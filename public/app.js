@@ -162,7 +162,7 @@ function renderHome() {
       <a class="btn" href="#" onclick="return go('join-creator')">Become a Founding Creator</a>
       <a class="btn ghost" href="#" onclick="return go('for-businesses')">For Businesses</a>
     </div>
-    <p class="small muted mt">Founding creator sign-up is open now in all 11 markets. Markets open to businesses in the next 60 to 90 days.</p>
+    <p class="small muted mt">Founding creator sign-up is open now in all 11 markets. Markets open to businesses in the next 60 to 90 days. Don't see your city? Sign up anyway: new markets open where creator sign-ups pile up, and early sign-ups hold founding standing when their city opens.</p>
   </section>
   <section class="grid cols-3 mt">
     <div class="card"><h3>1. Build your founding profile</h3><p class="muted">Creators sign up now and build their full profile: your market, your audience, what share of it is local. Early sign-ups hold founding status and priority when businesses start searching.</p></div>
@@ -175,8 +175,27 @@ function renderHome() {
   </section>`;
 }
 
-function marketOptions(selected) {
-  return state.boot.markets.map((m) => `<option value="${esc(m.name)}" ${m.name === selected ? "selected" : ""}>${esc(m.label)}</option>`).join("");
+function unlistedLabel() {
+  return (state.boot && state.boot.unlistedMarket) || "Not listed yet";
+}
+
+function marketOptions(selected, forJoin) {
+  const opts = state.boot.markets.map((m) => `<option value="${esc(m.name)}" ${m.name === selected ? "selected" : ""}>${esc(m.label)}</option>`).join("");
+  return forJoin ? opts + `<option value="${esc(unlistedLabel())}">My city is not listed yet</option>` : opts;
+}
+
+// When a joiner picks "My city is not listed yet", the market city
+// dropdown swaps for their own typed city + state: nobody is turned
+// away, and their sign-up counts toward opening their city.
+function syncMarketChoice() {
+  const m = document.getElementById("jc-market");
+  if (!m) return;
+  const unlisted = m.value === unlistedLabel();
+  const cityWrap = document.getElementById("jc-city-wrap");
+  const customWrap = document.getElementById("jc-custom-wrap");
+  if (cityWrap) cityWrap.style.display = unlisted ? "none" : "";
+  if (customWrap) { customWrap.style.display = unlisted ? "" : "none"; customWrap.style.gridColumn = unlisted ? "1 / -1" : ""; }
+  if (!unlisted) document.getElementById("jc-city").innerHTML = cityOptions(m.value);
 }
 
 function cityOptions(marketName, selected) {
@@ -261,7 +280,7 @@ function renderJoinCreator() {
   app.innerHTML = `
   <section class="panel" style="max-width:680px;margin:10px auto">
     <h2>Become a Founding Creator</h2>
-    <p class="muted">SIGNL is opening market by market, and creators are signing up first. Build your full founding profile now: when your market opens to businesses in the next 60 to 90 days, we email you, and founding creators get priority when businesses search. This is not a waitlist form; this is your real profile.</p>
+    <p class="muted">SIGNL is opening market by market, and creators are signing up first. Build your full founding profile now: when your market opens to businesses in the next 60 to 90 days, we email you, and founding creators get priority when businesses search. This is not a waitlist form; this is your real profile. City not listed yet? Pick "My city is not listed yet" below and sign up anyway: your sign-up counts toward opening your city, and you hold founding standing there.</p>
     <div id="form-error"></div>
     <form onsubmit="return doRegisterCreator(event)">
       <div class="form-2col">
@@ -270,8 +289,13 @@ function renderJoinCreator() {
       </div>
       <div class="field"><label>Password (10+ characters)</label><input type="password" id="jc-password" required minlength="10" autocomplete="new-password"></div>
       <div class="form-2col">
-        <div class="field"><label>Your market</label><select id="jc-market" onchange="document.getElementById('jc-city').innerHTML = cityOptions(this.value)">${marketOptions("Hampton Roads")}</select></div>
-        <div class="field"><label>Your home city</label><select id="jc-city">${cityOptions("Hampton Roads")}</select></div>
+        <div class="field"><label>Your market</label><select id="jc-market" onchange="syncMarketChoice()">${marketOptions("Hampton Roads", true)}</select><p class="small muted">Don't see your city? Pick "My city is not listed yet" and sign up anyway.</p></div>
+        <div class="field" id="jc-city-wrap"><label>Your home city</label><select id="jc-city">${cityOptions("Hampton Roads")}</select></div>
+        <div id="jc-custom-wrap" style="display:none">
+          <div class="field"><label>Your city</label><input id="jc-city-text" placeholder="For example: Austin"></div>
+          <div class="field"><label>Your state</label><input id="jc-state-text" placeholder="For example: TX"></div>
+          <p class="small muted">SIGNL is not open there yet. Your sign-up counts: when enough creators in your city sign up, we open there, and founding sign-ups go first.</p>
+        </div>
       </div>
       <div class="form-2col">
         <div class="field"><label>Instagram handle (required)</label><input id="jc-handle" placeholder="yourhandle" required oninput="document.getElementById('jc-ig-link').textContent = this.value ? 'instagram.com/' + this.value.replace(/^@/, '') : ''"><p class="small muted" id="jc-ig-link"></p></div>
@@ -351,14 +375,22 @@ async function doRegisterCreator(e) {
   const paidBox = document.getElementById("jc-paid");
   if (tierBand === "Creators" && paidBox && paidBox.checked && !comps.includes(PAID_COMP)) comps.push(PAID_COMP);
   const topCities = document.getElementById("jc-topcities").value.split(",").map((x) => x.trim()).filter(Boolean);
+  const marketVal = document.getElementById("jc-market").value;
+  const isUnlisted = marketVal === unlistedLabel();
+  const customCity = isUnlisted ? document.getElementById("jc-city-text").value.trim() : "";
+  const customState = isUnlisted ? document.getElementById("jc-state-text").value.trim() : "";
+  if (isUnlisted && !customCity) { errBox("Tell us your city, so your sign-up counts toward opening SIGNL there."); return false; }
+  if (isUnlisted && !customState) { errBox("Tell us your state, so your sign-up counts toward opening SIGNL there."); return false; }
   try {
     const data = await api("POST", "/auth/register", {
       role: "creator",
       name: document.getElementById("jc-name").value,
       email: document.getElementById("jc-email").value,
       password: document.getElementById("jc-password").value,
-      market: document.getElementById("jc-market").value,
-      city: document.getElementById("jc-city").value,
+      market: marketVal,
+      city: isUnlisted ? undefined : document.getElementById("jc-city").value,
+      customCity: isUnlisted ? customCity : undefined,
+      customState: isUnlisted ? customState : undefined,
       handle: document.getElementById("jc-handle").value,
       tiktokHandle: document.getElementById("jc-tiktok").value,
       youtubeChannel: document.getElementById("jc-youtube").value,
@@ -425,13 +457,17 @@ function renderPending() {
   const u = state.user;
   const f = u.founding || {};
   const isCreator = u.role === "creator";
+  const isUnlisted = isCreator && u.market === unlistedLabel();
+  const place = isUnlisted ? `${esc(u.city)}${u.state ? ", " + esc(u.state) : ""}` : esc(u.market);
   app.innerHTML = `
   <section class="panel center" style="max-width:560px;margin:40px auto">
     <h2>${isCreator ? "Founding profile received" : "Application received"}</h2>
-    <p>Thanks, ${esc(u.name)}. ${isCreator ? `Your founding creator profile for <strong>${esc(u.market)}</strong> is built and in the review queue.` : "Every SIGNL application is reviewed by a person before accounts activate. Yours is in the queue."}</p>
-    ${isCreator && f.queueBand ? `<p><span class="badge info">You are in the first ${f.queueBand} founding creators in ${esc(u.market)}</span></p>` : ""}
+    <p>Thanks, ${esc(u.name)}. ${isCreator ? `Your founding creator profile for <strong>${place}</strong> is built and in the review queue.` : "Every SIGNL application is reviewed by a person before accounts activate. Yours is in the queue."}</p>
+    ${isCreator && f.queueBand ? `<p><span class="badge info">${isUnlisted ? `You are in the first ${f.queueBand} to sign up in ${esc(u.city)}` : `You are in the first ${f.queueBand} founding creators in ${esc(u.market)}`}</span></p>` : ""}
     <p class="muted">${isCreator
-      ? `Every application is reviewed by a person. The moment you are approved, your founding status page opens here, and we will email you at ${esc(u.email)} when ${esc(u.market)} opens to businesses in the next 60 to 90 days. Sign back in any time to check your status.${state.boot && state.boot.email && state.boot.email.enabled ? ` A confirmation email is on its way to ${esc(u.email)}.` : ""}`
+      ? isUnlisted
+        ? `SIGNL is not open in ${esc(u.city)} yet, and your sign-up counts toward opening it: we open new markets where creator sign-ups pile up, and founding sign-ups there go first. Every application is reviewed by a person. The moment you are approved, your founding status page opens here, and we will email you at ${esc(u.email)} the moment ${esc(u.city)} opens. Sign back in any time to check your status.${state.boot && state.boot.email && state.boot.email.enabled ? ` A confirmation email is on its way to ${esc(u.email)}.` : ""}`
+        : `Every application is reviewed by a person. The moment you are approved, your founding status page opens here, and we will email you at ${esc(u.email)} when ${esc(u.market)} opens to businesses in the next 60 to 90 days. Sign back in any time to check your status.${state.boot && state.boot.email && state.boot.email.enabled ? ` A confirmation email is on its way to ${esc(u.email)}.` : ""}`
       : "Sign back in any time to check your status; your dashboard opens the moment you are approved."}</p>
     ${isCreator && !(u.creator && u.creator.hasPhoto) ? `
     <div style="text-align:left">
@@ -557,18 +593,20 @@ async function loadFounding() {
     const card = data.card;
     const p = card.profile || {};
     state.user.founding = f;
+    const isUnl = !!f.unlisted;
+    const place = isUnl ? `${esc(f.city)}${f.state ? ", " + esc(f.state) : ""}` : esc(f.market);
     el.innerHTML = `
     <div class="panel">
       <div class="flex-between">
         <div>
           <h3 style="margin:0">${esc(state.user.name)} <span class="muted">@${esc(p.handle || "")}</span></h3>
-          <p class="muted small">${esc(f.market)} &middot; ${esc(f.city)}</p>
+          <p class="muted small">${isUnl ? place : `${esc(f.market)} &middot; ${esc(f.city)}`}</p>
         </div>
-        <span class="badge ok" style="font-size:0.95rem;padding:6px 14px">Founding Creator, ${esc(f.market)}</span>
+        <span class="badge ok" style="font-size:0.95rem;padding:6px 14px">Founding Creator, ${isUnl ? esc(f.city) : esc(f.market)}</span>
       </div>
       <div class="grid cols-2 mt">
         <div>
-          ${card.photoUrl ? `<img class="profile-photo" src="${esc(card.photoUrl)}" alt="Your profile photo">` : `<div class="photo-placeholder">No photo yet. Add one in your profile below; businesses see it when ${esc(f.market)} opens.</div>`}
+          ${card.photoUrl ? `<img class="profile-photo" src="${esc(card.photoUrl)}" alt="Your profile photo">` : `<div class="photo-placeholder">No photo yet. Add one in your profile below; businesses see it when ${isUnl ? esc(f.city) : esc(f.market)} opens.</div>`}
           <p>${p.localAudiencePct}% local audience <span class="badge info">${esc(p.localAudienceSource || "Self-reported")}</span></p>
           <p>${scoreBadge(card.localImpactScore)}</p>
           ${card.scoreComponents ? `<p class="small muted">Reliability ${card.scoreComponents.reliability} &middot; ${esc(card.scoreComponents.reliabilityBasis)}</p>` : ""}
@@ -586,13 +624,21 @@ async function loadFounding() {
         </div>
       </div>
     </div>
+    ${isUnl ? `
+    <div class="panel">
+      <h3 style="margin-top:0">${esc(f.city)} opens when sign-ups pile up</h3>
+      <p>SIGNL is not open in ${place} yet. Your sign-up is counted: we open new markets where creator sign-ups pile up, and when ${esc(f.city)} opens, its founding sign-ups are first in line for offers. We email you at <strong>${esc(state.user.email)}</strong> the moment it opens.</p>
+      ${f.priorityBand ? `<p><span class="badge tier" style="font-size:0.95rem;padding:6px 14px">You are in the first ${f.priorityBand} to sign up in ${esc(f.city)}</span></p>
+      <p class="muted">You signed up early, and it counts: founding creators in a new market are ordered by sign-up time, earliest first.</p>` : ""}
+      <p class="muted">Keep your profile current in the meantime; when ${esc(f.city)} opens, your local audience percentage is what businesses look at first.</p>
+    </div>` : `
     <div class="panel">
       <h3 style="margin-top:0">${esc(f.market)} opens to businesses in the next ${esc(f.launchWindow)}</h3>
       <p>Your market is not taking business offers yet, and that is on purpose: SIGNL opens each market with its founding roster in place. The moment ${esc(f.market)} opens, we email you at <strong>${esc(state.user.email)}</strong>.</p>
       ${f.priorityBand ? `<p><span class="badge tier" style="font-size:0.95rem;padding:6px 14px">You are in the first ${f.priorityBand} founding creators in ${esc(f.market)}</span></p>
       <p class="muted">You signed up early, and it counts: when businesses search the ${esc(f.market)} roster, founding creators are ordered by sign-up time, earliest first.</p>` : ""}
       <p class="muted">Offers, visits, and messages unlock here the day your market activates. Keep your profile current in the meantime; your local audience percentage is what businesses look at first.</p>
-    </div>`;
+    </div>`}`;
     profEl.innerHTML = `<h3 class="mt">Your profile</h3>` + creatorProfileHtml(state.user);
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
@@ -623,7 +669,10 @@ function creatorProfileHtml(u) {
       </div>
       <div class="form-2col">
         <div class="field"><label>Instagram handle</label><input id="p-handle" value="${esc(c.handle || "")}"></div>
-        <div class="field"><label>Home city (${esc(u.market)})</label><select id="p-city">${cityOptions(u.market, u.city || "")}</select></div>
+        ${u.market === unlistedLabel()
+          ? `<div class="field"><label>Your city (not an open market yet)</label><input id="p-city-text" value="${esc(u.city || "")}"></div>
+             <div class="field"><label>Your state</label><input id="p-state-text" value="${esc(u.state || "")}"></div>`
+          : `<div class="field"><label>Home city (${esc(u.market)})</label><select id="p-city">${cityOptions(u.market, u.city || "")}</select></div>`}
       </div>
       <div class="form-2col">
         <div class="field"><label>TikTok handle</label><input id="p-tiktok" value="${esc(c.tiktokHandle || "")}" placeholder="Optional"></div>
@@ -674,9 +723,12 @@ async function doUpdateCreator(e) {
   const pctRaw = document.getElementById("p-localpct").value;
   try {
     const uploaded = await uploadPhotoInput("p-photo");
+    const cityEl = document.getElementById("p-city");
+    const cityTextEl = document.getElementById("p-city-text");
     const data = await api("PATCH", "/me/profile", {
       handle: document.getElementById("p-handle").value,
-      city: document.getElementById("p-city").value,
+      city: cityEl ? cityEl.value : cityTextEl ? cityTextEl.value : undefined,
+      state: document.getElementById("p-state-text") ? document.getElementById("p-state-text").value : undefined,
       tiktokHandle: document.getElementById("p-tiktok").value,
       youtubeChannel: document.getElementById("p-youtube").value,
       facebookUrl: document.getElementById("p-facebook").value,
@@ -1193,7 +1245,7 @@ async function loadApplications() {
           : "";
       return `<tr>
         <td><strong>${esc(u.name)}</strong><br><span class="muted small">${esc(u.email)}</span></td>
-        <td>${esc(u.role)}${standing}</td><td>${esc(u.market)}<br><span class="muted small">${esc(u.city || "")}</span></td>
+        <td>${esc(u.role)}${standing}</td><td>${esc(u.market)}<br><span class="muted small">${esc(u.city || "")}${u.state ? ", " + esc(u.state) : ""}</span></td>
         <td class="small">${detail}</td>
         <td>${fmtDate(u.createdAt)}</td>
         <td>${u.status === "pending"
@@ -1255,7 +1307,14 @@ async function loadStats() {
       <div class="table-wrap panel"><table>
         <tr><th>Market</th><th>Approved creators</th><th>Approved businesses</th><th>Bookings</th><th>Posts</th></tr>
         ${Object.entries(s.perMarket).map(([m, v]) => `<tr><td>${esc(m)}</td><td>${v.creators}</td><td>${v.businesses}</td><td>${v.bookings}</td><td>${v.posts}</td></tr>`).join("")}
-      </table></div>`;
+      </table></div>
+      ${s.unlistedByCity && s.unlistedByCity.length ? `
+      <h3 class="mt">Sign-ups in cities not open yet</h3>
+      <p class="muted small">Creators who signed up from outside the 11 founding markets. This is the demand signal for where to open next.</p>
+      <div class="table-wrap panel"><table>
+        <tr><th>City</th><th>Creator sign-ups</th></tr>
+        ${s.unlistedByCity.map((r) => `<tr><td>${esc(r.place)}</td><td>${r.creators}</td></tr>`).join("")}
+      </table></div>` : ""}`;
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }

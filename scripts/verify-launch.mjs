@@ -250,6 +250,31 @@ try {
   const approveC = await admin("POST", "/api/admin/review", { userId: regC.data.user.id, decision: "approve" });
   check("admin approves the Creators-tier creator", approveC.status === 200 && approveC.data.user.status === "approved");
 
+  // --- city not listed: anyone can sign up, counted per city ---
+  check("bootstrap names the unlisted pseudo-market", boot.data.unlistedMarket === "Not listed yet");
+  const noState = await client()("POST", "/api/auth/register", { ...basePayload, email: "x6@example.com", market: "Not listed yet", customCity: "Austin" });
+  check("unlisted sign-up without a state is refused (400)", noState.status === 400, String(noState.status));
+  const creatorE = client();
+  const regE = await creatorE("POST", "/api/auth/register", { ...basePayload, name: "Austin Creator", email: "launch-e@example.com", handle: "austineats", market: "Not listed yet", customCity: "Austin", customState: "tx" });
+  check("unlisted creator (Austin, TX) registers with a full profile", regE.status === 201, JSON.stringify(regE.data));
+  check("unlisted sign-up stores typed city + normalized state", regE.data.user.market === "Not listed yet" && regE.data.user.city === "Austin" && regE.data.user.state === "TX", JSON.stringify([regE.data.user.market, regE.data.user.city, regE.data.user.state]));
+  check("unlisted founder gets the per-city first-100 band", regE.data.user.founding && regE.data.user.founding.queueBand === 100 && regE.data.user.founding.unlisted === true && regE.data.user.founding.marketLive === false, JSON.stringify(regE.data.user.founding));
+  const regG = await client()("POST", "/api/auth/register", { ...basePayload, name: "Austin Two", email: "launch-g@example.com", handle: "austintwo", market: "Not listed yet", customCity: "Austin", customState: "TX" });
+  check("second Austin sign-up registers (same city pool)", regG.status === 201, JSON.stringify(regG.data));
+  const regF = await client()("POST", "/api/auth/register", { ...basePayload, name: "Dallas Creator", email: "launch-f@example.com", handle: "dallaseats", market: "Not listed yet", customCity: "Dallas", customState: "TX" });
+  check("Dallas sign-up registers in its own city pool", regF.status === 201 && regF.data.user.founding.queueBand === 100, JSON.stringify(regF.data.user && regF.data.user.founding));
+  const patchE = await creatorE("PATCH", "/api/me/profile", { city: "Round Rock", state: "TX" });
+  check("unlisted creator can correct their typed city", patchE.status === 200 && patchE.data.user.city === "Round Rock", JSON.stringify(patchE.data.user && patchE.data.user.city));
+  await creatorE("PATCH", "/api/me/profile", { city: "Austin" });
+  const approveE = await admin("POST", "/api/admin/review", { userId: regE.data.user.id, decision: "approve" });
+  check("admin approves the unlisted creator", approveE.status === 200 && approveE.data.user.status === "approved");
+  const foundingE = await creatorE("GET", "/api/me/founding");
+  check("unlisted founding status: city shown, market not live, banded standing", foundingE.status === 200 && foundingE.data.founding.unlisted === true && foundingE.data.founding.city === "Austin" && foundingE.data.founding.marketLive === false && foundingE.data.founding.priorityBand === 100, JSON.stringify(foundingE.data.founding));
+  const statsNow = await admin("GET", "/api/admin/stats");
+  const austinRow = (statsNow.data.unlistedByCity || []).find((r) => r.place === "Austin, TX");
+  const dallasRow = (statsNow.data.unlistedByCity || []).find((r) => r.place === "Dallas, TX");
+  check("admin stats count unlisted sign-ups per city (Austin 2, Dallas 1)", !!austinRow && austinRow.creators === 2 && !!dallasRow && dallasRow.creators === 1, JSON.stringify(statsNow.data.unlistedByCity));
+
   // client wiring for the new UI: bottom nav, paid option, terms consent
   check("client ships the mobile bottom nav", appJs.text.includes("bottomnav") && appJs.text.includes("renderBottomNav"));
   check("client gates the paid campaigns option to the Creators tier", appJs.text.includes("jc-paid-wrap") && appJs.text.includes("PAID_COMP"));
@@ -267,6 +292,9 @@ try {
   check("event: market_activated logged for Hampton Roads", byType("market_activated").some((e) => e.market === "Hampton Roads"));
   check("event: sign-up confirmation email queued for every creator registration", byType("signup_confirmation_email_queued").length >= 4, String(byType("signup_confirmation_email_queued").length));
   check("event: approval email queued on each creator approval", byType("approval_email_queued").length >= 3, String(byType("approval_email_queued").length));
+  const appSubE = byType("application_submitted").find((e) => e.subjectId === regE.data.user.id);
+  check("application_submitted records the unlisted city demand (city, state, unlisted flag)", !!appSubE && appSubE.data.unlisted === true && appSubE.data.city === "Austin" && appSubE.data.state === "TX", JSON.stringify(appSubE && appSubE.data));
+  check("client offers the not-listed path in sign-up", appJs.text.includes("jc-custom-wrap") && appJs.text.includes("My city is not listed yet") && appJs.text.includes("unlistedByCity"));
   check("event: with no SMTP transport, emails are recorded not_sent (never faked as sent)", byType("signup_confirmation_email_sent").length === 0 && byType("approval_email_not_sent").some((e) => e.data && e.data.reason === "transport_not_configured"), JSON.stringify(byType("approval_email_not_sent").map((e) => e.data && e.data.reason)));
   const pcEvC = byType("profile_completed").find((e) => e.subjectId === regC.data.user.id);
   check("profile_completed records the paid campaigns opt-in and terms version", !!pcEvC && pcEvC.data.openToPaidCampaigns === true && pcEvC.data.termsVersion === boot.data.termsVersion && pcEvC.data.marketingEmailConsent === true, JSON.stringify(pcEvC && pcEvC.data));

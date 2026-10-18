@@ -126,7 +126,7 @@ end to end. It is read from the environment only, is not in
 netlify.toml, and must never be set on the Netlify site.
 
 All three suites were run green against this codebase on 2026-10-18
-(150 checks total).
+(163 checks total).
 
 ## 2026-10-18 post-launch changes (Jeff's screenshot review)
 
@@ -147,6 +147,14 @@ All three suites were run green against this codebase on 2026-10-18
   (auto-triggered by the admin approve action). Both are logged as
   *_email_queued events, then *_email_sent or *_email_not_sent. They
   send only when the SMTP env vars above are set.
+- "My city is not listed yet" sign-ups: the market picker gains that
+  option; the creator types their own city + state and completes the
+  full founding profile under the pseudo-market "Not listed yet"
+  (user.state holds the state). Standing bands rank per typed city.
+  Pending, founding-status and both emails have unlisted variants
+  ("your sign-up counts toward opening your city"). Admin Stats shows
+  unlistedByCity: sign-ups per outside city, biggest first, the
+  demand signal for choosing the next market.
 
 ## Environment variables
 

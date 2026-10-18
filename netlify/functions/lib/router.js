@@ -29,6 +29,12 @@ const TERMS_VERSION = "2026-10-18";
 // Creators tier (15k+) only: on top of comps, these creators can also be
 // hired for paid cash campaigns when a business runs one (Jeff, 2026-10-18).
 const PAID_COMP = "Paid cash campaigns";
+// Anyone, anywhere can sign up (Jeff, 2026-10-18): a creator whose city
+// is not in a founding market registers under this pseudo-market with
+// their own typed city + state. Their sign-ups are counted per city in
+// admin stats, and when a city's count gets big enough it becomes a
+// market. Nobody gets left out at the door.
+const UNLISTED = "Not listed yet";
 const MAX_PHOTO_BYTES = 2.5 * 1024 * 1024;
 
 const H48 = 48 * 60 * 60 * 1000;
@@ -129,7 +135,10 @@ function creatorRanks(users) {
   const creators = users.filter((u) => u.role === "creator");
   const byMarket = {};
   for (const c of creators) {
-    (byMarket[c.market] = byMarket[c.market] || []).push(c);
+    // Unlisted creators rank inside their own city, not one shared pool:
+    // "first 100 in Austin" is the standing that matters there.
+    const key = c.market === UNLISTED ? `${c.city || ""}, ${c.state || ""}` : c.market;
+    (byMarket[key] = byMarket[key] || []).push(c);
   }
   const approvedRank = new Map();
   const pendingRank = new Map();
@@ -151,6 +160,8 @@ async function foundingSummary(user) {
   return {
     market: user.market,
     city: user.city || "",
+    state: user.state || null,
+    unlisted: user.market === UNLISTED,
     marketLive: await isMarketLive(user.market),
     launchWindow: LAUNCH_WINDOW_TEXT,
     status: user.status,
@@ -205,6 +216,30 @@ async function deliverEmail(kind, user, subject, text, band) {
 function signupConfirmationEmail(user, band) {
   const first = (user.name || "").split(" ")[0] || "there";
   const subject = "Your SIGNL founding creator profile is in";
+  if (user.market === UNLISTED) {
+    const place = `${user.city}, ${user.state}`;
+    const lines = [
+      `Hi ${first},`,
+      "",
+      `Your founding creator profile is built and in the review queue. Every application is reviewed by a person.`,
+    ];
+    if (band) lines.push(`You are in the first ${band} creators to sign up in ${user.city}. That founding standing never expires.`);
+    lines.push(
+      "",
+      `SIGNL has not opened in ${place} yet, and your sign-up is how that changes: we open new markets where creator sign-ups pile up. When ${user.city} opens, founding sign-ups there are first in line, and we email you the moment it happens.`,
+      "",
+      "The deal, as agreed: businesses comp you a meal or service, you post your honest experience within 48 hours, and you disclose the comp in the post. Nobody can ever ask you for a positive post.",
+      "",
+      "Sign in any time to check your status: https://app.joinsignl.com",
+      "",
+      "You agreed to SIGNL's Terms of Service and Privacy Policy, and to receive account and marketing emails from SIGNL. You can unsubscribe from marketing emails at any time.",
+      "",
+      "National platforms sell reach. We sell regulars.",
+      "The SIGNL team",
+      "hello@joinsignl.com",
+    );
+    return { subject, text: lines.join("\n") };
+  }
   const lines = [
     `Hi ${first},`,
     "",
@@ -230,6 +265,26 @@ function signupConfirmationEmail(user, band) {
 
 function approvalEmail(user, band) {
   const first = (user.name || "").split(" ")[0] || "there";
+  if (user.market === UNLISTED) {
+    const subject = `You are approved: founding creator for ${user.city}`;
+    const lines = [
+      `Hi ${first},`,
+      "",
+      `Good news: your application was reviewed and approved. You are a Founding Creator for ${user.city}, and your founding status page is live.`,
+    ];
+    if (band) lines.push(`You are in the first ${band} to sign up in ${user.city}. When ${user.city} opens, founding sign-ups are first in line for offers.`);
+    lines.push(
+      "",
+      "Sign in to see your status and keep your profile current: https://app.joinsignl.com",
+      "",
+      `${user.city} is not an open market yet. We open new markets where creator sign-ups pile up, and the moment ${user.city} opens, we email you again.`,
+      "",
+      "National platforms sell reach. We sell regulars.",
+      "The SIGNL team",
+      "hello@joinsignl.com",
+    );
+    return { subject, text: lines.join("\n") };
+  }
   const subject = "You are approved: welcome to the SIGNL founding roster";
   const lines = [
     `Hi ${first},`,
@@ -383,8 +438,19 @@ async function handleRegister(event) {
   if (!isEmail(b.email || "")) return err(400, "A valid email is required");
   if (typeof b.password !== "string" || b.password.length < 10) return err(400, "Password must be at least 10 characters");
   if (!b.name || typeof b.name !== "string") return err(400, "Name is required");
-  const market = marketByName(b.market || "");
+  const unlisted = b.market === UNLISTED;
+  if (unlisted && role !== "creator") return err(400, "Business accounts open when a market launches. Join the founding business list at joinsignl.com/businesses.html.");
+  const market = unlisted ? { name: UNLISTED, cities: [] } : marketByName(b.market || "");
   if (!market) return err(400, "Choose one of the SIGNL markets");
+  let customCity = "";
+  let customState = "";
+  if (unlisted) {
+    customCity = (b.customCity || "").trim().slice(0, 60);
+    customState = (b.customState || "").trim().slice(0, 60);
+    if (!customCity) return err(400, "Tell us your city, so your sign-up counts toward opening SIGNL there");
+    if (!customState) return err(400, "Tell us your state, so your sign-up counts toward opening SIGNL there");
+    if (customState.length === 2) customState = customState.toUpperCase();
+  }
 
   const email = b.email.toLowerCase();
   const existing = await store.get(`email:${email}`);
@@ -402,7 +468,8 @@ async function handleRegister(event) {
     passwordHash: hash,
     status: "pending",
     market: market.name,
-    city: (b.city || "").trim(),
+    city: unlisted ? customCity : (b.city || "").trim(),
+    state: unlisted ? customState : null,
     createdAt: ts,
     updatedAt: ts,
     reviewedAt: null,
@@ -422,8 +489,8 @@ async function handleRegister(event) {
     // acknowledgments (honest posts, FTC disclosure).
     const handle = (b.handle || "").replace(/^@/, "").trim();
     if (!handle) return err(400, "Your Instagram handle is required");
-    const city = (b.city || "").trim();
-    if (!city || !market.cities.includes(city)) return err(400, `Choose your home city in the ${market.name} market`);
+    const city = unlisted ? customCity : (b.city || "").trim();
+    if (!unlisted && (!city || !market.cities.includes(city))) return err(400, `Choose your home city in the ${market.name} market`);
     if (b.followerCount === undefined || b.followerCount === null || b.followerCount === "") return err(400, "Your follower count is required");
     const followers = Math.max(0, parseInt(b.followerCount, 10) || 0);
     const categories = cleanStringList(b.categories, CREATOR_CATEGORIES, 8);
@@ -507,7 +574,7 @@ async function handleRegister(event) {
     market: user.market,
     data:
       role === "creator"
-        ? { handle: user.creator.handle, city: user.city, followerCount: user.creator.followerCount, tierBand: user.creator.tierBand, suggestedTier: user.creator.suggestedTier, localAudiencePct: user.creator.localAudiencePct, localAudienceSource: user.creator.localAudienceSource, categories: user.creator.categories, compCategories: user.creator.compCategories, openToPaidCampaigns: user.creator.openToPaidCampaigns, termsVersion: TERMS_VERSION, marketingEmailConsent: true }
+        ? { handle: user.creator.handle, city: user.city, state: user.state, unlisted: user.market === UNLISTED, followerCount: user.creator.followerCount, tierBand: user.creator.tierBand, suggestedTier: user.creator.suggestedTier, localAudiencePct: user.creator.localAudiencePct, localAudienceSource: user.creator.localAudienceSource, categories: user.creator.categories, compCategories: user.creator.compCategories, openToPaidCampaigns: user.creator.openToPaidCampaigns, termsVersion: TERMS_VERSION, marketingEmailConsent: true }
         : { businessName: user.business.businessName, category: user.business.category, plan: user.business.plan, planPriceMonthly: user.business.planPriceMonthly },
   });
   if (role === "creator") {
@@ -632,6 +699,7 @@ async function route(event) {
       businessCategories: BUSINESS_CATEGORIES,
       plans: PLANS,
       paidCampaignsComp: PAID_COMP,
+      unlistedMarket: UNLISTED,
       termsVersion: TERMS_VERSION,
       email: { enabled: emailEnabled() },
       launch: {
@@ -692,9 +760,19 @@ async function route(event) {
       }
       if (b.topAudienceCities !== undefined) c.topAudienceCities = cleanStringList(b.topAudienceCities, null, 5);
       if (b.city !== undefined) {
-        const mkt = marketByName(user.market);
-        const newCity = String(b.city).trim();
-        if (mkt && mkt.cities.includes(newCity)) { changes.city = [user.city, newCity]; user.city = newCity; }
+        const newCity = String(b.city).trim().slice(0, 60);
+        if (user.market === UNLISTED) {
+          // Unlisted creators type their own city; it can be corrected.
+          if (newCity) { changes.city = [user.city, newCity]; user.city = newCity; }
+        } else {
+          const mkt = marketByName(user.market);
+          if (mkt && mkt.cities.includes(newCity)) { changes.city = [user.city, newCity]; user.city = newCity; }
+        }
+      }
+      if (b.state !== undefined && user.market === UNLISTED) {
+        let ns = String(b.state).trim().slice(0, 60);
+        if (ns.length === 2) ns = ns.toUpperCase();
+        if (ns) user.state = ns;
       }
       if (b.bio !== undefined) c.bio = String(b.bio).trim();
       if (b.localAudiencePct !== undefined) {
@@ -880,6 +958,16 @@ async function route(event) {
         if (u.role === "creator" && u.status === "approved") perMarket[u.market].creators += 1;
         if (u.role === "business" && u.status === "approved") perMarket[u.market].businesses += 1;
       }
+      // Demand signal outside the founding markets (Jeff, 2026-10-18):
+      // how many creators signed up per unlisted city, biggest first.
+      const unlistedMap = {};
+      for (const u of users) {
+        if (u.role === "creator" && u.market === UNLISTED) {
+          const place = `${u.city || "Unknown"}${u.state ? ", " + u.state : ""}`;
+          unlistedMap[place] = (unlistedMap[place] || 0) + 1;
+        }
+      }
+      const unlistedByCity = Object.entries(unlistedMap).map(([place, creators]) => ({ place, creators })).sort((a, b) => b.creators - a.creators);
       for (const bk of bookings) if (perMarket[bk.market]) perMarket[bk.market].bookings += 1;
       for (const p of posts) {
         const bk = bookings.find((x) => x.id === p.bookingId);
@@ -901,6 +989,7 @@ async function route(event) {
         },
         posts: { total: posts.length, onTime, late: posts.length - onTime, onTimeRate: posts.length ? Math.round((onTime / posts.length) * 100) : null },
         perMarket,
+        unlistedByCity,
       });
     }
     return err(404, "Unknown admin route");
