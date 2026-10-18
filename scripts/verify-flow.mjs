@@ -11,6 +11,10 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
+const { approvalEmail, signupConfirmationEmail } = require("../netlify/functions/lib/router.js");
 
 const PORT = 8917;
 const BASE = `http://localhost:${PORT}`;
@@ -100,6 +104,18 @@ try {
   check("bootstrap lists 39 markets", boot.data.markets && boot.data.markets.length === 39, JSON.stringify(boot.data.markets && boot.data.markets.length));
   check("bootstrap plans are $299 and $799", boot.data.plans[0].priceMonthly === 299 && boot.data.plans[1].priceMonthly === 799);
 
+  // --- referral: email copy + status page rendering path ---
+  const mailListed = approvalEmail({ name: "Verify Creator", email: "v@example.com", market: "Hampton Roads", creator: { handle: "verifyeats757", tierBand: "Locals" } }, 100);
+  check("approval email (listed market) carries the creator invite link", mailListed.text.includes("https://app.joinsignl.com/?ref=verifyeats757"), mailListed.text);
+  const mailUnlisted = approvalEmail({ name: "Tulsa Creator", email: "t@example.com", market: "Not listed yet", city: "Tulsa", creator: { handle: "tulsaeats", tierBand: "Locals" } }, 100);
+  check("approval email (unlisted) carries the creator invite link", mailUnlisted.text.includes("https://app.joinsignl.com/?ref=tulsaeats"), mailUnlisted.text);
+  const mailSignup = signupConfirmationEmail({ name: "Verify Creator", email: "v@example.com", market: "Hampton Roads", creator: { handle: "verifyeats757", tierBand: "Locals" } }, 100);
+  check("sign-up confirmation email does NOT carry the invite ask (approval only)", !mailSignup.text.includes("?ref="), mailSignup.text);
+  const appJs = await anon("GET", "/app.js");
+  const appJsText = String((appJs.data && appJs.data.raw) || "");
+  check("status page renders the Grow your roster invite block", appJsText.includes("Grow your roster") && appJsText.includes("app.joinsignl.com/?ref="), appJsText.slice(0, 80));
+  check("client persists the ?ref= credit and sends it at registration", appJsText.includes("signl_ref") && appJsText.includes("referredBy"), "");
+
   // --- creator registers through the real sign-up path ---
   const creator = client();
   const reg = await creator("POST", "/api/auth/register", {
@@ -118,10 +134,23 @@ try {
     bio: "Verification account created by scripts/verify-flow.mjs",
     agreedHonestPosts: true,
     agreedFtcDisclosure: true, agreedTerms: true,
+    referredBy: "  @foundingfriend  ",
   });
   check("creator registration returns 201", reg.status === 201, JSON.stringify(reg.data));
   check("creator starts as pending", reg.data.user && reg.data.user.status === "pending");
+  check("referral credit persisted on the user record (sanitized)", reg.data.user && reg.data.user.referredBy === "foundingfriend", JSON.stringify(reg.data.user && reg.data.user.referredBy));
   const creatorId = reg.data.user.id;
+
+  const mePending = await creator("GET", "/api/auth/me");
+  check("status page payload carries the handle the invite link is built from", mePending.data.user && mePending.data.user.creator && mePending.data.user.creator.handle === "verifyeats757");
+
+  const longRef = await client()("POST", "/api/auth/register", {
+    role: "creator", name: "Long Ref", email: "longref@example.com", password: "creator-pass-123",
+    market: "Hampton Roads", city: "Norfolk", handle: "longref", tierBand: "Locals", followerCount: 3000,
+    localAudiencePct: 40, categories: ["Food & Drink"], agreedHonestPosts: true, agreedFtcDisclosure: true, agreedTerms: true,
+    referredBy: "x".repeat(60),
+  });
+  check("over-long referral credit is capped at 40 chars", longRef.status === 201 && longRef.data.user.referredBy.length === 40, JSON.stringify(longRef.data.user && longRef.data.user.referredBy));
 
   const dup = await client()("POST", "/api/auth/register", {
     role: "creator", name: "Dupe", email: "vcreator@example.com", password: "creator-pass-123", market: "Hampton Roads", handle: "dupe",
@@ -141,6 +170,7 @@ try {
   const apps = await admin("GET", "/api/admin/applications");
   const pendingCreator = (apps.data.pending || []).find((u) => u.id === creatorId);
   check("admin sees the pending creator application", !!pendingCreator);
+  check("admin applications payload carries the referral credit (via @handle)", !!pendingCreator && pendingCreator.referredBy === "foundingfriend", JSON.stringify(pendingCreator && pendingCreator.referredBy));
   const approve1 = await admin("POST", "/api/admin/review", { userId: creatorId, decision: "approve" });
   check("admin approves creator", approve1.status === 200 && approve1.data.user.status === "approved");
 
@@ -253,6 +283,8 @@ try {
   check("two messages logged", count("message_sent") >= 2);
   const redeemEvent = (events.data.events || []).find((e) => e.type === "code_redeemed");
   check("redeem event carries market and deadline", !!redeemEvent && redeemEvent.market === "Hampton Roads" && !!redeemEvent.data.postDeadline);
+  const submitEvent = (events.data.events || []).find((e) => e.type === "application_submitted" && e.subjectId === creatorId);
+  check("application_submitted event records the referral credit", !!submitEvent && submitEvent.data.referredBy === "foundingfriend", JSON.stringify(submitEvent && submitEvent.data));
 
   // --- admin stats roll up by market ---
   const stats = await admin("GET", "/api/admin/stats");

@@ -35,6 +35,31 @@ async function api(method, path, body) {
   return data;
 }
 
+// Creator referral (Jeff, 2026-10-18): a visitor who arrived through
+// a creator's invite link (?ref=<handle>) carries that credit through
+// to their registration, so the inviting creator is credited.
+function storedRef() {
+  try { return localStorage.getItem("signl_ref") || ""; } catch (e) { return ""; }
+}
+
+function inviteUrlFor(u) {
+  const handle = u && u.creator && u.creator.handle;
+  return handle ? `https://app.joinsignl.com/?ref=${encodeURIComponent(handle)}` : "";
+}
+
+function growRosterHtml(u) {
+  const link = inviteUrlFor(u);
+  if (!link) return "";
+  const place = u.market === unlistedLabel() ? (u.city || "your city") : u.market;
+  return `
+    <div class="panel mt" style="text-align:left">
+      <h3 style="margin-top:0">Grow your roster</h3>
+      <p class="small">Founding rosters fill by invitation. Share your personal invite link with other creators in ${esc(place)}: anyone who signs up through your link is credited to you.</p>
+      <div class="field"><label>Your invite link</label><input type="text" readonly value="${esc(link)}" onclick="this.select()"></div>
+      <p class="small muted">Tap the link to select it, copy it, and send it to a creator who should be on the founding roster with you.</p>
+    </div>`;
+}
+
 function fmtNum(n) {
   if (n === null || n === undefined) return "n/a";
   if (n >= 1000000) return (n / 1000000).toFixed(1).replace(/\.0$/, "") + "M";
@@ -459,6 +484,7 @@ async function doRegisterCreator(e) {
       agreedHonestPosts: true,
       agreedFtcDisclosure: true,
       agreedTerms: true,
+      referredBy: storedRef() || undefined,
     });
     state.user = data.user;
     await uploadPhotoInput("jc-photo");
@@ -525,6 +551,7 @@ function renderPending() {
       <div class="field"><label>Add your profile photo now (optional)</label><input type="file" id="pending-photo" accept="image/png,image/jpeg,image/webp"></div>
       <button class="btn small-btn" onclick="return uploadPendingPhoto(event)">Upload photo</button> <span id="pending-photo-ok" class="saved"></span>
     </div>` : ""}
+    ${isCreator ? growRosterHtml(u) : ""}
     <div class="mt"><button class="btn ghost" onclick="signOut()">Sign out</button></div>
   </section>`;
 }
@@ -613,7 +640,7 @@ function renderCreatorDash() {
   const tab = state.tab || "Profile";
   state.tab = tab;
   let body = "";
-  if (tab === "Profile") body = creatorProfileHtml(u);
+  if (tab === "Profile") body = creatorProfileHtml(u) + growRosterHtml(u);
   app.innerHTML = `
     <h2>Creator dashboard <span class="badge ok">Founding Creator, ${esc(u.market)}</span></h2>
     ${tabsHtml(["Profile", "Offers", "My Visits", "Messages"], tab)}
@@ -690,6 +717,7 @@ async function loadFounding() {
       <p class="muted">You signed up early, and it counts: when businesses search the ${esc(f.market)} roster, founding creators are ordered by sign-up time, earliest first.</p>` : ""}
       <p class="muted">Offers, visits, and messages unlock here the day your market activates. Keep your profile current in the meantime; your local audience percentage is what businesses look at first.</p>
     </div>`}`;
+    el.innerHTML += growRosterHtml(state.user);
     profEl.innerHTML = `<h3 class="mt">Your profile</h3>` + creatorProfileHtml(state.user);
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
@@ -1292,7 +1320,7 @@ async function loadApplications() {
         ? (u.foundingPriority ? `<br><span class="badge tier">Founding priority #${u.foundingPriority}</span>` : u.queuePosition ? `<br><span class="badge info">Queue #${u.queuePosition} in market</span>` : "")
         : "";
       const detail = u.role === "creator" && u.creator
-        ? `@${esc(u.creator.handle)} &middot; ${fmtNum(u.creator.followerCount)} followers &middot; ${esc(u.creator.tierBand)} &middot; Local: ${u.creator.localAudiencePct === null ? "not reported" : u.creator.localAudiencePct + "% (Self-reported)"} &middot; ${(u.creator.categories || []).map(esc).join(", ")} &middot; Photo: ${u.creator.hasPhoto ? "yes" : "no"} &middot; Socials: IG${u.creator.tiktokHandle ? ", TikTok" : ""}${u.creator.youtubeChannel ? ", YouTube" : ""}${u.creator.facebookUrl ? ", Facebook" : ""}${u.creator.xUrl ? ", X" : ""}${u.creator.linkedinUrl ? ", LinkedIn" : ""}`
+        ? `@${esc(u.creator.handle)} &middot; ${fmtNum(u.creator.followerCount)} followers &middot; ${esc(u.creator.tierBand)} &middot; Local: ${u.creator.localAudiencePct === null ? "not reported" : u.creator.localAudiencePct + "% (Self-reported)"} &middot; ${(u.creator.categories || []).map(esc).join(", ")} &middot; Photo: ${u.creator.hasPhoto ? "yes" : "no"} &middot; Socials: IG${u.creator.tiktokHandle ? ", TikTok" : ""}${u.creator.youtubeChannel ? ", YouTube" : ""}${u.creator.facebookUrl ? ", Facebook" : ""}${u.creator.xUrl ? ", X" : ""}${u.creator.linkedinUrl ? ", LinkedIn" : ""}${u.referredBy ? ` &middot; via @${esc(u.referredBy)}` : ""}`
         : u.role === "business" && u.business
           ? `${esc(u.business.businessName)} &middot; ${esc(u.business.category)} &middot; ${esc(u.business.planName)}`
           : "";
@@ -1383,6 +1411,10 @@ async function loadStats() {
       state.user = me.user;
     } catch (e) { state.user = null; }
     const params = new URLSearchParams(location.search);
+    const refParam = params.get("ref");
+    if (refParam) {
+      try { localStorage.setItem("signl_ref", refParam.trim().replace(/^@/, "").slice(0, 40)); } catch (e) { /* storage unavailable */ }
+    }
     const code = params.get("code");
     if (code && state.user && state.user.role === "business") {
       state.tab = "Counter";

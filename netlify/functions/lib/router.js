@@ -284,6 +284,9 @@ function signupConfirmationEmail(user, band) {
 function approvalEmail(user, band) {
   const first = greetingName(user);
   const paidLine = paidCampaignLine(user);
+  // Referral ask lands at approval, when the creator is in (Jeff,
+  // 2026-10-18): their personal invite link, sign-ups credited to them.
+  const inviteUrl = user.creator && user.creator.handle ? `https://app.joinsignl.com/?ref=${encodeURIComponent(user.creator.handle)}` : null;
   if (user.market === UNLISTED) {
     const subject = `You are approved: founding creator for ${user.city}`;
     const lines = [
@@ -298,6 +301,7 @@ function approvalEmail(user, band) {
       "",
       `${user.city} is not an open market yet. We open new markets where creator sign-ups pile up, and the moment ${user.city} opens, we email you again.`,
       "",
+      ...(inviteUrl ? [`Grow the roster: founding rosters fill by invitation. Share your personal invite link with other creators in ${user.city}: ${inviteUrl} Every creator who signs up through your link is credited to you.`, ""] : []),
       ...(paidLine ? [paidLine, ""] : []),
       "National platforms sell reach. We sell regulars.",
       "The SIGNL team",
@@ -318,6 +322,7 @@ function approvalEmail(user, band) {
     "",
     `${user.market} opens to businesses in the next ${LAUNCH_WINDOW_TEXT}. The moment it opens, we email you again, and founding creators get first pick of every offer. Your local audience percentage is the number businesses look at first, so keep it honest and current.`,
     "",
+    ...(inviteUrl ? [`Grow the roster: founding rosters fill by invitation. Share your personal invite link with other creators in ${user.market}: ${inviteUrl} Every creator who signs up through your link is credited to you.`, ""] : []),
     ...(paidLine ? [paidLine, ""] : []),
     "National platforms sell reach. We sell regulars.",
     "The SIGNL team",
@@ -506,6 +511,12 @@ async function handleRegister(event) {
     business: null,
   };
 
+  // Creator referral credit (Jeff, 2026-10-18): a sign-up that arrived
+  // through another creator's invite link (?ref=<handle>) is credited
+  // to that handle. Sanitized to a short handle-shaped string.
+  const referredBy = typeof b.referredBy === "string" ? b.referredBy.trim().replace(/^@/, "").slice(0, 40) : "";
+  if (referredBy) user.referredBy = referredBy;
+
   if (role === "creator") {
     // The founding creator profile builder. Required: Instagram handle,
     // home city inside the chosen market, follower count, at least one
@@ -598,8 +609,8 @@ async function handleRegister(event) {
     market: user.market,
     data:
       role === "creator"
-        ? { handle: user.creator.handle, city: user.city, state: user.state, country: user.country, unlisted: user.market === UNLISTED, followerCount: user.creator.followerCount, tierBand: user.creator.tierBand, suggestedTier: user.creator.suggestedTier, localAudiencePct: user.creator.localAudiencePct, localAudienceSource: user.creator.localAudienceSource, categories: user.creator.categories, compCategories: user.creator.compCategories, openToPaidCampaigns: user.creator.openToPaidCampaigns, termsVersion: TERMS_VERSION, marketingEmailConsent: true }
-        : { businessName: user.business.businessName, category: user.business.category, plan: user.business.plan, planPriceMonthly: user.business.planPriceMonthly },
+        ? { handle: user.creator.handle, city: user.city, state: user.state, country: user.country, unlisted: user.market === UNLISTED, followerCount: user.creator.followerCount, tierBand: user.creator.tierBand, suggestedTier: user.creator.suggestedTier, localAudiencePct: user.creator.localAudiencePct, localAudienceSource: user.creator.localAudienceSource, categories: user.creator.categories, compCategories: user.creator.compCategories, openToPaidCampaigns: user.creator.openToPaidCampaigns, termsVersion: TERMS_VERSION, marketingEmailConsent: true, ...(user.referredBy ? { referredBy: user.referredBy } : {}) }
+        : { businessName: user.business.businessName, category: user.business.category, plan: user.business.plan, planPriceMonthly: user.business.planPriceMonthly, ...(user.referredBy ? { referredBy: user.referredBy } : {}) },
   });
   if (role === "creator") {
     // Registration IS the complete profile build at launch: the profile
@@ -1444,4 +1455,6 @@ async function route(event) {
   return err(404, "Route not found");
 }
 
-module.exports = { route };
+// The email builders are exported alongside the router so the verify
+// suites can assert on the exact copy a creator receives.
+module.exports = { route, approvalEmail, signupConfirmationEmail };
