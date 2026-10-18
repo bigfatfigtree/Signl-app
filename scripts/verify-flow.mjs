@@ -97,7 +97,7 @@ try {
 
   const anon = client();
   const boot = await anon("GET", "/api/bootstrap");
-  check("bootstrap lists 11 markets", boot.data.markets && boot.data.markets.length === 11, JSON.stringify(boot.data.markets && boot.data.markets.length));
+  check("bootstrap lists 39 markets", boot.data.markets && boot.data.markets.length === 39, JSON.stringify(boot.data.markets && boot.data.markets.length));
   check("bootstrap plans are $299 and $799", boot.data.plans[0].priceMonthly === 299 && boot.data.plans[1].priceMonthly === 799);
 
   // --- creator registers through the real sign-up path ---

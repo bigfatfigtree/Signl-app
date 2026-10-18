@@ -27,10 +27,28 @@ The public launch is **creator founding sign-up only**:
   launch. All business functionality (discovery, offers, counter,
   plans) remains in the codebase, gated off.
 - **Market activation is a per-market admin flag** (Admin, Markets
-  tab), default OFF for all 11 markets. Until a market is live, its
+  tab), default OFF for all 39 markets. Until a market is live, its
   approved creators see only the founding status page, and discovery,
   offers, bookings, the counter, posts, and messages refuse with the
   launch-window message.
+- **Markets are country-grouped and universal (2026-10-18).** There
+  are 39 markets across 12 countries and territories: the 11 US
+  founding metros (unchanged names, city lists, and flags), 12 more
+  US single-city markets (Nashville, Austin, Dallas, Chicago, Los
+  Angeles, San Diego, Seattle, Tampa, Miami, Phoenix, Denver,
+  Minneapolis), London and Manchester (United Kingdom), Dubai and
+  Abu Dhabi (United Arab Emirates), Riyadh (Saudi Arabia), Doha
+  (Qatar), Astana (Kazakhstan), Bishkek (Kyrgyzstan), Sydney,
+  Melbourne, and Perth (Australia), Auckland (New Zealand), Singapore,
+  Hong Kong, and Beijing and Shanghai (China). Each market record
+  carries a `country`, which the API/bootstrap exposes; the sign-up
+  picker is a search box plus a select grouped by country (United
+  States first, then alphabetical; cities alphabetical within a
+  country), with "My city is not listed yet" last. Dubai is a core
+  market in that picker, never a typed-in fallback. Every market,
+  new and founding, defaults to NOT live: founding sign-ups are open
+  everywhere, and offers stay gated per market until an admin
+  activates it.
 - **The creator roster is never public.** No public roster pages
   exist; discovery requires an authenticated, approved business
   account in a live market, and creator photos are served only to the
@@ -48,7 +66,8 @@ The public launch is **creator founding sign-up only**:
   Required: full name, email, password, market, home city (must be in
   that market's published city list), Instagram handle, follower
   count, at least one content category (Food & Drink, Nightlife,
-  Beauty & Grooming, Fitness & Wellness, Retail & Shopping,
+  Beauty & Grooming, Fitness & Wellness, Health & Wellness,
+  Retail & Shopping,
   Attractions & Events, Local Services, Other), self-reported local
   audience percentage (always labeled "Self-reported" until Meta
   verification exists), and both acknowledgments: the honest-post rule
@@ -106,7 +125,7 @@ database, and registers fresh accounts through the real sign-up path):
 ```
 node scripts/verify-flow.mjs        # 57 checks: main marketplace flow
 node scripts/verify-fallbacks.mjs   # 14 checks: check-in / confirm fallbacks
-node scripts/verify-launch.mjs      # 61 checks: the launch shape itself
+node scripts/verify-launch.mjs      # 108 checks: the launch shape itself
 npm run verify                      # all three, in order
 ```
 
@@ -126,7 +145,7 @@ end to end. It is read from the environment only, is not in
 netlify.toml, and must never be set on the Netlify site.
 
 All three suites were run green against this codebase on 2026-10-18
-(163 checks total).
+(179 checks total).
 
 ## 2026-10-18 post-launch changes (Jeff's screenshot review)
 
@@ -148,13 +167,25 @@ All three suites were run green against this codebase on 2026-10-18
   *_email_queued events, then *_email_sent or *_email_not_sent. They
   send only when the SMTP env vars above are set.
 - "My city is not listed yet" sign-ups: the market picker gains that
-  option; the creator types their own city + state and completes the
-  full founding profile under the pseudo-market "Not listed yet"
-  (user.state holds the state). Standing bands rank per typed city.
-  Pending, founding-status and both emails have unlisted variants
-  ("your sign-up counts toward opening your city"). Admin Stats shows
-  unlistedByCity: sign-ups per outside city, biggest first, the
-  demand signal for choosing the next market.
+  option; the creator types their own city + country (state/province
+  optional) and completes the full founding profile under the
+  pseudo-market "Not listed yet" (user.country holds the country;
+  user.state keeps an optional state/province, and older records that
+  only have a state still display and rank). Standing bands rank per
+  typed city + country. Pending, founding-status and both emails have
+  unlisted variants ("your sign-up counts toward opening your city").
+  Admin Stats shows unlistedByCity: sign-ups per outside city +
+  country, biggest first, the demand signal for choosing the next
+  market.
+- Universal markets (later on 2026-10-18): 28 single-city core
+  markets added across 12 countries and territories (see Launch
+  shape), every market record gained a `country`, the sign-up picker
+  became a search box over a country-grouped select, and creator
+  categories gained a Health & Wellness content category plus a
+  "Health & wellness services" comp category (med spa treatments,
+  vein clinic services, dental, dermatology and aesthetics, IV
+  therapy). Listed-market accounts store the market's country on the
+  user record.
 
 ## Environment variables
 
@@ -178,7 +209,8 @@ production. Locally they go in the shell.
 
 ## Data schema (Netlify Blobs, store "signl-data", one key per record)
 
-- `user:{uuid}` account (name, email, market, city, createdAt; status
+- `user:{uuid}` account (name, email, market, city, country, and an
+  optional state for unlisted sign-ups; createdAt; status
   lifecycle pending, approved, rejected, with reviewedAt/reviewedBy
   stamps). Creator payload under `creator`: handle, instagramUrl,
   tiktokHandle, tiktokUrl, youtubeChannel, facebookUrl, xHandle,
@@ -284,7 +316,7 @@ Everything below assumes this directory is the repo root.
    that page is the founding business list, and it is the whole
    business front door until a market activates. Decide whether the
    current Netlify forms stay as a fallback during the switchover.
-8. **Do NOT activate any market yet.** All 11 markets ship
+8. **Do NOT activate any market yet.** All 39 markets ship
    founding-only. When a market's founding roster is ready (60 to 90
    day window), activate it in Admin, Markets tab; that is also the
    moment to email that market's founding creators at their registered

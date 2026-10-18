@@ -84,12 +84,23 @@ try {
 
   const anon = client();
   const boot = await anon("GET", "/api/bootstrap");
-  check("bootstrap lists 11 markets", boot.data.markets && boot.data.markets.length === 11);
+  check("bootstrap lists 39 markets (11 founding metros + 28 universal core markets)", boot.data.markets && boot.data.markets.length === 39, JSON.stringify(boot.data.markets && boot.data.markets.length));
+  const NEW_MARKETS = ["Nashville", "Austin", "Dallas", "Chicago", "Los Angeles", "San Diego", "Seattle", "Tampa", "Miami", "Phoenix", "Denver", "Minneapolis", "London", "Manchester", "Dubai", "Abu Dhabi", "Riyadh", "Doha", "Astana", "Bishkek", "Sydney", "Melbourne", "Perth", "Auckland", "Singapore", "Hong Kong", "Beijing", "Shanghai"];
+  check("all 28 new core markets are in bootstrap", NEW_MARKETS.every((n) => (boot.data.markets || []).some((m) => m.name === n)), JSON.stringify((boot.data.markets || []).map((m) => m.name)));
+  check("bootstrap exposes a country on every market (grouped picker data)", (boot.data.markets || []).length === 39 && boot.data.markets.every((m) => !!m.country), JSON.stringify((boot.data.markets || []).map((m) => [m.name, m.country])));
+  const EXPECTED_COUNTRIES = { "Abu Dhabi": "United Arab Emirates", "Riyadh": "Saudi Arabia", "Doha": "Qatar", "Astana": "Kazakhstan", "Bishkek": "Kyrgyzstan", "Sydney": "Australia", "Melbourne": "Australia", "Perth": "Australia", "Auckland": "New Zealand", "Singapore": "Singapore", "Hong Kong": "Hong Kong", "Beijing": "China", "Shanghai": "China" };
+  check("Bella's 13 focus markets carry the right countries", Object.entries(EXPECTED_COUNTRIES).every(([n, c]) => (boot.data.markets || []).some((m) => m.name === n && m.country === c)), JSON.stringify(EXPECTED_COUNTRIES));
+  check("bootstrap spans exactly 12 countries and territories", new Set((boot.data.markets || []).map((m) => m.country)).size === 12, JSON.stringify([...new Set((boot.data.markets || []).map((m) => m.country))]));
+  check("Dubai is a core market in the United Arab Emirates", (boot.data.markets || []).some((m) => m.name === "Dubai" && m.country === "United Arab Emirates" && m.cities.includes("Dubai")));
+  check("London and Manchester are United Kingdom markets", ["London", "Manchester"].every((n) => (boot.data.markets || []).some((m) => m.name === n && m.country === "United Kingdom")));
+  check("the 12 new US cities carry the United States country", NEW_MARKETS.slice(0, 12).every((n) => (boot.data.markets || []).some((m) => m.name === n && m.country === "United States")));
+  check("every new market starts not live", NEW_MARKETS.every((n) => boot.data.launch && boot.data.launch.marketLive[n] === false), JSON.stringify(boot.data.launch && boot.data.launch.marketLive));
   check("bootstrap: creator sign-up open, business sign-up closed", boot.data.launch && boot.data.launch.creatorSignupOpen === true && boot.data.launch.businessSignupOpen === false, JSON.stringify(boot.data.launch));
   check("bootstrap: every market starts not live", boot.data.launch && Object.values(boot.data.launch.marketLive).every((v) => v === false));
   check("bootstrap: launch window is 60 to 90 days", boot.data.launch && boot.data.launch.launchWindow === "60 to 90 days");
   check("creator categories are the launch set", Array.isArray(boot.data.creatorCategories) && boot.data.creatorCategories.includes("Beauty & Grooming") && boot.data.creatorCategories.includes("Food & Drink") && !boot.data.creatorCategories.includes("Lifestyle"));
   check("comp categories published", Array.isArray(boot.data.compCategories) && boot.data.compCategories.includes("Restaurant meals"));
+  check("health and wellness is a creator category and a comp category", boot.data.creatorCategories.includes("Health & Wellness") && boot.data.compCategories.includes("Health & wellness services"), JSON.stringify([boot.data.creatorCategories, boot.data.compCategories]));
   check("bootstrap names the Creators-tier paid campaigns option", boot.data.paidCampaignsComp === "Paid cash campaigns");
   check("bootstrap reports email transport off locally (queued, never faked)", boot.data.email && boot.data.email.enabled === false);
 
@@ -214,7 +225,9 @@ try {
   // --- admin market controls, then activation opens the gate ---
   const markets = await admin("GET", "/api/admin/markets");
   const hr = (markets.data.markets || []).find((m) => m.name === "Hampton Roads");
-  check("admin markets list: 11 markets, Hampton Roads founding-only with 2 approved creators", (markets.data.markets || []).length === 11 && !!hr && hr.live === false && hr.creatorsApproved === 2, JSON.stringify(hr));
+  check("admin markets list: 39 markets, Hampton Roads founding-only with 2 approved creators", (markets.data.markets || []).length === 39 && !!hr && hr.live === false && hr.creatorsApproved === 2, JSON.stringify(hr));
+  const dubaiRow = (markets.data.markets || []).find((m) => m.name === "Dubai");
+  check("admin markets list: Dubai present, United Arab Emirates, not live", !!dubaiRow && dubaiRow.country === "United Arab Emirates" && dubaiRow.live === false, JSON.stringify(dubaiRow));
   const toggle = await admin("POST", "/api/admin/markets/toggle", { market: "Hampton Roads", live: true });
   check("admin activates Hampton Roads", toggle.status === 200 && toggle.data.live === true, JSON.stringify(toggle.data));
   const openOffers = await creatorA("GET", "/api/offers");
@@ -250,30 +263,40 @@ try {
   const approveC = await admin("POST", "/api/admin/review", { userId: regC.data.user.id, decision: "approve" });
   check("admin approves the Creators-tier creator", approveC.status === 200 && approveC.data.user.status === "approved");
 
+  // --- Dubai is a core market: picked, never typed in ---
+  const dubaiCreator = client();
+  const regDubai = await dubaiCreator("POST", "/api/auth/register", { ...basePayload, name: "Dubai Creator", email: "launch-dubai@example.com", handle: "dubaieats", market: "Dubai", city: "Dubai" });
+  check("Dubai is selectable as a core market at sign-up (201)", regDubai.status === 201, JSON.stringify(regDubai.data));
+  check("Dubai sign-up stores the market and its country, founding-only", regDubai.data.user.market === "Dubai" && regDubai.data.user.country === "United Arab Emirates" && regDubai.data.user.founding.marketLive === false && regDubai.data.user.founding.unlisted === false, JSON.stringify([regDubai.data.user.market, regDubai.data.user.country, regDubai.data.user.founding]));
+  const londonAttempt = await client()("POST", "/api/auth/register", { ...basePayload, email: "x7@example.com", handle: "londonwrong", market: "London", city: "Dubai" });
+  check("a city outside the picked market is still refused (London market, Dubai city, 400)", londonAttempt.status === 400, String(londonAttempt.status));
+  const regSingapore = await client()("POST", "/api/auth/register", { ...basePayload, name: "Singapore Creator", email: "launch-sg@example.com", handle: "singaporeeats", market: "Singapore", city: "Singapore" });
+  check("Singapore (Bella list) is selectable as a core market at sign-up", regSingapore.status === 201 && regSingapore.data.user.market === "Singapore" && regSingapore.data.user.country === "Singapore" && regSingapore.data.user.founding.marketLive === false, JSON.stringify(regSingapore.data.user && [regSingapore.data.user.market, regSingapore.data.user.country]));
+
   // --- city not listed: anyone can sign up, counted per city ---
   check("bootstrap names the unlisted pseudo-market", boot.data.unlistedMarket === "Not listed yet");
-  const noState = await client()("POST", "/api/auth/register", { ...basePayload, email: "x6@example.com", market: "Not listed yet", customCity: "Austin" });
-  check("unlisted sign-up without a state is refused (400)", noState.status === 400, String(noState.status));
+  const noCountry = await client()("POST", "/api/auth/register", { ...basePayload, email: "x6@example.com", market: "Not listed yet", customCity: "Tulsa", customState: "OK" });
+  check("unlisted sign-up without a country is refused (400)", noCountry.status === 400, String(noCountry.status));
   const creatorE = client();
-  const regE = await creatorE("POST", "/api/auth/register", { ...basePayload, name: "Austin Creator", email: "launch-e@example.com", handle: "austineats", market: "Not listed yet", customCity: "Austin", customState: "tx" });
-  check("unlisted creator (Austin, TX) registers with a full profile", regE.status === 201, JSON.stringify(regE.data));
-  check("unlisted sign-up stores typed city + normalized state", regE.data.user.market === "Not listed yet" && regE.data.user.city === "Austin" && regE.data.user.state === "TX", JSON.stringify([regE.data.user.market, regE.data.user.city, regE.data.user.state]));
+  const regE = await creatorE("POST", "/api/auth/register", { ...basePayload, name: "Tulsa Creator", email: "launch-e@example.com", handle: "tulsaeats", market: "Not listed yet", customCity: "Tulsa", customCountry: "United States", customState: "ok" });
+  check("unlisted creator (Tulsa, United States) registers with a full profile", regE.status === 201, JSON.stringify(regE.data));
+  check("unlisted sign-up stores typed city + country, state optional and normalized", regE.data.user.market === "Not listed yet" && regE.data.user.city === "Tulsa" && regE.data.user.country === "United States" && regE.data.user.state === "OK", JSON.stringify([regE.data.user.market, regE.data.user.city, regE.data.user.country, regE.data.user.state]));
   check("unlisted founder gets the per-city first-100 band", regE.data.user.founding && regE.data.user.founding.queueBand === 100 && regE.data.user.founding.unlisted === true && regE.data.user.founding.marketLive === false, JSON.stringify(regE.data.user.founding));
-  const regG = await client()("POST", "/api/auth/register", { ...basePayload, name: "Austin Two", email: "launch-g@example.com", handle: "austintwo", market: "Not listed yet", customCity: "Austin", customState: "TX" });
-  check("second Austin sign-up registers (same city pool)", regG.status === 201, JSON.stringify(regG.data));
-  const regF = await client()("POST", "/api/auth/register", { ...basePayload, name: "Dallas Creator", email: "launch-f@example.com", handle: "dallaseats", market: "Not listed yet", customCity: "Dallas", customState: "TX" });
-  check("Dallas sign-up registers in its own city pool", regF.status === 201 && regF.data.user.founding.queueBand === 100, JSON.stringify(regF.data.user && regF.data.user.founding));
-  const patchE = await creatorE("PATCH", "/api/me/profile", { city: "Round Rock", state: "TX" });
-  check("unlisted creator can correct their typed city", patchE.status === 200 && patchE.data.user.city === "Round Rock", JSON.stringify(patchE.data.user && patchE.data.user.city));
-  await creatorE("PATCH", "/api/me/profile", { city: "Austin" });
+  const regG = await client()("POST", "/api/auth/register", { ...basePayload, name: "Tulsa Two", email: "launch-g@example.com", handle: "tulsatwo", market: "Not listed yet", customCity: "Tulsa", customCountry: "United States" });
+  check("second Tulsa sign-up registers (same city pool, no state needed)", regG.status === 201, JSON.stringify(regG.data));
+  const regF = await client()("POST", "/api/auth/register", { ...basePayload, name: "Toronto Creator", email: "launch-f@example.com", handle: "torontoeats", market: "Not listed yet", customCity: "Toronto", customCountry: "Canada" });
+  check("Toronto sign-up registers in its own city + country pool", regF.status === 201 && regF.data.user.founding.queueBand === 100 && regF.data.user.country === "Canada", JSON.stringify(regF.data.user && regF.data.user.founding));
+  const patchE = await creatorE("PATCH", "/api/me/profile", { city: "Broken Arrow", country: "United States", state: "OK" });
+  check("unlisted creator can correct their typed city and country", patchE.status === 200 && patchE.data.user.city === "Broken Arrow" && patchE.data.user.country === "United States", JSON.stringify(patchE.data.user && [patchE.data.user.city, patchE.data.user.country]));
+  await creatorE("PATCH", "/api/me/profile", { city: "Tulsa" });
   const approveE = await admin("POST", "/api/admin/review", { userId: regE.data.user.id, decision: "approve" });
   check("admin approves the unlisted creator", approveE.status === 200 && approveE.data.user.status === "approved");
   const foundingE = await creatorE("GET", "/api/me/founding");
-  check("unlisted founding status: city shown, market not live, banded standing", foundingE.status === 200 && foundingE.data.founding.unlisted === true && foundingE.data.founding.city === "Austin" && foundingE.data.founding.marketLive === false && foundingE.data.founding.priorityBand === 100, JSON.stringify(foundingE.data.founding));
+  check("unlisted founding status: city + country shown, market not live, banded standing", foundingE.status === 200 && foundingE.data.founding.unlisted === true && foundingE.data.founding.city === "Tulsa" && foundingE.data.founding.country === "United States" && foundingE.data.founding.marketLive === false && foundingE.data.founding.priorityBand === 100, JSON.stringify(foundingE.data.founding));
   const statsNow = await admin("GET", "/api/admin/stats");
-  const austinRow = (statsNow.data.unlistedByCity || []).find((r) => r.place === "Austin, TX");
-  const dallasRow = (statsNow.data.unlistedByCity || []).find((r) => r.place === "Dallas, TX");
-  check("admin stats count unlisted sign-ups per city (Austin 2, Dallas 1)", !!austinRow && austinRow.creators === 2 && !!dallasRow && dallasRow.creators === 1, JSON.stringify(statsNow.data.unlistedByCity));
+  const tulsaRow = (statsNow.data.unlistedByCity || []).find((r) => r.place === "Tulsa, United States");
+  const torontoRow = (statsNow.data.unlistedByCity || []).find((r) => r.place === "Toronto, Canada");
+  check("admin stats count unlisted sign-ups per city + country (Tulsa 2, Toronto 1)", !!tulsaRow && tulsaRow.creators === 2 && tulsaRow.country === "United States" && !!torontoRow && torontoRow.creators === 1 && torontoRow.country === "Canada", JSON.stringify(statsNow.data.unlistedByCity));
 
   // client wiring for the new UI: bottom nav, paid option, terms consent
   check("client ships the mobile bottom nav", appJs.text.includes("bottomnav") && appJs.text.includes("renderBottomNav"));
@@ -293,8 +316,10 @@ try {
   check("event: sign-up confirmation email queued for every creator registration", byType("signup_confirmation_email_queued").length >= 4, String(byType("signup_confirmation_email_queued").length));
   check("event: approval email queued on each creator approval", byType("approval_email_queued").length >= 3, String(byType("approval_email_queued").length));
   const appSubE = byType("application_submitted").find((e) => e.subjectId === regE.data.user.id);
-  check("application_submitted records the unlisted city demand (city, state, unlisted flag)", !!appSubE && appSubE.data.unlisted === true && appSubE.data.city === "Austin" && appSubE.data.state === "TX", JSON.stringify(appSubE && appSubE.data));
+  check("application_submitted records the unlisted city demand (city, country, state, unlisted flag)", !!appSubE && appSubE.data.unlisted === true && appSubE.data.city === "Tulsa" && appSubE.data.country === "United States" && appSubE.data.state === "OK", JSON.stringify(appSubE && appSubE.data));
   check("client offers the not-listed path in sign-up", appJs.text.includes("jc-custom-wrap") && appJs.text.includes("My city is not listed yet") && appJs.text.includes("unlistedByCity"));
+  check("client groups the market picker by country with a search filter", appJs.text.includes("optgroup") && appJs.text.includes("jc-market-search") && appJs.text.includes("filterMarketOptions"), "");
+  check("client collects city + country on the not-listed path", appJs.text.includes("jc-country-text") && appJs.text.includes("customCountry") && appJs.text.includes("p-country-text"), "");
   check("event: with no SMTP transport, emails are recorded not_sent (never faked as sent)", byType("signup_confirmation_email_sent").length === 0 && byType("approval_email_not_sent").some((e) => e.data && e.data.reason === "transport_not_configured"), JSON.stringify(byType("approval_email_not_sent").map((e) => e.data && e.data.reason)));
   const pcEvC = byType("profile_completed").find((e) => e.subjectId === regC.data.user.id);
   check("profile_completed records the paid campaigns opt-in and terms version", !!pcEvC && pcEvC.data.openToPaidCampaigns === true && pcEvC.data.termsVersion === boot.data.termsVersion && pcEvC.data.marketingEmailConsent === true, JSON.stringify(pcEvC && pcEvC.data));

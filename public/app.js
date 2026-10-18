@@ -162,7 +162,7 @@ function renderHome() {
       <a class="btn" href="#" onclick="return go('join-creator')">Become a Founding Creator</a>
       <a class="btn ghost" href="#" onclick="return go('for-businesses')">For Businesses</a>
     </div>
-    <p class="small muted mt">Founding creator sign-up is open now in all 11 markets. Markets open to businesses in the next 60 to 90 days. Don't see your city? Sign up anyway: new markets open where creator sign-ups pile up, and early sign-ups hold founding standing when their city opens.</p>
+    <p class="small muted mt">Founding creator sign-up is open now in all 39 markets, across 12 countries and territories. Markets open to businesses in the next 60 to 90 days. Don't see your city? Sign up anyway: new markets open where creator sign-ups pile up, and early sign-ups hold founding standing when their city opens.</p>
   </section>
   <section class="grid cols-3 mt">
     <div class="card"><h3>1. Build your founding profile</h3><p class="muted">Creators sign up now and build their full profile: your market, your audience, what share of it is local. Early sign-ups hold founding status and priority when businesses start searching.</p></div>
@@ -179,13 +179,61 @@ function unlistedLabel() {
   return (state.boot && state.boot.unlistedMarket) || "Not listed yet";
 }
 
+// "City, Country" for an unlisted creator. Records from before the
+// country field fall back to their stored state, so nobody's place
+// loses its second half.
+function unlistedPlace(rec) {
+  const region = rec.country || rec.state || "";
+  return `${rec.city || ""}${region ? ", " + region : ""}`;
+}
+
+// Market options are grouped by country (United States first, then the
+// rest alphabetically), cities alphabetical inside each country, so the
+// picker stays scannable as SIGNL goes universal (39 markets, 2026-10-18).
 function marketOptions(selected, forJoin) {
-  const opts = state.boot.markets.map((m) => `<option value="${esc(m.name)}" ${m.name === selected ? "selected" : ""}>${esc(m.label)}</option>`).join("");
-  return forJoin ? opts + `<option value="${esc(unlistedLabel())}">My city is not listed yet</option>` : opts;
+  const byCountry = {};
+  for (const m of state.boot.markets) {
+    const country = m.country || "United States";
+    (byCountry[country] = byCountry[country] || []).push(m);
+  }
+  const countries = Object.keys(byCountry).sort((a, b) => (a === "United States" ? -1 : b === "United States" ? 1 : a.localeCompare(b)));
+  const groups = countries.map((country) => {
+    const opts = [...byCountry[country]]
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((m) => `<option value="${esc(m.name)}" ${m.name === selected ? "selected" : ""}>${esc(m.label)}</option>`)
+      .join("");
+    return `<optgroup label="${esc(country)}">${opts}</optgroup>`;
+  }).join("");
+  return forJoin ? groups + `<option value="${esc(unlistedLabel())}">My city is not listed yet</option>` : groups;
+}
+
+// The search box above the market picker filters the grouped options
+// live; if the current selection gets filtered out, the first match
+// takes over so the city list below never disagrees with the market.
+function filterMarketOptions() {
+  const input = document.getElementById("jc-market-search");
+  const sel = document.getElementById("jc-market");
+  if (!input || !sel) return;
+  const q = input.value.trim().toLowerCase();
+  let firstMatch = null;
+  for (const opt of sel.querySelectorAll("option")) {
+    if (opt.value === unlistedLabel()) continue;
+    const hit = !q || opt.textContent.toLowerCase().includes(q) || opt.value.toLowerCase().includes(q);
+    opt.hidden = !hit;
+    if (hit && !firstMatch) firstMatch = opt;
+  }
+  for (const grp of sel.querySelectorAll("optgroup")) {
+    grp.hidden = ![...grp.querySelectorAll("option")].some((o) => !o.hidden);
+  }
+  const current = sel.selectedOptions && sel.selectedOptions[0];
+  if (q && firstMatch && current && current.hidden) {
+    sel.value = firstMatch.value;
+    syncMarketChoice();
+  }
 }
 
 // When a joiner picks "My city is not listed yet", the market city
-// dropdown swaps for their own typed city + state: nobody is turned
+// dropdown swaps for their own typed city + country: nobody is turned
 // away, and their sign-up counts toward opening their city.
 function syncMarketChoice() {
   const m = document.getElementById("jc-market");
@@ -289,11 +337,12 @@ function renderJoinCreator() {
       </div>
       <div class="field"><label>Password (10+ characters)</label><input type="password" id="jc-password" required minlength="10" autocomplete="new-password"></div>
       <div class="form-2col">
-        <div class="field"><label>Your market</label><select id="jc-market" onchange="syncMarketChoice()">${marketOptions("Hampton Roads", true)}</select><p class="small muted">Don't see your city? Pick "My city is not listed yet" and sign up anyway.</p></div>
+        <div class="field"><label>Your market</label><input id="jc-market-search" placeholder="Search markets, for example: Dubai" oninput="filterMarketOptions()" style="margin-bottom:6px"><select id="jc-market" onchange="syncMarketChoice()">${marketOptions("Hampton Roads", true)}</select><p class="small muted">Markets are grouped by country. Don't see your city? Pick "My city is not listed yet" and sign up anyway.</p></div>
         <div class="field" id="jc-city-wrap"><label>Your home city</label><select id="jc-city">${cityOptions("Hampton Roads")}</select></div>
         <div id="jc-custom-wrap" style="display:none">
-          <div class="field"><label>Your city</label><input id="jc-city-text" placeholder="For example: Austin"></div>
-          <div class="field"><label>Your state</label><input id="jc-state-text" placeholder="For example: TX"></div>
+          <div class="field"><label>Your city</label><input id="jc-city-text" placeholder="For example: Tulsa"></div>
+          <div class="field"><label>Your country</label><input id="jc-country-text" placeholder="For example: United States"></div>
+          <div class="field"><label>Your state or province (optional)</label><input id="jc-state-text" placeholder="Optional, for example: OK"></div>
           <p class="small muted">SIGNL is not open there yet. Your sign-up counts: when enough creators in your city sign up, we open there, and founding sign-ups go first.</p>
         </div>
       </div>
@@ -378,9 +427,10 @@ async function doRegisterCreator(e) {
   const marketVal = document.getElementById("jc-market").value;
   const isUnlisted = marketVal === unlistedLabel();
   const customCity = isUnlisted ? document.getElementById("jc-city-text").value.trim() : "";
+  const customCountry = isUnlisted ? document.getElementById("jc-country-text").value.trim() : "";
   const customState = isUnlisted ? document.getElementById("jc-state-text").value.trim() : "";
   if (isUnlisted && !customCity) { errBox("Tell us your city, so your sign-up counts toward opening SIGNL there."); return false; }
-  if (isUnlisted && !customState) { errBox("Tell us your state, so your sign-up counts toward opening SIGNL there."); return false; }
+  if (isUnlisted && !customCountry) { errBox("Tell us your country, so your sign-up counts toward opening SIGNL there."); return false; }
   try {
     const data = await api("POST", "/auth/register", {
       role: "creator",
@@ -390,6 +440,7 @@ async function doRegisterCreator(e) {
       market: marketVal,
       city: isUnlisted ? undefined : document.getElementById("jc-city").value,
       customCity: isUnlisted ? customCity : undefined,
+      customCountry: isUnlisted ? customCountry : undefined,
       customState: isUnlisted ? customState : undefined,
       handle: document.getElementById("jc-handle").value,
       tiktokHandle: document.getElementById("jc-tiktok").value,
@@ -458,7 +509,7 @@ function renderPending() {
   const f = u.founding || {};
   const isCreator = u.role === "creator";
   const isUnlisted = isCreator && u.market === unlistedLabel();
-  const place = isUnlisted ? `${esc(u.city)}${u.state ? ", " + esc(u.state) : ""}` : esc(u.market);
+  const place = isUnlisted ? esc(unlistedPlace(u)) : esc(u.market);
   app.innerHTML = `
   <section class="panel center" style="max-width:560px;margin:40px auto">
     <h2>${isCreator ? "Founding profile received" : "Application received"}</h2>
@@ -594,7 +645,7 @@ async function loadFounding() {
     const p = card.profile || {};
     state.user.founding = f;
     const isUnl = !!f.unlisted;
-    const place = isUnl ? `${esc(f.city)}${f.state ? ", " + esc(f.state) : ""}` : esc(f.market);
+    const place = isUnl ? esc(unlistedPlace(f)) : esc(f.market);
     el.innerHTML = `
     <div class="panel">
       <div class="flex-between">
@@ -671,7 +722,8 @@ function creatorProfileHtml(u) {
         <div class="field"><label>Instagram handle</label><input id="p-handle" value="${esc(c.handle || "")}"></div>
         ${u.market === unlistedLabel()
           ? `<div class="field"><label>Your city (not an open market yet)</label><input id="p-city-text" value="${esc(u.city || "")}"></div>
-             <div class="field"><label>Your state</label><input id="p-state-text" value="${esc(u.state || "")}"></div>`
+             <div class="field"><label>Your country</label><input id="p-country-text" value="${esc(u.country || "")}"></div>
+             <div class="field"><label>Your state or province (optional)</label><input id="p-state-text" value="${esc(u.state || "")}"></div>`
           : `<div class="field"><label>Home city (${esc(u.market)})</label><select id="p-city">${cityOptions(u.market, u.city || "")}</select></div>`}
       </div>
       <div class="form-2col">
@@ -729,6 +781,7 @@ async function doUpdateCreator(e) {
       handle: document.getElementById("p-handle").value,
       city: cityEl ? cityEl.value : cityTextEl ? cityTextEl.value : undefined,
       state: document.getElementById("p-state-text") ? document.getElementById("p-state-text").value : undefined,
+      country: document.getElementById("p-country-text") ? document.getElementById("p-country-text").value : undefined,
       tiktokHandle: document.getElementById("p-tiktok").value,
       youtubeChannel: document.getElementById("p-youtube").value,
       facebookUrl: document.getElementById("p-facebook").value,
@@ -931,7 +984,7 @@ async function loadDiscover() {
   const u = state.user;
   el.innerHTML = `
     <div class="filters">
-      <div><label>Market</label><select id="f-market">${state.boot.markets.map((m) => `<option ${m.name === u.market ? "selected" : ""}>${esc(m.name)}</option>`).join("")}</select></div>
+      <div><label>Market</label><select id="f-market">${marketOptions(u.market)}</select></div>
       <div><label>Tier</label><select id="f-tier"><option value="">All tiers</option>${state.boot.tiers.map((t) => `<option>${esc(t.id)}</option>`).join("")}</select></div>
       <div><label>Category</label><select id="f-category"><option value="">All categories</option>${state.boot.creatorCategories.map((c) => `<option>${esc(c)}</option>`).join("")}</select></div>
       <div><label>Search</label><input id="f-q" placeholder="Name or handle"></div>
@@ -1211,7 +1264,7 @@ async function loadMarkets() {
       <div class="table-wrap panel"><table>
         <tr><th>Market</th><th>Status</th><th>Approved creators</th><th>Pending creators</th><th>Approved businesses</th><th>Action</th></tr>
         ${data.markets.map((m) => `<tr>
-          <td><strong>${esc(m.name)}</strong><br><span class="muted small">${esc(m.label)}</span></td>
+          <td><strong>${esc(m.name)}</strong><br><span class="muted small">${esc(m.label)} &middot; ${esc(m.country || "United States")}</span></td>
           <td>${m.live ? `<span class="badge ok">Live</span>` : `<span class="badge info">Founding only</span>`}</td>
           <td>${m.creatorsApproved}</td><td>${m.creatorsPending}</td><td>${m.businessesApproved}</td>
           <td><button class="btn small-btn ${m.live ? "danger" : ""}" onclick="toggleMarket('${esc(m.name)}', ${m.live ? "false" : "true"})">${m.live ? "Deactivate" : "Activate market"}</button></td>
@@ -1245,7 +1298,7 @@ async function loadApplications() {
           : "";
       return `<tr>
         <td><strong>${esc(u.name)}</strong><br><span class="muted small">${esc(u.email)}</span></td>
-        <td>${esc(u.role)}${standing}</td><td>${esc(u.market)}<br><span class="muted small">${esc(u.city || "")}${u.state ? ", " + esc(u.state) : ""}</span></td>
+        <td>${esc(u.role)}${standing}</td><td>${esc(u.market)}<br><span class="muted small">${esc(u.city || "")}${u.market === unlistedLabel() ? (u.country ? ", " + esc(u.country) : u.state ? ", " + esc(u.state) : "") : (u.state ? ", " + esc(u.state) : "")}</span></td>
         <td class="small">${detail}</td>
         <td>${fmtDate(u.createdAt)}</td>
         <td>${u.status === "pending"
@@ -1310,9 +1363,9 @@ async function loadStats() {
       </table></div>
       ${s.unlistedByCity && s.unlistedByCity.length ? `
       <h3 class="mt">Sign-ups in cities not open yet</h3>
-      <p class="muted small">Creators who signed up from outside the 11 founding markets. This is the demand signal for where to open next.</p>
+      <p class="muted small">Creators who signed up from outside the listed markets, counted per city and country. This is the demand signal for where to open next.</p>
       <div class="table-wrap panel"><table>
-        <tr><th>City</th><th>Creator sign-ups</th></tr>
+        <tr><th>City, country</th><th>Creator sign-ups</th></tr>
         ${s.unlistedByCity.map((r) => `<tr><td>${esc(r.place)}</td><td>${r.creators}</td></tr>`).join("")}
       </table></div>` : ""}`;
   } catch (err) {

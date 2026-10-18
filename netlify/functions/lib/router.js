@@ -15,7 +15,7 @@ const { emailEnabled, sendEmail } = require("./email");
 // disabled (businesses join the founding list on joinsignl.com), and
 // the marketplace (discovery, offers, bookings, counter, posts,
 // messages) stays inactive in a market until an admin flips that
-// market's "live" flag. All 11 markets default to NOT live.
+// market's "live" flag. All 39 markets default to NOT live.
 //
 // SIGNL_TEST_ALLOW_BUSINESS=1 is a TEST-ONLY override used by the
 // verify suites: it re-enables business registration and treats every
@@ -30,10 +30,11 @@ const TERMS_VERSION = "2026-10-18";
 // hired for paid cash campaigns when a business runs one (Jeff, 2026-10-18).
 const PAID_COMP = "Paid cash campaigns";
 // Anyone, anywhere can sign up (Jeff, 2026-10-18): a creator whose city
-// is not in a founding market registers under this pseudo-market with
-// their own typed city + state. Their sign-ups are counted per city in
-// admin stats, and when a city's count gets big enough it becomes a
-// market. Nobody gets left out at the door.
+// is not one of the listed markets registers under this pseudo-market
+// with their own typed city + country (state/province optional, kept
+// for older records). Their sign-ups are counted per city in admin
+// stats, and when a city's count gets big enough it becomes a market.
+// Nobody gets left out at the door.
 const UNLISTED = "Not listed yet";
 const MAX_PHOTO_BYTES = 2.5 * 1024 * 1024;
 
@@ -136,8 +137,10 @@ function creatorRanks(users) {
   const byMarket = {};
   for (const c of creators) {
     // Unlisted creators rank inside their own city, not one shared pool:
-    // "first 100 in Austin" is the standing that matters there.
-    const key = c.market === UNLISTED ? `${c.city || ""}, ${c.state || ""}` : c.market;
+    // "first 100 in Tulsa" is the standing that matters there. The key
+    // is city + country; records from before the country field fall
+    // back to their stored state so they keep ranking.
+    const key = c.market === UNLISTED ? `${c.city || ""}, ${c.country || c.state || ""}` : c.market;
     (byMarket[key] = byMarket[key] || []).push(c);
   }
   const approvedRank = new Map();
@@ -161,6 +164,7 @@ async function foundingSummary(user) {
     market: user.market,
     city: user.city || "",
     state: user.state || null,
+    country: user.country || null,
     unlisted: user.market === UNLISTED,
     marketLive: await isMarketLive(user.market),
     launchWindow: LAUNCH_WINDOW_TEXT,
@@ -217,7 +221,7 @@ function signupConfirmationEmail(user, band) {
   const first = (user.name || "").split(" ")[0] || "there";
   const subject = "Your SIGNL founding creator profile is in";
   if (user.market === UNLISTED) {
-    const place = `${user.city}, ${user.state}`;
+    const place = `${user.city}, ${user.country || user.state || ""}`;
     const lines = [
       `Hi ${first},`,
       "",
@@ -443,12 +447,14 @@ async function handleRegister(event) {
   const market = unlisted ? { name: UNLISTED, cities: [] } : marketByName(b.market || "");
   if (!market) return err(400, "Choose one of the SIGNL markets");
   let customCity = "";
+  let customCountry = "";
   let customState = "";
   if (unlisted) {
     customCity = (b.customCity || "").trim().slice(0, 60);
+    customCountry = (b.customCountry || "").trim().slice(0, 60);
     customState = (b.customState || "").trim().slice(0, 60);
     if (!customCity) return err(400, "Tell us your city, so your sign-up counts toward opening SIGNL there");
-    if (!customState) return err(400, "Tell us your state, so your sign-up counts toward opening SIGNL there");
+    if (!customCountry) return err(400, "Tell us your country, so your sign-up counts toward opening SIGNL there");
     if (customState.length === 2) customState = customState.toUpperCase();
   }
 
@@ -469,7 +475,8 @@ async function handleRegister(event) {
     status: "pending",
     market: market.name,
     city: unlisted ? customCity : (b.city || "").trim(),
-    state: unlisted ? customState : null,
+    state: unlisted ? customState || null : null,
+    country: unlisted ? customCountry : market.country || "United States",
     createdAt: ts,
     updatedAt: ts,
     reviewedAt: null,
@@ -574,7 +581,7 @@ async function handleRegister(event) {
     market: user.market,
     data:
       role === "creator"
-        ? { handle: user.creator.handle, city: user.city, state: user.state, unlisted: user.market === UNLISTED, followerCount: user.creator.followerCount, tierBand: user.creator.tierBand, suggestedTier: user.creator.suggestedTier, localAudiencePct: user.creator.localAudiencePct, localAudienceSource: user.creator.localAudienceSource, categories: user.creator.categories, compCategories: user.creator.compCategories, openToPaidCampaigns: user.creator.openToPaidCampaigns, termsVersion: TERMS_VERSION, marketingEmailConsent: true }
+        ? { handle: user.creator.handle, city: user.city, state: user.state, country: user.country, unlisted: user.market === UNLISTED, followerCount: user.creator.followerCount, tierBand: user.creator.tierBand, suggestedTier: user.creator.suggestedTier, localAudiencePct: user.creator.localAudiencePct, localAudienceSource: user.creator.localAudienceSource, categories: user.creator.categories, compCategories: user.creator.compCategories, openToPaidCampaigns: user.creator.openToPaidCampaigns, termsVersion: TERMS_VERSION, marketingEmailConsent: true }
         : { businessName: user.business.businessName, category: user.business.category, plan: user.business.plan, planPriceMonthly: user.business.planPriceMonthly },
   });
   if (role === "creator") {
@@ -774,6 +781,10 @@ async function route(event) {
         if (ns.length === 2) ns = ns.toUpperCase();
         if (ns) user.state = ns;
       }
+      if (b.country !== undefined && user.market === UNLISTED) {
+        const nc = String(b.country).trim().slice(0, 60);
+        if (nc) user.country = nc;
+      }
       if (b.bio !== undefined) c.bio = String(b.bio).trim();
       if (b.localAudiencePct !== undefined) {
         const pct = b.localAudiencePct === null || b.localAudiencePct === "" ? null : Math.max(0, Math.min(100, Number(b.localAudiencePct)));
@@ -894,6 +905,7 @@ async function route(event) {
           id: m.id,
           name: m.name,
           label: m.label,
+          country: m.country || "United States",
           live: TEST_MODE ? true : !!flags[m.name],
           creatorsApproved: inMarket.filter((u) => u.role === "creator" && u.status === "approved").length,
           creatorsPending: inMarket.filter((u) => u.role === "creator" && u.status === "pending").length,
@@ -958,16 +970,20 @@ async function route(event) {
         if (u.role === "creator" && u.status === "approved") perMarket[u.market].creators += 1;
         if (u.role === "business" && u.status === "approved") perMarket[u.market].businesses += 1;
       }
-      // Demand signal outside the founding markets (Jeff, 2026-10-18):
+      // Demand signal outside the listed markets (Jeff, 2026-10-18):
       // how many creators signed up per unlisted city, biggest first.
+      // Places are city + country; older records without a country fall
+      // back to their stored state so nothing disappears from the view.
       const unlistedMap = {};
       for (const u of users) {
         if (u.role === "creator" && u.market === UNLISTED) {
-          const place = `${u.city || "Unknown"}${u.state ? ", " + u.state : ""}`;
-          unlistedMap[place] = (unlistedMap[place] || 0) + 1;
+          const region = u.country || u.state || "";
+          const place = `${u.city || "Unknown"}${region ? ", " + region : ""}`;
+          if (!unlistedMap[place]) unlistedMap[place] = { place, city: u.city || "Unknown", country: u.country || null, creators: 0 };
+          unlistedMap[place].creators += 1;
         }
       }
-      const unlistedByCity = Object.entries(unlistedMap).map(([place, creators]) => ({ place, creators })).sort((a, b) => b.creators - a.creators);
+      const unlistedByCity = Object.values(unlistedMap).sort((a, b) => b.creators - a.creators);
       for (const bk of bookings) if (perMarket[bk.market]) perMarket[bk.market].bookings += 1;
       for (const p of posts) {
         const bk = bookings.find((x) => x.id === p.bookingId);
