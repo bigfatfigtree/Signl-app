@@ -14,6 +14,8 @@ const state = {
 
 const app = document.getElementById("app");
 const topnav = document.getElementById("topnav");
+const bottomnav = document.getElementById("bottomnav");
+const PAID_COMP = "Paid cash campaigns";
 
 function esc(s) {
   return String(s === null || s === undefined ? "" : s)
@@ -57,14 +59,75 @@ function renderNav() {
       <a href="#" onclick="return go('signin')">Sign in</a>
       <a href="#" onclick="return go('join-creator')">Join as a Founding Creator</a>
       <a href="#" onclick="return go('for-businesses')">For Businesses</a>`;
+  } else {
+    const u = state.user;
+    const label = u.role === "business" && u.business ? u.business.businessName : u.name;
+    topnav.innerHTML = `
+      <span class="muted small">${esc(label)} &middot; ${esc(u.role)}</span>
+      <a href="#" onclick="return go('dashboard')">Dashboard</a>
+      <button class="linklike" onclick="signOut()">Sign out</button>`;
+  }
+  renderBottomNav();
+}
+
+// App-style bottom navigation for small screens (Jeff, 2026-10-18):
+// the top link row wrapped and broke on phones, so on mobile the nav
+// lives in a fixed bottom tab bar, with the sections of the signed-in
+// experience one tap away. Desktop keeps the top nav.
+function renderBottomNav() {
+  if (!bottomnav) return;
+  const item = (glyph, label, onclick, active) => `
+    <button class="bn-item ${active ? "on" : ""}" onclick="${onclick}">
+      <span class="bn-glyph">${glyph}</span><span class="bn-label">${label}</span>
+    </button>`;
+  const v = state.view;
+  const t = state.tab;
+  if (!state.user) {
+    bottomnav.innerHTML =
+      item("&#8962;", "Home", "return go('home')", v === "home") +
+      item("&#10010;", "Join", "return go('join-creator')", v === "join-creator") +
+      item("&#10132;", "Sign in", "return go('signin')", v === "signin") +
+      item("&#9636;", "Businesses", "return go('for-businesses')", v === "for-businesses" || v === "join-business");
     return;
   }
   const u = state.user;
-  const label = u.role === "business" && u.business ? u.business.businessName : u.name;
-  topnav.innerHTML = `
-    <span class="muted small">${esc(label)} &middot; ${esc(u.role)}</span>
-    <a href="#" onclick="return go('dashboard')">Dashboard</a>
-    <button class="linklike" onclick="signOut()">Sign out</button>`;
+  if (u.status !== "approved" || u.role === "admin") {
+    let items = "";
+    if (u.role === "admin") {
+      items =
+        item("&#9636;", "Requests", "return go('dashboard','Applications')", t === "Applications" || !t) +
+        item("&#9673;", "Markets", "return go('dashboard','Markets')", t === "Markets") +
+        item("&#9776;", "Events", "return go('dashboard','Event Log')", t === "Event Log") +
+        item("&#8721;", "Stats", "return go('dashboard','Stats')", t === "Stats");
+    } else {
+      items = item("&#9733;", "Status", "return go('dashboard')", true);
+    }
+    bottomnav.innerHTML = items + item("&#8617;", "Sign out", "signOut()", false);
+    return;
+  }
+  if (u.role === "creator") {
+    const live = !!(u.founding && u.founding.marketLive);
+    if (!live) {
+      bottomnav.innerHTML =
+        item("&#9733;", "Status", "return go('dashboard')", true) +
+        item("&#8617;", "Sign out", "signOut()", false);
+      return;
+    }
+    bottomnav.innerHTML =
+      item("&#9679;", "Profile", "return go('dashboard','Profile')", t === "Profile" || !t) +
+      item("&#9670;", "Offers", "return go('dashboard','Offers')", t === "Offers") +
+      item("&#10003;", "My Visits", "return go('dashboard','My Visits')", t === "My Visits") +
+      item("&#9993;", "Messages", "return go('dashboard','Messages')", t === "Messages") +
+      item("&#8617;", "Sign out", "signOut()", false);
+    return;
+  }
+  // business (reachable in test mode; business accounts open at launch)
+  bottomnav.innerHTML =
+    item("&#9673;", "Discover", "return go('dashboard','Discover')", t === "Discover" || !t) +
+    item("&#9670;", "Offers", "return go('dashboard','My Offers')", t === "My Offers") +
+    item("&#10003;", "Visits", "return go('dashboard','Visits & Posts')", t === "Visits & Posts") +
+    item("&#9993;", "Messages", "return go('dashboard','Messages')", t === "Messages") +
+    item("&#8617;", "Sign out", "signOut()", false);
 }
 
 function go(view, tab) {
@@ -175,6 +238,21 @@ function syncSuggestedTier() {
   if (f && sel) sel.value = suggestedTierId(f.value);
   const hint = document.getElementById("jc-tier-hint");
   if (hint && f) hint.textContent = `Suggested from your follower count: ${suggestedTierId(f.value)}. Confirm your band, or pick another.`;
+  syncPaidOption();
+}
+
+// Paid cash campaigns are a Creators-tier option: the checkbox block
+// only appears while the Creators band is selected.
+function syncPaidOption() {
+  const sel = document.getElementById("jc-tier");
+  const wrap = document.getElementById("jc-paid-wrap");
+  if (sel && wrap) wrap.style.display = sel.value === "Creators" ? "" : "none";
+}
+
+function syncPaidOptionProfile() {
+  const sel = document.getElementById("p-tier");
+  const wrap = document.getElementById("p-paid-wrap");
+  if (sel && wrap) wrap.style.display = sel.value === "Creators" ? "" : "none";
 }
 
 function renderJoinCreator() {
@@ -207,7 +285,7 @@ function renderJoinCreator() {
       <div class="field"><label>LinkedIn profile (optional)</label><input id="jc-linkedin" placeholder="linkedin.com/in/yourname or full URL"></div>
       <div class="form-2col">
         <div class="field"><label>Followers (required)</label><input type="number" id="jc-followers" min="0" required placeholder="For example 8400" oninput="syncSuggestedTier()"></div>
-        <div class="field"><label>Your tier band (confirm)</label><select id="jc-tier">${tierOptions("Neighbors")}</select><p class="small muted" id="jc-tier-hint">Enter your followers and we will suggest your band.</p></div>
+        <div class="field"><label>Your tier band (confirm)</label><select id="jc-tier" onchange="syncPaidOption()">${tierOptions("Neighbors")}</select><p class="small muted" id="jc-tier-hint">Enter your followers and we will suggest your band.</p></div>
       </div>
       <div class="form-2col">
         <div class="field"><label>Typical post views (optional)</label><input type="number" id="jc-avgviews" min="0" placeholder="For example 6000"></div>
@@ -219,11 +297,16 @@ function renderJoinCreator() {
       <div class="field"><label>Top audience cities (optional)</label><input id="jc-topcities" placeholder="For example: Virginia Beach, Norfolk, Chesapeake"><p class="small muted">Up to 5, comma separated.</p></div>
       <div class="field"><label>What do you create in? (pick at least one)</label><div class="checkrow">${cats}</div></div>
       <div class="field"><label>Comps you would accept (optional)</label><div class="checkrow">${comps}</div></div>
+      <div class="field" id="jc-paid-wrap" style="display:none">
+        <label style="font-weight:500"><input type="checkbox" id="jc-paid" style="width:auto"> <strong>Paid cash campaigns</strong> (Creators tier): on top of comps, businesses can hire me for paid campaigns when a business runs one.</label>
+        <p class="small muted">Paid campaigns depend on the business and the campaign. Comps are always part of SIGNL; cash work is extra when it is offered.</p>
+      </div>
       <div class="field"><label>Short bio</label><textarea id="jc-bio" rows="2" placeholder="What do you post, where do you go, what do you love locally?"></textarea></div>
       <div class="field"><label>Profile photo (optional, add now or later)</label><input type="file" id="jc-photo" accept="image/png,image/jpeg,image/webp"><p class="small muted">PNG, JPEG, or WebP, under 2.5 MB. Businesses see this on your profile when your market opens.</p></div>
       <div class="notice blue">The deal: businesses comp you a meal or service, you post your honest experience within 48 hours of the visit, and you disclose the comp in the post. Nobody can ask you for a positive post. Ever.</div>
       <div class="field"><label style="font-weight:500"><input type="checkbox" id="jc-agree-honest" style="width:auto" required> I understand no business can require me to post positively. My posts stay my honest opinion.</label></div>
       <div class="field"><label style="font-weight:500"><input type="checkbox" id="jc-agree-ftc" style="width:auto" required> I agree to clearly disclose every comp in my posts, as the FTC requires.</label></div>
+      <div class="field"><label style="font-weight:500"><input type="checkbox" id="jc-agree-terms" style="width:auto" required> I agree to the <a href="https://joinsignl.com/terms.html" target="_blank" rel="noopener">Terms of Service</a> and <a href="https://joinsignl.com/privacy.html" target="_blank" rel="noopener">Privacy Policy</a>, and I agree SIGNL can email me about my account, launch updates and offers. I can unsubscribe from marketing emails at any time.</label></div>
       <button class="btn" type="submit" style="width:100%">Create my founding profile</button>
       <p class="small muted mt">Every application is reviewed by a person. Founding spots are limited in every market, and priority goes in sign-up order.</p>
     </form>
@@ -263,6 +346,10 @@ async function doRegisterCreator(e) {
   if (!cats.length) { errBox("Pick at least one category you create in."); return false; }
   if (!document.getElementById("jc-agree-honest").checked) { errBox("Please confirm the honest-post rule."); return false; }
   if (!document.getElementById("jc-agree-ftc").checked) { errBox("Please confirm the FTC disclosure agreement."); return false; }
+  if (!document.getElementById("jc-agree-terms").checked) { errBox("Please agree to the Terms of Service and email consent so we can reach you at launch."); return false; }
+  const tierBand = document.getElementById("jc-tier").value;
+  const paidBox = document.getElementById("jc-paid");
+  if (tierBand === "Creators" && paidBox && paidBox.checked && !comps.includes(PAID_COMP)) comps.push(PAID_COMP);
   const topCities = document.getElementById("jc-topcities").value.split(",").map((x) => x.trim()).filter(Boolean);
   try {
     const data = await api("POST", "/auth/register", {
@@ -278,7 +365,7 @@ async function doRegisterCreator(e) {
       facebookUrl: document.getElementById("jc-facebook").value,
       xHandle: document.getElementById("jc-x").value,
       linkedinUrl: document.getElementById("jc-linkedin").value,
-      tierBand: document.getElementById("jc-tier").value,
+      tierBand,
       followerCount: parseInt(document.getElementById("jc-followers").value, 10) || 0,
       avgViews: parseInt(document.getElementById("jc-avgviews").value, 10) || 0,
       localAudiencePct: Number(document.getElementById("jc-localpct").value),
@@ -288,6 +375,7 @@ async function doRegisterCreator(e) {
       bio: document.getElementById("jc-bio").value,
       agreedHonestPosts: true,
       agreedFtcDisclosure: true,
+      agreedTerms: true,
     });
     state.user = data.user;
     await uploadPhotoInput("jc-photo");
@@ -341,9 +429,9 @@ function renderPending() {
   <section class="panel center" style="max-width:560px;margin:40px auto">
     <h2>${isCreator ? "Founding profile received" : "Application received"}</h2>
     <p>Thanks, ${esc(u.name)}. ${isCreator ? `Your founding creator profile for <strong>${esc(u.market)}</strong> is built and in the review queue.` : "Every SIGNL application is reviewed by a person before accounts activate. Yours is in the queue."}</p>
-    ${isCreator && f.queuePosition ? `<p><span class="badge info">You are #${f.queuePosition} in the ${esc(u.market)} founding queue</span></p>` : ""}
+    ${isCreator && f.queueBand ? `<p><span class="badge info">You are in the first ${f.queueBand} founding creators in ${esc(u.market)}</span></p>` : ""}
     <p class="muted">${isCreator
-      ? `Every application is reviewed by a person. The moment you are approved, your founding status page opens here, and we will email you at ${esc(u.email)} when ${esc(u.market)} opens to businesses in the next 60 to 90 days. Sign back in any time to check your status.`
+      ? `Every application is reviewed by a person. The moment you are approved, your founding status page opens here, and we will email you at ${esc(u.email)} when ${esc(u.market)} opens to businesses in the next 60 to 90 days. Sign back in any time to check your status.${state.boot && state.boot.email && state.boot.email.enabled ? ` A confirmation email is on its way to ${esc(u.email)}.` : ""}`
       : "Sign back in any time to check your status; your dashboard opens the moment you are approved."}</p>
     ${isCreator && !(u.creator && u.creator.hasPhoto) ? `
     <div style="text-align:left">
@@ -415,11 +503,11 @@ function creatorCard(c, viewer) {
       <div>${c.photoUrl ? `<img class="avatar" src="${esc(c.photoUrl)}" alt="">` : ""}<strong>${esc(c.name)}</strong> <span class="muted">@${esc(p.handle || "")}</span></div>
       <button class="heart ${c.isFavorite ? "on" : ""}" title="Save to favorites" onclick="toggleFav('${c.userId}')">${c.isFavorite ? "&#10084;" : "&#9825;"}</button>
     </div>
-    <p class="small muted">${esc(c.market)} &middot; ${esc(p.tierBand || "")} &middot; ${fmtNum(p.followerCount)} followers &middot; ${fmtNum(p.avgViews)} avg views${c.foundingPriority ? ` &middot; Founding priority #${c.foundingPriority}` : ""}</p>
+    <p class="small muted">${esc(c.market)} &middot; ${esc(p.tierBand || "")} &middot; ${fmtNum(p.followerCount)} followers &middot; ${fmtNum(p.avgViews)} avg views${c.foundingBand ? ` &middot; Founding creator, first ${c.foundingBand} in market` : ""}</p>
     <p>${localTxt}</p>
-    <p>${scoreBadge(c.localImpactScore)}</p>
+    <p>${scoreBadge(c.localImpactScore)}${p.openToPaidCampaigns ? ` <span class="badge tier">Open to paid campaigns</span>` : ""}</p>
     ${p.categories && p.categories.length ? `<p class="small">${p.categories.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
-    ${p.compCategories && p.compCategories.length ? `<p class="small muted">Open to comps: ${p.compCategories.map(esc).join(", ")}</p>` : ""}
+    ${p.compCategories && p.compCategories.filter((x) => x !== PAID_COMP).length ? `<p class="small muted">Open to comps: ${p.compCategories.filter((x) => x !== PAID_COMP).map(esc).join(", ")}</p>` : ""}
     ${p.bio ? `<p class="small muted">${esc(p.bio)}</p>` : ""}
     <p class="small">${socialLinksHtml(p)}</p>
     <div class="cta-row" style="justify-content:flex-start">
@@ -488,7 +576,8 @@ async function loadFounding() {
         <div>
           <p class="small"><strong>${fmtNum(p.followerCount)}</strong> followers &middot; ${esc(p.tierBand || "")} tier ${p.avgViews ? "&middot; " + fmtNum(p.avgViews) + " typical views" : ""}</p>
           ${p.categories && p.categories.length ? `<p class="small">${p.categories.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
-          ${p.compCategories && p.compCategories.length ? `<p class="small muted">Open to comps: ${p.compCategories.map(esc).join(", ")}</p>` : ""}
+          ${p.openToPaidCampaigns ? `<p class="small"><span class="badge tier">Open to paid campaigns</span></p>` : ""}
+          ${p.compCategories && p.compCategories.filter((x) => x !== PAID_COMP).length ? `<p class="small muted">Open to comps: ${p.compCategories.filter((x) => x !== PAID_COMP).map(esc).join(", ")}</p>` : ""}
           ${p.topAudienceCities && p.topAudienceCities.length ? `<p class="small muted">Top audience cities: ${p.topAudienceCities.map(esc).join(", ")}</p>` : ""}
           ${p.bio ? `<p class="small muted">${esc(p.bio)}</p>` : ""}
           <p class="small">
@@ -500,8 +589,8 @@ async function loadFounding() {
     <div class="panel">
       <h3 style="margin-top:0">${esc(f.market)} opens to businesses in the next ${esc(f.launchWindow)}</h3>
       <p>Your market is not taking business offers yet, and that is on purpose: SIGNL opens each market with its founding roster in place. The moment ${esc(f.market)} opens, we email you at <strong>${esc(state.user.email)}</strong>.</p>
-      ${f.priorityPosition ? `<p><span class="badge tier" style="font-size:0.95rem;padding:6px 14px">Founding priority #${f.priorityPosition} in ${esc(f.market)}</span></p>
-      <p class="muted">You signed up early, and it counts: when businesses search the ${esc(f.market)} roster, founding creators are ordered by sign-up time, earliest first. ${f.foundingCreatorsInMarket > 1 ? `You are one of ${f.foundingCreatorsInMarket} approved founding creators in your market so far.` : "You are the first approved founding creator in your market."}</p>` : ""}
+      ${f.priorityBand ? `<p><span class="badge tier" style="font-size:0.95rem;padding:6px 14px">You are in the first ${f.priorityBand} founding creators in ${esc(f.market)}</span></p>
+      <p class="muted">You signed up early, and it counts: when businesses search the ${esc(f.market)} roster, founding creators are ordered by sign-up time, earliest first.</p>` : ""}
       <p class="muted">Offers, visits, and messages unlock here the day your market activates. Keep your profile current in the meantime; your local audience percentage is what businesses look at first.</p>
     </div>`;
     profEl.innerHTML = `<h3 class="mt">Your profile</h3>` + creatorProfileHtml(state.user);
@@ -546,7 +635,7 @@ function creatorProfileHtml(u) {
       </div>
       <div class="field"><label>LinkedIn profile URL</label><input id="p-linkedin" value="${esc(c.linkedinUrl || "")}" placeholder="Optional"></div>
       <div class="form-2col">
-        <div class="field"><label>Tier band</label><select id="p-tier">${tiers}</select></div>
+        <div class="field"><label>Tier band</label><select id="p-tier" onchange="syncPaidOptionProfile()">${tiers}</select></div>
         <div class="field"><label>Followers</label><input type="number" id="p-followers" min="0" value="${c.followerCount || 0}"></div>
       </div>
       <div class="form-2col">
@@ -556,6 +645,9 @@ function creatorProfileHtml(u) {
       <div class="field"><label>Top audience cities</label><input id="p-topcities" value="${esc((c.topAudienceCities || []).join(", "))}" placeholder="Up to 5, comma separated"></div>
       <div class="field"><label>What you create in</label><div class="checkrow">${cats}</div></div>
       <div class="field"><label>Comps you would accept</label><div class="checkrow">${comps}</div></div>
+      <div class="field" id="p-paid-wrap" style="display:${c.tierBand === "Creators" ? "" : "none"}">
+        <label style="font-weight:500"><input type="checkbox" id="p-paid" style="width:auto" ${c.openToPaidCampaigns ? "checked" : ""}> <strong>Paid cash campaigns</strong> (Creators tier): businesses can hire me for paid campaigns when a business runs one, on top of comps.</label>
+      </div>
       <div class="field"><label>Bio</label><textarea id="p-bio" rows="2">${esc(c.bio || "")}</textarea></div>
       <button class="btn" type="submit">Save profile</button> <span id="save-ok" class="saved"></span>
     </form>
@@ -577,6 +669,8 @@ async function doUpdateCreator(e) {
   e.preventDefault();
   const cats = Array.from(document.querySelectorAll("input[name=p-cat]:checked")).map((x) => x.value);
   const comps = Array.from(document.querySelectorAll("input[name=p-comp]:checked")).map((x) => x.value);
+  const paidBox = document.getElementById("p-paid");
+  if (document.getElementById("p-tier").value === "Creators" && paidBox && paidBox.checked && !comps.includes(PAID_COMP)) comps.push(PAID_COMP);
   const pctRaw = document.getElementById("p-localpct").value;
   try {
     const uploaded = await uploadPhotoInput("p-photo");

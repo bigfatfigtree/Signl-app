@@ -126,7 +126,27 @@ end to end. It is read from the environment only, is not in
 netlify.toml, and must never be set on the Netlify site.
 
 All three suites were run green against this codebase on 2026-10-18
-(132 checks total).
+(150 checks total).
+
+## 2026-10-18 post-launch changes (Jeff's screenshot review)
+
+- Mobile nav is an app-style fixed bottom tab bar under 720px; the top
+  link row is desktop-only (it wrapped and broke on phones).
+- Creators tier (15k+) can opt into "Paid cash campaigns" on top of
+  comps, at sign-up and in profile edit. Enforced server-side; dropping
+  out of the Creators tier removes the option. Businesses see an
+  "Open to paid campaigns" badge on the creator card.
+- Creator-facing founding standing is BANDED: "in the first 100" (then
+  200, 300...). Exact queue positions and market signup counts are
+  never sent to creator or business clients; they remain in admin
+  responses and the event log, so exact display can return later.
+- Sign-up requires agreeing to the Terms of Service + Privacy Policy
+  and to account/marketing emails (checkbox, stored with terms version
+  2026-10-18 and timestamps, on the user record and in events).
+- Two transactional emails: sign-up confirmation and approval notice
+  (auto-triggered by the admin approve action). Both are logged as
+  *_email_queued events, then *_email_sent or *_email_not_sent. They
+  send only when the SMTP env vars above are set.
 
 ## Environment variables
 
@@ -141,6 +161,12 @@ production. Locally they go in the shell.
 | SIGNL_LOCAL | Local only | Set to 1 for the file-backed local store. Never set in Netlify. |
 | SIGNL_LOCAL_DB | Local only | Path of the local JSON database file. |
 | SIGNL_TEST_ALLOW_BUSINESS | Tests only | Set to 1 ONLY by the verify suites: re-opens business registration and treats all markets as live so gated flows can be tested. **Never set in Netlify.** Production behavior with it unset: business sign-up closed, markets founding-only until activated. |
+| NETLIFY_BLOBS_SITE_ID | Yes (this site) | Netlify site API ID. This site's function runtime does not receive the automatic Blobs context, so the store uses explicit config (added 2026-10-18 after a MissingBlobsEnvironmentError). |
+| NETLIFY_BLOBS_TOKEN | Yes (this site) | Netlify personal access token used with the site ID above for Blobs access. |
+| SIGNL_SMTP_USER | For email | Mailbox that sends transactional email, hello@joinsignl.com. Without SIGNL_SMTP_USER/PASS, sign-up confirmation and approval emails are queued as events and never sent. |
+| SIGNL_SMTP_PASS | For email | A Gmail App Password for that mailbox (requires 2-Step Verification on the account). Never the account's real password. |
+| SIGNL_SMTP_HOST / SIGNL_SMTP_PORT | No | Default smtp.gmail.com / 465 (implicit TLS). |
+| SIGNL_MAIL_FROM | No | Default "SIGNL <hello@joinsignl.com>". |
 
 ## Data schema (Netlify Blobs, store "signl-data", one key per record)
 
@@ -152,7 +178,11 @@ production. Locally they go in the shell.
   suggestedTier, computedTier, categories, compCategories, bio,
   topAudienceCities, localAudiencePct, localAudienceSource,
   localAudienceAsOf, agreedHonestPosts, agreedFtcDisclosure,
-  agreedAt, hasPhoto, photoUploadedAt, igConnected. Founding priority
+  agreedAt, agreedTerms, termsVersion, marketingEmailConsent,
+  marketingConsentAt, openToPaidCampaigns, hasPhoto, photoUploadedAt,
+  igConnected. The user record also carries termsVersion,
+  termsAcceptedAt, marketingEmailConsent, marketingConsentAt.
+  Founding priority
   is the creator's createdAt order inside their market; nothing extra
   is stored for it. `foundingViewedOn` (date) throttles the
   founding_status_viewed event to once per creator per day. Business

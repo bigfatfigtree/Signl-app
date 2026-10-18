@@ -90,17 +90,21 @@ try {
   check("bootstrap: launch window is 60 to 90 days", boot.data.launch && boot.data.launch.launchWindow === "60 to 90 days");
   check("creator categories are the launch set", Array.isArray(boot.data.creatorCategories) && boot.data.creatorCategories.includes("Beauty & Grooming") && boot.data.creatorCategories.includes("Food & Drink") && !boot.data.creatorCategories.includes("Lifestyle"));
   check("comp categories published", Array.isArray(boot.data.compCategories) && boot.data.compCategories.includes("Restaurant meals"));
+  check("bootstrap names the Creators-tier paid campaigns option", boot.data.paidCampaignsComp === "Paid cash campaigns");
+  check("bootstrap reports email transport off locally (queued, never faked)", boot.data.email && boot.data.email.enabled === false);
 
   // --- registration validation (profile builder enforces its fields) ---
   const basePayload = {
     role: "creator", name: "Launch Creator", email: "launch-a@example.com", password: "creator-pass-123",
     market: "Hampton Roads", city: "Norfolk", handle: "launcheats", followerCount: 8400,
-    localAudiencePct: 62, categories: ["Food & Drink"], agreedHonestPosts: true, agreedFtcDisclosure: true,
+    localAudiencePct: 62, categories: ["Food & Drink"], agreedHonestPosts: true, agreedFtcDisclosure: true, agreedTerms: true,
   };
   const noPct = await client()("POST", "/api/auth/register", { ...basePayload, email: "x1@example.com", localAudiencePct: undefined });
   check("registration without local audience % is refused (400)", noPct.status === 400, String(noPct.status));
   const noAgree = await client()("POST", "/api/auth/register", { ...basePayload, email: "x2@example.com", agreedFtcDisclosure: false });
   check("registration without the FTC agreement is refused (400)", noAgree.status === 400, String(noAgree.status));
+  const noTerms = await client()("POST", "/api/auth/register", { ...basePayload, email: "x5@example.com", agreedTerms: false });
+  check("registration without the Terms + email consent is refused (400)", noTerms.status === 400, String(noTerms.status));
   const badCity = await client()("POST", "/api/auth/register", { ...basePayload, email: "x3@example.com", city: "Richmond" });
   check("home city outside the chosen market is refused (400)", badCity.status === 400, String(badCity.status));
   const noCats = await client()("POST", "/api/auth/register", { ...basePayload, email: "x4@example.com", categories: [] });
@@ -142,7 +146,8 @@ try {
   check("tier suggestion computed from followers (8400 -> Locals)", pc.suggestedTier === "Locals" && pc.computedTier === "Locals");
   check("local audience stored as Self-reported", pc.localAudiencePct === 62 && pc.localAudienceSource === "Self-reported");
   check("rule acknowledgments stored with timestamp", pc.agreedHonestPosts === true && pc.agreedFtcDisclosure === true && !!pc.agreedAt);
-  check("registration response carries founding queue position 1", regA.data.user.founding && regA.data.user.founding.queuePosition === 1 && regA.data.user.founding.marketLive === false, JSON.stringify(regA.data.user.founding));
+  check("terms + marketing consent stored with version and timestamp", pc.agreedTerms === true && pc.termsVersion === boot.data.termsVersion && pc.marketingEmailConsent === true && !!pc.marketingConsentAt, JSON.stringify([pc.agreedTerms, pc.termsVersion, pc.marketingEmailConsent]));
+  check("registration response shows the first-100 band, never the exact queue number", regA.data.user.founding && regA.data.user.founding.queueBand === 100 && regA.data.user.founding.queuePosition === undefined && regA.data.user.founding.creatorsInMarket === undefined && regA.data.user.founding.marketLive === false, JSON.stringify(regA.data.user.founding));
 
   // --- photo upload while pending, privacy of the photo route ---
   const photoUp = await creatorA("POST", "/api/me/photo", { dataUrl: TINY_PNG });
@@ -174,12 +179,12 @@ try {
   const card = founding.data.card || {};
   check("founding status names the market and city", f.market === "Hampton Roads" && f.city === "Norfolk", JSON.stringify(f));
   check("founding status: market not live yet", f.marketLive === false);
-  check("founding priority position is 1", f.priorityPosition === 1, String(f.priorityPosition));
+  check("founding status shows the first-100 band, never the exact position or market counts", f.priorityBand === 100 && f.priorityPosition === undefined && f.foundingCreatorsInMarket === undefined, JSON.stringify(f));
   check("launch window on the founding page is 60 to 90 days", f.launchWindow === "60 to 90 days");
   check("founding card carries the computed Local Impact Score", typeof card.localImpactScore === "number", String(card.localImpactScore));
   check("founding card shows the photo URL", typeof card.photoUrl === "string" && card.photoUrl.endsWith("/photo"), String(card.photoUrl));
   check("founding card displays all six socials", card.profile.instagramUrl === "https://instagram.com/launcheats" && card.profile.tiktokUrl === "https://www.tiktok.com/@launcheats" && card.profile.youtubeChannel === "Launch Eats TV" && card.profile.facebookUrl === "https://www.facebook.com/launcheatspage" && card.profile.xUrl === "https://x.com/launcheats" && card.profile.linkedinUrl === "https://www.linkedin.com/in/launcheats");
-  check("founding card carries foundingPriority 1", card.foundingPriority === 1);
+  check("founding card carries the first-100 band, not an exact priority number", card.foundingBand === 100 && card.foundingPriority === undefined, String(card.foundingBand));
 
   // the client actually renders those links (display wiring in app.js)
   const appJs = await anon.raw("/app.js");
@@ -198,9 +203,9 @@ try {
   check("second creator registers", regB.status === 201, JSON.stringify(regB.data));
   await admin("POST", "/api/admin/review", { userId: regB.data.user.id, decision: "approve" });
   const foundingB = await creatorB("GET", "/api/me/founding");
-  check("second approved creator holds founding priority 2", foundingB.data.founding && foundingB.data.founding.priorityPosition === 2, JSON.stringify(foundingB.data.founding));
+  check("second approved creator also lands in the first-100 band (exact order stays internal)", foundingB.data.founding && foundingB.data.founding.priorityBand === 100 && foundingB.data.founding.priorityPosition === undefined, JSON.stringify(foundingB.data.founding));
   const foundingA2 = await creatorA("GET", "/api/me/founding");
-  check("first creator keeps priority 1 and sees 2 founding creators in market", foundingA2.data.founding.priorityPosition === 1 && foundingA2.data.founding.foundingCreatorsInMarket === 2);
+  check("first creator keeps the first-100 band and never sees market signup counts", foundingA2.data.founding.priorityBand === 100 && foundingA2.data.founding.foundingCreatorsInMarket === undefined && foundingA2.data.founding.creatorsInMarket === undefined);
 
   // another creator cannot view creator A's photo (businesses/admin/self only)
   const crossPhoto = await creatorB.raw(`/api/users/${creatorAId}/photo`);
@@ -215,7 +220,7 @@ try {
   const openOffers = await creatorA("GET", "/api/offers");
   check("offers open once the market is live (200)", openOffers.status === 200, String(openOffers.status));
   const disc = await creatorA("GET", "/api/discover?market=Hampton%20Roads");
-  check("discovery default sort is founding priority (earliest sign-up first)", (disc.data.creators || []).length === 2 && disc.data.creators[0].userId === creatorAId && disc.data.creators[0].foundingPriority === 1 && disc.data.creators[1].foundingPriority === 2, JSON.stringify((disc.data.creators || []).map((c) => [c.userId === creatorAId, c.foundingPriority])));
+  check("discovery default sort is founding priority (earliest sign-up first), displayed as bands", (disc.data.creators || []).length === 2 && disc.data.creators[0].userId === creatorAId && disc.data.creators[0].foundingBand === 100 && disc.data.creators[1].foundingBand === 100 && disc.data.creators[0].foundingPriority === undefined, JSON.stringify((disc.data.creators || []).map((c) => [c.userId === creatorAId, c.foundingBand])));
   const discScore = await creatorA("GET", "/api/discover?market=Hampton%20Roads&sort=score");
   check("discovery score sort still available (?sort=score)", discScore.status === 200 && (discScore.data.creators || []).length === 2);
   const bizAfter = await client()("POST", "/api/auth/register", {
@@ -223,6 +228,33 @@ try {
     password: "business-pass-123", market: "Hampton Roads", city: "Norfolk", category: "Restaurant", planId: "managed",
   });
   check("business registration stays closed even in a live market (403): role gate is separate", bizAfter.status === 403, String(bizAfter.status));
+
+  // --- paid cash campaigns: a Creators-tier option only ---
+  const creatorC = client();
+  const regC = await creatorC("POST", "/api/auth/register", {
+    ...basePayload, name: "Big Creator", email: "launch-c@example.com", handle: "bigcreator",
+    followerCount: 42000, tierBand: "Creators", compCategories: ["Restaurant meals", "Paid cash campaigns"],
+  });
+  check("Creators-tier registration with paid campaigns selected returns 201", regC.status === 201, JSON.stringify(regC.data));
+  check("paid campaigns stored for the Creators-tier creator", regC.data.user.creator.openToPaidCampaigns === true && regC.data.user.creator.compCategories.includes("Paid cash campaigns"), JSON.stringify(regC.data.user.creator.compCategories));
+  const creatorD = client();
+  const regD = await creatorD("POST", "/api/auth/register", {
+    ...basePayload, name: "Local Creator", email: "launch-d@example.com", handle: "localcreator",
+    followerCount: 8400, tierBand: "Locals", compCategories: ["Restaurant meals", "Paid cash campaigns"],
+  });
+  check("Locals-tier attempt at paid campaigns is stripped server-side", regD.status === 201 && regD.data.user.creator.openToPaidCampaigns === false && !regD.data.user.creator.compCategories.includes("Paid cash campaigns"), JSON.stringify(regD.data.user.creator.compCategories));
+  const patchPaidOff = await creatorC("PATCH", "/api/me/profile", { compCategories: ["Restaurant meals"] });
+  check("profile update can drop the paid campaigns option", patchPaidOff.status === 200 && patchPaidOff.data.user.creator.openToPaidCampaigns === false, JSON.stringify(patchPaidOff.data));
+  const patchTierDrop = await creatorC("PATCH", "/api/me/profile", { tierBand: "Locals", compCategories: ["Restaurant meals", "Paid cash campaigns"] });
+  check("dropping out of the Creators tier removes the paid option", patchTierDrop.status === 200 && patchTierDrop.data.user.creator.openToPaidCampaigns === false && !patchTierDrop.data.user.creator.compCategories.includes("Paid cash campaigns"), JSON.stringify(patchTierDrop.data));
+  const approveC = await admin("POST", "/api/admin/review", { userId: regC.data.user.id, decision: "approve" });
+  check("admin approves the Creators-tier creator", approveC.status === 200 && approveC.data.user.status === "approved");
+
+  // client wiring for the new UI: bottom nav, paid option, terms consent
+  check("client ships the mobile bottom nav", appJs.text.includes("bottomnav") && appJs.text.includes("renderBottomNav"));
+  check("client gates the paid campaigns option to the Creators tier", appJs.text.includes("jc-paid-wrap") && appJs.text.includes("PAID_COMP"));
+  check("client collects the Terms + email consent at sign-up", appJs.text.includes("jc-agree-terms"));
+  check("client never renders an exact queue number to creators (admin keeps exact numbers)", !appJs.text.includes("in the ${esc(u.market)} founding queue") && !appJs.text.includes("Founding priority #${f.priorityPosition}") && !appJs.text.includes("#${f.queuePosition}"));
 
   // --- dataset: the new steps are all events ---
   const events = await admin("GET", "/api/admin/events?limit=500");
@@ -233,6 +265,11 @@ try {
   check("event: profile_photo_uploaded logged", byType("profile_photo_uploaded").length >= 1);
   check("event: founding_status_viewed logged", byType("founding_status_viewed").length >= 1);
   check("event: market_activated logged for Hampton Roads", byType("market_activated").some((e) => e.market === "Hampton Roads"));
+  check("event: sign-up confirmation email queued for every creator registration", byType("signup_confirmation_email_queued").length >= 4, String(byType("signup_confirmation_email_queued").length));
+  check("event: approval email queued on each creator approval", byType("approval_email_queued").length >= 3, String(byType("approval_email_queued").length));
+  check("event: with no SMTP transport, emails are recorded not_sent (never faked as sent)", byType("signup_confirmation_email_sent").length === 0 && byType("approval_email_not_sent").some((e) => e.data && e.data.reason === "transport_not_configured"), JSON.stringify(byType("approval_email_not_sent").map((e) => e.data && e.data.reason)));
+  const pcEvC = byType("profile_completed").find((e) => e.subjectId === regC.data.user.id);
+  check("profile_completed records the paid campaigns opt-in and terms version", !!pcEvC && pcEvC.data.openToPaidCampaigns === true && pcEvC.data.termsVersion === boot.data.termsVersion && pcEvC.data.marketingEmailConsent === true, JSON.stringify(pcEvC && pcEvC.data));
 } finally {
   server.kill("SIGTERM");
   try { fs.unlinkSync(DB); } catch (e) { /* ignore */ }

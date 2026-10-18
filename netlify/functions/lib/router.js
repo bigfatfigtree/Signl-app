@@ -7,6 +7,7 @@ const auth = require("./auth");
 const { logEvent, listEvents } = require("./events");
 const { MARKETS, TIERS, CREATOR_CATEGORIES, COMP_CATEGORIES, BUSINESS_CATEGORIES, PLANS, tierForFollowers } = require("./markets");
 const { computeLocalImpactScore, summarizeHistory } = require("./score");
+const { emailEnabled, sendEmail } = require("./email");
 
 // ------------------------------------------------------------------
 // Launch shape (Jeff, 2026-10-18): creator founding sign-up is the
@@ -24,6 +25,10 @@ const { computeLocalImpactScore, summarizeHistory } = require("./score");
 // ------------------------------------------------------------------
 const TEST_MODE = process.env.SIGNL_TEST_ALLOW_BUSINESS === "1";
 const LAUNCH_WINDOW_TEXT = "60 to 90 days";
+const TERMS_VERSION = "2026-10-18";
+// Creators tier (15k+) only: on top of comps, these creators can also be
+// hired for paid cash campaigns when a business runs one (Jeff, 2026-10-18).
+const PAID_COMP = "Paid cash campaigns";
 const MAX_PHOTO_BYTES = 2.5 * 1024 * 1024;
 
 const H48 = 48 * 60 * 60 * 1000;
@@ -156,10 +161,93 @@ async function foundingSummary(user) {
   };
 }
 
+// Creator-facing founding summary (Jeff, 2026-10-18): never show the
+// exact queue number or how many people have signed up in a market.
+// Creators see a band instead: "in the first 100" (then 200, 300...).
+// Exact positions and counts stay in admin responses and the event log.
+function foundingBand(position) {
+  if (!position || position < 1) return null;
+  return Math.ceil(position / 100) * 100;
+}
+
+function publicFounding(summary) {
+  if (!summary) return summary;
+  const { priorityPosition, queuePosition, foundingCreatorsInMarket, creatorsInMarket, ...rest } = summary;
+  return {
+    ...rest,
+    priorityBand: foundingBand(priorityPosition),
+    queueBand: foundingBand(queuePosition),
+  };
+}
+
 async function withFounding(user) {
   const pub = publicUser(user);
-  if (pub && pub.role === "creator") pub.founding = await foundingSummary(user);
+  if (pub && pub.role === "creator") pub.founding = publicFounding(await foundingSummary(user));
   return pub;
+}
+
+// ---------- transactional email ----------
+// Every outbound email is an event first (the dataset keeps the full
+// record), then a send attempt when the SMTP transport is configured.
+// A missing transport queues the email; it is never reported as sent.
+async function deliverEmail(kind, user, subject, text, band) {
+  const base = { kind, to: user.email, subject, band: band || null };
+  await logEvent({ type: `${kind}_email_queued`, actorId: user.id, actorRole: user.role, subjectId: user.id, market: user.market || null, data: base });
+  const result = await sendEmail({ to: user.email, subject, text });
+  if (result.sent) {
+    await logEvent({ type: `${kind}_email_sent`, actorId: user.id, actorRole: user.role, subjectId: user.id, market: user.market || null, data: base });
+  } else {
+    await logEvent({ type: `${kind}_email_not_sent`, actorId: user.id, actorRole: user.role, subjectId: user.id, market: user.market || null, data: { ...base, reason: result.reason || "unknown" } });
+  }
+  return result;
+}
+
+function signupConfirmationEmail(user, band) {
+  const first = (user.name || "").split(" ")[0] || "there";
+  const subject = "Your SIGNL founding creator profile is in";
+  const lines = [
+    `Hi ${first},`,
+    "",
+    `Your founding creator profile for ${user.market} is built and in the review queue. Every application is reviewed by a person.`,
+  ];
+  if (band) lines.push(`You are in the first ${band} creators to sign up in ${user.market}. That founding standing never expires.`);
+  lines.push(
+    "",
+    `What happens next: when you are approved, we email you again and your founding status page opens at app.joinsignl.com. ${user.market} opens to businesses in the next ${LAUNCH_WINDOW_TEXT}, and founding creators get first pick of offers when it does.`,
+    "",
+    "The deal, as agreed: businesses comp you a meal or service, you post your honest experience within 48 hours, and you disclose the comp in the post. Nobody can ever ask you for a positive post.",
+    "",
+    "Sign in any time to check your status: https://app.joinsignl.com",
+    "",
+    "You agreed to SIGNL's Terms of Service and Privacy Policy, and to receive account and marketing emails from SIGNL. You can unsubscribe from marketing emails at any time.",
+    "",
+    "National platforms sell reach. We sell regulars.",
+    "The SIGNL team",
+    "hello@joinsignl.com",
+  );
+  return { subject, text: lines.join("\n") };
+}
+
+function approvalEmail(user, band) {
+  const first = (user.name || "").split(" ")[0] || "there";
+  const subject = "You are approved: welcome to the SIGNL founding roster";
+  const lines = [
+    `Hi ${first},`,
+    "",
+    `Good news: your application was reviewed and approved. You are now a Founding Creator in ${user.market}, and your founding status page is live.`,
+  ];
+  if (band) lines.push(`You are in the first ${band} founding creators in ${user.market}. Founding creators are shown to businesses in sign-up order, earliest first.`);
+  lines.push(
+    "",
+    "Sign in to see your status and keep your profile current: https://app.joinsignl.com",
+    "",
+    `${user.market} opens to businesses in the next ${LAUNCH_WINDOW_TEXT}. The moment it opens, we email you again, and founding creators get first pick of every offer. Your local audience percentage is the number businesses look at first, so keep it honest and current.`,
+    "",
+    "National platforms sell reach. We sell regulars.",
+    "The SIGNL team",
+    "hello@joinsignl.com",
+  );
+  return { subject, text: lines.join("\n") };
 }
 
 function cleanStringList(value, allowed, maxItems) {
@@ -231,7 +319,7 @@ async function publicCreator(u, viewer, foundingPriority) {
     market: u.market,
     city: u.city || "",
     createdAt: u.createdAt,
-    foundingPriority: foundingPriority === undefined ? null : foundingPriority,
+    foundingBand: foundingPriority === undefined ? null : foundingBand(foundingPriority),
     photoUrl: u.creator && u.creator.hasPhoto ? `/api/users/${u.id}/photo` : null,
     profile: u.creator,
     localImpactScore: impact ? impact.score : null,
@@ -319,6 +407,10 @@ async function handleRegister(event) {
     updatedAt: ts,
     reviewedAt: null,
     reviewedBy: null,
+    termsVersion: TERMS_VERSION,
+    termsAcceptedAt: ts,
+    marketingEmailConsent: true,
+    marketingConsentAt: ts,
     creator: null,
     business: null,
   };
@@ -343,6 +435,7 @@ async function handleRegister(event) {
     if (Number.isNaN(localPct)) return err(400, "Local audience percentage must be a number from 0 to 100");
     if (b.agreedHonestPosts !== true) return err(400, "Please confirm the honest-post rule: no business can ever require a positive post.");
     if (b.agreedFtcDisclosure !== true) return err(400, "Please confirm you will disclose every comp in your posts, as the FTC requires.");
+    if (b.agreedTerms !== true) return err(400, "Please agree to the Terms of Service and Privacy Policy, and to receiving account and marketing emails from SIGNL.");
     const suggestedTier = tierForFollowers(followers);
     const tier = TIERS.some((t) => t.id === b.tierBand) ? b.tierBand : suggestedTier;
     const tiktok = (b.tiktokHandle || "").replace(/^@/, "").trim();
@@ -365,7 +458,13 @@ async function handleRegister(event) {
       suggestedTier,
       computedTier: suggestedTier,
       categories,
-      compCategories: cleanStringList(b.compCategories, COMP_CATEGORIES, 8),
+      compCategories: (() => {
+        const list = cleanStringList(b.compCategories, COMP_CATEGORIES, 8);
+        // Paid cash campaigns are a Creators-tier (15k+) option only.
+        if (tier === "Creators" && Array.isArray(b.compCategories) && b.compCategories.includes(PAID_COMP) && !list.includes(PAID_COMP)) list.push(PAID_COMP);
+        return list;
+      })(),
+      openToPaidCampaigns: tier === "Creators" && Array.isArray(b.compCategories) && b.compCategories.includes(PAID_COMP),
       bio: (b.bio || "").trim(),
       topAudienceCities: cleanStringList(b.topAudienceCities, null, 5),
       localAudiencePct: localPct,
@@ -374,11 +473,16 @@ async function handleRegister(event) {
       agreedHonestPosts: true,
       agreedFtcDisclosure: true,
       agreedAt: ts,
+      agreedTerms: true,
+      termsVersion: TERMS_VERSION,
+      marketingEmailConsent: true,
+      marketingConsentAt: ts,
       hasPhoto: false,
       photoUploadedAt: null,
       igConnected: false,
     };
   } else {
+    if (b.agreedTerms !== true) return err(400, "Please agree to the Terms of Service and Privacy Policy, and to receiving account and marketing emails from SIGNL.");
     if (!b.businessName) return err(400, "Business name is required");
     const plan = planById(b.planId || "self-service") || PLANS[0];
     user.business = {
@@ -403,7 +507,7 @@ async function handleRegister(event) {
     market: user.market,
     data:
       role === "creator"
-        ? { handle: user.creator.handle, city: user.city, followerCount: user.creator.followerCount, tierBand: user.creator.tierBand, suggestedTier: user.creator.suggestedTier, localAudiencePct: user.creator.localAudiencePct, localAudienceSource: user.creator.localAudienceSource, categories: user.creator.categories, compCategories: user.creator.compCategories }
+        ? { handle: user.creator.handle, city: user.city, followerCount: user.creator.followerCount, tierBand: user.creator.tierBand, suggestedTier: user.creator.suggestedTier, localAudiencePct: user.creator.localAudiencePct, localAudienceSource: user.creator.localAudienceSource, categories: user.creator.categories, compCategories: user.creator.compCategories, openToPaidCampaigns: user.creator.openToPaidCampaigns, termsVersion: TERMS_VERSION, marketingEmailConsent: true }
         : { businessName: user.business.businessName, category: user.business.category, plan: user.business.plan, planPriceMonthly: user.business.planPriceMonthly },
   });
   if (role === "creator") {
@@ -436,6 +540,10 @@ async function handleRegister(event) {
         hasPhoto: false,
         agreedHonestPosts: true,
         agreedFtcDisclosure: true,
+        agreedTerms: true,
+        termsVersion: TERMS_VERSION,
+        marketingEmailConsent: true,
+        openToPaidCampaigns: user.creator.openToPaidCampaigns,
       },
     });
   }
@@ -448,6 +556,18 @@ async function handleRegister(event) {
       market: user.market,
       data: { plan: user.business.plan, planPriceMonthly: user.business.planPriceMonthly, source: "registration", billingStatus: user.business.billingStatus },
     });
+  }
+
+  if (role === "creator") {
+    // Sign-up confirmation email (Jeff, 2026-10-18). Queued as an event
+    // always; sent immediately when the SMTP transport is configured.
+    // Email trouble must never fail a registration, hence the try/catch.
+    try {
+      const summary = await foundingSummary(user);
+      const band = foundingBand(summary && summary.queuePosition);
+      const mail = signupConfirmationEmail(user, band);
+      await deliverEmail("signup_confirmation", user, mail.subject, mail.text, band);
+    } catch (e) { /* email is best-effort; the queued events tell the story */ }
   }
 
   const token = await auth.createSession(id);
@@ -511,6 +631,9 @@ async function route(event) {
       compCategories: COMP_CATEGORIES,
       businessCategories: BUSINESS_CATEGORIES,
       plans: PLANS,
+      paidCampaignsComp: PAID_COMP,
+      termsVersion: TERMS_VERSION,
+      email: { enabled: emailEnabled() },
       launch: {
         creatorSignupOpen: true,
         businessSignupOpen: TEST_MODE,
@@ -543,7 +666,16 @@ async function route(event) {
       if (b.avgViews !== undefined) c.avgViews = Math.max(0, parseInt(b.avgViews, 10) || 0);
       if (b.tierBand && TIERS.some((t) => t.id === b.tierBand)) c.tierBand = b.tierBand;
       if (Array.isArray(b.categories)) c.categories = b.categories.filter((x) => CREATOR_CATEGORIES.includes(x));
-      if (Array.isArray(b.compCategories)) c.compCategories = b.compCategories.filter((x) => COMP_CATEGORIES.includes(x));
+      if (Array.isArray(b.compCategories)) {
+        // Paid cash campaigns stay selectable only while the creator is
+        // in the Creators tier; dropping a tier drops the option.
+        c.compCategories = b.compCategories.filter((x) => COMP_CATEGORIES.includes(x) || (x === PAID_COMP && c.tierBand === "Creators"));
+        c.openToPaidCampaigns = c.compCategories.includes(PAID_COMP);
+      }
+      if (c.tierBand !== "Creators" && Array.isArray(c.compCategories) && c.compCategories.includes(PAID_COMP)) {
+        c.compCategories = c.compCategories.filter((x) => x !== PAID_COMP);
+        c.openToPaidCampaigns = false;
+      }
       if (b.tiktokHandle !== undefined) { const tk = String(b.tiktokHandle).replace(/^@/, "").trim(); c.tiktokHandle = tk || null; c.tiktokUrl = tk ? `https://www.tiktok.com/@${tk}` : null; }
       if (b.youtubeChannel !== undefined) c.youtubeChannel = String(b.youtubeChannel).trim() || null;
       if (b.facebookUrl !== undefined || b.xHandle !== undefined || b.xUrl !== undefined || b.linkedinUrl !== undefined) {
@@ -719,6 +851,16 @@ async function route(event) {
       target.updatedAt = nowIso();
       await store.set(`user:${target.id}`, target);
       await logEvent({ type: b.decision === "approve" ? "application_approved" : "application_rejected", actorId: user.id, actorRole: "admin", subjectId: target.id, market: target.market, data: { applicantRole: target.role, email: target.email } });
+      if (b.decision === "approve" && target.role === "creator") {
+        // Approval email auto-triggers (Jeff, 2026-10-18): queued as an
+        // event always, sent when the SMTP transport is configured.
+        try {
+          const { approvedRank } = creatorRanks(await allUsers());
+          const band = foundingBand(approvedRank.get(target.id));
+          const mail = approvalEmail(target, band);
+          await deliverEmail("approval", target, mail.subject, mail.text, band);
+        } catch (e) { /* email is best-effort */ }
+      }
       return json(200, { user: publicUser(target) });
     }
     if (method === "GET" && seg[1] === "events") {
@@ -776,7 +918,8 @@ async function route(event) {
   // per day so the log stays meaningful.
   if (method === "GET" && seg[0] === "me" && seg[1] === "founding") {
     if (user.role !== "creator") return err(403, "Creators only");
-    const summary = await foundingSummary(user);
+    const summaryRaw = await foundingSummary(user);
+    const summary = publicFounding(summaryRaw);
     const { approvedRank } = creatorRanks(await allUsers());
     const card = await publicCreator(user, user, approvedRank.get(user.id) || null);
     const today = nowIso().slice(0, 10);
@@ -784,7 +927,7 @@ async function route(event) {
       user.foundingViewedOn = today;
       user.updatedAt = nowIso();
       await store.set(`user:${user.id}`, user);
-      await logEvent({ type: "founding_status_viewed", actorId: user.id, actorRole: "creator", subjectId: user.id, market: user.market, data: { priorityPosition: summary.priorityPosition, marketLive: summary.marketLive } });
+      await logEvent({ type: "founding_status_viewed", actorId: user.id, actorRole: "creator", subjectId: user.id, market: user.market, data: { priorityPosition: summaryRaw.priorityPosition, marketLive: summaryRaw.marketLive } });
     }
     return json(200, { founding: summary, card });
   }

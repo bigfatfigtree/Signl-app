@@ -117,7 +117,7 @@ try {
     categories: ["Food & Drink", "Nightlife"],
     bio: "Verification account created by scripts/verify-flow.mjs",
     agreedHonestPosts: true,
-    agreedFtcDisclosure: true,
+    agreedFtcDisclosure: true, agreedTerms: true,
   });
   check("creator registration returns 201", reg.status === 201, JSON.stringify(reg.data));
   check("creator starts as pending", reg.data.user && reg.data.user.status === "pending");
@@ -156,6 +156,7 @@ try {
     city: "Norfolk",
     category: "Restaurant",
     planId: "managed",
+    agreedTerms: true,
   });
   check("business registration returns 201", regB.status === 201, JSON.stringify(regB.data));
   check("business plan recorded as Managed $799", regB.data.user.business && regB.data.user.business.plan === "managed" && regB.data.user.business.planPriceMonthly === 799);
