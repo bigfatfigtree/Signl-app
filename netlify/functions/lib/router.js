@@ -24,7 +24,7 @@ const { emailEnabled, sendEmail } = require("./email");
 // not in netlify.toml and must never be added there).
 // ------------------------------------------------------------------
 const TEST_MODE = process.env.SIGNL_TEST_ALLOW_BUSINESS === "1";
-const LAUNCH_WINDOW_TEXT = "60 to 90 days";
+const LAUNCH_WINDOW_TEXT = "30 to 90 days";
 const TERMS_VERSION = "2026-10-18";
 // Creators tier (15k+) only: on top of comps, these creators can also be
 // hired for paid cash campaigns when a business runs one (Jeff, 2026-10-18).

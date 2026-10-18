@@ -162,7 +162,7 @@ function renderHome() {
       <a class="btn" href="#" onclick="return go('join-creator')">Become a Founding Creator</a>
       <a class="btn ghost" href="#" onclick="return go('for-businesses')">For Businesses</a>
     </div>
-    <p class="small muted mt">Founding creator sign-up is open now in all 39 markets, across 12 countries and territories. Markets open to businesses in the next 60 to 90 days. Don't see your city? Sign up anyway: new markets open where creator sign-ups pile up, and early sign-ups hold founding standing when their city opens.</p>
+    <p class="small muted mt">Founding creator sign-up is open now in all 39 markets, across 12 countries and territories. Markets open to businesses in the next 30 to 90 days. Don't see your city? Sign up anyway: new markets open where creator sign-ups pile up, and early sign-ups hold founding standing when their city opens.</p>
   </section>
   <section class="grid cols-3 mt">
     <div class="card"><h3>1. Build your founding profile</h3><p class="muted">Creators sign up now and build their full profile: your market, your audience, what share of it is local. Early sign-ups hold founding status and priority when businesses start searching.</p></div>
@@ -328,7 +328,7 @@ function renderJoinCreator() {
   app.innerHTML = `
   <section class="panel" style="max-width:680px;margin:10px auto">
     <h2>Become a Founding Creator</h2>
-    <p class="muted">SIGNL is opening market by market, and creators are signing up first. Build your full founding profile now: when your market opens to businesses in the next 60 to 90 days, we email you, and founding creators get priority when businesses search. This is not a waitlist form; this is your real profile. City not listed yet? Pick "My city is not listed yet" below and sign up anyway: your sign-up counts toward opening your city, and you hold founding standing there.</p>
+    <p class="muted">SIGNL is opening market by market, and creators are signing up first. Build your full founding profile now: when your market opens to businesses in the next 30 to 90 days, we email you, and founding creators get priority when businesses search. This is not a waitlist form; this is your real profile. City not listed yet? Pick "My city is not listed yet" below and sign up anyway: your sign-up counts toward opening your city, and you hold founding standing there.</p>
     <div id="form-error"></div>
     <form onsubmit="return doRegisterCreator(event)">
       <div class="form-2col">
@@ -485,7 +485,7 @@ function renderForBusinesses() {
   app.innerHTML = `
   <section class="panel" style="max-width:680px;margin:10px auto">
     <h2>For Businesses: founding list, not accounts. Yet.</h2>
-    <p>SIGNL is building its founding creator rosters first, market by market. Business accounts open when your market launches, in the next 60 to 90 days. Until then, founding businesses join by list, not by account.</p>
+    <p>SIGNL is building its founding creator rosters first, market by market. Business accounts open when your market launches, in the next 30 to 90 days. Until then, founding businesses join by list, not by account.</p>
     <p><strong>Why join the list now:</strong> the price on this page is the founding price. Join the founding business list and you lock it in. When your market opens, your account activates at founding pricing while later businesses pay the standard rate.</p>
     <div class="plan-cards">${plans}</div>
     <div class="notice blue mt">Founding pricing: Self-Service $299/mo, Managed $799/mo, 3-month minimum. Joining the list costs nothing and charges nothing. It holds your price and your place in your market's launch.</div>
@@ -518,7 +518,7 @@ function renderPending() {
     <p class="muted">${isCreator
       ? isUnlisted
         ? `SIGNL is not open in ${esc(u.city)} yet, and your sign-up counts toward opening it: we open new markets where creator sign-ups pile up, and founding sign-ups there go first. Every application is reviewed by a person. The moment you are approved, your founding status page opens here, and we will email you at ${esc(u.email)} the moment ${esc(u.city)} opens. Sign back in any time to check your status.${state.boot && state.boot.email && state.boot.email.enabled ? ` A confirmation email is on its way to ${esc(u.email)}.` : ""}`
-        : `Every application is reviewed by a person. The moment you are approved, your founding status page opens here, and we will email you at ${esc(u.email)} when ${esc(u.market)} opens to businesses in the next 60 to 90 days. Sign back in any time to check your status.${state.boot && state.boot.email && state.boot.email.enabled ? ` A confirmation email is on its way to ${esc(u.email)}.` : ""}`
+        : `Every application is reviewed by a person. The moment you are approved, your founding status page opens here, and we will email you at ${esc(u.email)} when ${esc(u.market)} opens to businesses in the next 30 to 90 days. Sign back in any time to check your status.${state.boot && state.boot.email && state.boot.email.enabled ? ` A confirmation email is on its way to ${esc(u.email)}.` : ""}`
       : "Sign back in any time to check your status; your dashboard opens the moment you are approved."}</p>
     ${isCreator && !(u.creator && u.creator.hasPhoto) ? `
     <div style="text-align:left">
