@@ -75,7 +75,15 @@ let blobsStore = null;
 function getBlobs() {
   if (!blobsStore) {
     const { getStore } = require("@netlify/blobs");
-    blobsStore = getStore({ name: "signl-data", consistency: "strong" });
+    const opts = { name: "signl-data", consistency: "strong" };
+    // Manual configuration path: this site's function runtime does not
+    // receive the automatic Blobs environment, so when the explicit
+    // credentials are present in env, use them.
+    if (process.env.NETLIFY_BLOBS_SITE_ID && process.env.NETLIFY_BLOBS_TOKEN) {
+      opts.siteID = process.env.NETLIFY_BLOBS_SITE_ID;
+      opts.token = process.env.NETLIFY_BLOBS_TOKEN;
+    }
+    blobsStore = getStore(opts);
   }
   return blobsStore;
 }

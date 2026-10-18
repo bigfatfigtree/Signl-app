@@ -9,7 +9,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 500,
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ error: "Something went wrong on our side. Please try again.", debug: String(e && e.name) + ": " + String(e && e.message) }),
+      body: JSON.stringify({ error: "Something went wrong on our side. Please try again." }),
     };
   }
 };
