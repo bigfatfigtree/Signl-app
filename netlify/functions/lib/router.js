@@ -217,8 +217,20 @@ async function deliverEmail(kind, user, subject, text, band) {
   return result;
 }
 
+function greetingName(user) {
+  const first = ((user && user.name) || "").trim().split(/\s+/)[0] || "";
+  if (!first || first.includes("@") || (user.email && first.toLowerCase() === String(user.email).toLowerCase())) return "there";
+  return first;
+}
+
+function paidCampaignLine(user) {
+  if (!user || !user.creator || user.creator.tierBand !== "Creators") return null;
+  return "One more thing, because you are in the Creators tier (15k+ followers): you are also eligible for paid campaigns, where a business pays you cash on top of the comped experience. Creators tier members are first in line for paid campaigns when they open in your market.";
+}
+
 function signupConfirmationEmail(user, band) {
-  const first = (user.name || "").split(" ")[0] || "there";
+  const first = greetingName(user);
+  const paidLine = paidCampaignLine(user);
   const subject = "Your SIGNL founding creator profile is in";
   if (user.market === UNLISTED) {
     const place = `${user.city}, ${user.country || user.state || ""}`;
@@ -234,6 +246,7 @@ function signupConfirmationEmail(user, band) {
       "",
       "The deal, as agreed: businesses comp you a meal or service, you post your honest experience within 48 hours, and you disclose the comp in the post. Nobody can ever ask you for a positive post.",
       "",
+      ...(paidLine ? [paidLine, ""] : []),
       "Sign in any time to check your status: https://app.joinsignl.com",
       "",
       "You agreed to SIGNL's Terms of Service and Privacy Policy, and to receive account and marketing emails from SIGNL. You can unsubscribe from marketing emails at any time.",
@@ -256,6 +269,7 @@ function signupConfirmationEmail(user, band) {
     "",
     "The deal, as agreed: businesses comp you a meal or service, you post your honest experience within 48 hours, and you disclose the comp in the post. Nobody can ever ask you for a positive post.",
     "",
+    ...(paidLine ? [paidLine, ""] : []),
     "Sign in any time to check your status: https://app.joinsignl.com",
     "",
     "You agreed to SIGNL's Terms of Service and Privacy Policy, and to receive account and marketing emails from SIGNL. You can unsubscribe from marketing emails at any time.",
@@ -268,7 +282,8 @@ function signupConfirmationEmail(user, band) {
 }
 
 function approvalEmail(user, band) {
-  const first = (user.name || "").split(" ")[0] || "there";
+  const first = greetingName(user);
+  const paidLine = paidCampaignLine(user);
   if (user.market === UNLISTED) {
     const subject = `You are approved: founding creator for ${user.city}`;
     const lines = [
@@ -283,6 +298,7 @@ function approvalEmail(user, band) {
       "",
       `${user.city} is not an open market yet. We open new markets where creator sign-ups pile up, and the moment ${user.city} opens, we email you again.`,
       "",
+      ...(paidLine ? [paidLine, ""] : []),
       "National platforms sell reach. We sell regulars.",
       "The SIGNL team",
       "hello@joinsignl.com",
@@ -302,6 +318,7 @@ function approvalEmail(user, band) {
     "",
     `${user.market} opens to businesses in the next ${LAUNCH_WINDOW_TEXT}. The moment it opens, we email you again, and founding creators get first pick of every offer. Your local audience percentage is the number businesses look at first, so keep it honest and current.`,
     "",
+    ...(paidLine ? [paidLine, ""] : []),
     "National platforms sell reach. We sell regulars.",
     "The SIGNL team",
     "hello@joinsignl.com",
