@@ -1,0 +1,5 @@
+node_modules/
+.localdb.json
+.localdb.json.tmp
+.netlify/
+.DS_Store
