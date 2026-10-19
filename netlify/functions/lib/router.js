@@ -1709,15 +1709,19 @@ async function handleRegister(event) {
     if (b.agreedTerms !== true) return err(400, "Please agree to the Terms of Service and Privacy Policy, and to receiving account and marketing emails from SIGNL.");
     // Audience stacking (Jeff, 2026-10-19): the sign-up's follower
     // count is the Instagram count; any other platform counts the
-    // creator reports join the stack, and the tier suggestion reads
-    // the stacked TOTAL. The creator can still confirm another band.
+    // creator reports join the stack, and the tier reads the stacked
+    // TOTAL. The band is FULLY AUTOMATIC (Jeff, 2026-10-19 01:46):
+    // it is always tierForFollowers(totalAudience). A client-sent
+    // tierBand (including the ?tier= claim-link prefill, which is
+    // still accepted as a param) never sets the band; nobody picks
+    // or confirms their own category.
     const stack = normalizeAudienceStack(b.audienceStack);
     let igFollowers = followers;
     if (stack.instagram) igFollowers = stack.instagram;
     else if (igFollowers > 0) stack.instagram = igFollowers;
     const totalAudience = Object.values(stack).reduce((s, n) => s + n, 0);
     const suggestedTier = tierForFollowers(totalAudience);
-    const tier = TIERS.some((t) => t.id === b.tierBand) ? b.tierBand : suggestedTier;
+    const tier = suggestedTier;
     const tiktok = (b.tiktokHandle || "").replace(/^@/, "").trim();
     const youtube = (b.youtubeChannel || "").trim();
     const socials = normalizeSocials(b);
@@ -2021,11 +2025,10 @@ async function route(event) {
       // Audience counts, stacked (Jeff, 2026-10-19). Sending
       // audienceStack replaces the whole stack; sending followerCount
       // alone updates the Instagram row (its historical meaning). The
-      // tier band derives from the stacked TOTAL whenever the counts
-      // change, unless the creator deliberately picks a different
-      // band in the same save (a tierBand value that differs from the
-      // band they already had).
-      const tierBefore = c.tierBand;
+      // tier band is FULLY AUTOMATIC (Jeff, 2026-10-19 01:46): it
+      // always derives from the stacked TOTAL whenever the counts
+      // change, exactly as at sign-up. A tierBand sent with a save is
+      // ignored; nobody picks their own band anywhere.
       const countsTouched = b.audienceStack !== undefined || b.followerCount !== undefined;
       if (countsTouched) {
         let stack;
@@ -2044,19 +2047,13 @@ async function route(event) {
         c.totalAudience = changes.totalAudience[1];
         c.computedTier = tierForFollowers(c.totalAudience);
         c.suggestedTier = c.computedTier;
-        // The band follows the new total, unless this same save
-        // deliberately picks a different band (handled just below).
-        if (b.tierBand === undefined || b.tierBand === tierBefore) c.tierBand = c.computedTier;
+        // Fully automatic: the band always follows the new total.
+        c.tierBand = c.computedTier;
       }
       if (b.avgViews !== undefined) c.avgViews = Math.max(0, parseInt(b.avgViews, 10) || 0);
       if (b.maxVisitsPerWeek !== undefined) {
         const mv = Math.round(Number(b.maxVisitsPerWeek));
         c.maxVisitsPerWeek = Number.isFinite(mv) ? Math.min(7, Math.max(1, mv)) : 3;
-      }
-      if (b.tierBand && TIERS.some((t) => t.id === b.tierBand) && b.tierBand !== tierBefore) {
-        // A deliberate band change (the submitted band differs from
-        // the stored one) always wins, with or without new counts.
-        c.tierBand = b.tierBand;
       }
       if (Array.isArray(b.categories)) c.categories = b.categories.filter((x) => CREATOR_CATEGORIES.includes(x));
       if (Array.isArray(b.compCategories)) {

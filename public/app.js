@@ -530,10 +530,6 @@ async function signOut() {
   render();
 }
 
-function tierOptions(selected) {
-  return state.boot.tiers.map((t) => `<option value="${esc(t.id)}" ${t.id === selected ? "selected" : ""}>${esc(t.label)} (${t.min >= 1000 ? t.min / 1000 + "k" : t.min} to ${t.max === Infinity ? "any" : t.max >= 1000 ? t.max / 1000 + "k" : t.max} followers)</option>`).join("");
-}
-
 function suggestedTierId(followers) {
   const n = Number(followers) || 0;
   if (n >= 15000) return "Creators";
@@ -550,28 +546,34 @@ function signupStackTotal() {
   return total;
 }
 
+// Tier bands are fully automatic (Jeff, 2026-10-19): the band is
+// derived from the total audience across platforms, at sign-up and
+// on every profile save. Nobody picks or confirms their own band,
+// so the form shows it as a read-only line that follows the counts.
 function syncSuggestedTier() {
-  const f = document.getElementById("jc-followers");
-  const sel = document.getElementById("jc-tier");
   const total = signupStackTotal();
-  if (sel) sel.value = suggestedTierId(total);
-  const hint = document.getElementById("jc-tier-hint");
-  if (hint && f) hint.textContent = `Suggested from your total audience across platforms (${total.toLocaleString()}): ${suggestedTierId(total)}. Confirm your band, or pick another.`;
+  const line = document.getElementById("jc-tier-line");
+  if (line) line.textContent = total > 0
+    ? `Your band: ${suggestedTierId(total)}, set automatically from your total audience across platforms (${total.toLocaleString()} total).`
+    : "Your band is set automatically from your total audience across platforms.";
   syncPaidOption();
 }
 
 // Paid cash campaigns are a Creators-tier option: the checkbox block
-// only appears while the Creators band is selected.
+// only appears while the automatic band is Creators.
 function syncPaidOption() {
-  const sel = document.getElementById("jc-tier");
   const wrap = document.getElementById("jc-paid-wrap");
-  if (sel && wrap) wrap.style.display = sel.value === "Creators" ? "" : "none";
+  if (wrap) wrap.style.display = suggestedTierId(signupStackTotal()) === "Creators" ? "" : "none";
+}
+
+function profileStackTotal() {
+  const ids = ["p-followers", "p-stack-tiktok", "p-stack-facebook", "p-stack-x", "p-stack-linkedin", "p-stack-youtube"];
+  return ids.reduce((s, id) => s + (parseInt((document.getElementById(id) || {}).value, 10) || 0), 0);
 }
 
 function syncPaidOptionProfile() {
-  const sel = document.getElementById("p-tier");
   const wrap = document.getElementById("p-paid-wrap");
-  if (sel && wrap) wrap.style.display = sel.value === "Creators" ? "" : "none";
+  if (wrap) wrap.style.display = suggestedTierId(profileStackTotal()) === "Creators" ? "" : "none";
 }
 
 function renderJoinCreator() {
@@ -579,7 +581,6 @@ function renderJoinCreator() {
   const comps = state.boot.compCategories.map((c) => `<label><input type="checkbox" name="c-comp" value="${esc(c)}"> ${esc(c)}</label>`).join("");
   const pf = state.prefill || {};
   const pfMarket = pf.market || "Hampton Roads";
-  const pfTier = pf.tier || "Neighbors";
   const hasPrefill = !!(pf.handle || pf.market || pf.tier);
   app.innerHTML = `
   <section class="panel" style="max-width:680px;margin:10px auto">
@@ -616,7 +617,7 @@ function renderJoinCreator() {
       <div class="field"><label>LinkedIn profile (optional)</label><input id="jc-linkedin" placeholder="linkedin.com/in/yourname or full URL"></div>
       <div class="form-2col">
         <div class="field"><label>Instagram followers (required)</label><input type="number" id="jc-followers" min="0" required placeholder="For example 8400" oninput="syncSuggestedTier()"></div>
-        <div class="field"><label>Your tier band (confirm)</label><select id="jc-tier" onchange="syncPaidOption()">${tierOptions(pfTier)}</select><p class="small muted" id="jc-tier-hint">Enter your followers and we will suggest your band.</p></div>
+        <div class="field"><label>Your tier band</label><p id="jc-tier-line" style="margin:6px 0">Your band is set automatically from your total audience across platforms.</p><p class="small muted">Neighbors 500 to 2k &middot; Locals 2k to 15k &middot; Creators 15k and up. Nobody picks their own band; it updates itself as your counts change.</p></div>
       </div>
       <div class="field"><label>Your audience on other platforms (optional)</label>
         <div class="form-2col">
@@ -661,19 +662,15 @@ function renderJoinCreator() {
     </form>
   </section>`;
   // Claim-link prefill, applied to the live form: the handle link
-  // preview, the unlisted-city swap when the link named no listed
-  // market, and the paid-campaigns block when the Creators band came
-  // pre-selected. Filling only; nothing here submits anything.
+  // preview and the unlisted-city swap when the link named no listed
+  // market. (The ?tier= param is still parsed, but bands are fully
+  // automatic now, so it fills nothing.) Filling only; nothing here
+  // submits anything.
   if (pf.handle) {
     const linkEl = document.getElementById("jc-ig-link");
     if (linkEl) linkEl.textContent = "instagram.com/" + pf.handle;
   }
   if (pf.market === unlistedLabel()) syncMarketChoice();
-  if (pf.tier) {
-    syncPaidOption();
-    const hint = document.getElementById("jc-tier-hint");
-    if (hint) hint.textContent = `Your invite link suggested the ${pf.tier} band. Confirm it below with your follower count, or pick another.`;
-  }
 }
 
 function readPhotoInput(inputId) {
@@ -716,9 +713,9 @@ async function doRegisterCreator(e) {
     if (v > 0) stackFromForm[platform] = v;
   }
   if (!document.getElementById("jc-agree-terms").checked) { errBox("Please agree to the Terms of Service and email consent so we can reach you at launch."); return false; }
-  const tierBand = document.getElementById("jc-tier").value;
+  const autoBand = suggestedTierId(signupStackTotal());
   const paidBox = document.getElementById("jc-paid");
-  if (tierBand === "Creators" && paidBox && paidBox.checked && !comps.includes(PAID_COMP)) comps.push(PAID_COMP);
+  if (autoBand === "Creators" && paidBox && paidBox.checked && !comps.includes(PAID_COMP)) comps.push(PAID_COMP);
   const topCities = document.getElementById("jc-topcities").value.split(",").map((x) => x.trim()).filter(Boolean);
   const marketVal = document.getElementById("jc-market").value;
   const isUnlisted = marketVal === unlistedLabel();
@@ -745,7 +742,6 @@ async function doRegisterCreator(e) {
       facebookUrl: document.getElementById("jc-facebook").value,
       xHandle: document.getElementById("jc-x").value,
       linkedinUrl: document.getElementById("jc-linkedin").value,
-      tierBand,
       followerCount: parseInt(document.getElementById("jc-followers").value, 10) || 0,
       audienceStack: stackFromForm,
       avgViews: parseInt(document.getElementById("jc-avgviews").value, 10) || 0,
@@ -1169,7 +1165,6 @@ function creatorProfileHtml(u) {
   const c = u.creator || {};
   const cats = state.boot.creatorCategories.map((x) => `<label><input type="checkbox" name="p-cat" value="${esc(x)}" ${c.categories && c.categories.includes(x) ? "checked" : ""}> ${esc(x)}</label>`).join("");
   const comps = state.boot.compCategories.map((x) => `<label><input type="checkbox" name="p-comp" value="${esc(x)}" ${c.compCategories && c.compCategories.includes(x) ? "checked" : ""}> ${esc(x)}</label>`).join("");
-  const tiers = state.boot.tiers.map((t) => `<option value="${esc(t.id)}" ${c.tierBand === t.id ? "selected" : ""}>${esc(t.label)}</option>`).join("");
   const stackVal = (id) => (c.audienceStack && c.audienceStack[id]) || (id === "instagram" ? c.followerCount || 0 : 0);
   const stackRows = [
     ["instagram", "Instagram followers", "p-followers"],
@@ -1224,7 +1219,7 @@ function creatorProfileHtml(u) {
         <div class="field"><label>X (Twitter) handle or URL</label><input id="p-x" value="${esc(c.xHandle || "")}" placeholder="Optional"></div>
       </div>
       <div class="field"><label>LinkedIn profile URL</label><input id="p-linkedin" value="${esc(c.linkedinUrl || "")}" placeholder="Optional"></div>
-      <div class="field"><label>Tier band</label><select id="p-tier" onchange="syncPaidOptionProfile()">${tiers}</select><p class="small muted">Your band follows your total audience below when your counts change, unless you deliberately pick a different band here.</p></div>
+      <div class="field"><label>Your tier band</label><p style="margin:6px 0"><strong id="p-tier-band">${esc(c.tierBand || "")}</strong></p><p class="small muted">Set automatically from your total audience across platforms. It updates itself when your counts below change; nobody picks their own band.</p></div>
       <div class="field"><label>Your audience, platform by platform</label>
         <div class="form-2col">
           ${stackRows.map(([id, label, inputId]) => `<div class="field"><label>${label}</label><input type="number" id="${inputId}" min="0" value="${stackVal(id)}" oninput="syncStackTotal()"></div>`).join("")}
@@ -1273,10 +1268,12 @@ async function loadMyScore() {
 }
 
 function syncStackTotal() {
-  const ids = ["p-followers", "p-stack-tiktok", "p-stack-facebook", "p-stack-x", "p-stack-linkedin", "p-stack-youtube"];
-  const total = ids.reduce((s, id) => s + (parseInt((document.getElementById(id) || {}).value, 10) || 0), 0);
+  const total = profileStackTotal();
   const el = document.getElementById("p-stack-total");
   if (el) el.textContent = fmtNum(total);
+  const band = document.getElementById("p-tier-band");
+  if (band) band.textContent = suggestedTierId(total);
+  syncPaidOptionProfile();
 }
 
 async function doUpdateCreator(e) {
@@ -1284,7 +1281,7 @@ async function doUpdateCreator(e) {
   const cats = Array.from(document.querySelectorAll("input[name=p-cat]:checked")).map((x) => x.value);
   const comps = Array.from(document.querySelectorAll("input[name=p-comp]:checked")).map((x) => x.value);
   const paidBox = document.getElementById("p-paid");
-  if (document.getElementById("p-tier").value === "Creators" && paidBox && paidBox.checked && !comps.includes(PAID_COMP)) comps.push(PAID_COMP);
+  if (suggestedTierId(profileStackTotal()) === "Creators" && paidBox && paidBox.checked && !comps.includes(PAID_COMP)) comps.push(PAID_COMP);
   const pctRaw = document.getElementById("p-localpct").value;
   try {
     const uploaded = await uploadPhotoInput("p-photo");
@@ -1301,7 +1298,6 @@ async function doUpdateCreator(e) {
       facebookUrl: document.getElementById("p-facebook").value,
       xHandle: document.getElementById("p-x").value,
       linkedinUrl: document.getElementById("p-linkedin").value,
-      tierBand: document.getElementById("p-tier").value,
       maxVisitsPerWeek: parseInt(document.getElementById("p-maxvisits").value, 10) || 3,
       followerCount: parseInt(document.getElementById("p-followers").value, 10) || 0,
       audienceStack: (() => {

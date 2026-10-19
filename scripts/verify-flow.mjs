@@ -142,7 +142,8 @@ try {
   // actually driven by the parsed values.
   check("claim-link prefill: client parses handle, market, tier params with a sanitizer", appJsText.includes("parseClaimParams") && appJsText.includes("sanitizeClaimHandle") && appJsText.includes('params.get("handle")') && appJsText.includes('params.get("market")') && appJsText.includes('params.get("tier")'), "");
   check("claim-link prefill: market and tier validate by exact match against the published lists", appJsText.includes("state.boot.markets.find((x) => x.name === marketRaw") && appJsText.includes("state.boot.tiers.some((t) => t.id === tierRaw)"), "");
-  check("claim-link prefill fills the sign-up form (market, city list, tier, handle)", appJsText.includes("marketOptions(pfMarket, true)") && appJsText.includes("cityOptions(pfMarket)") && appJsText.includes("tierOptions(pfTier)") && appJsText.includes("state.prefill"), "");
+  check("claim-link prefill fills the sign-up form (market, city list, handle)", appJsText.includes("marketOptions(pfMarket, true)") && appJsText.includes("cityOptions(pfMarket)") && appJsText.includes("state.prefill"), "");
+  check("sign-up has no band picker: the band line is automatic and follows the counts", appJsText.includes('id="jc-tier-line"') && !appJsText.includes('id="jc-tier"') && appJsText.includes("set automatically from your total audience"), "");
 
   // --- creator registers through the real sign-up path ---
   const creator = client();

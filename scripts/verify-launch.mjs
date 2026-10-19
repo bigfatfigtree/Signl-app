@@ -361,8 +361,8 @@ try {
   check("Locals-tier attempt at paid campaigns is stripped server-side", regD.status === 201 && regD.data.user.creator.openToPaidCampaigns === false && !regD.data.user.creator.compCategories.includes("Paid cash campaigns"), JSON.stringify(regD.data.user.creator.compCategories));
   const patchPaidOff = await creatorC("PATCH", "/api/me/profile", { compCategories: ["Restaurant meals"] });
   check("profile update can drop the paid campaigns option", patchPaidOff.status === 200 && patchPaidOff.data.user.creator.openToPaidCampaigns === false, JSON.stringify(patchPaidOff.data));
-  const patchTierDrop = await creatorC("PATCH", "/api/me/profile", { tierBand: "Locals", compCategories: ["Restaurant meals", "Paid cash campaigns"] });
-  check("dropping out of the Creators tier removes the paid option", patchTierDrop.status === 200 && patchTierDrop.data.user.creator.openToPaidCampaigns === false && !patchTierDrop.data.user.creator.compCategories.includes("Paid cash campaigns"), JSON.stringify(patchTierDrop.data));
+  const patchTierDrop = await creatorC("PATCH", "/api/me/profile", { followerCount: 8400, audienceStack: { instagram: 8400 }, compCategories: ["Restaurant meals", "Paid cash campaigns"] });
+  check("dropping out of the Creators tier (counts fall, band re-derives to Locals) removes the paid option", patchTierDrop.status === 200 && patchTierDrop.data.user.creator.tierBand === "Locals" && patchTierDrop.data.user.creator.openToPaidCampaigns === false && !patchTierDrop.data.user.creator.compCategories.includes("Paid cash campaigns"), JSON.stringify(patchTierDrop.data));
   const approveC = await admin("POST", "/api/admin/review", { userId: regC.data.user.id, decision: "approve" });
   check("admin approves the Creators-tier creator", approveC.status === 200 && approveC.data.user.status === "approved");
 

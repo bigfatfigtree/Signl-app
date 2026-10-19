@@ -85,8 +85,12 @@ The public launch is **creator founding sign-up only**:
   post views, top audience cities (up to 5), comps they would accept,
   bio, and a profile photo (PNG/JPEG/WebP up to 2.5 MB, stored in
   Blobs). The tier band (Neighbors 500-2k, Locals 2k-15k, Creators
-  15k+) is auto-suggested from the follower count and confirmed by the
-  creator. Social inputs are normalized to canonical URLs (a bare
+  15k+) is FULLY AUTOMATIC: it is computed from the creator's stacked
+  total audience across platforms, at sign-up and on every profile
+  save. Nobody picks or confirms their own band; the sign-up form
+  shows it as a read-only line that follows the counts, and any tier
+  value a client sends is ignored server-side. Social inputs are
+  normalized to canonical URLs (a bare
   Facebook page name becomes facebook.com/..., an X URL becomes the
   handle plus x.com/..., a LinkedIn slug becomes linkedin.com/in/...).
 - Local Impact Score computed only from stored inputs (formula below).
@@ -97,8 +101,10 @@ The public launch is **creator founding sign-up only**:
   sanitized client-side (handle charset + length caps, market and
   tier by exact match against the bootstrap lists, anything else
   silently ignored); they only fill fields, never submit, and never
-  bypass the human review. DM copy is unchanged: DMs still carry the
-  generic link.
+  bypass the human review. The ?tier= param is still accepted and
+  validated, but it no longer sets the band: tier bands are fully
+  automatic from the stacked total (above). DM copy is unchanged:
+  DMs still carry the generic link.
 - **Public creator profiles (2026-10-19).** `GET /api/c/<handle>`
   answers logged-out visitors with a whitelist payload for an
   approved creator: display name, handle + Instagram URL, photo URL,
@@ -167,7 +173,7 @@ node scripts/verify-flow.mjs        # 97 checks: main marketplace flow
 node scripts/verify-fallbacks.mjs   # 14 checks: check-in / confirm fallbacks
 node scripts/verify-launch.mjs      # 165 checks: the launch shape itself
 node scripts/verify-compliance.mjs  # 110 checks: stacking, compliance, Momentum v2, round-2 ops
-npm run verify                      # all four, in order (386 total)
+npm run verify                      # all four, in order (389 total)
 ```
 
 `verify-launch.mjs` runs in true production shape: business
@@ -186,7 +192,7 @@ end to end. It is read from the environment only, is not in
 netlify.toml, and must never be set on the Netlify site.
 
 All four suites were run green against this codebase on 2026-10-19
-(386 checks total, including the Momentum points math end to end:
+(389 checks total, including the Momentum points math end to end:
 a recruiter with 2 credited sign-ups and 1 approval earns 16
 REFERRAL points (their full total also counts their own profile
 entries, for example +5 for reporting a local audience percentage,
@@ -347,10 +353,12 @@ self-reported, capped at 100,000,000 per platform), and the server
 computes `creator.totalAudience`. `followerCount` now means the
 Instagram count; a profile with no stack falls back to treating its
 stored followerCount as the Instagram count, so legacy profiles lose
-nothing. Tier bands derive from the total: profile saves re-derive
-the band from the new total unless the same save deliberately picks a
-different band; sign-up keeps the band the creator confirms and stores
-the derived band as `computedTier`. Discovery follower min/max
+nothing. Tier bands derive from the total, FULLY AUTOMATICALLY
+(Jeff, 2026-10-19 01:46): sign-up and profile saves alike set the
+band to `tierForFollowers(totalAudience)` (also stored as
+`computedTier`); a tier value sent by any client, including the
+claim-link ?tier= prefill, is ignored, and both forms show the band
+as a read-only line that follows the counts. Discovery follower min/max
 filters read the total, and every surface (public profile, discovery
 card, full profile, preview, the creator's own profile) renders the
 total plus the per-platform breakdown. Local audience % and the Local
