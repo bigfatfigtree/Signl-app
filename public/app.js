@@ -371,7 +371,7 @@ function renderBottomNav() {
 function go(view, tab) {
   // Any navigation leaves Business Preview: the mode is a single
   // deliberate walk, and the admin lands back on the normal console.
-  if (state.preview) state.preview = null;
+  if (state.preview) { stopPreviewCountdown(); state.preview = null; }
   state.view = view;
   if (tab) state.tab = tab;
   render();
@@ -2158,7 +2158,7 @@ async function loadApplications() {
         <td>${fmtDate(u.createdAt)}</td>
         <td>${u.status === "pending"
           ? `<button class="btn small-btn" onclick="reviewApp('${u.id}','approve')">Approve</button> <button class="btn small-btn danger" onclick="reviewApp('${u.id}','reject')">Reject</button>`
-          : `<span class="badge ${u.status === "approved" ? "ok" : "bad"}">${esc(u.status)}</span>`}</td>
+          : `<span class="badge ${u.status === "approved" ? "ok" : "bad"}">${esc(u.status)}</span>${u.role === "creator" && u.tester ? ` <span class="badge warn">Tester</span>` : ""}${u.role === "creator" && u.status === "approved" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="setTester('${u.id}', ${u.tester ? "false" : "true"})">${u.tester ? "Move to roster" : "Move to Tester"}</button>` : ""}`}</td>
       </tr>`;
     };
     el.innerHTML = `
@@ -2194,6 +2194,23 @@ async function reviewApp(userId, decision) {
   } catch (err) { alert(err.message); }
 }
 
+// Tester designation (Jeff, 2026-10-19): an approved creator moved
+// to Tester keeps signing in and using the creator side to test the
+// app, but businesses never see them: discovery excludes them, their
+// public profile page 404s, campaign sends skip their email, and
+// roster / approved counts leave them out. Moving back to the
+// roster restores all of it.
+async function setTester(userId, tester) {
+  const msg = tester
+    ? "Move this creator to Tester? They keep full creator access for testing, but businesses will not see them, their public profile page comes down, campaign sends skip them, and roster counts exclude them."
+    : "Move this creator back to the active roster? Businesses will see them in discovery again, their public profile page returns, and roster counts will include them.";
+  if (!confirm(msg)) return;
+  try {
+    await api("POST", "/admin/tester", { userId, tester });
+    loadApplications();
+  } catch (err) { alert(err.message); }
+}
+
 async function loadEvents() {
   const el = document.getElementById("tab-body");
   try {
@@ -2223,6 +2240,7 @@ async function loadStats() {
         <div class="stat"><div class="num">${s.users.creators}</div><div class="lbl">Creators</div></div>
         <div class="stat"><div class="num">${s.users.businesses}</div><div class="lbl">Businesses</div></div>
         <div class="stat"><div class="num">${s.users.pending}</div><div class="lbl">Pending</div></div>
+        <div class="stat"><div class="num">${s.users.testers || 0}</div><div class="lbl">Testers (excluded from roster counts)</div></div>
         <div class="stat"><div class="num">${s.offers}</div><div class="lbl">Offers</div></div>
         <div class="stat"><div class="num">${s.bookings.redeemed}</div><div class="lbl">Visits redeemed</div></div>
         <div class="stat"><div class="num">${s.posts.total}</div><div class="lbl">Posts</div></div>
@@ -2256,12 +2274,19 @@ async function loadStats() {
 // console cleanly.
 function enterPreview() {
   if (!state.user || state.user.role !== "admin") return;
-  state.preview = { step: "plans", planId: "self-service", market: "Hampton Roads", creators: null, creator: null, targetId: "", sent: [], confirmation: null };
+  state.preview = { step: "plans", planId: "self-service", market: "Hampton Roads", creators: null, creator: null, targetId: "", sent: [], confirmation: null, dashboard: null };
   state.view = "dashboard";
   render();
 }
 
+// Straight to the business dashboard (the tracking + returns walk).
+function enterPreviewDashboard() {
+  enterPreview();
+  if (state.preview) previewToDashboard();
+}
+
 function exitPreview() {
+  stopPreviewCountdown();
   state.preview = null;
   state.tab = "Applications";
   render();
@@ -2270,19 +2295,25 @@ function exitPreview() {
 function renderPreview() {
   const pv = state.preview;
   if (!pv) return renderAdmin();
+  if (pv.step !== "dashboard") stopPreviewCountdown();
   const stepLabel = {
     plans: "Step 1 of 4: the plans a business picks from",
     discover: "Step 2 of 4: search the roster",
     profile: "Step 3 of 4: the full creator profile",
     offer: "Step 4 of 4: the offer composer (simulation)",
+    dashboard: "The business dashboard: bookings, codes, tracking and returns",
   }[pv.step] || "";
-  const planName = (state.boot.plans.find((p) => p.id === pv.planId) || {}).name || "";
+  const planName = pv.step === "dashboard" && pv.dashboard
+    ? pv.dashboard.plan.name
+    : (state.boot.plans.find((p) => p.id === pv.planId) || {}).name || "";
+  const navBtn = (step, label) => `<button class="${pv.step === step || (step === "discover" && (pv.step === "profile" || pv.step === "offer")) ? "active" : ""}" onclick="previewNavTo('${step}')">${label}</button>`;
   app.innerHTML = `
   <div class="preview-banner">
     <span class="preview-tag">PREVIEW</span>
     <span><strong>Previewing as a business.</strong> Everything here is what a business sees. Offers sent in preview are simulations: they never reach a creator and nothing is saved.</span>
     <button class="btn small-btn" onclick="exitPreview()">Exit preview</button>
   </div>
+  <div class="tabs">${navBtn("plans", "Plans")}${navBtn("discover", "Discover")}${navBtn("dashboard", "Dashboard")}</div>
   <p class="muted small">${esc(stepLabel)} &middot; Plan: ${esc(planName)} &middot; Market: ${esc(pv.market)}</p>
   <div id="preview-main"></div>`;
   const main = document.getElementById("preview-main");
@@ -2290,7 +2321,17 @@ function renderPreview() {
   else if (pv.step === "discover") { main.innerHTML = previewDiscoverHtml(); if (pv.creators) renderPreviewResults(); else runPreviewDiscover(); }
   else if (pv.step === "profile" && pv.creator) main.innerHTML = creatorProfileDetailHtml(pv.creator, true);
   else if (pv.step === "offer") main.innerHTML = previewOfferHtml();
+  else if (pv.step === "dashboard") { main.innerHTML = pv.dashboard ? previewDashboardHtml(pv.dashboard) : `<section class="panel"><p class="muted">Loading the dashboard...</p></section>`; if (pv.dashboard) startPreviewCountdown(); else loadPreviewDashboard(); }
   else main.innerHTML = previewPlansHtml();
+}
+
+function previewNavTo(step) {
+  const pv = state.preview;
+  if (!pv) return;
+  if (step === "dashboard") return previewToDashboard();
+  stopPreviewCountdown();
+  pv.step = step;
+  renderPreview();
 }
 
 function previewPlansHtml() {

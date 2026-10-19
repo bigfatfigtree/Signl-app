@@ -253,7 +253,7 @@ function creatorRanks(users) {
   const pendingRank = new Map();
   for (const list of Object.values(byMarket)) {
     const sorted = [...list].sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
-    sorted.filter((u) => u.status === "approved").forEach((u, i) => approvedRank.set(u.id, i + 1));
+    sorted.filter((u) => u.status === "approved" && !isTester(u)).forEach((u, i) => approvedRank.set(u.id, i + 1));
     sorted.filter((u) => u.status === "pending").forEach((u, i) => pendingRank.set(u.id, i + 1));
   }
   return { approvedRank, pendingRank };
@@ -305,7 +305,7 @@ function referralCounts(users) {
     const rec = counts.get(key) || { signups: 0, approved: 0, list: [] };
     rec.signups += 1;
     rec.list.push(u);
-    if (u.role === "creator" && u.status === "approved") rec.approved += 1;
+    if (u.role === "creator" && u.status === "approved" && !isTester(u)) rec.approved += 1;
     counts.set(key, rec);
   }
   return counts;
@@ -350,7 +350,7 @@ function createMomentum(data) {
     const ref = (handleKey && referrals.get(handleKey)) || { signups: 0, approved: 0, list: [] };
     for (const s of ref.list) {
       push("referral_signup", `Creator joined through your invite link (@${(s.creator && s.creator.handle) || "creator"})`, MOMENTUM_POINTS.referralSignup, s.createdAt);
-      if (s.role === "creator" && s.status === "approved") {
+      if (s.role === "creator" && s.status === "approved" && !isTester(s)) {
         push("referral_approved", `A creator you recruited was approved (@${(s.creator && s.creator.handle) || "creator"})`, MOMENTUM_POINTS.referralApproved, s.reviewedAt || s.createdAt);
       }
     }
@@ -536,7 +536,7 @@ async function foundingSummary(user) {
     status: user.status,
     priorityPosition: user.status === "approved" ? approvedRank.get(user.id) || null : null,
     queuePosition: user.status === "pending" ? pendingRank.get(user.id) || null : null,
-    foundingCreatorsInMarket: inMarket.filter((u) => u.status === "approved").length,
+    foundingCreatorsInMarket: inMarket.filter((u) => u.status === "approved" && !isTester(u)).length,
     creatorsInMarket: inMarket.length,
   };
 }
@@ -757,7 +757,7 @@ async function maybeSendRecruiterKit() {
   const claimedAt = nowIso();
   await store.set(RECRUITER_KIT_FLAG_KEY, { version: 1, claimedAt, recipients: [] });
   const users = await allUsers();
-  const recipients = users.filter((u) => u.role === "creator" && u.status === "approved");
+  const recipients = users.filter((u) => u.role === "creator" && u.status === "approved" && !isTester(u));
   const sentTo = [];
   for (const recipient of recipients) {
     try {
@@ -976,7 +976,9 @@ async function discoverCards(query, viewer) {
   const users = await allUsers();
   // Banned creators (redeemed a comp, never posted, cure expired) are
   // out of discovery entirely: a business can never select them again.
-  let creators = users.filter((u) => u.role === "creator" && u.status === "approved" && standingState(u) !== "banned");
+  // Testers are out too: an approved tester account tests the app, it
+  // is never shown to a business as a bookable creator.
+  let creators = users.filter((u) => isRosterCreator(u) && standingState(u) !== "banned");
   const market = query.market || (viewer && viewer.role === "business" ? viewer.market : null);
   if (market) creators = creators.filter((u) => u.market === (marketByName(market) || {}).name);
   if (query.tier) creators = creators.filter((u) => u.creator && u.creator.tierBand === query.tier);
@@ -1202,6 +1204,26 @@ function banAtFor(booking) {
 function standingState(user) {
   if (!user || !user.standing || !user.standing.state) return "good";
   return user.standing.state;
+}
+
+// ---------- tester designation (Jeff, 2026-10-19) ----------
+// A tester is an approved creator account used to exercise the app
+// end to end (Tony Johnson is the first): they sign in and use the
+// creator side normally (profile, founding page, preview offers,
+// settings), but they are NOT on the roster. Every business-facing
+// surface and every roster/approved count treats them as if the
+// account were not there: discovery never returns them, their
+// /c/<handle> page answers 404 like a pending creator's, their
+// photo is not public, campaign sends never go to their email, and
+// founding ranks, per-market counts, and admin stats all skip them.
+// The flag lives on the user record as `tester` (default false),
+// set only from the admin console (POST /api/admin/tester).
+function isTester(u) {
+  return !!(u && u.tester);
+}
+
+function isRosterCreator(u) {
+  return !!u && u.role === "creator" && u.status === "approved" && !isTester(u);
 }
 
 // ---------- visit windows + weekly cap (Jeff, 2026-10-19 r2) ----------
@@ -1541,7 +1563,10 @@ async function maybeRunComplianceSweep() {
 //     (campaign:<id>) and one record per recipient
 //     (campaign-recipient:<id>:<email>). The queue ships EMPTY;
 //     recipients arrive only through the admin import endpoint,
-//     already skip-filtered by whoever prepares the import.
+//     already skip-filtered by whoever prepares the import. The
+//     server additionally refuses tester-account emails at import
+//     and prunes them from the queue at sweep time, so a tester
+//     can never receive a campaign send.
 //   - Sending happens only in runCampaignSweep(): the campaign must
 //     be ARMED (Jeff arms it in the admin UI) and the clock must be
 //     inside the send window, 08:00-21:00 America/New_York.
@@ -1644,7 +1669,7 @@ function campaignWindowOpen(date) {
 // time-traveled deterministically.
 async function runCampaignSweep(opts = {}) {
   const now = opts.now instanceof Date && !Number.isNaN(opts.now.getTime()) ? opts.now : new Date();
-  const summary = { campaigns: 0, armed: 0, windowClosed: 0, attempted: 0, sent: 0, failed: 0, capReached: 0, disarmed: 0 };
+  const summary = { campaigns: 0, armed: 0, windowClosed: 0, attempted: 0, sent: 0, failed: 0, capReached: 0, disarmed: 0, skippedTesters: 0 };
   const configs = (await store.list("campaign:")).map((r) => r.value);
   for (const cfg of configs) {
     if (!cfg || !cfg.id) continue;
@@ -1652,7 +1677,26 @@ async function runCampaignSweep(opts = {}) {
     if (!cfg.armed) continue;
     summary.armed += 1;
     if (!campaignWindowOpen(now)) { summary.windowClosed += 1; continue; }
-    const recipients = await listCampaignRecipients(cfg.id);
+    let recipients = await listCampaignRecipients(cfg.id);
+    // Tester guard (Jeff, 2026-10-19): an address queued before its
+    // account was flagged tester must still never be sent to. Any
+    // queued recipient whose email now belongs to a tester account
+    // leaves the queue as skipped before the batch is picked.
+    if (recipients.some((r) => r.status === "queued")) {
+      const testerEmails = new Set((await allUsers()).filter((u) => isTester(u)).map((u) => String(u.email || "").toLowerCase()));
+      let pruned = false;
+      for (const r of recipients) {
+        if (r.status !== "queued" || !testerEmails.has(String(r.email || "").toLowerCase())) continue;
+        r.status = "skipped";
+        r.skipReason = "tester_account";
+        r.updatedAt = now.toISOString();
+        await store.set(`campaign-recipient:${cfg.id}:${r.email}`, r);
+        summary.skippedTesters += 1;
+        pruned = true;
+        await logEvent({ type: "campaign_recipient_skipped", actorId: null, actorRole: "system", subjectId: null, market: r.market || null, data: { campaignId: cfg.id, email: r.email, reason: "tester_account" } });
+      }
+      if (pruned) recipients = await listCampaignRecipients(cfg.id);
+    }
     let counts = campaignCounts(recipients);
     cfg.lastRunAt = now.toISOString();
     if (counts.sent >= CAMPAIGN_SEND_CAP) {
@@ -1816,6 +1860,279 @@ async function genCode() {
   throw new Error("Could not allocate a booking code");
 }
 
+// ---------- Business Preview dashboard (Jeff, 2026-10-19) ----------
+// The business home Jeff asked to walk through end to end: one
+// simulated business on the Growth plan, a roster of bookings across
+// the REAL approved creators, and every lifecycle state on one
+// screen - code issued, redeemed with the 48 hour clock running,
+// posted on time with performance and a review, posted late, and one
+// visit sitting in the late window so a problem surfaces the way a
+// business actually sees it. Every timestamp is computed relative to
+// the request, so the states and the countdown are always live.
+// The invariant is the preview invariant, held absolutely: this
+// builder READS the user store and the code index and writes
+// NOTHING. No store.set, no logEvent, no metric moves; the bookings
+// exist only inside this response and nowhere else in the system.
+const PREVIEW_DASH_BUSINESS = { name: "Salt & Ember Kitchen", category: "Chef-driven restaurant", market: "Hampton Roads" };
+const PREVIEW_MEDIA_CPM_USD = 22; // modeled media value: dollars per 1,000 creator-reported views
+
+function hoursFrom(nowMs, h) {
+  return new Date(nowMs + h * 3600 * 1000).toISOString();
+}
+
+function previewFmtDate(iso) {
+  if (!iso) return "";
+  return new Date(iso).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
+}
+
+// Same QR the creator's real visit screen carries: the counter URL
+// for the code, generated with the same library and settings.
+function previewQrSvg(code) {
+  try {
+    const qrcode = require("qrcode-generator");
+    const qr = qrcode(0, "M");
+    const base = process.env.APP_URL || "https://app.joinsignl.com";
+    qr.addData(`${base}/counter?code=${code}`);
+    qr.make();
+    return qr.createSvgTag({ cellSize: 6, margin: 8, scalable: true });
+  } catch (e) {
+    return null;
+  }
+}
+
+// A display-only code for a simulated booking. Checked (read-only)
+// against the live code index and against the codes already handed
+// out in this response, so a simulated code never equals a real one.
+async function previewDisplayCode(used) {
+  for (let attempt = 0; attempt < 12; attempt++) {
+    let code = "SGNL-";
+    for (let i = 0; i < 6; i++) code += CODE_CHARS[crypto.randomInt(CODE_CHARS.length)];
+    if (used.has(code)) continue;
+    const taken = await store.get(`code:${code}`);
+    if (!taken) { used.add(code); return code; }
+  }
+  used.add("SGNL-PREVUE");
+  return "SGNL-PREVUE";
+}
+
+// The Standard Visit checklist for one simulated booking, in the same
+// states the real surfaces compute: done, pending, or overdue.
+function previewDashChecklist(b) {
+  const methodLabel = b.redeemMethod === "business_confirm" ? "you confirmed the visit in the app (no code needed)" : "staff scanned the code at the counter";
+  const items = [
+    {
+      key: "redeem",
+      label: "Visit redeemed in the app (code burned, 48 hour clock started)",
+      state: b.redeemedAt ? "done" : "pending",
+      detail: b.redeemedAt
+        ? `${previewFmtDate(b.redeemedAt)} · ${methodLabel}`
+        : `Code ${b.code} · redeem by ${previewFmtDate(b.redeemBy)} · the creator can come any time in the window, no appointment`,
+    },
+    {
+      key: "post",
+      label: "1 post or reel within 48 hours of the visit",
+      state: b.post ? "done" : b.state === "overdue" || b.state === "paused" ? "overdue" : "pending",
+      detail: b.post
+        ? `Posted ${previewFmtDate(b.post.submittedAt)} · ${b.post.hoursAfterRedeem}h after redemption · ${b.post.onTime ? "on time" : "delivered late"}`
+        : b.redeemedAt
+          ? `Due by ${previewFmtDate(b.postDeadline)}`
+          : "The clock starts at redemption",
+    },
+    {
+      key: "stories",
+      label: "2 stories from the visit",
+      state: b.post ? "done" : "pending",
+      detail: "Part of the Standard Visit, posted around the visit itself",
+    },
+    {
+      key: "disclosure",
+      label: "Comp disclosed in the post (FTC)",
+      state: b.post ? "done" : "pending",
+      detail: b.post ? "Disclosed, as every SIGNL post must be" : "Required on every post; a post without it does not check off",
+    },
+    {
+      key: "live30",
+      label: "Post stays live at least 30 days",
+      state: b.post ? "done" : "pending",
+      detail: b.post ? `Live since ${previewFmtDate(b.post.submittedAt)}, tracked from the proof link` : "Tracked from the proof link once the post lands",
+    },
+    {
+      key: "numbers",
+      label: "Post numbers reported (views and likes)",
+      state: b.post && b.post.reportedAt ? "done" : "pending",
+      detail: b.post && b.post.reportedAt
+        ? `${Number(b.post.views || 0).toLocaleString("en-US")} views · ${Number(b.post.likes || 0).toLocaleString("en-US")} likes, reported by the creator`
+        : "Asked automatically 7 days after the post; the numbers land here",
+    },
+  ];
+  return items;
+}
+
+async function previewDashboard() {
+  const now = Date.now();
+  const plan = planById("growth") || PLANS[1];
+  const users = await allUsers();
+  const roster = users.filter((u) => isRosterCreator(u));
+  const handleOf = (u) => ((u.creator && u.creator.handle) || "").toLowerCase();
+  const nameOf = (u) => (u.name || "").toLowerCase();
+  const featured = [
+    roster.find((u) => handleOf(u).includes("elegance.by.emily")) || roster.find((u) => nameOf(u).includes("emily")),
+    roster.find((u) => handleOf(u).includes("vibewithkesha")) || roster.find((u) => nameOf(u).includes("kesha")),
+    roster.find((u) => handleOf(u).includes("minimony")) || roster.find((u) => nameOf(u).includes("moni")),
+    roster.find((u) => handleOf(u).includes("ac32085")) || roster.find((u) => nameOf(u).includes("christopher")),
+  ];
+  // Slots in demo order; a missing featured creator falls back to the
+  // roster in sign-up order, and a small roster simply covers more
+  // than one slot, the way a real business books a favorite twice.
+  const slotCreator = (i) => featured[i] || (roster.length ? roster[i % roster.length] : null);
+  const briefs = [
+    { slot: 0, kind: "booked", title: "Autumn tasting menu for two", whatComped: "Five-course tasting menu for the creator and a guest, with two cocktails", dollarCap: 110, visitWindow: "Evenings this week" },
+    { slot: 1, kind: "redeemed", title: "Weekend brunch on us", whatComped: "Brunch for two: two entrees, two coffees, one shared pastry board", dollarCap: 65, compCost: 34, visitWindow: "Weekend mornings" },
+    { slot: 2, kind: "complete_on_time", title: "Chef's counter dinner", whatComped: "Chef's counter seating for two, four courses", dollarCap: 90, compCost: 47, visitWindow: "Weeknights" },
+    { slot: 3, kind: "complete_late", title: "Cocktail hour feature", whatComped: "Two signature cocktails and three small plates for the creator and a guest", dollarCap: 70, compCost: 38, visitWindow: "Thursday to Saturday" },
+    { slot: 0, kind: "overdue", title: "Sunday supper club", whatComped: "Sunday supper for two: shared starter, two mains, dessert to share", dollarCap: 80, compCost: 41, visitWindow: "Sundays" },
+  ];
+  const usedCodes = new Set();
+  const bookings = [];
+  for (let i = 0; i < briefs.length; i++) {
+    const brief = briefs[i];
+    const creator = slotCreator(brief.slot);
+    if (!creator) continue;
+    const code = await previewDisplayCode(usedCodes);
+    const b = {
+      id: `preview-dash-${i + 1}`,
+      preview: true,
+      businessId: "__preview__",
+      businessName: PREVIEW_DASH_BUSINESS.name,
+      market: PREVIEW_DASH_BUSINESS.market,
+      creatorId: creator.id,
+      creatorName: creator.name,
+      creatorHandle: creator.creator ? creator.creator.handle : "",
+      creatorTier: creator.creator ? creator.creator.tierBand : null,
+      title: brief.title,
+      whatComped: brief.whatComped,
+      dollarCap: brief.dollarCap,
+      compCostModeled: brief.compCost || null,
+      visitWindow: brief.visitWindow,
+      windowMode: "7days",
+      code,
+      codeStatus: "issued",
+      status: "booked",
+      state: "booked",
+      stateLabel: "Booked · code issued",
+      createdAt: null,
+      redeemBy: null,
+      checkinAt: null,
+      redeemedAt: null,
+      redeemMethod: null,
+      postDeadline: null,
+      pauseAt: null,
+      post: null,
+      review: null,
+      alerts: [],
+      checklist: [],
+      qrSvg: null,
+    };
+    if (brief.kind === "booked") {
+      b.createdAt = hoursFrom(now, -26);
+      b.redeemBy = hoursFrom(now, -26 + COMPLIANCE.visitWindowDays * 24);
+      b.qrSvg = previewQrSvg(code);
+    } else if (brief.kind === "redeemed") {
+      b.createdAt = hoursFrom(now, -49);
+      b.redeemBy = hoursFrom(now, -49 + COMPLIANCE.visitWindowDays * 24);
+      b.redeemedAt = hoursFrom(now, -5);
+      b.redeemMethod = "counter_code";
+      b.codeStatus = "burned";
+      b.status = "redeemed";
+      b.postDeadline = hoursFrom(now, -5 + COMPLIANCE.onTimeHours);
+      b.state = "post_due";
+      b.stateLabel = "Redeemed · post clock running";
+      b.alerts = ["On track: the post is due inside the 48 hour window."];
+    } else if (brief.kind === "complete_on_time" || brief.kind === "complete_late") {
+      const onTime = brief.kind === "complete_on_time";
+      const redeemedAgoH = onTime ? 9 * 24 : 12 * 24;
+      const afterH = onTime ? 21 : 70;
+      b.createdAt = hoursFrom(now, -(redeemedAgoH + 48));
+      b.redeemBy = hoursFrom(now, -(redeemedAgoH + 48) + COMPLIANCE.visitWindowDays * 24);
+      b.redeemedAt = hoursFrom(now, -redeemedAgoH);
+      b.redeemMethod = onTime ? "counter_code" : "business_confirm";
+      b.codeStatus = "burned";
+      b.status = "completed";
+      b.postDeadline = hoursFrom(now, -redeemedAgoH + COMPLIANCE.onTimeHours);
+      b.post = {
+        url: onTime ? "https://www.instagram.com/p/C8kQ2mPxT4a/" : "https://www.instagram.com/reel/C9rT7wKdN2s/",
+        submittedAt: hoursFrom(now, -redeemedAgoH + afterH),
+        onTime,
+        hoursAfterRedeem: afterH,
+        disclosedComp: true,
+        views: onTime ? 12400 : 8150,
+        likes: onTime ? 986 : 640,
+        reportedAt: hoursFrom(now, -redeemedAgoH + afterH + PERFORMANCE_ASK_DAYS * 24),
+      };
+      b.review = onTime
+        ? { stars: 5, text: "Posted right on time and the reel is still bringing people in.", createdAt: hoursFrom(now, -4 * 24) }
+        : { stars: 4, text: "Great post, a couple of days past the 48 hours but worth it.", createdAt: hoursFrom(now, -3 * 24) };
+      b.state = onTime ? "posted_on_time" : "posted_late";
+      b.stateLabel = onTime ? "Posted on time · complete" : "Posted late · delivered, complete";
+    } else if (brief.kind === "overdue") {
+      b.createdAt = hoursFrom(now, -5 * 24);
+      b.redeemBy = hoursFrom(now, -5 * 24 + COMPLIANCE.visitWindowDays * 24);
+      b.redeemedAt = hoursFrom(now, -84);
+      b.redeemMethod = "business_confirm";
+      b.codeStatus = "burned";
+      b.status = "redeemed";
+      b.postDeadline = hoursFrom(now, -84 + COMPLIANCE.onTimeHours);
+      b.pauseAt = hoursFrom(now, -84 + COMPLIANCE.hardStopDays * 24);
+      b.state = "overdue";
+      b.stateLabel = "Post overdue · in the late window";
+      b.replacementAvailable = true;
+      b.alerts = [
+        `The 48 hour deadline passed ${Math.round((now - Date.parse(b.postDeadline)) / 3600000)} hours ago with no post link yet. Reminder emails went out automatically at the deadline.`,
+        `The visit still counts if the post lands before the hard stop on ${previewFmtDate(b.pauseAt)}; after that the creator's account pauses until it does.`,
+        "In the live app, this is where you can request a replacement visit. Nothing about the creator's standing is ever shown publicly.",
+      ];
+    }
+    b.checklist = previewDashChecklist(b);
+    bookings.push(b);
+  }
+  const delivered = bookings.filter((b) => b.post);
+  const onTimeCount = delivered.filter((b) => b.post.onTime).length;
+  const totalViews = delivered.reduce((s, b) => s + (b.post.views || 0), 0);
+  const totalLikes = delivered.reduce((s, b) => s + (b.post.likes || 0), 0);
+  const compValueGiven = bookings.reduce((s, b) => s + (b.redeemedAt ? b.compCostModeled || 0 : 0), 0);
+  const mediaValueReceived = Math.round((totalViews / 1000) * PREVIEW_MEDIA_CPM_USD);
+  const summary = {
+    cycleLabel: new Date(now).toLocaleString("en-US", { month: "long", year: "numeric" }),
+    visitsUsed: bookings.length,
+    visitsAllowance: plan.visitsPerMonth,
+    visitsRemaining: Math.max(0, plan.visitsPerMonth - bookings.length),
+    postsDelivered: delivered.length,
+    postsOnTime: onTimeCount,
+    postsLate: delivered.length - onTimeCount,
+    onTimeRatePct: delivered.length ? Math.round((onTimeCount / delivered.length) * 100) : null,
+    postsInFlight: bookings.filter((b) => b.state === "post_due").length,
+    postsOverdue: bookings.filter((b) => b.state === "overdue").length,
+    totalViews,
+    totalLikes,
+    compValueGiven,
+    compValueBasis: "Modeled at the business's own cost for the comps actually given, not menu price",
+    mediaValueReceived,
+    mediaValueBasis: `Modeled at a $${PREVIEW_MEDIA_CPM_USD} CPM on creator-reported views, the cost of buying the same views as paid social`,
+    returnMultiple: compValueGiven > 0 ? Math.round((mediaValueReceived / compValueGiven) * 10) / 10 : null,
+    modeled: true,
+  };
+  return {
+    preview: true,
+    business: { ...PREVIEW_DASH_BUSINESS, planId: plan.id, planName: plan.name },
+    plan: { id: plan.id, name: plan.name, priceMonthly: plan.priceMonthly, minMonths: plan.minMonths, visitsPerMonth: plan.visitsPerMonth, features: plan.features },
+    rights: visitRightsForPlan(plan.id),
+    standardVisit: STANDARD_VISIT,
+    summary,
+    bookings,
+    rosterEmpty: bookings.length === 0,
+  };
+}
+
 // ---------- auth context ----------
 
 async function getAuthUser(event) {
@@ -1876,6 +2193,7 @@ async function handleRegister(event) {
     passwordSalt: salt,
     passwordHash: hash,
     status: "pending",
+    tester: false,
     market: market.name,
     city: unlisted ? customCity : (b.city || "").trim(),
     state: unlisted ? customState || null : null,
@@ -2180,7 +2498,7 @@ async function route(event) {
           // A banned creator's page stops resolving, exactly like a
           // pending or rejected one: they are not bookable, so the
           // public page comes down until an admin reinstates them.
-          .filter((u) => u.role === "creator" && u.status === "approved" && standingState(u) !== "banned" && u.creator && String(u.creator.handle || "").toLowerCase() === handleKey)
+          .filter((u) => isRosterCreator(u) && standingState(u) !== "banned" && u.creator && String(u.creator.handle || "").toLowerCase() === handleKey)
           .sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1))[0]
       : null;
     if (!target) return err(404, "Creator not found");
@@ -2197,8 +2515,9 @@ async function route(event) {
     const target = await store.get(`user:${seg[1]}`);
     if (!target || target.role !== "creator") return err(404, "Photo not found");
     // Public while approved and in good/paused standing; a banned
-    // creator's photo locks down with their profile page.
-    let allowed = target.status === "approved" && standingState(target) !== "banned";
+    // creator's photo locks down with their profile page. A tester's
+    // photo locks down the same way: their profile is not public.
+    let allowed = target.status === "approved" && !isTester(target) && standingState(target) !== "banned";
     if (!allowed && user) {
       allowed =
         user.id === target.id ||
@@ -2492,7 +2811,7 @@ async function route(event) {
           label: m.label,
           country: m.country || "United States",
           live: TEST_MODE ? true : !!flags[m.name],
-          creatorsApproved: inMarket.filter((u) => u.role === "creator" && u.status === "approved").length,
+          creatorsApproved: inMarket.filter((u) => u.role === "creator" && u.status === "approved" && !isTester(u)).length,
           creatorsPending: inMarket.filter((u) => u.role === "creator" && u.status === "pending").length,
           businessesApproved: inMarket.filter((u) => u.role === "business" && u.status === "approved").length,
         };
@@ -2538,6 +2857,22 @@ async function route(event) {
       }
       return json(200, { user: publicUser(target) });
     }
+    // Tester designation (Jeff, 2026-10-19): move an approved creator
+    // between the active roster and Tester. A tester keeps full
+    // creator-side access for testing the app, but discovery, the
+    // public /c/ page, campaign sends, and every roster/approved
+    // count exclude them (see isTester / isRosterCreator).
+    if (method === "POST" && seg[1] === "tester") {
+      const b = parseBody(event);
+      const target = await store.get(`user:${b.userId}`);
+      if (!target || target.role !== "creator") return err(404, "Creator not found");
+      if (typeof b.tester !== "boolean") return err(400, "tester must be true or false");
+      target.tester = b.tester;
+      target.updatedAt = nowIso();
+      await store.set(`user:${target.id}`, target);
+      await logEvent({ type: b.tester ? "creator_marked_tester" : "creator_unmarked_tester", actorId: user.id, actorRole: "admin", subjectId: target.id, market: target.market, data: { email: target.email, tester: b.tester } });
+      return json(200, { user: publicUser(target) });
+    }
     if (method === "GET" && seg[1] === "events") {
       const events = await listEvents({ limit: Math.min(2000, parseInt(query.limit, 10) || 500) });
       const filtered = query.type ? events.filter((e) => e.type === query.type) : events;
@@ -2552,7 +2887,7 @@ async function route(event) {
       for (const m of MARKETS) perMarket[m.name] = { creators: 0, businesses: 0, bookings: 0, posts: 0 };
       for (const u of users) {
         if (!perMarket[u.market]) continue;
-        if (u.role === "creator" && u.status === "approved") perMarket[u.market].creators += 1;
+        if (u.role === "creator" && u.status === "approved" && !isTester(u)) perMarket[u.market].creators += 1;
         if (u.role === "business" && u.status === "approved") perMarket[u.market].businesses += 1;
       }
       // Demand signal outside the listed markets (Jeff, 2026-10-18):
@@ -2580,7 +2915,11 @@ async function route(event) {
           creators: users.filter((u) => u.role === "creator").length,
           businesses: users.filter((u) => u.role === "business").length,
           pending: users.filter((u) => u.status === "pending").length,
-          approved: users.filter((u) => u.status === "approved").length,
+          // Approved is a roster number: tester accounts are approved
+          // but are not roster creators, so they never inflate it.
+          // They are reported separately so the count stays honest.
+          approved: users.filter((u) => u.status === "approved" && !isTester(u)).length,
+          testers: users.filter((u) => isTester(u)).length,
         },
         offers: offers.length,
         bookings: {
@@ -2625,6 +2964,11 @@ async function route(event) {
         cfg.createdAt = nowIso();
         await saveCampaignConfig(cfg);
       }
+      // Tester accounts never receive campaign sends (Jeff,
+      // 2026-10-19): a recipient whose email belongs to a tester
+      // account is recorded as skipped at import, exactly like a
+      // blocklist address, and never enters the queue.
+      const testerEmails = new Set((await allUsers()).filter((u) => isTester(u)).map((u) => String(u.email || "").toLowerCase()));
       let imported = 0;
       let duplicates = 0;
       let skipped = 0;
@@ -2644,6 +2988,11 @@ async function route(event) {
         const existing = await store.get(key);
         if (existing) { duplicates += 1; continue; }
         const ts = nowIso();
+        if (testerEmails.has(email)) {
+          await store.set(key, { campaignId, email, name, handle, market, opener, status: "skipped", skipReason: "tester_account", sentAt: null, messageRef: null, importedAt: ts, updatedAt: ts });
+          skipped += 1;
+          continue;
+        }
         if (skipSet.has(email)) {
           await store.set(key, { campaignId, email, name, handle, market, opener, status: "skipped", skipReason: "blocklist", sentAt: null, messageRef: null, importedAt: ts, updatedAt: ts });
           skipped += 1;
@@ -2835,6 +3184,16 @@ async function route(event) {
           note: "Simulation only: no event logged, the creator is not notified, and no Momentum points are awarded.",
         },
       });
+    }
+    // Business Preview dashboard (Jeff, 2026-10-19): the business
+    // home - booked creators, visit codes, redemption, the post
+    // clock, delivered posts, performance and returns - as ONE
+    // simulated Growth-plan business over the real approved roster.
+    // previewDashboard() only reads and computes; like every preview
+    // route it writes nothing and logs nothing.
+    if (method === "GET" && seg[1] === "preview" && seg[2] === "dashboard") {
+      const dashboard = await previewDashboard();
+      return json(200, { dashboard, preview: true });
     }
     return err(404, "Unknown admin route");
   }

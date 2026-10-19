@@ -345,6 +345,63 @@ try {
   check("preview offer wrote no events (no offer_created anywhere in the log)", !(evAfterPv.data.events || []).some((e) => e.type === "offer_created"), "");
   check("client ships the business preview mode (banner, steps, simulated composer)", appJs.text.includes("Preview as business") && appJs.text.includes("PREVIEW") && appJs.text.includes("renderPreview") && appJs.text.includes("previewSendOffer") && appJs.text.includes("/admin/preview/offers") && appJs.text.includes("exitPreview"), "");
 
+  // --- tester designation: approved, but never on the roster ---
+  // A tester account (Tony Johnson is the first) exercises the app
+  // as a creator while staying invisible to businesses: discovery
+  // excludes them, /c/<handle> 404s, their photo is not public, and
+  // roster / approved counts skip them. Their own creator side
+  // keeps working normally: testing is the point.
+  const testerC = client();
+  const regT = await testerC("POST", "/api/auth/register", { ...basePayload, name: "Tony Tester", email: "launch-t@example.com", handle: "tonytester", city: "Norfolk" });
+  check("tester candidate registers", regT.status === 201, JSON.stringify(regT.data));
+  const testerId = regT.data.user.id;
+  check("new accounts start with the tester flag off", regT.data.user.tester === false, JSON.stringify(regT.data.user.tester));
+  const tPhotoUp = await testerC("POST", "/api/me/photo", { dataUrl: TINY_PNG });
+  check("tester candidate uploads a photo", tPhotoUp.status === 200, JSON.stringify(tPhotoUp.data));
+  await admin("POST", "/api/admin/review", { userId: testerId, decision: "approve" });
+  const statsWithT = await admin("GET", "/api/admin/stats");
+  check("before the flag: stats count 3 approved creators in Hampton Roads, 0 testers", statsWithT.data.perMarket["Hampton Roads"].creators === 3 && statsWithT.data.users.testers === 0, JSON.stringify([statsWithT.data.perMarket["Hampton Roads"], statsWithT.data.users]));
+  check("before the flag: the tester's public profile resolves", (await anon("GET", "/api/c/tonytester")).status === 200);
+  const discWithT = await creatorA("GET", "/api/discover?market=Hampton%20Roads");
+  check("before the flag: discovery shows all 3 approved creators", (discWithT.data.creators || []).length === 3, JSON.stringify((discWithT.data.creators || []).length));
+  check("the toggle refuses a non-admin (403)", (await creatorA("POST", "/api/admin/tester", { userId: testerId, tester: true })).status === 403);
+  check("the toggle refuses the signed-out (401)", (await client()("POST", "/api/admin/tester", { userId: testerId, tester: true })).status === 401);
+  check("the toggle refuses an unknown user (404)", (await admin("POST", "/api/admin/tester", { userId: "no-such-user", tester: true })).status === 404);
+  check("the toggle refuses a non-boolean flag (400)", (await admin("POST", "/api/admin/tester", { userId: testerId, tester: "yes" })).status === 400);
+  const flipT = await admin("POST", "/api/admin/tester", { userId: testerId, tester: true });
+  check("admin moves the creator to Tester (account stays approved)", flipT.status === 200 && flipT.data.user.tester === true && flipT.data.user.status === "approved", JSON.stringify(flipT.data));
+  const appsT = await admin("GET", "/api/admin/applications");
+  const decidedT = (appsT.data.decided || []).find((u) => u.id === testerId);
+  check("admin applications list carries the tester flag (drives the Tester badge)", !!decidedT && decidedT.tester === true, JSON.stringify(decidedT && decidedT.tester));
+  check("tester's public profile 404s exactly like a pending creator's", (await anon("GET", "/api/c/tonytester")).status === 404);
+  const discNoT = await creatorA("GET", "/api/discover?market=Hampton%20Roads");
+  check("discovery excludes the tester (back to the 2 real creators)", (discNoT.data.creators || []).length === 2 && !(discNoT.data.creators || []).some((c) => c.userId === testerId), JSON.stringify((discNoT.data.creators || []).map((c) => c.name)));
+  const pvDiscNoT = await admin("GET", "/api/admin/preview/discover?market=Hampton%20Roads");
+  check("business preview discovery excludes the tester too (same discovery query)", !(pvDiscNoT.data.creators || []).some((c) => c.userId === testerId));
+  const anonTPhoto = await client().raw(`/api/users/${testerId}/photo`);
+  check("the tester's photo is not public while flagged (401 anonymous)", anonTPhoto.status === 401, String(anonTPhoto.status));
+  const ownTPhoto = await testerC.raw(`/api/users/${testerId}/photo`);
+  check("the tester can still fetch their own photo (200)", ownTPhoto.status === 200 && ownTPhoto.contentType.includes("image/png"), String(ownTPhoto.status));
+  const statsNoT = await admin("GET", "/api/admin/stats");
+  check("stats exclude the tester from roster counts and report testers separately", statsNoT.data.perMarket["Hampton Roads"].creators === 2 && statsNoT.data.users.approved === statsWithT.data.users.approved - 1 && statsNoT.data.users.testers === 1, JSON.stringify([statsNoT.data.perMarket["Hampton Roads"], statsNoT.data.users]));
+  const marketsNoT = await admin("GET", "/api/admin/markets");
+  const hrNoT = (marketsNoT.data.markets || []).find((m) => m.name === "Hampton Roads");
+  check("admin markets: Hampton Roads approved creators back to 2 with a tester flagged", !!hrNoT && hrNoT.creatorsApproved === 2, JSON.stringify(hrNoT));
+  const meT = await testerC("GET", "/api/auth/me");
+  check("the tester still signs in and sees their own account (flag visible to them)", meT.status === 200 && meT.data.user.tester === true && meT.data.user.status === "approved", JSON.stringify(meT.data.user && [meT.data.user.tester, meT.data.user.status]));
+  const foundingT = await testerC("GET", "/api/me/founding");
+  check("the tester's founding page still works", foundingT.status === 200 && !!foundingT.data.founding, JSON.stringify(foundingT.data));
+  const patchT = await testerC("PATCH", "/api/me/profile", { neighborhood: "Ocean View" });
+  check("the tester can still edit their profile", patchT.status === 200 && patchT.data.user.creator.neighborhood === "Ocean View", JSON.stringify(patchT.data.user && patchT.data.user.creator && patchT.data.user.creator.neighborhood));
+  const unflipT = await admin("POST", "/api/admin/tester", { userId: testerId, tester: false });
+  check("admin moves the creator back to the roster", unflipT.status === 200 && unflipT.data.user.tester === false, JSON.stringify(unflipT.data));
+  check("back on the roster: the public profile resolves again", (await anon("GET", "/api/c/tonytester")).status === 200);
+  const discBackT = await creatorA("GET", "/api/discover?market=Hampton%20Roads");
+  check("back on the roster: discovery shows them again", (discBackT.data.creators || []).length === 3, JSON.stringify((discBackT.data.creators || []).length));
+  check("client ships the tester toggle (Move to Tester / Move to roster, Tester badge) in the admin applications list", appJs.text.includes("Move to Tester") && appJs.text.includes("Move to roster") && appJs.text.includes("setTester") && appJs.text.includes("/admin/tester") && appJs.text.includes(">Tester</span>"), "");
+  check("client stats tab shows the separate testers count", appJs.text.includes("Testers (excluded from roster counts)"), "");
+  await admin("POST", "/api/admin/tester", { userId: testerId, tester: true });
+
   // --- paid cash campaigns: a Creators-tier option only ---
   const creatorC = client();
   const regC = await creatorC("POST", "/api/auth/register", {

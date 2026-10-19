@@ -20,7 +20,11 @@
 //   - every send logs a campaign_email_sent event;
 //   - the Campaign tab's paste-import box is served in app.js and
 //     the exact payload shape it posts imports cleanly over a full
-//     admin session, without arming anything.
+//     admin session, without arming anything;
+//   - tester accounts (user.tester, set via POST /api/admin/tester,
+//     admin only) never receive campaign sends: their email is
+//     skipped at import, and an address flagged tester after it was
+//     queued is pruned by the sweep before any send.
 //
 // Run: node scripts/verify-campaign.mjs
 
@@ -271,6 +275,62 @@ try {
   const afterBox = await admin("GET", "/api/admin/campaign");
   check("imported pair queued on the default campaign", afterBox.data.counts.queued === queuedBefore + 2, JSON.stringify(afterBox.data.counts));
   check("campaign stays disarmed after a box import (import never arms)", afterBox.data.campaign.armed === false, JSON.stringify(afterBox.data.campaign));
+
+  // ---------- Part I: tester accounts never receive campaign sends ----------
+  part("I: tester exclusion");
+  const tony = makeClient();
+  const tonyReg = await tony("POST", "/api/auth/register", {
+    role: "creator", name: "Tony Tester", email: "tony-tester@example.com", password: "password123",
+    market: "Hampton Roads", city: "Norfolk", handle: "tonytester", categories: ["Food & Drink"],
+    compCategories: ["Restaurant meals"], tierBand: "Locals", followerCount: 2500, avgViews: 700,
+    localAudiencePct: 55, bio: "", agreedHonestPosts: true, agreedFtcDisclosure: true, agreedPostCompliance: true, agreedTerms: true,
+  });
+  check("tester candidate registered", tonyReg.status === 201, JSON.stringify(tonyReg.data));
+  const tonyId = tonyReg.data.user.id;
+  check("registration stores tester: false by default", tonyReg.data.user.tester === false, JSON.stringify(tonyReg.data.user.tester));
+  const tonyApprove = await admin("POST", "/api/admin/review", { userId: tonyId, decision: "approve" });
+  check("tester candidate approved", tonyApprove.status === 200 && tonyApprove.data.user.status === "approved", JSON.stringify(tonyApprove.data));
+  check("toggle refuses anonymous callers (401)", (await anon("POST", "/api/admin/tester", { userId: tonyId, tester: true })).status === 401);
+  check("toggle refuses non-admin creators (403)", (await creator("POST", "/api/admin/tester", { userId: tonyId, tester: true })).status === 403);
+  check("toggle refuses an unknown user (404)", (await admin("POST", "/api/admin/tester", { userId: "nobody", tester: true })).status === 404);
+  check("toggle refuses a non-boolean flag (400)", (await admin("POST", "/api/admin/tester", { userId: tonyId, tester: "yes" })).status === 400);
+  const flip = await admin("POST", "/api/admin/tester", { userId: tonyId, tester: true });
+  check("admin flags the creator as tester", flip.status === 200 && flip.data.user.tester === true, JSON.stringify(flip.data));
+  check("creator_marked_tester event logged", (await countEvents(admin, "creator_marked_tester")) === 1);
+  const impT = await admin("POST", "/api/admin/campaign/import", {
+    campaignId: "tester-test",
+    recipients: [
+      { email: "tony-tester@example.com", name: "Tony Tester", handle: "tonytester", market: "Hampton Roads", opener: "your posts" },
+      { email: "lateflag@example.com", name: "Late Flag", handle: "lateflag", market: "Hampton Roads", opener: "your posts" },
+      { email: "realprospect@example.com", name: "Real Prospect", handle: "realprospect", market: "Hampton Roads", opener: "your posts" },
+    ],
+  });
+  check("import skips the tester account address, queues the other two", impT.status === 200 && impT.data.imported === 2 && impT.data.skipped === 1, JSON.stringify(impT.data));
+  const tStatus = await admin("GET", "/api/admin/campaign?campaignId=tester-test");
+  check("tester-test queue: 2 queued, 1 skipped, 0 sent", tStatus.data.counts.queued === 2 && tStatus.data.counts.skipped === 1 && tStatus.data.counts.sent === 0, JSON.stringify(tStatus.data.counts));
+  // Flag the second address AFTER it was already queued: the sweep
+  // must prune it from the queue rather than send to it.
+  const late = makeClient();
+  const lateReg = await late("POST", "/api/auth/register", {
+    role: "creator", name: "Late Flag", email: "lateflag@example.com", password: "password123",
+    market: "Hampton Roads", city: "Norfolk", handle: "lateflag", categories: ["Food & Drink"],
+    compCategories: ["Restaurant meals"], tierBand: "Locals", followerCount: 1800, avgViews: 500,
+    localAudiencePct: 48, bio: "", agreedHonestPosts: true, agreedFtcDisclosure: true, agreedPostCompliance: true, agreedTerms: true,
+  });
+  check("late-flag creator registered", lateReg.status === 201, JSON.stringify(lateReg.data));
+  await admin("POST", "/api/admin/review", { userId: lateReg.data.user.id, decision: "approve" });
+  await admin("POST", "/api/admin/tester", { userId: lateReg.data.user.id, tester: true });
+  await admin("POST", "/api/admin/campaign/arm", { campaignId: "tester-test" });
+  const sentEventsBefore = await countEvents(admin, "campaign_email_sent");
+  const sweepT = await admin("POST", "/api/admin/campaign/sweep", { now: IN_WINDOW });
+  check("sweep sends only to the real prospect and prunes the newly flagged tester", sweepT.data.sweep.sent === 1 && sweepT.data.sweep.skippedTesters === 1, JSON.stringify(sweepT.data.sweep));
+  check("exactly one campaign_email_sent event from the tester-test sweep", (await countEvents(admin, "campaign_email_sent")) === sentEventsBefore + 1);
+  check("the pruned recipient is logged (campaign_recipient_skipped)", (await countEvents(admin, "campaign_recipient_skipped")) >= 1);
+  const tAfter = await admin("GET", "/api/admin/campaign?campaignId=tester-test");
+  check("after the sweep: 1 sent, 2 skipped, queue empty, auto-disarmed", tAfter.data.counts.sent === 1 && tAfter.data.counts.skipped === 2 && tAfter.data.counts.queued === 0 && tAfter.data.campaign.armed === false, JSON.stringify({ counts: tAfter.data.counts, armed: tAfter.data.campaign.armed }));
+  const unflip = await admin("POST", "/api/admin/tester", { userId: tonyId, tester: false });
+  check("admin can move a tester back to the roster", unflip.status === 200 && unflip.data.user.tester === false, JSON.stringify(unflip.data));
+  check("creator_unmarked_tester event logged", (await countEvents(admin, "creator_unmarked_tester")) === 1);
 } catch (err) {
   failed++;
   console.error("SUITE ERROR:", err && err.stack || err);
