@@ -124,10 +124,17 @@ const MANAGED_TALENT_BUDGET_DEFAULT = 500;
 //
 // The loop, per booking (comp or paid):
 //   - The booking carries a creatorCode: this creator's audience
-//     code at this business. The creator shares it in the post;
-//     their audience gets discountPct% off when they use it, and
-//     every use is rung up at the business's own register (SIGNL
-//     never integrates with a POS, ever).
+//     code at this business. The creator shares it in the post,
+//     and every use is rung up at the business's own register
+//     (SIGNL never integrates with a POS, ever). A code DISCOUNT
+//     is the business's choice, never a default (Jeff,
+//     2026-10-19): the business turns code discounts on and picks
+//     the percentage (discountEnabled / discountPct on the
+//     business record); a booking is stamped with the business's
+//     percentage when codes are on and 0 when they are off. The
+//     code is issued either way: with no discount it is a
+//     counting code, and no surface may promise the audience a
+//     percentage off the business never offered.
 //   - The business reports the tally back on the booking: how
 //     many code redemptions, and the total basket value rung with
 //     the code (POST /bookings/:id/code-redemptions).
@@ -145,7 +152,10 @@ const MANAGED_TALENT_BUDGET_DEFAULT = 500;
 // Aggregation sums values and costs first and divides once; scores
 // are never averaged. A zero cost basis returns a null score,
 // never NaN or Infinity.
-const ROAS_MODEL = { cpm: 22, like: 0.10, comment: 0.50, share: 1.00, defaultDiscountPct: 20 };
+// suggestedDiscountPct is only ever a SUGGESTION shown to a
+// business when it turns code discounts on; it is never applied
+// as a default stamp (see discountSettingOf below).
+const ROAS_MODEL = { cpm: 22, like: 0.10, comment: 0.50, share: 1.00, suggestedDiscountPct: 20 };
 const ROAS_LABEL = "SIGNL ROAS Score, our own model";
 const ROAS_REGISTER_BASIS = "Register value is spend tracked through the creator's audience code, rung up at the business's own register. It is a floor: customers who never used a code are not counted.";
 const ROAS_MEDIA_BASIS = `Media value is modeled at SIGNL's published rates ($${ROAS_MODEL.cpm} per 1,000 views, $${ROAS_MODEL.like.toFixed(2)} per like, $${ROAS_MODEL.comment.toFixed(2)} per comment, $${ROAS_MODEL.share.toFixed(2)} per share) on the creator's reported post numbers.`;
@@ -211,7 +221,11 @@ function roasFor(bookings) {
   let basketTotalAll = 0;
   for (const b of bookings) {
     const red = b.redemptions || null;
-    const pct = red && typeof red.discountPct === "number" ? red.discountPct : typeof b.discountPct === "number" ? b.discountPct : ROAS_MODEL.defaultDiscountPct;
+    // The discount percent comes from the booking's stamp (the
+    // business's opt-in choice at creation) or the tally's
+    // snapshot of it. A booking with neither reads as 0: codes
+    // are opt-in, so an unstamped booking promised no discount.
+    const pct = red && typeof red.discountPct === "number" ? red.discountPct : typeof b.discountPct === "number" ? b.discountPct : 0;
     const basket = red ? Math.max(0, Number(red.basketTotal) || 0) : 0;
     registerValue += basket;
     basketTotalAll += basket;
@@ -1040,6 +1054,55 @@ function reviewLinksView(business) {
     if (links[key]) out.push({ key, label: REVIEW_LINK_HOSTS[key].label, url: links[key] });
   }
   return out.length ? out : null;
+}
+// Audience-code discounts (Jeff, 2026-10-19): OPT-IN, always.
+// A business may offer its creators' audiences a discount for
+// using the creator's code; SIGNL never forces one and never
+// applies a default percentage. The setting lives on the
+// business record: discountEnabled (default false) and
+// discountPct (the business's own choice, 5..50, only meaningful
+// when enabled). The creatorCode itself is issued on every
+// booking either way: it is the counting handle the register
+// tally hangs on, discount or not.
+const DISCOUNT_PCT_MIN = 5;
+const DISCOUNT_PCT_MAX = 50;
+// The configured setting as a view: pct is the stored choice,
+// or the suggested value when the business has not picked one
+// yet (shown in the settings UI, never stamped from here).
+// effectivePct is what a new booking would carry: the choice
+// when on, 0 when off.
+function discountSettingOf(business) {
+  const enabled = !!(business && business.discountEnabled === true);
+  const stored = business && typeof business.discountPct === "number" && Number.isFinite(business.discountPct) ? business.discountPct : null;
+  const pct = stored !== null ? stored : ROAS_MODEL.suggestedDiscountPct;
+  return { enabled, pct, effectivePct: enabled ? pct : 0 };
+}
+// The percentage stamped on a new booking for this business:
+// their percentage when they opted in, 0 when they did not.
+function discountPctForBooking(business) {
+  return discountSettingOf(business).effectivePct;
+}
+// Validate a discount-setting write against the record's current
+// state. Input fields are optional (an omitted field keeps its
+// current value); enabling with no percentage anywhere falls
+// back to the suggested value, which the business can change.
+function validateDiscountSetting(input, business) {
+  const cur = discountSettingOf(business);
+  let enabled = cur.enabled;
+  let pct = business && typeof business.discountPct === "number" && Number.isFinite(business.discountPct) ? business.discountPct : null;
+  if (input.enabled !== undefined) {
+    if (typeof input.enabled !== "boolean") return { ok: false, error: "Code discounts on/off must be true or false" };
+    enabled = input.enabled;
+  }
+  if (input.pct !== undefined && input.pct !== null && input.pct !== "") {
+    const n = Number(input.pct);
+    if (!Number.isFinite(n) || n < DISCOUNT_PCT_MIN || n > DISCOUNT_PCT_MAX) return { ok: false, error: `Discount percent must be between ${DISCOUNT_PCT_MIN} and ${DISCOUNT_PCT_MAX}` };
+    pct = Math.round(n * 100) / 100;
+  } else if (input.pct === null) {
+    pct = null;
+  }
+  if (enabled && pct === null) pct = ROAS_MODEL.suggestedDiscountPct;
+  return { ok: true, enabled, pct };
 }
 // The Managed talent budget stored on a business record, with the
 // suggested default for records that predate the field.
@@ -2375,6 +2438,12 @@ async function genCode() {
 // NOTHING. No store.set, no logEvent, no metric moves; the bookings
 // exist only inside this response and nowhere else in the system.
 const PREVIEW_DASH_BUSINESS = { name: "Salt & Ember Kitchen", category: "Chef-driven restaurant", market: "Hampton Roads" };
+// Salt & Ember is presented as a business that HAS opted in to
+// audience-code discounts, at its own chosen 20 percent: that is
+// what keeps the simulated tallies below scoring exactly as they
+// always have. The dashboard says so in words next to the score.
+// (Discounts are every business's own opt-in, never a default.)
+const PREVIEW_DASH_DISCOUNT = { enabled: true, pct: ROAS_MODEL.suggestedDiscountPct };
 
 function hoursFrom(nowMs, h) {
   return new Date(nowMs + h * 3600 * 1000).toISOString();
@@ -2533,12 +2602,13 @@ async function previewDashboard() {
       compCostModeled: brief.compCost || null,
       // SIGNL ROAS simulation (Jeff, 2026-10-19): the audience
       // code this creator would share for Salt & Ember, the
-      // discount it carries, the register tally the business
-      // reported back (posted bookings only), and the comp's
-      // cost basis at the business's own cost.
+      // discount it carries (Salt & Ember opted in at 20 percent;
+      // see PREVIEW_DASH_DISCOUNT), the register tally the
+      // business reported back (posted bookings only), and the
+      // comp's cost basis at the business's own cost.
       creatorCode: previewCreatorCode(creator.creator ? creator.creator.handle : "", usedCreatorCodes),
-      discountPct: ROAS_MODEL.defaultDiscountPct,
-      redemptions: brief.redemptions ? { ...brief.redemptions, discountPct: ROAS_MODEL.defaultDiscountPct } : null,
+      discountPct: PREVIEW_DASH_DISCOUNT.pct,
+      redemptions: brief.redemptions ? { ...brief.redemptions, discountPct: PREVIEW_DASH_DISCOUNT.pct } : null,
       compCostActual: brief.compCost || null,
       visitWindow: brief.visitWindow,
       windowMode: "7days",
@@ -2697,6 +2767,10 @@ async function previewDashboard() {
   const managedSpent = Math.round(managedPaid.reduce((s, x) => s + x.businessTotal, 0) * 100) / 100;
   const managedView = {
     business: { name: "Harbor Table (Managed plan example)", category: "Seafood restaurant", market: PREVIEW_DASH_BUSINESS.market },
+    // The contrast case: Harbor Table has NOT turned code
+    // discounts on. Its creator codes would still be issued and
+    // tallied; they would carry no discount.
+    discountCodes: { enabled: false, pct: null },
     plan: { id: managedPlan.id, name: managedPlan.name, priceMonthly: managedPlan.priceMonthly, minMonths: managedPlan.minMonths, visitsPerMonth: managedPlan.visitsPerMonth },
     budget: {
       monthlyTalentBudget: MANAGED_TALENT_BUDGET_DEFAULT,
@@ -2708,7 +2782,7 @@ async function previewDashboard() {
   };
   return {
     preview: true,
-    business: { ...PREVIEW_DASH_BUSINESS, planId: plan.id, planName: plan.name },
+    business: { ...PREVIEW_DASH_BUSINESS, planId: plan.id, planName: plan.name, discountCodes: { ...PREVIEW_DASH_DISCOUNT } },
     plan: { id: plan.id, name: plan.name, priceMonthly: plan.priceMonthly, minMonths: plan.minMonths, visitsPerMonth: plan.visitsPerMonth, features: plan.features },
     rights: visitRightsForPlan(plan.id),
     standardVisit: STANDARD_VISIT,
@@ -2921,6 +2995,12 @@ async function handleRegister(event) {
       // Facebook): empty at sign-up, set from the Plan tab or by an
       // admin; host-validated at write time (validateReviewLinks).
       reviewLinks: {},
+      // Audience-code discounts: OFF at sign-up, always. The
+      // business may turn them on and pick a percentage (5..50)
+      // from the Plan tab or via an admin; bookings stamp 0 until
+      // they do. The creator code is still issued for counting.
+      discountEnabled: false,
+      discountPct: null,
       // Managed talent budget: every business record carries the
       // field; it only spends on the Managed plan. Not a deposit.
       monthlyTalentBudget: MANAGED_TALENT_BUDGET_DEFAULT,
@@ -3325,6 +3405,15 @@ async function route(event) {
         const v = validateReviewLinks(b.reviewLinks);
         if (!v.ok) return err(400, v.error);
         bz.reviewLinks = v.links;
+      }
+      // Audience-code discounts: the business's opt-in and its
+      // own percentage. Off unless they turn it on; the code is
+      // issued for counting either way.
+      if (b.discountEnabled !== undefined || b.discountPct !== undefined) {
+        const v = validateDiscountSetting({ enabled: b.discountEnabled, pct: b.discountPct }, bz);
+        if (!v.ok) return err(400, v.error);
+        bz.discountEnabled = v.enabled;
+        bz.discountPct = v.pct;
       }
       // Managed talent budget: a cap + authorization, not a
       // deposit. Editable any time; spends only on Managed.
@@ -3901,7 +3990,7 @@ async function route(event) {
       const target = (dash.bookings || []).find((x) => x.id === b.bookingId);
       if (!target) return err(404, "Simulated booking not found");
       if (!target.post) return err(400, "In this simulation, redemption tallies report against a delivered visit");
-      target.redemptions = { count, basketTotal: roasRound2(basketTotal), discountPct: target.discountPct || ROAS_MODEL.defaultDiscountPct };
+      target.redemptions = { count, basketTotal: roasRound2(basketTotal), discountPct: typeof target.discountPct === "number" ? target.discountPct : 0 };
       if (b.compCostActual !== undefined && b.compCostActual !== null && b.compCostActual !== "") {
         const cost = Number(b.compCostActual);
         if (!Number.isFinite(cost) || cost < 0 || cost > 100000000) return err(400, "Comp cost must be a dollar amount, 0 or more");
@@ -3933,6 +4022,23 @@ async function route(event) {
       await store.set(`user:${target.id}`, target);
       await logEvent({ type: "business_review_links_updated", actorId: user.id, actorRole: "admin", subjectId: target.id, market: target.market, data: { platforms: Object.keys(v.links) } });
       return json(200, { business: { userId: target.id, reviewLinks: v.links, reviewLinksView: reviewLinksView(target.business) } });
+    }
+    // Admin: set a business's audience-code discount setting
+    // (the founding-application/admin side of the field; the
+    // business can also set its own from the Plan tab). Discounts
+    // are the business's opt-in: off unless enabled here or by
+    // the business, at the business's own percentage (5..50).
+    if (method === "POST" && seg[1] === "discount-setting") {
+      const b = parseBody(event);
+      const target = b.userId ? await store.get(`user:${b.userId}`) : null;
+      if (!target || target.role !== "business" || !target.business) return err(404, "Business not found");
+      const v = validateDiscountSetting({ enabled: b.enabled, pct: b.pct }, target.business);
+      if (!v.ok) return err(400, v.error);
+      target.business = { ...target.business, discountEnabled: v.enabled, discountPct: v.pct };
+      target.updatedAt = nowIso();
+      await store.set(`user:${target.id}`, target);
+      await logEvent({ type: "business_discount_setting_updated", actorId: user.id, actorRole: "admin", subjectId: target.id, market: target.market, data: { enabled: v.enabled, pct: v.pct } });
+      return json(200, { business: { userId: target.id, discount: discountSettingOf(target.business) } });
     }
     // Business Preview dashboard (Jeff, 2026-10-19): the business
     // home - booked creators, visit codes, redemption, the post
@@ -4127,6 +4233,11 @@ async function route(event) {
       }
       const code = await genCode();
       const creatorCode = await genCreatorCode(user.creator ? user.creator.handle : "");
+      // The audience-code discount is the BUSINESS's opt-in:
+      // their percentage when they turned codes on, 0 when they
+      // did not. The code itself is issued either way.
+      const offerBiz = await store.get(`user:${offer.businessId}`);
+      const offerDiscountPct = discountPctForBooking(offerBiz && offerBiz.business);
       const ts = nowIso();
       const booking = {
         id: crypto.randomUUID(),
@@ -4156,13 +4267,14 @@ async function route(event) {
         postDeadline: null,
         replacementRequestedAt: null,
         // SIGNL ROAS (Jeff, 2026-10-19): the creator's audience
-        // code at this business, the discount it carries, the
-        // redemption tally the business will report back, and the
-        // comp's cost basis. The cost starts at the comp's stated
-        // value; the business reports its own actual cost with
-        // the redemption tally when it has one.
+        // code at this business, the discount it carries (the
+        // business's opt-in percentage, 0 when codes are off),
+        // the redemption tally the business will report back, and
+        // the comp's cost basis. The cost starts at the comp's
+        // stated value; the business reports its own actual cost
+        // with the redemption tally when it has one.
         creatorCode,
-        discountPct: ROAS_MODEL.defaultDiscountPct,
+        discountPct: offerDiscountPct,
         redemptions: null,
         compCostActual: offer.dollarCap,
       };
@@ -4257,11 +4369,13 @@ async function route(event) {
       postDeadline: null,
       replacementRequestedAt: null,
       // SIGNL ROAS (Jeff, 2026-10-19): paid visits carry an
-      // audience code too. The cost basis is what the visit cost
-      // the business (rate + the 3% business side); the tally and
-      // discount work exactly like a comp visit's.
+      // audience code too, stamped with this business's own
+      // discount opt-in (their percentage, or 0 when codes are
+      // off). The cost basis is what the visit cost the business
+      // (rate + the 3% business side); the tally works exactly
+      // like a comp visit's.
       creatorCode,
-      discountPct: ROAS_MODEL.defaultDiscountPct,
+      discountPct: discountPctForBooking(user.business),
       redemptions: null,
       compCostActual: math.businessTotal,
       paidLane: {
@@ -4662,7 +4776,10 @@ async function route(event) {
     if (!Number.isInteger(count) || count < 0 || count > 1000000) return err(400, "Redemption count must be a whole number, 0 or more");
     const basketTotal = Number(b.basketTotal);
     if (!Number.isFinite(basketTotal) || basketTotal < 0 || basketTotal > 100000000) return err(400, "Basket total must be a dollar amount, 0 or more");
-    let discountPct = typeof booking.discountPct === "number" ? booking.discountPct : ROAS_MODEL.defaultDiscountPct;
+    // The tally snapshots the booking's stamped percentage. A
+    // booking with no stamp promised no discount: 0, never a
+    // default (codes are the business's opt-in).
+    let discountPct = typeof booking.discountPct === "number" ? booking.discountPct : 0;
     if (b.discountPct !== undefined && b.discountPct !== null && b.discountPct !== "") {
       const pct = Number(b.discountPct);
       if (!Number.isFinite(pct) || pct < 0 || pct > 100) return err(400, "Discount percent must be between 0 and 100");

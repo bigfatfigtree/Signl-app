@@ -710,6 +710,16 @@ package. Verified in `scripts/verify-paidlane.mjs` (58 checks).
   creator's offer view and completed-visit card show a courtesy
   block ("Their review pages") linking out. Display-if-exists
   only, never mandatory, never on public profiles.
+- **Audience-code discounts.** `business.discountEnabled`
+  (default `false`) + `business.discountPct` (the business's
+  own percentage, 5..50, null until chosen). Set by the business
+  itself (`PATCH /api/me/profile`, Plan tab in the UI) or by an
+  admin (`POST /api/admin/discount-setting`, editor in Admin ->
+  Applications; logs `business_discount_setting_updated`; both
+  validated by `validateDiscountSetting`). Bookings stamp the
+  effective percentage (see the ROAS section). Opt-in only:
+  nothing anywhere applies a discount the business did not
+  choose.
 - **Managed talent budget.** `business.monthlyTalentBudget`
   (default 500 at registration and normalized onto legacy records
   at plan selection; editable via `PATCH /api/me/profile`, Plan
@@ -746,19 +756,37 @@ spec (`signl-standard-visit-and-compliance.md`, "The SIGNL ROAS
 Score"); this section is the runbook.
 
 - **Constants.** One object in `netlify/functions/lib/router.js`:
-  `ROAS_MODEL = { cpm: 22, like: 0.10, comment: 0.50, share: 1.00, defaultDiscountPct: 20 }`
+  `ROAS_MODEL = { cpm: 22, like: 0.10, comment: 0.50, share: 1.00, suggestedDiscountPct: 20 }`
   (SIGNL's published model rates). `GET /api/bootstrap` ships it
   as `roasModel` with the label. Change rates there and only
-  there.
+  there. `suggestedDiscountPct` is a suggestion shown to a
+  business when it enables code discounts; it is never stamped
+  anywhere (there is no default discount).
+- **Discount opt-in.** A code discount is the BUSINESS's
+  choice, never forced and never defaulted (Jeff, 2026-10-19).
+  The business record carries `discountEnabled` (default
+  `false`) and `discountPct` (the business's own percentage,
+  validated 5..50, only meaningful when enabled). Settable from
+  the Plan tab (`PATCH /me/profile` with `discountEnabled` /
+  `discountPct`) and by an admin (`POST /api/admin/discount-setting`
+  with `{ userId, enabled, pct }`, logs
+  `business_discount_setting_updated`); both run through
+  `validateDiscountSetting`. Turning codes off keeps the chosen
+  percentage stored but applies 0.
 - **Creator codes.** Every booking (comp accept and paid) is
   stamped at creation with `creatorCode` (creator handle base,
   uppercase alphanumerics capped at 12, plus a 4-char suffix;
   uniqueness enforced through the `ccode:` index, same retry
-  discipline as visit codes), `discountPct` (default 20), and
-  `redemptions: null`. The creator's booking view shows the code
-  with the share-it framing; the business sees it on the visit
-  card. Public `/c/` profiles never carry it (the payload is a
-  strict whitelist; the ROAS suite asserts its absence).
+  discipline as visit codes), `discountPct` (the business's
+  percentage when it opted in, **0 when it did not**), and
+  `redemptions: null`. The code is issued either way: it is the
+  counting handle the register tally hangs on. The creator's
+  booking view branches on the stamp: opted in, "your audience
+  gets {pct}% off"; off, the code is presented as a counting
+  code with no percentage promised. The business sees the same
+  branch on the visit card. Public `/c/` profiles never carry
+  the code (the payload is a strict whitelist; the ROAS suite
+  asserts its absence).
 - **Cost basis.** `booking.compCostActual` starts at the comp's
   stated value for comp bookings (the dashboard's "comp given at
   the business's own cost" convention) and at the business's
@@ -797,7 +825,12 @@ Score"); this section is the runbook.
   reported numbers (comments and shares included), so Salt &
   Ember shows Score 6.29x, all-in 5.06x, $804 register, $741.70
   media, $85 comp at cost + $160.80 discounts, over the Growth
-  allocation. The old CPM-only media line is gone.
+  allocation. The old CPM-only media line is gone. Salt & Ember
+  is presented as a business that opted IN to code discounts at
+  its chosen 20 percent (`dashboard.business.discountCodes`),
+  and the dashboard says so in words beside the score; Harbor
+  Table, the Managed example, is presented with codes OFF
+  (`managedView.discountCodes`).
   `POST /api/admin/preview/code-redemptions` recomputes a
   simulated tally in memory and returns the moved scores; it
   writes nothing and logs nothing, and the next dashboard load
@@ -806,8 +839,14 @@ Score"); this section is the runbook.
   verify`): the worked example end to end (media 449.40,
   discount 97.20, comp cost 15 -> 8.34, all-in 6.58), codes on
   comp + paid bookings, public-profile absence, endpoint auth
-  and validation, replace-not-increment, edge cases, and the
-  preview zero-write invariant.
+  and validation, replace-not-increment, edge cases, the
+  preview zero-write invariant, and the discount opt-in:
+  codes-off bookings stamp 0 (comp and paid), codes-on bookings
+  stamp the business's percentage via both the admin endpoint
+  and the Plan-tab write (with range/boolean validation on
+  both), codes-off tallies count with zero discount cost and a
+  computed score, and the preview presents Salt & Ember codes
+  on / Harbor Table codes off.
 
 ## Environment variables
 
@@ -862,7 +901,9 @@ production. Locally they go in the shell.
   payload under `business` (businessName, category, plan, planName,
   planPriceMonthly, planMinMonths, billingStatus, planSelectedAt,
   reviewLinks ({ google, yelp, tripadvisor, facebook }, optional
-  host-validated public review-page URLs), monthlyTalentBudget
+  host-validated public review-page URLs), discountEnabled +
+  discountPct (audience-code discount opt-in, default off, and
+  the business's own percentage 5..50), monthlyTalentBudget
   (Managed plan spending cap for paid creator bookings, default
   500, not a deposit)).
 - `email:{email}` uniqueness index to the user id.
@@ -883,7 +924,8 @@ production. Locally they go in the shell.
   (held/released/refunded), paymentNote, bookedAt, proofAt,
   releasedAt, refundedAt, refundReason }). ROAS (2026-10-19) adds
   creatorCode (the per-creator audience code), discountPct
-  (default 20), compCostActual (cost basis; starts at the comp's
+  (the business's opt-in percentage at creation, 0 when the
+  business has code discounts off), compCostActual (cost basis; starts at the comp's
   stated value, or the paid booking's business total), and
   redemptions ({ count, basketTotal, discountPct, reportedAt,
   reportedBy } or null; written by the business's tally reports).

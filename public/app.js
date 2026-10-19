@@ -1546,14 +1546,28 @@ function visitCard(b, role) {
       : `<p class="small"><span class="badge tier">Paid visit</span> Creator rate $${lane.rate} &middot; you pay $${lane.businessTotal} (rate + 3%) &middot; the creator receives $${lane.creatorNet}. ${escrowBadge}<br><span class="muted">${esc(lane.paymentNote)}</span></p>`;
   }
   if (b.creatorCode) {
-    const pct = typeof b.discountPct === "number" ? b.discountPct : 20;
-    html += role === "creator"
-      ? `
+    // The discount is the business's opt-in, stamped on the
+    // booking: their percentage when they turned code discounts
+    // on, 0 when they did not. At 0 the code is a counting code
+    // only and the copy must never promise a percentage off.
+    const pct = typeof b.discountPct === "number" ? b.discountPct : 0;
+    if (role === "creator") {
+      html += pct > 0
+        ? `
     <div class="showcase-block">
       <h4>Your audience code at ${esc(b.businessName)}: ${esc(b.creatorCode)}</h4>
       <p class="small" style="margin:0">Share it in your post: your audience gets ${pct}% off when they use it at ${esc(b.businessName)}, and every use is tracked back to this visit. It is how the business sees the customers your post actually sent through the door, and it feeds your SIGNL track record.</p>
     </div>`
-      : `<p class="small">Audience code for this visit: <strong>${esc(b.creatorCode)}</strong> (${pct}% off for customers who use it). It is rung up at your own register; report the tally on this card after the visit and it feeds the visit's SIGNL ROAS Score.</p>`;
+        : `
+    <div class="showcase-block">
+      <h4>Your audience code at ${esc(b.businessName)}: ${esc(b.creatorCode)}</h4>
+      <p class="small" style="margin:0">Share it in your post so the business can count the customers it sends through the door: every use is tracked back to this visit, and it feeds your SIGNL track record. This business has not turned on a code discount, so there is no percentage off to promise; the code is how your visit gets counted.</p>
+    </div>`;
+    } else {
+      html += pct > 0
+        ? `<p class="small">Audience code for this visit: <strong>${esc(b.creatorCode)}</strong> (${pct}% off for customers who use it, your chosen code discount). It is rung up at your own register; report the tally on this card after the visit and it feeds the visit's SIGNL ROAS Score.</p>`
+        : `<p class="small">Audience code for this visit: <strong>${esc(b.creatorCode)}</strong>. You have not turned on a code discount, so it is a counting code only: no percentage off for customers who use it. It is rung up at your own register; report the tally on this card after the visit and it feeds the visit's SIGNL ROAS Score.</p>`;
+    }
   }
   if (role === "creator" && b.codeStatus === "issued") {
     html += `
@@ -2060,7 +2074,27 @@ function renderPlanTab() {
     <p class="small muted">Your coordinator spends this on paid creator bookings for you. It is a spending cap and an authorization, not a deposit: each booking escrows on its own, and SIGNL holds each payment until the post is live.</p>
     <div class="field"><label>Budget per month ($)</label><input type="number" id="me-talent-budget" min="0" step="1" value="${esc(String(u.business.monthlyTalentBudget == null ? 500 : u.business.monthlyTalentBudget))}"></div>
     <button class="btn" onclick="saveTalentBudget()">Save budget</button> <span id="tb-ok" class="saved"></span>` : ""}
+  </div>
+  <div class="panel mt">
+    <h3>Audience code discount</h3>
+    <p class="small muted">Every creator who visits you gets a personal audience code, and the code counts the customers their post sends you whether or not it carries a discount. A discount is entirely your choice: it is off unless you turn it on, and the percentage is yours to pick (5 to 50). Nothing is ever applied by default. New bookings carry the setting you save here; bookings already made keep the setting they were created with.</p>
+    <label style="font-weight:500"><input type="checkbox" id="me-discount-enabled" style="width:auto" ${u.business.discountEnabled ? "checked" : ""}> Offer a discount when customers use a creator's code</label>
+    <div class="field" style="margin-top:8px"><label>Discount percent (%)</label><input type="number" id="me-discount-pct" min="5" max="50" step="1" value="${esc(String(u.business.discountPct == null ? ((state.boot.roasModel && state.boot.roasModel.suggestedDiscountPct) || 20) : u.business.discountPct))}"></div>
+    <p class="small muted">Most businesses that turn this on start at ${esc(String((state.boot.roasModel && state.boot.roasModel.suggestedDiscountPct) || 20))}%. With codes off, the creator's card shows the code as a counting code and promises their audience nothing.</p>
+    <button class="btn" onclick="saveMyDiscount()">Save code discount</button> <span id="disc-ok" class="saved"></span>
   </div>`;
+}
+
+async function saveMyDiscount() {
+  try {
+    const pctRaw = document.getElementById("me-discount-pct").value;
+    const data = await api("PATCH", "/me/profile", {
+      discountEnabled: document.getElementById("me-discount-enabled").checked,
+      discountPct: pctRaw === "" ? undefined : Number(pctRaw),
+    });
+    state.user = data.user;
+    document.getElementById("disc-ok").textContent = "Saved.";
+  } catch (err) { alert(err.message); }
 }
 
 async function saveMyReviewLinks() {
@@ -2405,7 +2439,7 @@ async function loadApplications() {
         <td>${fmtDate(u.createdAt)}</td>
         <td>${u.status === "pending"
           ? `<button class="btn small-btn" onclick="reviewApp('${u.id}','approve')">Approve</button> <button class="btn small-btn danger" onclick="reviewApp('${u.id}','reject')">Reject</button>`
-          : `<span class="badge ${u.status === "approved" ? "ok" : "bad"}">${esc(u.status)}</span>${u.role === "creator" && u.tester ? ` <span class="badge warn">Tester</span>` : ""}${u.role === "creator" && u.status === "approved" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="setTester('${u.id}', ${u.tester ? "false" : "true"})">${u.tester ? "Move to roster" : "Move to Tester"}</button>` : ""}`}${u.role === "business" && u.business ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleReviewLinks('${u.id}')">Review links</button><div id="rl-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px">${["google", "yelp", "tripadvisor", "facebook"].map((k) => `<div class="field"><label>${esc(k)}</label><input id="rl-${k}-${u.id}" type="url" value="${esc((u.business.reviewLinks || {})[k] || "")}" placeholder="https://"></div>`).join("")}<button class="btn small-btn" onclick="saveReviewLinks('${u.id}')">Save review links</button></div>` : ""}</td>
+          : `<span class="badge ${u.status === "approved" ? "ok" : "bad"}">${esc(u.status)}</span>${u.role === "creator" && u.tester ? ` <span class="badge warn">Tester</span>` : ""}${u.role === "creator" && u.status === "approved" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="setTester('${u.id}', ${u.tester ? "false" : "true"})">${u.tester ? "Move to roster" : "Move to Tester"}</button>` : ""}`}${u.role === "business" && u.business ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleReviewLinks('${u.id}')">Review links</button><div id="rl-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px">${["google", "yelp", "tripadvisor", "facebook"].map((k) => `<div class="field"><label>${esc(k)}</label><input id="rl-${k}-${u.id}" type="url" value="${esc((u.business.reviewLinks || {})[k] || "")}" placeholder="https://"></div>`).join("")}<button class="btn small-btn" onclick="saveReviewLinks('${u.id}')">Save review links</button></div><br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleDiscountEditor('${u.id}')">Code discount</button><div id="disc-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px"><label style="font-weight:500"><input type="checkbox" id="disc-enabled-${u.id}" style="width:auto" ${u.business.discountEnabled ? "checked" : ""}> Code discounts on (business's opt-in)</label><div class="field"><label>Discount percent (5 to 50)</label><input id="disc-pct-${u.id}" type="number" min="5" max="50" step="1" value="${esc(String(u.business.discountPct == null ? 20 : u.business.discountPct))}"></div><button class="btn small-btn" onclick="saveDiscountSetting('${u.id}')">Save code discount</button></div>` : ""}</td>
       </tr>`;
     };
     el.innerHTML = `
@@ -2465,6 +2499,27 @@ async function saveReviewLinks(userId) {
         tripadvisor: document.getElementById("rl-tripadvisor-" + userId).value,
         facebook: document.getElementById("rl-facebook-" + userId).value,
       },
+    });
+    loadApplications();
+  } catch (err) { alert(err.message); }
+}
+
+// Admin-side editor for a business's audience-code discount
+// setting (the founding-application side of the field; the
+// business can also set its own from the Plan tab). Discounts
+// are opt-in; the server validates the percentage range.
+function toggleDiscountEditor(userId) {
+  const el = document.getElementById("disc-edit-" + userId);
+  if (el) el.style.display = el.style.display === "none" ? "" : "none";
+}
+
+async function saveDiscountSetting(userId) {
+  try {
+    const pctRaw = document.getElementById("disc-pct-" + userId).value;
+    await api("POST", "/admin/discount-setting", {
+      userId,
+      enabled: document.getElementById("disc-enabled-" + userId).checked,
+      pct: pctRaw === "" ? undefined : Number(pctRaw),
     });
     loadApplications();
   } catch (err) { alert(err.message); }
@@ -2907,7 +2962,7 @@ function pvBookingCard(b) {
       html += `<p class="small">Your comp produced <strong>${fmtNum(p.views)} views &middot; ${fmtNum(p.likes)} likes &middot; ${fmtNum(p.comments || 0)} comments &middot; ${fmtNum(p.shares || 0)} shares</strong> (creator-reported ${esc(fmtDate(p.reportedAt))}).</p>`;
     }
     if (b.creatorCode) {
-      html += `<p class="small">Audience code for this creator: <strong>${esc(b.creatorCode)}</strong> (${b.discountPct}% off). It is shared in the post and rung up at your own register; the tally below is what the business reported back.</p>`;
+      html += `<p class="small">Audience code for this creator: <strong>${esc(b.creatorCode)}</strong>${b.discountPct > 0 ? ` (${b.discountPct}% off, the discount this business turned on)` : " (counting code only: this business has not turned on a code discount)"}. It is shared in the post and rung up at your own register; the tally below is what the business reported back.</p>`;
     }
     if (b.redemptions) {
       html += `<p class="small">Code tally: <strong>${b.redemptions.count} customers used it, $${fmtMoney(b.redemptions.basketTotal)} rung up</strong> at the register.</p>`;
@@ -2994,6 +3049,7 @@ function pvManagedHtml(mv) {
       <div class="stat"><div class="num">$${fmtNum(b.remaining)}</div><div class="lbl">Remaining this month</div></div>
     </div>
     <p class="small muted">${esc(b.note)}</p>
+    ${mv.discountCodes && !mv.discountCodes.enabled ? `<p class="small muted"><strong>Audience-code discounts: off.</strong> Harbor Table has not turned code discounts on, so its creator codes are counting codes only: they track the customers a post sends in, and promise no percentage off. Turning them on, and picking the percentage, is the business's call whenever it wants.</p>` : ""}
     ${rows || `<p class="small muted">No paid bookings yet this month.</p>`}
     <p class="small muted">Paid bookings are the optional lane: a specific creator at her own listed rate, 6% total fee split evenly (business +3%, creator keeps 97%). Comp-only is always fine, forever. ${b.paidBookings && b.paidBookings.length ? esc(b.paidBookings[0].paymentNote) : ""}</p>
   </section>`;
@@ -3058,6 +3114,7 @@ function previewDashboardHtml(d) {
         <div class="stat"><div class="num">$${fmtMoney(s.roas.compCost + s.roas.discountCost)}</div><div class="lbl">Visit costs: $${fmtMoney(s.roas.compCost)} comps at cost + $${fmtMoney(s.roas.discountCost)} code discounts</div></div>
       </div>
       <p class="small muted" style="margin-bottom:0">${esc(s.roas.registerBasis)} ${esc(s.roas.mediaBasis)}${s.roas.planKnown ? ` The all-in score also counts the ${esc(plan.name)} plan allocation of $${fmtMoney(s.roas.planAllocation)} across the delivered visits.` : ""} This is SIGNL's own return model, not an ad platform's: the register side is spend we can point at, the media side is priced in the open.</p>
+      ${d.business.discountCodes && d.business.discountCodes.enabled ? `<p class="small" style="margin-bottom:0"><strong>Audience-code discounts: on.</strong> ${esc(d.business.name)} turned code discounts on and chose ${d.business.discountCodes.pct}% off: that was their call and their percentage, which is why the tallies above carry a discount cost. Codes are always optional; a business that leaves them off still gets the code and the count, with no discount promised.</p>` : ""}
     </div>` : ""}
     <div class="showcase-block"><h4>Your plan's content rights</h4>
       <p class="small" style="margin:0 0 4px"><span class="rules">With the ${esc(plan.name)} plan you can:</span> share a delivered post with the creator tagged; repost it on your own feed; run it as an ad while your SIGNL account is active (the ad right ends if the account ends).</p>
