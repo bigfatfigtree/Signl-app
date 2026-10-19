@@ -50,8 +50,9 @@ const CODE_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 // visitRightsForPlan): Self-Service shares natively; Growth and
 // Managed also repost on their own feed and may run the post as an
 // ad while their account is active. Nobody, on any plan, edits the
-// creator's content. Paid hero campaigns are a separate product
-// (bespoke paid creator work at a 20% platform fee) and have nothing
+// creator's content. Paid creator bookings are a separate lane
+// (the creator's own listed rate, a 6% service fee split 3% to the
+// business and 3% to the creator) and have nothing
 // to do with these usage rights. This object is the single source of
 // truth: it ships in bootstrap, on public profiles, on discovery
 // cards, in the offer composer, and in the creator's offer checklist.
