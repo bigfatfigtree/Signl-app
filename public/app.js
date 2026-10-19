@@ -113,22 +113,40 @@ async function renderPublicProfile() {
     return;
   }
   const place = p.unlisted ? esc(p.city) : esc(p.market);
+  const initial = esc((p.name || "?").trim().charAt(0).toUpperCase() || "?");
   app.innerHTML = `
-  <section class="panel" style="max-width:640px;margin:20px auto">
-    <div class="flex-between">
-      <div style="display:flex;gap:16px;align-items:flex-start">
-        ${p.photoUrl ? `<img class="profile-photo" src="${esc(p.photoUrl)}" alt="">` : `<span class="profile-photo avatar-initial">${esc((p.name || "?").trim().charAt(0).toUpperCase() || "?")}</span>`}
-        <div>
-          <h2 style="margin:0">${esc(p.name)}</h2>
-          <p class="muted" style="margin:4px 0">@<a href="${esc(p.instagramUrl)}" target="_blank" rel="noopener">${esc(p.handle)}</a> &middot; ${place}${!p.unlisted && p.city ? ` &middot; ${esc(p.city)}` : ""}${p.neighborhood ? ` &middot; ${esc(p.neighborhood)}` : ""}</p>
-        </div>
+  <div style="max-width:720px;margin:20px auto">
+    <div class="creator-card full">
+      <div class="cc-photo">
+        ${p.photoUrl ? `<img src="${esc(p.photoUrl)}" alt="">` : `<div class="cc-mono"><span>${initial}</span></div>`}
+        ${p.tierBand ? `<span class="cc-tier">${esc(p.tierBand)}</span>` : ""}
+        ${p.paidRate ? `<span class="cc-paid">Paid bookings: $${esc(String(p.paidRate))}</span>` : ""}
       </div>
-      <span class="badge ok" style="font-size:0.95rem;padding:6px 14px">Founding Creator</span>
+      <div class="cc-body">
+        <div class="cc-id">
+          <div class="cc-name">${esc(p.name)}</div>
+          <div class="cc-handle">@<a href="${esc(p.instagramUrl)}" target="_blank" rel="noopener">${esc(p.handle)}</a></div>
+          <div class="cc-chips">
+            <span class="cc-chip market">${place}</span>
+            ${!p.unlisted && p.city ? `<span class="cc-chip">${esc(p.city)}</span>` : ""}
+            ${p.neighborhood ? `<span class="cc-chip">${esc(p.neighborhood)}</span>` : ""}
+            <span class="cc-chip">Founding Creator</span>
+            ${p.foundingBand ? `<span class="cc-chip">In the first ${p.foundingBand} founding creators in ${place}</span>` : ""}
+          </div>
+        </div>
+        <p>${scoreBadge(p.localImpactScore)}${p.momentumPoints ? ` <span class="badge info">Momentum ${p.momentumPoints} pts</span>` : ""}</p>
+        <div class="cc-local">
+          ${p.localAudiencePct === null || p.localAudiencePct === undefined
+            ? `<div class="lbl">Local audience not reported yet</div>`
+            : `<div class="big">${p.localAudiencePct}%</div><div class="lbl">of their followers are local</div><div class="src">${esc(p.localAudienceSource || "Self-reported")}</div>`}
+        </div>
+        <div class="cc-meta">
+          <div><div class="k">Stacked audience</div><div class="v">${fmtNum(totalAudienceOf(p))}</div></div>
+        </div>
+        ${stackList(p).length ? `<div class="cc-platforms">${stackList(p).map((x) => `<span class="cc-plat">${esc(x.label)} ${fmtNum(x.count)}</span>`).join("")}</div>` : ""}
+      </div>
     </div>
-    <p class="mt">${p.localAudiencePct === null || p.localAudiencePct === undefined ? "Local audience not reported yet" : `<strong>${p.localAudiencePct}%</strong> of their followers are local <span class="badge info">${esc(p.localAudienceSource || "Self-reported")}</span>`}</p>
-    <p>${scoreBadge(p.localImpactScore)}${p.momentumPoints ? ` <span class="badge info">Momentum ${p.momentumPoints} pts</span>` : ""} <span class="badge tier">${esc(p.tierBand || "")}</span></p>
-    <p class="small">${audienceLineHtml(p)}</p>
-    ${p.foundingBand ? `<p><span class="badge tier" style="padding:6px 14px">In the first ${p.foundingBand} founding creators in ${place}</span></p>` : ""}
+    <section class="panel" style="margin-top:20px">
     ${p.categories && p.categories.length ? `<p class="small">${p.categories.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
     ${p.compCategories && p.compCategories.length ? `<p class="small muted">Open to comps: ${p.compCategories.map(esc).join(", ")}</p>` : ""}
     <p class="small">${p.paidRate ? `<span class="badge tier">Paid bookings: $${esc(String(p.paidRate))}</span> ` : ""}${p.compOpen === false ? `<span class="badge warn">Paid visits only</span>` : `<span class="badge info">Open to comp visits</span>`}</p>
@@ -141,7 +159,8 @@ async function renderPublicProfile() {
     <div class="cta-row" style="justify-content:flex-start">
       ${state.user ? `<a class="btn ghost" href="#" onclick="return go('dashboard')">Back to my dashboard</a>` : `<a class="btn" href="#" onclick="return go('join-creator')">Become a Founding Creator</a> <a class="btn ghost" href="#" onclick="return go('for-businesses')">For Businesses</a>`}
     </div>
-  </section>`;
+    </section>
+  </div>`;
 }
 
 function inviteUrlFor(u) {
@@ -1029,24 +1048,40 @@ function creatorProfileDetailHtml(c, preview) {
   const localTxt = p.localAudiencePct === null || p.localAudiencePct === undefined
     ? "Local audience not reported yet"
     : `${p.localAudiencePct}% local audience <span class="badge info">${esc(p.localAudienceSource || "Self-reported")}</span>`;
+  const initial = esc((c.name || "?").trim().charAt(0).toUpperCase() || "?");
   return `
   <div class="panel">
     <p><button class="btn small-btn ghost" onclick="${preview ? "previewBackToResults()" : "backToDiscover()"}">&larr; Back to results</button></p>
-    <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
-      ${avatarHtml(c, "profile-photo")}
-      <div style="flex:1;min-width:240px">
-        <h3 style="margin:0">${esc(c.name)}</h3>
-        <p class="muted" style="margin:4px 0">@<a href="${esc(p.instagramUrl || "")}" target="_blank" rel="noopener">${esc(p.handle || "")}</a> &middot; ${esc(c.market)}${c.city ? ` &middot; ${esc(c.city)}` : ""}${c.neighborhood ? ` &middot; ${esc(c.neighborhood)}` : ""}</p>
-        <p>${scoreBadge(c.localImpactScore)}${p.openToPaidCampaigns ? ` <span class="badge tier">Open to paid campaigns</span>` : ""}${paidLaneBadgesHtml(p)}${c.momentum && c.momentum.points ? ` <span class="badge info">Momentum ${c.momentum.points} pts</span>` : ""} <span class="badge tier">${esc(p.tierBand || "")}</span>${c.foundingBand ? ` <span class="badge tier">Founding creator, first ${c.foundingBand} in market</span>` : ""}</p>
-        <p>${localTxt}</p>
+    <div class="creator-card full">
+      <div class="cc-photo">
+        ${c.photoUrl ? `<img src="${esc(c.photoUrl)}" alt="">` : `<div class="cc-mono"><span>${initial}</span></div>`}
+        ${p.tierBand ? `<span class="cc-tier">${esc(p.tierBand)}</span>` : ""}
+        ${p.paidRate ? `<span class="cc-paid">Paid bookings: $${esc(String(p.paidRate))}</span>` : ""}
+      </div>
+      <div class="cc-body">
+        <div class="cc-id">
+          <div class="cc-name">${esc(c.name)}</div>
+          <div class="cc-handle">@<a href="${esc(p.instagramUrl || "")}" target="_blank" rel="noopener">${esc(p.handle || "")}</a></div>
+          <div class="cc-chips">
+            <span class="cc-chip market">${esc(c.market)}</span>
+            ${c.city ? `<span class="cc-chip">${esc(c.city)}</span>` : ""}
+            ${c.neighborhood ? `<span class="cc-chip">${esc(c.neighborhood)}</span>` : ""}
+            ${c.foundingBand ? `<span class="cc-chip">Founding creator, first ${c.foundingBand} in market</span>` : ""}
+          </div>
+        </div>
+        <p>${scoreBadge(c.localImpactScore)}${p.openToPaidCampaigns ? ` <span class="badge tier">Open to paid campaigns</span>` : ""}${paidLaneBadgesHtml(p)}${c.momentum && c.momentum.points ? ` <span class="badge info">Momentum ${c.momentum.points} pts</span>` : ""}</p>
+        <div class="cc-local">
+          ${p.localAudiencePct === null || p.localAudiencePct === undefined
+            ? `<div class="lbl">Local audience not reported yet</div>`
+            : `<div class="big">${p.localAudiencePct}%</div><div class="lbl">of their followers are local</div><div class="src">${esc(p.localAudienceSource || "Self-reported")}</div>`}
+        </div>
+        <div class="cc-meta">
+          <div><div class="k">Total audience (all platforms)</div><div class="v">${fmtNum(totalAudienceOf(c))}</div></div>
+          <div><div class="k">Typical views</div><div class="v">${fmtNum(p.avgViews)}</div></div>
+        </div>
+        ${stackList(c).length ? `<div class="cc-platforms">${stackList(c).map((x) => `<span class="cc-plat">${esc(x.label)} ${fmtNum(x.count)}</span>`).join("")}</div>` : ""}
       </div>
     </div>
-    <div class="stat-row mt">
-      <div class="stat"><div class="num">${fmtNum(totalAudienceOf(c))}</div><div class="lbl">Total audience (all platforms)</div></div>
-      <div class="stat"><div class="num">${fmtNum(p.avgViews)}</div><div class="lbl">Typical views</div></div>
-      <div class="stat"><div class="num">${p.localAudiencePct === null || p.localAudiencePct === undefined ? "—" : p.localAudiencePct + "%"}</div><div class="lbl">Followers local (${esc(p.localAudienceSource || "Self-reported")})</div></div>
-    </div>
-    ${stackList(c).length ? `<p class="small muted">Where the audience lives: ${stackList(c).map((x) => `${esc(x.label)} ${fmtNum(x.count)}`).join(" &middot; ")}</p>` : ""}
     ${c.standing === "paused" ? `<p><span class="badge warn">Paused: a late post is outstanding</span> <span class="small muted">Greyed out in search and unable to take new offers until the post is delivered.</span></p>` : ""}
     ${c.bookedUp ? `<p><span class="badge info">Booked up this week</span> <span class="small muted">At their weekly visit max. Offers can still be sent; accepting reopens next week.</span></p>` : ""}
     ${visitIncludesHtml(c.visitIncludes)}
@@ -1109,26 +1144,48 @@ function creatorCard(c, viewer, opts) {
   const reviewLine = c.reviewSummary && c.reviewSummary.count
     ? ` ${starsHtml(c.reviewSummary.average)} <strong>${esc(String(c.reviewSummary.average))}</strong> <span class="muted">(${c.reviewSummary.count} review${c.reviewSummary.count === 1 ? "" : "s"})</span>`
     : "";
+  // v2 .creator-card anatomy: one component for discovery, the public
+  // profile hero, and the profile detail header (DESIGN-SYSTEM.md).
+  // Same data, same words, same handlers; only the layout changed.
+  const initial = esc((c.name || "?").trim().charAt(0).toUpperCase() || "?");
   return `
-  <div class="card${c.standing === "paused" ? " paused" : ""}">
-    <div class="flex-between">
-      <div>${avatarHtml(c, "avatar")}<strong>${esc(c.name)}</strong> <span class="muted">@${esc(p.handle || "")}</span></div>
-      ${opts.preview ? "" : `<button class="heart ${c.isFavorite ? "on" : ""}" title="Save to favorites" onclick="toggleFav('${c.userId}')">${c.isFavorite ? "&#10084;" : "&#9825;"}</button>`}
+  <div class="creator-card${c.standing === "paused" ? " paused" : ""}">
+    <div class="cc-photo">
+      ${c.photoUrl ? `<img src="${esc(c.photoUrl)}" alt="">` : `<div class="cc-mono"><span>${initial}</span></div>`}
+      ${p.tierBand ? `<span class="cc-tier">${esc(p.tierBand)}</span>` : ""}
+      ${p.paidRate ? `<span class="cc-paid">Paid bookings: $${esc(String(p.paidRate))}</span>` : ""}
     </div>
-    <p class="small muted">${esc(c.market)} &middot; ${esc(c.city || "")}${c.neighborhood ? ` &middot; ${esc(c.neighborhood)}` : ""} &middot; ${esc(p.tierBand || "")} &middot; ${fmtNum(totalAudienceOf(c))} total audience &middot; ${fmtNum(p.avgViews)} avg views${c.foundingBand ? ` &middot; Founding creator, first ${c.foundingBand} in market` : ""}</p>
-    <p class="small">${stackChipsHtml(c)}</p>
+    <div class="cc-id">
+      <div class="cc-name">${esc(c.name)}</div>
+      <div class="cc-handle">@${esc(p.handle || "")}</div>
+      <div class="cc-chips">
+        <span class="cc-chip market">${esc(c.market)}</span>
+        ${c.city ? `<span class="cc-chip">${esc(c.city)}</span>` : ""}
+        ${c.neighborhood ? `<span class="cc-chip">${esc(c.neighborhood)}</span>` : ""}
+        ${c.foundingBand ? `<span class="cc-chip">Founding creator, first ${c.foundingBand} in market</span>` : ""}
+      </div>
+    </div>
+    <div class="cc-local">
+      ${p.localAudiencePct === null || p.localAudiencePct === undefined
+        ? `<div class="lbl">Local audience not reported yet</div>`
+        : `<div class="big">${p.localAudiencePct}%</div><div class="lbl">of their followers are local</div><div class="src">${esc(p.localAudienceSource || "Self-reported")}</div>`}
+    </div>
+    <div class="cc-meta">
+      <div><div class="k">Stacked audience</div><div class="v">${fmtNum(totalAudienceOf(c))}</div></div>
+      <div><div class="k">Typical views</div><div class="v">${fmtNum(p.avgViews)}</div></div>
+    </div>
+    ${stackList(c).length ? `<div class="cc-platforms">${stackList(c).map((x) => `<span class="cc-plat">${esc(x.label)} ${fmtNum(x.count)}</span>`).join("")}</div>` : ""}
     ${c.standing === "paused" ? `<p><span class="badge warn">Paused: a late post is outstanding</span> <span class="small muted">This creator is greyed out and cannot take new offers until the post is delivered.</span></p>` : ""}
     ${c.bookedUp ? `<p><span class="badge info">Booked up this week</span> <span class="small muted">At their weekly visit max. You can still send offers; they can accept next week.</span></p>` : ""}
-    <p>${localTxt}</p>
     <p>${scoreBadge(c.localImpactScore)}${p.openToPaidCampaigns ? ` <span class="badge tier">Open to paid campaigns</span>` : ""}${paidLaneBadgesHtml(p)}${c.momentum && c.momentum.points ? ` <span class="badge info">Momentum ${c.momentum.points} pts</span>` : ""}</p>
     ${p.categories && p.categories.length ? `<p class="small">${p.categories.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
     ${p.compCategories && p.compCategories.filter((x) => x !== PAID_COMP).length ? `<p class="small muted">Open to comps: ${p.compCategories.filter((x) => x !== PAID_COMP).map(esc).join(", ")}</p>` : ""}
     ${p.bio ? `<p class="small muted">${esc(p.bio)}</p>` : ""}
     <p class="small">${socialLinksHtml(p)}</p>
     ${bestWorkHtml(c.bestWork, true)}
-    ${trackLine || reviewLine ? `<p class="small">${trackLine}${reviewLine}</p>` : ""}
+    ${trackLine || reviewLine ? `<div class="cc-track">${trackLine}${reviewLine}</div>` : ""}
     <p class="small muted">Every SIGNL visit: 1 post or reel + 2 stories within 48 hours, tracked as proof. Content rights follow your plan.</p>
-    <div class="cta-row" style="justify-content:flex-start">
+    <div class="cc-actions">
       ${opts.preview
         ? `<button class="btn small-btn" onclick="previewViewCreator('${c.userId}')">View profile</button>
            <button class="btn small-btn ghost" onclick="previewStartOffer('${c.userId}')">Send preview offer</button>${p.paidRate ? `
@@ -1136,7 +1193,8 @@ function creatorCard(c, viewer, opts) {
         : `<button class="btn small-btn" onclick="startOffer('${c.userId}')">Send offer</button>${p.paidRate ? `
            <button class="btn small-btn" onclick="bookPaidVisit('${c.userId}')">Book paid visit ($${esc(String(p.paidRate))})</button>` : ""}
            <button class="btn small-btn ghost" onclick="openCreatorProfile('${c.userId}')">View profile</button>
-           <button class="btn small-btn ghost" onclick="openThread('${c.userId}')">Message</button>`}
+           <button class="btn small-btn ghost" onclick="openThread('${c.userId}')">Message</button>
+           <button class="heart ${c.isFavorite ? "on" : ""}" title="Save to favorites" onclick="toggleFav('${c.userId}')">${c.isFavorite ? "&#10084;" : "&#9825;"}</button>`}
     </div>
   </div>`;
 }
@@ -1848,7 +1906,7 @@ async function runDiscover() {
       el.innerHTML = `<div class="panel center"><h3>No approved creators match yet</h3><p class="muted">SIGNL is building the founding roster in this market now. Creators who sign up and get approved will appear here automatically.</p></div>`;
       return;
     }
-    el.innerHTML = `<div class="grid cols-2">${data.creators.map((c) => creatorCard(c, state.user)).join("")}</div>`;
+    el.innerHTML = `<div class="creator-grid">${data.creators.map((c) => creatorCard(c, state.user)).join("")}</div>`;
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
@@ -2771,7 +2829,7 @@ function renderPreviewResults() {
     el.innerHTML = `<div class="panel center"><h3>No approved creators match yet</h3><p class="muted">This is the same empty state a business sees while a market's founding roster is still filling.</p></div>`;
     return;
   }
-  el.innerHTML = `<div class="grid cols-2">${list.map((c) => creatorCard(c, state.user, { preview: true })).join("")}</div>`;
+  el.innerHTML = `<div class="creator-grid">${list.map((c) => creatorCard(c, state.user, { preview: true })).join("")}</div>`;
 }
 
 async function previewViewCreator(userId) {

@@ -569,6 +569,13 @@ tbody tr:hover td { background: rgba(245,240,231,.55); }
   background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent;
 }
 
+/* Small app-only states carried over from the legacy theme. */
+.creator-card.paused { opacity: .55; filter: grayscale(.7); }
+.creator-card.paused .btn { pointer-events: none; }
+.saved { color: #0A7A50; font-weight: 600; font-size: .9rem; }
+.pv-tick { font-family: 'Space Grotesk', monospace; font-weight: 700; }
+.rules { color: #0A7A50; }
+
 /* Reveal motion: matches v2 (IO-driven .in), off under reduced motion. */
 .reveal { opacity: 0; transform: translateY(26px); transition: opacity .7s ease, transform .7s cubic-bezier(.22,.8,.3,1); }
 .reveal.in { opacity: 1; transform: none; }
