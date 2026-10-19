@@ -370,7 +370,18 @@ try {
   check("the problem booking surfaces its alerts and the hard stop", Array.isArray(overdueBk.alerts) && overdueBk.alerts.length >= 2 && !!overdueBk.pauseAt && Date.parse(overdueBk.pauseAt) > Date.now() && overdueBk.replacementAvailable === true, JSON.stringify(overdueBk.alerts || null));
   const dSum = dash.summary || {};
   const deliveredPosts = dBookings.filter((b) => b.post);
-  check("dashboard summary is consistent with its own bookings (tracking + returns)", dSum.modeled === true && dSum.visitsUsed === dBookings.length && dSum.visitsAllowance === 20 && dSum.postsDelivered === deliveredPosts.length && dSum.totalViews === deliveredPosts.reduce((s, b) => s + (b.post.views || 0), 0) && dSum.totalLikes === deliveredPosts.reduce((s, b) => s + (b.post.likes || 0), 0) && dSum.compValueGiven === dBookings.reduce((s, b) => s + (b.redeemedAt ? b.compCostModeled || 0 : 0), 0) && dSum.mediaValueReceived === Math.round((dSum.totalViews / 1000) * 22), JSON.stringify(dSum));
+  check("dashboard summary is consistent with its own bookings (tracking + returns)", dSum.modeled === true && dSum.visitsUsed === dBookings.length && dSum.visitsAllowance === 20 && dSum.postsDelivered === deliveredPosts.length && dSum.totalViews === deliveredPosts.reduce((s, b) => s + (b.post.views || 0), 0) && dSum.totalLikes === deliveredPosts.reduce((s, b) => s + (b.post.likes || 0), 0) && dSum.compValueGiven === dBookings.reduce((s, b) => s + (b.redeemedAt ? b.compCostModeled || 0 : 0), 0), JSON.stringify(dSum));
+  // SIGNL ROAS (2026-10-19): the returns story is the score now.
+  // The two delivered bookings carry fixed simulated tallies
+  // (9 redemptions / $486 and 6 / $318) and fixed reported numbers,
+  // so the aggregate is exact: media 449.40 + 292.30 = 741.70,
+  // register 804, value 1545.70, costs 85 comp + 160.80 discounts,
+  // score 6.29, all-in with $29.95 x 2 of plan allocation 5.06.
+  const dRoas = dSum.roas || {};
+  check("dashboard summary carries the SIGNL ROAS block, labeled as our own model", dRoas.label === "SIGNL ROAS Score, our own model" && dRoas.redemptions && dRoas.redemptions.count === 15 && dRoas.redemptions.basketTotal === 804 && dRoas.registerValue === 804 && dRoas.mediaValue === 741.7 && dRoas.value === 1545.7 && dRoas.compCost === 85 && dRoas.discountCost === 160.8 && dRoas.planAllocation === 59.9 && dRoas.score === 6.29 && dRoas.allInScore === 5.06, JSON.stringify(dRoas));
+  check("dashboard ROAS carries the floor + modeled framing, never revenue language", /floor/.test(dRoas.registerBasis || "") && /[Mm]odeled/.test(dRoas.mediaBasis || "") && !/revenue (generated|we generated)/i.test(JSON.stringify(dSum)), "");
+  check("the old CPM-only media line is gone from the summary", dSum.mediaValueReceived === undefined && dSum.returnMultiple === undefined, JSON.stringify(Object.keys(dSum)));
+  check("delivered dashboard bookings carry creator codes, tallies, and their own scores", deliveredPosts.every((b) => typeof b.creatorCode === "string" && b.creatorCode.length > 3 && b.redemptions && typeof b.redemptions.count === "number" && b.roas && typeof b.roas.score === "number"), JSON.stringify(deliveredPosts.map((b) => ({ code: b.creatorCode, roas: b.roas && b.roas.score }))));
   check("dashboard carries the plan rights recap and the Standard Visit", !!dash.rights && dash.rights.adUse === true && Array.isArray(dash.rights.can) && !!dash.standardVisit && Array.isArray(dash.standardVisit.deliverables), "");
   const evAfterDash = await admin("GET", "/api/admin/events?limit=2000");
   check("preview dashboard wrote no events", (evAfterDash.data.events || []).length === (evBeforeDash.data.events || []).length, `${(evBeforeDash.data.events || []).length} -> ${(evAfterDash.data.events || []).length}`);

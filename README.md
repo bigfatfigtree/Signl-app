@@ -737,6 +737,78 @@ package. Verified in `scripts/verify-paidlane.mjs` (58 checks).
   of: "Comp-only is always fine. Pay only when you want a specific
   creator who charges." No em dashes in any of the new UI copy.
 
+## The SIGNL ROAS Score: creator codes and register attribution (2026-10-19)
+
+Jeff's model, built the same day. SIGNL's own return-on-spend
+system, labeled everywhere it renders **"SIGNL ROAS Score, our
+own model"**. Design rationale and the sales framing live in the
+spec (`signl-standard-visit-and-compliance.md`, "The SIGNL ROAS
+Score"); this section is the runbook.
+
+- **Constants.** One object in `netlify/functions/lib/router.js`:
+  `ROAS_MODEL = { cpm: 22, like: 0.10, comment: 0.50, share: 1.00, defaultDiscountPct: 20 }`
+  (SIGNL's published model rates). `GET /api/bootstrap` ships it
+  as `roasModel` with the label. Change rates there and only
+  there.
+- **Creator codes.** Every booking (comp accept and paid) is
+  stamped at creation with `creatorCode` (creator handle base,
+  uppercase alphanumerics capped at 12, plus a 4-char suffix;
+  uniqueness enforced through the `ccode:` index, same retry
+  discipline as visit codes), `discountPct` (default 20), and
+  `redemptions: null`. The creator's booking view shows the code
+  with the share-it framing; the business sees it on the visit
+  card. Public `/c/` profiles never carry it (the payload is a
+  strict whitelist; the ROAS suite asserts its absence).
+- **Cost basis.** `booking.compCostActual` starts at the comp's
+  stated value for comp bookings (the dashboard's "comp given at
+  the business's own cost" convention) and at the business's
+  all-in total for paid bookings. The business corrects it to
+  their true cost when reporting a tally. No food-cost percentage
+  exists anywhere in code.
+- **Reporting.** `POST /api/bookings/:id/code-redemptions`
+  (the owning business or an admin; creators get 403, other
+  businesses 404). Body: `count` (whole, 0..1,000,000),
+  `basketTotal` (0..100,000,000), optional `discountPct` (0..100)
+  and `compCostActual` (>= 0). A report REPLACES the stored tally
+  `booking.redemptions = { count, basketTotal, discountPct, reportedAt, reportedBy }`
+  and logs `code_redemptions_reported`. No POS integration, ever.
+- **The math.** One helper, `roasFor(bookings)`, returns
+  `{ label, value, registerValue, mediaValue, compCost, discountCost, planAllocation, planKnown, score, allInScore, redemptions, registerBasis, mediaBasis, model }`.
+  Per booking: registerValue = basket total; mediaValue = views
+  x $22/1000 + likes x $0.10 + comments x $0.50 + shares x $1.00
+  from the post's performance report (zero when none);
+  discountCost = basket x discountPct/100; planAllocation = plan
+  price / visits allowance when the plan is known. Aggregation
+  sums values and costs BEFORE dividing; scores are never
+  averaged. Zero total cost -> `score: null` (never NaN or
+  Infinity). Every booking payload from `withPostState` carries
+  its own `roas`. The performance report
+  (`POST /api/bookings/:id/performance`) also accepts `comments`
+  and `shares` alongside views/likes.
+- **Labeling.** Register value is described as tracked spend
+  through the code, a floor (code-less customers are not
+  counted); media value as modeled at the published rates. The
+  strings live in `ROAS_REGISTER_BASIS` / `ROAS_MEDIA_BASIS` in
+  the router. No "revenue generated" language anywhere; the
+  suites grep for it.
+- **Preview.** The Business Preview dashboard's returns story is
+  the ROAS block now: the two delivered simulated bookings carry
+  fixed tallies (9 redemptions / $486 and 6 / $318) and full
+  reported numbers (comments and shares included), so Salt &
+  Ember shows Score 6.29x, all-in 5.06x, $804 register, $741.70
+  media, $85 comp at cost + $160.80 discounts, over the Growth
+  allocation. The old CPM-only media line is gone.
+  `POST /api/admin/preview/code-redemptions` recomputes a
+  simulated tally in memory and returns the moved scores; it
+  writes nothing and logs nothing, and the next dashboard load
+  shows the original tallies (asserted).
+- **Verification.** `scripts/verify-roas.mjs` (in `npm run
+  verify`): the worked example end to end (media 449.40,
+  discount 97.20, comp cost 15 -> 8.34, all-in 6.58), codes on
+  comp + paid bookings, public-profile absence, endpoint auth
+  and validation, replace-not-increment, edge cases, and the
+  preview zero-write invariant.
+
 ## Environment variables
 
 Set these in Netlify (Site settings, Environment variables) for
@@ -809,12 +881,18 @@ production. Locally they go in the shell.
   add kind ("paid"; absent on comp bookings) and paidLane
   ({ rate, businessTotal, creatorNet, platformFee, escrowState
   (held/released/refunded), paymentNote, bookedAt, proofAt,
-  releasedAt, refundedAt, refundReason }).
+  releasedAt, refundedAt, refundReason }). ROAS (2026-10-19) adds
+  creatorCode (the per-creator audience code), discountPct
+  (default 20), compCostActual (cost basis; starts at the comp's
+  stated value, or the paid booking's business total), and
+  redemptions ({ count, basketTotal, discountPct, reportedAt,
+  reportedBy } or null; written by the business's tally reports).
 - `code:{SGNL-XXXXXX}` redemption lookup index to the booking.
+- `ccode:{CODE}` creator-code uniqueness index to the booking.
 - `post:{uuid}` url, submittedAt, deadline, hoursAfterRedeem, onTime,
   includesDisclosure, verifiedAt/verifiedBy, adUseDeclaredAt/
   adUseDeclaredBy/adUsePlan, performanceRequestedAt, views, likes,
-  reportedAt.
+  comments, shares, reportedAt.
 - `message:{uuid}` threadId (sorted user-id pair), from/to, body.
 - `review:{uuid}` a business's post-visit review of a creator:
   bookingId, creatorId, businessId, businessName snapshot, stars
@@ -876,7 +954,8 @@ to fire; the campaign data payload carries the campaignId; a send's
 payload carries the recipient email, handle, market, and
 messageRef), paid_booking_created,
 paid_escrow_released, paid_escrow_refunded,
-creator_reviewed_business, business_review_links_updated.
+creator_reviewed_business, business_review_links_updated,
+code_redemptions_reported.
 
 Each event carries ts, actorId, actorRole, subjectId, market, and a
 data payload with the decision-relevant fields (amounts, caps, tier,

@@ -110,6 +110,152 @@ function paidMath(rate) {
 // escrows on its own. Suggested default $500.
 const MANAGED_TALENT_BUDGET_DEFAULT = 500;
 
+// ---------- The SIGNL ROAS Score (Jeff, 2026-10-19) ----------
+// SIGNL's own return-on-spend model, and the math is published
+// wherever the score renders: it is always labeled "SIGNL ROAS
+// Score, our own model", with its component lines shown. Two
+// honesty rules are baked into the framing strings below and must
+// never drift: the register side is TRACKED spend rung up with a
+// creator's audience code, which makes it a FLOOR (customers who
+// never used a code are not counted), and the media side is
+// MODELED at the rates in ROAS_MODEL from creator-reported post
+// numbers. Nothing anywhere calls any of this "revenue
+// generated": the code measures influenced, tracked spend.
+//
+// The loop, per booking (comp or paid):
+//   - The booking carries a creatorCode: this creator's audience
+//     code at this business. The creator shares it in the post;
+//     their audience gets discountPct% off when they use it, and
+//     every use is rung up at the business's own register (SIGNL
+//     never integrates with a POS, ever).
+//   - The business reports the tally back on the booking: how
+//     many code redemptions, and the total basket value rung with
+//     the code (POST /bookings/:id/code-redemptions).
+//   - COST = what the visit cost the business: compCostActual
+//     (the comp's cost to the business; the business reports its
+//     own cost, so a $50 menu comp can be a $15 cost, the markdown
+//     is theirs to state, never a percentage we invent) + the
+//     discount cost of the code redemptions (basket x discount%).
+//     The ALL-IN variant adds the plan allocation: the plan's
+//     monthly price divided by its monthly visit allowance.
+//   - VALUE = registerValue (tracked basket spend) + mediaValue
+//     (the delivered post, priced at the model rates below from
+//     the creator's post-performance report; zero with no report).
+//   - SCORE = value / cost; ALL-IN = value / (cost + allocation).
+// Aggregation sums values and costs first and divides once; scores
+// are never averaged. A zero cost basis returns a null score,
+// never NaN or Infinity.
+const ROAS_MODEL = { cpm: 22, like: 0.10, comment: 0.50, share: 1.00, defaultDiscountPct: 20 };
+const ROAS_LABEL = "SIGNL ROAS Score, our own model";
+const ROAS_REGISTER_BASIS = "Register value is spend tracked through the creator's audience code, rung up at the business's own register. It is a floor: customers who never used a code are not counted.";
+const ROAS_MEDIA_BASIS = `Media value is modeled at SIGNL's published rates ($${ROAS_MODEL.cpm} per 1,000 views, $${ROAS_MODEL.like.toFixed(2)} per like, $${ROAS_MODEL.comment.toFixed(2)} per comment, $${ROAS_MODEL.share.toFixed(2)} per share) on the creator's reported post numbers.`;
+
+function roasRound2(n) {
+  return Math.round((Number(n) || 0) * 100) / 100;
+}
+
+// The audience code a creator shares for one business: their
+// handle, uppercased and stripped to letters and numbers, plus a
+// short random suffix. Human-readable on purpose (it gets said
+// out loud in a post and typed at a register). Uniqueness is
+// guarded by the ccode: index, the same discipline as booking
+// codes; the code lives on the booking and is shown to the
+// creator, never on public profiles.
+function creatorCodeBase(handle) {
+  const base = String(handle || "CREATOR").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 12);
+  return base || "CREATOR";
+}
+async function genCreatorCode(handle) {
+  const base = creatorCodeBase(handle);
+  for (let attempt = 0; attempt < 12; attempt++) {
+    let suffix = "";
+    for (let i = 0; i < 4; i++) suffix += CODE_CHARS[crypto.randomInt(CODE_CHARS.length)];
+    const code = `${base}-${suffix}`;
+    const taken = await store.get(`ccode:${code}`);
+    if (!taken) return code;
+  }
+  throw new Error("Could not allocate a creator code");
+}
+
+// The post-performance numbers a booking's score reads: the post
+// record when one is attached (the withPostState shape), else
+// numbers carried on the booking object itself (preview and
+// fixtures). A post that exists but was never reported counts as
+// no report: media value stays zero, never zero-filled fiction.
+function roasPerformanceOf(booking) {
+  const src = booking.post || booking.performance || booking;
+  const num = (v) => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : 0);
+  const views = num(src.views);
+  const likes = num(src.likes);
+  const comments = num(src.comments);
+  const shares = num(src.shares);
+  const reported = !!(src.reportedAt || views || likes || comments || shares);
+  return { views, likes, comments, shares, reported };
+}
+
+// One helper for every ROAS surface (Jeff, 2026-10-19). Takes any
+// set of booking-shaped objects; each may carry redemptions
+// {count, basketTotal, discountPct}, compCostActual (falling back
+// to the comp's stated value, dollarCap), a post or performance
+// numbers, and a planAllocation (dollars per visit) or a plan
+// {priceMonthly, visitsPerMonth}. Returns the summed components
+// and the two scores.
+function roasFor(bookings) {
+  let registerValue = 0;
+  let mediaValue = 0;
+  let compCost = 0;
+  let discountCost = 0;
+  let planAllocation = 0;
+  let planKnown = bookings.length > 0;
+  let redemptionCount = 0;
+  let basketTotalAll = 0;
+  for (const b of bookings) {
+    const red = b.redemptions || null;
+    const pct = red && typeof red.discountPct === "number" ? red.discountPct : typeof b.discountPct === "number" ? b.discountPct : ROAS_MODEL.defaultDiscountPct;
+    const basket = red ? Math.max(0, Number(red.basketTotal) || 0) : 0;
+    registerValue += basket;
+    basketTotalAll += basket;
+    redemptionCount += red ? Math.max(0, Math.floor(Number(red.count) || 0)) : 0;
+    discountCost += (basket * pct) / 100;
+    const perf = roasPerformanceOf(b);
+    if (perf.reported) {
+      mediaValue += (perf.views * ROAS_MODEL.cpm) / 1000 + perf.likes * ROAS_MODEL.like + perf.comments * ROAS_MODEL.comment + perf.shares * ROAS_MODEL.share;
+    }
+    const cost = typeof b.compCostActual === "number" && Number.isFinite(b.compCostActual) ? b.compCostActual : typeof b.dollarCap === "number" ? b.dollarCap : 0;
+    compCost += Math.max(0, cost);
+    let alloc = null;
+    if (typeof b.planAllocation === "number" && Number.isFinite(b.planAllocation)) alloc = b.planAllocation;
+    else if (b.plan && b.plan.priceMonthly && b.plan.visitsPerMonth) alloc = b.plan.priceMonthly / b.plan.visitsPerMonth;
+    if (alloc === null) planKnown = false;
+    else planAllocation += alloc;
+  }
+  registerValue = roasRound2(registerValue);
+  mediaValue = roasRound2(mediaValue);
+  compCost = roasRound2(compCost);
+  discountCost = roasRound2(discountCost);
+  planAllocation = roasRound2(planAllocation);
+  const value = roasRound2(registerValue + mediaValue);
+  const costTotal = roasRound2(compCost + discountCost);
+  const score = costTotal > 0 ? roasRound2(value / costTotal) : null;
+  const allInScore = planKnown && roasRound2(costTotal + planAllocation) > 0 ? roasRound2(value / (costTotal + planAllocation)) : null;
+  return {
+    label: ROAS_LABEL,
+    value,
+    registerValue,
+    mediaValue,
+    compCost,
+    discountCost,
+    planAllocation,
+    planKnown,
+    score,
+    allInScore,
+    redemptions: { count: redemptionCount, basketTotal: roasRound2(basketTotalAll) },
+    registerBasis: ROAS_REGISTER_BASIS,
+    mediaBasis: ROAS_MEDIA_BASIS,
+    model: { ...ROAS_MODEL },
+  };
+}
+
 // The rights a business holds over a delivered post, by plan. The
 // creator sees exactly this, for the specific business making the
 // offer, BEFORE accepting: rights are never a surprise.
@@ -1295,7 +1441,20 @@ async function withPostState(booking) {
   let businessReview = null;
   const myBizReview = (await allBizReviews()).find((r) => r.bookingId === booking.id);
   if (myBizReview) businessReview = { stars: myBizReview.stars, text: myBizReview.text || "", createdAt: myBizReview.createdAt };
-  return { ...booking, post, postState: postState(booking, post), compliance: complianceStatusFor(booking, post, creatorStanding), businessReviewLinks, businessReview };
+  // SIGNL ROAS (Jeff, 2026-10-19): every booking payload carries
+  // its own score, computed by the one helper from the stored
+  // facts (redemption tally, reported cost, the post's reported
+  // numbers, the business's plan allocation when its plan is
+  // known). Legacy bookings without the ROAS fields read as
+  // empty tallies and the comp's stated value as cost basis.
+  let planAllocation;
+  if (booking.businessId) {
+    const bizUser = await store.get(`user:${booking.businessId}`);
+    const plan = bizUser && bizUser.business ? planById(bizUser.business.plan) : null;
+    if (plan) planAllocation = plan.priceMonthly / plan.visitsPerMonth;
+  }
+  const roas = roasFor([{ ...booking, post, planAllocation }]);
+  return { ...booking, post, postState: postState(booking, post), compliance: complianceStatusFor(booking, post, creatorStanding), businessReviewLinks, businessReview, roas };
 }
 
 // ---------- Post compliance (Jeff, 2026-10-19; timeline final) ----------
@@ -2216,7 +2375,6 @@ async function genCode() {
 // NOTHING. No store.set, no logEvent, no metric moves; the bookings
 // exist only inside this response and nowhere else in the system.
 const PREVIEW_DASH_BUSINESS = { name: "Salt & Ember Kitchen", category: "Chef-driven restaurant", market: "Hampton Roads" };
-const PREVIEW_MEDIA_CPM_USD = 22; // modeled media value: dollars per 1,000 creator-reported views
 
 function hoursFrom(nowMs, h) {
   return new Date(nowMs + h * 3600 * 1000).toISOString();
@@ -2255,6 +2413,23 @@ async function previewDisplayCode(used) {
   }
   used.add("SGNL-PREVUE");
   return "SGNL-PREVUE";
+}
+
+// A display-only audience code for a simulated booking (the
+// SIGNL ROAS creator code). Derived from the creator's handle
+// like the real ones; never written to the ccode: index, so a
+// simulated code can never be reported against or collide with
+// a real tally.
+function previewCreatorCode(handle, used) {
+  const base = creatorCodeBase(handle);
+  for (let attempt = 0; attempt < 12; attempt++) {
+    let suffix = "";
+    for (let i = 0; i < 4; i++) suffix += CODE_CHARS[crypto.randomInt(CODE_CHARS.length)];
+    const code = `${base}-${suffix}`;
+    if (!used.has(code)) { used.add(code); return code; }
+  }
+  used.add(`${base}-PREVIEW`);
+  return `${base}-PREVIEW`;
 }
 
 // The Standard Visit checklist for one simulated booking, in the same
@@ -2300,10 +2475,10 @@ function previewDashChecklist(b) {
     },
     {
       key: "numbers",
-      label: "Post numbers reported (views and likes)",
+      label: "Post numbers reported (views, likes, comments, shares)",
       state: b.post && b.post.reportedAt ? "done" : "pending",
       detail: b.post && b.post.reportedAt
-        ? `${Number(b.post.views || 0).toLocaleString("en-US")} views · ${Number(b.post.likes || 0).toLocaleString("en-US")} likes, reported by the creator`
+        ? `${Number(b.post.views || 0).toLocaleString("en-US")} views · ${Number(b.post.likes || 0).toLocaleString("en-US")} likes · ${Number(b.post.comments || 0).toLocaleString("en-US")} comments · ${Number(b.post.shares || 0).toLocaleString("en-US")} shares, reported by the creator`
         : "Asked automatically 7 days after the post; the numbers land here",
     },
   ];
@@ -2330,11 +2505,12 @@ async function previewDashboard() {
   const briefs = [
     { slot: 0, kind: "booked", title: "Autumn tasting menu for two", whatComped: "Five-course tasting menu for the creator and a guest, with two cocktails", dollarCap: 110, visitWindow: "Evenings this week" },
     { slot: 1, kind: "redeemed", title: "Weekend brunch on us", whatComped: "Brunch for two: two entrees, two coffees, one shared pastry board", dollarCap: 65, compCost: 34, visitWindow: "Weekend mornings" },
-    { slot: 2, kind: "complete_on_time", title: "Chef's counter dinner", whatComped: "Chef's counter seating for two, four courses", dollarCap: 90, compCost: 47, visitWindow: "Weeknights" },
-    { slot: 3, kind: "complete_late", title: "Cocktail hour feature", whatComped: "Two signature cocktails and three small plates for the creator and a guest", dollarCap: 70, compCost: 38, visitWindow: "Thursday to Saturday" },
+    { slot: 2, kind: "complete_on_time", title: "Chef's counter dinner", whatComped: "Chef's counter seating for two, four courses", dollarCap: 90, compCost: 47, visitWindow: "Weeknights", redemptions: { count: 9, basketTotal: 486 } },
+    { slot: 3, kind: "complete_late", title: "Cocktail hour feature", whatComped: "Two signature cocktails and three small plates for the creator and a guest", dollarCap: 70, compCost: 38, visitWindow: "Thursday to Saturday", redemptions: { count: 6, basketTotal: 318 } },
     { slot: 0, kind: "overdue", title: "Sunday supper club", whatComped: "Sunday supper for two: shared starter, two mains, dessert to share", dollarCap: 80, compCost: 41, visitWindow: "Sundays" },
   ];
   const usedCodes = new Set();
+  const usedCreatorCodes = new Set();
   const bookings = [];
   for (let i = 0; i < briefs.length; i++) {
     const brief = briefs[i];
@@ -2355,6 +2531,15 @@ async function previewDashboard() {
       whatComped: brief.whatComped,
       dollarCap: brief.dollarCap,
       compCostModeled: brief.compCost || null,
+      // SIGNL ROAS simulation (Jeff, 2026-10-19): the audience
+      // code this creator would share for Salt & Ember, the
+      // discount it carries, the register tally the business
+      // reported back (posted bookings only), and the comp's
+      // cost basis at the business's own cost.
+      creatorCode: previewCreatorCode(creator.creator ? creator.creator.handle : "", usedCreatorCodes),
+      discountPct: ROAS_MODEL.defaultDiscountPct,
+      redemptions: brief.redemptions ? { ...brief.redemptions, discountPct: ROAS_MODEL.defaultDiscountPct } : null,
+      compCostActual: brief.compCost || null,
       visitWindow: brief.visitWindow,
       windowMode: "7days",
       code,
@@ -2409,6 +2594,8 @@ async function previewDashboard() {
         disclosedComp: true,
         views: onTime ? 12400 : 8150,
         likes: onTime ? 986 : 640,
+        comments: onTime ? 74 : 52,
+        shares: onTime ? 41 : 23,
         reportedAt: hoursFrom(now, -redeemedAgoH + afterH + PERFORMANCE_ASK_DAYS * 24),
       };
       b.review = onTime
@@ -2442,7 +2629,17 @@ async function previewDashboard() {
   const totalViews = delivered.reduce((s, b) => s + (b.post.views || 0), 0);
   const totalLikes = delivered.reduce((s, b) => s + (b.post.likes || 0), 0);
   const compValueGiven = bookings.reduce((s, b) => s + (b.redeemedAt ? b.compCostModeled || 0 : 0), 0);
-  const mediaValueReceived = Math.round((totalViews / 1000) * PREVIEW_MEDIA_CPM_USD);
+  // SIGNL ROAS (Jeff, 2026-10-19): the returns story is the
+  // score now, computed by the one helper over the delivered
+  // bookings: register spend tracked through each creator's
+  // audience code plus media value at the published model rates,
+  // against the comps' cost and the code discounts, with the
+  // Growth plan allocation ($599 / 20 visits = $29.95 a visit)
+  // in the all-in variant. Each delivered booking also carries
+  // its own score for its card.
+  const planAllocation = plan.priceMonthly / plan.visitsPerMonth;
+  for (const b of delivered) b.roas = roasFor([{ ...b, planAllocation }]);
+  const roas = roasFor(delivered.map((b) => ({ ...b, planAllocation })));
   const summary = {
     cycleLabel: new Date(now).toLocaleString("en-US", { month: "long", year: "numeric" }),
     visitsUsed: bookings.length,
@@ -2458,9 +2655,7 @@ async function previewDashboard() {
     totalLikes,
     compValueGiven,
     compValueBasis: "Modeled at the business's own cost for the comps actually given, not menu price",
-    mediaValueReceived,
-    mediaValueBasis: `Modeled at a $${PREVIEW_MEDIA_CPM_USD} CPM on creator-reported views, the cost of buying the same views as paid social`,
-    returnMultiple: compValueGiven > 0 ? Math.round((mediaValueReceived / compValueGiven) * 10) / 10 : null,
+    roas,
     modeled: true,
   };
   // Managed talent budget view (Jeff, 2026-10-19): a SECOND
@@ -2889,6 +3084,7 @@ async function route(event) {
       paidCampaignsComp: PAID_COMP,
       unlistedMarket: UNLISTED,
       standardVisit: STANDARD_VISIT,
+      roasModel: { ...ROAS_MODEL, label: ROAS_LABEL },
       audiencePlatforms: AUDIENCE_PLATFORMS,
       termsVersion: TERMS_VERSION,
       email: { enabled: emailEnabled() },
@@ -3687,6 +3883,42 @@ async function route(event) {
         },
       });
     }
+    // Preview code redemptions (Jeff, 2026-10-19): the register
+    // side of the SIGNL ROAS Score, simulated with the same
+    // discipline as every preview action. Rebuilds the simulated
+    // dashboard in memory, applies the reported tally to the one
+    // simulated booking, and returns the recomputed scores. The
+    // dashboard builder only reads, this handler writes NOTHING
+    // and logs NOTHING, and the next dashboard load shows the
+    // original simulated tallies again.
+    if (method === "POST" && seg[1] === "preview" && seg[2] === "code-redemptions") {
+      const b = parseBody(event);
+      const count = Number(b.count);
+      if (!Number.isInteger(count) || count < 0 || count > 1000000) return err(400, "Redemption count must be a whole number, 0 or more");
+      const basketTotal = Number(b.basketTotal);
+      if (!Number.isFinite(basketTotal) || basketTotal < 0 || basketTotal > 100000000) return err(400, "Basket total must be a dollar amount, 0 or more");
+      const dash = await previewDashboard();
+      const target = (dash.bookings || []).find((x) => x.id === b.bookingId);
+      if (!target) return err(404, "Simulated booking not found");
+      if (!target.post) return err(400, "In this simulation, redemption tallies report against a delivered visit");
+      target.redemptions = { count, basketTotal: roasRound2(basketTotal), discountPct: target.discountPct || ROAS_MODEL.defaultDiscountPct };
+      if (b.compCostActual !== undefined && b.compCostActual !== null && b.compCostActual !== "") {
+        const cost = Number(b.compCostActual);
+        if (!Number.isFinite(cost) || cost < 0 || cost > 100000000) return err(400, "Comp cost must be a dollar amount, 0 or more");
+        target.compCostActual = roasRound2(cost);
+      }
+      const plan = dash.plan || {};
+      const planAllocation = plan.priceMonthly && plan.visitsPerMonth ? plan.priceMonthly / plan.visitsPerMonth : undefined;
+      target.roas = roasFor([{ ...target, planAllocation }]);
+      const deliveredNow = (dash.bookings || []).filter((x) => x.post);
+      const aggregate = roasFor(deliveredNow.map((x) => (x.id === target.id ? { ...target, planAllocation } : { ...x, planAllocation })));
+      return json(200, {
+        preview: true,
+        booking: { id: target.id, creatorCode: target.creatorCode, redemptions: target.redemptions, compCostActual: target.compCostActual, roas: target.roas },
+        roas: aggregate,
+        note: "Simulation only: nothing was saved, no tally was recorded, and the dashboard still shows its original simulated numbers on the next load.",
+      });
+    }
     // Admin: set a business's public review-page links (the
     // founding-application/admin side of the field; businesses can
     // also edit their own from the Plan tab). Host-validated.
@@ -3894,6 +4126,7 @@ async function route(event) {
         return err(403, `You are at your max of ${cap} visit${cap === 1 ? "" : "s"} this week (your setting, under Profile). This offer stays in your Offers tab: accept it next week, or raise your weekly max if you want more.`);
       }
       const code = await genCode();
+      const creatorCode = await genCreatorCode(user.creator ? user.creator.handle : "");
       const ts = nowIso();
       const booking = {
         id: crypto.randomUUID(),
@@ -3922,9 +4155,20 @@ async function route(event) {
         redeemMethod: null,
         postDeadline: null,
         replacementRequestedAt: null,
+        // SIGNL ROAS (Jeff, 2026-10-19): the creator's audience
+        // code at this business, the discount it carries, the
+        // redemption tally the business will report back, and the
+        // comp's cost basis. The cost starts at the comp's stated
+        // value; the business reports its own actual cost with
+        // the redemption tally when it has one.
+        creatorCode,
+        discountPct: ROAS_MODEL.defaultDiscountPct,
+        redemptions: null,
+        compCostActual: offer.dollarCap,
       };
       await store.set(`booking:${booking.id}`, booking);
       await store.set(`code:${code}`, { bookingId: booking.id });
+      await store.set(`ccode:${creatorCode}`, { bookingId: booking.id });
       await logEvent({ type: "offer_accepted", actorId: user.id, actorRole: "creator", subjectId: offer.id, market: offer.market, data: { businessId: offer.businessId, visitDate: booking.visitDate } });
       await logEvent({ type: "booking_code_issued", actorId: user.id, actorRole: "creator", subjectId: booking.id, market: offer.market, data: { code, offerId: offer.id, businessId: offer.businessId, dollarCap: offer.dollarCap } });
       return json(201, { booking: await withPostState(booking) });
@@ -3982,6 +4226,7 @@ async function route(event) {
     }
     const math = paidMath(rate);
     const code = await genCode();
+    const creatorCode = await genCreatorCode(creator.creator ? creator.creator.handle : "");
     const ts = nowIso();
     const booking = {
       id: crypto.randomUUID(),
@@ -4011,6 +4256,14 @@ async function route(event) {
       redeemMethod: null,
       postDeadline: null,
       replacementRequestedAt: null,
+      // SIGNL ROAS (Jeff, 2026-10-19): paid visits carry an
+      // audience code too. The cost basis is what the visit cost
+      // the business (rate + the 3% business side); the tally and
+      // discount work exactly like a comp visit's.
+      creatorCode,
+      discountPct: ROAS_MODEL.defaultDiscountPct,
+      redemptions: null,
+      compCostActual: math.businessTotal,
       paidLane: {
         rate: math.rate,
         businessTotal: math.businessTotal,
@@ -4027,6 +4280,7 @@ async function route(event) {
     };
     await store.set(`booking:${booking.id}`, booking);
     await store.set(`code:${code}`, { bookingId: booking.id });
+    await store.set(`ccode:${creatorCode}`, { bookingId: booking.id });
     await logEvent({ type: "paid_booking_created", actorId: user.id, actorRole: "business", subjectId: booking.id, market: booking.market, data: { creatorId: creator.id, rate: math.rate, businessTotal: math.businessTotal, creatorNet: math.creatorNet, platformFee: math.platformFee, escrowState: "held" } });
     await logEvent({ type: "booking_code_issued", actorId: user.id, actorRole: "business", subjectId: booking.id, market: booking.market, data: { code, offerId: null, businessId: user.id, dollarCap: booking.dollarCap, kind: "paid" } });
     return json(201, { booking: await withPostState(booking) });
@@ -4351,10 +4605,13 @@ async function route(event) {
   }
 
   // Post-performance report (Jeff, 2026-10-19 round 2): the creator
-  // adds the post's views and likes after the day-7 email asks. Two
-  // optional fields, at least one required, one report per post. The
-  // numbers live on the post record; Momentum's +5 is computed from
-  // reportedAt, so it can only ever land once.
+  // adds the post's views and likes after the day-7 email asks.
+  // Optional fields, at least one required, one report per post.
+  // The numbers live on the post record; Momentum's +5 is computed
+  // from reportedAt, so it can only ever land once. Comments and
+  // shares joined the report with the SIGNL ROAS Score (Jeff,
+  // 2026-10-19): they are two of the four numbers the media side
+  // of the score prices.
   if (method === "POST" && seg[0] === "bookings" && seg.length === 3 && seg[2] === "performance") {
     if (user.role !== "creator") return err(403, "Creators report their own post numbers");
     const booking = await store.get(`booking:${seg[1]}`);
@@ -4371,14 +4628,58 @@ async function route(event) {
     };
     const views = num(b.views);
     const likes = num(b.likes);
-    if (views === "invalid" || likes === "invalid") return err(400, "Views and likes must be whole numbers, 0 or more");
-    if (views === null && likes === null) return err(400, "Add at least one number: views or likes");
+    const comments = num(b.comments);
+    const shares = num(b.shares);
+    if (views === "invalid" || likes === "invalid" || comments === "invalid" || shares === "invalid") return err(400, "Post numbers must be whole numbers, 0 or more");
+    if (views === null && likes === null && comments === null && shares === null) return err(400, "Add at least one number: views, likes, comments, or shares");
     if (views !== null) post.views = views;
     if (likes !== null) post.likes = likes;
+    if (comments !== null) post.comments = comments;
+    if (shares !== null) post.shares = shares;
     post.reportedAt = nowIso();
     await store.set(`post:${post.id}`, post);
-    await logEvent({ type: "post_performance_reported", actorId: user.id, actorRole: "creator", subjectId: post.id, market: booking.market, data: { bookingId: booking.id, views: post.views == null ? null : post.views, likes: post.likes == null ? null : post.likes } });
+    await logEvent({ type: "post_performance_reported", actorId: user.id, actorRole: "creator", subjectId: post.id, market: booking.market, data: { bookingId: booking.id, views: post.views == null ? null : post.views, likes: post.likes == null ? null : post.likes, comments: post.comments == null ? null : post.comments, shares: post.shares == null ? null : post.shares } });
     return json(200, { post });
+  }
+
+  // Code redemptions (Jeff, 2026-10-19): the register side of the
+  // SIGNL ROAS Score. The creator's audience code is rung up at
+  // the business's own register (no POS integration, ever); the
+  // business reports the tally back against the booking: how many
+  // customers used the code and the total basket value rung with
+  // it. The report REPLACES the stored tally (it is the business's
+  // current count, not an increment), snapshots the booking's
+  // discount percentage, and can carry the business's own actual
+  // comp cost when they state one. Businesses report on their own
+  // bookings; admins can report for any founding business.
+  if (method === "POST" && seg[0] === "bookings" && seg.length === 3 && seg[2] === "code-redemptions") {
+    if (user.role === "creator") return err(403, "Businesses report code redemptions; creators share the code");
+    const booking = await store.get(`booking:${seg[1]}`);
+    if (!booking) return err(404, "Booking not found");
+    if (user.role === "business" && booking.businessId !== user.id) return err(404, "Booking not found");
+    const b = parseBody(event);
+    const count = Number(b.count);
+    if (!Number.isInteger(count) || count < 0 || count > 1000000) return err(400, "Redemption count must be a whole number, 0 or more");
+    const basketTotal = Number(b.basketTotal);
+    if (!Number.isFinite(basketTotal) || basketTotal < 0 || basketTotal > 100000000) return err(400, "Basket total must be a dollar amount, 0 or more");
+    let discountPct = typeof booking.discountPct === "number" ? booking.discountPct : ROAS_MODEL.defaultDiscountPct;
+    if (b.discountPct !== undefined && b.discountPct !== null && b.discountPct !== "") {
+      const pct = Number(b.discountPct);
+      if (!Number.isFinite(pct) || pct < 0 || pct > 100) return err(400, "Discount percent must be between 0 and 100");
+      discountPct = pct;
+      booking.discountPct = pct;
+    }
+    if (b.compCostActual !== undefined && b.compCostActual !== null && b.compCostActual !== "") {
+      const cost = Number(b.compCostActual);
+      if (!Number.isFinite(cost) || cost < 0 || cost > 100000000) return err(400, "Comp cost must be a dollar amount, 0 or more");
+      booking.compCostActual = roasRound2(cost);
+    }
+    const ts = nowIso();
+    booking.redemptions = { count, basketTotal: roasRound2(basketTotal), discountPct, reportedAt: ts, reportedBy: user.id };
+    booking.updatedAt = ts;
+    await store.set(`booking:${booking.id}`, booking);
+    await logEvent({ type: "code_redemptions_reported", actorId: user.id, actorRole: user.role, subjectId: booking.id, market: booking.market, data: { creatorId: booking.creatorId, businessId: booking.businessId, creatorCode: booking.creatorCode || null, count, basketTotal: booking.redemptions.basketTotal, discountPct, compCostActual: typeof booking.compCostActual === "number" ? booking.compCostActual : null } });
+    return json(200, { booking: await withPostState(booking) });
   }
 
   // Business-didn't-honor report (Jeff, 2026-10-19 r2): the creator

@@ -202,6 +202,14 @@ function fmtNum(n) {
   return String(n);
 }
 
+// Money at full precision (the ROAS surfaces): dollars and
+// cents, thousands separated. fmtNum abbreviates counts; money
+// in a return calculation never abbreviates.
+function fmtMoney(n) {
+  if (n === null || n === undefined || !Number.isFinite(Number(n))) return "n/a";
+  return Number(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 // ---------- audience stacking (Jeff, 2026-10-19) ----------
 // A creator's audience is the SUM of their platforms, and every
 // surface shows the total plus where it lives. Payloads carry the
@@ -1537,6 +1545,16 @@ function visitCard(b, role) {
       ? `<p class="small"><span class="badge tier">Paid visit</span> Your rate $${lane.rate}: you receive $${lane.creatorNet} (97% of your rate). ${escrowBadge}<br><span class="muted">${esc(lane.paymentNote)}${lane.escrowState === "held" && lane.proofAt ? " Your post is in; the escrow releases 48 hours after proof." : ""}${lane.escrowState === "refunded" ? " This visit resolved without delivery, so the business was refunded." : ""}</span></p>`
       : `<p class="small"><span class="badge tier">Paid visit</span> Creator rate $${lane.rate} &middot; you pay $${lane.businessTotal} (rate + 3%) &middot; the creator receives $${lane.creatorNet}. ${escrowBadge}<br><span class="muted">${esc(lane.paymentNote)}</span></p>`;
   }
+  if (b.creatorCode) {
+    const pct = typeof b.discountPct === "number" ? b.discountPct : 20;
+    html += role === "creator"
+      ? `
+    <div class="showcase-block">
+      <h4>Your audience code at ${esc(b.businessName)}: ${esc(b.creatorCode)}</h4>
+      <p class="small" style="margin:0">Share it in your post: your audience gets ${pct}% off when they use it at ${esc(b.businessName)}, and every use is tracked back to this visit. It is how the business sees the customers your post actually sent through the door, and it feeds your SIGNL track record.</p>
+    </div>`
+      : `<p class="small">Audience code for this visit: <strong>${esc(b.creatorCode)}</strong> (${pct}% off for customers who use it). It is rung up at your own register; report the tally on this card after the visit and it feeds the visit's SIGNL ROAS Score.</p>`;
+  }
   if (role === "creator" && b.codeStatus === "issued") {
     html += `
     <div class="grid cols-2">
@@ -1600,7 +1618,10 @@ function visitCard(b, role) {
     }
     if (role === "business" && !post.verifiedAt) html += `<button class="btn small-btn ghost" onclick="verifyPost('${post.id}')">Verify post is live</button>`;
     if (post.reportedAt) {
-      const nums = `${typeof post.views === "number" ? fmtNum(post.views) + " views" : ""}${typeof post.views === "number" && typeof post.likes === "number" ? " &middot; " : ""}${typeof post.likes === "number" ? fmtNum(post.likes) + " likes" : ""}`;
+      const nums = [["views", post.views], ["likes", post.likes], ["comments", post.comments], ["shares", post.shares]]
+        .filter(([, v]) => typeof v === "number")
+        .map(([k, v]) => `${fmtNum(v)} ${k}`)
+        .join(" &middot; ");
       html += role === "business"
         ? `<p class="small">Your comp produced <strong>${nums}</strong> (creator-reported).</p>`
         : `<p class="small">You reported ${nums} (+5 Momentum). Thanks: numbers like these are what bring businesses back.</p>`;
@@ -1608,14 +1629,37 @@ function visitCard(b, role) {
       html += `
     <form onsubmit="return submitPostPerformance(event, '${b.id}')">
       <h4 style="margin:10px 0 4px">Add post numbers</h4>
-      <p class="small muted">A week in, how did the post do? Two optional numbers; reporting earns +5 Momentum points.</p>
+      <p class="small muted">A week in, how did the post do? Optional numbers; reporting earns +5 Momentum points, and they price the media side of the business's SIGNL ROAS Score.</p>
       <div class="form-2col">
         <div class="field"><label>Views</label><input type="number" id="perf-views-${b.id}" min="0" placeholder="Optional"></div>
         <div class="field"><label>Likes</label><input type="number" id="perf-likes-${b.id}" min="0" placeholder="Optional"></div>
+        <div class="field"><label>Comments</label><input type="number" id="perf-comments-${b.id}" min="0" placeholder="Optional"></div>
+        <div class="field"><label>Shares</label><input type="number" id="perf-shares-${b.id}" min="0" placeholder="Optional"></div>
       </div>
       <button class="btn small-btn" type="submit">Report numbers (+5 Momentum)</button>
     </form>`;
     }
+  }
+  if (post && b.roas && (b.redemptions || post.reportedAt)) {
+    const r = b.roas;
+    const scoreLine = `<strong>SIGNL ROAS Score: ${r.score === null ? "n/a yet" : r.score.toFixed(2) + "&times;"}</strong> <span class="muted">(our own model)</span> &middot; $${fmtMoney(r.registerValue)} tracked through the code + $${fmtMoney(r.mediaValue)} modeled media value, against $${fmtMoney(r.compCost)} comp at cost + $${fmtMoney(r.discountCost)} code discounts${r.allInScore !== null && r.allInScore !== undefined ? ` &middot; all-in ${r.allInScore.toFixed(2)}&times; with the plan counted` : ""}`;
+    html += role === "business"
+      ? `<p class="small">${scoreLine}.</p>`
+      : `<p class="small">${b.redemptions ? `Your code brought <strong>${b.redemptions.count} customer${b.redemptions.count === 1 ? "" : "s"}, $${fmtMoney(b.redemptions.basketTotal)} rung up</strong> at ${esc(b.businessName)}. ` : ""}${scoreLine}.</p>`;
+  }
+  if (role === "business" && post) {
+    html += `
+    <form onsubmit="return submitCodeRedemptions(event, '${b.id}')">
+      <h4 style="margin:10px 0 4px">Code redemptions at your register</h4>
+      <p class="small muted">Customers who used ${b.creatorCode ? `<strong>${esc(b.creatorCode)}</strong>` : "the creator's audience code"} at your register. Report the running tally (it replaces the last one) and, if you know it, what the comp actually cost you; both feed this visit's SIGNL ROAS Score, our own model.</p>
+      <div class="form-2col">
+        <div class="field"><label>Customers who used the code</label><input type="number" id="redeem-count-${b.id}" min="0" placeholder="0" value="${b.redemptions ? b.redemptions.count : ""}"></div>
+        <div class="field"><label>Total rung up with the code ($)</label><input type="number" id="redeem-basket-${b.id}" min="0" step="0.01" placeholder="0.00" value="${b.redemptions ? b.redemptions.basketTotal : ""}"></div>
+        <div class="field"><label>What the comp cost you ($) (optional)</label><input type="number" id="redeem-cost-${b.id}" min="0" step="0.01" placeholder="At your cost" value="${typeof b.compCostActual === "number" ? b.compCostActual : ""}"></div>
+      </div>
+      <button class="btn small-btn" type="submit">Report tally</button>
+      ${b.redemptions ? `<span class="small muted">Last reported ${fmtDate(b.redemptions.reportedAt)}.</span>` : ""}
+    </form>`;
   }
   if (role === "business" && b.postState === "overdue" && !b.replacementRequestedAt) {
     html += `<button class="btn small-btn danger" onclick="requestReplacement('${b.id}')">Request replacement visit</button>`;
@@ -1681,11 +1725,31 @@ async function submitPostPerformance(e, bookingId) {
   try {
     const views = document.getElementById("perf-views-" + bookingId).value;
     const likes = document.getElementById("perf-likes-" + bookingId).value;
+    const commentsEl = document.getElementById("perf-comments-" + bookingId);
+    const sharesEl = document.getElementById("perf-shares-" + bookingId);
     await api("POST", `/bookings/${bookingId}/performance`, {
       views: views === "" ? null : parseInt(views, 10),
       likes: likes === "" ? null : parseInt(likes, 10),
+      comments: !commentsEl || commentsEl.value === "" ? null : parseInt(commentsEl.value, 10),
+      shares: !sharesEl || sharesEl.value === "" ? null : parseInt(sharesEl.value, 10),
     });
     loadMyVisits("creator");
+  } catch (err) { alert(err.message); }
+  return false;
+}
+
+async function submitCodeRedemptions(e, bookingId) {
+  e.preventDefault();
+  try {
+    const count = document.getElementById("redeem-count-" + bookingId).value;
+    const basket = document.getElementById("redeem-basket-" + bookingId).value;
+    const cost = document.getElementById("redeem-cost-" + bookingId).value;
+    await api("POST", `/bookings/${bookingId}/code-redemptions`, {
+      count: count === "" ? 0 : parseInt(count, 10),
+      basketTotal: basket === "" ? 0 : parseFloat(basket),
+      compCostActual: cost === "" ? null : parseFloat(cost),
+    });
+    loadMyVisits("business");
   } catch (err) { alert(err.message); }
   return false;
 }
@@ -2840,8 +2904,28 @@ function pvBookingCard(b) {
     const p = b.post;
     html += `<p class="small">Post: <a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.url)}</a> &middot; submitted ${esc(fmtDate(p.submittedAt))} (${p.hoursAfterRedeem}h after redemption) &middot; ${p.onTime ? `<span class="saved">On time</span>` : `<span style="color:var(--amber)">Delivered late</span>`} &middot; comp disclosed</p>`;
     if (p.reportedAt) {
-      html += `<p class="small">Your comp produced <strong>${fmtNum(p.views)} views &middot; ${fmtNum(p.likes)} likes</strong> (creator-reported ${esc(fmtDate(p.reportedAt))}).</p>`;
+      html += `<p class="small">Your comp produced <strong>${fmtNum(p.views)} views &middot; ${fmtNum(p.likes)} likes &middot; ${fmtNum(p.comments || 0)} comments &middot; ${fmtNum(p.shares || 0)} shares</strong> (creator-reported ${esc(fmtDate(p.reportedAt))}).</p>`;
     }
+    if (b.creatorCode) {
+      html += `<p class="small">Audience code for this creator: <strong>${esc(b.creatorCode)}</strong> (${b.discountPct}% off). It is shared in the post and rung up at your own register; the tally below is what the business reported back.</p>`;
+    }
+    if (b.redemptions) {
+      html += `<p class="small">Code tally: <strong>${b.redemptions.count} customers used it, $${fmtMoney(b.redemptions.basketTotal)} rung up</strong> at the register.</p>`;
+    }
+    if (b.roas) {
+      const r = b.roas;
+      html += `<p class="small"><strong>SIGNL ROAS Score: ${r.score === null ? "n/a" : r.score.toFixed(2) + "&times;"}</strong> <span class="muted">(our own model)</span> &middot; $${fmtMoney(r.registerValue)} tracked at the register + $${fmtMoney(r.mediaValue)} modeled media value, against $${fmtMoney(r.compCost)} comp at cost + $${fmtMoney(r.discountCost)} code discounts${r.allInScore !== null ? ` &middot; all-in ${r.allInScore.toFixed(2)}&times; with the plan counted` : ""}.</p>`;
+    }
+    html += `
+    <form onsubmit="return pvReportRedemptions(event, '${b.id}')">
+      <div class="form-2col">
+        <div class="field"><label>Code redemptions (simulation)</label><input type="number" id="pv-redeem-count-${b.id}" min="0" value="${b.redemptions ? b.redemptions.count : 0}"></div>
+        <div class="field"><label>Total rung up with the code ($) (simulation)</label><input type="number" id="pv-redeem-basket-${b.id}" min="0" step="0.01" value="${b.redemptions ? b.redemptions.basketTotal : 0}"></div>
+      </div>
+      <button class="btn small-btn ghost" type="submit">Preview the score with this tally</button>
+      <span class="small" id="pv-redeem-result-${b.id}"></span>
+      <p class="small muted">Simulation only: in the live app the business reports this tally on the visit and it is saved. Here nothing is recorded, and the dashboard keeps its original tallies.</p>
+    </form>`;
     html += `<button class="btn small-btn ghost" disabled>Use in an ad</button> <span class="small muted">Your Growth plan includes ad use while your account is active; the creator is notified and earns +25 Momentum. Disabled in preview; try it live from the creator profile's showcase.</span>`;
   }
   if (b.review) {
@@ -2915,6 +2999,30 @@ function pvManagedHtml(mv) {
   </section>`;
 }
 
+// Preview code redemptions (Jeff, 2026-10-19): the business
+// reports a register tally against a simulated delivered visit
+// and sees the SIGNL ROAS Score move. The server recomputes in
+// memory and saves nothing; the result line says so.
+async function pvReportRedemptions(e, bookingId) {
+  e.preventDefault();
+  const out = document.getElementById("pv-redeem-result-" + bookingId);
+  try {
+    const count = document.getElementById("pv-redeem-count-" + bookingId).value;
+    const basket = document.getElementById("pv-redeem-basket-" + bookingId).value;
+    const data = await api("POST", "/admin/preview/code-redemptions", {
+      bookingId,
+      count: count === "" ? 0 : parseInt(count, 10),
+      basketTotal: basket === "" ? 0 : parseFloat(basket),
+    });
+    const r = data.booking.roas;
+    const agg = data.roas;
+    if (out) out.textContent = ` With that tally, this visit scores ${r.score === null ? "n/a" : r.score.toFixed(2) + "x"} and the dashboard total becomes ${agg.score === null ? "n/a" : agg.score.toFixed(2) + "x"} (all-in ${agg.allInScore === null ? "n/a" : agg.allInScore.toFixed(2) + "x"}). Nothing was saved.`;
+  } catch (err) {
+    if (out) out.textContent = " " + err.message;
+  }
+  return false;
+}
+
 function previewDashboardHtml(d) {
   const s = d.summary;
   const plan = d.plan;
@@ -2937,11 +3045,20 @@ function previewDashboardHtml(d) {
       <div class="stat"><div class="num">${s.onTimeRatePct === null ? "n/a" : s.onTimeRatePct + "%"}</div><div class="lbl">On-time rate (${s.postsOnTime} on time, ${s.postsLate} late)</div></div>
       <div class="stat"><div class="num">${fmtNum(s.totalViews)}</div><div class="lbl">Total content views</div></div>
       <div class="stat"><div class="num">$${fmtNum(s.compValueGiven)}</div><div class="lbl">Comp given, at cost (modeled)</div></div>
-      <div class="stat"><div class="num">$${fmtNum(s.mediaValueReceived)}</div><div class="lbl">Media value received (modeled)</div></div>
-      <div class="stat"><div class="num">${s.returnMultiple === null ? "n/a" : s.returnMultiple + "&times;"}</div><div class="lbl">Modeled return on comp</div></div>
     </div>
     <p class="small muted">${s.postsInFlight} post still inside its 48 hour clock, ${s.postsOverdue} overdue in the late window, ${s.visitsRemaining} visits left on the ${esc(plan.name)} allowance this month.</p>
-    <p class="small muted">${esc(s.compValueBasis)}. ${esc(s.mediaValueBasis)}. Both are planning models on simulated data, shown so the shape of the returns math is visible; live figures replace them as real visits complete.</p>
+    <p class="small muted">${esc(s.compValueBasis)}. The figures below are on simulated data, shown so the shape of the returns math is visible; live figures replace them as real visits complete.</p>
+    ${s.roas ? `
+    <div class="showcase-block"><h4>${esc(s.roas.label)}</h4>
+      <div class="stat-row">
+        <div class="stat"><div class="num">${s.roas.score === null ? "n/a" : s.roas.score.toFixed(2) + "&times;"}</div><div class="lbl">SIGNL ROAS Score</div></div>
+        <div class="stat"><div class="num">${s.roas.allInScore === null ? "n/a" : s.roas.allInScore.toFixed(2) + "&times;"}</div><div class="lbl">All-in, with the plan counted</div></div>
+        <div class="stat"><div class="num">$${fmtMoney(s.roas.registerValue)}</div><div class="lbl">Register value, tracked through creator codes (${s.roas.redemptions.count} redemptions, $${fmtMoney(s.roas.redemptions.basketTotal)} rung up)</div></div>
+        <div class="stat"><div class="num">$${fmtMoney(s.roas.mediaValue)}</div><div class="lbl">Media value, modeled at the published rates</div></div>
+        <div class="stat"><div class="num">$${fmtMoney(s.roas.compCost + s.roas.discountCost)}</div><div class="lbl">Visit costs: $${fmtMoney(s.roas.compCost)} comps at cost + $${fmtMoney(s.roas.discountCost)} code discounts</div></div>
+      </div>
+      <p class="small muted" style="margin-bottom:0">${esc(s.roas.registerBasis)} ${esc(s.roas.mediaBasis)}${s.roas.planKnown ? ` The all-in score also counts the ${esc(plan.name)} plan allocation of $${fmtMoney(s.roas.planAllocation)} across the delivered visits.` : ""} This is SIGNL's own return model, not an ad platform's: the register side is spend we can point at, the media side is priced in the open.</p>
+    </div>` : ""}
     <div class="showcase-block"><h4>Your plan's content rights</h4>
       <p class="small" style="margin:0 0 4px"><span class="rules">With the ${esc(plan.name)} plan you can:</span> share a delivered post with the creator tagged; repost it on your own feed; run it as an ad while your SIGNL account is active (the ad right ends if the account ends).</p>
       <p class="small muted" style="margin:0">You can never edit a creator's post. Rights follow your plan and are shown to the creator before they accept, so there are no surprises on either side.</p>
