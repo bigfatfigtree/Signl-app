@@ -22,8 +22,8 @@ The public launch is **creator founding sign-up only**:
   search (discovery's default sort is sign-up order).
 - **Businesses cannot create accounts.** The app's For Businesses page
   sends them to the founding business list on joinsignl.com, where
-  joining locks in founding pricing ($299/mo Self-Service, $799/mo
-  Managed, 3-month minimum). Business accounts open per market at
+  joining locks in founding pricing ($299/mo Self-Service, $599/mo
+  Growth, $999/mo Managed, 3-month minimum). Business accounts open per market at
   launch. All business functionality (discovery, offers, counter,
   plans) remains in the codebase, gated off.
 - **Market activation is a per-market admin flag** (Admin, Markets
@@ -139,8 +139,9 @@ The public launch is **creator founding sign-up only**:
   the deadline, and the business verifies the post is live. Overdue
   posts can trigger a replacement request.
 - Messaging between a business and a creator, both directions.
-- Business plans: Self-Service $299/mo and Managed $799/mo, 3-month
-  minimum. Plan selection is recorded at registration and can be
+- Business plans: Self-Service $299/mo, Growth $599/mo, and Managed
+  $999/mo, 3-month minimum, then month to month (see the 2026-10-19
+  section below for what each plan's content rights are). Plan selection is recorded at registration and can be
   changed in the Plan tab. **Founding billing placeholder:** no card is
   charged and nothing pretends otherwise; the recorded plan and the
   honest billing status are stored on the account. Stripe checkout is
@@ -164,8 +165,9 @@ database, and registers fresh accounts through the real sign-up path):
 ```
 node scripts/verify-flow.mjs        # 97 checks: main marketplace flow
 node scripts/verify-fallbacks.mjs   # 14 checks: check-in / confirm fallbacks
-node scripts/verify-launch.mjs      # 164 checks: the launch shape itself
-npm run verify                      # all three, in order (275 total)
+node scripts/verify-launch.mjs      # 165 checks: the launch shape itself
+node scripts/verify-compliance.mjs  # 110 checks: stacking, compliance, Momentum v2, round-2 ops
+npm run verify                      # all four, in order (386 total)
 ```
 
 `verify-launch.mjs` runs in true production shape: business
@@ -183,12 +185,16 @@ treats every market as live so the gated flows can still be exercised
 end to end. It is read from the environment only, is not in
 netlify.toml, and must never be set on the Netlify site.
 
-All three suites were run green against this codebase on 2026-10-19
-(275 checks total, including the Momentum points math end to end:
-a recruiter with 2 credited sign-ups and 1 approval sits at 16
-points in their own payload, the admin applications payload, and
-the recruiter leaderboard; the Business Preview isolation checks and
-the business review round-trip described below are covered too).
+All four suites were run green against this codebase on 2026-10-19
+(386 checks total, including the Momentum points math end to end:
+a recruiter with 2 credited sign-ups and 1 approval earns 16
+REFERRAL points (their full total also counts their own profile
+entries, for example +5 for reporting a local audience percentage,
+so the launch scenario recruiter's full total is 21); the Business
+Preview isolation checks and the business review round-trip
+described below are covered too. verify-compliance.mjs time-travels
+a throwaway DB (seed redemption timestamps in the past, reboot, run
+the sweep) to prove the whole compliance ladder deterministically.
 
 ## 2026-10-18 post-launch changes (Jeff's screenshot review)
 
@@ -275,7 +281,7 @@ platforms' profiles do, without inventing anything.
 **Business Preview (admin-only).** The admin console carries a
 "Preview as business" entry. Preview walks the real business
 journey in four steps: (1) the founding plans screen ($299
-Self-Service / $799 Managed, pick a plan and a market), (2) Discover
+Self-Service / $599 Growth / $999 Managed, pick a plan and a market), (2) Discover
 with the complete live filter set (market, neighborhood, category,
 comp category, tier, follower range, min local %, paid-only, and the
 founding / Impact Score / Momentum sorts), (3) the full rich creator
@@ -332,6 +338,158 @@ the preview profile:
 The discovery query itself was refactored into `discoverCards()` so
 the real surface and the preview can never drift apart.
 
+## 2026-10-19: stacking, the Standard Visit, compliance, Momentum v2, round-2 ops
+
+**Audience stacking.** A creator's audience is the sum of their
+platforms. The profile carries per-platform counts for Instagram,
+TikTok, Facebook, X, LinkedIn, and YouTube (`creator.audienceStack`,
+self-reported, capped at 100,000,000 per platform), and the server
+computes `creator.totalAudience`. `followerCount` now means the
+Instagram count; a profile with no stack falls back to treating its
+stored followerCount as the Instagram count, so legacy profiles lose
+nothing. Tier bands derive from the total: profile saves re-derive
+the band from the new total unless the same save deliberately picks a
+different band; sign-up keeps the band the creator confirms and stores
+the derived band as `computedTier`. Discovery follower min/max
+filters read the total, and every surface (public profile, discovery
+card, full profile, preview, the creator's own profile) renders the
+total plus the per-platform breakdown. Local audience % and the Local
+Impact Score are unchanged (the % stays Instagram-based).
+
+**The Standard Visit and the rights ladder.** One package for every
+visit, defined once server-side (`STANDARD_VISIT` in lib/router.js)
+and shipped in bootstrap, on public profiles, and on discovery cards
+as "Every SIGNL visit includes": 1 post or reel + 2 stories within
+48 hours of the visit, honest and disclosed, live at least 30 days,
+tracked delivery proof. What the business may do with the post
+follows the BUSINESS'S PLAN, and the creator's offer checklist states
+that plan's rights before they accept (`visitRightsForPlan`, attached
+to each offer as `visitRights`): Self-Service ($299/mo, up to 8
+visits/mo) shares natively with the creator tagged, nothing more.
+Growth ($599/mo, up to 20 visits/mo) adds own-feed reposts and ad use
+while the account is active; the ad right ends when the account
+ends. Managed ($999/mo, up to 30 visits/mo, coordinator-run) carries
+Growth's rights plus the quarterly hero feature. Nobody, on any
+plan, edits the creator's content. Paid hero campaigns (20% platform
+fee) are a separate cash product, unrelated to these rights. Ad use
+is an explicit action on a delivered post: `POST /api/posts/:id/ad-use`
+(business, own post, Growth/Managed only, once per post) logs
+`ad_use_declared`, notifies the creator in-app (a message in the
+thread plus the visit card), and is worth +25 Momentum. The admin
+preview has the same action as a simulation (`POST
+/api/admin/preview/ad-use`): no event, no notification, no points.
+The offer composer (real and preview) pre-loads the package summary
+and offers comp suggestion chips by the target creator's tier and
+redemption-window chips; the underlying offer fields are unchanged.
+
+**Post compliance.** The check-off is the pasted Instagram post/reel
+URL (host-validated like best-work links) in My Visits; a bare
+checkbox earns nothing. The timeline lives in ONE config object
+(`COMPLIANCE` in lib/router.js: visitWindowDays 7, onTimeHours 48,
+hardStopDays 7, banFuseDays 7) and runs from redemption:
+
+| When | What |
+| --- | --- |
+| Redemption | 48h post clock starts (postDeadline = redeemedAt + 48h) |
+| Post within 48h | On time (+20 Momentum) |
+| 48h, no proof | Friendly reminder email (post_reminder_1) |
+| Post by day 7 | Delivered late (+5 and -10) |
+| Day 5 | Second reminder (post_reminder_2) |
+| Day 6 | Final warning: "your account pauses tomorrow" (post_reminder_3) |
+| Day 7, no proof | PAUSED: greyed and sunk in discovery, blocked from accepting offers; the visit is recorded as a missed deadline (visit_deadline_missed, account_paused) |
+| Days 7-14 (ban fuse) | A proof still lands: delivered late at +0 and -10, auto-unpauses; the missed-deadline mark stays on the track record and on-time % |
+| Day 14, still no proof | BANNED: out of discovery entirely, public profile 404s, -50 Momentum (account_banned). Proof after the ban is recorded for the business but never auto-unbans |
+| Any time | An admin can reinstate (POST /api/admin/compliance/reinstate, account_reinstated); the -50 stays on the record |
+
+The engine is `runComplianceSweep()` in lib/router.js. It is driven
+three ways: the Netlify scheduled function
+`netlify/functions/compliance-sweep.mjs` (cron `23 */6 * * *`, POSTs
+to the app's own endpoint with the `x-signl-sweep-token` header
+matching the SIGNL_SWEEP_TOKEN env var), the admin endpoint `POST
+/api/admin/compliance/sweep`, and an opportunistic throttled run
+(about hourly, claimed via the `config:complianceSweep` record)
+inside the request path. Every step is idempotent: markers are
+stamped on the booking before the action fires. Admins watch it all
+in the Compliance tab (`GET /api/admin/compliance`: visits by status
+with creator, business, redeemed-at, deadline, hard stop, ban date,
+proof link, standing, and reinstate buttons). Reminder emails send
+from hello@ via the existing SMTP transport with the "The SIGNL
+team" sign-off; when email is not configured they are logged as
+`*_email_not_sent` events, never faked as sent. Sign-up now requires
+the plain-language post-rule agreement (`agreedPostCompliance`,
+terms version 2026-10-19): "Post within 48 hours for full credit.
+One week is the hard stop."
+
+**Momentum v2.** One currency, still computed server-side from
+stored facts only (never a stored counter), floored at 0. Earn:
+photo +10, bio (40+ chars) +5, neighborhood +5, local % reported +5,
+stack of 3+ platforms +10, best work +5 per link (max +15), first
+offer accepted +10, on-time post +20, late post (inside the week)
++5, 4-5 star business review +10, ad use +25 per post, post
+performance report +5, every 5 consecutive on-time posts +25 streak
+bonus, referrals +3 per sign-up and +10 per approved recruit. Lose:
+late post -10 (on top of the +5, or on top of +0 inside the ban
+fuse), no-show -25, redeemed-never-posted -50 (survives
+reinstatement). The creator's own payload (`GET /api/auth/me`,
+founding, admin applications) carries the full detail: total,
+ledger (every entry with its date), and a ways-to-earn checklist
+with live done/available state; discovery cards, public profiles,
+and the leaderboard carry the summary (points, signups, approved).
+Banned creators' totals freeze at ban time (earnings dated after
+the ban do not count while banned); paused creators keep earning
+from profile completion. Preview and simulated actions write no
+records, so they can never mint points.
+
+**Post-performance capture.** Seven days after a proof is
+submitted, the sweep sends ONE email ("How did your post do?") and
+stamps `post.performanceRequestedAt`. The creator reports views
+and/or likes (`POST /api/bookings/:id/performance`, one report per
+post) onto the post record (`views`, `likes`, `reportedAt`), worth
++5 Momentum once. Businesses see the numbers on their visit view;
+the track record aggregates them as `contentViews` ONLY when at
+least one post carries a reported figure (absent stays absent,
+never zero-filled or estimated).
+
+**Visit windows, not appointments.** An accepted offer carries a
+redemption window: redeem any time within 7 days of accepting
+(`windowMode: "7days"`, the default) or by the end of the current
+week, Sunday (`windowMode: "thisweek"`), picked with the composer
+chips. The booking stores `redeemBy`; the creator's visit card
+shows "Use by <date>". No time slots exist anywhere. If the window
+passes unused, the sweep expires the booking (`offer_expired`,
+status expired, code dead) and Momentum treats it as the
+accept-then-vanish no-show (-25). Bookings WITH a visit date still
+no-show on the date rule; dateless, unexpired bookings are never
+penalized.
+
+**Staff notice.** When a creator taps "I am here" (check-in) or a
+comp is redeemed (counter or business confirm), the business
+immediately gets an email (`staff_notice_sent` event plus the
+`staff_notice` delivery events): creator name and photo, what was
+comped and the cap, the booking code, and one line on how
+redemption works. One notice per trigger per booking. Preview mode
+never reaches a redemption, so no preview notice can exist.
+
+**Business-didn't-honor reports.** On a visit with no delivered
+post, the creator can file "The business didn't honor this"
+(`POST /api/bookings/:id/honor-report`, short reason required). It
+logs `business_honor_report`, stamps the booking, and voids that
+visit's compliance clock entirely: the sweep skips it, Momentum
+skips it, and the track record does not count it as a completed
+visit. The business record carries its running count
+(`business.honorReports`), and the admin Compliance view aggregates
+reports per business with a visible WARNING flag at two or more.
+There is no public surface for any of this.
+
+**Weekly visit cap.** A creator sets "Max visits per week" in
+profile edit (`creator.maxVisitsPerWeek`, default 3, range 1-7).
+The count is bookings accepted in the current Mon-Sun week that are
+not cancelled or expired. At cap, offers still arrive, but
+accepting is refused with a plain explanation, and discovery (card,
+full profile, preview, public profile payload) flags the creator
+`bookedUp: true` ("Booked up this week"): visible, not greyed.
+That is deliberately different from paused.
+
 ## Environment variables
 
 Set these in Netlify (Site settings, Environment variables) for
@@ -351,6 +509,7 @@ production. Locally they go in the shell.
 | SIGNL_SMTP_PASS | For email | A Gmail App Password for that mailbox (requires 2-Step Verification on the account). Never the account's real password. |
 | SIGNL_SMTP_HOST / SIGNL_SMTP_PORT | No | Default smtp.gmail.com / 465 (implicit TLS). |
 | SIGNL_MAIL_FROM | No | Default "SIGNL <hello@joinsignl.com>". |
+| SIGNL_SWEEP_TOKEN | For the scheduled sweep | Shared secret the Netlify scheduled function (compliance-sweep.mjs) sends as the `x-signl-sweep-token` header to POST /api/admin/compliance/sweep. Without it, the sweep still runs via the admin endpoint and the opportunistic in-request trigger. |
 
 ## Data schema (Netlify Blobs, store "signl-data", one key per record)
 
@@ -366,8 +525,12 @@ production. Locally they go in the shell.
   localAudienceAsOf, agreedHonestPosts, agreedFtcDisclosure,
   agreedAt, agreedTerms, termsVersion, marketingEmailConsent,
   marketingConsentAt, openToPaidCampaigns, hasPhoto, photoUploadedAt,
-  igConnected. The user record also carries termsVersion,
-  termsAcceptedAt, marketingEmailConsent, marketingConsentAt.
+  igConnected, audienceStack (per-platform counts), totalAudience,
+  maxVisitsPerWeek, agreedPostCompliance. The user record also carries termsVersion,
+  termsAcceptedAt, marketingEmailConsent, marketingConsentAt, and
+  standing ({ state: good/paused/banned, reason, at, bookingId }) once
+  the compliance engine has acted. The business payload also carries
+  honorReports (running count of didn't-honor reports).
   Founding priority
   is the creator's createdAt order inside their market; nothing extra
   is stored for it. `foundingViewedOn` (date) throttles the
@@ -376,15 +539,22 @@ production. Locally they go in the shell.
   planPriceMonthly, planMinMonths, billingStatus, planSelectedAt).
 - `email:{email}` uniqueness index to the user id.
 - `session:{token}` server-side session (30 day expiry).
-- `offer:{uuid}` title, whatComped, dollarCap, visitWindow, spots,
+- `offer:{uuid}` title, whatComped, dollarCap, visitWindow,
+  windowMode (7days/thisweek), spots,
   optional target creatorId, status open/declined.
 - `booking:{uuid}` the visit: offer snapshot, visitDate, code,
-  codeStatus (issued/burned), status (booked/redeemed/completed),
+  codeStatus (issued/burned/expired), status (booked/redeemed/completed/expired),
   checkinAt, redeemedAt, redeemMethod (counter_code/business_confirm),
-  postDeadline (redeemedAt + 48h), replacementRequestedAt.
+  postDeadline (redeemedAt + 48h), redeemBy (acceptance + window),
+  replacementRequestedAt, compliance ({ reminder1At/2At/3At,
+  visitLateAt, missedDeadlineAt, pausedAt, bannedAt, banAt,
+  lateDeliveredAt, expiredAt }), honorReportedAt + honorReason,
+  staffNotice ({ checkinNoticeAt, redeemNoticeAt }).
 - `code:{SGNL-XXXXXX}` redemption lookup index to the booking.
 - `post:{uuid}` url, submittedAt, deadline, hoursAfterRedeem, onTime,
-  includesDisclosure, verifiedAt/verifiedBy.
+  includesDisclosure, verifiedAt/verifiedBy, adUseDeclaredAt/
+  adUseDeclaredBy/adUsePlan, performanceRequestedAt, views, likes,
+  reportedAt.
 - `message:{uuid}` threadId (sorted user-id pair), from/to, body.
 - `review:{uuid}` a business's post-visit review of a creator:
   bookingId, creatorId, businessId, businessName snapshot, stars
@@ -398,6 +568,10 @@ production. Locally they go in the shell.
   a live market.
 - `config:markets` market activation flags: `{ flags: { [marketName]:
   true } }`. A market with no flag is not live.
+- `config:complianceSweep` `{ lastRunAt }`: the throttle claim for
+  the opportunistic compliance sweep.
+- `config:recruiterKitEmailV1Sent`: one-shot claim flag for the
+  recruiter kit email (it can never send twice).
 - `event:{yyyy-mm-dd}:{uuid}` the append-only event log.
 
 ### Event types written today
@@ -412,7 +586,16 @@ favorite_added, favorite_removed, offer_created, offer_accepted,
 offer_declined, booking_code_issued, creator_checked_in,
 visit_confirmed_by_business, code_redeemed, post_submitted,
 post_verified, business_review_left, replacement_requested,
-message_sent, admin_bootstrapped.
+message_sent, admin_bootstrapped,
+proof_submitted, proof_late_accepted, post_reminder_1,
+post_reminder_2, post_reminder_3 (each with its
+`*_email_queued` / `*_email_sent` / `*_email_not_sent` delivery
+companions), visit_late, visit_deadline_missed, account_paused,
+account_unpaused, account_banned, account_reinstated,
+offer_expired, staff_notice_sent (plus staff_notice delivery
+companions), business_honor_report, ad_use_declared,
+post_performance_requested (plus post_performance delivery
+companions), post_performance_reported.
 
 Each event carries ts, actorId, actorRole, subjectId, market, and a
 data payload with the decision-relevant fields (amounts, caps, tier,
