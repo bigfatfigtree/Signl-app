@@ -1951,8 +1951,9 @@ function renderAdmin() {
   app.innerHTML = `
     <h2>SIGNL Admin</h2>
     <div class="panel preview-cta">
-      <div><strong>Business Preview</strong><p class="muted small" style="margin:4px 0 0">Walk the app exactly as a business does: the founding plans, roster search with every filter, full creator profiles, and the offer composer. Offers sent in preview are simulations that never reach a creator and are never saved.</p></div>
+      <div><strong>Business Preview</strong><p class="muted small" style="margin:4px 0 0">Walk the app exactly as a business does: the founding plans, roster search with every filter, full creator profiles, the offer composer, and the business dashboard with bookings, codes, tracking and returns. Offers sent in preview are simulations that never reach a creator and are never saved.</p></div>
       <button class="btn" onclick="enterPreview()">Preview as business &rarr;</button>
+      <button class="btn ghost" onclick="enterPreviewDashboard()">Business dashboard &rarr;</button>
     </div>
     ${tabsHtml(["Applications", "Markets", "Recruiters", "Event Log", "Compliance", "Campaign", "Stats"], tab)}
     <div id="tab-body"><p class="muted">Loading...</p></div>`;
@@ -2349,7 +2350,8 @@ function previewPlansHtml() {
     <p class="muted">A business joins the founding list and picks a plan (recorded at sign-up, no card charged during founding); when their market activates, they land in Discover with the founding roster ready. Pick a plan and a market, then walk the roster exactly as they would.</p>
     <div class="field"><label>Market to preview</label><select id="pv-market">${state.boot.markets.map((m) => `<option ${pv.market === m.name ? "selected" : ""}>${esc(m.name)}</option>`).join("")}</select></div>
     <div class="plan-cards">${plans}</div>
-    <p class="mt"><button class="btn" onclick="previewToDiscover()">Continue as this business: search the roster &rarr;</button></p>
+    <p class="mt"><button class="btn" onclick="previewToDiscover()">Continue as this business: search the roster &rarr;</button>
+    <button class="btn ghost" onclick="previewToDashboard()">Skip ahead: the business dashboard &rarr;</button></p>
     <p class="small muted">Preview discovery works in every market, live or not, so a market can be test-driven before it opens. Real businesses only search their own market once it is live.</p>
   </section>`;
 }
@@ -2526,6 +2528,195 @@ async function previewSendOffer(e) {
     if (el) el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
   return false;
+}
+
+// ---------------- business preview dashboard (admin) ----------------
+// Jeff (2026-10-19): the business home, walked inside preview. One
+// simulated Growth-plan business, bookings across the real approved
+// roster in every lifecycle state, the counter staff view, and the
+// tracking + returns summary. The server builds it read-only per
+// request (GET /admin/preview/dashboard): nothing is saved, no event
+// is logged, and the bookings exist only on this screen.
+function previewToDashboard() {
+  const pv = state.preview;
+  if (!pv) return;
+  pv.step = "dashboard";
+  renderPreview();
+}
+
+async function loadPreviewDashboard() {
+  const pv = state.preview;
+  try {
+    const data = await api("GET", "/admin/preview/dashboard");
+    if (!state.preview || state.preview.step !== "dashboard") return;
+    pv.dashboard = data.dashboard;
+    renderPreview();
+  } catch (err) {
+    const main = document.getElementById("preview-main");
+    if (main) main.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+  }
+}
+
+let pvCountdownTimer = null;
+function startPreviewCountdown() {
+  stopPreviewCountdown();
+  tickPreviewCountdowns();
+  pvCountdownTimer = setInterval(tickPreviewCountdowns, 30000);
+}
+function stopPreviewCountdown() {
+  if (pvCountdownTimer) { clearInterval(pvCountdownTimer); pvCountdownTimer = null; }
+}
+function pvDurCore(ms) {
+  const a = Math.abs(ms);
+  const d = Math.floor(a / 86400000), h = Math.floor((a % 86400000) / 3600000), m = Math.floor((a % 3600000) / 60000);
+  return d > 0 ? `${d}d ${h}h` : h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+function tickPreviewCountdowns() {
+  document.querySelectorAll(".pv-tick").forEach((el) => {
+    const t = Date.parse(el.dataset.target || "");
+    if (!t) return;
+    const diff = t - Date.now();
+    if (el.dataset.kind === "left") el.textContent = diff > 0 ? `${pvDurCore(diff)} left` : `${pvDurCore(-diff)} past the deadline`;
+    else el.textContent = diff > 0 ? `in ${pvDurCore(diff)}` : "now";
+  });
+}
+
+function pvStateBadge(b) {
+  const map = {
+    booked: `<span class="badge info">${esc(b.stateLabel)}</span>`,
+    post_due: `<span class="badge info">${esc(b.stateLabel)}</span>`,
+    posted_on_time: `<span class="badge ok">${esc(b.stateLabel)}</span>`,
+    posted_late: `<span class="badge warn">${esc(b.stateLabel)}</span>`,
+    overdue: `<span class="badge bad">${esc(b.stateLabel)}</span>`,
+  };
+  return map[b.state] || `<span class="badge">${esc(b.stateLabel)}</span>`;
+}
+
+function pvStars(n) {
+  return `<span class="stars">${"&#9733;".repeat(n)}${"&#9734;".repeat(5 - n)}</span>`;
+}
+
+function pvChecklistHtml(b) {
+  const rows = (b.checklist || []).map((it) => {
+    const mark = it.state === "done" ? "&#10003;" : it.state === "overdue" ? "!" : "&middot;";
+    return `<div class="earn-row ${it.state === "done" ? "done" : ""}"><span class="earn-state">${mark}</span><span class="earn-label">${esc(it.label)}<br><span class="small muted">${esc(it.detail)}</span></span></div>`;
+  }).join("");
+  return `<div class="showcase-block"><h4>The Standard Visit checklist</h4>${rows}</div>`;
+}
+
+function pvBookingCard(b) {
+  const methodLabel = b.redeemMethod === "business_confirm" ? "business confirmed in the app (no code)" : "staff scanned the code at the counter";
+  let html = `
+  <div class="card mb">
+    <div class="flex-between"><strong>${esc(b.title)}</strong>${pvStateBadge(b)}</div>
+    <p class="small muted">@${esc(b.creatorHandle)} (${esc(b.creatorName)})${b.creatorTier ? ` &middot; ${esc(b.creatorTier)}` : ""} &middot; ${esc(b.market)} &middot; Comp: ${esc(b.whatComped)} (cap $${b.dollarCap}${b.compCostModeled ? `, at cost $${b.compCostModeled} modeled` : ""}) &middot; Window: ${esc(b.visitWindow || "Flexible")}</p>`;
+  if (b.state === "booked") {
+    html += `
+    <div class="grid cols-2">
+      <div>
+        <p class="small muted" style="margin-bottom:0">The visit credential, exactly as issued. The creator shows the code or the QR; staff redeem it in the app and the 48 hour post clock starts at that moment.</p>
+        <div class="code-display">${esc(b.code)}</div>
+        <p class="small"><strong>Redeem by ${esc(fmtDate(b.redeemBy))}</strong>. Any time inside the window, no appointment. If the window passes unused, the booking expires as a no-show.</p>
+      </div>
+      <div class="qr-box">${b.qrSvg || ""}</div>
+    </div>`;
+  }
+  if (b.redeemedAt) {
+    html += `<p class="small muted">Redeemed ${esc(fmtDate(b.redeemedAt))} (${esc(methodLabel)}). Code ${esc(b.code)} is burned. Post deadline: <strong>${esc(fmtDate(b.postDeadline))}</strong>.</p>`;
+  }
+  if (b.state === "post_due") {
+    html += `<p class="small">Post clock: <span class="countdown pv-tick" data-kind="left" data-target="${esc(b.postDeadline)}"></span> of the 48 hours. The creator sees the same countdown in My Visits.</p>`;
+  }
+  if (b.state === "overdue") {
+    html += `<div class="notice"><strong>This visit needs attention.</strong> ${(b.alerts || []).map((a) => `<br>${esc(a)}`).join("")}<br>Hard stop <span class="countdown pv-tick" data-kind="until" data-target="${esc(b.pauseAt)}"></span> (${esc(fmtDate(b.pauseAt))}).</div>
+    <button class="btn small-btn" disabled>Request a replacement visit</button> <span class="small muted">In the live app this asks SIGNL for a replacement creator for the burned visit. Disabled in preview.</span>`;
+  }
+  if (b.post) {
+    const p = b.post;
+    html += `<p class="small">Post: <a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.url)}</a> &middot; submitted ${esc(fmtDate(p.submittedAt))} (${p.hoursAfterRedeem}h after redemption) &middot; ${p.onTime ? `<span class="saved">On time</span>` : `<span style="color:var(--amber)">Delivered late</span>`} &middot; comp disclosed</p>`;
+    if (p.reportedAt) {
+      html += `<p class="small">Your comp produced <strong>${fmtNum(p.views)} views &middot; ${fmtNum(p.likes)} likes</strong> (creator-reported ${esc(fmtDate(p.reportedAt))}).</p>`;
+    }
+    html += `<button class="btn small-btn ghost" disabled>Use in an ad</button> <span class="small muted">Your Growth plan includes ad use while your account is active; the creator is notified and earns +25 Momentum. Disabled in preview; try it live from the creator profile's showcase.</span>`;
+  }
+  if (b.review) {
+    html += `<div class="review-item"><span class="small muted">Your review of this creator</span><br>${pvStars(b.review.stars)} <span class="small">${esc(b.review.text)}</span></div>`;
+  }
+  html += pvChecklistHtml(b);
+  html += `</div>`;
+  return html;
+}
+
+function pvStaffPanelHtml(d) {
+  const booked = (d.bookings || []).find((b) => b.state === "booked");
+  const redeemed = (d.bookings || []).find((b) => b.state === "post_due");
+  if (!booked) return "";
+  return `
+  <section class="panel">
+    <h3 style="margin-top:0"><span class="preview-tag">PREVIEW</span> What staff see at the counter</h3>
+    <p class="muted small">The Counter screen, read-only. In the live app this is the whole job: the creator shows their code or QR, staff look it up, one tap redeems it and starts the 48 hour clock. The register is never involved; staff ring the comp in your own system the way they normally do.</p>
+    <div class="grid cols-2">
+      <div class="card">
+        <div class="field"><label>Booking code</label><input value="${esc(booked.code)}" disabled style="text-transform:uppercase;font-family:Archivo;font-weight:700;letter-spacing:0.06em"></div>
+        <div class="card" style="margin-top:10px">
+          <div class="flex-between"><strong>${esc(booked.creatorName)}</strong><span class="badge tier">@${esc(booked.creatorHandle)}</span></div>
+          <p class="small">${esc(booked.title)}: ${esc(booked.whatComped)}</p>
+          <p class="small muted">Comp cap $${booked.dollarCap} &middot; Window: ${esc(booked.visitWindow || "Flexible")} &middot; Code ${esc(booked.code)}</p>
+          <p class="small">Check the person in front of you matches the creator, then redeem. The code burns and the 48 hour post clock starts now.</p>
+          <button class="btn" style="width:100%" disabled>Redeem and start the clock</button>
+          <p class="small muted" style="margin-bottom:0">Read-only in preview. No code shown anywhere in preview can actually be redeemed.</p>
+        </div>
+      </div>
+      <div>
+        ${redeemed ? `<div class="error-box">This code was already redeemed at ${esc(fmtDate(redeemed.redeemedAt))}. Codes work once.</div>
+        <p class="small muted">That is what staff see if a burned code is entered again, here for ${esc(redeemed.title)} (@${esc(redeemed.creatorHandle)}). One code, one visit, no double comps.</p>` : ""}
+        <div class="card">
+          <strong>No code? No problem.</strong>
+          <p class="small">If the creator is standing there but the code cannot be scanned, staff confirm the visit from the booking instead. The same 48 hour clock starts, and the booking is marked "business confirmed", like the Sunday supper club visit in the list below. The creator also gets an "I am here" check-in button on their side.</p>
+        </div>
+      </div>
+    </div>
+  </section>`;
+}
+
+function previewDashboardHtml(d) {
+  const s = d.summary;
+  const plan = d.plan;
+  if (!d.bookings || !d.bookings.length) {
+    return `<section class="panel"><h3 style="margin-top:0"><span class="preview-tag">PREVIEW</span> The business dashboard</h3><p class="muted">No approved creators yet, so there is no roster to simulate bookings over. Approve founding creators and the dashboard fills in.</p></section>`;
+  }
+  return `
+  <section class="panel">
+    <div class="flex-between">
+      <div><h3 style="margin:0">${esc(d.business.name)}</h3><p class="muted small" style="margin:4px 0 0">${esc(d.business.category)} &middot; ${esc(d.business.market)} &middot; ${esc(s.cycleLabel)} cycle</p></div>
+      <span class="badge info">${esc(plan.name)} plan &middot; $${plan.priceMonthly}/mo &middot; ${plan.visitsPerMonth} visits/mo</span>
+    </div>
+    <p class="small muted" style="margin-bottom:0">The dashboard a business lives in: who is booked, the codes, redemption, the post clock, delivered posts, and what it all returned. Every booking below is simulated over the real founding roster, with simulated visit data. Nothing here is saved, and no creator is contacted.</p>
+  </section>
+  <section class="panel">
+    <h3 style="margin-top:0">Tracking and returns, ${esc(s.cycleLabel)}</h3>
+    <div class="stat-row">
+      <div class="stat"><div class="num">${s.visitsUsed}<span class="small muted"> of ${s.visitsAllowance}</span></div><div class="lbl">Visits booked this month</div></div>
+      <div class="stat"><div class="num">${s.postsDelivered}</div><div class="lbl">Posts delivered</div></div>
+      <div class="stat"><div class="num">${s.onTimeRatePct === null ? "n/a" : s.onTimeRatePct + "%"}</div><div class="lbl">On-time rate (${s.postsOnTime} on time, ${s.postsLate} late)</div></div>
+      <div class="stat"><div class="num">${fmtNum(s.totalViews)}</div><div class="lbl">Total content views</div></div>
+      <div class="stat"><div class="num">$${fmtNum(s.compValueGiven)}</div><div class="lbl">Comp given, at cost (modeled)</div></div>
+      <div class="stat"><div class="num">$${fmtNum(s.mediaValueReceived)}</div><div class="lbl">Media value received (modeled)</div></div>
+      <div class="stat"><div class="num">${s.returnMultiple === null ? "n/a" : s.returnMultiple + "&times;"}</div><div class="lbl">Modeled return on comp</div></div>
+    </div>
+    <p class="small muted">${s.postsInFlight} post still inside its 48 hour clock, ${s.postsOverdue} overdue in the late window, ${s.visitsRemaining} visits left on the ${esc(plan.name)} allowance this month.</p>
+    <p class="small muted">${esc(s.compValueBasis)}. ${esc(s.mediaValueBasis)}. Both are planning models on simulated data, shown so the shape of the returns math is visible; live figures replace them as real visits complete.</p>
+    <div class="showcase-block"><h4>Your plan's content rights</h4>
+      <p class="small" style="margin:0 0 4px"><span class="rules">With the ${esc(plan.name)} plan you can:</span> share a delivered post with the creator tagged; repost it on your own feed; run it as an ad while your SIGNL account is active (the ad right ends if the account ends).</p>
+      <p class="small muted" style="margin:0">You can never edit a creator's post. Rights follow your plan and are shown to the creator before they accept, so there are no surprises on either side.</p>
+    </div>
+  </section>
+  ${pvStaffPanelHtml(d)}
+  <section class="panel">
+    <h3 style="margin-top:0">Bookings (${d.bookings.length})</h3>
+    ${d.bookings.map((b) => pvBookingCard(b)).join("")}
+    <p class="small muted">End of the simulated roster. In the live app this list is the business's Visits &amp; Posts tab, fed by real bookings, real codes and real proof links.</p>
+  </section>`;
 }
 
 // ---------------- init ----------------

@@ -345,6 +345,47 @@ try {
   check("preview offer wrote no events (no offer_created anywhere in the log)", !(evAfterPv.data.events || []).some((e) => e.type === "offer_created"), "");
   check("client ships the business preview mode (banner, steps, simulated composer)", appJs.text.includes("Preview as business") && appJs.text.includes("PREVIEW") && appJs.text.includes("renderPreview") && appJs.text.includes("previewSendOffer") && appJs.text.includes("/admin/preview/offers") && appJs.text.includes("exitPreview"), "");
 
+  // --- admin Business Preview dashboard: the full visit lifecycle
+  // over the real roster, with the preview invariant held: the route
+  // renders only for the admin, and answering it writes no events,
+  // moves no counts, and leaves no booking anywhere a real surface
+  // can see.
+  const creatorBId = regB.data.user.id;
+  const evBeforeDash = await admin("GET", "/api/admin/events?limit=2000");
+  const statsBeforeDash = await admin("GET", "/api/admin/stats");
+  const dashRes = await admin("GET", "/api/admin/preview/dashboard");
+  const dash = dashRes.data.dashboard || {};
+  const dBookings = dash.bookings || [];
+  check("preview dashboard answers for the admin as a flagged simulation on the Growth plan", dashRes.status === 200 && dashRes.data.preview === true && dash.preview === true && !!dash.plan && dash.plan.id === "growth" && dash.plan.visitsPerMonth === 20, `${dashRes.status} ${JSON.stringify(dash.plan || null)}`);
+  check("preview dashboard covers the full lifecycle (booked, clock running, on time, late, overdue)", ["booked", "post_due", "posted_on_time", "posted_late", "overdue"].every((st) => dBookings.some((b) => b.state === st)), JSON.stringify(dBookings.map((b) => b.state)));
+  check("preview dashboard bookings are all flagged simulated with preview ids", dBookings.length === 5 && dBookings.every((b) => b.preview === true && b.id.startsWith("preview-dash-") && b.businessId === "__preview__"), JSON.stringify(dBookings.map((b) => b.id)));
+  check("preview dashboard features only the real approved roster", dBookings.length > 0 && dBookings.every((b) => [creatorAId, creatorBId].includes(b.creatorId)) && dBookings.some((b) => b.creatorId === creatorAId), JSON.stringify(dBookings.map((b) => b.creatorHandle)));
+  const codeRe = /^SGNL-[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{6}$/;
+  check("every dashboard code matches the SGNL-XXXXXX format", dBookings.length > 0 && dBookings.every((b) => codeRe.test(b.code)), JSON.stringify(dBookings.map((b) => b.code)));
+  check("dashboard codes are unique within the response", new Set(dBookings.map((b) => b.code)).size === dBookings.length, "");
+  const bookedBk = dBookings.find((b) => b.state === "booked") || {};
+  check("the booked dashboard booking carries a rendered QR (the counter credential)", typeof bookedBk.qrSvg === "string" && bookedBk.qrSvg.includes("<svg") && !!bookedBk.redeemBy && Date.parse(bookedBk.redeemBy) > Date.now(), String(bookedBk.qrSvg || "").slice(0, 60));
+  check("every dashboard booking carries the Standard Visit checklist", dBookings.every((b) => Array.isArray(b.checklist) && b.checklist.length === 6 && b.checklist.some((it) => it.key === "post")), "");
+  const overdueBk = dBookings.find((b) => b.state === "overdue") || {};
+  check("the problem booking surfaces its alerts and the hard stop", Array.isArray(overdueBk.alerts) && overdueBk.alerts.length >= 2 && !!overdueBk.pauseAt && Date.parse(overdueBk.pauseAt) > Date.now() && overdueBk.replacementAvailable === true, JSON.stringify(overdueBk.alerts || null));
+  const dSum = dash.summary || {};
+  const deliveredPosts = dBookings.filter((b) => b.post);
+  check("dashboard summary is consistent with its own bookings (tracking + returns)", dSum.modeled === true && dSum.visitsUsed === dBookings.length && dSum.visitsAllowance === 20 && dSum.postsDelivered === deliveredPosts.length && dSum.totalViews === deliveredPosts.reduce((s, b) => s + (b.post.views || 0), 0) && dSum.totalLikes === deliveredPosts.reduce((s, b) => s + (b.post.likes || 0), 0) && dSum.compValueGiven === dBookings.reduce((s, b) => s + (b.redeemedAt ? b.compCostModeled || 0 : 0), 0) && dSum.mediaValueReceived === Math.round((dSum.totalViews / 1000) * 22), JSON.stringify(dSum));
+  check("dashboard carries the plan rights recap and the Standard Visit", !!dash.rights && dash.rights.adUse === true && Array.isArray(dash.rights.can) && !!dash.standardVisit && Array.isArray(dash.standardVisit.deliverables), "");
+  const evAfterDash = await admin("GET", "/api/admin/events?limit=2000");
+  check("preview dashboard wrote no events", (evAfterDash.data.events || []).length === (evBeforeDash.data.events || []).length, `${(evBeforeDash.data.events || []).length} -> ${(evAfterDash.data.events || []).length}`);
+  const statsAfterDash = await admin("GET", "/api/admin/stats");
+  check("preview dashboard moved no counts (admin stats identical)", JSON.stringify(statsAfterDash.data) === JSON.stringify(statsBeforeDash.data), "");
+  const adminBookings = await admin("GET", "/api/bookings");
+  check("simulated bookings never appear in the real bookings list", !(adminBookings.data.bookings || []).some((b) => String(b.id).startsWith("preview-dash-") || dBookings.some((db) => db.code === b.code)), JSON.stringify((adminBookings.data.bookings || []).map((b) => b.id)));
+  const creatorABookings = await creatorA("GET", "/api/bookings");
+  check("a featured creator's real bookings stay empty after the dashboard", creatorABookings.status === 200 && (creatorABookings.data.bookings || []).length === 0, JSON.stringify(creatorABookings.data.bookings || null));
+  const dashForbidden = await creatorA("GET", "/api/admin/preview/dashboard");
+  check("preview dashboard is admin-only (a creator gets 403)", dashForbidden.status === 403, String(dashForbidden.status));
+  const dashAnon = await client()("GET", "/api/admin/preview/dashboard");
+  check("preview dashboard refuses signed-out callers (401)", dashAnon.status === 401, String(dashAnon.status));
+  check("client ships the preview dashboard (nav, countdown, staff panel, returns)", appJs.text.includes("previewToDashboard") && appJs.text.includes("/admin/preview/dashboard") && appJs.text.includes("previewDashboardHtml") && appJs.text.includes("What staff see at the counter") && appJs.text.includes("enterPreviewDashboard"), "");
+
   // --- tester designation: approved, but never on the roster ---
   // A tester account (Tony Johnson is the first) exercises the app
   // as a creator while staying invisible to businesses: discovery

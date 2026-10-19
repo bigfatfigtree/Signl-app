@@ -311,6 +311,39 @@ preview path is verified without the production admin password: the
 launch suite signs in as the env-bootstrapped admin against a
 throwaway local database and exercises the real endpoints.
 
+**Business Preview dashboard (admin-only).** The preview also
+carries a Dashboard view (Admin → Preview as business → Dashboard,
+or the "Business dashboard" button on the admin console):
+`GET /api/admin/preview/dashboard` builds, per request and entirely
+in memory, one simulated business ("Salt & Ember Kitchen", Growth
+plan, Hampton Roads) with five bookings across the real approved
+roster covering the full visit lifecycle: booked with the
+SGNL-XXXXXX credential issued (code + rendered QR of the counter
+URL, redemption window), redeemed via staff scan with the 48 hour
+post clock counting down live, posted on time with reported
+performance (views/likes) and a 5-star business review, posted late
+but delivered with a 4-star review, and one problem booking
+redeemed via the business-confirm fallback and sitting in the late
+window (deadline passed, hard stop ahead, replacement affordance
+shown disabled). Featured creators (Emily, Kesha, Moni,
+Christopher) fill the slots first; any approved roster creator can
+cover a slot. Simulated codes are generated for display and checked
+read-only against the live code index so one never equals a real
+code. The top summary is the business's tracking + returns: visits
+used vs the plan allowance, posts delivered, on-time rate, total
+content views, comp value given (modeled at the business's own
+cost) vs media value received (modeled at a $22 CPM on reported
+views) with the modeled return multiple, and the plan's content
+rights recap. A read-only Counter panel shows what staff see at
+redemption, including the burned-code response and the no-code
+confirm fallback. Every booking carries its Standard Visit
+checklist. The route holds the preview invariant absolutely: it
+reads users and the code index and writes nothing (no store writes,
+no events, no metrics); the launch suite asserts the event log and
+admin stats are byte-identical across the call, that simulated
+bookings and codes appear in no real bookings list, and that the
+route is admin-only (403 creator / 401 signed-out).
+
 **Richer creator profiles.** One showcase, rendered identically on
 the public profile page, the discovery card, the full profile view,
 the creator's own profile ("How businesses see your profile"), and
