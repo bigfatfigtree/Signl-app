@@ -131,6 +131,8 @@ async function renderPublicProfile() {
     ${p.foundingBand ? `<p><span class="badge tier" style="padding:6px 14px">In the first ${p.foundingBand} founding creators in ${place}</span></p>` : ""}
     ${p.categories && p.categories.length ? `<p class="small">${p.categories.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
     ${p.compCategories && p.compCategories.length ? `<p class="small muted">Open to comps: ${p.compCategories.map(esc).join(", ")}</p>` : ""}
+    <p class="small">${p.paidRate ? `<span class="badge tier">Paid bookings: $${esc(String(p.paidRate))}</span> ` : ""}${p.compOpen === false ? `<span class="badge warn">Paid visits only</span>` : `<span class="badge info">Open to comp visits</span>`}</p>
+    ${p.paidRate ? `<p class="small muted">Businesses can also book this creator at her listed rate: the business pays the rate plus 3%, she keeps 97% of her rate, and SIGNL holds the payment until the post is live.</p>` : ""}
     ${bestWorkHtml(p.bestWork)}
     ${trackRecordHtml(p)}
     ${reviewsHtml(p)}
@@ -185,7 +187,7 @@ function momentumHtml(u) {
   return `
   <div class="panel mt" style="text-align:left">
     <div class="flex-between"><h3 style="margin:0">Momentum</h3><span class="badge info" style="font-size:1rem;padding:6px 14px">${m.points} points</span></div>
-    <p class="small">Points decide the order businesses see you in. You earn them for completing your profile, delivering posts on time, great reviews, posts that run as ads, and recruiting creators. Late posts, no-shows, and a redeemed visit with no post cost you points.${m.floorApplied ? " Your total never drops below zero." : ""}</p>
+    <p class="small">Points decide the order businesses see you in. You earn them for completing your profile, delivering posts on time, reviewing businesses after completed visits, posts that run as ads, and recruiting creators. Late posts, no-shows, and a redeemed visit with no post cost you points.${m.floorApplied ? " Your total never drops below zero." : ""}</p>
     <h4 style="margin:14px 0 6px">Ways to earn</h4>
     ${checklist || `<p class="small muted">Loading...</p>`}
     ${ledger ? `<h4 style="margin:16px 0 6px">Points history</h4>${ledger}` : ""}
@@ -889,6 +891,71 @@ function starsHtml(n) {
   return `<span class="stars" title="${full} out of 5 stars">${"★".repeat(full)}${"☆".repeat(5 - full)}</span>`;
 }
 
+// ---------- paid lane + review links (Jeff, 2026-10-19) ----------
+// Two lanes, one roster. These renderers read only the normalized
+// payload fields (profile.paidRate: number or null; profile.compOpen:
+// boolean) so every surface states the creator's booking terms the
+// same way: her listed rate with a "Paid bookings" marker when she
+// charges, and her comp-open state either way.
+function paidLaneBadgesHtml(p) {
+  if (!p) return "";
+  let out = "";
+  if (p.paidRate) out += ` <span class="badge tier">Paid bookings: $${esc(String(p.paidRate))}</span>`;
+  out += p.compOpen === false
+    ? ` <span class="badge warn">Paid visits only</span>`
+    : ` <span class="badge info">Open to comp visits</span>`;
+  return out;
+}
+
+// The business's public review pages, as a courtesy block. The
+// server sends [{key,label,url}] only when links exist, so this
+// renders nothing at all for businesses without them. No points
+// attach to external reviews, anywhere, ever.
+function reviewLinksBlockHtml(links) {
+  if (!links || !links.length) return "";
+  return `<div class="showcase-block"><h4>Their review pages</h4><p class="small" style="margin:0">${links.map((l) => `<a href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.label)}</a>`).join(" &middot; ")}</p><p class="small muted" style="margin:4px 0 0">If you want to leave them a public review too, these are their pages. Entirely your call, and never part of the deal.</p></div>`;
+}
+
+// Book a paid visit at the creator's listed rate (real surface).
+async function bookPaidVisit(creatorId) {
+  const c = (state.discover || []).find((x) => x.userId === creatorId);
+  const p = c && c.profile ? c.profile : {};
+  const rate = p.paidRate;
+  if (!rate) { alert("That creator has not listed a paid rate."); return; }
+  const total = Math.round(rate * 1.03 * 100) / 100;
+  const net = Math.round(rate * 0.97 * 100) / 100;
+  if (!confirm(`Book a paid visit with ${c ? c.name : "this creator"} at their listed rate of $${rate}?\n\nYou pay $${total} (the rate plus 3%). They keep $${net} (97% of their rate). SIGNL holds the payment and releases it when their post is live. Comp-only is always fine too: paid is only for booking this specific creator.`)) return;
+  try {
+    const data = await api("POST", "/bookings/paid", { creatorId });
+    state.tab = "Visits & Posts";
+    render();
+    setTimeout(() => alert(`Paid visit booked. The code is ${data.booking.code}; the creator shows it at the visit and the 48 hour post clock starts at redemption. Payment state: ${data.booking.paidLane.paymentNote}`), 50);
+  } catch (err) { alert(err.message); }
+}
+
+// Preview twin of the paid booking: a simulation with the real fee
+// math, zero writes (the server route enforces it).
+async function previewPaidBooking(creatorId) {
+  try {
+    const data = await api("POST", "/admin/preview/paid-booking", { creatorId });
+    const bk = data.booking;
+    alert(`PREVIEW paid booking (simulation)\n\nCreator rate: $${bk.rate}\nYou pay: $${bk.businessTotal} (rate + 3%)\nCreator keeps: $${bk.creatorNet} (97% of her rate)\nSIGNL fee: $${bk.platformFee} total, split evenly\nEscrow: held by SIGNL until the post is live\n\n${bk.paymentNote}\n${bk.note}`);
+  } catch (err) { alert(err.message); }
+}
+
+// Creator reviews the business after a completed visit: +10
+// Momentum at ANY star rating (honest reviews, never paid praise).
+async function submitBusinessReview(e, bookingId) {
+  e.preventDefault();
+  const stars = document.getElementById("bizrev-stars-" + bookingId).value;
+  const text = document.getElementById("bizrev-text-" + bookingId).value;
+  try {
+    await api("POST", `/bookings/${bookingId}/review-business`, { stars: Number(stars), text });
+    loadMyVisits("creator");
+  } catch (err) { alert(err.message); }
+  return false;
+}
+
 // The creator's uploaded photo, or a brand-styled initial tile when
 // they have not added one yet.
 function avatarHtml(card, cls) {
@@ -962,7 +1029,7 @@ function creatorProfileDetailHtml(c, preview) {
       <div style="flex:1;min-width:240px">
         <h3 style="margin:0">${esc(c.name)}</h3>
         <p class="muted" style="margin:4px 0">@<a href="${esc(p.instagramUrl || "")}" target="_blank" rel="noopener">${esc(p.handle || "")}</a> &middot; ${esc(c.market)}${c.city ? ` &middot; ${esc(c.city)}` : ""}${c.neighborhood ? ` &middot; ${esc(c.neighborhood)}` : ""}</p>
-        <p>${scoreBadge(c.localImpactScore)}${p.openToPaidCampaigns ? ` <span class="badge tier">Open to paid campaigns</span>` : ""}${c.momentum && c.momentum.points ? ` <span class="badge info">Momentum ${c.momentum.points} pts</span>` : ""} <span class="badge tier">${esc(p.tierBand || "")}</span>${c.foundingBand ? ` <span class="badge tier">Founding creator, first ${c.foundingBand} in market</span>` : ""}</p>
+        <p>${scoreBadge(c.localImpactScore)}${p.openToPaidCampaigns ? ` <span class="badge tier">Open to paid campaigns</span>` : ""}${paidLaneBadgesHtml(p)}${c.momentum && c.momentum.points ? ` <span class="badge info">Momentum ${c.momentum.points} pts</span>` : ""} <span class="badge tier">${esc(p.tierBand || "")}</span>${c.foundingBand ? ` <span class="badge tier">Founding creator, first ${c.foundingBand} in market</span>` : ""}</p>
         <p>${localTxt}</p>
       </div>
     </div>
@@ -984,9 +1051,10 @@ function creatorProfileDetailHtml(c, preview) {
     ${creatorShowcaseHtml(c)}
     <div class="cta-row" style="justify-content:flex-start">
       ${preview
-        ? `<button class="btn" onclick="previewStartOffer('${c.userId}')">Send this creator an offer (preview)</button>`
-        : `<button class="btn" onclick="startOffer('${c.userId}')">Send offer</button> <button class="btn ghost" onclick="openThread('${c.userId}')">Message</button>`}
+        ? `<button class="btn" onclick="previewStartOffer('${c.userId}')">Send this creator an offer (preview)</button>${p.paidRate ? ` <button class="btn ghost" onclick="previewPaidBooking('${c.userId}')">Preview paid booking ($${esc(String(p.paidRate))})</button>` : ""}`
+        : `<button class="btn" onclick="startOffer('${c.userId}')">Send offer</button>${p.paidRate ? ` <button class="btn" onclick="bookPaidVisit('${c.userId}')">Book paid visit ($${esc(String(p.paidRate))})</button>` : ""} <button class="btn ghost" onclick="openThread('${c.userId}')">Message</button>`}
     </div>
+    ${p.paidRate ? `<p class="small muted">Paid bookings: this creator lists a paid rate of $${esc(String(p.paidRate))} for the same Standard Visit. You pay the rate plus 3%, she keeps 97% of her rate, and SIGNL holds the payment until her post is live. Comp-only is always fine too.</p>` : ""}
     ${preview ? `<p class="small muted">Preview: an offer sent from here is a simulation. It never reaches ${esc(c.name)} and nothing is saved.</p>` : ""}
     ${preview && c.trackRecord && c.trackRecord.postsDelivered > 0 ? `
     <div class="showcase-block"><h4>Ad use (preview)</h4>
@@ -1044,7 +1112,7 @@ function creatorCard(c, viewer, opts) {
     ${c.standing === "paused" ? `<p><span class="badge warn">Paused: a late post is outstanding</span> <span class="small muted">This creator is greyed out and cannot take new offers until the post is delivered.</span></p>` : ""}
     ${c.bookedUp ? `<p><span class="badge info">Booked up this week</span> <span class="small muted">At their weekly visit max. You can still send offers; they can accept next week.</span></p>` : ""}
     <p>${localTxt}</p>
-    <p>${scoreBadge(c.localImpactScore)}${p.openToPaidCampaigns ? ` <span class="badge tier">Open to paid campaigns</span>` : ""}${c.momentum && c.momentum.points ? ` <span class="badge info">Momentum ${c.momentum.points} pts</span>` : ""}</p>
+    <p>${scoreBadge(c.localImpactScore)}${p.openToPaidCampaigns ? ` <span class="badge tier">Open to paid campaigns</span>` : ""}${paidLaneBadgesHtml(p)}${c.momentum && c.momentum.points ? ` <span class="badge info">Momentum ${c.momentum.points} pts</span>` : ""}</p>
     ${p.categories && p.categories.length ? `<p class="small">${p.categories.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
     ${p.compCategories && p.compCategories.filter((x) => x !== PAID_COMP).length ? `<p class="small muted">Open to comps: ${p.compCategories.filter((x) => x !== PAID_COMP).map(esc).join(", ")}</p>` : ""}
     ${p.bio ? `<p class="small muted">${esc(p.bio)}</p>` : ""}
@@ -1055,8 +1123,10 @@ function creatorCard(c, viewer, opts) {
     <div class="cta-row" style="justify-content:flex-start">
       ${opts.preview
         ? `<button class="btn small-btn" onclick="previewViewCreator('${c.userId}')">View profile</button>
-           <button class="btn small-btn ghost" onclick="previewStartOffer('${c.userId}')">Send preview offer</button>`
-        : `<button class="btn small-btn" onclick="startOffer('${c.userId}')">Send offer</button>
+           <button class="btn small-btn ghost" onclick="previewStartOffer('${c.userId}')">Send preview offer</button>${p.paidRate ? `
+           <button class="btn small-btn ghost" onclick="previewPaidBooking('${c.userId}')">Preview paid booking ($${esc(String(p.paidRate))})</button>` : ""}`
+        : `<button class="btn small-btn" onclick="startOffer('${c.userId}')">Send offer</button>${p.paidRate ? `
+           <button class="btn small-btn" onclick="bookPaidVisit('${c.userId}')">Book paid visit ($${esc(String(p.paidRate))})</button>` : ""}
            <button class="btn small-btn ghost" onclick="openCreatorProfile('${c.userId}')">View profile</button>
            <button class="btn small-btn ghost" onclick="openThread('${c.userId}')">Message</button>`}
     </div>
@@ -1128,6 +1198,7 @@ async function loadFounding() {
           ${stackList(card).length ? `<p class="small">${stackChipsHtml(card)}</p>` : ""}
           ${p.categories && p.categories.length ? `<p class="small">${p.categories.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
           ${p.openToPaidCampaigns ? `<p class="small"><span class="badge tier">Open to paid campaigns</span></p>` : ""}
+          <p class="small">${paidLaneBadgesHtml(p)}</p>
           ${p.compCategories && p.compCategories.filter((x) => x !== PAID_COMP).length ? `<p class="small muted">Open to comps: ${p.compCategories.filter((x) => x !== PAID_COMP).map(esc).join(", ")}</p>` : ""}
           ${p.neighborhood ? `<p class="small muted">Neighborhood: ${esc(p.neighborhood)}</p>` : ""}
           ${p.topAudienceCities && p.topAudienceCities.length ? `<p class="small muted">Top audience cities: ${p.topAudienceCities.map(esc).join(", ")}</p>` : ""}
@@ -1237,6 +1308,16 @@ function creatorProfileHtml(u) {
       <div class="field" id="p-paid-wrap" style="display:${c.tierBand === "Creators" ? "" : "none"}">
         <label style="font-weight:500"><input type="checkbox" id="p-paid" style="width:auto" ${c.openToPaidCampaigns ? "checked" : ""}> <strong>Paid cash campaigns</strong> (Creators tier): businesses can hire me for paid campaigns when a business runs one, on top of comps.</label>
       </div>
+      <div class="showcase-block">
+        <h4>How businesses can book you</h4>
+        <div class="field">
+          <label style="font-weight:500"><input type="checkbox" id="p-comp-open" style="width:auto" ${c.compOpen === false ? "" : "checked"}> Accept comp visits. Businesses comp you the experience and you post honestly within 48 hours. Creators who accept comps get more offers and more free experiences, and every completed visit earns Momentum points. Momentum lifts you in business search and builds the track record that gets you trusted and booked, including first access to paid bookings.</label>
+        </div>
+        <div class="field"><label>Set a paid rate (optional). Businesses can book you at your listed rate for a paid visit, and you keep 97% of it. Paid-only is fine too, but paid-only creators receive fewer offers.</label>
+          <input type="number" id="p-paid-rate" min="50" step="1" placeholder="For example: 250" value="${c.paidRate ? esc(String(c.paidRate)) : ""}">
+          <p class="small muted">Your rate in dollars for one paid Standard Visit. The business pays your rate plus 3%, SIGNL holds the payment, and it releases to you when your post is live. Minimum $50. Leave blank for no paid bookings.</p>
+        </div>
+      </div>
       <div class="field"><label>Best work (up to 3 links)</label>
         ${[0, 1, 2].map((i) => `<input id="p-work-${i}" type="url" placeholder="https://www.instagram.com/reel/... or a TikTok or YouTube link" value="${esc((c.bestWork || [])[i] || "")}" style="margin-bottom:8px">`).join("")}
         <p class="small muted">Your strongest posts, shown on your public profile and to businesses in search results as Watch cards. Instagram, TikTok, or YouTube links only. Clear a box to remove that link.</p>
@@ -1299,6 +1380,8 @@ async function doUpdateCreator(e) {
       xHandle: document.getElementById("p-x").value,
       linkedinUrl: document.getElementById("p-linkedin").value,
       maxVisitsPerWeek: parseInt(document.getElementById("p-maxvisits").value, 10) || 3,
+      compOpen: document.getElementById("p-comp-open").checked,
+      paidRate: (() => { const v = document.getElementById("p-paid-rate").value.trim(); return v === "" ? null : Number(v); })(),
       followerCount: parseInt(document.getElementById("p-followers").value, 10) || 0,
       audienceStack: (() => {
         const s = { instagram: parseInt(document.getElementById("p-followers").value, 10) || 0 };
@@ -1344,6 +1427,7 @@ async function loadCreatorOffers() {
           <p class="small"><strong>They can:</strong> ${rights.can.map(esc).join("; ")}</p>
           <p class="small"><strong>They can't:</strong> ${rights.cannot.map(esc).join("; ")}</p>
         </div>
+        ${reviewLinksBlockHtml(o.businessReviewLinks)}
         <p class="small muted">Redemption window: ${o.windowMode === "thisweek" ? "this week, ends Sunday" : "any time within 7 days of accepting"}. No appointment: you show up inside the window with your code.${o.visitWindow ? ` Note from the business: ${esc(o.visitWindow)}` : ""}</p>
         <form onsubmit="return acceptOffer(event, '${o.id}')">
           <button class="btn small-btn" type="submit">Accept and get my code</button>
@@ -1442,6 +1526,17 @@ function visitCard(b, role) {
   <div class="card mb">
     <div class="flex-between"><strong>${esc(b.title)}</strong>${complianceBadge(b)}</div>
     <p class="small muted">${role === "creator" ? esc(b.businessName) : "@" + esc(b.creatorHandle) + " (" + esc(b.creatorName) + ")"} &middot; ${esc(b.market)} &middot; Comp: ${esc(b.whatComped)} (cap $${b.dollarCap}) &middot; Visit: ${esc(b.visitDate || b.visitWindow || "Flexible")}</p>`;
+  if (b.paidLane) {
+    const lane = b.paidLane;
+    const escrowBadge = lane.escrowState === "released"
+      ? `<span class="badge ok">Payment released</span>`
+      : lane.escrowState === "refunded"
+        ? `<span class="badge warn">Payment refunded</span>`
+        : `<span class="badge info">Payment held by SIGNL</span>`;
+    html += role === "creator"
+      ? `<p class="small"><span class="badge tier">Paid visit</span> Your rate $${lane.rate}: you receive $${lane.creatorNet} (97% of your rate). ${escrowBadge}<br><span class="muted">${esc(lane.paymentNote)}${lane.escrowState === "held" && lane.proofAt ? " Your post is in; the escrow releases 48 hours after proof." : ""}${lane.escrowState === "refunded" ? " This visit resolved without delivery, so the business was refunded." : ""}</span></p>`
+      : `<p class="small"><span class="badge tier">Paid visit</span> Creator rate $${lane.rate} &middot; you pay $${lane.businessTotal} (rate + 3%) &middot; the creator receives $${lane.creatorNet}. ${escrowBadge}<br><span class="muted">${esc(lane.paymentNote)}</span></p>`;
+  }
   if (role === "creator" && b.codeStatus === "issued") {
     html += `
     <div class="grid cols-2">
@@ -1526,6 +1621,23 @@ function visitCard(b, role) {
     html += `<button class="btn small-btn danger" onclick="requestReplacement('${b.id}')">Request replacement visit</button>`;
   }
   if (b.replacementRequestedAt) html += `<p class="small">Replacement requested ${fmtDate(b.replacementRequestedAt)}. SIGNL will line up a substitute creator.</p>`;
+  if (role === "creator" && b.status === "completed") {
+    if (b.businessReview) {
+      html += `<div class="review-item"><span class="small muted">Your review of ${esc(b.businessName)}</span><br>${starsHtml(b.businessReview.stars)} <span class="small">${esc(b.businessReview.text || "")}</span> <span class="saved">+10 Momentum earned</span></div>`;
+    } else {
+      html += `
+    <form onsubmit="return submitBusinessReview(event, '${b.id}')">
+      <h4 style="margin:10px 0 4px">Review this business</h4>
+      <p class="small muted">Optional, and honest is the whole point: leaving a review earns +10 Momentum at any star rating. SIGNL never pays for positive reviews, and nobody can ask you for one.</p>
+      <div class="form-2col">
+        <div class="field"><label>Your rating</label><select id="bizrev-stars-${b.id}"><option value="5">5 stars</option><option value="4">4 stars</option><option value="3">3 stars</option><option value="2">2 stars</option><option value="1">1 star</option></select></div>
+        <div class="field"><label>Your words (optional)</label><input id="bizrev-text-${b.id}" maxlength="500" placeholder="How was the visit, honestly?"></div>
+      </div>
+      <button class="btn small-btn" type="submit">Leave review (+10 Momentum)</button>
+    </form>`;
+    }
+    html += reviewLinksBlockHtml(b.businessReviewLinks);
+  }
   const otherId = role === "creator" ? b.businessId : b.creatorId;
   html += `<div class="mt"><button class="btn small-btn ghost" onclick="openThread('${otherId}')">Message</button></div></div>`;
   return html;
@@ -1620,7 +1732,7 @@ async function loadDiscover() {
       <div><label>Total audience max</label><input type="number" id="f-fmax" min="0" placeholder="Any"></div>
       <div><label>Min % followers in market</label><input type="number" id="f-minlocal" min="0" max="100" placeholder="Any"></div>
       <div><label>Sort by</label><select id="f-sort"><option value="">Founding order</option><option value="score">Local Impact Score</option><option value="momentum">Momentum (roster standing)</option></select></div>
-      <div><label>&nbsp;</label><label style="font-weight:500"><input type="checkbox" id="f-paid" style="width:auto"> Open to paid campaigns only</label></div>
+      <div><label>&nbsp;</label><label style="font-weight:500"><input type="checkbox" id="f-paid" style="width:auto"> Has a paid rate (paid bookings) only</label></div>
       <div><label>&nbsp;</label><button class="btn small-btn" style="width:100%" onclick="runDiscover()">Search</button></div>
     </div>
     <div id="discover-results"><p class="muted">Loading creators in ${esc(u.market)}...</p></div>`;
@@ -1850,6 +1962,7 @@ async function counterRedeem(code) {
 function renderPlanTab() {
   const el = document.getElementById("tab-body");
   const u = state.user;
+  const rl = u.business.reviewLinks || {};
   const plans = state.boot.plans.map((p) => `
     <div class="plan-card ${u.business.plan === p.id ? "selected" : ""}" id="plan-${esc(p.id)}" onclick="selectPlan('${esc(p.id)}')">
       <div class="price">$${p.priceMonthly}<span class="small muted">/mo</span></div>
@@ -1867,7 +1980,46 @@ function renderPlanTab() {
     <input type="hidden" id="me-plan" value="${esc(u.business.plan)}">
     <button class="btn mt" onclick="savePlan()">Save plan selection</button>
     <p class="small muted mt">Card billing through Stripe is wired in at launch. Until then your selection is recorded and your founding spot is held.</p>
+  </div>
+  <div class="panel mt">
+    <h3>Your public review pages</h3>
+    <p class="small muted">Optional. When a creator completes a visit with you, your review pages appear in their visit flow as a courtesy ("Their review pages"), one tap out. Nothing is ever required, and no points attach to reviews left there.</p>
+    <div class="form-2col">
+      <div class="field"><label>Google review link</label><input id="rl-google" type="url" value="${esc(rl.google || "")}" placeholder="https://g.page/r/..."></div>
+      <div class="field"><label>Yelp page link</label><input id="rl-yelp" type="url" value="${esc(rl.yelp || "")}" placeholder="https://www.yelp.com/biz/..."></div>
+      <div class="field"><label>TripAdvisor page link</label><input id="rl-tripadvisor" type="url" value="${esc(rl.tripadvisor || "")}" placeholder="https://www.tripadvisor.com/..."></div>
+      <div class="field"><label>Facebook page link</label><input id="rl-facebook" type="url" value="${esc(rl.facebook || "")}" placeholder="https://www.facebook.com/..."></div>
+    </div>
+    <button class="btn" onclick="saveMyReviewLinks()">Save review pages</button> <span id="rl-ok" class="saved"></span>
+    ${u.business.plan === "managed" ? `
+    <h3 class="mt">Monthly creator talent budget</h3>
+    <p class="small muted">Your coordinator spends this on paid creator bookings for you. It is a spending cap and an authorization, not a deposit: each booking escrows on its own, and SIGNL holds each payment until the post is live.</p>
+    <div class="field"><label>Budget per month ($)</label><input type="number" id="me-talent-budget" min="0" step="1" value="${esc(String(u.business.monthlyTalentBudget == null ? 500 : u.business.monthlyTalentBudget))}"></div>
+    <button class="btn" onclick="saveTalentBudget()">Save budget</button> <span id="tb-ok" class="saved"></span>` : ""}
   </div>`;
+}
+
+async function saveMyReviewLinks() {
+  try {
+    const data = await api("PATCH", "/me/profile", {
+      reviewLinks: {
+        google: document.getElementById("rl-google").value,
+        yelp: document.getElementById("rl-yelp").value,
+        tripadvisor: document.getElementById("rl-tripadvisor").value,
+        facebook: document.getElementById("rl-facebook").value,
+      },
+    });
+    state.user = data.user;
+    document.getElementById("rl-ok").textContent = "Saved.";
+  } catch (err) { alert(err.message); }
+}
+
+async function saveTalentBudget() {
+  try {
+    const data = await api("PATCH", "/me/profile", { monthlyTalentBudget: Number(document.getElementById("me-talent-budget").value) });
+    state.user = data.user;
+    document.getElementById("tb-ok").textContent = "Saved.";
+  } catch (err) { alert(err.message); }
 }
 
 async function savePlan() {
@@ -2159,7 +2311,7 @@ async function loadApplications() {
         <td>${fmtDate(u.createdAt)}</td>
         <td>${u.status === "pending"
           ? `<button class="btn small-btn" onclick="reviewApp('${u.id}','approve')">Approve</button> <button class="btn small-btn danger" onclick="reviewApp('${u.id}','reject')">Reject</button>`
-          : `<span class="badge ${u.status === "approved" ? "ok" : "bad"}">${esc(u.status)}</span>${u.role === "creator" && u.tester ? ` <span class="badge warn">Tester</span>` : ""}${u.role === "creator" && u.status === "approved" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="setTester('${u.id}', ${u.tester ? "false" : "true"})">${u.tester ? "Move to roster" : "Move to Tester"}</button>` : ""}`}</td>
+          : `<span class="badge ${u.status === "approved" ? "ok" : "bad"}">${esc(u.status)}</span>${u.role === "creator" && u.tester ? ` <span class="badge warn">Tester</span>` : ""}${u.role === "creator" && u.status === "approved" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="setTester('${u.id}', ${u.tester ? "false" : "true"})">${u.tester ? "Move to roster" : "Move to Tester"}</button>` : ""}`}${u.role === "business" && u.business ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleReviewLinks('${u.id}')">Review links</button><div id="rl-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px">${["google", "yelp", "tripadvisor", "facebook"].map((k) => `<div class="field"><label>${esc(k)}</label><input id="rl-${k}-${u.id}" type="url" value="${esc((u.business.reviewLinks || {})[k] || "")}" placeholder="https://"></div>`).join("")}<button class="btn small-btn" onclick="saveReviewLinks('${u.id}')">Save review links</button></div>` : ""}</td>
       </tr>`;
     };
     el.innerHTML = `
@@ -2201,6 +2353,29 @@ async function reviewApp(userId, decision) {
 // public profile page 404s, campaign sends skip their email, and
 // roster / approved counts leave them out. Moving back to the
 // roster restores all of it.
+// Admin-side editor for a business's public review-page links
+// (the founding application side of the field; businesses can also
+// edit their own from the Plan tab). Host-validated server-side.
+function toggleReviewLinks(userId) {
+  const el = document.getElementById("rl-edit-" + userId);
+  if (el) el.style.display = el.style.display === "none" ? "" : "none";
+}
+
+async function saveReviewLinks(userId) {
+  try {
+    await api("POST", "/admin/review-links", {
+      userId,
+      links: {
+        google: document.getElementById("rl-google-" + userId).value,
+        yelp: document.getElementById("rl-yelp-" + userId).value,
+        tripadvisor: document.getElementById("rl-tripadvisor-" + userId).value,
+        facebook: document.getElementById("rl-facebook-" + userId).value,
+      },
+    });
+    loadApplications();
+  } catch (err) { alert(err.message); }
+}
+
 async function setTester(userId, tester) {
   const msg = tester
     ? "Move this creator to Tester? They keep full creator access for testing, but businesses will not see them, their public profile page comes down, campaign sends skip them, and roster counts exclude them."
@@ -2390,7 +2565,7 @@ function previewDiscoverHtml() {
       <div><label>Total audience max</label><input type="number" id="pvf-fmax" min="0" placeholder="Any"></div>
       <div><label>Min % followers in market</label><input type="number" id="pvf-minlocal" min="0" max="100" placeholder="Any"></div>
       <div><label>Sort by</label><select id="pvf-sort"><option value="">Founding order</option><option value="score">Local Impact Score</option><option value="momentum">Momentum (roster standing)</option></select></div>
-      <div><label>&nbsp;</label><label style="font-weight:500"><input type="checkbox" id="pvf-paid" style="width:auto"> Open to paid campaigns only</label></div>
+      <div><label>&nbsp;</label><label style="font-weight:500"><input type="checkbox" id="pvf-paid" style="width:auto"> Has a paid rate (paid bookings) only</label></div>
       <div><label>&nbsp;</label><button class="btn small-btn" style="width:100%" onclick="runPreviewDiscover()">Search</button></div>
     </div>
     <div id="pv-results"><p class="muted">Loading creators...</p></div>
@@ -2679,6 +2854,37 @@ function pvStaffPanelHtml(d) {
   </section>`;
 }
 
+// The Managed-plan talent budget panel (Jeff, 2026-10-19): a
+// SECOND simulated business on Managed, so the Growth dashboard
+// above it stays untouched. Shows the budget set for the month,
+// what the coordinator has spent on paid bookings this cycle, and
+// what remains, with each paid booking's fee math and escrow
+// state. Simulated like everything in preview: zero writes.
+function pvManagedHtml(mv) {
+  const b = mv.budget;
+  const rows = (b.paidBookings || []).map((pb) => `
+    <div class="review-item">
+      <strong>@${esc(pb.creatorHandle)}</strong> (${esc(pb.creatorName)}) &middot; paid visit at her listed rate of $${esc(String(pb.rate))}<br>
+      <span class="small">Business paid $${esc(String(pb.businessTotal))} (rate + 3%) &middot; creator receives $${esc(String(pb.creatorNet))} &middot; SIGNL fee $${esc(String(pb.platformFee))}, split evenly &middot; ${pb.escrowState === "released" ? `<span class="badge ok">Escrow released</span>` : `<span class="badge info">Escrow held</span>`} <span class="muted">${esc(pb.escrowNote)}</span></span>
+    </div>`).join("");
+  return `
+  <section class="panel">
+    <div class="flex-between">
+      <div><h3 style="margin:0">${esc(mv.business.name)}</h3><p class="muted small" style="margin:4px 0 0">${esc(mv.business.category)} &middot; ${esc(mv.business.market)} &middot; a second simulated business, shown so the Managed budget has somewhere honest to live</p></div>
+      <span class="badge info">${esc(mv.plan.name)} plan &middot; $${mv.plan.priceMonthly}/mo &middot; ${mv.plan.visitsPerMonth} visits/mo</span>
+    </div>
+    <h4>Monthly creator talent budget</h4>
+    <div class="stat-row">
+      <div class="stat"><div class="num">$${fmtNum(b.monthlyTalentBudget)}</div><div class="lbl">Budget set for the month</div></div>
+      <div class="stat"><div class="num">$${fmtNum(b.spentThisMonth)}</div><div class="lbl">Spent on paid bookings</div></div>
+      <div class="stat"><div class="num">$${fmtNum(b.remaining)}</div><div class="lbl">Remaining this month</div></div>
+    </div>
+    <p class="small muted">${esc(b.note)}</p>
+    ${rows || `<p class="small muted">No paid bookings yet this month.</p>`}
+    <p class="small muted">Paid bookings are the optional lane: a specific creator at her own listed rate, 6% total fee split evenly (business +3%, creator keeps 97%). Comp-only is always fine, forever. ${b.paidBookings && b.paidBookings.length ? esc(b.paidBookings[0].paymentNote) : ""}</p>
+  </section>`;
+}
+
 function previewDashboardHtml(d) {
   const s = d.summary;
   const plan = d.plan;
@@ -2712,6 +2918,7 @@ function previewDashboardHtml(d) {
     </div>
   </section>
   ${pvStaffPanelHtml(d)}
+  ${d.managedView ? pvManagedHtml(d.managedView) : ""}
   <section class="panel">
     <h3 style="margin-top:0">Bookings (${d.bookings.length})</h3>
     ${d.bookings.map((b) => pvBookingCard(b)).join("")}

@@ -363,6 +363,7 @@ const PLANS = [
       "A SIGNL coordinator runs everything for you",
       "Up to 30 creator visits per month",
       "Campaign calendar and creator scheduling handled",
+      "A monthly paid creator budget your coordinator spends for you",
       "Quarterly hero creator feature",
       "Growth content rights (own-feed reposts + ads while active) and a monthly report",
     ],

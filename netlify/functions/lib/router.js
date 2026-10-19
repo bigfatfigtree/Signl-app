@@ -70,6 +70,46 @@ const STANDARD_VISIT = {
     "Every SIGNL visit includes: 1 post or reel + 2 stories within 48 hours of the visit, honest and disclosed, live at least 30 days, with tracked delivery proof. Content rights follow the business's plan: Self-Service shares the post natively with the creator tagged; Growth and Managed can also repost it on their own feed and run it as an ad while their account is active. Nobody can edit the creator's content.",
 };
 
+// ---------- The paid lane (Jeff, 2026-10-19) ----------
+// Two lanes, one roster. The comp visit stays the default driver.
+// A Paid Visit books a specific creator at HER OWN listed rate for
+// the same Standard Visit package. The platform fee is 6% of the
+// rate, split evenly: the business pays rate + 3%, the creator
+// keeps 97% of her rate, and SIGNL holds the payment in escrow
+// until the post is live. The subscription is the business; 6% is
+// deliberately the lowest take in the industry, split evenly.
+// Comp-only is always fine, forever: paid is an optional
+// per-creator upgrade, never a ticket to the roster. Minimum
+// listable rate $50 (below that, processing and support cost more
+// than the booking returns). Escrow releases when post proof is
+// submitted AND a 48 hour hold after proof passes; it refunds on a
+// no-show or a creator ban under the compliance ladder. Pre-Stripe
+// honesty: every paid booking is recorded with a founding-billing
+// style label, no card charged, and nothing anywhere simulates a
+// charge.
+const PAID_LANE = {
+  feePctTotal: 6,
+  businessFeePct: 3,
+  creatorFeePct: 3,
+  minRate: 50,
+  escrowHoldHoursAfterProof: 48,
+  paymentNote: "Paid visit recorded, no card charged. SIGNL holds the payment until the post is live.",
+};
+function paidMath(rate) {
+  const r = Math.round(Number(rate) * 100) / 100;
+  return {
+    rate: r,
+    businessTotal: Math.round(r * (1 + PAID_LANE.businessFeePct / 100) * 100) / 100,
+    creatorNet: Math.round(r * (1 - PAID_LANE.creatorFeePct / 100) * 100) / 100,
+    platformFee: Math.round(r * (PAID_LANE.feePctTotal / 100) * 100) / 100,
+  };
+}
+// Managed-plan businesses carry a monthly talent budget: a
+// spending cap + authorization the SIGNL coordinator spends on
+// paid creator bookings. It is NOT a held deposit; each booking
+// escrows on its own. Suggested default $500.
+const MANAGED_TALENT_BUDGET_DEFAULT = 500;
+
 // The rights a business holds over a delivered post, by plan. The
 // creator sees exactly this, for the specific business making the
 // offer, BEFORE accepting: rights are never a surprise.
@@ -287,7 +327,7 @@ const MOMENTUM_POINTS = {
   firstOfferAccepted: 10,
   postOnTime: 20,
   postLateDelivered: 5,
-  reviewHigh: 10,
+  reviewGiven: 10,
   streakBonus: 25,
   streakEvery: 5,
   adUse: 25,
@@ -321,6 +361,11 @@ function createMomentum(data) {
   const bookings = (data && data.bookings) || [];
   const posts = (data && data.posts) || [];
   const reviews = (data && data.reviews) || [];
+  // Creator reviews OF businesses (bizreview: records), the mirror
+  // of the business reviews above. Leaving one after a completed
+  // visit earns +10 at ANY star rating (Jeff, 2026-10-19): points
+  // for leaving an honest review, never for a positive one.
+  const bizReviews = (data && data.bizReviews) || [];
   const referrals = referralCounts(users);
   const bookingsByCreator = new Map();
   for (const b of bookings) {
@@ -336,6 +381,11 @@ function createMomentum(data) {
   for (const r of reviews) {
     if (!reviewsByCreator.has(r.creatorId)) reviewsByCreator.set(r.creatorId, []);
     reviewsByCreator.get(r.creatorId).push(r);
+  }
+  const bizReviewsByCreator = new Map();
+  for (const r of bizReviews) {
+    if (!bizReviewsByCreator.has(r.creatorId)) bizReviewsByCreator.set(r.creatorId, []);
+    bizReviewsByCreator.get(r.creatorId).push(r);
   }
 
   function detailFor(user) {
@@ -425,10 +475,15 @@ function createMomentum(data) {
         push("never_posted", `Redeemed a comp at ${b.businessName || "a business"} and never posted`, MOMENTUM_POINTS.neverPostedPenalty, b.compliance.bannedAt);
       }
     }
-    for (const r of reviewsByCreator.get(user.id) || []) {
-      if (Number(r.stars) >= 4) {
-        push("review_high", `${r.stars}-star business review received`, MOMENTUM_POINTS.reviewHigh, r.createdAt);
-      }
+    // Creator reviews of businesses (Jeff, 2026-10-19): +10 for
+    // LEAVING an honest review after a completed visit, at any
+    // star rating. Points-for-positive-only would pay for praise,
+    // so the rating never gates the points. (Reviews a creator
+    // RECEIVES from businesses never mint points; they are shown
+    // on the profile as social proof only.)
+    const myBizReviews = bizReviewsByCreator.get(user.id) || [];
+    for (const r of myBizReviews) {
+      push("review_given", `You reviewed ${r.businessName || "a business"} after a completed visit`, MOMENTUM_POINTS.reviewGiven, r.createdAt);
     }
     // Ad use (Jeff, 2026-10-19): a Growth or Managed business running
     // a delivered post as an ad is a real outcome for the creator:
@@ -466,7 +521,7 @@ function createMomentum(data) {
       { id: "firstoffer", label: "Accept your first offer", points: MOMENTUM_POINTS.firstOfferAccepted, done: myBookings.length > 0 },
       { id: "ontime", label: "Deliver a post on time (+20 each)", points: MOMENTUM_POINTS.postOnTime, done: myPosts.some((p) => p.onTime), detail: `${myPosts.filter((p) => p.onTime).length} on-time posts` },
       { id: "streak", label: "Hit a 5-post on-time streak (+25 bonus)", points: MOMENTUM_POINTS.streakBonus, done: ledger.some((e) => e.kind === "streak_bonus") },
-      { id: "reviews", label: "Earn a 4-5 star business review (+10 each)", points: MOMENTUM_POINTS.reviewHigh, done: (reviewsByCreator.get(user.id) || []).some((r) => Number(r.stars) >= 4) },
+      { id: "reviews", label: "Review a business after a completed visit (+10 each, any star rating)", points: MOMENTUM_POINTS.reviewGiven, done: myBizReviews.length > 0, detail: `${myBizReviews.length} reviewed` },
       { id: "aduse", label: "Have a post run as an ad by a Growth or Managed business (+25 each)", points: MOMENTUM_POINTS.adUse, done: myPosts.some((p) => p.adUseDeclaredAt), detail: `${myPosts.filter((p) => p.adUseDeclaredAt).length} posts ran as ads` },
       { id: "performance", label: "Report a post's views and likes when asked, 7 days after posting (+5 each)", points: MOMENTUM_POINTS.performanceReport, done: myPosts.some((p) => p.reportedAt), detail: `${myPosts.filter((p) => p.reportedAt).length} posts reported` },
       { id: "referrals", label: "Invite creators (+3 per sign-up, +10 per approval)", points: MOMENTUM_POINTS.referralSignup, done: ref.signups > 0, detail: `${ref.signups} joined, ${ref.approved} approved` },
@@ -494,8 +549,8 @@ function createMomentum(data) {
 // Every Momentum read in a request goes through one of these so the
 // numbers can never disagree between surfaces.
 async function momentumContext() {
-  const [users, bookings, posts, reviews] = await Promise.all([allUsers(), allBookings(), allPosts(), allReviews()]);
-  return { users, momentum: createMomentum({ users, bookings, posts, reviews }) };
+  const [users, bookings, posts, reviews, bizReviews] = await Promise.all([allUsers(), allBookings(), allPosts(), allReviews(), allBizReviews()]);
+  return { users, momentum: createMomentum({ users, bookings, posts, reviews, bizReviews }) };
 }
 
 function inviteUrlForUser(user) {
@@ -791,6 +846,62 @@ function cleanStringList(value, allowed, maxItems) {
 // Optional social links beyond Instagram/TikTok/YouTube: Facebook
 // (profile or Page URL), X (handle or URL), LinkedIn (profile URL).
 // Accepts a full URL or a bare handle/slug and stores a canonical URL.
+// Business review-page links (Jeff, 2026-10-19): a business may
+// link its public review pages (Google, Yelp, TripAdvisor,
+// Facebook) so a creator sees them as a courtesy block in the
+// visit flow: "Their review pages", one tap out. Host-validated
+// per platform so a rendered link can never point somewhere its
+// label does not say. Display-if-exists only, never mandatory,
+// and NO points attach to external reviews anywhere: points are
+// for the in-app review only (and Google prohibits incentivized
+// reviews outright, so points there would endanger the business's
+// own profile).
+const REVIEW_LINK_HOSTS = {
+  google: { label: "Google", hosts: ["google.com", "g.page", "goo.gl", "maps.app.goo.gl"], suffixHosts: ["google.com"] },
+  yelp: { label: "Yelp", hosts: ["yelp.com"], suffixHosts: ["yelp.com"] },
+  tripadvisor: { label: "TripAdvisor", hosts: ["tripadvisor.com"], suffixHosts: ["tripadvisor.com"] },
+  facebook: { label: "Facebook", hosts: ["facebook.com", "fb.com"], suffixHosts: ["facebook.com"] },
+};
+function validateReviewLinks(input) {
+  const out = {};
+  if (input === undefined || input === null) return { ok: true, links: out };
+  if (typeof input !== "object" || Array.isArray(input)) return { ok: false, error: "Review links must be an object" };
+  for (const key of Object.keys(REVIEW_LINK_HOSTS)) {
+    const raw = input[key];
+    if (raw === undefined || raw === null || String(raw).trim() === "") continue;
+    const value = String(raw).trim();
+    let u;
+    try {
+      u = new URL(value);
+    } catch (e) {
+      return { ok: false, error: `Your ${REVIEW_LINK_HOSTS[key].label} review link is not a valid URL` };
+    }
+    if (u.protocol !== "http:" && u.protocol !== "https:") return { ok: false, error: `Your ${REVIEW_LINK_HOSTS[key].label} review link must start with http:// or https://` };
+    const host = u.hostname.toLowerCase().replace(/^www\./, "");
+    const spec = REVIEW_LINK_HOSTS[key];
+    const hostOk = spec.hosts.includes(host) || spec.suffixHosts.some((s) => host === s || host.endsWith("." + s));
+    if (!hostOk) return { ok: false, error: `That link does not point at ${spec.label}. Paste the link from your ${spec.label} review page.` };
+    out[key] = value.slice(0, 500);
+  }
+  return { ok: true, links: out };
+}
+// The display shape: only the links that exist, labeled, in a
+// fixed order. Null when the business has none (nothing renders).
+function reviewLinksView(business) {
+  const links = (business && business.reviewLinks) || {};
+  const out = [];
+  for (const key of Object.keys(REVIEW_LINK_HOSTS)) {
+    if (links[key]) out.push({ key, label: REVIEW_LINK_HOSTS[key].label, url: links[key] });
+  }
+  return out.length ? out : null;
+}
+// The Managed talent budget stored on a business record, with the
+// suggested default for records that predate the field.
+function talentBudgetOf(business) {
+  const n = Number(business && business.monthlyTalentBudget);
+  return Number.isFinite(n) && n >= 0 ? n : MANAGED_TALENT_BUDGET_DEFAULT;
+}
+
 function normalizeSocials(b) {
   const out = { facebookUrl: null, xHandle: null, xUrl: null, linkedinUrl: null };
   const fb = (b.facebookUrl || "").trim();
@@ -947,6 +1058,16 @@ async function allReviews() {
   return rows.map((r) => r.value);
 }
 
+// Creator reviews OF businesses live as bizreview:{id} records
+// (see the POST /bookings/:id/review-business route). They feed
+// Momentum (+10 for leaving one, any star rating) and show on the
+// creator's own visit card. They are never a public rating of the
+// business and carry no points for the business.
+async function allBizReviews() {
+  const rows = await store.list("bizreview:");
+  return rows.map((r) => r.value);
+}
+
 function reviewDisplay(r) {
   return {
     stars: r.stars,
@@ -1004,15 +1125,19 @@ async function discoverCards(query, viewer) {
     creators = creators.filter((u) => u.creator && u.creator.localAudiencePct !== null && u.creator.localAudiencePct !== undefined && Number(u.creator.localAudiencePct) >= minLocal);
   }
   if (query.paid === "1" || query.paid === "true") {
-    creators = creators.filter((u) => u.creator && u.creator.openToPaidCampaigns === true);
+    // The paid filter reads the REAL paid lane (Jeff, 2026-10-19):
+    // a creator is bookable for paid visits only when she has
+    // listed a paid rate. (It previously read the Creators-tier
+    // paid-campaigns comp flag, which is a different thing.)
+    creators = creators.filter((u) => u.creator && Number(u.creator.paidRate) > 0);
   }
   if (query.q) {
     const q = query.q.toLowerCase();
     creators = creators.filter((u) => u.name.toLowerCase().includes(q) || (u.creator && u.creator.handle.toLowerCase().includes(q)));
   }
   const { approvedRank } = creatorRanks(users);
-  const [bookings, posts, reviews] = await Promise.all([allBookings(), allPosts(), allReviews()]);
-  const momentum = createMomentum({ users, bookings, posts, reviews });
+  const [bookings, posts, reviews, bizReviews] = await Promise.all([allBookings(), allPosts(), allReviews(), allBizReviews()]);
+  const momentum = createMomentum({ users, bookings, posts, reviews, bizReviews });
   const bookedUp = await bookedUpCreatorIds(users, bookings);
   const out = [];
   for (const c of creators) {
@@ -1064,7 +1189,12 @@ async function publicCreator(u, viewer, foundingPriority) {
     createdAt: u.createdAt,
     foundingBand: foundingPriority === undefined ? null : foundingBand(foundingPriority),
     photoUrl: u.creator && u.creator.hasPhoto ? `/api/users/${u.id}/photo` : null,
-    profile: u.creator,
+    // Paid lane fields ride on the card normalized: compOpen
+    // defaults true for legacy records, paidRate is a number or
+    // null (null = no paid bookings at any price).
+    profile: u.creator
+      ? { ...u.creator, compOpen: u.creator.compOpen !== false, paidRate: typeof u.creator.paidRate === "number" && u.creator.paidRate > 0 ? u.creator.paidRate : null }
+      : u.creator,
     totalAudience: audienceTotalOf(u.creator || {}),
     audienceStack: audienceView(u.creator || {}).platforms,
     visitIncludes: STANDARD_VISIT.summary,
@@ -1119,6 +1249,8 @@ async function publicProfilePayload(u) {
     audienceStack: audience.platforms,
     categories: c.categories || [],
     compCategories: (c.compCategories || []).filter((x) => x !== PAID_COMP),
+    compOpen: c.compOpen !== false,
+    paidRate: typeof c.paidRate === "number" && c.paidRate > 0 ? c.paidRate : null,
     localAudiencePct: c.localAudiencePct === undefined ? null : c.localAudiencePct,
     localAudienceSource: c.localAudienceSource || "Self-reported",
     localImpactScore: impact ? impact.score : null,
@@ -1149,7 +1281,21 @@ async function withPostState(booking) {
     const creator = await store.get(`user:${booking.creatorId}`);
     if (creator) creatorStanding = standingState(creator);
   }
-  return { ...booking, post, postState: postState(booking, post), compliance: complianceStatusFor(booking, post, creatorStanding) };
+  // Paid lane + review surfaces (Jeff, 2026-10-19): the booking's
+  // paidLane object rides on the record itself; here we attach the
+  // business's public review-page links (courtesy block for the
+  // creator, display-if-exists) and the creator's own in-app review
+  // of this business when one exists (so the visit card can show
+  // it instead of the review form).
+  let businessReviewLinks = null;
+  if (booking.businessId) {
+    const bizUser = await store.get(`user:${booking.businessId}`);
+    if (bizUser && bizUser.business) businessReviewLinks = reviewLinksView(bizUser.business);
+  }
+  let businessReview = null;
+  const myBizReview = (await allBizReviews()).find((r) => r.bookingId === booking.id);
+  if (myBizReview) businessReview = { stars: myBizReview.stars, text: myBizReview.text || "", createdAt: myBizReview.createdAt };
+  return { ...booking, post, postState: postState(booking, post), compliance: complianceStatusFor(booking, post, creatorStanding), businessReviewLinks, businessReview };
 }
 
 // ---------- Post compliance (Jeff, 2026-10-19; timeline final) ----------
@@ -1415,8 +1561,26 @@ function bannedNoticeReason() {
 // Netlify scheduled function (netlify/functions/compliance-sweep.mjs),
 // by the admin endpoint, and opportunistically (throttled) from the
 // request path. Returns a summary of what it did.
+// Paid-lane escrow refund (Jeff, 2026-10-19): when a paid visit
+// resolves badly, the business's money goes back and the state is
+// recorded on the booking. Idempotent: only a "held" escrow can
+// refund, exactly once. Reasons: no_show (window expired unused),
+// creator_banned (the compliance ladder's end), business_did_not_honor
+// (an honor report voided the visit; the money follows the void).
+async function refundPaidEscrow(booking, reason, summary) {
+  const lane = booking.paidLane;
+  if (!lane || lane.escrowState !== "held") return;
+  lane.escrowState = "refunded";
+  lane.refundedAt = nowIso();
+  lane.refundReason = reason;
+  booking.updatedAt = nowIso();
+  await store.set(`booking:${booking.id}`, booking);
+  await logEvent({ type: "paid_escrow_refunded", actorId: null, actorRole: "system", subjectId: booking.id, market: booking.market, data: { creatorId: booking.creatorId, businessId: booking.businessId, rate: lane.rate, businessTotal: lane.businessTotal, reason } });
+  if (summary) summary.escrowRefunded += 1;
+}
+
 async function runComplianceSweep() {
-  const summary = { checked: 0, reminder1: 0, reminder2: 0, reminder3: 0, lateMarked: 0, paused: 0, banned: 0, performance: 0, expired: 0 };
+  const summary = { checked: 0, reminder1: 0, reminder2: 0, reminder3: 0, lateMarked: 0, paused: 0, banned: 0, performance: 0, expired: 0, escrowReleased: 0, escrowRefunded: 0 };
   const bookings = await allBookings();
   const posts = await allPosts();
   const postByBooking = new Map(posts.map((p) => [p.bookingId, p]));
@@ -1499,6 +1663,9 @@ async function runComplianceSweep() {
         await logEvent({ type: "account_banned", actorId: null, actorRole: "system", subjectId: creator.id, market: booking.market, data: { bookingId: booking.id, businessId: booking.businessId, redeemedAt: booking.redeemedAt, banAt: booking.compliance.banAt } });
         summary.banned += 1;
       }
+      // A paid visit that ends in a ban refunds the business in
+      // full: the post will never exist.
+      await refundPaidEscrow(booking, "creator_banned", summary);
     }
     if (dirty) {
       booking.updatedAt = nowIso();
@@ -1520,6 +1687,8 @@ async function runComplianceSweep() {
     await store.set(`booking:${booking.id}`, booking);
     await logEvent({ type: "offer_expired", actorId: null, actorRole: "system", subjectId: booking.id, market: booking.market, data: { creatorId: booking.creatorId, businessId: booking.businessId, redeemBy: booking.redeemBy } });
     summary.expired += 1;
+    // An expired paid booking is a no-show: the escrow refunds.
+    await refundPaidEscrow(booking, "no_show", summary);
   }
   // Post-performance capture (Jeff, 2026-10-19 round 2): seven days
   // after a proof was submitted, send ONE email asking for the post's
@@ -1540,6 +1709,24 @@ async function runComplianceSweep() {
       await deliverEmail("post_performance", creator, mail.subject, mail.text, null);
     } catch (e) { /* best-effort; the requested event is the record */ }
     summary.performance += 1;
+  }
+  // Paid-lane escrow release (Jeff, 2026-10-19): a held escrow
+  // releases when the post proof exists AND the 48 hour hold after
+  // proof has passed. The hold protects against chargebacks on a
+  // post that vanishes overnight; release is a state change on the
+  // booking plus an event, never a simulated charge.
+  for (const booking of bookings) {
+    const lane = booking.paidLane;
+    if (!lane || lane.escrowState !== "held") continue;
+    const post = postByBooking.get(booking.id);
+    if (!post || !post.submittedAt) continue;
+    if (now < Date.parse(post.submittedAt) + PAID_LANE.escrowHoldHoursAfterProof * 3600000) continue;
+    lane.escrowState = "released";
+    lane.releasedAt = nowIso();
+    booking.updatedAt = nowIso();
+    await store.set(`booking:${booking.id}`, booking);
+    await logEvent({ type: "paid_escrow_released", actorId: null, actorRole: "system", subjectId: booking.id, market: booking.market, data: { creatorId: booking.creatorId, businessId: booking.businessId, rate: lane.rate, creatorNet: lane.creatorNet, proofAt: post.submittedAt } });
+    summary.escrowReleased += 1;
   }
   return summary;
 }
@@ -2133,6 +2320,54 @@ async function previewDashboard() {
     returnMultiple: compValueGiven > 0 ? Math.round((mediaValueReceived / compValueGiven) * 10) / 10 : null,
     modeled: true,
   };
+  // Managed talent budget view (Jeff, 2026-10-19): a SECOND
+  // simulated business on the Managed plan, so Salt & Ember's
+  // Growth dashboard above stays exactly as it was. (Choice
+  // documented in the README runbook.) The Managed business
+  // carries the suggested $500 monthly talent budget; its
+  // coordinator has spent part of it this cycle on two paid
+  // bookings over the real roster, at illustrative rates run
+  // through the real paidMath fee split. Spent is the sum of those
+  // bookings' business totals for the cycle; remaining is budget
+  // minus spent. Simulated like everything in preview: computed
+  // per request, zero writes, no creator contacted.
+  const managedPlan = planById("managed") || PLANS[2];
+  const managedPaid = [];
+  const paidSlots = [
+    { slot: 2, rate: 250, escrowState: "released", escrowNote: "Post live and the 48 hour hold passed: released to the creator" },
+    { slot: 1, rate: 180, escrowState: "held", escrowNote: "Post live, inside the 48 hour hold: still held by SIGNL" },
+  ];
+  for (let i = 0; i < paidSlots.length; i++) {
+    const creator = slotCreator(paidSlots[i].slot);
+    if (!creator) continue;
+    const math = paidMath(paidSlots[i].rate);
+    managedPaid.push({
+      id: `preview-paid-${i + 1}`,
+      preview: true,
+      creatorId: creator.id,
+      creatorName: creator.name,
+      creatorHandle: creator.creator ? creator.creator.handle : "",
+      rate: math.rate,
+      businessTotal: math.businessTotal,
+      creatorNet: math.creatorNet,
+      platformFee: math.platformFee,
+      escrowState: paidSlots[i].escrowState,
+      escrowNote: paidSlots[i].escrowNote,
+      paymentNote: PAID_LANE.paymentNote,
+    });
+  }
+  const managedSpent = Math.round(managedPaid.reduce((s, x) => s + x.businessTotal, 0) * 100) / 100;
+  const managedView = {
+    business: { name: "Harbor Table (Managed plan example)", category: "Seafood restaurant", market: PREVIEW_DASH_BUSINESS.market },
+    plan: { id: managedPlan.id, name: managedPlan.name, priceMonthly: managedPlan.priceMonthly, minMonths: managedPlan.minMonths, visitsPerMonth: managedPlan.visitsPerMonth },
+    budget: {
+      monthlyTalentBudget: MANAGED_TALENT_BUDGET_DEFAULT,
+      spentThisMonth: managedSpent,
+      remaining: Math.round((MANAGED_TALENT_BUDGET_DEFAULT - managedSpent) * 100) / 100,
+      paidBookings: managedPaid,
+      note: "A spending cap and authorization, not a held deposit: each paid booking escrows on its own, held by SIGNL until the post is live.",
+    },
+  };
   return {
     preview: true,
     business: { ...PREVIEW_DASH_BUSINESS, planId: plan.id, planName: plan.name },
@@ -2141,6 +2376,7 @@ async function previewDashboard() {
     standardVisit: STANDARD_VISIT,
     summary,
     bookings,
+    managedView,
     rosterEmpty: bookings.length === 0,
   };
 }
@@ -2294,6 +2530,13 @@ async function handleRegister(event) {
         return list;
       })(),
       openToPaidCampaigns: tier === "Creators" && Array.isArray(b.compCategories) && b.compCategories.includes(PAID_COMP),
+      // Paid lane (Jeff, 2026-10-19): every creator starts open to
+      // comp visits (the default driver) with NO paid rate listed.
+      // Both are hers to change in profile settings: compOpen false
+      // means paid-only, paidRate (minimum $50) lists her for paid
+      // bookings at that rate.
+      compOpen: true,
+      paidRate: null,
       bio: (b.bio || "").trim(),
       // Best work links (up to 3) are added in profile edit, not at
       // sign-up; the field exists from day one so every payload and
@@ -2336,6 +2579,13 @@ async function handleRegister(event) {
       planMinMonths: plan.minMonths,
       billingStatus: "Founding billing: plan recorded, no card charged. Billing starts at launch.",
       planSelectedAt: ts,
+      // Public review-page links (Google, Yelp, TripAdvisor,
+      // Facebook): empty at sign-up, set from the Plan tab or by an
+      // admin; host-validated at write time (validateReviewLinks).
+      reviewLinks: {},
+      // Managed talent budget: every business record carries the
+      // field; it only spends on the Managed plan. Not a deposit.
+      monthlyTalentBudget: MANAGED_TALENT_BUDGET_DEFAULT,
     };
   }
 
@@ -2628,6 +2878,31 @@ async function route(event) {
         const mv = Math.round(Number(b.maxVisitsPerWeek));
         c.maxVisitsPerWeek = Number.isFinite(mv) ? Math.min(7, Math.max(1, mv)) : 3;
       }
+      // Paid lane settings (Jeff, 2026-10-19): compOpen is the
+      // comp-trade toggle (default true; false = paid-only, which
+      // the settings copy warns brings fewer offers). paidRate is
+      // optional: null/empty means no paid bookings; when set it
+      // must clear the $50 floor (below that, processing and
+      // support cost more than the booking returns). The rate is
+      // HERS: businesses book at exactly this number.
+      if (b.compOpen !== undefined) {
+        c.compOpen = b.compOpen !== false;
+        changes.compOpen = [user.creator.compOpen !== false, c.compOpen];
+      }
+      if (b.paidRate !== undefined) {
+        if (b.paidRate === null || b.paidRate === "") {
+          changes.paidRate = [c.paidRate == null ? null : c.paidRate, null];
+          c.paidRate = null;
+        } else {
+          const rate = Math.round(Number(b.paidRate) * 100) / 100;
+          if (!Number.isFinite(rate) || rate < PAID_LANE.minRate) {
+            return err(400, `Your paid rate must be at least $${PAID_LANE.minRate}, or left blank for no paid bookings. Below that, the payment processing and support cost more than the booking is worth.`);
+          }
+          if (rate > 100000) return err(400, "That rate is too large to list. Set the rate a business actually books at.");
+          changes.paidRate = [c.paidRate == null ? null : c.paidRate, rate];
+          c.paidRate = rate;
+        }
+      }
       if (Array.isArray(b.categories)) c.categories = b.categories.filter((x) => CREATOR_CATEGORIES.includes(x));
       if (Array.isArray(b.compCategories)) {
         // Paid cash campaigns stay selectable only while the creator is
@@ -2705,6 +2980,20 @@ async function route(event) {
       const bz = { ...user.business };
       if (b.businessName) bz.businessName = String(b.businessName).trim();
       if (b.category && BUSINESS_CATEGORIES.includes(b.category)) bz.category = b.category;
+      // Public review-page links: host-validated, optional, shown
+      // to creators as a courtesy block. No points ever attach.
+      if (b.reviewLinks !== undefined) {
+        const v = validateReviewLinks(b.reviewLinks);
+        if (!v.ok) return err(400, v.error);
+        bz.reviewLinks = v.links;
+      }
+      // Managed talent budget: a cap + authorization, not a
+      // deposit. Editable any time; spends only on Managed.
+      if (b.monthlyTalentBudget !== undefined) {
+        const budget = Math.round(Number(b.monthlyTalentBudget));
+        if (!Number.isFinite(budget) || budget < 0 || budget > 1000000) return err(400, "Monthly talent budget must be a whole dollar amount, 0 or more");
+        bz.monthlyTalentBudget = budget;
+      }
       user.business = bz;
       if (b.city !== undefined) user.city = String(b.city).trim();
       user.updatedAt = ts;
@@ -2751,6 +3040,9 @@ async function route(event) {
       planMinMonths: plan.minMonths,
       billingStatus: "Founding billing: plan recorded, no card charged. Billing starts at launch.",
       planSelectedAt: nowIso(),
+      // Normalize the Managed talent budget onto records that
+      // predate the field (suggested default $500).
+      monthlyTalentBudget: talentBudgetOf(user.business),
     };
     user.updatedAt = nowIso();
     await store.set(`user:${user.id}`, user);
@@ -2777,8 +3069,8 @@ async function route(event) {
       const all = await allUsers();
       const users = all.filter((u) => u.role !== "admin");
       const { approvedRank, pendingRank } = creatorRanks(all);
-      const [allBk, allPo, allRv] = await Promise.all([allBookings(), allPosts(), allReviews()]);
-      const momentum = createMomentum({ users: all, bookings: allBk, posts: allPo, reviews: allRv });
+      const [allBk, allPo, allRv, allBz] = await Promise.all([allBookings(), allPosts(), allReviews(), allBizReviews()]);
+      const momentum = createMomentum({ users: all, bookings: allBk, posts: allPo, reviews: allRv, bizReviews: allBz });
       const attach = (u) => {
         const pub = publicUser(u);
         if (u.role === "creator") {
@@ -2796,8 +3088,8 @@ async function route(event) {
       // Recruiter leaderboard (Jeff, 2026-10-18): every creator with
       // at least one credited sign-up, best Momentum first.
       const all = await allUsers();
-      const [lbBk, lbPo, lbRv] = await Promise.all([allBookings(), allPosts(), allReviews()]);
-      const momentum = createMomentum({ users: all, bookings: lbBk, posts: lbPo, reviews: lbRv });
+      const [lbBk, lbPo, lbRv, lbBz] = await Promise.all([allBookings(), allPosts(), allReviews(), allBizReviews()]);
+      const momentum = createMomentum({ users: all, bookings: lbBk, posts: lbPo, reviews: lbRv, bizReviews: lbBz });
       const rows = [];
       for (const u of all) {
         if (u.role !== "creator" || !u.creator || !u.creator.handle) continue;
@@ -3204,6 +3496,50 @@ async function route(event) {
         },
       });
     }
+    // Preview paid booking: the paid lane, simulated with the same
+    // discipline. Validates the creator and her listed rate, runs
+    // the REAL fee math, returns a flagged simulated booking, and
+    // writes NOTHING: no booking, no code, no event, no escrow.
+    if (method === "POST" && seg[1] === "preview" && seg[2] === "paid-booking") {
+      const b = parseBody(event);
+      const targetCreator = b.creatorId ? await store.get(`user:${b.creatorId}`) : null;
+      if (!targetCreator || targetCreator.role !== "creator" || targetCreator.status !== "approved" || isTester(targetCreator)) return err(400, "Target creator is not an approved creator");
+      const rate = Number(targetCreator.creator && targetCreator.creator.paidRate);
+      if (!Number.isFinite(rate) || rate < PAID_LANE.minRate) return err(400, "That creator has not listed a paid rate, so there is no paid booking to preview.");
+      const math = paidMath(rate);
+      return json(201, {
+        preview: true,
+        booking: {
+          id: `preview-${crypto.randomUUID()}`,
+          preview: true,
+          kind: "paid",
+          creatorId: targetCreator.id,
+          creatorHandle: targetCreator.creator ? targetCreator.creator.handle : null,
+          rate: math.rate,
+          businessTotal: math.businessTotal,
+          creatorNet: math.creatorNet,
+          platformFee: math.platformFee,
+          escrowState: "held",
+          paymentNote: PAID_LANE.paymentNote,
+          note: "Simulation only: no booking saved, no code issued, no payment recorded, and the creator is not contacted.",
+        },
+      });
+    }
+    // Admin: set a business's public review-page links (the
+    // founding-application/admin side of the field; businesses can
+    // also edit their own from the Plan tab). Host-validated.
+    if (method === "POST" && seg[1] === "review-links") {
+      const b = parseBody(event);
+      const target = b.userId ? await store.get(`user:${b.userId}`) : null;
+      if (!target || target.role !== "business" || !target.business) return err(404, "Business not found");
+      const v = validateReviewLinks(b.links || {});
+      if (!v.ok) return err(400, v.error);
+      target.business = { ...target.business, reviewLinks: v.links };
+      target.updatedAt = nowIso();
+      await store.set(`user:${target.id}`, target);
+      await logEvent({ type: "business_review_links_updated", actorId: user.id, actorRole: "admin", subjectId: target.id, market: target.market, data: { platforms: Object.keys(v.links) } });
+      return json(200, { business: { userId: target.id, reviewLinks: v.links, reviewLinksView: reviewLinksView(target.business) } });
+    }
     // Business Preview dashboard (Jeff, 2026-10-19): the business
     // home - booked creators, visit codes, redemption, the post
     // clock, delivered posts, performance and returns - as ONE
@@ -3358,14 +3694,18 @@ async function route(event) {
         out = out.filter((o) => o.market === user.market && o.status === "open" && (!o.creatorId || o.creatorId === user.id));
         // The creator's checklist ("They can / They can't") depends on
         // the business's plan (rights follow the plan; see
-        // visitRightsForPlan). Attach both per offer.
+        // visitRightsForPlan). Attach both per offer, plus the
+        // business's public review-page links when it has set them
+        // (the "Their review pages" courtesy block).
         const bizIds = [...new Set(out.map((o) => o.businessId))];
         const plans = {};
+        const reviewLinks = {};
         for (const id of bizIds) {
           const biz = await store.get(`user:${id}`);
           plans[id] = biz && biz.business ? biz.business.plan : null;
+          reviewLinks[id] = biz && biz.business ? reviewLinksView(biz.business) : null;
         }
-        out = out.map((o) => ({ ...o, businessPlan: plans[o.businessId] || null, visitRights: visitRightsForPlan(plans[o.businessId] || null) }));
+        out = out.map((o) => ({ ...o, businessPlan: plans[o.businessId] || null, visitRights: visitRightsForPlan(plans[o.businessId] || null), businessReviewLinks: reviewLinks[o.businessId] || null }));
       }
       out.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
       return json(200, { offers: out });
@@ -3449,6 +3789,85 @@ async function route(event) {
     const out = [];
     for (const b of bookings) out.push(await withPostState(b));
     return json(200, { bookings: out });
+  }
+
+  // ---------- paid visits (Jeff, 2026-10-19) ----------
+  // A business books a SPECIFIC creator at her own listed rate for
+  // the same Standard Visit package. The booking is a normal
+  // booking (same code, same redemption, same compliance ladder)
+  // plus a paidLane object: the fee math, the escrow state, and the
+  // founding-billing honesty label. SIGNL holds the payment:
+  // escrow "held" at booking, "released" by the compliance sweep
+  // once proof exists and the 48 hour post-proof hold passes,
+  // "refunded" on a no-show or a ban. Paid bookings do NOT consume
+  // the plan's monthly visit allowance: the plan buys the service,
+  // a paid visit is a per-visit purchase on top.
+  if (seg[0] === "bookings" && seg.length === 2 && seg[1] === "paid" && method === "POST") {
+    if (user.role !== "business") return err(403, "Businesses only");
+    if (!(await isMarketLive(user.market))) return err(403, "SIGNL is not live in your market yet, so paid bookings open with the market.");
+    const b = parseBody(event);
+    const creator = await store.get(`user:${b.creatorId}`);
+    if (!creator || creator.role !== "creator" || creator.status !== "approved" || isTester(creator)) return err(400, "That creator is not on the roster");
+    if (creator.market !== user.market) return err(400, "Paid bookings are inside your own market");
+    if (standingState(creator) === "banned") return err(400, "That creator redeemed a comp and never posted, so they cannot be booked again.");
+    if (standingState(creator) === "paused") return err(400, "That creator is paused until a late post lands. Pick another creator for now.");
+    const rate = Number(creator.creator && creator.creator.paidRate);
+    if (!Number.isFinite(rate) || rate < PAID_LANE.minRate) return err(400, "That creator has not listed a paid rate. Comp visits are always available; paid bookings need a creator who charges.");
+    const allBk = await allBookings();
+    const cap = maxVisitsPerWeekOf(creator);
+    if (visitsThisWeek(allBk, creator.id, Date.now()) >= cap) {
+      return err(409, `That creator is at their max of ${cap} visit${cap === 1 ? "" : "s"} this week. Try again next week.`);
+    }
+    const math = paidMath(rate);
+    const code = await genCode();
+    const ts = nowIso();
+    const booking = {
+      id: crypto.randomUUID(),
+      offerId: null,
+      kind: "paid",
+      businessId: user.id,
+      businessName: user.business.businessName,
+      creatorId: creator.id,
+      creatorName: creator.name,
+      creatorHandle: creator.creator ? creator.creator.handle : "",
+      market: user.market,
+      category: user.business.category,
+      title: `Paid visit: ${user.business.businessName}`,
+      whatComped: String(b.whatComped || "The Standard Visit experience, as agreed with the business").trim().slice(0, 280),
+      dollarCap: Math.round(rate),
+      visitWindow: "Any time within 7 days of booking",
+      windowMode: "7days",
+      redeemBy: redeemByFor({ windowMode: "7days" }, new Date(ts)),
+      visitDate: "",
+      code,
+      codeStatus: "issued",
+      status: "booked",
+      createdAt: ts,
+      updatedAt: ts,
+      checkinAt: null,
+      redeemedAt: null,
+      redeemMethod: null,
+      postDeadline: null,
+      replacementRequestedAt: null,
+      paidLane: {
+        rate: math.rate,
+        businessTotal: math.businessTotal,
+        creatorNet: math.creatorNet,
+        platformFee: math.platformFee,
+        escrowState: "held",
+        paymentNote: PAID_LANE.paymentNote,
+        bookedAt: ts,
+        proofAt: null,
+        releasedAt: null,
+        refundedAt: null,
+        refundReason: null,
+      },
+    };
+    await store.set(`booking:${booking.id}`, booking);
+    await store.set(`code:${code}`, { bookingId: booking.id });
+    await logEvent({ type: "paid_booking_created", actorId: user.id, actorRole: "business", subjectId: booking.id, market: booking.market, data: { creatorId: creator.id, rate: math.rate, businessTotal: math.businessTotal, creatorNet: math.creatorNet, platformFee: math.platformFee, escrowState: "held" } });
+    await logEvent({ type: "booking_code_issued", actorId: user.id, actorRole: "business", subjectId: booking.id, market: booking.market, data: { code, offerId: null, businessId: user.id, dollarCap: booking.dollarCap, kind: "paid" } });
+    return json(201, { booking: await withPostState(booking) });
   }
 
   if (seg[0] === "bookings" && seg.length === 2 && method === "GET") {
@@ -3587,6 +4006,10 @@ async function route(event) {
     await store.set(`post:${post.id}`, post);
     booking.status = "completed";
     booking.updatedAt = ts;
+    // Paid lane: proof starts the 48 hour escrow hold. The sweep
+    // releases once the hold passes; the state stays "held" until
+    // then, so both sides see exactly where the money is.
+    if (booking.paidLane && booking.paidLane.escrowState === "held") booking.paidLane.proofAt = ts;
     await logEvent({ type: "post_submitted", actorId: user.id, actorRole: "creator", subjectId: post.id, market: booking.market, data: { bookingId: booking.id, businessId: booking.businessId, url, onTime, hoursAfterRedeem: post.hoursAfterRedeem, includesDisclosure: post.includesDisclosure, category: booking.category } });
 
     // Compliance bookkeeping for the proof (Jeff, 2026-10-19;
@@ -3730,6 +4153,41 @@ async function route(event) {
     return json(201, { review: reviewDisplay(review) });
   }
 
+  // ---------- creator reviews of businesses (Jeff, 2026-10-19) ----------
+  // The mirror review: after a completed visit, the CREATOR may
+  // review the BUSINESS in-app (1-5 stars plus a short note, one
+  // per booking, stored as bizreview:{id}). Leaving one earns +10
+  // Momentum at ANY star rating, computed from this record like
+  // every other point: the points pay for honesty, never for
+  // praise. This is separate from the business's public review
+  // pages (Google, Yelp, and friends): those are a courtesy link
+  // in the visit flow, carry no points, and are never required.
+  if (method === "POST" && seg[0] === "bookings" && seg.length === 3 && seg[2] === "review-business") {
+    if (user.role !== "creator") return err(403, "Creators review their own completed visits");
+    const b = parseBody(event);
+    const booking = await store.get(`booking:${seg[1]}`);
+    if (!booking || booking.creatorId !== user.id) return err(404, "Booking not found");
+    if (booking.status !== "completed") return err(409, "Reviews open once the visit is completed and your post is in");
+    const existing = (await allBizReviews()).find((r) => r.bookingId === booking.id);
+    if (existing) return err(409, "You already reviewed this visit");
+    const stars = Number(b.stars);
+    if (!Number.isInteger(stars) || stars < 1 || stars > 5) return err(400, "Stars must be a whole number from 1 to 5");
+    const text = String(b.text == null ? "" : b.text).trim().slice(0, 500);
+    const review = {
+      id: crypto.randomUUID(),
+      bookingId: booking.id,
+      creatorId: user.id,
+      businessId: booking.businessId,
+      businessName: booking.businessName || "A SIGNL business",
+      stars,
+      text,
+      createdAt: nowIso(),
+    };
+    await store.set(`bizreview:${review.id}`, review);
+    await logEvent({ type: "creator_reviewed_business", actorId: user.id, actorRole: "creator", subjectId: booking.businessId, market: booking.market, data: { bookingId: booking.id, stars, hasText: !!text } });
+    return json(201, { review: { stars: review.stars, text: review.text, businessName: review.businessName, createdAt: review.createdAt } });
+  }
+
   // Post-performance report (Jeff, 2026-10-19 round 2): the creator
   // adds the post's views and likes after the day-7 email asks. Two
   // optional fields, at least one required, one report per post. The
@@ -3783,6 +4241,9 @@ async function route(event) {
     booking.honorReason = reason;
     booking.updatedAt = nowIso();
     await store.set(`booking:${booking.id}`, booking);
+    // A paid visit voided by an honor report refunds the escrow:
+    // the business did not hold up its end, so its money goes back.
+    await refundPaidEscrow(booking, "business_did_not_honor");
     await logEvent({ type: "business_honor_report", actorId: user.id, actorRole: "creator", subjectId: booking.id, market: booking.market, data: { businessId: booking.businessId, creatorId: user.id, reason, wasRedeemed: !!booking.redeemedAt } });
     // Flag the business record with its running count.
     const bizUser = await store.get(`user:${booking.businessId}`);

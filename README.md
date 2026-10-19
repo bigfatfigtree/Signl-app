@@ -171,10 +171,11 @@ database, and registers fresh accounts through the real sign-up path):
 ```
 node scripts/verify-flow.mjs        # 98 checks: main marketplace flow
 node scripts/verify-fallbacks.mjs   # 14 checks: check-in / confirm fallbacks
-node scripts/verify-launch.mjs      # 165 checks: the launch shape itself
+node scripts/verify-launch.mjs      # 210 checks: the launch shape itself
 node scripts/verify-compliance.mjs  # 112 checks: stacking, compliance, Momentum v2, round-2 ops
-node scripts/verify-campaign.mjs    # 55 checks: creator outreach campaign (stub mailer only)
-npm run verify                      # all five, in order (444 total)
+node scripts/verify-campaign.mjs    # 79 checks: creator outreach campaign (stub mailer only)
+node scripts/verify-paidlane.mjs    # 58 checks: paid lane, creator reviews, review links, Managed budget
+npm run verify                      # all six, in order (571 total)
 ```
 
 `verify-launch.mjs` runs in true production shape: business
@@ -192,8 +193,8 @@ treats every market as live so the gated flows can still be exercised
 end to end. It is read from the environment only, is not in
 netlify.toml, and must never be set on the Netlify site.
 
-All five suites were run green against this codebase on 2026-10-19
-(444 checks total, including the Momentum points math end to end:
+All six suites were run green against this codebase on 2026-10-19
+(571 checks total, including the Momentum points math end to end:
 a recruiter with 2 credited sign-ups and 1 approval earns 16
 REFERRAL points (their full total also counts their own profile
 entries, for example +5 for reporting a local audience percentage,
@@ -595,6 +596,108 @@ mail already does.
   the failure path. Production sends require all three of: armed,
   non-empty queue, inside the window.
 
+## The paid lane, creator reviews of businesses, review links, Managed budget (2026-10-19)
+
+Jeff's model: two lanes, one roster, the business decides. The comp
+visit stays the default driver. A **Paid Visit** books a specific
+creator at **her own listed rate** for the same Standard Visit
+package. Verified in `scripts/verify-paidlane.mjs` (58 checks).
+
+- **Creator fields.** `creator.compOpen` (boolean, default `true`):
+  the comp-trade toggle. `creator.paidRate` (USD number or `null`):
+  her listed paid rate; `null` means no paid bookings at any price.
+  Both are set at registration defaults and edited in the creator's
+  own profile settings (`PATCH /api/me/profile`), where the UI
+  carries Jeff's verbatim explainer copy for both fields. A rate
+  below **$50** is refused with the reason stated (below that,
+  processing and support cost more than the booking returns).
+  `compOpen: false` means paid-only; the settings copy says plainly
+  that paid-only creators receive fewer offers. Discovery cards,
+  the full profile view, the founding home, and the public
+  `/c/<handle>` profile all show the rate with a "Paid bookings"
+  marker and the comp-open state. The discovery `paid=1` filter
+  reads `paidRate` (it previously read the Creators-tier
+  paid-campaigns comp flag, a different thing; that flag still
+  exists for hero cash campaigns).
+- **Fee math.** 6% of the rate total, split evenly: business pays
+  `rate x 1.03`, creator keeps `rate x 0.97`, platform fee
+  `rate x 0.06`. `paidMath()` in lib/router.js is the single source;
+  $250 -> $257.50 / $242.50 / $15.00. The subscription is the
+  business; 6% is deliberately the lowest take in the industry.
+  Comp-only is always fine, forever; paid is an optional
+  per-creator upgrade, never a ticket to the roster.
+- **Booking plumbing.** `POST /api/bookings/paid` (business, own
+  live market, approved non-tester creator with a listed rate)
+  creates a normal booking with `kind: "paid"` and a `paidLane`
+  object `{ rate, businessTotal, creatorNet, platformFee,
+  escrowState, paymentNote, bookedAt, proofAt, releasedAt,
+  refundedAt, refundReason }`. Same code, redemption, and
+  compliance ladder as a comp visit; the creator's weekly visit
+  cap applies; paid bookings do NOT consume the plan's monthly
+  visit allowance. Events: `paid_booking_created`,
+  `booking_code_issued`.
+- **Escrow.** `held` at booking. The compliance sweep releases it
+  (`released`, `paid_escrow_released`) when the post proof exists
+  AND 48 hours have passed since proof (the hold protects against
+  chargebacks on a post that vanishes overnight). It refunds
+  (`refunded`, `paid_escrow_refunded`) when the visit resolves as
+  a no-show (redemption window expiry in the sweep), when the
+  creator is banned under the compliance ladder, or when an honor
+  report voids the visit (`business_did_not_honor`). **Pre-Stripe
+  honesty:** `paymentNote` reads "Paid visit recorded, no card
+  charged. SIGNL holds the payment until the post is live." No
+  charge is ever simulated anywhere.
+- **Creator reviews of businesses (Momentum correction).**
+  `POST /api/bookings/:id/review-business` (creator, own booking,
+  status completed, one per booking) stores a `bizreview:{id}`
+  record `{ bookingId, creatorId, businessId, businessName, stars,
+  text, createdAt }` and logs `creator_reviewed_business`. Leaving
+  one earns **+10 Momentum at ANY star rating** (ledger kind
+  `review_given`): points pay for honesty, never for praise. The
+  old rule (points for RECEIVING a 4-5 star business review,
+  `review_high`) is removed from the points table, the ledger, and
+  the checklist; reviews a creator receives are profile social
+  proof only and mint nothing. External reviews carry no points
+  anywhere (Google prohibits incentivized reviews; points there
+  would endanger the business's own profile).
+- **Business review-page links.** `business.reviewLinks` =
+  `{ google, yelp, tripadvisor, facebook }` (optional URLs,
+  host-validated per platform by `validateReviewLinks`: a Yelp
+  link must point at yelp.com, a Google link at google.com /
+  g.page / goo.gl, and so on). Set by the business itself
+  (`PATCH /api/me/profile`, Plan tab in the UI) or by an admin
+  (`POST /api/admin/review-links`, editor in Admin -> Applications;
+  logs `business_review_links_updated`). When present, the
+  creator's offer view and completed-visit card show a courtesy
+  block ("Their review pages") linking out. Display-if-exists
+  only, never mandatory, never on public profiles.
+- **Managed talent budget.** `business.monthlyTalentBudget`
+  (default 500 at registration and normalized onto legacy records
+  at plan selection; editable via `PATCH /api/me/profile`, Plan
+  tab). It is a spending cap + authorization the SIGNL coordinator
+  spends on paid creator bookings, NOT a held deposit; each
+  booking escrows individually. The Managed plan's feature list
+  says so. In the Business Preview dashboard, the budget displays
+  as a **second simulated business on Managed** ("Harbor Table
+  (Managed plan example)") with its own panel: budget set / spent
+  this month / remaining, where spent is the sum of that cycle's
+  simulated paid bookings' business totals (two bookings over the
+  real roster at illustrative rates through the real `paidMath`,
+  one escrow released, one held). **Choice made and documented
+  here, per the build spec:** Salt & Ember's Growth dashboard is
+  unchanged; the Managed view rides alongside it as
+  `dashboard.managedView` rather than flipping the simulated
+  business's plan. Zero-write invariant holds for the whole
+  payload, asserted in both the launch and paid-lane suites.
+- **Preview paid booking.** `POST /api/admin/preview/paid-booking`
+  (admin) validates the creator and her listed rate, runs the real
+  fee math, and returns a flagged simulated booking. No booking,
+  no code, no event, no escrow: the paid-lane suite asserts the
+  creator's booking count and the event log do not move.
+- **Copy rules.** The business-facing line everywhere is some form
+  of: "Comp-only is always fine. Pay only when you want a specific
+  creator who charges." No em dashes in any of the new UI copy.
+
 ## Environment variables
 
 Set these in Netlify (Site settings, Environment variables) for
@@ -631,7 +734,10 @@ production. Locally they go in the shell.
   neighborhood, topAudienceCities, localAudiencePct, localAudienceSource,
   localAudienceAsOf, agreedHonestPosts, agreedFtcDisclosure,
   agreedAt, agreedTerms, termsVersion, marketingEmailConsent,
-  marketingConsentAt, openToPaidCampaigns, hasPhoto, photoUploadedAt,
+  marketingConsentAt, openToPaidCampaigns, compOpen (paid lane:
+  accepts comp visits, default true), paidRate (paid lane: her
+  listed rate in USD, minimum 50, null = no paid bookings),
+  hasPhoto, photoUploadedAt,
   igConnected, audienceStack (per-platform counts), totalAudience,
   maxVisitsPerWeek, agreedPostCompliance. The user record also carries termsVersion,
   termsAcceptedAt, marketingEmailConsent, marketingConsentAt, and
@@ -643,7 +749,11 @@ production. Locally they go in the shell.
   is stored for it. `foundingViewedOn` (date) throttles the
   founding_status_viewed event to once per creator per day. Business
   payload under `business` (businessName, category, plan, planName,
-  planPriceMonthly, planMinMonths, billingStatus, planSelectedAt).
+  planPriceMonthly, planMinMonths, billingStatus, planSelectedAt,
+  reviewLinks ({ google, yelp, tripadvisor, facebook }, optional
+  host-validated public review-page URLs), monthlyTalentBudget
+  (Managed plan spending cap for paid creator bookings, default
+  500, not a deposit)).
 - `email:{email}` uniqueness index to the user id.
 - `session:{token}` server-side session (30 day expiry).
 - `offer:{uuid}` title, whatComped, dollarCap, visitWindow,
@@ -656,7 +766,11 @@ production. Locally they go in the shell.
   replacementRequestedAt, compliance ({ reminder1At/2At/3At,
   visitLateAt, missedDeadlineAt, pausedAt, bannedAt, banAt,
   lateDeliveredAt, expiredAt }), honorReportedAt + honorReason,
-  staffNotice ({ checkinNoticeAt, redeemNoticeAt }).
+  staffNotice ({ checkinNoticeAt, redeemNoticeAt }). Paid visits
+  add kind ("paid"; absent on comp bookings) and paidLane
+  ({ rate, businessTotal, creatorNet, platformFee, escrowState
+  (held/released/refunded), paymentNote, bookedAt, proofAt,
+  releasedAt, refundedAt, refundReason }).
 - `code:{SGNL-XXXXXX}` redemption lookup index to the booking.
 - `post:{uuid}` url, submittedAt, deadline, hoursAfterRedeem, onTime,
   includesDisclosure, verifiedAt/verifiedBy, adUseDeclaredAt/
@@ -667,6 +781,11 @@ production. Locally they go in the shell.
   bookingId, creatorId, businessId, businessName snapshot, stars
   (1-5), comment, createdAt. One per completed booking; written only
   via POST /api/bookings/:id/review.
+- `bizreview:{uuid}` a creator's post-visit review of a business:
+  bookingId, creatorId, businessId, businessName snapshot, stars
+  (1-5), text, createdAt. One per completed booking; written only
+  via POST /api/bookings/:id/review-business. Feeds Momentum
+  (+10 for leaving one, any star rating); never a public rating.
 - `favorite:{businessId}:{creatorId}`.
 - `photo:{userId}` the creator's profile photo: contentType,
   dataBase64, bytes, uploadedAt. Served without sign-in once the
@@ -715,7 +834,9 @@ campaign_recipients_imported, campaign_armed, campaign_disarmed,
 campaign_email_sent, campaign_email_failed, campaign_queue_empty,
 campaign_send_cap_reached (the campaign data payload carries the
 campaignId; a send's payload carries the recipient email, handle,
-market, and messageRef).
+market, and messageRef), paid_booking_created,
+paid_escrow_released, paid_escrow_refunded,
+creator_reviewed_business, business_review_links_updated.
 
 Each event carries ts, actorId, actorRole, subjectId, market, and a
 data payload with the decision-relevant fields (amounts, caps, tier,
