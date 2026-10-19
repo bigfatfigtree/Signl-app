@@ -29,7 +29,15 @@
 //   - tester accounts (user.tester, set via POST /api/admin/tester,
 //     admin only) never receive campaign sends: their email is
 //     skipped at import, and an address flagged tester after it was
-//     queued is pruned by the sweep before any send.
+//     queued is pruned by the sweep before any send;
+//   - the second campaign (founding-crossover-2026-10) for creators
+//     already on national platforms: its template renders the
+//     additive, non-exclusive pitch with the approved subject, the
+//     template dispatch never sends crossover recipients the
+//     founding email, imports dedupe within the campaign AND
+//     against the founding campaign (skip reason cross_campaign),
+//     and the global 40/day ceiling binds across both real
+//     campaigns combined.
 //
 // Run: node scripts/verify-campaign.mjs
 
@@ -291,10 +299,10 @@ try {
   const appJs = fs.readFileSync(path.join(root, "public/app.js"), "utf8");
   check("campaign tab wired in the client", appJs.includes("loadCampaign") && appJs.includes("/admin/campaign"));
   check("arm/pause control wired in the client", appJs.includes("toggleCampaignArm") && appJs.includes("/admin/campaign/arm") && appJs.includes("/admin/campaign/disarm"));
-  check("paste-import box rendered in the campaign tab", appJs.includes('id="campaign-import-text"') && appJs.includes("Paste recipients (JSON array)") && appJs.includes(">Import recipients</button>"));
+  check("paste-import box rendered in the campaign tab", appJs.includes('id="campaign-import-text${meta.suffix}"') && appJs.includes("Paste recipients (JSON array)") && appJs.includes(">Import recipients</button>"));
   check("import handler posts the box payload to the endpoint", appJs.includes("importCampaignRecipients") && appJs.includes('api("POST", "/admin/campaign/import"') && appJs.includes('campaignId: "founding-creators-2026-10"'));
   const servedJs = await anon("GET", "/app.js");
-  check("served app.js carries the import box + handler", servedJs.status === 200 && servedJs.text.includes('id="campaign-import-text"') && servedJs.text.includes("importCampaignRecipients") && servedJs.text.includes("/admin/campaign/import"), String(servedJs.status));
+  check("served app.js carries the import box + handler", servedJs.status === 200 && servedJs.text.includes('id="campaign-import-text${meta.suffix}"') && servedJs.text.includes("importCampaignRecipients") && servedJs.text.includes("/admin/campaign/import"), String(servedJs.status));
 
   // ---------- Part H: the paste-box payload shape, end to end ----------
   part("H: paste-box import");
@@ -369,6 +377,76 @@ try {
   const unflip = await admin("POST", "/api/admin/tester", { userId: tonyId, tester: false });
   check("admin can move a tester back to the roster", unflip.status === 200 && unflip.data.user.tester === false, JSON.stringify(unflip.data));
   check("creator_unmarked_tester event logged", (await countEvents(admin, "creator_unmarked_tester")) === 1);
+
+  // ---------- Part J: the crossover campaign (founding-crossover-2026-10) ----------
+  part("J: crossover campaign");
+  const { crossoverEmail, campaignEmailFor, CROSSOVER_CAMPAIGN_ID } = require("../netlify/functions/lib/router.js");
+  check("crossover campaign id is the shipped one", CROSSOVER_CAMPAIGN_ID === "founding-crossover-2026-10", CROSSOVER_CAMPAIGN_ID);
+  const xo = crossoverEmail({ name: "Jordan Lee", handle: "jordancreates", market: "Richmond", opener: "your GRIN campaign posts and your Shockoe Bottom food reviews" });
+  check("crossover subject: national platforms plus a local layer in the market", xo.subject === "Your national platforms, plus a local layer in Richmond", xo.subject);
+  check("crossover greeting uses the first name only", xo.text.startsWith("Hi Jordan,"), xo.text.slice(0, 40));
+  check("crossover opener slot is filled", xo.text.includes("I found you through your GRIN campaign posts and your Shockoe Bottom food reviews."));
+  check("platforms named the approved generic way", xo.text.includes("platforms like Grin, Cohley, or Momfluence"));
+  check("additive and non-exclusive: keep every national deal", xo.text.includes("not asking you to leave any of them") && xo.text.includes("nothing about SIGNL is exclusive") && xo.text.includes("Keep every national deal you have."));
+  check("local perks: comps, honest post within 48 hours, tracked public track record", xo.text.includes("Local businesses comp you a meal, a service, or an experience") && xo.text.includes("post honestly about it within 48 hours") && xo.text.includes("Every visit is tracked") && xo.text.includes("public track record"));
+  check("local money route 1: own paid rate, keep 97 percent, business covers 3 percent, escrow released when the post is live", xo.text.includes("set a paid rate on your SIGNL profile") && xo.text.includes("you keep 97 percent of your rate") && xo.text.includes("the business covers another 3 percent") && xo.text.includes("SIGNL holds the payment and releases it when your post is live"));
+  check("local money route 2: 15k+ followers first in line for paid cash campaigns", xo.text.includes("15k+ followers are first in line for paid cash campaigns"));
+  check("why local pays: the audience share in the market is the number SIGNL leads with", xo.text.includes("cannot tell a business what share of a creator's audience lives in its market") && xo.text.includes("SIGNL leads with exactly that number"));
+  check("founding mechanics: free profile, spot held in sign-up order, founding-market paragraph", xo.text.includes("Your founding profile is free") && xo.text.includes("your spot is held in sign-up order") && xo.text.includes("Richmond is a founding market: sign-ups are open now and offers open city by city as the roster fills, in the next 30 to 90 days."));
+  check("crossover claim link is the full prefilled URL", xo.text.includes("https://app.joinsignl.com/?handle=jordancreates&market=Richmond"));
+  check("crossover sign-off is Jeff, Founder, SIGNL, with the tagline", xo.text.includes("\nJeff\nFounder, SIGNL\nhello@joinsignl.com | joinsignl.com\nNational platforms sell reach. We sell regulars."));
+  check("no last name anywhere in the crossover email", !xo.text.includes("Rimmer") && !xo.subject.includes("Rimmer"));
+  check("no em dashes anywhere in the crossover email", !xo.text.includes("—") && !xo.subject.includes("—"));
+  const xoHr = crossoverEmail({ name: "", handle: "hrfoodie", market: "Hampton Roads", opener: "your Momfluence posts" });
+  check("crossover missing name falls back to Hi there,", xoHr.text.startsWith("Hi there,"), xoHr.text.slice(0, 40));
+  check("crossover Hampton Roads paragraph carries the November launch", xoHr.text.includes("Hampton Roads launches in November, and our opening push is Black Friday weekend."));
+  check("template dispatch: the crossover id renders the crossover subject", campaignEmailFor(CROSSOVER_CAMPAIGN_ID, { name: "A B", handle: "ab", market: "Richmond", opener: "your posts" }).subject === "Your national platforms, plus a local layer in Richmond");
+  check("template dispatch: the founding id renders the founding subject", campaignEmailFor("founding-creators-2026-10", { name: "A B", handle: "ab", market: "Richmond", opener: "your posts" }).subject === "A founding creator spot in Richmond");
+  check("template dispatch: any other campaign keeps the founding template", campaignEmailFor("daily-test", { name: "A B", handle: "ab", market: "Richmond", opener: "your posts" }).subject === "A founding creator spot in Richmond");
+  // Cross-campaign dedupe: pasteone@example.com already sits in
+  // the founding campaign (Part H). Importing it into crossover
+  // must record it skipped with reason cross_campaign, never queue
+  // it, and the import response must report the cross count.
+  const xoRecipients = [{ email: "pasteone@example.com", name: "Paste One", handle: "paste1", market: "Hampton Roads", opener: "your Granby Street posts" }];
+  for (let i = 1; i <= 45; i++) {
+    xoRecipients.push({ email: `xo${String(i).padStart(2, "0")}@example.com`, name: `Crossover Creator ${i}`, handle: `xo${i}`, market: "Richmond", opener: "your national campaign posts" });
+  }
+  const foundingBefore = await admin("GET", "/api/admin/campaign");
+  const xoImp = await admin("POST", "/api/admin/campaign/import", { campaignId: "founding-crossover-2026-10", recipients: xoRecipients });
+  check("crossover import queues the 45 fresh addresses", xoImp.status === 200 && xoImp.data.imported === 45, JSON.stringify(xoImp.data));
+  check("the founding-campaign address is skipped and reported as cross_campaign", xoImp.data.skipped === 1 && xoImp.data.crossCampaign === 1, JSON.stringify(xoImp.data));
+  const xoStatus = await admin("GET", "/api/admin/campaign?campaignId=founding-crossover-2026-10");
+  check("crossover queue lives under its own campaign keys: 45 queued, 1 skipped, 0 sent", xoStatus.data.counts.queued === 45 && xoStatus.data.counts.skipped === 1 && xoStatus.data.counts.sent === 0 && xoStatus.data.campaign.id === "founding-crossover-2026-10", JSON.stringify(xoStatus.data.counts));
+  check("crossover starts disarmed (import never arms)", xoStatus.data.campaign.armed === false, JSON.stringify(xoStatus.data.campaign));
+  const foundingAfterImp = await admin("GET", "/api/admin/campaign");
+  check("founding campaign counts untouched by the crossover import", JSON.stringify(foundingAfterImp.data.counts) === JSON.stringify(foundingBefore.data.counts), JSON.stringify({ before: foundingBefore.data.counts, after: foundingAfterImp.data.counts }));
+  const xoDup = await admin("POST", "/api/admin/campaign/import", { campaignId: "founding-crossover-2026-10", recipients: xoRecipients });
+  check("re-import into crossover dedupes within the campaign", xoDup.status === 200 && xoDup.data.imported === 0 && xoDup.data.duplicates === 46, JSON.stringify(xoDup.data));
+  // The global ceiling binds across BOTH real campaigns combined:
+  // on a fresh ET day, arm founding (2 queued from Part H) and
+  // crossover (45 queued) and sweep until a run sends nothing.
+  // The day's combined total must stop at exactly 40.
+  await admin("POST", "/api/admin/campaign/arm", {});
+  await admin("POST", "/api/admin/campaign/arm", { campaignId: "founding-crossover-2026-10" });
+  const foundingSentBefore = (await admin("GET", "/api/admin/campaign")).data.counts.sent;
+  const DAYJ = "2026-10-23T15:00:00.000Z"; // a fresh ET day, 11:00 EDT
+  let lastJSweep = null;
+  for (let i = 0; i < 12; i++) {
+    lastJSweep = await admin("POST", "/api/admin/campaign/sweep", { now: DAYJ });
+    if (lastJSweep.data.sweep.sent === 0) break;
+  }
+  const foundingAfterJ = await admin("GET", "/api/admin/campaign");
+  const xoAfterJ = await admin("GET", "/api/admin/campaign?campaignId=founding-crossover-2026-10");
+  const dayJTotal = (foundingAfterJ.data.counts.sent - foundingSentBefore) + xoAfterJ.data.counts.sent;
+  check("both real campaigns together stop at the day's 40", dayJTotal === 40, `dayJ=${dayJTotal} foundingDay=${foundingAfterJ.data.counts.sent - foundingSentBefore} crossover=${xoAfterJ.data.counts.sent}`);
+  check("crossover did the bulk of the day's sending from its own queue", xoAfterJ.data.counts.sent >= 38, JSON.stringify(xoAfterJ.data.counts));
+  check("the ceiling sweep reports sentToday 40 with the ceiling hit, not an error", lastJSweep.data.sweep.sent === 0 && lastJSweep.data.sweep.sentToday === 40 && lastJSweep.data.sweep.dailyCeilingHit >= 1, JSON.stringify(lastJSweep.data.sweep));
+  check("crossover stays armed with queue remaining and no lastError", xoAfterJ.data.campaign.armed === true && xoAfterJ.data.counts.queued === 45 - xoAfterJ.data.counts.sent && !xoAfterJ.data.campaign.lastError, JSON.stringify({ counts: xoAfterJ.data.counts, armed: xoAfterJ.data.campaign.armed }));
+  // Client guards for the two-campaign tab.
+  check("campaign tab renders both campaign sections", appJs.includes("CAMPAIGN_SECTIONS") && appJs.includes("campaignSectionHtml") && appJs.includes("Platform crossover creators") && appJs.includes("founding-crossover-2026-10"));
+  check("crossover import posts the crossover campaign id", appJs.includes('campaignId: "founding-crossover-2026-10"'));
+  const servedJs2 = await anon("GET", "/app.js");
+  check("served app.js carries the crossover campaign", servedJs2.status === 200 && servedJs2.text.includes("founding-crossover-2026-10") && servedJs2.text.includes("campaignSectionHtml"), String(servedJs2.status));
 } catch (err) {
   failed++;
   console.error("SUITE ERROR:", err && err.stack || err);

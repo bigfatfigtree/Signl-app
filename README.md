@@ -173,9 +173,9 @@ node scripts/verify-flow.mjs        # 98 checks: main marketplace flow
 node scripts/verify-fallbacks.mjs   # 14 checks: check-in / confirm fallbacks
 node scripts/verify-launch.mjs      # 210 checks: the launch shape itself
 node scripts/verify-compliance.mjs  # 112 checks: stacking, compliance, Momentum v2, round-2 ops
-node scripts/verify-campaign.mjs    # 86 checks: creator outreach campaign (stub mailer only)
+node scripts/verify-campaign.mjs    # 119 checks: creator outreach campaigns (stub mailer only)
 node scripts/verify-paidlane.mjs    # 58 checks: paid lane, creator reviews, review links, Managed budget
-npm run verify                      # all six, in order (578 total)
+npm run verify                      # all six, in order (611 total)
 ```
 
 `verify-launch.mjs` runs in true production shape: business
@@ -194,7 +194,7 @@ end to end. It is read from the environment only, is not in
 netlify.toml, and must never be set on the Netlify site.
 
 All six suites were run green against this codebase on 2026-10-19
-(571 checks total, including the Momentum points math end to end:
+(611 checks total, including the Momentum points math end to end:
 a recruiter with 2 credited sign-ups and 1 approval earns 16
 REFERRAL points (their full total also counts their own profile
 entries, for example +5 for reporting a local audience percentage,
@@ -560,6 +560,31 @@ mail already does.
   paragraph (30 to 90 days, sign-up order). The claim link is
   prefilled per recipient (`?handle=&market=`). Sign-off is "Jeff",
   first name only. No em dashes.
+- **Second campaign: platform crossover.** Campaign id
+  `founding-crossover-2026-10`, same queue, engine, ceiling, and
+  admin endpoints. It targets creators already working national
+  platforms, and its template (`crossoverEmail()` in lib/router.js,
+  dispatched per campaign by `campaignEmailFor()`) carries a
+  different, additive pitch. Subject: "Your national platforms,
+  plus a local layer in {Market}". The copy is explicit that SIGNL
+  is non-exclusive and asks nobody to leave platforms like Grin,
+  Cohley, or Momfluence; it sells the local layer on top: comps
+  from businesses in their own city, honest posts within 48
+  hours, a tracked public track record, and two local money
+  routes (their own paid rate on their profile, of which they
+  keep 97 percent while the business covers another 3 percent and
+  SIGNL escrows the payment until the post is live; and 15k+
+  creators first in line for paid cash campaigns), because SIGNL
+  leads with the share of a creator's audience that lives in the
+  business's market. Founding mechanics match the founding
+  template (free profile, spot in sign-up order, same market
+  paragraph, prefilled claim link). One extra import rule: an
+  address the founding campaign already holds (any status) is
+  recorded on the crossover campaign as `skipped` with
+  `skipReason: cross_campaign` and reported in the import
+  response's `crossCampaign` count, so no creator ever receives
+  both outreach emails. Crossover recipients live under their own
+  campaign keys and can only ever receive the crossover template.
 - **Engine.** `netlify/functions/campaign-sweep.mjs` (Netlify
   scheduled function, every 30 minutes) POSTs to
   `POST /api/admin/campaign/sweep`, which sits in front of the
@@ -586,8 +611,10 @@ mail already does.
   of 1,000 (`CAMPAIGN_RUNAWAY_BACKSTOP`,
   `disarmReason: runaway_backstop_reached`) exists purely as a bug
   guard and is never expected to bind.
-- **Admin surface.** Admin → Campaign tab (counts by status, last
-  error, recent sends, Arm/Pause button), backed by
+- **Admin surface.** Admin → Campaign tab: one stacked section
+  per campaign (founding, then crossover), each with its own
+  counts by status, last error, recent sends, paste-import box,
+  and Arm/Pause button, backed by
   `GET /api/admin/campaign` (status: `?campaignId=` optional),
   `POST /api/admin/campaign/import` (recipients array, max 500;
   dedupes by email; validates email shape and requires handle,

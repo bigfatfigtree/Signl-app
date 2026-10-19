@@ -2118,62 +2118,87 @@ function renderAdmin() {
   if (tab === "Stats") loadStats();
 }
 
-// Creator outreach campaign (Jeff, 2026-10-19): the founding
-// creator email sends from inside the app (its own SMTP transport),
-// so there is no per-send approval card. This tab is the control
-// surface: queue counts, the last error if a run stopped, recent
-// sends, and the Arm / Pause switch. Recipients are imported by
-// pasting a JSON array into the box on this tab, which posts to
-// the admin import endpoint; sending runs on the 30-minute
-// scheduled sweep, inside the 08:00-21:00 ET window, in batches
-// of 8, under a global daily ceiling of 40 sends per ET day
-// across all campaigns (it protects the sending domain).
+// Creator outreach campaigns (Jeff, 2026-10-19): the outreach
+// email sends from inside the app (its own SMTP transport), so
+// there is no per-send approval card. This tab is the control
+// surface for BOTH campaigns: queue counts, the last error if a
+// run stopped, recent sends, and the Arm / Pause switch per
+// campaign. The founding campaign pitches a founding creator
+// spot; the crossover campaign (added later the same day) pitches
+// creators already on national platforms the additive local
+// layer, and its imports skip any address the founding campaign
+// already holds. Recipients are imported by pasting a JSON array
+// into the box on the campaign's section, which posts to the
+// admin import endpoint; sending runs on the 30-minute scheduled
+// sweep, inside the 08:00-21:00 ET window, in batches of 8,
+// under a global daily ceiling of 40 sends per ET day across
+// all campaigns (it protects the sending domain).
+const CAMPAIGN_SECTIONS = [
+  { key: "founding", suffix: "", id: "founding-creators-2026-10", title: "Founding creators", blurb: "The founding creator email: a founding spot in their market, comped local experiences for honest posts within 48 hours, and a live founding profile from day one." },
+  { key: "crossover", suffix: "-crossover", id: "founding-crossover-2026-10", title: "Platform crossover creators", blurb: "For creators already working national platforms like Grin, Cohley, or Momfluence. The pitch is additive and non-exclusive: keep those deals, SIGNL is the local layer on top. Imports skip any address the founding campaign already holds, so nobody receives both emails." },
+];
+
 async function loadCampaign() {
   const el = document.getElementById("tab-body");
   try {
-    const data = await api("GET", "/admin/campaign");
-    const c = data.campaign || {};
-    const counts = data.counts || {};
-    const sends = (data.recentSends || []).map((s) => `
-      <div class="card mb">
-        <div class="flex-between"><strong>${esc(s.name || s.handle || s.email)}</strong><span class="badge ok">Sent</span></div>
-        <p class="small muted">@${esc(s.handle || "")} &middot; ${esc(s.market || "")} &middot; ${esc(s.email)}${s.sentAt ? ` &middot; ${esc(fmtDate(s.sentAt))}` : ""}</p>
-      </div>`).join("");
+    const sections = [];
+    for (const meta of CAMPAIGN_SECTIONS) {
+      const data = await api("GET", "/admin/campaign?campaignId=" + encodeURIComponent(meta.id));
+      sections.push(campaignSectionHtml(meta, data));
+    }
     el.innerHTML = `
-      <div class="flex-between"><h3 style="margin:0">Creator outreach campaign</h3><span class="badge ${c.armed ? "ok" : "info"}">${c.armed ? "Armed" : "Paused"}</span></div>
-      <p class="small muted" style="margin-top:8px">Campaign <strong>${esc(c.id || "")}</strong>. The sweep sends up to ${c.batchSize || 8} emails every 30 minutes while armed, only between ${c.window ? c.window.startHour : 8}:00 and ${c.window ? c.window.endHour : 21}:00 ET. Daily ceiling: ${c.dailyCeiling || 40} sends per day (ET) across all campaigns, to protect the sending domain. Hitting it is normal; the queue waits for the next day. The queue auto-pauses when it empties.${c.lastRunAt ? ` Last sweep: ${esc(fmtDate(c.lastRunAt))}.` : ""} Send window is ${c.windowOpenNow ? "open now" : "closed right now"}.</p>
-      ${c.lastError ? `<div class="error-box">${esc(c.lastError)}</div>` : ""}
-      <p class="small">Queued: <strong>${counts.queued || 0}</strong> &middot; Sent: <strong>${counts.sent || 0}</strong> &middot; Bounced: <strong>${counts.bounced || 0}</strong> &middot; Skipped: <strong>${counts.skipped || 0}</strong> &middot; Total: <strong>${counts.total || 0}</strong> &middot; Sent today: <strong>${c.sentToday != null ? c.sentToday : 0} of ${c.dailyCeiling || 40} (daily ceiling)</strong></p>
-      <button class="btn ${c.armed ? "danger" : ""}" onclick="toggleCampaignArm(${c.armed ? "false" : "true"})">${c.armed ? "Pause campaign" : "Arm campaign"}</button>
-      <div id="campaign-note" class="small saved"></div>
-      <h3 class="mt">Import recipients</h3>
-      <p class="small muted">Paste a JSON array of recipient objects: email, handle, market and opener are required; name is optional. Imported addresses join the queue; nothing sends until the campaign is armed.</p>
-      <div class="field"><label>Paste recipients (JSON array)</label><textarea id="campaign-import-text" rows="8" placeholder='[{"email":"creator@example.com","name":"Casey","handle":"casey","market":"Richmond","opener":"your Carytown posts"}]'></textarea></div>
-      <button class="btn" onclick="importCampaignRecipients()">Import recipients</button>
-      <div id="campaign-import-note" class="small saved"></div>
-      ${sends ? `<h3 class="mt">Recent sends</h3>${sends}` : `<p class="muted mt">No sends yet.</p>`}`;
+      <h3 style="margin:0 0 8px">Creator outreach campaigns</h3>
+      <p class="small muted">Both campaigns send through the same sweep: up to 8 emails per campaign every 30 minutes while armed, only between 8:00 and 21:00 ET. One daily ceiling covers both together: 40 sends per day (ET) across all campaigns, to protect the sending domain. Hitting it is normal; the queues wait for the next day. A queue auto-pauses when it empties.</p>
+      ${sections.join("")}`;
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
 }
 
-async function toggleCampaignArm(arm) {
-  const note = document.getElementById("campaign-note");
+function campaignSectionHtml(meta, data) {
+  const c = data.campaign || {};
+  const counts = data.counts || {};
+  const sends = (data.recentSends || []).map((s) => `
+    <div class="card mb">
+      <div class="flex-between"><strong>${esc(s.name || s.handle || s.email)}</strong><span class="badge ok">Sent</span></div>
+      <p class="small muted">@${esc(s.handle || "")} &middot; ${esc(s.market || "")} &middot; ${esc(s.email)}${s.sentAt ? ` &middot; ${esc(fmtDate(s.sentAt))}` : ""}</p>
+    </div>`).join("");
+  return `
+    <div class="flex-between mt"><h3 style="margin:0">${esc(meta.title)}</h3><span class="badge ${c.armed ? "ok" : "info"}">${c.armed ? "Armed" : "Paused"}</span></div>
+    <p class="small muted" style="margin-top:8px">Campaign <strong>${esc(c.id || meta.id)}</strong>. ${esc(meta.blurb)}${c.lastRunAt ? ` Last sweep: ${esc(fmtDate(c.lastRunAt))}.` : ""} Send window is ${c.windowOpenNow ? "open now" : "closed right now"}.</p>
+    ${c.lastError ? `<div class="error-box">${esc(c.lastError)}</div>` : ""}
+    <p class="small">Queued: <strong>${counts.queued || 0}</strong> &middot; Sent: <strong>${counts.sent || 0}</strong> &middot; Bounced: <strong>${counts.bounced || 0}</strong> &middot; Skipped: <strong>${counts.skipped || 0}</strong> &middot; Total: <strong>${counts.total || 0}</strong> &middot; Sent today: <strong>${c.sentToday != null ? c.sentToday : 0} of ${c.dailyCeiling || 40} (daily ceiling)</strong></p>
+    <button class="btn ${c.armed ? "danger" : ""}" onclick="toggleCampaignArm(${c.armed ? "false" : "true"}, '${meta.id}')">${c.armed ? "Pause campaign" : "Arm campaign"}</button>
+    <div id="campaign-note${meta.suffix}" class="small saved"></div>
+    <h3 class="mt">Import recipients</h3>
+    <p class="small muted">Paste a JSON array of recipient objects: email, handle, market and opener are required; name is optional. Imported addresses join this campaign's queue; nothing sends until the campaign is armed.</p>
+    <div class="field"><label>Paste recipients (JSON array)</label><textarea id="campaign-import-text${meta.suffix}" rows="8" placeholder='[{"email":"creator@example.com","name":"Casey","handle":"casey","market":"Richmond","opener":"your Carytown posts"}]'></textarea></div>
+    <button class="btn" onclick="importCampaignRecipients('${meta.key}')">Import recipients</button>
+    <div id="campaign-import-note${meta.suffix}" class="small saved"></div>
+    ${sends ? `<h3 class="mt">Recent sends</h3>${sends}` : `<p class="muted mt">No sends yet.</p>`}`;
+}
+
+async function toggleCampaignArm(arm, campaignId) {
   try {
-    await api("POST", arm ? "/admin/campaign/arm" : "/admin/campaign/disarm", {});
+    await api("POST", arm ? "/admin/campaign/arm" : "/admin/campaign/disarm", { campaignId: campaignId || "founding-creators-2026-10" });
     loadCampaign();
   } catch (err) {
-    if (note) note.textContent = err.message;
+    for (const meta of CAMPAIGN_SECTIONS) {
+      const note = document.getElementById("campaign-note" + meta.suffix);
+      if (note && (!campaignId || meta.id === campaignId)) note.textContent = err.message;
+    }
   }
 }
 
-// Paste-import for the campaign queue: the operator pastes a JSON
-// array of recipients, we parse it here (a parse failure shows an
-// inline error and calls nothing), then POST the same payload the
-// admin import endpoint has always taken and show its counts.
-async function importCampaignRecipients() {
-  const box = document.getElementById("campaign-import-text");
-  const note = document.getElementById("campaign-import-note");
+// Paste-import for a campaign queue: the operator pastes a JSON
+// array into the campaign's box, we parse it here (a parse failure
+// shows an inline error and calls nothing), then POST the same
+// payload the admin import endpoint has always taken and show its
+// counts.
+async function importCampaignRecipients(sectionKey) {
+  const meta = CAMPAIGN_SECTIONS.find((s) => s.key === sectionKey) || CAMPAIGN_SECTIONS[0];
+  const box = document.getElementById("campaign-import-text" + meta.suffix);
+  const note = document.getElementById("campaign-import-note" + meta.suffix);
   let recipients;
   try {
     recipients = JSON.parse(box ? box.value : "");
@@ -2186,10 +2211,14 @@ async function importCampaignRecipients() {
     return;
   }
   try {
-    const data = await api("POST", "/admin/campaign/import", { campaignId: "founding-creators-2026-10", recipients });
-    const summary = `Imported ${data.imported || 0} · Duplicates ${data.duplicates || 0} · Skipped ${data.skipped || 0} · Invalid ${(data.invalid || []).length}`;
+    const payload = meta.key === "crossover"
+      ? { campaignId: "founding-crossover-2026-10", recipients }
+      : { campaignId: "founding-creators-2026-10", recipients };
+    const data = await api("POST", "/admin/campaign/import", payload);
+    let summary = `Imported ${data.imported || 0} · Duplicates ${data.duplicates || 0} · Skipped ${data.skipped || 0} · Invalid ${(data.invalid || []).length}`;
+    if (data.crossCampaign) summary += ` · ${data.crossCampaign} already in the founding campaign`;
     await loadCampaign();
-    const fresh = document.getElementById("campaign-import-note");
+    const fresh = document.getElementById("campaign-import-note" + meta.suffix);
     if (fresh) fresh.textContent = summary;
   } catch (err) {
     if (note) note.textContent = err.message;

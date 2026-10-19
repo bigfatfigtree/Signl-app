@@ -1779,10 +1779,23 @@ async function maybeRunCampaignSweep() {
 //     as a bug guard and is never expected to bind. More than 2
 //     send failures in one run stop the run and set
 //     campaign.lastError. An emptied queue auto-disarms.
+//   - A second campaign (founding-crossover-2026-10) targets
+//     creators already on national platforms with an additive,
+//     non-exclusive pitch (crossoverEmail()). It runs through the
+//     exact same machinery and ceiling; the only extra rule is at
+//     import: an address the founding campaign already holds is
+//     recorded on the crossover campaign as skipped with reason
+//     cross_campaign, so nobody receives two outreach emails.
 //   - "bounced" exists as a recipient status for the day bounce
 //     handling is automated; v1 never sets it (SMTP send results
 //     cannot see bounces), so counts report it honestly as 0.
 const DEFAULT_CAMPAIGN_ID = "founding-creators-2026-10";
+// Second campaign (Jeff, 2026-10-19): platform-crossover creators,
+// the ones already working national platforms (Grin, Cohley,
+// Momfluence and the like). Same machinery, different email: the
+// pitch is additive and non-exclusive. SIGNL is the local layer on
+// top of the national deals they keep, never a replacement.
+const CROSSOVER_CAMPAIGN_ID = "founding-crossover-2026-10";
 const CAMPAIGN_BATCH_SIZE = 8;
 // Anti-spam daily ceiling (Jeff, 2026-10-19): at most this many
 // campaign sends per America/New_York calendar day, counted across
@@ -1842,6 +1855,21 @@ function campaignFirstName(name) {
   return first;
 }
 
+// The founding mechanics paragraph, shared by both campaign
+// templates: Hampton Roads (the November / Black Friday launch
+// market) vs every other founding market, which opens in waves in
+// the following 30 to 90 days.
+function campaignMarketParagraph(market) {
+  return market === "Hampton Roads"
+    ? "Hampton Roads launches in November, and our opening push is Black Friday weekend. Founding creators are joining now, in sign-up order, and the first ones in get seen first when businesses start choosing."
+    : `${market} is a founding market: sign-ups are open now and offers open city by city as the roster fills, in the next 30 to 90 days. Founding creators join in sign-up order, and the first ones in get seen first when businesses start choosing.`;
+}
+
+function campaignClaimLink(recipient) {
+  const market = String(recipient.market || "");
+  return `app.joinsignl.com/?handle=${encodeURIComponent(String(recipient.handle || "").replace(/^@/, ""))}&market=${encodeURIComponent(market)}`;
+}
+
 // The Jeff-approved outreach email (2026-10-19), rendered server
 // side from the recipient's slots. Plain text, first name only,
 // no em dashes. The market paragraph differs for Hampton Roads
@@ -1849,9 +1877,7 @@ function campaignFirstName(name) {
 function campaignEmail(recipient) {
   const market = String(recipient.market || "");
   const subject = `A founding creator spot in ${market}`;
-  const marketParagraph = market === "Hampton Roads"
-    ? "Hampton Roads launches in November, and our opening push is Black Friday weekend. Founding creators are joining now, in sign-up order, and the first ones in get seen first when businesses start choosing."
-    : `${market} is a founding market: sign-ups are open now and offers open city by city as the roster fills, in the next 30 to 90 days. Founding creators join in sign-up order, and the first ones in get seen first when businesses start choosing.`;
+  const marketParagraph = campaignMarketParagraph(market);
   const lines = [
     `Hi ${campaignFirstName(recipient.name)},`,
     "",
@@ -1862,7 +1888,7 @@ function campaignEmail(recipient) {
     marketParagraph,
     "",
     "Your spot is partly filled in already:",
-    `app.joinsignl.com/?handle=${encodeURIComponent(String(recipient.handle || "").replace(/^@/, ""))}&market=${encodeURIComponent(market)}`,
+    campaignClaimLink(recipient),
     "",
     "Two minutes, and no fees for creators, ever. If it's not for you, you won't hear from me again.",
     "",
@@ -1872,6 +1898,51 @@ function campaignEmail(recipient) {
     "National platforms sell reach. We sell regulars.",
   ];
   return { subject, text: lines.join("\n") };
+}
+
+// The crossover email (Jeff, 2026-10-19), for creators already
+// working national platforms. The positioning is additive and
+// non-exclusive by design: they keep every national deal they
+// have, and SIGNL is the local layer on top, in their own city.
+// Same rules as the founding template: plain text, first name
+// only sign-off, no em dashes, claim link prefilled.
+function crossoverEmail(recipient) {
+  const market = String(recipient.market || "");
+  const subject = `Your national platforms, plus a local layer in ${market}`;
+  const lines = [
+    `Hi ${campaignFirstName(recipient.name)},`,
+    "",
+    `I'm Jeff, founder of SIGNL. I found you through ${String(recipient.opener || "").trim()}.`,
+    "",
+    "You already know how the national platforms work, platforms like Grin, Cohley, or Momfluence. SIGNL is not asking you to leave any of them, and nothing about SIGNL is exclusive. Keep every national deal you have. SIGNL is the local layer on top: the work in your own city that the national platforms cannot see.",
+    "",
+    `Here is what that layer looks like in ${market}. Local businesses comp you a meal, a service, or an experience, and you post honestly about it within 48 hours. No script, no required praise, full disclosure. Every visit is tracked, and your delivered posts build a public track record that businesses near you can see.`,
+    "",
+    "There is local money in it too, two ways. First, you can set a paid rate on your SIGNL profile for direct local bookings: you keep 97 percent of your rate, the business covers another 3 percent on their side, and SIGNL holds the payment and releases it when your post is live. Second, creators with 15k+ followers are first in line for paid cash campaigns when local businesses run them.",
+    "",
+    "Why local pays differently: the followers who live near you are the customers local businesses actually want, and a national platform cannot tell a business what share of a creator's audience lives in its market. SIGNL leads with exactly that number.",
+    "",
+    campaignMarketParagraph(market),
+    "",
+    "Your founding profile is free, and your spot is held in sign-up order. Claim yours here, it takes about two minutes:",
+    `https://${campaignClaimLink(recipient)}`,
+    "",
+    "If it's not for you, no hard feelings, and you won't hear from me again.",
+    "",
+    "Jeff",
+    "Founder, SIGNL",
+    "hello@joinsignl.com | joinsignl.com",
+    "National platforms sell reach. We sell regulars.",
+  ];
+  return { subject, text: lines.join("\n") };
+}
+
+// Which template a campaign sends. Every campaign except the
+// crossover campaign uses the founding template; crossover
+// recipients are stored under their own campaign keys and only
+// ever receive the crossover email.
+function campaignEmailFor(campaignId, recipient) {
+  return campaignId === CROSSOVER_CAMPAIGN_ID ? crossoverEmail(recipient) : campaignEmail(recipient);
 }
 
 function campaignWindowOpen(date) {
@@ -1984,7 +2055,7 @@ async function runCampaignSweep(opts = {}) {
     for (let i = 0; i < batch.length; i++) {
       if (failures > CAMPAIGN_MAX_FAILURES_PER_RUN) break;
       const recipient = batch[i];
-      const mail = campaignEmail(recipient);
+      const mail = campaignEmailFor(cfg.id, recipient);
       const messageRef = crypto.randomUUID();
       const result = await sendEmail({ to: recipient.email, subject: mail.subject, text: mail.text });
       summary.attempted += 1;
@@ -3356,6 +3427,7 @@ async function route(event) {
       let imported = 0;
       let duplicates = 0;
       let skipped = 0;
+      let crossCampaign = 0;
       const invalid = [];
       for (const raw of b.recipients) {
         const item = raw && typeof raw === "object" ? raw : {};
@@ -3382,13 +3454,29 @@ async function route(event) {
           skipped += 1;
           continue;
         }
+        // Cross-campaign dedupe (Jeff, 2026-10-19): the crossover
+        // campaign never emails a creator the founding campaign
+        // already has. The audiences overlap by design (the same
+        // creator can sit on national platforms and on local
+        // benches), and nobody gets two SIGNL outreach emails. The
+        // address is recorded on the crossover campaign as skipped
+        // with reason cross_campaign, so the tab shows it honestly.
+        if (campaignId === CROSSOVER_CAMPAIGN_ID) {
+          const foundingRec = await store.get(`campaign-recipient:${DEFAULT_CAMPAIGN_ID}:${email}`);
+          if (foundingRec) {
+            await store.set(key, { campaignId, email, name, handle, market, opener, status: "skipped", skipReason: "cross_campaign", sentAt: null, messageRef: null, importedAt: ts, updatedAt: ts });
+            skipped += 1;
+            crossCampaign += 1;
+            continue;
+          }
+        }
         await store.set(key, { campaignId, email, name, handle, market, opener, status: "queued", sentAt: null, messageRef: null, importedAt: ts, updatedAt: ts });
         imported += 1;
       }
       const recipients = await listCampaignRecipients(campaignId);
       const counts = campaignCounts(recipients);
-      await logEvent({ type: "campaign_recipients_imported", actorId: user.id, actorRole: "admin", subjectId: null, market: null, data: { campaignId, imported, duplicates, skipped, invalid: invalid.length } });
-      return json(200, { campaignId, imported, duplicates, skipped, invalid, counts });
+      await logEvent({ type: "campaign_recipients_imported", actorId: user.id, actorRole: "admin", subjectId: null, market: null, data: { campaignId, imported, duplicates, skipped, crossCampaign, invalid: invalid.length } });
+      return json(200, { campaignId, imported, duplicates, skipped, crossCampaign, invalid, counts });
     }
     if (method === "POST" && seg[1] === "campaign" && (seg[2] === "arm" || seg[2] === "disarm")) {
       const b = parseBody(event);
@@ -4386,4 +4474,4 @@ async function route(event) {
 
 // The email builders are exported alongside the router so the verify
 // suites can assert on the exact copy a creator receives.
-module.exports = { route, approvalEmail, signupConfirmationEmail, recruiterKitEmail, createMomentum, runComplianceSweep, runCampaignSweep, campaignEmail, DEFAULT_CAMPAIGN_ID, STANDARD_VISIT, visitRightsForPlan, RECRUITER_KIT_FLAG_KEY };
+module.exports = { route, approvalEmail, signupConfirmationEmail, recruiterKitEmail, createMomentum, runComplianceSweep, runCampaignSweep, campaignEmail, crossoverEmail, campaignEmailFor, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, STANDARD_VISIT, visitRightsForPlan, RECRUITER_KIT_FLAG_KEY };
