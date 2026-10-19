@@ -96,7 +96,19 @@ function smtpSend({ to, subject, text }) {
   });
 }
 
+// Test-only mailer stub (the verify suites set SIGNL_MAIL_STUB=1):
+// sendEmail never touches the network. Addresses containing
+// "stubfail" report a failure; everything else reports sent, so the
+// suites can drive success and failure paths deterministically.
+// Production never sets this flag; with it unset, behavior below is
+// exactly the real SMTP transport.
+const MAIL_STUB = process.env.SIGNL_MAIL_STUB === "1";
+
 async function sendEmail({ to, subject, text }) {
+  if (MAIL_STUB) {
+    if (/stubfail/i.test(String(to))) return { sent: false, queued: false, reason: "stub_failure" };
+    return { sent: true, stub: true };
+  }
   if (!emailEnabled()) return { sent: false, queued: true, reason: "transport_not_configured" };
   try {
     await smtpSend({ to, subject, text });

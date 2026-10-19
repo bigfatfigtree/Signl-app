@@ -1531,6 +1531,219 @@ async function maybeRunComplianceSweep() {
   await runComplianceSweep();
 }
 
+// ---------- Creator outreach campaign sender (Jeff, 2026-10-19) ----------
+// Jeff approved a creator outreach email and wants it sent WITHOUT
+// per-send approval cards. The Gmail connector pops a card per
+// send; the app's own SMTP transport (lib/email.js) does not, so the
+// campaign sends from INSIDE the app, exactly like its transactional
+// mail. Design constraints that keep this small and safe:
+//   - Recipients live in Blobs: one config record per campaign
+//     (campaign:<id>) and one record per recipient
+//     (campaign-recipient:<id>:<email>). The queue ships EMPTY;
+//     recipients arrive only through the admin import endpoint,
+//     already skip-filtered by whoever prepares the import.
+//   - Sending happens only in runCampaignSweep(): the campaign must
+//     be ARMED (Jeff arms it in the admin UI) and the clock must be
+//     inside the send window, 08:00-21:00 America/New_York.
+//   - Batches are small (8), total sends per campaign are capped at
+//     80 in code, and more than 2 send failures in one run stop the
+//     run and set campaign.lastError. An emptied queue auto-disarms.
+//   - "bounced" exists as a recipient status for the day bounce
+//     handling is automated; v1 never sets it (SMTP send results
+//     cannot see bounces), so counts report it honestly as 0.
+const DEFAULT_CAMPAIGN_ID = "founding-creators-2026-10";
+const CAMPAIGN_BATCH_SIZE = 8;
+const CAMPAIGN_SEND_CAP = 80;
+const CAMPAIGN_MAX_FAILURES_PER_RUN = 2;
+const CAMPAIGN_WINDOW = { startHour: 8, endHour: 21, timeZone: "America/New_York" };
+
+function campaignPaceMs() {
+  const n = parseInt(process.env.SIGNL_CAMPAIGN_PACE_MS || "", 10);
+  return Number.isNaN(n) ? 400 : Math.max(0, n);
+}
+const campaignSleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function validCampaignId(id) {
+  return typeof id === "string" && /^[a-z0-9][a-z0-9-]{0,60}$/.test(id);
+}
+
+async function getCampaignConfig(campaignId) {
+  const rec = await store.get(`campaign:${campaignId}`);
+  if (rec) return rec;
+  return { id: campaignId, armed: false, armedAt: null, armedBy: null, disarmedAt: null, disarmReason: null, lastError: null, lastRunAt: null, totalSent: 0, createdAt: null, updatedAt: null };
+}
+
+async function saveCampaignConfig(cfg) {
+  cfg.updatedAt = nowIso();
+  await store.set(`campaign:${cfg.id}`, cfg);
+  return cfg;
+}
+
+async function listCampaignRecipients(campaignId) {
+  const rows = await store.list(`campaign-recipient:${campaignId}:`);
+  return rows.map((r) => r.value);
+}
+
+function campaignCounts(recipients) {
+  const counts = { queued: 0, sent: 0, bounced: 0, skipped: 0, total: recipients.length };
+  for (const r of recipients) {
+    if (Object.prototype.hasOwnProperty.call(counts, r.status)) counts[r.status] += 1;
+  }
+  return counts;
+}
+
+function campaignFirstName(name) {
+  const first = String(name || "").trim().split(/\s+/)[0] || "";
+  if (!first || first.includes("@")) return "there";
+  return first;
+}
+
+// The Jeff-approved outreach email (2026-10-19), rendered server
+// side from the recipient's slots. Plain text, first name only,
+// no em dashes. The market paragraph differs for Hampton Roads
+// (the November / Black Friday launch market) vs everywhere else.
+function campaignEmail(recipient) {
+  const market = String(recipient.market || "");
+  const subject = `A founding creator spot in ${market}`;
+  const marketParagraph = market === "Hampton Roads"
+    ? "Hampton Roads launches in November, and our opening push is Black Friday weekend. Founding creators are joining now, in sign-up order, and the first ones in get seen first when businesses start choosing."
+    : `${market} is a founding market: sign-ups are open now and offers open city by city as the roster fills, in the next 30 to 90 days. Founding creators join in sign-up order, and the first ones in get seen first when businesses start choosing.`;
+  const lines = [
+    `Hi ${campaignFirstName(recipient.name)},`,
+    "",
+    `I'm Jeff, founder of SIGNL. I found you through ${String(recipient.opener || "").trim()}. You're exactly the kind of local voice we're building around.`,
+    "",
+    "SIGNL connects local creators with local businesses: they comp you a meal, a service, or an experience, and you post honestly about it within 48 hours. No script, no required praise, full disclosure. Businesses get real local posts. You get comped experiences and a founding profile that's live and shareable from day one.",
+    "",
+    marketParagraph,
+    "",
+    "Your spot is partly filled in already:",
+    `app.joinsignl.com/?handle=${encodeURIComponent(String(recipient.handle || "").replace(/^@/, ""))}&market=${encodeURIComponent(market)}`,
+    "",
+    "Two minutes, and no fees for creators, ever. If it's not for you, you won't hear from me again.",
+    "",
+    "Jeff",
+    "Founder, SIGNL",
+    "hello@joinsignl.com | joinsignl.com",
+    "National platforms sell reach. We sell regulars.",
+  ];
+  return { subject, text: lines.join("\n") };
+}
+
+function campaignWindowOpen(date) {
+  const hourRaw = new Intl.DateTimeFormat("en-US", { hour: "numeric", hour12: false, timeZone: CAMPAIGN_WINDOW.timeZone }).format(date);
+  const hour = ((parseInt(hourRaw, 10) % 24) + 24) % 24;
+  return hour >= CAMPAIGN_WINDOW.startHour && hour < CAMPAIGN_WINDOW.endHour;
+}
+
+// One campaign sweep pass over every campaign config. Sends only
+// for armed campaigns inside the window. Returns a summary; the
+// scheduled function (netlify/functions/campaign-sweep.mjs) and the
+// admin endpoint are the callers. `opts.now` exists for the verify
+// suites (TEST_MODE only at the endpoint) so the window can be
+// time-traveled deterministically.
+async function runCampaignSweep(opts = {}) {
+  const now = opts.now instanceof Date && !Number.isNaN(opts.now.getTime()) ? opts.now : new Date();
+  const summary = { campaigns: 0, armed: 0, windowClosed: 0, attempted: 0, sent: 0, failed: 0, capReached: 0, disarmed: 0 };
+  const configs = (await store.list("campaign:")).map((r) => r.value);
+  for (const cfg of configs) {
+    if (!cfg || !cfg.id) continue;
+    summary.campaigns += 1;
+    if (!cfg.armed) continue;
+    summary.armed += 1;
+    if (!campaignWindowOpen(now)) { summary.windowClosed += 1; continue; }
+    const recipients = await listCampaignRecipients(cfg.id);
+    let counts = campaignCounts(recipients);
+    cfg.lastRunAt = now.toISOString();
+    if (counts.sent >= CAMPAIGN_SEND_CAP) {
+      cfg.armed = false;
+      cfg.disarmedAt = now.toISOString();
+      cfg.disarmReason = "send_cap_reached";
+      await saveCampaignConfig(cfg);
+      await logEvent({ type: "campaign_send_cap_reached", actorId: null, actorRole: "system", subjectId: null, market: null, data: { campaignId: cfg.id, totalSent: counts.sent, cap: CAMPAIGN_SEND_CAP } });
+      summary.capReached += 1;
+      summary.disarmed += 1;
+      continue;
+    }
+    const batch = recipients
+      .filter((r) => r.status === "queued")
+      .slice(0, Math.min(CAMPAIGN_BATCH_SIZE, CAMPAIGN_SEND_CAP - counts.sent));
+    let failures = 0;
+    let lastReason = null;
+    for (let i = 0; i < batch.length; i++) {
+      if (failures > CAMPAIGN_MAX_FAILURES_PER_RUN) break;
+      const recipient = batch[i];
+      const mail = campaignEmail(recipient);
+      const messageRef = crypto.randomUUID();
+      const result = await sendEmail({ to: recipient.email, subject: mail.subject, text: mail.text });
+      summary.attempted += 1;
+      if (result.sent) {
+        recipient.status = "sent";
+        recipient.sentAt = now.toISOString();
+        recipient.messageRef = messageRef;
+        recipient.updatedAt = now.toISOString();
+        await store.set(`campaign-recipient:${cfg.id}:${recipient.email}`, recipient);
+        counts.sent += 1;
+        summary.sent += 1;
+        await logEvent({ type: "campaign_email_sent", actorId: null, actorRole: "system", subjectId: null, market: recipient.market || null, data: { campaignId: cfg.id, email: recipient.email, handle: recipient.handle || null, messageRef } });
+      } else {
+        failures += 1;
+        summary.failed += 1;
+        lastReason = result.reason || "send_failed";
+        recipient.attempts = (recipient.attempts || 0) + 1;
+        recipient.lastAttemptAt = now.toISOString();
+        recipient.lastError = lastReason;
+        recipient.updatedAt = now.toISOString();
+        await store.set(`campaign-recipient:${cfg.id}:${recipient.email}`, recipient);
+        await logEvent({ type: "campaign_email_failed", actorId: null, actorRole: "system", subjectId: null, market: recipient.market || null, data: { campaignId: cfg.id, email: recipient.email, handle: recipient.handle || null, reason: lastReason } });
+      }
+      if (i < batch.length - 1) {
+        const pace = campaignPaceMs();
+        if (pace > 0) await campaignSleep(pace);
+      }
+    }
+    if (failures > CAMPAIGN_MAX_FAILURES_PER_RUN) {
+      cfg.lastError = `Send run stopped after ${failures} failures (last: ${lastReason}). The queue is paused where it stands; check the transport, then the next scheduled run retries.`;
+    }
+    const after = await listCampaignRecipients(cfg.id);
+    counts = campaignCounts(after);
+    cfg.totalSent = counts.sent;
+    if (cfg.armed && counts.queued === 0 && counts.sent > 0) {
+      cfg.armed = false;
+      cfg.disarmedAt = now.toISOString();
+      cfg.disarmReason = "queue_empty";
+      await logEvent({ type: "campaign_queue_empty", actorId: null, actorRole: "system", subjectId: null, market: null, data: { campaignId: cfg.id, totalSent: counts.sent } });
+      summary.disarmed += 1;
+    } else if (cfg.armed && counts.sent >= CAMPAIGN_SEND_CAP) {
+      cfg.armed = false;
+      cfg.disarmedAt = now.toISOString();
+      cfg.disarmReason = "send_cap_reached";
+      await logEvent({ type: "campaign_send_cap_reached", actorId: null, actorRole: "system", subjectId: null, market: null, data: { campaignId: cfg.id, totalSent: counts.sent, cap: CAMPAIGN_SEND_CAP } });
+      summary.capReached += 1;
+      summary.disarmed += 1;
+    }
+    await saveCampaignConfig(cfg);
+  }
+  return summary;
+}
+
+function campaignView(cfg, counts) {
+  return {
+    id: cfg.id,
+    armed: !!cfg.armed,
+    armedAt: cfg.armedAt || null,
+    disarmedAt: cfg.disarmedAt || null,
+    disarmReason: cfg.disarmReason || null,
+    lastError: cfg.lastError || null,
+    lastRunAt: cfg.lastRunAt || null,
+    totalSent: counts ? counts.sent : cfg.totalSent || 0,
+    sendCap: CAMPAIGN_SEND_CAP,
+    batchSize: CAMPAIGN_BATCH_SIZE,
+    window: { startHour: CAMPAIGN_WINDOW.startHour, endHour: CAMPAIGN_WINDOW.endHour, timeZone: CAMPAIGN_WINDOW.timeZone },
+    windowOpenNow: campaignWindowOpen(new Date()),
+  };
+}
+
 // Staff notice (Jeff, 2026-10-19 r2): the moment a creator checks
 // in or a comp is redeemed, the business gets an email: who is
 // here, their photo, what is comped, the code, and how it works.
@@ -2012,6 +2225,28 @@ async function route(event) {
     return json(200, { user: await withFounding(user) });
   }
 
+  // Campaign sweep trigger. This route deliberately sits BEFORE the
+  // sign-in wall below: the Netlify scheduled function
+  // (netlify/functions/campaign-sweep.mjs) POSTs here every 30
+  // minutes with no session, carrying the x-signl-sweep-token header
+  // when SIGNL_SWEEP_TOKEN is set. Without a matching token, only an
+  // admin session may trigger it. A `now` in the body is honored
+  // ONLY in TEST_MODE (the verify suites time-travel the send window
+  // with it); production always uses the real clock.
+  if (method === "POST" && seg[0] === "admin" && seg[1] === "campaign" && seg[2] === "sweep") {
+    const token = process.env.SIGNL_SWEEP_TOKEN;
+    const tokenOk = !!token && (event.headers["x-signl-sweep-token"] || event.headers["X-Signl-Sweep-Token"]) === token;
+    if (!tokenOk && (!user || user.role !== "admin")) return err(403, "Admin only");
+    const b = parseBody(event);
+    const opts = {};
+    if (TEST_MODE && b.now) {
+      const d = new Date(b.now);
+      if (!Number.isNaN(d.getTime())) opts.now = d;
+    }
+    const summary = await runCampaignSweep(opts);
+    return json(200, { ok: true, sweep: summary });
+  }
+
   if (!user) return err(401, "Sign in required");
 
   // ---------- profile ----------
@@ -2357,6 +2592,94 @@ async function route(event) {
         perMarket,
         unlistedByCity,
       });
+    }
+    // Creator outreach campaigns (Jeff, 2026-10-19): status,
+    // import, arm, disarm. Sending itself lives in
+    // runCampaignSweep (scheduled function + sweep endpoint above);
+    // these routes only manage the queue and the arm switch.
+    if (method === "GET" && seg[1] === "campaign" && !seg[2]) {
+      const campaignId = validCampaignId(query.campaignId) ? query.campaignId : DEFAULT_CAMPAIGN_ID;
+      const cfg = await getCampaignConfig(campaignId);
+      const recipients = await listCampaignRecipients(campaignId);
+      const counts = campaignCounts(recipients);
+      const recentSends = recipients
+        .filter((r) => r.status === "sent")
+        .sort((a, b) => ((a.sentAt || "") < (b.sentAt || "") ? 1 : -1))
+        .slice(0, 10)
+        .map((r) => ({ email: r.email, name: r.name || "", handle: r.handle || "", market: r.market || "", sentAt: r.sentAt || null, messageRef: r.messageRef || null }));
+      return json(200, { campaign: campaignView(cfg, counts), counts, recentSends });
+    }
+    if (method === "POST" && seg[1] === "campaign" && seg[2] === "import") {
+      const b = parseBody(event);
+      const campaignId = b.campaignId === undefined ? DEFAULT_CAMPAIGN_ID : b.campaignId;
+      if (!validCampaignId(campaignId)) return err(400, "campaignId must be lowercase letters, numbers, and dashes");
+      if (!Array.isArray(b.recipients)) return err(400, "recipients must be a list");
+      if (b.recipients.length > 500) return err(400, "Import at most 500 recipients at a time");
+      const skipSet = new Set();
+      for (const raw of [...(Array.isArray(b.skipEmails) ? b.skipEmails : []), ...(Array.isArray(b.blocklist) ? b.blocklist : [])]) {
+        const e = String(raw || "").trim().toLowerCase();
+        if (e) skipSet.add(e);
+      }
+      let cfg = await getCampaignConfig(campaignId);
+      if (!cfg.createdAt) {
+        cfg.createdAt = nowIso();
+        await saveCampaignConfig(cfg);
+      }
+      let imported = 0;
+      let duplicates = 0;
+      let skipped = 0;
+      const invalid = [];
+      for (const raw of b.recipients) {
+        const item = raw && typeof raw === "object" ? raw : {};
+        const email = String(item.email || "").trim().toLowerCase();
+        const handle = String(item.handle || "").trim().replace(/^@/, "").slice(0, 40);
+        const market = String(item.market || "").trim().slice(0, 60);
+        const opener = String(item.opener || "").trim().slice(0, 280);
+        const name = String(item.name || "").trim().slice(0, 120);
+        if (!isEmail(email)) { invalid.push({ email: email || null, reason: "invalid email" }); continue; }
+        if (!handle) { invalid.push({ email, reason: "handle is required" }); continue; }
+        if (!market) { invalid.push({ email, reason: "market is required" }); continue; }
+        if (!opener) { invalid.push({ email, reason: "opener is required" }); continue; }
+        const key = `campaign-recipient:${campaignId}:${email}`;
+        const existing = await store.get(key);
+        if (existing) { duplicates += 1; continue; }
+        const ts = nowIso();
+        if (skipSet.has(email)) {
+          await store.set(key, { campaignId, email, name, handle, market, opener, status: "skipped", skipReason: "blocklist", sentAt: null, messageRef: null, importedAt: ts, updatedAt: ts });
+          skipped += 1;
+          continue;
+        }
+        await store.set(key, { campaignId, email, name, handle, market, opener, status: "queued", sentAt: null, messageRef: null, importedAt: ts, updatedAt: ts });
+        imported += 1;
+      }
+      const recipients = await listCampaignRecipients(campaignId);
+      const counts = campaignCounts(recipients);
+      await logEvent({ type: "campaign_recipients_imported", actorId: user.id, actorRole: "admin", subjectId: null, market: null, data: { campaignId, imported, duplicates, skipped, invalid: invalid.length } });
+      return json(200, { campaignId, imported, duplicates, skipped, invalid, counts });
+    }
+    if (method === "POST" && seg[1] === "campaign" && (seg[2] === "arm" || seg[2] === "disarm")) {
+      const b = parseBody(event);
+      const campaignId = b.campaignId === undefined ? DEFAULT_CAMPAIGN_ID : b.campaignId;
+      if (!validCampaignId(campaignId)) return err(400, "campaignId must be lowercase letters, numbers, and dashes");
+      let cfg = await getCampaignConfig(campaignId);
+      if (!cfg.createdAt) cfg.createdAt = nowIso();
+      if (seg[2] === "arm") {
+        cfg.armed = true;
+        cfg.armedAt = nowIso();
+        cfg.armedBy = user.id;
+        cfg.disarmReason = null;
+        await saveCampaignConfig(cfg);
+        await logEvent({ type: "campaign_armed", actorId: user.id, actorRole: "admin", subjectId: null, market: null, data: { campaignId } });
+      } else {
+        cfg.armed = false;
+        cfg.disarmedAt = nowIso();
+        cfg.disarmReason = "manual";
+        await saveCampaignConfig(cfg);
+        await logEvent({ type: "campaign_disarmed", actorId: user.id, actorRole: "admin", subjectId: null, market: null, data: { campaignId } });
+      }
+      const recipients = await listCampaignRecipients(campaignId);
+      const counts = campaignCounts(recipients);
+      return json(200, { campaign: campaignView(cfg, counts), counts });
     }
     // Post compliance (Jeff, 2026-10-19): every redeemed visit and
     // where it stands in the post-or-pay-the-price timeline. Read
@@ -3150,4 +3473,4 @@ async function route(event) {
 
 // The email builders are exported alongside the router so the verify
 // suites can assert on the exact copy a creator receives.
-module.exports = { route, approvalEmail, signupConfirmationEmail, recruiterKitEmail, createMomentum, runComplianceSweep, STANDARD_VISIT, visitRightsForPlan, RECRUITER_KIT_FLAG_KEY };
+module.exports = { route, approvalEmail, signupConfirmationEmail, recruiterKitEmail, createMomentum, runComplianceSweep, runCampaignSweep, campaignEmail, DEFAULT_CAMPAIGN_ID, STANDARD_VISIT, visitRightsForPlan, RECRUITER_KIT_FLAG_KEY };

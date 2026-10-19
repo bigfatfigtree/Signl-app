@@ -20,6 +20,8 @@
 //   event:{yyyy-mm-dd}:{uuid}    append-only event log record
 //   photo:{userId}               creator profile photo { contentType, dataBase64, bytes, uploadedAt }
 //   config:markets               { flags: { [marketName]: true } } market activation; absent = not live
+//   campaign:{id}                outreach campaign config { armed, lastError, lastRunAt, totalSent, ... }
+//   campaign-recipient:{id}:{email}  one queued/sent/skipped outreach recipient
 
 const fs = require("fs");
 const path = require("path");

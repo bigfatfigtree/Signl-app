@@ -1954,14 +1954,57 @@ function renderAdmin() {
       <div><strong>Business Preview</strong><p class="muted small" style="margin:4px 0 0">Walk the app exactly as a business does: the founding plans, roster search with every filter, full creator profiles, and the offer composer. Offers sent in preview are simulations that never reach a creator and are never saved.</p></div>
       <button class="btn" onclick="enterPreview()">Preview as business &rarr;</button>
     </div>
-    ${tabsHtml(["Applications", "Markets", "Recruiters", "Event Log", "Compliance", "Stats"], tab)}
+    ${tabsHtml(["Applications", "Markets", "Recruiters", "Event Log", "Compliance", "Campaign", "Stats"], tab)}
     <div id="tab-body"><p class="muted">Loading...</p></div>`;
   if (tab === "Applications") loadApplications();
   if (tab === "Markets") loadMarkets();
   if (tab === "Recruiters") loadLeaderboard();
   if (tab === "Event Log") loadEvents();
   if (tab === "Compliance") loadCompliance();
+  if (tab === "Campaign") loadCampaign();
   if (tab === "Stats") loadStats();
+}
+
+// Creator outreach campaign (Jeff, 2026-10-19): the founding
+// creator email sends from inside the app (its own SMTP transport),
+// so there is no per-send approval card. This tab is the control
+// surface: queue counts, the last error if a run stopped, recent
+// sends, and the Arm / Pause switch. Recipients are imported
+// through the admin API only; sending runs on the 30-minute
+// scheduled sweep, inside the 08:00-21:00 ET window, in batches
+// of 8, capped at 80 sends for the campaign.
+async function loadCampaign() {
+  const el = document.getElementById("tab-body");
+  try {
+    const data = await api("GET", "/admin/campaign");
+    const c = data.campaign || {};
+    const counts = data.counts || {};
+    const sends = (data.recentSends || []).map((s) => `
+      <div class="card mb">
+        <div class="flex-between"><strong>${esc(s.name || s.handle || s.email)}</strong><span class="badge ok">Sent</span></div>
+        <p class="small muted">@${esc(s.handle || "")} &middot; ${esc(s.market || "")} &middot; ${esc(s.email)}${s.sentAt ? ` &middot; ${esc(fmtDate(s.sentAt))}` : ""}</p>
+      </div>`).join("");
+    el.innerHTML = `
+      <div class="flex-between"><h3 style="margin:0">Creator outreach campaign</h3><span class="badge ${c.armed ? "ok" : "info"}">${c.armed ? "Armed" : "Paused"}</span></div>
+      <p class="small muted" style="margin-top:8px">Campaign <strong>${esc(c.id || "")}</strong>. The sweep sends up to ${c.batchSize || 8} emails every 30 minutes while armed, only between ${c.window ? c.window.startHour : 8}:00 and ${c.window ? c.window.endHour : 21}:00 ET. Hard cap: ${c.sendCap || 80} sends. The queue auto-pauses when it empties.${c.lastRunAt ? ` Last sweep: ${esc(fmtDate(c.lastRunAt))}.` : ""} Send window is ${c.windowOpenNow ? "open now" : "closed right now"}.</p>
+      ${c.lastError ? `<div class="error-box">${esc(c.lastError)}</div>` : ""}
+      <p class="small">Queued: <strong>${counts.queued || 0}</strong> &middot; Sent: <strong>${counts.sent || 0}</strong> &middot; Bounced: <strong>${counts.bounced || 0}</strong> &middot; Skipped: <strong>${counts.skipped || 0}</strong> &middot; Total: <strong>${counts.total || 0}</strong></p>
+      <button class="btn ${c.armed ? "danger" : ""}" onclick="toggleCampaignArm(${c.armed ? "false" : "true"})">${c.armed ? "Pause campaign" : "Arm campaign"}</button>
+      <div id="campaign-note" class="small saved"></div>
+      ${sends ? `<h3 class="mt">Recent sends</h3>${sends}` : `<p class="muted mt">No sends yet.</p>`}`;
+  } catch (err) {
+    el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+  }
+}
+
+async function toggleCampaignArm(arm) {
+  const note = document.getElementById("campaign-note");
+  try {
+    await api("POST", arm ? "/admin/campaign/arm" : "/admin/campaign/disarm", {});
+    loadCampaign();
+  } catch (err) {
+    if (note) note.textContent = err.message;
+  }
 }
 
 // Post compliance (Jeff, 2026-10-19): every redeemed visit by

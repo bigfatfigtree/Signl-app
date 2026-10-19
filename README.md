@@ -169,11 +169,12 @@ Verification (each suite spins up its own throwaway server and
 database, and registers fresh accounts through the real sign-up path):
 
 ```
-node scripts/verify-flow.mjs        # 97 checks: main marketplace flow
+node scripts/verify-flow.mjs        # 98 checks: main marketplace flow
 node scripts/verify-fallbacks.mjs   # 14 checks: check-in / confirm fallbacks
 node scripts/verify-launch.mjs      # 165 checks: the launch shape itself
-node scripts/verify-compliance.mjs  # 110 checks: stacking, compliance, Momentum v2, round-2 ops
-npm run verify                      # all four, in order (389 total)
+node scripts/verify-compliance.mjs  # 112 checks: stacking, compliance, Momentum v2, round-2 ops
+node scripts/verify-campaign.mjs    # 55 checks: creator outreach campaign (stub mailer only)
+npm run verify                      # all five, in order (444 total)
 ```
 
 `verify-launch.mjs` runs in true production shape: business
@@ -191,8 +192,8 @@ treats every market as live so the gated flows can still be exercised
 end to end. It is read from the environment only, is not in
 netlify.toml, and must never be set on the Netlify site.
 
-All four suites were run green against this codebase on 2026-10-19
-(389 checks total, including the Momentum points math end to end:
+All five suites were run green against this codebase on 2026-10-19
+(444 checks total, including the Momentum points math end to end:
 a recruiter with 2 credited sign-ups and 1 approval earns 16
 REFERRAL points (their full total also counts their own profile
 entries, for example +5 for reporting a local audience percentage,
@@ -498,6 +499,69 @@ full profile, preview, public profile payload) flags the creator
 `bookedUp: true` ("Booked up this week"): visible, not greyed.
 That is deliberately different from paused.
 
+## Creator outreach campaign (2026-10-19)
+
+Jeff approved a founding-creator outreach email and wants it sent
+without a per-send approval card. The Gmail connector pops a card
+per send; the app's own SMTP transport (`lib/email.js`) does not.
+So the campaign sends from inside the app, like its transactional
+mail already does.
+
+- **Queue.** `campaign:{id}` holds the config (`armed`, `armedAt`,
+  `armedBy`, `lastError`, `lastRunAt`, `totalSent`, `disarmReason`);
+  `campaign-recipient:{id}:{email}` holds one record per recipient
+  (`email`, `name`, `handle`, `market`, `opener` — a short true
+  personalization string — plus `status` queued/sent/bounced/
+  skipped, `sentAt`, `messageRef`). The seed campaign id is
+  `founding-creators-2026-10`. **The queue ships empty: no real
+  recipients exist in code or seeds.** Recipients arrive only
+  through the import endpoint below, from the skip-filtered harvest
+  list.
+- **Template.** Rendered server side (`campaignEmail()` in
+  lib/router.js) with the recipient's slots; Jeff approved the copy
+  on 2026-10-19. Subject: "A founding creator spot in {Market}".
+  Greeting "Hi {FirstName}," (first token of the name; "Hi there,"
+  when missing). Hampton Roads gets the November / Black Friday
+  launch paragraph; every other market gets the founding-market
+  paragraph (30 to 90 days, sign-up order). The claim link is
+  prefilled per recipient (`?handle=&market=`). Sign-off is "Jeff",
+  first name only. No em dashes.
+- **Engine.** `netlify/functions/campaign-sweep.mjs` (Netlify
+  scheduled function, every 30 minutes) POSTs to
+  `POST /api/admin/campaign/sweep`, which sits in front of the
+  sign-in wall and accepts the same `SIGNL_SWEEP_TOKEN` as the
+  compliance sweep, or an admin session. `runCampaignSweep()` sends
+  only when the campaign is armed AND the clock is inside the send
+  window (08:00–21:00 America/New_York): the next batch of up to 8
+  queued recipients, paced inside the run (`SIGNL_CAMPAIGN_PACE_MS`,
+  default 400ms). Each successful send is stamped (`sentAt`,
+  `messageRef`) and logged as a `campaign_email_sent` event. More
+  than 2 failures in a run stops the run and sets `lastError`;
+  failed recipients stay queued for a later retry, never burned.
+  The campaign auto-disarms when its queue empties
+  (`disarmReason: queue_empty`) and total sends per campaign are
+  capped at 80 in code (`disarmReason: send_cap_reached`).
+- **Admin surface.** Admin → Campaign tab (counts by status, last
+  error, recent sends, Arm/Pause button), backed by
+  `GET /api/admin/campaign` (status: `?campaignId=` optional),
+  `POST /api/admin/campaign/import` (recipients array, max 500;
+  dedupes by email; validates email shape and requires handle,
+  market, and opener; addresses in the payload's `skipEmails` /
+  `blocklist` arrays are recorded as `skipped`, never queued — the
+  importer supplies the skips, there is no hardcoded blocklist),
+  `POST /api/admin/campaign/arm` and `/disarm`. Arming happens only
+  through the UI or these endpoints. All campaign routes are admin
+  only (the sweep additionally accepts the sweep token).
+- **Operating it.** Import the recipients (admin session), check
+  the Campaign tab counts, then Arm. The 30-minute sweep does the
+  rest inside the window until the queue drains or the 80-send cap
+  hits. Pause any time from the tab.
+- **Safety.** The verify suite runs with the test mailer stub
+  (`SIGNL_MAIL_STUB=1`, tests only, never in Netlify): sends never
+  touch the network, and addresses containing "stubfail" exercise
+  the failure path. Production sends require all three of: armed,
+  non-empty queue, inside the window.
+
 ## Environment variables
 
 Set these in Netlify (Site settings, Environment variables) for
@@ -517,7 +581,9 @@ production. Locally they go in the shell.
 | SIGNL_SMTP_PASS | For email | A Gmail App Password for that mailbox (requires 2-Step Verification on the account). Never the account's real password. |
 | SIGNL_SMTP_HOST / SIGNL_SMTP_PORT | No | Default smtp.gmail.com / 465 (implicit TLS). |
 | SIGNL_MAIL_FROM | No | Default "SIGNL <hello@joinsignl.com>". |
-| SIGNL_SWEEP_TOKEN | For the scheduled sweep | Shared secret the Netlify scheduled function (compliance-sweep.mjs) sends as the `x-signl-sweep-token` header to POST /api/admin/compliance/sweep. Without it, the sweep still runs via the admin endpoint and the opportunistic in-request trigger. |
+| SIGNL_SWEEP_TOKEN | For the scheduled sweeps | Shared secret the Netlify scheduled functions (compliance-sweep.mjs, campaign-sweep.mjs) send as the `x-signl-sweep-token` header to POST /api/admin/compliance/sweep and /api/admin/campaign/sweep. Without it, the compliance sweep still runs via the admin endpoint and the opportunistic in-request trigger; the campaign sweep runs via the admin endpoint only. |
+| SIGNL_CAMPAIGN_PACE_MS | No | Delay in milliseconds between sends inside one campaign sweep run (batch pacing). Default 400. |
+| SIGNL_MAIL_STUB | Tests only | Set to 1 ONLY by verify-campaign.mjs: sendEmail never touches the network; addresses containing "stubfail" report failure, everything else reports sent. **Never set in Netlify.** |
 
 ## Data schema (Netlify Blobs, store "signl-data", one key per record)
 
@@ -580,6 +646,14 @@ production. Locally they go in the shell.
   the opportunistic compliance sweep.
 - `config:recruiterKitEmailV1Sent`: one-shot claim flag for the
   recruiter kit email (it can never send twice).
+- `campaign:{id}` outreach campaign config: armed, armedAt, armedBy,
+  disarmedAt, disarmReason, lastError, lastRunAt, totalSent,
+  createdAt. Absent means the campaign exists only as its default:
+  disarmed, nothing sent.
+- `campaign-recipient:{id}:{email}` one outreach recipient: email,
+  name, handle, market, opener, status (queued/sent/bounced/
+  skipped), skipReason, sentAt, messageRef, attempts, lastError,
+  importedAt, updatedAt. The queue ships empty by design.
 - `event:{yyyy-mm-dd}:{uuid}` the append-only event log.
 
 ### Event types written today
@@ -603,7 +677,12 @@ account_unpaused, account_banned, account_reinstated,
 offer_expired, staff_notice_sent (plus staff_notice delivery
 companions), business_honor_report, ad_use_declared,
 post_performance_requested (plus post_performance delivery
-companions), post_performance_reported.
+companions), post_performance_reported,
+campaign_recipients_imported, campaign_armed, campaign_disarmed,
+campaign_email_sent, campaign_email_failed, campaign_queue_empty,
+campaign_send_cap_reached (the campaign data payload carries the
+campaignId; a send's payload carries the recipient email, handle,
+market, and messageRef).
 
 Each event carries ts, actorId, actorRole, subjectId, market, and a
 data payload with the decision-relevant fields (amounts, caps, tier,
