@@ -52,7 +52,12 @@ The public launch is **creator founding sign-up only**:
 - **The creator roster is never public.** No public roster pages
   exist; discovery requires an authenticated, approved business
   account in a live market, and creator photos are served only to the
-  owner, the admin, or such a business.
+  owner, the admin, or such a business. The one exception, added
+  2026-10-19: each **approved** creator has a single shareable public
+  profile page at `app.joinsignl.com/c/<handle>` (their own link to
+  advertise, never a listing or an index). It serves a strict
+  whitelist of public-safe fields (see below); pending and rejected
+  creators answer 404 there, exactly like unknown handles.
 
 ## What is implemented
 
@@ -82,6 +87,26 @@ The public launch is **creator founding sign-up only**:
   Facebook page name becomes facebook.com/..., an X URL becomes the
   handle plus x.com/..., a LinkedIn slug becomes linkedin.com/in/...).
 - Local Impact Score computed only from stored inputs (formula below).
+- **Claim-link prefill (2026-10-19).** The sign-up form honors
+  `?handle=<ig>&market=<name>&tier=<band>` (alongside the existing
+  `?ref=` referral credit), so per-target links from email and
+  partner channels land on a half-completed application. Params are
+  sanitized client-side (handle charset + length caps, market and
+  tier by exact match against the bootstrap lists, anything else
+  silently ignored); they only fill fields, never submit, and never
+  bypass the human review. DM copy is unchanged: DMs still carry the
+  generic link.
+- **Public creator profiles (2026-10-19).** `GET /api/c/<handle>`
+  answers logged-out visitors with a whitelist payload for an
+  approved creator: display name, handle + Instagram URL, market (or
+  typed city for unlisted creators), city, neighborhood/area, tier
+  band, follower count, content categories, comp categories, local
+  audience % with its source label, Local Impact Score when
+  computable, Momentum points, and the banded founding standing
+  ("in the first 100 in <market>"). Never the email, never internal
+  or admin fields, never a photo. The SPA renders it at `/c/<handle>`
+  for logged-out and signed-in visitors alike, and approved creators
+  get a "Your public profile" link + copy button in their profile.
 - Business discovery: browse approved creators in a market and search
   them the way businesses actually shop (spec:
   `signl-business-search-spec.md` in the SIGNL goal workspace). Filters,

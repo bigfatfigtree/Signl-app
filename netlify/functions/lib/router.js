@@ -546,6 +546,48 @@ async function publicCreator(u, viewer, foundingPriority) {
   };
 }
 
+// ---------- public creator profile ----------
+// One approved creator's shareable profile (Jeff, 2026-10-19): the
+// roster is never public (no listing, no browsing, no search), but a
+// creator can share their OWN page, app.joinsignl.com/c/<handle>,
+// the way creators elsewhere advertise a bio link. The payload is a
+// strict whitelist of public-safe fields built field by field; the
+// full user record never leaves this function. Pending and rejected
+// creators answer exactly like unknown handles: 404.
+function sanitizePublicHandle(raw) {
+  let h = String(raw || "");
+  try { h = decodeURIComponent(h); } catch (e) { /* keep the raw value */ }
+  return h.trim().replace(/^@/, "").replace(/[^A-Za-z0-9._-]/g, "").slice(0, 40).toLowerCase();
+}
+
+async function publicProfilePayload(u) {
+  const c = u.creator || {};
+  const users = await allUsers();
+  const { approvedRank } = creatorRanks(users);
+  const history = await creatorHistory(u.id);
+  const impact = computeLocalImpactScore(c, history);
+  const momentum = momentumFor(u, momentumMap(users));
+  const unlisted = u.market === UNLISTED;
+  return {
+    name: u.name,
+    handle: c.handle,
+    instagramUrl: c.instagramUrl || `https://instagram.com/${c.handle}`,
+    market: unlisted ? u.city || "" : u.market,
+    unlisted,
+    city: u.city || "",
+    neighborhood: c.neighborhood || "",
+    tierBand: c.tierBand || null,
+    followerCount: c.followerCount || 0,
+    categories: c.categories || [],
+    compCategories: (c.compCategories || []).filter((x) => x !== PAID_COMP),
+    localAudiencePct: c.localAudiencePct === undefined ? null : c.localAudiencePct,
+    localAudienceSource: c.localAudienceSource || "Self-reported",
+    localImpactScore: impact ? impact.score : null,
+    momentumPoints: momentum.points,
+    foundingBand: foundingBand(approvedRank.get(u.id) || null),
+  };
+}
+
 function postState(booking, post) {
   if (post) return post.onTime ? "submitted_on_time" : "submitted_late";
   if (booking.status === "completed") return "submitted_on_time";
@@ -890,6 +932,19 @@ async function route(event) {
         marketLive: await marketLiveMap(),
       },
     });
+  }
+
+  // Public creator profile: GET /api/c/<handle>. No sign-in required;
+  // approved creators only, whitelist payload (see publicProfilePayload).
+  if (method === "GET" && seg[0] === "c" && seg.length === 2) {
+    const handleKey = sanitizePublicHandle(seg[1]);
+    const target = handleKey
+      ? (await allUsers())
+          .filter((u) => u.role === "creator" && u.status === "approved" && u.creator && String(u.creator.handle || "").toLowerCase() === handleKey)
+          .sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1))[0]
+      : null;
+    if (!target) return err(404, "Creator not found");
+    return json(200, { profile: await publicProfilePayload(target) });
   }
 
   // Auth

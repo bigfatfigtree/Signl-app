@@ -71,6 +71,68 @@ function parseClaimParams(params) {
   return out;
 }
 
+// Public creator profile (Jeff, 2026-10-19): an approved creator's
+// shareable page, app.joinsignl.com/c/<handle>. The server answers a
+// whitelist payload for approved creators only; everyone else reads
+// as "not public". The roster itself stays private: this is one
+// creator's own link, never a listing.
+function publicProfileUrl(u) {
+  const handle = u && u.creator && u.creator.handle;
+  return handle ? `https://app.joinsignl.com/c/${encodeURIComponent(handle)}` : "";
+}
+
+async function copyPublicProfile() {
+  const el = document.getElementById("pp-copied");
+  try {
+    await navigator.clipboard.writeText(publicProfileUrl(state.user));
+    if (el) el.textContent = "Copied.";
+  } catch (e) {
+    if (el) el.textContent = "Copy the link from the box above.";
+  }
+  return false;
+}
+
+async function renderPublicProfile() {
+  const handle = state.publicHandle || "";
+  app.innerHTML = `<section class="panel center" style="max-width:560px;margin:40px auto"><p class="muted">Loading @${esc(handle)}...</p></section>`;
+  let p = null;
+  try {
+    const data = await api("GET", "/c/" + encodeURIComponent(handle));
+    p = data.profile;
+  } catch (e) { p = null; }
+  if (!p) {
+    app.innerHTML = `
+    <section class="panel center" style="max-width:560px;margin:40px auto">
+      <h2>Profile not public</h2>
+      <p class="muted">There is no public SIGNL profile at this link. The creator may still be in review, or the link may be wrong.</p>
+      <div class="cta-row" style="justify-content:center">
+        ${state.user ? `<a class="btn" href="#" onclick="return go('dashboard')">Back to my dashboard</a>` : `<a class="btn" href="#" onclick="return go('join-creator')">Become a Founding Creator</a>`}
+      </div>
+    </section>`;
+    return;
+  }
+  const place = p.unlisted ? esc(p.city) : esc(p.market);
+  app.innerHTML = `
+  <section class="panel" style="max-width:640px;margin:20px auto">
+    <div class="flex-between">
+      <div>
+        <h2 style="margin:0">${esc(p.name)}</h2>
+        <p class="muted" style="margin:4px 0">@<a href="${esc(p.instagramUrl)}" target="_blank" rel="noopener">${esc(p.handle)}</a> &middot; ${place}${!p.unlisted && p.city ? ` &middot; ${esc(p.city)}` : ""}${p.neighborhood ? ` &middot; ${esc(p.neighborhood)}` : ""}</p>
+      </div>
+      <span class="badge ok" style="font-size:0.95rem;padding:6px 14px">Founding Creator</span>
+    </div>
+    <p class="mt">${p.localAudiencePct === null || p.localAudiencePct === undefined ? "Local audience not reported yet" : `<strong>${p.localAudiencePct}%</strong> of their followers are local <span class="badge info">${esc(p.localAudienceSource || "Self-reported")}</span>`}</p>
+    <p>${scoreBadge(p.localImpactScore)}${p.momentumPoints ? ` <span class="badge info">Momentum ${p.momentumPoints} pts</span>` : ""} <span class="badge tier">${esc(p.tierBand || "")} &middot; ${fmtNum(p.followerCount)} followers</span></p>
+    ${p.foundingBand ? `<p><span class="badge tier" style="padding:6px 14px">In the first ${p.foundingBand} founding creators in ${place}</span></p>` : ""}
+    ${p.categories && p.categories.length ? `<p class="small">${p.categories.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
+    ${p.compCategories && p.compCategories.length ? `<p class="small muted">Open to comps: ${p.compCategories.map(esc).join(", ")}</p>` : ""}
+    <p class="small muted">SIGNL connects local businesses with local creators. Businesses comp a meal or a service, creators post honestly within 48 hours and disclose the comp, and every post is tracked. No business can ever require a positive post.</p>
+    <div class="cta-row" style="justify-content:flex-start">
+      ${state.user ? `<a class="btn ghost" href="#" onclick="return go('dashboard')">Back to my dashboard</a>` : `<a class="btn" href="#" onclick="return go('join-creator')">Become a Founding Creator</a> <a class="btn ghost" href="#" onclick="return go('for-businesses')">For Businesses</a>`}
+    </div>
+  </section>`;
+}
+
 function inviteUrlFor(u) {
   const handle = u && u.creator && u.creator.handle;
   return handle ? `https://app.joinsignl.com/?ref=${encodeURIComponent(handle)}` : "";
@@ -196,6 +258,7 @@ function go(view, tab) {
 
 async function render() {
   renderNav();
+  if (state.view === "public-profile") return renderPublicProfile();
   const u = state.user;
   if (!u) {
     if (state.view === "join-creator") return renderJoinCreator();
@@ -793,6 +856,16 @@ function creatorProfileHtml(u) {
       <div id="my-score"><span class="badge info">Loading score...</span></div>
     </div>
     <p class="small muted">Your Local Impact Score is computed only from your stored profile and your real visit history on SIGNL. Your local audience figure shows as <strong>Self-reported</strong> until Instagram verification is available.</p>
+    ${u.status === "approved" && c.handle ? `
+    <div class="field"><label>Your public profile</label>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <input type="text" readonly value="${esc(publicProfileUrl(u))}" onclick="this.select()" style="flex:1;min-width:220px">
+        <button type="button" class="btn small-btn" onclick="return copyPublicProfile()">Copy link</button>
+        <a class="btn small-btn ghost" href="${esc(publicProfileUrl(u))}" target="_blank" rel="noopener">View</a>
+        <span id="pp-copied" class="saved"></span>
+      </div>
+      <p class="small muted">Share this link anywhere, including your Instagram bio. Visitors see your name, handle, market and neighborhood, tier, follower count, categories, local audience share, Local Impact Score, Momentum points, and founding standing. Your email and account details are never shown, and there is no public roster: this page exists only at your link.</p>
+    </div>` : ""}
     <div id="form-error"></div>
     <form onsubmit="return doUpdateCreator(event)">
       <div class="field"><label>Profile photo</label>
@@ -1517,6 +1590,17 @@ async function loadStats() {
       // visitor lands on the sign-up, pre-filled. Signed-in visitors
       // keep their normal landing, and nothing ever auto-submits.
       if (!state.user) state.view = "join-creator";
+    }
+    // A public profile URL (/c/<handle>) wins over every other view:
+    // the page must render the same for logged-out and signed-in
+    // visitors alike.
+    const cMatch = location.pathname.match(/^\/c\/([^/]+)\/?$/);
+    if (cMatch) {
+      let h = cMatch[1];
+      try { h = decodeURIComponent(h); } catch (e) { /* keep raw */ }
+      // Light tidy only; the server sanitizes authoritatively.
+      state.publicHandle = h.trim().replace(/^@/, "").slice(0, 40) || h;
+      state.view = "public-profile";
     }
     const code = params.get("code");
     if (code && state.user && state.user.role === "business") {

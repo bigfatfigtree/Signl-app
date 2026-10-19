@@ -199,6 +199,35 @@ try {
   check("founding card displays all six socials", card.profile.instagramUrl === "https://instagram.com/launcheats" && card.profile.tiktokUrl === "https://www.tiktok.com/@launcheats" && card.profile.youtubeChannel === "Launch Eats TV" && card.profile.facebookUrl === "https://www.facebook.com/launcheatspage" && card.profile.xUrl === "https://x.com/launcheats" && card.profile.linkedinUrl === "https://www.linkedin.com/in/launcheats");
   check("founding card exposes the neighborhood (card + profile)", card.neighborhood === "Ghent" && card.profile.neighborhood === "Ghent", JSON.stringify([card.neighborhood, card.profile && card.profile.neighborhood]));
 
+  // --- public creator profile: /c/<handle>, approved only, whitelist only ---
+  const pubRaw = await anon.raw("/api/c/launcheats");
+  check("public profile answers for an approved creator, no sign-in", pubRaw.status === 200, String(pubRaw.status));
+  check("public profile leaks no email, password material, or internal fields", !pubRaw.text.includes("launch-a@example.com") && !pubRaw.text.includes("passwordHash") && !pubRaw.text.includes("passwordSalt") && !pubRaw.text.includes("reviewedBy") && !pubRaw.text.includes("referredBy") && !pubRaw.text.includes("agreedTerms"), pubRaw.text.slice(0, 200));
+  const pub = (JSON.parse(pubRaw.text) || {}).profile || {};
+  check("public profile carries the public-safe fields", pub.name === "Launch Creator" && pub.handle === "launcheats" && pub.market === "Hampton Roads" && pub.city === "Norfolk" && pub.neighborhood === "Ghent" && pub.tierBand === "Locals" && pub.followerCount === 8400, JSON.stringify(pub));
+  check("public profile shows local audience % with its source label", pub.localAudiencePct === 62 && pub.localAudienceSource === "Self-reported", JSON.stringify([pub.localAudiencePct, pub.localAudienceSource]));
+  check("public profile carries categories and comp categories", Array.isArray(pub.categories) && pub.categories.includes("Food & Drink") && Array.isArray(pub.compCategories) && pub.compCategories.includes("Restaurant meals"), JSON.stringify([pub.categories, pub.compCategories]));
+  check("public profile carries Local Impact Score and Momentum points", typeof pub.localImpactScore === "number" && pub.momentumPoints === 0, JSON.stringify([pub.localImpactScore, pub.momentumPoints]));
+  check("public profile shows the founding standing band, never an exact position", pub.foundingBand === 100 && pub.foundingPriority === undefined && pub.priorityPosition === undefined, JSON.stringify(pub.foundingBand));
+  const pubCase = await anon("GET", "/api/c/LaunchEats");
+  check("public profile handle lookup is case-insensitive", pubCase.status === 200 && !!pubCase.data.profile && pubCase.data.profile.handle === "launcheats", String(pubCase.status));
+  const pubUnknown = await anon("GET", "/api/c/nosuchcreator");
+  check("public profile for an unknown handle is 404", pubUnknown.status === 404, String(pubUnknown.status));
+  const pubDirty = await anon("GET", "/api/c/%3Cscript%3E");
+  check("public profile sanitizes markup in the handle and 404s", pubDirty.status === 404, String(pubDirty.status));
+  const creatorP = client();
+  const regP = await creatorP("POST", "/api/auth/register", { ...basePayload, name: "Pending Creator", email: "launch-p@example.com", handle: "pendingplates" });
+  check("pending creator registers for the public-profile gate checks", regP.status === 201, JSON.stringify(regP.data));
+  const pubPending = await anon("GET", "/api/c/pendingplates");
+  check("public profile for a PENDING creator is 404", pubPending.status === 404, String(pubPending.status));
+  await admin("POST", "/api/admin/review", { userId: regP.data.user.id, decision: "reject" });
+  const pubRejected = await anon("GET", "/api/c/pendingplates");
+  check("public profile for a REJECTED creator is 404", pubRejected.status === 404, String(pubRejected.status));
+  const pubPage = await anon.raw("/c/launcheats");
+  check("the /c/<handle> page serves the app shell to logged-out visitors", pubPage.status === 200 && pubPage.text.includes("/app.js"), String(pubPage.status));
+  const appJsPub = await anon.raw("/app.js");
+  check("client ships the public profile view, the /c/ route handling, and the dashboard profile link", appJsPub.text.includes("renderPublicProfile") && appJsPub.text.includes("public-profile") && appJsPub.text.includes("app.joinsignl.com/c/") && appJsPub.text.includes("Your public profile") && appJsPub.text.includes("copyPublicProfile"), "");
+
   // --- neighborhood round-trips through profile edit + admin list ---
   const nbPatch = await creatorA("PATCH", "/api/me/profile", { neighborhood: "Oceanfront" });
   check("profile edit updates the neighborhood", nbPatch.status === 200 && nbPatch.data.user.creator.neighborhood === "Oceanfront", JSON.stringify(nbPatch.data.user && nbPatch.data.user.creator && nbPatch.data.user.creator.neighborhood));
