@@ -320,28 +320,51 @@ const BUSINESS_CATEGORIES = [
   "Fitness Studio", "Retail", "Attraction", "Local Services", "Other",
 ];
 
+// Three plans (Jeff, 2026-10-19). All 3-month minimum, then month to
+// month. Content rights follow the plan: Self-Service shares creator
+// posts natively only; Growth adds own-feed reposts and ad use while
+// the account is active; Managed is Growth's rights, hand-held, with
+// more visits and the quarterly hero feature.
 const PLANS = [
   {
     id: "self-service",
     name: "Self-Service",
     priceMonthly: 299,
     minMonths: 3,
+    visitsPerMonth: 8,
     features: [
       "Browse the local roster and send comp offers",
       "Up to 8 creator visits per month",
       "Post tracking and results dashboard",
+      "Share creator posts natively, with the creator tagged",
+    ],
+  },
+  {
+    id: "growth",
+    name: "Growth",
+    priceMonthly: 599,
+    minMonths: 3,
+    visitsPerMonth: 20,
+    features: [
+      "Browse the local roster and send comp offers",
+      "Up to 20 creator visits per month",
+      "Post tracking and results dashboard",
+      "Repost creator posts on your own feed",
+      "Run creator posts as ads while your account is active",
     ],
   },
   {
     id: "managed",
     name: "Managed",
-    priceMonthly: 799,
+    priceMonthly: 999,
     minMonths: 3,
+    visitsPerMonth: 30,
     features: [
-      "SIGNL coordinator runs everything for you",
+      "A SIGNL coordinator runs everything for you",
+      "Up to 30 creator visits per month",
       "Campaign calendar and creator scheduling handled",
       "Quarterly hero creator feature",
-      "Extended content rights and monthly report",
+      "Growth content rights (own-feed reposts + ads while active) and a monthly report",
     ],
   },
 ];

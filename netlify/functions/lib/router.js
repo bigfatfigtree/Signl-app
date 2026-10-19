@@ -38,19 +38,23 @@ const PAID_COMP = "Paid cash campaigns";
 const UNLISTED = "Not listed yet";
 const MAX_PHOTO_BYTES = 2.5 * 1024 * 1024;
 
-const H48 = 48 * 60 * 60 * 1000;
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 const CODE_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 
 // ---------- The Standard Visit (Jeff, 2026-10-19) ----------
 // One package, identical for every creator and every business, so a
 // selection is never a negotiation: the creator posts within 48 hours
-// of the visit, the post stays live at least 30 days, the business
-// gets tracked proof and native share rights, and nothing more. Paid
-// ad usage exists only inside paid hero campaigns, where the creator
-// is paid cash too. This object is the single source of truth: it
-// ships in bootstrap, on public profiles, on discovery cards, in the
-// offer composer, and in the creator's offer checklist.
+// of the visit and the post stays live at least 30 days. What the
+// business may DO with the post follows the business's plan (see
+// visitRightsForPlan): Self-Service shares natively; Growth and
+// Managed also repost on their own feed and may run the post as an
+// ad while their account is active. Nobody, on any plan, edits the
+// creator's content. Paid hero campaigns are a separate product
+// (bespoke paid creator work at a 20% platform fee) and have nothing
+// to do with these usage rights. This object is the single source of
+// truth: it ships in bootstrap, on public profiles, on discovery
+// cards, in the offer composer, and in the creator's offer checklist.
 const STANDARD_VISIT = {
   name: "The Standard Visit",
   postWithinHours: 48,
@@ -60,14 +64,30 @@ const STANDARD_VISIT = {
   businessGets: [
     "The post, tracked and proven in the dashboard",
     "The post stays live on the creator's profile for at least 30 days",
-    "Native share rights: repost and share with the creator tagged",
   ],
-  businessCannot: ["Edit the creator's content", "Post it as their own content", "Run it as an ad"],
-  managedExtra: "Managed plans add 90 days of own-feed repost rights.",
-  paidNote: "Paid ad usage and whitelisting are available only through paid hero campaigns, where the creator is paid cash too.",
   summary:
-    "Every SIGNL visit includes: 1 post or reel + 2 stories within 48 hours of the visit, honest and disclosed, live at least 30 days. The business gets tracked delivery proof and native share rights (creator tagged). No edits, no posting it as their own, no ads. Managed adds 90-day own-feed repost rights.",
+    "Every SIGNL visit includes: 1 post or reel + 2 stories within 48 hours of the visit, honest and disclosed, live at least 30 days, with tracked delivery proof. Content rights follow the business's plan: Self-Service shares the post natively with the creator tagged; Growth and Managed can also repost it on their own feed and run it as an ad while their account is active. Nobody can edit the creator's content.",
 };
+
+// The rights a business holds over a delivered post, by plan. The
+// creator sees exactly this, for the specific business making the
+// offer, BEFORE accepting: rights are never a surprise.
+function visitRightsForPlan(planId) {
+  if (planId === "growth" || planId === "managed") {
+    return {
+      plan: planId,
+      can: ["Share your post with you tagged", "Repost it on their own feed", "Run it as an ad while their SIGNL account is active (the ad right ends if their account ends)"],
+      cannot: ["Edit your post"],
+      adUse: true,
+    };
+  }
+  return {
+    plan: "self-service",
+    can: ["Share your post with you tagged"],
+    cannot: ["Edit it", "Post it as their own content", "Run it as an ad"],
+    adUse: false,
+  };
+}
 
 // ---------- Audience stacking (Jeff, 2026-10-19) ----------
 // A creator's audience lives on more than Instagram. The profile
@@ -269,6 +289,8 @@ const MOMENTUM_POINTS = {
   reviewHigh: 10,
   streakBonus: 25,
   streakEvery: 5,
+  adUse: 25,
+  performanceReport: 5,
   latePenalty: -10,
   noShowPenalty: -25,
   neverPostedPenalty: -50,
@@ -359,6 +381,7 @@ function createMomentum(data) {
       push("first_offer", "First offer accepted", MOMENTUM_POINTS.firstOfferAccepted, myBookings[0].createdAt);
     }
     let streak = 0;
+    const bookingById = new Map(bookings.map((b) => [b.id, b]));
     for (const p of myPosts) {
       if (p.onTime) {
         push("post_on_time", "Post delivered on time", MOMENTUM_POINTS.postOnTime, p.submittedAt);
@@ -367,17 +390,33 @@ function createMomentum(data) {
           push("streak_bonus", `Reliability streak: ${streak} on-time posts in a row`, MOMENTUM_POINTS.streakBonus, p.submittedAt);
         }
       } else {
-        push("post_late", "Post delivered late (inside the cure window it still counts)", MOMENTUM_POINTS.postLateDelivered, p.submittedAt);
+        // Delivered late has two tiers (Jeff, 2026-10-19 01:34):
+        // inside the one-week hard stop it pays +5 with the -10
+        // penalty; inside the ban fuse (days 7-14) it pays +0 with
+        // the same -10, and the missed deadline stays on the record.
+        const bk = bookingById.get(p.bookingId);
+        const inFuse = bk && bk.redeemedAt && Date.parse(p.submittedAt) > Date.parse(bk.redeemedAt) + COMPLIANCE.hardStopDays * DAY_MS;
+        if (inFuse) {
+          push("post_late_fuse", "Post delivered after the hard stop (inside the ban fuse: counts, no delivery points)", 0, p.submittedAt);
+        } else {
+          push("post_late", "Post delivered late (inside the week it still counts)", MOMENTUM_POINTS.postLateDelivered, p.submittedAt);
+        }
         push("post_late_penalty", "Late post penalty", MOMENTUM_POINTS.latePenalty, p.submittedAt);
         streak = 0;
       }
     }
     for (const b of myBookings) {
-      // No-show: accepted, never showed, and the visit date has
-      // passed. Bookings without a visit date cannot be judged and
-      // are never penalized.
-      if (!b.redeemedAt && !postByBooking.has(b.id) && b.visitDate && Date.parse(b.visitDate) < Date.now()) {
-        push("no_show", `No-show: accepted a visit at ${b.businessName || "a business"} and never showed`, MOMENTUM_POINTS.noShowPenalty, b.visitDate);
+      // An honor report voids every consequence of the visit for
+      // the creator: the business did not hold up its end.
+      if (b.honorReportedAt) continue;
+      // No-show: accepted and never showed. Two proofs: the
+      // redemption window expired unused (the accept-then-vanish
+      // case), or a set visit date has passed with no redemption.
+      // Bookings with neither cannot be judged and are never
+      // penalized.
+      const expiredUnused = b.status === "expired" || (b.compliance && b.compliance.expiredAt);
+      if (!b.redeemedAt && !postByBooking.has(b.id) && (expiredUnused || (b.visitDate && Date.parse(b.visitDate) < Date.now()))) {
+        push("no_show", `No-show: accepted a visit at ${b.businessName || "a business"} and never showed`, MOMENTUM_POINTS.noShowPenalty, (b.compliance && b.compliance.expiredAt) || b.visitDate || b.updatedAt);
       }
       // The ban case: redeemed the comp and never posted. The
       // penalty is a fact of the record and survives reinstatement.
@@ -388,6 +427,19 @@ function createMomentum(data) {
     for (const r of reviewsByCreator.get(user.id) || []) {
       if (Number(r.stars) >= 4) {
         push("review_high", `${r.stars}-star business review received`, MOMENTUM_POINTS.reviewHigh, r.createdAt);
+      }
+    }
+    // Ad use (Jeff, 2026-10-19): a Growth or Managed business running
+    // a delivered post as an ad is a real outcome for the creator:
+    // +25 per declared post, straight from the stored declaration.
+    const bookingNameById = new Map(bookings.map((b) => [b.id, b.businessName || ""]));
+    for (const p of myPosts) {
+      if (p.adUseDeclaredAt) {
+        const bn = bookingNameById.get(p.bookingId);
+        push("ad_use", `Your post ran as an ad${bn ? ` (${bn})` : ""}`, MOMENTUM_POINTS.adUse, p.adUseDeclaredAt);
+      }
+      if (p.reportedAt) {
+        push("performance_report", "Reported post performance (views and likes)", MOMENTUM_POINTS.performanceReport, p.reportedAt);
       }
     }
 
@@ -414,6 +466,8 @@ function createMomentum(data) {
       { id: "ontime", label: "Deliver a post on time (+20 each)", points: MOMENTUM_POINTS.postOnTime, done: myPosts.some((p) => p.onTime), detail: `${myPosts.filter((p) => p.onTime).length} on-time posts` },
       { id: "streak", label: "Hit a 5-post on-time streak (+25 bonus)", points: MOMENTUM_POINTS.streakBonus, done: ledger.some((e) => e.kind === "streak_bonus") },
       { id: "reviews", label: "Earn a 4-5 star business review (+10 each)", points: MOMENTUM_POINTS.reviewHigh, done: (reviewsByCreator.get(user.id) || []).some((r) => Number(r.stars) >= 4) },
+      { id: "aduse", label: "Have a post run as an ad by a Growth or Managed business (+25 each)", points: MOMENTUM_POINTS.adUse, done: myPosts.some((p) => p.adUseDeclaredAt), detail: `${myPosts.filter((p) => p.adUseDeclaredAt).length} posts ran as ads` },
+      { id: "performance", label: "Report a post's views and likes when asked, 7 days after posting (+5 each)", points: MOMENTUM_POINTS.performanceReport, done: myPosts.some((p) => p.reportedAt), detail: `${myPosts.filter((p) => p.reportedAt).length} posts reported` },
       { id: "referrals", label: "Invite creators (+3 per sign-up, +10 per approval)", points: MOMENTUM_POINTS.referralSignup, done: ref.signups > 0, detail: `${ref.signups} joined, ${ref.approved} approved` },
     ];
 
@@ -849,7 +903,9 @@ async function creatorHistory(creatorUserId) {
 // nothing here is ever invented, estimated, or seeded.
 function summarizeTrackRecord(bookings, posts, creatorId) {
   const mine = bookings.filter((b) => b.creatorId === creatorId);
-  const visited = mine.filter((b) => b.redeemedAt);
+  // Honor-reported visits never count as completed: the business
+  // did not hold up its end, so the visit is void on the record.
+  const visited = mine.filter((b) => b.redeemedAt && !b.honorReportedAt);
   const myPosts = posts.filter((p) => p.creatorId === creatorId);
   const onTime = myPosts.filter((p) => p.onTime).length;
   const names = [];
@@ -857,12 +913,23 @@ function summarizeTrackRecord(bookings, posts, creatorId) {
     const n = String(b.businessName || "").trim();
     if (n && !names.includes(n)) names.push(n);
   }
+  // Post-performance (Jeff, 2026-10-19 round 2): creators report a
+  // post's views and likes 7 days after posting. The aggregate only
+  // exists when at least one delivered post carries a creator-
+  // reported figure: absent data stays absent, never zero-filled
+  // or estimated.
+  let contentViews = 0;
+  let hasContentViews = false;
+  for (const p of myPosts) {
+    if (typeof p.views === "number") { contentViews += p.views; hasContentViews = true; }
+  }
   return {
     visitsCompleted: visited.length,
     postsDelivered: myPosts.length,
     onTimePct: myPosts.length ? Math.round((onTime / myPosts.length) * 100) : null,
     businessesWorkedWith: names,
     isNew: visited.length === 0 && myPosts.length === 0,
+    ...(hasContentViews ? { contentViews } : {}),
   };
 }
 
@@ -943,6 +1010,7 @@ async function discoverCards(query, viewer) {
   const { approvedRank } = creatorRanks(users);
   const [bookings, posts, reviews] = await Promise.all([allBookings(), allPosts(), allReviews()]);
   const momentum = createMomentum({ users, bookings, posts, reviews });
+  const bookedUp = await bookedUpCreatorIds(users, bookings);
   const out = [];
   for (const c of creators) {
     const card = await publicCreator(c, viewer, approvedRank.get(c.id) || null);
@@ -950,6 +1018,9 @@ async function discoverCards(query, viewer) {
     // businesses were promised creators would be seen in.
     card.momentum = momentum.summaryFor(c);
     card.standing = standingState(c);
+    // At their weekly visit cap: still visible, NOT greyed (that is
+    // the paused treatment), flagged "Booked up this week".
+    card.bookedUp = bookedUp.has(c.id);
     out.push(card);
   }
   // Default sort is founding priority: earliest founding sign-ups
@@ -1002,6 +1073,7 @@ async function publicCreator(u, viewer, foundingPriority) {
     scoreComponents: impact ? impact.components : null,
     history,
     isFavorite,
+    bookedUp: visitsThisWeek(await allBookings(), u.id, Date.now()) >= maxVisitsPerWeekOf(u),
   };
 }
 
@@ -1077,31 +1149,108 @@ async function withPostState(booking) {
   return { ...booking, post, postState: postState(booking, post), compliance: complianceStatusFor(booking, post, creatorStanding) };
 }
 
-// ---------- Post compliance (Jeff, 2026-10-19) ----------
+// ---------- Post compliance (Jeff, 2026-10-19; timeline final) ----------
 // The deal is simple and the enforcement is automatic. The 48-hour
 // post clock starts at redemption. The creator checks off by pasting
 // the post link (the link IS the proof; a bare checkbox would prove
-// nothing). If the deadline passes with no proof, a 7-day cure
-// window runs: friendly reminder at 48h, a second at day 5, a final
-// warning plus an account PAUSE at day 8, and when the cure closes at
-// day 9 a creator who redeemed a comp and never posted is banned
-// from future offers. Proof inside the cure counts as delivered but
-// late. Proof after a ban is recorded for the business but never
-// auto-unbans; an admin reinstates by hand.
+// nothing). The ladder (Jeff's pick, 2026-10-19 01:34):
+//   post within onTimeHours of redemption      ON TIME (+20)
+//   post after that, within hardStopDays       DELIVERED LATE (+5, -10)
+//   reminders at 48h, day 5, day 6 ("your account pauses tomorrow")
+//   day hardStopDays, no proof                 PAUSED (greyed, blocked
+//                                              from offers; the visit is
+//                                              recorded as a missed deadline)
+//   during the ban fuse (hardStopDays .. hardStopDays+banFuseDays)
+//                                              a proof still lands, counts
+//                                              delivered-late at +0/-10,
+//                                              unpauses; the missed mark stays
+//   day hardStopDays+banFuseDays, still none   BANNED from offers (-50);
+//                                              admin reinstatement only
+// If the comp was never redeemed, this ladder never runs: the
+// redemption window (Part 5) expires the booking as a no-show.
 // Standing lives on the user record: user.standing = { state, reason,
 // at, bookingId }. No standing record means good standing.
-const CURE_DAYS_AFTER_REDEMPTION = 9; // 48h deadline + 7-day cure
-const PAUSE_DAY_AFTER_REDEMPTION = 8;
+// THE timeline (Jeff, 2026-10-19): every number the engine runs on
+// lives in this ONE object, so a timeline decision is a one-line
+// edit here and nowhere else.
+const COMPLIANCE = {
+  visitWindowDays: 7, // an accepted offer redeems within this window (Part 5)
+  onTimeHours: 48, // post within this of redemption = on time
+  hardStopDays: 7, // one week after redemption: the hard stop (pause)
+  banFuseDays: 7, // days after the hard stop before the ban lands (day 14)
+};
+// Reminder offsets derive from the timeline: stage 2 lands two days
+// before the hard stop (day 5), the final warning one day before
+// (day 6, "your account pauses tomorrow").
+const REMINDER2_DAYS = COMPLIANCE.hardStopDays - 2;
+const REMINDER3_DAYS = COMPLIANCE.hardStopDays - 1;
+// The post-performance email ("How did your post do?") asks seven
+// days after proof; a separate feature's timing, kept named here.
+const PERFORMANCE_ASK_DAYS = 7;
+
+function pauseAtFor(booking) {
+  if (!booking.redeemedAt) return null;
+  return new Date(Date.parse(booking.redeemedAt) + COMPLIANCE.hardStopDays * DAY_MS).toISOString();
+}
+
+function banAtFor(booking) {
+  if (booking.compliance && booking.compliance.cureClosesAt) return booking.compliance.cureClosesAt;
+  if (!booking.redeemedAt) return null;
+  return new Date(Date.parse(booking.redeemedAt) + (COMPLIANCE.hardStopDays + COMPLIANCE.banFuseDays) * DAY_MS).toISOString();
+}
 
 function standingState(user) {
   if (!user || !user.standing || !user.standing.state) return "good";
   return user.standing.state;
 }
 
-function cureClosesAtFor(booking) {
-  if (booking.compliance && booking.compliance.cureClosesAt) return booking.compliance.cureClosesAt;
-  if (!booking.redeemedAt) return null;
-  return new Date(Date.parse(booking.redeemedAt) + CURE_DAYS_AFTER_REDEMPTION * DAY_MS).toISOString();
+// ---------- visit windows + weekly cap (Jeff, 2026-10-19 r2) ----------
+// There are NO appointments on SIGNL. An accepted offer carries a
+// redemption WINDOW: the creator redeems any time inside it. Two
+// shapes only, picked in the composer: "7days" (redeem within
+// COMPLIANCE.visitWindowDays of accepting; the default) and
+// "thisweek" (redeem by the end of the current week, Sunday).
+function redeemByFor(offer, fromDate) {
+  const from = fromDate ? new Date(fromDate) : new Date();
+  if (offer && offer.windowMode === "thisweek") {
+    const end = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate(), 23, 59, 59));
+    let add = (7 - end.getUTCDay()) % 7; // days until Sunday (0 if today is Sunday)
+    end.setUTCDate(end.getUTCDate() + add);
+    if (end.getTime() <= from.getTime()) end.setUTCDate(end.getUTCDate() + 7);
+    return end.toISOString();
+  }
+  return new Date(from.getTime() + COMPLIANCE.visitWindowDays * DAY_MS).toISOString();
+}
+
+function startOfWeekMs(d) {
+  const x = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  const dow = (x.getUTCDay() + 6) % 7; // Monday = 0
+  return x.getTime() - dow * DAY_MS;
+}
+
+// The weekly visit cap: a creator sets maxVisitsPerWeek (default 3,
+// range 1-7). The count is bookings ACCEPTED in the current week
+// (Mon-Sun) that are still live claims on the creator's time:
+// booked, redeemed, or completed visits count; cancelled and
+// expired ones do not.
+function visitsThisWeek(bookings, creatorId, nowMs) {
+  const start = startOfWeekMs(new Date(nowMs));
+  return bookings.filter((b) => b.creatorId === creatorId && b.status !== "cancelled" && b.status !== "expired" && Date.parse(b.createdAt) >= start && Date.parse(b.createdAt) < start + 7 * DAY_MS).length;
+}
+
+function maxVisitsPerWeekOf(creatorUser) {
+  const v = creatorUser && creatorUser.creator ? Number(creatorUser.creator.maxVisitsPerWeek) : NaN;
+  return Number.isInteger(v) && v >= 1 && v <= 7 ? v : 3;
+}
+
+async function bookedUpCreatorIds(users, bookings) {
+  const nowMs = Date.now();
+  const out = new Set();
+  for (const u of users) {
+    if (u.role !== "creator") continue;
+    if (visitsThisWeek(bookings, u.id, nowMs) >= maxVisitsPerWeekOf(u)) out.add(u.id);
+  }
+  return out;
 }
 
 // The one status every surface agrees on. Business labels: Redeemed,
@@ -1110,36 +1259,66 @@ function cureClosesAtFor(booking) {
 //   post_due        redeemed, inside the 48 hours
 //   posted_on_time  proof in by the deadline
 //   posted_late     proof in after the deadline (counts delivered)
-//   overdue_cure    deadline passed, no proof, cure window open
-//   paused          day 8 reached with no proof (creator paused)
-//   missed          cure closed with no proof (creator banned)
+//   overdue         deadline passed, no proof, hard stop not reached
+//   paused          hard stop (day 7) reached with no proof
+//   missed          ban fuse burned down with no proof (day 14)
+//   expired         redemption window passed unused (a no-show)
+//   honor_reported  creator reported the business did not honor the
+//                   comp; the compliance clock is void for this visit
 function complianceStatusFor(booking, post, creatorStanding) {
-  const cureClosesAt = cureClosesAtFor(booking);
+  const banAt = banAtFor(booking);
   const base = {
     redeemedAt: booking.redeemedAt || null,
     postDeadline: booking.postDeadline || null,
-    cureClosesAt,
+    pauseAt: pauseAtFor(booking),
+    banAt,
     proofUrl: post ? post.url : null,
     proofSubmittedAt: post ? post.submittedAt : null,
     creatorStanding: creatorStanding || "good",
+    redeemBy: booking.redeemBy || null,
+    honorReportedAt: booking.honorReportedAt || null,
+    missedDeadlineAt: (booking.compliance && booking.compliance.missedDeadlineAt) || null,
   };
-  if (!booking.redeemedAt) return { ...base, status: "booked" };
+  if (booking.honorReportedAt && !post) return { ...base, status: "honor_reported" };
+  if (!booking.redeemedAt) return { ...base, status: booking.status === "expired" ? "expired" : "booked" };
   if (post) return { ...base, status: post.onTime ? "posted_on_time" : "posted_late" };
   const now = Date.now();
   if (now <= Date.parse(booking.postDeadline)) return { ...base, status: "post_due" };
-  if (now < Date.parse(cureClosesAt)) {
-    const pauseAt = Date.parse(booking.redeemedAt) + PAUSE_DAY_AFTER_REDEMPTION * DAY_MS;
-    return { ...base, status: now >= pauseAt ? "paused" : "overdue_cure" };
-  }
+  if (now < Date.parse(base.pauseAt)) return { ...base, status: "overdue" };
+  if (now < Date.parse(banAt)) return { ...base, status: "paused" };
   return { ...base, status: "missed" };
+}
+
+// Post-performance email (Jeff, 2026-10-19 round 2): ONE automated
+// email, seven days after proof was submitted, asking for the post's
+// views and likes. No chase sequence follows it. Reporting earns
+// the creator +5 Momentum, computed from the stored report.
+function postPerformanceEmail(creator, booking) {
+  const first = greetingName(creator);
+  const biz = booking.businessName || "your visit";
+  return {
+    subject: "How did your post do?",
+    text: [
+      `Hi ${first},`,
+      "",
+      `It has been a week since your post for ${biz} went up. Two quick numbers help the business see what a visit is worth, and they build your own SIGNL track record: your post's views and likes.`,
+      "",
+      "Add them in the app: open My Visits, find the visit, and use Add post numbers. It takes ten seconds, and reporting earns you +5 Momentum points.",
+      "",
+      "Sign in: https://app.joinsignl.com",
+      "",
+      "The SIGNL team",
+      "hello@joinsignl.com",
+    ].join("\n"),
+  };
 }
 
 function complianceReminderEmail(creator, booking, stage) {
   const first = greetingName(creator);
   const biz = booking.businessName || "your visit";
   const deadline = booking.postDeadline ? new Date(booking.postDeadline).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" }) : "";
-  const cure = cureClosesAtFor(booking);
-  const cureDate = cure ? new Date(cure).toLocaleDateString("en-US", { dateStyle: "medium" }) : "";
+  const pauseDate = (() => { const p = pauseAtFor(booking); return p ? new Date(p).toLocaleDateString("en-US", { dateStyle: "medium" }) : ""; })();
+  const banDate = (() => { const b = banAtFor(booking); return b ? new Date(b).toLocaleDateString("en-US", { dateStyle: "medium" }) : ""; })();
   const howTo = [
     "How to check off (takes 20 seconds):",
     "1. Open SIGNL and go to My Visits.",
@@ -1153,11 +1332,11 @@ function complianceReminderEmail(creator, booking, stage) {
       text: [
         `Hi ${first},`,
         "",
-        `The 48 hours for your post about ${biz} are up (it was due ${deadline}), and we do not have your post link yet. No stress: you are in the cure window, and a post delivered now still counts, just marked late.`,
+        `The 48 hours for your full-credit post about ${biz} are up (it was due ${deadline}), and we do not have your post link yet. No stress: a post delivered within one week of the visit still counts, marked late. One week is the hard stop.`,
         "",
         ...howTo,
         "",
-        `Please get the link in before ${cureDate}. After that date the window closes: accounts pause at day 8, and a redeemed visit with no post at all closes the account to future offers.`,
+        `Please get the link in before ${pauseDate}. On that day your account pauses if no post has landed, and a redeemed visit that reaches ${banDate} with no post closes the account to future offers.`,
         "",
         "If you already posted, this email crossed with your check-off and you can ignore it.",
         "",
@@ -1176,7 +1355,7 @@ function complianceReminderEmail(creator, booking, stage) {
         "",
         ...howTo,
         "",
-        `Your cure window closes ${cureDate}. At day 8 your account pauses (greyed out for businesses, no new offers) until the post lands, and if the window closes with no post, the account is removed from future offers.`,
+        `The hard stop is ${pauseDate}: one week after the visit. That day your account pauses (greyed out for businesses, no new offers) until the post lands. A post can still land for one more week after that, and if ${banDate} arrives with no post, the account is removed from future offers.`,
         "",
         "If something went wrong with the visit itself, reply to this email and tell us. We would rather hear it than guess.",
         "",
@@ -1186,15 +1365,15 @@ function complianceReminderEmail(creator, booking, stage) {
     };
   }
   return {
-    subject: "Final notice: your SIGNL account pauses today",
+    subject: "Final warning: your SIGNL account pauses tomorrow",
     text: [
       `Hi ${first},`,
       "",
-      `This is the final notice for your visit to ${biz}: eight days have passed since the comp was redeemed and we still have no post link. Your account is now PAUSED. Businesses see you greyed out and cannot send you new offers until the post lands.`,
+      `This is the final warning for your visit to ${biz}: the one-week hard stop lands tomorrow, ${pauseDate}, and we still have no post link. When it lands, your account PAUSES: businesses see you greyed out and you cannot accept new offers until the post arrives.`,
       "",
       ...howTo,
       "",
-      `If the post link arrives before ${cureDate}, your account unpauses automatically and the visit counts as delivered late. If the window closes with no post, the account is banned from future offers, and only a person at SIGNL can reinstate it.`,
+      `Even after the pause, the post can still land for one more week and your account unpauses automatically; the visit counts as delivered late and the missed deadline stays on your record. If ${banDate} arrives with no post, the account is banned from future offers, and only a person at SIGNL can reinstate it.`,
       "",
       "The SIGNL team",
       "hello@joinsignl.com",
@@ -1214,22 +1393,27 @@ function bannedNoticeReason() {
 // by the admin endpoint, and opportunistically (throttled) from the
 // request path. Returns a summary of what it did.
 async function runComplianceSweep() {
-  const summary = { checked: 0, reminder1: 0, reminder2: 0, reminder3: 0, lateMarked: 0, paused: 0, banned: 0 };
+  const summary = { checked: 0, reminder1: 0, reminder2: 0, reminder3: 0, lateMarked: 0, paused: 0, banned: 0, performance: 0, expired: 0 };
   const bookings = await allBookings();
   const posts = await allPosts();
   const postByBooking = new Map(posts.map((p) => [p.bookingId, p]));
   const now = Date.now();
   for (const booking of bookings) {
+    // An honor report voids this visit's compliance clock entirely:
+    // the business did not hold up its end, so no reminder, pause,
+    // or ban can ever come out of this booking.
+    if (booking.honorReportedAt) continue;
     if (!booking.redeemedAt || booking.status === "completed") continue;
     if (postByBooking.has(booking.id)) continue;
     summary.checked += 1;
     const creator = await store.get(`user:${booking.creatorId}`);
     if (!creator || creator.role !== "creator") continue;
     booking.compliance = booking.compliance || {};
-    if (!booking.compliance.cureClosesAt) booking.compliance.cureClosesAt = cureClosesAtFor(booking);
+    if (!booking.compliance.banAt) booking.compliance.banAt = banAtFor(booking);
     const redeemedMs = Date.parse(booking.redeemedAt);
     const deadlineMs = Date.parse(booking.postDeadline);
-    const cureCloseMs = Date.parse(booking.compliance.cureClosesAt);
+    const pauseMs = redeemedMs + COMPLIANCE.hardStopDays * DAY_MS;
+    const banMs = Date.parse(booking.compliance.banAt);
     let dirty = false;
 
     const sendStage = async (stage) => {
@@ -1237,7 +1421,7 @@ async function runComplianceSweep() {
       if (booking.compliance[key]) return;
       booking.compliance[key] = nowIso();
       dirty = true;
-      await logEvent({ type: `post_reminder_${stage}`, actorId: null, actorRole: "system", subjectId: booking.id, market: booking.market, data: { creatorId: booking.creatorId, businessId: booking.businessId, redeemedAt: booking.redeemedAt, postDeadline: booking.postDeadline, cureClosesAt: booking.compliance.cureClosesAt } });
+      await logEvent({ type: `post_reminder_${stage}`, actorId: null, actorRole: "system", subjectId: booking.id, market: booking.market, data: { creatorId: booking.creatorId, businessId: booking.businessId, redeemedAt: booking.redeemedAt, postDeadline: booking.postDeadline, pauseAt: pauseAtFor(booking), banAt: booking.compliance.banAt } });
       try {
         const mail = complianceReminderEmail(creator, booking, stage);
         await deliverEmail(`post_reminder_${stage}`, creator, mail.subject, mail.text, null);
@@ -1254,21 +1438,33 @@ async function runComplianceSweep() {
       }
       await sendStage(1);
     }
-    if (now >= redeemedMs + 5 * DAY_MS) await sendStage(2);
-    if (now >= redeemedMs + PAUSE_DAY_AFTER_REDEMPTION * DAY_MS) await sendStage(3);
-    if (now >= redeemedMs + PAUSE_DAY_AFTER_REDEMPTION * DAY_MS && now < cureCloseMs) {
+    if (now >= redeemedMs + REMINDER2_DAYS * DAY_MS) await sendStage(2);
+    if (now >= redeemedMs + REMINDER3_DAYS * DAY_MS) await sendStage(3);
+    if (now >= pauseMs && now < banMs) {
+      // The hard stop: the visit is recorded as a missed deadline and
+      // the account pauses until a proof lands inside the ban fuse.
+      if (!booking.compliance.missedDeadlineAt) {
+        booking.compliance.missedDeadlineAt = nowIso();
+        dirty = true;
+        await logEvent({ type: "visit_deadline_missed", actorId: null, actorRole: "system", subjectId: booking.id, market: booking.market, data: { creatorId: booking.creatorId, businessId: booking.businessId, redeemedAt: booking.redeemedAt, pauseAt: pauseAtFor(booking) } });
+      }
       if (standingState(creator) !== "banned" && standingState(creator) !== "paused") {
-        creator.standing = { state: "paused", reason: "A post is past due and the cure window is closing. Deliver the post link to unpause.", at: nowIso(), bookingId: booking.id };
+        creator.standing = { state: "paused", reason: "A post passed the one-week hard stop with nothing delivered. Deliver the post link to unpause.", at: nowIso(), bookingId: booking.id };
         creator.updatedAt = nowIso();
         await store.set(`user:${creator.id}`, creator);
         booking.compliance.pausedAt = nowIso();
         dirty = true;
-        await logEvent({ type: "account_paused", actorId: null, actorRole: "system", subjectId: creator.id, market: booking.market, data: { bookingId: booking.id, businessId: booking.businessId, cureClosesAt: booking.compliance.cureClosesAt } });
+        await logEvent({ type: "account_paused", actorId: null, actorRole: "system", subjectId: creator.id, market: booking.market, data: { bookingId: booking.id, businessId: booking.businessId, banAt: booking.compliance.banAt } });
         summary.paused += 1;
       }
     }
-    if (now >= cureCloseMs) {
-      // The ban: redeemed, never posted, cure closed. Jeff's rule.
+    if (now >= banMs) {
+      // The ban: redeemed, never posted, fuse burned down. Jeff's rule.
+      if (!booking.compliance.missedDeadlineAt) {
+        booking.compliance.missedDeadlineAt = nowIso();
+        dirty = true;
+        await logEvent({ type: "visit_deadline_missed", actorId: null, actorRole: "system", subjectId: booking.id, market: booking.market, data: { creatorId: booking.creatorId, businessId: booking.businessId, redeemedAt: booking.redeemedAt, pauseAt: pauseAtFor(booking) } });
+      }
       if (!booking.compliance.bannedAt) {
         booking.compliance.bannedAt = nowIso();
         dirty = true;
@@ -1277,7 +1473,7 @@ async function runComplianceSweep() {
         creator.standing = { state: "banned", reason: bannedNoticeReason(), at: nowIso(), bookingId: booking.id };
         creator.updatedAt = nowIso();
         await store.set(`user:${creator.id}`, creator);
-        await logEvent({ type: "account_banned", actorId: null, actorRole: "system", subjectId: creator.id, market: booking.market, data: { bookingId: booking.id, businessId: booking.businessId, redeemedAt: booking.redeemedAt, cureClosesAt: booking.compliance.cureClosesAt } });
+        await logEvent({ type: "account_banned", actorId: null, actorRole: "system", subjectId: creator.id, market: booking.market, data: { bookingId: booking.id, businessId: booking.businessId, redeemedAt: booking.redeemedAt, banAt: booking.compliance.banAt } });
         summary.banned += 1;
       }
     }
@@ -1285,6 +1481,42 @@ async function runComplianceSweep() {
       booking.updatedAt = nowIso();
       await store.set(`booking:${booking.id}`, booking);
     }
+  }
+  // Redemption-window expiry (Jeff, 2026-10-19 r2): an accepted
+  // offer that is never redeemed inside its window expires. That is
+  // the accept-then-vanish case: Momentum treats it as a no-show
+  // (computed from this stored marker), and the code dies with it.
+  for (const booking of bookings) {
+    if (booking.redeemedAt || booking.status !== "booked" || booking.honorReportedAt) continue;
+    if (!booking.redeemBy || now <= Date.parse(booking.redeemBy)) continue;
+    booking.status = "expired";
+    booking.codeStatus = "expired";
+    booking.compliance = booking.compliance || {};
+    booking.compliance.expiredAt = nowIso();
+    booking.updatedAt = nowIso();
+    await store.set(`booking:${booking.id}`, booking);
+    await logEvent({ type: "offer_expired", actorId: null, actorRole: "system", subjectId: booking.id, market: booking.market, data: { creatorId: booking.creatorId, businessId: booking.businessId, redeemBy: booking.redeemBy } });
+    summary.expired += 1;
+  }
+  // Post-performance capture (Jeff, 2026-10-19 round 2): seven days
+  // after a proof was submitted, send ONE email asking for the post's
+  // views and likes. The marker lives on the post record, so it can
+  // never fire twice, and no chase sequence follows it.
+  for (const post of posts) {
+    if (!post.submittedAt || post.performanceRequestedAt) continue;
+    if (now < Date.parse(post.submittedAt) + PERFORMANCE_ASK_DAYS * DAY_MS) continue;
+    const booking = bookings.find((b) => b.id === post.bookingId);
+    if (!booking) continue;
+    const creator = await store.get(`user:${post.creatorId}`);
+    if (!creator || creator.role !== "creator") continue;
+    post.performanceRequestedAt = nowIso();
+    await store.set(`post:${post.id}`, post);
+    await logEvent({ type: "post_performance_requested", actorId: null, actorRole: "system", subjectId: post.id, market: booking.market, data: { bookingId: booking.id, creatorId: post.creatorId, businessId: post.businessId } });
+    try {
+      const mail = postPerformanceEmail(creator, booking);
+      await deliverEmail("post_performance", creator, mail.subject, mail.text, null);
+    } catch (e) { /* best-effort; the requested event is the record */ }
+    summary.performance += 1;
   }
   return summary;
 }
@@ -1299,6 +1531,50 @@ async function maybeRunComplianceSweep() {
   await runComplianceSweep();
 }
 
+// Staff notice (Jeff, 2026-10-19 r2): the moment a creator checks
+// in or a comp is redeemed, the business gets an email: who is
+// here, their photo, what is comped, the code, and how it works.
+// Windows replaced fixed visit days, so this replaces any
+// morning-of notice. One notice per trigger per booking, logged
+// as staff_notice_sent. Preview mode never reaches a redemption,
+// so no preview email can exist.
+function staffNoticeEmail(creator, booking, trigger) {
+  const c = creator.creator || {};
+  const photo = c.hasPhoto ? `https://app.joinsignl.com/api/users/${creator.id}/photo` : "(no photo on file yet)";
+  const happening = trigger === "checkin" ? `${creator.name} (@${c.handle || ""}) just checked in at your business on SIGNL.` : `${creator.name} (@${c.handle || ""}) is redeeming their SIGNL comp right now.`;
+  return {
+    subject: trigger === "checkin" ? `SIGNL check-in: ${creator.name} is here` : `SIGNL visit now: ${creator.name} is redeeming their comp`,
+    text: [
+      happening,
+      "",
+      `Creator: ${creator.name} (@${c.handle || ""})`,
+      `Photo: ${photo}`,
+      `Comp: ${booking.whatComped} (cap $${booking.dollarCap})`,
+      `Booking code: ${booking.code}`,
+      "",
+      "How it works: the creator shows this code, you redeem it in the app at the Counter tab, and their 48 hour post clock starts at that moment. Ring the comp in your own system the way you normally do; SIGNL never touches your register.",
+      "",
+      "The SIGNL team",
+      "hello@joinsignl.com",
+    ].join("\n"),
+  };
+}
+
+async function sendStaffNotice(booking, trigger) {
+  const marker = trigger === "checkin" ? "checkinNoticeAt" : "redeemNoticeAt";
+  booking.staffNotice = booking.staffNotice || {};
+  if (booking.staffNotice[marker]) return;
+  const [bizUser, creator] = await Promise.all([store.get(`user:${booking.businessId}`), store.get(`user:${booking.creatorId}`)]);
+  if (!bizUser || !creator) return;
+  booking.staffNotice[marker] = nowIso();
+  await store.set(`booking:${booking.id}`, booking);
+  await logEvent({ type: "staff_notice_sent", actorId: null, actorRole: "system", subjectId: booking.id, market: booking.market, data: { trigger, creatorId: booking.creatorId, businessId: booking.businessId, code: booking.code } });
+  try {
+    const mail = staffNoticeEmail(creator, booking, trigger);
+    await deliverEmail("staff_notice", bizUser, mail.subject, mail.text, null);
+  } catch (e) { /* best-effort; the event is the record */ }
+}
+
 // After a proof lands, a paused creator unpauses automatically UNLESS
 // another redeemed visit is still sitting in its pause window. A ban
 // is never lifted here: reinstatement is a human decision.
@@ -1308,7 +1584,7 @@ async function unpauseIfClear(creator, sourceBookingId) {
   const posts = await allPosts();
   const postedIds = new Set(posts.filter((p) => p.creatorId === creator.id).map((p) => p.bookingId));
   const now = Date.now();
-  const stillPaused = bookings.some((b) => b.id !== sourceBookingId && !postedIds.has(b.id) && now >= Date.parse(b.redeemedAt) + PAUSE_DAY_AFTER_REDEMPTION * DAY_MS && now < Date.parse(cureClosesAtFor(b)));
+  const stillPaused = bookings.some((b) => b.id !== sourceBookingId && !postedIds.has(b.id) && now >= Date.parse(pauseAtFor(b)) && now < Date.parse(banAtFor(b)));
   if (stillPaused) return false;
   creator.standing = { state: "good", reason: null, at: nowIso(), bookingId: null };
   creator.updatedAt = nowIso();
@@ -1351,7 +1627,7 @@ async function handleRegister(event) {
   // the list on joinsignl.com and lock in founding pricing; accounts open
   // when their market launches. (TEST_MODE re-opens this for the suites.)
   if (role === "business" && !TEST_MODE) {
-    return err(403, "Business accounts are not open yet. Founding businesses join the founding business list at joinsignl.com/businesses.html to lock in founding pricing ($299/mo Self-Service, $799/mo Managed). Business accounts open when your market launches.");
+    return err(403, "Business accounts are not open yet. Founding businesses join the founding business list at joinsignl.com/businesses.html to lock in founding pricing ($299/mo Self-Service, $599/mo Growth, $999/mo Managed). Business accounts open when your market launches.");
   }
   if (!isEmail(b.email || "")) return err(400, "A valid email is required");
   if (typeof b.password !== "string" || b.password.length < 10) return err(400, "Password must be at least 10 characters");
@@ -1429,7 +1705,7 @@ async function handleRegister(event) {
     if (Number.isNaN(localPct)) return err(400, "Local audience percentage must be a number from 0 to 100");
     if (b.agreedHonestPosts !== true) return err(400, "Please confirm the honest-post rule: no business can ever require a positive post.");
     if (b.agreedFtcDisclosure !== true) return err(400, "Please confirm you will disclose every comp in your posts, as the FTC requires.");
-    if (b.agreedPostCompliance !== true) return err(400, "Please confirm the post rule: after a comped visit you post within 48 hours and paste the post link in the app. A redeemed visit with no post pauses, then closes, your account.");
+    if (b.agreedPostCompliance !== true) return err(400, "Please confirm the post rule: post within 48 hours of a comped visit for full credit and paste the post link in the app. One week is the hard stop: a redeemed visit with no post pauses your account at one week and closes it at two.");
     if (b.agreedTerms !== true) return err(400, "Please agree to the Terms of Service and Privacy Policy, and to receiving account and marketing emails from SIGNL.");
     // Audience stacking (Jeff, 2026-10-19): the sign-up's follower
     // count is the Instagram count; any other platform counts the
@@ -1476,6 +1752,9 @@ async function handleRegister(event) {
       // sign-up; the field exists from day one so every payload and
       // card can rely on it.
       bestWork: [],
+      // Weekly visit cap (Jeff, 2026-10-19 r2): default 3, the
+      // creator can set 1-7 in profile edit.
+      maxVisitsPerWeek: 3,
       // Neighborhood / area inside the home city (Jeff, 2026-10-19:
       // businesses shop by neighborhood: Oceanfront, Ghent, Carytown).
       // Optional free text; never required, never validated against a
@@ -1770,6 +2049,10 @@ async function route(event) {
         if (b.tierBand === undefined || b.tierBand === tierBefore) c.tierBand = c.computedTier;
       }
       if (b.avgViews !== undefined) c.avgViews = Math.max(0, parseInt(b.avgViews, 10) || 0);
+      if (b.maxVisitsPerWeek !== undefined) {
+        const mv = Math.round(Number(b.maxVisitsPerWeek));
+        c.maxVisitsPerWeek = Number.isFinite(mv) ? Math.min(7, Math.max(1, mv)) : 3;
+      }
       if (b.tierBand && TIERS.some((t) => t.id === b.tierBand) && b.tierBand !== tierBefore) {
         // A deliberate band change (the submitted band differs from
         // the stored one) always wins, with or without new counts.
@@ -2082,7 +2365,8 @@ async function route(event) {
     // where it stands in the post-or-pay-the-price timeline. Read
     // only; the sweep does the transitions.
     if (method === "GET" && seg[1] === "compliance") {
-      const bookings = (await allBookings()).filter((b) => b.redeemedAt);
+      const allBk = await allBookings();
+      const bookings = allBk.filter((b) => b.redeemedAt || b.honorReportedAt || b.status === "expired");
       const posts = await allPosts();
       const postByBooking = new Map(posts.map((p) => [p.bookingId, p]));
       const rows = [];
@@ -2102,7 +2386,8 @@ async function route(event) {
           title: b.title || "",
           redeemedAt: b.redeemedAt,
           postDeadline: b.postDeadline,
-          cureClosesAt: status.cureClosesAt,
+          banAt: status.banAt,
+          pauseAt: status.pauseAt,
           status: status.status,
           proofUrl: post ? post.url : null,
           proofSubmittedAt: post ? post.submittedAt : null,
@@ -2111,10 +2396,26 @@ async function route(event) {
             reminder2At: (b.compliance && b.compliance.reminder2At) || null,
             reminder3At: (b.compliance && b.compliance.reminder3At) || null,
           },
+          redeemBy: b.redeemBy || null,
+          honorReportedAt: b.honorReportedAt || null,
+          honorReason: b.honorReason || null,
         });
       }
-      rows.sort((a, b) => (a.redeemedAt < b.redeemedAt ? -1 : 1));
-      return json(200, { visits: rows });
+      rows.sort((a, b) => ((a.redeemedAt || "") < (b.redeemedAt || "") ? -1 : 1));
+      // Honor reports aggregate per business (admin only, never a
+      // public surface): two or more reports raise the warning flag.
+      const byBiz = new Map();
+      for (const b of allBk) {
+        if (!b.honorReportedAt) continue;
+        const cur = byBiz.get(b.businessId) || { businessId: b.businessId, businessName: b.businessName || "", reports: 0, lastReason: "", lastAt: null };
+        cur.reports += 1;
+        if (!cur.lastAt || b.honorReportedAt > cur.lastAt) { cur.lastAt = b.honorReportedAt; cur.lastReason = b.honorReason || ""; }
+        byBiz.set(b.businessId, cur);
+      }
+      const businesses = [...byBiz.values()].map((x) => ({ ...x, warning: x.reports >= 2 })).sort((a, b) => b.reports - a.reports);
+      const counts = {};
+      for (const r of rows) counts[r.status] = (counts[r.status] || 0) + 1;
+      return json(200, { visits: rows, businesses, counts });
     }
     // Reinstate a banned (or paused) creator by hand. A late post
     // after a ban never does this automatically: a person decides.
@@ -2183,11 +2484,37 @@ async function route(event) {
         whatComped: String(b.whatComped).trim(),
         dollarCap,
         visitWindow: String(b.visitWindow || "").trim(),
+        windowMode: b.windowMode === "thisweek" ? "thisweek" : "7days",
         spots,
         status: "preview-sent",
         createdAt: nowIso(),
       };
       return json(201, { offer: simulated, preview: true });
+    }
+    // Preview ad use: the same simulation discipline as preview
+    // offers. Validates the target and the plan's right, returns a
+    // flagged confirmation, and writes NOTHING: no ad_use_declared
+    // event, no notification, no Momentum.
+    if (method === "POST" && seg[1] === "preview" && seg[2] === "ad-use") {
+      const b = parseBody(event);
+      const plan = planById(b.planId || "") || PLANS[0];
+      if (!visitRightsForPlan(plan.id).adUse) return err(400, "The Self-Service plan does not include ad use. Growth and Managed do.");
+      let targetCreator = null;
+      if (b.creatorId) {
+        targetCreator = await store.get(`user:${b.creatorId}`);
+        if (!targetCreator || targetCreator.role !== "creator" || targetCreator.status !== "approved") return err(400, "Target creator is not an approved creator");
+      }
+      return json(201, {
+        preview: true,
+        adUse: {
+          preview: true,
+          creatorId: targetCreator ? targetCreator.id : null,
+          creatorHandle: targetCreator && targetCreator.creator ? targetCreator.creator.handle : null,
+          plan: plan.id,
+          declaredAt: nowIso(),
+          note: "Simulation only: no event logged, the creator is not notified, and no Momentum points are awarded.",
+        },
+      });
     }
     return err(404, "Unknown admin route");
   }
@@ -2314,13 +2641,14 @@ async function route(event) {
         whatComped: String(b.whatComped).trim(),
         dollarCap,
         visitWindow: String(b.visitWindow || "").trim(),
+        windowMode: b.windowMode === "thisweek" ? "thisweek" : "7days",
         spots,
         status: "open",
         createdAt: ts,
         updatedAt: ts,
       };
       await store.set(`offer:${offer.id}`, offer);
-      await logEvent({ type: "offer_created", actorId: user.id, actorRole: "business", subjectId: offer.id, market: offer.market, data: { title: offer.title, dollarCap, spots, targeted: !!targetCreator, creatorId: offer.creatorId, category: offer.category } });
+      await logEvent({ type: "offer_created", actorId: user.id, actorRole: "business", subjectId: offer.id, market: offer.market, data: { title: offer.title, dollarCap, spots, targeted: !!targetCreator, creatorId: offer.creatorId, category: offer.category, windowMode: offer.windowMode } });
       return json(201, { offer });
     }
     if (method === "GET" && seg.length === 1) {
@@ -2331,15 +2659,15 @@ async function route(event) {
       else if (user.role === "creator") {
         out = out.filter((o) => o.market === user.market && o.status === "open" && (!o.creatorId || o.creatorId === user.id));
         // The creator's checklist ("They can / They can't") depends on
-        // the business's plan: Managed adds 90-day own-feed repost
-        // rights to the Standard Visit. Attach it per offer.
+        // the business's plan (rights follow the plan; see
+        // visitRightsForPlan). Attach both per offer.
         const bizIds = [...new Set(out.map((o) => o.businessId))];
         const plans = {};
         for (const id of bizIds) {
           const biz = await store.get(`user:${id}`);
           plans[id] = biz && biz.business ? biz.business.plan : null;
         }
-        out = out.map((o) => ({ ...o, businessPlan: plans[o.businessId] || null }));
+        out = out.map((o) => ({ ...o, businessPlan: plans[o.businessId] || null, visitRights: visitRightsForPlan(plans[o.businessId] || null) }));
       }
       out.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
       return json(200, { offers: out });
@@ -2355,9 +2683,16 @@ async function route(event) {
       if (offer.creatorId && offer.creatorId !== user.id) return err(403, "This offer was sent to a different creator");
       if (offer.market !== user.market) return err(403, "This offer is in a different market");
       const b = parseBody(event);
-      const existing = (await allBookings()).filter((bk) => bk.offerId === offer.id);
+      const allBk = await allBookings();
+      const existing = allBk.filter((bk) => bk.offerId === offer.id);
       if (existing.length >= offer.spots) return err(409, "All spots on this offer are booked");
       if (existing.some((bk) => bk.creatorId === user.id)) return err(409, "You already booked this offer");
+      // Weekly visit cap (creator's own setting): offers still
+      // arrive at cap, but accepting waits for next week.
+      const cap = maxVisitsPerWeekOf(user);
+      if (visitsThisWeek(allBk, user.id, Date.now()) >= cap) {
+        return err(403, `You are at your max of ${cap} visit${cap === 1 ? "" : "s"} this week (your setting, under Profile). This offer stays in your Offers tab: accept it next week, or raise your weekly max if you want more.`);
+      }
       const code = await genCode();
       const ts = nowIso();
       const booking = {
@@ -2374,6 +2709,8 @@ async function route(event) {
         whatComped: offer.whatComped,
         dollarCap: offer.dollarCap,
         visitWindow: offer.visitWindow,
+        windowMode: offer.windowMode || "7days",
+        redeemBy: redeemByFor(offer, new Date(ts)),
         visitDate: (b.visitDate || "").trim(),
         code,
         codeStatus: "issued",
@@ -2450,6 +2787,7 @@ async function route(event) {
     booking.updatedAt = nowIso();
     await store.set(`booking:${booking.id}`, booking);
     await logEvent({ type: "creator_checked_in", actorId: user.id, actorRole: "creator", subjectId: booking.id, market: booking.market, data: { businessId: booking.businessId, code: booking.code } });
+    await sendStaffNotice(booking, "checkin");
     return json(200, { booking: await withPostState(booking) });
   }
 
@@ -2463,11 +2801,12 @@ async function route(event) {
     booking.redeemMethod = "business_confirm";
     booking.codeStatus = "burned";
     booking.status = "redeemed";
-    booking.postDeadline = new Date(Date.parse(ts) + H48).toISOString();
+    booking.postDeadline = new Date(Date.parse(ts) + COMPLIANCE.onTimeHours * 3600 * 1000).toISOString();
     booking.updatedAt = ts;
     await store.set(`booking:${booking.id}`, booking);
     await logEvent({ type: "visit_confirmed_by_business", actorId: user.id, actorRole: "business", subjectId: booking.id, market: booking.market, data: { creatorId: booking.creatorId, code: booking.code, postDeadline: booking.postDeadline } });
     await logEvent({ type: "code_redeemed", actorId: user.id, actorRole: "business", subjectId: booking.id, market: booking.market, data: { creatorId: booking.creatorId, code: booking.code, method: "business_confirm", postDeadline: booking.postDeadline } });
+    await sendStaffNotice(booking, "redeem");
     return json(200, { booking: await withPostState(booking) });
   }
 
@@ -2507,10 +2846,11 @@ async function route(event) {
       booking.redeemMethod = "counter_code";
       booking.codeStatus = "burned";
       booking.status = "redeemed";
-      booking.postDeadline = new Date(Date.parse(ts) + H48).toISOString();
+      booking.postDeadline = new Date(Date.parse(ts) + COMPLIANCE.onTimeHours * 3600 * 1000).toISOString();
       booking.updatedAt = ts;
       await store.set(`booking:${booking.id}`, booking);
       await logEvent({ type: "code_redeemed", actorId: user.id, actorRole: user.role, subjectId: booking.id, market: booking.market, data: { creatorId: booking.creatorId, code: booking.code, method: "counter_code", postDeadline: booking.postDeadline, dollarCap: booking.dollarCap } });
+      await sendStaffNotice(booking, "redeem");
       return json(200, { booking: await withPostState(booking) });
     }
   }
@@ -2551,31 +2891,36 @@ async function route(event) {
     booking.updatedAt = ts;
     await logEvent({ type: "post_submitted", actorId: user.id, actorRole: "creator", subjectId: post.id, market: booking.market, data: { bookingId: booking.id, businessId: booking.businessId, url, onTime, hoursAfterRedeem: post.hoursAfterRedeem, includesDisclosure: post.includesDisclosure, category: booking.category } });
 
-    // Compliance bookkeeping for the proof (Jeff, 2026-10-19).
+    // Compliance bookkeeping for the proof (Jeff, 2026-10-19;
+    // timeline final 01:34). Any proof at or before the ban moment
+    // (day 14) counts as delivered: on time inside 48h, delivered
+    // late up to the day-7 hard stop (+5/-10), and inside the ban
+    // fuse (days 7-14) delivered late at +0/-10 with the missed
+    // deadline mark staying on the record. A proof after day 14 is
+    // recorded for the business but never saves the account.
     booking.compliance = booking.compliance || {};
-    if (!booking.compliance.cureClosesAt) booking.compliance.cureClosesAt = cureClosesAtFor(booking);
-    const cureCloseMs = Date.parse(booking.compliance.cureClosesAt);
+    if (!booking.compliance.banAt) booking.compliance.banAt = banAtFor(booking);
+    const banMs = Date.parse(booking.compliance.banAt);
     const submittedMs = Date.parse(ts);
     const wasBanned = standingState(user) === "banned";
-    await logEvent({ type: "proof_submitted", actorId: user.id, actorRole: "creator", subjectId: post.id, market: booking.market, data: { bookingId: booking.id, businessId: booking.businessId, url, onTime, withinCure: submittedMs <= cureCloseMs, whileBanned: wasBanned } });
-    if (!onTime && submittedMs <= cureCloseMs) {
-      // Delivered inside the cure window: counts, marked late.
+    await logEvent({ type: "proof_submitted", actorId: user.id, actorRole: "creator", subjectId: post.id, market: booking.market, data: { bookingId: booking.id, businessId: booking.businessId, url, onTime, withinFuse: submittedMs <= banMs, whileBanned: wasBanned } });
+    if (!onTime && submittedMs <= banMs) {
+      // Delivered late, inside the fuse: counts, marked late.
       booking.compliance.lateDeliveredAt = ts;
-      await logEvent({ type: "proof_late_accepted", actorId: user.id, actorRole: "creator", subjectId: post.id, market: booking.market, data: { bookingId: booking.id, businessId: booking.businessId, withinCure: true } });
-    } else if (!onTime && submittedMs > cureCloseMs) {
-      // The proof arrived after the cure window closed. It is
-      // recorded for the business (the visit counts as delivered,
-      // late), but it does not save the account: the ban the sweep
-      // would apply lands here instead, and only an admin can
-      // reinstate.
-      booking.compliance.proofAfterCureAt = ts;
-      await logEvent({ type: "proof_late_accepted", actorId: user.id, actorRole: "creator", subjectId: post.id, market: booking.market, data: { bookingId: booking.id, businessId: booking.businessId, withinCure: false } });
+      await logEvent({ type: "proof_late_accepted", actorId: user.id, actorRole: "creator", subjectId: post.id, market: booking.market, data: { bookingId: booking.id, businessId: booking.businessId, withinFuse: true } });
+    } else if (!onTime && submittedMs > banMs) {
+      // The proof arrived after the ban moment. It is recorded for
+      // the business (the visit counts as delivered, late), but it
+      // does not save the account: the ban the sweep would apply
+      // lands here instead, and only an admin can reinstate.
+      booking.compliance.proofAfterBanAt = ts;
+      await logEvent({ type: "proof_late_accepted", actorId: user.id, actorRole: "creator", subjectId: post.id, market: booking.market, data: { bookingId: booking.id, businessId: booking.businessId, withinFuse: false } });
       if (!wasBanned) {
         if (!booking.compliance.bannedAt) booking.compliance.bannedAt = ts;
         user.standing = { state: "banned", reason: bannedNoticeReason(), at: ts, bookingId: booking.id };
         user.updatedAt = ts;
         await store.set(`user:${user.id}`, user);
-        await logEvent({ type: "account_banned", actorId: null, actorRole: "system", subjectId: user.id, market: booking.market, data: { bookingId: booking.id, businessId: booking.businessId, redeemedAt: booking.redeemedAt, cureClosesAt: booking.compliance.cureClosesAt, trigger: "proof_arrived_after_cure_closed" } });
+        await logEvent({ type: "account_banned", actorId: null, actorRole: "system", subjectId: user.id, market: booking.market, data: { bookingId: booking.id, businessId: booking.businessId, redeemedAt: booking.redeemedAt, banAt: booking.compliance.banAt, trigger: "proof_arrived_after_ban_moment" } });
       }
     }
     await store.set(`booking:${booking.id}`, booking);
@@ -2596,6 +2941,50 @@ async function route(event) {
     await store.set(`post:${post.id}`, post);
     const booking = await store.get(`booking:${post.bookingId}`);
     await logEvent({ type: "post_verified", actorId: user.id, actorRole: user.role, subjectId: post.id, market: booking ? booking.market : user.market, data: { bookingId: post.bookingId, creatorId: post.creatorId, onTime: post.onTime } });
+    return json(200, { post });
+  }
+
+  // Ad use (Jeff, 2026-10-19): a Growth or Managed business declares
+  // it is running a delivered post as an ad. The right exists only
+  // while the business's account is active (it is the plan's right,
+  // declared here so the use is on the record). Declaring logs
+  // ad_use_declared, notifies the creator in-app (a message in their
+  // thread), and awards the creator +25 Momentum, computed from this
+  // stored declaration like every other point. No cash moves: paid
+  // hero campaigns are the separate cash product. One declaration
+  // per post.
+  if (seg[0] === "posts" && seg.length === 3 && seg[2] === "ad-use" && method === "POST") {
+    if (user.role !== "business") return err(403, "Businesses only");
+    const post = await store.get(`post:${seg[1]}`);
+    if (!post || post.businessId !== user.id) return err(404, "Post not found");
+    const plan = user.business && user.business.plan;
+    if (plan !== "growth" && plan !== "managed") {
+      return err(403, "Ad use comes with the Growth and Managed plans. Your plan covers sharing the post natively, with the creator tagged.");
+    }
+    if (post.adUseDeclaredAt) return err(409, "This post is already declared for ad use");
+    const ts = nowIso();
+    post.adUseDeclaredAt = ts;
+    post.adUseDeclaredBy = user.id;
+    post.adUsePlan = plan;
+    await store.set(`post:${post.id}`, post);
+    const booking = await store.get(`booking:${post.bookingId}`);
+    const bizName = (user.business && user.business.businessName) || post.businessName || "A SIGNL business";
+    await logEvent({ type: "ad_use_declared", actorId: user.id, actorRole: "business", subjectId: post.id, market: booking ? booking.market : user.market, data: { bookingId: post.bookingId, creatorId: post.creatorId, plan, url: post.url } });
+    // In-app notification: a message in the existing thread, so the
+    // creator sees it in Messages and on the visit card.
+    try {
+      const threadId = [user.id, post.creatorId].sort().join("__");
+      const msg = {
+        id: crypto.randomUUID(),
+        threadId,
+        fromId: user.id,
+        toId: post.creatorId,
+        body: `Good news: ${bizName} is using your post in an ad. That is part of our ${plan === "managed" ? "Managed" : "Growth"} plan rights while our account is active, and it earned you +25 Momentum points. Your post: ${post.url}`,
+        createdAt: ts,
+      };
+      await store.set(`message:${msg.id}`, msg);
+      await logEvent({ type: "message_sent", actorId: user.id, actorRole: "business", subjectId: msg.id, market: user.market, data: { toId: post.creatorId, toRole: "creator", threadId, bodyLength: msg.body.length, system: "ad_use_notification" } });
+    } catch (e) { /* the declaration stands even if the note fails */ }
     return json(200, { post });
   }
 
@@ -2641,6 +3030,71 @@ async function route(event) {
     await store.set(`review:${review.id}`, review);
     await logEvent({ type: "business_review_left", actorId: user.id, actorRole: "business", subjectId: booking.creatorId, market: booking.market, data: { bookingId: booking.id, stars, hasComment: !!comment } });
     return json(201, { review: reviewDisplay(review) });
+  }
+
+  // Post-performance report (Jeff, 2026-10-19 round 2): the creator
+  // adds the post's views and likes after the day-7 email asks. Two
+  // optional fields, at least one required, one report per post. The
+  // numbers live on the post record; Momentum's +5 is computed from
+  // reportedAt, so it can only ever land once.
+  if (method === "POST" && seg[0] === "bookings" && seg.length === 3 && seg[2] === "performance") {
+    if (user.role !== "creator") return err(403, "Creators report their own post numbers");
+    const booking = await store.get(`booking:${seg[1]}`);
+    if (!booking || booking.creatorId !== user.id) return err(404, "Booking not found");
+    const post = (await allPosts()).find((p) => p.bookingId === booking.id);
+    if (!post) return err(400, "No post proof on this visit yet");
+    if (post.reportedAt) return err(409, "Post numbers already reported for this visit");
+    const b = parseBody(event);
+    const num = (v) => {
+      if (v === null || v === undefined || v === "") return null;
+      const n = Number(v);
+      if (!Number.isInteger(n) || n < 0 || n > 2000000000) return "invalid";
+      return n;
+    };
+    const views = num(b.views);
+    const likes = num(b.likes);
+    if (views === "invalid" || likes === "invalid") return err(400, "Views and likes must be whole numbers, 0 or more");
+    if (views === null && likes === null) return err(400, "Add at least one number: views or likes");
+    if (views !== null) post.views = views;
+    if (likes !== null) post.likes = likes;
+    post.reportedAt = nowIso();
+    await store.set(`post:${post.id}`, post);
+    await logEvent({ type: "post_performance_reported", actorId: user.id, actorRole: "creator", subjectId: post.id, market: booking.market, data: { bookingId: booking.id, views: post.views == null ? null : post.views, likes: post.likes == null ? null : post.likes } });
+    return json(200, { post });
+  }
+
+  // Business-didn't-honor report (Jeff, 2026-10-19 r2): the creator
+  // showed up (or redeemed) and the business did not hold up its
+  // end. Filing it logs business_honor_report, voids this visit's
+  // compliance clock (no late, missed, pause, or ban can come out
+  // of it, and Momentum skips it entirely), and flags the business
+  // record. There is deliberately no public surface for it: the
+  // admin Compliance view is the only place reports aggregate, and
+  // two reports on one business raise a visible warning flag there.
+  if (method === "POST" && seg[0] === "bookings" && seg.length === 3 && seg[2] === "honor-report") {
+    if (user.role !== "creator") return err(403, "Creators report visits on their own bookings");
+    const booking = await store.get(`booking:${seg[1]}`);
+    if (!booking || booking.creatorId !== user.id) return err(404, "Booking not found");
+    if (booking.honorReportedAt) return err(409, "You already reported this visit");
+    const post = (await allPosts()).find((p) => p.bookingId === booking.id);
+    if (post) return err(409, "This visit already has a delivered post; there is nothing to report");
+    const b = parseBody(event);
+    const reason = String(b.reason || "").trim().slice(0, 280);
+    if (!reason) return err(400, "Add a short reason: what happened at the business?");
+    booking.honorReportedAt = nowIso();
+    booking.honorReason = reason;
+    booking.updatedAt = nowIso();
+    await store.set(`booking:${booking.id}`, booking);
+    await logEvent({ type: "business_honor_report", actorId: user.id, actorRole: "creator", subjectId: booking.id, market: booking.market, data: { businessId: booking.businessId, creatorId: user.id, reason, wasRedeemed: !!booking.redeemedAt } });
+    // Flag the business record with its running count.
+    const bizUser = await store.get(`user:${booking.businessId}`);
+    if (bizUser && bizUser.business) {
+      const all = await allBookings();
+      bizUser.business.honorReports = all.filter((x) => x.businessId === bizUser.id && x.honorReportedAt).length;
+      bizUser.updatedAt = nowIso();
+      await store.set(`user:${bizUser.id}`, bizUser);
+    }
+    return json(200, { booking: await withPostState(booking) });
   }
 
   // ---------- messages ----------
@@ -2699,4 +3153,4 @@ async function route(event) {
 
 // The email builders are exported alongside the router so the verify
 // suites can assert on the exact copy a creator receives.
-module.exports = { route, approvalEmail, signupConfirmationEmail, recruiterKitEmail, createMomentum, runComplianceSweep, STANDARD_VISIT, RECRUITER_KIT_FLAG_KEY };
+module.exports = { route, approvalEmail, signupConfirmationEmail, recruiterKitEmail, createMomentum, runComplianceSweep, STANDARD_VISIT, visitRightsForPlan, RECRUITER_KIT_FLAG_KEY };
