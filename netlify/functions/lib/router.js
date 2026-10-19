@@ -432,7 +432,7 @@ function recruiterKitEmail(user) {
     "",
     "National platforms sell reach. We sell regulars.",
     "",
-    "Jeff Rimmer",
+    "Jeff",
     "Founder, SIGNL",
     "hello@joinsignl.com",
   ];
