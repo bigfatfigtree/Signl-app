@@ -1,17 +1,21 @@
+/* Base layout + legacy component rules. The v2 light theme
+   (theme-v2.css, loaded after this file) carries the full design
+   system; the tokens below are the same light values so no dark
+   palette is defined anywhere. */
 :root {
-  --bg: #0c0c0c;
-  --panel: #141414;
-  --panel-2: #1b1b1b;
-  --line: #2a2a2a;
-  --text: #f4f1ea;
-  --muted: #a8a49a;
-  --grad: linear-gradient(90deg, #006afc, #019bfc, #03c9ab, #2fe07e);
-  --blue: #019bfc;
-  --teal: #03c9ab;
-  --green: #2fe07e;
-  --red: #ff6b6b;
-  --amber: #ffb84d;
-  --radius: 14px;
+  --bg: #FAF7F1;
+  --panel: #FFFFFF;
+  --panel-2: #F5F0E7;
+  --line: #E7E0D1;
+  --text: #141414;
+  --muted: #4E4B44;
+  --grad: linear-gradient(94deg, #006AFC 0%, #019BFC 32%, #03C9AB 66%, #2FE07E 100%);
+  --blue: #019BFC;
+  --teal: #03C9AB;
+  --green: #0A9D6C;
+  --red: #C2482B;
+  --amber: #B97A0F;
+  --radius: 22px;
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
