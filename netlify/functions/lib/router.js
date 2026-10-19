@@ -1553,6 +1553,17 @@ async function maybeRunComplianceSweep() {
   await runComplianceSweep();
 }
 
+const CAMPAIGN_SWEEP_THROTTLE_MS = 25 * 60 * 1000;
+async function maybeRunCampaignSweep() {
+  if (TEST_MODE) return;
+  const rec = await store.get("config:campaignSweep");
+  const last = rec && rec.lastRunAt ? Date.parse(rec.lastRunAt) : 0;
+  if (Date.now() - last < CAMPAIGN_SWEEP_THROTTLE_MS) return;
+  // Claim before running so concurrent requests do not pile on.
+  await store.set("config:campaignSweep", { lastRunAt: nowIso() });
+  await runCampaignSweep();
+}
+
 // ---------- Creator outreach campaign sender (Jeff, 2026-10-19) ----------
 // Jeff approved a creator outreach email and wants it sent WITHOUT
 // per-send approval cards. The Gmail connector pops a card per
@@ -2461,6 +2472,13 @@ async function route(event) {
   // scheduled function and the admin endpoint are the explicit
   // triggers), and it must never break a request either.
   try { await maybeRunComplianceSweep(); } catch (e) { /* sweep is best-effort on the request path */ }
+  // Campaign sweep: same opportunistic pattern (Jeff fix, 2026-10-19).
+  // The scheduled function alone never fired in production: the armed
+  // founding-creator campaign sat at 0 sends for hours with no error
+  // recorded anywhere. Running a throttled pass on ordinary API
+  // traffic makes sending independent of Netlify's scheduler and of
+  // the sweep token, exactly like compliance above.
+  try { await maybeRunCampaignSweep(); } catch (e) { /* sweep is best-effort on the request path */ }
   const ctx = await getAuthUser(event);
   const user = ctx.user;
 
