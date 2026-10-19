@@ -51,13 +51,16 @@ The public launch is **creator founding sign-up only**:
   activates it.
 - **The creator roster is never public.** No public roster pages
   exist; discovery requires an authenticated, approved business
-  account in a live market, and creator photos are served only to the
-  owner, the admin, or such a business. The one exception, added
-  2026-10-19: each **approved** creator has a single shareable public
-  profile page at `app.joinsignl.com/c/<handle>` (their own link to
-  advertise, never a listing or an index). It serves a strict
-  whitelist of public-safe fields (see below); pending and rejected
-  creators answer 404 there, exactly like unknown handles.
+  account in a live market. The one exception, added 2026-10-19: each
+  **approved** creator has a single shareable public profile page at
+  `app.joinsignl.com/c/<handle>` (their own link to advertise, never
+  a listing or an index). It serves a strict whitelist of public-safe
+  fields (see below); pending and rejected creators answer 404 there,
+  exactly like unknown handles. Photo rule (changed 2026-10-19 with
+  the richer profiles): an **approved** creator's photo is part of
+  their public profile and is served without sign-in; a pending or
+  rejected creator's photo stays locked to the owner, the admin, or
+  an approved business in a live market.
 
 ## What is implemented
 
@@ -98,15 +101,18 @@ The public launch is **creator founding sign-up only**:
   generic link.
 - **Public creator profiles (2026-10-19).** `GET /api/c/<handle>`
   answers logged-out visitors with a whitelist payload for an
-  approved creator: display name, handle + Instagram URL, market (or
-  typed city for unlisted creators), city, neighborhood/area, tier
-  band, follower count, content categories, comp categories, local
-  audience % with its source label, Local Impact Score when
-  computable, Momentum points, and the banded founding standing
-  ("in the first 100 in <market>"). Never the email, never internal
-  or admin fields, never a photo. The SPA renders it at `/c/<handle>`
-  for logged-out and signed-in visitors alike, and approved creators
-  get a "Your public profile" link + copy button in their profile.
+  approved creator: display name, handle + Instagram URL, photo URL,
+  market (or typed city for unlisted creators), city,
+  neighborhood/area, tier band, follower count, content categories,
+  comp categories, local audience % with its source label, Local
+  Impact Score when computable, Momentum points, and the banded
+  founding standing ("in the first 100 in <market>"). Since the
+  richer-profiles build (below) it also carries the creator's best
+  work links, their SIGNL track record, and any business reviews.
+  Never the email, never internal or admin fields. The SPA renders it
+  at `/c/<handle>` for logged-out and signed-in visitors alike, and
+  approved creators get a "Your public profile" link + copy button in
+  their profile.
 - Business discovery: browse approved creators in a market and search
   them the way businesses actually shop (spec:
   `signl-business-search-spec.md` in the SIGNL goal workspace). Filters,
@@ -156,10 +162,10 @@ Verification (each suite spins up its own throwaway server and
 database, and registers fresh accounts through the real sign-up path):
 
 ```
-node scripts/verify-flow.mjs        # 70 checks: main marketplace flow
+node scripts/verify-flow.mjs        # 97 checks: main marketplace flow
 node scripts/verify-fallbacks.mjs   # 14 checks: check-in / confirm fallbacks
-node scripts/verify-launch.mjs      # 119 checks: the launch shape itself
-npm run verify                      # all three, in order
+node scripts/verify-launch.mjs      # 164 checks: the launch shape itself
+npm run verify                      # all three, in order (275 total)
 ```
 
 `verify-launch.mjs` runs in true production shape: business
@@ -177,11 +183,12 @@ treats every market as live so the gated flows can still be exercised
 end to end. It is read from the environment only, is not in
 netlify.toml, and must never be set on the Netlify site.
 
-All three suites were run green against this codebase on 2026-10-18
-(203 checks total, including the Momentum points math end to end:
+All three suites were run green against this codebase on 2026-10-19
+(275 checks total, including the Momentum points math end to end:
 a recruiter with 2 credited sign-ups and 1 approval sits at 16
 points in their own payload, the admin applications payload, and
-the recruiter leaderboard).
+the recruiter leaderboard; the Business Preview isolation checks and
+the business review round-trip described below are covered too).
 
 ## 2026-10-18 post-launch changes (Jeff's screenshot review)
 
@@ -259,6 +266,72 @@ approved.** Nothing is estimated or self-reported.
   one `recruiter_kit_email_run` summary event. The flag is claimed
   before sending, so it can never repeat.
 
+## Business Preview + richer creator profiles (2026-10-19)
+
+Two builds Jeff ordered so the platform can be test-driven as a
+business and so creator profiles sell the connection the way the big
+platforms' profiles do, without inventing anything.
+
+**Business Preview (admin-only).** The admin console carries a
+"Preview as business" entry. Preview walks the real business
+journey in four steps: (1) the founding plans screen ($299
+Self-Service / $799 Managed, pick a plan and a market), (2) Discover
+with the complete live filter set (market, neighborhood, category,
+comp category, tier, follower range, min local %, paid-only, and the
+founding / Impact Score / Momentum sorts), (3) the full rich creator
+profile, (4) the offer composer. A PREVIEW banner rides every
+preview screen and each step is badged; Exit preview (or any
+navigation) returns to the admin console. Server side:
+`GET /api/admin/preview/discover` runs the **identical**
+`discoverCards()` query the real business surface uses, minus the
+market-live gate, so any market can be test-driven before it opens;
+`GET /api/admin/preview/creator/:id` returns the full rich card.
+Offers are **simulated**: `POST /api/admin/preview/offers` validates
+exactly like the real composer and returns a confirmation object
+flagged `preview: true`, but it writes **nothing** to the store and
+logs **no event** (client-side session list only). A preview offer
+can therefore never reach a creator, a count, or a metric; the
+verify suites prove it (creator offer list unchanged, admin stats
+`offers` unchanged, zero `offer_created` events) in both the launch
+shape and the live-marketplace shape. This is also how the admin
+preview path is verified without the production admin password: the
+launch suite signs in as the env-bootstrapped admin against a
+throwaway local database and exercises the real endpoints.
+
+**Richer creator profiles.** One showcase, rendered identically on
+the public profile page, the discovery card, the full profile view,
+the creator's own profile ("How businesses see your profile"), and
+the preview profile:
+
+- **Photo.** The creator's uploaded photo now appears on the public
+  profile (see the photo rule in Launch shape). No photo renders as a
+  brand-styled initial tile.
+- **Best work.** Creators add up to 3 links in profile edit
+  (`creator.bestWork`, validated by `validateBestWork` in
+  `lib/router.js`: http/https only, 300 chars max, host must be
+  Instagram, TikTok, or YouTube including the vm./vt. short domains).
+  They render as labeled outbound link cards ("Watch: Instagram
+  reel", platform from the host). No third-party embeds.
+- **SIGNL track record.** Computed only from stored bookings and
+  posts (`summarizeTrackRecord`): visits completed (bookings with a
+  redemption), posts delivered, on-time %, and the distinct business
+  names from redeemed bookings. Before any activity the honest zero
+  state renders: "New to SIGNL: no visits yet. Founding creator,
+  first 100 in <market>." Never invented numbers.
+- **Business reviews (plumbing).** `POST /api/bookings/:id/review`:
+  a business can leave ONE review per booking it owns once the
+  booking is completed (post in): `{ stars: 1-5, comment?: <=500
+  chars }`, stored as `review:{uuid}` { bookingId, creatorId,
+  businessId, businessName (snapshot), stars, comment, createdAt }
+  and logged as `business_review_left`. Profiles display the average
+  + count and the review list (stars, comment, business name, date)
+  **only when a real review exists**. There is deliberately no
+  business-facing entry UI yet; it ships with business accounts.
+  Nothing is seeded, ever.
+
+The discovery query itself was refactored into `discoverCards()` so
+the real surface and the preview can never drift apart.
+
 ## Environment variables
 
 Set these in Netlify (Site settings, Environment variables) for
@@ -288,6 +361,7 @@ production. Locally they go in the shell.
   tiktokHandle, tiktokUrl, youtubeChannel, facebookUrl, xHandle,
   xUrl, linkedinUrl, followerCount, avgViews, tierBand,
   suggestedTier, computedTier, categories, compCategories, bio,
+  bestWork (up to 3 host-validated Instagram/TikTok/YouTube URLs),
   neighborhood, topAudienceCities, localAudiencePct, localAudienceSource,
   localAudienceAsOf, agreedHonestPosts, agreedFtcDisclosure,
   agreedAt, agreedTerms, termsVersion, marketingEmailConsent,
@@ -312,10 +386,16 @@ production. Locally they go in the shell.
 - `post:{uuid}` url, submittedAt, deadline, hoursAfterRedeem, onTime,
   includesDisclosure, verifiedAt/verifiedBy.
 - `message:{uuid}` threadId (sorted user-id pair), from/to, body.
+- `review:{uuid}` a business's post-visit review of a creator:
+  bookingId, creatorId, businessId, businessName snapshot, stars
+  (1-5), comment, createdAt. One per completed booking; written only
+  via POST /api/bookings/:id/review.
 - `favorite:{businessId}:{creatorId}`.
 - `photo:{userId}` the creator's profile photo: contentType,
-  dataBase64, bytes, uploadedAt. Served only to the owner, the admin,
-  or an approved business in a live market.
+  dataBase64, bytes, uploadedAt. Served without sign-in once the
+  creator is approved (it is on their public profile); before
+  approval, only to the owner, the admin, or an approved business in
+  a live market.
 - `config:markets` market activation flags: `{ flags: { [marketName]:
   true } }`. A market with no flag is not live.
 - `event:{yyyy-mm-dd}:{uuid}` the append-only event log.
@@ -331,7 +411,8 @@ plan_selected, user_signed_in, profile_updated, local_audience_updated,
 favorite_added, favorite_removed, offer_created, offer_accepted,
 offer_declined, booking_code_issued, creator_checked_in,
 visit_confirmed_by_business, code_redeemed, post_submitted,
-post_verified, replacement_requested, message_sent, admin_bootstrapped.
+post_verified, business_review_left, replacement_requested,
+message_sent, admin_bootstrapped.
 
 Each event carries ts, actorId, actorRole, subjectId, market, and a
 data payload with the decision-relevant fields (amounts, caps, tier,
