@@ -1769,15 +1769,35 @@ async function maybeRunCampaignSweep() {
 //   - Sending happens only in runCampaignSweep(): the campaign must
 //     be ARMED (Jeff arms it in the admin UI) and the clock must be
 //     inside the send window, 08:00-21:00 America/New_York.
-//   - Batches are small (8), total sends per campaign are capped at
-//     80 in code, and more than 2 send failures in one run stop the
-//     run and set campaign.lastError. An emptied queue auto-disarms.
+//   - Batches are small (8). Volume is governed by a GLOBAL daily
+//     ceiling (40 sends per America/New_York calendar day across
+//     ALL campaigns): the constraint being protected is the hello@
+//     sending domain's reputation, not any single campaign, so the
+//     ceiling follows the domain. Reaching it is not an error; the
+//     sweep simply sends nothing more that day and campaigns stay
+//     armed. A per-campaign lifetime backstop (1,000) exists purely
+//     as a bug guard and is never expected to bind. More than 2
+//     send failures in one run stop the run and set
+//     campaign.lastError. An emptied queue auto-disarms.
 //   - "bounced" exists as a recipient status for the day bounce
 //     handling is automated; v1 never sets it (SMTP send results
 //     cannot see bounces), so counts report it honestly as 0.
 const DEFAULT_CAMPAIGN_ID = "founding-creators-2026-10";
 const CAMPAIGN_BATCH_SIZE = 8;
-const CAMPAIGN_SEND_CAP = 80;
+// Anti-spam daily ceiling (Jeff, 2026-10-19): at most this many
+// campaign sends per America/New_York calendar day, counted across
+// ALL campaigns combined, because what the ceiling protects is the
+// hello@ sending domain, not a campaign. The count is derived from
+// the recipient records themselves (every successful send stamps
+// sentAt on its own record), so there is no separate counter to
+// drift from reality or to race: see campaignSentToday().
+const CAMPAIGN_DAILY_CEILING = 40;
+// Runaway backstop ONLY: a per-campaign lifetime ceiling set so
+// high it can bind only if something is deeply wrong (a bug looping
+// sends). It is a bug guard, never a product limit, and normal
+// operation never reaches it; the daily ceiling above is the real
+// volume control.
+const CAMPAIGN_RUNAWAY_BACKSTOP = 1000;
 const CAMPAIGN_MAX_FAILURES_PER_RUN = 2;
 const CAMPAIGN_WINDOW = { startHour: 8, endHour: 21, timeZone: "America/New_York" };
 
@@ -1860,6 +1880,37 @@ function campaignWindowOpen(date) {
   return hour >= CAMPAIGN_WINDOW.startHour && hour < CAMPAIGN_WINDOW.endHour;
 }
 
+// yyyy-mm-dd of a date in the campaign timezone (America/New_York),
+// the calendar the daily ceiling runs on.
+function campaignDayKey(date) {
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: CAMPAIGN_WINDOW.timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(date);
+  const get = (t) => (parts.find((p) => p.type === t) || {}).value || "";
+  return `${get("year")}-${get("month")}-${get("day")}`;
+}
+
+// How many campaign emails have already gone out on the ET calendar
+// day containing `now`, across every campaign. Derived from the
+// recipient records themselves: each successful send stamps sentAt
+// on its own record (a unique key per recipient), so the count is
+// always exactly the sends that happened, with no separate counter
+// record to increment, drift, or lose a race. The sweep runs under
+// the claim-before-run throttle lock, and even if two runs ever
+// overlapped, the worst case is one extra small batch, because each
+// run re-derives the count before it sends.
+async function campaignSentToday(now) {
+  const dayKey = campaignDayKey(now);
+  const rows = await store.list("campaign-recipient:");
+  let n = 0;
+  for (const row of rows) {
+    const r = row.value;
+    if (!r || r.status !== "sent" || !r.sentAt) continue;
+    const t = Date.parse(r.sentAt);
+    if (Number.isNaN(t)) continue;
+    if (campaignDayKey(new Date(t)) === dayKey) n += 1;
+  }
+  return n;
+}
+
 // One campaign sweep pass over every campaign config. Sends only
 // for armed campaigns inside the window. Returns a summary; the
 // scheduled function (netlify/functions/campaign-sweep.mjs) and the
@@ -1868,7 +1919,12 @@ function campaignWindowOpen(date) {
 // time-traveled deterministically.
 async function runCampaignSweep(opts = {}) {
   const now = opts.now instanceof Date && !Number.isNaN(opts.now.getTime()) ? opts.now : new Date();
-  const summary = { campaigns: 0, armed: 0, windowClosed: 0, attempted: 0, sent: 0, failed: 0, capReached: 0, disarmed: 0, skippedTesters: 0 };
+  const summary = { campaigns: 0, armed: 0, windowClosed: 0, attempted: 0, sent: 0, failed: 0, backstopReached: 0, dailyCeilingHit: 0, disarmed: 0, skippedTesters: 0, sentToday: 0, dailyCeiling: CAMPAIGN_DAILY_CEILING };
+  // Global daily ceiling: sends already made today, across every
+  // campaign, counted once up front and incremented locally as this
+  // run sends, so a multi-campaign sweep can never overshoot.
+  let sentToday = await campaignSentToday(now);
+  summary.sentToday = sentToday;
   const configs = (await store.list("campaign:")).map((r) => r.value);
   for (const cfg of configs) {
     if (!cfg || !cfg.id) continue;
@@ -1898,19 +1954,31 @@ async function runCampaignSweep(opts = {}) {
     }
     let counts = campaignCounts(recipients);
     cfg.lastRunAt = now.toISOString();
-    if (counts.sent >= CAMPAIGN_SEND_CAP) {
+    if (counts.sent >= CAMPAIGN_RUNAWAY_BACKSTOP) {
+      // Bug guard only (see CAMPAIGN_RUNAWAY_BACKSTOP): a campaign
+      // at the backstop means something looped, so stop it loudly.
       cfg.armed = false;
       cfg.disarmedAt = now.toISOString();
-      cfg.disarmReason = "send_cap_reached";
+      cfg.disarmReason = "runaway_backstop_reached";
+      cfg.lastError = `Runaway backstop reached: this campaign has sent ${counts.sent} emails in its lifetime, which should never happen. It has been disarmed; investigate before re-arming.`;
       await saveCampaignConfig(cfg);
-      await logEvent({ type: "campaign_send_cap_reached", actorId: null, actorRole: "system", subjectId: null, market: null, data: { campaignId: cfg.id, totalSent: counts.sent, cap: CAMPAIGN_SEND_CAP } });
-      summary.capReached += 1;
+      await logEvent({ type: "campaign_runaway_backstop_reached", actorId: null, actorRole: "system", subjectId: null, market: null, data: { campaignId: cfg.id, totalSent: counts.sent, backstop: CAMPAIGN_RUNAWAY_BACKSTOP } });
+      summary.backstopReached += 1;
       summary.disarmed += 1;
+      continue;
+    }
+    const remainingToday = CAMPAIGN_DAILY_CEILING - sentToday;
+    if (remainingToday <= 0) {
+      // The daily ceiling is reached: not an error, nothing is
+      // wrong. The campaign stays armed, no lastError is set, and
+      // the queue simply waits for the next ET calendar day.
+      summary.dailyCeilingHit += 1;
+      await saveCampaignConfig(cfg);
       continue;
     }
     const batch = recipients
       .filter((r) => r.status === "queued")
-      .slice(0, Math.min(CAMPAIGN_BATCH_SIZE, CAMPAIGN_SEND_CAP - counts.sent));
+      .slice(0, Math.min(CAMPAIGN_BATCH_SIZE, CAMPAIGN_RUNAWAY_BACKSTOP - counts.sent, remainingToday));
     let failures = 0;
     let lastReason = null;
     for (let i = 0; i < batch.length; i++) {
@@ -1928,6 +1996,8 @@ async function runCampaignSweep(opts = {}) {
         await store.set(`campaign-recipient:${cfg.id}:${recipient.email}`, recipient);
         counts.sent += 1;
         summary.sent += 1;
+        sentToday += 1;
+        summary.sentToday = sentToday;
         await logEvent({ type: "campaign_email_sent", actorId: null, actorRole: "system", subjectId: null, market: recipient.market || null, data: { campaignId: cfg.id, email: recipient.email, handle: recipient.handle || null, messageRef } });
       } else {
         failures += 1;
@@ -1957,12 +2027,12 @@ async function runCampaignSweep(opts = {}) {
       cfg.disarmReason = "queue_empty";
       await logEvent({ type: "campaign_queue_empty", actorId: null, actorRole: "system", subjectId: null, market: null, data: { campaignId: cfg.id, totalSent: counts.sent } });
       summary.disarmed += 1;
-    } else if (cfg.armed && counts.sent >= CAMPAIGN_SEND_CAP) {
+    } else if (cfg.armed && counts.sent >= CAMPAIGN_RUNAWAY_BACKSTOP) {
       cfg.armed = false;
       cfg.disarmedAt = now.toISOString();
-      cfg.disarmReason = "send_cap_reached";
-      await logEvent({ type: "campaign_send_cap_reached", actorId: null, actorRole: "system", subjectId: null, market: null, data: { campaignId: cfg.id, totalSent: counts.sent, cap: CAMPAIGN_SEND_CAP } });
-      summary.capReached += 1;
+      cfg.disarmReason = "runaway_backstop_reached";
+      await logEvent({ type: "campaign_runaway_backstop_reached", actorId: null, actorRole: "system", subjectId: null, market: null, data: { campaignId: cfg.id, totalSent: counts.sent, backstop: CAMPAIGN_RUNAWAY_BACKSTOP } });
+      summary.backstopReached += 1;
       summary.disarmed += 1;
     }
     await saveCampaignConfig(cfg);
@@ -1970,7 +2040,7 @@ async function runCampaignSweep(opts = {}) {
   return summary;
 }
 
-function campaignView(cfg, counts) {
+function campaignView(cfg, counts, sentToday) {
   return {
     id: cfg.id,
     armed: !!cfg.armed,
@@ -1980,7 +2050,9 @@ function campaignView(cfg, counts) {
     lastError: cfg.lastError || null,
     lastRunAt: cfg.lastRunAt || null,
     totalSent: counts ? counts.sent : cfg.totalSent || 0,
-    sendCap: CAMPAIGN_SEND_CAP,
+    dailyCeiling: CAMPAIGN_DAILY_CEILING,
+    sentToday: typeof sentToday === "number" ? sentToday : null,
+    backstop: CAMPAIGN_RUNAWAY_BACKSTOP,
     batchSize: CAMPAIGN_BATCH_SIZE,
     window: { startHour: CAMPAIGN_WINDOW.startHour, endHour: CAMPAIGN_WINDOW.endHour, timeZone: CAMPAIGN_WINDOW.timeZone },
     windowOpenNow: campaignWindowOpen(new Date()),
@@ -3257,7 +3329,8 @@ async function route(event) {
         .sort((a, b) => ((a.sentAt || "") < (b.sentAt || "") ? 1 : -1))
         .slice(0, 10)
         .map((r) => ({ email: r.email, name: r.name || "", handle: r.handle || "", market: r.market || "", sentAt: r.sentAt || null, messageRef: r.messageRef || null }));
-      return json(200, { campaign: campaignView(cfg, counts), counts, recentSends });
+      const sentToday = await campaignSentToday(new Date());
+      return json(200, { campaign: campaignView(cfg, counts, sentToday), counts, recentSends });
     }
     if (method === "POST" && seg[1] === "campaign" && seg[2] === "import") {
       const b = parseBody(event);
@@ -3339,7 +3412,8 @@ async function route(event) {
       }
       const recipients = await listCampaignRecipients(campaignId);
       const counts = campaignCounts(recipients);
-      return json(200, { campaign: campaignView(cfg, counts), counts });
+      const sentToday = await campaignSentToday(new Date());
+      return json(200, { campaign: campaignView(cfg, counts, sentToday), counts });
     }
     // Post compliance (Jeff, 2026-10-19): every redeemed visit and
     // where it stands in the post-or-pay-the-price timeline. Read

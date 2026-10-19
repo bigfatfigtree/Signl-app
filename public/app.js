@@ -2126,7 +2126,8 @@ function renderAdmin() {
 // pasting a JSON array into the box on this tab, which posts to
 // the admin import endpoint; sending runs on the 30-minute
 // scheduled sweep, inside the 08:00-21:00 ET window, in batches
-// of 8, capped at 80 sends for the campaign.
+// of 8, under a global daily ceiling of 40 sends per ET day
+// across all campaigns (it protects the sending domain).
 async function loadCampaign() {
   const el = document.getElementById("tab-body");
   try {
@@ -2140,9 +2141,9 @@ async function loadCampaign() {
       </div>`).join("");
     el.innerHTML = `
       <div class="flex-between"><h3 style="margin:0">Creator outreach campaign</h3><span class="badge ${c.armed ? "ok" : "info"}">${c.armed ? "Armed" : "Paused"}</span></div>
-      <p class="small muted" style="margin-top:8px">Campaign <strong>${esc(c.id || "")}</strong>. The sweep sends up to ${c.batchSize || 8} emails every 30 minutes while armed, only between ${c.window ? c.window.startHour : 8}:00 and ${c.window ? c.window.endHour : 21}:00 ET. Hard cap: ${c.sendCap || 80} sends. The queue auto-pauses when it empties.${c.lastRunAt ? ` Last sweep: ${esc(fmtDate(c.lastRunAt))}.` : ""} Send window is ${c.windowOpenNow ? "open now" : "closed right now"}.</p>
+      <p class="small muted" style="margin-top:8px">Campaign <strong>${esc(c.id || "")}</strong>. The sweep sends up to ${c.batchSize || 8} emails every 30 minutes while armed, only between ${c.window ? c.window.startHour : 8}:00 and ${c.window ? c.window.endHour : 21}:00 ET. Daily ceiling: ${c.dailyCeiling || 40} sends per day (ET) across all campaigns, to protect the sending domain. Hitting it is normal; the queue waits for the next day. The queue auto-pauses when it empties.${c.lastRunAt ? ` Last sweep: ${esc(fmtDate(c.lastRunAt))}.` : ""} Send window is ${c.windowOpenNow ? "open now" : "closed right now"}.</p>
       ${c.lastError ? `<div class="error-box">${esc(c.lastError)}</div>` : ""}
-      <p class="small">Queued: <strong>${counts.queued || 0}</strong> &middot; Sent: <strong>${counts.sent || 0}</strong> &middot; Bounced: <strong>${counts.bounced || 0}</strong> &middot; Skipped: <strong>${counts.skipped || 0}</strong> &middot; Total: <strong>${counts.total || 0}</strong></p>
+      <p class="small">Queued: <strong>${counts.queued || 0}</strong> &middot; Sent: <strong>${counts.sent || 0}</strong> &middot; Bounced: <strong>${counts.bounced || 0}</strong> &middot; Skipped: <strong>${counts.skipped || 0}</strong> &middot; Total: <strong>${counts.total || 0}</strong> &middot; Sent today: <strong>${c.sentToday != null ? c.sentToday : 0} of ${c.dailyCeiling || 40} (daily ceiling)</strong></p>
       <button class="btn ${c.armed ? "danger" : ""}" onclick="toggleCampaignArm(${c.armed ? "false" : "true"})">${c.armed ? "Pause campaign" : "Arm campaign"}</button>
       <div id="campaign-note" class="small saved"></div>
       <h3 class="mt">Import recipients</h3>

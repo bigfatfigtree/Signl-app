@@ -15,8 +15,13 @@
 //     clock is inside the 08:00-21:00 ET window (time-traveled via
 //     the TEST_MODE-only `now` in the sweep call), in batches of 8;
 //   - an emptied queue auto-disarms; more than 2 send failures in a
-//     run stop the run and set lastError; total sends per campaign
-//     are capped at 80 in code;
+//     run stop the run and set lastError;
+//   - a GLOBAL daily ceiling of 40 sends per America/New_York
+//     calendar day, counted across all campaigns (it protects the
+//     sending domain): sends stop at 40 within one ET day, hitting
+//     the ceiling is not an error (campaigns stay armed, no
+//     lastError), sends resume the next ET day, and a campaign's
+//     lifetime total may pass the old 80 cap across days;
 //   - every send logs a campaign_email_sent event;
 //   - the Campaign tab's paste-import box is served in app.js and
 //     the exact payload shape it posts imports cleanly over a full
@@ -229,27 +234,57 @@ try {
   check("manual disarm works", disarm.status === 200 && disarm.data.campaign.armed === false, JSON.stringify(disarm.data));
   check("campaign_disarmed event logged", (await countEvents(admin, "campaign_disarmed")) >= 1);
 
-  // ---------- Part F: the 80-send cap ----------
-  part("F: send cap");
+  // ---------- Part F: the global daily ceiling (40/day, ET) ----------
+  part("F: daily ceiling");
+  const DAY2 = "2026-10-20T15:00:00.000Z"; // 11:00 EDT, the next ET day
+  const DAY3 = "2026-10-21T15:00:00.000Z"; // 11:00 EDT, the day after
   const capRecipients = [];
   for (let i = 1; i <= 85; i++) {
     capRecipients.push({ email: `cap${String(i).padStart(3, "0")}@example.com`, name: `Cap Creator ${i}`, handle: `cap${i}`, market: "Richmond", opener: "your Richmond posts" });
   }
-  const capImp = await admin("POST", "/api/admin/campaign/import", { campaignId: "cap-test", recipients: capRecipients });
-  check("cap-test import queued 85", capImp.status === 200 && capImp.data.imported === 85, JSON.stringify(capImp.data));
-  await admin("POST", "/api/admin/campaign/arm", { campaignId: "cap-test" });
-  let totalSent = 0;
-  for (let i = 0; i < 14; i++) {
-    const s = await admin("POST", "/api/admin/campaign/sweep", { now: IN_WINDOW });
-    totalSent += s.data.sweep.sent;
+  const capImp = await admin("POST", "/api/admin/campaign/import", { campaignId: "daily-test", recipients: capRecipients });
+  check("daily-test import queued 85", capImp.status === 200 && capImp.data.imported === 85, JSON.stringify(capImp.data));
+  await admin("POST", "/api/admin/campaign/arm", { campaignId: "daily-test" });
+  // Part D already sent 10 today (ET 2026-10-19) on the default
+  // campaign, and the ceiling is global, so only 30 of today's 40
+  // remain for this campaign.
+  let day1Sent = 0;
+  let lastSweep = null;
+  for (let i = 0; i < 10; i++) {
+    lastSweep = await admin("POST", "/api/admin/campaign/sweep", { now: IN_WINDOW });
+    day1Sent += lastSweep.data.sweep.sent;
+    if (lastSweep.data.sweep.sent === 0) break;
+  }
+  check("same-day sweeps stop when the global day total hits 40 (10 earlier + 30 here)", day1Sent === 30, `day1=${day1Sent}`);
+  check("the zero-send sweep reports the ceiling honestly (sentToday 40 of 40, ceiling hit, not an error)", lastSweep.data.sweep.sent === 0 && lastSweep.data.sweep.sentToday === 40 && lastSweep.data.sweep.dailyCeiling === 40 && lastSweep.data.sweep.dailyCeilingHit >= 1, JSON.stringify(lastSweep.data.sweep));
+  const day1Status = await admin("GET", "/api/admin/campaign?campaignId=daily-test");
+  check("queue waits at 30 sent / 55 queued", day1Status.data.counts.sent === 30 && day1Status.data.counts.queued === 55, JSON.stringify(day1Status.data.counts));
+  check("hitting the ceiling is not an error: still armed, no lastError, no disarm reason", day1Status.data.campaign.armed === true && !day1Status.data.campaign.lastError && !day1Status.data.campaign.disarmReason, JSON.stringify(day1Status.data.campaign));
+  check("campaign view exposes the daily ceiling, today's count field, and the runaway backstop", day1Status.data.campaign.dailyCeiling === 40 && typeof day1Status.data.campaign.sentToday === "number" && day1Status.data.campaign.backstop === 1000, JSON.stringify(day1Status.data.campaign));
+  check("no backstop event fired", (await countEvents(admin, "campaign_runaway_backstop_reached")) === 0);
+  const day1Default = await admin("GET", "/api/admin/campaign");
+  check("the ceiling is global: the default campaign's 10 earlier sends count toward the same 40", day1Default.data.counts.sent === 10 && day1Status.data.counts.sent + day1Default.data.counts.sent === 40, JSON.stringify({ daily: day1Status.data.counts, dflt: day1Default.data.counts }));
+  // The next ET day the ceiling resets and sending resumes.
+  let day2Sent = 0;
+  for (let i = 0; i < 10; i++) {
+    const s = await admin("POST", "/api/admin/campaign/sweep", { now: DAY2 });
+    day2Sent += s.data.sweep.sent;
     if (s.data.sweep.sent === 0) break;
   }
-  check("sweeps stop at exactly 80 sends", totalSent === 80, `total=${totalSent}`);
-  const capStatus = await admin("GET", "/api/admin/campaign?campaignId=cap-test");
-  check("cap leaves 5 queued and disarms by cap", capStatus.data.counts.sent === 80 && capStatus.data.counts.queued === 5 && capStatus.data.campaign.armed === false && capStatus.data.campaign.disarmReason === "send_cap_reached", JSON.stringify({ counts: capStatus.data.counts, campaign: capStatus.data.campaign }));
-  check("cap event logged", (await countEvents(admin, "campaign_send_cap_reached")) >= 1);
-  const afterCap = await admin("POST", "/api/admin/campaign/sweep", { now: IN_WINDOW });
-  check("no sends after the cap", afterCap.data.sweep.sent === 0, JSON.stringify(afterCap.data.sweep));
+  check("the next ET day sends resume and stop at that day's 40", day2Sent === 40, `day2=${day2Sent}`);
+  const day2Status = await admin("GET", "/api/admin/campaign?campaignId=daily-test");
+  check("after day 2: 70 sent / 15 queued, still armed", day2Status.data.counts.sent === 70 && day2Status.data.counts.queued === 15 && day2Status.data.campaign.armed === true, JSON.stringify({ counts: day2Status.data.counts, armed: day2Status.data.campaign.armed }));
+  // A third day drains the queue: the lifetime total passes the
+  // old 80 cap, which no longer exists as a limit.
+  let day3Sent = 0;
+  for (let i = 0; i < 10; i++) {
+    const s = await admin("POST", "/api/admin/campaign/sweep", { now: DAY3 });
+    day3Sent += s.data.sweep.sent;
+    if (s.data.sweep.sent === 0) break;
+  }
+  check("day 3 sends the remaining 15", day3Sent === 15, `day3=${day3Sent}`);
+  const day3Status = await admin("GET", "/api/admin/campaign?campaignId=daily-test");
+  check("lifetime total passes the old 80 cap (85 sent) and the drained queue auto-disarms", day3Status.data.counts.sent === 85 && day3Status.data.counts.queued === 0 && day3Status.data.campaign.armed === false && day3Status.data.campaign.disarmReason === "queue_empty", JSON.stringify({ counts: day3Status.data.counts, campaign: day3Status.data.campaign }));
 
   // ---------- Part G: client copy guards ----------
   part("G: client copy");
@@ -322,7 +357,10 @@ try {
   await admin("POST", "/api/admin/tester", { userId: lateReg.data.user.id, tester: true });
   await admin("POST", "/api/admin/campaign/arm", { campaignId: "tester-test" });
   const sentEventsBefore = await countEvents(admin, "campaign_email_sent");
-  const sweepT = await admin("POST", "/api/admin/campaign/sweep", { now: IN_WINDOW });
+  // Part F exhausted the daily ceiling for ET 2026-10-19 (IN_WINDOW's
+  // day), so this sweep time-travels to a fresh ET day; the tester
+  // behavior under test does not depend on the date.
+  const sweepT = await admin("POST", "/api/admin/campaign/sweep", { now: "2026-10-22T15:00:00.000Z" });
   check("sweep sends only to the real prospect and prunes the newly flagged tester", sweepT.data.sweep.sent === 1 && sweepT.data.sweep.skippedTesters === 1, JSON.stringify(sweepT.data.sweep));
   check("exactly one campaign_email_sent event from the tester-test sweep", (await countEvents(admin, "campaign_email_sent")) === sentEventsBefore + 1);
   check("the pruned recipient is logged (campaign_recipient_skipped)", (await countEvents(admin, "campaign_recipient_skipped")) >= 1);

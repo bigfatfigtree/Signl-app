@@ -173,9 +173,9 @@ node scripts/verify-flow.mjs        # 98 checks: main marketplace flow
 node scripts/verify-fallbacks.mjs   # 14 checks: check-in / confirm fallbacks
 node scripts/verify-launch.mjs      # 210 checks: the launch shape itself
 node scripts/verify-compliance.mjs  # 112 checks: stacking, compliance, Momentum v2, round-2 ops
-node scripts/verify-campaign.mjs    # 79 checks: creator outreach campaign (stub mailer only)
+node scripts/verify-campaign.mjs    # 86 checks: creator outreach campaign (stub mailer only)
 node scripts/verify-paidlane.mjs    # 58 checks: paid lane, creator reviews, review links, Managed budget
-npm run verify                      # all six, in order (571 total)
+npm run verify                      # all six, in order (578 total)
 ```
 
 `verify-launch.mjs` runs in true production shape: business
@@ -573,8 +573,19 @@ mail already does.
   than 2 failures in a run stops the run and sets `lastError`;
   failed recipients stay queued for a later retry, never burned.
   The campaign auto-disarms when its queue empties
-  (`disarmReason: queue_empty`) and total sends per campaign are
-  capped at 80 in code (`disarmReason: send_cap_reached`).
+  (`disarmReason: queue_empty`). Volume is governed by a GLOBAL
+  daily ceiling, not a per-campaign cap: at most 40 campaign sends
+  per America/New_York calendar day across ALL campaigns combined,
+  because what the ceiling protects is the hello@ sending domain.
+  The count is derived from the recipient records themselves (each
+  successful send stamps `sentAt` on its own record), so there is
+  no separate counter to drift or race. Reaching the ceiling is not
+  an error: the sweep sends nothing more that day, campaigns stay
+  armed, no `lastError` is set, and the Campaign tab shows "Sent
+  today: X of 40 (daily ceiling)". A per-campaign lifetime backstop
+  of 1,000 (`CAMPAIGN_RUNAWAY_BACKSTOP`,
+  `disarmReason: runaway_backstop_reached`) exists purely as a bug
+  guard and is never expected to bind.
 - **Admin surface.** Admin → Campaign tab (counts by status, last
   error, recent sends, Arm/Pause button), backed by
   `GET /api/admin/campaign` (status: `?campaignId=` optional),
@@ -588,8 +599,9 @@ mail already does.
   only (the sweep additionally accepts the sweep token).
 - **Operating it.** Import the recipients (admin session), check
   the Campaign tab counts, then Arm. The 30-minute sweep does the
-  rest inside the window until the queue drains or the 80-send cap
-  hits. Pause any time from the tab.
+  rest inside the window until the queue drains, pacing itself
+  across days at the 40-per-day global ceiling. Pause any time from
+  the tab.
 - **Safety.** The verify suite runs with the test mailer stub
   (`SIGNL_MAIL_STUB=1`, tests only, never in Netlify): sends never
   touch the network, and addresses containing "stubfail" exercise
@@ -832,9 +844,10 @@ post_performance_requested (plus post_performance delivery
 companions), post_performance_reported,
 campaign_recipients_imported, campaign_armed, campaign_disarmed,
 campaign_email_sent, campaign_email_failed, campaign_queue_empty,
-campaign_send_cap_reached (the campaign data payload carries the
-campaignId; a send's payload carries the recipient email, handle,
-market, and messageRef), paid_booking_created,
+campaign_runaway_backstop_reached (bug guard only, never expected
+to fire; the campaign data payload carries the campaignId; a send's
+payload carries the recipient email, handle, market, and
+messageRef), paid_booking_created,
 paid_escrow_released, paid_escrow_refunded,
 creator_reviewed_business, business_review_links_updated.
 
