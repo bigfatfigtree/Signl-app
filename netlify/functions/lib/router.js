@@ -25,7 +25,7 @@ const { emailEnabled, sendEmail } = require("./email");
 // ------------------------------------------------------------------
 const TEST_MODE = process.env.SIGNL_TEST_ALLOW_BUSINESS === "1";
 const LAUNCH_WINDOW_TEXT = "30 to 90 days";
-const TERMS_VERSION = "2026-10-18";
+const TERMS_VERSION = "2026-10-19";
 // Creators tier (15k+) only: on top of comps, these creators can also be
 // hired for paid cash campaigns when a business runs one (Jeff, 2026-10-18).
 const PAID_COMP = "Paid cash campaigns";
@@ -39,7 +39,93 @@ const UNLISTED = "Not listed yet";
 const MAX_PHOTO_BYTES = 2.5 * 1024 * 1024;
 
 const H48 = 48 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
 const CODE_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+
+// ---------- The Standard Visit (Jeff, 2026-10-19) ----------
+// One package, identical for every creator and every business, so a
+// selection is never a negotiation: the creator posts within 48 hours
+// of the visit, the post stays live at least 30 days, the business
+// gets tracked proof and native share rights, and nothing more. Paid
+// ad usage exists only inside paid hero campaigns, where the creator
+// is paid cash too. This object is the single source of truth: it
+// ships in bootstrap, on public profiles, on discovery cards, in the
+// offer composer, and in the creator's offer checklist.
+const STANDARD_VISIT = {
+  name: "The Standard Visit",
+  postWithinHours: 48,
+  deliverables: ["1 post or reel", "2 stories"],
+  postStaysLiveDays: 30,
+  creatorDoes: "Show up, enjoy the comp, and post within 48 hours of the visit: 1 post or reel + 2 stories. Honest opinion, comp disclosed.",
+  businessGets: [
+    "The post, tracked and proven in the dashboard",
+    "The post stays live on the creator's profile for at least 30 days",
+    "Native share rights: repost and share with the creator tagged",
+  ],
+  businessCannot: ["Edit the creator's content", "Post it as their own content", "Run it as an ad"],
+  managedExtra: "Managed plans add 90 days of own-feed repost rights.",
+  paidNote: "Paid ad usage and whitelisting are available only through paid hero campaigns, where the creator is paid cash too.",
+  summary:
+    "Every SIGNL visit includes: 1 post or reel + 2 stories within 48 hours of the visit, honest and disclosed, live at least 30 days. The business gets tracked delivery proof and native share rights (creator tagged). No edits, no posting it as their own, no ads. Managed adds 90-day own-feed repost rights.",
+};
+
+// ---------- Audience stacking (Jeff, 2026-10-19) ----------
+// A creator's audience lives on more than Instagram. The profile
+// carries a self-reported follower count per platform; the server
+// sums them into totalAudience, and the tier band derives from that
+// total. Local audience % stays Instagram-based (it is the number
+// Meta verification will replace). Legacy profiles with no stack
+// treat their stored followerCount as the Instagram count, so no
+// record loses its audience in the migration.
+const AUDIENCE_PLATFORMS = [
+  { id: "instagram", label: "Instagram" },
+  { id: "tiktok", label: "TikTok" },
+  { id: "facebook", label: "Facebook" },
+  { id: "x", label: "X" },
+  { id: "linkedin", label: "LinkedIn" },
+  { id: "youtube", label: "YouTube" },
+];
+const AUDIENCE_COUNT_CAP = 100000000;
+
+function normalizeAudienceStack(input) {
+  const out = {};
+  if (!input || typeof input !== "object") return out;
+  for (const p of AUDIENCE_PLATFORMS) {
+    const raw = input[p.id];
+    if (raw === undefined || raw === null || raw === "") continue;
+    const n = Math.floor(Number(raw));
+    if (!Number.isFinite(n) || n <= 0) continue;
+    out[p.id] = Math.min(AUDIENCE_COUNT_CAP, n);
+  }
+  return out;
+}
+
+// The stack stored on a creator record, with the legacy fallback:
+// no stack yet means followerCount IS the Instagram count.
+function audienceStackOf(creator) {
+  const c = creator || {};
+  const stack = normalizeAudienceStack(c.audienceStack);
+  if (!Object.keys(stack).length && (c.followerCount || 0) > 0) {
+    stack.instagram = Math.min(AUDIENCE_COUNT_CAP, Math.floor(Number(c.followerCount)) || 0);
+  }
+  return stack;
+}
+
+function audienceTotalOf(creator) {
+  const stack = audienceStackOf(creator);
+  return Object.values(stack).reduce((s, n) => s + n, 0);
+}
+
+// Display/payload shape: total plus the per-platform breakdown,
+// biggest first, only platforms the creator actually reported.
+function audienceView(creator) {
+  const stack = audienceStackOf(creator);
+  const platforms = AUDIENCE_PLATFORMS
+    .filter((p) => stack[p.id])
+    .map((p) => ({ platform: p.id, label: p.label, count: stack[p.id] }))
+    .sort((a, b) => b.count - a.count);
+  return { total: platforms.reduce((s, p) => s + p.count, 0), platforms };
+}
 
 // ---------- small helpers ----------
 
@@ -153,39 +239,208 @@ function creatorRanks(users) {
   return { approvedRank, pendingRank };
 }
 
-// ---------- Momentum: referral points + roster standing ----------
-// Jeff (2026-10-18): creators earn standing for recruiting, and the
-// app says so plainly at sign-up. Points come ONLY from stored
-// sign-up records: +3 for every account whose referredBy credits this
-// creator's handle, +10 more for each credited creator who is
-// approved. Nothing is estimated, self-reported, or projected.
-const MOMENTUM_POINTS_PER_SIGNUP = 3;
-const MOMENTUM_POINTS_PER_APPROVED = 10;
+// ---------- Momentum: one computed currency (Jeff, 2026-10-18/19) ----------
+// Creators earn standing for recruiting AND for doing the work well:
+// completing their profile, accepting offers, delivering posts on
+// time. They lose points for late posts, no-shows, and the worst
+// outcome, redeeming a comp and never posting. Points are NEVER a
+// stored counter: every total is computed on read from stored facts
+// (user records, bookings, posts, reviews), the same philosophy the
+// referral points shipped with, so the ledger below always explains
+// the total exactly. Totals floor at 0, never negative. Preview and
+// simulated actions write no records, so they can never mint points.
+// A banned creator's total freezes at the moment the ban landed:
+// earn entries dated after the ban do not count while the ban stands
+// (paused creators keep earning from profile completion; only offers
+// and posts are blocked for them).
+const MOMENTUM_POINTS = {
+  referralSignup: 3,
+  referralApproved: 10,
+  profilePhoto: 10,
+  profileBio: 5,
+  profileNeighborhood: 5,
+  profileLocalAudience: 5,
+  profileStack: 10,
+  profileBestWorkPerLink: 5,
+  profileBestWorkMax: 15,
+  firstOfferAccepted: 10,
+  postOnTime: 20,
+  postLateDelivered: 5,
+  reviewHigh: 10,
+  streakBonus: 25,
+  streakEvery: 5,
+  latePenalty: -10,
+  noShowPenalty: -25,
+  neverPostedPenalty: -50,
+};
 
-function momentumMap(users) {
-  const counts = new Map(); // lowercased handle -> { signups, approved }
+function referralCounts(users) {
+  const counts = new Map(); // lowercased handle -> { signups, approved, signupsList }
   for (const u of users) {
     if (!u.referredBy) continue;
     const key = String(u.referredBy).trim().toLowerCase();
     if (!key) continue;
-    const rec = counts.get(key) || { signups: 0, approved: 0 };
+    const rec = counts.get(key) || { signups: 0, approved: 0, list: [] };
     rec.signups += 1;
+    rec.list.push(u);
     if (u.role === "creator" && u.status === "approved") rec.approved += 1;
     counts.set(key, rec);
   }
   return counts;
 }
 
-function momentumFor(user, counts) {
-  if (!user || user.role !== "creator" || !user.creator || !user.creator.handle) {
-    return { signups: 0, approved: 0, points: 0 };
+// Builds the per-creator Momentum view from the full dataset. The
+// caller loads users/bookings/posts/reviews once per request and
+// every surface (own profile, discovery, public profile, admin)
+// reads the same numbers from here.
+function createMomentum(data) {
+  const users = (data && data.users) || [];
+  const bookings = (data && data.bookings) || [];
+  const posts = (data && data.posts) || [];
+  const reviews = (data && data.reviews) || [];
+  const referrals = referralCounts(users);
+  const bookingsByCreator = new Map();
+  for (const b of bookings) {
+    if (!bookingsByCreator.has(b.creatorId)) bookingsByCreator.set(b.creatorId, []);
+    bookingsByCreator.get(b.creatorId).push(b);
   }
-  const rec = counts.get(user.creator.handle.trim().toLowerCase()) || { signups: 0, approved: 0 };
-  return {
-    signups: rec.signups,
-    approved: rec.approved,
-    points: rec.signups * MOMENTUM_POINTS_PER_SIGNUP + rec.approved * MOMENTUM_POINTS_PER_APPROVED,
-  };
+  const postsByCreator = new Map();
+  for (const p of posts) {
+    if (!postsByCreator.has(p.creatorId)) postsByCreator.set(p.creatorId, []);
+    postsByCreator.get(p.creatorId).push(p);
+  }
+  const reviewsByCreator = new Map();
+  for (const r of reviews) {
+    if (!reviewsByCreator.has(r.creatorId)) reviewsByCreator.set(r.creatorId, []);
+    reviewsByCreator.get(r.creatorId).push(r);
+  }
+
+  function detailFor(user) {
+    const empty = { signups: 0, approved: 0, points: 0, ledger: [], checklist: [], floorApplied: false };
+    if (!user || user.role !== "creator" || !user.creator) return empty;
+    const c = user.creator;
+    const ledger = [];
+    const push = (kind, label, points, at) => ledger.push({ kind, label, points, at: at || null });
+
+    // Referrals (unchanged math): +3 per credited sign-up, +10 more
+    // per credited creator who is approved.
+    const handleKey = String(c.handle || "").trim().toLowerCase();
+    const ref = (handleKey && referrals.get(handleKey)) || { signups: 0, approved: 0, list: [] };
+    for (const s of ref.list) {
+      push("referral_signup", `Creator joined through your invite link (@${(s.creator && s.creator.handle) || "creator"})`, MOMENTUM_POINTS.referralSignup, s.createdAt);
+      if (s.role === "creator" && s.status === "approved") {
+        push("referral_approved", `A creator you recruited was approved (@${(s.creator && s.creator.handle) || "creator"})`, MOMENTUM_POINTS.referralApproved, s.reviewedAt || s.createdAt);
+      }
+    }
+
+    // Profile completion, from the record as it stands now.
+    const profileAt = c.photoUploadedAt || user.updatedAt || user.createdAt;
+    const hasPhoto = !!c.hasPhoto;
+    const bioDone = String(c.bio || "").trim().length >= 40;
+    const neighborhoodDone = !!String(c.neighborhood || "").trim();
+    const localDone = c.localAudiencePct !== null && c.localAudiencePct !== undefined;
+    const stackCount = Object.keys(audienceStackOf(c)).length;
+    const stackDone = stackCount >= 3;
+    const workLinks = Math.min(3, (c.bestWork || []).length);
+    if (hasPhoto) push("profile_photo", "Profile photo added", MOMENTUM_POINTS.profilePhoto, c.photoUploadedAt || profileAt);
+    if (bioDone) push("profile_bio", "Bio written", MOMENTUM_POINTS.profileBio, user.updatedAt || user.createdAt);
+    if (neighborhoodDone) push("profile_neighborhood", "Neighborhood set", MOMENTUM_POINTS.profileNeighborhood, user.updatedAt || user.createdAt);
+    if (localDone) push("profile_local", "Local audience % reported", MOMENTUM_POINTS.profileLocalAudience, user.updatedAt || user.createdAt);
+    if (stackDone) push("profile_stack", "Audience stack completed (3+ platforms)", MOMENTUM_POINTS.profileStack, user.updatedAt || user.createdAt);
+    for (let i = 0; i < workLinks; i++) {
+      push("profile_best_work", `Best work link ${i + 1} added`, MOMENTUM_POINTS.profileBestWorkPerLink, user.updatedAt || user.createdAt);
+    }
+
+    // The work itself: offers, posts, reviews, streaks, penalties.
+    const myBookings = (bookingsByCreator.get(user.id) || []).slice().sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
+    const myPosts = (postsByCreator.get(user.id) || []).slice().sort((a, b) => (a.submittedAt < b.submittedAt ? -1 : 1));
+    const postByBooking = new Map(myPosts.map((p) => [p.bookingId, p]));
+    if (myBookings.length) {
+      push("first_offer", "First offer accepted", MOMENTUM_POINTS.firstOfferAccepted, myBookings[0].createdAt);
+    }
+    let streak = 0;
+    for (const p of myPosts) {
+      if (p.onTime) {
+        push("post_on_time", "Post delivered on time", MOMENTUM_POINTS.postOnTime, p.submittedAt);
+        streak += 1;
+        if (streak % MOMENTUM_POINTS.streakEvery === 0) {
+          push("streak_bonus", `Reliability streak: ${streak} on-time posts in a row`, MOMENTUM_POINTS.streakBonus, p.submittedAt);
+        }
+      } else {
+        push("post_late", "Post delivered late (inside the cure window it still counts)", MOMENTUM_POINTS.postLateDelivered, p.submittedAt);
+        push("post_late_penalty", "Late post penalty", MOMENTUM_POINTS.latePenalty, p.submittedAt);
+        streak = 0;
+      }
+    }
+    for (const b of myBookings) {
+      // No-show: accepted, never showed, and the visit date has
+      // passed. Bookings without a visit date cannot be judged and
+      // are never penalized.
+      if (!b.redeemedAt && !postByBooking.has(b.id) && b.visitDate && Date.parse(b.visitDate) < Date.now()) {
+        push("no_show", `No-show: accepted a visit at ${b.businessName || "a business"} and never showed`, MOMENTUM_POINTS.noShowPenalty, b.visitDate);
+      }
+      // The ban case: redeemed the comp and never posted. The
+      // penalty is a fact of the record and survives reinstatement.
+      if (b.compliance && b.compliance.bannedAt) {
+        push("never_posted", `Redeemed a comp at ${b.businessName || "a business"} and never posted`, MOMENTUM_POINTS.neverPostedPenalty, b.compliance.bannedAt);
+      }
+    }
+    for (const r of reviewsByCreator.get(user.id) || []) {
+      if (Number(r.stars) >= 4) {
+        push("review_high", `${r.stars}-star business review received`, MOMENTUM_POINTS.reviewHigh, r.createdAt);
+      }
+    }
+
+    ledger.sort((a, b) => String(a.at || "") < String(b.at || "") ? -1 : 1);
+
+    // Ban freeze: while the ban stands, earns dated after it landed
+    // do not count. Losses always count; they are history.
+    const standing = user.standing || null;
+    let effective = ledger;
+    if (standing && standing.state === "banned" && standing.at) {
+      effective = ledger.filter((e) => !(e.points > 0 && e.at && Date.parse(e.at) > Date.parse(standing.at)));
+    }
+    const rawTotal = effective.reduce((s, e) => s + e.points, 0);
+    const points = Math.max(0, rawTotal);
+
+    const checklist = [
+      { id: "photo", label: "Add your profile photo", points: MOMENTUM_POINTS.profilePhoto, done: hasPhoto },
+      { id: "bio", label: "Write your bio (40+ characters)", points: MOMENTUM_POINTS.profileBio, done: bioDone },
+      { id: "neighborhood", label: "Set your neighborhood or area", points: MOMENTUM_POINTS.profileNeighborhood, done: neighborhoodDone },
+      { id: "local", label: "Report your local audience %", points: MOMENTUM_POINTS.profileLocalAudience, done: localDone },
+      { id: "stack", label: "Complete your audience stack (3+ platforms)", points: MOMENTUM_POINTS.profileStack, done: stackDone, detail: `${stackCount} of 3+ platforms` },
+      { id: "bestwork", label: "Add best work links (+5 each, up to 3)", points: MOMENTUM_POINTS.profileBestWorkPerLink, done: workLinks >= 3, detail: `${workLinks} of 3 added` },
+      { id: "firstoffer", label: "Accept your first offer", points: MOMENTUM_POINTS.firstOfferAccepted, done: myBookings.length > 0 },
+      { id: "ontime", label: "Deliver a post on time (+20 each)", points: MOMENTUM_POINTS.postOnTime, done: myPosts.some((p) => p.onTime), detail: `${myPosts.filter((p) => p.onTime).length} on-time posts` },
+      { id: "streak", label: "Hit a 5-post on-time streak (+25 bonus)", points: MOMENTUM_POINTS.streakBonus, done: ledger.some((e) => e.kind === "streak_bonus") },
+      { id: "reviews", label: "Earn a 4-5 star business review (+10 each)", points: MOMENTUM_POINTS.reviewHigh, done: (reviewsByCreator.get(user.id) || []).some((r) => Number(r.stars) >= 4) },
+      { id: "referrals", label: "Invite creators (+3 per sign-up, +10 per approval)", points: MOMENTUM_POINTS.referralSignup, done: ref.signups > 0, detail: `${ref.signups} joined, ${ref.approved} approved` },
+    ];
+
+    return {
+      signups: ref.signups,
+      approved: ref.approved,
+      points,
+      floorApplied: rawTotal < 0,
+      ledger: effective,
+      checklist,
+    };
+  }
+
+  function summaryFor(user) {
+    const d = detailFor(user);
+    return { signups: d.signups, approved: d.approved, points: d.points };
+  }
+
+  return { detailFor, summaryFor };
+}
+
+// Loads the full dataset once and returns a Momentum calculator.
+// Every Momentum read in a request goes through one of these so the
+// numbers can never disagree between surfaces.
+async function momentumContext() {
+  const [users, bookings, posts, reviews] = await Promise.all([allUsers(), allBookings(), allPosts(), allReviews()]);
+  return { users, momentum: createMomentum({ users, bookings, posts, reviews }) };
 }
 
 function inviteUrlForUser(user) {
@@ -255,9 +510,11 @@ async function withFounding(user) {
   const pub = publicUser(user);
   if (pub && pub.role === "creator") {
     pub.founding = publicFounding(await foundingSummary(user));
-    // Momentum rides on the creator's own profile payload so the
-    // "Grow your roster" block always shows their real standing.
-    pub.momentum = momentumFor(user, momentumMap(await allUsers()));
+    // Momentum rides on the creator's own profile payload in full
+    // detail (total, ledger, ways-to-earn checklist) so the dashboard
+    // can run the profile-completion incentive loop.
+    const { momentum } = await momentumContext();
+    pub.momentum = momentum.detailFor(user);
   }
   return pub;
 }
@@ -650,7 +907,9 @@ async function creatorReviews(creatorId) {
 // reads a field stored on the creator record.
 async function discoverCards(query, viewer) {
   const users = await allUsers();
-  let creators = users.filter((u) => u.role === "creator" && u.status === "approved");
+  // Banned creators (redeemed a comp, never posted, cure expired) are
+  // out of discovery entirely: a business can never select them again.
+  let creators = users.filter((u) => u.role === "creator" && u.status === "approved" && standingState(u) !== "banned");
   const market = query.market || (viewer && viewer.role === "business" ? viewer.market : null);
   if (market) creators = creators.filter((u) => u.market === (marketByName(market) || {}).name);
   if (query.tier) creators = creators.filter((u) => u.creator && u.creator.tierBand === query.tier);
@@ -664,10 +923,12 @@ async function discoverCards(query, viewer) {
       return area.includes(nb) || city.includes(nb);
     });
   }
+  // Follower range filters read the STACKED TOTAL audience (Jeff,
+  // 2026-10-19): a creator's reach is all their platforms summed.
   const fMin = parseInt(query.followersMin, 10);
-  if (!Number.isNaN(fMin)) creators = creators.filter((u) => u.creator && (u.creator.followerCount || 0) >= fMin);
+  if (!Number.isNaN(fMin)) creators = creators.filter((u) => u.creator && audienceTotalOf(u.creator) >= fMin);
   const fMax = parseInt(query.followersMax, 10);
-  if (!Number.isNaN(fMax)) creators = creators.filter((u) => u.creator && (u.creator.followerCount || 0) <= fMax);
+  if (!Number.isNaN(fMax)) creators = creators.filter((u) => u.creator && audienceTotalOf(u.creator) <= fMax);
   const minLocal = Number(query.minLocalPct);
   if (query.minLocalPct !== undefined && !Number.isNaN(minLocal)) {
     creators = creators.filter((u) => u.creator && u.creator.localAudiencePct !== null && u.creator.localAudiencePct !== undefined && Number(u.creator.localAudiencePct) >= minLocal);
@@ -680,13 +941,15 @@ async function discoverCards(query, viewer) {
     creators = creators.filter((u) => u.name.toLowerCase().includes(q) || (u.creator && u.creator.handle.toLowerCase().includes(q)));
   }
   const { approvedRank } = creatorRanks(users);
-  const counts = momentumMap(users);
+  const [bookings, posts, reviews] = await Promise.all([allBookings(), allPosts(), allReviews()]);
+  const momentum = createMomentum({ users, bookings, posts, reviews });
   const out = [];
   for (const c of creators) {
     const card = await publicCreator(c, viewer, approvedRank.get(c.id) || null);
     // Roster standing rides on the card: it is part of the order
     // businesses were promised creators would be seen in.
-    card.momentum = momentumFor(c, counts);
+    card.momentum = momentum.summaryFor(c);
+    card.standing = standingState(c);
     out.push(card);
   }
   // Default sort is founding priority: earliest founding sign-ups
@@ -700,7 +963,13 @@ async function discoverCards(query, viewer) {
   } else {
     out.sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
   }
-  return out;
+  // Paused creators stay visible but sink below creators in good
+  // standing on EVERY sort (stable partition applied last): greyed
+  // out and deprioritized until they deliver the missing post.
+  return [
+    ...out.filter((c) => c.standing !== "paused"),
+    ...out.filter((c) => c.standing === "paused"),
+  ];
 }
 
 async function publicCreator(u, viewer, foundingPriority) {
@@ -722,6 +991,9 @@ async function publicCreator(u, viewer, foundingPriority) {
     foundingBand: foundingPriority === undefined ? null : foundingBand(foundingPriority),
     photoUrl: u.creator && u.creator.hasPhoto ? `/api/users/${u.id}/photo` : null,
     profile: u.creator,
+    totalAudience: audienceTotalOf(u.creator || {}),
+    audienceStack: audienceView(u.creator || {}).platforms,
+    visitIncludes: STANDARD_VISIT.summary,
     bestWork: bestWorkCards(u.creator || {}),
     trackRecord,
     reviewSummary: reviewSummaryOf(reviewList),
@@ -749,14 +1021,14 @@ function sanitizePublicHandle(raw) {
 
 async function publicProfilePayload(u) {
   const c = u.creator || {};
-  const users = await allUsers();
+  const { users, momentum } = await momentumContext();
   const { approvedRank } = creatorRanks(users);
   const history = await creatorHistory(u.id);
   const impact = computeLocalImpactScore(c, history);
-  const momentum = momentumFor(u, momentumMap(users));
   const trackRecord = await creatorTrackRecord(u.id);
   const reviewList = (await creatorReviews(u.id)).map(reviewDisplay);
   const unlisted = u.market === UNLISTED;
+  const audience = audienceView(c);
   return {
     name: u.name,
     handle: c.handle,
@@ -768,17 +1040,20 @@ async function publicProfilePayload(u) {
     neighborhood: c.neighborhood || "",
     tierBand: c.tierBand || null,
     followerCount: c.followerCount || 0,
+    totalAudience: audience.total,
+    audienceStack: audience.platforms,
     categories: c.categories || [],
     compCategories: (c.compCategories || []).filter((x) => x !== PAID_COMP),
     localAudiencePct: c.localAudiencePct === undefined ? null : c.localAudiencePct,
     localAudienceSource: c.localAudienceSource || "Self-reported",
     localImpactScore: impact ? impact.score : null,
-    momentumPoints: momentum.points,
+    momentumPoints: momentum.summaryFor(u).points,
     foundingBand: foundingBand(approvedRank.get(u.id) || null),
     bestWork: bestWorkCards(c),
     trackRecord,
     reviewSummary: reviewSummaryOf(reviewList),
     reviews: reviewList.slice(0, 10),
+    visitIncludes: STANDARD_VISIT.summary,
   };
 }
 
@@ -794,7 +1069,252 @@ function postState(booking, post) {
 async function withPostState(booking) {
   const posts = await allPosts();
   const post = posts.find((p) => p.bookingId === booking.id) || null;
-  return { ...booking, post, postState: postState(booking, post) };
+  let creatorStanding = "good";
+  if (booking.creatorId) {
+    const creator = await store.get(`user:${booking.creatorId}`);
+    if (creator) creatorStanding = standingState(creator);
+  }
+  return { ...booking, post, postState: postState(booking, post), compliance: complianceStatusFor(booking, post, creatorStanding) };
+}
+
+// ---------- Post compliance (Jeff, 2026-10-19) ----------
+// The deal is simple and the enforcement is automatic. The 48-hour
+// post clock starts at redemption. The creator checks off by pasting
+// the post link (the link IS the proof; a bare checkbox would prove
+// nothing). If the deadline passes with no proof, a 7-day cure
+// window runs: friendly reminder at 48h, a second at day 5, a final
+// warning plus an account PAUSE at day 8, and when the cure closes at
+// day 9 a creator who redeemed a comp and never posted is banned
+// from future offers. Proof inside the cure counts as delivered but
+// late. Proof after a ban is recorded for the business but never
+// auto-unbans; an admin reinstates by hand.
+// Standing lives on the user record: user.standing = { state, reason,
+// at, bookingId }. No standing record means good standing.
+const CURE_DAYS_AFTER_REDEMPTION = 9; // 48h deadline + 7-day cure
+const PAUSE_DAY_AFTER_REDEMPTION = 8;
+
+function standingState(user) {
+  if (!user || !user.standing || !user.standing.state) return "good";
+  return user.standing.state;
+}
+
+function cureClosesAtFor(booking) {
+  if (booking.compliance && booking.compliance.cureClosesAt) return booking.compliance.cureClosesAt;
+  if (!booking.redeemedAt) return null;
+  return new Date(Date.parse(booking.redeemedAt) + CURE_DAYS_AFTER_REDEMPTION * DAY_MS).toISOString();
+}
+
+// The one status every surface agrees on. Business labels: Redeemed,
+// Post due, Posted, Late, Missed. Internal states:
+//   booked          visit not redeemed yet
+//   post_due        redeemed, inside the 48 hours
+//   posted_on_time  proof in by the deadline
+//   posted_late     proof in after the deadline (counts delivered)
+//   overdue_cure    deadline passed, no proof, cure window open
+//   paused          day 8 reached with no proof (creator paused)
+//   missed          cure closed with no proof (creator banned)
+function complianceStatusFor(booking, post, creatorStanding) {
+  const cureClosesAt = cureClosesAtFor(booking);
+  const base = {
+    redeemedAt: booking.redeemedAt || null,
+    postDeadline: booking.postDeadline || null,
+    cureClosesAt,
+    proofUrl: post ? post.url : null,
+    proofSubmittedAt: post ? post.submittedAt : null,
+    creatorStanding: creatorStanding || "good",
+  };
+  if (!booking.redeemedAt) return { ...base, status: "booked" };
+  if (post) return { ...base, status: post.onTime ? "posted_on_time" : "posted_late" };
+  const now = Date.now();
+  if (now <= Date.parse(booking.postDeadline)) return { ...base, status: "post_due" };
+  if (now < Date.parse(cureClosesAt)) {
+    const pauseAt = Date.parse(booking.redeemedAt) + PAUSE_DAY_AFTER_REDEMPTION * DAY_MS;
+    return { ...base, status: now >= pauseAt ? "paused" : "overdue_cure" };
+  }
+  return { ...base, status: "missed" };
+}
+
+function complianceReminderEmail(creator, booking, stage) {
+  const first = greetingName(creator);
+  const biz = booking.businessName || "your visit";
+  const deadline = booking.postDeadline ? new Date(booking.postDeadline).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" }) : "";
+  const cure = cureClosesAtFor(booking);
+  const cureDate = cure ? new Date(cure).toLocaleDateString("en-US", { dateStyle: "medium" }) : "";
+  const howTo = [
+    "How to check off (takes 20 seconds):",
+    "1. Open SIGNL and go to My Visits.",
+    "2. Find this visit and paste the link to your post under Post your proof.",
+    "3. That link is your check-off. We verify delivery from it.",
+    "The post must be your honest experience with the comp disclosed, as you agreed.",
+  ];
+  if (stage === 1) {
+    return {
+      subject: `Your SIGNL post is due for ${biz}`,
+      text: [
+        `Hi ${first},`,
+        "",
+        `The 48 hours for your post about ${biz} are up (it was due ${deadline}), and we do not have your post link yet. No stress: you are in the cure window, and a post delivered now still counts, just marked late.`,
+        "",
+        ...howTo,
+        "",
+        `Please get the link in before ${cureDate}. After that date the window closes: accounts pause at day 8, and a redeemed visit with no post at all closes the account to future offers.`,
+        "",
+        "If you already posted, this email crossed with your check-off and you can ignore it.",
+        "",
+        "The SIGNL team",
+        "hello@joinsignl.com",
+      ].join("\n"),
+    };
+  }
+  if (stage === 2) {
+    return {
+      subject: `Still missing your post link for ${biz}`,
+      text: [
+        `Hi ${first},`,
+        "",
+        `We are still missing the post link for your visit to ${biz}. The visit was redeemed, the comp was real, and the only thing left is the post you agreed to.`,
+        "",
+        ...howTo,
+        "",
+        `Your cure window closes ${cureDate}. At day 8 your account pauses (greyed out for businesses, no new offers) until the post lands, and if the window closes with no post, the account is removed from future offers.`,
+        "",
+        "If something went wrong with the visit itself, reply to this email and tell us. We would rather hear it than guess.",
+        "",
+        "The SIGNL team",
+        "hello@joinsignl.com",
+      ].join("\n"),
+    };
+  }
+  return {
+    subject: "Final notice: your SIGNL account pauses today",
+    text: [
+      `Hi ${first},`,
+      "",
+      `This is the final notice for your visit to ${biz}: eight days have passed since the comp was redeemed and we still have no post link. Your account is now PAUSED. Businesses see you greyed out and cannot send you new offers until the post lands.`,
+      "",
+      ...howTo,
+      "",
+      `If the post link arrives before ${cureDate}, your account unpauses automatically and the visit counts as delivered late. If the window closes with no post, the account is banned from future offers, and only a person at SIGNL can reinstate it.`,
+      "",
+      "The SIGNL team",
+      "hello@joinsignl.com",
+    ].join("\n"),
+  };
+}
+
+function bannedNoticeReason() {
+  return "A comped visit was redeemed and no post was ever delivered inside the window. This account cannot be booked again unless SIGNL reinstates it.";
+}
+
+// The sweep: one pass over every redeemed-but-unposted booking,
+// driving reminders, the day-8 pause, and the day-9 ban. Idempotent:
+// every step stamps the booking or the user record before it acts, so
+// a re-run never double-sends or double-punishes. Called by the
+// Netlify scheduled function (netlify/functions/compliance-sweep.mjs),
+// by the admin endpoint, and opportunistically (throttled) from the
+// request path. Returns a summary of what it did.
+async function runComplianceSweep() {
+  const summary = { checked: 0, reminder1: 0, reminder2: 0, reminder3: 0, lateMarked: 0, paused: 0, banned: 0 };
+  const bookings = await allBookings();
+  const posts = await allPosts();
+  const postByBooking = new Map(posts.map((p) => [p.bookingId, p]));
+  const now = Date.now();
+  for (const booking of bookings) {
+    if (!booking.redeemedAt || booking.status === "completed") continue;
+    if (postByBooking.has(booking.id)) continue;
+    summary.checked += 1;
+    const creator = await store.get(`user:${booking.creatorId}`);
+    if (!creator || creator.role !== "creator") continue;
+    booking.compliance = booking.compliance || {};
+    if (!booking.compliance.cureClosesAt) booking.compliance.cureClosesAt = cureClosesAtFor(booking);
+    const redeemedMs = Date.parse(booking.redeemedAt);
+    const deadlineMs = Date.parse(booking.postDeadline);
+    const cureCloseMs = Date.parse(booking.compliance.cureClosesAt);
+    let dirty = false;
+
+    const sendStage = async (stage) => {
+      const key = `reminder${stage}At`;
+      if (booking.compliance[key]) return;
+      booking.compliance[key] = nowIso();
+      dirty = true;
+      await logEvent({ type: `post_reminder_${stage}`, actorId: null, actorRole: "system", subjectId: booking.id, market: booking.market, data: { creatorId: booking.creatorId, businessId: booking.businessId, redeemedAt: booking.redeemedAt, postDeadline: booking.postDeadline, cureClosesAt: booking.compliance.cureClosesAt } });
+      try {
+        const mail = complianceReminderEmail(creator, booking, stage);
+        await deliverEmail(`post_reminder_${stage}`, creator, mail.subject, mail.text, null);
+      } catch (e) { /* email is best-effort; the reminder event is the record */ }
+      summary[`reminder${stage}`] += 1;
+    };
+
+    if (now > deadlineMs) {
+      if (!booking.compliance.visitLateAt) {
+        booking.compliance.visitLateAt = nowIso();
+        dirty = true;
+        await logEvent({ type: "visit_late", actorId: null, actorRole: "system", subjectId: booking.id, market: booking.market, data: { creatorId: booking.creatorId, businessId: booking.businessId, postDeadline: booking.postDeadline } });
+        summary.lateMarked += 1;
+      }
+      await sendStage(1);
+    }
+    if (now >= redeemedMs + 5 * DAY_MS) await sendStage(2);
+    if (now >= redeemedMs + PAUSE_DAY_AFTER_REDEMPTION * DAY_MS) await sendStage(3);
+    if (now >= redeemedMs + PAUSE_DAY_AFTER_REDEMPTION * DAY_MS && now < cureCloseMs) {
+      if (standingState(creator) !== "banned" && standingState(creator) !== "paused") {
+        creator.standing = { state: "paused", reason: "A post is past due and the cure window is closing. Deliver the post link to unpause.", at: nowIso(), bookingId: booking.id };
+        creator.updatedAt = nowIso();
+        await store.set(`user:${creator.id}`, creator);
+        booking.compliance.pausedAt = nowIso();
+        dirty = true;
+        await logEvent({ type: "account_paused", actorId: null, actorRole: "system", subjectId: creator.id, market: booking.market, data: { bookingId: booking.id, businessId: booking.businessId, cureClosesAt: booking.compliance.cureClosesAt } });
+        summary.paused += 1;
+      }
+    }
+    if (now >= cureCloseMs) {
+      // The ban: redeemed, never posted, cure closed. Jeff's rule.
+      if (!booking.compliance.bannedAt) {
+        booking.compliance.bannedAt = nowIso();
+        dirty = true;
+      }
+      if (standingState(creator) !== "banned") {
+        creator.standing = { state: "banned", reason: bannedNoticeReason(), at: nowIso(), bookingId: booking.id };
+        creator.updatedAt = nowIso();
+        await store.set(`user:${creator.id}`, creator);
+        await logEvent({ type: "account_banned", actorId: null, actorRole: "system", subjectId: creator.id, market: booking.market, data: { bookingId: booking.id, businessId: booking.businessId, redeemedAt: booking.redeemedAt, cureClosesAt: booking.compliance.cureClosesAt } });
+        summary.banned += 1;
+      }
+    }
+    if (dirty) {
+      booking.updatedAt = nowIso();
+      await store.set(`booking:${booking.id}`, booking);
+    }
+  }
+  return summary;
+}
+
+const SWEEP_THROTTLE_MS = 55 * 60 * 1000;
+async function maybeRunComplianceSweep() {
+  const rec = await store.get("config:complianceSweep");
+  const last = rec && rec.lastRunAt ? Date.parse(rec.lastRunAt) : 0;
+  if (Date.now() - last < SWEEP_THROTTLE_MS) return;
+  // Claim before running so concurrent requests do not pile on.
+  await store.set("config:complianceSweep", { lastRunAt: nowIso() });
+  await runComplianceSweep();
+}
+
+// After a proof lands, a paused creator unpauses automatically UNLESS
+// another redeemed visit is still sitting in its pause window. A ban
+// is never lifted here: reinstatement is a human decision.
+async function unpauseIfClear(creator, sourceBookingId) {
+  if (standingState(creator) !== "paused") return false;
+  const bookings = (await allBookings()).filter((b) => b.creatorId === creator.id && b.redeemedAt && b.status !== "completed");
+  const posts = await allPosts();
+  const postedIds = new Set(posts.filter((p) => p.creatorId === creator.id).map((p) => p.bookingId));
+  const now = Date.now();
+  const stillPaused = bookings.some((b) => b.id !== sourceBookingId && !postedIds.has(b.id) && now >= Date.parse(b.redeemedAt) + PAUSE_DAY_AFTER_REDEMPTION * DAY_MS && now < Date.parse(cureClosesAtFor(b)));
+  if (stillPaused) return false;
+  creator.standing = { state: "good", reason: null, at: nowIso(), bookingId: null };
+  creator.updatedAt = nowIso();
+  await store.set(`user:${creator.id}`, creator);
+  await logEvent({ type: "account_unpaused", actorId: creator.id, actorRole: "creator", subjectId: creator.id, market: creator.market, data: { bookingId: sourceBookingId, how: "proof_submitted" } });
+  return true;
 }
 
 async function genCode() {
@@ -909,8 +1429,18 @@ async function handleRegister(event) {
     if (Number.isNaN(localPct)) return err(400, "Local audience percentage must be a number from 0 to 100");
     if (b.agreedHonestPosts !== true) return err(400, "Please confirm the honest-post rule: no business can ever require a positive post.");
     if (b.agreedFtcDisclosure !== true) return err(400, "Please confirm you will disclose every comp in your posts, as the FTC requires.");
+    if (b.agreedPostCompliance !== true) return err(400, "Please confirm the post rule: after a comped visit you post within 48 hours and paste the post link in the app. A redeemed visit with no post pauses, then closes, your account.");
     if (b.agreedTerms !== true) return err(400, "Please agree to the Terms of Service and Privacy Policy, and to receiving account and marketing emails from SIGNL.");
-    const suggestedTier = tierForFollowers(followers);
+    // Audience stacking (Jeff, 2026-10-19): the sign-up's follower
+    // count is the Instagram count; any other platform counts the
+    // creator reports join the stack, and the tier suggestion reads
+    // the stacked TOTAL. The creator can still confirm another band.
+    const stack = normalizeAudienceStack(b.audienceStack);
+    let igFollowers = followers;
+    if (stack.instagram) igFollowers = stack.instagram;
+    else if (igFollowers > 0) stack.instagram = igFollowers;
+    const totalAudience = Object.values(stack).reduce((s, n) => s + n, 0);
+    const suggestedTier = tierForFollowers(totalAudience);
     const tier = TIERS.some((t) => t.id === b.tierBand) ? b.tierBand : suggestedTier;
     const tiktok = (b.tiktokHandle || "").replace(/^@/, "").trim();
     const youtube = (b.youtubeChannel || "").trim();
@@ -926,7 +1456,9 @@ async function handleRegister(event) {
       xHandle: socials.xHandle,
       xUrl: socials.xUrl,
       linkedinUrl: socials.linkedinUrl,
-      followerCount: followers,
+      followerCount: igFollowers,
+      audienceStack: stack,
+      totalAudience,
       avgViews: Math.max(0, parseInt(b.avgViews, 10) || 0),
       tierBand: tier,
       suggestedTier,
@@ -955,6 +1487,7 @@ async function handleRegister(event) {
       localAudienceAsOf: ts.slice(0, 10),
       agreedHonestPosts: true,
       agreedFtcDisclosure: true,
+      agreedPostCompliance: true,
       agreedAt: ts,
       agreedTerms: true,
       termsVersion: TERMS_VERSION,
@@ -990,7 +1523,7 @@ async function handleRegister(event) {
     market: user.market,
     data:
       role === "creator"
-        ? { handle: user.creator.handle, city: user.city, neighborhood: user.creator.neighborhood, state: user.state, country: user.country, unlisted: user.market === UNLISTED, followerCount: user.creator.followerCount, tierBand: user.creator.tierBand, suggestedTier: user.creator.suggestedTier, localAudiencePct: user.creator.localAudiencePct, localAudienceSource: user.creator.localAudienceSource, categories: user.creator.categories, compCategories: user.creator.compCategories, openToPaidCampaigns: user.creator.openToPaidCampaigns, termsVersion: TERMS_VERSION, marketingEmailConsent: true, ...(user.referredBy ? { referredBy: user.referredBy } : {}) }
+        ? { handle: user.creator.handle, city: user.city, neighborhood: user.creator.neighborhood, state: user.state, country: user.country, unlisted: user.market === UNLISTED, followerCount: user.creator.followerCount, audienceStack: user.creator.audienceStack, totalAudience: user.creator.totalAudience, tierBand: user.creator.tierBand, suggestedTier: user.creator.suggestedTier, localAudiencePct: user.creator.localAudiencePct, localAudienceSource: user.creator.localAudienceSource, categories: user.creator.categories, compCategories: user.creator.compCategories, openToPaidCampaigns: user.creator.openToPaidCampaigns, agreedPostCompliance: true, termsVersion: TERMS_VERSION, marketingEmailConsent: true, ...(user.referredBy ? { referredBy: user.referredBy } : {}) }
         : { businessName: user.business.businessName, category: user.business.category, plan: user.business.plan, planPriceMonthly: user.business.planPriceMonthly, ...(user.referredBy ? { referredBy: user.referredBy } : {}) },
   });
   if (role === "creator") {
@@ -1008,6 +1541,8 @@ async function handleRegister(event) {
         city: user.city,
         neighborhood: user.creator.neighborhood,
         followerCount: user.creator.followerCount,
+        audienceStack: user.creator.audienceStack,
+        totalAudience: user.creator.totalAudience,
         avgViews: user.creator.avgViews,
         tierBand: user.creator.tierBand,
         localAudiencePct: user.creator.localAudiencePct,
@@ -1024,6 +1559,7 @@ async function handleRegister(event) {
         hasPhoto: false,
         agreedHonestPosts: true,
         agreedFtcDisclosure: true,
+        agreedPostCompliance: true,
         agreedTerms: true,
         termsVersion: TERMS_VERSION,
         marketingEmailConsent: true,
@@ -1106,6 +1642,11 @@ async function route(event) {
   // deploy, guarded by a claimed blob flag, and never repeats. It
   // must never break a request, hence the try/catch.
   try { await maybeSendRecruiterKit(); } catch (e) { /* kit email is best-effort */ }
+  // Post-compliance sweep: drives the 48h reminders, the day-8 pause,
+  // and the day-9 ban. Throttled to roughly hourly here (the Netlify
+  // scheduled function and the admin endpoint are the explicit
+  // triggers), and it must never break a request either.
+  try { await maybeRunComplianceSweep(); } catch (e) { /* sweep is best-effort on the request path */ }
   const ctx = await getAuthUser(event);
   const user = ctx.user;
 
@@ -1121,6 +1662,8 @@ async function route(event) {
       plans: PLANS,
       paidCampaignsComp: PAID_COMP,
       unlistedMarket: UNLISTED,
+      standardVisit: STANDARD_VISIT,
+      audiencePlatforms: AUDIENCE_PLATFORMS,
       termsVersion: TERMS_VERSION,
       email: { enabled: emailEnabled() },
       launch: {
@@ -1138,7 +1681,10 @@ async function route(event) {
     const handleKey = sanitizePublicHandle(seg[1]);
     const target = handleKey
       ? (await allUsers())
-          .filter((u) => u.role === "creator" && u.status === "approved" && u.creator && String(u.creator.handle || "").toLowerCase() === handleKey)
+          // A banned creator's page stops resolving, exactly like a
+          // pending or rejected one: they are not bookable, so the
+          // public page comes down until an admin reinstates them.
+          .filter((u) => u.role === "creator" && u.status === "approved" && standingState(u) !== "banned" && u.creator && String(u.creator.handle || "").toLowerCase() === handleKey)
           .sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1))[0]
       : null;
     if (!target) return err(404, "Creator not found");
@@ -1154,7 +1700,9 @@ async function route(event) {
   if (method === "GET" && seg[0] === "users" && seg.length === 3 && seg[2] === "photo") {
     const target = await store.get(`user:${seg[1]}`);
     if (!target || target.role !== "creator") return err(404, "Photo not found");
-    let allowed = target.status === "approved";
+    // Public while approved and in good/paused standing; a banned
+    // creator's photo locks down with their profile page.
+    let allowed = target.status === "approved" && standingState(target) !== "banned";
     if (!allowed && user) {
       allowed =
         user.id === target.id ||
@@ -1191,9 +1739,42 @@ async function route(event) {
       const c = { ...user.creator };
       const changes = {};
       if (b.handle) { changes.handle = [c.handle, String(b.handle).replace(/^@/, "").trim()]; c.handle = changes.handle[1]; c.instagramUrl = `https://instagram.com/${c.handle}`; }
-      if (b.followerCount !== undefined) { changes.followerCount = [c.followerCount, Math.max(0, parseInt(b.followerCount, 10) || 0)]; c.followerCount = changes.followerCount[1]; c.computedTier = tierForFollowers(c.followerCount); c.suggestedTier = c.computedTier; }
+      // Audience counts, stacked (Jeff, 2026-10-19). Sending
+      // audienceStack replaces the whole stack; sending followerCount
+      // alone updates the Instagram row (its historical meaning). The
+      // tier band derives from the stacked TOTAL whenever the counts
+      // change, unless the creator deliberately picks a different
+      // band in the same save (a tierBand value that differs from the
+      // band they already had).
+      const tierBefore = c.tierBand;
+      const countsTouched = b.audienceStack !== undefined || b.followerCount !== undefined;
+      if (countsTouched) {
+        let stack;
+        if (b.audienceStack !== undefined) {
+          stack = normalizeAudienceStack(b.audienceStack);
+        } else {
+          stack = audienceStackOf(c);
+          const fc = Math.max(0, parseInt(b.followerCount, 10) || 0);
+          if (fc > 0) stack.instagram = Math.min(AUDIENCE_COUNT_CAP, fc);
+          else delete stack.instagram;
+        }
+        changes.followerCount = [c.followerCount, stack.instagram || 0];
+        changes.totalAudience = [audienceTotalOf(c), Object.values(stack).reduce((s, n) => s + n, 0)];
+        c.audienceStack = stack;
+        c.followerCount = stack.instagram || 0;
+        c.totalAudience = changes.totalAudience[1];
+        c.computedTier = tierForFollowers(c.totalAudience);
+        c.suggestedTier = c.computedTier;
+        // The band follows the new total, unless this same save
+        // deliberately picks a different band (handled just below).
+        if (b.tierBand === undefined || b.tierBand === tierBefore) c.tierBand = c.computedTier;
+      }
       if (b.avgViews !== undefined) c.avgViews = Math.max(0, parseInt(b.avgViews, 10) || 0);
-      if (b.tierBand && TIERS.some((t) => t.id === b.tierBand)) c.tierBand = b.tierBand;
+      if (b.tierBand && TIERS.some((t) => t.id === b.tierBand) && b.tierBand !== tierBefore) {
+        // A deliberate band change (the submitted band differs from
+        // the stored one) always wins, with or without new counts.
+        c.tierBand = b.tierBand;
+      }
       if (Array.isArray(b.categories)) c.categories = b.categories.filter((x) => CREATOR_CATEGORIES.includes(x));
       if (Array.isArray(b.compCategories)) {
         // Paid cash campaigns stay selectable only while the creator is
@@ -1325,19 +1906,32 @@ async function route(event) {
   }
 
   // ---------- admin ----------
+  // The compliance sweep also accepts the scheduled-function token:
+  // netlify/functions/compliance-sweep.mjs POSTs here on a schedule
+  // with the x-signl-sweep-token header when SIGNL_SWEEP_TOKEN is
+  // set. Without the env var, only an admin session can trigger it.
+  if (method === "POST" && seg[0] === "admin" && seg[1] === "compliance" && seg[2] === "sweep") {
+    const token = process.env.SIGNL_SWEEP_TOKEN;
+    const tokenOk = !!token && (event.headers["x-signl-sweep-token"] || event.headers["X-Signl-Sweep-Token"]) === token;
+    if (!tokenOk && (!user || user.role !== "admin")) return err(403, "Admin only");
+    const summary = await runComplianceSweep();
+    await store.set("config:complianceSweep", { lastRunAt: nowIso() });
+    return json(200, { ok: true, sweep: summary });
+  }
   if (seg[0] === "admin") {
     if (user.role !== "admin") return err(403, "Admin only");
     if (method === "GET" && seg[1] === "applications") {
       const all = await allUsers();
       const users = all.filter((u) => u.role !== "admin");
       const { approvedRank, pendingRank } = creatorRanks(all);
-      const counts = momentumMap(all);
+      const [allBk, allPo, allRv] = await Promise.all([allBookings(), allPosts(), allReviews()]);
+      const momentum = createMomentum({ users: all, bookings: allBk, posts: allPo, reviews: allRv });
       const attach = (u) => {
         const pub = publicUser(u);
         if (u.role === "creator") {
           pub.foundingPriority = approvedRank.get(u.id) || null;
           pub.queuePosition = pendingRank.get(u.id) || null;
-          pub.momentum = momentumFor(u, counts);
+          pub.momentum = momentum.summaryFor(u);
         }
         return pub;
       };
@@ -1349,11 +1943,12 @@ async function route(event) {
       // Recruiter leaderboard (Jeff, 2026-10-18): every creator with
       // at least one credited sign-up, best Momentum first.
       const all = await allUsers();
-      const counts = momentumMap(all);
+      const [lbBk, lbPo, lbRv] = await Promise.all([allBookings(), allPosts(), allReviews()]);
+      const momentum = createMomentum({ users: all, bookings: lbBk, posts: lbPo, reviews: lbRv });
       const rows = [];
       for (const u of all) {
         if (u.role !== "creator" || !u.creator || !u.creator.handle) continue;
-        const m = momentumFor(u, counts);
+        const m = momentum.summaryFor(u);
         if (m.signups < 1) continue;
         rows.push({
           userId: u.id,
@@ -1483,6 +2078,58 @@ async function route(event) {
         unlistedByCity,
       });
     }
+    // Post compliance (Jeff, 2026-10-19): every redeemed visit and
+    // where it stands in the post-or-pay-the-price timeline. Read
+    // only; the sweep does the transitions.
+    if (method === "GET" && seg[1] === "compliance") {
+      const bookings = (await allBookings()).filter((b) => b.redeemedAt);
+      const posts = await allPosts();
+      const postByBooking = new Map(posts.map((p) => [p.bookingId, p]));
+      const rows = [];
+      for (const b of bookings) {
+        const creator = await store.get(`user:${b.creatorId}`);
+        const post = postByBooking.get(b.id) || null;
+        const status = complianceStatusFor(b, post, creator ? standingState(creator) : "good");
+        rows.push({
+          bookingId: b.id,
+          creatorId: b.creatorId,
+          creatorName: b.creatorName || (creator ? creator.name : ""),
+          creatorHandle: b.creatorHandle || (creator && creator.creator ? creator.creator.handle : ""),
+          creatorStanding: creator ? standingState(creator) : "good",
+          businessId: b.businessId,
+          businessName: b.businessName || "",
+          market: b.market || "",
+          title: b.title || "",
+          redeemedAt: b.redeemedAt,
+          postDeadline: b.postDeadline,
+          cureClosesAt: status.cureClosesAt,
+          status: status.status,
+          proofUrl: post ? post.url : null,
+          proofSubmittedAt: post ? post.submittedAt : null,
+          reminders: {
+            reminder1At: (b.compliance && b.compliance.reminder1At) || null,
+            reminder2At: (b.compliance && b.compliance.reminder2At) || null,
+            reminder3At: (b.compliance && b.compliance.reminder3At) || null,
+          },
+        });
+      }
+      rows.sort((a, b) => (a.redeemedAt < b.redeemedAt ? -1 : 1));
+      return json(200, { visits: rows });
+    }
+    // Reinstate a banned (or paused) creator by hand. A late post
+    // after a ban never does this automatically: a person decides.
+    if (method === "POST" && seg[1] === "compliance" && seg[2] === "reinstate") {
+      const b = parseBody(event);
+      const target = await store.get(`user:${b.userId}`);
+      if (!target || target.role !== "creator") return err(404, "Creator not found");
+      const previous = standingState(target);
+      if (previous === "good") return err(409, "This creator is already in good standing");
+      target.standing = { state: "good", reason: null, at: nowIso(), bookingId: null, reinstatedBy: user.id, previousState: previous };
+      target.updatedAt = nowIso();
+      await store.set(`user:${target.id}`, target);
+      await logEvent({ type: "account_reinstated", actorId: user.id, actorRole: "admin", subjectId: target.id, market: target.market, data: { previousState: previous, note: String(b.note || "").slice(0, 300) } });
+      return json(200, { user: publicUser(target) });
+    }
     // Business Preview (Jeff, 2026-10-19): the admin walks the real
     // business journey inside the live app - plans, discovery with
     // the full filter set, the rich creator profile - to test-run
@@ -1500,10 +2147,11 @@ async function route(event) {
     if (method === "GET" && seg[1] === "preview" && seg[2] === "creator" && seg[3]) {
       const target = await store.get(`user:${seg[3]}`);
       if (!target || target.role !== "creator" || target.status !== "approved") return err(404, "Creator not found");
-      const users = await allUsers();
+      const { users, momentum } = await momentumContext();
       const { approvedRank } = creatorRanks(users);
       const card = await publicCreator(target, { id: "__preview__", role: "business", market: null }, approvedRank.get(target.id) || null);
-      card.momentum = momentumFor(target, momentumMap(users));
+      card.momentum = momentum.summaryFor(target);
+      card.standing = standingState(target);
       return json(200, { creator: card, preview: true });
     }
     if (method === "POST" && seg[1] === "preview" && seg[2] === "offers") {
@@ -1517,6 +2165,8 @@ async function route(event) {
       if (b.creatorId) {
         targetCreator = await store.get(`user:${b.creatorId}`);
         if (!targetCreator || targetCreator.role !== "creator" || targetCreator.status !== "approved") return err(400, "Target creator is not an approved creator");
+        if (standingState(targetCreator) === "banned") return err(400, "That creator redeemed a comp and never posted, so they cannot be booked again.");
+        if (standingState(targetCreator) === "paused") return err(400, "That creator is paused until a late post lands. Pick another creator for now.");
       }
       // SIMULATION ONLY: build the confirmation and return it. No
       // store.set and no logEvent below this line - that is the whole
@@ -1648,6 +2298,8 @@ async function route(event) {
       if (b.creatorId) {
         targetCreator = await store.get(`user:${b.creatorId}`);
         if (!targetCreator || targetCreator.role !== "creator" || targetCreator.status !== "approved") return err(400, "Target creator is not an approved creator");
+        if (standingState(targetCreator) === "banned") return err(400, "That creator redeemed a comp and never posted, so they cannot be booked again.");
+        if (standingState(targetCreator) === "paused") return err(400, "That creator is paused until a late post lands. Pick another creator for now.");
       }
       const ts = nowIso();
       const offer = {
@@ -1676,12 +2328,28 @@ async function route(event) {
       const bookings = await allBookings();
       let out = offers.map((o) => ({ ...o, bookedCount: bookings.filter((bk) => bk.offerId === o.id).length }));
       if (user.role === "business") out = out.filter((o) => o.businessId === user.id);
-      else if (user.role === "creator") out = out.filter((o) => o.market === user.market && o.status === "open" && (!o.creatorId || o.creatorId === user.id));
+      else if (user.role === "creator") {
+        out = out.filter((o) => o.market === user.market && o.status === "open" && (!o.creatorId || o.creatorId === user.id));
+        // The creator's checklist ("They can / They can't") depends on
+        // the business's plan: Managed adds 90-day own-feed repost
+        // rights to the Standard Visit. Attach it per offer.
+        const bizIds = [...new Set(out.map((o) => o.businessId))];
+        const plans = {};
+        for (const id of bizIds) {
+          const biz = await store.get(`user:${id}`);
+          plans[id] = biz && biz.business ? biz.business.plan : null;
+        }
+        out = out.map((o) => ({ ...o, businessPlan: plans[o.businessId] || null }));
+      }
       out.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
       return json(200, { offers: out });
     }
     if (method === "POST" && seg.length === 3 && seg[2] === "accept") {
       if (user.role !== "creator") return err(403, "Creators only");
+      // Compliance standing gates new bookings: a paused creator
+      // delivers the missing post first; a banned creator is done.
+      if (standingState(user) === "banned") return err(403, "Your account was closed to offers after a comped visit was redeemed and no post was delivered. Contact hello@joinsignl.com if you believe this is wrong.");
+      if (standingState(user) === "paused") return err(403, "Your account is paused until the late post from your last visit is checked off. Paste the post link under My Visits and new offers open again.");
       const offer = await store.get(`offer:${seg[1]}`);
       if (!offer || offer.status !== "open") return err(404, "Offer not available");
       if (offer.creatorId && offer.creatorId !== user.id) return err(403, "This offer was sent to a different creator");
@@ -1856,7 +2524,11 @@ async function route(event) {
     if (!booking.redeemedAt) return err(409, "The visit has not been redeemed yet. The 48 hour clock starts at redemption.");
     if (booking.status === "completed") return err(409, "A post was already submitted for this visit");
     const url = (b.url || "").trim();
-    if (!/^https?:\/\/.+/i.test(url)) return err(400, "Paste the full link to your post");
+    // The pasted link IS the check-off (Jeff, 2026-10-19): proof of
+    // the post, not a bare checkbox. It must be the Instagram post
+    // or reel itself, host-validated the same way best-work links
+    // are, so the business can open exactly what was delivered.
+    if (bestWorkPlatform(url) !== "Instagram") return err(400, "Paste the full link to your Instagram post or reel. That link is your proof of delivery.");
     const ts = nowIso();
     const onTime = Date.parse(ts) <= Date.parse(booking.postDeadline);
     const post = {
@@ -1877,8 +2549,41 @@ async function route(event) {
     await store.set(`post:${post.id}`, post);
     booking.status = "completed";
     booking.updatedAt = ts;
-    await store.set(`booking:${booking.id}`, booking);
     await logEvent({ type: "post_submitted", actorId: user.id, actorRole: "creator", subjectId: post.id, market: booking.market, data: { bookingId: booking.id, businessId: booking.businessId, url, onTime, hoursAfterRedeem: post.hoursAfterRedeem, includesDisclosure: post.includesDisclosure, category: booking.category } });
+
+    // Compliance bookkeeping for the proof (Jeff, 2026-10-19).
+    booking.compliance = booking.compliance || {};
+    if (!booking.compliance.cureClosesAt) booking.compliance.cureClosesAt = cureClosesAtFor(booking);
+    const cureCloseMs = Date.parse(booking.compliance.cureClosesAt);
+    const submittedMs = Date.parse(ts);
+    const wasBanned = standingState(user) === "banned";
+    await logEvent({ type: "proof_submitted", actorId: user.id, actorRole: "creator", subjectId: post.id, market: booking.market, data: { bookingId: booking.id, businessId: booking.businessId, url, onTime, withinCure: submittedMs <= cureCloseMs, whileBanned: wasBanned } });
+    if (!onTime && submittedMs <= cureCloseMs) {
+      // Delivered inside the cure window: counts, marked late.
+      booking.compliance.lateDeliveredAt = ts;
+      await logEvent({ type: "proof_late_accepted", actorId: user.id, actorRole: "creator", subjectId: post.id, market: booking.market, data: { bookingId: booking.id, businessId: booking.businessId, withinCure: true } });
+    } else if (!onTime && submittedMs > cureCloseMs) {
+      // The proof arrived after the cure window closed. It is
+      // recorded for the business (the visit counts as delivered,
+      // late), but it does not save the account: the ban the sweep
+      // would apply lands here instead, and only an admin can
+      // reinstate.
+      booking.compliance.proofAfterCureAt = ts;
+      await logEvent({ type: "proof_late_accepted", actorId: user.id, actorRole: "creator", subjectId: post.id, market: booking.market, data: { bookingId: booking.id, businessId: booking.businessId, withinCure: false } });
+      if (!wasBanned) {
+        if (!booking.compliance.bannedAt) booking.compliance.bannedAt = ts;
+        user.standing = { state: "banned", reason: bannedNoticeReason(), at: ts, bookingId: booking.id };
+        user.updatedAt = ts;
+        await store.set(`user:${user.id}`, user);
+        await logEvent({ type: "account_banned", actorId: null, actorRole: "system", subjectId: user.id, market: booking.market, data: { bookingId: booking.id, businessId: booking.businessId, redeemedAt: booking.redeemedAt, cureClosesAt: booking.compliance.cureClosesAt, trigger: "proof_arrived_after_cure_closed" } });
+      }
+    }
+    await store.set(`booking:${booking.id}`, booking);
+    // A paused creator who delivers unpauses automatically; a banned
+    // creator does not (reinstatement is a human decision).
+    if (standingState(user) === "paused") {
+      try { await unpauseIfClear(user, booking.id); } catch (e) { /* unpause is best-effort */ }
+    }
     return json(201, { post, booking: await withPostState(booking) });
   }
 
@@ -1994,4 +2699,4 @@ async function route(event) {
 
 // The email builders are exported alongside the router so the verify
 // suites can assert on the exact copy a creator receives.
-module.exports = { route, approvalEmail, signupConfirmationEmail, recruiterKitEmail, momentumFor, momentumMap, RECRUITER_KIT_FLAG_KEY };
+module.exports = { route, approvalEmail, signupConfirmationEmail, recruiterKitEmail, createMomentum, runComplianceSweep, STANDARD_VISIT, RECRUITER_KIT_FLAG_KEY };

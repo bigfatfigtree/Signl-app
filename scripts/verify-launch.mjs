@@ -108,7 +108,7 @@ try {
   const basePayload = {
     role: "creator", name: "Launch Creator", email: "launch-a@example.com", password: "creator-pass-123",
     market: "Hampton Roads", city: "Norfolk", handle: "launcheats", followerCount: 8400,
-    localAudiencePct: 62, categories: ["Food & Drink"], agreedHonestPosts: true, agreedFtcDisclosure: true, agreedTerms: true,
+    localAudiencePct: 62, categories: ["Food & Drink"], agreedHonestPosts: true, agreedFtcDisclosure: true, agreedPostCompliance: true, agreedTerms: true,
   };
   const noPct = await client()("POST", "/api/auth/register", { ...basePayload, email: "x1@example.com", localAudiencePct: undefined });
   check("registration without local audience % is refused (400)", noPct.status === 400, String(noPct.status));
@@ -207,7 +207,10 @@ try {
   check("public profile carries the public-safe fields", pub.name === "Launch Creator" && pub.handle === "launcheats" && pub.market === "Hampton Roads" && pub.city === "Norfolk" && pub.neighborhood === "Ghent" && pub.tierBand === "Locals" && pub.followerCount === 8400, JSON.stringify(pub));
   check("public profile shows local audience % with its source label", pub.localAudiencePct === 62 && pub.localAudienceSource === "Self-reported", JSON.stringify([pub.localAudiencePct, pub.localAudienceSource]));
   check("public profile carries categories and comp categories", Array.isArray(pub.categories) && pub.categories.includes("Food & Drink") && Array.isArray(pub.compCategories) && pub.compCategories.includes("Restaurant meals"), JSON.stringify([pub.categories, pub.compCategories]));
-  check("public profile carries Local Impact Score and Momentum points", typeof pub.localImpactScore === "number" && pub.momentumPoints === 0, JSON.stringify([pub.localImpactScore, pub.momentumPoints]));
+  // Momentum (expanded 2026-10-19): creator A already earns from
+  // their own profile: photo +10, bio (66 chars) +5, neighborhood +5,
+  // local audience % +5 = 25, before any referral or visit exists.
+  check("public profile carries Local Impact Score and Momentum points (25 from profile completion)", typeof pub.localImpactScore === "number" && pub.momentumPoints === 25, JSON.stringify([pub.localImpactScore, pub.momentumPoints]));
   check("public profile shows the founding standing band, never an exact position", pub.foundingBand === 100 && pub.foundingPriority === undefined && pub.priorityPosition === undefined, JSON.stringify(pub.foundingBand));
   const pubCase = await anon("GET", "/api/c/LaunchEats");
   check("public profile handle lookup is case-insensitive", pubCase.status === 200 && !!pubCase.data.profile && pubCase.data.profile.handle === "launcheats", String(pubCase.status));
@@ -408,21 +411,25 @@ try {
   const recruiter = client();
   const regR = await recruiter("POST", "/api/auth/register", { ...basePayload, name: "Recruiter One", email: "launch-r@example.com", handle: "recruiterone" });
   check("recruiter creator registers", regR.status === 201, JSON.stringify(regR.data));
-  check("a fresh creator starts at zero Momentum", !!regR.data.user.momentum && regR.data.user.momentum.signups === 0 && regR.data.user.momentum.approved === 0 && regR.data.user.momentum.points === 0, JSON.stringify(regR.data.user.momentum));
+  // Fresh-creator Momentum under the expanded rules: no referrals
+  // yet, but registration itself reports a local audience % (+5).
+  // Bio, photo, neighborhood, and stack are all empty in basePayload.
+  check("a fresh creator starts with referral Momentum at zero (5 pts = local % reported at sign-up)", !!regR.data.user.momentum && regR.data.user.momentum.signups === 0 && regR.data.user.momentum.approved === 0 && regR.data.user.momentum.points === 5, JSON.stringify(regR.data.user.momentum));
   const recruit1 = await client()("POST", "/api/auth/register", { ...basePayload, name: "Recruit One", email: "launch-r1@example.com", handle: "recruitone", referredBy: "recruiterone" });
   const recruit2 = await client()("POST", "/api/auth/register", { ...basePayload, name: "Recruit Two", email: "launch-r2@example.com", handle: "recruittwo", referredBy: "recruiterone" });
   check("two creators sign up through the recruiter's invite link", recruit1.status === 201 && recruit2.status === 201, JSON.stringify([recruit1.status, recruit2.status]));
   const meBefore = await recruiter("GET", "/api/auth/me");
-  check("Momentum before approvals: 2 sign-ups credited = 6 points", !!meBefore.data.user.momentum && meBefore.data.user.momentum.signups === 2 && meBefore.data.user.momentum.approved === 0 && meBefore.data.user.momentum.points === 6, JSON.stringify(meBefore.data.user.momentum));
+  check("Momentum before approvals: 2 sign-ups credited = 6 referral points (11 total with the +5 local %)", !!meBefore.data.user.momentum && meBefore.data.user.momentum.signups === 2 && meBefore.data.user.momentum.approved === 0 && meBefore.data.user.momentum.points === 11, JSON.stringify(meBefore.data.user.momentum));
   await admin("POST", "/api/admin/review", { userId: recruit1.data.user.id, decision: "approve" });
   const meAfter = await recruiter("GET", "/api/auth/me");
-  check("Momentum math: 2 sign-ups + 1 approved = 16 points", !!meAfter.data.user.momentum && meAfter.data.user.momentum.signups === 2 && meAfter.data.user.momentum.approved === 1 && meAfter.data.user.momentum.points === 16, JSON.stringify(meAfter.data.user.momentum));
+  check("Momentum math: 2 sign-ups + 1 approved = 16 referral points (21 total)", !!meAfter.data.user.momentum && meAfter.data.user.momentum.signups === 2 && meAfter.data.user.momentum.approved === 1 && meAfter.data.user.momentum.points === 21, JSON.stringify(meAfter.data.user.momentum));
+  check("Momentum detail carries the ledger and the ways-to-earn checklist", Array.isArray(meAfter.data.user.momentum.ledger) && meAfter.data.user.momentum.ledger.reduce((s, e) => s + e.points, 0) === 21 && Array.isArray(meAfter.data.user.momentum.checklist) && meAfter.data.user.momentum.checklist.some((i) => i.id === "photo" && i.done === false), JSON.stringify(meAfter.data.user.momentum.checklist && meAfter.data.user.momentum.checklist.length));
   const board = await admin("GET", "/api/admin/leaderboard");
   const boardRow = (board.data.leaderboard || []).find((r) => r.handle === "recruiterone");
-  check("admin leaderboard ranks the recruiter first with 16 points", !!boardRow && boardRow.market === "Hampton Roads" && boardRow.signups === 2 && boardRow.approved === 1 && boardRow.points === 16 && board.data.leaderboard[0].handle === "recruiterone", JSON.stringify(board.data.leaderboard));
+  check("admin leaderboard ranks the recruiter first with 21 points", !!boardRow && boardRow.market === "Hampton Roads" && boardRow.signups === 2 && boardRow.approved === 1 && boardRow.points === 21 && board.data.leaderboard[0].handle === "recruiterone", JSON.stringify(board.data.leaderboard));
   const appsNow = await admin("GET", "/api/admin/applications");
   const pendingR = (appsNow.data.pending || []).find((u) => u.id === regR.data.user.id);
-  check("admin applications payload carries the recruiter's Momentum", !!pendingR && !!pendingR.momentum && pendingR.momentum.points === 16, JSON.stringify(pendingR && pendingR.momentum));
+  check("admin applications payload carries the recruiter's Momentum", !!pendingR && !!pendingR.momentum && pendingR.momentum.points === 21, JSON.stringify(pendingR && pendingR.momentum));
   // Email copy is server-side only (bodies are never stored), so assert
   // the shipped strings in the router source, the same way the suite
   // asserts client copy in app.js.

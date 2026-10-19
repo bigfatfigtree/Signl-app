@@ -55,7 +55,7 @@ try {
   await admin("POST", "/api/auth/login", { email: "jeff@joinsignl.com", password: "verify-admin-pass-123" });
 
   const creator = client();
-  const rc = await creator("POST", "/api/auth/register", { role: "creator", name: "Fallback Creator", email: "fc@example.com", password: "creator-pass-123", market: "Richmond", city: "Richmond", handle: "fallbackeats", tierBand: "Neighbors", followerCount: 900, localAudiencePct: 80, categories: ["Food & Drink"], agreedHonestPosts: true, agreedFtcDisclosure: true, agreedTerms: true });
+  const rc = await creator("POST", "/api/auth/register", { role: "creator", name: "Fallback Creator", email: "fc@example.com", password: "creator-pass-123", market: "Richmond", city: "Richmond", handle: "fallbackeats", tierBand: "Neighbors", followerCount: 900, localAudiencePct: 80, categories: ["Food & Drink"], agreedHonestPosts: true, agreedFtcDisclosure: true, agreedPostCompliance: true, agreedTerms: true });
   await admin("POST", "/api/admin/review", { userId: rc.data.user.id, decision: "approve" });
 
   const business = client();

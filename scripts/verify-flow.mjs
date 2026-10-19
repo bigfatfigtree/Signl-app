@@ -14,7 +14,7 @@ import path from "node:path";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
-const { approvalEmail, signupConfirmationEmail, recruiterKitEmail, momentumMap, momentumFor } = require("../netlify/functions/lib/router.js");
+const { approvalEmail, signupConfirmationEmail, recruiterKitEmail, createMomentum } = require("../netlify/functions/lib/router.js");
 
 const PORT = 8917;
 const BASE = `http://localhost:${PORT}`;
@@ -118,14 +118,17 @@ try {
   const mailKit = recruiterKitEmail({ name: "Verify Creator", email: "v@example.com", market: "Hampton Roads", city: "Norfolk", creator: { handle: "verifyeats757", tierBand: "Locals" } });
   check("recruiter kit email: subject, hosted badge, benefits, film link, no-pressure close", mailKit.subject === "Your Founding Creator badge is ready" && mailKit.text.includes("https://joinsignl.com/assets/badges/signl-founding-creator-badge-square.png") && mailKit.text.includes("https://joinsignl.com/assets/badges/signl-founding-creator-badge-portrait.png") && mailKit.text.includes("https://app.joinsignl.com/?ref=verifyeats757") && benefitsPresent(mailKit) && mailKit.text.includes("https://joinsignl.com/creators.html") && /no requirement/i.test(mailKit.text), mailKit.text);
   // Momentum points math, unit level (the end-to-end scenario is in
-  // verify-launch): 2 credited sign-ups, 1 of them approved = 16.
+  // verify-launch): 2 credited sign-ups, 1 of them approved = 16
+  // referral points. The unit recruiter's own profile carries no
+  // earnable completion items (no bio, photo, local %, stack), so
+  // the total is exactly the referral math.
   const unitUsers = [
     { id: "u1", role: "creator", status: "approved", referredBy: "RecruiterOne", creator: { handle: "someoneelse" } },
     { id: "u2", role: "creator", status: "pending", referredBy: "recruiterone", creator: { handle: "another" } },
     { id: "u3", role: "creator", status: "approved", creator: { handle: "recruiterone" } },
     { id: "u4", role: "creator", status: "approved", referredBy: "unrelated", creator: { handle: "fourth" } },
   ];
-  const unitMomentum = momentumFor(unitUsers[2], momentumMap(unitUsers));
+  const unitMomentum = createMomentum({ users: unitUsers, bookings: [], posts: [], reviews: [] }).detailFor(unitUsers[2]);
   check("Momentum unit math: 2 sign-ups (case-insensitive credit) + 1 approved = 16 points", unitMomentum.signups === 2 && unitMomentum.approved === 1 && unitMomentum.points === 16, JSON.stringify(unitMomentum));
   const appJs = await anon("GET", "/app.js");
   const appJsText = String((appJs.data && appJs.data.raw) || "");
@@ -158,7 +161,7 @@ try {
     categories: ["Food & Drink", "Nightlife"],
     bio: "Verification account created by scripts/verify-flow.mjs",
     agreedHonestPosts: true,
-    agreedFtcDisclosure: true, agreedTerms: true,
+    agreedFtcDisclosure: true, agreedPostCompliance: true, agreedTerms: true,
     referredBy: "  @foundingfriend  ",
   });
   check("creator registration returns 201", reg.status === 201, JSON.stringify(reg.data));
@@ -172,7 +175,7 @@ try {
   const longRef = await client()("POST", "/api/auth/register", {
     role: "creator", name: "Long Ref", email: "longref@example.com", password: "creator-pass-123",
     market: "Hampton Roads", city: "Norfolk", handle: "longref", tierBand: "Locals", followerCount: 3000,
-    localAudiencePct: 40, categories: ["Food & Drink"], agreedHonestPosts: true, agreedFtcDisclosure: true, agreedTerms: true,
+    localAudiencePct: 40, categories: ["Food & Drink"], agreedHonestPosts: true, agreedFtcDisclosure: true, agreedPostCompliance: true, agreedTerms: true,
     referredBy: "x".repeat(60),
   });
   check("over-long referral credit is capped at 40 chars", longRef.status === 201 && longRef.data.user.referredBy.length === 40, JSON.stringify(longRef.data.user && longRef.data.user.referredBy));
