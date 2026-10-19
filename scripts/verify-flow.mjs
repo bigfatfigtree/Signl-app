@@ -329,6 +329,15 @@ try {
   const pubFlow2 = await anon("GET", "/api/c/verifyeats757");
   check("public profile labels the best work card from the host", ((pubFlow2.data.profile || {}).bestWork || []).length === 1 && pubFlow2.data.profile.bestWork[0].label === "Watch: Instagram post" && pubFlow2.data.profile.bestWork[0].platform === "Instagram", JSON.stringify((pubFlow2.data.profile || {}).bestWork));
 
+  // --- preview isolation inside the live marketplace ---
+  const offersBeforePv = await creator("GET", "/api/offers");
+  const pvOfferFlow = await admin("POST", "/api/admin/preview/offers", { creatorId, title: "Flow preview dinner", whatComped: "Simulation only", dollarCap: 50, spots: 1, visitWindow: "Any night" });
+  check("preview offer confirms as a simulation in the marketplace shape too", pvOfferFlow.status === 201 && pvOfferFlow.data.offer.preview === true, JSON.stringify(pvOfferFlow.data));
+  const offersAfterPv = await creator("GET", "/api/offers");
+  check("creator's offers are unchanged by the preview (still just the real one)", (offersAfterPv.data.offers || []).length === (offersBeforePv.data.offers || []).length && !(offersAfterPv.data.offers || []).some((o) => o.title === "Flow preview dinner"), JSON.stringify((offersAfterPv.data.offers || []).map((o) => o.title)));
+  const statsFlowPv = await admin("GET", "/api/admin/stats");
+  check("admin stats still count exactly 1 real offer after the preview", statsFlowPv.data.offers === 1, String(statsFlowPv.data.offers));
+
   // --- messages both ways ---
   const m1 = await creator("POST", "/api/messages", { toUserId: businessId, body: "Thanks for having us in. Post is live." });
   check("creator messages the business", m1.status === 201);

@@ -311,6 +311,37 @@ try {
   });
   check("business registration stays closed even in a live market (403): role gate is separate", bizAfter.status === 403, String(bizAfter.status));
 
+  // --- admin Business Preview: same discovery, simulated offers ---
+  // This is the server-side proof of the preview path (the suite signs
+  // in as the env admin, exactly as Jeff does in the browser): the
+  // preview endpoints answer with the real roster and filters, and a
+  // simulated offer leaves no trace a creator, a count, or the event
+  // log can see.
+  const pvDisc = await admin("GET", "/api/admin/preview/discover?market=Hampton%20Roads");
+  check("preview discovery answers for the admin with the real roster", pvDisc.status === 200 && pvDisc.data.preview === true && (pvDisc.data.creators || []).some((c) => c.userId === creatorAId), String(pvDisc.status));
+  const pvCard = (pvDisc.data.creators || []).find((c) => c.userId === creatorAId) || {};
+  check("preview card carries the rich profile (best work, track record, review summary)", Array.isArray(pvCard.bestWork) && pvCard.bestWork.length === 3 && !!pvCard.trackRecord && pvCard.trackRecord.isNew === true && !!pvCard.reviewSummary && pvCard.reviewSummary.count === 0, JSON.stringify([pvCard.bestWork && pvCard.bestWork.length, pvCard.trackRecord]));
+  const pvFilterMiss = await admin("GET", "/api/admin/preview/discover?market=Hampton%20Roads&minLocalPct=70");
+  check("preview discovery honors the min local % filter (62 < 70 excluded)", !(pvFilterMiss.data.creators || []).some((c) => c.userId === creatorAId));
+  const pvFilterHit = await admin("GET", "/api/admin/preview/discover?market=Hampton%20Roads&minLocalPct=50&sort=momentum");
+  check("preview discovery honors filters + momentum sort together", pvFilterHit.status === 200 && (pvFilterHit.data.creators || []).some((c) => c.userId === creatorAId));
+  const pvDubai = await admin("GET", "/api/admin/preview/discover?market=Dubai");
+  check("preview discovery works in a market that is not live yet", pvDubai.status === 200 && pvDubai.data.preview === true, String(pvDubai.status));
+  const pvCreator = await admin("GET", `/api/admin/preview/creator/${creatorAId}`);
+  check("preview full profile answers with momentum + showcase", pvCreator.status === 200 && !!pvCreator.data.creator && pvCreator.data.creator.userId === creatorAId && typeof pvCreator.data.creator.momentum.points === "number" && Array.isArray(pvCreator.data.creator.bestWork), String(pvCreator.status));
+  const pvForbidden = await creatorA("GET", "/api/admin/preview/discover?market=Hampton%20Roads");
+  check("preview is admin-only (a creator gets 403)", pvForbidden.status === 403, String(pvForbidden.status));
+  const statsBeforePv = await admin("GET", "/api/admin/stats");
+  const pvOffer = await admin("POST", "/api/admin/preview/offers", { creatorId: creatorAId, title: "Preview only dinner", whatComped: "Two entrees (simulation)", dollarCap: 60, spots: 1, visitWindow: "Weeknights" });
+  check("preview offer composer validates and confirms as a simulation", pvOffer.status === 201 && pvOffer.data.preview === true && !!pvOffer.data.offer && pvOffer.data.offer.preview === true && pvOffer.data.offer.creatorHandle === "launcheats", JSON.stringify(pvOffer.data));
+  const creatorOffersAfterPv = await creatorA("GET", "/api/offers");
+  check("preview offer is invisible to the creator (their offer list stays empty)", creatorOffersAfterPv.status === 200 && (creatorOffersAfterPv.data.offers || []).length === 0 && !(creatorOffersAfterPv.data.offers || []).some((o) => o.title === "Preview only dinner"), JSON.stringify(creatorOffersAfterPv.data.offers));
+  const statsAfterPv = await admin("GET", "/api/admin/stats");
+  check("preview offer moved no counts (admin stats offers unchanged at 0)", statsAfterPv.data.offers === statsBeforePv.data.offers && statsAfterPv.data.offers === 0, JSON.stringify([statsBeforePv.data.offers, statsAfterPv.data.offers]));
+  const evAfterPv = await admin("GET", "/api/admin/events?limit=500");
+  check("preview offer wrote no events (no offer_created anywhere in the log)", !(evAfterPv.data.events || []).some((e) => e.type === "offer_created"), "");
+  check("client ships the business preview mode (banner, steps, simulated composer)", appJs.text.includes("Preview as business") && appJs.text.includes("PREVIEW") && appJs.text.includes("renderPreview") && appJs.text.includes("previewSendOffer") && appJs.text.includes("/admin/preview/offers") && appJs.text.includes("exitPreview"), "");
+
   // --- paid cash campaigns: a Creators-tier option only ---
   const creatorC = client();
   const regC = await creatorC("POST", "/api/auth/register", {

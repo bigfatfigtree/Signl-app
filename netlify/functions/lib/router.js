@@ -1483,6 +1483,62 @@ async function route(event) {
         unlistedByCity,
       });
     }
+    // Business Preview (Jeff, 2026-10-19): the admin walks the real
+    // business journey inside the live app - plans, discovery with
+    // the full filter set, the rich creator profile - to test-run
+    // what a business will see. Discovery and profiles are the exact
+    // code businesses get (discoverCards / publicCreator), minus the
+    // market-live gate, so every market can be test-driven before it
+    // opens. Offers are SIMULATED: the composer validates exactly
+    // like the real one and returns a confirmation object, but
+    // nothing is written to the store and no event is logged, so a
+    // preview offer can never reach a creator, a count, or a metric.
+    if (method === "GET" && seg[1] === "preview" && seg[2] === "discover") {
+      const creators = await discoverCards(query, { id: "__preview__", role: "business", market: null });
+      return json(200, { creators, preview: true });
+    }
+    if (method === "GET" && seg[1] === "preview" && seg[2] === "creator" && seg[3]) {
+      const target = await store.get(`user:${seg[3]}`);
+      if (!target || target.role !== "creator" || target.status !== "approved") return err(404, "Creator not found");
+      const users = await allUsers();
+      const { approvedRank } = creatorRanks(users);
+      const card = await publicCreator(target, { id: "__preview__", role: "business", market: null }, approvedRank.get(target.id) || null);
+      card.momentum = momentumFor(target, momentumMap(users));
+      return json(200, { creator: card, preview: true });
+    }
+    if (method === "POST" && seg[1] === "preview" && seg[2] === "offers") {
+      const b = parseBody(event);
+      if (!b.title || !b.whatComped) return err(400, "Title and what is comped are required");
+      const dollarCap = parseInt(b.dollarCap, 10);
+      const spots = parseInt(b.spots, 10);
+      if (!dollarCap || dollarCap <= 0) return err(400, "Dollar cap must be a positive number");
+      if (!spots || spots <= 0) return err(400, "Spots must be a positive number");
+      let targetCreator = null;
+      if (b.creatorId) {
+        targetCreator = await store.get(`user:${b.creatorId}`);
+        if (!targetCreator || targetCreator.role !== "creator" || targetCreator.status !== "approved") return err(400, "Target creator is not an approved creator");
+      }
+      // SIMULATION ONLY: build the confirmation and return it. No
+      // store.set and no logEvent below this line - that is the whole
+      // point of preview mode.
+      const simulated = {
+        id: `preview-${crypto.randomUUID()}`,
+        preview: true,
+        businessId: user.id,
+        businessName: "Preview Business",
+        market: targetCreator ? targetCreator.market : String(b.market || "Hampton Roads"),
+        creatorId: targetCreator ? targetCreator.id : null,
+        creatorHandle: targetCreator && targetCreator.creator ? targetCreator.creator.handle : null,
+        title: String(b.title).trim(),
+        whatComped: String(b.whatComped).trim(),
+        dollarCap,
+        visitWindow: String(b.visitWindow || "").trim(),
+        spots,
+        status: "preview-sent",
+        createdAt: nowIso(),
+      };
+      return json(201, { offer: simulated, preview: true });
+    }
     return err(404, "Unknown admin route");
   }
 

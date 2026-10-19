@@ -8,6 +8,7 @@ const state = {
   tab: null,
   prefill: null, // claim-link prefill: sanitized ?handle=&market=&tier=
   publicHandle: null, // set when the URL is /c/<handle>
+  preview: null, // admin Business Preview session (see enterPreview)
   discover: [],
   threads: [],
   activeThread: null, // other user id
@@ -256,6 +257,9 @@ function renderBottomNav() {
 }
 
 function go(view, tab) {
+  // Any navigation leaves Business Preview: the mode is a single
+  // deliberate walk, and the admin lands back on the normal console.
+  if (state.preview) state.preview = null;
   state.view = view;
   if (tab) state.tab = tab;
   render();
@@ -701,6 +705,7 @@ function renderRejected() {
 
 function renderDashboard() {
   const u = state.user;
+  if (u.role === "admin" && state.preview) return renderPreview();
   if (u.role === "admin") return renderAdmin();
   if (u.role === "creator") return renderCreatorDash();
   return renderBusinessDash();
@@ -1583,6 +1588,10 @@ function renderAdmin() {
   state.tab = tab;
   app.innerHTML = `
     <h2>SIGNL Admin</h2>
+    <div class="panel preview-cta">
+      <div><strong>Business Preview</strong><p class="muted small" style="margin:4px 0 0">Walk the app exactly as a business does: the founding plans, roster search with every filter, full creator profiles, and the offer composer. Offers sent in preview are simulations that never reach a creator and are never saved.</p></div>
+      <button class="btn" onclick="enterPreview()">Preview as business &rarr;</button>
+    </div>
     ${tabsHtml(["Applications", "Markets", "Recruiters", "Event Log", "Stats"], tab)}
     <div id="tab-body"><p class="muted">Loading...</p></div>`;
   if (tab === "Applications") loadApplications();
@@ -1725,6 +1734,245 @@ async function loadStats() {
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
+}
+
+// ---------------- business preview (admin) ----------------
+// Jeff (2026-10-19): a test run of the business journey inside the
+// real app. The admin sees the founding plans a business picks from,
+// searches the real roster with every live filter, opens the full
+// rich creator profile, and runs the offer composer end to end. The
+// composer is a simulation: the server validates and confirms but
+// writes nothing, so no creator ever sees a preview offer and no
+// count or metric moves. Every preview screen carries the PREVIEW
+// banner; Exit preview (or any navigation) returns to the admin
+// console cleanly.
+function enterPreview() {
+  if (!state.user || state.user.role !== "admin") return;
+  state.preview = { step: "plans", planId: "self-service", market: "Hampton Roads", creators: null, creator: null, targetId: "", sent: [], confirmation: null };
+  state.view = "dashboard";
+  render();
+}
+
+function exitPreview() {
+  state.preview = null;
+  state.tab = "Applications";
+  render();
+}
+
+function renderPreview() {
+  const pv = state.preview;
+  if (!pv) return renderAdmin();
+  const stepLabel = {
+    plans: "Step 1 of 4: the plans a business picks from",
+    discover: "Step 2 of 4: search the roster",
+    profile: "Step 3 of 4: the full creator profile",
+    offer: "Step 4 of 4: the offer composer (simulation)",
+  }[pv.step] || "";
+  const planName = (state.boot.plans.find((p) => p.id === pv.planId) || {}).name || "";
+  app.innerHTML = `
+  <div class="preview-banner">
+    <span class="preview-tag">PREVIEW</span>
+    <span><strong>Previewing as a business.</strong> Everything here is what a business sees. Offers sent in preview are simulations: they never reach a creator and nothing is saved.</span>
+    <button class="btn small-btn" onclick="exitPreview()">Exit preview</button>
+  </div>
+  <p class="muted small">${esc(stepLabel)} &middot; Plan: ${esc(planName)} &middot; Market: ${esc(pv.market)}</p>
+  <div id="preview-main"></div>`;
+  const main = document.getElementById("preview-main");
+  if (pv.step === "plans") main.innerHTML = previewPlansHtml();
+  else if (pv.step === "discover") { main.innerHTML = previewDiscoverHtml(); if (pv.creators) renderPreviewResults(); else runPreviewDiscover(); }
+  else if (pv.step === "profile" && pv.creator) main.innerHTML = creatorProfileDetailHtml(pv.creator, true);
+  else if (pv.step === "offer") main.innerHTML = previewOfferHtml();
+  else main.innerHTML = previewPlansHtml();
+}
+
+function previewPlansHtml() {
+  const pv = state.preview;
+  const plans = state.boot.plans.map((p) => `
+    <div class="plan-card ${pv.planId === p.id ? "selected" : ""}" onclick="previewPickPlan('${p.id}')">
+      <div class="price">$${p.priceMonthly}<span class="small muted">/mo</span></div>
+      <strong>${esc(p.name)}</strong>
+      <p class="small muted">${p.minMonths}-month minimum, then month to month.</p>
+      <ul>${p.features.map((f) => `<li>${esc(f)}</li>`).join("")}</ul>
+    </div>`).join("");
+  return `
+  <section class="panel">
+    <h3 style="margin-top:0"><span class="preview-tag">PREVIEW</span> What a business sees first: the founding plans</h3>
+    <p class="muted">A business joins the founding list and picks a plan (recorded at sign-up, no card charged during founding); when their market activates, they land in Discover with the founding roster ready. Pick a plan and a market, then walk the roster exactly as they would.</p>
+    <div class="field"><label>Market to preview</label><select id="pv-market">${state.boot.markets.map((m) => `<option ${pv.market === m.name ? "selected" : ""}>${esc(m.name)}</option>`).join("")}</select></div>
+    <div class="plan-cards">${plans}</div>
+    <p class="mt"><button class="btn" onclick="previewToDiscover()">Continue as this business: search the roster &rarr;</button></p>
+    <p class="small muted">Preview discovery works in every market, live or not, so a market can be test-driven before it opens. Real businesses only search their own market once it is live.</p>
+  </section>`;
+}
+
+function previewPickPlan(id) {
+  const m = document.getElementById("pv-market");
+  if (m) state.preview.market = m.value;
+  state.preview.planId = id;
+  renderPreview();
+}
+
+function previewToDiscover() {
+  const m = document.getElementById("pv-market");
+  if (m) state.preview.market = m.value;
+  state.preview.step = "discover";
+  state.preview.creators = null;
+  renderPreview();
+}
+
+function previewDiscoverHtml() {
+  const pv = state.preview;
+  return `
+  <section class="panel">
+    <h3 style="margin-top:0"><span class="preview-tag">PREVIEW</span> Discover: the roster a business searches</h3>
+    <p class="muted small">Every filter a real business gets, answered by the same server code, over the real approved roster.</p>
+    <div class="filters">
+      <div><label>Market</label><select id="pvf-market">${state.boot.markets.map((m) => `<option ${pv.market === m.name ? "selected" : ""}>${esc(m.name)}</option>`).join("")}</select></div>
+      <div><label>Neighborhood / area</label><input id="pvf-neighborhood" placeholder="For example: Oceanfront, Ghent"></div>
+      <div><label>Tier</label><select id="pvf-tier"><option value="">All tiers</option>${state.boot.tiers.map((t) => `<option>${esc(t.id)}</option>`).join("")}</select></div>
+      <div><label>Category</label><select id="pvf-category"><option value="">All categories</option>${state.boot.creatorCategories.map((c) => `<option>${esc(c)}</option>`).join("")}</select></div>
+      <div><label>Search</label><input id="pvf-q" placeholder="Name or handle"></div>
+    </div>
+    <div class="filters">
+      <div><label>Would accept (comp fit)</label><select id="pvf-comp"><option value="">Any comp</option>${state.boot.compCategories.map((c) => `<option>${esc(c)}</option>`).join("")}</select></div>
+      <div><label>Followers min</label><input type="number" id="pvf-fmin" min="0" placeholder="Any"></div>
+      <div><label>Followers max</label><input type="number" id="pvf-fmax" min="0" placeholder="Any"></div>
+      <div><label>Min % followers in market</label><input type="number" id="pvf-minlocal" min="0" max="100" placeholder="Any"></div>
+      <div><label>Sort by</label><select id="pvf-sort"><option value="">Founding order</option><option value="score">Local Impact Score</option><option value="momentum">Momentum (roster standing)</option></select></div>
+      <div><label>&nbsp;</label><label style="font-weight:500"><input type="checkbox" id="pvf-paid" style="width:auto"> Open to paid campaigns only</label></div>
+      <div><label>&nbsp;</label><button class="btn small-btn" style="width:100%" onclick="runPreviewDiscover()">Search</button></div>
+    </div>
+    <div id="pv-results"><p class="muted">Loading creators...</p></div>
+  </section>
+  ${previewSentHtml()}`;
+}
+
+function previewSentHtml() {
+  const pv = state.preview;
+  if (!pv || !pv.sent.length) return "";
+  return `<section class="panel"><h4 style="margin-top:0">Sent in this preview session (${pv.sent.length})</h4><p class="small muted">Simulations only. Stored nowhere, seen by no creator, counted nowhere.</p>${pv.sent.map((o) => `<p class="small">&middot; <strong>${esc(o.title)}</strong> &rarr; ${o.creatorHandle ? "@" + esc(o.creatorHandle) : "open offer"} &middot; cap $${o.dollarCap} &middot; ${esc(o.visitWindow || "Flexible window")}</p>`).join("")}</section>`;
+}
+
+async function runPreviewDiscover() {
+  const el = document.getElementById("pv-results");
+  const val = (id) => { const n = document.getElementById(id); return n ? n.value : ""; };
+  const params = new URLSearchParams();
+  const market = val("pvf-market");
+  if (market) { params.set("market", market); state.preview.market = market; }
+  const neighborhood = val("pvf-neighborhood").trim();
+  const tier = val("pvf-tier");
+  const category = val("pvf-category");
+  const q = val("pvf-q");
+  const comp = val("pvf-comp");
+  const fmin = val("pvf-fmin");
+  const fmax = val("pvf-fmax");
+  const minlocal = val("pvf-minlocal");
+  const sort = val("pvf-sort");
+  if (neighborhood) params.set("neighborhood", neighborhood);
+  if (tier) params.set("tier", tier);
+  if (category) params.set("category", category);
+  if (q) params.set("q", q);
+  if (comp) params.set("compCategory", comp);
+  if (fmin) params.set("followersMin", fmin);
+  if (fmax) params.set("followersMax", fmax);
+  if (minlocal) params.set("minLocalPct", minlocal);
+  if (sort) params.set("sort", sort);
+  const paidBox = document.getElementById("pvf-paid");
+  if (paidBox && paidBox.checked) params.set("paid", "1");
+  try {
+    const data = await api("GET", "/admin/preview/discover?" + params.toString());
+    state.preview.creators = data.creators || [];
+    renderPreviewResults();
+  } catch (err) {
+    if (el) el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+  }
+}
+
+function renderPreviewResults() {
+  const el = document.getElementById("pv-results");
+  if (!el) return;
+  const list = state.preview.creators || [];
+  if (!list.length) {
+    el.innerHTML = `<div class="panel center"><h3>No approved creators match yet</h3><p class="muted">This is the same empty state a business sees while a market's founding roster is still filling.</p></div>`;
+    return;
+  }
+  el.innerHTML = `<div class="grid cols-2">${list.map((c) => creatorCard(c, state.user, { preview: true })).join("")}</div>`;
+}
+
+async function previewViewCreator(userId) {
+  try {
+    const data = await api("GET", "/admin/preview/creator/" + encodeURIComponent(userId));
+    state.preview.creator = data.creator;
+    state.preview.step = "profile";
+    renderPreview();
+    window.scrollTo(0, 0);
+  } catch (err) { alert(err.message); }
+}
+
+function previewBackToResults() {
+  state.preview.step = "discover";
+  renderPreview();
+}
+
+function previewStartOffer(userId) {
+  state.preview.targetId = userId || "";
+  state.preview.confirmation = null;
+  state.preview.step = "offer";
+  renderPreview();
+  window.scrollTo(0, 0);
+}
+
+function previewOfferHtml() {
+  const pv = state.preview;
+  const target = pv.targetId
+    ? (pv.creators || []).find((c) => c.userId === pv.targetId) || (pv.creator && pv.creator.userId === pv.targetId ? pv.creator : null)
+    : null;
+  return `
+  <section class="panel">
+    <h3 style="margin-top:0"><span class="preview-tag">PREVIEW</span> Send an offer (simulation)</h3>
+    ${pv.confirmation ? `<div class="notice blue">${pv.confirmation}</div>` : ""}
+    ${target
+      ? `<div class="notice">Sending directly to <strong>${esc(target.name)}</strong> (@${esc((target.profile || {}).handle || "")}). <a href="#" onclick="previewStartOffer(''); return false;">Make it an open offer instead</a></div>`
+      : `<p class="small muted">An open offer: any approved creator in ${esc(pv.market)} could book it in the real app. Or go back to the roster and pick a creator to target.</p>`}
+    <div id="pv-form-error"></div>
+    <form onsubmit="return previewSendOffer(event)">
+      <div class="field"><label>Offer title</label><input id="pvo-title" required placeholder="For example: Dinner for two on us"></div>
+      <div class="field"><label>Exactly what is comped</label><input id="pvo-comped" required placeholder="For example: Two entrees and two drinks for the creator and a guest"></div>
+      <div class="form-2col">
+        <div class="field"><label>Dollar cap ($)</label><input type="number" id="pvo-cap" min="1" required placeholder="75"></div>
+        <div class="field"><label>Spots (creators who can book)</label><input type="number" id="pvo-spots" min="1" value="1" required></div>
+      </div>
+      <div class="field"><label>Visit window</label><input id="pvo-window" placeholder="For example: Any Tuesday to Thursday in October"></div>
+      <p class="small muted">The real composer carries the same honesty reminder: describe the experience, never the opinion. Posts stay honest, and creators disclose the comp.</p>
+      <button class="btn" type="submit">Send preview offer</button>
+      <button class="btn ghost" type="button" onclick="previewBackToResults()">Back to the roster</button>
+    </form>
+  </section>
+  ${previewSentHtml()}`;
+}
+
+async function previewSendOffer(e) {
+  e.preventDefault();
+  const pv = state.preview;
+  try {
+    const data = await api("POST", "/admin/preview/offers", {
+      title: document.getElementById("pvo-title").value,
+      whatComped: document.getElementById("pvo-comped").value,
+      dollarCap: parseInt(document.getElementById("pvo-cap").value, 10),
+      spots: parseInt(document.getElementById("pvo-spots").value, 10),
+      visitWindow: document.getElementById("pvo-window").value,
+      creatorId: pv.targetId || null,
+      market: pv.market,
+    });
+    pv.sent.unshift(data.offer);
+    const o = data.offer;
+    pv.confirmation = `Simulation sent: &ldquo;${esc(o.title)}&rdquo; ${o.creatorHandle ? `to @${esc(o.creatorHandle)}` : "as an open offer"}. In the real app it would now sit in the creator's Offers tab. Here it went nowhere: no creator was contacted, nothing was saved, and no count moved.`;
+    renderPreview();
+  } catch (err) {
+    const el = document.getElementById("pv-form-error");
+    if (el) el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+  }
+  return false;
 }
 
 // ---------------- init ----------------
