@@ -374,6 +374,7 @@ function renderJoinCreator() {
           <p class="small muted">SIGNL is not open there yet. Your sign-up counts: when enough creators in your city sign up, we open there, and founding sign-ups go first.</p>
         </div>
       </div>
+      <div class="field"><label>Your neighborhood or area (optional)</label><input id="jc-neighborhood" placeholder="For example: Oceanfront, Ghent, Town Center" maxlength="80"><p class="small muted">The part of town you actually post from. Businesses search by neighborhood, so this helps the right ones find you.</p></div>
       <div class="form-2col">
         <div class="field"><label>Instagram handle (required)</label><input id="jc-handle" placeholder="yourhandle" required oninput="document.getElementById('jc-ig-link').textContent = this.value ? 'instagram.com/' + this.value.replace(/^@/, '') : ''"><p class="small muted" id="jc-ig-link"></p></div>
         <div class="field"><label>TikTok handle (optional)</label><input id="jc-tiktok" placeholder="yourhandle"></div>
@@ -467,6 +468,7 @@ async function doRegisterCreator(e) {
       password: document.getElementById("jc-password").value,
       market: marketVal,
       city: isUnlisted ? undefined : document.getElementById("jc-city").value,
+      neighborhood: document.getElementById("jc-neighborhood").value,
       customCity: isUnlisted ? customCity : undefined,
       customCountry: isUnlisted ? customCountry : undefined,
       customState: isUnlisted ? customState : undefined,
@@ -620,9 +622,9 @@ function creatorCard(c, viewer) {
       <div>${c.photoUrl ? `<img class="avatar" src="${esc(c.photoUrl)}" alt="">` : ""}<strong>${esc(c.name)}</strong> <span class="muted">@${esc(p.handle || "")}</span></div>
       <button class="heart ${c.isFavorite ? "on" : ""}" title="Save to favorites" onclick="toggleFav('${c.userId}')">${c.isFavorite ? "&#10084;" : "&#9825;"}</button>
     </div>
-    <p class="small muted">${esc(c.market)} &middot; ${esc(p.tierBand || "")} &middot; ${fmtNum(p.followerCount)} followers &middot; ${fmtNum(p.avgViews)} avg views${c.foundingBand ? ` &middot; Founding creator, first ${c.foundingBand} in market` : ""}</p>
+    <p class="small muted">${esc(c.market)} &middot; ${esc(c.city || "")}${c.neighborhood ? ` &middot; ${esc(c.neighborhood)}` : ""} &middot; ${esc(p.tierBand || "")} &middot; ${fmtNum(p.followerCount)} followers &middot; ${fmtNum(p.avgViews)} avg views${c.foundingBand ? ` &middot; Founding creator, first ${c.foundingBand} in market` : ""}</p>
     <p>${localTxt}</p>
-    <p>${scoreBadge(c.localImpactScore)}${p.openToPaidCampaigns ? ` <span class="badge tier">Open to paid campaigns</span>` : ""}</p>
+    <p>${scoreBadge(c.localImpactScore)}${p.openToPaidCampaigns ? ` <span class="badge tier">Open to paid campaigns</span>` : ""}${c.momentum && c.momentum.points ? ` <span class="badge info">Momentum ${c.momentum.points} pts</span>` : ""}</p>
     ${p.categories && p.categories.length ? `<p class="small">${p.categories.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
     ${p.compCategories && p.compCategories.filter((x) => x !== PAID_COMP).length ? `<p class="small muted">Open to comps: ${p.compCategories.filter((x) => x !== PAID_COMP).map(esc).join(", ")}</p>` : ""}
     ${p.bio ? `<p class="small muted">${esc(p.bio)}</p>` : ""}
@@ -697,6 +699,7 @@ async function loadFounding() {
           ${p.categories && p.categories.length ? `<p class="small">${p.categories.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
           ${p.openToPaidCampaigns ? `<p class="small"><span class="badge tier">Open to paid campaigns</span></p>` : ""}
           ${p.compCategories && p.compCategories.filter((x) => x !== PAID_COMP).length ? `<p class="small muted">Open to comps: ${p.compCategories.filter((x) => x !== PAID_COMP).map(esc).join(", ")}</p>` : ""}
+          ${p.neighborhood ? `<p class="small muted">Neighborhood: ${esc(p.neighborhood)}</p>` : ""}
           ${p.topAudienceCities && p.topAudienceCities.length ? `<p class="small muted">Top audience cities: ${p.topAudienceCities.map(esc).join(", ")}</p>` : ""}
           ${p.bio ? `<p class="small muted">${esc(p.bio)}</p>` : ""}
           <p class="small">
@@ -737,7 +740,7 @@ function creatorProfileHtml(u) {
     <div class="flex-between">
       <div>
         <h3 style="margin:0">${esc(u.name)} <span class="muted">@${esc(c.handle || "")}</span></h3>
-        <p class="muted small">${esc(u.market)} &middot; ${esc(u.city || "")}</p>
+        <p class="muted small">${esc(u.market)} &middot; ${esc(u.city || "")}${c.neighborhood ? ` &middot; ${esc(c.neighborhood)}` : ""}</p>
       </div>
       <div id="my-score"><span class="badge info">Loading score...</span></div>
     </div>
@@ -757,6 +760,7 @@ function creatorProfileHtml(u) {
              <div class="field"><label>Your state or province (optional)</label><input id="p-state-text" value="${esc(u.state || "")}"></div>`
           : `<div class="field"><label>Home city (${esc(u.market)})</label><select id="p-city">${cityOptions(u.market, u.city || "")}</select></div>`}
       </div>
+      <div class="field"><label>Your neighborhood or area</label><input id="p-neighborhood" value="${esc(c.neighborhood || "")}" placeholder="Optional, for example: Oceanfront, Ghent, Town Center" maxlength="80"><p class="small muted">Businesses search by neighborhood. Keep it to the area you actually post from.</p></div>
       <div class="form-2col">
         <div class="field"><label>TikTok handle</label><input id="p-tiktok" value="${esc(c.tiktokHandle || "")}" placeholder="Optional"></div>
         <div class="field"><label>YouTube channel</label><input id="p-youtube" value="${esc(c.youtubeChannel || "")}" placeholder="Optional"></div>
@@ -811,6 +815,7 @@ async function doUpdateCreator(e) {
     const data = await api("PATCH", "/me/profile", {
       handle: document.getElementById("p-handle").value,
       city: cityEl ? cityEl.value : cityTextEl ? cityTextEl.value : undefined,
+      neighborhood: document.getElementById("p-neighborhood").value,
       state: document.getElementById("p-state-text") ? document.getElementById("p-state-text").value : undefined,
       country: document.getElementById("p-country-text") ? document.getElementById("p-country-text").value : undefined,
       tiktokHandle: document.getElementById("p-tiktok").value,
@@ -1016,9 +1021,18 @@ async function loadDiscover() {
   el.innerHTML = `
     <div class="filters">
       <div><label>Market</label><select id="f-market">${marketOptions(u.market)}</select></div>
+      <div><label>Neighborhood / area</label><input id="f-neighborhood" placeholder="For example: Oceanfront, Ghent"></div>
       <div><label>Tier</label><select id="f-tier"><option value="">All tiers</option>${state.boot.tiers.map((t) => `<option>${esc(t.id)}</option>`).join("")}</select></div>
       <div><label>Category</label><select id="f-category"><option value="">All categories</option>${state.boot.creatorCategories.map((c) => `<option>${esc(c)}</option>`).join("")}</select></div>
       <div><label>Search</label><input id="f-q" placeholder="Name or handle"></div>
+    </div>
+    <div class="filters">
+      <div><label>Would accept (comp fit)</label><select id="f-comp"><option value="">Any comp</option>${state.boot.compCategories.map((c) => `<option>${esc(c)}</option>`).join("")}</select></div>
+      <div><label>Followers min</label><input type="number" id="f-fmin" min="0" placeholder="Any"></div>
+      <div><label>Followers max</label><input type="number" id="f-fmax" min="0" placeholder="Any"></div>
+      <div><label>Min % followers in market</label><input type="number" id="f-minlocal" min="0" max="100" placeholder="Any"></div>
+      <div><label>Sort by</label><select id="f-sort"><option value="">Founding order</option><option value="score">Local Impact Score</option><option value="momentum">Momentum (roster standing)</option></select></div>
+      <div><label>&nbsp;</label><label style="font-weight:500"><input type="checkbox" id="f-paid" style="width:auto"> Open to paid campaigns only</label></div>
       <div><label>&nbsp;</label><button class="btn small-btn" style="width:100%" onclick="runDiscover()">Search</button></div>
     </div>
     <div id="discover-results"><p class="muted">Loading creators in ${esc(u.market)}...</p></div>`;
@@ -1036,6 +1050,19 @@ async function runDiscover() {
   if (tier) params.set("tier", tier);
   if (category) params.set("category", category);
   if (q) params.set("q", q);
+  const neighborhood = document.getElementById("f-neighborhood").value.trim();
+  const comp = document.getElementById("f-comp").value;
+  const fmin = document.getElementById("f-fmin").value;
+  const fmax = document.getElementById("f-fmax").value;
+  const minlocal = document.getElementById("f-minlocal").value;
+  const sort = document.getElementById("f-sort").value;
+  if (neighborhood) params.set("neighborhood", neighborhood);
+  if (comp) params.set("compCategory", comp);
+  if (fmin) params.set("followersMin", fmin);
+  if (fmax) params.set("followersMax", fmax);
+  if (minlocal) params.set("minLocalPct", minlocal);
+  if (sort) params.set("sort", sort);
+  if (document.getElementById("f-paid").checked) params.set("paid", "1");
   try {
     const data = await api("GET", "/discover?" + params.toString());
     state.discover = data.creators;
@@ -1324,7 +1351,7 @@ async function loadApplications() {
         ? (u.foundingPriority ? `<br><span class="badge tier">Founding priority #${u.foundingPriority}</span>` : u.queuePosition ? `<br><span class="badge info">Queue #${u.queuePosition} in market</span>` : "")
         : "";
       const detail = u.role === "creator" && u.creator
-        ? `@${esc(u.creator.handle)} &middot; ${fmtNum(u.creator.followerCount)} followers &middot; ${esc(u.creator.tierBand)} &middot; Local: ${u.creator.localAudiencePct === null ? "not reported" : u.creator.localAudiencePct + "% (Self-reported)"} &middot; ${(u.creator.categories || []).map(esc).join(", ")} &middot; Photo: ${u.creator.hasPhoto ? "yes" : "no"} &middot; Socials: IG${u.creator.tiktokHandle ? ", TikTok" : ""}${u.creator.youtubeChannel ? ", YouTube" : ""}${u.creator.facebookUrl ? ", Facebook" : ""}${u.creator.xUrl ? ", X" : ""}${u.creator.linkedinUrl ? ", LinkedIn" : ""}${u.referredBy ? ` &middot; via @${esc(u.referredBy)}` : ""}${u.momentum && u.momentum.signups ? ` &middot; Momentum: ${u.momentum.points} pts (${u.momentum.signups} joined, ${u.momentum.approved} approved)` : ""}`
+        ? `@${esc(u.creator.handle)} &middot; ${fmtNum(u.creator.followerCount)} followers &middot; ${esc(u.creator.tierBand)} &middot; Local: ${u.creator.localAudiencePct === null ? "not reported" : u.creator.localAudiencePct + "% (Self-reported)"} &middot; ${(u.creator.categories || []).map(esc).join(", ")} &middot; Photo: ${u.creator.hasPhoto ? "yes" : "no"} &middot; Socials: IG${u.creator.tiktokHandle ? ", TikTok" : ""}${u.creator.youtubeChannel ? ", YouTube" : ""}${u.creator.facebookUrl ? ", Facebook" : ""}${u.creator.xUrl ? ", X" : ""}${u.creator.linkedinUrl ? ", LinkedIn" : ""}${u.creator.neighborhood ? ` &middot; Area: ${esc(u.creator.neighborhood)}` : ""}${u.referredBy ? ` &middot; via @${esc(u.referredBy)}` : ""}${u.momentum && u.momentum.signups ? ` &middot; Momentum: ${u.momentum.points} pts (${u.momentum.signups} joined, ${u.momentum.approved} approved)` : ""}`
         : u.role === "business" && u.business
           ? `${esc(u.business.businessName)} &middot; ${esc(u.business.category)} &middot; ${esc(u.business.planName)}`
           : "";

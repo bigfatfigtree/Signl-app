@@ -82,8 +82,16 @@ The public launch is **creator founding sign-up only**:
   Facebook page name becomes facebook.com/..., an X URL becomes the
   handle plus x.com/..., a LinkedIn slug becomes linkedin.com/in/...).
 - Local Impact Score computed only from stored inputs (formula below).
-- Business discovery: browse approved creators in a market, filter by
-  tier and category, search, favorite.
+- Business discovery: browse approved creators in a market and search
+  them the way businesses actually shop (spec:
+  `signl-business-search-spec.md` in the SIGNL goal workspace). Filters,
+  all server-side over stored fields: market, neighborhood/area text
+  match, tier band, content category, comp category fit, follower
+  range, minimum local audience %, open-to-paid-campaigns, name/handle
+  text. Sorts: founding order (default), Local Impact Score, Momentum
+  points. Creators carry an optional free-text `neighborhood` (their
+  area inside their home city), collected at sign-up and editable in
+  the profile.
 - Offers: targeted (to one creator) or open (whole market), with an
   exact "what is comped" description, a dollar cap, a visit window,
   and a spot count. Creators accept (booking) or decline.
@@ -255,7 +263,7 @@ production. Locally they go in the shell.
   tiktokHandle, tiktokUrl, youtubeChannel, facebookUrl, xHandle,
   xUrl, linkedinUrl, followerCount, avgViews, tierBand,
   suggestedTier, computedTier, categories, compCategories, bio,
-  topAudienceCities, localAudiencePct, localAudienceSource,
+  neighborhood, topAudienceCities, localAudiencePct, localAudienceSource,
   localAudienceAsOf, agreedHonestPosts, agreedFtcDisclosure,
   agreedAt, agreedTerms, termsVersion, marketingEmailConsent,
   marketingConsentAt, openToPaidCampaigns, hasPhoto, photoUploadedAt,

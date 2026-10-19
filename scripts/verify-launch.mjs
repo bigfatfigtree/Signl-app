@@ -140,6 +140,7 @@ try {
     linkedinUrl: "launcheats",
     tierBand: "Locals",
     avgViews: 5000,
+    neighborhood: "Ghent",
     topAudienceCities: ["Norfolk", "Virginia Beach"],
     compCategories: ["Restaurant meals", "Drinks & nightlife"],
     bio: "Launch-shape verification creator with every social field filled.",
@@ -156,6 +157,7 @@ try {
   check("LinkedIn bare slug canonicalized to /in/ URL", pc.linkedinUrl === "https://www.linkedin.com/in/launcheats", pc.linkedinUrl);
   check("tier suggestion computed from followers (8400 -> Locals)", pc.suggestedTier === "Locals" && pc.computedTier === "Locals");
   check("local audience stored as Self-reported", pc.localAudiencePct === 62 && pc.localAudienceSource === "Self-reported");
+  check("neighborhood stored at sign-up (optional free text)", pc.neighborhood === "Ghent", JSON.stringify(pc.neighborhood));
   check("rule acknowledgments stored with timestamp", pc.agreedHonestPosts === true && pc.agreedFtcDisclosure === true && !!pc.agreedAt);
   check("terms + marketing consent stored with version and timestamp", pc.agreedTerms === true && pc.termsVersion === boot.data.termsVersion && pc.marketingEmailConsent === true && !!pc.marketingConsentAt, JSON.stringify([pc.agreedTerms, pc.termsVersion, pc.marketingEmailConsent]));
   check("registration response shows the first-100 band, never the exact queue number", regA.data.user.founding && regA.data.user.founding.queueBand === 100 && regA.data.user.founding.queuePosition === undefined && regA.data.user.founding.creatorsInMarket === undefined && regA.data.user.founding.marketLive === false, JSON.stringify(regA.data.user.founding));
@@ -195,6 +197,18 @@ try {
   check("founding card carries the computed Local Impact Score", typeof card.localImpactScore === "number", String(card.localImpactScore));
   check("founding card shows the photo URL", typeof card.photoUrl === "string" && card.photoUrl.endsWith("/photo"), String(card.photoUrl));
   check("founding card displays all six socials", card.profile.instagramUrl === "https://instagram.com/launcheats" && card.profile.tiktokUrl === "https://www.tiktok.com/@launcheats" && card.profile.youtubeChannel === "Launch Eats TV" && card.profile.facebookUrl === "https://www.facebook.com/launcheatspage" && card.profile.xUrl === "https://x.com/launcheats" && card.profile.linkedinUrl === "https://www.linkedin.com/in/launcheats");
+  check("founding card exposes the neighborhood (card + profile)", card.neighborhood === "Ghent" && card.profile.neighborhood === "Ghent", JSON.stringify([card.neighborhood, card.profile && card.profile.neighborhood]));
+
+  // --- neighborhood round-trips through profile edit + admin list ---
+  const nbPatch = await creatorA("PATCH", "/api/me/profile", { neighborhood: "Oceanfront" });
+  check("profile edit updates the neighborhood", nbPatch.status === 200 && nbPatch.data.user.creator.neighborhood === "Oceanfront", JSON.stringify(nbPatch.data.user && nbPatch.data.user.creator && nbPatch.data.user.creator.neighborhood));
+  const meAfterNb = await creatorA("GET", "/api/auth/me");
+  check("neighborhood persists on the creator's own payload", meAfterNb.data.user.creator.neighborhood === "Oceanfront");
+  const appsAfterNb = await admin("GET", "/api/admin/applications");
+  const decidedA = (appsAfterNb.data.decided || []).find((u) => u.id === creatorAId);
+  check("admin applications list carries the neighborhood", !!decidedA && decidedA.creator.neighborhood === "Oceanfront", JSON.stringify(decidedA && decidedA.creator && decidedA.creator.neighborhood));
+  const nbClear = await creatorA("PATCH", "/api/me/profile", { neighborhood: "" });
+  check("neighborhood can be cleared back to empty (stays optional)", nbClear.status === 200 && nbClear.data.user.creator.neighborhood === "", JSON.stringify(nbClear.data.user && nbClear.data.user.creator && nbClear.data.user.creator.neighborhood));
   check("founding card carries the first-100 band, not an exact priority number", card.foundingBand === 100 && card.foundingPriority === undefined, String(card.foundingBand));
 
   // the client actually renders those links (display wiring in app.js)
@@ -212,6 +226,7 @@ try {
   const creatorB = client();
   const regB = await creatorB("POST", "/api/auth/register", { ...basePayload, name: "Second Creator", email: "launch-b@example.com", handle: "secondeats", city: "Virginia Beach" });
   check("second creator registers", regB.status === 201, JSON.stringify(regB.data));
+  check("sign-up without a neighborhood still works; the field defaults to empty", regB.data.user.creator.neighborhood === "", JSON.stringify(regB.data.user.creator.neighborhood));
   await admin("POST", "/api/admin/review", { userId: regB.data.user.id, decision: "approve" });
   const foundingB = await creatorB("GET", "/api/me/founding");
   check("second approved creator also lands in the first-100 band (exact order stays internal)", foundingB.data.founding && foundingB.data.founding.priorityBand === 100 && foundingB.data.founding.priorityPosition === undefined, JSON.stringify(foundingB.data.founding));

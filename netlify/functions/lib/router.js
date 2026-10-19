@@ -534,6 +534,7 @@ async function publicCreator(u, viewer, foundingPriority) {
     name: u.name,
     market: u.market,
     city: u.city || "",
+    neighborhood: (u.creator && u.creator.neighborhood) || "",
     createdAt: u.createdAt,
     foundingBand: foundingPriority === undefined ? null : foundingBand(foundingPriority),
     photoUrl: u.creator && u.creator.hasPhoto ? `/api/users/${u.id}/photo` : null,
@@ -703,6 +704,11 @@ async function handleRegister(event) {
       })(),
       openToPaidCampaigns: tier === "Creators" && Array.isArray(b.compCategories) && b.compCategories.includes(PAID_COMP),
       bio: (b.bio || "").trim(),
+      // Neighborhood / area inside the home city (Jeff, 2026-10-19:
+      // businesses shop by neighborhood: Oceanfront, Ghent, Carytown).
+      // Optional free text; never required, never validated against a
+      // list, because neighborhoods are local knowledge.
+      neighborhood: typeof b.neighborhood === "string" ? b.neighborhood.trim().slice(0, 80) : "",
       topAudienceCities: cleanStringList(b.topAudienceCities, null, 5),
       localAudiencePct: localPct,
       localAudienceSource: "Self-reported",
@@ -744,7 +750,7 @@ async function handleRegister(event) {
     market: user.market,
     data:
       role === "creator"
-        ? { handle: user.creator.handle, city: user.city, state: user.state, country: user.country, unlisted: user.market === UNLISTED, followerCount: user.creator.followerCount, tierBand: user.creator.tierBand, suggestedTier: user.creator.suggestedTier, localAudiencePct: user.creator.localAudiencePct, localAudienceSource: user.creator.localAudienceSource, categories: user.creator.categories, compCategories: user.creator.compCategories, openToPaidCampaigns: user.creator.openToPaidCampaigns, termsVersion: TERMS_VERSION, marketingEmailConsent: true, ...(user.referredBy ? { referredBy: user.referredBy } : {}) }
+        ? { handle: user.creator.handle, city: user.city, neighborhood: user.creator.neighborhood, state: user.state, country: user.country, unlisted: user.market === UNLISTED, followerCount: user.creator.followerCount, tierBand: user.creator.tierBand, suggestedTier: user.creator.suggestedTier, localAudiencePct: user.creator.localAudiencePct, localAudienceSource: user.creator.localAudienceSource, categories: user.creator.categories, compCategories: user.creator.compCategories, openToPaidCampaigns: user.creator.openToPaidCampaigns, termsVersion: TERMS_VERSION, marketingEmailConsent: true, ...(user.referredBy ? { referredBy: user.referredBy } : {}) }
         : { businessName: user.business.businessName, category: user.business.category, plan: user.business.plan, planPriceMonthly: user.business.planPriceMonthly, ...(user.referredBy ? { referredBy: user.referredBy } : {}) },
   });
   if (role === "creator") {
@@ -760,6 +766,7 @@ async function handleRegister(event) {
       data: {
         handle: user.creator.handle,
         city: user.city,
+        neighborhood: user.creator.neighborhood,
         followerCount: user.creator.followerCount,
         avgViews: user.creator.avgViews,
         tierBand: user.creator.tierBand,
@@ -953,6 +960,11 @@ async function route(event) {
         if (nc) user.country = nc;
       }
       if (b.bio !== undefined) c.bio = String(b.bio).trim();
+      if (b.neighborhood !== undefined) {
+        const nb = String(b.neighborhood || "").trim().slice(0, 80);
+        changes.neighborhood = [c.neighborhood || "", nb];
+        c.neighborhood = nb;
+      }
       if (b.localAudiencePct !== undefined) {
         const pct = b.localAudiencePct === null || b.localAudiencePct === "" ? null : Math.max(0, Math.min(100, Number(b.localAudiencePct)));
         changes.localAudiencePct = [c.localAudiencePct, pct];
@@ -1245,6 +1257,23 @@ async function route(event) {
   }
 
   // ---------- discovery ----------
+  // Business-facing creator search (spec: files/signl-business-search-
+  // spec.md in the goal workspace). Every filter reads a field stored
+  // on the creator record; nothing is computed from outside data.
+  //   ?market=        market name (default: the business's own market)
+  //   ?neighborhood=  case-insensitive text match on the creator's
+  //                   neighborhood/area (also matches their city)
+  //   ?tier=          tier band (Neighbors / Locals / Creators)
+  //   ?category=      a creator content category
+  //   ?compCategory=  a comp category the creator accepts (business
+  //                   category fit: "what would they take from us")
+  //   ?followersMin= / ?followersMax=   follower-count range
+  //   ?minLocalPct=   minimum % of the creator's followers in market
+  //                   (the lead differentiator: no major platform
+  //                   shows an SMB this number)
+  //   ?paid=1         only creators open to paid cash campaigns
+  //   ?q=             name or handle text search
+  //   ?sort=          founding (default) | score | momentum
   if (method === "GET" && seg[0] === "discover") {
     const users = await allUsers();
     let creators = users.filter((u) => u.role === "creator" && u.status === "approved");
@@ -1252,18 +1281,48 @@ async function route(event) {
     if (market) creators = creators.filter((u) => u.market === marketByName(market)?.name);
     if (query.tier) creators = creators.filter((u) => u.creator && u.creator.tierBand === query.tier);
     if (query.category) creators = creators.filter((u) => u.creator && u.creator.categories.includes(query.category));
+    if (query.compCategory) creators = creators.filter((u) => u.creator && (u.creator.compCategories || []).includes(query.compCategory));
+    if (query.neighborhood) {
+      const nb = String(query.neighborhood).trim().toLowerCase();
+      if (nb) creators = creators.filter((u) => {
+        const area = ((u.creator && u.creator.neighborhood) || "").toLowerCase();
+        const city = (u.city || "").toLowerCase();
+        return area.includes(nb) || city.includes(nb);
+      });
+    }
+    const fMin = parseInt(query.followersMin, 10);
+    if (!Number.isNaN(fMin)) creators = creators.filter((u) => u.creator && (u.creator.followerCount || 0) >= fMin);
+    const fMax = parseInt(query.followersMax, 10);
+    if (!Number.isNaN(fMax)) creators = creators.filter((u) => u.creator && (u.creator.followerCount || 0) <= fMax);
+    const minLocal = Number(query.minLocalPct);
+    if (query.minLocalPct !== undefined && !Number.isNaN(minLocal)) {
+      creators = creators.filter((u) => u.creator && u.creator.localAudiencePct !== null && u.creator.localAudiencePct !== undefined && Number(u.creator.localAudiencePct) >= minLocal);
+    }
+    if (query.paid === "1" || query.paid === "true") {
+      creators = creators.filter((u) => u.creator && u.creator.openToPaidCampaigns === true);
+    }
     if (query.q) {
       const q = query.q.toLowerCase();
       creators = creators.filter((u) => u.name.toLowerCase().includes(q) || (u.creator && u.creator.handle.toLowerCase().includes(q)));
     }
     const { approvedRank } = creatorRanks(users);
+    const counts = momentumMap(users);
     const out = [];
-    for (const c of creators) out.push(await publicCreator(c, user, approvedRank.get(c.id) || null));
+    for (const c of creators) {
+      const card = await publicCreator(c, user, approvedRank.get(c.id) || null);
+      // Roster standing rides on the card: it is part of the order
+      // businesses were promised creators would be seen in.
+      card.momentum = momentumFor(c, counts);
+      out.push(card);
+    }
     // Default sort is founding priority: earliest founding sign-ups
     // first, which is the priority promise made at sign-up. Businesses
-    // can re-sort by Local Impact Score with ?sort=score.
+    // can re-sort by Local Impact Score (?sort=score) or by Momentum
+    // points (?sort=momentum).
     if (query.sort === "score") {
       out.sort((a, b) => (b.localImpactScore || 0) - (a.localImpactScore || 0));
+    } else if (query.sort === "momentum") {
+      out.sort((a, b) => (b.momentum.points - a.momentum.points) || (a.createdAt < b.createdAt ? -1 : 1));
     } else {
       out.sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
     }

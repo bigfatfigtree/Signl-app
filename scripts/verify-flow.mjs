@@ -221,6 +221,30 @@ try {
   check("creator local audience shows Self-reported", found && found.profile.localAudienceSource === "Self-reported");
   check("Local Impact Score computed from stored inputs", found && typeof found.localImpactScore === "number", found && String(found.localImpactScore));
 
+  // --- business search: the full filter set over stored fields ---
+  const nbSet = await creator("PATCH", "/api/me/profile", { neighborhood: "Oceanfront", compCategories: ["Restaurant meals"] });
+  check("creator sets neighborhood + comp fit via profile edit", nbSet.status === 200 && nbSet.data.user.creator.neighborhood === "Oceanfront" && nbSet.data.user.creator.compCategories.includes("Restaurant meals"), JSON.stringify(nbSet.data.user && nbSet.data.user.creator));
+  const discNb = await business("GET", "/api/discover?market=Hampton%20Roads&neighborhood=ocean");
+  check("discovery filters by neighborhood text (case-insensitive partial)", (discNb.data.creators || []).some((c) => c.userId === creatorId), JSON.stringify((discNb.data.creators || []).length));
+  check("discovery card exposes the neighborhood", (discNb.data.creators || []).some((c) => c.userId === creatorId && c.neighborhood === "Oceanfront" && c.profile.neighborhood === "Oceanfront"));
+  const discNbMiss = await business("GET", "/api/discover?market=Hampton%20Roads&neighborhood=ghent");
+  check("neighborhood filter excludes non-matching areas", !(discNbMiss.data.creators || []).some((c) => c.userId === creatorId));
+  const discLocalHi = await business("GET", "/api/discover?market=Hampton%20Roads&minLocalPct=70");
+  check("min local audience % excludes creators below the floor (62 < 70)", !(discLocalHi.data.creators || []).some((c) => c.userId === creatorId));
+  const discLocalLo = await business("GET", "/api/discover?market=Hampton%20Roads&minLocalPct=50");
+  check("min local audience % includes creators above the floor (62 >= 50)", (discLocalLo.data.creators || []).some((c) => c.userId === creatorId));
+  const discFol = await business("GET", "/api/discover?market=Hampton%20Roads&followersMin=8000&followersMax=9000");
+  check("follower range filter includes the creator (8400 in 8000-9000)", (discFol.data.creators || []).some((c) => c.userId === creatorId));
+  const discFolMiss = await business("GET", "/api/discover?market=Hampton%20Roads&followersMax=1000");
+  check("follower range filter excludes creators above the cap", !(discFolMiss.data.creators || []).some((c) => c.userId === creatorId));
+  const discComp = await business("GET", "/api/discover?market=Hampton%20Roads&compCategory=Restaurant%20meals");
+  check("comp category fit filter matches what the creator accepts", (discComp.data.creators || []).some((c) => c.userId === creatorId));
+  const discPaid = await business("GET", "/api/discover?market=Hampton%20Roads&paid=1");
+  check("paid-campaigns filter excludes a Locals-tier creator", !(discPaid.data.creators || []).some((c) => c.userId === creatorId));
+  const discMom = await business("GET", "/api/discover?market=Hampton%20Roads&sort=momentum");
+  const momCard = (discMom.data.creators || []).find((c) => c.userId === creatorId);
+  check("momentum sort answers and cards carry Momentum standing", discMom.status === 200 && !!momCard && typeof momCard.momentum.points === "number", JSON.stringify(momCard && momCard.momentum));
+
   const fav = await business("POST", "/api/favorites", { creatorId });
   check("favorite toggles on", fav.status === 200 && fav.data.isFavorite === true);
 
