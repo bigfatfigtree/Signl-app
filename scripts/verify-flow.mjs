@@ -14,7 +14,7 @@ import path from "node:path";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
-const { approvalEmail, signupConfirmationEmail } = require("../netlify/functions/lib/router.js");
+const { approvalEmail, signupConfirmationEmail, recruiterKitEmail, momentumMap, momentumFor } = require("../netlify/functions/lib/router.js");
 
 const PORT = 8917;
 const BASE = `http://localhost:${PORT}`;
@@ -110,7 +110,23 @@ try {
   const mailUnlisted = approvalEmail({ name: "Tulsa Creator", email: "t@example.com", market: "Not listed yet", city: "Tulsa", creator: { handle: "tulsaeats", tierBand: "Locals" } }, 100);
   check("approval email (unlisted) carries the creator invite link", mailUnlisted.text.includes("https://app.joinsignl.com/?ref=tulsaeats"), mailUnlisted.text);
   const mailSignup = signupConfirmationEmail({ name: "Verify Creator", email: "v@example.com", market: "Hampton Roads", creator: { handle: "verifyeats757", tierBand: "Locals" } }, 100);
-  check("sign-up confirmation email does NOT carry the invite ask (approval only)", !mailSignup.text.includes("?ref="), mailSignup.text);
+  // Jeff (2026-10-18, supersedes the approval-only ask): the recruiting
+  // benefits are stated at sign-up too, in BOTH transactional emails.
+  const benefitsPresent = (mail) => mail.text.includes("+3 when a creator joins through your link") && mail.text.includes("+10 when they are approved") && mail.text.includes("roster standing is part of the order they see");
+  check("sign-up confirmation email states the recruiting benefits (invite link, +3/+10 points, visibility)", mailSignup.text.includes("https://app.joinsignl.com/?ref=verifyeats757") && benefitsPresent(mailSignup), mailSignup.text);
+  check("approval emails state the recruiting benefits too (listed + unlisted)", benefitsPresent(mailListed) && benefitsPresent(mailUnlisted), mailListed.text);
+  const mailKit = recruiterKitEmail({ name: "Verify Creator", email: "v@example.com", market: "Hampton Roads", city: "Norfolk", creator: { handle: "verifyeats757", tierBand: "Locals" } });
+  check("recruiter kit email: subject, hosted badge, benefits, film link, no-pressure close", mailKit.subject === "Your Founding Creator badge is ready" && mailKit.text.includes("https://joinsignl.com/assets/badges/signl-founding-creator-badge-square.png") && mailKit.text.includes("https://joinsignl.com/assets/badges/signl-founding-creator-badge-portrait.png") && mailKit.text.includes("https://app.joinsignl.com/?ref=verifyeats757") && benefitsPresent(mailKit) && mailKit.text.includes("https://joinsignl.com/creators.html") && /no requirement/i.test(mailKit.text), mailKit.text);
+  // Momentum points math, unit level (the end-to-end scenario is in
+  // verify-launch): 2 credited sign-ups, 1 of them approved = 16.
+  const unitUsers = [
+    { id: "u1", role: "creator", status: "approved", referredBy: "RecruiterOne", creator: { handle: "someoneelse" } },
+    { id: "u2", role: "creator", status: "pending", referredBy: "recruiterone", creator: { handle: "another" } },
+    { id: "u3", role: "creator", status: "approved", creator: { handle: "recruiterone" } },
+    { id: "u4", role: "creator", status: "approved", referredBy: "unrelated", creator: { handle: "fourth" } },
+  ];
+  const unitMomentum = momentumFor(unitUsers[2], momentumMap(unitUsers));
+  check("Momentum unit math: 2 sign-ups (case-insensitive credit) + 1 approved = 16 points", unitMomentum.signups === 2 && unitMomentum.approved === 1 && unitMomentum.points === 16, JSON.stringify(unitMomentum));
   const appJs = await anon("GET", "/app.js");
   const appJsText = String((appJs.data && appJs.data.raw) || "");
   check("status page renders the Grow your roster invite block", appJsText.includes("Grow your roster") && appJsText.includes("app.joinsignl.com/?ref="), appJsText.slice(0, 80));

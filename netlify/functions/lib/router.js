@@ -153,6 +153,62 @@ function creatorRanks(users) {
   return { approvedRank, pendingRank };
 }
 
+// ---------- Momentum: referral points + roster standing ----------
+// Jeff (2026-10-18): creators earn standing for recruiting, and the
+// app says so plainly at sign-up. Points come ONLY from stored
+// sign-up records: +3 for every account whose referredBy credits this
+// creator's handle, +10 more for each credited creator who is
+// approved. Nothing is estimated, self-reported, or projected.
+const MOMENTUM_POINTS_PER_SIGNUP = 3;
+const MOMENTUM_POINTS_PER_APPROVED = 10;
+
+function momentumMap(users) {
+  const counts = new Map(); // lowercased handle -> { signups, approved }
+  for (const u of users) {
+    if (!u.referredBy) continue;
+    const key = String(u.referredBy).trim().toLowerCase();
+    if (!key) continue;
+    const rec = counts.get(key) || { signups: 0, approved: 0 };
+    rec.signups += 1;
+    if (u.role === "creator" && u.status === "approved") rec.approved += 1;
+    counts.set(key, rec);
+  }
+  return counts;
+}
+
+function momentumFor(user, counts) {
+  if (!user || user.role !== "creator" || !user.creator || !user.creator.handle) {
+    return { signups: 0, approved: 0, points: 0 };
+  }
+  const rec = counts.get(user.creator.handle.trim().toLowerCase()) || { signups: 0, approved: 0 };
+  return {
+    signups: rec.signups,
+    approved: rec.approved,
+    points: rec.signups * MOMENTUM_POINTS_PER_SIGNUP + rec.approved * MOMENTUM_POINTS_PER_APPROVED,
+  };
+}
+
+function inviteUrlForUser(user) {
+  return user && user.creator && user.creator.handle
+    ? `https://app.joinsignl.com/?ref=${encodeURIComponent(user.creator.handle)}`
+    : null;
+}
+
+// The recruiting benefits, stated the same way everywhere they appear
+// (sign-up email, approval email, recruiter kit email). Plain text,
+// no em dashes.
+function rosterBenefitsLines(user, place) {
+  const inviteUrl = inviteUrlForUser(user);
+  if (!inviteUrl) return [];
+  return [
+    `Grow your roster in ${place}, and get seen first:`,
+    `Your personal invite link: ${inviteUrl}`,
+    "Share it with creators you know. Every creator who signs up through your link is credited to your roster, and you earn Momentum points: +3 when a creator joins through your link, and +10 when they are approved.",
+    "A bigger roster moves you up: when businesses in your market start choosing creators, roster standing is part of the order they see.",
+    "",
+  ];
+}
+
 // Lightweight founding summary attached to auth responses for creators:
 // where they stand in their market and whether that market is live yet.
 async function foundingSummary(user) {
@@ -197,7 +253,12 @@ function publicFounding(summary) {
 
 async function withFounding(user) {
   const pub = publicUser(user);
-  if (pub && pub.role === "creator") pub.founding = publicFounding(await foundingSummary(user));
+  if (pub && pub.role === "creator") {
+    pub.founding = publicFounding(await foundingSummary(user));
+    // Momentum rides on the creator's own profile payload so the
+    // "Grow your roster" block always shows their real standing.
+    pub.momentum = momentumFor(user, momentumMap(await allUsers()));
+  }
   return pub;
 }
 
@@ -247,6 +308,7 @@ function signupConfirmationEmail(user, band) {
       "The deal, as agreed: businesses comp you a meal or service, you post your honest experience within 48 hours, and you disclose the comp in the post. Nobody can ever ask you for a positive post.",
       "",
       ...(paidLine ? [paidLine, ""] : []),
+      ...rosterBenefitsLines(user, user.city),
       "Sign in any time to check your status: https://app.joinsignl.com",
       "",
       "You agreed to SIGNL's Terms of Service and Privacy Policy, and to receive account and marketing emails from SIGNL. You can unsubscribe from marketing emails at any time.",
@@ -270,6 +332,7 @@ function signupConfirmationEmail(user, band) {
     "The deal, as agreed: businesses comp you a meal or service, you post your honest experience within 48 hours, and you disclose the comp in the post. Nobody can ever ask you for a positive post.",
     "",
     ...(paidLine ? [paidLine, ""] : []),
+    ...rosterBenefitsLines(user, user.market),
     "Sign in any time to check your status: https://app.joinsignl.com",
     "",
     "You agreed to SIGNL's Terms of Service and Privacy Policy, and to receive account and marketing emails from SIGNL. You can unsubscribe from marketing emails at any time.",
@@ -285,8 +348,9 @@ function approvalEmail(user, band) {
   const first = greetingName(user);
   const paidLine = paidCampaignLine(user);
   // Referral ask lands at approval, when the creator is in (Jeff,
-  // 2026-10-18): their personal invite link, sign-ups credited to them.
-  const inviteUrl = user.creator && user.creator.handle ? `https://app.joinsignl.com/?ref=${encodeURIComponent(user.creator.handle)}` : null;
+  // 2026-10-18): rosterBenefitsLines carries their personal invite
+  // link, the credited roster, the Momentum points, and the
+  // visibility benefit.
   if (user.market === UNLISTED) {
     const subject = `You are approved: founding creator for ${user.city}`;
     const lines = [
@@ -301,7 +365,7 @@ function approvalEmail(user, band) {
       "",
       `${user.city} is not an open market yet. We open new markets where creator sign-ups pile up, and the moment ${user.city} opens, we email you again.`,
       "",
-      ...(inviteUrl ? [`Grow the roster: founding rosters fill by invitation. Share your personal invite link with other creators in ${user.city}: ${inviteUrl} Every creator who signs up through your link is credited to you.`, ""] : []),
+      ...rosterBenefitsLines(user, user.city),
       ...(paidLine ? [paidLine, ""] : []),
       "National platforms sell reach. We sell regulars.",
       "The SIGNL team",
@@ -322,13 +386,84 @@ function approvalEmail(user, band) {
     "",
     `${user.market} opens to businesses in the next ${LAUNCH_WINDOW_TEXT}. The moment it opens, we email you again, and founding creators get first pick of every offer. Your local audience percentage is the number businesses look at first, so keep it honest and current.`,
     "",
-    ...(inviteUrl ? [`Grow the roster: founding rosters fill by invitation. Share your personal invite link with other creators in ${user.market}: ${inviteUrl} Every creator who signs up through your link is credited to you.`, ""] : []),
+    ...rosterBenefitsLines(user, user.market),
     ...(paidLine ? [paidLine, ""] : []),
     "National platforms sell reach. We sell regulars.",
     "The SIGNL team",
     "hello@joinsignl.com",
   );
   return { subject, text: lines.join("\n") };
+}
+
+// ---------- one-time recruiter kit email ----------
+// Jeff (2026-10-18): the recruiter ask goes BY EMAIL from the app,
+// never by Instagram DM. Every creator who is already approved when
+// this ships gets exactly one kit email: their Founding Creator
+// badge, their invite link, and the recruiting benefits. The blob
+// flag below is claimed BEFORE any send, inside the API handler, so
+// the first request after deploy fires it and no request ever fires
+// it again, even if a send fails midway.
+const RECRUITER_KIT_FLAG_KEY = "config:recruiterKitEmailV1Sent";
+const BADGE_SQUARE_URL = "https://joinsignl.com/assets/badges/signl-founding-creator-badge-square.png";
+const BADGE_PORTRAIT_URL = "https://joinsignl.com/assets/badges/signl-founding-creator-badge-portrait.png";
+const CREATOR_FILM_URL = "https://joinsignl.com/creators.html";
+
+function recruiterKitEmail(user) {
+  const first = greetingName(user);
+  const unlisted = user.market === UNLISTED;
+  const place = unlisted ? user.city : user.market;
+  const subject = "Your Founding Creator badge is ready";
+  const lines = [
+    `Hi ${first},`,
+    "",
+    `Thank you for being first. You are on the SIGNL founding roster in ${place}, approved before the market opens, and this platform gets built on creators who show up early like you did.`,
+    "",
+    "Your Founding Creator badge is ready. It is yours to save and post anywhere:",
+    `Square (best for feed posts): ${BADGE_SQUARE_URL}`,
+    `Portrait (best for stories): ${BADGE_PORTRAIT_URL}`,
+    "",
+    ...rosterBenefitsLines(user, place),
+    `If you feel like spreading the word, post the badge to your story with your invite link, or share our short creator film: ${CREATOR_FILM_URL}`,
+    "Only if you want to. There is no requirement and no follow-up nagging from me. You are on the founding roster either way, and first pick of offers stays yours.",
+    "",
+    unlisted
+      ? `${user.city} opens when sign-ups there pile up, and every creator who joins through you makes that happen sooner. The moment it opens, you hear from me.`
+      : `${user.market} opens to businesses in the next ${LAUNCH_WINDOW_TEXT}. The moment it opens, you hear from me.`,
+    "",
+    "National platforms sell reach. We sell regulars.",
+    "",
+    "Jeff Rimmer",
+    "Founder, SIGNL",
+    "hello@joinsignl.com",
+  ];
+  return { subject, text: lines.join("\n") };
+}
+
+async function maybeSendRecruiterKit() {
+  const existing = await store.get(RECRUITER_KIT_FLAG_KEY);
+  if (existing) return;
+  // Claim first, send second: the kit can never go out twice.
+  const claimedAt = nowIso();
+  await store.set(RECRUITER_KIT_FLAG_KEY, { version: 1, claimedAt, recipients: [] });
+  const users = await allUsers();
+  const recipients = users.filter((u) => u.role === "creator" && u.status === "approved");
+  const sentTo = [];
+  for (const recipient of recipients) {
+    try {
+      const mail = recruiterKitEmail(recipient);
+      await deliverEmail("recruiter_kit", recipient, mail.subject, mail.text, null);
+      sentTo.push(recipient.email);
+    } catch (e) { /* one recipient must never block the rest */ }
+  }
+  await store.set(RECRUITER_KIT_FLAG_KEY, { version: 1, claimedAt, completedAt: nowIso(), recipients: sentTo });
+  await logEvent({
+    type: "recruiter_kit_email_run",
+    actorId: null,
+    actorRole: "system",
+    subjectId: null,
+    market: null,
+    data: { version: 1, recipients: sentTo.length, emails: sentTo },
+  });
 }
 
 function cleanStringList(value, allowed, maxItems) {
@@ -720,6 +855,10 @@ async function route(event) {
   const query = event.queryStringParameters || {};
 
   await auth.ensureAdmin(logEvent);
+  // One-time recruiter kit email: fires on the first request after
+  // deploy, guarded by a claimed blob flag, and never repeats. It
+  // must never break a request, hence the try/catch.
+  try { await maybeSendRecruiterKit(); } catch (e) { /* kit email is best-effort */ }
   const ctx = await getAuthUser(event);
   const user = ctx.user;
 
@@ -912,17 +1051,45 @@ async function route(event) {
       const all = await allUsers();
       const users = all.filter((u) => u.role !== "admin");
       const { approvedRank, pendingRank } = creatorRanks(all);
+      const counts = momentumMap(all);
       const attach = (u) => {
         const pub = publicUser(u);
         if (u.role === "creator") {
           pub.foundingPriority = approvedRank.get(u.id) || null;
           pub.queuePosition = pendingRank.get(u.id) || null;
+          pub.momentum = momentumFor(u, counts);
         }
         return pub;
       };
       const pending = users.filter((u) => u.status === "pending").sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
       const decided = users.filter((u) => u.status !== "pending").sort((a, b) => (a.reviewedAt < b.reviewedAt ? 1 : -1));
       return json(200, { pending: pending.map(attach), decided: decided.map(attach) });
+    }
+    if (method === "GET" && seg[1] === "leaderboard") {
+      // Recruiter leaderboard (Jeff, 2026-10-18): every creator with
+      // at least one credited sign-up, best Momentum first.
+      const all = await allUsers();
+      const counts = momentumMap(all);
+      const rows = [];
+      for (const u of all) {
+        if (u.role !== "creator" || !u.creator || !u.creator.handle) continue;
+        const m = momentumFor(u, counts);
+        if (m.signups < 1) continue;
+        rows.push({
+          userId: u.id,
+          name: u.name,
+          handle: u.creator.handle,
+          market: u.market,
+          city: u.city || "",
+          status: u.status,
+          createdAt: u.createdAt,
+          signups: m.signups,
+          approved: m.approved,
+          points: m.points,
+        });
+      }
+      rows.sort((a, b) => b.points - a.points || b.approved - a.approved || (a.createdAt < b.createdAt ? -1 : 1));
+      return json(200, { leaderboard: rows });
     }
     if (method === "GET" && seg[1] === "markets") {
       const all = await allUsers();
@@ -1457,4 +1624,4 @@ async function route(event) {
 
 // The email builders are exported alongside the router so the verify
 // suites can assert on the exact copy a creator receives.
-module.exports = { route, approvalEmail, signupConfirmationEmail };
+module.exports = { route, approvalEmail, signupConfirmationEmail, recruiterKitEmail, momentumFor, momentumMap, RECRUITER_KIT_FLAG_KEY };

@@ -304,6 +304,32 @@ try {
   check("client collects the Terms + email consent at sign-up", appJs.text.includes("jc-agree-terms"));
   check("client never renders an exact queue number to creators (admin keeps exact numbers)", !appJs.text.includes("in the ${esc(u.market)} founding queue") && !appJs.text.includes("Founding priority #${f.priorityPosition}") && !appJs.text.includes("#${f.queuePosition}"));
 
+  // --- Momentum: referral points computed from stored sign-ups only ---
+  const recruiter = client();
+  const regR = await recruiter("POST", "/api/auth/register", { ...basePayload, name: "Recruiter One", email: "launch-r@example.com", handle: "recruiterone" });
+  check("recruiter creator registers", regR.status === 201, JSON.stringify(regR.data));
+  check("a fresh creator starts at zero Momentum", !!regR.data.user.momentum && regR.data.user.momentum.signups === 0 && regR.data.user.momentum.approved === 0 && regR.data.user.momentum.points === 0, JSON.stringify(regR.data.user.momentum));
+  const recruit1 = await client()("POST", "/api/auth/register", { ...basePayload, name: "Recruit One", email: "launch-r1@example.com", handle: "recruitone", referredBy: "recruiterone" });
+  const recruit2 = await client()("POST", "/api/auth/register", { ...basePayload, name: "Recruit Two", email: "launch-r2@example.com", handle: "recruittwo", referredBy: "recruiterone" });
+  check("two creators sign up through the recruiter's invite link", recruit1.status === 201 && recruit2.status === 201, JSON.stringify([recruit1.status, recruit2.status]));
+  const meBefore = await recruiter("GET", "/api/auth/me");
+  check("Momentum before approvals: 2 sign-ups credited = 6 points", !!meBefore.data.user.momentum && meBefore.data.user.momentum.signups === 2 && meBefore.data.user.momentum.approved === 0 && meBefore.data.user.momentum.points === 6, JSON.stringify(meBefore.data.user.momentum));
+  await admin("POST", "/api/admin/review", { userId: recruit1.data.user.id, decision: "approve" });
+  const meAfter = await recruiter("GET", "/api/auth/me");
+  check("Momentum math: 2 sign-ups + 1 approved = 16 points", !!meAfter.data.user.momentum && meAfter.data.user.momentum.signups === 2 && meAfter.data.user.momentum.approved === 1 && meAfter.data.user.momentum.points === 16, JSON.stringify(meAfter.data.user.momentum));
+  const board = await admin("GET", "/api/admin/leaderboard");
+  const boardRow = (board.data.leaderboard || []).find((r) => r.handle === "recruiterone");
+  check("admin leaderboard ranks the recruiter first with 16 points", !!boardRow && boardRow.market === "Hampton Roads" && boardRow.signups === 2 && boardRow.approved === 1 && boardRow.points === 16 && board.data.leaderboard[0].handle === "recruiterone", JSON.stringify(board.data.leaderboard));
+  const appsNow = await admin("GET", "/api/admin/applications");
+  const pendingR = (appsNow.data.pending || []).find((u) => u.id === regR.data.user.id);
+  check("admin applications payload carries the recruiter's Momentum", !!pendingR && !!pendingR.momentum && pendingR.momentum.points === 16, JSON.stringify(pendingR && pendingR.momentum));
+  // Email copy is server-side only (bodies are never stored), so assert
+  // the shipped strings in the router source, the same way the suite
+  // asserts client copy in app.js.
+  const routerSrc = fs.readFileSync(new URL("../netlify/functions/lib/router.js", import.meta.url), "utf8");
+  check("sign-up and approval emails state the recruiting benefits (points + visibility)", routerSrc.includes("+3 when a creator joins through your link") && routerSrc.includes("+10 when they are approved") && routerSrc.includes("roster standing is part of the order they see"));
+  check("recruiter kit email is wired: subject, hosted badge, one-time flag", routerSrc.includes("Your Founding Creator badge is ready") && routerSrc.includes("https://joinsignl.com/assets/badges/signl-founding-creator-badge-square.png") && routerSrc.includes("recruiterKitEmailV1Sent"));
+
   // --- dataset: the new steps are all events ---
   const events = await admin("GET", "/api/admin/events?limit=500");
   const byType = (t) => (events.data.events || []).filter((e) => e.type === t);
@@ -321,6 +347,8 @@ try {
   check("client groups the market picker by country with a search filter", appJs.text.includes("optgroup") && appJs.text.includes("jc-market-search") && appJs.text.includes("filterMarketOptions"), "");
   check("client collects city + country on the not-listed path", appJs.text.includes("jc-country-text") && appJs.text.includes("customCountry") && appJs.text.includes("p-country-text"), "");
   check("event: with no SMTP transport, emails are recorded not_sent (never faked as sent)", byType("signup_confirmation_email_sent").length === 0 && byType("approval_email_not_sent").some((e) => e.data && e.data.reason === "transport_not_configured"), JSON.stringify(byType("approval_email_not_sent").map((e) => e.data && e.data.reason)));
+  check("event: recruiter kit trigger ran exactly once, at the first request, when no approved creators existed yet", byType("recruiter_kit_email_run").length === 1 && byType("recruiter_kit_email_run")[0].data.recipients === 0, JSON.stringify(byType("recruiter_kit_email_run").map((e) => e.data)));
+  check("client shows roster counts, Momentum points, and the visibility line in Grow your roster", appJs.text.includes("Momentum points") && appJs.text.includes("Creators who build a roster get seen first when businesses start choosing in your market. Points: +3 when a creator joins through your link, +10 when they are approved.") && appJs.text.includes("/admin/leaderboard"));
   const pcEvC = byType("profile_completed").find((e) => e.subjectId === regC.data.user.id);
   check("profile_completed records the paid campaigns opt-in and terms version", !!pcEvC && pcEvC.data.openToPaidCampaigns === true && pcEvC.data.termsVersion === boot.data.termsVersion && pcEvC.data.marketingEmailConsent === true, JSON.stringify(pcEvC && pcEvC.data));
 } finally {

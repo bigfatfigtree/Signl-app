@@ -51,11 +51,14 @@ function growRosterHtml(u) {
   const link = inviteUrlFor(u);
   if (!link) return "";
   const place = u.market === unlistedLabel() ? (u.city || "your city") : u.market;
+  const m = u.momentum || { signups: 0, approved: 0, points: 0 };
   return `
     <div class="panel mt" style="text-align:left">
       <h3 style="margin-top:0">Grow your roster</h3>
       <p class="small">Founding rosters fill by invitation. Share your personal invite link with other creators in ${esc(place)}: anyone who signs up through your link is credited to you.</p>
       <div class="field"><label>Your invite link</label><input type="text" readonly value="${esc(link)}" onclick="this.select()"></div>
+      <p class="small"><strong>Your roster:</strong> ${m.signups} ${m.signups === 1 ? "creator" : "creators"} joined through your link &middot; ${m.approved} approved &middot; <strong>${m.points} Momentum points</strong></p>
+      <p class="small">Creators who build a roster get seen first when businesses start choosing in your market. Points: +3 when a creator joins through your link, +10 when they are approved.</p>
       <p class="small muted">Tap the link to select it, copy it, and send it to a creator who should be on the founding roster with you.</p>
     </div>`;
 }
@@ -1274,10 +1277,11 @@ function renderAdmin() {
   state.tab = tab;
   app.innerHTML = `
     <h2>SIGNL Admin</h2>
-    ${tabsHtml(["Applications", "Markets", "Event Log", "Stats"], tab)}
+    ${tabsHtml(["Applications", "Markets", "Recruiters", "Event Log", "Stats"], tab)}
     <div id="tab-body"><p class="muted">Loading...</p></div>`;
   if (tab === "Applications") loadApplications();
   if (tab === "Markets") loadMarkets();
+  if (tab === "Recruiters") loadLeaderboard();
   if (tab === "Event Log") loadEvents();
   if (tab === "Stats") loadStats();
 }
@@ -1320,7 +1324,7 @@ async function loadApplications() {
         ? (u.foundingPriority ? `<br><span class="badge tier">Founding priority #${u.foundingPriority}</span>` : u.queuePosition ? `<br><span class="badge info">Queue #${u.queuePosition} in market</span>` : "")
         : "";
       const detail = u.role === "creator" && u.creator
-        ? `@${esc(u.creator.handle)} &middot; ${fmtNum(u.creator.followerCount)} followers &middot; ${esc(u.creator.tierBand)} &middot; Local: ${u.creator.localAudiencePct === null ? "not reported" : u.creator.localAudiencePct + "% (Self-reported)"} &middot; ${(u.creator.categories || []).map(esc).join(", ")} &middot; Photo: ${u.creator.hasPhoto ? "yes" : "no"} &middot; Socials: IG${u.creator.tiktokHandle ? ", TikTok" : ""}${u.creator.youtubeChannel ? ", YouTube" : ""}${u.creator.facebookUrl ? ", Facebook" : ""}${u.creator.xUrl ? ", X" : ""}${u.creator.linkedinUrl ? ", LinkedIn" : ""}${u.referredBy ? ` &middot; via @${esc(u.referredBy)}` : ""}`
+        ? `@${esc(u.creator.handle)} &middot; ${fmtNum(u.creator.followerCount)} followers &middot; ${esc(u.creator.tierBand)} &middot; Local: ${u.creator.localAudiencePct === null ? "not reported" : u.creator.localAudiencePct + "% (Self-reported)"} &middot; ${(u.creator.categories || []).map(esc).join(", ")} &middot; Photo: ${u.creator.hasPhoto ? "yes" : "no"} &middot; Socials: IG${u.creator.tiktokHandle ? ", TikTok" : ""}${u.creator.youtubeChannel ? ", YouTube" : ""}${u.creator.facebookUrl ? ", Facebook" : ""}${u.creator.xUrl ? ", X" : ""}${u.creator.linkedinUrl ? ", LinkedIn" : ""}${u.referredBy ? ` &middot; via @${esc(u.referredBy)}` : ""}${u.momentum && u.momentum.signups ? ` &middot; Momentum: ${u.momentum.points} pts (${u.momentum.signups} joined, ${u.momentum.approved} approved)` : ""}`
         : u.role === "business" && u.business
           ? `${esc(u.business.businessName)} &middot; ${esc(u.business.category)} &middot; ${esc(u.business.planName)}`
           : "";
@@ -1339,6 +1343,22 @@ async function loadApplications() {
       ${data.pending.length ? `<div class="table-wrap panel"><table><tr><th>Applicant</th><th>Type</th><th>Market</th><th>Details</th><th>Applied</th><th>Decision</th></tr>${data.pending.map(row).join("")}</table></div>` : `<p class="muted">No pending applications.</p>`}
       <h3 class="mt">Decided (${data.decided.length})</h3>
       ${data.decided.length ? `<div class="table-wrap panel"><table><tr><th>Applicant</th><th>Type</th><th>Market</th><th>Details</th><th>Applied</th><th>Status</th></tr>${data.decided.map(row).join("")}</table></div>` : `<p class="muted">None yet.</p>`}`;
+  } catch (err) {
+    el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+  }
+}
+
+async function loadLeaderboard() {
+  const el = document.getElementById("tab-body");
+  try {
+    const data = await api("GET", "/admin/leaderboard");
+    const rows = data.leaderboard || [];
+    el.innerHTML = `
+      <p class="muted small">Recruiters ranked by Momentum points: +3 for every creator who signs up through their invite link, +10 more when that creator is approved. Points come only from stored sign-up records.</p>
+      ${rows.length ? `<div class="table-wrap panel"><table>
+        <tr><th>#</th><th>Creator</th><th>Handle</th><th>Market</th><th>Sign-ups via link</th><th>Approved</th><th>Momentum points</th></tr>
+        ${rows.map((r, i) => `<tr><td>${i + 1}</td><td><strong>${esc(r.name)}</strong></td><td>@${esc(r.handle)}</td><td>${esc(r.market)}</td><td>${r.signups}</td><td>${r.approved}</td><td><strong>${r.points}</strong></td></tr>`).join("")}
+      </table></div>` : `<p class="muted">No creator has a credited sign-up yet. Leaderboard rows appear as soon as someone joins through an invite link.</p>`}`;
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }

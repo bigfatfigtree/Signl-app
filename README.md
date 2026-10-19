@@ -123,9 +123,9 @@ Verification (each suite spins up its own throwaway server and
 database, and registers fresh accounts through the real sign-up path):
 
 ```
-node scripts/verify-flow.mjs        # 57 checks: main marketplace flow
+node scripts/verify-flow.mjs        # 70 checks: main marketplace flow
 node scripts/verify-fallbacks.mjs   # 14 checks: check-in / confirm fallbacks
-node scripts/verify-launch.mjs      # 108 checks: the launch shape itself
+node scripts/verify-launch.mjs      # 119 checks: the launch shape itself
 npm run verify                      # all three, in order
 ```
 
@@ -145,7 +145,10 @@ end to end. It is read from the environment only, is not in
 netlify.toml, and must never be set on the Netlify site.
 
 All three suites were run green against this codebase on 2026-10-18
-(179 checks total).
+(203 checks total, including the Momentum points math end to end:
+a recruiter with 2 credited sign-ups and 1 approval sits at 16
+points in their own payload, the admin applications payload, and
+the recruiter leaderboard).
 
 ## 2026-10-18 post-launch changes (Jeff's screenshot review)
 
@@ -186,6 +189,42 @@ All three suites were run green against this codebase on 2026-10-18
   vein clinic services, dental, dermatology and aesthetics, IV
   therapy). Listed-market accounts store the market's country on the
   user record.
+
+## Momentum: referral points + roster standing (2026-10-18)
+
+Creators earn standing for recruiting. Points are computed server-side
+from stored sign-up records only (`lib/router.js`, `momentumMap` /
+`momentumFor`): **+3 for every account whose `referredBy` credits the
+creator's handle, +10 more for each credited creator who is
+approved.** Nothing is estimated or self-reported.
+
+- The creator's own payload (register, login, `/api/auth/me`, profile
+  updates) carries `momentum: { signups, approved, points }`, and the
+  "Grow your roster" block (pending, founding status, dashboard
+  Profile tab) shows the roster count, approved count, points, and
+  the rule in plain words: "Creators who build a roster get seen
+  first when businesses start choosing in your market. Points: +3
+  when a creator joins through your link, +10 when they are
+  approved."
+- Admin: `/api/admin/applications` carries `momentum` per creator,
+  and the **Recruiters** tab renders `/api/admin/leaderboard`
+  (handle, market, sign-ups, approved, points, best first).
+- Both transactional emails (sign-up confirmation and approval,
+  listed and unlisted variants) carry the same benefits block: the
+  personal invite link, the credited roster, the +3/+10 points, and
+  "A bigger roster moves you up: when businesses in your market start
+  choosing creators, roster standing is part of the order they see."
+- **One-time recruiter kit email.** The recruiter ask goes by email
+  from the app, never by Instagram DM. On the first API request after
+  the deploy that shipped it, the handler claims the blob flag
+  `config:recruiterKitEmailV1Sent` and emails every currently
+  approved creator exactly once (subject "Your Founding Creator
+  badge is ready": badge links hosted on joinsignl.com under
+  `/assets/badges/`, invite link, benefits block, optional story
+  ask, no-pressure close, signed by Jeff). Each send is logged as
+  `recruiter_kit_email_queued` / `_sent` / `_not_sent` events, plus
+  one `recruiter_kit_email_run` summary event. The flag is claimed
+  before sending, so it can never repeat.
 
 ## Environment variables
 
