@@ -131,6 +131,15 @@ try {
   const appJsText = String((appJs.data && appJs.data.raw) || "");
   check("status page renders the Grow your roster invite block", appJsText.includes("Grow your roster") && appJsText.includes("app.joinsignl.com/?ref="), appJsText.slice(0, 80));
   check("client persists the ?ref= credit and sends it at registration", appJsText.includes("signl_ref") && appJsText.includes("referredBy"), "");
+  // Claim-link prefill (Jeff, 2026-10-19): ?handle=&market=&tier= from
+  // email / partner links pre-fill the sign-up form. The suites assert
+  // the shipped client wiring the same way as the other client checks:
+  // param parsing with a handle sanitizer, exact-match validation of
+  // market and tier against the bootstrap lists, and the form defaults
+  // actually driven by the parsed values.
+  check("claim-link prefill: client parses handle, market, tier params with a sanitizer", appJsText.includes("parseClaimParams") && appJsText.includes("sanitizeClaimHandle") && appJsText.includes('params.get("handle")') && appJsText.includes('params.get("market")') && appJsText.includes('params.get("tier")'), "");
+  check("claim-link prefill: market and tier validate by exact match against the published lists", appJsText.includes("state.boot.markets.find((x) => x.name === marketRaw") && appJsText.includes("state.boot.tiers.some((t) => t.id === tierRaw)"), "");
+  check("claim-link prefill fills the sign-up form (market, city list, tier, handle)", appJsText.includes("marketOptions(pfMarket, true)") && appJsText.includes("cityOptions(pfMarket)") && appJsText.includes("tierOptions(pfTier)") && appJsText.includes("state.prefill"), "");
 
   // --- creator registers through the real sign-up path ---
   const creator = client();

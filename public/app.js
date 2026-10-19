@@ -6,6 +6,8 @@ const state = {
   boot: null, // markets, tiers, categories, plans
   view: "home",
   tab: null,
+  prefill: null, // claim-link prefill: sanitized ?handle=&market=&tier=
+  publicHandle: null, // set when the URL is /c/<handle>
   discover: [],
   threads: [],
   activeThread: null, // other user id
@@ -40,6 +42,33 @@ async function api(method, path, body) {
 // to their registration, so the inviting creator is credited.
 function storedRef() {
   try { return localStorage.getItem("signl_ref") || ""; } catch (e) { return ""; }
+}
+
+// Claim-link prefill (Jeff, 2026-10-19): per-target links from email
+// and partner channels arrive as ?handle=<ig>&market=<name>&tier=<band>
+// and pre-fill the creator sign-up form, so a creator we already know
+// lands on a half-completed application instead of a cold form. The
+// params only ever FILL fields: they never submit the form, never skip
+// the human review, and anything that does not exactly match the
+// published market and tier lists is silently ignored. (DM copy is
+// unchanged by design: DMs still carry the generic link.)
+function sanitizeClaimHandle(v) {
+  return String(v || "").trim().replace(/^@/, "").replace(/[^A-Za-z0-9._]/g, "").slice(0, 30);
+}
+
+function parseClaimParams(params) {
+  const out = {};
+  const handle = sanitizeClaimHandle(params.get("handle"));
+  if (handle) out.handle = handle;
+  const marketRaw = String(params.get("market") || "").trim().slice(0, 60);
+  if (marketRaw && state.boot) {
+    const m = state.boot.markets.find((x) => x.name === marketRaw || x.id === marketRaw);
+    if (m) out.market = m.name;
+    else if (marketRaw === unlistedLabel()) out.market = marketRaw;
+  }
+  const tierRaw = String(params.get("tier") || "").trim().slice(0, 20);
+  if (tierRaw && state.boot && state.boot.tiers.some((t) => t.id === tierRaw)) out.tier = tierRaw;
+  return out;
 }
 
 function inviteUrlFor(u) {
@@ -353,10 +382,15 @@ function syncPaidOptionProfile() {
 function renderJoinCreator() {
   const cats = state.boot.creatorCategories.map((c) => `<label><input type="checkbox" name="c-cat" value="${esc(c)}"> ${esc(c)}</label>`).join("");
   const comps = state.boot.compCategories.map((c) => `<label><input type="checkbox" name="c-comp" value="${esc(c)}"> ${esc(c)}</label>`).join("");
+  const pf = state.prefill || {};
+  const pfMarket = pf.market || "Hampton Roads";
+  const pfTier = pf.tier || "Neighbors";
+  const hasPrefill = !!(pf.handle || pf.market || pf.tier);
   app.innerHTML = `
   <section class="panel" style="max-width:680px;margin:10px auto">
     <h2>Become a Founding Creator</h2>
     <p class="muted">SIGNL is opening market by market, and creators are signing up first. Build your full founding profile now: when your market opens to businesses in the next 30 to 90 days, we email you, and founding creators get priority when businesses search. This is not a waitlist form; this is your real profile. City not listed yet? Pick "My city is not listed yet" below and sign up anyway: your sign-up counts toward opening your city, and you hold founding standing there.</p>
+    ${hasPrefill ? `<div class="notice blue">Your invite link told us a head start: we pre-filled what it carried below. Check it, finish the rest, and your profile goes into the review queue.</div>` : ""}
     <div id="form-error"></div>
     <form onsubmit="return doRegisterCreator(event)">
       <div class="form-2col">
@@ -365,8 +399,8 @@ function renderJoinCreator() {
       </div>
       <div class="field"><label>Password (10+ characters)</label><input type="password" id="jc-password" required minlength="10" autocomplete="new-password"></div>
       <div class="form-2col">
-        <div class="field"><label>Your market</label><input id="jc-market-search" placeholder="Search markets, for example: Dubai" oninput="filterMarketOptions()" style="margin-bottom:6px"><select id="jc-market" onchange="syncMarketChoice()">${marketOptions("Hampton Roads", true)}</select><p class="small muted">Markets are grouped by country. Don't see your city? Pick "My city is not listed yet" and sign up anyway.</p></div>
-        <div class="field" id="jc-city-wrap"><label>Your home city</label><select id="jc-city">${cityOptions("Hampton Roads")}</select></div>
+        <div class="field"><label>Your market</label><input id="jc-market-search" placeholder="Search markets, for example: Dubai" oninput="filterMarketOptions()" style="margin-bottom:6px"><select id="jc-market" onchange="syncMarketChoice()">${marketOptions(pfMarket, true)}</select><p class="small muted">Markets are grouped by country. Don't see your city? Pick "My city is not listed yet" and sign up anyway.</p></div>
+        <div class="field" id="jc-city-wrap"><label>Your home city</label><select id="jc-city">${cityOptions(pfMarket)}</select></div>
         <div id="jc-custom-wrap" style="display:none">
           <div class="field"><label>Your city</label><input id="jc-city-text" placeholder="For example: Tulsa"></div>
           <div class="field"><label>Your country</label><input id="jc-country-text" placeholder="For example: United States"></div>
@@ -376,7 +410,7 @@ function renderJoinCreator() {
       </div>
       <div class="field"><label>Your neighborhood or area (optional)</label><input id="jc-neighborhood" placeholder="For example: Oceanfront, Ghent, Town Center" maxlength="80"><p class="small muted">The part of town you actually post from. Businesses search by neighborhood, so this helps the right ones find you.</p></div>
       <div class="form-2col">
-        <div class="field"><label>Instagram handle (required)</label><input id="jc-handle" placeholder="yourhandle" required oninput="document.getElementById('jc-ig-link').textContent = this.value ? 'instagram.com/' + this.value.replace(/^@/, '') : ''"><p class="small muted" id="jc-ig-link"></p></div>
+        <div class="field"><label>Instagram handle (required)</label><input id="jc-handle" placeholder="yourhandle" required value="${esc(pf.handle || "")}" oninput="document.getElementById('jc-ig-link').textContent = this.value ? 'instagram.com/' + this.value.replace(/^@/, '') : ''"><p class="small muted" id="jc-ig-link"></p></div>
         <div class="field"><label>TikTok handle (optional)</label><input id="jc-tiktok" placeholder="yourhandle"></div>
       </div>
       <div class="field"><label>YouTube channel (optional)</label><input id="jc-youtube" placeholder="Channel name or URL"></div>
@@ -387,7 +421,7 @@ function renderJoinCreator() {
       <div class="field"><label>LinkedIn profile (optional)</label><input id="jc-linkedin" placeholder="linkedin.com/in/yourname or full URL"></div>
       <div class="form-2col">
         <div class="field"><label>Followers (required)</label><input type="number" id="jc-followers" min="0" required placeholder="For example 8400" oninput="syncSuggestedTier()"></div>
-        <div class="field"><label>Your tier band (confirm)</label><select id="jc-tier" onchange="syncPaidOption()">${tierOptions("Neighbors")}</select><p class="small muted" id="jc-tier-hint">Enter your followers and we will suggest your band.</p></div>
+        <div class="field"><label>Your tier band (confirm)</label><select id="jc-tier" onchange="syncPaidOption()">${tierOptions(pfTier)}</select><p class="small muted" id="jc-tier-hint">Enter your followers and we will suggest your band.</p></div>
       </div>
       <div class="form-2col">
         <div class="field"><label>Typical post views (optional)</label><input type="number" id="jc-avgviews" min="0" placeholder="For example 6000"></div>
@@ -413,6 +447,20 @@ function renderJoinCreator() {
       <p class="small muted mt">Every application is reviewed by a person. Founding spots are limited in every market, and priority goes in sign-up order.</p>
     </form>
   </section>`;
+  // Claim-link prefill, applied to the live form: the handle link
+  // preview, the unlisted-city swap when the link named no listed
+  // market, and the paid-campaigns block when the Creators band came
+  // pre-selected. Filling only; nothing here submits anything.
+  if (pf.handle) {
+    const linkEl = document.getElementById("jc-ig-link");
+    if (linkEl) linkEl.textContent = "instagram.com/" + pf.handle;
+  }
+  if (pf.market === unlistedLabel()) syncMarketChoice();
+  if (pf.tier) {
+    syncPaidOption();
+    const hint = document.getElementById("jc-tier-hint");
+    if (hint) hint.textContent = `Your invite link suggested the ${pf.tier} band. Confirm it below with your follower count, or pick another.`;
+  }
 }
 
 function readPhotoInput(inputId) {
@@ -1461,6 +1509,14 @@ async function loadStats() {
     const refParam = params.get("ref");
     if (refParam) {
       try { localStorage.setItem("signl_ref", refParam.trim().replace(/^@/, "").slice(0, 40)); } catch (e) { /* storage unavailable */ }
+    }
+    const claim = parseClaimParams(params);
+    if (claim.handle || claim.market || claim.tier) {
+      state.prefill = claim;
+      // A claim link is an invitation to the form itself: a logged-out
+      // visitor lands on the sign-up, pre-filled. Signed-in visitors
+      // keep their normal landing, and nothing ever auto-submits.
+      if (!state.user) state.view = "join-creator";
     }
     const code = params.get("code");
     if (code && state.user && state.user.role === "business") {
