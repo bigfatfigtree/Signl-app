@@ -1,1 +1,22 @@
-{"dependencies":{"@netlify/blobs":"^8.1.0","qrcode-generator":"^1.4.4"},"description":"SIGNL public platform: local creator marketing app (app.joinsignl.com)","engines":{"node":">=18"},"name":"signl-app","private":true,"scripts":{"dev":"node scripts/dev-server.mjs","verify":"node scripts/verify-flow.mjs && node scripts/verify-fallbacks.mjs && node scripts/verify-launch.mjs","verify-fallbacks":"node scripts/verify-fallbacks.mjs","verify-flow":"node scripts/verify-flow.mjs","verify-launch":"node scripts/verify-launch.mjs"},"type":"commonjs","version":"1.0.0"}
+{
+  "dependencies": {
+    "@netlify/blobs": "^8.1.0",
+    "qrcode-generator": "^1.4.4"
+  },
+  "description": "SIGNL public platform: local creator marketing app (app.joinsignl.com)",
+  "engines": {
+    "node": ">=18"
+  },
+  "name": "signl-app",
+  "private": true,
+  "scripts": {
+    "dev": "node scripts/dev-server.mjs",
+    "verify": "node scripts/verify-flow.mjs && node scripts/verify-fallbacks.mjs && node scripts/verify-launch.mjs && node scripts/verify-compliance.mjs",
+    "verify-fallbacks": "node scripts/verify-fallbacks.mjs",
+    "verify-flow": "node scripts/verify-flow.mjs",
+    "verify-launch": "node scripts/verify-launch.mjs",
+    "verify-compliance": "node scripts/verify-compliance.mjs"
+  },
+  "type": "commonjs",
+  "version": "1.0.0"
+}

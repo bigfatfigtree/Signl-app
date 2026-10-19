@@ -102,7 +102,7 @@ try {
   const anon = client();
   const boot = await anon("GET", "/api/bootstrap");
   check("bootstrap lists 39 markets", boot.data.markets && boot.data.markets.length === 39, JSON.stringify(boot.data.markets && boot.data.markets.length));
-  check("bootstrap plans are $299 and $799", boot.data.plans[0].priceMonthly === 299 && boot.data.plans[1].priceMonthly === 799);
+  check("bootstrap plans are the three founding plans ($299 / $599 / $999, 3-month minimum)", boot.data.plans.length === 3 && boot.data.plans[0].id === "self-service" && boot.data.plans[0].priceMonthly === 299 && boot.data.plans[1].id === "growth" && boot.data.plans[1].priceMonthly === 599 && boot.data.plans[2].id === "managed" && boot.data.plans[2].priceMonthly === 999 && boot.data.plans.every((p) => p.minMonths === 3), JSON.stringify(boot.data.plans.map((p) => [p.id, p.priceMonthly])));
 
   // --- referral: email copy + status page rendering path ---
   const mailListed = approvalEmail({ name: "Verify Creator", email: "v@example.com", market: "Hampton Roads", creator: { handle: "verifyeats757", tierBand: "Locals" } }, 100);
@@ -217,7 +217,7 @@ try {
     agreedTerms: true,
   });
   check("business registration returns 201", regB.status === 201, JSON.stringify(regB.data));
-  check("business plan recorded as Managed $799", regB.data.user.business && regB.data.user.business.plan === "managed" && regB.data.user.business.planPriceMonthly === 799);
+  check("business plan recorded as Managed $999", regB.data.user.business && regB.data.user.business.plan === "managed" && regB.data.user.business.planPriceMonthly === 999);
   check("founding billing is honest (no card charged)", /no card charged/i.test(regB.data.user.business.billingStatus), regB.data.user.business.billingStatus);
   const businessId = regB.data.user.id;
 
