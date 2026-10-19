@@ -115,9 +115,12 @@ async function renderPublicProfile() {
   app.innerHTML = `
   <section class="panel" style="max-width:640px;margin:20px auto">
     <div class="flex-between">
-      <div>
-        <h2 style="margin:0">${esc(p.name)}</h2>
-        <p class="muted" style="margin:4px 0">@<a href="${esc(p.instagramUrl)}" target="_blank" rel="noopener">${esc(p.handle)}</a> &middot; ${place}${!p.unlisted && p.city ? ` &middot; ${esc(p.city)}` : ""}${p.neighborhood ? ` &middot; ${esc(p.neighborhood)}` : ""}</p>
+      <div style="display:flex;gap:16px;align-items:flex-start">
+        ${p.photoUrl ? `<img class="profile-photo" src="${esc(p.photoUrl)}" alt="">` : `<span class="profile-photo avatar-initial">${esc((p.name || "?").trim().charAt(0).toUpperCase() || "?")}</span>`}
+        <div>
+          <h2 style="margin:0">${esc(p.name)}</h2>
+          <p class="muted" style="margin:4px 0">@<a href="${esc(p.instagramUrl)}" target="_blank" rel="noopener">${esc(p.handle)}</a> &middot; ${place}${!p.unlisted && p.city ? ` &middot; ${esc(p.city)}` : ""}${p.neighborhood ? ` &middot; ${esc(p.neighborhood)}` : ""}</p>
+        </div>
       </div>
       <span class="badge ok" style="font-size:0.95rem;padding:6px 14px">Founding Creator</span>
     </div>
@@ -126,6 +129,9 @@ async function renderPublicProfile() {
     ${p.foundingBand ? `<p><span class="badge tier" style="padding:6px 14px">In the first ${p.foundingBand} founding creators in ${place}</span></p>` : ""}
     ${p.categories && p.categories.length ? `<p class="small">${p.categories.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
     ${p.compCategories && p.compCategories.length ? `<p class="small muted">Open to comps: ${p.compCategories.map(esc).join(", ")}</p>` : ""}
+    ${bestWorkHtml(p.bestWork)}
+    ${trackRecordHtml(p)}
+    ${reviewsHtml(p)}
     <p class="small muted">SIGNL connects local businesses with local creators. Businesses comp a meal or a service, creators post honestly within 48 hours and disclose the comp, and every post is tracked. No business can ever require a positive post.</p>
     <div class="cta-row" style="justify-content:flex-start">
       ${state.user ? `<a class="btn ghost" href="#" onclick="return go('dashboard')">Back to my dashboard</a>` : `<a class="btn" href="#" onclick="return go('join-creator')">Become a Founding Creator</a> <a class="btn ghost" href="#" onclick="return go('for-businesses')">For Businesses</a>`}
@@ -722,16 +728,147 @@ function socialLinksHtml(p) {
   return links.join(" &middot; ");
 }
 
-function creatorCard(c, viewer) {
+// ---------- creator showcase: photo, best work, track record, reviews ----------
+// One set of renderers for every surface that shows a creator (public
+// profile page, discovery card, full profile view, the creator's own
+// profile, and the admin Business Preview), so what a business sees
+// is identical everywhere. All data comes from the server payloads,
+// which compute everything from stored records only.
+
+function starsHtml(n) {
+  const full = Math.max(0, Math.min(5, Math.round(Number(n) || 0)));
+  return `<span class="stars" title="${full} out of 5 stars">${"★".repeat(full)}${"☆".repeat(5 - full)}</span>`;
+}
+
+// The creator's uploaded photo, or a brand-styled initial tile when
+// they have not added one yet.
+function avatarHtml(card, cls) {
+  if (card.photoUrl) return `<img class="${cls}" src="${esc(card.photoUrl)}" alt="">`;
+  const initial = esc((card.name || "?").trim().charAt(0).toUpperCase() || "?");
+  return `<span class="${cls} avatar-initial" aria-hidden="true">${initial}</span>`;
+}
+
+// Best work renders as labeled outbound link cards ("Watch: Instagram
+// reel"). Third-party players are never embedded.
+function bestWorkHtml(list, compact) {
+  if (!list || !list.length) return "";
+  const cards = list.map((w) => `<a class="work-card" href="${esc(w.url)}" target="_blank" rel="noopener noreferrer"><span class="work-play">&#9654;</span><span>${esc(w.label)}</span><span class="work-host">${esc(w.platform)}</span></a>`).join("");
+  if (compact) return `<div class="work-row">${cards}</div>`;
+  return `<div class="showcase-block"><h4>Best work</h4><div class="work-row">${cards}</div></div>`;
+}
+
+// The SIGNL track record: real visits, posts, and on-time record from
+// completed platform bookings only. Before any activity the honest
+// zero state shows instead of numbers.
+function trackRecordHtml(card) {
+  const tr = card.trackRecord;
+  if (!tr) return "";
+  if (tr.isNew) {
+    return `<div class="showcase-block"><h4>SIGNL track record</h4><p class="muted">New to SIGNL: no visits yet.${card.foundingBand ? ` Founding creator, first ${card.foundingBand} in ${esc(card.market || "")}.` : ""} Every completed visit, delivered post, and on-time record appears here as it happens, computed from real bookings only.</p></div>`;
+  }
+  const names = (tr.businessesWorkedWith || []).map(esc).join(", ");
+  return `<div class="showcase-block"><h4>SIGNL track record</h4>
+    <div class="stat-row">
+      <div class="stat"><div class="num">${tr.visitsCompleted}</div><div class="lbl">Visits completed</div></div>
+      <div class="stat"><div class="num">${tr.postsDelivered}</div><div class="lbl">Posts delivered</div></div>
+      <div class="stat"><div class="num">${tr.onTimePct === null || tr.onTimePct === undefined ? "—" : tr.onTimePct + "%"}</div><div class="lbl">On time</div></div>
+    </div>
+    ${names ? `<p class="small muted">Worked with: ${names}</p>` : ""}</div>`;
+}
+
+// Business reviews appear only when a real review exists (a business
+// reviewed a completed visit). Nothing is ever seeded or averaged in.
+function reviewsHtml(card) {
+  const sum = card.reviewSummary || { count: 0, average: null };
+  if (!sum.count) return "";
+  const items = (card.reviews || []).map((r) => `
+    <div class="review-item">
+      <div>${starsHtml(r.stars)} <strong>${esc(r.businessName)}</strong> <span class="muted small">${esc(fmtDate(r.createdAt))}</span></div>
+      ${r.comment ? `<p style="margin:6px 0 0">${esc(r.comment)}</p>` : ""}
+    </div>`).join("");
+  return `<div class="showcase-block"><h4>Business reviews</h4>
+    <p>${starsHtml(sum.average)} <strong>${esc(String(sum.average))}</strong> average from ${sum.count} business review${sum.count === 1 ? "" : "s"} after completed visits.</p>
+    ${items}</div>`;
+}
+
+function creatorShowcaseHtml(card) {
+  return bestWorkHtml(card.bestWork) + trackRecordHtml(card) + reviewsHtml(card);
+}
+
+// The full creator profile view: what a business opens from a
+// discovery card (and what the admin preview opens). Built entirely
+// from the same card payload discovery returns, so the detail view
+// can never disagree with the card.
+function creatorProfileDetailHtml(c, preview) {
   const p = c.profile || {};
   const localTxt = p.localAudiencePct === null || p.localAudiencePct === undefined
     ? "Local audience not reported yet"
     : `${p.localAudiencePct}% local audience <span class="badge info">${esc(p.localAudienceSource || "Self-reported")}</span>`;
   return `
+  <div class="panel">
+    <p><button class="btn small-btn ghost" onclick="${preview ? "previewBackToResults()" : "backToDiscover()"}">&larr; Back to results</button></p>
+    <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
+      ${avatarHtml(c, "profile-photo")}
+      <div style="flex:1;min-width:240px">
+        <h3 style="margin:0">${esc(c.name)}</h3>
+        <p class="muted" style="margin:4px 0">@<a href="${esc(p.instagramUrl || "")}" target="_blank" rel="noopener">${esc(p.handle || "")}</a> &middot; ${esc(c.market)}${c.city ? ` &middot; ${esc(c.city)}` : ""}${c.neighborhood ? ` &middot; ${esc(c.neighborhood)}` : ""}</p>
+        <p>${scoreBadge(c.localImpactScore)}${p.openToPaidCampaigns ? ` <span class="badge tier">Open to paid campaigns</span>` : ""}${c.momentum && c.momentum.points ? ` <span class="badge info">Momentum ${c.momentum.points} pts</span>` : ""} <span class="badge tier">${esc(p.tierBand || "")}</span>${c.foundingBand ? ` <span class="badge tier">Founding creator, first ${c.foundingBand} in market</span>` : ""}</p>
+        <p>${localTxt}</p>
+      </div>
+    </div>
+    <div class="stat-row mt">
+      <div class="stat"><div class="num">${fmtNum(p.followerCount)}</div><div class="lbl">Followers</div></div>
+      <div class="stat"><div class="num">${fmtNum(p.avgViews)}</div><div class="lbl">Typical views</div></div>
+      <div class="stat"><div class="num">${p.localAudiencePct === null || p.localAudiencePct === undefined ? "—" : p.localAudiencePct + "%"}</div><div class="lbl">Followers local (${esc(p.localAudienceSource || "Self-reported")})</div></div>
+    </div>
+    ${c.scoreComponents ? `<p class="small muted">Local Impact Score, in the open: local audience ${c.scoreComponents.localAudiencePct}% &middot; reliability ${c.scoreComponents.reliability} (${esc(c.scoreComponents.reliabilityBasis)}) &middot; engagement ${c.scoreComponents.engagement}.</p>` : ""}
+    ${p.categories && p.categories.length ? `<p class="small">${p.categories.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
+    ${p.compCategories && p.compCategories.filter((x) => x !== PAID_COMP).length ? `<p class="small muted">Open to comps: ${p.compCategories.filter((x) => x !== PAID_COMP).map(esc).join(", ")}</p>` : ""}
+    ${p.topAudienceCities && p.topAudienceCities.length ? `<p class="small muted">Top audience cities: ${p.topAudienceCities.map(esc).join(", ")}</p>` : ""}
+    ${p.bio ? `<p>${esc(p.bio)}</p>` : ""}
+    <p class="small">${socialLinksHtml(p)}</p>
+    ${creatorShowcaseHtml(c)}
+    <div class="cta-row" style="justify-content:flex-start">
+      ${preview
+        ? `<button class="btn" onclick="previewStartOffer('${c.userId}')">Send this creator an offer (preview)</button>`
+        : `<button class="btn" onclick="startOffer('${c.userId}')">Send offer</button> <button class="btn ghost" onclick="openThread('${c.userId}')">Message</button>`}
+    </div>
+    ${preview ? `<p class="small muted">Preview: an offer sent from here is a simulation. It never reaches ${esc(c.name)} and nothing is saved.</p>` : ""}
+  </div>`;
+}
+
+function openCreatorProfile(userId) {
+  const c = (state.discover || []).find((x) => x.userId === userId);
+  const el = document.getElementById("tab-body");
+  if (!c || !el) return;
+  el.innerHTML = creatorProfileDetailHtml(c, false);
+  window.scrollTo(0, 0);
+}
+
+function backToDiscover() {
+  loadDiscover();
+}
+
+function creatorCard(c, viewer, opts) {
+  opts = opts || {};
+  const p = c.profile || {};
+  const localTxt = p.localAudiencePct === null || p.localAudiencePct === undefined
+    ? "Local audience not reported yet"
+    : `${p.localAudiencePct}% local audience <span class="badge info">${esc(p.localAudienceSource || "Self-reported")}</span>`;
+  const tr = c.trackRecord;
+  const trackLine = tr
+    ? (tr.isNew
+      ? `<span class="badge info">New to SIGNL: no visits yet</span>`
+      : `<span class="muted">${tr.visitsCompleted} visits completed &middot; ${tr.postsDelivered} posts delivered &middot; ${tr.onTimePct === null || tr.onTimePct === undefined ? "—" : tr.onTimePct + "% on time"}</span>`)
+    : "";
+  const reviewLine = c.reviewSummary && c.reviewSummary.count
+    ? ` ${starsHtml(c.reviewSummary.average)} <strong>${esc(String(c.reviewSummary.average))}</strong> <span class="muted">(${c.reviewSummary.count} review${c.reviewSummary.count === 1 ? "" : "s"})</span>`
+    : "";
+  return `
   <div class="card">
     <div class="flex-between">
-      <div>${c.photoUrl ? `<img class="avatar" src="${esc(c.photoUrl)}" alt="">` : ""}<strong>${esc(c.name)}</strong> <span class="muted">@${esc(p.handle || "")}</span></div>
-      <button class="heart ${c.isFavorite ? "on" : ""}" title="Save to favorites" onclick="toggleFav('${c.userId}')">${c.isFavorite ? "&#10084;" : "&#9825;"}</button>
+      <div>${avatarHtml(c, "avatar")}<strong>${esc(c.name)}</strong> <span class="muted">@${esc(p.handle || "")}</span></div>
+      ${opts.preview ? "" : `<button class="heart ${c.isFavorite ? "on" : ""}" title="Save to favorites" onclick="toggleFav('${c.userId}')">${c.isFavorite ? "&#10084;" : "&#9825;"}</button>`}
     </div>
     <p class="small muted">${esc(c.market)} &middot; ${esc(c.city || "")}${c.neighborhood ? ` &middot; ${esc(c.neighborhood)}` : ""} &middot; ${esc(p.tierBand || "")} &middot; ${fmtNum(p.followerCount)} followers &middot; ${fmtNum(p.avgViews)} avg views${c.foundingBand ? ` &middot; Founding creator, first ${c.foundingBand} in market` : ""}</p>
     <p>${localTxt}</p>
@@ -740,9 +877,15 @@ function creatorCard(c, viewer) {
     ${p.compCategories && p.compCategories.filter((x) => x !== PAID_COMP).length ? `<p class="small muted">Open to comps: ${p.compCategories.filter((x) => x !== PAID_COMP).map(esc).join(", ")}</p>` : ""}
     ${p.bio ? `<p class="small muted">${esc(p.bio)}</p>` : ""}
     <p class="small">${socialLinksHtml(p)}</p>
+    ${bestWorkHtml(c.bestWork, true)}
+    ${trackLine || reviewLine ? `<p class="small">${trackLine}${reviewLine}</p>` : ""}
     <div class="cta-row" style="justify-content:flex-start">
-      <button class="btn small-btn" onclick="startOffer('${c.userId}')">Send offer</button>
-      <button class="btn small-btn ghost" onclick="openThread('${c.userId}')">Message</button>
+      ${opts.preview
+        ? `<button class="btn small-btn" onclick="previewViewCreator('${c.userId}')">View profile</button>
+           <button class="btn small-btn ghost" onclick="previewStartOffer('${c.userId}')">Send preview offer</button>`
+        : `<button class="btn small-btn" onclick="startOffer('${c.userId}')">Send offer</button>
+           <button class="btn small-btn ghost" onclick="openCreatorProfile('${c.userId}')">View profile</button>
+           <button class="btn small-btn ghost" onclick="openThread('${c.userId}')">Message</button>`}
     </div>
   </div>`;
 }
@@ -836,6 +979,7 @@ async function loadFounding() {
     </div>`}`;
     el.innerHTML += growRosterHtml(state.user);
     profEl.innerHTML = `<h3 class="mt">Your profile</h3>` + creatorProfileHtml(state.user);
+    fillMyShowcase(card);
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
@@ -905,10 +1049,22 @@ function creatorProfileHtml(u) {
       <div class="field" id="p-paid-wrap" style="display:${c.tierBand === "Creators" ? "" : "none"}">
         <label style="font-weight:500"><input type="checkbox" id="p-paid" style="width:auto" ${c.openToPaidCampaigns ? "checked" : ""}> <strong>Paid cash campaigns</strong> (Creators tier): businesses can hire me for paid campaigns when a business runs one, on top of comps.</label>
       </div>
+      <div class="field"><label>Best work (up to 3 links)</label>
+        ${[0, 1, 2].map((i) => `<input id="p-work-${i}" type="url" placeholder="https://www.instagram.com/reel/... or a TikTok or YouTube link" value="${esc((c.bestWork || [])[i] || "")}" style="margin-bottom:8px">`).join("")}
+        <p class="small muted">Your strongest posts, shown on your public profile and to businesses in search results as Watch cards. Instagram, TikTok, or YouTube links only. Clear a box to remove that link.</p>
+      </div>
       <div class="field"><label>Bio</label><textarea id="p-bio" rows="2">${esc(c.bio || "")}</textarea></div>
       <button class="btn" type="submit">Save profile</button> <span id="save-ok" class="saved"></span>
     </form>
+    <div id="my-showcase"></div>
   </div>`;
+}
+
+function fillMyShowcase(card) {
+  const sc = document.getElementById("my-showcase");
+  if (sc && card) {
+    sc.innerHTML = `<div class="showcase-block"><h4>How businesses see your profile</h4><p class="small muted">Your best work, SIGNL track record, and business reviews, exactly as they appear on your public profile and in business search. The track record and reviews come only from real completed visits on SIGNL.</p>${creatorShowcaseHtml(card)}</div>`;
+  }
 }
 
 async function loadMyScore() {
@@ -919,6 +1075,7 @@ async function loadMyScore() {
     const mine = data.card;
     const el = document.getElementById("my-score");
     if (el && mine) el.innerHTML = scoreBadge(mine.localImpactScore) + (mine.scoreComponents ? `<div class="small muted mt">Local ${mine.scoreComponents.localAudiencePct}% (${esc(mine.scoreComponents.localAudienceSource)}) &middot; Reliability ${mine.scoreComponents.reliability} &middot; ${esc(mine.scoreComponents.reliabilityBasis)}</div>` : "");
+    fillMyShowcase(mine);
   } catch (e) { /* non-fatal */ }
 }
 
@@ -951,6 +1108,7 @@ async function doUpdateCreator(e) {
       topAudienceCities: document.getElementById("p-topcities").value.split(",").map((x) => x.trim()).filter(Boolean),
       categories: cats,
       compCategories: comps,
+      bestWork: [0, 1, 2].map((i) => { const el = document.getElementById("p-work-" + i); return el ? el.value : ""; }),
       bio: document.getElementById("p-bio").value,
     });
     state.user = data.user;

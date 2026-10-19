@@ -175,3 +175,37 @@ th { color: var(--muted); font-weight: 600; }
 .heart { background: none; border: 0; font-size: 1.3rem; cursor: pointer; color: var(--muted); }
 .heart.on { color: var(--red); }
 .countdown { font-family: Archivo; font-weight: 700; }
+
+/* Business preview (admin) + creator showcase: photo tile, best
+   work cards, track record, business reviews (2026-10-19). */
+.preview-banner {
+  display: flex; gap: 14px; align-items: center; flex-wrap: wrap;
+  border: 1px solid #6b4d1c; background: #241a08; color: #ffd9a0;
+  border-radius: var(--radius); padding: 14px 18px; margin-bottom: 14px;
+}
+.preview-banner .btn { margin-left: auto; }
+.preview-tag {
+  display: inline-block; padding: 2px 10px; border-radius: 999px;
+  font-size: 0.72rem; font-weight: 800; letter-spacing: 0.08em;
+  background: var(--grad); color: #06130b; vertical-align: middle;
+}
+.preview-cta { display: flex; justify-content: space-between; gap: 16px; align-items: center; flex-wrap: wrap; }
+.avatar-initial {
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--grad); color: #06130b; font-weight: 800;
+  font-family: Archivo, sans-serif;
+}
+.profile-photo.avatar-initial { font-size: 3rem; }
+.showcase-block { border-top: 1px solid var(--line); margin-top: 16px; padding-top: 14px; }
+.showcase-block h4 { margin: 0 0 8px; }
+.work-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+.work-card {
+  display: inline-flex; gap: 8px; align-items: center; padding: 8px 14px;
+  border: 1px solid var(--line); border-radius: 999px; background: var(--panel-2);
+  color: var(--text); text-decoration: none; font-size: 0.88rem; font-weight: 600;
+}
+.work-card:hover { border-color: var(--teal); }
+.work-play { color: var(--green); font-size: 0.75rem; }
+.work-host { color: var(--muted); font-weight: 500; }
+.stars { color: var(--amber); letter-spacing: 2px; }
+.review-item { border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; margin: 8px 0; background: var(--panel-2); }

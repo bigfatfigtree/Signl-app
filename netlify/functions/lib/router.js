@@ -501,6 +501,64 @@ function normalizeSocials(b) {
   return out;
 }
 
+// Best-work links (Jeff, 2026-10-19): a creator may attach up to 3
+// links to their own best posts - Instagram, TikTok or YouTube only.
+// Host-validated, so a rendered link card can never point somewhere
+// its label does not say. Links are stored raw on the creator record
+// and rendered as outbound cards; third-party players are never
+// embedded.
+const BEST_WORK_HOSTS = [
+  { hosts: ["instagram.com"], platform: "Instagram" },
+  { hosts: ["tiktok.com", "vm.tiktok.com", "vt.tiktok.com"], platform: "TikTok" },
+  { hosts: ["youtube.com", "m.youtube.com", "youtu.be"], platform: "YouTube" },
+];
+function bestWorkPlatform(url) {
+  let u;
+  try {
+    u = new URL(String(url || ""));
+  } catch (e) {
+    return null;
+  }
+  if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+  const host = u.hostname.toLowerCase().replace(/^www\./, "");
+  for (const entry of BEST_WORK_HOSTS) {
+    if (entry.hosts.includes(host)) return entry.platform;
+  }
+  return null;
+}
+function bestWorkLabel(url) {
+  const platform = bestWorkPlatform(url);
+  if (!platform) return "Watch";
+  let path = "";
+  try {
+    path = new URL(String(url)).pathname.toLowerCase();
+  } catch (e) {
+    path = "";
+  }
+  let kind = "video";
+  if (platform === "Instagram") kind = /^\/(reel|reels|tv)\b/.test(path) ? "reel" : "post";
+  if (platform === "YouTube") kind = path.startsWith("/shorts/") ? "short" : "video";
+  return `Watch: ${platform} ${kind}`;
+}
+function validateBestWork(input) {
+  if (input === undefined || input === null) return { ok: true, links: [] };
+  if (!Array.isArray(input)) return { ok: false, error: "Best work must be a list of links" };
+  const links = [];
+  for (const raw of input) {
+    const s = String(raw == null ? "" : raw).trim();
+    if (!s) continue;
+    if (s.length > 300) return { ok: false, error: "Best work links are too long (300 characters max each)" };
+    if (!bestWorkPlatform(s)) return { ok: false, error: "Best work links must be Instagram, TikTok or YouTube URLs" };
+    if (!links.includes(s)) links.push(s);
+  }
+  if (links.length > 3) return { ok: false, error: "Add up to 3 best work links" };
+  return { ok: true, links };
+}
+function bestWorkCards(creator) {
+  const links = validateBestWork(creator && creator.bestWork).links;
+  return links.map((url) => ({ url, platform: bestWorkPlatform(url), label: bestWorkLabel(url) }));
+}
+
 async function allOffers() {
   const rows = await store.list("offer:");
   return rows.map((r) => r.value);
@@ -522,9 +580,134 @@ async function creatorHistory(creatorUserId) {
   return summarizeHistory(bookings, posts);
 }
 
+// ---------- SIGNL track record + business reviews ----------
+// The track record is the differentiator (Jeff, 2026-10-19: profiles
+// must be detailed and robust, because the platform sells the
+// connection). Every figure is computed ONLY from stored bookings and
+// posts: visits completed = bookings actually redeemed, posts
+// delivered = posts actually submitted, on-time % from those posts,
+// businesses worked with = the distinct business names on redeemed
+// bookings. Before any activity exists the zero state is the honest
+// answer (isNew) and the UI says "New to SIGNL: no visits yet" -
+// nothing here is ever invented, estimated, or seeded.
+function summarizeTrackRecord(bookings, posts, creatorId) {
+  const mine = bookings.filter((b) => b.creatorId === creatorId);
+  const visited = mine.filter((b) => b.redeemedAt);
+  const myPosts = posts.filter((p) => p.creatorId === creatorId);
+  const onTime = myPosts.filter((p) => p.onTime).length;
+  const names = [];
+  for (const b of visited) {
+    const n = String(b.businessName || "").trim();
+    if (n && !names.includes(n)) names.push(n);
+  }
+  return {
+    visitsCompleted: visited.length,
+    postsDelivered: myPosts.length,
+    onTimePct: myPosts.length ? Math.round((onTime / myPosts.length) * 100) : null,
+    businessesWorkedWith: names,
+    isNew: visited.length === 0 && myPosts.length === 0,
+  };
+}
+
+async function creatorTrackRecord(creatorId) {
+  const [bookings, posts] = await Promise.all([allBookings(), allPosts()]);
+  return summarizeTrackRecord(bookings, posts, creatorId);
+}
+
+// Business reviews live as review:{id} records (see the POST
+// /bookings/:id/review route). The only shape a review is ever shown
+// in: stars, the business's own words, the business's name, when.
+async function allReviews() {
+  const rows = await store.list("review:");
+  return rows.map((r) => r.value);
+}
+
+function reviewDisplay(r) {
+  return {
+    stars: r.stars,
+    comment: r.comment || "",
+    businessName: r.businessName || "A SIGNL business",
+    createdAt: r.createdAt,
+  };
+}
+
+function reviewSummaryOf(displayList) {
+  if (!displayList.length) return { count: 0, average: null };
+  const avg = displayList.reduce((s, r) => s + (Number(r.stars) || 0), 0) / displayList.length;
+  return { count: displayList.length, average: Math.round(avg * 10) / 10 };
+}
+
+async function creatorReviews(creatorId) {
+  const all = await allReviews();
+  return all
+    .filter((r) => r.creatorId === creatorId)
+    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+}
+
+// The discovery query, shared verbatim by the real business surface
+// and the admin Business Preview so both answer identically. `viewer`
+// only drives the favorite flag and the default market; every filter
+// reads a field stored on the creator record.
+async function discoverCards(query, viewer) {
+  const users = await allUsers();
+  let creators = users.filter((u) => u.role === "creator" && u.status === "approved");
+  const market = query.market || (viewer && viewer.role === "business" ? viewer.market : null);
+  if (market) creators = creators.filter((u) => u.market === (marketByName(market) || {}).name);
+  if (query.tier) creators = creators.filter((u) => u.creator && u.creator.tierBand === query.tier);
+  if (query.category) creators = creators.filter((u) => u.creator && u.creator.categories.includes(query.category));
+  if (query.compCategory) creators = creators.filter((u) => u.creator && (u.creator.compCategories || []).includes(query.compCategory));
+  if (query.neighborhood) {
+    const nb = String(query.neighborhood).trim().toLowerCase();
+    if (nb) creators = creators.filter((u) => {
+      const area = ((u.creator && u.creator.neighborhood) || "").toLowerCase();
+      const city = (u.city || "").toLowerCase();
+      return area.includes(nb) || city.includes(nb);
+    });
+  }
+  const fMin = parseInt(query.followersMin, 10);
+  if (!Number.isNaN(fMin)) creators = creators.filter((u) => u.creator && (u.creator.followerCount || 0) >= fMin);
+  const fMax = parseInt(query.followersMax, 10);
+  if (!Number.isNaN(fMax)) creators = creators.filter((u) => u.creator && (u.creator.followerCount || 0) <= fMax);
+  const minLocal = Number(query.minLocalPct);
+  if (query.minLocalPct !== undefined && !Number.isNaN(minLocal)) {
+    creators = creators.filter((u) => u.creator && u.creator.localAudiencePct !== null && u.creator.localAudiencePct !== undefined && Number(u.creator.localAudiencePct) >= minLocal);
+  }
+  if (query.paid === "1" || query.paid === "true") {
+    creators = creators.filter((u) => u.creator && u.creator.openToPaidCampaigns === true);
+  }
+  if (query.q) {
+    const q = query.q.toLowerCase();
+    creators = creators.filter((u) => u.name.toLowerCase().includes(q) || (u.creator && u.creator.handle.toLowerCase().includes(q)));
+  }
+  const { approvedRank } = creatorRanks(users);
+  const counts = momentumMap(users);
+  const out = [];
+  for (const c of creators) {
+    const card = await publicCreator(c, viewer, approvedRank.get(c.id) || null);
+    // Roster standing rides on the card: it is part of the order
+    // businesses were promised creators would be seen in.
+    card.momentum = momentumFor(c, counts);
+    out.push(card);
+  }
+  // Default sort is founding priority: earliest founding sign-ups
+  // first, which is the priority promise made at sign-up. Businesses
+  // can re-sort by Local Impact Score (?sort=score) or by Momentum
+  // points (?sort=momentum).
+  if (query.sort === "score") {
+    out.sort((a, b) => (b.localImpactScore || 0) - (a.localImpactScore || 0));
+  } else if (query.sort === "momentum") {
+    out.sort((a, b) => (b.momentum.points - a.momentum.points) || (a.createdAt < b.createdAt ? -1 : 1));
+  } else {
+    out.sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
+  }
+  return out;
+}
+
 async function publicCreator(u, viewer, foundingPriority) {
   const history = await creatorHistory(u.id);
   const impact = computeLocalImpactScore(u.creator || {}, history);
+  const trackRecord = await creatorTrackRecord(u.id);
+  const reviewList = (await creatorReviews(u.id)).map(reviewDisplay);
   let isFavorite = false;
   if (viewer && viewer.role === "business") {
     isFavorite = !!(await store.get(`favorite:${viewer.id}:${u.id}`));
@@ -539,6 +722,10 @@ async function publicCreator(u, viewer, foundingPriority) {
     foundingBand: foundingPriority === undefined ? null : foundingBand(foundingPriority),
     photoUrl: u.creator && u.creator.hasPhoto ? `/api/users/${u.id}/photo` : null,
     profile: u.creator,
+    bestWork: bestWorkCards(u.creator || {}),
+    trackRecord,
+    reviewSummary: reviewSummaryOf(reviewList),
+    reviews: reviewList.slice(0, 10),
     localImpactScore: impact ? impact.score : null,
     scoreComponents: impact ? impact.components : null,
     history,
@@ -567,11 +754,14 @@ async function publicProfilePayload(u) {
   const history = await creatorHistory(u.id);
   const impact = computeLocalImpactScore(c, history);
   const momentum = momentumFor(u, momentumMap(users));
+  const trackRecord = await creatorTrackRecord(u.id);
+  const reviewList = (await creatorReviews(u.id)).map(reviewDisplay);
   const unlisted = u.market === UNLISTED;
   return {
     name: u.name,
     handle: c.handle,
     instagramUrl: c.instagramUrl || `https://instagram.com/${c.handle}`,
+    photoUrl: c.hasPhoto ? `/api/users/${u.id}/photo` : null,
     market: unlisted ? u.city || "" : u.market,
     unlisted,
     city: u.city || "",
@@ -585,6 +775,10 @@ async function publicProfilePayload(u) {
     localImpactScore: impact ? impact.score : null,
     momentumPoints: momentum.points,
     foundingBand: foundingBand(approvedRank.get(u.id) || null),
+    bestWork: bestWorkCards(c),
+    trackRecord,
+    reviewSummary: reviewSummaryOf(reviewList),
+    reviews: reviewList.slice(0, 10),
   };
 }
 
@@ -746,6 +940,10 @@ async function handleRegister(event) {
       })(),
       openToPaidCampaigns: tier === "Creators" && Array.isArray(b.compCategories) && b.compCategories.includes(PAID_COMP),
       bio: (b.bio || "").trim(),
+      // Best work links (up to 3) are added in profile edit, not at
+      // sign-up; the field exists from day one so every payload and
+      // card can rely on it.
+      bestWork: [],
       // Neighborhood / area inside the home city (Jeff, 2026-10-19:
       // businesses shop by neighborhood: Oceanfront, Ghent, Carytown).
       // Optional free text; never required, never validated against a
@@ -947,6 +1145,33 @@ async function route(event) {
     return json(200, { profile: await publicProfilePayload(target) });
   }
 
+  // Creator photo serving (Jeff, 2026-10-19). An APPROVED creator's
+  // photo is part of their public profile - the /c/<handle> page shows
+  // it - so it is served without sign-in for approved creators. Before
+  // approval (or after rejection) the photo stays locked down: the
+  // owner, the admin, or an approved business whose market is live.
+  // This route deliberately sits BEFORE the sign-in wall below.
+  if (method === "GET" && seg[0] === "users" && seg.length === 3 && seg[2] === "photo") {
+    const target = await store.get(`user:${seg[1]}`);
+    if (!target || target.role !== "creator") return err(404, "Photo not found");
+    let allowed = target.status === "approved";
+    if (!allowed && user) {
+      allowed =
+        user.id === target.id ||
+        user.role === "admin" ||
+        (user.role === "business" && user.status === "approved" && (await isMarketLive(user.market)));
+    }
+    if (!allowed) return err(user ? 403 : 401, user ? "That photo is not public" : "Sign in required");
+    const photo = await store.get(`photo:${target.id}`);
+    if (!photo) return err(404, "Photo not found");
+    return {
+      statusCode: 200,
+      headers: { "Content-Type": photo.contentType, "Cache-Control": "private, max-age=300" },
+      body: photo.dataBase64,
+      isBase64Encoded: true,
+    };
+  }
+
   // Auth
   if (method === "POST" && seg[0] === "auth" && seg[1] === "register") return handleRegister(event);
   if (method === "POST" && seg[0] === "auth" && seg[1] === "login") return handleLogin(event);
@@ -1015,6 +1240,12 @@ async function route(event) {
         if (nc) user.country = nc;
       }
       if (b.bio !== undefined) c.bio = String(b.bio).trim();
+      if (b.bestWork !== undefined) {
+        const v = validateBestWork(b.bestWork);
+        if (!v.ok) return err(400, v.error);
+        changes.bestWork = [(c.bestWork || []).length, v.links.length];
+        c.bestWork = v.links;
+      }
       if (b.neighborhood !== undefined) {
         const nb = String(b.neighborhood || "").trim().slice(0, 80);
         changes.neighborhood = [c.neighborhood || "", nb];
@@ -1052,9 +1283,9 @@ async function route(event) {
 
   // ---------- profile photo ----------
   // Upload is a JSON body { dataUrl: "data:image/png;base64,..." } and
-  // the bytes live in their own record: photo:{userId}. Serving is
-  // locked down: the owner, the admin, or an approved business whose
-  // market is live. Anonymous visitors can never fetch a creator photo.
+  // the bytes live in their own record: photo:{userId}. Serving lives
+  // with the public routes above (approved creators' photos are on
+  // their public profile; everyone else's stay locked down).
   if (method === "POST" && seg[0] === "me" && seg[1] === "photo") {
     if (user.role !== "creator" || !user.creator) return err(403, "Creators only");
     const b = parseBody(event);
@@ -1070,24 +1301,6 @@ async function route(event) {
     await store.set(`user:${user.id}`, user);
     await logEvent({ type: "profile_photo_uploaded", actorId: user.id, actorRole: "creator", subjectId: user.id, market: user.market, data: { contentType: m[1], bytes } });
     return json(200, { ok: true, photoUrl: `/api/users/${user.id}/photo` });
-  }
-
-  if (method === "GET" && seg[0] === "users" && seg.length === 3 && seg[2] === "photo") {
-    const target = await store.get(`user:${seg[1]}`);
-    if (!target || target.role !== "creator") return err(404, "Photo not found");
-    const allowed =
-      user.id === target.id ||
-      user.role === "admin" ||
-      (user.role === "business" && user.status === "approved" && (await isMarketLive(user.market)));
-    if (!allowed) return err(403, "That photo is not public");
-    const photo = await store.get(`photo:${target.id}`);
-    if (!photo) return err(404, "Photo not found");
-    return {
-      statusCode: 200,
-      headers: { "Content-Type": photo.contentType, "Cache-Control": "private, no-store" },
-      body: photo.dataBase64,
-      isBase64Encoded: true,
-    };
   }
 
   // ---------- plan selection (business) ----------
@@ -1330,58 +1543,9 @@ async function route(event) {
   //   ?q=             name or handle text search
   //   ?sort=          founding (default) | score | momentum
   if (method === "GET" && seg[0] === "discover") {
-    const users = await allUsers();
-    let creators = users.filter((u) => u.role === "creator" && u.status === "approved");
-    const market = query.market || (user.role === "business" ? user.market : null);
-    if (market) creators = creators.filter((u) => u.market === marketByName(market)?.name);
-    if (query.tier) creators = creators.filter((u) => u.creator && u.creator.tierBand === query.tier);
-    if (query.category) creators = creators.filter((u) => u.creator && u.creator.categories.includes(query.category));
-    if (query.compCategory) creators = creators.filter((u) => u.creator && (u.creator.compCategories || []).includes(query.compCategory));
-    if (query.neighborhood) {
-      const nb = String(query.neighborhood).trim().toLowerCase();
-      if (nb) creators = creators.filter((u) => {
-        const area = ((u.creator && u.creator.neighborhood) || "").toLowerCase();
-        const city = (u.city || "").toLowerCase();
-        return area.includes(nb) || city.includes(nb);
-      });
-    }
-    const fMin = parseInt(query.followersMin, 10);
-    if (!Number.isNaN(fMin)) creators = creators.filter((u) => u.creator && (u.creator.followerCount || 0) >= fMin);
-    const fMax = parseInt(query.followersMax, 10);
-    if (!Number.isNaN(fMax)) creators = creators.filter((u) => u.creator && (u.creator.followerCount || 0) <= fMax);
-    const minLocal = Number(query.minLocalPct);
-    if (query.minLocalPct !== undefined && !Number.isNaN(minLocal)) {
-      creators = creators.filter((u) => u.creator && u.creator.localAudiencePct !== null && u.creator.localAudiencePct !== undefined && Number(u.creator.localAudiencePct) >= minLocal);
-    }
-    if (query.paid === "1" || query.paid === "true") {
-      creators = creators.filter((u) => u.creator && u.creator.openToPaidCampaigns === true);
-    }
-    if (query.q) {
-      const q = query.q.toLowerCase();
-      creators = creators.filter((u) => u.name.toLowerCase().includes(q) || (u.creator && u.creator.handle.toLowerCase().includes(q)));
-    }
-    const { approvedRank } = creatorRanks(users);
-    const counts = momentumMap(users);
-    const out = [];
-    for (const c of creators) {
-      const card = await publicCreator(c, user, approvedRank.get(c.id) || null);
-      // Roster standing rides on the card: it is part of the order
-      // businesses were promised creators would be seen in.
-      card.momentum = momentumFor(c, counts);
-      out.push(card);
-    }
-    // Default sort is founding priority: earliest founding sign-ups
-    // first, which is the priority promise made at sign-up. Businesses
-    // can re-sort by Local Impact Score (?sort=score) or by Momentum
-    // points (?sort=momentum).
-    if (query.sort === "score") {
-      out.sort((a, b) => (b.localImpactScore || 0) - (a.localImpactScore || 0));
-    } else if (query.sort === "momentum") {
-      out.sort((a, b) => (b.momentum.points - a.momentum.points) || (a.createdAt < b.createdAt ? -1 : 1));
-    } else {
-      out.sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
-    }
-    return json(200, { creators: out });
+    // The query itself lives in discoverCards() so the admin Business
+    // Preview answers with the identical roster, filters, and sorts.
+    return json(200, { creators: await discoverCards(query, user) });
   }
 
   // ---------- favorites ----------
@@ -1680,6 +1844,42 @@ async function route(event) {
     else if (user.role === "business") posts = posts.filter((p) => p.businessId === user.id);
     posts.sort((a, b) => (a.submittedAt < b.submittedAt ? 1 : -1));
     return json(200, { posts });
+  }
+
+  // ---------- business reviews (post-visit) ----------
+  // Plumbing only (Jeff, 2026-10-19): a business whose visit completed
+  // (the post came in and the booking completed) can leave ONE review
+  // per booking: 1-5 stars plus a short comment, attributed to the
+  // business name, stored as review:{id} and logged as
+  // business_review_left. Reviews surface on the creator's public
+  // profile, discovery card, and preview profile the moment they
+  // exist. There is no business-facing entry UI yet (it ships with
+  // business accounts) and nothing is ever seeded: a creator with no
+  // completed visits simply has no review section anywhere.
+  if (method === "POST" && seg[0] === "bookings" && seg.length === 3 && seg[2] === "review") {
+    if (user.role !== "business") return err(403, "Only businesses can review a completed visit");
+    const b = parseBody(event);
+    const booking = await store.get(`booking:${seg[1]}`);
+    if (!booking || booking.businessId !== user.id) return err(404, "Booking not found");
+    if (booking.status !== "completed") return err(409, "Reviews open once the visit is completed and the post is in");
+    const existing = (await allReviews()).find((r) => r.bookingId === booking.id);
+    if (existing) return err(409, "This visit already has a review");
+    const stars = Number(b.stars);
+    if (!Number.isInteger(stars) || stars < 1 || stars > 5) return err(400, "Stars must be a whole number from 1 to 5");
+    const comment = String(b.comment == null ? "" : b.comment).trim().slice(0, 500);
+    const review = {
+      id: crypto.randomUUID(),
+      bookingId: booking.id,
+      creatorId: booking.creatorId,
+      businessId: user.id,
+      businessName: (user.business && user.business.businessName) || booking.businessName || "A SIGNL business",
+      stars,
+      comment,
+      createdAt: nowIso(),
+    };
+    await store.set(`review:${review.id}`, review);
+    await logEvent({ type: "business_review_left", actorId: user.id, actorRole: "business", subjectId: booking.creatorId, market: booking.market, data: { bookingId: booking.id, stars, hasComment: !!comment } });
+    return json(201, { review: reviewDisplay(review) });
   }
 
   // ---------- messages ----------

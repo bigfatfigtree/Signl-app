@@ -304,6 +304,31 @@ try {
   const verify = await business("POST", `/api/posts/${postId}/verify`, {});
   check("business verifies the post is live", verify.status === 200 && !!verify.data.post.verifiedAt);
 
+  // --- business review plumbing: one review per completed booking ---
+  const badStars = await business("POST", `/api/bookings/${bookingId}/review`, { stars: 0, comment: "Too soon" });
+  check("review rejects stars outside 1-5 (400)", badStars.status === 400, String(badStars.status));
+  const review = await business("POST", `/api/bookings/${bookingId}/review`, { stars: 5, comment: "Posted on time and the reel brought real reservations." });
+  check("business leaves a review on the completed visit", review.status === 201 && review.data.review.stars === 5 && review.data.review.businessName === "Verify Table" && /reservations/.test(review.data.review.comment), JSON.stringify(review.data));
+  const dupReview = await business("POST", `/api/bookings/${bookingId}/review`, { stars: 4, comment: "Again" });
+  check("a second review on the same booking is refused (409)", dupReview.status === 409, String(dupReview.status));
+  const creatorReview = await creator("POST", `/api/bookings/${bookingId}/review`, { stars: 5 });
+  check("creators cannot review visits (403)", creatorReview.status === 403, String(creatorReview.status));
+
+  // --- track record + reviews compute from the real visit ---
+  const pubFlow = await anon("GET", "/api/c/verifyeats757");
+  const pf = pubFlow.data.profile || {};
+  check("public profile track record counts the real visit (1 visit, 1 post, 100% on time, business named)", !!pf.trackRecord && pf.trackRecord.visitsCompleted === 1 && pf.trackRecord.postsDelivered === 1 && pf.trackRecord.onTimePct === 100 && pf.trackRecord.isNew === false && (pf.trackRecord.businessesWorkedWith || []).includes("Verify Table"), JSON.stringify(pf.trackRecord));
+  check("public profile shows the business review and its summary", !!pf.reviewSummary && pf.reviewSummary.count === 1 && pf.reviewSummary.average === 5 && (pf.reviews || []).length === 1 && pf.reviews[0].businessName === "Verify Table" && pf.reviews[0].stars === 5, JSON.stringify([pf.reviewSummary, pf.reviews]));
+  const discAfterReview = await business("GET", "/api/discover?market=Hampton%20Roads");
+  const cardAfterReview = (discAfterReview.data.creators || []).find((c) => c.userId === creatorId) || {};
+  check("discovery card carries the same track record + review summary", !!cardAfterReview.trackRecord && cardAfterReview.trackRecord.visitsCompleted === 1 && !!cardAfterReview.reviewSummary && cardAfterReview.reviewSummary.count === 1, JSON.stringify([cardAfterReview.trackRecord, cardAfterReview.reviewSummary]));
+
+  // --- best work round-trips in the full marketplace shape too ---
+  const bwFlow = await creator("PATCH", "/api/me/profile", { bestWork: ["https://www.instagram.com/p/VERIFYPOST/"] });
+  check("best work saves through profile edit", bwFlow.status === 200 && (bwFlow.data.user.creator.bestWork || []).length === 1, JSON.stringify(bwFlow.data.user && bwFlow.data.user.creator && bwFlow.data.user.creator.bestWork));
+  const pubFlow2 = await anon("GET", "/api/c/verifyeats757");
+  check("public profile labels the best work card from the host", ((pubFlow2.data.profile || {}).bestWork || []).length === 1 && pubFlow2.data.profile.bestWork[0].label === "Watch: Instagram post" && pubFlow2.data.profile.bestWork[0].platform === "Instagram", JSON.stringify((pubFlow2.data.profile || {}).bestWork));
+
   // --- messages both ways ---
   const m1 = await creator("POST", "/api/messages", { toUserId: businessId, body: "Thanks for having us in. Post is live." });
   check("creator messages the business", m1.status === 201);
@@ -323,7 +348,7 @@ try {
   const required = [
     "application_submitted", "application_approved", "plan_selected",
     "favorite_added", "offer_created", "offer_accepted", "booking_code_issued",
-    "code_redeemed", "post_submitted", "post_verified", "message_sent",
+    "code_redeemed", "post_submitted", "post_verified", "business_review_left", "message_sent",
     "profile_updated", "local_audience_updated", "user_signed_in",
   ];
   for (const t of required) check(`event log contains ${t}`, count(t) >= 1, `count=${count(t)}`);

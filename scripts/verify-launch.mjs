@@ -228,6 +228,27 @@ try {
   const appJsPub = await anon.raw("/app.js");
   check("client ships the public profile view, the /c/ route handling, and the dashboard profile link", appJsPub.text.includes("renderPublicProfile") && appJsPub.text.includes("public-profile") && appJsPub.text.includes("app.joinsignl.com/c/") && appJsPub.text.includes("Your public profile") && appJsPub.text.includes("copyPublicProfile"), "");
 
+  // --- richer profiles: photo, best work, track record, reviews ---
+  const bwSet = await creatorA("PATCH", "/api/me/profile", { bestWork: ["https://www.instagram.com/reel/ABC123/", "https://www.tiktok.com/@launcheats/video/123", "https://www.youtube.com/watch?v=xyz"] });
+  check("creator adds 3 best work links (Instagram, TikTok, YouTube)", bwSet.status === 200 && (bwSet.data.user.creator.bestWork || []).length === 3, JSON.stringify(bwSet.data.user && bwSet.data.user.creator && bwSet.data.user.creator.bestWork));
+  const bwBadHost = await creatorA("PATCH", "/api/me/profile", { bestWork: ["https://vimeo.com/123"] });
+  check("best work rejects a non-Instagram/TikTok/YouTube host (400)", bwBadHost.status === 400, String(bwBadHost.status));
+  const bwTooMany = await creatorA("PATCH", "/api/me/profile", { bestWork: ["https://www.instagram.com/p/1/", "https://www.instagram.com/p/2/", "https://www.instagram.com/p/3/", "https://www.instagram.com/p/4/"] });
+  check("best work caps at 3 links (400)", bwTooMany.status === 400, String(bwTooMany.status));
+  const bwBadProto = await creatorA("PATCH", "/api/me/profile", { bestWork: ["javascript:alert(1)"] });
+  check("best work rejects non-http(s) URLs (400)", bwBadProto.status === 400, String(bwBadProto.status));
+  const pubRich = await anon("GET", "/api/c/launcheats");
+  const pr = pubRich.data.profile || {};
+  check("public profile now carries the creator photo URL", pr.photoUrl === `/api/users/${creatorAId}/photo`, String(pr.photoUrl));
+  check("public profile renders best work as labeled outbound cards", Array.isArray(pr.bestWork) && pr.bestWork.length === 3 && pr.bestWork[0].platform === "Instagram" && pr.bestWork[0].label === "Watch: Instagram reel" && pr.bestWork[1].platform === "TikTok" && pr.bestWork[2].platform === "YouTube", JSON.stringify(pr.bestWork));
+  check("public profile track record is the honest zero state before any visit", !!pr.trackRecord && pr.trackRecord.isNew === true && pr.trackRecord.visitsCompleted === 0 && pr.trackRecord.postsDelivered === 0 && pr.trackRecord.onTimePct === null && (pr.trackRecord.businessesWorkedWith || []).length === 0, JSON.stringify(pr.trackRecord));
+  check("public profile has no reviews before any exist (never seeded)", !!pr.reviewSummary && pr.reviewSummary.count === 0 && pr.reviewSummary.average === null && Array.isArray(pr.reviews) && pr.reviews.length === 0, JSON.stringify(pr.reviewSummary));
+  const pubRichRaw = await anon.raw("/api/c/launcheats");
+  check("public profile with photo + best work + track record still leaks no email or internal fields", !pubRichRaw.text.includes("launch-a@example.com") && !pubRichRaw.text.includes("passwordHash") && !pubRichRaw.text.includes("passwordSalt") && !pubRichRaw.text.includes("reviewedBy") && !pubRichRaw.text.includes("referredBy") && !pubRichRaw.text.includes("agreedTerms"), pubRichRaw.text.slice(0, 160));
+  const pubPhotoAnon = await client().raw(pr.photoUrl || "/api/users/none/photo");
+  check("an approved creator's photo serves to the public (it is on their profile page)", pubPhotoAnon.status === 200 && pubPhotoAnon.contentType.includes("image/png"), `${pubPhotoAnon.status} ${pubPhotoAnon.contentType}`);
+  check("client ships best work editing and the showcase renderers (track record zero state, reviews)", appJsPub.text.includes("p-work-") && appJsPub.text.includes("New to SIGNL: no visits yet") && appJsPub.text.includes("creatorShowcaseHtml") && appJsPub.text.includes("Business reviews") && appJsPub.text.includes("Watch:"), "");
+
   // --- neighborhood round-trips through profile edit + admin list ---
   const nbPatch = await creatorA("PATCH", "/api/me/profile", { neighborhood: "Oceanfront" });
   check("profile edit updates the neighborhood", nbPatch.status === 200 && nbPatch.data.user.creator.neighborhood === "Oceanfront", JSON.stringify(nbPatch.data.user && nbPatch.data.user.creator && nbPatch.data.user.creator.neighborhood));
@@ -262,9 +283,13 @@ try {
   const foundingA2 = await creatorA("GET", "/api/me/founding");
   check("first creator keeps the first-100 band and never sees market signup counts", foundingA2.data.founding.priorityBand === 100 && foundingA2.data.founding.foundingCreatorsInMarket === undefined && foundingA2.data.founding.creatorsInMarket === undefined);
 
-  // another creator cannot view creator A's photo (businesses/admin/self only)
+  // An APPROVED creator's photo is part of their public profile page
+  // (Jeff, 2026-10-19: the photo ships on /c/<handle>), so another
+  // signed-in creator can fetch it. The locked-down side still holds
+  // before approval: the anonymous fetch of this same photo while
+  // creator A was pending was refused with 401 above.
   const crossPhoto = await creatorB.raw(`/api/users/${creatorAId}/photo`);
-  check("a different creator cannot fetch the photo (403)", crossPhoto.status === 403, String(crossPhoto.status));
+  check("an approved creator's photo is fetchable by another creator (it is on their public profile)", crossPhoto.status === 200 && crossPhoto.contentType.includes("image/png"), String(crossPhoto.status));
 
   // --- admin market controls, then activation opens the gate ---
   const markets = await admin("GET", "/api/admin/markets");
