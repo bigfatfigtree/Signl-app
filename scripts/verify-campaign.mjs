@@ -17,7 +17,10 @@
 //   - an emptied queue auto-disarms; more than 2 send failures in a
 //     run stop the run and set lastError; total sends per campaign
 //     are capped at 80 in code;
-//   - every send logs a campaign_email_sent event.
+//   - every send logs a campaign_email_sent event;
+//   - the Campaign tab's paste-import box is served in app.js and
+//     the exact payload shape it posts imports cleanly over a full
+//     admin session, without arming anything.
 //
 // Run: node scripts/verify-campaign.mjs
 
@@ -249,6 +252,25 @@ try {
   const appJs = fs.readFileSync(path.join(root, "public/app.js"), "utf8");
   check("campaign tab wired in the client", appJs.includes("loadCampaign") && appJs.includes("/admin/campaign"));
   check("arm/pause control wired in the client", appJs.includes("toggleCampaignArm") && appJs.includes("/admin/campaign/arm") && appJs.includes("/admin/campaign/disarm"));
+  check("paste-import box rendered in the campaign tab", appJs.includes('id="campaign-import-text"') && appJs.includes("Paste recipients (JSON array)") && appJs.includes(">Import recipients</button>"));
+  check("import handler posts the box payload to the endpoint", appJs.includes("importCampaignRecipients") && appJs.includes('api("POST", "/admin/campaign/import"') && appJs.includes('campaignId: "founding-creators-2026-10"'));
+  const servedJs = await anon("GET", "/app.js");
+  check("served app.js carries the import box + handler", servedJs.status === 200 && servedJs.text.includes('id="campaign-import-text"') && servedJs.text.includes("importCampaignRecipients") && servedJs.text.includes("/admin/campaign/import"), String(servedJs.status));
+
+  // ---------- Part H: the paste-box payload shape, end to end ----------
+  part("H: paste-box import");
+  const queuedBefore = (await admin("GET", "/api/admin/campaign")).data.counts.queued;
+  const boxImp = await admin("POST", "/api/admin/campaign/import", {
+    campaignId: "founding-creators-2026-10",
+    recipients: [
+      { email: "pasteone@example.com", name: "Paste One", handle: "paste1", market: "Hampton Roads", opener: "your Granby Street posts" },
+      { email: "pastetwo@example.com", handle: "paste2", market: "Hampton Roads", opener: "your Ocean View posts" },
+    ],
+  });
+  check("box-shaped payload imports (explicit campaignId, name optional)", boxImp.status === 200 && boxImp.data.imported === 2, JSON.stringify(boxImp.data));
+  const afterBox = await admin("GET", "/api/admin/campaign");
+  check("imported pair queued on the default campaign", afterBox.data.counts.queued === queuedBefore + 2, JSON.stringify(afterBox.data.counts));
+  check("campaign stays disarmed after a box import (import never arms)", afterBox.data.campaign.armed === false, JSON.stringify(afterBox.data.campaign));
 } catch (err) {
   failed++;
   console.error("SUITE ERROR:", err && err.stack || err);

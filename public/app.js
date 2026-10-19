@@ -1969,8 +1969,9 @@ function renderAdmin() {
 // creator email sends from inside the app (its own SMTP transport),
 // so there is no per-send approval card. This tab is the control
 // surface: queue counts, the last error if a run stopped, recent
-// sends, and the Arm / Pause switch. Recipients are imported
-// through the admin API only; sending runs on the 30-minute
+// sends, and the Arm / Pause switch. Recipients are imported by
+// pasting a JSON array into the box on this tab, which posts to
+// the admin import endpoint; sending runs on the 30-minute
 // scheduled sweep, inside the 08:00-21:00 ET window, in batches
 // of 8, capped at 80 sends for the campaign.
 async function loadCampaign() {
@@ -1991,6 +1992,11 @@ async function loadCampaign() {
       <p class="small">Queued: <strong>${counts.queued || 0}</strong> &middot; Sent: <strong>${counts.sent || 0}</strong> &middot; Bounced: <strong>${counts.bounced || 0}</strong> &middot; Skipped: <strong>${counts.skipped || 0}</strong> &middot; Total: <strong>${counts.total || 0}</strong></p>
       <button class="btn ${c.armed ? "danger" : ""}" onclick="toggleCampaignArm(${c.armed ? "false" : "true"})">${c.armed ? "Pause campaign" : "Arm campaign"}</button>
       <div id="campaign-note" class="small saved"></div>
+      <h3 class="mt">Import recipients</h3>
+      <p class="small muted">Paste a JSON array of recipient objects: email, handle, market and opener are required; name is optional. Imported addresses join the queue; nothing sends until the campaign is armed.</p>
+      <div class="field"><label>Paste recipients (JSON array)</label><textarea id="campaign-import-text" rows="8" placeholder='[{"email":"creator@example.com","name":"Casey","handle":"casey","market":"Richmond","opener":"your Carytown posts"}]'></textarea></div>
+      <button class="btn" onclick="importCampaignRecipients()">Import recipients</button>
+      <div id="campaign-import-note" class="small saved"></div>
       ${sends ? `<h3 class="mt">Recent sends</h3>${sends}` : `<p class="muted mt">No sends yet.</p>`}`;
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
@@ -2002,6 +2008,35 @@ async function toggleCampaignArm(arm) {
   try {
     await api("POST", arm ? "/admin/campaign/arm" : "/admin/campaign/disarm", {});
     loadCampaign();
+  } catch (err) {
+    if (note) note.textContent = err.message;
+  }
+}
+
+// Paste-import for the campaign queue: the operator pastes a JSON
+// array of recipients, we parse it here (a parse failure shows an
+// inline error and calls nothing), then POST the same payload the
+// admin import endpoint has always taken and show its counts.
+async function importCampaignRecipients() {
+  const box = document.getElementById("campaign-import-text");
+  const note = document.getElementById("campaign-import-note");
+  let recipients;
+  try {
+    recipients = JSON.parse(box ? box.value : "");
+  } catch (e) {
+    if (note) note.textContent = "That is not valid JSON. Fix the pasted list and try again; nothing was imported.";
+    return;
+  }
+  if (!Array.isArray(recipients)) {
+    if (note) note.textContent = "Paste a JSON array of recipients (it starts with [ and ends with ]). Nothing was imported.";
+    return;
+  }
+  try {
+    const data = await api("POST", "/admin/campaign/import", { campaignId: "founding-creators-2026-10", recipients });
+    const summary = `Imported ${data.imported || 0} · Duplicates ${data.duplicates || 0} · Skipped ${data.skipped || 0} · Invalid ${(data.invalid || []).length}`;
+    await loadCampaign();
+    const fresh = document.getElementById("campaign-import-note");
+    if (fresh) fresh.textContent = summary;
   } catch (err) {
     if (note) note.textContent = err.message;
   }
