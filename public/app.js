@@ -126,13 +126,15 @@ async function renderPublicProfile() {
       <span class="badge ok" style="font-size:0.95rem;padding:6px 14px">Founding Creator</span>
     </div>
     <p class="mt">${p.localAudiencePct === null || p.localAudiencePct === undefined ? "Local audience not reported yet" : `<strong>${p.localAudiencePct}%</strong> of their followers are local <span class="badge info">${esc(p.localAudienceSource || "Self-reported")}</span>`}</p>
-    <p>${scoreBadge(p.localImpactScore)}${p.momentumPoints ? ` <span class="badge info">Momentum ${p.momentumPoints} pts</span>` : ""} <span class="badge tier">${esc(p.tierBand || "")} &middot; ${fmtNum(p.followerCount)} followers</span></p>
+    <p>${scoreBadge(p.localImpactScore)}${p.momentumPoints ? ` <span class="badge info">Momentum ${p.momentumPoints} pts</span>` : ""} <span class="badge tier">${esc(p.tierBand || "")}</span></p>
+    <p class="small">${audienceLineHtml(p)}</p>
     ${p.foundingBand ? `<p><span class="badge tier" style="padding:6px 14px">In the first ${p.foundingBand} founding creators in ${place}</span></p>` : ""}
     ${p.categories && p.categories.length ? `<p class="small">${p.categories.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
     ${p.compCategories && p.compCategories.length ? `<p class="small muted">Open to comps: ${p.compCategories.map(esc).join(", ")}</p>` : ""}
     ${bestWorkHtml(p.bestWork)}
     ${trackRecordHtml(p)}
     ${reviewsHtml(p)}
+    ${visitIncludesHtml(p.visitIncludes)}
     <p class="small muted">SIGNL connects local businesses with local creators. Businesses comp a meal or a service, creators post honestly within 48 hours and disclose the comp, and every post is tracked. No business can ever require a positive post.</p>
     <div class="cta-row" style="justify-content:flex-start">
       ${state.user ? `<a class="btn ghost" href="#" onclick="return go('dashboard')">Back to my dashboard</a>` : `<a class="btn" href="#" onclick="return go('join-creator')">Become a Founding Creator</a> <a class="btn ghost" href="#" onclick="return go('for-businesses')">For Businesses</a>`}
@@ -161,11 +163,121 @@ function growRosterHtml(u) {
     </div>`;
 }
 
+// Momentum (expanded, Jeff 2026-10-19): one computed currency. The
+// dashboard shows the total, the ways-to-earn checklist with live
+// done/available state, and the ledger that explains the total. All
+// of it comes from the server payload (state.user.momentum), which
+// is computed from stored records only.
+function momentumHtml(u) {
+  const m = u && u.momentum;
+  if (!m) return "";
+  const checklist = (m.checklist || []).map((item) => `
+    <div class="earn-row ${item.done ? "done" : ""}">
+      <span class="earn-state">${item.done ? "&#10003;" : "+"}</span>
+      <span class="earn-label">${esc(item.label)}${item.detail ? ` <span class="muted">(${esc(item.detail)})</span>` : ""}</span>
+      <span class="earn-points">${item.points > 0 ? "+" + item.points : item.points} pts</span>
+    </div>`).join("");
+  const ledger = (m.ledger || []).slice().reverse().slice(0, 30).map((e) => `
+    <div class="earn-row">
+      <span class="earn-label">${esc(e.label)}${e.at ? ` <span class="muted">${esc(fmtDate(e.at))}</span>` : ""}</span>
+      <span class="earn-points ${e.points < 0 ? "neg" : ""}">${e.points > 0 ? "+" + e.points : e.points}</span>
+    </div>`).join("");
+  return `
+  <div class="panel mt" style="text-align:left">
+    <div class="flex-between"><h3 style="margin:0">Momentum</h3><span class="badge info" style="font-size:1rem;padding:6px 14px">${m.points} points</span></div>
+    <p class="small">Points decide the order businesses see you in. You earn them for completing your profile, delivering posts on time, great reviews, posts that run as ads, and recruiting creators. Late posts, no-shows, and a redeemed visit with no post cost you points.${m.floorApplied ? " Your total never drops below zero." : ""}</p>
+    <h4 style="margin:14px 0 6px">Ways to earn</h4>
+    ${checklist || `<p class="small muted">Loading...</p>`}
+    ${ledger ? `<h4 style="margin:16px 0 6px">Points history</h4>${ledger}` : ""}
+    <p class="small muted" style="margin-top:12px">Watch out: a post delivered late is -10. A no-show is -25. Redeeming a comp and never posting is -50, and it closes your account to future offers.</p>
+  </div>`;
+}
+
 function fmtNum(n) {
   if (n === null || n === undefined) return "n/a";
   if (n >= 1000000) return (n / 1000000).toFixed(1).replace(/\.0$/, "") + "M";
   if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, "") + "k";
   return String(n);
+}
+
+// ---------- audience stacking (Jeff, 2026-10-19) ----------
+// A creator's audience is the SUM of their platforms, and every
+// surface shows the total plus where it lives. Payloads carry the
+// stack as an array of { platform, label, count }; the creator's own
+// stored record carries it as a map, so normalize both shapes here.
+function stackList(source) {
+  if (!source) return [];
+  if (Array.isArray(source.audienceStack)) return source.audienceStack.filter((p) => p && p.count > 0);
+  if (source.audienceStack && typeof source.audienceStack === "object") {
+    const labels = { instagram: "Instagram", tiktok: "TikTok", facebook: "Facebook", x: "X", linkedin: "LinkedIn", youtube: "YouTube" };
+    return Object.entries(source.audienceStack)
+      .filter(([, n]) => Number(n) > 0)
+      .map(([platform, count]) => ({ platform, label: labels[platform] || platform, count: Number(count) }))
+      .sort((a, b) => b.count - a.count);
+  }
+  return [];
+}
+
+function totalAudienceOf(source) {
+  if (!source) return 0;
+  if (typeof source.totalAudience === "number") return source.totalAudience;
+  const list = stackList(source);
+  if (list.length) return list.reduce((s, p) => s + p.count, 0);
+  return (source.profile && source.profile.followerCount) || source.followerCount || 0;
+}
+
+function stackChipsHtml(source) {
+  const list = stackList(source);
+  if (!list.length) return "";
+  return `<span class="stack-chips">${list.map((p) => `<span class="stack-chip">${esc(p.label)} ${fmtNum(p.count)}</span>`).join(" ")}</span>`;
+}
+
+function audienceLineHtml(source) {
+  const total = totalAudienceOf(source);
+  return `<strong>${fmtNum(total)}</strong> total audience ${stackChipsHtml(source)}`;
+}
+
+// The Standard Visit, as the server defines it (bootstrap carries
+// the single source of truth; the fallback text mirrors it).
+function standardVisit() {
+  return (state.boot && state.boot.standardVisit) || {
+    summary: "Every SIGNL visit includes: 1 post or reel + 2 stories within 48 hours of the visit, honest and disclosed, live at least 30 days, with tracked delivery proof. Content rights follow the business's plan.",
+  };
+}
+
+function visitIncludesHtml(summary) {
+  const text = summary || standardVisit().summary;
+  return `<div class="showcase-block"><h4>Every SIGNL visit includes</h4><p class="small muted">${esc(text)}</p></div>`;
+}
+
+// Content rights by business plan, mirroring the server's
+// visitRightsForPlan. The creator's offer checklist prefers the
+// server-attached rights on the offer itself; this is the fallback
+// and the composer's own-plan line.
+function rightsForPlan(planId) {
+  if (planId === "growth" || planId === "managed") {
+    return {
+      can: ["Share your post with you tagged", "Repost it on their own feed", "Run it as an ad while their SIGNL account is active (the ad right ends if their account ends)"],
+      cannot: ["Edit your post"],
+    };
+  }
+  return {
+    can: ["Share your post with you tagged"],
+    cannot: ["Edit it", "Post it as their own content", "Run it as an ad"],
+  };
+}
+
+// Compliance standing banner for creators (paused / banned).
+function standingBannerHtml(u) {
+  const st = u && u.standing;
+  if (!st || !st.state || st.state === "good") return "";
+  if (st.state === "paused") {
+    return `<div class="notice"><strong>Your account is paused.</strong> A post from a comped visit is past due. Paste the post link under My Visits and your account unpauses automatically. Until then, businesses see you greyed out and cannot send you new offers.</div>`;
+  }
+  if (st.state === "banned") {
+    return `<div class="error-box"><strong>Your account is closed to offers.</strong> ${esc(st.reason || "A comped visit was redeemed and no post was delivered.")}<br>Questions: hello@joinsignl.com</div>`;
+  }
+  return "";
 }
 
 function fmtDate(iso) {
@@ -429,12 +541,22 @@ function suggestedTierId(followers) {
   return "Neighbors";
 }
 
+function signupStackTotal() {
+  let total = parseInt((document.getElementById("jc-followers") || {}).value, 10) || 0;
+  for (const id of ["jc-stack-tiktok", "jc-stack-facebook", "jc-stack-x", "jc-stack-linkedin", "jc-stack-youtube"]) {
+    const el = document.getElementById(id);
+    if (el) total += parseInt(el.value, 10) || 0;
+  }
+  return total;
+}
+
 function syncSuggestedTier() {
   const f = document.getElementById("jc-followers");
   const sel = document.getElementById("jc-tier");
-  if (f && sel) sel.value = suggestedTierId(f.value);
+  const total = signupStackTotal();
+  if (sel) sel.value = suggestedTierId(total);
   const hint = document.getElementById("jc-tier-hint");
-  if (hint && f) hint.textContent = `Suggested from your follower count: ${suggestedTierId(f.value)}. Confirm your band, or pick another.`;
+  if (hint && f) hint.textContent = `Suggested from your total audience across platforms (${total.toLocaleString()}): ${suggestedTierId(total)}. Confirm your band, or pick another.`;
   syncPaidOption();
 }
 
@@ -493,8 +615,18 @@ function renderJoinCreator() {
       </div>
       <div class="field"><label>LinkedIn profile (optional)</label><input id="jc-linkedin" placeholder="linkedin.com/in/yourname or full URL"></div>
       <div class="form-2col">
-        <div class="field"><label>Followers (required)</label><input type="number" id="jc-followers" min="0" required placeholder="For example 8400" oninput="syncSuggestedTier()"></div>
+        <div class="field"><label>Instagram followers (required)</label><input type="number" id="jc-followers" min="0" required placeholder="For example 8400" oninput="syncSuggestedTier()"></div>
         <div class="field"><label>Your tier band (confirm)</label><select id="jc-tier" onchange="syncPaidOption()">${tierOptions(pfTier)}</select><p class="small muted" id="jc-tier-hint">Enter your followers and we will suggest your band.</p></div>
+      </div>
+      <div class="field"><label>Your audience on other platforms (optional)</label>
+        <div class="form-2col">
+          <div class="field"><label>TikTok followers</label><input type="number" id="jc-stack-tiktok" min="0" placeholder="Optional" oninput="syncSuggestedTier()"></div>
+          <div class="field"><label>Facebook followers</label><input type="number" id="jc-stack-facebook" min="0" placeholder="Optional" oninput="syncSuggestedTier()"></div>
+          <div class="field"><label>X followers</label><input type="number" id="jc-stack-x" min="0" placeholder="Optional" oninput="syncSuggestedTier()"></div>
+          <div class="field"><label>LinkedIn connections</label><input type="number" id="jc-stack-linkedin" min="0" placeholder="Optional" oninput="syncSuggestedTier()"></div>
+          <div class="field"><label>YouTube subscribers</label><input type="number" id="jc-stack-youtube" min="0" placeholder="Optional" oninput="syncSuggestedTier()"></div>
+        </div>
+        <p class="small muted">SIGNL stacks your audience: your tier and your profile read your TOTAL across every platform, not just Instagram. Add the ones you use; skip the rest.</p>
       </div>
       <div class="form-2col">
         <div class="field"><label>Typical post views (optional)</label><input type="number" id="jc-avgviews" min="0" placeholder="For example 6000"></div>
@@ -512,9 +644,17 @@ function renderJoinCreator() {
       </div>
       <div class="field"><label>Short bio</label><textarea id="jc-bio" rows="2" placeholder="What do you post, where do you go, what do you love locally?"></textarea></div>
       <div class="field"><label>Profile photo (optional, add now or later)</label><input type="file" id="jc-photo" accept="image/png,image/jpeg,image/webp"><p class="small muted">PNG, JPEG, or WebP, under 2.5 MB. Businesses see this on your profile when your market opens.</p></div>
-      <div class="notice blue">The deal: businesses comp you a meal or service, you post your honest experience within 48 hours of the visit, and you disclose the comp in the post. Nobody can ask you for a positive post. Ever.</div>
+      <div class="notice blue">The deal, in plain words:
+        <ul style="margin:8px 0 0;padding-left:18px">
+          <li>A business comps you a meal or service. You post your honest experience within 48 hours of the visit and disclose the comp. Nobody can ask you for a positive post. Ever.</li>
+          <li>Your check-off is the post link: you paste it in the app under My Visits. The link is the proof.</li>
+          <li>Post within 48 hours for full credit. One week is the hard stop: a late post inside the week still counts, and reminders land at 48 hours, day 5, and day 6.</li>
+          <li>At one week with no post, your account pauses. A post in the second week still lands and unpauses you, with the missed deadline on your record. At two weeks with no post, your account closes to future offers. Showing up matters here.</li>
+        </ul>
+      </div>
       <div class="field"><label style="font-weight:500"><input type="checkbox" id="jc-agree-honest" style="width:auto" required> I understand no business can require me to post positively. My posts stay my honest opinion.</label></div>
       <div class="field"><label style="font-weight:500"><input type="checkbox" id="jc-agree-ftc" style="width:auto" required> I agree to clearly disclose every comp in my posts, as the FTC requires.</label></div>
+      <div class="field"><label style="font-weight:500"><input type="checkbox" id="jc-agree-compliance" style="width:auto" required> I agree to post within 48 hours of every comped visit for full credit and paste the post link in the app. I understand one week is the hard stop: a redeemed visit with no post pauses my account at one week and closes it at two.</label></div>
       <div class="field"><label style="font-weight:500"><input type="checkbox" id="jc-agree-terms" style="width:auto" required> I agree to the <a href="https://joinsignl.com/terms.html" target="_blank" rel="noopener">Terms of Service</a> and <a href="https://joinsignl.com/privacy.html" target="_blank" rel="noopener">Privacy Policy</a>, and I agree SIGNL can email me about my account, launch updates and offers. I can unsubscribe from marketing emails at any time.</label></div>
       <button class="btn" type="submit" style="width:100%">Create my founding profile</button>
       <p class="small muted mt">Every application is reviewed by a person. Founding spots are limited in every market, and priority goes in sign-up order.</p>
@@ -569,6 +709,12 @@ async function doRegisterCreator(e) {
   if (!cats.length) { errBox("Pick at least one category you create in."); return false; }
   if (!document.getElementById("jc-agree-honest").checked) { errBox("Please confirm the honest-post rule."); return false; }
   if (!document.getElementById("jc-agree-ftc").checked) { errBox("Please confirm the FTC disclosure agreement."); return false; }
+  if (!document.getElementById("jc-agree-compliance").checked) { errBox("Please confirm the post rule: post within 48 hours for full credit, paste the link, one week is the hard stop, and a redeemed visit with no post pauses at one week and closes at two."); return false; }
+  const stackFromForm = { instagram: parseInt(document.getElementById("jc-followers").value, 10) || 0 };
+  for (const [id, platform] of [["jc-stack-tiktok", "tiktok"], ["jc-stack-facebook", "facebook"], ["jc-stack-x", "x"], ["jc-stack-linkedin", "linkedin"], ["jc-stack-youtube", "youtube"]]) {
+    const v = parseInt(document.getElementById(id).value, 10) || 0;
+    if (v > 0) stackFromForm[platform] = v;
+  }
   if (!document.getElementById("jc-agree-terms").checked) { errBox("Please agree to the Terms of Service and email consent so we can reach you at launch."); return false; }
   const tierBand = document.getElementById("jc-tier").value;
   const paidBox = document.getElementById("jc-paid");
@@ -601,6 +747,7 @@ async function doRegisterCreator(e) {
       linkedinUrl: document.getElementById("jc-linkedin").value,
       tierBand,
       followerCount: parseInt(document.getElementById("jc-followers").value, 10) || 0,
+      audienceStack: stackFromForm,
       avgViews: parseInt(document.getElementById("jc-avgviews").value, 10) || 0,
       localAudiencePct: Number(document.getElementById("jc-localpct").value),
       topAudienceCities: topCities,
@@ -609,6 +756,7 @@ async function doRegisterCreator(e) {
       bio: document.getElementById("jc-bio").value,
       agreedHonestPosts: true,
       agreedFtcDisclosure: true,
+      agreedPostCompliance: true,
       agreedTerms: true,
       referredBy: storedRef() || undefined,
     });
@@ -640,7 +788,7 @@ function renderForBusinesses() {
     <p>SIGNL is building its founding creator rosters first, market by market. Business accounts open when your market launches, in the next 30 to 90 days. Until then, founding businesses join by list, not by account.</p>
     <p><strong>Why join the list now:</strong> the price on this page is the founding price. Join the founding business list and you lock it in. When your market opens, your account activates at founding pricing while later businesses pay the standard rate.</p>
     <div class="plan-cards">${plans}</div>
-    <div class="notice blue mt">Founding pricing: Self-Service $299/mo, Managed $799/mo, 3-month minimum. Joining the list costs nothing and charges nothing. It holds your price and your place in your market's launch.</div>
+    <div class="notice blue mt">Founding pricing: Self-Service $299/mo, Growth $599/mo, Managed $999/mo, 3-month minimum, then month to month. Joining the list costs nothing and charges nothing. It holds your price and your place in your market's launch.</div>
     <a class="btn" style="width:100%;text-align:center" href="https://joinsignl.com/businesses.html">Join the founding business list</a>
     <p class="small muted mt">The list lives on joinsignl.com. When your market launches we will email you there and open your account here, with the founding roster in your market ready to browse.</p>
     <p class="small muted">Creator sign-up is separate and open now: <a href="#" onclick="return go('join-creator')">become a founding creator</a>. The creator roster itself is not public; only businesses with activated accounts in a launched market can browse it.</p>
@@ -777,6 +925,7 @@ function trackRecordHtml(card) {
       <div class="stat"><div class="num">${tr.visitsCompleted}</div><div class="lbl">Visits completed</div></div>
       <div class="stat"><div class="num">${tr.postsDelivered}</div><div class="lbl">Posts delivered</div></div>
       <div class="stat"><div class="num">${tr.onTimePct === null || tr.onTimePct === undefined ? "—" : tr.onTimePct + "%"}</div><div class="lbl">On time</div></div>
+      ${typeof tr.contentViews === "number" ? `<div class="stat"><div class="num">${fmtNum(tr.contentViews)}</div><div class="lbl">Content views (creator-reported)</div></div>` : ""}
     </div>
     ${names ? `<p class="small muted">Worked with: ${names}</p>` : ""}</div>`;
 }
@@ -822,10 +971,14 @@ function creatorProfileDetailHtml(c, preview) {
       </div>
     </div>
     <div class="stat-row mt">
-      <div class="stat"><div class="num">${fmtNum(p.followerCount)}</div><div class="lbl">Followers</div></div>
+      <div class="stat"><div class="num">${fmtNum(totalAudienceOf(c))}</div><div class="lbl">Total audience (all platforms)</div></div>
       <div class="stat"><div class="num">${fmtNum(p.avgViews)}</div><div class="lbl">Typical views</div></div>
       <div class="stat"><div class="num">${p.localAudiencePct === null || p.localAudiencePct === undefined ? "—" : p.localAudiencePct + "%"}</div><div class="lbl">Followers local (${esc(p.localAudienceSource || "Self-reported")})</div></div>
     </div>
+    ${stackList(c).length ? `<p class="small muted">Where the audience lives: ${stackList(c).map((x) => `${esc(x.label)} ${fmtNum(x.count)}`).join(" &middot; ")}</p>` : ""}
+    ${c.standing === "paused" ? `<p><span class="badge warn">Paused: a late post is outstanding</span> <span class="small muted">Greyed out in search and unable to take new offers until the post is delivered.</span></p>` : ""}
+    ${c.bookedUp ? `<p><span class="badge info">Booked up this week</span> <span class="small muted">At their weekly visit max. Offers can still be sent; accepting reopens next week.</span></p>` : ""}
+    ${visitIncludesHtml(c.visitIncludes)}
     ${c.scoreComponents ? `<p class="small muted">Local Impact Score, in the open: local audience ${c.scoreComponents.localAudiencePct}% &middot; reliability ${c.scoreComponents.reliability} (${esc(c.scoreComponents.reliabilityBasis)}) &middot; engagement ${c.scoreComponents.engagement}.</p>` : ""}
     ${p.categories && p.categories.length ? `<p class="small">${p.categories.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
     ${p.compCategories && p.compCategories.filter((x) => x !== PAID_COMP).length ? `<p class="small muted">Open to comps: ${p.compCategories.filter((x) => x !== PAID_COMP).map(esc).join(", ")}</p>` : ""}
@@ -839,7 +992,22 @@ function creatorProfileDetailHtml(c, preview) {
         : `<button class="btn" onclick="startOffer('${c.userId}')">Send offer</button> <button class="btn ghost" onclick="openThread('${c.userId}')">Message</button>`}
     </div>
     ${preview ? `<p class="small muted">Preview: an offer sent from here is a simulation. It never reaches ${esc(c.name)} and nothing is saved.</p>` : ""}
+    ${preview && c.trackRecord && c.trackRecord.postsDelivered > 0 ? `
+    <div class="showcase-block"><h4>Ad use (preview)</h4>
+      <p class="small muted">On Growth and Managed plans, a business can run a delivered post as an ad while its account is active. In the real app that logs the use, notifies the creator, and awards +25 Momentum. Here it is a simulation: nothing is logged and no points move.</p>
+      <button class="btn small-btn ghost" onclick="previewAdUse('${c.userId}')">Use a delivered post in an ad (preview)</button> <span id="pv-aduse-note" class="saved"></span>
+    </div>` : ""}
   </div>`;
+}
+
+async function previewAdUse(userId) {
+  const note = document.getElementById("pv-aduse-note");
+  try {
+    const data = await api("POST", "/admin/preview/ad-use", { creatorId: userId, planId: state.preview ? state.preview.planId : "growth" });
+    if (note) note.textContent = (data.adUse && data.adUse.note) || "Simulated.";
+  } catch (err) {
+    if (note) note.textContent = err.message;
+  }
 }
 
 function openCreatorProfile(userId) {
@@ -870,12 +1038,15 @@ function creatorCard(c, viewer, opts) {
     ? ` ${starsHtml(c.reviewSummary.average)} <strong>${esc(String(c.reviewSummary.average))}</strong> <span class="muted">(${c.reviewSummary.count} review${c.reviewSummary.count === 1 ? "" : "s"})</span>`
     : "";
   return `
-  <div class="card">
+  <div class="card${c.standing === "paused" ? " paused" : ""}">
     <div class="flex-between">
       <div>${avatarHtml(c, "avatar")}<strong>${esc(c.name)}</strong> <span class="muted">@${esc(p.handle || "")}</span></div>
       ${opts.preview ? "" : `<button class="heart ${c.isFavorite ? "on" : ""}" title="Save to favorites" onclick="toggleFav('${c.userId}')">${c.isFavorite ? "&#10084;" : "&#9825;"}</button>`}
     </div>
-    <p class="small muted">${esc(c.market)} &middot; ${esc(c.city || "")}${c.neighborhood ? ` &middot; ${esc(c.neighborhood)}` : ""} &middot; ${esc(p.tierBand || "")} &middot; ${fmtNum(p.followerCount)} followers &middot; ${fmtNum(p.avgViews)} avg views${c.foundingBand ? ` &middot; Founding creator, first ${c.foundingBand} in market` : ""}</p>
+    <p class="small muted">${esc(c.market)} &middot; ${esc(c.city || "")}${c.neighborhood ? ` &middot; ${esc(c.neighborhood)}` : ""} &middot; ${esc(p.tierBand || "")} &middot; ${fmtNum(totalAudienceOf(c))} total audience &middot; ${fmtNum(p.avgViews)} avg views${c.foundingBand ? ` &middot; Founding creator, first ${c.foundingBand} in market` : ""}</p>
+    <p class="small">${stackChipsHtml(c)}</p>
+    ${c.standing === "paused" ? `<p><span class="badge warn">Paused: a late post is outstanding</span> <span class="small muted">This creator is greyed out and cannot take new offers until the post is delivered.</span></p>` : ""}
+    ${c.bookedUp ? `<p><span class="badge info">Booked up this week</span> <span class="small muted">At their weekly visit max. You can still send offers; they can accept next week.</span></p>` : ""}
     <p>${localTxt}</p>
     <p>${scoreBadge(c.localImpactScore)}${p.openToPaidCampaigns ? ` <span class="badge tier">Open to paid campaigns</span>` : ""}${c.momentum && c.momentum.points ? ` <span class="badge info">Momentum ${c.momentum.points} pts</span>` : ""}</p>
     ${p.categories && p.categories.length ? `<p class="small">${p.categories.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
@@ -884,6 +1055,7 @@ function creatorCard(c, viewer, opts) {
     <p class="small">${socialLinksHtml(p)}</p>
     ${bestWorkHtml(c.bestWork, true)}
     ${trackLine || reviewLine ? `<p class="small">${trackLine}${reviewLine}</p>` : ""}
+    <p class="small muted">Every SIGNL visit: 1 post or reel + 2 stories within 48 hours, tracked as proof. Content rights follow your plan.</p>
     <div class="cta-row" style="justify-content:flex-start">
       ${opts.preview
         ? `<button class="btn small-btn" onclick="previewViewCreator('${c.userId}')">View profile</button>
@@ -904,9 +1076,10 @@ function renderCreatorDash() {
   const tab = state.tab || "Profile";
   state.tab = tab;
   let body = "";
-  if (tab === "Profile") body = creatorProfileHtml(u) + growRosterHtml(u);
+  if (tab === "Profile") body = creatorProfileHtml(u) + momentumHtml(u) + growRosterHtml(u);
   app.innerHTML = `
     <h2>Creator dashboard <span class="badge ok">Founding Creator, ${esc(u.market)}</span></h2>
+    ${standingBannerHtml(u)}
     ${tabsHtml(["Profile", "Offers", "My Visits", "Messages"], tab)}
     <div id="tab-body">${body}</div>`;
   if (tab === "Profile") setTimeout(loadMyScore, 10);
@@ -921,6 +1094,7 @@ function renderCreatorDash() {
 function renderFoundingHome() {
   app.innerHTML = `
     <h2>Your founding status</h2>
+    ${standingBannerHtml(state.user)}
     <div id="founding-body"><p class="muted">Loading your founding profile...</p></div>
     <div id="founding-profile"></div>`;
   loadFounding();
@@ -954,7 +1128,8 @@ async function loadFounding() {
           ${card.scoreComponents ? `<p class="small muted">Reliability ${card.scoreComponents.reliability} &middot; ${esc(card.scoreComponents.reliabilityBasis)}</p>` : ""}
         </div>
         <div>
-          <p class="small"><strong>${fmtNum(p.followerCount)}</strong> followers &middot; ${esc(p.tierBand || "")} tier ${p.avgViews ? "&middot; " + fmtNum(p.avgViews) + " typical views" : ""}</p>
+          <p class="small"><strong>${fmtNum(totalAudienceOf(card))}</strong> total audience &middot; ${esc(p.tierBand || "")} tier ${p.avgViews ? "&middot; " + fmtNum(p.avgViews) + " typical views" : ""}</p>
+          ${stackList(card).length ? `<p class="small">${stackChipsHtml(card)}</p>` : ""}
           ${p.categories && p.categories.length ? `<p class="small">${p.categories.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
           ${p.openToPaidCampaigns ? `<p class="small"><span class="badge tier">Open to paid campaigns</span></p>` : ""}
           ${p.compCategories && p.compCategories.filter((x) => x !== PAID_COMP).length ? `<p class="small muted">Open to comps: ${p.compCategories.filter((x) => x !== PAID_COMP).map(esc).join(", ")}</p>` : ""}
@@ -982,7 +1157,7 @@ async function loadFounding() {
       <p class="muted">You signed up early, and it counts: when businesses search the ${esc(f.market)} roster, founding creators are ordered by sign-up time, earliest first.</p>` : ""}
       <p class="muted">Offers, visits, and messages unlock here the day your market activates. Keep your profile current in the meantime; your local audience percentage is what businesses look at first.</p>
     </div>`}`;
-    el.innerHTML += growRosterHtml(state.user);
+    el.innerHTML += momentumHtml(state.user) + growRosterHtml(state.user);
     profEl.innerHTML = `<h3 class="mt">Your profile</h3>` + creatorProfileHtml(state.user);
     fillMyShowcase(card);
   } catch (err) {
@@ -995,6 +1170,15 @@ function creatorProfileHtml(u) {
   const cats = state.boot.creatorCategories.map((x) => `<label><input type="checkbox" name="p-cat" value="${esc(x)}" ${c.categories && c.categories.includes(x) ? "checked" : ""}> ${esc(x)}</label>`).join("");
   const comps = state.boot.compCategories.map((x) => `<label><input type="checkbox" name="p-comp" value="${esc(x)}" ${c.compCategories && c.compCategories.includes(x) ? "checked" : ""}> ${esc(x)}</label>`).join("");
   const tiers = state.boot.tiers.map((t) => `<option value="${esc(t.id)}" ${c.tierBand === t.id ? "selected" : ""}>${esc(t.label)}</option>`).join("");
+  const stackVal = (id) => (c.audienceStack && c.audienceStack[id]) || (id === "instagram" ? c.followerCount || 0 : 0);
+  const stackRows = [
+    ["instagram", "Instagram followers", "p-followers"],
+    ["tiktok", "TikTok followers", "p-stack-tiktok"],
+    ["facebook", "Facebook followers", "p-stack-facebook"],
+    ["x", "X followers", "p-stack-x"],
+    ["linkedin", "LinkedIn connections", "p-stack-linkedin"],
+    ["youtube", "YouTube subscribers", "p-stack-youtube"],
+  ];
   return `
   <div class="panel">
     <div class="flex-between">
@@ -1040,10 +1224,14 @@ function creatorProfileHtml(u) {
         <div class="field"><label>X (Twitter) handle or URL</label><input id="p-x" value="${esc(c.xHandle || "")}" placeholder="Optional"></div>
       </div>
       <div class="field"><label>LinkedIn profile URL</label><input id="p-linkedin" value="${esc(c.linkedinUrl || "")}" placeholder="Optional"></div>
-      <div class="form-2col">
-        <div class="field"><label>Tier band</label><select id="p-tier" onchange="syncPaidOptionProfile()">${tiers}</select></div>
-        <div class="field"><label>Followers</label><input type="number" id="p-followers" min="0" value="${c.followerCount || 0}"></div>
+      <div class="field"><label>Tier band</label><select id="p-tier" onchange="syncPaidOptionProfile()">${tiers}</select><p class="small muted">Your band follows your total audience below when your counts change, unless you deliberately pick a different band here.</p></div>
+      <div class="field"><label>Your audience, platform by platform</label>
+        <div class="form-2col">
+          ${stackRows.map(([id, label, inputId]) => `<div class="field"><label>${label}</label><input type="number" id="${inputId}" min="0" value="${stackVal(id)}" oninput="syncStackTotal()"></div>`).join("")}
+        </div>
+        <p class="small muted">Total audience: <strong id="p-stack-total">${fmtNum(totalAudienceOf(c))}</strong> across every platform. Businesses see the total and the breakdown. Skip any platform you do not use (leave it at 0). Completing 3 or more platforms earns Momentum points.</p>
       </div>
+      <div class="field"><label>Max visits per week</label><input type="number" id="p-maxvisits" min="1" max="7" value="${c.maxVisitsPerWeek || 3}"><p class="small muted">Your pace, your call: 1 to 7 comped visits a week. At your max, offers still arrive but accepting waits until next week, and businesses see you as booked up this week.</p></div>
       <div class="form-2col">
         <div class="field"><label>Typical post views</label><input type="number" id="p-avgviews" min="0" value="${c.avgViews || 0}"></div>
         <div class="field"><label>Local audience share (%)</label><input type="number" id="p-localpct" min="0" max="100" value="${c.localAudiencePct === null || c.localAudiencePct === undefined ? "" : c.localAudiencePct}"></div>
@@ -1084,6 +1272,13 @@ async function loadMyScore() {
   } catch (e) { /* non-fatal */ }
 }
 
+function syncStackTotal() {
+  const ids = ["p-followers", "p-stack-tiktok", "p-stack-facebook", "p-stack-x", "p-stack-linkedin", "p-stack-youtube"];
+  const total = ids.reduce((s, id) => s + (parseInt((document.getElementById(id) || {}).value, 10) || 0), 0);
+  const el = document.getElementById("p-stack-total");
+  if (el) el.textContent = fmtNum(total);
+}
+
 async function doUpdateCreator(e) {
   e.preventDefault();
   const cats = Array.from(document.querySelectorAll("input[name=p-cat]:checked")).map((x) => x.value);
@@ -1107,7 +1302,16 @@ async function doUpdateCreator(e) {
       xHandle: document.getElementById("p-x").value,
       linkedinUrl: document.getElementById("p-linkedin").value,
       tierBand: document.getElementById("p-tier").value,
+      maxVisitsPerWeek: parseInt(document.getElementById("p-maxvisits").value, 10) || 3,
       followerCount: parseInt(document.getElementById("p-followers").value, 10) || 0,
+      audienceStack: (() => {
+        const s = { instagram: parseInt(document.getElementById("p-followers").value, 10) || 0 };
+        for (const [id, platform] of [["p-stack-tiktok", "tiktok"], ["p-stack-facebook", "facebook"], ["p-stack-x", "x"], ["p-stack-linkedin", "linkedin"], ["p-stack-youtube", "youtube"]]) {
+          const v = parseInt(document.getElementById(id).value, 10) || 0;
+          if (v > 0) s[platform] = v;
+        }
+        return s;
+      })(),
       avgViews: parseInt(document.getElementById("p-avgviews").value, 10) || 0,
       localAudiencePct: pctRaw === "" ? null : Number(pctRaw),
       topAudienceCities: document.getElementById("p-topcities").value.split(",").map((x) => x.trim()).filter(Boolean),
@@ -1134,20 +1338,23 @@ async function loadCreatorOffers() {
       el.innerHTML = `<div class="panel center"><h3>No offers yet</h3><p class="muted">When businesses in ${esc(state.user.market)} send offers, they land here. Keep your local audience percentage current: it is what businesses look at first.</p></div>`;
       return;
     }
-    el.innerHTML = data.offers.map((o) => `
+    el.innerHTML = data.offers.map((o) => { const rights = o.visitRights || rightsForPlan(o.businessPlan); return `
       <div class="card mb">
         <div class="flex-between"><strong>${esc(o.title)}</strong><span class="badge tier">${esc(o.businessName)}</span></div>
-        <p>${esc(o.whatComped)}</p>
-        <p class="small muted">Comp cap $${o.dollarCap} &middot; Visit window: ${esc(o.visitWindow || "Flexible")} &middot; ${o.bookedCount}/${o.spots} spots booked ${o.creatorId ? "&middot; Sent directly to you" : "&middot; Open to your market"}</p>
+        <div class="showcase-block">
+          <h4>The deal, in plain words</h4>
+          <p class="small"><strong>You get:</strong> ${esc(o.whatComped)} (comp cap $${o.dollarCap}) &middot; ${o.bookedCount}/${o.spots} spots booked &middot; ${o.creatorId ? "Sent directly to you" : "Open to your market"}</p>
+          <p class="small"><strong>You post:</strong> 1 post or reel + 2 stories within 48 hours of your visit, honest, with the comp disclosed. The post stays live at least 30 days. You check off by pasting the post link in My Visits.</p>
+          <p class="small"><strong>They can:</strong> ${rights.can.map(esc).join("; ")}</p>
+          <p class="small"><strong>They can't:</strong> ${rights.cannot.map(esc).join("; ")}</p>
+        </div>
+        <p class="small muted">Redemption window: ${o.windowMode === "thisweek" ? "this week, ends Sunday" : "any time within 7 days of accepting"}. No appointment: you show up inside the window with your code.${o.visitWindow ? ` Note from the business: ${esc(o.visitWindow)}` : ""}</p>
         <form onsubmit="return acceptOffer(event, '${o.id}')">
-          <div class="form-2col">
-            <div class="field"><label>Visit date</label><input type="date" id="vd-${o.id}" required></div>
-            <div class="field"><label>&nbsp;</label><button class="btn small-btn" type="submit">Accept and get my code</button></div>
-          </div>
+          <button class="btn small-btn" type="submit">Accept and get my code</button>
         </form>
         ${o.creatorId ? `<button class="btn small-btn danger" onclick="declineOffer('${o.id}')">Decline</button>` : ""}
         <button class="btn small-btn ghost" onclick="openThread('${o.businessId}')">Message business</button>
-      </div>`).join("");
+      </div>`; }).join("");
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
@@ -1156,10 +1363,11 @@ async function loadCreatorOffers() {
 async function acceptOffer(e, offerId) {
   e.preventDefault();
   try {
-    const data = await api("POST", `/offers/${offerId}/accept`, { visitDate: document.getElementById("vd-" + offerId).value });
+    const data = await api("POST", `/offers/${offerId}/accept`, {});
     state.tab = "My Visits";
     render();
-    setTimeout(() => alert(`Booked. Your one-time code is ${data.booking.code}. Show it at the visit; staff redeem it in the app and your 48 hour post clock starts.`), 50);
+    const useBy = data.booking && data.booking.redeemBy ? ` Use it any time by ${fmtDate(data.booking.redeemBy)}; no appointment needed.` : "";
+    setTimeout(() => alert(`Booked. Your one-time code is ${data.booking.code}.${useBy} Show it at the visit; staff redeem it in the app and your 48 hour post clock starts.`), 50);
   } catch (err) {
     alert(err.message);
   }
@@ -1201,11 +1409,42 @@ function postStateBadge(stateName, b) {
   }
 }
 
+// Compliance status line, shared by both roles: the same stored
+// facts the sweep acts on (Redeemed / Post due / Posted / Late /
+// Missed), rendered from the server's compliance object.
+function complianceBadge(b) {
+  const c = b.compliance;
+  if (!c) return postStateBadge(b.postState, b);
+  const when = (iso) => (iso ? fmtDate(iso) : "");
+  switch (c.status) {
+    case "posted_on_time": return `<span class="badge ok">Posted on time</span>`;
+    case "posted_late": return `<span class="badge warn">Posted late (delivered)</span>`;
+    case "post_due": return `<span class="badge warn">Post due by ${esc(when(c.deadline))}</span>`;
+    case "overdue": return `<span class="badge bad">Post overdue: hard stop ${esc(when(c.pauseAt))}</span>`;
+    case "paused": return `<span class="badge bad">Creator paused: past the one-week hard stop</span>`;
+    case "missed": return `<span class="badge bad">Missed: no post delivered</span>`;
+    case "expired": return `<span class="badge bad">Window expired unused</span>`;
+    case "honor_reported": return `<span class="badge warn">Reported: business didn't honor (clock voided)</span>`;
+    default: return postStateBadge(b.postState, b);
+  }
+}
+
+async function submitHonorReport(e, bookingId) {
+  e.preventDefault();
+  const reason = document.getElementById("honor-" + bookingId).value.trim();
+  if (!reason) { alert("Add a short reason: what happened at the business?"); return false; }
+  try {
+    await api("POST", `/bookings/${bookingId}/honor-report`, { reason });
+    loadMyVisits("creator");
+  } catch (err) { alert(err.message); }
+  return false;
+}
+
 function visitCard(b, role) {
   const post = b.post;
   let html = `
   <div class="card mb">
-    <div class="flex-between"><strong>${esc(b.title)}</strong>${postStateBadge(b.postState, b)}</div>
+    <div class="flex-between"><strong>${esc(b.title)}</strong>${complianceBadge(b)}</div>
     <p class="small muted">${role === "creator" ? esc(b.businessName) : "@" + esc(b.creatorHandle) + " (" + esc(b.creatorName) + ")"} &middot; ${esc(b.market)} &middot; Comp: ${esc(b.whatComped)} (cap $${b.dollarCap}) &middot; Visit: ${esc(b.visitDate || b.visitWindow || "Flexible")}</p>`;
   if (role === "creator" && b.codeStatus === "issued") {
     html += `
@@ -1213,10 +1452,26 @@ function visitCard(b, role) {
       <div>
         <p class="small muted" style="margin-bottom:0">Your one-time visit code. Show this at the visit; staff redeem it in the app and your 48 hour clock starts at that moment.</p>
         <div class="code-display">${esc(b.code)}</div>
+        ${b.redeemBy ? `<p class="small"><strong>Use by ${esc(fmtDate(b.redeemBy))}</strong>. Come any time inside your window; no appointment needed. If the window passes unused, the offer expires and counts as a no-show.</p>` : ""}
         ${b.checkinAt ? `<p class="small">You checked in at ${fmtDate(b.checkinAt)}. Waiting for the business to confirm.</p>` : `<button class="btn small-btn ghost" onclick="checkIn('${b.id}')">I am here (check in)</button>`}
       </div>
       <div class="qr-box"><img src="/api/bookings/${b.id}/qr" alt="QR code for ${esc(b.code)}" onerror="this.parentElement.style.display='none'"></div>
     </div>`;
+  }
+  if (role === "creator" && b.status === "expired") {
+    html += `<p class="small">This offer's window passed without a redemption, so it expired. It counts as a no-show on your Momentum. If something went wrong, tell us at hello@joinsignl.com.</p>`;
+  }
+  if (b.honorReportedAt) {
+    html += role === "creator"
+      ? `<p class="small">You reported that this business did not honor the comp (${esc(fmtDate(b.honorReportedAt))}). The visit is void: no post is owed, the clock is stopped, and it cannot hurt your standing. The SIGNL team has the report.</p>`
+      : `<p class="small">The creator reported that this comp was not honored. The visit is void and under SIGNL review.</p>`;
+  } else if (role === "creator" && !post && b.status !== "expired") {
+    html += `
+    <form onsubmit="return submitHonorReport(event, '${b.id}')">
+      <div class="field"><label>Business didn't honor this comp?</label><input id="honor-${b.id}" maxlength="280" placeholder="What happened, in one line"></div>
+      <button class="btn small-btn danger" type="submit">Report: the business didn't honor this</button>
+      <p class="small muted">Filing this voids the visit: no post is owed, the compliance clock stops, and it cannot hurt your standing. It flags the business for the SIGNL team. It is never shown publicly.</p>
+    </form>`;
   }
   if (role === "business" && b.codeStatus === "issued") {
     html += `<p class="small">Booking code <strong>${esc(b.code)}</strong>. Redeem it at the Counter tab when the creator is with you${b.checkinAt ? ", or confirm the visit below (creator checked in " + fmtDate(b.checkinAt) + ")" : ", or confirm the visit below if the code cannot be scanned"}.</p>
@@ -1226,17 +1481,50 @@ function visitCard(b, role) {
     html += `<p class="small muted">Redeemed ${fmtDate(b.redeemedAt)} (${b.redeemMethod === "business_confirm" ? "business confirmed" : "code at counter"}). Post deadline: <strong>${fmtDate(b.postDeadline)}</strong>.</p>`;
   }
   if (role === "creator" && b.redeemedAt && !post) {
+    const late = b.compliance && (b.compliance.status === "overdue" || b.compliance.status === "paused" || b.compliance.status === "missed");
     html += `
     <form onsubmit="return submitPost(event, '${b.id}')">
-      <div class="field"><label>Link to your post</label><input id="post-url-${b.id}" type="url" placeholder="https://www.instagram.com/p/..." required></div>
+      <h4 style="margin:10px 0 4px">Post your proof</h4>
+      ${late ? `<p class="small"><strong>This post is past its 48 hour deadline.</strong> Post within 48 hours for full credit. One week is the hard stop: inside the week it still counts as delivered late, and even after the pause a post inside the second week unpauses you, though the missed deadline stays on your record. No link, no check-off.</p>` : `<p class="small muted">Your check-off is the post link itself. Paste it here and the visit is marked delivered${b.compliance && b.compliance.deadline ? ` (deadline ${esc(fmtDate(b.compliance.deadline))})` : ""}. Post within 48 hours for full credit; one week is the hard stop.</p>`}
+      <div class="field"><label>Link to your Instagram post or reel</label><input id="post-url-${b.id}" type="url" placeholder="https://www.instagram.com/p/..." required></div>
       <label style="font-weight:500"><input type="checkbox" id="post-disc-${b.id}" style="width:auto"> My post clearly discloses the comp (for example #ad or "comped by the business"), as the FTC requires.</label>
       <p class="small muted">Post your honest experience. Nobody can require a positive post.</p>
       <button class="btn small-btn" type="submit">Submit post</button>
     </form>`;
   }
+  if (role === "business" && b.compliance && b.compliance.status === "missed") {
+    html += `<p class="small">This visit's comp was redeemed and no post was ever delivered. The creator's account has been closed to future offers. ${b.replacementRequestedAt ? "" : "You can request a replacement visit below."}</p>`;
+  }
   if (post) {
     html += `<p class="small">Post: <a href="${esc(post.url)}" target="_blank" rel="noopener">${esc(post.url)}</a> &middot; submitted ${fmtDate(post.submittedAt)} (${post.hoursAfterRedeem}h after redemption) ${post.verifiedAt ? "&middot; <span class='saved'>Verified by the business</span>" : ""}</p>`;
+    if (post.adUseDeclaredAt) {
+      html += `<p class="small"><span class="badge ok">Running as an ad</span> Declared ${fmtDate(post.adUseDeclaredAt)}. The creator was notified and earned +25 Momentum.${role === "business" ? " This right lasts while your account is active." : ""}</p>`;
+    } else if (role === "business") {
+      const myPlan = state.user && state.user.business ? state.user.business.plan : null;
+      if (myPlan === "growth" || myPlan === "managed") {
+        html += `<button class="btn small-btn ghost" onclick="declareAdUse('${post.id}')">Use in an ad</button> <span class="small muted">Included in your plan while your account is active. The creator is notified and earns +25 Momentum.</span>`;
+      } else {
+        html += `<p class="small muted">Ad use is a Growth and Managed feature. Your plan covers sharing this post natively, with the creator tagged.</p>`;
+      }
+    }
     if (role === "business" && !post.verifiedAt) html += `<button class="btn small-btn ghost" onclick="verifyPost('${post.id}')">Verify post is live</button>`;
+    if (post.reportedAt) {
+      const nums = `${typeof post.views === "number" ? fmtNum(post.views) + " views" : ""}${typeof post.views === "number" && typeof post.likes === "number" ? " &middot; " : ""}${typeof post.likes === "number" ? fmtNum(post.likes) + " likes" : ""}`;
+      html += role === "business"
+        ? `<p class="small">Your comp produced <strong>${nums}</strong> (creator-reported).</p>`
+        : `<p class="small">You reported ${nums} (+5 Momentum). Thanks: numbers like these are what bring businesses back.</p>`;
+    } else if (role === "creator" && post.performanceRequestedAt) {
+      html += `
+    <form onsubmit="return submitPostPerformance(event, '${b.id}')">
+      <h4 style="margin:10px 0 4px">Add post numbers</h4>
+      <p class="small muted">A week in, how did the post do? Two optional numbers; reporting earns +5 Momentum points.</p>
+      <div class="form-2col">
+        <div class="field"><label>Views</label><input type="number" id="perf-views-${b.id}" min="0" placeholder="Optional"></div>
+        <div class="field"><label>Likes</label><input type="number" id="perf-likes-${b.id}" min="0" placeholder="Optional"></div>
+      </div>
+      <button class="btn small-btn" type="submit">Report numbers (+5 Momentum)</button>
+    </form>`;
+    }
   }
   if (role === "business" && b.postState === "overdue" && !b.replacementRequestedAt) {
     html += `<button class="btn small-btn danger" onclick="requestReplacement('${b.id}')">Request replacement visit</button>`;
@@ -1280,6 +1568,26 @@ async function verifyPost(postId) {
   catch (err) { alert(err.message); }
 }
 
+async function submitPostPerformance(e, bookingId) {
+  e.preventDefault();
+  try {
+    const views = document.getElementById("perf-views-" + bookingId).value;
+    const likes = document.getElementById("perf-likes-" + bookingId).value;
+    await api("POST", `/bookings/${bookingId}/performance`, {
+      views: views === "" ? null : parseInt(views, 10),
+      likes: likes === "" ? null : parseInt(likes, 10),
+    });
+    loadMyVisits("creator");
+  } catch (err) { alert(err.message); }
+  return false;
+}
+
+async function declareAdUse(postId) {
+  if (!confirm("Use this post in an ad? Your plan covers ad use while your account is active. The creator is notified and earns +25 Momentum.")) return;
+  try { await api("POST", `/posts/${postId}/ad-use`, {}); loadMyVisits("business"); }
+  catch (err) { alert(err.message); }
+}
+
 // ---------- business ----------
 
 function renderBusinessDash() {
@@ -1312,8 +1620,8 @@ async function loadDiscover() {
     </div>
     <div class="filters">
       <div><label>Would accept (comp fit)</label><select id="f-comp"><option value="">Any comp</option>${state.boot.compCategories.map((c) => `<option>${esc(c)}</option>`).join("")}</select></div>
-      <div><label>Followers min</label><input type="number" id="f-fmin" min="0" placeholder="Any"></div>
-      <div><label>Followers max</label><input type="number" id="f-fmax" min="0" placeholder="Any"></div>
+      <div><label>Total audience min</label><input type="number" id="f-fmin" min="0" placeholder="Any"></div>
+      <div><label>Total audience max</label><input type="number" id="f-fmax" min="0" placeholder="Any"></div>
       <div><label>Min % followers in market</label><input type="number" id="f-minlocal" min="0" max="100" placeholder="Any"></div>
       <div><label>Sort by</label><select id="f-sort"><option value="">Founding order</option><option value="score">Local Impact Score</option><option value="momentum">Momentum (roster standing)</option></select></div>
       <div><label>&nbsp;</label><label style="font-weight:500"><input type="checkbox" id="f-paid" style="width:auto"> Open to paid campaigns only</label></div>
@@ -1371,23 +1679,80 @@ function startOffer(creatorId) {
   render();
 }
 
+// Composer suggestion chips (Jeff, 2026-10-19): the Standard Visit
+// package is pre-loaded and shown as a plain summary, comps are
+// suggested by the creator's tier, dates are one tap. The underlying
+// offer fields and API do not change.
+function compSuggestions(tierBand) {
+  const all = [
+    { label: "Meal for one", comp: "Meal for one, on us", cap: 50 },
+    { label: "Meal for two", comp: "Meal for two, on us", cap: 100 },
+    { label: "Experience for two", comp: "Experience for two, on us", cap: 175 },
+  ];
+  if (tierBand === "Neighbors") return [all[0], { label: "Dessert + drinks", comp: "Dessert and drinks for one, on us", cap: 35 }];
+  if (tierBand === "Locals") return [all[1], { label: "Brunch for two", comp: "Brunch for two, on us", cap: 80 }];
+  if (tierBand === "Creators") return [all[2], { label: "Meal for two + signature", comp: "Meal for two plus a signature item, on us", cap: 125 }];
+  return all;
+}
+
+// Redemption windows (Jeff, 2026-10-19 r2): no appointments
+// anywhere on SIGNL. An accepted offer is redeemed inside a
+// window: 7 days from accepting (default) or this week, ending
+// Sunday. The chips set the mode select; the free-text field is
+// just an optional note for the creator.
+function chipsRowHtml(kind, prefix, tierBand) {
+  if (kind === "comp") {
+    return `<div class="chip-row">${compSuggestions(tierBand).map((s) => `<button type="button" class="chip" onclick="setCompChip('${prefix}', ${JSON.stringify(s.comp)}, ${s.cap})">${esc(s.label)} (~$${s.cap})</button>`).join("")}</div>`;
+  }
+  return `<div class="chip-row"><button type="button" class="chip" onclick="setWindowMode('${prefix}', '7days')">Use within 7 days</button><button type="button" class="chip" onclick="setWindowMode('${prefix}', 'thisweek')">This week (ends Sunday)</button></div>`;
+}
+
+function setCompChip(prefix, comp, cap) {
+  const c = document.getElementById(prefix + "-comped");
+  const k = document.getElementById(prefix + "-cap");
+  if (c) c.value = comp;
+  if (k) k.value = cap;
+}
+
+function setWindowMode(prefix, mode) {
+  const el = document.getElementById(prefix + "-windowmode");
+  if (el) el.value = mode;
+}
+
+function windowModeFieldHtml(prefix) {
+  return `<div class="field"><label>Redemption window (no appointments: the creator comes any time inside it)</label><select id="${prefix}-windowmode"><option value="7days">Use within 7 days of accepting</option><option value="thisweek">This week (ends Sunday)</option></select>${chipsRowHtml("window", prefix)}</div>`;
+}
+
+function packageSummaryHtml(planId, planName) {
+  const rights = rightsForPlan(planId);
+  return `<div class="showcase-block"><h4>Every offer is the Standard Visit</h4>
+    <p class="small">${esc(standardVisit().summary)}</p>
+    <p class="small"><strong>Your plan${planName ? ` (${esc(planName)})` : ""} covers:</strong> ${rights.can.map(esc).join("; ")}. They can't: ${rights.cannot.map(esc).join("; ")}.</p>
+    <p class="small muted">Tip: creators post more when they can bring a guest. Meal-for-two comps outperform solo comps.</p>
+  </div>`;
+}
+
 async function loadMyOffers() {
   const el = document.getElementById("tab-body");
   const target = state.offerTarget ? state.discover.find((c) => c.userId === state.offerTarget) : null;
+  const myPlan = state.user && state.user.business ? state.user.business.plan : null;
+  const planObj = (state.boot ? state.boot.plans : []).find((p) => p.id === myPlan);
   let html = `
   <div class="panel">
     <h3>Create a comp offer</h3>
     <div id="form-error"></div>
+    ${packageSummaryHtml(myPlan, planObj ? planObj.name : null)}
     <form onsubmit="return createOffer(event)">
       <input type="hidden" id="o-creator" value="${target ? esc(target.userId) : ""}">
       ${target ? `<div class="notice blue">Sending directly to <strong>${esc(target.name)}</strong> (@${esc(target.profile.handle)}). <a href="#" onclick="state.offerTarget=null; loadMyOffers(); return false;">Make it an open offer instead</a></div>` : `<p class="small muted">Leave this open and any approved creator in ${esc(state.user.market)} can book it, or pick a creator in Discover and tap Send offer.</p>`}
       <div class="field"><label>Offer title</label><input id="o-title" required placeholder="For example: Dinner for two on us"></div>
-      <div class="field"><label>Exactly what is comped</label><input id="o-comped" required placeholder="For example: Two entrees and two drinks for the creator and a guest"></div>
+      <div class="field"><label>Exactly what is comped</label><input id="o-comped" required placeholder="For example: Two entrees and two drinks for the creator and a guest">${chipsRowHtml("comp", "o", target && target.profile ? target.profile.tierBand : null)}<p class="small muted">Suggestions by ${target ? "this creator's tier" : "tier"}; type anything custom.</p></div>
       <div class="form-2col">
         <div class="field"><label>Dollar cap ($)</label><input type="number" id="o-cap" min="1" required placeholder="75"></div>
         <div class="field"><label>Spots (creators who can book)</label><input type="number" id="o-spots" min="1" value="1" required></div>
       </div>
-      <div class="field"><label>Visit window</label><input id="o-window" placeholder="For example: Any Tuesday to Thursday in October"></div>
+      ${windowModeFieldHtml("o")}
+      <div class="field"><label>Window note for the creator (optional)</label><input id="o-window" placeholder="For example: Evenings are best"></div>
       <p class="small muted">Reminder: you can describe the experience, never the opinion. Posts stay honest, and creators disclose the comp.</p>
       <button class="btn" type="submit">Publish offer</button>
     </form>
@@ -1418,6 +1783,7 @@ async function createOffer(e) {
       dollarCap: parseInt(document.getElementById("o-cap").value, 10),
       spots: parseInt(document.getElementById("o-spots").value, 10),
       visitWindow: document.getElementById("o-window").value,
+      windowMode: document.getElementById("o-windowmode").value,
       creatorId: document.getElementById("o-creator").value || null,
     });
     state.offerTarget = null;
@@ -1592,13 +1958,81 @@ function renderAdmin() {
       <div><strong>Business Preview</strong><p class="muted small" style="margin:4px 0 0">Walk the app exactly as a business does: the founding plans, roster search with every filter, full creator profiles, and the offer composer. Offers sent in preview are simulations that never reach a creator and are never saved.</p></div>
       <button class="btn" onclick="enterPreview()">Preview as business &rarr;</button>
     </div>
-    ${tabsHtml(["Applications", "Markets", "Recruiters", "Event Log", "Stats"], tab)}
+    ${tabsHtml(["Applications", "Markets", "Recruiters", "Event Log", "Compliance", "Stats"], tab)}
     <div id="tab-body"><p class="muted">Loading...</p></div>`;
   if (tab === "Applications") loadApplications();
   if (tab === "Markets") loadMarkets();
   if (tab === "Recruiters") loadLeaderboard();
   if (tab === "Event Log") loadEvents();
+  if (tab === "Compliance") loadCompliance();
   if (tab === "Stats") loadStats();
+}
+
+// Post compliance (Jeff, 2026-10-19): every redeemed visit by
+// status, with the sweep trigger and the reinstate action for
+// banned creators. All of it is a read over the same records the
+// sweep acts on; reinstatement is the only write here.
+async function loadCompliance() {
+  const el = document.getElementById("tab-body");
+  try {
+    const data = await api("GET", "/admin/compliance");
+    const statusLabel = {
+      booked: "Booked, not redeemed",
+      post_due: "Post due",
+      posted_on_time: "Posted on time",
+      posted_late: "Posted late (delivered)",
+      overdue: "Overdue, inside the week",
+      paused: "Past the hard stop, creator paused",
+      missed: "Missed: no post delivered",
+      expired: "Window expired unused (no-show)",
+      honor_reported: "Business didn't honor: clock voided",
+    };
+    const rows = (data.visits || []).map((r) => `
+      <div class="card mb">
+        <div class="flex-between"><strong>${esc(r.title)}</strong><span class="badge ${r.status === "posted_on_time" ? "ok" : r.status === "posted_late" || r.status === "post_due" ? "warn" : r.status === "booked" ? "info" : "bad"}">${esc(statusLabel[r.status] || r.status)}</span></div>
+        <p class="small muted">Creator: <strong>${esc(r.creatorName)}</strong> (@${esc(r.creatorHandle)}) &middot; Business: ${esc(r.businessName)} &middot; Market: ${esc(r.market)}</p>
+        <p class="small">Redeemed: ${r.redeemedAt ? esc(fmtDate(r.redeemedAt)) : "not yet"} &middot; Post deadline: ${r.postDeadline ? esc(fmtDate(r.postDeadline)) : "n/a"} &middot; Hard stop: ${r.pauseAt ? esc(fmtDate(r.pauseAt)) : "n/a"} &middot; Ban lands: ${r.banAt ? esc(fmtDate(r.banAt)) : "n/a"}</p>
+        ${r.proofUrl ? `<p class="small">Proof: <a href="${esc(r.proofUrl)}" target="_blank" rel="noopener">${esc(r.proofUrl)}</a>${r.proofSubmittedAt ? ` &middot; submitted ${esc(fmtDate(r.proofSubmittedAt))}` : ""}</p>` : ""}
+        ${r.honorReportedAt ? `<p class="small">Honor report ${esc(fmtDate(r.honorReportedAt))}: &ldquo;${esc(r.honorReason || "")}&rdquo; This visit's compliance clock is void.</p>` : ""}
+        <p class="small">Creator standing: <strong>${esc(r.creatorStanding)}</strong></p>
+        ${r.creatorStanding === "banned" ? `<button class="btn small-btn" onclick="reinstateCreator('${r.creatorId}')">Reinstate creator</button>` : ""}
+        ${r.creatorStanding === "paused" ? `<button class="btn small-btn ghost" onclick="reinstateCreator('${r.creatorId}')">Unpause creator</button>` : ""}
+      </div>`).join("");
+    const bizRows = (data.businesses || []).map((bz) => `
+      <div class="card mb">
+        <div class="flex-between"><strong>${esc(bz.businessName)}</strong><span class="badge ${bz.warning ? "bad" : "warn"}">${bz.reports} honor report${bz.reports === 1 ? "" : "s"}${bz.warning ? " &middot; WARNING" : ""}</span></div>
+        <p class="small muted">Latest reason: &ldquo;${esc(bz.lastReason || "")}&rdquo; &middot; ${bz.lastAt ? esc(fmtDate(bz.lastAt)) : ""}</p>
+        ${bz.warning ? `<p class="small">Two or more creators say this business did not honor a comp. Review before their next offers go out.</p>` : ""}
+      </div>`).join("");
+    el.innerHTML = `
+      <div class="flex-between"><h3 style="margin:0">Post compliance</h3><button class="btn small-btn" onclick="runSweepNow()">Run sweep now</button></div>
+      <p class="small muted" style="margin-top:8px">The sweep runs on a schedule and sends the 48-hour reminder, the day-5 reminder, and the day-6 final warning; it pauses creators at the one-week hard stop and bans at two weeks when a redeemed comp never gets a post. Counts: ${Object.entries(data.counts || {}).map(([k, v]) => `${esc(k)} ${v}`).join(" &middot; ") || "none yet"}</p>
+      <div id="sweep-note" class="small saved"></div>
+      ${rows || `<p class="muted">No redeemed visits yet. Compliance rows appear here the moment a comp is redeemed.</p>`}
+      ${bizRows ? `<h3 class="mt">Businesses with honor reports</h3><p class="small muted">Creator reports that a business did not honor a comp. Admin only; there is no public surface for this.</p>${bizRows}` : ""}`;
+  } catch (err) {
+    el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+  }
+}
+
+async function runSweepNow() {
+  const note = document.getElementById("sweep-note");
+  try {
+    const data = await api("POST", "/admin/compliance/sweep", {});
+    const s = data.sweep || {};
+    if (note) note.textContent = `Sweep ran: ${(s.reminder1 || 0) + (s.reminder2 || 0) + (s.reminder3 || 0)} reminder(s), ${s.paused || 0} pause(s), ${s.banned || 0} ban(s), ${s.expired || 0} window expiration(s), ${s.performance || 0} performance request(s).`;
+    loadCompliance();
+  } catch (err) {
+    if (note) note.textContent = err.message;
+  }
+}
+
+async function reinstateCreator(userId) {
+  if (!confirm("Reinstate this creator? Their account returns to good standing and they can take offers again. The missed visit stays on their record.")) return;
+  try {
+    await api("POST", "/admin/compliance/reinstate", { userId });
+    loadCompliance();
+  } catch (err) { alert(err.message); }
 }
 
 async function loadMarkets() {
@@ -1835,8 +2269,8 @@ function previewDiscoverHtml() {
     </div>
     <div class="filters">
       <div><label>Would accept (comp fit)</label><select id="pvf-comp"><option value="">Any comp</option>${state.boot.compCategories.map((c) => `<option>${esc(c)}</option>`).join("")}</select></div>
-      <div><label>Followers min</label><input type="number" id="pvf-fmin" min="0" placeholder="Any"></div>
-      <div><label>Followers max</label><input type="number" id="pvf-fmax" min="0" placeholder="Any"></div>
+      <div><label>Total audience min</label><input type="number" id="pvf-fmin" min="0" placeholder="Any"></div>
+      <div><label>Total audience max</label><input type="number" id="pvf-fmax" min="0" placeholder="Any"></div>
       <div><label>Min % followers in market</label><input type="number" id="pvf-minlocal" min="0" max="100" placeholder="Any"></div>
       <div><label>Sort by</label><select id="pvf-sort"><option value="">Founding order</option><option value="score">Local Impact Score</option><option value="momentum">Momentum (roster standing)</option></select></div>
       <div><label>&nbsp;</label><label style="font-weight:500"><input type="checkbox" id="pvf-paid" style="width:auto"> Open to paid campaigns only</label></div>
@@ -1927,6 +2361,7 @@ function previewOfferHtml() {
   const target = pv.targetId
     ? (pv.creators || []).find((c) => c.userId === pv.targetId) || (pv.creator && pv.creator.userId === pv.targetId ? pv.creator : null)
     : null;
+  const planObj = (state.boot.plans || []).find((p) => p.id === pv.planId);
   return `
   <section class="panel">
     <h3 style="margin-top:0"><span class="preview-tag">PREVIEW</span> Send an offer (simulation)</h3>
@@ -1934,15 +2369,17 @@ function previewOfferHtml() {
     ${target
       ? `<div class="notice">Sending directly to <strong>${esc(target.name)}</strong> (@${esc((target.profile || {}).handle || "")}). <a href="#" onclick="previewStartOffer(''); return false;">Make it an open offer instead</a></div>`
       : `<p class="small muted">An open offer: any approved creator in ${esc(pv.market)} could book it in the real app. Or go back to the roster and pick a creator to target.</p>`}
+    ${packageSummaryHtml(pv.planId, planObj ? planObj.name : null)}
     <div id="pv-form-error"></div>
     <form onsubmit="return previewSendOffer(event)">
       <div class="field"><label>Offer title</label><input id="pvo-title" required placeholder="For example: Dinner for two on us"></div>
-      <div class="field"><label>Exactly what is comped</label><input id="pvo-comped" required placeholder="For example: Two entrees and two drinks for the creator and a guest"></div>
+      <div class="field"><label>Exactly what is comped</label><input id="pvo-comped" required placeholder="For example: Two entrees and two drinks for the creator and a guest">${chipsRowHtml("comp", "pvo", target && target.profile ? target.profile.tierBand : null)}</div>
       <div class="form-2col">
         <div class="field"><label>Dollar cap ($)</label><input type="number" id="pvo-cap" min="1" required placeholder="75"></div>
         <div class="field"><label>Spots (creators who can book)</label><input type="number" id="pvo-spots" min="1" value="1" required></div>
       </div>
-      <div class="field"><label>Visit window</label><input id="pvo-window" placeholder="For example: Any Tuesday to Thursday in October"></div>
+      ${windowModeFieldHtml("pvo")}
+      <div class="field"><label>Window note for the creator (optional)</label><input id="pvo-window" placeholder="For example: Evenings are best"></div>
       <p class="small muted">The real composer carries the same honesty reminder: describe the experience, never the opinion. Posts stay honest, and creators disclose the comp.</p>
       <button class="btn" type="submit">Send preview offer</button>
       <button class="btn ghost" type="button" onclick="previewBackToResults()">Back to the roster</button>
@@ -1961,6 +2398,7 @@ async function previewSendOffer(e) {
       dollarCap: parseInt(document.getElementById("pvo-cap").value, 10),
       spots: parseInt(document.getElementById("pvo-spots").value, 10),
       visitWindow: document.getElementById("pvo-window").value,
+      windowMode: document.getElementById("pvo-windowmode").value,
       creatorId: pv.targetId || null,
       market: pv.market,
     });
