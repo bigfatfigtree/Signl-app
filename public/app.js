@@ -1589,7 +1589,7 @@ async function submitHonorReport(e, bookingId) {
 function visitCard(b, role) {
   const post = b.post;
   let html = `
-  <div class="card mb">
+  <div class="card visit-card mb">
     <div class="flex-between"><strong>${esc(b.title)}</strong>${complianceBadge(b)}</div>
     <p class="small muted">${role === "creator" ? esc(b.businessName) : "@" + esc(b.creatorHandle) + " (" + esc(b.creatorName) + ")"} &middot; ${esc(b.market)} &middot; Comp: ${esc(b.whatComped)} (cap $${b.dollarCap}) &middot; Visit: ${esc(b.visitDate || b.visitWindow || "Flexible")}</p>`;
   if (b.paidLane) {
@@ -2989,7 +2989,7 @@ function pvChecklistHtml(b) {
 function pvBookingCard(b) {
   const methodLabel = b.redeemMethod === "business_confirm" ? "business confirmed in the app (no code)" : "staff scanned the code at the counter";
   let html = `
-  <div class="card mb">
+  <div class="card visit-card mb">
     <div class="flex-between"><strong>${esc(b.title)}</strong>${pvStateBadge(b)}</div>
     <p class="small muted">@${esc(b.creatorHandle)} (${esc(b.creatorName)})${b.creatorTier ? ` &middot; ${esc(b.creatorTier)}` : ""} &middot; ${esc(b.market)} &middot; Comp: ${esc(b.whatComped)} (cap $${b.dollarCap}${b.compCostModeled ? `, at cost $${b.compCostModeled} modeled` : ""}) &middot; Window: ${esc(b.visitWindow || "Flexible")}</p>`;
   if (b.state === "booked") {
@@ -3165,8 +3165,8 @@ function previewDashboardHtml(d) {
     ${s.roas ? `
     <div class="showcase-block"><h4>${esc(s.roas.label)}</h4>
       <div class="stat-row">
-        <div class="stat"><div class="num">${s.roas.score === null ? "n/a" : s.roas.score.toFixed(2) + "&times;"}</div><div class="lbl">SIGNL ROAS Score</div></div>
-        <div class="stat"><div class="num">${s.roas.allInScore === null ? "n/a" : s.roas.allInScore.toFixed(2) + "&times;"}</div><div class="lbl">All-in, with the plan counted</div></div>
+        <div class="stat"><div class="num grad-text">${s.roas.score === null ? "n/a" : s.roas.score.toFixed(2) + "&times;"}</div><div class="lbl">SIGNL ROAS Score</div></div>
+        <div class="stat"><div class="num grad-text">${s.roas.allInScore === null ? "n/a" : s.roas.allInScore.toFixed(2) + "&times;"}</div><div class="lbl">All-in, with the plan counted</div></div>
         <div class="stat"><div class="num">$${fmtMoney(s.roas.registerValue)}</div><div class="lbl">Register value, tracked through creator codes (${s.roas.redemptions.count} redemptions, $${fmtMoney(s.roas.redemptions.basketTotal)} rung up)</div></div>
         <div class="stat"><div class="num">$${fmtMoney(s.roas.mediaValue)}</div><div class="lbl">Media value, modeled at the published rates</div></div>
         <div class="stat"><div class="num">$${fmtMoney(s.roas.compCost + s.roas.discountCost)}</div><div class="lbl">Visit costs: $${fmtMoney(s.roas.compCost)} comps at cost + $${fmtMoney(s.roas.discountCost)} code discounts</div></div>
