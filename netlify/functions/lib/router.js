@@ -826,6 +826,7 @@ function signupConfirmationEmail(user, band) {
       `Hi ${first},`,
       "",
       `Your founding creator profile is built and in the review queue. Every application is reviewed by a person.`,
+      "Every founding application gets a decision or a clear status within 2 business days.",
     ];
     if (band) lines.push(`You are in the first ${band} creators to sign up in ${user.city}. That founding standing never expires.`);
     lines.push(
@@ -850,6 +851,7 @@ function signupConfirmationEmail(user, band) {
     `Hi ${first},`,
     "",
     `Your founding creator profile for ${user.market} is built and in the review queue. Every application is reviewed by a person.`,
+    "Every founding application gets a decision or a clear status within 2 business days.",
   ];
   if (band) lines.push(`You are in the first ${band} creators to sign up in ${user.market}. That founding standing never expires.`);
   lines.push(
@@ -2112,6 +2114,8 @@ function campaignEmail(recipient) {
     "Your spot is partly filled in already:",
     campaignClaimLink(recipient),
     "",
+    "If you apply, you will get a decision or a clear status within 2 business days.",
+    "",
     "Two minutes, and no fees for creators, ever. If it's not for you, you won't hear from me again.",
     "",
     "Jeff",
@@ -2148,6 +2152,8 @@ function crossoverEmail(recipient) {
     "",
     "Your founding profile is free, and your spot is held in sign-up order. Claim yours here, it takes about two minutes:",
     `https://${campaignClaimLink(recipient)}`,
+    "",
+    "If you apply, you will get a decision or a clear status within 2 business days.",
     "",
     "If it's not for you, no hard feelings, and you won't hear from me again.",
     "",

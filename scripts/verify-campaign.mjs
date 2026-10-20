@@ -135,6 +135,7 @@ try {
   check("opener slot is filled", hr.text.includes("I found you through your Oceanfront food posts."));
   check("Hampton Roads paragraph carries the Black Friday launch", hr.text.includes("Hampton Roads launches in November, and our opening push is Black Friday weekend."));
   check("claim link is prefilled with handle + market", hr.text.includes("app.joinsignl.com/?handle=maya757&market=Hampton%20Roads"));
+  check("founding email carries the approval status sentence", hr.text.includes("If you apply, you will get a decision or a clear status within 2 business days."));
   check("sign-off is Jeff, Founder, SIGNL, with the tagline", hr.text.includes("\nJeff\nFounder, SIGNL\nhello@joinsignl.com | joinsignl.com\nNational platforms sell reach. We sell regulars."));
   check("no last name anywhere in the email", !hr.text.includes("Rimmer") && !hr.subject.includes("Rimmer"));
   check("no em dashes anywhere in the email", !hr.text.includes("—") && !hr.subject.includes("—"));
@@ -394,6 +395,7 @@ try {
   check("why local pays: the audience share in the market is the number SIGNL leads with", xo.text.includes("cannot tell a business what share of a creator's audience lives in its market") && xo.text.includes("SIGNL leads with exactly that number"));
   check("founding mechanics: free profile, spot held in sign-up order, founding-market paragraph", xo.text.includes("Your founding profile is free") && xo.text.includes("your spot is held in sign-up order") && xo.text.includes("Richmond is a founding market: sign-ups are open now and offers open city by city as the roster fills, in the next 30 to 90 days."));
   check("crossover claim link is the full prefilled URL", xo.text.includes("https://app.joinsignl.com/?handle=jordancreates&market=Richmond"));
+  check("crossover email carries the approval status sentence", xo.text.includes("If you apply, you will get a decision or a clear status within 2 business days."));
   check("crossover sign-off is Jeff, Founder, SIGNL, with the tagline", xo.text.includes("\nJeff\nFounder, SIGNL\nhello@joinsignl.com | joinsignl.com\nNational platforms sell reach. We sell regulars."));
   check("no last name anywhere in the crossover email", !xo.text.includes("Rimmer") && !xo.subject.includes("Rimmer"));
   check("no em dashes anywhere in the crossover email", !xo.text.includes("—") && !xo.subject.includes("—"));

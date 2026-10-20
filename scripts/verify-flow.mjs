@@ -110,6 +110,8 @@ try {
   const mailUnlisted = approvalEmail({ name: "Tulsa Creator", email: "t@example.com", market: "Not listed yet", city: "Tulsa", creator: { handle: "tulsaeats", tierBand: "Locals" } }, 100);
   check("approval email (unlisted) carries the creator invite link", mailUnlisted.text.includes("https://app.joinsignl.com/?ref=tulsaeats"), mailUnlisted.text);
   const mailSignup = signupConfirmationEmail({ name: "Verify Creator", email: "v@example.com", market: "Hampton Roads", creator: { handle: "verifyeats757", tierBand: "Locals" } }, 100);
+  const mailSignupUnlisted = signupConfirmationEmail({ name: "Tulsa Creator", email: "tulsa@example.com", market: "Not listed yet", city: "Tulsa", country: "United States", creator: { handle: "tulsaeats", tierBand: "Locals" } }, 100);
+  check("sign-up confirmation emails carry the approval promise (listed + unlisted)", mailSignup.text.includes("Every founding application gets a decision or a clear status within 2 business days.") && mailSignupUnlisted.text.includes("Every founding application gets a decision or a clear status within 2 business days."), mailSignup.text);
   // Jeff (2026-10-18, supersedes the approval-only ask): the recruiting
   // benefits are stated at sign-up too, in BOTH transactional emails.
   const benefitsPresent = (mail) => mail.text.includes("+3 when a creator joins through your link") && mail.text.includes("+10 when they are approved") && mail.text.includes("roster standing is part of the order they see");
@@ -133,6 +135,7 @@ try {
   const appJs = await anon("GET", "/app.js");
   const appJsText = String((appJs.data && appJs.data.raw) || "");
   check("status page renders the Grow your roster invite block", appJsText.includes("Grow your roster") && appJsText.includes("app.joinsignl.com/?ref="), appJsText.slice(0, 80));
+  check("pending screen carries the approval promise for creators", appJsText.includes("Every founding application gets a decision or a clear status within 2 business days."), "");
   check("client persists the ?ref= credit and sends it at registration", appJsText.includes("signl_ref") && appJsText.includes("referredBy"), "");
   // Claim-link prefill (Jeff, 2026-10-19): ?handle=&market=&tier= from
   // email / partner links pre-fill the sign-up form. The suites assert

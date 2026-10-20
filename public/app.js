@@ -838,7 +838,7 @@ function renderPending() {
   app.innerHTML = `
   <section class="panel center" style="max-width:560px;margin:40px auto">
     <h2>${isCreator ? "Founding profile received" : "Application received"}</h2>
-    <p>Thanks, ${esc(u.name)}. ${isCreator ? `Your founding creator profile for <strong>${place}</strong> is built and in the review queue.` : "Every SIGNL application is reviewed by a person before accounts activate. Yours is in the queue."}</p>
+    <p>Thanks, ${esc(u.name)}. ${isCreator ? `Your founding creator profile for <strong>${place}</strong> is built and in the review queue. Every founding application gets a decision or a clear status within 2 business days.` : "Every SIGNL application is reviewed by a person before accounts activate. Yours is in the queue."}</p>
     ${isCreator && f.queueBand ? `<p><span class="badge info">${isUnlisted ? `You are in the first ${f.queueBand} to sign up in ${esc(u.city)}` : `You are in the first ${f.queueBand} founding creators in ${esc(u.market)}`}</span></p>` : ""}
     <p class="muted">${isCreator
       ? isUnlisted
