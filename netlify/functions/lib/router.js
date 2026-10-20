@@ -2786,6 +2786,77 @@ async function previewDashboard() {
       note: "A spending cap and authorization, not a held deposit: each paid booking escrows on its own, held by SIGNL until the post is live.",
     },
   };
+  // Business Home (dashboard concept merge, Jeff 2026-10-20): the
+  // first screen a business opens, computed from the same simulated
+  // bookings as everything else on this dashboard: the headline
+  // metrics, the attention list, the visit pipeline as cumulative
+  // stage reach (each stage counts the bookings that reached it),
+  // plan pace, the content that is working (ranked by the register
+  // tallies, the tracked action, never vanity counts alone), and
+  // the next visits by nearest deadline. Pure computation over the
+  // in-memory simulation: zero writes, like everything in preview.
+  const homeAttention = [];
+  for (const b of bookings) {
+    if (b.state === "overdue") {
+      homeAttention.push({ kind: "overdue", bookingId: b.id, label: "A post is past its deadline", detail: `${b.title} with @${b.creatorHandle}: the 48 hour deadline passed and no post link is in yet. The hard stop is ${previewFmtDate(b.pauseAt)}.` });
+    }
+  }
+  for (const b of bookings) {
+    if (b.state === "post_due") {
+      homeAttention.push({ kind: "clock", bookingId: b.id, label: "A post clock is running", detail: `${b.title} with @${b.creatorHandle}: the visit is redeemed and the post is due by ${previewFmtDate(b.postDeadline)}.` });
+    }
+  }
+  for (const b of bookings) {
+    if (b.post && !b.redemptions) {
+      homeAttention.push({ kind: "tally", bookingId: b.id, label: "A register tally is still unreported", detail: `${b.title} with @${b.creatorHandle}: the post is live, and reporting the code tally on the visit card below completes its SIGNL ROAS Score.` });
+    }
+  }
+  for (const b of bookings) {
+    if (b.state === "booked" && b.redeemBy && Date.parse(b.redeemBy) - now < 48 * 3600 * 1000) {
+      homeAttention.push({ kind: "window", bookingId: b.id, label: "A visit window closes soon", detail: `${b.title} with @${b.creatorHandle}: the redemption window closes ${previewFmtDate(b.redeemBy)}.` });
+    }
+  }
+  const homeTopContent = delivered
+    .slice()
+    .sort((a, b) => ((b.redemptions ? b.redemptions.count : 0) - (a.redemptions ? a.redemptions.count : 0)) || ((b.post.views || 0) - (a.post.views || 0)))
+    .slice(0, 3)
+    .map((b) => ({
+      bookingId: b.id,
+      title: b.title,
+      creatorName: b.creatorName,
+      creatorHandle: b.creatorHandle,
+      postUrl: b.post.url,
+      views: b.post.views || 0,
+      likes: b.post.likes || 0,
+      onTime: !!b.post.onTime,
+      redemptions: b.redemptions ? { count: b.redemptions.count, basketTotal: b.redemptions.basketTotal } : null,
+      roasScore: b.roas ? b.roas.score : null,
+    }));
+  const nextDeadlineOf = (b) => (b.state === "booked" ? b.redeemBy : b.state === "overdue" ? b.pauseAt : b.postDeadline);
+  const homeNextVisits = bookings
+    .filter((b) => !b.post)
+    .map((b) => ({ bookingId: b.id, title: b.title, creatorName: b.creatorName, creatorHandle: b.creatorHandle, state: b.state, stateLabel: b.stateLabel, when: nextDeadlineOf(b), whenLabel: b.state === "booked" ? "Redeem by" : b.state === "overdue" ? "Hard stop" : "Post due" }))
+    .sort((a, b) => (String(a.when || "") < String(b.when || "") ? -1 : 1));
+  const home = {
+    visitsUsed: summary.visitsUsed,
+    visitsAllowance: summary.visitsAllowance,
+    visitsRemaining: summary.visitsRemaining,
+    postsLive: summary.postsDelivered,
+    onTimeRatePct: summary.onTimeRatePct,
+    roasScore: summary.roas ? summary.roas.score : null,
+    roasAllInScore: summary.roas ? summary.roas.allInScore : null,
+    attention: homeAttention,
+    pipeline: {
+      invited: bookings.length,
+      claimed: bookings.filter((b) => !!b.code).length,
+      visitSet: bookings.filter((b) => !!b.redeemBy).length,
+      clockRunning: bookings.filter((b) => !!b.redeemedAt).length,
+      live: delivered.length,
+    },
+    planPacePct: summary.visitsAllowance ? Math.round((summary.visitsUsed / summary.visitsAllowance) * 100) : 0,
+    topContent: homeTopContent,
+    nextVisits: homeNextVisits,
+  };
   return {
     preview: true,
     business: { ...PREVIEW_DASH_BUSINESS, planId: plan.id, planName: plan.name, discountCodes: { ...PREVIEW_DASH_DISCOUNT } },
@@ -2795,6 +2866,7 @@ async function previewDashboard() {
     summary,
     bookings,
     managedView,
+    home,
     rosterEmpty: bookings.length === 0,
   };
 }

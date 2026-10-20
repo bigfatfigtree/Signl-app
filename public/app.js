@@ -381,7 +381,8 @@ function renderBottomNav() {
       return;
     }
     bottomnav.innerHTML =
-      item("&#9679;", "Profile", "return go('dashboard','Profile')", t === "Profile" || !t) +
+      item("&#8962;", "Home", "return go('dashboard','Home')", t === "Home" || !t) +
+      item("&#9679;", "Profile", "return go('dashboard','Profile')", t === "Profile") +
       item("&#9670;", "Offers", "return go('dashboard','Offers')", t === "Offers") +
       item("&#10003;", "My Visits", "return go('dashboard','My Visits')", t === "My Visits") +
       item("&#9993;", "Messages", "return go('dashboard','Messages')", t === "Messages") +
@@ -401,6 +402,7 @@ function go(view, tab) {
   // Any navigation leaves Business Preview: the mode is a single
   // deliberate walk, and the admin lands back on the normal console.
   if (state.preview) { stopPreviewCountdown(); state.preview = null; }
+  stopHomeCountdown();
   state.view = view;
   if (tab) state.tab = tab;
   render();
@@ -1204,16 +1206,19 @@ function creatorCard(c, viewer, opts) {
 function renderCreatorDash() {
   const u = state.user;
   const marketLive = !!(u.founding && u.founding.marketLive);
-  if (!marketLive) return renderFoundingHome();
-  const tab = state.tab || "Profile";
+  if (!marketLive) { stopHomeCountdown(); return renderFoundingHome(); }
+  const tab = state.tab || "Home";
   state.tab = tab;
+  if (tab !== "Home") stopHomeCountdown();
   let body = "";
+  if (tab === "Home") body = `<div id="creator-home"><p class="muted">Loading your home...</p></div>`;
   if (tab === "Profile") body = creatorProfileHtml(u) + momentumHtml(u) + growRosterHtml(u);
   app.innerHTML = `
     <h2>Creator dashboard <span class="badge ok">Founding Creator, ${esc(u.market)}</span></h2>
     ${standingBannerHtml(u)}
-    ${tabsHtml(["Profile", "Offers", "My Visits", "Messages"], tab)}
+    ${tabsHtml(["Home", "Profile", "Offers", "My Visits", "Messages"], tab)}
     <div id="tab-body">${body}</div>`;
+  if (tab === "Home") loadCreatorHome();
   if (tab === "Profile") setTimeout(loadMyScore, 10);
   if (tab === "Offers") loadCreatorOffers();
   if (tab === "My Visits") loadMyVisits("creator");
@@ -1290,9 +1295,380 @@ async function loadFounding() {
       <p class="muted">You signed up early, and it counts: when businesses search the ${esc(f.market)} roster, founding creators are ordered by sign-up time, earliest first.</p>` : ""}
       <p class="muted">Offers, visits, and messages unlock here the day your market activates. Keep your profile current in the meantime; your local audience percentage is what businesses look at first.</p>
     </div>`}`;
+    el.innerHTML += homeFoundingBlocksHtml(card, state.user);
     el.innerHTML += momentumHtml(state.user) + growRosterHtml(state.user);
     profEl.innerHTML = `<h3 class="mt">Your profile</h3>` + creatorProfileHtml(state.user);
     fillMyShowcase(card);
+  } catch (err) {
+    el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+  }
+}
+
+// ---------------- creator home (dashboard concept merge, 2026-10-20) ----------------
+// The creator's first screen, in the founding home (pre-launch
+// blocks) and as the live dashboard's Home tab. Built from the
+// concept Jeff approved, fed ONLY by data the app already has:
+// /bookings, /offers, /me/founding, and state.user.momentum. No
+// estimated reach, no invented ranking scores, no instant-money
+// framing: paid cash stays in its own piles, labeled with the
+// real hold, and comp value is never summed into cash.
+// Mobile first (Jeff, hard requirement): every block below is a
+// single stacked column at phone width; the CSS only widens.
+
+let homeTickTimer = null;
+function startHomeCountdown() {
+  stopHomeCountdown();
+  tickHomeCountdowns();
+  homeTickTimer = setInterval(tickHomeCountdowns, 1000);
+}
+function stopHomeCountdown() {
+  if (homeTickTimer) { clearInterval(homeTickTimer); homeTickTimer = null; }
+}
+function homeDurCore(ms) {
+  if (!Number.isFinite(ms)) return "";
+  const a = Math.abs(ms);
+  const d = Math.floor(a / 86400000), h = Math.floor((a % 86400000) / 3600000), m = Math.floor((a % 3600000) / 60000), s = Math.floor((a % 60000) / 1000);
+  if (d > 0) return `${d}d ${h}h ${m}m`;
+  if (h > 0) return `${h}h ${m}m ${String(s).padStart(2, "0")}s`;
+  return `${m}m ${String(s).padStart(2, "0")}s`;
+}
+function tickHomeCountdowns() {
+  document.querySelectorAll(".home-tick").forEach((el) => {
+    const t = Date.parse(el.dataset.target || "");
+    if (!t) return;
+    const diff = t - Date.now();
+    el.textContent = homeDurCore(diff) + (diff < 0 && el.dataset.mode === "post" ? " overdue" : "");
+  });
+}
+
+// The money piles, computed from the creator's own bookings: paid
+// cash released, paid cash still held, paid cash refunded, and
+// comp value received (the face value of comps actually redeemed,
+// at the businesses' stated caps). Cash and comp never mix.
+function homeMoney(bookings) {
+  let released = 0, held = 0, refunded = 0, compValue = 0, paidCount = 0;
+  for (const b of bookings) {
+    if (b.redeemedAt && !b.honorReportedAt) compValue += Number(b.dollarCap) || 0;
+    const lane = b.paidLane;
+    if (lane) {
+      paidCount += 1;
+      if (lane.escrowState === "released") released += Number(lane.creatorNet) || 0;
+      else if (lane.escrowState === "refunded") refunded += Number(lane.creatorNet) || 0;
+      else held += Number(lane.creatorNet) || 0;
+    }
+  }
+  const round = (n) => Math.round(n * 100) / 100;
+  return { released: round(released), held: round(held), refunded: round(refunded), compValue: round(compValue), paidCount };
+}
+
+// The current on-time streak, counted from real delivered posts:
+// walk the posts newest first and stop at the first late one.
+// The Momentum engine pays +25 at every 5 in a row; this only
+// displays the count those stored posts prove.
+function homeStreak(bookings) {
+  const posts = bookings.filter((b) => b.post).map((b) => b.post)
+    .sort((a, b) => (String(a.submittedAt) < String(b.submittedAt) ? -1 : 1));
+  let streak = 0;
+  for (let i = posts.length - 1; i >= 0; i--) {
+    if (posts[i].onTime) streak += 1; else break;
+  }
+  return { delivered: posts.length, streak };
+}
+
+// The next visit that needs the creator: a running post clock
+// first, then a code waiting to be redeemed, then a paid visit
+// whose money is still in its post-proof hold.
+function homeActiveBooking(bookings) {
+  const live = bookings.filter((b) => b.status !== "expired" && !b.honorReportedAt);
+  const clock = live.filter((b) => b.redeemedAt && !b.post)
+    .sort((a, b) => (String(a.postDeadline || "") < String(b.postDeadline || "") ? -1 : 1));
+  if (clock.length) return clock[0];
+  const booked = live.filter((b) => !b.redeemedAt && b.codeStatus === "issued")
+    .sort((a, b) => (String(a.redeemBy || a.createdAt || "") < String(b.redeemBy || b.createdAt || "") ? -1 : 1));
+  if (booked.length) return booked[0];
+  const held = live.filter((b) => b.post && b.paidLane && b.paidLane.escrowState === "held")
+    .sort((a, b) => (String(a.createdAt || "") < String(b.createdAt || "") ? -1 : 1));
+  return held[0] || null;
+}
+
+function homeTrackerHtml(b) {
+  const paidDone = b.paidLane ? b.paidLane.escrowState === "released" : !!(b.post && b.post.verifiedAt);
+  const steps = [
+    { label: "Visit confirmed", done: true, current: false },
+    { label: "Redeemed in app", done: !!b.redeemedAt, current: !b.redeemedAt },
+    { label: "Add live post link", done: !!b.post, current: !!b.redeemedAt && !b.post },
+    { label: b.paidLane ? "Post verified, money released" : "Post verified", done: paidDone, current: !!b.post && !paidDone },
+  ];
+  return `<div class="home-steps">${steps.map((s) => `
+    <div class="home-step ${s.done ? "done" : ""} ${s.current ? "current" : ""}">
+      <span class="hs-dot">${s.done ? "&#10003;" : ""}</span><span>${esc(s.label)}</span>
+    </div>`).join("")}</div>`;
+}
+
+function homeActiveVisitHtml(b) {
+  if (!b) {
+    return `
+  <section class="panel">
+    <p class="ui-kicker">Active visit</p>
+    <h3 class="home-h">No active visit right now</h3>
+    <p class="small muted">When you accept an offer, the visit, its one-time code, and its 48 hour post clock live here, front and center.</p>
+    <div class="home-actions"><button class="btn small-btn" onclick="return go('dashboard','Offers')">See offers</button></div>
+  </section>`;
+  }
+  const lane = b.paidLane;
+  const clockRunning = !!b.redeemedAt && !b.post;
+  const awaitingRedeem = !b.redeemedAt && b.codeStatus === "issued";
+  let clockBlock = "";
+  if (clockRunning) {
+    const diff = Date.parse(b.postDeadline || "") - Date.now();
+    clockBlock = `
+    <p class="ui-kicker" style="margin-top:14px">Time left to post</p>
+    <div class="home-count home-tick" data-mode="post" data-target="${esc(b.postDeadline || "")}">${esc(homeDurCore(diff))}${diff < 0 ? " overdue" : ""}</div>
+    <p class="small muted">Post by ${esc(fmtDate(b.postDeadline))}. Paste the post link under My Visits and the visit checks off.</p>`;
+  } else if (awaitingRedeem) {
+    clockBlock = `
+    <p class="small" style="margin-top:12px">Your redemption window closes <strong>${esc(fmtDate(b.redeemBy))}</strong> (<span class="countdown home-tick" data-target="${esc(b.redeemBy || "")}">${esc(homeDurCore(Date.parse(b.redeemBy || "") - Date.now()))}</span> left). Come any time inside the window; no appointment needed. Your 48 hour post clock starts the moment staff redeem your code.</p>`;
+  } else if (b.post && lane && lane.escrowState === "held") {
+    const releaseTxt = lane.proofAt ? fmtDate(new Date(Date.parse(lane.proofAt) + 48 * 3600 * 1000).toISOString()) : "48 hours after your post proof lands";
+    clockBlock = `
+    <p class="small" style="margin-top:12px"><strong>Your post is in.</strong> The paid money for this visit is held by SIGNL and releases ${esc(releaseTxt)}. Nothing else is owed on this visit.</p>`;
+  }
+  const codeBlock = b.codeStatus === "issued" ? `
+    <div class="home-visit-grid">
+      <div>
+        <p class="small muted" style="margin-bottom:0">Your one-time visit code. Show this at the visit; staff redeem it in the app and your 48 hour clock starts at that moment.</p>
+        <div class="code-display">${esc(b.code)}</div>
+        ${b.redeemBy ? `<p class="small"><strong>Use by ${esc(fmtDate(b.redeemBy))}</strong>. If the window passes unused, the offer expires and counts as a no-show.</p>` : ""}
+      </div>
+      <div class="qr-box"><img src="/api/bookings/${b.id}/qr" alt="QR code for ${esc(b.code)}" onerror="this.parentElement.style.display='none'"></div>
+    </div>` : (b.redeemedAt ? `
+    <p class="small muted">Code ${esc(b.code)} was redeemed ${esc(fmtDate(b.redeemedAt))} and is burned. It can never be used again.</p>` : "");
+  const actionBlock = clockRunning
+    ? `<div class="home-actions"><button class="btn small-btn" onclick="return go('dashboard','My Visits')">Paste your post link</button></div>`
+    : awaitingRedeem
+      ? `<div class="home-actions">${b.checkinAt ? `<span class="small">You checked in at ${esc(fmtDate(b.checkinAt))}. Waiting for the business to confirm.</span>` : `<button class="btn small-btn ghost" onclick="homeCheckIn('${b.id}')">I am here (check in)</button>`}<button class="btn small-btn" onclick="return go('dashboard','My Visits')">Visit details</button></div>`
+      : "";
+  return `
+  <section class="panel">
+    <div class="flex-between">
+      <p class="ui-kicker" style="margin:0">Active visit</p>
+      ${lane ? `<span class="badge tier">Paid visit</span>` : `<span class="badge info">Comp visit</span>`}
+    </div>
+    <h3 class="home-h">${esc(b.title)} at ${esc(b.businessName)}</h3>
+    <p class="small muted" style="margin:0">Comp: ${esc(b.whatComped)} (cap $${b.dollarCap})${lane ? ` &middot; Your rate $${lane.rate}: you receive $${lane.creatorNet}` : ""}</p>
+    ${homeTrackerHtml(b)}
+    ${clockBlock}
+    ${codeBlock}
+    ${actionBlock}
+  </section>`;
+}
+
+async function homeCheckIn(bookingId) {
+  try { await api("POST", `/bookings/${bookingId}/checkin`, {}); loadCreatorHome(); }
+  catch (err) { alert(err.message); }
+}
+
+async function homeAcceptOffer(e, offerId) {
+  e.preventDefault();
+  try {
+    const data = await api("POST", `/offers/${offerId}/accept`, {});
+    const useBy = data.booking && data.booking.redeemBy ? ` Use it any time by ${fmtDate(data.booking.redeemBy)}; no appointment needed.` : "";
+    alert(`Booked. Your one-time code is ${data.booking.code}.${useBy} Show it at the visit; staff redeem it in the app and your 48 hour post clock starts.`);
+    loadCreatorHome();
+  } catch (err) { alert(err.message); }
+  return false;
+}
+
+// Opportunities picked for you: the same open offers the Offers
+// tab lists, ordered the honest way: sent directly to you first,
+// then the most spots still open. Every card spells out the deal
+// (compensation, the Standard Visit deliverables, the business's
+// plan rights, the window) before any accept button.
+function homeOpportunitiesHtml(offers, u) {
+  const ranked = offers.slice().sort((a, b) => {
+    const ta = a.creatorId === u.id ? 0 : 1;
+    const tb = b.creatorId === u.id ? 0 : 1;
+    if (ta !== tb) return ta - tb;
+    return ((b.spots || 0) - (b.bookedCount || 0)) - ((a.spots || 0) - (a.bookedCount || 0));
+  });
+  if (!ranked.length) {
+    return `
+  <section class="panel">
+    <p class="ui-kicker">Opportunities</p>
+    <h3 class="home-h">No open offers right now</h3>
+    <p class="small muted">When businesses in ${esc(u.market)} send offers, the best fits land here first. Your local audience percentage is what businesses look at hardest; keep it current in your profile.</p>
+  </section>`;
+  }
+  const cards = ranked.slice(0, 3).map((o) => {
+    const rights = o.visitRights || rightsForPlan(o.businessPlan);
+    const left = Math.max(0, (o.spots || 0) - (o.bookedCount || 0));
+    return `
+    <div class="card home-opp mb">
+      <div class="flex-between"><strong>${esc(o.title)}</strong><span class="badge tier">${esc(o.businessName)}</span></div>
+      ${o.creatorId ? `<p style="margin:8px 0 0"><span class="badge ok">Sent directly to you</span></p>` : ""}
+      <p class="small"><strong>You get:</strong> ${esc(o.whatComped)} (comp cap $${o.dollarCap})</p>
+      <p class="small"><strong>You post:</strong> 1 post or reel + 2 stories within 48 hours of your visit, honest, with the comp disclosed. The post stays live at least 30 days, and you check off by pasting the post link in My Visits.</p>
+      <p class="small"><strong>They can:</strong> ${rights.can.map(esc).join("; ")}<br><strong>They can't:</strong> ${rights.cannot.map(esc).join("; ")}</p>
+      <p class="small muted">Deadline: ${o.windowMode === "thisweek" ? "visit this week, the window ends Sunday" : "visit any time within 7 days of accepting"}. ${left} of ${o.spots} spot${o.spots === 1 ? "" : "s"} left.${o.visitWindow ? ` Note from the business: ${esc(o.visitWindow)}` : ""}</p>
+      <form onsubmit="return homeAcceptOffer(event, '${o.id}')">
+        <button class="btn small-btn" type="submit">Accept and get my code</button>
+      </form>
+    </div>`;
+  }).join("");
+  return `
+  <section class="panel">
+    <p class="ui-kicker">Opportunities picked for you</p>
+    <h3 class="home-h">Open offers in ${esc(u.market)}</h3>
+    <p class="small muted">Sent to you first, then the open offers with the most spots left. The full deal is on every card before you accept anything.</p>
+    ${cards}
+    ${ranked.length > 3 ? `<div class="home-actions"><button class="btn small-btn ghost" onclick="return go('dashboard','Offers')">See all ${ranked.length} offers</button></div>` : ""}
+  </section>`;
+}
+
+// Your local signal: the proof businesses read on your profile,
+// from the same card /me/founding returns. Register actions only
+// appear when a business has actually reported a tally.
+function homeLocalSignalHtml(card, bookings) {
+  const p = (card && card.profile) || {};
+  const tr = (card && card.trackRecord) || {};
+  const comp = (card && card.scoreComponents) || null;
+  const tallyCount = bookings.reduce((s, b) => s + (b.redemptions ? b.redemptions.count || 0 : 0), 0);
+  const tallyTotal = bookings.reduce((s, b) => s + (b.redemptions ? b.redemptions.basketTotal || 0 : 0), 0);
+  const { delivered, streak } = homeStreak(bookings);
+  return `
+  <section class="panel">
+    <p class="ui-kicker">Your local signal</p>
+    <h3 class="home-h">The proof businesses see</h3>
+    <div class="ui-row"><span class="k">Local audience</span><span class="v">${p.localAudiencePct === null || p.localAudiencePct === undefined ? "Not reported yet" : p.localAudiencePct + "%"}</span></div>
+    <div class="ui-row"><span class="k">Local Impact Score</span><span class="v">${card && card.localImpactScore !== null && card.localImpactScore !== undefined ? card.localImpactScore + " / 100" : "Pending"}</span></div>
+    ${comp ? `<div class="ui-row"><span class="k">Reliability in your score</span><span class="v">${esc(String(comp.reliability))}</span></div>
+    <p class="small muted">${esc(comp.reliabilityBasis || "")}</p>` : ""}
+    <div class="ui-row"><span class="k">On-time delivery</span><span class="v">${tr.onTimePct === null || tr.onTimePct === undefined ? "No posts yet" : tr.onTimePct + "%"}</span></div>
+    <div class="ui-row"><span class="k">Track record</span><span class="v">${tr.visitsCompleted || 0} visits &middot; ${tr.postsDelivered || 0} posts</span></div>
+    <div class="ui-row"><span class="k">Register actions</span><span class="v">${tallyCount ? `${tallyCount} customers &middot; $${fmtMoney(tallyTotal)} rung up` : "None reported yet"}</span></div>
+    ${delivered ? `<div class="ui-row"><span class="k">On-time streak</span><span class="v">${streak} in a row</span></div>
+    <p class="small muted">Every 5 on-time posts in a row earns a +25 Momentum streak bonus. The count above is counted from your delivered posts, newest first.</p>` : ""}
+    <div class="home-actions"><button class="btn small-btn ghost" onclick="return go('dashboard','Profile')">View your full profile</button></div>
+  </section>`;
+}
+
+// The paid lane, shown the same way in the founding home and the
+// live Home tab: comp on or off, the creator's own rate with the
+// keep-97-percent math at that rate, and the honest hold line.
+function homePaidLaneHtml(creator, footerHtml) {
+  const c = creator || {};
+  const compOpen = c.compOpen !== false;
+  const rate = typeof c.paidRate === "number" && c.paidRate > 0 ? c.paidRate : null;
+  const keep = rate ? Math.round(rate * 0.97 * 100) / 100 : null;
+  const total = rate ? Math.round(rate * 1.03 * 100) / 100 : null;
+  return `
+  <section class="panel">
+    <p class="ui-kicker">Paid lane</p>
+    <h3 class="home-h">Comp and paid, your choice</h3>
+    <p class="small"><strong>Comp visits:</strong> ${compOpen ? "on. Businesses can comp you experiences for honest posts, and every completed visit builds your track record." : "off. You are paid-only right now, and that is always fine."}</p>
+    <p class="small"><strong>Your paid rate:</strong> ${rate ? `$${rate} for one paid Standard Visit. A business pays $${fmtMoney(total)} (your rate + 3%), and you keep $${fmtMoney(keep)}, which is 97% of your rate.` : "not set. Set one in your profile (minimum $50) and businesses can book you at your rate for a paid visit."}</p>
+    <p class="small muted">Paid visits are recorded in the app, no card charged. SIGNL holds the payment until your post is live, and releases it 48 hours after your proof lands. Comp-only is always fine, forever.</p>
+    ${footerHtml || ""}
+  </section>`;
+}
+
+function homeMoneyHtml(money) {
+  return `
+  <section class="panel">
+    <p class="ui-kicker">Money</p>
+    <h3 class="home-h">Cash and comps, kept separate</h3>
+    <div class="home-money">
+      <div class="hm-pile"><div class="hm-num">$${fmtMoney(money.released)}</div><div class="hm-lbl">Paid cash released (paid visits delivered, hold passed)</div></div>
+      <div class="hm-pile"><div class="hm-num">$${fmtMoney(money.held)}</div><div class="hm-lbl">Paid cash held by SIGNL: it releases 48 hours after your post proof lands</div></div>
+      <div class="hm-pile"><div class="hm-num">$${fmtMoney(money.compValue)}</div><div class="hm-lbl">Comp value received (face value of comps you redeemed: experiences, not cash)</div></div>
+    </div>
+    ${money.refunded ? `<p class="small muted">$${fmtMoney(money.refunded)} went back to businesses from paid visits that resolved without delivery.</p>` : ""}
+    <p class="small muted">These piles are the app's own ledger of your paid work: paid visits are recorded here, no card charged, and comp value is never counted as cash.</p>
+  </section>`;
+}
+
+function homeComingUpHtml(bookings) {
+  const items = [];
+  for (const b of bookings) {
+    if (b.honorReportedAt) continue;
+    if (!b.redeemedAt && b.codeStatus === "issued" && b.status !== "expired") {
+      items.push({ at: b.redeemBy, label: `Redeem your visit at ${b.businessName}`, detail: b.title });
+    } else if (b.redeemedAt && !b.post) {
+      items.push({ at: b.postDeadline, label: `Post due for ${b.businessName}`, detail: b.title });
+    }
+    if (b.post && b.post.performanceRequestedAt && !b.post.reportedAt) {
+      items.push({ at: b.post.performanceRequestedAt, label: `Post numbers requested by ${b.businessName}`, detail: "Reporting them earns +5 Momentum" });
+    }
+    if (b.paidLane && b.paidLane.escrowState === "held" && b.paidLane.proofAt) {
+      items.push({ at: new Date(Date.parse(b.paidLane.proofAt) + 48 * 3600 * 1000).toISOString(), label: `Paid money releases from ${b.businessName}`, detail: `$${fmtMoney(b.paidLane.creatorNet)} when the 48 hour hold passes` });
+    }
+  }
+  items.sort((a, b) => (String(a.at || "") < String(b.at || "") ? -1 : 1));
+  const rows = items.slice(0, 5).map((it) => `
+    <div class="ui-row"><span class="k">${esc(it.label)}<br><span class="small muted">${esc(it.detail || "")}</span></span><span class="v">${esc(fmtDate(it.at))}</span></div>`).join("");
+  return `
+  <section class="panel">
+    <p class="ui-kicker">Coming up</p>
+    <h3 class="home-h">Your next deadlines</h3>
+    ${rows || `<p class="small muted">Nothing scheduled. Accepted visits, post deadlines, and payout holds land here.</p>`}
+    <div class="home-actions"><button class="btn small-btn ghost" onclick="return go('dashboard','My Visits')">Open My Visits</button></div>
+  </section>`;
+}
+
+// The pre-launch slice of the home: the numbers a founding creator
+// already has (Momentum, local audience, impact, total audience)
+// plus the paid lane panel, above the Momentum detail.
+function homeFoundingBlocksHtml(card, u) {
+  const p = (card && card.profile) || {};
+  const m = (u && u.momentum) || { points: 0 };
+  return `
+  <div class="stat-band home-metrics">
+    <div class="stat-cell"><div class="stat-num"><em>${m.points}</em></div><div class="stat-lbl">Momentum points (they set your order in business search when your market opens)</div></div>
+    <div class="stat-cell"><div class="stat-num">${p.localAudiencePct === null || p.localAudiencePct === undefined ? "Not set" : p.localAudiencePct + "%"}</div><div class="stat-lbl">Local audience (the number businesses look at first)</div></div>
+    <div class="stat-cell"><div class="stat-num">${card && card.localImpactScore !== null && card.localImpactScore !== undefined ? card.localImpactScore : "New"}</div><div class="stat-lbl">Local Impact Score, out of 100</div></div>
+    <div class="stat-cell"><div class="stat-num">${fmtNum(totalAudienceOf(card))}</div><div class="stat-lbl">Total audience across your platforms</div></div>
+  </div>
+  ${homePaidLaneHtml(u.creator, `<p class="small muted" style="margin-bottom:0">Change either setting in your profile form below.</p>`)}`;
+}
+
+async function loadCreatorHome() {
+  const el = document.getElementById("creator-home");
+  if (!el) return;
+  const u = state.user;
+  try {
+    const [bkData, offData, fData] = await Promise.all([
+      api("GET", "/bookings"),
+      api("GET", "/offers"),
+      api("GET", "/me/founding"),
+    ]);
+    if (!document.getElementById("creator-home")) return; // navigated away mid-load
+    const bookings = bkData.bookings || [];
+    const offers = offData.offers || [];
+    const card = fData.card || {};
+    const tr = card.trackRecord || {};
+    const money = homeMoney(bookings);
+    const m = u.momentum || { points: 0 };
+    const hour = new Date().getHours();
+    const greet = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+    const firstName = (u.name || "").trim().split(" ")[0] || u.name || "";
+    el.innerHTML = `
+    <p class="ui-kicker">Creator home &middot; ${esc(u.market)}</p>
+    <h3 class="home-title">${esc(greet)}, ${esc(firstName)}.</h3>
+    <p class="ui-sub">Your active visit, your offers, and your money, in one place.</p>
+    <div class="stat-band home-metrics">
+      <div class="stat-cell"><div class="stat-num">$${fmtMoney(money.released)}</div><div class="stat-lbl">Paid cash released (paid visits delivered, hold passed)</div></div>
+      <div class="stat-cell"><div class="stat-num">$${fmtMoney(money.compValue)}</div><div class="stat-lbl">Comp value received (experiences, not cash)</div></div>
+      <div class="stat-cell"><div class="stat-num">${tr.onTimePct === null || tr.onTimePct === undefined ? "New" : tr.onTimePct + "%"}</div><div class="stat-lbl">On-time posts (${tr.postsDelivered || 0} delivered)</div></div>
+      <div class="stat-cell"><div class="stat-num"><em>${m.points}</em></div><div class="stat-lbl">Momentum points (your order in business search)</div></div>
+    </div>
+    ${homeActiveVisitHtml(homeActiveBooking(bookings))}
+    ${homeOpportunitiesHtml(offers, u)}
+    ${homeLocalSignalHtml(card, bookings)}
+    ${homePaidLaneHtml(u.creator, `<div class="home-actions"><button class="btn small-btn ghost" onclick="return go('dashboard','Profile')">Edit in your profile</button></div>`)}
+    ${homeMoneyHtml(money)}
+    ${momentumHtml(u)}
+    ${homeComingUpHtml(bookings)}`;
+    startHomeCountdown();
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
@@ -3137,6 +3513,53 @@ async function pvReportRedemptions(e, bookingId) {
   return false;
 }
 
+// Business Home (dashboard concept merge, Jeff 2026-10-20): the
+// first screen of the preview dashboard, rendered from the `home`
+// object the server computes over the same simulated bookings:
+// headline metrics, the attention list, the visit pipeline, plan
+// pace, the content that is working (ranked by register tallies),
+// and next visits. Simulation only, like the whole preview.
+function pvHomeHtml(d) {
+  const h = d.home;
+  if (!h) return "";
+  const stages = [
+    [h.pipeline.invited, "Invited", "Bookings created"],
+    [h.pipeline.claimed, "Claimed", "Codes issued"],
+    [h.pipeline.visitSet, "Visit set", "Windows open"],
+    [h.pipeline.clockRunning, "48h clock", "Visits redeemed"],
+    [h.pipeline.live, "Live", "Posts delivered"],
+  ];
+  const attention = h.attention && h.attention.length ? `
+    <div class="notice" style="margin-top:16px"><strong>${h.attention.length} item${h.attention.length === 1 ? "" : "s"} need your attention.</strong>
+    ${h.attention.map((a) => `<br><strong>${esc(a.label)}:</strong> ${esc(a.detail)}`).join("")}</div>`
+    : `<div class="notice blue" style="margin-top:16px"><strong>Nothing needs your attention.</strong> Every visit is on track.</div>`;
+  const content = (h.topContent || []).map((c) => `
+    <div class="ui-row"><span class="k"><strong>${esc(c.title)}</strong> with @${esc(c.creatorHandle)}<br><span class="small muted">${fmtNum(c.views)} views &middot; ${fmtNum(c.likes)} likes &middot; ${c.onTime ? "posted on time" : "posted late"}${c.roasScore !== null && c.roasScore !== undefined ? ` &middot; SIGNL ROAS ${c.roasScore.toFixed(2)}&times;` : ""}</span></span><span class="v">${c.redemptions ? `${c.redemptions.count} code uses<br>$${fmtMoney(c.redemptions.basketTotal)} rung up` : "No tally yet"}</span></div>`).join("");
+  const next = (h.nextVisits || []).map((n) => `
+    <div class="ui-row"><span class="k"><strong>${esc(n.title)}</strong> with @${esc(n.creatorHandle)}<br><span class="small muted">${esc(n.stateLabel)}</span></span><span class="v">${esc(n.whenLabel)}<br><span class="pv-tick" data-kind="left" data-target="${esc(n.when || "")}"></span></span></div>`).join("");
+  return `
+  <section class="panel">
+    <h3 style="margin-top:0"><span class="preview-tag">PREVIEW</span> Business home</h3>
+    <p class="small muted">The first screen a business opens: what is happening, what needs attention, and what it is returning. Built from the same simulated visits as everything below it.</p>
+    <div class="stat-band home-metrics">
+      <div class="stat-cell"><div class="stat-num">${h.visitsUsed}<span class="small muted"> of ${h.visitsAllowance}</span></div><div class="stat-lbl">Creator visits booked this month (${h.visitsRemaining} left on the plan)</div></div>
+      <div class="stat-cell"><div class="stat-num">${h.postsLive}</div><div class="stat-lbl">Posts live</div></div>
+      <div class="stat-cell"><div class="stat-num grad-text">${h.roasScore === null ? "n/a" : h.roasScore.toFixed(2) + "&times;"}</div><div class="stat-lbl">SIGNL ROAS Score (register tallies plus modeled media value)</div></div>
+      <div class="stat-cell"><div class="stat-num">${h.onTimeRatePct === null ? "n/a" : h.onTimeRatePct + "%"}</div><div class="stat-lbl">Posts on time</div></div>
+    </div>
+    ${attention}
+    <h4>Visit pipeline</h4>
+    <div class="pv-funnel">${stages.map(([n, label, sub]) => `<div class="pv-stage"><div class="pv-stage-num">${n}</div><div class="pv-stage-lbl">${label}</div><div class="pv-stage-sub">${sub}</div></div>`).join("")}</div>
+    <p class="small muted">Each stage counts the simulated bookings that have reached it, from invitation to a live post.</p>
+    <h4>Plan pace</h4>
+    <div class="flex-between"><span class="small"><strong>${esc(d.plan.name)} plan:</strong> ${h.visitsUsed} of ${h.visitsAllowance} visits booked this month</span><span class="badge ${h.planPacePct >= 100 ? "warn" : "info"}">${h.planPacePct}%</span></div>
+    <div class="meter" style="margin-top:8px"><i style="width:${Math.min(100, h.planPacePct)}%"></i></div>
+    ${content ? `<h4>Content that is working</h4>
+    <p class="small muted">Delivered posts ranked by the register action they produced: the code tallies reported on each visit, with views as supporting detail.</p>${content}` : ""}
+    ${next ? `<h4>Next visits</h4>${next}` : ""}
+  </section>`;
+}
+
 function previewDashboardHtml(d) {
   const s = d.summary;
   const plan = d.plan;
@@ -3151,6 +3574,7 @@ function previewDashboardHtml(d) {
     </div>
     <p class="small muted" style="margin-bottom:0">The dashboard a business lives in: who is booked, the codes, redemption, the post clock, delivered posts, and what it all returned. Every booking below is simulated over the real founding roster, with simulated visit data. Nothing here is saved, and no creator is contacted.</p>
   </section>
+  ${pvHomeHtml(d)}
   <section class="panel">
     <h3 style="margin-top:0">Tracking and returns, ${esc(s.cycleLabel)}</h3>
     <div class="stat-row">

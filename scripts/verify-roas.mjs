@@ -305,6 +305,18 @@ try {
   const onTimeAgain = (((dashAgain.data.dashboard || {}).bookings || []).find((b) => b.id === "preview-dash-3") || {});
   check("preview: the dashboard still shows the original simulated tally afterwards (9/$486)", onTimeAgain.redemptions && onTimeAgain.redemptions.count === 9 && onTimeAgain.redemptions.basketTotal === 486, JSON.stringify(onTimeAgain.redemptions || null));
 
+  // ---------- F2: the Business Home object (concept merge, 2026-10-20) ----------
+  // The home layer reads the same simulation: headline metrics,
+  // attention, pipeline stage reach, plan pace, working content
+  // ranked by register tallies, next visits by nearest deadline.
+  const home = (dashAgain.data.dashboard || {}).home || {};
+  check("preview home: headline metrics ride the same simulation (5 of 20 visits, 15 left, 2 posts live, ROAS 6.29)", home.visitsUsed === 5 && home.visitsAllowance === 20 && home.visitsRemaining === 15 && home.postsLive === 2 && home.roasScore === 6.29, JSON.stringify(home));
+  check("preview home: pipeline counts bookings that reached each stage (5 invited, 5 claimed, 5 visit set, 4 redeemed, 2 live)", !!home.pipeline && home.pipeline.invited === 5 && home.pipeline.claimed === 5 && home.pipeline.visitSet === 5 && home.pipeline.clockRunning === 4 && home.pipeline.live === 2, JSON.stringify(home.pipeline));
+  check("preview home: plan pace is 25 percent of the Growth allowance", home.planPacePct === 25, String(home.planPacePct));
+  check("preview home: attention leads with the overdue post, then the running clock", Array.isArray(home.attention) && home.attention.length === 2 && home.attention[0].kind === "overdue" && home.attention[1].kind === "clock", JSON.stringify(home.attention));
+  check("preview home: content that is working ranks by register tallies (9 uses before 6)", Array.isArray(home.topContent) && home.topContent.length === 2 && home.topContent[0].bookingId === "preview-dash-3" && home.topContent[0].redemptions.count === 9 && home.topContent[1].redemptions.count === 6, JSON.stringify((home.topContent || []).map((c) => c.bookingId)));
+  check("preview home: next visits sort by nearest deadline (post clock, hard stop, redeem window)", Array.isArray(home.nextVisits) && home.nextVisits.length === 3 && home.nextVisits[0].bookingId === "preview-dash-2" && home.nextVisits[1].bookingId === "preview-dash-5" && home.nextVisits[2].bookingId === "preview-dash-1", JSON.stringify((home.nextVisits || []).map((n) => n.bookingId)));
+
   // ---------- G: the client carries the surfaces ----------
   const appJs = await anon("GET", "/app.js");
   check("client ships the creator audience-code framing", appJs.text.includes("Your audience code at") && appJs.text.includes("every use is tracked"), "");
@@ -313,6 +325,9 @@ try {
   check("client labels the preview businesses' code choices in words (on at Salt & Ember, off at Harbor Table)", appJs.text.includes("Audience-code discounts: on.") && appJs.text.includes("Audience-code discounts: off."), "");
   check("client ships the ROAS label and the business tally form", appJs.text.includes("SIGNL ROAS Score") && appJs.text.includes("submitCodeRedemptions") && appJs.text.includes("/code-redemptions") && appJs.text.includes("pvReportRedemptions"), "");
   check("client never says revenue was generated", !/revenue (generated|we generated)/i.test(appJs.text), "");
+  check("client ships the business preview home (metrics, attention, pipeline, plan pace, working content, next visits)", appJs.text.includes("pvHomeHtml") && appJs.text.includes("Business home") && appJs.text.includes("Visit pipeline") && appJs.text.includes("Plan pace") && appJs.text.includes("need your attention"), "");
+  check("client ships the creator home (active visit, opportunities, local signal, money piles)", appJs.text.includes("loadCreatorHome") && appJs.text.includes("homeActiveVisitHtml") && appJs.text.includes("Opportunities picked for you") && appJs.text.includes("Your local signal") && appJs.text.includes("Cash and comps, kept separate"), "");
+  check("client never promises instant paid money (no instant payout, transfer, or cash-out framing)", !/instant (payout|transfer|cash)/i.test(appJs.text) && !appJs.text.includes("Transfer $") && !/cash out/i.test(appJs.text), "");
 
   console.log(`\nROAS verification: ${passed} passed, ${failures.length} failed`);
   if (failures.length) { console.log("Failures:", failures); process.exitCode = 1; }

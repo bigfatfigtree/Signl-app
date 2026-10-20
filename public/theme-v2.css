@@ -576,6 +576,76 @@ tbody tr:hover td { background: rgba(245,240,231,.55); }
 .pv-tick { font-family: 'Space Grotesk', monospace; font-weight: 700; }
 .rules { color: #0A7A50; }
 
+/* ---------- home dashboards (concept merge, 2026-10-20) ----------
+   Mobile is a hard requirement (Jeff): every rule below is
+   single-column and fully usable at phone width (~390px) by
+   default; min-width queries only WIDEN a layout that already
+   works. No fixed pixel widths beyond the phone viewport, no
+   horizontal scroll, and action buttons keep a 44px tap height. */
+.home-metrics { margin: 18px 0 20px; }
+.home-title {
+  font-family: 'Archivo', sans-serif; font-weight: 800; font-size: 1.45rem;
+  letter-spacing: -.02em; margin: 6px 0 4px; color: var(--ink); line-height: 1.15;
+}
+.home-h { margin: 4px 0 8px; font-size: 1.12rem; }
+.home-count {
+  font-family: 'Space Grotesk', monospace; font-weight: 700;
+  font-size: clamp(1.65rem, 8vw, 2.4rem); line-height: 1.05; color: var(--ink);
+}
+/* The active-visit step tracker: 2 by 2 on a phone, one row of
+   four once there is room. */
+.home-steps { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 14px 0; }
+@media (min-width: 760px) { .home-steps { grid-template-columns: repeat(4, 1fr); } }
+.home-step {
+  display: flex; align-items: center; gap: 9px; min-height: 44px;
+  border: 1px solid var(--line2); border-radius: 14px; padding: 10px 12px;
+  background: var(--bg); color: var(--ink3); font-size: .86rem; font-weight: 600; line-height: 1.35;
+}
+.home-step .hs-dot {
+  flex: none; width: 24px; height: 24px; border-radius: 50%;
+  border: 1.5px solid var(--line); background: #fff;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: .78rem; font-weight: 800; color: var(--ink3);
+}
+.home-step.done { color: var(--ink); border-color: rgba(10,157,108,.38); background: rgba(47,224,126,.08); }
+.home-step.done .hs-dot { background: var(--grad); border-color: transparent; color: #fff; }
+.home-step.current { color: var(--ink); border-color: var(--blue); background: rgba(1,155,252,.06); }
+.home-step.current .hs-dot { border-color: var(--blue); color: var(--blue); }
+/* Code and QR stack on a phone (the QR is never squeezed); side
+   by side only when both fit comfortably. */
+.home-visit-grid { display: grid; gap: 16px; grid-template-columns: 1fr; margin-top: 14px; }
+@media (min-width: 700px) { .home-visit-grid { grid-template-columns: 1fr auto; align-items: start; } }
+.home-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+.home-actions .btn, .home-opp .btn {
+  min-height: 44px; display: inline-flex; align-items: center; justify-content: center;
+}
+/* Money piles: stacked on a phone, three across on desktop. Cash
+   and comp stay visually separate piles at every width. */
+.home-money { display: grid; gap: 12px; grid-template-columns: 1fr; margin-top: 6px; }
+@media (min-width: 760px) { .home-money { grid-template-columns: repeat(3, 1fr); } }
+.hm-pile { background: var(--bg); border: 1px solid var(--line2); border-radius: var(--r-sm); padding: 16px; }
+.hm-num { font-family: 'Space Grotesk', monospace; font-weight: 700; font-size: 1.6rem; color: var(--ink); }
+.hm-lbl { font-size: .84rem; color: var(--ink2); margin-top: 5px; line-height: 1.45; }
+/* Preview pipeline funnel: 2 columns on a phone (the fifth stage
+   wraps full width), 5 across on desktop. Never a scroll row. */
+.pv-funnel { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin: 10px 0 6px; }
+.pv-funnel .pv-stage:last-child { grid-column: 1 / -1; }
+@media (min-width: 760px) {
+  .pv-funnel { grid-template-columns: repeat(5, 1fr); }
+  .pv-funnel .pv-stage:last-child { grid-column: auto; }
+}
+.pv-stage { background: var(--bg); border: 1px solid var(--line2); border-radius: var(--r-sm); padding: 14px 12px; text-align: center; }
+.pv-stage-num { font-family: 'Space Grotesk', monospace; font-weight: 700; font-size: 1.7rem; color: var(--ink); }
+.pv-stage-lbl { font-size: .68rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--ink); margin-top: 3px; }
+.pv-stage-sub { font-size: .76rem; color: var(--ink3); margin-top: 2px; }
+/* Phone tightening for the shared stat band when it carries a
+   home's headline metrics: smaller cells, numbers stay legible. */
+@media (max-width: 480px) {
+  .home-metrics .stat-cell { padding: 18px 16px 15px; }
+  .home-metrics .stat-cell .stat-num { font-size: 1.6rem; }
+  .home-opp { padding: 18px; }
+}
+
 /* Reveal motion: matches v2 (IO-driven .in), off under reduced motion. */
 .reveal { opacity: 0; transform: translateY(26px); transition: opacity .7s ease, transform .7s cubic-bezier(.22,.8,.3,1); }
 .reveal.in { opacity: 1; transform: none; }

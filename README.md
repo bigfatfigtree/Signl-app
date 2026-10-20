@@ -848,6 +848,69 @@ Score"); this section is the runbook.
   computed score, and the preview presents Salt & Ember codes
   on / Harbor Table codes off.
 
+## Home dashboards: Creator Home + Business Preview Home (2026-10-20)
+
+The dashboard concept Jeff approved (three role homes) merged
+into the app as a presentation layer over the existing
+machinery, per the merge spec in the goal workspace
+(files/signl-dashboard-concept-review.md). Profiles stay the
+deep layer; the homes answer "what needs me today, and how am
+I doing".
+
+- Creator Home (live markets): a new default "Home" tab in the
+  creator dashboard, fed only by /bookings, /offers,
+  /me/founding, and the Momentum payload. Metric row (paid cash
+  released, comp value received, on-time %, Momentum points);
+  Active Visit card (the next booking that needs the creator:
+  running post clock first, then an unredeemed code, then a
+  paid visit in its hold) with a per-second countdown, the
+  4-step tracker (confirmed, redeemed, add post link, verified
+  / money released), and the redemption code + QR up front;
+  Opportunities picked for you (the Offers tab's open offers,
+  ordered direct sends first, then most spots left, each card
+  labeling compensation, the Standard Visit deliverables, the
+  business's plan rights, and the window before accepting);
+  Your local signal (local %, Local Impact Score, on-time %,
+  register actions from reported tallies, and the current
+  on-time streak counted from delivered posts, shown only when
+  posts exist); Paid lane panel (compOpen state, own rate with
+  the keep-97% math at that rate, the honest hold line);
+  Money panel keeping paid cash released, paid cash held, and
+  comp value in three separate piles (comp is never cash);
+  the existing Momentum panel; Coming up (redeem windows, post
+  deadlines, performance asks, paid release times). The
+  pre-launch founding home carries the slice that already has
+  real data: a metric band (Momentum, local %, impact, total
+  audience) plus the same paid lane panel.
+- Business Preview Home: the admin preview dashboard opens with
+  a Business Home section rendered from a `home` object that
+  previewDashboard() computes over the same simulated bookings:
+  visits used/remaining against the plan cap, posts live, the
+  SIGNL ROAS headline; the attention list (overdue post, running
+  clock, unreported tally, closing window); the visit pipeline
+  as cumulative stage reach (invited, claimed, visit set, 48h
+  clock, live); plan pace; content that is working ranked by
+  register tallies; next visits by nearest deadline (ticking
+  with the existing preview countdown). Pure computation: the
+  preview zero-write invariant is untouched and re-asserted by
+  the ROAS suite.
+- Honesty rules held: no match percentages or invented
+  rankings, no deliverables or rights beyond the Standard Visit
+  and the business's plan, no instant-money framing anywhere
+  (paid copy keeps the recorded, no-card-charged, 48-hours-
+  after-proof language), no estimated-reach charting.
+- Mobile is a hard requirement (Jeff): the home surfaces are
+  single-column at phone width by default (code/QR stack, money
+  piles stack, tracker 2x2, funnel 2-wide, metric band 2x2) and
+  only widen at min-width breakpoints; action buttons keep a
+  44px minimum tap height; nothing essential sits behind a
+  desktop-only layout; no horizontal scroll. Verified by a
+  render harness over the real client builders plus CSS audits
+  (no fixed widths over 390px in the home section), alongside
+  the suites: 687 checks, 0 failed (11 new: 6 preview-home
+  payload checks in verify-roas, 3 client-surface checks there,
+  2 paid-lane honesty checks in verify-paidlane).
+
 ## Environment variables
 
 Set these in Netlify (Site settings, Environment variables) for
