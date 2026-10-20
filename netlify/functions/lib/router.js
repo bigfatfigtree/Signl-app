@@ -2600,7 +2600,7 @@ function campaignEmail(recipient) {
     "",
     "If you apply, you will get a decision or a clear status within 2 business days.",
     "",
-    "Two minutes, and no fees for creators, ever. If it's not for you, you won't hear from me again.",
+    "Two minutes, and joining plus comped visits are always free. The only fee anywhere is on paid bookings, where you keep 97 percent of your rate. If it's not for you, you won't hear from me again.",
     "",
     "Jeff",
     "Founder, SIGNL",
