@@ -80,11 +80,13 @@ a { color: #0163C9; }
 }
 #topnav a:hover, #topnav button.linklike:hover { color: var(--ink); }
 
-/* Mobile bottom tab bar: light glass, ink glyphs, gradient active. */
+/* Mobile bottom tab bar: SOLID white, ink SVG icons, gradient
+   active label. Solid on purpose (Jeff, 2026-10-20): the old
+   translucent glass bar clipped labels, washed out the sign-out
+   item, and jittered against the browser chrome on scroll. */
 @media (max-width: 720px) {
   #bottomnav {
-    background: rgba(255,255,255,.94);
-    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    background: #FFFFFF;
     border-top: 1px solid var(--line);
     box-shadow: 0 -8px 24px -12px rgba(26,23,18,.14);
   }

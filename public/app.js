@@ -337,24 +337,49 @@ function renderNav() {
   renderBottomNav();
 }
 
+// Bottom-nav icons: one inline SVG set, stroke in currentColor, so
+// every item renders identically on every phone. The old HTML-entity
+// glyphs were the wonkiness Jeff screenshotted (2026-10-20): the
+// sign-out arrow rendered as a washed-out blue emoji on iOS, labels
+// clipped, and the translucent bar fought the browser chrome.
+function bnIcon(name) {
+  const paths = {
+    home: `<path d="M3 10.8 12 3l9 7.8"/><path d="M5.2 9.4V21h13.6V9.4"/><path d="M9.5 21v-6h5v6"/>`,
+    profile: `<circle cx="12" cy="8" r="3.8"/><path d="M4.5 20.5c1.4-3.9 4.4-5.4 7.5-5.4s6.1 1.5 7.5 5.4"/>`,
+    offers: `<path d="M3.5 12V4.5H11l9.5 9.5-7.5 7.5z"/><circle cx="8" cy="9.2" r="1.5"/>`,
+    visits: `<circle cx="12" cy="12" r="8.6"/><path d="m8.4 12.4 2.5 2.5 4.7-5.2"/>`,
+    messages: `<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3.5 7 8.5 6 8.5-6"/>`,
+    status: `<path d="m12 3.2 2.7 5.5 6 .9-4.3 4.2 1 6-5.4-2.9-5.4 2.9 1-6L3.3 9.6l6-.9z"/>`,
+    signout: `<path d="M9 21H5.5A1.5 1.5 0 0 1 4 19.5v-15A1.5 1.5 0 0 1 5.5 3H9"/><path d="m16 16.5 4.5-4.5L16 7.5"/><path d="M20.5 12H9"/>`,
+    join: `<circle cx="12" cy="12" r="8.6"/><path d="M12 8.2v7.6M8.2 12h7.6"/>`,
+    signin: `<path d="M15 3h3.5A1.5 1.5 0 0 1 20 4.5v15A1.5 1.5 0 0 1 18.5 21H15"/><path d="m10.5 16.5 4.5-4.5-4.5-4.5"/><path d="M15 12H3.5"/>`,
+    building: `<rect x="4.5" y="3" width="15" height="18" rx="1"/><path d="M9.5 21v-4h5v4"/><path d="M8 7h2m4 0h2M8 10.8h2m4 0h2"/>`,
+    requests: `<rect x="5" y="4.5" width="14" height="16.5" rx="2"/><path d="M9.3 4.5a2.7 2.7 0 0 1 5.4 0"/><path d="M9 11h6M9 15h4"/>`,
+    pin: `<path d="M12 21.2S5 15.3 5 9.9a7 7 0 0 1 14 0c0 5.4-7 11.3-7 11.3z"/><circle cx="12" cy="9.9" r="2.6"/>`,
+    list: `<path d="M8.5 6h12M8.5 12h12M8.5 18h12"/><circle cx="4" cy="6" r="1" fill="currentColor" stroke="none"/><circle cx="4" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="4" cy="18" r="1" fill="currentColor" stroke="none"/>`,
+    stats: `<path d="M3.5 20.5h17"/><path d="M6.5 20.5v-7M12 20.5V4.5M17.5 20.5v-10"/>`,
+  };
+  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || paths.home}</svg>`;
+}
+
 // App-style bottom navigation for small screens (Jeff, 2026-10-18):
 // the top link row wrapped and broke on phones, so on mobile the nav
 // lives in a fixed bottom tab bar, with the sections of the signed-in
 // experience one tap away. Desktop keeps the top nav.
 function renderBottomNav() {
   if (!bottomnav) return;
-  const item = (glyph, label, onclick, active) => `
+  const item = (icon, label, onclick, active) => `
     <button class="bn-item ${active ? "on" : ""}" onclick="${onclick}">
-      <span class="bn-glyph">${glyph}</span><span class="bn-label">${label}</span>
+      <span class="bn-icon">${bnIcon(icon)}</span><span class="bn-label">${label}</span>
     </button>`;
   const v = state.view;
   const t = state.tab;
   if (!state.user) {
     bottomnav.innerHTML =
-      item("&#8962;", "Home", "return go('home')", v === "home") +
-      item("&#10010;", "Join", "return go('join-creator')", v === "join-creator") +
-      item("&#10132;", "Sign in", "return go('signin')", v === "signin") +
-      item("&#9636;", "Businesses", "return go('for-businesses')", v === "for-businesses" || v === "join-business");
+      item("home", "Home", "return go('home')", v === "home") +
+      item("join", "Join", "return go('join-creator')", v === "join-creator") +
+      item("signin", "Sign in", "return go('signin')", v === "signin") +
+      item("building", "Businesses", "return go('for-businesses')", v === "for-businesses" || v === "join-business");
     return;
   }
   const u = state.user;
@@ -362,40 +387,44 @@ function renderBottomNav() {
     let items = "";
     if (u.role === "admin") {
       items =
-        item("&#9636;", "Requests", "return go('dashboard','Applications')", t === "Applications" || !t) +
-        item("&#9673;", "Markets", "return go('dashboard','Markets')", t === "Markets") +
-        item("&#9776;", "Events", "return go('dashboard','Event Log')", t === "Event Log") +
-        item("&#8721;", "Stats", "return go('dashboard','Stats')", t === "Stats");
+        item("requests", "Requests", "return go('dashboard','Applications')", t === "Applications" || !t) +
+        item("pin", "Markets", "return go('dashboard','Markets')", t === "Markets") +
+        item("list", "Events", "return go('dashboard','Event Log')", t === "Event Log") +
+        item("stats", "Stats", "return go('dashboard','Stats')", t === "Stats");
     } else {
-      items = item("&#9733;", "Status", "return go('dashboard')", true);
+      items = item("status", "Status", "return go('dashboard')", true);
     }
-    bottomnav.innerHTML = items + item("&#8617;", "Sign out", "signOut()", false);
+    bottomnav.innerHTML = items + item("signout", "Sign out", "signOut()", false);
     return;
   }
   if (u.role === "creator") {
     const live = !!(u.founding && u.founding.marketLive);
     if (!live) {
+      // Founding creators (Jeff's tab set, 2026-10-20): Dashboard /
+      // Profile / Status / Sign out, mirroring the founding tabs.
       bottomnav.innerHTML =
-        item("&#9733;", "Status", "return go('dashboard')", true) +
-        item("&#8617;", "Sign out", "signOut()", false);
+        item("home", "Dashboard", "return go('dashboard','Dashboard')", t === "Dashboard" || !t || (t !== "Profile" && t !== "Status")) +
+        item("profile", "Profile", "return go('dashboard','Profile')", t === "Profile") +
+        item("status", "Status", "return go('dashboard','Status')", t === "Status") +
+        item("signout", "Sign out", "signOut()", false);
       return;
     }
     bottomnav.innerHTML =
-      item("&#8962;", "Home", "return go('dashboard','Home')", t === "Home" || !t) +
-      item("&#9679;", "Profile", "return go('dashboard','Profile')", t === "Profile") +
-      item("&#9670;", "Offers", "return go('dashboard','Offers')", t === "Offers") +
-      item("&#10003;", "My Visits", "return go('dashboard','My Visits')", t === "My Visits") +
-      item("&#9993;", "Messages", "return go('dashboard','Messages')", t === "Messages") +
-      item("&#8617;", "Sign out", "signOut()", false);
+      item("home", "Dashboard", "return go('dashboard','Dashboard')", t === "Dashboard" || !t) +
+      item("profile", "Profile", "return go('dashboard','Profile')", t === "Profile") +
+      item("offers", "Offers", "return go('dashboard','Offers')", t === "Offers") +
+      item("visits", "My Visits", "return go('dashboard','My Visits')", t === "My Visits") +
+      item("messages", "Messages", "return go('dashboard','Messages')", t === "Messages") +
+      item("signout", "Sign out", "signOut()", false);
     return;
   }
   // business (reachable in test mode; business accounts open at launch)
   bottomnav.innerHTML =
-    item("&#9673;", "Discover", "return go('dashboard','Discover')", t === "Discover" || !t) +
-    item("&#9670;", "Offers", "return go('dashboard','My Offers')", t === "My Offers") +
-    item("&#10003;", "Visits", "return go('dashboard','Visits & Posts')", t === "Visits & Posts") +
-    item("&#9993;", "Messages", "return go('dashboard','Messages')", t === "Messages") +
-    item("&#8617;", "Sign out", "signOut()", false);
+    item("pin", "Discover", "return go('dashboard','Discover')", t === "Discover" || !t) +
+    item("offers", "Offers", "return go('dashboard','My Offers')", t === "My Offers") +
+    item("visits", "Visits", "return go('dashboard','Visits & Posts')", t === "Visits & Posts") +
+    item("messages", "Messages", "return go('dashboard','Messages')", t === "Messages") +
+    item("signout", "Sign out", "signOut()", false);
 }
 
 function go(view, tab) {
@@ -1203,43 +1232,110 @@ function creatorCard(c, viewer, opts) {
 
 // ---------- creator ----------
 
+const LIVE_CREATOR_TABS = ["Dashboard", "Profile", "Offers", "My Visits", "Messages"];
+const FOUNDING_TABS = ["Dashboard", "Profile", "Status"];
+
 function renderCreatorDash() {
   const u = state.user;
   const marketLive = !!(u.founding && u.founding.marketLive);
   if (!marketLive) { stopHomeCountdown(); return renderFoundingHome(); }
-  const tab = state.tab || "Home";
+  let tab = state.tab || "Dashboard";
+  if (!LIVE_CREATOR_TABS.includes(tab)) tab = "Dashboard";
   state.tab = tab;
-  if (tab !== "Home") stopHomeCountdown();
+  if (tab !== "Dashboard") stopHomeCountdown();
   let body = "";
-  if (tab === "Home") body = `<div id="creator-home"><p class="muted">Loading your home...</p></div>`;
+  if (tab === "Dashboard") body = `<div id="creator-home"><p class="muted">Loading your dashboard...</p></div>`;
   if (tab === "Profile") body = creatorProfileHtml(u) + momentumHtml(u) + growRosterHtml(u);
   app.innerHTML = `
     <h2>Creator dashboard <span class="badge ok">Founding Creator, ${esc(u.market)}</span></h2>
     ${standingBannerHtml(u)}
-    ${tabsHtml(["Home", "Profile", "Offers", "My Visits", "Messages"], tab)}
+    ${tabsHtml(LIVE_CREATOR_TABS, tab)}
     <div id="tab-body">${body}</div>`;
-  if (tab === "Home") loadCreatorHome();
+  if (tab === "Dashboard") loadCreatorHome();
   if (tab === "Profile") setTimeout(loadMyScore, 10);
   if (tab === "Offers") loadCreatorOffers();
   if (tab === "My Visits") loadMyVisits("creator");
   if (tab === "Messages") loadThreads();
 }
 
-// The approved creator's home before their market activates: founding
-// status, launch window, priority position, and their full profile.
-// Data comes from GET /me/founding (which also powers the score).
+// The approved creator's home before their market activates. It is
+// a real tabbed interface now (Jeff, 2026-10-20: Dashboard / Profile
+// / Status, mirroring the bottom nav), because founding creators are
+// the entire audience until markets open and the old single status
+// page hid the Home blocks from every one of them. Dashboard leads
+// with the home blocks; the full founding status detail lives under
+// Status; Profile is the same profile form founding creators already
+// use. Data comes from GET /me/founding (which also powers the score).
 function renderFoundingHome() {
+  const u = state.user;
+  let tab = state.tab || "Dashboard";
+  if (!FOUNDING_TABS.includes(tab)) tab = "Dashboard";
+  state.tab = tab;
+  const placeBadge = u.market === unlistedLabel() ? esc(u.city || u.market) : esc(u.market);
+  let body = "";
+  if (tab === "Dashboard") body = `<div id="founding-dash"><p class="muted">Loading your dashboard...</p></div>`;
+  if (tab === "Status") body = `<h3 style="margin-top:0">Your founding status</h3><div id="founding-body"><p class="muted">Loading your founding profile...</p></div>`;
+  if (tab === "Profile") body = creatorProfileHtml(u);
   app.innerHTML = `
-    <h2>Your founding status</h2>
-    ${standingBannerHtml(state.user)}
-    <div id="founding-body"><p class="muted">Loading your founding profile...</p></div>
-    <div id="founding-profile"></div>`;
-  loadFounding();
+    <h2>Creator dashboard <span class="badge ok">Founding Creator, ${placeBadge}</span></h2>
+    ${standingBannerHtml(u)}
+    ${tabsHtml(FOUNDING_TABS, tab)}
+    <div id="tab-body">${body}</div>`;
+  if (tab === "Dashboard") loadFoundingDashboard();
+  if (tab === "Status") loadFoundingStatus();
+  if (tab === "Profile") setTimeout(loadMyScore, 10);
 }
 
-async function loadFounding() {
+// The founding Dashboard tab: greeting, a compact founding status
+// card (the full detail is one tap away under Status), the metric
+// band and paid lane panel, Momentum, and the roster block.
+async function loadFoundingDashboard() {
+  const el = document.getElementById("founding-dash");
+  if (!el) return;
+  try {
+    const data = await api("GET", "/me/founding");
+    if (!document.getElementById("founding-dash")) return; // navigated away mid-load
+    const f = data.founding;
+    const card = data.card;
+    const p = card.profile || {};
+    state.user.founding = f;
+    const u = state.user;
+    const isUnl = !!f.unlisted;
+    const place = isUnl ? esc(unlistedPlace(f)) : esc(f.market);
+    const hour = new Date().getHours();
+    const greet = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+    const firstName = (u.name || "").trim().split(" ")[0] || u.name || "";
+    el.innerHTML = `
+    <p class="ui-kicker">Creator dashboard &middot; ${place}</p>
+    <h3 class="home-title">${esc(greet)}, ${esc(firstName)}.</h3>
+    <p class="ui-sub">${isUnl ? `${esc(f.city)} opens when sign-ups pile up. Until then, this is your home: your numbers, your paid lane, and your roster.` : `${esc(f.market)} opens to businesses in the next ${esc(f.launchWindow)}. Until then, this is your home: your numbers, your paid lane, and your roster.`}</p>
+    <div class="panel">
+      <div class="flex-between">
+        <div>
+          <h3 style="margin:0">${esc(u.name)} <span class="muted">@${esc(p.handle || "")}</span></h3>
+          <p class="muted small">${isUnl ? place : `${esc(f.market)} &middot; ${esc(f.city)}`}</p>
+        </div>
+        <span class="badge ok" style="font-size:0.95rem;padding:6px 14px">Founding Creator, ${isUnl ? esc(f.city) : esc(f.market)}</span>
+      </div>
+      <p class="small">${p.localAudiencePct}% local audience &middot; ${esc(p.tierBand || "")} tier &middot; ${fmtNum(totalAudienceOf(card))} total audience${f.priorityBand ? ` &middot; in the first ${f.priorityBand} founding creators in ${place}` : ""}</p>
+      <p style="margin-bottom:0">${scoreBadge(card.localImpactScore)}</p>
+      <div class="home-actions"><button class="btn small-btn ghost" onclick="return go('dashboard','Status')">See your full status</button></div>
+    </div>
+    ${homeFoundingBlocksHtml(card, u)}
+    ${momentumHtml(u)}
+    ${growRosterHtml(u)}`;
+  } catch (err) {
+    el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+  }
+}
+
+// The founding Status tab: the full founding status detail (status,
+// market, tier, local audience and source, Impact Score, reliability,
+// audience stack, what happens next), unchanged from the old
+// founding page, now hosted under its own tab.
+async function loadFoundingStatus() {
   const el = document.getElementById("founding-body");
-  const profEl = document.getElementById("founding-profile");
+  if (!el) return;
   try {
     const data = await api("GET", "/me/founding");
     const f = data.founding;
@@ -1295,10 +1391,6 @@ async function loadFounding() {
       <p class="muted">You signed up early, and it counts: when businesses search the ${esc(f.market)} roster, founding creators are ordered by sign-up time, earliest first.</p>` : ""}
       <p class="muted">Offers, visits, and messages unlock here the day your market activates. Keep your profile current in the meantime; your local audience percentage is what businesses look at first.</p>
     </div>`}`;
-    el.innerHTML += homeFoundingBlocksHtml(card, state.user);
-    el.innerHTML += momentumHtml(state.user) + growRosterHtml(state.user);
-    profEl.innerHTML = `<h3 class="mt">Your profile</h3>` + creatorProfileHtml(state.user);
-    fillMyShowcase(card);
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
@@ -1306,7 +1398,7 @@ async function loadFounding() {
 
 // ---------------- creator home (dashboard concept merge, 2026-10-20) ----------------
 // The creator's first screen, in the founding home (pre-launch
-// blocks) and as the live dashboard's Home tab. Built from the
+// blocks) and as the live dashboard's Dashboard tab. Built from the
 // concept Jeff approved, fed ONLY by data the app already has:
 // /bookings, /offers, /me/founding, and state.user.momentum. No
 // estimated reach, no invented ranking scores, no instant-money
@@ -1553,7 +1645,7 @@ function homeLocalSignalHtml(card, bookings) {
 }
 
 // The paid lane, shown the same way in the founding home and the
-// live Home tab: comp on or off, the creator's own rate with the
+// live Dashboard tab: comp on or off, the creator's own rate with the
 // keep-97-percent math at that rate, and the honest hold line.
 function homePaidLaneHtml(creator, footerHtml) {
   const c = creator || {};
@@ -1628,7 +1720,7 @@ function homeFoundingBlocksHtml(card, u) {
     <div class="stat-cell"><div class="stat-num">${card && card.localImpactScore !== null && card.localImpactScore !== undefined ? card.localImpactScore : "New"}</div><div class="stat-lbl">Local Impact Score, out of 100</div></div>
     <div class="stat-cell"><div class="stat-num">${fmtNum(totalAudienceOf(card))}</div><div class="stat-lbl">Total audience across your platforms</div></div>
   </div>
-  ${homePaidLaneHtml(u.creator, `<p class="small muted" style="margin-bottom:0">Change either setting in your profile form below.</p>`)}`;
+  ${homePaidLaneHtml(u.creator, `<p class="small muted" style="margin-bottom:0">Change either setting in the Profile tab.</p>`)}`;
 }
 
 async function loadCreatorHome() {
@@ -1652,7 +1744,7 @@ async function loadCreatorHome() {
     const greet = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
     const firstName = (u.name || "").trim().split(" ")[0] || u.name || "";
     el.innerHTML = `
-    <p class="ui-kicker">Creator home &middot; ${esc(u.market)}</p>
+    <p class="ui-kicker">Creator dashboard &middot; ${esc(u.market)}</p>
     <h3 class="home-title">${esc(greet)}, ${esc(firstName)}.</h3>
     <p class="ui-sub">Your active visit, your offers, and your money, in one place.</p>
     <div class="stat-band home-metrics">

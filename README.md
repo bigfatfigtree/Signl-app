@@ -848,6 +848,30 @@ Score"); this section is the runbook.
   computed score, and the preview presents Salt & Ember codes
   on / Harbor Table codes off.
 
+## Founding tabs + Dashboard rename + bottom-nav fix (2026-10-20)
+
+Jeff's phone QA of the Creator Home found that his own founding
+account (pre-launch market) never saw it: the Home tab sat behind
+the live-market gate and the founding view was a single status
+page. Fixes:
+
+- The founding (pre-launch) creator view is now a tabbed
+  interface, Jeff's set: Dashboard (default landing: greeting,
+  compact founding status card, metric band, paid lane panel,
+  Momentum, grow-your-roster) / Profile (the existing profile
+  form, untouched) / Status (the full founding status detail,
+  unchanged, under its own tab) / Sign out in the bottom nav.
+- The live dashboard's first tab is renamed Home to Dashboard
+  everywhere (desktop tabs + mobile bottom nav).
+- Bottom nav rebuilt: inline SVG icons in currentColor replace
+  the HTML-entity glyphs (the sign-out arrow had rendered as a
+  washed-out blue emoji on iOS); the bar is solid (no translucent
+  glass or backdrop blur), fixed height 58px plus
+  env(safe-area-inset-bottom), labels never wrap, and page
+  content bottom padding matches the bar so nothing hides
+  behind it. Applies to every bottom nav (signed-out, pending,
+  founding, live creator, business, admin).
+
 ## Home dashboards: Creator Home + Business Preview Home (2026-10-20)
 
 The dashboard concept Jeff approved (three role homes) merged
@@ -857,7 +881,7 @@ machinery, per the merge spec in the goal workspace
 deep layer; the homes answer "what needs me today, and how am
 I doing".
 
-- Creator Home (live markets): a new default "Home" tab in the
+- Creator Home (live markets): a new default "Dashboard" tab in the
   creator dashboard, fed only by /bookings, /offers,
   /me/founding, and the Momentum payload. Metric row (paid cash
   released, comp value received, on-time %, Momentum points);

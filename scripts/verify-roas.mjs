@@ -327,6 +327,12 @@ try {
   check("client never says revenue was generated", !/revenue (generated|we generated)/i.test(appJs.text), "");
   check("client ships the business preview home (metrics, attention, pipeline, plan pace, working content, next visits)", appJs.text.includes("pvHomeHtml") && appJs.text.includes("Business home") && appJs.text.includes("Visit pipeline") && appJs.text.includes("Plan pace") && appJs.text.includes("need your attention"), "");
   check("client ships the creator home (active visit, opportunities, local signal, money piles)", appJs.text.includes("loadCreatorHome") && appJs.text.includes("homeActiveVisitHtml") && appJs.text.includes("Opportunities picked for you") && appJs.text.includes("Your local signal") && appJs.text.includes("Cash and comps, kept separate"), "");
+  check("client ships the founding tabs (Dashboard, Profile, Status) behind the pre-launch gate", appJs.text.includes("FOUNDING_TABS") && appJs.text.includes("loadFoundingDashboard") && appJs.text.includes("loadFoundingStatus") && appJs.text.includes("See your full status"), "");
+  check("client labels the creator tab Dashboard in tabs and bottom nav (no Home dashboard tab)", appJs.text.includes("LIVE_CREATOR_TABS") && appJs.text.includes("go('dashboard','Dashboard')") && !appJs.text.includes("go('dashboard','Home')"), "");
+  check("bottom nav ships inline SVG icons, not entity glyphs (no emoji-style sign-out arrow)", appJs.text.includes("bnIcon") && appJs.text.includes("bn-icon") && appJs.text.includes('item("signout", "Sign out"') && appJs.text.includes('item("home", "Dashboard"') && !appJs.text.includes("&#8617;") && !appJs.text.includes("&#8962;"), "");
+  const themeCss = await anon("GET", "/theme-v2.css");
+  const baseCss = await anon("GET", "/styles.css");
+  check("bottom nav bar is solid with a fixed safe-area height (no translucent glass)", !themeCss.text.includes("rgba(255,255,255,.94)") && baseCss.text.includes("height: calc(58px + env(safe-area-inset-bottom))") && baseCss.text.includes(".bn-icon svg") && baseCss.text.includes("white-space: nowrap"), "");
   check("client never promises instant paid money (no instant payout, transfer, or cash-out framing)", !/instant (payout|transfer|cash)/i.test(appJs.text) && !appJs.text.includes("Transfer $") && !/cash out/i.test(appJs.text), "");
 
   console.log(`\nROAS verification: ${passed} passed, ${failures.length} failed`);
