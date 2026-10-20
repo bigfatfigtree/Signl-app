@@ -2382,7 +2382,7 @@ async function runOfferSweep() {
       await store.set(`offer:${offer.id}`, offer);
       summary.offersExpired += 1;
       await logEvent({ type: "offer_selection_deadline_passed", actorId: null, actorRole: "system", subjectId: offer.id, market: offer.market, data: { businessId: offer.businessId, released: waiting.length } });
-      await notifyUser(offer.businessId, "offer_deadline", `The selection deadline passed on "${offer.title}", so the waiting applications were released. Repost any time; picking applicants inside the window keeps the stack.` , { offerId: offer.id });
+      await notifyUser(offer.businessId, "offer_deadline", `The selection deadline passed on "${offer.title}", so the waiting applications were released. Repost any time; picking applicants inside the window keeps the stack.`, { offerId: offer.id });
       continue;
     }
 

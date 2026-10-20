@@ -2935,8 +2935,6 @@ async function loadMyOffers() {
   </div>
   <div id="offer-list"><p class="muted">Loading your offers...</p></div>
   <div id="applicant-stack"></div>`;
-  // The old chip helpers write into "o-..." ids; the v2 comp input
-  // is "o2-comped", so rebind the direct-lane chips by prefix.
   offerCoachUpdate();
   try {
     const data = await api("GET", "/offers");
