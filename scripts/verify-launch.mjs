@@ -1,11 +1,12 @@
 // Launch-shape verification (Jeff's 2026-10-18 launch decision,
-// business accounts reversed to REAL by Jeff on 2026-10-20).
+// with the 2026-10-20 correction restoring founding-list mode
+// for businesses).
 // This suite runs WITHOUT the test override, exactly like production:
 //   - creator founding sign-up is open in all markets
-//   - business registration is a REAL account flow (founding
-//     framing, plan recorded honestly, reviewed like any
-//     application); a founding business in a not-live market can
-//     browse, favorite, and draft offers, but publishing and
+//   - business registration is founding-list intake (same form,
+//     plan recorded honestly, reviewed like any application); a
+//     founding business gets NO product access until an admin
+//     activates it by hand, and even then publishing and
 //     bookings stay behind the market live flag
 //   - registration is the full profile builder (all fields enforced)
 //   - approved creators land on a founding status page, and the
@@ -137,7 +138,7 @@ try {
   check("business registration succeeds (201) as a pending founding account", bizAttempt.status === 201 && bizAttempt.data.user && bizAttempt.data.user.status === "pending", JSON.stringify(bizAttempt.data).slice(0, 200));
   const hopefulBizId = bizAttempt.data.user && bizAttempt.data.user.id;
   check("business plan recorded honestly (Managed $999, founding billing, no charge)", bizAttempt.data.user.business.plan === "managed" && bizAttempt.data.user.business.planPriceMonthly === 999 && /no card charged/.test(bizAttempt.data.user.business.billingStatus), JSON.stringify(bizAttempt.data.user.business));
-  check("business record carries its Stripe payment link and profile fields", bizAttempt.data.user.business.paymentLink === "https://buy.stripe.com/cNi14o4o5487bKXbR59R602" && bizAttempt.data.user.business.neighborhood === "Ghent" && /chef counter/.test(bizAttempt.data.user.business.about), JSON.stringify(bizAttempt.data.user.business));
+  check("business record is founding-state with profile fields and NO payment link (payment stays concierge)", bizAttempt.data.user.business.accessState === "founding" && !("paymentLink" in bizAttempt.data.user.business) && bizAttempt.data.user.business.neighborhood === "Ghent" && /chef counter/.test(bizAttempt.data.user.business.about), JSON.stringify(bizAttempt.data.user.business));
   const bizNoTerms = await client()("POST", "/api/auth/register", {
     role: "business", name: "No Terms", businessName: "No Terms Table", email: "noterms@example.com",
     password: "business-pass-123", market: "Hampton Roads", city: "Norfolk", category: "Restaurant", planId: "growth",
@@ -209,16 +210,29 @@ try {
   check("admin approves creator A", approveA.status === 200 && approveA.data.user.status === "approved");
 
   // --- the founding business, approved, in a NOT-live market ---
-  // Accounts, profiles, browse, favorites, and DRAFT offers are
-  // real pre-launch; publishing and bookings stay gated.
+  // Approval alone opens nothing: the founding gate refuses
+  // browse, favorites, offers, and Business Home server-side
+  // until an admin activates the business by hand. After
+  // activation, browse, favorites, and DRAFT offers are real
+  // pre-launch; publishing and bookings stay market-gated.
   const approveBiz = await admin("POST", "/api/admin/review", { userId: hopefulBizId, decision: "approve" });
-  check("admin approves the founding business", approveBiz.status === 200 && approveBiz.data.user.status === "approved");
+  check("admin approves the founding business (approval is not activation)", approveBiz.status === 200 && approveBiz.data.user.status === "approved" && approveBiz.data.user.business.accessState === "founding");
+  const bizHomeGate = await hopefulBiz("GET", "/api/me/business-home");
+  check("Business Home refuses for a founding business (403, points at the status page)", bizHomeGate.status === 403 && /Founding Status page/.test(bizHomeGate.data.error || ""), JSON.stringify(bizHomeGate.data));
+  const bizBrowseGate = await hopefulBiz("GET", "/api/discover?market=Hampton%20Roads");
+  check("browse refuses for a founding business (403): the roster is not visible pre-activation", bizBrowseGate.status === 403 && /founding list/.test(bizBrowseGate.data.error || ""), JSON.stringify(bizBrowseGate.data));
+  const bizFavGate = await hopefulBiz("POST", "/api/favorites", { creatorId: creatorAId });
+  check("favorites refuse for a founding business (403)", bizFavGate.status === 403, String(bizFavGate.status));
+  const bizDraftGate = await hopefulBiz("POST", "/api/offers", { title: "Launch week dinner for two", whatComped: "Two entrees and two drinks", dollarCap: 100, spots: 2, visitWindow: "Evenings" });
+  check("offers refuse for a founding business, drafts included (403)", bizDraftGate.status === 403, String(bizDraftGate.status));
+  const activateBiz = await admin("POST", "/api/admin/businesses/activate", { userId: hopefulBizId });
+  check("admin Activate business flips the founding business to active", activateBiz.status === 200 && activateBiz.data.user.business.accessState === "active", JSON.stringify(activateBiz.data.user && activateBiz.data.user.business));
   const bizHomePre = await hopefulBiz("GET", "/api/me/business-home");
   check("business home answers pre-launch with marketLive false", bizHomePre.status === 200 && bizHomePre.data.marketLive === false && bizHomePre.data.home && typeof bizHomePre.data.home.visitsUsed === "number", JSON.stringify(bizHomePre.data).slice(0, 200));
   const bizBrowsePre = await hopefulBiz("GET", "/api/discover?market=Hampton%20Roads");
-  check("founding business can browse the roster pre-launch (200)", bizBrowsePre.status === 200 && (bizBrowsePre.data.creators || []).some((c) => c.userId === creatorAId), String(bizBrowsePre.status));
+  check("activated business can browse the roster pre-launch (200)", bizBrowsePre.status === 200 && (bizBrowsePre.data.creators || []).some((c) => c.userId === creatorAId), String(bizBrowsePre.status));
   const bizFavPre = await hopefulBiz("POST", "/api/favorites", { creatorId: creatorAId });
-  check("founding business can favorite a creator pre-launch", bizFavPre.status === 200 && bizFavPre.data.isFavorite === true, JSON.stringify(bizFavPre.data));
+  check("activated business can favorite a creator pre-launch", bizFavPre.status === 200 && bizFavPre.data.isFavorite === true, JSON.stringify(bizFavPre.data));
   const bizFavsPre = await hopefulBiz("GET", "/api/favorites");
   check("favorites persist for the business", bizFavsPre.status === 200 && (bizFavsPre.data.favorites || []).some((c) => c.userId === creatorAId));
   const bizDraft = await hopefulBiz("POST", "/api/offers", { title: "Launch week dinner for two", whatComped: "Two entrees and two drinks", dollarCap: 100, spots: 2, visitWindow: "Evenings" });
@@ -350,11 +364,15 @@ try {
   check("discovery default sort is founding priority (earliest sign-up first), displayed as bands", (disc.data.creators || []).length === 2 && disc.data.creators[0].userId === creatorAId && disc.data.creators[0].foundingBand === 100 && disc.data.creators[1].foundingBand === 100 && disc.data.creators[0].foundingPriority === undefined, JSON.stringify((disc.data.creators || []).map((c) => [c.userId === creatorAId, c.foundingBand])));
   const discScore = await creatorA("GET", "/api/discover?market=Hampton%20Roads&sort=score");
   check("discovery score sort still available (?sort=score)", discScore.status === 200 && (discScore.data.creators || []).length === 2);
-  const bizAfter = await client()("POST", "/api/auth/register", {
+  const lateBiz = client();
+  const bizAfter = await lateBiz("POST", "/api/auth/register", {
     role: "business", name: "Late Owner", businessName: "Late Table", email: "late@example.com",
     password: "business-pass-123", market: "Hampton Roads", city: "Norfolk", category: "Restaurant", planId: "managed", agreedTerms: true,
   });
-  check("business registration works the same in a live market (201): accounts are real, the live flag gates activity, not sign-up", bizAfter.status === 201 && bizAfter.data.user.status === "pending", String(bizAfter.status));
+  check("business registration works the same in a live market (201): founding intake, the live flag does not change sign-up", bizAfter.status === 201 && bizAfter.data.user.status === "pending" && bizAfter.data.user.business.accessState === "founding", String(bizAfter.status));
+  await admin("POST", "/api/admin/review", { userId: bizAfter.data.user.id, decision: "approve" });
+  const lateBrowse = await lateBiz("GET", "/api/discover?market=Hampton%20Roads");
+  check("a live market does NOT silently activate a founding business: browse still refuses (403) until an admin activates it", lateBrowse.status === 403 && /founding list/.test(lateBrowse.data.error || ""), JSON.stringify(lateBrowse.data));
 
   // --- admin Business Preview: same discovery, simulated offers ---
   // This is the server-side proof of the preview path (the suite signs

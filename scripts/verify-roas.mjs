@@ -136,6 +136,8 @@ try {
   const c2 = await registerCreator(`roastable${u}`);
   await approve(c1.user.id); await approve(c2.user.id);
   await approve(biz.user.id); await approve(biz2.user.id);
+  await admin("POST", "/api/admin/businesses/activate", { userId: biz.user.id });
+  await admin("POST", "/api/admin/businesses/activate", { userId: biz2.user.id });
 
   async function compBooking(business, creator, dollarCap, title) {
     const off = await business("POST", "/api/offers", { title, whatComped: "Dinner for two", dollarCap, spots: 1, includesAlcohol: false, creatorId: creator.user.id });

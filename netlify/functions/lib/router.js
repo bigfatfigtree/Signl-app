@@ -110,18 +110,10 @@ function paidMath(rate) {
 // escrows on its own. Suggested default $500.
 const MANAGED_TALENT_BUDGET_DEFAULT = 500;
 
-// Stripe payment links for the three plans (live, Extra Medium
-// LLC; recorded in the goal workspace, files/signl-stripe-live.md).
-// Billing stays honest: the plan is recorded in-app at sign-up and
-// NO card is charged by the app. When a market launches, the
-// business pays through its plan's link to activate; the app shows
-// the link and the recorded status, and never pretends a webhook
-// or a charge happened.
-const STRIPE_PAYMENT_LINKS = {
-  "self-service": "https://buy.stripe.com/5kQ6oI4o534316jf3h9R600",
-  growth: "https://buy.stripe.com/7sY3cw5s91ZZ6qD3kz9R601",
-  managed: "https://buy.stripe.com/cNi14o4o5487bKXbR59R602",
-};
+// Plan payment stays concierge (Jeff, 2026-10-20): the plan is
+// recorded in-app at sign-up, NO card is charged by the app, and
+// no payment link is shown in the app. When SIGNL activates a
+// business, Jeff sends the payment step by hand.
 
 // ---------- Offer flow v2: open offers, applications, backfill ----------
 // (Jeff, 2026-10-20; design: files/signl-offer-flow-design.md.)
@@ -537,9 +529,29 @@ function planById(id) {
   return PLANS.find((p) => p.id === id) || null;
 }
 
+// Business access state (Jeff, 2026-10-20 correction): approval
+// and activation are separate. An approved business stays on the
+// founding list (accessState "founding") until an admin activates
+// it by hand; only then does it get product access. Records made
+// before the field existed have no accessState and read founding,
+// so they sit in founding state with no migration.
+function businessAccessState(u) {
+  return u && u.role === "business" && u.business && u.business.accessState === "active" ? "active" : "founding";
+}
+
+function isFoundingBusiness(u) {
+  return !!u && u.role === "business" && businessAccessState(u) !== "active";
+}
+
+const FOUNDING_BUSINESS_MESSAGE = "Your business is on the founding list, so the creator roster and the product tools are not open yet. Every founding application gets a decision or a clear status within 2 business days. Your Founding Status page shows your plan, your place in line, and what happens next.";
+
 function publicUser(u) {
   if (!u) return null;
   const { passwordHash, passwordSalt, ...rest } = u;
+  if (rest.role === "business" && rest.business) {
+    rest.business = { ...rest.business, accessState: businessAccessState(rest) };
+    delete rest.business.paymentLink;
+  }
   return rest;
 }
 
@@ -3437,7 +3449,7 @@ async function businessHome(user) {
   rebookPrompts.sort((a, b) => (Number(b.isFavorite) - Number(a.isFavorite)) || (a.source === b.source ? 0 : a.source === "delivered" ? -1 : 1));
 
   return {
-    business: { name: user.business.businessName, category: user.business.category, market: user.market, planId: plan.id, planName: user.business.planName, billingStatus: user.business.billingStatus, paymentLink: STRIPE_PAYMENT_LINKS[plan.id] || null },
+    business: { name: user.business.businessName, category: user.business.category, market: user.market, planId: plan.id, planName: user.business.planName, billingStatus: user.business.billingStatus, accessState: businessAccessState(user) },
     plan: { id: plan.id, name: plan.name, priceMonthly: plan.priceMonthly, minMonths: plan.minMonths, visitsPerMonth: plan.visitsPerMonth },
     marketLive: await isMarketLive(user.market),
     home: {
@@ -3488,14 +3500,15 @@ async function handleRegister(event) {
   const b = parseBody(event);
   const role = b.role;
   if (role !== "creator" && role !== "business") return err(400, "role must be creator or business");
-  // Business accounts are REAL accounts (Jeff reversed the
-  // founding-list-only deferral, 2026-10-20): a business registers,
-  // is reviewed like any application, and gets its profile, browse,
-  // favorites, and draft offers immediately. Offers publish and
-  // bookings flow only when its market goes live (the market gate
-  // below), and billing stays founding-honest: the plan is recorded
-  // in-app, no card is charged, activation pays through the plan's
-  // Stripe payment link when the market launches.
+  // Business registration is founding-list intake (Jeff restored
+  // the standing launch shape, 2026-10-20): a business registers
+  // with the full form, is reviewed like any application, and
+  // lands on a Founding Status page only. Approval does NOT open
+  // the product: the business stays in founding access state until
+  // an admin activates it by hand (the concierge founding cohort,
+  // a partner's first sales). Billing stays founding-honest: the
+  // plan is recorded in-app, no card is charged, and payment stays
+  // concierge, hand-sent by Jeff at activation.
   if (!isEmail(b.email || "")) return err(400, "A valid email is required");
   if (typeof b.password !== "string" || b.password.length < 10) return err(400, "Password must be at least 10 characters");
   if (!b.name || typeof b.name !== "string") return err(400, "Name is required");
@@ -3676,10 +3689,12 @@ async function handleRegister(event) {
       planMinMonths: plan.minMonths,
       billingStatus: "Founding billing: plan recorded, no card charged. Billing starts at launch.",
       planSelectedAt: ts,
-      // The plan's Stripe payment link (activation at launch).
-      // Stored on the record so every surface shows the same
-      // truthful billing state; the app itself never charges.
-      paymentLink: STRIPE_PAYMENT_LINKS[plan.id] || null,
+      // Founding-list access state: no product access until an
+      // admin activates this business by hand. No payment link is
+      // stored or shown; payment is concierge at activation.
+      accessState: "founding",
+      activatedAt: null,
+      activatedBy: null,
       // Public review-page links (Google, Yelp, TripAdvisor,
       // Facebook): empty at sign-up, set from the Plan tab or by an
       // admin; host-validated at write time (validateReviewLinks).
@@ -3917,7 +3932,7 @@ async function route(event) {
       allowed =
         user.id === target.id ||
         user.role === "admin" ||
-        (user.role === "business" && user.status === "approved" && (await isMarketLive(user.market)));
+        (user.role === "business" && user.status === "approved" && businessAccessState(user) === "active" && (await isMarketLive(user.market)));
     }
     if (!allowed) return err(user ? 403 : 401, user ? "That photo is not public" : "Sign in required");
     const photo = await store.get(`photo:${target.id}`);
@@ -4177,11 +4192,11 @@ async function route(event) {
       planMinMonths: plan.minMonths,
       billingStatus: "Founding billing: plan recorded, no card charged. Billing starts at launch.",
       planSelectedAt: nowIso(),
-      paymentLink: STRIPE_PAYMENT_LINKS[plan.id] || null,
       // Normalize the Managed talent budget onto records that
       // predate the field (suggested default $500).
       monthlyTalentBudget: talentBudgetOf(user.business),
     };
+    delete user.business.paymentLink;
     user.updatedAt = nowIso();
     await store.set(`user:${user.id}`, user);
     await logEvent({ type: "plan_selected", actorId: user.id, actorRole: "business", subjectId: user.id, market: user.market, data: { plan: plan.id, planPriceMonthly: plan.priceMonthly, source: "dashboard", billingStatus: user.business.billingStatus } });
@@ -4278,6 +4293,8 @@ async function route(event) {
           creatorsApproved: inMarket.filter((u) => u.role === "creator" && u.status === "approved" && !isTester(u)).length,
           creatorsPending: inMarket.filter((u) => u.role === "creator" && u.status === "pending").length,
           businessesApproved: inMarket.filter((u) => u.role === "business" && u.status === "approved").length,
+          businessesFounding: inMarket.filter((u) => u.role === "business" && u.status === "approved" && businessAccessState(u) !== "active").length,
+          businessesActive: inMarket.filter((u) => u.role === "business" && u.status === "approved" && businessAccessState(u) === "active").length,
         };
       });
       return json(200, { markets: out, testMode: TEST_MODE });
@@ -4320,6 +4337,48 @@ async function route(event) {
         } catch (e) { /* email is best-effort */ }
       }
       return json(200, { user: publicUser(target) });
+    }
+    // Business activation (Jeff, 2026-10-20 correction): approval
+    // puts a business on the founding list; ACTIVATION is a
+    // separate admin action that flips accessState to "active"
+    // and opens browse, favorites, and draft offers. Publishing
+    // and bookings stay behind the market live flag exactly as
+    // before. This is how pilot businesses get in by hand before
+    // a market launch. Flipping a market live never calls this:
+    // activation is never silent or automatic.
+    if (method === "POST" && seg[1] === "businesses" && seg[2] === "activate") {
+      const b = parseBody(event);
+      const target = b.userId ? await store.get(`user:${b.userId}`) : null;
+      if (!target || target.role !== "business" || !target.business) return err(404, "Business not found");
+      if (target.status !== "approved") return err(400, "Approve the business application first. Activation opens product access for an approved founding business.");
+      if (businessAccessState(target) === "active") return json(200, { user: publicUser(target), alreadyActive: true });
+      target.business = { ...target.business, accessState: "active", activatedAt: nowIso(), activatedBy: user.id };
+      delete target.business.paymentLink;
+      target.updatedAt = nowIso();
+      await store.set(`user:${target.id}`, target);
+      await logEvent({ type: "business_activated", actorId: user.id, actorRole: "admin", subjectId: target.id, market: target.market, data: { businessName: target.business.businessName, plan: target.business.plan, via: "admin_action" } });
+      return json(200, { user: publicUser(target) });
+    }
+    // Bulk activation for a market launch: activate every approved
+    // founding business in one market. Still an explicit admin
+    // action (the market toggle above never does this), and each
+    // business gets its own business_activated event.
+    if (method === "POST" && seg[1] === "businesses" && seg[2] === "activate-market") {
+      const b = parseBody(event);
+      const market = marketByName(b.market || "");
+      if (!market) return err(400, "Unknown market");
+      const all = await allUsers();
+      const targets = all.filter((u) => u.role === "business" && u.business && u.market === market.name && u.status === "approved" && businessAccessState(u) !== "active");
+      const activated = [];
+      for (const target of targets) {
+        target.business = { ...target.business, accessState: "active", activatedAt: nowIso(), activatedBy: user.id };
+        delete target.business.paymentLink;
+        target.updatedAt = nowIso();
+        await store.set(`user:${target.id}`, target);
+        await logEvent({ type: "business_activated", actorId: user.id, actorRole: "admin", subjectId: target.id, market: target.market, data: { businessName: target.business.businessName, plan: target.business.plan, via: "bulk_market_activation" } });
+        activated.push(publicUser(target));
+      }
+      return json(200, { market: market.name, activatedCount: activated.length, businesses: activated });
     }
     // Tester designation (Jeff, 2026-10-19): move an approved creator
     // between the active roster and Tester. A tester keeps full
@@ -4778,6 +4837,21 @@ async function route(event) {
     return err(404, "Unknown admin route");
   }
 
+  // ---------- founding business gate ----------
+  // A business that has not been activated by an admin is on the
+  // founding list, whatever its application's review state or its
+  // market's live flag: browse, favorites, offers (drafts
+  // included), applications, bookings, the counter, posts, and
+  // messages all refuse server-side with a pointer at its
+  // Founding Status page. Hiding the UI is not the enforcement;
+  // this check is. Business Home has the same check at its
+  // handler below. This sits ahead of the approved-account gate
+  // so a founding business always gets the founding answer.
+  const MARKETPLACE_SECTIONS = ["discover", "favorites", "offers", "applications", "open-offers", "bookings", "counter", "posts", "messages"];
+  if (user.role !== "admin" && isFoundingBusiness(user) && MARKETPLACE_SECTIONS.includes(seg[0])) {
+    return err(403, FOUNDING_BUSINESS_MESSAGE);
+  }
+
   // Everything below requires an approved account.
   if (!requireApproved(user) && user.role !== "admin") {
     return err(403, "Your application is still under review");
@@ -4808,17 +4882,15 @@ async function route(event) {
   // Bookings, the counter, posts, and messages only operate in
   // markets an admin has activated, for everyone. Creators are
   // gated on everything marketplace-shaped until their market
-  // launches (their founding home is their world until then).
-  // Businesses are different since accounts went real (Jeff,
-  // 2026-10-20): a founding business in a market that has not
-  // launched yet can still browse the roster, favorite creators,
-  // and build DRAFT offers, so the day the market flips live it is
-  // ready to publish. Publishing, selecting, and every booking
-  // flow stay behind the live flag, enforced in the handlers.
-  const MARKETPLACE_SECTIONS = ["discover", "favorites", "offers", "applications", "open-offers", "bookings", "counter", "posts", "messages"];
+  // launches (their founding home is their world until then). An
+  // ACTIVATED business in a market that has not launched yet can
+  // still browse the roster, favorite creators, and build DRAFT
+  // offers, so the day the market flips live it is ready to
+  // publish. Publishing, selecting, and every booking flow stay
+  // behind the live flag, enforced in the handlers.
   if (user.role !== "admin" && MARKETPLACE_SECTIONS.includes(seg[0])) {
     if (!(await isMarketLive(user.market))) {
-      const businessPrelaunchOk = user.role === "business" && (
+      const businessPrelaunchOk = user.role === "business" && businessAccessState(user) === "active" && (
         seg[0] === "favorites" ||
         (seg[0] === "discover" && method === "GET") ||
         (seg[0] === "offers" && (method === "GET" || method === "POST" || method === "PATCH"))
@@ -4827,14 +4899,6 @@ async function route(event) {
         return err(403, `The ${user.market} market has not launched yet. Founding creators keep priority in the order they signed up, and ${user.market} opens to businesses in the next ${LAUNCH_WINDOW_TEXT}.`);
       }
     }
-  }
-
-  // A business account still in review cannot write marketplace
-  // state (favorites, offers). Reads stay open so the founding
-  // business can look around the moment it is approved... and the
-  // client keeps pending accounts on the status screen anyway.
-  if (user.role === "business" && user.status !== "approved" && method !== "GET" && (seg[0] === "favorites" || seg[0] === "offers")) {
-    return err(403, "Your founding business account is in review. Every application gets a decision or a clear status within 2 business days; everything opens the moment you are approved.");
   }
 
   // ---------- discovery ----------
@@ -5497,6 +5561,7 @@ async function route(event) {
   // ---------- business home ----------
   if (method === "GET" && seg[0] === "me" && seg[1] === "business-home") {
     if (user.role !== "business") return err(403, "Businesses only");
+    if (isFoundingBusiness(user)) return err(403, FOUNDING_BUSINESS_MESSAGE);
     return json(200, await businessHome(user));
   }
 
@@ -6094,4 +6159,4 @@ async function route(event) {
 
 // The email builders are exported alongside the router so the verify
 // suites can assert on the exact copy a creator receives.
-module.exports = { route, approvalEmail, signupConfirmationEmail, recruiterKitEmail, createMomentum, runComplianceSweep, runOfferSweep, runCampaignSweep, campaignEmail, crossoverEmail, campaignEmailFor, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, STANDARD_VISIT, visitRightsForPlan, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, STRIPE_PAYMENT_LINKS };
+module.exports = { route, approvalEmail, signupConfirmationEmail, recruiterKitEmail, createMomentum, runComplianceSweep, runOfferSweep, runCampaignSweep, campaignEmail, crossoverEmail, campaignEmailFor, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, STANDARD_VISIT, visitRightsForPlan, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength };

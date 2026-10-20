@@ -1,5 +1,9 @@
-// Business-side verification (Jeff, 2026-10-20): real business
-// accounts, favorites, the open offer lifecycle (post, apply,
+// Business-side verification (Jeff, 2026-10-20): founding-list
+// intake and the admin activation gate (registration lands in
+// founding state; browse, favorites, offers, Business Home,
+// bookings, and messages refuse server-side; an admin activates
+// the business by hand; publishing stays behind the market live
+// flag), then favorites, the open offer lifecycle (post, apply,
 // select, release, expire), the dignity floor, backfill, rebook,
 // the coaching nudge, the selection SLA, and the zero-write
 // preview invariant. Production shape: NO test override; the
@@ -103,14 +107,73 @@ try {
     neighborhood: "Carytown", about: "Counter service, loud room.", agreedTerms: true,
   });
   check("business registers as a real account (201, pending)", bizReg.status === 201 && bizReg.data.user.status === "pending", JSON.stringify(bizReg.data).slice(0, 160));
+  check("registration lands in founding state with plan interest recorded and NO payment link", bizReg.data.user.business.accessState === "founding" && bizReg.data.user.business.plan === "growth" && !("paymentLink" in bizReg.data.user.business), JSON.stringify(bizReg.data.user.business));
   const bizId = bizReg.data.user.id;
-  await admin("POST", "/api/admin/review", { userId: bizId, decision: "approve" });
+  const appsBefore = await admin("GET", "/api/admin/applications");
+  const pendingBizRow = (appsBefore.data.pending || []).find((u) => u.id === bizId);
+  check("admin list surfaces the business state: Founding list", !!pendingBizRow && pendingBizRow.business.accessState === "founding", JSON.stringify(pendingBizRow && pendingBizRow.business));
+  const approveBizRes = await admin("POST", "/api/admin/review", { userId: bizId, decision: "approve" });
+  check("admin approval alone leaves the business in founding state", approveBizRes.status === 200 && approveBizRes.data.user.status === "approved" && approveBizRes.data.user.business.accessState === "founding", JSON.stringify(approveBizRes.data.user && approveBizRes.data.user.business));
   const bizMe = await biz("GET", "/api/auth/me");
-  check("approved business signs in with plan + profile intact", bizMe.data.user.business.plan === "growth" && bizMe.data.user.business.neighborhood === "Carytown", JSON.stringify(bizMe.data.user.business));
+  check("approved founding business signs in with plan + profile intact", bizMe.data.user.business.plan === "growth" && bizMe.data.user.business.neighborhood === "Carytown" && bizMe.data.user.business.accessState === "founding", JSON.stringify(bizMe.data.user.business));
+
+  // ---------- the founding gate: no product access ----------
+  const gateBrowse = await biz("GET", "/api/discover?market=Richmond");
+  check("founding business cannot browse the roster (403, points at the status page)", gateBrowse.status === 403 && /founding list/.test(gateBrowse.data.error || "") && /Founding Status page/.test(gateBrowse.data.error || ""), JSON.stringify(gateBrowse.data));
+  const gateFavs = await biz("GET", "/api/favorites");
+  check("founding business cannot read favorites (403)", gateFavs.status === 403, String(gateFavs.status));
+  const gateFavWrite = await biz("POST", "/api/favorites", { creatorId: cB.id });
+  check("founding business cannot favorite a creator (403)", gateFavWrite.status === 403, String(gateFavWrite.status));
+  const gateOffers = await biz("GET", "/api/offers");
+  check("founding business cannot read offers (403)", gateOffers.status === 403, String(gateOffers.status));
+  const gateDraft = await biz("POST", "/api/offers", { title: "Founding draft attempt", whatComped: "Dinner for two", dollarCap: 80, spots: 1 });
+  check("founding business cannot create even a draft offer (403)", gateDraft.status === 403 && /founding list/.test(gateDraft.data.error || ""), JSON.stringify(gateDraft.data));
+  const gateHome = await biz("GET", "/api/me/business-home");
+  check("Business Home data refuses for a founding business (403)", gateHome.status === 403 && /Founding Status page/.test(gateHome.data.error || ""), JSON.stringify(gateHome.data));
+  const gateBookings = await biz("GET", "/api/bookings");
+  check("founding business cannot read bookings (403)", gateBookings.status === 403, String(gateBookings.status));
+  const gateMessages = await biz("GET", "/api/messages");
+  check("founding business cannot read messages (403)", gateMessages.status === 403, String(gateMessages.status));
+
+  // ---------- admin activation (by hand, per business) ----------
+  const activate = await admin("POST", "/api/admin/businesses/activate", { userId: bizId });
+  check("admin Activate business flips the business to active", activate.status === 200 && activate.data.user.business.accessState === "active" && !!activate.data.user.business.activatedAt, JSON.stringify(activate.data.user && activate.data.user.business));
+  const browsePre = await biz("GET", "/api/discover?market=Richmond");
+  check("activated business can browse the roster before the market goes live", browsePre.status === 200 && (browsePre.data.creators || []).some((c) => c.userId === cA.id), String(browsePre.status));
+  const favPre = await biz("POST", "/api/favorites", { creatorId: cA.id });
+  check("activated business can favorite before the market goes live", favPre.status === 200 && favPre.data.isFavorite === true, JSON.stringify(favPre.data));
+  await biz("POST", "/api/favorites", { creatorId: cA.id });
+  const draftPre = await biz("POST", "/api/offers", { title: "Founding draft, saved pre-launch", whatComped: "Dinner for two", dollarCap: 80, spots: 1 });
+  check("activated business can save a draft offer before the market goes live", draftPre.status === 201 && draftPre.data.offer.status === "draft", JSON.stringify(draftPre.data).slice(0, 200));
+  const publishPre = await biz("POST", `/api/offers/${draftPre.data.offer.id}/publish`, {});
+  check("publishing stays market-gated for an activated business (403)", publishPre.status === 403 && /market opens|market launches|not launched/.test(publishPre.data.error || ""), JSON.stringify(publishPre.data));
+  const bookingsPre = await biz("GET", "/api/bookings");
+  check("bookings stay market-gated for an activated business pre-launch (403)", bookingsPre.status === 403, String(bookingsPre.status));
+  const homePre = await biz("GET", "/api/me/business-home");
+  check("Business Home answers for an activated business pre-launch", homePre.status === 200 && homePre.data.marketLive === false, JSON.stringify(homePre.data).slice(0, 160));
+
+  // ---------- bulk activation + no silent activation ----------
+  const bizTwo = client();
+  const bizTwoReg = await bizTwo("POST", "/api/auth/register", {
+    role: "business", name: "Second Owner", businessName: "Second Stack", email: "secondstack@example.com",
+    password: "business-pass-123", market: "Richmond", city: "Richmond", category: "Restaurant", planId: "self-service", agreedTerms: true,
+  });
+  await admin("POST", "/api/admin/review", { userId: bizTwoReg.data.user.id, decision: "approve" });
+  const marketsBeforeToggle = await admin("GET", "/api/admin/markets");
+  const richmondRow = (marketsBeforeToggle.data.markets || []).find((m) => m.name === "Richmond");
+  check("admin markets list counts founding vs active businesses", !!richmondRow && richmondRow.businessesFounding === 1 && richmondRow.businessesActive === 1, JSON.stringify(richmondRow));
 
   // Market goes live through the real admin flag.
   const toggle = await admin("POST", "/api/admin/markets/toggle", { market: "Richmond", live: true });
   check("admin activates Richmond", toggle.status === 200 && toggle.data.live === true);
+  const bizTwoMeAfterToggle = await bizTwo("GET", "/api/auth/me");
+  check("flipping the market live does NOT silently activate founding businesses", bizTwoMeAfterToggle.data.user.business.accessState === "founding", JSON.stringify(bizTwoMeAfterToggle.data.user.business));
+  const bizTwoBrowse = await bizTwo("GET", "/api/discover?market=Richmond");
+  check("a founding business in a LIVE market still cannot browse until activated", bizTwoBrowse.status === 403, String(bizTwoBrowse.status));
+  const bulk = await admin("POST", "/api/admin/businesses/activate-market", { market: "Richmond" });
+  check("bulk activation activates the market's founding businesses", bulk.status === 200 && bulk.data.activatedCount === 1, JSON.stringify(bulk.data).slice(0, 200));
+  const bizTwoBrowseAfter = await bizTwo("GET", "/api/discover?market=Richmond");
+  check("bulk-activated business can browse", bizTwoBrowseAfter.status === 200, String(bizTwoBrowseAfter.status));
 
   // ---------- favorites ----------
   const fav1 = await biz("POST", "/api/favorites", { creatorId: cB.id });
@@ -302,14 +365,15 @@ try {
   // ---------- the event trail (Jeff's data directive) ----------
   const ev = await admin2("GET", "/api/admin/events?limit=2000");
   const types = new Set((ev.data.events || []).map((e) => e.type));
-  for (const t of ["offer_created", "application_submitted", "application_selected", "application_released", "backfill_offered", "backfill_accepted", "favorite_added", "rebook_sent", "offer_nudge_sent"]) {
+  for (const t of ["offer_created", "application_submitted", "application_selected", "application_released", "backfill_offered", "backfill_accepted", "favorite_added", "rebook_sent", "offer_nudge_sent", "business_activated"]) {
     check(`event logged: ${t}`, types.has(t), "");
   }
 
   // ---------- client ships the new surfaces ----------
   const appJsRes = await fetch(BASE + "/app.js");
   const appJs = await appJsRes.text();
-  check("client ships business sign-up, composer v2, board, applications, favorites, home", appJs.includes("Create your founding business account") && appJs.includes("Apply with one tap") && appJs.includes("My applications") && appJs.includes("dignity floor") && appJs.includes("Invite again") && appJs.includes("loadBusinessHome") && appJs.includes("viewApplicants"), "");
+  check("client ships business sign-up, composer v2, board, applications, favorites, home", appJs.includes("Join the founding business list") && appJs.includes("Apply with one tap") && appJs.includes("My applications") && appJs.includes("dignity floor") && appJs.includes("Invite again") && appJs.includes("loadBusinessHome") && appJs.includes("viewApplicants"), "");
+  check("client ships the founding business status page and the admin Activate business action, with no Stripe payment link anywhere", appJs.includes("renderBusinessFoundingStatus") && appJs.includes("Founding business list,") && appJs.includes("Activate business") && appJs.includes("activateMarketBusinesses") && !appJs.includes("buy.stripe.com") && !appJs.includes("paymentLink"), "");
   check("client bottom nav carries the business Home/Favorites tabs", appJs.includes("Favorites") && appJs.includes("bnIcon"), "");
 
   console.log(`\nBusiness verification: ${passed} passed, ${failed} failed`);

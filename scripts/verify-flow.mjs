@@ -228,7 +228,9 @@ try {
   const apps2 = await admin("GET", "/api/admin/applications");
   check("admin sees the pending business application", (apps2.data.pending || []).some((u) => u.id === businessId));
   const approve2 = await admin("POST", "/api/admin/review", { userId: businessId, decision: "approve" });
-  check("admin approves business", approve2.status === 200 && approve2.data.user.status === "approved");
+  check("admin approves business (still founding until activated)", approve2.status === 200 && approve2.data.user.status === "approved" && approve2.data.user.business.accessState === "founding");
+  const activate2 = await admin("POST", "/api/admin/businesses/activate", { userId: businessId });
+  check("admin activates the business for the marketplace flow", activate2.status === 200 && activate2.data.user.business.accessState === "active");
 
   // --- discovery, favorite, offer ---
   const disc = await business("GET", "/api/discover?market=Hampton%20Roads");

@@ -20,12 +20,30 @@ The public launch is **creator founding sign-up only**:
   days**; SIGNL emails creators at the address they registered with
   when their market opens; early sign-ups get priority when businesses
   search (discovery's default sort is sign-up order).
-- **Businesses cannot create accounts.** The app's For Businesses page
-  sends them to the founding business list on joinsignl.com, where
-  joining locks in founding pricing ($299/mo Self-Service, $599/mo
-  Growth, $999/mo Managed, 3-month minimum). Business accounts open per market at
-  launch. All business functionality (discovery, offers, counter,
-  plans) remains in the codebase, gated off.
+- **Businesses join a founding list; they get no product access
+  yet.** Business registration (in the app, and via the founding
+  business form on joinsignl.com, which stays the top of funnel)
+  is founding-list intake: the full form, plan interest recorded
+  honestly ($299/mo Self-Service, $599/mo Growth, $999/mo Managed,
+  3-month minimum; no card charged, no payment link shown, payment
+  stays concierge and is hand-sent by Jeff at activation). A
+  registered business lands on a **Founding Status page only**:
+  what it joined, its plan interest, its category spot held in
+  application order, founding pricing locked while subscribed,
+  and the 2 business day decision-or-status promise. Approval is
+  NOT activation: an approved business stays in founding access
+  state (`business.accessState: "founding"`, the default for every
+  record, including ones created before the field existed) and
+  browse/discovery, favorites, offers (drafts included), Business
+  Home, bookings, and messages all refuse server-side. An admin
+  activates a business by hand (**Activate business** on its
+  Admin record, or **Activate founding businesses** for a whole
+  market on the Markets tab), which flips it to full access
+  (browse, favorites, drafts); publishing and bookings still wait
+  for the market live flag. Flipping a market live never
+  auto-activates its founding businesses. All business
+  functionality (discovery, offers, counter, plans) remains built,
+  behind this gate.
 - **Market activation is a per-market admin flag** (Admin, Markets
   tab), default OFF for all 39 markets. Until a market is live, its
   approved creators see only the founding status page, and discovery,
@@ -51,7 +69,8 @@ The public launch is **creator founding sign-up only**:
   activates it.
 - **The creator roster is never public.** No public roster pages
   exist; discovery requires an authenticated, approved business
-  account in a live market. The one exception, added 2026-10-19: each
+  account that an admin has ACTIVATED (founding-list businesses
+  cannot browse at all, in any market, live or not). The one exception, added 2026-10-19: each
   **approved** creator has a single shareable public profile page at
   `app.joinsignl.com/c/<handle>` (their own link to advertise, never
   a listing or an index). It serves a strict whitelist of public-safe
@@ -169,17 +188,21 @@ Verification (each suite spins up its own throwaway server and
 database, and registers fresh accounts through the real sign-up path):
 
 ```
-node scripts/verify-flow.mjs        # 98 checks: main marketplace flow
-node scripts/verify-fallbacks.mjs   # 14 checks: check-in / confirm fallbacks
-node scripts/verify-launch.mjs      # 210 checks: the launch shape itself
+node scripts/verify-flow.mjs        # 101 checks: main marketplace flow
+node scripts/verify-fallbacks.mjs   # 15 checks: check-in / confirm fallbacks
+node scripts/verify-launch.mjs      # 233 checks: the launch shape itself
 node scripts/verify-compliance.mjs  # 112 checks: stacking, compliance, Momentum v2, round-2 ops
-node scripts/verify-campaign.mjs    # 119 checks: creator outreach campaigns (stub mailer only)
-node scripts/verify-paidlane.mjs    # 58 checks: paid lane, creator reviews, review links, Managed budget
-npm run verify                      # all six, in order (611 total)
+node scripts/verify-campaign.mjs    # 121 checks: creator outreach campaigns (stub mailer only)
+node scripts/verify-paidlane.mjs    # 60 checks: paid lane, creator reviews, review links, Managed budget
+node scripts/verify-roas.mjs        # 70 checks: SIGNL ROAS Score, creator codes, register tallies
+node scripts/verify-business.mjs    # 92 checks: founding gate, admin activation, offer lifecycle v2
+npm run verify                      # all eight, in order (804 total)
 ```
 
-`verify-launch.mjs` runs in true production shape: business
-registration refused, all markets founding-only, the full profile
+`verify-launch.mjs` and `verify-business.mjs` run in true
+production shape: business registration is founding-list intake,
+all markets founding-only, a founding business's product
+endpoints refuse until an admin activates it, the full profile
 builder enforced field by field, a creator registered with **all six
 social fields filled** (Instagram, TikTok, YouTube, Facebook, X,
 LinkedIn) and confirmed to persist and display on the founding card,
@@ -187,14 +210,15 @@ the roster invisible to anonymous visitors, founding priority in
 sign-up order, and the marketplace opening only when an admin
 activates the market.
 
-The two marketplace suites set `SIGNL_TEST_ALLOW_BUSINESS=1`, a
-**test-only** server flag that re-opens business registration and
-treats every market as live so the gated flows can still be exercised
-end to end. It is read from the environment only, is not in
-netlify.toml, and must never be set on the Netlify site.
+The marketplace suites set `SIGNL_TEST_ALLOW_BUSINESS=1`, a
+**test-only** server flag that treats every market as live so the
+gated flows can still be exercised end to end (their business
+fixtures still go through the real admin activation action). It
+is read from the environment only, is not in netlify.toml, and
+must never be set on the Netlify site.
 
-All six suites were run green against this codebase on 2026-10-19
-(611 checks total, including the Momentum points math end to end:
+All eight suites were run green against this codebase on
+2026-10-20 (804 checks total, including the Momentum points math end to end:
 a recruiter with 2 credited sign-ups and 1 approval earns 16
 REFERRAL points (their full total also counts their own profile
 entries, for example +5 for reporting a local audience percentage,
@@ -1060,7 +1084,9 @@ application_submitted, application_approved, application_rejected,
 profile_completed (the full founding profile, including the social
 links and comp categories), profile_photo_uploaded,
 founding_status_viewed (at most once per creator per day),
-market_activated, market_deactivated,
+market_activated, market_deactivated, business_activated
+(the admin activation of a founding business, per business,
+including bulk market activations),
 plan_selected, user_signed_in, profile_updated, local_audience_updated,
 favorite_added, favorite_removed, offer_created, offer_accepted,
 offer_declined, booking_code_issued, creator_checked_in,
@@ -1138,25 +1164,38 @@ Everything below assumes this directory is the repo root.
    live, the **creator** CTAs on joinsignl.com should link to
    https://app.joinsignl.com (that is where founding profiles are
    built). The **business** CTAs stay on joinsignl.com/businesses.html:
-   that page is the founding business list, and it is the whole
-   business front door until a market activates. Decide whether the
+   that page's founding business form is list-mode and stays the
+   top of funnel. The app's own For Businesses page is the same
+   founding-list intake, never product access. Decide whether the
    current Netlify forms stay as a fallback during the switchover.
-8. **Do NOT activate any market yet.** All 39 markets ship
-   founding-only. When a market's founding roster is ready (60 to 90
-   day window), activate it in Admin, Markets tab; that is also the
-   moment to email that market's founding creators at their registered
-   addresses and open business onboarding there. Make sure
-   SIGNL_TEST_ALLOW_BUSINESS is **not** set anywhere in the Netlify
-   environment; it is a test-only flag.
+8. **Do NOT activate any market yet, and do not activate businesses
+   except deliberate pilots.** All 39 markets ship founding-only.
+   When a market's founding roster is ready (30 to 90 day window),
+   the launch sequence is two separate admin actions, in either
+   order: activate the market in Admin, Markets tab, AND activate
+   its founding businesses (per business with **Activate business**
+   on the Admin record, or **Activate founding businesses** for
+   the whole market on the Markets tab). The market toggle never
+   activates businesses on its own. A pilot business (concierge
+   founding cohort, a partner's first sale) can be activated by
+   hand before its market goes live: it can then browse, favorite,
+   and draft, while publishing and bookings wait for the live
+   flag. Market activation is also the moment to email that
+   market's founding creators at their registered addresses.
+   Make sure SIGNL_TEST_ALLOW_BUSINESS is **not** set anywhere in
+   the Netlify environment; it is a test-only flag.
 
 ## Known limits, stated plainly
 
-- Business accounts are closed on purpose (launch shape above), not
-  broken: the For Businesses page and the API refusal both point to
-  the founding business list. Re-opening is two switches: activate the
-  market (Admin, Markets) and, when business self-serve is wanted,
-  lift the registration gate in lib/router.js (the TEST_MODE flag
-  shows exactly where).
+- Business product access is closed by default on purpose (launch
+  shape above), not broken: registration is founding-list intake,
+  and the API refuses every product endpoint for a founding-state
+  business with a pointer at its Founding Status page. Opening a
+  business up is an admin action, never a code change: approve the
+  application, then **Activate business** on its record (or bulk
+  activate a market's founding businesses from the Markets tab);
+  opening a whole market additionally needs the market live flag
+  (Admin, Markets) for publishing and bookings.
 - No outbound email yet: applicants are told to sign back in to check
   their status (the UI says exactly that), and approvals are worked
   from the admin Applications tab. Launch emails to founding creators

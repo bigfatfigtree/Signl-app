@@ -203,6 +203,7 @@ try {
   await approve(admin, Q.user.id);
   const G = await registerBusiness("growth", "Salt & Ember Kitchen");
   await approve(admin, G.user.id);
+  await admin("POST", "/api/admin/businesses/activate", { userId: G.user.id });
   const discPaid = await G.client("GET", "/api/discover?market=Hampton%20Roads&paid=1");
   const paidIds = (discPaid.data.creators || []).map((c) => c.userId);
   check("paid=1 discovery includes the rate-listed creator", paidIds.includes(P.user.id), JSON.stringify(paidIds));

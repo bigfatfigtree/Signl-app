@@ -140,7 +140,10 @@ async function registerBusiness(admin, planId, businessName) {
     planId,
     agreedTerms: true,
   });
-  if (r.status === 201) await admin("POST", "/api/admin/review", { userId: r.data.user.id, decision: "approve" });
+  if (r.status === 201) {
+    await admin("POST", "/api/admin/review", { userId: r.data.user.id, decision: "approve" });
+    await admin("POST", "/api/admin/businesses/activate", { userId: r.data.user.id });
+  }
   return { client: c, res: r, user: r.data && r.data.user };
 }
 async function adminClient() {

@@ -320,6 +320,17 @@ function hoursLeft(deadline) {
   return ms / 3600000;
 }
 
+// Business access state (server-enforced): an approved business
+// stays on the founding list until an admin activates it by hand.
+// Anything other than accessState "active" is founding.
+function businessAccessState(u) {
+  return u && u.role === "business" && u.business && u.business.accessState === "active" ? "active" : "founding";
+}
+
+function isFoundingBusiness(u) {
+  return !!u && u.role === "business" && businessAccessState(u) !== "active";
+}
+
 function renderNav() {
   if (!state.user) {
     topnav.innerHTML = `
@@ -384,7 +395,7 @@ function renderBottomNav() {
     return;
   }
   const u = state.user;
-  if (u.status !== "approved" || u.role === "admin") {
+  if (u.status !== "approved" || u.role === "admin" || isFoundingBusiness(u)) {
     let items = "";
     if (u.role === "admin") {
       items =
@@ -450,8 +461,9 @@ async function render() {
     if (state.view === "signin") return renderSignin();
     return renderHome();
   }
-  if (u.status === "pending") return renderPending();
+  if (u.status === "pending") return u.role === "business" ? renderBusinessFoundingStatus() : renderPending();
   if (u.status === "rejected") return renderRejected();
+  if (isFoundingBusiness(u)) return renderBusinessFoundingStatus();
   return renderDashboard();
 }
 
@@ -842,12 +854,12 @@ function renderForBusinesses() {
     </div>`).join("");
   app.innerHTML = `
   <section class="panel" style="max-width:680px;margin:10px auto">
-    <h2>For Businesses: founding accounts are open</h2>
-    <p>SIGNL is building its founding creator rosters market by market, and founding business accounts are now open. Create your account today: build your profile, browse the founding roster in your market, save favorites, and draft your first offers. Offers publish the day your market opens, in the next 30 to 90 days.</p>
-    <p><strong>Founding pricing, locked by signing up now:</strong> the price on this page is the founding price. When your market opens, your account activates at founding pricing while later businesses pay the standard rate.</p>
+    <h2>For Businesses: join the founding list</h2>
+    <p>SIGNL is building its founding creator rosters market by market. Businesses do not get product access yet, and the creator roster is not visible to businesses before launch. Join the founding business list now: tell us about your business and the plan you want, and we will hold your place while your market's roster is built.</p>
+    <p><strong>Founding pricing, locked by joining now:</strong> the price on this page is the founding price, and it stays locked while you stay subscribed. When your market opens, SIGNL activates founding businesses by hand, in application order.</p>
     <div class="plan-cards">${plans}</div>
-    <div class="notice blue mt">Founding pricing: Self-Service $299/mo, Growth $599/mo, Managed $999/mo, 3-month minimum, then month to month. Signing up costs nothing and charges nothing: your plan is recorded, billing starts when your market launches, and activation is paid securely through Stripe at that point.</div>
-    <h3 class="mt">Create your founding business account</h3>
+    <div class="notice blue mt">Founding pricing: Self-Service $299/mo, Growth $599/mo, Managed $999/mo, 3-month minimum, then month to month. Joining costs nothing and charges nothing: your plan interest is recorded, no card is taken, and payment stays concierge. Jeff sends the payment step by hand when SIGNL activates your business.</div>
+    <h3 class="mt">Join the founding business list</h3>
     <div id="jb-error"></div>
     <form onsubmit="return registerBusiness(event)">
       <div class="form-2col">
@@ -866,12 +878,12 @@ function renderForBusinesses() {
         <div class="field"><label>City</label><select id="jb-city"></select></div>
         <div class="field"><label>Neighborhood / area (optional)</label><input id="jb-neighborhood" placeholder="For example: Oceanfront, Ghent"></div>
       </div>
-      <div class="field"><label>About your business (optional, creators see this on your offers)</label><textarea id="jb-about" rows="3" placeholder="What you serve, what the visit feels like, anything a creator should know"></textarea></div>
+      <div class="field"><label>About your business (optional)</label><textarea id="jb-about" rows="3" placeholder="What you serve, what the visit feels like, anything SIGNL should know when reviewing your application"></textarea></div>
       <input type="hidden" id="jb-plan" value="${esc(state.boot.plans[0].id)}">
       <label style="font-weight:500"><input type="checkbox" id="jb-terms" style="width:auto" required> I agree to the Terms of Service and Privacy Policy, and to receiving account and marketing emails from SIGNL.</label>
-      <button class="btn mt" type="submit" style="width:100%">Create founding business account</button>
+      <button class="btn mt" type="submit" style="width:100%">Join the founding business list</button>
     </form>
-    <p class="small muted mt">Every application is reviewed by a person; you will get a decision or a clear status within 2 business days. Creator sign-up is separate and open now: <a href="#" onclick="return go('join-creator')">become a founding creator</a>. The creator roster itself is not public; only businesses with activated accounts in a launched market can browse it.</p>
+    <p class="small muted mt">Every application is reviewed by a person; you will get a decision or a clear status within 2 business days. Creator sign-up is separate and open now: <a href="#" onclick="return go('join-creator')">become a founding creator</a>. The creator roster is not public, and it is not shown to founding businesses before activation: only businesses SIGNL activates can browse it.</p>
   </section>`;
   bizCityOptions();
 }
@@ -919,22 +931,57 @@ function selectPlan(id) {
   if (hidden) hidden.value = id;
 }
 
+// The founding business status page: the ONLY screen a business
+// sees before activation (pending or approved). It mirrors the
+// creator founding pattern: what they joined, their plan
+// interest, the promises, and what happens next. No roster, no
+// product tools, no payment link: payment stays concierge.
+function renderBusinessFoundingStatus() {
+  const u = state.user;
+  const bz = u.business || {};
+  const inReview = u.status !== "approved";
+  app.innerHTML = `
+  <section class="panel" style="max-width:640px;margin:24px auto">
+    <p><span class="badge ${inReview ? "info" : "ok"}">${inReview ? "Application in review" : "Founding list"}</span></p>
+    <h2 style="margin-top:8px">${esc(bz.businessName || "Your business")} is on the founding list</h2>
+    <p>You joined the <strong>Founding business list, ${esc(u.market)}</strong>. Businesses do not get product access yet: the creator roster stays hidden until SIGNL activates your business by hand.</p>
+    <p>${inReview
+      ? `Your application is in review. Every founding application gets a decision or a clear status within 2 business days.`
+      : `Your application is approved, and your founding spot is held. Activation is a separate step, done by hand by SIGNL.`}</p>
+    <div class="panel" style="margin-top:16px">
+      <div class="ui-row"><span class="k">Plan interest</span><span class="v">${esc(bz.planName || "")}</span></div>
+      <div class="ui-row"><span class="k">Category spot</span><span class="v">Your ${esc(bz.category || "business")} spot is held in application order</span></div>
+      <div class="ui-row"><span class="k">Founding pricing</span><span class="v">Locked while you stay subscribed</span></div>
+      <div class="ui-row"><span class="k">Activation</span><span class="v">When ${esc(u.market)} opens, or sooner if SIGNL activates your business by hand for a pilot</span></div>
+      <div class="ui-row"><span class="k">Payment</span><span class="v">Nothing is due now. Payment stays concierge: Jeff sends the payment step by hand at activation</span></div>
+    </div>
+    <h3 class="mt">What happens next</h3>
+    <ol style="padding-left:20px">
+      <li>${inReview ? "SIGNL reviews your application. You will get a decision or a clear status within 2 business days." : "Your application is approved. There is nothing else you need to send right now."}</li>
+      <li>SIGNL keeps building the founding creator roster in ${esc(u.market)}. The roster is not shown to businesses before activation.</li>
+      <li>When your market opens, SIGNL activates founding businesses by hand, in application order. A pilot business can be activated sooner.</li>
+      <li>The moment your business is activated, this page opens into the full app: browse, favorites, and draft offers. Publishing follows your market's launch.</li>
+    </ol>
+    <p class="muted small">Sign back in any time to check your status. Questions: hello@joinsignl.com</p>
+    <div class="mt"><button class="btn ghost" onclick="signOut()">Sign out</button></div>
+  </section>`;
+}
+
 function renderPending() {
   const u = state.user;
+  if (u.role === "business") return renderBusinessFoundingStatus();
   const f = u.founding || {};
   const isCreator = u.role === "creator";
   const isUnlisted = isCreator && u.market === unlistedLabel();
   const place = isUnlisted ? esc(unlistedPlace(u)) : esc(u.market);
   app.innerHTML = `
   <section class="panel center" style="max-width:560px;margin:40px auto">
-    <h2>${isCreator ? "Founding profile received" : "Application received"}</h2>
-    <p>Thanks, ${esc(u.name)}. ${isCreator ? `Your founding creator profile for <strong>${place}</strong> is built and in the review queue. Every founding application gets a decision or a clear status within 2 business days.` : `Your founding business account for <strong>${esc(u.business ? u.business.businessName : "")}</strong> is in the review queue. Every founding application gets a decision or a clear status within 2 business days. The moment you are approved, your dashboard opens: browse the founding roster in ${esc(u.market)}, save favorites, build your profile, and draft offers. Offers publish the day your market opens.`}</p>
+    <h2>Founding profile received</h2>
+    <p>Thanks, ${esc(u.name)}. Your founding creator profile for <strong>${place}</strong> is built and in the review queue. Every founding application gets a decision or a clear status within 2 business days.</p>
     ${isCreator && f.queueBand ? `<p><span class="badge info">${isUnlisted ? `You are in the first ${f.queueBand} to sign up in ${esc(u.city)}` : `You are in the first ${f.queueBand} founding creators in ${esc(u.market)}`}</span></p>` : ""}
-    <p class="muted">${isCreator
-      ? isUnlisted
-        ? `SIGNL is not open in ${esc(u.city)} yet, and your sign-up counts toward opening it: we open new markets where creator sign-ups pile up, and founding sign-ups there go first. Every application is reviewed by a person. The moment you are approved, your founding status page opens here, and we will email you at ${esc(u.email)} the moment ${esc(u.city)} opens. Sign back in any time to check your status.${state.boot && state.boot.email && state.boot.email.enabled ? ` A confirmation email is on its way to ${esc(u.email)}.` : ""}`
-        : `Every application is reviewed by a person. The moment you are approved, your founding status page opens here, and we will email you at ${esc(u.email)} when ${esc(u.market)} opens to businesses in the next 30 to 90 days. Sign back in any time to check your status.${state.boot && state.boot.email && state.boot.email.enabled ? ` A confirmation email is on its way to ${esc(u.email)}.` : ""}`
-      : "Sign back in any time to check your status; your dashboard opens the moment you are approved."}</p>
+    <p class="muted">${isUnlisted
+      ? `SIGNL is not open in ${esc(u.city)} yet, and your sign-up counts toward opening it: we open new markets where creator sign-ups pile up, and founding sign-ups there go first. Every application is reviewed by a person. The moment you are approved, your founding status page opens here, and we will email you at ${esc(u.email)} the moment ${esc(u.city)} opens. Sign back in any time to check your status.${state.boot && state.boot.email && state.boot.email.enabled ? ` A confirmation email is on its way to ${esc(u.email)}.` : ""}`
+      : `Every application is reviewed by a person. The moment you are approved, your founding status page opens here, and we will email you at ${esc(u.email)} when ${esc(u.market)} opens to businesses in the next 30 to 90 days. Sign back in any time to check your status.${state.boot && state.boot.email && state.boot.email.enabled ? ` A confirmation email is on its way to ${esc(u.email)}.` : ""}`}</p>
     ${isCreator && !(u.creator && u.creator.hasPhoto) ? `
     <div style="text-align:left">
       <div class="field"><label>Add your profile photo now (optional)</label><input type="file" id="pending-photo" accept="image/png,image/jpeg,image/webp"></div>
@@ -971,6 +1018,7 @@ function renderDashboard() {
   if (u.role === "admin" && state.preview) return renderPreview();
   if (u.role === "admin") return renderAdmin();
   if (u.role === "creator") return renderCreatorDash();
+  if (isFoundingBusiness(u)) return renderBusinessFoundingStatus();
   return renderBusinessDash();
 }
 
@@ -2588,7 +2636,7 @@ async function loadBusinessHome() {
       <h4>Plan pace</h4>
       <div class="flex-between"><span class="small"><strong>${esc(d.plan.name)} plan:</strong> ${h.visitsUsed} of ${h.visitsAllowance} visits booked this month</span><span class="badge ${h.planPacePct >= 100 ? "warn" : "info"}">${h.planPacePct}%</span></div>
       <div class="meter" style="margin-top:8px"><i style="width:${Math.min(100, h.planPacePct)}%"></i></div>
-      <p class="small muted">Billing: ${esc(d.business.billingStatus)}${d.business.paymentLink ? ` When your market launches, activate here: <a href="${esc(d.business.paymentLink)}" target="_blank" rel="noopener">pay securely through Stripe</a>. Nothing is charged before then.` : ""}</p>
+      <p class="small muted">Billing: ${esc(d.business.billingStatus)} Payment stays concierge: SIGNL sends the payment step by hand, and nothing is charged before activation.</p>
       ${content ? `<h4>Content that is working</h4>
       <p class="small muted">Delivered posts ranked by the register action they produced: the code tallies reported on each visit, with views as supporting detail.</p>${content}` : ""}
       ${next ? `<h4>Next visits</h4>${next}` : ""}
@@ -3178,11 +3226,11 @@ function renderPlanTab() {
     <h3>Your plan</h3>
     <p>Current plan: <strong>${esc(u.business.planName)}</strong>, selected ${fmtDate(u.business.planSelectedAt)}.</p>
     <p class="muted">${esc(u.business.billingStatus)}</p>
-    ${u.business.paymentLink ? `<p class="small">Activation at launch is paid securely through Stripe: <a href="${esc(u.business.paymentLink)}" target="_blank" rel="noopener">your plan's payment link</a>. Nothing is charged before your market launches, and SIGNL never takes a card in the app.</p>` : ""}
+    <p class="small">Payment stays concierge: when billing starts, Jeff sends the payment step by hand. Nothing is charged before then, and SIGNL never takes a card in the app.</p>
     <div class="plan-cards">${plans}</div>
     <input type="hidden" id="me-plan" value="${esc(u.business.plan)}">
     <button class="btn mt" onclick="savePlan()">Save plan selection</button>
-    <p class="small muted mt">Card billing through Stripe is wired in at launch. Until then your selection is recorded and your founding spot is held.</p>
+    <p class="small muted mt">Until billing starts, your selection is recorded and your founding pricing stays locked while you stay subscribed.</p>
   </div>
   <div class="panel mt">
     <h3>Your public review pages</h3>
@@ -3535,15 +3583,15 @@ async function loadMarkets() {
   try {
     const data = await api("GET", "/admin/markets");
     el.innerHTML = `
-      <p class="muted small">A market that is not live shows creators their founding status page only: no offers, no discovery, no business accounts. Activating a market opens the marketplace there. Founding creators keep sign-up-order priority in discovery.</p>
-      ${data.testMode ? `<div class="error-box">TEST MODE is on (SIGNL_TEST_ALLOW_BUSINESS): every market reads live and business registration is open. Never run production this way.</div>` : ""}
+      <p class="muted small">A market that is not live shows creators their founding status page only: no offers, no discovery. Activating a market opens publishing and bookings there, but it does NOT activate founding businesses: business activation is a separate admin action, per business or for every founding business in a market. Founding creators keep sign-up-order priority in discovery.</p>
+      ${data.testMode ? `<div class="error-box">TEST MODE is on (SIGNL_TEST_ALLOW_BUSINESS): every market reads live. Never run production this way.</div>` : ""}
       <div class="table-wrap panel"><table>
         <tr><th>Market</th><th>Status</th><th>Approved creators</th><th>Pending creators</th><th>Approved businesses</th><th>Action</th></tr>
         ${data.markets.map((m) => `<tr>
           <td><strong>${esc(m.name)}</strong><br><span class="muted small">${esc(m.label)} &middot; ${esc(m.country || "United States")}</span></td>
           <td>${m.live ? `<span class="badge ok">Live</span>` : `<span class="badge info">Founding only</span>`}</td>
-          <td>${m.creatorsApproved}</td><td>${m.creatorsPending}</td><td>${m.businessesApproved}</td>
-          <td><button class="btn small-btn ${m.live ? "danger" : ""}" onclick="toggleMarket('${esc(m.name)}', ${m.live ? "false" : "true"})">${m.live ? "Deactivate" : "Activate market"}</button></td>
+          <td>${m.creatorsApproved}</td><td>${m.creatorsPending}</td><td>${m.businessesApproved}<br><span class="muted small">Founding list: ${m.businessesFounding || 0} &middot; Active: ${m.businessesActive || 0}</span></td>
+          <td><button class="btn small-btn ${m.live ? "danger" : ""}" onclick="toggleMarket('${esc(m.name)}', ${m.live ? "false" : "true"})">${m.live ? "Deactivate" : "Activate market"}</button>${m.businessesFounding ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="activateMarketBusinesses('${esc(m.name)}')">Activate founding businesses (${m.businessesFounding})</button>` : ""}</td>
         </tr>`).join("")}
       </table></div>`;
   } catch (err) {
@@ -3552,9 +3600,18 @@ async function loadMarkets() {
 }
 
 async function toggleMarket(market, live) {
-  if (!confirm(`${live ? "Activate" : "Deactivate"} the ${market} market?`)) return;
+  if (!confirm(`${live ? "Activate" : "Deactivate"} the ${market} market?${live ? " This opens publishing and bookings there. It does not activate founding businesses; that stays a separate action." : ""}`)) return;
   try {
     await api("POST", "/admin/markets/toggle", { market, live });
+    loadMarkets();
+  } catch (err) { alert(err.message); }
+}
+
+async function activateMarketBusinesses(market) {
+  if (!confirm(`Activate every approved founding business in ${market}? Each one gets full product access (browse, favorites, drafts). Publishing still follows the market live flag.`)) return;
+  try {
+    const data = await api("POST", "/admin/businesses/activate-market", { market });
+    alert(`Activated ${data.activatedCount} founding business${data.activatedCount === 1 ? "" : "es"} in ${market}.`);
     loadMarkets();
   } catch (err) { alert(err.message); }
 }
@@ -3567,19 +3624,22 @@ async function loadApplications() {
       const standing = u.role === "creator"
         ? (u.foundingPriority ? `<br><span class="badge tier">Founding priority #${u.foundingPriority}</span>` : u.queuePosition ? `<br><span class="badge info">Queue #${u.queuePosition} in market</span>` : "")
         : "";
+      const businessState = u.role === "business"
+        ? `<br><span class="badge ${businessAccessState(u) === "active" ? "ok" : "info"}">${businessAccessState(u) === "active" ? "Active" : "Founding list"}</span>`
+        : "";
       const detail = u.role === "creator" && u.creator
         ? `@${esc(u.creator.handle)} &middot; ${fmtNum(u.creator.followerCount)} followers &middot; ${esc(u.creator.tierBand)} &middot; Local: ${u.creator.localAudiencePct === null ? "not reported" : u.creator.localAudiencePct + "% (Self-reported)"} &middot; ${(u.creator.categories || []).map(esc).join(", ")} &middot; Photo: ${u.creator.hasPhoto ? "yes" : "no"} &middot; Socials: IG${u.creator.tiktokHandle ? ", TikTok" : ""}${u.creator.youtubeChannel ? ", YouTube" : ""}${u.creator.facebookUrl ? ", Facebook" : ""}${u.creator.xUrl ? ", X" : ""}${u.creator.linkedinUrl ? ", LinkedIn" : ""}${u.creator.neighborhood ? ` &middot; Area: ${esc(u.creator.neighborhood)}` : ""}${u.referredBy ? ` &middot; via @${esc(u.referredBy)}` : ""}${u.momentum && u.momentum.signups ? ` &middot; Momentum: ${u.momentum.points} pts (${u.momentum.signups} joined, ${u.momentum.approved} approved)` : ""}`
         : u.role === "business" && u.business
-          ? `${esc(u.business.businessName)} &middot; ${esc(u.business.category)} &middot; ${esc(u.business.planName)}`
+          ? `${esc(u.business.businessName)} &middot; ${esc(u.business.category)} &middot; ${esc(u.business.planName)} &middot; Access: ${businessAccessState(u) === "active" ? "Active" : "Founding list"}`
           : "";
       return `<tr>
         <td><strong>${esc(u.name)}</strong><br><span class="muted small">${esc(u.email)}</span></td>
-        <td>${esc(u.role)}${standing}</td><td>${esc(u.market)}<br><span class="muted small">${esc(u.city || "")}${u.market === unlistedLabel() ? (u.country ? ", " + esc(u.country) : u.state ? ", " + esc(u.state) : "") : (u.state ? ", " + esc(u.state) : "")}</span></td>
+        <td>${esc(u.role)}${standing}${businessState}</td><td>${esc(u.market)}<br><span class="muted small">${esc(u.city || "")}${u.market === unlistedLabel() ? (u.country ? ", " + esc(u.country) : u.state ? ", " + esc(u.state) : "") : (u.state ? ", " + esc(u.state) : "")}</span></td>
         <td class="small">${detail}</td>
         <td>${fmtDate(u.createdAt)}</td>
         <td>${u.status === "pending"
           ? `<button class="btn small-btn" onclick="reviewApp('${u.id}','approve')">Approve</button> <button class="btn small-btn danger" onclick="reviewApp('${u.id}','reject')">Reject</button>`
-          : `<span class="badge ${u.status === "approved" ? "ok" : "bad"}">${esc(u.status)}</span>${u.role === "creator" && u.tester ? ` <span class="badge warn">Tester</span>` : ""}${u.role === "creator" && u.status === "approved" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="setTester('${u.id}', ${u.tester ? "false" : "true"})">${u.tester ? "Move to roster" : "Move to Tester"}</button>` : ""}`}${u.role === "business" && u.business ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleReviewLinks('${u.id}')">Review links</button><div id="rl-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px">${["google", "yelp", "tripadvisor", "facebook"].map((k) => `<div class="field"><label>${esc(k)}</label><input id="rl-${k}-${u.id}" type="url" value="${esc((u.business.reviewLinks || {})[k] || "")}" placeholder="https://"></div>`).join("")}<button class="btn small-btn" onclick="saveReviewLinks('${u.id}')">Save review links</button></div><br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleDiscountEditor('${u.id}')">Code discount</button><div id="disc-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px"><label style="font-weight:500"><input type="checkbox" id="disc-enabled-${u.id}" style="width:auto" ${u.business.discountEnabled ? "checked" : ""}> Code discounts on (business's opt-in)</label><div class="field"><label>Discount percent (5 to 50)</label><input id="disc-pct-${u.id}" type="number" min="5" max="50" step="1" value="${esc(String(u.business.discountPct == null ? 20 : u.business.discountPct))}"></div><button class="btn small-btn" onclick="saveDiscountSetting('${u.id}')">Save code discount</button></div>` : ""}</td>
+          : `<span class="badge ${u.status === "approved" ? "ok" : "bad"}">${esc(u.status)}</span>${u.role === "creator" && u.tester ? ` <span class="badge warn">Tester</span>` : ""}${u.role === "creator" && u.status === "approved" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="setTester('${u.id}', ${u.tester ? "false" : "true"})">${u.tester ? "Move to roster" : "Move to Tester"}</button>` : ""}`}${u.role === "business" && u.status === "approved" && businessAccessState(u) !== "active" ? `<br><button class="btn small-btn" style="margin-top:6px" onclick="activateBusiness('${u.id}')">Activate business</button>` : ""}${u.role === "business" && u.business ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleReviewLinks('${u.id}')">Review links</button><div id="rl-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px">${["google", "yelp", "tripadvisor", "facebook"].map((k) => `<div class="field"><label>${esc(k)}</label><input id="rl-${k}-${u.id}" type="url" value="${esc((u.business.reviewLinks || {})[k] || "")}" placeholder="https://"></div>`).join("")}<button class="btn small-btn" onclick="saveReviewLinks('${u.id}')">Save review links</button></div><br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleDiscountEditor('${u.id}')">Code discount</button><div id="disc-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px"><label style="font-weight:500"><input type="checkbox" id="disc-enabled-${u.id}" style="width:auto" ${u.business.discountEnabled ? "checked" : ""}> Code discounts on (business's opt-in)</label><div class="field"><label>Discount percent (5 to 50)</label><input id="disc-pct-${u.id}" type="number" min="5" max="50" step="1" value="${esc(String(u.business.discountPct == null ? 20 : u.business.discountPct))}"></div><button class="btn small-btn" onclick="saveDiscountSetting('${u.id}')">Save code discount</button></div>` : ""}</td>
       </tr>`;
     };
     el.innerHTML = `
@@ -3611,6 +3671,18 @@ async function loadLeaderboard() {
 async function reviewApp(userId, decision) {
   try {
     await api("POST", "/admin/review", { userId, decision });
+    loadApplications();
+  } catch (err) { alert(err.message); }
+}
+
+// Business activation: approval alone leaves a business on the
+// founding list. This separate action flips it to full access
+// (browse, favorites, drafts); publishing still follows the
+// market live flag.
+async function activateBusiness(userId) {
+  if (!confirm("Activate this business? It gets full product access: browse, favorites, and draft offers. Publishing still follows the market live flag.")) return;
+  try {
+    await api("POST", "/admin/businesses/activate", { userId });
     loadApplications();
   } catch (err) { alert(err.message); }
 }
