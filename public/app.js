@@ -561,7 +561,7 @@ async function signOut() {
 
 function suggestedTierId(followers) {
   const n = Number(followers) || 0;
-  if (n >= 15000) return "Creators";
+  if (n >= 15000) return "Headliners";
   if (n >= 2000) return "Locals";
   return "Neighbors";
 }
@@ -588,11 +588,11 @@ function syncSuggestedTier() {
   syncPaidOption();
 }
 
-// Paid cash campaigns are a Creators-tier option: the checkbox block
-// only appears while the automatic band is Creators.
+// Paid cash campaigns are a Headliners-tier option: the checkbox block
+// only appears while the automatic band is Headliners.
 function syncPaidOption() {
   const wrap = document.getElementById("jc-paid-wrap");
-  if (wrap) wrap.style.display = suggestedTierId(signupStackTotal()) === "Creators" ? "" : "none";
+  if (wrap) wrap.style.display = suggestedTierId(signupStackTotal()) === "Headliners" ? "" : "none";
 }
 
 function profileStackTotal() {
@@ -602,7 +602,7 @@ function profileStackTotal() {
 
 function syncPaidOptionProfile() {
   const wrap = document.getElementById("p-paid-wrap");
-  if (wrap) wrap.style.display = suggestedTierId(profileStackTotal()) === "Creators" ? "" : "none";
+  if (wrap) wrap.style.display = suggestedTierId(profileStackTotal()) === "Headliners" ? "" : "none";
 }
 
 function renderJoinCreator() {
@@ -646,7 +646,7 @@ function renderJoinCreator() {
       <div class="field"><label>LinkedIn profile (optional)</label><input id="jc-linkedin" placeholder="linkedin.com/in/yourname or full URL"></div>
       <div class="form-2col">
         <div class="field"><label>Instagram followers (required)</label><input type="number" id="jc-followers" min="0" required placeholder="For example 8400" oninput="syncSuggestedTier()"></div>
-        <div class="field"><label>Your tier band</label><p id="jc-tier-line" style="margin:6px 0">Your band is set automatically from your total audience across platforms.</p><p class="small muted">Neighbors 500 to 2k &middot; Locals 2k to 15k &middot; Creators 15k and up. Nobody picks their own band; it updates itself as your counts change.</p></div>
+        <div class="field"><label>Your tier band</label><p id="jc-tier-line" style="margin:6px 0">Your band is set automatically from your total audience across platforms.</p><p class="small muted">Neighbors 500 to 2k &middot; Locals 2k to 15k &middot; Headliners 15k and up. Nobody picks their own band; it updates itself as your counts change.</p></div>
       </div>
       <div class="field"><label>Your audience on other platforms (optional)</label>
         <div class="form-2col">
@@ -669,7 +669,7 @@ function renderJoinCreator() {
       <div class="field"><label>What do you create in? (pick at least one)</label><div class="checkrow">${cats}</div></div>
       <div class="field"><label>Comps you would accept (optional)</label><div class="checkrow">${comps}</div></div>
       <div class="field" id="jc-paid-wrap" style="display:none">
-        <label style="font-weight:500"><input type="checkbox" id="jc-paid" style="width:auto"> <strong>Paid cash campaigns</strong> (Creators tier): on top of comps, businesses can hire me for paid campaigns when a business runs one.</label>
+        <label style="font-weight:500"><input type="checkbox" id="jc-paid" style="width:auto"> <strong>Paid cash campaigns</strong> (Headliners tier): on top of comps, businesses can hire me for paid campaigns when a business runs one.</label>
         <p class="small muted">Paid campaigns depend on the business and the campaign. Comps are always part of SIGNL; cash work is extra when it is offered.</p>
       </div>
       <div class="field"><label>Short bio</label><textarea id="jc-bio" rows="2" placeholder="What do you post, where do you go, what do you love locally?"></textarea></div>
@@ -744,7 +744,7 @@ async function doRegisterCreator(e) {
   if (!document.getElementById("jc-agree-terms").checked) { errBox("Please agree to the Terms of Service and email consent so we can reach you at launch."); return false; }
   const autoBand = suggestedTierId(signupStackTotal());
   const paidBox = document.getElementById("jc-paid");
-  if (autoBand === "Creators" && paidBox && paidBox.checked && !comps.includes(PAID_COMP)) comps.push(PAID_COMP);
+  if (autoBand === "Headliners" && paidBox && paidBox.checked && !comps.includes(PAID_COMP)) comps.push(PAID_COMP);
   const topCities = document.getElementById("jc-topcities").value.split(",").map((x) => x.trim()).filter(Boolean);
   const marketVal = document.getElementById("jc-market").value;
   const isUnlisted = marketVal === unlistedLabel();
@@ -1371,8 +1371,8 @@ function creatorProfileHtml(u) {
       <div class="field"><label>Top audience cities</label><input id="p-topcities" value="${esc((c.topAudienceCities || []).join(", "))}" placeholder="Up to 5, comma separated"></div>
       <div class="field"><label>What you create in</label><div class="checkrow">${cats}</div></div>
       <div class="field"><label>Comps you would accept</label><div class="checkrow">${comps}</div></div>
-      <div class="field" id="p-paid-wrap" style="display:${c.tierBand === "Creators" ? "" : "none"}">
-        <label style="font-weight:500"><input type="checkbox" id="p-paid" style="width:auto" ${c.openToPaidCampaigns ? "checked" : ""}> <strong>Paid cash campaigns</strong> (Creators tier): businesses can hire me for paid campaigns when a business runs one, on top of comps.</label>
+      <div class="field" id="p-paid-wrap" style="display:${c.tierBand === "Headliners" ? "" : "none"}">
+        <label style="font-weight:500"><input type="checkbox" id="p-paid" style="width:auto" ${c.openToPaidCampaigns ? "checked" : ""}> <strong>Paid cash campaigns</strong> (Headliners tier): businesses can hire me for paid campaigns when a business runs one, on top of comps.</label>
       </div>
       <div class="showcase-block">
         <h4>How businesses can book you</h4>
@@ -1428,7 +1428,7 @@ async function doUpdateCreator(e) {
   const cats = Array.from(document.querySelectorAll("input[name=p-cat]:checked")).map((x) => x.value);
   const comps = Array.from(document.querySelectorAll("input[name=p-comp]:checked")).map((x) => x.value);
   const paidBox = document.getElementById("p-paid");
-  if (suggestedTierId(profileStackTotal()) === "Creators" && paidBox && paidBox.checked && !comps.includes(PAID_COMP)) comps.push(PAID_COMP);
+  if (suggestedTierId(profileStackTotal()) === "Headliners" && paidBox && paidBox.checked && !comps.includes(PAID_COMP)) comps.push(PAID_COMP);
   const pctRaw = document.getElementById("p-localpct").value;
   try {
     const uploaded = await uploadPhotoInput("p-photo");
@@ -1935,7 +1935,7 @@ function compSuggestions(tierBand) {
   ];
   if (tierBand === "Neighbors") return [all[0], { label: "Dessert + drinks", comp: "Dessert and drinks for one, on us", cap: 35 }];
   if (tierBand === "Locals") return [all[1], { label: "Brunch for two", comp: "Brunch for two, on us", cap: 80 }];
-  if (tierBand === "Creators") return [all[2], { label: "Meal for two + signature", comp: "Meal for two plus a signature item, on us", cap: 125 }];
+  if (tierBand === "Headliners") return [all[2], { label: "Meal for two + signature", comp: "Meal for two plus a signature item, on us", cap: 125 }];
   return all;
 }
 

@@ -208,9 +208,9 @@ the sweep) to prove the whole compliance ladder deterministically.
 
 - Mobile nav is an app-style fixed bottom tab bar under 720px; the top
   link row is desktop-only (it wrapped and broke on phones).
-- Creators tier (15k+) can opt into "Paid cash campaigns" on top of
+- Headliners tier (15k+) can opt into "Paid cash campaigns" on top of
   comps, at sign-up and in profile edit. Enforced server-side; dropping
-  out of the Creators tier removes the option. Businesses see an
+  out of the Headliners tier removes the option. Businesses see an
   "Open to paid campaigns" badge on the creator card.
 - Creator-facing founding standing is BANDED: "in the first 100" (then
   200, 300...). Exact queue positions and market signup counts are

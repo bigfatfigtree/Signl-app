@@ -204,24 +204,24 @@ try {
   const noAgreeRes = await noAgree("POST", "/api/auth/register", badPayload);
   check("registration without the post-compliance agreement is refused", noAgreeRes.status === 400, `${noAgreeRes.status} ${JSON.stringify(noAgreeRes.data)}`);
 
-  const stacked = await registerCreator({ tierBand: "Creators", followerCount: 900, audienceStack: { instagram: 900, tiktok: 800 } });
+  const stacked = await registerCreator({ tierBand: "Headliners", followerCount: 900, audienceStack: { instagram: 900, tiktok: 800 } });
   check("stacked registration accepted", stacked.res.status === 201, JSON.stringify(stacked.res.data));
   check("totalAudience is the stack sum (900 + 800 = 1700)", stacked.user.creator.totalAudience === 1700, JSON.stringify(stacked.user.creator));
-  check("sign-up band is automatic: claiming Creators with a 1700 total lands in Neighbors", stacked.user.creator.tierBand === "Neighbors" && stacked.user.creator.computedTier === "Neighbors", JSON.stringify({ tierBand: stacked.user.creator.tierBand, computedTier: stacked.user.creator.computedTier }));
+  check("sign-up band is automatic: claiming Headliners with a 1700 total lands in Neighbors", stacked.user.creator.tierBand === "Neighbors" && stacked.user.creator.computedTier === "Neighbors", JSON.stringify({ tierBand: stacked.user.creator.tierBand, computedTier: stacked.user.creator.computedTier }));
   check("stored stack keeps both platforms", stacked.user.creator.audienceStack.instagram === 900 && stacked.user.creator.audienceStack.tiktok === 800);
 
-  const claimSmall = await registerCreator({ tierBand: "Creators", followerCount: 900 });
-  check("sign-up claiming Creators with 900 total lands in Neighbors (client tierBand ignored)", claimSmall.user.creator.tierBand === "Neighbors" && claimSmall.user.creator.totalAudience === 900, JSON.stringify(claimSmall.user.creator));
+  const claimSmall = await registerCreator({ tierBand: "Headliners", followerCount: 900 });
+  check("sign-up claiming Headliners with 900 total lands in Neighbors (client tierBand ignored)", claimSmall.user.creator.tierBand === "Neighbors" && claimSmall.user.creator.totalAudience === 900, JSON.stringify(claimSmall.user.creator));
   const stackBig = await registerCreator({ followerCount: 900, audienceStack: { instagram: 900, tiktok: 20000 } });
-  check("sign-up stack counts rule the band: 900 IG + 20k TikTok lands in Creators automatically", stackBig.user.creator.tierBand === "Creators" && stackBig.user.creator.totalAudience === 20900, JSON.stringify(stackBig.user.creator));
+  check("sign-up stack counts rule the band: 900 IG + 20k TikTok lands in Headliners automatically", stackBig.user.creator.tierBand === "Headliners" && stackBig.user.creator.totalAudience === 20900, JSON.stringify(stackBig.user.creator));
 
   const legacy = await registerCreator({ followerCount: 3000 });
   check("legacy profile (no stack): followerCount becomes the Instagram count", legacy.user.creator.totalAudience === 3000 && legacy.user.creator.tierBand === "Locals", JSON.stringify(legacy.user.creator));
 
   // PATCH: counts changes re-derive the tier; a band sent with a save is ignored.
   const patch1 = await stacked.client("PATCH", "/api/me/profile", { audienceStack: { instagram: 900, tiktok: 800, youtube: 20000 } });
-  check("adding YouTube 20k re-derives the tier from the new total (21700 = Creators)", patch1.data.user.creator.tierBand === "Creators" && patch1.data.user.creator.totalAudience === 21700, JSON.stringify(patch1.data.user.creator));
-  const patch2 = await legacy.client("PATCH", "/api/me/profile", { tierBand: "Creators", audienceStack: { instagram: 3000 } });
+  check("adding YouTube 20k re-derives the tier from the new total (21700 = Headliners)", patch1.data.user.creator.tierBand === "Headliners" && patch1.data.user.creator.totalAudience === 21700, JSON.stringify(patch1.data.user.creator));
+  const patch2 = await legacy.client("PATCH", "/api/me/profile", { tierBand: "Headliners", audienceStack: { instagram: 3000 } });
   check("a band sent with a save is ignored: 3000 total stays Locals (fully automatic)", patch2.data.user.creator.tierBand === "Locals", patch2.data.user.creator.tierBand);
   const patch3 = await legacy.client("PATCH", "/api/me/profile", { audienceStack: { instagram: 100 } });
   check("a counts-only save re-derives from the new total (100 total = the floor band, Neighbors)", patch3.data.user.creator.totalAudience === 100 && patch3.data.user.creator.tierBand === "Neighbors", JSON.stringify({ total: patch3.data.user.creator.totalAudience, tier: patch3.data.user.creator.tierBand }));

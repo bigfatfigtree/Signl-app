@@ -5,7 +5,7 @@ const crypto = require("crypto");
 const store = require("./store");
 const auth = require("./auth");
 const { logEvent, listEvents } = require("./events");
-const { MARKETS, TIERS, CREATOR_CATEGORIES, COMP_CATEGORIES, BUSINESS_CATEGORIES, PLANS, tierForFollowers } = require("./markets");
+const { MARKETS, TIERS, CREATOR_CATEGORIES, COMP_CATEGORIES, BUSINESS_CATEGORIES, PLANS, tierForFollowers, normalizeTierBand } = require("./markets");
 const { computeLocalImpactScore, summarizeHistory } = require("./score");
 const { emailEnabled, sendEmail } = require("./email");
 
@@ -26,7 +26,7 @@ const { emailEnabled, sendEmail } = require("./email");
 const TEST_MODE = process.env.SIGNL_TEST_ALLOW_BUSINESS === "1";
 const LAUNCH_WINDOW_TEXT = "30 to 90 days";
 const TERMS_VERSION = "2026-10-19";
-// Creators tier (15k+) only: on top of comps, these creators can also be
+// Headliners tier (15k+) only: on top of comps, these creators can also be
 // hired for paid cash campaigns when a business runs one (Jeff, 2026-10-18).
 const PAID_COMP = "Paid cash campaigns";
 // Anyone, anywhere can sign up (Jeff, 2026-10-18): a creator whose city
@@ -812,8 +812,8 @@ function greetingName(user) {
 }
 
 function paidCampaignLine(user) {
-  if (!user || !user.creator || user.creator.tierBand !== "Creators") return null;
-  return "One more thing, because you are in the Creators tier (15k+ followers): you are also eligible for paid campaigns, where a business pays you cash on top of the comped experience. Creators tier members are first in line for paid campaigns when they open in your market.";
+  if (!user || !user.creator || normalizeTierBand(user.creator.tierBand) !== "Headliners") return null;
+  return "One more thing, because you are in the Headliners tier (15k+ followers): you are also eligible for paid campaigns, where a business pays you cash on top of the comped experience. Headliners tier members are first in line for paid campaigns when they open in your market.";
 }
 
 function signupConfirmationEmail(user, band) {
@@ -1312,7 +1312,7 @@ async function discoverCards(query, viewer) {
   let creators = users.filter((u) => isRosterCreator(u) && standingState(u) !== "banned");
   const market = query.market || (viewer && viewer.role === "business" ? viewer.market : null);
   if (market) creators = creators.filter((u) => u.market === (marketByName(market) || {}).name);
-  if (query.tier) creators = creators.filter((u) => u.creator && u.creator.tierBand === query.tier);
+  if (query.tier) creators = creators.filter((u) => u.creator && normalizeTierBand(u.creator.tierBand) === normalizeTierBand(query.tier));
   if (query.category) creators = creators.filter((u) => u.creator && u.creator.categories.includes(query.category));
   if (query.compCategory) creators = creators.filter((u) => u.creator && (u.creator.compCategories || []).includes(query.compCategory));
   if (query.neighborhood) {
@@ -1452,7 +1452,7 @@ async function publicProfilePayload(u) {
     unlisted,
     city: u.city || "",
     neighborhood: c.neighborhood || "",
-    tierBand: c.tierBand || null,
+    tierBand: normalizeTierBand(c.tierBand) || null,
     followerCount: c.followerCount || 0,
     totalAudience: audience.total,
     audienceStack: audience.platforms,
@@ -2595,7 +2595,7 @@ async function previewDashboard() {
       creatorId: creator.id,
       creatorName: creator.name,
       creatorHandle: creator.creator ? creator.creator.handle : "",
-      creatorTier: creator.creator ? creator.creator.tierBand : null,
+      creatorTier: creator.creator ? normalizeTierBand(creator.creator.tierBand) : null,
       title: brief.title,
       whatComped: brief.whatComped,
       dollarCap: brief.dollarCap,
@@ -2937,11 +2937,11 @@ async function handleRegister(event) {
       categories,
       compCategories: (() => {
         const list = cleanStringList(b.compCategories, COMP_CATEGORIES, 8);
-        // Paid cash campaigns are a Creators-tier (15k+) option only.
-        if (tier === "Creators" && Array.isArray(b.compCategories) && b.compCategories.includes(PAID_COMP) && !list.includes(PAID_COMP)) list.push(PAID_COMP);
+        // Paid cash campaigns are a Headliners-tier (15k+) option only.
+        if (tier === "Headliners" && Array.isArray(b.compCategories) && b.compCategories.includes(PAID_COMP) && !list.includes(PAID_COMP)) list.push(PAID_COMP);
         return list;
       })(),
-      openToPaidCampaigns: tier === "Creators" && Array.isArray(b.compCategories) && b.compCategories.includes(PAID_COMP),
+      openToPaidCampaigns: tier === "Headliners" && Array.isArray(b.compCategories) && b.compCategories.includes(PAID_COMP),
       // Paid lane (Jeff, 2026-10-19): every creator starts open to
       // comp visits (the default driver) with NO paid rate listed.
       // Both are hers to change in profile settings: compOpen false
@@ -3017,7 +3017,7 @@ async function handleRegister(event) {
     market: user.market,
     data:
       role === "creator"
-        ? { handle: user.creator.handle, city: user.city, neighborhood: user.creator.neighborhood, state: user.state, country: user.country, unlisted: user.market === UNLISTED, followerCount: user.creator.followerCount, audienceStack: user.creator.audienceStack, totalAudience: user.creator.totalAudience, tierBand: user.creator.tierBand, suggestedTier: user.creator.suggestedTier, localAudiencePct: user.creator.localAudiencePct, localAudienceSource: user.creator.localAudienceSource, categories: user.creator.categories, compCategories: user.creator.compCategories, openToPaidCampaigns: user.creator.openToPaidCampaigns, agreedPostCompliance: true, termsVersion: TERMS_VERSION, marketingEmailConsent: true, ...(user.referredBy ? { referredBy: user.referredBy } : {}) }
+        ? { handle: user.creator.handle, city: user.city, neighborhood: user.creator.neighborhood, state: user.state, country: user.country, unlisted: user.market === UNLISTED, followerCount: user.creator.followerCount, audienceStack: user.creator.audienceStack, totalAudience: user.creator.totalAudience, tierBand: normalizeTierBand(user.creator.tierBand), suggestedTier: normalizeTierBand(user.creator.suggestedTier), localAudiencePct: user.creator.localAudiencePct, localAudienceSource: user.creator.localAudienceSource, categories: user.creator.categories, compCategories: user.creator.compCategories, openToPaidCampaigns: user.creator.openToPaidCampaigns, agreedPostCompliance: true, termsVersion: TERMS_VERSION, marketingEmailConsent: true, ...(user.referredBy ? { referredBy: user.referredBy } : {}) }
         : { businessName: user.business.businessName, category: user.business.category, plan: user.business.plan, planPriceMonthly: user.business.planPriceMonthly, ...(user.referredBy ? { referredBy: user.referredBy } : {}) },
   });
   if (role === "creator") {
@@ -3038,7 +3038,7 @@ async function handleRegister(event) {
         audienceStack: user.creator.audienceStack,
         totalAudience: user.creator.totalAudience,
         avgViews: user.creator.avgViews,
-        tierBand: user.creator.tierBand,
+        tierBand: normalizeTierBand(user.creator.tierBand),
         localAudiencePct: user.creator.localAudiencePct,
         localAudienceSource: user.creator.localAudienceSource,
         categories: user.creator.categories,
@@ -3325,11 +3325,11 @@ async function route(event) {
       if (Array.isArray(b.categories)) c.categories = b.categories.filter((x) => CREATOR_CATEGORIES.includes(x));
       if (Array.isArray(b.compCategories)) {
         // Paid cash campaigns stay selectable only while the creator is
-        // in the Creators tier; dropping a tier drops the option.
-        c.compCategories = b.compCategories.filter((x) => COMP_CATEGORIES.includes(x) || (x === PAID_COMP && c.tierBand === "Creators"));
+        // in the Headliners tier; dropping a tier drops the option.
+        c.compCategories = b.compCategories.filter((x) => COMP_CATEGORIES.includes(x) || (x === PAID_COMP && c.tierBand === "Headliners"));
         c.openToPaidCampaigns = c.compCategories.includes(PAID_COMP);
       }
-      if (c.tierBand !== "Creators" && Array.isArray(c.compCategories) && c.compCategories.includes(PAID_COMP)) {
+      if (c.tierBand !== "Headliners" && Array.isArray(c.compCategories) && c.compCategories.includes(PAID_COMP)) {
         c.compCategories = c.compCategories.filter((x) => x !== PAID_COMP);
         c.openToPaidCampaigns = false;
       }
@@ -4098,7 +4098,7 @@ async function route(event) {
   //   ?market=        market name (default: the business's own market)
   //   ?neighborhood=  case-insensitive text match on the creator's
   //                   neighborhood/area (also matches their city)
-  //   ?tier=          tier band (Neighbors / Locals / Creators)
+  //   ?tier=          tier band (Neighbors / Locals / Headliners)
   //   ?category=      a creator content category
   //   ?compCategory=  a comp category the creator accepts (business
   //                   category fit: "what would they take from us")

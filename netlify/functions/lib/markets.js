@@ -290,14 +290,21 @@ const MARKETS = [
 const TIERS = [
   { id: "Neighbors", label: "Neighbors", min: 500, max: 2000, blurb: "Everyday locals. Comp-only visits." },
   { id: "Locals", label: "Locals", min: 2000, max: 15000, blurb: "Established local voices. Comp visits, first in line for more." },
-  { id: "Creators", label: "Creators", min: 15000, max: Infinity, blurb: "Top local creators. Comp visits plus first in line for paid cash campaigns." },
+  { id: "Headliners", label: "Headliners", min: 15000, max: Infinity, blurb: "Top local creators. Comp visits plus first in line for paid cash campaigns." },
 ];
 
 function tierForFollowers(n) {
-  if (n >= 15000) return "Creators";
+  if (n >= 15000) return "Headliners";
   if (n >= 2000) return "Locals";
   if (n >= 500) return "Neighbors";
   return "Neighbors";
+}
+
+// The 15k+ band was renamed Creators -> Headliners (Jeff, 2026-10-19).
+// Records stored before the rename still carry "Creators"; normalize
+// wherever a stored band is read so legacy records behave identically.
+function normalizeTierBand(b) {
+  return b === "Creators" ? "Headliners" : b;
 }
 
 // What creators create in (profile builder, launch spec 2026-10-18).
@@ -370,4 +377,4 @@ const PLANS = [
   },
 ];
 
-module.exports = { MARKETS, TIERS, CREATOR_CATEGORIES, COMP_CATEGORIES, BUSINESS_CATEGORIES, PLANS, tierForFollowers };
+module.exports = { MARKETS, TIERS, CREATOR_CATEGORIES, COMP_CATEGORIES, BUSINESS_CATEGORIES, PLANS, tierForFollowers, normalizeTierBand };

@@ -101,7 +101,7 @@ try {
   check("creator categories are the launch set", Array.isArray(boot.data.creatorCategories) && boot.data.creatorCategories.includes("Beauty & Grooming") && boot.data.creatorCategories.includes("Food & Drink") && !boot.data.creatorCategories.includes("Lifestyle"));
   check("comp categories published", Array.isArray(boot.data.compCategories) && boot.data.compCategories.includes("Restaurant meals"));
   check("health and wellness is a creator category and a comp category", boot.data.creatorCategories.includes("Health & Wellness") && boot.data.compCategories.includes("Health & wellness services"), JSON.stringify([boot.data.creatorCategories, boot.data.compCategories]));
-  check("bootstrap names the Creators-tier paid campaigns option", boot.data.paidCampaignsComp === "Paid cash campaigns");
+  check("bootstrap names the Headliners-tier paid campaigns option", boot.data.paidCampaignsComp === "Paid cash campaigns");
   check("bootstrap reports email transport off locally (queued, never faked)", boot.data.email && boot.data.email.enabled === false);
 
   // --- registration validation (profile builder enforces its fields) ---
@@ -454,14 +454,14 @@ try {
   check("client stats tab shows the separate testers count", appJs.text.includes("Testers (excluded from roster counts)"), "");
   await admin("POST", "/api/admin/tester", { userId: testerId, tester: true });
 
-  // --- paid cash campaigns: a Creators-tier option only ---
+  // --- paid cash campaigns: a Headliners-tier option only ---
   const creatorC = client();
   const regC = await creatorC("POST", "/api/auth/register", {
     ...basePayload, name: "Big Creator", email: "launch-c@example.com", handle: "bigcreator",
-    followerCount: 42000, tierBand: "Creators", compCategories: ["Restaurant meals", "Paid cash campaigns"],
+    followerCount: 42000, tierBand: "Headliners", compCategories: ["Restaurant meals", "Paid cash campaigns"],
   });
-  check("Creators-tier registration with paid campaigns selected returns 201", regC.status === 201, JSON.stringify(regC.data));
-  check("paid campaigns stored for the Creators-tier creator", regC.data.user.creator.openToPaidCampaigns === true && regC.data.user.creator.compCategories.includes("Paid cash campaigns"), JSON.stringify(regC.data.user.creator.compCategories));
+  check("Headliners-tier registration with paid campaigns selected returns 201", regC.status === 201, JSON.stringify(regC.data));
+  check("paid campaigns stored for the Headliners-tier creator", regC.data.user.creator.openToPaidCampaigns === true && regC.data.user.creator.compCategories.includes("Paid cash campaigns"), JSON.stringify(regC.data.user.creator.compCategories));
   const creatorD = client();
   const regD = await creatorD("POST", "/api/auth/register", {
     ...basePayload, name: "Local Creator", email: "launch-d@example.com", handle: "localcreator",
@@ -471,9 +471,9 @@ try {
   const patchPaidOff = await creatorC("PATCH", "/api/me/profile", { compCategories: ["Restaurant meals"] });
   check("profile update can drop the paid campaigns option", patchPaidOff.status === 200 && patchPaidOff.data.user.creator.openToPaidCampaigns === false, JSON.stringify(patchPaidOff.data));
   const patchTierDrop = await creatorC("PATCH", "/api/me/profile", { followerCount: 8400, audienceStack: { instagram: 8400 }, compCategories: ["Restaurant meals", "Paid cash campaigns"] });
-  check("dropping out of the Creators tier (counts fall, band re-derives to Locals) removes the paid option", patchTierDrop.status === 200 && patchTierDrop.data.user.creator.tierBand === "Locals" && patchTierDrop.data.user.creator.openToPaidCampaigns === false && !patchTierDrop.data.user.creator.compCategories.includes("Paid cash campaigns"), JSON.stringify(patchTierDrop.data));
+  check("dropping out of the Headliners tier (counts fall, band re-derives to Locals) removes the paid option", patchTierDrop.status === 200 && patchTierDrop.data.user.creator.tierBand === "Locals" && patchTierDrop.data.user.creator.openToPaidCampaigns === false && !patchTierDrop.data.user.creator.compCategories.includes("Paid cash campaigns"), JSON.stringify(patchTierDrop.data));
   const approveC = await admin("POST", "/api/admin/review", { userId: regC.data.user.id, decision: "approve" });
-  check("admin approves the Creators-tier creator", approveC.status === 200 && approveC.data.user.status === "approved");
+  check("admin approves the Headliners-tier creator", approveC.status === 200 && approveC.data.user.status === "approved");
 
   // --- Dubai is a core market: picked, never typed in ---
   const dubaiCreator = client();
@@ -512,7 +512,7 @@ try {
 
   // client wiring for the new UI: bottom nav, paid option, terms consent
   check("client ships the mobile bottom nav", appJs.text.includes("bottomnav") && appJs.text.includes("renderBottomNav"));
-  check("client gates the paid campaigns option to the Creators tier", appJs.text.includes("jc-paid-wrap") && appJs.text.includes("PAID_COMP"));
+  check("client gates the paid campaigns option to the Headliners tier", appJs.text.includes("jc-paid-wrap") && appJs.text.includes("PAID_COMP"));
   check("client collects the Terms + email consent at sign-up", appJs.text.includes("jc-agree-terms"));
   check("client never renders an exact queue number to creators (admin keeps exact numbers)", !appJs.text.includes("in the ${esc(u.market)} founding queue") && !appJs.text.includes("Founding priority #${f.priorityPosition}") && !appJs.text.includes("#${f.queuePosition}"));
 
