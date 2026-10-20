@@ -3676,6 +3676,10 @@ async function handleRegister(event) {
       planMinMonths: plan.minMonths,
       billingStatus: "Founding billing: plan recorded, no card charged. Billing starts at launch.",
       planSelectedAt: ts,
+      // The plan's Stripe payment link (activation at launch).
+      // Stored on the record so every surface shows the same
+      // truthful billing state; the app itself never charges.
+      paymentLink: STRIPE_PAYMENT_LINKS[plan.id] || null,
       // Public review-page links (Google, Yelp, TripAdvisor,
       // Facebook): empty at sign-up, set from the Plan tab or by an
       // admin; host-validated at write time (validateReviewLinks).
@@ -4173,6 +4177,7 @@ async function route(event) {
       planMinMonths: plan.minMonths,
       billingStatus: "Founding billing: plan recorded, no card charged. Billing starts at launch.",
       planSelectedAt: nowIso(),
+      paymentLink: STRIPE_PAYMENT_LINKS[plan.id] || null,
       // Normalize the Managed talent budget onto records that
       // predate the field (suggested default $500).
       monthlyTalentBudget: talentBudgetOf(user.business),
@@ -4822,6 +4827,14 @@ async function route(event) {
         return err(403, `The ${user.market} market has not launched yet. Founding creators keep priority in the order they signed up, and ${user.market} opens to businesses in the next ${LAUNCH_WINDOW_TEXT}.`);
       }
     }
+  }
+
+  // A business account still in review cannot write marketplace
+  // state (favorites, offers). Reads stay open so the founding
+  // business can look around the moment it is approved... and the
+  // client keeps pending accounts on the status screen anyway.
+  if (user.role === "business" && user.status !== "approved" && method !== "GET" && (seg[0] === "favorites" || seg[0] === "offers")) {
+    return err(403, "Your founding business account is in review. Every application gets a decision or a clear status within 2 business days; everything opens the moment you are approved.");
   }
 
   // ---------- discovery ----------

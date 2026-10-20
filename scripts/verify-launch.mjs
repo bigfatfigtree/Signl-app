@@ -1,7 +1,12 @@
-// Launch-shape verification (Jeff's 2026-10-18 launch decision).
+// Launch-shape verification (Jeff's 2026-10-18 launch decision,
+// business accounts reversed to REAL by Jeff on 2026-10-20).
 // This suite runs WITHOUT the test override, exactly like production:
-//   - creator founding sign-up is the only public account type
-//   - business registration is refused (founding list on joinsignl.com)
+//   - creator founding sign-up is open in all markets
+//   - business registration is a REAL account flow (founding
+//     framing, plan recorded honestly, reviewed like any
+//     application); a founding business in a not-live market can
+//     browse, favorite, and draft offers, but publishing and
+//     bookings stay behind the market live flag
 //   - registration is the full profile builder (all fields enforced)
 //   - approved creators land on a founding status page, and the
 //     marketplace stays closed until an admin activates the market
@@ -95,7 +100,8 @@ try {
   check("London and Manchester are United Kingdom markets", ["London", "Manchester"].every((n) => (boot.data.markets || []).some((m) => m.name === n && m.country === "United Kingdom")));
   check("the 12 new US cities carry the United States country", NEW_MARKETS.slice(0, 12).every((n) => (boot.data.markets || []).some((m) => m.name === n && m.country === "United States")));
   check("every new market starts not live", NEW_MARKETS.every((n) => boot.data.launch && boot.data.launch.marketLive[n] === false), JSON.stringify(boot.data.launch && boot.data.launch.marketLive));
-  check("bootstrap: creator sign-up open, business sign-up closed", boot.data.launch && boot.data.launch.creatorSignupOpen === true && boot.data.launch.businessSignupOpen === false, JSON.stringify(boot.data.launch));
+  check("bootstrap: creator sign-up open, business sign-up open (real accounts, Jeff 2026-10-20)", boot.data.launch && boot.data.launch.creatorSignupOpen === true && boot.data.launch.businessSignupOpen === true, JSON.stringify(boot.data.launch));
+  check("bootstrap publishes the offer guidance (tier floors, paid floor, SLA, templates)", !!boot.data.offerGuidance && boot.data.offerGuidance.compGuidance.Headliners.floor === 100 && boot.data.offerGuidance.compGuidance.Neighbors.floor === 25 && boot.data.offerGuidance.paidFloor === 50 && boot.data.offerGuidance.selectionSlaHours === 72 && (boot.data.offerGuidance.templates || []).length === 4, JSON.stringify(boot.data.offerGuidance));
   check("bootstrap: every market starts not live", boot.data.launch && Object.values(boot.data.launch.marketLive).every((v) => v === false));
   check("bootstrap: launch window is 30 to 90 days", boot.data.launch && boot.data.launch.launchWindow === "30 to 90 days");
   check("creator categories are the launch set", Array.isArray(boot.data.creatorCategories) && boot.data.creatorCategories.includes("Beauty & Grooming") && boot.data.creatorCategories.includes("Food & Drink") && !boot.data.creatorCategories.includes("Lifestyle"));
@@ -121,13 +127,29 @@ try {
   const noCats = await client()("POST", "/api/auth/register", { ...basePayload, email: "x4@example.com", categories: [] });
   check("registration with no content category is refused (400)", noCats.status === 400, String(noCats.status));
 
-  // --- business registration is closed at launch ---
-  const bizAttempt = await client()("POST", "/api/auth/register", {
+  // --- business registration is a real account flow now ---
+  const hopefulBiz = client();
+  const bizAttempt = await hopefulBiz("POST", "/api/auth/register", {
     role: "business", name: "Hopeful Owner", businessName: "Hopeful Table", email: "hopeful@example.com",
     password: "business-pass-123", market: "Hampton Roads", city: "Norfolk", category: "Restaurant", planId: "managed",
+    neighborhood: "Ghent", about: "Neighborhood spot, chef counter.", agreedTerms: true,
   });
-  check("business registration is refused (403)", bizAttempt.status === 403, String(bizAttempt.status));
-  check("refusal points at the founding business list and founding pricing", /joinsignl\.com\/businesses\.html/.test(bizAttempt.data.error || "") && /\$299/.test(bizAttempt.data.error || ""), bizAttempt.data.error);
+  check("business registration succeeds (201) as a pending founding account", bizAttempt.status === 201 && bizAttempt.data.user && bizAttempt.data.user.status === "pending", JSON.stringify(bizAttempt.data).slice(0, 200));
+  const hopefulBizId = bizAttempt.data.user && bizAttempt.data.user.id;
+  check("business plan recorded honestly (Managed $999, founding billing, no charge)", bizAttempt.data.user.business.plan === "managed" && bizAttempt.data.user.business.planPriceMonthly === 999 && /no card charged/.test(bizAttempt.data.user.business.billingStatus), JSON.stringify(bizAttempt.data.user.business));
+  check("business record carries its Stripe payment link and profile fields", bizAttempt.data.user.business.paymentLink === "https://buy.stripe.com/cNi14o4o5487bKXbR59R602" && bizAttempt.data.user.business.neighborhood === "Ghent" && /chef counter/.test(bizAttempt.data.user.business.about), JSON.stringify(bizAttempt.data.user.business));
+  const bizNoTerms = await client()("POST", "/api/auth/register", {
+    role: "business", name: "No Terms", businessName: "No Terms Table", email: "noterms@example.com",
+    password: "business-pass-123", market: "Hampton Roads", city: "Norfolk", category: "Restaurant", planId: "growth",
+  });
+  check("business registration without the Terms agreement is refused (400)", bizNoTerms.status === 400, String(bizNoTerms.status));
+  const bizUnlisted = await client()("POST", "/api/auth/register", {
+    role: "business", name: "Unlisted Owner", businessName: "Unlisted Table", email: "unlisted-biz@example.com",
+    password: "business-pass-123", market: "Not listed yet", customCity: "Nowhere", customCountry: "United States", category: "Restaurant", planId: "growth", agreedTerms: true,
+  });
+  check("business registration in an unlisted market is refused (400): accounts are tied to a market", bizUnlisted.status === 400, String(bizUnlisted.status));
+  const bizPendingWrite = await hopefulBiz("POST", "/api/favorites", { creatorId: "nobody" });
+  check("a business still in review cannot write marketplace state (403)", bizPendingWrite.status === 403, String(bizPendingWrite.status));
 
   // --- full-profile creator: ALL SIX social fields filled ---
   const creatorA = client();
@@ -185,6 +207,26 @@ try {
   check("admin queue shows creator A with queue position 1", !!pendingA && pendingA.queuePosition === 1, JSON.stringify(pendingA && pendingA.queuePosition));
   const approveA = await admin("POST", "/api/admin/review", { userId: creatorAId, decision: "approve" });
   check("admin approves creator A", approveA.status === 200 && approveA.data.user.status === "approved");
+
+  // --- the founding business, approved, in a NOT-live market ---
+  // Accounts, profiles, browse, favorites, and DRAFT offers are
+  // real pre-launch; publishing and bookings stay gated.
+  const approveBiz = await admin("POST", "/api/admin/review", { userId: hopefulBizId, decision: "approve" });
+  check("admin approves the founding business", approveBiz.status === 200 && approveBiz.data.user.status === "approved");
+  const bizHomePre = await hopefulBiz("GET", "/api/me/business-home");
+  check("business home answers pre-launch with marketLive false", bizHomePre.status === 200 && bizHomePre.data.marketLive === false && bizHomePre.data.home && typeof bizHomePre.data.home.visitsUsed === "number", JSON.stringify(bizHomePre.data).slice(0, 200));
+  const bizBrowsePre = await hopefulBiz("GET", "/api/discover?market=Hampton%20Roads");
+  check("founding business can browse the roster pre-launch (200)", bizBrowsePre.status === 200 && (bizBrowsePre.data.creators || []).some((c) => c.userId === creatorAId), String(bizBrowsePre.status));
+  const bizFavPre = await hopefulBiz("POST", "/api/favorites", { creatorId: creatorAId });
+  check("founding business can favorite a creator pre-launch", bizFavPre.status === 200 && bizFavPre.data.isFavorite === true, JSON.stringify(bizFavPre.data));
+  const bizFavsPre = await hopefulBiz("GET", "/api/favorites");
+  check("favorites persist for the business", bizFavsPre.status === 200 && (bizFavsPre.data.favorites || []).some((c) => c.userId === creatorAId));
+  const bizDraft = await hopefulBiz("POST", "/api/offers", { title: "Launch week dinner for two", whatComped: "Two entrees and two drinks", dollarCap: 100, spots: 2, visitWindow: "Evenings" });
+  check("business offer in a not-live market saves as a DRAFT (201)", bizDraft.status === 201 && bizDraft.data.offer.status === "draft" && bizDraft.data.offer.lane === "open", JSON.stringify(bizDraft.data).slice(0, 200));
+  const bizPublishPre = await hopefulBiz("POST", `/api/offers/${bizDraft.data.offer.id}/publish`, {});
+  check("publishing stays gated until the market opens (403 with the launch message)", bizPublishPre.status === 403 && /Offers go live when your market opens/.test(bizPublishPre.data.error || ""), JSON.stringify(bizPublishPre.data));
+  const bizBookingsPre = await hopefulBiz("GET", "/api/bookings");
+  check("bookings stay gated for the business pre-launch (403)", bizBookingsPre.status === 403, String(bizBookingsPre.status));
 
   const founding = await creatorA("GET", "/api/me/founding");
   check("founding endpoint answers for the approved creator", founding.status === 200, JSON.stringify(founding.data));
@@ -310,9 +352,9 @@ try {
   check("discovery score sort still available (?sort=score)", discScore.status === 200 && (discScore.data.creators || []).length === 2);
   const bizAfter = await client()("POST", "/api/auth/register", {
     role: "business", name: "Late Owner", businessName: "Late Table", email: "late@example.com",
-    password: "business-pass-123", market: "Hampton Roads", city: "Norfolk", category: "Restaurant", planId: "managed",
+    password: "business-pass-123", market: "Hampton Roads", city: "Norfolk", category: "Restaurant", planId: "managed", agreedTerms: true,
   });
-  check("business registration stays closed even in a live market (403): role gate is separate", bizAfter.status === 403, String(bizAfter.status));
+  check("business registration works the same in a live market (201): accounts are real, the live flag gates activity, not sign-up", bizAfter.status === 201 && bizAfter.data.user.status === "pending", String(bizAfter.status));
 
   // --- admin Business Preview: same discovery, simulated offers ---
   // This is the server-side proof of the preview path (the suite signs
@@ -335,14 +377,15 @@ try {
   const pvForbidden = await creatorA("GET", "/api/admin/preview/discover?market=Hampton%20Roads");
   check("preview is admin-only (a creator gets 403)", pvForbidden.status === 403, String(pvForbidden.status));
   const statsBeforePv = await admin("GET", "/api/admin/stats");
+  const evBeforePv = await admin("GET", "/api/admin/events?limit=2000");
   const pvOffer = await admin("POST", "/api/admin/preview/offers", { creatorId: creatorAId, title: "Preview only dinner", whatComped: "Two entrees (simulation)", dollarCap: 60, spots: 1, visitWindow: "Weeknights" });
   check("preview offer composer validates and confirms as a simulation", pvOffer.status === 201 && pvOffer.data.preview === true && !!pvOffer.data.offer && pvOffer.data.offer.preview === true && pvOffer.data.offer.creatorHandle === "launcheats", JSON.stringify(pvOffer.data));
   const creatorOffersAfterPv = await creatorA("GET", "/api/offers");
   check("preview offer is invisible to the creator (their offer list stays empty)", creatorOffersAfterPv.status === 200 && (creatorOffersAfterPv.data.offers || []).length === 0 && !(creatorOffersAfterPv.data.offers || []).some((o) => o.title === "Preview only dinner"), JSON.stringify(creatorOffersAfterPv.data.offers));
   const statsAfterPv = await admin("GET", "/api/admin/stats");
-  check("preview offer moved no counts (admin stats offers unchanged at 0)", statsAfterPv.data.offers === statsBeforePv.data.offers && statsAfterPv.data.offers === 0, JSON.stringify([statsBeforePv.data.offers, statsAfterPv.data.offers]));
-  const evAfterPv = await admin("GET", "/api/admin/events?limit=500");
-  check("preview offer wrote no events (no offer_created anywhere in the log)", !(evAfterPv.data.events || []).some((e) => e.type === "offer_created"), "");
+  check("preview offer moved no counts (admin stats offers identical before/after)", statsAfterPv.data.offers === statsBeforePv.data.offers, JSON.stringify([statsBeforePv.data.offers, statsAfterPv.data.offers]));
+  const evAfterPv = await admin("GET", "/api/admin/events?limit=2000");
+  check("preview offer wrote no events (offer_created count identical before/after)", (evAfterPv.data.events || []).filter((e) => e.type === "offer_created").length === (evBeforePv.data.events || []).filter((e) => e.type === "offer_created").length, "");
   check("client ships the business preview mode (banner, steps, simulated composer)", appJs.text.includes("Preview as business") && appJs.text.includes("PREVIEW") && appJs.text.includes("renderPreview") && appJs.text.includes("previewSendOffer") && appJs.text.includes("/admin/preview/offers") && appJs.text.includes("exitPreview"), "");
 
   // --- admin Business Preview dashboard: the full visit lifecycle
