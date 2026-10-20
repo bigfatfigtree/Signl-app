@@ -110,6 +110,154 @@ function paidMath(rate) {
 // escrows on its own. Suggested default $500.
 const MANAGED_TALENT_BUDGET_DEFAULT = 500;
 
+// Stripe payment links for the three plans (live, Extra Medium
+// LLC; recorded in the goal workspace, files/signl-stripe-live.md).
+// Billing stays honest: the plan is recorded in-app at sign-up and
+// NO card is charged by the app. When a market launches, the
+// business pays through its plan's link to activate; the app shows
+// the link and the recorded status, and never pretends a webhook
+// or a charge happened.
+const STRIPE_PAYMENT_LINKS = {
+  "self-service": "https://buy.stripe.com/5kQ6oI4o534316jf3h9R600",
+  growth: "https://buy.stripe.com/7sY3cw5s91ZZ6qD3kz9R601",
+  managed: "https://buy.stripe.com/cNi14o4o5487bKXbR59R602",
+};
+
+// ---------- Offer flow v2: open offers, applications, backfill ----------
+// (Jeff, 2026-10-20; design: files/signl-offer-flow-design.md.)
+// Two lanes, one standardized package. DIRECT offers invite a
+// specific creator (the original flow). OPEN offers post terms to
+// the market: creators apply with ONE TAP (their profile card
+// attaches automatically, never a free-text pitch), the business
+// selects from a ranked stack, and nobody is ghosted: every
+// applicant ends in a notified terminal state.
+//
+// Timeline rules, implemented consistently everywhere:
+//   - Applications are open for applyWindowDays (default 3) from
+//     publish, and never past the redemption window start.
+//   - The redemption window starts no earlier than the application
+//     window close (windowStartAt is clamped up to it) and runs
+//     windowDays (default 7).
+//   - SELECTION DEADLINE = the earlier of (applications close +
+//     72 hours) and the redemption window start. When it passes
+//     with applicants still waiting, the sweep releases them all
+//     with a notification and the offer expires: the business can
+//     repost, but it cannot hold creators hostage.
+//   - Application stack cap: live applications are capped at
+//     spots x APPLICATION_STACK_PER_SPOT, so a business always has
+//     a backfill bench (2 alternates per spot) and never faces an
+//     unbounded pile.
+//   - BACKFILL: when a selected creator declines, no-shows, or
+//     lets the redemption window expire, the spot offers to the
+//     next ranked still-applied applicant, who gets a bounded
+//     24 hour accept window; on expiry or decline it moves to the
+//     next, then the offer falls back to the open pool.
+//   - COACHING NUDGE: an open offer with zero applications 48
+//     hours after publish earns the business an in-app attention
+//     item and an email with one-tap fixes (raise the comp, widen
+//     the window).
+// DIGNITY FLOOR: a comp offer may not target a tier whose floor
+// its value does not meet. The block is soft and explained (raise
+// the value or drop the tier), never silent. Where it applies:
+//   - Open lane with target tiers: hard soft-block per tier.
+//   - Open lane untargeted: a $25 absolute minimum (the Neighbors
+//     floor), and eligibility does the rest: an untargeted comp
+//     only reaches creators whose tier floor its value clears, so
+//     a $25 coffee flight finds Neighbors and never insults a
+//     Headliner. Targeting a tier explicitly is the way to reach
+//     it, at that tier's floor or better.
+//   - Direct lane (one invited creator who can decline): the
+//     composer warns, the server does not block; the invitation
+//     is a conversation, not a tier posting.
+// Cash offers use the paid-lane floor instead ($50,
+// PAID_LANE.minRate).
+const COMP_GUIDANCE = {
+  Neighbors: { floor: 25, typicalLow: 25, typicalHigh: 75 },
+  Locals: { floor: 50, typicalLow: 50, typicalHigh: 150 },
+  Headliners: { floor: 100, typicalLow: 100, typicalHigh: 250 },
+};
+const SELECTION_SLA_HOURS = 72;
+const BACKFILL_ACCEPT_HOURS = 24;
+const OFFER_NUDGE_HOURS = 48;
+const APPLICATION_STACK_PER_SPOT = 3;
+const OFFER_TEMPLATES = [
+  { id: "grand-opening", label: "Grand Opening", title: "Grand opening: be one of our first guests", spots: 3, windowDays: 7, note: "Opening week: come any time we are open." },
+  { id: "new-menu", label: "New Menu", title: "New menu tasting", spots: 2, windowDays: 7, note: "Our new menu just launched." },
+  { id: "slow-weekday", label: "Slow Weekday", title: "Weekday visit, bring a friend", spots: 2, windowDays: 5, note: "Monday to Thursday visits help us most." },
+  { id: "seasonal", label: "Seasonal", title: "Seasonal special feature", spots: 2, windowDays: 7, note: "Limited-time seasonal special." },
+];
+
+async function allApplications() {
+  const rows = await store.list("application:");
+  return rows.map((r) => r.value);
+}
+
+// In-app notification: a small record the dashboards read. This is
+// the surface that guarantees "no ghosting": every application
+// state change writes one for the creator, and offer events write
+// them for the business.
+async function notifyUser(userId, kind, text, data = {}) {
+  const rec = { id: crypto.randomUUID(), userId, kind, text, data, createdAt: nowIso(), readAt: null };
+  await store.set(`note:${userId}:${rec.id}`, rec);
+  return rec;
+}
+
+function laneOf(offer) {
+  if (offer.lane) return offer.lane;
+  return offer.creatorId ? "direct" : "open";
+}
+function kindOf(offer) {
+  return offer.kind === "paid" ? "paid" : "comp";
+}
+
+// The tiers an offer may target given its comp value. Returns the
+// first (highest) tier whose dignity floor the value misses, or
+// null when every targeted tier clears its floor.
+function dignityBlock(dollarCap, targetTiers) {
+  const tiers = targetTiers && targetTiers.length ? targetTiers : Object.keys(COMP_GUIDANCE);
+  for (const t of ["Headliners", "Locals", "Neighbors"]) {
+    if (tiers.includes(t) && dollarCap < COMP_GUIDANCE[t].floor) return { tier: t, floor: COMP_GUIDANCE[t].floor };
+  }
+  return null;
+}
+
+// Offer strength checklist (the coaching meter): the same four
+// signals the composer shows live. Computed from stored fields
+// only, so the business home and the composer can never disagree.
+function offerStrength(offer) {
+  const windowDays = offer.windowEndAt && offer.windowStartAt
+    ? Math.max(0, Math.round((Date.parse(offer.windowEndAt) - Date.parse(offer.windowStartAt)) / DAY_MS))
+    : offer.windowMode === "thisweek" ? 7 : 7;
+  const checks = [
+    { key: "value", label: "Comp value (or cash rate) is stated", ok: kindOf(offer) === "paid" ? Number(offer.cashRate) >= PAID_LANE.minRate : Number(offer.dollarCap) > 0 },
+    { key: "window", label: "Redemption window is 3+ days", ok: windowDays >= 3 },
+    { key: "includes", label: "What is included is written out", ok: String(offer.includes || offer.whatComped || "").trim().length >= 12 },
+    { key: "experience", label: "The experience is described", ok: String(offer.experience || "").trim().length >= 12 },
+  ];
+  return { checks, score: checks.filter((c) => c.ok).length, total: checks.length, windowDays };
+}
+
+// The offer timeline, from the rules at the top of this section.
+// publishMs is when the offer went (or goes) open.
+function offerTimeline({ applyWindowDays = 3, windowDays = 7, windowStartAt = null }, publishMs) {
+  const applyDays = Math.min(14, Math.max(1, Math.round(Number(applyWindowDays) || 3)));
+  const winDays = Math.min(30, Math.max(1, Math.round(Number(windowDays) || 7)));
+  const applicationsCloseMs = publishMs + applyDays * DAY_MS;
+  let startMs = windowStartAt ? Date.parse(windowStartAt) : NaN;
+  if (Number.isNaN(startMs) || startMs < applicationsCloseMs) startMs = applicationsCloseMs;
+  const endMs = startMs + winDays * DAY_MS;
+  const deadlineMs = Math.min(applicationsCloseMs + SELECTION_SLA_HOURS * 3600 * 1000, startMs);
+  return {
+    applyWindowDays: applyDays,
+    windowDays: winDays,
+    applicationsCloseAt: new Date(applicationsCloseMs).toISOString(),
+    windowStartAt: new Date(startMs).toISOString(),
+    windowEndAt: new Date(endMs).toISOString(),
+    selectionDeadline: new Date(deadlineMs).toISOString(),
+  };
+}
+
+
 // ---------- The SIGNL ROAS Score (Jeff, 2026-10-19) ----------
 // SIGNL's own return-on-spend model, and the math is published
 // wherever the score renders: it is always labeled "SIGNL ROAS
@@ -1208,6 +1356,200 @@ async function allPosts() {
   return rows.map((r) => r.value);
 }
 
+// Creates the booking for an offer a creator is taking, whether
+// the take came from a direct accept, a business selection, or a
+// backfill accept. One code path so the compliance clock, the
+// audience code, the discount stamp, and (for paid offers) the
+// escrow ledger are identical in every lane. Callers own the
+// standing / cap / eligibility checks that differ per lane.
+async function createBookingForOffer({ offer, creator, via, applicationId = null }) {
+  const business = await store.get(`user:${offer.businessId}`);
+  const code = await genCode();
+  const creatorCode = await genCreatorCode(creator.creator ? creator.creator.handle : "");
+  const ts = nowIso();
+  const kind = kindOf(offer);
+  let redeemBy;
+  if (laneOf(offer) === "open" && offer.windowEndAt) {
+    redeemBy = new Date(Math.min(Date.parse(offer.windowEndAt), Date.parse(ts) + COMPLIANCE.visitWindowDays * DAY_MS)).toISOString();
+  } else {
+    redeemBy = redeemByFor(offer, new Date(ts));
+  }
+  const booking = {
+    id: crypto.randomUUID(),
+    offerId: offer.id,
+    applicationId,
+    businessId: offer.businessId,
+    businessName: offer.businessName,
+    creatorId: creator.id,
+    creatorName: creator.name,
+    creatorHandle: creator.creator ? creator.creator.handle : "",
+    market: offer.market,
+    category: offer.category,
+    title: offer.title,
+    whatComped: offer.whatComped,
+    dollarCap: offer.dollarCap,
+    visitWindow: offer.visitWindow,
+    windowMode: offer.windowMode || "7days",
+    redeemBy,
+    visitDate: "",
+    code,
+    codeStatus: "issued",
+    status: "booked",
+    createdAt: ts,
+    updatedAt: ts,
+    checkinAt: null,
+    redeemedAt: null,
+    redeemMethod: null,
+    postDeadline: null,
+    replacementRequestedAt: null,
+    creatorCode,
+    discountPct: discountPctForBooking(business && business.business),
+    redemptions: null,
+    compCostActual: offer.dollarCap,
+  };
+  if (kind === "paid") {
+    // Paid open offer: the business posted a cash rate for the
+    // Standard Visit package. The escrow ledger is exactly the
+    // paid-booking ledger: rate + 3% from the business, 97% to
+    // the creator, held until the post is live (+48h hold).
+    const math = paidMath(Number(offer.cashRate));
+    booking.kind = "paid";
+    booking.compCostActual = math.businessTotal;
+    booking.paidLane = {
+      rate: math.rate,
+      businessTotal: math.businessTotal,
+      creatorNet: math.creatorNet,
+      platformFee: math.platformFee,
+      escrowState: "held",
+      paymentNote: PAID_LANE.paymentNote,
+      bookedAt: ts,
+      proofAt: null,
+      releasedAt: null,
+      refundedAt: null,
+      refundReason: null,
+    };
+  }
+  await store.set(`booking:${booking.id}`, booking);
+  await store.set(`code:${code}`, { bookingId: booking.id });
+  await store.set(`ccode:${creatorCode}`, { bookingId: booking.id });
+  await logEvent({ type: "booking_code_issued", actorId: creator.id, actorRole: "creator", subjectId: booking.id, market: offer.market, data: { code, offerId: offer.id, businessId: offer.businessId, dollarCap: booking.dollarCap, via } });
+  if (kind === "paid") {
+    await logEvent({ type: "paid_booking_created", actorId: offer.businessId, actorRole: "business", subjectId: booking.id, market: booking.market, data: { creatorId: creator.id, rate: booking.paidLane.rate, businessTotal: booking.paidLane.businessTotal, creatorNet: booking.paidLane.creatorNet, platformFee: booking.paidLane.platformFee, escrowState: "held", via, offerId: offer.id } });
+  }
+  return booking;
+}
+
+// How many spots of an offer are actually taken: live bookings
+// only (an expired or cancelled booking frees its spot, which is
+// what makes backfill possible).
+function filledCountFor(offerId, bookings) {
+  return bookings.filter((bk) => bk.offerId === offerId && bk.status !== "expired" && bk.status !== "cancelled").length;
+}
+
+// The applicant stack ranking (design note: local fit, Impact,
+// Momentum, reliability; founding order breaks ties). Scores are
+// computed live from stored records, the same inputs discovery
+// uses, and the components ride on the payload so the business
+// sees WHY the stack is ordered the way it is.
+async function rankApplications(apps) {
+  const users = await allUsers();
+  const byId = new Map(users.map((u) => [u.id, u]));
+  const [bookings, posts, reviews, bizReviews] = await Promise.all([allBookings(), allPosts(), allReviews(), allBizReviews()]);
+  const momentum = createMomentum({ users, bookings, posts, reviews, bizReviews });
+  const { approvedRank } = creatorRanks(users);
+  const out = [];
+  for (const app of apps) {
+    const c = byId.get(app.creatorId);
+    if (!c || !c.creator) continue;
+    const history = summarizeHistory(bookings.filter((b) => b.creatorId === c.id), posts);
+    const impact = computeLocalImpactScore(c.creator, history);
+    const track = summarizeTrackRecord(bookings, posts, c.id);
+    const localPct = c.creator.localAudiencePct === null || c.creator.localAudiencePct === undefined ? 0 : Number(c.creator.localAudiencePct);
+    const reliability = history.redeemed > 0 ? Math.round(((history.postsOnTime + history.postsLate * 0.5) / history.redeemed) * 100) : 50;
+    const mom = momentum.summaryFor(c);
+    const rankScore = Math.round((0.35 * localPct + 0.25 * (impact ? impact.score : 0) + 0.2 * Math.min(100, mom.points) + 0.2 * reliability) * 100) / 100;
+    out.push({
+      ...app,
+      rankScore,
+      rankParts: { localPct, impactScore: impact ? impact.score : null, momentum: mom.points, reliability },
+      creator: {
+        userId: c.id,
+        name: c.name,
+        handle: c.creator.handle,
+        tierBand: normalizeTierBand(c.creator.tierBand),
+        localAudiencePct: c.creator.localAudiencePct === undefined ? null : c.creator.localAudiencePct,
+        totalAudience: audienceTotalOf(c.creator),
+        paidRate: typeof c.creator.paidRate === "number" && c.creator.paidRate > 0 ? c.creator.paidRate : null,
+        foundingRank: approvedRank.get(c.id) || null,
+        createdAt: c.createdAt,
+        trackRecord: track,
+      },
+    });
+  }
+  out.sort((a, b) => (b.rankScore - a.rankScore) || (a.creator.createdAt < b.creator.createdAt ? -1 : 1));
+  return out;
+}
+
+const RELEASE_REASON_TEXT = {
+  spots_filled: "The business filled all the spots on this offer.",
+  selection_deadline: "The selection deadline passed, so applications released automatically. Nobody should be left waiting without an answer.",
+  offer_expired: "The offer's redemption window passed before selections finished.",
+  offer_closed: "The business closed this offer.",
+  business_released: "The business released this application to decide on the remaining stack.",
+  backfill_window_passed: "The 24 hour backfill window passed, so the spot moved to the next applicant.",
+  backfill_declined: "You passed on the backfill spot, so it moved to the next applicant.",
+};
+
+// Ends an application in a notified terminal state. The event and
+// the in-app notification are the no-ghosting guarantee: release
+// is never silent, on either side.
+async function releaseApplication(app, reason, actor = { id: null, role: "system" }) {
+  app.status = reason === "offer_expired" ? "expired" : "released";
+  app.releaseReason = reason;
+  app.decidedAt = nowIso();
+  app.updatedAt = nowIso();
+  await store.set(`application:${app.id}`, app);
+  await logEvent({ type: "application_released", actorId: actor.id, actorRole: actor.role, subjectId: app.id, market: app.market, data: { offerId: app.offerId, creatorId: app.creatorId, businessId: app.businessId, reason } });
+  await notifyUser(app.creatorId, "application_released", RELEASE_REASON_TEXT[reason] || "Your application was released.", { offerId: app.offerId, applicationId: app.id, reason });
+  return app;
+}
+
+// After spots free up on an open offer, offer the next spot to
+// the highest ranked applicant still waiting. One outstanding
+// backfill offer per freed spot chain: the sweep advances it when
+// its 24 hour window passes. When nobody is left waiting, a
+// filled offer reopens to the pool.
+async function maybeBackfill(offer, bookings) {
+  if (!offer || laneOf(offer) !== "open") return null;
+  if (offer.status !== "open" && offer.status !== "filled") return null;
+  const allBk = bookings || (await allBookings());
+  if (filledCountFor(offer.id, allBk) >= offer.spots) return null;
+  const apps = await allApplications();
+  const mine = apps.filter((a) => a.offerId === offer.id);
+  if (mine.some((a) => a.status === "backfill_offered")) return null;
+  const waiting = mine.filter((a) => a.status === "applied");
+  if (!waiting.length) {
+    if (offer.status === "filled") {
+      offer.status = "open";
+      offer.updatedAt = nowIso();
+      await store.set(`offer:${offer.id}`, offer);
+    }
+    return null;
+  }
+  const ranked = await rankApplications(waiting);
+  const next = ranked[0];
+  const app = await store.get(`application:${next.id}`);
+  if (!app || app.status !== "applied") return null;
+  app.status = "backfill_offered";
+  app.backfillOfferedAt = nowIso();
+  app.backfillExpiresAt = new Date(Date.now() + BACKFILL_ACCEPT_HOURS * 3600 * 1000).toISOString();
+  app.updatedAt = nowIso();
+  await store.set(`application:${app.id}`, app);
+  await logEvent({ type: "backfill_offered", actorId: null, actorRole: "system", subjectId: app.id, market: app.market, data: { offerId: offer.id, creatorId: app.creatorId, businessId: app.businessId, expiresAt: app.backfillExpiresAt } });
+  await notifyUser(app.creatorId, "backfill_offered", `A spot opened up on "${offer.title}" at ${offer.businessName}. You have 24 hours to take it from your Applications.`, { offerId: offer.id, applicationId: app.id });
+  return app;
+}
+
 async function creatorHistory(creatorUserId) {
   const bookings = (await allBookings()).filter((b) => b.creatorId === creatorUserId);
   const posts = (await allPosts()).filter((p) => p.creatorId === creatorUserId);
@@ -1953,6 +2295,136 @@ async function runComplianceSweep() {
     summary.escrowReleased += 1;
   }
   return summary;
+}
+
+// The offer lifecycle sweep (Jeff, 2026-10-20): the SLA and
+// backfill engine for open offers. Runs on the same triggers as
+// the compliance sweep (scheduled function, admin endpoint, and a
+// throttled opportunistic pass). Everything it does is logged and
+// notified; nothing here is silent.
+//   - Selection deadline passed with applicants waiting: release
+//     them all (reason selection_deadline) and expire the offer.
+//   - Redemption window ended: expire the offer, release anyone
+//     still waiting (reason offer_expired).
+//   - A backfill offer's 24 hour window passed: release that
+//     applicant and advance the spot to the next in the stack.
+//   - A selected booking expired or was cancelled: free the spot
+//     and backfill from the stack.
+//   - Zero applications 48 hours after publish: the coaching
+//     nudge (attention item on the business home + one email).
+async function runOfferSweep() {
+  const summary = { offersExpired: 0, slaReleased: 0, backfillAdvanced: 0, backfillOffered: 0, nudges: 0 };
+  const now = Date.now();
+  const offers = await allOffers();
+  const bookings = await allBookings();
+  const apps = await allApplications();
+  const appsByOffer = new Map();
+  for (const a of apps) {
+    if (!appsByOffer.has(a.offerId)) appsByOffer.set(a.offerId, []);
+    appsByOffer.get(a.offerId).push(a);
+  }
+
+  // Freed spots: a selected application's booking died (window
+  // expired = the no-show case, or the creator cancelled).
+  for (const booking of bookings) {
+    if (!booking.applicationId || booking.backfillHandled) continue;
+    if (booking.status !== "expired" && booking.status !== "cancelled") continue;
+    booking.backfillHandled = true;
+    booking.updatedAt = nowIso();
+    await store.set(`booking:${booking.id}`, booking);
+    const offer = offers.find((o) => o.id === booking.offerId);
+    if (offer && (offer.status === "open" || offer.status === "filled")) {
+      const offered = await maybeBackfill(offer, bookings);
+      if (offered) summary.backfillOffered += 1;
+    }
+  }
+
+  for (const offer of offers) {
+    if (laneOf(offer) !== "open") continue;
+    if (offer.status !== "open" && offer.status !== "filled") continue;
+    const mine = appsByOffer.get(offer.id) || [];
+    const waiting = mine.filter((a) => a.status === "applied");
+    const windowEnded = offer.windowEndAt && now > Date.parse(offer.windowEndAt);
+    const deadlinePassed = offer.selectionDeadline && now > Date.parse(offer.selectionDeadline);
+
+    // Backfill windows advance first, while the offer is alive.
+    if (!windowEnded) {
+      for (const app of mine.filter((a) => a.status === "backfill_offered")) {
+        if (app.backfillExpiresAt && now > Date.parse(app.backfillExpiresAt)) {
+          await releaseApplication(app, "backfill_window_passed");
+          summary.backfillAdvanced += 1;
+          const fresh = offers.find((o) => o.id === offer.id);
+          const offered = await maybeBackfill(fresh || offer, bookings);
+          if (offered) summary.backfillOffered += 1;
+        }
+      }
+    }
+
+    if (windowEnded) {
+      offer.status = "expired";
+      offer.updatedAt = nowIso();
+      await store.set(`offer:${offer.id}`, offer);
+      summary.offersExpired += 1;
+      await logEvent({ type: "offer_expired_window", actorId: null, actorRole: "system", subjectId: offer.id, market: offer.market, data: { businessId: offer.businessId } });
+      for (const app of mine.filter((a) => a.status === "applied" || a.status === "backfill_offered")) {
+        await releaseApplication(app, "offer_expired");
+      }
+      continue;
+    }
+
+    if (deadlinePassed && waiting.length) {
+      for (const app of waiting) {
+        await releaseApplication(app, "selection_deadline");
+        summary.slaReleased += 1;
+      }
+      offer.status = "expired";
+      offer.updatedAt = nowIso();
+      await store.set(`offer:${offer.id}`, offer);
+      summary.offersExpired += 1;
+      await logEvent({ type: "offer_selection_deadline_passed", actorId: null, actorRole: "system", subjectId: offer.id, market: offer.market, data: { businessId: offer.businessId, released: waiting.length } });
+      await notifyUser(offer.businessId, "offer_deadline", `The selection deadline passed on "${offer.title}", so the waiting applications were released. Repost any time; picking applicants inside the window keeps the stack.` , { offerId: offer.id });
+      continue;
+    }
+
+    // Coaching nudge: published 48+ hours, zero applications ever,
+    // not nudged yet. One nudge per offer, ever.
+    if (offer.status === "open" && !offer.nudgeSentAt && mine.length === 0 && now > Date.parse(offer.createdAt) + OFFER_NUDGE_HOURS * 3600 * 1000) {
+      offer.nudgeSentAt = nowIso();
+      offer.updatedAt = nowIso();
+      await store.set(`offer:${offer.id}`, offer);
+      summary.nudges += 1;
+      await logEvent({ type: "offer_nudge_sent", actorId: null, actorRole: "system", subjectId: offer.id, market: offer.market, data: { businessId: offer.businessId, hoursOpen: OFFER_NUDGE_HOURS } });
+      await notifyUser(offer.businessId, "offer_nudge", `"${offer.title}" has no applications after 48 hours. Two one-tap fixes usually move it: raise the comp, or widen the redemption window. Both are on the offer card under My Offers.`, { offerId: offer.id });
+      const biz = await store.get(`user:${offer.businessId}`);
+      if (biz && biz.email) {
+        try {
+          await deliverEmail("offer_nudge", biz, `No applications yet on "${offer.title}"`, [
+            `Hi ${greetingName(biz)},`,
+            ``,
+            `Your SIGNL offer "${offer.title}" has been open for 48 hours with no applications yet. That is fixable, and the two changes that move offers most are one tap each on the offer card under My Offers in the app:`,
+            ``,
+            `1. Raise the comp value. Offers priced at or above the typical range for the tier fill first.`,
+            `2. Widen the redemption window. Longer windows give creators room to fit the visit in.`,
+            ``,
+            `Your offer stays live while you decide. Creators apply with one tap, and you pick from the stack.`,
+            ``,
+            `Jeff`,
+            `Founder, SIGNL`,
+          ].join("\n"), null);
+        } catch (e) { /* email is best-effort; the nudge event and attention item are the record */ }
+      }
+    }
+  }
+  return summary;
+}
+
+const OFFER_SWEEP_THROTTLE_MS = 55 * 60 * 1000;
+async function maybeRunOfferSweep() {
+  const rec = await store.get("config:offerSweep");
+  const last = rec && rec.lastRunAt ? Date.parse(rec.lastRunAt) : 0;
+  if (Date.now() - last < OFFER_SWEEP_THROTTLE_MS) return null;
+  await store.set("config:offerSweep", { lastRunAt: nowIso() });
+  return runOfferSweep();
 }
 
 const SWEEP_THROTTLE_MS = 55 * 60 * 1000;
@@ -2871,6 +3343,131 @@ async function previewDashboard() {
   };
 }
 
+// ---------- Business Home (real data) ----------
+// The Preview Business Home (above) becomes the real business
+// home: the same computations, fed by the business's real
+// bookings, offers, and applications. Pure read: zero writes.
+// The metric definitions match the preview exactly (visits used
+// this cycle against the plan allowance, posts live, on-time
+// rate, ROAS from sums via roasFor, pipeline as cumulative stage
+// reach, top content ranked by register tallies then views), so
+// the sample a business saw before sign-up and the home they get
+// after can never tell two different stories.
+async function businessHome(user) {
+  const now = Date.now();
+  const plan = planById(user.business.plan) || PLANS[0];
+  const bookings = (await allBookings()).filter((b) => b.businessId === user.id);
+  const posts = await allPosts();
+  const postByBooking = new Map(posts.map((p) => [p.bookingId, p]));
+  const offers = (await allOffers()).filter((o) => o.businessId === user.id);
+  const apps = (await allApplications()).filter((a) => a.businessId === user.id);
+  const monthStart = new Date();
+  monthStart.setDate(1);
+  monthStart.setHours(0, 0, 0, 0);
+  const monthBookings = bookings.filter((b) => Date.parse(b.createdAt) >= monthStart.getTime());
+  const delivered = bookings.filter((b) => postByBooking.has(b.id));
+  const onTime = delivered.filter((b) => postByBooking.get(b.id).onTime);
+  const planAllocation = plan.priceMonthly / plan.visitsPerMonth;
+  const roas = roasFor(delivered.map((b) => ({ ...b, planAllocation })));
+  const totalViews = delivered.reduce((s, b) => s + (Number(postByBooking.get(b.id).views) || 0), 0);
+
+  const attention = [];
+  for (const b of bookings) {
+    const post = postByBooking.get(b.id);
+    if (b.redeemedAt && !post && b.postDeadline && now > Date.parse(b.postDeadline) && b.status !== "completed") {
+      attention.push({ kind: "overdue", bookingId: b.id, label: "A post is past its deadline", detail: `${b.title} with @${b.creatorHandle}: the 48 hour deadline passed and no post link is in yet.` });
+    } else if (b.redeemedAt && !post) {
+      attention.push({ kind: "clock", bookingId: b.id, label: "A post clock is running", detail: `${b.title} with @${b.creatorHandle}: redeemed, post due by ${previewFmtDate(b.postDeadline)}.` });
+    }
+    if (post && !b.redemptions) {
+      attention.push({ kind: "tally", bookingId: b.id, label: "A register tally is still unreported", detail: `${b.title} with @${b.creatorHandle}: the post is live; reporting the code tally on the visit completes its SIGNL ROAS Score.` });
+    }
+    if (!b.redeemedAt && b.status === "booked" && b.redeemBy && Date.parse(b.redeemBy) - now < 48 * 3600 * 1000 && Date.parse(b.redeemBy) > now) {
+      attention.push({ kind: "window", bookingId: b.id, label: "A visit window closes soon", detail: `${b.title} with @${b.creatorHandle}: the redemption window closes ${previewFmtDate(b.redeemBy)}.` });
+    }
+  }
+  for (const o of offers) {
+    if (laneOf(o) !== "open") continue;
+    const mine = apps.filter((a) => a.offerId === o.id);
+    const waiting = mine.filter((a) => a.status === "applied" || a.status === "backfill_offered");
+    if ((o.status === "open" || o.status === "filled") && waiting.length) {
+      attention.push({ kind: "applications", offerId: o.id, label: `${waiting.length} creator${waiting.length === 1 ? "" : "s"} waiting on "${o.title}"`, detail: `Selection deadline: ${previewFmtDate(o.selectionDeadline)}. Pick from the stack under My Offers before it passes and applications release automatically.` });
+    }
+    if (o.nudgeSentAt && o.status === "open" && mine.length === 0) {
+      attention.push({ kind: "offer_nudge", offerId: o.id, label: `"${o.title}" has no applications yet`, detail: "Two one-tap fixes usually move it: raise the comp, or widen the window. Both are on the offer card under My Offers.", fixes: ["raise_comp", "widen_window"] });
+    }
+    if (o.status === "draft") {
+      attention.push({ kind: "draft", offerId: o.id, label: `"${o.title}" is a draft`, detail: "Drafts are saved and ready. Offers publish when your market opens." });
+    }
+  }
+
+  const topContent = delivered
+    .slice()
+    .sort((a, b) => ((b.redemptions ? b.redemptions.count : 0) - (a.redemptions ? a.redemptions.count : 0)) || ((Number(postByBooking.get(b.id).views) || 0) - (Number(postByBooking.get(a.id).views) || 0)))
+    .slice(0, 3)
+    .map((b) => {
+      const post = postByBooking.get(b.id);
+      return { bookingId: b.id, title: b.title, creatorName: b.creatorName, creatorHandle: b.creatorHandle, postUrl: post.url, views: post.views || 0, likes: post.likes || 0, onTime: !!post.onTime, redemptions: b.redemptions ? { count: b.redemptions.count, basketTotal: b.redemptions.basketTotal } : null, roasScore: roasFor([{ ...b, planAllocation }]).score };
+    });
+  const nextVisits = bookings
+    .filter((b) => !postByBooking.has(b.id) && b.status === "booked")
+    .map((b) => ({ bookingId: b.id, title: b.title, creatorName: b.creatorName, creatorHandle: b.creatorHandle, state: b.redeemedAt ? "post_due" : "booked", stateLabel: b.redeemedAt ? "Redeemed, post clock running" : "Booked, code issued", when: b.redeemedAt ? b.postDeadline : b.redeemBy, whenLabel: b.redeemedAt ? "Post due" : "Redeem by" }))
+    .sort((a, b) => (String(a.when || "") < String(b.when || "") ? -1 : 1));
+
+  // Rebook prompts: creators with a delivered visit first (proof
+  // beats promise), favorites ahead of the rest inside each group.
+  const favRows = await store.list(`favorite:${user.id}:`);
+  const favIds = new Set(favRows.map((r) => r.key.split(":")[2]));
+  const deliveredCreators = new Map();
+  for (const b of delivered) {
+    if (!deliveredCreators.has(b.creatorId)) deliveredCreators.set(b.creatorId, b);
+  }
+  const rebookPrompts = [];
+  for (const [creatorId, b] of deliveredCreators) {
+    const c = await store.get(`user:${creatorId}`);
+    if (!c) continue;
+    rebookPrompts.push({ creatorId, name: c.name, handle: c.creator ? c.creator.handle : b.creatorHandle, isFavorite: favIds.has(creatorId), source: "delivered", lastTitle: b.title, lastWhatComped: b.whatComped, lastDollarCap: b.dollarCap });
+  }
+  for (const creatorId of favIds) {
+    if (deliveredCreators.has(creatorId)) continue;
+    const c = await store.get(`user:${creatorId}`);
+    if (!c || c.role !== "creator") continue;
+    rebookPrompts.push({ creatorId, name: c.name, handle: c.creator ? c.creator.handle : "", isFavorite: true, source: "favorite", lastTitle: null, lastWhatComped: null, lastDollarCap: null });
+  }
+  rebookPrompts.sort((a, b) => (Number(b.isFavorite) - Number(a.isFavorite)) || (a.source === b.source ? 0 : a.source === "delivered" ? -1 : 1));
+
+  return {
+    business: { name: user.business.businessName, category: user.business.category, market: user.market, planId: plan.id, planName: user.business.planName, billingStatus: user.business.billingStatus, paymentLink: STRIPE_PAYMENT_LINKS[plan.id] || null },
+    plan: { id: plan.id, name: plan.name, priceMonthly: plan.priceMonthly, minMonths: plan.minMonths, visitsPerMonth: plan.visitsPerMonth },
+    marketLive: await isMarketLive(user.market),
+    home: {
+      visitsUsed: monthBookings.length,
+      visitsAllowance: plan.visitsPerMonth,
+      visitsRemaining: Math.max(0, plan.visitsPerMonth - monthBookings.length),
+      postsLive: delivered.length,
+      onTimeRatePct: delivered.length ? Math.round((onTime.length / delivered.length) * 100) : null,
+      roasScore: roas.score,
+      roasAllInScore: roas.allInScore,
+      totalViews,
+      attention,
+      pipeline: {
+        invited: bookings.length,
+        claimed: bookings.filter((b) => !!b.code).length,
+        visitSet: bookings.filter((b) => !!b.redeemBy).length,
+        clockRunning: bookings.filter((b) => !!b.redeemedAt).length,
+        live: delivered.length,
+      },
+      planPacePct: plan.visitsPerMonth ? Math.round((monthBookings.length / plan.visitsPerMonth) * 100) : 0,
+      topContent,
+      nextVisits,
+    },
+    rebookPrompts,
+    favoritesCount: favIds.size,
+    openOffers: offers.filter((o) => laneOf(o) === "open" && (o.status === "open" || o.status === "filled")).length,
+    draftOffers: offers.filter((o) => o.status === "draft").length,
+  };
+}
+
 // ---------- auth context ----------
 
 async function getAuthUser(event) {
@@ -2891,17 +3488,19 @@ async function handleRegister(event) {
   const b = parseBody(event);
   const role = b.role;
   if (role !== "creator" && role !== "business") return err(400, "role must be creator or business");
-  // Launch shape: business accounts are closed. Founding businesses join
-  // the list on joinsignl.com and lock in founding pricing; accounts open
-  // when their market launches. (TEST_MODE re-opens this for the suites.)
-  if (role === "business" && !TEST_MODE) {
-    return err(403, "Business accounts are not open yet. Founding businesses join the founding business list at joinsignl.com/businesses.html to lock in founding pricing ($299/mo Self-Service, $599/mo Growth, $999/mo Managed). Business accounts open when your market launches.");
-  }
+  // Business accounts are REAL accounts (Jeff reversed the
+  // founding-list-only deferral, 2026-10-20): a business registers,
+  // is reviewed like any application, and gets its profile, browse,
+  // favorites, and draft offers immediately. Offers publish and
+  // bookings flow only when its market goes live (the market gate
+  // below), and billing stays founding-honest: the plan is recorded
+  // in-app, no card is charged, activation pays through the plan's
+  // Stripe payment link when the market launches.
   if (!isEmail(b.email || "")) return err(400, "A valid email is required");
   if (typeof b.password !== "string" || b.password.length < 10) return err(400, "Password must be at least 10 characters");
   if (!b.name || typeof b.name !== "string") return err(400, "Name is required");
   const unlisted = b.market === UNLISTED;
-  if (unlisted && role !== "creator") return err(400, "Business accounts open when a market launches. Join the founding business list at joinsignl.com/businesses.html.");
+  if (unlisted && role !== "creator") return err(400, "Business accounts are tied to a SIGNL market. Pick your market from the list; if your city is not there yet, join as a creator-market signal on joinsignl.com and we will open business accounts when the market launches.");
   const market = unlisted ? { name: UNLISTED, cities: [] } : marketByName(b.market || "");
   if (!market) return err(400, "Choose one of the SIGNL markets");
   let customCity = "";
@@ -3059,10 +3658,18 @@ async function handleRegister(event) {
   } else {
     if (b.agreedTerms !== true) return err(400, "Please agree to the Terms of Service and Privacy Policy, and to receiving account and marketing emails from SIGNL.");
     if (!b.businessName) return err(400, "Business name is required");
+    const bizCity = (b.city || "").trim();
+    if (bizCity && market.cities.length && !market.cities.includes(bizCity)) return err(400, `Choose your city in the ${market.name} market`);
+    if (bizCity) user.city = bizCity;
     const plan = planById(b.planId || "self-service") || PLANS[0];
     user.business = {
       businessName: String(b.businessName).trim(),
       category: BUSINESS_CATEGORIES.includes(b.category) ? b.category : "Other",
+      // Profile fields a creator sees when weighing an offer:
+      // neighborhood/area and a short about, editable any time
+      // from the profile settings.
+      neighborhood: typeof b.neighborhood === "string" ? b.neighborhood.trim().slice(0, 80) : "",
+      about: typeof b.about === "string" ? b.about.trim().slice(0, 600) : "",
       plan: plan.id,
       planName: `${plan.name} $${plan.priceMonthly}/mo`,
       planPriceMonthly: plan.priceMonthly,
@@ -3219,6 +3826,10 @@ async function route(event) {
   // scheduled function and the admin endpoint are the explicit
   // triggers), and it must never break a request either.
   try { await maybeRunComplianceSweep(); } catch (e) { /* sweep is best-effort on the request path */ }
+  // Offer lifecycle sweep: same opportunistic pattern (selection
+  // SLA releases, backfill advancement, offer expiry, the 48 hour
+  // coaching nudge).
+  try { await maybeRunOfferSweep(); } catch (e) { /* sweep is best-effort on the request path */ }
   // Campaign sweep: same opportunistic pattern (Jeff fix, 2026-10-19).
   // The scheduled function alone never fired in production: the armed
   // founding-creator campaign sat at 0 sends for hours with no error
@@ -3248,9 +3859,23 @@ async function route(event) {
       email: { enabled: emailEnabled() },
       launch: {
         creatorSignupOpen: true,
-        businessSignupOpen: TEST_MODE,
+        businessSignupOpen: true,
         launchWindow: LAUNCH_WINDOW_TEXT,
         marketLive: await marketLiveMap(),
+      },
+      // Offer composer guidance (offer flow v2): tier comp floors
+      // and typical ranges, the paid floor, the selection SLA, and
+      // the play templates, so the composer and the server enforce
+      // the same numbers from one source.
+      offerGuidance: {
+        compGuidance: COMP_GUIDANCE,
+        paidFloor: PAID_LANE.minRate,
+        paidBusinessFeePct: PAID_LANE.businessFeePct,
+        paidCreatorKeepPct: 100 - PAID_LANE.creatorFeePct,
+        selectionSlaHours: SELECTION_SLA_HOURS,
+        backfillAcceptHours: BACKFILL_ACCEPT_HOURS,
+        applicationStackPerSpot: APPLICATION_STACK_PER_SPOT,
+        templates: OFFER_TEMPLATES,
       },
     });
   }
@@ -3477,6 +4102,8 @@ async function route(event) {
       const bz = { ...user.business };
       if (b.businessName) bz.businessName = String(b.businessName).trim();
       if (b.category && BUSINESS_CATEGORIES.includes(b.category)) bz.category = b.category;
+      if (b.neighborhood !== undefined) bz.neighborhood = String(b.neighborhood || "").trim().slice(0, 80);
+      if (b.about !== undefined) bz.about = String(b.about || "").trim().slice(0, 600);
       // Public review-page links: host-validated, optional, shown
       // to creators as a courtesy block. No points ever attach.
       if (b.reviewLinks !== undefined) {
@@ -3567,6 +4194,21 @@ async function route(event) {
     if (!tokenOk && (!user || user.role !== "admin")) return err(403, "Admin only");
     const summary = await runComplianceSweep();
     await store.set("config:complianceSweep", { lastRunAt: nowIso() });
+    // The scheduled trigger also drives the offer lifecycle, so
+    // the SLA and backfill never depend on ordinary app traffic.
+    const offerSweep = await runOfferSweep();
+    await store.set("config:offerSweep", { lastRunAt: nowIso() });
+    return json(200, { ok: true, sweep: summary, offerSweep });
+  }
+  // Offer lifecycle sweep: same trigger discipline as compliance
+  // (scheduled token or admin session). Drives the selection SLA,
+  // backfill advancement, offer expiry, and the coaching nudge.
+  if (method === "POST" && seg[0] === "admin" && seg[1] === "offers" && seg[2] === "sweep") {
+    const token = process.env.SIGNL_SWEEP_TOKEN;
+    const tokenOk = !!token && (event.headers["x-signl-sweep-token"] || event.headers["X-Signl-Sweep-Token"]) === token;
+    if (!tokenOk && (!user || user.role !== "admin")) return err(403, "Admin only");
+    const summary = await runOfferSweep();
+    await store.set("config:offerSweep", { lastRunAt: nowIso() });
     return json(200, { ok: true, sweep: summary });
   }
   if (seg[0] === "admin") {
@@ -4158,14 +4800,27 @@ async function route(event) {
   }
 
   // ---------- market activation gate ----------
-  // Discovery, offers, bookings, the counter, posts, and messages only
-  // operate in markets an admin has activated. Until then, an approved
-  // creator's world is their founding status page, and no business
-  // account can exist in production at all.
-  const MARKETPLACE_SECTIONS = ["discover", "favorites", "offers", "bookings", "counter", "posts", "messages"];
+  // Bookings, the counter, posts, and messages only operate in
+  // markets an admin has activated, for everyone. Creators are
+  // gated on everything marketplace-shaped until their market
+  // launches (their founding home is their world until then).
+  // Businesses are different since accounts went real (Jeff,
+  // 2026-10-20): a founding business in a market that has not
+  // launched yet can still browse the roster, favorite creators,
+  // and build DRAFT offers, so the day the market flips live it is
+  // ready to publish. Publishing, selecting, and every booking
+  // flow stay behind the live flag, enforced in the handlers.
+  const MARKETPLACE_SECTIONS = ["discover", "favorites", "offers", "applications", "open-offers", "bookings", "counter", "posts", "messages"];
   if (user.role !== "admin" && MARKETPLACE_SECTIONS.includes(seg[0])) {
     if (!(await isMarketLive(user.market))) {
-      return err(403, `The ${user.market} market has not launched yet. Founding creators keep priority in the order they signed up, and ${user.market} opens to businesses in the next ${LAUNCH_WINDOW_TEXT}.`);
+      const businessPrelaunchOk = user.role === "business" && (
+        seg[0] === "favorites" ||
+        (seg[0] === "discover" && method === "GET") ||
+        (seg[0] === "offers" && (method === "GET" || method === "POST" || method === "PATCH"))
+      );
+      if (!businessPrelaunchOk) {
+        return err(403, `The ${user.market} market has not launched yet. Founding creators keep priority in the order they signed up, and ${user.market} opens to businesses in the next ${LAUNCH_WINDOW_TEXT}.`);
+      }
     }
   }
 
@@ -4225,14 +4880,81 @@ async function route(event) {
 
   // ---------- offers ----------
   if (seg[0] === "offers") {
+    // Rebook is matched before the :id routes below.
+    if (method === "POST" && seg.length === 2 && seg[1] === "rebook") {
+      if (user.role !== "business") return err(403, "Businesses only");
+      if (!(await isMarketLive(user.market))) return err(403, "Rebooking opens when your market launches. Your favorites and visit history are saved and waiting.");
+      const b = parseBody(event);
+      const creator = await store.get(`user:${b.creatorId}`);
+      if (!creator || creator.role !== "creator" || creator.status !== "approved") return err(400, "That creator is not on the roster");
+      if (standingState(creator) === "banned") return err(400, "That creator redeemed a comp and never posted, so they cannot be booked again.");
+      if (standingState(creator) === "paused") return err(400, "That creator is paused until a late post lands. Pick another creator for now.");
+      // Prefill from the business's most recent delivered visit
+      // with this creator when there is one; otherwise a sensible
+      // blank direct offer the business can adjust before sending.
+      const myBookings = (await allBookings()).filter((bk) => bk.businessId === user.id && bk.creatorId === creator.id);
+      const posts = await allPosts();
+      const delivered = myBookings.filter((bk) => posts.some((p) => p.bookingId === bk.id)).sort((a, b2) => (a.createdAt < b2.createdAt ? 1 : -1))[0];
+      const last = delivered || myBookings.sort((a, b2) => (a.createdAt < b2.createdAt ? 1 : -1))[0];
+      const ts = nowIso();
+      const offer = {
+        id: crypto.randomUUID(),
+        businessId: user.id,
+        businessName: user.business.businessName,
+        market: user.market,
+        category: user.business.category,
+        creatorId: creator.id,
+        creatorHandle: creator.creator ? creator.creator.handle : null,
+        lane: "direct",
+        kind: "comp",
+        cashRate: null,
+        targetTiers: null,
+        title: String(b.title || (last ? last.title : `Visit us again: ${user.business.businessName}`)).trim().slice(0, 140),
+        whatComped: String(b.whatComped || (last ? last.whatComped : "")).trim(),
+        includes: String(b.includes || (last ? last.whatComped : "")).trim(),
+        experience: "",
+        dollarCap: Math.max(1, parseInt(b.dollarCap, 10) || (last ? last.dollarCap : 75)),
+        visitWindow: String(b.visitWindow || "").trim(),
+        windowMode: b.windowMode === "thisweek" ? "thisweek" : "7days",
+        spots: 1,
+        status: "open",
+        rebookOfBookingId: last ? last.id : null,
+        createdAt: ts,
+        updatedAt: ts,
+      };
+      if (!offer.whatComped) return err(400, "Say what is comped on the invite. It prefilled from your last visit when there is one; this creator has none yet, so add it.");
+      await store.set(`offer:${offer.id}`, offer);
+      await logEvent({ type: "offer_created", actorId: user.id, actorRole: "business", subjectId: offer.id, market: offer.market, data: { title: offer.title, dollarCap: offer.dollarCap, spots: 1, targeted: true, creatorId: creator.id, category: offer.category, windowMode: offer.windowMode, lane: "direct", kind: "comp", via: "rebook" } });
+      await logEvent({ type: "rebook_sent", actorId: user.id, actorRole: "business", subjectId: offer.id, market: offer.market, data: { creatorId: creator.id, fromBookingId: last ? last.id : null, fromFavorite: !!(await store.get(`favorite:${user.id}:${creator.id}`)) } });
+      await notifyUser(creator.id, "offer_received", `${user.business.businessName} invited you back: "${offer.title}". It is under your Offers.`, { offerId: offer.id });
+      return json(201, { offer });
+    }
+
     if (method === "POST" && seg.length === 1) {
       if (user.role !== "business") return err(403, "Businesses only");
       const b = parseBody(event);
       if (!b.title || !b.whatComped) return err(400, "Title and what is comped are required");
-      const dollarCap = parseInt(b.dollarCap, 10);
       const spots = parseInt(b.spots, 10);
-      if (!dollarCap || dollarCap <= 0) return err(400, "Dollar cap must be a positive number");
       if (!spots || spots <= 0) return err(400, "Spots must be a positive number");
+      const lane = b.creatorId ? "direct" : "open";
+      const kind = b.kind === "paid" ? "paid" : "comp";
+      let cashRate = null;
+      let dollarCap = parseInt(b.dollarCap, 10);
+      if (kind === "paid") {
+        cashRate = Math.round(Number(b.cashRate || b.dollarCap) * 100) / 100;
+        if (!Number.isFinite(cashRate) || cashRate < PAID_LANE.minRate) return err(400, `A cash offer for the Standard Visit package starts at $${PAID_LANE.minRate}. Below that, the payment processing and support cost more than the booking is worth. Comp offers have no minimum beyond the dignity floor for the tiers you target.`);
+        dollarCap = Math.round(cashRate);
+      } else if (!dollarCap || dollarCap <= 0) {
+        return err(400, "Dollar cap must be a positive number");
+      }
+      // Target tiers (open lane): validated against the tier list;
+      // the dignity floor soft-blocks a comp that underprices a
+      // targeted tier, with the reason stated, never silent.
+      let targetTiers = null;
+      if (Array.isArray(b.targetTiers) && b.targetTiers.length) {
+        const valid = b.targetTiers.filter((t) => Object.keys(COMP_GUIDANCE).includes(t));
+        targetTiers = valid.length ? valid : null;
+      }
       let targetCreator = null;
       if (b.creatorId) {
         targetCreator = await store.get(`user:${b.creatorId}`);
@@ -4240,6 +4962,22 @@ async function route(event) {
         if (standingState(targetCreator) === "banned") return err(400, "That creator redeemed a comp and never posted, so they cannot be booked again.");
         if (standingState(targetCreator) === "paused") return err(400, "That creator is paused until a late post lands. Pick another creator for now.");
       }
+      if (kind === "comp") {
+        // The dignity floor (see COMP_GUIDANCE): targeted open
+        // offers soft-block per targeted tier; untargeted offers
+        // carry the $25 absolute minimum and let eligibility keep
+        // small comps in front of the tiers they fit; direct
+        // offers warn in the composer only.
+        if (!targetCreator && targetTiers) {
+          const block = dignityBlock(dollarCap, targetTiers);
+          if (block) return err(400, `A $${dollarCap} comp is below the dignity floor for ${block.tier} (floor $${block.floor}, typical $${COMP_GUIDANCE[block.tier].typicalLow} to $${COMP_GUIDANCE[block.tier].typicalHigh}). Raise the comp value to $${block.floor} or more, or remove ${block.tier} from who can apply. Token comps burn the roster's trust, so SIGNL does not send them.`);
+        }
+        if (!targetCreator && !targetTiers && dollarCap < COMP_GUIDANCE.Neighbors.floor) {
+          return err(400, `A comp offer starts at $${COMP_GUIDANCE.Neighbors.floor} of value. Below that it is a token, and token comps burn the roster's trust. Raise the value, or send a direct offer to one creator instead.`);
+        }
+      }
+      const marketLive = await isMarketLive(user.market);
+      const wantsDraft = b.draft === true || !marketLive;
       const ts = nowIso();
       const offer = {
         id: crypto.randomUUID(),
@@ -4249,24 +4987,53 @@ async function route(event) {
         category: user.business.category,
         creatorId: targetCreator ? targetCreator.id : null,
         creatorHandle: targetCreator && targetCreator.creator ? targetCreator.creator.handle : null,
-        title: String(b.title).trim(),
+        lane,
+        kind,
+        cashRate,
+        targetTiers,
+        title: String(b.title).trim().slice(0, 140),
         whatComped: String(b.whatComped).trim(),
+        includes: String(b.includes || b.whatComped).trim().slice(0, 600),
+        experience: String(b.experience || "").trim().slice(0, 600),
+        templateId: typeof b.templateId === "string" ? b.templateId.slice(0, 40) : null,
         dollarCap,
         visitWindow: String(b.visitWindow || "").trim(),
         windowMode: b.windowMode === "thisweek" ? "thisweek" : "7days",
         spots,
-        status: "open",
+        status: wantsDraft ? "draft" : "open",
         createdAt: ts,
         updatedAt: ts,
+        publishedAt: wantsDraft ? null : ts,
+        nudgeSentAt: null,
       };
+      if (lane === "open") {
+        const tl = offerTimeline({ applyWindowDays: b.applyWindowDays, windowDays: b.windowDays, windowStartAt: b.windowStartAt }, Date.parse(ts));
+        Object.assign(offer, tl);
+        if (wantsDraft) {
+          // Drafts carry the timeline they WOULD publish with, so
+          // the composer preview is honest before the market opens.
+          offer.draftTimeline = true;
+        }
+      }
       await store.set(`offer:${offer.id}`, offer);
-      await logEvent({ type: "offer_created", actorId: user.id, actorRole: "business", subjectId: offer.id, market: offer.market, data: { title: offer.title, dollarCap, spots, targeted: !!targetCreator, creatorId: offer.creatorId, category: offer.category, windowMode: offer.windowMode } });
+      await logEvent({ type: "offer_created", actorId: user.id, actorRole: "business", subjectId: offer.id, market: offer.market, data: { title: offer.title, dollarCap, spots, targeted: !!targetCreator, creatorId: offer.creatorId, category: offer.category, windowMode: offer.windowMode, lane, kind, cashRate, targetTiers, templateId: offer.templateId, status: offer.status, strength: offerStrength(offer).score } });
+      if (targetCreator) await notifyUser(targetCreator.id, "offer_received", `${user.business.businessName} sent you an offer: "${offer.title}". It is under your Offers.`, { offerId: offer.id });
       return json(201, { offer });
     }
+
     if (method === "GET" && seg.length === 1) {
       const offers = await allOffers();
       const bookings = await allBookings();
-      let out = offers.map((o) => ({ ...o, bookedCount: bookings.filter((bk) => bk.offerId === o.id).length }));
+      const apps = await allApplications();
+      let out = offers.map((o) => ({
+        ...o,
+        lane: laneOf(o),
+        kind: kindOf(o),
+        bookedCount: bookings.filter((bk) => bk.offerId === o.id).length,
+        filledCount: filledCountFor(o.id, bookings),
+        applicationCount: apps.filter((a) => a.offerId === o.id && a.status !== "withdrawn").length,
+        strength: offerStrength(o),
+      }));
       if (user.role === "business") out = out.filter((o) => o.businessId === user.id);
       else if (user.role === "creator") {
         out = out.filter((o) => o.market === user.market && o.status === "open" && (!o.creatorId || o.creatorId === user.id));
@@ -4288,6 +5055,228 @@ async function route(event) {
       out.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
       return json(200, { offers: out });
     }
+
+    // Publish a draft (the market must be live: drafts are how a
+    // founding business gets ready before launch day).
+    if (method === "POST" && seg.length === 3 && seg[2] === "publish") {
+      if (user.role !== "business") return err(403, "Businesses only");
+      const offer = await store.get(`offer:${seg[1]}`);
+      if (!offer || offer.businessId !== user.id) return err(404, "Offer not found");
+      if (offer.status !== "draft") return err(409, "Only a draft can be published");
+      if (!(await isMarketLive(user.market))) return err(403, `Offers go live when your market opens. ${user.market} opens to businesses in the next ${LAUNCH_WINDOW_TEXT}; your draft is saved and ready to publish that day.`);
+      if (kindOf(offer) === "comp" && Array.isArray(offer.targetTiers) && offer.targetTiers.length) {
+        const block = dignityBlock(offer.dollarCap, offer.targetTiers);
+        if (block) return err(400, `A $${offer.dollarCap} comp is below the dignity floor for ${block.tier} (floor $${block.floor}). Raise the comp value or remove ${block.tier} from who can apply before publishing.`);
+      }
+      const ts = nowIso();
+      offer.status = "open";
+      offer.publishedAt = ts;
+      offer.updatedAt = ts;
+      if (laneOf(offer) === "open") Object.assign(offer, offerTimeline(offer, Date.parse(ts)));
+      await store.set(`offer:${offer.id}`, offer);
+      await logEvent({ type: "offer_published", actorId: user.id, actorRole: "business", subjectId: offer.id, market: offer.market, data: { lane: laneOf(offer), kind: kindOf(offer) } });
+      if (offer.creatorId) await notifyUser(offer.creatorId, "offer_received", `${user.business.businessName} sent you an offer: "${offer.title}". It is under your Offers.`, { offerId: offer.id });
+      return json(200, { offer });
+    }
+
+    // One-tap fixes and edits while an offer is a draft or open:
+    // title, comp text, value (dignity floor re-checked), cash
+    // rate, spots (can grow), and the redemption window end (the
+    // widen-window fix extends it).
+    if (method === "PATCH" && seg.length === 2) {
+      if (user.role !== "business") return err(403, "Businesses only");
+      const offer = await store.get(`offer:${seg[1]}`);
+      if (!offer || offer.businessId !== user.id) return err(404, "Offer not found");
+      if (offer.status !== "draft" && offer.status !== "open") return err(409, "This offer can no longer be edited");
+      const b = parseBody(event);
+      const changes = {};
+      if (b.title) { changes.title = [offer.title, String(b.title).trim().slice(0, 140)]; offer.title = changes.title[1]; }
+      if (b.whatComped) { changes.whatComped = [offer.whatComped, String(b.whatComped).trim()]; offer.whatComped = changes.whatComped[1]; }
+      if (b.includes !== undefined) offer.includes = String(b.includes).trim().slice(0, 600);
+      if (b.experience !== undefined) offer.experience = String(b.experience).trim().slice(0, 600);
+      if (b.dollarCap !== undefined && kindOf(offer) === "comp") {
+        const cap = parseInt(b.dollarCap, 10);
+        if (!cap || cap <= 0) return err(400, "Dollar cap must be a positive number");
+        if (Array.isArray(offer.targetTiers) && offer.targetTiers.length) {
+          const block = dignityBlock(cap, offer.targetTiers);
+          if (block) return err(400, `A $${cap} comp is below the dignity floor for ${block.tier} (floor $${block.floor}). Raise the comp value to $${block.floor} or more, or remove ${block.tier} from who can apply.`);
+        } else if (laneOf(offer) === "open" && cap < COMP_GUIDANCE.Neighbors.floor) {
+          return err(400, `A comp offer starts at $${COMP_GUIDANCE.Neighbors.floor} of value.`);
+        }
+        changes.dollarCap = [offer.dollarCap, cap];
+        offer.dollarCap = cap;
+      }
+      if (b.cashRate !== undefined && kindOf(offer) === "paid") {
+        const rate = Math.round(Number(b.cashRate) * 100) / 100;
+        if (!Number.isFinite(rate) || rate < PAID_LANE.minRate) return err(400, `A cash offer starts at $${PAID_LANE.minRate}.`);
+        changes.cashRate = [offer.cashRate, rate];
+        offer.cashRate = rate;
+        offer.dollarCap = Math.round(rate);
+      }
+      if (b.spots !== undefined) {
+        const s = parseInt(b.spots, 10);
+        if (!s || s <= 0) return err(400, "Spots must be a positive number");
+        changes.spots = [offer.spots, s];
+        offer.spots = s;
+      }
+      if (b.windowEndAt && offer.windowStartAt) {
+        const endMs = Date.parse(b.windowEndAt);
+        if (Number.isNaN(endMs) || endMs <= Date.parse(offer.windowStartAt)) return err(400, "The window end must be after the window start");
+        changes.windowEndAt = [offer.windowEndAt, new Date(endMs).toISOString()];
+        offer.windowEndAt = changes.windowEndAt[1];
+      }
+      if (b.targetTiers !== undefined && kindOf(offer) === "comp") {
+        const valid = Array.isArray(b.targetTiers) ? b.targetTiers.filter((t) => Object.keys(COMP_GUIDANCE).includes(t)) : [];
+        const block = dignityBlock(offer.dollarCap, valid.length ? valid : null);
+        if (block) return err(400, `A $${offer.dollarCap} comp is below the dignity floor for ${block.tier} (floor $${block.floor}). Raise the comp value or remove ${block.tier} from who can apply.`);
+        offer.targetTiers = valid.length ? valid : null;
+      }
+      offer.updatedAt = nowIso();
+      await store.set(`offer:${offer.id}`, offer);
+      await logEvent({ type: "offer_updated", actorId: user.id, actorRole: "business", subjectId: offer.id, market: offer.market, data: { changes } });
+      return json(200, { offer });
+    }
+
+    // Close an offer: everyone still waiting is released with a
+    // notification, never left hanging.
+    if (method === "POST" && seg.length === 3 && seg[2] === "close") {
+      if (user.role !== "business") return err(403, "Businesses only");
+      const offer = await store.get(`offer:${seg[1]}`);
+      if (!offer || offer.businessId !== user.id) return err(404, "Offer not found");
+      if (offer.status === "closed" || offer.status === "expired") return err(409, "This offer is already closed");
+      offer.status = "closed";
+      offer.updatedAt = nowIso();
+      await store.set(`offer:${offer.id}`, offer);
+      await logEvent({ type: "offer_closed", actorId: user.id, actorRole: "business", subjectId: offer.id, market: offer.market, data: {} });
+      const mine = (await allApplications()).filter((a) => a.offerId === offer.id && (a.status === "applied" || a.status === "backfill_offered"));
+      for (const app of mine) await releaseApplication(app, "offer_closed", { id: user.id, role: "business" });
+      return json(200, { offer });
+    }
+
+    // The applicant stack for one of the business's open offers,
+    // ranked (local fit, Impact, Momentum, reliability, founding
+    // order tiebreak), with each applicant's attached profile card.
+    if (method === "GET" && seg.length === 3 && seg[2] === "applications") {
+      if (user.role !== "business") return err(403, "Businesses only");
+      const offer = await store.get(`offer:${seg[1]}`);
+      if (!offer || offer.businessId !== user.id) return err(404, "Offer not found");
+      const bookings = await allBookings();
+      const mine = (await allApplications()).filter((a) => a.offerId === offer.id && a.status !== "withdrawn");
+      const ranked = await rankApplications(mine);
+      return json(200, { offer: { ...offer, filledCount: filledCountFor(offer.id, bookings) }, applications: ranked });
+    }
+
+    // Select an applicant: creates the booking through the same
+    // code path as a direct accept. When the last spot fills, the
+    // offer closes to the stack and everyone still waiting is
+    // released with a notification.
+    if (method === "POST" && seg.length === 3 && seg[2] === "select") {
+      if (user.role !== "business") return err(403, "Businesses only");
+      if (!(await isMarketLive(user.market))) return err(403, "Selecting creators opens when your market launches.");
+      const offer = await store.get(`offer:${seg[1]}`);
+      if (!offer || offer.businessId !== user.id) return err(404, "Offer not found");
+      if (laneOf(offer) !== "open") return err(400, "Direct offers do not have an applicant stack");
+      if (offer.status !== "open" && offer.status !== "filled") return err(409, "This offer is not taking selections");
+      const b = parseBody(event);
+      const app = await store.get(`application:${b.applicationId}`);
+      if (!app || app.offerId !== offer.id) return err(404, "Application not found");
+      if (app.status !== "applied" && app.status !== "backfill_offered") return err(409, "That application is no longer waiting");
+      const bookings = await allBookings();
+      if (filledCountFor(offer.id, bookings) >= offer.spots) return err(409, "All spots on this offer are filled");
+      const creator = await store.get(`user:${app.creatorId}`);
+      if (!creator || creator.role !== "creator" || creator.status !== "approved") return err(400, "That creator is no longer on the roster");
+      if (standingState(creator) === "banned" || standingState(creator) === "paused") return err(400, "That creator cannot take a visit right now (compliance standing). Pick the next applicant.");
+      const cap = maxVisitsPerWeekOf(creator);
+      if (visitsThisWeek(bookings, creator.id, Date.now()) >= cap) return err(409, `That creator is at their max of ${cap} visits this week. Pick the next applicant, or wait for next week.`);
+      const booking = await createBookingForOffer({ offer, creator, via: "selection", applicationId: app.id });
+      app.status = "selected";
+      app.bookingId = booking.id;
+      app.decidedAt = nowIso();
+      app.updatedAt = nowIso();
+      await store.set(`application:${app.id}`, app);
+      await logEvent({ type: "application_selected", actorId: user.id, actorRole: "business", subjectId: app.id, market: offer.market, data: { offerId: offer.id, creatorId: creator.id, bookingId: booking.id } });
+      await logEvent({ type: "offer_accepted", actorId: creator.id, actorRole: "creator", subjectId: offer.id, market: offer.market, data: { businessId: offer.businessId, visitDate: "", via: "selection" } });
+      await notifyUser(creator.id, "application_selected", `You were picked for "${offer.title}" at ${offer.businessName}. Your visit code is in My Visits; redeem it inside the window and post within 48 hours of the visit.`, { offerId: offer.id, applicationId: app.id, bookingId: booking.id });
+      const after = await allBookings();
+      if (filledCountFor(offer.id, after) >= offer.spots) {
+        offer.status = "filled";
+        offer.updatedAt = nowIso();
+        await store.set(`offer:${offer.id}`, offer);
+        const waiting = (await allApplications()).filter((a) => a.offerId === offer.id && a.status === "applied");
+        for (const w of waiting) await releaseApplication(w, "spots_filled", { id: user.id, role: "business" });
+      }
+      return json(201, { booking: await withPostState(booking), application: app });
+    }
+
+    // Release one applicant by hand (they are told, with the
+    // reason stated in plain copy).
+    if (method === "POST" && seg.length === 3 && seg[2] === "release") {
+      if (user.role !== "business") return err(403, "Businesses only");
+      const offer = await store.get(`offer:${seg[1]}`);
+      if (!offer || offer.businessId !== user.id) return err(404, "Offer not found");
+      const b = parseBody(event);
+      const app = await store.get(`application:${b.applicationId}`);
+      if (!app || app.offerId !== offer.id) return err(404, "Application not found");
+      if (app.status !== "applied" && app.status !== "backfill_offered") return err(409, "That application already ended");
+      await releaseApplication(app, "business_released", { id: user.id, role: "business" });
+      return json(200, { application: app });
+    }
+
+    // One-tap apply (creator, open lane). No free-text pitch: the
+    // application IS the creator's profile card, snapshotted here
+    // and ranked live from the same records discovery uses.
+    if (method === "POST" && seg.length === 3 && seg[2] === "apply") {
+      if (user.role !== "creator") return err(403, "Creators only");
+      if (standingState(user) === "banned") return err(403, "Your account was closed to offers after a comped visit was redeemed and no post was delivered. Contact hello@joinsignl.com if you believe this is wrong.");
+      if (standingState(user) === "paused") return err(403, "Your account is paused until the late post from your last visit is checked off. Paste the post link under My Visits and offers open again.");
+      const offer = await store.get(`offer:${seg[1]}`);
+      if (!offer || laneOf(offer) !== "open") return err(404, "Offer not available");
+      if (offer.status !== "open") return err(409, "This offer is not taking applications right now");
+      if (offer.market !== user.market) return err(403, "This offer is in a different market");
+      if (offer.applicationsCloseAt && Date.now() > Date.parse(offer.applicationsCloseAt)) return err(409, "Applications for this offer have closed");
+      const tier = normalizeTierBand(user.creator ? user.creator.tierBand : "");
+      if (Array.isArray(offer.targetTiers) && offer.targetTiers.length && !offer.targetTiers.includes(tier)) return err(403, `This offer is for ${offer.targetTiers.join(", ")} creators. Your tier is ${tier}.`);
+      if (kindOf(offer) === "comp" && !(Array.isArray(offer.targetTiers) && offer.targetTiers.length) && Number(offer.dollarCap) < (COMP_GUIDANCE[tier] || {}).floor) return err(403, `This comp is below your tier's guidance floor ($${(COMP_GUIDANCE[tier] || {}).floor}), so it is not shown to ${tier}. That floor exists to protect the roster from token comps.`);
+      if (kindOf(offer) === "comp" && user.creator && user.creator.compOpen === false) return err(403, "This is a comp offer and your profile is set to paid visits only. Turn comp visits back on under Profile if you want comp offers.");
+      const apps = await allApplications();
+      const mine = apps.filter((a) => a.offerId === offer.id);
+      if (mine.some((a) => a.creatorId === user.id && a.status !== "withdrawn" && a.status !== "released" && a.status !== "expired")) return err(409, "You already applied to this offer");
+      const live = mine.filter((a) => ["applied", "selected", "backfill_offered", "backfill_accepted"].includes(a.status));
+      const capApps = Math.max(offer.spots, offer.spots * APPLICATION_STACK_PER_SPOT);
+      if (live.length >= capApps) return err(409, "This offer's application stack is full. Spots free up as the business decides; check the board again soon.");
+      const bookings = await allBookings();
+      if (bookings.some((bk) => bk.offerId === offer.id && bk.creatorId === user.id && bk.status !== "expired" && bk.status !== "cancelled")) return err(409, "You already have this visit booked");
+      const ts = nowIso();
+      const app = {
+        id: crypto.randomUUID(),
+        offerId: offer.id,
+        businessId: offer.businessId,
+        creatorId: user.id,
+        market: offer.market,
+        status: "applied",
+        appliedAt: ts,
+        createdAt: ts,
+        updatedAt: ts,
+        decidedAt: null,
+        releaseReason: null,
+        bookingId: null,
+        backfillOfferedAt: null,
+        backfillExpiresAt: null,
+        snapshot: {
+          handle: user.creator ? user.creator.handle : "",
+          name: user.name,
+          tierBand: tier,
+          localAudiencePct: user.creator ? user.creator.localAudiencePct : null,
+          totalAudience: audienceTotalOf(user.creator || {}),
+          paidRate: user.creator && typeof user.creator.paidRate === "number" && user.creator.paidRate > 0 ? user.creator.paidRate : null,
+        },
+      };
+      await store.set(`application:${app.id}`, app);
+      await logEvent({ type: "application_submitted", actorId: user.id, actorRole: "creator", subjectId: app.id, market: offer.market, data: { offerId: offer.id, businessId: offer.businessId, tierBand: tier, localAudiencePct: app.snapshot.localAudiencePct, totalAudience: app.snapshot.totalAudience } });
+      await notifyUser(offer.businessId, "application_received", `${user.name} (@${app.snapshot.handle}) applied to "${offer.title}". The stack is under My Offers.`, { offerId: offer.id, applicationId: app.id });
+      return json(201, { application: app });
+    }
+
     if (method === "POST" && seg.length === 3 && seg[2] === "accept") {
       if (user.role !== "creator") return err(403, "Creators only");
       // Compliance standing gates new bookings: a paused creator
@@ -4300,7 +5289,8 @@ async function route(event) {
       if (offer.market !== user.market) return err(403, "This offer is in a different market");
       const b = parseBody(event);
       const allBk = await allBookings();
-      const existing = allBk.filter((bk) => bk.offerId === offer.id);
+      const existing = allBk.filter((bk) => bk.offerId === offer.id && bk.status !== "expired" && bk.status !== "cancelled");
+      if (laneOf(offer) === "open") return err(400, "Open offers work by application: apply with one tap and the business picks from the stack. Your application is your profile card; no pitch needed.");
       if (existing.length >= offer.spots) return err(409, "All spots on this offer are booked");
       if (existing.some((bk) => bk.creatorId === user.id)) return err(409, "You already booked this offer");
       // Weekly visit cap (creator's own setting): offers still
@@ -4309,58 +5299,13 @@ async function route(event) {
       if (visitsThisWeek(allBk, user.id, Date.now()) >= cap) {
         return err(403, `You are at your max of ${cap} visit${cap === 1 ? "" : "s"} this week (your setting, under Profile). This offer stays in your Offers tab: accept it next week, or raise your weekly max if you want more.`);
       }
-      const code = await genCode();
-      const creatorCode = await genCreatorCode(user.creator ? user.creator.handle : "");
-      // The audience-code discount is the BUSINESS's opt-in:
-      // their percentage when they turned codes on, 0 when they
-      // did not. The code itself is issued either way.
-      const offerBiz = await store.get(`user:${offer.businessId}`);
-      const offerDiscountPct = discountPctForBooking(offerBiz && offerBiz.business);
-      const ts = nowIso();
-      const booking = {
-        id: crypto.randomUUID(),
-        offerId: offer.id,
-        businessId: offer.businessId,
-        businessName: offer.businessName,
-        creatorId: user.id,
-        creatorName: user.name,
-        creatorHandle: user.creator ? user.creator.handle : "",
-        market: offer.market,
-        category: offer.category,
-        title: offer.title,
-        whatComped: offer.whatComped,
-        dollarCap: offer.dollarCap,
-        visitWindow: offer.visitWindow,
-        windowMode: offer.windowMode || "7days",
-        redeemBy: redeemByFor(offer, new Date(ts)),
-        visitDate: (b.visitDate || "").trim(),
-        code,
-        codeStatus: "issued",
-        status: "booked",
-        createdAt: ts,
-        updatedAt: ts,
-        checkinAt: null,
-        redeemedAt: null,
-        redeemMethod: null,
-        postDeadline: null,
-        replacementRequestedAt: null,
-        // SIGNL ROAS (Jeff, 2026-10-19): the creator's audience
-        // code at this business, the discount it carries (the
-        // business's opt-in percentage, 0 when codes are off),
-        // the redemption tally the business will report back, and
-        // the comp's cost basis. The cost starts at the comp's
-        // stated value; the business reports its own actual cost
-        // with the redemption tally when it has one.
-        creatorCode,
-        discountPct: offerDiscountPct,
-        redemptions: null,
-        compCostActual: offer.dollarCap,
-      };
-      await store.set(`booking:${booking.id}`, booking);
-      await store.set(`code:${code}`, { bookingId: booking.id });
-      await store.set(`ccode:${creatorCode}`, { bookingId: booking.id });
+      const booking = await createBookingForOffer({ offer, creator: user, via: "direct_accept" });
+      if (b.visitDate) {
+        booking.visitDate = String(b.visitDate).trim();
+        booking.updatedAt = nowIso();
+        await store.set(`booking:${booking.id}`, booking);
+      }
       await logEvent({ type: "offer_accepted", actorId: user.id, actorRole: "creator", subjectId: offer.id, market: offer.market, data: { businessId: offer.businessId, visitDate: booking.visitDate } });
-      await logEvent({ type: "booking_code_issued", actorId: user.id, actorRole: "creator", subjectId: booking.id, market: offer.market, data: { code, offerId: offer.id, businessId: offer.businessId, dollarCap: offer.dollarCap } });
       return json(201, { booking: await withPostState(booking) });
     }
     if (method === "POST" && seg.length === 3 && seg[2] === "decline") {
@@ -4372,8 +5317,174 @@ async function route(event) {
       offer.updatedAt = nowIso();
       await store.set(`offer:${offer.id}`, offer);
       await logEvent({ type: "offer_declined", actorId: user.id, actorRole: "creator", subjectId: offer.id, market: offer.market, data: { businessId: offer.businessId } });
+      await notifyUser(offer.businessId, "offer_declined", `${user.name} passed on "${offer.title}". Your favorites and past creators are one tap to re-invite under Discover.`, { offerId: offer.id });
       return json(200, { offer });
     }
+  }
+
+  // ---------- open offers board + my applications ----------
+  if (method === "GET" && seg[0] === "open-offers") {
+    if (user.role !== "creator") return err(403, "Creators only");
+    const offers = await allOffers();
+    const apps = await allApplications();
+    const bookings = await allBookings();
+    const tier = normalizeTierBand(user.creator ? user.creator.tierBand : "");
+    const now = Date.now();
+    const out = [];
+    for (const o of offers) {
+      if (laneOf(o) !== "open" || o.status !== "open" || o.market !== user.market) continue;
+      if (Array.isArray(o.targetTiers) && o.targetTiers.length && !o.targetTiers.includes(tier)) continue;
+      // Dignity eligibility: an untargeted comp reaches only the
+      // tiers whose floor its value clears (see COMP_GUIDANCE).
+      if (kindOf(o) === "comp" && !(Array.isArray(o.targetTiers) && o.targetTiers.length) && Number(o.dollarCap) < (COMP_GUIDANCE[tier] || {}).floor) continue;
+      if (o.applicationsCloseAt && now > Date.parse(o.applicationsCloseAt)) continue;
+      const mine = apps.filter((a) => a.offerId === o.id);
+      const myApp = mine.find((a) => a.creatorId === user.id && a.status !== "withdrawn");
+      const biz = await store.get(`user:${o.businessId}`);
+      out.push({
+        ...o,
+        lane: "open",
+        kind: kindOf(o),
+        filledCount: filledCountFor(o.id, bookings),
+        applicationCount: mine.filter((a) => ["applied", "selected", "backfill_offered", "backfill_accepted"].includes(a.status)).length,
+        stackCap: Math.max(o.spots, o.spots * APPLICATION_STACK_PER_SPOT),
+        myApplication: myApp ? { id: myApp.id, status: myApp.status } : null,
+        strength: offerStrength(o),
+        businessPlan: biz && biz.business ? biz.business.plan : null,
+        visitRights: visitRightsForPlan(biz && biz.business ? biz.business.plan : null),
+        businessReviewLinks: biz && biz.business ? reviewLinksView(biz.business) : null,
+        businessAbout: biz && biz.business ? (biz.business.about || "") : "",
+        businessNeighborhood: biz && biz.business ? (biz.business.neighborhood || "") : "",
+        paidMath: kindOf(o) === "paid" ? paidMath(Number(o.cashRate)) : null,
+      });
+    }
+    out.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+    return json(200, { offers: out });
+  }
+
+  if (seg[0] === "applications") {
+    if (method === "GET" && seg.length === 1) {
+      if (user.role !== "creator") return err(403, "Creators only");
+      const apps = (await allApplications()).filter((a) => a.creatorId === user.id);
+      const out = [];
+      for (const a of apps) {
+        const offer = await store.get(`offer:${a.offerId}`);
+        if (!offer) continue;
+        out.push({ ...a, offer: { id: offer.id, title: offer.title, businessName: offer.businessName, market: offer.market, kind: kindOf(offer), whatComped: offer.whatComped, dollarCap: offer.dollarCap, cashRate: offer.cashRate, windowStartAt: offer.windowStartAt || null, windowEndAt: offer.windowEndAt || null, status: offer.status } });
+      }
+      out.sort((a, b) => (a.appliedAt < b.appliedAt ? 1 : -1));
+      return json(200, { applications: out });
+    }
+    // Accept a backfill spot inside its 24 hour window: creates
+    // the booking through the shared path and closes the chain.
+    if (method === "POST" && seg.length === 3 && seg[2] === "accept-backfill") {
+      if (user.role !== "creator") return err(403, "Creators only");
+      if (standingState(user) === "banned") return err(403, "Your account was closed to offers after a comped visit was redeemed and no post was delivered.");
+      if (standingState(user) === "paused") return err(403, "Your account is paused until the late post from your last visit is checked off.");
+      const app = await store.get(`application:${seg[1]}`);
+      if (!app || app.creatorId !== user.id) return err(404, "Application not found");
+      if (app.status !== "backfill_offered") return err(409, "This backfill spot is no longer being offered to you");
+      if (app.backfillExpiresAt && Date.now() > Date.parse(app.backfillExpiresAt)) return err(409, "The 24 hour window on this spot has passed");
+      const offer = await store.get(`offer:${app.offerId}`);
+      if (!offer || (offer.status !== "open" && offer.status !== "filled")) return err(409, "That offer is no longer active");
+      const bookings = await allBookings();
+      if (filledCountFor(offer.id, bookings) >= offer.spots) return err(409, "All spots on this offer are filled");
+      const cap = maxVisitsPerWeekOf(user);
+      if (visitsThisWeek(bookings, user.id, Date.now()) >= cap) return err(403, `You are at your max of ${cap} visits this week (your setting, under Profile).`);
+      const booking = await createBookingForOffer({ offer, creator: user, via: "backfill", applicationId: app.id });
+      app.status = "backfill_accepted";
+      app.bookingId = booking.id;
+      app.decidedAt = nowIso();
+      app.updatedAt = nowIso();
+      await store.set(`application:${app.id}`, app);
+      await logEvent({ type: "backfill_accepted", actorId: user.id, actorRole: "creator", subjectId: app.id, market: offer.market, data: { offerId: offer.id, businessId: offer.businessId, bookingId: booking.id } });
+      await logEvent({ type: "application_selected", actorId: null, actorRole: "system", subjectId: app.id, market: offer.market, data: { offerId: offer.id, creatorId: user.id, bookingId: booking.id, via: "backfill" } });
+      await notifyUser(offer.businessId, "backfill_filled", `${user.name} took the backfilled spot on "${offer.title}". The visit is booked and the code is issued.`, { offerId: offer.id, applicationId: app.id, bookingId: booking.id });
+      const after = await allBookings();
+      if (filledCountFor(offer.id, after) >= offer.spots && offer.status !== "filled") {
+        offer.status = "filled";
+        offer.updatedAt = nowIso();
+        await store.set(`offer:${offer.id}`, offer);
+        const waiting = (await allApplications()).filter((a) => a.offerId === offer.id && a.status === "applied");
+        for (const w of waiting) await releaseApplication(w, "spots_filled", { id: null, role: "system" });
+      }
+      return json(201, { booking: await withPostState(booking), application: app });
+    }
+    // Pass on a backfill spot: it advances to the next applicant
+    // immediately instead of waiting out the window.
+    if (method === "POST" && seg.length === 3 && seg[2] === "decline-backfill") {
+      if (user.role !== "creator") return err(403, "Creators only");
+      const app = await store.get(`application:${seg[1]}`);
+      if (!app || app.creatorId !== user.id) return err(404, "Application not found");
+      if (app.status !== "backfill_offered") return err(409, "This backfill spot is not open");
+      await releaseApplication(app, "backfill_declined", { id: user.id, role: "creator" });
+      const offer = await store.get(`offer:${app.offerId}`);
+      if (offer) await maybeBackfill(offer);
+      return json(200, { application: app });
+    }
+    // A selected creator gives the spot back before redemption:
+    // the booking cancels and the spot backfills.
+    if (method === "POST" && seg.length === 3 && seg[2] === "decline") {
+      if (user.role !== "creator") return err(403, "Creators only");
+      const app = await store.get(`application:${seg[1]}`);
+      if (!app || app.creatorId !== user.id) return err(404, "Application not found");
+      if (app.status !== "selected" && app.status !== "backfill_accepted") return err(409, "Only a selected application can be given back");
+      const booking = app.bookingId ? await store.get(`booking:${app.bookingId}`) : null;
+      if (booking && !booking.redeemedAt && booking.status === "booked") {
+        booking.status = "cancelled";
+        booking.codeStatus = "cancelled";
+        booking.updatedAt = nowIso();
+        await store.set(`booking:${booking.id}`, booking);
+        await refundPaidEscrow(booking, "creator_declined", { escrowRefunded: 0 });
+        await logEvent({ type: "booking_cancelled", actorId: user.id, actorRole: "creator", subjectId: booking.id, market: booking.market, data: { offerId: app.offerId, businessId: app.businessId, via: "application_decline" } });
+      }
+      app.status = "released";
+      app.releaseReason = "creator_declined";
+      app.decidedAt = nowIso();
+      app.updatedAt = nowIso();
+      await store.set(`application:${app.id}`, app);
+      await logEvent({ type: "application_released", actorId: user.id, actorRole: "creator", subjectId: app.id, market: app.market, data: { offerId: app.offerId, creatorId: user.id, businessId: app.businessId, reason: "creator_declined" } });
+      await notifyUser(app.businessId, "creator_declined", `${user.name} gave back the spot on the offer they were picked for. The spot backfills to the next applicant automatically.`, { offerId: app.offerId, applicationId: app.id });
+      const offer = await store.get(`offer:${app.offerId}`);
+      if (offer) await maybeBackfill(offer);
+      return json(200, { application: app });
+    }
+    if (method === "POST" && seg.length === 3 && seg[2] === "withdraw") {
+      if (user.role !== "creator") return err(403, "Creators only");
+      const app = await store.get(`application:${seg[1]}`);
+      if (!app || app.creatorId !== user.id) return err(404, "Application not found");
+      if (app.status !== "applied") return err(409, "Only a waiting application can be withdrawn");
+      app.status = "withdrawn";
+      app.updatedAt = nowIso();
+      await store.set(`application:${app.id}`, app);
+      await logEvent({ type: "application_withdrawn", actorId: user.id, actorRole: "creator", subjectId: app.id, market: app.market, data: { offerId: app.offerId, businessId: app.businessId } });
+      return json(200, { application: app });
+    }
+  }
+
+  // ---------- notifications ----------
+  if (seg[0] === "notifications") {
+    if (method === "GET" && seg.length === 1) {
+      const rows = await store.list(`note:${user.id}:`);
+      const notes = rows.map((r) => r.value).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)).slice(0, 40);
+      return json(200, { notifications: notes, unreadCount: notes.filter((n) => !n.readAt).length });
+    }
+    if (method === "POST" && seg.length === 2 && seg[1] === "read") {
+      const rows = await store.list(`note:${user.id}:`);
+      for (const r of rows) {
+        if (!r.value.readAt) {
+          r.value.readAt = nowIso();
+          await store.set(r.key, r.value);
+        }
+      }
+      return json(200, { ok: true });
+    }
+  }
+
+  // ---------- business home ----------
+  if (method === "GET" && seg[0] === "me" && seg[1] === "business-home") {
+    if (user.role !== "business") return err(403, "Businesses only");
+    return json(200, await businessHome(user));
   }
 
   // ---------- bookings and counter ----------
@@ -4970,4 +6081,4 @@ async function route(event) {
 
 // The email builders are exported alongside the router so the verify
 // suites can assert on the exact copy a creator receives.
-module.exports = { route, approvalEmail, signupConfirmationEmail, recruiterKitEmail, createMomentum, runComplianceSweep, runCampaignSweep, campaignEmail, crossoverEmail, campaignEmailFor, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, STANDARD_VISIT, visitRightsForPlan, RECRUITER_KIT_FLAG_KEY };
+module.exports = { route, approvalEmail, signupConfirmationEmail, recruiterKitEmail, createMomentum, runComplianceSweep, runOfferSweep, runCampaignSweep, campaignEmail, crossoverEmail, campaignEmailFor, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, STANDARD_VISIT, visitRightsForPlan, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, STRIPE_PAYMENT_LINKS };

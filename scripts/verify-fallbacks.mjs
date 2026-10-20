@@ -65,12 +65,17 @@ try {
 
   const offer = await business("POST", "/api/offers", { title: "Coffee flight on us", whatComped: "One coffee flight", dollarCap: 25, spots: 2, visitWindow: "Weekdays" });
   check("open offer created", offer.status === 201);
-  const accept = await creator("POST", `/api/offers/${offer.data.offer.id}/accept`, { visitDate: "2026-10-21" });
-  check("creator books the open offer", accept.status === 201);
+  // Open offers run on applications now (offer flow v2): the
+  // creator applies with one tap and the business selects, which
+  // creates the booking the fallback checks below exercise.
+  const applied = await creator("POST", `/api/offers/${offer.data.offer.id}/apply`, {});
+  check("creator applies to the open offer", applied.status === 201, JSON.stringify(applied.data));
+  const accept = await business("POST", `/api/offers/${offer.data.offer.id}/select`, { applicationId: applied.data.application.id });
+  check("business selects and a booking is created", accept.status === 201, JSON.stringify(accept.data));
   const bookingId = accept.data.booking.id;
 
-  const doubleBook = await creator("POST", `/api/offers/${offer.data.offer.id}/accept`, { visitDate: "2026-10-21" });
-  check("same creator cannot book twice (409)", doubleBook.status === 409, String(doubleBook.status));
+  const doubleBook = await creator("POST", `/api/offers/${offer.data.offer.id}/apply`, {});
+  check("same creator cannot apply twice (409)", doubleBook.status === 409, String(doubleBook.status));
 
   const checkin = await creator("POST", `/api/bookings/${bookingId}/checkin`, {});
   check("creator checks in (I am here)", checkin.status === 200 && !!checkin.data.booking.checkinAt, JSON.stringify(checkin.data));
