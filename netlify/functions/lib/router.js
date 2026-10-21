@@ -5638,7 +5638,30 @@ async function route(event) {
       };
       const pending = users.filter((u) => u.status === "pending").sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
       const decided = users.filter((u) => u.status !== "pending").sort((a, b) => (a.reviewedAt < b.reviewedAt ? 1 : -1));
-      return json(200, { pending: pending.map(attach), decided: decided.map(attach) });
+      // Founding roster counts (Jeff, 2026-10-21): approval alone is
+      // not the launch number any more. The quick claim holds the
+      // spot with almost nothing on file, so this strip separates
+      // approved from approved AND profile-complete (the only
+      // creators businesses can actually see). Creators only;
+      // testers never count toward the roster, matching the markets
+      // endpoint. Computed from the records on every read.
+      const LAUNCH_MARKET_LABELS = [
+        ["Hampton Roads", "Hampton Roads"],
+        ["Richmond", "Richmond"],
+        ["Raleigh", "Raleigh/The Triangle"],
+        ["Washington DC", "Washington DC"],
+      ];
+      const rosterCounts = (list) => ({
+        pending: list.filter((u) => u.status === "pending").length,
+        approved: list.filter((u) => u.status === "approved" && !isTester(u)).length,
+        approvedComplete: list.filter((u) => u.status === "approved" && !isTester(u) && profileCompleteOf(u)).length,
+      });
+      const creatorsAll = users.filter((u) => u.role === "creator");
+      const summary = {
+        markets: LAUNCH_MARKET_LABELS.map(([name, label]) => ({ market: name, label, ...rosterCounts(creatorsAll.filter((u) => u.market === name)) })),
+        all: rosterCounts(creatorsAll),
+      };
+      return json(200, { pending: pending.map(attach), decided: decided.map(attach), summary });
     }
     if (method === "GET" && seg[1] === "leaderboard") {
       // Recruiter leaderboard (Jeff, 2026-10-18): every creator with
