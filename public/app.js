@@ -4,6 +4,7 @@
 const state = {
   user: null,
   boot: null, // markets, tiers, categories, plans
+  joinMode: "quick", // two-step claim: "quick" (default) or "full"
   view: "home",
   tab: null,
   prefill: null, // claim-link prefill: sanitized ?handle=&market=&tier=
@@ -182,6 +183,30 @@ function growRosterHtml(u) {
       <p class="small">Creators who build a roster get seen first when businesses start choosing in your market. Points: +3 when a creator joins through your link, +10 when they are approved.</p>
       <p class="small muted">Tap the link to select it, copy it, and send it to a creator who should be on the founding roster with you.</p>
     </div>`;
+}
+
+// Two-step claim, step two (Jeff, 2026-10-20): the finish-your-
+// profile card. It rides on an approved creator's dashboard until
+// the profile is complete: progress over the gate items, every
+// item with its Momentum value, and the button into the Profile
+// tab where the work happens. Data is the server-computed
+// user.profileCompletion payload; nothing here is client math.
+function profileCompletionHtml(u) {
+  const pc = u && u.profileCompletion;
+  if (!pc || pc.complete || u.role !== "creator" || u.status !== "approved") return "";
+  const rows = pc.items.map((item) => `
+    <div class="earn-row ${item.done ? "done" : ""}">
+      <span class="earn-state">${item.done ? "&#10003;" : "+"}</span>
+      <span class="earn-label">${esc(item.label)}${item.required ? ` <span class="badge info">Needed to go live</span>` : ""}${item.detail ? ` <span class="muted">(${esc(item.detail)})</span>` : ""}</span>
+      <span class="earn-points">${item.points ? "+" + item.points + " pts" : ""}</span>
+    </div>`).join("");
+  return `
+  <div class="panel mt" style="text-align:left">
+    <div class="flex-between"><h3 style="margin:0">Finish your profile to be launch-ready</h3><span class="badge info">${pc.requiredDone} of ${pc.requiredTotal} essentials done</span></div>
+    <p class="small">Businesses cannot see you yet, and you cannot take offers, until the essentials are done. The rest of the checklist earns Momentum points, and points order the creator list businesses see.</p>
+    ${rows}
+    <div class="mt"><button class="btn" onclick="return go('dashboard','Profile')">Finish my profile</button></div>
+  </div>`;
 }
 
 // Momentum (expanded, Jeff 2026-10-19): one computed currency. The
@@ -481,7 +506,7 @@ function renderHome() {
     <p class="small muted mt">Founding creator sign-up is open now in all 39 markets, across 12 countries and territories. Markets open to businesses in the next 30 to 90 days. Don't see your city? Sign up anyway: new markets open where creator sign-ups pile up, and early sign-ups hold founding standing when their city opens.</p>
   </section>
   <section class="grid cols-3 mt">
-    <div class="card"><h3>1. Build your founding profile</h3><p class="muted">Creators sign up now and build their full profile: your market, your audience, what share of it is local. Early sign-ups hold founding status and priority when businesses start searching.</p></div>
+    <div class="card"><h3>1. Claim your spot, finish your profile</h3><p class="muted">Creators claim their founding spot in about a minute (handle, market, email), then finish their full profile after approval: your audience, what share of it is local. Early sign-ups hold founding status and priority when businesses start searching.</p></div>
     <div class="card"><h3>2. Your market opens</h3><p class="muted">When your market opens to businesses, we email you. Businesses browse the founding roster in your market and see what share of each creator's audience is actually local.</p></div>
     <div class="card"><h3>3. Visit, comped, honest post</h3><p class="muted">The creator books a visit and gets a one-time code, redeemed in the app at the visit. The clock starts there: an honest post, with disclosure, within 48 hours.</p></div>
   </section>
@@ -650,7 +675,139 @@ function syncPaidOptionProfile() {
   if (wrap) wrap.style.display = suggestedTierId(profileStackTotal()) === "Headliners" ? "" : "none";
 }
 
+// ---------- two-step claim, step one (Jeff, 2026-10-20) ----------
+// The quick claim: handle, market, email, password, and the same
+// four rule checkboxes the full form carries. Submitting claims
+// the founding spot (spots lock in sign-up order) and puts the
+// application in the review queue; the full profile is step two,
+// finished after approval from the dashboard checklist. Claim-link
+// prefill (?handle=&market=) fills this form exactly like the full
+// one, so every link already in the wild lands here.
+function filterQuickMarketOptions() {
+  const input = document.getElementById("qc-market-search");
+  const sel = document.getElementById("qc-market");
+  if (!input || !sel) return;
+  const q = input.value.trim().toLowerCase();
+  let firstMatch = null;
+  for (const opt of sel.querySelectorAll("option")) {
+    if (opt.value === unlistedLabel()) continue;
+    const hit = !q || opt.textContent.toLowerCase().includes(q) || opt.value.toLowerCase().includes(q);
+    opt.hidden = !hit;
+    if (hit && !firstMatch) firstMatch = opt;
+  }
+  for (const grp of sel.querySelectorAll("optgroup")) {
+    grp.hidden = ![...grp.querySelectorAll("option")].some((o) => !o.hidden);
+  }
+  const current = sel.selectedOptions && sel.selectedOptions[0];
+  if (q && firstMatch && current && current.hidden) {
+    sel.value = firstMatch.value;
+    syncQuickMarketChoice();
+  }
+}
+
+function syncQuickMarketChoice() {
+  const m = document.getElementById("qc-market");
+  if (!m) return;
+  const unlisted = m.value === unlistedLabel();
+  const customWrap = document.getElementById("qc-custom-wrap");
+  if (customWrap) customWrap.style.display = unlisted ? "" : "none";
+}
+
+function renderQuickClaim() {
+  const pf = state.prefill || {};
+  const pfMarket = pf.market || "Hampton Roads";
+  const hasPrefill = !!(pf.handle || pf.market || pf.tier);
+  app.innerHTML = `
+  <section class="panel" style="max-width:680px;margin:10px auto">
+    <h2>Claim your founding spot</h2>
+    <p class="muted">Founding spots lock in sign-up order, so claim yours now and finish the rest after approval. This takes about a minute: your handle, your market, an email, and a password. When you are approved, we email you, and your dashboard walks you through finishing your profile: your photo, your audience counts, what share of it is local. A finished profile is what businesses see, so that step is what makes you bookable. City not listed yet? Pick "My city is not listed yet" below and claim anyway: your sign-up counts toward opening your city, and you hold founding standing there.</p>
+    ${hasPrefill ? `<div class="notice blue">Your invite link told us a head start: we pre-filled what it carried below. Check it, claim your spot, and your application goes into the review queue.</div>` : ""}
+    <div id="form-error"></div>
+    <form onsubmit="return doQuickClaim(event)">
+      <div class="field"><label>Instagram handle (required)</label><input id="qc-handle" placeholder="yourhandle" required value="${esc(pf.handle || "")}" oninput="document.getElementById('qc-ig-link').textContent = this.value ? 'instagram.com/' + this.value.replace(/^@/, '') : ''"><p class="small muted" id="qc-ig-link">${pf.handle ? "instagram.com/" + esc(pf.handle) : ""}</p></div>
+      <div class="field"><label>Your market</label><input id="qc-market-search" placeholder="Search markets, for example: Dubai" oninput="filterQuickMarketOptions()" style="margin-bottom:6px"><select id="qc-market" onchange="syncQuickMarketChoice()">${marketOptions(pfMarket, true)}</select><p class="small muted">Markets are grouped by country. Don't see your city? Pick "My city is not listed yet" and claim anyway.</p></div>
+      <div id="qc-custom-wrap" style="display:none">
+        <div class="field"><label>Your city</label><input id="qc-city-text" placeholder="For example: Tulsa"></div>
+        <div class="field"><label>Your country</label><input id="qc-country-text" placeholder="For example: United States"></div>
+        <div class="field"><label>Your state or province (optional)</label><input id="qc-state-text" placeholder="Optional, for example: OK"></div>
+        <p class="small muted">SIGNL is not open there yet. Your sign-up counts: when enough creators in your city sign up, we open there, and founding sign-ups go first.</p>
+      </div>
+      <div class="form-2col">
+        <div class="field"><label>Email (how we reach you at launch)</label><input type="email" id="qc-email" required autocomplete="email"></div>
+        <div class="field"><label>Password (10+ characters)</label><input type="password" id="qc-password" required minlength="10" autocomplete="new-password"></div>
+      </div>
+      <div class="notice blue">The deal, in plain words:
+        <ul style="margin:8px 0 0;padding-left:18px">
+          <li>A business comps you a meal or service. You post your honest experience within 48 hours of the visit and disclose the comp. Nobody can ask you for a positive post. Ever.</li>
+          <li>Your check-off is the post link: you paste it in the app under My Visits. The link is the proof.</li>
+          <li>Post within 48 hours for full credit. One week is the hard stop: a late post inside the week still counts, and reminders land at 48 hours, day 5, and day 6.</li>
+          <li>At one week with no post, your account pauses. A post in the second week still lands and unpauses you, with the missed deadline on your record. At two weeks with no post, your account closes to future offers. Showing up matters here.</li>
+        </ul>
+      </div>
+      <div class="field"><label style="font-weight:500"><input type="checkbox" id="qc-agree-honest" style="width:auto" required> I understand no business can require me to post positively. My posts stay my honest opinion.</label></div>
+      <div class="field"><label style="font-weight:500"><input type="checkbox" id="qc-agree-ftc" style="width:auto" required> I agree to clearly disclose every comp in my posts, as the FTC requires.</label></div>
+      <div class="field"><label style="font-weight:500"><input type="checkbox" id="qc-agree-compliance" style="width:auto" required> I agree to post within 48 hours of every comped visit for full credit and paste the post link in the app. I understand one week is the hard stop: a redeemed visit with no post pauses my account at one week and closes it at two.</label></div>
+      <div class="field"><label style="font-weight:500"><input type="checkbox" id="qc-agree-terms" style="width:auto" required> I agree to the <a href="https://joinsignl.com/terms.html" target="_blank" rel="noopener">Terms of Service</a> and <a href="https://joinsignl.com/privacy.html" target="_blank" rel="noopener">Privacy Policy</a>, and I agree SIGNL can email me about my account, launch updates and offers. I can unsubscribe from marketing emails at any time.</label></div>
+      <button class="btn" type="submit" style="width:100%">Claim my founding spot</button>
+      <p class="small muted mt">Every application is reviewed by a person, and every founding application gets a decision or a clear status within 2 business days. Founding spots are limited in every market, and priority goes in sign-up order.</p>
+      <p class="small">Prefer to complete everything now? <a href="#" onclick="return showFullJoin()">Build your full profile instead</a>.</p>
+    </form>
+  </section>`;
+  if (pf.market === unlistedLabel()) syncQuickMarketChoice();
+}
+
+async function doQuickClaim(e) {
+  e.preventDefault();
+  const errBox = (msg) => {
+    document.getElementById("form-error").innerHTML = `<div class="error-box">${esc(msg)}</div>`;
+    window.scrollTo(0, 0);
+  };
+  if (!document.getElementById("qc-agree-honest").checked) { errBox("Please confirm the honest-post rule."); return false; }
+  if (!document.getElementById("qc-agree-ftc").checked) { errBox("Please confirm the FTC disclosure agreement."); return false; }
+  if (!document.getElementById("qc-agree-compliance").checked) { errBox("Please confirm the post rule: post within 48 hours for full credit, paste the link, one week is the hard stop, and a redeemed visit with no post pauses at one week and closes at two."); return false; }
+  if (!document.getElementById("qc-agree-terms").checked) { errBox("Please agree to the Terms of Service and email consent so we can reach you at launch."); return false; }
+  const marketVal = document.getElementById("qc-market").value;
+  const isUnlisted = marketVal === unlistedLabel();
+  const customCity = isUnlisted ? document.getElementById("qc-city-text").value.trim() : "";
+  const customCountry = isUnlisted ? document.getElementById("qc-country-text").value.trim() : "";
+  const customState = isUnlisted ? document.getElementById("qc-state-text").value.trim() : "";
+  if (isUnlisted && !customCity) { errBox("Tell us your city, so your sign-up counts toward opening SIGNL there."); return false; }
+  if (isUnlisted && !customCountry) { errBox("Tell us your country, so your sign-up counts toward opening SIGNL there."); return false; }
+  try {
+    const data = await api("POST", "/auth/register", {
+      role: "creator",
+      quickClaim: true,
+      email: document.getElementById("qc-email").value,
+      password: document.getElementById("qc-password").value,
+      market: marketVal,
+      customCity: isUnlisted ? customCity : undefined,
+      customCountry: isUnlisted ? customCountry : undefined,
+      customState: isUnlisted ? customState : undefined,
+      handle: document.getElementById("qc-handle").value,
+      agreedHonestPosts: true,
+      agreedFtcDisclosure: true,
+      agreedPostCompliance: true,
+      agreedTerms: true,
+      referredBy: storedRef() || undefined,
+    });
+    state.user = data.user;
+    state.view = "dashboard";
+    render();
+  } catch (err) {
+    errBox(err.message);
+  }
+  return false;
+}
+
+function showFullJoin() { state.joinMode = "full"; render(); return false; }
+function showQuickJoin() { state.joinMode = "quick"; render(); return false; }
+
 function renderJoinCreator() {
+  // Two-step claim (Jeff, 2026-10-20): the quick claim is the
+  // default first step (handle, market, email, password, the rule
+  // checkboxes); the full founding profile form below stays one
+  // tap away for creators who would rather do it all now.
+  if (state.joinMode !== "full") return renderQuickClaim();
   const cats = state.boot.creatorCategories.map((c) => `<label><input type="checkbox" name="c-cat" value="${esc(c)}"> ${esc(c)}</label>`).join("");
   const comps = state.boot.compCategories.map((c) => `<label><input type="checkbox" name="c-comp" value="${esc(c)}"> ${esc(c)}</label>`).join("");
   const pf = state.prefill || {};
@@ -661,6 +818,7 @@ function renderJoinCreator() {
     <h2>Become a Founding Creator</h2>
     <p class="muted">SIGNL is opening market by market, and creators are signing up first. Build your full founding profile now: when your market opens to businesses in the next 30 to 90 days, we email you, and founding creators get priority when businesses search. This is not a waitlist form; this is your real profile. City not listed yet? Pick "My city is not listed yet" below and sign up anyway: your sign-up counts toward opening your city, and you hold founding standing there.</p>
     ${hasPrefill ? `<div class="notice blue">Your invite link told us a head start: we pre-filled what it carried below. Check it, finish the rest, and your profile goes into the review queue.</div>` : ""}
+    <p class="small">In a hurry? <a href="#" onclick="return showQuickJoin()">Claim your spot with just your handle</a> and finish your profile after approval instead.</p>
     <div id="form-error"></div>
     <form onsubmit="return doRegisterCreator(event)">
       <div class="form-2col">
@@ -974,10 +1132,16 @@ function renderPending() {
   const isCreator = u.role === "creator";
   const isUnlisted = isCreator && u.market === unlistedLabel();
   const place = isUnlisted ? esc(unlistedPlace(u)) : esc(u.market);
+  // Two-step claim (Jeff, 2026-10-20): a quick claim is a claimed
+  // spot, not a built profile, and the screen says so plainly.
+  const claimedOnly = isCreator && u.creator && u.creator.signupPath === "quick_claim" && u.creator.profileComplete === false;
   app.innerHTML = `
   <section class="panel center" style="max-width:560px;margin:40px auto">
-    <h2>Founding profile received</h2>
-    <p>Thanks, ${esc(u.name)}. Your founding creator profile for <strong>${place}</strong> is built and in the review queue. Every founding application gets a decision or a clear status within 2 business days.</p>
+    <h2>${claimedOnly ? "Your spot is claimed" : "Founding profile received"}</h2>
+    ${claimedOnly
+      ? `<p>Thanks, ${esc(u.name)}. Your founding spot in <strong>${place}</strong> is claimed and your application is in the review queue. Every founding application gets a decision or a clear status within 2 business days.</p>
+    <p class="muted" style="text-align:left">Your profile is not finished yet, and that is by design: when you are approved, we email you, and you finish your profile from the checklist on your dashboard (your home city, your audience counts, what share of it is local, your photo). A finished profile is what businesses see, so that step is what makes you bookable.</p>`
+      : `<p>Thanks, ${esc(u.name)}. Your founding creator profile for <strong>${place}</strong> is built and in the review queue. Every founding application gets a decision or a clear status within 2 business days.</p>`}
     ${isCreator && f.queueBand ? `<p><span class="badge info">${isUnlisted ? `You are in the first ${f.queueBand} to sign up in ${esc(u.city)}` : `You are in the first ${f.queueBand} founding creators in ${esc(u.market)}`}</span></p>` : ""}
     <p class="muted">${isUnlisted
       ? `SIGNL is not open in ${esc(u.city)} yet, and your sign-up counts toward opening it: we open new markets where creator sign-ups pile up, and founding sign-ups there go first. Every application is reviewed by a person. The moment you are approved, your founding status page opens here, and we will email you at ${esc(u.email)} the moment ${esc(u.city)} opens. Sign back in any time to check your status.${state.boot && state.boot.email && state.boot.email.enabled ? ` A confirmation email is on its way to ${esc(u.email)}.` : ""}`
@@ -1416,6 +1580,7 @@ async function loadFoundingDashboard() {
     <p class="ui-kicker">Creator dashboard &middot; ${place}</p>
     <h3 class="home-title">${esc(greet)}, ${esc(firstName)}.</h3>
     <p class="ui-sub">${isUnl ? `${esc(f.city)} opens when sign-ups pile up. Until then, this is your home: your numbers, your paid lane, and your roster.` : `${esc(f.market)} opens to businesses in the next ${esc(f.launchWindow)}. Until then, this is your home: your numbers, your paid lane, and your roster.`}</p>
+    ${profileCompletionHtml(u)}
     <div class="panel">
       <div class="flex-between">
         <div>
@@ -1854,6 +2019,7 @@ async function loadCreatorHome() {
     <p class="ui-kicker">Creator dashboard &middot; ${esc(u.market)}</p>
     <h3 class="home-title">${esc(greet)}, ${esc(firstName)}.</h3>
     <p class="ui-sub">Your active visit, your offers, and your money, in one place.</p>
+    ${profileCompletionHtml(u)}
     <div class="stat-band home-metrics">
       <div class="stat-cell"><div class="stat-num">$${fmtMoney(money.released)}</div><div class="stat-lbl">Paid cash released (paid visits delivered, hold passed)</div></div>
       <div class="stat-cell"><div class="stat-num">$${fmtMoney(money.compValue)}</div><div class="stat-lbl">Comp value received (experiences, not cash)</div></div>
@@ -1907,7 +2073,9 @@ function creatorProfileHtml(u) {
       <p class="small muted">Share this link anywhere, including your Instagram bio. Visitors see your name, handle, market and neighborhood, tier, follower count, categories, local audience share, Local Impact Score, Momentum points, and founding standing. Your email and account details are never shown, and there is no public roster: this page exists only at your link.</p>
     </div>` : ""}
     <div id="form-error"></div>
+    ${u.profileCompletion && !u.profileCompletion.complete ? `<div class="notice blue">Your profile is not finished yet. Still needed to go live: ${u.profileCompletion.items.filter((i) => i.required && !i.done).map((i) => esc(i.label)).join(", ")}. Fill in the fields below and save. Businesses cannot see you, and you cannot take offers, until your profile is finished.</div>` : ""}
     <form onsubmit="return doUpdateCreator(event)">
+      <div class="field"><label>Your name</label><input id="p-name" value="${esc(u.name || "")}"><p class="small muted">Shown to businesses next to your handle. A quick claim starts with your handle here; put your real name in.</p></div>
       <div class="field"><label>Profile photo</label>
         ${c.hasPhoto ? `<img class="profile-photo" src="/api/users/${esc(u.id)}/photo" alt="Your profile photo">` : `<div class="photo-placeholder">No photo yet.</div>`}
         <input type="file" id="p-photo" accept="image/png,image/jpeg,image/webp">
@@ -2010,6 +2178,7 @@ async function doUpdateCreator(e) {
     const cityEl = document.getElementById("p-city");
     const cityTextEl = document.getElementById("p-city-text");
     const data = await api("PATCH", "/me/profile", {
+      name: document.getElementById("p-name").value,
       handle: document.getElementById("p-handle").value,
       city: cityEl ? cityEl.value : cityTextEl ? cityTextEl.value : undefined,
       neighborhood: document.getElementById("p-neighborhood").value,

@@ -11,8 +11,9 @@
   "private": true,
   "scripts": {
     "dev": "node scripts/dev-server.mjs",
-    "verify": "node scripts/verify-flow.mjs && node scripts/verify-fallbacks.mjs && node scripts/verify-launch.mjs && node scripts/verify-compliance.mjs && node scripts/verify-campaign.mjs && node scripts/verify-paidlane.mjs && node scripts/verify-roas.mjs && node scripts/verify-business.mjs",
+    "verify": "node scripts/verify-flow.mjs && node scripts/verify-fallbacks.mjs && node scripts/verify-launch.mjs && node scripts/verify-compliance.mjs && node scripts/verify-campaign.mjs && node scripts/verify-paidlane.mjs && node scripts/verify-roas.mjs && node scripts/verify-business.mjs && node scripts/verify-quickclaim.mjs",
     "verify-business": "node scripts/verify-business.mjs",
+    "verify-quickclaim": "node scripts/verify-quickclaim.mjs",
     "verify-campaign": "node scripts/verify-campaign.mjs",
     "verify-roas": "node scripts/verify-roas.mjs",
     "verify-fallbacks": "node scripts/verify-fallbacks.mjs",

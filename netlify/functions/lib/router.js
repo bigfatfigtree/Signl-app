@@ -940,6 +940,13 @@ async function withFounding(user) {
   const pub = publicUser(user);
   if (pub && pub.role === "creator") {
     pub.founding = publicFounding(await foundingSummary(user));
+    // Two-step claim (Jeff, 2026-10-20): the creator's own payload
+    // carries the completion checklist (items, points, what is
+    // still missing) so the dashboard can run the finish-your-
+    // profile loop, and the stored flag on the payload is the
+    // COMPUTED value, never a stale stored one.
+    pub.profileCompletion = profileCompletionFor(user);
+    if (pub.creator) pub.creator = { ...pub.creator, profileComplete: pub.profileCompletion.complete };
     // Momentum rides on the creator's own profile payload in full
     // detail (total, ledger, ways-to-earn checklist) so the dashboard
     // can run the profile-completion incentive loop.
@@ -1033,13 +1040,137 @@ function signupConfirmationEmail(user, band) {
   return { subject, text: lines.join("\n") };
 }
 
+// The completion checklist as plain email lines, shared by the
+// approval email and the day-3 reminder. Points are the existing
+// Momentum profile values; the four gate items (home city,
+// audience counts, categories, local audience %) are the ones a
+// finished profile cannot go live without.
+function completionChecklistLines(user) {
+  const items = profileCompletionItems(user);
+  return items.map((i) => {
+    const pts = i.points ? ` (+${i.points} Momentum points)` : "";
+    const gate = i.required ? " [needed to go live]" : "";
+    return `- ${i.label}${pts}${gate}`;
+  });
+}
+
+// Step-one confirmation for the quick claim (Jeff, 2026-10-20):
+// the spot is claimed and the place in line is locked; the profile
+// itself is finished after approval, which the email says plainly
+// so nobody mistakes the claim for a finished profile.
+function claimConfirmationEmail(user, band) {
+  const first = greetingName(user);
+  const subject = "Your SIGNL founding spot is claimed";
+  if (user.market === UNLISTED) {
+    const place = `${user.city}, ${user.country || user.state || ""}`;
+    const lines = [
+      `Hi ${first},`,
+      "",
+      `Your founding spot in ${user.city} is claimed, and your application is in the review queue. Every application is reviewed by a person.`,
+      "Every founding application gets a decision or a clear status within 2 business days.",
+    ];
+    if (band) lines.push(`You are in the first ${band} creators to sign up in ${user.city}. Founding spots lock in sign-up order, and that standing never expires.`);
+    lines.push(
+      "",
+      `What happens next: when you are approved, we email you again, and that is when you finish your profile: your home city, your audience counts, your local audience percentage, your categories, and the rest of what businesses see. A finished profile is what makes you visible to businesses, so the approval email is the one to act on.`,
+      "",
+      `SIGNL has not opened in ${place} yet, and your sign-up is how that changes: we open new markets where creator sign-ups pile up. When ${user.city} opens, founding sign-ups there are first in line.`,
+      "",
+      "The deal, as agreed: businesses comp you a meal or service, you post your honest experience within 48 hours, and you disclose the comp in the post. Nobody can ever ask you for a positive post.",
+      "",
+      ...rosterBenefitsLines(user, user.city),
+      "Sign in any time to check your status: https://app.joinsignl.com",
+      "",
+      "You agreed to SIGNL's Terms of Service and Privacy Policy, and to receive account and marketing emails from SIGNL. You can unsubscribe from marketing emails at any time.",
+      "",
+      "National platforms sell reach. We sell regulars.",
+      "Jeff",
+      "Founder, SIGNL",
+      "hello@joinsignl.com",
+    );
+    return { subject, text: lines.join("\n") };
+  }
+  const lines = [
+    `Hi ${first},`,
+    "",
+    `Your founding spot in ${user.market} is claimed, and your application is in the review queue. Every application is reviewed by a person.`,
+    "Every founding application gets a decision or a clear status within 2 business days.",
+  ];
+  if (band) lines.push(`You are in the first ${band} creators to sign up in ${user.market}. Founding spots lock in sign-up order, and that standing never expires.`);
+  lines.push(
+    "",
+    `What happens next: when you are approved, we email you again, and that is when you finish your profile: your home city, your audience counts, your local audience percentage, your categories, and the rest of what businesses see. A finished profile is what makes you visible to businesses, so the approval email is the one to act on. ${user.market} opens to businesses in the next ${LAUNCH_WINDOW_TEXT}, and founding creators with finished profiles get first pick of offers when it does.`,
+    "",
+    "The deal, as agreed: businesses comp you a meal or service, you post your honest experience within 48 hours, and you disclose the comp in the post. Nobody can ever ask you for a positive post.",
+    "",
+    ...rosterBenefitsLines(user, user.market),
+    "Sign in any time to check your status: https://app.joinsignl.com",
+    "",
+    "You agreed to SIGNL's Terms of Service and Privacy Policy, and to receive account and marketing emails from SIGNL. You can unsubscribe from marketing emails at any time.",
+    "",
+    "National platforms sell reach. We sell regulars.",
+    "Jeff",
+    "Founder, SIGNL",
+    "hello@joinsignl.com",
+  );
+  return { subject, text: lines.join("\n") };
+}
+
+// The day-3 completion reminder (Jeff, 2026-10-20): shorter than
+// the approval email, same pitch. Sent once, by the sweep, only to
+// approved creators whose profile is still unfinished.
+function profileCompletionReminderEmail(user) {
+  const first = greetingName(user);
+  const completion = profileCompletionFor(user);
+  const labels = { city: "your home city", audience: "your audience counts", categories: "your content categories", local: "your local audience %" };
+  const missing = completion.missing.map((id) => labels[id] || id).join(", ");
+  const unlisted = user.market === UNLISTED;
+  const place = unlisted ? user.city : user.market;
+  const subject = "Finish your SIGNL profile to be launch-ready";
+  const lines = [
+    `Hi ${first},`,
+    "",
+    `You are approved as a Founding Creator in ${place}, and your founding spot is locked in. One step is still open: your profile is not finished yet, so businesses cannot see you and you cannot take offers.`,
+    "",
+    `Still to do: ${missing}.`,
+    "Finishing takes a few minutes: sign in, open the Profile tab, and work down the checklist on your dashboard: https://app.joinsignl.com",
+    "",
+    ...completionChecklistLines(user),
+    "",
+    unlisted
+      ? `We open new markets where creator sign-ups pile up, and when ${user.city} opens, founding creators with finished profiles go first.`
+      : `${user.market} opens to businesses in the next ${LAUNCH_WINDOW_TEXT}, and founding creators with finished profiles get first pick of every offer.`,
+    "",
+    "National platforms sell reach. We sell regulars.",
+    "Jeff",
+    "Founder, SIGNL",
+    "hello@joinsignl.com",
+  ];
+  return { subject, text: lines.join("\n") };
+}
+
 function approvalEmail(user, band) {
   const first = greetingName(user);
   const paidLine = paidCampaignLine(user);
-  // Referral ask lands at approval, when the creator is in (Jeff,
-  // 2026-10-18): rosterBenefitsLines carries their personal invite
-  // link, the credited roster, the Momentum points, and the
-  // visibility benefit.
+  // The approval email carries the step-two ask (Jeff, 2026-10-20):
+  // finish the profile to be launch-ready, with the completion
+  // checklist and its Momentum values and a direct link into the
+  // app, then the referral ask (rosterBenefitsLines: their
+  // personal invite link, +3 per sign-up, +10 per approval, points
+  // ordering the business-facing creator list). Founding spots
+  // lock in sign-up order. Signs as Jeff, per the standing rule
+  // for outbound email.
+  const finishLines = (opensLine) => [
+    "",
+    "One step left: finish your profile to be launch-ready.",
+    "Sign in and open the Profile tab: https://app.joinsignl.com",
+    "Your dashboard shows this checklist. The items marked [needed to go live] are what make you visible to businesses; the rest earn Momentum points, and Momentum points order the creator list businesses see:",
+    ...completionChecklistLines(user),
+    "Until your profile is finished, businesses cannot see you and you cannot take offers, so finish it before your market opens.",
+    "",
+    opensLine,
+    "",
+  ];
   if (user.market === UNLISTED) {
     const subject = `You are approved: founding creator for ${user.city}`;
     const lines = [
@@ -1047,17 +1178,15 @@ function approvalEmail(user, band) {
       "",
       `Good news: your application was reviewed and approved. You are a Founding Creator for ${user.city}, and your founding status page is live.`,
     ];
-    if (band) lines.push(`You are in the first ${band} to sign up in ${user.city}. When ${user.city} opens, founding sign-ups are first in line for offers.`);
+    if (band) lines.push(`You are in the first ${band} to sign up in ${user.city}. Founding spots lock in sign-up order, and when ${user.city} opens, founding sign-ups are first in line for offers.`);
     lines.push(
-      "",
-      "Sign in to see your status and keep your profile current: https://app.joinsignl.com",
-      "",
-      `${user.city} is not an open market yet. We open new markets where creator sign-ups pile up, and the moment ${user.city} opens, we email you again.`,
-      "",
+      ...finishLines(`${user.city} is not an open market yet. We open new markets where creator sign-ups pile up, and the moment ${user.city} opens, we email you again.`),
       ...rosterBenefitsLines(user, user.city),
+      "Momentum points order the creator list businesses see, and Headliners are first in line for paid campaigns.",
       ...(paidLine ? [paidLine, ""] : []),
       "National platforms sell reach. We sell regulars.",
-      "The SIGNL team",
+      "Jeff",
+      "Founder, SIGNL",
       "hello@joinsignl.com",
     );
     return { subject, text: lines.join("\n") };
@@ -1068,17 +1197,15 @@ function approvalEmail(user, band) {
     "",
     `Good news: your application was reviewed and approved. You are now a Founding Creator in ${user.market}, and your founding status page is live.`,
   ];
-  if (band) lines.push(`You are in the first ${band} founding creators in ${user.market}. Founding creators are shown to businesses in sign-up order, earliest first.`);
+  if (band) lines.push(`You are in the first ${band} founding creators in ${user.market}. Founding spots lock in sign-up order, and founding creators are shown to businesses in that order.`);
   lines.push(
-    "",
-    "Sign in to see your status and keep your profile current: https://app.joinsignl.com",
-    "",
-    `${user.market} opens to businesses in the next ${LAUNCH_WINDOW_TEXT}. The moment it opens, we email you again, and founding creators get first pick of every offer. Your local audience percentage is the number businesses look at first, so keep it honest and current.`,
-    "",
+    ...finishLines(`${user.market} opens to businesses in the next ${LAUNCH_WINDOW_TEXT}. The moment it opens, we email you again, and founding creators get first pick of every offer. Your local audience percentage is the number businesses look at first, so keep it honest and current.`),
     ...rosterBenefitsLines(user, user.market),
+    "Momentum points order the creator list businesses see, and Headliners are first in line for paid campaigns.",
     ...(paidLine ? [paidLine, ""] : []),
     "National platforms sell reach. We sell regulars.",
-    "The SIGNL team",
+    "Jeff",
+    "Founder, SIGNL",
     "hello@joinsignl.com",
   );
   return { subject, text: lines.join("\n") };
@@ -1664,8 +1791,10 @@ async function discoverCards(query, viewer) {
   // Banned creators (redeemed a comp, never posted, cure expired) are
   // out of discovery entirely: a business can never select them again.
   // Testers are out too: an approved tester account tests the app, it
-  // is never shown to a business as a bookable creator.
-  let creators = users.filter((u) => isRosterCreator(u) && standingState(u) !== "banned");
+  // is never shown to a business as a bookable creator. And an approved
+  // creator whose profile is not complete (a quick claim that has not
+  // finished step two) is not on the roster yet either.
+  let creators = users.filter((u) => isRosterCreator(u) && profileCompleteOf(u) && standingState(u) !== "banned");
   const market = query.market || (viewer && viewer.role === "business" ? viewer.market : null);
   if (market) creators = creators.filter((u) => u.market === (marketByName(market) || {}).name);
   if (query.tier) creators = creators.filter((u) => u.creator && normalizeTierBand(u.creator.tierBand) === normalizeTierBand(query.tier));
@@ -1949,6 +2078,115 @@ function isTester(u) {
 
 function isRosterCreator(u) {
   return !!u && u.role === "creator" && u.status === "approved" && !isTester(u);
+}
+
+// ---------- profile completion: the two-step claim (Jeff, 2026-10-20) ----------
+// Step one CLAIMS the spot with almost nothing: handle, market,
+// email, password, and the rule checkboxes. Founding spots lock in
+// sign-up order, so the claim is what holds the creator's place.
+// Step two is the full profile, finished AFTER approval from the
+// checklist on the creator's dashboard (the approval email walks
+// them into it, and one reminder follows at day 3). An approved
+// creator whose profile is not complete is NOT on the roster:
+// businesses cannot discover them, their public /c/ page answers
+// 404 exactly like a pending creator's, and they cannot apply to
+// open offers or receive direct ones. They can always sign in, see
+// their checklist, and finish the profile.
+//
+// Completeness is COMPUTED from the record on every read (the
+// Momentum philosophy: stored facts, never a client-sent flag).
+// The required set is exactly what the original full sign-up form
+// required, so every creator who registered the old way is
+// complete by construction:
+//   - an Instagram handle
+//   - a home city
+//   - at least one audience count (any platform)
+//   - at least one content category
+//   - a self-reported local audience %
+// Photo, a 40+ character bio, neighborhood, best-work links, and
+// the paid settings are NOT gate fields: they are the points layer
+// of the checklist (existing Momentum values), encouraged, never
+// blocking. The stored creator.profileComplete flag is a cache for
+// payloads, admin, and the reminder sweep; the backfill below
+// repairs it for records written before this shipped.
+function profileCompletionItems(user) {
+  const c = (user && user.creator) || {};
+  const stackCount = Object.keys(audienceStackOf(c)).length;
+  const workLinks = Math.min(3, (c.bestWork || []).length);
+  return [
+    { id: "city", label: "Set your home city", points: null, done: !!String((user && user.city) || "").trim(), required: true },
+    { id: "audience", label: "Add your audience counts", points: MOMENTUM_POINTS.profileStack, done: audienceTotalOf(c) > 0, required: true, detail: stackCount ? `${stackCount} of 3+ platforms counted for the stack bonus` : "3+ platforms earns the stack bonus" },
+    { id: "categories", label: "Pick at least one content category", points: null, done: Array.isArray(c.categories) && c.categories.length > 0, required: true },
+    { id: "local", label: "Report your local audience %", points: MOMENTUM_POINTS.profileLocalAudience, done: c.localAudiencePct !== null && c.localAudiencePct !== undefined, required: true },
+    { id: "photo", label: "Add your profile photo", points: MOMENTUM_POINTS.profilePhoto, done: !!c.hasPhoto, required: false },
+    { id: "bio", label: "Write your bio (40+ characters)", points: MOMENTUM_POINTS.profileBio, done: String(c.bio || "").trim().length >= 40, required: false },
+    { id: "neighborhood", label: "Set your neighborhood or area", points: MOMENTUM_POINTS.profileNeighborhood, done: !!String(c.neighborhood || "").trim(), required: false },
+    { id: "bestwork", label: "Add best work links (+5 each, up to 3)", points: MOMENTUM_POINTS.profileBestWorkPerLink, done: workLinks >= 3, required: false, detail: `${workLinks} of 3 added` },
+    { id: "settings", label: "Review how businesses can book you (comp visits on, paid rate optional)", points: null, done: true, required: false },
+  ];
+}
+
+function profileCompletionFor(user) {
+  const items = profileCompletionItems(user);
+  const required = items.filter((i) => i.required);
+  const requiredDone = required.filter((i) => i.done).length;
+  return {
+    complete: requiredDone === required.length,
+    items,
+    requiredDone,
+    requiredTotal: required.length,
+    missing: required.filter((i) => !i.done).map((i) => i.id),
+  };
+}
+
+function profileCompleteOf(user) {
+  if (!user || user.role !== "creator" || !user.creator) return false;
+  if (!String(user.creator.handle || "").trim()) return false;
+  return profileCompletionFor(user).complete;
+}
+
+// One-time backfill for records written before profileComplete
+// existed: recompute the stored flag (and the completion stamp)
+// from the record itself and report who is genuinely incomplete.
+// Runs opportunistically on the first request after deploy
+// (claimed-flag pattern, like the recruiter kit) and on demand
+// from the admin endpoint. Idempotent: once the flags match the
+// computed values, later runs change nothing.
+const PROFILE_BACKFILL_KEY = "config:profileBackfill";
+async function runProfileBackfill() {
+  const users = await allUsers();
+  const audit = { ranAt: nowIso(), creators: 0, complete: 0, incomplete: 0, updated: 0, approvedIncomplete: [] };
+  for (const u of users) {
+    if (u.role !== "creator" || !u.creator) continue;
+    audit.creators += 1;
+    const completion = profileCompletionFor(u);
+    if (completion.complete) audit.complete += 1;
+    else audit.incomplete += 1;
+    if (u.status === "approved" && !completion.complete) {
+      audit.approvedIncomplete.push({ userId: u.id, handle: u.creator.handle || null, email: u.email, market: u.market, status: u.status, missing: completion.missing });
+    }
+    if (u.creator.profileComplete !== completion.complete || (completion.complete && !u.creator.profileCompletedAt)) {
+      u.creator = {
+        ...u.creator,
+        profileComplete: completion.complete,
+        profileCompletedAt: completion.complete ? (u.creator.profileCompletedAt || u.reviewedAt || u.updatedAt || u.createdAt) : null,
+      };
+      u.updatedAt = nowIso();
+      await store.set(`user:${u.id}`, u);
+      audit.updated += 1;
+    }
+  }
+  await store.set(PROFILE_BACKFILL_KEY, { done: true, ranAt: audit.ranAt, audit });
+  await logEvent({ type: "profile_backfill_completed", actorId: null, actorRole: "system", subjectId: null, market: null, data: audit });
+  return audit;
+}
+
+async function maybeRunProfileBackfill() {
+  const rec = await store.get(PROFILE_BACKFILL_KEY);
+  if (rec && rec.done) return null;
+  // Claim before running so concurrent requests do not pile on.
+  await store.set(PROFILE_BACKFILL_KEY, { claimedAt: nowIso(), done: false });
+  return runProfileBackfill();
 }
 
 // ---------- visit windows + weekly cap (Jeff, 2026-10-19 r2) ----------
@@ -2458,6 +2696,54 @@ async function maybeRunCampaignSweep() {
   // Claim before running so concurrent requests do not pile on.
   await store.set("config:campaignSweep", { lastRunAt: nowIso() });
   await runCampaignSweep();
+}
+
+// ---------- profile completion reminder sweep (Jeff, 2026-10-20) ----------
+// The two-step claim leaves some approved creators with an
+// unfinished profile: approved, spot locked, but invisible to
+// businesses until the gate fields land. Three days after
+// approval, ONE reminder goes out (the approval email already made
+// the full pitch; this is the shorter nudge). The sent stamp lives
+// on the user record, so it can never fire twice. Testers and
+// preview records are excluded: preview writes no user records at
+// all, and a tester is not on the roster. Runs on the same
+// triggers as the compliance sweep: the scheduled function (via
+// the admin compliance sweep endpoint) and a throttled
+// opportunistic pass on ordinary requests. An explicit `now` is
+// honored ONLY in TEST_MODE, mirroring the campaign sweep.
+const PROFILE_REMINDER_DAYS = 3;
+async function runProfileCompletionReminderSweep(opts = {}) {
+  const summary = { checked: 0, sent: 0 };
+  const now = opts.now ? opts.now.getTime() : Date.now();
+  const users = await allUsers();
+  for (const u of users) {
+    if (u.role !== "creator" || u.status !== "approved" || isTester(u)) continue;
+    if (standingState(u) === "banned") continue;
+    if (profileCompleteOf(u)) continue;
+    summary.checked += 1;
+    if (u.profileCompletionReminderSentAt) continue;
+    if (!u.reviewedAt) continue;
+    if (now - Date.parse(u.reviewedAt) < PROFILE_REMINDER_DAYS * DAY_MS) continue;
+    u.profileCompletionReminderSentAt = nowIso();
+    u.updatedAt = nowIso();
+    await store.set(`user:${u.id}`, u);
+    await logEvent({ type: "profile_completion_reminder_sent", actorId: null, actorRole: "system", subjectId: u.id, market: u.market, data: { handle: u.creator ? u.creator.handle : null, approvedAt: u.reviewedAt, missing: profileCompletionFor(u).missing } });
+    try {
+      const mail = profileCompletionReminderEmail(u);
+      await deliverEmail("profile_completion_reminder", u, mail.subject, mail.text, null);
+    } catch (e) { /* email is best-effort; the sent stamp and the event are the record */ }
+    summary.sent += 1;
+  }
+  return summary;
+}
+
+const PROFILE_REMINDER_SWEEP_THROTTLE_MS = 55 * 60 * 1000;
+async function maybeRunProfileReminderSweep() {
+  const rec = await store.get("config:profileReminderSweep");
+  const last = rec && rec.lastRunAt ? Date.parse(rec.lastRunAt) : 0;
+  if (Date.now() - last < PROFILE_REMINDER_SWEEP_THROTTLE_MS) return null;
+  await store.set("config:profileReminderSweep", { lastRunAt: nowIso() });
+  return runProfileCompletionReminderSweep();
 }
 
 // ---------- Creator outreach campaign sender (Jeff, 2026-10-19) ----------
@@ -3048,7 +3334,7 @@ async function previewDashboard() {
   const now = Date.now();
   const plan = planById("growth") || PLANS[1];
   const users = await allUsers();
-  const roster = users.filter((u) => isRosterCreator(u));
+  const roster = users.filter((u) => isRosterCreator(u) && profileCompleteOf(u));
   const handleOf = (u) => ((u.creator && u.creator.handle) || "").toLowerCase();
   const nameOf = (u) => (u.name || "").toLowerCase();
   const featured = [
@@ -3500,6 +3786,22 @@ async function handleRegister(event) {
   const b = parseBody(event);
   const role = b.role;
   if (role !== "creator" && role !== "business") return err(400, "role must be creator or business");
+  // Two-step claim (Jeff, 2026-10-20): a creator may claim their
+  // founding spot with only a handle, a market, an email, a
+  // password, and the rule checkboxes. The full profile is step
+  // two, finished after approval from the dashboard checklist.
+  // quickClaim is creators only; businesses always register with
+  // the full form. The agreement checks are the same four the full
+  // form enforces, with the same words.
+  const quickClaim = role === "creator" && b.quickClaim === true;
+  const claimHandle = quickClaim && typeof b.handle === "string" ? b.handle.replace(/^@/, "").trim() : "";
+  if (quickClaim) {
+    if (!claimHandle) return err(400, "Your Instagram handle is required");
+    if (b.agreedHonestPosts !== true) return err(400, "Please confirm the honest-post rule: no business can ever require a positive post.");
+    if (b.agreedFtcDisclosure !== true) return err(400, "Please confirm you will disclose every comp in your posts, as the FTC requires.");
+    if (b.agreedPostCompliance !== true) return err(400, "Please confirm the post rule: post within 48 hours of a comped visit for full credit and paste the post link in the app. One week is the hard stop: a redeemed visit with no post pauses your account at one week and closes it at two.");
+    if (b.agreedTerms !== true) return err(400, "Please agree to the Terms of Service and Privacy Policy, and to receiving account and marketing emails from SIGNL.");
+  }
   // Business registration is founding-list intake (Jeff restored
   // the standing launch shape, 2026-10-20): a business registers
   // with the full form, is reviewed like any application, and
@@ -3511,7 +3813,7 @@ async function handleRegister(event) {
   // concierge, hand-sent by Jeff at activation.
   if (!isEmail(b.email || "")) return err(400, "A valid email is required");
   if (typeof b.password !== "string" || b.password.length < 10) return err(400, "Password must be at least 10 characters");
-  if (!b.name || typeof b.name !== "string") return err(400, "Name is required");
+  if (!quickClaim && (!b.name || typeof b.name !== "string")) return err(400, "Name is required");
   const unlisted = b.market === UNLISTED;
   if (unlisted && role !== "creator") return err(400, "Business accounts are tied to a SIGNL market. Pick your market from the list; if your city is not there yet, join as a creator-market signal on joinsignl.com and we will open business accounts when the market launches.");
   const market = unlisted ? { name: UNLISTED, cities: [] } : marketByName(b.market || "");
@@ -3539,7 +3841,9 @@ async function handleRegister(event) {
     id,
     role,
     email,
-    name: b.name.trim(),
+    // A quick claim carries no name: the handle stands in until
+    // the creator sets their real name in the completion flow.
+    name: typeof b.name === "string" && b.name.trim() ? b.name.trim() : claimHandle,
     passwordSalt: salt,
     passwordHash: hash,
     status: "pending",
@@ -3566,7 +3870,58 @@ async function handleRegister(event) {
   const referredBy = typeof b.referredBy === "string" ? b.referredBy.trim().replace(/^@/, "").slice(0, 40) : "";
   if (referredBy) user.referredBy = referredBy;
 
-  if (role === "creator") {
+  if (role === "creator" && quickClaim) {
+    // Step one of the two-step claim: the record carries the
+    // handle, the four agreements, and defaults for everything
+    // else. The gate fields (home city, audience counts,
+    // categories, local audience %) stay empty on purpose, so
+    // profileComplete computes false until the creator finishes
+    // step two after approval. City for a listed market is a
+    // completion step; an unlisted claim already carries its
+    // typed city on the user record from the market block above.
+    user.creator = {
+      handle: claimHandle,
+      instagramUrl: `https://instagram.com/${claimHandle}`,
+      tiktokHandle: null,
+      tiktokUrl: null,
+      youtubeChannel: null,
+      facebookUrl: null,
+      xHandle: null,
+      xUrl: null,
+      linkedinUrl: null,
+      followerCount: 0,
+      audienceStack: {},
+      totalAudience: 0,
+      avgViews: 0,
+      tierBand: tierForFollowers(0),
+      suggestedTier: tierForFollowers(0),
+      computedTier: tierForFollowers(0),
+      categories: [],
+      compCategories: [],
+      openToPaidCampaigns: false,
+      compOpen: true,
+      paidRate: null,
+      bio: "",
+      bestWork: [],
+      maxVisitsPerWeek: 3,
+      neighborhood: "",
+      topAudienceCities: [],
+      localAudiencePct: null,
+      localAudienceSource: null,
+      localAudienceAsOf: null,
+      agreedHonestPosts: true,
+      agreedFtcDisclosure: true,
+      agreedPostCompliance: true,
+      agreedAt: ts,
+      agreedTerms: true,
+      termsVersion: TERMS_VERSION,
+      marketingEmailConsent: true,
+      marketingConsentAt: ts,
+      hasPhoto: false,
+      photoUploadedAt: null,
+      igConnected: false,
+    };
+  } else if (role === "creator") {
     // The founding creator profile builder. Required: Instagram handle,
     // home city inside the chosen market, follower count, at least one
     // content category, self-reported local audience %, and both rule
@@ -3711,6 +4066,16 @@ async function handleRegister(event) {
     };
   }
 
+  if (role === "creator") {
+    // The stored completeness flag, computed from the record by
+    // the same rule the roster gates read: a full-form
+    // registration lands complete, a quick claim lands incomplete.
+    const completeNow = profileCompleteOf(user);
+    user.creator.profileComplete = completeNow;
+    user.creator.profileCompletedAt = completeNow ? ts : null;
+    user.creator.signupPath = quickClaim ? "quick_claim" : "full";
+  }
+
   await store.set(`user:${id}`, user);
   await store.set(`email:${email}`, { userId: id });
   await logEvent({
@@ -3721,13 +4086,16 @@ async function handleRegister(event) {
     market: user.market,
     data:
       role === "creator"
-        ? { handle: user.creator.handle, city: user.city, neighborhood: user.creator.neighborhood, state: user.state, country: user.country, unlisted: user.market === UNLISTED, followerCount: user.creator.followerCount, audienceStack: user.creator.audienceStack, totalAudience: user.creator.totalAudience, tierBand: normalizeTierBand(user.creator.tierBand), suggestedTier: normalizeTierBand(user.creator.suggestedTier), localAudiencePct: user.creator.localAudiencePct, localAudienceSource: user.creator.localAudienceSource, categories: user.creator.categories, compCategories: user.creator.compCategories, openToPaidCampaigns: user.creator.openToPaidCampaigns, agreedPostCompliance: true, termsVersion: TERMS_VERSION, marketingEmailConsent: true, ...(user.referredBy ? { referredBy: user.referredBy } : {}) }
+        ? { quickClaim: !!quickClaim, profileComplete: user.creator.profileComplete === true, handle: user.creator.handle, city: user.city, neighborhood: user.creator.neighborhood, state: user.state, country: user.country, unlisted: user.market === UNLISTED, followerCount: user.creator.followerCount, audienceStack: user.creator.audienceStack, totalAudience: user.creator.totalAudience, tierBand: normalizeTierBand(user.creator.tierBand), suggestedTier: normalizeTierBand(user.creator.suggestedTier), localAudiencePct: user.creator.localAudiencePct, localAudienceSource: user.creator.localAudienceSource, categories: user.creator.categories, compCategories: user.creator.compCategories, openToPaidCampaigns: user.creator.openToPaidCampaigns, agreedPostCompliance: true, termsVersion: TERMS_VERSION, marketingEmailConsent: true, ...(user.referredBy ? { referredBy: user.referredBy } : {}) }
         : { businessName: user.business.businessName, category: user.business.category, plan: user.business.plan, planPriceMonthly: user.business.planPriceMonthly, ...(user.referredBy ? { referredBy: user.referredBy } : {}) },
   });
-  if (role === "creator") {
-    // Registration IS the complete profile build at launch: the profile
-    // fields are all collected up front, so this fires here. A photo can
-    // still be added afterwards (profile_photo_uploaded).
+  if (role === "creator" && !quickClaim) {
+    // A full-form registration IS the complete profile build: the
+    // profile fields are all collected up front, so this fires
+    // here. A quick claim fires NO profile_completed event: the
+    // profile is finished later, and that flip is logged by the
+    // profile save when it lands. A photo can still be added
+    // afterwards (profile_photo_uploaded).
     await logEvent({
       type: "profile_completed",
       actorId: id,
@@ -3783,7 +4151,7 @@ async function handleRegister(event) {
     try {
       const summary = await foundingSummary(user);
       const band = foundingBand(summary && summary.queuePosition);
-      const mail = signupConfirmationEmail(user, band);
+      const mail = quickClaim ? claimConfirmationEmail(user, band) : signupConfirmationEmail(user, band);
       await deliverEmail("signup_confirmation", user, mail.subject, mail.text, band);
     } catch (e) { /* email is best-effort; the queued events tell the story */ }
   }
@@ -3840,6 +4208,13 @@ async function route(event) {
   // deploy, guarded by a claimed blob flag, and never repeats. It
   // must never break a request, hence the try/catch.
   try { await maybeSendRecruiterKit(); } catch (e) { /* kit email is best-effort */ }
+  // One-time profileComplete backfill: recomputes the stored flag
+  // for records written before the two-step claim shipped, guarded
+  // by its own claimed flag, audit logged as an event.
+  try { await maybeRunProfileBackfill(); } catch (e) { /* backfill is best-effort on the request path */ }
+  // Profile completion reminders: same throttled opportunistic
+  // pattern as the compliance sweep below.
+  try { await maybeRunProfileReminderSweep(); } catch (e) { /* reminder sweep is best-effort on the request path */ }
   // Post-compliance sweep: drives the 48h reminders, the day-8 pause,
   // and the day-9 ban. Throttled to roughly hourly here (the Netlify
   // scheduled function and the admin endpoint are the explicit
@@ -3908,7 +4283,7 @@ async function route(event) {
           // A banned creator's page stops resolving, exactly like a
           // pending or rejected one: they are not bookable, so the
           // public page comes down until an admin reinstates them.
-          .filter((u) => isRosterCreator(u) && standingState(u) !== "banned" && u.creator && String(u.creator.handle || "").toLowerCase() === handleKey)
+          .filter((u) => isRosterCreator(u) && profileCompleteOf(u) && standingState(u) !== "banned" && u.creator && String(u.creator.handle || "").toLowerCase() === handleKey)
           .sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1))[0]
       : null;
     if (!target) return err(404, "Creator not found");
@@ -3927,7 +4302,9 @@ async function route(event) {
     // Public while approved and in good/paused standing; a banned
     // creator's photo locks down with their profile page. A tester's
     // photo locks down the same way: their profile is not public.
-    let allowed = target.status === "approved" && !isTester(target) && standingState(target) !== "banned";
+    // An unfinished profile's photo locks down too: the /c/ page it
+    // would illustrate does not resolve yet.
+    let allowed = target.status === "approved" && !isTester(target) && profileCompleteOf(target) && standingState(target) !== "banned";
     if (!allowed && user) {
       allowed =
         user.id === target.id ||
@@ -3985,6 +4362,12 @@ async function route(event) {
     if (user.role === "creator" && user.creator) {
       const c = { ...user.creator };
       const changes = {};
+      // Display name: a quick claim starts out named by its
+      // handle; the completion flow is where the real name lands.
+      if (b.name !== undefined) {
+        const nn = String(b.name || "").trim().slice(0, 80);
+        if (nn) { changes.name = [user.name, nn]; user.name = nn; }
+      }
       if (b.handle) { changes.handle = [c.handle, String(b.handle).replace(/^@/, "").trim()]; c.handle = changes.handle[1]; c.instagramUrl = `https://instagram.com/${c.handle}`; }
       // Audience counts, stacked (Jeff, 2026-10-19). Sending
       // audienceStack replaces the whole stack; sending followerCount
@@ -4109,9 +4492,23 @@ async function route(event) {
         c.localAudienceAsOf = pct === null ? null : ts.slice(0, 10);
       }
       user.creator = c;
+      // Two-step claim (Jeff, 2026-10-20): completeness recomputes
+      // on every save, from the record, and the stored flag follows
+      // it. The flip to complete is the step-two finish line: it
+      // stamps profileCompletedAt, and clearing a gate field flips
+      // the creator back to incomplete (the roster gates read the
+      // computed value, so they follow immediately).
+      const wasComplete = c.profileComplete === true;
+      const nowComplete = profileCompleteOf(user);
+      c.profileComplete = nowComplete;
+      if (nowComplete && !wasComplete) c.profileCompletedAt = ts;
+      if (!nowComplete) c.profileCompletedAt = null;
       user.updatedAt = ts;
       await store.set(`user:${user.id}`, user);
       await logEvent({ type: "profile_updated", actorId: user.id, actorRole: "creator", subjectId: user.id, market: user.market, data: { changes } });
+      if (nowComplete && !wasComplete) {
+        await logEvent({ type: "profile_completed", actorId: user.id, actorRole: "creator", subjectId: user.id, market: user.market, data: { via: "completion_flow", handle: c.handle, city: user.city, neighborhood: c.neighborhood, followerCount: c.followerCount, audienceStack: c.audienceStack, totalAudience: c.totalAudience, avgViews: c.avgViews, tierBand: normalizeTierBand(c.tierBand), localAudiencePct: c.localAudiencePct, localAudienceSource: c.localAudienceSource, categories: c.categories, compCategories: c.compCategories, topAudienceCities: c.topAudienceCities, hasTiktok: !!c.tiktokHandle, hasYoutube: !!c.youtubeChannel, facebookUrl: c.facebookUrl, xHandle: c.xHandle, xUrl: c.xUrl, linkedinUrl: c.linkedinUrl, hasPhoto: !!c.hasPhoto, openToPaidCampaigns: c.openToPaidCampaigns } });
+      }
       if (changes.localAudiencePct) {
         await logEvent({ type: "local_audience_updated", actorId: user.id, actorRole: "creator", subjectId: user.id, market: user.market, data: { from: changes.localAudiencePct[0], to: changes.localAudiencePct[1], source: "Self-reported" } });
       }
@@ -4218,7 +4615,18 @@ async function route(event) {
     // the SLA and backfill never depend on ordinary app traffic.
     const offerSweep = await runOfferSweep();
     await store.set("config:offerSweep", { lastRunAt: nowIso() });
-    return json(200, { ok: true, sweep: summary, offerSweep });
+    // And the profile completion reminders, so the day-3 nudge
+    // rides the same scheduled clock. A `now` in the body is
+    // honored ONLY in TEST_MODE (the verify suites time-travel).
+    const b = parseBody(event);
+    const remOpts = {};
+    if (TEST_MODE && b.now) {
+      const d = new Date(b.now);
+      if (!Number.isNaN(d.getTime())) remOpts.now = d;
+    }
+    const profileReminders = await runProfileCompletionReminderSweep(remOpts);
+    await store.set("config:profileReminderSweep", { lastRunAt: nowIso() });
+    return json(200, { ok: true, sweep: summary, offerSweep, profileReminders });
   }
   // Offer lifecycle sweep: same trigger discipline as compliance
   // (scheduled token or admin session). Drives the selection SLA,
@@ -4337,6 +4745,16 @@ async function route(event) {
         } catch (e) { /* email is best-effort */ }
       }
       return json(200, { user: publicUser(target) });
+    }
+    // Profile backfill on demand (Jeff, 2026-10-20): recompute the
+    // stored profileComplete flags from the records themselves and
+    // return the audit (who is complete, who is not, and which
+    // approved creators are still unfinished). The same pass runs
+    // once on its own after deploy; this endpoint re-runs it and
+    // reports, for the launch checklist.
+    if (method === "POST" && seg[1] === "profile-backfill") {
+      const audit = await runProfileBackfill();
+      return json(200, { ok: true, audit });
     }
     // Business activation (Jeff, 2026-10-20 correction): approval
     // puts a business on the founding list; ACTIVATION is a
@@ -4677,6 +5095,7 @@ async function route(event) {
       if (b.creatorId) {
         targetCreator = await store.get(`user:${b.creatorId}`);
         if (!targetCreator || targetCreator.role !== "creator" || targetCreator.status !== "approved") return err(400, "Target creator is not an approved creator");
+        if (!profileCompleteOf(targetCreator)) return err(400, "That creator has not finished their founding profile yet, so they cannot receive offers. They get the checklist and a reminder from us; pick another creator for now.");
         if (standingState(targetCreator) === "banned") return err(400, "That creator redeemed a comp and never posted, so they cannot be booked again.");
         if (standingState(targetCreator) === "paused") return err(400, "That creator is paused until a late post lands. Pick another creator for now.");
       }
@@ -4934,7 +5353,7 @@ async function route(event) {
       for (const r of rows) {
         const creatorId = r.key.split(":")[2];
         const c = await store.get(`user:${creatorId}`);
-        if (c) out.push(await publicCreator(c, user));
+        if (c && profileCompleteOf(c)) out.push(await publicCreator(c, user));
       }
       return json(200, { favorites: out });
     }
@@ -4944,6 +5363,10 @@ async function route(event) {
       if (!creator || creator.role !== "creator") return err(404, "Creator not found");
       const key = `favorite:${user.id}:${creator.id}`;
       const existing = await store.get(key);
+      // Adding a favorite needs a roster creator; removing one is
+      // always allowed, even if the creator later unfinished their
+      // profile (their card simply stops rendering above).
+      if (!existing && !profileCompleteOf(creator)) return err(404, "Creator not found");
       if (existing) {
         await store.del(key);
         await logEvent({ type: "favorite_removed", actorId: user.id, actorRole: "business", subjectId: creator.id, market: creator.market, data: {} });
@@ -4964,6 +5387,7 @@ async function route(event) {
       const b = parseBody(event);
       const creator = await store.get(`user:${b.creatorId}`);
       if (!creator || creator.role !== "creator" || creator.status !== "approved") return err(400, "That creator is not on the roster");
+      if (!profileCompleteOf(creator)) return err(400, "That creator has not finished their founding profile yet, so they cannot take offers. They get the checklist and a reminder from us; pick another creator for now.");
       if (standingState(creator) === "banned") return err(400, "That creator redeemed a comp and never posted, so they cannot be booked again.");
       if (standingState(creator) === "paused") return err(400, "That creator is paused until a late post lands. Pick another creator for now.");
       // Prefill from the business's most recent delivered visit
@@ -5036,6 +5460,7 @@ async function route(event) {
       if (b.creatorId) {
         targetCreator = await store.get(`user:${b.creatorId}`);
         if (!targetCreator || targetCreator.role !== "creator" || targetCreator.status !== "approved") return err(400, "Target creator is not an approved creator");
+        if (!profileCompleteOf(targetCreator)) return err(400, "That creator has not finished their founding profile yet, so they cannot receive offers. They get the checklist and a reminder from us; pick another creator for now.");
         if (standingState(targetCreator) === "banned") return err(400, "That creator redeemed a comp and never posted, so they cannot be booked again.");
         if (standingState(targetCreator) === "paused") return err(400, "That creator is paused until a late post lands. Pick another creator for now.");
       }
@@ -5262,6 +5687,7 @@ async function route(event) {
       if (filledCountFor(offer.id, bookings) >= offer.spots) return err(409, "All spots on this offer are filled");
       const creator = await store.get(`user:${app.creatorId}`);
       if (!creator || creator.role !== "creator" || creator.status !== "approved") return err(400, "That creator is no longer on the roster");
+      if (!profileCompleteOf(creator)) return err(400, "That creator has not finished their founding profile yet, so they cannot take a visit. Pick the next applicant.");
       if (standingState(creator) === "banned" || standingState(creator) === "paused") return err(400, "That creator cannot take a visit right now (compliance standing). Pick the next applicant.");
       const cap = maxVisitsPerWeekOf(creator);
       if (visitsThisWeek(bookings, creator.id, Date.now()) >= cap) return err(409, `That creator is at their max of ${cap} visits this week. Pick the next applicant, or wait for next week.`);
@@ -5306,6 +5732,7 @@ async function route(event) {
       if (user.role !== "creator") return err(403, "Creators only");
       if (standingState(user) === "banned") return err(403, "Your account was closed to offers after a comped visit was redeemed and no post was delivered. Contact hello@joinsignl.com if you believe this is wrong.");
       if (standingState(user) === "paused") return err(403, "Your account is paused until the late post from your last visit is checked off. Paste the post link under My Visits and offers open again.");
+      if (!profileCompleteOf(user)) return err(403, "Finish your founding profile before applying: businesses can only pick creators with finished profiles. Your checklist is on your dashboard, under Profile.");
       const offer = await store.get(`offer:${seg[1]}`);
       if (!offer || laneOf(offer) !== "open") return err(404, "Offer not available");
       if (offer.status !== "open") return err(409, "This offer is not taking applications right now");
@@ -5360,6 +5787,7 @@ async function route(event) {
       // delivers the missing post first; a banned creator is done.
       if (standingState(user) === "banned") return err(403, "Your account was closed to offers after a comped visit was redeemed and no post was delivered. Contact hello@joinsignl.com if you believe this is wrong.");
       if (standingState(user) === "paused") return err(403, "Your account is paused until the late post from your last visit is checked off. Paste the post link under My Visits and new offers open again.");
+      if (!profileCompleteOf(user)) return err(403, "Finish your founding profile before accepting offers: businesses can only book creators with finished profiles. Your checklist is on your dashboard, under Profile.");
       const offer = await store.get(`offer:${seg[1]}`);
       if (!offer || offer.status !== "open") return err(404, "Offer not available");
       if (offer.creatorId && offer.creatorId !== user.id) return err(403, "This offer was sent to a different creator");
@@ -5458,6 +5886,7 @@ async function route(event) {
       if (user.role !== "creator") return err(403, "Creators only");
       if (standingState(user) === "banned") return err(403, "Your account was closed to offers after a comped visit was redeemed and no post was delivered.");
       if (standingState(user) === "paused") return err(403, "Your account is paused until the late post from your last visit is checked off.");
+      if (!profileCompleteOf(user)) return err(403, "Finish your founding profile before taking this spot: businesses can only book creators with finished profiles. Your checklist is on your dashboard, under Profile.");
       const app = await store.get(`application:${seg[1]}`);
       if (!app || app.creatorId !== user.id) return err(404, "Application not found");
       if (app.status !== "backfill_offered") return err(409, "This backfill spot is no longer being offered to you");
@@ -5593,6 +6022,7 @@ async function route(event) {
     const b = parseBody(event);
     const creator = await store.get(`user:${b.creatorId}`);
     if (!creator || creator.role !== "creator" || creator.status !== "approved" || isTester(creator)) return err(400, "That creator is not on the roster");
+    if (!profileCompleteOf(creator)) return err(400, "That creator has not finished their founding profile yet, so they cannot take bookings.");
     if (creator.market !== user.market) return err(400, "Paid bookings are inside your own market");
     if (standingState(creator) === "banned") return err(400, "That creator redeemed a comp and never posted, so they cannot be booked again.");
     if (standingState(creator) === "paused") return err(400, "That creator is paused until a late post lands. Pick another creator for now.");
@@ -6159,4 +6589,4 @@ async function route(event) {
 
 // The email builders are exported alongside the router so the verify
 // suites can assert on the exact copy a creator receives.
-module.exports = { route, approvalEmail, signupConfirmationEmail, recruiterKitEmail, createMomentum, runComplianceSweep, runOfferSweep, runCampaignSweep, campaignEmail, crossoverEmail, campaignEmailFor, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, STANDARD_VISIT, visitRightsForPlan, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength };
+module.exports = { route, approvalEmail, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, createMomentum, runComplianceSweep, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, profileCompleteOf, profileCompletionFor, campaignEmail, crossoverEmail, campaignEmailFor, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, STANDARD_VISIT, visitRightsForPlan, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength };
