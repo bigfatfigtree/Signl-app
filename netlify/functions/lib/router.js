@@ -110,6 +110,86 @@ function paidMath(rate) {
 // escrows on its own. Suggested default $500.
 const MANAGED_TALENT_BUDGET_DEFAULT = 500;
 
+// ---------- Refinement bundle (Jeff, 2026-10-20 late) ----------
+// Four product rules shipped together:
+// 1. COVERS: every comp offer states how many people the comp
+//    covers (1 or 2). The entourage problem: a creator showing up
+//    with three friends on a comp written for one is a register
+//    fight nobody wins, so the number is a required choice in the
+//    composer, stamped onto the booking, and shown on every card
+//    including the staff redemption card. Records written before
+//    this shipped read as 1.
+// 2. PAID BRIEF: paid visits (offers and direct bookings) may
+//    carry short key points for the creator. Paid buys direction,
+//    not a verdict: key points only, never a script, never
+//    required praise, never post pre-approval. Comp offers cannot
+//    carry a brief; the server refuses one.
+// 3. STRIKES: a booked visit whose redemption window expires
+//    unused is a strike. Three strikes pause the account pending
+//    admin review. Honor-voided and business-cancelled bookings
+//    never strike. Reinstatement is admin-only and resets the
+//    count to one short of the limit (probation), so one more
+//    expired window pauses the account again.
+// 4. The creator free line, word for word, everywhere creators
+//    meet SIGNL. It is carefully worded to stay true: joining,
+//    listing, and comp bookings are free; the only creator-side
+//    fee anywhere is the 3% share of the 6% platform fee on PAID
+//    bookings, and that math never sits next to the word free.
+const CREATOR_FREE_LINE = "SIGNL is free for creators. Always. Businesses pay the platform. You never pay to join, to list, or to get booked.";
+const PAID_BRIEF_MAX = 500;
+const PAID_BRIEF_GUIDANCE = "Key points only: what to feature, names, dates. Creators post honestly in their own words. No scripts, no required praise, no post pre-approval.";
+const STRIKE_LIMIT = 3;
+// Reinstatement from a strike pause restarts the count here: one
+// short of the limit, so exactly one more expired window pauses
+// the account again. The pause email tells the creator this.
+const STRIKE_PROBATION_COUNT = STRIKE_LIMIT - 1;
+const VISIT_GUARANTEE_LINE = "Visit Guarantee: if a booked creator does not show up or does not post, that visit does not count against your monthly visits. It is replaced.";
+
+function coversOf(record) {
+  const n = Number(record && record.covers);
+  return n === 2 ? 2 : 1;
+}
+
+function coversText(record) {
+  return coversOf(record) === 2 ? "Comp covers 2 people" : "Comp covers you";
+}
+
+function noShowStrikesOf(user) {
+  const n = Number(user && user.noShowStrikes);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+}
+
+function strikePauseReason() {
+  return "Three booked visit windows expired unused. The account is paused pending a SIGNL review.";
+}
+
+function strikePaused(user) {
+  return !!(user && user.standing && user.standing.source === "strikes" && user.standing.state === "paused");
+}
+
+// What a business hears when it tries to book a paused creator,
+// and what a paused creator hears about their own account. A
+// strike pause is NOT lifted by pasting a post link, so the copy
+// must never promise that route for it.
+function pausedPickMessage(creator) {
+  return strikePaused(creator)
+    ? "That creator is paused pending a SIGNL review. Pick another creator for now."
+    : "That creator is paused until a late post lands. Pick another creator for now.";
+}
+
+function pausedSelfMessage(user) {
+  return strikePaused(user)
+    ? "Your account is paused pending a SIGNL review after three booked visit windows expired unused. The team reviews every pause by hand; questions: hello@joinsignl.com."
+    : "Your account is paused until the late post from your last visit is checked off. Paste the post link under My Visits and offers open again.";
+}
+
+// The plain-language line a creator sees about their own strikes.
+function strikeStatusLine(user) {
+  const n = noShowStrikesOf(user);
+  if (!n) return null;
+  return `Visit strikes: ${n} of ${STRIKE_LIMIT}. Letting a booked visit window expire counts as a strike. Three strikes pauses your account for review.`;
+}
+
 // Plan payment stays concierge (Jeff, 2026-10-20): the plan is
 // recorded in-app at sign-up, NO card is charged by the app, and
 // no payment link is shown in the app. When SIGNL activates a
@@ -1002,6 +1082,8 @@ function signupConfirmationEmail(user, band) {
       "",
       "The deal, as agreed: businesses comp you a meal or service, you post your honest experience within 48 hours, and you disclose the comp in the post. Nobody can ever ask you for a positive post.",
       "",
+      CREATOR_FREE_LINE,
+      "",
       ...(paidLine ? [paidLine, ""] : []),
       ...rosterBenefitsLines(user, user.city),
       "Sign in any time to check your status: https://app.joinsignl.com",
@@ -1026,6 +1108,8 @@ function signupConfirmationEmail(user, band) {
     `What happens next: when you are approved, we email you again and your founding status page opens at app.joinsignl.com. ${user.market} opens to businesses in the next ${LAUNCH_WINDOW_TEXT}, and founding creators get first pick of offers when it does.`,
     "",
     "The deal, as agreed: businesses comp you a meal or service, you post your honest experience within 48 hours, and you disclose the comp in the post. Nobody can ever ask you for a positive post.",
+    "",
+    CREATOR_FREE_LINE,
     "",
     ...(paidLine ? [paidLine, ""] : []),
     ...rosterBenefitsLines(user, user.market),
@@ -1078,6 +1162,8 @@ function claimConfirmationEmail(user, band) {
       "",
       "The deal, as agreed: businesses comp you a meal or service, you post your honest experience within 48 hours, and you disclose the comp in the post. Nobody can ever ask you for a positive post.",
       "",
+      CREATOR_FREE_LINE,
+      "",
       ...rosterBenefitsLines(user, user.city),
       "Sign in any time to check your status: https://app.joinsignl.com",
       "",
@@ -1102,6 +1188,8 @@ function claimConfirmationEmail(user, band) {
     `What happens next: when you are approved, we email you again, and that is when you finish your profile: your home city, your audience counts, your local audience percentage, your categories, and the rest of what businesses see. A finished profile is what makes you visible to businesses, so the approval email is the one to act on. ${user.market} opens to businesses in the next ${LAUNCH_WINDOW_TEXT}, and founding creators with finished profiles get first pick of offers when it does.`,
     "",
     "The deal, as agreed: businesses comp you a meal or service, you post your honest experience within 48 hours, and you disclose the comp in the post. Nobody can ever ask you for a positive post.",
+    "",
+    CREATOR_FREE_LINE,
     "",
     ...rosterBenefitsLines(user, user.market),
     "Sign in any time to check your status: https://app.joinsignl.com",
@@ -1170,6 +1258,7 @@ function approvalEmail(user, band) {
     "",
     opensLine,
     "",
+    CREATOR_FREE_LINE,
   ];
   if (user.market === UNLISTED) {
     const subject = `You are approved: founding creator for ${user.city}`;
@@ -1526,6 +1615,8 @@ async function createBookingForOffer({ offer, creator, via, applicationId = null
     category: offer.category,
     title: offer.title,
     whatComped: offer.whatComped,
+    covers: kind === "paid" ? null : coversOf(offer),
+    paidBrief: kind === "paid" ? (offer.paidBrief || null) : null,
     dollarCap: offer.dollarCap,
     visitWindow: offer.visitWindow,
     windowMode: offer.windowMode || "7days",
@@ -1571,9 +1662,9 @@ async function createBookingForOffer({ offer, creator, via, applicationId = null
   await store.set(`booking:${booking.id}`, booking);
   await store.set(`code:${code}`, { bookingId: booking.id });
   await store.set(`ccode:${creatorCode}`, { bookingId: booking.id });
-  await logEvent({ type: "booking_code_issued", actorId: creator.id, actorRole: "creator", subjectId: booking.id, market: offer.market, data: { code, offerId: offer.id, businessId: offer.businessId, dollarCap: booking.dollarCap, via } });
+  await logEvent({ type: "booking_code_issued", actorId: creator.id, actorRole: "creator", subjectId: booking.id, market: offer.market, data: { code, offerId: offer.id, businessId: offer.businessId, dollarCap: booking.dollarCap, covers: booking.covers, hasBrief: !!booking.paidBrief, via } });
   if (kind === "paid") {
-    await logEvent({ type: "paid_booking_created", actorId: offer.businessId, actorRole: "business", subjectId: booking.id, market: booking.market, data: { creatorId: creator.id, rate: booking.paidLane.rate, businessTotal: booking.paidLane.businessTotal, creatorNet: booking.paidLane.creatorNet, platformFee: booking.paidLane.platformFee, escrowState: "held", via, offerId: offer.id } });
+    await logEvent({ type: "paid_booking_created", actorId: offer.businessId, actorRole: "business", subjectId: booking.id, market: booking.market, data: { creatorId: creator.id, rate: booking.paidLane.rate, businessTotal: booking.paidLane.businessTotal, creatorNet: booking.paidLane.creatorNet, platformFee: booking.paidLane.platformFee, escrowState: "held", via, offerId: offer.id, hasBrief: !!booking.paidBrief } });
   }
   return booking;
 }
@@ -2421,6 +2512,28 @@ function bannedNoticeReason() {
   return "A comped visit was redeemed and no post was ever delivered inside the window. This account cannot be booked again unless SIGNL reinstates it.";
 }
 
+// The strike pause email (refinement bundle, 2026-10-20): sent once
+// when the third expired window pauses the account. Plain language,
+// the count, what happens next, and the review route. No em dashes.
+function strikePauseEmail(creator) {
+  const first = greetingName(creator);
+  const subject = "Your SIGNL account is paused for review";
+  const lines = [
+    `Hi ${first},`,
+    "",
+    `Three booked visits on your account reached the end of their redemption windows without being used. ${strikeStatusLine(creator) || ""}`,
+    "",
+    "Your account is paused while the SIGNL team reviews it. While it is paused, businesses cannot send you new offers and you cannot take new ones. Visits you already redeemed are not affected.",
+    "",
+    "If something kept you from those visits, reply to this email and tell us what happened. Reviews are done by a person, and reinstated accounts restart with two strikes on the count, one short of the limit, so one more expired window pauses the account again.",
+    "",
+    "Jeff",
+    "Founder, SIGNL",
+    "hello@joinsignl.com",
+  ];
+  return { subject, text: lines.join("\n") };
+}
+
 // The sweep: one pass over every redeemed-but-unposted booking,
 // driving reminders, the day-8 pause, and the day-9 ban. Idempotent:
 // every step stamps the booking or the user record before it acts, so
@@ -2554,6 +2667,38 @@ async function runComplianceSweep() {
     await store.set(`booking:${booking.id}`, booking);
     await logEvent({ type: "offer_expired", actorId: null, actorRole: "system", subjectId: booking.id, market: booking.market, data: { creatorId: booking.creatorId, businessId: booking.businessId, redeemBy: booking.redeemBy } });
     summary.expired += 1;
+    // Strike rule (refinement bundle, 2026-10-20): an expired
+    // redemption window is a strike on the creator. The loop above
+    // already skips honor-voided bookings, and business-cancelled
+    // bookings never reach "expired" (their status is cancelled),
+    // so a strike can only land on a genuine accept-then-vanish.
+    // The booking's status change above makes this idempotent: a
+    // re-run skips it because it is no longer "booked". At the
+    // limit the account pauses pending admin review, with the
+    // strike source stamped on the standing record so no proof
+    // submission can lift it (unpauseIfClear checks the source).
+    const strikeCreator = await store.get(`user:${booking.creatorId}`);
+    if (strikeCreator && strikeCreator.role === "creator") {
+      const strikes = noShowStrikesOf(strikeCreator) + 1;
+      strikeCreator.noShowStrikes = strikes;
+      strikeCreator.updatedAt = nowIso();
+      await store.set(`user:${strikeCreator.id}`, strikeCreator);
+      booking.compliance.strikeCounted = strikes;
+      booking.updatedAt = nowIso();
+      await store.set(`booking:${booking.id}`, booking);
+      await logEvent({ type: "creator_strike", actorId: null, actorRole: "system", subjectId: strikeCreator.id, market: booking.market, data: { bookingId: booking.id, businessId: booking.businessId, strikes, limit: STRIKE_LIMIT } });
+      summary.strikes = (summary.strikes || 0) + 1;
+      if (strikes >= STRIKE_LIMIT && standingState(strikeCreator) !== "banned" && standingState(strikeCreator) !== "paused") {
+        strikeCreator.standing = { state: "paused", source: "strikes", reason: strikePauseReason(), at: nowIso(), bookingId: booking.id };
+        strikeCreator.updatedAt = nowIso();
+        await store.set(`user:${strikeCreator.id}`, strikeCreator);
+        await notifyUser(strikeCreator.id, "account_paused_strikes", "Your SIGNL account is paused for review: three booked visit windows expired unused. Reply to the email we sent if something kept you from those visits.", { strikes, limit: STRIKE_LIMIT });
+        const mail = strikePauseEmail(strikeCreator);
+        await deliverEmail("strike_pause", strikeCreator, mail.subject, mail.text);
+        await logEvent({ type: "account_paused_strikes", actorId: null, actorRole: "system", subjectId: strikeCreator.id, market: booking.market, data: { bookingId: booking.id, businessId: booking.businessId, strikes, limit: STRIKE_LIMIT } });
+        summary.strikePaused = (summary.strikePaused || 0) + 1;
+      }
+    }
     // An expired paid booking is a no-show: the escrow refunds.
     await refundPaidEscrow(booking, "no_show", summary);
   }
@@ -2937,7 +3082,7 @@ function campaignEmail(recipient) {
     "",
     "If you apply, you will get a decision or a clear status within 2 business days.",
     "",
-    "Two minutes, and joining plus comped visits are always free. The only fee anywhere is on paid bookings, where you keep 97 percent of your rate. If it's not for you, you won't hear from me again.",
+    "Two minutes. " + CREATOR_FREE_LINE + " If it's not for you, you won't hear from me again.",
     "",
     "Jeff",
     "Founder, SIGNL",
@@ -3406,6 +3551,7 @@ function staffBookingView(booking) {
     creatorHandle: booking.creatorHandle || "",
     title: booking.title,
     whatComped: booking.whatComped,
+    covers: booking.kind === "paid" ? null : coversOf(booking),
     dollarCap: booking.dollarCap,
     visitDate: booking.visitDate || "",
     visitWindow: booking.visitWindow || "",
@@ -3422,6 +3568,9 @@ function staffBookingView(booking) {
 // is never lifted here: reinstatement is a human decision.
 async function unpauseIfClear(creator, sourceBookingId) {
   if (standingState(creator) !== "paused") return false;
+  // A strike pause is admin-review only: a proof landing on some
+  // other visit must never lift it.
+  if (strikePaused(creator)) return false;
   const bookings = (await allBookings()).filter((b) => b.creatorId === creator.id && b.redeemedAt && b.status !== "completed");
   const posts = await allPosts();
   const postedIds = new Set(posts.filter((p) => p.creatorId === creator.id).map((p) => p.bookingId));
@@ -3465,6 +3614,13 @@ const PREVIEW_DASH_BUSINESS = { name: "Salt & Ember Kitchen", category: "Chef-dr
 // always have. The dashboard says so in words next to the score.
 // (Discounts are every business's own opt-in, never a default.)
 const PREVIEW_DASH_DISCOUNT = { enabled: true, pct: ROAS_MODEL.suggestedDiscountPct };
+// The preview staff demo's fixed credentials (refinement bundle,
+// 2026-10-20): displayed ONLY inside Business Preview, valid ONLY
+// for the in-memory simulation the client runs from the preview
+// dashboard payload. They are not a real staff code or PIN: no
+// staffcfg or staffpin record ever carries them, and the real
+// staff endpoints have never heard of them.
+const PREVIEW_STAFF_DEMO = { staffCode: "EMBER6", pin: "2468" };
 
 function hoursFrom(nowMs, h) {
   return new Date(nowMs + h * 3600 * 1000).toISOString();
@@ -3593,11 +3749,11 @@ async function previewDashboard() {
   // than one slot, the way a real business books a favorite twice.
   const slotCreator = (i) => featured[i] || (roster.length ? roster[i % roster.length] : null);
   const briefs = [
-    { slot: 0, kind: "booked", title: "Autumn tasting menu for two", whatComped: "Five-course tasting menu for the creator and a guest, with two cocktails", dollarCap: 110, visitWindow: "Evenings this week" },
-    { slot: 1, kind: "redeemed", title: "Weekend brunch on us", whatComped: "Brunch for two: two entrees, two coffees, one shared pastry board", dollarCap: 65, compCost: 34, visitWindow: "Weekend mornings" },
-    { slot: 2, kind: "complete_on_time", title: "Chef's counter dinner", whatComped: "Chef's counter seating for two, four courses", dollarCap: 90, compCost: 47, visitWindow: "Weeknights", redemptions: { count: 9, basketTotal: 486 } },
-    { slot: 3, kind: "complete_late", title: "Cocktail hour feature", whatComped: "Two signature cocktails and three small plates for the creator and a guest", dollarCap: 70, compCost: 38, visitWindow: "Thursday to Saturday", redemptions: { count: 6, basketTotal: 318 } },
-    { slot: 0, kind: "overdue", title: "Sunday supper club", whatComped: "Sunday supper for two: shared starter, two mains, dessert to share", dollarCap: 80, compCost: 41, visitWindow: "Sundays" },
+    { slot: 0, kind: "booked", title: "Autumn tasting menu for two", whatComped: "Five-course tasting menu for the creator and a guest, with two cocktails", dollarCap: 110, covers: 2, visitWindow: "Evenings this week" },
+    { slot: 1, kind: "redeemed", title: "Weekend brunch on us", whatComped: "Brunch for two: two entrees, two coffees, one shared pastry board", dollarCap: 65, covers: 2, compCost: 34, visitWindow: "Weekend mornings" },
+    { slot: 2, kind: "complete_on_time", title: "Chef's counter dinner", whatComped: "Chef's counter seating for two, four courses", dollarCap: 90, covers: 2, compCost: 47, visitWindow: "Weeknights", redemptions: { count: 9, basketTotal: 486 } },
+    { slot: 3, kind: "complete_late", title: "Cocktail hour feature", whatComped: "Two signature cocktails and three small plates for the creator and a guest", dollarCap: 70, covers: 2, compCost: 38, visitWindow: "Thursday to Saturday", redemptions: { count: 6, basketTotal: 318 } },
+    { slot: 0, kind: "overdue", title: "Sunday supper club", whatComped: "Sunday supper for two: shared starter, two mains, dessert to share", dollarCap: 80, covers: 2, compCost: 41, visitWindow: "Sundays" },
   ];
   const usedCodes = new Set();
   const usedCreatorCodes = new Set();
@@ -3619,6 +3775,8 @@ async function previewDashboard() {
       creatorTier: creator.creator ? normalizeTierBand(creator.creator.tierBand) : null,
       title: brief.title,
       whatComped: brief.whatComped,
+      covers: brief.covers || 1,
+      paidBrief: null,
       dollarCap: brief.dollarCap,
       compCostModeled: brief.compCost || null,
       // SIGNL ROAS simulation (Jeff, 2026-10-19): the audience
@@ -3872,6 +4030,28 @@ async function previewDashboard() {
     topContent: homeTopContent,
     nextVisits: homeNextVisits,
   };
+  // Staff redemption demo (refinement bundle, 2026-10-20): Jeff
+  // presents with the Preview example accounts and needs to run
+  // the PIN login himself in front of a business. The demo is a
+  // pure function of this payload: a fixed sample staff code for
+  // the simulated business, a known demo PIN, and the one sample
+  // booking still in its booked state as the redeemable visit.
+  // The client runs the whole staff flow against these values in
+  // memory. Nothing here reads or writes a real staff record: no
+  // staffpin, staffcfg, staffsession, or booking record is ever
+  // touched, which the verify suite asserts byte-for-byte.
+  const staffDemoBooked = bookings.find((b) => b.state === "booked") || null;
+  const staffDemo = {
+    businessName: PREVIEW_DASH_BUSINESS.name,
+    staffCode: PREVIEW_STAFF_DEMO.staffCode,
+    registerPath: `/redeem/${PREVIEW_STAFF_DEMO.staffCode}`,
+    demoPin: PREVIEW_STAFF_DEMO.pin,
+    redeemCode: staffDemoBooked ? staffDemoBooked.code : null,
+    redeemVisit: staffDemoBooked
+      ? { creatorName: staffDemoBooked.creatorName, creatorHandle: staffDemoBooked.creatorHandle, title: staffDemoBooked.title, whatComped: staffDemoBooked.whatComped, covers: staffDemoBooked.covers, dollarCap: staffDemoBooked.dollarCap, redeemBy: staffDemoBooked.redeemBy, visitWindow: staffDemoBooked.visitWindow }
+      : null,
+    burnedExample: (() => { const burned = bookings.find((b) => b.codeStatus === "burned"); return burned ? { code: burned.code, title: burned.title } : null; })(),
+  };
   return {
     preview: true,
     business: { ...PREVIEW_DASH_BUSINESS, planId: plan.id, planName: plan.name, discountCodes: { ...PREVIEW_DASH_DISCOUNT } },
@@ -3880,6 +4060,7 @@ async function previewDashboard() {
     standardVisit: STANDARD_VISIT,
     summary,
     bookings,
+    staffDemo,
     managedView,
     home,
     rosterEmpty: bookings.length === 0,
@@ -5461,10 +5642,18 @@ async function route(event) {
       if (!target || target.role !== "creator") return err(404, "Creator not found");
       const previous = standingState(target);
       if (previous === "good") return err(409, "This creator is already in good standing");
+      const wasStrikePause = strikePaused(target);
       target.standing = { state: "good", reason: null, at: nowIso(), bookingId: null, reinstatedBy: user.id, previousState: previous };
+      // Strike probation (refinement bundle, 2026-10-20): a creator
+      // reinstated from a strike pause restarts at
+      // STRIKE_PROBATION_COUNT (one short of the limit), so exactly
+      // one more expired window pauses the account again. The pause
+      // email told the creator precisely this. Reinstatement from
+      // any other pause or ban leaves the strike count untouched.
+      if (wasStrikePause) target.noShowStrikes = STRIKE_PROBATION_COUNT;
       target.updatedAt = nowIso();
       await store.set(`user:${target.id}`, target);
-      await logEvent({ type: "account_reinstated", actorId: user.id, actorRole: "admin", subjectId: target.id, market: target.market, data: { previousState: previous, note: String(b.note || "").slice(0, 300) } });
+      await logEvent({ type: "account_reinstated", actorId: user.id, actorRole: "admin", subjectId: target.id, market: target.market, data: { previousState: previous, note: String(b.note || "").slice(0, 300), strikePause: wasStrikePause, strikesAfter: noShowStrikesOf(target) } });
       return json(200, { user: publicUser(target) });
     }
     // Business Preview (Jeff, 2026-10-19): the admin walks the real
@@ -5504,7 +5693,7 @@ async function route(event) {
         if (!targetCreator || targetCreator.role !== "creator" || targetCreator.status !== "approved") return err(400, "Target creator is not an approved creator");
         if (!profileCompleteOf(targetCreator)) return err(400, "That creator has not finished their founding profile yet, so they cannot receive offers. They get the checklist and a reminder from us; pick another creator for now.");
         if (standingState(targetCreator) === "banned") return err(400, "That creator redeemed a comp and never posted, so they cannot be booked again.");
-        if (standingState(targetCreator) === "paused") return err(400, "That creator is paused until a late post lands. Pick another creator for now.");
+        if (standingState(targetCreator) === "paused") return err(400, pausedPickMessage(targetCreator));
       }
       // SIMULATION ONLY: build the confirmation and return it. No
       // store.set and no logEvent below this line - that is the whole
@@ -5519,6 +5708,8 @@ async function route(event) {
         creatorHandle: targetCreator && targetCreator.creator ? targetCreator.creator.handle : null,
         title: String(b.title).trim(),
         whatComped: String(b.whatComped).trim(),
+        covers: coversOf(b),
+        paidBrief: null,
         dollarCap,
         visitWindow: String(b.visitWindow || "").trim(),
         windowMode: b.windowMode === "thisweek" ? "thisweek" : "7days",
@@ -5796,7 +5987,7 @@ async function route(event) {
       if (!creator || creator.role !== "creator" || creator.status !== "approved") return err(400, "That creator is not on the roster");
       if (!profileCompleteOf(creator)) return err(400, "That creator has not finished their founding profile yet, so they cannot take offers. They get the checklist and a reminder from us; pick another creator for now.");
       if (standingState(creator) === "banned") return err(400, "That creator redeemed a comp and never posted, so they cannot be booked again.");
-      if (standingState(creator) === "paused") return err(400, "That creator is paused until a late post lands. Pick another creator for now.");
+      if (standingState(creator) === "paused") return err(400, pausedPickMessage(creator));
       // Prefill from the business's most recent delivered visit
       // with this creator when there is one; otherwise a sensible
       // blank direct offer the business can adjust before sending.
@@ -5815,6 +6006,8 @@ async function route(event) {
         creatorHandle: creator.creator ? creator.creator.handle : null,
         lane: "direct",
         kind: "comp",
+        covers: last ? coversOf(last) : 1,
+        paidBrief: null,
         cashRate: null,
         targetTiers: null,
         title: String(b.title || (last ? last.title : `Visit us again: ${user.business.businessName}`)).trim().slice(0, 140),
@@ -5869,7 +6062,7 @@ async function route(event) {
         if (!targetCreator || targetCreator.role !== "creator" || targetCreator.status !== "approved") return err(400, "Target creator is not an approved creator");
         if (!profileCompleteOf(targetCreator)) return err(400, "That creator has not finished their founding profile yet, so they cannot receive offers. They get the checklist and a reminder from us; pick another creator for now.");
         if (standingState(targetCreator) === "banned") return err(400, "That creator redeemed a comp and never posted, so they cannot be booked again.");
-        if (standingState(targetCreator) === "paused") return err(400, "That creator is paused until a late post lands. Pick another creator for now.");
+        if (standingState(targetCreator) === "paused") return err(400, pausedPickMessage(targetCreator));
       }
       if (kind === "comp") {
         // The dignity floor (see COMP_GUIDANCE): targeted open
@@ -5885,6 +6078,19 @@ async function route(event) {
           return err(400, `A comp offer starts at $${COMP_GUIDANCE.Neighbors.floor} of value. Below that it is a token, and token comps burn the roster's trust. Raise the value, or send a direct offer to one creator instead.`);
         }
       }
+      // Covers + paid brief (refinement bundle, 2026-10-20): a comp
+      // offer must say how many people the comp covers; a paid
+      // offer may carry short key points for the creator. A brief
+      // on a comp offer is refused outright: paid buys direction,
+      // comp does not.
+      let covers = null;
+      let paidBrief = null;
+      if (kind === "comp") {
+        covers = coversOf(b);
+        if (String(b.paidBrief || "").trim()) return err(400, "Key points are a paid visit feature, so a comp offer cannot carry them. " + PAID_BRIEF_GUIDANCE);
+      } else {
+        paidBrief = String(b.paidBrief || "").trim().slice(0, PAID_BRIEF_MAX) || null;
+      }
       const marketLive = await isMarketLive(user.market);
       const wantsDraft = b.draft === true || !marketLive;
       const ts = nowIso();
@@ -5898,6 +6104,8 @@ async function route(event) {
         creatorHandle: targetCreator && targetCreator.creator ? targetCreator.creator.handle : null,
         lane,
         kind,
+        covers,
+        paidBrief,
         cashRate,
         targetTiers,
         title: String(b.title).trim().slice(0, 140),
@@ -5925,7 +6133,7 @@ async function route(event) {
         }
       }
       await store.set(`offer:${offer.id}`, offer);
-      await logEvent({ type: "offer_created", actorId: user.id, actorRole: "business", subjectId: offer.id, market: offer.market, data: { title: offer.title, dollarCap, spots, targeted: !!targetCreator, creatorId: offer.creatorId, category: offer.category, windowMode: offer.windowMode, lane, kind, cashRate, targetTiers, templateId: offer.templateId, status: offer.status, strength: offerStrength(offer).score } });
+      await logEvent({ type: "offer_created", actorId: user.id, actorRole: "business", subjectId: offer.id, market: offer.market, data: { title: offer.title, dollarCap, spots, targeted: !!targetCreator, creatorId: offer.creatorId, category: offer.category, windowMode: offer.windowMode, lane, kind, cashRate, covers, hasBrief: !!paidBrief, targetTiers, templateId: offer.templateId, status: offer.status, strength: offerStrength(offer).score } });
       if (targetCreator) await notifyUser(targetCreator.id, "offer_received", `${user.business.businessName} sent you an offer: "${offer.title}". It is under your Offers.`, { offerId: offer.id });
       return json(201, { offer });
     }
@@ -6040,6 +6248,18 @@ async function route(event) {
         if (block) return err(400, `A $${offer.dollarCap} comp is below the dignity floor for ${block.tier} (floor $${block.floor}). Raise the comp value or remove ${block.tier} from who can apply.`);
         offer.targetTiers = valid.length ? valid : null;
       }
+      if (b.covers !== undefined && kindOf(offer) === "comp") {
+        changes.covers = [coversOf(offer), coversOf(b)];
+        offer.covers = changes.covers[1];
+      }
+      if (b.paidBrief !== undefined) {
+        if (kindOf(offer) !== "paid") {
+          if (String(b.paidBrief || "").trim()) return err(400, "Key points are a paid visit feature, so a comp offer cannot carry them. " + PAID_BRIEF_GUIDANCE);
+        } else {
+          changes.paidBrief = [offer.paidBrief || null, String(b.paidBrief || "").trim().slice(0, PAID_BRIEF_MAX) || null];
+          offer.paidBrief = changes.paidBrief[1];
+        }
+      }
       offer.updatedAt = nowIso();
       await store.set(`offer:${offer.id}`, offer);
       await logEvent({ type: "offer_updated", actorId: user.id, actorRole: "business", subjectId: offer.id, market: offer.market, data: { changes } });
@@ -6138,7 +6358,7 @@ async function route(event) {
     if (method === "POST" && seg.length === 3 && seg[2] === "apply") {
       if (user.role !== "creator") return err(403, "Creators only");
       if (standingState(user) === "banned") return err(403, "Your account was closed to offers after a comped visit was redeemed and no post was delivered. Contact hello@joinsignl.com if you believe this is wrong.");
-      if (standingState(user) === "paused") return err(403, "Your account is paused until the late post from your last visit is checked off. Paste the post link under My Visits and offers open again.");
+      if (standingState(user) === "paused") return err(403, pausedSelfMessage(user));
       if (!profileCompleteOf(user)) return err(403, "Finish your founding profile before applying: businesses can only pick creators with finished profiles. Your checklist is on your dashboard, under Profile.");
       const offer = await store.get(`offer:${seg[1]}`);
       if (!offer || laneOf(offer) !== "open") return err(404, "Offer not available");
@@ -6193,7 +6413,7 @@ async function route(event) {
       // Compliance standing gates new bookings: a paused creator
       // delivers the missing post first; a banned creator is done.
       if (standingState(user) === "banned") return err(403, "Your account was closed to offers after a comped visit was redeemed and no post was delivered. Contact hello@joinsignl.com if you believe this is wrong.");
-      if (standingState(user) === "paused") return err(403, "Your account is paused until the late post from your last visit is checked off. Paste the post link under My Visits and new offers open again.");
+      if (standingState(user) === "paused") return err(403, pausedSelfMessage(user));
       if (!profileCompleteOf(user)) return err(403, "Finish your founding profile before accepting offers: businesses can only book creators with finished profiles. Your checklist is on your dashboard, under Profile.");
       const offer = await store.get(`offer:${seg[1]}`);
       if (!offer || offer.status !== "open") return err(404, "Offer not available");
@@ -6292,7 +6512,7 @@ async function route(event) {
     if (method === "POST" && seg.length === 3 && seg[2] === "accept-backfill") {
       if (user.role !== "creator") return err(403, "Creators only");
       if (standingState(user) === "banned") return err(403, "Your account was closed to offers after a comped visit was redeemed and no post was delivered.");
-      if (standingState(user) === "paused") return err(403, "Your account is paused until the late post from your last visit is checked off.");
+      if (standingState(user) === "paused") return err(403, pausedSelfMessage(user));
       if (!profileCompleteOf(user)) return err(403, "Finish your founding profile before taking this spot: businesses can only book creators with finished profiles. Your checklist is on your dashboard, under Profile.");
       const app = await store.get(`application:${seg[1]}`);
       if (!app || app.creatorId !== user.id) return err(404, "Application not found");
@@ -6432,7 +6652,7 @@ async function route(event) {
     if (!profileCompleteOf(creator)) return err(400, "That creator has not finished their founding profile yet, so they cannot take bookings.");
     if (creator.market !== user.market) return err(400, "Paid bookings are inside your own market");
     if (standingState(creator) === "banned") return err(400, "That creator redeemed a comp and never posted, so they cannot be booked again.");
-    if (standingState(creator) === "paused") return err(400, "That creator is paused until a late post lands. Pick another creator for now.");
+    if (standingState(creator) === "paused") return err(400, pausedPickMessage(creator));
     const rate = Number(creator.creator && creator.creator.paidRate);
     if (!Number.isFinite(rate) || rate < PAID_LANE.minRate) return err(400, "That creator has not listed a paid rate. Comp visits are always available; paid bookings need a creator who charges.");
     const allBk = await allBookings();
@@ -6457,6 +6677,8 @@ async function route(event) {
       category: user.business.category,
       title: `Paid visit: ${user.business.businessName}`,
       whatComped: String(b.whatComped || "The Standard Visit experience, as agreed with the business").trim().slice(0, 280),
+      covers: null,
+      paidBrief: String(b.paidBrief || "").trim().slice(0, PAID_BRIEF_MAX) || null,
       dollarCap: Math.round(rate),
       visitWindow: "Any time within 7 days of booking",
       windowMode: "7days",
@@ -6499,8 +6721,8 @@ async function route(event) {
     await store.set(`booking:${booking.id}`, booking);
     await store.set(`code:${code}`, { bookingId: booking.id });
     await store.set(`ccode:${creatorCode}`, { bookingId: booking.id });
-    await logEvent({ type: "paid_booking_created", actorId: user.id, actorRole: "business", subjectId: booking.id, market: booking.market, data: { creatorId: creator.id, rate: math.rate, businessTotal: math.businessTotal, creatorNet: math.creatorNet, platformFee: math.platformFee, escrowState: "held" } });
-    await logEvent({ type: "booking_code_issued", actorId: user.id, actorRole: "business", subjectId: booking.id, market: booking.market, data: { code, offerId: null, businessId: user.id, dollarCap: booking.dollarCap, kind: "paid" } });
+    await logEvent({ type: "paid_booking_created", actorId: user.id, actorRole: "business", subjectId: booking.id, market: booking.market, data: { creatorId: creator.id, rate: math.rate, businessTotal: math.businessTotal, creatorNet: math.creatorNet, platformFee: math.platformFee, escrowState: "held", hasBrief: !!booking.paidBrief } });
+    await logEvent({ type: "booking_code_issued", actorId: user.id, actorRole: "business", subjectId: booking.id, market: booking.market, data: { code, offerId: null, businessId: user.id, dollarCap: booking.dollarCap, kind: "paid", hasBrief: !!booking.paidBrief } });
     return json(201, { booking: await withPostState(booking) });
   }
 
@@ -6993,4 +7215,4 @@ async function route(event) {
 
 // The email builders are exported alongside the router so the verify
 // suites can assert on the exact copy a creator receives.
-module.exports = { route, approvalEmail, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, createMomentum, runComplianceSweep, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, profileCompleteOf, profileCompletionFor, campaignEmail, crossoverEmail, campaignEmailFor, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, STANDARD_VISIT, visitRightsForPlan, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength };
+module.exports = { route, approvalEmail, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, profileCompleteOf, profileCompletionFor, campaignEmail, crossoverEmail, campaignEmailFor, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, STANDARD_VISIT, visitRightsForPlan, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine };

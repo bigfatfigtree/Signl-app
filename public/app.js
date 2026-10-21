@@ -307,6 +307,20 @@ function visitIncludesHtml(summary) {
   return `<div class="showcase-block"><h4>Every SIGNL visit includes</h4><p class="small muted">${esc(text)}</p></div>`;
 }
 
+// Refinement bundle (2026-10-20): the creator free line, word for
+// word, everywhere creators meet SIGNL. It never sits next to
+// paid-lane fee math. The Visit Guarantee line is the business
+// twin: one sentence on the Plan tab and in the composer.
+const CREATOR_FREE_LINE = "SIGNL is free for creators. Always. Businesses pay the platform. You never pay to join, to list, or to get booked.";
+const VISIT_GUARANTEE_LINE = "Visit Guarantee: if a booked creator does not show up or does not post, that visit does not count against your monthly visits. It is replaced.";
+const PAID_BRIEF_GUIDANCE = "Key points only: what to feature, names, dates. Creators post honestly in their own words. No scripts, no required praise, no post pre-approval.";
+
+// How many people a comp covers, in checklist words. Records from
+// before the covers field read as 1 ("Comp covers you").
+function coversLine(record) {
+  return record && Number(record.covers) === 2 ? "Comp covers 2 people" : "Comp covers you";
+}
+
 // Content rights by business plan, mirroring the server's
 // visitRightsForPlan. The creator's offer checklist prefers the
 // server-attached rights on the offer itself; this is the fallback
@@ -329,12 +343,23 @@ function standingBannerHtml(u) {
   const st = u && u.standing;
   if (!st || !st.state || st.state === "good") return "";
   if (st.state === "paused") {
+    if (st.source === "strikes") {
+      return `<div class="notice"><strong>Your account is paused for review.</strong> Three booked visit windows expired unused. The SIGNL team reviews every pause by hand, and reinstated accounts restart one strike short of the limit. Questions: hello@joinsignl.com</div>`;
+    }
     return `<div class="notice"><strong>Your account is paused.</strong> A post from a comped visit is past due. Paste the post link under My Visits and your account unpauses automatically. Until then, businesses see you greyed out and cannot send you new offers.</div>`;
   }
   if (st.state === "banned") {
     return `<div class="error-box"><strong>Your account is closed to offers.</strong> ${esc(st.reason || "A comped visit was redeemed and no post was delivered.")}<br>Questions: hello@joinsignl.com</div>`;
   }
   return "";
+}
+
+// The creator's own strike count, in plain language, shown
+// whenever it is above zero (refinement bundle, 2026-10-20).
+function strikeStatusHtml(u) {
+  const n = u && Number(u.noShowStrikes) > 0 ? Math.floor(Number(u.noShowStrikes)) : 0;
+  if (!n) return "";
+  return `<p class="small"><strong>Visit strikes: ${n} of 3.</strong> Letting a booked visit window expire counts as a strike. Three strikes pauses your account for review.</p>`;
 }
 
 function fmtDate(iso) {
@@ -739,6 +764,7 @@ function renderQuickClaim() {
   app.innerHTML = `
   <section class="panel" style="max-width:680px;margin:10px auto">
     <h2>Claim your founding spot</h2>
+    <p><strong>${CREATOR_FREE_LINE}</strong></p>
     <p class="muted">Founding spots lock in sign-up order, so claim yours now and finish the rest after approval. This takes about a minute: your handle, your market, an email, and a password. When you are approved, we email you, and your dashboard walks you through finishing your profile: your photo, your audience counts, what share of it is local. A finished profile is what businesses see, so that step is what makes you bookable. City not listed yet? Pick "My city is not listed yet" below and claim anyway: your sign-up counts toward opening your city, and you hold founding standing there.</p>
     ${hasPrefill ? `<div class="notice blue">Your invite link told us a head start: we pre-filled what it carried below. Check it, claim your spot, and your application goes into the review queue.</div>` : ""}
     <div id="form-error"></div>
@@ -835,6 +861,7 @@ function renderJoinCreator() {
   app.innerHTML = `
   <section class="panel" style="max-width:680px;margin:10px auto">
     <h2>Become a Founding Creator</h2>
+    <p><strong>${CREATOR_FREE_LINE}</strong></p>
     <p class="muted">SIGNL is opening market by market, and creators are signing up first. Build your full founding profile now: when your market opens to businesses in the next 30 to 90 days, we email you, and founding creators get priority when businesses search. This is not a waitlist form; this is your real profile. City not listed yet? Pick "My city is not listed yet" below and sign up anyway: your sign-up counts toward opening your city, and you hold founding standing there.</p>
     ${hasPrefill ? `<div class="notice blue">Your invite link told us a head start: we pre-filled what it carried below. Check it, finish the rest, and your profile goes into the review queue.</div>` : ""}
     <p class="small">In a hurry? <a href="#" onclick="return showQuickJoin()">Claim your spot with just your handle</a> and finish your profile after approval instead.</p>
@@ -1161,6 +1188,7 @@ function renderPending() {
       ? `<p>Thanks, ${esc(u.name)}. Your founding spot in <strong>${place}</strong> is claimed and your application is in the review queue. Every founding application gets a decision or a clear status within 2 business days.</p>
     <p class="muted" style="text-align:left">Your profile is not finished yet, and that is by design: when you are approved, we email you, and you finish your profile from the checklist on your dashboard (your home city, your audience counts, what share of it is local, your photo). A finished profile is what businesses see, so that step is what makes you bookable.</p>`
       : `<p>Thanks, ${esc(u.name)}. Your founding creator profile for <strong>${place}</strong> is built and in the review queue. Every founding application gets a decision or a clear status within 2 business days.</p>`}
+    ${isCreator ? `<p><strong>${CREATOR_FREE_LINE}</strong></p>` : ""}
     ${isCreator && f.queueBand ? `<p><span class="badge info">${isUnlisted ? `You are in the first ${f.queueBand} to sign up in ${esc(u.city)}` : `You are in the first ${f.queueBand} founding creators in ${esc(u.market)}`}</span></p>` : ""}
     <p class="muted">${isUnlisted
       ? `SIGNL is not open in ${esc(u.city)} yet, and your sign-up counts toward opening it: we open new markets where creator sign-ups pile up, and founding sign-ups there go first. Every application is reviewed by a person. The moment you are approved, your founding status page opens here, and we will email you at ${esc(u.email)} the moment ${esc(u.city)} opens. Sign back in any time to check your status.${state.boot && state.boot.email && state.boot.email.enabled ? ` A confirmation email is on its way to ${esc(u.email)}.` : ""}`
@@ -1273,8 +1301,10 @@ async function bookPaidVisit(creatorId) {
   const total = Math.round(rate * 1.03 * 100) / 100;
   const net = Math.round(rate * 0.97 * 100) / 100;
   if (!confirm(`Book a paid visit with ${c ? c.name : "this creator"} at their listed rate of $${rate}?\n\nYou pay $${total} (the rate plus 3%). They keep $${net} (97% of their rate). SIGNL holds the payment and releases it when their post is live. Comp-only is always fine too: paid is only for booking this specific creator.`)) return;
+  const briefInput = prompt(`Key points for the creator (optional, paid visits only). Leave blank for none.\n\n${PAID_BRIEF_GUIDANCE}`, "");
+  const paidBrief = briefInput ? briefInput.trim().slice(0, 500) : "";
   try {
-    const data = await api("POST", "/bookings/paid", { creatorId });
+    const data = await api("POST", "/bookings/paid", { creatorId, ...(paidBrief ? { paidBrief } : {}) });
     state.tab = "Visits & Posts";
     render();
     setTimeout(() => alert(`Paid visit booked. The code is ${data.booking.code}; the creator shows it at the visit and the 48 hour post clock starts at redemption. Payment state: ${data.booking.paidLane.paymentNote}`), 50);
@@ -1911,7 +1941,8 @@ function homeOpportunitiesHtml(offers, u) {
     <div class="card home-opp mb">
       <div class="flex-between"><strong>${esc(o.title)}</strong><span class="badge tier">${esc(o.businessName)}</span></div>
       ${o.creatorId ? `<p style="margin:8px 0 0"><span class="badge ok">Sent directly to you</span></p>` : ""}
-      <p class="small"><strong>You get:</strong> ${esc(o.whatComped)} (comp cap $${o.dollarCap})</p>
+      <p class="small"><strong>You get:</strong> ${esc(o.whatComped)} (comp cap $${o.dollarCap})${o.kind === "paid" ? "" : ` &middot; ${coversLine(o)}`}</p>
+      ${o.kind === "paid" && o.paidBrief ? `<p class="small"><strong>Key points from the business:</strong> ${esc(o.paidBrief)}</p>` : ""}
       <p class="small"><strong>You post:</strong> 1 post or reel + 2 stories within 48 hours of your visit, honest, with the comp disclosed. The post stays live at least 30 days, and you check off by pasting the post link in My Visits.</p>
       <p class="small"><strong>They can:</strong> ${rights.can.map(esc).join("; ")}<br><strong>They can't:</strong> ${rights.cannot.map(esc).join("; ")}</p>
       <p class="small muted">Deadline: ${o.windowMode === "thisweek" ? "visit this week, the window ends Sunday" : "visit any time within 7 days of accepting"}. ${left} of ${o.spots} spot${o.spots === 1 ? "" : "s"} left.${o.visitWindow ? ` Note from the business: ${esc(o.visitWindow)}` : ""}</p>
@@ -2070,6 +2101,7 @@ async function loadCreatorHome() {
     ${card.ratingCount >= 1 && card.ratingAvg !== null && card.ratingAvg !== undefined
       ? `<p class="small">${starsHtml(card.ratingAvg)} <strong>Your rating: ${esc(String(card.ratingAvg))}</strong> from ${card.ratingCount} business${card.ratingCount === 1 ? "" : "es"}, shown next to your Momentum points.</p>`
       : `<p class="small muted">Businesses rate you after visits. Your rating appears here after your first rated visit.</p>`}
+    ${strikeStatusHtml(u)}
     ${homeActiveVisitHtml(homeActiveBooking(bookings))}
     ${homeOpportunitiesHtml(offers, u)}
     ${homeLocalSignalHtml(card, bookings)}
@@ -2300,7 +2332,8 @@ async function loadCreatorOffers() {
         <div class="flex-between"><strong>${esc(o.title)}</strong><span class="badge tier">${esc(o.businessName)}</span></div>
         <div class="showcase-block">
           <h4>The deal, in plain words</h4>
-          <p class="small"><strong>You get:</strong> ${esc(o.whatComped)} (comp cap $${o.dollarCap}) &middot; ${o.bookedCount}/${o.spots} spots booked &middot; ${o.creatorId ? "Sent directly to you" : "Open to your market"}</p>
+          <p class="small"><strong>You get:</strong> ${esc(o.whatComped)} (comp cap $${o.dollarCap})${o.kind === "paid" ? "" : ` &middot; ${coversLine(o)}`} &middot; ${o.bookedCount}/${o.spots} spots booked &middot; ${o.creatorId ? "Sent directly to you" : "Open to your market"}</p>
+          ${o.kind === "paid" && o.paidBrief ? `<p class="small"><strong>Key points from the business:</strong> ${esc(o.paidBrief)}</p>` : ""}
           <p class="small"><strong>You post:</strong> 1 post or reel + 2 stories within 48 hours of your visit, honest, with the comp disclosed. The post stays live at least 30 days. You check off by pasting the post link in My Visits.</p>
           <p class="small"><strong>They can:</strong> ${rights.can.map(esc).join("; ")}</p>
           <p class="small"><strong>They can't:</strong> ${rights.cannot.map(esc).join("; ")}</p>
@@ -2357,7 +2390,8 @@ async function loadOpenBoard() {
           <h4>The deal, in plain words</h4>
           ${o.kind === "paid"
             ? `<p class="small"><strong>You get paid:</strong> $${o.cashRate} for the Standard Visit package. You keep $${o.paidMath ? o.paidMath.creatorNet : ""} (97% of the rate); SIGNL holds the payment and releases it when your post is live.</p>`
-            : `<p class="small"><strong>You get:</strong> ${esc(o.whatComped)} (comp value $${o.dollarCap})</p>`}
+            : `<p class="small"><strong>You get:</strong> ${esc(o.whatComped)} (comp value $${o.dollarCap}) &middot; ${coversLine(o)}</p>`}
+          ${o.kind === "paid" && o.paidBrief ? `<p class="small"><strong>Key points from the business:</strong> ${esc(o.paidBrief)}</p>` : ""}
           ${o.includes ? `<p class="small"><strong>Included:</strong> ${esc(o.includes)}</p>` : ""}
           ${o.experience ? `<p class="small"><strong>The experience:</strong> ${esc(o.experience)}</p>` : ""}
           <p class="small"><strong>You post:</strong> 1 post or reel + 2 stories within 48 hours of your visit, honest, with the comp disclosed. The post stays live at least 30 days.</p>
@@ -2538,7 +2572,10 @@ function visitCard(b, role) {
   let html = `
   <div class="card visit-card mb">
     <div class="flex-between"><strong>${esc(b.title)}</strong>${complianceBadge(b)}</div>
-    <p class="small muted">${role === "creator" ? esc(b.businessName) : "@" + esc(b.creatorHandle) + " (" + esc(b.creatorName) + ")"} &middot; ${esc(b.market)} &middot; Comp: ${esc(b.whatComped)} (cap $${b.dollarCap}) &middot; Visit: ${esc(b.visitDate || b.visitWindow || "Flexible")}</p>`;
+    <p class="small muted">${role === "creator" ? esc(b.businessName) : "@" + esc(b.creatorHandle) + " (" + esc(b.creatorName) + ")"} &middot; ${esc(b.market)} &middot; Comp: ${esc(b.whatComped)} (cap $${b.dollarCap})${b.kind === "paid" || b.paidLane ? "" : ` &middot; ${coversLine(b)}`} &middot; Visit: ${esc(b.visitDate || b.visitWindow || "Flexible")}</p>`;
+  if (b.paidBrief) {
+    html += `<p class="small"><strong>Key points from the business:</strong> ${esc(b.paidBrief)}</p>`;
+  }
   if (b.paidLane) {
     const lane = b.paidLane;
     const escrowBadge = lane.escrowState === "released"
@@ -3141,6 +3178,12 @@ function offerCoachUpdate() {
   ];
   const el = document.getElementById("o2-strength");
   if (el) el.innerHTML = `<strong>Offer strength: ${checks.filter((c) => c.ok).length} of ${checks.length}.</strong> ` + checks.map((c) => `<br>${c.ok ? "&#10003;" : "&#9675;"} ${esc(c.label)}`).join("");
+  // Covers is a comp question; the key-points brief is a paid
+  // unlock. Show exactly one of the two blocks for the chosen kind.
+  const coversWrap = document.getElementById("o2-covers-wrap");
+  if (coversWrap) coversWrap.style.display = kind === "comp" ? "" : "none";
+  const briefWrap = document.getElementById("o2-brief-wrap");
+  if (briefWrap) briefWrap.style.display = kind === "paid" ? "" : "none";
   const warn = document.getElementById("o2-dignity");
   if (warn) {
     let html = "";
@@ -3198,6 +3241,12 @@ async function loadMyOffers() {
         <label style="font-weight:500"><input type="radio" name="o2-kind" value="paid" style="width:auto" onchange="offerCoachUpdate()"> Cash: a rate for the Standard Visit package</label>
       </div>
       <div class="field"><label>Exactly what is comped</label><input id="o2-comped" required placeholder="For example: Two entrees and two drinks for the creator and a guest" oninput="offerCoachUpdate()">${mode === "direct" ? chipsRowHtml("comp", "o2", target && target.profile ? target.profile.tierBand : null) : ""}</div>
+      <div class="field" id="o2-covers-wrap"><label>How many people does the comp cover?</label>
+        <label style="font-weight:500"><input type="radio" name="o2-covers" value="1" checked style="width:auto"> 1 person: just the creator</label><br>
+        <label style="font-weight:500"><input type="radio" name="o2-covers" value="2" style="width:auto"> 2 people: the creator and a guest</label>
+        <p class="small muted">Say it here and it prints on the offer, the visit card, and the staff redemption screen, so nobody is surprised at the register.</p>
+      </div>
+      <div class="field" id="o2-brief-wrap" style="display:none"><label>Key points for the creator (optional, paid visits only)</label><textarea id="o2-brief" rows="2" maxlength="500" placeholder="For example: feature the new patio, use our full name, the tasting runs through November"></textarea><p class="small muted">${PAID_BRIEF_GUIDANCE}</p></div>
       <div class="form-2col">
         <div class="field"><label>Comp value / dollar cap ($)</label><input type="number" id="o2-cap" min="1" placeholder="100" oninput="offerCoachUpdate()"></div>
         <div class="field"><label>Cash rate ($) if cash</label><input type="number" id="o2-rate" min="50" step="1" placeholder="150" oninput="offerCoachUpdate()"></div>
@@ -3224,6 +3273,7 @@ async function loadMyOffers() {
       <div id="o2-dignity"></div>
       <div id="o2-strength" class="showcase-block"></div>
       <p class="small muted">Reminder: you can describe the experience, never the opinion. Posts stay honest, and creators disclose the comp.</p>
+      <p class="small muted">${VISIT_GUARANTEE_LINE}</p>
       <div class="cta-row" style="justify-content:flex-start">
         <button class="btn" type="submit">${marketLive ? "Publish offer" : "Publish offer (goes live when your market opens)"}</button>
         <button class="btn ghost" type="button" onclick="return createOfferV2(event, true)">Save as draft</button>
@@ -3263,7 +3313,8 @@ function offerCardHtml(o) {
   <div class="card mb">
     <div class="flex-between"><strong>${esc(o.title)}</strong><span class="badge ${statusBadge}">${esc(o.status)}</span></div>
     <p>${esc(o.whatComped)}</p>
-    <p class="small muted">${terms} &middot; ${o.lane === "direct" ? (o.creatorHandle ? "Sent to @" + esc(o.creatorHandle) : "Direct") : "Open offer"} &middot; ${o.filledCount || 0}/${o.spots} spots filled${o.lane === "open" ? ` &middot; ${o.applicationCount || 0} applications` : ""} &middot; ${when}</p>
+    <p class="small muted">${terms} &middot; ${o.lane === "direct" ? (o.creatorHandle ? "Sent to @" + esc(o.creatorHandle) : "Direct") : "Open offer"} &middot; ${o.filledCount || 0}/${o.spots} spots filled${o.lane === "open" ? ` &middot; ${o.applicationCount || 0} applications` : ""} &middot; ${when}${o.kind === "paid" ? "" : ` &middot; ${coversLine(o)}`}</p>
+    ${o.kind === "paid" && o.paidBrief ? `<p class="small"><strong>Key points for the creator:</strong> ${esc(o.paidBrief)}</p>` : ""}
     ${o.strength ? `<p class="small muted">Offer strength ${o.strength.score} of ${o.strength.total}: ${o.strength.checks.filter((c) => !c.ok).map((c) => esc(c.label)).join("; ") || "all checks pass"}</p>` : ""}
     <div class="cta-row" style="justify-content:flex-start">
       ${o.lane === "open" && (o.status === "open" || o.status === "filled") ? `<button class="btn small-btn" onclick="viewApplicants('${o.id}')">View applicants (${o.applicationCount || 0})</button>` : ""}
@@ -3306,8 +3357,14 @@ async function createOfferV2(e, draft) {
     draft: draft === true,
     creatorId: mode === "direct" ? (target || null) : null,
   };
-  if (kind === "paid") payload.cashRate = parseFloat(document.getElementById("o2-rate").value);
-  else payload.dollarCap = parseInt(document.getElementById("o2-cap").value, 10);
+  if (kind === "paid") {
+    payload.cashRate = parseFloat(document.getElementById("o2-rate").value);
+    const briefEl = document.getElementById("o2-brief");
+    if (briefEl && briefEl.value.trim()) payload.paidBrief = briefEl.value.trim();
+  } else {
+    payload.dollarCap = parseInt(document.getElementById("o2-cap").value, 10);
+    payload.covers = parseInt((document.querySelector("input[name='o2-covers']:checked") || {}).value, 10) || 1;
+  }
   if (mode === "open") {
     payload.targetTiers = [...document.querySelectorAll("input[name='o2-tier']:checked")].map((x) => x.value);
     payload.applyWindowDays = parseInt(document.getElementById("o2-applydays").value, 10);
@@ -3426,7 +3483,7 @@ async function counterLookup(e, preset) {
       <div class="card">
         <div class="flex-between"><strong>${esc(b.creatorName)}</strong><span class="badge tier">@${esc(b.creatorHandle)}</span></div>
         <p>${esc(b.title)}: ${esc(b.whatComped)}</p>
-        <p class="small muted">Comp cap $${b.dollarCap} &middot; Visit date: ${esc(b.visitDate || b.visitWindow || "Flexible")} &middot; Code ${esc(b.code)}</p>
+        <p class="small muted">Comp cap $${b.dollarCap}${b.kind === "paid" || b.paidLane ? "" : ` &middot; ${coversLine(b)}`} &middot; Visit date: ${esc(b.visitDate || b.visitWindow || "Flexible")} &middot; Code ${esc(b.code)}</p>
         <p class="small">Check the person in front of you matches the creator, then redeem. The code burns and the 48 hour post clock starts now.</p>
         <button class="btn" style="width:100%" onclick="counterRedeem('${esc(code)}')">Redeem and start the clock</button>
       </div>`;
@@ -3458,6 +3515,18 @@ async function counterRedeem(code) {
 // labeled the same: "Redeem a creator visit".
 
 function goStaff() {
+  // Admin presenters get the preview staff DEMO (refinement
+  // bundle, 2026-10-20): when Jeff taps "Redeem a creator visit"
+  // while presenting, the PIN flow he shows a business runs in
+  // simulation against the example business, never against a real
+  // business's staff mode.
+  if (state.user && state.user.role === "admin") {
+    if (state.preview && state.preview.dashboard) return pvStaffEnter();
+    if (state.preview) { state.preview.wantStaffDemo = true; return previewToDashboard(); }
+    enterPreview();
+    if (state.preview) { state.preview.wantStaffDemo = true; previewToDashboard(); }
+    return false;
+  }
   if (state.preview) { stopPreviewCountdown(); state.preview = null; }
   stopHomeCountdown();
   state.view = "staff";
@@ -3475,6 +3544,22 @@ async function renderStaff() {
 }
 
 async function staffPinScreen() {
+  // The preview demo's register link (refinement bundle,
+  // 2026-10-20): /redeem/EMBER6 is the simulated business's sample
+  // staff code. For an admin it opens the demo entry, never the
+  // real staff flow (the real endpoints have never heard of it).
+  // The code mirrors PREVIEW_STAFF_DEMO in the server router; the
+  // authoritative demo values ride the preview dashboard payload.
+  if (state.user && state.user.role === "admin" && state.staffCode === "EMBER6") {
+    app.innerHTML = `
+  <section class="panel" style="max-width:460px;margin:30px auto">
+    <h2>Redeem a creator visit</h2>
+    <div class="notice blue"><strong>Preview simulation.</strong> This register link belongs to the Preview example business (Salt & Ember Kitchen). Open the staff demo to run the PIN flow end to end in simulation. Nothing is saved and no real record changes.</div>
+    <button class="btn" style="width:100%" onclick="return goStaff()">Open the staff demo</button>
+    <p class="small muted mt">Real staff links open the real PIN screen. This one is the demo's, shown only to you as admin.</p>
+  </section>`;
+    return;
+  }
   const ownerBiz = state.user && state.user.role === "business" ? state.user : null;
   let bizName = ownerBiz && ownerBiz.business ? ownerBiz.business.businessName : "";
   if (!bizName && state.staffCode && state.staffBizName) bizName = state.staffBizName;
@@ -3551,7 +3636,7 @@ async function staffLookup(e, preset) {
       <div class="card">
         <div class="flex-between"><strong>${esc(b.creatorName)}</strong><span class="badge tier">@${esc(b.creatorHandle)}</span></div>
         <p>${esc(b.title)}: ${esc(b.whatComped)}</p>
-        <p class="small muted">Comp cap $${b.dollarCap} &middot; Visit: ${esc(b.visitDate || b.visitWindow || "Flexible")}${b.redeemBy ? ` &middot; Redeem by ${fmtDate(b.redeemBy)}` : ""}</p>
+        <p class="small muted">Comp cap $${b.dollarCap}${b.covers ? ` &middot; ${coversLine(b)}` : ""} &middot; Visit: ${esc(b.visitDate || b.visitWindow || "Flexible")}${b.redeemBy ? ` &middot; Redeem by ${fmtDate(b.redeemBy)}` : ""}</p>
         <p class="small">Check the person in front of you matches the creator, then redeem. The code burns and the 48 hour post clock starts now.</p>
         <button class="btn" style="width:100%" onclick="staffRedeem('${esc(code)}')">REDEEM</button>
       </div>`;
@@ -3678,6 +3763,7 @@ function renderPlanTab() {
     <h3>Your plan</h3>
     <p>Current plan: <strong>${esc(u.business.planName)}</strong>, selected ${fmtDate(u.business.planSelectedAt)}.</p>
     <p class="muted">${esc(u.business.billingStatus)}</p>
+    <p class="small"><strong>${VISIT_GUARANTEE_LINE}</strong></p>
     <p class="small">Payment stays concierge: when billing starts, Jeff sends the payment step by hand. Nothing is charged before then, and SIGNL never takes a card in the app.</p>
     <div class="plan-cards">${plans}</div>
     <input type="hidden" id="me-plan" value="${esc(u.business.plan)}">
@@ -4099,7 +4185,7 @@ async function runSweepNow() {
   try {
     const data = await api("POST", "/admin/compliance/sweep", {});
     const s = data.sweep || {};
-    if (note) note.textContent = `Sweep ran: ${(s.reminder1 || 0) + (s.reminder2 || 0) + (s.reminder3 || 0)} reminder(s), ${s.paused || 0} pause(s), ${s.banned || 0} ban(s), ${s.expired || 0} window expiration(s), ${s.performance || 0} performance request(s).`;
+    if (note) note.textContent = `Sweep ran: ${(s.reminder1 || 0) + (s.reminder2 || 0) + (s.reminder3 || 0)} reminder(s), ${s.paused || 0} pause(s), ${s.banned || 0} ban(s), ${s.expired || 0} window expiration(s), ${s.performance || 0} performance request(s)${s.strikes ? `, ${s.strikes} no-show strike(s)` : ""}${s.strikePaused ? `, ${s.strikePaused} strike pause(s)` : ""}.`;
     loadCompliance();
   } catch (err) {
     if (note) note.textContent = err.message;
@@ -4375,6 +4461,7 @@ function renderPreview() {
     profile: "Step 3 of 4: the full creator profile",
     offer: "Step 4 of 4: the offer composer (simulation)",
     dashboard: "The business dashboard: bookings, codes, tracking and returns",
+    staffdemo: "The staff redemption demo: the register flow, simulated end to end",
   }[pv.step] || "";
   const planName = pv.step === "dashboard" && pv.dashboard
     ? pv.dashboard.plan.name
@@ -4395,6 +4482,7 @@ function renderPreview() {
   else if (pv.step === "profile" && pv.creator) main.innerHTML = creatorProfileDetailHtml(pv.creator, true);
   else if (pv.step === "offer") main.innerHTML = previewOfferHtml();
   else if (pv.step === "dashboard") { main.innerHTML = pv.dashboard ? previewDashboardHtml(pv.dashboard) : `<section class="panel"><p class="muted">Loading the dashboard...</p></section>`; if (pv.dashboard) startPreviewCountdown(); else loadPreviewDashboard(); }
+  else if (pv.step === "staffdemo") main.innerHTML = pvStaffDemoHtml();
   else main.innerHTML = previewPlansHtml();
 }
 
@@ -4563,6 +4651,10 @@ function previewOfferHtml() {
     <form onsubmit="return previewSendOffer(event)">
       <div class="field"><label>Offer title</label><input id="pvo-title" required placeholder="For example: Dinner for two on us"></div>
       <div class="field"><label>Exactly what is comped</label><input id="pvo-comped" required placeholder="For example: Two entrees and two drinks for the creator and a guest">${chipsRowHtml("comp", "pvo", target && target.profile ? target.profile.tierBand : null)}</div>
+      <div class="field"><label>How many people does the comp cover?</label>
+        <label style="font-weight:500"><input type="radio" name="pvo-covers" value="1" checked style="width:auto"> 1 person: just the creator</label><br>
+        <label style="font-weight:500"><input type="radio" name="pvo-covers" value="2" style="width:auto"> 2 people: the creator and a guest</label>
+      </div>
       <div class="form-2col">
         <div class="field"><label>Dollar cap ($)</label><input type="number" id="pvo-cap" min="1" required placeholder="75"></div>
         <div class="field"><label>Spots (creators who can book)</label><input type="number" id="pvo-spots" min="1" value="1" required></div>
@@ -4584,6 +4676,7 @@ async function previewSendOffer(e) {
     const data = await api("POST", "/admin/preview/offers", {
       title: document.getElementById("pvo-title").value,
       whatComped: document.getElementById("pvo-comped").value,
+      covers: parseInt((document.querySelector("input[name='pvo-covers']:checked") || {}).value, 10) || 1,
       dollarCap: parseInt(document.getElementById("pvo-cap").value, 10),
       spots: parseInt(document.getElementById("pvo-spots").value, 10),
       visitWindow: document.getElementById("pvo-window").value,
@@ -4622,6 +4715,7 @@ async function loadPreviewDashboard() {
     const data = await api("GET", "/admin/preview/dashboard");
     if (!state.preview || state.preview.step !== "dashboard") return;
     pv.dashboard = data.dashboard;
+    if (pv.wantStaffDemo) { pv.wantStaffDemo = false; return pvStaffEnter(); }
     renderPreview();
   } catch (err) {
     const main = document.getElementById("preview-main");
@@ -4681,7 +4775,7 @@ function pvBookingCard(b) {
   let html = `
   <div class="card visit-card mb">
     <div class="flex-between"><strong>${esc(b.title)}</strong>${pvStateBadge(b)}</div>
-    <p class="small muted">@${esc(b.creatorHandle)} (${esc(b.creatorName)})${b.creatorTier ? ` &middot; ${esc(b.creatorTier)}` : ""} &middot; ${esc(b.market)} &middot; Comp: ${esc(b.whatComped)} (cap $${b.dollarCap}${b.compCostModeled ? `, at cost $${b.compCostModeled} modeled` : ""}) &middot; Window: ${esc(b.visitWindow || "Flexible")}</p>`;
+    <p class="small muted">@${esc(b.creatorHandle)} (${esc(b.creatorName)})${b.creatorTier ? ` &middot; ${esc(b.creatorTier)}` : ""} &middot; ${esc(b.market)} &middot; Comp: ${esc(b.whatComped)} (cap $${b.dollarCap}${b.compCostModeled ? `, at cost $${b.compCostModeled} modeled` : ""})${b.kind === "paid" ? "" : ` &middot; ${coversLine(b)}`} &middot; Window: ${esc(b.visitWindow || "Flexible")}</p>`;
   if (b.state === "booked") {
     html += `
     <div class="grid cols-2">
@@ -4743,25 +4837,40 @@ function pvStaffPanelHtml(d) {
   const booked = (d.bookings || []).find((b) => b.state === "booked");
   const redeemed = (d.bookings || []).find((b) => b.state === "post_due");
   if (!booked) return "";
+  const demo = d.staffDemo || null;
   return `
   <section class="panel">
     <h3 style="margin-top:0"><span class="preview-tag">PREVIEW</span> What staff see at the counter</h3>
-    <p class="muted small">The Counter screen, read-only. In the live app this is the whole job: the creator shows their code or QR, staff look it up, one tap redeems it and starts the 48 hour clock. The register is never involved; staff ring the comp in your own system the way they normally do.</p>
+    <p class="muted small">The Counter screen. In the live app this is the whole job: the creator shows their code or QR, staff look it up, one tap redeems it and starts the 48 hour clock. The register is never involved; staff ring the comp in your own system the way they normally do.</p>
+    ${demo ? `
+    <div class="notice blue">
+      <strong>Try the staff login yourself (simulation).</strong> This demo runs the full staff flow against ${esc(demo.businessName)} in preview: PIN screen, code lookup, redeem. Nothing is saved and no real record changes.
+      <div class="grid cols-2" style="margin-top:10px">
+        <p class="small" style="margin:0"><strong>Business (staff) code:</strong> <span class="code">${esc(demo.staffCode)}</span><br><strong>Register link:</strong> ${esc(demo.registerPath)}<br><strong>Demo staff PIN:</strong> <span class="code">${esc(demo.demoPin)}</span></p>
+        <p class="small" style="margin:0"><strong>Sample creator code to redeem:</strong> <span class="code">${esc(demo.redeemCode || "")}</span><br><span class="muted">${demo.redeemVisit ? `${esc(demo.redeemVisit.title)} with @${esc(demo.redeemVisit.creatorHandle)} &middot; ${coversLine(demo.redeemVisit)}` : ""}</span></p>
+      </div>
+      <div class="cta-row" style="justify-content:flex-start;margin-top:10px">
+        <button class="btn" onclick="return pvStaffEnter()">Open the staff demo</button>
+      </div>
+      <div class="field" style="margin-top:10px;max-width:340px"><label>Set your own demo PIN for this session (4 to 6 digits)</label><input id="pv-demo-pin" inputmode="numeric" maxlength="6" placeholder="${esc(demo.demoPin)}"></div>
+      <button class="btn small-btn ghost" onclick="return pvStaffSetPin()">Use this PIN for the demo</button> <span id="pv-demo-pin-ok" class="saved"></span>
+      <p class="small muted" style="margin-bottom:0">In the live app the owner sets the real staff PIN on the Plan tab, and staff open this same flow from the sign-in screen or the register card link. The demo PIN above exists only inside this preview.</p>
+    </div>` : ""}
     <div class="grid cols-2">
       <div class="card">
         <div class="field"><label>Booking code</label><input value="${esc(booked.code)}" disabled style="text-transform:uppercase;font-family:Archivo;font-weight:700;letter-spacing:0.06em"></div>
         <div class="card" style="margin-top:10px">
           <div class="flex-between"><strong>${esc(booked.creatorName)}</strong><span class="badge tier">@${esc(booked.creatorHandle)}</span></div>
           <p class="small">${esc(booked.title)}: ${esc(booked.whatComped)}</p>
-          <p class="small muted">Comp cap $${booked.dollarCap} &middot; Window: ${esc(booked.visitWindow || "Flexible")} &middot; Code ${esc(booked.code)}</p>
+          <p class="small muted">Comp cap $${booked.dollarCap} &middot; ${coversLine(booked)} &middot; Window: ${esc(booked.visitWindow || "Flexible")} &middot; Code ${esc(booked.code)}</p>
           <p class="small">Check the person in front of you matches the creator, then redeem. The code burns and the 48 hour post clock starts now.</p>
-          <button class="btn" style="width:100%" disabled>Redeem and start the clock</button>
-          <p class="small muted" style="margin-bottom:0">Read-only in preview. No code shown anywhere in preview can actually be redeemed.</p>
+          <button class="btn" style="width:100%" onclick="return pvStaffEnter()">Try it in the demo above</button>
+          <p class="small muted" style="margin-bottom:0">The live Redeem button is disabled on this read-only card; the demo at the top of this panel runs the real flow in simulation.</p>
         </div>
       </div>
       <div>
         ${redeemed ? `<div class="error-box">This code was already redeemed at ${esc(fmtDate(redeemed.redeemedAt))}. Codes work once.</div>
-        <p class="small muted">That is what staff see if a burned code is entered again, here for ${esc(redeemed.title)} (@${esc(redeemed.creatorHandle)}). One code, one visit, no double comps.</p>` : ""}
+        <p class="small muted">That is what staff see if a burned code is entered again, here for ${esc(redeemed.title)} (@${esc(redeemed.creatorHandle)}). One code, one visit, no double comps. Try it in the demo: enter this code after the PIN.</p>` : ""}
         <div class="card">
           <strong>No code? No problem.</strong>
           <p class="small">If the creator is standing there but the code cannot be scanned, staff confirm the visit from the booking instead. The same 48 hour clock starts, and the booking is marked "business confirmed", like the Sunday supper club visit in the list below. The creator also gets an "I am here" check-in button on their side.</p>
@@ -4769,6 +4878,182 @@ function pvStaffPanelHtml(d) {
       </div>
     </div>
   </section>`;
+}
+
+// ---------------- preview staff demo (simulation) ----------------
+// Jeff presents with the Preview example accounts (2026-10-20):
+// the staff PIN login, runnable end to end without touching a
+// real record. The demo state lives ONLY in state.preview.pvStaff
+// (in memory, gone on exit or reload). The PIN is the seeded demo
+// PIN from the dashboard payload, or one Jeff sets for the session
+// in the staff panel above. Lookup knows exactly two answers: the
+// sample redeemable code from the payload (redeemable once per
+// demo run), and any already-burned sample code (the "codes work
+// once" answer). Everything else is the plain unknown-code answer,
+// worded like the real flow's.
+function pvStaffDemoData() {
+  const pv = state.preview;
+  return pv && pv.dashboard ? pv.dashboard.staffDemo : null;
+}
+
+function pvStaffSession() {
+  const pv = state.preview;
+  if (!pv.pvStaff) {
+    const demo = pvStaffDemoData();
+    pv.pvStaff = { step: "pin", pin: demo ? demo.demoPin : "2468", redeemed: false, fails: 0, found: null, error: "" };
+  }
+  return pv.pvStaff;
+}
+
+function pvStaffEnter() {
+  const pv = state.preview;
+  if (!pv) return false;
+  if (!pv.dashboard) { previewToDashboard(); return false; }
+  if (!pv.pvStaff) pvStaffSession();
+  pv.step = "staffdemo";
+  renderPreview();
+  window.scrollTo(0, 0);
+  return false;
+}
+
+function pvStaffSetPin() {
+  const el = document.getElementById("pv-demo-pin");
+  const ok = document.getElementById("pv-demo-pin-ok");
+  const v = el ? el.value.trim() : "";
+  if (!/^\d{4,6}$/.test(v)) { if (ok) ok.textContent = "Use 4 to 6 digits."; return false; }
+  const s = pvStaffSession();
+  s.pin = v;
+  if (ok) ok.textContent = `Demo PIN set to ${v} for this preview session.`;
+  return false;
+}
+
+function pvStaffDemoHtml() {
+  const demo = pvStaffDemoData();
+  if (!demo) return `<section class="panel"><p class="muted">Loading the staff demo...</p></section>`;
+  const s = pvStaffSession();
+  const banner = `<div class="notice blue"><strong>Preview simulation.</strong> You are staff at ${esc(demo.businessName)} for the next minute. Nothing here is saved, and no real record changes. <a href="#" onclick="return pvStaffExit()">Back to the dashboard</a></div>`;
+  if (s.step === "pin") {
+    return `
+    <section class="panel" style="max-width:520px;margin:10px auto">
+      <h2 style="margin-top:0">Staff sign-in</h2>
+      ${banner}
+      <p class="muted">${esc(demo.businessName)}. Staff: enter the PIN your manager set, then the creator's code.</p>
+      <form onsubmit="return pvStaffPinSubmit(event)">
+        <div class="field"><label>Business code</label><input value="${esc(demo.staffCode)}" disabled style="text-transform:uppercase;font-family:Archivo;font-weight:700;letter-spacing:0.06em"></div>
+        <div class="field"><label>Staff PIN</label><input id="pv-staff-pin" type="password" inputmode="numeric" autocomplete="off" placeholder="The demo PIN is ${esc(s.pin)}" required></div>
+        <div id="pv-staff-error">${s.error ? `<div class="error-box">${esc(s.error)}</div>` : ""}</div>
+        <button class="btn" type="submit" style="width:100%">Open the code screen</button>
+      </form>
+      <p class="small muted">Demo PIN for this session: <span class="code">${esc(s.pin)}</span> (seeded ${esc(demo.demoPin)}; change it in the staff panel on the dashboard).</p>
+    </section>`;
+  }
+  if (s.step === "code") {
+    const v = demo.redeemVisit || {};
+    return `
+    <section class="panel" style="max-width:520px;margin:10px auto">
+      <h2 style="margin-top:0">Redeem a creator visit</h2>
+      ${banner}
+      <p class="muted">${esc(demo.businessName)} &middot; staff mode. Enter the creator's code, or scan their QR in the live app.</p>
+      <form onsubmit="return pvStaffLookup(event)">
+        <div class="field"><label>Creator's visit code</label><input id="pv-staff-code" style="text-transform:uppercase;font-family:Archivo;font-weight:700;letter-spacing:0.06em" autocomplete="off" placeholder="SGNL-XXXXXX" required></div>
+        <div id="pv-staff-error">${s.error ? `<div class="error-box">${esc(s.error)}</div>` : ""}</div>
+        <button class="btn" type="submit" style="width:100%">Look up the visit</button>
+      </form>
+      <p class="small muted">Try the sample code <span class="code">${esc(demo.redeemCode || "")}</span> (${esc(v.title || "the booked visit")}${v.creatorHandle ? `, @${esc(v.creatorHandle)}` : ""}). ${demo.burnedExample ? `Or try the already-used code <span class="code">${esc(demo.burnedExample.code)}</span> to see the codes-work-once answer.` : ""}</p>
+      ${s.found ? pvStaffFoundHtml(s.found) : ""}
+      <p class="mt"><button class="btn ghost" onclick="return pvStaffExit()">Done: back to the dashboard</button></p>
+    </section>`;
+  }
+  return `
+  <section class="panel center" style="max-width:520px;margin:10px auto">
+    <h2 style="margin-top:0">Visit redeemed</h2>
+    ${banner}
+    <p><strong>${esc(s.redeemedName || "The creator")}</strong> is redeemed in this simulation. Their 48 hour post clock would start now, and the owner would get the staff notice email.</p>
+    <p class="muted">In the live app the code burns for real. Here nothing was saved: run it again any time.</p>
+    <button class="btn" onclick="return pvStaffAgain()">Redeem another (back to the code screen)</button>
+    <button class="btn ghost" onclick="return pvStaffExit()">Back to the dashboard</button>
+  </section>`;
+}
+
+function pvStaffFoundHtml(found) {
+  if (found.state === "burned") {
+    return `<div class="error-box" style="margin-top:12px">This code was already redeemed. Codes work once.</div>`;
+  }
+  if (found.state === "redeemed") {
+    return `<div class="notice" style="margin-top:12px"><strong>Already redeemed in this demo.</strong> The code burned when you redeemed it above. Exit the demo and re-enter to run it again.</div>`;
+  }
+  const v = found.visit;
+  return `
+  <div class="card" style="margin-top:12px">
+    <div class="flex-between"><strong>${esc(v.creatorName)}</strong><span class="badge tier">@${esc(v.creatorHandle)}</span></div>
+    <p class="small">${esc(v.title)}: ${esc(v.whatComped)}</p>
+    <p class="small muted">Comp cap $${v.dollarCap} &middot; ${coversLine(v)} &middot; Visit: ${esc(v.visitWindow || "Flexible")}${v.redeemBy ? ` &middot; Redeem by ${fmtDate(v.redeemBy)}` : ""}</p>
+    <p class="small">Check the person in front of you matches the creator, then redeem. The code burns and the 48 hour post clock starts now.</p>
+    <button class="btn" style="width:100%" onclick="return pvStaffRedeem()">Redeem and start the clock</button>
+  </div>`;
+}
+
+function pvStaffPinSubmit(e) {
+  e.preventDefault();
+  const s = pvStaffSession();
+  const v = (document.getElementById("pv-staff-pin") || {}).value || "";
+  if (v !== s.pin) {
+    s.fails += 1;
+    s.error = s.fails >= 5 ? "Too many wrong PINs. In the live app this locks staff entry for 15 minutes; the demo just asks you to try the demo PIN shown below." : "That PIN is not right for this business. Try again.";
+    renderPreview();
+    return false;
+  }
+  s.error = "";
+  s.step = "code";
+  renderPreview();
+  window.scrollTo(0, 0);
+  return false;
+}
+
+function pvStaffLookup(e) {
+  e.preventDefault();
+  const demo = pvStaffDemoData();
+  const s = pvStaffSession();
+  const code = (((document.getElementById("pv-staff-code") || {}).value) || "").trim().toUpperCase();
+  s.error = "";
+  if (demo.redeemCode && code === demo.redeemCode) {
+    s.found = s.redeemed ? { state: "redeemed" } : { state: "ok", visit: demo.redeemVisit };
+  } else if (demo.burnedExample && code === demo.burnedExample.code) {
+    s.found = { state: "burned" };
+  } else {
+    s.found = null;
+    s.error = "We could not find that code. Check the code on the creator's phone and try again.";
+  }
+  renderPreview();
+  return false;
+}
+
+function pvStaffRedeem() {
+  const s = pvStaffSession();
+  const demo = pvStaffDemoData();
+  s.redeemed = true;
+  s.redeemedName = demo && demo.redeemVisit ? `${demo.redeemVisit.creatorName} (@${demo.redeemVisit.creatorHandle})` : "The creator";
+  s.step = "done";
+  s.found = null;
+  renderPreview();
+  window.scrollTo(0, 0);
+  return false;
+}
+
+function pvStaffAgain() {
+  const s = pvStaffSession();
+  s.step = "code";
+  s.error = "";
+  renderPreview();
+  return false;
+}
+
+function pvStaffExit() {
+  const pv = state.preview;
+  if (pv) { pv.step = "dashboard"; pv.pvStaff = null; }
+  renderPreview();
+  window.scrollTo(0, 0);
+  return false;
 }
 
 // The Managed-plan talent budget panel (Jeff, 2026-10-19): a
