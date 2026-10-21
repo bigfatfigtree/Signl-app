@@ -164,6 +164,7 @@ async function renderPublicProfile() {
           </div>
         </div>
         <p>${scoreBadge(p.localImpactScore)}${p.momentumPoints ? ` <span class="badge info">Momentum ${p.momentumPoints} pts</span>` : ""}${badgesHtml(p.badges)}</p>
+        <p>${shareBlockHtml(p.handle, p.unlisted ? (p.city || "") : (p.market || ""), "Share", p.name)}</p>
         <div class="cc-local">
           ${p.localAudiencePct === null || p.localAudiencePct === undefined
             ? `<div class="lbl">Local audience not reported yet</div>`
@@ -195,6 +196,50 @@ async function renderPublicProfile() {
 function inviteUrlFor(u) {
   const handle = u && u.creator && u.creator.handle;
   return handle ? `https://app.joinsignl.com/?ref=${encodeURIComponent(handle)}` : "";
+}
+
+// One-tap referral sharing (Jeff, 2026-10-21, narrow scope): the
+// creator's referral link with a pre-written founding-status line
+// naming their market. navigator.share where the platform offers
+// it (the mobile share sheet: Instagram, Facebook, messages);
+// otherwise a small fallback menu: copy link, Facebook, X,
+// WhatsApp. Placed ONLY in the dashboard roster block, the
+// founding status (approval) surface, the profile-completion
+// moment, and the public /c/ profile (with the profile owner's
+// own referral link, so the creator is credited whoever shares).
+function sharePayloadFor(place, handle, subjectName) {
+  const url = `https://app.joinsignl.com/?ref=${encodeURIComponent(handle || "")}`;
+  const text = subjectName
+    ? `${subjectName} is a founding creator on SIGNL in ${place}. Local businesses comp creators for honest posts, and it is free for creators. Claim your spot:`
+    : `I just became a founding creator on SIGNL in ${place}. Local businesses comp creators for honest posts, and it is free for creators. Claim your spot:`;
+  return { title: "SIGNL", text, url };
+}
+
+function shareBlockHtml(handle, place, label, subjectName) {
+  if (!handle) return "";
+  const payload = sharePayloadFor(place, handle, subjectName);
+  const full = `${payload.text} ${payload.url}`;
+  return `<span class="share-wrap"><button type="button" class="btn small-btn ghost" data-share-handle="${esc(handle)}" data-share-place="${esc(place || "")}"${subjectName ? ` data-share-name="${esc(subjectName)}"` : ""} onclick="return shareInvite(this)">${esc(label || "Share your invite")}</button><span class="share-menu" style="display:none"> <a href="#" onclick="return copyShareLink(this)">Copy link</a> &middot; <a href="https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(payload.url)}" target="_blank" rel="noopener">Facebook</a> &middot; <a href="https://twitter.com/intent/tweet?text=${encodeURIComponent(payload.text)}&url=${encodeURIComponent(payload.url)}" target="_blank" rel="noopener">X</a> &middot; <a href="https://wa.me/?text=${encodeURIComponent(full)}" target="_blank" rel="noopener">WhatsApp</a></span></span>`;
+}
+
+function shareInvite(btn) {
+  const payload = sharePayloadFor(btn.getAttribute("data-share-place") || "", btn.getAttribute("data-share-handle") || "", btn.getAttribute("data-share-name") || "");
+  if (navigator.share) {
+    navigator.share(payload).catch(() => {});
+    return false;
+  }
+  const menu = btn.parentElement ? btn.parentElement.querySelector(".share-menu") : null;
+  if (menu) menu.style.display = menu.style.display === "block" ? "none" : "block";
+  return false;
+}
+
+function copyShareLink(a) {
+  const wrap = a.closest ? a.closest(".share-wrap") : null;
+  const btn = wrap ? wrap.querySelector("[data-share-handle]") : null;
+  const url = btn ? sharePayloadFor("", btn.getAttribute("data-share-handle") || "").url : "";
+  if (url && navigator.clipboard) navigator.clipboard.writeText(url).catch(() => {});
+  a.textContent = "Copied";
+  return false;
 }
 
 // University autocomplete (Jeff, 2026-10-21): the bundled IPEDS
@@ -289,6 +334,7 @@ function growRosterHtml(u) {
       <h3 style="margin-top:0">Grow your roster</h3>
       <p class="small">Founding rosters fill by invitation. Share your personal invite link with other creators in ${esc(place)}: anyone who signs up through your link is credited to you.</p>
       <div class="field"><label>Your invite link</label><input type="text" readonly value="${esc(link)}" onclick="this.select()"></div>
+      <p class="small">${shareBlockHtml(u.creator && u.creator.handle, place, "Share your invite")}</p>
       <p class="small"><strong>Your roster:</strong> ${m.signups} ${m.signups === 1 ? "creator" : "creators"} joined through your link &middot; ${m.approved} approved &middot; <strong>${m.points} Momentum points</strong></p>
       ${m.campusCrew ? `<p class="small"><strong>Your campus crew: ${m.campusCrew.count} creator${m.campusCrew.count === 1 ? "" : "s"} from ${esc(m.campusCrew.university)}</strong></p>` : ""}
       <p class="small">Creators who build a roster get seen first when businesses start choosing in your market. Points: +3 when a creator joins through your link, +10 when they are approved.</p>
@@ -1849,6 +1895,7 @@ async function loadFoundingStatus() {
         </div>
         <span class="badge ok" style="font-size:0.95rem;padding:6px 14px">Founding Creator, ${isUnl ? esc(f.city) : esc(f.market)}</span>
       </div>
+      <p class="small">You are in. Know a creator who should be on the founding roster with you? ${shareBlockHtml(p.handle, isUnl ? (f.city || "") : (f.market || ""), "Share your invite")}</p>
       <div class="grid cols-2 mt">
         <div>
           ${card.photoUrl ? `<img class="profile-photo" src="${esc(card.photoUrl)}" alt="Your profile photo">` : `<div class="photo-placeholder">No photo yet. Add one in your profile below; businesses see it when ${isUnl ? esc(f.city) : esc(f.market)} opens.</div>`}
@@ -2363,7 +2410,7 @@ function creatorProfileHtml(u) {
         <p class="small muted">Your strongest posts, shown on your public profile and to businesses in search results as Watch cards. Instagram, TikTok, or YouTube links only. Clear a box to remove that link.</p>
       </div>
       <div class="field"><label>Bio</label><textarea id="p-bio" rows="2">${esc(c.bio || "")}</textarea></div>
-      <button class="btn" type="submit">Save profile</button> <span id="save-ok" class="saved"></span>
+      <button class="btn" type="submit">Save profile</button> <span id="save-ok" class="saved"></span><span id="profile-complete-share"></span>
     </form>
     <div id="my-showcase"></div>
   </div>`;
@@ -2417,6 +2464,7 @@ async function doUpdateCreator(e) {
   const paidBox = document.getElementById("p-paid");
   if (suggestedTierId(profileStackTotal()) === "Headliners" && paidBox && paidBox.checked && !comps.includes(PAID_COMP)) comps.push(PAID_COMP);
   const pctRaw = document.getElementById("p-localpct").value;
+  const wasProfileComplete = !!((state.user.profileCompletion && state.user.profileCompletion.complete) || (state.user.creator && state.user.creator.profileComplete === true));
   try {
     const uploaded = await uploadPhotoInput("p-photo");
     const cityEl = document.getElementById("p-city");
@@ -2458,6 +2506,16 @@ async function doUpdateCreator(e) {
     state.user = data.user;
     if (uploaded && state.user.creator) state.user.creator.hasPhoto = true;
     document.getElementById("save-ok").textContent = "Saved.";
+    // The profile-completion moment: the save that flips the
+    // profile to complete gets a one-tap share of the invite link.
+    const nowComplete = !!((data.user.profileCompletion && data.user.profileCompletion.complete) || (data.user.creator && data.user.creator.profileComplete === true));
+    if (!wasProfileComplete && nowComplete) {
+      const shareEl = document.getElementById("profile-complete-share");
+      if (shareEl) {
+        const cplace = data.user.market === unlistedLabel() ? (data.user.city || "your city") : data.user.market;
+        shareEl.innerHTML = `<p class="small" style="margin-top:10px"><strong>Your profile is complete and launch-ready.</strong> Tell another creator: ${shareBlockHtml(data.user.creator && data.user.creator.handle, cplace, "Share your invite")}</p>`;
+      }
+    }
     loadMyScore();
   } catch (err) {
     document.getElementById("form-error").innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
