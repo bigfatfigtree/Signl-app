@@ -540,21 +540,22 @@ function renderHome() {
   <section class="hero">
     <h1>Local creators.<br><span class="grad-text">Real regulars.</span></h1>
     <p>SIGNL connects local businesses with local creators and everyday people nearby. The business comps a meal or a service, the creator posts honestly within 48 hours, and every visit and post is tracked. No national reach games. National platforms sell reach. We sell regulars.</p>
+    <p><strong>${CREATOR_FREE_LINE}</strong></p>
     <div class="cta-row">
       <a class="btn" href="#" onclick="return go('join-creator')">Become a Founding Creator</a>
       <a class="btn ghost" href="#" onclick="return go('for-businesses')">For Businesses</a>
       <a class="btn ghost" href="#" onclick="return goStaff()">Redeem a creator visit</a>
     </div>
-    <p class="small muted mt">Founding creator sign-up is open now in all 39 markets, across 12 countries and territories. Markets open to businesses in the next 30 to 90 days. Don't see your city? Sign up anyway: new markets open where creator sign-ups pile up, and early sign-ups hold founding standing when their city opens.</p>
+    <p class="small muted mt">Founding creator sign-up is open now in all 39 markets, across 12 countries and territories. Markets open to businesses in the next 30 to 90 days. Every founding application gets a decision or a clear status within 2 business days. In the four launch markets, Hampton Roads, Richmond, Raleigh and Washington DC, founding rosters lock on November 1, in sign-up order. Don't see your city? Sign up anyway: new markets open where creator sign-ups pile up, and early sign-ups hold founding standing when their city opens.</p>
   </section>
   <section class="grid cols-3 mt">
     <div class="card"><h3>1. Claim your spot, finish your profile</h3><p class="muted">Creators claim their founding spot in about a minute (handle, market, email), then finish their full profile after approval: your audience, what share of it is local. Early sign-ups hold founding status and priority when businesses start searching.</p></div>
     <div class="card"><h3>2. Your market opens</h3><p class="muted">When your market opens to businesses, we email you. Businesses browse the founding roster in your market and see what share of each creator's audience is actually local.</p></div>
-    <div class="card"><h3>3. Visit, comped, honest post</h3><p class="muted">The creator books a visit and gets a one-time code, redeemed in the app at the visit. The clock starts there: an honest post, with disclosure, within 48 hours.</p></div>
+    <div class="card"><h3>3. Visit, comped, honest post</h3><p class="muted">The creator books a visit and gets a one-time code, redeemed in the app at the visit. The clock starts there: an honest post, with disclosure, within 48 hours. Comped visits are the everyday offer; paid cash campaigns sit on top, and Headliners (15,000+ followers) are first in line for them.</p></div>
   </section>
   <section class="panel mt">
     <h3>The rules, up front</h3>
-    <p>Posts are honest, always. A business can never require a positive post, a rating, or specific words. Creators disclose every comp, as the FTC requires. If a post does not land in 48 hours, the business gets a replacement visit.</p>
+    <p>Posts are honest, always. A business can never require a positive post, a rating, or specific words. Creators disclose every comp, as the FTC requires. If a post does not land in 48 hours, the business gets a replacement visit. Build the roster and get seen first: invite other creators and earn Momentum points (+3 per sign-up through your link, +10 per approval). Points order the creator list businesses see.</p>
   </section>`;
 }
 
@@ -766,6 +767,7 @@ function renderQuickClaim() {
     <h2>Claim your founding spot</h2>
     <p><strong>${CREATOR_FREE_LINE}</strong></p>
     <p class="muted">Founding spots lock in sign-up order, so claim yours now and finish the rest after approval. This takes about a minute: your handle, your market, an email, and a password. When you are approved, we email you, and your dashboard walks you through finishing your profile: your photo, your audience counts, what share of it is local. A finished profile is what businesses see, so that step is what makes you bookable. City not listed yet? Pick "My city is not listed yet" below and claim anyway: your sign-up counts toward opening your city, and you hold founding standing there.</p>
+    <p class="small"><strong>What you get:</strong> comped meals, services and experiences at local businesses, yours for an honest post within 48 hours. Paid cash campaigns sit on top of comps, and Headliners are first in line for them. In Hampton Roads, Richmond, Raleigh and Washington DC, founding rosters lock on November 1, in sign-up order. After approval, your personal invite link earns Momentum points (+3 per creator who signs up through it, +10 per approval), and points order the creator list businesses see.</p>
     ${hasPrefill ? `<div class="notice blue">Your invite link told us a head start: we pre-filled what it carried below. Check it, claim your spot, and your application goes into the review queue.</div>` : ""}
     <div id="form-error"></div>
     <form onsubmit="return doQuickClaim(event)">
@@ -863,6 +865,7 @@ function renderJoinCreator() {
     <h2>Become a Founding Creator</h2>
     <p><strong>${CREATOR_FREE_LINE}</strong></p>
     <p class="muted">SIGNL is opening market by market, and creators are signing up first. Build your full founding profile now: when your market opens to businesses in the next 30 to 90 days, we email you, and founding creators get priority when businesses search. This is not a waitlist form; this is your real profile. City not listed yet? Pick "My city is not listed yet" below and sign up anyway: your sign-up counts toward opening your city, and you hold founding standing there.</p>
+    <p class="small"><strong>What you get:</strong> comped meals, services and experiences at local businesses, yours for an honest post within 48 hours. Paid cash campaigns sit on top of comps, and Headliners are first in line for them. In Hampton Roads, Richmond, Raleigh and Washington DC, founding rosters lock on November 1, in sign-up order. After approval, your personal invite link earns Momentum points (+3 per creator who signs up through it, +10 per approval), and points order the creator list businesses see.</p>
     ${hasPrefill ? `<div class="notice blue">Your invite link told us a head start: we pre-filled what it carried below. Check it, finish the rest, and your profile goes into the review queue.</div>` : ""}
     <p class="small">In a hurry? <a href="#" onclick="return showQuickJoin()">Claim your spot with just your handle</a> and finish your profile after approval instead.</p>
     <div id="form-error"></div>
@@ -936,7 +939,7 @@ function renderJoinCreator() {
       <div class="field"><label style="font-weight:500"><input type="checkbox" id="jc-agree-compliance" style="width:auto" required> I agree to post within 48 hours of every comped visit for full credit and paste the post link in the app. I understand one week is the hard stop: a redeemed visit with no post pauses my account at one week and closes it at two.</label></div>
       <div class="field"><label style="font-weight:500"><input type="checkbox" id="jc-agree-terms" style="width:auto" required> I agree to the <a href="https://joinsignl.com/terms.html" target="_blank" rel="noopener">Terms of Service</a> and <a href="https://joinsignl.com/privacy.html" target="_blank" rel="noopener">Privacy Policy</a>, and I agree SIGNL can email me about my account, launch updates and offers. I can unsubscribe from marketing emails at any time.</label></div>
       <button class="btn" type="submit" style="width:100%">Create my founding profile</button>
-      <p class="small muted mt">Every application is reviewed by a person. Founding spots are limited in every market, and priority goes in sign-up order.</p>
+      <p class="small muted mt">Every application is reviewed by a person, and every founding application gets a decision or a clear status within 2 business days. Founding spots are limited in every market, and priority goes in sign-up order. In Hampton Roads, Richmond, Raleigh and Washington DC, founding rosters lock on November 1.</p>
     </form>
   </section>`;
   // Claim-link prefill, applied to the live form: the handle link
@@ -1189,6 +1192,7 @@ function renderPending() {
     <p class="muted" style="text-align:left">Your profile is not finished yet, and that is by design: when you are approved, we email you, and you finish your profile from the checklist on your dashboard (your home city, your audience counts, what share of it is local, your photo). A finished profile is what businesses see, so that step is what makes you bookable.</p>`
       : `<p>Thanks, ${esc(u.name)}. Your founding creator profile for <strong>${place}</strong> is built and in the review queue. Every founding application gets a decision or a clear status within 2 business days.</p>`}
     ${isCreator ? `<p><strong>${CREATOR_FREE_LINE}</strong></p>` : ""}
+    ${isCreator && ["Hampton Roads", "Richmond", "Raleigh/The Triangle", "Washington DC"].includes(u.market) ? `<p class="small"><strong>The ${esc(u.market)} founding roster locks on November 1.</strong> Your spot is already claimed in sign-up order, ahead of the lock.</p>` : ""}
     ${isCreator && f.queueBand ? `<p><span class="badge info">${isUnlisted ? `You are in the first ${f.queueBand} to sign up in ${esc(u.city)}` : `You are in the first ${f.queueBand} founding creators in ${esc(u.market)}`}</span></p>` : ""}
     <p class="muted">${isUnlisted
       ? `SIGNL is not open in ${esc(u.city)} yet, and your sign-up counts toward opening it: we open new markets where creator sign-ups pile up, and founding sign-ups there go first. Every application is reviewed by a person. The moment you are approved, your founding status page opens here, and we will email you at ${esc(u.email)} the moment ${esc(u.city)} opens. Sign back in any time to check your status.${state.boot && state.boot.email && state.boot.email.enabled ? ` A confirmation email is on its way to ${esc(u.email)}.` : ""}`
