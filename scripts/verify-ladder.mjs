@@ -187,7 +187,8 @@ function eliteFixture({ postsN = 10, stars = [5, 5, 4, 5, 4], standing = null, s
   const m = engine([solo]);
   const l = m.ladderFor(solo);
   check("no referrals: ladder empty, no badges, no bonus entries", l.approvedReferrals === 0 && l.badges.length === 0 && !m.detailFor(solo).ledger.some((e) => e.kind.startsWith("referral_milestone")));
-  check("summaryFor shape unchanged (signups/approved/points)", JSON.stringify(Object.keys(m.summaryFor(solo)).sort()) === JSON.stringify(["approved", "points", "signups"]));
+  const sum = m.summaryFor(solo);
+  check("summaryFor still carries signups/approved/points (campusCrew rides along from the campus build)", sum.signups === 0 && sum.approved === 0 && sum.points === 0 && "campusCrew" in sum);
 }
 
 // --- client copy guards ---
