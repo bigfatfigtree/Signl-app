@@ -327,10 +327,14 @@ try {
   const pubFlow = await anon("GET", "/api/c/verifyeats757");
   const pf = pubFlow.data.profile || {};
   check("public profile track record counts the real visit (1 visit, 1 post, 100% on time, business named)", !!pf.trackRecord && pf.trackRecord.visitsCompleted === 1 && pf.trackRecord.postsDelivered === 1 && pf.trackRecord.onTimePct === 100 && pf.trackRecord.isNew === false && (pf.trackRecord.businessesWorkedWith || []).includes("Verify Table"), JSON.stringify(pf.trackRecord));
-  check("public profile shows the business review and its summary", !!pf.reviewSummary && pf.reviewSummary.count === 1 && pf.reviewSummary.average === 5 && (pf.reviews || []).length === 1 && pf.reviews[0].businessName === "Verify Table" && pf.reviews[0].stars === 5, JSON.stringify([pf.reviewSummary, pf.reviews]));
+  // Public rating threshold (Jeff, 2026-10-20 late; supersedes the
+  // show-from-the-first-review rule this check used to assert):
+  // at 1 rating the public profile carries NO rating data at all.
+  check("public profile hides the rating below 3 ratings (empty state, never a zero)", !!pf.reviewSummary && pf.reviewSummary.count === 0 && pf.reviewSummary.average === null && (pf.reviews || []).length === 0 && pf.ratingAvg === null && pf.ratingCount === 0, JSON.stringify([pf.reviewSummary, pf.reviews, pf.ratingAvg, pf.ratingCount]));
   const discAfterReview = await business("GET", "/api/discover?market=Hampton%20Roads");
   const cardAfterReview = (discAfterReview.data.creators || []).find((c) => c.userId === creatorId) || {};
   check("discovery card carries the same track record + review summary", !!cardAfterReview.trackRecord && cardAfterReview.trackRecord.visitsCompleted === 1 && !!cardAfterReview.reviewSummary && cardAfterReview.reviewSummary.count === 1, JSON.stringify([cardAfterReview.trackRecord, cardAfterReview.reviewSummary]));
+  check("discovery card carries ratingAvg / ratingCount from the first rating (businesses see it at 1)", cardAfterReview.ratingAvg === 5 && cardAfterReview.ratingCount === 1, JSON.stringify([cardAfterReview.ratingAvg, cardAfterReview.ratingCount]));
 
   // --- best work round-trips in the full marketplace shape too ---
   const bwFlow = await creator("PATCH", "/api/me/profile", { bestWork: ["https://www.instagram.com/p/VERIFYPOST/"] });

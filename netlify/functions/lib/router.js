@@ -1596,10 +1596,16 @@ async function rankApplications(apps) {
   const [bookings, posts, reviews, bizReviews] = await Promise.all([allBookings(), allPosts(), allReviews(), allBizReviews()]);
   const momentum = createMomentum({ users, bookings, posts, reviews, bizReviews });
   const { approvedRank } = creatorRanks(users);
+  const reviewsByCreator = new Map();
+  for (const r of reviews) {
+    if (!reviewsByCreator.has(r.creatorId)) reviewsByCreator.set(r.creatorId, []);
+    reviewsByCreator.get(r.creatorId).push(r);
+  }
   const out = [];
   for (const app of apps) {
     const c = byId.get(app.creatorId);
     if (!c || !c.creator) continue;
+    const rating = ratingFieldsOf(reviewsByCreator.get(c.id) || []);
     const history = summarizeHistory(bookings.filter((b) => b.creatorId === c.id), posts);
     const impact = computeLocalImpactScore(c.creator, history);
     const track = summarizeTrackRecord(bookings, posts, c.id);
@@ -1619,6 +1625,8 @@ async function rankApplications(apps) {
         localAudiencePct: c.creator.localAudiencePct === undefined ? null : c.creator.localAudiencePct,
         totalAudience: audienceTotalOf(c.creator),
         paidRate: typeof c.creator.paidRate === "number" && c.creator.paidRate > 0 ? c.creator.paidRate : null,
+        ratingAvg: rating.ratingAvg,
+        ratingCount: rating.ratingCount,
         foundingRank: approvedRank.get(c.id) || null,
         createdAt: c.createdAt,
         trackRecord: track,
@@ -1775,6 +1783,28 @@ function reviewSummaryOf(displayList) {
   return { count: displayList.length, average: Math.round(avg * 10) / 10 };
 }
 
+// The business-to-creator RATING (Jeff, 2026-10-20 late): creators
+// carry two standing numbers, Momentum points AND a star rating
+// from businesses. The rating is the average of the review records
+// above, computed server-side on read like everything else (never
+// a stored, client-editable field). ratingAvg is null until the
+// first rating exists: an unrated creator is NEVER rendered as
+// 0 stars or 0.0 anywhere. The rating is display only: it never
+// feeds Momentum points and never changes any ordering (discovery
+// and the applicant stack stay Momentum-led).
+function ratingFieldsOf(reviewRecords) {
+  const list = reviewRecords || [];
+  if (!list.length) return { ratingAvg: null, ratingCount: 0 };
+  const avg = list.reduce((s, r) => s + (Number(r.stars) || 0), 0) / list.length;
+  return { ratingAvg: Math.round(avg * 10) / 10, ratingCount: list.length };
+}
+
+// The public /c/ profile shows a creator's rating only once at
+// least this many businesses have rated them: one or two early
+// ratings never define a creator in public. Below the threshold
+// the public payload carries no rating data at all.
+const PUBLIC_RATING_MIN_COUNT = 3;
+
 async function creatorReviews(creatorId) {
   const all = await allReviews();
   return all
@@ -1870,6 +1900,7 @@ async function publicCreator(u, viewer, foundingPriority) {
   const impact = computeLocalImpactScore(u.creator || {}, history);
   const trackRecord = await creatorTrackRecord(u.id);
   const reviewList = (await creatorReviews(u.id)).map(reviewDisplay);
+  const rating = ratingFieldsOf(reviewList);
   let isFavorite = false;
   if (viewer && viewer.role === "business") {
     isFavorite = !!(await store.get(`favorite:${viewer.id}:${u.id}`));
@@ -1896,6 +1927,8 @@ async function publicCreator(u, viewer, foundingPriority) {
     trackRecord,
     reviewSummary: reviewSummaryOf(reviewList),
     reviews: reviewList.slice(0, 10),
+    ratingAvg: rating.ratingAvg,
+    ratingCount: rating.ratingCount,
     localImpactScore: impact ? impact.score : null,
     scoreComponents: impact ? impact.components : null,
     history,
@@ -1926,6 +1959,15 @@ async function publicProfilePayload(u) {
   const impact = computeLocalImpactScore(c, history);
   const trackRecord = await creatorTrackRecord(u.id);
   const reviewList = (await creatorReviews(u.id)).map(reviewDisplay);
+  // Public rating threshold (Jeff, 2026-10-20 late): the public
+  // profile carries rating data only once PUBLIC_RATING_MIN_COUNT
+  // businesses have rated this creator. Below that the payload
+  // carries the empty state (average null, no reviews), so nothing
+  // about ratings renders publicly and no "no reviews" or penalty
+  // framing ever appears. Businesses inside the app see the rating
+  // from the first one; only the public page waits for three.
+  const rating = ratingFieldsOf(reviewList);
+  const showPublicRating = rating.ratingCount >= PUBLIC_RATING_MIN_COUNT;
   const unlisted = u.market === UNLISTED;
   const audience = audienceView(c);
   return {
@@ -1952,8 +1994,10 @@ async function publicProfilePayload(u) {
     foundingBand: foundingBand(approvedRank.get(u.id) || null),
     bestWork: bestWorkCards(c),
     trackRecord,
-    reviewSummary: reviewSummaryOf(reviewList),
-    reviews: reviewList.slice(0, 10),
+    reviewSummary: showPublicRating ? reviewSummaryOf(reviewList) : { count: 0, average: null },
+    reviews: showPublicRating ? reviewList.slice(0, 10) : [],
+    ratingAvg: showPublicRating ? rating.ratingAvg : null,
+    ratingCount: showPublicRating ? rating.ratingCount : 0,
     visitIncludes: STANDARD_VISIT.summary,
   };
 }
@@ -1989,6 +2033,13 @@ async function withPostState(booking) {
   let businessReview = null;
   const myBizReview = (await allBizReviews()).find((r) => r.bookingId === booking.id);
   if (myBizReview) businessReview = { stars: myBizReview.stars, text: myBizReview.text || "", createdAt: myBizReview.createdAt };
+  // The mirror: the business's own rating OF this creator on this
+  // booking, when one exists, so the business visit card shows the
+  // rating it left instead of the rating form (and the creator's
+  // card shows what the business said).
+  let creatorReview = null;
+  const myCreatorReview = (await allReviews()).find((r) => r.bookingId === booking.id);
+  if (myCreatorReview) creatorReview = { stars: myCreatorReview.stars, comment: myCreatorReview.comment || "", createdAt: myCreatorReview.createdAt };
   // SIGNL ROAS (Jeff, 2026-10-19): every booking payload carries
   // its own score, computed by the one helper from the stored
   // facts (redemption tally, reported cost, the post's reported
@@ -2002,7 +2053,7 @@ async function withPostState(booking) {
     if (plan) planAllocation = plan.priceMonthly / plan.visitsPerMonth;
   }
   const roas = roasFor([{ ...booking, post, planAllocation }]);
-  return { ...booking, post, postState: postState(booking, post), compliance: complianceStatusFor(booking, post, creatorStanding), businessReviewLinks, businessReview, roas };
+  return { ...booking, post, postState: postState(booking, post), compliance: complianceStatusFor(booking, post, creatorStanding), businessReviewLinks, businessReview, creatorReview, roas };
 }
 
 // ---------- Post compliance (Jeff, 2026-10-19; timeline final) ----------
@@ -6344,16 +6395,22 @@ async function route(event) {
     return json(200, { posts });
   }
 
-  // ---------- business reviews (post-visit) ----------
-  // Plumbing only (Jeff, 2026-10-19): a business whose visit completed
-  // (the post came in and the booking completed) can leave ONE review
-  // per booking: 1-5 stars plus a short comment, attributed to the
+  // ---------- business ratings of creators (post-visit) ----------
+  // The business-to-creator RATING (Jeff, 2026-10-19 plumbing;
+  // surfaced as a first-class score 2026-10-20 late): a business
+  // whose visit completed (the post proof came in and the booking
+  // completed) rates the creator ONCE per booking: 1-5 stars plus
+  // an optional short comment (280 chars), attributed to the
   // business name, stored as review:{id} and logged as
-  // business_review_left. Reviews surface on the creator's public
-  // profile, discovery card, and preview profile the moment they
-  // exist. There is no business-facing entry UI yet (it ships with
-  // business accounts) and nothing is ever seeded: a creator with no
-  // completed visits simply has no review section anywhere.
+  // business_review_left. Not editable after submit. The ratings
+  // aggregate server-side into ratingAvg / ratingCount (see
+  // ratingFieldsOf) and show next to Momentum on the discovery
+  // card, the creator detail, the applicant stack, and the
+  // creator's own profile; the public /c/ profile shows them only
+  // at 3+ ratings (PUBLIC_RATING_MIN_COUNT). Ratings never mint
+  // Momentum points for anyone and never change ordering. The
+  // entry UI is the business's visit card (Visits & Posts); a
+  // creator with no completed visits simply has no rating anywhere.
   if (method === "POST" && seg[0] === "bookings" && seg.length === 3 && seg[2] === "review") {
     if (user.role !== "business") return err(403, "Only businesses can review a completed visit");
     const b = parseBody(event);
@@ -6364,7 +6421,7 @@ async function route(event) {
     if (existing) return err(409, "This visit already has a review");
     const stars = Number(b.stars);
     if (!Number.isInteger(stars) || stars < 1 || stars > 5) return err(400, "Stars must be a whole number from 1 to 5");
-    const comment = String(b.comment == null ? "" : b.comment).trim().slice(0, 500);
+    const comment = String(b.comment == null ? "" : b.comment).trim().slice(0, 280);
     const review = {
       id: crypto.randomUUID(),
       bookingId: booking.id,

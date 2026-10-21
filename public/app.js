@@ -1272,6 +1272,21 @@ async function previewPaidBooking(creatorId) {
   } catch (err) { alert(err.message); }
 }
 
+// Business rates the creator after a completed visit (the post
+// proof is in). One rating per booking, not editable; it feeds
+// the creator's star rating shown next to their Momentum points.
+// Ratings never move anyone's Momentum points.
+async function submitCreatorReview(e, bookingId) {
+  e.preventDefault();
+  const stars = document.getElementById("crev-stars-" + bookingId).value;
+  const comment = document.getElementById("crev-comment-" + bookingId).value;
+  try {
+    await api("POST", `/bookings/${bookingId}/review`, { stars: Number(stars), comment });
+    loadMyVisits("business");
+  } catch (err) { alert(err.message); }
+  return false;
+}
+
 // Creator reviews the business after a completed visit: +10
 // Momentum at ANY star rating (honest reviews, never paid praise).
 async function submitBusinessReview(e, bookingId) {
@@ -1322,18 +1337,23 @@ function trackRecordHtml(card) {
     ${names ? `<p class="small muted">Worked with: ${names}</p>` : ""}</div>`;
 }
 
-// Business reviews appear only when a real review exists (a business
-// reviewed a completed visit). Nothing is ever seeded or averaged in.
+// Business ratings appear only when a real rating exists (a
+// business rated a completed visit). The headline reads the
+// server-computed ratingAvg / ratingCount; an unrated creator
+// renders nothing here at all, never a zero. Nothing is ever
+// seeded or averaged in.
 function reviewsHtml(card) {
   const sum = card.reviewSummary || { count: 0, average: null };
-  if (!sum.count) return "";
+  const avg = card.ratingAvg !== undefined && card.ratingAvg !== null ? card.ratingAvg : sum.average;
+  const count = card.ratingCount !== undefined ? card.ratingCount : sum.count;
+  if (!count || avg === null || avg === undefined) return "";
   const items = (card.reviews || []).map((r) => `
     <div class="review-item">
       <div>${starsHtml(r.stars)} <strong>${esc(r.businessName)}</strong> <span class="muted small">${esc(fmtDate(r.createdAt))}</span></div>
       ${r.comment ? `<p style="margin:6px 0 0">${esc(r.comment)}</p>` : ""}
     </div>`).join("");
   return `<div class="showcase-block"><h4>Business reviews</h4>
-    <p>${starsHtml(sum.average)} <strong>${esc(String(sum.average))}</strong> average from ${sum.count} business review${sum.count === 1 ? "" : "s"} after completed visits.</p>
+    <p>${starsHtml(avg)} <strong>${esc(String(avg))}</strong> average rating from ${count} business rating${count === 1 ? "" : "s"} after completed visits.</p>
     ${items}</div>`;
 }
 
@@ -1443,8 +1463,10 @@ function creatorCard(c, viewer, opts) {
       ? `<span class="badge info">New to SIGNL: no visits yet</span>`
       : `<span class="muted">${tr.visitsCompleted} visits completed &middot; ${tr.postsDelivered} posts delivered &middot; ${tr.onTimePct === null || tr.onTimePct === undefined ? "—" : tr.onTimePct + "% on time"}</span>`)
     : "";
-  const reviewLine = c.reviewSummary && c.reviewSummary.count
-    ? ` ${starsHtml(c.reviewSummary.average)} <strong>${esc(String(c.reviewSummary.average))}</strong> <span class="muted">(${c.reviewSummary.count} review${c.reviewSummary.count === 1 ? "" : "s"})</span>`
+  const ratingAvg = c.ratingAvg !== undefined && c.ratingAvg !== null ? c.ratingAvg : (c.reviewSummary ? c.reviewSummary.average : null);
+  const ratingCount = c.ratingCount !== undefined ? c.ratingCount : (c.reviewSummary ? c.reviewSummary.count : 0);
+  const reviewLine = ratingCount >= 1 && ratingAvg !== null && ratingAvg !== undefined
+    ? ` ${starsHtml(ratingAvg)} <strong>${esc(String(ratingAvg))}</strong> <span class="muted">(${ratingCount} rating${ratingCount === 1 ? "" : "s"})</span>`
     : "";
   // v2 .creator-card anatomy: one component for discovery, the public
   // profile hero, and the profile detail header (DESIGN-SYSTEM.md).
@@ -2026,6 +2048,9 @@ async function loadCreatorHome() {
       <div class="stat-cell"><div class="stat-num">${tr.onTimePct === null || tr.onTimePct === undefined ? "New" : tr.onTimePct + "%"}</div><div class="stat-lbl">On-time posts (${tr.postsDelivered || 0} delivered)</div></div>
       <div class="stat-cell"><div class="stat-num"><em>${m.points}</em></div><div class="stat-lbl">Momentum points (your order in business search)</div></div>
     </div>
+    ${card.ratingCount >= 1 && card.ratingAvg !== null && card.ratingAvg !== undefined
+      ? `<p class="small">${starsHtml(card.ratingAvg)} <strong>Your rating: ${esc(String(card.ratingAvg))}</strong> from ${card.ratingCount} business${card.ratingCount === 1 ? "" : "es"}, shown next to your Momentum points.</p>`
+      : `<p class="small muted">Businesses rate you after visits. Your rating appears here after your first rated visit.</p>`}
     ${homeActiveVisitHtml(homeActiveBooking(bookings))}
     ${homeOpportunitiesHtml(offers, u)}
     ${homeLocalSignalHtml(card, bookings)}
@@ -2138,10 +2163,23 @@ function creatorProfileHtml(u) {
   </div>`;
 }
 
+// The creator's own rating line on their Home/Profile: the second
+// standing number next to Momentum. Rated: the average and who it
+// came from. Unrated: the neutral explainer the spec asks for,
+// never a zero and never penalty framing.
+function myRatingHtml(card) {
+  const count = card.ratingCount !== undefined ? card.ratingCount : (card.reviewSummary ? card.reviewSummary.count : 0);
+  const avg = card.ratingAvg !== undefined && card.ratingAvg !== null ? card.ratingAvg : (card.reviewSummary ? card.reviewSummary.average : null);
+  if (count >= 1 && avg !== null && avg !== undefined) {
+    return `<div class="showcase-block"><h4>Your rating</h4><p style="margin:0">${starsHtml(avg)} <strong>${esc(String(avg))}</strong> from ${count} business${count === 1 ? "" : "es"}. Businesses see your rating next to your Momentum points: two separate numbers, and ratings never change your points.</p></div>`;
+  }
+  return `<div class="showcase-block"><h4>Your rating</h4><p class="muted" style="margin:0">Businesses rate you after visits. Your rating appears here after your first rated visit.</p></div>`;
+}
+
 function fillMyShowcase(card) {
   const sc = document.getElementById("my-showcase");
   if (sc && card) {
-    sc.innerHTML = `<div class="showcase-block"><h4>How businesses see your profile</h4><p class="small muted">Your best work, SIGNL track record, and business reviews, exactly as they appear on your public profile and in business search. The track record and reviews come only from real completed visits on SIGNL.</p>${creatorShowcaseHtml(card)}</div>`;
+    sc.innerHTML = `${myRatingHtml(card)}<div class="showcase-block"><h4>How businesses see your profile</h4><p class="small muted">Your best work, SIGNL track record, and business reviews, exactly as they appear to businesses in search. On your public profile the rating shows once 3 or more businesses have rated you. The track record and reviews come only from real completed visits on SIGNL.</p>${creatorShowcaseHtml(card)}</div>`;
   }
 }
 
@@ -2628,6 +2666,9 @@ function visitCard(b, role) {
   }
   if (b.replacementRequestedAt) html += `<p class="small">Replacement requested ${fmtDate(b.replacementRequestedAt)}. SIGNL will line up a substitute creator.</p>`;
   if (role === "creator" && b.status === "completed") {
+    if (b.creatorReview) {
+      html += `<div class="review-item"><span class="small muted">${esc(b.businessName)} rated you</span><br>${starsHtml(b.creatorReview.stars)} <span class="small">${esc(b.creatorReview.comment || "")}</span></div>`;
+    }
     if (b.businessReview) {
       html += `<div class="review-item"><span class="small muted">Your review of ${esc(b.businessName)}</span><br>${starsHtml(b.businessReview.stars)} <span class="small">${esc(b.businessReview.text || "")}</span> <span class="saved">+10 Momentum earned</span></div>`;
     } else {
@@ -2643,6 +2684,22 @@ function visitCard(b, role) {
     </form>`;
     }
     html += reviewLinksBlockHtml(b.businessReviewLinks);
+  }
+  if (role === "business" && b.status === "completed") {
+    if (b.creatorReview) {
+      html += `<div class="review-item"><span class="small muted">Your rating of this creator</span><br>${starsHtml(b.creatorReview.stars)} <span class="small">${esc(b.creatorReview.comment || "")}</span></div>`;
+    } else {
+      html += `
+    <form onsubmit="return submitCreatorReview(event, '${b.id}')">
+      <h4 style="margin:10px 0 4px">Rate this creator</h4>
+      <p class="small muted">The visit is complete and the post is in. Rate how the visit and the post went. The rating shows on the creator's profile next to their Momentum points: two separate numbers, and ratings never change anyone's points. One rating per visit, and it cannot be edited after.</p>
+      <div class="form-2col">
+        <div class="field"><label>Your rating</label><select id="crev-stars-${b.id}"><option value="5">5 stars</option><option value="4">4 stars</option><option value="3">3 stars</option><option value="2">2 stars</option><option value="1">1 star</option></select></div>
+        <div class="field"><label>Your words (optional, 280 characters)</label><input id="crev-comment-${b.id}" maxlength="280" placeholder="How was the visit and the post?"></div>
+      </div>
+      <button class="btn small-btn" type="submit">Leave rating</button>
+    </form>`;
+    }
   }
   const otherId = role === "creator" ? b.businessId : b.creatorId;
   html += `<div class="mt"><button class="btn small-btn ghost" onclick="openThread('${otherId}')">Message</button></div></div>`;
@@ -3274,6 +3331,9 @@ async function viewApplicants(offerId) {
 function applicantCardHtml(offer, a) {
   const c = a.creator || {};
   const tr = c.trackRecord || {};
+  const ratingBit = c.ratingCount >= 1 && c.ratingAvg !== null && c.ratingAvg !== undefined
+    ? ` &middot; ${starsHtml(c.ratingAvg)} <strong>${esc(String(c.ratingAvg))}</strong> (${c.ratingCount} rating${c.ratingCount === 1 ? "" : "s"})`
+    : "";
   const stateLine = {
     applied: `<span class="badge info">Waiting</span>`,
     selected: `<span class="badge ok">Selected, visit booked</span>`,
@@ -3285,7 +3345,7 @@ function applicantCardHtml(offer, a) {
   return `
   <div class="card mb">
     <div class="flex-between"><strong>${esc(c.name || a.snapshot.name)} <span class="muted">@${esc(c.handle || a.snapshot.handle)}</span></strong>${stateLine}</div>
-    <p class="small">${esc(c.tierBand || a.snapshot.tierBand || "")} &middot; ${c.localAudiencePct === null || c.localAudiencePct === undefined ? "local % not reported" : c.localAudiencePct + "% local audience"} &middot; Impact ${c.impact !== undefined && a.rankParts ? a.rankParts.impactScore : ""} &middot; Momentum ${a.rankParts ? a.rankParts.momentum : ""} pts &middot; reliability ${a.rankParts ? a.rankParts.reliability : ""}</p>
+    <p class="small">${esc(c.tierBand || a.snapshot.tierBand || "")} &middot; ${c.localAudiencePct === null || c.localAudiencePct === undefined ? "local % not reported" : c.localAudiencePct + "% local audience"} &middot; Impact ${c.impact !== undefined && a.rankParts ? a.rankParts.impactScore : ""} &middot; Momentum ${a.rankParts ? a.rankParts.momentum : ""} pts${ratingBit} &middot; reliability ${a.rankParts ? a.rankParts.reliability : ""}</p>
     <p class="small muted">${tr.isNew || !tr.visitsCompleted ? "New to SIGNL: no visits yet." : `${tr.visitsCompleted} visits completed &middot; ${tr.postsDelivered} posts delivered &middot; ${tr.onTimePct === null || tr.onTimePct === undefined ? "on-time n/a" : tr.onTimePct + "% on time"}`} &middot; ${fmtNum(c.totalAudience || a.snapshot.totalAudience)} total audience${c.paidRate ? ` &middot; paid rate $${c.paidRate}` : ""}</p>
     ${(a.status === "applied" || a.status === "backfill_offered") ? `<div class="cta-row" style="justify-content:flex-start"><button class="btn small-btn" onclick="selectApplicant('${offer.id}','${a.id}')">Select this creator</button><button class="btn small-btn ghost" onclick="releaseApplicant('${offer.id}','${a.id}')">Release</button></div>` : ""}
   </div>`;
