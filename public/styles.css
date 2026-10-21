@@ -140,6 +140,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--blue); bord
 .badge.warn { background: #3a2a10; border-color: #6b4d1c; color: var(--amber); }
 .badge.bad { background: #3a1d1d; border-color: #5a2a2a; color: var(--red); }
 .badge.info { background: #14213d; border-color: #274069; color: #9db9ff; }
+.badge.elite { background: linear-gradient(90deg, #006AFC, #03C9AB); border-color: transparent; color: #ffffff; }
 
 .stat-row { display: flex; gap: 22px; flex-wrap: wrap; }
 .stat { min-width: 110px; }

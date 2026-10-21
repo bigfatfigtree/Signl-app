@@ -1,6 +1,22 @@
 // SIGNL app (app.joinsignl.com). Single-page client for the SIGNL API.
 "use strict";
 
+// Google Analytics 4 (Jeff, 2026-10-21): the same property as the
+// marketing site (G-0V1YPFCTSD), loaded by this single shared entry
+// so every app view is measured, signed in or not.
+var GA_ID = "G-0V1YPFCTSD";
+if (GA_ID) {
+  var gaScript = document.createElement("script");
+  gaScript.async = true;
+  gaScript.src = "https://www.googletagmanager.com/gtag/js?id=" + GA_ID;
+  document.head.appendChild(gaScript);
+  window.dataLayer = window.dataLayer || [];
+  window.gtag = function () { window.dataLayer.push(arguments); };
+  gtag("js", new Date());
+  gtag("config", GA_ID);
+}
+function trackEvent(name, params) { if (window.gtag) gtag("event", name, params || {}); }
+
 const state = {
   user: null,
   boot: null, // markets, tiers, categories, plans
@@ -138,7 +154,7 @@ async function renderPublicProfile() {
             ${p.foundingBand ? `<span class="cc-chip">In the first ${p.foundingBand} founding creators in ${place}</span>` : ""}
           </div>
         </div>
-        <p>${scoreBadge(p.localImpactScore)}${p.momentumPoints ? ` <span class="badge info">Momentum ${p.momentumPoints} pts</span>` : ""}</p>
+        <p>${scoreBadge(p.localImpactScore)}${p.momentumPoints ? ` <span class="badge info">Momentum ${p.momentumPoints} pts</span>` : ""}${badgesHtml(p.badges)}</p>
         <div class="cc-local">
           ${p.localAudiencePct === null || p.localAudiencePct === undefined
             ? `<div class="lbl">Local audience not reported yet</div>`
@@ -184,6 +200,7 @@ function growRosterHtml(u) {
       <div class="field"><label>Your invite link</label><input type="text" readonly value="${esc(link)}" onclick="this.select()"></div>
       <p class="small"><strong>Your roster:</strong> ${m.signups} ${m.signups === 1 ? "creator" : "creators"} joined through your link &middot; ${m.approved} approved &middot; <strong>${m.points} Momentum points</strong></p>
       <p class="small">Creators who build a roster get seen first when businesses start choosing in your market. Points: +3 when a creator joins through your link, +10 when they are approved.</p>
+      ${ladderHtml(u)}
       <p class="small muted">Tap the link to select it, copy it, and send it to a creator who should be on the founding roster with you.</p>
     </div>`;
 }
@@ -1277,6 +1294,38 @@ function starsHtml(n) {
 // boolean) so every surface states the creator's booking terms the
 // same way: her listed rate with a "Paid bookings" marker when she
 // charges, and her comp-open state either way.
+// Creator standing badges (ladder v2 + SIGNL Elite, Jeff,
+// 2026-10-21): the server computes them (user.badges on the public
+// payload, card.badges in discovery, creator.badges in the
+// applicant stack); this only renders them.
+function badgesHtml(badges) {
+  if (!badges || !badges.length) return "";
+  return badges.map((b) => b.kind === "elite"
+    ? ' <span class="badge elite">SIGNL Elite</span>'
+    : ` <span class="badge tier">${esc(b.name)}</span>`).join("");
+}
+
+// The ladder block inside Grow your roster: badges earned, the
+// pending unlock, the distance to the next badge, and Elite. Copy
+// is plain on purpose (Jeff): badges and points, no guarantees,
+// and points are priority because points set the order businesses
+// see.
+function ladderHtml(u) {
+  const l = u && u.ladder;
+  if (!l) return "";
+  const earned = (l.badges || []).filter((b) => b.kind === "milestone");
+  let out = `<p class="small" style="margin-top:10px"><strong>Referral badges:</strong> approved referrals earn badges and bonus Momentum points. 1 approved referral: Connector badge, +25 points. 3: Super Connector, +50. 5: Roster Builder, +75. 10: City Lead, +150.</p>`;
+  if (earned.length) out += `<p class="small">Your badges: ${earned.map((b) => esc(b.name)).join(" &middot; ")}</p>`;
+  const pending = (l.milestones || []).find((m) => m.state === "pending_unlock");
+  if (pending) {
+    out += `<p class="small">Your ${esc(pending.name)} badge unlocks when @${esc(pending.trippingHandle || "your referral")} delivers their first post.</p>`;
+  } else if (l.next) {
+    out += `<p class="small">${l.next.needed} more approved ${l.next.needed === 1 ? "referral" : "referrals"} to your next badge: ${esc(l.next.name)}.</p>`;
+  }
+  if (l.elite && l.elite.qualified) out += `<p class="small"><span class="badge elite">SIGNL Elite</span> You hold SIGNL Elite: 10 or more on-time posts and a 4.5+ rating from 5 or more businesses.</p>`;
+  return out;
+}
+
 function paidLaneBadgesHtml(p) {
   if (!p) return "";
   let out = "";
@@ -1444,7 +1493,7 @@ function creatorProfileDetailHtml(c, preview) {
             ${c.foundingBand ? `<span class="cc-chip">Founding creator, first ${c.foundingBand} in market</span>` : ""}
           </div>
         </div>
-        <p>${scoreBadge(c.localImpactScore)}${p.openToPaidCampaigns ? ` <span class="badge tier">Open to paid campaigns</span>` : ""}${paidLaneBadgesHtml(p)}${c.momentum && c.momentum.points ? ` <span class="badge info">Momentum ${c.momentum.points} pts</span>` : ""}</p>
+        <p>${scoreBadge(c.localImpactScore)}${p.openToPaidCampaigns ? ` <span class="badge tier">Open to paid campaigns</span>` : ""}${paidLaneBadgesHtml(p)}${c.momentum && c.momentum.points ? ` <span class="badge info">Momentum ${c.momentum.points} pts</span>` : ""}${badgesHtml(c.badges)}</p>
         <div class="cc-local">
           ${p.localAudiencePct === null || p.localAudiencePct === undefined
             ? `<div class="lbl">Local audience not reported yet</div>`
@@ -1554,7 +1603,7 @@ function creatorCard(c, viewer, opts) {
     ${stackList(c).length ? `<div class="cc-platforms">${stackList(c).map((x) => `<span class="cc-plat">${esc(x.label)} ${fmtNum(x.count)}</span>`).join("")}</div>` : ""}
     ${c.standing === "paused" ? `<p><span class="badge warn">Paused: a late post is outstanding</span> <span class="small muted">This creator is greyed out and cannot take new offers until the post is delivered.</span></p>` : ""}
     ${c.bookedUp ? `<p><span class="badge info">Booked up this week</span> <span class="small muted">At their weekly visit max. You can still send offers; they can accept next week.</span></p>` : ""}
-    <p>${scoreBadge(c.localImpactScore)}${p.openToPaidCampaigns ? ` <span class="badge tier">Open to paid campaigns</span>` : ""}${paidLaneBadgesHtml(p)}${c.momentum && c.momentum.points ? ` <span class="badge info">Momentum ${c.momentum.points} pts</span>` : ""}</p>
+    <p>${scoreBadge(c.localImpactScore)}${p.openToPaidCampaigns ? ` <span class="badge tier">Open to paid campaigns</span>` : ""}${paidLaneBadgesHtml(p)}${c.momentum && c.momentum.points ? ` <span class="badge info">Momentum ${c.momentum.points} pts</span>` : ""}${badgesHtml(c.badges)}</p>
     ${p.categories && p.categories.length ? `<p class="small">${p.categories.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
     ${p.compCategories && p.compCategories.filter((x) => x !== PAID_COMP).length ? `<p class="small muted">Open to comps: ${p.compCategories.filter((x) => x !== PAID_COMP).map(esc).join(", ")}</p>` : ""}
     ${p.bio ? `<p class="small muted">${esc(p.bio)}</p>` : ""}
@@ -3430,7 +3479,7 @@ function applicantCardHtml(offer, a) {
   return `
   <div class="card mb">
     <div class="flex-between"><strong>${esc(c.name || a.snapshot.name)} <span class="muted">@${esc(c.handle || a.snapshot.handle)}</span></strong>${stateLine}</div>
-    <p class="small">${esc(c.tierBand || a.snapshot.tierBand || "")} &middot; ${c.localAudiencePct === null || c.localAudiencePct === undefined ? "local % not reported" : c.localAudiencePct + "% local audience"} &middot; Impact ${c.impact !== undefined && a.rankParts ? a.rankParts.impactScore : ""} &middot; Momentum ${a.rankParts ? a.rankParts.momentum : ""} pts${ratingBit} &middot; reliability ${a.rankParts ? a.rankParts.reliability : ""}</p>
+    <p class="small">${esc(c.tierBand || a.snapshot.tierBand || "")} &middot; ${c.localAudiencePct === null || c.localAudiencePct === undefined ? "local % not reported" : c.localAudiencePct + "% local audience"} &middot; Impact ${c.impact !== undefined && a.rankParts ? a.rankParts.impactScore : ""} &middot; Momentum ${a.rankParts ? a.rankParts.momentum : ""} pts${ratingBit}${badgesHtml(c.badges)} &middot; reliability ${a.rankParts ? a.rankParts.reliability : ""}</p>
     <p class="small muted">${tr.isNew || !tr.visitsCompleted ? "New to SIGNL: no visits yet." : `${tr.visitsCompleted} visits completed &middot; ${tr.postsDelivered} posts delivered &middot; ${tr.onTimePct === null || tr.onTimePct === undefined ? "on-time n/a" : tr.onTimePct + "% on time"}`} &middot; ${fmtNum(c.totalAudience || a.snapshot.totalAudience)} total audience${c.paidRate ? ` &middot; paid rate $${c.paidRate}` : ""}</p>
     ${(a.status === "applied" || a.status === "backfill_offered") ? `<div class="cta-row" style="justify-content:flex-start"><button class="btn small-btn" onclick="selectApplicant('${offer.id}','${a.id}')">Select this creator</button><button class="btn small-btn ghost" onclick="releaseApplicant('${offer.id}','${a.id}')">Release</button></div>` : ""}
   </div>`;

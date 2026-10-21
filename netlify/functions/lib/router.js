@@ -737,6 +737,31 @@ const MOMENTUM_POINTS = {
   neverPostedPenalty: -50,
 };
 
+// ---------- Referral ladder v2 + SIGNL Elite (Jeff, 2026-10-21) ----------
+// Jeff rejected v1's product guarantees ("the guarantees scare me"):
+// the ladder pays BADGES and BONUS MOMENTUM POINTS only. Points
+// already order the business-facing creator list, so points are
+// priority; badges are the visible standing. Nothing is stored and
+// nothing is promised: every milestone and the Elite badge are
+// computed on read from the same stored facts as Momentum itself.
+// A milestone counts APPROVED referrals only (role creator, status
+// approved, not a tester, never the referrer themself by id, email
+// or handle), and it UNLOCKS only when the referral who tripped it
+// (the threshold-th approved referral, in approval order) has
+// delivered their first post, so a ladder cannot be climbed on
+// paper approvals that never work.
+const REFERRAL_MILESTONES = [
+  { milestone: 1, id: "connector", name: "Connector", bonus: 25 },
+  { milestone: 3, id: "super_connector", name: "Super Connector", bonus: 50 },
+  { milestone: 5, id: "roster_builder", name: "Roster Builder", bonus: 75 },
+  { milestone: 10, id: "city_lead", name: "City Lead", bonus: 150 },
+];
+// SIGNL Elite (Jeff, 2026-10-21: "let's make our own elite"): an
+// earned status badge for creators who do the work at volume and
+// are rated highly for it. Computed, never stored, and lost
+// automatically when the inputs drop.
+const ELITE_RULE = { minOnTimePosts: 10, minRatingAvg: 4.5, minRatings: 5 };
+
 function referralCounts(users) {
   const counts = new Map(); // lowercased handle -> { signups, approved, signupsList }
   for (const u of users) {
@@ -767,6 +792,80 @@ function createMomentum(data) {
   // for leaving an honest review, never for a positive one.
   const bizReviews = (data && data.bizReviews) || [];
   const referrals = referralCounts(users);
+  // The ladder's view of a referrer's credited creators: approved
+  // only, testers out, self-referrals out (same id, same email
+  // under a second account, or the referrer's own handle), sorted
+  // in approval order so the tripping referral of milestone m is
+  // element m-1.
+  function approvedReferralList(user) {
+    if (!user || user.role !== "creator" || !user.creator) return [];
+    const handleKey = String(user.creator.handle || "").trim().toLowerCase();
+    if (!handleKey) return [];
+    const rec = referrals.get(handleKey);
+    if (!rec) return [];
+    const myEmail = String(user.email || "").trim().toLowerCase();
+    return rec.list.filter((s) => {
+      if (!s || s.id === user.id) return false;
+      if (s.role !== "creator" || s.status !== "approved" || isTester(s)) return false;
+      if (myEmail && String(s.email || "").trim().toLowerCase() === myEmail) return false;
+      const sh = s.creator && s.creator.handle ? String(s.creator.handle).trim().toLowerCase() : "";
+      if (sh && sh === handleKey) return false;
+      return true;
+    }).slice().sort((a, b) => {
+      const ka = a.reviewedAt || a.createdAt || "";
+      const kb = b.reviewedAt || b.createdAt || "";
+      if (ka !== kb) return ka < kb ? -1 : 1;
+      return String(a.createdAt || "") < String(b.createdAt || "") ? -1 : 1;
+    });
+  }
+  function firstPostAt(userId) {
+    const list = postsByCreator.get(userId) || [];
+    if (!list.length) return null;
+    return list.map((p) => p.submittedAt).filter(Boolean).sort()[0] || null;
+  }
+  // The full ladder view for one creator: milestone states, the
+  // badges earned so far, what is next, and the Elite block. Pure
+  // computation over the maps above; safe to call on any surface.
+  function ladderFor(user) {
+    const blankMilestones = REFERRAL_MILESTONES.map((m) => ({ milestone: m.milestone, id: m.id, name: m.name, bonus: m.bonus, state: "not_reached", trippingHandle: null }));
+    const blank = { signups: 0, approvedReferrals: 0, milestones: blankMilestones, badges: [], next: null, elite: { qualified: false, onTimePosts: 0, ratingAvg: null, ratingCount: 0 } };
+    if (!user || user.role !== "creator" || !user.creator) return blank;
+    const handleKey = String(user.creator.handle || "").trim().toLowerCase();
+    const rec = (handleKey && referrals.get(handleKey)) || { signups: 0, approved: 0, list: [] };
+    const approvedList = approvedReferralList(user);
+    const milestones = REFERRAL_MILESTONES.map((m) => {
+      const trip = approvedList[m.milestone - 1] || null;
+      if (!trip) return { milestone: m.milestone, id: m.id, name: m.name, bonus: m.bonus, state: "not_reached", trippingHandle: null };
+      return {
+        milestone: m.milestone, id: m.id, name: m.name, bonus: m.bonus,
+        state: firstPostAt(trip.id) ? "unlocked" : "pending_unlock",
+        trippingHandle: (trip.creator && trip.creator.handle) || null,
+      };
+    });
+    const badges = milestones.filter((m) => m.state === "unlocked").map((m) => ({ id: m.id, name: m.name, kind: "milestone" }));
+    const myPosts = postsByCreator.get(user.id) || [];
+    const onTimePosts = myPosts.filter((p) => p.onTime).length;
+    const rating = ratingFieldsOf(reviewsByCreator.get(user.id) || []);
+    const standing = standingState(user);
+    const qualified = user.status === "approved" && standing !== "banned" && standing !== "paused"
+      && onTimePosts >= ELITE_RULE.minOnTimePosts
+      && rating.ratingCount >= ELITE_RULE.minRatings
+      && rating.ratingAvg !== null && rating.ratingAvg >= ELITE_RULE.minRatingAvg;
+    if (qualified) badges.push({ id: "signl_elite", name: "SIGNL Elite", kind: "elite" });
+    const nextM = milestones.find((m) => m.state !== "unlocked") || null;
+    const next = nextM ? { milestone: nextM.milestone, name: nextM.name, state: nextM.state, needed: Math.max(0, nextM.milestone - approvedList.length), trippingHandle: nextM.trippingHandle } : null;
+    return {
+      signups: rec.signups,
+      approvedReferrals: approvedList.length,
+      milestones,
+      badges,
+      next,
+      elite: { qualified, onTimePosts, ratingAvg: rating.ratingAvg, ratingCount: rating.ratingCount },
+    };
+  }
+  function badgesFor(user) {
+    return ladderFor(user).badges;
+  }
   const bookingsByCreator = new Map();
   for (const b of bookings) {
     if (!bookingsByCreator.has(b.creatorId)) bookingsByCreator.set(b.creatorId, []);
@@ -803,6 +902,20 @@ function createMomentum(data) {
       push("referral_signup", `Creator joined through your invite link (@${(s.creator && s.creator.handle) || "creator"})`, MOMENTUM_POINTS.referralSignup, s.createdAt);
       if (s.role === "creator" && s.status === "approved" && !isTester(s)) {
         push("referral_approved", `A creator you recruited was approved (@${(s.creator && s.creator.handle) || "creator"})`, MOMENTUM_POINTS.referralApproved, s.reviewedAt || s.createdAt);
+      }
+    }
+
+    // Referral milestone bonuses (ladder v2): one ledger entry per
+    // UNLOCKED milestone, dated at the tripping referral's first
+    // post. Pending milestones pay nothing yet, which is the point:
+    // recruit creators who actually show up and post.
+    {
+      const ladderNow = ladderFor(user);
+      const approvedList = approvedReferralList(user);
+      for (const m of ladderNow.milestones) {
+        if (m.state !== "unlocked") continue;
+        const trip = approvedList[m.milestone - 1];
+        push(`referral_milestone_${m.milestone}`, `Referral milestone: ${m.name} badge (${m.milestone} approved ${m.milestone === 1 ? "referral" : "referrals"}, and the referral who earned it delivered their first post)`, m.bonus, trip ? firstPostAt(trip.id) : null);
       }
     }
 
@@ -942,7 +1055,7 @@ function createMomentum(data) {
     return { signups: d.signups, approved: d.approved, points: d.points };
   }
 
-  return { detailFor, summaryFor };
+  return { detailFor, summaryFor, ladderFor, badgesFor };
 }
 
 // Loads the full dataset once and returns a Momentum calculator.
@@ -1032,6 +1145,8 @@ async function withFounding(user) {
     // can run the profile-completion incentive loop.
     const { momentum } = await momentumContext();
     pub.momentum = momentum.detailFor(user);
+    pub.ladder = momentum.ladderFor(user);
+    pub.badges = pub.ladder.badges;
   }
   return pub;
 }
@@ -1718,6 +1833,7 @@ async function rankApplications(apps) {
         paidRate: typeof c.creator.paidRate === "number" && c.creator.paidRate > 0 ? c.creator.paidRate : null,
         ratingAvg: rating.ratingAvg,
         ratingCount: rating.ratingCount,
+        badges: momentum.badgesFor(c),
         foundingRank: approvedRank.get(c.id) || null,
         createdAt: c.createdAt,
         trackRecord: track,
@@ -1960,6 +2076,7 @@ async function discoverCards(query, viewer) {
     // Roster standing rides on the card: it is part of the order
     // businesses were promised creators would be seen in.
     card.momentum = momentum.summaryFor(c);
+    card.badges = momentum.badgesFor(c);
     card.standing = standingState(c);
     // At their weekly visit cap: still visible, NOT greyed (that is
     // the paused treatment), flagged "Booked up this week".
@@ -2082,6 +2199,7 @@ async function publicProfilePayload(u) {
     localAudienceSource: c.localAudienceSource || "Self-reported",
     localImpactScore: impact ? impact.score : null,
     momentumPoints: momentum.summaryFor(u).points,
+    badges: momentum.badgesFor(u),
     foundingBand: foundingBand(approvedRank.get(u.id) || null),
     bestWork: bestWorkCards(c),
     trackRecord,
@@ -7215,4 +7333,4 @@ async function route(event) {
 
 // The email builders are exported alongside the router so the verify
 // suites can assert on the exact copy a creator receives.
-module.exports = { route, approvalEmail, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, profileCompleteOf, profileCompletionFor, campaignEmail, crossoverEmail, campaignEmailFor, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, STANDARD_VISIT, visitRightsForPlan, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine };
+module.exports = { route, approvalEmail, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, profileCompleteOf, profileCompletionFor, campaignEmail, crossoverEmail, campaignEmailFor, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, STANDARD_VISIT, visitRightsForPlan, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE };
