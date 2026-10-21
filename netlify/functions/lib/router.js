@@ -4527,6 +4527,17 @@ async function handleRegister(event) {
   const referredBy = typeof b.referredBy === "string" ? b.referredBy.trim().replace(/^@/, "").slice(0, 40) : "";
   if (referredBy) user.referredBy = referredBy;
 
+  // Signup source (Jeff, 2026-10-21): our own segment and channel
+  // pages tag their claim links with ?src= (moms, students, dads,
+  // foodies, linkedin, learn, market pages). The client persists it
+  // like the referral credit and sends it at registration; here it
+  // is sanitized to a short slug (lowercase, alphanumeric, dash,
+  // underscore, 40 chars) and stored on the record as signupSource,
+  // so admin can see which page produced each applicant. Absent or
+  // unusable values store nothing.
+  const signupSource = typeof b.signupSource === "string" ? b.signupSource.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 40) : "";
+  if (signupSource) user.signupSource = signupSource;
+
   if (role === "creator" && quickClaim) {
     // Step one of the two-step claim: the record carries the
     // handle, the four agreements, and defaults for everything
@@ -4751,8 +4762,8 @@ async function handleRegister(event) {
     market: user.market,
     data:
       role === "creator"
-        ? { quickClaim: !!quickClaim, profileComplete: user.creator.profileComplete === true, handle: user.creator.handle, city: user.city, neighborhood: user.creator.neighborhood, university: user.creator.university, state: user.state, country: user.country, unlisted: user.market === UNLISTED, followerCount: user.creator.followerCount, audienceStack: user.creator.audienceStack, totalAudience: user.creator.totalAudience, tierBand: normalizeTierBand(user.creator.tierBand), suggestedTier: normalizeTierBand(user.creator.suggestedTier), localAudiencePct: user.creator.localAudiencePct, localAudienceSource: user.creator.localAudienceSource, categories: user.creator.categories, compCategories: user.creator.compCategories, openToPaidCampaigns: user.creator.openToPaidCampaigns, agreedPostCompliance: true, termsVersion: TERMS_VERSION, marketingEmailConsent: true, ...(user.referredBy ? { referredBy: user.referredBy } : {}) }
-        : { businessName: user.business.businessName, category: user.business.category, plan: user.business.plan, planPriceMonthly: user.business.planPriceMonthly, ...(user.referredBy ? { referredBy: user.referredBy } : {}) },
+        ? { quickClaim: !!quickClaim, profileComplete: user.creator.profileComplete === true, handle: user.creator.handle, city: user.city, neighborhood: user.creator.neighborhood, university: user.creator.university, state: user.state, country: user.country, unlisted: user.market === UNLISTED, followerCount: user.creator.followerCount, audienceStack: user.creator.audienceStack, totalAudience: user.creator.totalAudience, tierBand: normalizeTierBand(user.creator.tierBand), suggestedTier: normalizeTierBand(user.creator.suggestedTier), localAudiencePct: user.creator.localAudiencePct, localAudienceSource: user.creator.localAudienceSource, categories: user.creator.categories, compCategories: user.creator.compCategories, openToPaidCampaigns: user.creator.openToPaidCampaigns, agreedPostCompliance: true, termsVersion: TERMS_VERSION, marketingEmailConsent: true, ...(user.referredBy ? { referredBy: user.referredBy } : {}), ...(user.signupSource ? { signupSource: user.signupSource } : {}) }
+        : { businessName: user.business.businessName, category: user.business.category, plan: user.business.plan, planPriceMonthly: user.business.planPriceMonthly, ...(user.referredBy ? { referredBy: user.referredBy } : {}), ...(user.signupSource ? { signupSource: user.signupSource } : {}) },
   });
   if (role === "creator" && !quickClaim) {
     // A full-form registration IS the complete profile build: the

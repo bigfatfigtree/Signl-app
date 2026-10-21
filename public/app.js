@@ -65,6 +65,14 @@ function storedRef() {
   try { return localStorage.getItem("signl_ref") || ""; } catch (e) { return ""; }
 }
 
+// Signup source (Jeff, 2026-10-21): segment and channel pages tag
+// their claim links with ?src= (moms, students, linkedin, learn).
+// It is persisted exactly like the referral credit and sent at
+// registration, so each applicant's origin page is on the record.
+function storedSrc() {
+  try { return localStorage.getItem("signl_src") || ""; } catch (e) { return ""; }
+}
+
 // Claim-link prefill (Jeff, 2026-10-19): per-target links from email
 // and partner channels arrive as ?handle=<ig>&market=<name>&tier=<band>
 // and pre-fill the creator sign-up form, so a creator we already know
@@ -872,6 +880,7 @@ async function doQuickClaim(e) {
       agreedPostCompliance: true,
       agreedTerms: true,
       referredBy: storedRef() || undefined,
+      signupSource: storedSrc() || undefined,
     });
     state.user = data.user;
     state.view = "dashboard";
@@ -1074,6 +1083,7 @@ async function doRegisterCreator(e) {
       agreedPostCompliance: true,
       agreedTerms: true,
       referredBy: storedRef() || undefined,
+      signupSource: storedSrc() || undefined,
     });
     state.user = data.user;
     await uploadPhotoInput("jc-photo");
@@ -4328,7 +4338,7 @@ async function loadApplications() {
         ? `<br><span class="badge ${businessAccessState(u) === "active" ? "ok" : "info"}">${businessAccessState(u) === "active" ? "Active" : "Founding list"}</span>`
         : "";
       const detail = u.role === "creator" && u.creator
-        ? `@${esc(u.creator.handle)} &middot; ${fmtNum(u.creator.followerCount)} followers &middot; ${esc(u.creator.tierBand)} &middot; Local: ${u.creator.localAudiencePct === null ? "not reported" : u.creator.localAudiencePct + "% (Self-reported)"} &middot; ${(u.creator.categories || []).map(esc).join(", ")} &middot; Photo: ${u.creator.hasPhoto ? "yes" : "no"} &middot; Socials: IG${u.creator.tiktokHandle ? ", TikTok" : ""}${u.creator.youtubeChannel ? ", YouTube" : ""}${u.creator.facebookUrl ? ", Facebook" : ""}${u.creator.xUrl ? ", X" : ""}${u.creator.linkedinUrl ? ", LinkedIn" : ""}${u.creator.neighborhood ? ` &middot; Area: ${esc(u.creator.neighborhood)}` : ""}${u.creator.university || u.university ? ` &middot; University: ${esc(u.creator.university || u.university)}` : ""}${u.referredBy ? ` &middot; via @${esc(u.referredBy)}` : ""}${u.momentum && u.momentum.signups ? ` &middot; Momentum: ${u.momentum.points} pts (${u.momentum.signups} joined, ${u.momentum.approved} approved)` : ""}`
+        ? `@${esc(u.creator.handle)} &middot; ${fmtNum(u.creator.followerCount)} followers &middot; ${esc(u.creator.tierBand)} &middot; Local: ${u.creator.localAudiencePct === null ? "not reported" : u.creator.localAudiencePct + "% (Self-reported)"} &middot; ${(u.creator.categories || []).map(esc).join(", ")} &middot; Photo: ${u.creator.hasPhoto ? "yes" : "no"} &middot; Socials: IG${u.creator.tiktokHandle ? ", TikTok" : ""}${u.creator.youtubeChannel ? ", YouTube" : ""}${u.creator.facebookUrl ? ", Facebook" : ""}${u.creator.xUrl ? ", X" : ""}${u.creator.linkedinUrl ? ", LinkedIn" : ""}${u.creator.neighborhood ? ` &middot; Area: ${esc(u.creator.neighborhood)}` : ""}${u.creator.university || u.university ? ` &middot; University: ${esc(u.creator.university || u.university)}` : ""}${u.referredBy ? ` &middot; via @${esc(u.referredBy)}` : ""}${u.signupSource ? ` &middot; Source: ${esc(u.signupSource)}` : ""}${u.momentum && u.momentum.signups ? ` &middot; Momentum: ${u.momentum.points} pts (${u.momentum.signups} joined, ${u.momentum.approved} approved)` : ""}`
         : u.role === "business" && u.business
           ? `${esc(u.business.businessName)} &middot; ${esc(u.business.category)} &middot; ${esc(u.business.planName)} &middot; Access: ${businessAccessState(u) === "active" ? "Active" : "Founding list"}`
           : "";
@@ -5302,6 +5312,10 @@ function previewDashboardHtml(d) {
     const refParam = params.get("ref");
     if (refParam) {
       try { localStorage.setItem("signl_ref", refParam.trim().replace(/^@/, "").slice(0, 40)); } catch (e) { /* storage unavailable */ }
+    }
+    const srcParam = params.get("src");
+    if (srcParam) {
+      try { localStorage.setItem("signl_src", srcParam.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 40)); } catch (e) { /* storage unavailable */ }
     }
     const claim = parseClaimParams(params);
     if (claim.handle || claim.market || claim.tier) {
