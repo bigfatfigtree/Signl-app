@@ -3223,6 +3223,200 @@ async function sendStaffNotice(booking, trigger) {
   } catch (e) { /* best-effort; the event is the record */ }
 }
 
+// The ONE counter redemption (Jeff, 2026-10-20 late): burn the
+// code, start the 48 hour post clock, log it, and send the owner
+// the staff notice. The owner Counter tab and staff mode both run
+// through here, so a redemption means exactly the same thing
+// whoever taps the button. actor.via is "owner" or "staff" and is
+// stamped on the booking (owner visit views show it) and on the
+// code_redeemed event. Callers check the not-yet-redeemed state
+// before calling; this function assumes the code is live.
+async function performCounterRedeem(booking, actor) {
+  const ts = nowIso();
+  booking.redeemedAt = ts;
+  booking.redeemMethod = "counter_code";
+  booking.redeemedVia = actor.via;
+  booking.codeStatus = "burned";
+  booking.status = "redeemed";
+  booking.postDeadline = new Date(Date.parse(ts) + COMPLIANCE.onTimeHours * 3600 * 1000).toISOString();
+  booking.updatedAt = ts;
+  await store.set(`booking:${booking.id}`, booking);
+  await logEvent({ type: "code_redeemed", actorId: actor.id, actorRole: actor.role, subjectId: booking.id, market: booking.market, data: { creatorId: booking.creatorId, code: booking.code, method: "counter_code", via: actor.via, postDeadline: booking.postDeadline, dollarCap: booking.dollarCap } });
+  await sendStaffNotice(booking, "redeem");
+  return booking;
+}
+
+// ---------- staff redemption mode (Jeff, 2026-10-20 late) ----------
+// The person at the register is a host or a server, not the owner,
+// so redemption cannot require the owner's login. Staff mode is
+// the answer: a scoped session for ONE business, opened with the
+// business's staff PIN, that can do exactly three things (look up
+// a creator code for that business, see that visit's essentials,
+// redeem it) and nothing else. It is NOT a user account: the token
+// lives in its own cookie (signl_staff) and its own record
+// namespace (staffsession:), so it never resolves as a signed-in
+// user anywhere; every owner route still answers it 401.
+//
+// Records:
+//   staffpin:{businessId}     { salt, hash, setAt, updatedAt }
+//                             scrypt, same helpers as passwords;
+//                             a separate record so the secret can
+//                             never ride a user payload.
+//   staffcfg:{businessId}     { staffCode, epoch, createdAt }
+//   bizcode:{CODE}            { businessId }  staff-code index;
+//                             the code is the typeable identifier
+//                             printed on the register card.
+//   staffsession:{token}      { businessId, epoch, createdAt,
+//                             expiresAt }  12 hour shift session.
+//   staffguard:{businessId}   { fails: [ms], lockedUntil }
+//                             5 wrong PINs inside 15 minutes locks
+//                             staff entry for that business 15 min.
+// Sign out all staff devices bumps the cfg epoch and deletes the
+// business's session records, so every outstanding token dies.
+const STAFF_SESSION_TTL_MS = 12 * 3600 * 1000;
+const STAFF_PIN_MAX_FAILS = 5;
+const STAFF_PIN_FAIL_WINDOW_MS = 15 * 60 * 1000;
+const STAFF_PIN_LOCK_MS = 15 * 60 * 1000;
+const STAFF_LOOKUP_LIMIT = 30;
+const STAFF_LOOKUP_WINDOW_MS = 10 * 60 * 1000;
+const staffLookupAttempts = new Map(); // staff token -> [ms]
+
+function staffCookie(token, secure) {
+  const parts = [
+    `signl_staff=${token}`,
+    "Path=/",
+    "HttpOnly",
+    "SameSite=Lax",
+    `Max-Age=${Math.floor(STAFF_SESSION_TTL_MS / 1000)}`,
+  ];
+  if (secure) parts.push("Secure");
+  return parts.join("; ");
+}
+
+function clearStaffCookie(secure) {
+  const parts = ["signl_staff=", "Path=/", "HttpOnly", "SameSite=Lax", "Max-Age=0"];
+  if (secure) parts.push("Secure");
+  return parts.join("; ");
+}
+
+async function staffPinRecord(businessId) {
+  return store.get(`staffpin:${businessId}`);
+}
+
+// The business's staff code: six unambiguous characters, minted
+// lazily the first time staff settings are read or a PIN is set,
+// indexed for the register link and the generic entry path.
+async function ensureStaffCode(bizUser) {
+  let cfg = await store.get(`staffcfg:${bizUser.id}`);
+  if (cfg && cfg.staffCode) return cfg;
+  for (let attempt = 0; attempt < 12; attempt++) {
+    let code = "";
+    for (let i = 0; i < 6; i++) code += CODE_CHARS[crypto.randomInt(CODE_CHARS.length)];
+    const taken = await store.get(`bizcode:${code}`);
+    if (!taken) {
+      cfg = { staffCode: code, epoch: (cfg && cfg.epoch) || 0, createdAt: nowIso() };
+      await store.set(`staffcfg:${bizUser.id}`, cfg);
+      await store.set(`bizcode:${code}`, { businessId: bizUser.id });
+      return cfg;
+    }
+  }
+  return cfg || { staffCode: null, epoch: 0 };
+}
+
+async function businessByStaffCode(code) {
+  const clean = String(code || "").trim().toUpperCase();
+  if (!clean) return null;
+  const idx = await store.get(`bizcode:${clean}`);
+  if (!idx || !idx.businessId) return null;
+  const biz = await store.get(`user:${idx.businessId}`);
+  return biz && biz.role === "business" && biz.business ? biz : null;
+}
+
+async function staffPinLock(businessId) {
+  const g = await store.get(`staffguard:${businessId}`);
+  return g && g.lockedUntil && Date.now() < Date.parse(g.lockedUntil) ? g : null;
+}
+
+async function staffPinFail(businessId) {
+  const now = Date.now();
+  const g = (await store.get(`staffguard:${businessId}`)) || { fails: [], lockedUntil: null };
+  g.fails = (g.fails || []).filter((t) => now - t < STAFF_PIN_FAIL_WINDOW_MS);
+  g.fails.push(now);
+  if (g.fails.length >= STAFF_PIN_MAX_FAILS) {
+    g.lockedUntil = new Date(now + STAFF_PIN_LOCK_MS).toISOString();
+    g.fails = [];
+  }
+  await store.set(`staffguard:${businessId}`, g);
+  return g;
+}
+
+async function createStaffSession(businessId) {
+  const cfg = (await store.get(`staffcfg:${businessId}`)) || { epoch: 0 };
+  const token = crypto.randomBytes(32).toString("hex");
+  const now = Date.now();
+  await store.set(`staffsession:${token}`, {
+    businessId,
+    epoch: cfg.epoch || 0,
+    createdAt: new Date(now).toISOString(),
+    expiresAt: new Date(now + STAFF_SESSION_TTL_MS).toISOString(),
+  });
+  return token;
+}
+
+async function getStaffContext(event) {
+  const cookies = auth.parseCookies(event.headers.cookie || event.headers.Cookie || "");
+  const token = cookies.signl_staff;
+  if (!token) return null;
+  const s = await store.get(`staffsession:${token}`);
+  if (!s) return null;
+  if (Date.now() > Date.parse(s.expiresAt)) {
+    await store.del(`staffsession:${token}`);
+    return null;
+  }
+  const cfg = await store.get(`staffcfg:${s.businessId}`);
+  if (((cfg && cfg.epoch) || 0) !== (s.epoch || 0)) {
+    await store.del(`staffsession:${token}`);
+    return null;
+  }
+  const biz = await store.get(`user:${s.businessId}`);
+  if (!biz || biz.role !== "business" || !biz.business) return null;
+  return { token, businessId: s.businessId, business: biz, expiresAt: s.expiresAt };
+}
+
+function staffLookupAllowed(token) {
+  const now = Date.now();
+  const hits = (staffLookupAttempts.get(token) || []).filter((t) => now - t < STAFF_LOOKUP_WINDOW_MS);
+  if (hits.length >= STAFF_LOOKUP_LIMIT) {
+    staffLookupAttempts.set(token, hits);
+    return false;
+  }
+  hits.push(now);
+  staffLookupAttempts.set(token, hits);
+  return true;
+}
+
+// The staff-scoped view of a booking: the redemption essentials
+// and nothing else. No audience codes, no money beyond the comp
+// cap the creator already agreed to show, no other bookings.
+function staffBookingView(booking) {
+  let windowStatus = "open";
+  if (booking.status === "expired" || (booking.redeemBy && Date.now() > Date.parse(booking.redeemBy))) windowStatus = "closed";
+  return {
+    creatorName: booking.creatorName,
+    creatorHandle: booking.creatorHandle || "",
+    title: booking.title,
+    whatComped: booking.whatComped,
+    dollarCap: booking.dollarCap,
+    visitDate: booking.visitDate || "",
+    visitWindow: booking.visitWindow || "",
+    redeemBy: booking.redeemBy || null,
+    windowStatus,
+    redeemedAt: booking.redeemedAt || null,
+    postDeadline: booking.postDeadline || null,
+    code: booking.code,
+  };
+}
+
 // After a proof lands, a paused creator unpauses automatically UNLESS
 // another redeemed visit is still sitting in its pause window. A ban
 // is never lifted here: reinstatement is a human decision.
@@ -3814,6 +4008,10 @@ async function businessHome(user) {
     favoritesCount: favIds.size,
     openOffers: offers.filter((o) => laneOf(o) === "open" && (o.status === "open" || o.status === "filled")).length,
     draftOffers: offers.filter((o) => o.status === "draft").length,
+    // Staff redemption (Jeff, 2026-10-20 late): the home prompts
+    // an activated owner with no staff PIN to set one, so the
+    // register is never stuck waiting on the owner's login.
+    staffPinSet: !!(await staffPinRecord(user.id)),
   };
 }
 
@@ -4404,6 +4602,95 @@ async function route(event) {
     return json(200, { ok: true, sweep: summary });
   }
 
+  // ---------- staff redemption mode (Jeff, 2026-10-20 late) ----------
+  // These routes sit BEFORE the sign-in wall on purpose: a staff
+  // session is not a user account. Entry trades the business's
+  // staff PIN for a scoped 12 hour token in its own cookie; the
+  // lookup and redeem routes accept ONLY that token and only for
+  // that one business. A staff token presented anywhere else in
+  // the API resolves as "not signed in", because getSessionUser
+  // never sees it: different cookie, different record namespace.
+  // Staff mode works only for ACTIVATED businesses in LIVE
+  // markets, the same ground the owner Counter tab stands on
+  // (the founding gate plus the market gate): a founding or
+  // pre-launch business has no visits to redeem.
+  const staffCtx = await getStaffContext(event);
+  const staffSecure = (event.headers["x-forwarded-proto"] || "").includes("https");
+
+  if (method === "GET" && seg[0] === "staff" && seg[1] === "business") {
+    // Public on purpose: the name behind a staff code, so the PIN
+    // screen can show which business staff are signing in to
+    // before anyone types the PIN. The code is the printed
+    // identifier on the register card; the PIN is the secret.
+    const biz = await businessByStaffCode(query.code || "");
+    if (!biz) return err(404, "That business code does not match a SIGNL business. Check the code on the register card and try again.");
+    return json(200, { businessName: biz.business.businessName, market: biz.market });
+  }
+
+  if (method === "POST" && seg[0] === "staff" && seg[1] === "enter") {
+    const b = parseBody(event);
+    let biz = null;
+    if (b.businessCode) biz = await businessByStaffCode(b.businessCode);
+    else if (user && user.role === "business") biz = user;
+    if (!biz) return err(400, "Enter the business code from the register card first.");
+    if (businessAccessState(biz) !== "active") return err(403, FOUNDING_BUSINESS_MESSAGE);
+    if (!(await isMarketLive(biz.market))) return err(403, `The ${biz.market} market has not launched yet, so there are no creator visits to redeem.`);
+    const pinRec = await staffPinRecord(biz.id);
+    if (!pinRec) return err(403, "The owner has not set a staff PIN yet. Ask the owner to set one under Plan, then Staff redemption.");
+    if (await staffPinLock(biz.id)) return err(429, "Too many wrong PIN tries. Staff sign-in is locked for 15 minutes. Ask the owner if the PIN changed.");
+    const pin = String(b.pin || "");
+    if (!/^\d{4,6}$/.test(pin) || !auth.verifyPassword(pin, pinRec.salt, pinRec.hash)) {
+      const g = await staffPinFail(biz.id);
+      if (g.lockedUntil && Date.now() < Date.parse(g.lockedUntil)) return err(429, "Too many wrong PIN tries. Staff sign-in is locked for 15 minutes. Ask the owner if the PIN changed.");
+      return err(401, "That PIN did not match. Check with the owner and try again.");
+    }
+    await store.del(`staffguard:${biz.id}`);
+    const token = await createStaffSession(biz.id);
+    await logEvent({ type: "staff_session_started", actorId: biz.id, actorRole: "business", subjectId: biz.id, market: biz.market, data: { via: user && user.id === biz.id ? "owner_signed_in" : "staff_entry" } });
+    return json(200, { businessName: biz.business.businessName, expiresAt: new Date(Date.now() + STAFF_SESSION_TTL_MS).toISOString() }, { "Set-Cookie": staffCookie(token, staffSecure) });
+  }
+
+  if (method === "GET" && seg[0] === "staff" && seg[1] === "session") {
+    if (!staffCtx) return json(200, { active: false });
+    return json(200, { active: true, businessName: staffCtx.business.business.businessName, market: staffCtx.business.market, expiresAt: staffCtx.expiresAt });
+  }
+
+  if (method === "POST" && seg[0] === "staff" && seg[1] === "exit") {
+    if (staffCtx) {
+      await store.del(`staffsession:${staffCtx.token}`);
+      await logEvent({ type: "staff_session_ended", actorId: staffCtx.businessId, actorRole: "business", subjectId: staffCtx.businessId, market: staffCtx.business.market, data: {} });
+    }
+    return json(200, { ok: true }, { "Set-Cookie": clearStaffCookie(staffSecure) });
+  }
+
+  if (method === "POST" && seg[0] === "staff" && (seg[1] === "lookup" || seg[1] === "redeem")) {
+    if (!staffCtx) return err(401, "Your staff session has ended. Enter the staff PIN to keep going.");
+    const biz = staffCtx.business;
+    if (businessAccessState(biz) !== "active" || !(await isMarketLive(biz.market))) {
+      return err(403, "Staff redemption is not open for this business right now.");
+    }
+    if (!staffLookupAllowed(staffCtx.token)) return err(429, "Too many code lookups in a row. Wait a few minutes and try again.");
+    const b = parseBody(event);
+    const code = (b.code || "").trim().toUpperCase();
+    if (!code) return err(400, "Enter the creator's code");
+    const idx = await store.get(`code:${code}`);
+    if (!idx) return err(404, "That code does not match any booking. Check the code and try again.");
+    const booking = await store.get(`booking:${idx.bookingId}`);
+    if (!booking) return err(404, "That code does not match any booking. Check the code and try again.");
+    if (booking.businessId !== biz.id) return err(403, "That code is for a different business. Check the code and try again.");
+    if (seg[1] === "lookup") {
+      return json(200, { booking: staffBookingView(booking) });
+    }
+    if (booking.codeStatus === "burned" || booking.redeemedAt) {
+      return err(409, `This code was already redeemed at ${booking.redeemedAt}`);
+    }
+    if (booking.status === "expired" || (booking.redeemBy && Date.now() > Date.parse(booking.redeemBy))) {
+      return err(409, "This visit's redemption window has passed, so this code can no longer be redeemed.");
+    }
+    const done = await performCounterRedeem(booking, { id: biz.id, role: "business", via: "staff" });
+    return json(200, { booking: staffBookingView(done) });
+  }
+
   if (!user) return err(401, "Sign in required");
 
   // ---------- profile ----------
@@ -4649,6 +4936,75 @@ async function route(event) {
     await store.set(`user:${user.id}`, user);
     await logEvent({ type: "plan_selected", actorId: user.id, actorRole: "business", subjectId: user.id, market: user.market, data: { plan: plan.id, planPriceMonthly: plan.priceMonthly, source: "dashboard", billingStatus: user.business.billingStatus } });
     return json(200, { user: publicUser(user) });
+  }
+
+  // ---------- staff redemption settings (owner) ----------
+  // Owner-login only: set or rotate the staff PIN, read the
+  // business's staff code and register link, and sign out every
+  // staff device. The PIN lives in its own record (staffpin:),
+  // never on the user record, so it cannot leak through a payload.
+  // PIN controls work for any approved business (an owner can set
+  // up before activation); staff ENTRY stays gated on activation
+  // plus a live market at the /staff/enter route above.
+  if (seg[0] === "me" && seg[1] === "staff") {
+    if (user.role !== "business" || !user.business) return err(403, "Businesses only");
+    if (method === "GET" && seg.length === 2) {
+      const cfg = await ensureStaffCode(user);
+      const pinRec = await staffPinRecord(user.id);
+      const sessions = (await store.list("staffsession:")).filter((r) => r.value && r.value.businessId === user.id && Date.parse(r.value.expiresAt) > Date.now());
+      const base = process.env.APP_URL || "https://app.joinsignl.com";
+      return json(200, {
+        staffPinSet: !!pinRec,
+        staffPinSetAt: pinRec ? pinRec.setAt : null,
+        staffCode: cfg.staffCode,
+        staffLink: cfg.staffCode ? `${base}/redeem/${cfg.staffCode}` : null,
+        activeStaffSessions: sessions.length,
+        businessName: user.business.businessName,
+      });
+    }
+    if (method === "POST" && seg[2] === "pin") {
+      const b = parseBody(event);
+      const pin = String(b.pin || "");
+      if (!/^\d{4,6}$/.test(pin)) return err(400, "The staff PIN must be 4 to 6 digits, numbers only.");
+      const { salt, hash } = auth.hashPassword(pin);
+      const existing = await staffPinRecord(user.id);
+      const ts = nowIso();
+      await store.set(`staffpin:${user.id}`, { salt, hash, setAt: existing ? existing.setAt : ts, updatedAt: ts });
+      await ensureStaffCode(user);
+      await logEvent({ type: existing ? "staff_pin_rotated" : "staff_pin_set", actorId: user.id, actorRole: "business", subjectId: user.id, market: user.market, data: {} });
+      return json(200, { ok: true, staffPinSet: true });
+    }
+    if (method === "POST" && seg[2] === "signout-all") {
+      const cfg = (await store.get(`staffcfg:${user.id}`)) || { staffCode: null, epoch: 0 };
+      cfg.epoch = (cfg.epoch || 0) + 1;
+      cfg.updatedAt = nowIso();
+      await store.set(`staffcfg:${user.id}`, cfg);
+      const rows = await store.list("staffsession:");
+      let killed = 0;
+      for (const r of rows) {
+        if (r.value && r.value.businessId === user.id) {
+          await store.del(r.key);
+          killed += 1;
+        }
+      }
+      await logEvent({ type: "staff_sessions_revoked", actorId: user.id, actorRole: "business", subjectId: user.id, market: user.market, data: { killed } });
+      return json(200, { ok: true, killed });
+    }
+    if (method === "GET" && seg[2] === "register-card-qr") {
+      const cfg = await ensureStaffCode(user);
+      try {
+        const qrcode = require("qrcode-generator");
+        const qr = qrcode(0, "M");
+        const base = process.env.APP_URL || "https://app.joinsignl.com";
+        qr.addData(`${base}/redeem/${cfg.staffCode}`);
+        qr.make();
+        const svg = qr.createSvgTag({ cellSize: 6, margin: 8, scalable: true });
+        return { statusCode: 200, headers: { "Content-Type": "image/svg+xml", "Cache-Control": "no-store" }, body: svg };
+      } catch (e) {
+        return err(501, "QR generation is unavailable on this deployment; the printed link works on its own.");
+      }
+    }
+    return err(404, "Unknown staff settings route");
   }
 
   // ---------- admin ----------
@@ -6236,16 +6592,7 @@ async function route(event) {
       if (booking.codeStatus === "burned" || booking.redeemedAt) {
         return err(409, `This code was already redeemed at ${booking.redeemedAt}`);
       }
-      const ts = nowIso();
-      booking.redeemedAt = ts;
-      booking.redeemMethod = "counter_code";
-      booking.codeStatus = "burned";
-      booking.status = "redeemed";
-      booking.postDeadline = new Date(Date.parse(ts) + COMPLIANCE.onTimeHours * 3600 * 1000).toISOString();
-      booking.updatedAt = ts;
-      await store.set(`booking:${booking.id}`, booking);
-      await logEvent({ type: "code_redeemed", actorId: user.id, actorRole: user.role, subjectId: booking.id, market: booking.market, data: { creatorId: booking.creatorId, code: booking.code, method: "counter_code", postDeadline: booking.postDeadline, dollarCap: booking.dollarCap } });
-      await sendStaffNotice(booking, "redeem");
+      await performCounterRedeem(booking, { id: user.id, role: user.role, via: "owner" });
       return json(200, { booking: await withPostState(booking) });
     }
   }

@@ -14,6 +14,9 @@ const state = {
   threads: [],
   activeThread: null, // other user id
   counterCode: "",
+  staff: null, // live staff session info (GET /staff/session) while in staff mode
+  staffCode: "", // business staff code from a /redeem/<code> register link
+  staffBizName: "", // business name resolved for the PIN screen
 };
 
 const app = document.getElementById("app");
@@ -357,6 +360,17 @@ function isFoundingBusiness(u) {
 }
 
 function renderNav() {
+  if (state.view === "staff") {
+    // Staff mode has no navigation of its own: the register screen
+    // does one job. The bar carries the brand and the way out.
+    topnav.innerHTML = state.staff
+      ? `<span class="muted small">${esc(state.staff.businessName)} &middot; Staff mode</span>
+         <button class="linklike" onclick="staffExit()">End staff session</button>`
+      : `<span class="muted small">Staff redemption</span>
+         <a href="#" onclick="return go('home')">Back to SIGNL home</a>`;
+    renderBottomNav();
+    return;
+  }
   if (!state.user) {
     topnav.innerHTML = `
       <a href="#" onclick="return go('signin')">Sign in</a>
@@ -405,6 +419,7 @@ function bnIcon(name) {
 // experience one tap away. Desktop keeps the top nav.
 function renderBottomNav() {
   if (!bottomnav) return;
+  if (state.view === "staff") { bottomnav.innerHTML = ""; return; }
   const item = (icon, label, onclick, active) => `
     <button class="bn-item ${active ? "on" : ""}" onclick="${onclick}">
       <span class="bn-icon">${bnIcon(icon)}</span><span class="bn-label">${label}</span>
@@ -479,6 +494,7 @@ function go(view, tab) {
 async function render() {
   renderNav();
   if (state.view === "public-profile") return renderPublicProfile();
+  if (state.view === "staff") return renderStaff();
   const u = state.user;
   if (!u) {
     if (state.view === "join-creator") return renderJoinCreator();
@@ -502,6 +518,7 @@ function renderHome() {
     <div class="cta-row">
       <a class="btn" href="#" onclick="return go('join-creator')">Become a Founding Creator</a>
       <a class="btn ghost" href="#" onclick="return go('for-businesses')">For Businesses</a>
+      <a class="btn ghost" href="#" onclick="return goStaff()">Redeem a creator visit</a>
     </div>
     <p class="small muted mt">Founding creator sign-up is open now in all 39 markets, across 12 countries and territories. Markets open to businesses in the next 30 to 90 days. Don't see your city? Sign up anyway: new markets open where creator sign-ups pile up, and early sign-ups hold founding standing when their city opens.</p>
   </section>
@@ -602,6 +619,8 @@ function renderSignin() {
       <div class="field"><label>Password</label><input type="password" id="si-password" required autocomplete="current-password"></div>
       <button class="btn" type="submit" style="width:100%">Sign in</button>
     </form>
+    <button class="btn ghost mt" style="width:100%" onclick="return goStaff()">Redeem a creator visit</button>
+    <p class="small muted">Staff at a SIGNL business: the button above takes you straight to the register screen. PIN in, creator code in, redeemed.</p>
     <p class="small muted mt">New to SIGNL? <a href="#" onclick="return go('join-creator')">Join as a founding creator</a>. Businesses: <a href="#" onclick="return go('for-businesses')">join the founding business list</a>.</p>
   </section>`;
 }
@@ -2847,6 +2866,11 @@ async function loadBusinessHome() {
       <div class="ui-row"><span class="k"><strong>${esc(r.name)}</strong> @${esc(r.handle)}${r.isFavorite ? ` <span class="badge tier">Favorite</span>` : ""}<br><span class="small muted">${r.source === "delivered" ? `Delivered for you before: ${esc(r.lastTitle || "")}` : "Saved in your favorites"}</span></span><span class="v"><button class="btn small-btn" onclick="rebookCreator('${esc(r.creatorId)}')">Invite again</button></span></div>`).join("");
     el.innerHTML = `
     ${d.marketLive ? "" : `<div class="notice blue"><strong>Your market opens in the next 30 to 90 days.</strong> Everything you build now is ready for launch day: browse the founding roster, save favorites, and draft offers. Publishing, selecting, and bookings switch on the moment ${esc(d.business.market)} goes live.</div>`}
+    <div class="panel" style="display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap">
+      <div><strong>At the register?</strong><p class="muted small" style="margin:4px 0 0">Staff mode redeems a creator's visit with just the staff PIN and the creator's code. No owner login needed at the counter.</p></div>
+      <button class="btn" onclick="return goStaff()">Redeem a creator visit</button>
+    </div>
+    ${d.staffPinSet === false ? `<div class="notice"><strong>Set your staff PIN.</strong> Your team redeems creator visits with a short PIN, so nobody at the register ever needs your login. Set it once under Plan, then Staff redemption, and print the register card for the counter. <button class="btn small-btn" onclick="return go('dashboard','Plan')">Set the staff PIN</button></div>` : ""}
     <section class="panel">
       <h3 style="margin-top:0">Business home</h3>
       <div class="stat-band home-metrics">
@@ -3376,6 +3400,7 @@ function renderCounter(prefill) {
   <div class="panel" style="max-width:560px;margin:0 auto">
     <h3>Counter check-in</h3>
     <p class="muted">The creator shows their code or QR at the visit. Scan the QR with any phone camera (it lands back here), or type the short code. One tap burns the code and starts the 48 hour post clock. Your register is never involved: ring the comp in your own system the way you normally do.</p>
+    <p class="small">Handing this device to staff? <button class="linklike" onclick="return goStaff()">Redeem a creator visit</button> in staff mode: PIN in, code in, done. They never see anything but the visit in front of them.</p>
     <form onsubmit="return counterLookup(event)">
       <div class="field"><label>Booking code</label><input id="counter-code" value="${esc(code)}" placeholder="SGNL-XXXXXX" style="text-transform:uppercase;font-family:Archivo;font-weight:700;letter-spacing:0.06em" required></div>
       <button class="btn" type="submit" style="width:100%">Look up booking</button>
@@ -3421,6 +3446,204 @@ async function counterRedeem(code) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
 }
+
+// ---------- staff mode ----------
+// Staff redemption (Jeff, 2026-10-20 late): the register screen.
+// Three taps and no menus: PIN in, creator code in (typed or
+// scanned), one big REDEEM. The session is the server's scoped
+// staff token (its own cookie), never a user account; this client
+// only ever calls /staff/* while in this view. Entry points are
+// the opening screen, the owner Business Home, the Counter tab,
+// and the printed register card link (/redeem/<staff code>), all
+// labeled the same: "Redeem a creator visit".
+
+function goStaff() {
+  if (state.preview) { stopPreviewCountdown(); state.preview = null; }
+  stopHomeCountdown();
+  state.view = "staff";
+  render();
+  return false;
+}
+
+async function renderStaff() {
+  let sess = { active: false };
+  try { sess = await api("GET", "/staff/session"); } catch (e) { /* treated as no session */ }
+  state.staff = sess && sess.active ? sess : null;
+  renderNav();
+  if (state.staff) return staffCodeScreen();
+  return staffPinScreen();
+}
+
+async function staffPinScreen() {
+  const ownerBiz = state.user && state.user.role === "business" ? state.user : null;
+  let bizName = ownerBiz && ownerBiz.business ? ownerBiz.business.businessName : "";
+  if (!bizName && state.staffCode && state.staffBizName) bizName = state.staffBizName;
+  app.innerHTML = `
+  <section class="panel" style="max-width:460px;margin:30px auto">
+    <h2>Redeem a creator visit</h2>
+    <p class="muted">Staff sign-in for the register. Enter the staff PIN your owner set. This device stays signed in for the shift (12 hours) and can only redeem creator visits${bizName ? ` at <strong>${esc(bizName)}</strong>` : ""}.</p>
+    <div id="staff-error"></div>
+    <form onsubmit="return staffEnter(event)">
+      ${!ownerBiz && !state.staffCode ? `<div class="field"><label>Business code (on the register card)</label><input id="staff-bizcode" value="${esc(state.staffCode)}" style="text-transform:uppercase;font-family:Archivo;font-weight:700;letter-spacing:0.06em" autocomplete="off" required></div>` : ""}
+      ${!ownerBiz && state.staffCode ? `<input type="hidden" id="staff-bizcode" value="${esc(state.staffCode)}">` : ""}
+      <div class="field"><label>Staff PIN</label><input type="password" id="staff-pin" inputmode="numeric" autocomplete="off" maxlength="6" style="font-family:Archivo;font-weight:700;letter-spacing:0.3em" required></div>
+      <button class="btn" type="submit" style="width:100%">Start staff mode</button>
+    </form>
+    <p class="small muted mt">No PIN yet? The owner sets it in the app under Plan, then Staff redemption.</p>
+  </section>`;
+  if (!bizName && state.staffCode) {
+    try {
+      const d = await api("GET", "/staff/business?code=" + encodeURIComponent(state.staffCode));
+      state.staffBizName = d.businessName || "";
+      const pinEl = document.getElementById("staff-pin");
+      if (state.view === "staff" && !state.staff && !(pinEl && (pinEl.value || document.activeElement === pinEl))) staffPinScreen();
+    } catch (e) { /* the enter call will surface a bad code plainly */ }
+  }
+}
+
+async function staffEnter(e) {
+  e.preventDefault();
+  const errEl = document.getElementById("staff-error");
+  try {
+    const body = { pin: document.getElementById("staff-pin").value };
+    const codeEl = document.getElementById("staff-bizcode");
+    if (codeEl && codeEl.value.trim()) body.businessCode = codeEl.value.trim().toUpperCase();
+    await api("POST", "/staff/enter", body);
+    render();
+  } catch (err) {
+    if (errEl) errEl.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+  }
+  return false;
+}
+
+function staffCodeScreen() {
+  const s = state.staff;
+  app.innerHTML = `
+  <section class="panel" style="max-width:560px;margin:30px auto">
+    <div class="flex-between"><h2 style="margin:0">Redeem a creator visit</h2><span class="badge tier">Staff mode</span></div>
+    <p class="muted">${esc(s.businessName)} &middot; signed in for this shift. The creator shows their code or QR.</p>
+    ${"BarcodeDetector" in window && navigator.mediaDevices ? `<button class="btn" style="width:100%;margin-bottom:12px" onclick="staffScan()">Scan the creator's QR</button>` : ""}
+    <form onsubmit="return staffLookup(event)">
+      <div class="field"><label>Creator's code</label><input id="staff-code" placeholder="SGNL-XXXXXX" style="text-transform:uppercase;font-family:Archivo;font-weight:700;letter-spacing:0.06em" autocomplete="off" required></div>
+      <button class="btn" type="submit" style="width:100%">Look up visit</button>
+    </form>
+    <div id="staff-result" class="mt"></div>
+    <p class="small mt"><button class="linklike" onclick="staffExit()">End staff session</button></p>
+  </section>`;
+}
+
+async function staffLookup(e, preset) {
+  if (e) e.preventDefault();
+  const code = (preset || document.getElementById("staff-code").value).trim().toUpperCase();
+  const el = document.getElementById("staff-result");
+  try {
+    const data = await api("POST", "/staff/lookup", { code });
+    const b = data.booking;
+    if (b.redeemedAt) {
+      el.innerHTML = `<div class="error-box">This code was already redeemed at ${fmtDate(b.redeemedAt)}. Codes work once.</div>`;
+      return false;
+    }
+    if (b.windowStatus === "closed") {
+      el.innerHTML = `<div class="error-box">This visit's redemption window has passed, so this code can no longer be redeemed.</div>`;
+      return false;
+    }
+    el.innerHTML = `
+      <div class="card">
+        <div class="flex-between"><strong>${esc(b.creatorName)}</strong><span class="badge tier">@${esc(b.creatorHandle)}</span></div>
+        <p>${esc(b.title)}: ${esc(b.whatComped)}</p>
+        <p class="small muted">Comp cap $${b.dollarCap} &middot; Visit: ${esc(b.visitDate || b.visitWindow || "Flexible")}${b.redeemBy ? ` &middot; Redeem by ${fmtDate(b.redeemBy)}` : ""}</p>
+        <p class="small">Check the person in front of you matches the creator, then redeem. The code burns and the 48 hour post clock starts now.</p>
+        <button class="btn" style="width:100%" onclick="staffRedeem('${esc(code)}')">REDEEM</button>
+      </div>`;
+  } catch (err) {
+    el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+  }
+  return false;
+}
+
+async function staffRedeem(code) {
+  const el = document.getElementById("staff-result");
+  try {
+    const data = await api("POST", "/staff/redeem", { code });
+    const b = data.booking;
+    el.innerHTML = `
+      <div class="notice blue">
+        <strong>Redeemed.</strong> ${esc(b.creatorName)}'s visit is in, and their 48-hour post clock started. Their post is due by <strong>${fmtDate(b.postDeadline)}</strong>. Ring the comp in your own register, up to the $${b.dollarCap} cap.
+        <div class="mt"><button class="btn" style="width:100%" onclick="staffDone()">Done</button></div>
+      </div>`;
+  } catch (err) {
+    el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+  }
+}
+
+function staffDone() {
+  render();
+  return false;
+}
+
+async function staffExit() {
+  try { await api("POST", "/staff/exit", {}); } catch (e) { /* session is over either way */ }
+  state.staff = null;
+  state.staffBizName = "";
+  if (state.user) { state.view = "dashboard"; }
+  render();
+  return false;
+}
+
+// Camera QR scan (where the platform supports it): the creator's
+// QR encodes the counter URL carrying the code; staff mode pulls
+// the code out and looks it up. Anything else falls back to typing.
+let staffScanStream = null;
+async function staffScan() {
+  const overlay = document.createElement("div");
+  overlay.id = "staff-scan-overlay";
+  overlay.style.cssText = "position:fixed;inset:0;background:rgba(10,10,12,0.92);z-index:999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px";
+  overlay.innerHTML = `
+    <video id="staff-scan-video" autoplay playsinline style="width:100%;max-width:480px;border-radius:12px;background:#000"></video>
+    <p class="small" style="color:#fff;margin:14px 0">Point the camera at the creator's QR code.</p>
+    <button class="btn ghost" onclick="staffScanStop()">Cancel</button>`;
+  document.body.appendChild(overlay);
+  try {
+    staffScanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+    const video = document.getElementById("staff-scan-video");
+    video.srcObject = staffScanStream;
+    const detector = new window.BarcodeDetector({ formats: ["qr_code"] });
+    const tick = async () => {
+      if (!document.getElementById("staff-scan-overlay")) return;
+      try {
+        const codes = await detector.detect(video);
+        if (codes && codes.length) {
+          const raw = String(codes[0].rawValue || "");
+          let code = "";
+          const m = raw.match(/code=([A-Za-z0-9-]+)/);
+          if (m) code = m[1].toUpperCase();
+          else if (/SGNL-/i.test(raw)) code = raw.trim().toUpperCase();
+          if (code) {
+            staffScanStop();
+            const input = document.getElementById("staff-code");
+            if (input) { input.value = code; staffLookup(null, code); }
+            return;
+          }
+        }
+      } catch (e) { /* keep scanning */ }
+      setTimeout(tick, 350);
+    };
+    tick();
+  } catch (e) {
+    staffScanStop();
+    alert("The camera could not open here. Type the creator's code instead.");
+  }
+}
+
+function staffScanStop() {
+  if (staffScanStream) {
+    for (const t of staffScanStream.getTracks()) t.stop();
+    staffScanStream = null;
+  }
+  const overlay = document.getElementById("staff-scan-overlay");
+  if (overlay) overlay.remove();
+}
+
 
 // ---------- plan tab ----------
 
@@ -3484,7 +3707,91 @@ function renderPlanTab() {
     <div class="field" style="margin-top:8px"><label>Discount percent (%)</label><input type="number" id="me-discount-pct" min="5" max="50" step="1" value="${esc(String(u.business.discountPct == null ? ((state.boot.roasModel && state.boot.roasModel.suggestedDiscountPct) || 20) : u.business.discountPct))}"></div>
     <p class="small muted">Most businesses that turn this on start at ${esc(String((state.boot.roasModel && state.boot.roasModel.suggestedDiscountPct) || 20))}%. With codes off, the creator's card shows the code as a counting code and promises their audience nothing.</p>
     <button class="btn" onclick="saveMyDiscount()">Save code discount</button> <span id="disc-ok" class="saved"></span>
+  </div>
+  <div class="panel mt" id="staff-settings">
+    <h3>Staff redemption</h3>
+    <p class="muted">Loading...</p>
   </div>`;
+  loadStaffSettings();
+}
+
+// Staff redemption settings (owner): the staff PIN, the business
+// code and register card, and the sign-out-all-staff kill switch.
+// The PIN itself is never shown (it lives server-side, hashed);
+// this panel only ever learns whether one is set.
+async function loadStaffSettings() {
+  const el = document.getElementById("staff-settings");
+  if (!el) return;
+  try {
+    const d = await api("GET", "/me/staff");
+    el.innerHTML = `
+    <h3>Staff redemption</h3>
+    <p class="small muted">Your team at the register redeems creator visits without your login: they open the staff screen, enter this PIN, then the creator's code. A staff session lasts one shift (12 hours) and can only redeem visits. It never sees offers, money, messages, or ratings. Change the PIN any time; the old one stops working at once.</p>
+    ${d.staffPinSet
+      ? `<p><span class="badge ok">Staff PIN is set</span> <span class="small muted">since ${fmtDate(d.staffPinSetAt)}</span></p>`
+      : `<p><span class="badge warn">No staff PIN yet</span> <span class="small muted">Staff cannot redeem visits until you set one.</span></p>`}
+    <div class="form-2col">
+      <div class="field"><label>${d.staffPinSet ? "New staff PIN (4 to 6 digits)" : "Staff PIN (4 to 6 digits)"}</label><input type="password" id="staff-pin-new" inputmode="numeric" autocomplete="off" maxlength="6"></div>
+      <div class="field"><label>Confirm PIN</label><input type="password" id="staff-pin-confirm" inputmode="numeric" autocomplete="off" maxlength="6"></div>
+    </div>
+    <button class="btn" onclick="saveStaffPin()">${d.staffPinSet ? "Change staff PIN" : "Set staff PIN"}</button> <span id="staff-pin-ok" class="saved"></span>
+    <h3 class="mt">Register card</h3>
+    <p class="small muted">Print this card and keep it at the register. Staff scan it to open your staff screen (the PIN is still asked every shift), or they type your business code: <strong>${esc(d.staffCode || "")}</strong></p>
+    <div class="form-2col" style="align-items:start">
+      <div class="field"><label>Your staff link</label><input type="text" readonly value="${esc(d.staffLink || "")}" onclick="this.select()"></div>
+      <div><img src="/api/me/staff/register-card-qr" alt="QR code for your staff redemption link" style="width:150px;height:150px;background:#fff;border:1px solid var(--line,#ddd);border-radius:8px"></div>
+    </div>
+    <button class="btn ghost" onclick="printStaffCard()">Print register card</button>
+    <h3 class="mt">Staff devices</h3>
+    <p class="small muted">${d.activeStaffSessions} staff session${d.activeStaffSessions === 1 ? "" : "s"} active right now. If a team member leaves, sign out every staff device and change the PIN: every phone at the register will ask for the PIN again.</p>
+    <button class="btn danger" onclick="staffSignOutAll()">Sign out all staff devices</button> <span id="staff-out-ok" class="saved"></span>`;
+  } catch (err) {
+    el.innerHTML = `<h3>Staff redemption</h3><div class="error-box">${esc(err.message)}</div>`;
+  }
+}
+
+async function saveStaffPin() {
+  const pin = document.getElementById("staff-pin-new").value;
+  const confirmPin = document.getElementById("staff-pin-confirm").value;
+  if (pin !== confirmPin) { alert("The two PINs do not match. Type the same PIN twice."); return; }
+  try {
+    await api("POST", "/me/staff/pin", { pin });
+    document.getElementById("staff-pin-ok").textContent = "Saved. The new PIN works now; the old one is done.";
+    loadStaffSettings();
+  } catch (err) { alert(err.message); }
+}
+
+async function staffSignOutAll() {
+  if (!confirm("Sign out every staff device? Each one will need the staff PIN to redeem again.")) return;
+  try {
+    const d = await api("POST", "/me/staff/signout-all", {});
+    document.getElementById("staff-out-ok").textContent = `Done. ${d.killed} staff session${d.killed === 1 ? "" : "s"} signed out.`;
+    loadStaffSettings();
+  } catch (err) { alert(err.message); }
+}
+
+// The printable register card: a clean standalone page with the
+// real logo, the business's own QR, and the one line staff need.
+async function printStaffCard() {
+  try {
+    const d = await api("GET", "/me/staff");
+    const w = window.open("", "_blank", "width=640,height=760");
+    if (!w) { alert("Allow pop-ups to print the register card, or screenshot the QR and link above."); return; }
+    const origin = location.origin;
+    w.document.write(`<!DOCTYPE html><html><head><title>SIGNL register card</title>
+    <style>body{font-family:Arial,sans-serif;text-align:center;padding:36px;color:#141414}img.logo{height:54px}img.qr{width:260px;height:260px}.biz{font-size:22px;font-weight:700;margin:10px 0 2px}.big{font-size:30px;font-weight:800;letter-spacing:0.02em;margin:18px 0 6px}.line{font-size:17px}.code{font-family:monospace;font-size:19px;font-weight:700;letter-spacing:0.12em}.muted{color:#666;font-size:13px}</style></head>
+    <body>
+      <img class="logo" src="${origin}/assets/logo.png" alt="SIGNL">
+      <div class="biz">${esc(d.businessName)}</div>
+      <div class="big">Redeem a creator visit</div>
+      <img class="qr" src="${origin}/api/me/staff/register-card-qr" alt="QR code for the staff redemption link">
+      <p class="line">Staff: scan, enter the PIN, scan the creator's code.</p>
+      <p class="muted">Or open <strong>${esc(d.staffLink || "")}</strong><br>Business code: <span class="code">${esc(d.staffCode || "")}</span></p>
+    </body></html>`);
+    w.document.close();
+    w.focus();
+    setTimeout(() => { try { w.print(); } catch (e) { /* the card is on screen either way */ } }, 450);
+  } catch (err) { alert(err.message); }
 }
 
 async function saveBusinessProfile() {
@@ -4651,6 +4958,16 @@ function previewDashboardHtml(d) {
       // Light tidy only; the server sanitizes authoritatively.
       state.publicHandle = h.trim().replace(/^@/, "").slice(0, 40) || h;
       state.view = "public-profile";
+    }
+    // A register card link (/redeem/<staff code>) opens the staff
+    // screen pre-identified to that business, whatever else the
+    // URL carried. The PIN is still asked every shift.
+    const redeemMatch = location.pathname.match(/^\/redeem\/([^/]+)\/?$/);
+    if (redeemMatch) {
+      let sc = redeemMatch[1];
+      try { sc = decodeURIComponent(sc); } catch (e) { /* keep raw */ }
+      state.staffCode = sc.trim().toUpperCase().slice(0, 12);
+      state.view = "staff";
     }
     const code = params.get("code");
     if (code && state.user && state.user.role === "business") {
