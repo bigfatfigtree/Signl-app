@@ -150,6 +150,7 @@ async function renderPublicProfile() {
             <span class="cc-chip market">${place}</span>
             ${!p.unlisted && p.city ? `<span class="cc-chip">${esc(p.city)}</span>` : ""}
             ${p.neighborhood ? `<span class="cc-chip">${esc(p.neighborhood)}</span>` : ""}
+            ${p.campusBadge ? `<span class="cc-chip">${esc(p.campusBadge)}</span>` : ""}
             <span class="cc-chip">Founding Creator</span>
             ${p.foundingBand ? `<span class="cc-chip">In the first ${p.foundingBand} founding creators in ${place}</span>` : ""}
           </div>
@@ -188,6 +189,23 @@ function inviteUrlFor(u) {
   return handle ? `https://app.joinsignl.com/?ref=${encodeURIComponent(handle)}` : "";
 }
 
+function universityDatalistHtml(id) {
+  const schools = (state.boot && state.boot.universities) || [];
+  return `<datalist id="${esc(id)}">${schools.map((school) => `<option value="${esc(school)}"></option>`).join("")}</datalist>`;
+}
+
+function campusBadgeHtml(source) {
+  if (!source) return "";
+  let badge = "";
+  if (typeof source === "string") badge = source;
+  else if (source.campusBadge) badge = source.campusBadge;
+  else {
+    const university = source.university || (source.profile && source.profile.university) || (source.creator && source.creator.university) || "";
+    badge = university ? `Campus: ${university}` : "";
+  }
+  return badge ? ` <span class="badge info">${esc(badge)}</span>` : "";
+}
+
 function growRosterHtml(u) {
   const link = inviteUrlFor(u);
   if (!link) return "";
@@ -199,6 +217,7 @@ function growRosterHtml(u) {
       <p class="small">Founding rosters fill by invitation. Share your personal invite link with other creators in ${esc(place)}: anyone who signs up through your link is credited to you.</p>
       <div class="field"><label>Your invite link</label><input type="text" readonly value="${esc(link)}" onclick="this.select()"></div>
       <p class="small"><strong>Your roster:</strong> ${m.signups} ${m.signups === 1 ? "creator" : "creators"} joined through your link &middot; ${m.approved} approved &middot; <strong>${m.points} Momentum points</strong></p>
+      ${m.campusCrew ? `<p class="small"><strong>Your campus crew: ${m.campusCrew.count} creator${m.campusCrew.count === 1 ? "" : "s"} from ${esc(m.campusCrew.university)}</strong></p>` : ""}
       <p class="small">Creators who build a roster get seen first when businesses start choosing in your market. Points: +3 when a creator joins through your link, +10 when they are approved.</p>
       ${ladderHtml(u)}
       <p class="small muted">Tap the link to select it, copy it, and send it to a creator who should be on the founding roster with you.</p>
@@ -903,6 +922,7 @@ function renderJoinCreator() {
         </div>
       </div>
       <div class="field"><label>Your neighborhood or area (optional)</label><input id="jc-neighborhood" placeholder="For example: Oceanfront, Ghent, Town Center" maxlength="80"><p class="small muted">The part of town you actually post from. Businesses search by neighborhood, so this helps the right ones find you.</p></div>
+      <div class="field"><label>Your university (optional)</label><input id="jc-university" list="jc-university-options" placeholder="Start typing your school" maxlength="120">${universityDatalistHtml("jc-university-options")}<p class="small muted">If you attend one, adding it puts a campus badge on your profile and groups same-school referrals into your campus crew.</p></div>
       <div class="form-2col">
         <div class="field"><label>Instagram handle (required)</label><input id="jc-handle" placeholder="yourhandle" required value="${esc(pf.handle || "")}" oninput="document.getElementById('jc-ig-link').textContent = this.value ? 'instagram.com/' + this.value.replace(/^@/, '') : ''"><p class="small muted" id="jc-ig-link"></p></div>
         <div class="field"><label>TikTok handle (optional)</label><input id="jc-tiktok" placeholder="yourhandle"></div>
@@ -1031,6 +1051,7 @@ async function doRegisterCreator(e) {
       market: marketVal,
       city: isUnlisted ? undefined : document.getElementById("jc-city").value,
       neighborhood: document.getElementById("jc-neighborhood").value,
+      university: document.getElementById("jc-university").value,
       customCity: isUnlisted ? customCity : undefined,
       customCountry: isUnlisted ? customCountry : undefined,
       customState: isUnlisted ? customState : undefined,
@@ -1490,6 +1511,7 @@ function creatorProfileDetailHtml(c, preview) {
             <span class="cc-chip market">${esc(c.market)}</span>
             ${c.city ? `<span class="cc-chip">${esc(c.city)}</span>` : ""}
             ${c.neighborhood ? `<span class="cc-chip">${esc(c.neighborhood)}</span>` : ""}
+            ${campusBadgeHtml(c) ? `<span class="cc-chip">${esc(c.campusBadge || `Campus: ${(c.profile && c.profile.university) || c.university}`)}</span>` : ""}
             ${c.foundingBand ? `<span class="cc-chip">Founding creator, first ${c.foundingBand} in market</span>` : ""}
           </div>
         </div>
@@ -1588,6 +1610,7 @@ function creatorCard(c, viewer, opts) {
         <span class="cc-chip market">${esc(c.market)}</span>
         ${c.city ? `<span class="cc-chip">${esc(c.city)}</span>` : ""}
         ${c.neighborhood ? `<span class="cc-chip">${esc(c.neighborhood)}</span>` : ""}
+        ${campusBadgeHtml(c) ? `<span class="cc-chip">${esc(c.campusBadge || `Campus: ${(c.profile && c.profile.university) || c.university}`)}</span>` : ""}
         ${c.foundingBand ? `<span class="cc-chip">Founding creator, first ${c.foundingBand} in market</span>` : ""}
       </div>
     </div>
@@ -1713,7 +1736,7 @@ async function loadFoundingDashboard() {
         </div>
         <span class="badge ok" style="font-size:0.95rem;padding:6px 14px">Founding Creator, ${isUnl ? esc(f.city) : esc(f.market)}</span>
       </div>
-      <p class="small">${p.localAudiencePct}% local audience &middot; ${esc(p.tierBand || "")} tier &middot; ${fmtNum(totalAudienceOf(card))} total audience${f.priorityBand ? ` &middot; in the first ${f.priorityBand} founding creators in ${place}` : ""}</p>
+      <p class="small">${p.localAudiencePct}% local audience &middot; ${esc(p.tierBand || "")} tier &middot; ${fmtNum(totalAudienceOf(card))} total audience${f.priorityBand ? ` &middot; in the first ${f.priorityBand} founding creators in ${place}` : ""}${campusBadgeHtml(card)}</p>
       <p style="margin-bottom:0">${scoreBadge(card.localImpactScore)}</p>
       <div class="home-actions"><button class="btn small-btn ghost" onclick="return go('dashboard','Status')">See your full status</button></div>
     </div>
@@ -1759,7 +1782,7 @@ async function loadFoundingStatus() {
         <div>
           <p class="small"><strong>${fmtNum(totalAudienceOf(card))}</strong> total audience &middot; ${esc(p.tierBand || "")} tier ${p.avgViews ? "&middot; " + fmtNum(p.avgViews) + " typical views" : ""}</p>
           ${stackList(card).length ? `<p class="small">${stackChipsHtml(card)}</p>` : ""}
-          ${p.categories && p.categories.length ? `<p class="small">${p.categories.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
+          ${p.categories && p.categories.length ? `<p class="small">${p.categories.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}${campusBadgeHtml(card)}</p>` : campusBadgeHtml(card) ? `<p class="small">${campusBadgeHtml(card)}</p>` : ""}
           ${p.openToPaidCampaigns ? `<p class="small"><span class="badge tier">Open to paid campaigns</span></p>` : ""}
           <p class="small">${paidLaneBadgesHtml(p)}</p>
           ${p.compCategories && p.compCategories.filter((x) => x !== PAID_COMP).length ? `<p class="small muted">Open to comps: ${p.compCategories.filter((x) => x !== PAID_COMP).map(esc).join(", ")}</p>` : ""}
@@ -2219,6 +2242,7 @@ function creatorProfileHtml(u) {
           : `<div class="field"><label>Home city (${esc(u.market)})</label><select id="p-city">${cityOptions(u.market, u.city || "")}</select></div>`}
       </div>
       <div class="field"><label>Your neighborhood or area</label><input id="p-neighborhood" value="${esc(c.neighborhood || "")}" placeholder="Optional, for example: Oceanfront, Ghent, Town Center" maxlength="80"><p class="small muted">Businesses search by neighborhood. Keep it to the area you actually post from.</p></div>
+      <div class="field"><label>Your university (optional)</label><input id="p-university" list="p-university-options" value="${esc(c.university || u.university || "")}" placeholder="Start typing your school" maxlength="120">${universityDatalistHtml("p-university-options")}<p class="small muted">Adding your school puts a campus badge on your profile and groups same-school referrals into your campus crew.${(c.university || u.university) ? ` Current badge: <strong>Campus: ${esc(c.university || u.university)}</strong>.` : ""}</p></div>
       <div class="form-2col">
         <div class="field"><label>TikTok handle</label><input id="p-tiktok" value="${esc(c.tiktokHandle || "")}" placeholder="Optional"></div>
         <div class="field"><label>YouTube channel</label><input id="p-youtube" value="${esc(c.youtubeChannel || "")}" placeholder="Optional"></div>
@@ -2324,6 +2348,7 @@ async function doUpdateCreator(e) {
       handle: document.getElementById("p-handle").value,
       city: cityEl ? cityEl.value : cityTextEl ? cityTextEl.value : undefined,
       neighborhood: document.getElementById("p-neighborhood").value,
+      university: document.getElementById("p-university").value,
       state: document.getElementById("p-state-text") ? document.getElementById("p-state-text").value : undefined,
       country: document.getElementById("p-country-text") ? document.getElementById("p-country-text").value : undefined,
       tiktokHandle: document.getElementById("p-tiktok").value,
@@ -3479,6 +3504,7 @@ function applicantCardHtml(offer, a) {
   return `
   <div class="card mb">
     <div class="flex-between"><strong>${esc(c.name || a.snapshot.name)} <span class="muted">@${esc(c.handle || a.snapshot.handle)}</span></strong>${stateLine}</div>
+    ${campusBadgeHtml(c) ? `<p class="small" style="margin-top:6px">${campusBadgeHtml(c)}</p>` : ""}
     <p class="small">${esc(c.tierBand || a.snapshot.tierBand || "")} &middot; ${c.localAudiencePct === null || c.localAudiencePct === undefined ? "local % not reported" : c.localAudiencePct + "% local audience"} &middot; Impact ${c.impact !== undefined && a.rankParts ? a.rankParts.impactScore : ""} &middot; Momentum ${a.rankParts ? a.rankParts.momentum : ""} pts${ratingBit}${badgesHtml(c.badges)} &middot; reliability ${a.rankParts ? a.rankParts.reliability : ""}</p>
     <p class="small muted">${tr.isNew || !tr.visitsCompleted ? "New to SIGNL: no visits yet." : `${tr.visitsCompleted} visits completed &middot; ${tr.postsDelivered} posts delivered &middot; ${tr.onTimePct === null || tr.onTimePct === undefined ? "on-time n/a" : tr.onTimePct + "% on time"}`} &middot; ${fmtNum(c.totalAudience || a.snapshot.totalAudience)} total audience${c.paidRate ? ` &middot; paid rate $${c.paidRate}` : ""}</p>
     ${(a.status === "applied" || a.status === "backfill_offered") ? `<div class="cta-row" style="justify-content:flex-start"><button class="btn small-btn" onclick="selectApplicant('${offer.id}','${a.id}')">Select this creator</button><button class="btn small-btn ghost" onclick="releaseApplicant('${offer.id}','${a.id}')">Release</button></div>` : ""}
@@ -4303,7 +4329,7 @@ async function loadApplications() {
         ? `<br><span class="badge ${businessAccessState(u) === "active" ? "ok" : "info"}">${businessAccessState(u) === "active" ? "Active" : "Founding list"}</span>`
         : "";
       const detail = u.role === "creator" && u.creator
-        ? `@${esc(u.creator.handle)} &middot; ${fmtNum(u.creator.followerCount)} followers &middot; ${esc(u.creator.tierBand)} &middot; Local: ${u.creator.localAudiencePct === null ? "not reported" : u.creator.localAudiencePct + "% (Self-reported)"} &middot; ${(u.creator.categories || []).map(esc).join(", ")} &middot; Photo: ${u.creator.hasPhoto ? "yes" : "no"} &middot; Socials: IG${u.creator.tiktokHandle ? ", TikTok" : ""}${u.creator.youtubeChannel ? ", YouTube" : ""}${u.creator.facebookUrl ? ", Facebook" : ""}${u.creator.xUrl ? ", X" : ""}${u.creator.linkedinUrl ? ", LinkedIn" : ""}${u.creator.neighborhood ? ` &middot; Area: ${esc(u.creator.neighborhood)}` : ""}${u.referredBy ? ` &middot; via @${esc(u.referredBy)}` : ""}${u.momentum && u.momentum.signups ? ` &middot; Momentum: ${u.momentum.points} pts (${u.momentum.signups} joined, ${u.momentum.approved} approved)` : ""}`
+        ? `@${esc(u.creator.handle)} &middot; ${fmtNum(u.creator.followerCount)} followers &middot; ${esc(u.creator.tierBand)} &middot; Local: ${u.creator.localAudiencePct === null ? "not reported" : u.creator.localAudiencePct + "% (Self-reported)"} &middot; ${(u.creator.categories || []).map(esc).join(", ")} &middot; Photo: ${u.creator.hasPhoto ? "yes" : "no"} &middot; Socials: IG${u.creator.tiktokHandle ? ", TikTok" : ""}${u.creator.youtubeChannel ? ", YouTube" : ""}${u.creator.facebookUrl ? ", Facebook" : ""}${u.creator.xUrl ? ", X" : ""}${u.creator.linkedinUrl ? ", LinkedIn" : ""}${u.creator.neighborhood ? ` &middot; Area: ${esc(u.creator.neighborhood)}` : ""}${u.creator.university || u.university ? ` &middot; University: ${esc(u.creator.university || u.university)}` : ""}${u.referredBy ? ` &middot; via @${esc(u.referredBy)}` : ""}${u.momentum && u.momentum.signups ? ` &middot; Momentum: ${u.momentum.points} pts (${u.momentum.signups} joined, ${u.momentum.approved} approved)` : ""}`
         : u.role === "business" && u.business
           ? `${esc(u.business.businessName)} &middot; ${esc(u.business.category)} &middot; ${esc(u.business.planName)} &middot; Access: ${businessAccessState(u) === "active" ? "Active" : "Founding list"}`
           : "";
