@@ -46,14 +46,15 @@ const CODE_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 // One package, identical for every creator and every business, so a
 // selection is never a negotiation: the creator posts within 48 hours
 // of the visit and the post stays live at least 30 days. What the
-// business may DO with the post follows the business's plan (see
-// visitRightsForPlan): Self-Service shares natively; Growth and
-// Managed also repost on their own feed and may run the post as an
-// ad while their account is active. Nobody, on any plan, edits the
-// creator's content. Paid creator bookings are a separate lane
-// (the creator's own listed rate, a 6% service fee split 3% to the
-// business and 3% to the creator) and have nothing
-// to do with these usage rights. This object is the single source of
+// business may DO with the post follows the VISIT, never the plan
+// (rights model adopted by Jeff, 2026-10-21; see
+// visitRightsForVisit): a comp visit is native sharing only, with no
+// downloads, no reposting the file, and no ad use, ever; a paid
+// visit (the creator's own listed rate, a 6% service fee split 3% to
+// the business and 3% to the creator) adds repost rights and ad use
+// for a set window of 6 months from the post date, never perpetuity.
+// The creator always owns their content, and nobody, on any visit,
+// edits it. This object is the single source of
 // truth: it ships in bootstrap, on public profiles, on discovery
 // cards, in the offer composer, and in the creator's offer checklist.
 const STANDARD_VISIT = {
@@ -67,7 +68,7 @@ const STANDARD_VISIT = {
     "The post stays live on the creator's profile for at least 30 days",
   ],
   summary:
-    "Every SIGNL visit includes: 1 post or reel + 2 stories within 48 hours of the visit, honest and disclosed, live at least 30 days, with tracked delivery proof. Content rights follow the business's plan: Self-Service shares the post natively with the creator tagged; Growth and Managed can also repost it on their own feed and run it as an ad while their account is active. Nobody can edit the creator's content.",
+    "Every SIGNL visit includes: 1 post or reel + 2 stories within 48 hours of the visit, honest and disclosed, live at least 30 days, with tracked delivery proof. Content rights follow the visit, never the plan: on a comp visit the business may share the post natively only, with the creator tagged; no downloads, no reposting the file, no ad use. On a paid visit the business may also repost the post and run it as an ad for 6 months from the post date. The creator always owns their content, and nobody can edit it.",
 };
 
 // ---------- The paid lane (Jeff, 2026-10-19) ----------
@@ -490,22 +491,34 @@ function roasFor(bookings) {
   };
 }
 
-// The rights a business holds over a delivered post, by plan. The
-// creator sees exactly this, for the specific business making the
-// offer, BEFORE accepting: rights are never a surprise.
-function visitRightsForPlan(planId) {
-  if (planId === "growth" || planId === "managed") {
+// The rights a business holds over a delivered post, by VISIT TYPE
+// (rights model adopted by Jeff, 2026-10-21; it supersedes the
+// plan-based ladder of 2026-10-19). A comp visit gives the business
+// native sharing only: no downloads, no reposting the file, no ad
+// use, ever, on every plan. A paid visit adds repost rights and ad
+// use for a set window of 6 months from the post date, never
+// perpetuity. The creator always owns their content. The creator
+// sees exactly this, for the specific offer, BEFORE accepting:
+// rights are never a surprise.
+const AD_USE_WINDOW_MONTHS = 6;
+function adUseWindowEnd(post) {
+  const d = new Date((post && (post.submittedAt || post.createdAt)) || Date.now());
+  d.setMonth(d.getMonth() + AD_USE_WINDOW_MONTHS);
+  return d;
+}
+function visitRightsForVisit(kind) {
+  if (kind === "paid") {
     return {
-      plan: planId,
-      can: ["Share your post with you tagged", "Repost it on their own feed", "Run it as an ad while their SIGNL account is active (the ad right ends if their account ends)"],
-      cannot: ["Edit your post"],
+      basis: "paid",
+      can: ["Share your post natively, with you tagged", "Repost it on their own feed", "Run it as an ad for 6 months from the post date (never longer)"],
+      cannot: ["Edit your post", "Use it in ads after the 6-month window"],
       adUse: true,
     };
   }
   return {
-    plan: "self-service",
-    can: ["Share your post with you tagged"],
-    cannot: ["Edit it", "Post it as their own content", "Run it as an ad"],
+    basis: "comp",
+    can: ["Share your post natively, with you tagged"],
+    cannot: ["Edit it", "Download it or post it as their own content", "Run it as an ad"],
     adUse: false,
   };
 }
@@ -1185,9 +1198,10 @@ function createMomentum(data) {
     for (const r of myBizReviews) {
       push("review_given", `You reviewed ${r.businessName || "a business"} after a completed visit`, MOMENTUM_POINTS.reviewGiven, r.createdAt);
     }
-    // Ad use (Jeff, 2026-10-19): a Growth or Managed business running
-    // a delivered post as an ad is a real outcome for the creator:
-    // +25 per declared post, straight from the stored declaration.
+    // Ad use (Jeff, 2026-10-19; rights model 2026-10-21): a business
+    // running a paid visit's delivered post as an ad is a real
+    // outcome for the creator: +25 per declared post, straight from
+    // the stored declaration.
     const bookingNameById = new Map(bookings.map((b) => [b.id, b.businessName || ""]));
     for (const p of myPosts) {
       if (p.adUseDeclaredAt) {
@@ -1222,7 +1236,7 @@ function createMomentum(data) {
       { id: "ontime", label: "Deliver a post on time (+20 each)", points: MOMENTUM_POINTS.postOnTime, done: myPosts.some((p) => p.onTime), detail: `${myPosts.filter((p) => p.onTime).length} on-time posts` },
       { id: "streak", label: "Hit a 5-post on-time streak (+25 bonus)", points: MOMENTUM_POINTS.streakBonus, done: ledger.some((e) => e.kind === "streak_bonus") },
       { id: "reviews", label: "Review a business after a completed visit (+10 each, any star rating)", points: MOMENTUM_POINTS.reviewGiven, done: myBizReviews.length > 0, detail: `${myBizReviews.length} reviewed` },
-      { id: "aduse", label: "Have a post run as an ad by a Growth or Managed business (+25 each)", points: MOMENTUM_POINTS.adUse, done: myPosts.some((p) => p.adUseDeclaredAt), detail: `${myPosts.filter((p) => p.adUseDeclaredAt).length} posts ran as ads` },
+      { id: "aduse", label: "Have a paid-visit post run as an ad by the business (+25 each)", points: MOMENTUM_POINTS.adUse, done: myPosts.some((p) => p.adUseDeclaredAt), detail: `${myPosts.filter((p) => p.adUseDeclaredAt).length} posts ran as ads` },
       { id: "performance", label: "Report a post's views and likes when asked, 7 days after posting (+5 each)", points: MOMENTUM_POINTS.performanceReport, done: myPosts.some((p) => p.reportedAt), detail: `${myPosts.filter((p) => p.reportedAt).length} posts reported` },
       { id: "referrals", label: "Invite creators (+3 per sign-up, +10 per approval)", points: MOMENTUM_POINTS.referralSignup, done: ref.signups > 0, detail: `${ref.signups} joined, ${ref.approved} approved` },
     ];
@@ -4372,7 +4386,7 @@ async function previewDashboard() {
     preview: true,
     business: { ...PREVIEW_DASH_BUSINESS, planId: plan.id, planName: plan.name, discountCodes: { ...PREVIEW_DASH_DISCOUNT } },
     plan: { id: plan.id, name: plan.name, priceMonthly: plan.priceMonthly, minMonths: plan.minMonths, visitsPerMonth: plan.visitsPerMonth, features: plan.features },
-    rights: visitRightsForPlan(plan.id),
+    rights: { comp: visitRightsForVisit("comp"), paid: visitRightsForVisit("paid") },
     standardVisit: STANDARD_VISIT,
     summary,
     bookings,
@@ -6098,13 +6112,16 @@ async function route(event) {
       return json(201, { offer: simulated, preview: true });
     }
     // Preview ad use: the same simulation discipline as preview
-    // offers. Validates the target and the plan's right, returns a
-    // flagged confirmation, and writes NOTHING: no ad_use_declared
-    // event, no notification, no Momentum.
+    // offers. Validates the target and the visit-type right (ad use
+    // comes with paid visits only, on every plan; rights model
+    // adopted 2026-10-21), returns a flagged confirmation, and
+    // writes NOTHING: no ad_use_declared event, no notification,
+    // no Momentum.
     if (method === "POST" && seg[1] === "preview" && seg[2] === "ad-use") {
       const b = parseBody(event);
       const plan = planById(b.planId || "") || PLANS[0];
-      if (!visitRightsForPlan(plan.id).adUse) return err(400, "The Self-Service plan does not include ad use. Growth and Managed do.");
+      const visitKind = b.visitKind === "paid" ? "paid" : "comp";
+      if (!visitRightsForVisit(visitKind).adUse) return err(400, "Ad use comes with paid visits only. A comp visit covers native sharing only, on every plan.");
       let targetCreator = null;
       if (b.creatorId) {
         targetCreator = await store.get(`user:${b.creatorId}`);
@@ -6117,6 +6134,7 @@ async function route(event) {
           creatorId: targetCreator ? targetCreator.id : null,
           creatorHandle: targetCreator && targetCreator.creator ? targetCreator.creator.handle : null,
           plan: plan.id,
+          visitKind,
           declaredAt: nowIso(),
           note: "Simulation only: no event logged, the creator is not notified, and no Momentum points are awarded.",
         },
@@ -6533,8 +6551,8 @@ async function route(event) {
       else if (user.role === "creator") {
         out = out.filter((o) => o.market === user.market && o.status === "open" && (!o.creatorId || o.creatorId === user.id));
         // The creator's checklist ("They can / They can't") depends on
-        // the business's plan (rights follow the plan; see
-        // visitRightsForPlan). Attach both per offer, plus the
+        // the visit type (rights follow the visit, never the plan;
+        // see visitRightsForVisit). Attach both per offer, plus the
         // business's public review-page links when it has set them
         // (the "Their review pages" courtesy block).
         const bizIds = [...new Set(out.map((o) => o.businessId))];
@@ -6545,7 +6563,7 @@ async function route(event) {
           plans[id] = biz && biz.business ? biz.business.plan : null;
           reviewLinks[id] = biz && biz.business ? reviewLinksView(biz.business) : null;
         }
-        out = out.map((o) => ({ ...o, businessPlan: plans[o.businessId] || null, visitRights: visitRightsForPlan(plans[o.businessId] || null), businessReviewLinks: reviewLinks[o.businessId] || null }));
+        out = out.map((o) => ({ ...o, businessPlan: plans[o.businessId] || null, visitRights: visitRightsForVisit(kindOf(o)), businessReviewLinks: reviewLinks[o.businessId] || null }));
       }
       out.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
       return json(200, { offers: out });
@@ -6861,7 +6879,7 @@ async function route(event) {
         myApplication: myApp ? { id: myApp.id, status: myApp.status } : null,
         strength: offerStrength(o),
         businessPlan: biz && biz.business ? biz.business.plan : null,
-        visitRights: visitRightsForPlan(biz && biz.business ? biz.business.plan : null),
+        visitRights: visitRightsForVisit(kindOf(o)),
         businessReviewLinks: biz && biz.business ? reviewLinksView(biz.business) : null,
         businessAbout: biz && biz.business ? (biz.business.about || "") : "",
         businessNeighborhood: biz && biz.business ? (biz.business.neighborhood || "") : "",
@@ -7290,32 +7308,35 @@ async function route(event) {
     return json(200, { post });
   }
 
-  // Ad use (Jeff, 2026-10-19): a Growth or Managed business declares
-  // it is running a delivered post as an ad. The right exists only
-  // while the business's account is active (it is the plan's right,
-  // declared here so the use is on the record). Declaring logs
-  // ad_use_declared, notifies the creator in-app (a message in their
-  // thread), and awards the creator +25 Momentum, computed from this
-  // stored declaration like every other point. No cash moves: paid
-  // hero campaigns are the separate cash product. One declaration
-  // per post.
+  // Ad use (Jeff, 2026-10-19; rights model adopted 2026-10-21): a
+  // business declares it is running a delivered post as an ad. The
+  // right attaches to the VISIT, never the plan: only a paid visit's
+  // post can be declared, and only inside the set window of 6 months
+  // from the post date. A comp visit's post covers native sharing
+  // only, on every plan. Declaring logs ad_use_declared, notifies
+  // the creator in-app (a message in their thread), and awards the
+  // creator +25 Momentum, computed from this stored declaration
+  // like every other point. One declaration per post.
   if (seg[0] === "posts" && seg.length === 3 && seg[2] === "ad-use" && method === "POST") {
     if (user.role !== "business") return err(403, "Businesses only");
     const post = await store.get(`post:${seg[1]}`);
     if (!post || post.businessId !== user.id) return err(404, "Post not found");
-    const plan = user.business && user.business.plan;
-    if (plan !== "growth" && plan !== "managed") {
-      return err(403, "Ad use comes with the Growth and Managed plans. Your plan covers sharing the post natively, with the creator tagged.");
-    }
     if (post.adUseDeclaredAt) return err(409, "This post is already declared for ad use");
+    const booking = await store.get(`booking:${post.bookingId}`);
+    if (!booking || booking.kind !== "paid") {
+      return err(403, "Ad use comes with paid visits only. This post came from a comp visit, which covers native sharing only.");
+    }
+    const windowEnd = adUseWindowEnd(post);
+    if (Date.now() > windowEnd.getTime()) {
+      return err(403, `The 6-month ad window for this post closed on ${windowEnd.toISOString().slice(0, 10)}. Paid-visit ad rights run 6 months from the post date, never longer.`);
+    }
     const ts = nowIso();
     post.adUseDeclaredAt = ts;
     post.adUseDeclaredBy = user.id;
-    post.adUsePlan = plan;
+    post.adUseWindowEndsAt = windowEnd.toISOString();
     await store.set(`post:${post.id}`, post);
-    const booking = await store.get(`booking:${post.bookingId}`);
     const bizName = (user.business && user.business.businessName) || post.businessName || "A SIGNL business";
-    await logEvent({ type: "ad_use_declared", actorId: user.id, actorRole: "business", subjectId: post.id, market: booking ? booking.market : user.market, data: { bookingId: post.bookingId, creatorId: post.creatorId, plan, url: post.url } });
+    await logEvent({ type: "ad_use_declared", actorId: user.id, actorRole: "business", subjectId: post.id, market: booking ? booking.market : user.market, data: { bookingId: post.bookingId, creatorId: post.creatorId, visitKind: "paid", url: post.url, windowEndsAt: post.adUseWindowEndsAt } });
     // In-app notification: a message in the existing thread, so the
     // creator sees it in Messages and on the visit card.
     try {
@@ -7325,7 +7346,7 @@ async function route(event) {
         threadId,
         fromId: user.id,
         toId: post.creatorId,
-        body: `Good news: ${bizName} is using your post in an ad. That is part of our ${plan === "managed" ? "Managed" : "Growth"} plan rights while our account is active, and it earned you +25 Momentum points. Your post: ${post.url}`,
+        body: `Good news: ${bizName} is using your post from your paid visit in an ad. Paid visits include repost and ad rights for 6 months from the post date, and this earned you +25 Momentum points. Your post: ${post.url}`,
         createdAt: ts,
       };
       await store.set(`message:${msg.id}`, msg);
@@ -7593,4 +7614,4 @@ async function route(event) {
 
 // The email builders are exported alongside the router so the verify
 // suites can assert on the exact copy a creator receives.
-module.exports = { route, approvalEmail, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, profileCompleteOf, profileCompletionFor, campaignEmail, crossoverEmail, campaignEmailFor, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, STANDARD_VISIT, visitRightsForPlan, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData };
+module.exports = { route, approvalEmail, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, profileCompleteOf, profileCompletionFor, campaignEmail, crossoverEmail, campaignEmailFor, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, AD_USE_WINDOW_MONTHS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData };

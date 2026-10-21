@@ -6,8 +6,9 @@
 //   - audience stacking: totals, tier derivation from the total,
 //     legacy fallback, deliberate tier picks, discovery filters on
 //     the total;
-//   - the Standard Visit rights ladder by plan (self-service vs
-//     growth) as the creator sees it before accepting;
+//   - the Standard Visit rights by visit type (comp vs paid,
+//     rights model adopted 2026-10-21) as the creator sees them
+//     before accepting: identical on every plan;
 //   - the post-compliance engine with time travel: seed redemption
 //     timestamps in the past (edit the JSON DB while the server is
 //     down, the local store caches the file per process), run the
@@ -15,9 +16,11 @@
 //     late proof inside cure = delivered late (not banned), paused
 //     creators blocked from offers, banned creators out of
 //     discovery and off their public page, admin reinstatement;
-//   - ad use: +25 Momentum and an ad_use_declared event for real
-//     Growth businesses, 403 for Self-Service, and preview ad use
-//     writing nothing and awarding nothing;
+//   - ad use: a comp visit's post refuses declaration on every plan
+//     (403); a paid visit's post declares cleanly (+25 Momentum and
+//     an ad_use_declared event), a second declaration is 409, a paid
+//     post past its 6-month window refuses (403), and preview ad use
+//     writes nothing and awards nothing;
 //   - post-performance capture: one email at day 7 post-proof,
 //     +5 Momentum once, numbers visible to the business, aggregate
 //     contentViews in the track record;
@@ -247,20 +250,27 @@ try {
   check("discovery card carries totalAudience + the stack breakdown", card && card.totalAudience === 21700 && Array.isArray(card.audienceStack) && card.audienceStack.length === 3, JSON.stringify(card && card.audienceStack));
   check("discovery card carries the Standard Visit summary", !!(card && card.visitIncludes && card.visitIncludes.includes("48 hours")), JSON.stringify(card && card.visitIncludes));
 
-  // ---------- Part C: rights ladder on the creator's offer ----------
-  part("C: rights by plan");
+  // ---------- Part C: rights on the creator's offer ----------
+  // Rights model (adopted 2026-10-21): rights follow the VISIT,
+  // never the plan. A comp offer carries comp rights from every
+  // business; a paid offer carries paid rights from every business.
+  part("C: rights by visit type");
   const selfReg = await registerBusiness(admin, "self-service", "Self Service Diner");
   const selfBizC = selfReg.client;
   const selfBiz = selfReg.res;
   check("self-service business registered + approved", selfBiz.status === 201, JSON.stringify(selfBiz.data));
   const offG = await bizC("POST", "/api/offers", { title: "Growth dinner", whatComped: "Meal for two, on us", dollarCap: 100, spots: 1, visitWindow: "This week", creatorId: stacked.user.id });
   const offS = await selfBizC("POST", "/api/offers", { title: "Self dinner", whatComped: "Meal for one, on us", dollarCap: 50, spots: 1, visitWindow: "This week", creatorId: stacked.user.id });
-  check("both offers created", offG.status === 201 && offS.status === 201, `${offG.status}/${offS.status}`);
+  check("both comp offers created", offG.status === 201 && offS.status === 201, `${offG.status}/${offS.status}`);
+  const offP = await bizC("POST", "/api/offers", { title: "Paid dinner", whatComped: "Tasting menu for two", kind: "paid", cashRate: 250, spots: 1, visitWindow: "This week", creatorId: stacked.user.id });
+  check("paid offer created", offP.status === 201, `${offP.status} ${JSON.stringify(offP.data)}`);
   const myOffers = await stacked.client("GET", "/api/offers");
   const og = (myOffers.data.offers || []).find((o) => o.id === offG.data.offer.id);
   const os = (myOffers.data.offers || []).find((o) => o.id === offS.data.offer.id);
-  check("growth offer checklist: ad use allowed while the account is active", !!og && og.businessPlan === "growth" && og.visitRights && og.visitRights.adUse === true && og.visitRights.can.some((x) => /ad/i.test(x)), JSON.stringify(og && og.visitRights));
-  check("self-service offer checklist: no ad use, no posting as their own", !!os && os.businessPlan === "self-service" && os.visitRights && os.visitRights.adUse === false && os.visitRights.cannot.some((x) => /ad/i.test(x)), JSON.stringify(os && os.visitRights));
+  const op = (myOffers.data.offers || []).find((o) => o.id === (offP.data.offer && offP.data.offer.id));
+  check("growth business, comp offer: comp rights (native share only, no ad use)", !!og && og.businessPlan === "growth" && og.visitRights && og.visitRights.basis === "comp" && og.visitRights.adUse === false && og.visitRights.cannot.some((x) => /ad/i.test(x)), JSON.stringify(og && og.visitRights));
+  check("self-service business, comp offer: the same comp rights (plan never changes rights)", !!os && os.businessPlan === "self-service" && os.visitRights && os.visitRights.basis === "comp" && os.visitRights.adUse === false && os.visitRights.cannot.some((x) => /ad/i.test(x)), JSON.stringify(os && os.visitRights));
+  check("paid offer: paid rights (repost + ad use for 6 months from the post date)", !!op && op.visitRights && op.visitRights.basis === "paid" && op.visitRights.adUse === true && op.visitRights.can.some((x) => /6 months/i.test(x)), JSON.stringify(op && op.visitRights));
 
   // ---------- Part D: momentum determinism (profile + streak) ----------
   part("D: momentum determinism");
@@ -397,36 +407,73 @@ try {
   check("the -50 survives reinstatement (record, not a reset)", mBannedAfter.ledger.some((e) => e.kind === "never_posted" && e.points === -50), JSON.stringify(mBannedAfter.ledger));
 
   // ---------- Part F: ad use ----------
+  // Rights model (adopted 2026-10-21): ad use attaches to the VISIT,
+  // never the plan. postOn is the on-time creator's delivered post
+  // from a COMP visit with the Growth business: even a Growth
+  // business cannot declare ad use on it.
   part("F: ad use");
-  const adUse = await bizC("POST", `/api/posts/${postOn.data.post.id}/ad-use`, {});
-  check("growth business declares ad use", adUse.status === 200 && !!adUse.data.post.adUseDeclaredAt, JSON.stringify(adUse.data));
+  const adUseComp = await bizC("POST", `/api/posts/${postOn.data.post.id}/ad-use`, {});
+  check("comp-visit post refuses ad use even for a Growth business (403, paid visits only)", adUseComp.status === 403 && /paid visits only/i.test(JSON.stringify(adUseComp.data)), `${adUseComp.status} ${JSON.stringify(adUseComp.data)}`);
+  check("the refused declaration logged no event", (await countEvents(admin2, "ad_use_declared")) === 0);
+  // The paid lane: a fresh creator takes a paid offer from the same
+  // Growth business, posts, and the business declares cleanly.
+  const paidC = await registerCreator({});
+  await admin("POST", "/api/admin/review", { userId: paidC.user.id, decision: "approve" });
+  const offPaid = await bizC("POST", "/api/offers", { title: "Paid visit", whatComped: "Tasting menu for two", kind: "paid", cashRate: 250, spots: 1, creatorId: paidC.user.id });
+  const accPaid = await paidC.client("POST", `/api/offers/${offPaid.data.offer.id}/accept`, { visitDate: "2026-10-21" });
+  check("paid offer accepted into a paid booking", accPaid.status === 201 && !!accPaid.data.booking && accPaid.data.booking.kind === "paid", JSON.stringify(accPaid.data));
+  await bizC("POST", `/api/bookings/${accPaid.data.booking.id}/confirm`, {});
+  const postPaid = await paidC.client("POST", "/api/posts", { bookingId: accPaid.data.booking.id, url: "https://www.instagram.com/p/paidvisit1/", disclosedComp: true });
+  check("paid visit posted", postPaid.status === 201, JSON.stringify(postPaid.data));
+  const mPaidBefore = await momentumOf(paidC.client);
+  const adUse = await bizC("POST", `/api/posts/${postPaid.data.post.id}/ad-use`, {});
+  check("business declares ad use on a paid visit's post (window end stamped)", adUse.status === 200 && !!adUse.data.post.adUseDeclaredAt && !!adUse.data.post.adUseWindowEndsAt, JSON.stringify(adUse.data));
   check("ad_use_declared event logged", (await countEvents(admin2, "ad_use_declared")) === 1);
-  mOn = await momentumOf(ontime.client);
-  check("creator gains +25 for the ad use (35 + 25 = 60)", mOn.points === 60 && mOn.ledger.some((e) => e.kind === "ad_use" && e.points === 25), JSON.stringify(mOn.ledger));
-  const adUse2 = await bizC("POST", `/api/posts/${postOn.data.post.id}/ad-use`, {});
+  const mPaidAfter = await momentumOf(paidC.client);
+  check("creator gains +25 for the ad use", mPaidAfter.points === mPaidBefore.points + 25 && mPaidAfter.ledger.some((e) => e.kind === "ad_use" && e.points === 25), JSON.stringify(mPaidAfter.ledger));
+  const adUse2 = await bizC("POST", `/api/posts/${postPaid.data.post.id}/ad-use`, {});
   check("second declaration on the same post refused", adUse2.status === 409, `${adUse2.status}`);
-  // Plan gate vs ownership, on a post the SELF-SERVICE business owns:
-  // its own declaration hits the plan gate (403); the growth business
-  // (not the owner) gets a 404.
+  // Ownership vs the comp gate, on a post the SELF-SERVICE business
+  // owns (a comp visit): its own declaration hits the comp gate
+  // (403); the growth business (not the owner) gets a 404.
   const offSelf = await selfBizC("POST", "/api/offers", { title: "Self-service visit", whatComped: "Meal for one, on us", dollarCap: 50, spots: 1, creatorId: ontime.user.id });
   const accSelf = await ontime.client("POST", `/api/offers/${offSelf.data.offer.id}/accept`, { visitDate: "2026-10-21" });
   await selfBizC("POST", `/api/bookings/${accSelf.data.booking.id}/confirm`, {});
   const postSelf = await ontime.client("POST", "/api/posts", { bookingId: accSelf.data.booking.id, url: "https://www.instagram.com/p/selfsvc1/", disclosedComp: true });
   check("self-service visit posted", postSelf.status === 201, JSON.stringify(postSelf.data));
   const adUseSelf = await selfBizC("POST", `/api/posts/${postSelf.data.post.id}/ad-use`, {});
-  check("self-service business cannot declare ad use on its own post (plan gate, 403)", adUseSelf.status === 403, `${adUseSelf.status} ${JSON.stringify(adUseSelf.data)}`);
+  check("self-service business cannot declare ad use on its own comp post (comp gate, 403)", adUseSelf.status === 403 && /paid visits only/i.test(JSON.stringify(adUseSelf.data)), `${adUseSelf.status} ${JSON.stringify(adUseSelf.data)}`);
   const adUseNotOwner = await bizC("POST", `/api/posts/${postSelf.data.post.id}/ad-use`, {});
   check("a business that does not own the post gets 404", adUseNotOwner.status === 404, `${adUseNotOwner.status}`);
   const eventsBefore = await admin2("GET", "/api/admin/events?limit=2000");
   const eventCountBefore = (eventsBefore.data.events || []).length;
-  const mOnBefore = (await momentumOf(ontime.client)).points;
-  const pvAd = await admin2("POST", "/api/admin/preview/ad-use", { creatorId: ontime.user.id, planId: "growth" });
-  check("preview ad use returns a flagged simulation", pvAd.status === 201 && pvAd.data.preview === true, JSON.stringify(pvAd.data));
+  const mPaidPointsBefore = (await momentumOf(paidC.client)).points;
+  const pvAd = await admin2("POST", "/api/admin/preview/ad-use", { creatorId: paidC.user.id, visitKind: "paid" });
+  check("preview ad use (paid visit) returns a flagged simulation", pvAd.status === 201 && pvAd.data.preview === true, JSON.stringify(pvAd.data));
   const eventsAfter = await admin2("GET", "/api/admin/events?limit=2000");
   check("preview ad use wrote no events", (eventsAfter.data.events || []).length === eventCountBefore);
-  check("preview ad use awarded no points", (await momentumOf(ontime.client)).points === mOnBefore);
-  const pvAdSelf = await admin2("POST", "/api/admin/preview/ad-use", { creatorId: ontime.user.id, planId: "self-service" });
-  check("preview ad use on self-service refused (plan has no ad right)", pvAdSelf.status === 400, `${pvAdSelf.status}`);
+  check("preview ad use awarded no points", (await momentumOf(paidC.client)).points === mPaidPointsBefore);
+  const pvAdComp = await admin2("POST", "/api/admin/preview/ad-use", { creatorId: paidC.user.id, visitKind: "comp" });
+  check("preview ad use on a comp visit refused (no ad right on comp visits)", pvAdComp.status === 400, `${pvAdComp.status}`);
+  // The 6-month window: a paid post aged past it refuses. A second
+  // paid chain, then the post is aged 200 days in the DB.
+  const agedC = await registerCreator({});
+  await admin("POST", "/api/admin/review", { userId: agedC.user.id, decision: "approve" });
+  const offAged = await bizC("POST", "/api/offers", { title: "Paid visit, aged post", whatComped: "Tasting menu for two", kind: "paid", cashRate: 250, spots: 1, creatorId: agedC.user.id });
+  const accAged = await agedC.client("POST", `/api/offers/${offAged.data.offer.id}/accept`, { visitDate: "2026-10-21" });
+  await bizC("POST", `/api/bookings/${accAged.data.booking.id}/confirm`, {});
+  const postAged = await agedC.client("POST", "/api/posts", { bookingId: accAged.data.booking.id, url: "https://www.instagram.com/p/paidaged1/", disclosedComp: true });
+  check("second paid visit posted", postAged.status === 201, JSON.stringify(postAged.data));
+  await stopServer();
+  editDb((db) => shiftPostSubmitted(db, agedC.user.id, 200)); // proof is now 200 days old: outside the 6-month window
+  startServer();
+  await waitUp();
+  const adminF = await adminClient();
+  const bizCF = makeClient();
+  await bizCF("POST", "/api/auth/login", { email: biz.data.user.email, password: "password123" });
+  const adUseAged = await bizCF("POST", `/api/posts/${postAged.data.post.id}/ad-use`, {});
+  check("paid post past its 6-month window refuses ad use (403)", adUseAged.status === 403 && /6-month/i.test(JSON.stringify(adUseAged.data)), `${adUseAged.status} ${JSON.stringify(adUseAged.data)}`);
+  check("the aged refusal logged no second event", (await countEvents(adminF, "ad_use_declared")) === 1);
 
   // ---------- Part G: post-performance capture ----------
   part("G: performance capture");

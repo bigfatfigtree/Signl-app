@@ -328,10 +328,11 @@ const BUSINESS_CATEGORIES = [
 ];
 
 // Three plans (Jeff, 2026-10-19). All 3-month minimum, then month to
-// month. Content rights follow the plan: Self-Service shares creator
-// posts natively only; Growth adds own-feed reposts and ad use while
-// the account is active; Managed is Growth's rights, hand-held, with
-// more visits and the quarterly hero feature.
+// month. Content rights follow the VISIT, never the plan (rights
+// model adopted 2026-10-21): a comp visit is native sharing only on
+// every plan; a paid visit adds repost rights and ad use for 6
+// months from the post date. Managed is hand-held, with more visits
+// and the quarterly hero feature.
 const PLANS = [
   {
     id: "self-service",
@@ -343,7 +344,7 @@ const PLANS = [
       "Browse the local roster and send comp offers",
       "Up to 8 creator visits per month",
       "Post tracking and results dashboard",
-      "Share creator posts natively, with the creator tagged",
+      "Share comp-visit posts natively, with the creator tagged",
     ],
   },
   {
@@ -356,8 +357,8 @@ const PLANS = [
       "Browse the local roster and send comp offers",
       "Up to 20 creator visits per month",
       "Post tracking and results dashboard",
-      "Repost creator posts on your own feed",
-      "Run creator posts as ads while your account is active",
+      "Paid visits: book specific creators at their listed rate",
+      "Paid visits include repost rights and ad use for 6 months",
     ],
   },
   {
@@ -372,7 +373,7 @@ const PLANS = [
       "Campaign calendar and creator scheduling handled",
       "A monthly paid creator budget your coordinator spends for you",
       "Quarterly hero creator feature",
-      "Growth content rights (own-feed reposts + ads while active) and a monthly report",
+      "Paid bookings and their repost and ad rights, handled for you, plus a monthly report",
     ],
   },
 ];

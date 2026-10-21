@@ -476,20 +476,21 @@ function coversLine(record) {
   return record && Number(record.covers) === 2 ? "Comp covers 2 people" : "Comp covers you";
 }
 
-// Content rights by business plan, mirroring the server's
-// visitRightsForPlan. The creator's offer checklist prefers the
-// server-attached rights on the offer itself; this is the fallback
-// and the composer's own-plan line.
-function rightsForPlan(planId) {
-  if (planId === "growth" || planId === "managed") {
+// Content rights by visit type, mirroring the server's
+// visitRightsForVisit (rights model adopted 2026-10-21: rights
+// follow the visit, never the plan). The creator's offer checklist
+// prefers the server-attached rights on the offer itself; this is
+// the fallback and the composer's rights line.
+function rightsForVisit(kind) {
+  if (kind === "paid") {
     return {
-      can: ["Share your post with you tagged", "Repost it on their own feed", "Run it as an ad while their SIGNL account is active (the ad right ends if their account ends)"],
-      cannot: ["Edit your post"],
+      can: ["Share your post natively, with you tagged", "Repost it on their own feed", "Run it as an ad for 6 months from the post date (never longer)"],
+      cannot: ["Edit your post", "Use it in ads after the 6-month window"],
     };
   }
   return {
-    can: ["Share your post with you tagged"],
-    cannot: ["Edit it", "Post it as their own content", "Run it as an ad"],
+    can: ["Share your post natively, with you tagged"],
+    cannot: ["Edit it", "Download it or post it as their own content", "Run it as an ad"],
   };
 }
 
@@ -1670,7 +1671,7 @@ function creatorProfileDetailHtml(c, preview) {
     ${preview ? `<p class="small muted">Preview: an offer sent from here is a simulation. It never reaches ${esc(c.name)} and nothing is saved.</p>` : ""}
     ${preview && c.trackRecord && c.trackRecord.postsDelivered > 0 ? `
     <div class="showcase-block"><h4>Ad use (preview)</h4>
-      <p class="small muted">On Growth and Managed plans, a business can run a delivered post as an ad while its account is active. In the real app that logs the use, notifies the creator, and awards +25 Momentum. Here it is a simulation: nothing is logged and no points move.</p>
+      <p class="small muted">Ad use comes with paid visits: on a paid visit, a business can repost the post and run it as an ad for 6 months from the post date. In the real app that logs the use, notifies the creator, and awards +25 Momentum. Here it is a simulation: nothing is logged and no points move.</p>
       <button class="btn small-btn ghost" onclick="previewAdUse('${c.userId}')">Use a delivered post in an ad (preview)</button> <span id="pv-aduse-note" class="saved"></span>
     </div>` : ""}
   </div>`;
@@ -1679,7 +1680,7 @@ function creatorProfileDetailHtml(c, preview) {
 async function previewAdUse(userId) {
   const note = document.getElementById("pv-aduse-note");
   try {
-    const data = await api("POST", "/admin/preview/ad-use", { creatorId: userId, planId: state.preview ? state.preview.planId : "growth" });
+    const data = await api("POST", "/admin/preview/ad-use", { creatorId: userId, planId: state.preview ? state.preview.planId : "growth", visitKind: "paid" });
     if (note) note.textContent = (data.adUse && data.adUse.note) || "Simulated.";
   } catch (err) {
     if (note) note.textContent = err.message;
@@ -1756,7 +1757,7 @@ function creatorCard(c, viewer, opts) {
     <p class="small">${socialLinksHtml(p)}</p>
     ${bestWorkHtml(c.bestWork, true)}
     ${trackLine || reviewLine ? `<div class="cc-track">${trackLine}${reviewLine}</div>` : ""}
-    <p class="small muted">Every SIGNL visit: 1 post or reel + 2 stories within 48 hours, tracked as proof. Content rights follow your plan.</p>
+    <p class="small muted">Every SIGNL visit: 1 post or reel + 2 stories within 48 hours, tracked as proof. Content rights follow the visit: comp visits are native share only; paid visits add repost and 6-month ad rights.</p>
     <div class="cc-actions">
       ${opts.preview
         ? `<button class="btn small-btn" onclick="previewViewCreator('${c.userId}')">View profile</button>
@@ -2135,7 +2136,7 @@ function homeOpportunitiesHtml(offers, u) {
   </section>`;
   }
   const cards = ranked.slice(0, 3).map((o) => {
-    const rights = o.visitRights || rightsForPlan(o.businessPlan);
+    const rights = o.visitRights || rightsForVisit(o.kind);
     const left = Math.max(0, (o.spots || 0) - (o.bookedCount || 0));
     return `
     <div class="card home-opp mb">
@@ -2542,7 +2543,7 @@ async function loadCreatorOffers() {
       direct.innerHTML = `<div class="panel center"><h3>No direct offers yet</h3><p class="muted">When a business in ${esc(state.user.market)} sends you an offer directly, it lands here. Open offers from every business in your market are on the board above.</p></div>`;
       return;
     }
-    direct.innerHTML = mine.map((o) => { const rights = o.visitRights || rightsForPlan(o.businessPlan); return `
+    direct.innerHTML = mine.map((o) => { const rights = o.visitRights || rightsForVisit(o.kind); return `
       <div class="card mb">
         <div class="flex-between"><strong>${esc(o.title)}</strong><span class="badge tier">${esc(o.businessName)}</span></div>
         <div class="showcase-block">
@@ -2596,7 +2597,7 @@ async function loadOpenBoard() {
     el.innerHTML = `<h3>Open offers in ${esc(state.user.market)}</h3>
     <p class="small muted">One tap applies. Your profile card (local %, Impact, Momentum, track record${state.user.creator && state.user.creator.paidRate ? ", your rate" : ""}) attaches automatically. Offers only show when the comp fits your tier's guidance: that floor protects you from token comps.</p>` +
     data.offers.map((o) => {
-      const rights = o.visitRights || rightsForPlan(o.businessPlan);
+      const rights = o.visitRights || rightsForVisit(o.kind);
       const spotsLeft = Math.max(0, o.spots - (o.filledCount || 0));
       return `
       <div class="card mb">
@@ -2878,13 +2879,12 @@ function visitCard(b, role) {
   if (post) {
     html += `<p class="small">Post: <a href="${esc(post.url)}" target="_blank" rel="noopener">${esc(post.url)}</a> &middot; submitted ${fmtDate(post.submittedAt)} (${post.hoursAfterRedeem}h after redemption) ${post.verifiedAt ? "&middot; <span class='saved'>Verified by the business</span>" : ""}</p>`;
     if (post.adUseDeclaredAt) {
-      html += `<p class="small"><span class="badge ok">Running as an ad</span> Declared ${fmtDate(post.adUseDeclaredAt)}. The creator was notified and earned +25 Momentum.${role === "business" ? " This right lasts while your account is active." : ""}</p>`;
+      html += `<p class="small"><span class="badge ok">Running as an ad</span> Declared ${fmtDate(post.adUseDeclaredAt)}. The creator was notified and earned +25 Momentum.${role === "business" && post.adUseWindowEndsAt ? ` This paid visit's ad window runs to ${fmtDate(post.adUseWindowEndsAt)}.` : ""}</p>`;
     } else if (role === "business") {
-      const myPlan = state.user && state.user.business ? state.user.business.plan : null;
-      if (myPlan === "growth" || myPlan === "managed") {
-        html += `<button class="btn small-btn ghost" onclick="declareAdUse('${post.id}')">Use in an ad</button> <span class="small muted">Included in your plan while your account is active. The creator is notified and earns +25 Momentum.</span>`;
+      if (b.kind === "paid") {
+        html += `<button class="btn small-btn ghost" onclick="declareAdUse('${post.id}')">Use in an ad</button> <span class="small muted">This was a paid visit: ad use is included for 6 months from the post date. The creator is notified and earns +25 Momentum.</span>`;
       } else {
-        html += `<p class="small muted">Ad use is a Growth and Managed feature. Your plan covers sharing this post natively, with the creator tagged.</p>`;
+        html += `<p class="small muted">This was a comp visit, so it covers native sharing only, with the creator tagged. Ad use comes with paid visits.</p>`;
       }
     }
     if (role === "business" && !post.verifiedAt) html += `<button class="btn small-btn ghost" onclick="verifyPost('${post.id}')">Verify post is live</button>`;
@@ -3045,7 +3045,7 @@ async function submitCodeRedemptions(e, bookingId) {
 }
 
 async function declareAdUse(postId) {
-  if (!confirm("Use this post in an ad? Your plan covers ad use while your account is active. The creator is notified and earns +25 Momentum.")) return;
+  if (!confirm("Use this post in an ad? This paid visit includes ad use for 6 months from the post date. The creator is notified and earns +25 Momentum.")) return;
   try { await api("POST", `/posts/${postId}/ad-use`, {}); loadMyVisits("business"); }
   catch (err) { alert(err.message); }
 }
@@ -3331,10 +3331,10 @@ function windowModeFieldHtml(prefix) {
 }
 
 function packageSummaryHtml(planId, planName) {
-  const rights = rightsForPlan(planId);
+  const comp = rightsForVisit("comp");
   return `<div class="showcase-block"><h4>Every offer is the Standard Visit</h4>
     <p class="small">${esc(standardVisit().summary)}</p>
-    <p class="small"><strong>Your plan${planName ? ` (${esc(planName)})` : ""} covers:</strong> ${rights.can.map(esc).join("; ")}. They can't: ${rights.cannot.map(esc).join("; ")}.</p>
+    <p class="small"><strong>On a comp visit, you can:</strong> ${comp.can.map(esc).join("; ")}. They can't: ${comp.cannot.map(esc).join("; ")}. <strong>On a paid visit, you can also</strong> repost the post on your own feed and run it as an ad for 6 months from the post date. Rights follow the visit, not your plan${planName ? ` (${esc(planName)})` : ""}.</p>
     <p class="small muted">Tip: creators post more when they can bring a guest. Meal-for-two comps outperform solo comps.</p>
   </div>`;
 }
@@ -5039,7 +5039,7 @@ function pvBookingCard(b) {
       <span class="small" id="pv-redeem-result-${b.id}"></span>
       <p class="small muted">Simulation only: in the live app the business reports this tally on the visit and it is saved. Here nothing is recorded, and the dashboard keeps its original tallies.</p>
     </form>`;
-    html += `<button class="btn small-btn ghost" disabled>Use in an ad</button> <span class="small muted">Your Growth plan includes ad use while your account is active; the creator is notified and earns +25 Momentum. Disabled in preview; try it live from the creator profile's showcase.</span>`;
+    html += `<button class="btn small-btn ghost" disabled>Use in an ad</button> <span class="small muted">Ad use comes with paid visits (repost plus ads for 6 months from the post date); the creator is notified and earns +25 Momentum. Disabled in preview; try it live from a paid visit.</span>`;
   }
   if (b.review) {
     html += `<div class="review-item"><span class="small muted">Your review of this creator</span><br>${pvStars(b.review.stars)} <span class="small">${esc(b.review.text)}</span></div>`;
@@ -5413,9 +5413,10 @@ function previewDashboardHtml(d) {
       <p class="small muted" style="margin-bottom:0">${esc(s.roas.registerBasis)} ${esc(s.roas.mediaBasis)}${s.roas.planKnown ? ` The all-in score also counts the ${esc(plan.name)} plan allocation of $${fmtMoney(s.roas.planAllocation)} across the delivered visits.` : ""} This is SIGNL's own return model, not an ad platform's: the register side is spend we can point at, the media side is priced in the open.</p>
       ${d.business.discountCodes && d.business.discountCodes.enabled ? `<p class="small" style="margin-bottom:0"><strong>Audience-code discounts: on.</strong> ${esc(d.business.name)} turned code discounts on and chose ${d.business.discountCodes.pct}% off: that was their call and their percentage, which is why the tallies above carry a discount cost. Codes are always optional; a business that leaves them off still gets the code and the count, with no discount promised.</p>` : ""}
     </div>` : ""}
-    <div class="showcase-block"><h4>Your plan's content rights</h4>
-      <p class="small" style="margin:0 0 4px"><span class="rules">With the ${esc(plan.name)} plan you can:</span> share a delivered post with the creator tagged; repost it on your own feed; run it as an ad while your SIGNL account is active (the ad right ends if the account ends).</p>
-      <p class="small muted" style="margin:0">You can never edit a creator's post. Rights follow your plan and are shown to the creator before they accept, so there are no surprises on either side.</p>
+    <div class="showcase-block"><h4>Content rights: they follow the visit</h4>
+      <p class="small" style="margin:0 0 4px"><span class="rules">On a comp visit (every plan, including ${esc(plan.name)}):</span> share a delivered post natively, with the creator tagged. No downloads, no reposting the file, no ads.</p>
+      <p class="small" style="margin:0 0 4px"><span class="rules">On a paid visit:</span> you can also repost the post on your own feed and run it as an ad for 6 months from the post date.</p>
+      <p class="small muted" style="margin:0">The creator always owns their content, and nobody can edit it. Rights follow the visit, not the plan, and are shown to the creator before they accept, so there are no surprises on either side.</p>
     </div>
   </section>
   ${pvStaffPanelHtml(d)}

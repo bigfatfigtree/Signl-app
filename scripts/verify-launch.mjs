@@ -443,7 +443,7 @@ try {
   check("dashboard ROAS carries the floor + modeled framing, never revenue language", /floor/.test(dRoas.registerBasis || "") && /[Mm]odeled/.test(dRoas.mediaBasis || "") && !/revenue (generated|we generated)/i.test(JSON.stringify(dSum)), "");
   check("the old CPM-only media line is gone from the summary", dSum.mediaValueReceived === undefined && dSum.returnMultiple === undefined, JSON.stringify(Object.keys(dSum)));
   check("delivered dashboard bookings carry creator codes, tallies, and their own scores", deliveredPosts.every((b) => typeof b.creatorCode === "string" && b.creatorCode.length > 3 && b.redemptions && typeof b.redemptions.count === "number" && b.roas && typeof b.roas.score === "number"), JSON.stringify(deliveredPosts.map((b) => ({ code: b.creatorCode, roas: b.roas && b.roas.score }))));
-  check("dashboard carries the plan rights recap and the Standard Visit", !!dash.rights && dash.rights.adUse === true && Array.isArray(dash.rights.can) && !!dash.standardVisit && Array.isArray(dash.standardVisit.deliverables), "");
+  check("dashboard carries the visit-based rights recap and the Standard Visit", !!dash.rights && dash.rights.comp && dash.rights.comp.adUse === false && dash.rights.paid && dash.rights.paid.adUse === true && Array.isArray(dash.rights.paid.can) && !!dash.standardVisit && Array.isArray(dash.standardVisit.deliverables), "");
   const evAfterDash = await admin("GET", "/api/admin/events?limit=2000");
   check("preview dashboard wrote no events", (evAfterDash.data.events || []).length === (evBeforeDash.data.events || []).length, `${(evBeforeDash.data.events || []).length} -> ${(evAfterDash.data.events || []).length}`);
   const statsAfterDash = await admin("GET", "/api/admin/stats");
