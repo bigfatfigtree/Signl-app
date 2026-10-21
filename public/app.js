@@ -197,9 +197,64 @@ function inviteUrlFor(u) {
   return handle ? `https://app.joinsignl.com/?ref=${encodeURIComponent(handle)}` : "";
 }
 
-function universityDatalistHtml(id) {
-  const schools = (state.boot && state.boot.universities) || [];
-  return `<datalist id="${esc(id)}">${schools.map((school) => `<option value="${esc(school)}"></option>`).join("")}</datalist>`;
+// University autocomplete (Jeff, 2026-10-21): the bundled IPEDS
+// institution dataset (public/data/us-colleges.json, US Dept of
+// Education) lazy-loads the first time a form renders the field.
+// Typing 2+ characters matches names and aliases; picking a
+// result fills the canonical dataset name, and the server
+// resolves it (plus city/state) at save. Text with no pick is
+// sent as typed and lands as a flagged free entry.
+let collegesClientCache = null;
+let collegesClientLoading = null;
+function loadCollegesClient() {
+  if (collegesClientCache) return Promise.resolve(collegesClientCache);
+  if (!collegesClientLoading) {
+    collegesClientLoading = fetch("/data/us-colleges.json")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((list) => {
+        collegesClientCache = (Array.isArray(list) ? list : []).map((rec) => ({ n: rec.n, a: rec.a || [], c: rec.c, s: rec.s, q: (rec.n + " " + (rec.a || []).join(" ")).toLowerCase() }));
+        return collegesClientCache;
+      })
+      .catch(() => { collegesClientCache = []; return collegesClientCache; });
+  }
+  return collegesClientLoading;
+}
+
+function universityMatches(q) {
+  const query = (q || "").trim().toLowerCase();
+  if (query.length < 2 || !collegesClientCache) return [];
+  const starts = [];
+  const subs = [];
+  for (const rec of collegesClientCache) {
+    if (rec.n.toLowerCase().startsWith(query) || rec.a.some((a) => a.toLowerCase().startsWith(query))) starts.push(rec);
+    else if (rec.q.includes(query)) subs.push(rec);
+    if (starts.length >= 8) break;
+  }
+  return starts.concat(subs).slice(0, 8);
+}
+
+function setupUniversityAutocomplete(inputId, resultsId) {
+  const input = document.getElementById(inputId);
+  const box = document.getElementById(resultsId);
+  if (!input || !box || input.dataset.uniWired) return;
+  input.dataset.uniWired = "1";
+  input.setAttribute("autocomplete", "off");
+  loadCollegesClient();
+  input.addEventListener("input", () => {
+    const q = input.value;
+    if ((q || "").trim().length < 2) { box.innerHTML = ""; return; }
+    loadCollegesClient().then(() => {
+      const ms = universityMatches(q);
+      box.innerHTML = ms.map((rec, i) => `<button type="button" class="uni-opt" data-uni-i="${i}"><strong>${esc(rec.n)}</strong> <span class="muted">${esc(rec.c)}, ${esc(rec.s)}</span></button>`).join("");
+      box.querySelectorAll(".uni-opt").forEach((btn, i) => {
+        btn.addEventListener("click", () => {
+          input.value = ms[i].n;
+          box.innerHTML = "";
+        });
+      });
+    });
+  });
+  input.addEventListener("blur", () => { setTimeout(() => { box.innerHTML = ""; }, 200); });
 }
 
 function universityStatusSuffix(u) {
@@ -941,7 +996,7 @@ function renderJoinCreator() {
         </div>
       </div>
       <div class="field"><label>Your neighborhood or area (optional)</label><input id="jc-neighborhood" placeholder="For example: Oceanfront, Ghent, Town Center" maxlength="80"><p class="small muted">The part of town you actually post from. Businesses search by neighborhood, so this helps the right ones find you.</p></div>
-      <div class="field"><label>Your university (if you are a student now)</label><input id="jc-university" list="jc-university-options" placeholder="Start typing your school" maxlength="120">${universityDatalistHtml("jc-university-options")}<p class="small muted">Current students who add their school get a campus badge on their profile, and same-school referrals group into your campus crew.</p></div>
+      <div class="field"><label>Your university (if you are a student now)</label><input id="jc-university" placeholder="Start typing your school" maxlength="120"><div class="uni-results" id="jc-university-results"></div><p class="small muted">Current students who add their school get a campus badge on their profile, and same-school referrals group into your campus crew. Pick your school from the list if it appears; if it does not, type it in full.</p></div>
       <div class="field"><label>Student status (optional)</label><select id="jc-university-status"><option value="">Select one</option><option value="current_student">Current student</option><option value="alumni">Alumni</option><option value="not_student">Not a student</option></select><p class="small muted">The campus badge is for current students. Alumni and everyone else still get the campus crew grouping.</p></div>
       <div class="form-2col">
         <div class="field"><label>Instagram handle (required)</label><input id="jc-handle" placeholder="yourhandle" required value="${esc(pf.handle || "")}" oninput="document.getElementById('jc-ig-link').textContent = this.value ? 'instagram.com/' + this.value.replace(/^@/, '') : ''"><p class="small muted" id="jc-ig-link"></p></div>
@@ -1009,6 +1064,7 @@ function renderJoinCreator() {
     if (linkEl) linkEl.textContent = "instagram.com/" + pf.handle;
   }
   if (pf.market === unlistedLabel()) syncMarketChoice();
+  setupUniversityAutocomplete("jc-university", "jc-university-results");
 }
 
 function readPhotoInput(inputId) {
@@ -1691,7 +1747,7 @@ function renderCreatorDash() {
     ${tabsHtml(LIVE_CREATOR_TABS, tab)}
     <div id="tab-body">${body}</div>`;
   if (tab === "Dashboard") loadCreatorHome();
-  if (tab === "Profile") setTimeout(loadMyScore, 10);
+  if (tab === "Profile") { setTimeout(loadMyScore, 10); setTimeout(() => setupUniversityAutocomplete("p-university", "p-university-results"), 10); }
   if (tab === "Offers") loadCreatorOffers();
   if (tab === "My Visits") loadMyVisits("creator");
   if (tab === "Messages") loadThreads();
@@ -1722,7 +1778,7 @@ function renderFoundingHome() {
     <div id="tab-body">${body}</div>`;
   if (tab === "Dashboard") loadFoundingDashboard();
   if (tab === "Status") loadFoundingStatus();
-  if (tab === "Profile") setTimeout(loadMyScore, 10);
+  if (tab === "Profile") { setTimeout(loadMyScore, 10); setTimeout(() => setupUniversityAutocomplete("p-university", "p-university-results"), 10); }
 }
 
 // The founding Dashboard tab: greeting, a compact founding status
@@ -2263,7 +2319,7 @@ function creatorProfileHtml(u) {
           : `<div class="field"><label>Home city (${esc(u.market)})</label><select id="p-city">${cityOptions(u.market, u.city || "")}</select></div>`}
       </div>
       <div class="field"><label>Your neighborhood or area</label><input id="p-neighborhood" value="${esc(c.neighborhood || "")}" placeholder="Optional, for example: Oceanfront, Ghent, Town Center" maxlength="80"><p class="small muted">Businesses search by neighborhood. Keep it to the area you actually post from.</p></div>
-      <div class="field"><label>Your university (if you are a student now)</label><input id="p-university" list="p-university-options" value="${esc(c.university || u.university || "")}" placeholder="Start typing your school" maxlength="120">${universityDatalistHtml("p-university-options")}<p class="small muted">Adding your school groups same-school referrals into your campus crew.${(c.university || u.university) && (c.universityStatus || u.universityStatus) === "current_student" ? ` Current badge: <strong>Campus: ${esc(c.university || u.university)}</strong>.` : ""}</p></div>
+      <div class="field"><label>Your university (if you are a student now)</label><input id="p-university" value="${esc(c.university || u.university || "")}" placeholder="Start typing your school" maxlength="120"><div class="uni-results" id="p-university-results"></div><p class="small muted">Adding your school groups same-school referrals into your campus crew.${(c.university || u.university) && (c.universityStatus || u.universityStatus) === "current_student" ? ` Current badge: <strong>Campus: ${esc(c.university || u.university)}</strong>.` : ""}</p></div>
       <div class="field"><label>Student status (optional)</label><select id="p-university-status"><option value=""${!(c.universityStatus || u.universityStatus) ? " selected" : ""}>Select one</option><option value="current_student"${(c.universityStatus || u.universityStatus) === "current_student" ? " selected" : ""}>Current student</option><option value="alumni"${(c.universityStatus || u.universityStatus) === "alumni" ? " selected" : ""}>Alumni</option><option value="not_student"${(c.universityStatus || u.universityStatus) === "not_student" ? " selected" : ""}>Not a student</option></select><p class="small muted">The campus badge is for current students only, so it shows while your status is Current student.</p></div>
       <div class="form-2col">
         <div class="field"><label>TikTok handle</label><input id="p-tiktok" value="${esc(c.tiktokHandle || "")}" placeholder="Optional"></div>
@@ -4352,7 +4408,7 @@ async function loadApplications() {
         ? `<br><span class="badge ${businessAccessState(u) === "active" ? "ok" : "info"}">${businessAccessState(u) === "active" ? "Active" : "Founding list"}</span>`
         : "";
       const detail = u.role === "creator" && u.creator
-        ? `@${esc(u.creator.handle)} &middot; ${fmtNum(u.creator.followerCount)} followers &middot; ${esc(u.creator.tierBand)} &middot; Local: ${u.creator.localAudiencePct === null ? "not reported" : u.creator.localAudiencePct + "% (Self-reported)"} &middot; ${(u.creator.categories || []).map(esc).join(", ")} &middot; Photo: ${u.creator.hasPhoto ? "yes" : "no"} &middot; Socials: IG${u.creator.tiktokHandle ? ", TikTok" : ""}${u.creator.youtubeChannel ? ", YouTube" : ""}${u.creator.facebookUrl ? ", Facebook" : ""}${u.creator.xUrl ? ", X" : ""}${u.creator.linkedinUrl ? ", LinkedIn" : ""}${u.creator.neighborhood ? ` &middot; Area: ${esc(u.creator.neighborhood)}` : ""}${u.creator.university || u.university ? ` &middot; University: ${esc(u.creator.university || u.university)}${universityStatusSuffix(u)}` : ""}${u.referredBy ? ` &middot; via @${esc(u.referredBy)}` : ""}${u.signupSource ? ` &middot; Source: ${esc(u.signupSource)}` : ""}${u.momentum && u.momentum.signups ? ` &middot; Momentum: ${u.momentum.points} pts (${u.momentum.signups} joined, ${u.momentum.approved} approved)` : ""}`
+        ? `@${esc(u.creator.handle)} &middot; ${fmtNum(u.creator.followerCount)} followers &middot; ${esc(u.creator.tierBand)} &middot; Local: ${u.creator.localAudiencePct === null ? "not reported" : u.creator.localAudiencePct + "% (Self-reported)"} &middot; ${(u.creator.categories || []).map(esc).join(", ")} &middot; Photo: ${u.creator.hasPhoto ? "yes" : "no"} &middot; Socials: IG${u.creator.tiktokHandle ? ", TikTok" : ""}${u.creator.youtubeChannel ? ", YouTube" : ""}${u.creator.facebookUrl ? ", Facebook" : ""}${u.creator.xUrl ? ", X" : ""}${u.creator.linkedinUrl ? ", LinkedIn" : ""}${u.creator.neighborhood ? ` &middot; Area: ${esc(u.creator.neighborhood)}` : ""}${u.creator.university || u.university ? ` &middot; University: ${esc(u.creator.university || u.university)}${universityStatusSuffix(u)}${u.universityUnverified || (u.creator && u.creator.universityUnverified) ? " (unverified)" : ""}` : ""}${u.referredBy ? ` &middot; via @${esc(u.referredBy)}` : ""}${u.signupSource ? ` &middot; Source: ${esc(u.signupSource)}` : ""}${u.momentum && u.momentum.signups ? ` &middot; Momentum: ${u.momentum.points} pts (${u.momentum.signups} joined, ${u.momentum.approved} approved)` : ""}`
         : u.role === "business" && u.business
           ? `${esc(u.business.businessName)} &middot; ${esc(u.business.category)} &middot; ${esc(u.business.planName)} &middot; Access: ${businessAccessState(u) === "active" ? "Active" : "Founding list"}`
           : "";

@@ -8,7 +8,7 @@ import path from "node:path";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
-const { UNIVERSITY_OPTIONS, normalizeUniversity, sameUniversity, campusBadgeText, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor } = require("../netlify/functions/lib/router.js");
+const { UNIVERSITY_OPTIONS, normalizeUniversity, sameUniversity, campusBadgeText, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, resolveUniversity, collegesData } = require("../netlify/functions/lib/router.js");
 
 const PORT = 8941;
 const BASE = `http://localhost:${PORT}`;
@@ -94,6 +94,11 @@ try {
   check("unit: student status normalizes labels and slugs, junk becomes unset", normalizeUniversityStatus("Current student") === "current_student" && normalizeUniversityStatus("current_student") === "current_student" && normalizeUniversityStatus("Alumni") === "alumni" && normalizeUniversityStatus("Not a student") === "not_student" && normalizeUniversityStatus("bogus") === "" && normalizeUniversityStatus(undefined) === "");
   check("unit: the badge gate passes current students only", campusBadgeFor({ creator: { university: "VCU", universityStatus: "current_student" } }) === "Campus: VCU" && campusBadgeFor({ creator: { university: "VCU", universityStatus: "alumni" } }) === null && campusBadgeFor({ creator: { university: "VCU", universityStatus: "not_student" } }) === null && campusBadgeFor({ creator: { university: "VCU" } }) === null && campusBadgeFor({ creator: { universityStatus: "current_student" } }) === null);
   check("unit: status labels render for admin", universityStatusLabel("current_student") === "Current student" && universityStatusLabel("alumni") === "Alumni" && universityStatusLabel("not_student") === "Not a student" && universityStatusLabel("") === "");
+  check("unit: the bundled IPEDS dataset carries 6,000+ institutions", collegesData().list.length > 6000, String(collegesData().list.length));
+  check("unit: alias resolves to the shipped canonical with dataset city/state", (() => { const r = resolveUniversity("VCU"); return r.name === "VCU" && r.verified === true && r.city === "Richmond" && r.state === "VA"; })(), JSON.stringify(resolveUniversity("VCU")));
+  check("unit: the dataset's own name for an override school collapses to the same canonical", resolveUniversity("Virginia Commonwealth University").name === "VCU" && resolveUniversity("North Carolina State University at Raleigh").name === "NC State University" && resolveUniversity("University of North Carolina at Chapel Hill").name === "UNC Chapel Hill");
+  check("unit: a non-launch dataset school resolves by name and by dataset alias", (() => { const byName = resolveUniversity("James Madison University"); const byAlias = resolveUniversity("JMU"); return byName.name === "James Madison University" && byName.verified === true && byName.city === "Harrisonburg" && byName.state === "VA" && byAlias.name === "James Madison University" && byAlias.verified === true; })(), JSON.stringify(resolveUniversity("JMU")));
+  check("unit: free entry stays as typed and unverified; empty stays empty", (() => { const r = resolveUniversity("Tiny Made Up College"); const e = resolveUniversity(""); return r.name === "Tiny Made Up College" && r.verified === false && e.name === ""; })());
 
   const up = await waitForServer();
   check("dev server boots and /api/bootstrap responds", up);
@@ -260,9 +265,43 @@ try {
   const alumRow = [...(apps2.data.pending || []), ...(apps2.data.decided || [])].find((u) => u.id === alumId);
   check("admin payload: alumni status carried, badge null", !!alumRow && alumRow.universityStatus === "not_student" && alumRow.creator.universityStatus === "not_student" && alumRow.campusBadge === null, JSON.stringify(alumRow));
 
+  // ---------- dataset-driven resolution over HTTP ----------
+  const served = await client()("GET", "/data/us-colleges.json");
+  check("the client dataset is served and slim", served.status === 200 && Array.isArray(served.data) && served.data.length > 6000 && !!served.data.find((r) => r.n === "Virginia Commonwealth University" && (r.a || []).includes("VCU")), String(served.status));
+
+  const variant = client();
+  const variantReg = await variant("POST", "/api/auth/register", fullCreatorBody({
+    name: "Variant Spelling", email: "campusvariant@example.com", handle: "campusvariant",
+    university: "Virginia Commonwealth University", referredBy: "campuslead",
+  }));
+  check("dataset-name variant stores the shipped canonical plus dataset city/state, verified", variantReg.status === 201 && variantReg.data.user.university === "VCU" && variantReg.data.user.creator.university === "VCU" && variantReg.data.user.universityCity === "Richmond" && variantReg.data.user.universityState === "VA" && variantReg.data.user.universityUnverified === false && variantReg.data.user.creator.universityUnverified === false, JSON.stringify(variantReg.data.user));
+  const leadMe2 = await lead("GET", "/api/auth/me");
+  check("campus crew groups variants of the same school together", !!leadMe2.data.user.momentum.campusCrew && leadMe2.data.user.momentum.campusCrew.count === 2, JSON.stringify(leadMe2.data.user.momentum));
+
+  const jmu = client();
+  const jmuReg = await jmu("POST", "/api/auth/register", fullCreatorBody({
+    name: "JMU Creator", email: "campusjmu@example.com", handle: "campusjmu",
+    university: "JMU",
+  }));
+  check("a dataset alias outside the launch 16 resolves to the dataset canonical", jmuReg.status === 201 && jmuReg.data.user.university === "James Madison University" && jmuReg.data.user.universityCity === "Harrisonburg" && jmuReg.data.user.universityUnverified === false, JSON.stringify(jmuReg.data.user));
+
+  const free = client();
+  const freeReg = await free("POST", "/api/auth/register", fullCreatorBody({
+    name: "Free Entry", email: "campusfree@example.com", handle: "campusfree",
+    university: "Tiny Made Up College",
+  }));
+  const freeId = freeReg.data.user.id;
+  check("unmatched free entry is stored as typed and flagged on both record levels", freeReg.status === 201 && freeReg.data.user.university === "Tiny Made Up College" && freeReg.data.user.universityUnverified === true && freeReg.data.user.creator.universityUnverified === true, JSON.stringify(freeReg.data.user));
+  const apps3 = await admin("GET", "/api/admin/applications");
+  const freeRow = [...(apps3.data.pending || []), ...(apps3.data.decided || [])].find((u) => u.id === freeId);
+  check("admin payload carries the unverified flag", !!freeRow && freeRow.universityUnverified === true && freeRow.creator.universityUnverified === true, JSON.stringify(freeRow));
+  const freeFix = await free("PATCH", "/api/me/profile", { university: "VCU" });
+  check("editing a free entry into a dataset school clears the flag and stores city/state", freeFix.status === 200 && freeFix.data.user.university === "VCU" && freeFix.data.user.universityUnverified === false && freeFix.data.user.creator.universityUnverified === false && freeFix.data.user.universityCity === "Richmond", JSON.stringify(freeFix.data.user));
+
   const appJsRes = await fetch(BASE + "/app.js");
   const appJs = await appJsRes.text();
-  check("client ships signup and profile university fields with datalists", appJs.includes("jc-university") && appJs.includes("p-university") && appJs.includes("universityDatalistHtml"), "");
+  check("client ships dataset autocomplete on signup and profile university fields", appJs.includes("jc-university") && appJs.includes("p-university") && appJs.includes("setupUniversityAutocomplete") && appJs.includes("/data/us-colleges.json") && !appJs.includes("universityDatalistHtml"), "");
+  check("client ships the unverified marker for admin", appJs.includes("(unverified)"), "");
   check("client ships the campus badge and exact campus crew line", appJs.includes("campusBadgeHtml") && appJs.includes("Your campus crew:") && appJs.includes("Campus: VCU") === false && appJs.includes("m.campusCrew.university"), "");
   check("client ships university in admin application details", appJs.includes("University:") && appJs.includes("u.creator.university || u.university"), "");
   check("client ships the student-status selects and admin suffix", appJs.includes("jc-university-status") && appJs.includes("p-university-status") && appJs.includes("universityStatusSuffix") && appJs.includes("Your university (if you are a student now)"), "");

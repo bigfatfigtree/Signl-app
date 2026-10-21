@@ -608,6 +608,7 @@ const UNIVERSITY_ALIASES = {
   "college of william and mary": "William & Mary",
   "william and mary": "William & Mary",
   "north carolina state university": "NC State University",
+  "north carolina state university at raleigh": "NC State University",
   "north carolina state": "NC State University",
   ncsu: "NC State University",
   "university of north carolina at chapel hill": "UNC Chapel Hill",
@@ -627,6 +628,58 @@ function normalizeUniversity(value) {
   if (!clean) return "";
   const key = clean.toLowerCase().replace(/&/g, " and ").replace(/\./g, "").replace(/\s+/g, " ");
   return UNIVERSITY_ALIASES[key] || clean.slice(0, 120);
+}
+
+function universityKey(value) {
+  if (typeof value !== "string") return "";
+  return value.trim().replace(/\s+/g, " ").toLowerCase().replace(/&/g, " and ").replace(/\./g, "").replace(/\s+/g, " ");
+}
+
+// Dataset-driven university resolution (Jeff, 2026-10-21): the
+// bundled IPEDS institution directory (US Dept of Education, the
+// College Scorecard source data; scripts/build-colleges.mjs) is
+// the canonical list. A submitted value resolves, in order: the
+// shipped alias map (our launch-market canonicals, so records
+// from the 16-school era keep their stored names and cohorts),
+// an exact dataset name, then a dataset alias. A hit stores the
+// canonical name plus the dataset city/state and counts as
+// verified. A miss is free entry: stored as typed and flagged
+// universityUnverified so admin can see it was never matched.
+let collegesCache = null;
+function collegesData() {
+  if (collegesCache) return collegesCache;
+  let list = [];
+  try { list = require("./us-colleges.json"); } catch (e) { list = []; }
+  const byName = new Map();
+  const byAlias = new Map();
+  const byCanonical = new Map();
+  for (const rec of Array.isArray(list) ? list : []) {
+    byName.set(universityKey(rec.n), rec);
+    for (const a of rec.a || []) {
+      const k = universityKey(a);
+      if (k && !byAlias.has(k)) byAlias.set(k, rec);
+    }
+    byCanonical.set(normalizeUniversity(rec.n), rec);
+  }
+  collegesCache = { list: Array.isArray(list) ? list : [], byName, byAlias, byCanonical };
+  return collegesCache;
+}
+
+function resolveUniversity(value) {
+  const clean = typeof value === "string" ? value.trim().replace(/\s+/g, " ").slice(0, 160) : "";
+  if (!clean) return { name: "", verified: false, city: "", state: "" };
+  const data = collegesData();
+  const key = universityKey(clean);
+  const aliasHit = UNIVERSITY_ALIASES[key];
+  if (aliasHit) {
+    const rec = data.byCanonical.get(aliasHit) || data.byName.get(universityKey(aliasHit));
+    return { name: aliasHit, verified: true, city: rec ? rec.c : "", state: rec ? rec.s : "" };
+  }
+  const byName = data.byName.get(key);
+  if (byName) return { name: byName.n, verified: true, city: byName.c, state: byName.s };
+  const byAlias = data.byAlias.get(key);
+  if (byAlias) return { name: normalizeUniversity(byAlias.n), verified: true, city: byAlias.c, state: byAlias.s };
+  return { name: clean.slice(0, 120), verified: false, city: "", state: "" };
 }
 
 function universityOfRecord(user) {
@@ -4574,6 +4627,11 @@ async function handleRegister(event) {
   const signupSource = typeof b.signupSource === "string" ? b.signupSource.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 40) : "";
   if (signupSource) user.signupSource = signupSource;
 
+  // University resolution runs once here; both creator record
+  // builders below read it, so a dataset pick, an alias, and a
+  // free-typed school all land in the same canonical shape.
+  const uniResolved = resolveUniversity(b.university);
+
   if (role === "creator" && quickClaim) {
     // Step one of the two-step claim: the record carries the
     // handle, the four agreements, and defaults for everything
@@ -4609,7 +4667,10 @@ async function handleRegister(event) {
       bestWork: [],
       maxVisitsPerWeek: 3,
       neighborhood: "",
-      university: normalizeUniversity(b.university),
+      university: uniResolved.name,
+      universityCity: uniResolved.city,
+      universityState: uniResolved.state,
+      universityUnverified: uniResolved.name ? !uniResolved.verified : false,
       universityStatus: normalizeUniversityStatus(b.universityStatus),
       topAudienceCities: [],
       localAudiencePct: null,
@@ -4713,7 +4774,10 @@ async function handleRegister(event) {
       // Optional free text; never required, never validated against a
       // list, because neighborhoods are local knowledge.
       neighborhood: typeof b.neighborhood === "string" ? b.neighborhood.trim().slice(0, 80) : "",
-      university: normalizeUniversity(b.university),
+      university: uniResolved.name,
+      universityCity: uniResolved.city,
+      universityState: uniResolved.state,
+      universityUnverified: uniResolved.name ? !uniResolved.verified : false,
       universityStatus: normalizeUniversityStatus(b.universityStatus),
       topAudienceCities: cleanStringList(b.topAudienceCities, null, 5),
       localAudiencePct: localPct,
@@ -4783,6 +4847,9 @@ async function handleRegister(event) {
     user.creator.university = user.university;
     user.universityStatus = normalizeUniversityStatus(user.creator.universityStatus);
     user.creator.universityStatus = user.universityStatus;
+    user.universityCity = user.creator.universityCity || "";
+    user.universityState = user.creator.universityState || "";
+    user.universityUnverified = user.creator.universityUnverified === true;
     // The stored completeness flag, computed from the record by
     // the same rule the roster gates read: a full-form
     // registration lands complete, a quick claim lands incomplete.
@@ -5292,10 +5359,16 @@ async function route(event) {
         c.neighborhood = nb;
       }
       if (b.university !== undefined) {
-        const university = normalizeUniversity(b.university);
-        changes.university = [universityOfRecord(user), university];
-        c.university = university;
-        user.university = university;
+        const resolved = resolveUniversity(b.university);
+        changes.university = [universityOfRecord(user), resolved.name];
+        c.university = resolved.name;
+        user.university = resolved.name;
+        c.universityCity = resolved.city;
+        c.universityState = resolved.state;
+        user.universityCity = resolved.city;
+        user.universityState = resolved.state;
+        c.universityUnverified = resolved.name ? !resolved.verified : false;
+        user.universityUnverified = c.universityUnverified;
       }
       if (b.universityStatus !== undefined) {
         const status = normalizeUniversityStatus(b.universityStatus);
@@ -5540,8 +5613,9 @@ async function route(event) {
         if (u.role === "creator") {
           pub.university = universityOfRecord(u);
           pub.universityStatus = universityStatusOfRecord(u);
+          pub.universityUnverified = u.universityUnverified === true || !!(u.creator && u.creator.universityUnverified === true);
           pub.campusBadge = campusBadgeFor(u);
-          if (pub.creator) pub.creator = { ...pub.creator, university: pub.university, universityStatus: pub.universityStatus };
+          if (pub.creator) pub.creator = { ...pub.creator, university: pub.university, universityStatus: pub.universityStatus, universityUnverified: pub.universityUnverified };
           pub.foundingPriority = approvedRank.get(u.id) || null;
           pub.queuePosition = pendingRank.get(u.id) || null;
           pub.momentum = momentum.summaryFor(u);
@@ -7519,4 +7593,4 @@ async function route(event) {
 
 // The email builders are exported alongside the router so the verify
 // suites can assert on the exact copy a creator receives.
-module.exports = { route, approvalEmail, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, profileCompleteOf, profileCompletionFor, campaignEmail, crossoverEmail, campaignEmailFor, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, STANDARD_VISIT, visitRightsForPlan, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor };
+module.exports = { route, approvalEmail, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, profileCompleteOf, profileCompletionFor, campaignEmail, crossoverEmail, campaignEmailFor, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, STANDARD_VISIT, visitRightsForPlan, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData };
