@@ -568,6 +568,83 @@ function audienceView(creator) {
   return { total: platforms.reduce((s, p) => s + p.count, 0), platforms };
 }
 
+// ---------- Campus identity (Jeff, 2026-10-21) ----------
+// A creator may name the university they attend. It is optional
+// profile color, never a completion gate: signup and profile edit
+// accept free text, the datalist suggests the schools SIGNL is
+// actively recruiting around, and the stored value is mirrored on
+// the user record and the creator profile so every surface reads
+// the same school. Creators from the same school form a campus
+// badge, and referrals between students at the same school form a
+// campus crew on the referrer's dashboard. No separate campus
+// reward exists: the normal +3/+10 referral Momentum and the
+// specced milestone badges are the whole incentive system.
+const UNIVERSITY_OPTIONS = [
+  "VCU",
+  "Virginia State University",
+  "University of Richmond",
+  "Old Dominion University",
+  "Norfolk State University",
+  "Hampton University",
+  "Christopher Newport University",
+  "William & Mary",
+  "NC State University",
+  "Duke University",
+  "UNC Chapel Hill",
+  "Howard University",
+  "George Washington University",
+  "American University",
+  "George Mason University",
+  "Georgetown University",
+];
+const UNIVERSITY_ALIASES = {
+  "virginia commonwealth university": "VCU",
+  "virginia commonwealth": "VCU",
+  "virginia state": "Virginia State University",
+  odu: "Old Dominion University",
+  "old dominion": "Old Dominion University",
+  "norfolk state": "Norfolk State University",
+  "christopher newport": "Christopher Newport University",
+  "college of william and mary": "William & Mary",
+  "william and mary": "William & Mary",
+  "north carolina state university": "NC State University",
+  "north carolina state": "NC State University",
+  ncsu: "NC State University",
+  "university of north carolina at chapel hill": "UNC Chapel Hill",
+  "university of north carolina chapel hill": "UNC Chapel Hill",
+  unc: "UNC Chapel Hill",
+  gw: "George Washington University",
+  gwu: "George Washington University",
+  "george washington": "George Washington University",
+  "american u": "American University",
+  gmu: "George Mason University",
+  "george mason": "George Mason University",
+};
+
+function normalizeUniversity(value) {
+  if (typeof value !== "string") return "";
+  const clean = value.trim().replace(/\s+/g, " ").slice(0, 160);
+  if (!clean) return "";
+  const key = clean.toLowerCase().replace(/&/g, " and ").replace(/\./g, "").replace(/\s+/g, " ");
+  return UNIVERSITY_ALIASES[key] || clean.slice(0, 120);
+}
+
+function universityOfRecord(user) {
+  if (!user) return "";
+  return normalizeUniversity((user.creator && user.creator.university) || user.university || "");
+}
+
+function sameUniversity(a, b) {
+  const left = normalizeUniversity(a);
+  const right = normalizeUniversity(b);
+  return !!left && !!right && left.toLowerCase() === right.toLowerCase();
+}
+
+function campusBadgeText(value) {
+  const university = normalizeUniversity(value);
+  return university ? `Campus: ${university}` : null;
+}
+
 // ---------- small helpers ----------
 
 function json(statusCode, obj, extraHeaders) {
@@ -789,7 +866,7 @@ function createMomentum(data) {
   }
 
   function detailFor(user) {
-    const empty = { signups: 0, approved: 0, points: 0, ledger: [], checklist: [], floorApplied: false };
+    const empty = { signups: 0, approved: 0, points: 0, ledger: [], checklist: [], floorApplied: false, campusCrew: null };
     if (!user || user.role !== "creator" || !user.creator) return empty;
     const c = user.creator;
     const ledger = [];
@@ -803,6 +880,29 @@ function createMomentum(data) {
       push("referral_signup", `Creator joined through your invite link (@${(s.creator && s.creator.handle) || "creator"})`, MOMENTUM_POINTS.referralSignup, s.createdAt);
       if (s.role === "creator" && s.status === "approved" && !isTester(s)) {
         push("referral_approved", `A creator you recruited was approved (@${(s.creator && s.creator.handle) || "creator"})`, MOMENTUM_POINTS.referralApproved, s.reviewedAt || s.createdAt);
+      }
+    }
+
+    // Campus crew: the slice of this creator's credited referrals
+    // who named the SAME university. This is a display grouping of
+    // the existing referral list, not a second reward system. It
+    // appears only when the creator has a university and at least
+    // one same-school creator arrived through their invite link.
+    const ownUniversity = universityOfRecord(user);
+    let campusCrew = null;
+    if (ownUniversity && handleKey) {
+      const crew = users
+        .filter((candidate) => candidate.id !== user.id && candidate.role === "creator" && candidate.creator && String(candidate.referredBy || "").trim().toLowerCase() === handleKey && sameUniversity(universityOfRecord(candidate), ownUniversity))
+        .slice()
+        .sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
+      if (crew.length) {
+        campusCrew = {
+          university: ownUniversity,
+          count: crew.length,
+          signups: crew.length,
+          approved: crew.filter((candidate) => candidate.status === "approved" && !isTester(candidate)).length,
+          creators: crew.map((candidate) => ({ userId: candidate.id, handle: candidate.creator.handle || "", status: candidate.status })),
+        };
       }
     }
 
@@ -934,12 +1034,13 @@ function createMomentum(data) {
       floorApplied: rawTotal < 0,
       ledger: effective,
       checklist,
+      campusCrew,
     };
   }
 
   function summaryFor(user) {
     const d = detailFor(user);
-    return { signups: d.signups, approved: d.approved, points: d.points };
+    return { signups: d.signups, approved: d.approved, points: d.points, campusCrew: d.campusCrew };
   }
 
   return { detailFor, summaryFor };
@@ -1712,6 +1813,8 @@ async function rankApplications(apps) {
         userId: c.id,
         name: c.name,
         handle: c.creator.handle,
+        university: universityOfRecord(c),
+        campusBadge: campusBadgeText(universityOfRecord(c)),
         tierBand: normalizeTierBand(c.creator.tierBand),
         localAudiencePct: c.creator.localAudiencePct === undefined ? null : c.creator.localAudiencePct,
         totalAudience: audienceTotalOf(c.creator),
@@ -1992,6 +2095,7 @@ async function publicCreator(u, viewer, foundingPriority) {
   const trackRecord = await creatorTrackRecord(u.id);
   const reviewList = (await creatorReviews(u.id)).map(reviewDisplay);
   const rating = ratingFieldsOf(reviewList);
+  const university = universityOfRecord(u);
   let isFavorite = false;
   if (viewer && viewer.role === "business") {
     isFavorite = !!(await store.get(`favorite:${viewer.id}:${u.id}`));
@@ -2002,6 +2106,8 @@ async function publicCreator(u, viewer, foundingPriority) {
     market: u.market,
     city: u.city || "",
     neighborhood: (u.creator && u.creator.neighborhood) || "",
+    university,
+    campusBadge: campusBadgeText(university),
     createdAt: u.createdAt,
     foundingBand: foundingPriority === undefined ? null : foundingBand(foundingPriority),
     photoUrl: u.creator && u.creator.hasPhoto ? `/api/users/${u.id}/photo` : null,
@@ -2009,7 +2115,7 @@ async function publicCreator(u, viewer, foundingPriority) {
     // defaults true for legacy records, paidRate is a number or
     // null (null = no paid bookings at any price).
     profile: u.creator
-      ? { ...u.creator, compOpen: u.creator.compOpen !== false, paidRate: typeof u.creator.paidRate === "number" && u.creator.paidRate > 0 ? u.creator.paidRate : null }
+      ? { ...u.creator, university, compOpen: u.creator.compOpen !== false, paidRate: typeof u.creator.paidRate === "number" && u.creator.paidRate > 0 ? u.creator.paidRate : null }
       : u.creator,
     totalAudience: audienceTotalOf(u.creator || {}),
     audienceStack: audienceView(u.creator || {}).platforms,
@@ -2060,10 +2166,13 @@ async function publicProfilePayload(u) {
   const rating = ratingFieldsOf(reviewList);
   const showPublicRating = rating.ratingCount >= PUBLIC_RATING_MIN_COUNT;
   const unlisted = u.market === UNLISTED;
+  const university = universityOfRecord(u);
   const audience = audienceView(c);
   return {
     name: u.name,
     handle: c.handle,
+    university,
+    campusBadge: campusBadgeText(university),
     instagramUrl: c.instagramUrl || `https://instagram.com/${c.handle}`,
     photoUrl: c.hasPhoto ? `/api/users/${u.id}/photo` : null,
     market: unlisted ? u.city || "" : u.market,
@@ -4335,6 +4444,7 @@ async function handleRegister(event) {
       bestWork: [],
       maxVisitsPerWeek: 3,
       neighborhood: "",
+      university: normalizeUniversity(b.university),
       topAudienceCities: [],
       localAudiencePct: null,
       localAudienceSource: null,
@@ -4437,6 +4547,7 @@ async function handleRegister(event) {
       // Optional free text; never required, never validated against a
       // list, because neighborhoods are local knowledge.
       neighborhood: typeof b.neighborhood === "string" ? b.neighborhood.trim().slice(0, 80) : "",
+      university: normalizeUniversity(b.university),
       topAudienceCities: cleanStringList(b.topAudienceCities, null, 5),
       localAudiencePct: localPct,
       localAudienceSource: "Self-reported",
@@ -4497,6 +4608,12 @@ async function handleRegister(event) {
   }
 
   if (role === "creator") {
+    // Mirror the campus field at the user-record level as well as
+    // on the creator profile: signup, admin, and referral cohort
+    // reads can then find the same canonical school in either
+    // place, and profile edit keeps the two in sync.
+    user.university = normalizeUniversity(user.creator.university);
+    user.creator.university = user.university;
     // The stored completeness flag, computed from the record by
     // the same rule the roster gates read: a full-form
     // registration lands complete, a quick claim lands incomplete.
@@ -4516,7 +4633,7 @@ async function handleRegister(event) {
     market: user.market,
     data:
       role === "creator"
-        ? { quickClaim: !!quickClaim, profileComplete: user.creator.profileComplete === true, handle: user.creator.handle, city: user.city, neighborhood: user.creator.neighborhood, state: user.state, country: user.country, unlisted: user.market === UNLISTED, followerCount: user.creator.followerCount, audienceStack: user.creator.audienceStack, totalAudience: user.creator.totalAudience, tierBand: normalizeTierBand(user.creator.tierBand), suggestedTier: normalizeTierBand(user.creator.suggestedTier), localAudiencePct: user.creator.localAudiencePct, localAudienceSource: user.creator.localAudienceSource, categories: user.creator.categories, compCategories: user.creator.compCategories, openToPaidCampaigns: user.creator.openToPaidCampaigns, agreedPostCompliance: true, termsVersion: TERMS_VERSION, marketingEmailConsent: true, ...(user.referredBy ? { referredBy: user.referredBy } : {}) }
+        ? { quickClaim: !!quickClaim, profileComplete: user.creator.profileComplete === true, handle: user.creator.handle, city: user.city, neighborhood: user.creator.neighborhood, university: user.creator.university, state: user.state, country: user.country, unlisted: user.market === UNLISTED, followerCount: user.creator.followerCount, audienceStack: user.creator.audienceStack, totalAudience: user.creator.totalAudience, tierBand: normalizeTierBand(user.creator.tierBand), suggestedTier: normalizeTierBand(user.creator.suggestedTier), localAudiencePct: user.creator.localAudiencePct, localAudienceSource: user.creator.localAudienceSource, categories: user.creator.categories, compCategories: user.creator.compCategories, openToPaidCampaigns: user.creator.openToPaidCampaigns, agreedPostCompliance: true, termsVersion: TERMS_VERSION, marketingEmailConsent: true, ...(user.referredBy ? { referredBy: user.referredBy } : {}) }
         : { businessName: user.business.businessName, category: user.business.category, plan: user.business.plan, planPriceMonthly: user.business.planPriceMonthly, ...(user.referredBy ? { referredBy: user.referredBy } : {}) },
   });
   if (role === "creator" && !quickClaim) {
@@ -4536,6 +4653,7 @@ async function handleRegister(event) {
         handle: user.creator.handle,
         city: user.city,
         neighborhood: user.creator.neighborhood,
+        university: user.creator.university,
         followerCount: user.creator.followerCount,
         audienceStack: user.creator.audienceStack,
         totalAudience: user.creator.totalAudience,
@@ -4673,6 +4791,7 @@ async function route(event) {
       creatorCategories: CREATOR_CATEGORIES,
       compCategories: COMP_CATEGORIES,
       businessCategories: BUSINESS_CATEGORIES,
+      universities: UNIVERSITY_OPTIONS,
       plans: PLANS,
       paidCampaignsComp: PAID_COMP,
       unlistedMarket: UNLISTED,
@@ -5003,6 +5122,12 @@ async function route(event) {
         changes.neighborhood = [c.neighborhood || "", nb];
         c.neighborhood = nb;
       }
+      if (b.university !== undefined) {
+        const university = normalizeUniversity(b.university);
+        changes.university = [universityOfRecord(user), university];
+        c.university = university;
+        user.university = university;
+      }
       if (b.localAudiencePct !== undefined) {
         const pct = b.localAudiencePct === null || b.localAudiencePct === "" ? null : Math.max(0, Math.min(100, Number(b.localAudiencePct)));
         changes.localAudiencePct = [c.localAudiencePct, pct];
@@ -5026,7 +5151,7 @@ async function route(event) {
       await store.set(`user:${user.id}`, user);
       await logEvent({ type: "profile_updated", actorId: user.id, actorRole: "creator", subjectId: user.id, market: user.market, data: { changes } });
       if (nowComplete && !wasComplete) {
-        await logEvent({ type: "profile_completed", actorId: user.id, actorRole: "creator", subjectId: user.id, market: user.market, data: { via: "completion_flow", handle: c.handle, city: user.city, neighborhood: c.neighborhood, followerCount: c.followerCount, audienceStack: c.audienceStack, totalAudience: c.totalAudience, avgViews: c.avgViews, tierBand: normalizeTierBand(c.tierBand), localAudiencePct: c.localAudiencePct, localAudienceSource: c.localAudienceSource, categories: c.categories, compCategories: c.compCategories, topAudienceCities: c.topAudienceCities, hasTiktok: !!c.tiktokHandle, hasYoutube: !!c.youtubeChannel, facebookUrl: c.facebookUrl, xHandle: c.xHandle, xUrl: c.xUrl, linkedinUrl: c.linkedinUrl, hasPhoto: !!c.hasPhoto, openToPaidCampaigns: c.openToPaidCampaigns } });
+        await logEvent({ type: "profile_completed", actorId: user.id, actorRole: "creator", subjectId: user.id, market: user.market, data: { via: "completion_flow", handle: c.handle, city: user.city, neighborhood: c.neighborhood, university: c.university, followerCount: c.followerCount, audienceStack: c.audienceStack, totalAudience: c.totalAudience, avgViews: c.avgViews, tierBand: normalizeTierBand(c.tierBand), localAudiencePct: c.localAudiencePct, localAudienceSource: c.localAudienceSource, categories: c.categories, compCategories: c.compCategories, topAudienceCities: c.topAudienceCities, hasTiktok: !!c.tiktokHandle, hasYoutube: !!c.youtubeChannel, facebookUrl: c.facebookUrl, xHandle: c.xHandle, xUrl: c.xUrl, linkedinUrl: c.linkedinUrl, hasPhoto: !!c.hasPhoto, openToPaidCampaigns: c.openToPaidCampaigns } });
       }
       if (changes.localAudiencePct) {
         await logEvent({ type: "local_audience_updated", actorId: user.id, actorRole: "creator", subjectId: user.id, market: user.market, data: { from: changes.localAudiencePct[0], to: changes.localAudiencePct[1], source: "Self-reported" } });
@@ -5238,6 +5363,9 @@ async function route(event) {
       const attach = (u) => {
         const pub = publicUser(u);
         if (u.role === "creator") {
+          pub.university = universityOfRecord(u);
+          pub.campusBadge = campusBadgeText(pub.university);
+          if (pub.creator) pub.creator = { ...pub.creator, university: pub.university };
           pub.foundingPriority = approvedRank.get(u.id) || null;
           pub.queuePosition = pendingRank.get(u.id) || null;
           pub.momentum = momentum.summaryFor(u);
@@ -7215,4 +7343,4 @@ async function route(event) {
 
 // The email builders are exported alongside the router so the verify
 // suites can assert on the exact copy a creator receives.
-module.exports = { route, approvalEmail, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, profileCompleteOf, profileCompletionFor, campaignEmail, crossoverEmail, campaignEmailFor, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, STANDARD_VISIT, visitRightsForPlan, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine };
+module.exports = { route, approvalEmail, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, profileCompleteOf, profileCompletionFor, campaignEmail, crossoverEmail, campaignEmailFor, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, STANDARD_VISIT, visitRightsForPlan, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText };
