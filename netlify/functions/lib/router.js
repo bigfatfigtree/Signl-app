@@ -645,6 +645,40 @@ function campusBadgeText(value) {
   return university ? `Campus: ${university}` : null;
 }
 
+// Student status gate (Jeff, 2026-10-21): the campus badge is for
+// CURRENT students only. The status is captured beside the
+// university field, stored normalized on the user record and the
+// creator profile (kept in sync like the university itself), and
+// the badge computation reads it: university set AND status
+// current_student earns the badge; alumni, not-a-student, and
+// unset statuses earn none.
+const UNIVERSITY_STATUSES = ["current_student", "alumni", "not_student"];
+const UNIVERSITY_STATUS_LABELS = { current_student: "Current student", alumni: "Alumni", not_student: "Not a student" };
+
+function normalizeUniversityStatus(value) {
+  if (typeof value !== "string") return "";
+  const key = value.trim().toLowerCase().replace(/[\s-]+/g, "_");
+  if (["current_student", "current", "student"].includes(key)) return "current_student";
+  if (["alumni", "alumnus", "alumna", "graduate"].includes(key)) return "alumni";
+  if (["not_student", "not_a_student", "not", "none", "no"].includes(key)) return "not_student";
+  return "";
+}
+
+function universityStatusOfRecord(user) {
+  if (!user) return "";
+  return normalizeUniversityStatus((user.creator && user.creator.universityStatus) || user.universityStatus || "");
+}
+
+function universityStatusLabel(status) {
+  return UNIVERSITY_STATUS_LABELS[normalizeUniversityStatus(status)] || "";
+}
+
+function campusBadgeFor(user) {
+  const university = universityOfRecord(user);
+  if (!university) return null;
+  return universityStatusOfRecord(user) === "current_student" ? `Campus: ${university}` : null;
+}
+
 // ---------- small helpers ----------
 
 function json(statusCode, obj, extraHeaders) {
@@ -1929,7 +1963,8 @@ async function rankApplications(apps) {
         name: c.name,
         handle: c.creator.handle,
         university: universityOfRecord(c),
-        campusBadge: campusBadgeText(universityOfRecord(c)),
+        universityStatus: universityStatusOfRecord(c),
+        campusBadge: campusBadgeFor(c),
         tierBand: normalizeTierBand(c.creator.tierBand),
         localAudiencePct: c.creator.localAudiencePct === undefined ? null : c.creator.localAudiencePct,
         totalAudience: audienceTotalOf(c.creator),
@@ -2224,7 +2259,8 @@ async function publicCreator(u, viewer, foundingPriority) {
     city: u.city || "",
     neighborhood: (u.creator && u.creator.neighborhood) || "",
     university,
-    campusBadge: campusBadgeText(university),
+    universityStatus: universityStatusOfRecord(u),
+    campusBadge: campusBadgeFor(u),
     createdAt: u.createdAt,
     foundingBand: foundingPriority === undefined ? null : foundingBand(foundingPriority),
     photoUrl: u.creator && u.creator.hasPhoto ? `/api/users/${u.id}/photo` : null,
@@ -2289,7 +2325,7 @@ async function publicProfilePayload(u) {
     name: u.name,
     handle: c.handle,
     university,
-    campusBadge: campusBadgeText(university),
+    campusBadge: campusBadgeFor(u),
     instagramUrl: c.instagramUrl || `https://instagram.com/${c.handle}`,
     photoUrl: c.hasPhoto ? `/api/users/${u.id}/photo` : null,
     market: unlisted ? u.city || "" : u.market,
@@ -4574,6 +4610,7 @@ async function handleRegister(event) {
       maxVisitsPerWeek: 3,
       neighborhood: "",
       university: normalizeUniversity(b.university),
+      universityStatus: normalizeUniversityStatus(b.universityStatus),
       topAudienceCities: [],
       localAudiencePct: null,
       localAudienceSource: null,
@@ -4677,6 +4714,7 @@ async function handleRegister(event) {
       // list, because neighborhoods are local knowledge.
       neighborhood: typeof b.neighborhood === "string" ? b.neighborhood.trim().slice(0, 80) : "",
       university: normalizeUniversity(b.university),
+      universityStatus: normalizeUniversityStatus(b.universityStatus),
       topAudienceCities: cleanStringList(b.topAudienceCities, null, 5),
       localAudiencePct: localPct,
       localAudienceSource: "Self-reported",
@@ -4743,6 +4781,8 @@ async function handleRegister(event) {
     // place, and profile edit keeps the two in sync.
     user.university = normalizeUniversity(user.creator.university);
     user.creator.university = user.university;
+    user.universityStatus = normalizeUniversityStatus(user.creator.universityStatus);
+    user.creator.universityStatus = user.universityStatus;
     // The stored completeness flag, computed from the record by
     // the same rule the roster gates read: a full-form
     // registration lands complete, a quick claim lands incomplete.
@@ -5257,6 +5297,12 @@ async function route(event) {
         c.university = university;
         user.university = university;
       }
+      if (b.universityStatus !== undefined) {
+        const status = normalizeUniversityStatus(b.universityStatus);
+        changes.universityStatus = [universityStatusOfRecord(user), status];
+        c.universityStatus = status;
+        user.universityStatus = status;
+      }
       if (b.localAudiencePct !== undefined) {
         const pct = b.localAudiencePct === null || b.localAudiencePct === "" ? null : Math.max(0, Math.min(100, Number(b.localAudiencePct)));
         changes.localAudiencePct = [c.localAudiencePct, pct];
@@ -5493,8 +5539,9 @@ async function route(event) {
         const pub = publicUser(u);
         if (u.role === "creator") {
           pub.university = universityOfRecord(u);
-          pub.campusBadge = campusBadgeText(pub.university);
-          if (pub.creator) pub.creator = { ...pub.creator, university: pub.university };
+          pub.universityStatus = universityStatusOfRecord(u);
+          pub.campusBadge = campusBadgeFor(u);
+          if (pub.creator) pub.creator = { ...pub.creator, university: pub.university, universityStatus: pub.universityStatus };
           pub.foundingPriority = approvedRank.get(u.id) || null;
           pub.queuePosition = pendingRank.get(u.id) || null;
           pub.momentum = momentum.summaryFor(u);
@@ -7472,4 +7519,4 @@ async function route(event) {
 
 // The email builders are exported alongside the router so the verify
 // suites can assert on the exact copy a creator receives.
-module.exports = { route, approvalEmail, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, profileCompleteOf, profileCompletionFor, campaignEmail, crossoverEmail, campaignEmailFor, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, STANDARD_VISIT, visitRightsForPlan, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText };
+module.exports = { route, approvalEmail, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, profileCompleteOf, profileCompletionFor, campaignEmail, crossoverEmail, campaignEmailFor, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, STANDARD_VISIT, visitRightsForPlan, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor };

@@ -3,3 +3,4 @@ node_modules/
 .localdb.json.tmp
 .netlify/
 .DS_Store
+node_modules/

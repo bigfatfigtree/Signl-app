@@ -202,15 +202,25 @@ function universityDatalistHtml(id) {
   return `<datalist id="${esc(id)}">${schools.map((school) => `<option value="${esc(school)}"></option>`).join("")}</datalist>`;
 }
 
+function universityStatusSuffix(u) {
+  // Admin detail helper: " (Current student)" / " (Alumni)" /
+  // " (Not a student)" beside the university, empty when unset.
+  const s = (u && u.universityStatus) || (u && u.creator && u.creator.universityStatus) || "";
+  const label = { current_student: "Current student", alumni: "Alumni", not_student: "Not a student" }[s] || "";
+  return label ? ` (${label})` : "";
+}
+
 function campusBadgeHtml(source) {
   if (!source) return "";
   let badge = "";
   if (typeof source === "string") badge = source;
-  else if (source.campusBadge) badge = source.campusBadge;
-  else {
-    const university = source.university || (source.profile && source.profile.university) || (source.creator && source.creator.university) || "";
-    badge = university ? `Campus: ${university}` : "";
-  }
+  // The server computes the badge under the student-status gate
+  // (current students only): when the field is present, even as
+  // null, it is the whole answer. Never re-derive it from the
+  // university alone, or alumni would get their badge back.
+  else if ("campusBadge" in source) badge = source.campusBadge || "";
+  else if (source.profile && "campusBadge" in source.profile) badge = source.profile.campusBadge || "";
+  else if (source.creator && "campusBadge" in source.creator) badge = source.creator.campusBadge || "";
   return badge ? ` <span class="badge info">${esc(badge)}</span>` : "";
 }
 
@@ -931,7 +941,8 @@ function renderJoinCreator() {
         </div>
       </div>
       <div class="field"><label>Your neighborhood or area (optional)</label><input id="jc-neighborhood" placeholder="For example: Oceanfront, Ghent, Town Center" maxlength="80"><p class="small muted">The part of town you actually post from. Businesses search by neighborhood, so this helps the right ones find you.</p></div>
-      <div class="field"><label>Your university (optional)</label><input id="jc-university" list="jc-university-options" placeholder="Start typing your school" maxlength="120">${universityDatalistHtml("jc-university-options")}<p class="small muted">If you attend one, adding it puts a campus badge on your profile and groups same-school referrals into your campus crew.</p></div>
+      <div class="field"><label>Your university (if you are a student now)</label><input id="jc-university" list="jc-university-options" placeholder="Start typing your school" maxlength="120">${universityDatalistHtml("jc-university-options")}<p class="small muted">Current students who add their school get a campus badge on their profile, and same-school referrals group into your campus crew.</p></div>
+      <div class="field"><label>Student status (optional)</label><select id="jc-university-status"><option value="">Select one</option><option value="current_student">Current student</option><option value="alumni">Alumni</option><option value="not_student">Not a student</option></select><p class="small muted">The campus badge is for current students. Alumni and everyone else still get the campus crew grouping.</p></div>
       <div class="form-2col">
         <div class="field"><label>Instagram handle (required)</label><input id="jc-handle" placeholder="yourhandle" required value="${esc(pf.handle || "")}" oninput="document.getElementById('jc-ig-link').textContent = this.value ? 'instagram.com/' + this.value.replace(/^@/, '') : ''"><p class="small muted" id="jc-ig-link"></p></div>
         <div class="field"><label>TikTok handle (optional)</label><input id="jc-tiktok" placeholder="yourhandle"></div>
@@ -1061,6 +1072,7 @@ async function doRegisterCreator(e) {
       city: isUnlisted ? undefined : document.getElementById("jc-city").value,
       neighborhood: document.getElementById("jc-neighborhood").value,
       university: document.getElementById("jc-university").value,
+      universityStatus: document.getElementById("jc-university-status").value || undefined,
       customCity: isUnlisted ? customCity : undefined,
       customCountry: isUnlisted ? customCountry : undefined,
       customState: isUnlisted ? customState : undefined,
@@ -1520,7 +1532,7 @@ function creatorProfileDetailHtml(c, preview) {
             <span class="cc-chip market">${esc(c.market)}</span>
             ${c.city ? `<span class="cc-chip">${esc(c.city)}</span>` : ""}
             ${c.neighborhood ? `<span class="cc-chip">${esc(c.neighborhood)}</span>` : ""}
-            ${campusBadgeHtml(c) ? `<span class="cc-chip">${esc(c.campusBadge || `Campus: ${(c.profile && c.profile.university) || c.university}`)}</span>` : ""}
+            ${campusBadgeHtml(c) ? `<span class="cc-chip">${esc(c.campusBadge || (c.profile && c.profile.campusBadge) || "")}</span>` : ""}
             ${c.foundingBand ? `<span class="cc-chip">Founding creator, first ${c.foundingBand} in market</span>` : ""}
           </div>
         </div>
@@ -1619,7 +1631,7 @@ function creatorCard(c, viewer, opts) {
         <span class="cc-chip market">${esc(c.market)}</span>
         ${c.city ? `<span class="cc-chip">${esc(c.city)}</span>` : ""}
         ${c.neighborhood ? `<span class="cc-chip">${esc(c.neighborhood)}</span>` : ""}
-        ${campusBadgeHtml(c) ? `<span class="cc-chip">${esc(c.campusBadge || `Campus: ${(c.profile && c.profile.university) || c.university}`)}</span>` : ""}
+        ${campusBadgeHtml(c) ? `<span class="cc-chip">${esc(c.campusBadge || (c.profile && c.profile.campusBadge) || "")}</span>` : ""}
         ${c.foundingBand ? `<span class="cc-chip">Founding creator, first ${c.foundingBand} in market</span>` : ""}
       </div>
     </div>
@@ -2251,7 +2263,8 @@ function creatorProfileHtml(u) {
           : `<div class="field"><label>Home city (${esc(u.market)})</label><select id="p-city">${cityOptions(u.market, u.city || "")}</select></div>`}
       </div>
       <div class="field"><label>Your neighborhood or area</label><input id="p-neighborhood" value="${esc(c.neighborhood || "")}" placeholder="Optional, for example: Oceanfront, Ghent, Town Center" maxlength="80"><p class="small muted">Businesses search by neighborhood. Keep it to the area you actually post from.</p></div>
-      <div class="field"><label>Your university (optional)</label><input id="p-university" list="p-university-options" value="${esc(c.university || u.university || "")}" placeholder="Start typing your school" maxlength="120">${universityDatalistHtml("p-university-options")}<p class="small muted">Adding your school puts a campus badge on your profile and groups same-school referrals into your campus crew.${(c.university || u.university) ? ` Current badge: <strong>Campus: ${esc(c.university || u.university)}</strong>.` : ""}</p></div>
+      <div class="field"><label>Your university (if you are a student now)</label><input id="p-university" list="p-university-options" value="${esc(c.university || u.university || "")}" placeholder="Start typing your school" maxlength="120">${universityDatalistHtml("p-university-options")}<p class="small muted">Adding your school groups same-school referrals into your campus crew.${(c.university || u.university) && (c.universityStatus || u.universityStatus) === "current_student" ? ` Current badge: <strong>Campus: ${esc(c.university || u.university)}</strong>.` : ""}</p></div>
+      <div class="field"><label>Student status (optional)</label><select id="p-university-status"><option value=""${!(c.universityStatus || u.universityStatus) ? " selected" : ""}>Select one</option><option value="current_student"${(c.universityStatus || u.universityStatus) === "current_student" ? " selected" : ""}>Current student</option><option value="alumni"${(c.universityStatus || u.universityStatus) === "alumni" ? " selected" : ""}>Alumni</option><option value="not_student"${(c.universityStatus || u.universityStatus) === "not_student" ? " selected" : ""}>Not a student</option></select><p class="small muted">The campus badge is for current students only, so it shows while your status is Current student.</p></div>
       <div class="form-2col">
         <div class="field"><label>TikTok handle</label><input id="p-tiktok" value="${esc(c.tiktokHandle || "")}" placeholder="Optional"></div>
         <div class="field"><label>YouTube channel</label><input id="p-youtube" value="${esc(c.youtubeChannel || "")}" placeholder="Optional"></div>
@@ -2358,6 +2371,7 @@ async function doUpdateCreator(e) {
       city: cityEl ? cityEl.value : cityTextEl ? cityTextEl.value : undefined,
       neighborhood: document.getElementById("p-neighborhood").value,
       university: document.getElementById("p-university").value,
+      universityStatus: document.getElementById("p-university-status").value,
       state: document.getElementById("p-state-text") ? document.getElementById("p-state-text").value : undefined,
       country: document.getElementById("p-country-text") ? document.getElementById("p-country-text").value : undefined,
       tiktokHandle: document.getElementById("p-tiktok").value,
@@ -4338,7 +4352,7 @@ async function loadApplications() {
         ? `<br><span class="badge ${businessAccessState(u) === "active" ? "ok" : "info"}">${businessAccessState(u) === "active" ? "Active" : "Founding list"}</span>`
         : "";
       const detail = u.role === "creator" && u.creator
-        ? `@${esc(u.creator.handle)} &middot; ${fmtNum(u.creator.followerCount)} followers &middot; ${esc(u.creator.tierBand)} &middot; Local: ${u.creator.localAudiencePct === null ? "not reported" : u.creator.localAudiencePct + "% (Self-reported)"} &middot; ${(u.creator.categories || []).map(esc).join(", ")} &middot; Photo: ${u.creator.hasPhoto ? "yes" : "no"} &middot; Socials: IG${u.creator.tiktokHandle ? ", TikTok" : ""}${u.creator.youtubeChannel ? ", YouTube" : ""}${u.creator.facebookUrl ? ", Facebook" : ""}${u.creator.xUrl ? ", X" : ""}${u.creator.linkedinUrl ? ", LinkedIn" : ""}${u.creator.neighborhood ? ` &middot; Area: ${esc(u.creator.neighborhood)}` : ""}${u.creator.university || u.university ? ` &middot; University: ${esc(u.creator.university || u.university)}` : ""}${u.referredBy ? ` &middot; via @${esc(u.referredBy)}` : ""}${u.signupSource ? ` &middot; Source: ${esc(u.signupSource)}` : ""}${u.momentum && u.momentum.signups ? ` &middot; Momentum: ${u.momentum.points} pts (${u.momentum.signups} joined, ${u.momentum.approved} approved)` : ""}`
+        ? `@${esc(u.creator.handle)} &middot; ${fmtNum(u.creator.followerCount)} followers &middot; ${esc(u.creator.tierBand)} &middot; Local: ${u.creator.localAudiencePct === null ? "not reported" : u.creator.localAudiencePct + "% (Self-reported)"} &middot; ${(u.creator.categories || []).map(esc).join(", ")} &middot; Photo: ${u.creator.hasPhoto ? "yes" : "no"} &middot; Socials: IG${u.creator.tiktokHandle ? ", TikTok" : ""}${u.creator.youtubeChannel ? ", YouTube" : ""}${u.creator.facebookUrl ? ", Facebook" : ""}${u.creator.xUrl ? ", X" : ""}${u.creator.linkedinUrl ? ", LinkedIn" : ""}${u.creator.neighborhood ? ` &middot; Area: ${esc(u.creator.neighborhood)}` : ""}${u.creator.university || u.university ? ` &middot; University: ${esc(u.creator.university || u.university)}${universityStatusSuffix(u)}` : ""}${u.referredBy ? ` &middot; via @${esc(u.referredBy)}` : ""}${u.signupSource ? ` &middot; Source: ${esc(u.signupSource)}` : ""}${u.momentum && u.momentum.signups ? ` &middot; Momentum: ${u.momentum.points} pts (${u.momentum.signups} joined, ${u.momentum.approved} approved)` : ""}`
         : u.role === "business" && u.business
           ? `${esc(u.business.businessName)} &middot; ${esc(u.business.category)} &middot; ${esc(u.business.planName)} &middot; Access: ${businessAccessState(u) === "active" ? "Active" : "Founding list"}`
           : "";
