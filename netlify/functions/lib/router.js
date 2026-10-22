@@ -5,7 +5,7 @@ const crypto = require("crypto");
 const store = require("./store");
 const auth = require("./auth");
 const { logEvent, listEvents } = require("./events");
-const { MARKETS, TIERS, CREATOR_CATEGORIES, COMP_CATEGORIES, BUSINESS_CATEGORIES, PLANS, tierForFollowers, normalizeTierBand } = require("./markets");
+const { MARKETS, TIERS, CREATOR_CATEGORIES, COMP_CATEGORIES, BUSINESS_CATEGORIES, PLANS, PROFESSIONS, REALTOR_PROFESSION, tierForFollowers, normalizeTierBand } = require("./markets");
 const { computeLocalImpactScore, summarizeHistory } = require("./score");
 const { emailEnabled, sendEmail } = require("./email");
 const claimEvidence = require("./claim-evidence");
@@ -1776,6 +1776,43 @@ function cleanStringList(value, allowed, maxItems) {
     .slice(0, maxItems || 8);
 }
 
+// Profession + the realtor layer (Jeff, 2026-10-22). Profession is
+// an optional self-description from the fixed everyday list; junk
+// or a missing value stores "". Only REALTOR_PROFESSION carries
+// behavior: it flags the creator as a realtor, which unlocks the
+// neighborhood tags and the brokerage line on the public profile.
+function cleanProfession(value) {
+  const v = typeof value === "string" ? value.trim() : "";
+  return PROFESSIONS.includes(v) ? v : "";
+}
+
+function creatorIsRealtor(c) {
+  return !!c && c.profession === REALTOR_PROFESSION;
+}
+
+// Neighborhood tags (stored as farmAreas): up to 3 short
+// free-text tags for the neighborhoods the realtor works.
+// Accepts an array or a comma-separated
+// string; each tag is whitespace-collapsed, capped at 60 chars,
+// deduped case-insensitively, and the list is capped at 3.
+function cleanFarmAreas(value) {
+  let list = [];
+  if (Array.isArray(value)) list = value;
+  else if (typeof value === "string") list = value.split(",");
+  const seen = new Set();
+  const out = [];
+  for (const raw of list) {
+    const tag = String(raw || "").replace(/\s+/g, " ").trim().slice(0, 60);
+    if (!tag) continue;
+    const key = tag.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(tag);
+    if (out.length >= 3) break;
+  }
+  return out;
+}
+
 // Optional social links beyond Instagram/TikTok/YouTube: Facebook
 // (profile or Page URL), X (handle or URL), LinkedIn (profile URL).
 // Accepts a full URL or a bare handle/slug and stores a canonical URL.
@@ -2492,6 +2529,15 @@ async function publicProfilePayload(u) {
     totalAudience: audience.total,
     audienceStack: audience.platforms,
     categories: c.categories || [],
+    // Realtor layer (Jeff, 2026-10-22): the profession rides the
+    // public payload for every creator; the neighborhood tags
+    // and brokerage line are exposed ONLY while the profile is
+    // realtor-flagged, so a non-realtor payload carries empty
+    // values and renders exactly as before.
+    profession: c.profession || "",
+    isRealtor: creatorIsRealtor(c),
+    farmAreas: creatorIsRealtor(c) ? (c.farmAreas || []) : [],
+    brokerage: creatorIsRealtor(c) ? (c.brokerage || "") : "",
     compCategories: (c.compCategories || []).filter((x) => x !== PAID_COMP),
     compOpen: c.compOpen !== false,
     paidRate: typeof c.paidRate === "number" && c.paidRate > 0 ? c.paidRate : null,
@@ -4987,6 +5033,9 @@ async function handleRegister(event) {
       hasPhoto: false,
       photoUploadedAt: null,
       igConnected: false,
+      profession: "",
+      farmAreas: [],
+      brokerage: "",
     };
   } else if (role === "creator") {
     // The founding creator profile builder. Required: a handle on the
@@ -5108,6 +5157,9 @@ async function handleRegister(event) {
       hasPhoto: false,
       photoUploadedAt: null,
       igConnected: false,
+      profession: cleanProfession(b.profession),
+      farmAreas: [],
+      brokerage: "",
     };
   } else {
     if (b.agreedTerms !== true) return err(400, "Please agree to the Terms of Service and Privacy Policy, and to receiving account and marketing emails from SIGNL.");
@@ -5183,7 +5235,7 @@ async function handleRegister(event) {
     market: user.market,
     data:
       role === "creator"
-        ? { quickClaim: !!quickClaim, profileComplete: user.creator.profileComplete === true, handle: user.creator.handle, primaryPlatform: primaryPlatformOf(user.creator), city: user.city, neighborhood: user.creator.neighborhood, university: user.creator.university, state: user.state, country: user.country, unlisted: user.market === UNLISTED, followerCount: user.creator.followerCount, audienceStack: user.creator.audienceStack, totalAudience: user.creator.totalAudience, tierBand: normalizeTierBand(user.creator.tierBand), suggestedTier: normalizeTierBand(user.creator.suggestedTier), localAudiencePct: user.creator.localAudiencePct, localAudienceSource: user.creator.localAudienceSource, categories: user.creator.categories, compCategories: user.creator.compCategories, openToPaidCampaigns: user.creator.openToPaidCampaigns, agreedPostCompliance: true, termsVersion: TERMS_VERSION, marketingEmailConsent: true, ...(user.referredBy ? { referredBy: user.referredBy } : {}), ...(user.signupSource ? { signupSource: user.signupSource } : {}) }
+        ? { quickClaim: !!quickClaim, profileComplete: user.creator.profileComplete === true, handle: user.creator.handle, primaryPlatform: primaryPlatformOf(user.creator), city: user.city, neighborhood: user.creator.neighborhood, university: user.creator.university, state: user.state, country: user.country, unlisted: user.market === UNLISTED, followerCount: user.creator.followerCount, audienceStack: user.creator.audienceStack, totalAudience: user.creator.totalAudience, tierBand: normalizeTierBand(user.creator.tierBand), suggestedTier: normalizeTierBand(user.creator.suggestedTier), localAudiencePct: user.creator.localAudiencePct, localAudienceSource: user.creator.localAudienceSource, categories: user.creator.categories, compCategories: user.creator.compCategories, openToPaidCampaigns: user.creator.openToPaidCampaigns, profession: user.creator.profession || "", agreedPostCompliance: true, termsVersion: TERMS_VERSION, marketingEmailConsent: true, ...(user.referredBy ? { referredBy: user.referredBy } : {}), ...(user.signupSource ? { signupSource: user.signupSource } : {}) }
         : { businessName: user.business.businessName, category: user.business.category, plan: user.business.plan, planPriceMonthly: user.business.planPriceMonthly, ...(user.referredBy ? { referredBy: user.referredBy } : {}), ...(user.signupSource ? { signupSource: user.signupSource } : {}) },
   });
   // Standing-authority auto-decision (Jeff, 2026-10-22): a creator
@@ -5489,6 +5541,7 @@ async function route(event) {
       markets: MARKETS,
       tiers: TIERS,
       creatorCategories: CREATOR_CATEGORIES,
+      professions: PROFESSIONS,
       compCategories: COMP_CATEGORIES,
       businessCategories: BUSINESS_CATEGORIES,
       universities: UNIVERSITY_OPTIONS,
@@ -5846,6 +5899,28 @@ async function route(event) {
         const nb = String(b.neighborhood || "").trim().slice(0, 80);
         changes.neighborhood = [c.neighborhood || "", nb];
         c.neighborhood = nb;
+      }
+      // Profession + realtor layer (Jeff, 2026-10-22): profession
+      // is optional color from the fixed list; the realtor fields
+      // (neighborhood tags, brokerage) are stored sanitized
+      // whenever sent, and only SURFACE publicly while the
+      // profession is Real estate agent, so switching profession
+      // away from real estate retires the layer without deleting
+      // what the creator typed.
+      if (b.profession !== undefined) {
+        const p = cleanProfession(b.profession);
+        changes.profession = [c.profession || "", p];
+        c.profession = p;
+      }
+      if (b.farmAreas !== undefined) {
+        const farms = cleanFarmAreas(b.farmAreas);
+        changes.farmAreas = [(c.farmAreas || []).length, farms.length];
+        c.farmAreas = farms;
+      }
+      if (b.brokerage !== undefined) {
+        const firm = String(b.brokerage || "").replace(/\s+/g, " ").trim().slice(0, 120);
+        changes.brokerage = [c.brokerage || "", firm];
+        c.brokerage = firm;
       }
       if (b.university !== undefined) {
         const resolved = resolveUniversity(b.university);
@@ -8148,4 +8223,4 @@ async function route(event) {
 
 // The email builders are exported alongside the router so the verify
 // suites can assert on the exact copy a creator receives.
-module.exports = { route, passwordResetEmail, approvalEmail, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, AD_USE_WINDOW_MONTHS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData };
+module.exports = { route, passwordResetEmail, approvalEmail, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, AD_USE_WINDOW_MONTHS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor };

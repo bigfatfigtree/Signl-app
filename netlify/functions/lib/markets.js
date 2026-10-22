@@ -314,6 +314,19 @@ const CREATOR_CATEGORIES = [
   "Local Services", "Other",
 ];
 
+// What the creator does off-platform (profile builder, Jeff,
+// 2026-10-22: the realtor layer). Optional everyday-language
+// self-description; it never gates completeness, offers, or tiers.
+// "Real estate agent" is the one value with product behavior: it
+// flags the profile as a realtor profile (neighborhood tags,
+// brokerage attribution, listing proof sheet).
+const PROFESSIONS = [
+  "Food & drink", "Beauty & style", "Fitness & wellness",
+  "Family & parenting", "Real estate agent",
+  "Photographer / videographer", "Student", "Other",
+];
+const REALTOR_PROFESSION = "Real estate agent";
+
 // What creators would accept as a comp (profile builder).
 const COMP_CATEGORIES = [
   "Restaurant meals", "Drinks & nightlife", "Beauty services",
@@ -378,4 +391,4 @@ const PLANS = [
   },
 ];
 
-module.exports = { MARKETS, TIERS, CREATOR_CATEGORIES, COMP_CATEGORIES, BUSINESS_CATEGORIES, PLANS, tierForFollowers, normalizeTierBand };
+module.exports = { MARKETS, TIERS, CREATOR_CATEGORIES, COMP_CATEGORIES, BUSINESS_CATEGORIES, PLANS, PROFESSIONS, REALTOR_PROFESSION, tierForFollowers, normalizeTierBand };
