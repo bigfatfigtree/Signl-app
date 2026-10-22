@@ -18,7 +18,16 @@ function emailEnabled() {
   return !!(process.env.SIGNL_SMTP_USER && process.env.SIGNL_SMTP_PASS);
 }
 
-function smtpSend({ to, subject, text }) {
+// Marketing-style sends (campaign outreach, and any transactional
+// mail whose copy promises "unsubscribe at any time") carry a real
+// List-Unsubscribe header, so the promise in the copy is one the
+// reader can actually act on from their mail app.
+const UNSUBSCRIBE_ADDR = "hello@joinsignl.com";
+function listUnsubscribeHeader() {
+  return `List-Unsubscribe: <mailto:${UNSUBSCRIBE_ADDR}?subject=unsubscribe>`;
+}
+
+function smtpSend({ to, subject, text, listUnsubscribe }) {
   return new Promise((resolve, reject) => {
     const host = process.env.SIGNL_SMTP_HOST || "smtp.gmail.com";
     const port = parseInt(process.env.SIGNL_SMTP_PORT || "465", 10);
@@ -76,6 +85,7 @@ function smtpSend({ to, subject, text }) {
           `From: ${from}`,
           `To: ${to}`,
           `Subject: ${subject}`,
+          ...(listUnsubscribe ? [listUnsubscribeHeader()] : []),
           "MIME-Version: 1.0",
           "Content-Type: text/plain; charset=utf-8",
           "",
@@ -104,18 +114,18 @@ function smtpSend({ to, subject, text }) {
 // exactly the real SMTP transport.
 const MAIL_STUB = process.env.SIGNL_MAIL_STUB === "1";
 
-async function sendEmail({ to, subject, text }) {
+async function sendEmail({ to, subject, text, listUnsubscribe }) {
   if (MAIL_STUB) {
     if (/stubfail/i.test(String(to))) return { sent: false, queued: false, reason: "stub_failure" };
     return { sent: true, stub: true };
   }
   if (!emailEnabled()) return { sent: false, queued: true, reason: "transport_not_configured" };
   try {
-    await smtpSend({ to, subject, text });
+    await smtpSend({ to, subject, text, listUnsubscribe: !!listUnsubscribe });
     return { sent: true };
   } catch (e) {
     return { sent: false, queued: false, reason: String(e && e.message || e).slice(0, 200) };
   }
 }
 
-module.exports = { emailEnabled, sendEmail };
+module.exports = { emailEnabled, sendEmail, listUnsubscribeHeader, UNSUBSCRIBE_ADDR };

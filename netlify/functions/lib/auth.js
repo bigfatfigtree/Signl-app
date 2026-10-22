@@ -44,6 +44,24 @@ async function destroySession(token) {
   if (token) await store.del(`session:${token}`);
 }
 
+// Revoke every session a user holds (password reset / password
+// change: the credential changed, so every other device signs out).
+// exceptToken keeps the caller's own session alive on a voluntary
+// change; a reset passes nothing and revokes all of them.
+async function revokeSessionsForUser(userId, exceptToken) {
+  const sessions = await store.list("session:");
+  let revoked = 0;
+  for (const s of sessions) {
+    if (s.value && s.value.userId === userId) {
+      const token = s.key.slice("session:".length);
+      if (exceptToken && token === exceptToken) continue;
+      await store.del(s.key);
+      revoked += 1;
+    }
+  }
+  return revoked;
+}
+
 function sessionCookie(token, secure) {
   const parts = [
     `signl_session=${token}`,
@@ -113,6 +131,7 @@ module.exports = {
   createSession,
   getSessionUser,
   destroySession,
+  revokeSessionsForUser,
   sessionCookie,
   clearCookie,
   parseCookies,

@@ -1433,10 +1433,10 @@ async function withFounding(user) {
 // Every outbound email is an event first (the dataset keeps the full
 // record), then a send attempt when the SMTP transport is configured.
 // A missing transport queues the email; it is never reported as sent.
-async function deliverEmail(kind, user, subject, text, band) {
+async function deliverEmail(kind, user, subject, text, band, opts) {
   const base = { kind, to: user.email, subject, band: band || null };
   await logEvent({ type: `${kind}_email_queued`, actorId: user.id, actorRole: user.role, subjectId: user.id, market: user.market || null, data: base });
-  const result = await sendEmail({ to: user.email, subject, text });
+  const result = await sendEmail({ to: user.email, subject, text, listUnsubscribe: !!(opts && opts.listUnsubscribe) });
   if (result.sent) {
     await logEvent({ type: `${kind}_email_sent`, actorId: user.id, actorRole: user.role, subjectId: user.id, market: user.market || null, data: base });
   } else {
@@ -1484,7 +1484,8 @@ function signupConfirmationEmail(user, band) {
       "You agreed to SIGNL's Terms of Service and Privacy Policy, and to receive account and marketing emails from SIGNL. You can unsubscribe from marketing emails at any time.",
       "",
       "National platforms sell reach. We sell regulars.",
-      "The SIGNL team",
+      "Jeff",
+      "Founder, SIGNL",
       "hello@joinsignl.com",
     );
     return { subject, text: lines.join("\n") };
@@ -1511,7 +1512,8 @@ function signupConfirmationEmail(user, band) {
     "You agreed to SIGNL's Terms of Service and Privacy Policy, and to receive account and marketing emails from SIGNL. You can unsubscribe from marketing emails at any time.",
     "",
     "National platforms sell reach. We sell regulars.",
-    "The SIGNL team",
+    "Jeff",
+    "Founder, SIGNL",
     "hello@joinsignl.com",
   );
   return { subject, text: lines.join("\n") };
@@ -1532,7 +1534,7 @@ function completionChecklistLines(user) {
 }
 
 // Step-one confirmation for the quick claim (Jeff, 2026-10-20):
-// the spot is claimed and the place in line is locked; the profile
+// the spot is claimed and the place in line is held; the profile
 // itself is finished after approval, which the email says plainly
 // so nobody mistakes the claim for a finished profile.
 function claimConfirmationEmail(user, band) {
@@ -1546,7 +1548,7 @@ function claimConfirmationEmail(user, band) {
       `Your founding spot in ${user.city} is claimed, and your application is in the review queue. Every application is reviewed by a person.`,
       "Every founding application gets a decision or a clear status within 2 business days.",
     ];
-    if (band) lines.push(`You are in the first ${band} creators to sign up in ${user.city}. Founding spots lock in sign-up order, and that standing never expires.`);
+    if (band) lines.push(`You are in the first ${band} creators to sign up in ${user.city}. Founding spots are held in sign-up order, and that standing never expires.`);
     lines.push(
       "",
       `What happens next: when you are approved, we email you again, and that is when you finish your profile: your home city, your audience counts, your local audience percentage, your categories, and the rest of what businesses see. A finished profile is what makes you visible to businesses, so the approval email is the one to act on.`,
@@ -1575,7 +1577,7 @@ function claimConfirmationEmail(user, band) {
     `Your founding spot in ${user.market} is claimed, and your application is in the review queue. Every application is reviewed by a person.`,
     "Every founding application gets a decision or a clear status within 2 business days.",
   ];
-  if (band) lines.push(`You are in the first ${band} creators to sign up in ${user.market}. Founding spots lock in sign-up order, and that standing never expires.`);
+  if (band) lines.push(`You are in the first ${band} creators to sign up in ${user.market}. Founding spots are held in sign-up order, and that standing never expires.`);
   lines.push(
     "",
     `What happens next: when you are approved, we email you again, and that is when you finish your profile: your home city, your audience counts, your local audience percentage, your categories, and the rest of what businesses see. A finished profile is what makes you visible to businesses, so the approval email is the one to act on. ${user.market} opens to businesses in the next ${LAUNCH_WINDOW_TEXT}, and founding creators with finished profiles get first pick of offers when it does.`,
@@ -1611,7 +1613,7 @@ function profileCompletionReminderEmail(user) {
   const lines = [
     `Hi ${first},`,
     "",
-    `You are approved as a Founding Creator in ${place}, and your founding spot is locked in. One step is still open: your profile is not finished yet, so businesses cannot see you and you cannot take offers.`,
+    `You are approved as a Founding Creator in ${place}, and your founding spot is held in sign-up order. One step is still open: your profile is not finished yet, so businesses cannot see you and you cannot take offers.`,
     "",
     `Still to do: ${missing}.`,
     "Finishing takes a few minutes: sign in, open the Profile tab, and work down the checklist on your dashboard: https://app.joinsignl.com",
@@ -1639,7 +1641,7 @@ function approvalEmail(user, band) {
   // app, then the referral ask (rosterBenefitsLines: their
   // personal invite link, +3 per sign-up, +10 per approval, points
   // ordering the business-facing creator list). Founding spots
-  // lock in sign-up order. Signs as Jeff, per the standing rule
+  // are held in sign-up order. Signs as Jeff, per the standing rule
   // for outbound email.
   const finishLines = (opensLine) => [
     "",
@@ -1660,7 +1662,7 @@ function approvalEmail(user, band) {
       "",
       `Good news: your application was reviewed and approved. You are a Founding Creator for ${user.city}, and your founding status page is live.`,
     ];
-    if (band) lines.push(`You are in the first ${band} to sign up in ${user.city}. Founding spots lock in sign-up order, and when ${user.city} opens, founding sign-ups are first in line for offers.`);
+    if (band) lines.push(`You are in the first ${band} to sign up in ${user.city}. Founding spots are held in sign-up order, and when ${user.city} opens, founding sign-ups are first in line for offers.`);
     lines.push(
       ...finishLines(`${user.city} is not an open market yet. We open new markets where creator sign-ups pile up, and the moment ${user.city} opens, we email you again.`),
       ...rosterBenefitsLines(user, user.city),
@@ -1679,7 +1681,7 @@ function approvalEmail(user, band) {
     "",
     `Good news: your application was reviewed and approved. You are now a Founding Creator in ${user.market}, and your founding status page is live.`,
   ];
-  if (band) lines.push(`You are in the first ${band} founding creators in ${user.market}. Founding spots lock in sign-up order, and founding creators are shown to businesses in that order.`);
+  if (band) lines.push(`You are in the first ${band} founding creators in ${user.market}. Founding spots are held in sign-up order, and founding creators are shown to businesses in that order.`);
   lines.push(
     ...finishLines(`${user.market} opens to businesses in the next ${LAUNCH_WINDOW_TEXT}. The moment it opens, we email you again, and founding creators get first pick of every offer. Your local audience percentage is the number businesses look at first, so keep it honest and current.`),
     ...rosterBenefitsLines(user, user.market),
@@ -3855,7 +3857,7 @@ async function runCampaignSweep(opts = {}) {
       const recipient = batch[i];
       const mail = campaignEmailFor(cfg.id, recipient);
       const messageRef = crypto.randomUUID();
-      const result = await sendEmail({ to: recipient.email, subject: mail.subject, text: mail.text });
+      const result = await sendEmail({ to: recipient.email, subject: mail.subject, text: mail.text, listUnsubscribe: true });
       summary.attempted += 1;
       if (result.sent) {
         recipient.status = "sent";
@@ -4853,7 +4855,11 @@ async function handleRegister(event) {
   if (typeof b.password !== "string" || b.password.length < 10) return err(400, "Password must be at least 10 characters");
   if (!quickClaim && (!b.name || typeof b.name !== "string")) return err(400, "Name is required");
   const unlisted = b.market === UNLISTED;
-  if (unlisted && role !== "creator") return err(400, "Business accounts are tied to a SIGNL market. Pick your market from the list; if your city is not there yet, join as a creator-market signal on joinsignl.com and we will open business accounts when the market launches.");
+  // A business in a not-yet-listed city joins the founding list
+  // exactly the way a creator signals a city (UX audit fix,
+  // 2026-10-22): the record carries their typed city, the account
+  // stays founding-gated like every founding business, and their
+  // sign-up counts toward opening the market. Nobody dead-ends.
   const market = unlisted ? { name: UNLISTED, cities: [] } : marketByName(b.market || "");
   if (!market) return err(400, "Choose one of the SIGNL markets");
   let customCity = "";
@@ -4870,7 +4876,7 @@ async function handleRegister(event) {
 
   const email = b.email.toLowerCase();
   const existing = await store.get(`email:${email}`);
-  if (existing) return err(409, "An account with this email already exists");
+  if (existing) return err(409, "An account with this email already exists. Sign in instead, or use Forgot password on the sign-in page to reset it.");
 
   const { salt, hash } = auth.hashPassword(b.password);
   const id = crypto.randomUUID();
@@ -5259,7 +5265,10 @@ async function handleRegister(event) {
       const summary = await foundingSummary(user);
       const band = foundingBand(summary && summary.queuePosition);
       const mail = quickClaim ? claimConfirmationEmail(user, band) : signupConfirmationEmail(user, band);
-      await deliverEmail("signup_confirmation", user, mail.subject, mail.text, band);
+      // Both step-one confirmations promise "unsubscribe at any
+      // time" in the copy, so the mail carries the List-Unsubscribe
+      // header that makes the promise real.
+      await deliverEmail("signup_confirmation", user, mail.subject, mail.text, band, { listUnsubscribe: true });
     } catch (e) { /* email is best-effort; the queued events tell the story */ }
   }
 
@@ -5296,6 +5305,134 @@ async function handleLogout(event, ctx) {
   if (ctx.token) await auth.destroySession(ctx.token);
   const secure = (event.headers["x-forwarded-proto"] || "").includes("https");
   return json(200, { ok: true }, { "Set-Cookie": auth.clearCookie(secure) });
+}
+
+// ---------- password reset + change (UX audit fix, 2026-10-22) ----------
+// A forgotten password used to be a permanent lockout: no reset
+// route existed, and re-registering the same email just 409ed.
+// The flow: POST /auth/forgot emails a single-use link (token in
+// the URL, only its SHA-256 hash at rest, one hour to live);
+// POST /auth/reset trades a live token for a new password and
+// revokes every session the account holds. The forgot endpoint
+// answers identically whether or not the account exists, and is
+// throttled per email+IP, so it cannot enumerate accounts.
+// SIGNL_RESET_TTL_MS exists so the verify suites can exercise the
+// expiry path without waiting an hour; production leaves it unset.
+const RESET_TTL_MS = (() => {
+  const n = parseInt(process.env.SIGNL_RESET_TTL_MS || "", 10);
+  return Number.isFinite(n) && n > 0 ? n : 60 * 60 * 1000;
+})();
+
+function resetTokenHash(token) {
+  return crypto.createHash("sha256").update(String(token || "")).digest("hex");
+}
+
+function passwordResetEmail(user, resetUrl) {
+  const first = greetingName(user);
+  const subject = "Reset your SIGNL password";
+  const lines = [
+    `Hi ${first},`,
+    "",
+    "We got a request to reset the password on your SIGNL account. Open this link to set a new one:",
+    resetUrl,
+    "",
+    "The link works once and expires in one hour. If you did not ask for a reset, you can ignore this email: your password stays exactly as it is.",
+    "",
+    "National platforms sell reach. We sell regulars.",
+    "Jeff",
+    "Founder, SIGNL",
+    "hello@joinsignl.com",
+  ];
+  return { subject, text: lines.join("\n") };
+}
+
+const forgotAttempts = new Map();
+async function handleForgot(event) {
+  const b = parseBody(event);
+  const email = String(b.email || "").toLowerCase().trim();
+  const ip = (event.headers["x-nf-client-connection-ip"] || event.headers["x-forwarded-for"] || "unknown").toString();
+  const key = `${email}|${ip}`;
+  const now = Date.now();
+  const attempts = (forgotAttempts.get(key) || []).filter((t) => now - t < 60 * 60 * 1000);
+  attempts.push(now);
+  forgotAttempts.set(key, attempts);
+  // The response never changes shape: account or no account,
+  // throttled or not, the caller hears the same thing.
+  const payload = { ok: true };
+  try {
+    const idx = email ? await store.get(`email:${email}`) : null;
+    const user = idx ? await store.get(`user:${idx.userId}`) : null;
+    if (user && attempts.length <= 5) {
+      const token = crypto.randomBytes(32).toString("hex");
+      const hash = resetTokenHash(token);
+      const prev = await store.get(`pwreset-user:${user.id}`);
+      if (prev && prev.tokenHash && prev.tokenHash !== hash) await store.del(`pwreset:${prev.tokenHash}`);
+      const created = new Date(now).toISOString();
+      await store.set(`pwreset:${hash}`, { userId: user.id, email: user.email, createdAt: created, expiresAt: new Date(now + RESET_TTL_MS).toISOString() });
+      await store.set(`pwreset-user:${user.id}`, { tokenHash: hash, createdAt: created });
+      const base = process.env.APP_URL || "https://app.joinsignl.com";
+      const mail = passwordResetEmail(user, `${base}/?reset=${token}`);
+      await deliverEmail("password_reset", user, mail.subject, mail.text, null);
+      // Test hook, same trust boundary as SIGNL_TEST_ALLOW_BUSINESS
+      // (never set in the deploy environment): the suites cannot
+      // read the mailbox, so in TEST_MODE the response carries the
+      // token and they can drive the flow end to end. Production
+      // responses never include it.
+      if (TEST_MODE) payload.devResetToken = token;
+    }
+  } catch (e) { /* a store or mail hiccup never changes the neutral answer */ }
+  return json(200, payload);
+}
+
+async function handleReset(event) {
+  const b = parseBody(event);
+  const token = typeof b.token === "string" ? b.token.trim() : "";
+  if (!token) return err(400, "That reset link is not valid. Request a new one from the sign-in page.");
+  if (typeof b.password !== "string" || b.password.length < 10) return err(400, "Password must be at least 10 characters");
+  const hash = resetTokenHash(token);
+  const rec = await store.get(`pwreset:${hash}`);
+  if (!rec) return err(400, "That reset link is not valid, or it has already been used. Request a new one from the sign-in page.");
+  if (Date.now() > Date.parse(rec.expiresAt)) {
+    await store.del(`pwreset:${hash}`);
+    const idxRec = await store.get(`pwreset-user:${rec.userId}`);
+    if (idxRec && idxRec.tokenHash === hash) await store.del(`pwreset-user:${rec.userId}`);
+    return err(400, "That reset link has expired. Request a new one from the sign-in page.");
+  }
+  const user = await store.get(`user:${rec.userId}`);
+  if (!user) {
+    await store.del(`pwreset:${hash}`);
+    return err(400, "That reset link is not valid. Request a new one from the sign-in page.");
+  }
+  const { salt, hash: pwHash } = auth.hashPassword(b.password);
+  user.passwordSalt = salt;
+  user.passwordHash = pwHash;
+  user.updatedAt = nowIso();
+  await store.set(`user:${user.id}`, user);
+  await store.del(`pwreset:${hash}`);
+  await store.del(`pwreset-user:${user.id}`);
+  // The credential changed: every existing session signs out.
+  await auth.revokeSessionsForUser(user.id);
+  await logEvent({ type: "password_reset_completed", actorId: user.id, actorRole: user.role, subjectId: user.id, market: user.market || null, data: {} });
+  return json(200, { ok: true });
+}
+
+async function handleChangePassword(event, ctx) {
+  if (!ctx.user) return err(401, "Not signed in");
+  const b = parseBody(event);
+  const user = ctx.user;
+  if (!auth.verifyPassword(b.currentPassword || "", user.passwordSalt, user.passwordHash)) {
+    return err(401, "Your current password did not match.");
+  }
+  if (typeof b.newPassword !== "string" || b.newPassword.length < 10) return err(400, "Password must be at least 10 characters");
+  const { salt, hash } = auth.hashPassword(b.newPassword);
+  user.passwordSalt = salt;
+  user.passwordHash = hash;
+  user.updatedAt = nowIso();
+  await store.set(`user:${user.id}`, user);
+  // Keep this device signed in; every other session signs out.
+  await auth.revokeSessionsForUser(user.id, ctx.token);
+  await logEvent({ type: "password_changed", actorId: user.id, actorRole: user.role, subjectId: user.id, market: user.market || null, data: {} });
+  return json(200, { ok: true });
 }
 
 // ---------- main router ----------
@@ -5438,6 +5575,9 @@ async function route(event) {
   if (method === "POST" && seg[0] === "auth" && seg[1] === "register") return handleRegister(event);
   if (method === "POST" && seg[0] === "auth" && seg[1] === "login") return handleLogin(event);
   if (method === "POST" && seg[0] === "auth" && seg[1] === "logout") return handleLogout(event, ctx);
+  if (method === "POST" && seg[0] === "auth" && seg[1] === "forgot") return handleForgot(event);
+  if (method === "POST" && seg[0] === "auth" && seg[1] === "reset") return handleReset(event);
+  if (method === "POST" && seg[0] === "auth" && seg[1] === "change-password") return handleChangePassword(event, ctx);
   if (method === "GET" && seg[0] === "auth" && seg[1] === "me") {
     if (!user) return err(401, "Not signed in");
     return json(200, { user: await withFounding(user) });
@@ -8008,4 +8148,4 @@ async function route(event) {
 
 // The email builders are exported alongside the router so the verify
 // suites can assert on the exact copy a creator receives.
-module.exports = { route, approvalEmail, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, AD_USE_WINDOW_MONTHS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData };
+module.exports = { route, passwordResetEmail, approvalEmail, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, AD_USE_WINDOW_MONTHS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData };

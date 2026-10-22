@@ -11,6 +11,8 @@
 //   user:{uuid}                  account + profile/business payload
 //   email:{lowercased email}     { userId } uniqueness index
 //   session:{token}              { userId, createdAt, expiresAt }
+//   pwreset:{sha256 of token}    { userId, email, createdAt, expiresAt } password reset, hash only at rest
+//   pwreset-user:{userId}        { tokenHash, createdAt } latest reset token per account
 //   offer:{uuid}                 comp offer
 //   booking:{uuid}               booking + redemption credential state
 //   code:{SGNL-XXXXXX}          { bookingId } redemption lookup index
