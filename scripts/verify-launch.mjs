@@ -148,7 +148,13 @@ try {
     role: "business", name: "Unlisted Owner", businessName: "Unlisted Table", email: "unlisted-biz@fixtures.dev",
     password: "business-pass-123", market: "Not listed yet", customCity: "Nowhere", customCountry: "United States", category: "Restaurant", planId: "growth", agreedTerms: true,
   });
-  check("business registration in an unlisted market is refused (400): accounts are tied to a market", bizUnlisted.status === 400, String(bizUnlisted.status));
+  // UX audit fix (2026-10-22): an unlisted-market business no
+  // longer dead-ends at registration. It joins the founding list
+  // for its typed city, exactly like a creator, and stays gated.
+  check("business registration in an unlisted market joins the founding list (201), pending", bizUnlisted.status === 201 && bizUnlisted.data.user && bizUnlisted.data.user.status === "pending", JSON.stringify(bizUnlisted.data).slice(0, 200));
+  check("unlisted business record keeps its typed city and stays founding-gated", !!bizUnlisted.data.user && bizUnlisted.data.user.city === "Nowhere" && bizUnlisted.data.user.business.accessState === "founding", JSON.stringify(bizUnlisted.data.user || {}).slice(0, 200));
+  const bizUnlistedWrite = await client()("POST", "/api/auth/login", { email: "unlisted-biz@fixtures.dev", password: "business-pass-123" });
+  check("the unlisted business can sign back in to its founding status", bizUnlistedWrite.status === 200, String(bizUnlistedWrite.status));
   const bizPendingWrite = await hopefulBiz("POST", "/api/favorites", { creatorId: "nobody" });
   check("a business still in review cannot write marketplace state (403)", bizPendingWrite.status === 403, String(bizPendingWrite.status));
 

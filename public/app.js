@@ -25,6 +25,7 @@ const state = {
   tab: null,
   prefill: null, // claim-link prefill: sanitized ?handle=&market=&tier=
   publicHandle: null, // set when the URL is /c/<handle>
+  resetToken: "", // password reset token from a /?reset= email link
   preview: null, // admin Business Preview session (see enterPreview)
   discover: [],
   threads: [],
@@ -47,15 +48,50 @@ function esc(s) {
 }
 
 async function api(method, path, body) {
-  const res = await fetch("/api" + path, {
-    method,
-    headers: body ? { "Content-Type": "application/json" } : {},
-    body: body ? JSON.stringify(body) : undefined,
-    credentials: "same-origin",
-  });
+  let res;
+  try {
+    res = await fetch("/api" + path, {
+      method,
+      headers: body ? { "Content-Type": "application/json" } : {},
+      body: body ? JSON.stringify(body) : undefined,
+      credentials: "same-origin",
+    });
+  } catch (e) {
+    // A network failure says so in plain words, never as a raw
+    // status or a browser exception string.
+    throw new Error("We could not reach SIGNL. Check your connection and try again.");
+  }
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+  if (!res.ok) {
+    // Server messages are plain language and pass through. A bare
+    // failure with no message becomes a friendly one: nobody should
+    // ever see "Request failed (502)" (UX audit fix, 2026-10-22).
+    throw new Error(data.error || "Something went wrong on our side. Try again in a moment.");
+  }
   return data;
+}
+
+// Submit state (UX audit fix, 2026-10-22): one shared helper so a
+// slow connection never invites a double-tap. The first call
+// disables the form's submit button and swaps its label to
+// "Working..."; the second restores both. Returns false when the
+// form is already busy, so handlers can bail on re-entry.
+function submitBusy(form, busy) {
+  if (!form || !form.querySelector) return true;
+  const btn = form.querySelector('button[type="submit"]');
+  if (!btn) return true;
+  if (busy) {
+    if (btn.dataset.busy) return false;
+    btn.dataset.busy = "1";
+    btn.dataset.label = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "Working...";
+    return true;
+  }
+  delete btn.dataset.busy;
+  btn.disabled = false;
+  if (btn.dataset.label) btn.textContent = btn.dataset.label;
+  return true;
 }
 
 // Creator referral (Jeff, 2026-10-18): a visitor who arrived through
@@ -127,6 +163,43 @@ async function copyPublicProfile() {
   return false;
 }
 
+// Share shell for /c/ profiles (UX audit fix, 2026-10-22): the
+// profile page sets its own document title and Open Graph /
+// Twitter meta from the loaded profile, so a link the creator
+// pastes into Messages, WhatsApp, or their bio unfurls as their
+// name, photo, and market instead of a generic SIGNL card. This
+// changes share presentation only: indexability is untouched
+// (the app shell keeps its noindex; Jeff has not ruled on
+// indexing profiles).
+const DEFAULT_PAGE_TITLE = "SIGNL - Local Creator Marketing Platform";
+function setShareMeta(key, attr, content) {
+  if (!content) return;
+  let el = document.head.querySelector(`meta[${attr}="${key}"][data-signl-meta]`);
+  if (!el) {
+    el = document.createElement("meta");
+    el.setAttribute(attr, key);
+    el.setAttribute("data-signl-meta", "1");
+    document.head.appendChild(el);
+  }
+  el.setAttribute("content", content);
+}
+function applyProfileShareShell(p, place) {
+  document.title = `${p.name} (@${p.handle}) on SIGNL${place ? ` | ${place}` : ""}`;
+  const desc = `${p.name} is a founding creator on SIGNL in ${place || "their market"}${p.tierBand ? ` (${p.tierBand} tier)` : ""}. Local businesses comp creators for honest posts.`;
+  setShareMeta("og:title", "property", document.title);
+  setShareMeta("og:description", "property", desc);
+  setShareMeta("og:type", "property", "profile");
+  if (p.photoUrl) setShareMeta("og:image", "property", p.photoUrl.startsWith("http") ? p.photoUrl : `https://app.joinsignl.com${p.photoUrl}`);
+  setShareMeta("twitter:card", "name", p.photoUrl ? "summary_large_image" : "summary");
+  setShareMeta("twitter:title", "name", document.title);
+  setShareMeta("twitter:description", "name", desc);
+  if (p.photoUrl) setShareMeta("twitter:image", "name", p.photoUrl.startsWith("http") ? p.photoUrl : `https://app.joinsignl.com${p.photoUrl}`);
+}
+function clearShareShell() {
+  document.title = DEFAULT_PAGE_TITLE;
+  document.head.querySelectorAll("meta[data-signl-meta]").forEach((el) => el.remove());
+}
+
 async function renderPublicProfile() {
   const handle = state.publicHandle || "";
   app.innerHTML = `<section class="panel center" style="max-width:560px;margin:40px auto"><p class="muted">Loading @${esc(handle)}...</p></section>`;
@@ -136,6 +209,7 @@ async function renderPublicProfile() {
     p = data.profile;
   } catch (e) { p = null; }
   if (!p) {
+    document.title = "Profile not public | SIGNL";
     app.innerHTML = `
     <section class="panel center" style="max-width:560px;margin:40px auto">
       <h2>Profile not public</h2>
@@ -147,6 +221,7 @@ async function renderPublicProfile() {
     return;
   }
   const place = p.unlisted ? esc(p.city) : esc(p.market);
+  applyProfileShareShell(p, p.unlisted ? (p.city || "") : (p.market || ""));
   const initial = esc((p.name || "?").trim().charAt(0).toUpperCase() || "?");
   app.innerHTML = `
   <div style="max-width:720px;margin:20px auto">
@@ -186,7 +261,7 @@ async function renderPublicProfile() {
     ${p.categories && p.categories.length ? `<p class="small">${p.categories.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
     ${p.compCategories && p.compCategories.length ? `<p class="small muted">Open to comps: ${p.compCategories.map(esc).join(", ")}</p>` : ""}
     <p class="small">${p.paidRate ? `<span class="badge tier">Paid bookings: $${esc(String(p.paidRate))}</span> ` : ""}${p.compOpen === false ? `<span class="badge warn">Paid visits only</span>` : `<span class="badge info">Open to comp visits</span>`}</p>
-    ${p.paidRate ? `<p class="small muted">Businesses can also book this creator at her listed rate: the business pays the rate plus 3%, she keeps 97% of her rate, and SIGNL holds the payment until the post is live.</p>` : ""}
+    ${p.paidRate ? `<p class="small muted">Businesses can also book this creator at their listed rate: the business pays the rate plus 3%, they keep 97% of their rate, and SIGNL holds the payment until the post is live.</p>` : ""}
     ${bestWorkHtml(p.bestWork)}
     ${trackRecordHtml(p)}
     ${reviewsHtml(p)}
@@ -497,7 +572,7 @@ function audienceLineHtml(source) {
 // the single source of truth; the fallback text mirrors it).
 function standardVisit() {
   return (state.boot && state.boot.standardVisit) || {
-    summary: "Every SIGNL visit includes: 1 post or reel + 2 stories within 48 hours of the visit, honest and disclosed, live at least 30 days, with tracked delivery proof. Content rights follow the business's plan.",
+    summary: "Every SIGNL visit includes: 1 post or reel + 2 stories within 48 hours of the visit, honest and disclosed, live at least 30 days, with tracked delivery proof. Content rights follow the visit, never the plan: on a comp visit the business may share the post natively only, with the creator tagged; no downloads, no reposting the file, no ad use. On a paid visit the business may also repost the post and run it as an ad for 6 months from the post date. The creator always owns their content, and nobody can edit it.",
   };
 }
 
@@ -719,12 +794,15 @@ function go(view, tab) {
 async function render() {
   renderNav();
   if (state.view === "public-profile") return renderPublicProfile();
+  clearShareShell();
   if (state.view === "staff") return renderStaff();
   const u = state.user;
   if (!u) {
     if (state.view === "join-creator") return renderJoinCreator();
     if (state.view === "for-businesses" || state.view === "join-business") return renderForBusinesses();
     if (state.view === "signin") return renderSignin();
+    if (state.view === "forgot") return renderForgot();
+    if (state.view === "reset") return renderReset();
     return renderHome();
   }
   if (u.status === "pending") return u.role === "business" ? renderBusinessFoundingStatus() : renderPending();
@@ -845,6 +923,7 @@ function renderSignin() {
       <div class="field"><label>Password</label><input type="password" id="si-password" required autocomplete="current-password"></div>
       <button class="btn" type="submit" style="width:100%">Sign in</button>
     </form>
+    <p class="small muted mt">You will stay signed in on this device for 30 days. <a href="#" onclick="return go('forgot')">Forgot password?</a></p>
     <button class="btn ghost mt" style="width:100%" onclick="return goStaff()">Redeem a creator visit</button>
     <p class="small muted">Staff at a SIGNL business: the button above takes you straight to the register screen. PIN in, creator code in, redeemed.</p>
     <p class="small muted mt">New to SIGNL? <a href="#" onclick="return go('join-creator')">Join as a founding creator</a>. Businesses: <a href="#" onclick="return go('for-businesses')">join the founding business list</a>.</p>
@@ -853,6 +932,8 @@ function renderSignin() {
 
 async function doSignin(e) {
   e.preventDefault();
+  const form = e.target;
+  if (!submitBusy(form, true)) return false;
   try {
     const data = await api("POST", "/auth/login", {
       email: document.getElementById("si-email").value,
@@ -862,7 +943,88 @@ async function doSignin(e) {
     state.view = "dashboard";
     render();
   } catch (err) {
+    submitBusy(form, false);
     document.getElementById("form-error").innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+  }
+  return false;
+}
+
+// Forgot password (UX audit fix, 2026-10-22): the request screen
+// always lands on the same neutral confirmation, whether or not
+// the email belongs to an account, so the form never confirms
+// that an account exists.
+function renderForgot() {
+  app.innerHTML = `
+  <section class="panel" style="max-width:460px;margin:30px auto">
+    <h2>Forgot password</h2>
+    <p class="muted">Enter the email on your SIGNL account and we will email you a link to set a new password. The link works once and expires in one hour.</p>
+    <div id="form-error"></div>
+    <form onsubmit="return doForgot(event)">
+      <div class="field"><label>Email</label><input type="email" id="fp-email" required autocomplete="email"></div>
+      <button class="btn" type="submit" style="width:100%">Email me a reset link</button>
+    </form>
+    <p class="small muted mt">Remembered it after all? <a href="#" onclick="return go('signin')">Back to sign in</a>.</p>
+  </section>`;
+}
+
+async function doForgot(e) {
+  e.preventDefault();
+  const form = e.target;
+  if (!submitBusy(form, true)) return false;
+  try {
+    await api("POST", "/auth/forgot", { email: document.getElementById("fp-email").value });
+    app.innerHTML = `
+    <section class="panel center" style="max-width:460px;margin:30px auto">
+      <h2>Check your email</h2>
+      <p>If an account exists for that email, a reset link is on its way. The link works once and expires in one hour.</p>
+      <p class="muted">Nothing arrived after a few minutes? Check spam, then request a fresh link.</p>
+      <div class="cta-row" style="justify-content:center">
+        <a class="btn" href="#" onclick="return go('forgot')">Request another link</a>
+        <a class="btn ghost" href="#" onclick="return go('signin')">Back to sign in</a>
+      </div>
+    </section>`;
+  } catch (err) {
+    submitBusy(form, false);
+    document.getElementById("form-error").innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+  }
+  return false;
+}
+
+// The reset screen the email link lands on (/?reset=<token>).
+function renderReset() {
+  app.innerHTML = `
+  <section class="panel" style="max-width:460px;margin:30px auto">
+    <h2>Set a new password</h2>
+    <p class="muted">Pick a new password for your SIGNL account. Setting it signs out every other device on the account.</p>
+    <div id="form-error"></div>
+    <form onsubmit="return doReset(event)">
+      <div class="field"><label>New password (10+ characters)</label><input type="password" id="rs-password" required minlength="10" autocomplete="new-password"></div>
+      <div class="field"><label>New password again</label><input type="password" id="rs-password2" required minlength="10" autocomplete="new-password"></div>
+      <button class="btn" type="submit" style="width:100%">Set my new password</button>
+    </form>
+    <p class="small muted mt">Link expired or already used? <a href="#" onclick="return go('forgot')">Request a new one</a>.</p>
+  </section>`;
+}
+
+async function doReset(e) {
+  e.preventDefault();
+  const form = e.target;
+  const errBox = (msg) => { document.getElementById("form-error").innerHTML = `<div class="error-box">${esc(msg)}</div>`; };
+  const pw = document.getElementById("rs-password").value;
+  if (pw !== document.getElementById("rs-password2").value) { errBox("The two passwords do not match. Type the same new password in both boxes."); return false; }
+  if (!submitBusy(form, true)) return false;
+  try {
+    await api("POST", "/auth/reset", { token: state.resetToken || "", password: pw });
+    state.resetToken = "";
+    app.innerHTML = `
+    <section class="panel center" style="max-width:460px;margin:30px auto">
+      <h2>Your password is set</h2>
+      <p>Sign in with your new password to pick up right where you left off.</p>
+      <div class="cta-row" style="justify-content:center"><a class="btn" href="#" onclick="return go('signin')">Sign in</a></div>
+    </section>`;
+  } catch (err) {
+    submitBusy(form, false);
+    errBox(err.message);
   }
   return false;
 }
@@ -872,6 +1034,52 @@ async function signOut() {
   state.user = null;
   state.view = "home";
   render();
+}
+
+// Account basics (UX audit fix, 2026-10-22): every signed-in
+// account surface shows who you are signed in as and offers a
+// password change (current password required; every other device
+// signs out, this one stays). Before this there was no settings
+// surface at all: no email display, no password change, and a
+// forgotten password was a permanent lockout.
+function accountHtml(u) {
+  return `
+  <div class="panel mt">
+    <h3>Your account</h3>
+    <p class="small muted">Signed in as <strong>${esc(u.email)}</strong>. This is the email SIGNL uses for your account and launch messages.</p>
+    <div id="acct-error"></div>
+    <form onsubmit="return doChangePassword(event)">
+      <div class="form-2col">
+        <div class="field"><label>Current password</label><input type="password" id="acct-current" required autocomplete="current-password"></div>
+        <div class="field"><label>New password (10+ characters)</label><input type="password" id="acct-new" required minlength="10" autocomplete="new-password"></div>
+      </div>
+      <button class="btn" type="submit">Change password</button> <span id="acct-ok" class="saved"></span>
+      <p class="small muted mt">Changing your password signs out every other device on this account. This device stays signed in.</p>
+    </form>
+    <p class="small muted">Cannot get in at all? Sign out, then use Forgot password on the sign-in screen and we will email you a reset link.</p>
+  </div>`;
+}
+
+async function doChangePassword(e) {
+  e.preventDefault();
+  const form = e.target;
+  if (!submitBusy(form, true)) return false;
+  const errEl = document.getElementById("acct-error");
+  try {
+    await api("POST", "/auth/change-password", {
+      currentPassword: document.getElementById("acct-current").value,
+      newPassword: document.getElementById("acct-new").value,
+    });
+    submitBusy(form, false);
+    form.reset();
+    if (errEl) errEl.innerHTML = "";
+    const ok = document.getElementById("acct-ok");
+    if (ok) ok.textContent = "Password changed.";
+  } catch (err) {
+    submitBusy(form, false);
+    if (errEl) errEl.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+  }
+  return false;
 }
 
 function suggestedTierId(followers) {
@@ -948,7 +1156,7 @@ function syncPaidOptionProfile() {
 // ---------- two-step claim, step one (Jeff, 2026-10-20) ----------
 // The quick claim: handle, market, email, password, and the same
 // four rule checkboxes the full form carries. Submitting claims
-// the founding spot (spots lock in sign-up order) and puts the
+// the founding spot (spots are held in sign-up order) and puts the
 // application in the review queue; the full profile is step two,
 // finished after approval from the dashboard checklist. Claim-link
 // prefill (?handle=&market=) fills this form exactly like the full
@@ -1002,7 +1210,7 @@ function renderQuickClaim() {
   <section class="panel" style="max-width:680px;margin:10px auto">
     <h2>Claim your founding spot</h2>
     <p><strong>${CREATOR_FREE_LINE}</strong></p>
-    <p class="muted">Founding spots lock in sign-up order, so claim yours now and finish the rest after approval. This takes about a minute: your handle, your market, an email, and a password. When you are approved, we email you, and your dashboard walks you through finishing your profile: your photo, your audience counts, what share of it is local. A finished profile is what businesses see, so that step is what makes you bookable. City not listed yet? Pick "My city is not listed yet" below and claim anyway: your sign-up counts toward opening your city, and you hold founding standing there.</p>
+    <p class="muted">Founding spots are held in sign-up order. Claim yours and finish the rest after approval. This takes about a minute: your handle, your market, an email, and a password. When you are approved, we email you, and your dashboard walks you through finishing your profile: your photo, your audience counts, what share of it is local. A finished profile is what businesses see, so that step is what makes you bookable. City not listed yet? Pick "My city is not listed yet" below and claim anyway: your sign-up counts toward opening your city, and you hold founding standing there.</p>
     <p class="small"><strong>What you get:</strong> comped meals, services and experiences at local businesses, yours for an honest post within 48 hours. Paid cash campaigns sit on top of comps, and Headliners are first in line for them. After approval, your personal invite link earns Momentum points (+3 per creator who signs up through it, +10 per approval), and points order the creator list businesses see.</p>
     ${hasPrefill ? `<div class="notice blue">Your invite link told us a head start: we pre-filled what it carried below. Check it, claim your spot, and your application goes into the review queue.</div>` : ""}
     <div id="form-error"></div>
@@ -1033,7 +1241,7 @@ function renderQuickClaim() {
       <div class="field"><label style="font-weight:500"><input type="checkbox" id="qc-agree-compliance" style="width:auto" required> I agree to post within 48 hours of every comped visit for full credit and paste the post link in the app. I understand one week is the hard stop: a redeemed visit with no post pauses my account at one week and closes it at two.</label></div>
       <div class="field"><label style="font-weight:500"><input type="checkbox" id="qc-agree-terms" style="width:auto" required> I agree to the <a href="https://joinsignl.com/terms.html" target="_blank" rel="noopener">Terms of Service</a> and <a href="https://joinsignl.com/privacy.html" target="_blank" rel="noopener">Privacy Policy</a>, and I agree SIGNL can email me about my account, launch updates and offers. I can unsubscribe from marketing emails at any time.</label></div>
       <button class="btn" type="submit" style="width:100%">Claim my founding spot</button>
-      <p class="small muted mt">Every application is reviewed by a person, and every founding application gets a decision or a clear status within 2 business days. Founding spots are limited in every market, and priority goes in sign-up order.</p>
+      <p class="small muted mt">Every application is reviewed by a person, and every founding application gets a decision or a clear status within 2 business days. Founding spots are held in sign-up order.</p>
       <p class="small">Prefer to complete everything now? <a href="#" onclick="return showFullJoin()">Build your full profile instead</a>.</p>
     </form>
   </section>`;
@@ -1057,6 +1265,8 @@ async function doQuickClaim(e) {
   const customState = isUnlisted ? document.getElementById("qc-state-text").value.trim() : "";
   if (isUnlisted && !customCity) { errBox("Tell us your city, so your sign-up counts toward opening SIGNL there."); return false; }
   if (isUnlisted && !customCountry) { errBox("Tell us your country, so your sign-up counts toward opening SIGNL there."); return false; }
+  const form = e.target;
+  if (!submitBusy(form, true)) return false;
   try {
     const data = await api("POST", "/auth/register", {
       role: "creator",
@@ -1080,6 +1290,7 @@ async function doQuickClaim(e) {
     state.view = "dashboard";
     render();
   } catch (err) {
+    submitBusy(form, false);
     errBox(err.message);
   }
   return false;
@@ -1182,7 +1393,7 @@ function renderJoinCreator() {
       <div class="field"><label style="font-weight:500"><input type="checkbox" id="jc-agree-compliance" style="width:auto" required> I agree to post within 48 hours of every comped visit for full credit and paste the post link in the app. I understand one week is the hard stop: a redeemed visit with no post pauses my account at one week and closes it at two.</label></div>
       <div class="field"><label style="font-weight:500"><input type="checkbox" id="jc-agree-terms" style="width:auto" required> I agree to the <a href="https://joinsignl.com/terms.html" target="_blank" rel="noopener">Terms of Service</a> and <a href="https://joinsignl.com/privacy.html" target="_blank" rel="noopener">Privacy Policy</a>, and I agree SIGNL can email me about my account, launch updates and offers. I can unsubscribe from marketing emails at any time.</label></div>
       <button class="btn" type="submit" style="width:100%">Create my founding profile</button>
-      <p class="small muted mt">Every application is reviewed by a person, and every founding application gets a decision or a clear status within 2 business days. Founding spots are limited in every market, and priority goes in sign-up order.</p>
+      <p class="small muted mt">Every application is reviewed by a person, and every founding application gets a decision or a clear status within 2 business days. Founding spots are held in sign-up order.</p>
     </form>
   </section>`;
   // Claim-link prefill, applied to the live form: the handle link
@@ -1250,6 +1461,8 @@ async function doRegisterCreator(e) {
   const customState = isUnlisted ? document.getElementById("jc-state-text").value.trim() : "";
   if (isUnlisted && !customCity) { errBox("Tell us your city, so your sign-up counts toward opening SIGNL there."); return false; }
   if (isUnlisted && !customCountry) { errBox("Tell us your country, so your sign-up counts toward opening SIGNL there."); return false; }
+  const form = e.target;
+  if (!submitBusy(form, true)) return false;
   try {
     const data = await api("POST", "/auth/register", {
       role: "creator",
@@ -1295,6 +1508,7 @@ async function doRegisterCreator(e) {
     state.view = "dashboard";
     render();
   } catch (err) {
+    submitBusy(form, false);
     errBox(err.message);
   }
   return false;
@@ -1328,9 +1542,17 @@ function renderForBusinesses() {
       </div>
       <div class="form-2col">
         <div class="field"><label>Category</label><select id="jb-category">${state.boot.businessCategories.map((c) => `<option>${esc(c)}</option>`).join("")}</select></div>
-        <div class="field"><label>Market</label><select id="jb-market" onchange="bizCityOptions()">${marketOptions("")}</select></div>
+        <div class="field"><label>Market</label><input id="jb-market-search" placeholder="Search markets" oninput="filterBizMarketOptions()" style="margin-bottom:6px"><select id="jb-market" onchange="syncBizMarketChoice()">${marketOptions("", true)}</select><p class="small muted">Don't see your city? Pick "My city is not listed yet" and join the founding list for your city instead.</p></div>
       </div>
-      <div class="form-2col">
+      <div id="jb-custom-wrap" style="display:none">
+        <div class="notice blue">Business accounts open market by market. Join the founding list for your city now: your sign-up counts toward opening SIGNL there, founding pricing is held for the businesses on the list, and we email you the moment your market opens so you can finish setting up.</div>
+        <div class="form-2col">
+          <div class="field"><label>Your city</label><input id="jb-city-text" placeholder="For example: Tulsa"></div>
+          <div class="field"><label>Your country</label><input id="jb-country-text" placeholder="For example: United States"></div>
+        </div>
+        <div class="field"><label>Your state or province (optional)</label><input id="jb-state-text" placeholder="Optional, for example: OK"></div>
+      </div>
+      <div class="form-2col" id="jb-city-row">
         <div class="field"><label>City</label><select id="jb-city"></select></div>
         <div class="field"><label>Neighborhood / area (optional)</label><input id="jb-neighborhood" placeholder="For example: Oceanfront, Ghent"></div>
       </div>
@@ -1351,8 +1573,56 @@ function bizCityOptions() {
   sel.innerHTML = (mkt ? mkt.cities : []).map((c) => `<option>${esc(c)}</option>`).join("");
 }
 
+// The business market picker gets the same search + not-listed
+// treatment the creator forms have (UX audit fix, 2026-10-22):
+// search filters the grouped options, and "My city is not listed
+// yet" swaps the city dropdown for the founding-list interest
+// fields instead of dead-ending the registration.
+function filterBizMarketOptions() {
+  const input = document.getElementById("jb-market-search");
+  const sel = document.getElementById("jb-market");
+  if (!input || !sel) return;
+  const q = input.value.trim().toLowerCase();
+  let firstMatch = null;
+  for (const opt of sel.querySelectorAll("option")) {
+    if (opt.value === unlistedLabel()) continue;
+    const hit = !q || opt.textContent.toLowerCase().includes(q) || opt.value.toLowerCase().includes(q);
+    opt.hidden = !hit;
+    if (hit && !firstMatch) firstMatch = opt;
+  }
+  for (const grp of sel.querySelectorAll("optgroup")) {
+    grp.hidden = ![...grp.querySelectorAll("option")].some((o) => !o.hidden);
+  }
+  const current = sel.selectedOptions && sel.selectedOptions[0];
+  if (q && firstMatch && current && current.hidden) {
+    sel.value = firstMatch.value;
+    syncBizMarketChoice();
+  }
+}
+
+function syncBizMarketChoice() {
+  const m = document.getElementById("jb-market");
+  if (!m) return;
+  const unlisted = m.value === unlistedLabel();
+  const customWrap = document.getElementById("jb-custom-wrap");
+  const cityRow = document.getElementById("jb-city-row");
+  if (customWrap) customWrap.style.display = unlisted ? "" : "none";
+  if (cityRow) cityRow.style.display = unlisted ? "none" : "";
+  if (!unlisted) bizCityOptions();
+}
+
 async function registerBusiness(e) {
   e.preventDefault();
+  const form = e.target;
+  const errBox = (msg) => { document.getElementById("jb-error").innerHTML = `<div class="error-box">${esc(msg)}</div>`; };
+  const marketVal = document.getElementById("jb-market").value;
+  const isUnlisted = marketVal === unlistedLabel();
+  const customCity = isUnlisted ? document.getElementById("jb-city-text").value.trim() : "";
+  const customCountry = isUnlisted ? document.getElementById("jb-country-text").value.trim() : "";
+  const customState = isUnlisted ? document.getElementById("jb-state-text").value.trim() : "";
+  if (isUnlisted && !customCity) { errBox("Tell us your city, so your sign-up counts toward opening SIGNL there."); return false; }
+  if (isUnlisted && !customCountry) { errBox("Tell us your country, so your sign-up counts toward opening SIGNL there."); return false; }
+  if (!submitBusy(form, true)) return false;
   try {
     const data = await api("POST", "/auth/register", {
       role: "business",
@@ -1360,8 +1630,11 @@ async function registerBusiness(e) {
       businessName: document.getElementById("jb-business").value,
       email: document.getElementById("jb-email").value,
       password: document.getElementById("jb-password").value,
-      market: document.getElementById("jb-market").value,
-      city: document.getElementById("jb-city").value,
+      market: marketVal,
+      customCity: isUnlisted ? customCity : undefined,
+      customCountry: isUnlisted ? customCountry : undefined,
+      customState: isUnlisted ? customState : undefined,
+      city: isUnlisted ? undefined : document.getElementById("jb-city").value,
       category: document.getElementById("jb-category").value,
       neighborhood: document.getElementById("jb-neighborhood").value,
       about: document.getElementById("jb-about").value,
@@ -1373,7 +1646,8 @@ async function registerBusiness(e) {
     state.tab = null;
     render();
   } catch (err) {
-    document.getElementById("jb-error").innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+    submitBusy(form, false);
+    errBox(err.message);
   }
   return false;
 }
@@ -1396,11 +1670,12 @@ function renderBusinessFoundingStatus() {
   const u = state.user;
   const bz = u.business || {};
   const inReview = u.status !== "approved";
+  const bizPlace = u.market === unlistedLabel() ? (u.city || "your city") : u.market;
   app.innerHTML = `
   <section class="panel" style="max-width:640px;margin:24px auto">
     <p><span class="badge ${inReview ? "info" : "ok"}">${inReview ? "Application in review" : "Founding list"}</span></p>
     <h2 style="margin-top:8px">${esc(bz.businessName || "Your business")} is on the founding list</h2>
-    <p>You joined the <strong>Founding business list, ${esc(u.market)}</strong>. Businesses do not get product access yet: the creator roster stays hidden until SIGNL activates your business by hand.</p>
+    <p>You joined the <strong>Founding business list, ${esc(bizPlace)}</strong>. Businesses do not get product access yet: the creator roster stays hidden until SIGNL activates your business by hand.</p>
     <p>${inReview
       ? `Your application is in review. Every founding application gets a decision or a clear status within 2 business days.`
       : `Your application is approved, and your founding spot is held. Activation is a separate step, done by hand by SIGNL.`}</p>
@@ -1408,7 +1683,7 @@ function renderBusinessFoundingStatus() {
       <div class="ui-row"><span class="k">Plan interest</span><span class="v">${esc(bz.planName || "")}</span></div>
       <div class="ui-row"><span class="k">Category spot</span><span class="v">Your ${esc(bz.category || "business")} spot is held in application order</span></div>
       <div class="ui-row"><span class="k">Founding pricing</span><span class="v">Locked while you stay subscribed</span></div>
-      <div class="ui-row"><span class="k">Activation</span><span class="v">When ${esc(u.market)} opens, or sooner if SIGNL activates your business by hand for a pilot</span></div>
+      <div class="ui-row"><span class="k">Activation</span><span class="v">When ${esc(bizPlace)} opens, or sooner if SIGNL activates your business by hand for a pilot</span></div>
       <div class="ui-row"><span class="k">Payment</span><span class="v">Nothing is due now. Payment stays concierge: Jeff sends the payment step by hand at activation</span></div>
     </div>
     <h3 class="mt">What happens next</h3>
@@ -1420,7 +1695,8 @@ function renderBusinessFoundingStatus() {
     </ol>
     <p class="muted small">Sign back in any time to check your status. Questions: hello@joinsignl.com</p>
     <div class="mt"><button class="btn ghost" onclick="signOut()">Sign out</button></div>
-  </section>`;
+  </section>
+  <div style="max-width:640px;margin:0 auto">${accountHtml(u)}</div>`;
 }
 
 function renderPending() {
@@ -1591,7 +1867,7 @@ async function bookPaidVisit(creatorId) {
     const data = await api("POST", "/bookings/paid", { creatorId, ...(paidBrief ? { paidBrief } : {}) });
     state.tab = "Visits & Posts";
     render();
-    setTimeout(() => alert(`Paid visit booked. The code is ${data.booking.code}; the creator shows it at the visit and the 48 hour post clock starts at redemption. Payment state: ${data.booking.paidLane.paymentNote}`), 50);
+    showBookingCard(data.booking, "Paid visit booked", data.booking.paidLane ? data.booking.paidLane.paymentNote : "");
   } catch (err) { alert(err.message); }
 }
 
@@ -1601,7 +1877,7 @@ async function previewPaidBooking(creatorId) {
   try {
     const data = await api("POST", "/admin/preview/paid-booking", { creatorId });
     const bk = data.booking;
-    alert(`PREVIEW paid booking (simulation)\n\nCreator rate: $${bk.rate}\nYou pay: $${bk.businessTotal} (rate + 3%)\nCreator keeps: $${bk.creatorNet} (97% of her rate)\nSIGNL fee: $${bk.platformFee} total, split evenly\nEscrow: held by SIGNL until the post is live\n\n${bk.paymentNote}\n${bk.note}`);
+    alert(`PREVIEW paid booking (simulation)\n\nCreator rate: $${bk.rate}\nYou pay: $${bk.businessTotal} (rate + 3%)\nCreator keeps: $${bk.creatorNet} (97% of their rate)\nSIGNL fee: $${bk.platformFee} total, split evenly\nEscrow: held by SIGNL until the post is live\n\n${bk.paymentNote}\n${bk.note}`);
   } catch (err) { alert(err.message); }
 }
 
@@ -1753,7 +2029,7 @@ function creatorProfileDetailHtml(c, preview) {
         ? `<button class="btn" onclick="previewStartOffer('${c.userId}')">Send this creator an offer (preview)</button>${p.paidRate ? ` <button class="btn ghost" onclick="previewPaidBooking('${c.userId}')">Preview paid booking ($${esc(String(p.paidRate))})</button>` : ""}`
         : `<button class="btn" onclick="startOffer('${c.userId}')">Send offer</button>${p.paidRate ? ` <button class="btn" onclick="bookPaidVisit('${c.userId}')">Book paid visit ($${esc(String(p.paidRate))})</button>` : ""} <button class="btn ghost" onclick="openThread('${c.userId}')">Message</button>`}
     </div>
-    ${p.paidRate ? `<p class="small muted">Paid bookings: this creator lists a paid rate of $${esc(String(p.paidRate))} for the same Standard Visit. You pay the rate plus 3%, she keeps 97% of her rate, and SIGNL holds the payment until her post is live. Comp-only is always fine too.</p>` : ""}
+    ${p.paidRate ? `<p class="small muted">Paid bookings: this creator lists a paid rate of $${esc(String(p.paidRate))} for the same Standard Visit. You pay the rate plus 3%, they keep 97% of their rate, and SIGNL holds the payment until their post is live. Comp-only is always fine too.</p>` : ""}
     ${preview ? `<p class="small muted">Preview: an offer sent from here is a simulation. It never reaches ${esc(c.name)} and nothing is saved.</p>` : ""}
     ${preview && c.trackRecord && c.trackRecord.postsDelivered > 0 ? `
     <div class="showcase-block"><h4>Ad use (preview)</h4>
@@ -1946,7 +2222,7 @@ async function loadFoundingDashboard() {
         </div>
         <span class="badge ok" style="font-size:0.95rem;padding:6px 14px">Founding Creator, ${isUnl ? esc(f.city) : esc(f.market)}</span>
       </div>
-      <p class="small">${p.localAudiencePct}% local audience &middot; ${esc(p.tierBand || "")} tier &middot; ${fmtNum(totalAudienceOf(card))} total audience${f.priorityBand ? ` &middot; in the first ${f.priorityBand} founding creators in ${place}` : ""}${campusBadgeHtml(card)}</p>
+      <p class="small">${p.localAudiencePct === null || p.localAudiencePct === undefined ? `Add your local audience % in your profile` : `${p.localAudiencePct}% local audience`} &middot; ${esc(p.tierBand || "")} tier &middot; ${fmtNum(totalAudienceOf(card))} total audience${f.priorityBand ? ` &middot; in the first ${f.priorityBand} founding creators in ${place}` : ""}${campusBadgeHtml(card)}</p>
       <p style="margin-bottom:0">${scoreBadge(card.localImpactScore)}</p>
       <div class="home-actions"><button class="btn small-btn ghost" onclick="return go('dashboard','Status')">See your full status</button></div>
     </div>
@@ -1986,7 +2262,9 @@ async function loadFoundingStatus() {
       <div class="grid cols-2 mt">
         <div>
           ${card.photoUrl ? `<img class="profile-photo" src="${esc(card.photoUrl)}" alt="Your profile photo">` : `<div class="photo-placeholder">No photo yet. Add one in your profile below; businesses see it when ${isUnl ? esc(f.city) : esc(f.market)} opens.</div>`}
-          <p>${p.localAudiencePct}% local audience <span class="badge info">${esc(p.localAudienceSource || "Self-reported")}</span></p>
+          ${p.localAudiencePct === null || p.localAudiencePct === undefined
+            ? `<p>Local audience not reported yet. <a href="#" onclick="return go('dashboard','Profile')">Add your local audience %</a> in your profile: it is the number businesses look at first.</p>`
+            : `<p>${p.localAudiencePct}% local audience <span class="badge info">${esc(p.localAudienceSource || "Self-reported")}</span></p>`}
           <p>${scoreBadge(card.localImpactScore)}</p>
           ${card.scoreComponents ? `<p class="small muted">Reliability ${card.scoreComponents.reliability} &middot; ${esc(card.scoreComponents.reliabilityBasis)}</p>` : ""}
         </div>
@@ -2127,6 +2405,40 @@ function homeTrackerHtml(b) {
     </div>`).join("")}</div>`;
 }
 
+// Booking credential card (UX audit fix, 2026-10-22): a one-time
+// visit code used to arrive in an alert(), gone the moment OK was
+// tapped. It now lands on a persistent card (code + QR + the use-by
+// line) that stays on screen across in-app navigation until the
+// person dismisses it. The same code also lives under My Visits.
+function showBookingCard(booking, heading, note) {
+  if (!booking || !booking.code) return;
+  dismissBookingCard();
+  const el = document.createElement("div");
+  el.id = "booking-card";
+  el.className = "booking-card";
+  el.setAttribute("role", "dialog");
+  el.setAttribute("aria-label", heading || "Your visit is booked");
+  el.innerHTML = `
+    <div class="flex-between">
+      <strong>${esc(heading || "You are booked")}</strong>
+      <button type="button" class="linklike" onclick="dismissBookingCard()">Dismiss</button>
+    </div>
+    ${booking.title || booking.businessName ? `<p class="small muted" style="margin:6px 0 0">${booking.title ? esc(booking.title) : ""}${booking.title && booking.businessName ? " at " : ""}${booking.businessName ? esc(booking.businessName) : ""}</p>` : ""}
+    <p class="small" style="margin:10px 0 0">The one-time visit code. The creator shows it at the visit; staff redeem it in the app and the 48 hour post clock starts at that moment.</p>
+    <div class="code-display">${esc(booking.code)}</div>
+    ${booking.id ? `<div class="qr-box" style="margin:0 auto"><img src="/api/bookings/${esc(booking.id)}/qr" alt="QR code for ${esc(booking.code)}" onerror="this.parentElement.style.display='none'"></div>` : ""}
+    ${booking.redeemBy ? `<p class="small"><strong>Use by ${esc(fmtDate(booking.redeemBy))}</strong>. Come any time inside the window; no appointment needed.</p>` : ""}
+    ${note ? `<p class="small muted">${esc(note)}</p>` : ""}
+    <p class="small muted">The visit and its code are saved in your visits list, so this card is safe to dismiss.</p>`;
+  document.body.appendChild(el);
+}
+
+function dismissBookingCard() {
+  const el = document.getElementById("booking-card");
+  if (el) el.remove();
+  return false;
+}
+
 function homeActiveVisitHtml(b) {
   if (!b) {
     return `
@@ -2192,12 +2504,13 @@ async function homeCheckIn(bookingId) {
 
 async function homeAcceptOffer(e, offerId) {
   e.preventDefault();
+  const form = e.target;
+  if (!submitBusy(form, true)) return false;
   try {
     const data = await api("POST", `/offers/${offerId}/accept`, {});
-    const useBy = data.booking && data.booking.redeemBy ? ` Use it any time by ${fmtDate(data.booking.redeemBy)}; no appointment needed.` : "";
-    alert(`Booked. Your one-time code is ${data.booking.code}.${useBy} Show it at the visit; staff redeem it in the app and your 48 hour post clock starts.`);
+    showBookingCard(data.booking, "You are booked");
     loadCreatorHome();
-  } catch (err) { alert(err.message); }
+  } catch (err) { submitBusy(form, false); alert(err.message); }
   return false;
 }
 
@@ -2501,6 +2814,7 @@ function creatorProfileHtml(u) {
       <div class="field"><label>Bio</label><textarea id="p-bio" rows="2">${esc(c.bio || "")}</textarea></div>
       <button class="btn" type="submit">Save profile</button> <span id="save-ok" class="saved"></span><span id="profile-complete-share"></span>
     </form>
+    ${accountHtml(u)}
     <div id="my-showcase"></div>
   </div>`;
 }
@@ -2548,6 +2862,8 @@ function syncStackTotal() {
 
 async function doUpdateCreator(e) {
   e.preventDefault();
+  const form = e.target;
+  if (!submitBusy(form, true)) return false;
   const cats = Array.from(document.querySelectorAll("input[name=p-cat]:checked")).map((x) => x.value);
   const comps = Array.from(document.querySelectorAll("input[name=p-comp]:checked")).map((x) => x.value);
   const paidBox = document.getElementById("p-paid");
@@ -2595,6 +2911,7 @@ async function doUpdateCreator(e) {
     });
     state.user = data.user;
     if (uploaded && state.user.creator) state.user.creator.hasPhoto = true;
+    submitBusy(form, false);
     document.getElementById("save-ok").textContent = "Saved.";
     // The profile-completion moment: the save that flips the
     // profile to complete gets a one-tap share of the invite link.
@@ -2608,7 +2925,18 @@ async function doUpdateCreator(e) {
     }
     loadMyScore();
   } catch (err) {
-    document.getElementById("form-error").innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+    submitBusy(form, false);
+    const errEl = document.getElementById("form-error");
+    if (errEl) {
+      errEl.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+      // The error renders at the top of a ~40-field form while the
+      // user is looking at the Save button at the bottom: bring it
+      // to them and focus it, so a failed save never looks like
+      // nothing happened (UX audit fix, 2026-10-22).
+      errEl.setAttribute("tabindex", "-1");
+      try { errEl.scrollIntoView({ behavior: "smooth", block: "start" }); } catch (e) { errEl.scrollIntoView(); }
+      try { errEl.focus({ preventScroll: true }); } catch (e) { /* focus is an enhancement */ }
+    }
   }
   return false;
 }
@@ -2764,7 +3092,7 @@ async function acceptBackfill(applicationId) {
     const data = await api("POST", `/applications/${applicationId}/accept-backfill`, {});
     state.tab = "My Visits";
     render();
-    setTimeout(() => alert(`Spot taken. Your one-time code is ${data.booking.code}. Redeem it inside the window; your 48 hour post clock starts at redemption.`), 50);
+    showBookingCard(data.booking, "Spot taken");
   } catch (err) { alert(err.message); loadMyApplications(); }
 }
 
@@ -2794,13 +3122,15 @@ async function withdrawApplication(applicationId) {
 
 async function acceptOffer(e, offerId) {
   e.preventDefault();
+  const form = e.target;
+  if (!submitBusy(form, true)) return false;
   try {
     const data = await api("POST", `/offers/${offerId}/accept`, {});
     state.tab = "My Visits";
     render();
-    const useBy = data.booking && data.booking.redeemBy ? ` Use it any time by ${fmtDate(data.booking.redeemBy)}; no appointment needed.` : "";
-    setTimeout(() => alert(`Booked. Your one-time code is ${data.booking.code}.${useBy} Show it at the visit; staff redeem it in the app and your 48 hour post clock starts.`), 50);
+    showBookingCard(data.booking, "You are booked");
   } catch (err) {
+    submitBusy(form, false);
     alert(err.message);
   }
   return false;
@@ -3893,6 +4223,8 @@ async function staffPinScreen() {
 
 async function staffEnter(e) {
   e.preventDefault();
+  const form = e.target;
+  if (!submitBusy(form, true)) return false;
   const errEl = document.getElementById("staff-error");
   try {
     const body = { pin: document.getElementById("staff-pin").value };
@@ -3901,6 +4233,7 @@ async function staffEnter(e) {
     await api("POST", "/staff/enter", body);
     render();
   } catch (err) {
+    submitBusy(form, false);
     if (errEl) errEl.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
   return false;
@@ -4102,7 +4435,8 @@ function renderPlanTab() {
   <div class="panel mt" id="staff-settings">
     <h3>Staff redemption</h3>
     <p class="muted">Loading...</p>
-  </div>`;
+  </div>
+  ${accountHtml(u)}`;
   loadStaffSettings();
 }
 
@@ -5381,7 +5715,7 @@ function pvManagedHtml(mv) {
   const b = mv.budget;
   const rows = (b.paidBookings || []).map((pb) => `
     <div class="review-item">
-      <strong>@${esc(pb.creatorHandle)}</strong> (${esc(pb.creatorName)}) &middot; paid visit at her listed rate of $${esc(String(pb.rate))}<br>
+      <strong>@${esc(pb.creatorHandle)}</strong> (${esc(pb.creatorName)}) &middot; paid visit at their listed rate of $${esc(String(pb.rate))}<br>
       <span class="small">Business paid $${esc(String(pb.businessTotal))} (rate + 3%) &middot; creator receives $${esc(String(pb.creatorNet))} &middot; SIGNL fee $${esc(String(pb.platformFee))}, split evenly &middot; ${pb.escrowState === "released" ? `<span class="badge ok">Escrow released</span>` : `<span class="badge info">Escrow held</span>`} <span class="muted">${esc(pb.escrowNote)}</span></span>
     </div>`).join("");
   return `
@@ -5399,7 +5733,7 @@ function pvManagedHtml(mv) {
     <p class="small muted">${esc(b.note)}</p>
     ${mv.discountCodes && !mv.discountCodes.enabled ? `<p class="small muted"><strong>Audience-code discounts: off.</strong> Harbor Table has not turned code discounts on, so its creator codes are counting codes only: they track the customers a post sends in, and promise no percentage off. Turning them on, and picking the percentage, is the business's call whenever it wants.</p>` : ""}
     ${rows || `<p class="small muted">No paid bookings yet this month.</p>`}
-    <p class="small muted">Paid bookings are the optional lane: a specific creator at her own listed rate, 6% total fee split evenly (business +3%, creator keeps 97%). Comp-only is always fine, forever. ${b.paidBookings && b.paidBookings.length ? esc(b.paidBookings[0].paymentNote) : ""}</p>
+    <p class="small muted">Paid bookings are the optional lane: a specific creator at their own listed rate, 6% total fee split evenly (business +3%, creator keeps 97%). Comp-only is always fine, forever. ${b.paidBookings && b.paidBookings.length ? esc(b.paidBookings[0].paymentNote) : ""}</p>
   </section>`;
 }
 
@@ -5545,6 +5879,13 @@ function previewDashboardHtml(d) {
     if (srcParam) {
       try { localStorage.setItem("signl_src", srcParam.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 40)); } catch (e) { /* storage unavailable */ }
     }
+    // A password reset link (/?reset=<token>) lands on the reset
+    // screen ahead of every other interpretation of the URL.
+    const resetParam = params.get("reset");
+    if (resetParam) {
+      state.resetToken = resetParam.trim().slice(0, 128);
+      state.view = "reset";
+    }
     const claim = parseClaimParams(params);
     if (claim.handle || claim.market || claim.tier || claim.platform) {
       state.prefill = claim;
@@ -5585,6 +5926,6 @@ function previewDashboardHtml(d) {
       setTimeout(() => renderCounter(code.toUpperCase()), 60);
     }
   } catch (e) {
-    app.innerHTML = `<div class="error-box" style="max-width:560px;margin:40px auto">SIGNL could not load. ${esc(e.message)}</div>`;
+    app.innerHTML = `<div style="max-width:560px;margin:40px auto"><div class="error-box">SIGNL could not load. ${esc(e.message)}</div><p class="mt"><button class="btn" onclick="location.reload()">Reload</button></p></div>`;
   }
 })();

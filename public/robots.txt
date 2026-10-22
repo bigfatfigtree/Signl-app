@@ -1,0 +1,7 @@
+# SIGNL app robots policy (app.joinsignl.com)
+# The public shell (landing pages, sign-in, public creator profiles
+# at /c/<handle>) is crawlable. The API and the authenticated app are
+# not: they serve account data, not pages.
+User-agent: *
+Allow: /
+Disallow: /api/

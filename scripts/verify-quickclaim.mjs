@@ -118,12 +118,19 @@ try {
   check("approval email carries the completion checklist with Momentum values", approvalMail.text.includes("[needed to go live]") && approvalMail.text.includes("Add your profile photo (+10 Momentum points)") && approvalMail.text.includes("Report your local audience % (+5 Momentum points)"), approvalMail.text);
   check("approval email links into the completion flow", approvalMail.text.includes("Sign in and open the Profile tab: https://app.joinsignl.com"));
   check("approval email carries the referral link with +3/+10 and the ordering line", approvalMail.text.includes("https://app.joinsignl.com/?ref=quickclaim757") && approvalMail.text.includes("+3 when a creator joins through your link") && approvalMail.text.includes("+10 when they are approved") && approvalMail.text.includes("Momentum points order the creator list businesses see"), approvalMail.text);
-  check("approval email states founding spots lock in sign-up order and signs as Jeff", approvalMail.text.includes("Founding spots lock in sign-up order") && approvalMail.text.includes("\nJeff\nFounder, SIGNL\n"), approvalMail.text);
+  check("approval email states founding spots are held in sign-up order and signs as Jeff", approvalMail.text.includes("Founding spots are held in sign-up order") && approvalMail.text.includes("\nJeff\nFounder, SIGNL\n"), approvalMail.text);
+
   check("approval email has no em dashes", !approvalMail.text.includes("—") && !approvalMail.text.includes("–"));
 
   const reminderMail = profileCompletionReminderEmail(claimUser);
   check("reminder email subject + still-to-do list from the computed missing set", reminderMail.subject === "Finish your SIGNL profile to be launch-ready" && reminderMail.text.includes("Still to do: your home city, your audience counts, your content categories, your local audience %."), reminderMail.text);
   check("reminder email has no em dashes and signs as Jeff", !reminderMail.text.includes("—") && reminderMail.text.includes("\nJeff\nFounder, SIGNL\n"));
+
+  // Lock / urgency language is banned from creator-facing copy
+  // (UX audit fix, 2026-10-22). Word-boundary match so legitimate
+  // words like "block" and "clock" never trip it.
+  const lockRe = /\block(ed|s|ing)?\b/i;
+  check("no lock language in claim, approval or reminder email copy", !lockRe.test(claimMail.text) && !lockRe.test(claimMail.subject) && !lockRe.test(approvalMail.text) && !lockRe.test(approvalMail.subject) && !lockRe.test(reminderMail.text) && !lockRe.test(reminderMail.subject));
 
   const completionOfClaim = profileCompletionFor(claimUser);
   check("computed completion for a bare claim: incomplete, all four gate items missing", completionOfClaim.complete === false && JSON.stringify(completionOfClaim.missing) === JSON.stringify(["city", "audience", "categories", "local"]), JSON.stringify(completionOfClaim.missing));
