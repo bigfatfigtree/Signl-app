@@ -221,7 +221,7 @@ try {
   check("strike status line is the plain-language wording", R.strikeStatusLine({ noShowStrikes: 1 }) === "Visit strikes: 1 of 3. Letting a booked visit window expire counts as a strike. Three strikes pauses your account for review." && R.strikeStatusLine({}) === null, R.strikeStatusLine({ noShowStrikes: 1 }));
   check("strike limit and probation constants", R.STRIKE_LIMIT === 3 && R.STRIKE_PROBATION_COUNT === 2);
 
-  const sampleUser = { name: "Casey Refine", email: "casey@example.com", market: "Hampton Roads", city: "Norfolk", creator: { handle: "caseyrefine", tierBand: "Locals", categories: ["Food & Drink"], localAudiencePct: 55, audienceStack: { instagram: 3000 }, followerCount: 3000, totalAudience: 3000, bestWork: [], bio: "", hasPhoto: false, neighborhood: "" } };
+  const sampleUser = { name: "Casey Refine", email: "casey@fixtures.dev", market: "Hampton Roads", city: "Norfolk", creator: { handle: "caseyrefine", tierBand: "Locals", categories: ["Food & Drink"], localAudiencePct: 55, audienceStack: { instagram: 3000 }, followerCount: 3000, totalAudience: 3000, bestWork: [], bio: "", hasPhoto: false, neighborhood: "" } };
   const claimMail = R.claimConfirmationEmail(sampleUser, 100);
   check("claim confirmation email carries the free line", claimMail.text.includes(R.CREATOR_FREE_LINE));
   const approvalMail = R.approvalEmail(sampleUser, 100);
@@ -242,9 +242,9 @@ try {
   check("served client carries the free line, the guarantee, and the brief guidance", appSrc.includes(R.CREATOR_FREE_LINE) && appSrc.includes(R.VISIT_GUARANTEE_LINE) && appSrc.includes(R.PAID_BRIEF_GUIDANCE));
 
   // ---------------- fixtures ----------------
-  const cStrike = await makeCreator("strikecreator", "strike@example.com", "Strike Creator");
-  const cHonor = await makeCreator("honorcreator", "honor@example.com", "Honor Creator");
-  const biz = await makeBusiness("Refinement Bistro", "bistro@example.com");
+  const cStrike = await makeCreator("strikecreator", "strike@fixtures.dev", "Strike Creator");
+  const cHonor = await makeCreator("honorcreator", "honor@fixtures.dev", "Honor Creator");
+  const biz = await makeBusiness("Refinement Bistro", "bistro@fixtures.dev");
 
   // ---------------- ITEM 1: covers ----------------
   const oDefault = await biz.client("POST", "/api/offers", { title: "Default covers dinner", whatComped: "Dinner for the creator", dollarCap: 80, spots: 1, creatorId: cStrike.id });

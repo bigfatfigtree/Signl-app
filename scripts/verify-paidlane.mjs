@@ -103,7 +103,7 @@ function creatorPayload(overrides = {}) {
   return {
     role: "creator",
     name: `Paid Creator ${n}`,
-    email: `paid${n}-${uniq()}@example.com`,
+    email: `paid${n}-${uniq()}@fixtures.dev`,
     password: "password123",
     market: "Hampton Roads",
     city: "Norfolk",
@@ -131,7 +131,7 @@ async function registerCreator(overrides = {}) {
 }
 async function registerBusiness(planId, businessName) {
   const client = makeClient();
-  const email = `biz-${uniq()}@example.com`;
+  const email = `biz-${uniq()}@fixtures.dev`;
   const r = await client("POST", "/api/auth/register", {
     role: "business", name: "Biz Owner", email, password: "password123",
     market: "Hampton Roads", city: "Norfolk", businessName, category: "Restaurant", planId, agreedTerms: true,
@@ -328,7 +328,7 @@ try {
 
   // ---------- Part F: business review-page links ----------
   part("F: review-page links");
-  const badLinks = await admin("POST", "/api/admin/review-links", { userId: G.user.id, links: { yelp: "https://example.com/not-yelp" } });
+  const badLinks = await admin("POST", "/api/admin/review-links", { userId: G.user.id, links: { yelp: "https://fixtures.dev/not-yelp" } });
   check("admin rejects a Yelp link that does not point at Yelp", badLinks.status === 400, `${badLinks.status}`);
   const goodLinks = await admin("POST", "/api/admin/review-links", { userId: G.user.id, links: { google: "https://g.page/r/salty-ember", yelp: "https://www.yelp.com/biz/salt-and-ember" } });
   check("admin sets host-valid review links", goodLinks.status === 200 && goodLinks.data.business.reviewLinksView.length === 2, `${goodLinks.status} ${JSON.stringify(goodLinks.data)}`);

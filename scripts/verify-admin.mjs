@@ -99,7 +99,7 @@ async function quickClaim(handle, market, extra = {}) {
   const c = client();
   const reg = await c("POST", "/api/auth/register", {
     role: "creator", quickClaim: true,
-    email: `${handle}@example.com`, password: "<MASKED_SECRET_002>",
+    email: `${handle}@fixtures.dev`, password: "<MASKED_SECRET_002>",
     market, handle, ...AGREE, ...extra,
   });
   if (reg.status !== 201) throw new Error(`quick claim ${handle} failed: ${JSON.stringify(reg.data)}`);
@@ -109,7 +109,7 @@ async function quickClaim(handle, market, extra = {}) {
 async function fullSignup(handle, market, city) {
   const c = client();
   const reg = await c("POST", "/api/auth/register", {
-    role: "creator", name: `Full ${handle}`, email: `${handle}@example.com`, password: "<MASKED_SECRET_002>",
+    role: "creator", name: `Full ${handle}`, email: `${handle}@fixtures.dev`, password: "<MASKED_SECRET_002>",
     market, city, handle,
     followerCount: 4200, localAudiencePct: 61, categories: ["Food & Drink"],
     ...AGREE,
@@ -152,7 +152,7 @@ try {
   // A business in Hampton Roads, approved: must not enter any count.
   const biz = client();
   const bizReg = await biz("POST", "/api/auth/register", {
-    role: "business", name: "Biz Owner", businessName: "Adm Testaurant", email: "admbiz@example.com",
+    role: "business", name: "Biz Owner", businessName: "Adm Testaurant", email: "admbiz@fixtures.dev",
     password: "<MASKED_SECRET_003>", market: "Hampton Roads", city: "Virginia Beach", category: "Restaurant", planId: "growth",
     agreedTerms: true,
   });

@@ -8,6 +8,7 @@ const { logEvent, listEvents } = require("./events");
 const { MARKETS, TIERS, CREATOR_CATEGORIES, COMP_CATEGORIES, BUSINESS_CATEGORIES, PLANS, tierForFollowers, normalizeTierBand } = require("./markets");
 const { computeLocalImpactScore, summarizeHistory } = require("./score");
 const { emailEnabled, sendEmail } = require("./email");
+const claimEvidence = require("./claim-evidence");
 
 // ------------------------------------------------------------------
 // Launch shape (Jeff, 2026-10-18): creator founding sign-up is the
@@ -805,6 +806,13 @@ const FOUNDING_BUSINESS_MESSAGE = "Your business is on the founding list, so the
 function publicUser(u) {
   if (!u) return null;
   const { passwordHash, passwordSalt, ...rest } = u;
+  // Internal decision markers (standing-authority auto-decisions,
+  // 2026-10-22) are server-side only: they never ride any client
+  // payload. Admin surfaces re-add what they need from the raw
+  // record behind admin auth.
+  delete rest.approvedBy;
+  delete rest.decisionReason;
+  delete rest.decisionNote;
   if (rest.role === "business" && rest.business) {
     rest.business = { ...rest.business, accessState: businessAccessState(rest) };
     delete rest.business.paymentLink;
@@ -2659,6 +2667,194 @@ async function maybeRunProfileBackfill() {
   // Claim before running so concurrent requests do not pile on.
   await store.set(PROFILE_BACKFILL_KEY, { claimedAt: nowIso(), done: false });
   return runProfileBackfill();
+}
+
+// ---------- Claim auto-decisions (Jeff standing authority, 2026-10-22) ----------
+// Jeff took himself off the approval critical path: obvious test
+// and spam claims are rejected without a person, and claims that
+// verifiably match our own outreach records are approved without
+// a person, each with exactly the side effects of the manual
+// decision. Everything else, and every claim that arrived through
+// another creator's referral link, waits for manual review:
+// referral approvals mint Momentum (+10) for the referrer, so no
+// rule ever approves them. INTERNAL ONLY: the system is never
+// disclosed publicly. Public copy keeps the person-reviewed
+// framing, auto-approved creators receive the standard approval
+// email unchanged, and the decision markers live on the record
+// server-side only (publicUser strips them; admin surfaces re-add
+// them behind admin auth).
+const AUTO_TEST_EMAIL_DOMAINS = new Set(["example.com", "example.org"]);
+const AUTO_TEST_EMAILS = new Set(["testclaim@example.com"]);
+const AUTO_TEST_HANDLES = new Set(["tiertest", "localtest", "signltestclaim"]);
+const AUTO_TEST_NAME_MARKET = new Set(["email test|dubai", "email test 2|dubai"]);
+const AUTO_DECISION_CLEANUP_KEY = "config:autoDecisionCleanupV1";
+const AUTO_DECISION_CLEANUP_NOTE = "cleanup 2026-10-22, Jeff standing authority";
+
+function claimHandleKey(u) {
+  return u && u.creator && typeof u.creator.handle === "string" ? u.creator.handle.replace(/^@/, "").trim().toLowerCase() : "";
+}
+
+// Conservative exact matches only; nothing fuzzy. A record is a
+// test/spam claim when its email domain is a reserved example
+// domain, its email is a known test address, its creator handle
+// is a known test handle, or it is one of the legacy named test
+// records (name + market, exact).
+function autoTestMatch(u) {
+  if (!u || u.role !== "creator") return false;
+  const email = String(u.email || "").toLowerCase();
+  const domain = email.split("@")[1] || "";
+  if (AUTO_TEST_EMAIL_DOMAINS.has(domain)) return true;
+  if (AUTO_TEST_EMAILS.has(email)) return true;
+  const handle = claimHandleKey(u);
+  if (handle && AUTO_TEST_HANDLES.has(handle)) return true;
+  const nameMarket = `${String(u.name || "").trim().toLowerCase()}|${String(u.market || "").trim().toLowerCase()}`;
+  if (AUTO_TEST_NAME_MARKET.has(nameMarket)) return true;
+  return false;
+}
+
+// The live half of the match evidence, preloaded once per
+// decision run: campaign recipients the app has actually SENT
+// (every campaign email embeds the recipient's personal claim
+// link, so a sent recipient supports both rules), indexed for
+// exact lookup. The static half is lib/claim-evidence.js.
+async function buildAutoEvidence() {
+  let recipients = [];
+  try {
+    const rows = await store.list("campaign-recipient:");
+    recipients = rows.map((r) => r.value).filter((r) => r && r.status === "sent");
+  } catch (e) { recipients = []; }
+  const sentByHandleEmail = new Map();
+  const sentByHandleMarket = new Map();
+  for (const r of recipients) {
+    const h = String(r.handle || "").replace(/^@/, "").trim().toLowerCase();
+    const em = String(r.email || "").trim().toLowerCase();
+    const mk = String(r.market || "").trim();
+    if (h && em) sentByHandleEmail.set(`${h}|${em}`, true);
+    if (h && mk) sentByHandleMarket.set(`${h}|${mk}`, true);
+  }
+  return { sentByHandleEmail, sentByHandleMarket };
+}
+
+// Which rule, if any, a pending creator claim matches:
+// "auto_rule_a", "auto_rule_b", or null. A claim carrying a
+// referral NEVER matches, no exceptions: it stays manual.
+function autoEvidenceRule(u, users, evidence) {
+  if (!u || u.role !== "creator" || !u.creator) return null;
+  if (u.referredBy) return null;
+  const handle = claimHandleKey(u);
+  if (!handle) return null;
+  const email = String(u.email || "").trim().toLowerCase();
+  const market = String(u.market || "").trim();
+  // Rule A: handle AND email both evidenced (snapshot, a campaign
+  // recipient actually sent, or a prior approval record).
+  if (claimEvidence.snapshotMatchA(handle, email)) return "auto_rule_a";
+  if (evidence.sentByHandleEmail.has(`${handle}|${email}`)) return "auto_rule_a";
+  const prior = (users || []).some((o) => o.id !== u.id && o.role === "creator" && o.status === "approved" && claimHandleKey(o) === handle && String(o.email || "").trim().toLowerCase() === email);
+  if (prior) return "auto_rule_a";
+  // Rule B: a personal claim link verifiably sent to this exact
+  // handle for this exact market (snapshot or sent recipient).
+  if (claimEvidence.snapshotMatchB(handle, market)) return "auto_rule_b";
+  if (evidence.sentByHandleMarket.has(`${handle}|${market}`)) return "auto_rule_b";
+  return null;
+}
+
+// Decide one pending creator record under the standing rules.
+// Returns { action, rule } when a rule decided it, else null (the
+// record stays pending for a person). Approval replays the manual
+// approval's side effects exactly: state, the
+// application_approved event, queue position (derived from the
+// records), and the standard approval email through the same send
+// path. Rejection stores the reason on the record and sends no
+// email and fires no referral effects.
+async function applyAutoDecision(u, users, evidence, opts = {}) {
+  if (!u || u.role !== "creator" || u.status !== "pending") return null;
+  if (autoTestMatch(u)) {
+    u.status = "rejected";
+    u.reviewedAt = nowIso();
+    u.reviewedBy = "system";
+    u.decisionReason = "auto_test";
+    if (opts.cleanupNote) u.decisionNote = opts.cleanupNote;
+    u.updatedAt = nowIso();
+    await store.set(`user:${u.id}`, u);
+    await logEvent({ type: "application_rejected", actorId: null, actorRole: "system", subjectId: u.id, market: u.market, data: { applicantRole: u.role, email: u.email, autoDecision: true, rule: "auto_test", ...(opts.cleanupNote ? { note: opts.cleanupNote } : {}) } });
+    return { action: "rejected", rule: "auto_test" };
+  }
+  const rule = autoEvidenceRule(u, users, evidence);
+  if (!rule) return null;
+  u.status = "approved";
+  u.reviewedAt = nowIso();
+  u.reviewedBy = "system";
+  u.approvedBy = rule;
+  u.updatedAt = nowIso();
+  await store.set(`user:${u.id}`, u);
+  await logEvent({ type: "application_approved", actorId: null, actorRole: "system", subjectId: u.id, market: u.market, data: { applicantRole: u.role, email: u.email, autoDecision: true, rule, approvedBy: rule } });
+  try {
+    const { approvedRank } = creatorRanks(await allUsers());
+    const band = foundingBand(approvedRank.get(u.id));
+    const mail = approvalEmail(u, band);
+    await deliverEmail("approval", u, mail.subject, mail.text, band);
+  } catch (e) { /* email is best-effort, exactly as in manual review */ }
+  return { action: "approved", rule };
+}
+
+// The named legacy records the one-time cleanup accounts for, by
+// exact identifier. A record that cannot be found is reported as
+// not found; nothing is approximated.
+const AUTO_CLEANUP_NAMED = [
+  { label: "Email Test", match: (u) => String(u.name || "").trim() === "Email Test" && u.market === "Dubai" },
+  { label: "Email Test 2", match: (u) => String(u.name || "").trim() === "Email Test 2" && u.market === "Dubai" },
+  { label: "Casey Rivers (@tiertest)", match: (u) => claimHandleKey(u) === "tiertest" },
+  { label: "Jamie Fox (@localtest)", match: (u) => claimHandleKey(u) === "localtest" },
+  { label: "@signltestclaim (testclaim@example.com)", match: (u) => claimHandleKey(u) === "signltestclaim" || String(u.email || "").toLowerCase() === "testclaim@example.com" },
+];
+
+// One-time pass over the pending records that predate the rules
+// (claimed-flag pattern, like the profile backfill): decide what
+// the rules decide, leave the rest pending, and store a full
+// audit, including a per-record account of the named legacy test
+// records and a read-only confirmation of the designated tester.
+async function runAutoDecisionCleanup() {
+  const ranAt = nowIso();
+  const users = await allUsers();
+  const evidence = await buildAutoEvidence();
+  const decided = [];
+  for (const u of users) {
+    if (u.role !== "creator" || u.status !== "pending") continue;
+    const d = await applyAutoDecision(u, users, evidence, { cleanupNote: AUTO_DECISION_CLEANUP_NOTE });
+    if (d) decided.push({ userId: u.id, handle: claimHandleKey(u) || null, email: u.email, market: u.market, action: d.action, rule: d.rule });
+  }
+  // Re-read so the audit reports final states, not pre-pass ones.
+  const after = await allUsers();
+  const namedRecords = AUTO_CLEANUP_NAMED.map((n) => {
+    const rec = after.find((u) => u.role === "creator" && n.match(u));
+    if (!rec) return { label: n.label, found: false };
+    const wasDecided = decided.some((d) => d.userId === rec.id);
+    return { label: n.label, found: true, userId: rec.id, email: rec.email, handle: claimHandleKey(rec) || null, market: rec.market, status: rec.status, action: wasDecided ? "decided by this cleanup" : `left as-is (${rec.status})` };
+  });
+  // Tony Johnson is already a designated tester: confirm the flag
+  // and change nothing about his record.
+  const tony = after.find((u) => u.role === "creator" && claimHandleKey(u) === "tonyjohnson374");
+  const audit = {
+    ranAt,
+    note: AUTO_DECISION_CLEANUP_NOTE,
+    decidedCount: decided.length,
+    approvedCount: decided.filter((d) => d.action === "approved").length,
+    rejectedCount: decided.filter((d) => d.action === "rejected").length,
+    decided,
+    namedRecords,
+    tonyJohnson: tony ? { found: true, userId: tony.id, email: tony.email, status: tony.status, tester: isTester(tony), changed: false } : { found: false },
+  };
+  await store.set(AUTO_DECISION_CLEANUP_KEY, { done: true, ranAt, audit });
+  await logEvent({ type: "auto_decision_cleanup_completed", actorId: null, actorRole: "system", subjectId: null, market: null, data: { decidedCount: audit.decidedCount, approvedCount: audit.approvedCount, rejectedCount: audit.rejectedCount, namedFound: namedRecords.filter((n) => n.found).length, tonyJohnsonFound: audit.tonyJohnson.found } });
+  return audit;
+}
+
+async function maybeRunAutoDecisionCleanup() {
+  const rec = await store.get(AUTO_DECISION_CLEANUP_KEY);
+  if (rec && rec.done) return null;
+  // Claim before running so concurrent requests do not pile on.
+  await store.set(AUTO_DECISION_CLEANUP_KEY, { claimedAt: nowIso(), done: false });
+  return runAutoDecisionCleanup();
 }
 
 // ---------- visit windows + weekly cap (Jeff, 2026-10-19 r2) ----------
@@ -4886,7 +5082,22 @@ async function handleRegister(event) {
         ? { quickClaim: !!quickClaim, profileComplete: user.creator.profileComplete === true, handle: user.creator.handle, city: user.city, neighborhood: user.creator.neighborhood, university: user.creator.university, state: user.state, country: user.country, unlisted: user.market === UNLISTED, followerCount: user.creator.followerCount, audienceStack: user.creator.audienceStack, totalAudience: user.creator.totalAudience, tierBand: normalizeTierBand(user.creator.tierBand), suggestedTier: normalizeTierBand(user.creator.suggestedTier), localAudiencePct: user.creator.localAudiencePct, localAudienceSource: user.creator.localAudienceSource, categories: user.creator.categories, compCategories: user.creator.compCategories, openToPaidCampaigns: user.creator.openToPaidCampaigns, agreedPostCompliance: true, termsVersion: TERMS_VERSION, marketingEmailConsent: true, ...(user.referredBy ? { referredBy: user.referredBy } : {}), ...(user.signupSource ? { signupSource: user.signupSource } : {}) }
         : { businessName: user.business.businessName, category: user.business.category, plan: user.business.plan, planPriceMonthly: user.business.planPriceMonthly, ...(user.referredBy ? { referredBy: user.referredBy } : {}), ...(user.signupSource ? { signupSource: user.signupSource } : {}) },
   });
-  if (role === "creator" && !quickClaim) {
+  // Standing-authority auto-decision (Jeff, 2026-10-22): a creator
+  // claim that is an exact test/spam match is rejected here, and
+  // one that verifiably matches our outreach evidence is approved
+  // here, with the manual decision's exact side effects. Anything
+  // else stays pending for a person. A decided claim skips the
+  // "in the review queue" confirmation email below: an approved
+  // creator gets the approval email instead, and a rejected test
+  // claim gets nothing. Failure here must never fail a sign-up.
+  let autoDecision = null;
+  if (role === "creator") {
+    try {
+      const evidence = await buildAutoEvidence();
+      autoDecision = await applyAutoDecision(user, await allUsers(), evidence);
+    } catch (e) { /* auto-decisions are best-effort; manual review remains */ }
+  }
+  if (role === "creator" && !quickClaim && (!autoDecision || autoDecision.action !== "rejected")) {
     // A full-form registration IS the complete profile build: the
     // profile fields are all collected up front, so this fires
     // here. A quick claim fires NO profile_completed event: the
@@ -4942,7 +5153,7 @@ async function handleRegister(event) {
     });
   }
 
-  if (role === "creator") {
+  if (role === "creator" && !autoDecision) {
     // Sign-up confirmation email (Jeff, 2026-10-18). Queued as an event
     // always; sent immediately when the SMTP transport is configured.
     // Email trouble must never fail a registration, hence the try/catch.
@@ -5010,6 +5221,10 @@ async function route(event) {
   // for records written before the two-step claim shipped, guarded
   // by its own claimed flag, audit logged as an event.
   try { await maybeRunProfileBackfill(); } catch (e) { /* backfill is best-effort on the request path */ }
+  // One-time auto-decision cleanup for pending records that
+  // predate the standing rules: same claimed-flag discipline, and
+  // it must never break a request either.
+  try { await maybeRunAutoDecisionCleanup(); } catch (e) { /* cleanup is best-effort on the request path */ }
   // Profile completion reminders: same throttled opportunistic
   // pattern as the compliance sweep below.
   try { await maybeRunProfileReminderSweep(); } catch (e) { /* reminder sweep is best-effort on the request path */ }
@@ -5624,6 +5839,12 @@ async function route(event) {
       const momentum = createMomentum({ users: all, bookings: allBk, posts: allPo, reviews: allRv, bizReviews: allBz });
       const attach = (u) => {
         const pub = publicUser(u);
+        // Admin-only visibility of the internal decision markers
+        // (publicUser strips them from every client payload; this
+        // endpoint is behind admin auth).
+        if (u.approvedBy) pub.approvedBy = u.approvedBy;
+        if (u.decisionReason) pub.decisionReason = u.decisionReason;
+        if (u.decisionNote) pub.decisionNote = u.decisionNote;
         if (u.role === "creator") {
           pub.university = universityOfRecord(u);
           pub.universityStatus = universityStatusOfRecord(u);
@@ -5657,9 +5878,27 @@ async function route(event) {
         approvedComplete: list.filter((u) => u.status === "approved" && !isTester(u) && profileCompleteOf(u)).length,
       });
       const creatorsAll = users.filter((u) => u.role === "creator");
+      // Auto-decided counts (internal, admin only): records the
+      // standing rules decided without a person, all time and
+      // today (America/New_York, the same calendar the campaign
+      // ceiling uses). Derived from the record markers themselves.
+      const etToday = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
+      const etDay = (iso) => {
+        if (!iso) return "";
+        try { return new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date(iso)); } catch (e) { return ""; }
+      };
+      const autoApproved = creatorsAll.filter((u) => u.status === "approved" && typeof u.approvedBy === "string" && u.approvedBy.startsWith("auto_"));
+      const autoRejected = creatorsAll.filter((u) => u.status === "rejected" && u.decisionReason === "auto_test");
+      const auto = {
+        approved: autoApproved.length,
+        rejected: autoRejected.length,
+        approvedToday: autoApproved.filter((u) => etDay(u.reviewedAt) === etToday).length,
+        rejectedToday: autoRejected.filter((u) => etDay(u.reviewedAt) === etToday).length,
+      };
       const summary = {
         markets: LAUNCH_MARKET_LABELS.map(([name, label]) => ({ market: name, label, ...rosterCounts(creatorsAll.filter((u) => u.market === name)) })),
         all: rosterCounts(creatorsAll),
+        auto,
       };
       return json(200, { pending: pending.map(attach), decided: decided.map(attach), summary });
     }
@@ -5758,6 +5997,18 @@ async function route(event) {
     if (method === "POST" && seg[1] === "profile-backfill") {
       const audit = await runProfileBackfill();
       return json(200, { ok: true, audit });
+    }
+    // Auto-decision cleanup on demand: re-runs the standing-rule
+    // pass over pending records and returns its audit (the same
+    // pass runs once on its own after deploy). Admin only, like
+    // every decision surface.
+    if (method === "POST" && seg[1] === "auto-decisions" && seg[2] === "run") {
+      const audit = await runAutoDecisionCleanup();
+      return json(200, { ok: true, audit });
+    }
+    if (method === "GET" && seg[1] === "auto-decisions") {
+      const rec = await store.get(AUTO_DECISION_CLEANUP_KEY);
+      return json(200, { cleanup: rec || null });
     }
     // Business activation (Jeff, 2026-10-20 correction): approval
     // puts a business on the founding list; ACTIVATION is a

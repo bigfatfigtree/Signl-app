@@ -4487,7 +4487,8 @@ async function loadApplications() {
       <div class="table-wrap panel"><table><tr><th>Market</th><th>Pending</th><th>Approved</th><th>Approved + profile complete</th></tr>
       ${s.markets.map((m) => `<tr><td>${esc(m.label)}</td><td>${m.pending}</td><td>${m.approved}</td><td>${m.approvedComplete}</td></tr>`).join("")}
       <tr><td><strong>All markets</strong></td><td><strong>${s.all.pending}</strong></td><td><strong>${s.all.approved}</strong></td><td><strong>${s.all.approvedComplete}</strong></td></tr>
-      </table></div>` : "";
+      </table></div>
+      ${s.auto ? `<p class="muted small">Auto-decided under the standing rules: ${s.auto.approved} approved, ${s.auto.rejected} rejected all time; today ${s.auto.approvedToday} approved, ${s.auto.rejectedToday} rejected. Referred claims always wait for a person.</p>` : ""}` : "";
     el.innerHTML = `
       ${summaryStrip}
       <h3>Pending (${data.pending.length})</h3>

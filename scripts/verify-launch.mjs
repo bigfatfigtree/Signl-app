@@ -113,25 +113,25 @@ try {
 
   // --- registration validation (profile builder enforces its fields) ---
   const basePayload = {
-    role: "creator", name: "Launch Creator", email: "launch-a@example.com", password: "creator-pass-123",
+    role: "creator", name: "Launch Creator", email: "launch-a@fixtures.dev", password: "creator-pass-123",
     market: "Hampton Roads", city: "Norfolk", handle: "launcheats", followerCount: 8400,
     localAudiencePct: 62, categories: ["Food & Drink"], agreedHonestPosts: true, agreedFtcDisclosure: true, agreedPostCompliance: true, agreedTerms: true,
   };
-  const noPct = await client()("POST", "/api/auth/register", { ...basePayload, email: "x1@example.com", localAudiencePct: undefined });
+  const noPct = await client()("POST", "/api/auth/register", { ...basePayload, email: "x1@fixtures.dev", localAudiencePct: undefined });
   check("registration without local audience % is refused (400)", noPct.status === 400, String(noPct.status));
-  const noAgree = await client()("POST", "/api/auth/register", { ...basePayload, email: "x2@example.com", agreedFtcDisclosure: false });
+  const noAgree = await client()("POST", "/api/auth/register", { ...basePayload, email: "x2@fixtures.dev", agreedFtcDisclosure: false });
   check("registration without the FTC agreement is refused (400)", noAgree.status === 400, String(noAgree.status));
-  const noTerms = await client()("POST", "/api/auth/register", { ...basePayload, email: "x5@example.com", agreedTerms: false });
+  const noTerms = await client()("POST", "/api/auth/register", { ...basePayload, email: "x5@fixtures.dev", agreedTerms: false });
   check("registration without the Terms + email consent is refused (400)", noTerms.status === 400, String(noTerms.status));
-  const badCity = await client()("POST", "/api/auth/register", { ...basePayload, email: "x3@example.com", city: "Richmond" });
+  const badCity = await client()("POST", "/api/auth/register", { ...basePayload, email: "x3@fixtures.dev", city: "Richmond" });
   check("home city outside the chosen market is refused (400)", badCity.status === 400, String(badCity.status));
-  const noCats = await client()("POST", "/api/auth/register", { ...basePayload, email: "x4@example.com", categories: [] });
+  const noCats = await client()("POST", "/api/auth/register", { ...basePayload, email: "x4@fixtures.dev", categories: [] });
   check("registration with no content category is refused (400)", noCats.status === 400, String(noCats.status));
 
   // --- business registration is a real account flow now ---
   const hopefulBiz = client();
   const bizAttempt = await hopefulBiz("POST", "/api/auth/register", {
-    role: "business", name: "Hopeful Owner", businessName: "Hopeful Table", email: "hopeful@example.com",
+    role: "business", name: "Hopeful Owner", businessName: "Hopeful Table", email: "hopeful@fixtures.dev",
     password: "business-pass-123", market: "Hampton Roads", city: "Norfolk", category: "Restaurant", planId: "managed",
     neighborhood: "Ghent", about: "Neighborhood spot, chef counter.", agreedTerms: true,
   });
@@ -140,12 +140,12 @@ try {
   check("business plan recorded honestly (Managed $999, founding billing, no charge)", bizAttempt.data.user.business.plan === "managed" && bizAttempt.data.user.business.planPriceMonthly === 999 && /no card charged/.test(bizAttempt.data.user.business.billingStatus), JSON.stringify(bizAttempt.data.user.business));
   check("business record is founding-state with profile fields and NO payment link (payment stays concierge)", bizAttempt.data.user.business.accessState === "founding" && !("paymentLink" in bizAttempt.data.user.business) && bizAttempt.data.user.business.neighborhood === "Ghent" && /chef counter/.test(bizAttempt.data.user.business.about), JSON.stringify(bizAttempt.data.user.business));
   const bizNoTerms = await client()("POST", "/api/auth/register", {
-    role: "business", name: "No Terms", businessName: "No Terms Table", email: "noterms@example.com",
+    role: "business", name: "No Terms", businessName: "No Terms Table", email: "noterms@fixtures.dev",
     password: "business-pass-123", market: "Hampton Roads", city: "Norfolk", category: "Restaurant", planId: "growth",
   });
   check("business registration without the Terms agreement is refused (400)", bizNoTerms.status === 400, String(bizNoTerms.status));
   const bizUnlisted = await client()("POST", "/api/auth/register", {
-    role: "business", name: "Unlisted Owner", businessName: "Unlisted Table", email: "unlisted-biz@example.com",
+    role: "business", name: "Unlisted Owner", businessName: "Unlisted Table", email: "unlisted-biz@fixtures.dev",
     password: "business-pass-123", market: "Not listed yet", customCity: "Nowhere", customCountry: "United States", category: "Restaurant", planId: "growth", agreedTerms: true,
   });
   check("business registration in an unlisted market is refused (400): accounts are tied to a market", bizUnlisted.status === 400, String(bizUnlisted.status));
@@ -258,7 +258,7 @@ try {
   // --- public creator profile: /c/<handle>, approved only, whitelist only ---
   const pubRaw = await anon.raw("/api/c/launcheats");
   check("public profile answers for an approved creator, no sign-in", pubRaw.status === 200, String(pubRaw.status));
-  check("public profile leaks no email, password material, or internal fields", !pubRaw.text.includes("launch-a@example.com") && !pubRaw.text.includes("passwordHash") && !pubRaw.text.includes("passwordSalt") && !pubRaw.text.includes("reviewedBy") && !pubRaw.text.includes("referredBy") && !pubRaw.text.includes("agreedTerms"), pubRaw.text.slice(0, 200));
+  check("public profile leaks no email, password material, or internal fields", !pubRaw.text.includes("launch-a@fixtures.dev") && !pubRaw.text.includes("passwordHash") && !pubRaw.text.includes("passwordSalt") && !pubRaw.text.includes("reviewedBy") && !pubRaw.text.includes("referredBy") && !pubRaw.text.includes("agreedTerms"), pubRaw.text.slice(0, 200));
   const pub = (JSON.parse(pubRaw.text) || {}).profile || {};
   check("public profile carries the public-safe fields", pub.name === "Launch Creator" && pub.handle === "launcheats" && pub.market === "Hampton Roads" && pub.city === "Norfolk" && pub.neighborhood === "Ghent" && pub.tierBand === "Locals" && pub.followerCount === 8400, JSON.stringify(pub));
   check("public profile shows local audience % with its source label", pub.localAudiencePct === 62 && pub.localAudienceSource === "Self-reported", JSON.stringify([pub.localAudiencePct, pub.localAudienceSource]));
@@ -275,7 +275,7 @@ try {
   const pubDirty = await anon("GET", "/api/c/%3Cscript%3E");
   check("public profile sanitizes markup in the handle and 404s", pubDirty.status === 404, String(pubDirty.status));
   const creatorP = client();
-  const regP = await creatorP("POST", "/api/auth/register", { ...basePayload, name: "Pending Creator", email: "launch-p@example.com", handle: "pendingplates" });
+  const regP = await creatorP("POST", "/api/auth/register", { ...basePayload, name: "Pending Creator", email: "launch-p@fixtures.dev", handle: "pendingplates" });
   check("pending creator registers for the public-profile gate checks", regP.status === 201, JSON.stringify(regP.data));
   const pubPending = await anon("GET", "/api/c/pendingplates");
   check("public profile for a PENDING creator is 404", pubPending.status === 404, String(pubPending.status));
@@ -303,7 +303,7 @@ try {
   check("public profile track record is the honest zero state before any visit", !!pr.trackRecord && pr.trackRecord.isNew === true && pr.trackRecord.visitsCompleted === 0 && pr.trackRecord.postsDelivered === 0 && pr.trackRecord.onTimePct === null && (pr.trackRecord.businessesWorkedWith || []).length === 0, JSON.stringify(pr.trackRecord));
   check("public profile has no reviews before any exist (never seeded)", !!pr.reviewSummary && pr.reviewSummary.count === 0 && pr.reviewSummary.average === null && Array.isArray(pr.reviews) && pr.reviews.length === 0, JSON.stringify(pr.reviewSummary));
   const pubRichRaw = await anon.raw("/api/c/launcheats");
-  check("public profile with photo + best work + track record still leaks no email or internal fields", !pubRichRaw.text.includes("launch-a@example.com") && !pubRichRaw.text.includes("passwordHash") && !pubRichRaw.text.includes("passwordSalt") && !pubRichRaw.text.includes("reviewedBy") && !pubRichRaw.text.includes("referredBy") && !pubRichRaw.text.includes("agreedTerms"), pubRichRaw.text.slice(0, 160));
+  check("public profile with photo + best work + track record still leaks no email or internal fields", !pubRichRaw.text.includes("launch-a@fixtures.dev") && !pubRichRaw.text.includes("passwordHash") && !pubRichRaw.text.includes("passwordSalt") && !pubRichRaw.text.includes("reviewedBy") && !pubRichRaw.text.includes("referredBy") && !pubRichRaw.text.includes("agreedTerms"), pubRichRaw.text.slice(0, 160));
   const pubPhotoAnon = await client().raw(pr.photoUrl || "/api/users/none/photo");
   check("an approved creator's photo serves to the public (it is on their profile page)", pubPhotoAnon.status === 200 && pubPhotoAnon.contentType.includes("image/png"), `${pubPhotoAnon.status} ${pubPhotoAnon.contentType}`);
   check("client ships best work editing and the showcase renderers (track record zero state, reviews)", appJsPub.text.includes("p-work-") && appJsPub.text.includes("New to SIGNL: no visits yet") && appJsPub.text.includes("creatorShowcaseHtml") && appJsPub.text.includes("Business reviews") && appJsPub.text.includes("Watch:"), "");
@@ -333,7 +333,7 @@ try {
 
   // --- second founding creator: priority follows sign-up order ---
   const creatorB = client();
-  const regB = await creatorB("POST", "/api/auth/register", { ...basePayload, name: "Second Creator", email: "launch-b@example.com", handle: "secondeats", city: "Virginia Beach" });
+  const regB = await creatorB("POST", "/api/auth/register", { ...basePayload, name: "Second Creator", email: "launch-b@fixtures.dev", handle: "secondeats", city: "Virginia Beach" });
   check("second creator registers", regB.status === 201, JSON.stringify(regB.data));
   check("sign-up without a neighborhood still works; the field defaults to empty", regB.data.user.creator.neighborhood === "", JSON.stringify(regB.data.user.creator.neighborhood));
   await admin("POST", "/api/admin/review", { userId: regB.data.user.id, decision: "approve" });
@@ -366,7 +366,7 @@ try {
   check("discovery score sort still available (?sort=score)", discScore.status === 200 && (discScore.data.creators || []).length === 2);
   const lateBiz = client();
   const bizAfter = await lateBiz("POST", "/api/auth/register", {
-    role: "business", name: "Late Owner", businessName: "Late Table", email: "late@example.com",
+    role: "business", name: "Late Owner", businessName: "Late Table", email: "late@fixtures.dev",
     password: "business-pass-123", market: "Hampton Roads", city: "Norfolk", category: "Restaurant", planId: "managed", agreedTerms: true,
   });
   check("business registration works the same in a live market (201): founding intake, the live flag does not change sign-up", bizAfter.status === 201 && bizAfter.data.user.status === "pending" && bizAfter.data.user.business.accessState === "founding", String(bizAfter.status));
@@ -465,7 +465,7 @@ try {
   // roster / approved counts skip them. Their own creator side
   // keeps working normally: testing is the point.
   const testerC = client();
-  const regT = await testerC("POST", "/api/auth/register", { ...basePayload, name: "Tony Tester", email: "launch-t@example.com", handle: "tonytester", city: "Norfolk" });
+  const regT = await testerC("POST", "/api/auth/register", { ...basePayload, name: "Tony Tester", email: "launch-t@fixtures.dev", handle: "tonytester", city: "Norfolk" });
   check("tester candidate registers", regT.status === 201, JSON.stringify(regT.data));
   const testerId = regT.data.user.id;
   check("new accounts start with the tester flag off", regT.data.user.tester === false, JSON.stringify(regT.data.user.tester));
@@ -518,14 +518,14 @@ try {
   // --- paid cash campaigns: a Headliners-tier option only ---
   const creatorC = client();
   const regC = await creatorC("POST", "/api/auth/register", {
-    ...basePayload, name: "Big Creator", email: "launch-c@example.com", handle: "bigcreator",
+    ...basePayload, name: "Big Creator", email: "launch-c@fixtures.dev", handle: "bigcreator",
     followerCount: 42000, tierBand: "Headliners", compCategories: ["Restaurant meals", "Paid cash campaigns"],
   });
   check("Headliners-tier registration with paid campaigns selected returns 201", regC.status === 201, JSON.stringify(regC.data));
   check("paid campaigns stored for the Headliners-tier creator", regC.data.user.creator.openToPaidCampaigns === true && regC.data.user.creator.compCategories.includes("Paid cash campaigns"), JSON.stringify(regC.data.user.creator.compCategories));
   const creatorD = client();
   const regD = await creatorD("POST", "/api/auth/register", {
-    ...basePayload, name: "Local Creator", email: "launch-d@example.com", handle: "localcreator",
+    ...basePayload, name: "Local Creator", email: "launch-d@fixtures.dev", handle: "localcreator",
     followerCount: 8400, tierBand: "Locals", compCategories: ["Restaurant meals", "Paid cash campaigns"],
   });
   check("Locals-tier attempt at paid campaigns is stripped server-side", regD.status === 201 && regD.data.user.creator.openToPaidCampaigns === false && !regD.data.user.creator.compCategories.includes("Paid cash campaigns"), JSON.stringify(regD.data.user.creator.compCategories));
@@ -538,26 +538,26 @@ try {
 
   // --- Dubai is a core market: picked, never typed in ---
   const dubaiCreator = client();
-  const regDubai = await dubaiCreator("POST", "/api/auth/register", { ...basePayload, name: "Dubai Creator", email: "launch-dubai@example.com", handle: "dubaieats", market: "Dubai", city: "Dubai" });
+  const regDubai = await dubaiCreator("POST", "/api/auth/register", { ...basePayload, name: "Dubai Creator", email: "launch-dubai@fixtures.dev", handle: "dubaieats", market: "Dubai", city: "Dubai" });
   check("Dubai is selectable as a core market at sign-up (201)", regDubai.status === 201, JSON.stringify(regDubai.data));
   check("Dubai sign-up stores the market and its country, founding-only", regDubai.data.user.market === "Dubai" && regDubai.data.user.country === "United Arab Emirates" && regDubai.data.user.founding.marketLive === false && regDubai.data.user.founding.unlisted === false, JSON.stringify([regDubai.data.user.market, regDubai.data.user.country, regDubai.data.user.founding]));
-  const londonAttempt = await client()("POST", "/api/auth/register", { ...basePayload, email: "x7@example.com", handle: "londonwrong", market: "London", city: "Dubai" });
+  const londonAttempt = await client()("POST", "/api/auth/register", { ...basePayload, email: "x7@fixtures.dev", handle: "londonwrong", market: "London", city: "Dubai" });
   check("a city outside the picked market is still refused (London market, Dubai city, 400)", londonAttempt.status === 400, String(londonAttempt.status));
-  const regSingapore = await client()("POST", "/api/auth/register", { ...basePayload, name: "Singapore Creator", email: "launch-sg@example.com", handle: "singaporeeats", market: "Singapore", city: "Singapore" });
+  const regSingapore = await client()("POST", "/api/auth/register", { ...basePayload, name: "Singapore Creator", email: "launch-sg@fixtures.dev", handle: "singaporeeats", market: "Singapore", city: "Singapore" });
   check("Singapore (Bella list) is selectable as a core market at sign-up", regSingapore.status === 201 && regSingapore.data.user.market === "Singapore" && regSingapore.data.user.country === "Singapore" && regSingapore.data.user.founding.marketLive === false, JSON.stringify(regSingapore.data.user && [regSingapore.data.user.market, regSingapore.data.user.country]));
 
   // --- city not listed: anyone can sign up, counted per city ---
   check("bootstrap names the unlisted pseudo-market", boot.data.unlistedMarket === "Not listed yet");
-  const noCountry = await client()("POST", "/api/auth/register", { ...basePayload, email: "x6@example.com", market: "Not listed yet", customCity: "Tulsa", customState: "OK" });
+  const noCountry = await client()("POST", "/api/auth/register", { ...basePayload, email: "x6@fixtures.dev", market: "Not listed yet", customCity: "Tulsa", customState: "OK" });
   check("unlisted sign-up without a country is refused (400)", noCountry.status === 400, String(noCountry.status));
   const creatorE = client();
-  const regE = await creatorE("POST", "/api/auth/register", { ...basePayload, name: "Tulsa Creator", email: "launch-e@example.com", handle: "tulsaeats", market: "Not listed yet", customCity: "Tulsa", customCountry: "United States", customState: "ok" });
+  const regE = await creatorE("POST", "/api/auth/register", { ...basePayload, name: "Tulsa Creator", email: "launch-e@fixtures.dev", handle: "tulsaeats", market: "Not listed yet", customCity: "Tulsa", customCountry: "United States", customState: "ok" });
   check("unlisted creator (Tulsa, United States) registers with a full profile", regE.status === 201, JSON.stringify(regE.data));
   check("unlisted sign-up stores typed city + country, state optional and normalized", regE.data.user.market === "Not listed yet" && regE.data.user.city === "Tulsa" && regE.data.user.country === "United States" && regE.data.user.state === "OK", JSON.stringify([regE.data.user.market, regE.data.user.city, regE.data.user.country, regE.data.user.state]));
   check("unlisted founder gets the per-city first-100 band", regE.data.user.founding && regE.data.user.founding.queueBand === 100 && regE.data.user.founding.unlisted === true && regE.data.user.founding.marketLive === false, JSON.stringify(regE.data.user.founding));
-  const regG = await client()("POST", "/api/auth/register", { ...basePayload, name: "Tulsa Two", email: "launch-g@example.com", handle: "tulsatwo", market: "Not listed yet", customCity: "Tulsa", customCountry: "United States" });
+  const regG = await client()("POST", "/api/auth/register", { ...basePayload, name: "Tulsa Two", email: "launch-g@fixtures.dev", handle: "tulsatwo", market: "Not listed yet", customCity: "Tulsa", customCountry: "United States" });
   check("second Tulsa sign-up registers (same city pool, no state needed)", regG.status === 201, JSON.stringify(regG.data));
-  const regF = await client()("POST", "/api/auth/register", { ...basePayload, name: "Toronto Creator", email: "launch-f@example.com", handle: "torontoeats", market: "Not listed yet", customCity: "Toronto", customCountry: "Canada" });
+  const regF = await client()("POST", "/api/auth/register", { ...basePayload, name: "Toronto Creator", email: "launch-f@fixtures.dev", handle: "torontoeats", market: "Not listed yet", customCity: "Toronto", customCountry: "Canada" });
   check("Toronto sign-up registers in its own city + country pool", regF.status === 201 && regF.data.user.founding.queueBand === 100 && regF.data.user.country === "Canada", JSON.stringify(regF.data.user && regF.data.user.founding));
   const patchE = await creatorE("PATCH", "/api/me/profile", { city: "Broken Arrow", country: "United States", state: "OK" });
   check("unlisted creator can correct their typed city and country", patchE.status === 200 && patchE.data.user.city === "Broken Arrow" && patchE.data.user.country === "United States", JSON.stringify(patchE.data.user && [patchE.data.user.city, patchE.data.user.country]));
@@ -579,14 +579,14 @@ try {
 
   // --- Momentum: referral points computed from stored sign-ups only ---
   const recruiter = client();
-  const regR = await recruiter("POST", "/api/auth/register", { ...basePayload, name: "Recruiter One", email: "launch-r@example.com", handle: "recruiterone" });
+  const regR = await recruiter("POST", "/api/auth/register", { ...basePayload, name: "Recruiter One", email: "launch-r@fixtures.dev", handle: "recruiterone" });
   check("recruiter creator registers", regR.status === 201, JSON.stringify(regR.data));
   // Fresh-creator Momentum under the expanded rules: no referrals
   // yet, but registration itself reports a local audience % (+5).
   // Bio, photo, neighborhood, and stack are all empty in basePayload.
   check("a fresh creator starts with referral Momentum at zero (5 pts = local % reported at sign-up)", !!regR.data.user.momentum && regR.data.user.momentum.signups === 0 && regR.data.user.momentum.approved === 0 && regR.data.user.momentum.points === 5, JSON.stringify(regR.data.user.momentum));
-  const recruit1 = await client()("POST", "/api/auth/register", { ...basePayload, name: "Recruit One", email: "launch-r1@example.com", handle: "recruitone", referredBy: "recruiterone" });
-  const recruit2 = await client()("POST", "/api/auth/register", { ...basePayload, name: "Recruit Two", email: "launch-r2@example.com", handle: "recruittwo", referredBy: "recruiterone" });
+  const recruit1 = await client()("POST", "/api/auth/register", { ...basePayload, name: "Recruit One", email: "launch-r1@fixtures.dev", handle: "recruitone", referredBy: "recruiterone" });
+  const recruit2 = await client()("POST", "/api/auth/register", { ...basePayload, name: "Recruit Two", email: "launch-r2@fixtures.dev", handle: "recruittwo", referredBy: "recruiterone" });
   check("two creators sign up through the recruiter's invite link", recruit1.status === 201 && recruit2.status === 201, JSON.stringify([recruit1.status, recruit2.status]));
   const meBefore = await recruiter("GET", "/api/auth/me");
   check("Momentum before approvals: 2 sign-ups credited = 6 referral points (11 total with the +5 local %)", !!meBefore.data.user.momentum && meBefore.data.user.momentum.signups === 2 && meBefore.data.user.momentum.approved === 0 && meBefore.data.user.momentum.points === 11, JSON.stringify(meBefore.data.user.momentum));

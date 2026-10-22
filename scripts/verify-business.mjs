@@ -95,14 +95,14 @@ try {
   await admin("POST", "/api/auth/login", { email: ADMIN_EMAIL, password: ADMIN_PASSWORD });
 
   // ---------- roster + business ----------
-  const cA = await makeCreator(admin, { name: "Stack Alice", email: "alice@example.com", handle: "stackalice", followers: 6000, localPct: 70 });
-  const cB = await makeCreator(admin, { name: "Stack Bob", email: "bob@example.com", handle: "stackbob", followers: 8000, localPct: 40 });
-  const cC = await makeCreator(admin, { name: "Stack Cara", email: "cara@example.com", handle: "stackcara", followers: 900, localPct: 90 });
-  const cD = await makeCreator(admin, { name: "Stack Dan", email: "dan@example.com", handle: "stackdan", followers: 1200, localPct: 60 });
+  const cA = await makeCreator(admin, { name: "Stack Alice", email: "alice@fixtures.dev", handle: "stackalice", followers: 6000, localPct: 70 });
+  const cB = await makeCreator(admin, { name: "Stack Bob", email: "bob@fixtures.dev", handle: "stackbob", followers: 8000, localPct: 40 });
+  const cC = await makeCreator(admin, { name: "Stack Cara", email: "cara@fixtures.dev", handle: "stackcara", followers: 900, localPct: 90 });
+  const cD = await makeCreator(admin, { name: "Stack Dan", email: "dan@fixtures.dev", handle: "stackdan", followers: 1200, localPct: 60 });
 
   const biz = client();
   const bizReg = await biz("POST", "/api/auth/register", {
-    role: "business", name: "Biz Owner", businessName: "Stackhouse", email: "stackhouse@example.com",
+    role: "business", name: "Biz Owner", businessName: "Stackhouse", email: "stackhouse@fixtures.dev",
     password: "business-pass-123", market: "Richmond", city: "Richmond", category: "Restaurant", planId: "growth",
     neighborhood: "Carytown", about: "Counter service, loud room.", agreedTerms: true,
   });
@@ -155,7 +155,7 @@ try {
   // ---------- bulk activation + no silent activation ----------
   const bizTwo = client();
   const bizTwoReg = await bizTwo("POST", "/api/auth/register", {
-    role: "business", name: "Second Owner", businessName: "Second Stack", email: "secondstack@example.com",
+    role: "business", name: "Second Owner", businessName: "Second Stack", email: "secondstack@fixtures.dev",
     password: "business-pass-123", market: "Richmond", city: "Richmond", category: "Restaurant", planId: "self-service", agreedTerms: true,
   });
   await admin("POST", "/api/admin/review", { userId: bizTwoReg.data.user.id, decision: "approve" });
@@ -341,7 +341,7 @@ try {
   check("offer sweep runs (backfill advanced, SLA released, nudge sent)", sweep.status === 200 && sweep.data.sweep.backfillAdvanced >= 1 && sweep.data.sweep.slaReleased >= 1 && sweep.data.sweep.nudges >= 1, JSON.stringify(sweep.data));
 
   const biz2 = client();
-  await biz2("POST", "/api/auth/login", { email: "stackhouse@example.com", password: "business-pass-123" });
+  await biz2("POST", "/api/auth/login", { email: "stackhouse@fixtures.dev", password: "business-pass-123" });
   const offersAfter = await biz2("GET", "/api/offers");
   const o3Row = (offersAfter.data.offers || []).find((o) => o.id === o3Id);
   const o4Row = (offersAfter.data.offers || []).find((o) => o.id === o4Id);

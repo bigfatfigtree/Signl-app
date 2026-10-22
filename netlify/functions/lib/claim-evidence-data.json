@@ -1,0 +1,817 @@
+{
+ "_meta": {
+  "generatedAt": "2026-10-22T04:23:42.944Z",
+  "refresh": "node scripts/build-claim-evidence.mjs (re-run after new campaign batches or sprint waves; commit the regenerated file)",
+  "sources": {
+   "campaign_batch:batch2-import.json": 35,
+   "campaign_batch:batch2-now.json": 13,
+   "campaign_batch:batch2-tomorrow.json": 11,
+   "campaign_batch:batch2-tonight.json": 12,
+   "campaign_batch:batch2-tue-evening-import.json": 11,
+   "campaign_batch:batch2b-import.json": 2,
+   "claim_sprint_email": 1,
+   "email_harvest": 90,
+   "dm_claim_sprint": 14
+  },
+  "excluded": "signl-campaign-run/state.json DM send log: proves a DM was sent, not that the personal claim link was in it, and carries no emails; satisfies neither rule."
+ },
+ "handleEmail": [
+  {
+   "handle": "100daysofrealfood",
+   "email": "support@100daysofrealfood.com",
+   "market": "Charlotte",
+   "source": "email_harvest"
+  },
+  {
+   "handle": "919eats",
+   "email": "919eats@gmail.com",
+   "market": "Raleigh",
+   "source": "email_harvest"
+  },
+  {
+   "handle": "_stormyblue",
+   "email": "stormyblue80@gmail.com",
+   "market": "Hampton Roads",
+   "source": "campaign_batch:batch2-tonight.json"
+  },
+  {
+   "handle": "_t_r_u_",
+   "email": "tru.anderson17@gmail.com",
+   "market": "Hampton Roads",
+   "source": "claim_sprint_email"
+  },
+  {
+   "handle": "_t_r_u_",
+   "email": "partnerships@studionineagency.com",
+   "market": "Hampton Roads",
+   "source": "email_harvest"
+  },
+  {
+   "handle": "aavalyy",
+   "email": "avalybusiness@gmail.com",
+   "market": "Hampton Roads",
+   "source": "campaign_batch:batch2-tonight.json"
+  },
+  {
+   "handle": "afsanehsworld",
+   "email": "afsanehsworld1@gmail.com",
+   "market": "Raleigh",
+   "source": "email_harvest"
+  },
+  {
+   "handle": "alliewears",
+   "email": "hello@alliewears.com",
+   "market": "Raleigh",
+   "source": "email_harvest"
+  },
+  {
+   "handle": "allisclare",
+   "email": "allisclarepr@gmail.com",
+   "market": "Richmond",
+   "source": "email_harvest"
+  },
+  {
+   "handle": "amandaauthentically",
+   "email": "amandaauthentically@gmail.com",
+   "market": "Charlottesville",
+   "source": "email_harvest"
+  },
+  {
+   "handle": "amandafinesse",
+   "email": "info@amandafinesse.com",
+   "market": "Washington DC",
+   "source": "campaign_batch:batch2-now.json"
+  },
+  {
+   "handle": "angelicatalan",
+   "email": "clarendonmoms@gmail.com",
+   "market": "Washington DC",
+   "source": "email_harvest"
+  },
+  {
+   "handle": "ashleehecht",
+   "email": "hechtashlee@gmail.com",
+   "market": "Wilmington NC",
+   "source": "campaign_batch:batch2-now.json"
+  },
+  {
+   "handle": "bacon_and_beauty",
+   "email": "baconandbeauty@gmail.com",
+   "market": "Hampton Roads",
+   "source": "campaign_batch:batch2-tonight.json"
+  },
+  {
+   "handle": "baileyschwartz",
+   "email": "bailey@dailywithbailey.com",
+   "market": "Charlotte",
+   "source": "email_harvest"
+  },
+  {
+   "handle": "bbbuffaloe",
+   "email": "raisingbuffaloes@gmail.com",
+   "market": "Raleigh",
+   "source": "email_harvest"
+  },
+  {
+   "handle": "bunchesofbeggs",
+   "email": "elizabeth@bunchesofbeggs.com",
+   "market": "Richmond",
+   "source": "email_harvest"
+  },
+  {
+   "handle": "candigurlzworld",
+   "email": "candibeemac@gmail.com",
+   "market": "Hampton Roads",
+   "source": "campaign_batch:batch2-tonight.json"
+  },
+  {
+   "handle": "carolyncoving",
+   "email": "carolyncovington@thedigitaldept.com",
+   "market": "Charlottesville",
+   "source": "email_harvest"
+  },
+  {
+   "handle": "charmcitycook",
+   "email": "amy@charmcitycook.com",
+   "market": "Baltimore",
+   "source": "email_harvest"
+  },
+  {
+   "handle": "charmcityfoodadventures",
+   "email": "charmcityfoodadventures@gmail.com",
+   "market": "Baltimore",
+   "source": "email_harvest"
+  },
+  {
+   "handle": "daughterofa_kinggg",
+   "email": "businessrhemah@gmail.com",
+   "market": "Charlotte",
+   "source": "email_harvest"
+  },
+  {
+   "handle": "dcfoodgod",
+   "email": "dcfoodgod@gmail.com",
+   "market": "Washington DC",
+   "source": "campaign_batch:batch2-tue-evening-import.json"
+  },
+  {
+   "handle": "dcveganlife",
+   "email": "dcveganlife@gmail.com",
+   "market": "Washington DC",
+   "source": "campaign_batch:batch2-now.json"
+  },
+  {
+   "handle": "dom.skeet",
+   "email": "dom.skeet757@gmail.com",
+   "market": "Hampton Roads",
+   "source": "campaign_batch:batch2-tonight.json"
+  },
+  {
+   "handle": "drinksinthedistrict",
+   "email": "drinksinthedistrict@gmail.com",
+   "market": "Washington DC",
+   "source": "campaign_batch:batch2-now.json"
+  },
+  {
+   "handle": "dustin_patrick_smith",
+   "email": "raisingbuffaloes@gmail.com",
+   "market": "Raleigh",
+   "source": "email_harvest"
+  },
+  {
+   "handle": "eatdrinkclt",
+   "email": "eatdrinkclt@gmail.com",
+   "market": "Charlotte",
+   "source": "email_harvest"
+  },
+  {
+   "handle": "eatdrinkdc",
+   "email": "lanna@eatdrink-dc.com",
+   "market": "Washington DC",
+   "source": "campaign_batch:batch2-now.json"
+  },
+  {
+   "handle": "elegance.by.emily",
+   "email": "info@elegancebyemilyllc.com",
+   "market": "Hampton Roads",
+   "source": "email_harvest"
+  },
+  {
+   "handle": "emilybreeze",
+   "email": "emilybreeze@famfluencetalent.com",
+   "market": "Charlotte",
+   "source": "email_harvest"
+  },
+  {
+   "handle": "fkdarkor",
+   "email": "fkdarkor@gmail.com",
+   "market": "Washington DC",
+   "source": "email_harvest"
+  },
+  {
+   "handle": "frommaskitchen",
+   "email": "frommaskitchen@gmail.com",
+   "market": "Raleigh",
+   "source": "email_harvest"
+  },
+  {
+   "handle": "guiltyofglitz_",
+   "email": "camille@guiltyofglitz.com",
+   "market": "Washington DC",
+   "source": "campaign_batch:batch2-now.json"
+  },
+  {
+   "handle": "highvibebyonose",
+   "email": "onose.ij@gmail.com",
+   "market": "Washington DC",
+   "source": "email_harvest"
+  },
+  {
+   "handle": "iheartveggies",
+   "email": "liz@iheartvegetables.com",
+   "market": "Richmond",
+   "source": "email_harvest"
+  },
+  {
+   "handle": "jessicarosehood",
+   "email": "hello@jessicarosehood.com",
+   "market": "Washington DC",
+   "source": "email_harvest"
+  },
+  {
+   "handle": "journeyswithkris",
+   "email": "info@journeyswithkris.com",
+   "market": "Hampton Roads",
+   "source": "campaign_batch:batch2-tonight.json"
+  },
+  {
+   "handle": "justdayyy_",
+   "email": "brandwithday@yahoo.com",
+   "market": "Hampton Roads",
+   "source": "campaign_batch:batch2-tonight.json"
+  },
+  {
+   "handle": "justlex.x",
+   "email": "management@seasonedandsouthern.com",
+   "market": "Charlotte",
+   "source": "email_harvest"
+  },
+  {
+   "handle": "katheats",
+   "email": "katheats@gmail.com",
+   "market": "Charlottesville",
+   "source": "email_harvest"
+  },
+  {
+   "handle": "khomplexx",
+   "email": "khomplexx@gmail.com",
+   "market": "Hampton Roads",
+   "source": "campaign_batch:batch2-import.json"
+  },
+  {
+   "handle": "kindalerice",
+   "email": "hello@kindalerice.com",
+   "market": "Richmond",
+   "source": "email_harvest"
+  },
+  {
+   "handle": "lastnamestokes",
+   "email": "anikkastokes@gmail.com",
+   "market": "Baltimore",
+   "source": "email_harvest"
+  },
+  {
+   "handle": "lifeofniya_",
+   "email": "niyademi@gmail.com",
+   "market": "Baltimore",
+   "source": "email_harvest"
+  },
+  {
+   "handle": "m_m_eatz",
+   "email": "m.m.eatz1029@gmail.com",
+   "market": "Baltimore",
+   "source": "email_harvest"
+  },
+  {
+   "handle": "magnoliamegan",
+   "email": "hello@magnoliamegan.com",
+   "market": "Raleigh",
+   "source": "email_harvest"
+  },
+  {
+   "handle": "magnoliamegan",
+   "email": "magnoliamegan@emcpower.co",
+   "market": "Raleigh",
+   "source": "email_harvest"
+  },
+  {
+   "handle": "michellebaub",
+   "email": "michellebaubyt@gmail.com",
+   "market": "Roanoke",
+   "source": "campaign_batch:batch2-now.json"
+  },
+  {
+   "handle": "miles.and.smiles",
+   "email": "claudia@milesandsmilesblog.com",
+   "market": "Richmond",
+   "source": "campaign_batch:batch2-tue-evening-import.json"
+  },
+  {
+   "handle": "mirandainclt",
+   "email": "mirandaincharlotte@gmail.com",
+   "market": "Charlotte",
+   "source": "email_harvest"
+  },
+  {
+   "handle": "mommiesjade",
+   "email": "shanisse@imftalent.com",
+   "market": "Richmond",
+   "source": "campaign_batch:batch2-tue-evening-import.json"
+  },
+  {
+   "handle": "morgannjoan",
+   "email": "hello@morgannjoan.com",
+   "market": "Richmond",
+   "source": "campaign_batch:batch2-tue-evening-import.json"
+  },
+  {
+   "handle": "msnadean",
+   "email": "nadean.biz@gmail.com",
+   "market": "Hampton Roads",
+   "source": "email_harvest"
+  },
+  {
+   "handle": "musingsofsaumya",
+   "email": "myriadmusings1@gmail.com",
+   "market": "Washington DC",
+   "source": "campaign_batch:batch2-now.json"
+  },
+  {
+   "handle": "n.o.m.s.piration",
+   "email": "n.o.m.s.piration@gmail.com",
+   "market": "Charlottesville",
+   "source": "email_harvest"
+  },
+  {
+   "handle": "neekosquishy",
+   "email": "neekosquishy@gmail.com",
+   "market": "Roanoke",
+   "source": "email_harvest"
+  },
+  {
+   "handle": "nomtastickim",
+   "email": "info@nomdigital.net",
+   "market": "Baltimore",
+   "source": "email_harvest"
+  },
+  {
+   "handle": "officialneesyrizzo_bu",
+   "email": "neesyrizzo@gmail.com",
+   "market": "Baltimore",
+   "source": "email_harvest"
+  },
+  {
+   "handle": "prettyyoungtt",
+   "email": "pretty.young.thriving@gmail.com",
+   "market": "Baltimore",
+   "source": "campaign_batch:batch2-now.json"
+  },
+  {
+   "handle": "quadajahwhitley",
+   "email": "admin@quadajahwhitley.com",
+   "market": "Hampton Roads",
+   "source": "campaign_batch:batch2-tonight.json"
+  },
+  {
+   "handle": "raleighfoodtrap",
+   "email": "raleighfoodtrap@gmail.com",
+   "market": "Raleigh",
+   "source": "email_harvest"
+  },
+  {
+   "handle": "raleighwanderlust",
+   "email": "allisoncollaborations@gmail.com",
+   "market": "Raleigh",
+   "source": "email_harvest"
+  },
+  {
+   "handle": "realfoodwithgratitude",
+   "email": "katie@hillermediagroup.com",
+   "market": "Richmond",
+   "source": "email_harvest"
+  },
+  {
+   "handle": "rvabeermom",
+   "email": "teresa@rvabeercandles.com",
+   "market": "Richmond",
+   "source": "campaign_batch:batch2-tue-evening-import.json"
+  },
+  {
+   "handle": "rvatots",
+   "email": "rvatots@gmail.com",
+   "market": "Richmond",
+   "source": "campaign_batch:batch2-tue-evening-import.json"
+  },
+  {
+   "handle": "sabrinastyled",
+   "email": "sabrinastyled3@gmail.com",
+   "market": "Raleigh",
+   "source": "email_harvest"
+  },
+  {
+   "handle": "shes_sew_in",
+   "email": "laurns.sew.in@gmail.com",
+   "market": "Greensboro",
+   "source": "campaign_batch:batch2-now.json"
+  },
+  {
+   "handle": "shiondafarrell",
+   "email": "shiondafarrell@icloud.com",
+   "market": "Charlotte",
+   "source": "email_harvest"
+  },
+  {
+   "handle": "sliceofclt",
+   "email": "sliceofclt@gmail.com",
+   "market": "Charlotte",
+   "source": "email_harvest"
+  },
+  {
+   "handle": "sliceofsaff",
+   "email": "ladysaffie@gmail.com",
+   "market": "Hampton Roads",
+   "source": "campaign_batch:batch2-tonight.json"
+  },
+  {
+   "handle": "southerntoatea",
+   "email": "courtney@pdmediacollabs.com",
+   "market": "Raleigh",
+   "source": "email_harvest"
+  },
+  {
+   "handle": "strykereats",
+   "email": "strykereats@gmail.com",
+   "market": "Atlanta",
+   "source": "email_harvest"
+  },
+  {
+   "handle": "styledwithpaws",
+   "email": "styledwithpaws@gmail.com",
+   "market": "Charlotte",
+   "source": "campaign_batch:batch2-now.json"
+  },
+  {
+   "handle": "summerinvb",
+   "email": "summersocialcreative@gmail.com",
+   "market": "Hampton Roads",
+   "source": "campaign_batch:batch2-tonight.json"
+  },
+  {
+   "handle": "sweetsauceblog",
+   "email": "sweetsauceblog@gmail.com",
+   "market": "Richmond",
+   "source": "campaign_batch:batch2-tue-evening-import.json"
+  },
+  {
+   "handle": "taliacadet",
+   "email": "talia@taliacadet.com",
+   "market": "Washington DC",
+   "source": "campaign_batch:batch2-tue-evening-import.json"
+  },
+  {
+   "handle": "taneetalkstoomuch",
+   "email": "taneescreations@gmail.com",
+   "market": "Hampton Roads",
+   "source": "campaign_batch:batch2b-import.json"
+  },
+  {
+   "handle": "techsavvymama",
+   "email": "techsavvymama@gmail.com",
+   "market": "Washington DC",
+   "source": "email_harvest"
+  },
+  {
+   "handle": "thatredheadedfoodie",
+   "email": "thatredheadedfoodie@gmail.com",
+   "market": "Atlanta",
+   "source": "email_harvest"
+  },
+  {
+   "handle": "the_zamp_camp",
+   "email": "thezampcamp@gmail.com",
+   "market": "Charlotte",
+   "source": "email_harvest"
+  },
+  {
+   "handle": "thebaltimorefoodie",
+   "email": "chyno@thebaltimorefoodie.com",
+   "market": "Baltimore",
+   "source": "email_harvest"
+  },
+  {
+   "handle": "theemilyedition",
+   "email": "emily@theemilyedition.com",
+   "market": "Washington DC",
+   "source": "campaign_batch:batch2-now.json"
+  },
+  {
+   "handle": "thegirrlkg.757",
+   "email": "thegirrlkg@gmail.com",
+   "market": "Hampton Roads",
+   "source": "email_harvest"
+  },
+  {
+   "handle": "thewestendmom",
+   "email": "megan@thewestendmom.com",
+   "market": "Richmond",
+   "source": "campaign_batch:batch2-tue-evening-import.json"
+  },
+  {
+   "handle": "urfriendkari",
+   "email": "kari@a-listme.com",
+   "market": "Richmond",
+   "source": "email_harvest"
+  },
+  {
+   "handle": "visitingwithvega",
+   "email": "visitingwithvega@gmail.com",
+   "market": "Hampton Roads",
+   "source": "campaign_batch:batch2b-import.json"
+  },
+  {
+   "handle": "whatkrisate",
+   "email": "whatkrisate@gmail.com",
+   "market": "Baltimore",
+   "source": "email_harvest"
+  },
+  {
+   "handle": "wyneesworld",
+   "email": "wyneesworld@gmail.com",
+   "market": "Charlotte",
+   "source": "campaign_batch:batch2-now.json"
+  },
+  {
+   "handle": "xoxoerinsmith",
+   "email": "xoxoerinsmith@gmail.com",
+   "market": "Richmond",
+   "source": "campaign_batch:batch2-tue-evening-import.json"
+  }
+ ],
+ "linkSent": [
+  {
+   "handle": "__beautyandthebeach__",
+   "market": "Hampton Roads",
+   "source": "dm_claim_sprint"
+  },
+  {
+   "handle": "_stormyblue",
+   "market": "Hampton Roads",
+   "source": "campaign_batch:batch2-tonight.json"
+  },
+  {
+   "handle": "_t_r_u_",
+   "market": "Hampton Roads",
+   "source": "claim_sprint_email"
+  },
+  {
+   "handle": "aavalyy",
+   "market": "Hampton Roads",
+   "source": "campaign_batch:batch2-tonight.json"
+  },
+  {
+   "handle": "amandafinesse",
+   "market": "Washington DC",
+   "source": "campaign_batch:batch2-now.json"
+  },
+  {
+   "handle": "ashleehecht",
+   "market": "Wilmington NC",
+   "source": "campaign_batch:batch2-now.json"
+  },
+  {
+   "handle": "bacon_and_beauty",
+   "market": "Hampton Roads",
+   "source": "campaign_batch:batch2-tonight.json"
+  },
+  {
+   "handle": "candigurlzworld",
+   "market": "Hampton Roads",
+   "source": "campaign_batch:batch2-tonight.json"
+  },
+  {
+   "handle": "dcfoodgod",
+   "market": "Washington DC",
+   "source": "campaign_batch:batch2-tue-evening-import.json"
+  },
+  {
+   "handle": "dcveganlife",
+   "market": "Washington DC",
+   "source": "campaign_batch:batch2-now.json"
+  },
+  {
+   "handle": "desxlyn",
+   "market": "Hampton Roads",
+   "source": "dm_claim_sprint"
+  },
+  {
+   "handle": "dom.skeet",
+   "market": "Hampton Roads",
+   "source": "campaign_batch:batch2-tonight.json"
+  },
+  {
+   "handle": "drinksinthedistrict",
+   "market": "Washington DC",
+   "source": "campaign_batch:batch2-now.json"
+  },
+  {
+   "handle": "eatdrinkdc",
+   "market": "Washington DC",
+   "source": "campaign_batch:batch2-now.json"
+  },
+  {
+   "handle": "erinnashleyyyy",
+   "market": "Hampton Roads",
+   "source": "dm_claim_sprint"
+  },
+  {
+   "handle": "flvckopics",
+   "market": "Hampton Roads",
+   "source": "dm_claim_sprint"
+  },
+  {
+   "handle": "guiltyofglitz_",
+   "market": "Washington DC",
+   "source": "campaign_batch:batch2-now.json"
+  },
+  {
+   "handle": "iheartfoodvb",
+   "market": "Hampton Roads",
+   "source": "dm_claim_sprint"
+  },
+  {
+   "handle": "inkeddcam",
+   "market": "Hampton Roads",
+   "source": "dm_claim_sprint"
+  },
+  {
+   "handle": "jenni___ayala",
+   "market": "Hampton Roads",
+   "source": "dm_claim_sprint"
+  },
+  {
+   "handle": "journeyswithkris",
+   "market": "Hampton Roads",
+   "source": "campaign_batch:batch2-tonight.json"
+  },
+  {
+   "handle": "justdayyy_",
+   "market": "Hampton Roads",
+   "source": "campaign_batch:batch2-tonight.json"
+  },
+  {
+   "handle": "katrinalhove",
+   "market": "Hampton Roads",
+   "source": "dm_claim_sprint"
+  },
+  {
+   "handle": "keeleyyokley",
+   "market": "Hampton Roads",
+   "source": "dm_claim_sprint"
+  },
+  {
+   "handle": "khomplexx",
+   "market": "Hampton Roads",
+   "source": "campaign_batch:batch2-import.json"
+  },
+  {
+   "handle": "macspecialz",
+   "market": "Hampton Roads",
+   "source": "dm_claim_sprint"
+  },
+  {
+   "handle": "michellebaub",
+   "market": "Roanoke",
+   "source": "campaign_batch:batch2-now.json"
+  },
+  {
+   "handle": "miles.and.smiles",
+   "market": "Richmond",
+   "source": "campaign_batch:batch2-tue-evening-import.json"
+  },
+  {
+   "handle": "mommiesjade",
+   "market": "Richmond",
+   "source": "campaign_batch:batch2-tue-evening-import.json"
+  },
+  {
+   "handle": "morgannjoan",
+   "market": "Richmond",
+   "source": "campaign_batch:batch2-tue-evening-import.json"
+  },
+  {
+   "handle": "mr.5starzay",
+   "market": "Hampton Roads",
+   "source": "dm_claim_sprint"
+  },
+  {
+   "handle": "musingsofsaumya",
+   "market": "Washington DC",
+   "source": "campaign_batch:batch2-now.json"
+  },
+  {
+   "handle": "noraeatsgood",
+   "market": "Hampton Roads",
+   "source": "dm_claim_sprint"
+  },
+  {
+   "handle": "prettyyoungtt",
+   "market": "Baltimore",
+   "source": "campaign_batch:batch2-now.json"
+  },
+  {
+   "handle": "quadajahwhitley",
+   "market": "Hampton Roads",
+   "source": "campaign_batch:batch2-tonight.json"
+  },
+  {
+   "handle": "rvabeermom",
+   "market": "Richmond",
+   "source": "campaign_batch:batch2-tue-evening-import.json"
+  },
+  {
+   "handle": "rvatots",
+   "market": "Richmond",
+   "source": "campaign_batch:batch2-tue-evening-import.json"
+  },
+  {
+   "handle": "shanegiamoni",
+   "market": "Hampton Roads",
+   "source": "dm_claim_sprint"
+  },
+  {
+   "handle": "shes_sew_in",
+   "market": "Greensboro",
+   "source": "campaign_batch:batch2-now.json"
+  },
+  {
+   "handle": "sliceofsaff",
+   "market": "Hampton Roads",
+   "source": "campaign_batch:batch2-tonight.json"
+  },
+  {
+   "handle": "styledwithpaws",
+   "market": "Charlotte",
+   "source": "campaign_batch:batch2-now.json"
+  },
+  {
+   "handle": "summerinvb",
+   "market": "Hampton Roads",
+   "source": "campaign_batch:batch2-tonight.json"
+  },
+  {
+   "handle": "sweetsauceblog",
+   "market": "Richmond",
+   "source": "campaign_batch:batch2-tue-evening-import.json"
+  },
+  {
+   "handle": "taliacadet",
+   "market": "Washington DC",
+   "source": "campaign_batch:batch2-tue-evening-import.json"
+  },
+  {
+   "handle": "taneetalkstoomuch",
+   "market": "Hampton Roads",
+   "source": "campaign_batch:batch2b-import.json"
+  },
+  {
+   "handle": "the_enchanting_fox",
+   "market": "Hampton Roads",
+   "source": "dm_claim_sprint"
+  },
+  {
+   "handle": "theemilyedition",
+   "market": "Washington DC",
+   "source": "campaign_batch:batch2-now.json"
+  },
+  {
+   "handle": "thewestendmom",
+   "market": "Richmond",
+   "source": "campaign_batch:batch2-tue-evening-import.json"
+  },
+  {
+   "handle": "visitingwithvega",
+   "market": "Hampton Roads",
+   "source": "campaign_batch:batch2b-import.json"
+  },
+  {
+   "handle": "wyneesworld",
+   "market": "Charlotte",
+   "source": "campaign_batch:batch2-now.json"
+  },
+  {
+   "handle": "xoxoerinsmith",
+   "market": "Richmond",
+   "source": "campaign_batch:batch2-tue-evening-import.json"
+  }
+ ]
+}

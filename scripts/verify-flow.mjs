@@ -105,19 +105,19 @@ try {
   check("bootstrap plans are the three founding plans ($299 / $599 / $999, 3-month minimum)", boot.data.plans.length === 3 && boot.data.plans[0].id === "self-service" && boot.data.plans[0].priceMonthly === 299 && boot.data.plans[1].id === "growth" && boot.data.plans[1].priceMonthly === 599 && boot.data.plans[2].id === "managed" && boot.data.plans[2].priceMonthly === 999 && boot.data.plans.every((p) => p.minMonths === 3), JSON.stringify(boot.data.plans.map((p) => [p.id, p.priceMonthly])));
 
   // --- referral: email copy + status page rendering path ---
-  const mailListed = approvalEmail({ name: "Verify Creator", email: "v@example.com", market: "Hampton Roads", creator: { handle: "verifyeats757", tierBand: "Locals" } }, 100);
+  const mailListed = approvalEmail({ name: "Verify Creator", email: "v@fixtures.dev", market: "Hampton Roads", creator: { handle: "verifyeats757", tierBand: "Locals" } }, 100);
   check("approval email (listed market) carries the creator invite link", mailListed.text.includes("https://app.joinsignl.com/?ref=verifyeats757"), mailListed.text);
-  const mailUnlisted = approvalEmail({ name: "Tulsa Creator", email: "t@example.com", market: "Not listed yet", city: "Tulsa", creator: { handle: "tulsaeats", tierBand: "Locals" } }, 100);
+  const mailUnlisted = approvalEmail({ name: "Tulsa Creator", email: "t@fixtures.dev", market: "Not listed yet", city: "Tulsa", creator: { handle: "tulsaeats", tierBand: "Locals" } }, 100);
   check("approval email (unlisted) carries the creator invite link", mailUnlisted.text.includes("https://app.joinsignl.com/?ref=tulsaeats"), mailUnlisted.text);
-  const mailSignup = signupConfirmationEmail({ name: "Verify Creator", email: "v@example.com", market: "Hampton Roads", creator: { handle: "verifyeats757", tierBand: "Locals" } }, 100);
-  const mailSignupUnlisted = signupConfirmationEmail({ name: "Tulsa Creator", email: "tulsa@example.com", market: "Not listed yet", city: "Tulsa", country: "United States", creator: { handle: "tulsaeats", tierBand: "Locals" } }, 100);
+  const mailSignup = signupConfirmationEmail({ name: "Verify Creator", email: "v@fixtures.dev", market: "Hampton Roads", creator: { handle: "verifyeats757", tierBand: "Locals" } }, 100);
+  const mailSignupUnlisted = signupConfirmationEmail({ name: "Tulsa Creator", email: "tulsa@fixtures.dev", market: "Not listed yet", city: "Tulsa", country: "United States", creator: { handle: "tulsaeats", tierBand: "Locals" } }, 100);
   check("sign-up confirmation emails carry the approval promise (listed + unlisted)", mailSignup.text.includes("Every founding application gets a decision or a clear status within 2 business days.") && mailSignupUnlisted.text.includes("Every founding application gets a decision or a clear status within 2 business days."), mailSignup.text);
   // Jeff (2026-10-18, supersedes the approval-only ask): the recruiting
   // benefits are stated at sign-up too, in BOTH transactional emails.
   const benefitsPresent = (mail) => mail.text.includes("+3 when a creator joins through your link") && mail.text.includes("+10 when they are approved") && mail.text.includes("roster standing is part of the order they see");
   check("sign-up confirmation email states the recruiting benefits (invite link, +3/+10 points, visibility)", mailSignup.text.includes("https://app.joinsignl.com/?ref=verifyeats757") && benefitsPresent(mailSignup), mailSignup.text);
   check("approval emails state the recruiting benefits too (listed + unlisted)", benefitsPresent(mailListed) && benefitsPresent(mailUnlisted), mailListed.text);
-  const mailKit = recruiterKitEmail({ name: "Verify Creator", email: "v@example.com", market: "Hampton Roads", city: "Norfolk", creator: { handle: "verifyeats757", tierBand: "Locals" } });
+  const mailKit = recruiterKitEmail({ name: "Verify Creator", email: "v@fixtures.dev", market: "Hampton Roads", city: "Norfolk", creator: { handle: "verifyeats757", tierBand: "Locals" } });
   check("recruiter kit email: subject, hosted badge, benefits, film link, no-pressure close", mailKit.subject === "Your Founding Creator badge is ready" && mailKit.text.includes("https://joinsignl.com/assets/badges/signl-founding-creator-badge-square.png") && mailKit.text.includes("https://joinsignl.com/assets/badges/signl-founding-creator-badge-portrait.png") && mailKit.text.includes("https://app.joinsignl.com/?ref=verifyeats757") && benefitsPresent(mailKit) && mailKit.text.includes("https://joinsignl.com/creators.html") && /no requirement/i.test(mailKit.text), mailKit.text);
   // Momentum points math, unit level (the end-to-end scenario is in
   // verify-launch): 2 credited sign-ups, 1 of them approved = 16
@@ -153,7 +153,7 @@ try {
   const reg = await creator("POST", "/api/auth/register", {
     role: "creator",
     name: "Verify Creator",
-    email: "vcreator@example.com",
+    email: "vcreator@fixtures.dev",
     password: "creator-pass-123",
     market: "Hampton Roads",
     city: "Virginia Beach",
@@ -177,7 +177,7 @@ try {
   check("status page payload carries the handle the invite link is built from", mePending.data.user && mePending.data.user.creator && mePending.data.user.creator.handle === "verifyeats757");
 
   const longRef = await client()("POST", "/api/auth/register", {
-    role: "creator", name: "Long Ref", email: "longref@example.com", password: "creator-pass-123",
+    role: "creator", name: "Long Ref", email: "longref@fixtures.dev", password: "creator-pass-123",
     market: "Hampton Roads", city: "Norfolk", handle: "longref", tierBand: "Locals", followerCount: 3000,
     localAudiencePct: 40, categories: ["Food & Drink"], agreedHonestPosts: true, agreedFtcDisclosure: true, agreedPostCompliance: true, agreedTerms: true,
     referredBy: "x".repeat(60),
@@ -185,7 +185,7 @@ try {
   check("over-long referral credit is capped at 40 chars", longRef.status === 201 && longRef.data.user.referredBy.length === 40, JSON.stringify(longRef.data.user && longRef.data.user.referredBy));
 
   const dup = await client()("POST", "/api/auth/register", {
-    role: "creator", name: "Dupe", email: "vcreator@example.com", password: "creator-pass-123", market: "Hampton Roads", handle: "dupe",
+    role: "creator", name: "Dupe", email: "vcreator@fixtures.dev", password: "creator-pass-123", market: "Hampton Roads", handle: "dupe",
   });
   check("duplicate email rejected with 409", dup.status === 409, String(dup.status));
 
@@ -212,7 +212,7 @@ try {
     role: "business",
     name: "Verify Owner",
     businessName: "Verify Table",
-    email: "vbiz@example.com",
+    email: "vbiz@fixtures.dev",
     password: "business-pass-123",
     market: "Hampton Roads",
     city: "Norfolk",

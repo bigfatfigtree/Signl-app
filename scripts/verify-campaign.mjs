@@ -156,7 +156,7 @@ try {
   check("unauthenticated sweep refused (no token configured)", (await anon("POST", "/api/admin/campaign/sweep", {})).status === 403);
   const creator = makeClient();
   const reg = await creator("POST", "/api/auth/register", {
-    role: "creator", name: "Case Creator", email: "case-creator@example.com", password: "password123",
+    role: "creator", name: "Case Creator", email: "case-creator@fixtures.dev", password: "password123",
     market: "Hampton Roads", city: "Norfolk", handle: "casecreator", categories: ["Food & Drink"],
     compCategories: ["Restaurant meals"], tierBand: "Locals", followerCount: 3000, avgViews: 900,
     localAudiencePct: 62, bio: "", agreedHonestPosts: true, agreedFtcDisclosure: true, agreedPostCompliance: true, agreedTerms: true,
@@ -172,22 +172,22 @@ try {
   part("C: import");
   const good = [];
   for (let i = 1; i <= 10; i++) {
-    good.push({ email: `good${String(i).padStart(2, "0")}@example.com`, name: `Good Creator ${i}`, handle: `good${i}`, market: "Hampton Roads", opener: "your Virginia Beach posts" });
+    good.push({ email: `good${String(i).padStart(2, "0")}@fixtures.dev`, name: `Good Creator ${i}`, handle: `good${i}`, market: "Hampton Roads", opener: "your Virginia Beach posts" });
   }
   const imp1 = await admin("POST", "/api/admin/campaign/import", {
     recipients: [
       ...good,
-      { email: "skipme@example.com", name: "Skip Me", handle: "skipme", market: "Richmond", opener: "your posts" },
+      { email: "skipme@fixtures.dev", name: "Skip Me", handle: "skipme", market: "Richmond", opener: "your posts" },
       { email: "not-an-email", handle: "x", market: "Richmond", opener: "your posts" },
-      { email: "noopener@example.com", handle: "noopener", market: "Richmond" },
+      { email: "noopener@fixtures.dev", handle: "noopener", market: "Richmond" },
     ],
-    skipEmails: ["skipme@example.com"],
+    skipEmails: ["skipme@fixtures.dev"],
   });
   check("import accepted", imp1.status === 200, JSON.stringify(imp1.data));
   check("10 good recipients imported", imp1.data.imported === 10, JSON.stringify(imp1.data));
   check("blocklist address recorded as skipped, not queued", imp1.data.skipped === 1, JSON.stringify(imp1.data));
   check("invalid email + missing opener refused as invalid", imp1.data.invalid.length === 2, JSON.stringify(imp1.data.invalid));
-  const imp2 = await admin("POST", "/api/admin/campaign/import", { recipients: [...good, { email: "skipme@example.com", name: "Skip Me", handle: "skipme", market: "Richmond", opener: "your posts" }] });
+  const imp2 = await admin("POST", "/api/admin/campaign/import", { recipients: [...good, { email: "skipme@fixtures.dev", name: "Skip Me", handle: "skipme", market: "Richmond", opener: "your posts" }] });
   check("re-import dedupes every existing address", imp2.status === 200 && imp2.data.imported === 0 && imp2.data.duplicates === 11, JSON.stringify(imp2.data));
   const status1 = await admin("GET", "/api/admin/campaign");
   check("status shows the queue", status1.data.counts.queued === 10 && status1.data.counts.skipped === 1 && status1.data.counts.sent === 0 && status1.data.counts.total === 11, JSON.stringify(status1.data.counts));
@@ -224,11 +224,11 @@ try {
   const failImp = await admin("POST", "/api/admin/campaign/import", {
     campaignId: "failure-test",
     recipients: [
-      { email: "stubfail1@example.com", name: "Fail One", handle: "fail1", market: "Hampton Roads", opener: "your posts" },
-      { email: "stubfail2@example.com", name: "Fail Two", handle: "fail2", market: "Hampton Roads", opener: "your posts" },
-      { email: "stubfail3@example.com", name: "Fail Three", handle: "fail3", market: "Hampton Roads", opener: "your posts" },
-      { email: "zgood1@example.com", name: "Zed One", handle: "zgood1", market: "Hampton Roads", opener: "your posts" },
-      { email: "zgood2@example.com", name: "Zed Two", handle: "zgood2", market: "Hampton Roads", opener: "your posts" },
+      { email: "stubfail1@fixtures.dev", name: "Fail One", handle: "fail1", market: "Hampton Roads", opener: "your posts" },
+      { email: "stubfail2@fixtures.dev", name: "Fail Two", handle: "fail2", market: "Hampton Roads", opener: "your posts" },
+      { email: "stubfail3@fixtures.dev", name: "Fail Three", handle: "fail3", market: "Hampton Roads", opener: "your posts" },
+      { email: "zgood1@fixtures.dev", name: "Zed One", handle: "zgood1", market: "Hampton Roads", opener: "your posts" },
+      { email: "zgood2@fixtures.dev", name: "Zed Two", handle: "zgood2", market: "Hampton Roads", opener: "your posts" },
     ],
   });
   check("failure-test import queued 5", failImp.status === 200 && failImp.data.imported === 5, JSON.stringify(failImp.data));
@@ -249,7 +249,7 @@ try {
   const DAY3 = "2026-10-21T15:00:00.000Z"; // 11:00 EDT, the day after
   const capRecipients = [];
   for (let i = 1; i <= 85; i++) {
-    capRecipients.push({ email: `cap${String(i).padStart(3, "0")}@example.com`, name: `Cap Creator ${i}`, handle: `cap${i}`, market: "Richmond", opener: "your Richmond posts" });
+    capRecipients.push({ email: `cap${String(i).padStart(3, "0")}@fixtures.dev`, name: `Cap Creator ${i}`, handle: `cap${i}`, market: "Richmond", opener: "your Richmond posts" });
   }
   const capImp = await admin("POST", "/api/admin/campaign/import", { campaignId: "daily-test", recipients: capRecipients });
   check("daily-test import queued 85", capImp.status === 200 && capImp.data.imported === 85, JSON.stringify(capImp.data));
@@ -311,8 +311,8 @@ try {
   const boxImp = await admin("POST", "/api/admin/campaign/import", {
     campaignId: "founding-creators-2026-10",
     recipients: [
-      { email: "pasteone@example.com", name: "Paste One", handle: "paste1", market: "Hampton Roads", opener: "your Granby Street posts" },
-      { email: "pastetwo@example.com", handle: "paste2", market: "Hampton Roads", opener: "your Ocean View posts" },
+      { email: "pasteone@fixtures.dev", name: "Paste One", handle: "paste1", market: "Hampton Roads", opener: "your Granby Street posts" },
+      { email: "pastetwo@fixtures.dev", handle: "paste2", market: "Hampton Roads", opener: "your Ocean View posts" },
     ],
   });
   check("box-shaped payload imports (explicit campaignId, name optional)", boxImp.status === 200 && boxImp.data.imported === 2, JSON.stringify(boxImp.data));
@@ -324,7 +324,7 @@ try {
   part("I: tester exclusion");
   const tony = makeClient();
   const tonyReg = await tony("POST", "/api/auth/register", {
-    role: "creator", name: "Tony Tester", email: "tony-tester@example.com", password: "password123",
+    role: "creator", name: "Tony Tester", email: "tony-tester@fixtures.dev", password: "password123",
     market: "Hampton Roads", city: "Norfolk", handle: "tonytester", categories: ["Food & Drink"],
     compCategories: ["Restaurant meals"], tierBand: "Locals", followerCount: 2500, avgViews: 700,
     localAudiencePct: 55, bio: "", agreedHonestPosts: true, agreedFtcDisclosure: true, agreedPostCompliance: true, agreedTerms: true,
@@ -344,9 +344,9 @@ try {
   const impT = await admin("POST", "/api/admin/campaign/import", {
     campaignId: "tester-test",
     recipients: [
-      { email: "tony-tester@example.com", name: "Tony Tester", handle: "tonytester", market: "Hampton Roads", opener: "your posts" },
-      { email: "lateflag@example.com", name: "Late Flag", handle: "lateflag", market: "Hampton Roads", opener: "your posts" },
-      { email: "realprospect@example.com", name: "Real Prospect", handle: "realprospect", market: "Hampton Roads", opener: "your posts" },
+      { email: "tony-tester@fixtures.dev", name: "Tony Tester", handle: "tonytester", market: "Hampton Roads", opener: "your posts" },
+      { email: "lateflag@fixtures.dev", name: "Late Flag", handle: "lateflag", market: "Hampton Roads", opener: "your posts" },
+      { email: "realprospect@fixtures.dev", name: "Real Prospect", handle: "realprospect", market: "Hampton Roads", opener: "your posts" },
     ],
   });
   check("import skips the tester account address, queues the other two", impT.status === 200 && impT.data.imported === 2 && impT.data.skipped === 1, JSON.stringify(impT.data));
@@ -356,7 +356,7 @@ try {
   // must prune it from the queue rather than send to it.
   const late = makeClient();
   const lateReg = await late("POST", "/api/auth/register", {
-    role: "creator", name: "Late Flag", email: "lateflag@example.com", password: "password123",
+    role: "creator", name: "Late Flag", email: "lateflag@fixtures.dev", password: "password123",
     market: "Hampton Roads", city: "Norfolk", handle: "lateflag", categories: ["Food & Drink"],
     compCategories: ["Restaurant meals"], tierBand: "Locals", followerCount: 1800, avgViews: 500,
     localAudiencePct: 48, bio: "", agreedHonestPosts: true, agreedFtcDisclosure: true, agreedPostCompliance: true, agreedTerms: true,
@@ -405,13 +405,13 @@ try {
   check("template dispatch: the crossover id renders the crossover subject", campaignEmailFor(CROSSOVER_CAMPAIGN_ID, { name: "A B", handle: "ab", market: "Richmond", opener: "your posts" }).subject === "Your national platforms, plus a local layer in Richmond");
   check("template dispatch: the founding id renders the founding subject", campaignEmailFor("founding-creators-2026-10", { name: "A B", handle: "ab", market: "Richmond", opener: "your posts" }).subject === "A founding creator spot in Richmond");
   check("template dispatch: any other campaign keeps the founding template", campaignEmailFor("daily-test", { name: "A B", handle: "ab", market: "Richmond", opener: "your posts" }).subject === "A founding creator spot in Richmond");
-  // Cross-campaign dedupe: pasteone@example.com already sits in
+  // Cross-campaign dedupe: pasteone@fixtures.dev already sits in
   // the founding campaign (Part H). Importing it into crossover
   // must record it skipped with reason cross_campaign, never queue
   // it, and the import response must report the cross count.
-  const xoRecipients = [{ email: "pasteone@example.com", name: "Paste One", handle: "paste1", market: "Hampton Roads", opener: "your Granby Street posts" }];
+  const xoRecipients = [{ email: "pasteone@fixtures.dev", name: "Paste One", handle: "paste1", market: "Hampton Roads", opener: "your Granby Street posts" }];
   for (let i = 1; i <= 45; i++) {
-    xoRecipients.push({ email: `xo${String(i).padStart(2, "0")}@example.com`, name: `Crossover Creator ${i}`, handle: `xo${i}`, market: "Richmond", opener: "your national campaign posts" });
+    xoRecipients.push({ email: `xo${String(i).padStart(2, "0")}@fixtures.dev`, name: `Crossover Creator ${i}`, handle: `xo${i}`, market: "Richmond", opener: "your national campaign posts" });
   }
   const foundingBefore = await admin("GET", "/api/admin/campaign");
   const xoImp = await admin("POST", "/api/admin/campaign/import", { campaignId: "founding-crossover-2026-10", recipients: xoRecipients });

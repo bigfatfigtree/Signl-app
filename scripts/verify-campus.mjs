@@ -74,7 +74,7 @@ function fullCreatorBody(overrides) {
   return {
     role: "creator",
     name: "Campus Creator",
-    email: "campus@example.com",
+    email: "campus@fixtures.dev",
     password: "campus-pass-1234",
     market: "Hampton Roads",
     city: "Virginia Beach",
@@ -114,7 +114,7 @@ try {
   const lead = client();
   const leadReg = await lead("POST", "/api/auth/register", fullCreatorBody({
     name: "Campus Lead",
-    email: "campuslead@example.com",
+    email: "campuslead@fixtures.dev",
     handle: "campuslead",
     university: "Virginia Commonwealth University",
     universityStatus: "Current student",
@@ -128,7 +128,7 @@ try {
   const same = client();
   const sameReg = await same("POST", "/api/auth/register", fullCreatorBody({
     name: "Same School",
-    email: "sameschool@example.com",
+    email: "sameschool@fixtures.dev",
     handle: "sameschool",
     university: "VCU",
     referredBy: "campuslead",
@@ -139,7 +139,7 @@ try {
   const other = client();
   const otherReg = await other("POST", "/api/auth/register", fullCreatorBody({
     name: "Other School",
-    email: "otherschool@example.com",
+    email: "otherschool@fixtures.dev",
     handle: "otherschool",
     city: "Norfolk",
     university: "Duke University",
@@ -161,7 +161,7 @@ try {
   const claim = await claimer("POST", "/api/auth/register", {
     role: "creator",
     quickClaim: true,
-    email: "campusclaim@example.com",
+    email: "campusclaim@fixtures.dev",
     password: "campus-pass-1234",
     market: "Hampton Roads",
     handle: "campusclaim",
@@ -188,7 +188,7 @@ try {
     role: "business",
     name: "Campus Biz Owner",
     businessName: "Campus Table",
-    email: "campusbiz@example.com",
+    email: "campusbiz@fixtures.dev",
     password: "campus-pass-1234",
     market: "Hampton Roads",
     city: "Norfolk",
@@ -228,7 +228,7 @@ try {
   // ---------- student-status gate: alumni and unset earn no badge ----------
   const alum = client();
   const alumReg = await alum("POST", "/api/auth/register", fullCreatorBody({
-    name: "Campus Alum", email: "campusalum@example.com", handle: "campusalum",
+    name: "Campus Alum", email: "campusalum@fixtures.dev", handle: "campusalum",
     university: "VCU", universityStatus: "alumni",
   }));
   check("alumni signup stores the status on both record levels", alumReg.status === 201 && alumReg.data.user.universityStatus === "alumni" && alumReg.data.user.creator.universityStatus === "alumni", JSON.stringify(alumReg.data.user));
@@ -244,7 +244,7 @@ try {
 
   const nostat = client();
   const nostatReg = await nostat("POST", "/api/auth/register", fullCreatorBody({
-    name: "No Status", email: "campusnostatus@example.com", handle: "campusnostatus",
+    name: "No Status", email: "campusnostatus@fixtures.dev", handle: "campusnostatus",
     university: "VCU",
   }));
   const nostatId = nostatReg.data.user.id;
@@ -271,7 +271,7 @@ try {
 
   const variant = client();
   const variantReg = await variant("POST", "/api/auth/register", fullCreatorBody({
-    name: "Variant Spelling", email: "campusvariant@example.com", handle: "campusvariant",
+    name: "Variant Spelling", email: "campusvariant@fixtures.dev", handle: "campusvariant",
     university: "Virginia Commonwealth University", referredBy: "campuslead",
   }));
   check("dataset-name variant stores the shipped canonical plus dataset city/state, verified", variantReg.status === 201 && variantReg.data.user.university === "VCU" && variantReg.data.user.creator.university === "VCU" && variantReg.data.user.universityCity === "Richmond" && variantReg.data.user.universityState === "VA" && variantReg.data.user.universityUnverified === false && variantReg.data.user.creator.universityUnverified === false, JSON.stringify(variantReg.data.user));
@@ -280,14 +280,14 @@ try {
 
   const jmu = client();
   const jmuReg = await jmu("POST", "/api/auth/register", fullCreatorBody({
-    name: "JMU Creator", email: "campusjmu@example.com", handle: "campusjmu",
+    name: "JMU Creator", email: "campusjmu@fixtures.dev", handle: "campusjmu",
     university: "JMU",
   }));
   check("a dataset alias outside the launch 16 resolves to the dataset canonical", jmuReg.status === 201 && jmuReg.data.user.university === "James Madison University" && jmuReg.data.user.universityCity === "Harrisonburg" && jmuReg.data.user.universityUnverified === false, JSON.stringify(jmuReg.data.user));
 
   const free = client();
   const freeReg = await free("POST", "/api/auth/register", fullCreatorBody({
-    name: "Free Entry", email: "campusfree@example.com", handle: "campusfree",
+    name: "Free Entry", email: "campusfree@fixtures.dev", handle: "campusfree",
     university: "Tiny Made Up College",
   }));
   const freeId = freeReg.data.user.id;

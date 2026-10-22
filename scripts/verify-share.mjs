@@ -133,7 +133,7 @@ try {
     await admin("POST", "/api/auth/login", { email: ADMIN_EMAIL, password: ADMIN_PASSWORD });
     const creator = client();
     const reg = await creator("POST", "/api/auth/register", {
-      role: "creator", name: "Share Owner", email: "shareowner@example.com", password: "<MASKED_SECRET_002>",
+      role: "creator", name: "Share Owner", email: "shareowner@fixtures.dev", password: "<MASKED_SECRET_002>",
       market: "Hampton Roads", city: "Norfolk", handle: "shareowner",
       followerCount: 5100, localAudiencePct: 70, categories: ["Food & Drink"], ...AGREE,
     });

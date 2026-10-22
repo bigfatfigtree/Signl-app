@@ -102,7 +102,7 @@ function creatorPayload(overrides = {}) {
   return {
     role: "creator",
     name: `Case Creator ${n}`,
-    email: `case${n}-${uniq()}@example.com`,
+    email: `case${n}-${uniq()}@fixtures.dev`,
     password: "password123",
     market: "Hampton Roads",
     city: "Norfolk",
@@ -134,7 +134,7 @@ async function registerBusiness(admin, planId, businessName) {
   const r = await c("POST", "/api/auth/register", {
     role: "business",
     name: "Biz Owner",
-    email: `biz-${uniq()}@example.com`,
+    email: `biz-${uniq()}@fixtures.dev`,
     password: "password123",
     market: "Hampton Roads",
     city: "Norfolk",

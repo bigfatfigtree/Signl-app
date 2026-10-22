@@ -105,7 +105,7 @@ try {
   if (!up) throw new Error("server did not start");
 
   // ---------- email copy (unit level, exported builders) ----------
-  const claimUser = { name: "quickclaim757", email: "q@example.com", market: "Hampton Roads", city: "", creator: { handle: "quickclaim757", tierBand: "Neighbors", categories: [], localAudiencePct: null, audienceStack: {}, followerCount: 0, totalAudience: 0, bestWork: [], bio: "", hasPhoto: false, neighborhood: "" } };
+  const claimUser = { name: "quickclaim757", email: "q@fixtures.dev", market: "Hampton Roads", city: "", creator: { handle: "quickclaim757", tierBand: "Neighbors", categories: [], localAudiencePct: null, audienceStack: {}, followerCount: 0, totalAudience: 0, bestWork: [], bio: "", hasPhoto: false, neighborhood: "" } };
   const claimMail = claimConfirmationEmail(claimUser, 100);
   check("claim email subject is the claimed-spot framing", claimMail.subject === "Your SIGNL founding spot is claimed", claimMail.subject);
   check("claim email carries the 2-business-day approval promise", claimMail.text.includes("decision or a clear status within 2 business days"));
@@ -113,7 +113,7 @@ try {
   check("claim email carries the referral link and signs as Jeff", claimMail.text.includes("https://app.joinsignl.com/?ref=quickclaim757") && claimMail.text.includes("\nJeff\nFounder, SIGNL\n"), claimMail.text);
   check("claim email has no em dashes", !claimMail.text.includes("—") && !claimMail.text.includes("–"));
 
-  const approvalMail = approvalEmail({ name: "Quick Claim", email: "q@example.com", market: "Hampton Roads", city: "Norfolk", creator: { handle: "quickclaim757", tierBand: "Locals", categories: ["Food & Drink"], localAudiencePct: 55, audienceStack: { instagram: 3000 }, followerCount: 3000, totalAudience: 3000, bestWork: [], bio: "", hasPhoto: false, neighborhood: "" } }, 100);
+  const approvalMail = approvalEmail({ name: "Quick Claim", email: "q@fixtures.dev", market: "Hampton Roads", city: "Norfolk", creator: { handle: "quickclaim757", tierBand: "Locals", categories: ["Food & Drink"], localAudiencePct: 55, audienceStack: { instagram: 3000 }, followerCount: 3000, totalAudience: 3000, bestWork: [], bio: "", hasPhoto: false, neighborhood: "" } }, 100);
   check("approval email leads with finishing the profile to be launch-ready", approvalMail.text.includes("finish your profile to be launch-ready"), approvalMail.text);
   check("approval email carries the completion checklist with Momentum values", approvalMail.text.includes("[needed to go live]") && approvalMail.text.includes("Add your profile photo (+10 Momentum points)") && approvalMail.text.includes("Report your local audience % (+5 Momentum points)"), approvalMail.text);
   check("approval email links into the completion flow", approvalMail.text.includes("Sign in and open the Profile tab: https://app.joinsignl.com"));
@@ -133,7 +133,7 @@ try {
   const claim = await claimer("POST", "/api/auth/register", {
     role: "creator",
     quickClaim: true,
-    email: "quickclaim@example.com",
+    email: "quickclaim@fixtures.dev",
     password: "claim-pass-1234",
     market: "Hampton Roads",
     handle: "quickclaim757",
@@ -148,11 +148,11 @@ try {
   check("quick claim referral credit persisted (claim links with ?ref= keep working)", claim.data.user && claim.data.user.referredBy === "foundingfriend");
   check("quick claim payload carries profileCompletion (incomplete, 0 of 4 essentials)", !!claim.data.user.profileCompletion && claim.data.user.profileCompletion.complete === false && claim.data.user.profileCompletion.requiredDone === 0 && claim.data.user.profileCompletion.requiredTotal === 4, JSON.stringify(claim.data.user.profileCompletion));
 
-  const noHandle = await client()("POST", "/api/auth/register", { role: "creator", quickClaim: true, email: "nohandle@example.com", password: "claim-pass-1234", market: "Hampton Roads", ...AGREE });
+  const noHandle = await client()("POST", "/api/auth/register", { role: "creator", quickClaim: true, email: "nohandle@fixtures.dev", password: "claim-pass-1234", market: "Hampton Roads", ...AGREE });
   check("quick claim without a handle is refused (400)", noHandle.status === 400, String(noHandle.status));
-  const noTerms = await client()("POST", "/api/auth/register", { role: "creator", quickClaim: true, email: "noterms@example.com", password: "claim-pass-1234", market: "Hampton Roads", handle: "noterms", agreedHonestPosts: true, agreedFtcDisclosure: true, agreedPostCompliance: true, agreedTerms: false });
+  const noTerms = await client()("POST", "/api/auth/register", { role: "creator", quickClaim: true, email: "noterms@fixtures.dev", password: "claim-pass-1234", market: "Hampton Roads", handle: "noterms", agreedHonestPosts: true, agreedFtcDisclosure: true, agreedPostCompliance: true, agreedTerms: false });
   check("quick claim without the terms agreement is refused (400)", noTerms.status === 400, String(noTerms.status));
-  const bizClaim = await client()("POST", "/api/auth/register", { role: "business", quickClaim: true, email: "bizclaim@example.com", password: "claim-pass-1234", market: "Hampton Roads", handle: "bizclaim", ...AGREE });
+  const bizClaim = await client()("POST", "/api/auth/register", { role: "business", quickClaim: true, email: "bizclaim@fixtures.dev", password: "claim-pass-1234", market: "Hampton Roads", handle: "bizclaim", ...AGREE });
   check("quickClaim does not bypass the business form (400 without business fields)", bizClaim.status === 400, String(bizClaim.status));
 
   // The old full form, untouched: lands complete.
@@ -160,7 +160,7 @@ try {
   const fullReg = await full("POST", "/api/auth/register", {
     role: "creator",
     name: "Full Form",
-    email: "fullform@example.com",
+    email: "fullform@fixtures.dev",
     password: "full-pass-1234",
     market: "Hampton Roads",
     city: "Virginia Beach",
@@ -178,7 +178,7 @@ try {
   const unlReg = await unl("POST", "/api/auth/register", {
     role: "creator",
     quickClaim: true,
-    email: "tulsa@example.com",
+    email: "tulsa@fixtures.dev",
     password: "claim-pass-1234",
     market: "Not listed yet",
     customCity: "Tulsa",
@@ -217,7 +217,7 @@ try {
     role: "business",
     name: "Verify Owner",
     businessName: "Claim Gate Table",
-    email: "gatebiz@example.com",
+    email: "gatebiz@fixtures.dev",
     password: "business-pass-123",
     market: "Hampton Roads",
     city: "Norfolk",
@@ -279,7 +279,7 @@ try {
   const lateReg = await late("POST", "/api/auth/register", {
     role: "creator",
     quickClaim: true,
-    email: "latefinisher@example.com",
+    email: "latefinisher@fixtures.dev",
     password: "claim-pass-1234",
     market: "Hampton Roads",
     handle: "latefinisher757",

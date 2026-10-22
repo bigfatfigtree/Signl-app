@@ -98,7 +98,7 @@ try {
   const claimer = client();
   const claim = await claimer("POST", "/api/auth/register", {
     role: "creator", quickClaim: true,
-    email: "srcmoms@example.com", password: "<MASKED_SECRET_002>",
+    email: "srcmoms@fixtures.dev", password: "<MASKED_SECRET_002>",
     market: "Hampton Roads", handle: "srcmoms",
     signupSource: "moms",
     ...AGREE,
@@ -110,7 +110,7 @@ try {
   // ---------- full signup carries the source ----------
   const full = client();
   const fullReg = await full("POST", "/api/auth/register", {
-    role: "creator", name: "Src Student", email: "srcstudents@example.com", password: "<MASKED_SECRET_002>",
+    role: "creator", name: "Src Student", email: "srcstudents@fixtures.dev", password: "<MASKED_SECRET_002>",
     market: "Richmond", city: "Richmond", handle: "srcstudents",
     followerCount: 3200, localAudiencePct: 55, categories: ["Food & Drink"],
     signupSource: "students",
@@ -123,7 +123,7 @@ try {
   const dirty = client();
   const dirtyReg = await dirty("POST", "/api/auth/register", {
     role: "creator", quickClaim: true,
-    email: "srcdirty@example.com", password: "<MASKED_SECRET_002>",
+    email: "srcdirty@fixtures.dev", password: "<MASKED_SECRET_002>",
     market: "Raleigh", handle: "srcdirty",
     signupSource: "Moms Page!! <x>",
     ...AGREE,
@@ -133,7 +133,7 @@ try {
   const junk = client();
   const junkReg = await junk("POST", "/api/auth/register", {
     role: "creator", quickClaim: true,
-    email: "srcjunk@example.com", password: "<MASKED_SECRET_002>",
+    email: "srcjunk@fixtures.dev", password: "<MASKED_SECRET_002>",
     market: "Raleigh", handle: "srcjunk",
     signupSource: "!! $$ %%",
     ...AGREE,
@@ -143,7 +143,7 @@ try {
   const long = client();
   const longReg = await long("POST", "/api/auth/register", {
     role: "creator", quickClaim: true,
-    email: "srclong@example.com", password: "<MASKED_SECRET_002>",
+    email: "srclong@fixtures.dev", password: "<MASKED_SECRET_002>",
     market: "Raleigh", handle: "srclong",
     signupSource: "a".repeat(60),
     ...AGREE,
@@ -154,7 +154,7 @@ try {
   const plain = client();
   const plainReg = await plain("POST", "/api/auth/register", {
     role: "creator", quickClaim: true,
-    email: "srcplain@example.com", password: "<MASKED_SECRET_002>",
+    email: "srcplain@fixtures.dev", password: "<MASKED_SECRET_002>",
     market: "Hampton Roads", handle: "srcplain",
     ...AGREE,
   });

@@ -106,7 +106,7 @@ try {
   async function registerCreator(handle) {
     const client = makeClient();
     const r = await client("POST", "/api/auth/register", {
-      role: "creator", name: `ROAS Creator ${handle}`, email: `${handle}@example.com`, password: "password123",
+      role: "creator", name: `ROAS Creator ${handle}`, email: `${handle}@fixtures.dev`, password: "password123",
       market: "Hampton Roads", city: "Norfolk", handle,
       categories: ["Food & Drink"], compCategories: ["Restaurant meals"], tierBand: "Locals",
       followerCount: 5000, avgViews: 900, localAudiencePct: 62, bio: "",
@@ -118,7 +118,7 @@ try {
   async function registerBusiness(planId, businessName) {
     const client = makeClient();
     const r = await client("POST", "/api/auth/register", {
-      role: "business", name: "Biz Owner", email: `biz-${uniq()}@example.com`, password: "password123",
+      role: "business", name: "Biz Owner", email: `biz-${uniq()}@fixtures.dev`, password: "password123",
       market: "Hampton Roads", city: "Norfolk", businessName, category: "Restaurant", planId, agreedTerms: true,
     });
     if (r.status !== 201 || !r.data.user) throw new Error(`business register failed: ${r.status} ${JSON.stringify(r.data)}`);

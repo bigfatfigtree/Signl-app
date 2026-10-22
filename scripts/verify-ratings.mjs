@@ -190,11 +190,11 @@ try {
   const adminLogin = await admin("POST", "/api/auth/login", { email: ADMIN_EMAIL, password: ADMIN_PASSWORD });
   check("admin signs in", adminLogin.status === 200 && adminLogin.data.user.role === "admin");
 
-  const rated = await makeCreator("ratedeats757", "rated@example.com", "Rated Creator");
-  const unrated = await makeCreator("unratedeats757", "unrated@example.com", "Unrated Creator");
-  const biz1 = await makeBusiness("Ratings Table One", "biz1@example.com");
-  const biz2 = await makeBusiness("Ratings Table Two", "biz2@example.com");
-  const biz3 = await makeBusiness("Ratings Table Three", "biz3@example.com");
+  const rated = await makeCreator("ratedeats757", "rated@fixtures.dev", "Rated Creator");
+  const unrated = await makeCreator("unratedeats757", "unrated@fixtures.dev", "Unrated Creator");
+  const biz1 = await makeBusiness("Ratings Table One", "biz1@fixtures.dev");
+  const biz2 = await makeBusiness("Ratings Table Two", "biz2@fixtures.dev");
+  const biz3 = await makeBusiness("Ratings Table Three", "biz3@fixtures.dev");
   check("fixtures ready: 2 creators, 3 businesses approved and active", true);
 
   // --- unrated creator: null, never zero, on every surface ---

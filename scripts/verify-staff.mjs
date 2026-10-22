@@ -227,13 +227,13 @@ try {
   const adminLogin = await admin("POST", "/api/auth/login", { email: ADMIN_EMAIL, password: ADMIN_PASSWORD });
   check("admin signs in", adminLogin.status === 200 && adminLogin.data.user.role === "admin");
 
-  const creator = await makeCreator("staffeats757", "staffcreator@example.com", "Staff Creator");
-  const bizA = await makeBusiness("Staff Table One", "staffbiz1@example.com", true);
-  const bizB = await makeBusiness("Staff Table Two", "staffbiz2@example.com", true);
-  const bizC = await makeBusiness("Staff Founding", "staffbiz3@example.com", false);
+  const creator = await makeCreator("staffeats757", "staffcreator@fixtures.dev", "Staff Creator");
+  const bizA = await makeBusiness("Staff Table One", "staffbiz1@fixtures.dev", true);
+  const bizB = await makeBusiness("Staff Table Two", "staffbiz2@fixtures.dev", true);
+  const bizC = await makeBusiness("Staff Founding", "staffbiz3@fixtures.dev", false);
   check("fixtures ready: 1 creator, 2 active businesses, 1 founding business", true);
 
-  const ownerA = await loginRaw("staffbiz1@example.com", "business-pass-123");
+  const ownerA = await loginRaw("staffbiz1@fixtures.dev", "business-pass-123");
 
   // --- owner staff settings ---
   const settings0 = await raw("GET", "/api/me/staff", { cookie: ownerA });
@@ -363,7 +363,7 @@ try {
   check("a killed session cannot look up codes (401)", lookupDead.status === 401, String(lookupDead.status));
 
   // --- founding gate: staff mode needs an activated business ---
-  const ownerC = await loginRaw("staffbiz3@example.com", "business-pass-123");
+  const ownerC = await loginRaw("staffbiz3@fixtures.dev", "business-pass-123");
   const setPinC = await raw("POST", "/api/me/staff/pin", { cookie: ownerC, body: { pin: "4321" } });
   const settingsC = await raw("GET", "/api/me/staff", { cookie: ownerC });
   check("founding owner can set a PIN and read settings pre-activation", setPinC.status === 200 && settingsC.data.staffPinSet === true, JSON.stringify(settingsC.data));
@@ -371,7 +371,7 @@ try {
   check("founding business cannot open staff mode (403 founding gate)", enterC.status === 403 && !enterC.staffCookie, `${enterC.status} ${JSON.stringify(enterC.data)}`);
 
   // --- PIN lockout: 5 wrong tries lock entry for 15 minutes ---
-  const ownerB = await loginRaw("staffbiz2@example.com", "business-pass-123");
+  const ownerB = await loginRaw("staffbiz2@fixtures.dev", "business-pass-123");
   await raw("POST", "/api/me/staff/pin", { cookie: ownerB, body: { pin: "9999" } });
   const settingsB = await raw("GET", "/api/me/staff", { cookie: ownerB });
   const codeB = settingsB.data.staffCode;
