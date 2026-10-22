@@ -41,6 +41,25 @@ const topnav = document.getElementById("topnav");
 const bottomnav = document.getElementById("bottomnav");
 const PAID_COMP = "Paid cash campaigns";
 
+// Realtor layer (Jeff, 2026-10-22): one profession value carries
+// product behavior. It must match REALTOR_PROFESSION in the
+// server's markets.js exactly; the server is authoritative (it
+// sanitizes against its own list and gates the public payload).
+const REALTOR_PROFESSION = "Real estate agent";
+function isRealtorProfile(c) {
+  return !!c && c.profession === REALTOR_PROFESSION;
+}
+function professionOptionsHtml(selected) {
+  const list = (state.boot && state.boot.professions) || [];
+  return `<option value="">Select one (optional)</option>` + list.map((x) => `<option value="${esc(x)}" ${x === selected ? "selected" : ""}>${esc(x)}</option>`).join("");
+}
+function syncRealtorFields() {
+  const block = document.getElementById("p-realtor-block");
+  const sel = document.getElementById("p-profession");
+  if (block && sel) block.style.display = sel.value === REALTOR_PROFESSION ? "" : "none";
+  return false;
+}
+
 function esc(s) {
   return String(s === null || s === undefined ? "" : s)
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
@@ -240,6 +259,7 @@ async function renderPublicProfile() {
             ${!p.unlisted && p.city ? `<span class="cc-chip">${esc(p.city)}</span>` : ""}
             ${p.neighborhood ? `<span class="cc-chip">${esc(p.neighborhood)}</span>` : ""}
             ${p.campusBadge ? `<span class="cc-chip">${esc(p.campusBadge)}</span>` : ""}
+            ${p.isRealtor ? `<span class="cc-chip">Realtor</span>` : ""}
             <span class="cc-chip">Founding Creator</span>
             ${p.foundingBand ? `<span class="cc-chip">In the first ${p.foundingBand} founding creators in ${place}</span>` : ""}
           </div>
@@ -259,6 +279,7 @@ async function renderPublicProfile() {
     </div>
     <section class="panel" style="margin-top:20px">
     ${p.categories && p.categories.length ? `<p class="small">${p.categories.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
+    ${p.isRealtor && p.farmAreas && p.farmAreas.length ? `<p class="small">Neighborhoods: ${p.farmAreas.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
     ${p.compCategories && p.compCategories.length ? `<p class="small muted">Open to comps: ${p.compCategories.map(esc).join(", ")}</p>` : ""}
     <p class="small">${p.paidRate ? `<span class="badge tier">Paid bookings: $${esc(String(p.paidRate))}</span> ` : ""}${p.compOpen === false ? `<span class="badge warn">Paid visits only</span>` : `<span class="badge info">Open to comp visits</span>`}</p>
     ${p.paidRate ? `<p class="small muted">Businesses can also book this creator at their listed rate: the business pays the rate plus 3%, they keep 97% of their rate, and SIGNL holds the payment until the post is live.</p>` : ""}
@@ -266,11 +287,98 @@ async function renderPublicProfile() {
     ${trackRecordHtml(p)}
     ${reviewsHtml(p)}
     ${visitIncludesHtml(p.visitIncludes)}
+    ${p.isRealtor && p.brokerage ? `<p class="small muted">Brokered by ${esc(p.brokerage)}</p>` : ""}
     <p class="small muted">SIGNL connects local businesses with local creators. Businesses comp a meal or a service, creators post honestly within 48 hours and disclose the comp, and every post is tracked. No business can ever require a positive post.</p>
     <div class="cta-row" style="justify-content:flex-start">
       ${state.user ? `<a class="btn ghost" href="#" onclick="return go('dashboard')">Back to my dashboard</a>` : `<a class="btn" href="#" onclick="return go('join-creator')">Become a Founding Creator</a> <a class="btn ghost" href="#" onclick="return go('for-businesses')">For Businesses</a>`}
     </div>
     </section>
+  </div>`;
+}
+
+// Listing presentation proof (Jeff, 2026-10-22, realtor layer):
+// a print-optimized one-pager at /c/<handle>/proof, rendered from
+// the SAME public payload as /c/<handle>, so it can only ever show
+// public facts: no email, no account data, nothing private. The
+// owner reaches it from the "Listing proof sheet" action on their
+// own Profile tab; anyone with the link sees the same public
+// facts. Honesty rule (playbook Part 3): every number here is a
+// real stored value from the creator's record. A metric that is
+// null or gated (rating below 3 businesses) is OMITTED, never
+// estimated, projected, or zero-filled into a claim.
+async function renderPublicProof() {
+  const handle = state.publicHandle || "";
+  app.innerHTML = `<section class="panel center" style="max-width:560px;margin:40px auto"><p class="muted">Loading the proof sheet for @${esc(handle)}...</p></section>`;
+  let p = null;
+  try {
+    const data = await api("GET", "/c/" + encodeURIComponent(handle));
+    p = data.profile;
+  } catch (e) { p = null; }
+  if (!p) {
+    document.title = "Proof sheet not public | SIGNL";
+    app.innerHTML = `
+    <section class="panel center" style="max-width:560px;margin:40px auto">
+      <h2>Proof sheet not public</h2>
+      <p class="muted">There is no public SIGNL profile at this link yet, so there is no proof sheet to show. Proof sheets exist once a creator is approved and public.</p>
+      <div class="cta-row" style="justify-content:center">
+        ${state.user ? `<a class="btn" href="#" onclick="return go('dashboard')">Back to my dashboard</a>` : `<a class="btn" href="#" onclick="return go('join-creator')">Become a Founding Creator</a>`}
+      </div>
+    </section>`;
+    return;
+  }
+  const place = p.unlisted ? (p.city || "") : (p.market || "");
+  document.title = `Listing proof: ${p.name} (@${p.handle}) | SIGNL`;
+  const initial = esc((p.name || "?").trim().charAt(0).toUpperCase() || "?");
+  const tr = p.trackRecord || {};
+  const generated = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+  const statCells = [];
+  statCells.push(`<div class="stat-cell"><div class="stat-num">${fmtNum(totalAudienceOf(p))}</div><div class="stat-lbl">Stacked audience, all platforms</div></div>`);
+  if (p.localAudiencePct !== null && p.localAudiencePct !== undefined) {
+    statCells.push(`<div class="stat-cell"><div class="stat-num">${p.localAudiencePct}%</div><div class="stat-lbl">Local audience (${esc(p.localAudienceSource || "Self-reported")})</div></div>`);
+  }
+  if (typeof p.momentumPoints === "number") {
+    statCells.push(`<div class="stat-cell"><div class="stat-num">${p.momentumPoints}</div><div class="stat-lbl">Momentum points (reliability and referrals)</div></div>`);
+  }
+  if (p.ratingCount >= 3 && p.ratingAvg !== null && p.ratingAvg !== undefined) {
+    statCells.push(`<div class="stat-cell"><div class="stat-num">${esc(String(p.ratingAvg))} / 5</div><div class="stat-lbl">Rating from ${p.ratingCount} businesses</div></div>`);
+  }
+  if (tr.postsDelivered > 0) {
+    statCells.push(`<div class="stat-cell"><div class="stat-num">${tr.postsDelivered}</div><div class="stat-lbl">Posts delivered on SIGNL</div></div>`);
+  }
+  if (tr.visitsCompleted > 0) {
+    statCells.push(`<div class="stat-cell"><div class="stat-num">${tr.visitsCompleted}</div><div class="stat-lbl">Visits completed</div></div>`);
+  }
+  if (tr.postsDelivered > 0 && tr.onTimePct !== null && tr.onTimePct !== undefined) {
+    statCells.push(`<div class="stat-cell"><div class="stat-num">${tr.onTimePct}%</div><div class="stat-lbl">Posts on time</div></div>`);
+  }
+  app.innerHTML = `
+  <div class="proof-sheet">
+    <div class="proof-head">
+      ${p.photoUrl ? `<img class="proof-photo" src="${esc(p.photoUrl)}" alt="">` : `<div class="proof-mono"><span>${initial}</span></div>`}
+      <div class="proof-id">
+        <div class="proof-name">${esc(p.name)}</div>
+        <div class="proof-handle">@${esc(p.handle)} &middot; ${esc(p.primaryPlatformLabel || "Instagram")}</div>
+        <div class="proof-place">${esc(place)}${p.city && !p.unlisted ? ` &middot; ${esc(p.city)}` : ""}${p.neighborhood ? ` &middot; ${esc(p.neighborhood)}` : ""}</div>
+        <div class="cc-chips" style="margin-top:8px">
+          ${p.tierBand ? `<span class="cc-chip">${esc(p.tierBand)}</span>` : ""}
+          ${p.isRealtor ? `<span class="cc-chip">Realtor</span>` : ""}
+          <span class="cc-chip">Founding Creator</span>
+        </div>
+      </div>
+      <div class="proof-brand">SIGNL</div>
+    </div>
+    ${p.isRealtor && p.farmAreas && p.farmAreas.length ? `<p class="proof-hoods">Neighborhoods: ${p.farmAreas.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
+    <div class="stat-band proof-stats">${statCells.join("")}</div>
+    ${tr.businessesWorkedWith && tr.businessesWorkedWith.length ? `<p class="proof-biz">Businesses posted for: ${tr.businessesWorkedWith.map(esc).join(", ")}</p>` : ""}
+    ${p.isRealtor && p.brokerage ? `<p class="proof-brokerage">Brokered by ${esc(p.brokerage)}</p>` : ""}
+    <div class="proof-foot">
+      <p>Activity verified by SIGNL &middot; Generated ${esc(generated)}</p>
+      <p class="muted">Every figure on this sheet comes from this creator's real SIGNL record: delivered posts, tracked visits, and business ratings. Local audience share is reported by the creator and labeled with its source above. Nothing here is estimated or projected.</p>
+    </div>
+    <div class="cta-row no-print" style="justify-content:flex-start;margin-top:16px">
+      <button class="btn" onclick="window.print()">Print or save as PDF</button>
+      <a class="btn ghost" href="/c/${encodeURIComponent(p.handle)}">Back to the public profile</a>
+    </div>
   </div>`;
 }
 
@@ -794,6 +902,7 @@ function go(view, tab) {
 async function render() {
   renderNav();
   if (state.view === "public-profile") return renderPublicProfile();
+  if (state.view === "public-proof") return renderPublicProof();
   clearShareShell();
   if (state.view === "staff") return renderStaff();
   const u = state.user;
@@ -1336,6 +1445,7 @@ function renderJoinCreator() {
         </div>
       </div>
       <div class="field"><label>Your neighborhood or area (optional)</label><input id="jc-neighborhood" placeholder="For example: Oceanfront, Ghent, Town Center" maxlength="80"><p class="small muted">The part of town you actually post from. Businesses search by neighborhood, so this helps the right ones find you.</p></div>
+      <div class="field"><label>What do you do? (optional)</label><select id="jc-profession">${professionOptionsHtml("")}</select><p class="small muted">Realtors: pick Real estate agent. Your profile gains neighborhood tags, your brokerage line, and a printable listing proof sheet, built for agents who sell the neighborhoods they post about.</p></div>
       <div class="field"><label>Your university (if you are a student now)</label><input id="jc-university" placeholder="Start typing your school" maxlength="120"><div class="uni-results" id="jc-university-results"></div><p class="small muted">Current students who add their school get a campus badge on their profile, and same-school referrals group into your campus crew. Pick your school from the list if it appears; if it does not, type it in full.</p></div>
       <div class="field"><label>Student status (optional)</label><select id="jc-university-status"><option value="">Select one</option><option value="current_student">Current student</option><option value="alumni">Alumni</option><option value="not_student">Not a student</option></select><p class="small muted">The campus badge is for current students. Alumni and everyone else still get the campus crew grouping.</p></div>
       <div class="field"><label>Where is your main audience?</label><select id="jc-platform" onchange="syncJcPlatform()">${primaryOptionsHtml(pf.platform || "instagram")}</select><p class="small muted">Pick the platform your audience actually follows you on. Your handle and your main follower count below are for this platform; the rest of your platforms stack on top.</p></div>
@@ -1472,6 +1582,7 @@ async function doRegisterCreator(e) {
       market: marketVal,
       city: isUnlisted ? undefined : document.getElementById("jc-city").value,
       neighborhood: document.getElementById("jc-neighborhood").value,
+      profession: document.getElementById("jc-profession").value || undefined,
       university: document.getElementById("jc-university").value,
       universityStatus: document.getElementById("jc-university-status").value || undefined,
       customCity: isUnlisted ? customCity : undefined,
@@ -2745,6 +2856,7 @@ function creatorProfileHtml(u) {
         <input type="text" readonly value="${esc(publicProfileUrl(u))}" onclick="this.select()" style="flex:1;min-width:220px">
         <button type="button" class="btn small-btn" onclick="return copyPublicProfile()">Copy link</button>
         <a class="btn small-btn ghost" href="${esc(publicProfileUrl(u))}" target="_blank" rel="noopener">View</a>
+        <a class="btn small-btn ghost" href="${esc(publicProfileUrl(u))}/proof" target="_blank" rel="noopener">Listing proof sheet</a>
         <span id="pp-copied" class="saved"></span>
       </div>
       <p class="small muted">Share this link anywhere, including your Instagram bio. Visitors see your name, handle, market and neighborhood, tier, follower count, categories, local audience share, Local Impact Score, Momentum points, and founding standing. Your email and account details are never shown, and there is no public roster: this page exists only at your link.</p>
@@ -2768,6 +2880,14 @@ function creatorProfileHtml(u) {
           : `<div class="field"><label>Home city (${esc(u.market)})</label><select id="p-city">${cityOptions(u.market, u.city || "")}</select></div>`}
       </div>
       <div class="field"><label>Your neighborhood or area</label><input id="p-neighborhood" value="${esc(c.neighborhood || "")}" placeholder="Optional, for example: Oceanfront, Ghent, Town Center" maxlength="80"><p class="small muted">Businesses search by neighborhood. Keep it to the area you actually post from.</p></div>
+      <div class="field"><label>What do you do? (optional)</label><select id="p-profession" onchange="syncRealtorFields()">${professionOptionsHtml(c.profession || "")}</select><p class="small muted">Realtors: pick Real estate agent and the fields below appear. Your profile gains a Realtor badge, your neighborhoods, and your brokerage line.</p></div>
+      <div id="p-realtor-block" style="display:${isRealtorProfile(c) ? "" : "none"}">
+        <div class="field"><label>Your neighborhoods (up to 3)</label>
+          ${[0, 1, 2].map((i) => `<input id="p-hood-${i}" value="${esc((c.farmAreas || [])[i] || "")}" placeholder="For example: Ghent" maxlength="60" style="margin-bottom:8px">`).join("")}
+          <p class="small muted">The neighborhoods you work and sell in. They show on your public profile as your neighborhoods, proof that you post where you sell.</p>
+        </div>
+        <div class="field"><label>Brokerage or firm (optional)</label><input id="p-brokerage" value="${esc(c.brokerage || "")}" placeholder="Your brokerage, as licensed" maxlength="120"><p class="small muted">Shown on your public profile and proof sheet as "Brokered by", so your pages carry your firm the way your broker requires.</p></div>
+      </div>
       <div class="field"><label>Your university (if you are a student now)</label><input id="p-university" value="${esc(c.university || u.university || "")}" placeholder="Start typing your school" maxlength="120"><div class="uni-results" id="p-university-results"></div><p class="small muted">Adding your school groups same-school referrals into your campus crew.${(c.university || u.university) && (c.universityStatus || u.universityStatus) === "current_student" ? ` Current badge: <strong>Campus: ${esc(c.university || u.university)}</strong>.` : ""}</p></div>
       <div class="field"><label>Student status (optional)</label><select id="p-university-status"><option value=""${!(c.universityStatus || u.universityStatus) ? " selected" : ""}>Select one</option><option value="current_student"${(c.universityStatus || u.universityStatus) === "current_student" ? " selected" : ""}>Current student</option><option value="alumni"${(c.universityStatus || u.universityStatus) === "alumni" ? " selected" : ""}>Alumni</option><option value="not_student"${(c.universityStatus || u.universityStatus) === "not_student" ? " selected" : ""}>Not a student</option></select><p class="small muted">The campus badge is for current students only, so it shows while your status is Current student.</p></div>
       <div class="form-2col">
@@ -2880,6 +3000,9 @@ async function doUpdateCreator(e) {
       primaryPlatform: document.getElementById("p-platform").value,
       city: cityEl ? cityEl.value : cityTextEl ? cityTextEl.value : undefined,
       neighborhood: document.getElementById("p-neighborhood").value,
+      profession: document.getElementById("p-profession") ? document.getElementById("p-profession").value : undefined,
+      farmAreas: [0, 1, 2].map((i) => { const el = document.getElementById("p-hood-" + i); return el ? el.value : ""; }),
+      brokerage: document.getElementById("p-brokerage") ? document.getElementById("p-brokerage").value : undefined,
       university: document.getElementById("p-university").value,
       universityStatus: document.getElementById("p-university-status").value,
       state: document.getElementById("p-state-text") ? document.getElementById("p-state-text").value : undefined,
@@ -4889,7 +5012,7 @@ async function loadApplications() {
         ? `<br><span class="badge ${businessAccessState(u) === "active" ? "ok" : "info"}">${businessAccessState(u) === "active" ? "Active" : "Founding list"}</span>`
         : "";
       const detail = u.role === "creator" && u.creator
-        ? `@${esc(u.creator.handle)} (${esc(primaryLabelClient(u.creator.primaryPlatform || "instagram"))}) &middot; ${fmtNum(u.creator.followerCount)} followers &middot; ${esc(u.creator.tierBand)} &middot; Local: ${u.creator.localAudiencePct === null ? "not reported" : u.creator.localAudiencePct + "% (Self-reported)"} &middot; ${(u.creator.categories || []).map(esc).join(", ")} &middot; Photo: ${u.creator.hasPhoto ? "yes" : "no"} &middot; Socials: IG${u.creator.tiktokHandle ? ", TikTok" : ""}${u.creator.youtubeChannel ? ", YouTube" : ""}${u.creator.facebookUrl ? ", Facebook" : ""}${u.creator.xUrl ? ", X" : ""}${u.creator.linkedinUrl ? ", LinkedIn" : ""}${u.creator.neighborhood ? ` &middot; Area: ${esc(u.creator.neighborhood)}` : ""}${u.creator.university || u.university ? ` &middot; University: ${esc(u.creator.university || u.university)}${universityStatusSuffix(u)}${u.universityUnverified || (u.creator && u.creator.universityUnverified) ? " (unverified)" : ""}` : ""}${u.referredBy ? ` &middot; Via referral: @${esc(u.referredBy)}` : ""}${u.signupSource ? ` &middot; Source: ${esc(u.signupSource)}` : ""}${u.momentum && u.momentum.signups ? ` &middot; Momentum: ${u.momentum.points} pts (${u.momentum.signups} joined, ${u.momentum.approved} approved)` : ""}`
+        ? `@${esc(u.creator.handle)} (${esc(primaryLabelClient(u.creator.primaryPlatform || "instagram"))}) &middot; ${fmtNum(u.creator.followerCount)} followers &middot; ${esc(u.creator.tierBand)} &middot; Local: ${u.creator.localAudiencePct === null ? "not reported" : u.creator.localAudiencePct + "% (Self-reported)"} &middot; ${(u.creator.categories || []).map(esc).join(", ")} &middot; Photo: ${u.creator.hasPhoto ? "yes" : "no"} &middot; Socials: IG${u.creator.tiktokHandle ? ", TikTok" : ""}${u.creator.youtubeChannel ? ", YouTube" : ""}${u.creator.facebookUrl ? ", Facebook" : ""}${u.creator.xUrl ? ", X" : ""}${u.creator.linkedinUrl ? ", LinkedIn" : ""}${u.creator.neighborhood ? ` &middot; Area: ${esc(u.creator.neighborhood)}` : ""}${u.creator.profession ? ` &middot; Profession: ${esc(u.creator.profession)}` : ""}${u.creator.profession === "Real estate agent" && u.creator.farmAreas && u.creator.farmAreas.length ? ` &middot; Neighborhoods: ${u.creator.farmAreas.map(esc).join(", ")}` : ""}${u.creator.profession === "Real estate agent" && u.creator.brokerage ? ` &middot; Brokered by: ${esc(u.creator.brokerage)}` : ""}${u.creator.university || u.university ? ` &middot; University: ${esc(u.creator.university || u.university)}${universityStatusSuffix(u)}${u.universityUnverified || (u.creator && u.creator.universityUnverified) ? " (unverified)" : ""}` : ""}${u.referredBy ? ` &middot; Via referral: @${esc(u.referredBy)}` : ""}${u.signupSource ? ` &middot; Source: ${esc(u.signupSource)}` : ""}${u.momentum && u.momentum.signups ? ` &middot; Momentum: ${u.momentum.points} pts (${u.momentum.signups} joined, ${u.momentum.approved} approved)` : ""}`
         : u.role === "business" && u.business
           ? `${esc(u.business.businessName)} &middot; ${esc(u.business.category)} &middot; ${esc(u.business.planName)} &middot; Access: ${businessAccessState(u) === "active" ? "Active" : "Founding list"}${u.referredBy ? ` &middot; Via referral: @${esc(u.referredBy)}` : ""}${u.signupSource ? ` &middot; Source: ${esc(u.signupSource)}` : ""}`
           : "";
@@ -5893,6 +6016,16 @@ function previewDashboardHtml(d) {
       // visitor lands on the sign-up, pre-filled. Signed-in visitors
       // keep their normal landing, and nothing ever auto-submits.
       if (!state.user) state.view = "join-creator";
+    }
+    // The listing proof sheet (/c/<handle>/proof) is matched
+    // before the plain profile: same public payload, print-first
+    // rendering.
+    const proofMatch = location.pathname.match(/^\/c\/([^/]+)\/proof\/?$/);
+    if (proofMatch) {
+      let h = proofMatch[1];
+      try { h = decodeURIComponent(h); } catch (e) { /* keep raw */ }
+      state.publicHandle = h.trim().replace(/^@/, "").slice(0, 40) || h;
+      state.view = "public-proof";
     }
     // A public profile URL (/c/<handle>) wins over every other view:
     // the page must render the same for logged-out and signed-in

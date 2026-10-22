@@ -658,3 +658,36 @@ tbody tr:hover td { background: rgba(245,240,231,.55); }
   .creator-card { transition: none; }
   .creator-card:hover { transform: none; }
 }
+
+/* Listing proof sheet (realtor layer, 2026-10-22): one clean
+   page, screen-readable and print-first. */
+.proof-sheet {
+  max-width: 760px; margin: 28px auto; background: #fff;
+  border: 1px solid var(--line2); border-radius: 18px; padding: 34px 36px;
+}
+.proof-head { display: flex; gap: 20px; align-items: center; }
+.proof-photo { width: 104px; height: 104px; border-radius: 16px; object-fit: cover; flex: 0 0 104px; }
+.proof-mono {
+  width: 104px; height: 104px; border-radius: 16px; flex: 0 0 104px;
+  background: var(--grad); display: flex; align-items: center; justify-content: center;
+}
+.proof-mono span { font-family: Archivo; font-weight: 800; font-size: 2.4rem; color: #fff; }
+.proof-id { flex: 1; min-width: 0; }
+.proof-name { font-family: Archivo; font-weight: 800; font-size: 1.9rem; line-height: 1.1; }
+.proof-handle { font-weight: 600; color: var(--ink2); margin-top: 3px; }
+.proof-place { color: var(--ink2); margin-top: 2px; }
+.proof-brand { font-family: Archivo; font-weight: 800; font-size: 1.3rem; letter-spacing: .04em; }
+.proof-hoods { margin: 20px 0 0; font-weight: 600; }
+.proof-stats { margin-top: 22px; border: 1px solid var(--line2); border-radius: 14px; overflow: hidden; }
+.proof-biz { margin-top: 18px; }
+.proof-brokerage { margin-top: 14px; font-size: .9rem; color: var(--ink2); }
+.proof-foot { margin-top: 26px; border-top: 1px solid var(--line2); padding-top: 16px; font-size: .9rem; }
+.proof-foot p:first-child { font-weight: 700; }
+
+@media print {
+  .topbar, .footer, #bottomnav, .no-print { display: none !important; }
+  body { background: #fff !important; }
+  main#app { padding: 0 !important; margin: 0 !important; }
+  .proof-sheet { border: none; border-radius: 0; margin: 0; max-width: none; padding: 10mm; }
+  .proof-stats { break-inside: avoid; }
+}
