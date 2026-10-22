@@ -11,7 +11,7 @@
   "private": true,
   "scripts": {
     "dev": "node scripts/dev-server.mjs",
-    "verify": "node scripts/verify-flow.mjs && node scripts/verify-fallbacks.mjs && node scripts/verify-launch.mjs && node scripts/verify-compliance.mjs && node scripts/verify-campaign.mjs && node scripts/verify-paidlane.mjs && node scripts/verify-roas.mjs && node scripts/verify-business.mjs && node scripts/verify-quickclaim.mjs && node scripts/verify-ratings.mjs && node scripts/verify-staff.mjs && node scripts/verify-refinements.mjs && node scripts/verify-campus.mjs && node scripts/verify-ladder.mjs && node scripts/verify-src.mjs && node scripts/verify-share.mjs && node scripts/verify-admin.mjs && node scripts/verify-autodecisions.mjs",
+    "verify": "node scripts/verify-flow.mjs && node scripts/verify-fallbacks.mjs && node scripts/verify-launch.mjs && node scripts/verify-compliance.mjs && node scripts/verify-campaign.mjs && node scripts/verify-paidlane.mjs && node scripts/verify-roas.mjs && node scripts/verify-business.mjs && node scripts/verify-quickclaim.mjs && node scripts/verify-ratings.mjs && node scripts/verify-staff.mjs && node scripts/verify-refinements.mjs && node scripts/verify-campus.mjs && node scripts/verify-ladder.mjs && node scripts/verify-src.mjs && node scripts/verify-share.mjs && node scripts/verify-admin.mjs && node scripts/verify-autodecisions.mjs && node scripts/verify-platforms.mjs",
     "verify-campus": "node scripts/verify-campus.mjs",
     "verify-admin": "node scripts/verify-admin.mjs",
     "verify-staff": "node scripts/verify-staff.mjs",
@@ -22,6 +22,7 @@
     "verify-roas": "node scripts/verify-roas.mjs",
     "verify-fallbacks": "node scripts/verify-fallbacks.mjs",
     "verify-autodecisions": "node scripts/verify-autodecisions.mjs",
+    "verify-platforms": "node scripts/verify-platforms.mjs",
     "verify-flow": "node scripts/verify-flow.mjs",
     "verify-launch": "node scripts/verify-launch.mjs",
     "verify-compliance": "node scripts/verify-compliance.mjs",

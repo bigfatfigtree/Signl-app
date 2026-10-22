@@ -539,6 +539,12 @@ const AUDIENCE_PLATFORMS = [
   { id: "x", label: "X" },
   { id: "linkedin", label: "LinkedIn" },
   { id: "youtube", label: "YouTube" },
+  // Snapchat (Jeff, 2026-10-22): count-only. Dubai and younger
+  // talent run Snapchat-first audiences, so the count stacks and
+  // tiers like every other platform, but there is deliberately NO
+  // Snapchat handle or profile-URL field anywhere: Snapchat has no
+  // public profile pattern in our system.
+  { id: "snapchat", label: "Snapchat" },
 ];
 const AUDIENCE_COUNT_CAP = 100000000;
 
@@ -569,6 +575,68 @@ function audienceStackOf(creator) {
 function audienceTotalOf(creator) {
   const stack = audienceStackOf(creator);
   return Object.values(stack).reduce((s, n) => s + n, 0);
+}
+
+// ---------- Primary platform (Jeff, 2026-10-22) ----------
+// Instagram was the assumed front door: the quick claim asked for
+// an Instagram handle, period, and the creator's identity keyed
+// off it. A creator's MAIN audience may live elsewhere, so signup
+// now opens with a picker ("Where is your main audience?") and the
+// handle is collected for the picked platform. The identity key
+// stays the handle string (/c/<handle>, referral links, claim
+// links, auto-decision evidence), unchanged. Records written
+// before the picker carry no primaryPlatform and read as
+// "instagram" everywhere (backfill on read, never a migration).
+const PRIMARY_PLATFORMS = [
+  { id: "instagram", label: "Instagram" },
+  { id: "tiktok", label: "TikTok" },
+  { id: "youtube", label: "YouTube" },
+  { id: "facebook", label: "Facebook" },
+  { id: "x", label: "X" },
+  { id: "linkedin", label: "LinkedIn" },
+];
+
+function normalizePrimaryPlatform(raw) {
+  const s = typeof raw === "string" ? raw.trim().toLowerCase() : "";
+  return PRIMARY_PLATFORMS.some((p) => p.id === s) ? s : "instagram";
+}
+
+function primaryPlatformOf(creator) {
+  const c = creator || {};
+  return PRIMARY_PLATFORMS.some((p) => p.id === c.primaryPlatform) ? c.primaryPlatform : "instagram";
+}
+
+function primaryPlatformLabel(platform) {
+  const meta = PRIMARY_PLATFORMS.find((p) => p.id === platform);
+  return meta ? meta.label : "Instagram";
+}
+
+function primaryPlatformUrl(platform, handle) {
+  const h = String(handle || "").replace(/^@/, "").trim();
+  if (!h) return null;
+  switch (platform) {
+    case "tiktok": return `https://www.tiktok.com/@${h}`;
+    case "youtube": return `https://www.youtube.com/@${h}`;
+    case "facebook": return `https://www.facebook.com/${h}`;
+    case "x": return `https://x.com/${h}`;
+    case "linkedin": return `https://www.linkedin.com/in/${h}`;
+    default: return `https://instagram.com/${h}`;
+  }
+}
+
+// The one profile link every surface points at: the creator's
+// primary platform profile. IG-primary (including every legacy
+// record) resolves to the stored instagramUrl exactly as before.
+function primaryProfileOf(creator) {
+  const c = creator || {};
+  const platform = primaryPlatformOf(c);
+  let url = null;
+  if (platform === "instagram") {
+    url = c.instagramUrl || primaryPlatformUrl(platform, c.handle);
+  } else {
+    url = c.primaryProfileUrl || primaryPlatformUrl(platform, c.handle);
+  }
+  return { platform, label: primaryPlatformLabel(platform), url };
 }
 
 // Display/payload shape: total plus the per-platform breakdown,
@@ -2343,7 +2411,7 @@ async function publicCreator(u, viewer, foundingPriority) {
     // defaults true for legacy records, paidRate is a number or
     // null (null = no paid bookings at any price).
     profile: u.creator
-      ? { ...u.creator, university, compOpen: u.creator.compOpen !== false, paidRate: typeof u.creator.paidRate === "number" && u.creator.paidRate > 0 ? u.creator.paidRate : null }
+      ? { ...u.creator, university, primaryPlatform: primaryProfileOf(u.creator).platform, primaryPlatformLabel: primaryProfileOf(u.creator).label, primaryProfileUrl: primaryProfileOf(u.creator).url, compOpen: u.creator.compOpen !== false, paidRate: typeof u.creator.paidRate === "number" && u.creator.paidRate > 0 ? u.creator.paidRate : null }
       : u.creator,
     totalAudience: audienceTotalOf(u.creator || {}),
     audienceStack: audienceView(u.creator || {}).platforms,
@@ -2396,12 +2464,22 @@ async function publicProfilePayload(u) {
   const unlisted = u.market === UNLISTED;
   const university = universityOfRecord(u);
   const audience = audienceView(c);
+  const primary = primaryProfileOf(c);
   return {
     name: u.name,
     handle: c.handle,
     university,
     campusBadge: campusBadgeFor(u),
-    instagramUrl: c.instagramUrl || `https://instagram.com/${c.handle}`,
+    // The public handle link points at the creator's PRIMARY
+    // platform (Jeff, 2026-10-22). instagramUrl stays in the
+    // payload with its exact legacy value for IG-primary creators
+    // (every record written before the picker); for a creator whose
+    // main platform is elsewhere it is null rather than a
+    // fabricated instagram.com link to somebody else's handle.
+    primaryPlatform: primary.platform,
+    primaryPlatformLabel: primary.label,
+    primaryProfileUrl: primary.url,
+    instagramUrl: primary.platform === "instagram" ? (c.instagramUrl || `https://instagram.com/${c.handle}`) : (c.instagramUrl || null),
     photoUrl: c.hasPhoto ? `/api/users/${u.id}/photo` : null,
     market: unlisted ? u.city || "" : u.market,
     unlisted,
@@ -4751,8 +4829,12 @@ async function handleRegister(event) {
   // form enforces, with the same words.
   const quickClaim = role === "creator" && b.quickClaim === true;
   const claimHandle = quickClaim && typeof b.handle === "string" ? b.handle.replace(/^@/, "").trim() : "";
+  // The claim's handle belongs to the creator's PRIMARY platform
+  // (Jeff, 2026-10-22): absent or unknown values read as Instagram,
+  // exactly as every claim link already in the wild behaves.
+  const claimPlatform = normalizePrimaryPlatform(b.primaryPlatform);
   if (quickClaim) {
-    if (!claimHandle) return err(400, "Your Instagram handle is required");
+    if (!claimHandle) return err(400, `Your ${primaryPlatformLabel(claimPlatform)} handle is required`);
     if (b.agreedHonestPosts !== true) return err(400, "Please confirm the honest-post rule: no business can ever require a positive post.");
     if (b.agreedFtcDisclosure !== true) return err(400, "Please confirm you will disclose every comp in your posts, as the FTC requires.");
     if (b.agreedPostCompliance !== true) return err(400, "Please confirm the post rule: post within 48 hours of a comped visit for full credit and paste the post link in the app. One week is the hard stop: a redeemed visit with no post pauses your account at one week and closes it at two.");
@@ -4853,14 +4935,16 @@ async function handleRegister(event) {
     // typed city on the user record from the market block above.
     user.creator = {
       handle: claimHandle,
-      instagramUrl: `https://instagram.com/${claimHandle}`,
-      tiktokHandle: null,
-      tiktokUrl: null,
-      youtubeChannel: null,
-      facebookUrl: null,
-      xHandle: null,
-      xUrl: null,
-      linkedinUrl: null,
+      primaryPlatform: claimPlatform,
+      primaryProfileUrl: primaryPlatformUrl(claimPlatform, claimHandle),
+      instagramUrl: claimPlatform === "instagram" ? `https://instagram.com/${claimHandle}` : null,
+      tiktokHandle: claimPlatform === "tiktok" ? claimHandle : null,
+      tiktokUrl: claimPlatform === "tiktok" ? `https://www.tiktok.com/@${claimHandle}` : null,
+      youtubeChannel: claimPlatform === "youtube" ? claimHandle : null,
+      facebookUrl: claimPlatform === "facebook" ? `https://www.facebook.com/${claimHandle}` : null,
+      xHandle: claimPlatform === "x" ? claimHandle : null,
+      xUrl: claimPlatform === "x" ? `https://x.com/${claimHandle}` : null,
+      linkedinUrl: claimPlatform === "linkedin" ? `https://www.linkedin.com/in/${claimHandle}` : null,
       followerCount: 0,
       audienceStack: {},
       totalAudience: 0,
@@ -4899,12 +4983,15 @@ async function handleRegister(event) {
       igConnected: false,
     };
   } else if (role === "creator") {
-    // The founding creator profile builder. Required: Instagram handle,
-    // home city inside the chosen market, follower count, at least one
-    // content category, self-reported local audience %, and both rule
-    // acknowledgments (honest posts, FTC disclosure).
+    // The founding creator profile builder. Required: a handle on the
+    // creator's primary platform (Jeff, 2026-10-22: the picker comes
+    // first, "Where is your main audience?"), home city inside the
+    // chosen market, follower count, at least one content category,
+    // self-reported local audience %, and both rule acknowledgments
+    // (honest posts, FTC disclosure).
+    const primaryPlatform = normalizePrimaryPlatform(b.primaryPlatform);
     const handle = (b.handle || "").replace(/^@/, "").trim();
-    if (!handle) return err(400, "Your Instagram handle is required");
+    if (!handle) return err(400, `Your ${primaryPlatformLabel(primaryPlatform)} handle is required`);
     const city = unlisted ? customCity : (b.city || "").trim();
     if (!unlisted && (!city || !market.cities.includes(city))) return err(400, `Choose your home city in the ${market.name} market`);
     if (b.followerCount === undefined || b.followerCount === null || b.followerCount === "") return err(400, "Your follower count is required");
@@ -4921,27 +5008,38 @@ async function handleRegister(event) {
     if (b.agreedPostCompliance !== true) return err(400, "Please confirm the post rule: post within 48 hours of a comped visit for full credit and paste the post link in the app. One week is the hard stop: a redeemed visit with no post pauses your account at one week and closes it at two.");
     if (b.agreedTerms !== true) return err(400, "Please agree to the Terms of Service and Privacy Policy, and to receiving account and marketing emails from SIGNL.");
     // Audience stacking (Jeff, 2026-10-19): the sign-up's follower
-    // count is the Instagram count; any other platform counts the
-    // creator reports join the stack, and the tier reads the stacked
-    // TOTAL. The band is FULLY AUTOMATIC (Jeff, 2026-10-19 01:46):
-    // it is always tierForFollowers(totalAudience). A client-sent
-    // tierBand (including the ?tier= claim-link prefill, which is
-    // still accepted as a param) never sets the band; nobody picks
-    // or confirms their own category.
+    // count is the count on the creator's PRIMARY platform (Jeff,
+    // 2026-10-22: it was the Instagram count when Instagram was the
+    // only door; the picker generalizes it); any other platform
+    // counts the creator reports join the stack, and the tier reads
+    // the stacked TOTAL. The band is FULLY AUTOMATIC (Jeff,
+    // 2026-10-19 01:46): it is always tierForFollowers(totalAudience).
+    // A client-sent tierBand (including the ?tier= claim-link
+    // prefill, which is still accepted as a param) never sets the
+    // band; nobody picks or confirms their own category. A non-
+    // Instagram primary may report ZERO Instagram followers without
+    // failing: the stack, not any single platform, carries the tier.
+    // The stored followerCount keeps its historical meaning (the
+    // Instagram count) for the surfaces that read it directly.
     const stack = normalizeAudienceStack(b.audienceStack);
-    let igFollowers = followers;
-    if (stack.instagram) igFollowers = stack.instagram;
-    else if (igFollowers > 0) stack.instagram = igFollowers;
+    if (!stack[primaryPlatform] && followers > 0) stack[primaryPlatform] = followers;
     const totalAudience = Object.values(stack).reduce((s, n) => s + n, 0);
     const suggestedTier = tierForFollowers(totalAudience);
     const tier = suggestedTier;
-    const tiktok = (b.tiktokHandle || "").replace(/^@/, "").trim();
-    const youtube = (b.youtubeChannel || "").trim();
+    // The primary handle doubles as that platform's social link when
+    // the creator did not fill the platform's own field separately.
+    const tiktok = (b.tiktokHandle || "").replace(/^@/, "").trim() || (primaryPlatform === "tiktok" ? handle : "");
+    const youtube = (b.youtubeChannel || "").trim() || (primaryPlatform === "youtube" ? handle : "");
     const socials = normalizeSocials(b);
+    if (!socials.facebookUrl && primaryPlatform === "facebook") socials.facebookUrl = `https://www.facebook.com/${handle}`;
+    if (!socials.xHandle && primaryPlatform === "x") { socials.xHandle = handle; socials.xUrl = `https://x.com/${handle}`; }
+    if (!socials.linkedinUrl && primaryPlatform === "linkedin") socials.linkedinUrl = `https://www.linkedin.com/in/${handle}`;
     user.city = city;
     user.creator = {
       handle,
-      instagramUrl: `https://instagram.com/${handle}`,
+      primaryPlatform,
+      primaryProfileUrl: primaryPlatformUrl(primaryPlatform, handle),
+      instagramUrl: primaryPlatform === "instagram" ? `https://instagram.com/${handle}` : null,
       tiktokHandle: tiktok || null,
       tiktokUrl: tiktok ? `https://www.tiktok.com/@${tiktok}` : null,
       youtubeChannel: youtube || null,
@@ -4949,7 +5047,7 @@ async function handleRegister(event) {
       xHandle: socials.xHandle,
       xUrl: socials.xUrl,
       linkedinUrl: socials.linkedinUrl,
-      followerCount: igFollowers,
+      followerCount: stack.instagram || 0,
       audienceStack: stack,
       totalAudience,
       avgViews: Math.max(0, parseInt(b.avgViews, 10) || 0),
@@ -5079,7 +5177,7 @@ async function handleRegister(event) {
     market: user.market,
     data:
       role === "creator"
-        ? { quickClaim: !!quickClaim, profileComplete: user.creator.profileComplete === true, handle: user.creator.handle, city: user.city, neighborhood: user.creator.neighborhood, university: user.creator.university, state: user.state, country: user.country, unlisted: user.market === UNLISTED, followerCount: user.creator.followerCount, audienceStack: user.creator.audienceStack, totalAudience: user.creator.totalAudience, tierBand: normalizeTierBand(user.creator.tierBand), suggestedTier: normalizeTierBand(user.creator.suggestedTier), localAudiencePct: user.creator.localAudiencePct, localAudienceSource: user.creator.localAudienceSource, categories: user.creator.categories, compCategories: user.creator.compCategories, openToPaidCampaigns: user.creator.openToPaidCampaigns, agreedPostCompliance: true, termsVersion: TERMS_VERSION, marketingEmailConsent: true, ...(user.referredBy ? { referredBy: user.referredBy } : {}), ...(user.signupSource ? { signupSource: user.signupSource } : {}) }
+        ? { quickClaim: !!quickClaim, profileComplete: user.creator.profileComplete === true, handle: user.creator.handle, primaryPlatform: primaryPlatformOf(user.creator), city: user.city, neighborhood: user.creator.neighborhood, university: user.creator.university, state: user.state, country: user.country, unlisted: user.market === UNLISTED, followerCount: user.creator.followerCount, audienceStack: user.creator.audienceStack, totalAudience: user.creator.totalAudience, tierBand: normalizeTierBand(user.creator.tierBand), suggestedTier: normalizeTierBand(user.creator.suggestedTier), localAudiencePct: user.creator.localAudiencePct, localAudienceSource: user.creator.localAudienceSource, categories: user.creator.categories, compCategories: user.creator.compCategories, openToPaidCampaigns: user.creator.openToPaidCampaigns, agreedPostCompliance: true, termsVersion: TERMS_VERSION, marketingEmailConsent: true, ...(user.referredBy ? { referredBy: user.referredBy } : {}), ...(user.signupSource ? { signupSource: user.signupSource } : {}) }
         : { businessName: user.business.businessName, category: user.business.category, plan: user.business.plan, planPriceMonthly: user.business.planPriceMonthly, ...(user.referredBy ? { referredBy: user.referredBy } : {}), ...(user.signupSource ? { signupSource: user.signupSource } : {}) },
   });
   // Standing-authority auto-decision (Jeff, 2026-10-22): a creator
@@ -5471,7 +5569,29 @@ async function route(event) {
         const nn = String(b.name || "").trim().slice(0, 80);
         if (nn) { changes.name = [user.name, nn]; user.name = nn; }
       }
-      if (b.handle) { changes.handle = [c.handle, String(b.handle).replace(/^@/, "").trim()]; c.handle = changes.handle[1]; c.instagramUrl = `https://instagram.com/${c.handle}`; }
+      // Primary platform + handle (Jeff, 2026-10-22): the handle is
+      // the handle ON the primary platform. Changing either one
+      // rebuilds the primary profile URL; instagramUrl is only ever
+      // written while Instagram is the primary platform, so a
+      // TikTok handle can never leak into an instagram.com link.
+      if (b.primaryPlatform !== undefined) {
+        const nextPlatform = normalizePrimaryPlatform(b.primaryPlatform);
+        changes.primaryPlatform = [primaryPlatformOf(c), nextPlatform];
+        c.primaryPlatform = nextPlatform;
+      }
+      if (b.handle) { changes.handle = [c.handle, String(b.handle).replace(/^@/, "").trim()]; c.handle = changes.handle[1]; }
+      if (b.handle || b.primaryPlatform !== undefined) {
+        const plat = primaryPlatformOf(c);
+        c.primaryProfileUrl = primaryPlatformUrl(plat, c.handle);
+        c.instagramUrl = plat === "instagram" ? `https://instagram.com/${c.handle}` : null;
+        // Keep the primary platform's own social link in step with
+        // the primary handle, the same backfill signup applies.
+        if (plat === "tiktok") { c.tiktokHandle = c.handle; c.tiktokUrl = `https://www.tiktok.com/@${c.handle}`; }
+        if (plat === "youtube") c.youtubeChannel = c.handle;
+        if (plat === "facebook") c.facebookUrl = `https://www.facebook.com/${c.handle}`;
+        if (plat === "x") { c.xHandle = c.handle; c.xUrl = `https://x.com/${c.handle}`; }
+        if (plat === "linkedin") c.linkedinUrl = `https://www.linkedin.com/in/${c.handle}`;
+      }
       // Audience counts, stacked (Jeff, 2026-10-19). Sending
       // audienceStack replaces the whole stack; sending followerCount
       // alone updates the Instagram row (its historical meaning). The
@@ -5850,7 +5970,7 @@ async function route(event) {
           pub.universityStatus = universityStatusOfRecord(u);
           pub.universityUnverified = u.universityUnverified === true || !!(u.creator && u.creator.universityUnverified === true);
           pub.campusBadge = campusBadgeFor(u);
-          if (pub.creator) pub.creator = { ...pub.creator, university: pub.university, universityStatus: pub.universityStatus, universityUnverified: pub.universityUnverified };
+          if (pub.creator) pub.creator = { ...pub.creator, university: pub.university, universityStatus: pub.universityStatus, universityUnverified: pub.universityUnverified, primaryPlatform: primaryPlatformOf(pub.creator), primaryPlatformLabel: primaryPlatformLabel(primaryPlatformOf(pub.creator)) };
           pub.foundingPriority = approvedRank.get(u.id) || null;
           pub.queuePosition = pendingRank.get(u.id) || null;
           pub.momentum = momentum.summaryFor(u);
@@ -7888,4 +8008,4 @@ async function route(event) {
 
 // The email builders are exported alongside the router so the verify
 // suites can assert on the exact copy a creator receives.
-module.exports = { route, approvalEmail, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, profileCompleteOf, profileCompletionFor, campaignEmail, crossoverEmail, campaignEmailFor, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, AD_USE_WINDOW_MONTHS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData };
+module.exports = { route, approvalEmail, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, AD_USE_WINDOW_MONTHS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData };

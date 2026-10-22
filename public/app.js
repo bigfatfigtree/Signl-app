@@ -89,6 +89,12 @@ function parseClaimParams(params) {
   const out = {};
   const handle = sanitizeClaimHandle(params.get("handle"));
   if (handle) out.handle = handle;
+  // Claim links may carry &platform=<slug> (Jeff, 2026-10-22): the
+  // claim opens with that platform preselected in the picker.
+  // Absent or unknown values prefill nothing, and the forms default
+  // to Instagram, exactly as every link already sent behaves.
+  const platformRaw = String(params.get("platform") || "").trim().toLowerCase();
+  if (PRIMARY_PLATFORMS_CLIENT.some((p) => p.id === platformRaw)) out.platform = platformRaw;
   const marketRaw = String(params.get("market") || "").trim().slice(0, 60);
   if (marketRaw && state.boot) {
     const m = state.boot.markets.find((x) => x.name === marketRaw || x.id === marketRaw);
@@ -153,7 +159,7 @@ async function renderPublicProfile() {
       <div class="cc-body">
         <div class="cc-id">
           <div class="cc-name">${esc(p.name)}</div>
-          <div class="cc-handle">@<a href="${esc(p.instagramUrl)}" target="_blank" rel="noopener">${esc(p.handle)}</a></div>
+          ${ccHandleHtml(p)}
           <div class="cc-chips">
             <span class="cc-chip market">${place}</span>
             ${!p.unlisted && p.city ? `<span class="cc-chip">${esc(p.city)}</span>` : ""}
@@ -421,13 +427,51 @@ function stackList(source) {
   if (!source) return [];
   if (Array.isArray(source.audienceStack)) return source.audienceStack.filter((p) => p && p.count > 0);
   if (source.audienceStack && typeof source.audienceStack === "object") {
-    const labels = { instagram: "Instagram", tiktok: "TikTok", facebook: "Facebook", x: "X", linkedin: "LinkedIn", youtube: "YouTube" };
+    const labels = { instagram: "Instagram", tiktok: "TikTok", facebook: "Facebook", x: "X", linkedin: "LinkedIn", youtube: "YouTube", snapchat: "Snapchat" };
     return Object.entries(source.audienceStack)
       .filter(([, n]) => Number(n) > 0)
       .map(([platform, count]) => ({ platform, label: labels[platform] || platform, count: Number(count) }))
       .sort((a, b) => b.count - a.count);
   }
   return [];
+}
+
+// ---------- primary platform (Jeff, 2026-10-22) ----------
+// Signup opens with "Where is your main audience?" and the handle
+// is collected for the picked platform. The server stores
+// primaryPlatform + primaryProfileUrl on the record and computes
+// them into every payload; these helpers only label and preview.
+// Records and payloads from before the picker read as Instagram.
+const PRIMARY_PLATFORMS_CLIENT = [
+  { id: "instagram", label: "Instagram", host: "instagram.com/" },
+  { id: "tiktok", label: "TikTok", host: "tiktok.com/@" },
+  { id: "youtube", label: "YouTube", host: "youtube.com/@" },
+  { id: "facebook", label: "Facebook", host: "facebook.com/" },
+  { id: "x", label: "X", host: "x.com/" },
+  { id: "linkedin", label: "LinkedIn", host: "linkedin.com/in/" },
+];
+function primaryMetaClient(id) {
+  return PRIMARY_PLATFORMS_CLIENT.find((p) => p.id === id) || PRIMARY_PLATFORMS_CLIENT[0];
+}
+function primaryLabelClient(id) { return primaryMetaClient(id).label; }
+function primaryOptionsHtml(selected) {
+  return PRIMARY_PLATFORMS_CLIENT.map((p) => `<option value="${p.id}"${p.id === selected ? " selected" : ""}>${p.label}</option>`).join("");
+}
+// The handle link for a creator payload: the primary profile URL
+// when the server computed one, the Instagram URL for legacy
+// payloads. Returns "" when neither exists.
+function primaryUrlOf(p) {
+  if (!p) return "";
+  return p.primaryProfileUrl || p.instagramUrl || "";
+}
+// The cc-handle line: for an Instagram-primary creator the markup
+// is byte-identical to what it has always been; any other primary
+// platform links its own URL and names itself beside the handle.
+function ccHandleHtml(p) {
+  const url = primaryUrlOf(p);
+  const plat = (p && p.primaryPlatform) || "instagram";
+  const label = plat !== "instagram" ? ` <span class="small muted">on ${esc(primaryLabelClient(plat))}</span>` : "";
+  return `<div class="cc-handle">@<a href="${esc(url)}" target="_blank" rel="noopener">${esc((p && p.handle) || "")}</a>${label}</div>`;
 }
 
 function totalAudienceOf(source) {
@@ -837,13 +881,38 @@ function suggestedTierId(followers) {
   return "Neighbors";
 }
 
+const JC_STACK_ROWS = [["jc-stack-tiktok", "tiktok"], ["jc-stack-facebook", "facebook"], ["jc-stack-x", "x"], ["jc-stack-linkedin", "linkedin"], ["jc-stack-youtube", "youtube"], ["jc-stack-snapchat", "snapchat"]];
+function jcPrimary() {
+  const sel = document.getElementById("jc-platform");
+  return sel ? sel.value : "instagram";
+}
 function signupStackTotal() {
+  // The main followers field IS the primary platform's count; a
+  // stack row for that same platform would double it, so its row
+  // is hidden by syncJcPlatform and skipped here.
   let total = parseInt((document.getElementById("jc-followers") || {}).value, 10) || 0;
-  for (const id of ["jc-stack-tiktok", "jc-stack-facebook", "jc-stack-x", "jc-stack-linkedin", "jc-stack-youtube"]) {
+  const primary = jcPrimary();
+  for (const [id, platform] of JC_STACK_ROWS) {
+    if (platform === primary) continue;
     const el = document.getElementById(id);
     if (el) total += parseInt(el.value, 10) || 0;
   }
   return total;
+}
+function syncJcPlatform() {
+  const meta = primaryMetaClient(jcPrimary());
+  const handleLabel = document.getElementById("jc-handle-label");
+  if (handleLabel) handleLabel.textContent = `${meta.label} handle (required)`;
+  const followersLabel = document.getElementById("jc-followers-label");
+  if (followersLabel) followersLabel.textContent = `${meta.label} followers (required)`;
+  const input = document.getElementById("jc-handle");
+  const link = document.getElementById("jc-ig-link");
+  if (link) link.textContent = input && input.value ? meta.host + input.value.replace(/^@/, "") : "";
+  for (const [, platform] of JC_STACK_ROWS) {
+    const row = document.getElementById("jc-stackrow-" + platform);
+    if (row) row.style.display = platform === meta.id ? "none" : "";
+  }
+  syncSuggestedTier();
 }
 
 // Tier bands are fully automatic (Jeff, 2026-10-19): the band is
@@ -867,7 +936,7 @@ function syncPaidOption() {
 }
 
 function profileStackTotal() {
-  const ids = ["p-followers", "p-stack-tiktok", "p-stack-facebook", "p-stack-x", "p-stack-linkedin", "p-stack-youtube"];
+  const ids = ["p-followers", "p-stack-tiktok", "p-stack-facebook", "p-stack-x", "p-stack-linkedin", "p-stack-youtube", "p-stack-snapchat"];
   return ids.reduce((s, id) => s + (parseInt((document.getElementById(id) || {}).value, 10) || 0), 0);
 }
 
@@ -914,9 +983,20 @@ function syncQuickMarketChoice() {
   if (customWrap) customWrap.style.display = unlisted ? "" : "none";
 }
 
+function syncQcPlatform() {
+  const sel = document.getElementById("qc-platform");
+  const meta = primaryMetaClient(sel ? sel.value : "instagram");
+  const label = document.getElementById("qc-handle-label");
+  if (label) label.textContent = `Your ${meta.label} handle (required)`;
+  const input = document.getElementById("qc-handle");
+  const link = document.getElementById("qc-ig-link");
+  if (link) link.textContent = input && input.value ? meta.host + input.value.replace(/^@/, "") : "";
+}
+
 function renderQuickClaim() {
   const pf = state.prefill || {};
   const pfMarket = pf.market || "Hampton Roads";
+  const pfPlatform = pf.platform || "instagram";
   const hasPrefill = !!(pf.handle || pf.market || pf.tier);
   app.innerHTML = `
   <section class="panel" style="max-width:680px;margin:10px auto">
@@ -927,7 +1007,8 @@ function renderQuickClaim() {
     ${hasPrefill ? `<div class="notice blue">Your invite link told us a head start: we pre-filled what it carried below. Check it, claim your spot, and your application goes into the review queue.</div>` : ""}
     <div id="form-error"></div>
     <form onsubmit="return doQuickClaim(event)">
-      <div class="field"><label>Instagram handle (required)</label><input id="qc-handle" placeholder="yourhandle" required value="${esc(pf.handle || "")}" oninput="document.getElementById('qc-ig-link').textContent = this.value ? 'instagram.com/' + this.value.replace(/^@/, '') : ''"><p class="small muted" id="qc-ig-link">${pf.handle ? "instagram.com/" + esc(pf.handle) : ""}</p></div>
+      <div class="field"><label>Where is your main audience?</label><select id="qc-platform" onchange="syncQcPlatform()">${primaryOptionsHtml(pfPlatform)}</select><p class="small muted">Pick the platform your audience actually follows you on. You can add the rest of your platforms when you finish your profile.</p></div>
+      <div class="field"><label id="qc-handle-label">Your ${esc(primaryLabelClient(pfPlatform))} handle (required)</label><input id="qc-handle" placeholder="yourhandle" required value="${esc(pf.handle || "")}" oninput="syncQcPlatform()"><p class="small muted" id="qc-ig-link">${pf.handle ? esc(primaryMetaClient(pfPlatform).host + pf.handle) : ""}</p></div>
       <div class="field"><label>Your market</label><input id="qc-market-search" placeholder="Search markets, for example: Dubai" oninput="filterQuickMarketOptions()" style="margin-bottom:6px"><select id="qc-market" onchange="syncQuickMarketChoice()">${marketOptions(pfMarket, true)}</select><p class="small muted">Markets are grouped by country. Don't see your city? Pick "My city is not listed yet" and claim anyway.</p></div>
       <div id="qc-custom-wrap" style="display:none">
         <div class="field"><label>Your city</label><input id="qc-city-text" placeholder="For example: Tulsa"></div>
@@ -987,6 +1068,7 @@ async function doQuickClaim(e) {
       customCountry: isUnlisted ? customCountry : undefined,
       customState: isUnlisted ? customState : undefined,
       handle: document.getElementById("qc-handle").value,
+      primaryPlatform: document.getElementById("qc-platform").value,
       agreedHonestPosts: true,
       agreedFtcDisclosure: true,
       agreedPostCompliance: true,
@@ -1045,8 +1127,9 @@ function renderJoinCreator() {
       <div class="field"><label>Your neighborhood or area (optional)</label><input id="jc-neighborhood" placeholder="For example: Oceanfront, Ghent, Town Center" maxlength="80"><p class="small muted">The part of town you actually post from. Businesses search by neighborhood, so this helps the right ones find you.</p></div>
       <div class="field"><label>Your university (if you are a student now)</label><input id="jc-university" placeholder="Start typing your school" maxlength="120"><div class="uni-results" id="jc-university-results"></div><p class="small muted">Current students who add their school get a campus badge on their profile, and same-school referrals group into your campus crew. Pick your school from the list if it appears; if it does not, type it in full.</p></div>
       <div class="field"><label>Student status (optional)</label><select id="jc-university-status"><option value="">Select one</option><option value="current_student">Current student</option><option value="alumni">Alumni</option><option value="not_student">Not a student</option></select><p class="small muted">The campus badge is for current students. Alumni and everyone else still get the campus crew grouping.</p></div>
+      <div class="field"><label>Where is your main audience?</label><select id="jc-platform" onchange="syncJcPlatform()">${primaryOptionsHtml(pf.platform || "instagram")}</select><p class="small muted">Pick the platform your audience actually follows you on. Your handle and your main follower count below are for this platform; the rest of your platforms stack on top.</p></div>
       <div class="form-2col">
-        <div class="field"><label>Instagram handle (required)</label><input id="jc-handle" placeholder="yourhandle" required value="${esc(pf.handle || "")}" oninput="document.getElementById('jc-ig-link').textContent = this.value ? 'instagram.com/' + this.value.replace(/^@/, '') : ''"><p class="small muted" id="jc-ig-link"></p></div>
+        <div class="field"><label id="jc-handle-label">${esc(primaryLabelClient(pf.platform || "instagram"))} handle (required)</label><input id="jc-handle" placeholder="yourhandle" required value="${esc(pf.handle || "")}" oninput="syncJcPlatform()"><p class="small muted" id="jc-ig-link"></p></div>
         <div class="field"><label>TikTok handle (optional)</label><input id="jc-tiktok" placeholder="yourhandle"></div>
       </div>
       <div class="field"><label>YouTube channel (optional)</label><input id="jc-youtube" placeholder="Channel name or URL"></div>
@@ -1056,18 +1139,19 @@ function renderJoinCreator() {
       </div>
       <div class="field"><label>LinkedIn profile (optional)</label><input id="jc-linkedin" placeholder="linkedin.com/in/yourname or full URL"></div>
       <div class="form-2col">
-        <div class="field"><label>Instagram followers (required)</label><input type="number" id="jc-followers" min="0" required placeholder="For example 8400" oninput="syncSuggestedTier()"></div>
+        <div class="field"><label id="jc-followers-label">${esc(primaryLabelClient(pf.platform || "instagram"))} followers (required)</label><input type="number" id="jc-followers" min="0" required placeholder="For example 8400" oninput="syncSuggestedTier()"></div>
         <div class="field"><label>Your tier band</label><p id="jc-tier-line" style="margin:6px 0">Your band is set automatically from your total audience across platforms.</p><p class="small muted">Neighbors 500 to 2k &middot; Locals 2k to 15k &middot; Headliners 15k and up. Nobody picks their own band; it updates itself as your counts change.</p></div>
       </div>
       <div class="field"><label>Your audience on other platforms (optional)</label>
         <div class="form-2col">
-          <div class="field"><label>TikTok followers</label><input type="number" id="jc-stack-tiktok" min="0" placeholder="Optional" oninput="syncSuggestedTier()"></div>
-          <div class="field"><label>Facebook followers</label><input type="number" id="jc-stack-facebook" min="0" placeholder="Optional" oninput="syncSuggestedTier()"></div>
-          <div class="field"><label>X followers</label><input type="number" id="jc-stack-x" min="0" placeholder="Optional" oninput="syncSuggestedTier()"></div>
-          <div class="field"><label>LinkedIn connections</label><input type="number" id="jc-stack-linkedin" min="0" placeholder="Optional" oninput="syncSuggestedTier()"></div>
-          <div class="field"><label>YouTube subscribers</label><input type="number" id="jc-stack-youtube" min="0" placeholder="Optional" oninput="syncSuggestedTier()"></div>
+          <div class="field" id="jc-stackrow-tiktok"><label>TikTok followers</label><input type="number" id="jc-stack-tiktok" min="0" placeholder="Optional" oninput="syncSuggestedTier()"></div>
+          <div class="field" id="jc-stackrow-facebook"><label>Facebook followers</label><input type="number" id="jc-stack-facebook" min="0" placeholder="Optional" oninput="syncSuggestedTier()"></div>
+          <div class="field" id="jc-stackrow-x"><label>X followers</label><input type="number" id="jc-stack-x" min="0" placeholder="Optional" oninput="syncSuggestedTier()"></div>
+          <div class="field" id="jc-stackrow-linkedin"><label>LinkedIn connections</label><input type="number" id="jc-stack-linkedin" min="0" placeholder="Optional" oninput="syncSuggestedTier()"></div>
+          <div class="field" id="jc-stackrow-youtube"><label>YouTube subscribers</label><input type="number" id="jc-stack-youtube" min="0" placeholder="Optional" oninput="syncSuggestedTier()"></div>
+          <div class="field" id="jc-stackrow-snapchat"><label>Snapchat followers</label><input type="number" id="jc-stack-snapchat" min="0" placeholder="Optional" oninput="syncSuggestedTier()"></div>
         </div>
-        <p class="small muted">SIGNL stacks your audience: your tier and your profile read your TOTAL across every platform, not just Instagram. Add the ones you use; skip the rest.</p>
+        <p class="small muted">SIGNL stacks your audience: your tier and your profile read your TOTAL across every platform, not just your main one. Add the ones you use; skip the rest.</p>
       </div>
       <div class="form-2col">
         <div class="field"><label>Typical post views (optional)</label><input type="number" id="jc-avgviews" min="0" placeholder="For example 6000"></div>
@@ -1106,10 +1190,7 @@ function renderJoinCreator() {
   // market. (The ?tier= param is still parsed, but bands are fully
   // automatic now, so it fills nothing.) Filling only; nothing here
   // submits anything.
-  if (pf.handle) {
-    const linkEl = document.getElementById("jc-ig-link");
-    if (linkEl) linkEl.textContent = "instagram.com/" + pf.handle;
-  }
+  syncJcPlatform();
   if (pf.market === unlistedLabel()) syncMarketChoice();
   setupUniversityAutocomplete("jc-university", "jc-university-results");
 }
@@ -1148,8 +1229,12 @@ async function doRegisterCreator(e) {
   if (!document.getElementById("jc-agree-honest").checked) { errBox("Please confirm the honest-post rule."); return false; }
   if (!document.getElementById("jc-agree-ftc").checked) { errBox("Please confirm the FTC disclosure agreement."); return false; }
   if (!document.getElementById("jc-agree-compliance").checked) { errBox("Please confirm the post rule: post within 48 hours for full credit, paste the link, one week is the hard stop, and a redeemed visit with no post pauses at one week and closes at two."); return false; }
-  const stackFromForm = { instagram: parseInt(document.getElementById("jc-followers").value, 10) || 0 };
-  for (const [id, platform] of [["jc-stack-tiktok", "tiktok"], ["jc-stack-facebook", "facebook"], ["jc-stack-x", "x"], ["jc-stack-linkedin", "linkedin"], ["jc-stack-youtube", "youtube"]]) {
+  const primaryPlatform = jcPrimary();
+  const stackFromForm = {};
+  const primaryCount = parseInt(document.getElementById("jc-followers").value, 10) || 0;
+  if (primaryCount > 0) stackFromForm[primaryPlatform] = primaryCount;
+  for (const [id, platform] of JC_STACK_ROWS) {
+    if (platform === primaryPlatform) continue;
     const v = parseInt(document.getElementById(id).value, 10) || 0;
     if (v > 0) stackFromForm[platform] = v;
   }
@@ -1180,6 +1265,7 @@ async function doRegisterCreator(e) {
       customCountry: isUnlisted ? customCountry : undefined,
       customState: isUnlisted ? customState : undefined,
       handle: document.getElementById("jc-handle").value,
+      primaryPlatform,
       tiktokHandle: document.getElementById("jc-tiktok").value,
       youtubeChannel: document.getElementById("jc-youtube").value,
       facebookUrl: document.getElementById("jc-facebook").value,
@@ -1630,7 +1716,7 @@ function creatorProfileDetailHtml(c, preview) {
       <div class="cc-body">
         <div class="cc-id">
           <div class="cc-name">${esc(c.name)}</div>
-          <div class="cc-handle">@<a href="${esc(p.instagramUrl || "")}" target="_blank" rel="noopener">${esc(p.handle || "")}</a></div>
+          ${ccHandleHtml(p)}
           <div class="cc-chips">
             <span class="cc-chip market">${esc(c.market)}</span>
             ${c.city ? `<span class="cc-chip">${esc(c.city)}</span>` : ""}
@@ -1729,7 +1815,7 @@ function creatorCard(c, viewer, opts) {
     </div>
     <div class="cc-id">
       <div class="cc-name">${esc(c.name)}</div>
-      <div class="cc-handle">@${esc(p.handle || "")}</div>
+      ${p.primaryPlatform && p.primaryPlatform !== "instagram" ? ccHandleHtml(p) : `<div class="cc-handle">@${esc(p.handle || "")}</div>`}
       <div class="cc-chips">
         <span class="cc-chip market">${esc(c.market)}</span>
         ${c.city ? `<span class="cc-chip">${esc(c.city)}</span>` : ""}
@@ -2328,6 +2414,7 @@ function creatorProfileHtml(u) {
     ["x", "X followers", "p-stack-x"],
     ["linkedin", "LinkedIn connections", "p-stack-linkedin"],
     ["youtube", "YouTube subscribers", "p-stack-youtube"],
+    ["snapchat", "Snapchat followers", "p-stack-snapchat"],
   ];
   return `
   <div class="panel">
@@ -2359,7 +2446,8 @@ function creatorProfileHtml(u) {
         <p class="small muted">Pick a new photo and save to replace it. PNG, JPEG, or WebP, under 2.5 MB.</p>
       </div>
       <div class="form-2col">
-        <div class="field"><label>Instagram handle</label><input id="p-handle" value="${esc(c.handle || "")}"></div>
+        <div class="field"><label>Where is your main audience?</label><select id="p-platform">${primaryOptionsHtml(c.primaryPlatform || "instagram")}</select></div>
+        <div class="field"><label>Your main handle</label><input id="p-handle" value="${esc(c.handle || "")}"><p class="small muted">Your handle on your main platform. Your public profile and claim links point there.</p></div>
         ${u.market === unlistedLabel()
           ? `<div class="field"><label>Your city (not an open market yet)</label><input id="p-city-text" value="${esc(u.city || "")}"></div>
              <div class="field"><label>Your country</label><input id="p-country-text" value="${esc(u.country || "")}"></div>
@@ -2473,6 +2561,7 @@ async function doUpdateCreator(e) {
     const data = await api("PATCH", "/me/profile", {
       name: document.getElementById("p-name").value,
       handle: document.getElementById("p-handle").value,
+      primaryPlatform: document.getElementById("p-platform").value,
       city: cityEl ? cityEl.value : cityTextEl ? cityTextEl.value : undefined,
       neighborhood: document.getElementById("p-neighborhood").value,
       university: document.getElementById("p-university").value,
@@ -2490,7 +2579,7 @@ async function doUpdateCreator(e) {
       followerCount: parseInt(document.getElementById("p-followers").value, 10) || 0,
       audienceStack: (() => {
         const s = { instagram: parseInt(document.getElementById("p-followers").value, 10) || 0 };
-        for (const [id, platform] of [["p-stack-tiktok", "tiktok"], ["p-stack-facebook", "facebook"], ["p-stack-x", "x"], ["p-stack-linkedin", "linkedin"], ["p-stack-youtube", "youtube"]]) {
+        for (const [id, platform] of [["p-stack-tiktok", "tiktok"], ["p-stack-facebook", "facebook"], ["p-stack-x", "x"], ["p-stack-linkedin", "linkedin"], ["p-stack-youtube", "youtube"], ["p-stack-snapchat", "snapchat"]]) {
           const v = parseInt(document.getElementById(id).value, 10) || 0;
           if (v > 0) s[platform] = v;
         }
@@ -4466,7 +4555,7 @@ async function loadApplications() {
         ? `<br><span class="badge ${businessAccessState(u) === "active" ? "ok" : "info"}">${businessAccessState(u) === "active" ? "Active" : "Founding list"}</span>`
         : "";
       const detail = u.role === "creator" && u.creator
-        ? `@${esc(u.creator.handle)} &middot; ${fmtNum(u.creator.followerCount)} followers &middot; ${esc(u.creator.tierBand)} &middot; Local: ${u.creator.localAudiencePct === null ? "not reported" : u.creator.localAudiencePct + "% (Self-reported)"} &middot; ${(u.creator.categories || []).map(esc).join(", ")} &middot; Photo: ${u.creator.hasPhoto ? "yes" : "no"} &middot; Socials: IG${u.creator.tiktokHandle ? ", TikTok" : ""}${u.creator.youtubeChannel ? ", YouTube" : ""}${u.creator.facebookUrl ? ", Facebook" : ""}${u.creator.xUrl ? ", X" : ""}${u.creator.linkedinUrl ? ", LinkedIn" : ""}${u.creator.neighborhood ? ` &middot; Area: ${esc(u.creator.neighborhood)}` : ""}${u.creator.university || u.university ? ` &middot; University: ${esc(u.creator.university || u.university)}${universityStatusSuffix(u)}${u.universityUnverified || (u.creator && u.creator.universityUnverified) ? " (unverified)" : ""}` : ""}${u.referredBy ? ` &middot; Via referral: @${esc(u.referredBy)}` : ""}${u.signupSource ? ` &middot; Source: ${esc(u.signupSource)}` : ""}${u.momentum && u.momentum.signups ? ` &middot; Momentum: ${u.momentum.points} pts (${u.momentum.signups} joined, ${u.momentum.approved} approved)` : ""}`
+        ? `@${esc(u.creator.handle)} (${esc(primaryLabelClient(u.creator.primaryPlatform || "instagram"))}) &middot; ${fmtNum(u.creator.followerCount)} followers &middot; ${esc(u.creator.tierBand)} &middot; Local: ${u.creator.localAudiencePct === null ? "not reported" : u.creator.localAudiencePct + "% (Self-reported)"} &middot; ${(u.creator.categories || []).map(esc).join(", ")} &middot; Photo: ${u.creator.hasPhoto ? "yes" : "no"} &middot; Socials: IG${u.creator.tiktokHandle ? ", TikTok" : ""}${u.creator.youtubeChannel ? ", YouTube" : ""}${u.creator.facebookUrl ? ", Facebook" : ""}${u.creator.xUrl ? ", X" : ""}${u.creator.linkedinUrl ? ", LinkedIn" : ""}${u.creator.neighborhood ? ` &middot; Area: ${esc(u.creator.neighborhood)}` : ""}${u.creator.university || u.university ? ` &middot; University: ${esc(u.creator.university || u.university)}${universityStatusSuffix(u)}${u.universityUnverified || (u.creator && u.creator.universityUnverified) ? " (unverified)" : ""}` : ""}${u.referredBy ? ` &middot; Via referral: @${esc(u.referredBy)}` : ""}${u.signupSource ? ` &middot; Source: ${esc(u.signupSource)}` : ""}${u.momentum && u.momentum.signups ? ` &middot; Momentum: ${u.momentum.points} pts (${u.momentum.signups} joined, ${u.momentum.approved} approved)` : ""}`
         : u.role === "business" && u.business
           ? `${esc(u.business.businessName)} &middot; ${esc(u.business.category)} &middot; ${esc(u.business.planName)} &middot; Access: ${businessAccessState(u) === "active" ? "Active" : "Founding list"}${u.referredBy ? ` &middot; Via referral: @${esc(u.referredBy)}` : ""}${u.signupSource ? ` &middot; Source: ${esc(u.signupSource)}` : ""}`
           : "";
@@ -5457,7 +5546,7 @@ function previewDashboardHtml(d) {
       try { localStorage.setItem("signl_src", srcParam.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 40)); } catch (e) { /* storage unavailable */ }
     }
     const claim = parseClaimParams(params);
-    if (claim.handle || claim.market || claim.tier) {
+    if (claim.handle || claim.market || claim.tier || claim.platform) {
       state.prefill = claim;
       // A claim link is an invitation to the form itself: a logged-out
       // visitor lands on the sign-up, pre-filled. Signed-in visitors
