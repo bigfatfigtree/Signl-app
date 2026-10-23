@@ -5114,7 +5114,7 @@ async function loadApplications() {
         ? `<br><span class="badge ${businessAccessState(u) === "active" ? "ok" : "info"}">${businessAccessState(u) === "active" ? "Active" : "Founding list"}</span>`
         : "";
       const detail = u.role === "creator" && u.creator
-        ? `@${esc(u.creator.handle)} (${esc(primaryLabelClient(u.creator.primaryPlatform || "instagram"))}) &middot; ${fmtNum(u.creator.followerCount)} followers &middot; ${esc(u.creator.tierBand)} &middot; Local: ${u.creator.localAudiencePct === null ? "not reported" : u.creator.localAudiencePct + "% (Self-reported)"} &middot; ${(u.creator.categories || []).map(esc).join(", ")} &middot; Photo: ${u.creator.hasPhoto ? "yes" : "no"} &middot; Socials: IG${u.creator.tiktokHandle ? ", TikTok" : ""}${u.creator.youtubeChannel ? ", YouTube" : ""}${u.creator.facebookUrl ? ", Facebook" : ""}${u.creator.xUrl ? ", X" : ""}${u.creator.linkedinUrl ? ", LinkedIn" : ""}${u.creator.neighborhood ? ` &middot; Area: ${esc(u.creator.neighborhood)}` : ""}${u.creator.profession ? ` &middot; Profession: ${esc(u.creator.profession)}` : ""}${u.creator.profession === "Real estate agent" && u.creator.farmAreas && u.creator.farmAreas.length ? ` &middot; Neighborhoods: ${u.creator.farmAreas.map(esc).join(", ")}` : ""}${u.creator.profession === "Real estate agent" && u.creator.brokerage ? ` &middot; Brokered by: ${esc(u.creator.brokerage)}` : ""}${u.creator.university || u.university ? ` &middot; University: ${esc(u.creator.university || u.university)}${universityStatusSuffix(u)}${u.universityUnverified || (u.creator && u.creator.universityUnverified) ? " (unverified)" : ""}` : ""}${u.referredBy ? ` &middot; Via referral: @${esc(u.referredBy)}` : ""}${u.signupSource ? ` &middot; Source: ${esc(u.signupSource)}` : ""}${u.momentum && u.momentum.signups ? ` &middot; Momentum: ${u.momentum.points} pts (${u.momentum.signups} joined, ${u.momentum.approved} approved)` : ""}`
+        ? `@${esc(u.creator.handle)} (${esc(primaryLabelClient(u.creator.primaryPlatform || "instagram"))}) &middot; ${fmtNum(u.creator.followerCount)} followers &middot; ${esc(u.creator.tierBand)} &middot; Local: ${u.creator.localAudiencePct === null ? "not reported" : u.creator.localAudiencePct + "% (Self-reported)"} &middot; ${(u.creator.categories || []).map(esc).join(", ")} &middot; Photo: ${u.creator.hasPhoto ? "yes" : "no"} &middot; Socials: IG${u.creator.tiktokHandle ? ", TikTok" : ""}${u.creator.youtubeChannel ? ", YouTube" : ""}${u.creator.facebookUrl ? ", Facebook" : ""}${u.creator.xUrl ? ", X" : ""}${u.creator.linkedinUrl ? ", LinkedIn" : ""}${u.creator.neighborhood ? ` &middot; Area: ${esc(u.creator.neighborhood)}` : ""}${u.creator.profession ? ` &middot; Profession: ${esc(u.creator.profession)}` : ""}${u.creator.profession === "Real estate agent" && u.creator.farmAreas && u.creator.farmAreas.length ? ` &middot; Neighborhoods: ${u.creator.farmAreas.map(esc).join(", ")}` : ""}${u.creator.profession === "Real estate agent" && u.creator.brokerage ? ` &middot; Brokered by: ${esc(u.creator.brokerage)}` : ""}${u.creator.university || u.university ? ` &middot; University: ${esc(u.creator.university || u.university)}${universityStatusSuffix(u)}${u.universityUnverified || (u.creator && u.creator.universityUnverified) ? " (unverified)" : ""}` : ""}${u.referredBy ? ` &middot; Via referral: @${esc(u.referredBy)}` : ""}${u.signupSource ? ` &middot; Source: ${esc(u.signupSource)}` : ""}${u.momentum && u.momentum.signups ? ` &middot; Momentum: ${u.momentum.points} pts (${u.momentum.signups} joined, ${u.momentum.approved} approved)` : ""}${u.rejectionReason ? ` &middot; Rejection reason: ${esc(u.rejectionReason)}` : ""}`
         : u.role === "business" && u.business
           ? `${esc(u.business.businessName)} &middot; ${esc(u.business.category)} &middot; ${esc(u.business.planName)} &middot; Access: ${businessAccessState(u) === "active" ? "Active" : "Founding list"}${u.referredBy ? ` &middot; Via referral: @${esc(u.referredBy)}` : ""}${u.signupSource ? ` &middot; Source: ${esc(u.signupSource)}` : ""}`
           : "";
@@ -5124,7 +5124,7 @@ async function loadApplications() {
         <td class="small">${detail}</td>
         <td>${fmtDate(u.createdAt)}</td>
         <td>${u.status === "pending"
-          ? `<button class="btn small-btn" onclick="reviewApp('${u.id}','approve')">Approve</button> <button class="btn small-btn danger" onclick="reviewApp('${u.id}','reject')">Reject</button>`
+          ? `<button class="btn small-btn" onclick="reviewApp('${u.id}','approve')">Approve</button> <button class="btn small-btn danger" onclick="toggleRejectEditor('${u.id}')">Reject</button><div id="rej-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px"><div class="field"><label>Reason (optional, named in their rejection email)</label><select id="rej-reason-${u.id}"><option value="">No reason given</option><option>Not local enough</option><option>Audience too small for this wave</option><option>Content not a fit</option><option>Market not open yet</option><option>Other</option></select></div><button class="btn small-btn danger" onclick="confirmRejectApp('${u.id}')">Send rejection</button></div>`
           : `<span class="badge ${u.status === "approved" ? "ok" : "bad"}">${esc(u.status)}</span>${u.role === "creator" && u.tester ? ` <span class="badge warn">Tester</span>` : ""}${u.role === "creator" && u.status === "approved" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="setTester('${u.id}', ${u.tester ? "false" : "true"})">${u.tester ? "Move to roster" : "Move to Tester"}</button>` : ""}`}${u.role === "business" && u.status === "approved" && businessAccessState(u) !== "active" ? `<br><button class="btn small-btn" style="margin-top:6px" onclick="activateBusiness('${u.id}')">Activate business</button>` : ""}${u.role === "business" && u.business ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleReviewLinks('${u.id}')">Review links</button><div id="rl-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px">${["google", "yelp", "tripadvisor", "facebook"].map((k) => `<div class="field"><label>${esc(k)}</label><input id="rl-${k}-${u.id}" type="url" value="${esc((u.business.reviewLinks || {})[k] || "")}" placeholder="https://"></div>`).join("")}<button class="btn small-btn" onclick="saveReviewLinks('${u.id}')">Save review links</button></div><br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleDiscountEditor('${u.id}')">Code discount</button><div id="disc-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px"><label style="font-weight:500"><input type="checkbox" id="disc-enabled-${u.id}" style="width:auto" ${u.business.discountEnabled ? "checked" : ""}> Code discounts on (business's opt-in)</label><div class="field"><label>Discount percent (5 to 50)</label><input id="disc-pct-${u.id}" type="number" min="5" max="50" step="1" value="${esc(String(u.business.discountPct == null ? 20 : u.business.discountPct))}"></div><button class="btn small-btn" onclick="saveDiscountSetting('${u.id}')">Save code discount</button></div>` : ""}</td>
       </tr>`;
     };
@@ -5167,6 +5167,25 @@ async function loadLeaderboard() {
 async function reviewApp(userId, decision) {
   try {
     await api("POST", "/admin/review", { userId, decision });
+    loadApplications();
+  } catch (err) { alert(err.message); }
+}
+
+// Rejection with an optional reason (audit F4): the Reject button
+// opens a small editor carrying the fixed reason categories; the
+// picked category rides the review call, is stored on the record,
+// and is named in the rejection email the server sends. No reason
+// picked sends the same rejection with the generic email line.
+function toggleRejectEditor(userId) {
+  const el = document.getElementById("rej-edit-" + userId);
+  if (el) el.style.display = el.style.display === "none" ? "" : "none";
+}
+
+async function confirmRejectApp(userId) {
+  const sel = document.getElementById("rej-reason-" + userId);
+  const reason = sel ? sel.value : "";
+  try {
+    await api("POST", "/admin/review", { userId, decision: "reject", ...(reason ? { reason } : {}) });
     loadApplications();
   } catch (err) { alert(err.message); }
 }
