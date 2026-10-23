@@ -90,16 +90,17 @@ try {
 
   const anon = client();
   const boot = await anon("GET", "/api/bootstrap");
-  check("bootstrap lists 39 markets (11 founding metros + 28 universal core markets)", boot.data.markets && boot.data.markets.length === 39, JSON.stringify(boot.data.markets && boot.data.markets.length));
-  const NEW_MARKETS = ["Nashville", "Austin", "Dallas", "Chicago", "Los Angeles", "San Diego", "Seattle", "Tampa", "Miami", "Phoenix", "Denver", "Minneapolis", "London", "Manchester", "Dubai", "Abu Dhabi", "Riyadh", "Doha", "Astana", "Bishkek", "Sydney", "Melbourne", "Perth", "Auckland", "Singapore", "Hong Kong", "Beijing", "Shanghai"];
-  check("all 28 new core markets are in bootstrap", NEW_MARKETS.every((n) => (boot.data.markets || []).some((m) => m.name === n)), JSON.stringify((boot.data.markets || []).map((m) => m.name)));
-  check("bootstrap exposes a country on every market (grouped picker data)", (boot.data.markets || []).length === 39 && boot.data.markets.every((m) => !!m.country), JSON.stringify((boot.data.markets || []).map((m) => [m.name, m.country])));
-  const EXPECTED_COUNTRIES = { "Abu Dhabi": "United Arab Emirates", "Riyadh": "Saudi Arabia", "Doha": "Qatar", "Astana": "Kazakhstan", "Bishkek": "Kyrgyzstan", "Sydney": "Australia", "Melbourne": "Australia", "Perth": "Australia", "Auckland": "New Zealand", "Singapore": "Singapore", "Hong Kong": "Hong Kong", "Beijing": "China", "Shanghai": "China" };
-  check("Bella's 13 focus markets carry the right countries", Object.entries(EXPECTED_COUNTRIES).every(([n, c]) => (boot.data.markets || []).some((m) => m.name === n && m.country === c)), JSON.stringify(EXPECTED_COUNTRIES));
-  check("bootstrap spans exactly 12 countries and territories", new Set((boot.data.markets || []).map((m) => m.country)).size === 12, JSON.stringify([...new Set((boot.data.markets || []).map((m) => m.country))]));
+  check("bootstrap lists 37 markets (the 2026-10-23 roster)", boot.data.markets && boot.data.markets.length === 37, JSON.stringify(boot.data.markets && boot.data.markets.length));
+  // Roster reset (2026-10-23): the markets added that day, on top of the founding metros and the 2026-10-18 core markets that survived (Nashville..Dubai).
+  const NEW_MARKETS = ["Philadelphia", "Pittsburgh", "Cincinnati", "Columbus", "New Orleans", "Orlando", "Houston", "San Antonio", "Las Vegas", "Detroit", "San Juan", "Paris", "Barcelona", "Lisbon", "Toronto", "Montreal"];
+  check("all 16 markets added 2026-10-23 are in bootstrap", NEW_MARKETS.every((n) => (boot.data.markets || []).some((m) => m.name === n)), JSON.stringify((boot.data.markets || []).map((m) => m.name)));
+  check("bootstrap exposes a country on every market (grouped picker data)", (boot.data.markets || []).length === 37 && boot.data.markets.every((m) => !!m.country), JSON.stringify((boot.data.markets || []).map((m) => [m.name, m.country])));
+  const EXPECTED_COUNTRIES = { "Paris": "France", "Barcelona": "Spain", "Lisbon": "Portugal", "Toronto": "Canada", "Montreal": "Canada", "San Juan": "Puerto Rico", "London": "United Kingdom", "Manchester": "United Kingdom", "Dubai": "United Arab Emirates" };
+  check("the international markets carry the right countries", Object.entries(EXPECTED_COUNTRIES).every(([n, c]) => (boot.data.markets || []).some((m) => m.name === n && m.country === c)), JSON.stringify(EXPECTED_COUNTRIES));
+  check("bootstrap spans exactly 8 countries and territories", new Set((boot.data.markets || []).map((m) => m.country)).size === 8, JSON.stringify([...new Set((boot.data.markets || []).map((m) => m.country))]));
   check("Dubai is a core market in the United Arab Emirates", (boot.data.markets || []).some((m) => m.name === "Dubai" && m.country === "United Arab Emirates" && m.cities.includes("Dubai")));
   check("London and Manchester are United Kingdom markets", ["London", "Manchester"].every((n) => (boot.data.markets || []).some((m) => m.name === n && m.country === "United Kingdom")));
-  check("the 12 new US cities carry the United States country", NEW_MARKETS.slice(0, 12).every((n) => (boot.data.markets || []).some((m) => m.name === n && m.country === "United States")));
+  check("the 10 new US cities carry the United States country", NEW_MARKETS.slice(0, 10).every((n) => (boot.data.markets || []).some((m) => m.name === n && m.country === "United States")));
   check("every new market starts not live", NEW_MARKETS.every((n) => boot.data.launch && boot.data.launch.marketLive[n] === false), JSON.stringify(boot.data.launch && boot.data.launch.marketLive));
   check("bootstrap: creator sign-up open, business sign-up open (real accounts, Jeff 2026-10-20)", boot.data.launch && boot.data.launch.creatorSignupOpen === true && boot.data.launch.businessSignupOpen === true, JSON.stringify(boot.data.launch));
   check("bootstrap publishes the offer guidance (tier floors, paid floor, SLA, templates)", !!boot.data.offerGuidance && boot.data.offerGuidance.compGuidance.Headliners.floor === 100 && boot.data.offerGuidance.compGuidance.Neighbors.floor === 25 && boot.data.offerGuidance.paidFloor === 50 && boot.data.offerGuidance.selectionSlaHours === 72 && (boot.data.offerGuidance.templates || []).length === 4, JSON.stringify(boot.data.offerGuidance));
@@ -252,7 +253,7 @@ try {
   check("founding endpoint answers for the approved creator", founding.status === 200, JSON.stringify(founding.data));
   const f = founding.data.founding || {};
   const card = founding.data.card || {};
-  check("founding status names the market and city", f.market === "Hampton Roads" && f.city === "Norfolk", JSON.stringify(f));
+  check("founding status names the market and city", f.market === "Virginia Beach" && f.city === "Norfolk", JSON.stringify(f));
   check("founding status: market not live yet", f.marketLive === false);
   check("founding status shows the first-100 band, never the exact position or market counts", f.priorityBand === 100 && f.priorityPosition === undefined && f.foundingCreatorsInMarket === undefined, JSON.stringify(f));
   check("launch window on the founding page is 30 to 90 days", f.launchWindow === "30 to 90 days");
@@ -266,7 +267,7 @@ try {
   check("public profile answers for an approved creator, no sign-in", pubRaw.status === 200, String(pubRaw.status));
   check("public profile leaks no email, password material, or internal fields", !pubRaw.text.includes("launch-a@fixtures.dev") && !pubRaw.text.includes("passwordHash") && !pubRaw.text.includes("passwordSalt") && !pubRaw.text.includes("reviewedBy") && !pubRaw.text.includes("referredBy") && !pubRaw.text.includes("agreedTerms"), pubRaw.text.slice(0, 200));
   const pub = (JSON.parse(pubRaw.text) || {}).profile || {};
-  check("public profile carries the public-safe fields", pub.name === "Launch Creator" && pub.handle === "launcheats" && pub.market === "Hampton Roads" && pub.city === "Norfolk" && pub.neighborhood === "Ghent" && pub.tierBand === "Locals" && pub.followerCount === 8400, JSON.stringify(pub));
+  check("public profile carries the public-safe fields", pub.name === "Launch Creator" && pub.handle === "launcheats" && pub.market === "Virginia Beach" && pub.city === "Norfolk" && pub.neighborhood === "Ghent" && pub.tierBand === "Locals" && pub.followerCount === 8400, JSON.stringify(pub));
   check("public profile shows local audience % with its source label", pub.localAudiencePct === 62 && pub.localAudienceSource === "Self-reported", JSON.stringify([pub.localAudiencePct, pub.localAudienceSource]));
   check("public profile carries categories and comp categories", Array.isArray(pub.categories) && pub.categories.includes("Food & Drink") && Array.isArray(pub.compCategories) && pub.compCategories.includes("Restaurant meals"), JSON.stringify([pub.categories, pub.compCategories]));
   // Momentum (expanded 2026-10-19): creator A already earns from
@@ -358,12 +359,12 @@ try {
 
   // --- admin market controls, then activation opens the gate ---
   const markets = await admin("GET", "/api/admin/markets");
-  const hr = (markets.data.markets || []).find((m) => m.name === "Hampton Roads");
-  check("admin markets list: 39 markets, Hampton Roads founding-only with 2 approved creators", (markets.data.markets || []).length === 39 && !!hr && hr.live === false && hr.creatorsApproved === 2, JSON.stringify(hr));
+  const hr = (markets.data.markets || []).find((m) => m.name === "Virginia Beach");
+  check("admin markets list: 37 markets, Virginia Beach founding-only with 2 approved creators", (markets.data.markets || []).length === 37 && !!hr && hr.live === false && hr.creatorsApproved === 2, JSON.stringify(hr));
   const dubaiRow = (markets.data.markets || []).find((m) => m.name === "Dubai");
   check("admin markets list: Dubai present, United Arab Emirates, not live", !!dubaiRow && dubaiRow.country === "United Arab Emirates" && dubaiRow.live === false, JSON.stringify(dubaiRow));
   const toggle = await admin("POST", "/api/admin/markets/toggle", { market: "Hampton Roads", live: true });
-  check("admin activates Hampton Roads", toggle.status === 200 && toggle.data.live === true, JSON.stringify(toggle.data));
+  check("admin activates the market by its legacy name (Hampton Roads alias resolves)", toggle.status === 200 && toggle.data.live === true && toggle.data.market === "Virginia Beach", JSON.stringify(toggle.data));
   const openOffers = await creatorA("GET", "/api/offers");
   check("offers open once the market is live (200)", openOffers.status === 200, String(openOffers.status));
   const disc = await creatorA("GET", "/api/discover?market=Hampton%20Roads");
@@ -479,7 +480,7 @@ try {
   check("tester candidate uploads a photo", tPhotoUp.status === 200, JSON.stringify(tPhotoUp.data));
   await admin("POST", "/api/admin/review", { userId: testerId, decision: "approve" });
   const statsWithT = await admin("GET", "/api/admin/stats");
-  check("before the flag: stats count 3 approved creators in Hampton Roads, 0 testers", statsWithT.data.perMarket["Hampton Roads"].creators === 3 && statsWithT.data.users.testers === 0, JSON.stringify([statsWithT.data.perMarket["Hampton Roads"], statsWithT.data.users]));
+  check("before the flag: stats count 3 approved creators in Virginia Beach, 0 testers", statsWithT.data.perMarket["Virginia Beach"].creators === 3 && statsWithT.data.users.testers === 0, JSON.stringify([statsWithT.data.perMarket["Virginia Beach"], statsWithT.data.users]));
   check("before the flag: the tester's public profile resolves", (await anon("GET", "/api/c/tonytester")).status === 200);
   const discWithT = await creatorA("GET", "/api/discover?market=Hampton%20Roads");
   check("before the flag: discovery shows all 3 approved creators", (discWithT.data.creators || []).length === 3, JSON.stringify((discWithT.data.creators || []).length));
@@ -502,10 +503,10 @@ try {
   const ownTPhoto = await testerC.raw(`/api/users/${testerId}/photo`);
   check("the tester can still fetch their own photo (200)", ownTPhoto.status === 200 && ownTPhoto.contentType.includes("image/png"), String(ownTPhoto.status));
   const statsNoT = await admin("GET", "/api/admin/stats");
-  check("stats exclude the tester from roster counts and report testers separately", statsNoT.data.perMarket["Hampton Roads"].creators === 2 && statsNoT.data.users.approved === statsWithT.data.users.approved - 1 && statsNoT.data.users.testers === 1, JSON.stringify([statsNoT.data.perMarket["Hampton Roads"], statsNoT.data.users]));
+  check("stats exclude the tester from roster counts and report testers separately", statsNoT.data.perMarket["Virginia Beach"].creators === 2 && statsNoT.data.users.approved === statsWithT.data.users.approved - 1 && statsNoT.data.users.testers === 1, JSON.stringify([statsNoT.data.perMarket["Virginia Beach"], statsNoT.data.users]));
   const marketsNoT = await admin("GET", "/api/admin/markets");
-  const hrNoT = (marketsNoT.data.markets || []).find((m) => m.name === "Hampton Roads");
-  check("admin markets: Hampton Roads approved creators back to 2 with a tester flagged", !!hrNoT && hrNoT.creatorsApproved === 2, JSON.stringify(hrNoT));
+  const hrNoT = (marketsNoT.data.markets || []).find((m) => m.name === "Virginia Beach");
+  check("admin markets: Virginia Beach approved creators back to 2 with a tester flagged", !!hrNoT && hrNoT.creatorsApproved === 2, JSON.stringify(hrNoT));
   const meT = await testerC("GET", "/api/auth/me");
   check("the tester still signs in and sees their own account (flag visible to them)", meT.status === 200 && meT.data.user.tester === true && meT.data.user.status === "approved", JSON.stringify(meT.data.user && [meT.data.user.tester, meT.data.user.status]));
   const foundingT = await testerC("GET", "/api/me/founding");
@@ -549,8 +550,8 @@ try {
   check("Dubai sign-up stores the market and its country, founding-only", regDubai.data.user.market === "Dubai" && regDubai.data.user.country === "United Arab Emirates" && regDubai.data.user.founding.marketLive === false && regDubai.data.user.founding.unlisted === false, JSON.stringify([regDubai.data.user.market, regDubai.data.user.country, regDubai.data.user.founding]));
   const londonAttempt = await client()("POST", "/api/auth/register", { ...basePayload, email: "x7@fixtures.dev", handle: "londonwrong", market: "London", city: "Dubai" });
   check("a city outside the picked market is still refused (London market, Dubai city, 400)", londonAttempt.status === 400, String(londonAttempt.status));
-  const regSingapore = await client()("POST", "/api/auth/register", { ...basePayload, name: "Singapore Creator", email: "launch-sg@fixtures.dev", handle: "singaporeeats", market: "Singapore", city: "Singapore" });
-  check("Singapore (Bella list) is selectable as a core market at sign-up", regSingapore.status === 201 && regSingapore.data.user.market === "Singapore" && regSingapore.data.user.country === "Singapore" && regSingapore.data.user.founding.marketLive === false, JSON.stringify(regSingapore.data.user && [regSingapore.data.user.market, regSingapore.data.user.country]));
+  const regParis = await client()("POST", "/api/auth/register", { ...basePayload, name: "Paris Creator", email: "launch-paris@fixtures.dev", handle: "pariseats", market: "Paris", city: "Paris" });
+  check("Paris (2026-10-23 roster) is selectable as a core market at sign-up", regParis.status === 201 && regParis.data.user.market === "Paris" && regParis.data.user.country === "France" && regParis.data.user.founding.marketLive === false, JSON.stringify(regParis.data.user && [regParis.data.user.market, regParis.data.user.country]));
 
   // --- city not listed: anyone can sign up, counted per city ---
   check("bootstrap names the unlisted pseudo-market", boot.data.unlistedMarket === "Not listed yet");
@@ -602,7 +603,7 @@ try {
   check("Momentum detail carries the ledger and the ways-to-earn checklist", Array.isArray(meAfter.data.user.momentum.ledger) && meAfter.data.user.momentum.ledger.reduce((s, e) => s + e.points, 0) === 21 && Array.isArray(meAfter.data.user.momentum.checklist) && meAfter.data.user.momentum.checklist.some((i) => i.id === "photo" && i.done === false), JSON.stringify(meAfter.data.user.momentum.checklist && meAfter.data.user.momentum.checklist.length));
   const board = await admin("GET", "/api/admin/leaderboard");
   const boardRow = (board.data.leaderboard || []).find((r) => r.handle === "recruiterone");
-  check("admin leaderboard ranks the recruiter first with 21 points", !!boardRow && boardRow.market === "Hampton Roads" && boardRow.signups === 2 && boardRow.approved === 1 && boardRow.points === 21 && board.data.leaderboard[0].handle === "recruiterone", JSON.stringify(board.data.leaderboard));
+  check("admin leaderboard ranks the recruiter first with 21 points", !!boardRow && boardRow.market === "Virginia Beach" && boardRow.signups === 2 && boardRow.approved === 1 && boardRow.points === 21 && board.data.leaderboard[0].handle === "recruiterone", JSON.stringify(board.data.leaderboard));
   const appsNow = await admin("GET", "/api/admin/applications");
   const pendingR = (appsNow.data.pending || []).find((u) => u.id === regR.data.user.id);
   check("admin applications payload carries the recruiter's Momentum", !!pendingR && !!pendingR.momentum && pendingR.momentum.points === 21, JSON.stringify(pendingR && pendingR.momentum));
@@ -621,7 +622,7 @@ try {
   check("profile_completed carries the social links", !!pcEvent && pcEvent.data.facebookUrl === "https://www.facebook.com/launcheatspage" && pcEvent.data.xUrl === "https://x.com/launcheats" && pcEvent.data.linkedinUrl === "https://www.linkedin.com/in/launcheats", JSON.stringify(pcEvent && pcEvent.data));
   check("event: profile_photo_uploaded logged", byType("profile_photo_uploaded").length >= 1);
   check("event: founding_status_viewed logged", byType("founding_status_viewed").length >= 1);
-  check("event: market_activated logged for Hampton Roads", byType("market_activated").some((e) => e.market === "Hampton Roads"));
+  check("event: market_activated logged for Virginia Beach", byType("market_activated").some((e) => e.market === "Virginia Beach"));
   check("event: sign-up confirmation email queued for every creator registration", byType("signup_confirmation_email_queued").length >= 4, String(byType("signup_confirmation_email_queued").length));
   check("event: approval email queued on each creator approval", byType("approval_email_queued").length >= 3, String(byType("approval_email_queued").length));
   const appSubE = byType("application_submitted").find((e) => e.subjectId === regE.data.user.id);

@@ -8,14 +8,27 @@
 // Abu Dhabi, Riyadh, Doha, Astana, Bishkek, Sydney, Melbourne, Perth,
 // Auckland, Singapore, Hong Kong, Beijing, and Shanghai. Every
 // market carries a country; the sign-up picker groups by country.
+// On 2026-10-23 Jeff reset the roster to 37 public cities and
+// renamed the Hampton Roads market to Virginia Beach (its anchor
+// city); coverage did NOT shrink: the Virginia Beach market still
+// covers the full Hampton Roads metro city list below, and stored
+// records carrying the legacy name "Hampton Roads" are normalized
+// to "Virginia Beach" by normalizeMarketName wherever markets are
+// matched, counted or displayed. New markets added the same day:
+// Philadelphia, Pittsburgh, Cincinnati, Columbus, New Orleans,
+// Orlando, Houston, San Antonio, Las Vegas, Detroit, San Juan,
+// Paris, Barcelona, Lisbon, Toronto, Montreal. Removed the same
+// day: Charlottesville, Roanoke, Greensboro, Wilmington, Miami,
+// Abu Dhabi, Riyadh, Doha, Astana, Bishkek, Sydney, Melbourne,
+// Perth, Auckland, Singapore, Hong Kong, Beijing, Shanghai.
 // A creator's "local audience" is measured against the city list of
 // their market. Do not edit these lists without updating the website.
 
 const MARKETS = [
   {
     id: "hampton-roads",
-    name: "Hampton Roads",
-    label: "Hampton Roads, Virginia",
+    name: "Virginia Beach",
+    label: "Virginia Beach, Virginia (all of Hampton Roads)",
     country: "United States",
     cities: ["Virginia Beach", "Norfolk", "Chesapeake", "Portsmouth", "Suffolk", "Newport News", "Hampton", "Williamsburg", "Poquoson", "Yorktown"],
   },
@@ -55,39 +68,11 @@ const MARKETS = [
     cities: ["Baltimore", "Towson", "Columbia", "Annapolis", "Glen Burnie", "Dundalk", "Ellicott City", "Owings Mills", "Catonsville", "Essex", "Randallstown", "Pikesville", "Severna Park", "Pasadena", "Bel Air", "Aberdeen", "Havre de Grace", "Westminster", "Eldersburg", "Reisterstown", "Parkville", "Middle River"],
   },
   {
-    id: "charlottesville",
-    name: "Charlottesville",
-    label: "Charlottesville, Virginia",
-    country: "United States",
-    cities: ["Charlottesville", "Crozet", "Scottsville", "Palmyra", "Lake Monticello", "Ruckersville", "Stanardsville", "Earlysville", "Keswick", "Gordonsville"],
-  },
-  {
-    id: "roanoke",
-    name: "Roanoke",
-    label: "Roanoke, Virginia",
-    country: "United States",
-    cities: ["Roanoke", "Salem", "Vinton", "Cave Spring", "Hollins", "Daleville", "Troutville", "Fincastle", "Rocky Mount"],
-  },
-  {
     id: "atlanta",
     name: "Atlanta",
     label: "Atlanta, Georgia",
     country: "United States",
     cities: ["Atlanta", "Decatur", "Marietta", "Sandy Springs", "Roswell", "Alpharetta", "Johns Creek", "Brookhaven", "Dunwoody", "Chamblee", "Tucker", "Norcross", "Duluth", "Smyrna", "Vinings", "Kennesaw", "Woodstock", "Acworth", "East Point", "College Park", "Peachtree Corners", "Snellville", "Lawrenceville", "Stockbridge"],
-  },
-  {
-    id: "greensboro",
-    name: "Greensboro",
-    label: "Greensboro, North Carolina (the Triad)",
-    country: "United States",
-    cities: ["Greensboro", "Winston-Salem", "High Point", "Burlington", "Kernersville", "Clemmons", "Thomasville", "Lexington", "Asheboro", "Archdale", "Jamestown", "Oak Ridge", "Summerfield", "Randleman"],
-  },
-  {
-    id: "wilmington",
-    name: "Wilmington",
-    label: "Wilmington, North Carolina",
-    country: "United States",
-    cities: ["Wilmington", "Wrightsville Beach", "Carolina Beach", "Kure Beach", "Leland", "Hampstead", "Surf City", "Topsail Beach", "Southport", "Shallotte", "Ocean Isle Beach", "Burgaw"],
   },
   {
     id: "nashville",
@@ -146,13 +131,6 @@ const MARKETS = [
     cities: ["Tampa"],
   },
   {
-    id: "miami",
-    name: "Miami",
-    label: "Miami, Florida",
-    country: "United States",
-    cities: ["Miami"],
-  },
-  {
     id: "phoenix",
     name: "Phoenix",
     label: "Phoenix, Arizona",
@@ -172,6 +150,83 @@ const MARKETS = [
     label: "Minneapolis, Minnesota",
     country: "United States",
     cities: ["Minneapolis"],
+  },
+  {
+    id: "philadelphia",
+    name: "Philadelphia",
+    label: "Philadelphia, Pennsylvania",
+    country: "United States",
+    cities: ["Philadelphia"],
+  },
+  {
+    id: "pittsburgh",
+    name: "Pittsburgh",
+    label: "Pittsburgh, Pennsylvania",
+    country: "United States",
+    cities: ["Pittsburgh"],
+  },
+  {
+    id: "cincinnati",
+    name: "Cincinnati",
+    label: "Cincinnati, Ohio",
+    country: "United States",
+    cities: ["Cincinnati"],
+  },
+  {
+    id: "columbus",
+    name: "Columbus",
+    label: "Columbus, Ohio",
+    country: "United States",
+    cities: ["Columbus"],
+  },
+  {
+    id: "new-orleans",
+    name: "New Orleans",
+    label: "New Orleans, Louisiana",
+    country: "United States",
+    cities: ["New Orleans"],
+  },
+  {
+    id: "orlando",
+    name: "Orlando",
+    label: "Orlando, Florida",
+    country: "United States",
+    cities: ["Orlando"],
+  },
+  {
+    id: "houston",
+    name: "Houston",
+    label: "Houston, Texas",
+    country: "United States",
+    cities: ["Houston"],
+  },
+  {
+    id: "san-antonio",
+    name: "San Antonio",
+    label: "San Antonio, Texas",
+    country: "United States",
+    cities: ["San Antonio"],
+  },
+  {
+    id: "las-vegas",
+    name: "Las Vegas",
+    label: "Las Vegas, Nevada",
+    country: "United States",
+    cities: ["Las Vegas"],
+  },
+  {
+    id: "detroit",
+    name: "Detroit",
+    label: "Detroit, Michigan",
+    country: "United States",
+    cities: ["Detroit"],
+  },
+  {
+    id: "san-juan",
+    name: "San Juan",
+    label: "San Juan, Puerto Rico",
+    country: "Puerto Rico",
+    cities: ["San Juan"],
   },
   {
     id: "london",
@@ -195,97 +250,53 @@ const MARKETS = [
     cities: ["Dubai"],
   },
   {
-    id: "abu-dhabi",
-    name: "Abu Dhabi",
-    label: "Abu Dhabi, United Arab Emirates",
-    country: "United Arab Emirates",
-    cities: ["Abu Dhabi"],
+    id: "paris",
+    name: "Paris",
+    label: "Paris, France",
+    country: "France",
+    cities: ["Paris"],
   },
   {
-    id: "riyadh",
-    name: "Riyadh",
-    label: "Riyadh, Saudi Arabia",
-    country: "Saudi Arabia",
-    cities: ["Riyadh"],
+    id: "barcelona",
+    name: "Barcelona",
+    label: "Barcelona, Spain",
+    country: "Spain",
+    cities: ["Barcelona"],
   },
   {
-    id: "doha",
-    name: "Doha",
-    label: "Doha, Qatar",
-    country: "Qatar",
-    cities: ["Doha"],
+    id: "lisbon",
+    name: "Lisbon",
+    label: "Lisbon, Portugal",
+    country: "Portugal",
+    cities: ["Lisbon"],
   },
   {
-    id: "astana",
-    name: "Astana",
-    label: "Astana, Kazakhstan",
-    country: "Kazakhstan",
-    cities: ["Astana"],
+    id: "toronto",
+    name: "Toronto",
+    label: "Toronto, Canada",
+    country: "Canada",
+    cities: ["Toronto"],
   },
   {
-    id: "bishkek",
-    name: "Bishkek",
-    label: "Bishkek, Kyrgyzstan",
-    country: "Kyrgyzstan",
-    cities: ["Bishkek"],
-  },
-  {
-    id: "sydney",
-    name: "Sydney",
-    label: "Sydney, Australia",
-    country: "Australia",
-    cities: ["Sydney"],
-  },
-  {
-    id: "melbourne",
-    name: "Melbourne",
-    label: "Melbourne, Australia",
-    country: "Australia",
-    cities: ["Melbourne"],
-  },
-  {
-    id: "perth",
-    name: "Perth",
-    label: "Perth, Australia",
-    country: "Australia",
-    cities: ["Perth"],
-  },
-  {
-    id: "auckland",
-    name: "Auckland",
-    label: "Auckland, New Zealand",
-    country: "New Zealand",
-    cities: ["Auckland"],
-  },
-  {
-    id: "singapore",
-    name: "Singapore",
-    label: "Singapore",
-    country: "Singapore",
-    cities: ["Singapore"],
-  },
-  {
-    id: "hong-kong",
-    name: "Hong Kong",
-    label: "Hong Kong",
-    country: "Hong Kong",
-    cities: ["Hong Kong"],
-  },
-  {
-    id: "beijing",
-    name: "Beijing",
-    label: "Beijing, China",
-    country: "China",
-    cities: ["Beijing"],
-  },
-  {
-    id: "shanghai",
-    name: "Shanghai",
-    label: "Shanghai, China",
-    country: "China",
-    cities: ["Shanghai"],
+    id: "montreal",
+    name: "Montreal",
+    label: "Montreal, Canada",
+    country: "Canada",
+    cities: ["Montreal"],
   },
 ];
+
+const MARKET_NAME_ALIASES = { "Hampton Roads": "Virginia Beach" };
+
+// Stored records created before the 2026-10-23 rename carry the
+// legacy market name. Every match, count and display of a market
+// name goes through this so legacy and canonical records behave
+// as one market. No stored record is rewritten.
+function normalizeMarketName(name) {
+  if (typeof name !== "string") return name;
+  const t = name.trim();
+  return MARKET_NAME_ALIASES[t] || t;
+}
 
 const TIERS = [
   { id: "Neighbors", label: "Neighbors", min: 500, max: 2000, blurb: "Everyday locals. Comp-only visits." },
@@ -391,4 +402,4 @@ const PLANS = [
   },
 ];
 
-module.exports = { MARKETS, TIERS, CREATOR_CATEGORIES, COMP_CATEGORIES, BUSINESS_CATEGORIES, PLANS, PROFESSIONS, REALTOR_PROFESSION, tierForFollowers, normalizeTierBand };
+module.exports = { MARKETS, MARKET_NAME_ALIASES, normalizeMarketName, TIERS, CREATOR_CATEGORIES, COMP_CATEGORIES, BUSINESS_CATEGORIES, PLANS, PROFESSIONS, REALTOR_PROFESSION, tierForFollowers, normalizeTierBand };

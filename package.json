@@ -11,7 +11,7 @@
   "private": true,
   "scripts": {
     "dev": "node scripts/dev-server.mjs",
-    "verify": "node scripts/verify-flow.mjs && node scripts/verify-fallbacks.mjs && node scripts/verify-launch.mjs && node scripts/verify-compliance.mjs && node scripts/verify-campaign.mjs && node scripts/verify-paidlane.mjs && node scripts/verify-roas.mjs && node scripts/verify-business.mjs && node scripts/verify-quickclaim.mjs && node scripts/verify-ratings.mjs && node scripts/verify-staff.mjs && node scripts/verify-refinements.mjs && node scripts/verify-campus.mjs && node scripts/verify-ladder.mjs && node scripts/verify-src.mjs && node scripts/verify-share.mjs && node scripts/verify-admin.mjs && node scripts/verify-autodecisions.mjs && node scripts/verify-platforms.mjs && node scripts/verify-realtor.mjs && node scripts/verify-signupfixes.mjs && npm run verify-passwordreset",
+    "verify": "node scripts/verify-flow.mjs && node scripts/verify-fallbacks.mjs && node scripts/verify-launch.mjs && node scripts/verify-compliance.mjs && node scripts/verify-campaign.mjs && node scripts/verify-paidlane.mjs && node scripts/verify-roas.mjs && node scripts/verify-business.mjs && node scripts/verify-quickclaim.mjs && node scripts/verify-ratings.mjs && node scripts/verify-staff.mjs && node scripts/verify-refinements.mjs && node scripts/verify-campus.mjs && node scripts/verify-ladder.mjs && node scripts/verify-src.mjs && node scripts/verify-share.mjs && node scripts/verify-admin.mjs && node scripts/verify-autodecisions.mjs && node scripts/verify-platforms.mjs && node scripts/verify-realtor.mjs && node scripts/verify-signupfixes.mjs && node scripts/verify-markets.mjs && npm run verify-passwordreset",
     "verify-campus": "node scripts/verify-campus.mjs",
     "verify-realtor": "node scripts/verify-realtor.mjs",
     "verify-signupfixes": "node scripts/verify-signupfixes.mjs",
@@ -31,7 +31,8 @@
     "verify-ladder": "node scripts/verify-ladder.mjs",
     "verify:src": "node scripts/verify-src.mjs",
     "verify:share": "node scripts/verify-share.mjs",
-    "verify-passwordreset": "node scripts/verify-passwordreset.mjs"
+    "verify-passwordreset": "node scripts/verify-passwordreset.mjs",
+    "verify-markets": "node scripts/verify-markets.mjs"
   },
   "type": "commonjs",
   "version": "1.0.0"

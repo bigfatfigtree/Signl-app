@@ -81,19 +81,19 @@ const escStub = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace
 const sandbox = { encodeURIComponent, esc: escStub, navigator: {}, document: {} };
 const vm = await import("node:vm");
 const ctx = vm.createContext(sandbox);
-vm.runInContext([extractFn("sharePayloadFor"), extractFn("shareBlockHtml"), extractFn("shareInvite"), extractFn("copyShareLink")].join("\n"), ctx);
+vm.runInContext([extractFn("displayMarketName"), extractFn("sharePayloadFor"), extractFn("shareBlockHtml"), extractFn("shareInvite"), extractFn("copyShareLink")].join("\n"), ctx);
 
 try {
   const payload = ctx.sharePayloadFor("Hampton Roads", "sharer757");
   check("share payload is the creator referral link", payload.url === "https://app.joinsignl.com/?ref=sharer757", payload.url);
-  check("share payload text is the founding-status line naming the market", payload.text === "I just became a founding creator on SIGNL in Hampton Roads. Local businesses comp creators for honest posts, and it is free for creators. Claim your spot:", payload.text);
+  check("share payload text is the founding-status line naming the market", payload.text === "I just became a founding creator on SIGNL in Virginia Beach. Local businesses comp creators for honest posts, and it is free for creators. Claim your spot:", payload.text);
   const named = ctx.sharePayloadFor("Richmond", "ownerhandle", "Casey Rivers");
   check("public-profile payload names the creator and still uses the owner's ref link", named.url === "https://app.joinsignl.com/?ref=ownerhandle" && named.text.startsWith("Casey Rivers is a founding creator on SIGNL in Richmond."), JSON.stringify(named));
 
   const block = ctx.shareBlockHtml("sharer757", "Hampton Roads", "Share your invite");
   check("fallback menu renders copy, Facebook, X, and WhatsApp", block.includes("Copy link") && block.includes("facebook.com/sharer/sharer.php?u=") && block.includes("twitter.com/intent/tweet") && block.includes("wa.me/?text="), block.slice(0, 200));
   check("fallback menu carries the referral link in every share target", block.includes(encodeURIComponent("https://app.joinsignl.com/?ref=sharer757")), "");
-  check("share button carries handle and place for the tap handler", block.includes('data-share-handle="sharer757"') && block.includes('data-share-place="Hampton Roads"'), "");
+  check("share button carries handle and place for the tap handler", block.includes('data-share-handle="sharer757"') && block.includes('data-share-place="Virginia Beach"'), "");
 
   const menu = { style: { display: "none" } };
   const fakeBtn = {
@@ -106,7 +106,7 @@ try {
   let sharedPayload = null;
   ctx.navigator.share = (p) => { sharedPayload = p; return Promise.resolve(); };
   ctx.shareInvite(fakeBtn);
-  check("with navigator.share the payload is handed to the share sheet", !!sharedPayload && sharedPayload.url === "https://app.joinsignl.com/?ref=sharer757" && sharedPayload.text.includes("Hampton Roads"), JSON.stringify(sharedPayload));
+  check("with navigator.share the payload is handed to the share sheet", !!sharedPayload && sharedPayload.url === "https://app.joinsignl.com/?ref=sharer757" && sharedPayload.text.includes("Virginia Beach"), JSON.stringify(sharedPayload));
   ctx.navigator.share = undefined;
 
   // ---------- placement: exactly the four approved surfaces ----------
@@ -140,7 +140,7 @@ try {
     const ownerId = reg.data.user.id;
     await admin("POST", "/api/admin/review", { userId: ownerId, decision: "approve" });
     const pub = await client()("GET", "/api/c/shareowner");
-    check("public /c/ payload carries the owner's handle and market for the share", pub.status === 200 && pub.data.profile.handle === "shareowner" && pub.data.profile.market === "Hampton Roads", JSON.stringify(pub.data.profile && { handle: pub.data.profile.handle, market: pub.data.profile.market }));
+    check("public /c/ payload carries the owner's handle and market for the share", pub.status === 200 && pub.data.profile.handle === "shareowner" && pub.data.profile.market === "Virginia Beach", JSON.stringify(pub.data.profile && { handle: pub.data.profile.handle, market: pub.data.profile.market }));
     const servedJs = await (await fetch(BASE + "/app.js")).text();
     check("the served app ships the share block on the public profile", servedJs.includes("shareBlockHtml(p.handle"), "");
   } finally {

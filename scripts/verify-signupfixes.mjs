@@ -143,7 +143,7 @@ try {
 
   // ---------- F2: wrong-market fix, pending only ----------
   const m = await quickClaim("wrongmarket@fixtures.dev", "wrongmarket757", "Hampton Roads");
-  check("wrong-market claim registers pending in Hampton Roads (the default mistake)", m.r.status === 201 && m.r.data.user.status === "pending" && m.r.data.user.market === "Hampton Roads", JSON.stringify(m.r.data.user && { status: m.r.data.user.status, market: m.r.data.user.market }));
+  check("wrong-market claim registers pending in Virginia Beach (legacy Hampton Roads name normalized at intake)", m.r.status === 201 && m.r.data.user.status === "pending" && m.r.data.user.market === "Virginia Beach", JSON.stringify(m.r.data.user && { status: m.r.data.user.status, market: m.r.data.user.market }));
   const mId = m.r.data.user.id;
 
   const anonMove = await client()("POST", "/api/me/market", { market: "Raleigh", city: "Raleigh" });
@@ -157,7 +157,7 @@ try {
   check("an unknown market is refused (400)", badMarket.status === 400, JSON.stringify(badMarket.data));
 
   const moved = await m.c("POST", "/api/me/market", { market: "Raleigh", city: "Raleigh" });
-  check("pending creator moves Hampton Roads -> Raleigh", moved.status === 200 && moved.data.user.market === "Raleigh" && moved.data.user.city === "Raleigh" && moved.data.user.country === "United States", JSON.stringify(moved.data.user && { market: moved.data.user.market, city: moved.data.user.city, country: moved.data.user.country }));
+  check("pending creator moves Virginia Beach -> Raleigh", moved.status === 200 && moved.data.user.market === "Raleigh" && moved.data.user.city === "Raleigh" && moved.data.user.country === "United States", JSON.stringify(moved.data.user && { market: moved.data.user.market, city: moved.data.user.city, country: moved.data.user.country }));
   check("the change is stamped on the record (marketChangedAt)", typeof moved.data.user.marketChangedAt === "string" && moved.data.user.marketChangedAt.length > 0);
 
   const unlNoCountry = await m.c("POST", "/api/me/market", { market: "Not listed yet", customCity: "Tulsa" });
@@ -168,7 +168,7 @@ try {
   check("and back to a listed market (city validated again)", backListed.status === 200 && backListed.data.user.market === "Raleigh" && backListed.data.user.city === "Raleigh");
 
   const mEvents = (await eventsOf("market_changed")).filter((e) => e.subjectId === mId);
-  check("market changes are logged as events with from/to", mEvents.some((e) => e.data.from === "Hampton Roads" && e.data.to === "Raleigh") && mEvents.some((e) => e.data.from === "Raleigh" && e.data.to === "Not listed yet"), JSON.stringify(mEvents.map((e) => e.data)));
+  check("market changes are logged as events with from/to", mEvents.some((e) => e.data.from === "Virginia Beach" && e.data.to === "Raleigh") && mEvents.some((e) => e.data.from === "Raleigh" && e.data.to === "Not listed yet"), JSON.stringify(mEvents.map((e) => e.data)));
 
   // A business cannot use the creator route.
   const biz = client();

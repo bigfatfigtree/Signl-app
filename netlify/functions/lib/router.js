@@ -5,7 +5,7 @@ const crypto = require("crypto");
 const store = require("./store");
 const auth = require("./auth");
 const { logEvent, listEvents } = require("./events");
-const { MARKETS, TIERS, CREATOR_CATEGORIES, COMP_CATEGORIES, BUSINESS_CATEGORIES, PLANS, PROFESSIONS, REALTOR_PROFESSION, tierForFollowers, normalizeTierBand } = require("./markets");
+const { MARKETS, normalizeMarketName, TIERS, CREATOR_CATEGORIES, COMP_CATEGORIES, BUSINESS_CATEGORIES, PLANS, PROFESSIONS, REALTOR_PROFESSION, tierForFollowers, normalizeTierBand } = require("./markets");
 const { computeLocalImpactScore, summarizeHistory } = require("./score");
 const { emailEnabled, sendEmail } = require("./email");
 const claimEvidence = require("./claim-evidence");
@@ -848,7 +848,9 @@ function isEmail(s) {
 }
 
 function marketByName(name) {
-  return MARKETS.find((m) => m.name === name || m.id === name) || null;
+  if (!name) return null;
+  const canonical = normalizeMarketName(name);
+  return MARKETS.find((m) => m.name === canonical || m.id === name) || null;
 }
 
 function planById(id) {
@@ -878,6 +880,7 @@ function publicUser(u) {
   // 2026-10-22) are server-side only: they never ride any client
   // payload. Admin surfaces re-add what they need from the raw
   // record behind admin auth.
+  if (typeof rest.market === "string") rest.market = normalizeMarketName(rest.market);
   delete rest.approvedBy;
   delete rest.decisionReason;
   delete rest.decisionNote;
@@ -907,7 +910,7 @@ async function isMarketLive(marketName) {
   if (TEST_MODE) return true;
   if (!marketName) return false;
   const flags = await getMarketFlags();
-  return !!flags[marketName];
+  return !!flags[normalizeMarketName(marketName)];
 }
 
 async function marketLiveMap() {
@@ -941,7 +944,7 @@ function creatorRanks(users) {
     // "first 100 in Tulsa" is the standing that matters there. The key
     // is city + country; records from before the country field fall
     // back to their stored state so they keep ranking.
-    const key = c.market === UNLISTED ? `${c.city || ""}, ${c.country || c.state || ""}` : c.market;
+    const key = c.market === UNLISTED ? `${c.city || ""}, ${c.country || c.state || ""}` : normalizeMarketName(c.market);
     (byMarket[key] = byMarket[key] || []).push(c);
   }
   const approvedRank = new Map();
@@ -1372,9 +1375,9 @@ async function foundingSummary(user) {
   if (!user || user.role !== "creator") return null;
   const users = await allUsers();
   const { approvedRank, pendingRank } = creatorRanks(users);
-  const inMarket = users.filter((u) => u.role === "creator" && u.market === user.market);
+  const inMarket = users.filter((u) => u.role === "creator" && normalizeMarketName(u.market) === normalizeMarketName(user.market));
   return {
-    market: user.market,
+    market: normalizeMarketName(user.market),
     city: user.city || "",
     state: user.state || null,
     country: user.country || null,
@@ -2402,7 +2405,7 @@ async function discoverCards(query, viewer) {
   // finished step two) is not on the roster yet either.
   let creators = users.filter((u) => isRosterCreator(u) && profileCompleteOf(u) && standingState(u) !== "banned");
   const market = query.market || (viewer && viewer.role === "business" ? viewer.market : null);
-  if (market) creators = creators.filter((u) => u.market === (marketByName(market) || {}).name);
+  if (market) creators = creators.filter((u) => normalizeMarketName(u.market) === (marketByName(market) || {}).name);
   if (query.tier) creators = creators.filter((u) => u.creator && normalizeTierBand(u.creator.tierBand) === normalizeTierBand(query.tier));
   if (query.category) creators = creators.filter((u) => u.creator && u.creator.categories.includes(query.category));
   if (query.compCategory) creators = creators.filter((u) => u.creator && (u.creator.compCategories || []).includes(query.compCategory));
@@ -2486,7 +2489,7 @@ async function publicCreator(u, viewer, foundingPriority) {
   return {
     userId: u.id,
     name: u.name,
-    market: u.market,
+    market: normalizeMarketName(u.market),
     city: u.city || "",
     neighborhood: (u.creator && u.creator.neighborhood) || "",
     university,
@@ -2569,7 +2572,7 @@ async function publicProfilePayload(u) {
     primaryProfileUrl: primary.url,
     instagramUrl: primary.platform === "instagram" ? (c.instagramUrl || `https://instagram.com/${c.handle}`) : (c.instagramUrl || null),
     photoUrl: c.hasPhoto ? `/api/users/${u.id}/photo` : null,
-    market: unlisted ? u.city || "" : u.market,
+    market: unlisted ? u.city || "" : normalizeMarketName(u.market),
     unlisted,
     city: u.city || "",
     neighborhood: c.neighborhood || "",
@@ -3747,12 +3750,12 @@ function campaignFirstName(name) {
 }
 
 // The founding mechanics paragraph, shared by both campaign
-// templates: Hampton Roads (the November / Black Friday launch
+// templates: Virginia Beach (the November / Black Friday launch
 // market) vs every other founding market, which opens in waves in
 // the following 30 to 90 days.
 function campaignMarketParagraph(market) {
-  return market === "Hampton Roads"
-    ? "Hampton Roads launches in November, and our opening push is Black Friday weekend. Founding creators are joining now, in sign-up order, and the first ones in get seen first when businesses start choosing."
+  return normalizeMarketName(market) === "Virginia Beach"
+    ? "Virginia Beach, covering all of Hampton Roads, launches in November, and our opening push is Black Friday weekend. Founding creators are joining now, in sign-up order, and the first ones in get seen first when businesses start choosing."
     : `${market} is a founding market: sign-ups are open now and offers open city by city as the roster fills, in the next 30 to 90 days. Founding creators join in sign-up order, and the first ones in get seen first when businesses start choosing.`;
 }
 
@@ -3763,7 +3766,7 @@ function campaignClaimLink(recipient) {
 
 // The Jeff-approved outreach email (2026-10-19), rendered server
 // side from the recipient's slots. Plain text, first name only,
-// no em dashes. The market paragraph differs for Hampton Roads
+// no em dashes. The market paragraph differs for Virginia Beach
 // (the November / Black Friday launch market) vs everywhere else.
 function campaignEmail(recipient) {
   const market = String(recipient.market || "");
@@ -4308,7 +4311,7 @@ async function genCode() {
 // builder READS the user store and the code index and writes
 // NOTHING. No store.set, no logEvent, no metric moves; the bookings
 // exist only inside this response and nowhere else in the system.
-const PREVIEW_DASH_BUSINESS = { name: "Salt & Ember Kitchen", category: "Chef-driven restaurant", market: "Hampton Roads" };
+const PREVIEW_DASH_BUSINESS = { name: "Salt & Ember Kitchen", category: "Chef-driven restaurant", market: "Virginia Beach" };
 // Salt & Ember is presented as a business that HAS opted in to
 // audience-code discounts, at its own chosen 20 percent: that is
 // what keeps the simulated tallies below scoring exactly as they
@@ -6308,7 +6311,7 @@ async function route(event) {
       // testers never count toward the roster, matching the markets
       // endpoint. Computed from the records on every read.
       const LAUNCH_MARKET_LABELS = [
-        ["Hampton Roads", "Hampton Roads"],
+        ["Virginia Beach", "Virginia Beach (all of Hampton Roads)"],
         ["Richmond", "Richmond"],
         ["Raleigh", "Raleigh/The Triangle"],
         ["Washington DC", "Washington DC"],
@@ -6337,7 +6340,7 @@ async function route(event) {
         rejectedToday: autoRejected.filter((u) => etDay(u.reviewedAt) === etToday).length,
       };
       const summary = {
-        markets: LAUNCH_MARKET_LABELS.map(([name, label]) => ({ market: name, label, ...rosterCounts(creatorsAll.filter((u) => u.market === name)) })),
+        markets: LAUNCH_MARKET_LABELS.map(([name, label]) => ({ market: name, label, ...rosterCounts(creatorsAll.filter((u) => normalizeMarketName(u.market) === name)) })),
         all: rosterCounts(creatorsAll),
         auto,
       };
@@ -6358,7 +6361,7 @@ async function route(event) {
           userId: u.id,
           name: u.name,
           handle: u.creator.handle,
-          market: u.market,
+          market: normalizeMarketName(u.market),
           city: u.city || "",
           status: u.status,
           createdAt: u.createdAt,
@@ -6499,7 +6502,7 @@ async function route(event) {
       const market = marketByName(b.market || "");
       if (!market) return err(400, "Unknown market");
       const all = await allUsers();
-      const targets = all.filter((u) => u.role === "business" && u.business && u.market === market.name && u.status === "approved" && businessAccessState(u) !== "active");
+      const targets = all.filter((u) => u.role === "business" && u.business && normalizeMarketName(u.market) === market.name && u.status === "approved" && businessAccessState(u) !== "active");
       const activated = [];
       for (const target of targets) {
         target.business = { ...target.business, accessState: "active", activatedAt: nowIso(), activatedBy: user.id };
@@ -6540,9 +6543,10 @@ async function route(event) {
       const perMarket = {};
       for (const m of MARKETS) perMarket[m.name] = { creators: 0, businesses: 0, bookings: 0, posts: 0 };
       for (const u of users) {
-        if (!perMarket[u.market]) continue;
-        if (u.role === "creator" && u.status === "approved" && !isTester(u)) perMarket[u.market].creators += 1;
-        if (u.role === "business" && u.status === "approved") perMarket[u.market].businesses += 1;
+        const mkey = normalizeMarketName(u.market);
+        if (!perMarket[mkey]) continue;
+        if (u.role === "creator" && u.status === "approved" && !isTester(u)) perMarket[mkey].creators += 1;
+        if (u.role === "business" && u.status === "approved") perMarket[mkey].businesses += 1;
       }
       // Demand signal outside the listed markets (Jeff, 2026-10-18):
       // how many creators signed up per unlisted city, biggest first.
@@ -6828,7 +6832,7 @@ async function route(event) {
         preview: true,
         businessId: user.id,
         businessName: "Preview Business",
-        market: targetCreator ? targetCreator.market : String(b.market || "Hampton Roads"),
+        market: targetCreator ? targetCreator.market : String(b.market || "Virginia Beach"),
         creatorId: targetCreator ? targetCreator.id : null,
         creatorHandle: targetCreator && targetCreator.creator ? targetCreator.creator.handle : null,
         title: String(b.title).trim(),

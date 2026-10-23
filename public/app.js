@@ -150,7 +150,8 @@ function parseClaimParams(params) {
   // to Instagram, exactly as every link already sent behaves.
   const platformRaw = String(params.get("platform") || "").trim().toLowerCase();
   if (PRIMARY_PLATFORMS_CLIENT.some((p) => p.id === platformRaw)) out.platform = platformRaw;
-  const marketRaw = String(params.get("market") || "").trim().slice(0, 60);
+  let marketRaw = String(params.get("market") || "").trim().slice(0, 60);
+  if (marketRaw === "Hampton Roads") marketRaw = "Virginia Beach";
   if (marketRaw && state.boot) {
     const m = state.boot.markets.find((x) => x.name === marketRaw || x.id === marketRaw);
     if (m) out.market = m.name;
@@ -396,7 +397,12 @@ function inviteUrlFor(u) {
 // founding status (approval) surface, the profile-completion
 // moment, and the public /c/ profile (with the profile owner's
 // own referral link, so the creator is credited whoever shares).
+function displayMarketName(place) {
+  return place === "Hampton Roads" ? "Virginia Beach" : place;
+}
+
 function sharePayloadFor(place, handle, subjectName) {
+  place = displayMarketName(place);
   const url = `https://app.joinsignl.com/?ref=${encodeURIComponent(handle || "")}`;
   const text = subjectName
     ? `${subjectName} is a founding creator on SIGNL in ${place}. Local businesses comp creators for honest posts, and it is free for creators. Claim your spot:`
@@ -408,7 +414,7 @@ function shareBlockHtml(handle, place, label, subjectName) {
   if (!handle) return "";
   const payload = sharePayloadFor(place, handle, subjectName);
   const full = `${payload.text} ${payload.url}`;
-  return `<span class="share-wrap"><button type="button" class="btn small-btn ghost" data-share-handle="${esc(handle)}" data-share-place="${esc(place || "")}"${subjectName ? ` data-share-name="${esc(subjectName)}"` : ""} onclick="return shareInvite(this)">${esc(label || "Share your invite")}</button><span class="share-menu" style="display:none"> <a href="#" onclick="return copyShareLink(this)">Copy link</a> &middot; <a href="https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(payload.url)}" target="_blank" rel="noopener">Facebook</a> &middot; <a href="https://twitter.com/intent/tweet?text=${encodeURIComponent(payload.text)}&url=${encodeURIComponent(payload.url)}" target="_blank" rel="noopener">X</a> &middot; <a href="https://wa.me/?text=${encodeURIComponent(full)}" target="_blank" rel="noopener">WhatsApp</a></span></span>`;
+  return `<span class="share-wrap"><button type="button" class="btn small-btn ghost" data-share-handle="${esc(handle)}" data-share-place="${esc(displayMarketName(place) || "")}"${subjectName ? ` data-share-name="${esc(subjectName)}"` : ""} onclick="return shareInvite(this)">${esc(label || "Share your invite")}</button><span class="share-menu" style="display:none"> <a href="#" onclick="return copyShareLink(this)">Copy link</a> &middot; <a href="https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(payload.url)}" target="_blank" rel="noopener">Facebook</a> &middot; <a href="https://twitter.com/intent/tweet?text=${encodeURIComponent(payload.text)}&url=${encodeURIComponent(payload.url)}" target="_blank" rel="noopener">X</a> &middot; <a href="https://wa.me/?text=${encodeURIComponent(full)}" target="_blank" rel="noopener">WhatsApp</a></span></span>`;
 }
 
 function shareInvite(btn) {
@@ -1336,7 +1342,7 @@ function syncQcPlatform() {
 
 function renderQuickClaim() {
   const pf = state.prefill || {};
-  const pfMarket = pf.market || "Hampton Roads";
+  const pfMarket = pf.market || "Virginia Beach";
   const pfPlatform = pf.platform || "instagram";
   const hasPrefill = !!(pf.handle || pf.market || pf.tier);
   app.innerHTML = `
@@ -1441,7 +1447,7 @@ function renderJoinCreator() {
   const cats = state.boot.creatorCategories.map((c) => `<label><input type="checkbox" name="c-cat" value="${esc(c)}"> ${esc(c)}</label>`).join("");
   const comps = state.boot.compCategories.map((c) => `<label><input type="checkbox" name="c-comp" value="${esc(c)}"> ${esc(c)}</label>`).join("");
   const pf = state.prefill || {};
-  const pfMarket = pf.market || "Hampton Roads";
+  const pfMarket = pf.market || "Virginia Beach";
   const hasPrefill = !!(pf.handle || pf.market || pf.tier);
   app.innerHTML = `
   <section class="panel" style="max-width:680px;margin:10px auto">
@@ -5415,7 +5421,7 @@ async function loadStats() {
 // console cleanly.
 function enterPreview() {
   if (!state.user || state.user.role !== "admin") return;
-  state.preview = { step: "plans", planId: "self-service", market: "Hampton Roads", creators: null, creator: null, targetId: "", sent: [], confirmation: null, dashboard: null };
+  state.preview = { step: "plans", planId: "self-service", market: "Virginia Beach", creators: null, creator: null, targetId: "", sent: [], confirmation: null, dashboard: null };
   state.view = "dashboard";
   render();
 }

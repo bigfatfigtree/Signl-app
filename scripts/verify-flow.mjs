@@ -101,7 +101,7 @@ try {
 
   const anon = client();
   const boot = await anon("GET", "/api/bootstrap");
-  check("bootstrap lists 39 markets", boot.data.markets && boot.data.markets.length === 39, JSON.stringify(boot.data.markets && boot.data.markets.length));
+  check("bootstrap lists 37 markets", boot.data.markets && boot.data.markets.length === 37, JSON.stringify(boot.data.markets && boot.data.markets.length));
   check("bootstrap plans are the three founding plans ($299 / $599 / $999, 3-month minimum)", boot.data.plans.length === 3 && boot.data.plans[0].id === "self-service" && boot.data.plans[0].priceMonthly === 299 && boot.data.plans[1].id === "growth" && boot.data.plans[1].priceMonthly === 599 && boot.data.plans[2].id === "managed" && boot.data.plans[2].priceMonthly === 999 && boot.data.plans.every((p) => p.minMonths === 3), JSON.stringify(boot.data.plans.map((p) => [p.id, p.priceMonthly])));
 
   // --- referral: email copy + status page rendering path ---
@@ -378,14 +378,15 @@ try {
   check("two approvals recorded", count("application_approved") >= 2);
   check("two messages logged", count("message_sent") >= 2);
   const redeemEvent = (events.data.events || []).find((e) => e.type === "code_redeemed");
-  check("redeem event carries market and deadline", !!redeemEvent && redeemEvent.market === "Hampton Roads" && !!redeemEvent.data.postDeadline);
+  // Fixtures register with the legacy name "Hampton Roads"; the 2026-10-23 rename normalizes it, so events carry the canonical market.
+  check("redeem event carries market and deadline", !!redeemEvent && redeemEvent.market === "Virginia Beach" && !!redeemEvent.data.postDeadline);
   const submitEvent = (events.data.events || []).find((e) => e.type === "application_submitted" && e.subjectId === creatorId);
   check("application_submitted event records the referral credit", !!submitEvent && submitEvent.data.referredBy === "foundingfriend", JSON.stringify(submitEvent && submitEvent.data));
 
   // --- admin stats roll up by market ---
   const stats = await admin("GET", "/api/admin/stats");
-  const hr = stats.data.perMarket && stats.data.perMarket["Hampton Roads"];
-  check("stats: Hampton Roads has 1 creator, 1 business, 1 post", !!hr && hr.creators === 1 && hr.businesses === 1 && hr.posts === 1, JSON.stringify(hr));
+  const hr = stats.data.perMarket && stats.data.perMarket["Virginia Beach"];
+  check("stats: Virginia Beach (legacy Hampton Roads records) has 1 creator, 1 business, 1 post", !!hr && hr.creators === 1 && hr.businesses === 1 && hr.posts === 1, JSON.stringify(hr));
   check("stats: posts on-time rate is 100%", stats.data.posts && stats.data.posts.onTimeRate === 100);
 } finally {
   server.kill("SIGTERM");

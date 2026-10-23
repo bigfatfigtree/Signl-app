@@ -175,10 +175,10 @@ try {
   // ---------- summary strip counts ----------
   const s = apps.data.summary || { markets: [], all: {} };
   const byMarket = Object.fromEntries((s.markets || []).map((m) => [m.market, m]));
-  check("summary covers exactly the four launch markets", s.markets.length === 4 && ["Hampton Roads", "Richmond", "Raleigh", "Washington DC"].every((n) => !!byMarket[n]), JSON.stringify((s.markets || []).map((m) => m.market)));
+  check("summary covers exactly the four launch markets", s.markets.length === 4 && ["Virginia Beach", "Richmond", "Raleigh", "Washington DC"].every((n) => !!byMarket[n]), JSON.stringify((s.markets || []).map((m) => m.market)));
   check("Raleigh row is labeled Raleigh/The Triangle", !!byMarket["Raleigh"] && byMarket["Raleigh"].label === "Raleigh/The Triangle", JSON.stringify(byMarket["Raleigh"]));
-  const hr = byMarket["Hampton Roads"] || {};
-  check("HR counts: 2 pending, 2 approved, 1 approved + complete (business excluded)", hr.pending === 2 && hr.approved === 2 && hr.approvedComplete === 1, JSON.stringify(hr));
+  const hr = byMarket["Virginia Beach"] || {};
+  check("Virginia Beach counts (fixtures claimed under the legacy Hampton Roads name): 2 pending, 2 approved, 1 approved + complete (business excluded)", hr.pending === 2 && hr.approved === 2 && hr.approvedComplete === 1, JSON.stringify(hr));
   const ric = byMarket["Richmond"] || {};
   check("Richmond counts: 0 pending, 1 approved, 1 approved + complete", ric.pending === 0 && ric.approved === 1 && ric.approvedComplete === 1, JSON.stringify(ric));
   const ral = byMarket["Raleigh"] || {};

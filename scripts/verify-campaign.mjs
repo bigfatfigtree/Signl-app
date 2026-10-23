@@ -133,7 +133,7 @@ try {
   check("subject names the market", hr.subject === "A founding creator spot in Hampton Roads", hr.subject);
   check("greeting uses the first name only", hr.text.startsWith("Hi Maya,"), hr.text.slice(0, 40));
   check("opener slot is filled", hr.text.includes("I found you through your Oceanfront food posts."));
-  check("Hampton Roads paragraph carries the Black Friday launch", hr.text.includes("Hampton Roads launches in November, and our opening push is Black Friday weekend."));
+  check("legacy Hampton Roads recipient gets the Virginia Beach paragraph carrying the Black Friday launch", hr.text.includes("Virginia Beach, covering all of Hampton Roads, launches in November, and our opening push is Black Friday weekend."));
   check("claim link is prefilled with handle + market", hr.text.includes("app.joinsignl.com/?handle=maya757&market=Hampton%20Roads"));
   check("founding email carries the approval status sentence", hr.text.includes("If you apply, you will get a decision or a clear status within 2 business days."));
   check("sign-off is Jeff, Founder, SIGNL, with the tagline", hr.text.includes("\nJeff\nFounder, SIGNL\nhello@joinsignl.com | joinsignl.com\nNational platforms sell reach. We sell regulars."));
@@ -401,7 +401,7 @@ try {
   check("no em dashes anywhere in the crossover email", !xo.text.includes("—") && !xo.subject.includes("—"));
   const xoHr = crossoverEmail({ name: "", handle: "hrfoodie", market: "Hampton Roads", opener: "your Momfluence posts" });
   check("crossover missing name falls back to Hi there,", xoHr.text.startsWith("Hi there,"), xoHr.text.slice(0, 40));
-  check("crossover Hampton Roads paragraph carries the November launch", xoHr.text.includes("Hampton Roads launches in November, and our opening push is Black Friday weekend."));
+  check("crossover legacy Hampton Roads recipient gets the Virginia Beach paragraph carrying the November launch", xoHr.text.includes("Virginia Beach, covering all of Hampton Roads, launches in November, and our opening push is Black Friday weekend."));
   check("template dispatch: the crossover id renders the crossover subject", campaignEmailFor(CROSSOVER_CAMPAIGN_ID, { name: "A B", handle: "ab", market: "Richmond", opener: "your posts" }).subject === "Your national platforms, plus a local layer in Richmond");
   check("template dispatch: the founding id renders the founding subject", campaignEmailFor("founding-creators-2026-10", { name: "A B", handle: "ab", market: "Richmond", opener: "your posts" }).subject === "A founding creator spot in Richmond");
   check("template dispatch: any other campaign keeps the founding template", campaignEmailFor("daily-test", { name: "A B", handle: "ab", market: "Richmond", opener: "your posts" }).subject === "A founding creator spot in Richmond");

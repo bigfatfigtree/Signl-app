@@ -32,13 +32,15 @@ try {
   snapshot = { handleEmail: [], linkSent: [] };
 }
 
+const { normalizeMarketName } = require("./markets");
+
 const byHandleEmail = new Map();
 for (const e of snapshot.handleEmail || []) {
   if (e && e.handle && e.email) byHandleEmail.set(`${e.handle}|${e.email}`, e);
 }
 const linkByHandleMarket = new Map();
 for (const e of snapshot.linkSent || []) {
-  if (e && e.handle && e.market) linkByHandleMarket.set(`${e.handle}|${e.market}`, e);
+  if (e && e.handle && e.market) linkByHandleMarket.set(`${e.handle}|${normalizeMarketName(e.market)}`, e);
 }
 
 function normHandle(h) {
@@ -53,7 +55,7 @@ function snapshotMatchA(handle, email) {
 
 // Snapshot Rule B: an entry whose handle and market both match.
 function snapshotMatchB(handle, market) {
-  const e = linkByHandleMarket.get(`${normHandle(handle)}|${String(market || "").trim()}`);
+  const e = linkByHandleMarket.get(`${normHandle(handle)}|${normalizeMarketName(String(market || ""))}`);
   return e ? e.source || "snapshot" : null;
 }
 
