@@ -5749,6 +5749,62 @@ async function route(event) {
 
   if (!user) return err(401, "Sign in required");
 
+  // ---------- self-serve market fix (pending creators) ----------
+  // Audit F2 (2026-10-22): the claim's market select defaults to
+  // Hampton Roads when a claim link carried no market, and the
+  // market was never editable afterward, so a wrong-market claim
+  // was a permanent dead end short of a support intervention no
+  // screen mentioned. While an application is still PENDING the
+  // creator can move it here, under exactly registration's rules:
+  // a canonical market plus a home city inside it, or the
+  // not-listed typed-city path. Once a decision lands the market
+  // is set: this route refuses, and the profile points approved
+  // creators at hello@joinsignl.com instead. The change is stamped
+  // on the record (marketChangedAt) and logged as an event; queue
+  // position and founding standing derive from the record, so
+  // they follow the new market on their own.
+  if (method === "POST" && seg[0] === "me" && seg[1] === "market") {
+    if (user.role !== "creator" || !user.creator) return err(403, "Creators only");
+    if (user.status !== "pending") return err(403, "Your application has already been decided, so your market is set. Email hello@joinsignl.com and we will help you move it.");
+    const b = parseBody(event);
+    const fromMarket = user.market;
+    const fromCity = user.city || "";
+    const unlisted = b.market === UNLISTED;
+    const market = unlisted ? { name: UNLISTED, cities: [] } : marketByName(b.market || "");
+    if (!market) return err(400, "Choose one of the SIGNL markets");
+    if (unlisted) {
+      const customCity = String(b.customCity || "").trim().slice(0, 60);
+      const customCountry = String(b.customCountry || "").trim().slice(0, 60);
+      let customState = String(b.customState || "").trim().slice(0, 60);
+      if (!customCity) return err(400, "Tell us your city, so your sign-up counts toward opening SIGNL there");
+      if (!customCountry) return err(400, "Tell us your country, so your sign-up counts toward opening SIGNL there");
+      if (customState.length === 2) customState = customState.toUpperCase();
+      user.market = UNLISTED;
+      user.city = customCity;
+      user.country = customCountry;
+      user.state = customState || null;
+    } else {
+      let city = String(b.city || "").trim();
+      if (!market.cities.includes(city)) {
+        // Keep the current city when it also belongs to the new
+        // market; otherwise the creator must pick one inside it,
+        // so a record can never carry a city outside its market.
+        if (user.city && market.cities.includes(user.city)) city = user.city;
+        else return err(400, `Choose your home city in the ${market.name} market`);
+      }
+      user.market = market.name;
+      user.city = city;
+      user.country = market.country || "United States";
+      user.state = null;
+    }
+    const ts = nowIso();
+    user.marketChangedAt = ts;
+    user.updatedAt = ts;
+    await store.set(`user:${user.id}`, user);
+    await logEvent({ type: "market_changed", actorId: user.id, actorRole: "creator", subjectId: user.id, market: user.market, data: { from: fromMarket, to: user.market, fromCity, toCity: user.city || "", via: "pending_self_serve" } });
+    return json(200, { user: await withFounding(user) });
+  }
+
   // ---------- profile ----------
   if (method === "PATCH" && seg[0] === "me" && seg[1] === "profile") {
     const b = parseBody(event);
