@@ -640,6 +640,28 @@ function primaryLabelClient(id) { return primaryMetaClient(id).label; }
 function primaryOptionsHtml(selected) {
   return PRIMARY_PLATFORMS_CLIENT.map((p) => `<option value="${p.id}"${p.id === selected ? " selected" : ""}>${p.label}</option>`).join("");
 }
+// Local audience % estimator help (audit F1 mitigation, 2026-10-22):
+// the one canonical helper text under every local % field (full
+// signup + profile edit). The gate itself is unchanged: a
+// self-reported local % stays required for completion until
+// Instagram verification exists. This teaches where the number
+// comes from and licenses a rough estimate.
+const LOCAL_PCT_HELP = "Find it on Instagram: Insights, then Audience, then your top cities. Add up the share in the cities in your market area, and enter that total. A rough number is fine: it is labeled Self-reported everywhere it appears.";
+
+// Picker disclosure (audit F3 mitigation, 2026-10-22): visit proof
+// is an Instagram post link for now, and that rule is unchanged.
+// When the picked primary platform is not Instagram, this one
+// small-print line says so at the picker, instead of the creator
+// finding out at their first visit with the clock running.
+const PROOF_DISCLOSURE = "Heads up: visit proof is an Instagram post link for now, so SIGNL visits get posted on Instagram.";
+function syncProofDisclosure(selectId, noteId) {
+  const sel = document.getElementById(selectId);
+  const note = document.getElementById(noteId);
+  if (!note) return;
+  note.style.display = sel && sel.value !== "instagram" ? "" : "none";
+}
+function syncPPlatform() { syncProofDisclosure("p-platform", "p-proof-note"); }
+
 // The handle link for a creator payload: the primary profile URL
 // when the server computed one, the Instagram URL for legacy
 // payloads. Returns "" when neither exists.
@@ -1217,6 +1239,7 @@ function signupStackTotal() {
   return total;
 }
 function syncJcPlatform() {
+  syncProofDisclosure("jc-platform", "jc-proof-note");
   const meta = primaryMetaClient(jcPrimary());
   const handleLabel = document.getElementById("jc-handle-label");
   if (handleLabel) handleLabel.textContent = `${meta.label} handle (required)`;
@@ -1302,6 +1325,7 @@ function syncQuickMarketChoice() {
 
 function syncQcPlatform() {
   const sel = document.getElementById("qc-platform");
+  syncProofDisclosure("qc-platform", "qc-proof-note");
   const meta = primaryMetaClient(sel ? sel.value : "instagram");
   const label = document.getElementById("qc-handle-label");
   if (label) label.textContent = `Your ${meta.label} handle (required)`;
@@ -1324,7 +1348,7 @@ function renderQuickClaim() {
     ${hasPrefill ? `<div class="notice blue">Your invite link told us a head start: we pre-filled what it carried below. Check it, claim your spot, and your application goes into the review queue.</div>` : ""}
     <div id="form-error"></div>
     <form onsubmit="return doQuickClaim(event)">
-      <div class="field"><label>Where is your main audience?</label><select id="qc-platform" onchange="syncQcPlatform()">${primaryOptionsHtml(pfPlatform)}</select><p class="small muted">Pick the platform your audience actually follows you on. You can add the rest of your platforms when you finish your profile.</p></div>
+      <div class="field"><label>Where is your main audience?</label><select id="qc-platform" onchange="syncQcPlatform()">${primaryOptionsHtml(pfPlatform)}</select><p class="small muted">Pick the platform your audience actually follows you on. You can add the rest of your platforms when you finish your profile.</p><p class="small muted" id="qc-proof-note" style="display:${pfPlatform !== "instagram" ? "" : "none"}">${PROOF_DISCLOSURE}</p></div>
       <div class="field"><label id="qc-handle-label">Your ${esc(primaryLabelClient(pfPlatform))} handle (required)</label><input id="qc-handle" placeholder="yourhandle" required value="${esc(pf.handle || "")}" oninput="syncQcPlatform()"><p class="small muted" id="qc-ig-link">${pf.handle ? esc(primaryMetaClient(pfPlatform).host + pf.handle) : ""}</p></div>
       <div class="field"><label>Your market</label><input id="qc-market-search" placeholder="Search markets, for example: Dubai" oninput="filterQuickMarketOptions()" style="margin-bottom:6px"><select id="qc-market" onchange="syncQuickMarketChoice()">${marketOptions(pfMarket, true)}</select><p class="small muted">Markets are grouped by country. Don't see your city? Pick "My city is not listed yet" and claim anyway.</p></div>
       <div id="qc-custom-wrap" style="display:none">
@@ -1448,7 +1472,7 @@ function renderJoinCreator() {
       <div class="field"><label>What do you do? (optional)</label><select id="jc-profession">${professionOptionsHtml("")}</select><p class="small muted">Realtors: pick Real estate agent. Your profile gains neighborhood tags, your brokerage line, and a printable listing proof sheet, built for agents who sell the neighborhoods they post about.</p></div>
       <div class="field"><label>Your university (if you are a student now)</label><input id="jc-university" placeholder="Start typing your school" maxlength="120"><div class="uni-results" id="jc-university-results"></div><p class="small muted">Current students who add their school get a campus badge on their profile, and same-school referrals group into your campus crew. Pick your school from the list if it appears; if it does not, type it in full.</p></div>
       <div class="field"><label>Student status (optional)</label><select id="jc-university-status"><option value="">Select one</option><option value="current_student">Current student</option><option value="alumni">Alumni</option><option value="not_student">Not a student</option></select><p class="small muted">The campus badge is for current students. Alumni and everyone else still get the campus crew grouping.</p></div>
-      <div class="field"><label>Where is your main audience?</label><select id="jc-platform" onchange="syncJcPlatform()">${primaryOptionsHtml(pf.platform || "instagram")}</select><p class="small muted">Pick the platform your audience actually follows you on. Your handle and your main follower count below are for this platform; the rest of your platforms stack on top.</p></div>
+      <div class="field"><label>Where is your main audience?</label><select id="jc-platform" onchange="syncJcPlatform()">${primaryOptionsHtml(pf.platform || "instagram")}</select><p class="small muted">Pick the platform your audience actually follows you on. Your handle and your main follower count below are for this platform; the rest of your platforms stack on top.</p><p class="small muted" id="jc-proof-note" style="display:${(pf.platform || "instagram") !== "instagram" ? "" : "none"}">${PROOF_DISCLOSURE}</p></div>
       <div class="form-2col">
         <div class="field"><label id="jc-handle-label">${esc(primaryLabelClient(pf.platform || "instagram"))} handle (required)</label><input id="jc-handle" placeholder="yourhandle" required value="${esc(pf.handle || "")}" oninput="syncJcPlatform()"><p class="small muted" id="jc-ig-link"></p></div>
         <div class="field"><label>TikTok handle (optional)</label><input id="jc-tiktok" placeholder="yourhandle"></div>
@@ -1478,7 +1502,7 @@ function renderJoinCreator() {
         <div class="field"><label>Typical post views (optional)</label><input type="number" id="jc-avgviews" min="0" placeholder="For example 6000"></div>
         <div class="field"><label>What share of your followers live in your market? (%)</label>
           <input type="number" id="jc-localpct" min="0" max="100" required placeholder="For example 60">
-          <p class="small muted">Be honest. This shows on your profile labeled Self-reported until Instagram verification is available. It is the number businesses care about most.</p>
+          <p class="small muted">${LOCAL_PCT_HELP} It is the number businesses care about most.</p>
         </div>
       </div>
       <div class="field"><label>Top audience cities (optional)</label><input id="jc-topcities" placeholder="For example: Virginia Beach, Norfolk, Chesapeake"><p class="small muted">Up to 5, comma separated.</p></div>
@@ -2982,7 +3006,7 @@ function creatorProfileHtml(u) {
         <p class="small muted">Pick a new photo and save to replace it. PNG, JPEG, or WebP, under 2.5 MB.</p>
       </div>
       <div class="form-2col">
-        <div class="field"><label>Where is your main audience?</label><select id="p-platform">${primaryOptionsHtml(c.primaryPlatform || "instagram")}</select></div>
+        <div class="field"><label>Where is your main audience?</label><select id="p-platform" onchange="syncPPlatform()">${primaryOptionsHtml(c.primaryPlatform || "instagram")}</select><p class="small muted" id="p-proof-note" style="display:${(c.primaryPlatform || "instagram") !== "instagram" ? "" : "none"}">${PROOF_DISCLOSURE}</p></div>
         <div class="field"><label>Your main handle</label><input id="p-handle" value="${esc(c.handle || "")}"><p class="small muted">Your handle on your main platform. Your public profile and claim links point there.</p></div>
         ${u.market === unlistedLabel()
           ? `<div class="field"><label>Your city (not an open market yet)</label><input id="p-city-text" value="${esc(u.city || "")}"></div>
@@ -3020,7 +3044,7 @@ function creatorProfileHtml(u) {
       <div class="field"><label>Max visits per week</label><input type="number" id="p-maxvisits" min="1" max="7" value="${c.maxVisitsPerWeek || 3}"><p class="small muted">Your pace, your call: 1 to 7 comped visits a week. At your max, offers still arrive but accepting waits until next week, and businesses see you as booked up this week.</p></div>
       <div class="form-2col">
         <div class="field"><label>Typical post views</label><input type="number" id="p-avgviews" min="0" value="${c.avgViews || 0}"></div>
-        <div class="field"><label>Local audience share (%)</label><input type="number" id="p-localpct" min="0" max="100" value="${c.localAudiencePct === null || c.localAudiencePct === undefined ? "" : c.localAudiencePct}"></div>
+        <div class="field"><label>Local audience share (%)</label><input type="number" id="p-localpct" min="0" max="100" value="${c.localAudiencePct === null || c.localAudiencePct === undefined ? "" : c.localAudiencePct}"><p class="small muted">${LOCAL_PCT_HELP}</p></div>
       </div>
       <div class="field"><label>Top audience cities</label><input id="p-topcities" value="${esc((c.topAudienceCities || []).join(", "))}" placeholder="Up to 5, comma separated"></div>
       <div class="field"><label>What you create in</label><div class="checkrow">${cats}</div></div>
