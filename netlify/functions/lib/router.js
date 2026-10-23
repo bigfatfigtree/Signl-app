@@ -881,6 +881,7 @@ function publicUser(u) {
   delete rest.approvedBy;
   delete rest.decisionReason;
   delete rest.decisionNote;
+  delete rest.rejectionReason;
   if (rest.role === "business" && rest.business) {
     rest.business = { ...rest.business, accessState: businessAccessState(rest) };
     delete rest.business.paymentLink;
@@ -1687,6 +1688,54 @@ function approvalEmail(user, band) {
     ...rosterBenefitsLines(user, user.market),
     "Momentum points order the creator list businesses see, and Headliners are first in line for paid campaigns.",
     ...(paidLine ? [paidLine, ""] : []),
+    "National platforms sell reach. We sell regulars.",
+    "Jeff",
+    "Founder, SIGNL",
+    "hello@joinsignl.com",
+  );
+  return { subject, text: lines.join("\n") };
+}
+
+// ---------- rejection email (audit F4, 2026-10-22) ----------
+// A human rejection used to be silent: the approval email existed
+// and no rejection email did, so a creator found out by signing in
+// to a reasonless screen. Now a person-reviewed rejection emails
+// the creator: honest and brief, not a fit for this round, the
+// reason category when the admin picked one, and an invitation to
+// apply again when their market expands. The categories are a
+// fixed list (the admin UI offers exactly these); an unknown value
+// reads as no reason given. Auto-decision rejections (test and
+// spam records) never pass through the admin review handler and
+// send NO email, exactly as before: silence there is by design.
+const REJECTION_REASONS = ["Not local enough", "Audience too small for this wave", "Content not a fit", "Market not open yet", "Other"];
+const REJECTION_REASON_LINES = {
+  "Not local enough": "your audience is not local enough to your market yet",
+  "Audience too small for this wave": "your audience is still small for this wave of the founding roster",
+  "Content not a fit": "your content is not the fit this round of the roster is being built around",
+  "Market not open yet": "your market is not open yet, and this round is for the markets opening first",
+  "Other": "your profile did not meet the founding bar for this round",
+};
+
+function rejectionEmail(user, reason) {
+  const first = greetingName(user);
+  const subject = "Your founding application: not a fit for this round";
+  const place = user.market === UNLISTED ? user.city : user.market;
+  const reasonLine = REJECTION_REASONS.includes(reason) ? REJECTION_REASON_LINES[reason] : null;
+  const lines = [
+    `Hi ${first},`,
+    "",
+    `Thank you for applying to be a SIGNL Founding Creator in ${place}. Your application was reviewed by a person, and it is not a fit for this round.`,
+  ];
+  if (reasonLine) {
+    lines.push("", `The honest reason: ${reasonLine}.`);
+  } else {
+    lines.push("", "This round is small on purpose: founding rosters start with the creators closest to the businesses opening first. That is about fit for this round, not about the quality of your work.");
+  }
+  lines.push(
+    "",
+    "Markets open in waves, and this is not a permanent no. You are welcome to apply again when your market expands, or sooner if your audience or your content changes.",
+    "Think we got it wrong? Reply to this email and a person will look again.",
+    "",
     "National platforms sell reach. We sell regulars.",
     "Jeff",
     "Founder, SIGNL",
@@ -6236,6 +6285,7 @@ async function route(event) {
         if (u.approvedBy) pub.approvedBy = u.approvedBy;
         if (u.decisionReason) pub.decisionReason = u.decisionReason;
         if (u.decisionNote) pub.decisionNote = u.decisionNote;
+        if (u.rejectionReason) pub.rejectionReason = u.rejectionReason;
         if (u.role === "creator") {
           pub.university = universityOfRecord(u);
           pub.universityStatus = universityStatusOfRecord(u);
@@ -6361,12 +6411,30 @@ async function route(event) {
       const target = await store.get(`user:${b.userId}`);
       if (!target || target.role === "admin") return err(404, "Application not found");
       if (b.decision !== "approve" && b.decision !== "reject") return err(400, "decision must be approve or reject");
+      // A human rejection of a creator may carry one reason
+      // category from the fixed list (audit F4): it is stored on
+      // the record, rides the rejection event, and is named in the
+      // rejection email. Any other value reads as no reason given.
+      // This handler is human-admin only; the auto-decision path
+      // never reaches it, so auto-rejections stay silent.
+      const rejectionReason = b.decision === "reject" && target.role === "creator" && REJECTION_REASONS.includes(b.reason) ? b.reason : null;
       target.status = b.decision === "approve" ? "approved" : "rejected";
       target.reviewedAt = nowIso();
       target.reviewedBy = user.id;
+      if (rejectionReason) target.rejectionReason = rejectionReason;
+      if (b.decision === "approve") delete target.rejectionReason;
       target.updatedAt = nowIso();
       await store.set(`user:${target.id}`, target);
-      await logEvent({ type: b.decision === "approve" ? "application_approved" : "application_rejected", actorId: user.id, actorRole: "admin", subjectId: target.id, market: target.market, data: { applicantRole: target.role, email: target.email } });
+      await logEvent({ type: b.decision === "approve" ? "application_approved" : "application_rejected", actorId: user.id, actorRole: "admin", subjectId: target.id, market: target.market, data: { applicantRole: target.role, email: target.email, ...(rejectionReason ? { rejectionReason } : {}) } });
+      if (b.decision === "reject" && target.role === "creator") {
+        // Rejection email (audit F4): queued as an event always,
+        // sent when the SMTP transport is configured, best-effort
+        // exactly like the approval email.
+        try {
+          const mail = rejectionEmail(target, rejectionReason);
+          await deliverEmail("rejection", target, mail.subject, mail.text, null);
+        } catch (e) { /* email is best-effort */ }
+      }
       if (b.decision === "approve" && target.role === "creator") {
         // Approval email auto-triggers (Jeff, 2026-10-18): queued as an
         // event always, sent when the SMTP transport is configured.
@@ -8279,4 +8347,4 @@ async function route(event) {
 
 // The email builders are exported alongside the router so the verify
 // suites can assert on the exact copy a creator receives.
-module.exports = { route, passwordResetEmail, approvalEmail, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, AD_USE_WINDOW_MONTHS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor };
+module.exports = { route, passwordResetEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, AD_USE_WINDOW_MONTHS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor };
