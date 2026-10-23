@@ -1,6 +1,6 @@
 {
  "_meta": {
-  "generatedAt": "2026-10-23T01:04:46.753Z",
+  "generatedAt": "2026-10-23T04:12:39.298Z",
   "refresh": "node scripts/build-claim-evidence.mjs (re-run after new campaign batches or sprint waves; commit the regenerated file)",
   "sources": {
    "campaign_batch:batch2-import.json": 35,
@@ -11,7 +11,7 @@
    "campaign_batch:batch2b-import.json": 2,
    "claim_sprint_email": 1,
    "email_harvest": 90,
-   "dm_claim_sprint": 15
+   "dm_claim_sprint": 16
   },
   "excluded": "signl-campaign-run/state.json DM send log: proves a DM was sent, not that the personal claim link was in it, and carries no emails; satisfies neither rule."
  },
