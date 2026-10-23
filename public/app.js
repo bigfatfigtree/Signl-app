@@ -1502,6 +1502,7 @@ function renderJoinCreator() {
       <div class="field"><label style="font-weight:500"><input type="checkbox" id="jc-agree-ftc" style="width:auto" required> I agree to clearly disclose every comp in my posts, as the FTC requires.</label></div>
       <div class="field"><label style="font-weight:500"><input type="checkbox" id="jc-agree-compliance" style="width:auto" required> I agree to post within 48 hours of every comped visit for full credit and paste the post link in the app. I understand one week is the hard stop: a redeemed visit with no post pauses my account at one week and closes it at two.</label></div>
       <div class="field"><label style="font-weight:500"><input type="checkbox" id="jc-agree-terms" style="width:auto" required> I agree to the <a href="https://joinsignl.com/terms.html" target="_blank" rel="noopener">Terms of Service</a> and <a href="https://joinsignl.com/privacy.html" target="_blank" rel="noopener">Privacy Policy</a>, and I agree SIGNL can email me about my account, launch updates and offers. I can unsubscribe from marketing emails at any time.</label></div>
+      <div id="jc-save-warn"></div>
       <button class="btn" type="submit" style="width:100%">Create my founding profile</button>
       <p class="small muted mt">Every application is reviewed by a person, and every founding application gets a decision or a clear status within 2 business days. Founding spots are held in sign-up order.</p>
     </form>
@@ -1571,6 +1572,14 @@ async function doRegisterCreator(e) {
   const customState = isUnlisted ? document.getElementById("jc-state-text").value.trim() : "";
   if (isUnlisted && !customCity) { errBox("Tell us your city, so your sign-up counts toward opening SIGNL there."); return false; }
   if (isUnlisted && !customCountry) { errBox("Tell us your country, so your sign-up counts toward opening SIGNL there."); return false; }
+  // Zero-audience warning (audit F9 twin): an all-zero stack is a
+  // valid sign-up but an unbookable profile. Say so inline before
+  // it submits, and let the creator choose.
+  const zeroWarnings = zeroAudienceWarnings(signupStackTotal());
+  if (zeroWarnings.length) {
+    const proceed = await confirmSaveWarning("jc-save-warn", "Before you sign up:", zeroWarnings, "Sign up anyway");
+    if (!proceed) return false;
+  }
   const form = e.target;
   if (!submitBusy(form, true)) return false;
   try {
@@ -3034,6 +3043,7 @@ function creatorProfileHtml(u) {
         <p class="small muted">Your strongest posts, shown on your public profile and to businesses in search results as Watch cards. Instagram, TikTok, or YouTube links only. Clear a box to remove that link.</p>
       </div>
       <div class="field"><label>Bio</label><textarea id="p-bio" rows="2">${esc(c.bio || "")}</textarea></div>
+      <div id="save-warn"></div>
       <button class="btn" type="submit">Save profile</button> <span id="save-ok" class="saved"></span><span id="profile-complete-share"></span>
     </form>
     ${accountHtml(u)}
@@ -3082,6 +3092,48 @@ function syncStackTotal() {
   syncPaidOptionProfile();
 }
 
+// ---------- un-completion guard (audit F9, 2026-10-22) ----------
+// A profile save used to be able to take a complete profile
+// offline in silence: clear the local audience %, uncheck every
+// category, or zero every audience count, and the creator vanished
+// from discovery under a cheerful "Saved." These pure helpers name
+// what a save is about to do BEFORE anything is written; the
+// warning renders inline and takes an explicit confirm, and after
+// the confirm the save proceeds exactly as before (the guard
+// warns, it never blocks, and the server truth is unchanged). Pure
+// on purpose: the verify suite exercises them directly.
+function uncompleteWarnings(wasComplete, vals) {
+  if (!wasComplete) return [];
+  const out = [];
+  if (vals.localPctBlank) out.push("Saving without a local audience % takes your profile offline to businesses until it is back.");
+  if (!vals.categoryCount) out.push("Saving with no content categories picked takes your profile offline to businesses until you pick at least one again.");
+  if (!(vals.stackTotal > 0)) out.push("Saving with every audience count at zero takes your profile offline to businesses until you add your counts back.");
+  return out;
+}
+
+// The full-signup twin (the audit's zero hole): an all-zero stack
+// passes the form and lands an unbookable profile under a "profile
+// is built" headline. Warn before the sign-up submits.
+function zeroAudienceWarnings(stackTotal) {
+  if (stackTotal > 0) return [];
+  return ["Every audience count here is zero, so this profile will not be bookable until counts are added. You can sign up now and add your counts from your profile after approval, or go back and add them first."];
+}
+
+// The shared inline confirm: renders the warning lines into the
+// mount with a proceed button and a Keep editing button, and
+// resolves with the creator's choice. Nothing is written while
+// it is open.
+function confirmSaveWarning(mountId, heading, lines, confirmLabel) {
+  return new Promise((resolve) => {
+    const mount = document.getElementById(mountId);
+    if (!mount) { resolve(true); return; }
+    mount.innerHTML = `<div class="error-box" style="text-align:left"><strong>${esc(heading)}</strong><ul style="margin:8px 0;padding-left:18px">${lines.map((l) => `<li>${esc(l)}</li>`).join("")}</ul><button type="button" class="btn small-btn danger" id="${mountId}-yes">${esc(confirmLabel)}</button> <button type="button" class="btn small-btn ghost" id="${mountId}-no">Keep editing</button></div>`;
+    try { mount.scrollIntoView({ behavior: "smooth", block: "center" }); } catch (e) { /* scroll is an enhancement */ }
+    document.getElementById(mountId + "-yes").onclick = () => { mount.innerHTML = ""; resolve(true); };
+    document.getElementById(mountId + "-no").onclick = () => { mount.innerHTML = ""; resolve(false); };
+  });
+}
+
 async function doUpdateCreator(e) {
   e.preventDefault();
   const form = e.target;
@@ -3094,6 +3146,19 @@ async function doUpdateCreator(e) {
   const wasProfileComplete = !!((state.user.profileCompletion && state.user.profileCompletion.complete) || (state.user.creator && state.user.creator.profileComplete === true));
   try {
     const uploaded = await uploadPhotoInput("p-photo");
+    // Un-completion guard (audit F9): name the consequence BEFORE
+    // the save lands and take an explicit confirm. A photo the
+    // creator picked that failed to upload is named too, instead
+    // of failing in silence (audit F11). After the confirm, the
+    // save proceeds unchanged.
+    const photoInput = document.getElementById("p-photo");
+    const photoFailed = !!(photoInput && photoInput.files && photoInput.files[0]) && !uploaded;
+    const warnings = uncompleteWarnings(wasProfileComplete, { localPctBlank: pctRaw === "", categoryCount: cats.length, stackTotal: profileStackTotal() });
+    if (photoFailed) warnings.push("Your new photo did not upload, so your profile keeps the photo it has now. You can try the photo again after saving.");
+    if (warnings.length) {
+      const proceed = await confirmSaveWarning("save-warn", "Before you save:", warnings, "Save anyway");
+      if (!proceed) { submitBusy(form, false); return false; }
+    }
     const cityEl = document.getElementById("p-city");
     const cityTextEl = document.getElementById("p-city-text");
     const data = await api("PATCH", "/me/profile", {
