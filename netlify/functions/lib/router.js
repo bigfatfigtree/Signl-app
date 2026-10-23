@@ -9,6 +9,8 @@ const { MARKETS, normalizeMarketName, TIERS, CREATOR_CATEGORIES, COMP_CATEGORIES
 const { computeLocalImpactScore, summarizeHistory } = require("./score");
 const { emailEnabled, sendEmail } = require("./email");
 const claimEvidence = require("./claim-evidence");
+const stripe = require("./stripe");
+const { buildProfilePageHtml } = require("./profile-meta");
 
 // ------------------------------------------------------------------
 // Launch shape (Jeff, 2026-10-18): creator founding sign-up is the
@@ -2535,6 +2537,63 @@ function sanitizePublicHandle(raw) {
   return h.trim().replace(/^@/, "").replace(/[^A-Za-z0-9._-]/g, "").slice(0, 40).toLowerCase();
 }
 
+// The ONE lookup behind every public surface for a creator page:
+// the /api/c/<handle> JSON route and the server-rendered /c/
+// page (Part C, 2026-10-23) both resolve through here, so the
+// page and the API can never disagree about who is public. A
+// banned creator's page stops resolving, exactly like a pending
+// or rejected one: they are not bookable, so the public page
+// comes down until an admin reinstates them.
+async function findPublicProfileUser(handleKey) {
+  if (!handleKey) return null;
+  const matches = (await allUsers())
+    .filter((u) => isRosterCreator(u) && profileCompleteOf(u) && standingState(u) !== "banned" && u.creator && String(u.creator.handle || "").toLowerCase() === handleKey)
+    .sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
+  return matches[0] || null;
+}
+
+// ---------- server-rendered /c/ pages (Jeff's ruling, 2026-10-23) ----------
+// netlify.toml rewrites /c/* to this function as seg ["cpage", ...]
+// BEFORE the SPA fallback: approved + profile-complete profiles
+// are served with real title/meta/OG tags and an index,follow
+// robots directive baked into the HTML; everyone else (pending,
+// rejected, incomplete, unknown, and deeper paths like
+// /c/<handle>/proof) gets the app shell back byte-identical, so
+// human UX is unchanged and the profile API keeps its 404.
+const FALLBACK_APP_SHELL = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"UTF-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n<title>SIGNL - Local Creator Marketing Platform</title>\n<meta name=\"description\" content=\"SIGNL connects local businesses with local creators. Businesses comp a meal or service, creators post honestly within 48 hours, and every post is tracked.\">\n<meta name=\"robots\" content=\"noindex\">\n<link rel=\"stylesheet\" href=\"/styles.css\">\n<link rel=\"stylesheet\" href=\"/theme-v2.css\">\n</head>\n<body>\n<main id=\"app\"><div class=\"loading\">Loading SIGNL...</div></main>\n<script src=\"/app.js\"></script>\n</body>\n</html>";
+let appShellCache = null;
+async function loadAppShell(event) {
+  if (appShellCache) return appShellCache;
+  let html = null;
+  try {
+    const fs = require("fs");
+    const path = require("path");
+    for (const rel of ["../../../public/index.html", "../../public/index.html"]) {
+      try { html = fs.readFileSync(path.join(__dirname, rel), "utf8"); if (html) break; } catch (e) { html = null; }
+    }
+  } catch (e) { html = null; }
+  if (!html) {
+    // Deployed functions are bundled without public/ beside them:
+    // fetch the shell the CDN is already serving for this host.
+    try {
+      const host = (event && event.headers && (event.headers["x-forwarded-host"] || event.headers.host)) || "app.joinsignl.com";
+      const res = await fetch(`https://${host}/index.html`);
+      if (res.ok) html = await res.text();
+    } catch (e) { html = null; }
+  }
+  if (!html) html = FALLBACK_APP_SHELL;
+  appShellCache = html;
+  return html;
+}
+
+function htmlPage(body) {
+  return {
+    statusCode: 200,
+    headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "public, max-age=300" },
+    body,
+  };
+}
+
 async function publicProfilePayload(u) {
   const c = u.creator || {};
   const { users, momentum } = await momentumContext();
@@ -3690,6 +3749,17 @@ const DEFAULT_CAMPAIGN_ID = "founding-creators-2026-10";
 // pitch is additive and non-exclusive. SIGNL is the local layer on
 // top of the national deals they keep, never a replacement.
 const CROSSOVER_CAMPAIGN_ID = "founding-crossover-2026-10";
+// Third campaign (Jeff, 2026-10-23): the founding BUSINESS wave.
+// Not a reply-yes hold: every recipient gets a PREBUILT signup
+// link (business name, market and category prefilled, source
+// tagged business-wave), and claiming it costs nothing and
+// commits them to nothing. Hampton Roads wording is correct in
+// this email by Jeff's ruling (businesses know the region by
+// that name) even though the app market is named Virginia Beach.
+// Recipients carry business fields (businessName, greeting,
+// category prose, appCategory, neighborhood), never a handle,
+// so they can never be read as creator claim evidence.
+const BUSINESS_CAMPAIGN_ID = "founding-businesses-2026-10";
 const CAMPAIGN_BATCH_SIZE = 8;
 // Anti-spam daily ceiling (Jeff, 2026-10-19): at most this many
 // campaign sends per America/New_York calendar day, counted across
@@ -3835,11 +3905,55 @@ function crossoverEmail(recipient) {
   return { subject, text: lines.join("\n") };
 }
 
+// The prebuilt founding signup link for a business recipient:
+// the registration form opens with the business name, market and
+// category already filled in, tagged source "business-wave"
+// (Jeff, 2026-10-23). The market rides as its app name
+// (Virginia Beach, id hampton-roads); the email copy says
+// Hampton Roads, per Jeff's business-facing ruling.
+function businessSignupLink(recipient) {
+  const pairs = [
+    ["biz", String(recipient.businessName || "")],
+    ["market", "Virginia Beach"],
+    ["category", String(recipient.appCategory || "")],
+    ["src", "business-wave"],
+  ];
+  const qs = pairs.map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&");
+  return `https://app.joinsignl.com/?${qs}`;
+}
+
+// The founding business wave email (Jeff's copy, 2026-10-23).
+// Plain text, signs first name only, no em dashes. The framing
+// is his: we pre-built the spot, claiming it gets them in early,
+// it costs nothing and commits them to nothing, and they get
+// updates as launch approaches.
+function businessWaveEmail(recipient) {
+  const business = String(recipient.businessName || "your business");
+  const subject = `Your SIGNL founding spot is pre-built, ${business}`;
+  const lines = [
+    `Hi ${String(recipient.greeting || "there")},`,
+    "",
+    "I'm Jeff, founder of SIGNL. We connect local businesses in Hampton Roads with local creators: a creator visits, posts honestly about it, and we track what the post brings in.",
+    "",
+    `We're opening Hampton Roads in November, and I've pre-built a founding spot for ${business}, my pick for the ${String(recipient.category || "business")} spot in ${String(recipient.neighborhood || "your neighborhood")}. Your registration is already filled in. One click claims it:`,
+    "",
+    businessSignupLink(recipient),
+    "",
+    `Claiming it costs nothing and commits you to nothing. It puts ${business} in early, ahead of the public launch, and you'll get updates from me as we get close to opening day. If you decide to activate when the market opens, founding pricing is locked at $299, $599 or $999 a month depending on the creator visits you want. If you never activate, that's fine too.`,
+    "",
+    "Jeff",
+    "Founder, SIGNL",
+  ];
+  return { subject, text: lines.join("\n") };
+}
+
 // Which template a campaign sends. Every campaign except the
 // crossover campaign uses the founding template; crossover
 // recipients are stored under their own campaign keys and only
-// ever receive the crossover email.
+// ever receive the crossover email. The business wave has its
+// own template and its own recipient shape.
 function campaignEmailFor(campaignId, recipient) {
+  if (campaignId === BUSINESS_CAMPAIGN_ID) return businessWaveEmail(recipient);
   return campaignId === CROSSOVER_CAMPAIGN_ID ? crossoverEmail(recipient) : campaignEmail(recipient);
 }
 
@@ -5541,6 +5655,118 @@ async function handleChangePassword(event, ctx) {
 
 // ---------- main router ----------
 
+// ---------- Stripe subscriptions (Jeff, 2026-10-23) ----------
+// App-side subscription billing for the three founding plans.
+// The live Stripe account (Extra Medium LLC) already carries the
+// products; these price IDs are the live ones (see
+// files/signl-stripe-live.md). Billing NEVER touches the founding
+// gate: checkout refuses a business whose accessState is not
+// "active", and webhook updates write only business.subscription.
+// The concierge flow (Jeff hand-sends a payment link at
+// activation) keeps working untouched; this is the self-serve
+// rail beside it, live only once STRIPE_SECRET_KEY and
+// STRIPE_WEBHOOK_SECRET are set in the Netlify env.
+const STRIPE_PLAN_PRICES = {
+  "price_1USRLTJ5DCULBlmAES4a3fNV": "self-service",
+  "price_1USRLcJ5DCULBlmAajXPmJjr": "growth",
+  "price_1USRLiJ5DCULBlmAZoITfl6r": "managed",
+};
+function stripePlanForPrice(priceId) {
+  const planId = STRIPE_PLAN_PRICES[priceId];
+  return planId ? planById(planId) : null;
+}
+function stripePriceForPlan(planId) {
+  for (const [priceId, id] of Object.entries(STRIPE_PLAN_PRICES)) {
+    if (id === planId) return priceId;
+  }
+  return null;
+}
+function stripePlanFields(plan) {
+  return plan ? { plan: plan.id, planName: plan.name, planPriceMonthly: plan.priceMonthly } : {};
+}
+
+async function updateBusinessSubscription(biz, patch) {
+  const record = (await store.get(`user:${biz.id}`)) || biz;
+  if (!record || record.role !== "business") return null;
+  record.business = record.business || {};
+  record.business.subscription = { ...(record.business.subscription || {}), ...patch, updatedAt: nowIso() };
+  record.updatedAt = nowIso();
+  await store.set(`user:${record.id}`, record);
+  return record;
+}
+
+// Resolve the business a Stripe object belongs to: the explicit
+// businessId (client_reference_id / metadata) first, then a scan
+// by the stored Stripe customer or subscription id.
+async function findBusinessForStripe({ businessId = null, customerId = null, subscriptionId = null } = {}) {
+  if (businessId) {
+    const u = await store.get(`user:${businessId}`);
+    if (u && u.role === "business") return u;
+  }
+  if (!customerId && !subscriptionId) return null;
+  const users = await allUsers();
+  return users.find((u) => u.role === "business" && u.business && u.business.subscription
+    && ((subscriptionId && u.business.subscription.id === subscriptionId)
+      || (customerId && u.business.subscription.customerId === customerId))) || null;
+}
+
+async function handleStripeWebhook(event) {
+  if (!stripe.webhookConfigured()) return err(503, "Billing is not configured.");
+  let raw = event.body || "";
+  if (event.isBase64Encoded) raw = Buffer.from(raw, "base64").toString("utf8");
+  const signature = (event.headers && (event.headers["stripe-signature"] || event.headers["Stripe-Signature"])) || "";
+  let evt = null;
+  try {
+    evt = stripe.verifyWebhookEvent(raw, signature, stripe.stripeWebhookSecret());
+  } catch (e) {
+    return err(400, "Webhook signature verification failed");
+  }
+  const obj = (evt && evt.data && evt.data.object) || {};
+  try {
+    if (evt.type === "checkout.session.completed") {
+      const businessId = obj.client_reference_id || (obj.metadata && obj.metadata.businessId) || null;
+      const biz = await findBusinessForStripe({ businessId, customerId: obj.customer || null, subscriptionId: obj.subscription || null });
+      if (biz) {
+        const plan = stripePlanForPrice(obj.metadata && obj.metadata.priceId) || planById(biz.business && biz.business.plan);
+        await updateBusinessSubscription(biz, {
+          id: obj.subscription || null,
+          customerId: obj.customer || null,
+          status: obj.payment_status === "paid" ? "active" : "incomplete",
+          ...stripePlanFields(plan),
+        });
+        await logEvent({ type: "billing_checkout_completed", actorId: null, actorRole: "system", subjectId: biz.id, market: biz.market || null, data: { subscriptionId: obj.subscription || null, customerId: obj.customer || null } });
+      }
+    } else if (evt.type === "customer.subscription.created" || evt.type === "customer.subscription.updated" || evt.type === "customer.subscription.deleted") {
+      const businessId = (obj.metadata && obj.metadata.businessId) || null;
+      const biz = await findBusinessForStripe({ businessId, customerId: obj.customer || null, subscriptionId: obj.id || null });
+      if (biz) {
+        const item = obj.items && Array.isArray(obj.items.data) ? obj.items.data[0] : null;
+        const plan = (item && item.price && stripePlanForPrice(item.price.id)) || stripePlanForPrice(obj.metadata && obj.metadata.priceId) || null;
+        await updateBusinessSubscription(biz, {
+          id: obj.id || null,
+          customerId: obj.customer || null,
+          status: evt.type === "customer.subscription.deleted" ? "canceled" : (obj.status || "active"),
+          currentPeriodEnd: obj.current_period_end ? new Date(obj.current_period_end * 1000).toISOString() : null,
+          ...stripePlanFields(plan),
+          ...(evt.type === "customer.subscription.deleted" ? { canceledAt: nowIso() } : {}),
+        });
+        await logEvent({ type: "billing_subscription_updated", actorId: null, actorRole: "system", subjectId: biz.id, market: biz.market || null, data: { subscriptionId: obj.id || null, status: evt.type === "customer.subscription.deleted" ? "canceled" : (obj.status || null), eventType: evt.type } });
+      }
+    } else if (evt.type === "invoice.payment_failed") {
+      const biz = await findBusinessForStripe({ customerId: obj.customer || null, subscriptionId: obj.subscription || null });
+      if (biz) {
+        await updateBusinessSubscription(biz, { status: "past_due", lastPaymentFailedAt: nowIso() });
+        await logEvent({ type: "billing_payment_failed", actorId: null, actorRole: "system", subjectId: biz.id, market: biz.market || null, data: { subscriptionId: obj.subscription || null, customerId: obj.customer || null } });
+      }
+    }
+  } catch (e) {
+    // The signature verified, so the event is authentic; a data
+    // problem on our side should not put Stripe into a retry loop.
+    console.error("SIGNL Stripe webhook handling error:", e);
+  }
+  return json(200, { received: true });
+}
+
 async function route(event) {
   const method = event.httpMethod || "GET";
   let path = event.path || "/";
@@ -5631,17 +5857,34 @@ async function route(event) {
   // Public creator profile: GET /api/c/<handle>. No sign-in required;
   // approved creators only, whitelist payload (see publicProfilePayload).
   if (method === "GET" && seg[0] === "c" && seg.length === 2) {
-    const handleKey = sanitizePublicHandle(seg[1]);
-    const target = handleKey
-      ? (await allUsers())
-          // A banned creator's page stops resolving, exactly like a
-          // pending or rejected one: they are not bookable, so the
-          // public page comes down until an admin reinstates them.
-          .filter((u) => isRosterCreator(u) && profileCompleteOf(u) && standingState(u) !== "banned" && u.creator && String(u.creator.handle || "").toLowerCase() === handleKey)
-          .sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1))[0]
-      : null;
+    const target = await findPublicProfileUser(sanitizePublicHandle(seg[1]));
     if (!target) return err(404, "Creator not found");
     return json(200, { profile: await publicProfilePayload(target) });
+  }
+
+  // Server-rendered profile page: /c/<handle> arrives here as
+  // seg ["cpage", <handle>] via the netlify.toml /c/* rewrite.
+  // Approved + profile-complete creators get the shell with their
+  // title/meta/OG tags and index,follow baked in (profile-meta.js);
+  // every other case, including deeper paths like the proof sheet
+  // (/c/<handle>/proof), returns the unmodified shell and the SPA
+  // renders exactly as before.
+  if (method === "GET" && seg[0] === "cpage") {
+    const shell = await loadAppShell(event);
+    if (seg.length !== 2) return htmlPage(shell);
+    const target = await findPublicProfileUser(sanitizePublicHandle(seg[1]));
+    if (!target) return htmlPage(shell);
+    const p = await publicProfilePayload(target);
+    const host = (event.headers && (event.headers["x-forwarded-host"] || event.headers.host)) || "app.joinsignl.com";
+    const place = p.unlisted ? p.city : p.market;
+    return htmlPage(buildProfilePageHtml(shell, {
+      name: p.name,
+      handle: p.handle,
+      place,
+      tierBand: p.tierBand,
+      photoUrl: p.photoUrl,
+      origin: `https://${host}`,
+    }));
   }
 
   // Creator photo serving (Jeff, 2026-10-19). An APPROVED creator's
@@ -5708,6 +5951,15 @@ async function route(event) {
     }
     const summary = await runCampaignSweep(opts);
     return json(200, { ok: true, sweep: summary });
+  }
+
+  // Stripe webhook (Jeff, 2026-10-23). Deliberately BEFORE the
+  // sign-in wall: Stripe's servers carry no session, authenticity
+  // is the HMAC signature over the raw body, verified inside
+  // handleStripeWebhook. When STRIPE_WEBHOOK_SECRET is unset the
+  // endpoint answers 503 and nothing is recorded.
+  if (method === "POST" && seg[0] === "stripe" && seg[1] === "webhook") {
+    return handleStripeWebhook(event);
   }
 
   // ---------- staff redemption mode (Jeff, 2026-10-20 late) ----------
@@ -5800,6 +6052,50 @@ async function route(event) {
   }
 
   if (!user) return err(401, "Sign in required");
+
+  // ---------- Stripe subscription checkout (Jeff, 2026-10-23) ----------
+  // An ACTIVATED business (or an admin acting for one) starts a
+  // subscription Checkout Session for one of the three founding
+  // plans. Founding-list businesses are refused: billing never
+  // bypasses the founding gate or market activation. Without
+  // STRIPE_SECRET_KEY the endpoint no-ops with a 503 and payment
+  // stays concierge, exactly as before.
+  if (method === "POST" && seg[0] === "billing" && seg[1] === "checkout") {
+    if (!stripe.billingConfigured()) return err(503, "Billing is not configured yet. Payment stays concierge for now: Jeff sends the payment step by hand at activation.");
+    const b = parseBody(event);
+    let biz = null;
+    if (user.role === "business") biz = user;
+    else if (user.role === "admin" && b.businessId) {
+      const target = await store.get(`user:${b.businessId}`);
+      if (target && target.role === "business") biz = target;
+    }
+    if (!biz) return err(403, "Only a business can start a subscription checkout.");
+    if (businessAccessState(biz) !== "active") return err(403, FOUNDING_BUSINESS_MESSAGE);
+    let priceId = typeof b.priceId === "string" ? b.priceId : null;
+    if (!priceId && typeof b.planId === "string") priceId = stripePriceForPlan(b.planId);
+    const plan = priceId ? stripePlanForPrice(priceId) : null;
+    if (!priceId || !plan) return err(400, "Choose one of the three SIGNL plans.");
+    const appUrl = (process.env.APP_URL || "https://app.joinsignl.com").replace(/\/+$/, "");
+    const existingCustomer = biz.business && biz.business.subscription && biz.business.subscription.customerId;
+    let session = null;
+    try {
+      session = await stripe.stripeApi("POST", "/v1/checkout/sessions", {
+        mode: "subscription",
+        success_url: `${appUrl}/?billing=success`,
+        cancel_url: `${appUrl}/?billing=canceled`,
+        client_reference_id: biz.id,
+        line_items: [{ price: priceId, quantity: 1 }],
+        metadata: { businessId: biz.id, priceId, planId: plan.id },
+        subscription_data: { metadata: { businessId: biz.id, priceId, planId: plan.id } },
+        ...(existingCustomer ? { customer: existingCustomer } : { customer_email: biz.email }),
+      });
+    } catch (e) {
+      console.error("SIGNL Stripe checkout error:", e);
+      return err(502, "Stripe could not start checkout. Please try again.");
+    }
+    await logEvent({ type: "billing_checkout_started", actorId: user.id, actorRole: user.role, subjectId: biz.id, market: biz.market || null, data: { planId: plan.id, priceId, sessionId: session.id || null } });
+    return json(200, { url: session.url, sessionId: session.id || null });
+  }
 
   // ---------- self-serve market fix (pending creators) ----------
   // Audit F2 (2026-10-22): the claim's market select defaults to
@@ -6636,25 +6932,54 @@ async function route(event) {
       for (const raw of b.recipients) {
         const item = raw && typeof raw === "object" ? raw : {};
         const email = String(item.email || "").trim().toLowerCase();
-        const handle = String(item.handle || "").trim().replace(/^@/, "").slice(0, 40);
-        const market = String(item.market || "").trim().slice(0, 60);
-        const opener = String(item.opener || "").trim().slice(0, 280);
-        const name = String(item.name || "").trim().slice(0, 120);
         if (!isEmail(email)) { invalid.push({ email: email || null, reason: "invalid email" }); continue; }
-        if (!handle) { invalid.push({ email, reason: "handle is required" }); continue; }
-        if (!market) { invalid.push({ email, reason: "market is required" }); continue; }
-        if (!opener) { invalid.push({ email, reason: "opener is required" }); continue; }
+        let handle = "";
+        let market = "";
+        let opener = "";
+        let name = "";
+        let bizFields = {};
+        if (campaignId === BUSINESS_CAMPAIGN_ID) {
+          // Business wave recipients are businesses, not creators:
+          // no handle, no opener. The template needs the business
+          // name, a greeting, the prose category for the sentence,
+          // the app category for the prebuilt link, and the
+          // neighborhood. handle stays empty on purpose: claim
+          // evidence only ever indexes recipients WITH a handle,
+          // so a business recipient can never be read as creator
+          // evidence.
+          const businessName = String(item.businessName || "").trim().slice(0, 120);
+          const greeting = String(item.greeting || "").trim().slice(0, 80);
+          const category = String(item.category || "").trim().slice(0, 80);
+          const appCategory = String(item.appCategory || "").trim().slice(0, 60);
+          const neighborhood = String(item.neighborhood || "").trim().slice(0, 120);
+          market = normalizeMarketName(String(item.market || "Virginia Beach").trim().slice(0, 60)) || "Virginia Beach";
+          if (!businessName) { invalid.push({ email, reason: "businessName is required" }); continue; }
+          if (!greeting) { invalid.push({ email, reason: "greeting is required" }); continue; }
+          if (!category) { invalid.push({ email, reason: "category is required" }); continue; }
+          if (!BUSINESS_CATEGORIES.includes(appCategory)) { invalid.push({ email, reason: "appCategory must be one of the app business categories" }); continue; }
+          if (!neighborhood) { invalid.push({ email, reason: "neighborhood is required" }); continue; }
+          name = businessName;
+          bizFields = { businessName, greeting, category, appCategory, neighborhood };
+        } else {
+          handle = String(item.handle || "").trim().replace(/^@/, "").slice(0, 40);
+          market = String(item.market || "").trim().slice(0, 60);
+          opener = String(item.opener || "").trim().slice(0, 280);
+          name = String(item.name || "").trim().slice(0, 120);
+          if (!handle) { invalid.push({ email, reason: "handle is required" }); continue; }
+          if (!market) { invalid.push({ email, reason: "market is required" }); continue; }
+          if (!opener) { invalid.push({ email, reason: "opener is required" }); continue; }
+        }
         const key = `campaign-recipient:${campaignId}:${email}`;
         const existing = await store.get(key);
         if (existing) { duplicates += 1; continue; }
         const ts = nowIso();
         if (testerEmails.has(email)) {
-          await store.set(key, { campaignId, email, name, handle, market, opener, status: "skipped", skipReason: "tester_account", sentAt: null, messageRef: null, importedAt: ts, updatedAt: ts });
+          await store.set(key, { campaignId, email, name, handle, market, opener, ...bizFields, status: "skipped", skipReason: "tester_account", sentAt: null, messageRef: null, importedAt: ts, updatedAt: ts });
           skipped += 1;
           continue;
         }
         if (skipSet.has(email)) {
-          await store.set(key, { campaignId, email, name, handle, market, opener, status: "skipped", skipReason: "blocklist", sentAt: null, messageRef: null, importedAt: ts, updatedAt: ts });
+          await store.set(key, { campaignId, email, name, handle, market, opener, ...bizFields, status: "skipped", skipReason: "blocklist", sentAt: null, messageRef: null, importedAt: ts, updatedAt: ts });
           skipped += 1;
           continue;
         }
@@ -6668,13 +6993,13 @@ async function route(event) {
         if (campaignId === CROSSOVER_CAMPAIGN_ID) {
           const foundingRec = await store.get(`campaign-recipient:${DEFAULT_CAMPAIGN_ID}:${email}`);
           if (foundingRec) {
-            await store.set(key, { campaignId, email, name, handle, market, opener, status: "skipped", skipReason: "cross_campaign", sentAt: null, messageRef: null, importedAt: ts, updatedAt: ts });
+            await store.set(key, { campaignId, email, name, handle, market, opener, ...bizFields, status: "skipped", skipReason: "cross_campaign", sentAt: null, messageRef: null, importedAt: ts, updatedAt: ts });
             skipped += 1;
             crossCampaign += 1;
             continue;
           }
         }
-        await store.set(key, { campaignId, email, name, handle, market, opener, status: "queued", sentAt: null, messageRef: null, importedAt: ts, updatedAt: ts });
+        await store.set(key, { campaignId, email, name, handle, market, opener, ...bizFields, status: "queued", sentAt: null, messageRef: null, importedAt: ts, updatedAt: ts });
         imported += 1;
       }
       const recipients = await listCampaignRecipients(campaignId);
@@ -8351,4 +8676,4 @@ async function route(event) {
 
 // The email builders are exported alongside the router so the verify
 // suites can assert on the exact copy a creator receives.
-module.exports = { route, passwordResetEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, AD_USE_WINDOW_MONTHS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor };
+module.exports = { route, passwordResetEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, AD_USE_WINDOW_MONTHS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor };

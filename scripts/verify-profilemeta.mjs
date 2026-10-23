@@ -1,0 +1,158 @@
+#!/usr/bin/env node
+// /c/ profile indexability verification (Jeff's ruling, 2026-10-23).
+//
+// Proves, against a throwaway local DB:
+//   - an APPROVED + profile-complete creator's /c/<handle> page is
+//     served with a real <title>, meta description, Open Graph /
+//     Twitter tags, and robots "index, follow" baked into the HTML
+//     (the dev server mirrors the production netlify.toml /c/*
+//     rewrite into the api function's cpage route);
+//   - an approved but INCOMPLETE creator gets the plain shell
+//     (generic title, noindex, no OG tags), exactly as before, and
+//     the profile API keeps its 404 for them;
+//   - an unknown handle gets the plain shell too, API 404;
+//   - deeper paths (/c/<handle>/proof) keep the plain shell so
+//     the SPA renders them unchanged;
+//   - robots.txt explicitly allows /c/;
+//   - the pure meta builder handles photos (absolute og:image)
+//     and escapes hostile names.
+//
+// Run: node scripts/verify-profilemeta.mjs
+
+import { spawn } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
+
+const root = path.dirname(fileURLToPath(import.meta.url)) + "/..";
+const PORT = 8973;
+const BASE = `http://127.0.0.1:${PORT}`;
+const ADMIN_EMAIL = "admin@signl.test";
+const ADMIN_PASSWORD = "test-admin-password-123";
+const AGREE = { agreedHonestPosts: true, agreedFtcDisclosure: true, agreedPostCompliance: true, agreedTerms: true };
+
+let passed = 0;
+let failed = 0;
+let currentPart = "boot";
+function part(name) { currentPart = name; }
+function check(name, cond, extra = "") {
+  if (cond) { passed++; console.log(`  ok [${currentPart}] ${name}`); }
+  else { failed++; console.error(`FAIL [${currentPart}] ${name}${extra ? " :: " + String(extra).slice(0, 300) : ""}`); }
+}
+
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "signl-profilemeta-"));
+const dbFile = path.join(tmp, "db.json");
+let server = null;
+
+function startServer() {
+  server = spawn("node", ["scripts/dev-server.mjs", String(PORT)], {
+    cwd: root,
+    env: { ...process.env, SIGNL_LOCAL: "1", SIGNL_LOCAL_DB: dbFile, SIGNL_TEST_ALLOW_BUSINESS: "1", SIGNL_MAIL_STUB: "1", APP_URL: BASE, ADMIN_EMAIL, ADMIN_PASSWORD },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  server.stderr.on("data", (d) => process.stderr.write("[server] " + d));
+}
+async function stopServer() {
+  if (!server) return;
+  server.kill("SIGTERM");
+  await new Promise((r) => setTimeout(r, 400));
+  server = null;
+}
+async function waitUp() {
+  for (let i = 0; i < 60; i++) {
+    try { const r = await fetch(`${BASE}/api/bootstrap`); if (r.ok) return; } catch (e) { /* not up yet */ }
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  throw new Error("server did not come up");
+}
+
+function makeClient() {
+  const jar = new Map();
+  return async function api(method, p, body) {
+    const headers = { "Content-Type": "application/json" };
+    const cookie = [...jar.entries()].map(([k, v]) => `${k}=${v}`).join("; ");
+    if (cookie) headers.Cookie = cookie;
+    const res = await fetch(BASE + p, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+    const setCookie = res.headers.get("set-cookie");
+    if (setCookie) for (const piece of setCookie.split(/,(?=[^;]+=)/)) {
+      const m = piece.trim().match(/^([^=]+)=([^;]*)/);
+      if (m) { if (m[2]) jar.set(m[1], m[2]); else jar.delete(m[1]); }
+    }
+    const text = await res.text();
+    let data = null;
+    try { data = JSON.parse(text); } catch (e) { /* html page */ }
+    return { status: res.status, data, text };
+  };
+}
+
+const require = createRequire(import.meta.url);
+const { buildProfilePageHtml } = require("../netlify/functions/lib/profile-meta.js");
+
+try {
+  part("unit: meta builder");
+  const shell = '<!DOCTYPE html><html><head><title>SIGNL - Local Creator Marketing Platform</title>\n<meta name="description" content="generic">\n<meta name="robots" content="noindex">\n</head><body></body></html>';
+  const withPhoto = buildProfilePageHtml(shell, { name: "Casey Rivers", handle: "caseyrivers", place: "Richmond", tierBand: "Locals", photoUrl: "/api/users/u1/photo", origin: "https://app.joinsignl.com" });
+  check("photo profile gets absolute og:image", withPhoto.includes('<meta property="og:image" content="https://app.joinsignl.com/api/users/u1/photo">'));
+  check("photo profile gets summary_large_image card", withPhoto.includes('<meta name="twitter:card" content="summary_large_image">'));
+  check("title mirrors the client share shell", withPhoto.includes("<title>Casey Rivers (@caseyrivers) on SIGNL | Richmond</title>"));
+  const hostile = buildProfilePageHtml(shell, { name: 'A "B" <C>', handle: "ab", place: "", tierBand: null, photoUrl: null, origin: "https://app.joinsignl.com" });
+  check("hostile name is escaped in title", !hostile.includes('<title>A "B" <C>') && hostile.includes("&quot;B&quot;"));
+  check("no photo means no og:image", !hostile.includes("og:image"));
+
+  part("http: fixtures");
+  startServer();
+  await waitUp();
+  const admin = makeClient();
+  await admin("POST", "/api/auth/login", { email: ADMIN_EMAIL, password: ADMIN_PASSWORD });
+  const complete = makeClient();
+  const regComplete = await complete("POST", "/api/auth/register", {
+    role: "creator", name: "Meta Owner", email: "metaowner@fixtures.dev", password: "<MASKED_SECRET_002>",
+    market: "Hampton Roads", city: "Norfolk", handle: "metaowner",
+    followerCount: 5100, localAudiencePct: 70, categories: ["Food & Drink"], ...AGREE,
+  });
+  check("complete creator registers", (regComplete.status === 200 || regComplete.status === 201) && !!regComplete.data.user, JSON.stringify(regComplete.data).slice(0, 200));
+  await admin("POST", "/api/admin/review", { userId: regComplete.data.user.id, decision: "approve" });
+  const incomplete = makeClient();
+  const regIncomplete = await incomplete("POST", "/api/auth/register", {
+    role: "creator", name: "Meta Incomplete", email: "metaincomplete@fixtures.dev", password: "<MASKED_SECRET_002>",
+    market: "Hampton Roads", city: "Norfolk", handle: "metaincomplete",
+    quickClaim: true, ...AGREE,
+  });
+  check("incomplete creator quick-claims (profile not complete)", (regIncomplete.status === 200 || regIncomplete.status === 201) && regIncomplete.data.user.creator.profileComplete === false, JSON.stringify(regIncomplete.data).slice(0, 250));
+  await admin("POST", "/api/admin/review", { userId: regIncomplete.data.user.id, decision: "approve" });
+
+  part("http: approved + complete page");
+  const page = await makeClient()("GET", "/c/metaowner");
+  check("page answers 200", page.status === 200);
+  check("page title is the creator title", page.text.includes("<title>Meta Owner (@metaowner) on SIGNL | Virginia Beach</title>"), page.text.slice(0, 400));
+  check("page robots is index, follow", page.text.includes('<meta name="robots" content="index, follow">'));
+  check("page carries no noindex", !page.text.includes('content="noindex"'));
+  check("page carries og:title + og:type profile", page.text.includes('<meta property="og:title"') && page.text.includes('<meta property="og:type" content="profile">'));
+  check("page description names the founding pitch", page.text.includes("Meta Owner is a founding creator on SIGNL in Virginia Beach"));
+  check("page still ships the SPA shell for humans", page.text.includes('<script src="/app.js"></script>'));
+  const apiPub = await makeClient()("GET", "/api/c/metaowner");
+  check("profile API agrees (200)", apiPub.status === 200 && apiPub.data.profile.handle === "metaowner");
+
+  part("http: incomplete + unknown keep old behavior");
+  const incPage = await makeClient()("GET", "/c/metaincomplete");
+  check("incomplete page is the plain shell", incPage.status === 200 && incPage.text.includes("<title>SIGNL - Local Creator Marketing Platform</title>") && incPage.text.includes('<meta name="robots" content="noindex">') && !incPage.text.includes("og:title"), incPage.text.slice(0, 300));
+  const incApi = await makeClient()("GET", "/api/c/metaincomplete");
+  check("incomplete profile API keeps 404", incApi.status === 404);
+  const unknownPage = await makeClient()("GET", "/c/neverexisted");
+  check("unknown page is the plain shell", unknownPage.status === 200 && unknownPage.text.includes('<meta name="robots" content="noindex">') && !unknownPage.text.includes("og:title"));
+  const unknownApi = await makeClient()("GET", "/api/c/neverexisted");
+  check("unknown profile API keeps 404", unknownApi.status === 404);
+  const proofPage = await makeClient()("GET", "/c/metaowner/proof");
+  check("proof path keeps the plain shell (SPA renders it)", proofPage.status === 200 && proofPage.text.includes('<meta name="robots" content="noindex">') && !proofPage.text.includes("og:title"));
+
+  part("http: robots.txt");
+  const robots = await (await fetch(`${BASE}/robots.txt`)).text();
+  check("robots.txt explicitly allows /c/", robots.includes("Allow: /c/") && robots.includes("Disallow: /api/"), robots);
+} finally {
+  await stopServer();
+}
+
+console.log(`\nverify-profilemeta: ${passed} passed, ${failed} failed`);
+process.exit(failed ? 1 : 0);

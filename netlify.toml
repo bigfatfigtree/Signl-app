@@ -8,6 +8,16 @@
   to = "/.netlify/functions/api/:splat"
   status = 200
 
+# Public creator profiles: /c/* is served by the api function
+# (seg "cpage") so approved, profile-complete creators get real
+# title/meta/OG tags and indexability in the served HTML
+# (Jeff's ruling, 2026-10-23). Everyone else gets the plain app
+# shell back from the same function, so the SPA behaves as before.
+[[redirects]]
+  from = "/c/*"
+  to = "/.netlify/functions/api/cpage/:splat"
+  status = 200
+
 # SPA fallback: every other route serves the app shell.
 [[redirects]]
   from = "/*"

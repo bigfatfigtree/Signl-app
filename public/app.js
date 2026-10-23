@@ -24,6 +24,7 @@ const state = {
   view: "home",
   tab: null,
   prefill: null, // claim-link prefill: sanitized ?handle=&market=&tier=
+  bizPrefill: null, // business-wave prefill: sanitized ?biz=&market=&category=
   publicHandle: null, // set when the URL is /c/<handle>
   resetToken: "", // password reset token from a /?reset= email link
   preview: null, // admin Business Preview session (see enterPreview)
@@ -162,6 +163,30 @@ function parseClaimParams(params) {
   return out;
 }
 
+// Business-wave prefill (Jeff, 2026-10-23): the founding
+// business wave email carries a prebuilt link per business,
+// ?biz=<name>&market=<name>&category=<app category>&src=business-wave.
+// Same discipline as the claim prefill: values only FILL the
+// founding registration form, anything that does not exactly
+// match the published market and category lists is silently
+// ignored, and nothing ever auto-submits. The src is persisted
+// by the generic ?src= handling in init, so the created record
+// carries signupSource "business-wave" with no extra plumbing.
+function parseBizParams(params) {
+  const out = {};
+  const biz = String(params.get("biz") || "").trim().slice(0, 120);
+  if (biz) out.businessName = biz;
+  let marketRaw = String(params.get("market") || "").trim().slice(0, 60);
+  if (marketRaw === "Hampton Roads") marketRaw = "Virginia Beach";
+  if (marketRaw && state.boot) {
+    const m = state.boot.markets.find((x) => x.name === marketRaw || x.id === marketRaw);
+    if (m) out.market = m.name;
+  }
+  const catRaw = String(params.get("category") || "").trim().slice(0, 60);
+  if (catRaw && state.boot && state.boot.businessCategories.includes(catRaw)) out.category = catRaw;
+  return out;
+}
+
 // Public creator profile (Jeff, 2026-10-19): an approved creator's
 // shareable page, app.joinsignl.com/c/<handle>. The server answers a
 // whitelist payload for approved creators only; everyone else reads
@@ -187,10 +212,11 @@ async function copyPublicProfile() {
 // profile page sets its own document title and Open Graph /
 // Twitter meta from the loaded profile, so a link the creator
 // pastes into Messages, WhatsApp, or their bio unfurls as their
-// name, photo, and market instead of a generic SIGNL card. This
-// changes share presentation only: indexability is untouched
-// (the app shell keeps its noindex; Jeff has not ruled on
-// indexing profiles).
+// name, photo, and market instead of a generic SIGNL card. Since
+// Jeff's 2026-10-23 ruling, approved + profile-complete profiles
+// ALSO get this meta server-rendered with index,follow (the
+// cpage route in the router); this client shell remains the
+// in-app fallback and keeps SPA navigation consistent.
 const DEFAULT_PAGE_TITLE = "SIGNL - Local Creator Marketing Platform";
 function setShareMeta(key, attr, content) {
   if (!content) return;
@@ -1680,6 +1706,7 @@ function renderForBusinesses() {
     <div class="plan-cards">${plans}</div>
     <div class="notice blue mt">Founding pricing: Self-Service $299/mo, Growth $599/mo, Managed $999/mo, 3-month minimum, then month to month. Joining costs nothing and charges nothing: your plan interest is recorded, no card is taken, and payment stays concierge. Jeff sends the payment step by hand when SIGNL activates your business.</div>
     <h3 class="mt">Join the founding business list</h3>
+    <div id="jb-prefill"></div>
     <div id="jb-error"></div>
     <form onsubmit="return registerBusiness(event)">
       <div class="form-2col">
@@ -1714,6 +1741,31 @@ function renderForBusinesses() {
     <p class="small muted mt">Every application is reviewed by a person; you will get a decision or a clear status within 2 business days. Creator sign-up is separate and open now: <a href="#" onclick="return go('join-creator')">become a founding creator</a>. The creator roster is not public, and it is not shown to founding businesses before activation: only businesses SIGNL activates can browse it.</p>
   </section>`;
   bizCityOptions();
+  applyBizPrefill();
+}
+
+// Business-wave prefill application (Jeff, 2026-10-23): when
+// the visitor arrived on a prebuilt link, the founding
+// registration opens with the business name, market and
+// category already filled in, under a note that says so. Every
+// field stays editable, per the form's existing conventions;
+// the business still adds its own name, email and password.
+function applyBizPrefill() {
+  const pre = state.bizPrefill;
+  if (!pre) return;
+  const note = document.getElementById("jb-prefill");
+  if (note && pre.businessName) {
+    note.innerHTML = `<div class="notice blue">We pre-built this founding registration for ${esc(pre.businessName)}. Check the details, add your name, email and password, and claim your spot.</div>`;
+  }
+  const bizEl = document.getElementById("jb-business");
+  if (bizEl && pre.businessName) bizEl.value = pre.businessName;
+  const catEl = document.getElementById("jb-category");
+  if (catEl && pre.category) catEl.value = pre.category;
+  const mktEl = document.getElementById("jb-market");
+  if (mktEl && pre.market) {
+    mktEl.value = pre.market;
+    syncBizMarketChoice();
+  }
 }
 
 function bizCityOptions() {
@@ -1790,6 +1842,7 @@ async function registerBusiness(e) {
       about: document.getElementById("jb-about").value,
       planId: document.getElementById("jb-plan").value,
       agreedTerms: document.getElementById("jb-terms").checked,
+      signupSource: storedSrc() || undefined,
     });
     state.user = data.user;
     state.view = "dashboard";
@@ -5211,7 +5264,7 @@ async function loadApplications() {
       const detail = u.role === "creator" && u.creator
         ? `@${esc(u.creator.handle)} (${esc(primaryLabelClient(u.creator.primaryPlatform || "instagram"))}) &middot; ${fmtNum(u.creator.followerCount)} followers &middot; ${esc(u.creator.tierBand)} &middot; Local: ${u.creator.localAudiencePct === null ? "not reported" : u.creator.localAudiencePct + "% (Self-reported)"} &middot; ${(u.creator.categories || []).map(esc).join(", ")} &middot; Photo: ${u.creator.hasPhoto ? "yes" : "no"} &middot; Socials: IG${u.creator.tiktokHandle ? ", TikTok" : ""}${u.creator.youtubeChannel ? ", YouTube" : ""}${u.creator.facebookUrl ? ", Facebook" : ""}${u.creator.xUrl ? ", X" : ""}${u.creator.linkedinUrl ? ", LinkedIn" : ""}${u.creator.neighborhood ? ` &middot; Area: ${esc(u.creator.neighborhood)}` : ""}${u.creator.profession ? ` &middot; Profession: ${esc(u.creator.profession)}` : ""}${u.creator.profession === "Real estate agent" && u.creator.farmAreas && u.creator.farmAreas.length ? ` &middot; Neighborhoods: ${u.creator.farmAreas.map(esc).join(", ")}` : ""}${u.creator.profession === "Real estate agent" && u.creator.brokerage ? ` &middot; Brokered by: ${esc(u.creator.brokerage)}` : ""}${u.creator.university || u.university ? ` &middot; University: ${esc(u.creator.university || u.university)}${universityStatusSuffix(u)}${u.universityUnverified || (u.creator && u.creator.universityUnverified) ? " (unverified)" : ""}` : ""}${u.referredBy ? ` &middot; Via referral: @${esc(u.referredBy)}` : ""}${u.signupSource ? ` &middot; Source: ${esc(u.signupSource)}` : ""}${u.momentum && u.momentum.signups ? ` &middot; Momentum: ${u.momentum.points} pts (${u.momentum.signups} joined, ${u.momentum.approved} approved)` : ""}${u.rejectionReason ? ` &middot; Rejection reason: ${esc(u.rejectionReason)}` : ""}`
         : u.role === "business" && u.business
-          ? `${esc(u.business.businessName)} &middot; ${esc(u.business.category)} &middot; ${esc(u.business.planName)} &middot; Access: ${businessAccessState(u) === "active" ? "Active" : "Founding list"}${u.referredBy ? ` &middot; Via referral: @${esc(u.referredBy)}` : ""}${u.signupSource ? ` &middot; Source: ${esc(u.signupSource)}` : ""}`
+          ? `${esc(u.business.businessName)} &middot; ${esc(u.business.category)} &middot; ${esc(u.business.planName)} &middot; Access: ${businessAccessState(u) === "active" ? "Active" : "Founding list"}${u.business.subscription ? ` &middot; Subscription: ${esc(u.business.subscription.status || "unknown")}${u.business.subscription.planName ? ` (${esc(u.business.subscription.planName)})` : ""}` : ""}${u.referredBy ? ` &middot; Via referral: @${esc(u.referredBy)}` : ""}${u.signupSource ? ` &middot; Source: ${esc(u.signupSource)}` : ""}`
           : "";
       return `<tr>
         <td><strong>${esc(u.name)}</strong><br><span class="muted small">${esc(u.email)}</span></td>
@@ -6232,6 +6285,16 @@ function previewDashboardHtml(d) {
       // visitor lands on the sign-up, pre-filled. Signed-in visitors
       // keep their normal landing, and nothing ever auto-submits.
       if (!state.user) state.view = "join-creator";
+    }
+    // A prebuilt business-wave link lands a logged-out business
+    // on the founding registration with its fields already
+    // filled in (Jeff, 2026-10-23). Same rule as claim links:
+    // prefill only, never a submit, signed-in visitors keep
+    // their normal landing.
+    const bizParams = parseBizParams(params);
+    if (bizParams.businessName || bizParams.market || bizParams.category) {
+      state.bizPrefill = bizParams;
+      if (!state.user) state.view = "join-business";
     }
     // The listing proof sheet (/c/<handle>/proof) is matched
     // before the plain profile: same public payload, print-first

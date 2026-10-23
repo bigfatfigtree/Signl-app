@@ -30,6 +30,28 @@ const MIME = {
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
+  // Mirror the production netlify.toml /c/* rewrite: profile
+  // paths are served by the api function (seg "cpage") so local
+  // behavior matches the deployed server-rendered meta exactly.
+  if (url.pathname.startsWith("/c/")) {
+    const event = {
+      httpMethod: "GET",
+      path: "/api/cpage" + url.pathname.slice(2),
+      headers: req.headers,
+      queryStringParameters: Object.fromEntries(url.searchParams.entries()),
+      body: null,
+      isBase64Encoded: false,
+    };
+    try {
+      const out = await handler(event);
+      res.writeHead(out.statusCode, out.headers || {});
+      res.end(out.body || "");
+    } catch (e) {
+      res.writeHead(500, { "Content-Type": "text/plain" });
+      res.end(String(e));
+    }
+    return;
+  }
   if (url.pathname.startsWith("/api/")) {
     const chunks = [];
     req.on("data", (c) => chunks.push(c));
