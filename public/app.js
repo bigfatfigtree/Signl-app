@@ -1837,9 +1837,27 @@ function renderPending() {
       <div class="field"><label>Add your profile photo now (optional)</label><input type="file" id="pending-photo" accept="image/png,image/jpeg,image/webp"></div>
       <button class="btn small-btn" onclick="return uploadPendingPhoto(event)">Upload photo</button> <span id="pending-photo-ok" class="saved"></span>
     </div>` : ""}
+    ${isCreator ? `
+    <div style="text-align:left;margin-top:16px">
+      <p class="small" style="margin:0"><a href="#" onclick="return togglePendingMarket(event)"><strong>Wrong market?</strong></a> <span class="muted">If ${place} is not where your audience is, move your application now, while it is still in review. Once a decision lands, your market is set.</span></p>
+      <div id="pm-wrap" style="display:none;margin-top:10px">
+        <div id="pm-error"></div>
+        <div class="field"><label>Your market</label><input id="pm-market-search" placeholder="Search markets, for example: Raleigh" oninput="filterPendingMarketOptions()" style="margin-bottom:6px"><select id="pm-market" onchange="syncPendingMarketChoice()">${marketOptions(u.market === unlistedLabel() ? "" : u.market, true)}</select></div>
+        <div class="field" id="pm-city-wrap"><label>Your home city</label><select id="pm-city">${cityOptions(u.market, u.city || "")}</select></div>
+        <div id="pm-custom-wrap" style="display:none">
+          <div class="field"><label>Your city</label><input id="pm-city-text" value="${esc(u.city || "")}" placeholder="For example: Tulsa"></div>
+          <div class="field"><label>Your country</label><input id="pm-country-text" value="${esc(u.country || "")}" placeholder="For example: United States"></div>
+          <div class="field"><label>Your state or province (optional)</label><input id="pm-state-text" value="${esc(u.state || "")}" placeholder="Optional, for example: OK"></div>
+          <p class="small muted">SIGNL is not open there yet. Your sign-up counts: when enough creators in your city sign up, we open there, and founding sign-ups go first.</p>
+        </div>
+        <button class="btn small-btn" onclick="return savePendingMarket(event)">Move my application</button>
+        <p class="small muted" style="margin-top:8px">Your sign-up time moves with you, so your place in line is kept.</p>
+      </div>
+    </div>` : ""}
     ${isCreator ? growRosterHtml(u) : ""}
     <div class="mt"><button class="btn ghost" onclick="signOut()">Sign out</button></div>
   </section>`;
+  if (isCreator) initPendingMarket();
 }
 
 async function uploadPendingPhoto(e) {
@@ -1848,6 +1866,89 @@ async function uploadPendingPhoto(e) {
   const el = document.getElementById("pending-photo-ok");
   if (el) el.textContent = ok ? "Photo added to your profile." : "That photo did not upload. You can add it later from your profile.";
   if (ok && state.user && state.user.creator) state.user.creator.hasPhoto = true;
+  return false;
+}
+
+// Wrong-market rescue (audit F2): while the application is in
+// review, the market can still be fixed from the pending screen.
+// The form mirrors signup (canonical market + a city inside it, or
+// the typed not-listed path); the server accepts the change only
+// while the application is pending, and stamps it on the record.
+function togglePendingMarket(e) {
+  if (e) e.preventDefault();
+  const wrap = document.getElementById("pm-wrap");
+  if (wrap) wrap.style.display = wrap.style.display === "none" ? "" : "none";
+  return false;
+}
+
+function initPendingMarket() {
+  const sel = document.getElementById("pm-market");
+  if (!sel || !state.user) return;
+  if (state.user.market === unlistedLabel()) sel.value = unlistedLabel();
+  syncPendingMarketChoice();
+}
+
+function filterPendingMarketOptions() {
+  const input = document.getElementById("pm-market-search");
+  const sel = document.getElementById("pm-market");
+  if (!input || !sel) return;
+  const q = input.value.trim().toLowerCase();
+  let firstMatch = null;
+  for (const opt of sel.querySelectorAll("option")) {
+    if (opt.value === unlistedLabel()) continue;
+    const hit = !q || opt.textContent.toLowerCase().includes(q) || opt.value.toLowerCase().includes(q);
+    opt.hidden = !hit;
+    if (hit && !firstMatch) firstMatch = opt;
+  }
+  for (const grp of sel.querySelectorAll("optgroup")) {
+    grp.hidden = ![...grp.querySelectorAll("option")].some((o) => !o.hidden);
+  }
+  const current = sel.selectedOptions && sel.selectedOptions[0];
+  if (q && firstMatch && current && current.hidden) {
+    sel.value = firstMatch.value;
+    syncPendingMarketChoice();
+  }
+}
+
+function syncPendingMarketChoice() {
+  const m = document.getElementById("pm-market");
+  if (!m) return;
+  const unlisted = m.value === unlistedLabel();
+  const customWrap = document.getElementById("pm-custom-wrap");
+  const cityWrap = document.getElementById("pm-city-wrap");
+  if (customWrap) customWrap.style.display = unlisted ? "" : "none";
+  if (cityWrap) cityWrap.style.display = unlisted ? "none" : "";
+  if (!unlisted) {
+    const citySel = document.getElementById("pm-city");
+    if (citySel) citySel.innerHTML = cityOptions(m.value, citySel.value);
+  }
+}
+
+async function savePendingMarket(e) {
+  if (e) e.preventDefault();
+  const errBox = (msg) => {
+    const el = document.getElementById("pm-error");
+    if (el) el.innerHTML = `<div class="error-box">${esc(msg)}</div>`;
+  };
+  const marketVal = document.getElementById("pm-market").value;
+  const isUnlisted = marketVal === unlistedLabel();
+  const body = { market: marketVal };
+  if (isUnlisted) {
+    body.customCity = document.getElementById("pm-city-text").value.trim();
+    body.customCountry = document.getElementById("pm-country-text").value.trim();
+    body.customState = document.getElementById("pm-state-text").value.trim();
+    if (!body.customCity) { errBox("Tell us your city, so your sign-up counts toward opening SIGNL there."); return false; }
+    if (!body.customCountry) { errBox("Tell us your country, so your sign-up counts toward opening SIGNL there."); return false; }
+  } else {
+    body.city = document.getElementById("pm-city").value;
+  }
+  try {
+    const data = await api("POST", "/me/market", body);
+    state.user = data.user;
+    render();
+  } catch (err) {
+    errBox(err.message);
+  }
   return false;
 }
 
@@ -2850,6 +2951,7 @@ function creatorProfileHtml(u) {
       <div id="my-score"><span class="badge info">Loading score...</span></div>
     </div>
     <p class="small muted">Your Local Impact Score is computed only from your stored profile and your real visit history on SIGNL. Your local audience figure shows as <strong>Self-reported</strong> until Instagram verification is available.</p>
+    <p class="small muted">Your market is set from your application and cannot be changed here. Wrong market? Email hello@joinsignl.com and we will move it for you.</p>
     ${u.status === "approved" && c.handle ? `
     <div class="field"><label>Your public profile</label>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
