@@ -5,7 +5,7 @@ const crypto = require("crypto");
 const store = require("./store");
 const auth = require("./auth");
 const { logEvent, listEvents } = require("./events");
-const { MARKETS, normalizeMarketName, TIERS, CREATOR_CATEGORIES, COMP_CATEGORIES, BUSINESS_CATEGORIES, PLANS, PROFESSIONS, REALTOR_PROFESSION, tierForFollowers, normalizeTierBand } = require("./markets");
+const { MARKETS, normalizeMarketName, resolveTypedCity, TIERS, CREATOR_CATEGORIES, COMP_CATEGORIES, BUSINESS_CATEGORIES, PLANS, PROFESSIONS, REALTOR_PROFESSION, tierForFollowers, normalizeTierBand } = require("./markets");
 const { computeLocalImpactScore, summarizeHistory } = require("./score");
 const { emailEnabled, sendEmail } = require("./email");
 const claimEvidence = require("./claim-evidence");
@@ -853,6 +853,44 @@ function marketByName(name) {
   if (!name) return null;
   const canonical = normalizeMarketName(name);
   return MARKETS.find((m) => m.name === canonical || m.id === name) || null;
+}
+
+// Typed-city resolution (Jeff, 2026-10-23): a not-listed sign-up
+// types a hometown that may already belong to a market's published
+// city list (Portsmouth is a Virginia Beach market city). Run the
+// resolver over the record's typed city with its state/country as
+// hints and apply the outcome in place:
+//   unique    - file the record under the metro (market replaced),
+//               keep the typed city as the home city, and stamp
+//               marketResolvedFrom/marketResolvedCity so the
+//               pending screen can say why.
+//   ambiguous - stay Not listed yet; store the candidate metros
+//               (marketCandidates) so the person can pick with one
+//               tap and admin can see the tie.
+//   none      - stay Not listed yet; the typed city remains the
+//               demand signal, and any stale resolution stamps go.
+// New intakes call this at registration; existing records are
+// NEVER moved by it silently - the only other callers are the
+// person's own pending market fix / profile save, and admin's
+// suggestion is applied solely through the file-market endpoint
+// behind Jeff's tap.
+function applyTypedCityResolution(user, typedCity) {
+  const res = resolveTypedCity(typedCity || "", { state: user.state, country: user.country });
+  if (res.status === "unique") {
+    user.market = res.market;
+    user.marketResolvedFrom = "typed_city";
+    user.marketResolvedCity = res.city;
+    delete user.marketCandidates;
+  } else if (res.status === "ambiguous") {
+    delete user.marketResolvedFrom;
+    delete user.marketResolvedCity;
+    user.marketCandidates = res.markets;
+  } else {
+    delete user.marketResolvedFrom;
+    delete user.marketResolvedCity;
+    delete user.marketCandidates;
+  }
+  return res;
 }
 
 function planById(id) {
@@ -5137,6 +5175,14 @@ async function handleRegister(event) {
   const signupSource = typeof b.signupSource === "string" ? b.signupSource.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 40) : "";
   if (signupSource) user.signupSource = signupSource;
 
+  // Typed-city resolution (Jeff, 2026-10-23): a not-listed sign-up
+  // whose typed city already belongs to a market is filed under
+  // that metro at intake (Portsmouth -> Virginia Beach), keeping
+  // the typed city as the home city. A tie stores its candidate
+  // metros on the record for a one-tap pick; no match leaves the
+  // record in the not-listed pool exactly as before.
+  if (unlisted) applyTypedCityResolution(user, customCity);
+
   // University resolution runs once here; both creator record
   // builders below read it, so a dataset pick, an alias, and a
   // free-typed school all land in the same canonical shape.
@@ -6136,6 +6182,23 @@ async function route(event) {
       user.city = customCity;
       user.country = customCountry;
       user.state = customState || null;
+      // Typed-city resolution (Jeff, 2026-10-23): the new typed
+      // city may already belong to a market; file it there, or
+      // store the tie's candidates for a one-tap pick.
+      applyTypedCityResolution(user, customCity);
+    } else if (user.market === UNLISTED && Array.isArray(user.marketCandidates) && user.marketCandidates.includes(market.name)) {
+      // Candidate pick (Jeff, 2026-10-23): the typed city tied
+      // between markets at intake and the creator now picks theirs
+      // with one tap. The filing keeps the typed city as the home
+      // city (the same shape a unique intake resolution stores);
+      // the picked metro's own list spelling of the town is
+      // stamped as the resolved city.
+      const res = resolveTypedCity(user.city || "", { state: user.state, country: user.country });
+      const match = (res.matches || []).find((mm) => mm.market === market.name);
+      user.market = market.name;
+      user.marketResolvedFrom = "typed_city";
+      user.marketResolvedCity = match ? match.city : user.city;
+      delete user.marketCandidates;
     } else {
       let city = String(b.city || "").trim();
       if (!market.cities.includes(city)) {
@@ -6149,6 +6212,11 @@ async function route(event) {
       user.city = city;
       user.country = market.country || "United States";
       user.state = null;
+      // An explicit market pick supersedes any earlier typed-city
+      // resolution, so its stamps and stored candidates go.
+      delete user.marketResolvedFrom;
+      delete user.marketResolvedCity;
+      delete user.marketCandidates;
     }
     const ts = nowIso();
     user.marketChangedAt = ts;
@@ -6296,6 +6364,16 @@ async function route(event) {
       if (b.country !== undefined && user.market === UNLISTED) {
         const nc = String(b.country).trim().slice(0, 60);
         if (nc) user.country = nc;
+      }
+      // Typed-city resolution (Jeff, 2026-10-23): a still-unlisted
+      // creator who corrects their city (or the state/country that
+      // disambiguates it) may have typed a town that already
+      // belongs to a market; file them under it, or refresh the
+      // stored tie candidates.
+      if (user.market === UNLISTED && (b.city !== undefined || b.state !== undefined || b.country !== undefined)) {
+        const before = user.market;
+        applyTypedCityResolution(user, user.city);
+        if (user.market !== before) changes.market = [before, user.market];
       }
       if (b.bio !== undefined) c.bio = String(b.bio).trim();
       if (b.bestWork !== undefined) {
@@ -6590,6 +6668,16 @@ async function route(event) {
         if (u.decisionReason) pub.decisionReason = u.decisionReason;
         if (u.decisionNote) pub.decisionNote = u.decisionNote;
         if (u.rejectionReason) pub.rejectionReason = u.rejectionReason;
+        // Typed-city suggestion (Jeff, 2026-10-23): an unlisted
+        // record whose typed city already belongs to a market gets
+        // the resolver's suggestion inline, so it can be filed
+        // with one tap (POST /admin/users/file-market). Computed
+        // on every read; the record itself is never moved here.
+        if (u.market === UNLISTED) {
+          const res = resolveTypedCity(u.city || "", { state: u.state, country: u.country });
+          if (res.status === "unique") pub.marketSuggestion = { status: "unique", market: res.market, city: res.city, typedCity: u.city || "" };
+          else if (res.status === "ambiguous") pub.marketSuggestion = { status: "ambiguous", markets: res.markets, city: res.city, typedCity: u.city || "" };
+        }
         if (u.role === "creator") {
           pub.university = universityOfRecord(u);
           pub.universityStatus = universityStatusOfRecord(u);
@@ -6829,6 +6917,41 @@ async function route(event) {
       target.updatedAt = nowIso();
       await store.set(`user:${target.id}`, target);
       await logEvent({ type: b.tester ? "creator_marked_tester" : "creator_unmarked_tester", actorId: user.id, actorRole: "admin", subjectId: target.id, market: target.market, data: { email: target.email, tester: b.tester } });
+      return json(200, { user: publicUser(target) });
+    }
+    // File an unlisted record under a market (Jeff, 2026-10-23):
+    // the admin tap behind the inline resolver suggestion on the
+    // applications queue. The posted market must be one the
+    // resolver currently derives from the record's typed city
+    // (the unique answer, or one of the tie's candidates), so the
+    // endpoint can never file a record somewhere its own city
+    // does not point. The typed city stays as the home city;
+    // existing records move ONLY through this tap, never silently.
+    if (method === "POST" && seg[1] === "users" && seg[2] === "file-market") {
+      const b = parseBody(event);
+      const target = b.userId ? await store.get(`user:${b.userId}`) : null;
+      if (!target || target.role === "admin") return err(404, "Application not found");
+      if (target.market !== UNLISTED) return err(400, "That record is already filed under a market");
+      const wanted = marketByName(String(b.market || ""));
+      if (!wanted) return err(400, "Choose one of the SIGNL markets");
+      const res = resolveTypedCity(target.city || "", { state: target.state, country: target.country });
+      const candidates = res.status === "unique" ? [res.market] : res.status === "ambiguous" ? res.markets : [];
+      if (!candidates.includes(wanted.name)) {
+        return err(400, candidates.length
+          ? `${target.city || "That city"} resolves to ${candidates.join(" or ")}, not ${wanted.name}`
+          : `${target.city || "That city"} does not belong to any SIGNL market yet`);
+      }
+      const match = (res.matches || []).find((mm) => mm.market === wanted.name);
+      const fromCity = target.city || "";
+      target.market = wanted.name;
+      target.marketResolvedFrom = "admin_suggestion";
+      target.marketResolvedCity = res.status === "unique" ? res.city : match ? match.city : fromCity;
+      target.marketFiledBy = user.id;
+      target.marketFiledAt = nowIso();
+      delete target.marketCandidates;
+      target.updatedAt = nowIso();
+      await store.set(`user:${target.id}`, target);
+      await logEvent({ type: "market_filed", actorId: user.id, actorRole: "admin", subjectId: target.id, market: target.market, data: { from: UNLISTED, to: target.market, typedCity: fromCity, via: "admin_suggestion" } });
       return json(200, { user: publicUser(target) });
     }
     if (method === "GET" && seg[1] === "events") {

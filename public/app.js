@@ -1012,6 +1012,37 @@ function unlistedPlace(rec) {
   return `${rec.city || ""}${region ? ", " + region : ""}`;
 }
 
+// Typed-city resolution (Jeff, 2026-10-23): when intake resolved
+// the typed city into a market, the pending screen says so in one
+// line, so a creator who typed Portsmouth learns they are filed
+// under Virginia Beach instead of parked as "not listed".
+function marketResolvedNote(u) {
+  if (!u || u.marketResolvedFrom !== "typed_city" || !u.market || u.market === unlistedLabel()) return "";
+  const city = u.marketResolvedCity || u.city || "";
+  if (!city) return "";
+  return `<p><span class="badge info">${esc(city)} is part of our ${esc(u.market)} market, so you're filed there.</span></p>`;
+}
+
+// Display spelling of a typed city for the candidate prompt: the
+// record keeps the typed value verbatim ("Portsmouth, United
+// States"); the prompt reads better without the country suffix.
+function typedCityDisplay(rec) {
+  return String((rec && rec.city) || "").replace(/,\s*(united states|usa)$/i, "");
+}
+
+// One tap on an ambiguous intake's candidate metro: files the
+// record under it through the pending market endpoint, which
+// keeps the typed city as the home city.
+async function pickCandidateMarket(e, market) {
+  if (e) e.preventDefault();
+  try {
+    const data = await api("POST", "/me/market", { market });
+    state.user = data.user;
+    render();
+  } catch (err) { alert(err.message); }
+  return false;
+}
+
 // Market options are grouped by country (United States first, then the
 // rest alphabetically), cities alphabetical inside each country, so the
 // picker stays scannable as SIGNL goes universal (39 markets, 2026-10-18).
@@ -1879,6 +1910,7 @@ function renderBusinessFoundingStatus() {
     <p><span class="badge ${inReview ? "info" : "ok"}">${inReview ? "Application in review" : "Founding list"}</span></p>
     <h2 style="margin-top:8px">${esc(bz.businessName || "Your business")} is on the founding list</h2>
     <p>You joined the <strong>Founding business list, ${esc(bizPlace)}</strong>. Businesses do not get product access yet: the creator roster stays hidden until SIGNL activates your business by hand.</p>
+    ${marketResolvedNote(u)}
     <p>${inReview
       ? `Your application is in review. Every founding application gets a decision or a clear status within 2 business days.`
       : `Your application is approved, and your founding spot is held. Activation is a separate step, done by hand by SIGNL.`}</p>
@@ -1920,6 +1952,13 @@ function renderPending() {
     <p class="muted" style="text-align:left">Your profile is not finished yet, and that is by design: when you are approved, we email you, and you finish your profile from the checklist on your dashboard (your home city, your audience counts, what share of it is local, your photo). A finished profile is what businesses see, so that step is what makes you bookable.</p>`
       : `<p>Thanks, ${esc(u.name)}. Your founding creator profile for <strong>${place}</strong> is built and in the review queue. Every founding application gets a decision or a clear status within 2 business days.</p>`}
     ${isCreator ? `<p><strong>${CREATOR_FREE_LINE}</strong></p>` : ""}
+    ${isCreator ? marketResolvedNote(u) : ""}
+    ${isCreator && isUnlisted && Array.isArray(u.marketCandidates) && u.marketCandidates.length ? `
+    <div style="text-align:left;margin-top:16px">
+      <p class="small" style="margin:0"><strong>One quick thing:</strong> ${esc(typedCityDisplay(u))} is in more than one SIGNL market. Which one is yours?</p>
+      <div style="margin-top:8px">${u.marketCandidates.map((m) => `<button class="btn small-btn" style="margin:0 8px 8px 0" onclick="return pickCandidateMarket(event, '${esc(m)}')">${esc(m)}</button>`).join("")}</div>
+      <p class="small muted" style="margin:0">Your typed city stays as your home city either way.</p>
+    </div>` : ""}
     ${isCreator && f.queueBand ? `<p><span class="badge info">${isUnlisted ? `You are in the first ${f.queueBand} to sign up in ${esc(u.city)}` : `You are in the first ${f.queueBand} founding creators in ${esc(u.market)}`}</span></p>` : ""}
     <p class="muted">${isUnlisted
       ? `SIGNL is not open in ${esc(u.city)} yet, and your sign-up counts toward opening it: we open new markets where creator sign-ups pile up, and founding sign-ups there go first. Every application is reviewed by a person. The moment you are approved, your founding status page opens here, and we will email you at ${esc(u.email)} the moment ${esc(u.city)} opens. Sign back in any time to check your status.${state.boot && state.boot.email && state.boot.email.enabled ? ` A confirmation email is on its way to ${esc(u.email)}.` : ""}`
@@ -5280,9 +5319,18 @@ async function loadApplications() {
         : u.role === "business" && u.business
           ? `${esc(u.business.businessName)} &middot; ${esc(u.business.category)} &middot; ${esc(u.business.planName)} &middot; Access: ${businessAccessState(u) === "active" ? "Active" : "Founding list"}${u.business.subscription ? ` &middot; Subscription: ${esc(u.business.subscription.status || "unknown")}${u.business.subscription.planName ? ` (${esc(u.business.subscription.planName)})` : ""}` : ""}${u.referredBy ? ` &middot; Via referral: @${esc(u.referredBy)}` : ""}${u.signupSource ? ` &middot; Source: ${esc(u.signupSource)}` : ""}`
           : "";
+      // Typed-city suggestion (Jeff, 2026-10-23): an unlisted
+      // record whose typed city already belongs to a market shows
+      // the resolver's suggestion with a one-tap filing action.
+      // An ambiguous city names its candidates, one button each.
+      const suggestion = u.marketSuggestion && u.marketSuggestion.status === "unique"
+        ? `<br><span class="small">Suggested: ${esc(u.marketSuggestion.market)} (from ${esc(u.marketSuggestion.city)})</span><br><button class="btn small-btn" style="margin-top:4px" onclick="fileUnderMarket('${u.id}', '${esc(u.marketSuggestion.market)}')">File under ${esc(u.marketSuggestion.market)}</button>`
+        : u.marketSuggestion && u.marketSuggestion.status === "ambiguous"
+          ? `<br><span class="small">Could be: ${u.marketSuggestion.markets.map(esc).join(" or ")} (from ${esc(u.marketSuggestion.city)})</span>${u.marketSuggestion.markets.map((m) => `<br><button class="btn small-btn" style="margin-top:4px" onclick="fileUnderMarket('${u.id}', '${esc(m)}')">File under ${esc(m)}</button>`).join("")}`
+          : "";
       return `<tr>
         <td><strong>${esc(u.name)}</strong><br><span class="muted small">${esc(u.email)}</span></td>
-        <td>${esc(u.role)}${standing}${businessState}</td><td>${esc(u.market)}<br><span class="muted small">${esc(u.city || "")}${u.market === unlistedLabel() ? (u.country ? ", " + esc(u.country) : u.state ? ", " + esc(u.state) : "") : (u.state ? ", " + esc(u.state) : "")}</span></td>
+        <td>${esc(u.role)}${standing}${businessState}</td><td>${esc(u.market)}<br><span class="muted small">${esc(u.city || "")}${u.market === unlistedLabel() ? (u.country ? ", " + esc(u.country) : u.state ? ", " + esc(u.state) : "") : (u.state ? ", " + esc(u.state) : "")}</span>${suggestion}</td>
         <td class="small">${detail}</td>
         <td>${fmtDate(u.createdAt)}</td>
         <td>${u.status === "pending"
@@ -5329,6 +5377,18 @@ async function loadLeaderboard() {
 async function reviewApp(userId, decision) {
   try {
     await api("POST", "/admin/review", { userId, decision });
+    loadApplications();
+  } catch (err) { alert(err.message); }
+}
+
+// File an unlisted application under the resolver's suggested
+// market (Jeff, 2026-10-23): the tap behind the "File under ..."
+// button on the applications queue. The server re-derives the
+// candidates from the record's typed city and refuses anything
+// else, and the typed city stays as the record's home city.
+async function fileUnderMarket(userId, market) {
+  try {
+    await api("POST", "/admin/users/file-market", { userId, market });
     loadApplications();
   } catch (err) { alert(err.message); }
 }

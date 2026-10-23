@@ -402,4 +402,211 @@ const PLANS = [
   },
 ];
 
-module.exports = { MARKETS, MARKET_NAME_ALIASES, normalizeMarketName, TIERS, CREATOR_CATEGORIES, COMP_CATEGORIES, BUSINESS_CATEGORIES, PLANS, PROFESSIONS, REALTOR_PROFESSION, tierForFollowers, normalizeTierBand };
+// ---------- typed-city resolution (city -> metro) ----------
+// The not-listed signup path takes a free-typed city ("Portsmouth,
+// United States") and parks the record in the "Not listed yet"
+// pool, even when the town already belongs to a market's published
+// city list above (Portsmouth is a Virginia Beach market city).
+// The resolver closes that gap: it normalizes the typed value,
+// strips state/country suffixes, and matches it against every
+// market's city list (and canonical name). Three outcomes:
+//   unique    - exactly one market claims the town; the record is
+//               filed under that metro and keeps the typed city as
+//               its home city.
+//   ambiguous - two or more markets claim the town (College Park
+//               is in both the Washington DC and Atlanta lists);
+//               the record stays unlisted with the candidates
+//               stored, and the person picks. A state suffix or
+//               hint that exactly one candidate sits in resolves
+//               the tie (College Park, GA -> Atlanta).
+//   none      - no market claims the town; the typed city stays
+//               the demand signal for a future market, unchanged.
+// State/country filtering is lenient by design: a filter that
+// would empty the candidate pool is ignored rather than punishing
+// a mistyped state, so resolution never does worse than the
+// unfiltered match.
+
+// US states and territories a typed suffix or form hint can carry,
+// as full name -> USPS code. The reverse lookup is derived.
+const US_STATE_CODES = {
+  alabama: "AL", alaska: "AK", arizona: "AZ", arkansas: "AR", california: "CA",
+  colorado: "CO", connecticut: "CT", delaware: "DE", "district of columbia": "DC",
+  florida: "FL", georgia: "GA", hawaii: "HI", idaho: "ID", illinois: "IL",
+  indiana: "IN", iowa: "IA", kansas: "KS", kentucky: "KY", louisiana: "LA",
+  maine: "ME", maryland: "MD", massachusetts: "MA", michigan: "MI",
+  minnesota: "MN", mississippi: "MS", missouri: "MO", montana: "MT",
+  nebraska: "NE", nevada: "NV", "new hampshire": "NH", "new jersey": "NJ",
+  "new mexico": "NM", "new york": "NY", "north carolina": "NC",
+  "north dakota": "ND", ohio: "OH", oklahoma: "OK", oregon: "OR",
+  pennsylvania: "PA", "rhode island": "RI", "south carolina": "SC",
+  "south dakota": "SD", tennessee: "TN", texas: "TX", utah: "UT",
+  vermont: "VT", virginia: "VA", washington: "WA", "west virginia": "WV",
+  wisconsin: "WI", wyoming: "WY", "puerto rico": "PR",
+};
+const US_STATE_BY_CODE = {};
+for (const [name, code] of Object.entries(US_STATE_CODES)) US_STATE_BY_CODE[code] = name;
+
+// The state(s) each market sits in, for tie-breaking only. Most
+// SIGNL markets are single-state; Washington DC spans DC/MD/VA and
+// Charlotte reaches into South Carolina (Rock Hill, Fort Mill).
+// International markets carry none: their country does the work.
+const MARKET_STATES = {
+  "hampton-roads": ["VA"],
+  richmond: ["VA"],
+  "washington-dc": ["DC", "MD", "VA"],
+  raleigh: ["NC"],
+  charlotte: ["NC", "SC"],
+  baltimore: ["MD"],
+  atlanta: ["GA"],
+  nashville: ["TN"],
+  austin: ["TX"],
+  dallas: ["TX"],
+  chicago: ["IL"],
+  "los-angeles": ["CA"],
+  "san-diego": ["CA"],
+  seattle: ["WA"],
+  tampa: ["FL"],
+  phoenix: ["AZ"],
+  denver: ["CO"],
+  minneapolis: ["MN"],
+  philadelphia: ["PA"],
+  pittsburgh: ["PA"],
+  cincinnati: ["OH"],
+  columbus: ["OH"],
+  "new-orleans": ["LA"],
+  orlando: ["FL"],
+  houston: ["TX"],
+  "san-antonio": ["TX"],
+  "las-vegas": ["NV"],
+  detroit: ["MI"],
+  "san-juan": ["PR"],
+};
+
+const COUNTRY_ALIASES = {
+  "united states": "United States",
+  "united states of america": "United States",
+  usa: "United States",
+  us: "United States",
+  america: "United States",
+  "united kingdom": "United Kingdom",
+  uk: "United Kingdom",
+  "great britain": "United Kingdom",
+  england: "United Kingdom",
+  canada: "Canada",
+  france: "France",
+  spain: "Spain",
+  portugal: "Portugal",
+  "united arab emirates": "United Arab Emirates",
+  uae: "United Arab Emirates",
+  "puerto rico": "Puerto Rico",
+};
+
+function normalizeCityKey(s) {
+  return String(s || "").toLowerCase().replace(/[.'’]/g, "").replace(/\s+/g, " ").trim();
+}
+
+function stateCodeOf(part) {
+  if (!part) return null;
+  const raw = String(part).trim();
+  if (/^[A-Za-z]{2}$/.test(raw) && US_STATE_BY_CODE[raw.toUpperCase()]) return raw.toUpperCase();
+  return US_STATE_CODES[normalizeCityKey(raw)] || null;
+}
+
+function countryNameOf(part) {
+  if (!part) return null;
+  return COUNTRY_ALIASES[normalizeCityKey(part)] || null;
+}
+
+// Splits a typed city value into its parts: the city itself plus
+// any state and country the value or the form hints carry.
+// "Portsmouth, United States" -> { city: "Portsmouth", country:
+// "United States" }; "College Park, GA" -> { city: "College Park",
+// state: "GA" }. The returned keys are every spelling worth trying
+// against the city lists: the city as typed, the legacy-alias
+// normalization of it (so a typed "Hampton Roads" still lands on
+// Virginia Beach), and city + state code ("Washington" + "DC" ->
+// "Washington DC", a listed city).
+function parseTypedCity(raw, hints) {
+  const h = hints || {};
+  const parts = String(raw || "").split(",").map((p) => p.trim()).filter(Boolean);
+  const city = parts.length ? parts[0] : "";
+  let state = null;
+  let country = null;
+  for (const part of parts.slice(1)) {
+    const c = countryNameOf(part);
+    if (c) { country = country || c; continue; }
+    const s = stateCodeOf(part);
+    if (s) {
+      state = state || s;
+      if (s === "PR") country = country || "Puerto Rico";
+    }
+    // Anything else (a province, a county) is ignored: it cannot
+    // disambiguate between SIGNL markets today.
+  }
+  if (!state) state = stateCodeOf(h.state);
+  if (!country) country = countryNameOf(h.country);
+  const keys = [];
+  const push = (k) => { if (k && !keys.includes(k)) keys.push(k); };
+  push(normalizeCityKey(city));
+  push(normalizeCityKey(normalizeMarketName(city)));
+  if (state) push(`${normalizeCityKey(city)} ${state.toLowerCase()}`);
+  return { city, state, country, keys };
+}
+
+function matchCityInMarkets(cityKey, markets) {
+  const hits = [];
+  for (const m of markets) {
+    const names = [m.name, ...(m.cities || [])];
+    for (const n of names) {
+      if (normalizeCityKey(normalizeMarketName(n)) === cityKey) {
+        hits.push({ market: m, matchedCity: n });
+        break;
+      }
+    }
+  }
+  return hits;
+}
+
+// resolveTypedCity(raw, hints, markets?) -> one of
+//   { status: "unique", market, marketId, city, state, country }
+//   { status: "ambiguous", markets: [names], matches: [{ market,
+//     city }], city, state, country }
+//   { status: "none", city }
+// `city` on a unique result is the matched list spelling (what the
+// confirmation copy names); on an ambiguous result it is the
+// typed city as given.
+function resolveTypedCity(raw, hints, markets) {
+  const list = Array.isArray(markets) && markets.length ? markets : MARKETS;
+  const parsed = parseTypedCity(raw, hints);
+  if (!parsed.city) return { status: "none", city: "" };
+  const byId = new Map();
+  for (const key of parsed.keys) {
+    for (const hit of matchCityInMarkets(key, list)) {
+      if (!byId.has(hit.market.id)) byId.set(hit.market.id, hit);
+    }
+  }
+  let pool = [...byId.values()];
+  if (!pool.length) return { status: "none", city: parsed.city };
+  if (parsed.country) {
+    const byCountry = pool.filter((hit) => (hit.market.country || "United States") === parsed.country);
+    if (byCountry.length) pool = byCountry;
+  }
+  if (parsed.state) {
+    const byState = pool.filter((hit) => (MARKET_STATES[hit.market.id] || []).includes(parsed.state));
+    if (byState.length) pool = byState;
+  }
+  if (pool.length === 1) {
+    const hit = pool[0];
+    return { status: "unique", market: hit.market.name, marketId: hit.market.id, city: hit.matchedCity, state: parsed.state, country: parsed.country };
+  }
+  return {
+    status: "ambiguous",
+    markets: pool.map((hit) => hit.market.name),
+    matches: pool.map((hit) => ({ market: hit.market.name, city: hit.matchedCity })),
+    city: parsed.city,
+    state: parsed.state,
+    country: parsed.country,
+  };
+}
+
+module.exports = { MARKETS, MARKET_NAME_ALIASES, normalizeMarketName, MARKET_STATES, parseTypedCity, resolveTypedCity, TIERS, CREATOR_CATEGORIES, COMP_CATEGORIES, BUSINESS_CATEGORIES, PLANS, PROFESSIONS, REALTOR_PROFESSION, tierForFollowers, normalizeTierBand };

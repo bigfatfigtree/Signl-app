@@ -564,8 +564,14 @@ try {
   check("unlisted founder gets the per-city first-100 band", regE.data.user.founding && regE.data.user.founding.queueBand === 100 && regE.data.user.founding.unlisted === true && regE.data.user.founding.marketLive === false, JSON.stringify(regE.data.user.founding));
   const regG = await client()("POST", "/api/auth/register", { ...basePayload, name: "Tulsa Two", email: "launch-g@fixtures.dev", handle: "tulsatwo", market: "Not listed yet", customCity: "Tulsa", customCountry: "United States" });
   check("second Tulsa sign-up registers (same city pool, no state needed)", regG.status === 201, JSON.stringify(regG.data));
-  const regF = await client()("POST", "/api/auth/register", { ...basePayload, name: "Toronto Creator", email: "launch-f@fixtures.dev", handle: "torontoeats", market: "Not listed yet", customCity: "Toronto", customCountry: "Canada" });
-  check("Toronto sign-up registers in its own city + country pool", regF.status === 201 && regF.data.user.founding.queueBand === 100 && regF.data.user.country === "Canada", JSON.stringify(regF.data.user && regF.data.user.founding));
+  // Waterloo, not Toronto: since the 2026-10-23 roster reset
+  // Toronto IS a market, and since the typed-city resolver shipped
+  // the same day, a typed "Toronto" files under the Toronto
+  // market at intake instead of pooling as unlisted (covered by
+  // verify-cityresolver). This case keeps its original intent: a
+  // second country's unlisted city pools on its own.
+  const regF = await client()("POST", "/api/auth/register", { ...basePayload, name: "Waterloo Creator", email: "launch-f@fixtures.dev", handle: "waterlooeats", market: "Not listed yet", customCity: "Waterloo", customCountry: "Canada" });
+  check("Waterloo sign-up registers in its own city + country pool", regF.status === 201 && regF.data.user.founding.queueBand === 100 && regF.data.user.country === "Canada", JSON.stringify(regF.data.user && regF.data.user.founding));
   const patchE = await creatorE("PATCH", "/api/me/profile", { city: "Broken Arrow", country: "United States", state: "OK" });
   check("unlisted creator can correct their typed city and country", patchE.status === 200 && patchE.data.user.city === "Broken Arrow" && patchE.data.user.country === "United States", JSON.stringify(patchE.data.user && [patchE.data.user.city, patchE.data.user.country]));
   await creatorE("PATCH", "/api/me/profile", { city: "Tulsa" });
@@ -575,8 +581,8 @@ try {
   check("unlisted founding status: city + country shown, market not live, banded standing", foundingE.status === 200 && foundingE.data.founding.unlisted === true && foundingE.data.founding.city === "Tulsa" && foundingE.data.founding.country === "United States" && foundingE.data.founding.marketLive === false && foundingE.data.founding.priorityBand === 100, JSON.stringify(foundingE.data.founding));
   const statsNow = await admin("GET", "/api/admin/stats");
   const tulsaRow = (statsNow.data.unlistedByCity || []).find((r) => r.place === "Tulsa, United States");
-  const torontoRow = (statsNow.data.unlistedByCity || []).find((r) => r.place === "Toronto, Canada");
-  check("admin stats count unlisted sign-ups per city + country (Tulsa 2, Toronto 1)", !!tulsaRow && tulsaRow.creators === 2 && tulsaRow.country === "United States" && !!torontoRow && torontoRow.creators === 1 && torontoRow.country === "Canada", JSON.stringify(statsNow.data.unlistedByCity));
+  const torontoRow = (statsNow.data.unlistedByCity || []).find((r) => r.place === "Waterloo, Canada");
+  check("admin stats count unlisted sign-ups per city + country (Tulsa 2, Waterloo 1)", !!tulsaRow && tulsaRow.creators === 2 && tulsaRow.country === "United States" && !!torontoRow && torontoRow.creators === 1 && torontoRow.country === "Canada", JSON.stringify(statsNow.data.unlistedByCity));
 
   // client wiring for the new UI: bottom nav, paid option, terms consent
   check("client ships the mobile bottom nav", appJs.text.includes("bottomnav") && appJs.text.includes("renderBottomNav"));
