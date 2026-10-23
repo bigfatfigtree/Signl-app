@@ -266,7 +266,7 @@ async function renderPublicProfile() {
     </section>`;
     return;
   }
-  const place = p.unlisted ? esc(p.city) : esc(p.market);
+  const place = p.unlisted ? esc(p.city) : esc(marketDisplayName(p.market));
   applyProfileShareShell(p, p.unlisted ? (p.city || "") : (p.market || ""));
   const initial = esc((p.name || "?").trim().charAt(0).toUpperCase() || "?");
   app.innerHTML = `
@@ -1004,6 +1004,21 @@ function unlistedLabel() {
   return (state.boot && state.boot.unlistedMarket) || "Not listed yet";
 }
 
+// Listed label for a market (Jeff, 2026-10-23): the record keeps
+// the canonical name ("Virginia Beach"); labels read
+// "Virginia Beach (Hampton Roads)" from the bootstrap label. The
+// value submitted and stored never changes.
+function marketDisplayName(name) {
+  const m = state.boot && state.boot.markets ? state.boot.markets.find((x) => x.name === name) : null;
+  return (m && m.label) || name;
+}
+
+// Conversational name for the Virginia Beach market in creator
+// and business prose (Jeff, 2026-10-23): talk says Hampton Roads.
+function marketTalkNameClient(name) {
+  return name === "Virginia Beach" ? "Hampton Roads" : name;
+}
+
 // "City, Country" for an unlisted creator. Records from before the
 // country field fall back to their stored state, so nobody's place
 // loses its second half.
@@ -1015,11 +1030,14 @@ function unlistedPlace(rec) {
 // Typed-city resolution (Jeff, 2026-10-23): when intake resolved
 // the typed city into a market, the pending screen says so in one
 // line, so a creator who typed Portsmouth learns they are filed
-// under Virginia Beach instead of parked as "not listed".
+// under the Virginia Beach market instead of parked as
+// "not listed". Conversation about that market says Hampton
+// Roads (Jeff, 2026-10-23), so its towns read that way here.
 function marketResolvedNote(u) {
   if (!u || u.marketResolvedFrom !== "typed_city" || !u.market || u.market === unlistedLabel()) return "";
   const city = u.marketResolvedCity || u.city || "";
   if (!city) return "";
+  if (u.market === "Virginia Beach") return `<p><span class="badge info">${esc(city)} is part of Hampton Roads, so you're filed there.</span></p>`;
   return `<p><span class="badge info">${esc(city)} is part of our ${esc(u.market)} market, so you're filed there.</span></p>`;
 }
 
@@ -1904,7 +1922,7 @@ function renderBusinessFoundingStatus() {
   const u = state.user;
   const bz = u.business || {};
   const inReview = u.status !== "approved";
-  const bizPlace = u.market === unlistedLabel() ? (u.city || "your city") : u.market;
+  const bizPlace = u.market === unlistedLabel() ? (u.city || "your city") : marketTalkNameClient(u.market);
   app.innerHTML = `
   <section class="panel" style="max-width:640px;margin:24px auto">
     <p><span class="badge ${inReview ? "info" : "ok"}">${inReview ? "Application in review" : "Founding list"}</span></p>
@@ -1924,7 +1942,7 @@ function renderBusinessFoundingStatus() {
     <h3 class="mt">What happens next</h3>
     <ol style="padding-left:20px">
       <li>${inReview ? "SIGNL reviews your application. You will get a decision or a clear status within 2 business days." : "Your application is approved. There is nothing else you need to send right now."}</li>
-      <li>SIGNL keeps building the founding creator roster in ${esc(u.market)}. The roster is not shown to businesses before activation.</li>
+      <li>SIGNL keeps building the founding creator roster in ${esc(marketTalkNameClient(u.market))}. The roster is not shown to businesses before activation.</li>
       <li>When your market opens, SIGNL activates founding businesses by hand, in application order. A pilot business can be activated sooner.</li>
       <li>The moment your business is activated, this page opens into the full app: browse, favorites, and draft offers. Publishing follows your market's launch.</li>
     </ol>
@@ -1940,7 +1958,7 @@ function renderPending() {
   const f = u.founding || {};
   const isCreator = u.role === "creator";
   const isUnlisted = isCreator && u.market === unlistedLabel();
-  const place = isUnlisted ? esc(unlistedPlace(u)) : esc(u.market);
+  const place = isUnlisted ? esc(unlistedPlace(u)) : esc(marketTalkNameClient(u.market));
   // Two-step claim (Jeff, 2026-10-20): a quick claim is a claimed
   // spot, not a built profile, and the screen says so plainly.
   const claimedOnly = isCreator && u.creator && u.creator.signupPath === "quick_claim" && u.creator.profileComplete === false;
@@ -1956,13 +1974,13 @@ function renderPending() {
     ${isCreator && isUnlisted && Array.isArray(u.marketCandidates) && u.marketCandidates.length ? `
     <div style="text-align:left;margin-top:16px">
       <p class="small" style="margin:0"><strong>One quick thing:</strong> ${esc(typedCityDisplay(u))} is in more than one SIGNL market. Which one is yours?</p>
-      <div style="margin-top:8px">${u.marketCandidates.map((m) => `<button class="btn small-btn" style="margin:0 8px 8px 0" onclick="return pickCandidateMarket(event, '${esc(m)}')">${esc(m)}</button>`).join("")}</div>
+      <div style="margin-top:8px">${u.marketCandidates.map((m) => `<button class="btn small-btn" style="margin:0 8px 8px 0" onclick="return pickCandidateMarket(event, '${esc(m)}')">${esc(marketDisplayName(m))}</button>`).join("")}</div>
       <p class="small muted" style="margin:0">Your typed city stays as your home city either way.</p>
     </div>` : ""}
-    ${isCreator && f.queueBand ? `<p><span class="badge info">${isUnlisted ? `You are in the first ${f.queueBand} to sign up in ${esc(u.city)}` : `You are in the first ${f.queueBand} founding creators in ${esc(u.market)}`}</span></p>` : ""}
+    ${isCreator && f.queueBand ? `<p><span class="badge info">${isUnlisted ? `You are in the first ${f.queueBand} to sign up in ${esc(u.city)}` : `You are in the first ${f.queueBand} founding creators in ${esc(marketTalkNameClient(u.market))}`}</span></p>` : ""}
     <p class="muted">${isUnlisted
       ? `SIGNL is not open in ${esc(u.city)} yet, and your sign-up counts toward opening it: we open new markets where creator sign-ups pile up, and founding sign-ups there go first. Every application is reviewed by a person. The moment you are approved, your founding status page opens here, and we will email you at ${esc(u.email)} the moment ${esc(u.city)} opens. Sign back in any time to check your status.${state.boot && state.boot.email && state.boot.email.enabled ? ` A confirmation email is on its way to ${esc(u.email)}.` : ""}`
-      : `Every application is reviewed by a person. The moment you are approved, your founding status page opens here, and we will email you at ${esc(u.email)} when ${esc(u.market)} opens to businesses in the next 30 to 90 days. Sign back in any time to check your status.${state.boot && state.boot.email && state.boot.email.enabled ? ` A confirmation email is on its way to ${esc(u.email)}.` : ""}`}</p>
+      : `Every application is reviewed by a person. The moment you are approved, your founding status page opens here, and we will email you at ${esc(u.email)} when ${esc(marketTalkNameClient(u.market))} opens to businesses in the next 30 to 90 days. Sign back in any time to check your status.${state.boot && state.boot.email && state.boot.email.enabled ? ` A confirmation email is on its way to ${esc(u.email)}.` : ""}`}</p>
     ${isCreator && !(u.creator && u.creator.hasPhoto) ? `
     <div style="text-align:left">
       <div class="field"><label>Add your profile photo now (optional)</label><input type="file" id="pending-photo" accept="image/png,image/jpeg,image/webp"></div>
@@ -2337,7 +2355,7 @@ function creatorProfileDetailHtml(c, preview) {
           <div class="cc-name">${esc(c.name)}</div>
           ${ccHandleHtml(p)}
           <div class="cc-chips">
-            <span class="cc-chip market">${esc(c.market)}</span>
+            <span class="cc-chip market">${esc(marketDisplayName(c.market))}</span>
             ${c.city ? `<span class="cc-chip">${esc(c.city)}</span>` : ""}
             ${c.neighborhood ? `<span class="cc-chip">${esc(c.neighborhood)}</span>` : ""}
             ${campusBadgeHtml(c) ? `<span class="cc-chip">${esc(c.campusBadge || (c.profile && c.profile.campusBadge) || "")}</span>` : ""}
@@ -2436,7 +2454,7 @@ function creatorCard(c, viewer, opts) {
       <div class="cc-name">${esc(c.name)}</div>
       ${p.primaryPlatform && p.primaryPlatform !== "instagram" ? ccHandleHtml(p) : `<div class="cc-handle">@${esc(p.handle || "")}</div>`}
       <div class="cc-chips">
-        <span class="cc-chip market">${esc(c.market)}</span>
+        <span class="cc-chip market">${esc(marketDisplayName(c.market))}</span>
         ${c.city ? `<span class="cc-chip">${esc(c.city)}</span>` : ""}
         ${c.neighborhood ? `<span class="cc-chip">${esc(c.neighborhood)}</span>` : ""}
         ${campusBadgeHtml(c) ? `<span class="cc-chip">${esc(c.campusBadge || (c.profile && c.profile.campusBadge) || "")}</span>` : ""}
@@ -2494,7 +2512,7 @@ function renderCreatorDash() {
   if (tab === "Dashboard") body = `<div id="creator-home"><p class="muted">Loading your dashboard...</p></div>`;
   if (tab === "Profile") body = creatorProfileHtml(u) + momentumHtml(u) + growRosterHtml(u);
   app.innerHTML = `
-    <h2>Creator dashboard <span class="badge ok">Founding Creator, ${esc(u.market)}</span></h2>
+    <h2>Creator dashboard <span class="badge ok">Founding Creator, ${esc(marketDisplayName(u.market))}</span></h2>
     ${standingBannerHtml(u)}
     ${tabsHtml(LIVE_CREATOR_TABS, tab)}
     <div id="tab-body">${body}</div>`;
@@ -2518,7 +2536,7 @@ function renderFoundingHome() {
   let tab = state.tab || "Dashboard";
   if (!FOUNDING_TABS.includes(tab)) tab = "Dashboard";
   state.tab = tab;
-  const placeBadge = u.market === unlistedLabel() ? esc(u.city || u.market) : esc(u.market);
+  const placeBadge = u.market === unlistedLabel() ? esc(u.city || u.market) : esc(marketDisplayName(u.market));
   let body = "";
   if (tab === "Dashboard") body = `<div id="founding-dash"><p class="muted">Loading your dashboard...</p></div>`;
   if (tab === "Status") body = `<h3 style="margin-top:0">Your founding status</h3><div id="founding-body"><p class="muted">Loading your founding profile...</p></div>`;
@@ -2548,22 +2566,22 @@ async function loadFoundingDashboard() {
     state.user.founding = f;
     const u = state.user;
     const isUnl = !!f.unlisted;
-    const place = isUnl ? esc(unlistedPlace(f)) : esc(f.market);
+    const place = isUnl ? esc(unlistedPlace(f)) : esc(marketTalkNameClient(f.market));
     const hour = new Date().getHours();
     const greet = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
     const firstName = (u.name || "").trim().split(" ")[0] || u.name || "";
     el.innerHTML = `
     <p class="ui-kicker">Creator dashboard &middot; ${place}</p>
     <h3 class="home-title">${esc(greet)}, ${esc(firstName)}.</h3>
-    <p class="ui-sub">${isUnl ? `${esc(f.city)} opens when sign-ups pile up. Until then, this is your home: your numbers, your paid lane, and your roster.` : `${esc(f.market)} opens to businesses in the next ${esc(f.launchWindow)}. Until then, this is your home: your numbers, your paid lane, and your roster.`}</p>
+    <p class="ui-sub">${isUnl ? `${esc(f.city)} opens when sign-ups pile up. Until then, this is your home: your numbers, your paid lane, and your roster.` : `${esc(marketTalkNameClient(f.market))} opens to businesses in the next ${esc(f.launchWindow)}. Until then, this is your home: your numbers, your paid lane, and your roster.`}</p>
     ${profileCompletionHtml(u)}
     <div class="panel">
       <div class="flex-between">
         <div>
           <h3 style="margin:0">${esc(u.name)} <span class="muted">@${esc(p.handle || "")}</span></h3>
-          <p class="muted small">${isUnl ? place : `${esc(f.market)} &middot; ${esc(f.city)}`}</p>
+          <p class="muted small">${isUnl ? place : `${esc(marketDisplayName(f.market))} &middot; ${esc(f.city)}`}</p>
         </div>
-        <span class="badge ok" style="font-size:0.95rem;padding:6px 14px">Founding Creator, ${isUnl ? esc(f.city) : esc(f.market)}</span>
+        <span class="badge ok" style="font-size:0.95rem;padding:6px 14px">Founding Creator, ${isUnl ? esc(f.city) : esc(marketDisplayName(f.market))}</span>
       </div>
       <p class="small">${p.localAudiencePct === null || p.localAudiencePct === undefined ? `Add your local audience % in your profile` : `${p.localAudiencePct}% local audience`} &middot; ${esc(p.tierBand || "")} tier &middot; ${fmtNum(totalAudienceOf(card))} total audience${f.priorityBand ? ` &middot; in the first ${f.priorityBand} founding creators in ${place}` : ""}${campusBadgeHtml(card)}</p>
       <p style="margin-bottom:0">${scoreBadge(card.localImpactScore)}</p>
@@ -2597,14 +2615,14 @@ async function loadFoundingStatus() {
       <div class="flex-between">
         <div>
           <h3 style="margin:0">${esc(state.user.name)} <span class="muted">@${esc(p.handle || "")}</span></h3>
-          <p class="muted small">${isUnl ? place : `${esc(f.market)} &middot; ${esc(f.city)}`}</p>
+          <p class="muted small">${isUnl ? place : `${esc(marketDisplayName(f.market))} &middot; ${esc(f.city)}`}</p>
         </div>
-        <span class="badge ok" style="font-size:0.95rem;padding:6px 14px">Founding Creator, ${isUnl ? esc(f.city) : esc(f.market)}</span>
+        <span class="badge ok" style="font-size:0.95rem;padding:6px 14px">Founding Creator, ${isUnl ? esc(f.city) : esc(marketDisplayName(f.market))}</span>
       </div>
       <p class="small">You are in. Know a creator who should be on the founding roster with you? ${shareBlockHtml(p.handle, isUnl ? (f.city || "") : (f.market || ""), "Share your invite")}</p>
       <div class="grid cols-2 mt">
         <div>
-          ${card.photoUrl ? `<img class="profile-photo" src="${esc(card.photoUrl)}" alt="Your profile photo">` : `<div class="photo-placeholder">No photo yet. Add one in your profile below; businesses see it when ${isUnl ? esc(f.city) : esc(f.market)} opens.</div>`}
+          ${card.photoUrl ? `<img class="profile-photo" src="${esc(card.photoUrl)}" alt="Your profile photo">` : `<div class="photo-placeholder">No photo yet. Add one in your profile below; businesses see it when ${isUnl ? esc(f.city) : esc(marketTalkNameClient(f.market))} opens.</div>`}
           ${p.localAudiencePct === null || p.localAudiencePct === undefined
             ? `<p>Local audience not reported yet. <a href="#" onclick="return go('dashboard','Profile')">Add your local audience %</a> in your profile: it is the number businesses look at first.</p>`
             : `<p>${p.localAudiencePct}% local audience <span class="badge info">${esc(p.localAudienceSource || "Self-reported")}</span></p>`}
@@ -2636,10 +2654,10 @@ async function loadFoundingStatus() {
       <p class="muted">Keep your profile current in the meantime; when ${esc(f.city)} opens, your local audience percentage is what businesses look at first.</p>
     </div>` : `
     <div class="panel">
-      <h3 style="margin-top:0">${esc(f.market)} opens to businesses in the next ${esc(f.launchWindow)}</h3>
-      <p>Your market is not taking business offers yet, and that is on purpose: SIGNL opens each market with its founding roster in place. The moment ${esc(f.market)} opens, we email you at <strong>${esc(state.user.email)}</strong>.</p>
-      ${f.priorityBand ? `<p><span class="badge tier" style="font-size:0.95rem;padding:6px 14px">You are in the first ${f.priorityBand} founding creators in ${esc(f.market)}</span></p>
-      <p class="muted">You signed up early, and it counts: when businesses search the ${esc(f.market)} roster, founding creators are ordered by sign-up time, earliest first.</p>` : ""}
+      <h3 style="margin-top:0">${esc(marketTalkNameClient(f.market))} opens to businesses in the next ${esc(f.launchWindow)}</h3>
+      <p>Your market is not taking business offers yet, and that is on purpose: SIGNL opens each market with its founding roster in place. The moment ${esc(marketTalkNameClient(f.market))} opens, we email you at <strong>${esc(state.user.email)}</strong>.</p>
+      ${f.priorityBand ? `<p><span class="badge tier" style="font-size:0.95rem;padding:6px 14px">You are in the first ${f.priorityBand} founding creators in ${esc(marketTalkNameClient(f.market))}</span></p>
+      <p class="muted">You signed up early, and it counts: when businesses search the ${esc(marketTalkNameClient(f.market))} roster, founding creators are ordered by sign-up time, earliest first.</p>` : ""}
       <p class="muted">Offers, visits, and messages unlock here the day your market activates. Keep your profile current in the meantime; your local audience percentage is what businesses look at first.</p>
     </div>`}`;
   } catch (err) {
@@ -2874,7 +2892,7 @@ function homeOpportunitiesHtml(offers, u) {
   <section class="panel">
     <p class="ui-kicker">Opportunities</p>
     <h3 class="home-h">No open offers right now</h3>
-    <p class="small muted">When businesses in ${esc(u.market)} send offers, the best fits land here first. Your local audience percentage is what businesses look at hardest; keep it current in your profile.</p>
+    <p class="small muted">When businesses in ${esc(marketTalkNameClient(u.market))} send offers, the best fits land here first. Your local audience percentage is what businesses look at hardest; keep it current in your profile.</p>
   </section>`;
   }
   const cards = ranked.slice(0, 3).map((o) => {
@@ -2897,7 +2915,7 @@ function homeOpportunitiesHtml(offers, u) {
   return `
   <section class="panel">
     <p class="ui-kicker">Opportunities picked for you</p>
-    <h3 class="home-h">Open offers in ${esc(u.market)}</h3>
+    <h3 class="home-h">Open offers in ${esc(marketTalkNameClient(u.market))}</h3>
     <p class="small muted">Sent to you first, then the open offers with the most spots left. The full deal is on every card before you accept anything.</p>
     ${cards}
     ${ranked.length > 3 ? `<div class="home-actions"><button class="btn small-btn ghost" onclick="return go('dashboard','Offers')">See all ${ranked.length} offers</button></div>` : ""}
@@ -3031,7 +3049,7 @@ async function loadCreatorHome() {
     const greet = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
     const firstName = (u.name || "").trim().split(" ")[0] || u.name || "";
     el.innerHTML = `
-    <p class="ui-kicker">Creator dashboard &middot; ${esc(u.market)}</p>
+    <p class="ui-kicker">Creator dashboard &middot; ${esc(marketDisplayName(u.market))}</p>
     <h3 class="home-title">${esc(greet)}, ${esc(firstName)}.</h3>
     <p class="ui-sub">Your active visit, your offers, and your money, in one place.</p>
     ${profileCompletionHtml(u)}
@@ -3077,7 +3095,7 @@ function creatorProfileHtml(u) {
     <div class="flex-between">
       <div>
         <h3 style="margin:0">${esc(u.name)} <span class="muted">@${esc(c.handle || "")}</span></h3>
-        <p class="muted small">${esc(u.market)} &middot; ${esc(u.city || "")}${c.neighborhood ? ` &middot; ${esc(c.neighborhood)}` : ""}</p>
+        <p class="muted small">${esc(marketDisplayName(u.market))} &middot; ${esc(u.city || "")}${c.neighborhood ? ` &middot; ${esc(c.neighborhood)}` : ""}</p>
       </div>
       <div id="my-score"><span class="badge info">Loading score...</span></div>
     </div>
@@ -3110,7 +3128,7 @@ function creatorProfileHtml(u) {
           ? `<div class="field"><label>Your city (not an open market yet)</label><input id="p-city-text" value="${esc(u.city || "")}"></div>
              <div class="field"><label>Your country</label><input id="p-country-text" value="${esc(u.country || "")}"></div>
              <div class="field"><label>Your state or province (optional)</label><input id="p-state-text" value="${esc(u.state || "")}"></div>`
-          : `<div class="field"><label>Home city (${esc(u.market)})</label><select id="p-city">${cityOptions(u.market, u.city || "")}</select></div>`}
+          : `<div class="field"><label>Home city (${esc(marketDisplayName(u.market))})</label><select id="p-city">${cityOptions(u.market, u.city || "")}</select></div>`}
       </div>
       <div class="field"><label>Your neighborhood or area</label><input id="p-neighborhood" value="${esc(c.neighborhood || "")}" placeholder="Optional, for example: Oceanfront, Ghent, Town Center" maxlength="80"><p class="small muted">Businesses search by neighborhood. Keep it to the area you actually post from.</p></div>
       <div class="field"><label>What do you do? (optional)</label><select id="p-profession" onchange="syncRealtorFields()">${professionOptionsHtml(c.profession || "")}</select><p class="small muted">Realtors: pick Real estate agent and the fields below appear. Your profile gains a Realtor badge, your neighborhoods, and your brokerage line.</p></div>
@@ -3356,7 +3374,7 @@ async function doUpdateCreator(e) {
 async function loadCreatorOffers() {
   const el = document.getElementById("tab-body");
   el.innerHTML = `
-    <div id="open-board"><p class="muted">Loading open offers in ${esc(state.user.market)}...</p></div>
+    <div id="open-board"><p class="muted">Loading open offers in ${esc(marketTalkNameClient(state.user.market))}...</p></div>
     <div id="my-apps"></div>
     <h3>Sent directly to you</h3>
     <div id="direct-offers"><p class="muted">Loading your direct offers...</p></div>
@@ -3369,7 +3387,7 @@ async function loadCreatorOffers() {
     const data = await api("GET", "/offers");
     const mine = (data.offers || []).filter((o) => o.lane !== "open");
     if (!mine.length) {
-      direct.innerHTML = `<div class="panel center"><h3>No direct offers yet</h3><p class="muted">When a business in ${esc(state.user.market)} sends you an offer directly, it lands here. Open offers from every business in your market are on the board above.</p></div>`;
+      direct.innerHTML = `<div class="panel center"><h3>No direct offers yet</h3><p class="muted">When a business in ${esc(marketTalkNameClient(state.user.market))} sends you an offer directly, it lands here. Open offers from every business in your market are on the board above.</p></div>`;
       return;
     }
     direct.innerHTML = mine.map((o) => { const rights = o.visitRights || rightsForVisit(o.kind); return `
@@ -3420,7 +3438,7 @@ async function loadOpenBoard() {
     const data = await api("GET", "/open-offers");
     if (!document.getElementById("open-board")) return;
     if (!data.offers.length) {
-      el.innerHTML = `<div class="panel"><h3 style="margin-top:0">Open offers in ${esc(state.user.market)}</h3><p class="muted">No open offers right now. Businesses post terms here and creators apply with one tap: your profile card is the application, no pitch to write. New offers land here first.</p></div>`;
+      el.innerHTML = `<div class="panel"><h3 style="margin-top:0">Open offers in ${esc(marketTalkNameClient(state.user.market))}</h3><p class="muted">No open offers right now. Businesses post terms here and creators apply with one tap: your profile card is the application, no pitch to write. New offers land here first.</p></div>`;
       return;
     }
     el.innerHTML = `<h3>Open offers in ${esc(state.user.market)}</h3>
@@ -3619,7 +3637,7 @@ function visitCard(b, role) {
   let html = `
   <div class="card visit-card mb">
     <div class="flex-between"><strong>${esc(b.title)}</strong>${complianceBadge(b)}</div>
-    <p class="small muted">${role === "creator" ? esc(b.businessName) : "@" + esc(b.creatorHandle) + " (" + esc(b.creatorName) + ")"} &middot; ${esc(b.market)} &middot; Comp: ${esc(b.whatComped)} (cap $${b.dollarCap})${b.kind === "paid" || b.paidLane ? "" : ` &middot; ${coversLine(b)}`} &middot; Visit: ${esc(b.visitDate || b.visitWindow || "Flexible")}</p>`;
+    <p class="small muted">${role === "creator" ? esc(b.businessName) : "@" + esc(b.creatorHandle) + " (" + esc(b.creatorName) + ")"} &middot; ${esc(marketDisplayName(b.market))} &middot; Comp: ${esc(b.whatComped)} (cap $${b.dollarCap})${b.kind === "paid" || b.paidLane ? "" : ` &middot; ${coversLine(b)}`} &middot; Visit: ${esc(b.visitDate || b.visitWindow || "Flexible")}</p>`;
   if (b.paidBrief) {
     html += `<p class="small"><strong>Key points from the business:</strong> ${esc(b.paidBrief)}</p>`;
   }
@@ -3948,7 +3966,7 @@ async function loadBusinessHome() {
     const rebook = (d.rebookPrompts || []).map((r) => `
       <div class="ui-row"><span class="k"><strong>${esc(r.name)}</strong> @${esc(r.handle)}${r.isFavorite ? ` <span class="badge tier">Favorite</span>` : ""}<br><span class="small muted">${r.source === "delivered" ? `Delivered for you before: ${esc(r.lastTitle || "")}` : "Saved in your favorites"}</span></span><span class="v"><button class="btn small-btn" onclick="rebookCreator('${esc(r.creatorId)}')">Invite again</button></span></div>`).join("");
     el.innerHTML = `
-    ${d.marketLive ? "" : `<div class="notice blue"><strong>Your market opens in the next 30 to 90 days.</strong> Everything you build now is ready for launch day: browse the founding roster, save favorites, and draft offers. Publishing, selecting, and bookings switch on the moment ${esc(d.business.market)} goes live.</div>`}
+    ${d.marketLive ? "" : `<div class="notice blue"><strong>Your market opens in the next 30 to 90 days.</strong> Everything you build now is ready for launch day: browse the founding roster, save favorites, and draft offers. Publishing, selecting, and bookings switch on the moment ${esc(marketTalkNameClient(d.business.market))} goes live.</div>`}
     <div class="panel" style="display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap">
       <div><strong>At the register?</strong><p class="muted small" style="margin:4px 0 0">Staff mode redeems a creator's visit with just the staff PIN and the creator's code. No owner login needed at the counter.</p></div>
       <button class="btn" onclick="return goStaff()">Redeem a creator visit</button>
@@ -5275,7 +5293,7 @@ async function loadMarkets() {
       <div class="table-wrap panel"><table>
         <tr><th>Market</th><th>Status</th><th>Approved creators</th><th>Pending creators</th><th>Approved businesses</th><th>Action</th></tr>
         ${data.markets.map((m) => `<tr>
-          <td><strong>${esc(m.name)}</strong><br><span class="muted small">${esc(m.label)} &middot; ${esc(m.country || "United States")}</span></td>
+          <td><strong>${esc(m.label)}</strong><br><span class="muted small">${esc(m.country || "United States")}</span></td>
           <td>${m.live ? `<span class="badge ok">Live</span>` : `<span class="badge info">Founding only</span>`}</td>
           <td>${m.creatorsApproved}</td><td>${m.creatorsPending}</td><td>${m.businessesApproved}<br><span class="muted small">Founding list: ${m.businessesFounding || 0} &middot; Active: ${m.businessesActive || 0}</span></td>
           <td><button class="btn small-btn ${m.live ? "danger" : ""}" onclick="toggleMarket('${esc(m.name)}', ${m.live ? "false" : "true"})">${m.live ? "Deactivate" : "Activate market"}</button>${m.businessesFounding ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="activateMarketBusinesses('${esc(m.name)}')">Activate founding businesses (${m.businessesFounding})</button>` : ""}</td>
@@ -5330,7 +5348,7 @@ async function loadApplications() {
           : "";
       return `<tr>
         <td><strong>${esc(u.name)}</strong><br><span class="muted small">${esc(u.email)}</span></td>
-        <td>${esc(u.role)}${standing}${businessState}</td><td>${esc(u.market)}<br><span class="muted small">${esc(u.city || "")}${u.market === unlistedLabel() ? (u.country ? ", " + esc(u.country) : u.state ? ", " + esc(u.state) : "") : (u.state ? ", " + esc(u.state) : "")}</span>${suggestion}</td>
+        <td>${esc(u.role)}${standing}${businessState}</td><td>${esc(marketDisplayName(u.market))}<br><span class="muted small">${esc(u.city || "")}${u.market === unlistedLabel() ? (u.country ? ", " + esc(u.country) : u.state ? ", " + esc(u.state) : "") : (u.state ? ", " + esc(u.state) : "")}</span>${suggestion}</td>
         <td class="small">${detail}</td>
         <td>${fmtDate(u.createdAt)}</td>
         <td>${u.status === "pending"
@@ -5890,7 +5908,7 @@ function pvBookingCard(b) {
   let html = `
   <div class="card visit-card mb">
     <div class="flex-between"><strong>${esc(b.title)}</strong>${pvStateBadge(b)}</div>
-    <p class="small muted">@${esc(b.creatorHandle)} (${esc(b.creatorName)})${b.creatorTier ? ` &middot; ${esc(b.creatorTier)}` : ""} &middot; ${esc(b.market)} &middot; Comp: ${esc(b.whatComped)} (cap $${b.dollarCap}${b.compCostModeled ? `, at cost $${b.compCostModeled} modeled` : ""})${b.kind === "paid" ? "" : ` &middot; ${coversLine(b)}`} &middot; Window: ${esc(b.visitWindow || "Flexible")}</p>`;
+    <p class="small muted">@${esc(b.creatorHandle)} (${esc(b.creatorName)})${b.creatorTier ? ` &middot; ${esc(b.creatorTier)}` : ""} &middot; ${esc(marketDisplayName(b.market))} &middot; Comp: ${esc(b.whatComped)} (cap $${b.dollarCap}${b.compCostModeled ? `, at cost $${b.compCostModeled} modeled` : ""})${b.kind === "paid" ? "" : ` &middot; ${coversLine(b)}`} &middot; Window: ${esc(b.visitWindow || "Flexible")}</p>`;
   if (b.state === "booked") {
     html += `
     <div class="grid cols-2">
@@ -6187,7 +6205,7 @@ function pvManagedHtml(mv) {
   return `
   <section class="panel">
     <div class="flex-between">
-      <div><h3 style="margin:0">${esc(mv.business.name)}</h3><p class="muted small" style="margin:4px 0 0">${esc(mv.business.category)} &middot; ${esc(mv.business.market)} &middot; a second simulated business, shown so the Managed budget has somewhere honest to live</p></div>
+      <div><h3 style="margin:0">${esc(mv.business.name)}</h3><p class="muted small" style="margin:4px 0 0">${esc(mv.business.category)} &middot; ${esc(marketDisplayName(mv.business.market))} &middot; a second simulated business, shown so the Managed budget has somewhere honest to live</p></div>
       <span class="badge info">${esc(mv.plan.name)} plan &middot; $${mv.plan.priceMonthly}/mo &middot; ${mv.plan.visitsPerMonth} visits/mo</span>
     </div>
     <h4>Monthly creator talent budget</h4>
@@ -6283,7 +6301,7 @@ function previewDashboardHtml(d) {
   return `
   <section class="panel">
     <div class="flex-between">
-      <div><h3 style="margin:0">${esc(d.business.name)}</h3><p class="muted small" style="margin:4px 0 0">${esc(d.business.category)} &middot; ${esc(d.business.market)} &middot; ${esc(s.cycleLabel)} cycle</p></div>
+      <div><h3 style="margin:0">${esc(d.business.name)}</h3><p class="muted small" style="margin:4px 0 0">${esc(d.business.category)} &middot; ${esc(marketDisplayName(d.business.market))} &middot; ${esc(s.cycleLabel)} cycle</p></div>
       <span class="badge info">${esc(plan.name)} plan &middot; $${plan.priceMonthly}/mo &middot; ${plan.visitsPerMonth} visits/mo</span>
     </div>
     <p class="small muted" style="margin-bottom:0">The dashboard a business lives in: who is booked, the codes, redemption, the post clock, delivered posts, and what it all returned. Every booking below is simulated over the real founding roster, with simulated visit data. Nothing here is saved, and no creator is contacted.</p>

@@ -1543,7 +1543,7 @@ function signupConfirmationEmail(user, band) {
   if (band) lines.push(`You are in the first ${band} creators to sign up in ${user.market}. That founding standing never expires.`);
   lines.push(
     "",
-    `What happens next: when you are approved, we email you again and your founding status page opens at app.joinsignl.com. ${user.market} opens to businesses in the next ${LAUNCH_WINDOW_TEXT}, and founding creators get first pick of offers when it does.`,
+    `What happens next: when you are approved, we email you again and your founding status page opens at app.joinsignl.com. ${marketTalkName(user.market)} opens to businesses in the next ${LAUNCH_WINDOW_TEXT}, and founding creators get first pick of offers when it does.`,
     "",
     "The deal, as agreed: businesses comp you a meal or service, you post your honest experience within 48 hours, and you disclose the comp in the post. Nobody can ever ask you for a positive post.",
     "",
@@ -1624,7 +1624,7 @@ function claimConfirmationEmail(user, band) {
   if (band) lines.push(`You are in the first ${band} creators to sign up in ${user.market}. Founding spots are held in sign-up order, and that standing never expires.`);
   lines.push(
     "",
-    `What happens next: when you are approved, we email you again, and that is when you finish your profile: your home city, your audience counts, your local audience percentage, your categories, and the rest of what businesses see. A finished profile is what makes you visible to businesses, so the approval email is the one to act on. ${user.market} opens to businesses in the next ${LAUNCH_WINDOW_TEXT}, and founding creators with finished profiles get first pick of offers when it does.`,
+    `What happens next: when you are approved, we email you again, and that is when you finish your profile: your home city, your audience counts, your local audience percentage, your categories, and the rest of what businesses see. A finished profile is what makes you visible to businesses, so the approval email is the one to act on. ${marketTalkName(user.market)} opens to businesses in the next ${LAUNCH_WINDOW_TEXT}, and founding creators with finished profiles get first pick of offers when it does.`,
     "",
     "The deal, as agreed: businesses comp you a meal or service, you post your honest experience within 48 hours, and you disclose the comp in the post. Nobody can ever ask you for a positive post.",
     "",
@@ -1652,7 +1652,7 @@ function profileCompletionReminderEmail(user) {
   const labels = { city: "your home city", audience: "your audience counts", categories: "your content categories", local: "your local audience %" };
   const missing = completion.missing.map((id) => labels[id] || id).join(", ");
   const unlisted = user.market === UNLISTED;
-  const place = unlisted ? user.city : user.market;
+  const place = unlisted ? user.city : marketTalkName(user.market);
   const subject = "Finish your SIGNL profile to be launch-ready";
   const lines = [
     `Hi ${first},`,
@@ -1666,7 +1666,7 @@ function profileCompletionReminderEmail(user) {
     "",
     unlisted
       ? `We open new markets where creator sign-ups pile up, and when ${user.city} opens, founding creators with finished profiles go first.`
-      : `${user.market} opens to businesses in the next ${LAUNCH_WINDOW_TEXT}, and founding creators with finished profiles get first pick of every offer.`,
+      : `${marketTalkName(user.market)} opens to businesses in the next ${LAUNCH_WINDOW_TEXT}, and founding creators with finished profiles get first pick of every offer.`,
     "",
     "National platforms sell reach. We sell regulars.",
     "Jeff",
@@ -1727,7 +1727,7 @@ function approvalEmail(user, band) {
   ];
   if (band) lines.push(`You are in the first ${band} founding creators in ${user.market}. Founding spots are held in sign-up order, and founding creators are shown to businesses in that order.`);
   lines.push(
-    ...finishLines(`${user.market} opens to businesses in the next ${LAUNCH_WINDOW_TEXT}. The moment it opens, we email you again, and founding creators get first pick of every offer. Your local audience percentage is the number businesses look at first, so keep it honest and current.`),
+    ...finishLines(`${marketTalkName(user.market)} opens to businesses in the next ${LAUNCH_WINDOW_TEXT}. The moment it opens, we email you again, and founding creators get first pick of every offer. Your local audience percentage is the number businesses look at first, so keep it honest and current.`),
     ...rosterBenefitsLines(user, user.market),
     "Momentum points order the creator list businesses see, and Headliners are first in line for paid campaigns.",
     ...(paidLine ? [paidLine, ""] : []),
@@ -1803,7 +1803,7 @@ const CREATOR_FILM_URL = "https://joinsignl.com/creators.html";
 function recruiterKitEmail(user) {
   const first = greetingName(user);
   const unlisted = user.market === UNLISTED;
-  const place = unlisted ? user.city : user.market;
+  const place = unlisted ? user.city : marketTalkName(user.market);
   const subject = "Your Founding Creator badge is ready";
   const lines = [
     `Hi ${first},`,
@@ -1820,7 +1820,7 @@ function recruiterKitEmail(user) {
     "",
     unlisted
       ? `${user.city} opens when sign-ups there pile up, and every creator who joins through you makes that happen sooner. The moment it opens, you hear from me.`
-      : `${user.market} opens to businesses in the next ${LAUNCH_WINDOW_TEXT}. The moment it opens, you hear from me.`,
+      : `${marketTalkName(user.market)} opens to businesses in the next ${LAUNCH_WINDOW_TEXT}. The moment it opens, you hear from me.`,
     "",
     "National platforms sell reach. We sell regulars.",
     "",
@@ -3857,13 +3857,22 @@ function campaignFirstName(name) {
   return first;
 }
 
+// How the Virginia Beach market is talked about, vs how it is
+// filed (Jeff, 2026-10-23): conversation with creators and
+// businesses in the area says "Hampton Roads"; listed labels read
+// "Virginia Beach (Hampton Roads)"; the canonical market name in
+// data, claim links and filing statements stays "Virginia Beach".
+function marketTalkName(market) {
+  return normalizeMarketName(market) === "Virginia Beach" ? "Hampton Roads" : String(market || "");
+}
+
 // The founding mechanics paragraph, shared by both campaign
 // templates: Virginia Beach (the November / Black Friday launch
 // market) vs every other founding market, which opens in waves in
 // the following 30 to 90 days.
 function campaignMarketParagraph(market) {
   return normalizeMarketName(market) === "Virginia Beach"
-    ? "Virginia Beach, covering all of Hampton Roads, launches in November, and our opening push is Black Friday weekend. Founding creators are joining now, in sign-up order, and the first ones in get seen first when businesses start choosing."
+    ? "Hampton Roads launches in November, and our opening push is Black Friday weekend. Founding creators are joining now, in sign-up order, and the first ones in get seen first when businesses start choosing."
     : `${market} is a founding market: sign-ups are open now and offers open city by city as the roster fills, in the next 30 to 90 days. Founding creators join in sign-up order, and the first ones in get seen first when businesses start choosing.`;
 }
 
@@ -6045,7 +6054,7 @@ async function route(event) {
     else if (user && user.role === "business") biz = user;
     if (!biz) return err(400, "Enter the business code from the register card first.");
     if (businessAccessState(biz) !== "active") return err(403, FOUNDING_BUSINESS_MESSAGE);
-    if (!(await isMarketLive(biz.market))) return err(403, `The ${biz.market} market has not launched yet, so there are no creator visits to redeem.`);
+    if (!(await isMarketLive(biz.market))) return err(403, `The ${marketTalkName(biz.market)} market has not launched yet, so there are no creator visits to redeem.`);
     const pinRec = await staffPinRecord(biz.id);
     if (!pinRec) return err(403, "The owner has not set a staff PIN yet. Ask the owner to set one under Plan, then Staff redemption.");
     if (await staffPinLock(biz.id)) return err(429, "Too many wrong PIN tries. Staff sign-in is locked for 15 minutes. Ask the owner if the PIN changed.");
@@ -6700,7 +6709,7 @@ async function route(event) {
       // testers never count toward the roster, matching the markets
       // endpoint. Computed from the records on every read.
       const LAUNCH_MARKET_LABELS = [
-        ["Virginia Beach", "Virginia Beach (all of Hampton Roads)"],
+        ["Virginia Beach", "Virginia Beach (Hampton Roads)"],
         ["Richmond", "Richmond"],
         ["Raleigh", "Raleigh/The Triangle"],
         ["Washington DC", "Washington DC"],
@@ -7499,7 +7508,7 @@ async function route(event) {
         (seg[0] === "offers" && (method === "GET" || method === "POST" || method === "PATCH"))
       );
       if (!businessPrelaunchOk) {
-        return err(403, `The ${user.market} market has not launched yet. Founding creators keep priority in the order they signed up, and ${user.market} opens to businesses in the next ${LAUNCH_WINDOW_TEXT}.`);
+        return err(403, `The ${marketTalkName(user.market)} market has not launched yet. Founding creators keep priority in the order they signed up, and ${marketTalkName(user.market)} opens to businesses in the next ${LAUNCH_WINDOW_TEXT}.`);
       }
     }
   }
@@ -7766,7 +7775,7 @@ async function route(event) {
       const offer = await store.get(`offer:${seg[1]}`);
       if (!offer || offer.businessId !== user.id) return err(404, "Offer not found");
       if (offer.status !== "draft") return err(409, "Only a draft can be published");
-      if (!(await isMarketLive(user.market))) return err(403, `Offers go live when your market opens. ${user.market} opens to businesses in the next ${LAUNCH_WINDOW_TEXT}; your draft is saved and ready to publish that day.`);
+      if (!(await isMarketLive(user.market))) return err(403, `Offers go live when your market opens. ${marketTalkName(user.market)} opens to businesses in the next ${LAUNCH_WINDOW_TEXT}; your draft is saved and ready to publish that day.`);
       if (kindOf(offer) === "comp" && Array.isArray(offer.targetTiers) && offer.targetTiers.length) {
         const block = dignityBlock(offer.dollarCap, offer.targetTiers);
         if (block) return err(400, `A $${offer.dollarCap} comp is below the dignity floor for ${block.tier} (floor $${block.floor}). Raise the comp value or remove ${block.tier} from who can apply before publishing.`);

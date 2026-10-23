@@ -36,7 +36,7 @@ import path from "node:path";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
-const { MARKETS, resolveTypedCity } = require("../netlify/functions/lib/markets.js");
+const { MARKETS, resolveTypedCity, normalizeMarketName } = require("../netlify/functions/lib/markets.js");
 
 const PORT = 8979;
 const BASE = `http://localhost:${PORT}`;
@@ -127,6 +127,15 @@ const rNone = resolveTypedCity("Tulsa");
 check("a town in no market's list resolves none (Tulsa)", rNone.status === "none", JSON.stringify(rNone));
 const rAlias = resolveTypedCity("Hampton Roads");
 check("the legacy market name reuses the alias machinery (Hampton Roads -> Virginia Beach)", rAlias.status === "unique" && rAlias.market === "Virginia Beach", JSON.stringify(rAlias));
+// Naming rule (Jeff, 2026-10-23): listed label reads
+// "Virginia Beach (Hampton Roads)" while the canonical name in
+// data stays "Virginia Beach", and a submitted label value must
+// normalize back to the canonical market, never a phantom one.
+const hrMarket = MARKETS.find((m) => m.id === "hampton-roads");
+check("the listed label for the Virginia Beach market is 'Virginia Beach (Hampton Roads)'", !!hrMarket && hrMarket.label === "Virginia Beach (Hampton Roads)" && hrMarket.name === "Virginia Beach", hrMarket && hrMarket.label);
+check("normalizeMarketName keeps the canonical name ('Virginia Beach' -> 'Virginia Beach')", normalizeMarketName("Virginia Beach") === "Virginia Beach");
+check("normalizeMarketName resolves the listed label ('Virginia Beach (Hampton Roads)' -> 'Virginia Beach')", normalizeMarketName("Virginia Beach (Hampton Roads)") === "Virginia Beach");
+check("normalizeMarketName still resolves the legacy alias ('Hampton Roads' -> 'Virginia Beach')", normalizeMarketName("Hampton Roads") === "Virginia Beach");
 const rWash = resolveTypedCity("Washington, DC");
 check("city + state recombine (Washington, DC -> Washington DC)", rWash.status === "unique" && rWash.market === "Washington DC", JSON.stringify(rWash));
 const rArlReal = resolveTypedCity("Arlington");

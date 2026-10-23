@@ -28,7 +28,7 @@ const MARKETS = [
   {
     id: "hampton-roads",
     name: "Virginia Beach",
-    label: "Virginia Beach, Virginia (all of Hampton Roads)",
+    label: "Virginia Beach (Hampton Roads)",
     country: "United States",
     cities: ["Virginia Beach", "Norfolk", "Chesapeake", "Portsmouth", "Suffolk", "Newport News", "Hampton", "Williamsburg", "Poquoson", "Yorktown"],
   },
@@ -295,7 +295,19 @@ const MARKET_NAME_ALIASES = { "Hampton Roads": "Virginia Beach" };
 function normalizeMarketName(name) {
   if (typeof name !== "string") return name;
   const t = name.trim();
-  return MARKET_NAME_ALIASES[t] || t;
+  if (MARKET_NAME_ALIASES[t]) return MARKET_NAME_ALIASES[t];
+  // Display labels are presentation only, but a label pasted or
+  // submitted as a market value (Jeff's "Virginia Beach
+  // (Hampton Roads)", 2026-10-23) must still land on the
+  // canonical market, never a phantom one.
+  const byLabel = MARKETS.find((m) => m.label === t);
+  if (byLabel) return byLabel.name;
+  const bare = t.replace(/\s*\([^)]*\)\s*$/, "").trim();
+  if (bare !== t) {
+    if (MARKET_NAME_ALIASES[bare]) return MARKET_NAME_ALIASES[bare];
+    if (MARKETS.some((m) => m.name === bare)) return bare;
+  }
+  return t;
 }
 
 const TIERS = [
