@@ -5854,22 +5854,19 @@ async function route(event) {
     });
   }
 
-  // Public creator profile: GET /api/c/<handle>. No sign-in required;
-  // approved creators only, whitelist payload (see publicProfilePayload).
-  if (method === "GET" && seg[0] === "c" && seg.length === 2) {
-    const target = await findPublicProfileUser(sanitizePublicHandle(seg[1]));
-    if (!target) return err(404, "Creator not found");
-    return json(200, { profile: await publicProfilePayload(target) });
-  }
-
-  // Server-rendered profile page: /c/<handle> arrives here as
-  // seg ["cpage", <handle>] via the netlify.toml /c/* rewrite.
-  // Approved + profile-complete creators get the shell with their
-  // title/meta/OG tags and index,follow baked in (profile-meta.js);
-  // every other case, including deeper paths like the proof sheet
-  // (/c/<handle>/proof), returns the unmodified shell and the SPA
-  // renders exactly as before.
-  if (method === "GET" && seg[0] === "cpage") {
+  // Server-rendered profile page (netlify.toml /c/* rewrite).
+  // Netlify hands this function the ORIGINAL request path for a
+  // rewrite, so a page request arrives as seg ["c", <handle>]
+  // with no "/api" in the raw path, while a genuine API call
+  // arrives as "/api/c/<handle>" (apiIdx > -1 after the strip
+  // above) and falls through to the JSON route below. (The "cpage" seg
+  // shape is also accepted for direct invocations.) Approved +
+  // profile-complete creators get the shell with their
+  // title/meta/OG tags and index,follow baked in
+  // (profile-meta.js); every other case, including deeper paths
+  // like the proof sheet (/c/<handle>/proof), returns the
+  // unmodified shell and the SPA renders exactly as before.
+  if (method === "GET" && (seg[0] === "cpage" || (seg[0] === "c" && apiIdx === -1))) {
     const shell = await loadAppShell(event);
     if (seg.length !== 2) return htmlPage(shell);
     const target = await findPublicProfileUser(sanitizePublicHandle(seg[1]));
@@ -5885,6 +5882,14 @@ async function route(event) {
       photoUrl: p.photoUrl,
       origin: `https://${host}`,
     }));
+  }
+
+  // Public creator profile: GET /api/c/<handle>. No sign-in required;
+  // approved creators only, whitelist payload (see publicProfilePayload).
+  if (method === "GET" && seg[0] === "c" && seg.length === 2) {
+    const target = await findPublicProfileUser(sanitizePublicHandle(seg[1]));
+    if (!target) return err(404, "Creator not found");
+    return json(200, { profile: await publicProfilePayload(target) });
   }
 
   // Creator photo serving (Jeff, 2026-10-19). An APPROVED creator's

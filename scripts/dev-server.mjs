@@ -31,12 +31,14 @@ const MIME = {
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   // Mirror the production netlify.toml /c/* rewrite: profile
-  // paths are served by the api function (seg "cpage") so local
-  // behavior matches the deployed server-rendered meta exactly.
+  // paths are served by the api function, and Netlify hands the
+  // function the ORIGINAL request path for a rewrite (verified
+  // live 2026-10-23), so pass the pathname through untouched
+  // and let the router tell page requests from API calls.
   if (url.pathname.startsWith("/c/")) {
     const event = {
       httpMethod: "GET",
-      path: "/api/cpage" + url.pathname.slice(2),
+      path: url.pathname,
       headers: req.headers,
       queryStringParameters: Object.fromEntries(url.searchParams.entries()),
       body: null,
