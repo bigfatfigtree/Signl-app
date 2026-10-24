@@ -1014,6 +1014,12 @@ function go(view, tab) {
   // deliberate walk, and the admin lands back on the normal console.
   if (state.preview) { stopPreviewCountdown(); state.preview = null; }
   stopHomeCountdown();
+  // Flush the deferred notification read (see loadNotificationsInto):
+  // leaving the dashboard marks its Updates read and clears the badges.
+  if (state.notesReadPending) {
+    state.notesReadPending = false;
+    api("POST", "/notifications/read", {}).then(() => refreshBadges()).catch(() => {});
+  }
   state.view = view;
   if (tab) state.tab = tab;
   render();
@@ -4177,7 +4183,13 @@ async function loadNotificationsInto(elId) {
     state.badges = data.badges || state.badges;
     renderBottomNav();
     el.innerHTML = `<div class="panel"><h3 style="margin-top:0">Updates</h3>${data.notifications.slice(0, 8).map((n) => `<p class="small" style="margin:6px 0"><span class="muted">${esc(fmtDate(n.createdAt))}</span> ${esc(n.text)}</p>`).join("")}</div>`;
-    if (data.unreadCount) api("POST", "/notifications/read", {}).then(() => refreshBadges()).catch(() => {});
+    // Badges (Wave 3c fix): do NOT mark notes read here. This loader runs on
+    // every dashboard render, so marking read on load wiped the tab badges
+    // in the same paint they appeared (rendered QA 2026-10-24: business
+    // badges never survived to a screenshot). Notes count as read once the
+    // user navigates away from the dashboard showing the Updates panel;
+    // go() flushes the pending read.
+    if (data.unreadCount) state.notesReadPending = true;
   } catch (e) { /* notifications are an enhancement, never a blocker */ }
 }
 
