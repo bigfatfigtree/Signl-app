@@ -99,6 +99,29 @@ async function api(method, path, body) {
   return data;
 }
 
+// Skeleton loading state (visual experience pass, 2026-10-24):
+// shimmer cards while a surface loads, with the old loading text
+// kept for screen readers. Purely presentational.
+function skelHtml(label, n) {
+  return `<div class="skel-wrap" role="status"><span class="sr-only">${esc(label)}</span>${'<div class="skel skel-card"><div class="skel-line med" style="margin-top:22px"></div><div class="skel-line"></div><div class="skel-line short"></div></div>'.repeat(n || 2)}</div>`;
+}
+
+// Business initial chip (visual experience pass): offer feeds have
+// no business photography in the data model, so cards lead with a
+// compact gradient monogram chip built from the business name
+// (existing data) instead of a bare text header.
+function bizChipHtml(name) {
+  const initial = (String(name || "?").trim().charAt(0) || "?").toUpperCase();
+  return `<span class="avatar-initial" style="width:42px;height:42px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:1.02rem;flex:none" aria-hidden="true">${esc(initial)}</span>`;
+}
+
+// Success check SVG (visual experience pass): drawn once by CSS
+// animation inside .success-check-wrap. Shared by the redemption
+// and proof-submission success moments.
+function successCheckHtml() {
+  return `<div class="success-check-wrap"><svg class="success-check" viewBox="0 0 52 52" aria-hidden="true"><circle cx="26" cy="26" r="24"></circle><path d="M15 27l7.5 7.5L37 19"></path></svg></div>`;
+}
+
 // Submit state (UX audit fix, 2026-10-22): one shared helper so a
 // slow connection never invites a double-tap. The first call
 // disables the form's submit button and swaps its label to
@@ -280,7 +303,7 @@ async function renderPublicProfile() {
   app.innerHTML = `
   <div style="max-width:720px;margin:20px auto">
     <div class="creator-card full">
-      <div class="cc-photo">
+      <div class="cc-photo${p.photoUrl ? "" : " no-photo"}">
         ${p.photoUrl ? `<img src="${esc(p.photoUrl)}" alt="">` : `<div class="cc-mono"><span>${initial}</span></div>`}
         ${p.tierBand ? `<span class="cc-tier">${esc(p.tierBand)}</span>` : ""}
         ${p.paidRate ? `<span class="cc-paid">Paid bookings: $${esc(String(p.paidRate))}</span>` : ""}
@@ -2451,7 +2474,7 @@ function creatorProfileDetailHtml(c, preview) {
   <div class="panel">
     <p><button class="btn small-btn ghost" onclick="${preview ? "previewBackToResults()" : "backToDiscover()"}">&larr; Back to results</button></p>
     <div class="creator-card full">
-      <div class="cc-photo">
+      <div class="cc-photo${c.photoUrl ? "" : " no-photo"}">
         ${c.photoUrl ? `<img src="${esc(c.photoUrl)}" alt="">` : `<div class="cc-mono"><span>${initial}</span></div>`}
         ${p.tierBand ? `<span class="cc-tier">${esc(p.tierBand)}</span>` : ""}
         ${p.paidRate ? `<span class="cc-paid">Paid bookings: $${esc(String(p.paidRate))}</span>` : ""}
@@ -2553,7 +2576,7 @@ function creatorCard(c, viewer, opts) {
   const initial = esc((c.name || "?").trim().charAt(0).toUpperCase() || "?");
   return `
   <div class="creator-card${c.standing === "paused" ? " paused" : ""}">
-    <div class="cc-photo">
+    <div class="cc-photo${c.photoUrl ? "" : " no-photo"}">
       ${c.photoUrl ? `<img src="${esc(c.photoUrl)}" alt="">` : `<div class="cc-mono"><span>${initial}</span></div>`}
       ${p.tierBand ? `<span class="cc-tier">${esc(p.tierBand)}</span>` : ""}
       ${p.paidRate ? `<span class="cc-paid">Paid bookings: $${esc(String(p.paidRate))}</span>` : ""}
@@ -2618,7 +2641,7 @@ function renderCreatorDash() {
   state.tab = tab;
   if (tab !== "Dashboard") stopHomeCountdown();
   let body = "";
-  if (tab === "Dashboard") body = `<div id="creator-home"><p class="muted">Loading your dashboard...</p></div>`;
+  if (tab === "Dashboard") body = `<div id="creator-home" class="vx-stagger">${skelHtml("Loading your dashboard...", 2)}</div>`;
   if (tab === "Profile") body = creatorProfileHtml(u) + momentumHtml(u) + growRosterHtml(u);
   app.innerHTML = `
     <h2>Creator dashboard <span class="badge ok">Founding Creator, ${esc(marketDisplayName(u.market))}</span></h2>
@@ -2646,8 +2669,8 @@ function renderFoundingHome() {
   state.tab = tab;
   const placeBadge = u.market === unlistedLabel() ? esc(u.city || u.market) : esc(marketDisplayName(u.market));
   let body = "";
-  if (tab === "Dashboard") body = `<div id="founding-dash"><p class="muted">Loading your dashboard...</p></div>`;
-  if (tab === "Status") body = `<h3 style="margin-top:0">Your founding status</h3><div id="founding-body"><p class="muted">Loading your founding profile...</p></div>`;
+  if (tab === "Dashboard") body = `<div id="founding-dash" class="vx-stagger">${skelHtml("Loading your dashboard...", 2)}</div>`;
+  if (tab === "Status") body = `<h3 style="margin-top:0">Your founding status</h3><div id="founding-body">${skelHtml("Loading your founding profile...", 1)}</div>`;
   if (tab === "Profile") body = creatorProfileHtml(u);
   app.innerHTML = `
     <h2>Creator dashboard <span class="badge ok">Founding Creator, ${placeBadge}</span></h2>
@@ -2678,9 +2701,12 @@ async function loadFoundingDashboard() {
     const greet = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
     const firstName = (u.name || "").trim().split(" ")[0] || u.name || "";
     el.innerHTML = `
-    <p class="ui-kicker">Creator dashboard &middot; ${place}</p>
-    <h3 class="home-title">${esc(greet)}, ${esc(firstName)}.</h3>
-    <p class="ui-sub">${isUnl ? `${esc(f.city)} opens when sign-ups pile up. Until then, this is your home: your numbers, your paid lane, and your roster.` : `${esc(marketTalkNameClient(f.market))} opens to businesses in the next ${esc(f.launchWindow)}. Until then, this is your home: your numbers, your paid lane, and your roster.`}</p>
+    <div class="dash-hero">
+      <p class="dh-kicker">Creator dashboard &middot; ${place}</p>
+      <div class="dh-name">${esc(greet)}, ${esc(firstName)}.</div>
+      <p class="dh-sub">${isUnl ? `${esc(f.city)} opens when sign-ups pile up. Until then, this is your home: your numbers, your paid lane, and your roster.` : `${esc(marketTalkNameClient(f.market))} opens to businesses in the next ${esc(f.launchWindow)}. Until then, this is your home: your numbers, your paid lane, and your roster.`}</p>
+      <div class="dh-row"><div><div class="dh-num">${fmtNum(totalAudienceOf(card))}</div><div class="dh-num-lbl">Total audience across your platforms</div></div></div>
+    </div>
     ${profileCompletionHtml(u)}
     <div class="panel">
       <div class="flex-between">
@@ -3157,9 +3183,12 @@ async function loadCreatorHome() {
     const greet = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
     const firstName = (u.name || "").trim().split(" ")[0] || u.name || "";
     el.innerHTML = `
-    <p class="ui-kicker">Creator dashboard &middot; ${esc(marketDisplayName(u.market))}</p>
-    <h3 class="home-title">${esc(greet)}, ${esc(firstName)}.</h3>
-    <p class="ui-sub">Your active visit, your offers, and your money, in one place.</p>
+    <div class="dash-hero">
+      <p class="dh-kicker">Creator dashboard &middot; ${esc(marketDisplayName(u.market))}</p>
+      <div class="dh-name">${esc(greet)}, ${esc(firstName)}.</div>
+      <p class="dh-sub">Your active visit, your offers, and your money, in one place.</p>
+      <div class="dh-row"><div><div class="dh-num">${m.points}</div><div class="dh-num-lbl">Momentum points. Points are priority: they order the list businesses see.</div></div></div>
+    </div>
     ${profileCompletionHtml(u)}
     <div class="stat-band home-metrics">
       <div class="stat-cell"><div class="stat-num">$${fmtMoney(money.released)}</div><div class="stat-lbl">${money.released ? "Paid cash released (paid visits delivered, hold passed)" : "Your first paid visit puts money here."}</div></div>
@@ -3518,10 +3547,10 @@ async function doUpdateCreator(e) {
 async function loadCreatorOffers() {
   const el = document.getElementById("tab-body");
   el.innerHTML = `
-    <div id="open-board"><p class="muted">Loading open offers in ${esc(marketTalkNameClient(state.user.market))}...</p></div>
+    <div id="open-board">${skelHtml("Loading open offers in " + marketTalkNameClient(state.user.market) + "...", 2)}</div>
     <div id="my-apps"></div>
     <h3>Sent directly to you</h3>
-    <div id="direct-offers"><p class="muted">Loading your direct offers...</p></div>
+    <div id="direct-offers">${skelHtml("Loading your direct offers...", 1)}</div>
     <div id="creator-notes" class="mt"></div>`;
   loadOpenBoard();
   loadMyApplications();
@@ -3531,12 +3560,12 @@ async function loadCreatorOffers() {
     const data = await api("GET", "/offers");
     const mine = (data.offers || []).filter((o) => o.lane !== "open");
     if (!mine.length) {
-      direct.innerHTML = `<div class="panel center"><h3>No direct offers yet</h3><p class="muted">When a business in ${esc(marketTalkNameClient(state.user.market))} sends you an offer directly, it lands here. Open offers from every business in your market are on the board above.</p></div>`;
+      direct.innerHTML = `<div class="empty-state"><span class="es-badge"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z"/></svg></span><h3>No direct offers yet</h3><p>When a business in ${esc(marketTalkNameClient(state.user.market))} sends you an offer directly, it lands here. Open offers from every business in your market are on the board above.</p></div>`;
       return;
     }
-    direct.innerHTML = mine.map((o) => { const rights = o.visitRights || rightsForVisit(o.kind); return `
+    direct.innerHTML = `<div class="vx-stagger">` + mine.map((o) => { const rights = o.visitRights || rightsForVisit(o.kind); return `
       <div class="card mb">
-        <div class="flex-between"><strong>${esc(o.title)}</strong><span class="badge tier">${esc(o.businessName)}</span></div>
+        <div class="flex-between"><span style="display:flex;align-items:center;gap:11px;min-width:0">${bizChipHtml(o.businessName)}<strong>${esc(o.title)}</strong></span><span class="badge tier">${esc(o.businessName)}</span></div>
         <div class="showcase-block">
           <h4>The deal, in plain words</h4>
           <p class="small"><strong>You get:</strong> ${esc(o.whatComped)} (comp cap $${o.dollarCap})${o.kind === "paid" ? "" : ` &middot; ${coversLine(o)}`} &middot; ${o.bookedCount}/${o.spots} spots booked &middot; ${o.creatorId ? "Sent directly to you" : "Open to your market"}</p>
@@ -3552,7 +3581,7 @@ async function loadCreatorOffers() {
         </form>
         ${o.creatorId ? `<button class="btn small-btn danger" onclick="declineOffer('${o.id}')">Decline</button>` : ""}
         <button class="btn small-btn ghost" onclick="openThread('${o.businessId}')">Message business</button>
-      </div>`; }).join("");
+      </div>`; }).join("") + `</div>`;
   } catch (err) {
     direct.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
@@ -3582,17 +3611,17 @@ async function loadOpenBoard() {
     const data = await api("GET", "/open-offers");
     if (!document.getElementById("open-board")) return;
     if (!data.offers.length) {
-      el.innerHTML = `<div class="panel"><h3 style="margin-top:0">Open offers in ${esc(marketTalkNameClient(state.user.market))}</h3><p class="muted">No open offers right now. Businesses post terms here and creators apply with one tap: your profile card is the application, no pitch to write. New offers land here first.</p></div>`;
+      el.innerHTML = `<div class="empty-state"><span class="es-badge"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z"/></svg></span><h3>Open offers in ${esc(marketTalkNameClient(state.user.market))}</h3><p>No open offers right now. Businesses post terms here and creators apply with one tap: your profile card is the application, no pitch to write. New offers land here first.</p></div>`;
       return;
     }
     el.innerHTML = `<h3>Open offers in ${esc(state.user.market)}</h3>
-    <p class="small muted">One tap applies. Your profile card (local %, Impact, Momentum, track record${state.user.creator && state.user.creator.paidRate ? ", your rate" : ""}) attaches automatically. Offers only show when the comp fits your tier's guidance: that floor protects you from token comps.</p>` +
+    <p class="small muted">One tap applies. Your profile card (local %, Impact, Momentum, track record${state.user.creator && state.user.creator.paidRate ? ", your rate" : ""}) attaches automatically. Offers only show when the comp fits your tier's guidance: that floor protects you from token comps.</p><div class="vx-stagger">` +
     data.offers.map((o) => {
       const rights = o.visitRights || rightsForVisit(o.kind);
       const spotsLeft = Math.max(0, o.spots - (o.filledCount || 0));
       return `
       <div class="card mb feed-card">
-        <div class="flex-between"><strong>${esc(o.title)}</strong><span class="badge tier">${esc(o.businessName)}</span></div>
+        <div class="flex-between"><span style="display:flex;align-items:center;gap:11px;min-width:0">${bizChipHtml(o.businessName)}<strong>${esc(o.title)}</strong></span><span class="badge tier">${esc(o.businessName)}</span></div>
         ${o.fitNote ? `<p class="small" style="margin:8px 0 0"><span class="badge ok">${esc(o.fitNote)}</span></p>` : ""}
         <div class="chip-row">
           ${o.kind === "paid" ? `<span class="chip-mini">Rate $${o.cashRate}</span>` : `<span class="chip-mini">Comp value $${o.dollarCap}</span><span class="chip-mini">${coversLine(o)}</span>`}
@@ -3620,7 +3649,7 @@ async function loadOpenBoard() {
           : `<button class="btn" onclick="applyToOffer('${o.id}')">Apply with one tap</button>`}
         <button class="btn small-btn ghost" onclick="openThread('${o.businessId}')">Message business</button>
       </div>`;
-    }).join("");
+    }).join("") + `</div>`;
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
@@ -3732,11 +3761,16 @@ async function loadMyVisits(role) {
   const el = document.getElementById("tab-body");
   try {
     const data = await api("GET", "/bookings");
+    const flash = state.postFlash
+      ? `<div class="card mb"><div class="success-hero">${successCheckHtml()}<h3>Post submitted</h3><p>Your post is in and the visit is marked delivered. Your numbers build from here: update them as the post grows and they feed your track record.</p></div></div>`
+      : "";
+    state.postFlash = false;
     if (!data.bookings.length) {
-      el.innerHTML = `<div class="panel center"><h3>No visits yet</h3><p class="muted">${role === "creator" ? "Accept an offer and your visit, code, and post deadline will live here." : "Bookings from your offers will live here."}</p></div>`;
+      el.innerHTML = flash + `<div class="empty-state"><span class="es-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12.5l5 5L20 6.5"/></svg></span><h3>No visits yet</h3><p>${role === "creator" ? "Accept an offer and your visit, code, and post deadline will live here." : "Bookings from your offers will live here."}</p>${role === "creator" ? `<button class="btn" onclick="return go('dashboard','Offers')">Browse open offers</button>` : `<button class="btn" onclick="return go('dashboard','My Offers')">Create an offer</button>`}</div>`;
       return;
     }
-    el.innerHTML = data.bookings.map((b) => visitCard(b, role)).join("");
+    el.innerHTML = flash + `<div class="vx-stagger">${data.bookings.map((b) => visitCard(b, role)).join("")}</div>`;
+    if (role === "creator") startHomeCountdown();
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
@@ -3792,6 +3826,15 @@ function visitCard(b, role) {
   <div class="card visit-card mb">
     <div class="flex-between"><strong>${esc(b.title)}</strong>${complianceBadge(b)}</div>
     <p class="small muted">${role === "creator" ? esc(b.businessName) : "@" + esc(b.creatorHandle) + " (" + esc(b.creatorName) + ")"} &middot; ${esc(marketDisplayName(b.market))} &middot; Comp: ${esc(b.whatComped)} (cap $${b.dollarCap})${b.kind === "paid" || b.paidLane ? "" : ` &middot; ${coversLine(b)}`} &middot; Visit: ${esc(b.visitDate || b.visitWindow || "Flexible")}</p>`;
+  if (role === "creator" && b.redeemedAt && !post && b.postDeadline) {
+    // Visual pass: the post countdown leads the card instead of
+    // sitting under the honor form below the fold. Same ticking
+    // element (home-tick), moved up; the proof form below keeps
+    // its own deadline copy.
+    const dueLate = b.compliance && (b.compliance.status === "overdue" || b.compliance.status === "paused" || b.compliance.status === "missed");
+    html += `
+    <div class="due-banner${dueLate ? " late" : ""}"><span class="db-lbl">${dueLate ? "Post overdue" : "Post due in"}</span><span class="db-num home-tick" data-mode="post" data-target="${esc(b.postDeadline)}">${esc(homeDurCore(Date.parse(b.postDeadline) - Date.now()))}</span></div>`;
+  }
   if (b.paidBrief) {
     html += `<p class="small"><strong>Key points from the business:</strong> ${esc(b.paidBrief)}</p>`;
   }
@@ -3867,7 +3910,6 @@ function visitCard(b, role) {
   if (role === "creator" && b.redeemedAt && !post) {
     const late = b.compliance && (b.compliance.status === "overdue" || b.compliance.status === "paused" || b.compliance.status === "missed");
     html += `
-    ${b.postDeadline ? `<p class="small" style="margin-top:10px"><strong>Post due in <span class="home-tick" data-mode="post" data-target="${esc(b.postDeadline)}">${esc(homeDurCore(Date.parse(b.postDeadline) - Date.now()))}</span></strong></p>` : ""}
     <form onsubmit="return submitPost(event, '${b.id}')">
       <h4 style="margin:10px 0 4px">Post your proof</h4>
       ${late ? `<p class="small"><strong>This post is past its 48 hour deadline.</strong> Post within 48 hours for full credit. A late post inside the catch-up window still counts, and the missed deadline stays on your record. No link, no check-off.</p>` : `<p class="small muted">Your check-off is the post link itself. Paste it here and the visit is marked delivered${b.compliance && b.compliance.deadline ? ` (deadline ${esc(fmtDate(b.compliance.deadline))})` : ""}. Post within 48 hours for full credit. A late post inside the catch-up window still counts.</p>`}
@@ -4024,6 +4066,7 @@ async function submitPost(e, bookingId) {
   if (!disc.checked) { alert("Confirm the disclosure first. Every SIGNL post must disclose the comp."); return false; }
   try {
     await api("POST", "/posts", { bookingId, url: document.getElementById("post-url-" + bookingId).value, includesDisclosure: true });
+    state.postFlash = true;
     loadMyVisits("creator");
   } catch (err) { alert(err.message); }
   return false;
@@ -4248,7 +4291,17 @@ async function loadBusinessHome() {
       <div class="ui-row"><span class="k"><strong>${esc(n.title)}</strong> with @${esc(n.creatorHandle)}<br><span class="small muted">${esc(n.stateLabel)}${n.dueInLabel ? ` &middot; ${esc(n.dueInLabel)}` : ""}</span></span><span class="v">${esc(n.whenLabel)}<br>${esc(fmtDate(n.when))}</span></div>`).join("");
     const rebook = (d.rebookPrompts || []).map((r) => `
       <div class="ui-row"><span class="k"><strong>${esc(r.name)}</strong> @${esc(r.handle)}${r.isFavorite ? ` <span class="badge tier">Favorite</span>` : ""}<br><span class="small muted">${r.source === "delivered" ? `Delivered for you before: ${esc(r.lastTitle || "")}` : "Saved in your favorites"}</span></span><span class="v"><button class="btn small-btn" onclick="rebookCreator('${esc(r.creatorId)}')">Invite again</button></span></div>`).join("");
+    el.classList.add("vx-stagger");
+    const heroNum = h.roasScore !== null && h.roasScore !== undefined && Number(h.roasScore) !== 0
+      ? { num: Number(h.roasScore).toFixed(2) + "&times;", lbl: "SIGNL ROAS Score" }
+      : { num: `${h.visitsUsed} of ${h.visitsAllowance}`, lbl: "Creator visits booked this month" };
     el.innerHTML = `
+    <div class="dash-hero">
+      <p class="dh-kicker">${esc(marketDisplayName(d.business.market))} &middot; ${esc(d.plan.name)} plan</p>
+      <div class="dh-name">${esc((state.user.business && state.user.business.businessName) || d.business.businessName || "")}</div>
+      <p class="dh-sub">Your visits, your posts, and what they brought back, in one place.</p>
+      <div class="dh-row"><div><div class="dh-num">${heroNum.num}</div><div class="dh-num-lbl">${heroNum.lbl}</div></div></div>
+    </div>
     ${d.marketLive ? "" : `<div class="notice blue"><strong>Your market opens in the next 30 to 90 days.</strong> Everything you build now is ready for launch day: browse the founding roster, save favorites, and draft offers. Publishing, selecting, and bookings switch on the moment ${esc(marketTalkNameClient(d.business.market))} goes live.</div>`}
     <div class="panel" style="display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap">
       <div><strong>At the register?</strong><p class="muted small" style="margin:4px 0 0">Staff mode redeems a creator's visit with just the staff PIN and the creator's code. No owner login needed at the counter.</p></div>
@@ -4355,7 +4408,7 @@ async function loadDiscover() {
       <div><label>&nbsp;</label><label style="font-weight:500"><input type="checkbox" id="f-paid" style="width:auto"> Has a paid rate (paid bookings) only</label></div>
       <div><label>&nbsp;</label><button class="btn small-btn" style="width:100%" onclick="runDiscover()">Search</button></div>
     </div>
-    <div id="discover-results"><p class="muted">Loading creators in ${esc(u.market)}...</p></div>`;
+    <div id="discover-results">${skelHtml("Loading creators...", 2)}</div>`;
   runDiscover();
 }
 
@@ -4387,10 +4440,10 @@ async function runDiscover() {
     const data = await api("GET", "/discover?" + params.toString());
     state.discover = data.creators;
     if (!data.creators.length) {
-      el.innerHTML = `<div class="panel center"><h3>No approved creators match yet</h3><p class="muted">SIGNL is building the founding roster in this market now. Creators who sign up and get approved will appear here automatically.</p></div>`;
+      el.innerHTML = `<div class="empty-state"><span class="es-badge"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z"/></svg></span><h3>No approved creators match yet</h3><p>SIGNL is building the founding roster in this market now. Creators who sign up and get approved will appear here automatically.</p></div>`;
       return;
     }
-    el.innerHTML = `<div class="creator-grid">${data.creators.map((c) => creatorCard(c, state.user)).join("")}</div>`;
+    el.innerHTML = `<div class="creator-grid vx-stagger">${data.creators.map((c) => creatorCard(c, state.user)).join("")}</div>`;
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
@@ -4742,15 +4795,15 @@ async function loadMyOffers() {
       <p class="small" id="offer-info-body"></p>
     </div>
   </div>
-  <div id="offer-list"><p class="muted">Loading your offers...</p></div>
+  <div id="offer-list">${skelHtml("Loading your offers...", 2)}</div>
   <div id="applicant-stack"></div>`;
   offerCoachUpdate();
   try {
     const data = await api("GET", "/offers");
     const list = document.getElementById("offer-list");
     if (!list) return;
-    if (!data.offers.length) { list.innerHTML = `<p class="muted">No offers yet. Your first offer goes out above.</p>`; return; }
-    list.innerHTML = data.offers.map((o) => offerCardHtml(o)).join("");
+    if (!data.offers.length) { list.innerHTML = `<div class="empty-state"><span class="es-badge"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z"/></svg></span><h3>No offers yet</h3><p>Your first offer goes out above.</p></div>`; return; }
+    list.innerHTML = `<div class="vx-stagger">${data.offers.map((o) => offerCardHtml(o)).join("")}</div>`;
     if (state.applicantOffer) {
       const id = state.applicantOffer;
       state.applicantOffer = null;
@@ -4988,7 +5041,7 @@ async function counterRedeem(code) {
   try {
     const data = await api("POST", "/counter/redeem", { code });
     const b = data.booking;
-    el.innerHTML = `<div class="notice blue">Redeemed. ${esc(b.creatorName)}'s post is due by <strong>${fmtDate(b.postDeadline)}</strong>. Ring the comp in your own system, up to the $${b.dollarCap} cap. Track the post under Visits &amp; Posts.</div>`;
+    el.innerHTML = `<div class="success-hero">${successCheckHtml()}<h3>Redeemed.</h3><p>${esc(b.creatorName)}'s post is due by <strong>${fmtDate(b.postDeadline)}</strong>. Ring the comp in your own system, up to the $${b.dollarCap} cap. Track the post under Visits &amp; Posts.</p></div>`;
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
@@ -5168,8 +5221,10 @@ async function staffRedeem(code) {
     const data = await api("POST", "/staff/redeem", { code });
     const b = data.booking;
     el.innerHTML = `
-      <div class="notice blue">
-        <strong>Redeemed.</strong> ${esc(b.creatorName)}'s visit is in, and their 48-hour post clock started. Their post is due by <strong>${fmtDate(b.postDeadline)}</strong>. Ring the comp in your own register, up to the $${b.dollarCap} cap.
+      <div class="success-hero">
+        ${successCheckHtml()}
+        <h3>Redeemed.</h3>
+        <p>${esc(b.creatorName)}'s visit is in, and their 48-hour post clock started. Their post is due by <strong>${fmtDate(b.postDeadline)}</strong>. Ring the comp in your own register, up to the $${b.dollarCap} cap.</p>
         <div class="mt"><button class="btn" style="width:100%" onclick="staffDone()">Done</button></div>
       </div>`;
   } catch (err) {
