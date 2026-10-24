@@ -8,7 +8,7 @@ const { logEvent, listEvents } = require("./events");
 const { MARKETS, normalizeMarketName, resolveTypedCity, TIERS, CREATOR_CATEGORIES, COMP_CATEGORIES, BUSINESS_CATEGORIES, PLANS, PROFESSIONS, REALTOR_PROFESSION, tierForFollowers, normalizeTierBand } = require("./markets");
 const { computeLocalImpactScore, summarizeHistory } = require("./score");
 const { computeFit, buildFitNote } = require("./fit");
-const { emailEnabled, sendEmail } = require("./email");
+const { emailEnabled, sendEmail, senderProfile } = require("./email");
 const claimEvidence = require("./claim-evidence");
 const stripe = require("./stripe");
 const { runMetricsSync } = require("./metrics-sync");
@@ -1572,7 +1572,7 @@ async function withFounding(user) {
 async function deliverEmail(kind, user, subject, text, band, opts) {
   const base = { kind, to: user.email, subject, band: band || null };
   await logEvent({ type: `${kind}_email_queued`, actorId: user.id, actorRole: user.role, subjectId: user.id, market: user.market || null, data: base });
-  const result = await sendEmail({ to: user.email, subject, text, listUnsubscribe: !!(opts && opts.listUnsubscribe) });
+  const result = await sendEmail({ to: user.email, subject, text, listUnsubscribe: !!(opts && opts.listUnsubscribe), profile: opts && opts.profile, fromMailbox: opts && opts.fromMailbox, replyTo: opts && opts.replyTo });
   if (result.sent) {
     await logEvent({ type: `${kind}_email_sent`, actorId: user.id, actorRole: user.role, subjectId: user.id, market: user.market || null, data: base });
   } else {
@@ -4076,6 +4076,34 @@ function campaignDailyCeiling() {
   const n = parseInt(process.env.CAMPAIGN_DAILY_CAP || "", 10);
   return Number.isNaN(n) || n <= 0 ? CAMPAIGN_DAILY_CEILING_DEFAULT : n;
 }
+// Sender mailboxes (Jeff, 2026-10-24): a campaign sends from the
+// default profile (hello@joinsignl.com) unless its config names
+// one of the signlteam.com profiles from lib/email.js (creators@,
+// team@, hello@ on the second sending domain). The stored value is
+// normalized through campaignFromMailbox, so a missing or junk
+// value always reads as "default" and every pre-existing campaign
+// behaves exactly as it did before profiles existed. A campaign
+// set to a profile whose SMTP vars are not in the environment is
+// NEVER silently sent from the default identity: the sweep skips
+// it and says why (see runCampaignSweep).
+const CAMPAIGN_MAILBOXES = ["default", "creators", "team", "hello_team"];
+function campaignFromMailbox(cfg) {
+  return cfg && CAMPAIGN_MAILBOXES.includes(cfg.fromMailbox) ? cfg.fromMailbox : "default";
+}
+// Warm-up guardrail for the signlteam.com profiles: a flat daily
+// cap per profile, counted across campaigns per ET day from the
+// sentFrom stamp each campaign send leaves on its recipient
+// record. Shipped conservative at 25; the 14-day warm-up ramp
+// (5 -> 50) is run by raising SIGNL_TEAMMAIL_DAILY_CAP in the
+// Netlify environment on schedule, no code change. An unset or
+// invalid value falls back to the shipped default, same as the
+// global ceiling above. The cap binds only signlteam profiles;
+// the default profile is governed by the global ceiling alone.
+const TEAMMAIL_DAILY_CAP_DEFAULT = 25;
+function teamMailDailyCap() {
+  const n = parseInt(process.env.SIGNL_TEAMMAIL_DAILY_CAP || "", 10);
+  return Number.isNaN(n) || n <= 0 ? TEAMMAIL_DAILY_CAP_DEFAULT : n;
+}
 // Runaway backstop ONLY: a per-campaign lifetime ceiling set so
 // high it can bind only if something is deeply wrong (a bug looping
 // sends). It is a bug guard, never a product limit, and normal
@@ -4098,7 +4126,7 @@ function validCampaignId(id) {
 async function getCampaignConfig(campaignId) {
   const rec = await store.get(`campaign:${campaignId}`);
   if (rec) return rec;
-  return { id: campaignId, armed: false, armedAt: null, armedBy: null, disarmedAt: null, disarmReason: null, lastError: null, lastRunAt: null, totalSent: 0, createdAt: null, updatedAt: null };
+  return { id: campaignId, armed: false, armedAt: null, armedBy: null, disarmedAt: null, disarmReason: null, lastError: null, lastRunAt: null, totalSent: 0, fromMailbox: "default", createdAt: null, updatedAt: null };
 }
 
 async function saveCampaignConfig(cfg) {
@@ -4310,6 +4338,28 @@ async function campaignSentToday(now) {
   return n;
 }
 
+// The same derivation, split by sending profile: every campaign
+// send stamps sentFrom (the sender profile key) on its recipient
+// record, so a profile's day count is exactly the sends that left
+// from that mailbox. Sends from before profiles existed carry no
+// stamp and count as "default". This is the counter the signlteam
+// warm-up cap (teamMailDailyCap) enforces against.
+async function campaignSentTodayByProfile(now) {
+  const dayKey = campaignDayKey(now);
+  const rows = await store.list("campaign-recipient:");
+  const counts = {};
+  for (const row of rows) {
+    const r = row.value;
+    if (!r || r.status !== "sent" || !r.sentAt) continue;
+    const t = Date.parse(r.sentAt);
+    if (Number.isNaN(t)) continue;
+    if (campaignDayKey(new Date(t)) !== dayKey) continue;
+    const key = CAMPAIGN_MAILBOXES.includes(r.sentFrom) ? r.sentFrom : "default";
+    counts[key] = (counts[key] || 0) + 1;
+  }
+  return counts;
+}
+
 // One campaign sweep pass over every campaign config. Sends only
 // for armed campaigns inside the window. Returns a summary; the
 // scheduled function (netlify/functions/campaign-sweep.mjs) and the
@@ -4319,18 +4369,39 @@ async function campaignSentToday(now) {
 async function runCampaignSweep(opts = {}) {
   const now = opts.now instanceof Date && !Number.isNaN(opts.now.getTime()) ? opts.now : new Date();
   const dailyCeiling = campaignDailyCeiling();
-  const summary = { campaigns: 0, armed: 0, windowClosed: 0, attempted: 0, sent: 0, failed: 0, backstopReached: 0, dailyCeilingHit: 0, disarmed: 0, skippedTesters: 0, sentToday: 0, dailyCeiling };
+  const summary = { campaigns: 0, armed: 0, windowClosed: 0, attempted: 0, sent: 0, failed: 0, backstopReached: 0, dailyCeilingHit: 0, disarmed: 0, skippedTesters: 0, sentToday: 0, dailyCeiling, senderUnavailable: 0, teamCapHit: 0, teamCap: teamMailDailyCap() };
   // Global daily ceiling: sends already made today, across every
   // campaign, counted once up front and incremented locally as this
   // run sends, so a multi-campaign sweep can never overshoot.
   let sentToday = await campaignSentToday(now);
   summary.sentToday = sentToday;
+  // Per-profile day counts for the signlteam warm-up cap, derived
+  // the same way and incremented locally as this run sends.
+  const sentByProfile = await campaignSentTodayByProfile(now);
   const configs = (await store.list("campaign:")).map((r) => r.value);
   for (const cfg of configs) {
     if (!cfg || !cfg.id) continue;
     summary.campaigns += 1;
     if (!cfg.armed) continue;
     summary.armed += 1;
+    // Sender profile gate (Jeff, 2026-10-24): a campaign set to a
+    // signlteam mailbox whose SMTP credentials are not in the
+    // environment is skipped, loudly, and NEVER falls back to
+    // sending from the default identity. The campaign stays armed;
+    // adding the profile's env vars is the whole fix. The check
+    // runs before the window check so the configuration problem is
+    // visible at any hour, and lastError clears the moment the
+    // profile becomes usable.
+    const fromMailbox = campaignFromMailbox(cfg);
+    if (fromMailbox !== "default" && !senderProfile(fromMailbox).available) {
+      cfg.lastRunAt = now.toISOString();
+      cfg.lastError = `Sender mailbox "${fromMailbox}" is not active: its SMTP credentials are not set in the server environment, so this campaign was skipped rather than sent from the wrong address. Add the profile's SIGNL_SMTP_USER / SIGNL_SMTP_PASS vars in Netlify to activate it.`;
+      await saveCampaignConfig(cfg);
+      await logEvent({ type: "campaign_sender_unavailable", actorId: null, actorRole: "system", subjectId: null, market: null, data: { campaignId: cfg.id, fromMailbox } });
+      summary.senderUnavailable += 1;
+      continue;
+    }
+    if (fromMailbox !== "default" && cfg.lastError && cfg.lastError.startsWith("Sender mailbox")) cfg.lastError = null;
     if (!campaignWindowOpen(now)) { summary.windowClosed += 1; continue; }
     let recipients = await listCampaignRecipients(cfg.id);
     // Tester guard (Jeff, 2026-10-19): an address queued before its
@@ -4376,9 +4447,22 @@ async function runCampaignSweep(opts = {}) {
       await saveCampaignConfig(cfg);
       continue;
     }
+    // Warm-up cap (signlteam profiles only): the profile's own
+    // daily budget, counted across campaigns, on top of the global
+    // ceiling. Reaching it reads exactly like the global ceiling:
+    // not an error, the campaign stays armed, the queue waits.
+    let remainingProfile = Infinity;
+    if (fromMailbox !== "default") {
+      remainingProfile = summary.teamCap - (sentByProfile[fromMailbox] || 0);
+      if (remainingProfile <= 0) {
+        summary.teamCapHit += 1;
+        await saveCampaignConfig(cfg);
+        continue;
+      }
+    }
     const batch = recipients
       .filter((r) => r.status === "queued")
-      .slice(0, Math.min(CAMPAIGN_BATCH_SIZE, CAMPAIGN_RUNAWAY_BACKSTOP - counts.sent, remainingToday));
+      .slice(0, Math.min(CAMPAIGN_BATCH_SIZE, CAMPAIGN_RUNAWAY_BACKSTOP - counts.sent, remainingToday, remainingProfile));
     let failures = 0;
     let lastReason = null;
     for (let i = 0; i < batch.length; i++) {
@@ -4386,11 +4470,15 @@ async function runCampaignSweep(opts = {}) {
       const recipient = batch[i];
       const mail = campaignEmailFor(cfg.id, recipient);
       const messageRef = crypto.randomUUID();
-      const result = await sendEmail({ to: recipient.email, subject: mail.subject, text: mail.text, listUnsubscribe: true });
+      // The default profile path passes no selector at all, so its
+      // send call is byte-identical to before profiles existed; a
+      // signlteam campaign sends explicitly as its own mailbox.
+      const result = await sendEmail({ to: recipient.email, subject: mail.subject, text: mail.text, listUnsubscribe: true, ...(fromMailbox !== "default" ? { profile: fromMailbox } : {}) });
       summary.attempted += 1;
       if (result.sent) {
         recipient.status = "sent";
         recipient.sentAt = now.toISOString();
+        recipient.sentFrom = fromMailbox;
         recipient.messageRef = messageRef;
         recipient.updatedAt = now.toISOString();
         await store.set(`campaign-recipient:${cfg.id}:${recipient.email}`, recipient);
@@ -4398,7 +4486,8 @@ async function runCampaignSweep(opts = {}) {
         summary.sent += 1;
         sentToday += 1;
         summary.sentToday = sentToday;
-        await logEvent({ type: "campaign_email_sent", actorId: null, actorRole: "system", subjectId: null, market: recipient.market || null, data: { campaignId: cfg.id, email: recipient.email, handle: recipient.handle || null, messageRef } });
+        sentByProfile[fromMailbox] = (sentByProfile[fromMailbox] || 0) + 1;
+        await logEvent({ type: "campaign_email_sent", actorId: null, actorRole: "system", subjectId: null, market: recipient.market || null, data: { campaignId: cfg.id, email: recipient.email, handle: recipient.handle || null, messageRef, fromMailbox } });
       } else {
         failures += 1;
         summary.failed += 1;
@@ -4441,8 +4530,12 @@ async function runCampaignSweep(opts = {}) {
 }
 
 function campaignView(cfg, counts, sentToday) {
+  const fromMailbox = campaignFromMailbox(cfg);
   return {
     id: cfg.id,
+    fromMailbox,
+    senderAvailable: senderProfile(fromMailbox).available,
+    teamMailDailyCap: teamMailDailyCap(),
     armed: !!cfg.armed,
     armedAt: cfg.armedAt || null,
     disarmedAt: cfg.disarmedAt || null,
@@ -7418,9 +7511,11 @@ async function route(event) {
         .filter((r) => r.status === "sent")
         .sort((a, b) => ((a.sentAt || "") < (b.sentAt || "") ? 1 : -1))
         .slice(0, 10)
-        .map((r) => ({ email: r.email, name: r.name || "", handle: r.handle || "", market: r.market || "", sentAt: r.sentAt || null, messageRef: r.messageRef || null }));
+        .map((r) => ({ email: r.email, name: r.name || "", handle: r.handle || "", market: r.market || "", sentAt: r.sentAt || null, messageRef: r.messageRef || null, fromMailbox: CAMPAIGN_MAILBOXES.includes(r.sentFrom) ? r.sentFrom : "default" }));
       const sentToday = await campaignSentToday(new Date());
-      return json(200, { campaign: campaignView(cfg, counts, sentToday), counts, recentSends });
+      const senderProfiles = {};
+      for (const name of CAMPAIGN_MAILBOXES) senderProfiles[name] = senderProfile(name).available;
+      return json(200, { campaign: campaignView(cfg, counts, sentToday), counts, recentSends, senderProfiles });
     }
     if (method === "POST" && seg[1] === "campaign" && seg[2] === "import") {
       const b = parseBody(event);
@@ -7546,6 +7641,28 @@ async function route(event) {
         await saveCampaignConfig(cfg);
         await logEvent({ type: "campaign_disarmed", actorId: user.id, actorRole: "admin", subjectId: null, market: null, data: { campaignId } });
       }
+      const recipients = await listCampaignRecipients(campaignId);
+      const counts = campaignCounts(recipients);
+      const sentToday = await campaignSentToday(new Date());
+      return json(200, { campaign: campaignView(cfg, counts, sentToday), counts });
+    }
+    // Sender mailbox selection (Jeff, 2026-10-24): which sender
+    // profile a campaign's mail leaves from. Values are the
+    // CAMPAIGN_MAILBOXES keys; "default" is the shipped behavior
+    // (hello@joinsignl.com). Selecting a signlteam profile does
+    // not activate it: the profile sends only once its SMTP vars
+    // exist in the environment, and until then the sweep skips
+    // the campaign rather than send from the wrong identity.
+    if (method === "POST" && seg[1] === "campaign" && seg[2] === "sender") {
+      const b = parseBody(event);
+      const campaignId = b.campaignId === undefined ? DEFAULT_CAMPAIGN_ID : b.campaignId;
+      if (!validCampaignId(campaignId)) return err(400, "campaignId must be lowercase letters, numbers, and dashes");
+      if (!CAMPAIGN_MAILBOXES.includes(b.fromMailbox)) return err(400, `fromMailbox must be one of: ${CAMPAIGN_MAILBOXES.join(", ")}`);
+      let cfg = await getCampaignConfig(campaignId);
+      if (!cfg.createdAt) cfg.createdAt = nowIso();
+      cfg.fromMailbox = b.fromMailbox;
+      await saveCampaignConfig(cfg);
+      await logEvent({ type: "campaign_sender_changed", actorId: user.id, actorRole: "admin", subjectId: null, market: null, data: { campaignId, fromMailbox: b.fromMailbox } });
       const recipients = await listCampaignRecipients(campaignId);
       const counts = campaignCounts(recipients);
       const sentToday = await campaignSentToday(new Date());
@@ -9366,4 +9483,4 @@ async function route(event) {
 
 // The email builders are exported alongside the router so the verify
 // suites can assert on the exact copy a creator receives.
-module.exports = { route, passwordResetEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, AD_USE_WINDOW_MONTHS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor };
+module.exports = { route, passwordResetEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, AD_USE_WINDOW_MONTHS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor };

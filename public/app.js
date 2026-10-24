@@ -5639,6 +5639,20 @@ const CAMPAIGN_SECTIONS = [
   { key: "business", suffix: "-business", kind: "business", campaignId: "founding-businesses-2026-10", title: "Founding businesses", blurb: "The founding business wave: local businesses get a founding spot with their registration prebuilt, claimed through their own signup link. It asks nothing today and commits them to nothing; claiming just puts them in early for launch updates." },
 ];
 
+// Sender profiles for the campaign card's "Sends from" select
+// (Jeff, 2026-10-24). The select posts its value as the campaign's
+// fromMailbox. "default" is the shipped behavior; the
+// signlteam.com profiles send only once their SMTP credentials
+// exist in the server environment, and until then the sweep skips
+// the campaign instead of sending from the wrong address.
+const CAMPAIGN_SENDER_OPTIONS = [
+  { value: "default", label: "Default: SIGNL <hello@joinsignl.com>" },
+  { value: "creators", label: "creators@signlteam.com" },
+  { value: "team", label: "team@signlteam.com" },
+  { value: "hello_team", label: "hello@signlteam.com" },
+];
+const CAMPAIGN_SENDER_ADDR = { default: "hello@joinsignl.com", creators: "creators@signlteam.com", team: "team@signlteam.com", hello_team: "hello@signlteam.com" };
+
 async function loadCampaign() {
   const el = document.getElementById("tab-body");
   try {
@@ -5679,6 +5693,8 @@ function campaignSectionHtml(meta, data) {
     <p class="small muted" style="margin-top:8px">Campaign <strong>${esc(c.id || meta.campaignId)}</strong>. ${esc(meta.blurb)}${c.lastRunAt ? ` Last sweep: ${esc(fmtDate(c.lastRunAt))}.` : ""} Send window is ${c.windowOpenNow ? "open now" : "closed right now"}.</p>
     ${c.lastError ? `<div class="error-box">${esc(c.lastError)}</div>` : ""}
     <p class="small">Queued: <strong>${counts.queued || 0}</strong> &middot; Sent: <strong>${counts.sent || 0}</strong> &middot; Bounced: <strong>${counts.bounced || 0}</strong> &middot; Skipped: <strong>${counts.skipped || 0}</strong> &middot; Total: <strong>${counts.total || 0}</strong> &middot; Sent today: <strong>${c.sentToday != null ? c.sentToday : 0} of ${c.dailyCeiling || 150} (daily ceiling)</strong></p>
+    <div class="field" style="max-width:440px"><label>Sends from</label><select id="campaign-sender${meta.suffix}" onchange="setCampaignSender('${meta.key}')">${CAMPAIGN_SENDER_OPTIONS.map((o) => `<option value="${o.value}" ${(c.fromMailbox || "default") === o.value ? "selected" : ""}>${o.label}</option>`).join("")}</select></div>
+    <p class="small muted">${campaignSenderNote(c, data.senderProfiles || {})}</p>
     <button class="btn ${c.armed ? "danger" : ""}" onclick="toggleCampaignArm(${c.armed ? "false" : "true"}, '${meta.campaignId}')">${c.armed ? "Pause campaign" : "Arm campaign"}</button>
     <div id="campaign-note${meta.suffix}" class="small saved"></div>
     <h3 class="mt">Import recipients</h3>
@@ -5687,6 +5703,33 @@ function campaignSectionHtml(meta, data) {
     <button class="btn" onclick="importCampaignRecipients('${meta.key}')">Import recipients</button>
     <div id="campaign-import-note${meta.suffix}" class="small saved"></div>
     ${sends ? `<h3 class="mt">Recent sends</h3>${sends}` : `<p class="muted mt">No sends yet.</p>`}`;
+}
+
+// The line under the "Sends from" select: what the campaign will
+// actually send as, and, for a signlteam profile that is not live
+// yet, the plain warning that the sweep skips this campaign
+// rather than send from the wrong address.
+function campaignSenderNote(c, profiles) {
+  const key = c.fromMailbox || "default";
+  const addr = CAMPAIGN_SENDER_ADDR[key] || CAMPAIGN_SENDER_ADDR.default;
+  if (key === "default") return "Sending as SIGNL &lt;hello@joinsignl.com&gt; (the default mailbox).";
+  if (profiles[key]) return `Sending as SIGNL &lt;${addr}&gt;. Replies go to hello@joinsignl.com. Warm-up cap: ${c.teamMailDailyCap || 25} sends per day for this mailbox, on top of the shared daily ceiling.`;
+  return `Mailbox ${addr} is selected but NOT active: its SMTP credentials are not in the server environment yet, so the sweep will skip this campaign rather than send from the wrong address.`;
+}
+
+async function setCampaignSender(sectionKey) {
+  const meta = CAMPAIGN_SECTIONS.find((s) => s.key === sectionKey) || CAMPAIGN_SECTIONS[0];
+  const sel = document.getElementById("campaign-sender" + meta.suffix);
+  if (!sel) return;
+  try {
+    await api("POST", "/admin/campaign/sender", { campaignId: meta.campaignId, fromMailbox: sel.value });
+    await loadCampaign();
+    const fresh = document.getElementById("campaign-note" + meta.suffix);
+    if (fresh) fresh.textContent = "Sender mailbox updated.";
+  } catch (err) {
+    const note = document.getElementById("campaign-note" + meta.suffix);
+    if (note) note.textContent = err.message;
+  }
 }
 
 async function toggleCampaignArm(arm, campaignId) {
