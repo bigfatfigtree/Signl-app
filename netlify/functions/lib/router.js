@@ -279,6 +279,33 @@ async function notifyUser(userId, kind, text, data = {}) {
   return rec;
 }
 
+// Milestone fan-out (UX teardown, 2026-10-24): the visit loop's
+// state changes were silent for the other side. A business heard
+// nothing when a creator accepted its offer; a creator heard
+// nothing when their code was redeemed and the 48 hour clock
+// started; proof, verification, ratings, performance reports and
+// paid bookings all landed with no signal at all. Jeff's harness
+// run proved it end to end: across the full loop the creator got
+// exactly one in-app note (offer_received) and the business got
+// zero, and no milestone email fired past approval. A milestone
+// now writes BOTH an in-app notification and an email through the
+// same deliverEmail transport as every other lifecycle email, so
+// the Admin event log shows each one fire. Email stays
+// best-effort, exactly like the rest of the lifecycle mail.
+async function notifyMilestone(userId, kind, noteText, subject, mailText, data = {}) {
+  await notifyUser(userId, kind, noteText, data);
+  try {
+    const u = await store.get(`user:${userId}`);
+    if (u && u.email) await deliverEmail(kind, u, subject, mailText, null);
+  } catch (e) { /* best-effort; the in-app note is the guaranteed record */ }
+}
+
+function milestoneDeadlineText(iso) {
+  try {
+    return new Date(iso).toLocaleString("en-US", { timeZone: "America/New_York", weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) + " ET";
+  } catch (e) { return String(iso || ""); }
+}
+
 function laneOf(offer) {
   if (offer.lane) return offer.lane;
   return offer.creatorId ? "direct" : "open";
@@ -4320,6 +4347,13 @@ async function performCounterRedeem(booking, actor) {
   await store.set(`booking:${booking.id}`, booking);
   await logEvent({ type: "code_redeemed", actorId: actor.id, actorRole: actor.role, subjectId: booking.id, market: booking.market, data: { creatorId: booking.creatorId, code: booking.code, method: "counter_code", via: actor.via, postDeadline: booking.postDeadline, dollarCap: booking.dollarCap } });
   await sendStaffNotice(booking, "redeem");
+  // The creator's 48 hour clock just started; until 2026-10-24
+  // they heard about it from nobody. Tell them, both surfaces.
+  await notifyMilestone(booking.creatorId, "clock_started",
+    `Your visit to ${booking.businessName || "the business"} is redeemed and your 48 hour post clock is running. Post by ${milestoneDeadlineText(booking.postDeadline)}, then paste the Instagram link in the app.`,
+    `Your 48 hour post clock started: ${booking.businessName || "your SIGNL visit"}`,
+    [`Your visit to ${booking.businessName || "the business"} was just redeemed at the counter, so your post clock is running.`, "", `Post within 48 hours, by ${milestoneDeadlineText(booking.postDeadline)}, then paste the full Instagram post or reel link in the app as your proof. On time is what keeps your Momentum climbing.`, "", "Open SIGNL: https://app.joinsignl.com", "", "Jeff", "Founder, SIGNL"].join("\n"),
+    { bookingId: booking.id });
   return booking;
 }
 
@@ -8102,6 +8136,11 @@ async function route(event) {
         await store.set(`booking:${booking.id}`, booking);
       }
       await logEvent({ type: "offer_accepted", actorId: user.id, actorRole: "creator", subjectId: offer.id, market: offer.market, data: { businessId: offer.businessId, visitDate: booking.visitDate } });
+      await notifyMilestone(offer.businessId, "booking_confirmed",
+        `${user.name} (@${(user.creator && user.creator.handle) || "creator"}) accepted "${offer.title}". Visit code ${booking.code} is live: redeem it at the counter when they visit.`,
+        `Booked: ${user.name} accepted your SIGNL offer`,
+        [`Good news: ${user.name} (@${(user.creator && user.creator.handle) || "creator"}) accepted your offer "${offer.title}" and the visit is booked.`, "", `Their visit code is ${booking.code}. When they visit, redeem the code at the counter (the Counter tab, or staff mode with your PIN). Redemption starts their 48 hour post clock.`, "", "Open SIGNL: https://app.joinsignl.com", "", "SIGNL"].join("\n"),
+        { bookingId: booking.id, offerId: offer.id });
       return json(201, { booking: await withPostState(booking) });
     }
     if (method === "POST" && seg.length === 3 && seg[2] === "decline") {
@@ -8400,6 +8439,11 @@ async function route(event) {
     await store.set(`code:${code}`, { bookingId: booking.id });
     await store.set(`ccode:${creatorCode}`, { bookingId: booking.id });
     await logEvent({ type: "paid_booking_created", actorId: user.id, actorRole: "business", subjectId: booking.id, market: booking.market, data: { creatorId: creator.id, rate: math.rate, businessTotal: math.businessTotal, creatorNet: math.creatorNet, platformFee: math.platformFee, escrowState: "held", hasBrief: !!booking.paidBrief } });
+    await notifyMilestone(creator.id, "paid_booking_received",
+      `${booking.businessName || "A business"} booked you at your listed rate of $${math.rate}. $${math.creatorNet} is recorded as held by SIGNL until your post is live. Visit code ${code}.`,
+      `Paid booking: ${booking.businessName || "a business"} booked you at $${math.rate}`,
+      [`${booking.businessName || "A business"} booked you at your listed rate of $${math.rate}.`, "", `${PAID_LANE.paymentNote} Your share is $${math.creatorNet} of the $${math.rate} rate.`, "", `Your visit code is ${code}: show it at the counter when you visit. The visit window is 7 days from booking.`, "", "Open SIGNL: https://app.joinsignl.com", "", "Jeff", "Founder, SIGNL"].join("\n"),
+      { bookingId: booking.id });
     await logEvent({ type: "booking_code_issued", actorId: user.id, actorRole: "business", subjectId: booking.id, market: booking.market, data: { code, offerId: null, businessId: user.id, dollarCap: booking.dollarCap, kind: "paid", hasBrief: !!booking.paidBrief } });
     return json(201, { booking: await withPostState(booking) });
   }
@@ -8458,6 +8502,11 @@ async function route(event) {
     await logEvent({ type: "visit_confirmed_by_business", actorId: user.id, actorRole: "business", subjectId: booking.id, market: booking.market, data: { creatorId: booking.creatorId, code: booking.code, postDeadline: booking.postDeadline } });
     await logEvent({ type: "code_redeemed", actorId: user.id, actorRole: "business", subjectId: booking.id, market: booking.market, data: { creatorId: booking.creatorId, code: booking.code, method: "business_confirm", postDeadline: booking.postDeadline } });
     await sendStaffNotice(booking, "redeem");
+    await notifyMilestone(booking.creatorId, "clock_started",
+      `Your visit to ${booking.businessName || "the business"} is redeemed and your 48 hour post clock is running. Post by ${milestoneDeadlineText(booking.postDeadline)}, then paste the Instagram link in the app.`,
+      `Your 48 hour post clock started: ${booking.businessName || "your SIGNL visit"}`,
+      [`Your visit to ${booking.businessName || "the business"} was just confirmed, so your post clock is running.`, "", `Post within 48 hours, by ${milestoneDeadlineText(booking.postDeadline)}, then paste the full Instagram post or reel link in the app as your proof. On time is what keeps your Momentum climbing.`, "", "Open SIGNL: https://app.joinsignl.com", "", "Jeff", "Founder, SIGNL"].join("\n"),
+      { bookingId: booking.id });
     return json(200, { booking: await withPostState(booking) });
   }
 
@@ -8570,6 +8619,11 @@ async function route(event) {
       }
     }
     await store.set(`booking:${booking.id}`, booking);
+    await notifyMilestone(booking.businessId, "proof_submitted",
+      `${user.name} posted for "${booking.title}"${post.onTime ? " (on time)" : " (late)"}. Open the link, confirm it is live under Posts, then report register tallies as they come in.`,
+      `${user.name} posted for your SIGNL visit`,
+      [`${user.name} just submitted their post for "${booking.title}"${post.onTime ? ", on time" : ", late"}.`, "", `Post: ${url}`, "", "Open it, confirm it is live in the app under Posts, and report register tallies as customers use the creator's code: the tally is what builds your SIGNL ROAS Score.", "", "Open SIGNL: https://app.joinsignl.com", "", "SIGNL"].join("\n"),
+      { bookingId: booking.id, postId: post.id });
     // A paused creator who delivers unpauses automatically; a banned
     // creator does not (reinstatement is a human decision).
     if (standingState(user) === "paused") {
@@ -8587,6 +8641,13 @@ async function route(event) {
     await store.set(`post:${post.id}`, post);
     const booking = await store.get(`booking:${post.bookingId}`);
     await logEvent({ type: "post_verified", actorId: user.id, actorRole: user.role, subjectId: post.id, market: booking ? booking.market : user.market, data: { bookingId: post.bookingId, creatorId: post.creatorId, onTime: post.onTime } });
+    if (booking) {
+      await notifyMilestone(post.creatorId, "post_verified",
+        `${booking.businessName || "The business"} confirmed your post is live. This visit is complete.`,
+        `Visit complete: ${booking.businessName || "the business"} confirmed your post`,
+        [`${booking.businessName || "The business"} confirmed your post is live, so this visit is complete.`, "", "When the business rates the visit and your post numbers come in, they land on the same booking in the app.", "", "Open SIGNL: https://app.joinsignl.com", "", "Jeff", "Founder, SIGNL"].join("\n"),
+        { bookingId: booking.id, postId: post.id });
+    }
     return json(200, { post });
   }
 
@@ -8684,6 +8745,11 @@ async function route(event) {
     };
     await store.set(`review:${review.id}`, review);
     await logEvent({ type: "business_review_left", actorId: user.id, actorRole: "business", subjectId: booking.creatorId, market: booking.market, data: { bookingId: booking.id, stars, hasComment: !!comment } });
+    await notifyMilestone(booking.creatorId, "rating_received",
+      `${review.businessName} rated your visit ${stars} star${stars === 1 ? "" : "s"}${comment ? `: "${comment}"` : ""}.`,
+      `${review.businessName} rated your visit ${stars} star${stars === 1 ? "" : "s"}`,
+      [`${review.businessName} rated your visit to them ${stars} star${stars === 1 ? "" : "s"}.${comment ? ` Their note: "${comment}"` : ""}`, "", "Ratings count toward SIGNL Elite once you have five of them, and they show on your public profile once you have three.", "", "Open SIGNL: https://app.joinsignl.com", "", "Jeff", "Founder, SIGNL"].join("\n"),
+      { bookingId: booking.id });
     return json(201, { review: reviewDisplay(review) });
   }
 
@@ -8757,6 +8823,11 @@ async function route(event) {
     post.reportedAt = nowIso();
     await store.set(`post:${post.id}`, post);
     await logEvent({ type: "post_performance_reported", actorId: user.id, actorRole: "creator", subjectId: post.id, market: booking.market, data: { bookingId: booking.id, views: post.views == null ? null : post.views, likes: post.likes == null ? null : post.likes, comments: post.comments == null ? null : post.comments, shares: post.shares == null ? null : post.shares } });
+    await notifyMilestone(booking.businessId, "performance_reported",
+      `${user.name} reported their post numbers for "${booking.title}" (${post.views == null ? "no views figure" : `${post.views} views`}). Your results on this booking are updated.`,
+      `${user.name} reported post numbers for your visit`,
+      [`${user.name} reported the numbers on their post for "${booking.title}": ${post.views == null ? "views not reported" : `${post.views} views`}, ${post.likes == null ? "likes not reported" : `${post.likes} likes`}, ${post.comments == null ? "comments not reported" : `${post.comments} comments`}, ${post.shares == null ? "shares not reported" : `${post.shares} shares`}.`, "", "They feed the media-value side of your SIGNL ROAS Score on this booking. The register side is still yours to report under Bookings.", "", "Open SIGNL: https://app.joinsignl.com", "", "SIGNL"].join("\n"),
+      { bookingId: booking.id, postId: post.id });
     return json(200, { post });
   }
 
@@ -8800,6 +8871,13 @@ async function route(event) {
     booking.updatedAt = ts;
     await store.set(`booking:${booking.id}`, booking);
     await logEvent({ type: "code_redemptions_reported", actorId: user.id, actorRole: user.role, subjectId: booking.id, market: booking.market, data: { creatorId: booking.creatorId, businessId: booking.businessId, creatorCode: booking.creatorCode || null, count, basketTotal: booking.redemptions.basketTotal, discountPct, compCostActual: typeof booking.compCostActual === "number" ? booking.compCostActual : null } });
+    if (user.id === booking.businessId) {
+      await notifyMilestone(booking.creatorId, "register_tally",
+        `${booking.businessName || "The business"} reports ${count} customer${count === 1 ? "" : "s"} used your code ${booking.creatorCode || ""} ($${booking.redemptions.basketTotal} rung up). That is tracked register spend from your post.`,
+        `Your code drove $${booking.redemptions.basketTotal} at ${booking.businessName || "the register"}`,
+        [`${booking.businessName || "The business"} just reported their register tally for your visit: ${count} customer${count === 1 ? "" : "s"} used your code ${booking.creatorCode || ""}, $${booking.redemptions.basketTotal} rung up in total.`, "", "That tracked register spend sits on your booking and your track record: it is the floor of what your post provably drove.", "", "Open SIGNL: https://app.joinsignl.com", "", "Jeff", "Founder, SIGNL"].join("\n"),
+        { bookingId: booking.id });
+    }
     return json(200, { booking: await withPostState(booking) });
   }
 
