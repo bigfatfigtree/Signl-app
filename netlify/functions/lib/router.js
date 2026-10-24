@@ -11,6 +11,7 @@ const { computeFit, buildFitNote } = require("./fit");
 const { emailEnabled, sendEmail } = require("./email");
 const claimEvidence = require("./claim-evidence");
 const stripe = require("./stripe");
+const { runMetricsSync } = require("./metrics-sync");
 const { buildProfilePageHtml } = require("./profile-meta");
 
 // ------------------------------------------------------------------
@@ -165,7 +166,7 @@ function noShowStrikesOf(user) {
 }
 
 function strikePauseReason() {
-  return "Three booked visit windows expired unused. The account is paused pending a SIGNL review.";
+  return "Booked visit windows expired unused. The account is paused pending a SIGNL review.";
 }
 
 function strikePaused(user) {
@@ -184,15 +185,18 @@ function pausedPickMessage(creator) {
 
 function pausedSelfMessage(user) {
   return strikePaused(user)
-    ? "Your account is paused pending a SIGNL review after three booked visit windows expired unused. The team reviews every pause by hand; questions: hello@joinsignl.com."
+    ? "Your account is paused pending a SIGNL review after booked visit windows expired unused. The team reviews every pause by hand; questions: hello@joinsignl.com."
     : "Your account is paused until the late post from your last visit is checked off. Paste the post link under My Visits and offers open again.";
 }
 
 // The plain-language line a creator sees about their own strikes.
+// AB1 (UX redesign, 2026-10-24): the internal ladder stays internal.
+// The line states the count and the plain consequence, never the
+// threshold that pauses the account.
 function strikeStatusLine(user) {
   const n = noShowStrikesOf(user);
   if (!n) return null;
-  return `Visit strikes: ${n} of ${STRIKE_LIMIT}. Letting a booked visit window expire counts as a strike. Three strikes pauses your account for review.`;
+  return `Visit strikes: ${n}. Letting a booked visit window expire unused counts as a strike, and strikes can pause your account for review.`;
 }
 
 // Plan payment stays concierge (Jeff, 2026-10-20): the plan is
@@ -250,8 +254,8 @@ function strikeStatusLine(user) {
 // PAID_LANE.minRate).
 const COMP_GUIDANCE = {
   Neighbors: { floor: 25, typicalLow: 25, typicalHigh: 75 },
-  Locals: { floor: 50, typicalLow: 50, typicalHigh: 150 },
-  Headliners: { floor: 100, typicalLow: 100, typicalHigh: 250 },
+  Locals: { floor: 50, typicalLow: 75, typicalHigh: 250 },
+  Headliners: { floor: 100, typicalLow: 250, typicalHigh: 750 },
 };
 const SELECTION_SLA_HOURS = 72;
 const BACKFILL_ACCEPT_HOURS = 24;
@@ -464,6 +468,9 @@ function roasPerformanceOf(booking) {
 // and the two scores.
 function roasFor(bookings) {
   let registerValue = 0;
+  let estimatedRegisterValue = 0;
+  let estimateUses = 0;
+  let estimateTickets = new Set();
   let mediaValue = 0;
   let compCost = 0;
   let discountCost = 0;
@@ -473,6 +480,21 @@ function roasFor(bookings) {
   let basketTotalAll = 0;
   for (const b of bookings) {
     const red = b.redemptions || null;
+    // Code-use estimate (UX redesign section 4, 2026-10-24): a
+    // booking with NO register tally but with logged code uses
+    // contributes an ESTIMATE, code uses times the business's
+    // average ticket, kept apart from the tracked registerValue
+    // (which stays the floor). The moment a tally exists for the
+    // booking, the actual replaces the estimate for it entirely.
+    if (!red) {
+      const uses = Math.max(0, Math.floor(Number(b.codeUseCount) || 0));
+      const ticket = typeof b.avgTicket === "number" && Number.isFinite(b.avgTicket) && b.avgTicket > 0 ? b.avgTicket : null;
+      if (uses > 0 && ticket !== null) {
+        estimatedRegisterValue += uses * ticket;
+        estimateUses += uses;
+        estimateTickets.add(ticket);
+      }
+    }
     // The discount percent comes from the booking's stamp (the
     // business's opt-in choice at creation) or the tally's
     // snapshot of it. A booking with neither reads as 0: codes
@@ -496,18 +518,27 @@ function roasFor(bookings) {
     else planAllocation += alloc;
   }
   registerValue = roasRound2(registerValue);
+  estimatedRegisterValue = roasRound2(estimatedRegisterValue);
   mediaValue = roasRound2(mediaValue);
   compCost = roasRound2(compCost);
   discountCost = roasRound2(discountCost);
   planAllocation = roasRound2(planAllocation);
-  const value = roasRound2(registerValue + mediaValue);
+  const value = roasRound2(registerValue + estimatedRegisterValue + mediaValue);
   const costTotal = roasRound2(compCost + discountCost);
   const score = costTotal > 0 ? roasRound2(value / costTotal) : null;
   const allInScore = planKnown && roasRound2(costTotal + planAllocation) > 0 ? roasRound2(value / (costTotal + planAllocation)) : null;
+  const registerSource = registerValue > 0 && estimatedRegisterValue > 0 ? "mixed" : registerValue > 0 ? "tracked" : estimatedRegisterValue > 0 ? "estimated" : "none";
   return {
     label: ROAS_LABEL,
     value,
     registerValue,
+    estimatedRegisterValue,
+    registerSource,
+    registerEstimate: {
+      uses: estimateUses,
+      avgTicket: estimateTickets.size === 1 ? [...estimateTickets][0] : null,
+      value: estimatedRegisterValue,
+    },
     mediaValue,
     compCost,
     discountCost,
@@ -520,6 +551,30 @@ function roasFor(bookings) {
     mediaBasis: ROAS_MEDIA_BASIS,
     model: { ...ROAS_MODEL },
   };
+}
+
+// Code-use estimate inputs (UX redesign section 4, 2026-10-24):
+// roasFor prices an estimate only when a booking carries BOTH a
+// codeUseCount and the business's average ticket. This helper loads
+// each distinct business once and stamps avgTicket (null when the
+// business never set one, or is missing) plus a defaulted
+// codeUseCount onto booking-shaped objects, in place. Preview and
+// fixture paths pass objects whose businessId resolves to nothing:
+// they simply get avgTicket null and no estimate, never a crash.
+async function enrichRoasEstimateInputs(bookings) {
+  const cache = new Map();
+  for (const b of bookings) {
+    if (!b || typeof b !== "object") continue;
+    if (typeof b.codeUseCount !== "number" || !Number.isFinite(b.codeUseCount)) b.codeUseCount = Math.max(0, Math.floor(Number(b.codeUseCount) || 0));
+    if (!b.businessId) { if (b.avgTicket === undefined) b.avgTicket = null; continue; }
+    if (!cache.has(b.businessId)) {
+      const bizUser = await store.get(`user:${b.businessId}`);
+      const ticket = bizUser && bizUser.business ? bizUser.business.averageTicket : null;
+      cache.set(b.businessId, typeof ticket === "number" && Number.isFinite(ticket) && ticket > 0 ? ticket : null);
+    }
+    b.avgTicket = cache.get(b.businessId);
+  }
+  return bookings;
 }
 
 // The rights a business holds over a delivered post, by VISIT TYPE
@@ -2800,6 +2855,44 @@ function postState(booking, post) {
   return "booked";
 }
 
+// Performance summary (UX redesign section 3, 2026-10-24): a post's
+// numbers are a time series (post.snapshots[]), and every payload
+// that carries a post also carries this summary of it: the latest
+// numbers (mirrored on the post fields themselves), when reporting
+// started, when it last updated, how many snapshots exist, the
+// views growth since the first snapshot, and where the latest
+// numbers came from. Legacy posts reported before snapshots existed
+// summarize from their flat fields with a zero snapshot count.
+function performanceSummary(post) {
+  const empty = { reported: false, views: null, likes: null, comments: null, shares: null, firstAt: null, updatedAt: null, snapshots: 0, viewsGrowthPct: null, source: null };
+  if (!post) return empty;
+  const snaps = Array.isArray(post.snapshots) ? post.snapshots : [];
+  const first = snaps.length ? snaps[0] : null;
+  const latest = snaps.length ? snaps[snaps.length - 1] : null;
+  const num = (v) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+  let viewsGrowthPct = null;
+  if (first && latest && snaps.length >= 2 && typeof first.views === "number" && first.views > 0 && typeof latest.views === "number") {
+    viewsGrowthPct = Math.round((((latest.views - first.views) / first.views) * 100) * 10) / 10;
+  }
+  return {
+    reported: !!post.reportedAt,
+    views: num(post.views),
+    likes: num(post.likes),
+    comments: num(post.comments),
+    shares: num(post.shares),
+    firstAt: first ? first.at : null,
+    updatedAt: post.lastSnapshotAt || (latest ? latest.at : null) || post.reportedAt || null,
+    snapshots: snaps.length,
+    viewsGrowthPct,
+    source: latest ? latest.source || null : null,
+  };
+}
+
+function postWithPerformance(post) {
+  if (!post) return post;
+  return { ...post, performance: performanceSummary(post) };
+}
+
 async function withPostState(booking) {
   const posts = await allPosts();
   const post = posts.find((p) => p.bookingId === booking.id) || null;
@@ -2841,8 +2934,10 @@ async function withPostState(booking) {
     const plan = bizUser && bizUser.business ? planById(bizUser.business.plan) : null;
     if (plan) planAllocation = plan.priceMonthly / plan.visitsPerMonth;
   }
-  const roas = roasFor([{ ...booking, post, planAllocation }]);
-  return { ...booking, post, postState: postState(booking, post), compliance: complianceStatusFor(booking, post, creatorStanding), businessReviewLinks, businessReview, creatorReview, roas };
+  const roasBooking = { ...booking, post, planAllocation };
+  await enrichRoasEstimateInputs([roasBooking]);
+  const roas = roasFor([roasBooking]);
+  return { ...booking, post: postWithPerformance(post), postState: postState(booking, post), compliance: complianceStatusFor(booking, post, creatorStanding), businessReviewLinks, businessReview, creatorReview, roas };
 }
 
 // ---------- Post compliance (Jeff, 2026-10-19; timeline final) ----------
@@ -2883,6 +2978,13 @@ const REMINDER3_DAYS = COMPLIANCE.hardStopDays - 1;
 // The post-performance email ("How did your post do?") asks seven
 // days after proof; a separate feature's timing, kept named here.
 const PERFORMANCE_ASK_DAYS = 7;
+// Performance refresh asks (UX redesign section 3, 2026-10-24):
+// posts keep collecting views long after the first report, so at
+// day 14 and day 30 after proof the sweep asks once more for fresh
+// numbers, but only when the latest snapshot is stale (older than
+// PERFORMANCE_UPDATE_STALE_DAYS). Markers live on the post record.
+const PERFORMANCE_UPDATE_ASK_DAYS = [14, 30];
+const PERFORMANCE_UPDATE_STALE_DAYS = 5;
 
 function pauseAtFor(booking) {
   if (!booking.redeemedAt) return null;
@@ -3326,12 +3428,39 @@ function postPerformanceEmail(creator, booking) {
   };
 }
 
+// AB1 (UX redesign, 2026-10-24): creator-facing reminder copy states
+// the plain consequences only. The internal ladder's exact pause
+// and ban timings never appear in anything a creator receives; the
+// engine's timings and thresholds are unchanged.
+// The refresh ask (UX redesign section 3, 2026-10-24): day 14 and
+// day 30 after proof, when the numbers on file have gone stale.
+// Same house pattern as postPerformanceEmail: plain ask, the reason
+// it matters, the ten-second route in, the team sign-off. No em
+// dashes, no compliance specifics.
+function postPerformanceUpdateEmail(creator, booking) {
+  const first = greetingName(creator);
+  const biz = booking.businessName || "your visit";
+  return {
+    subject: "Your post is still growing: update its numbers",
+    text: [
+      `Hi ${first},`,
+      "",
+      `Your post for ${biz} is still collecting views, and the numbers on file are from a while back. Fresh numbers show the full picture: the business sees these numbers on their results for your visit, and they build your own SIGNL track record.`,
+      "",
+      "Update them in the app: open My Visits, find the visit, and update your views, likes, comments, and shares. It takes ten seconds.",
+      "",
+      "Sign in: https://app.joinsignl.com",
+      "",
+      "The SIGNL team",
+      "hello@joinsignl.com",
+    ].join("\n"),
+  };
+}
+
 function complianceReminderEmail(creator, booking, stage) {
   const first = greetingName(creator);
   const biz = booking.businessName || "your visit";
   const deadline = booking.postDeadline ? new Date(booking.postDeadline).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" }) : "";
-  const pauseDate = (() => { const p = pauseAtFor(booking); return p ? new Date(p).toLocaleDateString("en-US", { dateStyle: "medium" }) : ""; })();
-  const banDate = (() => { const b = banAtFor(booking); return b ? new Date(b).toLocaleDateString("en-US", { dateStyle: "medium" }) : ""; })();
   const howTo = [
     "How to check off (takes 20 seconds):",
     "1. Open SIGNL and go to My Visits.",
@@ -3339,17 +3468,18 @@ function complianceReminderEmail(creator, booking, stage) {
     "3. That link is your check-off. We verify delivery from it.",
     "The post must be your honest experience with the comp disclosed, as you agreed.",
   ];
+  const consequence = "If a post never lands, the visit does not count, and repeated misses can pause your account.";
   if (stage === 1) {
     return {
       subject: `Your SIGNL post is due for ${biz}`,
       text: [
         `Hi ${first},`,
         "",
-        `The 48 hours for your full-credit post about ${biz} are up (it was due ${deadline}), and we do not have your post link yet. No stress: a post delivered within one week of the visit still counts, marked late. One week is the hard stop.`,
+        `The 48 hours for your full-credit post about ${biz} are up (it was due ${deadline}), and we do not have your post link yet. No stress: a late post inside the catch-up window still counts.`,
         "",
         ...howTo,
         "",
-        `Please get the link in before ${pauseDate}. On that day your account pauses if no post has landed, and a redeemed visit that reaches ${banDate} with no post closes the account to future offers.`,
+        consequence,
         "",
         "If you already posted, this email crossed with your check-off and you can ignore it.",
         "",
@@ -3368,7 +3498,7 @@ function complianceReminderEmail(creator, booking, stage) {
         "",
         ...howTo,
         "",
-        `The hard stop is ${pauseDate}: one week after the visit. That day your account pauses (greyed out for businesses, no new offers) until the post lands. A post can still land for one more week after that, and if ${banDate} arrives with no post, the account is removed from future offers.`,
+        `A late post inside the catch-up window still counts. ${consequence}`,
         "",
         "If something went wrong with the visit itself, reply to this email and tell us. We would rather hear it than guess.",
         "",
@@ -3378,15 +3508,15 @@ function complianceReminderEmail(creator, booking, stage) {
     };
   }
   return {
-    subject: "Final warning: your SIGNL account pauses tomorrow",
+    subject: "Final warning: your SIGNL post is still missing",
     text: [
       `Hi ${first},`,
       "",
-      `This is the final warning for your visit to ${biz}: the one-week hard stop lands tomorrow, ${pauseDate}, and we still have no post link. When it lands, your account PAUSES: businesses see you greyed out and you cannot accept new offers until the post arrives.`,
+      `This is the final warning for your visit to ${biz}: we still have no post link, and the catch-up window is closing. A late post inside the window still counts, so please get the link in now.`,
       "",
       ...howTo,
       "",
-      `Even after the pause, the post can still land for one more week and your account unpauses automatically; the visit counts as delivered late and the missed deadline stays on your record. If ${banDate} arrives with no post, the account is banned from future offers, and only a person at SIGNL can reinstate it.`,
+      consequence,
       "",
       "The SIGNL team",
       "hello@joinsignl.com",
@@ -3407,11 +3537,11 @@ function strikePauseEmail(creator) {
   const lines = [
     `Hi ${first},`,
     "",
-    `Three booked visits on your account reached the end of their redemption windows without being used. ${strikeStatusLine(creator) || ""}`,
+    `Booked visits on your account reached the end of their redemption windows without being used. ${strikeStatusLine(creator) || ""}`,
     "",
     "Your account is paused while the SIGNL team reviews it. While it is paused, businesses cannot send you new offers and you cannot take new ones. Visits you already redeemed are not affected.",
     "",
-    "If something kept you from those visits, reply to this email and tell us what happened. Reviews are done by a person, and reinstated accounts restart with two strikes on the count, one short of the limit, so one more expired window pauses the account again.",
+    "If something kept you from those visits, reply to this email and tell us what happened. Reviews are done by a person. If your account is reinstated, it restarts on probation, and another expired window can pause it again.",
     "",
     "Jeff",
     "Founder, SIGNL",
@@ -3446,7 +3576,7 @@ async function refundPaidEscrow(booking, reason, summary) {
 }
 
 async function runComplianceSweep() {
-  const summary = { checked: 0, reminder1: 0, reminder2: 0, reminder3: 0, lateMarked: 0, paused: 0, banned: 0, performance: 0, expired: 0, escrowReleased: 0, escrowRefunded: 0 };
+  const summary = { checked: 0, reminder1: 0, reminder2: 0, reminder3: 0, lateMarked: 0, paused: 0, banned: 0, performance: 0, performanceUpdates: 0, expired: 0, escrowReleased: 0, escrowRefunded: 0 };
   const bookings = await allBookings();
   const posts = await allPosts();
   const postByBooking = new Map(posts.map((p) => [p.bookingId, p]));
@@ -3502,7 +3632,7 @@ async function runComplianceSweep() {
         await logEvent({ type: "visit_deadline_missed", actorId: null, actorRole: "system", subjectId: booking.id, market: booking.market, data: { creatorId: booking.creatorId, businessId: booking.businessId, redeemedAt: booking.redeemedAt, pauseAt: pauseAtFor(booking) } });
       }
       if (standingState(creator) !== "banned" && standingState(creator) !== "paused") {
-        creator.standing = { state: "paused", reason: "A post passed the one-week hard stop with nothing delivered. Deliver the post link to unpause.", at: nowIso(), bookingId: booking.id };
+        creator.standing = { state: "paused", reason: "A post from a redeemed visit never landed. Deliver the post link to unpause.", at: nowIso(), bookingId: booking.id };
         creator.updatedAt = nowIso();
         await store.set(`user:${creator.id}`, creator);
         booking.compliance.pausedAt = nowIso();
@@ -3578,7 +3708,7 @@ async function runComplianceSweep() {
         strikeCreator.standing = { state: "paused", source: "strikes", reason: strikePauseReason(), at: nowIso(), bookingId: booking.id };
         strikeCreator.updatedAt = nowIso();
         await store.set(`user:${strikeCreator.id}`, strikeCreator);
-        await notifyUser(strikeCreator.id, "account_paused_strikes", "Your SIGNL account is paused for review: three booked visit windows expired unused. Reply to the email we sent if something kept you from those visits.", { strikes, limit: STRIKE_LIMIT });
+        await notifyUser(strikeCreator.id, "account_paused_strikes", "Your SIGNL account is paused for review: booked visit windows expired unused. Reply to the email we sent if something kept you from those visits.", { strikes, limit: STRIKE_LIMIT });
         const mail = strikePauseEmail(strikeCreator);
         await deliverEmail("strike_pause", strikeCreator, mail.subject, mail.text);
         await logEvent({ type: "account_paused_strikes", actorId: null, actorRole: "system", subjectId: strikeCreator.id, market: booking.market, data: { bookingId: booking.id, businessId: booking.businessId, strikes, limit: STRIKE_LIMIT } });
@@ -3602,11 +3732,48 @@ async function runComplianceSweep() {
     post.performanceRequestedAt = nowIso();
     await store.set(`post:${post.id}`, post);
     await logEvent({ type: "post_performance_requested", actorId: null, actorRole: "system", subjectId: post.id, market: booking.market, data: { bookingId: booking.id, creatorId: post.creatorId, businessId: post.businessId } });
+    // Refresh mechanics (UX redesign section 3, 2026-10-24): the
+    // day-7 ask now rides with an in-app notification too, so the
+    // creator sees it on the dashboard, not only in their inbox.
+    await notifyUser(post.creatorId, "performance_ask", `How did your post for ${booking.businessName || "your visit"} do? Add its views and likes under My Visits: it takes ten seconds and builds your track record.`, { bookingId: booking.id, postId: post.id });
     try {
       const mail = postPerformanceEmail(creator, booking);
       await deliverEmail("post_performance", creator, mail.subject, mail.text, null);
     } catch (e) { /* best-effort; the requested event is the record */ }
     summary.performance += 1;
+  }
+  // Performance refresh asks (UX redesign section 3, 2026-10-24):
+  // a reported post keeps growing, so at day 14 and day 30 after
+  // proof the sweep asks once more for fresh numbers, email plus
+  // in-app, but only when the latest snapshot is stale (more than
+  // PERFORMANCE_UPDATE_STALE_DAYS old). Each milestone fires once:
+  // its marker lives on the post record.
+  for (const post of posts) {
+    if (!post.submittedAt || !post.reportedAt) continue;
+    const ageDays = (now - Date.parse(post.submittedAt)) / DAY_MS;
+    const snapshots = Array.isArray(post.snapshots) ? post.snapshots : [];
+    const latest = snapshots.length ? snapshots[snapshots.length - 1] : null;
+    const latestAtMs = Date.parse(post.lastSnapshotAt || (latest && latest.at) || post.reportedAt);
+    if (!Number.isFinite(latestAtMs)) continue;
+    if (now - latestAtMs <= PERFORMANCE_UPDATE_STALE_DAYS * DAY_MS) continue;
+    for (const milestone of PERFORMANCE_UPDATE_ASK_DAYS) {
+      const marker = `performanceUpdate${milestone}At`;
+      if (ageDays < milestone || post[marker]) continue;
+      const booking = bookings.find((b) => b.id === post.bookingId);
+      if (!booking) break;
+      const creator = await store.get(`user:${post.creatorId}`);
+      if (!creator || creator.role !== "creator") break;
+      post[marker] = nowIso();
+      await store.set(`post:${post.id}`, post);
+      await logEvent({ type: "post_performance_update_requested", actorId: null, actorRole: "system", subjectId: post.id, market: booking.market, data: { bookingId: booking.id, creatorId: post.creatorId, businessId: post.businessId, milestone } });
+      await notifyUser(post.creatorId, "performance_update_ask", `Your post for ${booking.businessName || "your visit"} is still growing. Update its numbers under My Visits so the business sees the full picture.`, { bookingId: booking.id, postId: post.id });
+      try {
+        const mail = postPerformanceUpdateEmail(creator, booking);
+        await deliverEmail("post_performance_update", creator, mail.subject, mail.text, null);
+      } catch (e) { /* best-effort; the requested event is the record */ }
+      summary.performanceUpdates += 1;
+      break; // one refresh ask per post per sweep pass
+    }
   }
   // Paid-lane escrow release (Jeff, 2026-10-19): a held escrow
   // releases when the post proof exists AND the 48 hour hold after
@@ -4335,6 +4502,34 @@ async function sendStaffNotice(booking, trigger) {
 // stamped on the booking (owner visit views show it) and on the
 // code_redeemed event. Callers check the not-yet-redeemed state
 // before calling; this function assumes the code is live.
+// Code-use logging (UX redesign section 4, 2026-10-24): one tap at
+// the register, at the moment a customer uses a creator's audience
+// code. One stored record per call (codeuse:<id>) carries the count;
+// booking.codeUseCount is the running total the ROAS estimate reads
+// (code uses times the business's average ticket, only until an
+// actual register tally replaces the estimate). `via` is "owner"
+// (business owner or admin, from the booking view) or "staff" (a
+// staff session at the counter).
+async function logCodeUse(booking, count, by, via, actorRole) {
+  const ts = nowIso();
+  const rec = {
+    id: crypto.randomUUID(),
+    bookingId: booking.id,
+    businessId: booking.businessId,
+    creatorId: booking.creatorId,
+    count,
+    at: ts,
+    by,
+    via,
+  };
+  await store.set(`codeuse:${rec.id}`, rec);
+  booking.codeUseCount = (booking.codeUseCount || 0) + count;
+  booking.updatedAt = ts;
+  await store.set(`booking:${booking.id}`, booking);
+  await logEvent({ type: "code_use_logged", actorId: by, actorRole: actorRole || (via === "staff" ? "staff" : "business"), subjectId: booking.id, market: booking.market, data: { creatorId: booking.creatorId, businessId: booking.businessId, count, codeUseCount: booking.codeUseCount, via } });
+  return rec;
+}
+
 async function performCounterRedeem(booking, actor) {
   const ts = nowIso();
   booking.redeemedAt = ts;
@@ -5058,7 +5253,10 @@ async function businessHome(user) {
   const delivered = bookings.filter((b) => postByBooking.has(b.id));
   const onTime = delivered.filter((b) => postByBooking.get(b.id).onTime);
   const planAllocation = plan.priceMonthly / plan.visitsPerMonth;
-  const roas = roasFor(delivered.map((b) => ({ ...b, planAllocation })));
+  const roasInputs = delivered.map((b) => ({ ...b, planAllocation }));
+  await enrichRoasEstimateInputs(roasInputs);
+  const roasInputById = new Map(roasInputs.map((x) => [x.id, x]));
+  const roas = roasFor(roasInputs);
   const totalViews = delivered.reduce((s, b) => s + (Number(postByBooking.get(b.id).views) || 0), 0);
 
   const attention = [];
@@ -5097,7 +5295,8 @@ async function businessHome(user) {
     .slice(0, 3)
     .map((b) => {
       const post = postByBooking.get(b.id);
-      return { bookingId: b.id, title: b.title, creatorName: b.creatorName, creatorHandle: b.creatorHandle, postUrl: post.url, views: post.views || 0, likes: post.likes || 0, onTime: !!post.onTime, redemptions: b.redemptions ? { count: b.redemptions.count, basketTotal: b.redemptions.basketTotal } : null, roasScore: roasFor([{ ...b, planAllocation }]).score };
+      const perf = performanceSummary(post);
+      return { bookingId: b.id, title: b.title, creatorName: b.creatorName, creatorHandle: b.creatorHandle, postUrl: post.url, views: post.views || 0, likes: post.likes || 0, onTime: !!post.onTime, redemptions: b.redemptions ? { count: b.redemptions.count, basketTotal: b.redemptions.basketTotal } : null, performanceUpdatedAt: perf.updatedAt, performanceSource: perf.source, viewsGrowthPct: perf.viewsGrowthPct, roasScore: roasFor([roasInputById.get(b.id) || { ...b, planAllocation }]).score };
     });
   const nextVisits = bookings
     .filter((b) => !postByBooking.has(b.id) && b.status === "booked")
@@ -5199,7 +5398,7 @@ async function handleRegister(event) {
     if (!claimHandle) return err(400, `Your ${primaryPlatformLabel(claimPlatform)} handle is required`);
     if (b.agreedHonestPosts !== true) return err(400, "Please confirm the honest-post rule: no business can ever require a positive post.");
     if (b.agreedFtcDisclosure !== true) return err(400, "Please confirm you will disclose every comp in your posts, as the FTC requires.");
-    if (b.agreedPostCompliance !== true) return err(400, "Please confirm the post rule: post within 48 hours of a comped visit for full credit and paste the post link in the app. One week is the hard stop: a redeemed visit with no post pauses your account at one week and closes it at two.");
+    if (b.agreedPostCompliance !== true) return err(400, "Please confirm the post rule: post within 48 hours of a comped visit for full credit and paste the post link in the app. A late post inside the catch-up window still counts. If a post never lands, the visit does not count, and repeated misses can pause your account.");
     if (b.agreedTerms !== true) return err(400, "Please agree to the Terms of Service and Privacy Policy, and to receiving account and marketing emails from SIGNL.");
   }
   // Business registration is founding-list intake (Jeff restored
@@ -5382,7 +5581,7 @@ async function handleRegister(event) {
     if (Number.isNaN(localPct)) return err(400, "Local audience percentage must be a number from 0 to 100");
     if (b.agreedHonestPosts !== true) return err(400, "Please confirm the honest-post rule: no business can ever require a positive post.");
     if (b.agreedFtcDisclosure !== true) return err(400, "Please confirm you will disclose every comp in your posts, as the FTC requires.");
-    if (b.agreedPostCompliance !== true) return err(400, "Please confirm the post rule: post within 48 hours of a comped visit for full credit and paste the post link in the app. One week is the hard stop: a redeemed visit with no post pauses your account at one week and closes it at two.");
+    if (b.agreedPostCompliance !== true) return err(400, "Please confirm the post rule: post within 48 hours of a comped visit for full credit and paste the post link in the app. A late post inside the catch-up window still counts. If a post never lands, the visit does not count, and repeated misses can pause your account.");
     if (b.agreedTerms !== true) return err(400, "Please agree to the Terms of Service and Privacy Policy, and to receiving account and marketing emails from SIGNL.");
     // Audience stacking (Jeff, 2026-10-19): the sign-up's follower
     // count is the count on the creator's PRIMARY platform (Jeff,
@@ -6114,6 +6313,23 @@ async function route(event) {
     return json(200, { ok: true, sweep: summary });
   }
 
+  // Metrics sync trigger (UX redesign section 3, 2026-10-24). Same
+  // auth and placement discipline as the campaign sweep above and
+  // the compliance sweep route: the Netlify scheduled function
+  // (netlify/functions/metrics-sync.mjs) POSTs here daily with no
+  // session, carrying the x-signl-sweep-token header when
+  // SIGNL_SWEEP_TOKEN is set; without a matching token, only an
+  // admin session may trigger it. It drives the feature-flagged
+  // auto-sync seam in lib/metrics-sync.js: with the flag off (the
+  // shipped state) the call only reports the summary as JSON.
+  if (method === "POST" && seg[0] === "admin" && seg[1] === "metrics" && seg[2] === "sync") {
+    const token = process.env.SIGNL_SWEEP_TOKEN;
+    const tokenOk = !!token && (event.headers["x-signl-sweep-token"] || event.headers["X-Signl-Sweep-Token"]) === token;
+    if (!tokenOk && (!user || user.role !== "admin")) return err(403, "Admin only");
+    const summary = await runMetricsSync();
+    return json(200, summary);
+  }
+
   // Stripe webhook (Jeff, 2026-10-23). Deliberately BEFORE the
   // sign-in wall: Stripe's servers carry no session, authenticity
   // is the HMAC signature over the raw body, verified inside
@@ -6210,6 +6426,34 @@ async function route(event) {
     }
     const done = await performCounterRedeem(booking, { id: biz.id, role: "business", via: "staff" });
     return json(200, { booking: staffBookingView(done) });
+  }
+
+  // Staff code-use logging (UX redesign section 4, 2026-10-24): at
+  // the register, staff enter the creator's AUDIENCE code (not the
+  // visit code) and one use is logged against that booking. The
+  // booking resolves through the ccode: index the code was issued
+  // under, and only for the staff session's own business: a code
+  // belonging to another business reads as not found, exactly like
+  // an unknown code, so nothing about other businesses leaks. The
+  // staff lookup attempt limiter guards this the same way it
+  // guards lookup and redeem.
+  if (method === "POST" && seg[0] === "staff" && seg[1] === "code-use") {
+    if (!staffCtx) return err(401, "Your staff session has ended. Enter the staff PIN to keep going.");
+    const biz = staffCtx.business;
+    if (businessAccessState(biz) !== "active" || !(await isMarketLive(biz.market))) {
+      return err(403, "Staff mode is not open for this business right now.");
+    }
+    if (!staffLookupAllowed(staffCtx.token)) return err(429, "Too many code entries in a row. Wait a few minutes and try again.");
+    const b = parseBody(event);
+    const creatorCode = String(b.creatorCode || "").trim().toUpperCase();
+    if (!creatorCode) return err(400, "Enter the creator's code");
+    const idx = await store.get(`ccode:${creatorCode}`);
+    if (!idx || !idx.bookingId) return err(404, "That code does not match any creator code for this business. Check the code and try again.");
+    const booking = await store.get(`booking:${idx.bookingId}`);
+    if (!booking || booking.businessId !== biz.id) return err(404, "That code does not match any creator code for this business. Check the code and try again.");
+    if (booking.status === "cancelled") return err(400, "That visit is cancelled, so its code is not in use");
+    await logCodeUse(booking, 1, staffCtx.businessId, "staff", "staff");
+    return json(200, { creatorName: booking.creatorName, creatorHandle: booking.creatorHandle || "", codeUseCount: booking.codeUseCount });
   }
 
   if (!user) return err(401, "Sign in required");
@@ -6588,6 +6832,20 @@ async function route(event) {
         if (!v.ok) return err(400, v.error);
         bz.discountEnabled = v.enabled;
         bz.discountPct = v.pct;
+      }
+      // Average ticket (UX redesign section 4, 2026-10-24): the
+      // business's typical register spend per customer, set once
+      // and editable here. ROAS code-use estimates multiply logged
+      // code uses by this until an actual tally replaces them.
+      // null or "" clears it (estimates stop until it is set again).
+      if (b.averageTicket !== undefined) {
+        if (b.averageTicket === null || b.averageTicket === "") {
+          delete bz.averageTicket;
+        } else {
+          const ticket = Number(b.averageTicket);
+          if (!Number.isFinite(ticket) || ticket <= 0 || ticket > 100000) return err(400, "Average ticket must be a dollar amount above 0 and no more than 100000");
+          bz.averageTicket = roasRound2(ticket);
+        }
       }
       // Managed talent budget: a cap + authorization, not a
       // deposit. Editable any time; spends only on Managed.
@@ -8316,8 +8574,31 @@ async function route(event) {
   if (seg[0] === "notifications") {
     if (method === "GET" && seg.length === 1) {
       const rows = await store.list(`note:${user.id}:`);
-      const notes = rows.map((r) => r.value).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)).slice(0, 40);
-      return json(200, { notifications: notes, unreadCount: notes.filter((n) => !n.readAt).length });
+      const all = rows.map((r) => r.value).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+      const notes = all.slice(0, 40);
+      // Tab badges (UX redesign section 2, 2026-10-24): unread
+      // counts by surface, computed over ALL of the user's unread
+      // notifications (not just the 40 the list returns), grouped
+      // by kind. Only kinds that exist in the code are mapped;
+      // unmapped kinds count toward the total only. Messages carry
+      // no per-user read state and no notification kind fires on a
+      // message's arrival, so there is no unread-message signal to
+      // count yet: BADGE_MESSAGE_KINDS stays empty (messages: 0)
+      // until one of those exists.
+      const BADGE_OFFER_KINDS = user.role === "business"
+        ? ["application_received", "offer_declined", "creator_declined", "backfill_filled", "offer_deadline", "offer_nudge"]
+        : ["offer_received", "backfill_offered", "application_selected", "application_received", "offer_declined", "creator_declined", "backfill_filled", "offer_deadline", "offer_nudge"];
+      const BADGE_VISIT_KINDS = ["booking_confirmed", "clock_started", "proof_submitted", "post_verified", "rating_received", "performance_reported", "performance_updated", "register_tally", "paid_booking_received"];
+      const BADGE_MESSAGE_KINDS = [];
+      const unread = all.filter((n) => !n.readAt);
+      const countKinds = (kinds) => unread.filter((n) => kinds.includes(n.kind)).length;
+      const badges = {
+        offers: countKinds(BADGE_OFFER_KINDS),
+        visits: countKinds(BADGE_VISIT_KINDS),
+        messages: countKinds(BADGE_MESSAGE_KINDS),
+        total: unread.length,
+      };
+      return json(200, { notifications: notes, unreadCount: unread.length, badges });
     }
     if (method === "POST" && seg.length === 2 && seg[1] === "read") {
       const rows = await store.list(`note:${user.id}:`);
@@ -8703,7 +8984,7 @@ async function route(event) {
     if (user.role === "creator") posts = posts.filter((p) => p.creatorId === user.id);
     else if (user.role === "business") posts = posts.filter((p) => p.businessId === user.id);
     posts.sort((a, b) => (a.submittedAt < b.submittedAt ? 1 : -1));
-    return json(200, { posts });
+    return json(200, { posts: posts.map((p) => postWithPerformance(p)) });
   }
 
   // ---------- business ratings of creators (post-visit) ----------
@@ -8788,21 +9069,27 @@ async function route(event) {
     return json(201, { review: { stars: review.stars, text: review.text, businessName: review.businessName, createdAt: review.createdAt } });
   }
 
-  // Post-performance report (Jeff, 2026-10-19 round 2): the creator
-  // adds the post's views and likes after the day-7 email asks.
-  // Optional fields, at least one required, one report per post.
-  // The numbers live on the post record; Momentum's +5 is computed
-  // from reportedAt, so it can only ever land once. Comments and
-  // shares joined the report with the SIGNL ROAS Score (Jeff,
-  // 2026-10-19): they are two of the four numbers the media side
-  // of the score prices.
+  // Post-performance report (Jeff, 2026-10-19 round 2; time series
+  // since the UX redesign, 2026-10-24): the creator adds the post's
+  // numbers after the day-7 email asks, and can UPDATE them as the
+  // post keeps growing. Each report appends a snapshot to
+  // post.snapshots[]: provided numbers override, unprovided ones
+  // carry forward from the latest known set, and the flat
+  // post.views/likes/comments/shares fields always mirror the
+  // latest snapshot so every existing reader keeps working.
+  // post.reportedAt is set by the FIRST report only; Momentum's +5
+  // is computed from reportedAt, so it still lands exactly once.
+  // Comments and shares joined the report with the SIGNL ROAS Score
+  // (Jeff, 2026-10-19): they are two of the four numbers the media
+  // side of the score prices. Creator-reported numbers are labeled
+  // as such (source "creator_report") until the Meta sync provider
+  // lands; nothing here is ever presented as synced.
   if (method === "POST" && seg[0] === "bookings" && seg.length === 3 && seg[2] === "performance") {
     if (user.role !== "creator") return err(403, "Creators report their own post numbers");
     const booking = await store.get(`booking:${seg[1]}`);
     if (!booking || booking.creatorId !== user.id) return err(404, "Booking not found");
     const post = (await allPosts()).find((p) => p.bookingId === booking.id);
     if (!post) return err(400, "No post proof on this visit yet");
-    if (post.reportedAt) return err(409, "Post numbers already reported for this visit");
     const b = parseBody(event);
     const num = (v) => {
       if (v === null || v === undefined || v === "") return null;
@@ -8816,19 +9103,64 @@ async function route(event) {
     const shares = num(b.shares);
     if (views === "invalid" || likes === "invalid" || comments === "invalid" || shares === "invalid") return err(400, "Post numbers must be whole numbers, 0 or more");
     if (views === null && likes === null && comments === null && shares === null) return err(400, "Add at least one number: views, likes, comments, or shares");
-    if (views !== null) post.views = views;
-    if (likes !== null) post.likes = likes;
-    if (comments !== null) post.comments = comments;
-    if (shares !== null) post.shares = shares;
-    post.reportedAt = nowIso();
+    const isFirstReport = !post.reportedAt;
+    const carry = (provided, key) => (provided !== null ? provided : typeof post[key] === "number" && Number.isFinite(post[key]) ? post[key] : null);
+    const snapshot = {
+      at: nowIso(),
+      views: carry(views, "views"),
+      likes: carry(likes, "likes"),
+      comments: carry(comments, "comments"),
+      shares: carry(shares, "shares"),
+      source: "creator_report",
+    };
+    if (!Array.isArray(post.snapshots)) post.snapshots = [];
+    post.snapshots.push(snapshot);
+    post.views = snapshot.views;
+    post.likes = snapshot.likes;
+    post.comments = snapshot.comments;
+    post.shares = snapshot.shares;
+    if (isFirstReport) post.reportedAt = snapshot.at;
+    post.lastSnapshotAt = snapshot.at;
     await store.set(`post:${post.id}`, post);
-    await logEvent({ type: "post_performance_reported", actorId: user.id, actorRole: "creator", subjectId: post.id, market: booking.market, data: { bookingId: booking.id, views: post.views == null ? null : post.views, likes: post.likes == null ? null : post.likes, comments: post.comments == null ? null : post.comments, shares: post.shares == null ? null : post.shares } });
-    await notifyMilestone(booking.businessId, "performance_reported",
-      `${user.name} reported their post numbers for "${booking.title}" (${post.views == null ? "no views figure" : `${post.views} views`}). Your results on this booking are updated.`,
-      `${user.name} reported post numbers for your visit`,
-      [`${user.name} reported the numbers on their post for "${booking.title}": ${post.views == null ? "views not reported" : `${post.views} views`}, ${post.likes == null ? "likes not reported" : `${post.likes} likes`}, ${post.comments == null ? "comments not reported" : `${post.comments} comments`}, ${post.shares == null ? "shares not reported" : `${post.shares} shares`}.`, "", "They feed the media-value side of your SIGNL ROAS Score on this booking. The register side is still yours to report under Bookings.", "", "Open SIGNL: https://app.joinsignl.com", "", "SIGNL"].join("\n"),
-      { bookingId: booking.id, postId: post.id });
-    return json(200, { post });
+    await logEvent({ type: isFirstReport ? "post_performance_reported" : "post_performance_updated", actorId: user.id, actorRole: "creator", subjectId: post.id, market: booking.market, data: { bookingId: booking.id, views: post.views == null ? null : post.views, likes: post.likes == null ? null : post.likes, comments: post.comments == null ? null : post.comments, shares: post.shares == null ? null : post.shares, snapshots: post.snapshots.length } });
+    if (isFirstReport) {
+      await notifyMilestone(booking.businessId, "performance_reported",
+        `${user.name} reported their post numbers for "${booking.title}" (${post.views == null ? "no views figure" : `${post.views} views`}). Your results on this booking are updated.`,
+        `${user.name} reported post numbers for your visit`,
+        [`${user.name} reported the numbers on their post for "${booking.title}": ${post.views == null ? "views not reported" : `${post.views} views`}, ${post.likes == null ? "likes not reported" : `${post.likes} likes`}, ${post.comments == null ? "comments not reported" : `${post.comments} comments`}, ${post.shares == null ? "shares not reported" : `${post.shares} shares`}.`, "", "They feed the media-value side of your SIGNL ROAS Score on this booking. The register side is still yours to report under Bookings.", "", "Open SIGNL: https://app.joinsignl.com", "", "SIGNL"].join("\n"),
+        { bookingId: booking.id, postId: post.id });
+    } else {
+      // Later snapshot updates are quieter: an in-app note for the
+      // business, no email. The first report already carried the
+      // milestone fan-out.
+      await notifyUser(booking.businessId, "performance_updated",
+        `${user.name} updated their post numbers for "${booking.title}" (${post.views == null ? "no views figure" : `${post.views} views`} now). Your results on this booking are updated.`,
+        { bookingId: booking.id, postId: post.id });
+    }
+    return json(200, { post: postWithPerformance(post) });
+  }
+
+  // Code-use logging (UX redesign section 4, 2026-10-24): the
+  // business owner (or an admin) logs audience-code uses against a
+  // booking in one tap, as they happen at the register. Body
+  // { count } is optional (a whole number 1..500, default 1); one
+  // codeuse record is stored per call and booking.codeUseCount
+  // carries the running total the ROAS estimate reads. Creators
+  // never log uses: they share the code, the business counts it.
+  if (method === "POST" && seg[0] === "bookings" && seg.length === 3 && seg[2] === "code-uses") {
+    if (user.role === "creator") return err(403, "Businesses log code uses; creators share the code");
+    const booking = await store.get(`booking:${seg[1]}`);
+    if (!booking) return err(404, "Booking not found");
+    if (user.role === "business" && booking.businessId !== user.id) return err(404, "Booking not found");
+    if (booking.status === "cancelled") return err(400, "This booking is cancelled, so its code is not in use");
+    const b = parseBody(event);
+    let count = 1;
+    if (b.count !== undefined && b.count !== null && b.count !== "") {
+      count = Number(b.count);
+      if (!Number.isInteger(count) || count < 1 || count > 500) return err(400, "Code use count must be a whole number from 1 to 500");
+    }
+    await logCodeUse(booking, count, user.id, "owner", user.role);
+    return json(200, { booking: await withPostState(booking) });
   }
 
   // Code redemptions (Jeff, 2026-10-19): the register side of the
@@ -8974,4 +9306,4 @@ async function route(event) {
 
 // The email builders are exported alongside the router so the verify
 // suites can assert on the exact copy a creator receives.
-module.exports = { route, passwordResetEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, AD_USE_WINDOW_MONTHS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor };
+module.exports = { route, passwordResetEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, AD_USE_WINDOW_MONTHS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor };

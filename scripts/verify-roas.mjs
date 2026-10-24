@@ -208,8 +208,12 @@ try {
   await completeVisit(bk1, biz.client, c1.client);
   const perf = await c1.client("POST", `/api/bookings/${bk1.id}/performance`, { views: 12400, likes: 986, comments: 74, shares: 41 });
   check("the performance report now accepts comments and shares", perf.status === 200 && perf.data.post.comments === 74 && perf.data.post.shares === 41, `${perf.status} ${JSON.stringify(perf.data.post || perf.data).slice(0, 160)}`);
-  const perfAgain = await c1.client("POST", `/api/bookings/${bk1.id}/performance`, { views: 1 });
-  check("a second performance report is still refused (one report per post)", perfAgain.status === 409, String(perfAgain.status));
+  // Wave 1 (UX redesign section 3, 2026-10-24): a second report is
+  // a snapshot update, not a refusal. Re-reporting the same views
+  // appends snapshot 2 and leaves the mirrored numbers untouched,
+  // so the worked example below still prices the same report.
+  const perfAgain = await c1.client("POST", `/api/bookings/${bk1.id}/performance`, { views: 12400 });
+  check("a second performance report appends a snapshot (time series, no 409)", perfAgain.status === 200 && Array.isArray(perfAgain.data.post.snapshots) && perfAgain.data.post.snapshots.length === 2 && perfAgain.data.post.views === 12400 && perfAgain.data.post.likes === 986, `${perfAgain.status} ${JSON.stringify(perfAgain.data.post || perfAgain.data).slice(0, 200)}`);
   const bk1Pre = await getBooking(biz.client, bk1.id);
   check("media value prices the full report at the model rates (449.40 before any register tally)", bk1Pre.roas && bk1Pre.roas.mediaValue === 449.4 && bk1Pre.roas.registerValue === 0 && bk1Pre.roas.value === 449.4, JSON.stringify(bk1Pre.roas));
   const rep = await biz.client("POST", `/api/bookings/${bk1.id}/code-redemptions`, { count: 9, basketTotal: 486, compCostActual: 15 });

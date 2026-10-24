@@ -218,7 +218,7 @@ try {
   check("the free line is the exact approved wording", R.CREATOR_FREE_LINE === "SIGNL is free for creators. Always. Businesses pay the platform. You never pay to join, to list, or to get booked.", R.CREATOR_FREE_LINE);
   check("the Visit Guarantee line is the exact published wording", R.VISIT_GUARANTEE_LINE === "Visit Guarantee: if a booked creator does not show up or does not post, that visit does not count against your monthly visits. It is replaced.", R.VISIT_GUARANTEE_LINE);
   check("the brief guidance is the exact boundary copy", R.PAID_BRIEF_GUIDANCE === "Key points only: what to feature, names, dates. Creators post honestly in their own words. No scripts, no required praise, no post pre-approval.", R.PAID_BRIEF_GUIDANCE);
-  check("strike status line is the plain-language wording", R.strikeStatusLine({ noShowStrikes: 1 }) === "Visit strikes: 1 of 3. Letting a booked visit window expire counts as a strike. Three strikes pauses your account for review." && R.strikeStatusLine({}) === null, R.strikeStatusLine({ noShowStrikes: 1 }));
+  check("strike status line is the plain-language wording (AB1: no counter, no threshold)", R.strikeStatusLine({ noShowStrikes: 1 }) === "Visit strikes: 1. Letting a booked visit window expire unused counts as a strike, and strikes can pause your account for review." && R.strikeStatusLine({}) === null, R.strikeStatusLine({ noShowStrikes: 1 }));
   check("strike limit and probation constants", R.STRIKE_LIMIT === 3 && R.STRIKE_PROBATION_COUNT === 2);
 
   const sampleUser = { name: "Casey Refine", email: "casey@fixtures.dev", market: "Hampton Roads", city: "Norfolk", creator: { handle: "caseyrefine", tierBand: "Locals", categories: ["Food & Drink"], localAudiencePct: 55, audienceStack: { instagram: 3000 }, followerCount: 3000, totalAudience: 3000, bestWork: [], bio: "", hasPhoto: false, neighborhood: "" } };
@@ -232,7 +232,7 @@ try {
   check("campaign email carries the free line", campMail.text.includes(R.CREATOR_FREE_LINE), campMail.text);
   check("campaign email no longer carries the old fee-adjacent line", !campMail.text.includes("only fee anywhere") && !campMail.text.includes("joining plus comped visits"));
   const strikeMail = R.strikePauseEmail({ ...sampleUser, noShowStrikes: 3 });
-  check("strike pause email states the count and the probation term", strikeMail.text.includes("Visit strikes: 3 of 3") && strikeMail.text.includes("restart with two strikes on the count") && strikeMail.text.includes("one more expired window pauses the account again"), strikeMail.text);
+  check("strike pause email states the count and the probation term (AB1: no threshold math)", strikeMail.text.includes("Visit strikes: 3.") && strikeMail.text.includes("restarts on probation") && strikeMail.text.includes("another expired window can pause it again") && !strikeMail.text.includes("of 3"), strikeMail.text);
   check("no email builder output carries an em dash", [claimMail, approvalMail, signupMail, campMail, strikeMail].every((m) => !m.text.includes("—") && !m.text.includes("–") && !m.subject.includes("—")));
 
   // Overclaim audit over the shipped sources themselves.
