@@ -778,3 +778,264 @@ body.bn-on .footer { padding-bottom: calc(88px + env(safe-area-inset-bottom)); }
 }
 .card.highlight { outline: 3px solid #EC008C; outline-offset: 2px; transition: outline-color 0.3s; }
 .perf-update-card { border-color: #EC008C; }
+
+/* =====================================================================
+   Visual experience pass (2026-10-24)
+   Appended section only: new components, type/motion polish, and the
+   sanctioned overrides for .info-btn sizing and the photo-less
+   .cc-photo.no-photo / .cc-mono fallback. Everything above this
+   section is untouched; these rules win by cascade order where the
+   pass deliberately re-declares a value (type scale, card depth).
+   Light theme only; the locked gradient stays the brand accent.
+   ===================================================================== */
+
+/* ---------- 1. Type scale + rhythm ---------- */
+h1, .hero h1 { font-size: clamp(2.35rem, 8.5vw, 3.5rem); line-height: 1.04; }
+#app h2 { font-size: 1.55rem; }
+.home-title { font-size: 1.72rem; }
+.home-count {
+  background: var(--grad);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+main { padding-top: 26px; }
+
+/* ---------- 2. Card depth ---------- */
+/* Deeper layered shadow + 1px inner top highlight, combined in one
+   box-shadow. The base hover lift (transform) above still applies. */
+.creator-card, .visit-card {
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.7),
+    0 1px 2px rgba(26,23,18,.05),
+    0 24px 44px -18px rgba(26,23,18,.18);
+}
+
+/* ---------- 3. Dashboard hero (.dash-hero) ---------- */
+.dash-hero {
+  background: var(--grad); border-radius: var(--r-lg);
+  padding: 24px 24px 22px; color: #fff;
+  position: relative; overflow: hidden; margin-bottom: 20px;
+  box-shadow: 0 24px 44px -18px rgba(1,120,220,.45);
+  text-shadow: none;
+}
+.dash-hero::before {
+  content: ""; position: absolute; top: -110px; right: -70px;
+  width: 280px; height: 280px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(255,255,255,.14) 0%, rgba(255,255,255,0) 70%);
+  pointer-events: none;
+}
+.dash-hero::after {
+  content: ""; position: absolute; bottom: -130px; left: -80px;
+  width: 300px; height: 300px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(255,255,255,.14) 0%, rgba(255,255,255,0) 70%);
+  pointer-events: none;
+}
+.dash-hero > * { position: relative; z-index: 1; }
+.dash-hero h1, .dash-hero h2, .dash-hero h3 { color: #fff; }
+.dh-kicker {
+  font-family: 'Space Grotesk', monospace; font-size: .68rem; font-weight: 700;
+  letter-spacing: .18em; text-transform: uppercase; color: rgba(255,255,255,.82);
+}
+.dh-name {
+  font-family: 'Archivo', sans-serif; font-weight: 800;
+  font-size: clamp(1.65rem, 6vw, 2.25rem); letter-spacing: -.02em;
+  line-height: 1.08; margin-top: 6px;
+}
+.dh-sub {
+  font-family: 'Inter', sans-serif; font-size: .94rem;
+  color: rgba(255,255,255,.88); margin-top: 5px; line-height: 1.45;
+}
+.dh-row {
+  display: flex; align-items: flex-end; justify-content: space-between;
+  gap: 16px; flex-wrap: wrap; margin-top: 16px;
+}
+.dh-num {
+  font-family: 'Space Grotesk', monospace; font-weight: 700;
+  font-size: clamp(2.2rem, 9vw, 2.9rem); line-height: .95;
+}
+.dh-num-lbl { font-size: .8rem; color: rgba(255,255,255,.85); margin-top: 4px; }
+.dash-hero .btn {
+  background: #fff; color: var(--ink);
+  box-shadow: 0 10px 24px -10px rgba(0,40,90,.35);
+}
+.dash-hero a { color: #fff; text-decoration: underline; }
+
+/* ---------- 4. Motion system (transform / opacity only) ---------- */
+@keyframes vxRise {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: none; }
+}
+.vx-in { animation: vxRise .5s cubic-bezier(.22,.8,.3,1) both; }
+.vx-stagger > * { animation: vxRise .55s cubic-bezier(.22,.8,.3,1) both; }
+.vx-stagger > *:nth-child(1) { animation-delay: 0ms; }
+.vx-stagger > *:nth-child(2) { animation-delay: 50ms; }
+.vx-stagger > *:nth-child(3) { animation-delay: 100ms; }
+.vx-stagger > *:nth-child(4) { animation-delay: 150ms; }
+.vx-stagger > *:nth-child(5) { animation-delay: 200ms; }
+.vx-stagger > *:nth-child(6) { animation-delay: 250ms; }
+.vx-stagger > *:nth-child(7) { animation-delay: 300ms; }
+.vx-stagger > *:nth-child(8) { animation-delay: 350ms; }
+.vx-stagger > *:nth-child(n+9) { animation-delay: 400ms; }
+
+@keyframes vxOverlayIn { from { opacity: 0; } }
+.sheet-overlay { animation: vxOverlayIn .25s ease both; }
+@keyframes vxSheetUp {
+  from { transform: translateY(48px); opacity: .4; }
+  to { transform: none; opacity: 1; }
+}
+.sheet { animation: vxSheetUp .38s cubic-bezier(.22,.8,.3,1) both; }
+
+@keyframes vxBadgePop {
+  0% { transform: scale(.4); }
+  60% { transform: scale(1.25); }
+  100% { transform: scale(1); }
+}
+.bn-badge { animation: vxBadgePop .35s cubic-bezier(.22,.8,.3,1) both; }
+
+/* Press feedback */
+.btn:active { transform: scale(.97); }
+.bn-item:active, .chip:active { transform: scale(.96); }
+#bottomnav.signed-in .bn-item { transition: transform .12s ease; }
+
+/* ---------- 5. Skeletons ---------- */
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}
+.skel-wrap { display: grid; gap: 16px; }
+.skel {
+  position: relative; overflow: hidden;
+  background: var(--bg2); border-radius: var(--r-md);
+}
+.skel-card {
+  position: relative; overflow: hidden; height: 148px;
+  border: 1px solid var(--line2); background: #fff; border-radius: var(--r-md);
+}
+.skel::after, .skel-card::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(100deg, transparent 30%, rgba(255,255,255,.75) 50%, transparent 70%);
+  transform: translateX(-100%);
+  animation: vxShimmer 1.4s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes vxShimmer { to { transform: translateX(100%); } }
+.skel-line { height: 14px; border-radius: 7px; background: var(--bg2); margin: 12px 18px; }
+.skel-line.short { width: 45%; }
+.skel-line.med { width: 70%; }
+
+/* ---------- 6. Photo-less creator fallback ---------- */
+/* Scoped strictly under .cc-photo.no-photo: the default dark
+   .cc-mono treatment is unchanged everywhere else. */
+.cc-photo.no-photo { aspect-ratio: auto; height: 108px; background: var(--grad); }
+.cc-photo.no-photo::before {
+  content: ""; position: absolute; top: -60px; right: -40px;
+  width: 160px; height: 160px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(255,255,255,.16) 0%, rgba(255,255,255,0) 70%);
+  pointer-events: none;
+}
+.cc-photo.no-photo::after {
+  content: ""; position: absolute; bottom: -70px; left: -40px;
+  width: 170px; height: 170px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(255,255,255,.16) 0%, rgba(255,255,255,0) 70%);
+  pointer-events: none;
+}
+.cc-photo.no-photo .cc-mono { background: transparent; height: 100%; }
+.cc-photo.no-photo .cc-mono span {
+  background: none; color: #fff; -webkit-text-fill-color: #fff;
+  font-size: 1.9rem; width: 58px; height: 58px; border-radius: 50%;
+  border: 2px solid rgba(255,255,255,.6); background-color: rgba(255,255,255,.16);
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.creator-card.full .cc-photo.no-photo { height: auto; background: var(--grad); }
+.creator-card.full .cc-photo.no-photo .cc-mono span {
+  font-size: 2.6rem; width: 76px; height: 76px;
+}
+
+/* ---------- 7. Info button tap target ---------- */
+/* Visual stays a small circle; ::after extends the hit area to 44px. */
+.info-btn { width: 22px; height: 22px; font-size: .8rem; position: relative; flex: none; }
+.info-btn::after {
+  content: ""; position: absolute; inset: -11px; border-radius: 999px;
+}
+
+/* ---------- 8. Empty states ---------- */
+.empty-state {
+  background: var(--card); border: 1px solid var(--line2);
+  border-radius: var(--r-lg); box-shadow: var(--sh-md);
+  padding: 36px 24px 30px; text-align: center;
+}
+.es-badge {
+  width: 58px; height: 58px; border-radius: 50%; background: var(--grad);
+  color: #fff; display: inline-flex; align-items: center; justify-content: center;
+  box-shadow: 0 14px 28px -10px rgba(1,155,252,.55); margin-bottom: 14px;
+}
+.es-badge svg { width: 26px; height: 26px; }
+.empty-state h3 {
+  font-family: 'Archivo', sans-serif; font-weight: 800;
+  font-size: 1.28rem; margin: 0 0 6px;
+}
+.empty-state p { color: var(--ink2); line-height: 1.55; max-width: 420px; margin: 0 auto; }
+.empty-state .btn { margin-top: 18px; }
+
+/* ---------- 9. Success moment ---------- */
+.success-hero { text-align: center; padding: 30px 20px 22px; }
+.success-check-wrap {
+  width: 96px; height: 96px; border-radius: 50%; background: var(--grad-soft);
+  display: flex; align-items: center; justify-content: center;
+  margin: 0 auto 14px; animation: vxBadgePop .45s cubic-bezier(.22,.8,.3,1) both;
+}
+.success-check { width: 54px; height: 54px; display: block; }
+.success-check circle {
+  fill: none; stroke: #03C9AB; stroke-width: 3;
+  stroke-dasharray: 302; stroke-dashoffset: 302;
+  animation: vxDraw .7s ease forwards;
+}
+.success-check path {
+  stroke: #006AFC; stroke-width: 4; fill: none;
+  stroke-linecap: round; stroke-linejoin: round;
+  stroke-dasharray: 60; stroke-dashoffset: 60;
+  animation: vxDraw .45s ease .5s forwards;
+}
+@keyframes vxDraw { to { stroke-dashoffset: 0; } }
+.success-hero h3 {
+  font-family: 'Archivo', sans-serif; font-weight: 800;
+  font-size: 1.35rem; margin: 0 0 6px;
+}
+.success-hero p { color: var(--ink2); }
+
+/* ---------- 10. Due banner ---------- */
+.due-banner {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  background: var(--grad-soft); border: 1px solid var(--line);
+  border-radius: 16px; padding: 12px 16px;
+}
+.due-banner .db-lbl {
+  font-size: .72rem; font-weight: 700; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--ink2);
+}
+.due-banner .db-num {
+  font-family: 'Space Grotesk', monospace; font-weight: 700;
+  font-size: 1.45rem; color: var(--ink); line-height: 1;
+}
+.due-banner.late { background: #F9E9E4; border-color: #EDC4B6; }
+
+/* ---------- Reduced motion: the whole pass goes still ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .vx-in, .vx-stagger > *, .sheet, .sheet-overlay, .bn-badge,
+  .skel::after, .skel-card::after,
+  .success-check circle, .success-check path, .success-check-wrap {
+    animation: none;
+  }
+  .btn:active, .bn-item:active, .chip:active { transform: none; }
+}
+
+/* ---------- Visual pass addendum: view transitions ----------
+   Every render() swaps #app's children, so a top-level rise on
+   direct children gives tab/view changes a consistent enter
+   motion without touching any render code. Transform/opacity
+   only; still under reduced motion. */
+#app > * { animation: vxRise .45s cubic-bezier(.22,.8,.3,1) both; }
+#app > *:nth-child(2) { animation-delay: 40ms; }
+#app > *:nth-child(3) { animation-delay: 80ms; }
+#app > *:nth-child(n+4) { animation-delay: 120ms; }
+@media (prefers-reduced-motion: reduce) {
+  #app > * { animation: none; }
+}
