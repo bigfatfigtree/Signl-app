@@ -863,8 +863,8 @@ main { padding-top: 26px; }
   from { opacity: 0; transform: translateY(14px); }
   to { opacity: 1; transform: none; }
 }
-.vx-in { animation: vxRise .5s cubic-bezier(.22,.8,.3,1) both; }
-.vx-stagger > * { animation: vxRise .55s cubic-bezier(.22,.8,.3,1) both; }
+.vx-in { animation: vxRise .5s cubic-bezier(.22,.8,.3,1) backwards; }
+.vx-stagger > * { animation: vxRise .55s cubic-bezier(.22,.8,.3,1) backwards; }
 .vx-stagger > *:nth-child(1) { animation-delay: 0ms; }
 .vx-stagger > *:nth-child(2) { animation-delay: 50ms; }
 .vx-stagger > *:nth-child(3) { animation-delay: 100ms; }
@@ -1032,7 +1032,7 @@ main { padding-top: 26px; }
    direct children gives tab/view changes a consistent enter
    motion without touching any render code. Transform/opacity
    only; still under reduced motion. */
-#app > * { animation: vxRise .45s cubic-bezier(.22,.8,.3,1) both; }
+#app > * { animation: vxRise .45s cubic-bezier(.22,.8,.3,1) backwards; }
 #app > *:nth-child(2) { animation-delay: 40ms; }
 #app > *:nth-child(3) { animation-delay: 80ms; }
 #app > *:nth-child(n+4) { animation-delay: 120ms; }
