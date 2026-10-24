@@ -16,9 +16,11 @@
 //     the TEST_MODE-only `now` in the sweep call), in batches of 8;
 //   - an emptied queue auto-disarms; more than 2 send failures in a
 //     run stop the run and set lastError;
-//   - a GLOBAL daily ceiling of 40 sends per America/New_York
+//   - a GLOBAL daily ceiling of sends per America/New_York
 //     calendar day, counted across all campaigns (it protects the
-//     sending domain): sends stop at 40 within one ET day, hitting
+//     sending domain): this suite pins the ceiling to 40 via the
+//     CAMPAIGN_DAILY_CAP env override (the shipped default is
+//     150), so sends stop at 40 within one ET day, hitting
 //     the ceiling is not an error (campaigns stay armed, no
 //     lastError), sends resume the next ET day, and a campaign's
 //     lifetime total may pass the old 80 cap across days;
@@ -36,8 +38,8 @@
 //     template dispatch never sends crossover recipients the
 //     founding email, imports dedupe within the campaign AND
 //     against the founding campaign (skip reason cross_campaign),
-//     and the global 40/day ceiling binds across both real
-//     campaigns combined.
+//     and the global daily ceiling (pinned to 40/day for this
+//     suite) binds across both real campaigns combined.
 //
 // Run: node scripts/verify-campaign.mjs
 
@@ -70,7 +72,7 @@ let server = null;
 function startServer() {
   server = spawn("node", ["scripts/dev-server.mjs", String(PORT)], {
     cwd: root,
-    env: { ...process.env, SIGNL_LOCAL: "1", SIGNL_LOCAL_DB: dbFile, SIGNL_TEST_ALLOW_BUSINESS: "1", SIGNL_MAIL_STUB: "1", SIGNL_CAMPAIGN_PACE_MS: "0", APP_URL: BASE, ADMIN_EMAIL, ADMIN_PASSWORD },
+    env: { ...process.env, SIGNL_LOCAL: "1", SIGNL_LOCAL_DB: dbFile, SIGNL_TEST_ALLOW_BUSINESS: "1", SIGNL_MAIL_STUB: "1", SIGNL_CAMPAIGN_PACE_MS: "0", CAMPAIGN_DAILY_CAP: "40", APP_URL: BASE, ADMIN_EMAIL, ADMIN_PASSWORD },
     stdio: ["ignore", "pipe", "pipe"],
   });
   server.stderr.on("data", (d) => process.stderr.write("[server] " + d));
@@ -243,7 +245,7 @@ try {
   check("manual disarm works", disarm.status === 200 && disarm.data.campaign.armed === false, JSON.stringify(disarm.data));
   check("campaign_disarmed event logged", (await countEvents(admin, "campaign_disarmed")) >= 1);
 
-  // ---------- Part F: the global daily ceiling (40/day, ET) ----------
+  // ---------- Part F: the global daily ceiling (pinned 40/day, ET) ----------
   part("F: daily ceiling");
   const DAY2 = "2026-10-20T15:00:00.000Z"; // 11:00 EDT, the next ET day
   const DAY3 = "2026-10-21T15:00:00.000Z"; // 11:00 EDT, the day after

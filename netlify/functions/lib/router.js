@@ -3819,9 +3819,10 @@ async function maybeRunProfileReminderSweep() {
 //     be ARMED (Jeff arms it in the admin UI) and the clock must be
 //     inside the send window, 08:00-21:00 America/New_York.
 //   - Batches are small (8). Volume is governed by a GLOBAL daily
-//     ceiling (40 sends per America/New_York calendar day across
-//     ALL campaigns): the constraint being protected is the hello@
-//     sending domain's reputation, not any single campaign, so the
+//     ceiling (150 sends per America/New_York calendar day across
+//     ALL campaigns, tunable via the CAMPAIGN_DAILY_CAP env var):
+//     the constraint being protected is the hello@ sending
+//     domain's reputation, not any single campaign, so the
 //     ceiling follows the domain. Reaching it is not an error; the
 //     sweep simply sends nothing more that day and campaigns stay
 //     armed. A per-campaign lifetime backstop (1,000) exists purely
@@ -3857,14 +3858,21 @@ const CROSSOVER_CAMPAIGN_ID = "founding-crossover-2026-10";
 // so they can never be read as creator claim evidence.
 const BUSINESS_CAMPAIGN_ID = "founding-businesses-2026-10";
 const CAMPAIGN_BATCH_SIZE = 8;
-// Anti-spam daily ceiling (Jeff, 2026-10-19): at most this many
-// campaign sends per America/New_York calendar day, counted across
-// ALL campaigns combined, because what the ceiling protects is the
-// hello@ sending domain, not a campaign. The count is derived from
-// the recipient records themselves (every successful send stamps
-// sentAt on its own record), so there is no separate counter to
-// drift from reality or to race: see campaignSentToday().
-const CAMPAIGN_DAILY_CEILING = 40;
+// Anti-spam daily ceiling (Jeff, 2026-10-19; raised 2026-10-23): at
+// most this many campaign sends per America/New_York calendar day,
+// counted across ALL campaigns combined, because what the ceiling
+// protects is the hello@ sending domain, not a campaign. The count
+// is derived from the recipient records themselves (every
+// successful send stamps sentAt on its own record), so there is no
+// separate counter to drift from reality or to race: see
+// campaignSentToday(). The ceiling value itself is tunable without
+// a code change via the CAMPAIGN_DAILY_CAP env var; an unset or
+// invalid value falls back to the shipped default.
+const CAMPAIGN_DAILY_CEILING_DEFAULT = 150;
+function campaignDailyCeiling() {
+  const n = parseInt(process.env.CAMPAIGN_DAILY_CAP || "", 10);
+  return Number.isNaN(n) || n <= 0 ? CAMPAIGN_DAILY_CEILING_DEFAULT : n;
+}
 // Runaway backstop ONLY: a per-campaign lifetime ceiling set so
 // high it can bind only if something is deeply wrong (a bug looping
 // sends). It is a bug guard, never a product limit, and normal
@@ -4107,7 +4115,8 @@ async function campaignSentToday(now) {
 // time-traveled deterministically.
 async function runCampaignSweep(opts = {}) {
   const now = opts.now instanceof Date && !Number.isNaN(opts.now.getTime()) ? opts.now : new Date();
-  const summary = { campaigns: 0, armed: 0, windowClosed: 0, attempted: 0, sent: 0, failed: 0, backstopReached: 0, dailyCeilingHit: 0, disarmed: 0, skippedTesters: 0, sentToday: 0, dailyCeiling: CAMPAIGN_DAILY_CEILING };
+  const dailyCeiling = campaignDailyCeiling();
+  const summary = { campaigns: 0, armed: 0, windowClosed: 0, attempted: 0, sent: 0, failed: 0, backstopReached: 0, dailyCeilingHit: 0, disarmed: 0, skippedTesters: 0, sentToday: 0, dailyCeiling };
   // Global daily ceiling: sends already made today, across every
   // campaign, counted once up front and incremented locally as this
   // run sends, so a multi-campaign sweep can never overshoot.
@@ -4155,7 +4164,7 @@ async function runCampaignSweep(opts = {}) {
       summary.disarmed += 1;
       continue;
     }
-    const remainingToday = CAMPAIGN_DAILY_CEILING - sentToday;
+    const remainingToday = dailyCeiling - sentToday;
     if (remainingToday <= 0) {
       // The daily ceiling is reached: not an error, nothing is
       // wrong. The campaign stays armed, no lastError is set, and
@@ -4238,7 +4247,7 @@ function campaignView(cfg, counts, sentToday) {
     lastError: cfg.lastError || null,
     lastRunAt: cfg.lastRunAt || null,
     totalSent: counts ? counts.sent : cfg.totalSent || 0,
-    dailyCeiling: CAMPAIGN_DAILY_CEILING,
+    dailyCeiling: campaignDailyCeiling(),
     sentToday: typeof sentToday === "number" ? sentToday : null,
     backstop: CAMPAIGN_RUNAWAY_BACKSTOP,
     batchSize: CAMPAIGN_BATCH_SIZE,

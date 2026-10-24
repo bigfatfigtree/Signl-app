@@ -5162,7 +5162,7 @@ function campaignSectionHtml(meta, data) {
     <div class="flex-between mt"><h3 style="margin:0">${esc(meta.title)}</h3><span class="badge ${c.armed ? "ok" : "info"}">${c.armed ? "Armed" : "Paused"}</span></div>
     <p class="small muted" style="margin-top:8px">Campaign <strong>${esc(c.id || meta.campaignId)}</strong>. ${esc(meta.blurb)}${c.lastRunAt ? ` Last sweep: ${esc(fmtDate(c.lastRunAt))}.` : ""} Send window is ${c.windowOpenNow ? "open now" : "closed right now"}.</p>
     ${c.lastError ? `<div class="error-box">${esc(c.lastError)}</div>` : ""}
-    <p class="small">Queued: <strong>${counts.queued || 0}</strong> &middot; Sent: <strong>${counts.sent || 0}</strong> &middot; Bounced: <strong>${counts.bounced || 0}</strong> &middot; Skipped: <strong>${counts.skipped || 0}</strong> &middot; Total: <strong>${counts.total || 0}</strong> &middot; Sent today: <strong>${c.sentToday != null ? c.sentToday : 0} of ${c.dailyCeiling || 40} (daily ceiling)</strong></p>
+    <p class="small">Queued: <strong>${counts.queued || 0}</strong> &middot; Sent: <strong>${counts.sent || 0}</strong> &middot; Bounced: <strong>${counts.bounced || 0}</strong> &middot; Skipped: <strong>${counts.skipped || 0}</strong> &middot; Total: <strong>${counts.total || 0}</strong> &middot; Sent today: <strong>${c.sentToday != null ? c.sentToday : 0} of ${c.dailyCeiling || 150} (daily ceiling)</strong></p>
     <button class="btn ${c.armed ? "danger" : ""}" onclick="toggleCampaignArm(${c.armed ? "false" : "true"}, '${meta.campaignId}')">${c.armed ? "Pause campaign" : "Arm campaign"}</button>
     <div id="campaign-note${meta.suffix}" class="small saved"></div>
     <h3 class="mt">Import recipients</h3>

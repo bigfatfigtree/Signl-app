@@ -52,7 +52,7 @@ let server = null;
 function startServer() {
   server = spawn("node", ["scripts/dev-server.mjs", String(PORT)], {
     cwd: root,
-    env: { ...process.env, SIGNL_LOCAL: "1", SIGNL_LOCAL_DB: dbFile, SIGNL_TEST_ALLOW_BUSINESS: "1", SIGNL_MAIL_STUB: "1", SIGNL_CAMPAIGN_PACE_MS: "0", APP_URL: BASE, ADMIN_EMAIL, ADMIN_PASSWORD },
+    env: { ...process.env, SIGNL_LOCAL: "1", SIGNL_LOCAL_DB: dbFile, SIGNL_TEST_ALLOW_BUSINESS: "1", SIGNL_MAIL_STUB: "1", SIGNL_CAMPAIGN_PACE_MS: "0", CAMPAIGN_DAILY_CAP: "", APP_URL: BASE, ADMIN_EMAIL, ADMIN_PASSWORD },
     stdio: ["ignore", "pipe", "pipe"],
   });
   server.stderr.on("data", (d) => process.stderr.write("[server] " + d));
@@ -103,7 +103,7 @@ try {
     const s = await admin("GET", `/api/admin/campaign?campaignId=${id}`);
     check(`${id}: payload present at zero state`, s.status === 200 && s.data.campaign.id === id && s.data.campaign.armed === false, JSON.stringify(s.data).slice(0, 200));
     check(`${id}: zero counts, no sends`, s.data.counts.queued === 0 && s.data.counts.sent === 0 && s.data.counts.bounced === 0 && s.data.counts.skipped === 0 && s.data.counts.total === 0 && (s.data.recentSends || []).length === 0, JSON.stringify(s.data.counts));
-    check(`${id}: shared daily ceiling reported`, s.data.campaign.dailyCeiling === 40 && typeof s.data.campaign.sentToday === "number", JSON.stringify(s.data.campaign).slice(0, 200));
+    check(`${id}: shared daily ceiling reported (shipped default 150)`, s.data.campaign.dailyCeiling === 150 && typeof s.data.campaign.sentToday === "number", JSON.stringify(s.data.campaign).slice(0, 200));
   }
 
   part("business card import posts the business campaignId");
