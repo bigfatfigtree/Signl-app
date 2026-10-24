@@ -2480,6 +2480,7 @@ function creatorCard(c, viewer, opts) {
     <p class="small">${socialLinksHtml(p)}</p>
     ${bestWorkHtml(c.bestWork, true)}
     ${trackLine || reviewLine ? `<div class="cc-track">${trackLine}${reviewLine}</div>` : ""}
+    ${c.fit && c.fit.reasons && c.fit.reasons.length ? `<p class="small cc-fit"><strong>Why they fit:</strong> ${c.fit.reasons.slice(0, 2).map(esc).join(" &middot; ")}</p>` : ""}
     <p class="small muted">Every SIGNL visit: 1 post or reel + 2 stories within 48 hours, tracked as proof. Content rights follow the visit: comp visits are native share only; paid visits add repost and 6-month ad rights.</p>
     <div class="cc-actions">
       ${opts.preview
@@ -3449,6 +3450,7 @@ async function loadOpenBoard() {
       return `
       <div class="card mb">
         <div class="flex-between"><strong>${esc(o.title)}</strong><span class="badge tier">${esc(o.businessName)}</span></div>
+        ${o.fitNote ? `<p class="small" style="margin:8px 0 0"><span class="badge ok">${esc(o.fitNote)}</span></p>` : ""}
         <div class="showcase-block">
           <h4>The deal, in plain words</h4>
           ${o.kind === "paid"
@@ -4068,7 +4070,7 @@ async function loadDiscover() {
       <div><label>Total audience min</label><input type="number" id="f-fmin" min="0" placeholder="Any"></div>
       <div><label>Total audience max</label><input type="number" id="f-fmax" min="0" placeholder="Any"></div>
       <div><label>Min % followers in market</label><input type="number" id="f-minlocal" min="0" max="100" placeholder="Any"></div>
-      <div><label>Sort by</label><select id="f-sort"><option value="">Founding order</option><option value="score">Local Impact Score</option><option value="momentum">Momentum (roster standing)</option></select></div>
+      <div><label>Sort by</label><select id="f-sort"><option value="">Founding order</option><option value="score">Local Impact Score</option><option value="momentum">Momentum (roster standing)</option><option value="fit">Best fit</option></select></div>
       <div><label>&nbsp;</label><label style="font-weight:500"><input type="checkbox" id="f-paid" style="width:auto"> Has a paid rate (paid bookings) only</label></div>
       <div><label>&nbsp;</label><button class="btn small-btn" style="width:100%" onclick="runDiscover()">Search</button></div>
     </div>
@@ -5682,7 +5684,7 @@ function previewDiscoverHtml() {
       <div><label>Total audience min</label><input type="number" id="pvf-fmin" min="0" placeholder="Any"></div>
       <div><label>Total audience max</label><input type="number" id="pvf-fmax" min="0" placeholder="Any"></div>
       <div><label>Min % followers in market</label><input type="number" id="pvf-minlocal" min="0" max="100" placeholder="Any"></div>
-      <div><label>Sort by</label><select id="pvf-sort"><option value="">Founding order</option><option value="score">Local Impact Score</option><option value="momentum">Momentum (roster standing)</option></select></div>
+      <div><label>Sort by</label><select id="pvf-sort"><option value="">Founding order</option><option value="score">Local Impact Score</option><option value="momentum">Momentum (roster standing)</option><option value="fit">Best fit</option></select></div>
       <div><label>&nbsp;</label><label style="font-weight:500"><input type="checkbox" id="pvf-paid" style="width:auto"> Has a paid rate (paid bookings) only</label></div>
       <div><label>&nbsp;</label><button class="btn small-btn" style="width:100%" onclick="runPreviewDiscover()">Search</button></div>
     </div>

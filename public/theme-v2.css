@@ -499,6 +499,8 @@ tbody tr:hover td { background: rgba(245,240,231,.55); }
   padding: 12px 15px; font-size: .84rem; color: var(--ink2); line-height: 1.5;
 }
 .cc-track strong { color: var(--ink); display: block; font-size: .86rem; }
+.cc-fit { margin-top: 12px; padding: 0 6px; font-size: .84rem; color: var(--ink2); line-height: 1.5; }
+.cc-fit strong { color: var(--ink); }
 .cc-actions { margin-top: auto; padding: 16px 6px 0; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 .cc-link { font-weight: 700; font-size: .9rem; }
 .cc-link a {

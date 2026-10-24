@@ -7,6 +7,7 @@ const auth = require("./auth");
 const { logEvent, listEvents } = require("./events");
 const { MARKETS, normalizeMarketName, resolveTypedCity, TIERS, CREATOR_CATEGORIES, COMP_CATEGORIES, BUSINESS_CATEGORIES, PLANS, PROFESSIONS, REALTOR_PROFESSION, tierForFollowers, normalizeTierBand } = require("./markets");
 const { computeLocalImpactScore, summarizeHistory } = require("./score");
+const { computeFit, buildFitNote } = require("./fit");
 const { emailEnabled, sendEmail } = require("./email");
 const claimEvidence = require("./claim-evidence");
 const stripe = require("./stripe");
@@ -2431,6 +2432,45 @@ async function creatorReviews(creatorId) {
     .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
 }
 
+// ---------- matching fit (fit + explain, lib/fit.js) ----------
+// Fit is computed per viewer: the same creator fits two
+// businesses differently, so it is never a stored field. The
+// business input comes from the requesting business's own record;
+// a viewer without a business profile (admin, the Business
+// Preview stub) gets no fit at all and cards render exactly as
+// before. The creator input is the raw record plus the numbers
+// already computed for the card (rating, stacked audience,
+// Momentum points - the last three ride along for the learned
+// seam in fit.js; today's weights score none of them).
+function businessFitInputOf(viewer) {
+  if (!viewer || viewer.role !== "business" || !viewer.business) return null;
+  return {
+    category: viewer.business.category || "",
+    market: viewer.market || "",
+    city: viewer.city || "",
+    neighborhood: viewer.business.neighborhood || "",
+  };
+}
+
+function creatorFitInputOf(user, extra) {
+  const c = user.creator || {};
+  const e = extra || {};
+  return {
+    categories: c.categories || [],
+    compCategories: c.compCategories || [],
+    homeCity: user.city || "",
+    neighborhood: c.neighborhood || "",
+    farmAreas: c.farmAreas || [],
+    tier: normalizeTierBand(c.tierBand),
+    totalAudience: e.totalAudience !== undefined ? e.totalAudience : audienceTotalOf(c),
+    localAudiencePct: c.localAudiencePct === undefined ? null : c.localAudiencePct,
+    profession: c.profession || "",
+    ratingAvg: e.ratingAvg !== undefined ? e.ratingAvg : null,
+    ratingCount: e.ratingCount || 0,
+    momentumPoints: e.momentumPoints || 0,
+  };
+}
+
 // The discovery query, shared verbatim by the real business surface
 // and the admin Business Preview so both answer identically. `viewer`
 // only drives the favorite flag and the default market; every filter
@@ -2482,6 +2522,7 @@ async function discoverCards(query, viewer) {
   const [bookings, posts, reviews, bizReviews] = await Promise.all([allBookings(), allPosts(), allReviews(), allBizReviews()]);
   const momentum = createMomentum({ users, bookings, posts, reviews, bizReviews });
   const bookedUp = await bookedUpCreatorIds(users, bookings);
+  const fitBusiness = businessFitInputOf(viewer);
   const out = [];
   for (const c of creators) {
     const card = await publicCreator(c, viewer, approvedRank.get(c.id) || null);
@@ -2490,6 +2531,19 @@ async function discoverCards(query, viewer) {
     card.momentum = momentum.summaryFor(c);
     card.badges = momentum.badgesFor(c);
     card.standing = standingState(c);
+    // Matching fit (lib/fit.js): per-viewer, computed live from
+    // stored fields only, attached as { score, reasons } so the
+    // card can explain itself. Never a gate and never the default
+    // order: it only moves a list a business explicitly re-sorts.
+    if (fitBusiness) {
+      const fit = computeFit(fitBusiness, creatorFitInputOf(c, {
+        totalAudience: card.totalAudience,
+        ratingAvg: card.ratingAvg,
+        ratingCount: card.ratingCount,
+        momentumPoints: card.momentum.points,
+      }));
+      card.fit = { score: fit.score, reasons: fit.reasons };
+    }
     // At their weekly visit cap: still visible, NOT greyed (that is
     // the paused treatment), flagged "Booked up this week".
     card.bookedUp = bookedUp.has(c.id);
@@ -2497,12 +2551,16 @@ async function discoverCards(query, viewer) {
   }
   // Default sort is founding priority: earliest founding sign-ups
   // first, which is the priority promise made at sign-up. Businesses
-  // can re-sort by Local Impact Score (?sort=score) or by Momentum
-  // points (?sort=momentum).
+  // can re-sort by Local Impact Score (?sort=score), by Momentum
+  // points (?sort=momentum), or by matching fit (?sort=fit, only
+  // meaningful for a business viewer: fit is computed against
+  // their own record).
   if (query.sort === "score") {
     out.sort((a, b) => (b.localImpactScore || 0) - (a.localImpactScore || 0));
   } else if (query.sort === "momentum") {
     out.sort((a, b) => (b.momentum.points - a.momentum.points) || (a.createdAt < b.createdAt ? -1 : 1));
+  } else if (query.sort === "fit") {
+    out.sort((a, b) => ((b.fit ? b.fit.score : -1) - (a.fit ? a.fit.score : -1)) || (b.momentum.points - a.momentum.points) || (a.createdAt < b.createdAt ? -1 : 1));
   } else {
     out.sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
   }
@@ -7530,7 +7588,9 @@ async function route(event) {
   //                   shows an SMB this number)
   //   ?paid=1         only creators open to paid cash campaigns
   //   ?q=             name or handle text search
-  //   ?sort=          founding (default) | score | momentum
+  //   ?sort=          founding (default) | score | momentum | fit
+  //                   (fit = matching fit against the requesting
+  //                   business's own record, lib/fit.js)
   if (method === "GET" && seg[0] === "discover") {
     // The query itself lives in discoverCards() so the admin Business
     // Preview answers with the identical roster, filters, and sorts.
@@ -8068,6 +8128,19 @@ async function route(event) {
       const mine = apps.filter((a) => a.offerId === o.id);
       const myApp = mine.find((a) => a.creatorId === user.id && a.status !== "withdrawn");
       const biz = await store.get(`user:${o.businessId}`);
+      // Matching fit note (lib/fit.js): one short line, present
+      // only when this offer is a genuinely strong match for the
+      // viewing creator (category overlap or same city). It is an
+      // explanation, never an eligibility change: the board's
+      // filtering above is untouched.
+      const fitBusiness = {
+        category: o.category || "",
+        market: o.market || "",
+        city: biz ? (biz.city || "") : "",
+        neighborhood: biz && biz.business ? (biz.business.neighborhood || "") : "",
+      };
+      const myFitInput = creatorFitInputOf(user);
+      const fitNote = buildFitNote(computeFit(fitBusiness, myFitInput), fitBusiness, myFitInput);
       out.push({
         ...o,
         lane: "open",
@@ -8077,6 +8150,7 @@ async function route(event) {
         stackCap: Math.max(o.spots, o.spots * APPLICATION_STACK_PER_SPOT),
         myApplication: myApp ? { id: myApp.id, status: myApp.status } : null,
         strength: offerStrength(o),
+        fitNote,
         businessPlan: biz && biz.business ? biz.business.plan : null,
         visitRights: visitRightsForVisit(kindOf(o)),
         businessReviewLinks: biz && biz.business ? reviewLinksView(biz.business) : null,
