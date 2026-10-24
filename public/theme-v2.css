@@ -69,7 +69,10 @@ a { color: #0163C9; }
 
 /* ---------- header / nav ---------- */
 .topbar {
-  background: rgba(250,247,241,.88);
+  /* QA 2026-10-24: was rgba(250,247,241,.88) — at .88, scrolled page
+     text ghosted through the sticky header and collided with the logo
+     (seen on Discover/Offers/Composer at 390px). Fully opaque now. */
+  background: rgb(250,247,241);
   backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
   border-bottom: 1px solid var(--line2);
   padding: 12px 22px;
