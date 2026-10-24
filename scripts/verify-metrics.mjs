@@ -435,6 +435,18 @@ try {
   const dup4 = await biz.client("POST", "/api/offers", { ...dupBody, title: "Dedupe tasting night two" });
   check("offer dedupe: a closed twin does not block a fresh identical offer (201)",
     closeDup.status === 200 && dup4.status === 201, `${closeDup.status}/${dup4.status} ${JSON.stringify(dup4.data).slice(0, 160)}`);
+  const c2 = await registerCreator(`metricspeer${u}`);
+  await approve(c2.user.id);
+  const directDupBody = { title: "Direct dedupe tasting", whatComped: "Dinner for two", includes: "Two entrees and two drinks", dollarCap: 60, spots: 1, covers: 2, creatorId: c1.user.id };
+  const directDup1 = await biz.client("POST", "/api/offers", directDupBody);
+  const directDupSame = await biz.client("POST", "/api/offers", directDupBody);
+  check("offer dedupe: an identical direct offer to the SAME creator still returns 409",
+    directDup1.status === 201 && directDupSame.status === 409 && directDupSame.data.existingOfferId === directDup1.data.offer.id,
+    `${directDup1.status}/${directDupSame.status} ${JSON.stringify(directDupSame.data).slice(0, 200)}`);
+  const directDupOther = await biz.client("POST", "/api/offers", { ...directDupBody, creatorId: c2.user.id });
+  check("offer dedupe: an identical direct offer to a DIFFERENT creator is a different offer (201, not 409)",
+    directDupOther.status === 201 && directDupOther.data.offer && directDupOther.data.offer.id !== directDup1.data.offer.id && directDupOther.data.offer.creatorId === c2.user.id,
+    `${directDupOther.status} ${JSON.stringify(directDupOther.data).slice(0, 200)}`);
 
   // ---------- metrics sync seam ----------
   part("metrics sync seam");

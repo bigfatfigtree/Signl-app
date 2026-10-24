@@ -8115,7 +8115,8 @@ async function route(event) {
       // identical OPEN offer from the same business is a twin, not
       // a new offer. Same lane, same kind, same normalized title,
       // same amount (dollarCap and the cashRate rate field), same
-      // covers, same spots, and the same apply/window days when
+      // covers, same spots, same target creator (creatorId, null
+      // for open offers), and the same apply/window days when
       // stored: refuse with 409 and the existing offer's id, so
       // the client can point at the one already open instead of
       // creating a duplicate. Drafts are exempt (a draft is not
@@ -8124,6 +8125,7 @@ async function route(event) {
         const normTitle = (t) => String(t || "").trim().replace(/\s+/g, " ").toLowerCase();
         const existing = (await allOffers()).find((x) => {
           if (x.businessId !== user.id || x.status !== "open") return false;
+          if ((x.creatorId || null) !== (offer.creatorId || null)) return false;
           if (laneOf(x) !== laneOf(offer) || kindOf(x) !== kindOf(offer)) return false;
           if (normTitle(x.title) !== normTitle(offer.title)) return false;
           if (Number(x.dollarCap) !== Number(offer.dollarCap)) return false;
