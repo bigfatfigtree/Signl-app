@@ -187,12 +187,62 @@ try {
   check("DC counts: tester excluded, so 0 pending, 0 approved, 0 approved + complete", dcRow.pending === 0 && dcRow.approved === 0 && dcRow.approvedComplete === 0, JSON.stringify(dcRow));
   check("All row: 3 pending, 3 approved, 2 approved + complete", s.all.pending === 3 && s.all.approved === 3 && s.all.approvedComplete === 2, JSON.stringify(s.all));
 
+  // ---------- tester toggles + offer close (dead-button fix, 2026-10-24) ----------
+  // The Admin "Move to Tester" and My Offers "Close offer" buttons
+  // shipped dead in the live app: both handlers gated on the native
+  // confirm() dialog as their first statement and returned silently
+  // when it never surfaced. These checks pin the full path the
+  // buttons drive (route, event, Stats count, close semantics) plus
+  // the served-bundle wiring below.
+  const statsTesters = async () => {
+    const r = await admin("GET", "/api/admin/stats");
+    return r.data && r.data.users ? r.data.users.testers : null;
+  };
+  const eventCount = async (type) => {
+    const r = await admin("GET", `/api/admin/events?type=${encodeURIComponent(type)}&limit=2000`);
+    return (r.data.events || []).length;
+  };
+  check("stats tester count starts at 1 (the DC creator)", (await statsTesters()) === 1, String(await statsTesters()));
+  const markCreator = await admin("POST", "/api/admin/tester", { userId: hrFull.id, tester: true });
+  check("mark creator tester: 200, flag set, creator_marked_tester event fires, stats count moves to 2",
+    markCreator.status === 200 && markCreator.data.user.tester === true && (await eventCount("creator_marked_tester")) >= 2 && (await statsTesters()) === 2,
+    `${markCreator.status} testers=${await statsTesters()}`);
+  const unmarkCreator = await admin("POST", "/api/admin/tester", { userId: hrFull.id, tester: false });
+  check("unmark creator tester: flag clears, creator_unmarked_tester event fires, stats count back to 1",
+    unmarkCreator.status === 200 && unmarkCreator.data.user.tester === false && (await eventCount("creator_unmarked_tester")) === 1 && (await statsTesters()) === 1,
+    `${unmarkCreator.status} testers=${await statsTesters()}`);
+  const markBiz = await admin("POST", "/api/admin/tester", { userId: bizReg.data.user.id, tester: true });
+  check("mark business tester: 200, flag set, business_marked_tester event fires, stats count moves to 2",
+    markBiz.status === 200 && markBiz.data.user.tester === true && (await eventCount("business_marked_tester")) === 1 && (await statsTesters()) === 2,
+    `${markBiz.status} ${JSON.stringify(markBiz.data).slice(0, 160)} testers=${await statsTesters()}`);
+  const unmarkBiz = await admin("POST", "/api/admin/tester", { userId: bizReg.data.user.id, tester: false });
+  check("unmark business tester: flag clears, business_unmarked_tester event fires, stats count back to 1",
+    unmarkBiz.status === 200 && unmarkBiz.data.user.tester === false && (await eventCount("business_unmarked_tester")) === 1 && (await statsTesters()) === 1,
+    `${unmarkBiz.status} testers=${await statsTesters()}`);
+  await admin("POST", "/api/admin/businesses/activate", { userId: bizReg.data.user.id });
+  const closeFixture = await biz("POST", "/api/offers", { title: "Close me fixture", whatComped: "Dinner for two", dollarCap: 60, spots: 1 });
+  check("close fixture offer opens", closeFixture.status === 201 && closeFixture.data.offer.status === "open", `${closeFixture.status} ${JSON.stringify(closeFixture.data).slice(0, 160)}`);
+  const close1 = await biz("POST", `/api/offers/${closeFixture.data.offer.id}/close`, {});
+  check("close offer: 200 and the offer reads closed", close1.status === 200 && close1.data.offer.status === "closed", `${close1.status} ${JSON.stringify(close1.data).slice(0, 160)}`);
+  const close2 = await biz("POST", `/api/offers/${closeFixture.data.offer.id}/close`, {});
+  check("second close is a clean 409 error, not a silent no-op", close2.status === 409 && /already closed/.test(close2.data.error || ""), `${close2.status} ${JSON.stringify(close2.data).slice(0, 160)}`);
+
   // ---------- static client wiring ----------
   const appJs = fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), "..", "public", "app.js"), "utf8");
   check("queue row Details render the Via referral label", appJs.includes("Via referral: @${esc(u.referredBy)}"));
   check("queue row Details render the Source label", appJs.includes("Source: ${esc(u.signupSource)}"));
   check("applications view renders the roster counts strip", appJs.includes("Founding roster counts") && appJs.includes("Approved + profile complete") && appJs.includes("summaryStrip"));
   check("strip copy names the launch number without em dashes", appJs.includes("Approved + profile complete is the launch number") && !appJs.includes("launch number: only those creators show up for businesses. —"));
+  check("dead-button fix: admin rows render the tester toggle for creators AND businesses with the working handler",
+    appJs.includes("setTester('${u.id}'") && appJs.includes("'creator')") && appJs.includes("'business')") && (appJs.match(/Move to Tester/g) || []).length >= 2,
+    "");
+  const stBody = appJs.slice(appJs.indexOf("async function setTester"), appJs.indexOf("async function setTester") + 1800);
+  const coBody = appJs.slice(appJs.indexOf("async function closeOffer"), appJs.indexOf("async function closeOffer") + 800);
+  check("dead-button fix: My Offers renders Close offer with the working handler, and both handlers confirm through the DOM sheet (no native confirm gate)",
+    appJs.includes("closeOffer('${o.id}')") && appJs.includes("function showConfirmSheet") &&
+    stBody.includes("await showConfirmSheet(") && !stBody.includes("!confirm(") &&
+    coBody.includes("await showConfirmSheet(") && !coBody.includes("!confirm("),
+    "");
 } finally {
   server.kill("SIGKILL");
   try { fs.unlinkSync(DB); } catch (e) { /* ignore */ }

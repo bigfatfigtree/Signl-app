@@ -20,8 +20,10 @@
 //     estimate for its booking, registerSource values, the shared
 //     avgTicket rule in registerEstimate;
 //   - notification badges by kind, total = all unread, messages 0
-//     (no message-arrival kind and no per-message read state exist
-//     in the data model yet);
+//     until a message actually arrives (Wave 2: the message-send
+//     route now writes a "message_received" note for the other
+//     participant, one live signal per thread, and badges count
+//     it; the offer dedupe 409 is pinned in the same part);
 //   - AB1 copy: compliance reminder emails state plain
 //     consequences, with no pause/ban timings and no em dashes.
 //
@@ -409,6 +411,31 @@ try {
     cNotes1.data.badges.offers === 1 && cNotes1.data.badges.visits === 0 && cNotes1.data.badges.messages === 0 && cNotes1.data.badges.total === 1,
     JSON.stringify(cNotes1.data.badges));
 
+  // ---------- wave 2: message badges + offer dedupe ----------
+  part("wave2 badges + dedupe");
+  const msg1 = await biz.client("POST", "/api/messages", { toUserId: c1.user.id, body: "Hi from the metrics fixture" });
+  const msg2 = await biz.client("POST", "/api/messages", { toUserId: c1.user.id, body: "Second message, same thread" });
+  const cNotesMsg = await c1.client("GET", "/api/notifications");
+  check("message sent: recipient's messages badge is 1 (two messages in one thread still signal once)",
+    msg1.status === 201 && msg2.status === 201 && cNotesMsg.data.badges && cNotesMsg.data.badges.messages === 1,
+    `${msg1.status}/${msg2.status} ${JSON.stringify(cNotesMsg.data.badges)}`);
+  const bizNotesMsg = await biz.client("GET", "/api/notifications");
+  check("message sent: the sender's own messages badge stays 0",
+    bizNotesMsg.data.badges && bizNotesMsg.data.badges.messages === 0, JSON.stringify(bizNotesMsg.data.badges));
+  const dupBody = { title: "Dedupe tasting night", whatComped: "Dinner for two", includes: "Two entrees and two drinks", dollarCap: 60, spots: 2, covers: 2, applyWindowDays: 3, windowDays: 7 };
+  const dup1 = await biz.client("POST", "/api/offers", dupBody);
+  const dup2 = await biz.client("POST", "/api/offers", { ...dupBody, title: "  Dedupe   tasting night " });
+  check("offer dedupe: an identical open offer returns 409 with the existing offer id (title normalized)",
+    dup1.status === 201 && dup2.status === 409 && dup2.data.error === "This offer is already open" && dup2.data.existingOfferId === dup1.data.offer.id,
+    `${dup1.status}/${dup2.status} ${JSON.stringify(dup2.data).slice(0, 200)}`);
+  const dup3 = await biz.client("POST", "/api/offers", { ...dupBody, title: "Dedupe tasting night two" });
+  check("offer dedupe: a different title is a different offer (201)",
+    dup3.status === 201 && dup3.data.offer.id !== dup1.data.offer.id, `${dup3.status}`);
+  const closeDup = await biz.client("POST", `/api/offers/${dup3.data.offer.id}/close`, {});
+  const dup4 = await biz.client("POST", "/api/offers", { ...dupBody, title: "Dedupe tasting night two" });
+  check("offer dedupe: a closed twin does not block a fresh identical offer (201)",
+    closeDup.status === 200 && dup4.status === 201, `${closeDup.status}/${dup4.status} ${JSON.stringify(dup4.data).slice(0, 160)}`);
+
   // ---------- metrics sync seam ----------
   part("metrics sync seam");
   const syncAnon = await rawWithHeaders("POST", "/api/admin/metrics/sync", { body: {} });
@@ -420,6 +447,23 @@ try {
   const syncAdmin = await admin("POST", "/api/admin/metrics/sync", {});
   check("metrics sync under an admin session returns the same summary",
     syncAdmin.status === 200 && syncAdmin.data.enabled === false, `${syncAdmin.status} ${JSON.stringify(syncAdmin.data)}`);
+
+  // ---------- wave2 served-bundle pins ----------
+  part("wave2 bundle pins");
+  const appJsW2 = fs.readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
+  check("bundle: the bottom bar renders tab badges from state.badges (refreshBadges hook)",
+    appJsW2.includes("function refreshBadges()") && appJsW2.includes("state.badges = data.badges") && appJsW2.includes("bn-badge"),
+    "");
+  check("bundle: composer coaching reads Offer checklist, and Offer strength is gone from the client",
+    appJsW2.includes("Offer checklist:") && appJsW2.includes("Offer checklist ${o.strength.score}") && !appJsW2.includes("Offer strength"),
+    "");
+  check("bundle: signup copy carries no ladder specifics (no hard stop, no reminder schedule, no pause/close timing)",
+    !appJsW2.includes("reminders land at 48 hours, day 5, and day 6") && !appJsW2.includes("pauses my account at one week and closes it at two") &&
+    appJsW2.includes("A late post inside the catch-up window still counts") && appJsW2.includes("repeated misses can pause my account"),
+    "");
+  check("bundle: the paid booking sheet replaced the native confirm/prompt chain",
+    appJsW2.includes("function closePaidSheet") && appJsW2.includes("No card is charged in the app yet") && !appJsW2.includes("const briefInput = prompt("),
+    "");
 
   // ---------- refresh asks (time travel + sweep) ----------
   part("refresh asks");

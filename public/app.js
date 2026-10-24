@@ -32,6 +32,8 @@ const state = {
   threads: [],
   activeThread: null, // other user id
   counterCode: "",
+  badges: null, // tab badge counts from GET /notifications (UX redesign section 2)
+  offerDraft: {}, // offer composer form state: survives re-renders, cleared on a successful submit
   staff: null, // live staff session info (GET /staff/session) while in staff mode
   staffCode: "", // business staff code from a /redeem/<code> register link
   staffBizName: "", // business name resolved for the PIN screen
@@ -86,7 +88,13 @@ async function api(method, path, body) {
     // Server messages are plain language and pass through. A bare
     // failure with no message becomes a friendly one: nobody should
     // ever see "Request failed (502)" (UX audit fix, 2026-10-22).
-    throw new Error(data.error || "Something went wrong on our side. Try again in a moment.");
+    // The parsed body rides along on the error so callers that need
+    // structured fields (the offer dedupe's existingOfferId) can
+    // read them without a second request.
+    const e = new Error(data.error || "Something went wrong on our side. Try again in a moment.");
+    e.data = data;
+    e.status = res.status;
+    throw e;
   }
   return data;
 }
@@ -609,8 +617,8 @@ function momentumHtml(u) {
     </div>`).join("");
   return `
   <div class="panel mt" style="text-align:left">
-    <div class="flex-between"><h3 style="margin:0">Momentum</h3><span class="badge info" style="font-size:1rem;padding:6px 14px">${m.points} points</span></div>
-    <p class="small">Points decide the order businesses see you in. You earn them for completing your profile, delivering posts on time, reviewing businesses after completed visits, posts that run as ads, and recruiting creators. Late posts, no-shows, and a redeemed visit with no post cost you points.${m.floorApplied ? " Your total never drops below zero." : ""}</p>
+    <div class="flex-between"><h3 style="margin:0">Momentum points</h3><span class="badge info" style="font-size:1rem;padding:6px 14px">${m.points} points</span></div>
+    <p class="small">Earned for posting on time, completing your profile, and bringing creators in. You also earn them for reviewing businesses after completed visits and for posts that run as ads. Late posts, no-shows, and a redeemed visit with no post cost you points.${m.floorApplied ? " Your total never drops below zero." : ""}</p>
     <h4 style="margin:14px 0 6px">Ways to earn</h4>
     ${checklist || `<p class="small muted">Loading...</p>`}
     ${ledger ? `<h4 style="margin:16px 0 6px">Points history</h4>${ledger}` : ""}
@@ -796,12 +804,21 @@ function standingBannerHtml(u) {
 function strikeStatusHtml(u) {
   const n = u && Number(u.noShowStrikes) > 0 ? Math.floor(Number(u.noShowStrikes)) : 0;
   if (!n) return "";
-  return `<p class="small"><strong>Visit strikes: ${n} of 3.</strong> Letting a booked visit window expire counts as a strike. Three strikes pauses your account for review.</p>`;
+  return `<p class="small"><strong>Visit strikes: ${n}.</strong> Letting a booked visit window expire unused counts as a strike, and strikes can pause your account for review.</p>`;
 }
 
 function fmtDate(iso) {
   if (!iso) return "";
   return new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+}
+
+// Short card date ("Oct 27"): cards show dates, detail screens
+// keep full timestamps (UX redesign section 6).
+function fmtDay(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
 function hoursLeft(deadline) {
@@ -875,16 +892,21 @@ function bnIcon(name) {
   return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || paths.home}</svg>`;
 }
 
-// App-style bottom navigation for small screens (Jeff, 2026-10-18):
-// the top link row wrapped and broke on phones, so on mobile the nav
-// lives in a fixed bottom tab bar, with the sections of the signed-in
-// experience one tap away. Desktop keeps the top nav.
+// App-style bottom navigation (Jeff, 2026-10-18; unified in the
+// UX redesign, 2026-10-24): ONE nav system per role at every width.
+// Signed-in views render the bar at all widths (centered, max
+// width on desktop); signed-out views keep the mobile-only bar.
+// Tab badges ride the counts GET /notifications returns.
 function renderBottomNav() {
   if (!bottomnav) return;
+  const signedIn = !!state.user && state.view !== "staff";
+  bottomnav.classList.toggle("signed-in", signedIn);
+  document.body.classList.toggle("bn-on", signedIn);
   if (state.view === "staff") { bottomnav.innerHTML = ""; return; }
-  const item = (icon, label, onclick, active) => `
+  const badgeBubble = (n) => (n ? `<span class="bn-badge">${n > 99 ? "99+" : n}</span>` : "");
+  const item = (icon, label, onclick, active, badge) => `
     <button class="bn-item ${active ? "on" : ""}" onclick="${onclick}">
-      <span class="bn-icon">${bnIcon(icon)}</span><span class="bn-label">${label}</span>
+      <span class="bn-icon">${bnIcon(icon)}${badgeBubble(badge)}</span><span class="bn-label">${label}</span>
     </button>`;
   const v = state.view;
   const t = state.tab;
@@ -911,6 +933,7 @@ function renderBottomNav() {
     bottomnav.innerHTML = items + item("signout", "Sign out", "signOut()", false);
     return;
   }
+  const b = state.badges || {};
   if (u.role === "creator") {
     const live = !!(u.founding && u.founding.marketLive);
     if (!live) {
@@ -926,20 +949,64 @@ function renderBottomNav() {
     bottomnav.innerHTML =
       item("home", "Dashboard", "return go('dashboard','Dashboard')", t === "Dashboard" || !t) +
       item("profile", "Profile", "return go('dashboard','Profile')", t === "Profile") +
-      item("offers", "Offers", "return go('dashboard','Offers')", t === "Offers") +
-      item("visits", "My Visits", "return go('dashboard','My Visits')", t === "My Visits") +
-      item("messages", "Messages", "return go('dashboard','Messages')", t === "Messages") +
+      item("offers", "Offers", "return go('dashboard','Offers')", t === "Offers", b.offers) +
+      item("visits", "My Visits", "return go('dashboard','My Visits')", t === "My Visits", b.visits) +
+      item("messages", "Messages", "return go('dashboard','Messages')", t === "Messages", b.messages) +
       item("signout", "Sign out", "signOut()", false);
     return;
   }
-  // business: Home leads (the real Business Home), then Discover,
-  // Offers, Favorites, Sign out. The full tab row stays on top.
+  // business: Home, Discover, Offers, Counter, More. The rest of
+  // the sections (Favorites, Visits & Posts, Plan, Messages) live
+  // in the More sheet, so the bar stays at five targets.
+  const moreActive = ["Favorites", "Visits & Posts", "Plan", "Messages"].includes(t);
   bottomnav.innerHTML =
-    item("home", "Home", "return go('dashboard','Home')", t === "Home" || !t) +
+    item("home", "Home", "return go('dashboard','Home')", t === "Home" || !t, b.visits) +
     item("pin", "Discover", "return go('dashboard','Discover')", t === "Discover") +
-    item("offers", "Offers", "return go('dashboard','My Offers')", t === "My Offers") +
-    item("heart", "Favorites", "return go('dashboard','Favorites')", t === "Favorites") +
-    item("signout", "Sign out", "signOut()", false);
+    item("offers", "Offers", "return go('dashboard','My Offers')", t === "My Offers", b.offers) +
+    item("visits", "Counter", "return go('dashboard','Counter')", t === "Counter") +
+    item("list", "More", "return openMoreSheet()", moreActive, b.messages);
+}
+
+// Tab badges (UX redesign section 2): GET /notifications carries
+// { offers, visits, messages, total } counted over unread
+// notifications. Stored on state and the bar re-renders in place.
+async function refreshBadges() {
+  if (!state.user) { state.badges = null; return; }
+  try {
+    const data = await api("GET", "/notifications");
+    state.badges = data.badges || null;
+    renderBottomNav();
+  } catch (e) { /* badges are an enhancement, never a blocker */ }
+}
+
+// The business More sheet: the sections that do not fit the bar,
+// each row a full-width tap target, Messages carrying its badge.
+function openMoreSheet() {
+  closeMoreSheet();
+  const b = state.badges || {};
+  const row = (label, tab, badge) => `
+    <button class="sheet-row" onclick="closeMoreSheet(); return go('dashboard','${tab}')"><span>${label}</span>${badge ? `<span class="bn-badge static">${badge > 99 ? "99+" : badge}</span>` : ""}</button>`;
+  const el = document.createElement("div");
+  el.id = "more-sheet";
+  el.className = "sheet-overlay";
+  el.innerHTML = `
+  <div class="sheet" role="dialog" aria-label="More">
+    <div class="flex-between"><strong>More</strong><button class="linklike" onclick="closeMoreSheet()">Close</button></div>
+    ${row("Favorites", "Favorites", 0)}
+    ${row("Visits &amp; Posts", "Visits & Posts", 0)}
+    ${row("Plan", "Plan", 0)}
+    ${row("Messages", "Messages", b.messages || 0)}
+    <button class="sheet-row" onclick="closeMoreSheet(); signOut()"><span>Sign out</span></button>
+  </div>`;
+  el.addEventListener("click", (e) => { if (e.target === el) closeMoreSheet(); });
+  document.body.appendChild(el);
+  return false;
+}
+
+function closeMoreSheet() {
+  const el = document.getElementById("more-sheet");
+  if (el) el.remove();
+  return false;
 }
 
 function go(view, tab) {
@@ -1154,6 +1221,7 @@ async function doSignin(e) {
     state.user = data.user;
     state.view = "dashboard";
     render();
+    refreshBadges();
   } catch (err) {
     submitBusy(form, false);
     document.getElementById("form-error").innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
@@ -1446,13 +1514,13 @@ function renderQuickClaim() {
         <ul style="margin:8px 0 0;padding-left:18px">
           <li>A business comps you a meal or service. You post your honest experience within 48 hours of the visit and disclose the comp. Nobody can ask you for a positive post. Ever.</li>
           <li>Your check-off is the post link: you paste it in the app under My Visits. The link is the proof.</li>
-          <li>Post within 48 hours for full credit. One week is the hard stop: a late post inside the week still counts, and reminders land at 48 hours, day 5, and day 6.</li>
-          <li>At one week with no post, your account pauses. A post in the second week still lands and unpauses you, with the missed deadline on your record. At two weeks with no post, your account closes to future offers. Showing up matters here.</li>
+          <li>Post within 48 hours of the visit for full credit. A late post inside the catch-up window still counts.</li>
+          <li>If a post never lands, the visit does not count, and repeated misses can pause your account. Showing up matters here.</li>
         </ul>
       </div>
       <div class="field"><label style="font-weight:500"><input type="checkbox" id="qc-agree-honest" style="width:auto" required> I understand no business can require me to post positively. My posts stay my honest opinion.</label></div>
       <div class="field"><label style="font-weight:500"><input type="checkbox" id="qc-agree-ftc" style="width:auto" required> I agree to clearly disclose every comp in my posts, as the FTC requires.</label></div>
-      <div class="field"><label style="font-weight:500"><input type="checkbox" id="qc-agree-compliance" style="width:auto" required> I agree to post within 48 hours of every comped visit for full credit and paste the post link in the app. I understand one week is the hard stop: a redeemed visit with no post pauses my account at one week and closes it at two.</label></div>
+      <div class="field"><label style="font-weight:500"><input type="checkbox" id="qc-agree-compliance" style="width:auto" required> I agree to post within 48 hours of every comped visit for full credit and paste the post link in the app. I understand a post that never lands means the visit does not count, and repeated misses can pause my account.</label></div>
       <div class="field"><label style="font-weight:500"><input type="checkbox" id="qc-agree-terms" style="width:auto" required> I agree to the <a href="https://joinsignl.com/terms.html" target="_blank" rel="noopener">Terms of Service</a> and <a href="https://joinsignl.com/privacy.html" target="_blank" rel="noopener">Privacy Policy</a>, and I agree SIGNL can email me about my account, launch updates and offers. I can unsubscribe from marketing emails at any time.</label></div>
       <button class="btn" type="submit" style="width:100%">Claim my founding spot</button>
       <p class="small muted mt">Every application is reviewed by a person, and every founding application gets a decision or a clear status within 2 business days. Founding spots are held in sign-up order.</p>
@@ -1470,7 +1538,7 @@ async function doQuickClaim(e) {
   };
   if (!document.getElementById("qc-agree-honest").checked) { errBox("Please confirm the honest-post rule."); return false; }
   if (!document.getElementById("qc-agree-ftc").checked) { errBox("Please confirm the FTC disclosure agreement."); return false; }
-  if (!document.getElementById("qc-agree-compliance").checked) { errBox("Please confirm the post rule: post within 48 hours for full credit, paste the link, one week is the hard stop, and a redeemed visit with no post pauses at one week and closes at two."); return false; }
+  if (!document.getElementById("qc-agree-compliance").checked) { errBox("Please confirm the post rule: post within 48 hours for full credit, paste the link, and understand a post that never lands means the visit does not count, and repeated misses can pause your account."); return false; }
   if (!document.getElementById("qc-agree-terms").checked) { errBox("Please agree to the Terms of Service and email consent so we can reach you at launch."); return false; }
   const marketVal = document.getElementById("qc-market").value;
   const isUnlisted = marketVal === unlistedLabel();
@@ -1599,13 +1667,13 @@ function renderJoinCreator() {
         <ul style="margin:8px 0 0;padding-left:18px">
           <li>A business comps you a meal or service. You post your honest experience within 48 hours of the visit and disclose the comp. Nobody can ask you for a positive post. Ever.</li>
           <li>Your check-off is the post link: you paste it in the app under My Visits. The link is the proof.</li>
-          <li>Post within 48 hours for full credit. One week is the hard stop: a late post inside the week still counts, and reminders land at 48 hours, day 5, and day 6.</li>
-          <li>At one week with no post, your account pauses. A post in the second week still lands and unpauses you, with the missed deadline on your record. At two weeks with no post, your account closes to future offers. Showing up matters here.</li>
+          <li>Post within 48 hours of the visit for full credit. A late post inside the catch-up window still counts.</li>
+          <li>If a post never lands, the visit does not count, and repeated misses can pause your account. Showing up matters here.</li>
         </ul>
       </div>
       <div class="field"><label style="font-weight:500"><input type="checkbox" id="jc-agree-honest" style="width:auto" required> I understand no business can require me to post positively. My posts stay my honest opinion.</label></div>
       <div class="field"><label style="font-weight:500"><input type="checkbox" id="jc-agree-ftc" style="width:auto" required> I agree to clearly disclose every comp in my posts, as the FTC requires.</label></div>
-      <div class="field"><label style="font-weight:500"><input type="checkbox" id="jc-agree-compliance" style="width:auto" required> I agree to post within 48 hours of every comped visit for full credit and paste the post link in the app. I understand one week is the hard stop: a redeemed visit with no post pauses my account at one week and closes it at two.</label></div>
+      <div class="field"><label style="font-weight:500"><input type="checkbox" id="jc-agree-compliance" style="width:auto" required> I agree to post within 48 hours of every comped visit for full credit and paste the post link in the app. I understand a post that never lands means the visit does not count, and repeated misses can pause my account.</label></div>
       <div class="field"><label style="font-weight:500"><input type="checkbox" id="jc-agree-terms" style="width:auto" required> I agree to the <a href="https://joinsignl.com/terms.html" target="_blank" rel="noopener">Terms of Service</a> and <a href="https://joinsignl.com/privacy.html" target="_blank" rel="noopener">Privacy Policy</a>, and I agree SIGNL can email me about my account, launch updates and offers. I can unsubscribe from marketing emails at any time.</label></div>
       <div id="jc-save-warn"></div>
       <button class="btn" type="submit" style="width:100%">Create my founding profile</button>
@@ -1655,7 +1723,7 @@ async function doRegisterCreator(e) {
   if (!cats.length) { errBox("Pick at least one category you create in."); return false; }
   if (!document.getElementById("jc-agree-honest").checked) { errBox("Please confirm the honest-post rule."); return false; }
   if (!document.getElementById("jc-agree-ftc").checked) { errBox("Please confirm the FTC disclosure agreement."); return false; }
-  if (!document.getElementById("jc-agree-compliance").checked) { errBox("Please confirm the post rule: post within 48 hours for full credit, paste the link, one week is the hard stop, and a redeemed visit with no post pauses at one week and closes at two."); return false; }
+  if (!document.getElementById("jc-agree-compliance").checked) { errBox("Please confirm the post rule: post within 48 hours for full credit, paste the link, and understand a post that never lands means the visit does not count, and repeated misses can pause your account."); return false; }
   const primaryPlatform = jcPrimary();
   const stackFromForm = {};
   const primaryCount = parseInt(document.getElementById("jc-followers").value, 10) || 0;
@@ -2214,22 +2282,54 @@ function reviewLinksBlockHtml(links) {
 }
 
 // Book a paid visit at the creator's listed rate (real surface).
-async function bookPaidVisit(creatorId) {
+// Paid booking confirm sheet (UX redesign section 9): the old
+// flow chained a native confirm() and a native prompt(), the same
+// silent-gate pattern that killed the tester and close buttons
+// (a suppressed dialog books nothing and says nothing). The sheet
+// shows the full math and the honest payment state before anything
+// is booked; Cancel books nothing and sends nothing.
+function bookPaidVisit(creatorId) {
   const c = (state.discover || []).find((x) => x.userId === creatorId);
   const p = c && c.profile ? c.profile : {};
   const rate = p.paidRate;
   if (!rate) { alert("That creator has not listed a paid rate."); return; }
   const total = Math.round(rate * 1.03 * 100) / 100;
   const net = Math.round(rate * 0.97 * 100) / 100;
-  if (!confirm(`Book a paid visit with ${c ? c.name : "this creator"} at their listed rate of $${rate}?\n\nYou pay $${total} (the rate plus 3%). They keep $${net} (97% of their rate). SIGNL holds the payment and releases it when their post is live. Comp-only is always fine too: paid is only for booking this specific creator.`)) return;
-  const briefInput = prompt(`Key points for the creator (optional, paid visits only). Leave blank for none.\n\n${PAID_BRIEF_GUIDANCE}`, "");
-  const paidBrief = briefInput ? briefInput.trim().slice(0, 500) : "";
-  try {
-    const data = await api("POST", "/bookings/paid", { creatorId, ...(paidBrief ? { paidBrief } : {}) });
-    state.tab = "Visits & Posts";
-    render();
-    showBookingCard(data.booking, "Paid visit booked", data.booking.paidLane ? data.booking.paidLane.paymentNote : "");
-  } catch (err) { alert(err.message); }
+  closePaidSheet();
+  const el = document.createElement("div");
+  el.id = "paid-sheet";
+  el.className = "sheet-overlay";
+  el.innerHTML = `
+  <div class="sheet" role="dialog" aria-label="Book a paid visit">
+    <strong>Book a paid visit with ${esc(c ? c.name : "this creator")}</strong>
+    <p class="small" style="margin:10px 0 2px">Listed rate: <strong>$${esc(String(rate))}</strong></p>
+    <p class="small" style="margin:2px 0">You pay <strong>$${total}</strong> (rate + 3%)</p>
+    <p class="small" style="margin:2px 0">They keep <strong>$${net}</strong> (97%)</p>
+    <p class="small muted">No card is charged in the app yet. This records the booking and holds the amount in the app ledger. It is released after the post is live and the 48 hour hold passes.</p>
+    <div class="field"><label>Key points for the creator (optional)</label><textarea id="paid-brief" rows="3" maxlength="500" placeholder="What to feature, names, dates"></textarea><p class="small muted">${PAID_BRIEF_GUIDANCE}</p></div>
+    <button class="btn" style="width:100%" id="paid-sheet-book">Book paid visit</button>
+    <button class="btn ghost" style="width:100%;margin-top:8px" id="paid-sheet-cancel">Cancel</button>
+  </div>`;
+  document.body.appendChild(el);
+  document.getElementById("paid-sheet-cancel").onclick = () => closePaidSheet();
+  el.addEventListener("click", (e) => { if (e.target === el) closePaidSheet(); });
+  document.getElementById("paid-sheet-book").onclick = async () => {
+    const briefEl = document.getElementById("paid-brief");
+    const paidBrief = briefEl ? briefEl.value.trim().slice(0, 500) : "";
+    closePaidSheet();
+    try {
+      const data = await api("POST", "/bookings/paid", { creatorId, ...(paidBrief ? { paidBrief } : {}) });
+      state.tab = "Visits & Posts";
+      render();
+      showBookingCard(data.booking, "Paid visit booked", data.booking.paidLane ? data.booking.paidLane.paymentNote : "");
+    } catch (err) { alert(err.message); }
+  };
+}
+
+function closePaidSheet() {
+  const el = document.getElementById("paid-sheet");
+  if (el) el.remove();
+  return false;
 }
 
 // Preview twin of the paid booking: a simulation with the real fee
@@ -2436,7 +2536,9 @@ function creatorCard(c, viewer, opts) {
     : "";
   const ratingAvg = c.ratingAvg !== undefined && c.ratingAvg !== null ? c.ratingAvg : (c.reviewSummary ? c.reviewSummary.average : null);
   const ratingCount = c.ratingCount !== undefined ? c.ratingCount : (c.reviewSummary ? c.reviewSummary.count : 0);
-  const reviewLine = ratingCount >= 1 && ratingAvg !== null && ratingAvg !== undefined
+  // Feed anatomy (UX redesign section 6): the rating joins the card
+  // only once it rests on 3+ ratings; one or two ratings stay noise.
+  const reviewLine = ratingCount >= 3 && ratingAvg !== null && ratingAvg !== undefined
     ? ` ${starsHtml(ratingAvg)} <strong>${esc(String(ratingAvg))}</strong> <span class="muted">(${ratingCount} rating${ratingCount === 1 ? "" : "s"})</span>`
     : "";
   // v2 .creator-card anatomy: one component for discovery, the public
@@ -2515,7 +2617,6 @@ function renderCreatorDash() {
   app.innerHTML = `
     <h2>Creator dashboard <span class="badge ok">Founding Creator, ${esc(marketDisplayName(u.market))}</span></h2>
     ${standingBannerHtml(u)}
-    ${tabsHtml(LIVE_CREATOR_TABS, tab)}
     <div id="tab-body">${body}</div>`;
   if (tab === "Dashboard") loadCreatorHome();
   if (tab === "Profile") { setTimeout(loadMyScore, 10); setTimeout(() => setupUniversityAutocomplete("p-university", "p-university-results"), 10); }
@@ -2545,7 +2646,6 @@ function renderFoundingHome() {
   app.innerHTML = `
     <h2>Creator dashboard <span class="badge ok">Founding Creator, ${placeBadge}</span></h2>
     ${standingBannerHtml(u)}
-    ${tabsHtml(FOUNDING_TABS, tab)}
     <div id="tab-body">${body}</div>`;
   if (tab === "Dashboard") loadFoundingDashboard();
   if (tab === "Status") loadFoundingStatus();
@@ -2870,6 +2970,7 @@ async function homeAcceptOffer(e, offerId) {
   if (!submitBusy(form, true)) return false;
   try {
     const data = await api("POST", `/offers/${offerId}/accept`, {});
+    refreshBadges();
     showBookingCard(data.booking, "You are booked");
     loadCreatorHome();
   } catch (err) { submitBusy(form, false); alert(err.message); }
@@ -3021,7 +3122,7 @@ function homeFoundingBlocksHtml(card, u) {
   const m = (u && u.momentum) || { points: 0 };
   return `
   <div class="stat-band home-metrics">
-    <div class="stat-cell"><div class="stat-num"><em>${m.points}</em></div><div class="stat-lbl">Momentum points (they set your order in business search when your market opens)</div></div>
+    <div class="stat-cell"><div class="stat-num"><em>${m.points}</em></div><div class="stat-lbl">Momentum points</div></div>
     <div class="stat-cell"><div class="stat-num">${p.localAudiencePct === null || p.localAudiencePct === undefined ? "Not set" : p.localAudiencePct + "%"}</div><div class="stat-lbl">Local audience (the number businesses look at first)</div></div>
     <div class="stat-cell"><div class="stat-num">${card && card.localImpactScore !== null && card.localImpactScore !== undefined ? card.localImpactScore : "New"}</div><div class="stat-lbl">Local Impact Score, out of 100</div></div>
     <div class="stat-cell"><div class="stat-num">${fmtNum(totalAudienceOf(card))}</div><div class="stat-lbl">Total audience across your platforms</div></div>
@@ -3055,16 +3156,17 @@ async function loadCreatorHome() {
     <p class="ui-sub">Your active visit, your offers, and your money, in one place.</p>
     ${profileCompletionHtml(u)}
     <div class="stat-band home-metrics">
-      <div class="stat-cell"><div class="stat-num">$${fmtMoney(money.released)}</div><div class="stat-lbl">Paid cash released (paid visits delivered, hold passed)</div></div>
-      <div class="stat-cell"><div class="stat-num">$${fmtMoney(money.compValue)}</div><div class="stat-lbl">Comp value received (experiences, not cash)</div></div>
+      <div class="stat-cell"><div class="stat-num">$${fmtMoney(money.released)}</div><div class="stat-lbl">${money.released ? "Paid cash released (paid visits delivered, hold passed)" : "Your first paid visit puts money here."}</div></div>
+      <div class="stat-cell"><div class="stat-num">$${fmtMoney(money.compValue)}</div><div class="stat-lbl">${money.compValue ? "Comp value received (experiences, not cash)" : "Your first comped visit lands here."}</div></div>
       <div class="stat-cell"><div class="stat-num">${tr.onTimePct === null || tr.onTimePct === undefined ? "New" : tr.onTimePct + "%"}</div><div class="stat-lbl">On-time posts (${tr.postsDelivered || 0} delivered)</div></div>
-      <div class="stat-cell"><div class="stat-num"><em>${m.points}</em></div><div class="stat-lbl">Momentum points (your order in business search)</div></div>
+      <div class="stat-cell"><div class="stat-num"><em>${m.points}</em></div><div class="stat-lbl">Momentum points</div></div>
     </div>
     ${card.ratingCount >= 1 && card.ratingAvg !== null && card.ratingAvg !== undefined
       ? `<p class="small">${starsHtml(card.ratingAvg)} <strong>Your rating: ${esc(String(card.ratingAvg))}</strong> from ${card.ratingCount} business${card.ratingCount === 1 ? "" : "es"}, shown next to your Momentum points.</p>`
       : `<p class="small muted">Businesses rate you after visits. Your rating appears here after your first rated visit.</p>`}
     ${strikeStatusHtml(u)}
     ${homeActiveVisitHtml(homeActiveBooking(bookings))}
+    ${bookings.filter((b) => b.post && perfUpdateDue(b.post)).map((b) => perfUpdateFormHtml(b, "home")).join("")}
     ${homeOpportunitiesHtml(offers, u)}
     ${homeLocalSignalHtml(card, bookings)}
     ${homePaidLaneHtml(u.creator, `<div class="home-actions"><button class="btn small-btn ghost" onclick="return go('dashboard','Profile')">Edit in your profile</button></div>`)}
@@ -3264,6 +3366,41 @@ function zeroAudienceWarnings(stackTotal) {
 // mount with a proceed button and a Keep editing button, and
 // resolves with the creator's choice. Nothing is written while
 // it is open.
+// In-app confirm sheet: the same promise shape as a native
+// confirm(), rendered as DOM in a fixed overlay. Native confirm()
+// is a silent gate: in contexts where the dialog never surfaces
+// (suppressed modal dialogs), a confirm-first handler returns
+// before doing anything and nothing can surface why (the Admin
+// "Move to Tester" and My Offers "Close offer" buttons shipped
+// dead that way, 2026-10-24). A DOM sheet always renders, always
+// resolves, and works with touch, mouse, and keyboard alike.
+function showConfirmSheet(heading, body, confirmLabel) {
+  return new Promise((resolve) => {
+    closeConfirmSheet();
+    const el = document.createElement("div");
+    el.id = "confirm-sheet";
+    el.className = "sheet-overlay";
+    el.innerHTML = `
+    <div class="sheet" role="dialog" aria-label="${esc(heading)}">
+      <strong>${esc(heading)}</strong>
+      <p class="small muted">${esc(body)}</p>
+      <button class="btn" style="width:100%" id="confirm-sheet-yes">${esc(confirmLabel || "Confirm")}</button>
+      <button class="btn ghost" style="width:100%;margin-top:8px" id="confirm-sheet-no">Cancel</button>
+    </div>`;
+    document.body.appendChild(el);
+    const done = (v) => { closeConfirmSheet(); resolve(v); };
+    document.getElementById("confirm-sheet-yes").onclick = () => done(true);
+    document.getElementById("confirm-sheet-no").onclick = () => done(false);
+    el.addEventListener("click", (e) => { if (e.target === el) done(false); });
+  });
+}
+
+function closeConfirmSheet() {
+  const el = document.getElementById("confirm-sheet");
+  if (el) el.remove();
+  return false;
+}
+
 function confirmSaveWarning(mountId, heading, lines, confirmLabel) {
   return new Promise((resolve) => {
     const mount = document.getElementById(mountId);
@@ -3448,9 +3585,15 @@ async function loadOpenBoard() {
       const rights = o.visitRights || rightsForVisit(o.kind);
       const spotsLeft = Math.max(0, o.spots - (o.filledCount || 0));
       return `
-      <div class="card mb">
+      <div class="card mb feed-card">
         <div class="flex-between"><strong>${esc(o.title)}</strong><span class="badge tier">${esc(o.businessName)}</span></div>
         ${o.fitNote ? `<p class="small" style="margin:8px 0 0"><span class="badge ok">${esc(o.fitNote)}</span></p>` : ""}
+        <div class="chip-row">
+          ${o.kind === "paid" ? `<span class="chip-mini">Rate $${o.cashRate}</span>` : `<span class="chip-mini">Comp value $${o.dollarCap}</span><span class="chip-mini">${coversLine(o)}</span>`}
+          <span class="chip-mini">Redeem ${fmtDay(o.windowStartAt)} to ${fmtDay(o.windowEndAt)}</span>
+          <span class="chip-mini">${spotsLeft} spot${spotsLeft === 1 ? "" : "s"} left</span>
+          ${o.businessNeighborhood ? `<span class="chip-mini">${esc(o.businessNeighborhood)}</span>` : ""}
+        </div>
         <div class="showcase-block">
           <h4>The deal, in plain words</h4>
           ${o.kind === "paid"
@@ -3464,7 +3607,7 @@ async function loadOpenBoard() {
           <p class="small"><strong>They can't:</strong> ${rights.cannot.map(esc).join("; ")}</p>
         </div>
         ${reviewLinksBlockHtml(o.businessReviewLinks)}
-        <p class="small muted">${spotsLeft} of ${o.spots} spot${o.spots === 1 ? "" : "s"} open &middot; ${o.applicationCount} applied &middot; apply by ${fmtDate(o.applicationsCloseAt)} &middot; redeem ${fmtDate(o.windowStartAt)} to ${fmtDate(o.windowEndAt)}${o.businessNeighborhood ? ` &middot; ${esc(o.businessNeighborhood)}` : ""}${o.visitWindow ? `<br>Note from the business: ${esc(o.visitWindow)}` : ""}</p>
+        <p class="small muted">${spotsLeft} of ${o.spots} spot${o.spots === 1 ? "" : "s"} open &middot; ${o.applicationCount} applied &middot; apply by ${fmtDay(o.applicationsCloseAt)} &middot; redeem ${fmtDay(o.windowStartAt)} to ${fmtDay(o.windowEndAt)}${o.businessNeighborhood ? ` &middot; ${esc(o.businessNeighborhood)}` : ""}${o.visitWindow ? `<br>Note from the business: ${esc(o.visitWindow)}` : ""}</p>
         ${o.businessAbout ? `<p class="small muted">${esc(o.businessAbout)}</p>` : ""}
         ${o.myApplication
           ? `<p><span class="badge info">You applied: ${esc(o.myApplication.status.replace(/_/g, " "))}</span> <a href="#" onclick="document.getElementById('my-apps').scrollIntoView({behavior:'smooth'}); return false;">See it under My Applications</a></p>`
@@ -3480,6 +3623,7 @@ async function loadOpenBoard() {
 async function applyToOffer(offerId) {
   try {
     await api("POST", `/offers/${offerId}/apply`, {});
+    refreshBadges();
     loadOpenBoard();
     loadMyApplications();
   } catch (err) { alert(err.message); }
@@ -3522,6 +3666,7 @@ async function loadMyApplications() {
 async function acceptBackfill(applicationId) {
   try {
     const data = await api("POST", `/applications/${applicationId}/accept-backfill`, {});
+    refreshBadges();
     state.tab = "My Visits";
     render();
     showBookingCard(data.booking, "Spot taken");
@@ -3558,6 +3703,7 @@ async function acceptOffer(e, offerId) {
   if (!submitBusy(form, true)) return false;
   try {
     const data = await api("POST", `/offers/${offerId}/accept`, {});
+    refreshBadges();
     state.tab = "My Visits";
     render();
     showBookingCard(data.booking, "You are booked");
@@ -3614,8 +3760,8 @@ function complianceBadge(b) {
     case "posted_on_time": return `<span class="badge ok">Posted on time</span>`;
     case "posted_late": return `<span class="badge warn">Posted late (delivered)</span>`;
     case "post_due": return `<span class="badge warn">Post due by ${esc(when(c.deadline))}</span>`;
-    case "overdue": return `<span class="badge bad">Post overdue: hard stop ${esc(when(c.pauseAt))}</span>`;
-    case "paused": return `<span class="badge bad">Creator paused: past the one-week hard stop</span>`;
+    case "overdue": return `<span class="badge bad">Post overdue</span>`;
+    case "paused": return `<span class="badge bad">Creator paused: a post is past due</span>`;
     case "missed": return `<span class="badge bad">Missed: no post delivered</span>`;
     case "expired": return `<span class="badge bad">Window expired unused</span>`;
     case "honor_reported": return `<span class="badge warn">Reported: business didn't honor (clock voided)</span>`;
@@ -3715,9 +3861,10 @@ function visitCard(b, role) {
   if (role === "creator" && b.redeemedAt && !post) {
     const late = b.compliance && (b.compliance.status === "overdue" || b.compliance.status === "paused" || b.compliance.status === "missed");
     html += `
+    ${b.postDeadline ? `<p class="small" style="margin-top:10px"><strong>Post due in <span class="home-tick" data-mode="post" data-target="${esc(b.postDeadline)}">${esc(homeDurCore(Date.parse(b.postDeadline) - Date.now()))}</span></strong></p>` : ""}
     <form onsubmit="return submitPost(event, '${b.id}')">
       <h4 style="margin:10px 0 4px">Post your proof</h4>
-      ${late ? `<p class="small"><strong>This post is past its 48 hour deadline.</strong> Post within 48 hours for full credit. One week is the hard stop: inside the week it still counts as delivered late, and even after the pause a post inside the second week unpauses you, though the missed deadline stays on your record. No link, no check-off.</p>` : `<p class="small muted">Your check-off is the post link itself. Paste it here and the visit is marked delivered${b.compliance && b.compliance.deadline ? ` (deadline ${esc(fmtDate(b.compliance.deadline))})` : ""}. Post within 48 hours for full credit; one week is the hard stop.</p>`}
+      ${late ? `<p class="small"><strong>This post is past its 48 hour deadline.</strong> Post within 48 hours for full credit. A late post inside the catch-up window still counts, and the missed deadline stays on your record. No link, no check-off.</p>` : `<p class="small muted">Your check-off is the post link itself. Paste it here and the visit is marked delivered${b.compliance && b.compliance.deadline ? ` (deadline ${esc(fmtDate(b.compliance.deadline))})` : ""}. Post within 48 hours for full credit. A late post inside the catch-up window still counts.</p>`}
       <div class="field"><label>Link to your Instagram post or reel</label><input id="post-url-${b.id}" type="url" placeholder="https://www.instagram.com/p/..." required></div>
       <label style="font-weight:500"><input type="checkbox" id="post-disc-${b.id}" style="width:auto"> My post clearly discloses the comp (for example #ad or "comped by the business"), as the FTC requires.</label>
       <p class="small muted">Post your honest experience. Nobody can require a positive post.</p>
@@ -3747,6 +3894,9 @@ function visitCard(b, role) {
       html += role === "business"
         ? `<p class="small">Your comp produced <strong>${nums}</strong> (creator-reported).</p>`
         : `<p class="small">You reported ${nums} (+5 Momentum). Thanks: numbers like these are what bring businesses back.</p>`;
+      if (role === "business" && post.performance && post.performance.updatedAt) {
+        html += `<p class="small muted">${perfSourceLabel(post.performance.source)}, updated ${fmtDay(post.performance.updatedAt)}${typeof post.performance.viewsGrowthPct === "number" ? ` &middot; views ${post.performance.viewsGrowthPct >= 0 ? "+" : ""}${post.performance.viewsGrowthPct}% since the first report` : ""}</p>`;
+      }
     } else if (role === "creator" && post.performanceRequestedAt) {
       html += `
     <form onsubmit="return submitPostPerformance(event, '${b.id}')">
@@ -3762,6 +3912,9 @@ function visitCard(b, role) {
     </form>`;
     }
   }
+  if (post && role === "creator" && perfUpdateDue(post)) {
+    html += perfUpdateFormHtml(b, "visits");
+  }
   if (post && b.roas && (b.redemptions || post.reportedAt)) {
     const r = b.roas;
     const scoreLine = `<strong>SIGNL ROAS Score: ${r.score === null ? "n/a yet" : r.score.toFixed(2) + "&times;"}</strong> <span class="muted">(our own model)</span> &middot; $${fmtMoney(r.registerValue)} tracked through the code + $${fmtMoney(r.mediaValue)} modeled media value, against $${fmtMoney(r.compCost)} comp at cost + $${fmtMoney(r.discountCost)} code discounts${r.allInScore !== null && r.allInScore !== undefined ? ` &middot; all-in ${r.allInScore.toFixed(2)}&times; with the plan counted` : ""}`;
@@ -3770,17 +3923,31 @@ function visitCard(b, role) {
       : `<p class="small">${b.redemptions ? `Your code brought <strong>${b.redemptions.count} customer${b.redemptions.count === 1 ? "" : "s"}, $${fmtMoney(b.redemptions.basketTotal)} rung up</strong> at ${esc(b.businessName)}. ` : ""}${scoreLine}.</p>`;
   }
   if (role === "business" && post) {
+    const ticket = state.user && state.user.business ? Number(state.user.business.averageTicket) || 0 : 0;
+    const uses = Number(b.codeUseCount) || 0;
+    const tallyCount = b.redemptions ? b.redemptions.count : uses;
+    const tallyBasket = b.redemptions ? b.redemptions.basketTotal : (uses && ticket ? Math.round(uses * ticket * 100) / 100 : "");
     html += `
+    ${!b.redemptions && uses > 0 ? (ticket
+      ? `<p class="small" style="margin-top:12px">So far: ${uses} code use${uses === 1 ? "" : "s"} logged. At your $${fmtMoney(ticket)} average ticket that is about $${fmtMoney(uses * ticket)} of register value, estimated until you save this tally.</p>`
+      : `<p class="small" style="margin-top:12px">So far: ${uses} code use${uses === 1 ? "" : "s"} logged. Set your average ticket under Plan and SIGNL estimates the register value until you save this tally.</p>`) : ""}
+    <p style="margin-top:8px"><button class="btn small-btn ghost" type="button" onclick="logCodeUse('${b.id}')">Log a code use</button> <span class="small muted">${uses} logged so far at the counter</span></p>
     <form onsubmit="return submitCodeRedemptions(event, '${b.id}')">
-      <h4 style="margin:10px 0 4px">Code redemptions at your register</h4>
-      <p class="small muted">Customers who used ${b.creatorCode ? `<strong>${esc(b.creatorCode)}</strong>` : "the creator's audience code"} at your register. Report the running tally (it replaces the last one) and, if you know it, what the comp actually cost you; both feed this visit's SIGNL ROAS Score, our own model.</p>
+      <h4 style="margin:10px 0 4px">Code tally for this visit</h4>
+      <p class="small muted">One question settles it: how many customers used ${b.creatorCode ? `<strong>${esc(b.creatorCode)}</strong>` : "the creator's audience code"} at your register. Saving replaces the last tally and completes this visit's SIGNL ROAS Score.</p>
       <div class="form-2col">
-        <div class="field"><label>Customers who used the code</label><input type="number" id="redeem-count-${b.id}" min="0" placeholder="0" value="${b.redemptions ? b.redemptions.count : ""}"></div>
-        <div class="field"><label>Total rung up with the code ($)</label><input type="number" id="redeem-basket-${b.id}" min="0" step="0.01" placeholder="0.00" value="${b.redemptions ? b.redemptions.basketTotal : ""}"></div>
-        <div class="field"><label>What the comp cost you ($) (optional)</label><input type="number" id="redeem-cost-${b.id}" min="0" step="0.01" placeholder="At your cost" value="${typeof b.compCostActual === "number" ? b.compCostActual : ""}"></div>
+        <div class="field"><label>How many customers used the code?</label><input type="number" id="redeem-count-${b.id}" min="0" placeholder="0" value="${tallyCount}" oninput="tallyCountChanged('${b.id}')"></div>
+        <div class="field"><label>Total rung up with the code ($)</label><input type="number" id="redeem-basket-${b.id}" min="0" step="0.01" placeholder="0.00" value="${tallyBasket}" oninput="this.dataset.touched='1'"></div>
       </div>
-      <button class="btn small-btn" type="submit">Report tally</button>
+      <button class="btn small-btn" type="submit">Save tally</button>
       ${b.redemptions ? `<span class="small muted">Last reported ${fmtDate(b.redemptions.reportedAt)}.</span>` : ""}
+      <details style="margin-top:10px">
+        <summary class="small">Adjust the details (optional)</summary>
+        <div class="form-2col" style="margin-top:8px">
+          <div class="field"><label>Discount percent given with the code</label><input type="number" id="redeem-disc-${b.id}" min="0" max="100" step="0.5" placeholder="As rung up" value="${b.redemptions && b.redemptions.discountPct ? b.redemptions.discountPct : ""}"></div>
+          <div class="field"><label>What the comp cost you ($)</label><input type="number" id="redeem-cost-${b.id}" min="0" step="0.01" placeholder="At your cost" value="${typeof b.compCostActual === "number" ? b.compCostActual : ""}"></div>
+        </div>
+      </details>
     </form>`;
   }
   if (role === "business" && b.postState === "overdue" && !b.replacementRequestedAt) {
@@ -3861,6 +4028,75 @@ async function verifyPost(postId) {
   catch (err) { alert(err.message); }
 }
 
+// Update-numbers ask (spec section 3): a post 7+ days old whose
+// numbers were never reported, or not refreshed in 5+ days, gets
+// an update card. Reporting is repeatable now: each save appends a
+// snapshot and the growth line compares latest to first.
+function perfUpdateDue(post) {
+  if (!post) return false;
+  const perf = post.performance || {};
+  const base = perf.firstAt || post.submittedAt || post.createdAt;
+  if (!base || Number.isNaN(Date.parse(base))) return false;
+  if ((Date.now() - Date.parse(base)) / 86400000 < 7) return false;
+  if (!perf.reported || !(perf.snapshots > 0)) return true;
+  if (!perf.updatedAt) return true;
+  return (Date.now() - Date.parse(perf.updatedAt)) / 86400000 >= 5;
+}
+
+function perfUpdateFormHtml(b, ctx) {
+  const perf = (b.post && b.post.performance) || {};
+  const growth = typeof perf.viewsGrowthPct === "number" && perf.views !== null && perf.views !== undefined
+    ? `<p class="small"><strong>${fmtNum(perf.views)} views, ${perf.viewsGrowthPct >= 0 ? "+" : ""}${perf.viewsGrowthPct}% since your first report.</strong></p>`
+    : "";
+  const num = (v) => (v === null || v === undefined ? "" : v);
+  return `
+  <div class="card mb perf-update-card">
+    <form onsubmit="return submitPostPerformanceUpdate(event, '${b.id}', '${ctx}')">
+      <h4 style="margin:4px 0">Update post numbers</h4>
+      <p class="small muted">${esc(b.title)} at ${esc(b.businessName)}: posts keep growing after week one. Fresh numbers keep the business's SIGNL ROAS Score honest, and updating earns +5 Momentum.</p>
+      ${growth}
+      <div class="form-2col">
+        <div class="field"><label>Views</label><input type="number" id="perfu-views-${b.id}" min="0" value="${num(perf.views)}"></div>
+        <div class="field"><label>Likes</label><input type="number" id="perfu-likes-${b.id}" min="0" value="${num(perf.likes)}"></div>
+        <div class="field"><label>Comments</label><input type="number" id="perfu-comments-${b.id}" min="0" value="${num(perf.comments)}"></div>
+        <div class="field"><label>Shares</label><input type="number" id="perfu-shares-${b.id}" min="0" value="${num(perf.shares)}"></div>
+      </div>
+      <button class="btn small-btn" type="submit">Save updated numbers</button>
+    </form>
+  </div>`;
+}
+
+async function submitPostPerformanceUpdate(e, bookingId, ctx) {
+  e.preventDefault();
+  try {
+    const val = (k) => { const el = document.getElementById(`perfu-${k}-${bookingId}`); return !el || el.value === "" ? null : parseInt(el.value, 10); };
+    await api("POST", `/bookings/${bookingId}/performance`, { views: val("views"), likes: val("likes"), comments: val("comments"), shares: val("shares") });
+    if (ctx === "home") loadCreatorHome(); else loadMyVisits("creator");
+  } catch (err) { alert(err.message); }
+  return false;
+}
+
+// The counter-side code-use logger on the booking card: one tap
+// per customer who uses the code, feeding the estimate until the
+// owner saves the real tally.
+async function logCodeUse(bookingId) {
+  try {
+    await api("POST", `/bookings/${bookingId}/code-uses`, { count: 1 });
+    loadMyVisits("business");
+  } catch (err) { alert(err.message); }
+}
+
+// While the owner types the tally count, the total follows count x
+// average ticket until they hand-edit the total itself.
+function tallyCountChanged(bookingId) {
+  const basketEl = document.getElementById("redeem-basket-" + bookingId);
+  const countEl = document.getElementById("redeem-count-" + bookingId);
+  if (!basketEl || !countEl || basketEl.dataset.touched === "1") return;
+  const ticket = state.user && state.user.business ? Number(state.user.business.averageTicket) || 0 : 0;
+  const count = parseInt(countEl.value, 10) || 0;
+  if (ticket > 0) basketEl.value = count ? String(Math.round(count * ticket * 100) / 100) : "";
+}
+
 async function submitPostPerformance(e, bookingId) {
   e.preventDefault();
   try {
@@ -3885,10 +4121,12 @@ async function submitCodeRedemptions(e, bookingId) {
     const count = document.getElementById("redeem-count-" + bookingId).value;
     const basket = document.getElementById("redeem-basket-" + bookingId).value;
     const cost = document.getElementById("redeem-cost-" + bookingId).value;
+    const discEl = document.getElementById("redeem-disc-" + bookingId);
     await api("POST", `/bookings/${bookingId}/code-redemptions`, {
       count: count === "" ? 0 : parseInt(count, 10),
       basketTotal: basket === "" ? 0 : parseFloat(basket),
       compCostActual: cost === "" ? null : parseFloat(cost),
+      ...(discEl && discEl.value !== "" ? { discountPct: parseFloat(discEl.value) } : {}),
     });
     loadMyVisits("business");
   } catch (err) { alert(err.message); }
@@ -3915,7 +4153,6 @@ function renderBusinessDash() {
   app.innerHTML = `
     <h2>${esc(u.business.businessName)}</h2>
     <p class="muted small" style="margin-top:-8px">${esc(u.market)} &middot; ${esc(u.business.planName)} &middot; ${esc(u.business.billingStatus)}</p>
-    ${tabsHtml(BUSINESS_TABS, tab)}
     <div id="tab-body"></div>`;
   if (tab === "Home") loadBusinessHome();
   if (tab === "Discover") loadDiscover();
@@ -3937,14 +4174,46 @@ async function loadNotificationsInto(elId) {
     const data = await api("GET", "/notifications");
     if (!document.getElementById(elId)) return;
     if (!data.notifications.length) { el.innerHTML = ""; return; }
+    state.badges = data.badges || state.badges;
+    renderBottomNav();
     el.innerHTML = `<div class="panel"><h3 style="margin-top:0">Updates</h3>${data.notifications.slice(0, 8).map((n) => `<p class="small" style="margin:6px 0"><span class="muted">${esc(fmtDate(n.createdAt))}</span> ${esc(n.text)}</p>`).join("")}</div>`;
-    if (data.unreadCount) api("POST", "/notifications/read", {}).catch(() => {});
+    if (data.unreadCount) api("POST", "/notifications/read", {}).then(() => refreshBadges()).catch(() => {});
   } catch (e) { /* notifications are an enhancement, never a blocker */ }
 }
 
 // The real Business Home: the Preview home's computations fed by
 // this business's real bookings, offers, and applications (GET
 // /me/business-home). Same layout, same definitions, real data.
+// How post numbers reached us (UX redesign section 7): creator
+// numbers are labeled as creator-reported unless the metrics sync
+// supplied them, so a business never mistakes a hand-entered count
+// for a platform pull.
+function perfSourceLabel(source) {
+  return source === "meta_sync" ? "Synced from Instagram" : "Creator-reported";
+}
+
+// The ROAS stat cell (UX redesign section 7): with nothing
+// tracked, estimated, or modeled yet, show the starting state and
+// the way in, never a bare 0.00x. Otherwise the score rides with
+// its basis lines: what is tracked, what is estimated from code
+// uses at the business's average ticket, what is modeled media.
+function roasCellHtml(h, navButton) {
+  const r = h.roas || null;
+  const score = h.roasScore;
+  const hasTracked = !!(r && r.registerValue > 0);
+  const hasEstimate = !!(r && r.estimatedRegisterValue > 0);
+  const hasMedia = !!(r && r.mediaValue > 0);
+  if ((score === null || score === undefined || Number(score) === 0) && !hasTracked && !hasEstimate && !hasMedia) {
+    return `<div class="stat-cell"><div class="stat-num grad-text" style="font-size:1.1rem">No results yet</div><div class="stat-lbl">SIGNL ROAS Score. Log code uses at the register, or enter the tally after a post, and your score starts here.</div>${navButton ? `<button class="btn small-btn" style="margin-top:6px" onclick="return go('dashboard','Visits &amp; Posts')">Go to Visits &amp; Posts</button>` : ""}</div>`;
+  }
+  const basis = [
+    hasTracked ? `Register $${fmtMoney(r.registerValue)} tracked` : null,
+    hasEstimate && r.registerEstimate ? `About $${fmtMoney(r.estimatedRegisterValue)} estimated from ${r.registerEstimate.uses} code uses at your $${fmtMoney(r.registerEstimate.avgTicket)} average ticket` : null,
+    hasMedia ? `Media $${fmtMoney(r.mediaValue)} modeled` : null,
+  ].filter(Boolean).join("<br>");
+  return `<div class="stat-cell"><div class="stat-num grad-text">${score === null || score === undefined ? "n/a" : Number(score).toFixed(2) + "&times;"}</div><div class="stat-lbl">SIGNL ROAS Score (register tallies plus modeled media value)${basis ? `<br>${basis}` : ""}</div></div>`;
+}
+
 async function loadBusinessHome() {
   const el = document.getElementById("tab-body");
   try {
@@ -3958,13 +4227,13 @@ async function loadBusinessHome() {
       [h.pipeline.live, "Live", "Posts delivered"],
     ];
     const attention = h.attention && h.attention.length ? `
-      <div class="notice" style="margin-top:16px"><strong>${h.attention.length} item${h.attention.length === 1 ? "" : "s"} need your attention.</strong>
+      <div class="notice" style="margin-top:16px"><strong>${h.attention.length} item${h.attention.length === 1 ? "" : "s"} need${h.attention.length === 1 ? "s" : ""} your attention.</strong>
       ${h.attention.map((a) => `<br><strong>${esc(a.label)}:</strong> ${esc(a.detail)}${a.kind === "offer_nudge" ? ` <button class="btn small-btn" onclick="fixOffer('${esc(a.offerId)}','raise')">Raise comp +$25</button> <button class="btn small-btn ghost" onclick="fixOffer('${esc(a.offerId)}','widen')">Widen window +3 days</button>` : ""}${a.kind === "applications" ? ` <button class="btn small-btn" onclick="return goApplicants('${esc(a.offerId)}')">Review the stack</button>` : ""}`).join("")}</div>`
       : `<div class="notice blue" style="margin-top:16px"><strong>Nothing needs your attention.</strong> Every visit is on track.</div>`;
     const content = (h.topContent || []).map((c) => `
-      <div class="ui-row"><span class="k"><strong>${esc(c.title)}</strong> with @${esc(c.creatorHandle)}<br><span class="small muted">${fmtNum(c.views)} views &middot; ${fmtNum(c.likes)} likes &middot; ${c.onTime ? "posted on time" : "posted late"}${c.roasScore !== null && c.roasScore !== undefined ? ` &middot; SIGNL ROAS ${c.roasScore.toFixed(2)}&times;` : ""}</span></span><span class="v">${c.redemptions ? `${c.redemptions.count} code uses<br>$${fmtMoney(c.redemptions.basketTotal)} rung up` : "No tally yet"}</span></div>`).join("");
+      <div class="ui-row"><span class="k"><strong>${esc(c.title)}</strong> with @${esc(c.creatorHandle)}<br><span class="small muted">${fmtNum(c.views)} views &middot; ${fmtNum(c.likes)} likes &middot; ${c.onTime ? "posted on time" : "posted late"}${c.roasScore !== null && c.roasScore !== undefined ? ` &middot; SIGNL ROAS ${c.roasScore.toFixed(2)}&times;` : ""}${c.performanceUpdatedAt ? `<br>${perfSourceLabel(c.performanceSource)}, updated ${fmtDay(c.performanceUpdatedAt)}` : ""}</span></span><span class="v">${c.redemptions ? `${c.redemptions.count} code uses<br>$${fmtMoney(c.redemptions.basketTotal)} rung up` : "No tally yet"}</span></div>`).join("");
     const next = (h.nextVisits || []).map((n) => `
-      <div class="ui-row"><span class="k"><strong>${esc(n.title)}</strong> with @${esc(n.creatorHandle)}<br><span class="small muted">${esc(n.stateLabel)}</span></span><span class="v">${esc(n.whenLabel)}<br>${esc(fmtDate(n.when))}</span></div>`).join("");
+      <div class="ui-row"><span class="k"><strong>${esc(n.title)}</strong> with @${esc(n.creatorHandle)}<br><span class="small muted">${esc(n.stateLabel)}${n.dueInLabel ? ` &middot; ${esc(n.dueInLabel)}` : ""}</span></span><span class="v">${esc(n.whenLabel)}<br>${esc(fmtDate(n.when))}</span></div>`).join("");
     const rebook = (d.rebookPrompts || []).map((r) => `
       <div class="ui-row"><span class="k"><strong>${esc(r.name)}</strong> @${esc(r.handle)}${r.isFavorite ? ` <span class="badge tier">Favorite</span>` : ""}<br><span class="small muted">${r.source === "delivered" ? `Delivered for you before: ${esc(r.lastTitle || "")}` : "Saved in your favorites"}</span></span><span class="v"><button class="btn small-btn" onclick="rebookCreator('${esc(r.creatorId)}')">Invite again</button></span></div>`).join("");
     el.innerHTML = `
@@ -3979,7 +4248,7 @@ async function loadBusinessHome() {
       <div class="stat-band home-metrics">
         <div class="stat-cell"><div class="stat-num">${h.visitsUsed}<span class="small muted"> of ${h.visitsAllowance}</span></div><div class="stat-lbl">Creator visits booked this month (${h.visitsRemaining} left on the plan)</div></div>
         <div class="stat-cell"><div class="stat-num">${h.postsLive}</div><div class="stat-lbl">Posts live</div></div>
-        <div class="stat-cell"><div class="stat-num grad-text">${h.roasScore === null ? "n/a" : h.roasScore.toFixed(2) + "&times;"}</div><div class="stat-lbl">SIGNL ROAS Score (register tallies plus modeled media value)</div></div>
+        ${roasCellHtml(h, true)}
         <div class="stat-cell"><div class="stat-num">${h.onTimeRatePct === null ? "n/a" : h.onTimeRatePct + "%"}</div><div class="stat-lbl">Posts on time</div></div>
       </div>
       ${attention}
@@ -4170,15 +4439,17 @@ function setCompChip(prefix, comp, cap) {
   const k = document.getElementById(prefix + "-cap");
   if (c) c.value = comp;
   if (k) k.value = cap;
+  if (prefix === "o2") offerCoachUpdate();
 }
 
 function setWindowMode(prefix, mode) {
   const el = document.getElementById(prefix + "-windowmode");
   if (el) el.value = mode;
+  if (prefix === "o2") offerDraftSync();
 }
 
-function windowModeFieldHtml(prefix) {
-  return `<div class="field"><label>Redemption window (no appointments: the creator comes any time inside it)</label><select id="${prefix}-windowmode"><option value="7days">Use within 7 days of accepting</option><option value="thisweek">This week (ends Sunday)</option></select>${chipsRowHtml("window", prefix)}</div>`;
+function windowModeFieldHtml(prefix, selected) {
+  return `<div class="field"><label>Redemption window (no appointments: the creator comes any time inside it)</label><select id="${prefix}-windowmode" onchange="offerDraftSync()"><option value="7days" ${selected === "7days" ? "selected" : ""}>Use within 7 days of accepting</option><option value="thisweek" ${selected === "thisweek" ? "selected" : ""}>This week (ends Sunday)</option></select>${chipsRowHtml("window", prefix)}</div>`;
 }
 
 function packageSummaryHtml(planId, planName) {
@@ -4206,6 +4477,7 @@ function composerMode() {
 }
 
 function setComposerLane(lane) {
+  offerDraftSync();
   state.composerLane = lane;
   state.offerTarget = null;
   loadMyOffers();
@@ -4227,12 +4499,106 @@ function applyTemplate(id) {
 // The live coaching: strength checklist + dignity floor warning,
 // recomputed on every keystroke from the same guidance the
 // server enforces.
+// ---------- offer composer support (UX redesign section 5) ----------
+// The composer keeps its state in state.offerDraft: every input
+// writes through on input/change, the render initializes FROM the
+// draft, and loadMyOffers re-renders therefore never eat typed text.
+function offerDraftSync() {
+  if (!document.getElementById("o2-title")) return;
+  const d = state.offerDraft;
+  const set = (key, id) => { const el = document.getElementById(id); if (el) d[key] = el.value; };
+  set("title", "o2-title"); set("comped", "o2-comped"); set("cap", "o2-cap"); set("rate", "o2-rate");
+  set("brief", "o2-brief"); set("includes", "o2-includes"); set("experience", "o2-experience");
+  set("spots", "o2-spots"); set("applydays", "o2-applydays"); set("windowdays", "o2-windowdays");
+  set("window", "o2-window"); set("windowmode", "o2-windowmode"); set("template", "o2-template");
+  const kind = (document.querySelector("input[name='o2-kind']:checked") || {}).value;
+  if (kind) d.kind = kind;
+  const covers = (document.querySelector("input[name='o2-covers']:checked") || {}).value;
+  if (covers) d.covers = covers;
+  if (document.querySelector("input[name='o2-tier']")) d.tiers = [...document.querySelectorAll("input[name='o2-tier']:checked")].map((x) => x.value);
+}
+
+// Per-field inline validation: the error lands in a
+// <p class="field-err"> under the field; the top #form-error is
+// reserved for server errors and the dedupe notice.
+function offerFieldError(key, msg) {
+  const el = document.getElementById("err-o2-" + key);
+  if (el) el.textContent = msg || "";
+  return !msg;
+}
+
+function offerValidateField(key) {
+  offerDraftSync();
+  const d = state.offerDraft;
+  const kind = d.kind || "comp";
+  if (key === "title") return offerFieldError("title", !String(d.title || "").trim() ? "Give the offer a title." : "");
+  if (key === "comped") return offerFieldError("comped", !String(d.comped || "").trim() ? "Say exactly what is comped." : "");
+  if (key === "cap") return kind === "paid" ? offerFieldError("cap", "") : offerFieldError("cap", !(Number(d.cap) > 0) ? "Enter the comp value in dollars." : "");
+  if (key === "rate") return kind !== "paid" ? offerFieldError("rate", "") : offerFieldError("rate", !(Number(d.rate) >= 50) ? "Enter the cash rate. Cash offers start at $50." : "");
+  if (key === "spots") {
+    const v = String(d.spots === undefined ? "" : d.spots).trim();
+    if (v === "") return offerFieldError("spots", "");
+    return offerFieldError("spots", !(parseInt(v, 10) > 0) ? "Spots must be at least 1." : "");
+  }
+  return true;
+}
+
+const OFFER_INFO = {
+  lane: { title: "Open or direct", body: "An open offer posts your terms to your market and creators apply. A direct offer goes to one creator you pick in Discover, and only they see it." },
+  templates: { title: "Templates", body: "Templates prefill a proven offer shape: title, spots, window, and a note. Edit anything after picking one. The deliverable never changes: the Standard Visit." },
+  title: { title: "Offer title", body: "Name the experience, not the deal. For example: Dinner for two on us. Creators scan titles first, so say what they get." },
+  kind: { title: "How the creator is paid", body: "Comp means your product is the payment: the meal, service, or experience is on you. Cash means you pay the creator a rate for the same Standard Visit. Pick one; an offer is never both." },
+  comped: { title: "What is comped", body: "Say exactly what the creator gets, in one line. For example: Two entrees and two drinks. This line prints on the offer, the visit card, and the staff screen." },
+  covers: { title: "Who the comp covers", body: "One person is just the creator. Two people adds a guest. Creators post more when they can bring a guest, and meal for two comps outperform solo comps." },
+  cap: { title: "Comp value / dollar cap", body: "The most the comp can ring up, at menu value. For example: a $100 cap on a dinner for two. Higher caps inside the typical range for a tier fill first." },
+  rate: { title: "Cash rate", body: "What you pay the creator for one Standard Visit. The business pays the rate plus 3%. The creator keeps 97%. Minimum listed rate $50." },
+  brief: { title: "Key points", body: "Short direction for a paid visit: what to feature, names, dates. Creators post honestly in their own words. No scripts, no required praise, no post pre-approval." },
+  includes: { title: "What is included", body: "Any two entrees, two drinks each, dessert to share, tax and tip covered. Creators weigh this detail most: say exactly what they get." },
+  experience: { title: "The experience", body: "What it feels like and what photographs well. For example: chef's counter seats, open kitchen, the tasting menu everyone photographs." },
+  tiers: { title: "Who can apply", body: "Tiers are set automatically by audience size: Neighbors, Locals, Headliners. Ticking tiers only narrows who may apply. Leave all unticked and every tier your comp fits can apply." },
+  spots: { title: "Spots", body: "How many creators you will pick from the applicants. Each picked creator books one visit." },
+  applydays: { title: "Applications open for", body: "How many days creators can apply before you pick. Three days is the usual: long enough to build a stack, short enough to keep momentum." },
+  windowdays: { title: "Redemption window", body: "How many days picked creators have to come in, starting when applications close. Seven days is the usual. Windows of 3 or more days fill best." },
+  windownote: { title: "Window note", body: "Anything that helps the creator time the visit. For example: Evenings are best. The note prints on the offer and the visit card." },
+};
+
+function infoBtn(topic) {
+  return `<button type="button" class="info-btn" aria-label="About this field" onclick="showOfferInfo('${topic}')">i</button>`;
+}
+
+function showOfferInfo(topic) {
+  const info = OFFER_INFO[topic];
+  const pop = document.getElementById("offer-info-pop");
+  if (!info || !pop) return false;
+  document.getElementById("offer-info-title").textContent = info.title;
+  document.getElementById("offer-info-body").textContent = info.body;
+  pop.style.display = "";
+  return false;
+}
+
+function closeOfferInfo() {
+  const pop = document.getElementById("offer-info-pop");
+  if (pop) pop.style.display = "none";
+  return false;
+}
+
+function jumpToOffer(offerId) {
+  const card = document.getElementById("offer-card-" + offerId);
+  if (!card) return false;
+  card.scrollIntoView({ behavior: "smooth", block: "center" });
+  card.classList.add("highlight");
+  setTimeout(() => card.classList.remove("highlight"), 2400);
+  return false;
+}
+
 function offerCoachUpdate() {
+  offerDraftSync();
   const g = offerGuidance();
   const kind = (document.querySelector("input[name='o2-kind']:checked") || {}).value || "comp";
   const cap = parseInt((document.getElementById("o2-cap") || {}).value, 10) || 0;
   const rate = parseFloat((document.getElementById("o2-rate") || {}).value) || 0;
-  const windowDays = parseInt((document.getElementById("o2-windowdays") || {}).value, 10) || 0;
+  const wdEl = document.getElementById("o2-windowdays");
+  const windowDays = wdEl ? (wdEl.value === "" ? 7 : parseInt(wdEl.value, 10) || 0) : 7;
   const includes = ((document.getElementById("o2-includes") || {}).value || "").trim();
   const experience = ((document.getElementById("o2-experience") || {}).value || "").trim();
   const tiers = [...document.querySelectorAll("input[name='o2-tier']:checked")].map((x) => x.value);
@@ -4243,13 +4609,18 @@ function offerCoachUpdate() {
     { label: "The experience is described", ok: experience.length >= 12 },
   ];
   const el = document.getElementById("o2-strength");
-  if (el) el.innerHTML = `<strong>Offer strength: ${checks.filter((c) => c.ok).length} of ${checks.length}.</strong> ` + checks.map((c) => `<br>${c.ok ? "&#10003;" : "&#9675;"} ${esc(c.label)}`).join("");
-  // Covers is a comp question; the key-points brief is a paid
-  // unlock. Show exactly one of the two blocks for the chosen kind.
-  const coversWrap = document.getElementById("o2-covers-wrap");
-  if (coversWrap) coversWrap.style.display = kind === "comp" ? "" : "none";
+  const doneCount = checks.filter((c) => c.ok).length;
+  const nextCheck = checks.find((c) => !c.ok);
+  if (el) el.innerHTML = `<strong>Offer checklist: ${doneCount} of ${checks.length}</strong>` + (nextCheck ? `<br>Next: ${esc(nextCheck.label)}` : `<br>Complete: ready to publish.`) + checks.map((c) => `<br>${c.ok ? "&#10003;" : "&#9675;"} ${esc(c.label)}`).join("");
+  // Payment switch (UX redesign section 5): comp shows the cap
+  // group, paid shows the rate group plus the brief. What is
+  // comped and covers stay visible for both kinds.
   const briefWrap = document.getElementById("o2-brief-wrap");
   if (briefWrap) briefWrap.style.display = kind === "paid" ? "" : "none";
+  const capWrap = document.getElementById("o2-cap-wrap");
+  if (capWrap) capWrap.style.display = kind === "paid" ? "none" : "";
+  const rateWrap = document.getElementById("o2-rate-wrap");
+  if (rateWrap) rateWrap.style.display = kind === "paid" ? "" : "none";
   const warn = document.getElementById("o2-dignity");
   if (warn) {
     let html = "";
@@ -4281,61 +4652,67 @@ async function loadMyOffers() {
   const myPlan = state.user && state.user.business ? state.user.business.plan : null;
   const planObj = (state.boot ? state.boot.plans : []).find((p) => p.id === myPlan);
   const marketLive = !!(state.boot && state.boot.launch && state.boot.launch.marketLive && state.boot.launch.marketLive[state.user.market]);
+  const dft = state.offerDraft || {};
+  const dv = (v) => esc(v === undefined || v === null ? "" : String(v));
   const tierBoxes = ["Neighbors", "Locals", "Headliners"].map((t) => {
     const gd = g.compGuidance[t] || {};
-    return `<label style="font-weight:500"><input type="checkbox" name="o2-tier" value="${esc(t)}" style="width:auto" onchange="offerCoachUpdate()"> ${esc(t)} <span class="muted small">(floor $${gd.floor}, typical $${gd.typicalLow} to $${gd.typicalHigh})</span></label>`;
+    return `<label style="font-weight:500"><input type="checkbox" name="o2-tier" value="${esc(t)}" style="width:auto" ${(dft.tiers || []).includes(t) ? "checked" : ""} onchange="offerCoachUpdate()"> ${esc(t)} <span class="muted small">(floor $${gd.floor}, typical $${gd.typicalLow} to $${gd.typicalHigh})</span></label>`;
   }).join("<br>");
   el.innerHTML = `
   <div class="panel">
     <h3>Create an offer</h3>
     <div id="form-error"></div>
     ${packageSummaryHtml(myPlan, planObj ? planObj.name : null)}
+    <div class="field"><label>Who sees this offer ${infoBtn("lane")}</label>
     <div class="chip-row" role="tablist">
       <button type="button" class="chip ${mode === "open" ? "on" : ""}" onclick="setComposerLane('open')">Open offer: creators apply</button>
       <button type="button" class="chip ${mode === "direct" ? "on" : ""}" onclick="setComposerLane('direct')">Direct offer: invite one creator</button>
     </div>
+    <p class="small muted" style="margin-top:6px">${mode === "open" ? "Any creator who fits can apply. You pick from the applicants." : "Only the creator you pick sees this offer."}</p>
+    </div>
     ${mode === "direct" && !target ? `<p class="small muted">Pick the creator in Discover and tap Send offer, or <a href="#" onclick="setComposerLane('open'); return false;">post an open offer</a> and let creators apply.</p>` : ""}
     ${mode === "direct" && target ? `<div class="notice blue">Sending directly to <strong>${esc(target.name)}</strong> (@${esc(target.profile.handle)}), ${esc(target.profile.tierBand || "")} tier. <a href="#" onclick="state.offerTarget=null; loadMyOffers(); return false;">Make it an open offer instead</a></div>` : ""}
     ${mode === "open" ? `
-    <p class="small muted">Start from a play, or write your own. The deliverable never changes: the Standard Visit. You set the terms, creators apply with one tap (their profile card is the application), and you pick from the ranked stack.</p>
+    <p class="small muted">The deliverable never changes: the Standard Visit. You set the terms, creators apply with one tap (their profile card is the application), and you pick from the ranked stack.</p>
+    <p class="small muted" style="margin-bottom:4px">Start from a template (optional) ${infoBtn("templates")}</p>
     <div class="chip-row">${(g.templates || []).map((t) => `<button type="button" class="chip" onclick="applyTemplate('${esc(t.id)}')">${esc(t.label)}</button>`).join("")}</div>` : ""}
     <form onsubmit="return createOfferV2(event)">
-      <input type="hidden" id="o2-template" value="">
-      <div class="field"><label>Offer title</label><input id="o2-title" required placeholder="For example: Dinner for two on us"></div>
-      <div class="field"><label>How is the creator paid?</label>
-        <label style="font-weight:500"><input type="radio" name="o2-kind" value="comp" checked style="width:auto" onchange="offerCoachUpdate()"> Comp: your product, on you</label><br>
-        <label style="font-weight:500"><input type="radio" name="o2-kind" value="paid" style="width:auto" onchange="offerCoachUpdate()"> Cash: a rate for the Standard Visit package</label>
+      <input type="hidden" id="o2-template" value="${dv(dft.template)}">
+      <div class="field"><label>Offer title <span class="req-tag">Required</span> ${infoBtn("title")}</label><input id="o2-title" value="${dv(dft.title)}" placeholder="Dinner for two on us" oninput="offerDraftSync()" onblur="offerValidateField('title')"><p class="field-err" id="err-o2-title"></p></div>
+      <div class="field"><label>How is the creator paid? <span class="req-tag">Required</span> ${infoBtn("kind")}</label>
+        <label style="font-weight:500"><input type="radio" name="o2-kind" value="comp" ${dft.kind === "paid" ? "" : "checked"} style="width:auto" onchange="offerCoachUpdate()"> Comp: your product, on you</label><br>
+        <label style="font-weight:500"><input type="radio" name="o2-kind" value="paid" ${dft.kind === "paid" ? "checked" : ""} style="width:auto" onchange="offerCoachUpdate()"> Cash: a rate for the Standard Visit package</label>
       </div>
-      <div class="field"><label>Exactly what is comped</label><input id="o2-comped" required placeholder="For example: Two entrees and two drinks for the creator and a guest" oninput="offerCoachUpdate()">${mode === "direct" ? chipsRowHtml("comp", "o2", target && target.profile ? target.profile.tierBand : null) : ""}</div>
-      <div class="field" id="o2-covers-wrap"><label>How many people does the comp cover?</label>
-        <label style="font-weight:500"><input type="radio" name="o2-covers" value="1" checked style="width:auto"> 1 person: just the creator</label><br>
-        <label style="font-weight:500"><input type="radio" name="o2-covers" value="2" style="width:auto"> 2 people: the creator and a guest</label>
+      <div class="field"><label>Exactly what is comped <span class="req-tag">Required</span> ${infoBtn("comped")}</label><input id="o2-comped" value="${dv(dft.comped)}" placeholder="Two entrees and two drinks" oninput="offerCoachUpdate()" onblur="offerValidateField('comped')"><p class="field-err" id="err-o2-comped"></p>${mode === "direct" ? chipsRowHtml("comp", "o2", target && target.profile ? target.profile.tierBand : null) : ""}</div>
+      <div class="field" id="o2-covers-wrap"><label>How many people does the comp cover? <span class="req-tag">Required</span> ${infoBtn("covers")}</label>
+        <label style="font-weight:500"><input type="radio" name="o2-covers" value="1" ${dft.covers === "2" ? "" : "checked"} style="width:auto" onchange="offerDraftSync()"> 1 person: just the creator</label><br>
+        <label style="font-weight:500"><input type="radio" name="o2-covers" value="2" ${dft.covers === "2" ? "checked" : ""} style="width:auto" onchange="offerDraftSync()"> 2 people: the creator and a guest</label>
         <p class="small muted">Say it here and it prints on the offer, the visit card, and the staff redemption screen, so nobody is surprised at the register.</p>
       </div>
-      <div class="field" id="o2-brief-wrap" style="display:none"><label>Key points for the creator (optional, paid visits only)</label><textarea id="o2-brief" rows="2" maxlength="500" placeholder="For example: feature the new patio, use our full name, the tasting runs through November"></textarea><p class="small muted">${PAID_BRIEF_GUIDANCE}</p></div>
+      <div class="field" id="o2-brief-wrap" style="display:none"><label>Key points for the creator <span class="opt-tag">Optional</span> ${infoBtn("brief")}</label><textarea id="o2-brief" rows="2" maxlength="500" placeholder="Feature the new patio, use our full name" oninput="offerDraftSync()">${esc(dft.brief || "")}</textarea><p class="small muted">${PAID_BRIEF_GUIDANCE}</p></div>
       <div class="form-2col">
-        <div class="field"><label>Comp value / dollar cap ($)</label><input type="number" id="o2-cap" min="1" placeholder="100" oninput="offerCoachUpdate()"></div>
-        <div class="field"><label>Cash rate ($) if cash</label><input type="number" id="o2-rate" min="50" step="1" placeholder="150" oninput="offerCoachUpdate()"></div>
+        <div class="field" id="o2-cap-wrap"><label>Comp value / dollar cap ($) <span class="req-tag">Required</span> ${infoBtn("cap")}</label><input type="number" id="o2-cap" min="1" placeholder="100" value="${dv(dft.cap)}" oninput="offerCoachUpdate()" onblur="offerValidateField('cap')"><p class="field-err" id="err-o2-cap"></p></div>
+        <div class="field" id="o2-rate-wrap" style="display:none"><label>Cash rate ($) <span class="req-tag">Required</span> ${infoBtn("rate")}</label><input type="number" id="o2-rate" min="50" step="1" placeholder="150" value="${dv(dft.rate)}" oninput="offerCoachUpdate()" onblur="offerValidateField('rate')"><p class="field-err" id="err-o2-rate"></p><p class="small muted">The business pays the rate plus 3%. The creator keeps 97%. Minimum listed rate $50.</p></div>
       </div>
-      <div class="field"><label>What is included (the detail a creator weighs)</label><textarea id="o2-includes" rows="2" placeholder="For example: any two entrees, two drinks each, dessert to share, tax and tip covered" oninput="offerCoachUpdate()"></textarea></div>
-      <div class="field"><label>The experience (what it feels like, what is photogenic)</label><textarea id="o2-experience" rows="2" placeholder="For example: chef's counter seats, open kitchen, the tasting menu everyone photographs" oninput="offerCoachUpdate()"></textarea></div>
+      <div class="field"><label>What is included <span class="opt-tag">Optional</span> ${infoBtn("includes")}</label><textarea id="o2-includes" rows="2" placeholder="Any two entrees, two drinks each, dessert to share" oninput="offerCoachUpdate()">${esc(dft.includes || "")}</textarea></div>
+      <div class="field"><label>The experience <span class="opt-tag">Optional</span> ${infoBtn("experience")}</label><textarea id="o2-experience" rows="2" placeholder="Chef's counter seats, open kitchen" oninput="offerCoachUpdate()">${esc(dft.experience || "")}</textarea></div>
       ${mode === "open" ? `
-      <div class="field"><label>Who can apply (leave all unticked for every tier your comp fits)</label>${tierBoxes}</div>
+      <div class="field"><label>Who can apply <span class="opt-tag">Optional</span> ${infoBtn("tiers")}</label>${tierBoxes}</div>
       <div class="form-2col">
-        <div class="field"><label>Spots (creators you will pick)</label><input type="number" id="o2-spots" min="1" value="1" required></div>
-        <div class="field"><label>Applications open for (days)</label><input type="number" id="o2-applydays" min="1" max="14" value="3"></div>
+        <div class="field"><label>Spots (creators you will pick) <span class="req-tag">Required</span> ${infoBtn("spots")}</label><input type="number" id="o2-spots" min="1" placeholder="1" value="${dv(dft.spots)}" oninput="offerDraftSync()" onblur="offerValidateField('spots')"><p class="field-err" id="err-o2-spots"></p></div>
+        <div class="field"><label>Applications open for (days) <span class="opt-tag">Optional</span> ${infoBtn("applydays")}</label><input type="number" id="o2-applydays" min="1" max="14" placeholder="3" value="${dv(dft.applydays)}" oninput="offerDraftSync()"></div>
       </div>
       <div class="form-2col">
-        <div class="field"><label>Redemption window (days, starts when applications close)</label><input type="number" id="o2-windowdays" min="1" max="30" value="7" oninput="offerCoachUpdate()"></div>
-        <div class="field"><label>Window note for creators (optional)</label><input id="o2-window" placeholder="For example: Evenings are best"></div>
+        <div class="field"><label>Redemption window (days, starts when applications close) <span class="opt-tag">Optional</span> ${infoBtn("windowdays")}</label><input type="number" id="o2-windowdays" min="1" max="30" placeholder="7" value="${dv(dft.windowdays)}" oninput="offerCoachUpdate()"></div>
+        <div class="field"><label>Window note for creators <span class="opt-tag">Optional</span> ${infoBtn("windownote")}</label><input id="o2-window" value="${dv(dft.window)}" placeholder="Evenings are best" oninput="offerDraftSync()"></div>
       </div>
       <p class="small muted">How picking works: applications close, then you have up to ${g.selectionSlaHours} hours to pick before the redemption window starts. Anyone not picked is released with a notification, never left waiting. If a picked creator passes or no-shows, the spot backfills to the next applicant automatically.</p>` : `
       <div class="form-2col">
-        <div class="field"><label>Spots</label><input type="number" id="o2-spots" min="1" value="1" required></div>
+        <div class="field"><label>Spots <span class="req-tag">Required</span> ${infoBtn("spots")}</label><input type="number" id="o2-spots" min="1" placeholder="1" value="${dv(dft.spots)}" oninput="offerDraftSync()" onblur="offerValidateField('spots')"><p class="field-err" id="err-o2-spots"></p></div>
         <div class="field"><label>&nbsp;</label><p class="small muted" style="margin:6px 0 0">Direct offers are redeemed inside the window below.</p></div>
       </div>
-      ${windowModeFieldHtml("o2")}
-      <div class="field"><label>Window note for the creator (optional)</label><input id="o2-window" placeholder="For example: Evenings are best"></div>`}
+      ${windowModeFieldHtml("o2", dft.windowmode)}
+      <div class="field"><label>Window note for the creator <span class="opt-tag">Optional</span> ${infoBtn("windownote")}</label><input id="o2-window" value="${dv(dft.window)}" placeholder="Evenings are best" oninput="offerDraftSync()"></div>`}
       <div id="o2-dignity"></div>
       <div id="o2-strength" class="showcase-block"></div>
       <p class="small muted">Reminder: you can describe the experience, never the opinion. Posts stay honest, and creators disclose the comp.</p>
@@ -4346,6 +4723,12 @@ async function loadMyOffers() {
       </div>
       ${marketLive ? "" : `<p class="small muted">Your market has not opened yet, so new offers save as drafts: ready to publish the day it does.</p>`}
     </form>
+  </div>
+  <div id="offer-info-pop" class="sheet-overlay" style="display:none" onclick="if(event.target===this) closeOfferInfo()">
+    <div class="sheet">
+      <div class="flex-between"><strong id="offer-info-title"></strong><button type="button" class="linklike" onclick="closeOfferInfo()">Close</button></div>
+      <p class="small" id="offer-info-body"></p>
+    </div>
   </div>
   <div id="offer-list"><p class="muted">Loading your offers...</p></div>
   <div id="applicant-stack"></div>`;
@@ -4373,15 +4756,22 @@ function offerCardHtml(o) {
     ? `Cash $${o.cashRate} for the package (you pay $${Math.round(Number(o.cashRate) * 1.03 * 100) / 100}, creator keeps $${Math.round(Number(o.cashRate) * 0.97 * 100) / 100})`
     : `Cap $${o.dollarCap}`;
   const when = o.lane === "open" && o.windowStartAt
-    ? `Redeem ${fmtDate(o.windowStartAt)} to ${fmtDate(o.windowEndAt)} &middot; picks by ${fmtDate(o.selectionDeadline)}`
+    ? `Redeem ${fmtDay(o.windowStartAt)} to ${fmtDay(o.windowEndAt)} &middot; Pick by ${fmtDay(o.selectionDeadline)}`
     : esc(o.visitWindow || "Flexible window");
+  const firstMissing = o.strength && o.strength.checks ? (o.strength.checks.find((c) => !c.ok) || null) : null;
   return `
-  <div class="card mb">
+  <div class="card mb feed-card" id="offer-card-${o.id}">
     <div class="flex-between"><strong>${esc(o.title)}</strong><span class="badge ${statusBadge}">${esc(o.status)}</span></div>
     <p>${esc(o.whatComped)}</p>
-    <p class="small muted">${terms} &middot; ${o.lane === "direct" ? (o.creatorHandle ? "Sent to @" + esc(o.creatorHandle) : "Direct") : "Open offer"} &middot; ${o.filledCount || 0}/${o.spots} spots filled${o.lane === "open" ? ` &middot; ${o.applicationCount || 0} applications` : ""} &middot; ${when}${o.kind === "paid" ? "" : ` &middot; ${coversLine(o)}`}</p>
+    <div class="chip-row">
+      <span class="chip-mini">${o.kind === "paid" ? `Rate $${o.cashRate}` : `Cap $${o.dollarCap}`}</span>
+      <span class="chip-mini">${o.lane === "direct" ? (o.creatorHandle ? "Direct to @" + esc(o.creatorHandle) : "Direct") : "Open"}</span>
+      <span class="chip-mini">${o.filledCount || 0}/${o.spots} spots filled</span>
+      ${o.lane === "open" ? `<span class="chip-mini">${o.applicationCount || 0} applications</span>` : ""}
+    </div>
+    <p class="small muted">${terms} &middot; ${when}${o.kind === "paid" ? "" : ` &middot; ${coversLine(o)}`}</p>
     ${o.kind === "paid" && o.paidBrief ? `<p class="small"><strong>Key points for the creator:</strong> ${esc(o.paidBrief)}</p>` : ""}
-    ${o.strength ? `<p class="small muted">Offer strength ${o.strength.score} of ${o.strength.total}: ${o.strength.checks.filter((c) => !c.ok).map((c) => esc(c.label)).join("; ") || "all checks pass"}</p>` : ""}
+    ${o.strength ? `<p class="small muted">Offer checklist ${o.strength.score} of ${o.strength.total}: ${firstMissing ? esc(firstMissing.label) : "complete"}</p>` : ""}
     <div class="cta-row" style="justify-content:flex-start">
       ${o.lane === "open" && (o.status === "open" || o.status === "filled") ? `<button class="btn small-btn" onclick="viewApplicants('${o.id}')">View applicants (${o.applicationCount || 0})</button>` : ""}
       ${o.status === "draft" ? `<button class="btn small-btn" onclick="publishOffer('${o.id}')">Publish</button>` : ""}
@@ -4399,51 +4789,72 @@ async function publishOffer(offerId) {
 }
 
 async function closeOffer(offerId) {
-  if (!confirm("Close this offer? Anyone still waiting is released with a notification.")) return;
+  const ok = await showConfirmSheet("Close this offer?", "Anyone still waiting is released with a notification.", "Close offer");
+  if (!ok) return;
   try {
     await api("POST", `/offers/${offerId}/close`, {});
+    refreshBadges();
     loadMyOffers();
   } catch (err) { alert(err.message); }
 }
 
 async function createOfferV2(e, draft) {
   e.preventDefault();
+  offerDraftSync();
+  const d = state.offerDraft;
   const mode = composerMode();
-  const kind = (document.querySelector("input[name='o2-kind']:checked") || {}).value || "comp";
+  const kind = d.kind || "comp";
   const target = state.offerTarget;
+  // Inline validation first: errors land under their fields, the
+  // form is NOT re-rendered, and the draft keeps every keystroke.
+  const requiredKeys = ["title", "comped", kind === "paid" ? "rate" : "cap", "spots"];
+  let valid = true;
+  for (const key of requiredKeys) { if (!offerValidateField(key)) valid = false; }
+  if (!valid) return false;
+  // Clean-start fields left empty take the defaults their
+  // placeholders show (spots 1, apply days 3, window days 7).
   const payload = {
-    title: document.getElementById("o2-title").value,
-    whatComped: document.getElementById("o2-comped").value,
-    includes: document.getElementById("o2-includes").value,
-    experience: document.getElementById("o2-experience").value,
+    title: d.title || "",
+    whatComped: d.comped || "",
+    includes: d.includes || "",
+    experience: d.experience || "",
     kind,
-    spots: parseInt(document.getElementById("o2-spots").value, 10),
-    visitWindow: document.getElementById("o2-window").value,
-    templateId: document.getElementById("o2-template").value || null,
+    spots: parseInt(d.spots, 10) || 1,
+    visitWindow: d.window || "",
+    templateId: d.template || null,
     draft: draft === true,
     creatorId: mode === "direct" ? (target || null) : null,
   };
   if (kind === "paid") {
-    payload.cashRate = parseFloat(document.getElementById("o2-rate").value);
-    const briefEl = document.getElementById("o2-brief");
-    if (briefEl && briefEl.value.trim()) payload.paidBrief = briefEl.value.trim();
+    payload.cashRate = parseFloat(d.rate);
+    if (d.brief && d.brief.trim()) payload.paidBrief = d.brief.trim();
   } else {
-    payload.dollarCap = parseInt(document.getElementById("o2-cap").value, 10);
-    payload.covers = parseInt((document.querySelector("input[name='o2-covers']:checked") || {}).value, 10) || 1;
+    payload.dollarCap = parseInt(d.cap, 10);
+    payload.covers = parseInt(d.covers, 10) || 1;
   }
   if (mode === "open") {
-    payload.targetTiers = [...document.querySelectorAll("input[name='o2-tier']:checked")].map((x) => x.value);
-    payload.applyWindowDays = parseInt(document.getElementById("o2-applydays").value, 10);
-    payload.windowDays = parseInt(document.getElementById("o2-windowdays").value, 10);
+    payload.targetTiers = d.tiers || [];
+    payload.applyWindowDays = parseInt(d.applydays, 10) || 3;
+    payload.windowDays = parseInt(d.windowdays, 10) || 7;
   } else {
-    payload.windowMode = document.getElementById("o2-windowmode").value;
+    payload.windowMode = d.windowmode || "7days";
   }
   try {
     await api("POST", "/offers", payload);
+    state.offerDraft = {};
     state.offerTarget = null;
+    refreshBadges();
     loadMyOffers();
   } catch (err) {
-    document.getElementById("form-error").innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+    // Server errors and the dedupe notice live in #form-error; the
+    // form is never re-rendered on an error, so nothing typed is
+    // lost, and the draft survives a 409 untouched.
+    const fe = document.getElementById("form-error");
+    if (fe) {
+      fe.innerHTML = err.data && err.data.existingOfferId
+        ? `<div class="error-box">This offer is already open. <button type="button" class="btn small-btn" onclick="jumpToOffer('${err.data.existingOfferId}')">Jump to that offer</button></div>`
+        : `<div class="error-box">${esc(err.message)}</div>`;
+    }
     window.scrollTo(0, 0);
   }
   return false;
@@ -4683,8 +5094,31 @@ function staffCodeScreen() {
       <button class="btn" type="submit" style="width:100%">Look up visit</button>
     </form>
     <div id="staff-result" class="mt"></div>
+    <div class="card mt">
+      <strong>Log a code use</strong>
+      <p class="small muted">A customer used a creator's audience code at the register (the code from their post, not the SGNL visit code)? Log it here: each use counts toward that visit's register tally estimate.</p>
+      <form onsubmit="return staffLogCodeUse(event)">
+        <div class="field"><label>Creator's audience code</label><input id="staff-audience-code" placeholder="From the creator's post" style="text-transform:uppercase" autocomplete="off" required></div>
+        <button class="btn" type="submit" style="width:100%">Log a code use</button>
+      </form>
+      <div id="staff-code-use-result" class="mt"></div>
+    </div>
     <p class="small mt"><button class="linklike" onclick="staffExit()">End staff session</button></p>
   </section>`;
+}
+
+async function staffLogCodeUse(e) {
+  if (e) e.preventDefault();
+  const input = document.getElementById("staff-audience-code");
+  const el = document.getElementById("staff-code-use-result");
+  try {
+    const data = await api("POST", "/staff/code-use", { creatorCode: input.value.trim() });
+    el.innerHTML = `<div class="notice blue"><strong>${esc(data.creatorName || "Creator")}:</strong> ${data.codeUseCount} code use${data.codeUseCount === 1 ? "" : "s"} logged.</div>`;
+    input.value = "";
+  } catch (err) {
+    el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+  }
+  return false;
 }
 
 async function staffLookup(e, preset) {
@@ -4863,6 +5297,10 @@ function renderPlanTab() {
     <div class="field" style="margin-top:8px"><label>Discount percent (%)</label><input type="number" id="me-discount-pct" min="5" max="50" step="1" value="${esc(String(u.business.discountPct == null ? ((state.boot.roasModel && state.boot.roasModel.suggestedDiscountPct) || 20) : u.business.discountPct))}"></div>
     <p class="small muted">Most businesses that turn this on start at ${esc(String((state.boot.roasModel && state.boot.roasModel.suggestedDiscountPct) || 20))}%. With codes off, the creator's card shows the code as a counting code and promises their audience nothing.</p>
     <button class="btn" onclick="saveMyDiscount()">Save code discount</button> <span id="disc-ok" class="saved"></span>
+    <h3 class="mt">Your average ticket</h3>
+    <p class="small muted">What one customer typically spends. Code-use estimates use this until you enter an actual tally on a visit.${u.business.averageTicket ? ` Your average ticket: $${fmtMoney(u.business.averageTicket)}.` : ""}</p>
+    <div class="field"><label>Average ticket ($)</label><input type="number" id="me-avg-ticket" min="0" step="0.01" placeholder="40" value="${u.business.averageTicket ? esc(String(u.business.averageTicket)) : ""}"></div>
+    <button class="btn" onclick="saveMyAverageTicket()">Save average ticket</button> <span id="ticket-ok" class="saved"></span>
   </div>
   <div class="panel mt" id="staff-settings">
     <h3>Staff redemption</h3>
@@ -4963,6 +5401,16 @@ async function saveBusinessProfile() {
     state.user = data.user;
     render();
     setTimeout(() => { const ok = document.getElementById("bp-ok"); if (ok) ok.textContent = "Saved."; }, 30);
+  } catch (err) { alert(err.message); }
+}
+
+async function saveMyAverageTicket() {
+  try {
+    const raw = document.getElementById("me-avg-ticket").value;
+    const data = await api("PATCH", "/me/profile", { averageTicket: raw === "" ? null : Number(raw) });
+    state.user = data.user;
+    document.getElementById("ticket-ok").textContent = "Saved.";
+    renderPlanTab();
   } catch (err) { alert(err.message); }
 }
 
@@ -5069,6 +5517,7 @@ async function sendMessage(e, otherId) {
   e.preventDefault();
   try {
     await api("POST", "/messages", { toUserId: otherId, body: document.getElementById("msg-body").value });
+    refreshBadges();
     loadConversation(otherId);
   } catch (err) { alert(err.message); }
   return false;
@@ -5355,7 +5804,7 @@ async function loadApplications() {
         <td>${fmtDate(u.createdAt)}</td>
         <td>${u.status === "pending"
           ? `<button class="btn small-btn" onclick="reviewApp('${u.id}','approve')">Approve</button> <button class="btn small-btn danger" onclick="toggleRejectEditor('${u.id}')">Reject</button><div id="rej-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px"><div class="field"><label>Reason (optional, named in their rejection email)</label><select id="rej-reason-${u.id}"><option value="">No reason given</option><option>Not local enough</option><option>Audience too small for this wave</option><option>Content not a fit</option><option>Market not open yet</option><option>Other</option></select></div><button class="btn small-btn danger" onclick="confirmRejectApp('${u.id}')">Send rejection</button></div>`
-          : `<span class="badge ${u.status === "approved" ? "ok" : "bad"}">${esc(u.status)}</span>${u.role === "creator" && u.tester ? ` <span class="badge warn">Tester</span>` : ""}${u.role === "creator" && u.status === "approved" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="setTester('${u.id}', ${u.tester ? "false" : "true"})">${u.tester ? "Move to roster" : "Move to Tester"}</button>` : ""}`}${u.role === "business" && u.status === "approved" && businessAccessState(u) !== "active" ? `<br><button class="btn small-btn" style="margin-top:6px" onclick="activateBusiness('${u.id}')">Activate business</button>` : ""}${u.role === "business" && u.business ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleReviewLinks('${u.id}')">Review links</button><div id="rl-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px">${["google", "yelp", "tripadvisor", "facebook"].map((k) => `<div class="field"><label>${esc(k)}</label><input id="rl-${k}-${u.id}" type="url" value="${esc((u.business.reviewLinks || {})[k] || "")}" placeholder="https://"></div>`).join("")}<button class="btn small-btn" onclick="saveReviewLinks('${u.id}')">Save review links</button></div><br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleDiscountEditor('${u.id}')">Code discount</button><div id="disc-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px"><label style="font-weight:500"><input type="checkbox" id="disc-enabled-${u.id}" style="width:auto" ${u.business.discountEnabled ? "checked" : ""}> Code discounts on (business's opt-in)</label><div class="field"><label>Discount percent (5 to 50)</label><input id="disc-pct-${u.id}" type="number" min="5" max="50" step="1" value="${esc(String(u.business.discountPct == null ? 20 : u.business.discountPct))}"></div><button class="btn small-btn" onclick="saveDiscountSetting('${u.id}')">Save code discount</button></div>` : ""}</td>
+          : `<span class="badge ${u.status === "approved" ? "ok" : "bad"}">${esc(u.status)}</span>${u.tester ? ` <span class="badge warn">Tester</span>` : ""}${u.role === "creator" && u.status === "approved" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="setTester('${u.id}', ${u.tester ? "false" : "true"}, 'creator')">${u.tester ? "Move to roster" : "Move to Tester"}</button>` : ""}`}${u.role === "business" && u.status === "approved" && businessAccessState(u) !== "active" ? `<br><button class="btn small-btn" style="margin-top:6px" onclick="activateBusiness('${u.id}')">Activate business</button>` : ""}${u.role === "business" && u.status === "approved" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="setTester('${u.id}', ${u.tester ? "false" : "true"}, 'business')">${u.tester ? "Move to roster" : "Move to Tester"}</button>` : ""}${u.role === "business" && u.business ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleReviewLinks('${u.id}')">Review links</button><div id="rl-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px">${["google", "yelp", "tripadvisor", "facebook"].map((k) => `<div class="field"><label>${esc(k)}</label><input id="rl-${k}-${u.id}" type="url" value="${esc((u.business.reviewLinks || {})[k] || "")}" placeholder="https://"></div>`).join("")}<button class="btn small-btn" onclick="saveReviewLinks('${u.id}')">Save review links</button></div><br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleDiscountEditor('${u.id}')">Code discount</button><div id="disc-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px"><label style="font-weight:500"><input type="checkbox" id="disc-enabled-${u.id}" style="width:auto" ${u.business.discountEnabled ? "checked" : ""}> Code discounts on (business's opt-in)</label><div class="field"><label>Discount percent (5 to 50)</label><input id="disc-pct-${u.id}" type="number" min="5" max="50" step="1" value="${esc(String(u.business.discountPct == null ? 20 : u.business.discountPct))}"></div><button class="btn small-btn" onclick="saveDiscountSetting('${u.id}')">Save code discount</button></div>` : ""}</td>
       </tr>`;
     };
     const s = data.summary;
@@ -5494,11 +5943,17 @@ async function saveDiscountSetting(userId) {
   } catch (err) { alert(err.message); }
 }
 
-async function setTester(userId, tester) {
+async function setTester(userId, tester, role) {
+  const isBiz = role === "business";
   const msg = tester
-    ? "Move this creator to Tester? They keep full creator access for testing, but businesses will not see them, their public profile page comes down, campaign sends skip them, and roster counts exclude them."
-    : "Move this creator back to the active roster? Businesses will see them in discovery again, their public profile page returns, and roster counts will include them.";
-  if (!confirm(msg)) return;
+    ? (isBiz
+      ? "They keep full business access for testing, but campaign sends skip them and the tester count in Stats includes them. Their offers and visits keep working."
+      : "They keep full creator access for testing, but businesses will not see them, their public profile page comes down, campaign sends skip them, and roster counts exclude them.")
+    : (isBiz
+      ? "The business leaves the tester set: campaign sends can reach them again and the Stats tester count drops."
+      : "Businesses will see them in discovery again, their public profile page returns, and roster counts will include them.");
+  const ok = await showConfirmSheet(tester ? `Move this ${isBiz ? "business" : "creator"} to Tester?` : `Move this ${isBiz ? "business" : "creator"} back to the roster?`, msg, tester ? "Move to Tester" : "Move to roster");
+  if (!ok) return;
   try {
     await api("POST", "/admin/tester", { userId, tester });
     loadApplications();
@@ -6264,13 +6719,13 @@ function pvHomeHtml(d) {
     [h.pipeline.live, "Live", "Posts delivered"],
   ];
   const attention = h.attention && h.attention.length ? `
-    <div class="notice" style="margin-top:16px"><strong>${h.attention.length} item${h.attention.length === 1 ? "" : "s"} need your attention.</strong>
+    <div class="notice" style="margin-top:16px"><strong>${h.attention.length} item${h.attention.length === 1 ? "" : "s"} need${h.attention.length === 1 ? "s" : ""} your attention.</strong>
     ${h.attention.map((a) => `<br><strong>${esc(a.label)}:</strong> ${esc(a.detail)}`).join("")}</div>`
     : `<div class="notice blue" style="margin-top:16px"><strong>Nothing needs your attention.</strong> Every visit is on track.</div>`;
   const content = (h.topContent || []).map((c) => `
-    <div class="ui-row"><span class="k"><strong>${esc(c.title)}</strong> with @${esc(c.creatorHandle)}<br><span class="small muted">${fmtNum(c.views)} views &middot; ${fmtNum(c.likes)} likes &middot; ${c.onTime ? "posted on time" : "posted late"}${c.roasScore !== null && c.roasScore !== undefined ? ` &middot; SIGNL ROAS ${c.roasScore.toFixed(2)}&times;` : ""}</span></span><span class="v">${c.redemptions ? `${c.redemptions.count} code uses<br>$${fmtMoney(c.redemptions.basketTotal)} rung up` : "No tally yet"}</span></div>`).join("");
+    <div class="ui-row"><span class="k"><strong>${esc(c.title)}</strong> with @${esc(c.creatorHandle)}<br><span class="small muted">${fmtNum(c.views)} views &middot; ${fmtNum(c.likes)} likes &middot; ${c.onTime ? "posted on time" : "posted late"}${c.roasScore !== null && c.roasScore !== undefined ? ` &middot; SIGNL ROAS ${c.roasScore.toFixed(2)}&times;` : ""}${c.performanceUpdatedAt ? `<br>${perfSourceLabel(c.performanceSource)}, updated ${fmtDay(c.performanceUpdatedAt)}` : ""}</span></span><span class="v">${c.redemptions ? `${c.redemptions.count} code uses<br>$${fmtMoney(c.redemptions.basketTotal)} rung up` : "No tally yet"}</span></div>`).join("");
   const next = (h.nextVisits || []).map((n) => `
-    <div class="ui-row"><span class="k"><strong>${esc(n.title)}</strong> with @${esc(n.creatorHandle)}<br><span class="small muted">${esc(n.stateLabel)}</span></span><span class="v">${esc(n.whenLabel)}<br><span class="pv-tick" data-kind="left" data-target="${esc(n.when || "")}"></span></span></div>`).join("");
+    <div class="ui-row"><span class="k"><strong>${esc(n.title)}</strong> with @${esc(n.creatorHandle)}<br><span class="small muted">${esc(n.stateLabel)}${n.dueInLabel ? ` &middot; ${esc(n.dueInLabel)}` : ""}</span></span><span class="v">${esc(n.whenLabel)}<br><span class="pv-tick" data-kind="left" data-target="${esc(n.when || "")}"></span></span></div>`).join("");
   return `
   <section class="panel">
     <h3 style="margin-top:0"><span class="preview-tag">PREVIEW</span> Business home</h3>
@@ -6278,7 +6733,7 @@ function pvHomeHtml(d) {
     <div class="stat-band home-metrics">
       <div class="stat-cell"><div class="stat-num">${h.visitsUsed}<span class="small muted"> of ${h.visitsAllowance}</span></div><div class="stat-lbl">Creator visits booked this month (${h.visitsRemaining} left on the plan)</div></div>
       <div class="stat-cell"><div class="stat-num">${h.postsLive}</div><div class="stat-lbl">Posts live</div></div>
-      <div class="stat-cell"><div class="stat-num grad-text">${h.roasScore === null ? "n/a" : h.roasScore.toFixed(2) + "&times;"}</div><div class="stat-lbl">SIGNL ROAS Score (register tallies plus modeled media value)</div></div>
+      ${roasCellHtml(h, false)}
       <div class="stat-cell"><div class="stat-num">${h.onTimeRatePct === null ? "n/a" : h.onTimeRatePct + "%"}</div><div class="stat-lbl">Posts on time</div></div>
     </div>
     ${attention}
@@ -6428,6 +6883,7 @@ function previewDashboardHtml(d) {
       state.view = "dashboard";
     }
     render();
+    if (state.user) refreshBadges();
     if (code && state.user && state.user.role === "business" && state.tab === "Counter") {
       setTimeout(() => renderCounter(code.toUpperCase()), 60);
     }

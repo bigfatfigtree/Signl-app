@@ -353,6 +353,15 @@ function offerTimeline({ applyWindowDays = 3, windowDays = 7, windowStartAt = nu
   const applicationsCloseMs = publishMs + applyDays * DAY_MS;
   let startMs = windowStartAt ? Date.parse(windowStartAt) : NaN;
   if (Number.isNaN(startMs) || startMs < applicationsCloseMs) startMs = applicationsCloseMs;
+  // Clean window times (UX redesign section 6, 2026-10-24): window
+  // start and end sit on the hour, never on the publish minute, so
+  // cards never show artifacts like "1:55 PM to 12:55 PM". Zero the
+  // minutes/seconds/ms; if that would pull the start before
+  // applications close, step forward to the next clean hour.
+  const startDate = new Date(startMs);
+  startDate.setUTCMinutes(0, 0, 0);
+  startMs = startDate.getTime();
+  if (startMs < applicationsCloseMs) startMs += 3600 * 1000;
   const endMs = startMs + winDays * DAY_MS;
   const deadlineMs = Math.min(applicationsCloseMs + SELECTION_SLA_HOURS * 3600 * 1000, startMs);
   return {
@@ -5142,7 +5151,7 @@ async function previewDashboard() {
   }
   for (const b of bookings) {
     if (b.post && !b.redemptions) {
-      homeAttention.push({ kind: "tally", bookingId: b.id, label: "A register tally is still unreported", detail: `${b.title} with @${b.creatorHandle}: the post is live, and reporting the code tally on the visit card below completes its SIGNL ROAS Score.` });
+      homeAttention.push({ kind: "tally", bookingId: b.id, label: "Code tally not in yet", detail: `${b.title} with @${b.creatorHandle}: the post is live. Enter how many customers used the code and the tally completes its SIGNL ROAS Score.` });
     }
   }
   for (const b of bookings) {
@@ -5169,7 +5178,7 @@ async function previewDashboard() {
   const nextDeadlineOf = (b) => (b.state === "booked" ? b.redeemBy : b.state === "overdue" ? b.pauseAt : b.postDeadline);
   const homeNextVisits = bookings
     .filter((b) => !b.post)
-    .map((b) => ({ bookingId: b.id, title: b.title, creatorName: b.creatorName, creatorHandle: b.creatorHandle, state: b.state, stateLabel: b.stateLabel, when: nextDeadlineOf(b), whenLabel: b.state === "booked" ? "Redeem by" : b.state === "overdue" ? "Hard stop" : "Post due" }))
+    .map((b) => ({ bookingId: b.id, title: b.title, creatorName: b.creatorName, creatorHandle: b.creatorHandle, state: b.state, stateLabel: b.stateLabel, when: nextDeadlineOf(b), whenLabel: b.state === "booked" ? "Redeem by" : b.state === "overdue" ? "Hard stop" : "Post due", dueInLabel: b.state === "post_due" && b.postDeadline ? `Post due in ${Math.max(0, Math.round((Date.parse(b.postDeadline) - now) / 3600000))}h` : null }))
     .sort((a, b) => (String(a.when || "") < String(b.when || "") ? -1 : 1));
   const home = {
     visitsUsed: summary.visitsUsed,
@@ -5179,6 +5188,7 @@ async function previewDashboard() {
     onTimeRatePct: summary.onTimeRatePct,
     roasScore: summary.roas ? summary.roas.score : null,
     roasAllInScore: summary.roas ? summary.roas.allInScore : null,
+    roas: summary.roas || null,
     attention: homeAttention,
     pipeline: {
       invited: bookings.length,
@@ -5268,7 +5278,7 @@ async function businessHome(user) {
       attention.push({ kind: "clock", bookingId: b.id, label: "A post clock is running", detail: `${b.title} with @${b.creatorHandle}: redeemed, post due by ${previewFmtDate(b.postDeadline)}.` });
     }
     if (post && !b.redemptions) {
-      attention.push({ kind: "tally", bookingId: b.id, label: "A register tally is still unreported", detail: `${b.title} with @${b.creatorHandle}: the post is live; reporting the code tally on the visit completes its SIGNL ROAS Score.` });
+      attention.push({ kind: "tally", bookingId: b.id, label: "Code tally not in yet", detail: `${b.title} with @${b.creatorHandle}: the post is live. Enter how many customers used the code and the tally completes its SIGNL ROAS Score.` });
     }
     if (!b.redeemedAt && b.status === "booked" && b.redeemBy && Date.parse(b.redeemBy) - now < 48 * 3600 * 1000 && Date.parse(b.redeemBy) > now) {
       attention.push({ kind: "window", bookingId: b.id, label: "A visit window closes soon", detail: `${b.title} with @${b.creatorHandle}: the redemption window closes ${previewFmtDate(b.redeemBy)}.` });
@@ -5298,9 +5308,14 @@ async function businessHome(user) {
       const perf = performanceSummary(post);
       return { bookingId: b.id, title: b.title, creatorName: b.creatorName, creatorHandle: b.creatorHandle, postUrl: post.url, views: post.views || 0, likes: post.likes || 0, onTime: !!post.onTime, redemptions: b.redemptions ? { count: b.redemptions.count, basketTotal: b.redemptions.basketTotal } : null, performanceUpdatedAt: perf.updatedAt, performanceSource: perf.source, viewsGrowthPct: perf.viewsGrowthPct, roasScore: roasFor([roasInputById.get(b.id) || { ...b, planAllocation }]).score };
     });
+  // Due soon (teardown B3, 2026-10-24): redeemed bookings carry
+  // status "redeemed", not "booked", so a status-only filter hid
+  // exactly the visits whose post clock is running. Redeemed with
+  // no post yet and a future postDeadline belongs here, soonest
+  // first, labeled with the time remaining.
   const nextVisits = bookings
-    .filter((b) => !postByBooking.has(b.id) && b.status === "booked")
-    .map((b) => ({ bookingId: b.id, title: b.title, creatorName: b.creatorName, creatorHandle: b.creatorHandle, state: b.redeemedAt ? "post_due" : "booked", stateLabel: b.redeemedAt ? "Redeemed, post clock running" : "Booked, code issued", when: b.redeemedAt ? b.postDeadline : b.redeemBy, whenLabel: b.redeemedAt ? "Post due" : "Redeem by" }))
+    .filter((b) => !postByBooking.has(b.id) && (b.status === "booked" || (!!b.redeemedAt && b.postDeadline && Date.parse(b.postDeadline) > now)))
+    .map((b) => ({ bookingId: b.id, title: b.title, creatorName: b.creatorName, creatorHandle: b.creatorHandle, state: b.redeemedAt ? "post_due" : "booked", stateLabel: b.redeemedAt ? "Redeemed, post clock running" : "Booked, code issued", when: b.redeemedAt ? b.postDeadline : b.redeemBy, whenLabel: b.redeemedAt ? "Post due" : "Redeem by", dueInLabel: b.redeemedAt && b.postDeadline ? `Post due in ${Math.max(0, Math.round((Date.parse(b.postDeadline) - now) / 3600000))}h` : null }))
     .sort((a, b) => (String(a.when || "") < String(b.when || "") ? -1 : 1));
 
   // Rebook prompts: creators with a delivered visit first (proof
@@ -5337,6 +5352,7 @@ async function businessHome(user) {
       onTimeRatePct: delivered.length ? Math.round((onTime.length / delivered.length) * 100) : null,
       roasScore: roas.score,
       roasAllInScore: roas.allInScore,
+      roas,
       totalViews,
       attention,
       pipeline: {
@@ -7276,15 +7292,22 @@ async function route(event) {
     // creator-side access for testing the app, but discovery, the
     // public /c/ page, campaign sends, and every roster/approved
     // count exclude them (see isTester / isRosterCreator).
+    // Extended to businesses (2026-10-24): the flag lives on any
+    // user record, the Stats tester count already counts every
+    // flagged user, and campaign sends already skip any flagged
+    // account's email, so a business tester is the same mechanism
+    // with its own event names (business_marked_tester /
+    // business_unmarked_tester).
     if (method === "POST" && seg[1] === "tester") {
       const b = parseBody(event);
       const target = await store.get(`user:${b.userId}`);
-      if (!target || target.role !== "creator") return err(404, "Creator not found");
+      if (!target || (target.role !== "creator" && target.role !== "business")) return err(404, "Account not found");
       if (typeof b.tester !== "boolean") return err(400, "tester must be true or false");
       target.tester = b.tester;
       target.updatedAt = nowIso();
       await store.set(`user:${target.id}`, target);
-      await logEvent({ type: b.tester ? "creator_marked_tester" : "creator_unmarked_tester", actorId: user.id, actorRole: "admin", subjectId: target.id, market: target.market, data: { email: target.email, tester: b.tester } });
+      const prefix = target.role === "business" ? "business" : "creator";
+      await logEvent({ type: b.tester ? `${prefix}_marked_tester` : `${prefix}_unmarked_tester`, actorId: user.id, actorRole: "admin", subjectId: target.id, market: target.market, data: { email: target.email, tester: b.tester } });
       return json(200, { user: publicUser(target) });
     }
     // File an unlisted record under a market (Jeff, 2026-10-23):
@@ -8088,6 +8111,31 @@ async function route(event) {
           offer.draftTimeline = true;
         }
       }
+      // Offer dedupe (UX redesign section 5, 2026-10-24): an
+      // identical OPEN offer from the same business is a twin, not
+      // a new offer. Same lane, same kind, same normalized title,
+      // same amount (dollarCap and the cashRate rate field), same
+      // covers, same spots, and the same apply/window days when
+      // stored: refuse with 409 and the existing offer's id, so
+      // the client can point at the one already open instead of
+      // creating a duplicate. Drafts are exempt (a draft is not
+      // open), and a closed or expired twin never blocks.
+      if (offer.status === "open") {
+        const normTitle = (t) => String(t || "").trim().replace(/\s+/g, " ").toLowerCase();
+        const existing = (await allOffers()).find((x) => {
+          if (x.businessId !== user.id || x.status !== "open") return false;
+          if (laneOf(x) !== laneOf(offer) || kindOf(x) !== kindOf(offer)) return false;
+          if (normTitle(x.title) !== normTitle(offer.title)) return false;
+          if (Number(x.dollarCap) !== Number(offer.dollarCap)) return false;
+          if ((x.cashRate === null || x.cashRate === undefined ? null : Number(x.cashRate)) !== (offer.cashRate === null || offer.cashRate === undefined ? null : Number(offer.cashRate))) return false;
+          if (coversOf(x) !== coversOf(offer)) return false;
+          if (Number(x.spots) !== Number(offer.spots)) return false;
+          if (x.applyWindowDays !== undefined && offer.applyWindowDays !== undefined && Number(x.applyWindowDays) !== Number(offer.applyWindowDays)) return false;
+          if (x.windowDays !== undefined && offer.windowDays !== undefined && Number(x.windowDays) !== Number(offer.windowDays)) return false;
+          return true;
+        });
+        if (existing) return json(409, { error: "This offer is already open", existingOfferId: existing.id });
+      }
       await store.set(`offer:${offer.id}`, offer);
       await logEvent({ type: "offer_created", actorId: user.id, actorRole: "business", subjectId: offer.id, market: offer.market, data: { title: offer.title, dollarCap, spots, targeted: !!targetCreator, creatorId: offer.creatorId, category: offer.category, windowMode: offer.windowMode, lane, kind, cashRate, covers, hasBrief: !!paidBrief, targetTiers, templateId: offer.templateId, status: offer.status, strength: offerStrength(offer).score } });
       if (targetCreator) await notifyUser(targetCreator.id, "offer_received", `${user.business.businessName} sent you an offer: "${offer.title}". It is under your Offers.`, { offerId: offer.id });
@@ -8580,16 +8628,15 @@ async function route(event) {
       // counts by surface, computed over ALL of the user's unread
       // notifications (not just the 40 the list returns), grouped
       // by kind. Only kinds that exist in the code are mapped;
-      // unmapped kinds count toward the total only. Messages carry
-      // no per-user read state and no notification kind fires on a
-      // message's arrival, so there is no unread-message signal to
-      // count yet: BADGE_MESSAGE_KINDS stays empty (messages: 0)
-      // until one of those exists.
+      // unmapped kinds count toward the total only. Messages count
+      // the "message_received" notifications the message-send route
+      // writes for the other participant (one live signal per
+      // thread), so an unread thread badges Messages once.
       const BADGE_OFFER_KINDS = user.role === "business"
         ? ["application_received", "offer_declined", "creator_declined", "backfill_filled", "offer_deadline", "offer_nudge"]
         : ["offer_received", "backfill_offered", "application_selected", "application_received", "offer_declined", "creator_declined", "backfill_filled", "offer_deadline", "offer_nudge"];
       const BADGE_VISIT_KINDS = ["booking_confirmed", "clock_started", "proof_submitted", "post_verified", "rating_received", "performance_reported", "performance_updated", "register_tally", "paid_booking_received"];
-      const BADGE_MESSAGE_KINDS = [];
+      const BADGE_MESSAGE_KINDS = ["message_received"];
       const unread = all.filter((n) => !n.readAt);
       const countKinds = (kinds) => unread.filter((n) => kinds.includes(n.kind)).length;
       const badges = {
@@ -9296,6 +9343,17 @@ async function route(event) {
         createdAt: nowIso(),
       };
       await store.set(`message:${msg.id}`, msg);
+      // Message badge signal (UX redesign section 2, 2026-10-24):
+      // a stored message notifies the other participant, kind
+      // "message_received" with the thread id, so the Messages tab
+      // badge has something real to count. One live signal per
+      // thread: while an unread one is already waiting, further
+      // messages in the same thread do not stack more.
+      const priorNotes = await store.list(`note:${other.id}:`);
+      const alreadySignaled = priorNotes.some((r) => r.value && r.value.kind === "message_received" && !r.value.readAt && r.value.data && r.value.data.threadId === threadId);
+      if (!alreadySignaled) {
+        await notifyUser(other.id, "message_received", `${user.name} sent you a message.`, { threadId, messageId: msg.id, fromId: user.id });
+      }
       await logEvent({ type: "message_sent", actorId: user.id, actorRole: user.role, subjectId: msg.id, market: user.market, data: { toId: other.id, toRole: other.role, threadId, bodyLength: body.length } });
       return json(201, { message: msg });
     }

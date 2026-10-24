@@ -693,3 +693,85 @@ tbody tr:hover td { background: rgba(245,240,231,.55); }
   .proof-sheet { border: none; border-radius: 0; margin: 0; max-width: none; padding: 10mm; }
   .proof-stats { break-inside: avoid; }
 }
+
+/* ---------- Wave 2 (UX redesign, 2026-10-24) ---------- */
+/* Signed-in bottom bar at EVERY width: one nav system per role.
+   Signed-out views keep the styles.css mobile-only dark bar. The
+   bar is light to match the v2 surfaces; the gradient stays
+   reserved for the active label and primary actions. */
+#bottomnav.signed-in {
+  display: flex; align-items: stretch; position: fixed;
+  left: 50%; transform: translateX(-50%); right: auto; bottom: 0; z-index: 60;
+  width: min(620px, 100%); box-sizing: border-box;
+  height: calc(58px + env(safe-area-inset-bottom));
+  background: #fff; border-top: 1px solid var(--line2, #E8E2D6);
+  box-shadow: 0 -6px 24px rgba(20, 20, 20, 0.08);
+  padding: 4px 4px calc(4px + env(safe-area-inset-bottom));
+}
+#bottomnav.signed-in .bn-item {
+  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  background: none; border: 0; cursor: pointer; color: var(--ink2, #5A554C);
+  font-family: Inter, sans-serif; padding: 4px 2px; min-height: 48px;
+  -webkit-tap-highlight-color: transparent;
+}
+#bottomnav.signed-in .bn-icon { display: flex; align-items: center; justify-content: center; height: 24px; position: relative; }
+#bottomnav.signed-in .bn-icon svg { width: 22px; height: 22px; display: block; }
+#bottomnav.signed-in .bn-label { font-size: 0.66rem; font-weight: 600; letter-spacing: 0.02em; line-height: 1.15; white-space: nowrap; }
+#bottomnav.signed-in .bn-item.on .bn-label {
+  background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+body.bn-on main { padding-bottom: calc(88px + env(safe-area-inset-bottom)); }
+body.bn-on .footer { padding-bottom: calc(88px + env(safe-area-inset-bottom)); }
+
+/* Tab badge bubble: unread counts on the icon, hidden at zero. */
+.bn-badge {
+  position: absolute; top: -5px; right: -13px; min-width: 17px; height: 17px;
+  border-radius: 999px; background: var(--grad); color: #fff;
+  font-size: 0.62rem; font-weight: 800; line-height: 17px; text-align: center;
+  padding: 0 4px; box-sizing: border-box;
+}
+.bn-badge.static { position: static; display: inline-block; }
+
+/* Bottom sheets (More menu, confirms, paid booking, info popups):
+   one fixed overlay, one bottom-anchored white sheet. */
+.sheet-overlay {
+  position: fixed; inset: 0; z-index: 200; background: rgba(20, 20, 20, 0.45);
+  display: flex; align-items: flex-end; justify-content: center;
+}
+.sheet {
+  background: #fff; width: min(560px, 100%); max-height: 86vh; overflow-y: auto;
+  border-radius: 18px 18px 0 0; padding: 20px 18px calc(18px + env(safe-area-inset-bottom));
+  box-shadow: 0 -10px 40px rgba(20, 20, 20, 0.25);
+}
+.sheet-row {
+  display: flex; align-items: center; justify-content: space-between; width: 100%;
+  background: none; border: 0; border-bottom: 1px solid var(--line2, #E8E2D6);
+  padding: 15px 4px; font: inherit; font-weight: 600; color: var(--ink, #141414);
+  cursor: pointer; text-align: left; min-height: 52px;
+}
+.sheet-row:last-child { border-bottom: 0; }
+
+/* Offer composer: per-field errors, required/optional tags, info. */
+.field-err { color: #B3261E; font-size: 0.82rem; margin: 4px 0 0; min-height: 0; }
+.field-err:empty { display: none; }
+.req-tag, .opt-tag {
+  display: inline-block; font-size: 0.62rem; font-weight: 800; letter-spacing: 0.05em;
+  text-transform: uppercase; border-radius: 999px; padding: 2px 7px; vertical-align: 2px;
+}
+.req-tag { background: #141414; color: #fff; }
+.opt-tag { background: #EFEADF; color: #5A554C; }
+.info-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; border-radius: 999px; border: 1px solid #C9C2B2;
+  background: #fff; color: #5A554C; font-size: 0.72rem; font-weight: 800; font-style: italic;
+  cursor: pointer; vertical-align: 2px; padding: 0; line-height: 1;
+}
+
+/* Feed cards (section 6): tight chip rows on white cards. */
+.feed-card .chip-row { margin: 8px 0 2px; }
+.chip-mini {
+  display: inline-block; font-size: 0.74rem; font-weight: 700; color: #141414;
+  background: #F3EFE6; border: 1px solid #E8E2D6; border-radius: 999px; padding: 3px 9px;
+}
+.card.highlight { outline: 3px solid #EC008C; outline-offset: 2px; transition: outline-color 0.3s; }
+.perf-update-card { border-color: #EC008C; }

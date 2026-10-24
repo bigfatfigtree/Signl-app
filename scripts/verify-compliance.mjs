@@ -638,7 +638,7 @@ try {
   const appJs = fs.readFileSync(path.join(root, "public/app.js"), "utf8");
   check("signup carries the post-compliance agreement checkbox", appJs.includes("jc-agree-compliance") && appJs.includes("agreedPostCompliance"));
   check("My Visits proof block is headed Post your proof", appJs.includes("Post your proof"));
-  check("momentum block explains points decide order", appJs.includes("Points decide the order businesses see you in"));
+  check("momentum block explains what points are earned for (UX redesign section 7: no discovery-order promise)", appJs.includes("Earned for posting on time, completing your profile, and bringing creators in.") && !appJs.includes("your order in business search"));
   check("compliance tab wired in the client", appJs.includes("loadCompliance") && appJs.includes("/admin/compliance"));
   check("ad use action wired in the client", appJs.includes("declareAdUse") && appJs.includes("/ad-use"));
   check("performance form wired in the client", appJs.includes("submitPostPerformance") && appJs.includes("/performance"));
