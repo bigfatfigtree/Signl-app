@@ -145,6 +145,12 @@ try {
   // actually driven by the parsed values.
   check("claim-link prefill: client parses handle, market, tier params with a sanitizer", appJsText.includes("parseClaimParams") && appJsText.includes("sanitizeClaimHandle") && appJsText.includes('params.get("handle")') && appJsText.includes('params.get("market")') && appJsText.includes('params.get("tier")'), "");
   check("claim-link prefill: market and tier validate by exact match against the published lists", appJsText.includes("state.boot.markets.find((x) => x.name === marketRaw") && appJsText.includes("state.boot.tiers.some((t) => t.id === tierRaw)"), "");
+  // Claim-over-business precedence (bug fix, 2026-10-25): a claim
+  // link carries &market=, which parseBizParams also matches, and
+  // the business block runs after the claim block in init — without
+  // the handle guard, /claim?handle=X&market=Y landed on the
+  // business founding page instead of the creator claim form.
+  check("claim link beats business prefill: the join-business landing is guarded off when a claim handle is present", appJsText.includes("if (!claim.handle && (bizParams.businessName"), "");
   check("claim-link prefill fills the sign-up form (market, city list, handle)", appJsText.includes("marketOptions(pfMarket, true)") && appJsText.includes("cityOptions(pfMarket)") && appJsText.includes("state.prefill"), "");
   check("sign-up has no band picker: the band line is automatic and follows the counts", appJsText.includes('id="jc-tier-line"') && !appJsText.includes('id="jc-tier"') && appJsText.includes("set automatically from your total audience"), "");
 
