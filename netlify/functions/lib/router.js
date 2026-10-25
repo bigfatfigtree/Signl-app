@@ -4304,7 +4304,14 @@ function campaignEmailFor(campaignId, recipient) {
 function campaignWindowOpen(date) {
   const hourRaw = new Intl.DateTimeFormat("en-US", { hour: "numeric", hour12: false, timeZone: CAMPAIGN_WINDOW.timeZone }).format(date);
   const hour = ((parseInt(hourRaw, 10) % 24) + 24) % 24;
-  return hour >= CAMPAIGN_WINDOW.startHour && hour < CAMPAIGN_WINDOW.endHour;
+  // One-night exception (Jeff's order, 2026-10-24 ~21:45 ET): the
+  // founding-creators queue sends from the new creators@ signlteam
+  // mailbox tonight, past the normal 21:00 close, so on the ET
+  // calendar date 2026-10-24 the window stays open until midnight.
+  // Keyed to that single date, it expires on its own; every other
+  // day uses the shipped 08:00-21:00 window.
+  const endHour = campaignDayKey(date) === "2026-10-24" ? 24 : CAMPAIGN_WINDOW.endHour;
+  return hour >= CAMPAIGN_WINDOW.startHour && hour < endHour;
 }
 
 // yyyy-mm-dd of a date in the campaign timezone (America/New_York),
