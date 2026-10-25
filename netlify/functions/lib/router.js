@@ -1039,8 +1039,16 @@ async function allUsers() {
 // A market with no entry is NOT live. In TEST_MODE every market reads live.
 
 async function getMarketFlags() {
-  const rec = await store.get("config:markets");
-  return (rec && rec.flags) || {};
+  try {
+    const rec = await store.get("config:markets");
+    return (rec && rec.flags) || {};
+  } catch (e) {
+    // A store failure must not 500 the public bootstrap (its handler
+    // reads this via marketLiveMap): degrade to "no markets live",
+    // the founding state. See INCIDENT-2026-10-25.md.
+    console.error("SIGNL getMarketFlags failed (treating all markets as not live):", e);
+    return {};
+  }
 }
 
 async function isMarketLive(marketName) {
@@ -5502,8 +5510,17 @@ async function getAuthUser(event) {
   const cookies = auth.parseCookies(event.headers.cookie || event.headers.Cookie || "");
   const token = cookies.signl_session;
   if (!token) return { user: null, token: null };
-  const user = await auth.getSessionUser(token);
-  return { user, token };
+  try {
+    const user = await auth.getSessionUser(token);
+    return { user, token };
+  } catch (e) {
+    // A store failure on the session read fails safe to anonymous
+    // (public routes still serve; signed-in routes answer 401)
+    // instead of 500ing every route for cookie-bearing browsers.
+    // See INCIDENT-2026-10-25.md.
+    console.error("SIGNL getAuthUser session lookup failed (treating request as signed out):", e);
+    return { user: null, token: null };
+  }
 }
 
 function requireApproved(user) {
@@ -6267,7 +6284,17 @@ async function route(event) {
   const seg = path.split("/").filter(Boolean);
   const query = event.queryStringParameters || {};
 
-  await auth.ensureAdmin(logEvent);
+  // Admin bootstrap is best-effort, exactly like every preamble job
+  // below: it opportunistically creates the one admin account, but if
+  // the store itself is failing it must degrade to "admin bootstrap
+  // delayed" instead of taking down every route. Unguarded, this one
+  // read caused the total /api/* outage of 2026-10-25 (expired Netlify
+  // Blobs token) — see INCIDENT-2026-10-25.md.
+  try {
+    await auth.ensureAdmin(logEvent);
+  } catch (e) {
+    console.error("SIGNL ensureAdmin failed (continuing; admin bootstrap delayed):", e);
+  }
   // One-time recruiter kit email: fires on the first request after
   // deploy, guarded by a claimed blob flag, and never repeats. It
   // must never break a request, hence the try/catch.
