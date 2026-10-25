@@ -4210,6 +4210,8 @@ function campaignEmail(recipient) {
     "",
     "Local businesses book creators two ways on SIGNL: they comp you a meal, service or experience for an honest post, or they pay your own listed rate (you keep 97%). Most founding creators do both. Either way, you post honestly about it within 48 hours. No script, no required praise, full disclosure. Businesses get real local posts, and your founding profile is live and shareable from day one.",
     "",
+    "We don't rank you by followers. We rank you by how much of your audience actually lives here. That share is your local reach, and it is the number businesses look at first. Every post you deliver on time earns Momentum points, and those points raise your visibility to businesses.",
+    "",
     marketParagraph,
     "",
     "Your spot is partly filled in already:",
