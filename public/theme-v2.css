@@ -1034,3 +1034,278 @@ main { padding-top: 26px; }
 @media (prefers-reduced-motion: reduce) {
   #app > * { animation: none; }
 }
+
+/* =====================================================================
+   REDESIGN V2 — COMPOSITION (2026-10-25)
+   Jeff rejected V1 as "masking the current platform with these
+   colors": V1 swapped tokens over the old layouts. This section
+   recomposes the screens the way Slotted is composed (see
+   DESIGN-STUDY-V2.md): black hero bands and black stat blocks,
+   left-aligned display type, the app-head + live-row dashboard
+   opening, slot-card anatomy for every feed card (tile, tags,
+   title, meta, hairline, value-anchored foot with ONE pill
+   action), form panels split into a black head band over a white
+   form body, and Slotted's tab / bottom-bar treatments. Rules
+   here win by cascade order over everything above.
+   ===================================================================== */
+
+/* ---------- frame + rhythm ---------- */
+html, body { overflow-x: clip; }
+main { max-width: 1140px; padding-top: 26px; padding-left: 24px; padding-right: 24px; }
+@media (max-width: 720px) {
+  main { padding-top: 20px; padding-left: 16px; padding-right: 16px; padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
+}
+#app h2 { font-size: clamp(1.55rem, 4.6vw, 2rem); letter-spacing: -.03em; line-height: 1.12; }
+#app > h2 { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 2px 0 18px; }
+#app > h2 .badge { font-size: .78rem; padding: 7px 13px; }
+.panel { border-radius: var(--r-lg); padding: 26px; }
+@media (max-width: 640px) { .panel { padding: 20px; } }
+.panel h3, .card h3 { letter-spacing: -.02em; }
+label { font-weight: 700; letter-spacing: -.01em; }
+.notice { border-radius: var(--r-md); padding: 16px 18px; }
+
+/* ---------- topbar: Slotted top-links + mint CTA ---------- */
+.topbar { min-height: 66px; padding-top: 10px; padding-bottom: 10px; }
+#topnav { gap: 26px; }
+#topnav a, #topnav button.linklike { font-size: .92rem; }
+#topnav a.nav-cta {
+  background: var(--mint); color: var(--ink); font-weight: 700;
+  padding: 10px 18px; border-radius: 999px;
+}
+#topnav a.nav-cta:hover { background: var(--mint-b); color: var(--ink); }
+
+/* ---------- bottom bar: Slotted mobile bar (active = mint pill) ---------- */
+@media (max-width: 720px) {
+  #bottomnav {
+    height: calc(66px + env(safe-area-inset-bottom));
+    padding: 6px 6px calc(6px + env(safe-area-inset-bottom));
+  }
+  #bottomnav .bn-item { border-radius: 999px; margin: 0 1px; }
+  #bottomnav .bn-item.on { background: var(--mint); color: var(--ink); }
+  #bottomnav .bn-item.on .bn-label { color: var(--ink); }
+}
+#bottomnav.signed-in {
+  height: calc(66px + env(safe-area-inset-bottom));
+  padding: 6px 6px calc(6px + env(safe-area-inset-bottom));
+  width: min(640px, 100%);
+}
+#bottomnav.signed-in .bn-item { border-radius: 999px; margin: 0 1px; }
+#bottomnav.signed-in .bn-item.on { background: var(--mint); color: var(--ink); }
+#bottomnav.signed-in .bn-item.on .bn-label { color: var(--ink); }
+body.bn-on main { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
+body.bn-on .footer { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
+
+/* ---------- HOME: black hero band (Slotted hero composition) ---------- */
+.hero {
+  text-align: left; background: var(--black); color: #fff;
+  width: 100vw; margin-left: calc(50% - 50vw); margin-top: -26px;
+  padding: 76px max(24px, calc(50vw - 546px)) 64px;
+}
+@media (max-width: 720px) {
+  .hero { margin-top: -20px; padding: 56px max(20px, calc(50vw - 546px)) 48px; }
+}
+.hero h1 {
+  color: #fff; font-size: clamp(2.7rem, 7.4vw, 4.6rem);
+  line-height: 1.03; letter-spacing: -.035em; max-width: 660px; margin: 0 0 6px;
+}
+.hero h1 .grad-text { color: var(--mint); }
+.hero p {
+  color: #C6CFC6; font-size: 1.06rem; line-height: 1.6; font-weight: 500;
+  max-width: 560px; margin: 18px 0 0;
+}
+.hero p strong { color: #fff; }
+.hero .cta-row { justify-content: flex-start; margin-top: 30px; gap: 12px; }
+.hero .btn { min-height: 54px; font-size: .98rem; }
+.hero .btn.ghost {
+  background: rgba(11,13,12,.25); border-color: rgba(255,255,255,.65);
+  color: #fff; box-shadow: none; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+}
+.hero .btn.ghost:hover { background: rgba(255,255,255,.14); }
+.hero p.small { font-size: .82rem; color: #A9BFA9; max-width: 660px; line-height: 1.6; }
+@media (max-width: 560px) { .hero .cta-row .btn { flex: 1 1 100%; } }
+.hero + section { margin-top: 52px; }
+
+/* Home steps: Slotted step cards (number line, title, copy). */
+.grid .card { border-radius: 20px; padding: 24px; box-shadow: var(--sh-sm); }
+.grid .card h3 { font-size: 1.06rem; margin: 0 0 6px; }
+.grid .card p { line-height: 1.6; font-size: .94rem; }
+.sx-num {
+  display: block; font-size: .95rem; font-weight: 800;
+  color: var(--mint-deep); letter-spacing: .05em; margin-bottom: 10px;
+}
+
+/* Home rules: Slotted black example panel. */
+.rules-panel { background: var(--black); border-color: var(--black); color: #DDE7DD; padding: 30px; }
+.rules-panel h3 { color: #fff; font-size: 1.4rem; margin-top: 0; }
+.rules-panel p { color: #C6CFC6; line-height: 1.65; }
+@media (max-width: 640px) { .rules-panel { padding: 24px 20px; } }
+
+/* ---------- FORM PANELS: black head band + white body ---------- */
+.panel.form-panel { padding: 0; overflow: hidden; }
+.form-head { background: var(--black); color: #fff; padding: 32px 28px 28px; }
+.form-head h2 { color: #fff; margin: 0 0 12px; font-size: clamp(1.8rem, 5vw, 2.2rem); }
+.form-head h3 { color: #fff; }
+.form-head p { color: #C6CFC6; line-height: 1.6; margin: 0 0 10px; }
+.form-head p:last-child { margin-bottom: 0; }
+.form-head p strong, .form-head strong { color: #fff; }
+.form-head .muted { color: #9AA79E; }
+.form-head a { color: var(--mint); }
+.form-body { padding: 28px; }
+@media (max-width: 640px) {
+  .form-head { padding: 26px 20px 22px; }
+  .form-body { padding: 22px 20px; }
+}
+.form-panel .btn[type="submit"] { min-height: 54px; font-size: 1rem; }
+.form-body .notice.blue { border-radius: var(--r-md); padding: 18px 20px; line-height: 1.6; }
+
+/* Plan cards inside the business form: benefit cards; the selected
+   plan goes black with a mint price (Slotted stat treatment). */
+.form-body .plan-card { border-radius: var(--r-md); padding: 22px; }
+.form-body .plan-card .price { font-size: 2rem; font-weight: 800; letter-spacing: -.02em; }
+.plan-card.selected { background: var(--black); border-color: var(--black); color: #fff; box-shadow: var(--sh-md); }
+.plan-card.selected .price { color: var(--mint); }
+.plan-card.selected .muted, .plan-card.selected ul { color: #9AA79E; }
+
+/* ---------- DASHBOARD HERO: flat black, live-row stats ---------- */
+.dash-hero { border-radius: 28px; padding: 28px; }
+.dash-hero::before, .dash-hero::after { display: none; }
+.dh-kicker { color: var(--mint); letter-spacing: .16em; }
+.dh-name { font-size: clamp(1.9rem, 6vw, 2.7rem); margin-top: 8px; }
+.dh-sub { color: #C6CFC6; font-size: .98rem; line-height: 1.55; max-width: 580px; }
+.dh-row {
+  justify-content: flex-start; gap: 0; flex-wrap: nowrap;
+  border-top: 1px solid var(--hair-d); padding-top: 18px; margin-top: 20px;
+}
+.dh-row > div { padding: 0 22px; min-width: 0; }
+.dh-row > div:first-child { padding-left: 0; }
+.dh-row > div + div { border-left: 1px solid var(--hair-d); }
+.dh-num { font-size: clamp(1.9rem, 7vw, 2.5rem); }
+.dh-num-lbl {
+  text-transform: uppercase; letter-spacing: .08em; font-size: .68rem;
+  font-weight: 700; color: #9AA79E; margin-top: 5px; line-height: 1.4;
+}
+@media (max-width: 640px) {
+  .dash-hero { padding: 24px 20px; border-radius: 24px; }
+  .dh-row > div { padding: 0 14px; }
+}
+
+/* ---------- STAT BAND: Slotted black stat blocks ---------- */
+.stat-band { background: transparent; border: none; box-shadow: none; gap: 12px; overflow: visible; border-radius: 0; }
+.stat-band .stat-cell { background: var(--black); border-radius: var(--r-md); padding: 22px; border-right: none; }
+.stat-band .stat-num { color: var(--mint); }
+.stat-band .stat-num em { color: var(--mint); }
+.stat-band .stat-lbl { color: #9AA79E; }
+.stat-band .muted { color: #9AA79E; }
+.stat-band .grad-text { color: var(--mint); }
+/* The proof sheet is a print document: its band stays light. */
+.proof-sheet .stat-band { background: var(--card); border: 1px solid var(--line); box-shadow: none; gap: 0; border-radius: 14px; overflow: hidden; }
+.proof-sheet .stat-band .stat-cell { background: #fff; border-right: 1px solid var(--line2); }
+.proof-sheet .stat-band .stat-cell:last-child { border-right: none; }
+.proof-sheet .stat-band .stat-num { color: var(--ink); }
+.proof-sheet .stat-band .stat-lbl { color: var(--ink2); }
+
+/* ---------- KICKERS / SECTION HEADS in dashboard blocks ---------- */
+.ui-kicker { color: var(--mint-deep); display: inline-flex; align-items: center; gap: 10px; }
+.ui-kicker::before { content: ""; width: 26px; height: 2px; background: var(--mint-dot); flex: none; }
+.home-h { font-size: 1.32rem; letter-spacing: -.02em; margin: 8px 0 8px; }
+.showcase-block h4 {
+  font-size: .74rem; font-weight: 800; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--ink3);
+}
+#open-board > h3, #tab-body > h3 { font-size: 1.45rem; letter-spacing: -.025em; }
+
+/* ---------- SLOT CARDS: the feed anatomy ---------- */
+.slot-card { padding: 14px; border-radius: var(--r-md); }
+.slot-top { display: flex; gap: 12px; align-items: flex-start; }
+.slot-top .avatar-initial {
+  width: 56px !important; height: 56px !important; border-radius: 14px !important;
+  background: var(--black); color: var(--mint); font-size: 1.3rem !important;
+}
+.slot-body { flex: 1; min-width: 0; }
+.slot-badges { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; align-items: center; }
+.slot-name { font-weight: 800; font-size: 1.06rem; line-height: 1.25; letter-spacing: -.015em; }
+.slot-cat { font-size: .8rem; color: var(--ink3); font-weight: 600; margin-top: 2px; }
+.slot-meta { font-size: .8rem; font-weight: 600; color: var(--ink2); margin-top: 5px; display: flex; gap: 6px 12px; flex-wrap: wrap; }
+.slot-deal { border-top: 1px solid var(--line2); margin-top: 12px; }
+.slot-deal .showcase-block { border-top: none; margin-top: 10px; padding-top: 0; }
+.slot-foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  border-top: 1px solid var(--mint-pale); margin-top: 12px; padding-top: 12px;
+}
+.slot-price { font-size: 1.65rem; font-weight: 800; line-height: 1; letter-spacing: -.02em; }
+.slot-note {
+  font-size: .68rem; font-weight: 700; letter-spacing: .07em;
+  text-transform: uppercase; color: var(--ink3); margin-top: 5px;
+}
+.slot-actions { display: flex; gap: 8px; align-items: center; flex: none; flex-wrap: wrap; justify-content: flex-end; }
+.btn.book { background: var(--black); color: var(--mint); box-shadow: var(--sh-sm); }
+.btn.book:hover { background: var(--black2); color: var(--mint); }
+@media (max-width: 480px) {
+  .slot-foot { align-items: flex-end; }
+  .slot-actions .btn { min-height: 48px; }
+}
+
+/* Home opportunity cards: same book-action treatment. */
+.home-opp { padding: 16px; }
+.home-opp form .btn { background: var(--black); color: var(--mint); }
+.home-opp form .btn:hover { background: var(--black2); color: var(--mint); }
+
+/* ---------- PUBLIC PROFILE: black hero card ---------- */
+.creator-card.full {
+  background: var(--black); border-color: var(--black); color: #DDE7DD;
+  border-radius: 28px; padding: 26px;
+}
+.creator-card.full:hover { transform: none; }
+.creator-card.full .cc-name { color: #fff; font-size: clamp(1.9rem, 6vw, 2.5rem); letter-spacing: -.03em; }
+.creator-card.full .cc-handle { color: #9AA79E; }
+.creator-card.full .cc-chip { background: var(--panel-d); border-color: var(--hair-d); color: #C6CFC6; }
+.creator-card.full .cc-chip.market { background: var(--mint); border-color: var(--mint); color: var(--ink); }
+.creator-card.full .cc-local { background: transparent; border: none; padding: 6px 6px 0; margin-top: 20px; }
+.creator-card.full .cc-local .big { color: var(--mint); font-size: 3.4rem; }
+.creator-card.full .cc-local .lbl { color: #C6CFC6; }
+.creator-card.full .cc-local .src { color: #9AA79E; }
+.creator-card.full .cc-meta .k { color: #9AA79E; }
+.creator-card.full .cc-meta .v { color: #fff; }
+.creator-card.full .cc-plat { background: var(--panel-d); border-color: var(--hair-d); color: #C6CFC6; }
+.creator-card.full .badge { background: var(--panel-d); border-color: var(--hair-d); color: #DDE7DD; }
+.creator-card.full .badge.ok { background: var(--mint); border-color: var(--mint); color: var(--ink); }
+.creator-card.full .badge.tier, .creator-card.full .badge.elite { background: var(--mint); border-color: var(--mint); color: var(--ink); }
+.creator-card.full .badge.info { background: var(--panel-d); border-color: var(--hair-d); color: var(--mint); }
+.creator-card.full a { color: var(--mint); }
+@media (max-width: 759px) {
+  .creator-card.full { padding: 20px; }
+  .creator-card.full .cc-photo { aspect-ratio: 4/3; }
+  .creator-card.full .cc-photo.no-photo { aspect-ratio: auto; }
+}
+
+/* ---------- BUSINESS HOME: pipeline + rows ---------- */
+.pv-stage { background: var(--mint-pale); border-color: #CDE9D8; border-radius: 14px; }
+.pv-stage-num { font-size: 1.9rem; font-weight: 800; }
+.ui-row { padding: 13px 0; }
+
+/* ---------- COMPOSER: Slotted fat pill selectors ---------- */
+.chip { min-height: 42px; padding: 8px 16px; font-weight: 700; display: inline-flex; align-items: center; }
+.chip.on { background: var(--black); border-color: var(--black); color: var(--mint); }
+
+/* ---------- ADMIN: black preview band, tab row, dash tables ---------- */
+.panel.preview-cta { background: var(--black); border-color: var(--black); color: #DDE7DD; }
+.preview-cta strong { color: #fff; }
+.preview-cta .muted { color: #9AA79E; }
+.preview-cta .btn.ghost { background: transparent; border-color: rgba(255,255,255,.65); color: #fff; box-shadow: none; }
+.preview-cta .btn.ghost:hover { background: rgba(255,255,255,.14); }
+.tabs { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 8px; scrollbar-width: none; }
+.tabs::-webkit-scrollbar { display: none; }
+.tabs button { flex: none; min-height: 48px; padding: 0 20px; font-size: .92rem; }
+@media (min-width: 900px) { .tabs { flex-wrap: wrap; overflow: visible; } }
+table th { font-size: .7rem; letter-spacing: .1em; text-transform: uppercase; }
+th, td { padding: 11px 10px; }
+.table-wrap.panel { padding: 10px 18px; }
+.camp-counts { font-size: .95rem; }
+.camp-counts strong { font-size: 1.12rem; font-weight: 800; }
+
+/* ---------- SLOT FOOT: wrap on phones (price keeps its line, actions wrap under) ---------- */
+@media (max-width: 560px) {
+  .slot-foot { flex-wrap: wrap; }
+  .slot-actions { flex: 1 1 100%; justify-content: flex-start; flex-wrap: wrap; }
+  .slot-actions .btn.book { flex: 1 1 auto; }
+}
