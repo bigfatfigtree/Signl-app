@@ -2312,6 +2312,21 @@ function reviewLinksBlockHtml(links) {
   return `<div class="showcase-block"><h4>Their review pages</h4><p class="small" style="margin:0">${links.map((l) => `<a href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.label)}</a>`).join(" &middot; ")}</p><p class="small muted" style="margin:4px 0 0">If you want to leave them a public review too, these are their pages. Entirely your call, and never part of the deal.</p></div>`;
 }
 
+// The business's own referral program, tied in (Jeff,
+// 2026-10-25). The server sends {url, code, note} only when
+// the business has set a link or a code, so this renders
+// nothing at all for businesses without one. Any rewards are
+// the business's program under its own terms; SIGNL never
+// runs or guarantees them.
+function referralProgramBlockHtml(prog) {
+  if (!prog || (!prog.url && !prog.code)) return "";
+  return `<div class="showcase-block"><h4>This business runs its own referral program</h4>
+    ${prog.note ? `<p class="small" style="margin:0 0 4px"><strong>From the business:</strong> ${esc(prog.note)}</p>` : ""}
+    ${prog.url ? `<p class="small" style="margin:0">Referral link: <a href="${esc(prog.url)}" target="_blank" rel="noopener">${esc(prog.url)}</a></p>` : ""}
+    ${prog.code ? `<p class="small" style="margin:0">Referral code: <strong>${esc(prog.code)}</strong></p>` : ""}
+    <p class="small muted" style="margin:4px 0 0">Include the link in your caption or bio, or the code in your caption, so the business can track the bookings your post sends them. Any rewards come from the business's own program, under its terms, on top of your SIGNL comp or pay. SIGNL does not run or guarantee their program.</p></div>`;
+}
+
 // Book a paid visit at the creator's listed rate (real surface).
 // Paid booking confirm sheet (UX redesign section 9): the old
 // flow chained a native confirm() and a native prompt(), the same
@@ -3577,6 +3592,7 @@ async function loadCreatorOffers() {
           <p class="small"><strong>They can't:</strong> ${rights.cannot.map(esc).join("; ")}</p>
         </div>
         ${reviewLinksBlockHtml(o.businessReviewLinks)}
+        ${referralProgramBlockHtml(o.businessReferralProgram)}
         <p class="small muted">Redemption window: ${o.windowMode === "thisweek" ? "this week, ends Sunday" : "any time within 7 days of accepting"}. No appointment: you show up inside the window with your code.${o.visitWindow ? ` Note from the business: ${esc(o.visitWindow)}` : ""}</p>
         <form onsubmit="return acceptOffer(event, '${o.id}')">
           <button class="btn small-btn" type="submit">Accept and get my code</button>
@@ -3644,6 +3660,7 @@ async function loadOpenBoard() {
           <p class="small"><strong>They can't:</strong> ${rights.cannot.map(esc).join("; ")}</p>
         </div>
         ${reviewLinksBlockHtml(o.businessReviewLinks)}
+        ${referralProgramBlockHtml(o.businessReferralProgram)}
         <p class="small muted">${spotsLeft} of ${o.spots} spot${o.spots === 1 ? "" : "s"} open &middot; ${o.applicationCount} applied &middot; apply by ${fmtDay(o.applicationsCloseAt)} &middot; redeem ${fmtDay(o.windowStartAt)} to ${fmtDay(o.windowEndAt)}${o.businessNeighborhood ? ` &middot; ${esc(o.businessNeighborhood)}` : ""}${o.visitWindow ? `<br>Note from the business: ${esc(o.visitWindow)}` : ""}</p>
         ${o.businessAbout ? `<p class="small muted">${esc(o.businessAbout)}</p>` : ""}
         ${o.myApplication
@@ -3850,6 +3867,10 @@ function visitCard(b, role) {
     html += role === "creator"
       ? `<p class="small"><span class="badge tier">Paid visit</span> Your rate $${lane.rate}: you receive $${lane.creatorNet} (97% of your rate). ${escrowBadge}<br><span class="muted">${esc(lane.paymentNote)}${lane.escrowState === "held" && lane.proofAt ? " Your post is in; the escrow releases 48 hours after proof." : ""}${lane.escrowState === "refunded" ? " This visit resolved without delivery, so the business was refunded." : ""}</span></p>`
       : `<p class="small"><span class="badge tier">Paid visit</span> Creator rate $${lane.rate} &middot; you pay $${lane.businessTotal} (rate + 3%) &middot; the creator receives $${lane.creatorNet}. ${escrowBadge}<br><span class="muted">${esc(lane.paymentNote)}</span></p>`;
+  }
+  if (role === "creator") html += referralProgramBlockHtml(b.businessReferralProgram);
+  if (role === "business" && b.businessReferralProgram) {
+    html += `<p class="small muted">Your referral program rides on this visit: creators see your ${b.businessReferralProgram.url ? "referral link" : "referral code"}${b.businessReferralProgram.note ? " and your note" : ""} on their visit card, so the bookings their posts send you land in your own program.</p>`;
   }
   if (b.creatorCode) {
     // The discount is the business's opt-in, stamped on the
@@ -4839,6 +4860,7 @@ function offerCardHtml(o) {
     </div>
     <p class="small muted">${terms} &middot; ${when}${o.kind === "paid" ? "" : ` &middot; ${coversLine(o)}`}</p>
     ${o.kind === "paid" && o.paidBrief ? `<p class="small"><strong>Key points for the creator:</strong> ${esc(o.paidBrief)}</p>` : ""}
+    ${o.businessReferralProgram ? `<p class="small"><strong>Referral program active:</strong> creators will see your ${o.businessReferralProgram.url ? "referral link" : "referral code"}${o.businessReferralProgram.note ? " and your note" : ""} on this offer.</p>` : ""}
     ${o.strength ? `<p class="small muted">Offer checklist ${o.strength.score} of ${o.strength.total}: ${firstMissing ? esc(firstMissing.label) : "complete"}</p>` : ""}
     <div class="cta-row" style="justify-content:flex-start">
       ${o.lane === "open" && (o.status === "open" || o.status === "filled") ? `<button class="btn small-btn" onclick="viewApplicants('${o.id}')">View applicants (${o.applicationCount || 0})</button>` : ""}
@@ -5361,6 +5383,17 @@ function renderPlanTab() {
     <button class="btn" onclick="saveTalentBudget()">Save budget</button> <span id="tb-ok" class="saved"></span>` : ""}
   </div>
   <div class="panel mt">
+    <h3>Your referral program</h3>
+    <p class="small muted">Already run a referral program in your booking or register system? Keep it, and let SIGNL feed it. Save your tracked referral link once and it rides on every opportunity and booked visit: creators see it on their cards and carry it in their posts, so the bookings land in the dashboard you already use. SIGNL never touches referral money, and any rewards stay yours to run, under your program's terms.</p>
+    <div class="field"><label>Your tracked referral link</label><input id="rp-url" type="url" value="${esc(u.business.referralUrl || "")}" placeholder="https://your-booking-or-register-link"></div>
+    <div class="form-2col">
+      <div class="field"><label>Referral code (optional)</label><input id="rp-code" value="${esc(u.business.referralCode || "")}" placeholder="Your program's code, if it uses one"></div>
+      <div class="field"><label>What it earns, in one line (optional)</label><input id="rp-note" maxlength="200" value="${esc(u.business.referralNote || "")}" placeholder="For example: Followers get 15% off a first visit; you earn $10 per booking"></div>
+    </div>
+    ${(u.business.referralUrl || u.business.referralCode) ? `<p class="small"><strong>Active:</strong> creators will see this on your opportunities and on their booked visits.</p>` : ""}
+    <button class="btn" onclick="saveMyReferralProgram()">Save referral program</button> <span id="rp-ok" class="saved"></span>
+  </div>
+  <div class="panel mt">
     <h3>Audience code discount</h3>
     <p class="small muted">Every creator who visits you gets a personal audience code, and the code counts the customers their post sends you whether or not it carries a discount. A discount is entirely your choice: it is off unless you turn it on, and the percentage is yours to pick (5 to 50). Nothing is ever applied by default. New bookings carry the setting you save here; bookings already made keep the setting they were created with.</p>
     <label style="font-weight:500"><input type="checkbox" id="me-discount-enabled" style="width:auto" ${u.business.discountEnabled ? "checked" : ""}> Offer a discount when customers use a creator's code</label>
@@ -5508,6 +5541,18 @@ async function saveMyReviewLinks() {
     });
     state.user = data.user;
     document.getElementById("rl-ok").textContent = "Saved.";
+  } catch (err) { alert(err.message); }
+}
+
+async function saveMyReferralProgram() {
+  try {
+    const data = await api("PATCH", "/me/profile", {
+      referralUrl: document.getElementById("rp-url").value,
+      referralCode: document.getElementById("rp-code").value,
+      referralNote: document.getElementById("rp-note").value,
+    });
+    state.user = data.user;
+    document.getElementById("rp-ok").textContent = "Saved.";
   } catch (err) { alert(err.message); }
 }
 

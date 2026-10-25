@@ -2062,6 +2062,77 @@ function reviewLinksView(business) {
   }
   return out.length ? out : null;
 }
+// Business referral-program tie-in (Jeff, 2026-10-25): a
+// business that already runs a referral program in its own
+// POS/booking stack keeps it; SIGNL feeds it instead of
+// competing with it. The business saves its tracked referral
+// link, an optional short code, and a one-line note on what it
+// earns; creators see all three on the business's opportunities
+// and on their booked visits, and carry the link/code in their
+// post so the bookings land in the business's own dashboard.
+// SIGNL never touches referral money and never guarantees the
+// business's rewards: they are the business's program, under
+// the business's terms, on top of the SIGNL comp or pay.
+// Stored FLAT on the business record (referralUrl,
+// referralCode, referralNote); all optional, all empty = off.
+// The link points at the business's own stack, so there is NO
+// host allowlist here (unlike review links): any valid
+// http/https URL, length-capped, is accepted.
+const REFERRAL_URL_MAX = 1000;
+const REFERRAL_CODE_MAX = 60;
+const REFERRAL_NOTE_MAX = 200;
+// The stored setting, coerced defensively: records that
+// predate the fields, or hold anything unexpected, read as
+// empty strings. This runs on creator-facing read paths, so
+// it must NEVER throw (INCIDENT-2026-10-25: a read path that
+// throws can take the whole API down).
+function referralProgramOf(business) {
+  const out = { url: "", code: "", note: "" };
+  try {
+    if (!business) return out;
+    if (typeof business.referralUrl === "string") out.url = business.referralUrl;
+    if (typeof business.referralCode === "string") out.code = business.referralCode;
+    if (typeof business.referralNote === "string") out.note = business.referralNote;
+  } catch (e) { /* defensive: a bad record reads as no program */ }
+  return out;
+}
+// The creator-facing view: the program only when a link or a
+// code exists (a note alone is not a program). Null when the
+// business has not set one, so nothing renders.
+function referralProgramView(business) {
+  const p = referralProgramOf(business);
+  if (!p.url && !p.code) return null;
+  return { url: p.url || null, code: p.code || null, note: p.note || null };
+}
+// Validate a referral-program write against the record's
+// current state. Input fields are optional (an omitted field
+// keeps its current value); an explicit empty string clears
+// that field. A given link must be a valid http/https URL
+// (this refuses javascript: and other non-web links).
+function validateReferralProgram(input, business) {
+  const cur = referralProgramOf(business);
+  let url = cur.url;
+  let code = cur.code;
+  let note = cur.note;
+  if (input.url !== undefined) {
+    const value = String(input.url == null ? "" : input.url).trim();
+    if (value) {
+      let u;
+      try {
+        u = new URL(value);
+      } catch (e) {
+        return { ok: false, error: "Your referral link is not a valid URL" };
+      }
+      if (u.protocol !== "http:" && u.protocol !== "https:") return { ok: false, error: "Your referral link must start with http:// or https://" };
+      url = value.slice(0, REFERRAL_URL_MAX);
+    } else {
+      url = "";
+    }
+  }
+  if (input.code !== undefined) code = String(input.code == null ? "" : input.code).trim().slice(0, REFERRAL_CODE_MAX);
+  if (input.note !== undefined) note = String(input.note == null ? "" : input.note).trim().slice(0, REFERRAL_NOTE_MAX);
+  return { ok: true, url, code, note };
+}
 // Audience-code discounts (Jeff, 2026-10-19): OPT-IN, always.
 // A business may offer its creators' audiences a discount for
 // using the creator's code; SIGNL never forces one and never
@@ -2930,9 +3001,13 @@ async function withPostState(booking) {
   // of this business when one exists (so the visit card can show
   // it instead of the review form).
   let businessReviewLinks = null;
+  let businessReferralProgram = null;
   if (booking.businessId) {
     const bizUser = await store.get(`user:${booking.businessId}`);
-    if (bizUser && bizUser.business) businessReviewLinks = reviewLinksView(bizUser.business);
+    if (bizUser && bizUser.business) {
+      businessReviewLinks = reviewLinksView(bizUser.business);
+      businessReferralProgram = referralProgramView(bizUser.business);
+    }
   }
   let businessReview = null;
   const myBizReview = (await allBizReviews()).find((r) => r.bookingId === booking.id);
@@ -2959,7 +3034,7 @@ async function withPostState(booking) {
   const roasBooking = { ...booking, post, planAllocation };
   await enrichRoasEstimateInputs([roasBooking]);
   const roas = roasFor([roasBooking]);
-  return { ...booking, post: postWithPerformance(post), postState: postState(booking, post), compliance: complianceStatusFor(booking, post, creatorStanding), businessReviewLinks, businessReview, creatorReview, roas };
+  return { ...booking, post: postWithPerformance(post), postState: postState(booking, post), compliance: complianceStatusFor(booking, post, creatorStanding), businessReviewLinks, businessReferralProgram, businessReview, creatorReview, roas };
 }
 
 // ---------- Post compliance (Jeff, 2026-10-19; timeline final) ----------
@@ -5871,6 +5946,14 @@ async function handleRegister(event) {
       // they do. The creator code is still issued for counting.
       discountEnabled: false,
       discountPct: null,
+      // Referral-program tie-in (Jeff, 2026-10-25): empty at
+      // sign-up. The business may save its own tracked referral
+      // link/code/note from its POS or booking stack (Plan tab);
+      // creators then see it on the business's opportunities and
+      // booked visits. SIGNL never touches referral money.
+      referralUrl: "",
+      referralCode: "",
+      referralNote: "",
       // Managed talent budget: every business record carries the
       // field; it only spends on the Managed plan. Not a deposit.
       monthlyTalentBudget: MANAGED_TALENT_BUDGET_DEFAULT,
@@ -6994,6 +7077,19 @@ async function route(event) {
         if (!v.ok) return err(400, v.error);
         bz.discountEnabled = v.enabled;
         bz.discountPct = v.pct;
+      }
+      // Referral-program tie-in (Jeff, 2026-10-25): the
+      // business's own tracked link, code, and one-line note
+      // from its POS or booking stack, saved once here and
+      // shown to creators on every opportunity and booked
+      // visit (referralProgramView). Omitted fields keep their
+      // current values; an explicit empty string clears one.
+      if (b.referralUrl !== undefined || b.referralCode !== undefined || b.referralNote !== undefined) {
+        const v = validateReferralProgram({ url: b.referralUrl, code: b.referralCode, note: b.referralNote }, bz);
+        if (!v.ok) return err(400, v.error);
+        bz.referralUrl = v.url;
+        bz.referralCode = v.code;
+        bz.referralNote = v.note;
       }
       // Average ticket (UX redesign section 4, 2026-10-24): the
       // business's typical register spend per customer, set once
@@ -8327,7 +8423,15 @@ async function route(event) {
         applicationCount: apps.filter((a) => a.offerId === o.id && a.status !== "withdrawn").length,
         strength: offerStrength(o),
       }));
-      if (user.role === "business") out = out.filter((o) => o.businessId === user.id);
+      if (user.role === "business") {
+        out = out.filter((o) => o.businessId === user.id);
+        // The business's own view of its offers carries its
+        // referral program as active (it rides on every offer;
+        // see referralProgramView). Their own record is in
+        // hand, so no extra read is needed.
+        const ownReferral = referralProgramView(user.business);
+        if (ownReferral) out = out.map((o) => ({ ...o, businessReferralProgram: ownReferral }));
+      }
       else if (user.role === "creator") {
         out = out.filter((o) => o.market === user.market && o.status === "open" && (!o.creatorId || o.creatorId === user.id));
         // The creator's checklist ("They can / They can't") depends on
@@ -8338,12 +8442,14 @@ async function route(event) {
         const bizIds = [...new Set(out.map((o) => o.businessId))];
         const plans = {};
         const reviewLinks = {};
+        const referralPrograms = {};
         for (const id of bizIds) {
           const biz = await store.get(`user:${id}`);
           plans[id] = biz && biz.business ? biz.business.plan : null;
           reviewLinks[id] = biz && biz.business ? reviewLinksView(biz.business) : null;
+          referralPrograms[id] = biz && biz.business ? referralProgramView(biz.business) : null;
         }
-        out = out.map((o) => ({ ...o, businessPlan: plans[o.businessId] || null, visitRights: visitRightsForVisit(kindOf(o)), businessReviewLinks: reviewLinks[o.businessId] || null }));
+        out = out.map((o) => ({ ...o, businessPlan: plans[o.businessId] || null, visitRights: visitRightsForVisit(kindOf(o)), businessReviewLinks: reviewLinks[o.businessId] || null, businessReferralProgram: referralPrograms[o.businessId] || null }));
       }
       out.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
       return json(200, { offers: out });
@@ -8680,6 +8786,7 @@ async function route(event) {
         businessPlan: biz && biz.business ? biz.business.plan : null,
         visitRights: visitRightsForVisit(kindOf(o)),
         businessReviewLinks: biz && biz.business ? reviewLinksView(biz.business) : null,
+        businessReferralProgram: biz && biz.business ? referralProgramView(biz.business) : null,
         businessAbout: biz && biz.business ? (biz.business.about || "") : "",
         businessNeighborhood: biz && biz.business ? (biz.business.neighborhood || "") : "",
         paidMath: kindOf(o) === "paid" ? paidMath(Number(o.cashRate)) : null,
@@ -9536,4 +9643,4 @@ async function route(event) {
 
 // The email builders are exported alongside the router so the verify
 // suites can assert on the exact copy a creator receives.
-module.exports = { route, passwordResetEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, AD_USE_WINDOW_MONTHS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor };
+module.exports = { route, passwordResetEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, AD_USE_WINDOW_MONTHS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView };
