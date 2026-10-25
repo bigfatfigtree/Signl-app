@@ -48,9 +48,13 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const CODE_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 
 // ---------- The Standard Visit (Jeff, 2026-10-19) ----------
-// One package, identical for every creator and every business, so a
-// selection is never a negotiation: the creator posts within 48 hours
-// of the visit and the post stays live at least 30 days. What the
+// The comped package, identical for every creator and every business,
+// so a comped selection is never a negotiation: the creator posts
+// within 48 hours of the visit and the post stays live at least 30
+// days. Deliverables (Jeff, 2026-10-25): a comped visit is 1 post or
+// reel + 1 story that shares the post. PAID bookings are negotiated,
+// so their deliverables are set in the booking's own terms, never by
+// this package. What the
 // business may DO with the post follows the VISIT, never the plan
 // (rights model adopted by Jeff, 2026-10-21; see
 // visitRightsForVisit): a comp visit is native sharing only, with no
@@ -65,21 +69,22 @@ const CODE_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 const STANDARD_VISIT = {
   name: "The Standard Visit",
   postWithinHours: 48,
-  deliverables: ["1 post or reel", "2 stories"],
+  deliverables: ["1 post or reel", "1 story that shares the post"],
   postStaysLiveDays: 30,
-  creatorDoes: "Show up, enjoy the comp, and post within 48 hours of the visit: 1 post or reel + 2 stories. Honest opinion, comp disclosed.",
+  creatorDoes: "Show up, enjoy the comp, and post within 48 hours of the visit: 1 post or reel + 1 story that shares the post. Honest opinion, comp disclosed.",
   businessGets: [
     "The post, tracked and proven in the dashboard",
     "The post stays live on the creator's profile for at least 30 days",
   ],
   summary:
-    "Every SIGNL visit includes: 1 post or reel + 2 stories within 48 hours of the visit, honest and disclosed, live at least 30 days, with tracked delivery proof. Content rights follow the visit, never the plan: on a comp visit the business may share the post natively only, with the creator tagged; no downloads, no reposting the file, no ad use. On a paid visit the business may also repost the post and run it as an ad for 6 months from the post date. The creator always owns their content, and nobody can edit it.",
+    "Every SIGNL comped visit includes: 1 post or reel + 1 story that shares the post, within 48 hours of the visit, honest and disclosed, live at least 30 days, with tracked delivery proof. Paid bookings carry the deliverables set in the booking's own terms. Content rights follow the visit, never the plan: on a comp visit the business may share the post natively only, with the creator tagged; no downloads, no reposting the file, no ad use. On a paid visit the business may also repost the post and run it as an ad for 6 months from the post date. The creator always owns their content, and nobody can edit it.",
 };
 
 // ---------- The paid lane (Jeff, 2026-10-19) ----------
 // Two lanes, one roster. The comp visit stays the default driver.
-// A Paid Visit books a specific creator at HER OWN listed rate for
-// the same Standard Visit package. The platform fee is 6% of the
+// A Paid Visit books a specific creator at their own listed rate;
+// its deliverables are negotiated and set in the booking's terms.
+// The platform fee is 6% of the
 // rate, split evenly: the business pays rate + 3%, the creator
 // keeps 97% of her rate, and SIGNL holds the payment in escrow
 // until the post is live. The subscription is the business; 6% is
@@ -4205,6 +4210,8 @@ function campaignEmail(recipient) {
     "",
     "Local businesses book creators two ways on SIGNL: they comp you a meal, service or experience for an honest post, or they pay your own listed rate (you keep 97%). Most founding creators do both. Either way, you post honestly about it within 48 hours. No script, no required praise, full disclosure. Businesses get real local posts, and your founding profile is live and shareable from day one.",
     "",
+    "We don't rank you by followers. We rank you by how much of your audience actually lives here. That share is your local reach, and it is the number businesses look at first. Every post you deliver on time earns Momentum points, and those points raise your visibility to businesses.",
+    "",
     marketParagraph,
     "",
     "Your spot is partly filled in already:",
@@ -4985,9 +4992,9 @@ function previewDashChecklist(b) {
     },
     {
       key: "stories",
-      label: "2 stories from the visit",
+      label: "1 story from the visit, sharing the post",
       state: b.post ? "done" : "pending",
-      detail: "Part of the Standard Visit, posted around the visit itself",
+      detail: "Part of a comped visit, sharing the post itself; paid bookings follow the deliverables in their booking terms",
     },
     {
       key: "disclosure",
@@ -8158,7 +8165,7 @@ async function route(event) {
       let dollarCap = parseInt(b.dollarCap, 10);
       if (kind === "paid") {
         cashRate = Math.round(Number(b.cashRate || b.dollarCap) * 100) / 100;
-        if (!Number.isFinite(cashRate) || cashRate < PAID_LANE.minRate) return err(400, `A cash offer for the Standard Visit package starts at $${PAID_LANE.minRate}. Below that, the payment processing and support cost more than the booking is worth. Comp offers have no minimum beyond the dignity floor for the tiers you target.`);
+        if (!Number.isFinite(cashRate) || cashRate < PAID_LANE.minRate) return err(400, `A cash offer starts at $${PAID_LANE.minRate}. Below that, the payment processing and support cost more than the booking is worth. Comp offers have no minimum beyond the dignity floor for the tiers you target.`);
         dollarCap = Math.round(cashRate);
       } else if (!dollarCap || dollarCap <= 0) {
         return err(400, "Dollar cap must be a positive number");

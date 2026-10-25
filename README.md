@@ -424,11 +424,12 @@ total plus the per-platform breakdown. Local audience % and the Local
 Impact Score are unchanged (the % stays Instagram-based).
 
 **The Standard Visit and the rights ladder.** One package for every
-visit, defined once server-side (`STANDARD_VISIT` in lib/router.js)
+comped visit, defined once server-side (`STANDARD_VISIT` in lib/router.js)
 and shipped in bootstrap, on public profiles, and on discovery cards
-as "Every SIGNL visit includes": 1 post or reel + 2 stories within
-48 hours of the visit, honest and disclosed, live at least 30 days,
-tracked delivery proof. What the business may do with the post
+as "Every SIGNL comped visit includes": 1 post or reel + 1 story that
+shares the post within 48 hours of the visit, honest and disclosed,
+live at least 30 days, tracked delivery proof. Paid bookings set
+their deliverables in the booking's own terms instead. What the business may do with the post
 follows the BUSINESS'S PLAN, and the creator's offer checklist states
 that plan's rights before they accept (`visitRightsForPlan`, attached
 to each offer as `visitRights`): Self-Service ($299/mo, up to 8
