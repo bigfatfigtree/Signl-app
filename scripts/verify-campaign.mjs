@@ -138,6 +138,8 @@ try {
   check("legacy Hampton Roads recipient gets the Hampton Roads paragraph carrying the Black Friday launch", hr.text.includes("Hampton Roads launches in November, and our opening push is Black Friday weekend."));
   check("claim link is prefilled with handle + market", hr.text.includes("app.joinsignl.com/?handle=maya757&market=Hampton%20Roads"));
   check("founding email carries the approval status sentence", hr.text.includes("If you apply, you will get a decision or a clear status within 2 business days."));
+  check("founding pitch leads with both lanes: comp or the creator's own paid rate at 97%", hr.text.includes("Local businesses book creators two ways on SIGNL: they comp you a meal, service or experience for an honest post, or they pay your own listed rate (you keep 97%). Most founding creators do both."));
+  check("founding pitch keeps the mechanics after the lanes: 48 hours, no script, full disclosure, live founding profile", hr.text.includes("you post honestly about it within 48 hours. No script, no required praise, full disclosure.") && hr.text.includes("your founding profile is live and shareable from day one."));
   check("sign-off is Jeff, Founder, SIGNL, with the tagline", hr.text.includes("\nJeff\nFounder, SIGNL\nhello@joinsignl.com | joinsignl.com\nNational platforms sell reach. We sell regulars."));
   check("no last name anywhere in the email", !hr.text.includes("Rimmer") && !hr.subject.includes("Rimmer"));
   check("no em dashes anywhere in the email", !hr.text.includes("—") && !hr.subject.includes("—"));

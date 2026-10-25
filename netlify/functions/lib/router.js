@@ -4203,7 +4203,7 @@ function campaignEmail(recipient) {
     "",
     `I'm Jeff, founder of SIGNL. I found you through ${String(recipient.opener || "").trim()}. You're exactly the kind of local voice we're building around.`,
     "",
-    "SIGNL connects local creators with local businesses: they comp you a meal, a service, or an experience, and you post honestly about it within 48 hours. No script, no required praise, full disclosure. Businesses get real local posts. You get comped experiences and a founding profile that's live and shareable from day one.",
+    "Local businesses book creators two ways on SIGNL: they comp you a meal, service or experience for an honest post, or they pay your own listed rate (you keep 97%). Most founding creators do both. Either way, you post honestly about it within 48 hours. No script, no required praise, full disclosure. Businesses get real local posts, and your founding profile is live and shareable from day one.",
     "",
     marketParagraph,
     "",
