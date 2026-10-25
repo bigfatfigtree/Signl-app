@@ -336,11 +336,13 @@ async function renderPublicProfile() {
       </div>
     </div>
     <section class="panel" style="margin-top:20px">
+    <div class="tint-block" style="margin-top:0">
     ${p.categories && p.categories.length ? `<p class="small">${p.categories.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
     ${p.isRealtor && p.farmAreas && p.farmAreas.length ? `<p class="small">Neighborhoods: ${p.farmAreas.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
     ${p.compCategories && p.compCategories.length ? `<p class="small muted">Open to comps: ${p.compCategories.map(esc).join(", ")}</p>` : ""}
     <p class="small">${p.paidRate ? `<span class="badge tier">Paid bookings: $${esc(String(p.paidRate))}</span> ` : ""}${p.compOpen === false ? `<span class="badge warn">Paid visits only</span>` : `<span class="badge info">Open to comp visits</span>`}</p>
     ${p.paidRate ? `<p class="small muted">Books at $${esc(String(p.paidRate))} &middot; creator keeps 97% &middot; held until the post is live.</p>` : ""}
+    </div>
     ${bestWorkHtml(p.bestWork)}
     ${trackRecordHtml(p)}
     ${reviewsHtml(p)}
@@ -610,7 +612,7 @@ function profileCompletionHtml(u) {
       <span class="earn-points">${item.points ? "+" + item.points + " pts" : ""}</span>
     </div>`).join("");
   return `
-  <div class="panel mt" style="text-align:left">
+  <div class="panel mt tint" style="text-align:left">
     <div class="flex-between"><h3 style="margin:0">Finish your profile to be launch-ready</h3><span class="badge info">${pc.requiredDone} of ${pc.requiredTotal} essentials done</span></div>
     <p class="small">Businesses can't see you until the essentials are done.</p>
     ${rows}
@@ -701,6 +703,60 @@ function primaryMetaClient(id) {
 function primaryLabelClient(id) { return primaryMetaClient(id).label; }
 function primaryOptionsHtml(selected) {
   return PRIMARY_PLATFORMS_CLIENT.map((p) => `<option value="${p.id}"${p.id === selected ? " selected" : ""}>${p.label}</option>`).join("");
+}
+
+// ---------- V4 form controls: chips / toggles / steppers ----------
+// Presentation swaps bound to the SAME underlying field: a chip
+// group renders a hidden input carrying the form field's original
+// id, and pickChip writes the value into it, then runs the exact
+// sync handler the old <select> onchange ran. Field names,
+// defaults, validation, submit handlers and payloads are
+// unchanged; only the control's face changed.
+function chipSelectHtml(id, options, selected, syncName, optional) {
+  const sel = selected === undefined || selected === null ? "" : String(selected);
+  return `<div class="chiprow" data-chipfor="${esc(id)}"${optional ? ` data-optional="1"` : ""}>${options.map((o) => `<button type="button" class="rchip${String(o.value) === sel ? " on" : ""}" data-val="${esc(String(o.value))}" onclick="pickChip(this,'${esc(id)}'${syncName ? `,'${esc(syncName)}'` : ""})">${esc(o.label)}</button>`).join("")}</div><input type="hidden" id="${esc(id)}" value="${esc(sel)}">`;
+}
+function platformChipsHtml(id, selected, syncName) {
+  return chipSelectHtml(id, PRIMARY_PLATFORMS_CLIENT.map((p) => ({ value: p.id, label: p.label })), selected || "instagram", syncName, false);
+}
+function professionChipsHtml(id, selected, syncName) {
+  const list = (state.boot && state.boot.professions) || [];
+  return chipSelectHtml(id, list.map((x) => ({ value: x, label: x })), selected || "", syncName, true);
+}
+function universityStatusChipsHtml(id, selected) {
+  return chipSelectHtml(id, [
+    { value: "current_student", label: "Current student" },
+    { value: "alumni", label: "Alumni" },
+    { value: "not_student", label: "Not a student" },
+  ], selected || "", null, true);
+}
+function pickChip(btn, id, syncName) {
+  const input = document.getElementById(id);
+  if (!input || !btn) return false;
+  const row = btn.closest(".chiprow");
+  const val = btn.getAttribute("data-val") || "";
+  const optional = row && row.getAttribute("data-optional") === "1";
+  const next = optional && input.value === val ? "" : val;
+  input.value = next;
+  if (row) row.querySelectorAll(".rchip").forEach((b) => b.classList.toggle("on", (b.getAttribute("data-val") || "") === next));
+  if (syncName && typeof window[syncName] === "function") window[syncName]();
+  return false;
+}
+// Stepper for small-range numeric inputs: buttons adjust the SAME
+// input element and fire its real input/change events, so every
+// existing oninput/onchange handler and validation runs as before.
+function stepField(id, delta, min, max) {
+  const el = document.getElementById(id);
+  if (!el) return false;
+  let v = parseInt(el.value, 10);
+  if (!Number.isFinite(v)) v = (min !== null && min !== undefined ? min : 0) - delta; // empty field: first tap lands on the minimum
+  v += delta;
+  if (min !== null && min !== undefined) v = Math.max(min, v);
+  if (max !== null && max !== undefined) v = Math.min(max, v);
+  el.value = String(v);
+  el.dispatchEvent(new Event("input", { bubbles: true }));
+  el.dispatchEvent(new Event("change", { bubbles: true }));
+  return false;
 }
 // Local audience % estimator help (audit F1 mitigation, 2026-10-22):
 // the one canonical helper text under every local % field (full
@@ -793,18 +849,24 @@ function visitIncludesHtml(summary) {
 // Rights and deadlines stay visible in compressed form; nothing
 // about the deal is deleted, it is demoted, never dropped.
 function dealRowsHtml(o) {
-  const rows = [];
+  // V4 color-block split: the deal itself (You get / Included /
+  // Experience) renders on the pale mint tint field; the terms
+  // (Post / Rights) render as their own hairline-boxed block.
+  // Same rows, same words — only the grouping changed.
+  const main = [];
+  const terms = [];
   if (o.kind === "paid") {
     const net = o.paidMath && o.paidMath.creatorNet !== undefined && o.paidMath.creatorNet !== null && o.paidMath.creatorNet !== "" ? `$${o.paidMath.creatorNet} (97%)` : "97%";
-    rows.push(["You get paid", `$${o.cashRate} &middot; you keep ${net}`]);
+    main.push(["You get paid", `$${o.cashRate} &middot; you keep ${net}`]);
   } else {
-    rows.push(["You get", `${esc(o.whatComped)} &middot; $${o.dollarCap} cap &middot; ${Number(o.covers) === 2 ? "covers 2" : "covers you"}`]);
+    main.push(["You get", `${esc(o.whatComped)} &middot; $${o.dollarCap} cap &middot; ${Number(o.covers) === 2 ? "covers 2" : "covers you"}`]);
   }
-  if (o.includes) rows.push(["Included", esc(o.includes)]);
-  if (o.experience) rows.push(["Experience", esc(o.experience)]);
-  rows.push(["Post", o.kind === "paid" ? "Per booking terms &middot; 48h &middot; live 30 days" : "1 post/reel + 1 story &middot; 48h &middot; honest, disclosed &middot; live 30 days"]);
-  rows.push(["Rights", o.kind === "paid" ? "Share + repost + ads 6 months &middot; no edits" : "Native share only &middot; no edits, downloads or ads"]);
-  return `<div class="deal-rows">${rows.map(([k, v]) => `<div class="drow"><span class="dk">${k}</span><span class="dv">${v}</span></div>`).join("")}</div>`;
+  if (o.includes) main.push(["Included", esc(o.includes)]);
+  if (o.experience) main.push(["Experience", esc(o.experience)]);
+  terms.push(["Post", o.kind === "paid" ? "Per booking terms &middot; 48h &middot; live 30 days" : "1 post/reel + 1 story &middot; 48h &middot; honest, disclosed &middot; live 30 days"]);
+  terms.push(["Rights", o.kind === "paid" ? "Share + repost + ads 6 months &middot; no edits" : "Native share only &middot; no edits, downloads or ads"]);
+  const render = (rows) => rows.map(([k, v]) => `<div class="drow"><span class="dk">${k}</span><span class="dv">${v}</span></div>`).join("");
+  return `<div class="deal-rows deal-main">${render(main)}</div><div class="deal-rows deal-terms">${render(terms)}</div>`;
 }
 
 function dealPlainWordsHtml(o) {
@@ -1331,8 +1393,11 @@ async function doSignin(e) {
 // that an account exists.
 function renderForgot() {
   app.innerHTML = `
-  <section class="panel" style="max-width:460px;margin:30px auto">
+  <section class="panel form-panel" style="max-width:460px;margin:30px auto">
+    <div class="form-head">
     <h2>Forgot password</h2>
+    </div>
+    <div class="form-body">
     <p class="muted">Enter the email on your SIGNL account and we will email you a link to set a new password. The link works once and expires in one hour.</p>
     <div id="form-error"></div>
     <form onsubmit="return doForgot(event)">
@@ -1340,6 +1405,7 @@ function renderForgot() {
       <button class="btn" type="submit" style="width:100%">Email me a reset link</button>
     </form>
     <p class="small muted mt">Remembered it after all? <a href="#" onclick="return go('signin')">Back to sign in</a>.</p>
+    </div>
   </section>`;
 }
 
@@ -1369,8 +1435,11 @@ async function doForgot(e) {
 // The reset screen the email link lands on (/?reset=<token>).
 function renderReset() {
   app.innerHTML = `
-  <section class="panel" style="max-width:460px;margin:30px auto">
+  <section class="panel form-panel" style="max-width:460px;margin:30px auto">
+    <div class="form-head">
     <h2>Set a new password</h2>
+    </div>
+    <div class="form-body">
     <p class="muted">Pick a new password for your SIGNL account. Setting it signs out every other device on the account.</p>
     <div id="form-error"></div>
     <form onsubmit="return doReset(event)">
@@ -1379,6 +1448,7 @@ function renderReset() {
       <button class="btn" type="submit" style="width:100%">Set my new password</button>
     </form>
     <p class="small muted mt">Link expired or already used? <a href="#" onclick="return go('forgot')">Request a new one</a>.</p>
+    </div>
   </section>`;
 }
 
@@ -1598,18 +1668,27 @@ function renderQuickClaim() {
     ${hasPrefill ? `<div class="notice blue">Pre-filled from your invite link — check it and claim.</div>` : ""}
     <div id="form-error"></div>
     <form onsubmit="return doQuickClaim(event)">
-      <div class="field"><label>Where is your main audience?</label><select id="qc-platform" onchange="syncQcPlatform()">${primaryOptionsHtml(pfPlatform)}</select><p class="small muted">Your main platform. Add the rest later.</p><p class="small muted" id="qc-proof-note" style="display:${pfPlatform !== "instagram" ? "" : "none"}">${PROOF_DISCLOSURE}</p></div>
-      <div class="field"><label id="qc-handle-label">Your ${esc(primaryLabelClient(pfPlatform))} handle (required)</label><input id="qc-handle" placeholder="yourhandle" required value="${esc(pf.handle || "")}" oninput="syncQcPlatform()"><p class="small muted" id="qc-ig-link">${pf.handle ? esc(primaryMetaClient(pfPlatform).host + pf.handle) : ""}</p></div>
-      <div class="field"><label>Your market</label><input id="qc-market-search" placeholder="Search markets, for example: Dubai" oninput="filterQuickMarketOptions()" style="margin-bottom:6px"><select id="qc-market" onchange="syncQuickMarketChoice()">${marketOptions(pfMarket, true)}</select><p class="small muted">Grouped by country. City missing? Pick "My city is not listed yet".</p></div>
-      <div id="qc-custom-wrap" style="display:none">
-        <div class="field"><label>Your city</label><input id="qc-city-text" placeholder="For example: Tulsa"></div>
-        <div class="field"><label>Your country</label><input id="qc-country-text" placeholder="For example: United States"></div>
-        <div class="field"><label>Your state or province (optional)</label><input id="qc-state-text" placeholder="Optional, for example: OK"></div>
-        <p class="small muted">Not open there yet — your sign-up counts toward opening it. Founding sign-ups go first.</p>
+      <div class="fgroup tint">
+        <p class="fg-kicker">Your platform</p>
+        <div class="field"><label>Where is your main audience?</label>${platformChipsHtml("qc-platform", pfPlatform, "syncQcPlatform")}<p class="small muted">Your main platform. Add the rest later.</p><p class="small muted" id="qc-proof-note" style="display:${pfPlatform !== "instagram" ? "" : "none"}">${PROOF_DISCLOSURE}</p></div>
+        <div class="field"><label id="qc-handle-label">Your ${esc(primaryLabelClient(pfPlatform))} handle (required)</label><input id="qc-handle" placeholder="yourhandle" required value="${esc(pf.handle || "")}" oninput="syncQcPlatform()"><p class="small muted" id="qc-ig-link">${pf.handle ? esc(primaryMetaClient(pfPlatform).host + pf.handle) : ""}</p></div>
       </div>
-      <div class="form-2col">
-        <div class="field"><label>Email (how we reach you at launch)</label><input type="email" id="qc-email" required autocomplete="email"></div>
-        <div class="field"><label>Password (10+ characters)</label><input type="password" id="qc-password" required minlength="10" autocomplete="new-password"></div>
+      <div class="fgroup">
+        <p class="fg-kicker">Your market</p>
+        <div class="field"><label>Your market</label><input id="qc-market-search" placeholder="Search markets, for example: Dubai" oninput="filterQuickMarketOptions()" style="margin-bottom:6px"><select id="qc-market" onchange="syncQuickMarketChoice()">${marketOptions(pfMarket, true)}</select><p class="small muted">Grouped by country. City missing? Pick "My city is not listed yet".</p></div>
+        <div id="qc-custom-wrap" style="display:none">
+          <div class="field"><label>Your city</label><input id="qc-city-text" placeholder="For example: Tulsa"></div>
+          <div class="field"><label>Your country</label><input id="qc-country-text" placeholder="For example: United States"></div>
+          <div class="field"><label>Your state or province (optional)</label><input id="qc-state-text" placeholder="Optional, for example: OK"></div>
+          <p class="small muted">Not open there yet — your sign-up counts toward opening it. Founding sign-ups go first.</p>
+        </div>
+      </div>
+      <div class="fgroup tint">
+        <p class="fg-kicker">Your account</p>
+        <div class="form-2col">
+          <div class="field"><label>Email (how we reach you at launch)</label><input type="email" id="qc-email" required autocomplete="email"></div>
+          <div class="field"><label>Password (10+ characters)</label><input type="password" id="qc-password" required minlength="10" autocomplete="new-password"></div>
+        </div>
       </div>
       <details class="deal-details"><summary>The deal, in plain words</summary>
         <div class="dd-body"><ul style="margin:8px 0 0;padding-left:18px">
@@ -1619,10 +1698,10 @@ function renderQuickClaim() {
           <li>No post, no credit. Repeated misses can pause your account.</li>
         </ul></div>
       </details>
-      <div class="field"><label style="font-weight:500"><input type="checkbox" id="qc-agree-honest" style="width:auto" required> No business can require me to post positively. My posts stay my honest opinion.</label></div>
-      <div class="field"><label style="font-weight:500"><input type="checkbox" id="qc-agree-ftc" style="width:auto" required> I disclose every comp, as the FTC requires.</label></div>
-      <div class="field"><label style="font-weight:500"><input type="checkbox" id="qc-agree-compliance" style="width:auto" required> I post within 48 hours of each comped visit and paste the link in the app. A post that never lands doesn't count; repeated misses can pause my account.</label></div>
-      <div class="field"><label style="font-weight:500"><input type="checkbox" id="qc-agree-terms" style="width:auto" required> I agree to the <a href="https://joinsignl.com/terms.html" target="_blank" rel="noopener">Terms of Service</a> and <a href="https://joinsignl.com/privacy.html" target="_blank" rel="noopener">Privacy Policy</a>, and to account and launch emails. I can unsubscribe from marketing anytime.</label></div>
+      <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="qc-agree-honest" required><span>No business can require me to post positively. My posts stay my honest opinion.</span></label></div>
+      <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="qc-agree-ftc" required><span>I disclose every comp, as the FTC requires.</span></label></div>
+      <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="qc-agree-compliance" required><span>I post within 48 hours of each comped visit and paste the link in the app. A post that never lands doesn't count; repeated misses can pause my account.</span></label></div>
+      <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="qc-agree-terms" required><span>I agree to the <a href="https://joinsignl.com/terms.html" target="_blank" rel="noopener">Terms of Service</a> and <a href="https://joinsignl.com/privacy.html" target="_blank" rel="noopener">Privacy Policy</a>, and to account and launch emails. I can unsubscribe from marketing anytime.</span></label></div>
       <button class="btn" type="submit" style="width:100%">Claim my founding spot</button>
       <p class="small muted mt">Reviewed by a person — decision or clear status within 2 business days.</p>
       <p class="small">Prefer to complete everything now? <a href="#" onclick="return showFullJoin()">Build your full profile instead</a>.</p>
@@ -1710,26 +1789,34 @@ function renderJoinCreator() {
     <p class="small">In a hurry? <a href="#" onclick="return showQuickJoin()">Claim your spot with just your handle</a> and finish your profile after approval instead.</p>
     <div id="form-error"></div>
     <form onsubmit="return doRegisterCreator(event)">
-      <div class="form-2col">
-        <div class="field"><label>Full name</label><input id="jc-name" required autocomplete="name"></div>
-        <div class="field"><label>Email (how we reach you at launch)</label><input type="email" id="jc-email" required autocomplete="email"></div>
-      </div>
-      <div class="field"><label>Password (10+ characters)</label><input type="password" id="jc-password" required minlength="10" autocomplete="new-password"></div>
-      <div class="form-2col">
-        <div class="field"><label>Your market</label><input id="jc-market-search" placeholder="Search markets, for example: Dubai" oninput="filterMarketOptions()" style="margin-bottom:6px"><select id="jc-market" onchange="syncMarketChoice()">${marketOptions(pfMarket, true)}</select><p class="small muted">Grouped by country. City missing? Pick "My city is not listed yet".</p></div>
-        <div class="field" id="jc-city-wrap"><label>Your home city</label><select id="jc-city">${cityOptions(pfMarket)}</select></div>
-        <div id="jc-custom-wrap" style="display:none">
-          <div class="field"><label>Your city</label><input id="jc-city-text" placeholder="For example: Tulsa"></div>
-          <div class="field"><label>Your country</label><input id="jc-country-text" placeholder="For example: United States"></div>
-          <div class="field"><label>Your state or province (optional)</label><input id="jc-state-text" placeholder="Optional, for example: OK"></div>
-          <p class="small muted">Not open there yet — your sign-up counts toward opening it. Founding sign-ups go first.</p>
+      <div class="fgroup tint">
+        <p class="fg-kicker">About you</p>
+        <div class="form-2col">
+          <div class="field"><label>Full name</label><input id="jc-name" required autocomplete="name"></div>
+          <div class="field"><label>Email (how we reach you at launch)</label><input type="email" id="jc-email" required autocomplete="email"></div>
         </div>
+        <div class="field"><label>Password (10+ characters)</label><input type="password" id="jc-password" required minlength="10" autocomplete="new-password"></div>
       </div>
-      <div class="field"><label>Your neighborhood or area (optional)</label><input id="jc-neighborhood" placeholder="For example: Oceanfront, Ghent, Town Center" maxlength="80"><p class="small muted">Businesses search by neighborhood.</p></div>
-      <div class="field"><label>What do you do? (optional)</label><select id="jc-profession">${professionOptionsHtml("")}</select><p class="small muted">Realtors: pick Real estate agent for neighborhood tags + a listing proof sheet.</p></div>
-      <div class="field"><label>Your university (if you are a student now)</label><input id="jc-university" placeholder="Start typing your school" maxlength="120"><div class="uni-results" id="jc-university-results"></div><p class="small muted">Current students get a campus badge. Pick from the list, or type it in full.</p></div>
-      <div class="field"><label>Student status (optional)</label><select id="jc-university-status"><option value="">Select one</option><option value="current_student">Current student</option><option value="alumni">Alumni</option><option value="not_student">Not a student</option></select><p class="small muted">Badge is current students only.</p></div>
-      <div class="field"><label>Where is your main audience?</label><select id="jc-platform" onchange="syncJcPlatform()">${primaryOptionsHtml(pf.platform || "instagram")}</select><p class="small muted">Your main platform. The rest stack on top.</p><p class="small muted" id="jc-proof-note" style="display:${(pf.platform || "instagram") !== "instagram" ? "" : "none"}">${PROOF_DISCLOSURE}</p></div>
+      <div class="fgroup">
+        <p class="fg-kicker">Where you are</p>
+        <div class="form-2col">
+          <div class="field"><label>Your market</label><input id="jc-market-search" placeholder="Search markets, for example: Dubai" oninput="filterMarketOptions()" style="margin-bottom:6px"><select id="jc-market" onchange="syncMarketChoice()">${marketOptions(pfMarket, true)}</select><p class="small muted">Grouped by country. City missing? Pick "My city is not listed yet".</p></div>
+          <div class="field" id="jc-city-wrap"><label>Your home city</label><select id="jc-city">${cityOptions(pfMarket)}</select></div>
+          <div id="jc-custom-wrap" style="display:none">
+            <div class="field"><label>Your city</label><input id="jc-city-text" placeholder="For example: Tulsa"></div>
+            <div class="field"><label>Your country</label><input id="jc-country-text" placeholder="For example: United States"></div>
+            <div class="field"><label>Your state or province (optional)</label><input id="jc-state-text" placeholder="Optional, for example: OK"></div>
+            <p class="small muted">Not open there yet — your sign-up counts toward opening it. Founding sign-ups go first.</p>
+          </div>
+        </div>
+        <div class="field"><label>Your neighborhood or area (optional)</label><input id="jc-neighborhood" placeholder="For example: Oceanfront, Ghent, Town Center" maxlength="80"><p class="small muted">Businesses search by neighborhood.</p></div>
+        <div class="field"><label>What do you do? (optional)</label>${professionChipsHtml("jc-profession", "")}<p class="small muted">Realtors: pick Real estate agent for neighborhood tags + a listing proof sheet.</p></div>
+        <div class="field"><label>Your university (if you are a student now)</label><input id="jc-university" placeholder="Start typing your school" maxlength="120"><div class="uni-results" id="jc-university-results"></div><p class="small muted">Current students get a campus badge. Pick from the list, or type it in full.</p></div>
+        <div class="field"><label>Student status (optional)</label>${universityStatusChipsHtml("jc-university-status", "")}<p class="small muted">Badge is current students only.</p></div>
+      </div>
+      <div class="fgroup tint">
+        <p class="fg-kicker">Your audience</p>
+        <div class="field"><label>Where is your main audience?</label>${platformChipsHtml("jc-platform", pf.platform || "instagram", "syncJcPlatform")}<p class="small muted">Your main platform. The rest stack on top.</p><p class="small muted" id="jc-proof-note" style="display:${(pf.platform || "instagram") !== "instagram" ? "" : "none"}">${PROOF_DISCLOSURE}</p></div>
       <div class="form-2col">
         <div class="field"><label id="jc-handle-label">${esc(primaryLabelClient(pf.platform || "instagram"))} handle (required)</label><input id="jc-handle" placeholder="yourhandle" required value="${esc(pf.handle || "")}" oninput="syncJcPlatform()"><p class="small muted" id="jc-ig-link"></p></div>
         <div class="field"><label>TikTok handle (optional)</label><input id="jc-tiktok" placeholder="yourhandle"></div>
@@ -1762,15 +1849,19 @@ function renderJoinCreator() {
           <p class="small muted">${LOCAL_PCT_HELP}</p>
         </div>
       </div>
-      <div class="field"><label>Top audience cities (optional)</label><input id="jc-topcities" placeholder="For example: Virginia Beach, Norfolk, Chesapeake"><p class="small muted">Up to 5, comma separated.</p></div>
-      <div class="field"><label>What do you create in? (pick at least one)</label><div class="checkrow">${cats}</div></div>
-      <div class="field"><label>Comps you would accept (optional)</label><div class="checkrow">${comps}</div></div>
-      <div class="field" id="jc-paid-wrap" style="display:none">
-        <label style="font-weight:500"><input type="checkbox" id="jc-paid" style="width:auto"> <strong>Paid cash campaigns</strong> (Headliners tier): on top of comps, businesses can hire me for paid campaigns when a business runs one.</label>
-        <p class="small muted">Paid campaigns depend on the business and the campaign. Comps are always part of SIGNL; cash work is extra when it is offered.</p>
+        <div class="field"><label>Top audience cities (optional)</label><input id="jc-topcities" placeholder="For example: Virginia Beach, Norfolk, Chesapeake"><p class="small muted">Up to 5, comma separated.</p></div>
       </div>
-      <div class="field"><label>Short bio</label><textarea id="jc-bio" rows="2" placeholder="What do you post, where do you go, what do you love locally?"></textarea></div>
-      <div class="field"><label>Profile photo (optional, add now or later)</label><input type="file" id="jc-photo" accept="image/png,image/jpeg,image/webp"><p class="small muted">PNG, JPEG, or WebP, under 2.5 MB. Businesses see this on your profile when your market opens.</p></div>
+      <div class="fgroup">
+        <p class="fg-kicker">What you create</p>
+        <div class="field"><label>What do you create in? (pick at least one)</label><div class="checkrow">${cats}</div></div>
+        <div class="field"><label>Comps you would accept (optional)</label><div class="checkrow">${comps}</div></div>
+        <div class="field" id="jc-paid-wrap" style="display:none">
+          <label class="tgl-row"><input type="checkbox" class="sw" id="jc-paid"><span><strong>Paid cash campaigns</strong> (Headliners tier): on top of comps, businesses can hire me for paid campaigns when a business runs one.</span></label>
+          <p class="small muted">Paid campaigns depend on the business and the campaign. Comps are always part of SIGNL; cash work is extra when it is offered.</p>
+        </div>
+        <div class="field"><label>Short bio</label><textarea id="jc-bio" rows="2" placeholder="What do you post, where do you go, what do you love locally?"></textarea></div>
+        <div class="field"><label>Profile photo (optional, add now or later)</label><input type="file" id="jc-photo" accept="image/png,image/jpeg,image/webp"><p class="small muted">PNG, JPEG, or WebP, under 2.5 MB. Businesses see this on your profile when your market opens.</p></div>
+      </div>
       <div class="notice blue">The deal, in plain words:
         <ul style="margin:8px 0 0;padding-left:18px">
           <li>A business comps you a meal or service. You post your honest experience within 48 hours of the visit and disclose the comp. Nobody can ask you for a positive post. Ever.</li>
@@ -1779,10 +1870,10 @@ function renderJoinCreator() {
           <li>If a post never lands, the visit does not count, and repeated misses can pause your account. Showing up matters here.</li>
         </ul>
       </div>
-      <div class="field"><label style="font-weight:500"><input type="checkbox" id="jc-agree-honest" style="width:auto" required> I understand no business can require me to post positively. My posts stay my honest opinion.</label></div>
-      <div class="field"><label style="font-weight:500"><input type="checkbox" id="jc-agree-ftc" style="width:auto" required> I agree to clearly disclose every comp in my posts, as the FTC requires.</label></div>
-      <div class="field"><label style="font-weight:500"><input type="checkbox" id="jc-agree-compliance" style="width:auto" required> I agree to post within 48 hours of every comped visit for full credit and paste the post link in the app. I understand a post that never lands means the visit does not count, and repeated misses can pause my account.</label></div>
-      <div class="field"><label style="font-weight:500"><input type="checkbox" id="jc-agree-terms" style="width:auto" required> I agree to the <a href="https://joinsignl.com/terms.html" target="_blank" rel="noopener">Terms of Service</a> and <a href="https://joinsignl.com/privacy.html" target="_blank" rel="noopener">Privacy Policy</a>, and I agree SIGNL can email me about my account, launch updates and offers. I can unsubscribe from marketing emails at any time.</label></div>
+      <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="jc-agree-honest" required><span>I understand no business can require me to post positively. My posts stay my honest opinion.</span></label></div>
+      <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="jc-agree-ftc" required><span>I agree to clearly disclose every comp in my posts, as the FTC requires.</span></label></div>
+      <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="jc-agree-compliance" required><span>I agree to post within 48 hours of every comped visit for full credit and paste the post link in the app. I understand a post that never lands means the visit does not count, and repeated misses can pause my account.</span></label></div>
+      <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="jc-agree-terms" required><span>I agree to the <a href="https://joinsignl.com/terms.html" target="_blank" rel="noopener">Terms of Service</a> and <a href="https://joinsignl.com/privacy.html" target="_blank" rel="noopener">Privacy Policy</a>, and I agree SIGNL can email me about my account, launch updates and offers. I can unsubscribe from marketing emails at any time.</span></label></div>
       <div id="jc-save-warn"></div>
       <button class="btn" type="submit" style="width:100%">Create my founding profile</button>
       <p class="small muted mt">Every application is reviewed by a person, and every founding application gets a decision or a clear status within 2 business days. Founding spots are held in sign-up order.</p>
@@ -1937,18 +2028,21 @@ function renderForBusinesses() {
     <div id="jb-prefill"></div>
     <div id="jb-error"></div>
     <form onsubmit="return registerBusiness(event)">
-      <div class="form-2col">
-        <div class="field"><label>Your name</label><input id="jb-name" required placeholder="The person running this account"></div>
-        <div class="field"><label>Business name</label><input id="jb-business" required placeholder="Your business as customers know it"></div>
+      <div class="fgroup tint">
+        <p class="fg-kicker">Your business</p>
+        <div class="form-2col">
+          <div class="field"><label>Your name</label><input id="jb-name" required placeholder="The person running this account"></div>
+          <div class="field"><label>Business name</label><input id="jb-business" required placeholder="Your business as customers know it"></div>
+        </div>
+        <div class="form-2col">
+          <div class="field"><label>Email</label><input id="jb-email" type="email" required placeholder="you@yourbusiness.com"></div>
+          <div class="field"><label>Password (10+ characters)</label><input id="jb-password" type="password" required minlength="10"></div>
+        </div>
       </div>
-      <div class="form-2col">
-        <div class="field"><label>Email</label><input id="jb-email" type="email" required placeholder="you@yourbusiness.com"></div>
-        <div class="field"><label>Password (10+ characters)</label><input id="jb-password" type="password" required minlength="10"></div>
-      </div>
-      <div class="form-2col">
-        <div class="field"><label>Category</label><select id="jb-category">${state.boot.businessCategories.map((c) => `<option>${esc(c)}</option>`).join("")}</select></div>
+      <div class="fgroup">
+        <p class="fg-kicker">Where + what</p>
+        <div class="field"><label>Category</label>${chipSelectHtml("jb-category", state.boot.businessCategories.map((c) => ({ value: c, label: c })), state.boot.businessCategories[0], null, false)}</div>
         <div class="field"><label>Market</label><input id="jb-market-search" placeholder="Search markets" oninput="filterBizMarketOptions()" style="margin-bottom:6px"><select id="jb-market" onchange="syncBizMarketChoice()">${marketOptions("", true)}</select><p class="small muted">City missing? Pick "My city is not listed yet".</p></div>
-      </div>
       <div id="jb-custom-wrap" style="display:none">
         <div class="notice blue">Your sign-up counts toward opening SIGNL in your city. Founding pricing held — we email you at launch.</div>
         <div class="form-2col">
@@ -1961,9 +2055,10 @@ function renderForBusinesses() {
         <div class="field"><label>City</label><select id="jb-city"></select></div>
         <div class="field"><label>Neighborhood / area (optional)</label><input id="jb-neighborhood" placeholder="For example: Oceanfront, Ghent"></div>
       </div>
-      <div class="field"><label>About your business (optional)</label><textarea id="jb-about" rows="3" placeholder="What you serve, what the visit feels like, anything SIGNL should know when reviewing your application"></textarea></div>
+        <div class="field"><label>About your business (optional)</label><textarea id="jb-about" rows="3" placeholder="What you serve, what the visit feels like, anything SIGNL should know when reviewing your application"></textarea></div>
+      </div>
       <input type="hidden" id="jb-plan" value="${esc(state.boot.plans[0].id)}">
-      <label style="font-weight:500"><input type="checkbox" id="jb-terms" style="width:auto" required> I agree to the Terms of Service and Privacy Policy, and to account and marketing emails from SIGNL.</label>
+      <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="jb-terms" required><span>I agree to the Terms of Service and Privacy Policy, and to account and marketing emails from SIGNL.</span></label></div>
       <button class="btn mt" type="submit" style="width:100%">Join the founding business list</button>
     </form>
     <p class="small muted mt">Reviewed by a person — decision within 2 business days. The roster stays private until activation. Creators join separately: <a href="#" onclick="return go('join-creator')">become a founding creator</a>.</p>
@@ -1989,7 +2084,13 @@ function applyBizPrefill() {
   const bizEl = document.getElementById("jb-business");
   if (bizEl && pre.businessName) bizEl.value = pre.businessName;
   const catEl = document.getElementById("jb-category");
-  if (catEl && pre.category) catEl.value = pre.category;
+  if (catEl && pre.category) {
+    catEl.value = pre.category;
+    // V4: the category is a chip group over this hidden input —
+    // keep the highlighted chip in step with the prefilled value.
+    const catRow = document.querySelector('.chiprow[data-chipfor="jb-category"]');
+    if (catRow) catRow.querySelectorAll(".rchip").forEach((b) => b.classList.toggle("on", (b.getAttribute("data-val") || "") === pre.category));
+  }
   const mktEl = document.getElementById("jb-market");
   if (mktEl && pre.market) {
     mktEl.value = pre.market;
@@ -3138,9 +3239,14 @@ function homeOpportunitiesHtml(offers, u) {
       ${o.kind === "paid" && o.paidBrief ? `<p class="small"><strong>Key points:</strong> ${esc(o.paidBrief)}</p>` : ""}
       ${dealPlainWordsHtml(o)}
       <p class="small muted">${o.windowMode === "thisweek" ? "Visit this week — ends Sunday" : "Within 7 days of accepting"} &middot; ${left} of ${o.spots} spot${o.spots === 1 ? "" : "s"} left.${o.visitWindow ? ` Note from the business: ${esc(o.visitWindow)}` : ""}</p>
-      <form onsubmit="return homeAcceptOffer(event, '${o.id}')">
-        <button class="btn small-btn" type="submit">Accept</button>
-      </form>
+      <div class="slot-foot">
+        <div><div class="slot-price">$${o.kind === "paid" ? o.cashRate : o.dollarCap}</div><div class="slot-note">${o.kind === "paid" ? "Rate" : "Comp value"}</div></div>
+        <div class="slot-actions">
+          <form onsubmit="return homeAcceptOffer(event, '${o.id}')">
+            <button class="btn small-btn book" type="submit">Accept</button>
+          </form>
+        </div>
+      </div>
     </div>`;
   }).join("");
   return `
@@ -3203,7 +3309,7 @@ function homePaidLaneHtml(creator, footerHtml) {
 
 function homeMoneyHtml(money) {
   return `
-  <section class="panel">
+  <section class="panel tint">
     <p class="ui-kicker">Money</p>
     <h3 class="home-h">Cash and comps, kept separate</h3>
     <div class="home-money">
@@ -3235,7 +3341,7 @@ function homeComingUpHtml(bookings) {
   const rows = items.slice(0, 5).map((it) => `
     <div class="ui-row"><span class="k">${esc(it.label)}<br><span class="small muted">${esc(it.detail || "")}</span></span><span class="v">${esc(fmtDate(it.at))}</span></div>`).join("");
   return `
-  <section class="panel">
+  <section class="panel tint">
     <p class="ui-kicker">Coming up</p>
     <h3 class="home-h">Your next deadlines</h3>
     ${rows || `<p class="small muted">Nothing scheduled.</p>`}
@@ -3350,6 +3456,8 @@ function creatorProfileHtml(u) {
     <div id="form-error"></div>
     ${u.profileCompletion && !u.profileCompletion.complete ? `<div class="notice blue">Your profile is not finished yet. Still needed to go live: ${u.profileCompletion.items.filter((i) => i.required && !i.done).map((i) => esc(i.label)).join(", ")}. Fill in the fields below and save. Businesses cannot see you, and you cannot take offers, until your profile is finished.</div>` : ""}
     <form onsubmit="return doUpdateCreator(event)">
+      <div class="fgroup tint">
+      <p class="fg-kicker">The basics</p>
       <div class="field"><label>Your name</label><input id="p-name" value="${esc(u.name || "")}"><p class="small muted">Shown to businesses next to your handle. A quick claim starts with your handle here; put your real name in.</p></div>
       <div class="field"><label>Profile photo</label>
         ${c.hasPhoto ? `<img class="profile-photo" src="/api/users/${esc(u.id)}/photo" alt="Your profile photo">` : `<div class="photo-placeholder">No photo yet.</div>`}
@@ -3357,7 +3465,7 @@ function creatorProfileHtml(u) {
         <p class="small muted">Pick a new photo and save to replace it. PNG, JPEG, or WebP, under 2.5 MB.</p>
       </div>
       <div class="form-2col">
-        <div class="field"><label>Where is your main audience?</label><select id="p-platform" onchange="syncPPlatform()">${primaryOptionsHtml(c.primaryPlatform || "instagram")}</select><p class="small muted" id="p-proof-note" style="display:${(c.primaryPlatform || "instagram") !== "instagram" ? "" : "none"}">${PROOF_DISCLOSURE}</p></div>
+        <div class="field"><label>Where is your main audience?</label>${platformChipsHtml("p-platform", c.primaryPlatform || "instagram", "syncPPlatform")}<p class="small muted" id="p-proof-note" style="display:${(c.primaryPlatform || "instagram") !== "instagram" ? "" : "none"}">${PROOF_DISCLOSURE}</p></div>
         <div class="field"><label>Your main handle</label><input id="p-handle" value="${esc(c.handle || "")}"><p class="small muted">Your handle on your main platform. Your public profile and claim links point there.</p></div>
         ${u.market === unlistedLabel()
           ? `<div class="field"><label>Your city (not an open market yet)</label><input id="p-city-text" value="${esc(u.city || "")}"></div>
@@ -3366,7 +3474,7 @@ function creatorProfileHtml(u) {
           : `<div class="field"><label>Home city (${esc(marketDisplayName(u.market))})</label><select id="p-city">${cityOptions(u.market, u.city || "")}</select></div>`}
       </div>
       <div class="field"><label>Your neighborhood or area</label><input id="p-neighborhood" value="${esc(c.neighborhood || "")}" placeholder="Optional, for example: Oceanfront, Ghent, Town Center" maxlength="80"><p class="small muted">Businesses search by neighborhood. Keep it to the area you actually post from.</p></div>
-      <div class="field"><label>What do you do? (optional)</label><select id="p-profession" onchange="syncRealtorFields()">${professionOptionsHtml(c.profession || "")}</select><p class="small muted">Realtors: pick Real estate agent and the fields below appear. Your profile gains a Realtor badge, your neighborhoods, and your brokerage line.</p></div>
+      <div class="field"><label>What do you do? (optional)</label>${professionChipsHtml("p-profession", c.profession || "", "syncRealtorFields")}<p class="small muted">Realtors: pick Real estate agent and the fields below appear. Your profile gains a Realtor badge, your neighborhoods, and your brokerage line.</p></div>
       <div id="p-realtor-block" style="display:${isRealtorProfile(c) ? "" : "none"}">
         <div class="field"><label>Your neighborhoods (up to 3)</label>
           ${[0, 1, 2].map((i) => `<input id="p-hood-${i}" value="${esc((c.farmAreas || [])[i] || "")}" placeholder="For example: Ghent" maxlength="60" style="margin-bottom:8px">`).join("")}
@@ -3375,7 +3483,10 @@ function creatorProfileHtml(u) {
         <div class="field"><label>Brokerage or firm (optional)</label><input id="p-brokerage" value="${esc(c.brokerage || "")}" placeholder="Your brokerage, as licensed" maxlength="120"><p class="small muted">Shown on your public profile and proof sheet as "Brokered by", so your pages carry your firm the way your broker requires.</p></div>
       </div>
       <div class="field"><label>Your university (if you are a student now)</label><input id="p-university" value="${esc(c.university || u.university || "")}" placeholder="Start typing your school" maxlength="120"><div class="uni-results" id="p-university-results"></div><p class="small muted">Adding your school groups same-school referrals into your campus crew.${(c.university || u.university) && (c.universityStatus || u.universityStatus) === "current_student" ? ` Current badge: <strong>Campus: ${esc(c.university || u.university)}</strong>.` : ""}</p></div>
-      <div class="field"><label>Student status (optional)</label><select id="p-university-status"><option value=""${!(c.universityStatus || u.universityStatus) ? " selected" : ""}>Select one</option><option value="current_student"${(c.universityStatus || u.universityStatus) === "current_student" ? " selected" : ""}>Current student</option><option value="alumni"${(c.universityStatus || u.universityStatus) === "alumni" ? " selected" : ""}>Alumni</option><option value="not_student"${(c.universityStatus || u.universityStatus) === "not_student" ? " selected" : ""}>Not a student</option></select><p class="small muted">The campus badge is for current students only, so it shows while your status is Current student.</p></div>
+      <div class="field"><label>Student status (optional)</label>${universityStatusChipsHtml("p-university-status", c.universityStatus || u.universityStatus || "")}<p class="small muted">The campus badge is for current students only, so it shows while your status is Current student.</p></div>
+      </div>
+      <div class="fgroup">
+      <p class="fg-kicker">Your links</p>
       <div class="form-2col">
         <div class="field"><label>TikTok handle</label><input id="p-tiktok" value="${esc(c.tiktokHandle || "")}" placeholder="Optional"></div>
         <div class="field"><label>YouTube channel</label><input id="p-youtube" value="${esc(c.youtubeChannel || "")}" placeholder="Optional"></div>
@@ -3385,6 +3496,9 @@ function creatorProfileHtml(u) {
         <div class="field"><label>X (Twitter) handle or URL</label><input id="p-x" value="${esc(c.xHandle || "")}" placeholder="Optional"></div>
       </div>
       <div class="field"><label>LinkedIn profile URL</label><input id="p-linkedin" value="${esc(c.linkedinUrl || "")}" placeholder="Optional"></div>
+      </div>
+      <div class="fgroup tint">
+      <p class="fg-kicker">Your audience</p>
       <div class="field"><label>Your tier band</label><p style="margin:6px 0"><strong id="p-tier-band">${esc(c.tierBand || "")}</strong></p><p class="small muted">Set automatically from your total audience across platforms. It updates itself when your counts below change; nobody picks their own band.</p></div>
       <div class="field"><label>Your audience, platform by platform</label>
         <div class="form-2col">
@@ -3392,21 +3506,24 @@ function creatorProfileHtml(u) {
         </div>
         <p class="small muted">Total audience: <strong id="p-stack-total">${fmtNum(totalAudienceOf(c))}</strong> across every platform. Businesses see the total and the breakdown. Skip any platform you do not use (leave it at 0). Completing 3 or more platforms earns Momentum points.</p>
       </div>
-      <div class="field"><label>Max visits per week</label><input type="number" id="p-maxvisits" min="1" max="7" value="${c.maxVisitsPerWeek || 3}"><p class="small muted">Your pace, your call: 1 to 7 comped visits a week. At your max, offers still arrive but accepting waits until next week, and businesses see you as booked up this week.</p></div>
+      <div class="field"><label>Max visits per week</label><div class="stepper"><button type="button" class="step-btn" aria-label="One fewer" onclick="return stepField('p-maxvisits',-1,1,7)">&minus;</button><input type="number" id="p-maxvisits" min="1" max="7" value="${c.maxVisitsPerWeek || 3}"><button type="button" class="step-btn" aria-label="One more" onclick="return stepField('p-maxvisits',1,1,7)">+</button></div><p class="small muted">Your pace, your call: 1 to 7 comped visits a week. At your max, offers still arrive but accepting waits until next week, and businesses see you as booked up this week.</p></div>
       <div class="form-2col">
         <div class="field"><label>Typical post views</label><input type="number" id="p-avgviews" min="0" value="${c.avgViews || 0}"></div>
         <div class="field"><label>Your local reach (local audience share, %)</label><input type="number" id="p-localpct" min="0" max="100" value="${c.localAudiencePct === null || c.localAudiencePct === undefined ? "" : c.localAudiencePct}"><p class="small muted">${LOCAL_PCT_HELP}</p></div>
       </div>
       <div class="field"><label>Top audience cities</label><input id="p-topcities" value="${esc((c.topAudienceCities || []).join(", "))}" placeholder="Up to 5, comma separated"></div>
+      </div>
+      <div class="fgroup">
+      <p class="fg-kicker">What you create</p>
       <div class="field"><label>What you create in</label><div class="checkrow">${cats}</div></div>
       <div class="field"><label>Comps you would accept</label><div class="checkrow">${comps}</div></div>
       <div class="field" id="p-paid-wrap" style="display:${c.tierBand === "Headliners" ? "" : "none"}">
-        <label style="font-weight:500"><input type="checkbox" id="p-paid" style="width:auto" ${c.openToPaidCampaigns ? "checked" : ""}> <strong>Paid cash campaigns</strong> (Headliners tier): businesses can hire me for paid campaigns when a business runs one, on top of comps.</label>
+        <label class="tgl-row"><input type="checkbox" class="sw" id="p-paid" ${c.openToPaidCampaigns ? "checked" : ""}><span><strong>Paid cash campaigns</strong> (Headliners tier): businesses can hire me for paid campaigns when a business runs one, on top of comps.</span></label>
       </div>
       <div class="showcase-block">
         <h4>How businesses can book you</h4>
         <div class="field">
-          <label style="font-weight:500"><input type="checkbox" id="p-comp-open" style="width:auto" ${c.compOpen === false ? "" : "checked"}> Accept comp visits. Businesses comp you the experience and you post honestly within 48 hours. Creators who accept comps get more offers and more free experiences, and every completed visit earns Momentum points. Momentum lifts you in business search and builds the track record that gets you trusted and booked, including first access to paid bookings.</label>
+          <label class="tgl-row"><input type="checkbox" class="sw" id="p-comp-open" ${c.compOpen === false ? "" : "checked"}><span>Accept comp visits. Businesses comp you the experience and you post honestly within 48 hours. Creators who accept comps get more offers and more free experiences, and every completed visit earns Momentum points. Momentum lifts you in business search and builds the track record that gets you trusted and booked, including first access to paid bookings.</span></label>
         </div>
         <div class="field"><label>Set a paid rate (optional). Businesses can book you at your listed rate for a paid visit, and you keep 97% of it. Paid-only is fine too, but paid-only creators receive fewer offers.</label>
           <input type="number" id="p-paid-rate" min="50" step="1" placeholder="For example: 250" value="${c.paidRate ? esc(String(c.paidRate)) : ""}">
@@ -3418,6 +3535,7 @@ function creatorProfileHtml(u) {
         <p class="small muted">Your strongest posts, shown on your public profile and to businesses in search results as Watch cards. Instagram, TikTok, or YouTube links only. Clear a box to remove that link.</p>
       </div>
       <div class="field"><label>Bio</label><textarea id="p-bio" rows="2">${esc(c.bio || "")}</textarea></div>
+      </div>
       <div id="save-warn"></div>
       <button class="btn" type="submit">Save profile</button> <span id="save-ok" class="saved"></span><span id="profile-complete-share"></span>
     </form>
@@ -4032,7 +4150,7 @@ function visitCard(b, role) {
       <h4 style="margin:10px 0 4px">Post your proof</h4>
       ${late ? `<p class="small"><strong>This post is past its 48 hour deadline.</strong> Post within 48 hours for full credit. A late post inside the catch-up window still counts, and the missed deadline stays on your record. No link, no check-off.</p>` : `<p class="small muted">Your check-off is the post link itself. Paste it here and the visit is marked delivered${b.compliance && b.compliance.deadline ? ` (deadline ${esc(fmtDate(b.compliance.deadline))})` : ""}. Post within 48 hours for full credit. A late post inside the catch-up window still counts.</p>`}
       <div class="field"><label>Link to your Instagram post or reel</label><input id="post-url-${b.id}" type="url" placeholder="https://www.instagram.com/p/..." required></div>
-      <label style="font-weight:500"><input type="checkbox" id="post-disc-${b.id}" style="width:auto"> My post clearly discloses the comp (for example #ad or "comped by the business"), as the FTC requires.</label>
+      <label class="ckrow"><input type="checkbox" class="ckbox" id="post-disc-${b.id}"><span>My post clearly discloses the comp (for example #ad or "comped by the business"), as the FTC requires.</span></label>
       <p class="small muted">Post your honest experience. Nobody can require a positive post.</p>
       <button class="btn small-btn" type="submit">Submit post</button>
     </form>`;
@@ -4132,7 +4250,7 @@ function visitCard(b, role) {
       <h4 style="margin:10px 0 4px">Review this business</h4>
       <p class="small muted">Optional, and honest is the whole point: leaving a review earns +10 Momentum at any star rating. SIGNL never pays for positive reviews, and nobody can ask you for one.</p>
       <div class="form-2col">
-        <div class="field"><label>Your rating</label><select id="bizrev-stars-${b.id}"><option value="5">5 stars</option><option value="4">4 stars</option><option value="3">3 stars</option><option value="2">2 stars</option><option value="1">1 star</option></select></div>
+        <div class="field"><label>Your rating</label>${chipSelectHtml("bizrev-stars-" + b.id, [{ value: "5", label: "5 stars" }, { value: "4", label: "4 stars" }, { value: "3", label: "3 stars" }, { value: "2", label: "2 stars" }, { value: "1", label: "1 star" }], "5", null, false)}</div>
         <div class="field"><label>Your words (optional)</label><input id="bizrev-text-${b.id}" maxlength="500" placeholder="How was the visit, honestly?"></div>
       </div>
       <button class="btn small-btn" type="submit">Leave review (+10 Momentum)</button>
@@ -4149,7 +4267,7 @@ function visitCard(b, role) {
       <h4 style="margin:10px 0 4px">Rate this creator</h4>
       <p class="small muted">The visit is complete and the post is in. Rate how the visit and the post went. The rating shows on the creator's profile next to their Momentum points: two separate numbers, and ratings never change anyone's points. One rating per visit, and it cannot be edited after.</p>
       <div class="form-2col">
-        <div class="field"><label>Your rating</label><select id="crev-stars-${b.id}"><option value="5">5 stars</option><option value="4">4 stars</option><option value="3">3 stars</option><option value="2">2 stars</option><option value="1">1 star</option></select></div>
+        <div class="field"><label>Your rating</label>${chipSelectHtml("crev-stars-" + b.id, [{ value: "5", label: "5 stars" }, { value: "4", label: "4 stars" }, { value: "3", label: "3 stars" }, { value: "2", label: "2 stars" }, { value: "1", label: "1 star" }], "5", null, false)}</div>
         <div class="field"><label>Your words (optional, 280 characters)</label><input id="crev-comment-${b.id}" maxlength="280" placeholder="How was the visit and the post?"></div>
       </div>
       <button class="btn small-btn" type="submit">Leave rating</button>
@@ -4441,10 +4559,10 @@ async function loadBusinessHome() {
       <div class="flex-between"><span class="small"><strong>${esc(d.plan.name)} plan:</strong> ${h.visitsUsed} of ${h.visitsAllowance} visits booked this month</span><span class="badge ${h.planPacePct >= 100 ? "warn" : "info"}">${h.planPacePct}%</span></div>
       <div class="meter" style="margin-top:8px"><i style="width:${Math.min(100, h.planPacePct)}%"></i></div>
       <p class="small muted">${esc(d.business.billingStatus)}</p>
-      ${content ? `<h4>Content that is working</h4>
-${content}` : ""}
+      ${content ? `<div class="tint-block"><h4>Content that is working</h4>
+${content}</div>` : ""}
       ${next ? `<h4>Next visits</h4>${next}` : ""}
-      ${rebook ? `<h4>Invite again</h4><p class="small muted">Your delivered creators + favorites.</p>${rebook}` : ""}
+      ${rebook ? `<div class="tint-block"><h4>Invite again</h4><p class="small muted">Your delivered creators + favorites.</p>${rebook}</div>` : ""}
     </section>
     <div id="biz-notes" class="mt"></div>`;
     loadNotificationsInto("biz-notes");
@@ -4627,11 +4745,15 @@ function setCompChip(prefix, comp, cap) {
 function setWindowMode(prefix, mode) {
   const el = document.getElementById(prefix + "-windowmode");
   if (el) el.value = mode;
+  // V4: the mode is a chip group over the hidden input — keep the
+  // highlighted chip in step with the value.
+  document.querySelectorAll(`[data-wm^="${prefix}:"]`).forEach((b) => b.classList.toggle("on", b.getAttribute("data-wm") === prefix + ":" + mode));
   if (prefix === "o2") offerDraftSync();
 }
 
 function windowModeFieldHtml(prefix, selected) {
-  return `<div class="field"><label>Redemption window</label><select id="${prefix}-windowmode" onchange="offerDraftSync()"><option value="7days" ${selected === "7days" ? "selected" : ""}>Use within 7 days of accepting</option><option value="thisweek" ${selected === "thisweek" ? "selected" : ""}>This week (ends Sunday)</option></select>${chipsRowHtml("window", prefix)}</div>`;
+  const sel = selected === "thisweek" ? "thisweek" : "7days";
+  return `<div class="field"><label>Redemption window</label><div class="chiprow" data-wmrow="${prefix}"><button type="button" class="rchip${sel === "7days" ? " on" : ""}" data-wm="${prefix}:7days" onclick="setWindowMode('${prefix}', '7days')">Use within 7 days</button><button type="button" class="rchip${sel === "thisweek" ? " on" : ""}" data-wm="${prefix}:thisweek" onclick="setWindowMode('${prefix}', 'thisweek')">This week (ends Sunday)</button></div><input type="hidden" id="${prefix}-windowmode" value="${sel}"></div>`;
 }
 
 function packageSummaryHtml(planId, planName) {
@@ -4840,10 +4962,10 @@ async function loadMyOffers() {
   const marketLive = !!(state.boot && state.boot.launch && state.boot.launch.marketLive && state.boot.launch.marketLive[state.user.market]);
   const dft = state.offerDraft || {};
   const dv = (v) => esc(v === undefined || v === null ? "" : String(v));
-  const tierBoxes = ["Neighbors", "Locals", "Headliners"].map((t) => {
+  const tierBoxes = `<div class="chiprow">${["Neighbors", "Locals", "Headliners"].map((t) => {
     const gd = g.compGuidance[t] || {};
-    return `<label style="font-weight:500"><input type="checkbox" name="o2-tier" value="${esc(t)}" style="width:auto" ${(dft.tiers || []).includes(t) ? "checked" : ""} onchange="offerCoachUpdate()"> ${esc(t)} <span class="muted small">(floor $${gd.floor} &middot; typ. $${gd.typicalLow}–$${gd.typicalHigh})</span></label>`;
-  }).join("<br>");
+    return `<label class="tier-chip"><input type="checkbox" name="o2-tier" value="${esc(t)}" ${(dft.tiers || []).includes(t) ? "checked" : ""} onchange="offerCoachUpdate()"><span class="tc-name">${esc(t)}</span> <span class="muted small">(floor $${gd.floor} &middot; typ. $${gd.typicalLow}–$${gd.typicalHigh})</span></label>`;
+  }).join("")}</div>`;
   el.innerHTML = `
   <div class="panel">
     <h3>Create an offer</h3>
@@ -4863,40 +4985,56 @@ async function loadMyOffers() {
     <div class="chip-row">${(g.templates || []).map((t) => `<button type="button" class="chip" onclick="applyTemplate('${esc(t.id)}')">${esc(t.label)}</button>`).join("")}</div>` : ""}
     <form onsubmit="return createOfferV2(event)">
       <input type="hidden" id="o2-template" value="${dv(dft.template)}">
+      <div class="fgroup tint">
+      <p class="fg-kicker">The offer</p>
       <div class="field"><label>Offer title <span class="req-tag">Required</span> ${infoBtn("title")}</label><input id="o2-title" value="${dv(dft.title)}" placeholder="Dinner for two on us" oninput="offerDraftSync()" onblur="offerValidateField('title')"><p class="field-err" id="err-o2-title"></p></div>
       <div class="field"><label>How is the creator paid? <span class="req-tag">Required</span> ${infoBtn("kind")}</label>
-        <label style="font-weight:500"><input type="radio" name="o2-kind" value="comp" ${dft.kind === "paid" ? "" : "checked"} style="width:auto" onchange="offerCoachUpdate()"> Comp: your product, on you</label><br>
-        <label style="font-weight:500"><input type="radio" name="o2-kind" value="paid" ${dft.kind === "paid" ? "checked" : ""} style="width:auto" onchange="offerCoachUpdate()"> Cash: a rate for a paid booking</label>
+        <div class="radio-stack">
+        <label class="radio-chip"><input type="radio" name="o2-kind" value="comp" ${dft.kind === "paid" ? "" : "checked"} onchange="offerCoachUpdate()"><span>Comp: your product, on you</span></label>
+        <label class="radio-chip"><input type="radio" name="o2-kind" value="paid" ${dft.kind === "paid" ? "checked" : ""} onchange="offerCoachUpdate()"><span>Cash: a rate for a paid booking</span></label>
+        </div>
       </div>
       <div class="field"><label>Exactly what is comped <span class="req-tag">Required</span> ${infoBtn("comped")}</label><input id="o2-comped" value="${dv(dft.comped)}" placeholder="Two entrees and two drinks" oninput="offerCoachUpdate()" onblur="offerValidateField('comped')"><p class="field-err" id="err-o2-comped"></p>${mode === "direct" ? chipsRowHtml("comp", "o2", target && target.profile ? target.profile.tierBand : null) : ""}</div>
       <div class="field" id="o2-covers-wrap"><label>How many people does the comp cover? <span class="req-tag">Required</span> ${infoBtn("covers")}</label>
-        <label style="font-weight:500"><input type="radio" name="o2-covers" value="1" ${dft.covers === "2" ? "" : "checked"} style="width:auto" onchange="offerDraftSync()"> 1 person: just the creator</label><br>
-        <label style="font-weight:500"><input type="radio" name="o2-covers" value="2" ${dft.covers === "2" ? "checked" : ""} style="width:auto" onchange="offerDraftSync()"> 2 people: the creator and a guest</label>
+        <div class="radio-stack">
+        <label class="radio-chip"><input type="radio" name="o2-covers" value="1" ${dft.covers === "2" ? "" : "checked"} onchange="offerDraftSync()"><span>1 person: just the creator</span></label>
+        <label class="radio-chip"><input type="radio" name="o2-covers" value="2" ${dft.covers === "2" ? "checked" : ""} onchange="offerDraftSync()"><span>2 people: the creator and a guest</span></label>
+        </div>
         <p class="small muted">Prints on the offer, the visit card and the staff screen.</p>
       </div>
       <div class="field" id="o2-brief-wrap" style="display:none"><label>Key points for the creator <span class="opt-tag">Optional</span> ${infoBtn("brief")}</label><textarea id="o2-brief" rows="2" maxlength="500" placeholder="Feature the new patio, use our full name" oninput="offerDraftSync()">${esc(dft.brief || "")}</textarea><p class="small muted">${PAID_BRIEF_GUIDANCE}</p></div>
+      </div>
+      <div class="fgroup">
+      <p class="fg-kicker">The value</p>
       <div class="form-2col">
         <div class="field" id="o2-cap-wrap"><label>Comp value / dollar cap ($) <span class="req-tag">Required</span> ${infoBtn("cap")}</label><input type="number" id="o2-cap" min="1" placeholder="100" value="${dv(dft.cap)}" oninput="offerCoachUpdate()" onblur="offerValidateField('cap')"><p class="field-err" id="err-o2-cap"></p></div>
         <div class="field" id="o2-rate-wrap" style="display:none"><label>Cash rate ($) <span class="req-tag">Required</span> ${infoBtn("rate")}</label><input type="number" id="o2-rate" min="50" step="1" placeholder="150" value="${dv(dft.rate)}" oninput="offerCoachUpdate()" onblur="offerValidateField('rate')"><p class="field-err" id="err-o2-rate"></p><p class="small muted">You pay rate + 3%. Creator keeps 97%. Min $50.</p></div>
       </div>
       <div class="field"><label>What is included <span class="opt-tag">Optional</span> ${infoBtn("includes")}</label><textarea id="o2-includes" rows="2" placeholder="Any two entrees, two drinks each, dessert to share" oninput="offerCoachUpdate()">${esc(dft.includes || "")}</textarea></div>
       <div class="field"><label>The experience <span class="opt-tag">Optional</span> ${infoBtn("experience")}</label><textarea id="o2-experience" rows="2" placeholder="Chef's counter seats, open kitchen" oninput="offerCoachUpdate()">${esc(dft.experience || "")}</textarea></div>
+      </div>
       ${mode === "open" ? `
+      <div class="fgroup tint">
+      <p class="fg-kicker">Who + when</p>
       <div class="field"><label>Who can apply <span class="opt-tag">Optional</span> ${infoBtn("tiers")}</label>${tierBoxes}</div>
       <div class="form-2col">
-        <div class="field"><label>Spots (creators you will pick) <span class="req-tag">Required</span> ${infoBtn("spots")}</label><input type="number" id="o2-spots" min="1" placeholder="1" value="${dv(dft.spots)}" oninput="offerDraftSync()" onblur="offerValidateField('spots')"><p class="field-err" id="err-o2-spots"></p></div>
-        <div class="field"><label>Applications open for (days) <span class="opt-tag">Optional</span> ${infoBtn("applydays")}</label><input type="number" id="o2-applydays" min="1" max="14" placeholder="3" value="${dv(dft.applydays)}" oninput="offerDraftSync()"></div>
+        <div class="field"><label>Spots (creators you will pick) <span class="req-tag">Required</span> ${infoBtn("spots")}</label><div class="stepper"><button type="button" class="step-btn" aria-label="One fewer" onclick="return stepField('o2-spots',-1,1,null)">&minus;</button><input type="number" id="o2-spots" min="1" placeholder="1" value="${dv(dft.spots)}" oninput="offerDraftSync()" onblur="offerValidateField('spots')"><button type="button" class="step-btn" aria-label="One more" onclick="return stepField('o2-spots',1,1,null)">+</button></div><p class="field-err" id="err-o2-spots"></p></div>
+        <div class="field"><label>Applications open for (days) <span class="opt-tag">Optional</span> ${infoBtn("applydays")}</label><div class="stepper"><button type="button" class="step-btn" aria-label="One fewer" onclick="return stepField('o2-applydays',-1,1,14)">&minus;</button><input type="number" id="o2-applydays" min="1" max="14" placeholder="3" value="${dv(dft.applydays)}" oninput="offerDraftSync()"><button type="button" class="step-btn" aria-label="One more" onclick="return stepField('o2-applydays',1,1,14)">+</button></div></div>
       </div>
       <div class="form-2col">
-        <div class="field"><label>Redemption window (days, starts when applications close) <span class="opt-tag">Optional</span> ${infoBtn("windowdays")}</label><input type="number" id="o2-windowdays" min="1" max="30" placeholder="7" value="${dv(dft.windowdays)}" oninput="offerCoachUpdate()"></div>
+        <div class="field"><label>Redemption window (days, starts when applications close) <span class="opt-tag">Optional</span> ${infoBtn("windowdays")}</label><div class="stepper"><button type="button" class="step-btn" aria-label="One fewer" onclick="return stepField('o2-windowdays',-1,1,30)">&minus;</button><input type="number" id="o2-windowdays" min="1" max="30" placeholder="7" value="${dv(dft.windowdays)}" oninput="offerCoachUpdate()"><button type="button" class="step-btn" aria-label="One more" onclick="return stepField('o2-windowdays',1,1,30)">+</button></div></div>
         <div class="field"><label>Window note for creators <span class="opt-tag">Optional</span> ${infoBtn("windownote")}</label><input id="o2-window" value="${dv(dft.window)}" placeholder="Evenings are best" oninput="offerDraftSync()"></div>
       </div>
-      <p class="small muted">You get ${g.selectionSlaHours} hours to pick after applications close. Everyone else is released with a notification.</p>` : `
+      <p class="small muted">You get ${g.selectionSlaHours} hours to pick after applications close. Everyone else is released with a notification.</p>
+      </div>` : `
+      <div class="fgroup tint">
+      <p class="fg-kicker">Who + when</p>
       <div class="form-2col">
-        <div class="field"><label>Spots <span class="req-tag">Required</span> ${infoBtn("spots")}</label><input type="number" id="o2-spots" min="1" placeholder="1" value="${dv(dft.spots)}" oninput="offerDraftSync()" onblur="offerValidateField('spots')"><p class="field-err" id="err-o2-spots"></p></div>
+        <div class="field"><label>Spots <span class="req-tag">Required</span> ${infoBtn("spots")}</label><div class="stepper"><button type="button" class="step-btn" aria-label="One fewer" onclick="return stepField('o2-spots',-1,1,null)">&minus;</button><input type="number" id="o2-spots" min="1" placeholder="1" value="${dv(dft.spots)}" oninput="offerDraftSync()" onblur="offerValidateField('spots')"><button type="button" class="step-btn" aria-label="One more" onclick="return stepField('o2-spots',1,1,null)">+</button></div><p class="field-err" id="err-o2-spots"></p></div>
       </div>
       ${windowModeFieldHtml("o2", dft.windowmode)}
-      <div class="field"><label>Window note for the creator <span class="opt-tag">Optional</span> ${infoBtn("windownote")}</label><input id="o2-window" value="${dv(dft.window)}" placeholder="Evenings are best" oninput="offerDraftSync()"></div>`}
+      <div class="field"><label>Window note for the creator <span class="opt-tag">Optional</span> ${infoBtn("windownote")}</label><input id="o2-window" value="${dv(dft.window)}" placeholder="Evenings are best" oninput="offerDraftSync()"></div>
+      </div>`}
       <div id="o2-dignity"></div>
       <div id="o2-strength" class="showcase-block"></div>
       <p class="small muted">Describe the experience, never the opinion.</p>
@@ -4954,10 +5092,12 @@ function offerCardHtml(o) {
       </div>
     </div>
     <div class="slot-deal">
+    <div class="deal-rows deal-terms">
     <p class="small muted">${terms}${o.kind === "paid" ? "" : ` &middot; ${coversLine(o)}`}</p>
     ${o.kind === "paid" && o.paidBrief ? `<p class="small"><strong>Key points for the creator:</strong> ${esc(o.paidBrief)}</p>` : ""}
     ${o.businessReferralProgram ? `<p class="small"><strong>Referral program active:</strong> creators will see your ${o.businessReferralProgram.url ? "referral link" : "referral code"}${o.businessReferralProgram.note ? " and your note" : ""} on this offer.</p>` : ""}
     ${o.strength ? `<p class="small muted">Offer checklist ${o.strength.score} of ${o.strength.total}: ${firstMissing ? esc(firstMissing.label) : "complete"}</p>` : ""}
+    </div>
     </div>
     <div class="slot-foot">
       <div><div class="slot-price">$${o.kind === "paid" ? o.cashRate : o.dollarCap}</div><div class="slot-note">${o.kind === "paid" ? "Rate" : "Comp cap"}</div></div>
@@ -5446,7 +5586,7 @@ function renderPlanTab() {
     <p class="small muted">What creators see when they weigh your offers: your name, category, neighborhood, and a short about. A written-up experience fills offers faster.</p>
     <div class="form-2col">
       <div class="field"><label>Business name</label><input id="bp-name" value="${esc(u.business.businessName)}"></div>
-      <div class="field"><label>Category</label><select id="bp-category">${state.boot.businessCategories.map((c) => `<option ${c === u.business.category ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></div>
+      <div class="field"><label>Category</label>${chipSelectHtml("bp-category", state.boot.businessCategories.map((c) => ({ value: c, label: c })), u.business.category, null, false)}</div>
     </div>
     <div class="form-2col">
       <div class="field"><label>City</label><input id="bp-city" value="${esc(u.city || "")}"></div>
@@ -5455,7 +5595,7 @@ function renderPlanTab() {
     <div class="field"><label>About your business</label><textarea id="bp-about" rows="3" placeholder="What you serve, what the visit feels like">${esc(u.business.about || "")}</textarea></div>
     <button class="btn" onclick="saveBusinessProfile()">Save profile</button> <span id="bp-ok" class="saved"></span>
   </div>
-  <div class="panel mt">
+  <div class="panel mt tint">
     <h3>Your plan</h3>
     <p>Current plan: <strong>${esc(u.business.planName)}</strong>, selected ${fmtDate(u.business.planSelectedAt)}.</p>
     <p class="muted">${esc(u.business.billingStatus)}</p>
@@ -5482,7 +5622,7 @@ function renderPlanTab() {
     <div class="field"><label>Budget per month ($)</label><input type="number" id="me-talent-budget" min="0" step="1" value="${esc(String(u.business.monthlyTalentBudget == null ? 500 : u.business.monthlyTalentBudget))}"></div>
     <button class="btn" onclick="saveTalentBudget()">Save budget</button> <span id="tb-ok" class="saved"></span>` : ""}
   </div>
-  <div class="panel mt">
+  <div class="panel mt tint">
     <h3>Your referral program</h3>
     <p class="small muted">Already run a referral program in your booking or register system? Keep it, and let SIGNL feed it. Save your tracked referral link once and it rides on every opportunity and booked visit: creators see it on their cards and carry it in their posts, so the bookings land in the dashboard you already use. SIGNL never touches referral money, and any rewards stay yours to run, under your program's terms.</p>
     <div class="field"><label>Your tracked referral link</label><input id="rp-url" type="url" value="${esc(u.business.referralUrl || "")}" placeholder="https://your-booking-or-register-link"></div>
@@ -5496,7 +5636,7 @@ function renderPlanTab() {
   <div class="panel mt">
     <h3>Audience code discount</h3>
     <p class="small muted">Every creator who visits you gets a personal audience code, and the code counts the customers their post sends you whether or not it carries a discount. A discount is entirely your choice: it is off unless you turn it on, and the percentage is yours to pick (5 to 50). Nothing is ever applied by default. New bookings carry the setting you save here; bookings already made keep the setting they were created with.</p>
-    <label style="font-weight:500"><input type="checkbox" id="me-discount-enabled" style="width:auto" ${u.business.discountEnabled ? "checked" : ""}> Offer a discount when customers use a creator's code</label>
+    <label class="tgl-row"><input type="checkbox" class="sw" id="me-discount-enabled" ${u.business.discountEnabled ? "checked" : ""}><span>Offer a discount when customers use a creator's code</span></label>
     <div class="field" style="margin-top:8px"><label>Discount percent (%)</label><input type="number" id="me-discount-pct" min="5" max="50" step="1" value="${esc(String(u.business.discountPct == null ? ((state.boot.roasModel && state.boot.roasModel.suggestedDiscountPct) || 20) : u.business.discountPct))}"></div>
     <p class="small muted">Most businesses that turn this on start at ${esc(String((state.boot.roasModel && state.boot.roasModel.suggestedDiscountPct) || 20))}%. With codes off, the creator's card shows the code as a counting code and promises their audience nothing.</p>
     <button class="btn" onclick="saveMyDiscount()">Save code discount</button> <span id="disc-ok" class="saved"></span>
@@ -5505,7 +5645,7 @@ function renderPlanTab() {
     <div class="field"><label>Average ticket ($)</label><input type="number" id="me-avg-ticket" min="0" step="0.01" placeholder="40" value="${u.business.averageTicket ? esc(String(u.business.averageTicket)) : ""}"></div>
     <button class="btn" onclick="saveMyAverageTicket()">Save average ticket</button> <span id="ticket-ok" class="saved"></span>
   </div>
-  <div class="panel mt" id="staff-settings">
+  <div class="panel mt tint" id="staff-settings">
     <h3>Staff redemption</h3>
     <p class="muted">Loading...</p>
   </div>
@@ -6511,8 +6651,10 @@ function previewOfferHtml() {
       <div class="field"><label>Offer title</label><input id="pvo-title" required placeholder="For example: Dinner for two on us"></div>
       <div class="field"><label>Exactly what is comped</label><input id="pvo-comped" required placeholder="For example: Two entrees and two drinks for the creator and a guest">${chipsRowHtml("comp", "pvo", target && target.profile ? target.profile.tierBand : null)}</div>
       <div class="field"><label>How many people does the comp cover?</label>
-        <label style="font-weight:500"><input type="radio" name="pvo-covers" value="1" checked style="width:auto"> 1 person: just the creator</label><br>
-        <label style="font-weight:500"><input type="radio" name="pvo-covers" value="2" style="width:auto"> 2 people: the creator and a guest</label>
+        <div class="radio-stack">
+        <label class="radio-chip"><input type="radio" name="pvo-covers" value="1" checked><span>1 person: just the creator</span></label>
+        <label class="radio-chip"><input type="radio" name="pvo-covers" value="2"><span>2 people: the creator and a guest</span></label>
+        </div>
       </div>
       <div class="form-2col">
         <div class="field"><label>Dollar cap ($)</label><input type="number" id="pvo-cap" min="1" required placeholder="75"></div>
@@ -7012,8 +7154,8 @@ function pvHomeHtml(d) {
     <h4>Plan pace</h4>
     <div class="flex-between"><span class="small"><strong>${esc(d.plan.name)} plan:</strong> ${h.visitsUsed} of ${h.visitsAllowance} visits booked this month</span><span class="badge ${h.planPacePct >= 100 ? "warn" : "info"}">${h.planPacePct}%</span></div>
     <div class="meter" style="margin-top:8px"><i style="width:${Math.min(100, h.planPacePct)}%"></i></div>
-    ${content ? `<h4>Content that is working</h4>
-    <p class="small muted">Delivered posts ranked by the register action they produced: the code tallies reported on each visit, with views as supporting detail.</p>${content}` : ""}
+    ${content ? `<div class="tint-block"><h4>Content that is working</h4>
+    <p class="small muted">Delivered posts ranked by the register action they produced: the code tallies reported on each visit, with views as supporting detail.</p>${content}</div>` : ""}
     ${next ? `<h4>Next visits</h4>${next}` : ""}
   </section>`;
 }

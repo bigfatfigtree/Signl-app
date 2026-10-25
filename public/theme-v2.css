@@ -1405,3 +1405,175 @@ details.deal-details .dd-body .showcase-block { border-top: 1px solid var(--line
 /* ---------- rules rows inside the black card on mint ---------- */
 .rule-row { padding: 11px 0; border-top: 1px solid rgba(255,255,255,.16); font-weight: 700; color: #fff; font-size: 1.02rem; }
 .rule-row:first-of-type { border-top: none; padding-top: 2px; }
+
+/* =====================================================================
+   V4 (Jeff, 2026-10-25 night): color-blocked functional screens +
+   forms on toggles / checks / chips. Offer cards split into fields
+   (white header / pale-mint deal block / hairline terms block /
+   BLACK foot with mint price + mint pill action). Forms group into
+   calm color fields (.fgroup) and every small choice renders as a
+   chip, toggle, check row or stepper bound to the same input.
+   ===================================================================== */
+
+/* ---------- color-blocked panels + blocks ---------- */
+.panel.tint { background: var(--bg2); border-color: var(--line2); }
+.panel.tint .hm-pile { background: #fff; }
+.tint-block { background: var(--bg2); border-radius: 16px; padding: 10px 16px 8px; margin-top: 16px; }
+.tint-block h4 { margin: 10px 0 4px; }
+.tint-block .ui-row:last-child { border-bottom: none; }
+
+/* ---------- offer cards: field split ---------- */
+.slot-deal { border-top: none; }
+.deal-main {
+  background: var(--mint-pale); border-radius: 16px;
+  padding: 6px 14px; margin-top: 2px;
+}
+.deal-main .drow { border-color: rgba(11,13,12,.09); }
+.deal-main .drow:first-child, .deal-terms .drow:first-child { border-top: none; }
+.deal-main .dk { color: #33503F; }
+.deal-terms {
+  background: #fff; border: 1.5px solid var(--line); border-radius: 16px;
+  padding: 6px 14px; margin-top: 10px;
+}
+.deal-terms .drow { border-color: var(--line2); }
+div.deal-terms p:first-child { margin-top: 6px; }
+div.deal-terms p:last-child { margin-bottom: 6px; }
+
+/* the foot is the card's one BLACK block: mint price, mint pill */
+.slot-foot {
+  background: var(--black); border-top: none; border-radius: 16px;
+  padding: 14px 16px; margin-top: 14px;
+}
+.slot-foot .slot-price { color: var(--mint); }
+.slot-foot .slot-note { color: #9AA79E; }
+.slot-foot .btn.book { background: var(--mint); color: var(--black); box-shadow: none; }
+.slot-foot .btn.book:hover { background: var(--mint-b); color: var(--black); }
+.slot-foot .btn.ghost {
+  background: transparent; border-color: rgba(255,255,255,.45);
+  color: #fff; box-shadow: none;
+}
+.slot-foot .btn.ghost:hover { background: rgba(255,255,255,.12); }
+.slot-foot .btn:not(.book):not(.ghost):not(.danger) { background: #fff; color: var(--black); border-color: #fff; }
+.slot-foot a { color: var(--mint); }
+.slot-foot .badge { background: var(--panel-d); border-color: var(--hair-d); color: #DDE7DD; }
+.slot-foot .badge.info { color: var(--mint); }
+
+/* ---------- form fields: grouped color blocks ---------- */
+.fgroup {
+  border: 1.5px solid var(--line2); border-radius: 18px;
+  padding: 16px 16px 6px; margin: 0 0 14px;
+}
+.fgroup.tint { background: var(--bg2); border-color: transparent; }
+.fg-kicker {
+  font-size: .72rem; font-weight: 800; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--mint-deep); margin: 0 0 12px;
+}
+
+/* ---------- chip radio groups (bound to a hidden input) ---------- */
+.chiprow { display: flex; flex-wrap: wrap; gap: 8px; }
+.rchip {
+  appearance: none; -webkit-appearance: none;
+  border: 1.5px solid var(--line); background: #fff; color: var(--ink);
+  border-radius: 999px; padding: 10px 16px; min-height: 44px;
+  font: inherit; font-weight: 700; font-size: .92rem; cursor: pointer;
+}
+.rchip.on { background: var(--black); border-color: var(--black); color: var(--mint); }
+.rchip:focus-visible { outline: 2px solid var(--mint-deep); outline-offset: 2px; }
+
+/* ---------- multi-select chips: categories / comp fits ---------- */
+.checkrow { gap: 8px; }
+.checkrow label {
+  position: relative; display: inline-flex; align-items: center; gap: 8px;
+  background: #fff; border: 1.5px solid var(--line); border-radius: 999px;
+  padding: 10px 16px; min-height: 44px; cursor: pointer;
+  font-weight: 700; color: var(--ink); margin: 0;
+}
+.checkrow label input, .radio-chip input, .tier-chip input {
+  position: absolute; opacity: 0; width: 1px; height: 1px;
+  padding: 0; border: none; margin: 0; pointer-events: none;
+}
+.checkrow label:has(input:checked) { background: var(--mint); border-color: var(--mint); color: var(--ink); }
+.checkrow label:has(input:checked)::before { content: "\2713"; font-weight: 800; }
+.checkrow label:focus-within, .radio-chip:focus-within, .tier-chip:focus-within {
+  outline: 2px solid var(--mint-deep); outline-offset: 2px;
+}
+
+/* ---------- radio chips: stacked option rows ---------- */
+.radio-stack { display: flex; flex-direction: column; gap: 8px; }
+.radio-chip {
+  position: relative; display: flex; align-items: center; gap: 12px;
+  background: #fff; border: 1.5px solid var(--line); border-radius: 16px;
+  padding: 13px 16px; min-height: 50px; font-weight: 700;
+  cursor: pointer; margin: 0; color: var(--ink);
+}
+.radio-chip::before {
+  content: ""; width: 20px; height: 20px; border-radius: 50%;
+  border: 2px solid var(--line); flex: none; box-sizing: border-box;
+}
+.radio-chip:has(input:checked) { background: var(--black); border-color: var(--black); color: var(--mint); }
+.radio-chip:has(input:checked)::before {
+  border-color: var(--mint); background: var(--mint);
+  box-shadow: inset 0 0 0 4px var(--black);
+}
+
+/* ---------- tier chips (composer who-can-apply) ---------- */
+.tier-chip {
+  position: relative; display: inline-flex; align-items: center; gap: 7px;
+  background: #fff; border: 1.5px solid var(--line); border-radius: 999px;
+  padding: 10px 16px; min-height: 44px; font-weight: 700;
+  cursor: pointer; margin: 0; color: var(--ink);
+}
+.tier-chip:has(input:checked) { background: var(--mint); border-color: var(--mint); }
+.tier-chip:has(input:checked) .tc-name::before { content: "\2713  "; font-weight: 800; }
+.tier-chip:has(input:checked) .muted { color: #33503F; }
+
+/* ---------- consent check rows ---------- */
+.ckrow {
+  display: flex; gap: 12px; align-items: flex-start; width: 100%;
+  box-sizing: border-box; background: #fff;
+  border: 1.5px solid var(--line); border-radius: 16px;
+  padding: 14px 16px; font-weight: 500; cursor: pointer; margin: 0;
+}
+.ckrow:has(.ckbox:checked) { border-color: var(--black); }
+.ckbox {
+  appearance: none; -webkit-appearance: none;
+  width: 26px; height: 26px; flex: none; padding: 0; margin: 1px 0 0;
+  border: 2px solid var(--ink3); border-radius: 8px; background: #fff;
+  display: grid; place-items: center; cursor: pointer;
+}
+.ckbox:checked { background: var(--black); border-color: var(--black); }
+.ckbox:checked::after { content: "\2713"; color: var(--mint); font-size: 16px; font-weight: 800; line-height: 1; }
+.ckbox:focus-visible { outline: 2px solid var(--mint-deep); outline-offset: 2px; }
+
+/* ---------- toggle switches (bound to the same checkbox) ---------- */
+/* The switch floats at the label's first line and the text flows
+   full width under it: two of the toggle labels are full
+   paragraphs, and a fixed flex column squeezed them. */
+.tgl-row { display: block; font-weight: 500; cursor: pointer; margin: 0; }
+.tgl-row input.sw { float: left; margin: 2px 12px 6px 0; }
+input.sw {
+  appearance: none; -webkit-appearance: none;
+  width: 52px; height: 30px; flex: none; padding: 0;
+  border: none; border-radius: 999px; background: #D9E9DE;
+  position: relative; cursor: pointer; transition: background .15s ease;
+}
+input.sw::after {
+  content: ""; position: absolute; top: 3px; left: 3px;
+  width: 24px; height: 24px; border-radius: 50%; background: #fff;
+  box-shadow: 0 1px 3px rgba(0,0,0,.25);
+  transition: left .15s ease, background .15s ease;
+}
+input.sw:checked { background: var(--black); }
+input.sw:checked::after { left: 25px; background: var(--mint); }
+input.sw:focus-visible { outline: 2px solid var(--mint-deep); outline-offset: 2px; }
+
+/* ---------- steppers (bound to the same number input) ---------- */
+.stepper { display: flex; align-items: stretch; gap: 8px; }
+.stepper input { text-align: center; }
+.step-btn {
+  width: 48px; flex: none; min-height: 48px; border-radius: 14px;
+  border: 1.5px solid var(--line); background: #fff; color: var(--ink);
+  font: inherit; font-size: 1.25rem; font-weight: 800; cursor: pointer;
+}
+.step-btn:active { background: var(--mint-pale); }
+.step-btn:focus-visible { outline: 2px solid var(--mint-deep); outline-offset: 2px; }

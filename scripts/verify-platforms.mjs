@@ -283,7 +283,7 @@ try {
   // ---------- client ships the picker everywhere it belongs ----------
   const appJsRes = await fetch(BASE + "/app.js");
   const appJs = await appJsRes.text();
-  check("client ships the picker on quick claim, full signup, and profile edit", appJs.includes('id="qc-platform"') && appJs.includes('id="jc-platform"') && appJs.includes('id="p-platform"') && appJs.includes("Where is your main audience?"), "");
+  check("client ships the picker on quick claim, full signup, and profile edit", appJs.includes('platformChipsHtml("qc-platform"') && appJs.includes('platformChipsHtml("jc-platform"') && appJs.includes('platformChipsHtml("p-platform"') && appJs.includes("Where is your main audience?"), "");
   check("client reads the &platform= claim-link param", appJs.includes('params.get("platform")') && appJs.includes("pf.platform"), "");
   check("client submits primaryPlatform on claim, signup, and profile save", appJs.includes("primaryPlatform: document.getElementById(\"qc-platform\").value") && appJs.includes("primaryPlatform,") && appJs.includes("primaryPlatform: document.getElementById(\"p-platform\").value"), "");
   check("client ships snapchat stack fields on signup + profile (count-only, no handle field)", appJs.includes('id="jc-stack-snapchat"') && appJs.includes('"p-stack-snapchat"') && appJs.includes("Snapchat followers") && !appJs.includes("snapchatHandle"), "");

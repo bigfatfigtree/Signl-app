@@ -111,8 +111,8 @@ const PROFESSION_FIT = {
   "Photographer / videographer": { categories: ["Attraction", "Retail"], reason: "Photographer / videographer: shoots places and products for a living" },
 };
 
-// Short labels for the creator-side fit note ("Strong fit: your
-// food content, Raleigh").
+// Short labels for the creator-side fit note ("Strong fit · Food ·
+// Richmond"): label fragments only, never a sentence (V4).
 const CATEGORY_SHORT = {
   "Food & Drink": "food",
   "Nightlife": "nightlife",
@@ -255,11 +255,13 @@ function computeFit(business, creator) {
 }
 
 // buildFitNote(fit, business, creator) -> string | null
-// The creator-side "Strong fit" line for an open offer. It shows
+// The creator-side "Strong fit" pill for an open offer. It shows
 // only on a genuinely strong match: a direct or adjacent category
 // overlap, or the creator based in the business's own city. Weak
 // or empty matches get silence (null), never a dressed-up nudge.
-// Pattern: "Strong fit: your food content, Raleigh".
+// V4 shape: label fragments joined by " · ", never a sentence —
+// "Strong fit · Food · Richmond", "Strong fit · Based in Raleigh".
+// Same data as before; only the rendered string shape changed.
 function buildFitNote(fit, business, creator) {
   if (!fit || !fit.parts) return null;
   const b = business || {};
@@ -269,18 +271,20 @@ function buildFitNote(fit, business, creator) {
   if (!categoryStrong && !p.sameCity) return null;
   const segments = [];
   if (categoryStrong && p.categoryLabel) {
-    segments.push(`your ${CATEGORY_SHORT[p.categoryLabel] || p.categoryLabel.toLowerCase()} content`);
+    const short = CATEGORY_SHORT[p.categoryLabel] || p.categoryLabel.toLowerCase();
+    segments.push(short.charAt(0).toUpperCase() + short.slice(1));
   }
   if (p.sameCity) {
     segments.push(String(c.homeCity || b.city || "").trim());
   } else if (categoryStrong && p.sameMarket) {
     segments.push(normalizeMarketName(b.market) || b.market || "");
   }
-  if (!segments.filter(Boolean).length) return null;
+  const parts = segments.filter(Boolean);
+  if (!parts.length) return null;
   if (!categoryStrong && p.sameCity) {
-    return `Strong fit: based in ${segments[0]}`;
+    return `Strong fit · Based in ${parts[0]}`;
   }
-  return `Strong fit: ${segments.filter(Boolean).join(", ")}`;
+  return `Strong fit · ${parts.join(" · ")}`;
 }
 
 // ---------- learned re-ranker seam (NOT BUILT - identity) ----------
