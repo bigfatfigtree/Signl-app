@@ -6,6 +6,9 @@
 //   set(key, object)
 //   del(key)
 //   list(prefix) -> [{ key, value }] sorted by key
+//   listKeys(prefix) -> [key] sorted, WITHOUT fetching values
+//   getMany(keys) -> [{ key, value }] sorted by key, values fetched
+//     with bounded concurrency (never one serial round trip per key)
 //
 // Record key conventions:
 //   user:{uuid}                  account + profile/business payload
@@ -73,6 +76,17 @@ const fileStore = {
       .sort()
       .map((k) => ({ key: k, value: db[k] }));
   },
+  async listKeys(prefix) {
+    const db = loadFile();
+    return Object.keys(db).filter((k) => k.startsWith(prefix)).sort();
+  },
+  async getMany(keys) {
+    const db = loadFile();
+    return keys
+      .filter((k) => Object.prototype.hasOwnProperty.call(db, k))
+      .sort()
+      .map((k) => ({ key: k, value: db[k] }));
+  },
 };
 
 let blobsStore = null;
@@ -92,6 +106,32 @@ function getBlobs() {
   return blobsStore;
 }
 
+// Fetch values for a list of keys with bounded concurrency. The
+// previous list() awaited one Blobs get per key, strictly serially:
+// cost grew linearly with record count until admin reads over the
+// big prefixes (event:, campaign-recipient:) blew the function
+// timeout and the Admin Events / Campaign tabs hung on "Loading..."
+// forever (2026-10-25 follow-up to INCIDENT-2026-10-25). Same
+// contract as before (sorted by key, vanished keys skipped), just
+// parallel.
+const VALUE_FETCH_CONCURRENCY = 12;
+async function fetchValues(keys) {
+  const store = getBlobs();
+  const rows = new Array(keys.length).fill(null);
+  let next = 0;
+  async function worker() {
+    while (next < keys.length) {
+      const i = next;
+      next += 1;
+      const value = await store.get(keys[i], { type: "json" });
+      if (value !== null && value !== undefined) rows[i] = { key: keys[i], value };
+    }
+  }
+  const workers = Math.min(VALUE_FETCH_CONCURRENCY, keys.length);
+  await Promise.all(Array.from({ length: workers }, () => worker()));
+  return rows.filter(Boolean);
+}
+
 const blobsAdapter = {
   async get(key) {
     return await getBlobs().get(key, { type: "json" });
@@ -102,20 +142,26 @@ const blobsAdapter = {
   async del(key) {
     await getBlobs().delete(key);
   },
-  async list(prefix) {
+  async listKeys(prefix) {
     const store = getBlobs();
-    const out = [];
+    const keys = [];
     let cursor;
     do {
       const page = await store.list({ prefix, cursor });
-      for (const blob of page.blobs) {
-        const value = await store.get(blob.key, { type: "json" });
-        if (value !== null && value !== undefined) out.push({ key: blob.key, value });
-      }
+      for (const blob of page.blobs) keys.push(blob.key);
       cursor = page.cursor;
     } while (cursor);
-    out.sort((a, b) => (a.key < b.key ? -1 : 1));
-    return out;
+    keys.sort();
+    return keys;
+  },
+  async getMany(keys) {
+    const rows = await fetchValues([...keys].sort());
+    rows.sort((a, b) => (a.key < b.key ? -1 : 1));
+    return rows;
+  },
+  async list(prefix) {
+    const keys = await blobsAdapter.listKeys(prefix);
+    return await blobsAdapter.getMany(keys);
   },
 };
 

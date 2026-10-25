@@ -5746,7 +5746,9 @@ function campaignSectionHtml(meta, data) {
     <div class="flex-between mt"><h3 style="margin:0">${esc(meta.title)}</h3><span class="badge ${c.armed ? "ok" : "info"}">${c.armed ? "Armed" : "Paused"}</span></div>
     <p class="small muted" style="margin-top:8px">Campaign <strong>${esc(c.id || meta.campaignId)}</strong>. ${esc(meta.blurb)}${c.lastRunAt ? ` Last sweep: ${esc(fmtDate(c.lastRunAt))}.` : ""} Send window is ${c.windowOpenNow ? "open now" : "closed right now"}.</p>
     ${c.lastError ? `<div class="error-box">${esc(c.lastError)}</div>` : ""}
+    ${data.degraded ? `<div class="error-box">Campaign data could not be loaded just now, so this card is showing zeros. Refresh in a moment; nothing here was changed.</div>` : ""}
     <p class="small">Queued: <strong>${counts.queued || 0}</strong> &middot; Sent: <strong>${counts.sent || 0}</strong> &middot; Bounced: <strong>${counts.bounced || 0}</strong> &middot; Skipped: <strong>${counts.skipped || 0}</strong> &middot; Total: <strong>${counts.total || 0}</strong> &middot; Sent today: <strong>${c.sentToday != null ? c.sentToday : 0} of ${c.dailyCeiling || 150} (daily ceiling)</strong></p>
+    ${c.sentTodayByLane ? `<p class="small muted">Sent today by lane: ${Object.entries(c.sentTodayByLane).map(([k, n]) => `${esc(CAMPAIGN_SENDER_ADDR[k] || k)}: <strong>${n}</strong>`).join(" &middot; ") || "none yet"}</p>` : ""}
     <div class="field" style="max-width:440px"><label>Sends from</label><select id="campaign-sender${meta.suffix}" onchange="setCampaignSender('${meta.key}')">${CAMPAIGN_SENDER_OPTIONS.map((o) => `<option value="${o.value}" ${(c.fromMailbox || "default") === o.value ? "selected" : ""}>${o.label}</option>`).join("")}</select></div>
     <p class="small muted">${campaignSenderNote(c, data.senderProfiles || {})}</p>
     <button class="btn ${c.armed ? "danger" : ""}" onclick="toggleCampaignArm(${c.armed ? "false" : "true"}, '${meta.campaignId}')">${c.armed ? "Pause campaign" : "Arm campaign"}</button>
@@ -6134,6 +6136,7 @@ async function loadEvents() {
       <div class="filters">
         <div><label>Event type</label><select id="ev-type" onchange="loadEvents()"><option value="">All types</option>${types.map((t) => `<option ${t === type ? "selected" : ""}>${esc(t)}</option>`).join("")}</select></div>
       </div>
+      ${data.degraded ? `<div class="error-box">The event log could not be loaded just now. Refresh in a moment; nothing here was changed.</div>` : ""}
       <p class="muted small">${data.total} events, newest first. Every state change in the product writes one of these. This is the dataset.</p>
       <div class="table-wrap panel"><table>
         <tr><th>When</th><th>Type</th><th>Actor</th><th>Market</th><th>Data</th></tr>

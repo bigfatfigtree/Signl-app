@@ -4236,8 +4236,19 @@ async function saveCampaignConfig(cfg) {
 }
 
 async function listCampaignRecipients(campaignId) {
-  const rows = await store.list(`campaign-recipient:${campaignId}:`);
+  const prefix = `campaign-recipient:${campaignId}:`;
+  const keys = await store.listKeys(prefix);
+  const rows = await store.getMany(keys);
   return rows.map((r) => r.value);
+}
+
+// Every campaign recipient record across all campaigns, in ONE
+// bounded-parallel scan (store.getMany). The Admin Campaign tab and
+// the sweep's daily counters all derive from this single fetch
+// instead of each re-scanning the whole prefix on its own.
+async function allCampaignRecipientRows() {
+  const keys = await store.listKeys("campaign-recipient:");
+  return await store.getMany(keys);
 }
 
 function campaignCounts(recipients) {
@@ -4434,17 +4445,28 @@ function campaignDayKey(date) {
 // overlapped, the worst case is one extra small batch, because each
 // run re-derives the count before it sends.
 async function campaignSentToday(now) {
+  return (await campaignSentTodayStats(now)).total;
+}
+
+// Both derivations (the combined total and the per-profile split)
+// from a single scan of the recipient records, so a caller that
+// needs both never pays for two full-prefix reads.
+async function campaignSentTodayStats(now) {
   const dayKey = campaignDayKey(now);
-  const rows = await store.list("campaign-recipient:");
-  let n = 0;
+  const rows = await allCampaignRecipientRows();
+  let total = 0;
+  const byProfile = {};
   for (const row of rows) {
     const r = row.value;
     if (!r || r.status !== "sent" || !r.sentAt) continue;
     const t = Date.parse(r.sentAt);
     if (Number.isNaN(t)) continue;
-    if (campaignDayKey(new Date(t)) === dayKey) n += 1;
+    if (campaignDayKey(new Date(t)) !== dayKey) continue;
+    total += 1;
+    const key = CAMPAIGN_MAILBOXES.includes(r.sentFrom) ? r.sentFrom : "default";
+    byProfile[key] = (byProfile[key] || 0) + 1;
   }
-  return n;
+  return { total, byProfile };
 }
 
 // The same derivation, split by sending profile: every campaign
@@ -4454,19 +4476,7 @@ async function campaignSentToday(now) {
 // stamp and count as "default". This is the counter the signlteam
 // warm-up cap (teamMailDailyCap) enforces against.
 async function campaignSentTodayByProfile(now) {
-  const dayKey = campaignDayKey(now);
-  const rows = await store.list("campaign-recipient:");
-  const counts = {};
-  for (const row of rows) {
-    const r = row.value;
-    if (!r || r.status !== "sent" || !r.sentAt) continue;
-    const t = Date.parse(r.sentAt);
-    if (Number.isNaN(t)) continue;
-    if (campaignDayKey(new Date(t)) !== dayKey) continue;
-    const key = CAMPAIGN_MAILBOXES.includes(r.sentFrom) ? r.sentFrom : "default";
-    counts[key] = (counts[key] || 0) + 1;
-  }
-  return counts;
+  return (await campaignSentTodayStats(now)).byProfile;
 }
 
 // One campaign sweep pass over every campaign config. Sends only
@@ -4482,11 +4492,12 @@ async function runCampaignSweep(opts = {}) {
   // Global daily ceiling: sends already made today, across every
   // campaign, counted once up front and incremented locally as this
   // run sends, so a multi-campaign sweep can never overshoot.
-  let sentToday = await campaignSentToday(now);
+  // Per-profile day counts for the signlteam warm-up cap come from
+  // the same single scan and are incremented locally the same way.
+  const sentStats = await campaignSentTodayStats(now);
+  let sentToday = sentStats.total;
   summary.sentToday = sentToday;
-  // Per-profile day counts for the signlteam warm-up cap, derived
-  // the same way and incremented locally as this run sends.
-  const sentByProfile = await campaignSentTodayByProfile(now);
+  const sentByProfile = sentStats.byProfile;
   const configs = (await store.list("campaign:")).map((r) => r.value);
   for (const cfg of configs) {
     if (!cfg || !cfg.id) continue;
@@ -4638,7 +4649,7 @@ async function runCampaignSweep(opts = {}) {
   return summary;
 }
 
-function campaignView(cfg, counts, sentToday) {
+function campaignView(cfg, counts, sentToday, sentTodayByLane) {
   const fromMailbox = campaignFromMailbox(cfg);
   return {
     id: cfg.id,
@@ -4654,6 +4665,12 @@ function campaignView(cfg, counts, sentToday) {
     totalSent: counts ? counts.sent : cfg.totalSent || 0,
     dailyCeiling: campaignDailyCeiling(),
     sentToday: typeof sentToday === "number" ? sentToday : null,
+    // Per-lane sends today, keyed by sender profile ("creators" =
+    // creators@signlteam.com, "default" = hello@joinsignl.com, plus
+    // "team" / "hello_team" when those mailboxes send). Global across
+    // campaigns, exactly like sentToday: the ceiling protects the
+    // sending domain, and the Admin tab reads the split from here.
+    sentTodayByLane: sentTodayByLane && typeof sentTodayByLane === "object" ? sentTodayByLane : null,
     backstop: CAMPAIGN_RUNAWAY_BACKSTOP,
     batchSize: CAMPAIGN_BATCH_SIZE,
     window: { startHour: CAMPAIGN_WINDOW.startHour, endHour: CAMPAIGN_WINDOW.endHour, timeZone: CAMPAIGN_WINDOW.timeZone },
@@ -7588,9 +7605,19 @@ async function route(event) {
       return json(200, { user: publicUser(target) });
     }
     if (method === "GET" && seg[1] === "events") {
-      const events = await listEvents({ limit: Math.min(2000, parseInt(query.limit, 10) || 500) });
-      const filtered = query.type ? events.filter((e) => e.type === query.type) : events;
-      return json(200, { events: filtered, total: filtered.length });
+      // Guarded like the rest of Hardening A (INCIDENT-2026-10-25):
+      // if the event-log read fails, the tab must still render —
+      // an empty, flagged payload — never hang or 500. listEvents
+      // itself is bounded (newest 1,000 keys max), so this guard is
+      // the backstop, not the fix.
+      try {
+        const events = await listEvents({ limit: Math.min(2000, parseInt(query.limit, 10) || 500) });
+        const filtered = query.type ? events.filter((e) => e.type === query.type) : events;
+        return json(200, { events: filtered, total: filtered.length });
+      } catch (e) {
+        console.error("SIGNL admin events read failed (rendering empty, degraded):", e);
+        return json(200, { events: [], total: 0, degraded: true });
+      }
     }
     if (method === "GET" && seg[1] === "stats") {
       const users = (await allUsers()).filter((u) => u.role !== "admin");
@@ -7653,18 +7680,31 @@ async function route(event) {
     // these routes only manage the queue and the arm switch.
     if (method === "GET" && seg[1] === "campaign" && !seg[2]) {
       const campaignId = validCampaignId(query.campaignId) ? query.campaignId : DEFAULT_CAMPAIGN_ID;
-      const cfg = await getCampaignConfig(campaignId);
-      const recipients = await listCampaignRecipients(campaignId);
-      const counts = campaignCounts(recipients);
-      const recentSends = recipients
-        .filter((r) => r.status === "sent")
-        .sort((a, b) => ((a.sentAt || "") < (b.sentAt || "") ? 1 : -1))
-        .slice(0, 10)
-        .map((r) => ({ email: r.email, name: r.name || "", handle: r.handle || "", market: r.market || "", sentAt: r.sentAt || null, messageRef: r.messageRef || null, fromMailbox: CAMPAIGN_MAILBOXES.includes(r.sentFrom) ? r.sentFrom : "default" }));
-      const sentToday = await campaignSentToday(new Date());
       const senderProfiles = {};
       for (const name of CAMPAIGN_MAILBOXES) senderProfiles[name] = senderProfile(name).available;
-      return json(200, { campaign: campaignView(cfg, counts, sentToday), counts, recentSends, senderProfiles });
+      // Guarded like the rest of Hardening A (INCIDENT-2026-10-25):
+      // if the campaign reads fail, the tab must still render — a
+      // zeroed, flagged payload — never hang or 500. The reads
+      // themselves are bounded now (keys + parallel getMany, one
+      // shared scan for both sent-today derivations), so this guard
+      // is the backstop, not the fix.
+      try {
+        const cfg = await getCampaignConfig(campaignId);
+        const recipients = await listCampaignRecipients(campaignId);
+        const counts = campaignCounts(recipients);
+        const recentSends = recipients
+          .filter((r) => r.status === "sent")
+          .sort((a, b) => ((a.sentAt || "") < (b.sentAt || "") ? 1 : -1))
+          .slice(0, 10)
+          .map((r) => ({ email: r.email, name: r.name || "", handle: r.handle || "", market: r.market || "", sentAt: r.sentAt || null, messageRef: r.messageRef || null, fromMailbox: CAMPAIGN_MAILBOXES.includes(r.sentFrom) ? r.sentFrom : "default" }));
+        const sentStats = await campaignSentTodayStats(new Date());
+        return json(200, { campaign: campaignView(cfg, counts, sentStats.total, sentStats.byProfile), counts, recentSends, senderProfiles });
+      } catch (e) {
+        console.error("SIGNL admin campaign read failed (rendering zeroed, degraded):", e);
+        const zeroCounts = { queued: 0, sent: 0, bounced: 0, skipped: 0, total: 0 };
+        const fallbackCfg = { id: campaignId, armed: false, armedAt: null, armedBy: null, disarmedAt: null, disarmReason: null, lastError: null, lastRunAt: null, totalSent: 0, fromMailbox: "default", createdAt: null, updatedAt: null };
+        return json(200, { campaign: campaignView(fallbackCfg, zeroCounts, null, null), counts: zeroCounts, recentSends: [], senderProfiles, degraded: true });
+      }
     }
     if (method === "POST" && seg[1] === "campaign" && seg[2] === "import") {
       const b = parseBody(event);
