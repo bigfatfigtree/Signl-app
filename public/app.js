@@ -319,7 +319,7 @@ async function renderPublicProfile() {
             ${p.campusBadge ? `<span class="cc-chip">${esc(p.campusBadge)}</span>` : ""}
             ${p.isRealtor ? `<span class="cc-chip">Realtor</span>` : ""}
             <span class="cc-chip">Founding Creator</span>
-            ${p.foundingBand ? `<span class="cc-chip">In the first ${p.foundingBand} founding creators in ${place}</span>` : ""}
+            ${p.foundingBand ? `<span class="cc-chip">First ${p.foundingBand} founding</span>` : ""}
           </div>
         </div>
         <p>${scoreBadge(p.localImpactScore)}${p.momentumPoints ? ` <span class="badge info">Momentum ${p.momentumPoints} pts</span>` : ""}${badgesHtml(p.badges)}</p>
@@ -340,13 +340,12 @@ async function renderPublicProfile() {
     ${p.isRealtor && p.farmAreas && p.farmAreas.length ? `<p class="small">Neighborhoods: ${p.farmAreas.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
     ${p.compCategories && p.compCategories.length ? `<p class="small muted">Open to comps: ${p.compCategories.map(esc).join(", ")}</p>` : ""}
     <p class="small">${p.paidRate ? `<span class="badge tier">Paid bookings: $${esc(String(p.paidRate))}</span> ` : ""}${p.compOpen === false ? `<span class="badge warn">Paid visits only</span>` : `<span class="badge info">Open to comp visits</span>`}</p>
-    ${p.paidRate ? `<p class="small muted">Businesses can also book this creator at their listed rate: the business pays the rate plus 3%, they keep 97% of their rate, and SIGNL holds the payment until the post is live.</p>` : ""}
+    ${p.paidRate ? `<p class="small muted">Books at $${esc(String(p.paidRate))} &middot; creator keeps 97% &middot; held until the post is live.</p>` : ""}
     ${bestWorkHtml(p.bestWork)}
     ${trackRecordHtml(p)}
     ${reviewsHtml(p)}
     ${visitIncludesHtml(p.visitIncludes)}
     ${p.isRealtor && p.brokerage ? `<p class="small muted">Brokered by ${esc(p.brokerage)}</p>` : ""}
-    <p class="small muted">SIGNL connects local businesses with local creators. Businesses comp a meal or a service, creators post honestly within 48 hours and disclose the comp, and every post is tracked. No business can ever require a positive post.</p>
     <div class="cta-row" style="justify-content:flex-start">
       ${state.user ? `<a class="btn ghost" href="#" onclick="return go('dashboard')">Back to my dashboard</a>` : `<a class="btn" href="#" onclick="return go('join-creator')">Become a Founding Creator</a> <a class="btn ghost" href="#" onclick="return go('for-businesses')">For Businesses</a>`}
     </div>
@@ -584,14 +583,14 @@ function growRosterHtml(u) {
   return `
     <div class="panel mt" style="text-align:left">
       <h3 style="margin-top:0">Grow your roster</h3>
-      <p class="small">Founding rosters fill by invitation. Share your personal invite link with other creators in ${esc(place)}: anyone who signs up through your link is credited to you.</p>
+      <p class="small">Share your invite link — creators who join through it are credited to you.</p>
       <div class="field"><label>Your invite link</label><input type="text" readonly value="${esc(link)}" onclick="this.select()"></div>
       <p class="small">${shareBlockHtml(u.creator && u.creator.handle, place, "Share your invite")}</p>
       <p class="small"><strong>Your roster:</strong> ${m.signups} ${m.signups === 1 ? "creator" : "creators"} joined through your link &middot; ${m.approved} approved &middot; <strong>${m.points} Momentum points</strong></p>
       ${m.campusCrew ? `<p class="small"><strong>Your campus crew: ${m.campusCrew.count} creator${m.campusCrew.count === 1 ? "" : "s"} from ${esc(m.campusCrew.university)}</strong></p>` : ""}
-      <p class="small">Creators who build a roster get seen first when businesses start choosing in your market. Points: +3 when a creator joins through your link, +10 when they are approved.</p>
+      <p class="small">Points: +3 per sign-up &middot; +10 per approval. Roster builders get seen first.</p>
       ${ladderHtml(u)}
-      <p class="small muted">Tap the link to select it, copy it, and send it to a creator who should be on the founding roster with you.</p>
+      <p class="small muted">Tap the link to copy it.</p>
     </div>`;
 }
 
@@ -607,13 +606,13 @@ function profileCompletionHtml(u) {
   const rows = pc.items.map((item) => `
     <div class="earn-row ${item.done ? "done" : ""}">
       <span class="earn-state">${item.done ? "&#10003;" : "+"}</span>
-      <span class="earn-label">${esc(item.label)}${item.required ? ` <span class="badge info">Needed to go live</span>` : ""}${item.detail ? ` <span class="muted">(${esc(item.detail)})</span>` : ""}</span>
+      <span class="earn-label">${esc(item.label)}${item.required ? ` <span class="badge info">Needed</span>` : ""}${item.detail ? ` <span class="muted">(${esc(item.detail)})</span>` : ""}</span>
       <span class="earn-points">${item.points ? "+" + item.points + " pts" : ""}</span>
     </div>`).join("");
   return `
   <div class="panel mt" style="text-align:left">
     <div class="flex-between"><h3 style="margin:0">Finish your profile to be launch-ready</h3><span class="badge info">${pc.requiredDone} of ${pc.requiredTotal} essentials done</span></div>
-    <p class="small">Businesses cannot see you yet, and you cannot take offers, until the essentials are done. The rest of the checklist earns Momentum points, and points order the creator list businesses see.</p>
+    <p class="small">Businesses can't see you until the essentials are done.</p>
     ${rows}
     <div class="mt"><button class="btn" onclick="return go('dashboard','Profile')">Finish my profile</button></div>
   </div>`;
@@ -641,11 +640,11 @@ function momentumHtml(u) {
   return `
   <div class="panel mt" style="text-align:left">
     <div class="flex-between"><h3 style="margin:0">Momentum points</h3><span class="badge info" style="font-size:1rem;padding:6px 14px">${m.points} points</span></div>
-    <p class="small">Earned for posting on time, completing your profile, and bringing creators in. You also earn them for reviewing businesses after completed visits and for posts that run as ads. Late posts, no-shows, and a redeemed visit with no post cost you points.${m.floorApplied ? " Your total never drops below zero." : ""}</p>
+    <p class="small">Earned for on-time posts, a complete profile, reviews and invites.${m.floorApplied ? " Your total never drops below zero." : ""}</p>
     <h4 style="margin:14px 0 6px">Ways to earn</h4>
     ${checklist || `<p class="small muted">Loading...</p>`}
     ${ledger ? `<h4 style="margin:16px 0 6px">Points history</h4>${ledger}` : ""}
-    <p class="small muted" style="margin-top:12px">Watch out: a post delivered late is -10. A no-show is -25. Redeeming a comp and never posting is -50, and it closes your account to future offers.</p>
+    <p class="small muted" style="margin-top:12px">Late post −10 &middot; No-show −25 &middot; Redeemed, never posted −50.</p>
   </div>`;
 }
 
@@ -709,7 +708,7 @@ function primaryOptionsHtml(selected) {
 // self-reported local % stays required for completion until
 // Instagram verification exists. This teaches where the number
 // comes from and licenses a rough estimate.
-const LOCAL_PCT_HELP = "Find it on Instagram: Insights, then Audience, then your top cities. Add up the share in the cities in your market area, and enter that total. A rough number is fine: it is labeled Self-reported everywhere it appears.";
+const LOCAL_PCT_HELP = "Instagram: Insights → Audience → top cities. Add the share in your market's cities. A rough number is fine — it's labeled Self-reported everywhere.";
 
 // Picker disclosure (audit F3 mitigation, 2026-10-22): visit proof
 // is an Instagram post link for now, and that rule is unchanged.
@@ -769,9 +768,60 @@ function standardVisit() {
   };
 }
 
+// V3 (copy cut, 2026-10-25): the Standard Visit as tight labeled
+// rows on a mint field region; the full canonical summary lives
+// behind ONE tap. The rows carry the substance (post, rights,
+// ownership) in fragments, the way Slotted cards carry data.
+function standardVisitRowsHtml() {
+  return `<div class="deal-rows">
+    <div class="drow"><span class="dk">Post</span><span class="dv">1 post/reel + 1 story &middot; within 48h &middot; live 30 days</span></div>
+    <div class="drow"><span class="dk">Comp rights</span><span class="dv">Native share only, creator tagged</span></div>
+    <div class="drow"><span class="dk">Paid adds</span><span class="dv">Repost + ad use for 6 months</span></div>
+    <div class="drow"><span class="dk">Ownership</span><span class="dv">Creators own their content. Nobody edits it.</span></div>
+  </div>`;
+}
+
 function visitIncludesHtml(summary) {
   const text = summary || standardVisit().summary;
-  return `<div class="showcase-block"><h4>Every SIGNL comped visit includes</h4><p class="small muted">${esc(text)}</p></div>`;
+  return `<div class="visit-mint"><h4>Every comped visit includes</h4>${standardVisitRowsHtml()}
+    <details class="deal-details"><summary>The Standard Visit, in full</summary><div class="dd-body"><p class="small">${esc(text)}</p></div></details>
+  </div>`;
+}
+
+// V3: an offer's terms as compressed labeled rows (visible before
+// any accept tap) + the full plain-words version behind one tap.
+// Rights and deadlines stay visible in compressed form; nothing
+// about the deal is deleted, it is demoted, never dropped.
+function dealRowsHtml(o) {
+  const rows = [];
+  if (o.kind === "paid") {
+    const net = o.paidMath && o.paidMath.creatorNet !== undefined && o.paidMath.creatorNet !== null && o.paidMath.creatorNet !== "" ? `$${o.paidMath.creatorNet} (97%)` : "97%";
+    rows.push(["You get paid", `$${o.cashRate} &middot; you keep ${net}`]);
+  } else {
+    rows.push(["You get", `${esc(o.whatComped)} &middot; $${o.dollarCap} cap &middot; ${Number(o.covers) === 2 ? "covers 2" : "covers you"}`]);
+  }
+  if (o.includes) rows.push(["Included", esc(o.includes)]);
+  if (o.experience) rows.push(["Experience", esc(o.experience)]);
+  rows.push(["Post", o.kind === "paid" ? "Per booking terms &middot; 48h &middot; live 30 days" : "1 post/reel + 1 story &middot; 48h &middot; honest, disclosed &middot; live 30 days"]);
+  rows.push(["Rights", o.kind === "paid" ? "Share + repost + ads 6 months &middot; no edits" : "Native share only &middot; no edits, downloads or ads"]);
+  return `<div class="deal-rows">${rows.map(([k, v]) => `<div class="drow"><span class="dk">${k}</span><span class="dv">${v}</span></div>`).join("")}</div>`;
+}
+
+function dealPlainWordsHtml(o) {
+  const rights = o.visitRights || rightsForVisit(o.kind);
+  return `<details class="deal-details"><summary>The deal, in plain words</summary><div class="dd-body">
+    <div class="showcase-block">
+      ${o.kind === "paid"
+        ? `<p class="small"><strong>You get paid:</strong> $${o.cashRate} for this paid booking, on the deliverables set in its terms. You keep $${o.paidMath ? o.paidMath.creatorNet : ""} (97% of the rate); SIGNL holds the payment and releases it when your post is live.</p>`
+        : `<p class="small"><strong>You get:</strong> ${esc(o.whatComped)} (comp cap $${o.dollarCap}) &middot; ${coversLine(o)}</p>`}
+      ${o.kind === "paid" && o.paidBrief ? `<p class="small"><strong>Key points from the business:</strong> ${esc(o.paidBrief)}</p>` : ""}
+      ${o.includes ? `<p class="small"><strong>Included:</strong> ${esc(o.includes)}</p>` : ""}
+      ${o.experience ? `<p class="small"><strong>The experience:</strong> ${esc(o.experience)}</p>` : ""}
+      ${o.kind === "paid" ? `<p class="small"><strong>You post:</strong> the deliverables set in this booking's terms, posted within 48 hours of your visit, honest and disclosed. The post stays live at least 30 days. You check off by pasting the post link in My Visits.</p>` : `<p class="small"><strong>You post:</strong> 1 post or reel + 1 story that shares the post, within 48 hours of your visit, honest, with the comp disclosed. The post stays live at least 30 days. You check off by pasting the post link in My Visits.</p>`}
+      <p class="small"><strong>They can:</strong> ${rights.can.map(esc).join("; ")}</p>
+      <p class="small"><strong>They can't:</strong> ${rights.cannot.map(esc).join("; ")}</p>
+    </div>
+  </div></details>`;
 }
 
 // Refinement bundle (2026-10-20): the creator free line, word for
@@ -1076,23 +1126,36 @@ function renderHome() {
   app.innerHTML = `
   <section class="hero">
     <h1>Local creators.<br><span class="grad-text">Real regulars.</span></h1>
-    <p>SIGNL connects local businesses with local creators and everyday people nearby. The business comps a meal or a service, the creator posts honestly within 48 hours, and every visit and post is tracked. No national reach games. National platforms sell reach. We sell regulars.</p>
+    <p>Local businesses comp a meal or a service. A local creator posts honestly within 48 hours. Every visit tracked.</p>
     <p><strong>${CREATOR_FREE_LINE}</strong></p>
     <div class="cta-row">
       <a class="btn" href="#" onclick="return go('join-creator')">Become a Founding Creator</a>
       <a class="btn ghost" href="#" onclick="return go('for-businesses')">For Businesses</a>
       <a class="btn ghost" href="#" onclick="return goStaff()">Redeem a creator visit</a>
     </div>
-    <p class="small muted mt">Founding creator sign-up is open now in all 39 markets, across 12 countries and territories. Markets open to businesses in the next 30 to 90 days. Every founding application gets a decision or a clear status within 2 business days. Don't see your city? Sign up anyway: new markets open where creator sign-ups pile up, and early sign-ups hold founding standing when their city opens.</p>
+    <p class="small muted mt">Open now in all 39 markets &middot; Decisions within 2 business days</p>
   </section>
-  <section class="grid cols-3 mt">
-    <div class="card"><h3><span class="sx-num">1.</span>Claim your spot, finish your profile</h3><p class="muted">Creators claim their founding spot in about a minute (handle, market, email), then finish their full profile after approval: your audience, what share of it is local. Early sign-ups hold founding status and priority when businesses start searching.</p></div>
-    <div class="card"><h3><span class="sx-num">2.</span>Your market opens</h3><p class="muted">When your market opens to businesses, we email you. Businesses browse the founding roster in your market and see what share of each creator's audience is actually local.</p></div>
-    <div class="card"><h3><span class="sx-num">3.</span>Visit, comped, honest post</h3><p class="muted">The creator books a visit and gets a one-time code, redeemed in the app at the visit. The clock starts there: an honest post, with disclosure, within 48 hours. Comped visits are the everyday offer; paid cash campaigns sit on top, and Headliners (15,000+ followers) are first in line for them.</p></div>
+  <section style="margin-top:44px">
+    <p class="ui-kicker">How it works</p>
+    <div class="srow"><div class="snum">01</div><div><div class="stitle">Claim your spot</div><div class="swhis">Handle, market, email — about a minute.</div></div></div>
+    <div class="srow"><div class="snum">02</div><div><div class="stitle">Your market opens</div><div class="swhis">We email you. Businesses see local reach first.</div></div></div>
+    <div class="srow"><div class="snum">03</div><div><div class="stitle">Visit. Post honestly.</div><div class="swhis">Comped visit &middot; post within 48 hours.</div></div></div>
   </section>
-  <section class="panel rules-panel mt">
-    <h3>The rules, up front</h3>
-    <p>Posts are honest, always. A business can never require a positive post, a rating, or specific words. Creators disclose every comp, as the FTC requires. If a post does not land in 48 hours, the business gets a replacement visit. Build the roster and get seen first: invite other creators and earn Momentum points (+3 per sign-up through your link, +10 per approval). Points order the creator list businesses see.</p>
+  <section style="margin-top:40px">
+    <p class="ui-kicker">The two lanes</p>
+    <h2 style="margin:6px 0 4px">Comped, or <span style="color:var(--mint-deep)">paid.</span></h2>
+    <div class="lrow"><span class="tg"></span><div><span class="lname">Comped visits</span> <span class="lline">— the business covers it. You post honestly within 48 hours.</span></div></div>
+    <div class="lrow"><span class="tg off"></span><div><span class="lname">Paid bookings</span> <span class="lline">— booked at your rate. You keep 97%.</span></div></div>
+  </section>
+  <section class="fld fld-mint" style="margin-top:52px">
+    <p class="ui-kicker">The rules</p>
+    <h2 style="margin:8px 0 18px">Honest posts, <span class="acc">always.</span></h2>
+    <div class="black-card">
+      <div class="rule-row">No required praise, ever.</div>
+      <div class="rule-row">Every comp disclosed (FTC).</div>
+      <div class="rule-row">No post in 48 hours? Replacement visit.</div>
+      <details class="deal-details"><summary>All the rules</summary><div class="dd-body"><p class="small">A business can never require a positive post, a rating, or specific words. Creators disclose every comp, as the FTC requires. If a post does not land in 48 hours, the business gets a replacement visit. Invite other creators and earn Momentum points (+3 per sign-up through your link, +10 per approval). Points order the creator list businesses see.</p></div></details>
+    </div>
   </section>`;
 }
 
@@ -1526,41 +1589,42 @@ function renderQuickClaim() {
     <div class="form-head">
     <h2>Claim your founding spot</h2>
     <p><strong>${CREATOR_FREE_LINE}</strong></p>
-    <p><strong>We don't rank you by followers. We rank you by how much of your audience actually lives here.</strong> That share is your local reach, and it is the number businesses look at first.</p>
     </div>
+    <div class="form-mint">Ranked by local reach, not followers — the share of your audience that lives here.</div>
     <div class="form-body">
-    <p class="muted">Founding spots are held in sign-up order. Claim yours and finish the rest after approval. This takes about a minute: your handle, your market, an email, and a password. When you are approved, we email you, and your dashboard walks you through finishing your profile: your photo, your audience counts, what share of it is local. A finished profile is what businesses see, so that step is what makes you bookable. City not listed yet? Pick "My city is not listed yet" below and claim anyway: your sign-up counts toward opening your city, and you hold founding standing there.</p>
-    <p class="small"><strong>What you get:</strong> comped meals, services and experiences at local businesses, yours for an honest post within 48 hours. Paid cash campaigns sit on top of comps, and Headliners are first in line for them. After approval, your personal invite link earns Momentum points (+3 per creator who signs up through it, +10 per approval), and points order the creator list businesses see.</p>
-    ${hasPrefill ? `<div class="notice blue">Your invite link told us a head start: we pre-filled what it carried below. Check it, claim your spot, and your application goes into the review queue.</div>` : ""}
+    <p class="muted">About a minute: handle, market, email, password. Spots held in sign-up order — finish your profile after approval.</p>
+    <div class="lrow"><span class="tg"></span><div><span class="lname">Comped</span> <span class="lline">— meals, services and experiences, for an honest post within 48 hours.</span></div></div>
+    <div class="lrow"><span class="tg off"></span><div><span class="lname">Paid</span> <span class="lline">— cash campaigns on top. Headliners first in line.</span></div></div>
+    ${hasPrefill ? `<div class="notice blue">Pre-filled from your invite link — check it and claim.</div>` : ""}
     <div id="form-error"></div>
     <form onsubmit="return doQuickClaim(event)">
-      <div class="field"><label>Where is your main audience?</label><select id="qc-platform" onchange="syncQcPlatform()">${primaryOptionsHtml(pfPlatform)}</select><p class="small muted">Pick the platform your audience actually follows you on. You can add the rest of your platforms when you finish your profile.</p><p class="small muted" id="qc-proof-note" style="display:${pfPlatform !== "instagram" ? "" : "none"}">${PROOF_DISCLOSURE}</p></div>
+      <div class="field"><label>Where is your main audience?</label><select id="qc-platform" onchange="syncQcPlatform()">${primaryOptionsHtml(pfPlatform)}</select><p class="small muted">Your main platform. Add the rest later.</p><p class="small muted" id="qc-proof-note" style="display:${pfPlatform !== "instagram" ? "" : "none"}">${PROOF_DISCLOSURE}</p></div>
       <div class="field"><label id="qc-handle-label">Your ${esc(primaryLabelClient(pfPlatform))} handle (required)</label><input id="qc-handle" placeholder="yourhandle" required value="${esc(pf.handle || "")}" oninput="syncQcPlatform()"><p class="small muted" id="qc-ig-link">${pf.handle ? esc(primaryMetaClient(pfPlatform).host + pf.handle) : ""}</p></div>
-      <div class="field"><label>Your market</label><input id="qc-market-search" placeholder="Search markets, for example: Dubai" oninput="filterQuickMarketOptions()" style="margin-bottom:6px"><select id="qc-market" onchange="syncQuickMarketChoice()">${marketOptions(pfMarket, true)}</select><p class="small muted">Markets are grouped by country. Don't see your city? Pick "My city is not listed yet" and claim anyway.</p></div>
+      <div class="field"><label>Your market</label><input id="qc-market-search" placeholder="Search markets, for example: Dubai" oninput="filterQuickMarketOptions()" style="margin-bottom:6px"><select id="qc-market" onchange="syncQuickMarketChoice()">${marketOptions(pfMarket, true)}</select><p class="small muted">Grouped by country. City missing? Pick "My city is not listed yet".</p></div>
       <div id="qc-custom-wrap" style="display:none">
         <div class="field"><label>Your city</label><input id="qc-city-text" placeholder="For example: Tulsa"></div>
         <div class="field"><label>Your country</label><input id="qc-country-text" placeholder="For example: United States"></div>
         <div class="field"><label>Your state or province (optional)</label><input id="qc-state-text" placeholder="Optional, for example: OK"></div>
-        <p class="small muted">SIGNL is not open there yet. Your sign-up counts: when enough creators in your city sign up, we open there, and founding sign-ups go first.</p>
+        <p class="small muted">Not open there yet — your sign-up counts toward opening it. Founding sign-ups go first.</p>
       </div>
       <div class="form-2col">
         <div class="field"><label>Email (how we reach you at launch)</label><input type="email" id="qc-email" required autocomplete="email"></div>
         <div class="field"><label>Password (10+ characters)</label><input type="password" id="qc-password" required minlength="10" autocomplete="new-password"></div>
       </div>
-      <div class="notice blue">The deal, in plain words:
-        <ul style="margin:8px 0 0;padding-left:18px">
-          <li>A business comps you a meal or service. You post your honest experience within 48 hours of the visit and disclose the comp. Nobody can ask you for a positive post. Ever.</li>
-          <li>Your check-off is the post link: you paste it in the app under My Visits. The link is the proof.</li>
-          <li>Post within 48 hours of the visit for full credit. A late post inside the catch-up window still counts.</li>
-          <li>If a post never lands, the visit does not count, and repeated misses can pause your account. Showing up matters here.</li>
-        </ul>
-      </div>
-      <div class="field"><label style="font-weight:500"><input type="checkbox" id="qc-agree-honest" style="width:auto" required> I understand no business can require me to post positively. My posts stay my honest opinion.</label></div>
-      <div class="field"><label style="font-weight:500"><input type="checkbox" id="qc-agree-ftc" style="width:auto" required> I agree to clearly disclose every comp in my posts, as the FTC requires.</label></div>
-      <div class="field"><label style="font-weight:500"><input type="checkbox" id="qc-agree-compliance" style="width:auto" required> I agree to post within 48 hours of every comped visit for full credit and paste the post link in the app. I understand a post that never lands means the visit does not count, and repeated misses can pause my account.</label></div>
-      <div class="field"><label style="font-weight:500"><input type="checkbox" id="qc-agree-terms" style="width:auto" required> I agree to the <a href="https://joinsignl.com/terms.html" target="_blank" rel="noopener">Terms of Service</a> and <a href="https://joinsignl.com/privacy.html" target="_blank" rel="noopener">Privacy Policy</a>, and I agree SIGNL can email me about my account, launch updates and offers. I can unsubscribe from marketing emails at any time.</label></div>
+      <details class="deal-details"><summary>The deal, in plain words</summary>
+        <div class="dd-body"><ul style="margin:8px 0 0;padding-left:18px">
+          <li>A business comps you. You post honestly within 48 hours and disclose the comp. Nobody can require a positive post.</li>
+          <li>Check off by pasting your post link in My Visits.</li>
+          <li>Post within 48 hours for full credit. Late inside the catch-up window still counts.</li>
+          <li>No post, no credit. Repeated misses can pause your account.</li>
+        </ul></div>
+      </details>
+      <div class="field"><label style="font-weight:500"><input type="checkbox" id="qc-agree-honest" style="width:auto" required> No business can require me to post positively. My posts stay my honest opinion.</label></div>
+      <div class="field"><label style="font-weight:500"><input type="checkbox" id="qc-agree-ftc" style="width:auto" required> I disclose every comp, as the FTC requires.</label></div>
+      <div class="field"><label style="font-weight:500"><input type="checkbox" id="qc-agree-compliance" style="width:auto" required> I post within 48 hours of each comped visit and paste the link in the app. A post that never lands doesn't count; repeated misses can pause my account.</label></div>
+      <div class="field"><label style="font-weight:500"><input type="checkbox" id="qc-agree-terms" style="width:auto" required> I agree to the <a href="https://joinsignl.com/terms.html" target="_blank" rel="noopener">Terms of Service</a> and <a href="https://joinsignl.com/privacy.html" target="_blank" rel="noopener">Privacy Policy</a>, and to account and launch emails. I can unsubscribe from marketing anytime.</label></div>
       <button class="btn" type="submit" style="width:100%">Claim my founding spot</button>
-      <p class="small muted mt">Every application is reviewed by a person, and every founding application gets a decision or a clear status within 2 business days. Founding spots are held in sign-up order.</p>
+      <p class="small muted mt">Reviewed by a person — decision or clear status within 2 business days.</p>
       <p class="small">Prefer to complete everything now? <a href="#" onclick="return showFullJoin()">Build your full profile instead</a>.</p>
     </form>
     </div>
@@ -1635,12 +1699,14 @@ function renderJoinCreator() {
     <div class="form-head">
     <h2>Become a Founding Creator</h2>
     <p><strong>${CREATOR_FREE_LINE}</strong></p>
-    <p><strong>We don't rank you by followers. We rank you by how much of your audience actually lives here.</strong> That share is your local reach, and it is the number businesses look at first.</p>
     </div>
+    <div class="form-mint">Ranked by local reach, not followers — the share of your audience that lives here.</div>
     <div class="form-body">
-    <p class="muted">SIGNL is opening market by market, and creators are signing up first. Build your full founding profile now: when your market opens to businesses in the next 30 to 90 days, we email you, and founding creators get priority when businesses search. This is not a waitlist form; this is your real profile. City not listed yet? Pick "My city is not listed yet" below and sign up anyway: your sign-up counts toward opening your city, and you hold founding standing there.</p>
-    <p class="small"><strong>What you get:</strong> comped meals, services and experiences at local businesses, yours for an honest post within 48 hours. Paid cash campaigns sit on top of comps, and Headliners are first in line for them. After approval, your personal invite link earns Momentum points (+3 per creator who signs up through it, +10 per approval), and points order the creator list businesses see.</p>
-    ${hasPrefill ? `<div class="notice blue">Your invite link told us a head start: we pre-filled what it carried below. Check it, finish the rest, and your profile goes into the review queue.</div>` : ""}
+    <p class="muted">Build your full profile now. When your market opens (30–90 days), founding creators get priority. This is your real profile, not a waitlist.</p>
+    <p class="small muted">City missing? Pick "My city is not listed yet" and sign up anyway.</p>
+    <div class="lrow"><span class="tg"></span><div><span class="lname">Comped</span> <span class="lline">— meals, services and experiences, for an honest post within 48 hours.</span></div></div>
+    <div class="lrow"><span class="tg off"></span><div><span class="lname">Paid</span> <span class="lline">— cash campaigns on top. Headliners first in line.</span></div></div>
+    ${hasPrefill ? `<div class="notice blue">Pre-filled from your invite link — check it and finish.</div>` : ""}
     <p class="small">In a hurry? <a href="#" onclick="return showQuickJoin()">Claim your spot with just your handle</a> and finish your profile after approval instead.</p>
     <div id="form-error"></div>
     <form onsubmit="return doRegisterCreator(event)">
@@ -1650,20 +1716,20 @@ function renderJoinCreator() {
       </div>
       <div class="field"><label>Password (10+ characters)</label><input type="password" id="jc-password" required minlength="10" autocomplete="new-password"></div>
       <div class="form-2col">
-        <div class="field"><label>Your market</label><input id="jc-market-search" placeholder="Search markets, for example: Dubai" oninput="filterMarketOptions()" style="margin-bottom:6px"><select id="jc-market" onchange="syncMarketChoice()">${marketOptions(pfMarket, true)}</select><p class="small muted">Markets are grouped by country. Don't see your city? Pick "My city is not listed yet" and sign up anyway.</p></div>
+        <div class="field"><label>Your market</label><input id="jc-market-search" placeholder="Search markets, for example: Dubai" oninput="filterMarketOptions()" style="margin-bottom:6px"><select id="jc-market" onchange="syncMarketChoice()">${marketOptions(pfMarket, true)}</select><p class="small muted">Grouped by country. City missing? Pick "My city is not listed yet".</p></div>
         <div class="field" id="jc-city-wrap"><label>Your home city</label><select id="jc-city">${cityOptions(pfMarket)}</select></div>
         <div id="jc-custom-wrap" style="display:none">
           <div class="field"><label>Your city</label><input id="jc-city-text" placeholder="For example: Tulsa"></div>
           <div class="field"><label>Your country</label><input id="jc-country-text" placeholder="For example: United States"></div>
           <div class="field"><label>Your state or province (optional)</label><input id="jc-state-text" placeholder="Optional, for example: OK"></div>
-          <p class="small muted">SIGNL is not open there yet. Your sign-up counts: when enough creators in your city sign up, we open there, and founding sign-ups go first.</p>
+          <p class="small muted">Not open there yet — your sign-up counts toward opening it. Founding sign-ups go first.</p>
         </div>
       </div>
-      <div class="field"><label>Your neighborhood or area (optional)</label><input id="jc-neighborhood" placeholder="For example: Oceanfront, Ghent, Town Center" maxlength="80"><p class="small muted">The part of town you actually post from. Businesses search by neighborhood, so this helps the right ones find you.</p></div>
-      <div class="field"><label>What do you do? (optional)</label><select id="jc-profession">${professionOptionsHtml("")}</select><p class="small muted">Realtors: pick Real estate agent. Your profile gains neighborhood tags, your brokerage line, and a printable listing proof sheet, built for agents who sell the neighborhoods they post about.</p></div>
-      <div class="field"><label>Your university (if you are a student now)</label><input id="jc-university" placeholder="Start typing your school" maxlength="120"><div class="uni-results" id="jc-university-results"></div><p class="small muted">Current students who add their school get a campus badge on their profile, and same-school referrals group into your campus crew. Pick your school from the list if it appears; if it does not, type it in full.</p></div>
-      <div class="field"><label>Student status (optional)</label><select id="jc-university-status"><option value="">Select one</option><option value="current_student">Current student</option><option value="alumni">Alumni</option><option value="not_student">Not a student</option></select><p class="small muted">The campus badge is for current students. Alumni and everyone else still get the campus crew grouping.</p></div>
-      <div class="field"><label>Where is your main audience?</label><select id="jc-platform" onchange="syncJcPlatform()">${primaryOptionsHtml(pf.platform || "instagram")}</select><p class="small muted">Pick the platform your audience actually follows you on. Your handle and your main follower count below are for this platform; the rest of your platforms stack on top.</p><p class="small muted" id="jc-proof-note" style="display:${(pf.platform || "instagram") !== "instagram" ? "" : "none"}">${PROOF_DISCLOSURE}</p></div>
+      <div class="field"><label>Your neighborhood or area (optional)</label><input id="jc-neighborhood" placeholder="For example: Oceanfront, Ghent, Town Center" maxlength="80"><p class="small muted">Businesses search by neighborhood.</p></div>
+      <div class="field"><label>What do you do? (optional)</label><select id="jc-profession">${professionOptionsHtml("")}</select><p class="small muted">Realtors: pick Real estate agent for neighborhood tags + a listing proof sheet.</p></div>
+      <div class="field"><label>Your university (if you are a student now)</label><input id="jc-university" placeholder="Start typing your school" maxlength="120"><div class="uni-results" id="jc-university-results"></div><p class="small muted">Current students get a campus badge. Pick from the list, or type it in full.</p></div>
+      <div class="field"><label>Student status (optional)</label><select id="jc-university-status"><option value="">Select one</option><option value="current_student">Current student</option><option value="alumni">Alumni</option><option value="not_student">Not a student</option></select><p class="small muted">Badge is current students only.</p></div>
+      <div class="field"><label>Where is your main audience?</label><select id="jc-platform" onchange="syncJcPlatform()">${primaryOptionsHtml(pf.platform || "instagram")}</select><p class="small muted">Your main platform. The rest stack on top.</p><p class="small muted" id="jc-proof-note" style="display:${(pf.platform || "instagram") !== "instagram" ? "" : "none"}">${PROOF_DISCLOSURE}</p></div>
       <div class="form-2col">
         <div class="field"><label id="jc-handle-label">${esc(primaryLabelClient(pf.platform || "instagram"))} handle (required)</label><input id="jc-handle" placeholder="yourhandle" required value="${esc(pf.handle || "")}" oninput="syncJcPlatform()"><p class="small muted" id="jc-ig-link"></p></div>
         <div class="field"><label>TikTok handle (optional)</label><input id="jc-tiktok" placeholder="yourhandle"></div>
@@ -1676,7 +1742,7 @@ function renderJoinCreator() {
       <div class="field"><label>LinkedIn profile (optional)</label><input id="jc-linkedin" placeholder="linkedin.com/in/yourname or full URL"></div>
       <div class="form-2col">
         <div class="field"><label id="jc-followers-label">${esc(primaryLabelClient(pf.platform || "instagram"))} followers (required)</label><input type="number" id="jc-followers" min="0" required placeholder="For example 8400" oninput="syncSuggestedTier()"></div>
-        <div class="field"><label>Your tier band</label><p id="jc-tier-line" style="margin:6px 0">Your band is set automatically from your total audience across platforms.</p><p class="small muted">Neighbors 500 to 2k &middot; Locals 2k to 15k &middot; Headliners 15k and up. Nobody picks their own band; it updates itself as your counts change.</p></div>
+        <div class="field"><label>Your tier band</label><p id="jc-tier-line" style="margin:6px 0">Your band is set automatically from your total audience across platforms.</p><p class="small muted">Neighbors 500–2k &middot; Locals 2k–15k &middot; Headliners 15k+. Set automatically.</p></div>
       </div>
       <div class="field"><label>Your audience on other platforms (optional)</label>
         <div class="form-2col">
@@ -1687,13 +1753,13 @@ function renderJoinCreator() {
           <div class="field" id="jc-stackrow-youtube"><label>YouTube subscribers</label><input type="number" id="jc-stack-youtube" min="0" placeholder="Optional" oninput="syncSuggestedTier()"></div>
           <div class="field" id="jc-stackrow-snapchat"><label>Snapchat followers</label><input type="number" id="jc-stack-snapchat" min="0" placeholder="Optional" oninput="syncSuggestedTier()"></div>
         </div>
-        <p class="small muted">SIGNL stacks your audience: your tier and your profile read your TOTAL across every platform, not just your main one. Add the ones you use; skip the rest.</p>
+        <p class="small muted">Your tier reads your TOTAL across platforms. Add the ones you use.</p>
       </div>
       <div class="form-2col">
         <div class="field"><label>Typical post views (optional)</label><input type="number" id="jc-avgviews" min="0" placeholder="For example 6000"></div>
         <div class="field"><label>Your local reach: what share of your followers live in your market? (%)</label>
           <input type="number" id="jc-localpct" min="0" max="100" required placeholder="For example 60">
-          <p class="small muted">${LOCAL_PCT_HELP} It is the number businesses care about most.</p>
+          <p class="small muted">${LOCAL_PCT_HELP}</p>
         </div>
       </div>
       <div class="field"><label>Top audience cities (optional)</label><input id="jc-topcities" placeholder="For example: Virginia Beach, Norfolk, Chesapeake"><p class="small muted">Up to 5, comma separated.</p></div>
@@ -1855,20 +1921,19 @@ function renderForBusinesses() {
     <div class="plan-card ${i === 0 ? "selected" : ""}" id="plan-${esc(p.id)}" onclick="selectPlan('${esc(p.id)}')">
       <div class="price">$${p.priceMonthly}<span class="small muted">/mo</span></div>
       <strong>${esc(p.name)}</strong>
-      <p class="small muted">${p.minMonths}-month minimum, then month to month.</p>
+      <p class="small muted">${p.minMonths}-month minimum.</p>
       <ul>${p.features.map((f) => `<li>${esc(f)}</li>`).join("")}</ul>
     </div>`).join("");
   app.innerHTML = `
   <section class="panel form-panel" style="max-width:680px;margin:10px auto">
     <div class="form-head">
     <h2>For Businesses: join the founding list</h2>
-    <p>SIGNL is building its founding creator rosters market by market. Businesses do not get product access yet, and the creator roster is not visible to businesses before launch. Join the founding business list now: tell us about your business and the plan you want, and we will hold your place while your market's roster is built.</p>
-    <p><strong>Founding pricing, locked by joining now:</strong> the price on this page is the founding price, and it stays locked while you stay subscribed. When your market opens, SIGNL activates founding businesses by hand, in application order.</p>
+    <p>Join the founding business list. We hold your place while your market's roster is built.</p>
+    <p><strong>Founding pricing</strong> — locked while you stay subscribed. Activated by hand, in application order.</p>
     </div>
     <div class="form-body">
     <div class="plan-cards">${plans}</div>
-    <div class="notice blue mt">Founding pricing: Self-Service $299/mo, Growth $599/mo, Managed $999/mo, 3-month minimum, then month to month. Joining costs nothing and charges nothing: your plan interest is recorded, no card is taken, and payment stays concierge. Jeff sends the payment step by hand when SIGNL activates your business.</div>
-    <h3 class="mt">Join the founding business list</h3>
+    <div class="notice blue mt">Joining is free. No card taken — payment stays concierge at activation.</div>
     <div id="jb-prefill"></div>
     <div id="jb-error"></div>
     <form onsubmit="return registerBusiness(event)">
@@ -1882,10 +1947,10 @@ function renderForBusinesses() {
       </div>
       <div class="form-2col">
         <div class="field"><label>Category</label><select id="jb-category">${state.boot.businessCategories.map((c) => `<option>${esc(c)}</option>`).join("")}</select></div>
-        <div class="field"><label>Market</label><input id="jb-market-search" placeholder="Search markets" oninput="filterBizMarketOptions()" style="margin-bottom:6px"><select id="jb-market" onchange="syncBizMarketChoice()">${marketOptions("", true)}</select><p class="small muted">Don't see your city? Pick "My city is not listed yet" and join the founding list for your city instead.</p></div>
+        <div class="field"><label>Market</label><input id="jb-market-search" placeholder="Search markets" oninput="filterBizMarketOptions()" style="margin-bottom:6px"><select id="jb-market" onchange="syncBizMarketChoice()">${marketOptions("", true)}</select><p class="small muted">City missing? Pick "My city is not listed yet".</p></div>
       </div>
       <div id="jb-custom-wrap" style="display:none">
-        <div class="notice blue">Business accounts open market by market. Join the founding list for your city now: your sign-up counts toward opening SIGNL there, founding pricing is held for the businesses on the list, and we email you the moment your market opens so you can finish setting up.</div>
+        <div class="notice blue">Your sign-up counts toward opening SIGNL in your city. Founding pricing held — we email you at launch.</div>
         <div class="form-2col">
           <div class="field"><label>Your city</label><input id="jb-city-text" placeholder="For example: Tulsa"></div>
           <div class="field"><label>Your country</label><input id="jb-country-text" placeholder="For example: United States"></div>
@@ -1898,10 +1963,10 @@ function renderForBusinesses() {
       </div>
       <div class="field"><label>About your business (optional)</label><textarea id="jb-about" rows="3" placeholder="What you serve, what the visit feels like, anything SIGNL should know when reviewing your application"></textarea></div>
       <input type="hidden" id="jb-plan" value="${esc(state.boot.plans[0].id)}">
-      <label style="font-weight:500"><input type="checkbox" id="jb-terms" style="width:auto" required> I agree to the Terms of Service and Privacy Policy, and to receiving account and marketing emails from SIGNL.</label>
+      <label style="font-weight:500"><input type="checkbox" id="jb-terms" style="width:auto" required> I agree to the Terms of Service and Privacy Policy, and to account and marketing emails from SIGNL.</label>
       <button class="btn mt" type="submit" style="width:100%">Join the founding business list</button>
     </form>
-    <p class="small muted mt">Every application is reviewed by a person; you will get a decision or a clear status within 2 business days. Creator sign-up is separate and open now: <a href="#" onclick="return go('join-creator')">become a founding creator</a>. The creator roster is not public, and it is not shown to founding businesses before activation: only businesses SIGNL activates can browse it.</p>
+    <p class="small muted mt">Reviewed by a person — decision within 2 business days. The roster stays private until activation. Creators join separately: <a href="#" onclick="return go('join-creator')">become a founding creator</a>.</p>
     </div>
   </section>`;
   bizCityOptions();
@@ -2112,7 +2177,7 @@ function renderPending() {
           <div class="field"><label>Your city</label><input id="pm-city-text" value="${esc(u.city || "")}" placeholder="For example: Tulsa"></div>
           <div class="field"><label>Your country</label><input id="pm-country-text" value="${esc(u.country || "")}" placeholder="For example: United States"></div>
           <div class="field"><label>Your state or province (optional)</label><input id="pm-state-text" value="${esc(u.state || "")}" placeholder="Optional, for example: OK"></div>
-          <p class="small muted">SIGNL is not open there yet. Your sign-up counts: when enough creators in your city sign up, we open there, and founding sign-ups go first.</p>
+          <p class="small muted">Not open there yet — your sign-up counts toward opening it. Founding sign-ups go first.</p>
         </div>
         <button class="btn small-btn" onclick="return savePendingMarket(event)">Move my application</button>
         <p class="small muted" style="margin-top:8px">Your sign-up time moves with you, so your place in line is kept.</p>
@@ -2456,7 +2521,7 @@ function trackRecordHtml(card) {
   const tr = card.trackRecord;
   if (!tr) return "";
   if (tr.isNew) {
-    return `<div class="showcase-block"><h4>SIGNL track record</h4><p class="muted">New to SIGNL: no visits yet.${card.foundingBand ? ` Founding creator, first ${card.foundingBand} in ${esc(card.market || "")}.` : ""} Every completed visit, delivered post, and on-time record appears here as it happens, computed from real bookings only.</p></div>`;
+    return `<div class="showcase-block"><h4>SIGNL track record</h4><p class="muted">New to SIGNL — no visits yet.${card.foundingBand ? ` Founding creator, first ${card.foundingBand} in ${esc(card.market || "")}.` : ""}</p></div>`;
   }
   const names = (tr.businessesWorkedWith || []).map(esc).join(", ");
   return `<div class="showcase-block"><h4>SIGNL track record</h4>
@@ -2521,7 +2586,7 @@ function creatorProfileDetailHtml(c, preview) {
             ${c.city ? `<span class="cc-chip">${esc(c.city)}</span>` : ""}
             ${c.neighborhood ? `<span class="cc-chip">${esc(c.neighborhood)}</span>` : ""}
             ${campusBadgeHtml(c) ? `<span class="cc-chip">${esc(c.campusBadge || (c.profile && c.profile.campusBadge) || "")}</span>` : ""}
-            ${c.foundingBand ? `<span class="cc-chip">Founding creator, first ${c.foundingBand} in market</span>` : ""}
+            ${c.foundingBand ? `<span class="cc-chip">First ${c.foundingBand} founding</span>` : ""}
           </div>
         </div>
         <p>${scoreBadge(c.localImpactScore)}${p.openToPaidCampaigns ? ` <span class="badge tier">Open to paid campaigns</span>` : ""}${paidLaneBadgesHtml(p)}${c.momentum && c.momentum.points ? ` <span class="badge info">Momentum ${c.momentum.points} pts</span>` : ""}${badgesHtml(c.badges)}</p>
@@ -2552,7 +2617,7 @@ function creatorProfileDetailHtml(c, preview) {
         ? `<button class="btn" onclick="previewStartOffer('${c.userId}')">Send this creator an offer (preview)</button>${p.paidRate ? ` <button class="btn ghost" onclick="previewPaidBooking('${c.userId}')">Preview paid booking ($${esc(String(p.paidRate))})</button>` : ""}`
         : `<button class="btn" onclick="startOffer('${c.userId}')">Send offer</button>${p.paidRate ? ` <button class="btn" onclick="bookPaidVisit('${c.userId}')">Book paid visit ($${esc(String(p.paidRate))})</button>` : ""} <button class="btn ghost" onclick="openThread('${c.userId}')">Message</button>`}
     </div>
-    ${p.paidRate ? `<p class="small muted">Paid bookings: this creator lists a paid rate of $${esc(String(p.paidRate))} for a paid booking, on deliverables the two of you set in the booking terms. You pay the rate plus 3%, they keep 97% of their rate, and SIGNL holds the payment until their post is live. Comp-only is always fine too.</p>` : ""}
+    ${p.paidRate ? `<p class="small muted">Paid bookings: $${esc(String(p.paidRate))} &middot; you pay rate + 3% &middot; they keep 97% &middot; held until the post is live.</p>` : ""}
     ${preview ? `<p class="small muted">Preview: an offer sent from here is a simulation. It never reaches ${esc(c.name)} and nothing is saved.</p>` : ""}
     ${preview && c.trackRecord && c.trackRecord.postsDelivered > 0 ? `
     <div class="showcase-block"><h4>Ad use (preview)</h4>
@@ -2622,7 +2687,7 @@ function creatorCard(c, viewer, opts) {
         ${c.city ? `<span class="cc-chip">${esc(c.city)}</span>` : ""}
         ${c.neighborhood ? `<span class="cc-chip">${esc(c.neighborhood)}</span>` : ""}
         ${campusBadgeHtml(c) ? `<span class="cc-chip">${esc(c.campusBadge || (c.profile && c.profile.campusBadge) || "")}</span>` : ""}
-        ${c.foundingBand ? `<span class="cc-chip">Founding creator, first ${c.foundingBand} in market</span>` : ""}
+        ${c.foundingBand ? `<span class="cc-chip">First ${c.foundingBand} founding</span>` : ""}
       </div>
     </div>
     <div class="cc-local">
@@ -2677,7 +2742,7 @@ function renderCreatorDash() {
   if (tab === "Dashboard") body = `<div id="creator-home" class="vx-stagger">${skelHtml("Loading your dashboard...", 2)}</div>`;
   if (tab === "Profile") body = creatorProfileHtml(u) + momentumHtml(u) + growRosterHtml(u);
   app.innerHTML = `
-    <h2>Creator dashboard <span class="badge ok">Founding Creator, ${esc(marketDisplayName(u.market))}</span></h2>
+    <h2>Creator dashboard <span class="badge ok">Founding Creator</span></h2>
     ${standingBannerHtml(u)}
     <div id="tab-body">${body}</div>`;
   if (tab === "Dashboard") loadCreatorHome();
@@ -2706,7 +2771,7 @@ function renderFoundingHome() {
   if (tab === "Status") body = `<h3 style="margin-top:0">Your founding status</h3><div id="founding-body">${skelHtml("Loading your founding profile...", 1)}</div>`;
   if (tab === "Profile") body = creatorProfileHtml(u);
   app.innerHTML = `
-    <h2>Creator dashboard <span class="badge ok">Founding Creator, ${placeBadge}</span></h2>
+    <h2>Creator dashboard <span class="badge ok">Founding Creator</span></h2>
     ${standingBannerHtml(u)}
     <div id="tab-body">${body}</div>`;
   if (tab === "Dashboard") loadFoundingDashboard();
@@ -2737,7 +2802,7 @@ async function loadFoundingDashboard() {
     <div class="dash-hero">
       <p class="dh-kicker">Creator dashboard &middot; ${place}</p>
       <div class="dh-name">${esc(greet)}, ${esc(firstName)}.</div>
-      <p class="dh-sub">${isUnl ? `${esc(f.city)} opens when sign-ups pile up. Until then, this is your home: your numbers, your paid lane, and your roster.` : `${esc(marketTalkNameClient(f.market))} opens to businesses in the next ${esc(f.launchWindow)}. Until then, this is your home: your numbers, your paid lane, and your roster.`}</p>
+      <p class="dh-sub">${isUnl ? `${esc(f.city)} opens when sign-ups pile up. Your numbers, paid lane and roster.` : `${esc(marketTalkNameClient(f.market))} opens in the next ${esc(f.launchWindow)}. Your numbers, paid lane and roster.`}</p>
       <div class="dh-row"><div><div class="dh-num">${fmtNum(totalAudienceOf(card))}</div><div class="dh-num-lbl">Total audience across your platforms</div></div></div>
     </div>
     ${profileCompletionHtml(u)}
@@ -2747,9 +2812,9 @@ async function loadFoundingDashboard() {
           <h3 style="margin:0">${esc(u.name)} <span class="muted">@${esc(p.handle || "")}</span></h3>
           <p class="muted small">${isUnl ? place : `${esc(marketDisplayName(f.market))} &middot; ${esc(f.city)}`}</p>
         </div>
-        <span class="badge ok" style="font-size:0.95rem;padding:6px 14px">Founding Creator, ${isUnl ? esc(f.city) : esc(marketDisplayName(f.market))}</span>
+        <span class="badge ok" style="font-size:0.95rem;padding:6px 14px">Founding Creator</span>
       </div>
-      <p class="small">${p.localAudiencePct === null || p.localAudiencePct === undefined ? `Add your local audience % in your profile` : `${p.localAudiencePct}% local audience`} &middot; ${esc(p.tierBand || "")} tier &middot; ${fmtNum(totalAudienceOf(card))} total audience${f.priorityBand ? ` &middot; in the first ${f.priorityBand} founding creators in ${place}` : ""}${campusBadgeHtml(card)}</p>
+      <p class="small">${p.localAudiencePct === null || p.localAudiencePct === undefined ? `Add your local audience % in your profile` : `${p.localAudiencePct}% local audience`} &middot; ${esc(p.tierBand || "")} tier &middot; ${fmtNum(totalAudienceOf(card))} total audience${f.priorityBand ? ` &middot; first ${f.priorityBand} founding` : ""}${campusBadgeHtml(card)}</p>
       <p style="margin-bottom:0">${scoreBadge(card.localImpactScore)}</p>
       <div class="home-actions"><button class="btn small-btn ghost" onclick="return go('dashboard','Status')">See your full status</button></div>
     </div>
@@ -2783,7 +2848,7 @@ async function loadFoundingStatus() {
           <h3 style="margin:0">${esc(state.user.name)} <span class="muted">@${esc(p.handle || "")}</span></h3>
           <p class="muted small">${isUnl ? place : `${esc(marketDisplayName(f.market))} &middot; ${esc(f.city)}`}</p>
         </div>
-        <span class="badge ok" style="font-size:0.95rem;padding:6px 14px">Founding Creator, ${isUnl ? esc(f.city) : esc(marketDisplayName(f.market))}</span>
+        <span class="badge ok" style="font-size:0.95rem;padding:6px 14px">Founding Creator</span>
       </div>
       <p class="small">You are in. Know a creator who should be on the founding roster with you? ${shareBlockHtml(p.handle, isUnl ? (f.city || "") : (f.market || ""), "Share your invite")}</p>
       <div class="grid cols-2 mt">
@@ -2972,7 +3037,7 @@ function homeActiveVisitHtml(b) {
   <section class="panel">
     <p class="ui-kicker">Active visit</p>
     <h3 class="home-h">No active visit right now</h3>
-    <p class="small muted">When you accept an offer, the visit, its one-time code, and its 48 hour post clock live here, front and center.</p>
+    <p class="small muted">Accepted visits, codes and post clocks live here.</p>
     <div class="home-actions"><button class="btn small-btn" onclick="return go('dashboard','Offers')">See offers</button></div>
   </section>`;
   }
@@ -2985,21 +3050,21 @@ function homeActiveVisitHtml(b) {
     clockBlock = `
     <p class="ui-kicker" style="margin-top:14px">Time left to post</p>
     <div class="home-count home-tick" data-mode="post" data-target="${esc(b.postDeadline || "")}">${esc(homeDurCore(diff))}${diff < 0 ? " overdue" : ""}</div>
-    <p class="small muted">Post by ${esc(fmtDate(b.postDeadline))}. Paste the post link under My Visits and the visit checks off.</p>`;
+    <p class="small muted">Post by ${esc(fmtDate(b.postDeadline))}. Paste the link in My Visits.</p>`;
   } else if (awaitingRedeem) {
     clockBlock = `
-    <p class="small" style="margin-top:12px">Your redemption window closes <strong>${esc(fmtDate(b.redeemBy))}</strong> (<span class="countdown home-tick" data-target="${esc(b.redeemBy || "")}">${esc(homeDurCore(Date.parse(b.redeemBy || "") - Date.now()))}</span> left). Come any time inside the window; no appointment needed. Your 48 hour post clock starts the moment staff redeem your code.</p>`;
+    <p class="small" style="margin-top:12px">Window closes <strong>${esc(fmtDate(b.redeemBy))}</strong> (<span class="countdown home-tick" data-target="${esc(b.redeemBy || "")}">${esc(homeDurCore(Date.parse(b.redeemBy || "") - Date.now()))}</span> left). Walk in any time. Your 48h clock starts at redemption.</p>`;
   } else if (b.post && lane && lane.escrowState === "held") {
     const releaseTxt = lane.proofAt ? fmtDate(new Date(Date.parse(lane.proofAt) + 48 * 3600 * 1000).toISOString()) : "48 hours after your post proof lands";
     clockBlock = `
-    <p class="small" style="margin-top:12px"><strong>Your post is in.</strong> The paid money for this visit is held by SIGNL and releases ${esc(releaseTxt)}. Nothing else is owed on this visit.</p>`;
+    <p class="small" style="margin-top:12px"><strong>Post is in.</strong> Held money releases ${esc(releaseTxt)}.</p>`;
   }
   const codeBlock = b.codeStatus === "issued" ? `
     <div class="home-visit-grid">
       <div>
-        <p class="small muted" style="margin-bottom:0">Your one-time visit code. Show this at the visit; staff redeem it in the app and your 48 hour clock starts at that moment.</p>
+        <p class="small muted" style="margin-bottom:0">Show at the visit — staff redeem it and your 48h clock starts.</p>
         <div class="code-display">${esc(b.code)}</div>
-        ${b.redeemBy ? `<p class="small"><strong>Use by ${esc(fmtDate(b.redeemBy))}</strong>. If the window passes unused, the offer expires and counts as a no-show.</p>` : ""}
+        ${b.redeemBy ? `<p class="small"><strong>Use by ${esc(fmtDate(b.redeemBy))}</strong> — unused counts as a no-show.</p>` : ""}
       </div>
       <div class="qr-box"><img src="/api/bookings/${b.id}/qr" alt="QR code for ${esc(b.code)}" onerror="this.parentElement.style.display='none'"></div>
     </div>` : (b.redeemedAt ? `
@@ -3059,7 +3124,7 @@ function homeOpportunitiesHtml(offers, u) {
   <section class="panel">
     <p class="ui-kicker">Opportunities</p>
     <h3 class="home-h">No open offers right now</h3>
-    <p class="small muted">When businesses in ${esc(marketTalkNameClient(u.market))} send offers, the best fits land here first. Your local audience percentage is what businesses look at hardest; keep it current in your profile.</p>
+    <p class="small muted">Best fits land here first.</p>
   </section>`;
   }
   const cards = ranked.slice(0, 3).map((o) => {
@@ -3069,13 +3134,12 @@ function homeOpportunitiesHtml(offers, u) {
     <div class="card home-opp mb">
       <div class="flex-between"><strong>${esc(o.title)}</strong><span class="badge tier">${esc(o.businessName)}</span></div>
       ${o.creatorId ? `<p style="margin:8px 0 0"><span class="badge ok">Sent directly to you</span></p>` : ""}
-      <p class="small"><strong>You get:</strong> ${esc(o.whatComped)} (comp cap $${o.dollarCap})${o.kind === "paid" ? "" : ` &middot; ${coversLine(o)}`}</p>
-      ${o.kind === "paid" && o.paidBrief ? `<p class="small"><strong>Key points from the business:</strong> ${esc(o.paidBrief)}</p>` : ""}
-      ${o.kind === "paid" ? `<p class="small"><strong>You post:</strong> the deliverables set in this booking's terms, posted within 48 hours of your visit, honest and disclosed. The post stays live at least 30 days, and you check off by pasting the post link in My Visits.</p>` : `<p class="small"><strong>You post:</strong> 1 post or reel + 1 story that shares the post, within 48 hours of your visit, honest, with the comp disclosed. The post stays live at least 30 days, and you check off by pasting the post link in My Visits.</p>`}
-      <p class="small"><strong>They can:</strong> ${rights.can.map(esc).join("; ")}<br><strong>They can't:</strong> ${rights.cannot.map(esc).join("; ")}</p>
-      <p class="small muted">Deadline: ${o.windowMode === "thisweek" ? "visit this week, the window ends Sunday" : "visit any time within 7 days of accepting"}. ${left} of ${o.spots} spot${o.spots === 1 ? "" : "s"} left.${o.visitWindow ? ` Note from the business: ${esc(o.visitWindow)}` : ""}</p>
+      ${dealRowsHtml(o)}
+      ${o.kind === "paid" && o.paidBrief ? `<p class="small"><strong>Key points:</strong> ${esc(o.paidBrief)}</p>` : ""}
+      ${dealPlainWordsHtml(o)}
+      <p class="small muted">${o.windowMode === "thisweek" ? "Visit this week — ends Sunday" : "Within 7 days of accepting"} &middot; ${left} of ${o.spots} spot${o.spots === 1 ? "" : "s"} left.${o.visitWindow ? ` Note from the business: ${esc(o.visitWindow)}` : ""}</p>
       <form onsubmit="return homeAcceptOffer(event, '${o.id}')">
-        <button class="btn small-btn" type="submit">Accept and get my code</button>
+        <button class="btn small-btn" type="submit">Accept</button>
       </form>
     </div>`;
   }).join("");
@@ -3083,7 +3147,6 @@ function homeOpportunitiesHtml(offers, u) {
   <section class="panel">
     <p class="ui-kicker">Opportunities picked for you</p>
     <h3 class="home-h">Open offers in ${esc(marketTalkNameClient(u.market))}</h3>
-    <p class="small muted">Sent to you first, then the open offers with the most spots left. The full deal is on every card before you accept anything.</p>
     ${cards}
     ${ranked.length > 3 ? `<div class="home-actions"><button class="btn small-btn ghost" onclick="return go('dashboard','Offers')">See all ${ranked.length} offers</button></div>` : ""}
   </section>`;
@@ -3100,19 +3163,21 @@ function homeLocalSignalHtml(card, bookings) {
   const tallyTotal = bookings.reduce((s, b) => s + (b.redemptions ? b.redemptions.basketTotal || 0 : 0), 0);
   const { delivered, streak } = homeStreak(bookings);
   return `
-  <section class="panel">
+  <section class="fld fld-mint" style="margin-top:52px">
     <p class="ui-kicker">Your local signal</p>
     <h3 class="home-h">The proof businesses see</h3>
-    <div class="ui-row"><span class="k">Local reach</span><span class="v">${p.localAudiencePct === null || p.localAudiencePct === undefined ? "Not reported yet" : p.localAudiencePct + "%"}</span></div>
-    <div class="ui-row"><span class="k">Local Impact Score</span><span class="v">${card && card.localImpactScore !== null && card.localImpactScore !== undefined ? card.localImpactScore + " / 100" : "Pending"}</span></div>
-    ${comp ? `<div class="ui-row"><span class="k">Reliability in your score</span><span class="v">${esc(String(comp.reliability))}</span></div>
-    <p class="small muted">${esc(comp.reliabilityBasis || "")}</p>` : ""}
+    <div class="black-card" style="margin:14px 0 8px">
+      <div style="font-size:3rem;font-weight:800;color:var(--mint);line-height:1">${p.localAudiencePct === null || p.localAudiencePct === undefined ? "—" : p.localAudiencePct + "%"}</div>
+      <div style="font-weight:700;color:#fff;margin-top:5px">Local reach</div>
+      <div class="muted small">Impact Score ${card && card.localImpactScore !== null && card.localImpactScore !== undefined ? card.localImpactScore + " / 100" : "pending"}</div>
+    </div>
+    ${comp ? `<div class="ui-row"><span class="k">Reliability</span><span class="v">${esc(String(comp.reliability))}</span></div>` : ""}
     <div class="ui-row"><span class="k">On-time delivery</span><span class="v">${tr.onTimePct === null || tr.onTimePct === undefined ? "No posts yet" : tr.onTimePct + "%"}</span></div>
     <div class="ui-row"><span class="k">Track record</span><span class="v">${tr.visitsCompleted || 0} visits &middot; ${tr.postsDelivered || 0} posts</span></div>
     <div class="ui-row"><span class="k">Register actions</span><span class="v">${tallyCount ? `${tallyCount} customers &middot; $${fmtMoney(tallyTotal)} rung up` : "None reported yet"}</span></div>
     ${delivered ? `<div class="ui-row"><span class="k">On-time streak</span><span class="v">${streak} in a row</span></div>
-    <p class="small muted">Every 5 on-time posts in a row earns a +25 Momentum streak bonus. The count above is counted from your delivered posts, newest first.</p>` : ""}
-    <div class="home-actions"><button class="btn small-btn ghost" onclick="return go('dashboard','Profile')">View your full profile</button></div>
+    <p class="small muted">+25 Momentum per 5-post on-time streak.</p>` : ""}
+    <div class="home-actions"><button class="btn small-btn" onclick="return go('dashboard','Profile')">View your full profile</button></div>
   </section>`;
 }
 
@@ -3129,9 +3194,9 @@ function homePaidLaneHtml(creator, footerHtml) {
   <section class="panel">
     <p class="ui-kicker">Paid lane</p>
     <h3 class="home-h">Comp and paid, your choice</h3>
-    <p class="small"><strong>Comp visits:</strong> ${compOpen ? "on. Businesses can comp you experiences for honest posts, and every completed visit builds your track record." : "off. You are paid-only right now, and that is always fine."}</p>
-    <p class="small"><strong>Your paid rate:</strong> ${rate ? `$${rate} for one paid booking, on deliverables the booking terms set. A business pays $${fmtMoney(total)} (your rate + 3%), and you keep $${fmtMoney(keep)}, which is 97% of your rate.` : "not set. Set one in your profile (minimum $50) and businesses can book you at your rate for a paid visit."}</p>
-    <p class="small muted">Paid visits are recorded in the app, no card charged. SIGNL holds the payment until your post is live, and releases it 48 hours after your proof lands. Comp-only is always fine, forever.</p>
+    <div class="lrow"><span class="tg${compOpen ? "" : " off"}"></span><div><span class="lname">Comp visits</span> <span class="lline">— ${compOpen ? "on. Businesses can comp you for honest posts." : "off. You're paid-only — always fine."}</span></div></div>
+    <div class="lrow"><span class="tg${rate ? "" : " off"}"></span><div><span class="lname">Paid bookings</span> <span class="lline">— ${rate ? `your rate $${rate} &middot; you keep $${fmtMoney(keep)} (97%). Business pays $${fmtMoney(total)}.` : "not set. Set one in Profile (min $50)."}</span></div></div>
+    <p class="small muted">Recorded in the app, no card charged. Held until your post is live — released 48h after proof.</p>
     ${footerHtml || ""}
   </section>`;
 }
@@ -3142,12 +3207,11 @@ function homeMoneyHtml(money) {
     <p class="ui-kicker">Money</p>
     <h3 class="home-h">Cash and comps, kept separate</h3>
     <div class="home-money">
-      <div class="hm-pile"><div class="hm-num">$${fmtMoney(money.released)}</div><div class="hm-lbl">Paid cash released (paid visits delivered, hold passed)</div></div>
-      <div class="hm-pile"><div class="hm-num">$${fmtMoney(money.held)}</div><div class="hm-lbl">Paid cash held by SIGNL: it releases 48 hours after your post proof lands</div></div>
-      <div class="hm-pile"><div class="hm-num">$${fmtMoney(money.compValue)}</div><div class="hm-lbl">Comp value received (face value of comps you redeemed: experiences, not cash)</div></div>
+      <div class="hm-pile"><div class="hm-num">$${fmtMoney(money.released)}</div><div class="hm-lbl">Paid cash released</div></div>
+      <div class="hm-pile"><div class="hm-num">$${fmtMoney(money.held)}</div><div class="hm-lbl">Held — releases 48h after proof</div></div>
+      <div class="hm-pile"><div class="hm-num">$${fmtMoney(money.compValue)}</div><div class="hm-lbl">Comp value (not cash)</div></div>
     </div>
     ${money.refunded ? `<p class="small muted">$${fmtMoney(money.refunded)} went back to businesses from paid visits that resolved without delivery.</p>` : ""}
-    <p class="small muted">These piles are the app's own ledger of your paid work: paid visits are recorded here, no card charged, and comp value is never counted as cash.</p>
   </section>`;
 }
 
@@ -3174,7 +3238,7 @@ function homeComingUpHtml(bookings) {
   <section class="panel">
     <p class="ui-kicker">Coming up</p>
     <h3 class="home-h">Your next deadlines</h3>
-    ${rows || `<p class="small muted">Nothing scheduled. Accepted visits, post deadlines, and payout holds land here.</p>`}
+    ${rows || `<p class="small muted">Nothing scheduled.</p>`}
     <div class="home-actions"><button class="btn small-btn ghost" onclick="return go('dashboard','My Visits')">Open My Visits</button></div>
   </section>`;
 }
@@ -3188,9 +3252,9 @@ function homeFoundingBlocksHtml(card, u) {
   return `
   <div class="stat-band home-metrics">
     <div class="stat-cell"><div class="stat-num"><em>${m.points}</em></div><div class="stat-lbl">Momentum points</div></div>
-    <div class="stat-cell"><div class="stat-num">${p.localAudiencePct === null || p.localAudiencePct === undefined ? "Not set" : p.localAudiencePct + "%"}</div><div class="stat-lbl">Your local reach (the number businesses look at first)</div></div>
-    <div class="stat-cell"><div class="stat-num">${card && card.localImpactScore !== null && card.localImpactScore !== undefined ? card.localImpactScore : "New"}</div><div class="stat-lbl">Local Impact Score, out of 100</div></div>
-    <div class="stat-cell"><div class="stat-num">${fmtNum(totalAudienceOf(card))}</div><div class="stat-lbl">Total audience across your platforms</div></div>
+    <div class="stat-cell"><div class="stat-num">${p.localAudiencePct === null || p.localAudiencePct === undefined ? "Not set" : p.localAudiencePct + "%"}</div><div class="stat-lbl">Local reach</div></div>
+    <div class="stat-cell"><div class="stat-num">${card && card.localImpactScore !== null && card.localImpactScore !== undefined ? card.localImpactScore : "New"}</div><div class="stat-lbl">Impact Score / 100</div></div>
+    <div class="stat-cell"><div class="stat-num">${fmtNum(totalAudienceOf(card))}</div><div class="stat-lbl">Total audience</div></div>
   </div>
   ${homePaidLaneHtml(u.creator, `<p class="small muted" style="margin-bottom:0">Change either setting in the Profile tab.</p>`)}`;
 }
@@ -3219,19 +3283,19 @@ async function loadCreatorHome() {
     <div class="dash-hero">
       <p class="dh-kicker">Creator dashboard &middot; ${esc(marketDisplayName(u.market))}</p>
       <div class="dh-name">${esc(greet)}, ${esc(firstName)}.</div>
-      <p class="dh-sub">Your active visit, your offers, and your money, in one place.</p>
-      <div class="dh-row"><div><div class="dh-num">${m.points}</div><div class="dh-num-lbl">Momentum points. Points are priority: they order the list businesses see.</div></div></div>
+      <p class="dh-sub">Your visit, offers and money.</p>
+      <div class="dh-row"><div><div class="dh-num">${m.points}</div><div class="dh-num-lbl">Momentum points</div></div></div>
     </div>
     ${profileCompletionHtml(u)}
     <div class="stat-band home-metrics">
-      <div class="stat-cell"><div class="stat-num">$${fmtMoney(money.released)}</div><div class="stat-lbl">${money.released ? "Paid cash released (paid visits delivered, hold passed)" : "Your first paid visit puts money here."}</div></div>
-      <div class="stat-cell"><div class="stat-num">$${fmtMoney(money.compValue)}</div><div class="stat-lbl">${money.compValue ? "Comp value received (experiences, not cash)" : "Your first comped visit lands here."}</div></div>
+      <div class="stat-cell"><div class="stat-num">$${fmtMoney(money.released)}</div><div class="stat-lbl">${money.released ? "Paid cash released" : "Your first paid visit puts money here."}</div></div>
+      <div class="stat-cell"><div class="stat-num">$${fmtMoney(money.compValue)}</div><div class="stat-lbl">${money.compValue ? "Comp value received" : "Your first comped visit lands here."}</div></div>
       <div class="stat-cell"><div class="stat-num">${tr.onTimePct === null || tr.onTimePct === undefined ? "New" : tr.onTimePct + "%"}</div><div class="stat-lbl">On-time posts (${tr.postsDelivered || 0} delivered)</div></div>
       <div class="stat-cell"><div class="stat-num"><em>${m.points}</em></div><div class="stat-lbl">Momentum points</div></div>
     </div>
     ${card.ratingCount >= 1 && card.ratingAvg !== null && card.ratingAvg !== undefined
       ? `<p class="small">${starsHtml(card.ratingAvg)} <strong>Your rating: ${esc(String(card.ratingAvg))}</strong> from ${card.ratingCount} business${card.ratingCount === 1 ? "" : "es"}, shown next to your Momentum points.</p>`
-      : `<p class="small muted">Businesses rate you after visits. Your rating appears here after your first rated visit.</p>`}
+      : `<p class="small muted">Your rating appears after your first rated visit.</p>`}
     ${strikeStatusHtml(u)}
     ${homeActiveVisitHtml(homeActiveBooking(bookings))}
     ${bookings.filter((b) => b.post && perfUpdateDue(b.post)).map((b) => perfUpdateFormHtml(b, "home")).join("")}
@@ -3593,7 +3657,7 @@ async function loadCreatorOffers() {
     const data = await api("GET", "/offers");
     const mine = (data.offers || []).filter((o) => o.lane !== "open");
     if (!mine.length) {
-      direct.innerHTML = `<div class="empty-state"><span class="es-badge"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z"/></svg></span><h3>No direct offers yet</h3><p>When a business in ${esc(marketTalkNameClient(state.user.market))} sends you an offer directly, it lands here. Open offers from every business in your market are on the board above.</p></div>`;
+      direct.innerHTML = `<div class="empty-state"><span class="es-badge"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z"/></svg></span><h3>No direct offers yet</h3><p>Offers sent to you land here.</p></div>`;
       return;
     }
     direct.innerHTML = `<div class="vx-stagger">` + mine.map((o) => { const rights = o.visitRights || rightsForVisit(o.kind); return `
@@ -3607,26 +3671,21 @@ async function loadCreatorOffers() {
           </div>
         </div>
         <div class="slot-deal">
-        <div class="showcase-block">
-          <h4>The deal, in plain words</h4>
-          <p class="small"><strong>You get:</strong> ${esc(o.whatComped)} (comp cap $${o.dollarCap})${o.kind === "paid" ? "" : ` &middot; ${coversLine(o)}`} &middot; ${o.bookedCount}/${o.spots} spots booked &middot; ${o.creatorId ? "Sent directly to you" : "Open to your market"}</p>
-          ${o.kind === "paid" && o.paidBrief ? `<p class="small"><strong>Key points from the business:</strong> ${esc(o.paidBrief)}</p>` : ""}
-          ${o.kind === "paid" ? `<p class="small"><strong>You post:</strong> the deliverables set in this booking's terms, posted within 48 hours of your visit, honest and disclosed. The post stays live at least 30 days. You check off by pasting the post link in My Visits.</p>` : `<p class="small"><strong>You post:</strong> 1 post or reel + 1 story that shares the post, within 48 hours of your visit, honest, with the comp disclosed. The post stays live at least 30 days. You check off by pasting the post link in My Visits.</p>`}
-          <p class="small"><strong>They can:</strong> ${rights.can.map(esc).join("; ")}</p>
-          <p class="small"><strong>They can't:</strong> ${rights.cannot.map(esc).join("; ")}</p>
-        </div>
+        ${dealRowsHtml(o)}
+        ${o.kind === "paid" && o.paidBrief ? `<p class="small"><strong>Key points:</strong> ${esc(o.paidBrief)}</p>` : ""}
+        ${dealPlainWordsHtml(o)}
         ${reviewLinksBlockHtml(o.businessReviewLinks)}
         ${referralProgramBlockHtml(o.businessReferralProgram)}
-        <p class="small muted">Redemption window: ${o.windowMode === "thisweek" ? "this week, ends Sunday" : "any time within 7 days of accepting"}. No appointment: you show up inside the window with your code.${o.visitWindow ? ` Note from the business: ${esc(o.visitWindow)}` : ""}</p>
+        <p class="small muted">${o.windowMode === "thisweek" ? "Redeem this week — ends Sunday" : "Redeem within 7 days of accepting"} &middot; no appointment needed.${o.visitWindow ? ` Note from the business: ${esc(o.visitWindow)}` : ""}</p>
         </div>
         <div class="slot-foot">
           <div><div class="slot-price">$${o.kind === "paid" ? o.cashRate : o.dollarCap}</div><div class="slot-note">${o.kind === "paid" ? "Rate" : "Comp cap"}</div></div>
           <div class="slot-actions">
             <form onsubmit="return acceptOffer(event, '${o.id}')">
-              <button class="btn book" type="submit">Accept and get my code</button>
+              <button class="btn book" type="submit">Accept</button>
             </form>
             ${o.creatorId ? `<button class="btn small-btn danger" onclick="declineOffer('${o.id}')">Decline</button>` : ""}
-            <button class="btn small-btn ghost" onclick="openThread('${o.businessId}')">Message business</button>
+            <button class="btn small-btn ghost" onclick="openThread('${o.businessId}')">Message</button>
           </div>
         </div>
       </div>`; }).join("") + `</div>`;
@@ -3659,11 +3718,11 @@ async function loadOpenBoard() {
     const data = await api("GET", "/open-offers");
     if (!document.getElementById("open-board")) return;
     if (!data.offers.length) {
-      el.innerHTML = `<div class="empty-state"><span class="es-badge"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z"/></svg></span><h3>Open offers in ${esc(marketTalkNameClient(state.user.market))}</h3><p>No open offers right now. Businesses post terms here and creators apply with one tap: your profile card is the application, no pitch to write. New offers land here first.</p></div>`;
+      el.innerHTML = `<div class="empty-state"><span class="es-badge"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z"/></svg></span><h3>Open offers in ${esc(marketTalkNameClient(state.user.market))}</h3><p>No open offers right now. New offers land here first.</p></div>`;
       return;
     }
     el.innerHTML = `<h3>Open offers in ${esc(state.user.market)}</h3>
-    <p class="small muted">One tap applies. Your profile card (local %, Impact, Momentum, track record${state.user.creator && state.user.creator.paidRate ? ", your rate" : ""}) attaches automatically. Offers only show when the comp fits your tier's guidance: that floor protects you from token comps.</p><div class="vx-stagger">` +
+    <p class="small muted">One tap applies — your profile card is the application.</p><div class="vx-stagger">` +
     data.offers.map((o) => {
       const rights = o.visitRights || rightsForVisit(o.kind);
       const spotsLeft = Math.max(0, o.spots - (o.filledCount || 0));
@@ -3678,30 +3737,21 @@ async function loadOpenBoard() {
           </div>
         </div>
         <div class="slot-deal">
-        <div class="showcase-block">
-          <h4>The deal, in plain words</h4>
-          ${o.kind === "paid"
-            ? `<p class="small"><strong>You get paid:</strong> $${o.cashRate} for this paid booking, on the deliverables set in its terms. You keep $${o.paidMath ? o.paidMath.creatorNet : ""} (97% of the rate); SIGNL holds the payment and releases it when your post is live.</p>`
-            : `<p class="small"><strong>You get:</strong> ${esc(o.whatComped)} (comp value $${o.dollarCap}) &middot; ${coversLine(o)}</p>`}
-          ${o.kind === "paid" && o.paidBrief ? `<p class="small"><strong>Key points from the business:</strong> ${esc(o.paidBrief)}</p>` : ""}
-          ${o.includes ? `<p class="small"><strong>Included:</strong> ${esc(o.includes)}</p>` : ""}
-          ${o.experience ? `<p class="small"><strong>The experience:</strong> ${esc(o.experience)}</p>` : ""}
-          ${o.kind === "paid" ? `<p class="small"><strong>You post:</strong> the deliverables set in this booking's terms, posted within 48 hours of your visit, honest and disclosed. The post stays live at least 30 days.</p>` : `<p class="small"><strong>You post:</strong> 1 post or reel + 1 story that shares the post, within 48 hours of your visit, honest, with the comp disclosed. The post stays live at least 30 days.</p>`}
-          <p class="small"><strong>They can:</strong> ${rights.can.map(esc).join("; ")}</p>
-          <p class="small"><strong>They can't:</strong> ${rights.cannot.map(esc).join("; ")}</p>
-        </div>
+        ${dealRowsHtml(o)}
+        ${o.kind === "paid" && o.paidBrief ? `<p class="small"><strong>Key points:</strong> ${esc(o.paidBrief)}</p>` : ""}
+        ${dealPlainWordsHtml(o)}
         ${reviewLinksBlockHtml(o.businessReviewLinks)}
         ${referralProgramBlockHtml(o.businessReferralProgram)}
-        <p class="small muted">${spotsLeft} of ${o.spots} spot${o.spots === 1 ? "" : "s"} open &middot; ${o.applicationCount} applied &middot; apply by ${fmtDay(o.applicationsCloseAt)} &middot; redeem ${fmtDay(o.windowStartAt)} to ${fmtDay(o.windowEndAt)}${o.businessNeighborhood ? ` &middot; ${esc(o.businessNeighborhood)}` : ""}${o.visitWindow ? `<br>Note from the business: ${esc(o.visitWindow)}` : ""}</p>
+        <p class="small muted">Apply by ${fmtDay(o.applicationsCloseAt)} &middot; ${o.applicationCount} applied${o.visitWindow ? `<br>Note from the business: ${esc(o.visitWindow)}` : ""}</p>
         ${o.businessAbout ? `<p class="small muted">${esc(o.businessAbout)}</p>` : ""}
         </div>
         <div class="slot-foot">
           <div><div class="slot-price">$${o.kind === "paid" ? o.cashRate : o.dollarCap}</div><div class="slot-note">${o.kind === "paid" ? "Rate" : "Comp value"}</div></div>
           <div class="slot-actions">
             ${o.myApplication
-              ? `<span><span class="badge info">You applied: ${esc(o.myApplication.status.replace(/_/g, " "))}</span> <a href="#" onclick="document.getElementById('my-apps').scrollIntoView({behavior:'smooth'}); return false;">See it under My Applications</a></span>`
-              : `<button class="btn book" onclick="applyToOffer('${o.id}')">Apply with one tap</button>`}
-            <button class="btn small-btn ghost" onclick="openThread('${o.businessId}')">Message business</button>
+              ? `<span><span class="badge info">Applied</span> <a href="#" onclick="document.getElementById('my-apps').scrollIntoView({behavior:'smooth'}); return false;">My Applications</a></span>`
+              : `<button class="btn book" onclick="applyToOffer('${o.id}')">Apply</button>`}
+            <button class="btn small-btn ghost" onclick="openThread('${o.businessId}')">Message</button>
           </div>
         </div>
       </div>`;
@@ -3729,13 +3779,13 @@ async function loadMyApplications() {
     const apps = data.applications || [];
     if (!apps.length) { el.innerHTML = ""; return; }
     const badge = (a) => ({
-      applied: `<span class="badge info">Applied: waiting on the business</span>`,
-      selected: `<span class="badge ok">Selected: your visit is booked</span>`,
+      applied: `<span class="badge info">Waiting on business</span>`,
+      selected: `<span class="badge ok">Booked</span>`,
       released: `<span class="badge">Released</span>`,
-      expired: `<span class="badge">Released: window passed</span>`,
-      backfill_offered: `<span class="badge warn">A spot opened for you: 24 hours to take it</span>`,
-      backfill_accepted: `<span class="badge ok">Backfill taken: visit booked</span>`,
-      withdrawn: `<span class="badge">Withdrawn by you</span>`,
+      expired: `<span class="badge">Released</span>`,
+      backfill_offered: `<span class="badge warn">Spot open &middot; 24h</span>`,
+      backfill_accepted: `<span class="badge ok">Booked</span>`,
+      withdrawn: `<span class="badge">Withdrawn</span>`,
     }[a.status] || esc(a.status));
     el.innerHTML = `<h3>My applications</h3>` + apps.map((a) => `
       <div class="card mb slot-card">
@@ -3747,7 +3797,7 @@ async function loadMyApplications() {
           </div>
         </div>
         ${(a.status === "released" || a.status === "expired") && a.releaseReason ? `<p class="small">${esc(RELEASE_TEXT[a.releaseReason] || "This application ended.")}</p>` : ""}
-        ${a.status === "selected" || a.status === "backfill_accepted" ? `<p class="small">Your code and deadline are under My Visits.</p>` : ""}
+        ${a.status === "selected" || a.status === "backfill_accepted" ? `<p class="small">Code + deadline in My Visits.</p>` : ""}
         <div class="slot-foot">
           <div><div class="slot-price">$${a.offer.kind === "paid" ? a.offer.cashRate : a.offer.dollarCap}</div><div class="slot-note">${a.offer.kind === "paid" ? "Rate" : "Comp value"}</div></div>
           <div class="slot-actions">
@@ -4269,7 +4319,7 @@ function renderBusinessDash() {
   state.tab = tab;
   app.innerHTML = `
     <h2>${esc(u.business.businessName)}</h2>
-    <p class="muted small" style="margin-top:-8px">${esc(u.market)} &middot; ${esc(u.business.planName)} &middot; ${esc(u.business.billingStatus)}</p>
+    <p class="muted small" style="margin-top:-8px">${esc(u.market)} &middot; ${esc(u.business.planName)}</p>
     <div id="tab-body"></div>`;
   if (tab === "Home") loadBusinessHome();
   if (tab === "Discover") loadDiscover();
@@ -4327,7 +4377,7 @@ function roasCellHtml(h, navButton) {
   const hasEstimate = !!(r && r.estimatedRegisterValue > 0);
   const hasMedia = !!(r && r.mediaValue > 0);
   if ((score === null || score === undefined || Number(score) === 0) && !hasTracked && !hasEstimate && !hasMedia) {
-    return `<div class="stat-cell"><div class="stat-num grad-text" style="font-size:1.1rem">No results yet</div><div class="stat-lbl">SIGNL ROAS Score. Log code uses at the register, or enter the tally after a post, and your score starts here.</div>${navButton ? `<button class="btn small-btn" style="margin-top:6px" onclick="return go('dashboard','Visits &amp; Posts')">Go to Visits &amp; Posts</button>` : ""}</div>`;
+    return `<div class="stat-cell"><div class="stat-num grad-text" style="font-size:1.1rem">No results yet</div><div class="stat-lbl">SIGNL ROAS Score — starts with your first register tally.</div>${navButton ? `<button class="btn small-btn" style="margin-top:6px" onclick="return go('dashboard','Visits &amp; Posts')">Go to Visits &amp; Posts</button>` : ""}</div>`;
   }
   const basis = [
     hasTracked ? `Register $${fmtMoney(r.registerValue)} tracked` : null,
@@ -4367,19 +4417,19 @@ async function loadBusinessHome() {
     <div class="dash-hero">
       <p class="dh-kicker">${esc(marketDisplayName(d.business.market))} &middot; ${esc(d.plan.name)} plan</p>
       <div class="dh-name">${esc((state.user.business && state.user.business.businessName) || d.business.businessName || "")}</div>
-      <p class="dh-sub">Your visits, your posts, and what they brought back, in one place.</p>
+      <p class="dh-sub">Your visits, posts and results.</p>
       <div class="dh-row"><div><div class="dh-num">${heroNum.num}</div><div class="dh-num-lbl">${heroNum.lbl}</div></div></div>
     </div>
-    ${d.marketLive ? "" : `<div class="notice blue"><strong>Your market opens in the next 30 to 90 days.</strong> Everything you build now is ready for launch day: browse the founding roster, save favorites, and draft offers. Publishing, selecting, and bookings switch on the moment ${esc(marketTalkNameClient(d.business.market))} goes live.</div>`}
+    ${d.marketLive ? "" : `<div class="notice blue"><strong>Your market opens in 30–90 days.</strong> Draft offers now — publishing switches on at launch.</div>`}
     <div class="panel" style="display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap">
-      <div><strong>At the register?</strong><p class="muted small" style="margin:4px 0 0">Staff mode redeems a creator's visit with just the staff PIN and the creator's code. No owner login needed at the counter.</p></div>
+      <div><strong>At the register?</strong><p class="muted small" style="margin:4px 0 0">Staff redeem with the PIN + creator code. No login needed.</p></div>
       <button class="btn" onclick="return goStaff()">Redeem a creator visit</button>
     </div>
-    ${d.staffPinSet === false ? `<div class="notice"><strong>Set your staff PIN.</strong> Your team redeems creator visits with a short PIN, so nobody at the register ever needs your login. Set it once under Plan, then Staff redemption, and print the register card for the counter. <button class="btn small-btn" onclick="return go('dashboard','Plan')">Set the staff PIN</button></div>` : ""}
+    ${d.staffPinSet === false ? `<div class="notice"><strong>Set your staff PIN.</strong> Your team redeems visits with it — never your login. <button class="btn small-btn" onclick="return go('dashboard','Plan')">Set the staff PIN</button></div>` : ""}
     <section class="panel">
       <h3 style="margin-top:0">Business home</h3>
       <div class="stat-band home-metrics">
-        <div class="stat-cell"><div class="stat-num">${h.visitsUsed}<span class="small muted"> of ${h.visitsAllowance}</span></div><div class="stat-lbl">Creator visits booked this month (${h.visitsRemaining} left on the plan)</div></div>
+        <div class="stat-cell"><div class="stat-num">${h.visitsUsed}<span class="small muted"> of ${h.visitsAllowance}</span></div><div class="stat-lbl">Visits booked this month &middot; ${h.visitsRemaining} left</div></div>
         <div class="stat-cell"><div class="stat-num">${h.postsLive}</div><div class="stat-lbl">Posts live</div></div>
         ${roasCellHtml(h, true)}
         <div class="stat-cell"><div class="stat-num">${h.onTimeRatePct === null ? "n/a" : h.onTimeRatePct + "%"}</div><div class="stat-lbl">Posts on time</div></div>
@@ -4387,15 +4437,14 @@ async function loadBusinessHome() {
       ${attention}
       <h4>Visit pipeline</h4>
       <div class="pv-funnel">${stages.map(([n, label, sub]) => `<div class="pv-stage"><div class="pv-stage-num">${n}</div><div class="pv-stage-lbl">${label}</div><div class="pv-stage-sub">${sub}</div></div>`).join("")}</div>
-      <p class="small muted">Each stage counts the bookings that have reached it, from invitation to a live post.</p>
       <h4>Plan pace</h4>
       <div class="flex-between"><span class="small"><strong>${esc(d.plan.name)} plan:</strong> ${h.visitsUsed} of ${h.visitsAllowance} visits booked this month</span><span class="badge ${h.planPacePct >= 100 ? "warn" : "info"}">${h.planPacePct}%</span></div>
       <div class="meter" style="margin-top:8px"><i style="width:${Math.min(100, h.planPacePct)}%"></i></div>
-      <p class="small muted">Billing: ${esc(d.business.billingStatus)} Payment stays concierge: SIGNL sends the payment step by hand, and nothing is charged before activation.</p>
+      <p class="small muted">${esc(d.business.billingStatus)}</p>
       ${content ? `<h4>Content that is working</h4>
-      <p class="small muted">Delivered posts ranked by the register action they produced: the code tallies reported on each visit, with views as supporting detail.</p>${content}` : ""}
+${content}` : ""}
       ${next ? `<h4>Next visits</h4>${next}` : ""}
-      ${rebook ? `<h4>Invite again</h4><p class="small muted">Your delivered creators and favorites, favorites first. One tap creates a prefilled direct offer from the last visit.</p>${rebook}` : ""}
+      ${rebook ? `<h4>Invite again</h4><p class="small muted">Your delivered creators + favorites.</p>${rebook}` : ""}
     </section>
     <div id="biz-notes" class="mt"></div>`;
     loadNotificationsInto("biz-notes");
@@ -4582,15 +4631,18 @@ function setWindowMode(prefix, mode) {
 }
 
 function windowModeFieldHtml(prefix, selected) {
-  return `<div class="field"><label>Redemption window (no appointments: the creator comes any time inside it)</label><select id="${prefix}-windowmode" onchange="offerDraftSync()"><option value="7days" ${selected === "7days" ? "selected" : ""}>Use within 7 days of accepting</option><option value="thisweek" ${selected === "thisweek" ? "selected" : ""}>This week (ends Sunday)</option></select>${chipsRowHtml("window", prefix)}</div>`;
+  return `<div class="field"><label>Redemption window</label><select id="${prefix}-windowmode" onchange="offerDraftSync()"><option value="7days" ${selected === "7days" ? "selected" : ""}>Use within 7 days of accepting</option><option value="thisweek" ${selected === "thisweek" ? "selected" : ""}>This week (ends Sunday)</option></select>${chipsRowHtml("window", prefix)}</div>`;
 }
 
 function packageSummaryHtml(planId, planName) {
   const comp = rightsForVisit("comp");
-  return `<div class="showcase-block"><h4>Every comped offer is the Standard Visit</h4>
-    <p class="small">${esc(standardVisit().summary)}</p>
-    <p class="small"><strong>On a comp visit, you can:</strong> ${comp.can.map(esc).join("; ")}. They can't: ${comp.cannot.map(esc).join("; ")}. <strong>On a paid visit, you can also</strong> repost the post on your own feed and run it as an ad for 6 months from the post date. Rights follow the visit, not your plan${planName ? ` (${esc(planName)})` : ""}.</p>
-    <p class="small muted">Tip: creators post more when they can bring a guest. Meal-for-two comps outperform solo comps.</p>
+  return `<div class="pkg-mint"><h4>The Standard Visit — every comped offer</h4>
+    ${standardVisitRowsHtml()}
+    <details class="deal-details"><summary>The Standard Visit, in full</summary><div class="dd-body">
+      <p class="small">${esc(standardVisit().summary)}</p>
+      <p class="small"><strong>On a comp visit, you can:</strong> ${comp.can.map(esc).join("; ")}. They can't: ${comp.cannot.map(esc).join("; ")}. <strong>On a paid visit, you can also</strong> repost the post on your own feed and run it as an ad for 6 months from the post date. Rights follow the visit, not your plan${planName ? ` (${esc(planName)})` : ""}.</p>
+    </div></details>
+    <p class="small" style="margin:12px 0 0;font-weight:700">Meal-for-two comps outperform solo.</p>
   </div>`;
 }
 
@@ -4790,7 +4842,7 @@ async function loadMyOffers() {
   const dv = (v) => esc(v === undefined || v === null ? "" : String(v));
   const tierBoxes = ["Neighbors", "Locals", "Headliners"].map((t) => {
     const gd = g.compGuidance[t] || {};
-    return `<label style="font-weight:500"><input type="checkbox" name="o2-tier" value="${esc(t)}" style="width:auto" ${(dft.tiers || []).includes(t) ? "checked" : ""} onchange="offerCoachUpdate()"> ${esc(t)} <span class="muted small">(floor $${gd.floor}, typical $${gd.typicalLow} to $${gd.typicalHigh})</span></label>`;
+    return `<label style="font-weight:500"><input type="checkbox" name="o2-tier" value="${esc(t)}" style="width:auto" ${(dft.tiers || []).includes(t) ? "checked" : ""} onchange="offerCoachUpdate()"> ${esc(t)} <span class="muted small">(floor $${gd.floor} &middot; typ. $${gd.typicalLow}–$${gd.typicalHigh})</span></label>`;
   }).join("<br>");
   el.innerHTML = `
   <div class="panel">
@@ -4802,12 +4854,11 @@ async function loadMyOffers() {
       <button type="button" class="chip ${mode === "open" ? "on" : ""}" onclick="setComposerLane('open')">Open offer: creators apply</button>
       <button type="button" class="chip ${mode === "direct" ? "on" : ""}" onclick="setComposerLane('direct')">Direct offer: invite one creator</button>
     </div>
-    <p class="small muted" style="margin-top:6px">${mode === "open" ? "Any creator who fits can apply. You pick from the applicants." : "Only the creator you pick sees this offer."}</p>
+    <p class="small muted" style="margin-top:6px">${mode === "open" ? "Any creator who fits can apply. You pick." : "Only the creator you pick sees this offer."}</p>
     </div>
     ${mode === "direct" && !target ? `<p class="small muted">Pick the creator in Discover and tap Send offer, or <a href="#" onclick="setComposerLane('open'); return false;">post an open offer</a> and let creators apply.</p>` : ""}
     ${mode === "direct" && target ? `<div class="notice blue">Sending directly to <strong>${esc(target.name)}</strong> (@${esc(target.profile.handle)}), ${esc(target.profile.tierBand || "")} tier. <a href="#" onclick="state.offerTarget=null; loadMyOffers(); return false;">Make it an open offer instead</a></div>` : ""}
     ${mode === "open" ? `
-    <p class="small muted">On comp offers the deliverable never changes: the Standard Visit. On cash offers, your booking terms set the deliverables. You set the terms, creators apply with one tap (their profile card is the application), and you pick from the ranked stack.</p>
     <p class="small muted" style="margin-bottom:4px">Start from a template (optional) ${infoBtn("templates")}</p>
     <div class="chip-row">${(g.templates || []).map((t) => `<button type="button" class="chip" onclick="applyTemplate('${esc(t.id)}')">${esc(t.label)}</button>`).join("")}</div>` : ""}
     <form onsubmit="return createOfferV2(event)">
@@ -4815,18 +4866,18 @@ async function loadMyOffers() {
       <div class="field"><label>Offer title <span class="req-tag">Required</span> ${infoBtn("title")}</label><input id="o2-title" value="${dv(dft.title)}" placeholder="Dinner for two on us" oninput="offerDraftSync()" onblur="offerValidateField('title')"><p class="field-err" id="err-o2-title"></p></div>
       <div class="field"><label>How is the creator paid? <span class="req-tag">Required</span> ${infoBtn("kind")}</label>
         <label style="font-weight:500"><input type="radio" name="o2-kind" value="comp" ${dft.kind === "paid" ? "" : "checked"} style="width:auto" onchange="offerCoachUpdate()"> Comp: your product, on you</label><br>
-        <label style="font-weight:500"><input type="radio" name="o2-kind" value="paid" ${dft.kind === "paid" ? "checked" : ""} style="width:auto" onchange="offerCoachUpdate()"> Cash: a rate for a paid booking (the booking terms set the deliverables)</label>
+        <label style="font-weight:500"><input type="radio" name="o2-kind" value="paid" ${dft.kind === "paid" ? "checked" : ""} style="width:auto" onchange="offerCoachUpdate()"> Cash: a rate for a paid booking</label>
       </div>
       <div class="field"><label>Exactly what is comped <span class="req-tag">Required</span> ${infoBtn("comped")}</label><input id="o2-comped" value="${dv(dft.comped)}" placeholder="Two entrees and two drinks" oninput="offerCoachUpdate()" onblur="offerValidateField('comped')"><p class="field-err" id="err-o2-comped"></p>${mode === "direct" ? chipsRowHtml("comp", "o2", target && target.profile ? target.profile.tierBand : null) : ""}</div>
       <div class="field" id="o2-covers-wrap"><label>How many people does the comp cover? <span class="req-tag">Required</span> ${infoBtn("covers")}</label>
         <label style="font-weight:500"><input type="radio" name="o2-covers" value="1" ${dft.covers === "2" ? "" : "checked"} style="width:auto" onchange="offerDraftSync()"> 1 person: just the creator</label><br>
         <label style="font-weight:500"><input type="radio" name="o2-covers" value="2" ${dft.covers === "2" ? "checked" : ""} style="width:auto" onchange="offerDraftSync()"> 2 people: the creator and a guest</label>
-        <p class="small muted">Say it here and it prints on the offer, the visit card, and the staff redemption screen, so nobody is surprised at the register.</p>
+        <p class="small muted">Prints on the offer, the visit card and the staff screen.</p>
       </div>
       <div class="field" id="o2-brief-wrap" style="display:none"><label>Key points for the creator <span class="opt-tag">Optional</span> ${infoBtn("brief")}</label><textarea id="o2-brief" rows="2" maxlength="500" placeholder="Feature the new patio, use our full name" oninput="offerDraftSync()">${esc(dft.brief || "")}</textarea><p class="small muted">${PAID_BRIEF_GUIDANCE}</p></div>
       <div class="form-2col">
         <div class="field" id="o2-cap-wrap"><label>Comp value / dollar cap ($) <span class="req-tag">Required</span> ${infoBtn("cap")}</label><input type="number" id="o2-cap" min="1" placeholder="100" value="${dv(dft.cap)}" oninput="offerCoachUpdate()" onblur="offerValidateField('cap')"><p class="field-err" id="err-o2-cap"></p></div>
-        <div class="field" id="o2-rate-wrap" style="display:none"><label>Cash rate ($) <span class="req-tag">Required</span> ${infoBtn("rate")}</label><input type="number" id="o2-rate" min="50" step="1" placeholder="150" value="${dv(dft.rate)}" oninput="offerCoachUpdate()" onblur="offerValidateField('rate')"><p class="field-err" id="err-o2-rate"></p><p class="small muted">The business pays the rate plus 3%. The creator keeps 97%. Minimum listed rate $50.</p></div>
+        <div class="field" id="o2-rate-wrap" style="display:none"><label>Cash rate ($) <span class="req-tag">Required</span> ${infoBtn("rate")}</label><input type="number" id="o2-rate" min="50" step="1" placeholder="150" value="${dv(dft.rate)}" oninput="offerCoachUpdate()" onblur="offerValidateField('rate')"><p class="field-err" id="err-o2-rate"></p><p class="small muted">You pay rate + 3%. Creator keeps 97%. Min $50.</p></div>
       </div>
       <div class="field"><label>What is included <span class="opt-tag">Optional</span> ${infoBtn("includes")}</label><textarea id="o2-includes" rows="2" placeholder="Any two entrees, two drinks each, dessert to share" oninput="offerCoachUpdate()">${esc(dft.includes || "")}</textarea></div>
       <div class="field"><label>The experience <span class="opt-tag">Optional</span> ${infoBtn("experience")}</label><textarea id="o2-experience" rows="2" placeholder="Chef's counter seats, open kitchen" oninput="offerCoachUpdate()">${esc(dft.experience || "")}</textarea></div>
@@ -4840,22 +4891,21 @@ async function loadMyOffers() {
         <div class="field"><label>Redemption window (days, starts when applications close) <span class="opt-tag">Optional</span> ${infoBtn("windowdays")}</label><input type="number" id="o2-windowdays" min="1" max="30" placeholder="7" value="${dv(dft.windowdays)}" oninput="offerCoachUpdate()"></div>
         <div class="field"><label>Window note for creators <span class="opt-tag">Optional</span> ${infoBtn("windownote")}</label><input id="o2-window" value="${dv(dft.window)}" placeholder="Evenings are best" oninput="offerDraftSync()"></div>
       </div>
-      <p class="small muted">How picking works: applications close, then you have up to ${g.selectionSlaHours} hours to pick before the redemption window starts. Anyone not picked is released with a notification, never left waiting. If a picked creator passes or no-shows, the spot backfills to the next applicant automatically.</p>` : `
+      <p class="small muted">You get ${g.selectionSlaHours} hours to pick after applications close. Everyone else is released with a notification.</p>` : `
       <div class="form-2col">
         <div class="field"><label>Spots <span class="req-tag">Required</span> ${infoBtn("spots")}</label><input type="number" id="o2-spots" min="1" placeholder="1" value="${dv(dft.spots)}" oninput="offerDraftSync()" onblur="offerValidateField('spots')"><p class="field-err" id="err-o2-spots"></p></div>
-        <div class="field"><label>&nbsp;</label><p class="small muted" style="margin:6px 0 0">Direct offers are redeemed inside the window below.</p></div>
       </div>
       ${windowModeFieldHtml("o2", dft.windowmode)}
       <div class="field"><label>Window note for the creator <span class="opt-tag">Optional</span> ${infoBtn("windownote")}</label><input id="o2-window" value="${dv(dft.window)}" placeholder="Evenings are best" oninput="offerDraftSync()"></div>`}
       <div id="o2-dignity"></div>
       <div id="o2-strength" class="showcase-block"></div>
-      <p class="small muted">Reminder: you can describe the experience, never the opinion. Posts stay honest, and creators disclose the comp.</p>
+      <p class="small muted">Describe the experience, never the opinion.</p>
       <p class="small muted">${VISIT_GUARANTEE_LINE}</p>
       <div class="cta-row" style="justify-content:flex-start">
-        <button class="btn" type="submit">${marketLive ? "Publish offer" : "Publish offer (goes live when your market opens)"}</button>
+        <button class="btn" type="submit">Publish offer</button>
         <button class="btn ghost" type="button" onclick="return createOfferV2(event, true)">Save as draft</button>
       </div>
-      ${marketLive ? "" : `<p class="small muted">Your market has not opened yet, so new offers save as drafts: ready to publish the day it does.</p>`}
+      ${marketLive ? "" : `<p class="small muted">Market not open yet — offers save as drafts until it does.</p>`}
     </form>
   </div>
   <div id="offer-info-pop" class="sheet-overlay" style="display:none" onclick="if(event.target===this) closeOfferInfo()">
@@ -5386,7 +5436,7 @@ function renderPlanTab() {
     <div class="plan-card ${u.business.plan === p.id ? "selected" : ""}" id="plan-${esc(p.id)}" onclick="selectPlan('${esc(p.id)}')">
       <div class="price">$${p.priceMonthly}<span class="small muted">/mo</span></div>
       <strong>${esc(p.name)}</strong>
-      <p class="small muted">${p.minMonths}-month minimum, then month to month.</p>
+      <p class="small muted">${p.minMonths}-month minimum.</p>
       <ul>${p.features.map((f) => `<li>${esc(f)}</li>`).join("")}</ul>
       ${u.business.plan === p.id ? `<p class="saved mt">Your current plan</p>` : ""}
     </div>`).join("");
@@ -6310,7 +6360,7 @@ function previewPlansHtml() {
     <div class="plan-card ${pv.planId === p.id ? "selected" : ""}" onclick="previewPickPlan('${p.id}')">
       <div class="price">$${p.priceMonthly}<span class="small muted">/mo</span></div>
       <strong>${esc(p.name)}</strong>
-      <p class="small muted">${p.minMonths}-month minimum, then month to month.</p>
+      <p class="small muted">${p.minMonths}-month minimum.</p>
       <ul>${p.features.map((f) => `<li>${esc(f)}</li>`).join("")}</ul>
     </div>`).join("");
   return `

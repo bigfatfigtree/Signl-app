@@ -317,7 +317,7 @@ try {
   const appJsRes = await fetch(BASE + "/app.js");
   const appJs = await appJsRes.text();
   check("client ships the quick claim form + the full-form escape hatch", appJs.includes("Claim your founding spot") && appJs.includes("Claim my founding spot") && appJs.includes("Prefer to complete everything now?") && appJs.includes("quickClaim: true"), "");
-  check("client ships the completion checklist card + pending claimed copy", appJs.includes("profileCompletionHtml") && appJs.includes("Finish your profile to be launch-ready") && appJs.includes("Your spot is claimed") && appJs.includes("Needed to go live"), "");
+  check("client ships the completion checklist card + pending claimed copy", appJs.includes("profileCompletionHtml") && appJs.includes("Finish your profile to be launch-ready") && appJs.includes("Your spot is claimed") && appJs.includes("badge info\">Needed</span>"), "");
 } finally {
   server.kill("SIGTERM");
   try { fs.unlinkSync(DB); } catch (e) { /* ignore */ }

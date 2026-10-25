@@ -194,8 +194,8 @@ try {
   check("client ships the verbatim comp explainer copy", appJs.text.includes("Accept comp visits. Businesses comp you the experience and you post honestly within 48 hours. Creators who accept comps get more offers and more free experiences, and every completed visit earns Momentum points. Momentum lifts you in business search and builds the track record that gets you trusted and booked, including first access to paid bookings."), "");
   check("client ships the verbatim paid rate copy", appJs.text.includes("Set a paid rate (optional). Businesses can book you at your listed rate for a paid visit, and you keep 97% of it. Paid-only is fine too, but paid-only creators receive fewer offers."), "");
   check("client ships the review pages block and the paid badges", appJs.text.includes("Their review pages") && appJs.text.includes("Paid bookings:") && appJs.text.includes("Book paid visit"), "");
-  check("client ships the creator home paid lane panel with the honest hold copy (no card charged, releases 48 hours after proof)", appJs.text.includes("homePaidLaneHtml") && appJs.text.includes("Paid visits are recorded in the app, no card charged") && appJs.text.includes("releases it 48 hours after your proof lands"), "");
-  check("creator home keeps paid cash and comp value in separate piles", appJs.text.includes("Paid cash held by SIGNL") && appJs.text.includes("experiences, not cash") && appJs.text.includes("homeMoneyHtml"), "");
+  check("client ships the creator home paid lane panel with the honest hold copy (no card charged, releases 48 hours after proof)", appJs.text.includes("homePaidLaneHtml") && appJs.text.includes("no card charged") && appJs.text.includes("released 48h after proof"), "");
+  check("creator home keeps paid cash and comp value in separate piles", appJs.text.includes("Held — releases 48h after proof") && appJs.text.includes("Comp value (not cash)") && appJs.text.includes("homeMoneyHtml"), "");
 
   // ---------- Part B: discovery + public profile ----------
   part("B: discovery + public profile");
