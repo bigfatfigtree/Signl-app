@@ -392,7 +392,7 @@ async function renderPublicProof() {
   const statCells = [];
   statCells.push(`<div class="stat-cell"><div class="stat-num">${fmtNum(totalAudienceOf(p))}</div><div class="stat-lbl">Stacked audience, all platforms</div></div>`);
   if (p.localAudiencePct !== null && p.localAudiencePct !== undefined) {
-    statCells.push(`<div class="stat-cell"><div class="stat-num">${p.localAudiencePct}%</div><div class="stat-lbl">Local reach (${esc(p.localAudienceSource || "Self-reported")})</div></div>`);
+    statCells.push(`<div class="stat-cell"><div class="stat-num">${p.localAudiencePct}%</div><div class="stat-lbl">Local audience (${esc(p.localAudienceSource || "Self-reported")})</div></div>`);
   }
   if (typeof p.momentumPoints === "number") {
     statCells.push(`<div class="stat-cell"><div class="stat-num">${p.momentumPoints}</div><div class="stat-lbl">Momentum points (reliability and referrals)</div></div>`);
@@ -765,13 +765,13 @@ function audienceLineHtml(source) {
 // the single source of truth; the fallback text mirrors it).
 function standardVisit() {
   return (state.boot && state.boot.standardVisit) || {
-    summary: "Every SIGNL comped visit includes: 1 post or reel + 1 story that shares the post, within 48 hours of the visit, honest and disclosed, live at least 30 days, with tracked delivery proof. Paid bookings carry the deliverables set in the booking's own terms. Content rights follow the visit, never the plan: on a comp visit the business may share the post natively only, with the creator tagged; no downloads, no reposting the file, no ad use. On a paid visit the business may also repost the post and run it as an ad for 6 months from the post date. The creator always owns their content, and nobody can edit it.",
+    summary: "Every SIGNL visit includes: 1 post or reel + 2 stories within 48 hours of the visit, honest and disclosed, live at least 30 days, with tracked delivery proof. Content rights follow the visit, never the plan: on a comp visit the business may share the post natively only, with the creator tagged; no downloads, no reposting the file, no ad use. On a paid visit the business may also repost the post and run it as an ad for 6 months from the post date. The creator always owns their content, and nobody can edit it.",
   };
 }
 
 function visitIncludesHtml(summary) {
   const text = summary || standardVisit().summary;
-  return `<div class="showcase-block"><h4>Every SIGNL comped visit includes</h4><p class="small muted">${esc(text)}</p></div>`;
+  return `<div class="showcase-block"><h4>Every SIGNL visit includes</h4><p class="small muted">${esc(text)}</p></div>`;
 }
 
 // Refinement bundle (2026-10-20): the creator free line, word for
@@ -1521,7 +1521,6 @@ function renderQuickClaim() {
   <section class="panel" style="max-width:680px;margin:10px auto">
     <h2>Claim your founding spot</h2>
     <p><strong>${CREATOR_FREE_LINE}</strong></p>
-    <p><strong>We don't rank you by followers. We rank you by how much of your audience actually lives here.</strong> That share is your local reach, and it is the number businesses look at first.</p>
     <p class="muted">Founding spots are held in sign-up order. Claim yours and finish the rest after approval. This takes about a minute: your handle, your market, an email, and a password. When you are approved, we email you, and your dashboard walks you through finishing your profile: your photo, your audience counts, what share of it is local. A finished profile is what businesses see, so that step is what makes you bookable. City not listed yet? Pick "My city is not listed yet" below and claim anyway: your sign-up counts toward opening your city, and you hold founding standing there.</p>
     <p class="small"><strong>What you get:</strong> comped meals, services and experiences at local businesses, yours for an honest post within 48 hours. Paid cash campaigns sit on top of comps, and Headliners are first in line for them. After approval, your personal invite link earns Momentum points (+3 per creator who signs up through it, +10 per approval), and points order the creator list businesses see.</p>
     ${hasPrefill ? `<div class="notice blue">Your invite link told us a head start: we pre-filled what it carried below. Check it, claim your spot, and your application goes into the review queue.</div>` : ""}
@@ -1626,7 +1625,6 @@ function renderJoinCreator() {
   <section class="panel" style="max-width:680px;margin:10px auto">
     <h2>Become a Founding Creator</h2>
     <p><strong>${CREATOR_FREE_LINE}</strong></p>
-    <p><strong>We don't rank you by followers. We rank you by how much of your audience actually lives here.</strong> That share is your local reach, and it is the number businesses look at first.</p>
     <p class="muted">SIGNL is opening market by market, and creators are signing up first. Build your full founding profile now: when your market opens to businesses in the next 30 to 90 days, we email you, and founding creators get priority when businesses search. This is not a waitlist form; this is your real profile. City not listed yet? Pick "My city is not listed yet" below and sign up anyway: your sign-up counts toward opening your city, and you hold founding standing there.</p>
     <p class="small"><strong>What you get:</strong> comped meals, services and experiences at local businesses, yours for an honest post within 48 hours. Paid cash campaigns sit on top of comps, and Headliners are first in line for them. After approval, your personal invite link earns Momentum points (+3 per creator who signs up through it, +10 per approval), and points order the creator list businesses see.</p>
     ${hasPrefill ? `<div class="notice blue">Your invite link told us a head start: we pre-filled what it carried below. Check it, finish the rest, and your profile goes into the review queue.</div>` : ""}
@@ -1680,7 +1678,7 @@ function renderJoinCreator() {
       </div>
       <div class="form-2col">
         <div class="field"><label>Typical post views (optional)</label><input type="number" id="jc-avgviews" min="0" placeholder="For example 6000"></div>
-        <div class="field"><label>Your local reach: what share of your followers live in your market? (%)</label>
+        <div class="field"><label>What share of your followers live in your market? (%)</label>
           <input type="number" id="jc-localpct" min="0" max="100" required placeholder="For example 60">
           <p class="small muted">${LOCAL_PCT_HELP} It is the number businesses care about most.</p>
         </div>
@@ -2521,7 +2519,7 @@ function creatorProfileDetailHtml(c, preview) {
         ? `<button class="btn" onclick="previewStartOffer('${c.userId}')">Send this creator an offer (preview)</button>${p.paidRate ? ` <button class="btn ghost" onclick="previewPaidBooking('${c.userId}')">Preview paid booking ($${esc(String(p.paidRate))})</button>` : ""}`
         : `<button class="btn" onclick="startOffer('${c.userId}')">Send offer</button>${p.paidRate ? ` <button class="btn" onclick="bookPaidVisit('${c.userId}')">Book paid visit ($${esc(String(p.paidRate))})</button>` : ""} <button class="btn ghost" onclick="openThread('${c.userId}')">Message</button>`}
     </div>
-    ${p.paidRate ? `<p class="small muted">Paid bookings: this creator lists a paid rate of $${esc(String(p.paidRate))} for a paid booking, on deliverables the two of you set in the booking terms. You pay the rate plus 3%, they keep 97% of their rate, and SIGNL holds the payment until their post is live. Comp-only is always fine too.</p>` : ""}
+    ${p.paidRate ? `<p class="small muted">Paid bookings: this creator lists a paid rate of $${esc(String(p.paidRate))} for the same Standard Visit. You pay the rate plus 3%, they keep 97% of their rate, and SIGNL holds the payment until their post is live. Comp-only is always fine too.</p>` : ""}
     ${preview ? `<p class="small muted">Preview: an offer sent from here is a simulation. It never reaches ${esc(c.name)} and nothing is saved.</p>` : ""}
     ${preview && c.trackRecord && c.trackRecord.postsDelivered > 0 ? `
     <div class="showcase-block"><h4>Ad use (preview)</h4>
@@ -2614,7 +2612,7 @@ function creatorCard(c, viewer, opts) {
     ${bestWorkHtml(c.bestWork, true)}
     ${trackLine || reviewLine ? `<div class="cc-track">${trackLine}${reviewLine}</div>` : ""}
     ${c.fit && c.fit.reasons && c.fit.reasons.length ? `<p class="small cc-fit"><strong>Why they fit:</strong> ${c.fit.reasons.slice(0, 2).map(esc).join(" &middot; ")}</p>` : ""}
-    <p class="small muted">Every SIGNL comped visit: 1 post or reel + 1 story that shares the post within 48 hours, tracked as proof. Paid bookings carry the deliverables set in the booking's terms. Content rights follow the visit: comp visits are native share only; paid visits add repost and 6-month ad rights.</p>
+    <p class="small muted">Every SIGNL visit: 1 post or reel + 2 stories within 48 hours, tracked as proof. Content rights follow the visit: comp visits are native share only; paid visits add repost and 6-month ad rights.</p>
     <div class="cc-actions">
       ${opts.preview
         ? `<button class="btn small-btn" onclick="previewViewCreator('${c.userId}')">View profile</button>
@@ -3040,7 +3038,7 @@ function homeOpportunitiesHtml(offers, u) {
       ${o.creatorId ? `<p style="margin:8px 0 0"><span class="badge ok">Sent directly to you</span></p>` : ""}
       <p class="small"><strong>You get:</strong> ${esc(o.whatComped)} (comp cap $${o.dollarCap})${o.kind === "paid" ? "" : ` &middot; ${coversLine(o)}`}</p>
       ${o.kind === "paid" && o.paidBrief ? `<p class="small"><strong>Key points from the business:</strong> ${esc(o.paidBrief)}</p>` : ""}
-      ${o.kind === "paid" ? `<p class="small"><strong>You post:</strong> the deliverables set in this booking's terms, posted within 48 hours of your visit, honest and disclosed. The post stays live at least 30 days, and you check off by pasting the post link in My Visits.</p>` : `<p class="small"><strong>You post:</strong> 1 post or reel + 1 story that shares the post, within 48 hours of your visit, honest, with the comp disclosed. The post stays live at least 30 days, and you check off by pasting the post link in My Visits.</p>`}
+      <p class="small"><strong>You post:</strong> 1 post or reel + 2 stories within 48 hours of your visit, honest, with the comp disclosed. The post stays live at least 30 days, and you check off by pasting the post link in My Visits.</p>
       <p class="small"><strong>They can:</strong> ${rights.can.map(esc).join("; ")}<br><strong>They can't:</strong> ${rights.cannot.map(esc).join("; ")}</p>
       <p class="small muted">Deadline: ${o.windowMode === "thisweek" ? "visit this week, the window ends Sunday" : "visit any time within 7 days of accepting"}. ${left} of ${o.spots} spot${o.spots === 1 ? "" : "s"} left.${o.visitWindow ? ` Note from the business: ${esc(o.visitWindow)}` : ""}</p>
       <form onsubmit="return homeAcceptOffer(event, '${o.id}')">
@@ -3072,7 +3070,7 @@ function homeLocalSignalHtml(card, bookings) {
   <section class="panel">
     <p class="ui-kicker">Your local signal</p>
     <h3 class="home-h">The proof businesses see</h3>
-    <div class="ui-row"><span class="k">Local reach</span><span class="v">${p.localAudiencePct === null || p.localAudiencePct === undefined ? "Not reported yet" : p.localAudiencePct + "%"}</span></div>
+    <div class="ui-row"><span class="k">Local audience</span><span class="v">${p.localAudiencePct === null || p.localAudiencePct === undefined ? "Not reported yet" : p.localAudiencePct + "%"}</span></div>
     <div class="ui-row"><span class="k">Local Impact Score</span><span class="v">${card && card.localImpactScore !== null && card.localImpactScore !== undefined ? card.localImpactScore + " / 100" : "Pending"}</span></div>
     ${comp ? `<div class="ui-row"><span class="k">Reliability in your score</span><span class="v">${esc(String(comp.reliability))}</span></div>
     <p class="small muted">${esc(comp.reliabilityBasis || "")}</p>` : ""}
@@ -3099,7 +3097,7 @@ function homePaidLaneHtml(creator, footerHtml) {
     <p class="ui-kicker">Paid lane</p>
     <h3 class="home-h">Comp and paid, your choice</h3>
     <p class="small"><strong>Comp visits:</strong> ${compOpen ? "on. Businesses can comp you experiences for honest posts, and every completed visit builds your track record." : "off. You are paid-only right now, and that is always fine."}</p>
-    <p class="small"><strong>Your paid rate:</strong> ${rate ? `$${rate} for one paid booking, on deliverables the booking terms set. A business pays $${fmtMoney(total)} (your rate + 3%), and you keep $${fmtMoney(keep)}, which is 97% of your rate.` : "not set. Set one in your profile (minimum $50) and businesses can book you at your rate for a paid visit."}</p>
+    <p class="small"><strong>Your paid rate:</strong> ${rate ? `$${rate} for one paid Standard Visit. A business pays $${fmtMoney(total)} (your rate + 3%), and you keep $${fmtMoney(keep)}, which is 97% of your rate.` : "not set. Set one in your profile (minimum $50) and businesses can book you at your rate for a paid visit."}</p>
     <p class="small muted">Paid visits are recorded in the app, no card charged. SIGNL holds the payment until your post is live, and releases it 48 hours after your proof lands. Comp-only is always fine, forever.</p>
     ${footerHtml || ""}
   </section>`;
@@ -3157,7 +3155,7 @@ function homeFoundingBlocksHtml(card, u) {
   return `
   <div class="stat-band home-metrics">
     <div class="stat-cell"><div class="stat-num"><em>${m.points}</em></div><div class="stat-lbl">Momentum points</div></div>
-    <div class="stat-cell"><div class="stat-num">${p.localAudiencePct === null || p.localAudiencePct === undefined ? "Not set" : p.localAudiencePct + "%"}</div><div class="stat-lbl">Your local reach (the number businesses look at first)</div></div>
+    <div class="stat-cell"><div class="stat-num">${p.localAudiencePct === null || p.localAudiencePct === undefined ? "Not set" : p.localAudiencePct + "%"}</div><div class="stat-lbl">Local audience (the number businesses look at first)</div></div>
     <div class="stat-cell"><div class="stat-num">${card && card.localImpactScore !== null && card.localImpactScore !== undefined ? card.localImpactScore : "New"}</div><div class="stat-lbl">Local Impact Score, out of 100</div></div>
     <div class="stat-cell"><div class="stat-num">${fmtNum(totalAudienceOf(card))}</div><div class="stat-lbl">Total audience across your platforms</div></div>
   </div>
@@ -3300,7 +3298,7 @@ function creatorProfileHtml(u) {
       <div class="field"><label>Max visits per week</label><input type="number" id="p-maxvisits" min="1" max="7" value="${c.maxVisitsPerWeek || 3}"><p class="small muted">Your pace, your call: 1 to 7 comped visits a week. At your max, offers still arrive but accepting waits until next week, and businesses see you as booked up this week.</p></div>
       <div class="form-2col">
         <div class="field"><label>Typical post views</label><input type="number" id="p-avgviews" min="0" value="${c.avgViews || 0}"></div>
-        <div class="field"><label>Your local reach (local audience share, %)</label><input type="number" id="p-localpct" min="0" max="100" value="${c.localAudiencePct === null || c.localAudiencePct === undefined ? "" : c.localAudiencePct}"><p class="small muted">${LOCAL_PCT_HELP}</p></div>
+        <div class="field"><label>Local audience share (%)</label><input type="number" id="p-localpct" min="0" max="100" value="${c.localAudiencePct === null || c.localAudiencePct === undefined ? "" : c.localAudiencePct}"><p class="small muted">${LOCAL_PCT_HELP}</p></div>
       </div>
       <div class="field"><label>Top audience cities</label><input id="p-topcities" value="${esc((c.topAudienceCities || []).join(", "))}" placeholder="Up to 5, comma separated"></div>
       <div class="field"><label>What you create in</label><div class="checkrow">${cats}</div></div>
@@ -3315,7 +3313,7 @@ function creatorProfileHtml(u) {
         </div>
         <div class="field"><label>Set a paid rate (optional). Businesses can book you at your listed rate for a paid visit, and you keep 97% of it. Paid-only is fine too, but paid-only creators receive fewer offers.</label>
           <input type="number" id="p-paid-rate" min="50" step="1" placeholder="For example: 250" value="${c.paidRate ? esc(String(c.paidRate)) : ""}">
-          <p class="small muted">Your rate in dollars for one paid booking; the booking terms set the deliverables. The business pays your rate plus 3%, SIGNL holds the payment, and it releases to you when your post is live. Minimum $50. Leave blank for no paid bookings.</p>
+          <p class="small muted">Your rate in dollars for one paid Standard Visit. The business pays your rate plus 3%, SIGNL holds the payment, and it releases to you when your post is live. Minimum $50. Leave blank for no paid bookings.</p>
         </div>
       </div>
       <div class="field"><label>Best work (up to 3 links)</label>
@@ -3572,7 +3570,7 @@ async function loadCreatorOffers() {
           <h4>The deal, in plain words</h4>
           <p class="small"><strong>You get:</strong> ${esc(o.whatComped)} (comp cap $${o.dollarCap})${o.kind === "paid" ? "" : ` &middot; ${coversLine(o)}`} &middot; ${o.bookedCount}/${o.spots} spots booked &middot; ${o.creatorId ? "Sent directly to you" : "Open to your market"}</p>
           ${o.kind === "paid" && o.paidBrief ? `<p class="small"><strong>Key points from the business:</strong> ${esc(o.paidBrief)}</p>` : ""}
-          ${o.kind === "paid" ? `<p class="small"><strong>You post:</strong> the deliverables set in this booking's terms, posted within 48 hours of your visit, honest and disclosed. The post stays live at least 30 days. You check off by pasting the post link in My Visits.</p>` : `<p class="small"><strong>You post:</strong> 1 post or reel + 1 story that shares the post, within 48 hours of your visit, honest, with the comp disclosed. The post stays live at least 30 days. You check off by pasting the post link in My Visits.</p>`}
+          <p class="small"><strong>You post:</strong> 1 post or reel + 2 stories within 48 hours of your visit, honest, with the comp disclosed. The post stays live at least 30 days. You check off by pasting the post link in My Visits.</p>
           <p class="small"><strong>They can:</strong> ${rights.can.map(esc).join("; ")}</p>
           <p class="small"><strong>They can't:</strong> ${rights.cannot.map(esc).join("; ")}</p>
         </div>
@@ -3634,12 +3632,12 @@ async function loadOpenBoard() {
         <div class="showcase-block">
           <h4>The deal, in plain words</h4>
           ${o.kind === "paid"
-            ? `<p class="small"><strong>You get paid:</strong> $${o.cashRate} for this paid booking, on the deliverables set in its terms. You keep $${o.paidMath ? o.paidMath.creatorNet : ""} (97% of the rate); SIGNL holds the payment and releases it when your post is live.</p>`
+            ? `<p class="small"><strong>You get paid:</strong> $${o.cashRate} for the Standard Visit package. You keep $${o.paidMath ? o.paidMath.creatorNet : ""} (97% of the rate); SIGNL holds the payment and releases it when your post is live.</p>`
             : `<p class="small"><strong>You get:</strong> ${esc(o.whatComped)} (comp value $${o.dollarCap}) &middot; ${coversLine(o)}</p>`}
           ${o.kind === "paid" && o.paidBrief ? `<p class="small"><strong>Key points from the business:</strong> ${esc(o.paidBrief)}</p>` : ""}
           ${o.includes ? `<p class="small"><strong>Included:</strong> ${esc(o.includes)}</p>` : ""}
           ${o.experience ? `<p class="small"><strong>The experience:</strong> ${esc(o.experience)}</p>` : ""}
-          ${o.kind === "paid" ? `<p class="small"><strong>You post:</strong> the deliverables set in this booking's terms, posted within 48 hours of your visit, honest and disclosed. The post stays live at least 30 days.</p>` : `<p class="small"><strong>You post:</strong> 1 post or reel + 1 story that shares the post, within 48 hours of your visit, honest, with the comp disclosed. The post stays live at least 30 days.</p>`}
+          <p class="small"><strong>You post:</strong> 1 post or reel + 2 stories within 48 hours of your visit, honest, with the comp disclosed. The post stays live at least 30 days.</p>
           <p class="small"><strong>They can:</strong> ${rights.can.map(esc).join("; ")}</p>
           <p class="small"><strong>They can't:</strong> ${rights.cannot.map(esc).join("; ")}</p>
         </div>
@@ -4521,7 +4519,7 @@ function windowModeFieldHtml(prefix, selected) {
 
 function packageSummaryHtml(planId, planName) {
   const comp = rightsForVisit("comp");
-  return `<div class="showcase-block"><h4>Every comped offer is the Standard Visit</h4>
+  return `<div class="showcase-block"><h4>Every offer is the Standard Visit</h4>
     <p class="small">${esc(standardVisit().summary)}</p>
     <p class="small"><strong>On a comp visit, you can:</strong> ${comp.can.map(esc).join("; ")}. They can't: ${comp.cannot.map(esc).join("; ")}. <strong>On a paid visit, you can also</strong> repost the post on your own feed and run it as an ad for 6 months from the post date. Rights follow the visit, not your plan${planName ? ` (${esc(planName)})` : ""}.</p>
     <p class="small muted">Tip: creators post more when they can bring a guest. Meal-for-two comps outperform solo comps.</p>
@@ -4529,8 +4527,7 @@ function packageSummaryHtml(planId, planName) {
 }
 
 // ---------- offer composer v2 (Jeff, 2026-10-20) ----------
-// Two lanes: the comp package is locked (the Standard Visit); paid
-// bookings negotiate deliverables in their terms. DIRECT invites one creator (the
+// Two lanes, one locked package. DIRECT invites one creator (the
 // target picked in Discover). OPEN posts terms to the market and
 // creators apply with one tap. The composer coaches live: tier
 // comp guidance, the dignity floor, a four-point strength
@@ -4613,13 +4610,13 @@ function offerValidateField(key) {
 
 const OFFER_INFO = {
   lane: { title: "Open or direct", body: "An open offer posts your terms to your market and creators apply. A direct offer goes to one creator you pick in Discover, and only they see it." },
-  templates: { title: "Templates", body: "Templates prefill a proven offer shape: title, spots, window, and a note. Edit anything after picking one. On a comp offer the deliverable never changes: the Standard Visit. On a cash offer, the booking terms set the deliverables." },
+  templates: { title: "Templates", body: "Templates prefill a proven offer shape: title, spots, window, and a note. Edit anything after picking one. The deliverable never changes: the Standard Visit." },
   title: { title: "Offer title", body: "Name the experience, not the deal. For example: Dinner for two on us. Creators scan titles first, so say what they get." },
-  kind: { title: "How the creator is paid", body: "Comp means your product is the payment: the meal, service, or experience is on you, and the deliverable is the Standard Visit. Cash means you pay the creator a rate for a booking whose deliverables the booking terms set. Pick one; an offer is never both." },
+  kind: { title: "How the creator is paid", body: "Comp means your product is the payment: the meal, service, or experience is on you. Cash means you pay the creator a rate for the same Standard Visit. Pick one; an offer is never both." },
   comped: { title: "What is comped", body: "Say exactly what the creator gets, in one line. For example: Two entrees and two drinks. This line prints on the offer, the visit card, and the staff screen." },
   covers: { title: "Who the comp covers", body: "One person is just the creator. Two people adds a guest. Creators post more when they can bring a guest, and meal for two comps outperform solo comps." },
   cap: { title: "Comp value / dollar cap", body: "The most the comp can ring up, at menu value. For example: a $100 cap on a dinner for two. Higher caps inside the typical range for a tier fill first." },
-  rate: { title: "Cash rate", body: "What you pay the creator for one paid booking. The business pays the rate plus 3%. The creator keeps 97%. Minimum listed rate $50." },
+  rate: { title: "Cash rate", body: "What you pay the creator for one Standard Visit. The business pays the rate plus 3%. The creator keeps 97%. Minimum listed rate $50." },
   brief: { title: "Key points", body: "Short direction for a paid visit: what to feature, names, dates. Creators post honestly in their own words. No scripts, no required praise, no post pre-approval." },
   includes: { title: "What is included", body: "Any two entrees, two drinks each, dessert to share, tax and tip covered. Creators weigh this detail most: say exactly what they get." },
   experience: { title: "The experience", body: "What it feels like and what photographs well. For example: chef's counter seats, open kitchen, the tasting menu everyone photographs." },
@@ -4741,7 +4738,7 @@ async function loadMyOffers() {
     ${mode === "direct" && !target ? `<p class="small muted">Pick the creator in Discover and tap Send offer, or <a href="#" onclick="setComposerLane('open'); return false;">post an open offer</a> and let creators apply.</p>` : ""}
     ${mode === "direct" && target ? `<div class="notice blue">Sending directly to <strong>${esc(target.name)}</strong> (@${esc(target.profile.handle)}), ${esc(target.profile.tierBand || "")} tier. <a href="#" onclick="state.offerTarget=null; loadMyOffers(); return false;">Make it an open offer instead</a></div>` : ""}
     ${mode === "open" ? `
-    <p class="small muted">On comp offers the deliverable never changes: the Standard Visit. On cash offers, your booking terms set the deliverables. You set the terms, creators apply with one tap (their profile card is the application), and you pick from the ranked stack.</p>
+    <p class="small muted">The deliverable never changes: the Standard Visit. You set the terms, creators apply with one tap (their profile card is the application), and you pick from the ranked stack.</p>
     <p class="small muted" style="margin-bottom:4px">Start from a template (optional) ${infoBtn("templates")}</p>
     <div class="chip-row">${(g.templates || []).map((t) => `<button type="button" class="chip" onclick="applyTemplate('${esc(t.id)}')">${esc(t.label)}</button>`).join("")}</div>` : ""}
     <form onsubmit="return createOfferV2(event)">
@@ -4749,7 +4746,7 @@ async function loadMyOffers() {
       <div class="field"><label>Offer title <span class="req-tag">Required</span> ${infoBtn("title")}</label><input id="o2-title" value="${dv(dft.title)}" placeholder="Dinner for two on us" oninput="offerDraftSync()" onblur="offerValidateField('title')"><p class="field-err" id="err-o2-title"></p></div>
       <div class="field"><label>How is the creator paid? <span class="req-tag">Required</span> ${infoBtn("kind")}</label>
         <label style="font-weight:500"><input type="radio" name="o2-kind" value="comp" ${dft.kind === "paid" ? "" : "checked"} style="width:auto" onchange="offerCoachUpdate()"> Comp: your product, on you</label><br>
-        <label style="font-weight:500"><input type="radio" name="o2-kind" value="paid" ${dft.kind === "paid" ? "checked" : ""} style="width:auto" onchange="offerCoachUpdate()"> Cash: a rate for a paid booking (the booking terms set the deliverables)</label>
+        <label style="font-weight:500"><input type="radio" name="o2-kind" value="paid" ${dft.kind === "paid" ? "checked" : ""} style="width:auto" onchange="offerCoachUpdate()"> Cash: a rate for the Standard Visit package</label>
       </div>
       <div class="field"><label>Exactly what is comped <span class="req-tag">Required</span> ${infoBtn("comped")}</label><input id="o2-comped" value="${dv(dft.comped)}" placeholder="Two entrees and two drinks" oninput="offerCoachUpdate()" onblur="offerValidateField('comped')"><p class="field-err" id="err-o2-comped"></p>${mode === "direct" ? chipsRowHtml("comp", "o2", target && target.profile ? target.profile.tierBand : null) : ""}</div>
       <div class="field" id="o2-covers-wrap"><label>How many people does the comp cover? <span class="req-tag">Required</span> ${infoBtn("covers")}</label>
