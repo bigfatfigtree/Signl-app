@@ -5027,7 +5027,7 @@ function renderCounter(prefill) {
     <p class="muted">The creator shows their code or QR at the visit. Scan the QR with any phone camera (it lands back here), or type the short code. One tap burns the code and starts the 48 hour post clock. Your register is never involved: ring the comp in your own system the way you normally do.</p>
     <p class="small">Handing this device to staff? <button class="linklike" onclick="return goStaff()">Redeem a creator visit</button> in staff mode: PIN in, code in, done. They never see anything but the visit in front of them.</p>
     <form onsubmit="return counterLookup(event)">
-      <div class="field"><label>Booking code</label><input id="counter-code" value="${esc(code)}" placeholder="SGNL-XXXXXX" style="text-transform:uppercase;font-family:Archivo;font-weight:700;letter-spacing:0.06em" required></div>
+      <div class="field"><label>Booking code</label><input id="counter-code" value="${esc(code)}" placeholder="SGNL-XXXXXX" style="text-transform:uppercase;font-family:Manrope;font-weight:700;letter-spacing:0.06em" required></div>
       <button class="btn" type="submit" style="width:100%">Look up booking</button>
     </form>
     <div id="counter-result" class="mt"></div>
@@ -5137,9 +5137,9 @@ async function staffPinScreen() {
     <p class="muted">Staff sign-in for the register. Enter the staff PIN your owner set. This device stays signed in for the shift (12 hours) and can only redeem creator visits${bizName ? ` at <strong>${esc(bizName)}</strong>` : ""}.</p>
     <div id="staff-error"></div>
     <form onsubmit="return staffEnter(event)">
-      ${!ownerBiz && !state.staffCode ? `<div class="field"><label>Business code (on the register card)</label><input id="staff-bizcode" value="${esc(state.staffCode)}" style="text-transform:uppercase;font-family:Archivo;font-weight:700;letter-spacing:0.06em" autocomplete="off" required></div>` : ""}
+      ${!ownerBiz && !state.staffCode ? `<div class="field"><label>Business code (on the register card)</label><input id="staff-bizcode" value="${esc(state.staffCode)}" style="text-transform:uppercase;font-family:Manrope;font-weight:700;letter-spacing:0.06em" autocomplete="off" required></div>` : ""}
       ${!ownerBiz && state.staffCode ? `<input type="hidden" id="staff-bizcode" value="${esc(state.staffCode)}">` : ""}
-      <div class="field"><label>Staff PIN</label><input type="password" id="staff-pin" inputmode="numeric" autocomplete="off" maxlength="6" style="font-family:Archivo;font-weight:700;letter-spacing:0.3em" required></div>
+      <div class="field"><label>Staff PIN</label><input type="password" id="staff-pin" inputmode="numeric" autocomplete="off" maxlength="6" style="font-family:Manrope;font-weight:700;letter-spacing:0.3em" required></div>
       <button class="btn" type="submit" style="width:100%">Start staff mode</button>
     </form>
     <p class="small muted mt">No PIN yet? The owner sets it in the app under Plan, then Staff redemption.</p>
@@ -5180,7 +5180,7 @@ function staffCodeScreen() {
     <p class="muted">${esc(s.businessName)} &middot; signed in for this shift. The creator shows their code or QR.</p>
     ${"BarcodeDetector" in window && navigator.mediaDevices ? `<button class="btn" style="width:100%;margin-bottom:12px" onclick="staffScan()">Scan the creator's QR</button>` : ""}
     <form onsubmit="return staffLookup(event)">
-      <div class="field"><label>Creator's code</label><input id="staff-code" placeholder="SGNL-XXXXXX" style="text-transform:uppercase;font-family:Archivo;font-weight:700;letter-spacing:0.06em" autocomplete="off" required></div>
+      <div class="field"><label>Creator's code</label><input id="staff-code" placeholder="SGNL-XXXXXX" style="text-transform:uppercase;font-family:Manrope;font-weight:700;letter-spacing:0.06em" autocomplete="off" required></div>
       <button class="btn" type="submit" style="width:100%">Look up visit</button>
     </form>
     <div id="staff-result" class="mt"></div>
@@ -5477,7 +5477,7 @@ async function printStaffCard() {
     if (!w) { alert("Allow pop-ups to print the register card, or screenshot the QR and link above."); return; }
     const origin = location.origin;
     w.document.write(`<!DOCTYPE html><html><head><title>SIGNL register card</title>
-    <style>body{font-family:Arial,sans-serif;text-align:center;padding:36px;color:#141414}img.logo{height:54px}img.qr{width:260px;height:260px}.biz{font-size:22px;font-weight:700;margin:10px 0 2px}.big{font-size:30px;font-weight:800;letter-spacing:0.02em;margin:18px 0 6px}.line{font-size:17px}.code{font-family:monospace;font-size:19px;font-weight:700;letter-spacing:0.12em}.muted{color:#666;font-size:13px}</style></head>
+    <style>body{font-family:Arial,sans-serif;text-align:center;padding:36px;color:#0B0D0C}img.logo{height:54px}img.qr{width:260px;height:260px}.biz{font-size:22px;font-weight:700;margin:10px 0 2px}.big{font-size:30px;font-weight:800;letter-spacing:0.02em;margin:18px 0 6px}.line{font-size:17px}.code{font-family:monospace;font-size:19px;font-weight:700;letter-spacing:0.12em}.muted{color:#666;font-size:13px}</style></head>
     <body>
       <img class="logo" src="${origin}/assets/logo.png" alt="SIGNL">
       <div class="biz">${esc(d.businessName)}</div>
@@ -6615,7 +6615,7 @@ function pvStaffPanelHtml(d) {
     </div>` : ""}
     <div class="grid cols-2">
       <div class="card">
-        <div class="field"><label>Booking code</label><input value="${esc(booked.code)}" disabled style="text-transform:uppercase;font-family:Archivo;font-weight:700;letter-spacing:0.06em"></div>
+        <div class="field"><label>Booking code</label><input value="${esc(booked.code)}" disabled style="text-transform:uppercase;font-family:Manrope;font-weight:700;letter-spacing:0.06em"></div>
         <div class="card" style="margin-top:10px">
           <div class="flex-between"><strong>${esc(booked.creatorName)}</strong><span class="badge tier">@${esc(booked.creatorHandle)}</span></div>
           <p class="small">${esc(booked.title)}: ${esc(booked.whatComped)}</p>
@@ -6696,7 +6696,7 @@ function pvStaffDemoHtml() {
       ${banner}
       <p class="muted">${esc(demo.businessName)}. Staff: enter the PIN your manager set, then the creator's code.</p>
       <form onsubmit="return pvStaffPinSubmit(event)">
-        <div class="field"><label>Business code</label><input value="${esc(demo.staffCode)}" disabled style="text-transform:uppercase;font-family:Archivo;font-weight:700;letter-spacing:0.06em"></div>
+        <div class="field"><label>Business code</label><input value="${esc(demo.staffCode)}" disabled style="text-transform:uppercase;font-family:Manrope;font-weight:700;letter-spacing:0.06em"></div>
         <div class="field"><label>Staff PIN</label><input id="pv-staff-pin" type="password" inputmode="numeric" autocomplete="off" placeholder="The demo PIN is ${esc(s.pin)}" required></div>
         <div id="pv-staff-error">${s.error ? `<div class="error-box">${esc(s.error)}</div>` : ""}</div>
         <button class="btn" type="submit" style="width:100%">Open the code screen</button>
@@ -6712,7 +6712,7 @@ function pvStaffDemoHtml() {
       ${banner}
       <p class="muted">${esc(demo.businessName)} &middot; staff mode. Enter the creator's code, or scan their QR in the live app.</p>
       <form onsubmit="return pvStaffLookup(event)">
-        <div class="field"><label>Creator's visit code</label><input id="pv-staff-code" style="text-transform:uppercase;font-family:Archivo;font-weight:700;letter-spacing:0.06em" autocomplete="off" placeholder="SGNL-XXXXXX" required></div>
+        <div class="field"><label>Creator's visit code</label><input id="pv-staff-code" style="text-transform:uppercase;font-family:Manrope;font-weight:700;letter-spacing:0.06em" autocomplete="off" placeholder="SGNL-XXXXXX" required></div>
         <div id="pv-staff-error">${s.error ? `<div class="error-box">${esc(s.error)}</div>` : ""}</div>
         <button class="btn" type="submit" style="width:100%">Look up the visit</button>
       </form>
