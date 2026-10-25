@@ -1,6 +1,6 @@
 {
  "_meta": {
-  "generatedAt": "2026-10-24T00:42:28.323Z",
+  "generatedAt": "2026-10-24T22:13:55.504Z",
   "refresh": "node scripts/build-claim-evidence.mjs (re-run after new campaign batches or sprint waves; commit the regenerated file)",
   "sources": {
    "campaign_batch:batch2-import.json": 35,
@@ -11,7 +11,7 @@
    "campaign_batch:batch2b-import.json": 2,
    "claim_sprint_email": 1,
    "email_harvest": 90,
-   "dm_claim_sprint": 18
+   "dm_claim_sprint": 20
   },
   "excluded": "signl-campaign-run/state.json DM send log: proves a DM was sent, not that the personal claim link was in it, and carries no emails; satisfies neither rule."
  },
@@ -587,6 +587,11 @@
    "handle": "ashleehecht",
    "market": "Wilmington NC",
    "source": "campaign_batch:batch2-now.json"
+  },
+  {
+   "handle": "austinkgraff",
+   "market": "Washington DC",
+   "source": "dm_claim_sprint"
   },
   {
    "handle": "bacon_and_beauty",
