@@ -7006,9 +7006,13 @@ function previewDashboardHtml(d) {
     // on the founding registration with its fields already
     // filled in (Jeff, 2026-10-23). Same rule as claim links:
     // prefill only, never a submit, signed-in visitors keep
-    // their normal landing.
+    // their normal landing. A creator claim link carries &market=
+    // too, so this block must never run when a claim handle is
+    // present: the handle makes the URL a creator claim, and the
+    // business landing must not override it (bug fix, 2026-10-25:
+    // /claim?handle=X&market=Y rendered join-business).
     const bizParams = parseBizParams(params);
-    if (bizParams.businessName || bizParams.market || bizParams.category) {
+    if (!claim.handle && (bizParams.businessName || bizParams.market || bizParams.category)) {
       state.bizPrefill = bizParams;
       if (!state.user) state.view = "join-business";
     }
