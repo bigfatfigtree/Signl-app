@@ -5,10 +5,14 @@
 // founding-businesses-2026-10, import endpoint, sweep) before
 // the Admin tab rendered it. This suite proves, against a
 // throwaway local DB:
-//   - the admin campaign payload serves all THREE registry
+//   - the admin campaign payload serves all FOUR registry
 //     campaigns, and the business campaign is present at zero
 //     state (defined, disarmed, all counts zero, no sends)
 //     before anything is imported into it;
+//   - the hello@ founding lane (founding-creators-hello-2026-10,
+//     added 2026-10-25) is present at the same zero state, on
+//     the default sender profile, as a creator campaign in the
+//     registry next to the founding campaign it mirrors;
 //   - the payload shape the business card's Import button posts
 //     ({ campaignId: "founding-businesses-2026-10", recipients })
 //     lands in the business queue and nowhere else;
@@ -35,7 +39,8 @@ const BASE = `http://127.0.0.1:${PORT}`;
 const ADMIN_EMAIL = "admin@signl.test";
 const ADMIN_PASSWORD = "<MASKED_SECRET_001>";
 const BUSINESS_ID = "founding-businesses-2026-10";
-const CREATOR_IDS = ["founding-creators-2026-10", "founding-crossover-2026-10"];
+const CREATOR_IDS = ["founding-creators-2026-10", "founding-creators-hello-2026-10", "founding-crossover-2026-10"];
+const HELLO_ID = "founding-creators-hello-2026-10";
 
 let passed = 0;
 let failed = 0;
@@ -96,7 +101,7 @@ try {
   const admin = makeClient();
   await admin("POST", "/api/auth/login", { email: ADMIN_EMAIL, password: ADMIN_PASSWORD });
 
-  part("payload: all three campaigns, business at zero state");
+  part("payload: all four campaigns, business at zero state");
   const anonStatus = await anon("GET", `/api/admin/campaign?campaignId=${BUSINESS_ID}`);
   check("anonymous campaign read is refused", anonStatus.status === 401 || anonStatus.status === 403, String(anonStatus.status));
   for (const id of [...CREATOR_IDS, BUSINESS_ID]) {
@@ -104,7 +109,10 @@ try {
     check(`${id}: payload present at zero state`, s.status === 200 && s.data.campaign.id === id && s.data.campaign.armed === false, JSON.stringify(s.data).slice(0, 200));
     check(`${id}: zero counts, no sends`, s.data.counts.queued === 0 && s.data.counts.sent === 0 && s.data.counts.bounced === 0 && s.data.counts.skipped === 0 && s.data.counts.total === 0 && (s.data.recentSends || []).length === 0, JSON.stringify(s.data.counts));
     check(`${id}: shared daily ceiling reported (shipped default 150)`, s.data.campaign.dailyCeiling === 150 && typeof s.data.campaign.sentToday === "number", JSON.stringify(s.data.campaign).slice(0, 200));
+    check(`${id}: fresh campaign sits on the default sender profile`, s.data.campaign.fromMailbox === "default", JSON.stringify(s.data.campaign).slice(0, 200));
   }
+  const helloStatus = await admin("GET", `/api/admin/campaign?campaignId=${HELLO_ID}`);
+  check("hello@ lane: defined on the default sender profile (hello@joinsignl.com)", helloStatus.data.campaign.id === HELLO_ID && helloStatus.data.campaign.fromMailbox === "default", JSON.stringify(helloStatus.data.campaign).slice(0, 250));
 
   part("business card import posts the business campaignId");
   const boxPayload = {
@@ -133,7 +141,8 @@ try {
 
   part("client: registry + business section + creator cards unchanged");
   const appJs = fs.readFileSync(path.join(root, "public/app.js"), "utf8");
-  check("registry covers all three campaigns with kinds", appJs.includes('campaignId: "founding-creators-2026-10"') && appJs.includes('campaignId: "founding-crossover-2026-10"') && appJs.includes('campaignId: "founding-businesses-2026-10"') && appJs.includes('kind: "creator"') && appJs.includes('kind: "business"'));
+  check("registry covers all four campaigns with kinds", appJs.includes('campaignId: "founding-creators-2026-10"') && appJs.includes('campaignId: "founding-creators-hello-2026-10"') && appJs.includes('campaignId: "founding-crossover-2026-10"') && appJs.includes('campaignId: "founding-businesses-2026-10"') && appJs.includes('kind: "creator"') && appJs.includes('kind: "business"'));
+  check("hello@ lane card renders from the registry", appJs.includes('"Founding creators (hello@ lane)"') && appJs.includes('suffix: "-hello"'));
   check("business card renders from the registry", appJs.includes('"Founding businesses"') && appJs.includes('suffix: "-business"'));
   check("Business outreach campaigns section is rendered", appJs.includes("Business outreach campaigns") && appJs.includes("businessSections"));
   check("business card has its own import box suffix", appJs.includes('id="campaign-import-text${meta.suffix}"') && appJs.includes("campaign-import-note${meta.suffix}"));

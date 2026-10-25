@@ -406,6 +406,15 @@ try {
   check("crossover legacy Hampton Roads recipient gets the Hampton Roads paragraph carrying the November launch", xoHr.text.includes("Hampton Roads launches in November, and our opening push is Black Friday weekend."));
   check("template dispatch: the crossover id renders the crossover subject", campaignEmailFor(CROSSOVER_CAMPAIGN_ID, { name: "A B", handle: "ab", market: "Richmond", opener: "your posts" }).subject === "Your national platforms, plus a local layer in Richmond");
   check("template dispatch: the founding id renders the founding subject", campaignEmailFor("founding-creators-2026-10", { name: "A B", handle: "ab", market: "Richmond", opener: "your posts" }).subject === "A founding creator spot in Richmond");
+  // The hello@ lane (Jeff, 2026-10-25): a second founding-creators
+  // campaign whose only difference is the sender profile, so its
+  // dispatch must render the founding email byte for byte.
+  const { HELLO_CAMPAIGN_ID } = require("../netlify/functions/lib/router.js");
+  check("hello campaign id is the shipped one", HELLO_CAMPAIGN_ID === "founding-creators-hello-2026-10", HELLO_CAMPAIGN_ID);
+  const helloRecipient = { name: "A B", handle: "ab", market: "Richmond", opener: "your posts" };
+  const helloMail = campaignEmailFor(HELLO_CAMPAIGN_ID, helloRecipient);
+  const foundingMail = campaignEmail(helloRecipient);
+  check("template dispatch: the hello@ lane renders the founding email byte for byte", helloMail.subject === foundingMail.subject && helloMail.text === foundingMail.text, helloMail.subject);
   check("template dispatch: any other campaign keeps the founding template", campaignEmailFor("daily-test", { name: "A B", handle: "ab", market: "Richmond", opener: "your posts" }).subject === "A founding creator spot in Richmond");
   // Cross-campaign dedupe: pasteone@fixtures.dev already sits in
   // the founding campaign (Part H). Importing it into crossover

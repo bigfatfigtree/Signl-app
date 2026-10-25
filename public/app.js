@@ -5614,14 +5614,19 @@ function renderAdmin() {
 }
 
 // Outreach campaigns (Jeff, 2026-10-19; business wave added
-// 2026-10-23): the outreach email sends from inside the app
+// 2026-10-23; hello@ founding lane added 2026-10-25): the
+// outreach email sends from inside the app
 // (its own SMTP transport), so there is no per-send approval
 // card. This tab is the control surface for every campaign in
 // the CAMPAIGN_SECTIONS registry: queue counts, the last error
 // if a run stopped, recent sends, and the Arm / Pause switch
 // per campaign. The founding campaign pitches a founding
-// creator spot; the crossover campaign (added later the same
-// day) pitches creators already on national platforms the
+// creator spot; the hello@ lane (2026-10-25) is a second
+// founding-creators campaign sending the identical email from
+// the default hello@joinsignl.com mailbox, so volume is not
+// capped by the creators@ signlteam warm-up; the crossover
+// campaign (added later the same day) pitches creators
+// already on national platforms the
 // additive local layer, and its imports skip any address the
 // founding campaign already holds; the founding businesses
 // campaign (kind "business") emails local businesses a
@@ -5635,6 +5640,7 @@ function renderAdmin() {
 // protects the sending domain).
 const CAMPAIGN_SECTIONS = [
   { key: "founding", suffix: "", kind: "creator", campaignId: "founding-creators-2026-10", title: "Founding creators", blurb: "The founding creator email: a founding spot in their market, comped local experiences for honest posts within 48 hours, and a live founding profile from day one." },
+  { key: "founding-hello", suffix: "-hello", kind: "creator", campaignId: "founding-creators-hello-2026-10", title: "Founding creators (hello@ lane)", blurb: "The same founding creator email as the Founding creators campaign, sent from the default hello@joinsignl.com mailbox instead of creators@signlteam.com: a second lane, so founding outreach volume is not capped by the creators@ warm-up." },
   { key: "crossover", suffix: "-crossover", kind: "creator", campaignId: "founding-crossover-2026-10", title: "Platform crossover creators", blurb: "For creators already working national platforms like Grin, Cohley, or Momfluence. The pitch is additive and non-exclusive: keep those deals, SIGNL is the local layer on top. Imports skip any address the founding campaign already holds, so nobody receives both emails." },
   { key: "business", suffix: "-business", kind: "business", campaignId: "founding-businesses-2026-10", title: "Founding businesses", blurb: "The founding business wave: local businesses get a founding spot with their registration prebuilt, claimed through their own signup link. It asks nothing today and commits them to nothing; claiming just puts them in early for launch updates." },
 ];
