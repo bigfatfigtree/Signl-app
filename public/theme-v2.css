@@ -1074,24 +1074,35 @@ label { font-weight: 700; letter-spacing: -.01em; }
 }
 #topnav a.nav-cta:hover { background: var(--mint-b); color: var(--ink); }
 
-/* ---------- bottom bar: Slotted mobile bar (active = mint pill) ---------- */
+/* ---------- bottom bar: Slotted mobile bar (active = mint square) ---------- */
+/* Jeff, 2026-10-25: the active highlight is a SQUARE over the item,
+   symmetric inside the bar — a centered ::before tile, not a
+   full-height pill, so it never bulges past the bar's edges. The
+   tile is smaller than the 54px inner bar height, leaving even
+   clearance above and below; icon + label sit on top of it. */
 @media (max-width: 720px) {
   #bottomnav {
     height: calc(66px + env(safe-area-inset-bottom));
     padding: 6px 6px calc(6px + env(safe-area-inset-bottom));
   }
-  #bottomnav .bn-item { border-radius: 999px; margin: 0 1px; }
-  #bottomnav .bn-item.on { background: var(--mint); color: var(--ink); }
-  #bottomnav .bn-item.on .bn-label { color: var(--ink); }
 }
 #bottomnav.signed-in {
   height: calc(66px + env(safe-area-inset-bottom));
   padding: 6px 6px calc(6px + env(safe-area-inset-bottom));
   width: min(640px, 100%);
 }
-#bottomnav.signed-in .bn-item { border-radius: 999px; margin: 0 1px; }
-#bottomnav.signed-in .bn-item.on { background: var(--mint); color: var(--ink); }
+#bottomnav .bn-item { position: relative; margin: 0 1px; }
+#bottomnav .bn-item.on { color: var(--ink); }
+#bottomnav .bn-item.on .bn-label { color: var(--ink); }
+#bottomnav.signed-in .bn-item.on { color: var(--ink); }
 #bottomnav.signed-in .bn-item.on .bn-label { color: var(--ink); }
+#bottomnav .bn-item.on::before {
+  content: ""; position: absolute; left: 50%; top: 50%;
+  width: 48px; height: 48px; border-radius: 15px;
+  background: var(--mint); transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+#bottomnav .bn-icon, #bottomnav .bn-label { position: relative; z-index: 1; }
 body.bn-on main { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
 body.bn-on .footer { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
 
