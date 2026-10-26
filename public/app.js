@@ -308,6 +308,7 @@ async function renderPublicProfile() {
         ${p.tierBand ? `<span class="cc-tier">${esc(p.tierBand)}</span>` : ""}
         ${p.paidRate ? `<span class="cc-paid">Paid bookings: $${fmtPrice(p.paidRate)}</span>` : ""}
       </div>
+      ${galleryRowHtml(p.photos)}
       <div class="cc-body">
         <div class="cc-id">
           <div class="cc-name">${esc(p.name)}</div>
@@ -436,7 +437,7 @@ async function renderPublicProof() {
     </div>
     <div class="cta-row no-print" style="justify-content:flex-start;margin-top:16px">
       <button class="btn" onclick="window.print()">Print or save as PDF</button>
-      <a class="btn ghost" href="/c/${encodeURIComponent(p.handle)}">Back to the public profile</a>
+      <a class="btn ghost" href="/c/${encodeURIComponent(p.handle)}">Back to profile</a>
     </div>
   </div>`;
 }
@@ -2041,7 +2042,7 @@ function renderJoinCreator() {
       <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="jc-agree-compliance" required><span>I agree to post within 48 hours of every comped visit for full credit and paste the post link in the app. I understand a post that never lands means the visit does not count, and repeated misses can pause my account.</span></label></div>
       <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="jc-agree-terms" required><span>I agree to the <a href="https://joinsignl.com/terms.html" target="_blank" rel="noopener">Terms of Service</a> and <a href="https://joinsignl.com/privacy.html" target="_blank" rel="noopener">Privacy Policy</a>, and I agree SIGNL can email me about my account, launch updates and offers. I can unsubscribe from marketing emails at any time.</span></label></div>
       <div id="jc-save-warn"></div>
-      <button class="btn" type="submit" style="width:100%">Create my founding profile</button>
+      <button class="btn" type="submit" style="width:100%">Create my profile</button>
       <p class="small muted mt">Every application is reviewed by a person, and every founding application gets a decision or a clear status within 2 business days. Founding spots are held in sign-up order.</p>
     </form>
     </div>
@@ -2076,6 +2077,84 @@ async function uploadPhotoInput(inputId) {
   } catch (e) {
     return false; // non-fatal: the creator can add it from their profile
   }
+}
+
+// ---------- photo gallery (profile edit) ----------
+// Up to 6 photos, first = cover. Each change saves on its own
+// through the photo endpoints (same discipline as the lane
+// control): the profile form save never touches photos, so it
+// cannot clobber the gallery either.
+function galleryCountOf(c) {
+  const n = c && c.photoCount;
+  return Number.isInteger(n) && n >= 0 ? Math.min(n, 6) : (c && c.hasPhoto ? 1 : 0);
+}
+function galleryUrlsOf(u) {
+  const n = galleryCountOf(u.creator || {});
+  const out = [];
+  for (let i = 0; i < n; i++) out.push(i === 0 ? `/api/users/${u.id}/photo` : `/api/users/${u.id}/photo/${i}`);
+  return out;
+}
+function galleryHtml(u) {
+  const urls = galleryUrlsOf(u);
+  const v = state.galleryV || 0;
+  const tiles = urls.map((src, i) => `
+    <div class="gal-tile">
+      <img src="${esc(src)}?v=${v}" alt="Your photo ${i + 1}">
+      ${i === 0 ? `<span class="gal-cover">Cover</span>` : `<button type="button" class="gal-btn" onclick="return galleryMakeCover(${i})">Make cover</button>`}
+      <button type="button" class="gal-btn gal-del" onclick="return galleryRemovePhoto(${i})">Remove</button>
+    </div>`).join("");
+  const add = urls.length < 6 ? `<label class="gal-tile gal-add"><input type="file" accept="image/png,image/jpeg,image/webp" onchange="galleryAddPhoto(this)"><span>Add photo</span></label>` : "";
+  return `<div class="gal-grid">${tiles}${add}</div>`;
+}
+async function galleryOp(run) {
+  const err = document.getElementById("gallery-err");
+  if (err) err.style.display = "none";
+  try {
+    const data = await run();
+    if (data && state.user && state.user.creator) {
+      state.user.creator.photoCount = data.photoCount;
+      state.user.creator.hasPhoto = data.photoCount > 0;
+    }
+    state.galleryV = (state.galleryV || 0) + 1;
+    const host = document.getElementById("p-gallery");
+    if (host && state.user) host.innerHTML = galleryHtml(state.user);
+    return true;
+  } catch (e) {
+    if (err) { err.textContent = (e && e.message) || "That photo change did not save."; err.style.display = "block"; }
+    return false;
+  }
+}
+function galleryAddPhoto(input) {
+  const file = input && input.files && input.files[0];
+  if (!file) return false;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const slot = galleryCountOf(state.user.creator || {});
+    galleryOp(() => api("POST", "/me/photo", { dataUrl: reader.result, slot }));
+  };
+  reader.onerror = () => {
+    const err = document.getElementById("gallery-err");
+    if (err) { err.textContent = "That photo could not be read."; err.style.display = "block"; }
+  };
+  reader.readAsDataURL(file);
+  return false;
+}
+function galleryMakeCover(i) {
+  galleryOp(() => api("POST", "/me/photo/cover", { slot: i }));
+  return false;
+}
+function galleryRemovePhoto(i) {
+  galleryOp(() => api("DELETE", `/me/photo/${i}`));
+  return false;
+}
+
+// Public surfaces: the cover stays the hero; the rest of the
+// gallery rides under it as a snap-scroll row (shown when the
+// gallery has anything beyond the cover).
+function galleryRowHtml(photos) {
+  const list = Array.isArray(photos) ? photos.filter(Boolean) : [];
+  if (list.length < 2) return "";
+  return `<div class="gal-row">${list.slice(1).map((src) => `<img class="gal-row-img" src="${esc(src)}" alt="" loading="lazy">`).join("")}</div>`;
 }
 
 async function doRegisterCreator(e) {
@@ -2225,7 +2304,7 @@ function renderForBusinesses() {
       </div>
       <input type="hidden" id="jb-plan" value="${esc(state.boot.plans[0].id)}">
       <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="jb-terms" required><span>I agree to the Terms of Service and Privacy Policy, and to account and marketing emails from SIGNL.</span></label></div>
-      <button class="btn mt" type="submit" style="width:100%">Join the founding business list</button>
+      <button class="btn mt" type="submit" style="width:100%">Join founding list</button>
     </form>
     <p class="small muted mt">Reviewed by a person — decision within 2 business days. The roster stays private until activation. Creators join separately: <a href="#" onclick="return go('join-creator')">become a founding creator</a>.</p>
     </div>
@@ -2844,6 +2923,7 @@ function creatorProfileDetailHtml(c, preview) {
         ${p.tierBand ? `<span class="cc-tier">${esc(p.tierBand)}</span>` : ""}
         ${p.paidRate ? `<span class="cc-paid">Paid bookings: $${fmtPrice(p.paidRate)}</span>` : ""}
       </div>
+      ${galleryRowHtml(c.photos)}
       <div class="cc-body">
         <div class="cc-id">
           <div class="cc-name">${esc(c.name)}</div>
@@ -2881,7 +2961,7 @@ function creatorProfileDetailHtml(c, preview) {
     ${creatorShowcaseHtml(c)}
     <div class="cta-row" style="justify-content:flex-start">
       ${preview
-        ? `<button class="btn" onclick="previewStartOffer('${c.userId}')">Send this creator an offer (preview)</button>${p.paidRate ? ` <button class="btn ghost" onclick="previewPaidBooking('${c.userId}')">Preview paid booking ($${fmtPrice(p.paidRate)})</button>` : ""}`
+        ? `<button class="btn" onclick="previewStartOffer('${c.userId}')">Send offer</button>${p.paidRate ? ` <button class="btn ghost" onclick="previewPaidBooking('${c.userId}')">Preview paid booking ($${fmtPrice(p.paidRate)})</button>` : ""}`
         : `<button class="btn" onclick="startOffer('${c.userId}')">Send offer</button>${p.paidRate ? ` <button class="btn" onclick="bookPaidVisit('${c.userId}')">Book paid visit ($${fmtPrice(p.paidRate)})</button>` : ""} <button class="btn ghost" onclick="openThread('${c.userId}')">Message</button>`}
     </div>
     ${p.paidRate ? `<p class="small muted">Paid bookings: $${fmtPrice(p.paidRate)} &middot; you pay rate + 3% &middot; they keep 97% &middot; held until the post is live.</p>` : ""}
@@ -2889,7 +2969,7 @@ function creatorProfileDetailHtml(c, preview) {
     ${preview && c.trackRecord && c.trackRecord.postsDelivered > 0 ? `
     <div class="showcase-block"><h4>Ad use (preview)</h4>
       <p class="small muted">Ad use comes with paid visits: on a paid visit, a business can repost the post and run it as an ad for 6 months from the post date. In the real app that logs the use, notifies the creator, and awards +25 Momentum. Here it is a simulation: nothing is logged and no points move.</p>
-      <button class="btn small-btn ghost" onclick="previewAdUse('${c.userId}')">Use a delivered post in an ad (preview)</button> <span id="pv-aduse-note" class="saved"></span>
+      <button class="btn small-btn ghost" onclick="previewAdUse('${c.userId}')">Use in an ad</button> <span id="pv-aduse-note" class="saved"></span>
     </div>` : ""}
   </div>`;
 }
@@ -3747,10 +3827,10 @@ function creatorProfileHtml(u) {
       <div class="fgroup tint">
       <p class="fg-kicker">The basics</p>
       <div class="field"><label>Your name</label><input id="p-name" value="${esc(u.name || "")}"><p class="small muted">Shown to businesses next to your handle. A quick claim starts with your handle here; put your real name in.</p></div>
-      <div class="field"><label>Profile photo</label>
-        ${c.hasPhoto ? `<img class="profile-photo" src="/api/users/${esc(u.id)}/photo" alt="Your profile photo">` : `<div class="photo-placeholder">No photo yet.</div>`}
-        <input type="file" id="p-photo" accept="image/png,image/jpeg,image/webp">
-        <p class="small muted">Pick a new photo and save to replace it. PNG, JPEG, or WebP, under 2.5 MB.</p>
+      <div class="field"><label>Your photos</label>
+        <div id="p-gallery">${galleryHtml(u)}</div>
+        <p class="small muted">Up to 6 photos. The first is your cover: the one on your cards. Changes save as you make them. PNG, JPEG, or WebP, under 2.5 MB each.</p>
+        <p class="small lane-err" id="gallery-err" style="display:none"></p>
       </div>
       <div class="form-2col">
         <div class="field"><label>Where is your main audience?</label>${platformChipsHtml("p-platform", c.primaryPlatform || "instagram", "syncPPlatform")}<p class="small muted" id="p-proof-note" style="display:${(c.primaryPlatform || "instagram") !== "instagram" ? "" : "none"}">${PROOF_DISCLOSURE}</p></div>
@@ -3956,16 +4036,13 @@ async function doUpdateCreator(e) {
   const pctRaw = document.getElementById("p-localpct").value;
   const wasProfileComplete = !!((state.user.profileCompletion && state.user.profileCompletion.complete) || (state.user.creator && state.user.creator.profileComplete === true));
   try {
-    const uploaded = await uploadPhotoInput("p-photo");
+    // Photos are NOT part of this save: the gallery control above
+    // the form fields adds, removes and re-covers photos on its own
+    // the moment they change (gallery fix, 2026-10-25).
     // Un-completion guard (audit F9): name the consequence BEFORE
-    // the save lands and take an explicit confirm. A photo the
-    // creator picked that failed to upload is named too, instead
-    // of failing in silence (audit F11). After the confirm, the
-    // save proceeds unchanged.
-    const photoInput = document.getElementById("p-photo");
-    const photoFailed = !!(photoInput && photoInput.files && photoInput.files[0]) && !uploaded;
+    // the save lands and take an explicit confirm. After the
+    // confirm, the save proceeds unchanged.
     const warnings = uncompleteWarnings(wasProfileComplete, { localPctBlank: pctRaw === "", categoryCount: cats.length, stackTotal: profileStackTotal() });
-    if (photoFailed) warnings.push("Your new photo did not upload, so your profile keeps the photo it has now. You can try the photo again after saving.");
     if (warnings.length) {
       const proceed = await confirmSaveWarning("save-warn", "Before you save:", warnings, "Save anyway");
       if (!proceed) { submitBusy(form, false); return false; }
@@ -4012,7 +4089,6 @@ async function doUpdateCreator(e) {
       bio: document.getElementById("p-bio").value,
     });
     state.user = data.user;
-    if (uploaded && state.user.creator) state.user.creator.hasPhoto = true;
     submitBusy(form, false);
     document.getElementById("save-ok").textContent = "Saved.";
     // The profile-completion moment: the save that flips the
@@ -4136,8 +4212,12 @@ async function loadOpenBoard() {
 
 // One offer card, two surfaces: the V4 color-blocked feed card
 // renders unchanged in List mode and inside the stack in Cards
-// mode — same rows, same buttons, same handlers.
-function offerFeedCardHtml(o) {
+// mode — same rows, same buttons, same handlers. In preview mode
+// (opts.preview) the same card renders with simulation actions:
+// Apply posts to the preview endpoint (writes nothing) and there
+// is no Message button (no real thread exists behind a preview).
+function offerFeedCardHtml(o, opts) {
+  const preview = !!(opts && opts.preview);
   const spotsLeft = Math.max(0, o.spots - (o.filledCount || 0));
   return `
       <div class="card mb feed-card slot-card">
@@ -4162,9 +4242,13 @@ function offerFeedCardHtml(o) {
           <div><div class="slot-price">$${fmtPrice(o.kind === "paid" ? o.cashRate : o.dollarCap)}</div><div class="slot-note">${o.kind === "paid" ? "Rate" : "Comp value"}</div></div>
           <div class="slot-actions">
             ${o.myApplication
-              ? `<span><span class="badge info">Applied</span> <a href="#" onclick="document.getElementById('my-apps').scrollIntoView({behavior:'smooth'}); return false;">My Applications</a></span>`
-              : `<button class="btn book" onclick="applyToOffer('${o.id}')">Apply</button>`}
-            <button class="btn small-btn ghost" onclick="openThread('${o.businessId}')">Message</button>
+              ? (preview
+                ? `<span><span class="badge info">Applied</span> <span class="small muted">Simulation: nothing was sent.</span></span>`
+                : `<span><span class="badge info">Applied</span> <a href="#" onclick="document.getElementById('my-apps').scrollIntoView({behavior:'smooth'}); return false;">My Applications</a></span>`)
+              : (preview
+                ? `<button class="btn book" onclick="pvApplyToOffer('${o.id}')">Apply</button>`
+                : `<button class="btn book" onclick="applyToOffer('${o.id}')">Apply</button>`)}
+            ${preview ? "" : `<button class="btn small-btn ghost" onclick="openThread('${o.businessId}')">Message</button>`}
           </div>
         </div>
       </div>`;
@@ -4232,6 +4316,104 @@ function offersShowPassed() {
   const s = stackState.offers;
   if (s) { s.idx = 0; s.passed = 0; s.passedIds = new Set(); }
   renderOpenBoard();
+  return false;
+}
+
+// ---------- creator-side preview: the open-offer deck ----------
+// The same board, fed by simulated offers (GET
+// /admin/preview/open-offers) so the creator deck can be
+// test-driven end to end pre-launch. Apply posts to the preview
+// endpoint, which validates and writes NOTHING.
+function pvOffersHtml() {
+  return `<section class="panel">
+    <h3 style="margin-top:0"><span class="preview-tag">PREVIEW</span> Open offers, as a creator sees them</h3>
+    <p class="small muted">Simulated offers from preview businesses. Swipe or use the buttons; applying is a simulation.</p>
+    <div id="pv-open-board">${skelHtml("Loading preview offers...", 2)}</div>
+  </section>`;
+}
+async function loadPvOffers() {
+  const pv = state.preview;
+  if (!pv) return;
+  try {
+    const data = await api("GET", "/admin/preview/open-offers");
+    pv.offersList = data.offers || [];
+    renderPvBoardShell();
+  } catch (err) {
+    const el = document.getElementById("pv-open-board");
+    if (el) el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+  }
+}
+function renderPvBoardShell() {
+  const el = document.getElementById("pv-open-board");
+  if (!el) return;
+  el.innerHTML = `<div id="pv-offers-toggle">${pvOffersModeToggleHtml()}</div><div id="pv-open-list"></div>`;
+  renderPvBoard();
+}
+function pvOffersModeToggleHtml() {
+  const mode = state.pvOffersMode || "cards";
+  return `<div class="view-toggle"><div class="vt-group"><button type="button" class="rchip${mode === "cards" ? " on" : ""}" onclick="setPvOffersMode('cards')">Cards</button><button type="button" class="rchip${mode === "list" ? " on" : ""}" onclick="setPvOffersMode('list')">List</button></div><span class="stack-pos" data-stackpos="pvoffers"></span></div>`;
+}
+function setPvOffersMode(mode) {
+  state.pvOffersMode = mode;
+  const tg = document.getElementById("pv-offers-toggle");
+  if (tg) tg.innerHTML = pvOffersModeToggleHtml();
+  renderPvBoard();
+  return false;
+}
+function renderPvBoard() {
+  const el = document.getElementById("pv-open-list");
+  if (!el || !state.preview) return;
+  const all = state.preview.offersList || [];
+  if ((state.pvOffersMode || "cards") === "list") {
+    const pos = document.querySelector('[data-stackpos="pvoffers"]');
+    if (pos) pos.textContent = "";
+    el.innerHTML = `<div class="vx-stagger">${all.map((o) => offerFeedCardHtml(o, { preview: true })).join("")}</div>`;
+    return;
+  }
+  if (!stackState.pvoffers || stackState.pvoffers.src !== all) {
+    stackState.pvoffers = {
+      items: all, idx: 0, passed: 0, passedIds: new Set(), src: all,
+      cardHtml: (o) => offerFeedCardHtml(o, { preview: true }),
+      goLabelFor: (o) => (o.myApplication ? "Applied" : "Apply"),
+      onGo: async (o) => {
+        if (o.myApplication) { stackAdvance("pvoffers", "go"); return; }
+        try {
+          await pvApplyRequest(o);
+          stackAdvance("pvoffers", "go");
+        } catch (err) {
+          alert(err.message);
+          const wrap = document.querySelector('[data-stack="pvoffers"]');
+          if (wrap) renderStack(wrap);
+        }
+      },
+      onPass: (o) => { if (stackState.pvoffers) stackState.pvoffers.passedIds.add(o.id); },
+      onTap: null,
+      endHtml: (passed, total) => pvOffersEndHtml(passed, total),
+    };
+  }
+  el.innerHTML = `<div class="stk-wrap" data-stack="pvoffers"></div>`;
+  renderStack(el.firstElementChild);
+}
+async function pvApplyRequest(o) {
+  await api("POST", "/admin/preview/apply", { offerId: o.id });
+  o.myApplication = { status: "applied", preview: true };
+}
+async function pvApplyToOffer(offerId) {
+  const pv = state.preview;
+  const o = pv && (pv.offersList || []).find((x) => x.id === offerId);
+  if (!o) return;
+  try {
+    await pvApplyRequest(o);
+    renderPvBoard();
+  } catch (err) { alert(err.message); }
+}
+function pvOffersEndHtml(passed, total) {
+  return `<div class="stk-end"><h3>That's every preview offer</h3><p class="small muted">You looked through ${total} simulated offer${total === 1 ? "" : "s"}. Nothing was applied for real: preview applications are never written.</p><div class="stk-end-actions">${passed ? `<button type="button" class="btn ghost" onclick="pvOffersShowPassed()">Show passed (${passed})</button>` : ""}<button type="button" class="btn" onclick="loadPvOffers()">Reload preview offers</button></div></div>`;
+}
+function pvOffersShowPassed() {
+  const s = stackState.pvoffers;
+  if (s) { s.idx = 0; s.passed = 0; s.passedIds = new Set(); }
+  renderPvBoard();
   return false;
 }
 
@@ -4488,13 +4670,13 @@ function visitCard(b, role) {
     html += `
     <form onsubmit="return submitHonorReport(event, '${b.id}')">
       <div class="field"><label>Business didn't honor this comp?</label><input id="honor-${b.id}" maxlength="280" placeholder="What happened, in one line"></div>
-      <button class="btn small-btn danger" type="submit">Report: the business didn't honor this</button>
-      <p class="small muted">Filing this voids the visit: no post is owed, the compliance clock stops, and it cannot hurt your standing. It flags the business for the SIGNL team. It is never shown publicly.</p>
+      <button class="btn small-btn danger" type="submit">Report problem</button>
+      <p class="small muted">The business didn't honor this comp. Filing this voids the visit: no post is owed, the compliance clock stops, and it cannot hurt your standing. It flags the business for the SIGNL team. It is never shown publicly.</p>
     </form>`;
   }
   if (role === "business" && b.codeStatus === "issued") {
     html += `<p class="small">Booking code <strong>${esc(b.code)}</strong>. Redeem it at the Counter tab when the creator is with you${b.checkinAt ? ", or confirm the visit below (creator checked in " + fmtDate(b.checkinAt) + ")" : ", or confirm the visit below if the code cannot be scanned"}.</p>
-    <button class="btn small-btn" onclick="confirmVisit('${b.id}')">Confirm visit and start the 48h clock</button>`;
+    <button class="btn small-btn" onclick="confirmVisit('${b.id}')">Confirm visit</button> <span class="small muted">Starts the 48-hour post clock.</span>`;
   }
   if (b.redeemedAt) {
     html += `<p class="small muted">Redeemed ${fmtDate(b.redeemedAt)} (${b.redeemMethod === "business_confirm" ? "business confirmed" : "code at counter"}). Post deadline: <strong>${fmtDate(b.postDeadline)}</strong>.</p>`;
@@ -4548,7 +4730,7 @@ function visitCard(b, role) {
         <div class="field"><label>Comments</label><input type="number" id="perf-comments-${b.id}" min="0" placeholder="Optional"></div>
         <div class="field"><label>Shares</label><input type="number" id="perf-shares-${b.id}" min="0" placeholder="Optional"></div>
       </div>
-      <button class="btn small-btn" type="submit">Report numbers (+5 Momentum)</button>
+      <button class="btn small-btn" type="submit">Report numbers</button> <span class="small muted">+5 Momentum</span>
     </form>`;
     }
   }
@@ -4591,7 +4773,7 @@ function visitCard(b, role) {
     </form>`;
   }
   if (role === "business" && b.postState === "overdue" && !b.replacementRequestedAt) {
-    html += `<button class="btn small-btn danger" onclick="requestReplacement('${b.id}')">Request replacement visit</button>`;
+    html += `<button class="btn small-btn danger" onclick="requestReplacement('${b.id}')">Request replacement</button>`;
   }
   if (b.replacementRequestedAt) html += `<p class="small">Replacement requested ${fmtDate(b.replacementRequestedAt)}. SIGNL will line up a substitute creator.</p>`;
   if (role === "creator" && b.status === "completed") {
@@ -4609,7 +4791,7 @@ function visitCard(b, role) {
         <div class="field"><label>Your rating</label>${chipSelectHtml("bizrev-stars-" + b.id, [{ value: "5", label: "5 stars" }, { value: "4", label: "4 stars" }, { value: "3", label: "3 stars" }, { value: "2", label: "2 stars" }, { value: "1", label: "1 star" }], "5", null, false)}</div>
         <div class="field"><label>Your words (optional)</label><input id="bizrev-text-${b.id}" maxlength="500" placeholder="How was the visit, honestly?"></div>
       </div>
-      <button class="btn small-btn" type="submit">Leave review (+10 Momentum)</button>
+      <button class="btn small-btn" type="submit">Leave review</button> <span class="small muted">+10 Momentum</span>
     </form>`;
     }
     html += reviewLinksBlockHtml(b.businessReviewLinks);
@@ -4861,26 +5043,67 @@ function roasCellHtml(h, navButton) {
   return `<div class="stat-cell"><div class="stat-num grad-text">${score === null || score === undefined ? "n/a" : Number(score).toFixed(2) + "&times;"}</div><div class="stat-lbl">SIGNL ROAS Score (register tallies plus modeled media value)${basis ? `<br>${basis}` : ""}</div></div>`;
 }
 
+// ---------- business dashboard: a segmented report ----------
+// Jeff (2026-10-25): the business dashboard was one endless
+// scroll. It is a report now: a slim KPI band, then a segmented
+// switch — Overview | Needs you (badged) | Campaigns | Results —
+// with every block the old scroll carried inside its segment.
+// The live Home and the preview twin build their segments from
+// these same builders, so the two never drift apart.
+function dashSegsHtml(needsCount) {
+  const seg = (id, label, badge) => `<button type="button" class="rchip${id === "overview" ? " on" : ""}" data-segbtn="${id}" onclick="dashSeg('${id}', this)">${label}${badge ? ` <span class="seg-badge">${badge}</span>` : ""}</button>`;
+  return `<div class="view-toggle dash-segs"><div class="vt-group">${seg("overview", "Overview")}${seg("needs", "Needs you", needsCount || 0)}${seg("campaigns", "Campaigns")}${seg("results", "Results")}</div></div>`;
+}
+function dashSeg(id, btn) {
+  const root = btn && btn.closest ? btn.closest("[data-dash]") : null;
+  if (!root) return false;
+  root.querySelectorAll("[data-seg]").forEach((s) => { s.hidden = s.getAttribute("data-seg") !== id; });
+  root.querySelectorAll("[data-segbtn]").forEach((b) => b.classList.toggle("on", b.getAttribute("data-segbtn") === id));
+  return false;
+}
+function bizDashAttentionHtml(h, opts) {
+  const o = opts || {};
+  const all = h.attention || [];
+  if (!all.length) return `<div class="notice blue" style="margin-top:16px"><strong>Nothing needs your attention.</strong> Every visit is on track.</div>`;
+  const items = o.limit ? all.slice(0, o.limit) : all;
+  return `<div class="notice" style="margin-top:16px"><strong>${h.attention.length} item${h.attention.length === 1 ? "" : "s"} need${h.attention.length === 1 ? "s" : ""} your attention.</strong>
+    ${items.map((a) => `<br><strong>${esc(a.label)}:</strong> ${esc(a.detail)}${o.actions && a.kind === "offer_nudge" ? ` <button class="btn small-btn" onclick="fixOffer('${esc(a.offerId)}','raise')">Raise comp +$25</button> <button class="btn small-btn ghost" onclick="fixOffer('${esc(a.offerId)}','widen')">Widen window +3 days</button>` : ""}${o.actions && a.kind === "applications" ? ` <button class="btn small-btn" onclick="return goApplicants('${esc(a.offerId)}')">Review the stack</button>` : ""}`).join("")}
+    ${o.limit && all.length > items.length ? `<br><span class="small">+ ${all.length - items.length} more under Needs you.</span>` : ""}</div>`;
+}
+function bizDashPipelineHtml(h) {
+  const stages = [
+    [h.pipeline.invited, "Invited", "Bookings created"],
+    [h.pipeline.claimed, "Claimed", "Codes issued"],
+    [h.pipeline.visitSet, "Visit set", "Windows open"],
+    [h.pipeline.clockRunning, "48h clock", "Visits redeemed"],
+    [h.pipeline.live, "Live", "Posts delivered"],
+  ];
+  return `<h4>Visit pipeline</h4>
+    <div class="pv-funnel">${stages.map(([n, label, sub]) => `<div class="pv-stage"><div class="pv-stage-num">${n}</div><div class="pv-stage-lbl">${label}</div><div class="pv-stage-sub">${sub}</div></div>`).join("")}</div>`;
+}
+function bizDashPaceHtml(h, planName, billingStatus) {
+  return `<h4>Plan pace</h4>
+    <div class="flex-between"><span class="small"><strong>${esc(planName)} plan:</strong> ${h.visitsUsed} of ${h.visitsAllowance} visits booked this month</span><span class="badge ${h.planPacePct >= 100 ? "warn" : "info"}">${h.planPacePct}%</span></div>
+    <div class="meter" style="margin-top:8px"><i style="width:${Math.min(100, h.planPacePct)}%"></i></div>
+    ${billingStatus ? `<p class="small muted">${esc(billingStatus)}</p>` : ""}`;
+}
+function bizDashContentRowsHtml(h) {
+  return (h.topContent || []).map((c) => `
+    <div class="ui-row"><span class="k"><strong>${esc(c.title)}</strong> with @${esc(c.creatorHandle)}<br><span class="small muted">${fmtNum(c.views)} views &middot; ${fmtNum(c.likes)} likes &middot; ${c.onTime ? "posted on time" : "posted late"}${c.roasScore !== null && c.roasScore !== undefined ? ` &middot; SIGNL ROAS ${c.roasScore.toFixed(2)}&times;` : ""}${c.performanceUpdatedAt ? `<br>${perfSourceLabel(c.performanceSource)}, updated ${fmtDay(c.performanceUpdatedAt)}` : ""}</span></span><span class="v">${c.redemptions ? `${c.redemptions.count} code uses<br>$${fmtMoney(c.redemptions.basketTotal)} rung up` : "No tally yet"}</span></div>`).join("");
+}
+function bizDashNextRowsHtml(h, tickWhen) {
+  return (h.nextVisits || []).map((n) => `
+    <div class="ui-row"><span class="k"><strong>${esc(n.title)}</strong> with @${esc(n.creatorHandle)}<br><span class="small muted">${esc(n.stateLabel)}${n.dueInLabel ? ` &middot; ${esc(n.dueInLabel)}` : ""}</span></span><span class="v">${esc(n.whenLabel)}<br>${tickWhen ? `<span class="pv-tick" data-kind="left" data-target="${esc(n.when || "")}"></span>` : esc(fmtDate(n.when))}</span></div>`).join("");
+}
+
 async function loadBusinessHome() {
   const el = document.getElementById("tab-body");
   try {
     const d = await api("GET", "/me/business-home");
     const h = d.home;
-    const stages = [
-      [h.pipeline.invited, "Invited", "Bookings created"],
-      [h.pipeline.claimed, "Claimed", "Codes issued"],
-      [h.pipeline.visitSet, "Visit set", "Windows open"],
-      [h.pipeline.clockRunning, "48h clock", "Visits redeemed"],
-      [h.pipeline.live, "Live", "Posts delivered"],
-    ];
-    const attention = h.attention && h.attention.length ? `
-      <div class="notice" style="margin-top:16px"><strong>${h.attention.length} item${h.attention.length === 1 ? "" : "s"} need${h.attention.length === 1 ? "s" : ""} your attention.</strong>
-      ${h.attention.map((a) => `<br><strong>${esc(a.label)}:</strong> ${esc(a.detail)}${a.kind === "offer_nudge" ? ` <button class="btn small-btn" onclick="fixOffer('${esc(a.offerId)}','raise')">Raise comp +$25</button> <button class="btn small-btn ghost" onclick="fixOffer('${esc(a.offerId)}','widen')">Widen window +3 days</button>` : ""}${a.kind === "applications" ? ` <button class="btn small-btn" onclick="return goApplicants('${esc(a.offerId)}')">Review the stack</button>` : ""}`).join("")}</div>`
-      : `<div class="notice blue" style="margin-top:16px"><strong>Nothing needs your attention.</strong> Every visit is on track.</div>`;
-    const content = (h.topContent || []).map((c) => `
-      <div class="ui-row"><span class="k"><strong>${esc(c.title)}</strong> with @${esc(c.creatorHandle)}<br><span class="small muted">${fmtNum(c.views)} views &middot; ${fmtNum(c.likes)} likes &middot; ${c.onTime ? "posted on time" : "posted late"}${c.roasScore !== null && c.roasScore !== undefined ? ` &middot; SIGNL ROAS ${c.roasScore.toFixed(2)}&times;` : ""}${c.performanceUpdatedAt ? `<br>${perfSourceLabel(c.performanceSource)}, updated ${fmtDay(c.performanceUpdatedAt)}` : ""}</span></span><span class="v">${c.redemptions ? `${c.redemptions.count} code uses<br>$${fmtMoney(c.redemptions.basketTotal)} rung up` : "No tally yet"}</span></div>`).join("");
-    const next = (h.nextVisits || []).map((n) => `
-      <div class="ui-row"><span class="k"><strong>${esc(n.title)}</strong> with @${esc(n.creatorHandle)}<br><span class="small muted">${esc(n.stateLabel)}${n.dueInLabel ? ` &middot; ${esc(n.dueInLabel)}` : ""}</span></span><span class="v">${esc(n.whenLabel)}<br>${esc(fmtDate(n.when))}</span></div>`).join("");
+    const needsCount = (h.attention ? h.attention.length : 0) + (d.staffPinSet === false ? 1 : 0);
+    const content = bizDashContentRowsHtml(h);
+    const next = bizDashNextRowsHtml(h, false);
     const rebook = (d.rebookPrompts || []).map((r) => `
       <div class="ui-row"><span class="k"><strong>${esc(r.name)}</strong> @${esc(r.handle)}${r.isFavorite ? ` <span class="badge tier">Favorite</span>` : ""}<br><span class="small muted">${r.source === "delivered" ? `Delivered for you before: ${esc(r.lastTitle || "")}` : "Saved in your favorites"}</span></span><span class="v"><button class="btn small-btn" onclick="rebookCreator('${esc(r.creatorId)}')">Invite again</button></span></div>`).join("");
     el.classList.add("vx-stagger");
@@ -4888,18 +5111,13 @@ async function loadBusinessHome() {
       ? { num: Number(h.roasScore).toFixed(2) + "&times;", lbl: "SIGNL ROAS Score" }
       : { num: `${h.visitsUsed} of ${h.visitsAllowance}`, lbl: "Creator visits booked this month" };
     el.innerHTML = `
+    <div data-dash>
     <div class="dash-hero">
       <p class="dh-kicker">${esc(marketDisplayName(d.business.market))} &middot; ${esc(d.plan.name)} plan</p>
       <div class="dh-name">${esc((state.user.business && state.user.business.businessName) || d.business.businessName || "")}</div>
       <p class="dh-sub">Your visits, posts and results.</p>
       <div class="dh-row"><div><div class="dh-num">${heroNum.num}</div><div class="dh-num-lbl">${heroNum.lbl}</div></div></div>
     </div>
-    ${d.marketLive ? "" : `<div class="notice blue"><strong>Your market opens in 30–90 days.</strong> Draft offers now — publishing switches on at launch.</div>`}
-    <div class="panel" style="display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap">
-      <div><strong>At the register?</strong><p class="muted small" style="margin:4px 0 0">Staff redeem with the PIN + creator code. No login needed.</p></div>
-      <button class="btn" onclick="return goStaff()">Redeem a creator visit</button>
-    </div>
-    ${d.staffPinSet === false ? `<div class="notice"><strong>Set your staff PIN.</strong> Your team redeems visits with it — never your login. <button class="btn small-btn" onclick="return go('dashboard','Plan')">Set the staff PIN</button></div>` : ""}
     <section class="panel">
       <h3 style="margin-top:0">Business home</h3>
       <div class="stat-band home-metrics">
@@ -4908,18 +5126,42 @@ async function loadBusinessHome() {
         ${roasCellHtml(h, true)}
         <div class="stat-cell"><div class="stat-num">${h.onTimeRatePct === null ? "n/a" : h.onTimeRatePct + "%"}</div><div class="stat-lbl">Posts on time</div></div>
       </div>
-      ${attention}
-      <h4>Visit pipeline</h4>
-      <div class="pv-funnel">${stages.map(([n, label, sub]) => `<div class="pv-stage"><div class="pv-stage-num">${n}</div><div class="pv-stage-lbl">${label}</div><div class="pv-stage-sub">${sub}</div></div>`).join("")}</div>
-      <h4>Plan pace</h4>
-      <div class="flex-between"><span class="small"><strong>${esc(d.plan.name)} plan:</strong> ${h.visitsUsed} of ${h.visitsAllowance} visits booked this month</span><span class="badge ${h.planPacePct >= 100 ? "warn" : "info"}">${h.planPacePct}%</span></div>
-      <div class="meter" style="margin-top:8px"><i style="width:${Math.min(100, h.planPacePct)}%"></i></div>
-      <p class="small muted">${esc(d.business.billingStatus)}</p>
-      ${content ? `<div class="tint-block"><h4>Content that is working</h4>
-${content}</div>` : ""}
-      ${next ? `<h4>Next visits</h4>${next}` : ""}
-      ${rebook ? `<div class="tint-block"><h4>Invite again</h4><p class="small muted">Your delivered creators + favorites.</p>${rebook}</div>` : ""}
     </section>
+    ${dashSegsHtml(needsCount)}
+    <div data-seg="overview">
+      ${d.marketLive ? "" : `<div class="notice blue"><strong>Your market opens in 30–90 days.</strong> Draft offers now — publishing switches on at launch.</div>`}
+      <div class="panel" style="display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap">
+        <div><strong>At the register?</strong><p class="muted small" style="margin:4px 0 0">Staff redeem with the PIN + creator code. No login needed.</p></div>
+        <button class="btn" onclick="return goStaff()">Redeem a creator visit</button>
+      </div>
+      ${bizDashAttentionHtml(h, { actions: true, limit: 3 })}
+      <section class="panel">
+        <h3 style="margin-top:0">Snapshot</h3>
+        ${bizDashPipelineHtml(h)}
+        ${bizDashPaceHtml(h, d.plan.name, d.business.billingStatus)}
+      </section>
+    </div>
+    <div data-seg="needs" hidden>
+      ${d.staffPinSet === false ? `<div class="notice"><strong>Set your staff PIN.</strong> Your team redeems visits with it — never your login. <button class="btn small-btn" onclick="return go('dashboard','Plan')">Set the staff PIN</button></div>` : ""}
+      ${bizDashAttentionHtml(h, { actions: true })}
+    </div>
+    <div data-seg="campaigns" hidden>
+      <section class="panel">
+        <h3 style="margin-top:0">Active campaigns</h3>
+        ${next ? `<h4>Next visits</h4>${next}` : `<p class="small muted">No visits booked yet. Booked visits and their progress land here.</p>`}
+        ${rebook ? `<div class="tint-block"><h4>Invite again</h4><p class="small muted">Your delivered creators + favorites.</p>${rebook}</div>` : ""}
+        <p style="margin-bottom:0"><button class="btn small-btn ghost" onclick="return go('dashboard','My Offers')">Open My Offers</button></p>
+      </section>
+    </div>
+    <div data-seg="results" hidden>
+      <section class="panel">
+        <h3 style="margin-top:0">Results</h3>
+        ${content ? `<div class="tint-block"><h4>Content that is working</h4>
+${content}</div>` : `<p class="small muted">Delivered posts and what they returned land here.</p>`}
+        <p style="margin-bottom:0"><button class="btn small-btn ghost" onclick="return go('dashboard','Visits &amp; Posts')">Open Visits &amp; Posts</button></p>
+      </section>
+    </div>
+    </div>
     <div id="biz-notes" class="mt"></div>`;
     loadNotificationsInto("biz-notes");
   } catch (err) {
@@ -5096,6 +5338,7 @@ function discoverStackCard(c) {
     <div class="dcard-photo${c.photoUrl ? "" : " no-photo"}">
       ${c.photoUrl ? `<img src="${esc(c.photoUrl)}" alt="">` : `<div class="dcard-mono"><span>${initial}</span></div>`}
       ${p.tierBand ? `<span class="dcard-tier">${esc(p.tierBand)}</span>` : ""}
+      ${c.previewPhoto ? `<span class="dcard-sample">Sample photo · preview</span>` : ""}
     </div>
     <div class="dcard-body">
       <div class="dcard-name">${esc(c.name)}</div>
@@ -5426,8 +5669,8 @@ async function loadMyOffers() {
     ${packageSummaryHtml(myPlan, planObj ? planObj.name : null)}
     <div class="field"><label>Who sees this offer ${infoBtn("lane")}</label>
     <div class="chip-row" role="tablist">
-      <button type="button" class="chip ${mode === "open" ? "on" : ""}" onclick="setComposerLane('open')">Open offer: creators apply</button>
-      <button type="button" class="chip ${mode === "direct" ? "on" : ""}" onclick="setComposerLane('direct')">Direct offer: invite one creator</button>
+      <button type="button" class="chip ${mode === "open" ? "on" : ""}" onclick="setComposerLane('open')">Open offer</button>
+      <button type="button" class="chip ${mode === "direct" ? "on" : ""}" onclick="setComposerLane('direct')">Direct offer</button>
     </div>
     <p class="small muted" style="margin-top:6px">${mode === "open" ? "Any creator who fits can apply. You pick." : "Only the creator you pick sees this offer."}</p>
     </div>
@@ -5746,7 +5989,7 @@ async function counterLookup(e, preset) {
         <p>${esc(b.title)}: ${esc(b.whatComped)}</p>
         <p class="small muted">Comp cap $${fmtMoney(b.dollarCap)}${b.kind === "paid" || b.paidLane ? "" : ` &middot; ${coversLine(b)}`} &middot; Visit date: ${esc(b.visitDate || b.visitWindow || "Flexible")} &middot; Code ${esc(b.code)}</p>
         <p class="small">Check the person in front of you matches the creator, then redeem. The code burns and the 48 hour post clock starts now.</p>
-        <button class="btn" style="width:100%" onclick="counterRedeem('${esc(code)}')">Redeem and start the clock</button>
+        <button class="btn" style="width:100%" onclick="counterRedeem('${esc(code)}')">Redeem visit</button>
       </div>`;
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
@@ -6135,7 +6378,7 @@ async function loadStaffSettings() {
     <button class="btn ghost" onclick="printStaffCard()">Print register card</button>
     <h3 class="mt">Staff devices</h3>
     <p class="small muted">${d.activeStaffSessions} staff session${d.activeStaffSessions === 1 ? "" : "s"} active right now. If a team member leaves, sign out every staff device and change the PIN: every phone at the register will ask for the PIN again.</p>
-    <button class="btn danger" onclick="staffSignOutAll()">Sign out all staff devices</button> <span id="staff-out-ok" class="saved"></span>`;
+    <button class="btn danger" onclick="staffSignOutAll()">Sign out devices</button> <span id="staff-out-ok" class="saved"></span>`;
   } catch (err) {
     el.innerHTML = `<h3>Staff redemption</h3><div class="error-box">${esc(err.message)}</div>`;
   }
@@ -6885,7 +7128,7 @@ async function loadStats() {
 // console cleanly.
 function enterPreview() {
   if (!state.user || state.user.role !== "admin") return;
-  state.preview = { step: "plans", planId: "self-service", market: "Virginia Beach", creators: null, creator: null, targetId: "", sent: [], confirmation: null, dashboard: null };
+  state.preview = { step: "plans", planId: "self-service", market: "Virginia Beach", creators: null, creator: null, targetId: "", sent: [], confirmation: null, dashboard: null, offersList: null };
   state.view = "dashboard";
   render();
 }
@@ -6914,6 +7157,7 @@ function renderPreview() {
     offer: "Step 4 of 4: the offer composer (simulation)",
     dashboard: "The business dashboard: bookings, codes, tracking and returns",
     staffdemo: "The staff redemption demo: the register flow, simulated end to end",
+    offers: "The creator side: the open-offer deck a creator swipes through (simulation)",
   }[pv.step] || "";
   const planName = pv.step === "dashboard" && pv.dashboard
     ? pv.dashboard.plan.name
@@ -6922,10 +7166,12 @@ function renderPreview() {
   app.innerHTML = `
   <div class="preview-banner">
     <span class="preview-tag">PREVIEW</span>
-    <span><strong>Previewing as a business.</strong> Everything here is what a business sees. Offers sent in preview are simulations: they never reach a creator and nothing is saved.</span>
+    ${pv.step === "offers"
+      ? `<span><strong>Previewing as a creator.</strong> These open offers are simulations for testing the deck: applying writes nothing and notifies nobody.</span>`
+      : `<span><strong>Previewing as a business.</strong> Everything here is what a business sees. Offers sent in preview are simulations: they never reach a creator and nothing is saved.</span>`}
     <button class="btn small-btn" onclick="exitPreview()">Exit preview</button>
   </div>
-  <div class="tabs">${navBtn("plans", "Plans")}${navBtn("discover", "Discover")}${navBtn("dashboard", "Dashboard")}</div>
+  <div class="tabs">${navBtn("plans", "Plans")}${navBtn("discover", "Discover")}${navBtn("dashboard", "Dashboard")}${navBtn("offers", "Creator offers")}</div>
   <p class="muted small">${esc(stepLabel)} &middot; Plan: ${esc(planName)} &middot; Market: ${esc(pv.market)}</p>
   <div id="preview-main"></div>`;
   const main = document.getElementById("preview-main");
@@ -6935,6 +7181,7 @@ function renderPreview() {
   else if (pv.step === "offer") main.innerHTML = previewOfferHtml();
   else if (pv.step === "dashboard") { main.innerHTML = pv.dashboard ? previewDashboardHtml(pv.dashboard) : `<section class="panel"><p class="muted">Loading the dashboard...</p></section>`; if (pv.dashboard) startPreviewCountdown(); else loadPreviewDashboard(); }
   else if (pv.step === "staffdemo") main.innerHTML = pvStaffDemoHtml();
+  else if (pv.step === "offers") { main.innerHTML = pvOffersHtml(); if (pv.offersList) renderPvBoardShell(); else loadPvOffers(); }
   else main.innerHTML = previewPlansHtml();
 }
 
@@ -6962,9 +7209,9 @@ function previewPlansHtml() {
     <p class="muted">A business joins the founding list and picks a plan (recorded at sign-up, no card charged during founding); when their market activates, they land in Discover with the founding roster ready. Pick a plan and a market, then walk the roster exactly as they would.</p>
     <div class="field"><label>Market to preview</label><select id="pv-market">${state.boot.markets.map((m) => `<option ${pv.market === m.name ? "selected" : ""}>${esc(m.name)}</option>`).join("")}</select></div>
     <div class="plan-cards">${plans}</div>
-    <p class="mt"><button class="btn" onclick="previewToDiscover()">Continue as this business: search the roster &rarr;</button>
-    <button class="btn ghost" onclick="previewToDashboard()">Skip ahead: the business dashboard &rarr;</button></p>
-    <p class="small muted">Preview discovery works in every market, live or not, so a market can be test-driven before it opens. Real businesses only search their own market once it is live.</p>
+    <p class="mt"><button class="btn" onclick="previewToDiscover()">Search the roster &rarr;</button>
+    <button class="btn ghost" onclick="previewToDashboard()">Open dashboard &rarr;</button></p>
+    <p class="small muted">Continue as this business, or skip ahead. Preview discovery works in every market, live or not, so a market can be test-driven before it opens. Real businesses only search their own market once it is live.</p>
   </section>`;
 }
 
@@ -7249,7 +7496,7 @@ function pvBookingCard(b) {
   }
   if (b.state === "overdue") {
     html += `<div class="notice"><strong>This visit needs attention.</strong> ${(b.alerts || []).map((a) => `<br>${esc(a)}`).join("")}<br>Hard stop <span class="countdown pv-tick" data-kind="until" data-target="${esc(b.pauseAt)}"></span> (${esc(fmtDate(b.pauseAt))}).</div>
-    <button class="btn small-btn" disabled>Request a replacement visit</button> <span class="small muted">In the live app this asks SIGNL for a replacement creator for the burned visit. Disabled in preview.</span>`;
+    <button class="btn small-btn" disabled>Request replacement</button> <span class="small muted">In the live app this asks SIGNL for a replacement creator for the burned visit. Disabled in preview.</span>`;
   }
   if (b.post) {
     const p = b.post;
@@ -7273,7 +7520,7 @@ function pvBookingCard(b) {
         <div class="field"><label>Code redemptions (simulation)</label><input type="number" id="pv-redeem-count-${b.id}" min="0" value="${b.redemptions ? b.redemptions.count : 0}"></div>
         <div class="field"><label>Total rung up with the code ($) (simulation)</label><input type="number" id="pv-redeem-basket-${b.id}" min="0" step="0.01" value="${b.redemptions ? b.redemptions.basketTotal : 0}"></div>
       </div>
-      <button class="btn small-btn ghost" type="submit">Preview the score with this tally</button>
+      <button class="btn small-btn ghost" type="submit">Preview score</button>
       <span class="small" id="pv-redeem-result-${b.id}"></span>
       <p class="small muted">Simulation only: in the live app the business reports this tally on the visit and it is saved. Here nothing is recorded, and the dashboard keeps its original tallies.</p>
     </form>`;
@@ -7295,7 +7542,7 @@ function pvStaffPanelHtml(d) {
   return `
   <section class="panel">
     <h3 style="margin-top:0"><span class="preview-tag">PREVIEW</span> What staff see at the counter</h3>
-    <p class="muted small">The Counter screen. In the live app this is the whole job: the creator shows their code or QR, staff look it up, one tap redeems it and starts the 48 hour clock. The register is never involved; staff ring the comp in your own system the way they normally do.</p>
+    <p class="muted small">The Counter screen: code or QR, one tap redeems, the 48h clock starts. The register is never involved.</p>
     ${demo ? `
     <div class="notice blue">
       <strong>Try the staff login yourself (simulation).</strong> This demo runs the full staff flow against ${esc(demo.businessName)} in preview: PIN screen, code lookup, redeem. Nothing is saved and no real record changes.
@@ -7304,11 +7551,11 @@ function pvStaffPanelHtml(d) {
         <p class="small" style="margin:0"><strong>Sample creator code to redeem:</strong> <span class="code">${esc(demo.redeemCode || "")}</span><br><span class="muted">${demo.redeemVisit ? `${esc(demo.redeemVisit.title)} with @${esc(demo.redeemVisit.creatorHandle)} &middot; ${coversLine(demo.redeemVisit)}` : ""}</span></p>
       </div>
       <div class="cta-row" style="justify-content:flex-start;margin-top:10px">
-        <button class="btn" onclick="return pvStaffEnter()">Open the staff demo</button>
+        <button class="btn" onclick="return pvStaffEnter()">Open staff demo</button>
       </div>
       <div class="field" style="margin-top:10px;max-width:340px"><label>Set your own demo PIN for this session (4 to 6 digits)</label><input id="pv-demo-pin" inputmode="numeric" maxlength="6" placeholder="${esc(demo.demoPin)}"></div>
-      <button class="btn small-btn ghost" onclick="return pvStaffSetPin()">Use this PIN for the demo</button> <span id="pv-demo-pin-ok" class="saved"></span>
-      <p class="small muted" style="margin-bottom:0">In the live app the owner sets the real staff PIN on the Plan tab, and staff open this same flow from the sign-in screen or the register card link. The demo PIN above exists only inside this preview.</p>
+      <button class="btn small-btn ghost" onclick="return pvStaffSetPin()">Use this PIN</button> <span id="pv-demo-pin-ok" class="saved"></span>
+      <p class="small muted" style="margin-bottom:0">Live: the owner sets the real PIN on the Plan tab. This demo PIN exists only in preview.</p>
     </div>` : ""}
     <div class="grid cols-2">
       <div class="card">
@@ -7411,11 +7658,11 @@ function pvStaffDemoHtml() {
       <form onsubmit="return pvStaffLookup(event)">
         <div class="field"><label>Creator's visit code</label><input id="pv-staff-code" style="text-transform:uppercase;font-family:Manrope;font-weight:700;letter-spacing:0.06em" autocomplete="off" placeholder="SGNL-XXXXXX" required></div>
         <div id="pv-staff-error">${s.error ? `<div class="error-box">${esc(s.error)}</div>` : ""}</div>
-        <button class="btn" type="submit" style="width:100%">Look up the visit</button>
+        <button class="btn" type="submit" style="width:100%">Find the visit</button>
       </form>
       <p class="small muted">Try the sample code <span class="code">${esc(demo.redeemCode || "")}</span> (${esc(v.title || "the booked visit")}${v.creatorHandle ? `, @${esc(v.creatorHandle)}` : ""}). ${demo.burnedExample ? `Or try the already-used code <span class="code">${esc(demo.burnedExample.code)}</span> to see the codes-work-once answer.` : ""}</p>
       ${s.found ? pvStaffFoundHtml(s.found) : ""}
-      <p class="mt"><button class="btn ghost" onclick="return pvStaffExit()">Done: back to the dashboard</button></p>
+      <p class="mt"><button class="btn ghost" onclick="return pvStaffExit()">Back to dashboard</button></p>
     </section>`;
   }
   return `
@@ -7424,8 +7671,9 @@ function pvStaffDemoHtml() {
     ${banner}
     <p><strong>${esc(s.redeemedName || "The creator")}</strong> is redeemed in this simulation. Their 48 hour post clock would start now, and the owner would get the staff notice email.</p>
     <p class="muted">In the live app the code burns for real. Here nothing was saved: run it again any time.</p>
-    <button class="btn" onclick="return pvStaffAgain()">Redeem another (back to the code screen)</button>
-    <button class="btn ghost" onclick="return pvStaffExit()">Back to the dashboard</button>
+    <button class="btn" onclick="return pvStaffAgain()">Redeem another</button>
+    <button class="btn ghost" onclick="return pvStaffExit()">Back to dashboard</button>
+    <p class="small muted">Redeem another takes you back to the code screen.</p>
   </section>`;
 }
 
@@ -7536,9 +7784,9 @@ function pvManagedHtml(mv) {
       <div class="stat"><div class="num">$${fmtMoney(b.remaining)}</div><div class="lbl">Remaining this month</div></div>
     </div>
     <p class="small muted">${esc(b.note)}</p>
-    ${mv.discountCodes && !mv.discountCodes.enabled ? `<p class="small muted"><strong>Audience-code discounts: off.</strong> Harbor Table has not turned code discounts on, so its creator codes are counting codes only: they track the customers a post sends in, and promise no percentage off. Turning them on, and picking the percentage, is the business's call whenever it wants.</p>` : ""}
+    ${mv.discountCodes && !mv.discountCodes.enabled ? `<p class="small muted"><strong>Audience-code discounts: off.</strong> Codes count customers only. Turning discounts on, and the %, is the business's call.</p>` : ""}
     ${rows || `<p class="small muted">No paid bookings yet this month.</p>`}
-    <p class="small muted">Paid bookings are the optional lane: a specific creator at their own listed rate, 6% total fee split evenly (business +3%, creator keeps 97%). Comp-only is always fine, forever. ${b.paidBookings && b.paidBookings.length ? esc(b.paidBookings[0].paymentNote) : ""}</p>
+    <p class="small muted">Paid lane: a creator at their listed rate, 6% total split evenly (business +3%, creator keeps 97%). Comp-only is always fine. ${b.paidBookings && b.paidBookings.length ? esc(b.paidBookings[0].paymentNote) : ""}</p>
   </section>`;
 }
 
@@ -7572,45 +7820,40 @@ async function pvReportRedemptions(e, bookingId) {
 // headline metrics, the attention list, the visit pipeline, plan
 // pace, the content that is working (ranked by register tallies),
 // and next visits. Simulation only, like the whole preview.
+// The preview twin of Business Home, built from the SAME
+// segment builders as the live dashboard (bizDash* above), so
+// the two stay in sync. Returns one fragment per segment; the
+// preview dashboard composes them with its booking cards.
 function pvHomeHtml(d) {
   const h = d.home;
-  if (!h) return "";
-  const stages = [
-    [h.pipeline.invited, "Invited", "Bookings created"],
-    [h.pipeline.claimed, "Claimed", "Codes issued"],
-    [h.pipeline.visitSet, "Visit set", "Windows open"],
-    [h.pipeline.clockRunning, "48h clock", "Visits redeemed"],
-    [h.pipeline.live, "Live", "Posts delivered"],
-  ];
-  const attention = h.attention && h.attention.length ? `
-    <div class="notice" style="margin-top:16px"><strong>${h.attention.length} item${h.attention.length === 1 ? "" : "s"} need${h.attention.length === 1 ? "s" : ""} your attention.</strong>
-    ${h.attention.map((a) => `<br><strong>${esc(a.label)}:</strong> ${esc(a.detail)}`).join("")}</div>`
-    : `<div class="notice blue" style="margin-top:16px"><strong>Nothing needs your attention.</strong> Every visit is on track.</div>`;
-  const content = (h.topContent || []).map((c) => `
-    <div class="ui-row"><span class="k"><strong>${esc(c.title)}</strong> with @${esc(c.creatorHandle)}<br><span class="small muted">${fmtNum(c.views)} views &middot; ${fmtNum(c.likes)} likes &middot; ${c.onTime ? "posted on time" : "posted late"}${c.roasScore !== null && c.roasScore !== undefined ? ` &middot; SIGNL ROAS ${c.roasScore.toFixed(2)}&times;` : ""}${c.performanceUpdatedAt ? `<br>${perfSourceLabel(c.performanceSource)}, updated ${fmtDay(c.performanceUpdatedAt)}` : ""}</span></span><span class="v">${c.redemptions ? `${c.redemptions.count} code uses<br>$${fmtMoney(c.redemptions.basketTotal)} rung up` : "No tally yet"}</span></div>`).join("");
-  const next = (h.nextVisits || []).map((n) => `
-    <div class="ui-row"><span class="k"><strong>${esc(n.title)}</strong> with @${esc(n.creatorHandle)}<br><span class="small muted">${esc(n.stateLabel)}${n.dueInLabel ? ` &middot; ${esc(n.dueInLabel)}` : ""}</span></span><span class="v">${esc(n.whenLabel)}<br><span class="pv-tick" data-kind="left" data-target="${esc(n.when || "")}"></span></span></div>`).join("");
-  return `
+  const empty = { overview: "", needs: "", campaigns: "", results: "" };
+  if (!h) return empty;
+  const content = bizDashContentRowsHtml(h);
+  const next = bizDashNextRowsHtml(h, true);
+  return {
+    overview: `
   <section class="panel">
     <h3 style="margin-top:0"><span class="preview-tag">PREVIEW</span> Business home</h3>
-    <p class="small muted">The first screen a business opens: what is happening, what needs attention, and what it is returning. Built from the same simulated visits as everything below it.</p>
-    <div class="stat-band home-metrics">
-      <div class="stat-cell"><div class="stat-num">${h.visitsUsed}<span class="small muted"> of ${h.visitsAllowance}</span></div><div class="stat-lbl">Creator visits booked this month (${h.visitsRemaining} left on the plan)</div></div>
-      <div class="stat-cell"><div class="stat-num">${h.postsLive}</div><div class="stat-lbl">Posts live</div></div>
-      ${roasCellHtml(h, false)}
-      <div class="stat-cell"><div class="stat-num">${h.onTimeRatePct === null ? "n/a" : h.onTimeRatePct + "%"}</div><div class="stat-lbl">Posts on time</div></div>
-    </div>
-    ${attention}
-    <h4>Visit pipeline</h4>
-    <div class="pv-funnel">${stages.map(([n, label, sub]) => `<div class="pv-stage"><div class="pv-stage-num">${n}</div><div class="pv-stage-lbl">${label}</div><div class="pv-stage-sub">${sub}</div></div>`).join("")}</div>
-    <p class="small muted">Each stage counts the simulated bookings that have reached it, from invitation to a live post.</p>
-    <h4>Plan pace</h4>
-    <div class="flex-between"><span class="small"><strong>${esc(d.plan.name)} plan:</strong> ${h.visitsUsed} of ${h.visitsAllowance} visits booked this month</span><span class="badge ${h.planPacePct >= 100 ? "warn" : "info"}">${h.planPacePct}%</span></div>
-    <div class="meter" style="margin-top:8px"><i style="width:${Math.min(100, h.planPacePct)}%"></i></div>
-    ${content ? `<div class="tint-block"><h4>Content that is working</h4>
-    <p class="small muted">Delivered posts ranked by the register action they produced: the code tallies reported on each visit, with views as supporting detail.</p>${content}</div>` : ""}
-    ${next ? `<h4>Next visits</h4>${next}` : ""}
-  </section>`;
+    ${bizDashAttentionHtml(h, { limit: 3 })}
+    ${bizDashPipelineHtml(h)}
+    ${bizDashPaceHtml(h, d.plan.name)}
+  </section>`,
+    needs: `
+  <section class="panel">
+    <h3 style="margin-top:0">Needs you</h3>
+    ${bizDashAttentionHtml(h, {})}
+  </section>`,
+    campaigns: next ? `
+  <section class="panel">
+    <h3 style="margin-top:0">Next visits</h3>
+    ${next}
+  </section>` : "",
+    results: content ? `
+  <section class="panel">
+    <h3 style="margin-top:0">Content that is working</h3>
+    ${content}
+  </section>` : "",
+  };
 }
 
 function previewDashboardHtml(d) {
@@ -7619,15 +7862,43 @@ function previewDashboardHtml(d) {
   if (!d.bookings || !d.bookings.length) {
     return `<section class="panel"><h3 style="margin-top:0"><span class="preview-tag">PREVIEW</span> The business dashboard</h3><p class="muted">No approved creators yet, so there is no roster to simulate bookings over. Approve founding creators and the dashboard fills in.</p></section>`;
   }
+  const home = pvHomeHtml(d);
+  const overdue = d.bookings.filter((b) => b.state === "overdue");
+  const delivered = d.bookings.filter((b) => b.state === "posted_on_time" || b.state === "posted_late");
+  const active = d.bookings.filter((b) => b.state !== "overdue" && b.state !== "posted_on_time" && b.state !== "posted_late");
+  const needsCount = ((d.home && d.home.attention) ? d.home.attention.length : 0) + overdue.length;
   return `
+  <div data-dash>
   <section class="panel">
     <div class="flex-between">
       <div><h3 style="margin:0">${esc(d.business.name)}</h3><p class="muted small" style="margin:4px 0 0">${esc(d.business.category)} &middot; ${esc(marketDisplayName(d.business.market))} &middot; ${esc(s.cycleLabel)} cycle</p></div>
       <span class="badge info">${esc(plan.name)} plan &middot; $${fmtPrice(plan.priceMonthly)}/mo &middot; ${plan.visitsPerMonth} visits/mo</span>
     </div>
-    <p class="small muted" style="margin-bottom:0">The dashboard a business lives in: who is booked, the codes, redemption, the post clock, delivered posts, and what it all returned. Every booking below is simulated over the real founding roster, with simulated visit data. Nothing here is saved, and no creator is contacted.</p>
+    <p class="small muted" style="margin-bottom:0">Simulated over the real founding roster. Nothing is saved; no creator is contacted.</p>
   </section>
-  ${pvHomeHtml(d)}
+  <section class="panel">
+    <div class="stat-band home-metrics">
+      <div class="stat-cell"><div class="stat-num">${s.visitsUsed}<span class="small muted"> of ${s.visitsAllowance}</span></div><div class="stat-lbl">Visits booked this month &middot; ${s.visitsRemaining} left</div></div>
+      <div class="stat-cell"><div class="stat-num">${s.postsDelivered}</div><div class="stat-lbl">Posts live</div></div>
+      <div class="stat-cell"><div class="stat-num">$${fmtMoney(s.roas ? s.roas.redemptions.basketTotal : 0)}</div><div class="stat-lbl">Register rung up</div></div>
+      <div class="stat-cell"><div class="stat-num grad-text">${s.roas && s.roas.score !== null ? s.roas.score.toFixed(2) + "&times;" : "n/a"}</div><div class="stat-lbl">SIGNL ROAS Score</div></div>
+    </div>
+  </section>
+  ${dashSegsHtml(needsCount)}
+  <div data-seg="overview">
+    ${home.overview}
+    ${pvStaffPanelHtml(d)}
+  </div>
+  <div data-seg="needs" hidden>
+    ${home.needs}
+    ${overdue.length ? `<section class="panel"><h3 style="margin-top:0">Overdue visits (${overdue.length})</h3>${overdue.map((b) => pvBookingCard(b)).join("")}</section>` : ""}
+  </div>
+  <div data-seg="campaigns" hidden>
+    ${home.campaigns}
+    ${active.length ? `<section class="panel"><h3 style="margin-top:0">Active bookings (${active.length})</h3>${active.map((b) => pvBookingCard(b)).join("")}</section>` : ""}
+    ${d.managedView ? pvManagedHtml(d.managedView) : ""}
+  </div>
+  <div data-seg="results" hidden>
   <section class="panel">
     <h3 style="margin-top:0">Tracking and returns, ${esc(s.cycleLabel)}</h3>
     <div class="stat-row">
@@ -7637,8 +7908,7 @@ function previewDashboardHtml(d) {
       <div class="stat"><div class="num">${fmtNum(s.totalViews)}</div><div class="lbl">Total content views</div></div>
       <div class="stat"><div class="num">$${fmtMoney(s.compValueGiven)}</div><div class="lbl">Comp given, at cost (modeled)</div></div>
     </div>
-    <p class="small muted">${s.postsInFlight} post still inside its 48 hour clock, ${s.postsOverdue} overdue in the late window, ${s.visitsRemaining} visits left on the ${esc(plan.name)} allowance this month.</p>
-    <p class="small muted">${esc(s.compValueBasis)}. The figures below are on simulated data, shown so the shape of the returns math is visible; live figures replace them as real visits complete.</p>
+    <p class="small muted">${s.postsInFlight} in flight &middot; ${s.postsOverdue} overdue &middot; ${s.visitsRemaining} visits left. ${esc(s.compValueBasis)}.</p>
     ${s.roas ? `
     <div class="showcase-block"><h4>${esc(s.roas.label)}</h4>
       <div class="stat-row">
@@ -7648,22 +7918,19 @@ function previewDashboardHtml(d) {
         <div class="stat"><div class="num">$${fmtMoney(s.roas.mediaValue)}</div><div class="lbl">Media value, modeled at the published rates</div></div>
         <div class="stat"><div class="num">$${fmtMoney(s.roas.compCost + s.roas.discountCost)}</div><div class="lbl">Visit costs: $${fmtMoney(s.roas.compCost)} comps at cost + $${fmtMoney(s.roas.discountCost)} code discounts</div></div>
       </div>
-      <p class="small muted" style="margin-bottom:0">${esc(s.roas.registerBasis)} ${esc(s.roas.mediaBasis)}${s.roas.planKnown ? ` The all-in score also counts the ${esc(plan.name)} plan allocation of $${fmtMoney(s.roas.planAllocation)} across the delivered visits.` : ""} This is SIGNL's own return model, not an ad platform's: the register side is spend we can point at, the media side is priced in the open.</p>
-      ${d.business.discountCodes && d.business.discountCodes.enabled ? `<p class="small" style="margin-bottom:0"><strong>Audience-code discounts: on.</strong> ${esc(d.business.name)} turned code discounts on and chose ${d.business.discountCodes.pct}% off: that was their call and their percentage, which is why the tallies above carry a discount cost. Codes are always optional; a business that leaves them off still gets the code and the count, with no discount promised.</p>` : ""}
+      <p class="small muted" style="margin-bottom:0">${esc(s.roas.registerBasis)} ${esc(s.roas.mediaBasis)}${s.roas.planKnown ? ` The all-in score also counts the ${esc(plan.name)} plan allocation of $${fmtMoney(s.roas.planAllocation)} across the delivered visits.` : ""}</p>
+      ${d.business.discountCodes && d.business.discountCodes.enabled ? `<p class="small" style="margin-bottom:0"><strong>Audience-code discounts: on.</strong> ${d.business.discountCodes.pct}% off, the business's call. Tallies above carry the discount cost.</p>` : ""}
     </div>` : ""}
     <div class="showcase-block"><h4>Content rights: they follow the visit</h4>
       <p class="small" style="margin:0 0 4px"><span class="rules">On a comp visit (every plan, including ${esc(plan.name)}):</span> share a delivered post natively, with the creator tagged. No downloads, no reposting the file, no ads.</p>
       <p class="small" style="margin:0 0 4px"><span class="rules">On a paid visit:</span> you can also repost the post on your own feed and run it as an ad for 6 months from the post date.</p>
-      <p class="small muted" style="margin:0">The creator always owns their content, and nobody can edit it. Rights follow the visit, not the plan, and are shown to the creator before they accept, so there are no surprises on either side.</p>
+      <p class="small muted" style="margin:0">Rights follow the visit, not the plan. The creator always owns their content.</p>
     </div>
   </section>
-  ${pvStaffPanelHtml(d)}
-  ${d.managedView ? pvManagedHtml(d.managedView) : ""}
-  <section class="panel">
-    <h3 style="margin-top:0">Bookings (${d.bookings.length})</h3>
-    ${d.bookings.map((b) => pvBookingCard(b)).join("")}
-    <p class="small muted">End of the simulated roster. In the live app this list is the business's Visits &amp; Posts tab, fed by real bookings, real codes and real proof links.</p>
-  </section>`;
+    ${home.results}
+    ${delivered.length ? `<section class="panel"><h3 style="margin-top:0">Delivered (${delivered.length})</h3>${delivered.map((b) => pvBookingCard(b)).join("")}<p class="small muted">In the live app these live in Visits &amp; Posts, fed by real bookings, codes and proof links.</p></section>` : ""}
+  </div>
+  </div>`;
 }
 
 // ---------------- init ----------------

@@ -437,6 +437,10 @@ try {
   check("lane saves go through one PATCH helper carrying only lane fields", appJsL.text.includes('api("PATCH", "/me/profile", patch)'), "");
   const themeCss = await anon.raw("/theme-v2.css");
   check("bottom-nav active tile insets the whole item (no fixed 48px tile)", themeCss.text.includes("top: 4px; bottom: 4px") && !themeCss.text.includes("width: 48px; height: 48px"), "");
+  check("P2.4: badges are content-sized single-line pills (can never balloon)", themeCss.text.includes(".badge { width: max-content; max-width: 100%; white-space: nowrap; }"), "");
+  check("P2.4: admin tables stack into cards at phone width", themeCss.text.includes(".table-wrap table, .table-wrap tbody, .table-wrap tr, .table-wrap td { display: block; width: 100%; box-sizing: border-box; }"), "");
+  check("P2.2: dashboard segment switch ships (chips, Needs-you badge, segment animation)", themeCss.text.includes(".seg-badge") && themeCss.text.includes(".dash-segs") && appJsL.text.includes("dashSegsHtml") && appJsL.text.includes("Needs you"), "");
+  check("P2.3: the two wordy preview buttons are short now, captions carry the explanation", !appJsL.text.includes("Continue as this business: search the roster") && !appJsL.text.includes("Skip ahead: the business dashboard") && appJsL.text.includes("Search the roster") && appJsL.text.includes("Open dashboard"), "");
 
   await stopServer();
 } catch (e) {

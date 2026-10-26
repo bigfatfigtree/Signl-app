@@ -43,6 +43,85 @@ const PAID_COMP = "Paid cash campaigns";
 const UNLISTED = "Not listed yet";
 const MAX_PHOTO_BYTES = 2.5 * 1024 * 1024;
 
+// Creator photo gallery (Jeff, 2026-10-25): up to 6 photos per
+// creator, ordered, first = cover. Records written before the
+// gallery carry no photoCount: they migrate in place — hasPhoto
+// means a gallery of one (the existing photo:{userId} record IS
+// slot 0), never an orphaned photo.
+const MAX_CREATOR_PHOTOS = 6;
+function photoCountOf(creator) {
+  const c = creator || {};
+  if (Number.isInteger(c.photoCount) && c.photoCount >= 0) return Math.min(c.photoCount, MAX_CREATOR_PHOTOS);
+  return c.hasPhoto ? 1 : 0;
+}
+function photoKey(userId, idx) {
+  return idx === 0 ? `photo:${userId}` : `photo:${userId}:${idx}`;
+}
+function photoUrlsFor(u) {
+  const n = photoCountOf(u && u.creator);
+  const out = [];
+  for (let i = 0; i < n; i++) out.push(i === 0 ? `/api/users/${u.id}/photo` : `/api/users/${u.id}/photo/${i}`);
+  return out;
+}
+
+// Preview stock pool (Jeff, 2026-10-25): the V5 decks are
+// photo-led, but the real founding roster mostly has no photos
+// yet, so preview Discover was untestable. Inside PREVIEW ONLY
+// (admin, labeled simulation end to end), a roster card without
+// photos borrows this stock pool — each URL verified live when
+// added. The substitution happens on the response object; stored
+// records and every real surface are untouched, and the card is
+// flagged previewPhoto so the UI labels it a sample.
+const PREVIEW_STOCK_PHOTOS = [
+  1640777, 1267320, 3184291, 4253302, 5638732, 3184183, 262978, 769289,
+  958545, 3026802, 4346644, 3182812, 1854652, 1092730, 1437267, 699953,
+].map((id) => `https://images.pexels.com/photos/${id}/pexels-photo-${id}.jpeg?auto=compress&cs=tinysrgb&w=800`);
+function previewStockFor(seed, n) {
+  const s = String(seed || "signl");
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  const out = [];
+  for (let i = 0; i < n; i++) out.push(PREVIEW_STOCK_PHOTOS[(h + i) % PREVIEW_STOCK_PHOTOS.length]);
+  return out;
+}
+function decoratePreviewCard(card) {
+  if (!card) return card;
+  if (!card.photoUrl) {
+    const stock = previewStockFor(card.userId || card.name, 3);
+    card.photoUrl = stock[0];
+    card.photos = stock;
+    card.previewPhoto = true;
+  } else if (!Array.isArray(card.photos) || card.photos.length < 2) {
+    card.photos = [card.photoUrl, ...previewStockFor(card.userId || card.name, 2)];
+    card.previewPhoto = true;
+  }
+  return card;
+}
+
+// Simulated open offers for the creator-side preview deck.
+// Dates are relative to now so the board always looks current.
+function previewOpenOffers() {
+  const day = 24 * 60 * 60 * 1000;
+  const now = Date.now();
+  const iso = (t) => new Date(t).toISOString();
+  const base = {
+    lane: "open",
+    market: "Virginia Beach",
+    filledCount: 0,
+    myApplication: null,
+    fitNote: null,
+    businessReviewLinks: null,
+    businessReferralProgram: null,
+    visitRights: null,
+  };
+  return [
+    { ...base, id: "preview-offer-1", businessId: "__preview__", businessName: "Salt & Ember Kitchen", businessNeighborhood: "Oceanfront", businessAbout: "Chef-driven restaurant on the Oceanfront. Preview business: simulation only.", title: "Dinner for two, on us", kind: "comp", whatComped: "Dinner for two: two mains, two drinks, one dessert to share", covers: 2, dollarCap: 120, includes: "Two mains, two drinks, one dessert", experience: "Counter seats facing the open kitchen", spots: 4, applicationCount: 2, windowStartAt: iso(now + 2 * day), windowEndAt: iso(now + 9 * day), applicationsCloseAt: iso(now + 5 * day), visitWindow: "Any evening this week" },
+    { ...base, id: "preview-offer-2", businessId: "__preview__", businessName: "Harbor Pilates", businessNeighborhood: "Ghent", businessAbout: "Reformer studio in Ghent. Preview business: simulation only.", title: "Reformer class for you + 1", kind: "comp", whatComped: "One reformer class for two people", covers: 2, dollarCap: 70, includes: "Grip socks and towels", experience: "Small-format class, six reformers", spots: 6, filledCount: 1, applicationCount: 3, windowStartAt: iso(now + 1 * day), windowEndAt: iso(now + 8 * day), applicationsCloseAt: iso(now + 4 * day), visitWindow: "Weekday mornings" },
+    { ...base, id: "preview-offer-3", businessId: "__preview__", businessName: "The Daily Press", businessNeighborhood: "Downtown Norfolk", businessAbout: "Coffee bar and bakery. Preview business: simulation only.", title: "New menu shoot: paid visit", kind: "paid", cashRate: 150, paidMath: paidMath(150), paidBrief: "Feature the new fall menu: one reel at the bar, honest take.", spots: 2, applicationCount: 1, windowStartAt: iso(now + 3 * day), windowEndAt: iso(now + 10 * day), applicationsCloseAt: iso(now + 6 * day), visitWindow: "Before 11am" },
+    { ...base, id: "preview-offer-4", businessId: "__preview__", businessName: "Salt & Ember Kitchen", businessNeighborhood: "Oceanfront", businessAbout: "Chef-driven restaurant on the Oceanfront. Preview business: simulation only.", title: "Brunch launch weekend", kind: "comp", whatComped: "Brunch for two with coffee", covers: 2, dollarCap: 60, includes: "Two brunch plates, coffee or juice", experience: "First weekend of the new brunch menu", spots: 3, filledCount: 2, applicationCount: 5, windowStartAt: iso(now + 4 * day), windowEndAt: iso(now + 11 * day), applicationsCloseAt: iso(now + 7 * day), visitWindow: "Saturday or Sunday" },
+  ];
+}
+
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const CODE_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
@@ -2788,6 +2867,7 @@ async function publicCreator(u, viewer, foundingPriority) {
     createdAt: u.createdAt,
     foundingBand: foundingPriority === undefined ? null : foundingBand(foundingPriority),
     photoUrl: u.creator && u.creator.hasPhoto ? `/api/users/${u.id}/photo` : null,
+    photos: photoUrlsFor(u),
     // Paid lane fields ride on the card normalized: compOpen
     // defaults true for legacy records, paidRate is a number or
     // null (null = no paid bookings at any price).
@@ -2919,6 +2999,7 @@ async function publicProfilePayload(u) {
     primaryProfileUrl: primary.url,
     instagramUrl: primary.platform === "instagram" ? (c.instagramUrl || `https://instagram.com/${c.handle}`) : (c.instagramUrl || null),
     photoUrl: c.hasPhoto ? `/api/users/${u.id}/photo` : null,
+    photos: photoUrlsFor(u),
     market: unlisted ? u.city || "" : normalizeMarketName(u.market),
     unlisted,
     city: u.city || "",
@@ -6532,9 +6613,14 @@ async function route(event) {
   // approval (or after rejection) the photo stays locked down: the
   // owner, the admin, or an approved business whose market is live.
   // This route deliberately sits BEFORE the sign-in wall below.
-  if (method === "GET" && seg[0] === "users" && seg.length === 3 && seg[2] === "photo") {
+  // Gallery (Jeff, 2026-10-25): /photo serves the COVER (index 0,
+  // the original record key, so every existing surface keeps
+  // working); /photo/<n> serves gallery slot n under the same gate.
+  if (method === "GET" && seg[0] === "users" && (seg.length === 3 || seg.length === 4) && seg[2] === "photo") {
     const target = await store.get(`user:${seg[1]}`);
     if (!target || target.role !== "creator") return err(404, "Photo not found");
+    const photoIdx = seg.length === 4 ? parseInt(seg[3], 10) : 0;
+    if (!Number.isInteger(photoIdx) || photoIdx < 0 || photoIdx >= photoCountOf(target.creator)) return err(404, "Photo not found");
     // Public while approved and in good/paused standing; a banned
     // creator's photo locks down with their profile page. A tester's
     // photo locks down the same way: their profile is not public.
@@ -6548,7 +6634,7 @@ async function route(event) {
         (user.role === "business" && user.status === "approved" && businessAccessState(user) === "active" && (await isMarketLive(user.market)));
     }
     if (!allowed) return err(user ? 403 : 401, user ? "That photo is not public" : "Sign in required");
-    const photo = await store.get(`photo:${target.id}`);
+    const photo = await store.get(photoKey(target.id, photoIdx));
     if (!photo) return err(404, "Photo not found");
     return {
       statusCode: 200,
@@ -7156,26 +7242,83 @@ async function route(event) {
     return err(400, "Nothing to update for this account type");
   }
 
-  // ---------- profile photo ----------
+  // ---------- profile photo gallery ----------
   // Upload is a JSON body { dataUrl: "data:image/png;base64,..." } and
-  // the bytes live in their own record: photo:{userId}. Serving lives
-  // with the public routes above (approved creators' photos are on
-  // their public profile; everyone else's stay locked down).
-  if (method === "POST" && seg[0] === "me" && seg[1] === "photo") {
+  // the bytes live in their own records: photo:{userId} is the cover
+  // (slot 0, the original key), photo:{userId}:<n> the rest of the
+  // gallery. Serving lives with the public routes above (approved
+  // creators' photos are on their public profile; everyone else's
+  // stay locked down).
+  if (method === "POST" && seg[0] === "me" && seg[1] === "photo" && seg.length === 2) {
     if (user.role !== "creator" || !user.creator) return err(403, "Creators only");
     const b = parseBody(event);
     const m = typeof b.dataUrl === "string" && b.dataUrl.match(/^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/);
     if (!m) return err(400, "Send the photo as a PNG, JPEG, or WebP data URL");
     const bytes = Math.floor((m[2].length * 3) / 4);
     if (bytes > MAX_PHOTO_BYTES) return err(413, "That photo is too large. Please use one under 2.5 MB.");
+    const count = photoCountOf(user.creator);
+    let slot = 0;
+    if (b.slot !== undefined && b.slot !== null) {
+      slot = parseInt(b.slot, 10);
+      if (!Number.isInteger(slot) || slot < 0 || slot >= MAX_CREATOR_PHOTOS) return err(400, "That photo slot is not available");
+      if (slot > count) return err(400, "Add photos in order: fill the earlier slots first");
+      if (slot === count && count >= MAX_CREATOR_PHOTOS) return err(400, `A gallery holds up to ${MAX_CREATOR_PHOTOS} photos`);
+    }
     const ts = nowIso();
-    await store.set(`photo:${user.id}`, { contentType: m[1], dataBase64: m[2], bytes, uploadedAt: ts });
+    await store.set(photoKey(user.id, slot), { contentType: m[1], dataBase64: m[2], bytes, uploadedAt: ts });
+    const newCount = Math.max(count, slot + 1);
+    user.creator.photoCount = newCount;
     user.creator.hasPhoto = true;
-    user.creator.photoUploadedAt = ts;
+    if (slot === 0) user.creator.photoUploadedAt = ts;
     user.updatedAt = ts;
     await store.set(`user:${user.id}`, user);
-    await logEvent({ type: "profile_photo_uploaded", actorId: user.id, actorRole: "creator", subjectId: user.id, market: user.market, data: { contentType: m[1], bytes } });
-    return json(200, { ok: true, photoUrl: `/api/users/${user.id}/photo` });
+    await logEvent({ type: "profile_photo_uploaded", actorId: user.id, actorRole: "creator", subjectId: user.id, market: user.market, data: { contentType: m[1], bytes, slot, photoCount: newCount } });
+    return json(200, { ok: true, photoUrl: slot === 0 ? `/api/users/${user.id}/photo` : `/api/users/${user.id}/photo/${slot}`, photoCount: newCount, photos: photoUrlsFor(user) });
+  }
+
+  // Make one gallery photo the cover: the byte records rotate so
+  // the chosen slot becomes slot 0 (the cover every card reads).
+  if (method === "POST" && seg[0] === "me" && seg[1] === "photo" && seg[2] === "cover") {
+    if (user.role !== "creator" || !user.creator) return err(403, "Creators only");
+    const b = parseBody(event);
+    const count = photoCountOf(user.creator);
+    const slot = parseInt(b.slot, 10);
+    if (!Number.isInteger(slot) || slot < 0 || slot >= count) return err(400, "Pick one of your photos to make the cover");
+    if (slot > 0) {
+      const recs = [];
+      for (let i = 0; i < count; i++) recs.push(await store.get(photoKey(user.id, i)));
+      const order = [slot, ...recs.map((_, i) => i).filter((i) => i !== slot)];
+      for (let pos = 0; pos < count; pos++) {
+        const rec = recs[order[pos]];
+        if (rec) await store.set(photoKey(user.id, pos), rec);
+      }
+      user.creator.photoUploadedAt = nowIso();
+    }
+    user.updatedAt = nowIso();
+    await store.set(`user:${user.id}`, user);
+    await logEvent({ type: "profile_photo_cover", actorId: user.id, actorRole: "creator", subjectId: user.id, market: user.market, data: { slot, photoCount: count } });
+    return json(200, { ok: true, photoCount: count, photos: photoUrlsFor(user) });
+  }
+
+  // Remove one gallery photo: later slots shift down to fill the
+  // gap, so the gallery is always a dense ordered list.
+  if (method === "DELETE" && seg[0] === "me" && seg[1] === "photo" && seg.length === 3) {
+    if (user.role !== "creator" || !user.creator) return err(403, "Creators only");
+    const count = photoCountOf(user.creator);
+    const slot = parseInt(seg[2], 10);
+    if (!Number.isInteger(slot) || slot < 0 || slot >= count) return err(404, "Photo not found");
+    for (let i = slot; i < count - 1; i++) {
+      const next = await store.get(photoKey(user.id, i + 1));
+      if (next) await store.set(photoKey(user.id, i), next);
+    }
+    await store.del(photoKey(user.id, count - 1));
+    const newCount = count - 1;
+    user.creator.photoCount = newCount;
+    user.creator.hasPhoto = newCount > 0;
+    user.updatedAt = nowIso();
+    await store.set(`user:${user.id}`, user);
+    await logEvent({ type: "profile_photo_removed", actorId: user.id, actorRole: "creator", subjectId: user.id, market: user.market, data: { slot, photoCount: newCount } });
+    return json(200, { ok: true, photoCount: newCount, photos: photoUrlsFor(user) });
   }
 
   // ---------- plan selection (business) ----------
@@ -7964,7 +8107,7 @@ async function route(event) {
     // preview offer can never reach a creator, a count, or a metric.
     if (method === "GET" && seg[1] === "preview" && seg[2] === "discover") {
       const creators = await discoverCards(query, { id: "__preview__", role: "business", market: null });
-      return json(200, { creators, preview: true });
+      return json(200, { creators: creators.map(decoratePreviewCard), preview: true });
     }
     if (method === "GET" && seg[1] === "preview" && seg[2] === "creator" && seg[3]) {
       const target = await store.get(`user:${seg[3]}`);
@@ -7974,7 +8117,23 @@ async function route(event) {
       const card = await publicCreator(target, { id: "__preview__", role: "business", market: null }, approvedRank.get(target.id) || null);
       card.momentum = momentum.summaryFor(target);
       card.standing = standingState(target);
-      return json(200, { creator: card, preview: true });
+      return json(200, { creator: decoratePreviewCard(card), preview: true });
+    }
+    // Creator-side preview (Jeff, 2026-10-25): the creator Offers
+    // deck had nothing to test against — real open offers are zero
+    // pre-launch and the real marketplace is never seeded. These
+    // simulated open offers exist only inside preview: shaped
+    // exactly like the real /open-offers payload, built fresh per
+    // request, and applying to one writes NOTHING (no application,
+    // no notification, no event).
+    if (method === "GET" && seg[1] === "preview" && seg[2] === "open-offers") {
+      return json(200, { offers: previewOpenOffers(), preview: true });
+    }
+    if (method === "POST" && seg[1] === "preview" && seg[2] === "apply") {
+      const b = parseBody(event);
+      const offer = previewOpenOffers().find((o) => o.id === b.offerId);
+      if (!offer) return err(404, "That preview offer does not exist");
+      return json(201, { preview: true, applied: true, offerId: offer.id, note: "Simulation only: no application was written and the business is not notified." });
     }
     if (method === "POST" && seg[1] === "preview" && seg[2] === "offers") {
       const b = parseBody(event);

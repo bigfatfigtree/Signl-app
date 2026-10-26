@@ -465,6 +465,26 @@ try {
   check("preview dashboard refuses signed-out callers (401)", dashAnon.status === 401, String(dashAnon.status));
   check("client ships the preview dashboard (nav, countdown, staff panel, returns)", appJs.text.includes("previewToDashboard") && appJs.text.includes("/admin/preview/dashboard") && appJs.text.includes("previewDashboardHtml") && appJs.text.includes("What staff see at the counter") && appJs.text.includes("enterPreviewDashboard"), "");
 
+  // preview decks: galleries + creator offers (P2.1)
+  const galDisc = await admin("GET", "/api/admin/preview/discover");
+  const galCards = (galDisc.data && galDisc.data.creators) || [];
+  check("preview discover decorates roster cards with a stock gallery (flagged preview)", galDisc.status === 200 && galCards.length > 0 && galCards.every((c) => c.previewPhoto === true && Array.isArray(c.photos) && c.photos.length >= 3 && c.photos[0] === c.photoUrl && c.photos.slice(1).every((p) => /images\.pexels\.com/.test(p))) && galCards.some((c) => /images\.pexels\.com/.test(c.photoUrl || "")), JSON.stringify(galCards.map((c) => ({ p: c.photoUrl, n: (c.photos || []).length }))).slice(0, 300));
+  const galOne = await admin("GET", `/api/admin/preview/creator/${creatorAId}`);
+  check("preview creator detail carries the same gallery", galOne.status === 200 && galOne.data.creator.previewPhoto === true && (galOne.data.creator.photos || []).length >= 3, JSON.stringify(galOne.data.creator && galOne.data.creator.photos).slice(0, 200));
+  const galRealDisc = await creatorA("GET", "/api/discover");
+  check("the REAL discover payload is untouched by preview stock (no photos invented)", galRealDisc.status === 200 && (galRealDisc.data.creators || []).every((c) => !c.previewPhoto && !(c.photos || []).some((p) => /pexels/.test(p))), "");
+  const evBeforeGalOffers = await admin("GET", "/api/admin/events?limit=2000");
+  const galOffers = await admin("GET", "/api/admin/preview/open-offers");
+  const galOfferList = (galOffers.data && galOffers.data.offers) || [];
+  check("preview open offers exist for the creator deck (comp + paid, flagged simulation)", galOffers.status === 200 && galOffers.data.preview === true && galOfferList.length === 4 && galOfferList.some((o) => o.kind === "comp") && galOfferList.some((o) => o.kind === "paid" && o.cashRate === 150 && o.paidMath && o.paidMath.creatorNet === 145.5), JSON.stringify(galOfferList.map((o) => o.id)));
+  const galApply = await admin("POST", "/api/admin/preview/apply", { offerId: "preview-offer-1" });
+  check("preview apply answers as a simulation", galApply.status === 201 && galApply.data.preview === true && galApply.data.applied === true, `${galApply.status} ${JSON.stringify(galApply.data).slice(0, 120)}`);
+  const galApplyBad = await admin("POST", "/api/admin/preview/apply", { offerId: "nope" });
+  check("preview apply refuses unknown offers", galApplyBad.status === 404, String(galApplyBad.status));
+  const evAfterGalOffers = await admin("GET", "/api/admin/events?limit=2000");
+  check("preview offers + apply wrote nothing (events identical)", (evAfterGalOffers.data.events || []).length === (evBeforeGalOffers.data.events || []).length, `${(evBeforeGalOffers.data.events || []).length} -> ${(evAfterGalOffers.data.events || []).length}`);
+  check("client ships the segmented dashboards + creator-offers preview step", appJs.text.includes("dashSegsHtml") && appJs.text.includes("bizDashAttentionHtml") && appJs.text.includes("pvOffersHtml") && appJs.text.includes("/admin/preview/open-offers") && appJs.text.includes("Creator offers"), "");
+
   // --- tester designation: approved, but never on the roster ---
   // A tester account (Tony Johnson is the first) exercises the app
   // as a creator while staying invisible to businesses: discovery
