@@ -372,7 +372,7 @@ try {
   // ---------- client ships the new surfaces ----------
   const appJsRes = await fetch(BASE + "/app.js");
   const appJs = await appJsRes.text();
-  check("client ships business sign-up, composer v2, board, applications, favorites, home", appJs.includes("Join the founding business list") && appJs.includes("Apply with one tap") && appJs.includes("My applications") && appJs.includes("dignity floor") && appJs.includes("Invite again") && appJs.includes("loadBusinessHome") && appJs.includes("viewApplicants"), "");
+  check("client ships business sign-up, composer v2, board, applications, favorites, home", appJs.includes("Join the founding business list") && appJs.includes("applyToOffer") && appJs.includes("My applications") && appJs.includes("dignity floor") && appJs.includes("Invite again") && appJs.includes("loadBusinessHome") && appJs.includes("viewApplicants"), "");
   check("client ships the founding business status page and the admin Activate business action, with no Stripe payment link anywhere", appJs.includes("renderBusinessFoundingStatus") && appJs.includes("Founding business list,") && appJs.includes("Activate business") && appJs.includes("activateMarketBusinesses") && !appJs.includes("buy.stripe.com") && !appJs.includes("paymentLink"), "");
   check("client bottom nav carries the business Home/Favorites tabs", appJs.includes("Favorites") && appJs.includes("bnIcon"), "");
 

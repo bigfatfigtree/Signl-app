@@ -1034,3 +1034,693 @@ main { padding-top: 26px; }
 @media (prefers-reduced-motion: reduce) {
   #app > * { animation: none; }
 }
+
+/* =====================================================================
+   REDESIGN V2 — COMPOSITION (2026-10-25)
+   Jeff rejected V1 as "masking the current platform with these
+   colors": V1 swapped tokens over the old layouts. This section
+   recomposes the screens the way Slotted is composed (see
+   DESIGN-STUDY-V2.md): black hero bands and black stat blocks,
+   left-aligned display type, the app-head + live-row dashboard
+   opening, slot-card anatomy for every feed card (tile, tags,
+   title, meta, hairline, value-anchored foot with ONE pill
+   action), form panels split into a black head band over a white
+   form body, and Slotted's tab / bottom-bar treatments. Rules
+   here win by cascade order over everything above.
+   ===================================================================== */
+
+/* ---------- frame + rhythm ---------- */
+html, body { overflow-x: clip; }
+main { max-width: 1140px; padding-top: 26px; padding-left: 24px; padding-right: 24px; }
+@media (max-width: 720px) {
+  main { padding-top: 20px; padding-left: 16px; padding-right: 16px; padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
+}
+#app h2 { font-size: clamp(1.55rem, 4.6vw, 2rem); letter-spacing: -.03em; line-height: 1.12; }
+#app > h2 { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 2px 0 18px; }
+#app > h2 .badge { font-size: .78rem; padding: 7px 13px; }
+.panel { border-radius: var(--r-lg); padding: 26px; }
+@media (max-width: 640px) { .panel { padding: 20px; } }
+.panel h3, .card h3 { letter-spacing: -.02em; }
+label { font-weight: 700; letter-spacing: -.01em; }
+.notice { border-radius: var(--r-md); padding: 16px 18px; }
+
+/* ---------- topbar: Slotted top-links + mint CTA ---------- */
+.topbar { min-height: 66px; padding-top: 10px; padding-bottom: 10px; }
+#topnav { gap: 26px; }
+#topnav a, #topnav button.linklike { font-size: .92rem; }
+#topnav a.nav-cta {
+  background: var(--mint); color: var(--ink); font-weight: 700;
+  padding: 10px 18px; border-radius: 999px;
+}
+#topnav a.nav-cta:hover { background: var(--mint-b); color: var(--ink); }
+
+/* ---------- bottom bar: Slotted mobile bar (active = mint square) ---------- */
+/* Jeff, 2026-10-25: the active highlight is a SQUARE over the item,
+   symmetric inside the bar — a centered ::before tile, not a
+   full-height pill, so it never bulges past the bar's edges. The
+   tile is smaller than the 54px inner bar height, leaving even
+   clearance above and below; icon + label sit on top of it. */
+@media (max-width: 720px) {
+  #bottomnav {
+    height: calc(66px + env(safe-area-inset-bottom));
+    padding: 6px 6px calc(6px + env(safe-area-inset-bottom));
+  }
+}
+#bottomnav.signed-in {
+  height: calc(66px + env(safe-area-inset-bottom));
+  padding: 6px 6px calc(6px + env(safe-area-inset-bottom));
+  width: min(640px, 100%);
+}
+#bottomnav .bn-item { position: relative; margin: 0 1px; }
+#bottomnav .bn-item.on { color: var(--ink); }
+#bottomnav .bn-item.on .bn-label { color: var(--ink); }
+#bottomnav.signed-in .bn-item.on { color: var(--ink); }
+#bottomnav.signed-in .bn-item.on .bn-label { color: var(--ink); }
+#bottomnav .bn-item.on::before {
+  content: ""; position: absolute; left: 50%; top: 50%;
+  width: 48px; height: 48px; border-radius: 15px;
+  background: var(--mint); transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+#bottomnav .bn-icon, #bottomnav .bn-label { position: relative; z-index: 1; }
+body.bn-on main { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
+body.bn-on .footer { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
+
+/* ---------- HOME: black hero band (Slotted hero composition) ---------- */
+.hero {
+  text-align: left; background: var(--black); color: #fff;
+  width: 100vw; margin-left: calc(50% - 50vw); margin-top: -26px;
+  padding: 76px max(24px, calc(50vw - 546px)) 64px;
+}
+@media (max-width: 720px) {
+  .hero { margin-top: -20px; padding: 56px max(20px, calc(50vw - 546px)) 48px; }
+}
+.hero h1 {
+  color: #fff; font-size: clamp(2.7rem, 7.4vw, 4.6rem);
+  line-height: 1.03; letter-spacing: -.035em; max-width: 660px; margin: 0 0 6px;
+}
+.hero h1 .grad-text { color: var(--mint); }
+.hero p {
+  color: #C6CFC6; font-size: 1.06rem; line-height: 1.6; font-weight: 500;
+  max-width: 560px; margin: 18px 0 0;
+}
+.hero p strong { color: #fff; }
+.hero .cta-row { justify-content: flex-start; margin-top: 30px; gap: 12px; }
+.hero .btn { min-height: 54px; font-size: .98rem; }
+.hero .btn.ghost {
+  background: rgba(11,13,12,.25); border-color: rgba(255,255,255,.65);
+  color: #fff; box-shadow: none; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+}
+.hero .btn.ghost:hover { background: rgba(255,255,255,.14); }
+.hero p.small { font-size: .82rem; color: #A9BFA9; max-width: 660px; line-height: 1.6; }
+@media (max-width: 560px) { .hero .cta-row .btn { flex: 1 1 100%; } }
+.hero + section { margin-top: 52px; }
+
+/* Home steps: Slotted step cards (number line, title, copy). */
+.grid .card { border-radius: 20px; padding: 24px; box-shadow: var(--sh-sm); }
+.grid .card h3 { font-size: 1.06rem; margin: 0 0 6px; }
+.grid .card p { line-height: 1.6; font-size: .94rem; }
+.sx-num {
+  display: block; font-size: .95rem; font-weight: 800;
+  color: var(--mint-deep); letter-spacing: .05em; margin-bottom: 10px;
+}
+
+/* Home rules: Slotted black example panel. */
+.rules-panel { background: var(--black); border-color: var(--black); color: #DDE7DD; padding: 30px; }
+.rules-panel h3 { color: #fff; font-size: 1.4rem; margin-top: 0; }
+.rules-panel p { color: #C6CFC6; line-height: 1.65; }
+@media (max-width: 640px) { .rules-panel { padding: 24px 20px; } }
+
+/* ---------- FORM PANELS: black head band + white body ---------- */
+.panel.form-panel { padding: 0; overflow: hidden; }
+.form-head { background: var(--black); color: #fff; padding: 32px 28px 28px; }
+.form-head h2 { color: #fff; margin: 0 0 12px; font-size: clamp(1.8rem, 5vw, 2.2rem); }
+.form-head h3 { color: #fff; }
+.form-head p { color: #C6CFC6; line-height: 1.6; margin: 0 0 10px; }
+.form-head p:last-child { margin-bottom: 0; }
+.form-head p strong, .form-head strong { color: #fff; }
+.form-head .muted { color: #9AA79E; }
+.form-head a { color: var(--mint); }
+.form-body { padding: 28px; }
+@media (max-width: 640px) {
+  .form-head { padding: 26px 20px 22px; }
+  .form-body { padding: 22px 20px; }
+}
+.form-panel .btn[type="submit"] { min-height: 54px; font-size: 1rem; }
+.form-body .notice.blue { border-radius: var(--r-md); padding: 18px 20px; line-height: 1.6; }
+
+/* Plan cards inside the business form: benefit cards; the selected
+   plan goes black with a mint price (Slotted stat treatment). */
+.form-body .plan-card { border-radius: var(--r-md); padding: 22px; }
+.form-body .plan-card .price { font-size: 2rem; font-weight: 800; letter-spacing: -.02em; }
+.plan-card.selected { background: var(--black); border-color: var(--black); color: #fff; box-shadow: var(--sh-md); }
+.plan-card.selected .price { color: var(--mint); }
+.plan-card.selected .muted, .plan-card.selected ul { color: #9AA79E; }
+
+/* ---------- DASHBOARD HERO: flat black, live-row stats ---------- */
+.dash-hero { border-radius: 28px; padding: 28px; }
+.dash-hero::before, .dash-hero::after { display: none; }
+.dh-kicker { color: var(--mint); letter-spacing: .16em; }
+.dh-name { font-size: clamp(1.9rem, 6vw, 2.7rem); margin-top: 8px; }
+.dh-sub { color: #C6CFC6; font-size: .98rem; line-height: 1.55; max-width: 580px; }
+.dh-row {
+  justify-content: flex-start; gap: 0; flex-wrap: nowrap;
+  border-top: 1px solid var(--hair-d); padding-top: 18px; margin-top: 20px;
+}
+.dh-row > div { padding: 0 22px; min-width: 0; }
+.dh-row > div:first-child { padding-left: 0; }
+.dh-row > div + div { border-left: 1px solid var(--hair-d); }
+.dh-num { font-size: clamp(1.9rem, 7vw, 2.5rem); }
+.dh-num-lbl {
+  text-transform: uppercase; letter-spacing: .08em; font-size: .68rem;
+  font-weight: 700; color: #9AA79E; margin-top: 5px; line-height: 1.4;
+}
+@media (max-width: 640px) {
+  .dash-hero { padding: 24px 20px; border-radius: 24px; }
+  .dh-row > div { padding: 0 14px; }
+}
+
+/* ---------- STAT BAND: Slotted black stat blocks ---------- */
+.stat-band { background: transparent; border: none; box-shadow: none; gap: 12px; overflow: visible; border-radius: 0; }
+.stat-band .stat-cell { background: var(--black); border-radius: var(--r-md); padding: 22px; border-right: none; }
+.stat-band .stat-num { color: var(--mint); }
+.stat-band .stat-num em { color: var(--mint); }
+.stat-band .stat-lbl { color: #9AA79E; }
+.stat-band .muted { color: #9AA79E; }
+.stat-band .grad-text { color: var(--mint); }
+/* The proof sheet is a print document: its band stays light. */
+.proof-sheet .stat-band { background: var(--card); border: 1px solid var(--line); box-shadow: none; gap: 0; border-radius: 14px; overflow: hidden; }
+.proof-sheet .stat-band .stat-cell { background: #fff; border-right: 1px solid var(--line2); }
+.proof-sheet .stat-band .stat-cell:last-child { border-right: none; }
+.proof-sheet .stat-band .stat-num { color: var(--ink); }
+.proof-sheet .stat-band .stat-lbl { color: var(--ink2); }
+
+/* ---------- KICKERS / SECTION HEADS in dashboard blocks ---------- */
+.ui-kicker { color: var(--mint-deep); display: inline-flex; align-items: center; gap: 10px; }
+.ui-kicker::before { content: ""; width: 26px; height: 2px; background: var(--mint-dot); flex: none; }
+.home-h { font-size: 1.32rem; letter-spacing: -.02em; margin: 8px 0 8px; }
+.showcase-block h4 {
+  font-size: .74rem; font-weight: 800; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--ink3);
+}
+#open-board > h3, #tab-body > h3 { font-size: 1.45rem; letter-spacing: -.025em; }
+
+/* ---------- SLOT CARDS: the feed anatomy ---------- */
+.slot-card { padding: 14px; border-radius: var(--r-md); }
+.slot-top { display: flex; gap: 12px; align-items: flex-start; }
+.slot-top .avatar-initial {
+  width: 56px !important; height: 56px !important; border-radius: 14px !important;
+  background: var(--black); color: var(--mint); font-size: 1.3rem !important;
+}
+.slot-body { flex: 1; min-width: 0; }
+.slot-badges { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; align-items: center; }
+.slot-name { font-weight: 800; font-size: 1.06rem; line-height: 1.25; letter-spacing: -.015em; }
+.slot-cat { font-size: .8rem; color: var(--ink3); font-weight: 600; margin-top: 2px; }
+.slot-meta { font-size: .8rem; font-weight: 600; color: var(--ink2); margin-top: 5px; display: flex; gap: 6px 12px; flex-wrap: wrap; }
+.slot-deal { border-top: 1px solid var(--line2); margin-top: 12px; }
+.slot-deal .showcase-block { border-top: none; margin-top: 10px; padding-top: 0; }
+.slot-foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  border-top: 1px solid var(--mint-pale); margin-top: 12px; padding-top: 12px;
+}
+.slot-price { font-size: 1.65rem; font-weight: 800; line-height: 1; letter-spacing: -.02em; }
+.slot-note {
+  font-size: .68rem; font-weight: 700; letter-spacing: .07em;
+  text-transform: uppercase; color: var(--ink3); margin-top: 5px;
+}
+.slot-actions { display: flex; gap: 8px; align-items: center; flex: none; flex-wrap: wrap; justify-content: flex-end; }
+.btn.book { background: var(--black); color: var(--mint); box-shadow: var(--sh-sm); }
+.btn.book:hover { background: var(--black2); color: var(--mint); }
+@media (max-width: 480px) {
+  .slot-foot { align-items: flex-end; }
+  .slot-actions .btn { min-height: 48px; }
+}
+
+/* Home opportunity cards: same book-action treatment. */
+.home-opp { padding: 16px; }
+.home-opp form .btn { background: var(--black); color: var(--mint); }
+.home-opp form .btn:hover { background: var(--black2); color: var(--mint); }
+
+/* ---------- PUBLIC PROFILE: black hero card ---------- */
+.creator-card.full {
+  background: var(--black); border-color: var(--black); color: #DDE7DD;
+  border-radius: 28px; padding: 26px;
+}
+.creator-card.full:hover { transform: none; }
+.creator-card.full .cc-name { color: #fff; font-size: clamp(1.9rem, 6vw, 2.5rem); letter-spacing: -.03em; }
+.creator-card.full .cc-handle { color: #9AA79E; }
+.creator-card.full .cc-chip { background: var(--panel-d); border-color: var(--hair-d); color: #C6CFC6; }
+.creator-card.full .cc-chip.market { background: var(--mint); border-color: var(--mint); color: var(--ink); }
+.creator-card.full .cc-local { background: transparent; border: none; padding: 6px 6px 0; margin-top: 20px; }
+.creator-card.full .cc-local .big { color: var(--mint); font-size: 3.4rem; }
+.creator-card.full .cc-local .lbl { color: #C6CFC6; }
+.creator-card.full .cc-local .src { color: #9AA79E; }
+.creator-card.full .cc-meta .k { color: #9AA79E; }
+.creator-card.full .cc-meta .v { color: #fff; }
+.creator-card.full .cc-plat { background: var(--panel-d); border-color: var(--hair-d); color: #C6CFC6; }
+.creator-card.full .badge { background: var(--panel-d); border-color: var(--hair-d); color: #DDE7DD; }
+.creator-card.full .badge.ok { background: var(--mint); border-color: var(--mint); color: var(--ink); }
+.creator-card.full .badge.tier, .creator-card.full .badge.elite { background: var(--mint); border-color: var(--mint); color: var(--ink); }
+.creator-card.full .badge.info { background: var(--panel-d); border-color: var(--hair-d); color: var(--mint); }
+.creator-card.full a { color: var(--mint); }
+@media (max-width: 759px) {
+  .creator-card.full { padding: 20px; }
+  .creator-card.full .cc-photo { aspect-ratio: 4/3; }
+  .creator-card.full .cc-photo.no-photo { aspect-ratio: auto; }
+}
+
+/* ---------- BUSINESS HOME: pipeline + rows ---------- */
+.pv-stage { background: var(--mint-pale); border-color: #CDE9D8; border-radius: 14px; }
+.pv-stage-num { font-size: 1.9rem; font-weight: 800; }
+.ui-row { padding: 13px 0; }
+
+/* ---------- COMPOSER: Slotted fat pill selectors ---------- */
+.chip { min-height: 42px; padding: 8px 16px; font-weight: 700; display: inline-flex; align-items: center; }
+.chip.on { background: var(--black); border-color: var(--black); color: var(--mint); }
+
+/* ---------- ADMIN: black preview band, tab row, dash tables ---------- */
+.panel.preview-cta { background: var(--black); border-color: var(--black); color: #DDE7DD; }
+.preview-cta strong { color: #fff; }
+.preview-cta .muted { color: #9AA79E; }
+.preview-cta .btn.ghost { background: transparent; border-color: rgba(255,255,255,.65); color: #fff; box-shadow: none; }
+.preview-cta .btn.ghost:hover { background: rgba(255,255,255,.14); }
+.tabs { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 8px; scrollbar-width: none; }
+.tabs::-webkit-scrollbar { display: none; }
+.tabs button { flex: none; min-height: 48px; padding: 0 20px; font-size: .92rem; }
+@media (min-width: 900px) { .tabs { flex-wrap: wrap; overflow: visible; } }
+table th { font-size: .7rem; letter-spacing: .1em; text-transform: uppercase; }
+th, td { padding: 11px 10px; }
+.table-wrap.panel { padding: 10px 18px; }
+.camp-counts { font-size: .95rem; }
+.camp-counts strong { font-size: 1.12rem; font-weight: 800; }
+
+/* ---------- SLOT FOOT: wrap on phones (price keeps its line, actions wrap under) ---------- */
+@media (max-width: 560px) {
+  .slot-foot { flex-wrap: wrap; }
+  .slot-actions { flex: 1 1 100%; justify-content: flex-start; flex-wrap: wrap; }
+  .slot-actions .btn.book { flex: 1 1 auto; }
+}
+
+/* =====================================================================
+   V3 (Jeff, 2026-10-25 evening): the copy cut + Slotted grammar.
+   Sections are color FIELDS (black / white / mint), cards are data,
+   lanes are toggles, steps are numbered rows, offer terms are tight
+   labeled rows with the full text behind ONE tap. See COPY-CUT-V3.md.
+   ===================================================================== */
+
+/* ---------- color fields ---------- */
+.fld { width: 100vw; margin-left: calc(50% - 50vw); padding: 46px max(24px, calc(50vw - 546px)); }
+@media (max-width: 720px) { .fld { padding: 36px 20px; } }
+.fld-mint { background: var(--mint); color: var(--ink); }
+.fld-mint .ui-kicker { color: var(--ink); }
+.fld-mint .ui-kicker::before { background: var(--mint-deep); }
+.fld-mint h2, .fld-mint h3 { color: var(--ink); }
+.fld-mint h2 .acc, .fld-mint h3 .acc { color: #fff; }
+.fld-mint .ui-row { border-color: rgba(11,13,12,.22); }
+.fld-mint .ui-row .k { color: #26402F; }
+.fld-mint .muted { color: #3D5A47; }
+.black-card { background: var(--black); color: #DDE7DD; border-radius: 24px; padding: 24px; }
+.black-card h3, .black-card h4 { color: #fff; }
+.black-card .muted { color: #9AA79E; }
+.black-card .small { color: #C6CFC6; }
+
+/* dashboard heroes become black fields (Slotted field rhythm) */
+.dash-hero {
+  width: 100vw; margin-left: calc(50% - 50vw); border-radius: 0;
+  padding-left: max(24px, calc(50vw - 546px)); padding-right: max(24px, calc(50vw - 546px));
+}
+@media (max-width: 720px) { .dash-hero { padding-left: 20px; padding-right: 20px; } }
+
+/* ---------- steps: numbered rows ---------- */
+.srow { display: flex; gap: 16px; padding: 20px 0; border-top: 1px solid var(--line2); }
+.srow:first-of-type { border-top: none; padding-top: 8px; }
+.snum { font-size: 1.85rem; font-weight: 800; color: var(--mint-deep); line-height: 1; min-width: 46px; }
+.stitle { font-weight: 800; font-size: 1.08rem; letter-spacing: -.015em; }
+.swhis { color: var(--ink2); font-size: .93rem; margin-top: 3px; }
+
+/* ---------- lane toggle rows ---------- */
+.lrow { display: flex; gap: 14px; align-items: flex-start; padding: 13px 0; }
+.lrow + .lrow { border-top: 1px solid var(--line2); }
+.tg { width: 50px; height: 29px; border-radius: 999px; background: var(--black); flex: none; position: relative; margin-top: 2px; }
+.tg::after { content: ""; position: absolute; top: 4px; right: 4px; width: 21px; height: 21px; border-radius: 50%; background: var(--mint); }
+.tg.off { background: #D9E9DE; }
+.tg.off::after { right: auto; left: 4px; background: #fff; }
+.lname { font-weight: 800; }
+.lline { color: var(--ink2); font-size: .95rem; }
+
+/* ---------- deal rows: compressed offer terms ---------- */
+.deal-rows { margin-top: 2px; }
+.drow { display: flex; gap: 12px; padding: 8px 0; border-top: 1px solid var(--line2); }
+.drow .dk { font-size: .7rem; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; color: var(--ink3); min-width: 88px; padding-top: 3px; flex: none; }
+.drow .dv { font-size: .93rem; font-weight: 600; line-height: 1.45; }
+.visit-mint .drow, .pkg-mint .drow { border-color: rgba(11,13,12,.2); }
+.visit-mint .dk, .pkg-mint .dk { color: #33503F; }
+
+/* ---------- the one-tap plain-words expander ---------- */
+details.deal-details { margin-top: 12px; }
+details.deal-details > summary {
+  list-style: none; cursor: pointer; display: inline-flex; align-items: center;
+  background: var(--black); color: var(--mint); font-weight: 700; font-size: .86rem;
+  padding: 10px 18px; border-radius: 999px;
+}
+details.deal-details > summary::-webkit-details-marker { display: none; }
+details.deal-details > summary:hover { background: var(--black2); }
+details.deal-details .dd-body { padding-top: 4px; }
+details.deal-details .dd-body .showcase-block { border-top: 1px solid var(--line2); margin-top: 10px; padding-top: 10px; }
+.black-card details.deal-details > summary { background: var(--mint); color: var(--ink); }
+.visit-mint details.deal-details .dd-body p, .pkg-mint details.deal-details .dd-body p { color: var(--ink); }
+
+/* ---------- mint strip inside form panels ---------- */
+.form-mint { background: var(--mint); color: var(--ink); padding: 13px 28px; font-weight: 700; font-size: .95rem; line-height: 1.45; }
+@media (max-width: 640px) { .form-mint { padding: 12px 20px; } }
+
+/* ---------- mint field regions (profile visit, composer package) ---------- */
+.visit-mint, .pkg-mint { background: var(--mint); border-radius: 20px; padding: 20px; margin-top: 16px; }
+.visit-mint h4, .pkg-mint h4 { color: var(--ink); font-size: .74rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; margin: 0 0 6px; }
+
+/* ---------- feed tile = photo size ---------- */
+.slot-top .avatar-initial { width: 84px !important; height: 84px !important; border-radius: 16px !important; font-size: 1.85rem !important; }
+@media (min-width: 720px) { .slot-top .avatar-initial { width: 104px !important; height: 104px !important; } }
+
+/* ---------- rules rows inside the black card on mint ---------- */
+.rule-row { padding: 11px 0; border-top: 1px solid rgba(255,255,255,.16); font-weight: 700; color: #fff; font-size: 1.02rem; }
+.rule-row:first-of-type { border-top: none; padding-top: 2px; }
+
+/* =====================================================================
+   V4 (Jeff, 2026-10-25 night): color-blocked functional screens +
+   forms on toggles / checks / chips. Offer cards split into fields
+   (white header / pale-mint deal block / hairline terms block /
+   BLACK foot with mint price + mint pill action). Forms group into
+   calm color fields (.fgroup) and every small choice renders as a
+   chip, toggle, check row or stepper bound to the same input.
+   ===================================================================== */
+
+/* ---------- color-blocked panels + blocks ---------- */
+.panel.tint { background: var(--bg2); border-color: var(--line2); }
+.panel.tint .hm-pile { background: #fff; }
+.tint-block { background: var(--bg2); border-radius: 16px; padding: 10px 16px 8px; margin-top: 16px; }
+.tint-block h4 { margin: 10px 0 4px; }
+.tint-block .ui-row:last-child { border-bottom: none; }
+
+/* ---------- offer cards: field split ---------- */
+.slot-deal { border-top: none; }
+.deal-main {
+  background: var(--mint-pale); border-radius: 16px;
+  padding: 6px 14px; margin-top: 2px;
+}
+.deal-main .drow { border-color: rgba(11,13,12,.09); }
+.deal-main .drow:first-child, .deal-terms .drow:first-child { border-top: none; }
+.deal-main .dk { color: #33503F; }
+.deal-terms {
+  background: #fff; border: 1.5px solid var(--line); border-radius: 16px;
+  padding: 6px 14px; margin-top: 10px;
+}
+.deal-terms .drow { border-color: var(--line2); }
+div.deal-terms p:first-child { margin-top: 6px; }
+div.deal-terms p:last-child { margin-bottom: 6px; }
+
+/* the foot is the card's one BLACK block: mint price, mint pill */
+.slot-foot {
+  background: var(--black); border-top: none; border-radius: 16px;
+  padding: 14px 16px; margin-top: 14px;
+}
+.slot-foot .slot-price { color: var(--mint); }
+.slot-foot .slot-note { color: #9AA79E; }
+.slot-foot .btn.book { background: var(--mint); color: var(--black); box-shadow: none; }
+.slot-foot .btn.book:hover { background: var(--mint-b); color: var(--black); }
+.slot-foot .btn.ghost {
+  background: transparent; border-color: rgba(255,255,255,.45);
+  color: #fff; box-shadow: none;
+}
+.slot-foot .btn.ghost:hover { background: rgba(255,255,255,.12); }
+.slot-foot .btn:not(.book):not(.ghost):not(.danger) { background: #fff; color: var(--black); border-color: #fff; }
+.slot-foot a { color: var(--mint); }
+.slot-foot .badge { background: var(--panel-d); border-color: var(--hair-d); color: #DDE7DD; }
+.slot-foot .badge.info { color: var(--mint); }
+
+/* ---------- form fields: grouped color blocks ---------- */
+.fgroup {
+  border: 1.5px solid var(--line2); border-radius: 18px;
+  padding: 16px 16px 6px; margin: 0 0 14px;
+}
+.fgroup.tint { background: var(--bg2); border-color: transparent; }
+.fg-kicker {
+  font-size: .72rem; font-weight: 800; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--mint-deep); margin: 0 0 12px;
+}
+
+/* ---------- chip radio groups (bound to a hidden input) ---------- */
+.chiprow { display: flex; flex-wrap: wrap; gap: 8px; }
+.rchip {
+  appearance: none; -webkit-appearance: none;
+  border: 1.5px solid var(--line); background: #fff; color: var(--ink);
+  border-radius: 999px; padding: 10px 16px; min-height: 44px;
+  font: inherit; font-weight: 700; font-size: .92rem; cursor: pointer;
+}
+.rchip.on { background: var(--black); border-color: var(--black); color: var(--mint); }
+.rchip:focus-visible { outline: 2px solid var(--mint-deep); outline-offset: 2px; }
+
+/* ---------- multi-select chips: categories / comp fits ---------- */
+.checkrow { gap: 8px; }
+.checkrow label {
+  position: relative; display: inline-flex; align-items: center; gap: 8px;
+  background: #fff; border: 1.5px solid var(--line); border-radius: 999px;
+  padding: 10px 16px; min-height: 44px; cursor: pointer;
+  font-weight: 700; color: var(--ink); margin: 0;
+}
+.checkrow label input, .radio-chip input, .tier-chip input {
+  position: absolute; opacity: 0; width: 1px; height: 1px;
+  padding: 0; border: none; margin: 0; pointer-events: none;
+}
+.checkrow label:has(input:checked) { background: var(--mint); border-color: var(--mint); color: var(--ink); }
+.checkrow label:has(input:checked)::before { content: "\2713"; font-weight: 800; }
+.checkrow label:focus-within, .radio-chip:focus-within, .tier-chip:focus-within {
+  outline: 2px solid var(--mint-deep); outline-offset: 2px;
+}
+
+/* ---------- radio chips: stacked option rows ---------- */
+.radio-stack { display: flex; flex-direction: column; gap: 8px; }
+.radio-chip {
+  position: relative; display: flex; align-items: center; gap: 12px;
+  background: #fff; border: 1.5px solid var(--line); border-radius: 16px;
+  padding: 13px 16px; min-height: 50px; font-weight: 700;
+  cursor: pointer; margin: 0; color: var(--ink);
+}
+.radio-chip::before {
+  content: ""; width: 20px; height: 20px; border-radius: 50%;
+  border: 2px solid var(--line); flex: none; box-sizing: border-box;
+}
+.radio-chip:has(input:checked) { background: var(--black); border-color: var(--black); color: var(--mint); }
+.radio-chip:has(input:checked)::before {
+  border-color: var(--mint); background: var(--mint);
+  box-shadow: inset 0 0 0 4px var(--black);
+}
+
+/* ---------- tier chips (composer who-can-apply) ---------- */
+.tier-chip {
+  position: relative; display: inline-flex; align-items: center; gap: 7px;
+  background: #fff; border: 1.5px solid var(--line); border-radius: 999px;
+  padding: 10px 16px; min-height: 44px; font-weight: 700;
+  cursor: pointer; margin: 0; color: var(--ink);
+}
+.tier-chip:has(input:checked) { background: var(--mint); border-color: var(--mint); }
+.tier-chip:has(input:checked) .tc-name::before { content: "\2713  "; font-weight: 800; }
+.tier-chip:has(input:checked) .muted { color: #33503F; }
+
+/* ---------- consent check rows ---------- */
+.ckrow {
+  display: flex; gap: 12px; align-items: flex-start; width: 100%;
+  box-sizing: border-box; background: #fff;
+  border: 1.5px solid var(--line); border-radius: 16px;
+  padding: 14px 16px; font-weight: 500; cursor: pointer; margin: 0;
+}
+.ckrow:has(.ckbox:checked) { border-color: var(--black); }
+.ckbox {
+  appearance: none; -webkit-appearance: none;
+  width: 26px; height: 26px; flex: none; padding: 0; margin: 1px 0 0;
+  border: 2px solid var(--ink3); border-radius: 8px; background: #fff;
+  display: grid; place-items: center; cursor: pointer;
+}
+.ckbox:checked { background: var(--black); border-color: var(--black); }
+.ckbox:checked::after { content: "\2713"; color: var(--mint); font-size: 16px; font-weight: 800; line-height: 1; }
+.ckbox:focus-visible { outline: 2px solid var(--mint-deep); outline-offset: 2px; }
+
+/* ---------- toggle switches (bound to the same checkbox) ---------- */
+/* The switch floats at the label's first line and the text flows
+   full width under it: two of the toggle labels are full
+   paragraphs, and a fixed flex column squeezed them. */
+.tgl-row { display: block; font-weight: 500; cursor: pointer; margin: 0; }
+.tgl-row input.sw { float: left; margin: 2px 12px 6px 0; }
+input.sw {
+  appearance: none; -webkit-appearance: none;
+  width: 52px; height: 30px; flex: none; padding: 0;
+  border: none; border-radius: 999px; background: #D9E9DE;
+  position: relative; cursor: pointer; transition: background .15s ease;
+}
+input.sw::after {
+  content: ""; position: absolute; top: 3px; left: 3px;
+  width: 24px; height: 24px; border-radius: 50%; background: #fff;
+  box-shadow: 0 1px 3px rgba(0,0,0,.25);
+  transition: left .15s ease, background .15s ease;
+}
+input.sw:checked { background: var(--black); }
+input.sw:checked::after { left: 25px; background: var(--mint); }
+input.sw:focus-visible { outline: 2px solid var(--mint-deep); outline-offset: 2px; }
+
+/* ---------- steppers (bound to the same number input) ---------- */
+.stepper { display: flex; align-items: stretch; gap: 8px; }
+.stepper input { text-align: center; }
+.step-btn {
+  width: 48px; flex: none; min-height: 48px; border-radius: 14px;
+  border: 1.5px solid var(--line); background: #fff; color: var(--ink);
+  font: inherit; font-size: 1.25rem; font-weight: 800; cursor: pointer;
+}
+.step-btn:active { background: var(--mint-pale); }
+.step-btn:focus-visible { outline: 2px solid var(--mint-deep); outline-offset: 2px; }
+
+/* =====================================================================
+   V5 (Jeff, 2026-10-25 late): tier toggles, drag bars, and the
+   Tinder-feel card stacks for Discover + the creator Offers feed.
+   ===================================================================== */
+
+/* ---------- who-can-apply: Slotted lane toggle rows ---------- */
+.tier-toggles { display: flex; flex-direction: column; gap: 8px; }
+.tier-toggle {
+  display: flex; align-items: center; gap: 14px;
+  background: #fff; border: 1.5px solid var(--line); border-radius: 16px;
+  padding: 13px 16px; min-height: 58px; cursor: pointer; margin: 0;
+}
+.tier-toggle:focus-within { outline: 2px solid var(--mint-deep); outline-offset: 2px; }
+.tier-toggle .tt-body { display: flex; flex-direction: column; gap: 1px; }
+.tier-toggle .tt-name { font-weight: 800; font-size: 1rem; color: var(--ink); }
+.tier-toggle .tt-line { font-size: .85rem; font-weight: 600; color: var(--ink3); }
+
+/* ---------- drag bars (bound to the same number input) ---------- */
+.dragbar {
+  display: grid; grid-template-columns: 1fr auto; column-gap: 14px;
+  align-items: center; padding: 4px 0 2px;
+}
+.drag-range {
+  appearance: none; -webkit-appearance: none;
+  width: 100%; height: 10px; border-radius: 999px; margin: 0; padding: 0;
+  background: linear-gradient(90deg, var(--mint-soft) var(--fill, 0%), #E1EBE1 var(--fill, 0%));
+  cursor: pointer; touch-action: pan-y;
+}
+.drag-range::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 30px; height: 30px; border-radius: 50%;
+  background: var(--black); border: 3px solid #fff;
+  box-shadow: 0 2px 8px rgba(11,13,12,.35); cursor: grab;
+}
+.drag-range::-moz-range-thumb {
+  width: 24px; height: 24px; border-radius: 50%;
+  background: var(--black); border: 3px solid #fff;
+  box-shadow: 0 2px 8px rgba(11,13,12,.35); cursor: grab;
+}
+.drag-range::-moz-range-progress { background: var(--mint-soft); height: 10px; border-radius: 999px; }
+.drag-range::-moz-range-track { background: #E1EBE1; height: 10px; border-radius: 999px; }
+.drag-range:focus-visible { outline: 2px solid var(--mint-deep); outline-offset: 4px; }
+.drag-val input {
+  width: 78px; text-align: center; border: none; background: var(--bg2);
+  border-radius: 12px; padding: 9px 4px;
+  font: inherit; font-size: 1.3rem; font-weight: 800; color: var(--ink);
+  -moz-appearance: textfield; appearance: textfield;
+}
+.drag-val input::-webkit-outer-spin-button, .drag-val input::-webkit-inner-spin-button {
+  -webkit-appearance: none; margin: 0;
+}
+.drag-val input:focus { outline: 2px solid var(--mint-deep); outline-offset: 1px; background: var(--mint-pale); }
+.drag-minmax {
+  grid-column: 1; display: flex; justify-content: space-between;
+  font-size: .75rem; font-weight: 700; color: var(--ink3); margin-top: 2px;
+}
+
+/* ---------- Cards | List toggle + stack chrome ---------- */
+.view-toggle {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; margin: 14px 0 12px;
+}
+.view-toggle .vt-group { display: flex; gap: 8px; }
+.stack-pos { font-size: .85rem; font-weight: 700; color: var(--ink3); }
+.stk-wrap { position: relative; max-width: 560px; margin: 0 auto; }
+.stk-behind {
+  position: absolute; left: 6px; right: 6px; top: 10px; z-index: 0;
+  transform: scale(.965); opacity: .5; pointer-events: none;
+  filter: saturate(.75);
+}
+.stk-card { position: relative; z-index: 1; touch-action: pan-y; cursor: grab; }
+.stk-card img { -webkit-user-drag: none; user-select: none; -webkit-user-select: none; }
+.stk-card:active { cursor: grabbing; }
+.stk-actions {
+  display: flex; align-items: center; justify-content: center;
+  gap: 16px; margin: 18px auto 0; width: fit-content;
+  /* One floating action dock on both stacks. An offer card is
+     taller than the viewport, so the dock sticks above the
+     bottom nav while the card scrolls under it: Pass / Apply
+     are always one thumb-reach away. The frosted plate keeps
+     the dock readable over card content while it is stuck. */
+  position: sticky; bottom: 84px; z-index: 6;
+  background: rgba(250, 252, 250, .85);
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  border: 1.5px solid var(--line2); border-radius: 999px;
+  padding: 8px 12px; box-shadow: var(--sh-md);
+}
+.stk-pass {
+  width: 58px; height: 58px; flex: none; border-radius: 50%;
+  border: 1.5px solid var(--line); background: #fff; color: var(--ink);
+  font-size: 1.3rem; font-weight: 800; cursor: pointer; box-shadow: var(--sh-sm);
+}
+.stk-pass:active { transform: scale(.93); }
+.stk-go {
+  min-height: 58px; padding: 0 42px; border: none; border-radius: 999px;
+  background: var(--mint); color: var(--black);
+  font: inherit; font-size: 1.05rem; font-weight: 800; cursor: pointer;
+  box-shadow: var(--sh-sm);
+}
+.stk-go:active { transform: scale(.97); }
+.stk-pass:focus-visible, .stk-go:focus-visible { outline: 2px solid var(--mint-deep); outline-offset: 2px; }
+.stk-end {
+  background: #fff; border: 1.5px dashed var(--line); border-radius: 24px;
+  padding: 44px 24px; text-align: center;
+}
+.stk-end h3 { margin: 0 0 8px; }
+.stk-end-actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 18px; }
+
+/* ---------- discover stack card: photo-led, local reach hero ---------- */
+.dcard {
+  background: #fff; border-radius: 24px; box-shadow: var(--sh-md);
+  overflow: hidden; text-align: left;
+}
+.dcard.paused { opacity: .62; filter: grayscale(.6); }
+.dcard-photo { position: relative; aspect-ratio: 4 / 3.3; background: var(--bg2); }
+.dcard-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.dcard-photo.no-photo { background: var(--mint); }
+.dcard-mono { height: 100%; display: grid; place-items: center; }
+.dcard-mono span { font-size: 5.2rem; font-weight: 800; color: var(--black); letter-spacing: -.03em; }
+.dcard-tier {
+  position: absolute; left: 14px; top: 14px;
+  background: var(--black); color: var(--mint);
+  font-size: .78rem; font-weight: 800; letter-spacing: .02em;
+  padding: 6px 12px; border-radius: 999px;
+}
+.dcard-body { padding: 18px 20px 20px; }
+.dcard-name { font-size: 1.7rem; font-weight: 800; letter-spacing: -.02em; line-height: 1.1; }
+.dcard-handle { color: var(--ink3); font-weight: 600; margin-top: 2px; }
+.dcard-local { display: flex; align-items: baseline; gap: 9px; margin-top: 12px; }
+.dcard-pct { font-size: 2.6rem; font-weight: 800; letter-spacing: -.03em; line-height: 1; color: var(--ink); }
+.dcard-local-lbl {
+  font-size: .74rem; font-weight: 800; letter-spacing: .09em;
+  text-transform: uppercase; color: var(--mint-deep);
+}
+.dcard-local-na { font-size: 1rem; font-weight: 700; color: var(--ink3); }
+.dcard-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 13px; }
+.dcard-meta {
+  display: flex; flex-wrap: wrap; gap: 4px 8px; margin-top: 13px;
+  color: var(--ink2); font-weight: 600; font-size: .93rem;
+}
+.dcard-meta span + span::before { content: "\00B7  "; color: var(--ink3); }
+
+@media (prefers-reduced-motion: reduce) {
+  .stk-card { transition: none !important; }
+  .stk-pass:active, .stk-go:active { transform: none; }
+}

@@ -117,10 +117,10 @@ const seamIn = { score: 42, reasons: ["x"], parts: { category: "adjacent" } };
 check("the learned re-ranker seam is the identity function today", applyLearnedRerank(seamIn, { business: RESTAURANT, creator: bigCreator }) === seamIn);
 
 const noteStrong = buildFitNote(fDirect, RESTAURANT, { categories: ["Food & Drink"], homeCity: "Richmond" });
-check("fit note on a strong match follows the pattern", noteStrong === "Strong fit: your food content, Richmond", String(noteStrong));
+check("fit note on a strong match follows the pattern", noteStrong === "Strong fit · Food · Richmond", String(noteStrong));
 const fWeak = computeFit({ category: "Attraction", market: "Richmond", city: "Richmond" }, { categories: ["Nightlife"], homeCity: "Petersburg", localAudiencePct: 80 });
 const noteWeak = buildFitNote(fWeak, { category: "Attraction", market: "Richmond", city: "Richmond" }, { categories: ["Nightlife"], homeCity: "Petersburg" });
-check("adjacent category overlap across towns still earns the note (market named)", noteWeak === "Strong fit: your nightlife content, Richmond", String(noteWeak));
+check("adjacent category overlap across towns still earns the note (market named)", noteWeak === "Strong fit · Nightlife · Richmond", String(noteWeak));
 const noteCompOnly = buildFitNote(fComp, { category: "Fitness Studio", market: "Richmond", city: "Richmond" }, { categories: ["Beauty & Grooming"], compCategories: ["Fitness classes & passes"], homeCity: "Norfolk" });
 check("fit note stays silent on a comp-only signal in another town", noteCompOnly === null, String(noteCompOnly));
 const noteNone = buildFitNote(fZero, { category: "Fitness Studio", market: "Richmond", city: "Richmond" }, { categories: ["Nightlife"], homeCity: "Norfolk" });
@@ -264,7 +264,7 @@ try {
   const fionaBoard = await fiona.client("GET", "/api/open-offers");
   const fionaOffer = (fionaBoard.data.offers || []).find((o) => o.id === offerRes.data.offer.id);
   check("strong-match creator sees the fit note on the open offer",
-    !!fionaOffer && fionaOffer.fitNote === "Strong fit: your food content, Richmond", JSON.stringify(fionaOffer && fionaOffer.fitNote));
+    !!fionaOffer && fionaOffer.fitNote === "Strong fit · Food · Richmond", JSON.stringify(fionaOffer && fionaOffer.fitNote));
 
   const nadiaBoard = await nadia.client("GET", "/api/open-offers");
   const nadiaOffer = (nadiaBoard.data.offers || []).find((o) => o.id === offerRes.data.offer.id);
