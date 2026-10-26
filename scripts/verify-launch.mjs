@@ -485,6 +485,17 @@ try {
   check("preview offers + apply wrote nothing (events identical)", (evAfterGalOffers.data.events || []).length === (evBeforeGalOffers.data.events || []).length, `${(evBeforeGalOffers.data.events || []).length} -> ${(evAfterGalOffers.data.events || []).length}`);
   check("client ships the segmented dashboards + creator-offers preview step", appJs.text.includes("dashSegsHtml") && appJs.text.includes("bizDashAttentionHtml") && appJs.text.includes("pvOffersHtml") && appJs.text.includes("/admin/preview/open-offers") && appJs.text.includes("Creator offers"), "");
 
+  // preview discover deck (Jeff, 2026-10-25): the preview roster
+  // step rides the same stack engine + deck card as the real
+  // business Discover, so the swipe feel is testable in preview.
+  check("client ships the preview discover deck on the shared stack engine + deck card", appJs.text.includes("pvDiscoverModeToggleHtml") && appJs.text.includes('data-stack="pvdiscover"') && appJs.text.includes("cardHtml: (c) => discoverStackCard(c)") && appJs.text.includes('data-stackpos="pvdiscover"') && appJs.text.includes("pvDiscoverEndHtml") && appJs.text.includes("pvDiscoverShowPassed"), "");
+  check("preview deck Invite/Tap reuse the preview composer + profile step (never the real flows)", appJs.text.includes("onGo: (c) => { previewStartOffer(c.userId); }") && appJs.text.includes("onTap: (c) => { previewViewCreator(c.userId); }") && appJs.text.includes("onPass: (c) => { if (stackState.pvdiscover) stackState.pvdiscover.passedIds.add(c.userId); }"), "");
+  check("preview discover keeps the roster grid in List mode", appJs.text.includes("renderPvDiscoverBody") && appJs.text.includes('creatorCard(c, state.user, { preview: true })'), "");
+  const evBeforePvDeck = await admin("GET", "/api/admin/events?limit=2000");
+  const pvDeckBrowse = await admin("GET", "/api/admin/preview/discover?market=Hampton%20Roads");
+  const evAfterPvDeck = await admin("GET", "/api/admin/events?limit=2000");
+  check("preview discover browsing writes nothing (events identical, deck is read-only)", pvDeckBrowse.status === 200 && (evAfterPvDeck.data.events || []).length === (evBeforePvDeck.data.events || []).length, `${(evBeforePvDeck.data.events || []).length} -> ${(evAfterPvDeck.data.events || []).length}`);
+
   // --- tester designation: approved, but never on the roster ---
   // A tester account (Tony Johnson is the first) exercises the app
   // as a creator while staying invisible to businesses: discovery

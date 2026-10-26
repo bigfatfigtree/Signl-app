@@ -7306,7 +7306,65 @@ function renderPreviewResults() {
     el.innerHTML = `<div class="panel center"><h3>No approved creators match yet</h3><p class="muted">This is the same empty state a business sees while a market's founding roster is still filling.</p></div>`;
     return;
   }
-  el.innerHTML = `<div class="creator-grid">${list.map((c) => creatorCard(c, state.user, { preview: true })).join("")}</div>`;
+  el.innerHTML = `<div id="pv-discover-toggle">${pvDiscoverModeToggleHtml()}</div><div id="pv-discover-body"></div>`;
+  renderPvDiscoverBody();
+}
+
+// ---------- Preview Discover as a card stack (Jeff, 2026-10-25) ----------
+// The preview roster rides the SAME stack engine and the SAME deck
+// card as the real business Discover (discoverStackCard: cover
+// photo, local reach % as the hero number, the sample-photo pill
+// where the preview decoration applies), so the swipe feel tested
+// here is the feel businesses get. Invite opens the existing
+// preview offer composer, tap opens the existing preview profile
+// step, Pass is session-only with the end card's Show passed reset
+// — the exact semantics of the real decks. Preview stays a
+// simulation end to end: the deck writes nothing and no real
+// /discover state is touched. List mode keeps the roster grid this
+// step has always rendered.
+function pvDiscoverModeToggleHtml() {
+  const mode = state.pvDiscoverMode || "cards";
+  return `<div class="view-toggle"><div class="vt-group"><button type="button" class="rchip${mode === "cards" ? " on" : ""}" onclick="setPvDiscoverMode('cards')">Cards</button><button type="button" class="rchip${mode === "list" ? " on" : ""}" onclick="setPvDiscoverMode('list')">List</button></div><span class="stack-pos" data-stackpos="pvdiscover"></span></div>`;
+}
+function setPvDiscoverMode(mode) {
+  state.pvDiscoverMode = mode;
+  const tg = document.getElementById("pv-discover-toggle");
+  if (tg) tg.innerHTML = pvDiscoverModeToggleHtml();
+  renderPvDiscoverBody();
+  return false;
+}
+function renderPvDiscoverBody() {
+  const el = document.getElementById("pv-discover-body");
+  if (!el || !state.preview) return;
+  const all = state.preview.creators || [];
+  if ((state.pvDiscoverMode || "cards") === "list") {
+    const pos = document.querySelector('[data-stackpos="pvdiscover"]');
+    if (pos) pos.textContent = "";
+    el.innerHTML = `<div class="creator-grid">${all.map((c) => creatorCard(c, state.user, { preview: true })).join("")}</div>`;
+    return;
+  }
+  if (!stackState.pvdiscover || stackState.pvdiscover.src !== all) {
+    stackState.pvdiscover = {
+      items: all, idx: 0, passed: 0, passedIds: new Set(), src: all,
+      cardHtml: (c) => discoverStackCard(c),
+      goLabel: "Invite",
+      onGo: (c) => { previewStartOffer(c.userId); },
+      onPass: (c) => { if (stackState.pvdiscover) stackState.pvdiscover.passedIds.add(c.userId); },
+      onTap: (c) => { previewViewCreator(c.userId); },
+      endHtml: (passed, total) => pvDiscoverEndHtml(passed, total),
+    };
+  }
+  el.innerHTML = `<div class="stk-wrap" data-stack="pvdiscover"></div>`;
+  renderStack(el.firstElementChild);
+}
+function pvDiscoverEndHtml(passed, total) {
+  return `<div class="stk-end"><h3>That's everyone in this preview search</h3><p class="small muted">You looked through ${total} creator${total === 1 ? "" : "s"}. Passes live only in this preview session, and invites open the simulated composer: nothing reaches a real creator.</p><div class="stk-end-actions">${passed ? `<button type="button" class="btn ghost" onclick="pvDiscoverShowPassed()">Show passed (${passed})</button>` : ""}<button type="button" class="btn" onclick="runPreviewDiscover()">Search again</button></div></div>`;
+}
+function pvDiscoverShowPassed() {
+  const s = stackState.pvdiscover;
+  if (s) { s.idx = 0; s.passed = 0; s.passedIds = new Set(); }
+  renderPvDiscoverBody();
+  return false;
 }
 
 async function previewViewCreator(userId) {
