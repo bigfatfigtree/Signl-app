@@ -718,7 +718,7 @@ tbody tr:hover td { background: rgba(227,245,234,.55); }
 }
 #bottomnav.signed-in .bn-icon { display: flex; align-items: center; justify-content: center; height: 24px; position: relative; }
 #bottomnav.signed-in .bn-icon svg { width: 22px; height: 22px; display: block; }
-#bottomnav.signed-in .bn-label { font-size: 0.66rem; font-weight: 600; letter-spacing: 0.02em; line-height: 1.15; white-space: nowrap; }
+#bottomnav.signed-in .bn-label { font-size: 0.62rem; font-weight: 600; letter-spacing: 0; line-height: 1.15; white-space: nowrap; }
 #bottomnav.signed-in .bn-item.on { color: var(--mint); }
 #bottomnav.signed-in .bn-item.on .bn-label { color: var(--mint); }
 body.bn-on main { padding-bottom: calc(88px + env(safe-area-inset-bottom)); }
@@ -1075,19 +1075,22 @@ label { font-weight: 700; letter-spacing: -.01em; }
 #topnav a.nav-cta:hover { background: var(--mint-b); color: var(--ink); }
 
 /* ---------- bottom bar: Slotted mobile bar (active = mint square) ---------- */
-/* Jeff, 2026-10-25: the active highlight is a SQUARE over the item,
-   symmetric inside the bar — a centered ::before tile, not a
-   full-height pill, so it never bulges past the bar's edges. The
-   tile is smaller than the 54px inner bar height, leaving even
-   clearance above and below; icon + label sit on top of it. */
+/* Jeff, 2026-10-25 (second pass): the first tile was a fixed 48px
+   square centered on the item — narrower than the longest labels
+   ("Dashboard" measures 57px), so the word spilled past the tile
+   on both sides and its bottom rode the bar's edge. The tile now
+   INSETS the whole item (4px top/bottom, edge to edge across the
+   item), so the highlight frames icon + the FULL label
+   symmetrically at any label length, and the bar is a touch
+   taller so nothing sits near its edges. */
 @media (max-width: 720px) {
   #bottomnav {
-    height: calc(66px + env(safe-area-inset-bottom));
+    height: calc(72px + env(safe-area-inset-bottom));
     padding: 6px 6px calc(6px + env(safe-area-inset-bottom));
   }
 }
 #bottomnav.signed-in {
-  height: calc(66px + env(safe-area-inset-bottom));
+  height: calc(72px + env(safe-area-inset-bottom));
   padding: 6px 6px calc(6px + env(safe-area-inset-bottom));
   width: min(640px, 100%);
 }
@@ -1097,11 +1100,12 @@ label { font-weight: 700; letter-spacing: -.01em; }
 #bottomnav.signed-in .bn-item.on { color: var(--ink); }
 #bottomnav.signed-in .bn-item.on .bn-label { color: var(--ink); }
 #bottomnav .bn-item.on::before {
-  content: ""; position: absolute; left: 50%; top: 50%;
-  width: 48px; height: 48px; border-radius: 15px;
-  background: var(--mint); transform: translate(-50%, -50%);
+  content: ""; position: absolute; left: 0; right: 0; top: 4px; bottom: 4px;
+  border-radius: 15px;
+  background: var(--mint);
   pointer-events: none;
 }
+#bottomnav .bn-label { font-size: 0.62rem; letter-spacing: 0; }
 #bottomnav .bn-icon, #bottomnav .bn-label { position: relative; z-index: 1; }
 body.bn-on main { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
 body.bn-on .footer { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
@@ -1367,6 +1371,18 @@ th, td { padding: 11px 10px; }
 .tg.off::after { right: auto; left: 4px; background: #fff; }
 .lname { font-weight: 800; }
 .lline { color: var(--ink2); font-size: .95rem; }
+label.lname { cursor: pointer; }
+
+/* ---------- live lane control (dashboard panel + profile) ---------- */
+/* The lane rows carry REAL switches (input.sw) instead of the .tg
+   display spans: every flip saves on its own. */
+.lane-sw { flex: none; margin-top: 1px; cursor: pointer; }
+.lane-bothrow { padding: 2px 0 4px; }
+.lane-rate { border-top: 1px solid var(--line2); padding: 12px 0 2px; }
+.lane-rate > label { display: block; font-weight: 700; font-size: .92rem; margin-bottom: 7px; }
+.lane-rate-flex { display: flex; align-items: center; gap: 10px; }
+.lane-rate-flex input { width: 110px; flex: none; }
+.lane-err { color: var(--red); font-weight: 700; margin-top: 8px; }
 
 /* ---------- deal rows: compressed offer terms ---------- */
 .deal-rows { margin-top: 2px; }

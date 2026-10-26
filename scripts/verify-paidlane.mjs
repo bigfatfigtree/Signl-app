@@ -191,8 +191,12 @@ try {
   await P.client("PATCH", "/api/me/profile", { paidRate: 250 });
 
   const appJs = await anon.raw("/app.js");
-  check("client ships the verbatim comp explainer copy", appJs.text.includes("Accept comp visits. Businesses comp you the experience and you post honestly within 48 hours. Creators who accept comps get more offers and more free experiences, and every completed visit earns Momentum points. Momentum lifts you in business search and builds the track record that gets you trusted and booked, including first access to paid bookings."), "");
-  check("client ships the verbatim paid rate copy", appJs.text.includes("Set a paid rate (optional). Businesses can book you at your listed rate for a paid visit, and you keep 97% of it. Paid-only is fine too, but paid-only creators receive fewer offers."), "");
+  // Lane copy (lane-control fix, Jeff 2026-10-25): the profile's
+  // long explainer label and detached rate box were replaced by the
+  // shared live lane control; its short status lines are the pinned
+  // copy now.
+  check("client ships the lane control comp lines", appJs.text.includes("on. Businesses can comp you for honest posts.") && appJs.text.includes("off. You're paid-only — always fine."), "");
+  check("client ships the lane control paid lines", appJs.text.includes("not set. Flip the switch and set a rate (min $50).") && appJs.text.includes("Business pays $"), "");
   check("client ships the review pages block and the paid badges", appJs.text.includes("Their review pages") && appJs.text.includes("Paid bookings:") && appJs.text.includes("Book paid visit"), "");
   check("client ships the creator home paid lane panel with the honest hold copy (no card charged, releases 48 hours after proof)", appJs.text.includes("homePaidLaneHtml") && appJs.text.includes("no card charged") && appJs.text.includes("released 48h after proof"), "");
   check("creator home keeps paid cash and comp value in separate piles", appJs.text.includes("Held — releases 48h after proof") && appJs.text.includes("Comp value (not cash)") && appJs.text.includes("homeMoneyHtml"), "");
@@ -398,6 +402,41 @@ try {
   const eventsAfter = await admin("GET", "/api/admin/events?limit=2000");
   check("dashboard + preview paid booking wrote nothing (stats identical)", JSON.stringify(statsAfter.data) === JSON.stringify(statsBefore.data), "");
   check("dashboard + preview paid booking logged nothing (events identical)", (eventsAfter.data.events || []).length === (eventsBefore.data.events || []).length, `${(eventsBefore.data.events || []).length} -> ${(eventsAfter.data.events || []).length}`);
+
+  // ---------- Part L: lane control fix (Jeff, 2026-10-25) ----------
+  // The live lane control saves ONE field per flip; these pin the
+  // round-trips the control depends on (both-on, comp-only,
+  // paid-only) and the client structure that fixed the profile-save
+  // lane loss: one shared control, no lane fields in the form save,
+  // and a bottom-nav tile that frames the whole item.
+  part("L: lane control — one write path, partial saves, nav tile");
+  const L = await registerCreator({});
+  await approve(admin, L.user.id);
+  const laneState = async () => { const m = await L.client("GET", "/api/auth/me"); const c = m.data.user.creator; return { compOpen: c.compOpen, paidRate: c.paidRate }; };
+  let ls = await laneState();
+  check("lane round-trip starts comp on / no rate", ls.compOpen === true && ls.paidRate === null, JSON.stringify(ls));
+  await L.client("PATCH", "/api/me/profile", { compOpen: true, paidRate: 150 });
+  ls = await laneState();
+  check("both-on round-trip: comp on + rate 150 stored", ls.compOpen === true && ls.paidRate === 150, JSON.stringify(ls));
+  await L.client("PATCH", "/api/me/profile", { compOpen: false });
+  ls = await laneState();
+  check("comp-only flip leaves the rate intact (partial save)", ls.compOpen === false && ls.paidRate === 150, JSON.stringify(ls));
+  await L.client("PATCH", "/api/me/profile", { paidRate: 200 });
+  ls = await laneState();
+  check("rate-only save leaves comp state intact", ls.compOpen === false && ls.paidRate === 200, JSON.stringify(ls));
+  await L.client("PATCH", "/api/me/profile", { paidRate: null });
+  ls = await laneState();
+  check("paid off clears only the rate", ls.compOpen === false && ls.paidRate === null, JSON.stringify(ls));
+  await L.client("PATCH", "/api/me/profile", { compOpen: true });
+  ls = await laneState();
+  check("comp-only round-trip: comp back on, still no rate", ls.compOpen === true && ls.paidRate === null, JSON.stringify(ls));
+  const appJsL = await anon.raw("/app.js");
+  check("client ships ONE shared lane control (dashboard panel + profile) with Turn both on", appJsL.text.includes("function laneControlsHtml") && appJsL.text.includes("laneToggleComp") && appJsL.text.includes("laneTogglePaid") && appJsL.text.includes("laneBothOn") && appJsL.text.includes("Turn both on"), "");
+  check("profile form no longer reads or re-sends lane fields (no p-comp-open / p-paid-rate anywhere)", !appJsL.text.includes("p-comp-open") && !appJsL.text.includes("p-paid-rate"), "");
+  check("dashboard no longer tells creators to change lanes in the Profile tab", !appJsL.text.includes("Change either setting in the Profile tab"), "");
+  check("lane saves go through one PATCH helper carrying only lane fields", appJsL.text.includes('api("PATCH", "/me/profile", patch)'), "");
+  const themeCss = await anon.raw("/theme-v2.css");
+  check("bottom-nav active tile insets the whole item (no fixed 48px tile)", themeCss.text.includes("top: 4px; bottom: 4px") && !themeCss.text.includes("width: 48px; height: 48px"), "");
 
   await stopServer();
 } catch (e) {

@@ -3453,21 +3453,143 @@ function homeLocalSignalHtml(card, bookings) {
   </section>`;
 }
 
-// The paid lane, shown the same way in the founding home and the
-// live Dashboard tab: comp on or off, the creator's own rate with the
-// keep-97-percent math at that rate, and the honest hold line.
+// ---------- Booking lanes: ONE live control, two homes ----------
+// Jeff (2026-10-25): the dashboard panel was display-only, and in
+// the profile the lanes were a bare checkbox read once at form
+// submit plus a detached rate box. Tapping through the profile to
+// turn lanes ON saved both lanes OFF: the "paid" switch a creator
+// finds there is Paid cash campaigns (a campaign category, not paid
+// bookings — bookings exist only when a rate is set), and the save
+// re-sent whatever the comp box happened to hold. Lane state now
+// has exactly one write path: this control, rendered identically
+// in the dashboard lane panel and the profile's lane section.
+// Every flip saves immediately through PATCH /me/profile with ONLY
+// the lane field it changed, and the profile form no longer sends
+// compOpen/paidRate at all, so a form save can never clobber lane
+// state again.
+function laneRateOf(c) {
+  const r = Number(c && c.paidRate);
+  return Number.isFinite(r) && r > 0 ? r : null;
+}
+function laneCompLine(c) {
+  return c && c.compOpen === false ? "off. You're paid-only — always fine." : "on. Businesses can comp you for honest posts.";
+}
+function lanePaidLine(c) {
+  const rate = laneRateOf(c || {});
+  if (!rate) return "not set. Flip the switch and set a rate (min $50).";
+  const keep = Math.round(rate * 0.97 * 100) / 100;
+  const total = Math.round(rate * 1.03 * 100) / 100;
+  return `your rate $${fmtPrice(rate)} · you keep $${fmtMoney(keep)} (97%). Business pays $${fmtMoney(total)}.`;
+}
+function laneControlsHtml(c) {
+  const compOn = !c || c.compOpen !== false;
+  const rate = laneRateOf(c || {});
+  return `<div class="lane-ctl" id="lane-controls">
+    ${compOn && rate ? "" : `<div class="lane-bothrow"><button type="button" class="btn small-btn" onclick="return laneBothOn()">Turn both on</button></div>`}
+    <div class="lrow lane-row"><input type="checkbox" class="sw lane-sw" id="lane-comp" ${compOn ? "checked" : ""} onchange="laneToggleComp(this)"><div><label class="lname" for="lane-comp">Comp visits</label> <span class="lline" id="lane-comp-line">— ${esc(laneCompLine(c || {}))}</span></div></div>
+    <div class="lrow lane-row"><input type="checkbox" class="sw lane-sw" id="lane-paid" ${rate ? "checked" : ""} onchange="laneTogglePaid(this)"><div><label class="lname" for="lane-paid">Paid bookings</label> <span class="lline" id="lane-paid-line">— ${esc(lanePaidLine(c || {}))}</span></div></div>
+    <div class="lane-rate" id="lane-rate-row" style="display:${rate ? "block" : "none"}">
+      <label for="lane-rate">Your paid rate (min $50)</label>
+      <div class="lane-rate-flex"><input type="number" id="lane-rate" min="50" step="1" inputmode="numeric" placeholder="150" value="${rate || ""}" onchange="laneRateAuto()"><button type="button" class="btn small-btn" onclick="return laneRateSave()">Save rate</button></div>
+      <p class="small muted" id="lane-rate-note">${rate ? `At $${fmtMoney(rate)} you keep $${fmtMoney(Math.round(rate * 0.97 * 100) / 100)} (97%).` : "Paid bookings turn on when a rate is saved."}</p>
+    </div>
+    <p class="small lane-err" id="lane-err" style="display:none"></p>
+  </div>`;
+}
+function laneErr(msg) {
+  const e = document.getElementById("lane-err");
+  if (e) { e.textContent = msg || ""; e.style.display = msg ? "block" : "none"; }
+}
+function rerenderLaneControls() {
+  const host = document.getElementById("lane-controls");
+  if (!host || !state.user || !state.user.creator) return;
+  const rateInput = document.getElementById("lane-rate");
+  const typed = rateInput ? rateInput.value : "";
+  const row = document.getElementById("lane-rate-row");
+  const rowOpen = !!row && row.style.display !== "none";
+  host.outerHTML = laneControlsHtml(state.user.creator);
+  if (rowOpen) {
+    const r2 = document.getElementById("lane-rate-row");
+    if (r2) r2.style.display = "block";
+    if (typed && !laneRateOf(state.user.creator)) {
+      const ni = document.getElementById("lane-rate");
+      if (ni) ni.value = typed;
+    }
+  }
+}
+async function laneSave(patch) {
+  laneErr("");
+  try {
+    const data = await api("PATCH", "/me/profile", patch);
+    if (data && data.user) state.user = data.user;
+    rerenderLaneControls();
+    return true;
+  } catch (err) {
+    rerenderLaneControls();
+    laneErr((err && err.message) || "That didn't save. Try again.");
+    return false;
+  }
+}
+function laneToggleComp(input) {
+  laneSave({ compOpen: !!input.checked });
+  return true;
+}
+function laneTypedRate() {
+  const inp = document.getElementById("lane-rate");
+  const v = inp ? Number(inp.value) : NaN;
+  return Number.isFinite(v) && v > 0 ? v : null;
+}
+function laneOpenRateEntry(msg) {
+  const row = document.getElementById("lane-rate-row");
+  if (row) row.style.display = "block";
+  const inp = document.getElementById("lane-rate");
+  if (inp) inp.focus();
+  const note = document.getElementById("lane-rate-note");
+  if (note && msg) note.textContent = msg;
+}
+function laneTogglePaid(input) {
+  if (!input.checked) { laneSave({ paidRate: null }); return true; }
+  const rate = laneRateOf(state.user.creator || {}) || laneTypedRate();
+  if (rate && rate >= 50) { laneSave({ paidRate: rate }); return true; }
+  laneOpenRateEntry("Set a rate (min $50), then tap Save rate — paid bookings turn on.");
+  return true;
+}
+function laneRateSave() {
+  const v = laneTypedRate();
+  if (!v || v < 50) {
+    laneErr("Paid bookings need a rate of at least $50.");
+    const inp = document.getElementById("lane-rate");
+    if (inp) inp.focus();
+    return false;
+  }
+  laneSave({ paidRate: Math.round(v * 100) / 100 });
+  return false;
+}
+function laneRateAuto() {
+  // Typing a valid rate while the paid switch is on saves it, so
+  // the rate and the toggle land together.
+  const sw = document.getElementById("lane-paid");
+  const v = laneTypedRate();
+  if (sw && sw.checked && v && v >= 50 && v !== laneRateOf(state.user.creator || {})) laneSave({ paidRate: Math.round(v * 100) / 100 });
+  return true;
+}
+function laneBothOn() {
+  const rate = laneRateOf(state.user.creator || {}) || laneTypedRate();
+  if (rate && rate >= 50) { laneSave({ compOpen: true, paidRate: rate }); return false; }
+  laneSave({ compOpen: true });
+  laneOpenRateEntry("Comp is on. Set a rate (min $50), then tap Save rate — paid bookings turn on too.");
+  return false;
+}
+
+// The paid lane panel, shown the same way in the founding home and
+// the live Dashboard tab: the live lane control (the exact switches
+// from the profile's lane section) plus the honest hold line.
 function homePaidLaneHtml(creator, footerHtml) {
-  const c = creator || {};
-  const compOpen = c.compOpen !== false;
-  const rate = typeof c.paidRate === "number" && c.paidRate > 0 ? c.paidRate : null;
-  const keep = rate ? Math.round(rate * 0.97 * 100) / 100 : null;
-  const total = rate ? Math.round(rate * 1.03 * 100) / 100 : null;
   return `
   <section class="panel">
     <p class="ui-kicker">Paid lane</p>
     <h3 class="home-h">Comp and paid, your choice</h3>
-    <div class="lrow"><span class="tg${compOpen ? "" : " off"}"></span><div><span class="lname">Comp visits</span> <span class="lline">— ${compOpen ? "on. Businesses can comp you for honest posts." : "off. You're paid-only — always fine."}</span></div></div>
-    <div class="lrow"><span class="tg${rate ? "" : " off"}"></span><div><span class="lname">Paid bookings</span> <span class="lline">— ${rate ? `your rate $${fmtPrice(rate)} &middot; you keep $${fmtMoney(keep)} (97%). Business pays $${fmtMoney(total)}.` : "not set. Set one in Profile (min $50)."}</span></div></div>
+    ${laneControlsHtml(creator || {})}
     <p class="small muted">Recorded in the app, no card charged. Held until your post is live — released 48h after proof.</p>
     ${footerHtml || ""}
   </section>`;
@@ -3528,7 +3650,7 @@ function homeFoundingBlocksHtml(card, u) {
     <div class="stat-cell"><div class="stat-num">${card && card.localImpactScore !== null && card.localImpactScore !== undefined ? card.localImpactScore : "New"}</div><div class="stat-lbl">Impact Score / 100</div></div>
     <div class="stat-cell"><div class="stat-num">${fmtNum(totalAudienceOf(card))}</div><div class="stat-lbl">Total audience</div></div>
   </div>
-  ${homePaidLaneHtml(u.creator, `<p class="small muted" style="margin-bottom:0">Change either setting in the Profile tab.</p>`)}`;
+  ${homePaidLaneHtml(u.creator)}`;
 }
 
 async function loadCreatorHome() {
@@ -3573,7 +3695,7 @@ async function loadCreatorHome() {
     ${bookings.filter((b) => b.post && perfUpdateDue(b.post)).map((b) => perfUpdateFormHtml(b, "home")).join("")}
     ${homeOpportunitiesHtml(offers, u)}
     ${homeLocalSignalHtml(card, bookings)}
-    ${homePaidLaneHtml(u.creator, `<div class="home-actions"><button class="btn small-btn ghost" onclick="return go('dashboard','Profile')">Edit in your profile</button></div>`)}
+    ${homePaidLaneHtml(u.creator)}
     ${homeMoneyHtml(money)}
     ${momentumHtml(u)}
     ${homeComingUpHtml(bookings)}`;
@@ -3688,13 +3810,8 @@ function creatorProfileHtml(u) {
       </div>
       <div class="showcase-block">
         <h4>How businesses can book you</h4>
-        <div class="field">
-          <label class="tgl-row"><input type="checkbox" class="sw" id="p-comp-open" ${c.compOpen === false ? "" : "checked"}><span>Accept comp visits. Businesses comp you the experience and you post honestly within 48 hours. Creators who accept comps get more offers and more free experiences, and every completed visit earns Momentum points. Momentum lifts you in business search and builds the track record that gets you trusted and booked, including first access to paid bookings.</span></label>
-        </div>
-        <div class="field"><label>Set a paid rate (optional). Businesses can book you at your listed rate for a paid visit, and you keep 97% of it. Paid-only is fine too, but paid-only creators receive fewer offers.</label>
-          <input type="number" id="p-paid-rate" min="50" step="1" placeholder="For example: 250" value="${c.paidRate ? esc(String(c.paidRate)) : ""}">
-          <p class="small muted">Your rate in dollars for one paid booking; the booking terms set the deliverables. The business pays your rate plus 3%, SIGNL holds the payment, and it releases to you when your post is live. Minimum $50. Leave blank for no paid bookings.</p>
-        </div>
+        <p class="small muted">These save the moment you flip them — the same switches as your dashboard.</p>
+        ${laneControlsHtml(c)}
       </div>
       <div class="field"><label>Best work (up to 3 links)</label>
         ${[0, 1, 2].map((i) => `<input id="p-work-${i}" type="url" placeholder="https://www.instagram.com/reel/... or a TikTok or YouTube link" value="${esc((c.bestWork || [])[i] || "")}" style="margin-bottom:8px">`).join("")}
@@ -3874,8 +3991,9 @@ async function doUpdateCreator(e) {
       xHandle: document.getElementById("p-x").value,
       linkedinUrl: document.getElementById("p-linkedin").value,
       maxVisitsPerWeek: parseInt(document.getElementById("p-maxvisits").value, 10) || 3,
-      compOpen: document.getElementById("p-comp-open").checked,
-      paidRate: (() => { const v = document.getElementById("p-paid-rate").value.trim(); return v === "" ? null : Number(v); })(),
+      // compOpen/paidRate are deliberately NOT sent here: the lane
+      // control (laneControlsHtml) owns them and saves each flip on
+      // its own, so this form save can never clobber lane state.
       followerCount: parseInt(document.getElementById("p-followers").value, 10) || 0,
       audienceStack: (() => {
         const s = { instagram: parseInt(document.getElementById("p-followers").value, 10) || 0 };
