@@ -24,8 +24,37 @@ function escHtml(s) {
 function profilePageMeta(profile) {
   const place = profile.place || "";
   const title = `${profile.name} (@${profile.handle}) on SIGNL${place ? ` | ${place}` : ""}`;
-  const description = `${profile.name} is a founding creator on SIGNL in ${place || "their market"}${profile.tierBand ? ` (${profile.tierBand} tier)` : ""}. Local businesses comp creators for honest posts.`;
+  const pct = typeof profile.localAudiencePct === "number" ? profile.localAudiencePct : null;
+  const description = `${profile.name} is a founding creator on SIGNL in ${place || "their market"}${profile.tierBand ? ` (${profile.tierBand} tier)` : ""}.${pct !== null ? ` ${pct}% of their audience is local.` : ""} Local businesses comp creators for honest posts.`;
   return { title, description };
+}
+
+// Structured data for the profile page (SEO/AEO audit, 2026-10-25):
+// a ProfilePage whose mainEntity is the creator as a Person, built
+// ONLY from the same already-public facts the meta tags carry
+// (name, handle, place, tier/local reach via the description,
+// cover photo). JSON.stringify output is safe inside a <script>
+// block once "</" is neutralized, so a hostile name can never
+// break out of the tag.
+function profileJsonLd(profile, meta, canonical, image) {
+  const person = {
+    "@type": "Person",
+    name: String(profile.name || ""),
+    alternateName: `@${profile.handle || ""}`,
+    url: canonical,
+    description: meta.description,
+  };
+  if (image) person.image = image;
+  if (profile.place) person.homeLocation = { "@type": "Place", name: String(profile.place) };
+  const ld = {
+    "@context": "https://schema.org",
+    "@type": "ProfilePage",
+    url: canonical,
+    name: meta.title,
+    description: meta.description,
+    mainEntity: person,
+  };
+  return JSON.stringify(ld).replace(/<\//g, "<\\/");
 }
 
 function buildProfilePageHtml(shellHtml, profile) {
@@ -38,16 +67,19 @@ function buildProfilePageHtml(shellHtml, profile) {
   html = html.replace(/<title>[\s\S]*?<\/title>/, `<title>${escHtml(title)}</title>`);
   html = html.replace(/(<meta name="description" content=")[^"]*(")/, `$1${escHtml(description)}$2`);
   html = html.replace(/(<meta name="robots" content=")noindex(")/, "$1index, follow$2");
+  const canonical = `${origin}/c/${profile.handle}`;
   const tags = [
+    `<link rel="canonical" href="${escHtml(canonical)}">`,
     `<meta property="og:title" content="${escHtml(title)}">`,
     `<meta property="og:description" content="${escHtml(description)}">`,
     `<meta property="og:type" content="profile">`,
-    `<meta property="og:url" content="${escHtml(`${origin}/c/${profile.handle}`)}">`,
+    `<meta property="og:url" content="${escHtml(canonical)}">`,
     image ? `<meta property="og:image" content="${escHtml(image)}">` : null,
     `<meta name="twitter:card" content="${image ? "summary_large_image" : "summary"}">`,
     `<meta name="twitter:title" content="${escHtml(title)}">`,
     `<meta name="twitter:description" content="${escHtml(description)}">`,
     image ? `<meta name="twitter:image" content="${escHtml(image)}">` : null,
+    `<script type="application/ld+json">${profileJsonLd(profile, { title, description }, canonical, image)}</script>`,
   ].filter(Boolean).join("\n");
   html = html.replace(/<\/title>/, `</title>\n${tags}`);
   return html;

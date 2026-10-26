@@ -6,3 +6,10 @@ User-agent: *
 Allow: /
 Allow: /c/
 Disallow: /api/
+# Exception: creator cover photos live under /api/users/<id>/photo
+# and are the og:image of every public profile page — social and
+# search crawlers must be able to fetch them or shares unfurl
+# without the photo. The route itself stays gated server-side
+# (approved + complete profiles only); this only lifts the
+# robots advisory for that one public path family.
+Allow: /api/users/

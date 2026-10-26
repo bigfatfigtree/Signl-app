@@ -6594,6 +6594,7 @@ async function route(event) {
       handle: p.handle,
       place,
       tierBand: p.tierBand,
+      localAudiencePct: p.localAudiencePct,
       photoUrl: p.photoUrl,
       origin: `https://${host}`,
     }));

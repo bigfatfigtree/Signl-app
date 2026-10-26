@@ -101,6 +101,21 @@ try {
   check("hostile name is escaped in title", !hostile.includes('<title>A "B" <C>') && hostile.includes("&quot;B&quot;"));
   check("no photo means no og:image", !hostile.includes("og:image"));
 
+  // SEO/AEO completion (2026-10-25 audit): canonical + JSON-LD +
+  // the local reach % in the description, all from public facts.
+  const withPct = buildProfilePageHtml(shell, { name: "Casey Rivers", handle: "caseyrivers", place: "Richmond", tierBand: "Locals", localAudiencePct: 62, photoUrl: "/api/users/u1/photo", origin: "https://app.joinsignl.com" });
+  check("description carries the local reach %", withPct.includes("62% of their audience is local."));
+  check("no local % reported means no local sentence", !withPhoto.includes("of their audience is local."));
+  check("page carries a self-referencing canonical", withPct.includes('<link rel="canonical" href="https://app.joinsignl.com/c/caseyrivers">'));
+  const ldMatch = withPct.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/);
+  let ldOk = false;
+  try { const ld = JSON.parse(ldMatch[1]); ldOk = ld["@type"] === "ProfilePage" && ld.url === "https://app.joinsignl.com/c/caseyrivers" && ld.mainEntity && ld.mainEntity["@type"] === "Person" && ld.mainEntity.name === "Casey Rivers" && ld.mainEntity.alternateName === "@caseyrivers" && ld.mainEntity.image === "https://app.joinsignl.com/api/users/u1/photo" && ld.mainEntity.homeLocation.name === "Richmond"; } catch (e) { ldOk = false; }
+  check("JSON-LD ProfilePage + Person parses with the public facts", ldOk);
+  const hostileLd = hostile.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/);
+  let hostileLdOk = false;
+  try { hostileLdOk = !!hostileLd && !hostileLd[1].includes("</script") && JSON.parse(hostileLd[1]).mainEntity.name === 'A "B" <C>'; } catch (e) { hostileLdOk = false; }
+  check("hostile name cannot break out of the JSON-LD script", hostileLdOk);
+
   part("http: fixtures");
   startServer();
   await waitUp();
@@ -131,6 +146,8 @@ try {
   check("page carries no noindex", !page.text.includes('content="noindex"'));
   check("page carries og:title + og:type profile", page.text.includes('<meta property="og:title"') && page.text.includes('<meta property="og:type" content="profile">'));
   check("page description names the founding pitch", page.text.includes("Meta Owner is a founding creator on SIGNL in Virginia Beach"));
+  check("page description carries the local reach % (70 registered)", page.text.includes("70% of their audience is local."));
+  check("page carries its own canonical + JSON-LD ProfilePage", page.text.includes(`<link rel="canonical" href="https://127.0.0.1:${PORT}/c/metaowner">`) && page.text.includes('application/ld+json') && page.text.includes('"ProfilePage"') && page.text.includes('"@metaowner"'));
   check("page still ships the SPA shell for humans", page.text.includes('<script src="/app.js"></script>'));
   const apiPub = await makeClient()("GET", "/api/c/metaowner");
   check("profile API agrees (200)", apiPub.status === 200 && apiPub.data.profile.handle === "metaowner");

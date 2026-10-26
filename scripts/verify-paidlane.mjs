@@ -441,6 +441,7 @@ try {
   check("P2.4: admin tables stack into cards at phone width", themeCss.text.includes(".table-wrap table, .table-wrap tbody, .table-wrap tr, .table-wrap td { display: block; width: 100%; box-sizing: border-box; }"), "");
   check("P2.2: dashboard segment switch ships (chips, Needs-you badge, segment animation)", themeCss.text.includes(".seg-badge") && themeCss.text.includes(".dash-segs") && appJsL.text.includes("dashSegsHtml") && appJsL.text.includes("Needs you"), "");
   check("P2.3: the two wordy preview buttons are short now, captions carry the explanation", !appJsL.text.includes("Continue as this business: search the roster") && !appJsL.text.includes("Skip ahead: the business dashboard") && appJsL.text.includes("Search the roster") && appJsL.text.includes("Open dashboard"), "");
+  check("B-audit: gallery Remove pins top-right so it can never overlap Make cover on narrow tiles", themeCss.text.includes(".gal-btn.gal-del { left: auto; right: 6px; top: 6px; bottom: auto; }"), "");
 
   await stopServer();
 } catch (e) {

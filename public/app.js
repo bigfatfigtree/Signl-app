@@ -260,9 +260,23 @@ function setShareMeta(key, attr, content) {
   }
   el.setAttribute("content", content);
 }
+function setShareCanonical(href) {
+  // The server-rendered /c/ page already carries a canonical; the
+  // in-app shell just keeps it pointing at the profile on screen
+  // (and adds one, marked for cleanup, on shells served without).
+  let el = document.head.querySelector('link[rel="canonical"]');
+  if (!el) {
+    el = document.createElement("link");
+    el.setAttribute("rel", "canonical");
+    el.setAttribute("data-signl-meta", "1");
+    document.head.appendChild(el);
+  }
+  el.setAttribute("href", href);
+}
 function applyProfileShareShell(p, place) {
   document.title = `${p.name} (@${p.handle}) on SIGNL${place ? ` | ${place}` : ""}`;
-  const desc = `${p.name} is a founding creator on SIGNL in ${place || "their market"}${p.tierBand ? ` (${p.tierBand} tier)` : ""}. Local businesses comp creators for honest posts.`;
+  const desc = `${p.name} is a founding creator on SIGNL in ${place || "their market"}${p.tierBand ? ` (${p.tierBand} tier)` : ""}.${typeof p.localAudiencePct === "number" ? ` ${p.localAudiencePct}% of their audience is local.` : ""} Local businesses comp creators for honest posts.`;
+  setShareCanonical(`https://app.joinsignl.com/c/${p.handle}`);
   setShareMeta("og:title", "property", document.title);
   setShareMeta("og:description", "property", desc);
   setShareMeta("og:type", "property", "profile");
@@ -274,7 +288,7 @@ function applyProfileShareShell(p, place) {
 }
 function clearShareShell() {
   document.title = DEFAULT_PAGE_TITLE;
-  document.head.querySelectorAll("meta[data-signl-meta]").forEach((el) => el.remove());
+  document.head.querySelectorAll("meta[data-signl-meta], link[data-signl-meta]").forEach((el) => el.remove());
 }
 
 async function renderPublicProfile() {
