@@ -115,6 +115,23 @@ function paidMath(rate) {
     platformFee: Math.round(r * (PAID_LANE.feePctTotal / 100) * 100) / 100,
   };
 }
+// V5 money discipline (Jeff, 2026-10-25), the server twin of the
+// client's fmtMoney/fmtPrice: computed amounts and caps stated in
+// sentences render with thousands separators + exactly two
+// decimals (fmtMoneyS: $145.50); whole-dollar prices render clean
+// (fmtPriceS: $150) and fall back to fmtMoneyS when a value
+// actually carries cents. No server string ever emits a single
+// decimal or a dropped trailing zero again.
+function fmtMoneyS(n) {
+  if (n === null || n === undefined || !Number.isFinite(Number(n))) return "n/a";
+  return Number(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function fmtPriceS(n) {
+  if (n === null || n === undefined || !Number.isFinite(Number(n))) return "n/a";
+  const v = Number(n);
+  if (Math.round(v * 100) / 100 === Math.round(v)) return Math.round(v).toLocaleString("en-US");
+  return fmtMoneyS(v);
+}
 // Managed-plan businesses carry a monthly talent budget: a
 // spending cap + authorization the SIGNL coordinator spends on
 // paid creator bookings. It is NOT a held deposit; each booking
@@ -4696,7 +4713,7 @@ function staffNoticeEmail(creator, booking, trigger) {
       "",
       `Creator: ${creator.name} (@${c.handle || ""})`,
       `Photo: ${photo}`,
-      `Comp: ${booking.whatComped} (cap $${booking.dollarCap})`,
+      `Comp: ${booking.whatComped} (cap $${fmtMoneyS(booking.dollarCap)})`,
       `Booking code: ${booking.code}`,
       "",
       "How it works: the creator shows this code, you redeem it in the app at the Counter tab, and their 48 hour post clock starts at that moment. Ring the comp in your own system the way you normally do; SIGNL never touches your register.",
@@ -6929,7 +6946,7 @@ async function route(event) {
         } else {
           const rate = Math.round(Number(b.paidRate) * 100) / 100;
           if (!Number.isFinite(rate) || rate < PAID_LANE.minRate) {
-            return err(400, `Your paid rate must be at least $${PAID_LANE.minRate}, or left blank for no paid bookings. Below that, the payment processing and support cost more than the booking is worth.`);
+            return err(400, `Your paid rate must be at least $${fmtPriceS(PAID_LANE.minRate)}, or left blank for no paid bookings. Below that, the payment processing and support cost more than the booking is worth.`);
           }
           if (rate > 100000) return err(400, "That rate is too large to list. Set the rate a business actually books at.");
           changes.paidRate = [c.paidRate == null ? null : c.paidRate, rate];
@@ -8328,7 +8345,7 @@ async function route(event) {
       let dollarCap = parseInt(b.dollarCap, 10);
       if (kind === "paid") {
         cashRate = Math.round(Number(b.cashRate || b.dollarCap) * 100) / 100;
-        if (!Number.isFinite(cashRate) || cashRate < PAID_LANE.minRate) return err(400, `A cash offer starts at $${PAID_LANE.minRate}. Below that, the payment processing and support cost more than the booking is worth. Comp offers have no minimum beyond the dignity floor for the tiers you target.`);
+        if (!Number.isFinite(cashRate) || cashRate < PAID_LANE.minRate) return err(400, `A cash offer starts at $${fmtPriceS(PAID_LANE.minRate)}. Below that, the payment processing and support cost more than the booking is worth. Comp offers have no minimum beyond the dignity floor for the tiers you target.`);
         dollarCap = Math.round(cashRate);
       } else if (!dollarCap || dollarCap <= 0) {
         return err(400, "Dollar cap must be a positive number");
@@ -8357,10 +8374,10 @@ async function route(event) {
         // offers warn in the composer only.
         if (!targetCreator && targetTiers) {
           const block = dignityBlock(dollarCap, targetTiers);
-          if (block) return err(400, `A $${dollarCap} comp is below the dignity floor for ${block.tier} (floor $${block.floor}, typical $${COMP_GUIDANCE[block.tier].typicalLow} to $${COMP_GUIDANCE[block.tier].typicalHigh}). Raise the comp value to $${block.floor} or more, or remove ${block.tier} from who can apply. Token comps burn the roster's trust, so SIGNL does not send them.`);
+          if (block) return err(400, `A $${fmtMoneyS(dollarCap)} comp is below the dignity floor for ${block.tier} (floor $${fmtPriceS(block.floor)}, typical $${fmtPriceS(COMP_GUIDANCE[block.tier].typicalLow)} to $${fmtPriceS(COMP_GUIDANCE[block.tier].typicalHigh)}). Raise the comp value to $${fmtPriceS(block.floor)} or more, or remove ${block.tier} from who can apply. Token comps burn the roster's trust, so SIGNL does not send them.`);
         }
         if (!targetCreator && !targetTiers && dollarCap < COMP_GUIDANCE.Neighbors.floor) {
-          return err(400, `A comp offer starts at $${COMP_GUIDANCE.Neighbors.floor} of value. Below that it is a token, and token comps burn the roster's trust. Raise the value, or send a direct offer to one creator instead.`);
+          return err(400, `A comp offer starts at $${fmtPriceS(COMP_GUIDANCE.Neighbors.floor)} of value. Below that it is a token, and token comps burn the roster's trust. Raise the value, or send a direct offer to one creator instead.`);
         }
       }
       // Covers + paid brief (refinement bundle, 2026-10-20): a comp
@@ -8505,7 +8522,7 @@ async function route(event) {
       if (!(await isMarketLive(user.market))) return err(403, `Offers go live when your market opens. ${marketTalkName(user.market)} opens to businesses in the next ${LAUNCH_WINDOW_TEXT}; your draft is saved and ready to publish that day.`);
       if (kindOf(offer) === "comp" && Array.isArray(offer.targetTiers) && offer.targetTiers.length) {
         const block = dignityBlock(offer.dollarCap, offer.targetTiers);
-        if (block) return err(400, `A $${offer.dollarCap} comp is below the dignity floor for ${block.tier} (floor $${block.floor}). Raise the comp value or remove ${block.tier} from who can apply before publishing.`);
+        if (block) return err(400, `A $${fmtMoneyS(offer.dollarCap)} comp is below the dignity floor for ${block.tier} (floor $${fmtPriceS(block.floor)}). Raise the comp value or remove ${block.tier} from who can apply before publishing.`);
       }
       const ts = nowIso();
       offer.status = "open";
@@ -8538,16 +8555,16 @@ async function route(event) {
         if (!cap || cap <= 0) return err(400, "Dollar cap must be a positive number");
         if (Array.isArray(offer.targetTiers) && offer.targetTiers.length) {
           const block = dignityBlock(cap, offer.targetTiers);
-          if (block) return err(400, `A $${cap} comp is below the dignity floor for ${block.tier} (floor $${block.floor}). Raise the comp value to $${block.floor} or more, or remove ${block.tier} from who can apply.`);
+          if (block) return err(400, `A $${fmtMoneyS(cap)} comp is below the dignity floor for ${block.tier} (floor $${fmtPriceS(block.floor)}). Raise the comp value to $${fmtPriceS(block.floor)} or more, or remove ${block.tier} from who can apply.`);
         } else if (laneOf(offer) === "open" && cap < COMP_GUIDANCE.Neighbors.floor) {
-          return err(400, `A comp offer starts at $${COMP_GUIDANCE.Neighbors.floor} of value.`);
+          return err(400, `A comp offer starts at $${fmtPriceS(COMP_GUIDANCE.Neighbors.floor)} of value.`);
         }
         changes.dollarCap = [offer.dollarCap, cap];
         offer.dollarCap = cap;
       }
       if (b.cashRate !== undefined && kindOf(offer) === "paid") {
         const rate = Math.round(Number(b.cashRate) * 100) / 100;
-        if (!Number.isFinite(rate) || rate < PAID_LANE.minRate) return err(400, `A cash offer starts at $${PAID_LANE.minRate}.`);
+        if (!Number.isFinite(rate) || rate < PAID_LANE.minRate) return err(400, `A cash offer starts at $${fmtPriceS(PAID_LANE.minRate)}.`);
         changes.cashRate = [offer.cashRate, rate];
         offer.cashRate = rate;
         offer.dollarCap = Math.round(rate);
@@ -8567,7 +8584,7 @@ async function route(event) {
       if (b.targetTiers !== undefined && kindOf(offer) === "comp") {
         const valid = Array.isArray(b.targetTiers) ? b.targetTiers.filter((t) => Object.keys(COMP_GUIDANCE).includes(t)) : [];
         const block = dignityBlock(offer.dollarCap, valid.length ? valid : null);
-        if (block) return err(400, `A $${offer.dollarCap} comp is below the dignity floor for ${block.tier} (floor $${block.floor}). Raise the comp value or remove ${block.tier} from who can apply.`);
+        if (block) return err(400, `A $${fmtMoneyS(offer.dollarCap)} comp is below the dignity floor for ${block.tier} (floor $${fmtPriceS(block.floor)}). Raise the comp value or remove ${block.tier} from who can apply.`);
         offer.targetTiers = valid.length ? valid : null;
       }
       if (b.covers !== undefined && kindOf(offer) === "comp") {
@@ -8689,7 +8706,7 @@ async function route(event) {
       if (offer.applicationsCloseAt && Date.now() > Date.parse(offer.applicationsCloseAt)) return err(409, "Applications for this offer have closed");
       const tier = normalizeTierBand(user.creator ? user.creator.tierBand : "");
       if (Array.isArray(offer.targetTiers) && offer.targetTiers.length && !offer.targetTiers.includes(tier)) return err(403, `This offer is for ${offer.targetTiers.join(", ")} creators. Your tier is ${tier}.`);
-      if (kindOf(offer) === "comp" && !(Array.isArray(offer.targetTiers) && offer.targetTiers.length) && Number(offer.dollarCap) < (COMP_GUIDANCE[tier] || {}).floor) return err(403, `This comp is below your tier's guidance floor ($${(COMP_GUIDANCE[tier] || {}).floor}), so it is not shown to ${tier}. That floor exists to protect the roster from token comps.`);
+      if (kindOf(offer) === "comp" && !(Array.isArray(offer.targetTiers) && offer.targetTiers.length) && Number(offer.dollarCap) < (COMP_GUIDANCE[tier] || {}).floor) return err(403, `This comp is below your tier's guidance floor ($${fmtPriceS((COMP_GUIDANCE[tier] || {}).floor)}), so it is not shown to ${tier}. That floor exists to protect the roster from token comps.`);
       if (kindOf(offer) === "comp" && user.creator && user.creator.compOpen === false) return err(403, "This is a comp offer and your profile is set to paid visits only. Turn comp visits back on under Profile if you want comp offers.");
       const apps = await allApplications();
       const mine = apps.filter((a) => a.offerId === offer.id);
@@ -9087,9 +9104,9 @@ async function route(event) {
     await store.set(`ccode:${creatorCode}`, { bookingId: booking.id });
     await logEvent({ type: "paid_booking_created", actorId: user.id, actorRole: "business", subjectId: booking.id, market: booking.market, data: { creatorId: creator.id, rate: math.rate, businessTotal: math.businessTotal, creatorNet: math.creatorNet, platformFee: math.platformFee, escrowState: "held", hasBrief: !!booking.paidBrief } });
     await notifyMilestone(creator.id, "paid_booking_received",
-      `${booking.businessName || "A business"} booked you at your listed rate of $${math.rate}. $${math.creatorNet} is recorded as held by SIGNL until your post is live. Visit code ${code}.`,
-      `Paid booking: ${booking.businessName || "a business"} booked you at $${math.rate}`,
-      [`${booking.businessName || "A business"} booked you at your listed rate of $${math.rate}.`, "", `${PAID_LANE.paymentNote} Your share is $${math.creatorNet} of the $${math.rate} rate.`, "", `Your visit code is ${code}: show it at the counter when you visit. The visit window is 7 days from booking.`, "", "Open SIGNL: https://app.joinsignl.com", "", "Jeff", "Founder, SIGNL"].join("\n"),
+      `${booking.businessName || "A business"} booked you at your listed rate of $${fmtPriceS(math.rate)}. $${fmtMoneyS(math.creatorNet)} is recorded as held by SIGNL until your post is live. Visit code ${code}.`,
+      `Paid booking: ${booking.businessName || "a business"} booked you at $${fmtPriceS(math.rate)}`,
+      [`${booking.businessName || "A business"} booked you at your listed rate of $${fmtPriceS(math.rate)}.`, "", `${PAID_LANE.paymentNote} Your share is $${fmtMoneyS(math.creatorNet)} of the $${fmtPriceS(math.rate)} rate.`, "", `Your visit code is ${code}: show it at the counter when you visit. The visit window is 7 days from booking.`, "", "Open SIGNL: https://app.joinsignl.com", "", "Jeff", "Founder, SIGNL"].join("\n"),
       { bookingId: booking.id });
     await logEvent({ type: "booking_code_issued", actorId: user.id, actorRole: "business", subjectId: booking.id, market: booking.market, data: { code, offerId: null, businessId: user.id, dollarCap: booking.dollarCap, kind: "paid", hasBrief: !!booking.paidBrief } });
     return json(201, { booking: await withPostState(booking) });
@@ -9571,9 +9588,9 @@ async function route(event) {
     await logEvent({ type: "code_redemptions_reported", actorId: user.id, actorRole: user.role, subjectId: booking.id, market: booking.market, data: { creatorId: booking.creatorId, businessId: booking.businessId, creatorCode: booking.creatorCode || null, count, basketTotal: booking.redemptions.basketTotal, discountPct, compCostActual: typeof booking.compCostActual === "number" ? booking.compCostActual : null } });
     if (user.id === booking.businessId) {
       await notifyMilestone(booking.creatorId, "register_tally",
-        `${booking.businessName || "The business"} reports ${count} customer${count === 1 ? "" : "s"} used your code ${booking.creatorCode || ""} ($${booking.redemptions.basketTotal} rung up). That is tracked register spend from your post.`,
-        `Your code drove $${booking.redemptions.basketTotal} at ${booking.businessName || "the register"}`,
-        [`${booking.businessName || "The business"} just reported their register tally for your visit: ${count} customer${count === 1 ? "" : "s"} used your code ${booking.creatorCode || ""}, $${booking.redemptions.basketTotal} rung up in total.`, "", "That tracked register spend sits on your booking and your track record: it is the floor of what your post provably drove.", "", "Open SIGNL: https://app.joinsignl.com", "", "Jeff", "Founder, SIGNL"].join("\n"),
+        `${booking.businessName || "The business"} reports ${count} customer${count === 1 ? "" : "s"} used your code ${booking.creatorCode || ""} ($${fmtMoneyS(booking.redemptions.basketTotal)} rung up). That is tracked register spend from your post.`,
+        `Your code drove $${fmtMoneyS(booking.redemptions.basketTotal)} at ${booking.businessName || "the register"}`,
+        [`${booking.businessName || "The business"} just reported their register tally for your visit: ${count} customer${count === 1 ? "" : "s"} used your code ${booking.creatorCode || ""}, $${fmtMoneyS(booking.redemptions.basketTotal)} rung up in total.`, "", "That tracked register spend sits on your booking and your track record: it is the floor of what your post provably drove.", "", "Open SIGNL: https://app.joinsignl.com", "", "Jeff", "Founder, SIGNL"].join("\n"),
         { bookingId: booking.id });
     }
     return json(200, { booking: await withPostState(booking) });

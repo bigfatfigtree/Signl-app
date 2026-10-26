@@ -306,7 +306,7 @@ async function renderPublicProfile() {
       <div class="cc-photo${p.photoUrl ? "" : " no-photo"}">
         ${p.photoUrl ? `<img src="${esc(p.photoUrl)}" alt="">` : `<div class="cc-mono"><span>${initial}</span></div>`}
         ${p.tierBand ? `<span class="cc-tier">${esc(p.tierBand)}</span>` : ""}
-        ${p.paidRate ? `<span class="cc-paid">Paid bookings: $${esc(String(p.paidRate))}</span>` : ""}
+        ${p.paidRate ? `<span class="cc-paid">Paid bookings: $${fmtPrice(p.paidRate)}</span>` : ""}
       </div>
       <div class="cc-body">
         <div class="cc-id">
@@ -340,8 +340,8 @@ async function renderPublicProfile() {
     ${p.categories && p.categories.length ? `<p class="small">${p.categories.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
     ${p.isRealtor && p.farmAreas && p.farmAreas.length ? `<p class="small">Neighborhoods: ${p.farmAreas.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
     ${p.compCategories && p.compCategories.length ? `<p class="small muted">Open to comps: ${p.compCategories.map(esc).join(", ")}</p>` : ""}
-    <p class="small">${p.paidRate ? `<span class="badge tier">Paid bookings: $${esc(String(p.paidRate))}</span> ` : ""}${p.compOpen === false ? `<span class="badge warn">Paid visits only</span>` : `<span class="badge info">Open to comp visits</span>`}</p>
-    ${p.paidRate ? `<p class="small muted">Books at $${esc(String(p.paidRate))} &middot; creator keeps 97% &middot; held until the post is live.</p>` : ""}
+    <p class="small">${p.paidRate ? `<span class="badge tier">Paid bookings: $${fmtPrice(p.paidRate)}</span> ` : ""}${p.compOpen === false ? `<span class="badge warn">Paid visits only</span>` : `<span class="badge info">Open to comp visits</span>`}</p>
+    ${p.paidRate ? `<p class="small muted">Books at $${fmtPrice(p.paidRate)} &middot; creator keeps 97% &middot; held until the post is live.</p>` : ""}
     </div>
     ${bestWorkHtml(p.bestWork)}
     ${trackRecordHtml(p)}
@@ -665,6 +665,21 @@ function fmtMoney(n) {
   return Number(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+// V5 money discipline (Jeff, 2026-10-25): ONE shape everywhere.
+// fmtMoney is for computed amounts and caps stated in sentences:
+// thousands separators + exactly two decimals ($145.50,
+// $1,250.00). fmtPrice is for display prices — listed rates, plan
+// prices, big card anchors: clean whole dollars when the value is
+// whole ($150), and it falls back to fmtMoney the moment a value
+// actually carries cents, so no amount anywhere ever renders
+// with a single decimal or a dropped trailing zero again.
+function fmtPrice(n) {
+  if (n === null || n === undefined || !Number.isFinite(Number(n))) return "n/a";
+  const v = Number(n);
+  if (Math.round(v * 100) / 100 === Math.round(v)) return Math.round(v).toLocaleString("en-US");
+  return fmtMoney(v);
+}
+
 // ---------- audience stacking (Jeff, 2026-10-19) ----------
 // A creator's audience is the SUM of their platforms, and every
 // surface shows the total plus where it lives. Payloads carry the
@@ -757,6 +772,144 @@ function stepField(id, delta, min, max) {
   el.dispatchEvent(new Event("input", { bubbles: true }));
   el.dispatchEvent(new Event("change", { bubbles: true }));
   return false;
+}
+
+// ---------- V5: drag bars + card stacks (Jeff, 2026-10-25) ----------
+// Drag bar: a range slider bound to the SAME number input the V4
+// stepper drove. The number input stays the value readout (big,
+// borderless) and stays typeable; sliding writes its value and
+// dispatches its real input/change events, so validation, draft
+// sync and coach logic run exactly as they did with the stepper.
+function dragBarHtml(id, min, max, inputAttrs) {
+  // inputAttrs carries the field's own value/placeholder/handlers
+  // verbatim (oninput/onblur as the stepper-era input had them);
+  // dragSync rides along so typing moves the bar. The number
+  // input gets no max attribute: typing past the bar's range
+  // stays legal, the bar just pins at its end.
+  const attrs = String(inputAttrs || "").replace(/oninput="([^"]*)"/, `oninput="$1;dragSync('${id}')"`);
+  return `<div class="dragbar"><input type="range" class="drag-range" data-dragfor="${esc(id)}" min="${min}" max="${max}" step="1" aria-label="Drag to set the value" oninput="dragSlide(this)"><span class="drag-val"><input type="number" id="${esc(id)}" min="${min}" ${attrs}></span><span class="drag-minmax"><span>${min}</span><span>${max}</span></span></div>`;
+}
+function dragSync(id) {
+  const num = document.getElementById(id);
+  const bar = document.querySelector(`.drag-range[data-dragfor="${id}"]`);
+  if (!num || !bar) return;
+  let v = parseInt(num.value, 10);
+  if (!Number.isFinite(v)) v = parseInt(bar.min, 10) || 0;
+  v = Math.max(parseInt(bar.min, 10), Math.min(parseInt(bar.max, 10), v));
+  bar.value = String(v);
+  const pct = (v - Number(bar.min)) / Math.max(1, Number(bar.max) - Number(bar.min));
+  bar.style.setProperty("--fill", (pct * 100).toFixed(1) + "%");
+}
+function dragSlide(range) {
+  const id = range.getAttribute("data-dragfor");
+  const num = document.getElementById(id);
+  if (!num) return false;
+  num.value = range.value;
+  dragSync(id);
+  // The events the number input's own handlers expect (the same
+  // dispatch the V4 stepper performed).
+  num.dispatchEvent(new Event("input", { bubbles: true }));
+  num.dispatchEvent(new Event("change", { bubbles: true }));
+  return false;
+}
+function dragInit(root) {
+  (root || document).querySelectorAll(".drag-range").forEach((r) => dragSync(r.getAttribute("data-dragfor")));
+}
+
+// Card stacks (Discover + Offers): one card at a time, pointer
+// drag with a slight rotate, spring back under the threshold,
+// fly off past it. Buttons run the same animations. The stack is
+// presentation only: pass just advances locally, and the primary
+// action calls the exact handler the list view's button called.
+// Drags capture only when they start on the card itself, so page
+// scroll and the bottom nav are untouched.
+const stackState = {};
+function stackKeyOf(el) { return el.closest("[data-stack]").getAttribute("data-stack"); }
+function stackAdvance(key, dir) {
+  const s = stackState[key];
+  if (!s) return;
+  s.idx += 1;
+  s.passed += dir === "pass" ? 1 : 0;
+  const wrap = document.querySelector(`[data-stack="${key}"]`);
+  if (wrap) renderStack(wrap);
+}
+function renderStack(wrap) {
+  const key = wrap.getAttribute("data-stack");
+  const s = stackState[key];
+  if (!s) return;
+  const total = s.items.length;
+  const pos = document.querySelector(`[data-stackpos="${key}"]`);
+  if (s.idx >= total) {
+    wrap.innerHTML = s.endHtml(s.passed, total);
+    if (pos) pos.textContent = total ? `${total} of ${total}` : "";
+    return;
+  }
+  if (pos) pos.textContent = `${s.idx + 1} of ${total}`;
+  const behind = s.idx + 1 < total ? `<div class="stk-behind" aria-hidden="true">${s.cardHtml(s.items[s.idx + 1], s.idx + 1)}</div>` : "";
+  wrap.innerHTML = behind + `<div class="stk-card">${s.cardHtml(s.items[s.idx], s.idx)}</div>`
+    + `<div class="stk-actions"><button type="button" class="stk-pass" aria-label="Pass" onclick="stackButton('${key}','pass')">&#10005;</button><button type="button" class="stk-go" onclick="stackButton('${key}','go')">${esc(s.goLabelFor ? s.goLabelFor(s.items[s.idx]) : s.goLabel)}</button></div>`;
+  const card = wrap.querySelector(".stk-card");
+  if (card) attachStackDrag(wrap, card);
+}
+function stackButton(key, dir) {
+  const wrap = document.querySelector(`[data-stack="${key}"]`);
+  const s = stackState[key];
+  if (!wrap || !s) return false;
+  const card = wrap.querySelector(".stk-card");
+  const item = s.items[s.idx];
+  const finish = () => {
+    if (dir === "go") s.onGo(item);
+    else { s.onPass(item); stackAdvance(key, "pass"); }
+  };
+  if (card && !stackReducedMotion()) {
+    card.style.transition = "transform .28s ease, opacity .28s ease";
+    card.style.transform = `translateX(${dir === "go" ? 130 : -130}%) rotate(${dir === "go" ? 7 : -7}deg)`;
+    card.style.opacity = "0";
+    setTimeout(finish, 240);
+  } else finish();
+  return false;
+}
+function stackReducedMotion() {
+  try { return window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch (e) { return false; }
+}
+function attachStackDrag(wrap, card) {
+  let sx = 0, dx = 0, dragging = false, pid = null;
+  card.addEventListener("pointerdown", (e) => {
+    if (e.target.closest("button, a, input, details, summary, form")) return;
+    sx = e.clientX; dx = 0; dragging = true; pid = e.pointerId;
+    try { card.setPointerCapture(pid); } catch (err) { /* capture is an enhancement */ }
+    card.style.transition = "none";
+  });
+  card.addEventListener("pointermove", (e) => {
+    if (!dragging || e.pointerId !== pid) return;
+    dx = e.clientX - sx;
+    card.style.transform = `translateX(${dx}px) rotate(${Math.max(-8, Math.min(8, dx / 16))}deg)`;
+  });
+  const end = (e) => {
+    if (!dragging || (e && e.pointerId !== pid)) return;
+    dragging = false;
+    const key = stackKeyOf(card);
+    const s = stackState[key];
+    if (!s) return;
+    if (Math.abs(dx) > 90 && !stackReducedMotion()) {
+      const dir = dx > 0 ? "go" : "pass";
+      const item = s.items[s.idx];
+      card.style.transition = "transform .25s ease, opacity .25s ease";
+      card.style.transform = `translateX(${dir === "go" ? 130 : -130}%) rotate(${dir === "go" ? 7 : -7}deg)`;
+      card.style.opacity = "0";
+      setTimeout(() => { if (dir === "go") s.onGo(item); else { s.onPass(item); stackAdvance(key, "pass"); } }, 220);
+    } else if (Math.abs(dx) <= 8) {
+      card.style.transition = "transform .2s ease";
+      card.style.transform = "";
+      setTimeout(() => { if (s.onTap) s.onTap(s.items[s.idx]); }, 30);
+    } else {
+      card.style.transition = "transform .25s ease";
+      card.style.transform = "";
+    }
+    dx = 0;
+  };
+  card.addEventListener("pointerup", end);
+  card.addEventListener("pointercancel", end);
 }
 // Local audience % estimator help (audit F1 mitigation, 2026-10-22):
 // the one canonical helper text under every local % field (full
@@ -856,10 +1009,10 @@ function dealRowsHtml(o) {
   const main = [];
   const terms = [];
   if (o.kind === "paid") {
-    const net = o.paidMath && o.paidMath.creatorNet !== undefined && o.paidMath.creatorNet !== null && o.paidMath.creatorNet !== "" ? `$${o.paidMath.creatorNet} (97%)` : "97%";
-    main.push(["You get paid", `$${o.cashRate} &middot; you keep ${net}`]);
+    const net = o.paidMath && o.paidMath.creatorNet !== undefined && o.paidMath.creatorNet !== null && o.paidMath.creatorNet !== "" ? `$${fmtMoney(o.paidMath.creatorNet)} (97%)` : "97%";
+    main.push(["You get paid", `$${fmtPrice(o.cashRate)} &middot; you keep ${net}`]);
   } else {
-    main.push(["You get", `${esc(o.whatComped)} &middot; $${o.dollarCap} cap &middot; ${Number(o.covers) === 2 ? "covers 2" : "covers you"}`]);
+    main.push(["You get", `${esc(o.whatComped)} &middot; $${fmtMoney(o.dollarCap)} cap &middot; ${Number(o.covers) === 2 ? "covers 2" : "covers you"}`]);
   }
   if (o.includes) main.push(["Included", esc(o.includes)]);
   if (o.experience) main.push(["Experience", esc(o.experience)]);
@@ -874,8 +1027,8 @@ function dealPlainWordsHtml(o) {
   return `<details class="deal-details"><summary>The deal, in plain words</summary><div class="dd-body">
     <div class="showcase-block">
       ${o.kind === "paid"
-        ? `<p class="small"><strong>You get paid:</strong> $${o.cashRate} for this paid booking, on the deliverables set in its terms. You keep $${o.paidMath ? o.paidMath.creatorNet : ""} (97% of the rate); SIGNL holds the payment and releases it when your post is live.</p>`
-        : `<p class="small"><strong>You get:</strong> ${esc(o.whatComped)} (comp cap $${o.dollarCap}) &middot; ${coversLine(o)}</p>`}
+        ? `<p class="small"><strong>You get paid:</strong> $${fmtPrice(o.cashRate)} for this paid booking, on the deliverables set in its terms. You keep $${o.paidMath ? fmtMoney(o.paidMath.creatorNet) : ""} (97% of the rate); SIGNL holds the payment and releases it when your post is live.</p>`
+        : `<p class="small"><strong>You get:</strong> ${esc(o.whatComped)} (comp cap $${fmtMoney(o.dollarCap)}) &middot; ${coversLine(o)}</p>`}
       ${o.kind === "paid" && o.paidBrief ? `<p class="small"><strong>Key points from the business:</strong> ${esc(o.paidBrief)}</p>` : ""}
       ${o.includes ? `<p class="small"><strong>Included:</strong> ${esc(o.includes)}</p>` : ""}
       ${o.experience ? `<p class="small"><strong>The experience:</strong> ${esc(o.experience)}</p>` : ""}
@@ -2010,7 +2163,7 @@ async function doRegisterCreator(e) {
 function renderForBusinesses() {
   const plans = state.boot.plans.map((p, i) => `
     <div class="plan-card ${i === 0 ? "selected" : ""}" id="plan-${esc(p.id)}" onclick="selectPlan('${esc(p.id)}')">
-      <div class="price">$${p.priceMonthly}<span class="small muted">/mo</span></div>
+      <div class="price">$${fmtPrice(p.priceMonthly)}<span class="small muted">/mo</span></div>
       <strong>${esc(p.name)}</strong>
       <p class="small muted">${p.minMonths}-month minimum.</p>
       <ul>${p.features.map((f) => `<li>${esc(f)}</li>`).join("")}</ul>
@@ -2478,7 +2631,7 @@ function ladderHtml(u) {
 function paidLaneBadgesHtml(p) {
   if (!p) return "";
   let out = "";
-  if (p.paidRate) out += ` <span class="badge tier">Paid bookings: $${esc(String(p.paidRate))}</span>`;
+  if (p.paidRate) out += ` <span class="badge tier">Paid bookings: $${fmtPrice(p.paidRate)}</span>`;
   out += p.compOpen === false
     ? ` <span class="badge warn">Paid visits only</span>`
     : ` <span class="badge info">Open to comp visits</span>`;
@@ -2530,9 +2683,9 @@ function bookPaidVisit(creatorId) {
   el.innerHTML = `
   <div class="sheet" role="dialog" aria-label="Book a paid visit">
     <strong>Book a paid visit with ${esc(c ? c.name : "this creator")}</strong>
-    <p class="small" style="margin:10px 0 2px">Listed rate: <strong>$${esc(String(rate))}</strong></p>
-    <p class="small" style="margin:2px 0">You pay <strong>$${total}</strong> (rate + 3%)</p>
-    <p class="small" style="margin:2px 0">They keep <strong>$${net}</strong> (97%)</p>
+    <p class="small" style="margin:10px 0 2px">Listed rate: <strong>$${fmtPrice(rate)}</strong></p>
+    <p class="small" style="margin:2px 0">You pay <strong>$${fmtMoney(total)}</strong> (rate + 3%)</p>
+    <p class="small" style="margin:2px 0">They keep <strong>$${fmtMoney(net)}</strong> (97%)</p>
     <p class="small muted">No card is charged in the app yet. This records the booking and holds the amount in the app ledger. It is released after the post is live and the 48 hour hold passes.</p>
     <div class="field"><label>Key points for the creator (optional)</label><textarea id="paid-brief" rows="3" maxlength="500" placeholder="What to feature, names, dates"></textarea><p class="small muted">${PAID_BRIEF_GUIDANCE}</p></div>
     <button class="btn" style="width:100%" id="paid-sheet-book">Book paid visit</button>
@@ -2566,7 +2719,7 @@ async function previewPaidBooking(creatorId) {
   try {
     const data = await api("POST", "/admin/preview/paid-booking", { creatorId });
     const bk = data.booking;
-    alert(`PREVIEW paid booking (simulation)\n\nCreator rate: $${bk.rate}\nYou pay: $${bk.businessTotal} (rate + 3%)\nCreator keeps: $${bk.creatorNet} (97% of their rate)\nSIGNL fee: $${bk.platformFee} total, split evenly\nEscrow: held by SIGNL until the post is live\n\n${bk.paymentNote}\n${bk.note}`);
+    alert(`PREVIEW paid booking (simulation)\n\nCreator rate: $${fmtPrice(bk.rate)}\nYou pay: $${fmtMoney(bk.businessTotal)} (rate + 3%)\nCreator keeps: $${fmtMoney(bk.creatorNet)} (97% of their rate)\nSIGNL fee: $${fmtMoney(bk.platformFee)} total, split evenly\nEscrow: held by SIGNL until the post is live\n\n${bk.paymentNote}\n${bk.note}`);
   } catch (err) { alert(err.message); }
 }
 
@@ -2676,7 +2829,7 @@ function creatorProfileDetailHtml(c, preview) {
       <div class="cc-photo${c.photoUrl ? "" : " no-photo"}">
         ${c.photoUrl ? `<img src="${esc(c.photoUrl)}" alt="">` : `<div class="cc-mono"><span>${initial}</span></div>`}
         ${p.tierBand ? `<span class="cc-tier">${esc(p.tierBand)}</span>` : ""}
-        ${p.paidRate ? `<span class="cc-paid">Paid bookings: $${esc(String(p.paidRate))}</span>` : ""}
+        ${p.paidRate ? `<span class="cc-paid">Paid bookings: $${fmtPrice(p.paidRate)}</span>` : ""}
       </div>
       <div class="cc-body">
         <div class="cc-id">
@@ -2715,10 +2868,10 @@ function creatorProfileDetailHtml(c, preview) {
     ${creatorShowcaseHtml(c)}
     <div class="cta-row" style="justify-content:flex-start">
       ${preview
-        ? `<button class="btn" onclick="previewStartOffer('${c.userId}')">Send this creator an offer (preview)</button>${p.paidRate ? ` <button class="btn ghost" onclick="previewPaidBooking('${c.userId}')">Preview paid booking ($${esc(String(p.paidRate))})</button>` : ""}`
-        : `<button class="btn" onclick="startOffer('${c.userId}')">Send offer</button>${p.paidRate ? ` <button class="btn" onclick="bookPaidVisit('${c.userId}')">Book paid visit ($${esc(String(p.paidRate))})</button>` : ""} <button class="btn ghost" onclick="openThread('${c.userId}')">Message</button>`}
+        ? `<button class="btn" onclick="previewStartOffer('${c.userId}')">Send this creator an offer (preview)</button>${p.paidRate ? ` <button class="btn ghost" onclick="previewPaidBooking('${c.userId}')">Preview paid booking ($${fmtPrice(p.paidRate)})</button>` : ""}`
+        : `<button class="btn" onclick="startOffer('${c.userId}')">Send offer</button>${p.paidRate ? ` <button class="btn" onclick="bookPaidVisit('${c.userId}')">Book paid visit ($${fmtPrice(p.paidRate)})</button>` : ""} <button class="btn ghost" onclick="openThread('${c.userId}')">Message</button>`}
     </div>
-    ${p.paidRate ? `<p class="small muted">Paid bookings: $${esc(String(p.paidRate))} &middot; you pay rate + 3% &middot; they keep 97% &middot; held until the post is live.</p>` : ""}
+    ${p.paidRate ? `<p class="small muted">Paid bookings: $${fmtPrice(p.paidRate)} &middot; you pay rate + 3% &middot; they keep 97% &middot; held until the post is live.</p>` : ""}
     ${preview ? `<p class="small muted">Preview: an offer sent from here is a simulation. It never reaches ${esc(c.name)} and nothing is saved.</p>` : ""}
     ${preview && c.trackRecord && c.trackRecord.postsDelivered > 0 ? `
     <div class="showcase-block"><h4>Ad use (preview)</h4>
@@ -2778,7 +2931,7 @@ function creatorCard(c, viewer, opts) {
     <div class="cc-photo${c.photoUrl ? "" : " no-photo"}">
       ${c.photoUrl ? `<img src="${esc(c.photoUrl)}" alt="">` : `<div class="cc-mono"><span>${initial}</span></div>`}
       ${p.tierBand ? `<span class="cc-tier">${esc(p.tierBand)}</span>` : ""}
-      ${p.paidRate ? `<span class="cc-paid">Paid bookings: $${esc(String(p.paidRate))}</span>` : ""}
+      ${p.paidRate ? `<span class="cc-paid">Paid bookings: $${fmtPrice(p.paidRate)}</span>` : ""}
     </div>
     <div class="cc-id">
       <div class="cc-name">${esc(c.name)}</div>
@@ -2816,9 +2969,9 @@ function creatorCard(c, viewer, opts) {
       ${opts.preview
         ? `<button class="btn small-btn" onclick="previewViewCreator('${c.userId}')">View profile</button>
            <button class="btn small-btn ghost" onclick="previewStartOffer('${c.userId}')">Send preview offer</button>${p.paidRate ? `
-           <button class="btn small-btn ghost" onclick="previewPaidBooking('${c.userId}')">Preview paid booking ($${esc(String(p.paidRate))})</button>` : ""}`
+           <button class="btn small-btn ghost" onclick="previewPaidBooking('${c.userId}')">Preview paid booking ($${fmtPrice(p.paidRate)})</button>` : ""}`
         : `<button class="btn small-btn" onclick="startOffer('${c.userId}')">Send offer</button>${p.paidRate ? `
-           <button class="btn small-btn" onclick="bookPaidVisit('${c.userId}')">Book paid visit ($${esc(String(p.paidRate))})</button>` : ""}
+           <button class="btn small-btn" onclick="bookPaidVisit('${c.userId}')">Book paid visit ($${fmtPrice(p.paidRate)})</button>` : ""}
            <button class="btn small-btn ghost" onclick="openCreatorProfile('${c.userId}')">View profile</button>
            <button class="btn small-btn ghost" onclick="openThread('${c.userId}')">Message</button>
            <button class="heart ${c.isFavorite ? "on" : ""}" title="Save to favorites" onclick="toggleFav('${c.userId}')">${c.isFavorite ? "&#10084;" : "&#9825;"}</button>`}
@@ -2847,7 +3000,7 @@ function renderCreatorDash() {
     ${standingBannerHtml(u)}
     <div id="tab-body">${body}</div>`;
   if (tab === "Dashboard") loadCreatorHome();
-  if (tab === "Profile") { setTimeout(loadMyScore, 10); setTimeout(() => setupUniversityAutocomplete("p-university", "p-university-results"), 10); }
+  if (tab === "Profile") { setTimeout(loadMyScore, 10); setTimeout(() => { setupUniversityAutocomplete("p-university", "p-university-results"); dragInit(); }, 10); }
   if (tab === "Offers") loadCreatorOffers();
   if (tab === "My Visits") loadMyVisits("creator");
   if (tab === "Messages") loadThreads();
@@ -2877,7 +3030,7 @@ function renderFoundingHome() {
     <div id="tab-body">${body}</div>`;
   if (tab === "Dashboard") loadFoundingDashboard();
   if (tab === "Status") loadFoundingStatus();
-  if (tab === "Profile") { setTimeout(loadMyScore, 10); setTimeout(() => setupUniversityAutocomplete("p-university", "p-university-results"), 10); }
+  if (tab === "Profile") { setTimeout(loadMyScore, 10); setTimeout(() => { setupUniversityAutocomplete("p-university", "p-university-results"); dragInit(); }, 10); }
 }
 
 // The founding Dashboard tab: greeting, a compact founding status
@@ -3182,7 +3335,7 @@ function homeActiveVisitHtml(b) {
       ${lane ? `<span class="badge tier">Paid visit</span>` : `<span class="badge info">Comp visit</span>`}
     </div>
     <h3 class="home-h">${esc(b.title)} at ${esc(b.businessName)}</h3>
-    <p class="small muted" style="margin:0">Comp: ${esc(b.whatComped)} (cap $${b.dollarCap})${lane ? ` &middot; Your rate $${lane.rate}: you receive $${lane.creatorNet}` : ""}</p>
+    <p class="small muted" style="margin:0">Comp: ${esc(b.whatComped)} (cap $${fmtMoney(b.dollarCap)})${lane ? ` &middot; Your rate $${fmtPrice(lane.rate)}: you receive $${fmtMoney(lane.creatorNet)}` : ""}</p>
     ${homeTrackerHtml(b)}
     ${clockBlock}
     ${codeBlock}
@@ -3240,7 +3393,7 @@ function homeOpportunitiesHtml(offers, u) {
       ${dealPlainWordsHtml(o)}
       <p class="small muted">${o.windowMode === "thisweek" ? "Visit this week — ends Sunday" : "Within 7 days of accepting"} &middot; ${left} of ${o.spots} spot${o.spots === 1 ? "" : "s"} left.${o.visitWindow ? ` Note from the business: ${esc(o.visitWindow)}` : ""}</p>
       <div class="slot-foot">
-        <div><div class="slot-price">$${o.kind === "paid" ? o.cashRate : o.dollarCap}</div><div class="slot-note">${o.kind === "paid" ? "Rate" : "Comp value"}</div></div>
+        <div><div class="slot-price">$${fmtPrice(o.kind === "paid" ? o.cashRate : o.dollarCap)}</div><div class="slot-note">${o.kind === "paid" ? "Rate" : "Comp value"}</div></div>
         <div class="slot-actions">
           <form onsubmit="return homeAcceptOffer(event, '${o.id}')">
             <button class="btn small-btn book" type="submit">Accept</button>
@@ -3301,7 +3454,7 @@ function homePaidLaneHtml(creator, footerHtml) {
     <p class="ui-kicker">Paid lane</p>
     <h3 class="home-h">Comp and paid, your choice</h3>
     <div class="lrow"><span class="tg${compOpen ? "" : " off"}"></span><div><span class="lname">Comp visits</span> <span class="lline">— ${compOpen ? "on. Businesses can comp you for honest posts." : "off. You're paid-only — always fine."}</span></div></div>
-    <div class="lrow"><span class="tg${rate ? "" : " off"}"></span><div><span class="lname">Paid bookings</span> <span class="lline">— ${rate ? `your rate $${rate} &middot; you keep $${fmtMoney(keep)} (97%). Business pays $${fmtMoney(total)}.` : "not set. Set one in Profile (min $50)."}</span></div></div>
+    <div class="lrow"><span class="tg${rate ? "" : " off"}"></span><div><span class="lname">Paid bookings</span> <span class="lline">— ${rate ? `your rate $${fmtPrice(rate)} &middot; you keep $${fmtMoney(keep)} (97%). Business pays $${fmtMoney(total)}.` : "not set. Set one in Profile (min $50)."}</span></div></div>
     <p class="small muted">Recorded in the app, no card charged. Held until your post is live — released 48h after proof.</p>
     ${footerHtml || ""}
   </section>`;
@@ -3506,7 +3659,7 @@ function creatorProfileHtml(u) {
         </div>
         <p class="small muted">Total audience: <strong id="p-stack-total">${fmtNum(totalAudienceOf(c))}</strong> across every platform. Businesses see the total and the breakdown. Skip any platform you do not use (leave it at 0). Completing 3 or more platforms earns Momentum points.</p>
       </div>
-      <div class="field"><label>Max visits per week</label><div class="stepper"><button type="button" class="step-btn" aria-label="One fewer" onclick="return stepField('p-maxvisits',-1,1,7)">&minus;</button><input type="number" id="p-maxvisits" min="1" max="7" value="${c.maxVisitsPerWeek || 3}"><button type="button" class="step-btn" aria-label="One more" onclick="return stepField('p-maxvisits',1,1,7)">+</button></div><p class="small muted">Your pace, your call: 1 to 7 comped visits a week. At your max, offers still arrive but accepting waits until next week, and businesses see you as booked up this week.</p></div>
+      <div class="field"><label>Max visits per week</label>${dragBarHtml("p-maxvisits", 1, 7, `value="${c.maxVisitsPerWeek || 3}"`)}<p class="small muted">Your pace, your call: 1 to 7 comped visits a week. At your max, offers still arrive but accepting waits until next week, and businesses see you as booked up this week.</p></div>
       <div class="form-2col">
         <div class="field"><label>Typical post views</label><input type="number" id="p-avgviews" min="0" value="${c.avgViews || 0}"></div>
         <div class="field"><label>Your local reach (local audience share, %)</label><input type="number" id="p-localpct" min="0" max="100" value="${c.localAudiencePct === null || c.localAudiencePct === undefined ? "" : c.localAudiencePct}"><p class="small muted">${LOCAL_PCT_HELP}</p></div>
@@ -3797,7 +3950,7 @@ async function loadCreatorOffers() {
         <p class="small muted">${o.windowMode === "thisweek" ? "Redeem this week — ends Sunday" : "Redeem within 7 days of accepting"} &middot; no appointment needed.${o.visitWindow ? ` Note from the business: ${esc(o.visitWindow)}` : ""}</p>
         </div>
         <div class="slot-foot">
-          <div><div class="slot-price">$${o.kind === "paid" ? o.cashRate : o.dollarCap}</div><div class="slot-note">${o.kind === "paid" ? "Rate" : "Comp cap"}</div></div>
+          <div><div class="slot-price">$${fmtPrice(o.kind === "paid" ? o.cashRate : o.dollarCap)}</div><div class="slot-note">${o.kind === "paid" ? "Rate" : "Comp cap"}</div></div>
           <div class="slot-actions">
             <form onsubmit="return acceptOffer(event, '${o.id}')">
               <button class="btn book" type="submit">Accept</button>
@@ -3839,12 +3992,23 @@ async function loadOpenBoard() {
       el.innerHTML = `<div class="empty-state"><span class="es-badge"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z"/></svg></span><h3>Open offers in ${esc(marketTalkNameClient(state.user.market))}</h3><p>No open offers right now. New offers land here first.</p></div>`;
       return;
     }
+    state.openOffers = data.offers;
     el.innerHTML = `<h3>Open offers in ${esc(state.user.market)}</h3>
-    <p class="small muted">One tap applies — your profile card is the application.</p><div class="vx-stagger">` +
-    data.offers.map((o) => {
-      const rights = o.visitRights || rightsForVisit(o.kind);
-      const spotsLeft = Math.max(0, o.spots - (o.filledCount || 0));
-      return `
+    <p class="small muted">One tap applies — your profile card is the application.</p>
+    <div id="offers-toggle">${offersModeToggleHtml()}</div>
+    <div id="open-list"></div>`;
+    renderOpenBoard();
+  } catch (err) {
+    el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+  }
+}
+
+// One offer card, two surfaces: the V4 color-blocked feed card
+// renders unchanged in List mode and inside the stack in Cards
+// mode — same rows, same buttons, same handlers.
+function offerFeedCardHtml(o) {
+  const spotsLeft = Math.max(0, o.spots - (o.filledCount || 0));
+  return `
       <div class="card mb feed-card slot-card">
         <div class="slot-top">
           ${bizChipHtml(o.businessName)}
@@ -3864,7 +4028,7 @@ async function loadOpenBoard() {
         ${o.businessAbout ? `<p class="small muted">${esc(o.businessAbout)}</p>` : ""}
         </div>
         <div class="slot-foot">
-          <div><div class="slot-price">$${o.kind === "paid" ? o.cashRate : o.dollarCap}</div><div class="slot-note">${o.kind === "paid" ? "Rate" : "Comp value"}</div></div>
+          <div><div class="slot-price">$${fmtPrice(o.kind === "paid" ? o.cashRate : o.dollarCap)}</div><div class="slot-note">${o.kind === "paid" ? "Rate" : "Comp value"}</div></div>
           <div class="slot-actions">
             ${o.myApplication
               ? `<span><span class="badge info">Applied</span> <a href="#" onclick="document.getElementById('my-apps').scrollIntoView({behavior:'smooth'}); return false;">My Applications</a></span>`
@@ -3873,10 +4037,71 @@ async function loadOpenBoard() {
           </div>
         </div>
       </div>`;
-    }).join("") + `</div>`;
-  } catch (err) {
-    el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+}
+
+// ---------- V5: the Offers feed as a card stack (Jeff, 2026-10-25) ----------
+// Same stack model as Discover. Apply runs the exact apply call
+// (one tap, no added confirm — identical to the list button);
+// Pass hides the offer for this session only: there is NO
+// dismissal mechanism anywhere in the codebase for open offers
+// (decline exists only for direct offers), so passes live in
+// stackState and the end card offers "Show passed" to reset.
+function offersModeToggleHtml() {
+  const mode = state.offersMode || "cards";
+  return `<div class="view-toggle"><div class="vt-group"><button type="button" class="rchip${mode === "cards" ? " on" : ""}" onclick="setOffersMode('cards')">Cards</button><button type="button" class="rchip${mode === "list" ? " on" : ""}" onclick="setOffersMode('list')">List</button></div><span class="stack-pos" data-stackpos="offers"></span></div>`;
+}
+function setOffersMode(mode) {
+  state.offersMode = mode;
+  const tg = document.getElementById("offers-toggle");
+  if (tg) tg.innerHTML = offersModeToggleHtml();
+  renderOpenBoard();
+  return false;
+}
+function renderOpenBoard() {
+  const el = document.getElementById("open-list");
+  if (!el) return;
+  const all = state.openOffers || [];
+  if ((state.offersMode || "cards") === "list") {
+    const pos = document.querySelector('[data-stackpos="offers"]');
+    if (pos) pos.textContent = "";
+    el.innerHTML = `<div class="vx-stagger">${all.map((o) => offerFeedCardHtml(o)).join("")}</div>`;
+    return;
   }
+  if (!stackState.offers || stackState.offers.src !== all) {
+    stackState.offers = {
+      items: all, idx: 0, passed: 0, passedIds: new Set(), src: all,
+      cardHtml: (o) => offerFeedCardHtml(o),
+      goLabelFor: (o) => (o.myApplication ? "Applied" : "Apply"),
+      onGo: async (o) => {
+        if (o.myApplication) { stackAdvance("offers", "go"); return; }
+        try {
+          await api("POST", `/offers/${o.id}/apply`, {});
+          o.myApplication = true;
+          refreshBadges();
+          stackAdvance("offers", "go");
+          loadMyApplications();
+        } catch (err) {
+          alert(err.message);
+          const wrap = document.querySelector('[data-stack="offers"]');
+          if (wrap) renderStack(wrap);
+        }
+      },
+      onPass: (o) => { if (stackState.offers) stackState.offers.passedIds.add(o.id); },
+      onTap: null,
+      endHtml: (passed, total) => offersEndHtml(passed, total),
+    };
+  }
+  el.innerHTML = `<div class="stk-wrap" data-stack="offers"></div>`;
+  renderStack(el.firstElementChild);
+}
+function offersEndHtml(passed, total) {
+  return `<div class="stk-end"><h3>That's every open offer right now</h3><p class="small muted">You looked through ${total} offer${total === 1 ? "" : "s"}. New offers land here first, and your applications are tracked under My Applications below.</p><div class="stk-end-actions">${passed ? `<button type="button" class="btn ghost" onclick="offersShowPassed()">Show passed (${passed})</button>` : ""}<button type="button" class="btn" onclick="loadOpenBoard()">Refresh offers</button></div></div>`;
+}
+function offersShowPassed() {
+  const s = stackState.offers;
+  if (s) { s.idx = 0; s.passed = 0; s.passedIds = new Set(); }
+  renderOpenBoard();
+  return false;
 }
 
 async function applyToOffer(offerId) {
@@ -3911,13 +4136,13 @@ async function loadMyApplications() {
           <div class="slot-body">
             <div class="slot-badges"><span class="badge tier">${esc(a.offer.businessName)}</span>${badge(a)}</div>
             <div class="slot-name">${esc(a.offer.title)}</div>
-            <div class="slot-meta"><span>${esc(a.offer.businessName)}</span><span>${a.offer.kind === "paid" ? `Cash $${a.offer.cashRate}` : `Comp: ${esc(a.offer.whatComped)} (value $${a.offer.dollarCap})`}</span><span>applied ${fmtDate(a.appliedAt)}</span>${a.offer.windowStartAt ? `<span>redeem ${fmtDate(a.offer.windowStartAt)} to ${fmtDate(a.offer.windowEndAt)}</span>` : ""}</div>
+            <div class="slot-meta"><span>${esc(a.offer.businessName)}</span><span>${a.offer.kind === "paid" ? `Cash $${fmtPrice(a.offer.cashRate)}` : `Comp: ${esc(a.offer.whatComped)} (value $${fmtMoney(a.offer.dollarCap)})`}</span><span>applied ${fmtDate(a.appliedAt)}</span>${a.offer.windowStartAt ? `<span>redeem ${fmtDate(a.offer.windowStartAt)} to ${fmtDate(a.offer.windowEndAt)}</span>` : ""}</div>
           </div>
         </div>
         ${(a.status === "released" || a.status === "expired") && a.releaseReason ? `<p class="small">${esc(RELEASE_TEXT[a.releaseReason] || "This application ended.")}</p>` : ""}
         ${a.status === "selected" || a.status === "backfill_accepted" ? `<p class="small">Code + deadline in My Visits.</p>` : ""}
         <div class="slot-foot">
-          <div><div class="slot-price">$${a.offer.kind === "paid" ? a.offer.cashRate : a.offer.dollarCap}</div><div class="slot-note">${a.offer.kind === "paid" ? "Rate" : "Comp value"}</div></div>
+          <div><div class="slot-price">$${fmtPrice(a.offer.kind === "paid" ? a.offer.cashRate : a.offer.dollarCap)}</div><div class="slot-note">${a.offer.kind === "paid" ? "Rate" : "Comp value"}</div></div>
           <div class="slot-actions">
             ${a.status === "backfill_offered" ? `<button class="btn book" onclick="acceptBackfill('${a.id}')">Take the spot</button><button class="btn small-btn ghost" onclick="declineBackfill('${a.id}')">Pass</button>` : ""}
             ${a.status === "selected" ? `<button class="btn small-btn ghost" onclick="giveBackSpot('${a.id}')">Give the spot back</button>` : ""}
@@ -4057,7 +4282,7 @@ function visitCard(b, role) {
   let html = `
   <div class="card visit-card mb">
     <div class="flex-between"><strong>${esc(b.title)}</strong>${complianceBadge(b)}</div>
-    <p class="small muted">${role === "creator" ? esc(b.businessName) : "@" + esc(b.creatorHandle) + " (" + esc(b.creatorName) + ")"} &middot; ${esc(marketDisplayName(b.market))} &middot; Comp: ${esc(b.whatComped)} (cap $${b.dollarCap})${b.kind === "paid" || b.paidLane ? "" : ` &middot; ${coversLine(b)}`} &middot; Visit: ${esc(b.visitDate || b.visitWindow || "Flexible")}</p>`;
+    <p class="small muted">${role === "creator" ? esc(b.businessName) : "@" + esc(b.creatorHandle) + " (" + esc(b.creatorName) + ")"} &middot; ${esc(marketDisplayName(b.market))} &middot; Comp: ${esc(b.whatComped)} (cap $${fmtMoney(b.dollarCap)})${b.kind === "paid" || b.paidLane ? "" : ` &middot; ${coversLine(b)}`} &middot; Visit: ${esc(b.visitDate || b.visitWindow || "Flexible")}</p>`;
   if (role === "creator" && b.redeemedAt && !post && b.postDeadline) {
     // Visual pass: the post countdown leads the card instead of
     // sitting under the honor form below the fold. Same ticking
@@ -4078,8 +4303,8 @@ function visitCard(b, role) {
         ? `<span class="badge warn">Payment refunded</span>`
         : `<span class="badge info">Payment held by SIGNL</span>`;
     html += role === "creator"
-      ? `<p class="small"><span class="badge tier">Paid visit</span> Your rate $${lane.rate}: you receive $${lane.creatorNet} (97% of your rate). ${escrowBadge}<br><span class="muted">${esc(lane.paymentNote)}${lane.escrowState === "held" && lane.proofAt ? " Your post is in; the escrow releases 48 hours after proof." : ""}${lane.escrowState === "refunded" ? " This visit resolved without delivery, so the business was refunded." : ""}</span></p>`
-      : `<p class="small"><span class="badge tier">Paid visit</span> Creator rate $${lane.rate} &middot; you pay $${lane.businessTotal} (rate + 3%) &middot; the creator receives $${lane.creatorNet}. ${escrowBadge}<br><span class="muted">${esc(lane.paymentNote)}</span></p>`;
+      ? `<p class="small"><span class="badge tier">Paid visit</span> Your rate $${fmtPrice(lane.rate)}: you receive $${fmtMoney(lane.creatorNet)} (97% of your rate). ${escrowBadge}<br><span class="muted">${esc(lane.paymentNote)}${lane.escrowState === "held" && lane.proofAt ? " Your post is in; the escrow releases 48 hours after proof." : ""}${lane.escrowState === "refunded" ? " This visit resolved without delivery, so the business was refunded." : ""}</span></p>`
+      : `<p class="small"><span class="badge tier">Paid visit</span> Creator rate $${fmtPrice(lane.rate)} &middot; you pay $${fmtMoney(lane.businessTotal)} (rate + 3%) &middot; the creator receives $${fmtMoney(lane.creatorNet)}. ${escrowBadge}<br><span class="muted">${esc(lane.paymentNote)}</span></p>`;
   }
   if (role === "creator") html += referralProgramBlockHtml(b.businessReferralProgram);
   if (role === "business" && b.businessReferralProgram) {
@@ -4643,6 +4868,7 @@ async function loadDiscover() {
       <div><label>&nbsp;</label><label style="font-weight:500"><input type="checkbox" id="f-paid" style="width:auto"> Has a paid rate (paid bookings) only</label></div>
       <div><label>&nbsp;</label><button class="btn small-btn" style="width:100%" onclick="runDiscover()">Search</button></div>
     </div>
+    <div id="discover-toggle"></div>
     <div id="discover-results">${skelHtml("Loading creators...", 2)}</div>`;
   runDiscover();
 }
@@ -4678,10 +4904,99 @@ async function runDiscover() {
       el.innerHTML = `<div class="empty-state"><span class="es-badge"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z"/></svg></span><h3>No approved creators match yet</h3><p>SIGNL is building the founding roster in this market now. Creators who sign up and get approved will appear here automatically.</p></div>`;
       return;
     }
-    el.innerHTML = `<div class="creator-grid vx-stagger">${data.creators.map((c) => creatorCard(c, state.user)).join("")}</div>`;
+    const tg = document.getElementById("discover-toggle");
+    if (tg) tg.innerHTML = discoverModeToggleHtml();
+    renderDiscoverResults();
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
+}
+
+// ---------- V5: Discover as a card stack (Jeff, 2026-10-25) ----------
+// Tinder-feel browsing over the SAME results, eligibility and
+// actions: Invite is startOffer (the existing direct-offer flow),
+// tap opens the existing profile view, Pass is local to this
+// stack session. Cards is the default; List renders the exact
+// card grid Discover has always rendered.
+function discoverModeToggleHtml() {
+  const mode = state.discoverMode || "cards";
+  return `<div class="view-toggle"><div class="vt-group"><button type="button" class="rchip${mode === "cards" ? " on" : ""}" onclick="setDiscoverMode('cards')">Cards</button><button type="button" class="rchip${mode === "list" ? " on" : ""}" onclick="setDiscoverMode('list')">List</button></div><span class="stack-pos" data-stackpos="discover"></span></div>`;
+}
+function setDiscoverMode(mode) {
+  state.discoverMode = mode;
+  const tg = document.getElementById("discover-toggle");
+  if (tg) tg.innerHTML = discoverModeToggleHtml();
+  renderDiscoverResults();
+  return false;
+}
+function renderDiscoverResults() {
+  const el = document.getElementById("discover-results");
+  if (!el) return;
+  const all = state.discover || [];
+  if (!all.length) return; // runDiscover already rendered the empty state
+  if ((state.discoverMode || "cards") === "list") {
+    const pos = document.querySelector('[data-stackpos="discover"]');
+    if (pos) pos.textContent = "";
+    el.innerHTML = `<div class="creator-grid vx-stagger">${all.map((c) => creatorCard(c, state.user)).join("")}</div>`;
+    return;
+  }
+  if (!stackState.discover || stackState.discover.src !== all) {
+    stackState.discover = {
+      items: all, idx: 0, passed: 0, passedIds: new Set(), src: all,
+      cardHtml: (c) => discoverStackCard(c),
+      goLabel: "Invite",
+      onGo: (c) => { startOffer(c.userId); },
+      onPass: (c) => { if (stackState.discover) stackState.discover.passedIds.add(c.userId); },
+      onTap: (c) => { openCreatorProfile(c.userId); },
+      endHtml: (passed, total) => discoverEndHtml(passed, total),
+    };
+  }
+  el.innerHTML = `<div class="stk-wrap" data-stack="discover"></div>`;
+  renderStack(el.firstElementChild);
+}
+function discoverStackCard(c) {
+  const p = c.profile || {};
+  const initial = esc((c.name || "?").trim().charAt(0).toUpperCase() || "?");
+  const cats = (p.categories || []).slice(0, 3);
+  const extra = (p.categories || []).length - cats.length;
+  const place = [c.neighborhood, c.city].filter(Boolean).map(esc).join(" &middot; ");
+  const rateLine = p.compOpen === false ? "Paid visits only" : (p.paidRate ? `Listed rate $${fmtPrice(p.paidRate)}` : "Comp friendly");
+  return `<div class="dcard${c.standing === "paused" ? " paused" : ""}">
+    <div class="dcard-photo${c.photoUrl ? "" : " no-photo"}">
+      ${c.photoUrl ? `<img src="${esc(c.photoUrl)}" alt="">` : `<div class="dcard-mono"><span>${initial}</span></div>`}
+      ${p.tierBand ? `<span class="dcard-tier">${esc(p.tierBand)}</span>` : ""}
+    </div>
+    <div class="dcard-body">
+      <div class="dcard-name">${esc(c.name)}</div>
+      <div class="dcard-handle">@${esc(p.handle || "")}</div>
+      <div class="dcard-local">${p.localAudiencePct === null || p.localAudiencePct === undefined
+        ? `<span class="dcard-local-na">Local reach not reported yet</span>`
+        : `<span class="dcard-pct">${p.localAudiencePct}%</span><span class="dcard-local-lbl">local reach</span>`}</div>
+      ${cats.length ? `<div class="dcard-chips">${cats.map((x) => `<span class="cc-chip">${esc(x)}</span>`).join("")}${extra > 0 ? `<span class="cc-chip">+${extra}</span>` : ""}</div>` : ""}
+      <div class="dcard-meta"><span>${rateLine}</span>${place ? `<span>${place}</span>` : ""}<span>${fmtNum(totalAudienceOf(c))} audience</span></div>
+      ${c.bookedUp ? `<p class="small muted" style="margin:8px 0 0">Booked up this week — invites still land, accepting reopens next week.</p>` : ""}
+      ${c.standing === "paused" ? `<p class="small muted" style="margin:8px 0 0">Paused: a late post is outstanding, so this creator cannot take new offers yet.</p>` : ""}
+    </div>
+  </div>`;
+}
+function discoverEndHtml(passed, total) {
+  return `<div class="stk-end"><h3>That's everyone nearby right now</h3><p class="small muted">You looked through ${total} creator${total === 1 ? "" : "s"} in this search. New approved creators land here as they join.</p><div class="stk-end-actions">${passed ? `<button type="button" class="btn ghost" onclick="discoverShowPassed()">Show passed (${passed})</button>` : ""}<button type="button" class="btn" onclick="discoverClearFilters()">Clear filters</button></div></div>`;
+}
+function discoverShowPassed() {
+  const s = stackState.discover;
+  if (s) { s.idx = 0; s.passed = 0; s.passedIds = new Set(); }
+  renderDiscoverResults();
+  return false;
+}
+function discoverClearFilters() {
+  ["f-neighborhood", "f-q", "f-fmin", "f-fmax", "f-minlocal"].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ""; });
+  ["f-tier", "f-category", "f-comp", "f-sort"].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ""; });
+  const paid = document.getElementById("f-paid");
+  if (paid) paid.checked = false;
+  const mkt = document.getElementById("f-market");
+  if (mkt && state.user) mkt.value = state.user.market;
+  runDiscover();
+  return false;
 }
 
 async function toggleFav(creatorId) {
@@ -4729,7 +5044,7 @@ function compSuggestions(tierBand) {
 // just an optional note for the creator.
 function chipsRowHtml(kind, prefix, tierBand) {
   if (kind === "comp") {
-    return `<div class="chip-row">${compSuggestions(tierBand).map((s) => `<button type="button" class="chip" onclick="setCompChip('${prefix}', ${JSON.stringify(s.comp)}, ${s.cap})">${esc(s.label)} (~$${s.cap})</button>`).join("")}</div>`;
+    return `<div class="chip-row">${compSuggestions(tierBand).map((s) => `<button type="button" class="chip" onclick="setCompChip('${prefix}', ${JSON.stringify(s.comp)}, ${s.cap})">${esc(s.label)} (~$${fmtPrice(s.cap)})</button>`).join("")}</div>`;
   }
   return `<div class="chip-row"><button type="button" class="chip" onclick="setWindowMode('${prefix}', '7days')">Use within 7 days</button><button type="button" class="chip" onclick="setWindowMode('${prefix}', 'thisweek')">This week (ends Sunday)</button></div>`;
 }
@@ -4911,7 +5226,7 @@ function offerCoachUpdate() {
   const experience = ((document.getElementById("o2-experience") || {}).value || "").trim();
   const tiers = [...document.querySelectorAll("input[name='o2-tier']:checked")].map((x) => x.value);
   const checks = [
-    { label: kind === "paid" ? `Cash rate stated (floor $${g.paidFloor})` : "Comp value stated", ok: kind === "paid" ? rate >= g.paidFloor : cap > 0 },
+    { label: kind === "paid" ? `Cash rate stated (floor $${fmtPrice(g.paidFloor)})` : "Comp value stated", ok: kind === "paid" ? rate >= g.paidFloor : cap > 0 },
     { label: "Redemption window is 3+ days", ok: windowDays >= 3 },
     { label: "What is included is written out", ok: includes.length >= 12 },
     { label: "The experience is described", ok: experience.length >= 12 },
@@ -4935,10 +5250,10 @@ function offerCoachUpdate() {
     if (kind === "comp" && composerMode() === "open") {
       const blocked = tiers.filter((t) => g.compGuidance[t] && cap > 0 && cap < g.compGuidance[t].floor);
       if (blocked.length) {
-        html = `<div class="error-box">A $${cap} comp is below the dignity floor for ${blocked.map(esc).join(", ")} (floors: ${blocked.map((t) => `${esc(t)} $${g.compGuidance[t].floor}`).join(", ")}). Raise the value or untick ${blocked.length === 1 ? "that tier" : "those tiers"}: token comps burn the roster's trust, so SIGNL will not publish this as is.</div>`;
+        html = `<div class="error-box">A $${fmtMoney(cap)} comp is below the dignity floor for ${blocked.map(esc).join(", ")} (floors: ${blocked.map((t) => `${esc(t)} $${fmtPrice(g.compGuidance[t].floor)}`).join(", ")}). Raise the value or untick ${blocked.length === 1 ? "that tier" : "those tiers"}: token comps burn the roster's trust, so SIGNL will not publish this as is.</div>`;
       } else if (cap > 0 && tiers.length) {
         const fits = tiers.filter((t) => g.compGuidance[t] && cap >= g.compGuidance[t].typicalLow && cap <= g.compGuidance[t].typicalHigh);
-        html = `<p class="small muted">$${cap} sits in the typical range for ${fits.length ? fits.map(esc).join(", ") : "none of the ticked tiers, which usually means slower applications"}.</p>`;
+        html = `<p class="small muted">$${fmtMoney(cap)} sits in the typical range for ${fits.length ? fits.map(esc).join(", ") : "none of the ticked tiers, which usually means slower applications"}.</p>`;
       } else if (cap > 0 && cap < 25) {
         html = `<div class="error-box">Comp offers start at $25 of value. Below that it is a token, and token comps burn the roster's trust.</div>`;
       }
@@ -4946,10 +5261,13 @@ function offerCoachUpdate() {
     if (kind === "paid") {
       const total = Math.round(rate * 1.03 * 100) / 100;
       const net = Math.round(rate * 0.97 * 100) / 100;
-      html = rate > 0 ? `<p class="small muted">At $${rate}: you pay $${total} (rate + 3%), the creator keeps $${net} (97%), and SIGNL holds the payment until the post is live. Below $${g.paidFloor} a cash offer cannot run.</p>` : "";
+      html = rate > 0 ? `<p class="small muted">At $${fmtPrice(rate)}: you pay $${fmtMoney(total)} (rate + 3%), the creator keeps $${fmtMoney(net)} (97%), and SIGNL holds the payment until the post is live. Below $${fmtPrice(g.paidFloor)} a cash offer cannot run.</p>` : "";
     }
     warn.innerHTML = html;
   }
+  // V5: keep the drag bars painted in step with the values
+  // (template picks and chip fills write inputs directly).
+  dragInit();
 }
 
 async function loadMyOffers() {
@@ -4962,9 +5280,13 @@ async function loadMyOffers() {
   const marketLive = !!(state.boot && state.boot.launch && state.boot.launch.marketLive && state.boot.launch.marketLive[state.user.market]);
   const dft = state.offerDraft || {};
   const dv = (v) => esc(v === undefined || v === null ? "" : String(v));
-  const tierBoxes = `<div class="chiprow">${["Neighbors", "Locals", "Headliners"].map((t) => {
+  // V5 (Jeff, 2026-10-25): "Who can apply" is three Slotted lane
+  // toggle rows — switch + bold tier + one muted floor/typical
+  // line. The checkbox keeps its name, value, default and
+  // onchange; only its face changed (same swap as V4's toggles).
+  const tierBoxes = `<div class="tier-toggles">${["Neighbors", "Locals", "Headliners"].map((t) => {
     const gd = g.compGuidance[t] || {};
-    return `<label class="tier-chip"><input type="checkbox" name="o2-tier" value="${esc(t)}" ${(dft.tiers || []).includes(t) ? "checked" : ""} onchange="offerCoachUpdate()"><span class="tc-name">${esc(t)}</span> <span class="muted small">(floor $${gd.floor} &middot; typ. $${gd.typicalLow}–$${gd.typicalHigh})</span></label>`;
+    return `<label class="tier-toggle"><input type="checkbox" class="sw" name="o2-tier" value="${esc(t)}" ${(dft.tiers || []).includes(t) ? "checked" : ""} onchange="offerCoachUpdate()"><span class="tt-body"><span class="tt-name">${esc(t)}</span><span class="tt-line">floor $${fmtPrice(gd.floor)} &middot; typ. $${fmtPrice(gd.typicalLow)}&ndash;$${fmtPrice(gd.typicalHigh)}</span></span></label>`;
   }).join("")}</div>`;
   el.innerHTML = `
   <div class="panel">
@@ -5018,11 +5340,11 @@ async function loadMyOffers() {
       <p class="fg-kicker">Who + when</p>
       <div class="field"><label>Who can apply <span class="opt-tag">Optional</span> ${infoBtn("tiers")}</label>${tierBoxes}</div>
       <div class="form-2col">
-        <div class="field"><label>Spots (creators you will pick) <span class="req-tag">Required</span> ${infoBtn("spots")}</label><div class="stepper"><button type="button" class="step-btn" aria-label="One fewer" onclick="return stepField('o2-spots',-1,1,null)">&minus;</button><input type="number" id="o2-spots" min="1" placeholder="1" value="${dv(dft.spots)}" oninput="offerDraftSync()" onblur="offerValidateField('spots')"><button type="button" class="step-btn" aria-label="One more" onclick="return stepField('o2-spots',1,1,null)">+</button></div><p class="field-err" id="err-o2-spots"></p></div>
-        <div class="field"><label>Applications open for (days) <span class="opt-tag">Optional</span> ${infoBtn("applydays")}</label><div class="stepper"><button type="button" class="step-btn" aria-label="One fewer" onclick="return stepField('o2-applydays',-1,1,14)">&minus;</button><input type="number" id="o2-applydays" min="1" max="14" placeholder="3" value="${dv(dft.applydays)}" oninput="offerDraftSync()"><button type="button" class="step-btn" aria-label="One more" onclick="return stepField('o2-applydays',1,1,14)">+</button></div></div>
+        <div class="field"><label>Spots (creators you will pick) <span class="req-tag">Required</span> ${infoBtn("spots")}</label>${dragBarHtml("o2-spots", 1, 30, `placeholder="1" value="${dv(dft.spots)}" oninput="offerDraftSync()" onblur="offerValidateField('spots')"`)}<p class="field-err" id="err-o2-spots"></p></div>
+        <div class="field"><label>Applications open for (days) <span class="opt-tag">Optional</span> ${infoBtn("applydays")}</label>${dragBarHtml("o2-applydays", 1, 14, `placeholder="3" value="${dv(dft.applydays)}" oninput="offerDraftSync()"`)}</div>
       </div>
       <div class="form-2col">
-        <div class="field"><label>Redemption window (days, starts when applications close) <span class="opt-tag">Optional</span> ${infoBtn("windowdays")}</label><div class="stepper"><button type="button" class="step-btn" aria-label="One fewer" onclick="return stepField('o2-windowdays',-1,1,30)">&minus;</button><input type="number" id="o2-windowdays" min="1" max="30" placeholder="7" value="${dv(dft.windowdays)}" oninput="offerCoachUpdate()"><button type="button" class="step-btn" aria-label="One more" onclick="return stepField('o2-windowdays',1,1,30)">+</button></div></div>
+        <div class="field"><label>Redemption window (days, starts when applications close) <span class="opt-tag">Optional</span> ${infoBtn("windowdays")}</label>${dragBarHtml("o2-windowdays", 1, 30, `placeholder="7" value="${dv(dft.windowdays)}" oninput="offerCoachUpdate()"`)}</div>
         <div class="field"><label>Window note for creators <span class="opt-tag">Optional</span> ${infoBtn("windownote")}</label><input id="o2-window" value="${dv(dft.window)}" placeholder="Evenings are best" oninput="offerDraftSync()"></div>
       </div>
       <p class="small muted">You get ${g.selectionSlaHours} hours to pick after applications close. Everyone else is released with a notification.</p>
@@ -5030,7 +5352,7 @@ async function loadMyOffers() {
       <div class="fgroup tint">
       <p class="fg-kicker">Who + when</p>
       <div class="form-2col">
-        <div class="field"><label>Spots <span class="req-tag">Required</span> ${infoBtn("spots")}</label><div class="stepper"><button type="button" class="step-btn" aria-label="One fewer" onclick="return stepField('o2-spots',-1,1,null)">&minus;</button><input type="number" id="o2-spots" min="1" placeholder="1" value="${dv(dft.spots)}" oninput="offerDraftSync()" onblur="offerValidateField('spots')"><button type="button" class="step-btn" aria-label="One more" onclick="return stepField('o2-spots',1,1,null)">+</button></div><p class="field-err" id="err-o2-spots"></p></div>
+        <div class="field"><label>Spots <span class="req-tag">Required</span> ${infoBtn("spots")}</label>${dragBarHtml("o2-spots", 1, 30, `placeholder="1" value="${dv(dft.spots)}" oninput="offerDraftSync()" onblur="offerValidateField('spots')"`)}<p class="field-err" id="err-o2-spots"></p></div>
       </div>
       ${windowModeFieldHtml("o2", dft.windowmode)}
       <div class="field"><label>Window note for the creator <span class="opt-tag">Optional</span> ${infoBtn("windownote")}</label><input id="o2-window" value="${dv(dft.window)}" placeholder="Evenings are best" oninput="offerDraftSync()"></div>
@@ -5075,8 +5397,8 @@ async function loadMyOffers() {
 function offerCardHtml(o) {
   const statusBadge = { draft: "warn", open: "ok", filled: "info", closed: "", expired: "bad", declined: "bad" }[o.status] || "";
   const terms = o.kind === "paid"
-    ? `Cash $${o.cashRate} for the package (you pay $${Math.round(Number(o.cashRate) * 1.03 * 100) / 100}, creator keeps $${Math.round(Number(o.cashRate) * 0.97 * 100) / 100})`
-    : `Cap $${o.dollarCap}`;
+    ? `Cash $${fmtPrice(o.cashRate)} for the package (you pay $${fmtMoney(Number(o.cashRate) * 1.03)}, creator keeps $${fmtMoney(Number(o.cashRate) * 0.97)})`
+    : `Cap $${fmtMoney(o.dollarCap)}`;
   const when = o.lane === "open" && o.windowStartAt
     ? `Redeem ${fmtDay(o.windowStartAt)} to ${fmtDay(o.windowEndAt)} &middot; Pick by ${fmtDay(o.selectionDeadline)}`
     : esc(o.visitWindow || "Flexible window");
@@ -5100,7 +5422,7 @@ function offerCardHtml(o) {
     </div>
     </div>
     <div class="slot-foot">
-      <div><div class="slot-price">$${o.kind === "paid" ? o.cashRate : o.dollarCap}</div><div class="slot-note">${o.kind === "paid" ? "Rate" : "Comp cap"}</div></div>
+      <div><div class="slot-price">$${fmtPrice(o.kind === "paid" ? o.cashRate : o.dollarCap)}</div><div class="slot-note">${o.kind === "paid" ? "Rate" : "Comp cap"}</div></div>
       <div class="slot-actions">
         ${o.lane === "open" && (o.status === "open" || o.status === "filled") ? `<button class="btn small-btn book" onclick="viewApplicants('${o.id}')">View applicants (${o.applicationCount || 0})</button>` : ""}
         ${o.status === "draft" ? `<button class="btn small-btn book" onclick="publishOffer('${o.id}')">Publish</button>` : ""}
@@ -5235,7 +5557,7 @@ function applicantCardHtml(offer, a) {
     <div class="flex-between"><strong>${esc(c.name || a.snapshot.name)} <span class="muted">@${esc(c.handle || a.snapshot.handle)}</span></strong>${stateLine}</div>
     ${campusBadgeHtml(c) ? `<p class="small" style="margin-top:6px">${campusBadgeHtml(c)}</p>` : ""}
     <p class="small">${esc(c.tierBand || a.snapshot.tierBand || "")} &middot; ${c.localAudiencePct === null || c.localAudiencePct === undefined ? "local % not reported" : c.localAudiencePct + "% local audience"} &middot; Impact ${c.impact !== undefined && a.rankParts ? a.rankParts.impactScore : ""} &middot; Momentum ${a.rankParts ? a.rankParts.momentum : ""} pts${ratingBit}${badgesHtml(c.badges)} &middot; reliability ${a.rankParts ? a.rankParts.reliability : ""}</p>
-    <p class="small muted">${tr.isNew || !tr.visitsCompleted ? "New to SIGNL: no visits yet." : `${tr.visitsCompleted} visits completed &middot; ${tr.postsDelivered} posts delivered &middot; ${tr.onTimePct === null || tr.onTimePct === undefined ? "on-time n/a" : tr.onTimePct + "% on time"}`} &middot; ${fmtNum(c.totalAudience || a.snapshot.totalAudience)} total audience${c.paidRate ? ` &middot; paid rate $${c.paidRate}` : ""}</p>
+    <p class="small muted">${tr.isNew || !tr.visitsCompleted ? "New to SIGNL: no visits yet." : `${tr.visitsCompleted} visits completed &middot; ${tr.postsDelivered} posts delivered &middot; ${tr.onTimePct === null || tr.onTimePct === undefined ? "on-time n/a" : tr.onTimePct + "% on time"}`} &middot; ${fmtNum(c.totalAudience || a.snapshot.totalAudience)} total audience${c.paidRate ? ` &middot; paid rate $${fmtPrice(c.paidRate)}` : ""}</p>
     ${(a.status === "applied" || a.status === "backfill_offered") ? `<div class="cta-row" style="justify-content:flex-start"><button class="btn small-btn" onclick="selectApplicant('${offer.id}','${a.id}')">Select this creator</button><button class="btn small-btn ghost" onclick="releaseApplicant('${offer.id}','${a.id}')">Release</button></div>` : ""}
   </div>`;
 }
@@ -5291,7 +5613,7 @@ async function counterLookup(e, preset) {
       <div class="card">
         <div class="flex-between"><strong>${esc(b.creatorName)}</strong><span class="badge tier">@${esc(b.creatorHandle)}</span></div>
         <p>${esc(b.title)}: ${esc(b.whatComped)}</p>
-        <p class="small muted">Comp cap $${b.dollarCap}${b.kind === "paid" || b.paidLane ? "" : ` &middot; ${coversLine(b)}`} &middot; Visit date: ${esc(b.visitDate || b.visitWindow || "Flexible")} &middot; Code ${esc(b.code)}</p>
+        <p class="small muted">Comp cap $${fmtMoney(b.dollarCap)}${b.kind === "paid" || b.paidLane ? "" : ` &middot; ${coversLine(b)}`} &middot; Visit date: ${esc(b.visitDate || b.visitWindow || "Flexible")} &middot; Code ${esc(b.code)}</p>
         <p class="small">Check the person in front of you matches the creator, then redeem. The code burns and the 48 hour post clock starts now.</p>
         <button class="btn" style="width:100%" onclick="counterRedeem('${esc(code)}')">Redeem and start the clock</button>
       </div>`;
@@ -5306,7 +5628,7 @@ async function counterRedeem(code) {
   try {
     const data = await api("POST", "/counter/redeem", { code });
     const b = data.booking;
-    el.innerHTML = `<div class="success-hero">${successCheckHtml()}<h3>Redeemed.</h3><p>${esc(b.creatorName)}'s post is due by <strong>${fmtDate(b.postDeadline)}</strong>. Ring the comp in your own system, up to the $${b.dollarCap} cap. Track the post under Visits &amp; Posts.</p></div>`;
+    el.innerHTML = `<div class="success-hero">${successCheckHtml()}<h3>Redeemed.</h3><p>${esc(b.creatorName)}'s post is due by <strong>${fmtDate(b.postDeadline)}</strong>. Ring the comp in your own system, up to the $${fmtMoney(b.dollarCap)} cap. Track the post under Visits &amp; Posts.</p></div>`;
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
@@ -5470,7 +5792,7 @@ async function staffLookup(e, preset) {
       <div class="card">
         <div class="flex-between"><strong>${esc(b.creatorName)}</strong><span class="badge tier">@${esc(b.creatorHandle)}</span></div>
         <p>${esc(b.title)}: ${esc(b.whatComped)}</p>
-        <p class="small muted">Comp cap $${b.dollarCap}${b.covers ? ` &middot; ${coversLine(b)}` : ""} &middot; Visit: ${esc(b.visitDate || b.visitWindow || "Flexible")}${b.redeemBy ? ` &middot; Redeem by ${fmtDate(b.redeemBy)}` : ""}</p>
+        <p class="small muted">Comp cap $${fmtMoney(b.dollarCap)}${b.covers ? ` &middot; ${coversLine(b)}` : ""} &middot; Visit: ${esc(b.visitDate || b.visitWindow || "Flexible")}${b.redeemBy ? ` &middot; Redeem by ${fmtDate(b.redeemBy)}` : ""}</p>
         <p class="small">Check the person in front of you matches the creator, then redeem. The code burns and the 48 hour post clock starts now.</p>
         <button class="btn" style="width:100%" onclick="staffRedeem('${esc(code)}')">REDEEM</button>
       </div>`;
@@ -5489,7 +5811,7 @@ async function staffRedeem(code) {
       <div class="success-hero">
         ${successCheckHtml()}
         <h3>Redeemed.</h3>
-        <p>${esc(b.creatorName)}'s visit is in, and their 48-hour post clock started. Their post is due by <strong>${fmtDate(b.postDeadline)}</strong>. Ring the comp in your own register, up to the $${b.dollarCap} cap.</p>
+        <p>${esc(b.creatorName)}'s visit is in, and their 48-hour post clock started. Their post is due by <strong>${fmtDate(b.postDeadline)}</strong>. Ring the comp in your own register, up to the $${fmtMoney(b.dollarCap)} cap.</p>
         <div class="mt"><button class="btn" style="width:100%" onclick="staffDone()">Done</button></div>
       </div>`;
   } catch (err) {
@@ -5574,7 +5896,7 @@ function renderPlanTab() {
   const rl = u.business.reviewLinks || {};
   const plans = state.boot.plans.map((p) => `
     <div class="plan-card ${u.business.plan === p.id ? "selected" : ""}" id="plan-${esc(p.id)}" onclick="selectPlan('${esc(p.id)}')">
-      <div class="price">$${p.priceMonthly}<span class="small muted">/mo</span></div>
+      <div class="price">$${fmtPrice(p.priceMonthly)}<span class="small muted">/mo</span></div>
       <strong>${esc(p.name)}</strong>
       <p class="small muted">${p.minMonths}-month minimum.</p>
       <ul>${p.features.map((f) => `<li>${esc(f)}</li>`).join("")}</ul>
@@ -6498,7 +6820,7 @@ function previewPlansHtml() {
   const pv = state.preview;
   const plans = state.boot.plans.map((p) => `
     <div class="plan-card ${pv.planId === p.id ? "selected" : ""}" onclick="previewPickPlan('${p.id}')">
-      <div class="price">$${p.priceMonthly}<span class="small muted">/mo</span></div>
+      <div class="price">$${fmtPrice(p.priceMonthly)}<span class="small muted">/mo</span></div>
       <strong>${esc(p.name)}</strong>
       <p class="small muted">${p.minMonths}-month minimum.</p>
       <ul>${p.features.map((f) => `<li>${esc(f)}</li>`).join("")}</ul>
@@ -6560,7 +6882,7 @@ function previewDiscoverHtml() {
 function previewSentHtml() {
   const pv = state.preview;
   if (!pv || !pv.sent.length) return "";
-  return `<section class="panel"><h4 style="margin-top:0">Sent in this preview session (${pv.sent.length})</h4><p class="small muted">Simulations only. Stored nowhere, seen by no creator, counted nowhere.</p>${pv.sent.map((o) => `<p class="small">&middot; <strong>${esc(o.title)}</strong> &rarr; ${o.creatorHandle ? "@" + esc(o.creatorHandle) : "open offer"} &middot; cap $${o.dollarCap} &middot; ${esc(o.visitWindow || "Flexible window")}</p>`).join("")}</section>`;
+  return `<section class="panel"><h4 style="margin-top:0">Sent in this preview session (${pv.sent.length})</h4><p class="small muted">Simulations only. Stored nowhere, seen by no creator, counted nowhere.</p>${pv.sent.map((o) => `<p class="small">&middot; <strong>${esc(o.title)}</strong> &rarr; ${o.creatorHandle ? "@" + esc(o.creatorHandle) : "open offer"} &middot; cap $${fmtMoney(o.dollarCap)} &middot; ${esc(o.visitWindow || "Flexible window")}</p>`).join("")}</section>`;
 }
 
 async function runPreviewDiscover() {
@@ -6776,7 +7098,7 @@ function pvBookingCard(b) {
   let html = `
   <div class="card visit-card mb">
     <div class="flex-between"><strong>${esc(b.title)}</strong>${pvStateBadge(b)}</div>
-    <p class="small muted">@${esc(b.creatorHandle)} (${esc(b.creatorName)})${b.creatorTier ? ` &middot; ${esc(b.creatorTier)}` : ""} &middot; ${esc(marketDisplayName(b.market))} &middot; Comp: ${esc(b.whatComped)} (cap $${b.dollarCap}${b.compCostModeled ? `, at cost $${b.compCostModeled} modeled` : ""})${b.kind === "paid" ? "" : ` &middot; ${coversLine(b)}`} &middot; Window: ${esc(b.visitWindow || "Flexible")}</p>`;
+    <p class="small muted">@${esc(b.creatorHandle)} (${esc(b.creatorName)})${b.creatorTier ? ` &middot; ${esc(b.creatorTier)}` : ""} &middot; ${esc(marketDisplayName(b.market))} &middot; Comp: ${esc(b.whatComped)} (cap $${fmtMoney(b.dollarCap)}${b.compCostModeled ? `, at cost $${fmtMoney(b.compCostModeled)} modeled` : ""})${b.kind === "paid" ? "" : ` &middot; ${coversLine(b)}`} &middot; Window: ${esc(b.visitWindow || "Flexible")}</p>`;
   if (b.state === "booked") {
     html += `
     <div class="grid cols-2">
@@ -6863,7 +7185,7 @@ function pvStaffPanelHtml(d) {
         <div class="card" style="margin-top:10px">
           <div class="flex-between"><strong>${esc(booked.creatorName)}</strong><span class="badge tier">@${esc(booked.creatorHandle)}</span></div>
           <p class="small">${esc(booked.title)}: ${esc(booked.whatComped)}</p>
-          <p class="small muted">Comp cap $${booked.dollarCap} &middot; ${coversLine(booked)} &middot; Window: ${esc(booked.visitWindow || "Flexible")} &middot; Code ${esc(booked.code)}</p>
+          <p class="small muted">Comp cap $${fmtMoney(booked.dollarCap)} &middot; ${coversLine(booked)} &middot; Window: ${esc(booked.visitWindow || "Flexible")} &middot; Code ${esc(booked.code)}</p>
           <p class="small">Check the person in front of you matches the creator, then redeem. The code burns and the 48 hour post clock starts now.</p>
           <button class="btn" style="width:100%" onclick="return pvStaffEnter()">Try it in the demo above</button>
           <p class="small muted" style="margin-bottom:0">The live Redeem button is disabled on this read-only card; the demo at the top of this panel runs the real flow in simulation.</p>
@@ -6988,7 +7310,7 @@ function pvStaffFoundHtml(found) {
   <div class="card" style="margin-top:12px">
     <div class="flex-between"><strong>${esc(v.creatorName)}</strong><span class="badge tier">@${esc(v.creatorHandle)}</span></div>
     <p class="small">${esc(v.title)}: ${esc(v.whatComped)}</p>
-    <p class="small muted">Comp cap $${v.dollarCap} &middot; ${coversLine(v)} &middot; Visit: ${esc(v.visitWindow || "Flexible")}${v.redeemBy ? ` &middot; Redeem by ${fmtDate(v.redeemBy)}` : ""}</p>
+    <p class="small muted">Comp cap $${fmtMoney(v.dollarCap)} &middot; ${coversLine(v)} &middot; Visit: ${esc(v.visitWindow || "Flexible")}${v.redeemBy ? ` &middot; Redeem by ${fmtDate(v.redeemBy)}` : ""}</p>
     <p class="small">Check the person in front of you matches the creator, then redeem. The code burns and the 48 hour post clock starts now.</p>
     <button class="btn" style="width:100%" onclick="return pvStaffRedeem()">Redeem and start the clock</button>
   </div>`;
@@ -7067,20 +7389,20 @@ function pvManagedHtml(mv) {
   const b = mv.budget;
   const rows = (b.paidBookings || []).map((pb) => `
     <div class="review-item">
-      <strong>@${esc(pb.creatorHandle)}</strong> (${esc(pb.creatorName)}) &middot; paid visit at their listed rate of $${esc(String(pb.rate))}<br>
-      <span class="small">Business paid $${esc(String(pb.businessTotal))} (rate + 3%) &middot; creator receives $${esc(String(pb.creatorNet))} &middot; SIGNL fee $${esc(String(pb.platformFee))}, split evenly &middot; ${pb.escrowState === "released" ? `<span class="badge ok">Escrow released</span>` : `<span class="badge info">Escrow held</span>`} <span class="muted">${esc(pb.escrowNote)}</span></span>
+      <strong>@${esc(pb.creatorHandle)}</strong> (${esc(pb.creatorName)}) &middot; paid visit at their listed rate of $${fmtPrice(pb.rate)}<br>
+      <span class="small">Business paid $${fmtMoney(pb.businessTotal)} (rate + 3%) &middot; creator receives $${fmtMoney(pb.creatorNet)} &middot; SIGNL fee $${fmtMoney(pb.platformFee)}, split evenly &middot; ${pb.escrowState === "released" ? `<span class="badge ok">Escrow released</span>` : `<span class="badge info">Escrow held</span>`} <span class="muted">${esc(pb.escrowNote)}</span></span>
     </div>`).join("");
   return `
   <section class="panel">
     <div class="flex-between">
       <div><h3 style="margin:0">${esc(mv.business.name)}</h3><p class="muted small" style="margin:4px 0 0">${esc(mv.business.category)} &middot; ${esc(marketDisplayName(mv.business.market))} &middot; a second simulated business, shown so the Managed budget has somewhere honest to live</p></div>
-      <span class="badge info">${esc(mv.plan.name)} plan &middot; $${mv.plan.priceMonthly}/mo &middot; ${mv.plan.visitsPerMonth} visits/mo</span>
+      <span class="badge info">${esc(mv.plan.name)} plan &middot; $${fmtPrice(mv.plan.priceMonthly)}/mo &middot; ${mv.plan.visitsPerMonth} visits/mo</span>
     </div>
     <h4>Monthly creator talent budget</h4>
     <div class="stat-row">
-      <div class="stat"><div class="num">$${fmtNum(b.monthlyTalentBudget)}</div><div class="lbl">Budget set for the month</div></div>
-      <div class="stat"><div class="num">$${fmtNum(b.spentThisMonth)}</div><div class="lbl">Spent on paid bookings</div></div>
-      <div class="stat"><div class="num">$${fmtNum(b.remaining)}</div><div class="lbl">Remaining this month</div></div>
+      <div class="stat"><div class="num">$${fmtMoney(b.monthlyTalentBudget)}</div><div class="lbl">Budget set for the month</div></div>
+      <div class="stat"><div class="num">$${fmtMoney(b.spentThisMonth)}</div><div class="lbl">Spent on paid bookings</div></div>
+      <div class="stat"><div class="num">$${fmtMoney(b.remaining)}</div><div class="lbl">Remaining this month</div></div>
     </div>
     <p class="small muted">${esc(b.note)}</p>
     ${mv.discountCodes && !mv.discountCodes.enabled ? `<p class="small muted"><strong>Audience-code discounts: off.</strong> Harbor Table has not turned code discounts on, so its creator codes are counting codes only: they track the customers a post sends in, and promise no percentage off. Turning them on, and picking the percentage, is the business's call whenever it wants.</p>` : ""}
@@ -7170,7 +7492,7 @@ function previewDashboardHtml(d) {
   <section class="panel">
     <div class="flex-between">
       <div><h3 style="margin:0">${esc(d.business.name)}</h3><p class="muted small" style="margin:4px 0 0">${esc(d.business.category)} &middot; ${esc(marketDisplayName(d.business.market))} &middot; ${esc(s.cycleLabel)} cycle</p></div>
-      <span class="badge info">${esc(plan.name)} plan &middot; $${plan.priceMonthly}/mo &middot; ${plan.visitsPerMonth} visits/mo</span>
+      <span class="badge info">${esc(plan.name)} plan &middot; $${fmtPrice(plan.priceMonthly)}/mo &middot; ${plan.visitsPerMonth} visits/mo</span>
     </div>
     <p class="small muted" style="margin-bottom:0">The dashboard a business lives in: who is booked, the codes, redemption, the post clock, delivered posts, and what it all returned. Every booking below is simulated over the real founding roster, with simulated visit data. Nothing here is saved, and no creator is contacted.</p>
   </section>
@@ -7182,7 +7504,7 @@ function previewDashboardHtml(d) {
       <div class="stat"><div class="num">${s.postsDelivered}</div><div class="lbl">Posts delivered</div></div>
       <div class="stat"><div class="num">${s.onTimeRatePct === null ? "n/a" : s.onTimeRatePct + "%"}</div><div class="lbl">On-time rate (${s.postsOnTime} on time, ${s.postsLate} late)</div></div>
       <div class="stat"><div class="num">${fmtNum(s.totalViews)}</div><div class="lbl">Total content views</div></div>
-      <div class="stat"><div class="num">$${fmtNum(s.compValueGiven)}</div><div class="lbl">Comp given, at cost (modeled)</div></div>
+      <div class="stat"><div class="num">$${fmtMoney(s.compValueGiven)}</div><div class="lbl">Comp given, at cost (modeled)</div></div>
     </div>
     <p class="small muted">${s.postsInFlight} post still inside its 48 hour clock, ${s.postsOverdue} overdue in the late window, ${s.visitsRemaining} visits left on the ${esc(plan.name)} allowance this month.</p>
     <p class="small muted">${esc(s.compValueBasis)}. The figures below are on simulated data, shown so the shape of the returns math is visible; live figures replace them as real visits complete.</p>

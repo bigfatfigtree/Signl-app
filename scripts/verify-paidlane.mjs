@@ -196,6 +196,35 @@ try {
   check("client ships the review pages block and the paid badges", appJs.text.includes("Their review pages") && appJs.text.includes("Paid bookings:") && appJs.text.includes("Book paid visit"), "");
   check("client ships the creator home paid lane panel with the honest hold copy (no card charged, releases 48 hours after proof)", appJs.text.includes("homePaidLaneHtml") && appJs.text.includes("no card charged") && appJs.text.includes("released 48h after proof"), "");
   check("creator home keeps paid cash and comp value in separate piles", appJs.text.includes("Held — releases 48h after proof") && appJs.text.includes("Comp value (not cash)") && appJs.text.includes("homeMoneyHtml"), "");
+  // V5 money discipline (Jeff, 2026-10-25): the shipped formatters
+  // behave (computed = two decimals + separators; prices = whole,
+  // falling back to two decimals when a value carries cents), and
+  // no client interpolation renders a computed money field raw —
+  // the "$145.5" shape can never come back.
+  {
+    const mMoney = appJs.text.match(/function fmtMoney\(n\) \{[\s\S]*?\n\}/);
+    const mPrice = appJs.text.match(/function fmtPrice\(n\) \{[\s\S]*?\n\}/);
+    let fmtOk = false;
+    let fmtDetail = "formatter source not found";
+    if (mMoney && mPrice) {
+      try {
+        const fns = new Function(`${mMoney[0]}\n${mPrice[0]}\nreturn { fmtMoney, fmtPrice };`)();
+        const rendered = ["$" + fns.fmtMoney(145.5), "$" + fns.fmtMoney(1250), "$" + fns.fmtMoney(154.5), "$" + fns.fmtPrice(150), "$" + fns.fmtPrice(145.5), "$" + fns.fmtPrice(100)];
+        fmtOk = fns.fmtMoney(145.5) === "145.50" && fns.fmtMoney(1250) === "1,250.00" && fns.fmtPrice(150) === "150" && fns.fmtPrice(100) === "100"
+          && rendered.every((s) => !/\$\d+\.\d(?!\d)/.test(s));
+        fmtDetail = rendered.join(" ");
+      } catch (e) { fmtDetail = String(e); }
+    }
+    check("money format: computed amounts render $145.50 / $1,250.00, prices render whole, no single-decimal money anywhere", fmtOk, fmtDetail);
+    const rawComputed = (appJs.text.match(/\$\$\{[^}]*\}/g) || []).filter((interp) => {
+      if (!/(creatorNet|businessTotal|platformFee)/.test(interp)) return false;
+      const residue = interp.replace(/fmt(?:Money|Price)\([^()]*\)/g, "");
+      return /(creatorNet|businessTotal|platformFee)/.test(residue);
+    });
+    check("client never interpolates a computed money field without a formatter", rawComputed.length === 0, rawComputed.join(" | "));
+    const routerSrc = fs.readFileSync(path.join(root, "netlify/functions/lib/router.js"), "utf8");
+    check("server paid-booking strings route money through fmtMoneyS/fmtPriceS", !routerSrc.includes("$${math.creatorNet}") && !routerSrc.includes("of the $${math.rate} rate") && routerSrc.includes("fmtMoneyS(math.creatorNet)"), "");
+  }
 
   // ---------- Part B: discovery + public profile ----------
   part("B: discovery + public profile");
