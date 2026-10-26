@@ -623,7 +623,7 @@ function profileCompletionHtml(u) {
   const rows = pc.items.map((item) => `
     <div class="earn-row ${item.done ? "done" : ""}">
       <span class="earn-state">${item.done ? "&#10003;" : "+"}</span>
-      <span class="earn-label">${esc(item.label)}${item.required ? ` <span class="badge info">Needed</span>` : ""}${item.detail ? ` <span class="muted">(${esc(item.detail)})</span>` : ""}</span>
+      <span class="earn-label">${esc(item.label)}${item.required && !item.done ? ` <span class="badge info">Needed</span>` : ""}${item.detail ? ` <span class="muted">(${esc(item.detail)})</span>` : ""}</span>
       <span class="earn-points">${item.points ? "+" + item.points + " pts" : ""}</span>
     </div>`).join("");
   return `
@@ -1376,7 +1376,7 @@ function renderHome() {
       <a class="btn ghost" href="#" onclick="return go('for-businesses')">For Businesses</a>
       <a class="btn ghost" href="#" onclick="return goStaff()">Redeem a creator visit</a>
     </div>
-    <p class="small muted mt">Open now in all 39 markets &middot; Decisions within 2 business days</p>
+    <p class="small muted mt">Founding sign-ups open in all ${(state.boot && state.boot.markets ? state.boot.markets.length : 37)} markets &middot; Decisions within 2 business days</p>
   </section>
   <section style="margin-top:44px">
     <p class="ui-kicker">How it works</p>
@@ -1465,7 +1465,7 @@ async function pickCandidateMarket(e, market) {
 
 // Market options are grouped by country (United States first, then the
 // rest alphabetically), cities alphabetical inside each country, so the
-// picker stays scannable as SIGNL goes universal (39 markets, 2026-10-18).
+// picker stays scannable as SIGNL goes universal (37 markets, 2026-10-18).
 function marketOptions(selected, forJoin) {
   const byCountry = {};
   for (const m of state.boot.markets) {
@@ -2825,7 +2825,32 @@ async function previewPaidBooking(creatorId) {
   try {
     const data = await api("POST", "/admin/preview/paid-booking", { creatorId });
     const bk = data.booking;
-    alert(`PREVIEW paid booking (simulation)\n\nCreator rate: $${fmtPrice(bk.rate)}\nYou pay: $${fmtMoney(bk.businessTotal)} (rate + 3%)\nCreator keeps: $${fmtMoney(bk.creatorNet)} (97% of their rate)\nSIGNL fee: $${fmtMoney(bk.platformFee)} total, split evenly\nEscrow: held by SIGNL until the post is live\n\n${bk.paymentNote}\n${bk.note}`);
+    // The result renders as a sheet in the booking-card family,
+    // not a native alert: the preview is a presenter surface and
+    // every other preview action answers in the app's own UI
+    // (perfection pass, 2026-10-26).
+    dismissBookingCard();
+    const el = document.createElement("div");
+    el.id = "booking-card";
+    el.className = "booking-card";
+    el.setAttribute("role", "dialog");
+    el.setAttribute("aria-label", "Preview paid booking");
+    el.innerHTML = `
+    <div class="flex-between">
+      <strong>Paid booking preview</strong>
+      <button type="button" class="linklike" onclick="dismissBookingCard()">Dismiss</button>
+    </div>
+    <p class="small muted" style="margin:6px 0 0">Simulation: nothing is booked, charged or sent.</p>
+    <div class="mt">
+      <div class="flex-between"><span class="small">Creator rate</span><strong>$${fmtMoney(bk.rate)}</strong></div>
+      <div class="flex-between"><span class="small">You pay (rate + 3%)</span><strong>$${fmtMoney(bk.businessTotal)}</strong></div>
+      <div class="flex-between"><span class="small">Creator keeps (97% of their rate)</span><strong>$${fmtMoney(bk.creatorNet)}</strong></div>
+      <div class="flex-between"><span class="small">SIGNL fee, split evenly</span><strong>$${fmtMoney(bk.platformFee)}</strong></div>
+    </div>
+    <p class="small" style="margin:10px 0 0">Held by SIGNL until the post is live.</p>
+    ${bk.paymentNote ? `<p class="small muted">${esc(bk.paymentNote)}</p>` : ""}
+    ${bk.note ? `<p class="small muted">${esc(bk.note)}</p>` : ""}`;
+    document.body.appendChild(el);
   } catch (err) { alert(err.message); }
 }
 
@@ -3468,12 +3493,31 @@ async function homeAcceptOffer(e, offerId) {
   return false;
 }
 
+// The dashboard's open-offer action: applying is the open lane's
+// one tap (the Offers board's Apply, same endpoint). The home
+// re-renders after, and the card then reads Applied.
+async function homeApplyOffer(offerId) {
+  try {
+    await api("POST", `/offers/${offerId}/apply`, {});
+    refreshBadges();
+    loadCreatorHome();
+  } catch (err) { alert(err.message); }
+}
+
 // Opportunities picked for you: the same open offers the Offers
 // tab lists, ordered the honest way: sent directly to you first,
 // then the most spots still open. Every card spells out the deal
 // (compensation, the Standard Visit deliverables, the business's
 // plan rights, the window) before any accept button.
-function homeOpportunitiesHtml(offers, u) {
+function homeOpportunitiesHtml(offers, u, bookings, applications) {
+  // State before actions (perfection pass, 2026-10-26): a card
+  // never offers an action the creator has already taken. A booked
+  // offer reads Booked and points at My Visits; an open offer the
+  // creator already applied to reads Applied; an open offer gets
+  // Apply (open offers book by application, so the old Accept here
+  // could only ever fail against the server's lane rule).
+  const bookedOfferIds = new Set((bookings || []).filter((b) => b.offerId && b.status !== "cancelled" && b.status !== "expired").map((b) => b.offerId));
+  const appliedOfferIds = new Set((applications || []).filter((a) => a.status === "applied" || a.status === "backfill_offered").map((a) => a.offerId));
   const ranked = offers.slice().sort((a, b) => {
     const ta = a.creatorId === u.id ? 0 : 1;
     const tb = b.creatorId === u.id ? 0 : 1;
@@ -3491,6 +3535,16 @@ function homeOpportunitiesHtml(offers, u) {
   const cards = ranked.slice(0, 3).map((o) => {
     const rights = o.visitRights || rightsForVisit(o.kind);
     const left = Math.max(0, (o.spots || 0) - (o.bookedCount || 0));
+    const actions = bookedOfferIds.has(o.id)
+      ? `<span class="badge ok">Booked</span>
+          <button class="btn small-btn ghost" onclick="return go('dashboard','My Visits')">My Visits</button>`
+      : o.lane === "open"
+        ? (appliedOfferIds.has(o.id)
+          ? `<span class="badge info">Applied</span> <span class="small muted">Waiting on the business</span>`
+          : `<button class="btn small-btn book" onclick="homeApplyOffer('${o.id}')">Apply</button>`)
+        : `<form onsubmit="return homeAcceptOffer(event, '${o.id}')">
+            <button class="btn small-btn book" type="submit">Accept</button>
+          </form>`;
     return `
     <div class="card home-opp mb">
       <div class="flex-between"><strong>${esc(o.title)}</strong><span class="badge tier">${esc(o.businessName)}</span></div>
@@ -3502,9 +3556,7 @@ function homeOpportunitiesHtml(offers, u) {
       <div class="slot-foot">
         <div><div class="slot-price">$${fmtPrice(o.kind === "paid" ? o.cashRate : o.dollarCap)}</div><div class="slot-note">${o.kind === "paid" ? "Rate" : "Comp value"}</div></div>
         <div class="slot-actions">
-          <form onsubmit="return homeAcceptOffer(event, '${o.id}')">
-            <button class="btn small-btn book" type="submit">Accept</button>
-          </form>
+          ${actions}
         </div>
       </div>
     </div>`;
@@ -3752,14 +3804,16 @@ async function loadCreatorHome() {
   if (!el) return;
   const u = state.user;
   try {
-    const [bkData, offData, fData] = await Promise.all([
+    const [bkData, offData, fData, appData] = await Promise.all([
       api("GET", "/bookings"),
       api("GET", "/offers"),
       api("GET", "/me/founding"),
+      api("GET", "/applications").catch(() => ({ applications: [] })),
     ]);
     if (!document.getElementById("creator-home")) return; // navigated away mid-load
     const bookings = bkData.bookings || [];
     const offers = offData.offers || [];
+    const applications = appData.applications || [];
     const card = fData.card || {};
     const tr = card.trackRecord || {};
     const money = homeMoney(bookings);
@@ -3787,7 +3841,7 @@ async function loadCreatorHome() {
     ${strikeStatusHtml(u)}
     ${homeActiveVisitHtml(homeActiveBooking(bookings))}
     ${bookings.filter((b) => b.post && perfUpdateDue(b.post)).map((b) => perfUpdateFormHtml(b, "home")).join("")}
-    ${homeOpportunitiesHtml(offers, u)}
+    ${homeOpportunitiesHtml(offers, u, bookings, applications)}
     ${homeLocalSignalHtml(card, bookings)}
     ${homePaidLaneHtml(u.creator)}
     ${homeMoneyHtml(money)}
@@ -4146,13 +4200,22 @@ async function loadCreatorOffers() {
   loadNotificationsInto("creator-notes");
   const direct = document.getElementById("direct-offers");
   try {
-    const data = await api("GET", "/offers");
+    const [data, bkData] = await Promise.all([
+      api("GET", "/offers"),
+      api("GET", "/bookings").catch(() => ({ bookings: [] })),
+    ]);
+    // An offer the creator already booked out of this list reads
+    // Booked (code in My Visits), never Accept/Decline again: the
+    // server refuses a second accept, and declining a booked offer
+    // is refused too, so the buttons could only ever error
+    // (perfection pass, 2026-10-26).
+    const bookedOfferIds = new Set((bkData.bookings || []).filter((b) => b.offerId && b.status !== "cancelled" && b.status !== "expired").map((b) => b.offerId));
     const mine = (data.offers || []).filter((o) => o.lane !== "open");
     if (!mine.length) {
       direct.innerHTML = `<div class="empty-state"><span class="es-badge"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z"/></svg></span><h3>No direct offers yet</h3><p>Offers sent to you land here.</p></div>`;
       return;
     }
-    direct.innerHTML = `<div class="vx-stagger">` + mine.map((o) => { const rights = o.visitRights || rightsForVisit(o.kind); return `
+    direct.innerHTML = `<div class="vx-stagger">` + mine.map((o) => { const rights = o.visitRights || rightsForVisit(o.kind); const booked = bookedOfferIds.has(o.id); return `
       <div class="card mb slot-card">
         <div class="slot-top">
           ${bizChipHtml(o.businessName)}
@@ -4173,10 +4236,11 @@ async function loadCreatorOffers() {
         <div class="slot-foot">
           <div><div class="slot-price">$${fmtPrice(o.kind === "paid" ? o.cashRate : o.dollarCap)}</div><div class="slot-note">${o.kind === "paid" ? "Rate" : "Comp cap"}</div></div>
           <div class="slot-actions">
-            <form onsubmit="return acceptOffer(event, '${o.id}')">
+            ${booked ? `<span class="badge ok">Booked</span>
+            <button class="btn small-btn ghost" onclick="return go('dashboard','My Visits')">My Visits</button>` : `<form onsubmit="return acceptOffer(event, '${o.id}')">
               <button class="btn book" type="submit">Accept</button>
             </form>
-            ${o.creatorId ? `<button class="btn small-btn danger" onclick="declineOffer('${o.id}')">Decline</button>` : ""}
+            ${o.creatorId ? `<button class="btn small-btn danger" onclick="declineOffer('${o.id}')">Decline</button>` : ""}`}
             <button class="btn small-btn ghost" onclick="openThread('${o.businessId}')">Message</button>
           </div>
         </div>
@@ -5078,10 +5142,17 @@ function dashSeg(id, btn) {
 function bizDashAttentionHtml(h, opts) {
   const o = opts || {};
   const all = h.attention || [];
-  if (!all.length) return `<div class="notice blue" style="margin-top:16px"><strong>Nothing needs your attention.</strong> Every visit is on track.</div>`;
+  // The Needs-you badge counts the unset staff PIN as a task too
+  // (loadBusinessHome's needsCount), so an overview that names the
+  // PIN alongside the attention items keeps the two numbers in
+  // agreement on one screen (perfection pass, 2026-10-26).
+  const pin = !!o.pinItem;
+  const total = all.length + (pin ? 1 : 0);
+  if (!total) return `<div class="notice blue" style="margin-top:16px"><strong>Nothing needs your attention.</strong> Every visit is on track.</div>`;
   const items = o.limit ? all.slice(0, o.limit) : all;
-  return `<div class="notice" style="margin-top:16px"><strong>${h.attention.length} item${h.attention.length === 1 ? "" : "s"} need${h.attention.length === 1 ? "s" : ""} your attention.</strong>
+  return `<div class="notice" style="margin-top:16px"><strong>${total} item${total === 1 ? "" : "s"} need${total === 1 ? "s" : ""} your attention.</strong>
     ${items.map((a) => `<br><strong>${esc(a.label)}:</strong> ${esc(a.detail)}${o.actions && a.kind === "offer_nudge" ? ` <button class="btn small-btn" onclick="fixOffer('${esc(a.offerId)}','raise')">Raise comp +$25</button> <button class="btn small-btn ghost" onclick="fixOffer('${esc(a.offerId)}','widen')">Widen window +3 days</button>` : ""}${o.actions && a.kind === "applications" ? ` <button class="btn small-btn" onclick="return goApplicants('${esc(a.offerId)}')">Review the stack</button>` : ""}`).join("")}
+    ${pin ? `<br><strong>Staff PIN:</strong> not set yet. Your team redeems visits with it, never your login. <button class="btn small-btn" onclick="return go('dashboard','Plan')">Set the staff PIN</button>` : ""}
     ${o.limit && all.length > items.length ? `<br><span class="small">+ ${all.length - items.length} more under Needs you.</span>` : ""}</div>`;
 }
 function bizDashPipelineHtml(h) {
@@ -5103,7 +5174,7 @@ function bizDashPaceHtml(h, planName, billingStatus) {
 }
 function bizDashContentRowsHtml(h) {
   return (h.topContent || []).map((c) => `
-    <div class="ui-row"><span class="k"><strong>${esc(c.title)}</strong> with @${esc(c.creatorHandle)}<br><span class="small muted">${fmtNum(c.views)} views &middot; ${fmtNum(c.likes)} likes &middot; ${c.onTime ? "posted on time" : "posted late"}${c.roasScore !== null && c.roasScore !== undefined ? ` &middot; SIGNL ROAS ${c.roasScore.toFixed(2)}&times;` : ""}${c.performanceUpdatedAt ? `<br>${perfSourceLabel(c.performanceSource)}, updated ${fmtDay(c.performanceUpdatedAt)}` : ""}</span></span><span class="v">${c.redemptions ? `${c.redemptions.count} code uses<br>$${fmtMoney(c.redemptions.basketTotal)} rung up` : "No tally yet"}</span></div>`).join("");
+    <div class="ui-row"><span class="k"><strong>${esc(c.title)}</strong> with @${esc(c.creatorHandle)}<br><span class="small muted">${fmtNum(c.views)} views &middot; ${fmtNum(c.likes)} likes &middot; ${c.onTime ? "posted on time" : "posted late"}${c.roasScore !== null && c.roasScore !== undefined && c.redemptions && c.redemptions.count > 0 ? ` &middot; SIGNL ROAS ${c.roasScore.toFixed(2)}&times;` : ""}${c.performanceUpdatedAt ? `<br>${perfSourceLabel(c.performanceSource)}, updated ${fmtDay(c.performanceUpdatedAt)}` : ""}</span></span><span class="v">${c.redemptions ? `${c.redemptions.count} code uses<br>$${fmtMoney(c.redemptions.basketTotal)} rung up` : "No tally yet"}</span></div>`).join("");
 }
 function bizDashNextRowsHtml(h, tickWhen) {
   return (h.nextVisits || []).map((n) => `
@@ -5148,7 +5219,7 @@ async function loadBusinessHome() {
         <div><strong>At the register?</strong><p class="muted small" style="margin:4px 0 0">Staff redeem with the PIN + creator code. No login needed.</p></div>
         <button class="btn" onclick="return goStaff()">Redeem a creator visit</button>
       </div>
-      ${bizDashAttentionHtml(h, { actions: true, limit: 3 })}
+      ${bizDashAttentionHtml(h, { actions: true, limit: 3, pinItem: d.staffPinSet === false })}
       <section class="panel">
         <h3 style="margin-top:0">Snapshot</h3>
         ${bizDashPipelineHtml(h)}
@@ -8047,8 +8118,15 @@ function previewDashboardHtml(d) {
     // present: the handle makes the URL a creator claim, and the
     // business landing must not override it (bug fix, 2026-10-25:
     // /claim?handle=X&market=Y rendered join-business).
+    // Market ALONE is not a business signal either: the site's
+    // city and inbound pages point their creator CTAs ("Claim
+    // your founding spot") at /?market=<name>&src=inbound-*, so a
+    // market-only arrival belongs to the creator landing the
+    // claim block above already chose. The business landing needs
+    // a business fact: the wave link's name or category, or the
+    // business-wave source tag itself (perfection pass, 2026-10-26).
     const bizParams = parseBizParams(params);
-    if (!claim.handle && (bizParams.businessName || bizParams.market || bizParams.category)) {
+    if (!claim.handle && (bizParams.businessName || bizParams.category || (srcParam || "").trim().toLowerCase() === "business-wave")) {
       state.bizPrefill = bizParams;
       if (!state.user) state.view = "join-business";
     }

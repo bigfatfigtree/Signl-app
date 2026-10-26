@@ -20,7 +20,7 @@ const { buildProfilePageHtml } = require("./profile-meta");
 // disabled (businesses join the founding list on joinsignl.com), and
 // the marketplace (discovery, offers, bookings, counter, posts,
 // messages) stays inactive in a market until an admin flips that
-// market's "live" flag. All 39 markets default to NOT live.
+// market's "live" flag. All 37 markets default to NOT live.
 //
 // SIGNL_TEST_ALLOW_BUSINESS=1 is a TEST-ONLY override used by the
 // verify suites: it re-enables business registration and treats every
@@ -8922,8 +8922,8 @@ async function route(event) {
       const allBk = await allBookings();
       const existing = allBk.filter((bk) => bk.offerId === offer.id && bk.status !== "expired" && bk.status !== "cancelled");
       if (laneOf(offer) === "open") return err(400, "Open offers work by application: apply with one tap and the business picks from the stack. Your application is your profile card; no pitch needed.");
-      if (existing.length >= offer.spots) return err(409, "All spots on this offer are booked");
       if (existing.some((bk) => bk.creatorId === user.id)) return err(409, "You already booked this offer");
+      if (existing.length >= offer.spots) return err(409, "All spots on this offer are booked");
       // Weekly visit cap (creator's own setting): offers still
       // arrive at cap, but accepting waits for next week.
       const cap = maxVisitsPerWeekOf(user);
@@ -8949,6 +8949,14 @@ async function route(event) {
       const offer = await store.get(`offer:${seg[1]}`);
       if (!offer) return err(404, "Offer not found");
       if (offer.creatorId !== user.id) return err(403, "Only the invited creator can decline this offer");
+      // An accepted offer is a booked visit, not an invitation any
+      // more: declining it would mark the offer declined while the
+      // booking (and the business's expectation) stays live, and the
+      // two records would disagree. Refuse and point at the visit.
+      const declineBookings = await allBookings();
+      if (declineBookings.some((bk) => bk.offerId === offer.id && bk.creatorId === user.id && bk.status !== "expired" && bk.status !== "cancelled")) {
+        return err(409, "You already accepted this offer, so it cannot be declined. Your visit is in My Visits: message the business there if you cannot make it.");
+      }
       offer.status = "declined";
       offer.updatedAt = nowIso();
       await store.set(`offer:${offer.id}`, offer);
