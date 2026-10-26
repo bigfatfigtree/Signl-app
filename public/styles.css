@@ -11,10 +11,10 @@
   --muted: #5F7265;
   --grad: linear-gradient(94deg, #A9E8C9 0%, #B9F1D6 100%);
   --mint: #A9E8C9;
-  --mint-deep: #0E7A4A;
-  --blue: #0E7A4A;
-  --teal: #0E7A4A;
-  --green: #0E7A4A;
+  --mint-deep: #006AFC;
+  --blue: #006AFC;
+  --teal: #006AFC;
+  --green: #006AFC;
   --red: #C2482B;
   --amber: #B97A0F;
   --radius: 18px;
@@ -145,7 +145,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--blue); bord
 .badge.ok { background: #A9E8C9; border-color: #8FD3AC; color: #0B0D0C; }
 .badge.warn { background: #FBF3E2; border-color: #E7CF9E; color: #8A5A12; }
 .badge.bad { background: #F9E9E4; border-color: #EDC4B6; color: #A83A1E; }
-.badge.info { background: #E3F5EA; border-color: #8FD3AC; color: #0E7A4A; }
+.badge.info { background: #E3F5EA; border-color: #8FD3AC; color: #006AFC; }
 .badge.elite { background: #0B0D0C; border-color: #0B0D0C; color: #A9E8C9; }
 
 .stat-row { display: flex; gap: 22px; flex-wrap: wrap; }
@@ -169,14 +169,14 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--blue); bord
   position: fixed; left: 50%; transform: translateX(-50%);
   bottom: 16px; z-index: 60; width: min(420px, calc(100vw - 24px));
   background: var(--panel); color: var(--text);
-  border: 1px solid var(--gold, #0E7A4A); border-radius: 16px;
+  border: 1px solid var(--gold, #006AFC); border-radius: 16px;
   padding: 16px 18px; box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
   max-height: 82vh; overflow-y: auto;
 }
 .booking-card .code-display { margin: 10px 0; }
 
 .notice { border: 1px solid #E7CF9E; background: #FBF3E2; color: #6B4E12; border-radius: 10px; padding: 12px 16px; margin-bottom: 16px; }
-.notice.blue { border-color: #8FD3AC; background: #E3F5EA; color: #0B5C37; }
+.notice.blue { border-color: #8FD3AC; background: #E3F5EA; color: #006AFC; }
 .error-box { border: 1px solid #EDC4B6; background: #F9E9E4; color: #8F2F18; border-radius: 10px; padding: 12px 16px; margin-bottom: 16px; }
 .rules { color: var(--teal); font-weight: 700; }
 

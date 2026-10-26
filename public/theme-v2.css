@@ -1,7 +1,8 @@
 /* SIGNL app theme: SLOTTED DESIGN SYSTEM (2026-10-25).
    Jeff approved Slotted's final design and ordered the SIGNL app
    restyled to match it: mint + black ONLY as the accent system
-   (mint #A9E8C9, deep mint #8FD3AC / #0E7A4A, pale mint #B9F1D6 /
+   (mint #A9E8C9, deep mint #8FD3AC, accent blue #006AFC —
+   the deep-green accent was retired 2026-10-26 — pale mint #B9F1D6 /
    #E3F5EA tints, ink #0B0D0C, off-white #FAFCFA pages, sage
    secondary text, hairline borders, Manrope everywhere, pill
    buttons, large radii, soft shadows, black topbar / hero bands /
@@ -23,7 +24,7 @@
   --mint-b: #B9F1D6;
   --mint-pale: #E3F5EA;
   --mint-soft: #8FD3AC;
-  --mint-deep: #0E7A4A;
+  --mint-deep: #006AFC;
   --mint-dot: #3FA66B;
   --hair-d: #272C27;
   --bg: #FAFCFA;
@@ -47,9 +48,9 @@
   --panel-2: #F4F7F4;
   --text: #0B0D0C;
   --muted: #5F7265;
-  --blue: #0E7A4A;
-  --teal: #0E7A4A;
-  --green: #0E7A4A;
+  --blue: #006AFC;
+  --teal: #006AFC;
+  --green: #006AFC;
   --red: #C2482B;
   --amber: #B97A0F;
   --radius: 18px;
@@ -72,7 +73,7 @@ h1, h2, h3, .display {
 }
 h1 { font-weight: 800; }
 h2, h3 { font-weight: 800; }
-a { color: #0E7A4A; }
+a { color: #006AFC; }
 .muted { color: var(--ink2); }
 .num { font-family: 'Manrope', sans-serif; }
 .grad-text { color: var(--mint-deep); }
@@ -263,13 +264,13 @@ input:focus, select:focus, textarea:focus {
   border-radius: 14px;
 }
 .notice.blue {
-  border-color: #8FD3AC; background: #E3F5EA; color: #0B5C37;
+  border-color: #8FD3AC; background: #E3F5EA; color: #006AFC;
 }
 .error-box {
   border: 1px solid #EDC4B6; background: #F9E9E4; color: #8F2F18;
   border-radius: 14px;
 }
-.sparks { color: #0E7A4A; }
+.sparks { color: #006AFC; }
 
 /* ---------- tables (admin) ---------- */
 th { color: var(--ink3); }
@@ -332,7 +333,7 @@ tbody tr:hover td { background: rgba(227,245,234,.55); }
   background: var(--mint); color: var(--ink); border-color: transparent; font-weight: 800;
 }
 .earn-points {
-  font-family: 'Manrope', sans-serif; font-weight: 700; color: #0E7A4A;
+  font-family: 'Manrope', sans-serif; font-weight: 700; color: #006AFC;
 }
 .earn-points.neg { color: var(--red); }
 .ledger { display: grid; }
@@ -342,7 +343,7 @@ tbody tr:hover td { background: rgba(227,245,234,.55); }
 }
 .ledger .lg-row:last-child { border-bottom: none; }
 .ledger .pts { font-family: 'Manrope', sans-serif; font-weight: 700; white-space: nowrap; }
-.ledger .pts.plus { color: #0E7A4A; }
+.ledger .pts.plus { color: #006AFC; }
 .ledger .pts.minus { color: var(--red); }
 .meter { height: 10px; border-radius: 99px; background: var(--bg2); overflow: hidden; }
 .meter i { display: block; height: 100%; background: var(--black); border-radius: 99px; }
@@ -353,9 +354,9 @@ tbody tr:hover td { background: rgba(227,245,234,.55); }
   box-shadow: var(--sh-sm);
 }
 .work-card:hover { border-color: var(--ink3); }
-.work-play { color: #0E7A4A; }
+.work-play { color: #006AFC; }
 .work-host { color: var(--ink3); }
-.stars { color: #0E7A4A; }
+.stars { color: #006AFC; }
 .review-item {
   background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-sm);
 }
@@ -577,9 +578,9 @@ tbody tr:hover td { background: rgba(227,245,234,.55); }
 /* Small app-only states carried over from the legacy theme. */
 .creator-card.paused { opacity: .55; filter: grayscale(.7); }
 .creator-card.paused .btn { pointer-events: none; }
-.saved { color: #0E7A4A; font-weight: 600; font-size: .9rem; }
+.saved { color: #006AFC; font-weight: 600; font-size: .9rem; }
 .pv-tick { font-family: 'Manrope', sans-serif; font-weight: 700; }
-.rules { color: #0E7A4A; }
+.rules { color: #006AFC; }
 
 /* ---------- home dashboards (concept merge, 2026-10-20) ----------
    Mobile is a hard requirement (Jeff): every rule below is
@@ -774,8 +775,8 @@ body.bn-on .footer { padding-bottom: calc(88px + env(safe-area-inset-bottom)); }
   display: inline-block; font-size: 0.74rem; font-weight: 700; color: #0B0D0C;
   background: #F4F7F4; border: 1px solid #DFE7DF; border-radius: 999px; padding: 3px 9px;
 }
-.card.highlight { outline: 3px solid #0E7A4A; outline-offset: 2px; transition: outline-color 0.3s; }
-.perf-update-card { border-color: #0E7A4A; }
+.card.highlight { outline: 3px solid #006AFC; outline-offset: 2px; transition: outline-color 0.3s; }
+.perf-update-card { border-color: #006AFC; }
 
 /* =====================================================================
    Visual experience pass (2026-10-24)
@@ -979,7 +980,7 @@ main { padding-top: 26px; }
 }
 .success-check { width: 54px; height: 54px; display: block; }
 .success-check circle {
-  fill: none; stroke: #0E7A4A; stroke-width: 3;
+  fill: none; stroke: #006AFC; stroke-width: 3;
   stroke-dasharray: 302; stroke-dashoffset: 302;
   animation: vxDraw .7s ease forwards;
 }
