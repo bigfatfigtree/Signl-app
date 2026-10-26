@@ -874,6 +874,11 @@ function stackReducedMotion() {
 }
 function attachStackDrag(wrap, card) {
   let sx = 0, dx = 0, dragging = false, pid = null;
+  // The card photo is the natural grab spot, and a native HTML image
+  // drag cancels the pointer stream a few px in — which used to land
+  // in the tap band and open the profile mid-drag. Native drags are
+  // not stack drags: suppress them inside the card.
+  card.addEventListener("dragstart", (e) => { e.preventDefault(); });
   card.addEventListener("pointerdown", (e) => {
     if (e.target.closest("button, a, input, details, summary, form")) return;
     sx = e.clientX; dx = 0; dragging = true; pid = e.pointerId;
@@ -885,12 +890,20 @@ function attachStackDrag(wrap, card) {
     dx = e.clientX - sx;
     card.style.transform = `translateX(${dx}px) rotate(${Math.max(-8, Math.min(8, dx / 16))}deg)`;
   });
-  const end = (e) => {
+  const end = (e, cancelled) => {
     if (!dragging || (e && e.pointerId !== pid)) return;
     dragging = false;
     const key = stackKeyOf(card);
     const s = stackState[key];
     if (!s) return;
+    if (cancelled) {
+      // A cancelled gesture (scroll takeover, native-drag abort) is
+      // never a tap and never a swipe: just settle the card back.
+      card.style.transition = "transform .25s ease";
+      card.style.transform = "";
+      dx = 0;
+      return;
+    }
     if (Math.abs(dx) > 90 && !stackReducedMotion()) {
       const dir = dx > 0 ? "go" : "pass";
       const item = s.items[s.idx];
@@ -908,8 +921,8 @@ function attachStackDrag(wrap, card) {
     }
     dx = 0;
   };
-  card.addEventListener("pointerup", end);
-  card.addEventListener("pointercancel", end);
+  card.addEventListener("pointerup", (e) => end(e, false));
+  card.addEventListener("pointercancel", (e) => end(e, true));
 }
 // Local audience % estimator help (audit F1 mitigation, 2026-10-22):
 // the one canonical helper text under every local % field (full

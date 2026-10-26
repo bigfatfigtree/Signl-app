@@ -1649,6 +1649,7 @@ input.sw:focus-visible { outline: 2px solid var(--mint-deep); outline-offset: 2p
   filter: saturate(.75);
 }
 .stk-card { position: relative; z-index: 1; touch-action: pan-y; cursor: grab; }
+.stk-card img { -webkit-user-drag: none; user-select: none; -webkit-user-select: none; }
 .stk-card:active { cursor: grabbing; }
 .stk-actions {
   display: flex; align-items: center; justify-content: center;
