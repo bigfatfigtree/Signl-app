@@ -62,7 +62,7 @@ try {
   const rb = await business("POST", "/api/auth/register", { role: "business", name: "Fallback Owner", businessName: "Fallback Cafe", email: "fbiz@fixtures.dev", password: "business-pass-123", market: "Richmond", city: "Richmond", category: "Coffee & Bakery", planId: "self-service", agreedTerms: true });
   await admin("POST", "/api/admin/review", { userId: rb.data.user.id, decision: "approve" });
   await admin("POST", "/api/admin/businesses/activate", { userId: rb.data.user.id });
-  check("self-service plan recorded at $299", rb.data.user.business.planPriceMonthly === 299);
+  check("self-service plan recorded at $199", rb.data.user.business.planPriceMonthly === 199);
 
   const offer = await business("POST", "/api/offers", { title: "Coffee flight on us", whatComped: "One coffee flight", dollarCap: 25, spots: 2, visitWindow: "Weekdays" });
   check("open offer created", offer.status === 201);

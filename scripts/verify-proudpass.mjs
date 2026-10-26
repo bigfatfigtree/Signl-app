@@ -128,6 +128,17 @@ try {
 
   console.log("== F1/F3/F4/F5/F6/F7/F8: client source pins ==");
   const appJs = fs.readFileSync(path.join(import.meta.dirname, "..", "public", "app.js"), "utf8");
+  // Founding price hierarchy (Jeff, 2026-10-26): the standard
+  // rate is the hero figure on every plan card; the founding
+  // first-month price sits directly under it as the mint badge;
+  // the duplicate small-print first-month line is gone, and the
+  // surviving small line carries only the minimum + rate-held.
+  check("plan cards lead with the standard rate as the hero figure", appJs.includes('<div class="price">$${fmtPrice(p.priceMonthly)}<span class="small muted">/mo</span></div>'));
+  check("the founding badge sits directly under the hero price on all three plan-card renders", (appJs.match(/founding-badge-row/g) || []).length === 3 && appJs.includes('class="founding-badge">FOUNDING: FIRST MONTH $${fmtPrice(p.firstMonthPriceMonthly)}'));
+  check("no plan card restates the first-month price in small print", !appJs.includes("with the $100 founding credit.</p>") && !appJs.includes('<p class="small">First month'));
+  check("the surviving small line keeps only the minimum + founding-rate-held meaning", appJs.includes('-month minimum. Founding rate, locked while your plan stays active.'));
+  const stylesCss = fs.readFileSync(path.join(import.meta.dirname, "..", "public", "styles.css"), "utf8");
+  check("the founding badge is styled bold mint", stylesCss.includes(".founding-badge {") && stylesCss.includes("background: #A9E8C9") && stylesCss.includes("font-weight: 800"));
   check("F7 biz landing requires a business signal", appJs.includes('bizParams.businessName || bizParams.category || (srcParam || "").trim().toLowerCase() === "business-wave"'));
   check("F7 market alone no longer routes to join-business", !appJs.includes("bizParams.businessName || bizParams.market || bizParams.category"));
   check("F1 dashboard opportunities take bookings + applications", appJs.includes("function homeOpportunitiesHtml(offers, u, bookings, applications)"));

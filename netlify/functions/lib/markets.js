@@ -363,22 +363,37 @@ const BUSINESS_CATEGORIES = [
   "Fitness Studio", "Retail", "Attraction", "Local Services", "Other",
 ];
 
-// Three plans (Jeff, 2026-10-19). All 3-month minimum, then month to
-// month. Content rights follow the VISIT, never the plan (rights
-// model adopted 2026-10-21): a comp visit is native sharing only on
-// every plan; a paid visit adds repost rights and ad use for 6
-// months from the post date. Managed is hand-held, with more visits
-// and the quarterly hero feature.
+// Three plans (Jeff, 2026-10-19; FOUNDING structure locked
+// 2026-10-26). Prices below are FOUNDING rates: a founding business
+// keeps its rate while the plan stays active; later cohorts step
+// up. Every plan carries the $100 founding credit on the first
+// month (first month $99 / $249 / $599). All 3-month minimum, then
+// month to month. No per-location charge. Unused visits roll into
+// the next month and expire at the end of that month (one month of
+// carry max; see planAllowanceFor in router.js). Content rights
+// follow the VISIT and the LICENSE, never the plan (rights model
+// adopted 2026-10-21, license standardized 2026-10-26): a comp
+// visit is native sharing only on every plan; a paid booking
+// includes one standard license of 90 days of repost + paid ad
+// use; a comped post can be licensed the same way at the creator's
+// listed licensing fee, with the creator's approval. Paid bookings
+// and licensing are available on every plan; Growth is the tier
+// built for paid work and reuse (license library, priority
+// access). Managed is hand-held, with more visits and the
+// quarterly hero feature.
 const PLANS = [
   {
     id: "self-service",
     name: "Self-Service",
-    priceMonthly: 299,
+    priceMonthly: 199,
+    foundingCredit: 100,
+    firstMonthPriceMonthly: 99,
     minMonths: 3,
-    visitsPerMonth: 8,
+    visitsPerMonth: 5,
     features: [
       "Browse the roster, send comp offers",
-      "Up to 8 visits / month",
+      "Up to 5 visits / month",
+      "Unused visits roll over one month",
       "Post tracking + results",
       "Share comp posts natively, creator tagged",
     ],
@@ -386,30 +401,38 @@ const PLANS = [
   {
     id: "growth",
     name: "Growth",
-    priceMonthly: 599,
+    priceMonthly: 349,
+    foundingCredit: 100,
+    firstMonthPriceMonthly: 249,
     minMonths: 3,
-    visitsPerMonth: 20,
+    visitsPerMonth: 10,
     features: [
       "Browse the roster, send comp offers",
-      "Up to 20 visits / month",
+      "Up to 10 visits / month",
+      "Unused visits roll over one month",
       "Post tracking + results",
-      "Paid visits at creators' listed rates",
-      "Paid visits: repost + 6-month ad rights",
+      "Paid bookings at creators' listed rates",
+      "Paid bookings include the 90-day license",
+      "Every license tracked in one library",
+      "Priority access to the creators you license",
     ],
   },
   {
     id: "managed",
     name: "Managed",
-    priceMonthly: 999,
+    priceMonthly: 699,
+    foundingCredit: 100,
+    firstMonthPriceMonthly: 599,
     minMonths: 3,
-    visitsPerMonth: 30,
+    visitsPerMonth: 20,
     features: [
       "A coordinator runs everything",
-      "Up to 30 visits / month",
+      "Up to 20 visits / month",
+      "Unused visits roll over one month",
       "Calendar + scheduling handled",
       "Monthly paid budget, spent for you",
       "Quarterly hero creator feature",
-      "Paid bookings + rights handled · monthly report",
+      "Paid bookings + licenses handled · monthly report",
     ],
   },
 ];

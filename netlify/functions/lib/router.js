@@ -140,8 +140,11 @@ const CODE_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 // visitRightsForVisit): a comp visit is native sharing only, with no
 // downloads, no reposting the file, and no ad use, ever; a paid
 // visit (the creator's own listed rate, a 6% service fee split 3% to
-// the business and 3% to the creator) adds repost rights and ad use
-// for a set window of 6 months from the post date, never perpetuity.
+// the business and 3% to the creator) includes the one standard
+// license: repost rights and ad use for 90 days from the post date,
+// never perpetuity. A comped post can earn the same 90-day license
+// when the creator grants a license request at their listed
+// licensing fee (license standard locked by Jeff, 2026-10-26).
 // The creator always owns their content, and nobody, on any visit,
 // edits it. This object is the single source of
 // truth: it ships in bootstrap, on public profiles, on discovery
@@ -157,7 +160,7 @@ const STANDARD_VISIT = {
     "The post stays live on the creator's profile for at least 30 days",
   ],
   summary:
-    "Every SIGNL comped visit includes: 1 post or reel + 1 story that shares the post, within 48 hours of the visit, honest and disclosed, live at least 30 days, with tracked delivery proof. 48 hours is the standard creators are held to; a post inside one week still counts, as a late delivery. Paid bookings carry the deliverables set in the booking's own terms. Content rights follow the visit, never the plan: on a comp visit the business may share the post natively only, with the creator tagged; no downloads, no reposting the file, no ad use. On a paid visit the business may also repost the post and run it as an ad for 6 months from the post date. The creator always owns their content, and nobody can edit it.",
+    "Every SIGNL comped visit includes: 1 post or reel + 1 story that shares the post, within 48 hours of the visit, honest and disclosed, live at least 30 days, with tracked delivery proof. 48 hours is the standard creators are held to; a post inside one week still counts, as a late delivery. Paid bookings carry the deliverables set in the booking's own terms. Content rights follow the visit, never the plan: on a comp visit the business may share the post natively only, with the creator tagged; no downloads, no reposting the file, no ad use. On a paid visit the business may also repost the post and run it as an ad for 90 days from the post date, under the one standard license every paid booking includes. A comped post can be licensed the same way, for 90 days, at the creator's listed licensing fee and only with their approval. The creator always owns their content, and nobody can edit it.",
 };
 
 // ---------- The paid lane (Jeff, 2026-10-19) ----------
@@ -692,24 +695,31 @@ async function enrichRoasEstimateInputs(bookings) {
 // (rights model adopted by Jeff, 2026-10-21; it supersedes the
 // plan-based ladder of 2026-10-19). A comp visit gives the business
 // native sharing only: no downloads, no reposting the file, no ad
-// use, ever, on every plan. A paid visit adds repost rights and ad
-// use for a set window of 6 months from the post date, never
-// perpetuity. The creator always owns their content. The creator
-// sees exactly this, for the specific offer, BEFORE accepting:
-// rights are never a surprise.
-const AD_USE_WINDOW_MONTHS = 6;
+// use, ever, on every plan. A paid visit includes the one standard
+// license (Jeff, 2026-10-26): repost rights and ad use for 90 days
+// from the post date, never perpetuity. A comped post reaches the
+// same license only through a granted license request at the
+// creator's listed licensing fee; its 90 days run from the grant.
+// The creator always owns their content. The creator sees exactly
+// this, for the specific offer, BEFORE accepting: rights are never
+// a surprise.
+const LICENSE_WINDOW_DAYS = 90;
 function adUseWindowEnd(post) {
   const d = new Date((post && (post.submittedAt || post.createdAt)) || Date.now());
-  d.setMonth(d.getMonth() + AD_USE_WINDOW_MONTHS);
+  d.setDate(d.getDate() + LICENSE_WINDOW_DAYS);
   return d;
+}
+function licenseWindowEnd(fromMs) {
+  return new Date(fromMs + LICENSE_WINDOW_DAYS * DAY_MS);
 }
 function visitRightsForVisit(kind) {
   if (kind === "paid") {
     return {
       basis: "paid",
-      can: ["Share your post natively, with you tagged", "Repost it on their own feed", "Run it as an ad for 6 months from the post date (never longer)"],
-      cannot: ["Edit your post", "Use it in ads after the 6-month window"],
+      can: ["Share your post natively, with you tagged", "Repost it on their own feed", "Run it as an ad for 90 days from the post date (never longer)"],
+      cannot: ["Edit your post", "Use it in ads after the 90-day window"],
       adUse: true,
+      licenseDays: LICENSE_WINDOW_DAYS,
     };
   }
   return {
@@ -1089,6 +1099,52 @@ function applyTypedCityResolution(user, typedCity) {
 
 function planById(id) {
   return PLANS.find((p) => p.id === id) || null;
+}
+
+// ---------- Plan visit allowance + rollover (Jeff, 2026-10-26) ----------
+// The server-side allowance counter for a business's plan visits.
+// A "used" visit is a comp booking created in the month (paid
+// bookings are a per-visit purchase on top and never consume the
+// allowance; see the paid lane). ROLLOVER: visits the business did
+// not use out of a month's BASE allowance roll into the next month
+// and expire at the end of that month. Rolled visits never roll a
+// second time, so the carry into any month is just the previous
+// month's unused base, consumption is counted against the base
+// first, and the allowance can never exceed base + one month of
+// carry. Calendar months, matching the business home's cycle.
+// History is read against the CURRENT plan's base (a plan change
+// re-bases the allowance; there is no per-plan ledger). Months
+// before the business's first booking contribute nothing.
+function planAllowanceFor(bookings, plan, nowMs) {
+  const base = plan ? plan.visitsPerMonth : 0;
+  const now = new Date(nowMs);
+  const curKey = now.getFullYear() * 12 + now.getMonth();
+  const counts = new Map();
+  let earliest = null;
+  for (const b of bookings || []) {
+    if (!b || b.kind === "paid") continue;
+    const t = Date.parse(b.createdAt);
+    if (!Number.isFinite(t)) continue;
+    const d = new Date(t);
+    const k = d.getFullYear() * 12 + d.getMonth();
+    counts.set(k, (counts.get(k) || 0) + 1);
+    if (earliest === null || k < earliest) earliest = k;
+  }
+  const used = counts.get(curKey) || 0;
+  let carried = 0;
+  if (earliest !== null && earliest < curKey) {
+    carried = Math.max(0, base - Math.min(counts.get(curKey - 1) || 0, base));
+  }
+  const allowance = base + carried;
+  return {
+    base,
+    carried,
+    allowance,
+    used,
+    remaining: Math.max(0, allowance - used),
+    // Rolled visits on the current allowance lapse when this month ends.
+    carriedExpiresAt: carried > 0 ? new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString() : null,
+  };
 }
 
 // Business access state (Jeff, 2026-10-20 correction): approval
@@ -2469,6 +2525,8 @@ async function createBookingForOffer({ offer, creator, via, applicationId = null
       businessTotal: math.businessTotal,
       creatorNet: math.creatorNet,
       platformFee: math.platformFee,
+      licenseDays: LICENSE_WINDOW_DAYS,
+      licenseNote: "Standard license included: repost + ad use for 90 days from the post date, never longer.",
       escrowState: "held",
       paymentNote: PAID_LANE.paymentNote,
       bookedAt: ts,
@@ -2550,6 +2608,7 @@ async function rankApplications(apps) {
         localAudiencePct: c.creator.localAudiencePct === undefined ? null : c.creator.localAudiencePct,
         totalAudience: audienceTotalOf(c.creator),
         paidRate: typeof c.creator.paidRate === "number" && c.creator.paidRate > 0 ? c.creator.paidRate : null,
+        licensingFee: typeof c.creator.licensingFee === "number" && c.creator.licensingFee > 0 ? c.creator.licensingFee : null,
         ratingAvg: rating.ratingAvg,
         ratingCount: rating.ratingCount,
         badges: momentum.badgesFor(c),
@@ -2907,7 +2966,7 @@ async function publicCreator(u, viewer, foundingPriority) {
     // defaults true for legacy records, paidRate is a number or
     // null (null = no paid bookings at any price).
     profile: u.creator
-      ? { ...u.creator, university, primaryPlatform: primaryProfileOf(u.creator).platform, primaryPlatformLabel: primaryProfileOf(u.creator).label, primaryProfileUrl: primaryProfileOf(u.creator).url, compOpen: u.creator.compOpen !== false, paidRate: typeof u.creator.paidRate === "number" && u.creator.paidRate > 0 ? u.creator.paidRate : null }
+      ? { ...u.creator, university, primaryPlatform: primaryProfileOf(u.creator).platform, primaryPlatformLabel: primaryProfileOf(u.creator).label, primaryProfileUrl: primaryProfileOf(u.creator).url, compOpen: u.creator.compOpen !== false, paidRate: typeof u.creator.paidRate === "number" && u.creator.paidRate > 0 ? u.creator.paidRate : null, licensingFee: typeof u.creator.licensingFee === "number" && u.creator.licensingFee > 0 ? u.creator.licensingFee : null }
       : u.creator,
     totalAudience: audienceTotalOf(u.creator || {}),
     audienceStack: audienceView(u.creator || {}).platforms,
@@ -3056,6 +3115,7 @@ async function publicProfilePayload(u) {
     compCategories: (c.compCategories || []).filter((x) => x !== PAID_COMP),
     compOpen: c.compOpen !== false,
     paidRate: typeof c.paidRate === "number" && c.paidRate > 0 ? c.paidRate : null,
+    licensingFee: typeof c.licensingFee === "number" && c.licensingFee > 0 ? c.licensingFee : null,
     localAudiencePct: c.localAudiencePct === undefined ? null : c.localAudiencePct,
     localAudienceSource: c.localAudienceSource || "Self-reported",
     localImpactScore: impact ? impact.score : null,
@@ -3123,9 +3183,17 @@ async function withPostState(booking) {
   const posts = await allPosts();
   const post = posts.find((p) => p.bookingId === booking.id) || null;
   let creatorStanding = "good";
+  let creatorLicensingFee = null;
   if (booking.creatorId) {
     const creator = await store.get(`user:${booking.creatorId}`);
-    if (creator) creatorStanding = standingState(creator);
+    if (creator) {
+      creatorStanding = standingState(creator);
+      // Licensing (Jeff, 2026-10-26): the visit card prices the
+      // license action from the creator's listed fee, so it rides
+      // the booking payload like the handle does.
+      const f = creator.creator ? Number(creator.creator.licensingFee) : NaN;
+      creatorLicensingFee = Number.isFinite(f) && f >= 1 ? f : null;
+    }
   }
   // Paid lane + review surfaces (Jeff, 2026-10-19): the booking's
   // paidLane object rides on the record itself; here we attach the
@@ -3167,7 +3235,7 @@ async function withPostState(booking) {
   const roasBooking = { ...booking, post, planAllocation };
   await enrichRoasEstimateInputs([roasBooking]);
   const roas = roasFor([roasBooking]);
-  return { ...booking, post: postWithPerformance(post), postState: postState(booking, post), compliance: complianceStatusFor(booking, post, creatorStanding), businessReviewLinks, businessReferralProgram, businessReview, creatorReview, roas };
+  return { ...booking, post: postWithPerformance(post), creatorLicensingFee, postState: postState(booking, post), compliance: complianceStatusFor(booking, post, creatorStanding), businessReviewLinks, businessReferralProgram, businessReview, creatorReview, roas };
 }
 
 // ---------- Post compliance (Jeff, 2026-10-19; timeline final) ----------
@@ -4539,7 +4607,7 @@ function businessWaveEmail(recipient) {
     "",
     businessSignupLink(recipient),
     "",
-    `Claiming it costs nothing and commits you to nothing. It puts ${business} in early, ahead of the public launch, and you'll get updates from me as we get close to opening day. If you decide to activate when the market opens, founding pricing is locked at $299, $599 or $999 a month depending on the creator visits you want. If you never activate, that's fine too.`,
+    `Claiming it costs nothing and commits you to nothing. It puts ${business} in early, ahead of the public launch, and you'll get updates from me as we get close to opening day. If you decide to activate when the market opens, founding pricing is locked at $199, $349 or $699 a month depending on the creator visits you want, with $100 off your first month on any plan. If you never activate, that's fine too.`,
     "",
     "Jeff",
     "Founder, SIGNL",
@@ -5415,17 +5483,24 @@ async function previewDashboard() {
   // bookings: register spend tracked through each creator's
   // audience code plus media value at the published model rates,
   // against the comps' cost and the code discounts, with the
-  // Growth plan allocation ($599 / 20 visits = $29.95 a visit)
+  // Growth plan allocation ($349 / 10 visits = $34.90 a visit)
   // in the all-in variant. Each delivered booking also carries
   // its own score for its card.
   const planAllocation = plan.priceMonthly / plan.visitsPerMonth;
   for (const b of delivered) b.roas = roasFor([{ ...b, planAllocation }]);
   const roas = roasFor(delivered.map((b) => ({ ...b, planAllocation })));
+  // The simulated cycle runs through the same allowance counter
+  // as the real home (rollover included, Jeff 2026-10-26); the
+  // simulated bookings are stamped into the current month so the
+  // preview stays deterministic at month boundaries.
+  const pvAllowance = planAllowanceFor(bookings.map((b) => ({ ...b, kind: "comp", createdAt: new Date(now).toISOString() })), plan, now);
   const summary = {
     cycleLabel: new Date(now).toLocaleString("en-US", { month: "long", year: "numeric" }),
     visitsUsed: bookings.length,
-    visitsAllowance: plan.visitsPerMonth,
-    visitsRemaining: Math.max(0, plan.visitsPerMonth - bookings.length),
+    visitsAllowance: pvAllowance.allowance,
+    visitsBase: pvAllowance.base,
+    visitsCarried: pvAllowance.carried,
+    visitsRemaining: pvAllowance.remaining,
     postsDelivered: delivered.length,
     postsOnTime: onTimeCount,
     postsLate: delivered.length - onTimeCount,
@@ -5545,6 +5620,8 @@ async function previewDashboard() {
   const home = {
     visitsUsed: summary.visitsUsed,
     visitsAllowance: summary.visitsAllowance,
+    visitsBase: summary.visitsBase,
+    visitsCarried: summary.visitsCarried,
     visitsRemaining: summary.visitsRemaining,
     postsLive: summary.postsDelivered,
     onTimeRatePct: summary.onTimeRatePct,
@@ -5588,7 +5665,7 @@ async function previewDashboard() {
   return {
     preview: true,
     business: { ...PREVIEW_DASH_BUSINESS, planId: plan.id, planName: plan.name, discountCodes: { ...PREVIEW_DASH_DISCOUNT } },
-    plan: { id: plan.id, name: plan.name, priceMonthly: plan.priceMonthly, minMonths: plan.minMonths, visitsPerMonth: plan.visitsPerMonth, features: plan.features },
+    plan: { id: plan.id, name: plan.name, priceMonthly: plan.priceMonthly, foundingCredit: plan.foundingCredit, firstMonthPriceMonthly: plan.firstMonthPriceMonthly, minMonths: plan.minMonths, visitsPerMonth: plan.visitsPerMonth, features: plan.features },
     rights: { comp: visitRightsForVisit("comp"), paid: visitRightsForVisit("paid") },
     standardVisit: STANDARD_VISIT,
     summary,
@@ -5622,6 +5699,10 @@ async function businessHome(user) {
   monthStart.setDate(1);
   monthStart.setHours(0, 0, 0, 0);
   const monthBookings = bookings.filter((b) => Date.parse(b.createdAt) >= monthStart.getTime());
+  // Plan allowance with rollover (Jeff, 2026-10-26): comp visits
+  // used this month against this month's base plus last month's
+  // unused base, carried once. Paid bookings never consume it.
+  const allowance = planAllowanceFor(bookings, plan, now);
   const delivered = bookings.filter((b) => postByBooking.has(b.id));
   const onTime = delivered.filter((b) => postByBooking.get(b.id).onTime);
   const planAllocation = plan.priceMonthly / plan.visitsPerMonth;
@@ -5704,12 +5785,15 @@ async function businessHome(user) {
 
   return {
     business: { name: user.business.businessName, category: user.business.category, market: user.market, planId: plan.id, planName: user.business.planName, billingStatus: user.business.billingStatus, accessState: businessAccessState(user) },
-    plan: { id: plan.id, name: plan.name, priceMonthly: plan.priceMonthly, minMonths: plan.minMonths, visitsPerMonth: plan.visitsPerMonth },
+    plan: { id: plan.id, name: plan.name, priceMonthly: plan.priceMonthly, foundingCredit: plan.foundingCredit, firstMonthPriceMonthly: plan.firstMonthPriceMonthly, minMonths: plan.minMonths, visitsPerMonth: plan.visitsPerMonth },
     marketLive: await isMarketLive(user.market),
     home: {
-      visitsUsed: monthBookings.length,
-      visitsAllowance: plan.visitsPerMonth,
-      visitsRemaining: Math.max(0, plan.visitsPerMonth - monthBookings.length),
+      visitsUsed: allowance.used,
+      visitsAllowance: allowance.allowance,
+      visitsBase: allowance.base,
+      visitsCarried: allowance.carried,
+      visitsRemaining: allowance.remaining,
+      carriedExpiresAt: allowance.carriedExpiresAt,
       postsLive: delivered.length,
       onTimeRatePct: delivered.length ? Math.round((onTime.length / delivered.length) * 100) : null,
       roasScore: roas.score,
@@ -5724,7 +5808,7 @@ async function businessHome(user) {
         clockRunning: bookings.filter((b) => !!b.redeemedAt).length,
         live: delivered.length,
       },
-      planPacePct: plan.visitsPerMonth ? Math.round((monthBookings.length / plan.visitsPerMonth) * 100) : 0,
+      planPacePct: allowance.allowance ? Math.round((allowance.used / allowance.allowance) * 100) : 0,
       topContent,
       nextVisits,
     },
@@ -5917,6 +6001,7 @@ async function handleRegister(event) {
       openToPaidCampaigns: false,
       compOpen: true,
       paidRate: null,
+      licensingFee: null,
       bio: "",
       bestWork: [],
       maxVisitsPerWeek: 3,
@@ -6032,6 +6117,12 @@ async function handleRegister(event) {
       // bookings at that rate.
       compOpen: true,
       paidRate: null,
+      // Licensing (Jeff, 2026-10-26): the fee at which a business
+      // can license one of her delivered comped posts for the
+      // standard 90 days of repost + ad use. Null until she lists
+      // one in profile settings; every request still needs her
+      // approval, per post.
+      licensingFee: null,
       bio: (b.bio || "").trim(),
       // Best work links (up to 3) are added in profile edit, not at
       // sign-up; the field exists from day one so every payload and
@@ -7399,6 +7490,27 @@ async function route(event) {
           c.paidRate = rate;
         }
       }
+      // Licensing fee (Jeff, 2026-10-26): optional, like the paid
+      // rate. Null/empty means her comped posts cannot be licensed.
+      // When set (any amount from $1: a license is a click, not a
+      // visit, so the $50 booking floor does not apply), a business
+      // can request the standard 90-day license on a delivered
+      // comped post at exactly this fee; she approves or declines
+      // each request, and keeps 97% when she approves.
+      if (b.licensingFee !== undefined) {
+        if (b.licensingFee === null || b.licensingFee === "") {
+          changes.licensingFee = [c.licensingFee == null ? null : c.licensingFee, null];
+          c.licensingFee = null;
+        } else {
+          const fee = Math.round(Number(b.licensingFee) * 100) / 100;
+          if (!Number.isFinite(fee) || fee < 1) {
+            return err(400, "Your licensing fee must be at least $1, or left blank if you do not want your comped posts licensed.");
+          }
+          if (fee > 100000) return err(400, "That fee is too large to list. Set the fee a business actually licenses at.");
+          changes.licensingFee = [c.licensingFee == null ? null : c.licensingFee, fee];
+          c.licensingFee = fee;
+        }
+      }
       if (Array.isArray(b.categories)) c.categories = b.categories.filter((x) => CREATOR_CATEGORIES.includes(x));
       if (Array.isArray(b.compCategories)) {
         // Paid cash campaigns stay selectable only while the creator is
@@ -8593,6 +8705,34 @@ async function route(event) {
         },
       });
     }
+    // Preview license request (Jeff, 2026-10-26): licensing a
+    // comped post, simulated with the same discipline. Validates
+    // the creator and her listed licensing fee, runs the REAL fee
+    // math, returns a flagged simulated request, and writes
+    // NOTHING: no request, no event, no notification, no escrow.
+    if (method === "POST" && seg[1] === "preview" && seg[2] === "license-request") {
+      const b = parseBody(event);
+      const targetCreator = b.creatorId ? await store.get(`user:${b.creatorId}`) : null;
+      if (!targetCreator || targetCreator.role !== "creator" || targetCreator.status !== "approved" || isTester(targetCreator)) return err(400, "Target creator is not an approved creator");
+      const fee = Number(targetCreator.creator && targetCreator.creator.licensingFee);
+      if (!Number.isFinite(fee) || fee < 1) return err(400, "That creator has not listed a licensing fee, so there is no license to preview.");
+      const math = paidMath(fee);
+      return json(201, {
+        preview: true,
+        licenseRequest: {
+          preview: true,
+          creatorId: targetCreator.id,
+          creatorHandle: targetCreator.creator ? targetCreator.creator.handle : null,
+          fee: math.rate,
+          businessTotal: math.businessTotal,
+          creatorNet: math.creatorNet,
+          platformFee: math.platformFee,
+          licenseDays: LICENSE_WINDOW_DAYS,
+          escrowState: "held",
+          note: "Simulation only: no request saved, the creator is not contacted, and no payment is recorded.",
+        },
+      });
+    }
     // Preview code redemptions (Jeff, 2026-10-19): the register
     // side of the SIGNL ROAS Score, simulated with the same
     // discipline as every preview action. Rebuilds the simulated
@@ -9673,6 +9813,8 @@ async function route(event) {
         businessTotal: math.businessTotal,
         creatorNet: math.creatorNet,
         platformFee: math.platformFee,
+        licenseDays: LICENSE_WINDOW_DAYS,
+        licenseNote: "Standard license included: repost + ad use for 90 days from the post date, never longer.",
         escrowState: "held",
         paymentNote: PAID_LANE.paymentNote,
         bookedAt: ts,
@@ -9920,27 +10062,181 @@ async function route(event) {
     return json(200, { post });
   }
 
-  // Ad use (Jeff, 2026-10-19; rights model adopted 2026-10-21): a
-  // business declares it is running a delivered post as an ad. The
-  // right attaches to the VISIT, never the plan: only a paid visit's
-  // post can be declared, and only inside the set window of 6 months
-  // from the post date. A comp visit's post covers native sharing
-  // only, on every plan. Declaring logs ad_use_declared, notifies
-  // the creator in-app (a message in their thread), and awards the
-  // creator +25 Momentum, computed from this stored declaration
-  // like every other point. One declaration per post.
+  // ---------- post licensing (Jeff, 2026-10-26) ----------
+  // A business licenses a delivered COMPED post for the one
+  // standard license (90 days of repost + paid ad use) at the
+  // creator's listed licensing fee. The creator approves or
+  // declines each request; nothing is licensed without her yes.
+  // Money follows the paid lane exactly: paidMath splits the fee
+  // (business pays fee + 3%, the creator keeps 97%), the amount is
+  // recorded as held at request and released at grant (the right
+  // is the delivery), refunded on a decline. Founding-billing
+  // honesty applies throughout: recorded, no card charged, and
+  // while the Stripe rail is live a license would charge the
+  // business's card on file the same way a paid booking does.
+  // Available on every plan; there is no plan gate on licensing.
+  if (seg[0] === "posts" && seg.length === 3 && seg[2] === "license-request" && method === "POST") {
+    if (user.role !== "business") return err(403, "Businesses only");
+    const post = await store.get(`post:${seg[1]}`);
+    if (!post || post.businessId !== user.id) return err(404, "Post not found");
+    const booking = await store.get(`booking:${post.bookingId}`);
+    if (!booking) return err(404, "That visit is not on record");
+    if (booking.kind === "paid") return err(400, "This post came from a paid visit, which already includes the standard 90-day license. There is nothing more to license.");
+    if (post.license && post.license.status === "granted" && Date.parse(post.license.windowEndsAt) > Date.now()) {
+      return err(409, `This post is already licensed until ${String(post.license.windowEndsAt).slice(0, 10)}.`);
+    }
+    const existing = (await store.list("license:")).map((r) => r.value).filter((l) => l.postId === post.id && l.status === "pending");
+    if (existing.length) return err(409, "A license request on this post is already waiting on the creator.");
+    // Same rail rule as a paid booking: while Stripe Connect is
+    // live, a granted license charges the card on file, so the
+    // card comes first. Inert while the rail is off.
+    if (connect.connectConfigured() && !businessCardOnFile(user)) {
+      return err(400, "Add a card before licensing posts. Licenses charge your card on file when the creator approves, and SIGNL holds the payment until then. Add your card in the Plan tab, under Your plan.");
+    }
+    const creator = await store.get(`user:${post.creatorId}`);
+    const fee = creator && creator.creator ? Number(creator.creator.licensingFee) : NaN;
+    if (!creator || creator.role !== "creator" || !Number.isFinite(fee) || fee < 1) {
+      return err(400, "This creator has not listed a licensing fee, so this post cannot be licensed. Comp visits still cover native sharing: you can share the post on your own channels with the creator tagged.");
+    }
+    const math = paidMath(fee);
+    const ts = nowIso();
+    const rec = {
+      id: crypto.randomUUID(),
+      postId: post.id,
+      bookingId: post.bookingId,
+      businessId: user.id,
+      businessName: (user.business && user.business.businessName) || post.businessName || "",
+      creatorId: post.creatorId,
+      creatorHandle: creator.creator ? creator.creator.handle : "",
+      fee: math.rate,
+      businessTotal: math.businessTotal,
+      creatorNet: math.creatorNet,
+      platformFee: math.platformFee,
+      licenseDays: LICENSE_WINDOW_DAYS,
+      status: "pending",
+      escrowState: "held",
+      paymentNote: "License recorded, no card charged. SIGNL holds the payment until the creator decides.",
+      createdAt: ts,
+      respondedAt: null,
+      windowEndsAt: null,
+    };
+    await store.set(`license:${rec.id}`, rec);
+    await logEvent({ type: "license_requested", actorId: user.id, actorRole: "business", subjectId: rec.id, market: booking.market || user.market, data: { postId: post.id, bookingId: post.bookingId, creatorId: post.creatorId, fee: rec.fee, businessTotal: rec.businessTotal, creatorNet: rec.creatorNet } });
+    try {
+      const threadId = [user.id, post.creatorId].sort().join("__");
+      const msg = {
+        id: crypto.randomUUID(),
+        threadId,
+        fromId: user.id,
+        toId: post.creatorId,
+        body: `${rec.businessName || "A business"} wants to license your post from your comp visit for 90 days of reposting and ad use, at your $${fmtPriceS(rec.fee)} licensing fee. You would keep $${fmtMoneyS(rec.creatorNet)}. Nothing is licensed unless you approve it: decide on the post in your visits. Your post: ${post.url}`,
+        createdAt: ts,
+      };
+      await store.set(`message:${msg.id}`, msg);
+      await logEvent({ type: "message_sent", actorId: user.id, actorRole: "business", subjectId: msg.id, market: user.market, data: { toId: post.creatorId, toRole: "creator", threadId, bodyLength: msg.body.length, system: "license_request" } });
+    } catch (e) { /* the request stands even if the note fails */ }
+    return json(201, { licenseRequest: rec });
+  }
+
+  if (seg[0] === "license-requests" && seg.length === 1 && method === "GET") {
+    let rows = (await store.list("license:")).map((r) => r.value);
+    if (user.role === "creator") rows = rows.filter((l) => l.creatorId === user.id);
+    else if (user.role === "business") rows = rows.filter((l) => l.businessId === user.id);
+    else return err(403, "Creators and businesses only");
+    const out = [];
+    for (const l of rows) {
+      const post = await store.get(`post:${l.postId}`);
+      out.push({ ...l, postUrl: post ? post.url : null });
+    }
+    out.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+    return json(200, { licenseRequests: out });
+  }
+
+  if (seg[0] === "license-requests" && seg.length === 3 && seg[2] === "respond" && method === "POST") {
+    if (user.role !== "creator") return err(403, "Creators only");
+    const rec = await store.get(`license:${seg[1]}`);
+    if (!rec || rec.creatorId !== user.id) return err(404, "License request not found");
+    if (rec.status !== "pending") return err(409, "This request was already decided.");
+    const b = parseBody(event);
+    const decision = b.decision === "approve" ? "approve" : b.decision === "decline" ? "decline" : null;
+    if (!decision) return err(400, "Say approve or decline.");
+    const ts = nowIso();
+    rec.respondedAt = ts;
+    const post = await store.get(`post:${rec.postId}`);
+    const biz = await store.get(`user:${rec.businessId}`);
+    const bizName = rec.businessName || (biz && biz.business ? biz.business.businessName : "") || "The business";
+    if (decision === "approve") {
+      rec.status = "granted";
+      rec.escrowState = "released";
+      rec.windowEndsAt = licenseWindowEnd(Date.now()).toISOString();
+      await store.set(`license:${rec.id}`, rec);
+      if (post) {
+        post.license = { requestId: rec.id, fee: rec.fee, grantedAt: ts, windowEndsAt: rec.windowEndsAt, status: "granted" };
+        await store.set(`post:${post.id}`, post);
+      }
+      await logEvent({ type: "license_granted", actorId: user.id, actorRole: "creator", subjectId: rec.id, market: user.market, data: { postId: rec.postId, bookingId: rec.bookingId, businessId: rec.businessId, fee: rec.fee, creatorNet: rec.creatorNet, windowEndsAt: rec.windowEndsAt } });
+      try {
+        const threadId = [rec.businessId, user.id].sort().join("__");
+        const msg = {
+          id: crypto.randomUUID(),
+          threadId,
+          fromId: user.id,
+          toId: rec.businessId,
+          body: `Good news: your license on this post is granted. You can repost it and run it as an ad for 90 days, through ${rec.windowEndsAt.slice(0, 10)}. Declare the ad use on the post when you run it so the creator's record shows it. The post: ${post ? post.url : ""}`,
+          createdAt: ts,
+        };
+        await store.set(`message:${msg.id}`, msg);
+        await logEvent({ type: "message_sent", actorId: user.id, actorRole: "creator", subjectId: msg.id, market: user.market, data: { toId: rec.businessId, toRole: "business", threadId, bodyLength: msg.body.length, system: "license_granted" } });
+      } catch (e) { /* the grant stands even if the note fails */ }
+      return json(200, { licenseRequest: rec, post });
+    }
+    rec.status = "declined";
+    rec.escrowState = "refunded";
+    await store.set(`license:${rec.id}`, rec);
+    await logEvent({ type: "license_declined", actorId: user.id, actorRole: "creator", subjectId: rec.id, market: user.market, data: { postId: rec.postId, bookingId: rec.bookingId, businessId: rec.businessId, fee: rec.fee } });
+    try {
+      const threadId = [rec.businessId, user.id].sort().join("__");
+      const msg = {
+        id: crypto.randomUUID(),
+        threadId,
+        fromId: user.id,
+        toId: rec.businessId,
+        body: `Heads up: the creator declined the license request on this post, so it stays native sharing only: you can share it on your own channels with the creator tagged, with no ad use. Nothing was charged. The post: ${post ? post.url : ""}`,
+        createdAt: ts,
+      };
+      await store.set(`message:${msg.id}`, msg);
+      await logEvent({ type: "message_sent", actorId: user.id, actorRole: "creator", subjectId: msg.id, market: user.market, data: { toId: rec.businessId, toRole: "business", threadId, bodyLength: msg.body.length, system: "license_declined" } });
+    } catch (e) { /* the decline stands even if the note fails */ }
+    return json(200, { licenseRequest: rec });
+  }
+
+  // Ad use (Jeff, 2026-10-19; rights model adopted 2026-10-21;
+  // license standardized 2026-10-26): a business declares it is
+  // running a delivered post as an ad. The right attaches to the
+  // LICENSE, never the plan: a paid visit's post carries the
+  // standard 90-day license from the post date; a comp visit's post
+  // carries it only when the creator granted a license request on
+  // that post, and its 90 days run from the grant. Declaring logs
+  // ad_use_declared, notifies the creator in-app (a message in
+  // their thread), and awards the creator +25 Momentum, computed
+  // from this stored declaration like every other point. One
+  // declaration per post.
   if (seg[0] === "posts" && seg.length === 3 && seg[2] === "ad-use" && method === "POST") {
     if (user.role !== "business") return err(403, "Businesses only");
     const post = await store.get(`post:${seg[1]}`);
     if (!post || post.businessId !== user.id) return err(404, "Post not found");
     if (post.adUseDeclaredAt) return err(409, "This post is already declared for ad use");
     const booking = await store.get(`booking:${post.bookingId}`);
-    if (!booking || booking.kind !== "paid") {
-      return err(403, "Ad use comes with paid visits only. This post came from a comp visit, which covers native sharing only.");
+    const isPaidVisit = !!booking && booking.kind === "paid";
+    const license = post.license && post.license.status === "granted" ? post.license : null;
+    if (!isPaidVisit && !license) {
+      return err(403, "Ad use comes with paid visits only, or with a license the creator grants on this post. This was a comp visit, which covers native sharing only; paid visits include the standard 90-day license.");
     }
-    const windowEnd = adUseWindowEnd(post);
+    const windowEnd = isPaidVisit ? adUseWindowEnd(post) : new Date(license.windowEndsAt);
     if (Date.now() > windowEnd.getTime()) {
-      return err(403, `The 6-month ad window for this post closed on ${windowEnd.toISOString().slice(0, 10)}. Paid-visit ad rights run 6 months from the post date, never longer.`);
+      return err(403, isPaidVisit
+        ? `The 90-day ad window for this post closed on ${windowEnd.toISOString().slice(0, 10)}. Paid-visit ad rights run 90 days from the post date, never longer.`
+        : `The 90-day license on this post closed on ${windowEnd.toISOString().slice(0, 10)}. A new license from the creator would reopen it.`);
     }
     const ts = nowIso();
     post.adUseDeclaredAt = ts;
@@ -9948,7 +10244,7 @@ async function route(event) {
     post.adUseWindowEndsAt = windowEnd.toISOString();
     await store.set(`post:${post.id}`, post);
     const bizName = (user.business && user.business.businessName) || post.businessName || "A SIGNL business";
-    await logEvent({ type: "ad_use_declared", actorId: user.id, actorRole: "business", subjectId: post.id, market: booking ? booking.market : user.market, data: { bookingId: post.bookingId, creatorId: post.creatorId, visitKind: "paid", url: post.url, windowEndsAt: post.adUseWindowEndsAt } });
+    await logEvent({ type: "ad_use_declared", actorId: user.id, actorRole: "business", subjectId: post.id, market: booking ? booking.market : user.market, data: { bookingId: post.bookingId, creatorId: post.creatorId, visitKind: isPaidVisit ? "paid" : "comp", basis: isPaidVisit ? "paid" : "license", url: post.url, windowEndsAt: post.adUseWindowEndsAt } });
     // In-app notification: a message in the existing thread, so the
     // creator sees it in Messages and on the visit card.
     try {
@@ -9958,7 +10254,9 @@ async function route(event) {
         threadId,
         fromId: user.id,
         toId: post.creatorId,
-        body: `Good news: ${bizName} is using your post from your paid visit in an ad. Paid visits include repost and ad rights for 6 months from the post date, and this earned you +25 Momentum points. Your post: ${post.url}`,
+        body: isPaidVisit
+          ? `Good news: ${bizName} is using your post from your paid visit in an ad. Paid visits include the standard license: repost and ad rights for 90 days from the post date, and this earned you +25 Momentum points. Your post: ${post.url}`
+          : `Good news: ${bizName} is using your post in an ad under the 90-day license you granted on it, and this earned you +25 Momentum points. Your post: ${post.url}`,
         createdAt: ts,
       };
       await store.set(`message:${msg.id}`, msg);
@@ -10305,4 +10603,4 @@ async function route(event) {
 
 // The email builders are exported alongside the router so the verify
 // suites can assert on the exact copy a creator receives.
-module.exports = { route, passwordResetEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, AD_USE_WINDOW_MONTHS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView };
+module.exports = { route, passwordResetEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView };

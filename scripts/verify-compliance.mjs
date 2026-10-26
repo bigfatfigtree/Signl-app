@@ -19,7 +19,7 @@
 //   - ad use: a comp visit's post refuses declaration on every plan
 //     (403); a paid visit's post declares cleanly (+25 Momentum and
 //     an ad_use_declared event), a second declaration is 409, a paid
-//     post past its 6-month window refuses (403), and preview ad use
+//     post past its 90-day window refuses (403), and preview ad use
 //     writes nothing and awards nothing;
 //   - post-performance capture: one email at day 7 post-proof,
 //     +5 Momentum once, numbers visible to the business, aggregate
@@ -270,7 +270,7 @@ try {
   const op = (myOffers.data.offers || []).find((o) => o.id === (offP.data.offer && offP.data.offer.id));
   check("growth business, comp offer: comp rights (native share only, no ad use)", !!og && og.businessPlan === "growth" && og.visitRights && og.visitRights.basis === "comp" && og.visitRights.adUse === false && og.visitRights.cannot.some((x) => /ad/i.test(x)), JSON.stringify(og && og.visitRights));
   check("self-service business, comp offer: the same comp rights (plan never changes rights)", !!os && os.businessPlan === "self-service" && os.visitRights && os.visitRights.basis === "comp" && os.visitRights.adUse === false && os.visitRights.cannot.some((x) => /ad/i.test(x)), JSON.stringify(os && os.visitRights));
-  check("paid offer: paid rights (repost + ad use for 6 months from the post date)", !!op && op.visitRights && op.visitRights.basis === "paid" && op.visitRights.adUse === true && op.visitRights.can.some((x) => /6 months/i.test(x)), JSON.stringify(op && op.visitRights));
+  check("paid offer: paid rights (repost + ad use for 90 days from the post date, the standard license)", !!op && op.visitRights && op.visitRights.basis === "paid" && op.visitRights.adUse === true && op.visitRights.licenseDays === 90 && op.visitRights.can.some((x) => /90 days/i.test(x)), JSON.stringify(op && op.visitRights));
 
   // ---------- Part D: momentum determinism (profile + streak) ----------
   part("D: momentum determinism");
@@ -455,7 +455,7 @@ try {
   check("preview ad use awarded no points", (await momentumOf(paidC.client)).points === mPaidPointsBefore);
   const pvAdComp = await admin2("POST", "/api/admin/preview/ad-use", { creatorId: paidC.user.id, visitKind: "comp" });
   check("preview ad use on a comp visit refused (no ad right on comp visits)", pvAdComp.status === 400, `${pvAdComp.status}`);
-  // The 6-month window: a paid post aged past it refuses. A second
+  // The 90-day window: a paid post aged past it refuses. A second
   // paid chain, then the post is aged 200 days in the DB.
   const agedC = await registerCreator({});
   await admin("POST", "/api/admin/review", { userId: agedC.user.id, decision: "approve" });
@@ -465,14 +465,14 @@ try {
   const postAged = await agedC.client("POST", "/api/posts", { bookingId: accAged.data.booking.id, url: "https://www.instagram.com/p/paidaged1/", disclosedComp: true });
   check("second paid visit posted", postAged.status === 201, JSON.stringify(postAged.data));
   await stopServer();
-  editDb((db) => shiftPostSubmitted(db, agedC.user.id, 200)); // proof is now 200 days old: outside the 6-month window
+  editDb((db) => shiftPostSubmitted(db, agedC.user.id, 200)); // proof is now 200 days old: outside the 90-day window
   startServer();
   await waitUp();
   const adminF = await adminClient();
   const bizCF = makeClient();
   await bizCF("POST", "/api/auth/login", { email: biz.data.user.email, password: "password123" });
   const adUseAged = await bizCF("POST", `/api/posts/${postAged.data.post.id}/ad-use`, {});
-  check("paid post past its 6-month window refuses ad use (403)", adUseAged.status === 403 && /6-month/i.test(JSON.stringify(adUseAged.data)), `${adUseAged.status} ${JSON.stringify(adUseAged.data)}`);
+  check("paid post past its 90-day window refuses ad use (403)", adUseAged.status === 403 && /90-day/i.test(JSON.stringify(adUseAged.data)), `${adUseAged.status} ${JSON.stringify(adUseAged.data)}`);
   check("the aged refusal logged no second event", (await countEvents(adminF, "ad_use_declared")) === 1);
 
   // ---------- Part G: post-performance capture ----------

@@ -25,7 +25,7 @@
 // This suite proves: the exact worked example end to end
 // (12,400 views / 986 likes / 74 comments / 41 shares ->
 // media 449.40; $486 baskets at 20% -> discount 97.20; comp cost
-// 15 -> score 8.34; all-in with the Growth allocation 29.95 ->
+// 15 -> score 8.34; all-in with the Growth allocation 34.90 ->
 // 6.58); creator codes stamped at creation on comp AND paid
 // bookings and never on public profiles; the reporting
 // endpoint's auth and validation; comments/shares accepted by
@@ -218,7 +218,7 @@ try {
   check("media value prices the full report at the model rates (449.40 before any register tally)", bk1Pre.roas && bk1Pre.roas.mediaValue === 449.4 && bk1Pre.roas.registerValue === 0 && bk1Pre.roas.value === 449.4, JSON.stringify(bk1Pre.roas));
   const rep = await biz.client("POST", `/api/bookings/${bk1.id}/code-redemptions`, { count: 9, basketTotal: 486, compCostActual: 15 });
   const r1 = (rep.data.booking || {}).roas || {};
-  check("WORKED EXAMPLE: 9 redemptions, $486 baskets, comp cost 15 -> score 8.34, all-in 6.58", rep.status === 200 && r1.registerValue === 486 && r1.mediaValue === 449.4 && r1.value === 935.4 && r1.compCost === 15 && r1.discountCost === 97.2 && r1.planAllocation === 29.95 && r1.score === 8.34 && r1.allInScore === 6.58 && r1.redemptions.count === 9 && r1.redemptions.basketTotal === 486, `${rep.status} ${JSON.stringify(r1)}`);
+  check("WORKED EXAMPLE: 9 redemptions, $486 baskets, comp cost 15 -> score 8.34, all-in 6.36", rep.status === 200 && r1.registerValue === 486 && r1.mediaValue === 449.4 && r1.value === 935.4 && r1.compCost === 15 && r1.discountCost === 97.2 && r1.planAllocation === 34.9 && r1.score === 8.34 && r1.allInScore === 6.36 && r1.redemptions.count === 9 && r1.redemptions.basketTotal === 486, `${rep.status} ${JSON.stringify(r1)}`);
   check("the tally lands on the booking with its discount snapshot", rep.data.booking.redemptions && rep.data.booking.redemptions.count === 9 && rep.data.booking.redemptions.basketTotal === 486 && rep.data.booking.redemptions.discountPct === 20 && rep.data.booking.compCostActual === 15, JSON.stringify(rep.data.booking.redemptions || null));
   const evs1 = await admin("GET", "/api/admin/events?limit=2000");
   check("the redemption report is on the event log", (evs1.data.events || []).filter((e) => e.type === "code_redemptions_reported" && e.subjectId === bk1.id).length === 1, "");
@@ -256,7 +256,7 @@ try {
   const zeroed = await admin("POST", `/api/bookings/${bk2.id}/code-redemptions`, { count: 0, basketTotal: 0, compCostActual: 0 });
   const rz = (zeroed.data.booking || {}).roas || {};
   check("zero cost returns a null score, never NaN or Infinity", zeroed.status === 200 && rz.score === null && rz.compCost === 0 && rz.discountCost === 0 && !/NaN|Infinity/.test(JSON.stringify(rz)), JSON.stringify(rz));
-  check("with the plan allocation known the all-in still resolves on the allocation alone (5.00 media / 29.95 = 0.17)", rz.allInScore === 0.17 && rz.planKnown === true && rz.value === 5, JSON.stringify(rz));
+  check("with the plan allocation known the all-in still resolves on the allocation alone (5.00 media / 34.90 = 0.14)", rz.allInScore === 0.14 && rz.planKnown === true && rz.value === 5, JSON.stringify(rz));
 
   // ---------- E2: codes-off math: the tally still counts at 0 percent ----------
   // bk0 was stamped before the business opted in, so it stays a
@@ -267,7 +267,7 @@ try {
   check("codes-off booking: a performance report still prices the media side (1000 views -> 22.00)", perf0.status === 200 && perf0.data.post.views === 1000, `${perf0.status} ${JSON.stringify(perf0.data).slice(0, 120)}`);
   const rep0 = await biz.client("POST", `/api/bookings/${bk0.id}/code-redemptions`, { count: 4, basketTotal: 200, compCostActual: 25 });
   const r0 = (rep0.data.booking || {}).roas || {};
-  check("codes-off booking: tally counts, discount cost is 0, score computes from sums (222 / 25 = 8.88, all-in 4.04), never NaN", rep0.status === 200 && rep0.data.booking.redemptions.discountPct === 0 && r0.registerValue === 200 && r0.mediaValue === 22 && r0.value === 222 && r0.compCost === 25 && r0.discountCost === 0 && r0.score === 8.88 && r0.allInScore === 4.04 && !/NaN|Infinity/.test(JSON.stringify(r0)), `${rep0.status} ${JSON.stringify(r0)}`);
+  check("codes-off booking: tally counts, discount cost is 0, score computes from sums (222 / 25 = 8.88, all-in 3.71), never NaN", rep0.status === 200 && rep0.data.booking.redemptions.discountPct === 0 && r0.registerValue === 200 && r0.mediaValue === 22 && r0.value === 222 && r0.compCost === 25 && r0.discountCost === 0 && r0.score === 8.88 && r0.allInScore === 3.71 && !/NaN|Infinity/.test(JSON.stringify(r0)), `${rep0.status} ${JSON.stringify(r0)}`);
 
   // ---------- H: the business's own surface: the Plan tab (PATCH /me/profile) ----------
   const c3 = await registerCreator(`roasplan${u}`);
@@ -293,8 +293,8 @@ try {
   const late = dBookings.find((b) => b.id === "preview-dash-4") || {};
   const agg = ((dash.data.dashboard || {}).summary || {}).roas || {};
   check("preview: the two delivered bookings carry the fixed simulated tallies (9/$486 and 6/$318)", onTime.redemptions && onTime.redemptions.count === 9 && onTime.redemptions.basketTotal === 486 && late.redemptions && late.redemptions.count === 6 && late.redemptions.basketTotal === 318, JSON.stringify({ a: onTime.redemptions, b: late.redemptions }));
-  check("preview: per-booking scores are 6.49 and 6.01 with all-ins 5.37 and 4.64", onTime.roas && onTime.roas.score === 6.49 && onTime.roas.allInScore === 5.37 && late.roas && late.roas.score === 6.01 && late.roas.allInScore === 4.64, JSON.stringify({ a: onTime.roas && onTime.roas.score, b: late.roas && late.roas.score }));
-  check("preview: aggregation SUMS before dividing (6.29, not the 6.25 average of the two scores)", agg.score === 6.29 && agg.score !== 6.25 && agg.allInScore === 5.06 && agg.value === 1545.7 && agg.registerValue === 804 && agg.mediaValue === 741.7, JSON.stringify(agg));
+  check("preview: per-booking scores are 6.49 and 6.01 with all-ins 5.22 and 4.47", onTime.roas && onTime.roas.score === 6.49 && onTime.roas.allInScore === 5.22 && late.roas && late.roas.score === 6.01 && late.roas.allInScore === 4.47, JSON.stringify({ a: onTime.roas && onTime.roas.score, aIn: onTime.roas && onTime.roas.allInScore, b: late.roas && late.roas.score, bIn: late.roas && late.roas.allInScore }));
+  check("preview: aggregation SUMS before dividing (6.29, not the 6.25 average of the two scores)", agg.score === 6.29 && agg.score !== 6.25 && agg.allInScore === 4.9 && agg.value === 1545.7 && agg.registerValue === 804 && agg.mediaValue === 741.7, JSON.stringify(agg));
   check("preview: Salt & Ember is presented as codes ON at its chosen 20 percent; Harbor Table (Managed) as codes OFF", dash.data.dashboard.business.discountCodes && dash.data.dashboard.business.discountCodes.enabled === true && dash.data.dashboard.business.discountCodes.pct === 20 && dash.data.dashboard.managedView.discountCodes && dash.data.dashboard.managedView.discountCodes.enabled === false, JSON.stringify({ se: dash.data.dashboard.business.discountCodes, ht: dash.data.dashboard.managedView && dash.data.dashboard.managedView.discountCodes }));
   check("preview: the delivered bookings carry Salt & Ember's opted-in 20 percent stamp", onTime.discountPct === 20 && late.discountPct === 20 && onTime.redemptions.discountPct === 20, JSON.stringify({ a: onTime.discountPct, b: late.discountPct }));
   const simRep = await admin("POST", "/api/admin/preview/code-redemptions", { bookingId: "preview-dash-3", count: 12, basketTotal: 600 });
@@ -316,9 +316,9 @@ try {
   // attention, pipeline stage reach, plan pace, working content
   // ranked by register tallies, next visits by nearest deadline.
   const home = (dashAgain.data.dashboard || {}).home || {};
-  check("preview home: headline metrics ride the same simulation (5 of 20 visits, 15 left, 2 posts live, ROAS 6.29)", home.visitsUsed === 5 && home.visitsAllowance === 20 && home.visitsRemaining === 15 && home.postsLive === 2 && home.roasScore === 6.29, JSON.stringify(home));
+  check("preview home: headline metrics ride the same simulation (5 of 10 visits, 5 left, 2 posts live, ROAS 6.29)", home.visitsUsed === 5 && home.visitsAllowance === 10 && home.visitsRemaining === 5 && home.postsLive === 2 && home.roasScore === 6.29, JSON.stringify(home));
   check("preview home: pipeline counts bookings that reached each stage (5 invited, 5 claimed, 5 visit set, 4 redeemed, 2 live)", !!home.pipeline && home.pipeline.invited === 5 && home.pipeline.claimed === 5 && home.pipeline.visitSet === 5 && home.pipeline.clockRunning === 4 && home.pipeline.live === 2, JSON.stringify(home.pipeline));
-  check("preview home: plan pace is 25 percent of the Growth allowance", home.planPacePct === 25, String(home.planPacePct));
+  check("preview home: plan pace is 50 percent of the Growth allowance", home.planPacePct === 50, String(home.planPacePct));
   check("preview home: attention leads with the overdue post, then the running clock", Array.isArray(home.attention) && home.attention.length === 2 && home.attention[0].kind === "overdue" && home.attention[1].kind === "clock", JSON.stringify(home.attention));
   check("preview home: content that is working ranks by register tallies (9 uses before 6)", Array.isArray(home.topContent) && home.topContent.length === 2 && home.topContent[0].bookingId === "preview-dash-3" && home.topContent[0].redemptions.count === 9 && home.topContent[1].redemptions.count === 6, JSON.stringify((home.topContent || []).map((c) => c.bookingId)));
   check("preview home: next visits sort by nearest deadline (post clock, hard stop, redeem window)", Array.isArray(home.nextVisits) && home.nextVisits.length === 3 && home.nextVisits[0].bookingId === "preview-dash-2" && home.nextVisits[1].bookingId === "preview-dash-5" && home.nextVisits[2].bookingId === "preview-dash-1", JSON.stringify((home.nextVisits || []).map((n) => n.bookingId)));

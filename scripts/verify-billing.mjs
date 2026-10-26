@@ -193,7 +193,7 @@ try {
   const sub = meAfter.data.user.business.subscription || {};
   check("subscription persisted: id + customer", sub.id === "sub_123" && sub.customerId === "cus_123", JSON.stringify(sub));
   check("subscription persisted: status active", sub.status === "active", JSON.stringify(sub));
-  check("subscription persisted: plan from price", sub.plan === "growth" && sub.planName === "Growth" && sub.planPriceMonthly === 599, JSON.stringify(sub));
+  check("subscription persisted: plan from price", sub.plan === "growth" && sub.planName === "Growth" && sub.planPriceMonthly === 349, JSON.stringify(sub));
   check("subscription persisted: period end ISO", sub.currentPeriodEnd === new Date(1795000000 * 1000).toISOString(), JSON.stringify(sub));
   check("billing never touched accessState", meAfter.data.user.business.accessState === "active");
 

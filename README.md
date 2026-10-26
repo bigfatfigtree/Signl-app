@@ -24,8 +24,9 @@ The public launch is **creator founding sign-up only**:
   yet.** Business registration (in the app, and via the founding
   business form on joinsignl.com, which stays the top of funnel)
   is founding-list intake: the full form, plan interest recorded
-  honestly ($299/mo Self-Service, $599/mo Growth, $999/mo Managed,
-  3-month minimum; no card charged, no payment link shown, payment
+  honestly (founding rates: $199/mo Self-Service, $349/mo Growth,
+  $699/mo Managed, $100 off the first month on any plan, 3-month
+  minimum; no card charged, no payment link shown, payment
   stays concierge and is hand-sent by Jeff at activation). A
   registered business lands on a **Founding Status page only**:
   what it joined, its plan interest, its category spot held in
@@ -164,9 +165,14 @@ The public launch is **creator founding sign-up only**:
   the deadline, and the business verifies the post is live. Overdue
   posts can trigger a replacement request.
 - Messaging between a business and a creator, both directions.
-- Business plans: Self-Service $299/mo, Growth $599/mo, and Managed
-  $999/mo, 3-month minimum, then month to month (see the 2026-10-19
-  section below for what each plan's content rights are). Plan selection is recorded at registration and can be
+- Business plans (founding rates, locked while a founding plan
+  stays active): Self-Service $199/mo (5 visits/mo), Growth $349/mo
+  (10 visits/mo), and Managed $699/mo (20 visits/mo), $100 off the
+  first month on any plan (first month $99 / $249 / $599), 3-month
+  minimum, then month to month. Unused visits roll into the next
+  month and expire at the end of it (one month of carry, enforced
+  by the server-side allowance counter). Content rights follow the
+  VISIT, never the plan (see the 2026-10-26 section below). Plan selection is recorded at registration and can be
   changed in the Plan tab. **Founding billing placeholder:** no card is
   charged and nothing pretends otherwise; the recorded plan and the
   honest billing status are stored on the account. Stripe checkout is
@@ -959,6 +965,67 @@ I doing".
   the suites: 687 checks, 0 failed (11 new: 6 preview-home
   payload checks in verify-roas, 3 client-surface checks there,
   2 paid-lane honesty checks in verify-paidlane).
+
+## 2026-10-26: founding pricing, rollover, the 90-day license, comped-post licensing
+
+- **Founding pricing (locked 2026-10-26, supersedes every earlier
+  price in the dated sections above).** Self-Service $199/mo,
+  Growth $349/mo, Managed $699/mo, kept while a founding plan
+  stays active; later cohorts step up (no future price published).
+  Included visits 5 / 10 / 20 a month. $100 founding credit off
+  the first month on any plan (first month $99 / $249 / $599).
+  3-month minimum, no per-location charge. Wherever a business
+  sees a plan price (signup plan cards, the Plan tab, the preview
+  plans screen), the standard rate is the hero figure and the
+  first-month price rides directly under it as a mint badge
+  (`FOUNDING: FIRST MONTH $99` etc.); the small print carries the
+  minimum and the rate-held line only.
+- **Rollover, enforced server-side.** `planAllowanceFor` counts
+  comp-kind bookings by calendar month (paid bookings never
+  consume the allowance), consumes the base first, and carries
+  last month's unused base into this month; carried visits expire
+  at the end of the month they land in, so the allowance never
+  exceeds the plan plus one month of carry. The business home and
+  its preview twin report base / carried / allowance / remaining
+  from the one helper. There is deliberately no hard block at
+  booking creation: the counter is the enforcement surface, so a
+  Visit Guarantee replacement can never be stranded by it.
+- **Rights follow the visit, never the plan (this supersedes the
+  2026-10-19 "rights ladder" section: rights no longer come from
+  the business's plan, and no right runs "while the account is
+  active").** A comped visit is native share only, on every plan:
+  the business may share the post natively with the creator
+  tagged; no downloads, no reposting the file, no ad use. Every
+  paid booking includes ONE standard license: repost + paid ad
+  use for 90 days from the post date, stated in the booking terms
+  both sides see (`LICENSE_WINDOW_DAYS = 90` is the single
+  constant; the old 6-month window is gone). Paid bookings and
+  licensing are available on every plan; Growth is positioned as
+  the tier built for paid work and reuse (license library,
+  renewal tracking, priority access) and says so in a caption at
+  paid and license moments for Self-Service businesses.
+- **Licensing a comped post.** Creators list a `licensingFee` on
+  their profile (from $1, blank = not offered). On a delivered
+  comped post, the business sends a license request at that fee
+  (`POST /api/posts/:id/license-request`); the money runs through
+  the paid-lane math (fee + 3%, creator keeps 97%, held until the
+  decision). The creator approves or declines
+  (`POST /api/license-requests/:id/respond`); approval stamps
+  `post.license` and opens the same 90-day window from the grant,
+  and only then can the business declare ad use on that post
+  (the declaration logs its basis: paid or license). Decline
+  refunds the hold. The admin preview twin
+  (`POST /api/admin/preview/license-request`) runs the real math,
+  writes nothing. Pinned end to end in scripts/verify-licensing.mjs;
+  rollover in scripts/verify-rollover.mjs.
+- **Two-tap invite.** The direct composer (Discover card, list,
+  deck, profile) opens prefilled on a fresh draft: the target
+  tier's lead comp suggestion as title + comped + cap with its
+  chip selected, on the lane defaults (comp, 7 days, 1 spot), so
+  Invite then Publish is literally two taps. A draft with
+  anything typed in it is never overwritten. The preview composer
+  opens with the same prefilled state. Pinned in
+  scripts/verify-two-tap.mjs.
 
 ## Environment variables
 

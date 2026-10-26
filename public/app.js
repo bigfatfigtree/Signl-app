@@ -320,7 +320,7 @@ async function renderPublicProfile() {
       <div class="cc-photo${p.photoUrl ? "" : " no-photo"}">
         ${p.photoUrl ? `<img src="${esc(p.photoUrl)}" alt="">` : `<div class="cc-mono"><span>${initial}</span></div>`}
         ${p.tierBand ? `<span class="cc-tier">${esc(p.tierBand)}</span>` : ""}
-        ${p.paidRate ? `<span class="cc-paid">Paid bookings: $${fmtPrice(p.paidRate)}</span>` : ""}
+        ${p.paidRate ? `<span class="cc-paid">Paid bookings: $${fmtPrice(p.paidRate)}</span>` : ""}${p.licensingFee ? ` <span class="cc-paid">Licenses posts: $${fmtPrice(p.licensingFee)}</span>` : ""}
       </div>
       ${galleryRowHtml(p.photos)}
       <div class="cc-body">
@@ -356,7 +356,7 @@ async function renderPublicProfile() {
     ${p.isRealtor && p.farmAreas && p.farmAreas.length ? `<p class="small">Neighborhoods: ${p.farmAreas.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
     ${p.compCategories && p.compCategories.length ? `<p class="small muted">Open to comps: ${p.compCategories.map(esc).join(", ")}</p>` : ""}
     <p class="small">${p.paidRate ? `<span class="badge tier">Paid bookings: $${fmtPrice(p.paidRate)}</span> ` : ""}${p.compOpen === false ? `<span class="badge warn">Paid visits only</span>` : `<span class="badge info">Open to comp visits</span>`}</p>
-    ${p.paidRate ? `<p class="small muted">Books at $${fmtPrice(p.paidRate)} &middot; creator keeps 97% &middot; held until the post is live.</p>` : ""}
+    ${p.paidRate ? `<p class="small muted">Books at $${fmtPrice(p.paidRate)} &middot; creator keeps 97% &middot; held until the post is live.</p>` : ""}${p.licensingFee ? `<p class="small muted">Licenses a comped post for 90 days of repost and ad use at $${fmtPrice(p.licensingFee)} &middot; creator approves each one &middot; keeps 97%.</p>` : ""}
     </div>
     ${bestWorkHtml(p.bestWork)}
     ${trackRecordHtml(p)}
@@ -1003,7 +1003,7 @@ function audienceLineHtml(source) {
 // the single source of truth; the fallback text mirrors it).
 function standardVisit() {
   return (state.boot && state.boot.standardVisit) || {
-    summary: "Every SIGNL comped visit includes: 1 post or reel + 1 story that shares the post, within 48 hours of the visit, honest and disclosed, live at least 30 days, with tracked delivery proof. 48 hours is the standard creators are held to; a post inside one week still counts, as a late delivery. Paid bookings carry the deliverables set in the booking's own terms. Content rights follow the visit, never the plan: on a comp visit the business may share the post natively only, with the creator tagged; no downloads, no reposting the file, no ad use. On a paid visit the business may also repost the post and run it as an ad for 6 months from the post date. The creator always owns their content, and nobody can edit it.",
+    summary: "Every SIGNL comped visit includes: 1 post or reel + 1 story that shares the post, within 48 hours of the visit, honest and disclosed, live at least 30 days, with tracked delivery proof. 48 hours is the standard creators are held to; a post inside one week still counts, as a late delivery. Paid bookings carry the deliverables set in the booking's own terms. Content rights follow the visit, never the plan: on a comp visit the business may share the post natively only, with the creator tagged; no downloads, no reposting the file, no ad use. On a paid visit the business may also repost the post and run it as an ad for 90 days from the post date, under the one standard license every paid booking includes. A comped post can be licensed the same way, for 90 days, at the creator's listed licensing fee and only with their approval. The creator always owns their content, and nobody can edit it.",
   };
 }
 
@@ -1015,7 +1015,7 @@ function standardVisitRowsHtml() {
   return `<div class="deal-rows">
     <div class="drow"><span class="dk">Post</span><span class="dv">1 post/reel + 1 story &middot; within 48h &middot; live 30 days</span></div>
     <div class="drow"><span class="dk">Comp rights</span><span class="dv">Native share only, creator tagged</span></div>
-    <div class="drow"><span class="dk">Paid adds</span><span class="dv">Repost + ad use for 6 months</span></div>
+    <div class="drow"><span class="dk">Paid adds</span><span class="dv">Repost + ad use for 90 days</span></div>
     <div class="drow"><span class="dk">Ownership</span><span class="dv">Creators own their content. Nobody edits it.</span></div>
   </div>`;
 }
@@ -1047,7 +1047,7 @@ function dealRowsHtml(o) {
   if (o.includes) main.push(["Included", esc(o.includes)]);
   if (o.experience) main.push(["Experience", esc(o.experience)]);
   terms.push(["Post", o.kind === "paid" ? "Per booking terms &middot; 48h &middot; live 30 days" : "1 post/reel + 1 story &middot; 48h &middot; honest, disclosed &middot; live 30 days"]);
-  terms.push(["Rights", o.kind === "paid" ? "Share + repost + ads 6 months &middot; no edits" : "Native share only &middot; no edits, downloads or ads"]);
+  terms.push(["Rights", o.kind === "paid" ? "Share + repost + ads for 90 days &middot; no edits" : "Native share only &middot; no edits, downloads or ads"]);
   const render = (rows) => rows.map(([k, v]) => `<div class="drow"><span class="dk">${k}</span><span class="dv">${v}</span></div>`).join("");
   return `<div class="deal-rows deal-main">${render(main)}</div><div class="deal-rows deal-terms">${render(terms)}</div>`;
 }
@@ -1092,8 +1092,8 @@ function coversLine(record) {
 function rightsForVisit(kind) {
   if (kind === "paid") {
     return {
-      can: ["Share your post natively, with you tagged", "Repost it on their own feed", "Run it as an ad for 6 months from the post date (never longer)"],
-      cannot: ["Edit your post", "Use it in ads after the 6-month window"],
+      can: ["Share your post natively, with you tagged", "Repost it on their own feed", "Run it as an ad for 90 days from the post date (never longer)"],
+      cannot: ["Edit your post", "Use it in ads after the 90-day window"],
     };
   }
   return {
@@ -2274,8 +2274,9 @@ function renderForBusinesses() {
   const plans = state.boot.plans.map((p, i) => `
     <div class="plan-card ${i === 0 ? "selected" : ""}" id="plan-${esc(p.id)}" onclick="selectPlan('${esc(p.id)}')">
       <div class="price">$${fmtPrice(p.priceMonthly)}<span class="small muted">/mo</span></div>
+      <div class="founding-badge-row">${foundingBadgeHtml(p)}</div>
       <strong>${esc(p.name)}</strong>
-      <p class="small muted">${p.minMonths}-month minimum.</p>
+      <p class="small muted">${p.minMonths}-month minimum. Founding rate, locked while your plan stays active.</p>
       <ul>${p.features.map((f) => `<li>${esc(f)}</li>`).join("")}</ul>
     </div>`).join("");
   app.innerHTML = `
@@ -2446,6 +2447,17 @@ async function registerBusiness(e) {
     errBox(err.message);
   }
   return false;
+}
+
+// Founding price hierarchy (Jeff, 2026-10-26): wherever a
+// business sees a plan price, the standard rate is the hero
+// figure and the founding first-month price rides directly
+// under it as a bold mint badge, never the other way around.
+// The small print under the card carries the 3-month minimum
+// and the founding-rate-held line only: the first-month price
+// is stated once, in the badge.
+function foundingBadgeHtml(p) {
+  return `<span class="founding-badge">FOUNDING: FIRST MONTH $${fmtPrice(p.firstMonthPriceMonthly)}</span>`;
 }
 
 function selectPlan(id) {
@@ -2742,6 +2754,7 @@ function paidLaneBadgesHtml(p) {
   if (!p) return "";
   let out = "";
   if (p.paidRate) out += ` <span class="badge tier">Paid bookings: $${fmtPrice(p.paidRate)}</span>`;
+  if (p.licensingFee) out += ` <span class="badge tier">Licenses posts: $${fmtPrice(p.licensingFee)}</span>`;
   out += p.compOpen === false
     ? ` <span class="badge warn">Paid visits only</span>`
     : ` <span class="badge info">Open to comp visits</span>`;
@@ -2796,11 +2809,13 @@ function bookPaidVisit(creatorId) {
     <p class="small" style="margin:10px 0 2px">Listed rate: <strong>$${fmtPrice(rate)}</strong></p>
     <p class="small" style="margin:2px 0">You pay <strong>$${fmtMoney(total)}</strong> (rate + 3%)</p>
     <p class="small" style="margin:2px 0">They keep <strong>$${fmtMoney(net)}</strong> (97%)</p>
+    <p class="small" style="margin:2px 0">Includes the standard license: repost + ad use for 90 days from the post date.</p>
     ${paymentsLive()
       ? (cardOnFileView()
         ? `<p class="small muted">Your ${esc(brandName(cardOnFileView().brand))} &middot;&middot;&middot;&middot;${esc(cardOnFileView().last4)} is charged $${fmtMoney(total)} when you book. SIGNL holds it and releases the creator's share after the post is live and the 48 hour hold passes.</p>`
         : `<p class="small muted">Paid bookings charge a card on file, held by SIGNL until the post is live. Add yours once and every paid booking confirms in one tap.</p>`)
       : `<p class="small muted">No card is charged in the app yet. This records the booking and holds the amount in the app ledger. It is released after the post is live and the 48 hour hold passes.</p>`}
+    ${growthNudgeHtml()}
     <div class="field"><label>Key points for the creator (optional)</label><textarea id="paid-brief" rows="3" maxlength="500" placeholder="What to feature, names, dates"></textarea><p class="small muted">${PAID_BRIEF_GUIDANCE}</p></div>
     <button class="btn" style="width:100%" id="paid-sheet-book">${paymentsLive() && !cardOnFileView() ? "Add a card to book" : "Book paid visit"}</button>
     <button class="btn ghost" style="width:100%;margin-top:8px" id="paid-sheet-cancel">Cancel</button>
@@ -2857,6 +2872,8 @@ async function previewPaidBooking(creatorId) {
       <div class="flex-between"><span class="small">SIGNL fee, split evenly</span><strong>$${fmtMoney(bk.platformFee)}</strong></div>
     </div>
     <p class="small" style="margin:10px 0 0">Held by SIGNL until the post is live.</p>
+    <p class="small" style="margin:2px 0 0">Includes the standard license: repost + ad use for 90 days from the post date.</p>
+    ${state.preview && state.preview.planId === "self-service" ? `<p class="small muted">Growth is built for paid work and reuse: every license and renewal tracked in one library, and priority access to the creators you license.</p>` : ""}
     ${bk.paymentNote ? `<p class="small muted">${esc(bk.paymentNote)}</p>` : ""}
     ${bk.note ? `<p class="small muted">${esc(bk.note)}</p>` : ""}`;
     document.body.appendChild(el);
@@ -2969,7 +2986,7 @@ function creatorProfileDetailHtml(c, preview) {
       <div class="cc-photo${c.photoUrl ? "" : " no-photo"}">
         ${c.photoUrl ? `<img src="${esc(c.photoUrl)}" alt="">` : `<div class="cc-mono"><span>${initial}</span></div>`}
         ${p.tierBand ? `<span class="cc-tier">${esc(p.tierBand)}</span>` : ""}
-        ${p.paidRate ? `<span class="cc-paid">Paid bookings: $${fmtPrice(p.paidRate)}</span>` : ""}
+        ${p.paidRate ? `<span class="cc-paid">Paid bookings: $${fmtPrice(p.paidRate)}</span>` : ""}${p.licensingFee ? ` <span class="cc-paid">Licenses posts: $${fmtPrice(p.licensingFee)}</span>` : ""}
       </div>
       ${galleryRowHtml(c.photos)}
       <div class="cc-body">
@@ -3018,7 +3035,7 @@ function creatorProfileDetailHtml(c, preview) {
     ${preview ? `<p class="small muted">Preview: an offer sent from here is a simulation. It never reaches ${esc(c.name)} and nothing is saved.</p>` : ""}
     ${preview && c.trackRecord && c.trackRecord.postsDelivered > 0 ? `
     <div class="showcase-block"><h4>Ad use (preview)</h4>
-      <p class="small muted">Ad use comes with paid visits: on a paid visit, a business can repost the post and run it as an ad for 6 months from the post date. In the real app that logs the use, notifies the creator, and awards +25 Momentum. Here it is a simulation: nothing is logged and no points move.</p>
+      <p class="small muted">Ad use comes with the standard license: on a paid visit, a business can repost the post and run it as an ad for 90 days from the post date, and a comped post can be licensed the same way at the creator's listed fee with their approval. In the real app that logs the use, notifies the creator, and awards +25 Momentum. Here it is a simulation: nothing is logged and no points move.</p>
       <button class="btn small-btn ghost" onclick="previewAdUse('${c.userId}')">Use in an ad</button> <span id="pv-aduse-note" class="saved"></span>
     </div>` : ""}
   </div>`;
@@ -3074,7 +3091,7 @@ function creatorCard(c, viewer, opts) {
     <div class="cc-photo${c.photoUrl ? "" : " no-photo"}">
       ${c.photoUrl ? `<img src="${esc(c.photoUrl)}" alt="">` : `<div class="cc-mono"><span>${initial}</span></div>`}
       ${p.tierBand ? `<span class="cc-tier">${esc(p.tierBand)}</span>` : ""}
-      ${p.paidRate ? `<span class="cc-paid">Paid bookings: $${fmtPrice(p.paidRate)}</span>` : ""}
+      ${p.paidRate ? `<span class="cc-paid">Paid bookings: $${fmtPrice(p.paidRate)}</span>` : ""}${p.licensingFee ? ` <span class="cc-paid">Licenses posts: $${fmtPrice(p.licensingFee)}</span>` : ""}
     </div>
     <div class="cc-id">
       <div class="cc-name">${esc(c.name)}</div>
@@ -3107,7 +3124,7 @@ function creatorCard(c, viewer, opts) {
     ${bestWorkHtml(c.bestWork, true)}
     ${trackLine || reviewLine ? `<div class="cc-track">${trackLine}${reviewLine}</div>` : ""}
     ${c.fit && c.fit.reasons && c.fit.reasons.length ? `<p class="small cc-fit"><strong>Why they fit:</strong> ${c.fit.reasons.slice(0, 2).map(esc).join(" &middot; ")}</p>` : ""}
-    <p class="small muted">Every SIGNL comped visit: 1 post or reel + 1 story that shares the post within 48 hours, tracked as proof. Paid bookings carry the deliverables set in the booking's terms. Content rights follow the visit: comp visits are native share only; paid visits add repost and 6-month ad rights.</p>
+    <p class="small muted">Every SIGNL comped visit: 1 post or reel + 1 story that shares the post within 48 hours, tracked as proof. Paid bookings carry the deliverables set in the booking's terms. Content rights follow the visit: comp visits are native share only; paid visits add repost and ad rights for 90 days.</p>
     <div class="cc-actions">
       ${opts.preview
         ? `<button class="btn small-btn" onclick="previewViewCreator('${c.userId}')">View profile</button>
@@ -3655,9 +3672,33 @@ function lanePaidLine(c) {
   const total = Math.round(rate * 1.03 * 100) / 100;
   return `your rate $${fmtPrice(rate)} · you keep $${fmtMoney(keep)} (97%). Business pays $${fmtMoney(total)}.`;
 }
+function laneFeeOf(c) {
+  const f = Number(c && c.licensingFee);
+  return Number.isFinite(f) && f >= 1 ? f : null;
+}
+function laneFeeLine(c) {
+  const fee = laneFeeOf(c || {});
+  if (!fee) return "not set. Set a fee and businesses can license your comped posts for ads, only with your approval.";
+  const keep = Math.round(fee * 0.97 * 100) / 100;
+  return `your fee $${fmtPrice(fee)} · you keep $${fmtMoney(keep)} (97%) per license.`;
+}
+function laneFeeSave() {
+  const inp = document.getElementById("lane-fee");
+  const raw = inp ? inp.value.trim() : "";
+  if (raw === "") { laneSave({ licensingFee: null }); return false; }
+  const v = Number(raw);
+  if (!Number.isFinite(v) || v < 1) {
+    laneErr("Licensing fees start at $1, or leave it blank for no licensing.");
+    if (inp) inp.focus();
+    return false;
+  }
+  laneSave({ licensingFee: Math.round(v * 100) / 100 });
+  return false;
+}
 function laneControlsHtml(c) {
   const compOn = !c || c.compOpen !== false;
   const rate = laneRateOf(c || {});
+  const fee = laneFeeOf(c || {});
   return `<div class="lane-ctl" id="lane-controls">
     ${compOn && rate ? "" : `<div class="lane-bothrow"><button type="button" class="btn small-btn" onclick="return laneBothOn()">Turn both on</button></div>`}
     <div class="lrow lane-row"><input type="checkbox" class="sw lane-sw" id="lane-comp" ${compOn ? "checked" : ""} onchange="laneToggleComp(this)"><div><label class="lname" for="lane-comp">Comp visits</label> <span class="lline" id="lane-comp-line">— ${esc(laneCompLine(c || {}))}</span></div></div>
@@ -3666,6 +3707,11 @@ function laneControlsHtml(c) {
       <label for="lane-rate">Your paid rate (min $50)</label>
       <div class="lane-rate-flex"><input type="number" id="lane-rate" min="50" step="1" inputmode="numeric" placeholder="150" value="${rate || ""}" onchange="laneRateAuto()"><button type="button" class="btn small-btn" onclick="return laneRateSave()">Save rate</button></div>
       <p class="small muted" id="lane-rate-note">${rate ? `At $${fmtMoney(rate)} you keep $${fmtMoney(Math.round(rate * 0.97 * 100) / 100)} (97%).` : "Paid bookings turn on when a rate is saved."}</p>
+    </div>
+    <div class="lrow lane-row"><div><span class="lname">Post licensing</span> <span class="lline" id="lane-fee-line">— ${esc(laneFeeLine(c || {}))}</span></div></div>
+    <div class="lane-rate">
+      <div class="lane-rate-flex"><input type="number" id="lane-fee" min="1" step="1" inputmode="numeric" placeholder="75" value="${fee || ""}"><button type="button" class="btn small-btn" onclick="return laneFeeSave()">Save fee</button></div>
+      <p class="small muted">A business can ask to license one of your delivered comped posts for 90 days of reposting and ad use at this fee. You approve or decline every request; nothing runs without your yes. Leave blank to keep comped posts native-share only.</p>
     </div>
     <p class="small lane-err" id="lane-err" style="display:none"></p>
     ${payoutsStepHtml(c)}
@@ -4912,6 +4958,10 @@ async function loadMyVisits(role) {
   const el = document.getElementById("tab-body");
   try {
     const data = await api("GET", "/bookings");
+    // License requests ride alongside the visits so each post
+    // card can show its license state (fail-soft: cards simply
+    // show no license state if this read ever fails).
+    try { const lr = await api("GET", "/license-requests"); state.licenseRequests = lr.licenseRequests || []; } catch (e) { state.licenseRequests = state.licenseRequests || []; }
     const flash = state.postFlash
       ? `<div class="card mb"><div class="success-hero">${successCheckHtml()}<h3>Post submitted</h3><p>Your post is in and the visit is marked delivered. Your numbers build from here: update them as the post grows and they feed your track record.</p></div></div>`
       : "";
@@ -4997,8 +5047,8 @@ function visitCard(b, role) {
         ? `<span class="badge warn">Payment refunded</span>`
         : `<span class="badge info">Payment held by SIGNL</span>`;
     html += role === "creator"
-      ? `<p class="small"><span class="badge tier">Paid visit</span> Your rate $${fmtPrice(lane.rate)}: you receive $${fmtMoney(lane.creatorNet)} (97% of your rate). ${escrowBadge}<br><span class="muted">${esc(lane.paymentNote)}${lane.escrowState === "held" && lane.proofAt ? " Your post is in; the escrow releases 48 hours after proof." : ""}${lane.escrowState === "refunded" ? " This visit resolved without delivery, so the business was refunded." : ""}</span>${fundsStatusHtml(lane, "creator")}</p>`
-      : `<p class="small"><span class="badge tier">Paid visit</span> Creator rate $${fmtPrice(lane.rate)} &middot; you pay $${fmtMoney(lane.businessTotal)} (rate + 3%) &middot; the creator receives $${fmtMoney(lane.creatorNet)}. ${escrowBadge}<br><span class="muted">${esc(lane.paymentNote)}</span>${fundsStatusHtml(lane, "business")}</p>`;
+      ? `<p class="small"><span class="badge tier">Paid visit</span> Your rate $${fmtPrice(lane.rate)}: you receive $${fmtMoney(lane.creatorNet)} (97% of your rate). ${escrowBadge}<br><span class="muted">${esc(lane.paymentNote)}${lane.escrowState === "held" && lane.proofAt ? " Your post is in; the escrow releases 48 hours after proof." : ""}${lane.escrowState === "refunded" ? " This visit resolved without delivery, so the business was refunded." : ""} This booking includes the standard license: the business may repost your post and run it as an ad for 90 days from the post date, never longer, and never edited.</span>${fundsStatusHtml(lane, "creator")}</p>`
+      : `<p class="small"><span class="badge tier">Paid visit</span> Creator rate $${fmtPrice(lane.rate)} &middot; you pay $${fmtMoney(lane.businessTotal)} (rate + 3%) &middot; the creator receives $${fmtMoney(lane.creatorNet)}. ${escrowBadge}<br><span class="muted">${esc(lane.paymentNote)} This booking includes the standard license: repost and ad use for 90 days from the post date.</span>${fundsStatusHtml(lane, "business")}</p>`;
   }
   if (role === "creator") html += referralProgramBlockHtml(b.businessReferralProgram);
   if (role === "business" && b.businessReferralProgram) {
@@ -5079,13 +5129,31 @@ function visitCard(b, role) {
   }
   if (post) {
     html += `<p class="small">Post: <a href="${esc(post.url)}" target="_blank" rel="noopener">${esc(post.url)}</a> &middot; submitted ${fmtDate(post.submittedAt)} (${post.hoursAfterRedeem}h after redemption) ${post.verifiedAt ? "&middot; <span class='saved'>Verified by the business</span>" : ""}</p>`;
+    const lic = post.license && post.license.status === "granted" ? post.license : null;
+    const licActive = !!lic && Date.parse(lic.windowEndsAt) > Date.now();
+    const licReq = (state.licenseRequests || []).filter((l) => l.postId === post.id).slice().sort((x, y) => (x.createdAt < y.createdAt ? 1 : -1))[0] || null;
     if (post.adUseDeclaredAt) {
-      html += `<p class="small"><span class="badge ok">Running as an ad</span> Declared ${fmtDate(post.adUseDeclaredAt)}. The creator was notified and earned +25 Momentum.${role === "business" && post.adUseWindowEndsAt ? ` This paid visit's ad window runs to ${fmtDate(post.adUseWindowEndsAt)}.` : ""}</p>`;
+      html += `<p class="small"><span class="badge ok">Running as an ad</span> Declared ${fmtDate(post.adUseDeclaredAt)}. The creator was notified and earned +25 Momentum.${role === "business" && post.adUseWindowEndsAt ? ` ${b.kind === "paid" ? "This paid visit's" : "This license's"} ad window runs to ${fmtDate(post.adUseWindowEndsAt)}.` : ""}</p>`;
     } else if (role === "business") {
       if (b.kind === "paid") {
-        html += `<button class="btn small-btn ghost" onclick="declareAdUse('${post.id}')">Use in an ad</button> <span class="small muted">This was a paid visit: ad use is included for 6 months from the post date. The creator is notified and earns +25 Momentum.</span>`;
+        html += `<button class="btn small-btn ghost" onclick="declareAdUse('${post.id}', 'paid')">Use in an ad</button> <span class="small muted">This was a paid visit: the standard license is included, repost and ad use for 90 days from the post date. The creator is notified and earns +25 Momentum.</span>`;
+      } else if (licActive) {
+        html += `<p class="small"><span class="badge ok">Licensed for ads</span> Through ${fmtDate(lic.windowEndsAt)}: repost and ad use covered.</p><button class="btn small-btn ghost" onclick="declareAdUse('${post.id}', 'license')">Use in an ad</button> <span class="small muted">The creator is notified and earns +25 Momentum.</span>`;
+      } else if (licReq && licReq.status === "pending") {
+        html += `<p class="small muted">License requested at $${fmtPrice(licReq.fee)}: waiting on the creator. You pay only if they approve, and the 90 days run from their yes.</p>`;
+      } else if (b.creatorLicensingFee) {
+        html += `<button class="btn small-btn ghost" onclick="requestLicense('${post.id}', ${b.creatorLicensingFee})">License for ads</button> <span class="small muted">This was a comp visit, so it covers native sharing only until licensed. The creator licenses this post for 90 days of repost and ad use at their $${fmtPrice(b.creatorLicensingFee)} fee, only with their approval.</span>${growthNudgeHtml()}`;
       } else {
-        html += `<p class="small muted">This was a comp visit, so it covers native sharing only, with the creator tagged. Ad use comes with paid visits.</p>`;
+        html += `<p class="small muted">This was a comp visit, so it covers native sharing only, with the creator tagged. This creator has not listed a licensing fee, so ad use is not available on this post.</p>`;
+      }
+    }
+    if (role === "creator" && b.kind !== "paid") {
+      if (licReq && licReq.status === "pending") {
+        html += `<div class="notice blue"><strong>License request:</strong> ${esc(licReq.businessName || "A business")} wants to license this post for 90 days of reposting and ad use at your $${fmtPrice(licReq.fee)} fee. You keep $${fmtMoney(licReq.creatorNet)} (97%).<br><button class="btn small-btn" style="margin-top:8px" onclick="respondLicense('${licReq.id}', 'approve')">Approve license</button> <button class="btn small-btn ghost" style="margin-top:8px" onclick="respondLicense('${licReq.id}', 'decline')">Decline</button></div>`;
+      } else if (licActive) {
+        html += `<p class="small"><span class="badge ok">Licensed for ads</span> Through ${fmtDate(lic.windowEndsAt)}${licReq && licReq.creatorNet ? ` &middot; you kept $${fmtMoney(licReq.creatorNet)}` : ""}.</p>`;
+      } else if (licReq && licReq.status === "declined") {
+        html += `<p class="small muted">You declined a license request on this post. It stays native sharing only.</p>`;
       }
     }
     if (role === "business" && !post.verifiedAt) html += `<button class="btn small-btn ghost" onclick="verifyPost('${post.id}')">Verify post is live</button>`;
@@ -5340,9 +5408,37 @@ async function submitCodeRedemptions(e, bookingId) {
   return false;
 }
 
-async function declareAdUse(postId) {
-  if (!confirm("Use this post in an ad? This paid visit includes ad use for 6 months from the post date. The creator is notified and earns +25 Momentum.")) return;
+// The Growth nudge (Jeff, 2026-10-26): shown to Self-Service
+// businesses at the moment they start paid work or reuse. A muted
+// caption under the action, never a gate: paid bookings and
+// licensing are open on every plan.
+function growthNudgeHtml() {
+  const u = state.user;
+  if (!u || u.role !== "business" || !u.business || u.business.plan !== "self-service") return "";
+  return `<p class="small muted">Growth is built for paid work and reuse: every license and renewal tracked in one library, and priority access to the creators you license.</p>`;
+}
+
+async function declareAdUse(postId, basis) {
+  const msg = basis === "license"
+    ? "Use this post in an ad? Your license on this post covers repost and ad use inside its 90-day window. The creator is notified and earns +25 Momentum."
+    : "Use this post in an ad? This paid visit includes the standard license: repost and ad use for 90 days from the post date. The creator is notified and earns +25 Momentum.";
+  if (!confirm(msg)) return;
   try { await api("POST", `/posts/${postId}/ad-use`, {}); loadMyVisits("business"); }
+  catch (err) { alert(err.message); }
+}
+
+async function requestLicense(postId, fee) {
+  const total = Math.round(fee * 1.03 * 100) / 100;
+  const net = Math.round(fee * 0.97 * 100) / 100;
+  if (!confirm(`License this post for ads? The creator's fee is $${fmtPrice(fee)}: you pay $${fmtMoney(total)} (fee + 3%), the creator keeps $${fmtMoney(net)} (97%), held until they decide. If they approve, you can repost the post and run it as an ad for 90 days from their yes. Nothing is licensed unless they approve.`)) return;
+  try { await api("POST", `/posts/${postId}/license-request`, {}); loadMyVisits("business"); }
+  catch (err) { alert(err.message); }
+}
+
+async function respondLicense(id, decision) {
+  const rec = (state.licenseRequests || []).find((l) => l.id === id);
+  if (decision === "approve" && rec && !confirm(`Approve this license? ${rec.businessName || "The business"} can repost this post and run it as an ad for 90 days. You keep $${fmtMoney(rec.creatorNet)} (97% of your fee).`)) return;
+  try { await api("POST", `/license-requests/${id}/respond`, { decision }); loadMyVisits("creator"); }
   catch (err) { alert(err.message); }
 }
 
@@ -5476,6 +5572,7 @@ function bizDashPaceHtml(h, planName, billingStatus) {
   return `<h4>Plan pace</h4>
     <div class="flex-between"><span class="small"><strong>${esc(planName)} plan:</strong> ${h.visitsUsed} of ${h.visitsAllowance} visits booked this month</span><span class="badge ${h.planPacePct >= 100 ? "warn" : "info"}">${h.planPacePct}%</span></div>
     <div class="meter" style="margin-top:8px"><i style="width:${Math.min(100, h.planPacePct)}%"></i></div>
+    ${h.visitsCarried ? `<p class="small muted">${h.visitsCarried} unused visit${h.visitsCarried === 1 ? "" : "s"} rolled over from last month. Rolled visits expire at the end of this month.</p>` : `<p class="small muted">Unused visits roll into next month and expire at the end of it.</p>`}
     ${billingStatus ? `<p class="small muted">${esc(billingStatus)}</p>` : ""}`;
 }
 function bizDashContentRowsHtml(h) {
@@ -5787,10 +5884,36 @@ function goApplicants(offerId) {
   return false;
 }
 
+// Two-tap invite (Jeff, 2026-10-26): the homepage promises a
+// business can invite in two taps, so the DIRECT composer must
+// open submittable: on a FRESH draft, prefill the title with the
+// tier's lead comp suggestion and preselect that suggestion (its
+// comped text + cap), on top of the lane defaults that already
+// hold (kind comp, window 7 days, spots 1). Tap 1 = Invite on the
+// card, tap 2 = Send. Everything stays editable before sending.
+// A draft with anything typed in it is the business's own work
+// and is NEVER overwritten: prefill only fires on an empty draft.
+function offerDraftIsEmpty() {
+  const d = state.offerDraft || {};
+  return !["title", "comped", "cap", "rate", "brief", "includes", "experience", "spots", "window", "windowdays", "applydays"].some((k) => d[k] !== undefined && d[k] !== null && String(d[k]).trim() !== "");
+}
+
+function prefillDirectDraft(creator) {
+  if (!creator || !offerDraftIsEmpty()) return false;
+  const s = compSuggestions(creator.profile ? creator.profile.tierBand : null)[0];
+  if (!s) return false;
+  state.offerDraft.title = s.label;
+  state.offerDraft.comped = s.comp;
+  state.offerDraft.cap = String(s.cap);
+  state.offerDraft.kind = "comp";
+  return true;
+}
+
 function startOffer(creatorId) {
   pileUnlater("discover", creatorId);
   state.tab = "My Offers";
   state.offerTarget = creatorId;
+  prefillDirectDraft((state.discover || []).find((x) => x.userId === creatorId));
   render();
 }
 
@@ -5815,9 +5938,9 @@ function compSuggestions(tierBand) {
 // window: 7 days from accepting (default) or this week, ending
 // Sunday. The chips set the mode select; the free-text field is
 // just an optional note for the creator.
-function chipsRowHtml(kind, prefix, tierBand) {
+function chipsRowHtml(kind, prefix, tierBand, current) {
   if (kind === "comp") {
-    return `<div class="chip-row">${compSuggestions(tierBand).map((s) => `<button type="button" class="chip" onclick="setCompChip('${prefix}', ${JSON.stringify(s.comp)}, ${s.cap})">${esc(s.label)} (~$${fmtPrice(s.cap)})</button>`).join("")}</div>`;
+    return `<div class="chip-row">${compSuggestions(tierBand).map((s) => `<button type="button" class="chip${current && current.comp === s.comp && Number(current.cap) === s.cap ? " on" : ""}" data-compchip="${prefix}" data-comp="${esc(s.comp)}" data-cap="${s.cap}" onclick="setCompChip('${prefix}', ${JSON.stringify(s.comp)}, ${s.cap})">${esc(s.label)} (~$${fmtPrice(s.cap)})</button>`).join("")}</div>`;
   }
   return `<div class="chip-row"><button type="button" class="chip" onclick="setWindowMode('${prefix}', '7days')">Use within 7 days</button><button type="button" class="chip" onclick="setWindowMode('${prefix}', 'thisweek')">This week (ends Sunday)</button></div>`;
 }
@@ -5827,6 +5950,7 @@ function setCompChip(prefix, comp, cap) {
   const k = document.getElementById(prefix + "-cap");
   if (c) c.value = comp;
   if (k) k.value = cap;
+  document.querySelectorAll(`[data-compchip="${prefix}"]`).forEach((b) => b.classList.toggle("on", b.dataset.comp === comp && Number(b.dataset.cap) === Number(cap)));
   if (prefix === "o2") offerCoachUpdate();
 }
 
@@ -5850,7 +5974,7 @@ function packageSummaryHtml(planId, planName) {
     ${standardVisitRowsHtml()}
     <details class="deal-details"><summary>The Standard Visit, in full</summary><div class="dd-body">
       <p class="small">${esc(standardVisit().summary)}</p>
-      <p class="small"><strong>On a comp visit, you can:</strong> ${comp.can.map(esc).join("; ")}. They can't: ${comp.cannot.map(esc).join("; ")}. <strong>On a paid visit, you can also</strong> repost the post on your own feed and run it as an ad for 6 months from the post date. Rights follow the visit, not your plan${planName ? ` (${esc(planName)})` : ""}.</p>
+      <p class="small"><strong>On a comp visit, you can:</strong> ${comp.can.map(esc).join("; ")}. They can't: ${comp.cannot.map(esc).join("; ")}. <strong>On a paid visit, you can also</strong> repost the post on your own feed and run it as an ad for 90 days from the post date. A comped post can be licensed for the same 90 days at the creator's listed licensing fee, with their approval. Rights follow the visit, not your plan${planName ? ` (${esc(planName)})` : ""}.</p>
     </div></details>
     <p class="small" style="margin:12px 0 0;font-weight:700">Meal-for-two comps outperform solo.</p>
   </div>`;
@@ -6089,7 +6213,7 @@ async function loadMyOffers() {
         <label class="radio-chip"><input type="radio" name="o2-kind" value="paid" ${dft.kind === "paid" ? "checked" : ""} onchange="offerCoachUpdate()"><span>Cash: a rate for a paid booking</span></label>
         </div>
       </div>
-      <div class="field"><label>Exactly what is comped <span class="req-tag">Required</span> ${infoBtn("comped")}</label><input id="o2-comped" value="${dv(dft.comped)}" placeholder="Two entrees and two drinks" oninput="offerCoachUpdate()" onblur="offerValidateField('comped')"><p class="field-err" id="err-o2-comped"></p>${mode === "direct" ? chipsRowHtml("comp", "o2", target && target.profile ? target.profile.tierBand : null) : ""}</div>
+      <div class="field"><label>Exactly what is comped <span class="req-tag">Required</span> ${infoBtn("comped")}</label><input id="o2-comped" value="${dv(dft.comped)}" placeholder="Two entrees and two drinks" oninput="offerCoachUpdate()" onblur="offerValidateField('comped')"><p class="field-err" id="err-o2-comped"></p>${mode === "direct" ? chipsRowHtml("comp", "o2", target && target.profile ? target.profile.tierBand : null, { comp: dft.comped, cap: dft.cap }) : ""}</div>
       <div class="field" id="o2-covers-wrap"><label>How many people does the comp cover? <span class="req-tag">Required</span> ${infoBtn("covers")}</label>
         <div class="radio-stack">
         <label class="radio-chip"><input type="radio" name="o2-covers" value="1" ${dft.covers === "2" ? "" : "checked"} onchange="offerDraftSync()"><span>1 person: just the creator</span></label>
@@ -6670,8 +6794,9 @@ function renderPlanTab() {
   const plans = state.boot.plans.map((p) => `
     <div class="plan-card ${u.business.plan === p.id ? "selected" : ""}" id="plan-${esc(p.id)}" onclick="selectPlan('${esc(p.id)}')">
       <div class="price">$${fmtPrice(p.priceMonthly)}<span class="small muted">/mo</span></div>
+      <div class="founding-badge-row">${foundingBadgeHtml(p)}</div>
       <strong>${esc(p.name)}</strong>
-      <p class="small muted">${p.minMonths}-month minimum.</p>
+      <p class="small muted">${p.minMonths}-month minimum. Founding rate, locked while your plan stays active.</p>
       <ul>${p.features.map((f) => `<li>${esc(f)}</li>`).join("")}</ul>
       ${u.business.plan === p.id ? `<p class="saved mt">Your current plan</p>` : ""}
     </div>`).join("");
@@ -7608,8 +7733,9 @@ function previewPlansHtml() {
   const plans = state.boot.plans.map((p) => `
     <div class="plan-card ${pv.planId === p.id ? "selected" : ""}" onclick="previewPickPlan('${p.id}')">
       <div class="price">$${fmtPrice(p.priceMonthly)}<span class="small muted">/mo</span></div>
+      <div class="founding-badge-row">${foundingBadgeHtml(p)}</div>
       <strong>${esc(p.name)}</strong>
-      <p class="small muted">${p.minMonths}-month minimum.</p>
+      <p class="small muted">${p.minMonths}-month minimum. Founding rate, locked while your plan stays active.</p>
       <ul>${p.features.map((f) => `<li>${esc(f)}</li>`).join("")}</ul>
     </div>`).join("");
   return `
@@ -7811,6 +7937,11 @@ function previewOfferHtml() {
     ? (pv.creators || []).find((c) => c.userId === pv.targetId) || (pv.creator && pv.creator.userId === pv.targetId ? pv.creator : null)
     : null;
   const planObj = (state.boot.plans || []).find((p) => p.id === pv.planId);
+  // Two-tap parity (Jeff, 2026-10-26): a DIRECT preview offer
+  // opens prefilled exactly like the live composer: the tier's
+  // lead comp suggestion as title + comped + cap, its chip
+  // selected, on the same lane defaults (comp, 7 days, 1 spot).
+  const pvSug = target ? compSuggestions(target.profile ? target.profile.tierBand : null)[0] : null;
   return `
   <section class="panel">
     <h3 style="margin-top:0"><span class="preview-tag">PREVIEW</span> Send an offer (simulation)</h3>
@@ -7821,8 +7952,8 @@ function previewOfferHtml() {
     ${packageSummaryHtml(pv.planId, planObj ? planObj.name : null)}
     <div id="pv-form-error"></div>
     <form onsubmit="return previewSendOffer(event)">
-      <div class="field"><label>Offer title</label><input id="pvo-title" required placeholder="For example: Dinner for two on us"></div>
-      <div class="field"><label>Exactly what is comped</label><input id="pvo-comped" required placeholder="For example: Two entrees and two drinks for the creator and a guest">${chipsRowHtml("comp", "pvo", target && target.profile ? target.profile.tierBand : null)}</div>
+      <div class="field"><label>Offer title</label><input id="pvo-title" required placeholder="For example: Dinner for two on us"${pvSug ? ` value="${esc(pvSug.label)}"` : ""}></div>
+      <div class="field"><label>Exactly what is comped</label><input id="pvo-comped" required placeholder="For example: Two entrees and two drinks for the creator and a guest"${pvSug ? ` value="${esc(pvSug.comp)}"` : ""}>${chipsRowHtml("comp", "pvo", target && target.profile ? target.profile.tierBand : null, pvSug ? { comp: pvSug.comp, cap: pvSug.cap } : null)}</div>
       <div class="field"><label>How many people does the comp cover?</label>
         <div class="radio-stack">
         <label class="radio-chip"><input type="radio" name="pvo-covers" value="1" checked><span>1 person: just the creator</span></label>
@@ -7830,7 +7961,7 @@ function previewOfferHtml() {
         </div>
       </div>
       <div class="form-2col">
-        <div class="field"><label>Dollar cap ($)</label><input type="number" id="pvo-cap" min="1" required placeholder="75"></div>
+        <div class="field"><label>Dollar cap ($)</label><input type="number" id="pvo-cap" min="1" required placeholder="75"${pvSug ? ` value="${pvSug.cap}"` : ""}></div>
         <div class="field"><label>Spots (creators who can book)</label><input type="number" id="pvo-spots" min="1" value="1" required></div>
       </div>
       ${windowModeFieldHtml("pvo")}
@@ -7997,7 +8128,9 @@ function pvBookingCard(b) {
       <span class="small" id="pv-redeem-result-${b.id}"></span>
       <p class="small muted">Simulation only: in the live app the business reports this tally on the visit and it is saved. Here nothing is recorded, and the dashboard keeps its original tallies.</p>
     </form>`;
-    html += `<button class="btn small-btn ghost" disabled>Use in an ad</button> <span class="small muted">Ad use comes with paid visits (repost plus ads for 6 months from the post date); the creator is notified and earns +25 Momentum. Disabled in preview; try it live from a paid visit.</span>`;
+    html += b.kind === "paid"
+      ? `<button class="btn small-btn ghost" disabled>Use in an ad</button> <span class="small muted">Ad use comes with the standard license: this paid visit includes repost plus ads for 90 days from the post date; the creator is notified and earns +25 Momentum. Disabled in preview; try it live from a paid visit.</span>`
+      : `<button class="btn small-btn ghost" disabled>License for ads</button> <span class="small muted">This was a comp visit: native sharing only until licensed. In the live app, the business can license this post for 90 days of repost and ad use at the creator's listed licensing fee, only with their approval. Disabled in preview.</span>`;
   }
   if (b.review) {
     html += `<div class="review-item"><span class="small muted">Your review of this creator</span><br>${pvStars(b.review.stars)} <span class="small">${esc(b.review.text)}</span></div>`;
@@ -8396,7 +8529,7 @@ function previewDashboardHtml(d) {
     </div>` : ""}
     <div class="showcase-block"><h4>Content rights: they follow the visit</h4>
       <p class="small" style="margin:0 0 4px"><span class="rules">On a comp visit (every plan, including ${esc(plan.name)}):</span> share a delivered post natively, with the creator tagged. No downloads, no reposting the file, no ads.</p>
-      <p class="small" style="margin:0 0 4px"><span class="rules">On a paid visit:</span> you can also repost the post on your own feed and run it as an ad for 6 months from the post date.</p>
+      <p class="small" style="margin:0 0 4px"><span class="rules">On a paid visit:</span> you can also repost the post on your own feed and run it as an ad for 90 days from the post date.</p>
       <p class="small muted" style="margin:0">Rights follow the visit, not the plan. The creator always owns their content.</p>
     </div>
   </section>
