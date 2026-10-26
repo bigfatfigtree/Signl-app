@@ -156,7 +156,7 @@ const STANDARD_VISIT = {
     "The post stays live on the creator's profile for at least 30 days",
   ],
   summary:
-    "Every SIGNL comped visit includes: 1 post or reel + 1 story that shares the post, within 48 hours of the visit, honest and disclosed, live at least 30 days, with tracked delivery proof. Paid bookings carry the deliverables set in the booking's own terms. Content rights follow the visit, never the plan: on a comp visit the business may share the post natively only, with the creator tagged; no downloads, no reposting the file, no ad use. On a paid visit the business may also repost the post and run it as an ad for 6 months from the post date. The creator always owns their content, and nobody can edit it.",
+    "Every SIGNL comped visit includes: 1 post or reel + 1 story that shares the post, within 48 hours of the visit, honest and disclosed, live at least 30 days, with tracked delivery proof. 48 hours is the standard creators are held to; a post inside one week still counts, as a late delivery. Paid bookings carry the deliverables set in the booking's own terms. Content rights follow the visit, never the plan: on a comp visit the business may share the post natively only, with the creator tagged; no downloads, no reposting the file, no ad use. On a paid visit the business may also repost the post and run it as an ad for 6 months from the post date. The creator always owns their content, and nobody can edit it.",
 };
 
 // ---------- The paid lane (Jeff, 2026-10-19) ----------
@@ -4871,9 +4871,9 @@ async function performCounterRedeem(booking, actor) {
   // The creator's 48 hour clock just started; until 2026-10-24
   // they heard about it from nobody. Tell them, both surfaces.
   await notifyMilestone(booking.creatorId, "clock_started",
-    `Your visit to ${booking.businessName || "the business"} is redeemed and your 48 hour post clock is running. Post by ${milestoneDeadlineText(booking.postDeadline)}, then paste the Instagram link in the app.`,
+    `Your visit to ${booking.businessName || "the business"} is redeemed and your 48 hour post clock is running. Post by ${milestoneDeadlineText(booking.postDeadline)}, then paste the Instagram link in the app. A post inside the week still counts, as a late delivery.`,
     `Your 48 hour post clock started: ${booking.businessName || "your SIGNL visit"}`,
-    [`Your visit to ${booking.businessName || "the business"} was just redeemed at the counter, so your post clock is running.`, "", `Post within 48 hours, by ${milestoneDeadlineText(booking.postDeadline)}, then paste the full Instagram post or reel link in the app as your proof. On time is what keeps your Momentum climbing.`, "", "Open SIGNL: https://app.joinsignl.com", "", "Jeff", "Founder, SIGNL"].join("\n"),
+    [`Your visit to ${booking.businessName || "the business"} was just redeemed at the counter, so your post clock is running.`, "", `Post within 48 hours, by ${milestoneDeadlineText(booking.postDeadline)}, then paste the full Instagram post or reel link in the app as your proof. On time is what keeps your Momentum climbing, and a post inside the week still counts, as a late delivery.`, "", "Open SIGNL: https://app.joinsignl.com", "", "Jeff", "Founder, SIGNL"].join("\n"),
     { bookingId: booking.id });
   return booking;
 }
@@ -5350,11 +5350,11 @@ async function previewDashboard() {
       b.pauseAt = hoursFrom(now, -84 + COMPLIANCE.hardStopDays * 24);
       b.state = "overdue";
       b.stateLabel = "Post overdue · in the late window";
-      b.replacementAvailable = true;
+      b.replacementAvailable = false;
       b.alerts = [
         `The 48 hour deadline passed ${Math.round((now - Date.parse(b.postDeadline)) / 3600000)} hours ago with no post link yet. Reminder emails went out automatically at the deadline.`,
         `The visit still counts if the post lands before the hard stop on ${previewFmtDate(b.pauseAt)}; after that the creator's account pauses until it does.`,
-        "In the live app, this is where you can request a replacement visit. Nothing about the creator's standing is ever shown publicly.",
+        "If the week passes with no post, this is where you request a replacement visit under the Visit Guarantee. Nothing about the creator's standing is ever shown publicly.",
       ];
     }
     b.checklist = previewDashChecklist(b);
@@ -7578,6 +7578,7 @@ async function route(event) {
           country: m.country || "United States",
           live: TEST_MODE ? true : !!flags[m.name],
           creatorsApproved: inMarket.filter((u) => u.role === "creator" && u.status === "approved" && !isTester(u)).length,
+          creatorsApprovedComplete: inMarket.filter((u) => u.role === "creator" && u.status === "approved" && !isTester(u) && profileCompleteOf(u)).length,
           creatorsPending: inMarket.filter((u) => u.role === "creator" && u.status === "pending").length,
           businessesApproved: inMarket.filter((u) => u.role === "business" && u.status === "approved").length,
           businessesFounding: inMarket.filter((u) => u.role === "business" && u.status === "approved" && businessAccessState(u) !== "active").length,
@@ -8402,6 +8403,48 @@ async function route(event) {
     // The query itself lives in discoverCards() so the admin Business
     // Preview answers with the identical roster, filters, and sorts.
     return json(200, { creators: await discoverCards(query, user) });
+  }
+
+  // ---------- deck state: Later piles + not-a-fit (Jeff, 2026-10-26) ----------
+  // Per user, per deck: the Later pile (parked ids, in parked
+  // order) and the hidden list (not a fit / not for me). The decks
+  // read these to order and filter their queues; the records touch
+  // nothing else (no offers, creators or bookings are mutated).
+  if (seg[0] === "deck-state") {
+    const normDeck = (d) => ({
+      later: Array.isArray(d && d.later) ? d.later.filter((x) => typeof x === "string") : [],
+      hidden: Array.isArray(d && d.hidden) ? d.hidden.filter((x) => typeof x === "string") : [],
+      usedLater: !!(d && d.usedLater),
+    });
+    const loadDecks = async () => {
+      const rec = (await store.get(`deckstate:${user.id}`)) || {};
+      return { discover: normDeck(rec.discover), offers: normDeck(rec.offers) };
+    };
+    if (method === "GET") return json(200, { decks: await loadDecks() });
+    if (method === "POST") {
+      const b = parseBody(event);
+      const deck = b.deck === "discover" || b.deck === "offers" ? b.deck : null;
+      const action = ["later", "unlater", "hide", "unhide"].includes(b.action) ? b.action : null;
+      const itemId = typeof b.itemId === "string" && b.itemId ? b.itemId : null;
+      if (!deck || !action || !itemId) return err(400, "deck, action and itemId are required");
+      const decks = await loadDecks();
+      const d = decks[deck];
+      if (action === "later") {
+        if (!d.later.includes(itemId)) d.later.push(itemId);
+        d.hidden = d.hidden.filter((x) => x !== itemId);
+        d.usedLater = true;
+      } else if (action === "unlater") {
+        d.later = d.later.filter((x) => x !== itemId);
+      } else if (action === "hide") {
+        if (!d.hidden.includes(itemId)) d.hidden.push(itemId);
+        d.later = d.later.filter((x) => x !== itemId);
+      } else if (action === "unhide") {
+        d.hidden = d.hidden.filter((x) => x !== itemId);
+      }
+      await store.set(`deckstate:${user.id}`, decks);
+      return json(200, { decks });
+    }
+    return err(405, "Method not allowed");
   }
 
   // ---------- favorites ----------
@@ -9335,9 +9378,9 @@ async function route(event) {
     await logEvent({ type: "code_redeemed", actorId: user.id, actorRole: "business", subjectId: booking.id, market: booking.market, data: { creatorId: booking.creatorId, code: booking.code, method: "business_confirm", postDeadline: booking.postDeadline } });
     await sendStaffNotice(booking, "redeem");
     await notifyMilestone(booking.creatorId, "clock_started",
-      `Your visit to ${booking.businessName || "the business"} is redeemed and your 48 hour post clock is running. Post by ${milestoneDeadlineText(booking.postDeadline)}, then paste the Instagram link in the app.`,
+      `Your visit to ${booking.businessName || "the business"} is redeemed and your 48 hour post clock is running. Post by ${milestoneDeadlineText(booking.postDeadline)}, then paste the Instagram link in the app. A post inside the week still counts, as a late delivery.`,
       `Your 48 hour post clock started: ${booking.businessName || "your SIGNL visit"}`,
-      [`Your visit to ${booking.businessName || "the business"} was just confirmed, so your post clock is running.`, "", `Post within 48 hours, by ${milestoneDeadlineText(booking.postDeadline)}, then paste the full Instagram post or reel link in the app as your proof. On time is what keeps your Momentum climbing.`, "", "Open SIGNL: https://app.joinsignl.com", "", "Jeff", "Founder, SIGNL"].join("\n"),
+      [`Your visit to ${booking.businessName || "the business"} was just confirmed, so your post clock is running.`, "", `Post within 48 hours, by ${milestoneDeadlineText(booking.postDeadline)}, then paste the full Instagram post or reel link in the app as your proof. On time is what keeps your Momentum climbing, and a post inside the week still counts, as a late delivery.`, "", "Open SIGNL: https://app.joinsignl.com", "", "Jeff", "Founder, SIGNL"].join("\n"),
       { bookingId: booking.id });
     return json(200, { booking: await withPostState(booking) });
   }
@@ -9347,7 +9390,13 @@ async function route(event) {
     const booking = await store.get(`booking:${seg[1]}`);
     if (!booking || booking.businessId !== user.id) return err(404, "Booking not found");
     const state = await withPostState(booking);
-    if (state.postState !== "overdue") return err(409, "Replacements apply when a post is overdue");
+    // The Visit Guarantee trigger is the week, not the 48 hours
+    // (Jeff's reframe, 2026-10-26): 48 hours is the standard a post
+    // is due by, and a post inside the week still counts as a late
+    // delivery. A replacement opens only once the hard stop (one
+    // week after redemption) passes with no post.
+    const pastHardStop = !!booking.redeemedAt && Date.now() >= Date.parse(pauseAtFor(booking));
+    if (state.postState !== "overdue" || !pastHardStop) return err(409, "Replacements open when a full week passes with no post. Creators have up to a week; 48 hours is the standard they are held to.");
     booking.replacementRequestedAt = nowIso();
     booking.updatedAt = nowIso();
     await store.set(`booking:${booking.id}`, booking);

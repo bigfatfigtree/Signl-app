@@ -435,7 +435,7 @@ try {
   check("the booked dashboard booking carries a rendered QR (the counter credential)", typeof bookedBk.qrSvg === "string" && bookedBk.qrSvg.includes("<svg") && !!bookedBk.redeemBy && Date.parse(bookedBk.redeemBy) > Date.now(), String(bookedBk.qrSvg || "").slice(0, 60));
   check("every dashboard booking carries the Standard Visit checklist", dBookings.every((b) => Array.isArray(b.checklist) && b.checklist.length === 6 && b.checklist.some((it) => it.key === "post")), "");
   const overdueBk = dBookings.find((b) => b.state === "overdue") || {};
-  check("the problem booking surfaces its alerts and the hard stop", Array.isArray(overdueBk.alerts) && overdueBk.alerts.length >= 2 && !!overdueBk.pauseAt && Date.parse(overdueBk.pauseAt) > Date.now() && overdueBk.replacementAvailable === true, JSON.stringify(overdueBk.alerts || null));
+  check("the problem booking surfaces its alerts and the hard stop", Array.isArray(overdueBk.alerts) && overdueBk.alerts.length >= 2 && !!overdueBk.pauseAt && Date.parse(overdueBk.pauseAt) > Date.now() && overdueBk.replacementAvailable === false, JSON.stringify(overdueBk.alerts || null));
   const dSum = dash.summary || {};
   const deliveredPosts = dBookings.filter((b) => b.post);
   check("dashboard summary is consistent with its own bookings (tracking + returns)", dSum.modeled === true && dSum.visitsUsed === dBookings.length && dSum.visitsAllowance === 20 && dSum.postsDelivered === deliveredPosts.length && dSum.totalViews === deliveredPosts.reduce((s, b) => s + (b.post.views || 0), 0) && dSum.totalLikes === deliveredPosts.reduce((s, b) => s + (b.post.likes || 0), 0) && dSum.compValueGiven === dBookings.reduce((s, b) => s + (b.redeemedAt ? b.compCostModeled || 0 : 0), 0), JSON.stringify(dSum));
@@ -488,8 +488,8 @@ try {
   // preview discover deck (Jeff, 2026-10-25): the preview roster
   // step rides the same stack engine + deck card as the real
   // business Discover, so the swipe feel is testable in preview.
-  check("client ships the preview discover deck on the shared stack engine + deck card", appJs.text.includes("pvDiscoverModeToggleHtml") && appJs.text.includes('data-stack="pvdiscover"') && appJs.text.includes("cardHtml: (c) => discoverStackCard(c)") && appJs.text.includes('data-stackpos="pvdiscover"') && appJs.text.includes("pvDiscoverEndHtml") && appJs.text.includes("pvDiscoverShowPassed"), "");
-  check("preview deck Invite/Tap reuse the preview composer + profile step (never the real flows)", appJs.text.includes("onGo: (c) => { previewStartOffer(c.userId); }") && appJs.text.includes("onTap: (c) => { previewViewCreator(c.userId); }") && appJs.text.includes("onPass: (c) => { if (stackState.pvdiscover) stackState.pvdiscover.passedIds.add(c.userId); }"), "");
+  check("client ships the preview discover deck on the shared stack engine + deck card", appJs.text.includes("pvDiscoverModeToggleHtml") && appJs.text.includes('data-stack="pvdiscover"') && appJs.text.includes("cardHtml: (c) => discoverStackCard(c)") && appJs.text.includes('data-stackpos="pvdiscover"') && appJs.text.includes("pvDiscoverEndHtml") && appJs.text.includes("openLaterPile('pvdiscover')"), "");
+  check("preview deck Invite/Tap reuse the preview composer + profile step (never the real flows)", appJs.text.includes("onGo: (c) => { pileUnlater(\"pvdiscover\", c.userId); previewStartOffer(c.userId); }") && appJs.text.includes("onTap: (c) => { previewViewCreator(c.userId); }") && appJs.text.includes("onPass: (c) => { pileLater(\"pvdiscover\", c.userId); }"), "");
   check("preview discover keeps the roster grid in List mode", appJs.text.includes("renderPvDiscoverBody") && appJs.text.includes('creatorCard(c, state.user, { preview: true })'), "");
   const evBeforePvDeck = await admin("GET", "/api/admin/events?limit=2000");
   const pvDeckBrowse = await admin("GET", "/api/admin/preview/discover?market=Hampton%20Roads");

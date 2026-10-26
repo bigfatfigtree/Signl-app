@@ -833,9 +833,10 @@ function dragInit(root) {
 
 // Card stacks (Discover + Offers): one card at a time, pointer
 // drag with a slight rotate, spring back under the threshold,
-// fly off past it. Buttons run the same animations. The stack is
-// presentation only: pass just advances locally, and the primary
-// action calls the exact handler the list view's button called.
+// fly off past it. Buttons run the same animations. A pass is a
+// Later (the card parks in the deck's pile, see DECKS below) and
+// the primary action calls the exact handler the list view's
+// button called.
 // Drags capture only when they start on the card itself, so page
 // scroll and the bottom nav are untouched.
 const stackState = {};
@@ -855,14 +856,15 @@ function renderStack(wrap) {
   const total = s.items.length;
   const pos = document.querySelector(`[data-stackpos="${key}"]`);
   if (s.idx >= total) {
+    if (s.onRoundEnd && s.onRoundEnd(wrap)) return;
     wrap.innerHTML = s.endHtml(s.passed, total);
     if (pos) pos.textContent = total ? `${total} of ${total}` : "";
     return;
   }
   if (pos) pos.textContent = `${s.idx + 1} of ${total}`;
   const behind = s.idx + 1 < total ? `<div class="stk-behind" aria-hidden="true">${s.cardHtml(s.items[s.idx + 1], s.idx + 1)}</div>` : "";
-  wrap.innerHTML = behind + `<div class="stk-card">${s.cardHtml(s.items[s.idx], s.idx)}</div>`
-    + `<div class="stk-actions"><button type="button" class="stk-pass" aria-label="Pass" onclick="stackButton('${key}','pass')">&#10005;</button><button type="button" class="stk-go" onclick="stackButton('${key}','go')">${esc(s.goLabelFor ? s.goLabelFor(s.items[s.idx]) : s.goLabel)}</button></div>`;
+  wrap.innerHTML = behind + `<div class="stk-card">${s.round === 2 ? `<span class="stk-secondlook">Second look</span>` : ""}${s.cardHtml(s.items[s.idx], s.idx)}</div>`
+    + `<div class="stk-actions"><button type="button" class="stk-pass" aria-label="Later: park this card" onclick="stackButton('${key}','pass')">Later</button><button type="button" class="stk-go" onclick="stackButton('${key}','go')">${esc(s.goLabelFor ? s.goLabelFor(s.items[s.idx]) : s.goLabel)}</button></div>`;
   const card = wrap.querySelector(".stk-card");
   if (card) attachStackDrag(wrap, card);
 }
@@ -1001,7 +1003,7 @@ function audienceLineHtml(source) {
 // the single source of truth; the fallback text mirrors it).
 function standardVisit() {
   return (state.boot && state.boot.standardVisit) || {
-    summary: "Every SIGNL comped visit includes: 1 post or reel + 1 story that shares the post, within 48 hours of the visit, honest and disclosed, live at least 30 days, with tracked delivery proof. Paid bookings carry the deliverables set in the booking's own terms. Content rights follow the visit, never the plan: on a comp visit the business may share the post natively only, with the creator tagged; no downloads, no reposting the file, no ad use. On a paid visit the business may also repost the post and run it as an ad for 6 months from the post date. The creator always owns their content, and nobody can edit it.",
+    summary: "Every SIGNL comped visit includes: 1 post or reel + 1 story that shares the post, within 48 hours of the visit, honest and disclosed, live at least 30 days, with tracked delivery proof. 48 hours is the standard creators are held to; a post inside one week still counts, as a late delivery. Paid bookings carry the deliverables set in the booking's own terms. Content rights follow the visit, never the plan: on a comp visit the business may share the post natively only, with the creator tagged; no downloads, no reposting the file, no ad use. On a paid visit the business may also repost the post and run it as an ad for 6 months from the post date. The creator always owns their content, and nobody can edit it.",
   };
 }
 
@@ -1061,6 +1063,7 @@ function dealPlainWordsHtml(o) {
       ${o.includes ? `<p class="small"><strong>Included:</strong> ${esc(o.includes)}</p>` : ""}
       ${o.experience ? `<p class="small"><strong>The experience:</strong> ${esc(o.experience)}</p>` : ""}
       ${o.kind === "paid" ? `<p class="small"><strong>You post:</strong> the deliverables set in this booking's terms, posted within 48 hours of your visit, honest and disclosed. The post stays live at least 30 days. You check off by pasting the post link in My Visits.</p>` : `<p class="small"><strong>You post:</strong> 1 post or reel + 1 story that shares the post, within 48 hours of your visit, honest, with the comp disclosed. The post stays live at least 30 days. You check off by pasting the post link in My Visits.</p>`}
+      <p class="small muted">Up to a week at the outside. 48 hours is the standard and earns the Momentum.</p>
       <p class="small"><strong>They can:</strong> ${rights.can.map(esc).join("; ")}</p>
       <p class="small"><strong>They can't:</strong> ${rights.cannot.map(esc).join("; ")}</p>
     </div>
@@ -1396,8 +1399,9 @@ function renderHome() {
     <div class="black-card">
       <div class="rule-row">No required praise, ever.</div>
       <div class="rule-row">Every comp disclosed (FTC).</div>
-      <div class="rule-row">No post in 48 hours? Replacement visit.</div>
-      <details class="deal-details"><summary>All the rules</summary><div class="dd-body"><p class="small">A business can never require a positive post, a rating, or specific words. Creators disclose every comp, as the FTC requires. If a post does not land in 48 hours, the business gets a replacement visit. Invite other creators and earn Momentum points (+3 per sign-up through your link, +10 per approval). Points order the creator list businesses see.</p></div></details>
+      <div class="rule-row">Posts delivered in 48 hours*</div>
+      <p class="small muted" style="margin:10px 0 0">*Creators have up to a week; 48 hours is the standard they are held to. A visit with no post after the week is replaced for the business.</p>
+      <details class="deal-details"><summary>All the rules</summary><div class="dd-body"><p class="small">A business can never require a positive post, a rating, or specific words. Creators disclose every comp, as the FTC requires. A post inside the week still counts, as a late delivery. Invite other creators and earn Momentum points (+3 per sign-up through your link, +10 per approval). Points order the creator list businesses see.</p></div></details>
     </div>
   </section>`;
 }
@@ -3002,6 +3006,8 @@ function creatorProfileDetailHtml(c, preview) {
       ${preview
         ? `<button class="btn" onclick="previewStartOffer('${c.userId}')">Send offer</button>${p.paidRate ? ` <button class="btn ghost" onclick="previewPaidBooking('${c.userId}')">Preview paid booking ($${fmtPrice(p.paidRate)})</button>` : ""}`
         : `<button class="btn" onclick="startOffer('${c.userId}')">Send offer</button>${p.paidRate ? ` <button class="btn" onclick="bookPaidVisit('${c.userId}')">Book paid visit ($${fmtPrice(p.paidRate)})</button>` : ""} <button class="btn ghost" onclick="openThread('${c.userId}')">Message</button>`}
+      <button class="btn small-btn ghost" onclick="profileLater('${c.userId}', ${preview ? "true" : "false"})">Later</button>
+      <button class="btn small-btn ghost" onclick="profileNotFit('${c.userId}', ${preview ? "true" : "false"})">Not a fit</button>
     </div>
     ${p.paidRate ? `<p class="small muted">Paid bookings: $${fmtPrice(p.paidRate)} &middot; you pay rate + 3% &middot; they keep 97% &middot; held until the post is live.</p>` : ""}
     ${preview ? `<p class="small muted">Preview: an offer sent from here is a simulation. It never reaches ${esc(c.name)} and nothing is saved.</p>` : ""}
@@ -3315,7 +3321,7 @@ function tickHomeCountdowns() {
     const t = Date.parse(el.dataset.target || "");
     if (!t) return;
     const diff = t - Date.now();
-    el.textContent = homeDurCore(diff) + (diff < 0 && el.dataset.mode === "post" ? " overdue" : "");
+    el.textContent = homeDurCore(diff) + (diff < 0 && el.dataset.mode === "post" ? " late" : "");
   });
 }
 
@@ -3435,7 +3441,7 @@ function homeActiveVisitHtml(b) {
     const diff = Date.parse(b.postDeadline || "") - Date.now();
     clockBlock = `
     <p class="ui-kicker" style="margin-top:14px">Time left to post</p>
-    <div class="home-count home-tick" data-mode="post" data-target="${esc(b.postDeadline || "")}">${esc(homeDurCore(diff))}${diff < 0 ? " overdue" : ""}</div>
+    <div class="home-count home-tick" data-mode="post" data-target="${esc(b.postDeadline || "")}">${esc(homeDurCore(diff))}${diff < 0 ? " late" : ""}</div>
     <p class="small muted">Post by ${esc(fmtDate(b.postDeadline))}. Paste the link in My Visits.</p>`;
   } else if (awaitingRedeem) {
     clockBlock = `
@@ -3518,7 +3524,8 @@ function homeOpportunitiesHtml(offers, u, bookings, applications) {
   // could only ever fail against the server's lane rule).
   const bookedOfferIds = new Set((bookings || []).filter((b) => b.offerId && b.status !== "cancelled" && b.status !== "expired").map((b) => b.offerId));
   const appliedOfferIds = new Set((applications || []).filter((a) => a.status === "applied" || a.status === "backfill_offered").map((a) => a.offerId));
-  const ranked = offers.slice().sort((a, b) => {
+  const pileHidden = new Set(pileOf("offers").hidden);
+  const ranked = offers.filter((o) => !pileHidden.has(o.id)).slice().sort((a, b) => {
     const ta = a.creatorId === u.id ? 0 : 1;
     const tb = b.creatorId === u.id ? 0 : 1;
     if (ta !== tb) return ta - tb;
@@ -3559,6 +3566,7 @@ function homeOpportunitiesHtml(offers, u, bookings, applications) {
           ${actions}
         </div>
       </div>
+      ${o.lane === "open" && !bookedOfferIds.has(o.id) && !appliedOfferIds.has(o.id) ? `<div class="offer-pile-row"><button type="button" class="btn small-btn ghost" onclick="cardLater('offers','${o.id}')">Later</button><button type="button" class="btn small-btn ghost" onclick="cardHide('offers','${o.id}')">Not for me</button></div>` : ""}
     </div>`;
   }).join("");
   return `
@@ -3804,6 +3812,7 @@ async function loadCreatorHome() {
   if (!el) return;
   const u = state.user;
   try {
+    await ensureDeckState();
     const [bkData, offData, fData, appData] = await Promise.all([
       api("GET", "/bookings"),
       api("GET", "/offers"),
@@ -4278,6 +4287,7 @@ async function loadOpenBoard() {
       return;
     }
     state.openOffers = data.offers;
+    await ensureDeckState();
     el.innerHTML = `<h3>Open offers in ${esc(state.user.market)}</h3>
     <p class="small muted">One tap applies — your profile card is the application.</p>
     <div id="offers-toggle">${offersModeToggleHtml()}</div>
@@ -4329,19 +4339,220 @@ function offerFeedCardHtml(o, opts) {
             ${preview ? "" : `<button class="btn small-btn ghost" onclick="openThread('${o.businessId}')">Message</button>`}
           </div>
         </div>
+        ${opts && opts.pileKey && !o.myApplication ? `<div class="offer-pile-row"><button type="button" class="btn small-btn ghost" onclick="cardLater('${opts.pileKey}','${o.id}')">Later</button><button type="button" class="btn small-btn ghost" onclick="cardHide('${opts.pileKey}','${o.id}')">Not for me</button></div>` : ""}
       </div>`;
+}
+
+// ---------- Later piles + not a fit (Jeff, 2026-10-26) ----------
+// Passing a card means LATER now: the card parks in a per-user
+// pile for that deck. Real decks persist server-side (GET/POST
+// /deck-state) so the pile survives sessions; the preview twins
+// keep theirs in memory and write nothing. When the unseen cards
+// run out, the pile recycles as a Second look round in parked
+// order; the end card arrives only after that round cycles too.
+// The real no lives off the swipe: Not a fit / Not for me on the
+// full profile or offer view and in the Later grid, with an undo
+// toast and a Hidden restore list inside the Later view.
+const DECKS = {
+  offers: { pile: "offers", idOf: (o) => o.id, notFit: "Not for me", container: "open-list", board: () => renderOpenBoard() },
+  discover: { pile: "discover", idOf: (c) => c.userId, notFit: "Not a fit", container: "discover-results", board: () => renderDiscoverResults() },
+  pvoffers: { pile: "offers", preview: true, idOf: (o) => o.id, notFit: "Not for me", container: "pv-open-list", board: () => renderPvBoard() },
+  pvdiscover: { pile: "discover", preview: true, idOf: (c) => c.userId, notFit: "Not a fit", container: "pv-discover-body", board: () => renderPvDiscoverBody() },
+};
+const pvPiles = { discover: { later: [], hidden: [], usedLater: false }, offers: { later: [], hidden: [], usedLater: false } };
+function emptyPile() { return { later: [], hidden: [], usedLater: false }; }
+function pileOf(key) {
+  const meta = DECKS[key];
+  if (!meta) return emptyPile();
+  if (meta.preview) return pvPiles[meta.pile];
+  if (!state.deckState) state.deckState = { discover: emptyPile(), offers: emptyPile() };
+  return state.deckState[meta.pile] || emptyPile();
+}
+let deckStateLoaded = false;
+async function ensureDeckState() {
+  if (deckStateLoaded) return;
+  deckStateLoaded = true;
+  try {
+    const data = await api("GET", "/deck-state");
+    if (data && data.decks) state.deckState = { discover: { ...emptyPile(), ...(data.decks.discover || {}) }, offers: { ...emptyPile(), ...(data.decks.offers || {}) } };
+  } catch (e) { /* a failed read leaves the decks working session-only */ }
+}
+function pilePersist(key, action, itemId) {
+  const meta = DECKS[key];
+  if (!meta || meta.preview) return;
+  api("POST", "/deck-state", { deck: meta.pile, action, itemId }).catch(() => {});
+}
+function pileLater(key, itemId) {
+  const pile = pileOf(key);
+  if (!pile.later.includes(itemId)) pile.later.push(itemId);
+  pile.hidden = pile.hidden.filter((x) => x !== itemId);
+  pile.usedLater = true;
+  pilePersist(key, "later", itemId);
+  syncDeckChrome(key);
+}
+function pileUnlater(key, itemId) {
+  const pile = pileOf(key);
+  pile.later = pile.later.filter((x) => x !== itemId);
+  pilePersist(key, "unlater", itemId);
+  syncDeckChrome(key);
+}
+function pileHide(key, itemId) {
+  const pile = pileOf(key);
+  if (!pile.hidden.includes(itemId)) pile.hidden.push(itemId);
+  pile.later = pile.later.filter((x) => x !== itemId);
+  pilePersist(key, "hide", itemId);
+  showToast("Hidden", () => { pileUnhide(key, itemId); refreshDeckAfterPile(key); });
+  syncDeckChrome(key);
+}
+function pileUnhide(key, itemId) {
+  const pile = pileOf(key);
+  pile.hidden = pile.hidden.filter((x) => x !== itemId);
+  pilePersist(key, "unhide", itemId);
+  syncDeckChrome(key);
+}
+function refreshDeckAfterPile(key) {
+  delete stackState[key];
+  const meta = DECKS[key];
+  if (meta) meta.board();
+}
+// One small toast, in-system: dark pill, one optional Undo.
+let toastTimer = null;
+let toastUndoFn = null;
+function showToast(text, undoFn) {
+  let t = document.getElementById("signl-toast");
+  if (!t) { t = document.createElement("div"); t.id = "signl-toast"; t.className = "signl-toast"; document.body.appendChild(t); }
+  toastUndoFn = undoFn || null;
+  t.innerHTML = `<span>${esc(text)}</span>${undoFn ? `<button type="button" onclick="toastUndoRun()">Undo</button>` : ""}`;
+  t.classList.add("show");
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.classList.remove("show"); }, 4500);
+}
+function toastUndoRun() {
+  const t = document.getElementById("signl-toast");
+  if (t) t.classList.remove("show");
+  if (toastTimer) clearTimeout(toastTimer);
+  const fn = toastUndoFn;
+  toastUndoFn = null;
+  if (fn) fn();
+  return false;
+}
+// Queue math for a deck: hidden items vanish, parked items wait
+// for the Second look round, everything else is unseen.
+function deckQueue(key, all) {
+  const meta = DECKS[key];
+  const pile = pileOf(key);
+  const hidden = new Set(pile.hidden);
+  const visible = (all || []).filter((it) => !hidden.has(meta.idOf(it)));
+  const laterSet = new Set(pile.later);
+  const unseen = visible.filter((it) => !laterSet.has(meta.idOf(it)));
+  const parked = pile.later.map((id) => visible.find((it) => meta.idOf(it) === id)).filter(Boolean);
+  return { visible, unseen, parked };
+}
+function deckSrcOf(key) {
+  if (key === "offers") return state.openOffers || [];
+  if (key === "discover") return state.discover || [];
+  if (key === "pvoffers") return (state.preview && state.preview.offersList) || [];
+  if (key === "pvdiscover") return (state.preview && state.preview.creators) || [];
+  return [];
+}
+// Builds a deck's stackState: unseen first; if only the pile is
+// left, the deck opens on the Second look round. When round 1
+// runs out, onRoundEnd deals the pile back in, in parked order.
+function startDeck(key, all, cfg) {
+  const q = deckQueue(key, all);
+  const round = q.unseen.length ? 1 : 2;
+  return {
+    items: round === 1 ? q.unseen : q.parked, idx: 0, passed: 0, src: all, round,
+    onRoundEnd: (wrap) => {
+      const s = stackState[key];
+      if (!s || s.round !== 1) return false;
+      const q2 = deckQueue(key, s.src);
+      if (!q2.parked.length) return false;
+      s.items = q2.parked;
+      s.idx = 0;
+      s.round = 2;
+      renderStack(wrap);
+      syncDeckChrome(key);
+      return true;
+    },
+    ...cfg,
+  };
+}
+function syncDeckChrome(key) {
+  if (!DECKS[key]) return;
+  const s = stackState[key];
+  const q = deckQueue(key, s ? s.src : deckSrcOf(key));
+  document.querySelectorAll(`[data-deckcounts="${key}"]`).forEach((el) => { el.textContent = `${q.unseen.length} new · ${q.parked.length} in Later`; });
+  document.querySelectorAll(`[data-laterchip="${key}"]`).forEach((el) => { el.textContent = `Later (${q.parked.length})`; });
+  document.querySelectorAll(`[data-deckteach="${key}"]`).forEach((el) => { el.style.display = pileOf(key).usedLater ? "none" : ""; });
+}
+function deckChromeHtml(key) {
+  return `<span class="deck-counts" data-deckcounts="${key}"></span><button type="button" class="later-chip" data-laterchip="${key}" onclick="openLaterPile('${key}')">Later (0)</button>`;
+}
+function deckTeachHtml(key) {
+  return `<p class="small muted deck-teach" data-deckteach="${key}">Swipe left to park in Later. Nothing is a no until you say so.</p>`;
+}
+// The Later view: the pile as a grid over the board container.
+// Items render with the deck's own list cards (so invite/apply
+// ride along), plus Back to deck and the not-fit action per item,
+// and a Hidden restore list so nothing is unrecoverable.
+function laterItemHtml(key, item) {
+  const meta = DECKS[key];
+  const id = meta.idOf(item);
+  const card = key === "offers" ? offerFeedCardHtml(item)
+    : key === "pvoffers" ? offerFeedCardHtml(item, { preview: true })
+    : key === "discover" ? creatorCard(item, state.user)
+    : creatorCard(item, state.user, { preview: true });
+  const viewBtn = key === "discover" ? `<button type="button" class="btn small-btn ghost" onclick="openCreatorProfile('${id}')">View profile</button>`
+    : key === "pvdiscover" ? `<button type="button" class="btn small-btn ghost" onclick="previewViewCreator('${id}')">View profile</button>` : "";
+  return `<div class="later-item">${card}<div class="later-actions">${viewBtn}<button type="button" class="btn small-btn ghost" onclick="laterSendToDeck('${key}','${id}')">Back to deck</button><button type="button" class="btn small-btn ghost" onclick="laterHideItem('${key}','${id}')">${esc(meta.notFit)}</button></div></div>`;
+}
+function laterLabelOf(key, item) {
+  if (key === "offers" || key === "pvoffers") return item.title || "Offer";
+  const p = item.profile || {};
+  return `${item.name || ""} @${p.handle || ""}`;
+}
+function openLaterPile(key) {
+  const meta = DECKS[key];
+  if (!meta) return false;
+  const el = document.getElementById(meta.container);
+  if (!el) return false;
+  const all = deckSrcOf(key);
+  const pile = pileOf(key);
+  const q = deckQueue(key, all);
+  const hiddenItems = pile.hidden.map((id) => (all || []).find((it) => meta.idOf(it) === id)).filter(Boolean);
+  const gridCls = key === "offers" || key === "pvoffers" ? "vx-stagger" : "creator-grid";
+  el.innerHTML = `<div class="later-head"><button type="button" class="btn small-btn ghost" onclick="laterBackToDeck('${key}')">&larr; Back to deck</button><h3 style="margin:0">Later (${q.parked.length})</h3></div>
+    <p class="small muted">Parked cards, in the order you parked them. Open one to act on it, send it back to the deck, or mark it ${meta.notFit === "Not for me" ? "not for you" : "not a fit"}.</p>
+    ${q.parked.length ? `<div class="${gridCls}">${q.parked.map((it) => laterItemHtml(key, it)).join("")}</div>` : `<div class="panel center"><p class="muted">Nothing parked yet. Swipe left on a card and it waits here.</p></div>`}
+    ${hiddenItems.length ? `<div class="hidden-block"><h4>Hidden (${hiddenItems.length})</h4>${hiddenItems.map((it) => `<div class="hidden-row"><span>${esc(laterLabelOf(key, it))}</span><button type="button" class="btn small-btn ghost" onclick="laterRestoreItem('${key}','${meta.idOf(it)}')">Restore</button></div>`).join("")}</div>` : ""}`;
+  const pos = document.querySelector(`[data-stackpos="${key}"]`);
+  if (pos) pos.textContent = "";
+  window.scrollTo(0, 0);
+  return false;
+}
+function laterBackToDeck(key) { delete stackState[key]; DECKS[key].board(); return false; }
+function laterSendToDeck(key, itemId) { pileUnlater(key, itemId); openLaterPile(key); return false; }
+function laterHideItem(key, itemId) { pileHide(key, itemId); openLaterPile(key); return false; }
+function laterRestoreItem(key, itemId) { pileUnhide(key, itemId); openLaterPile(key); return false; }
+// The two off-swipe actions on full cards in list contexts.
+function cardLater(key, itemId) { pileLater(key, itemId); showToast("Parked in Later"); refreshDeckAfterPile(key); return false; }
+function cardHide(key, itemId) { pileHide(key, itemId); refreshDeckAfterPile(key); if (key === "offers" && !document.getElementById("open-list")) loadCreatorHome(); return false; }
+function profileLater(userId, preview) { pileLater(preview ? "pvdiscover" : "discover", userId); showToast("Parked in Later"); return false; }
+function profileNotFit(userId, preview) {
+  pileHide(preview ? "pvdiscover" : "discover", userId);
+  if (preview) previewBackToResults(); else backToDiscover();
+  return false;
 }
 
 // ---------- V5: the Offers feed as a card stack (Jeff, 2026-10-25) ----------
 // Same stack model as Discover. Apply runs the exact apply call
 // (one tap, no added confirm — identical to the list button);
-// Pass hides the offer for this session only: there is NO
-// dismissal mechanism anywhere in the codebase for open offers
-// (decline exists only for direct offers), so passes live in
-// stackState and the end card offers "Show passed" to reset.
+// a pass parks the offer in the creator's Later pile (see the
+// Later system above), which persists server-side.
 function offersModeToggleHtml() {
   const mode = state.offersMode || "cards";
-  return `<div class="view-toggle"><div class="vt-group"><button type="button" class="rchip${mode === "cards" ? " on" : ""}" onclick="setOffersMode('cards')">Cards</button><button type="button" class="rchip${mode === "list" ? " on" : ""}" onclick="setOffersMode('list')">List</button></div><span class="stack-pos" data-stackpos="offers"></span></div>`;
+  return `<div class="view-toggle"><div class="vt-group"><button type="button" class="rchip${mode === "cards" ? " on" : ""}" onclick="setOffersMode('cards')">Cards</button><button type="button" class="rchip${mode === "list" ? " on" : ""}" onclick="setOffersMode('list')">List</button></div>${deckChromeHtml("offers")}<span class="stack-pos" data-stackpos="offers"></span></div>${deckTeachHtml("offers")}`;
 }
 function setOffersMode(mode) {
   state.offersMode = mode;
@@ -4357,12 +4568,13 @@ function renderOpenBoard() {
   if ((state.offersMode || "cards") === "list") {
     const pos = document.querySelector('[data-stackpos="offers"]');
     if (pos) pos.textContent = "";
-    el.innerHTML = `<div class="vx-stagger">${all.map((o) => offerFeedCardHtml(o)).join("")}</div>`;
+    const q = deckQueue("offers", all);
+    el.innerHTML = `<div class="vx-stagger">${q.visible.map((o) => offerFeedCardHtml(o, { pileKey: "offers" })).join("")}</div>`;
+    syncDeckChrome("offers");
     return;
   }
   if (!stackState.offers || stackState.offers.src !== all) {
-    stackState.offers = {
-      items: all, idx: 0, passed: 0, passedIds: new Set(), src: all,
+    stackState.offers = startDeck("offers", all, {
       cardHtml: (o) => offerFeedCardHtml(o),
       goLabelFor: (o) => (o.myApplication ? "Applied" : "Apply"),
       onGo: async (o) => {
@@ -4370,6 +4582,7 @@ function renderOpenBoard() {
         try {
           await api("POST", `/offers/${o.id}/apply`, {});
           o.myApplication = true;
+          pileUnlater("offers", o.id);
           refreshBadges();
           stackAdvance("offers", "go");
           loadMyApplications();
@@ -4379,22 +4592,20 @@ function renderOpenBoard() {
           if (wrap) renderStack(wrap);
         }
       },
-      onPass: (o) => { if (stackState.offers) stackState.offers.passedIds.add(o.id); },
+      onPass: (o) => { pileLater("offers", o.id); },
       onTap: null,
       endHtml: (passed, total) => offersEndHtml(passed, total),
-    };
+    });
   }
   el.innerHTML = `<div class="stk-wrap" data-stack="offers"></div>`;
   renderStack(el.firstElementChild);
+  syncDeckChrome("offers");
 }
 function offersEndHtml(passed, total) {
-  return `<div class="stk-end"><h3>That's every open offer right now</h3><p class="small muted">You looked through ${total} offer${total === 1 ? "" : "s"}. New offers land here first, and your applications are tracked under My Applications below.</p><div class="stk-end-actions">${passed ? `<button type="button" class="btn ghost" onclick="offersShowPassed()">Show passed (${passed})</button>` : ""}<button type="button" class="btn" onclick="loadOpenBoard()">Refresh offers</button></div></div>`;
-}
-function offersShowPassed() {
-  const s = stackState.offers;
-  if (s) { s.idx = 0; s.passed = 0; s.passedIds = new Set(); }
-  renderOpenBoard();
-  return false;
+  const q = deckQueue("offers", (stackState.offers && stackState.offers.src) || []);
+  const n = q.parked.length;
+  const seen = q.visible.length;
+  return `<div class="stk-end"><h3>That's every open offer right now</h3><p class="small muted">You looked through ${seen} offer${seen === 1 ? "" : "s"}. New offers land here first, and your applications are tracked under My Applications below.</p><div class="stk-end-actions">${n ? `<button type="button" class="btn ghost" onclick="openLaterPile('offers')">Review Later (${n})</button>` : ""}<button type="button" class="btn" onclick="loadOpenBoard()">Refresh offers</button></div></div>`;
 }
 
 // ---------- creator-side preview: the open-offer deck ----------
@@ -4429,7 +4640,7 @@ function renderPvBoardShell() {
 }
 function pvOffersModeToggleHtml() {
   const mode = state.pvOffersMode || "cards";
-  return `<div class="view-toggle"><div class="vt-group"><button type="button" class="rchip${mode === "cards" ? " on" : ""}" onclick="setPvOffersMode('cards')">Cards</button><button type="button" class="rchip${mode === "list" ? " on" : ""}" onclick="setPvOffersMode('list')">List</button></div><span class="stack-pos" data-stackpos="pvoffers"></span></div>`;
+  return `<div class="view-toggle"><div class="vt-group"><button type="button" class="rchip${mode === "cards" ? " on" : ""}" onclick="setPvOffersMode('cards')">Cards</button><button type="button" class="rchip${mode === "list" ? " on" : ""}" onclick="setPvOffersMode('list')">List</button></div>${deckChromeHtml("pvoffers")}<span class="stack-pos" data-stackpos="pvoffers"></span></div>${deckTeachHtml("pvoffers")}`;
 }
 function setPvOffersMode(mode) {
   state.pvOffersMode = mode;
@@ -4445,18 +4656,20 @@ function renderPvBoard() {
   if ((state.pvOffersMode || "cards") === "list") {
     const pos = document.querySelector('[data-stackpos="pvoffers"]');
     if (pos) pos.textContent = "";
-    el.innerHTML = `<div class="vx-stagger">${all.map((o) => offerFeedCardHtml(o, { preview: true })).join("")}</div>`;
+    const q = deckQueue("pvoffers", all);
+    el.innerHTML = `<div class="vx-stagger">${q.visible.map((o) => offerFeedCardHtml(o, { preview: true, pileKey: "pvoffers" })).join("")}</div>`;
+    syncDeckChrome("pvoffers");
     return;
   }
   if (!stackState.pvoffers || stackState.pvoffers.src !== all) {
-    stackState.pvoffers = {
-      items: all, idx: 0, passed: 0, passedIds: new Set(), src: all,
+    stackState.pvoffers = startDeck("pvoffers", all, {
       cardHtml: (o) => offerFeedCardHtml(o, { preview: true }),
       goLabelFor: (o) => (o.myApplication ? "Applied" : "Apply"),
       onGo: async (o) => {
         if (o.myApplication) { stackAdvance("pvoffers", "go"); return; }
         try {
           await pvApplyRequest(o);
+          pileUnlater("pvoffers", o.id);
           stackAdvance("pvoffers", "go");
         } catch (err) {
           alert(err.message);
@@ -4464,13 +4677,14 @@ function renderPvBoard() {
           if (wrap) renderStack(wrap);
         }
       },
-      onPass: (o) => { if (stackState.pvoffers) stackState.pvoffers.passedIds.add(o.id); },
+      onPass: (o) => { pileLater("pvoffers", o.id); },
       onTap: null,
       endHtml: (passed, total) => pvOffersEndHtml(passed, total),
-    };
+    });
   }
   el.innerHTML = `<div class="stk-wrap" data-stack="pvoffers"></div>`;
   renderStack(el.firstElementChild);
+  syncDeckChrome("pvoffers");
 }
 async function pvApplyRequest(o) {
   await api("POST", "/admin/preview/apply", { offerId: o.id });
@@ -4482,22 +4696,23 @@ async function pvApplyToOffer(offerId) {
   if (!o) return;
   try {
     await pvApplyRequest(o);
+    pileUnlater("pvoffers", o.id);
+    delete stackState.pvoffers;
     renderPvBoard();
   } catch (err) { alert(err.message); }
 }
 function pvOffersEndHtml(passed, total) {
-  return `<div class="stk-end"><h3>That's every preview offer</h3><p class="small muted">You looked through ${total} simulated offer${total === 1 ? "" : "s"}. Nothing was applied for real: preview applications are never written.</p><div class="stk-end-actions">${passed ? `<button type="button" class="btn ghost" onclick="pvOffersShowPassed()">Show passed (${passed})</button>` : ""}<button type="button" class="btn" onclick="loadPvOffers()">Reload preview offers</button></div></div>`;
-}
-function pvOffersShowPassed() {
-  const s = stackState.pvoffers;
-  if (s) { s.idx = 0; s.passed = 0; s.passedIds = new Set(); }
-  renderPvBoard();
-  return false;
+  const q = deckQueue("pvoffers", (stackState.pvoffers && stackState.pvoffers.src) || []);
+  const n = q.parked.length;
+  const seen = q.visible.length;
+  return `<div class="stk-end"><h3>That's every preview offer</h3><p class="small muted">You looked through ${seen} simulated offer${seen === 1 ? "" : "s"}. Nothing was applied for real: preview applications are never written.</p><div class="stk-end-actions">${n ? `<button type="button" class="btn ghost" onclick="openLaterPile('pvoffers')">Review Later (${n})</button>` : ""}<button type="button" class="btn" onclick="loadPvOffers()">Reload preview offers</button></div></div>`;
 }
 
 async function applyToOffer(offerId) {
   try {
     await api("POST", `/offers/${offerId}/apply`, {});
+    pileUnlater("offers", offerId);
+    delete stackState.offers;
     refreshBadges();
     loadOpenBoard();
     loadMyApplications();
@@ -4628,7 +4843,7 @@ function postStateBadge(stateName, b) {
   switch (stateName) {
     case "submitted_on_time": return `<span class="badge ok">Post submitted on time</span>`;
     case "submitted_late": return `<span class="badge warn">Post submitted late</span>`;
-    case "overdue": return `<span class="badge bad">Post overdue</span>`;
+    case "overdue": return `<span class="badge warn">Post late</span>`;
     case "awaiting_post": {
       const h = hoursLeft(b.postDeadline);
       return `<span class="badge warn">Post due in <span class="countdown">${h !== null ? h.toFixed(1) : ""}h</span></span>`;
@@ -4648,7 +4863,7 @@ function complianceBadge(b) {
     case "posted_on_time": return `<span class="badge ok">Posted on time</span>`;
     case "posted_late": return `<span class="badge warn">Posted late (delivered)</span>`;
     case "post_due": return `<span class="badge warn">Post due by ${esc(when(c.deadline))}</span>`;
-    case "overdue": return `<span class="badge bad">Post overdue</span>`;
+    case "overdue": return `<span class="badge warn">Post late</span>`;
     case "paused": return `<span class="badge bad">Creator paused: a post is past due</span>`;
     case "missed": return `<span class="badge bad">Missed: no post delivered</span>`;
     case "expired": return `<span class="badge bad">Window expired unused</span>`;
@@ -4681,7 +4896,7 @@ function visitCard(b, role) {
     // its own deadline copy.
     const dueLate = b.compliance && (b.compliance.status === "overdue" || b.compliance.status === "paused" || b.compliance.status === "missed");
     html += `
-    <div class="due-banner${dueLate ? " late" : ""}"><span class="db-lbl">${dueLate ? "Post overdue" : "Post due in"}</span><span class="db-num home-tick" data-mode="post" data-target="${esc(b.postDeadline)}">${esc(homeDurCore(Date.parse(b.postDeadline) - Date.now()))}</span></div>`;
+    <div class="due-banner${dueLate ? " late" : ""}"><span class="db-lbl">${dueLate ? "Post late" : "Post due in"}</span><span class="db-num home-tick" data-mode="post" data-target="${esc(b.postDeadline)}">${esc(homeDurCore(Date.parse(b.postDeadline) - Date.now()))}</span></div>`;
   }
   if (b.paidBrief) {
     html += `<p class="small"><strong>Key points from the business:</strong> ${esc(b.paidBrief)}</p>`;
@@ -4850,7 +5065,10 @@ function visitCard(b, role) {
       </details>
     </form>`;
   }
-  if (role === "business" && b.postState === "overdue" && !b.replacementRequestedAt) {
+  if (role === "business" && b.postState === "overdue" && !b.replacementRequestedAt && b.compliance && b.compliance.pauseAt && Date.now() >= Date.parse(b.compliance.pauseAt)) {
+    // The Visit Guarantee replacement opens at the week, not at
+    // 48 hours (Jeff's reframe, 2026-10-26): inside the week the
+    // post is late, not failed, and still counts when it lands.
     html += `<button class="btn small-btn danger" onclick="requestReplacement('${b.id}')">Request replacement</button>`;
   }
   if (b.replacementRequestedAt) html += `<p class="small">Replacement requested ${fmtDate(b.replacementRequestedAt)}. SIGNL will line up a substitute creator.</p>`;
@@ -4907,7 +5125,7 @@ async function confirmVisit(bookingId) {
 }
 
 async function requestReplacement(bookingId) {
-  if (!confirm("Request a replacement visit for this overdue post?")) return;
+  if (!confirm("Request a replacement visit? The week has passed with no post, so the Visit Guarantee applies.")) return;
   try { await api("POST", `/bookings/${bookingId}/replacement`, {}); loadMyVisits("business"); }
   catch (err) { alert(err.message); }
 }
@@ -5332,6 +5550,7 @@ async function loadDiscover() {
 }
 
 async function runDiscover() {
+  await ensureDeckState();
   const el = document.getElementById("discover-results");
   const params = new URLSearchParams();
   const market = document.getElementById("f-market").value;
@@ -5373,12 +5592,12 @@ async function runDiscover() {
 // ---------- V5: Discover as a card stack (Jeff, 2026-10-25) ----------
 // Tinder-feel browsing over the SAME results, eligibility and
 // actions: Invite is startOffer (the existing direct-offer flow),
-// tap opens the existing profile view, Pass is local to this
-// stack session. Cards is the default; List renders the exact
-// card grid Discover has always rendered.
+// tap opens the existing profile view, a pass parks the creator
+// in the business's Later pile. Cards is the default; List renders
+// the exact card grid Discover has always rendered.
 function discoverModeToggleHtml() {
   const mode = state.discoverMode || "cards";
-  return `<div class="view-toggle"><div class="vt-group"><button type="button" class="rchip${mode === "cards" ? " on" : ""}" onclick="setDiscoverMode('cards')">Cards</button><button type="button" class="rchip${mode === "list" ? " on" : ""}" onclick="setDiscoverMode('list')">List</button></div><span class="stack-pos" data-stackpos="discover"></span></div>`;
+  return `<div class="view-toggle"><div class="vt-group"><button type="button" class="rchip${mode === "cards" ? " on" : ""}" onclick="setDiscoverMode('cards')">Cards</button><button type="button" class="rchip${mode === "list" ? " on" : ""}" onclick="setDiscoverMode('list')">List</button></div>${deckChromeHtml("discover")}<span class="stack-pos" data-stackpos="discover"></span></div>${deckTeachHtml("discover")}`;
 }
 function setDiscoverMode(mode) {
   state.discoverMode = mode;
@@ -5392,25 +5611,34 @@ function renderDiscoverResults() {
   if (!el) return;
   const all = state.discover || [];
   if (!all.length) return; // runDiscover already rendered the empty state
+  const q = deckQueue("discover", all);
+  if (!q.visible.length) {
+    const pos = document.querySelector('[data-stackpos="discover"]');
+    if (pos) pos.textContent = "";
+    el.innerHTML = `<div class="stk-end"><h3>Nothing new in this search</h3><p class="small muted">Everyone here is parked in your Later pile or hidden.</p><div class="stk-end-actions">${q.parked.length ? `<button type="button" class="btn ghost" onclick="openLaterPile('discover')">Review Later (${q.parked.length})</button>` : ""}<button type="button" class="btn" onclick="discoverClearFilters()">Clear filters</button></div></div>`;
+    syncDeckChrome("discover");
+    return;
+  }
   if ((state.discoverMode || "cards") === "list") {
     const pos = document.querySelector('[data-stackpos="discover"]');
     if (pos) pos.textContent = "";
-    el.innerHTML = `<div class="creator-grid vx-stagger">${all.map((c) => creatorCard(c, state.user)).join("")}</div>`;
+    el.innerHTML = `<div class="creator-grid vx-stagger">${q.visible.map((c) => creatorCard(c, state.user)).join("")}</div>`;
+    syncDeckChrome("discover");
     return;
   }
   if (!stackState.discover || stackState.discover.src !== all) {
-    stackState.discover = {
-      items: all, idx: 0, passed: 0, passedIds: new Set(), src: all,
+    stackState.discover = startDeck("discover", all, {
       cardHtml: (c) => discoverStackCard(c),
       goLabel: "Invite",
-      onGo: (c) => { startOffer(c.userId); },
-      onPass: (c) => { if (stackState.discover) stackState.discover.passedIds.add(c.userId); },
+      onGo: (c) => { pileUnlater("discover", c.userId); startOffer(c.userId); },
+      onPass: (c) => { pileLater("discover", c.userId); },
       onTap: (c) => { openCreatorProfile(c.userId); },
       endHtml: (passed, total) => discoverEndHtml(passed, total),
-    };
+    });
   }
   el.innerHTML = `<div class="stk-wrap" data-stack="discover"></div>`;
   renderStack(el.firstElementChild);
+  syncDeckChrome("discover");
 }
 function discoverStackCard(c) {
   const p = c.profile || {};
@@ -5439,13 +5667,10 @@ function discoverStackCard(c) {
   </div>`;
 }
 function discoverEndHtml(passed, total) {
-  return `<div class="stk-end"><h3>That's everyone nearby right now</h3><p class="small muted">You looked through ${total} creator${total === 1 ? "" : "s"} in this search. New approved creators land here as they join.</p><div class="stk-end-actions">${passed ? `<button type="button" class="btn ghost" onclick="discoverShowPassed()">Show passed (${passed})</button>` : ""}<button type="button" class="btn" onclick="discoverClearFilters()">Clear filters</button></div></div>`;
-}
-function discoverShowPassed() {
-  const s = stackState.discover;
-  if (s) { s.idx = 0; s.passed = 0; s.passedIds = new Set(); }
-  renderDiscoverResults();
-  return false;
+  const q = deckQueue("discover", (stackState.discover && stackState.discover.src) || []);
+  const n = q.parked.length;
+  const seen = q.visible.length;
+  return `<div class="stk-end"><h3>That's everyone nearby right now</h3><p class="small muted">You looked through ${seen} creator${seen === 1 ? "" : "s"} in this search. New approved creators land here as they join.</p><div class="stk-end-actions">${n ? `<button type="button" class="btn ghost" onclick="openLaterPile('discover')">Review Later (${n})</button>` : ""}<button type="button" class="btn" onclick="discoverClearFilters()">Clear filters</button></div></div>`;
 }
 function discoverClearFilters() {
   ["f-neighborhood", "f-q", "f-fmin", "f-fmax", "f-minlocal"].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ""; });
@@ -5475,6 +5700,7 @@ function goApplicants(offerId) {
 }
 
 function startOffer(creatorId) {
+  pileUnlater("discover", creatorId);
   state.tab = "My Offers";
   state.offerTarget = creatorId;
   render();
@@ -6931,12 +7157,12 @@ async function loadMarkets() {
       <p class="muted small">A market that is not live shows creators their founding status page only: no offers, no discovery. Activating a market opens publishing and bookings there, but it does NOT activate founding businesses: business activation is a separate admin action, per business or for every founding business in a market. Founding creators keep sign-up-order priority in discovery.</p>
       ${data.testMode ? `<div class="error-box">TEST MODE is on (SIGNL_TEST_ALLOW_BUSINESS): every market reads live. Never run production this way.</div>` : ""}
       <div class="table-wrap panel"><table>
-        <tr><th>Market</th><th>Status</th><th>Approved creators</th><th>Pending creators</th><th>Approved businesses</th><th>Action</th></tr>
+        <tr><th>Market</th><th>Status</th><th>Roster</th><th>Action</th></tr>
         ${data.markets.map((m) => `<tr>
           <td><strong>${esc(m.label)}</strong><br><span class="muted small">${esc(m.country || "United States")}</span></td>
           <td>${m.live ? `<span class="badge ok">Live</span>` : `<span class="badge info">Founding only</span>`}</td>
-          <td>${m.creatorsApproved}</td><td>${m.creatorsPending}</td><td>${m.businessesApproved}<br><span class="muted small">Founding list: ${m.businessesFounding || 0} &middot; Active: ${m.businessesActive || 0}</span></td>
-          <td><button class="btn small-btn ${m.live ? "danger" : ""}" onclick="toggleMarket('${esc(m.name)}', ${m.live ? "false" : "true"})">${m.live ? "Deactivate" : "Activate market"}</button>${m.businessesFounding ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="activateMarketBusinesses('${esc(m.name)}')">Activate founding businesses (${m.businessesFounding})</button>` : ""}</td>
+          <td><strong>${m.creatorsApproved}</strong> approved creators &middot; <strong>${m.creatorsApprovedComplete || 0}</strong> complete &middot; <strong>${m.creatorsPending}</strong> pending<br><span class="muted small"><strong>${m.businessesApproved}</strong> approved businesses &middot; ${m.businessesFounding || 0} on the founding list &middot; ${m.businessesActive || 0} active</span></td>
+          <td><button class="btn small-btn ${m.live ? "danger" : ""}" onclick="toggleMarket('${esc(m.name)}', ${m.live ? "false" : "true"})">${m.live ? "Deactivate" : "Activate market"}</button><div class="muted small" style="margin-top:4px">${m.live ? "Back to founding only: no new offers or bookings there." : "Opens publishing and bookings here. Founding businesses still activate separately."}</div>${m.businessesFounding ? `<button class="btn small-btn ghost" style="margin-top:6px" onclick="activateMarketBusinesses('${esc(m.name)}')">Activate founding businesses (${m.businessesFounding})</button>` : ""}</td>
         </tr>`).join("")}
       </table></div>`;
   } catch (err) {
@@ -6990,7 +7216,7 @@ async function loadApplications() {
         <td><strong>${esc(u.name)}</strong><br><span class="muted small">${esc(u.email)}</span></td>
         <td>${esc(u.role)}${standing}${businessState}</td><td>${esc(marketDisplayName(u.market))}<br><span class="muted small">${esc(u.city || "")}${u.market === unlistedLabel() ? (u.country ? ", " + esc(u.country) : u.state ? ", " + esc(u.state) : "") : (u.state ? ", " + esc(u.state) : "")}</span>${suggestion}</td>
         <td class="small">${detail}</td>
-        <td>${fmtDate(u.createdAt)}</td>
+        <td data-label="Applied">${fmtDate(u.createdAt)}</td>
         <td>${u.status === "pending"
           ? `<button class="btn small-btn" onclick="reviewApp('${u.id}','approve')">Approve</button> <button class="btn small-btn danger" onclick="toggleRejectEditor('${u.id}')">Reject</button><div id="rej-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px"><div class="field"><label>Reason (optional, named in their rejection email)</label><select id="rej-reason-${u.id}"><option value="">No reason given</option><option>Not local enough</option><option>Audience too small for this wave</option><option>Content not a fit</option><option>Market not open yet</option><option>Other</option></select></div><button class="btn small-btn danger" onclick="confirmRejectApp('${u.id}')">Send rejection</button></div>`
           : `<span class="badge ${u.status === "approved" ? "ok" : "bad"}">${esc(u.status)}</span>${u.tester ? ` <span class="badge warn">Tester</span>` : ""}${u.role === "creator" && u.status === "approved" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="setTester('${u.id}', ${u.tester ? "false" : "true"}, 'creator')">${u.tester ? "Move to roster" : "Move to Tester"}</button>` : ""}`}${u.role === "business" && u.status === "approved" && businessAccessState(u) !== "active" ? `<br><button class="btn small-btn" style="margin-top:6px" onclick="activateBusiness('${u.id}')">Activate business</button>` : ""}${u.role === "business" && u.status === "approved" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="setTester('${u.id}', ${u.tester ? "false" : "true"}, 'business')">${u.tester ? "Move to roster" : "Move to Tester"}</button>` : ""}${u.role === "business" && u.business ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleReviewLinks('${u.id}')">Review links</button><div id="rl-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px">${["google", "yelp", "tripadvisor", "facebook"].map((k) => `<div class="field"><label>${esc(k)}</label><input id="rl-${k}-${u.id}" type="url" value="${esc((u.business.reviewLinks || {})[k] || "")}" placeholder="https://"></div>`).join("")}<button class="btn small-btn" onclick="saveReviewLinks('${u.id}')">Save review links</button></div><br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleDiscountEditor('${u.id}')">Code discount</button><div id="disc-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px"><label style="font-weight:500"><input type="checkbox" id="disc-enabled-${u.id}" style="width:auto" ${u.business.discountEnabled ? "checked" : ""}> Code discounts on (business's opt-in)</label><div class="field"><label>Discount percent (5 to 50)</label><input id="disc-pct-${u.id}" type="number" min="5" max="50" step="1" value="${esc(String(u.business.discountPct == null ? 20 : u.business.discountPct))}"></div><button class="btn small-btn" onclick="saveDiscountSetting('${u.id}')">Save code discount</button></div>` : ""}</td>
@@ -7000,9 +7226,9 @@ async function loadApplications() {
     const summaryStrip = s ? `
       <h3>Founding roster counts</h3>
       <p class="muted small">Creators only, counted from the records. Approved + profile complete is the launch number: only those creators show up for businesses.</p>
-      <div class="table-wrap panel"><table><tr><th>Market</th><th>Pending</th><th>Approved</th><th>Approved + profile complete</th></tr>
-      ${s.markets.map((m) => `<tr><td>${esc(m.label)}</td><td>${m.pending}</td><td>${m.approved}</td><td>${m.approvedComplete}</td></tr>`).join("")}
-      <tr><td><strong>All markets</strong></td><td><strong>${s.all.pending}</strong></td><td><strong>${s.all.approved}</strong></td><td><strong>${s.all.approvedComplete}</strong></td></tr>
+      <div class="table-wrap panel"><table><tr><th>Market</th><th>Counts</th></tr>
+      ${s.markets.map((m) => `<tr><td>${esc(m.label)}</td><td><strong>${m.pending}</strong> pending &middot; <strong>${m.approved}</strong> approved &middot; <strong>${m.approvedComplete}</strong> approved + complete</td></tr>`).join("")}
+      <tr><td><strong>All markets</strong></td><td><strong>${s.all.pending}</strong> pending &middot; <strong>${s.all.approved}</strong> approved &middot; <strong>${s.all.approvedComplete}</strong> approved + complete</td></tr>
       </table></div>
       ${s.auto ? `<p class="muted small">Auto-decided under the standing rules: ${s.auto.approved} approved, ${s.auto.rejected} rejected all time; today ${s.auto.approvedToday} approved, ${s.auto.rejectedToday} rejected. Referred claims always wait for a person.</p>` : ""}` : "";
     el.innerHTML = `
@@ -7025,7 +7251,7 @@ async function loadLeaderboard() {
       <p class="muted small">Recruiters ranked by Momentum points: +3 for every creator who signs up through their invite link, +10 more when that creator is approved. Points come only from stored sign-up records.</p>
       ${rows.length ? `<div class="table-wrap panel"><table>
         <tr><th>#</th><th>Creator</th><th>Handle</th><th>Market</th><th>Sign-ups via link</th><th>Approved</th><th>Momentum points</th></tr>
-        ${rows.map((r, i) => `<tr><td>${i + 1}</td><td><strong>${esc(r.name)}</strong></td><td>@${esc(r.handle)}</td><td>${esc(r.market)}</td><td>${r.signups}</td><td>${r.approved}</td><td><strong>${r.points}</strong></td></tr>`).join("")}
+        ${rows.map((r, i) => `<tr><td data-label="Rank">${i + 1}</td><td><strong>${esc(r.name)}</strong></td><td>@${esc(r.handle)}</td><td>${esc(r.market)}</td><td data-label="Sign-ups via link">${r.signups}</td><td data-label="Approved">${r.approved}</td><td data-label="Momentum points"><strong>${r.points}</strong></td></tr>`).join("")}
       </table></div>` : `<p class="muted">No creator has a credited sign-up yet. Leaderboard rows appear as soon as someone joins through an invite link.</p>`}`;
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
@@ -7163,7 +7389,7 @@ async function loadEvents() {
       <p class="muted small">${data.total} events, newest first. Every state change in the product writes one of these. This is the dataset.</p>
       <div class="table-wrap panel"><table>
         <tr><th>When</th><th>Type</th><th>Actor</th><th>Market</th><th>Data</th></tr>
-        ${data.events.map((e) => `<tr><td class="small">${fmtDate(e.ts)}</td><td><span class="badge info">${esc(e.type)}</span></td><td class="small">${esc(e.actorRole || "")}</td><td class="small">${esc(e.market || "")}</td><td class="small">${esc(JSON.stringify(e.data || {}))}</td></tr>`).join("")}
+        ${data.events.map((e) => `<tr><td class="small" data-label="When">${fmtDate(e.ts)}</td><td><span class="badge info">${esc(e.type)}</span></td><td class="small">${esc(e.actorRole || "")}</td><td class="small">${esc(e.market || "")}</td><td class="small">${esc(JSON.stringify(e.data || {}))}</td></tr>`).join("")}
       </table></div>`;
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
@@ -7187,14 +7413,14 @@ async function loadStats() {
       </div></div>
       <div class="table-wrap panel"><table>
         <tr><th>Market</th><th>Approved creators</th><th>Approved businesses</th><th>Bookings</th><th>Posts</th></tr>
-        ${Object.entries(s.perMarket).map(([m, v]) => `<tr><td>${esc(m)}</td><td>${v.creators}</td><td>${v.businesses}</td><td>${v.bookings}</td><td>${v.posts}</td></tr>`).join("")}
+        ${Object.entries(s.perMarket).map(([m, v]) => `<tr><td>${esc(m)}</td><td data-label="Approved creators">${v.creators}</td><td data-label="Approved businesses">${v.businesses}</td><td data-label="Bookings">${v.bookings}</td><td data-label="Posts">${v.posts}</td></tr>`).join("")}
       </table></div>
       ${s.unlistedByCity && s.unlistedByCity.length ? `
       <h3 class="mt">Sign-ups in cities not open yet</h3>
       <p class="muted small">Creators who signed up from outside the listed markets, counted per city and country. This is the demand signal for where to open next.</p>
       <div class="table-wrap panel"><table>
         <tr><th>City, country</th><th>Creator sign-ups</th></tr>
-        ${s.unlistedByCity.map((r) => `<tr><td>${esc(r.place)}</td><td>${r.creators}</td></tr>`).join("")}
+        ${s.unlistedByCity.map((r) => `<tr><td>${esc(r.place)}</td><td data-label="Creator sign-ups">${r.creators}</td></tr>`).join("")}
       </table></div>` : ""}`;
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
@@ -7402,14 +7628,14 @@ function renderPreviewResults() {
 // where the preview decoration applies), so the swipe feel tested
 // here is the feel businesses get. Invite opens the existing
 // preview offer composer, tap opens the existing preview profile
-// step, Pass is session-only with the end card's Show passed reset
+// step, and a pass parks the creator in the preview Later pile
 // — the exact semantics of the real decks. Preview stays a
 // simulation end to end: the deck writes nothing and no real
 // /discover state is touched. List mode keeps the roster grid this
 // step has always rendered.
 function pvDiscoverModeToggleHtml() {
   const mode = state.pvDiscoverMode || "cards";
-  return `<div class="view-toggle"><div class="vt-group"><button type="button" class="rchip${mode === "cards" ? " on" : ""}" onclick="setPvDiscoverMode('cards')">Cards</button><button type="button" class="rchip${mode === "list" ? " on" : ""}" onclick="setPvDiscoverMode('list')">List</button></div><span class="stack-pos" data-stackpos="pvdiscover"></span></div>`;
+  return `<div class="view-toggle"><div class="vt-group"><button type="button" class="rchip${mode === "cards" ? " on" : ""}" onclick="setPvDiscoverMode('cards')">Cards</button><button type="button" class="rchip${mode === "list" ? " on" : ""}" onclick="setPvDiscoverMode('list')">List</button></div>${deckChromeHtml("pvdiscover")}<span class="stack-pos" data-stackpos="pvdiscover"></span></div>${deckTeachHtml("pvdiscover")}`;
 }
 function setPvDiscoverMode(mode) {
   state.pvDiscoverMode = mode;
@@ -7422,34 +7648,40 @@ function renderPvDiscoverBody() {
   const el = document.getElementById("pv-discover-body");
   if (!el || !state.preview) return;
   const all = state.preview.creators || [];
+  const q = deckQueue("pvdiscover", all);
+  if (!q.visible.length && all.length) {
+    const pos = document.querySelector('[data-stackpos="pvdiscover"]');
+    if (pos) pos.textContent = "";
+    el.innerHTML = `<div class="stk-end"><h3>Nothing new in this preview search</h3><p class="small muted">Everyone here is parked in your Later pile or hidden.</p><div class="stk-end-actions">${q.parked.length ? `<button type="button" class="btn ghost" onclick="openLaterPile('pvdiscover')">Review Later (${q.parked.length})</button>` : ""}<button type="button" class="btn" onclick="runPreviewDiscover()">Search again</button></div></div>`;
+    syncDeckChrome("pvdiscover");
+    return;
+  }
   if ((state.pvDiscoverMode || "cards") === "list") {
     const pos = document.querySelector('[data-stackpos="pvdiscover"]');
     if (pos) pos.textContent = "";
-    el.innerHTML = `<div class="creator-grid">${all.map((c) => creatorCard(c, state.user, { preview: true })).join("")}</div>`;
+    el.innerHTML = `<div class="creator-grid">${q.visible.map((c) => creatorCard(c, state.user, { preview: true })).join("")}</div>`;
+    syncDeckChrome("pvdiscover");
     return;
   }
   if (!stackState.pvdiscover || stackState.pvdiscover.src !== all) {
-    stackState.pvdiscover = {
-      items: all, idx: 0, passed: 0, passedIds: new Set(), src: all,
+    stackState.pvdiscover = startDeck("pvdiscover", all, {
       cardHtml: (c) => discoverStackCard(c),
       goLabel: "Invite",
-      onGo: (c) => { previewStartOffer(c.userId); },
-      onPass: (c) => { if (stackState.pvdiscover) stackState.pvdiscover.passedIds.add(c.userId); },
+      onGo: (c) => { pileUnlater("pvdiscover", c.userId); previewStartOffer(c.userId); },
+      onPass: (c) => { pileLater("pvdiscover", c.userId); },
       onTap: (c) => { previewViewCreator(c.userId); },
       endHtml: (passed, total) => pvDiscoverEndHtml(passed, total),
-    };
+    });
   }
   el.innerHTML = `<div class="stk-wrap" data-stack="pvdiscover"></div>`;
   renderStack(el.firstElementChild);
+  syncDeckChrome("pvdiscover");
 }
 function pvDiscoverEndHtml(passed, total) {
-  return `<div class="stk-end"><h3>That's everyone in this preview search</h3><p class="small muted">You looked through ${total} creator${total === 1 ? "" : "s"}. Passes live only in this preview session, and invites open the simulated composer: nothing reaches a real creator.</p><div class="stk-end-actions">${passed ? `<button type="button" class="btn ghost" onclick="pvDiscoverShowPassed()">Show passed (${passed})</button>` : ""}<button type="button" class="btn" onclick="runPreviewDiscover()">Search again</button></div></div>`;
-}
-function pvDiscoverShowPassed() {
-  const s = stackState.pvdiscover;
-  if (s) { s.idx = 0; s.passed = 0; s.passedIds = new Set(); }
-  renderPvDiscoverBody();
-  return false;
+  const q = deckQueue("pvdiscover", (stackState.pvdiscover && stackState.pvdiscover.src) || []);
+  const n = q.parked.length;
+  const seen = q.visible.length;
+  return `<div class="stk-end"><h3>That's everyone in this preview search</h3><p class="small muted">You looked through ${seen} creator${seen === 1 ? "" : "s"}. Later piles live only in this preview session, and invites open the simulated composer: nothing reaches a real creator.</p><div class="stk-end-actions">${n ? `<button type="button" class="btn ghost" onclick="openLaterPile('pvdiscover')">Review Later (${n})</button>` : ""}<button type="button" class="btn" onclick="runPreviewDiscover()">Search again</button></div></div>`;
 }
 
 async function previewViewCreator(userId) {

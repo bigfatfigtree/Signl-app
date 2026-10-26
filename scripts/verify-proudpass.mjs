@@ -61,7 +61,7 @@ function client() {
   };
 }
 
-const server = spawn("node", ["scripts/dev-server.mjs", String(PORT)], {
+let server = spawn("node", ["scripts/dev-server.mjs", String(PORT)], {
   cwd: path.join(import.meta.dirname, ".."),
   env: { ...process.env, SIGNL_LOCAL: "1", SIGNL_LOCAL_DB: DB, ADMIN_EMAIL, ADMIN_PASSWORD: "<MASKED_SECRET_003>", APP_URL: BASE },
   stdio: ["ignore", "pipe", "pipe"],
@@ -142,6 +142,98 @@ try {
   check("F6 Needed badge hides on done essentials", appJs.includes("item.required && !item.done"));
   check("F8 preview paid booking renders a sheet", appJs.includes('el.setAttribute("aria-label", "Preview paid booking")'));
   check("F8 preview paid booking no longer alerts the breakdown", !appJs.includes("alert(`PREVIEW paid booking (simulation)"));
+
+  console.log("== P1: admin Markets labels (Jeff's phone screenshots) ==");
+  const themeCss = fs.readFileSync(path.join(import.meta.dirname, "..", "public", "theme-v2.css"), "utf8");
+  const routerJs = fs.readFileSync(path.join(import.meta.dirname, "..", "netlify", "functions", "lib", "router.js"), "utf8");
+  check("P1 stacked tables carry a data-label mechanism", themeCss.includes(".table-wrap td[data-label]::before") && themeCss.includes("content: attr(data-label)"));
+  check("P1 Markets roster pairs every count with its label", appJs.includes("approved creators") && appJs.includes("complete") && appJs.includes("approved businesses") && appJs.includes("on the founding list"));
+  check("P1 Markets action states its consequence", appJs.includes("Opens publishing and bookings here. Founding businesses still activate separately."));
+  check("P1 Markets action is card-sized", appJs.includes('class="btn small-btn ${m.live ? "danger" : ""}"'));
+  check("P1 roster-counts view pairs counts with labels", appJs.includes("approved + complete") && appJs.includes("<strong>${m.pending}</strong> pending"));
+  check("P1 no bare founding-list fragment remains", !appJs.includes("Founding list:"));
+  check("P1 stats rows label their numbers", appJs.includes('data-label="Approved creators"') && appJs.includes('data-label="Bookings"') && appJs.includes('data-label="Creator sign-ups"'));
+  check("P1 server ships the complete count for markets", routerJs.includes("creatorsApprovedComplete"));
+
+  console.log("== P2: Later piles persist, hide excludes, bad input refused ==");
+  const ds0 = await cre("GET", "/api/deck-state");
+  check("P2 deck-state starts empty", ds0.status === 200 && Array.isArray(ds0.data.decks.offers.later) && ds0.data.decks.offers.later.length === 0, JSON.stringify(ds0.data).slice(0, 120));
+  const park = await cre("POST", "/api/deck-state", { deck: "offers", action: "later", itemId: offerId });
+  check("P2 later parks the item", park.status === 200 && park.data.decks.offers.later.includes(offerId) && park.data.decks.offers.usedLater === true, JSON.stringify(park.data).slice(0, 140));
+  const creFresh = client();
+  await creFresh("POST", "/api/auth/login", { email: "passcreator@fixtures.dev", password: "<MASKED_SECRET_001>" });
+  const dsFresh = await creFresh("GET", "/api/deck-state");
+  check("P2 later persists across sessions", (dsFresh.data.decks.offers.later || []).includes(offerId), JSON.stringify(dsFresh.data).slice(0, 140));
+  const hide = await cre("POST", "/api/deck-state", { deck: "offers", action: "hide", itemId: offerId });
+  check("P2 hide moves the item out of later into hidden", hide.status === 200 && hide.data.decks.offers.hidden.includes(offerId) && !hide.data.decks.offers.later.includes(offerId));
+  const unhide = await cre("POST", "/api/deck-state", { deck: "offers", action: "unhide", itemId: offerId });
+  check("P2 unhide restores the item", unhide.status === 200 && !unhide.data.decks.offers.hidden.includes(offerId));
+  const badDeck = await cre("POST", "/api/deck-state", { deck: "bogus", action: "later", itemId: "x" });
+  check("P2 unknown deck is refused (400)", badDeck.status === 400, `got ${badDeck.status}`);
+  const bizPark = await biz("POST", "/api/deck-state", { deck: "discover", action: "later", itemId: regCre.data.user.id });
+  check("P2 business parks a creator in discover", bizPark.status === 200 && bizPark.data.decks.discover.later.includes(regCre.data.user.id));
+  check("P2 client ships the Later system", appJs.includes("function startDeck(") && appJs.includes("Second look") && appJs.includes("Swipe left to park in Later. Nothing is a no until you say so.") && appJs.includes("function openLaterPile(") && appJs.includes("Review Later ("));
+  check("P2 session-only Show passed is gone everywhere", !appJs.includes("Show passed") && !appJs.includes("passedIds"));
+
+  console.log("== P3: the 48 hour reframe (standard at 48h, failure at the week) ==");
+  check("P3 business promise carries the asterisk line", appJs.includes("Posts delivered in 48 hours*") && appJs.includes("*Creators have up to a week; 48 hours is the standard they are held to."));
+  check("P3 creator grace caption ships in the deal block", appJs.includes("Up to a week at the outside. 48 hours is the standard and earns the Momentum."));
+  check("P3 in-week lateness reads Post late, not failure", appJs.includes('>Post late</span>') && !appJs.includes("Post overdue"));
+  check("P3 standard visit summary states the grace", routerJs.includes("48 hours is the standard creators are held to; a post inside one week still counts, as a late delivery."));
+  check("P3 replacement gate names the week", routerJs.includes("Replacements open when a full week passes with no post."));
+  check("P3 preview problem booking no longer offers an early replacement", routerJs.includes("b.replacementAvailable = false;"));
+
+  async function makeRedeemedBooking(title) {
+    const off = await biz("POST", "/api/offers", { title, whatComped: "Tasting menu", dollarCap: 50, spots: 1, visitWindow: "Any day" });
+    const oid = off.data.offer.id;
+    const applied = await cre("POST", `/api/offers/${oid}/apply`, {});
+    const sel = await biz("POST", `/api/offers/${oid}/select`, { applicationId: applied.data.application.id });
+    const bk = sel.data.booking;
+    const redeem = await biz("POST", "/api/counter/redeem", { code: bk.code });
+    return { oid, bk, redeem };
+  }
+  const A = await makeRedeemedBooking("Reframe tasting A");
+  check("P3 booking A redeemed, clock running", A.redeem.status === 200 && !!A.redeem.data.booking.redeemedAt, JSON.stringify(A.redeem.data).slice(0, 140));
+  const B = await makeRedeemedBooking("Reframe tasting B");
+  check("P3 booking B redeemed", B.redeem.status === 200, JSON.stringify(B.redeem.data).slice(0, 120));
+
+  const DAY = 24 * 3600 * 1000;
+  async function restartWithShift(bookingId, daysAgo) {
+    server.kill("SIGTERM");
+    await new Promise((r) => setTimeout(r, 600));
+    const db = JSON.parse(fs.readFileSync(DB, "utf8"));
+    const key = `booking:${bookingId}`;
+    const rec = db[key];
+    rec.redeemedAt = new Date(Date.now() - daysAgo * DAY).toISOString();
+    rec.postDeadline = new Date(Date.now() - daysAgo * DAY + 48 * 3600 * 1000).toISOString();
+    rec.compliance = {};
+    db[key] = rec;
+    fs.writeFileSync(DB, JSON.stringify(db, null, 1));
+    server = spawn("node", ["scripts/dev-server.mjs", String(PORT)], {
+      cwd: path.join(import.meta.dirname, ".."),
+      env: { ...process.env, SIGNL_LOCAL: "1", SIGNL_LOCAL_DB: DB, ADMIN_EMAIL, ADMIN_PASSWORD: "<MASKED_SECRET_003>", APP_URL: BASE },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    server.stderr.on("data", (d) => process.stderr.write("[server] " + d));
+    for (let i = 0; i < 60; i++) {
+      try { const r = await fetch(BASE + "/api/bootstrap"); if (r.ok) return; } catch (e) { /* booting */ }
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    throw new Error("server did not come back up");
+  }
+
+  await restartWithShift(A.bk.id, 3);
+  const earlyReplacement = await biz("POST", `/api/bookings/${A.bk.id}/replacement`, {});
+  check("P3 replacement inside the week is refused (409)", earlyReplacement.status === 409 && /full week/.test(earlyReplacement.data.error || ""), `got ${earlyReplacement.status}: ${JSON.stringify(earlyReplacement.data).slice(0, 140)}`);
+  const latePost = await cre("POST", "/api/posts", { bookingId: A.bk.id, url: "https://www.instagram.com/p/LATEWEEK/", includesDisclosure: true });
+  check("P3 a post at 72 hours is accepted", latePost.status === 201 || latePost.status === 200, `got ${latePost.status}: ${JSON.stringify(latePost.data).slice(0, 140)}`);
+  const creBookings = await cre("GET", "/api/bookings");
+  const bkA = (creBookings.data.bookings || []).find((b) => b.id === A.bk.id);
+  check("P3 the late post counts as delivered (submitted_late)", !!bkA && bkA.postState === "submitted_late", bkA && bkA.postState);
+
+  await restartWithShift(B.bk.id, 8);
+  const weekReplacement = await biz("POST", `/api/bookings/${B.bk.id}/replacement`, {});
+  check("P3 replacement opens after the week passes", weekReplacement.status === 200 && !!weekReplacement.data.booking.replacementRequestedAt, `got ${weekReplacement.status}: ${JSON.stringify(weekReplacement.data).slice(0, 140)}`);
 
   console.log(`\nverify-proudpass: ${passed} passed, ${failed} failed`);
   if (failures.length) { console.log("failures:", failures.join(" | ")); process.exitCode = 1; }
