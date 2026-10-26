@@ -11,6 +11,7 @@ const { computeFit, buildFitNote } = require("./fit");
 const { emailEnabled, sendEmail, senderProfile } = require("./email");
 const claimEvidence = require("./claim-evidence");
 const stripe = require("./stripe");
+const connect = require("./connect");
 const { runMetricsSync } = require("./metrics-sync");
 const { buildProfilePageHtml } = require("./profile-meta");
 
@@ -1121,6 +1122,28 @@ function publicUser(u) {
   if (rest.role === "business" && rest.business) {
     rest.business = { ...rest.business, accessState: businessAccessState(rest) };
     delete rest.business.paymentLink;
+    // Stripe Connect (2026-10-26): the raw billing record carries
+    // Stripe ids (customer, payment method). Client payloads get
+    // the display shape only: a card brand + last4, never an id.
+    if (rest.business.billing) {
+      const card = rest.business.billing.card || null;
+      rest.business.billing = {
+        card: card ? { brand: card.brand || "card", last4: card.last4 || "----", expMonth: card.expMonth || null, expYear: card.expYear || null } : null,
+      };
+    }
+  }
+  if (rest.role === "creator" && rest.creator) {
+    rest.creator = { ...rest.creator };
+    // Same rule for payouts: the client sees the plain state
+    // (status, ready, what's missing in plain words), never the
+    // connected account id.
+    const p = rest.creator.payouts || null;
+    rest.creator.payouts = {
+      status: p && p.status ? p.status : "not_started",
+      ready: !!(p && p.ready),
+      missing: p && Array.isArray(p.missing) ? p.missing : [],
+      updatedAt: p && p.updatedAt ? p.updatedAt : null,
+    };
   }
   return rest;
 }
@@ -2461,6 +2484,18 @@ async function createBookingForOffer({ offer, creator, via, applicationId = null
   await logEvent({ type: "booking_code_issued", actorId: creator.id, actorRole: "creator", subjectId: booking.id, market: offer.market, data: { code, offerId: offer.id, businessId: offer.businessId, dollarCap: booking.dollarCap, covers: booking.covers, hasBrief: !!booking.paidBrief, via } });
   if (kind === "paid") {
     await logEvent({ type: "paid_booking_created", actorId: offer.businessId, actorRole: "business", subjectId: booking.id, market: booking.market, data: { creatorId: creator.id, rate: booking.paidLane.rate, businessTotal: booking.paidLane.businessTotal, creatorNet: booking.paidLane.creatorNet, platformFee: booking.paidLane.platformFee, escrowState: "held", via, offerId: offer.id, hasBrief: !!booking.paidBrief } });
+    // Stripe Connect (2026-10-26): authorize the business's card
+    // on file for the booking total, held on the platform side.
+    // A failed charge is recorded as a funds state on the booking
+    // (visible to the business and in Admin), never silent; the
+    // paid offer itself was card-gated at posting.
+    const bizUser = await store.get(`user:${offer.businessId}`);
+    const offerFunds = await attachPaidFunds(booking, bizUser);
+    if (offerFunds) {
+      booking.updatedAt = nowIso();
+      await store.set(`booking:${booking.id}`, booking);
+    }
+    await promptCreatorPayoutSetup(booking, creator);
   }
   return booking;
 }
@@ -3761,6 +3796,10 @@ function strikePauseEmail(creator) {
 async function refundPaidEscrow(booking, reason, summary) {
   const lane = booking.paidLane;
   if (!lane || lane.escrowState !== "held") return;
+  // Stripe Connect (2026-10-26): real money goes back first: the
+  // held authorization is cancelled (never captured), so the
+  // business is refunded in full and no transfer ever occurs.
+  await refundPaidFunds(booking, reason);
   lane.escrowState = "refunded";
   lane.refundedAt = nowIso();
   lane.refundReason = reason;
@@ -3981,6 +4020,12 @@ async function runComplianceSweep() {
     const post = postByBooking.get(booking.id);
     if (!post || !post.submittedAt) continue;
     if (now < Date.parse(post.submittedAt) + PAID_LANE.escrowHoldHoursAfterProof * 3600000) continue;
+    // Stripe Connect (2026-10-26): when real money rides on the
+    // booking, the release moves it at this same moment: capture
+    // the held charge and transfer the creator's share. A creator
+    // whose payout setup is unfinished blocks the release (money
+    // stays held, creator prompted) instead of stranding funds.
+    if (!(await releasePaidFunds(booking))) continue;
     lane.escrowState = "released";
     lane.releasedAt = nowIso();
     booking.updatedAt = nowIso();
@@ -6360,6 +6405,194 @@ async function handleChangePassword(event, ctx) {
 
 // ---------- main router ----------
 
+// ---------- Stripe Connect paid lane (Jeff, 2026-10-26) ----------
+// The paid lane's money movement, built ready-but-off behind the
+// same env gate as subscription billing (lib/connect.js). Creators
+// hold Connect Express accounts (onboarding is Stripe-hosted and
+// resumable; the record carries only our plain state). Businesses
+// hold a card on file, never a Stripe account. A paid booking
+// authorizes the card (manual capture) at booking: funds "held".
+// The compliance sweep's existing escrow release (proof + 48h
+// hold) captures the charge and transfers the creator's share.
+// A booking whose creator has not finished payout setup stays
+// held and the creator is prompted; nothing strands at Stripe.
+// With no Stripe keys, none of this runs: bookings carry no
+// funds object and the recorded-ledger behavior is untouched.
+const FUNDS_HELD_NOTE = "SIGNL is holding this payment until the post is live.";
+
+function storedPayouts(user) {
+  const p = (user && user.creator && user.creator.payouts) || null;
+  return {
+    accountId: p && p.accountId ? p.accountId : null,
+    status: p && p.status ? p.status : "not_started",
+    ready: !!(p && p.ready),
+    missing: p && Array.isArray(p.missing) ? p.missing : [],
+    updatedAt: p && p.updatedAt ? p.updatedAt : null,
+  };
+}
+
+function payoutsClientView(user) {
+  const p = storedPayouts(user);
+  return { status: p.status, ready: p.ready, missing: p.missing, updatedAt: p.updatedAt };
+}
+
+// Refresh a creator's stored payout state from Stripe. No-ops
+// (returns the stored state) when the creator has no account or
+// the rail is off, and on any Stripe error: a payout read must
+// never break a request.
+async function refreshCreatorPayouts(user) {
+  const current = storedPayouts(user);
+  if (!current.accountId || !connect.connectConfigured()) return current;
+  try {
+    const account = await connect.getConnectedAccount(current.accountId);
+    const next = { accountId: current.accountId, ...connect.payoutStateFromAccount(account), updatedAt: nowIso() };
+    user.creator = user.creator || {};
+    user.creator.payouts = next;
+    user.updatedAt = nowIso();
+    await store.set(`user:${user.id}`, user);
+    return next;
+  } catch (e) {
+    console.error("SIGNL payout refresh failed:", e);
+    return current;
+  }
+}
+
+function businessCardOnFile(biz) {
+  const billing = (biz && biz.business && biz.business.billing) || null;
+  if (!billing || !billing.customerId || !billing.card || !billing.card.paymentMethodId) return null;
+  return { customerId: billing.customerId, card: billing.card };
+}
+
+// Attach real money to a freshly created paid booking: authorize
+// the business's card on file for the booking total, held on the
+// platform side. Never throws: the outcome is a funds state on
+// the booking (held / needs_card / charge_failed) plus an event,
+// so every caller can persist and report it. Returns null when
+// the rail is off (the booking then carries no funds at all,
+// exactly as before Connect).
+async function attachPaidFunds(booking, bizUser) {
+  const lane = booking.paidLane;
+  if (!lane || !connect.connectConfigured()) return null;
+  const onFile = businessCardOnFile(bizUser);
+  if (!onFile) {
+    lane.funds = { state: "needs_card", paymentIntentId: null, transferId: null, blockedReason: null, heldAt: null, releasedAt: null, refundedAt: null };
+    await logEvent({ type: "paid_funds_needs_card", actorId: null, actorRole: "system", subjectId: booking.id, market: booking.market, data: { creatorId: booking.creatorId, businessId: booking.businessId, businessTotal: lane.businessTotal } });
+    return lane.funds;
+  }
+  try {
+    const pi = await connect.createHeldCharge({
+      customerId: onFile.customerId,
+      paymentMethodId: onFile.card.paymentMethodId,
+      amountDollars: lane.businessTotal,
+      bookingId: booking.id,
+      businessId: booking.businessId,
+      creatorId: booking.creatorId,
+    });
+    lane.funds = { state: "held", paymentIntentId: pi.id, transferId: null, blockedReason: null, heldAt: nowIso(), releasedAt: null, refundedAt: null };
+    lane.paymentNote = FUNDS_HELD_NOTE;
+    await logEvent({ type: "paid_funds_held", actorId: null, actorRole: "system", subjectId: booking.id, market: booking.market, data: { creatorId: booking.creatorId, businessId: booking.businessId, businessTotal: lane.businessTotal, paymentIntentId: pi.id } });
+  } catch (e) {
+    lane.funds = { state: "charge_failed", paymentIntentId: null, transferId: null, blockedReason: null, heldAt: null, releasedAt: null, refundedAt: null };
+    await logEvent({ type: "paid_funds_charge_failed", actorId: null, actorRole: "system", subjectId: booking.id, market: booking.market, data: { creatorId: booking.creatorId, businessId: booking.businessId, businessTotal: lane.businessTotal, error: String((e && e.message) || e).slice(0, 200) } });
+  }
+  return lane.funds;
+}
+
+// The money half of the sweep's escrow release. Returns true
+// when the release may proceed: no funds (ledger-only booking),
+// or the charge captured and the creator's share transferred.
+// Returns false when the release must wait: the creator's payout
+// setup is unfinished (they are prompted, once per block) or
+// Stripe errored (retried on the next sweep; a captured charge
+// is detected by status, never captured twice).
+async function releasePaidFunds(booking) {
+  const lane = booking.paidLane;
+  const funds = lane && lane.funds;
+  if (!funds) return true;
+  if (funds.state === "released") return true;
+  if (funds.state !== "held") return false;
+  const creator = await store.get(`user:${booking.creatorId}`);
+  const payouts = creator ? await refreshCreatorPayouts(creator) : { ready: false, accountId: null };
+  if (!payouts.ready || !payouts.accountId) {
+    if (funds.blockedReason !== "payouts_not_ready") {
+      funds.blockedReason = "payouts_not_ready";
+      funds.blockedAt = nowIso();
+      booking.updatedAt = nowIso();
+      await store.set(`booking:${booking.id}`, booking);
+      await logEvent({ type: "paid_release_blocked", actorId: null, actorRole: "system", subjectId: booking.id, market: booking.market, data: { creatorId: booking.creatorId, businessId: booking.businessId, reason: "payouts_not_ready", creatorNet: lane.creatorNet } });
+      if (creator) {
+        await notifyMilestone(creator.id, "payout_setup_needed",
+          `Your $${fmtMoneyS(lane.creatorNet)} from ${booking.businessName || "a paid visit"} is ready to release, but your payouts are not set up yet. Finish payout setup under Profile so it can reach your bank.`,
+          `Your $${fmtMoneyS(lane.creatorNet)} is waiting: finish payout setup`,
+          [`Your paid visit for ${booking.businessName || "a business"} delivered, and your share of $${fmtMoneyS(lane.creatorNet)} is ready to release.`, "", "It cannot reach your bank until payout setup is finished. It takes a couple of minutes, inside the app under Profile, in the Paid bookings section: Stripe holds the bank details, SIGNL never sees them.", "", "Open SIGNL: https://app.joinsignl.com", "", "Jeff", "Founder, SIGNL"].join("\n"),
+          { bookingId: booking.id });
+      }
+    }
+    return false;
+  }
+  try {
+    const pi = await connect.getPaymentIntent(funds.paymentIntentId);
+    if (pi && pi.status === "requires_capture") await connect.captureHeldCharge(funds.paymentIntentId);
+    const transfer = await connect.createPayoutTransfer({ amountDollars: lane.creatorNet, destinationAccountId: payouts.accountId, bookingId: booking.id, creatorId: booking.creatorId });
+    funds.state = "released";
+    funds.transferId = transfer.id;
+    funds.blockedReason = null;
+    funds.releasedAt = nowIso();
+    await logEvent({ type: "paid_funds_released", actorId: null, actorRole: "system", subjectId: booking.id, market: booking.market, data: { creatorId: booking.creatorId, businessId: booking.businessId, creatorNet: lane.creatorNet, transferId: transfer.id, paymentIntentId: funds.paymentIntentId } });
+    return true;
+  } catch (e) {
+    if (funds.blockedReason !== "stripe_error") {
+      funds.blockedReason = "stripe_error";
+      funds.blockedAt = nowIso();
+      booking.updatedAt = nowIso();
+      await store.set(`booking:${booking.id}`, booking);
+      await logEvent({ type: "paid_release_blocked", actorId: null, actorRole: "system", subjectId: booking.id, market: booking.market, data: { creatorId: booking.creatorId, businessId: booking.businessId, reason: "stripe_error", error: String((e && e.message) || e).slice(0, 200) } });
+    }
+    return false;
+  }
+}
+
+// The money half of an escrow refund: a held authorization is
+// cancelled before capture, so the business is refunded in full
+// and no transfer ever occurs. A charge that was somehow already
+// captured is refunded through /refunds instead. Failures are
+// recorded as a funds state + event for a human, never silent.
+async function refundPaidFunds(booking, reason) {
+  const lane = booking.paidLane;
+  const funds = lane && lane.funds;
+  if (!funds || funds.state !== "held" || !funds.paymentIntentId) return;
+  try {
+    const pi = await connect.getPaymentIntent(funds.paymentIntentId);
+    if (pi && pi.status === "succeeded") {
+      const refund = await connect.refundPaymentIntent(funds.paymentIntentId);
+      funds.refundId = (refund && refund.id) || null;
+    } else {
+      await connect.cancelHeldCharge(funds.paymentIntentId);
+    }
+    funds.state = "refunded";
+    funds.refundedAt = nowIso();
+    await logEvent({ type: "paid_funds_refunded", actorId: null, actorRole: "system", subjectId: booking.id, market: booking.market, data: { creatorId: booking.creatorId, businessId: booking.businessId, businessTotal: lane.businessTotal, reason, paymentIntentId: funds.paymentIntentId } });
+  } catch (e) {
+    funds.state = "refund_failed";
+    await logEvent({ type: "paid_funds_refund_failed", actorId: null, actorRole: "system", subjectId: booking.id, market: booking.market, data: { creatorId: booking.creatorId, businessId: booking.businessId, reason, error: String((e && e.message) || e).slice(0, 200) } });
+  }
+}
+
+// When a paid booking lands for a creator whose payout setup is
+// unfinished, prompt them once, in-app and by email: the money
+// will be held safely, but it cannot reach their bank until
+// setup is done. Only fires while the rail is live.
+async function promptCreatorPayoutSetup(booking, creator) {
+  if (!connect.connectConfigured() || !creator || creator.role !== "creator") return;
+  if (storedPayouts(creator).ready) return;
+  const lane = booking.paidLane || {};
+  await notifyMilestone(creator.id, "payout_setup_needed",
+    `${booking.businessName || "A business"} booked you at your listed rate of $${fmtPriceS(lane.rate || 0)}. Set up payouts under Profile so your $${fmtMoneyS(lane.creatorNet || 0)} can reach your bank when your post is live.`,
+    `Paid booking: set up payouts so your money can reach you`,
+    [`${booking.businessName || "A business"} booked you at your listed rate of $${fmtPriceS(lane.rate || 0)}. Your share is $${fmtMoneyS(lane.creatorNet || 0)}.`, "", "Paid bookings pay out to your bank after your post is live, and that needs payout setup first: a couple of minutes under Profile, in the Paid bookings section. Stripe holds the bank details; SIGNL never sees them. Comp visits never need this.", "", "Open SIGNL: https://app.joinsignl.com", "", "Jeff", "Founder, SIGNL"].join("\n"),
+    { bookingId: booking.id });
+}
+
 // ---------- Stripe subscriptions (Jeff, 2026-10-23) ----------
 // App-side subscription billing for the three founding plans.
 // The live Stripe account (Extra Medium LLC) already carries the
@@ -6428,7 +6661,43 @@ async function handleStripeWebhook(event) {
   }
   const obj = (evt && evt.data && evt.data.object) || {};
   try {
-    if (evt.type === "checkout.session.completed") {
+    if (evt.type === "checkout.session.completed" && obj.mode === "setup") {
+      // Card on file (Connect phase 2, 2026-10-26): a setup-mode
+      // session carries no subscription, only a SetupIntent whose
+      // payment method becomes the business's card on file. The
+      // subscription branch below must never see these.
+      const businessId = obj.client_reference_id || (obj.metadata && obj.metadata.businessId) || null;
+      const biz = await findBusinessForStripe({ businessId, customerId: obj.customer || null });
+      if (biz && obj.setup_intent) {
+        const si = await connect.getSetupIntent(obj.setup_intent);
+        const pmId = si && si.payment_method;
+        if (pmId) {
+          const pm = await connect.getPaymentMethod(pmId);
+          const card = connect.cardViewFromPaymentMethod(pm);
+          const record = (await store.get(`user:${biz.id}`)) || biz;
+          record.business = record.business || {};
+          record.business.billing = record.business.billing || {};
+          record.business.billing.customerId = obj.customer || record.business.billing.customerId || null;
+          record.business.billing.card = { ...card, updatedAt: nowIso() };
+          record.updatedAt = nowIso();
+          await store.set(`user:${record.id}`, record);
+          await logEvent({ type: "billing_card_saved", actorId: null, actorRole: "system", subjectId: biz.id, market: biz.market || null, data: { brand: card.brand, last4: card.last4 } });
+        }
+      }
+    } else if (evt.type === "account.updated") {
+      // A creator's Connect account changed at Stripe (onboarding
+      // finished, a requirement landed, a restriction applied):
+      // mirror the plain state onto their record.
+      const users = await allUsers();
+      const creator = users.find((u) => u.role === "creator" && u.creator && u.creator.payouts && u.creator.payouts.accountId === obj.id);
+      if (creator) {
+        const state = connect.payoutStateFromAccount(obj);
+        creator.creator.payouts = { accountId: obj.id, ...state, updatedAt: nowIso() };
+        creator.updatedAt = nowIso();
+        await store.set(`user:${creator.id}`, creator);
+        await logEvent({ type: "payout_account_updated", actorId: null, actorRole: "system", subjectId: creator.id, market: creator.market || null, data: { status: state.status, ready: state.ready } });
+      }
+    } else if (evt.type === "checkout.session.completed") {
       const businessId = obj.client_reference_id || (obj.metadata && obj.metadata.businessId) || null;
       const biz = await findBusinessForStripe({ businessId, customerId: obj.customer || null, subscriptionId: obj.subscription || null });
       if (biz) {
@@ -6546,6 +6815,11 @@ async function route(event) {
       audiencePlatforms: AUDIENCE_PLATFORMS,
       termsVersion: TERMS_VERSION,
       email: { enabled: emailEnabled() },
+      // Stripe Connect paid-lane rail (2026-10-26): true only
+      // when the server carries Stripe keys. The client renders
+      // payout setup + card-on-file surfaces from this flag;
+      // false keeps every money surface exactly as it was.
+      payments: { connectLive: connect.connectConfigured() },
       launch: {
         creatorSignupOpen: true,
         businessSignupOpen: true,
@@ -6866,6 +7140,91 @@ async function route(event) {
     }
     await logEvent({ type: "billing_checkout_started", actorId: user.id, actorRole: user.role, subjectId: biz.id, market: biz.market || null, data: { planId: plan.id, priceId, sessionId: session.id || null } });
     return json(200, { url: session.url, sessionId: session.id || null });
+  }
+
+  // ---------- Stripe Connect: creator payouts (2026-10-26) ----------
+  // Payout setup lives ONLY in the paid lane: a creator never
+  // needs it to join, claim, or take a comped visit. Starting it
+  // creates (or reuses) their Express account and returns a fresh
+  // Stripe-hosted onboarding link; the return/refresh URLs land
+  // back in the app, which re-reads the state. Without Stripe
+  // keys this no-ops with a 503 and the paid lane stays recorded
+  // and concierge-settled, exactly as before.
+  if (method === "POST" && seg[0] === "me" && seg[1] === "payouts" && seg[2] === "start") {
+    if (user.role !== "creator" || !user.creator) return err(403, "Creators only");
+    if (!connect.connectConfigured()) return err(503, "Payouts are not live yet. Paid bookings are recorded in the app and settled by hand until the payout rail opens.");
+    const record = (await store.get(`user:${user.id}`)) || user;
+    record.creator = record.creator || {};
+    try {
+      let payouts = storedPayouts(record);
+      if (!payouts.accountId) {
+        const account = await connect.createConnectedAccount(record);
+        payouts = { accountId: account.id, ...connect.payoutStateFromAccount(account), updatedAt: nowIso() };
+        record.creator.payouts = payouts;
+        record.updatedAt = nowIso();
+        await store.set(`user:${record.id}`, record);
+        await logEvent({ type: "payout_account_created", actorId: user.id, actorRole: "creator", subjectId: user.id, market: user.market || null, data: {} });
+      } else {
+        payouts = await refreshCreatorPayouts(record);
+      }
+      const appUrl = (process.env.APP_URL || "https://app.joinsignl.com").replace(/\/+$/, "");
+      const url = await connect.createAccountLink(payouts.accountId, `${appUrl}/?payouts=refresh`, `${appUrl}/?payouts=return`);
+      if (!url) throw new Error("Stripe did not return an onboarding link");
+      await logEvent({ type: "payout_setup_started", actorId: user.id, actorRole: "creator", subjectId: user.id, market: user.market || null, data: { status: payouts.status } });
+      return json(200, { url, payouts: payoutsClientView(record) });
+    } catch (e) {
+      console.error("SIGNL payout setup error:", e);
+      return err(502, "Stripe could not open payout setup. Please try again.");
+    }
+  }
+
+  if (method === "GET" && seg[0] === "me" && seg[1] === "payouts" && seg.length === 2) {
+    if (user.role !== "creator" || !user.creator) return err(403, "Creators only");
+    const record = (await store.get(`user:${user.id}`)) || user;
+    const payouts = await refreshCreatorPayouts(record);
+    return json(200, { payouts: { status: payouts.status, ready: payouts.ready, missing: payouts.missing, updatedAt: payouts.updatedAt }, paymentsLive: connect.connectConfigured() });
+  }
+
+  // ---------- Stripe Connect: business card on file (2026-10-26) ----------
+  // A business never creates a Stripe account: it saves a card
+  // once (Checkout in setup mode) and paid bookings confirm
+  // against it in one tap. The saved method lands on the record
+  // through the webhook; this endpoint only opens the session.
+  // Same founding gate as subscription checkout: billing never
+  // activates a business by the back door.
+  if (method === "POST" && seg[0] === "billing" && seg[1] === "card") {
+    if (!connect.connectConfigured()) return err(503, "Billing is not configured yet. Payment stays concierge for now: Jeff sends the payment step by hand at activation.");
+    const b = parseBody(event);
+    let biz = null;
+    if (user.role === "business") biz = user;
+    else if (user.role === "admin" && b.businessId) {
+      const target = await store.get(`user:${b.businessId}`);
+      if (target && target.role === "business") biz = target;
+    }
+    if (!biz) return err(403, "Only a business can add a card.");
+    if (businessAccessState(biz) !== "active") return err(403, FOUNDING_BUSINESS_MESSAGE);
+    const record = (await store.get(`user:${biz.id}`)) || biz;
+    record.business = record.business || {};
+    record.business.billing = record.business.billing || {};
+    try {
+      if (!record.business.billing.customerId) {
+        const customer = await connect.createCustomer(record);
+        record.business.billing.customerId = customer.id;
+        record.updatedAt = nowIso();
+        await store.set(`user:${record.id}`, record);
+      }
+      const appUrl = (process.env.APP_URL || "https://app.joinsignl.com").replace(/\/+$/, "");
+      const session = await connect.createCardSetupSession(record, {
+        customerId: record.business.billing.customerId,
+        successUrl: `${appUrl}/?card=saved`,
+        cancelUrl: `${appUrl}/?card=canceled`,
+      });
+      await logEvent({ type: "billing_card_setup_started", actorId: user.id, actorRole: user.role, subjectId: biz.id, market: biz.market || null, data: { sessionId: session.id || null } });
+      return json(200, { url: session.url, sessionId: session.id || null });
+    } catch (e) {
+      console.error("SIGNL card setup error:", e);
+      return err(502, "Stripe could not open card setup. Please try again.");
+    }
   }
 
   // ---------- self-serve market fix (pending creators) ----------
@@ -8550,6 +8909,12 @@ async function route(event) {
         cashRate = Math.round(Number(b.cashRate || b.dollarCap) * 100) / 100;
         if (!Number.isFinite(cashRate) || cashRate < PAID_LANE.minRate) return err(400, `A cash offer starts at $${fmtPriceS(PAID_LANE.minRate)}. Below that, the payment processing and support cost more than the booking is worth. Comp offers have no minimum beyond the dignity floor for the tiers you target.`);
         dollarCap = Math.round(cashRate);
+        // Stripe Connect (2026-10-26): selecting a creator for a
+        // paid offer charges the card on file, so the card comes
+        // before the offer exists. Rail off: no gate, as before.
+        if (connect.connectConfigured() && !businessCardOnFile(user)) {
+          return err(400, "Add a card before posting a paid offer. When you pick a creator, the booking charges your card on file and SIGNL holds the money until the post is live. Add your card in the Plan tab, under Your plan.");
+        }
       } else if (!dollarCap || dollarCap <= 0) {
         return err(400, "Dollar cap must be a positive number");
       }
@@ -9247,6 +9612,13 @@ async function route(event) {
     if (standingState(creator) === "paused") return err(400, pausedPickMessage(creator));
     const rate = Number(creator.creator && creator.creator.paidRate);
     if (!Number.isFinite(rate) || rate < PAID_LANE.minRate) return err(400, "That creator has not listed a paid rate. Comp visits are always available; paid bookings need a creator who charges.");
+    // Stripe Connect (2026-10-26): while the rail is live, a paid
+    // booking charges the business's card on file at booking, so
+    // the card comes first. With the rail off this gate does not
+    // exist and the recorded flow is exactly as before.
+    if (connect.connectConfigured() && !businessCardOnFile(user)) {
+      return err(400, "Add a card before booking paid visits. Paid bookings charge your card on file when you book, and SIGNL holds the money until the creator's post is live. Add your card in the Plan tab, under Your plan.");
+    }
     const allBk = await allBookings();
     const cap = maxVisitsPerWeekOf(creator);
     if (visitsThisWeek(allBk, creator.id, Date.now()) >= cap) {
@@ -9313,12 +9685,28 @@ async function route(event) {
     await store.set(`booking:${booking.id}`, booking);
     await store.set(`code:${code}`, { bookingId: booking.id });
     await store.set(`ccode:${creatorCode}`, { bookingId: booking.id });
+    // Stripe Connect (2026-10-26): authorize the card on file for
+    // the booking total, held on the platform side. A charge that
+    // fails unwinds the booking entirely: no booking, no codes,
+    // no charge, and the business hears why in plain words.
+    const directFunds = await attachPaidFunds(booking, user);
+    if (directFunds && directFunds.state === "charge_failed") {
+      await store.del(`booking:${booking.id}`);
+      await store.del(`code:${code}`);
+      await store.del(`ccode:${creatorCode}`);
+      return err(502, "Your card could not be charged, so the booking was not made. Check the card in the Plan tab and try again.");
+    }
+    if (directFunds) {
+      booking.updatedAt = nowIso();
+      await store.set(`booking:${booking.id}`, booking);
+    }
     await logEvent({ type: "paid_booking_created", actorId: user.id, actorRole: "business", subjectId: booking.id, market: booking.market, data: { creatorId: creator.id, rate: math.rate, businessTotal: math.businessTotal, creatorNet: math.creatorNet, platformFee: math.platformFee, escrowState: "held", hasBrief: !!booking.paidBrief } });
     await notifyMilestone(creator.id, "paid_booking_received",
       `${booking.businessName || "A business"} booked you at your listed rate of $${fmtPriceS(math.rate)}. $${fmtMoneyS(math.creatorNet)} is recorded as held by SIGNL until your post is live. Visit code ${code}.`,
       `Paid booking: ${booking.businessName || "a business"} booked you at $${fmtPriceS(math.rate)}`,
-      [`${booking.businessName || "A business"} booked you at your listed rate of $${fmtPriceS(math.rate)}.`, "", `${PAID_LANE.paymentNote} Your share is $${fmtMoneyS(math.creatorNet)} of the $${fmtPriceS(math.rate)} rate.`, "", `Your visit code is ${code}: show it at the counter when you visit. The visit window is 7 days from booking.`, "", "Open SIGNL: https://app.joinsignl.com", "", "Jeff", "Founder, SIGNL"].join("\n"),
+      [`${booking.businessName || "A business"} booked you at your listed rate of $${fmtPriceS(math.rate)}.`, "", `${booking.paidLane.paymentNote} Your share is $${fmtMoneyS(math.creatorNet)} of the $${fmtPriceS(math.rate)} rate.`, "", `Your visit code is ${code}: show it at the counter when you visit. The visit window is 7 days from booking.`, "", "Open SIGNL: https://app.joinsignl.com", "", "Jeff", "Founder, SIGNL"].join("\n"),
       { bookingId: booking.id });
+    await promptCreatorPayoutSetup(booking, creator);
     await logEvent({ type: "booking_code_issued", actorId: user.id, actorRole: "business", subjectId: booking.id, market: booking.market, data: { code, offerId: null, businessId: user.id, dollarCap: booking.dollarCap, kind: "paid", hasBrief: !!booking.paidBrief } });
     return json(201, { booking: await withPostState(booking) });
   }

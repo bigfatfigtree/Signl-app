@@ -2796,15 +2796,20 @@ function bookPaidVisit(creatorId) {
     <p class="small" style="margin:10px 0 2px">Listed rate: <strong>$${fmtPrice(rate)}</strong></p>
     <p class="small" style="margin:2px 0">You pay <strong>$${fmtMoney(total)}</strong> (rate + 3%)</p>
     <p class="small" style="margin:2px 0">They keep <strong>$${fmtMoney(net)}</strong> (97%)</p>
-    <p class="small muted">No card is charged in the app yet. This records the booking and holds the amount in the app ledger. It is released after the post is live and the 48 hour hold passes.</p>
+    ${paymentsLive()
+      ? (cardOnFileView()
+        ? `<p class="small muted">Your ${esc(brandName(cardOnFileView().brand))} &middot;&middot;&middot;&middot;${esc(cardOnFileView().last4)} is charged $${fmtMoney(total)} when you book. SIGNL holds it and releases the creator's share after the post is live and the 48 hour hold passes.</p>`
+        : `<p class="small muted">Paid bookings charge a card on file, held by SIGNL until the post is live. Add yours once and every paid booking confirms in one tap.</p>`)
+      : `<p class="small muted">No card is charged in the app yet. This records the booking and holds the amount in the app ledger. It is released after the post is live and the 48 hour hold passes.</p>`}
     <div class="field"><label>Key points for the creator (optional)</label><textarea id="paid-brief" rows="3" maxlength="500" placeholder="What to feature, names, dates"></textarea><p class="small muted">${PAID_BRIEF_GUIDANCE}</p></div>
-    <button class="btn" style="width:100%" id="paid-sheet-book">Book paid visit</button>
+    <button class="btn" style="width:100%" id="paid-sheet-book">${paymentsLive() && !cardOnFileView() ? "Add a card to book" : "Book paid visit"}</button>
     <button class="btn ghost" style="width:100%;margin-top:8px" id="paid-sheet-cancel">Cancel</button>
   </div>`;
   document.body.appendChild(el);
   document.getElementById("paid-sheet-cancel").onclick = () => closePaidSheet();
   el.addEventListener("click", (e) => { if (e.target === el) closePaidSheet(); });
   document.getElementById("paid-sheet-book").onclick = async () => {
+    if (paymentsLive() && !cardOnFileView()) { closePaidSheet(); addBusinessCard(); return; }
     const briefEl = document.getElementById("paid-brief");
     const paidBrief = briefEl ? briefEl.value.trim().slice(0, 500) : "";
     closePaidSheet();
@@ -3625,6 +3630,21 @@ function laneRateOf(c) {
   const r = Number(c && c.paidRate);
   return Number.isFinite(r) && r > 0 ? r : null;
 }
+// Stripe Connect (2026-10-26): the payout rail is live only when
+// the server says payments are configured. Everything payout
+// related renders from this flag: rail off, the paid lane reads
+// exactly as it did before Connect existed.
+function paymentsLive() {
+  return !!(state.boot && state.boot.payments && state.boot.payments.connectLive);
+}
+function cardOnFileView() {
+  const b = state.user && state.user.business && state.user.business.billing;
+  return (b && b.card) || null;
+}
+function brandName(brand) {
+  const b = String(brand || "card");
+  return b.charAt(0).toUpperCase() + b.slice(1);
+}
 function laneCompLine(c) {
   return c && c.compOpen === false ? "off. You're paid-only — always fine." : "on. Businesses can comp you for honest posts.";
 }
@@ -3648,11 +3668,79 @@ function laneControlsHtml(c) {
       <p class="small muted" id="lane-rate-note">${rate ? `At $${fmtMoney(rate)} you keep $${fmtMoney(Math.round(rate * 0.97 * 100) / 100)} (97%).` : "Paid bookings turn on when a rate is saved."}</p>
     </div>
     <p class="small lane-err" id="lane-err" style="display:none"></p>
+    ${payoutsStepHtml(c)}
   </div>`;
 }
 function laneErr(msg) {
   const e = document.getElementById("lane-err");
   if (e) { e.textContent = msg || ""; e.style.display = msg ? "block" : "none"; }
+}
+// Payout setup step (Stripe Connect, 2026-10-26): part of the
+// paid lane only, and only once a rate is listed. Joining,
+// claiming and comp visits never need it. The states are the
+// server's plain words (never raw Stripe requirement codes), and
+// the step is resumable: the button always reopens Stripe's
+// hosted pages where the creator left off.
+function payoutsStepHtml(c) {
+  // The paid lane is "on" exactly when a rate is listed, the
+  // same derivation the lane control itself uses.
+  if (!laneRateOf(c || {})) return "";
+  const p = c.payouts || { status: "not_started", ready: false, missing: [] };
+  if (!paymentsLive()) {
+    return `<div class="lane-payouts"><div class="lrow lane-row"><div><span class="lname">Payouts</span><span class="lline"> — setup opens when the paid lane goes live. Comp visits never need it.</span></div></div></div>`;
+  }
+  if (p.ready) {
+    return `<div class="lane-payouts"><div class="lrow lane-row"><div><span class="lname">Payouts</span><span class="lline"> — <span class="badge ok">Payouts ready</span></span></div></div><p class="small muted">Paid bookings pay out to your bank after your post is live.</p></div>`;
+  }
+  if (p.status === "pending" || p.status === "restricted") {
+    const missing = (p.missing || []).length ? ` Stripe still needs: ${esc(p.missing.join(", "))}.` : "";
+    return `<div class="lane-payouts"><div class="lrow lane-row"><div><span class="lname">Payouts</span><span class="lline"> — almost there.${missing}</span></div></div><button type="button" class="btn small-btn" onclick="return startPayoutSetup()">Finish payout setup</button><p class="small muted">Your first payout can take longer while Stripe verifies you.</p></div>`;
+  }
+  return `<div class="lane-payouts"><div class="lrow lane-row"><div><span class="lname">Payouts</span><span class="lline"> — not set up. You can be booked at your rate, but the money cannot reach your bank until this is done.</span></div></div><button type="button" class="btn small-btn" onclick="return startPayoutSetup()">Set up payouts</button><p class="small muted">Two minutes on Stripe's secure pages: your bank details go to Stripe, never to SIGNL. Your first payout can take longer while Stripe verifies you.</p></div>`;
+}
+async function startPayoutSetup() {
+  try {
+    const data = await api("POST", "/me/payouts/start", {});
+    if (data && data.url) { window.location.href = data.url; return false; }
+    laneErr("Payout setup could not open. Try again.");
+  } catch (err) { laneErr((err && err.message) || "Payout setup could not open. Try again."); }
+  return false;
+}
+// Business card on file (Stripe Connect, 2026-10-26): opens
+// Stripe Checkout in setup mode; the saved card lands on the
+// record through the webhook and shows under Plan.
+async function addBusinessCard() {
+  try {
+    const data = await api("POST", "/billing/card", {});
+    if (data && data.url) { window.location.href = data.url; return false; }
+    alert("Card setup could not open. Try again.");
+  } catch (err) { alert((err && err.message) || "Card setup could not open. Try again."); }
+  return false;
+}
+function cardOnFileSectionHtml() {
+  const card = cardOnFileView();
+  if (card) {
+    return `<div class="mt"><p><span class="badge ok">Card on file</span> <strong>${esc(brandName(card.brand))} &middot;&middot;&middot;&middot;${esc(card.last4)}</strong></p><p class="small muted">Paid bookings charge this card when you book. SIGNL holds the money until the creator's post is live.</p><button class="btn ghost small-btn" onclick="return addBusinessCard()">Update card</button></div>`;
+  }
+  return `<div class="mt"><p><strong>No card on file.</strong></p><p class="small muted">Paid bookings need a card: it is charged when you book, SIGNL holds the money until the creator's post is live, and the creator is paid from it.</p><button class="btn small-btn" onclick="return addBusinessCard()">Add a card</button></div>`;
+}
+// Held / released money status on a booking card (Stripe
+// Connect, 2026-10-26). Renders nothing unless real funds ride
+// on the booking; the ledger states above it are unchanged.
+function fundsStatusHtml(lane, role) {
+  const f = lane && lane.funds;
+  if (!f) return "";
+  if (role === "creator") {
+    if (f.state === "released") return `<br><span class="muted">Released · on its way to your bank.</span>`;
+    if (f.state === "refunded") return `<br><span class="muted">Refunded to the business in full.</span>`;
+    if (f.state === "needs_card" || f.state === "charge_failed") return `<br><span class="muted">SIGNL is sorting out the business's card with the business.</span>`;
+    if (f.blockedReason === "payouts_not_ready") return `<br><span class="muted">Held · finish payout setup under Profile to release it.</span>`;
+    return `<br><span class="muted">Held · releases when your post is live.</span>`;
+  }
+  if (f.state === "released") return `<br><span class="muted">Paid · released to the creator.</span>`;
+  if (f.state === "refunded") return `<br><span class="muted">Paid · refunded in full.</span>`;
+  if (f.state === "needs_card" || f.state === "charge_failed") return `<br><span class="muted">Add a card under Plan to complete this booking's payment.</span>`;
+  return `<br><span class="muted">Paid · held until the post is live.</span>`;
 }
 function rerenderLaneControls() {
   const host = document.getElementById("lane-controls");
@@ -3744,7 +3832,7 @@ function homePaidLaneHtml(creator, footerHtml) {
     <p class="ui-kicker">Paid lane</p>
     <h3 class="home-h">Comp and paid, your choice</h3>
     ${laneControlsHtml(creator || {})}
-    <p class="small muted">Recorded in the app, no card charged. Held until your post is live — released 48h after proof.</p>
+    <p class="small muted">${paymentsLive() ? "Charged to the business's card at booking. Held until your post is live — released 48h after proof." : "Recorded in the app, no card charged. Held until your post is live — released 48h after proof."}</p>
     ${footerHtml || ""}
   </section>`;
 }
@@ -4909,8 +4997,8 @@ function visitCard(b, role) {
         ? `<span class="badge warn">Payment refunded</span>`
         : `<span class="badge info">Payment held by SIGNL</span>`;
     html += role === "creator"
-      ? `<p class="small"><span class="badge tier">Paid visit</span> Your rate $${fmtPrice(lane.rate)}: you receive $${fmtMoney(lane.creatorNet)} (97% of your rate). ${escrowBadge}<br><span class="muted">${esc(lane.paymentNote)}${lane.escrowState === "held" && lane.proofAt ? " Your post is in; the escrow releases 48 hours after proof." : ""}${lane.escrowState === "refunded" ? " This visit resolved without delivery, so the business was refunded." : ""}</span></p>`
-      : `<p class="small"><span class="badge tier">Paid visit</span> Creator rate $${fmtPrice(lane.rate)} &middot; you pay $${fmtMoney(lane.businessTotal)} (rate + 3%) &middot; the creator receives $${fmtMoney(lane.creatorNet)}. ${escrowBadge}<br><span class="muted">${esc(lane.paymentNote)}</span></p>`;
+      ? `<p class="small"><span class="badge tier">Paid visit</span> Your rate $${fmtPrice(lane.rate)}: you receive $${fmtMoney(lane.creatorNet)} (97% of your rate). ${escrowBadge}<br><span class="muted">${esc(lane.paymentNote)}${lane.escrowState === "held" && lane.proofAt ? " Your post is in; the escrow releases 48 hours after proof." : ""}${lane.escrowState === "refunded" ? " This visit resolved without delivery, so the business was refunded." : ""}</span>${fundsStatusHtml(lane, "creator")}</p>`
+      : `<p class="small"><span class="badge tier">Paid visit</span> Creator rate $${fmtPrice(lane.rate)} &middot; you pay $${fmtMoney(lane.businessTotal)} (rate + 3%) &middot; the creator receives $${fmtMoney(lane.creatorNet)}. ${escrowBadge}<br><span class="muted">${esc(lane.paymentNote)}</span>${fundsStatusHtml(lane, "business")}</p>`;
   }
   if (role === "creator") html += referralProgramBlockHtml(b.businessReferralProgram);
   if (role === "business" && b.businessReferralProgram) {
@@ -6607,7 +6695,9 @@ function renderPlanTab() {
     <p>Current plan: <strong>${esc(u.business.planName)}</strong>, selected ${fmtDate(u.business.planSelectedAt)}.</p>
     <p class="muted">${esc(u.business.billingStatus)}</p>
     <p class="small"><strong>${VISIT_GUARANTEE_LINE}</strong></p>
-    <p class="small">Payment stays concierge: when billing starts, Jeff sends the payment step by hand. Nothing is charged before then, and SIGNL never takes a card in the app.</p>
+    ${paymentsLive()
+      ? `<p class="small">The card below is for paid creator bookings: saved once, charged when you book, held until the post is live. Your plan itself still starts by hand at activation.</p>${cardOnFileSectionHtml()}`
+      : `<p class="small">Payment stays concierge: when billing starts, Jeff sends the payment step by hand. Nothing is charged before then, and SIGNL never takes a card in the app.</p>`}
     <div class="plan-cards">${plans}</div>
     <input type="hidden" id="me-plan" value="${esc(u.business.plan)}">
     <button class="btn mt" onclick="savePlan()">Save plan selection</button>
@@ -6959,16 +7049,24 @@ async function loadCampaign() {
   try {
     const creatorSections = [];
     const businessSections = [];
+    let ceilingCfg = null;
     for (const meta of CAMPAIGN_SECTIONS) {
       const data = await api("GET", "/admin/campaign?campaignId=" + encodeURIComponent(meta.campaignId));
+      if (meta.kind === "creator" && !ceilingCfg && data && data.campaign) ceilingCfg = data.campaign;
       (meta.kind === "business" ? businessSections : creatorSections).push(campaignSectionHtml(meta, data));
     }
+    // Send figures read off the live campaign config (2026-10-26
+    // cleanup): the old hardcoded daily figure was stale.
+    // The shared ceiling and the creators@ warm-up cap come from
+    // the server; the literals are only fallback display values.
+    const ceiling = (ceilingCfg && ceilingCfg.dailyCeiling) || 150;
+    const teamCap = (ceilingCfg && ceilingCfg.teamMailDailyCap) || 50;
     el.innerHTML = `
       <h3 style="margin:0 0 8px">Creator outreach campaigns</h3>
-      <p class="small muted">Both campaigns send through the same sweep: up to 8 emails per campaign every 30 minutes while armed, only between 8:00 and 21:00 ET. One daily ceiling covers both together: 40 sends per day (ET) across all campaigns, to protect the sending domain. Hitting it is normal; the queues wait for the next day. A queue auto-pauses when it empties.</p>
+      <p class="small muted">Both campaigns send through the same sweep: up to 8 emails per campaign every 30 minutes while armed, only between 8:00 and 21:00 ET. One daily ceiling covers everything: ${ceiling} sends per day (ET) across all campaigns, to protect the sending domain. The creators@signlteam.com mailbox also has its own warm-up cap of ${teamCap} sends per day. Hitting a cap is normal; the queues wait for the next day. A queue auto-pauses when it empties.</p>
       ${creatorSections.join("")}
       <h3 style="margin:24px 0 8px">Business outreach campaigns</h3>
-      <p class="small muted">The founding business wave sends through the same sweep, under the same shared daily ceiling: 40 sends per day (ET) across all campaigns. Nothing sends until the campaign is armed.</p>
+      <p class="small muted">The founding business wave sends through the same sweep, under the same shared daily ceiling: ${ceiling} sends per day (ET) across all campaigns. Nothing sends until the campaign is armed.</p>
       ${businessSections.join("")}`;
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
@@ -8399,6 +8497,33 @@ function previewDashboardHtml(d) {
       state.counterCode = code.toUpperCase();
       state.view = "dashboard";
     }
+    // Stripe Connect return landings (2026-10-26): Stripe's
+    // hosted pages bounce back here with ?payouts=return (or
+    // refresh) for creators and ?card=saved for businesses.
+    // Refresh the affected state, confirm in plain words, land
+    // on the tab that owns the surface, and strip the param so
+    // a reload does not re-run the landing.
+    const payoutsParam = params.get("payouts");
+    if (payoutsParam && state.user && state.user.role === "creator") {
+      try {
+        const d = await api("GET", "/me/payouts");
+        if (d && d.payouts && state.user.creator) state.user.creator.payouts = d.payouts;
+        setTimeout(() => showToast(d && d.payouts && d.payouts.ready ? "Payouts ready" : "Payout setup saved. Finish it any time under Profile."), 400);
+      } catch (e) { /* the lane section on Profile shows the same state */ }
+      state.tab = "Profile";
+      state.view = "dashboard";
+    }
+    const cardParam = params.get("card");
+    if (cardParam && state.user && state.user.role === "business") {
+      try {
+        const me2 = await api("GET", "/auth/me");
+        if (me2 && me2.user) state.user = me2.user;
+      } catch (e) { /* the Plan tab re-reads the record on save anyway */ }
+      if (cardParam === "saved") setTimeout(() => showToast(cardOnFileView() ? "Card saved" : "Card step finished. If Stripe saved it, it shows under Plan."), 400);
+      state.tab = "Plan";
+      state.view = "dashboard";
+    }
+    if (payoutsParam || cardParam) { try { history.replaceState(null, "", location.pathname); } catch (e) { /* cosmetic only */ } }
     render();
     if (state.user) refreshBadges();
     if (code && state.user && state.user.role === "business" && state.tab === "Counter") {
