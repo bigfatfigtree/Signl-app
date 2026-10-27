@@ -11,7 +11,7 @@
   "private": true,
   "scripts": {
     "dev": "node scripts/dev-server.mjs",
-    "verify": "node scripts/verify-flow.mjs && node scripts/verify-fallbacks.mjs && node scripts/verify-launch.mjs && node scripts/verify-compliance.mjs && node scripts/verify-campaign.mjs && node scripts/verify-paidlane.mjs && node scripts/verify-licensing.mjs && node scripts/verify-roas.mjs && node scripts/verify-rollover.mjs && node scripts/verify-business.mjs && node scripts/verify-quickclaim.mjs && node scripts/verify-ratings.mjs && node scripts/verify-staff.mjs && node scripts/verify-refinements.mjs && node scripts/verify-campus.mjs && node scripts/verify-ladder.mjs && node scripts/verify-src.mjs && node scripts/verify-share.mjs && node scripts/verify-admin.mjs && node scripts/verify-autodecisions.mjs && node scripts/verify-platforms.mjs && node scripts/verify-realtor.mjs && node scripts/verify-signupfixes.mjs && node scripts/verify-markets.mjs && node scripts/verify-billing.mjs && node scripts/verify-profilemeta.mjs && node scripts/verify-businesswave.mjs && node scripts/verify-campaignadmin.mjs && npm run verify-passwordreset && npm run verify-cityresolver && npm run verify-fit && npm run verify-metrics && npm run verify-mailboxes && npm run verify-storefail && npm run verify-referral && npm run verify-admintabs && npm run verify-connect && node scripts/verify-proudpass.mjs && node scripts/verify-two-tap.mjs && node scripts/verify-shell.mjs",
+    "verify": "node scripts/verify-flow.mjs && node scripts/verify-fallbacks.mjs && node scripts/verify-launch.mjs && node scripts/verify-compliance.mjs && node scripts/verify-campaign.mjs && node scripts/verify-paidlane.mjs && node scripts/verify-licensing.mjs && node scripts/verify-roas.mjs && node scripts/verify-rollover.mjs && node scripts/verify-business.mjs && node scripts/verify-quickclaim.mjs && node scripts/verify-ratings.mjs && node scripts/verify-staff.mjs && node scripts/verify-refinements.mjs && node scripts/verify-campus.mjs && node scripts/verify-ladder.mjs && node scripts/verify-src.mjs && node scripts/verify-share.mjs && node scripts/verify-admin.mjs && node scripts/verify-autodecisions.mjs && node scripts/verify-platforms.mjs && node scripts/verify-realtor.mjs && node scripts/verify-signupfixes.mjs && node scripts/verify-markets.mjs && node scripts/verify-billing.mjs && node scripts/verify-profilemeta.mjs && node scripts/verify-businesswave.mjs && node scripts/verify-campaignadmin.mjs && npm run verify-passwordreset && npm run verify-cityresolver && npm run verify-fit && npm run verify-metrics && npm run verify-mailboxes && npm run verify-storefail && npm run verify-referral && npm run verify-admintabs && npm run verify-connect && node scripts/verify-proudpass.mjs && node scripts/verify-two-tap.mjs && node scripts/verify-shell.mjs && node scripts/verify-earnlinks.mjs",
     "verify-campus": "node scripts/verify-campus.mjs",
     "verify-realtor": "node scripts/verify-realtor.mjs",
     "verify-signupfixes": "node scripts/verify-signupfixes.mjs",
@@ -43,7 +43,8 @@
     "verify-admintabs": "node scripts/verify-admintabs.mjs",
     "verify-proudpass": "node scripts/verify-proudpass.mjs",
     "verify-connect": "node scripts/verify-connect.mjs",
-    "verify-shell": "node scripts/verify-shell.mjs"
+    "verify-shell": "node scripts/verify-shell.mjs",
+    "verify-earnlinks": "node scripts/verify-earnlinks.mjs"
   },
   "type": "commonjs",
   "version": "1.0.0"
