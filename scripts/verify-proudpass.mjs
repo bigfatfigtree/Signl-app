@@ -148,7 +148,11 @@ try {
   check("F1 direct list computes booked offers", appJs.includes("const booked = bookedOfferIds.has(o.id)"));
   check("F3 home line is founding-honest + data-driven", appJs.includes("Founding sign-ups open in all ${") && !appJs.includes("Open now in all 39 markets"));
   check("F3 no stale 39-market copy remains", !appJs.includes("39 markets"));
-  check("F4 overview attention passes pinItem", appJs.includes("pinItem: d.staffPinSet === false"));
+  // V3 (2026-10-27): the business Home overview is the Sig queue
+  // now; the unset-PIN task is queued there from staffPinSet
+  // (and noticed on Visits). bizDashAttentionHtml keeps its
+  // pinItem option for the preview surface.
+  check("F4 overview attention passes pinItem", appJs.includes("const pin = !!o.pinItem;") && appJs.includes("staffPinSet === false"));
   check("F5 ROAS waits for a real tally", appJs.includes("c.redemptions && c.redemptions.count > 0"));
   check("F6 Needed badge hides on done essentials", appJs.includes("item.required && !item.done"));
   check("F8 preview paid booking renders a sheet", appJs.includes('el.setAttribute("aria-label", "Preview paid booking")'));

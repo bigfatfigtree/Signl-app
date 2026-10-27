@@ -1233,6 +1233,26 @@ function bnIcon(name) {
     shield: `<path d="M12 3.5 5 6v5.4c0 4.5 3 7.6 7 9.1 4-1.5 7-4.6 7-9.1V6Z"/><path d="m9 11.6 2.2 2.2 4-4.2"/>`,
     search: `<circle cx="11" cy="11" r="6.5"/><path d="m20.5 20.5-4.6-4.6"/>`,
     check: `<path d="m4.5 12.5 5 5 10-11"/>`,
+    // Overhaul V3 icon set (spec §3): single-weight line glyphs
+    // drawn for SIGNL. None of these reuse the V2/Grin glyphs
+    // (pulse wave, inbox tray, chart arrow, two people,
+    // storefront, chain link, handshake, bare chat bubble, photo
+    // frame, gift box, black agent face).
+    deck: `<rect x="3" y="7.5" width="11.5" height="13" rx="2.5"/><rect x="9.5" y="3.5" width="11.5" height="13" rx="2.5"/><path d="M17.6 6.4l.7 1.7 1.7.7-1.7.7-.7 1.7-.7-1.7-1.7-.7 1.7-.7z" fill="currentColor" stroke="none"/>`,
+    notice: `<rect x="5" y="5" width="14" height="15.5" rx="2"/><circle cx="12" cy="5" r="1.7"/><path d="M8.6 11h6.8M8.6 14.8h4.6"/>`,
+    calendar: `<rect x="3.5" y="5" width="17" height="16" rx="2"/><path d="M3.5 9.8h17M8 3v3.6M16 3v3.6"/><path d="m9 15.4 2.1 2.1 3.9-4.3"/>`,
+    banknote: `<rect x="2.5" y="6" width="19" height="12" rx="2"/><circle cx="12" cy="12" r="2.9"/><path d="M5.8 9.3h.8M17.4 14.7h.8"/>`,
+    bubble: `<path d="M4 5.8A2.8 2.8 0 0 1 6.8 3h10.4A2.8 2.8 0 0 1 20 5.8v7.4a2.8 2.8 0 0 1-2.8 2.8h-4.4L8.4 20.2v-4.2H6.8A2.8 2.8 0 0 1 4 13.2z"/><path d="M7.8 8h8.4M7.8 11.4h5"/>`,
+    list3: `<circle cx="4.2" cy="6" r="1.3" fill="currentColor" stroke="none"/><circle cx="4.2" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="4.2" cy="18" r="1.3" fill="currentColor" stroke="none"/><path d="M9 6h11.5M9 12h11.5M9 18h11.5"/>`,
+    bars: `<rect x="4.6" y="13.5" width="3.6" height="7"/><rect x="10.2" y="4.5" width="3.6" height="16"/><rect x="15.8" y="9.5" width="3.6" height="11"/>`,
+    play: `<rect x="3.5" y="4.5" width="17" height="15" rx="3"/><path d="M10.4 9.1v5.8l5-2.9z" fill="currentColor" stroke="none"/>`,
+    receipt: `<path d="M6 3h12v17.2l-2-1.3-2 1.3-2-1.3-2 1.3-2-1.3-2 1.3z"/><path d="M9.2 7.6h5.6M9.2 11h5.6M9.2 14.4h3.4"/>`,
+    person: `<circle cx="12" cy="12" r="8.6"/><circle cx="12" cy="9.9" r="2.9"/><path d="M6.9 17.1c1.2-2.3 3-3.3 5.1-3.3s3.9 1 5.1 3.3"/>`,
+    keypad: `<circle cx="6.5" cy="6.5" r="1.35" fill="currentColor" stroke="none"/><circle cx="12" cy="6.5" r="1.35" fill="currentColor" stroke="none"/><circle cx="17.5" cy="6.5" r="1.35" fill="currentColor" stroke="none"/><circle cx="6.5" cy="12" r="1.35" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.35" fill="currentColor" stroke="none"/><circle cx="17.5" cy="12" r="1.35" fill="currentColor" stroke="none"/><circle cx="6.5" cy="17.5" r="1.35" fill="currentColor" stroke="none"/><circle cx="12" cy="17.5" r="1.35" fill="currentColor" stroke="none"/><circle cx="17.5" cy="17.5" r="1.35" fill="currentColor" stroke="none"/>`,
+    bolt: `<path d="M13 2.8 4.9 13.4h5.5l-1 7.8 8.4-11.3h-5.6z"/>`,
+    sliders: `<path d="M3.5 6.5h17M3.5 12h17M3.5 17.5h17"/><circle cx="9" cy="6.5" r="2.1" fill="#fff"/><circle cx="15.5" cy="12" r="2.1" fill="#fff"/><circle cx="7.5" cy="17.5" r="2.1" fill="#fff"/>`,
+    help: `<circle cx="12" cy="12" r="8.6"/><path d="M9.7 9.3A2.5 2.5 0 1 1 12 11.8v1.2"/><path d="M12 16.9h.01"/>`,
+    star: `<path d="m12 3.2 2.7 5.5 6 .9-4.3 4.2 1 6-5.4-2.9-5.4 2.9 1-6L3.3 9.6l6-.9z"/>`,
   };
   return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || paths.home}</svg>`;
 }
@@ -1243,13 +1263,150 @@ function bnIcon(name) {
 // width on desktop); signed-out views keep the mobile-only bar.
 // Tab badges ride the counts GET /notifications returns.
 function renderBottomNav() {
-  // Overhaul V2 (2026-10-27): there is no bottom navigation bar.
-  // The icon rail is the navigation at every width (Grin
-  // template), and the quiet top row rides with it. This entry
-  // point keeps its name because nav renders, badge refreshes and
-  // sign-in/out all call it; it now just coordinates the rail.
-  renderRail();
+  // Overhaul V3 (2026-10-27): five labeled destinations in a
+  // bottom tab bar on phones; the same five as a labeled left
+  // rail on desktop, with the More rows expanded inline under a
+  // hairline; a slim top bar (identity, Messages, help) rides
+  // every app screen. The admin console keeps the V2 icon rail.
+  // This entry point keeps its name because nav renders, badge
+  // refreshes and sign-in/out all call it.
+  const u = state.user;
+  const tabbar = document.getElementById("tabbar");
+  const top2 = document.getElementById("topbar2");
+  const rail = document.getElementById("rail");
+  const toprow = document.getElementById("toprow");
   document.body.classList.remove("bn-on", "has-bn");
+  if (u && u.role === "admin" && !state.preview) {
+    if (tabbar) tabbar.innerHTML = "";
+    if (top2) top2.innerHTML = "";
+    document.body.classList.remove("v3-on", "v3-slim");
+    renderRail();
+    return;
+  }
+  if (rail) rail.innerHTML = "";
+  if (toprow) toprow.innerHTML = "";
+  document.body.classList.remove("rail-on");
+  const inApp = !!u && state.view !== "staff" && (u.role === "business" || u.role === "creator");
+  if (!inApp) {
+    if (tabbar) tabbar.innerHTML = "";
+    if (top2) top2.innerHTML = "";
+    document.body.classList.remove("v3-on", "v3-slim");
+    return;
+  }
+  const full = u.status === "approved" && (u.role === "creator" || businessAccessState(u) === "active");
+  document.body.classList.toggle("v3-on", full);
+  document.body.classList.toggle("v3-slim", !full);
+  renderTopBar2(full);
+  if (tabbar) tabbar.innerHTML = full ? tabBarHtml() : "";
+}
+
+// V3 destinations (spec §2): exactly five per role, icon plus an
+// always-visible text label, never renamed between widths. The
+// internal tab names stay the V2 ones; only the labels changed.
+const MORE_TABS = ["More", "Analytics", "Content", "Plan", "Profile", "Messages", "Settings", "Help", "Momentum", "Status", "Numbers"];
+function tabItemsFor() {
+  const u = state.user;
+  if (!u) return [];
+  const t = state.tab;
+  const b = state.badges || {};
+  const wc = state.waitCounts || {};
+  if (u.role === "business") {
+    return [
+      { icon: "home", label: "Home", tab: "Home", on: t === "Home" || !t },
+      { icon: "deck", label: "Find creators", tab: "Discover", on: t === "Discover" || t === "Favorites" },
+      { icon: "notice", label: "Offers", tab: "My Offers", on: t === "My Offers" || t === "Requests", badge: wc.bizApps != null ? wc.bizApps : (b.offers || 0) },
+      { icon: "calendar", label: "Visits", tab: "Visits & Posts", on: t === "Visits & Posts" || t === "Counter", badge: wc.bizVisits != null ? wc.bizVisits : (b.visits || 0) },
+      { icon: "list3", label: "More", tab: "More", on: MORE_TABS.includes(t) },
+    ];
+  }
+  if (u.role === "creator") {
+    const live = !!(u.founding && u.founding.marketLive);
+    if (!live) {
+      return [
+        { icon: "home", label: "Home", tab: "Dashboard", on: t === "Dashboard" || !t },
+        { icon: "list3", label: "More", tab: "More", on: ["More", "Profile", "Status", "Settings", "Help", "Momentum", "Numbers", "Messages"].includes(t) },
+      ];
+    }
+    return [
+      { icon: "home", label: "Home", tab: "Dashboard", on: t === "Dashboard" || !t },
+      { icon: "deck", label: "Offers", tab: "Offers", on: t === "Offers", badge: wc.crInvites != null ? wc.crInvites : (b.offers || 0) },
+      { icon: "calendar", label: "Visits", tab: "My Visits", on: t === "My Visits", badge: wc.crVisits != null ? wc.crVisits : (b.visits || 0) },
+      { icon: "banknote", label: "Earnings", tab: "Earnings", on: t === "Earnings", badge: wc.crLicense || 0 },
+      { icon: "list3", label: "More", tab: "More", on: MORE_TABS.includes(t) },
+    ];
+  }
+  return [];
+}
+
+// The More rows (spec §5.7 / §6.6): the things you check, not
+// the things you work. Rendered as the More screen on phones
+// and expanded inline in the desktop rail.
+function moreRowsFor() {
+  const u = state.user;
+  if (!u) return [];
+  const b = state.badges || {};
+  if (u.role === "business") {
+    return [
+      { icon: "bars", label: "Results", sub: "What your campaigns did.", tab: "Analytics" },
+      { icon: "play", label: "Posts & licenses", sub: "Every post about you, and the ones you can reuse.", tab: "Content" },
+      { icon: "receipt", label: "Plan & billing", sub: "Your plan, your visits, your billing.", tab: "Plan" },
+      { icon: "person", label: "Your business page", sub: "How creators see your business.", tab: "Profile" },
+      { icon: "bubble", label: "Messages", sub: "Talk to a creator about a visit or an offer.", tab: "Messages", badge: b.messages || 0 },
+      { icon: "sliders", label: "Settings", sub: "Account, staff PIN, notifications.", tab: "Settings" },
+      { icon: "help", label: "Help", sub: "How SIGNL works, in plain words.", tab: "Help" },
+    ];
+  }
+  if (u.role === "creator") {
+    const rows = [
+      { icon: "person", label: "My profile", sub: "What businesses see, your rate, your links.", tab: "Profile" },
+      { icon: "bars", label: "Your numbers", sub: "What your posts and visits did.", tab: "Numbers" },
+      { icon: "bolt", label: "Momentum", sub: "Your points, your tier, what earns more.", tab: "Momentum" },
+      { icon: "bubble", label: "Messages", sub: "Talk to a business about a visit or an offer.", tab: "Messages", badge: b.messages || 0 },
+      { icon: "sliders", label: "Settings", sub: "Account and notifications.", tab: "Settings" },
+      { icon: "help", label: "Help", sub: "How SIGNL works, in plain words.", tab: "Help" },
+    ];
+    return rows;
+  }
+  return [];
+}
+
+function tabBarHtml() {
+  const items = tabItemsFor();
+  if (!items.length) return "";
+  const btns = items.map((it) => `
+    <button type="button" class="tab-item ${it.on ? "on" : ""}" onclick="return go('dashboard','${it.tab}')" aria-label="${esc(it.label)}">
+      <span class="tab-ic">${bnIcon(it.icon)}${it.badge ? `<span class="tab-badge">${it.badge > 99 ? "99+" : it.badge}</span>` : ""}</span>
+      <span class="tab-label">${esc(it.label)}</span>
+    </button>`).join("");
+  const more = moreRowsFor().map((r) => `
+    <button type="button" class="tab-more-row ${state.tab === r.tab ? "on" : ""}" onclick="return go('dashboard','${r.tab}')">
+      <span class="tab-ic">${bnIcon(r.icon)}</span><span class="tab-label">${esc(r.label)}</span>${r.badge ? `<span class="tab-badge inline">${r.badge > 99 ? "99+" : r.badge}</span>` : ""}
+    </button>`).join("");
+  return `<div class="tab-main">${btns}</div>${more ? `<div class="tab-more"><div class="tab-more-sep"></div>${more}</div>` : ""}`;
+}
+
+// The slim V3 top bar: avatar chip + account name on the left;
+// Messages (unread badge) and help on the right, on every app
+// screen for both roles (spec §2.1).
+function renderTopBar2(full) {
+  const el = document.getElementById("topbar2");
+  if (!el) return;
+  const u = state.user;
+  const name = u.role === "business" && u.business ? u.business.businessName : u.name;
+  const photo = u.role === "creator" && u.creator ? u.creator.photoUrl : null;
+  const initial = String(name || "?").trim().charAt(0).toUpperCase() || "S";
+  const b = state.badges || {};
+  const live = u.role === "business" ? businessAccessState(u) === "active" : !!(u.founding && u.founding.marketLive);
+  el.innerHTML = `<div class="tb2-in">
+    <button type="button" class="tb2-id" onclick="return go('dashboard','Profile')">
+      ${photo ? `<img class="tb2-ava" src="${esc(photo)}" alt="">` : `<span class="tb2-ava txt">${esc(initial)}</span>`}
+      <span class="tb2-name">${esc(name || "")}</span>
+    </button>
+    <span class="tb2-actions">
+      ${full && (live || u.role === "creator") ? `<button type="button" class="tb2-btn" onclick="return go('dashboard','Messages')" aria-label="Messages">${bnIcon("bubble")}${b.messages ? `<span class="tab-badge">${b.messages > 99 ? "99+" : b.messages}</span>` : ""}</button>` : ""}
+      ${full ? `<button type="button" class="tb2-btn" onclick="return go('dashboard','Help')" aria-label="Help">${bnIcon("help")}</button>` : `<a class="tb2-btn" href="mailto:hello@joinsignl.com" aria-label="Help">${bnIcon("help")}</a>`}
+    </span>
+  </div>`;
 }
 async function refreshBadges() {
   if (!state.user) { state.badges = null; return; }
@@ -1301,6 +1458,13 @@ function closeMoreSheet() {
 // deadlines, licenses) and hands it over; there is no agent
 // logic behind the button in this stage.
 const SPARK_SVG = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.1 6.9L21 11l-6.9 2.1L12 20l-2.1-6.9L3 11l6.9-2.1z"/></svg>`;
+
+// Sig's face lives in exactly ONE place (V3 spec §4): the
+// axolotl (Jeff's pick, 2026-10-27) — a gradient blue-to-green
+// axolotl whose gills fan like signal bursts, cropped from the
+// character artwork into public/assets/sig-axolotl.png. Swap
+// this constant and every Sig surface updates at once.
+const SIG_AVATAR_HTML = `<span class="sig-ava sig-ava-img"><img src="/assets/sig-axolotl.png" alt="Sig"></span>`;
 
 // Overhaul V2 rail item sets (2026-10-27): the slim icon rail is
 // the navigation at EVERY width, mirroring the Grin template —
@@ -1364,6 +1528,11 @@ function railItems() {
 function renderRail() {
   const rail = document.getElementById("rail");
   if (!rail) return;
+  // Overhaul V3: the icon rail is the admin console's chrome
+  // only. Business and creator chrome is the tab bar + top bar
+  // (renderBottomNav); a stray call from a screen loader must
+  // never resurrect the V2 rail for them.
+  if (!state.user || state.user.role !== "admin") { rail.innerHTML = ""; document.body.classList.remove("rail-on"); return; }
   const items = railItems();
   document.body.classList.toggle("rail-on", !!items);
   if (!items) { rail.innerHTML = ""; return; }
@@ -1435,13 +1604,414 @@ function readyCardHtml(q) {
   const n = q.count || 0;
   const title = n ? `Sig has ${n} thing${n === 1 ? "" : "s"} ready for you` : esc(q.title || "Your queue is clear");
   const sub = n ? "One tap takes you straight to it." : esc(q.empty || "Sig is watching the queue. New items land here first.");
-  return `<div class="sig-card"><div class="sig-top"><span class="sig-ava">${SPARK_SVG}</span><div><div class="sig-title">${title}</div><div class="sig-sub">${sub}</div></div></div>${n ? readyRowsHtml(q) : ""}</div>`;
+  return `<div class="sig-card"><div class="sig-top">${SIG_AVATAR_HTML}<div><div class="sig-title">${title}</div><div class="sig-sub">${sub}</div></div></div>${n ? readyRowsHtml(q) : ""}</div>`;
 }
 // The "Your goals" card (Grin pattern): a plain-language goal
 // slot on the home. Structure only in V2 — Sig does not act on
 // goals yet, and the card says so instead of implying it does.
 function goalsCardHtml() {
   return `<div class="goals-card"><h3>Your goals</h3><p>No goals yet. Soon you will be able to tell Sig what you want, in plain words, and watch progress here. Sig does not act on goals yet.</p></div>`;
+}
+
+// ---------- Overhaul V3 components (spec §4–§6) ----------
+// Sig's queue card: a mint field, Sig's face at the head, at
+// most 3 items visible, each one plain sentence with a real
+// count and ONE action button of at most 3 words; "See all N"
+// expands in place. Parity rule (§4.7): every item also lives
+// at a manual address; the button navigates or pre-fills and
+// the user taps the final action there. The one exception is
+// the standard nudge, where this button IS the user's tap.
+function sigQueueHtml(items, opts) {
+  const o = opts || {};
+  const n = items.length;
+  if (!n) {
+    return `<div class="sig-card"><div class="sig-top">${SIG_AVATAR_HTML}<div><div class="sig-title">You're all caught up.</div><div class="sig-sub">When a creator applies, a visit needs you, or a post lands, it shows up here.</div></div></div>${(o.links || []).length ? `<div class="sig-links">${o.links.map((l, i) => `<button type="button" class="sig-link" data-sq="L${i}">${esc(l.label)}</button>`).join("")}</div>` : ""}</div>`;
+  }
+  const row = (r, i) => `<div class="sig-item"><div class="sig-stxt">${esc(r.text)}</div>${r.btn ? `<button type="button" class="btn small-btn" data-sq="${i}">${esc(r.btn)}</button>` : ""}</div>`;
+  return `<div class="sig-card"><div class="sig-top">${SIG_AVATAR_HTML}<div><div class="sig-title">Sig has ${n} thing${n === 1 ? "" : "s"} for you</div><div class="sig-sub">In the order they need you.</div></div></div>
+  ${items.slice(0, 3).map(row).join("")}
+  ${n > 3 ? `<div class="sig-more" hidden>${items.slice(3).map((r, j) => row(r, j + 3)).join("")}</div><button type="button" class="sig-seeall" onclick="return sigSeeAll(this)">See all ${n}</button>` : ""}
+  </div>`;
+}
+function sigSeeAll(btn) {
+  const card = btn && btn.closest ? btn.closest(".sig-card") : null;
+  const more = card && card.querySelector(".sig-more");
+  if (more) { more.hidden = false; btn.remove(); }
+  return false;
+}
+function wireSigQueue(root, items, links) {
+  if (!root) return;
+  root.querySelectorAll("[data-sq]").forEach((btn) => {
+    btn.onclick = () => {
+      const k = btn.getAttribute("data-sq");
+      const r = k.charAt(0) === "L" ? (links || [])[Number(k.slice(1))] : items[Number(k)];
+      if (r && r.act) r.act(btn);
+    };
+  });
+}
+
+// The launch checklist (spec §4.6): numbered steps, done steps
+// collapsed with checks, the next undone step expanded with
+// its action. Retires permanently once every non-optional
+// step is done (the creator's paid-rate step is optional).
+function checklistHtml(steps) {
+  const gated = steps.filter((s) => !s.optional);
+  if (gated.length && gated.every((s) => s.done)) return "";
+  const done = steps.filter((s) => s.done).length;
+  const nextIdx = steps.findIndex((s) => !s.done);
+  return `<div class="check-card"><div class="check-head"><strong>Getting set up</strong><span class="muted small">${done} of ${steps.length} done</span></div>
+  ${steps.map((s, i) => s.done
+    ? `<div class="check-row done"><span class="check-ic">${bnIcon("check")}</span><span class="check-tx">${esc(s.label)}</span></div>`
+    : i === nextIdx
+      ? `<div class="check-row next"><span class="check-ic num">${i + 1}</span><div class="check-tx"><div>${esc(s.label)}${s.optional ? ` <span class="badge info">Optional</span>` : ""}</div>${s.sub ? `<div class="muted small">${esc(s.sub)}</div>` : ""}</div>${s.btn ? `<button type="button" class="btn small-btn" data-ck="${i}">${esc(s.btn)}</button>` : ""}</div>`
+      : `<div class="check-row"><span class="check-ic num dim">${i + 1}</span><span class="check-tx muted">${esc(s.label)}</span></div>`).join("")}
+  </div>`;
+}
+function wireChecklist(root, steps) {
+  if (!root) return;
+  root.querySelectorAll("[data-ck]").forEach((btn) => {
+    btn.onclick = () => { const s = steps[Number(btn.getAttribute("data-ck"))]; if (s && s.act) s.act(); };
+  });
+}
+
+// The Home snapshot strip (spec §4.1): 2–3 real numbers once
+// they exist; before that, the slot carries the fills-in line,
+// never a row of zeros.
+function snapshotHtml(cells, fillLine, tab) {
+  if (!cells || !cells.length) return `<button type="button" class="snap-strip fill" onclick="return go('dashboard','${tab}')"><span class="snap-fill">${esc(fillLine)}</span><span class="ask-chev">›</span></button>`;
+  return `<button type="button" class="snap-strip" style="--snap-n:${cells.length}" onclick="return go('dashboard','${tab}')">${cells.map((c) => `<span class="snap-cell"><span class="snap-num">${c.num}</span><span class="snap-lbl">${esc(c.label)}</span></span>`).join("")}</button>`;
+}
+
+// The Ask Sig row (spec §4.1): opens Sig's guided flows.
+function askSigRowHtml() {
+  return `<button type="button" class="ask-sig" onclick="return openAgentSheet()">${SIG_AVATAR_HTML}<span class="ask-tx"><strong>Ask Sig</strong><span class="muted small">Walkthroughs and straight answers.</span></span><span class="ask-chev">›</span></button>`;
+}
+
+// Deadline helpers shared by the queue and the Visits screens.
+function addBizDays(fromMs, n) {
+  const d = new Date(fromMs);
+  let added = 0;
+  while (added < n) { d.setDate(d.getDate() + 1); const day = d.getDay(); if (day !== 0 && day !== 6) added++; }
+  return d.getTime();
+}
+function dayName(iso) {
+  const d = new Date(iso || "");
+  return Number.isNaN(d.getTime()) ? "" : d.toLocaleDateString(undefined, { weekday: "long" });
+}
+function dueDayWords(iso) {
+  const d = new Date(iso || "");
+  if (Number.isNaN(d.getTime())) return "";
+  const start = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const days = Math.round((start(d) - start(new Date())) / 86400000);
+  if (days <= 0) return "today";
+  if (days === 1) return "tomorrow";
+  if (days <= 6) return "by " + dayName(iso);
+  return "by " + d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+// "Post due by Thursday; the week runs out Sunday" (spec §5.4).
+function postDueLine(b) {
+  if (!b.postDeadline) return "";
+  const hard = (b.compliance && b.compliance.deadline) || new Date(Date.parse(b.postDeadline) + 5 * 86400000).toISOString();
+  return `Post due by ${dayName(b.postDeadline)}; the week runs out ${dayName(hard)}.`;
+}
+
+// The standard post nudge (spec §5.4): one tap, standard
+// wording, no free text. It sends as a normal message, so the
+// conversation lives in the thread afterwards.
+async function sendNudge(bookingId, btn) {
+  const b = (state.nudgeBookings || {})[bookingId];
+  if (!b) return false;
+  if (btn) { btn.disabled = true; btn.textContent = "Sending"; }
+  const first = (b.creatorName || "").trim().split(" ")[0] || "there";
+  const biz = (state.user.business && state.user.business.businessName) || "We";
+  const body = `Hi ${first}, ${biz} here on SIGNL. Thanks for visiting${b.redeemedAt ? ` on ${fmtDay(b.redeemedAt)}` : ""}. Your post is due by ${fmtDay(b.postDeadline)}: 1 post + 1 story that shares it. Shout if you need anything.`;
+  try {
+    await api("POST", "/messages", { toUserId: b.creatorId, body });
+    if (btn) btn.textContent = "Nudge sent";
+  } catch (err) {
+    if (btn) { btn.disabled = false; btn.textContent = "Send a nudge"; }
+    alert(err.message);
+  }
+  return false;
+}
+
+// ---------- V3 More, Settings, Help, Momentum, Earnings ----------
+
+function renderMoreScreen() {
+  const el = document.getElementById("tab-body");
+  if (!el) return;
+  const rows = moreRowsFor();
+  el.innerHTML = `
+  ${wsHead("More", { sub: "The things you check, not the things you work.", subKey: "more" })}
+  <div class="more-list">
+    ${rows.map((r) => `<button type="button" class="more-row" onclick="return go('dashboard','${r.tab}')"><span class="more-ic">${bnIcon(r.icon)}</span><span class="more-tx"><span class="more-label">${esc(r.label)}</span><span class="more-sub">${esc(r.sub)}</span></span>${r.badge ? `<span class="tab-badge inline">${r.badge > 99 ? "99+" : r.badge}</span>` : ""}<span class="more-chev">›</span></button>`).join("")}
+  </div>
+  <button type="button" class="more-row logout" onclick="signOut()"><span class="more-ic">${bnIcon("signout")}</span><span class="more-tx"><span class="more-label">Log out</span></span></button>`;
+}
+
+function renderSettingsTab() {
+  const el = document.getElementById("tab-body");
+  if (!el) return;
+  const u = state.user;
+  if (u.role !== "business") {
+    el.innerHTML = `
+  ${wsHead("Settings", { sub: "Account and notifications.", subKey: "settings" })}
+  <div class="panel mt">
+    <h3>Notifications</h3>
+    <p class="small muted">SIGNL emails you when a business invites you, answers your application, or sends a license request. In-app badges count what is waiting on you. There are no notification switches yet; the emails are the record.</p>
+  </div>
+  <div class="panel mt">
+    <h3>Payout details</h3>
+    <p class="small muted">Paid bookings record your rate in the app: booked at your rate, you keep 97%. Payouts run outside the app for now, so there is nothing to set up here yet, and nothing in the app promises a payout date.</p>
+  </div>
+  ${accountHtml(u)}`;
+    return;
+  }
+  const rl = u.business.reviewLinks || {};
+  el.innerHTML = `
+  ${wsHead("Settings", { sub: "Account, staff PIN, and the settings behind your offers.", subKey: "settings" })}
+  <div class="panel mt tint" id="staff-settings">
+    <h3>Staff redemption</h3>
+    <p class="muted">Loading...</p>
+  </div>
+  <div class="panel mt">
+    <h3>Your public review pages</h3>
+    <p class="small muted">Optional. When a creator completes a visit with you, your review pages appear in their visit flow as a courtesy ("Their review pages"), one tap out. Nothing is ever required, and no points attach to reviews left there.</p>
+    <div class="form-2col">
+      <div class="field"><label>Google review link</label><input id="rl-google" type="url" value="${esc(rl.google || "")}" placeholder="https://g.page/r/..."></div>
+      <div class="field"><label>Yelp page link</label><input id="rl-yelp" type="url" value="${esc(rl.yelp || "")}" placeholder="https://www.yelp.com/biz/..."></div>
+      <div class="field"><label>TripAdvisor page link</label><input id="rl-tripadvisor" type="url" value="${esc(rl.tripadvisor || "")}" placeholder="https://www.tripadvisor.com/..."></div>
+      <div class="field"><label>Facebook page link</label><input id="rl-facebook" type="url" value="${esc(rl.facebook || "")}" placeholder="https://www.facebook.com/..."></div>
+    </div>
+    <button class="btn" onclick="saveMyReviewLinks()">Save review pages</button> <span id="rl-ok" class="saved"></span>
+    ${u.business.plan === "managed" ? `
+    <h3 class="mt">Monthly creator talent budget</h3>
+    <p class="small muted">Your coordinator spends this on paid creator bookings for you. It is a spending cap and an authorization, not a deposit: each booking escrows on its own, and SIGNL holds each payment until the post is live.</p>
+    <div class="field"><label>Budget per month ($)</label><input type="number" id="me-talent-budget" min="0" step="1" value="${esc(String(u.business.monthlyTalentBudget == null ? 500 : u.business.monthlyTalentBudget))}"></div>
+    <button class="btn" onclick="saveTalentBudget()">Save budget</button> <span id="tb-ok" class="saved"></span>` : ""}
+  </div>
+  <div class="panel mt tint">
+    <h3>Your referral program</h3>
+    <p class="small muted">Already run a referral program in your booking or register system? Keep it, and let SIGNL feed it. Save your tracked referral link once and it rides on every opportunity and booked visit: creators see it on their cards and carry it in their posts, so the bookings land in the dashboard you already use. SIGNL never touches referral money, and any rewards stay yours to run, under your program's terms.</p>
+    <div class="field"><label>Your tracked referral link</label><input id="rp-url" type="url" value="${esc(u.business.referralUrl || "")}" placeholder="https://your-booking-or-register-link"></div>
+    <div class="form-2col">
+      <div class="field"><label>Referral code (optional)</label><input id="rp-code" value="${esc(u.business.referralCode || "")}" placeholder="Your program's code, if it uses one"></div>
+      <div class="field"><label>What it earns, in one line (optional)</label><input id="rp-note" maxlength="200" value="${esc(u.business.referralNote || "")}" placeholder="For example: Followers get 15% off a first visit; you earn $10 per booking"></div>
+    </div>
+    ${(u.business.referralUrl || u.business.referralCode) ? `<p class="small"><strong>Active:</strong> creators will see this on your opportunities and on their booked visits.</p>` : ""}
+    <button class="btn" onclick="saveMyReferralProgram()">Save referral program</button> <span id="rp-ok" class="saved"></span>
+  </div>
+  <div class="panel mt">
+    <h3>Audience code discount</h3>
+    <p class="small muted">Every creator who visits you gets a personal audience code, and the code counts the customers their post sends you whether or not it carries a discount. A discount is entirely your choice: it is off unless you turn it on, and the percentage is yours to pick (5 to 50). Nothing is ever applied by default. New bookings carry the setting you save here; bookings already made keep the setting they were created with.</p>
+    <label class="tgl-row"><input type="checkbox" class="sw" id="me-discount-enabled" ${u.business.discountEnabled ? "checked" : ""}><span>Offer a discount when customers use a creator's code</span></label>
+    <div class="field" style="margin-top:8px"><label>Discount percent (%)</label><input type="number" id="me-discount-pct" min="5" max="50" step="1" value="${esc(String(u.business.discountPct == null ? ((state.boot.roasModel && state.boot.roasModel.suggestedDiscountPct) || 20) : u.business.discountPct))}"></div>
+    <p class="small muted">Most businesses that turn this on start at ${esc(String((state.boot.roasModel && state.boot.roasModel.suggestedDiscountPct) || 20))}%. With codes off, the creator's card shows the code as a counting code and promises their audience nothing.</p>
+    <button class="btn" onclick="saveMyDiscount()">Save code discount</button> <span id="disc-ok" class="saved"></span>
+    <h3 class="mt">Your average ticket</h3>
+    <p class="small muted">What one customer typically spends. Code-use estimates use this until you enter an actual tally on a visit.${u.business.averageTicket ? ` Your average ticket: $${fmtMoney(u.business.averageTicket)}.` : ""}</p>
+    <div class="field"><label>Average ticket ($)</label><input type="number" id="me-avg-ticket" min="0" step="0.01" placeholder="40" value="${u.business.averageTicket ? esc(String(u.business.averageTicket)) : ""}"></div>
+    <button class="btn" onclick="saveMyAverageTicket()">Save average ticket</button> <span id="ticket-ok" class="saved"></span>
+  </div>
+  <div class="panel mt">
+    <h3>Notifications</h3>
+    <p class="small muted">SIGNL emails you when a creator applies, a visit is booked, and a post lands. In-app badges count what is waiting on you. There are no notification switches yet; the emails are the record.</p>
+  </div>
+  ${accountHtml(u)}`;
+  loadStaffSettings();
+}
+
+function renderHelpTab() {
+  const el = document.getElementById("tab-body");
+  if (!el) return;
+  const u = state.user;
+  const biz = u.role === "business";
+  const qa = (q, a) => `<details class="help-qa"><summary>${esc(q)}</summary><p class="small">${a}</p></details>`;
+  el.innerHTML = `
+  ${wsHead("Help", { sub: "How SIGNL works, in plain words.", subKey: "help" })}
+  <div class="wcard">
+  ${biz ? `
+    ${qa("How does a visit work?", "You post an offer or invite a creator. When you select an applicant, or a creator accepts your invite, the visit is booked with a code. Your staff redeem the code at the register with the staff PIN. The creator posts within 48 hours to be on time; one week is the hard deadline.")}
+    ${qa("What do I owe the creator?", "Exactly what the offer says: the comped meal or service, up to the dollar cap. Paid bookings pay the creator's listed rate instead.")}
+    ${qa("Can I reuse a creator's post?", "A comped visit is native share only: reshare it with credit, nothing more. Paid bookings include one standard license: 90 days to repost and run ads. A comped post can be licensed at the creator's listed fee for 90 days; the creator approves each use and keeps 97%.")}
+    ${qa("How fast do I have to answer applicants?", "Every applicant gets an answer within 2 business days. That is the deal. Anyone you do not pick is released with a note, never silence.")}
+    ${qa("What if a creator does not show up?", esc(VISIT_GUARANTEE_LINE))}
+    ${qa("What does SIGNL cost?", "Founding plans: Self-Service is $199 a month for 5 creators, Growth is $349 for 10, Managed is $699 for 20. Founding businesses get $100 off the first month and keep the founding rate while the plan stays active. The minimum is 3 months, there is no per-location charge, and unused visits roll into the next month, then expire.")}
+  ` : `
+    ${qa("What do I owe after a visit?", "One post plus one story that shares the post. Post within 48 hours to be on time; the hard deadline is one week. Always disclose the comp, that is the law and the deal.")}
+    ${qa("How do comped visits and paid bookings differ?", "A comped visit covers the meal or service, on the business. A paid booking pays your listed rate, and you keep 97%. Joining is free and comped visits are always free; the only fee is 3% on paid bookings.")}
+    ${qa("What is local reach?", "The share of your audience that actually lives here, times your audience size. Businesses rank creators by local reach, not follower count.")}
+    ${qa("How does Momentum work?", "Points for doing the work well: +20 for an on-time post, +10 when a business approves you, +25 when you approve a license, +3 when someone joins from your invite link. Late posts and no-shows cost points.")}
+    ${qa("What is a license request?", "A business asks to repost your post and run it as an ad for 90 days, at your listed licensing fee. You approve each use and keep 97%. It lives under Earnings.")}
+    ${qa("When do I get paid?", "Paid bookings record your rate in the app: booked at your rate, you keep 97%. Payouts run outside the app for now, and nothing in the app promises a payout date.")}
+  `}
+  <p class="small muted" style="margin-top:14px">Still stuck? Email <a href="mailto:hello@joinsignl.com">hello@joinsignl.com</a> and a person answers.</p>
+  </div>`;
+}
+
+function renderMomentumTab() {
+  const el = document.getElementById("tab-body");
+  if (!el) return;
+  const u = state.user;
+  const m = u.momentum || { points: 0, checklist: [] };
+  const tier = (u.creator && u.creator.tierBand) || "";
+  const next = (m.checklist || []).find((i) => !i.done);
+  el.innerHTML = `
+  ${wsHead("Momentum", { sub: "Your points, your tier, and what earns more.", subKey: "momentum" })}
+  <div class="wcard mom-card">
+    <div class="kpi-label">Your Momentum</div>
+    <div class="kpi-num" style="font-size:3rem">${fmtNum(m.points || 0)}</div>
+    <div class="kpi-sub">${m.points ? `${tier ? `You are in the ${esc(tier)} tier. ` : ""}${next ? `Next: ${esc(next.label)} (+${next.points}).` : "Every way to earn is done. Keep the streak going."}` : "Your Momentum starts with your first visit. Post on time and it climbs."}</div>
+  </div>
+  ${momentumHtml(u)}
+  ${growRosterHtml(u)}`;
+}
+
+// Creator Earnings (spec §6.5): real totals only, license
+// requests decided on the row, booking history with states in
+// words. Record language only while payments run off-app.
+async function renderEarningsTab() {
+  const el = document.getElementById("tab-body");
+  if (!el) return;
+  el.innerHTML = `${wsHead("Earnings", { sub: "What your posts and visits have earned you.", subKey: "earnings" })}${skelHtml("Loading your earnings...", 2)}`;
+  try {
+    const [bkData, lrData] = await Promise.all([
+      api("GET", "/bookings"),
+      api("GET", "/license-requests").catch(() => ({ licenseRequests: [] })),
+    ]);
+    if (!document.getElementById("tab-body")) return;
+    const bookings = bkData.bookings || [];
+    const lrs = lrData.licenseRequests || [];
+    state.licenseRequests = lrs;
+    const money = homeMoney(bookings);
+    const pending = lrs.filter((l) => l.status === "pending");
+    const granted = lrs.filter((l) => l.status === "granted");
+    const decided = lrs.filter((l) => l.status !== "pending");
+    state.waitCounts = state.waitCounts || {};
+    state.waitCounts.crLicense = pending.length;
+    const licEarned = granted.reduce((s, l) => s + (Number(l.creatorNet) || 0), 0);
+    const total = Math.round(((money.released || 0) + licEarned) * 100) / 100;
+    const nowD = new Date();
+    const inMonth = (iso) => { const d = new Date(iso || ""); return !Number.isNaN(d.getTime()) && d.getFullYear() === nowD.getFullYear() && d.getMonth() === nowD.getMonth(); };
+    let monthEarned = 0;
+    for (const b of bookings) if (b.paidLane && b.paidLane.escrowState === "released" && b.post && inMonth(b.post.firstAt || b.post.submittedAt)) monthEarned += Number(b.paidLane.creatorNet) || 0;
+    for (const l of granted) if (inMonth(l.createdAt)) monthEarned += Number(l.creatorNet) || 0;
+    const paidBookings = bookings.filter((b) => b.paidLane);
+    const stateWord = (b) => b.paidLane.escrowState === "refunded" ? "Refunded" : b.post ? (b.paidLane.escrowState === "released" ? "Complete" : "Post live") : "Booked";
+    const licRow = (l, withActions) => `<div class="lib-row"><div class="lib-main"><div class="lib-title">${esc(l.businessName || "A business")} wants to license your post</div><div class="lib-meta">Your fee $${fmtPrice(l.fee)} · you keep $${fmtMoney(l.creatorNet)} · 90 days of repost and ad use${l.postUrl ? ` · <a href="${esc(l.postUrl)}" target="_blank" rel="noopener">View post</a>` : ""}${l.status !== "pending" ? ` · ${l.status === "granted" ? "Approved" : "Declined"}` : ""}</div></div>${withActions ? `<span class="req-acts"><button type="button" class="btn small-btn ws-primary" onclick="return respondLicenseEarn('${l.id}','approve')">Approve</button> <button type="button" class="btn small-btn ws-outline" onclick="return respondLicenseEarn('${l.id}','decline')">Decline</button></span>` : ""}</div>`;
+    el.innerHTML = `
+  ${wsHead("Earnings", { sub: "What your posts and visits have earned you.", subKey: "earnings" })}
+  ${total > 0 || paidBookings.length || granted.length ? `
+  <div class="kpi-grid c3">
+    ${kpiCard("Total earned", `$${fmtMoney(total)}`, { sub: "Paid bookings released, plus licenses you approved" })}
+    ${kpiCard("This month", `$${fmtMoney(monthEarned)}`, { sub: "Earned in " + nowD.toLocaleDateString(undefined, { month: "long" }) })}
+    ${kpiCard("On its way", `$${fmtMoney(money.held || 0)}`, { sub: "Booked at your rate, held until the post is live" })}
+  </div>` : `
+  <div class="empty-card"><div class="ec-t">Nothing earned yet</div><div class="ec-s">Nothing earned yet. Paid bookings you complete show up here. Comped visits build your Momentum instead.</div></div>`}
+  <p class="small muted" style="margin:14px 2px 0">Paid bookings pay your listed rate. You keep 97%.</p>
+  <h3 style="margin:22px 0 0">License requests</h3>
+  ${pending.length ? `<div class="wcard" style="padding-top:8px;padding-bottom:8px">${pending.map((l) => licRow(l, true)).join("")}</div>` : `<p class="small muted" style="margin:8px 2px 0">No license requests waiting. When a business wants to reuse one of your posts, it lands here at your listed fee.</p>`}
+  ${decided.length ? `<div class="wcard" style="padding-top:8px;padding-bottom:8px;margin-top:12px">${decided.map((l) => licRow(l, false)).join("")}</div>` : ""}
+  <h3 style="margin:22px 0 0">Paid bookings</h3>
+  ${paidBookings.length ? `<div class="wcard" style="padding-top:8px;padding-bottom:8px">${paidBookings.map((b) => `<div class="lib-row"><div class="lib-main"><div class="lib-title">${esc(b.title)}</div><div class="lib-meta">${esc(b.businessName || "")} · Booked at your rate of $${fmtPrice(b.paidLane.rate)}. You keep $${fmtMoney(b.paidLane.creatorNet)}.</div></div><span class="badge ${b.paidLane.escrowState === "released" ? "ok" : b.paidLane.escrowState === "refunded" ? "warn" : "info"}">${stateWord(b)}</span></div>`).join("")}</div>` : `<p class="small muted" style="margin:8px 2px 0">No paid bookings yet. Set your rate on your profile and businesses can book you paid.</p>`}`;
+    renderBottomNav();
+  } catch (err) {
+    el.innerHTML = `${wsHead("Earnings")}<div class="error-box">${esc(err.message)}</div>`;
+  }
+}
+
+async function respondLicenseEarn(id, decision) {
+  const rec = (state.licenseRequests || []).find((l) => l.id === id);
+  if (decision === "approve" && rec && !confirm(`Approve this license? ${rec.businessName || "The business"} can repost this post and run it as an ad for 90 days. You keep $${fmtMoney(rec.creatorNet)} (97% of your fee).`)) return false;
+  try { await api("POST", `/license-requests/${id}/respond`, { decision }); renderEarningsTab(); }
+  catch (err) { alert(err.message); }
+  return false;
+}
+
+// Creator analytics (amendment, 2026-10-27): "Your numbers"
+// is the creator's Results — local reach with its composition,
+// posts delivered and on-time %, the day 7/14/30 series,
+// Momentum trend, and a reviews summary. Same honesty rules
+// as business Results: real records only, fills-in states,
+// no zero grids.
+async function renderCreatorNumbers() {
+  const el = document.getElementById("tab-body");
+  if (!el) return;
+  const u = state.user;
+  el.innerHTML = `${wsHead("Your numbers")}${skelHtml("Loading your numbers...", 2)}`;
+  try {
+    const [bkData, fData] = await Promise.all([
+      api("GET", "/bookings").catch(() => ({ bookings: [] })),
+      api("GET", "/me/founding").catch(() => ({ card: {} })),
+    ]);
+    if (!document.getElementById("tab-body")) return;
+    const bookings = bkData.bookings || [];
+    const card = fData.card || {};
+    const p = card.profile || {};
+    const tr = card.trackRecord || {};
+    const totalAud = totalAudienceOf(card);
+    const pctSet = !(p.localAudiencePct === null || p.localAudiencePct === undefined);
+    const localReach = pctSet ? Math.round((totalAud * Number(p.localAudiencePct)) / 100) : null;
+    const stack = stackList(card);
+    const delivered = bookings.filter((b) => b.post);
+    const m = u.momentum || { points: 0, ledger: [] };
+    const head = wsHead("Your numbers", { sub: "Your creator program in numbers, all from your real records.", subKey: "cr-numbers" });
+    const reachCard = `<div class="wcard">
+      <div class="kpi-label">Your local reach</div>
+      <div class="kpi-num" style="font-size:3.3rem">${localReach === null ? "Not set" : fmtNum(localReach)}</div>
+      <div class="kpi-sub">${pctSet ? `${p.localAudiencePct}% of your ${fmtNum(totalAud)} audience lives in ${esc(marketTalkNameClient(u.market))}. That share is what businesses see first.` : "Set your local % on your profile and this becomes the number businesses rank you by."}</div>
+      ${stack.length ? `<div class="stack-list">${stack.map((s) => `<div class="ui-row"><span class="k">${esc(s.label)}</span><span class="v">${fmtNum(s.count)}${pctSet ? ` · ${fmtNum(Math.round((s.count * Number(p.localAudiencePct)) / 100))} local` : ""}</span></div>`).join("")}</div>` : ""}
+    </div>`;
+    if (!bookings.length && !delivered.length && !(m.points > 0)) {
+      el.innerHTML = `${head}
+      ${reachCard}
+      <div class="empty-card"><div class="ec-t">Your numbers</div><div class="ec-s">This fills in once your visits and posts land. When businesses book you and your posts go live, you will see your posts, your on-time record, and your Momentum here.</div></div>`;
+      return;
+    }
+    const seriesRows = delivered.filter((b) => b.post && (b.post.snapshots || []).length).map((b) => {
+      const snaps = [...b.post.snapshots].sort((x, y) => String(x.at) < String(y.at) ? -1 : 1);
+      const base = Date.parse(b.post.firstAt || snaps[0].at);
+      const atDay = (dd) => { let v = null; for (const s of snaps) { if (Date.parse(s.at) <= base + dd * 24 * 3600 * 1000) v = s.views; } return v === null || v === undefined ? "&mdash;" : fmtNum(v); };
+      return `<tr><td>${esc(b.title)}</td><td>${atDay(7)}</td><td>${atDay(14)}</td><td>${atDay(30)}</td><td>${fmtNum(b.post.views || 0)}</td></tr>`;
+    }).join("");
+    const ledger = (m.ledger || []).slice().sort((a, b) => String(a.at || "") < String(b.at || "") ? -1 : 1);
+    let trendHtml = "";
+    if (ledger.length) {
+      const days = [];
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      for (let i = 29; i >= 0; i--) {
+        const dayStart = today.getTime() - i * 86400000;
+        const cum = ledger.filter((e) => (Date.parse(e.at || "") || 0) < dayStart + 86400000).reduce((s, e) => s + (Number(e.points) || 0), 0);
+        days.push({ date: new Date(dayStart).toISOString(), points: Math.max(cum, 0) });
+      }
+      if (days.some((dd) => dd.points > 0)) trendHtml = `<div class="chart-card"><h3>Momentum trend</h3><p class="wc-sub">Your points, day by day, last 30 days.</p>${lineChartSvg(days, [{ k: "points", color: "#006AFC" }])}</div>`;
+    }
+    const reviewRows = bookings.filter((b) => b.creatorReview).map((b) => `<div class="lib-row"><div class="lib-main"><div class="lib-title">${starsHtml(b.creatorReview.stars)} ${esc(String(b.creatorReview.stars))} — ${esc(b.title || "Visit")}</div><div class="lib-meta">${esc(b.businessName || "")}${b.creatorReview.createdAt ? ` · ${fmtDay(b.creatorReview.createdAt)}` : ""}${b.creatorReview.comment ? `<br>${esc(b.creatorReview.comment)}` : ""}</div></div></div>`).join("");
+    el.innerHTML = `${head}
+    ${reachCard}
+    <div class="kpi-grid c3">
+      ${kpiCard("Posts delivered", fmtNum(tr.postsDelivered || delivered.length), { sub: "Posts live from your visits" })}
+      ${kpiCard("On time", tr.onTimePct === null || tr.onTimePct === undefined ? "New" : tr.onTimePct + "%", { sub: "Inside the 48 hour standard" })}
+      ${kpiCard("Momentum", fmtNum(m.points || 0), { sub: "Points from on-time posts, invites and approvals" })}
+    </div>
+    ${trendHtml}
+    ${seriesRows ? `<div class="wcard"><h3>Post performance, day 7 / 14 / 30</h3><table class="series-table"><tr><th>Post</th><th>Day 7</th><th>Day 14</th><th>Day 30</th><th>Latest views</th></tr>${seriesRows}</table><p class="ana-note">Views at each mark after the post, from the numbers on record. A dash means that mark has not been reported yet.</p></div>` : `<div class="wcard"><h3>Post performance</h3><p class="wc-sub" style="margin:4px 0 0">Your posts appear here once their first numbers are in, tracked at day 7, 14 and 30. We do not chart zeroes.</p></div>`}
+    <div class="wcard"><h3>Reviews</h3>
+      ${card.ratingCount >= 1 && card.ratingAvg !== null && card.ratingAvg !== undefined ? `<p style="margin:4px 0 10px">${starsHtml(card.ratingAvg)} <strong>${esc(String(card.ratingAvg))}</strong> from ${card.ratingCount} business${card.ratingCount === 1 ? "" : "es"}.</p>${reviewRows}` : `<p class="wc-sub" style="margin:4px 0 0">No reviews yet. Reviews come from completed visits.</p>`}
+    </div>`;
+  } catch (err) {
+    el.innerHTML = `${wsHead("Your numbers")}<div class="error-box">${esc(err.message)}</div>`;
+  }
+}
+
+// The creator Offers gate card (spec §6.2 / §8): the deck is
+// replaced by this until the completion gate is finished.
+function gateCardHtml(u) {
+  const pc = u.profileCompletion;
+  const missing = pc ? pc.items.filter((i) => i.required && !i.done) : [];
+  return `<div class="empty-card gate-card"><div class="ec-t">Finish your profile to see offers near you.</div>
+  ${missing.length ? `<div class="ec-s">Still needed:</div><ul class="gate-list">${missing.map((i) => `<li>${esc(i.label)}${i.detail ? ` <span class="muted">(${esc(i.detail)})</span>` : ""}</li>`).join("")}</ul>` : `<div class="ec-s">A few essentials are still missing on your profile.</div>`}
+  <p class="center" style="margin-top:12px"><button class="btn ws-primary" onclick="return go('dashboard','Profile')">Finish profile</button></p></div>`;
 }
 
 // ---------- Overhaul V2 workspace scaffold (Grin grammar) ----------
@@ -1453,7 +2023,19 @@ function goalsCardHtml() {
 // gray subtitle line + optional action block under it.
 function wsHead(title, opts) {
   const o = opts || {};
-  return `<div class="ws-head"><h1 class="ws-title">${esc(title)}${o.chip || ""}</h1>${o.sub ? `<p class="ws-sub">${o.sub}</p>` : ""}${o.action ? `<div class="ws-action">${o.action}</div>` : ""}</div>`;
+  // V3 (spec §2.1): the purpose line shows on first visits and
+  // is collapsible thereafter — pass subKey and the line carries
+  // a dismiss control; once dismissed it stays dismissed on
+  // this device.
+  const sub = o.sub && !(o.subKey && subSeen(o.subKey)) ? o.sub : "";
+  return `<div class="ws-head"><h1 class="ws-title">${esc(title)}${o.chip || ""}</h1>${sub ? `<p class="ws-sub">${sub}${o.subKey ? ` <button type="button" class="sub-x" onclick="return dismissSub('${o.subKey}', this)" aria-label="Got it">×</button>` : ""}</p>` : ""}${o.action ? `<div class="ws-action">${o.action}</div>` : ""}</div>`;
+}
+function subSeen(key) { try { return localStorage.getItem("signl-sub-" + key) === "1"; } catch (e) { return false; } }
+function dismissSub(key, btn) {
+  try { localStorage.setItem("signl-sub-" + key, "1"); } catch (e) { /* private mode */ }
+  const p = btn && btn.closest ? btn.closest(".ws-sub") : null;
+  if (p) p.remove();
+  return false;
 }
 function livePill(text) { return `<span class="live-pill"><i></i>${esc(text || "Live")}</span>`; }
 
@@ -1572,22 +2154,61 @@ function wireReady(root) {
   });
 }
 function openAgentSheet() {
-  const q = state.agentQueue;
-  if (!q) return false;
+  // Ask Sig (V3, spec §4.1): guided flows that walk you to the
+  // exact screen, plus straight answers from SIGNL's locked
+  // facts. Sig never completes a consequential action here;
+  // every flow lands you on the screen where you tap it.
   closeAgentSheet();
+  const u = state.user;
+  if (!u) return false;
+  const biz = u.role === "business";
+  const live = biz ? businessAccessState(u) === "active" : !!(u.founding && u.founding.marketLive);
+  const flow = (label, act) => ({ label, act });
+  const flows = biz ? [
+    flow("Post an offer", () => go("dashboard", "My Offers")),
+    flow("Review applicants", () => { state.offersSeg = "applicants"; go("dashboard", "My Offers"); }),
+    flow("Find creators", () => go("dashboard", "Discover")),
+    flow("Redeem a visit", () => go("dashboard", "Counter")),
+    flow("Set the staff PIN", () => go("dashboard", "Settings")),
+    flow("See your results", () => go("dashboard", "Analytics")),
+  ] : live ? [
+    flow("See offers near you", () => go("dashboard", "Offers")),
+    flow("Answer an invite", () => { state.crOffersSeg = "invited"; go("dashboard", "Offers"); }),
+    flow("Add a post link", () => { state.visitsSeg = "needs"; go("dashboard", "My Visits"); }),
+    flow("See my earnings", () => go("dashboard", "Earnings")),
+    flow("Check my Momentum", () => go("dashboard", "Momentum")),
+    flow("Finish my profile", () => go("dashboard", "Profile")),
+  ] : [
+    flow("Finish my profile", () => go("dashboard", "Profile")),
+    flow("Check my Momentum", () => go("dashboard", "Momentum")),
+  ];
+  const qa = (q, a) => `<details class="help-qa"><summary>${esc(q)}</summary><p class="small">${a}</p></details>`;
   const el = document.createElement("div");
   el.id = "agent-sheet";
   el.className = "sheet-overlay";
   el.innerHTML = `
-  <div class="sheet" role="dialog" aria-label="Ready for you">
-    <div class="flex-between"><span class="sig-top" style="gap:10px"><span class="sig-ava" style="width:36px;height:36px;background:#EAF2FE">${SPARK_SVG}</span><strong>Sig · ${esc(q.title)}</strong></span><button class="linklike" onclick="closeAgentSheet()">Close</button></div>
-    <p class="small muted" style="margin:8px 0 4px">Your queue, from your real records. Work it here, or open the home it belongs to.</p>
-    ${q.rows && q.rows.length ? q.rows.map((r, i) => `
-    <div class="sheet-row"><span>${esc(r.text)}${r.sub ? `<br><span class="small muted">${esc(r.sub)}</span>` : ""}</span>${r.btn ? `<button type="button" class="btn small-btn" data-rq="${i}">${esc(r.btn)}</button>` : ""}</div>`).join("") : `<p class="small muted" style="margin:10px 0 2px">${esc(q.empty || "All caught up. Nothing is waiting on you.")}</p>`}
+  <div class="sheet" role="dialog" aria-label="Ask Sig">
+    <div class="flex-between"><span class="sig-top" style="gap:10px">${SIG_AVATAR_HTML}<strong>Ask Sig</strong></span><button class="linklike" onclick="closeAgentSheet()">Close</button></div>
+    <p class="small muted" style="margin:8px 0 4px">Tell Sig what you want to do. Sig walks you to the exact screen.</p>
+    ${flows.map((f, i) => `<button type="button" class="sheet-row ask-flow" data-flow="${i}"><span>${esc(f.label)}</span><span class="ask-chev">›</span></button>`).join("")}
+    <h4 style="margin:16px 0 4px">Straight answers</h4>
+    ${biz ? `
+    ${qa("What does SIGNL cost?", "Founding plans: Self-Service is $199 a month for 5 creators, Growth is $349 for 10, Managed is $699 for 20. Founding businesses get $100 off the first month and keep the founding rate while the plan stays active. The minimum is 3 months, there is no per-location charge, and unused visits roll into the next month, then expire.")}
+    ${qa("Can I reuse a creator's post?", "A comped visit is native share only: reshare it with credit, nothing more. Paid bookings include one standard license: 90 days to repost and run ads. A comped post can be licensed at the creator's listed fee for 90 days; the creator approves each use and keeps 97%.")}
+    ${qa("How fast do I have to answer applicants?", "Every applicant gets an answer within 2 business days. That is the deal.")}
+    ${qa("What if a creator does not show up?", esc(VISIT_GUARANTEE_LINE))}
+    ` : `
+    ${qa("What do I owe after a visit?", "One post plus one story that shares the post. Post within 48 hours to be on time; the hard deadline is one week.")}
+    ${qa("How does Momentum work?", "Points for doing the work well: +20 for an on-time post, +10 when a business approves you, +25 when you approve a license, +3 when someone joins from your invite link.")}
+    ${qa("What is local reach?", "The share of your audience that actually lives here, times your audience size. Businesses rank creators by local reach, not follower count.")}
+    ${qa("When do I get paid?", "Paid bookings record your rate in the app: booked at your rate, you keep 97%. Payouts run outside the app for now, and nothing in the app promises a payout date.")}
+    `}
   </div>`;
   el.addEventListener("click", (e) => { if (e.target === el) closeAgentSheet(); });
   document.body.appendChild(el);
-  wireReady(el);
+  el.querySelectorAll("[data-flow]").forEach((btn) => {
+    btn.onclick = () => { const f = flows[Number(btn.getAttribute("data-flow"))]; closeAgentSheet(); if (f && f.act) f.act(); };
+  });
   return false;
 }
 function closeAgentSheet() {
@@ -3520,8 +4141,8 @@ function creatorCard(c, viewer, opts) {
 
 // ---------- creator ----------
 
-const LIVE_CREATOR_TABS = ["Dashboard", "Profile", "Offers", "My Visits", "Messages"];
-const FOUNDING_TABS = ["Dashboard", "Profile", "Status"];
+const LIVE_CREATOR_TABS = ["Dashboard", "Profile", "Offers", "My Visits", "Messages", "Earnings", "More", "Momentum", "Numbers", "Settings", "Help"];
+const FOUNDING_TABS = ["Dashboard", "Profile", "Status", "More", "Momentum", "Numbers", "Messages", "Settings", "Help"];
 
 function renderCreatorDash() {
   const u = state.user;
@@ -3533,7 +4154,7 @@ function renderCreatorDash() {
   if (tab !== "Dashboard") stopHomeCountdown();
   let body = "";
   if (tab === "Dashboard") body = `<div id="creator-home" class="vx-stagger">${skelHtml("Loading your dashboard...", 2)}</div>`;
-  if (tab === "Profile") body = wsHead("Profile", { chip: livePill("Live"), sub: "Your public creator profile. This is what businesses see when they find you." }) + creatorProfileHtml(u) + momentumHtml(u) + growRosterHtml(u);
+  if (tab === "Profile") body = wsHead("My profile", { chip: livePill("Live"), sub: "Your public creator profile. This is what businesses see when they find you.", subKey: "cr-profile" }) + creatorProfileHtml(u) + momentumHtml(u) + growRosterHtml(u);
   app.innerHTML = `<div class="wrap">
     ${standingBannerHtml(u)}
     <div id="tab-body">${body}</div></div>`;
@@ -3542,6 +4163,12 @@ function renderCreatorDash() {
   if (tab === "Offers") loadCreatorOffers();
   if (tab === "My Visits") loadMyVisits("creator");
   if (tab === "Messages") loadThreads();
+  if (tab === "Earnings") renderEarningsTab();
+  if (tab === "More") renderMoreScreen();
+  if (tab === "Momentum") renderMomentumTab();
+  if (tab === "Numbers") renderCreatorNumbers();
+  if (tab === "Settings") renderSettingsTab();
+  if (tab === "Help") renderHelpTab();
 }
 
 // The approved creator's home before their market activates. It is
@@ -3561,7 +4188,7 @@ function renderFoundingHome() {
   let body = "";
   if (tab === "Dashboard") body = `<div id="founding-dash" class="vx-stagger">${skelHtml("Loading your dashboard...", 2)}</div>`;
   if (tab === "Status") body = `<h3 style="margin-top:0">Your founding status</h3><div id="founding-body">${skelHtml("Loading your founding profile...", 1)}</div>`;
-  if (tab === "Profile") body = wsHead("Profile", { sub: "Your public creator profile. Complete profiles get booked first." }) + creatorProfileHtml(u);
+  if (tab === "Profile") body = wsHead("My profile", { sub: "Your public creator profile. Complete profiles get booked first.", subKey: "cr-profile" }) + creatorProfileHtml(u);
   if (tab === "Status") body = wsHead("Status", { sub: "Where your founding enrollment stands." }) + body;
   app.innerHTML = `<div class="wrap">
     ${standingBannerHtml(u)}
@@ -3569,6 +4196,12 @@ function renderFoundingHome() {
   if (tab === "Dashboard") loadFoundingDashboard();
   if (tab === "Status") loadFoundingStatus();
   if (tab === "Profile") { setTimeout(loadMyScore, 10); setTimeout(() => { setupUniversityAutocomplete("p-university", "p-university-results"); dragInit(); }, 10); }
+  if (tab === "More") renderMoreScreen();
+  if (tab === "Momentum") renderMomentumTab();
+  if (tab === "Numbers") renderCreatorNumbers();
+  if (tab === "Messages") loadThreads();
+  if (tab === "Settings") renderSettingsTab();
+  if (tab === "Help") renderHelpTab();
 }
 
 // The founding Dashboard tab: greeting, a compact founding status
@@ -3594,25 +4227,26 @@ async function loadFoundingDashboard() {
     const pctSet = !(p.localAudiencePct === null || p.localAudiencePct === undefined);
     const localReach = pctSet ? Math.round((totalAud * Number(p.localAudiencePct)) / 100) : null;
     const momPts = (u.momentum || {}).points || 0;
-    // Ready-for-you queue (overhaul Stage 1): the real waiting
-    // items on this home, computed from the records on screen.
-    const queue = { count: 0, title: "", rows: [], empty: "All caught up. Nothing is waiting on you." };
+    // Sig's queue (V3): the real waiting items on this home,
+    // computed from the records on screen.
+    const queueItems = [];
     if (u.profileCompletion && !u.profileCompletion.complete) {
-      queue.rows.push({ text: "Finish your profile", sub: "Businesses can only find finished profiles.", btn: "Open profile", act: () => go("dashboard", "Profile") });
-      queue.count++;
+      queueItems.push({ text: "Finish your profile. Businesses can only find finished profiles.", btn: "Open profile", act: () => go("dashboard", "Profile") });
     }
-    if (u.status !== "approved") {
-      queue.rows.push({ text: "Your application is in review", sub: "Decisions land within 2 business days.", btn: "View status", act: () => go("dashboard", "Status") });
-      queue.count++;
+    if (!queueItems.length) {
+      queueItems.push({ text: isUnl ? `You are on the founding roster. ${f.city} opens when sign-ups pile up; we email you the moment it opens.` : `You are on the founding roster. ${marketTalkNameClient(f.market)} opens in the next ${f.launchWindow}; we email you the moment it opens.`, btn: "View status", act: () => go("dashboard", "Status") });
     }
-    if (!queue.rows.length) {
-      queue.rows.push({ text: "You are on the founding roster", sub: isUnl ? `${f.city} opens when sign-ups pile up. We email you the moment it opens.` : `${marketTalkNameClient(f.market)} opens in the next ${f.launchWindow}. We email you the moment it opens.`, btn: "View status", act: () => go("dashboard", "Status") });
-    }
-    queue.title = queue.count ? `${queue.count} thing${queue.count === 1 ? "" : "s"} ready for you` : "You are founding-ready";
-    setAgentFab(queue);
+    const fSteps = [
+      { label: "Claim your profile", sub: "You are on the roster.", done: u.status === "approved" },
+      { label: "Add the four basics", sub: "Home city, audience size, categories, local %.", done: !u.profileCompletion || u.profileCompletion.complete, btn: "Finish profile", act: () => go("dashboard", "Profile") },
+      { label: "Set your paid rate", sub: "Comped visits work without it.", done: !!(u.creator && u.creator.paidRate), optional: true, btn: "Set my rate", act: () => go("dashboard", "Profile") },
+      { label: "Apply to your first offer", sub: "Offers open when your market launches.", done: false },
+    ];
     el.innerHTML = `
-    ${wsHead("Home", { sub: `${esc(greet)}, ${esc(firstName)}. ${isUnl ? `${esc(f.city)} opens when sign-ups pile up. We email you the moment it opens.` : `${esc(marketTalkNameClient(f.market))} opens in the next ${esc(f.launchWindow)}. We email you the moment it opens.`}` })}
-    ${profileCompletionHtml(u)}
+    ${wsHead("Home", { sub: "Start here. Sig shows you what needs you, in order.", subKey: "cr-home" })}
+    <div class="home-greet"><div class="hg-hi">Hi, ${esc(firstName)}</div><div class="hg-line">${esc(greet)}. ${isUnl ? `${esc(f.city)} opens when sign-ups pile up. We email you the moment it opens.` : `${esc(marketTalkNameClient(f.market))} opens in the next ${esc(f.launchWindow)}. We email you the moment it opens.`}</div></div>
+    ${sigQueueHtml(queueItems, { links: [] })}
+    ${checklistHtml(fSteps)}
     <div class="wcard">
       <div class="kpi-label">Your local reach</div>
       <div class="kpi-num" style="font-size:3.3rem">${localReach === null ? "Not set" : fmtNum(localReach)}</div>
@@ -3624,7 +4258,6 @@ async function loadFoundingDashboard() {
       ${kpiCard("Momentum", fmtNum(momPts), { sub: "Points from invites, approvals and on-time posts" })}
       ${kpiCard("Local Impact Score", card.localImpactScore !== null && card.localImpactScore !== undefined ? String(card.localImpactScore) : "New", { sub: "Out of 100, from your profile and record" })}
     </div>
-    ${readyCardHtml(queue)}
     <div class="wcard">
       <div class="flex-between">
         <div>
@@ -3645,8 +4278,12 @@ async function loadFoundingDashboard() {
     <div class="wcard"><h3>Your funnel</h3><p class="wc-sub" style="margin:4px 0 0">Invites appear here once ${isUnl ? esc(f.city) : esc(marketTalkNameClient(f.market))} opens: invites received, visits booked, visits done, posts live. Nothing to count yet, and we do not chart zeroes.</p></div>
     ${momentumHtml(u)}
     ${growRosterHtml(u)}
-    ${goalsCardHtml()}`;
-    wireReady(el);
+    <h3 style="margin:22px 0 0">Your founding status</h3>
+    <div id="founding-body">${skelHtml("Loading your founding profile...", 1)}</div>
+    ${askSigRowHtml()}`;
+    wireSigQueue(el, queueItems, []);
+    wireChecklist(el, fSteps);
+    loadFoundingStatus();
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
@@ -4370,11 +5007,11 @@ function crFeedAct(i) {
   return false;
 }
 function crFeedHtml() {
-  const kinds = [["all", "All"], ["invites", "Invites"], ["visits", "Visits"], ["posts", "Posts"], ["momentum", "Momentum"]];
+  const kinds = [["all", "All"], ["applications", "Applications"], ["invites", "Invites"], ["visits", "Visits"], ["posts", "Posts"], ["licenses", "Licenses"]];
   const chips = `<div class="feed-chips">${kinds.map(([k, label]) => `<button type="button" class="fchip ${crFeedKind === k ? "on" : ""}" onclick="return crFeedSet('${k}')">${label}</button>`).join("")}</div>`;
   const all = state.crFeed || [];
   const shown = all.map((f, i) => ({ f, i })).filter(({ f }) => crFeedKind === "all" || f.kind === crFeedKind);
-  if (!shown.length) return `${chips}<div class="feed-list"><div class="feed-empty"><div class="ec-t">Nothing here yet</div><div class="ec-s">Invites, visits, posts and Momentum land here as they happen.</div></div></div>`;
+  if (!shown.length) return `${chips}<div class="feed-list"><div class="feed-empty"><div class="ec-t">Nothing here yet</div><div class="ec-s">Invites, visits, posts and licenses land here as they happen.</div></div></div>`;
   return chips + feedListHtml(shown.map(({ f, i }) => ({
     at: f.at,
     title: esc(f.title),
@@ -4391,110 +5028,147 @@ async function loadCreatorHome() {
   const u = state.user;
   try {
     await ensureDeckState();
-    const [bkData, offData, fData, appData] = await Promise.all([
+    const [bkData, offData, fData, appData, openData, lrData] = await Promise.all([
       api("GET", "/bookings"),
       api("GET", "/offers"),
       api("GET", "/me/founding"),
       api("GET", "/applications").catch(() => ({ applications: [] })),
+      api("GET", "/open-offers").catch(() => ({ offers: [] })),
+      api("GET", "/license-requests").catch(() => ({ licenseRequests: [] })),
     ]);
     if (!document.getElementById("creator-home")) return; // navigated away mid-load
     const bookings = bkData.bookings || [];
     const offers = offData.offers || [];
     const applications = appData.applications || [];
+    const openOffers = openData.offers || [];
+    const lrs = lrData.licenseRequests || [];
+    state.licenseRequests = lrs;
     const card = fData.card || {};
-    const tr = card.trackRecord || {};
     const money = homeMoney(bookings);
     const m = u.momentum || { points: 0 };
     const hour = new Date().getHours();
     const greet = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
     const firstName = (u.name || "").trim().split(" ")[0] || u.name || "";
-    // KPI strip (overhaul Stage 1): local reach leads, Momentum
-    // appears exactly once, visits and earnings follow.
     const cprof = card.profile || {};
     const totalAud = totalAudienceOf(card);
     const pctSet = !(cprof.localAudiencePct === null || cprof.localAudiencePct === undefined);
     const localReach = pctSet ? Math.round((totalAud * Number(cprof.localAudiencePct)) / 100) : null;
-    const visitsDone = bookings.filter((b) => b.redeemedAt || b.post).length;
-    const delivered = bookings.filter((b) => b.post);
-    // Ready-for-you queue from the records on this screen.
-    const queue = { count: 0, title: "", rows: [], empty: "All caught up. Nothing is waiting on you." };
-    const activeVisit = homeActiveBooking(bookings);
-    if (activeVisit) { queue.rows.push({ text: `Visit in motion: ${activeVisit.title}`, sub: "The 48 hour post standard is the one that earns Momentum.", btn: "Open visit", act: () => go("dashboard", "My Visits") }); queue.count++; }
-    const perfDue = bookings.filter((b) => b.post && perfUpdateDue(b.post));
-    if (perfDue.length) { queue.rows.push({ text: `${perfDue.length} post${perfDue.length === 1 ? "" : "s"} ready for a numbers update`, sub: "Day 7, 14 and 30 numbers keep your posts working for you.", btn: "Update", act: () => go("dashboard", "My Visits") }); queue.count++; }
-    if (offers.length) { queue.rows.push({ text: `${offers.length} offer${offers.length === 1 ? "" : "s"} open to you`, sub: "Comped visits and paid bookings at your listed rate.", btn: "See offers", act: () => go("dashboard", "Offers") }); queue.count++; }
-    queue.title = queue.count ? `${queue.count} thing${queue.count === 1 ? "" : "s"} ready for you` : "All caught up";
-    setAgentFab(queue);
-    // Activity feed: invites, visit milestones, posts and
-    // Momentum events from real records, newest first.
-    const feed = [];
-    for (const o of offers) feed.push({ kind: "invites", icon: "offers", at: o.createdAt, title: `Offer: ${o.title || "Untitled offer"}`, meta: `${o.businessName || ""}${o.kind === "paid" ? " · Paid booking" : " · Comped visit"}`, btn: "View", act: () => go("dashboard", "Offers") });
-    for (const a of applications) if (a.status === "pending") feed.push({ kind: "invites", icon: "offers", at: a.createdAt, title: `Application sent: ${a.offerTitle || a.title || "an offer"}`, meta: "Waiting on the business", btn: null });
-    for (const b of bookings) {
-      if (b.post) feed.push({ kind: "posts", icon: "visits", at: b.post.firstAt || b.post.updatedAt, title: `Post live: ${b.title}`, meta: `${b.businessName || ""} · ${b.state === "posted_on_time" ? "on time" : b.state === "posted_late" ? "late" : "delivered"}`, btn: "Open", act: () => go("dashboard", "My Visits") });
-      else if (b.redeemedAt) feed.push({ kind: "visits", icon: "visits", at: b.redeemedAt, title: `Visit done: ${b.title}`, meta: `${b.businessName || ""} · post clock running`, btn: "Open", act: () => go("dashboard", "My Visits") });
-      else feed.push({ kind: "visits", icon: "visits", at: b.createdAt, title: `Visit booked: ${b.title}`, meta: `${b.businessName || ""} · code issued`, btn: "Open", act: () => go("dashboard", "My Visits") });
+    const pc = u.profileCompletion;
+    const gateDone = !pc || pc.complete;
+    const bookedOfferIds = new Set(bookings.filter((b) => b.offerId && b.status !== "cancelled" && b.status !== "expired").map((b) => b.offerId));
+    const invites = offers.filter((o) => o.lane !== "open" && !bookedOfferIds.has(o.id));
+    const pendingLic = lrs.filter((l) => l.status === "pending");
+    state.waitCounts = state.waitCounts || {};
+    state.waitCounts.crInvites = invites.length;
+    state.waitCounts.crLicense = pendingLic.length;
+
+    // Sig's queue (spec §4.2/§4.4): deadlines first, then
+    // people waiting, then new opportunities, then setup gaps.
+    const now = Date.now();
+    const items = [];
+    const add = (cls, at, text, btn, act) => items.push({ cls, at: at || now, text, btn, act });
+    const postDue = bookings.filter((b) => b.redeemedAt && !b.post && b.postDeadline && (Date.parse(b.postDeadline) - now) <= 48 * 3600000 && b.status !== "cancelled")
+      .sort((a, b) => (Date.parse(a.postDeadline) || 0) - (Date.parse(b.postDeadline) || 0));
+    if (postDue.length) {
+      const b = postDue[0];
+      const overdue = Date.parse(b.postDeadline) < now;
+      add(1, Date.parse(b.postDeadline) || now, `Your post for ${b.businessName} is ${overdue ? "overdue" : "due " + dueDayWords(b.postDeadline)}.`, "Add post link", () => { state.visitsSeg = "needs"; state.visitFocus = b.id; go("dashboard", "My Visits"); });
     }
-    for (const e of (m.ledger || [])) feed.push({ kind: "momentum", icon: "status", at: e.at, title: `${e.points > 0 ? "+" : ""}${e.points} Momentum`, meta: e.label || "", btn: null });
-    feed.sort((x, y) => (String(y.at || "") < String(x.at || "") ? -1 : 1));
-    const feedTop = feed.slice(0, 14);
-    const feedCard = (f, i) => `<div class="feed-card" data-fk="${f.kind}"><div class="feed-dot${f.kind === "momentum" ? " acc" : ""}">${bnIcon(f.icon)}</div><div class="feed-main"><div class="feed-title">${esc(f.title)}</div><div class="feed-meta">${esc(f.meta)}${f.at ? ` &middot; ${fmtDate(f.at)}` : ""}</div></div>${f.btn ? `<span class="feed-act"><button type="button" class="btn small-btn ghost" data-cf="${i}">${f.btn}</button></span>` : ""}</div>`;
-    // Analytics: funnel + per-post day 7/14/30 series from the
-    // post snapshots that already auto-flow.
-    const funnelStages = [
-      [offers.length + bookings.length, "Invited", "Offers open + invites taken"],
-      [bookings.length, "Accepted", "Visits booked"],
-      [visitsDone, "Visited", "Visits happened"],
-      [delivered.length, "Posted", "Posts live"],
+    const startOfDay = new Date(); startOfDay.setHours(0, 0, 0, 0);
+    const dayOffset = (iso) => { const t = Date.parse(iso || ""); if (Number.isNaN(t)) return null; const d0 = new Date(t); d0.setHours(0, 0, 0, 0); return Math.round((d0.getTime() - startOfDay.getTime()) / 86400000); };
+    const visitSoon = bookings.filter((b) => !b.redeemedAt && !b.post && b.status !== "cancelled" && b.status !== "expired")
+      .map((b) => ({ b, off: dayOffset(b.visitDate || b.redeemBy) }))
+      .filter((x) => x.off !== null && x.off >= 0 && x.off <= 1)
+      .sort((a, b) => a.off - b.off);
+    if (visitSoon.length) {
+      const { b, off } = visitSoon[0];
+      add(1, now, `Visit ${off === 0 ? "today" : "tomorrow"}: ${b.title} at ${b.businessName}.`, "View visit", () => { state.visitsSeg = "upcoming"; state.visitFocus = b.id; go("dashboard", "My Visits"); });
+    }
+    state.waitCounts.crVisits = postDue.length + visitSoon.length;
+    if (pendingLic.length) add(2, now, `${pendingLic.length} license request${pendingLic.length === 1 ? " is" : "s are"} waiting on you.`, "Review", () => go("dashboard", "Earnings"));
+    if (invites.length) {
+      add(2, now, invites.length === 1 ? `${invites[0].businessName} invited you: "${invites[0].title}".` : `${invites.length} businesses invited you.`, "See invites", () => { state.crOffersSeg = "invited"; go("dashboard", "Offers"); });
+    }
+    const answered = applications.filter((a) => a.status !== "applied" && a.decidedAt && now - Date.parse(a.decidedAt) < 3 * 86400000)
+      .sort((a, b) => (Date.parse(b.decidedAt) || 0) - (Date.parse(a.decidedAt) || 0));
+    if (answered.length) {
+      const a = answered[0];
+      add(2, Date.parse(a.decidedAt) || now, `Your application to "${a.offerTitle || a.title || "an offer"}" was answered.`, "View", () => { state.crOffersSeg = "applied"; go("dashboard", "Offers"); });
+    }
+    let seenMark = 0;
+    try { seenMark = Number(localStorage.getItem("signl-offers-seen") || 0); } catch (e) { /* private mode */ }
+    const freshOffers = openOffers.filter((o) => (Date.parse(o.createdAt) || 0) > seenMark);
+    if (openOffers.length && (freshOffers.length || !seenMark)) {
+      const n = freshOffers.length || openOffers.length;
+      add(3, now, seenMark ? `${n} new offer${n === 1 ? "" : "s"} near you.` : `${openOffers.length} offer${openOffers.length === 1 ? "" : "s"} open near you in ${u.city || marketTalkNameClient(u.market)}.`, "See offers", () => { state.crOffersSeg = "foryou"; go("dashboard", "Offers"); });
+    }
+    if ((money.held || 0) > 0) add(3, now, `A paid booking is earning: $${fmtMoney(money.held)} held until the post is live.`, "See earnings", () => go("dashboard", "Earnings"));
+    if (pc && !pc.complete) add(4, now, `Your profile is missing essentials (${pc.requiredDone} of ${pc.requiredTotal} done). Businesses cannot find you yet.`, "Finish profile", () => go("dashboard", "Profile"));
+    const paidRate = u.creator && u.creator.paidRate;
+    if (!paidRate) add(4, now, "Set your paid rate so businesses can book you paid.", "Set my rate", () => go("dashboard", "Profile"));
+    items.sort((a, b) => a.cls - b.cls || a.at - b.at);
+    const queue = items.slice(0, 7);
+
+    // The launch checklist (spec §4.6): the paid-rate step is
+    // optional; the card retires when the other three are done.
+    const steps = [
+      { label: "Claim your profile", sub: "You are on the roster.", done: true },
+      { label: "Add the four basics", sub: "Home city, audience size, categories, local %.", done: gateDone, btn: "Finish profile", act: () => go("dashboard", "Profile") },
+      { label: "Set your paid rate", sub: "Comped visits work without it.", done: !!paidRate, optional: true, btn: "Set my rate", act: () => go("dashboard", "Profile") },
+      { label: "Apply to your first offer", sub: "Flip through offers near you.", done: applications.length > 0 || bookings.length > 0, btn: "See offers", act: () => { state.crOffersSeg = "foryou"; go("dashboard", "Offers"); } },
     ];
-    const seriesRows = delivered.filter((b) => b.post && (b.post.snapshots || []).length).map((b) => {
-      const snaps = [...b.post.snapshots].sort((x, y) => String(x.at) < String(y.at) ? -1 : 1);
-      const base = Date.parse(b.post.firstAt || snaps[0].at);
-      const atDay = (d) => { let v = null; for (const s of snaps) { if (Date.parse(s.at) <= base + d * 24 * 3600 * 1000) v = s.views; } return v === null || v === undefined ? "&mdash;" : fmtNum(v); };
-      return `<tr><td>${esc(b.title)}</td><td>${atDay(7)}</td><td>${atDay(14)}</td><td>${atDay(30)}</td><td>${fmtNum(b.post.views || 0)}</td></tr>`;
-    }).join("");
-    state.crFeed = feedTop;
-    state.crFeedActs = feedTop.map((f) => f.act || null);
+    const greetLine = !gateDone ? "Let's finish your profile so businesses can find you." : (queue.length ? queue[0].text : "You're all caught up.");
+    const snapCells = gateDone ? [
+      { num: localReach === null ? "Not set" : fmtNum(localReach), label: "Your local reach" },
+      { num: fmtNum(m.points || 0), label: "Momentum" },
+      ...(money.released > 0 ? [{ num: `$${fmtMoney(money.released)}`, label: "Earned" }] : []),
+    ] : null;
+    const tier = cprof.tierBand || (u.creator && u.creator.tierBand) || "";
+    const nextEarn = (m.checklist || []).find((i) => !i.done);
+    const momentumCard = `<div class="wcard mom-card">
+      <div class="flex-between"><div><div class="kpi-label">Momentum</div><div class="kpi-num" style="font-size:2.6rem">${fmtNum(m.points || 0)}</div></div>${tier ? `<span class="badge tier" style="font-size:1rem;padding:6px 14px">${esc(tier)}</span>` : ""}</div>
+      <div class="kpi-sub">${m.points ? (nextEarn ? `Next: ${esc(nextEarn.label)} (+${nextEarn.points}).` : "Every way to earn is done. Keep the streak going.") : "Your Momentum starts with your first visit. Post on time and it climbs."}</div>
+      <p style="margin:10px 0 0"><button class="btn small-btn ws-outline" onclick="return go('dashboard','Momentum')">See Momentum</button></p>
+    </div>`;
+    // Activity (§6.1): invites, applications, visits, posts,
+    // licenses, Momentum gains, and reviews — from real records.
+    const feed = [];
+    for (const o of invites) feed.push({ kind: "invites", icon: "deck", at: o.createdAt, title: `Invite: ${o.title || "Untitled offer"}`, meta: `${o.businessName || ""}${o.kind === "paid" ? " · Paid booking" : " · Comped visit"}`, btn: "View", act: () => { state.crOffersSeg = "invited"; go("dashboard", "Offers"); } });
+    for (const a of applications) feed.push({ kind: "applications", icon: "notice", at: a.createdAt, title: `Application sent: ${(a.offer && a.offer.title) || a.offerTitle || a.title || "an offer"}`, meta: a.status === "applied" ? "Waiting on the business" : a.status === "selected" ? "You're in" : "Not this time", btn: null });
+    for (const b of bookings) {
+      if (b.post) feed.push({ kind: "posts", icon: "visits", at: b.post.firstAt || b.post.updatedAt, title: `Post live: ${b.title}`, meta: `${b.businessName || ""} · ${b.state === "posted_on_time" ? "on time" : b.state === "posted_late" ? "late" : "delivered"}`, btn: "Open", act: () => { state.visitsSeg = "done"; state.visitFocus = b.id; go("dashboard", "My Visits"); } });
+      else if (b.redeemedAt) feed.push({ kind: "visits", icon: "visits", at: b.redeemedAt, title: `Visit done: ${b.title}`, meta: `${b.businessName || ""} · post clock running`, btn: "Open", act: () => { state.visitsSeg = "needs"; state.visitFocus = b.id; go("dashboard", "My Visits"); } });
+      else feed.push({ kind: "visits", icon: "visits", at: b.createdAt, title: `Visit booked: ${b.title}`, meta: `${b.businessName || ""} · code issued`, btn: "Open", act: () => { state.visitsSeg = "upcoming"; state.visitFocus = b.id; go("dashboard", "My Visits"); } });
+      if (b.creatorReview) feed.push({ kind: "visits", icon: "star", at: b.creatorReview.createdAt || (b.post && b.post.firstAt), title: `${b.businessName} rated you ${b.creatorReview.stars} stars`, meta: b.creatorReview.comment || "", btn: null });
+    }
+    for (const l of lrs) feed.push({ kind: "licenses", icon: "play", at: l.createdAt, title: l.status === "pending" ? `License request from ${l.businessName}` : `License ${l.status}: ${l.businessName}`, meta: `Your fee $${fmtPrice(l.fee)} · 90 days`, btn: l.status === "pending" ? "Review" : null, act: () => go("dashboard", "Earnings") });
+    for (const e of (m.ledger || [])) feed.push({ kind: "momentum", icon: "bolt", at: e.at, title: `${e.points > 0 ? "+" : ""}${e.points} Momentum`, meta: e.label || "", btn: null });
+    feed.sort((x, y) => (String(y.at || "") < String(x.at || "") ? -1 : 1));
+    state.crFeed = feed.slice(0, 14);
+    state.crFeedActs = state.crFeed.map((f) => f.act || null);
+    crFeedKind = "all";
+    const caughtLinks = [
+      { label: "See offers near you", act: () => { state.crOffersSeg = "foryou"; go("dashboard", "Offers"); } },
+      { label: "Check your Momentum", act: () => go("dashboard", "Momentum") },
+    ];
     el.innerHTML = `
-    ${wsHead("Home", { sub: `${esc(greet)}, ${esc(firstName)}. Your local reach is the number businesses rank on.` })}
-    ${profileCompletionHtml(u)}
-    <div class="wcard">
-      <div class="kpi-label">Your local reach</div>
-      <div class="kpi-num" style="font-size:3.3rem">${localReach === null ? "Not set" : fmtNum(localReach)}</div>
-      <div class="kpi-sub">${pctSet ? `${cprof.localAudiencePct}% of your ${fmtNum(totalAud)} audience lives in ${esc(marketTalkNameClient(u.market))}. That share is what businesses see first.` : "Set your local % on your profile and this becomes the number businesses rank you by."}</div>
-    </div>
-    <div class="kpi-grid c3">
-      ${kpiCard("Momentum", fmtNum(m.points), { sub: "Points from on-time posts, invites and approvals" })}
-      ${kpiCard("Visits done", fmtNum(visitsDone), { sub: "Visits completed on SIGNL" })}
-      ${kpiCard("Earned", `$${fmtMoney(money.released)}`, { sub: money.released ? "Paid cash released · you keep 97%" : "Your first paid visit puts money here · you keep 97%" })}
-    </div>
-    ${card.ratingCount >= 1 && card.ratingAvg !== null && card.ratingAvg !== undefined
-      ? `<p class="small">${starsHtml(card.ratingAvg)} <strong>Your rating: ${esc(String(card.ratingAvg))}</strong> from ${card.ratingCount} business${card.ratingCount === 1 ? "" : "es"}, shown next to your Momentum points.</p>`
-      : `<p class="small muted">Your rating appears after your first rated visit.</p>`}
+    ${wsHead("Home", { sub: "Start here. Sig shows you what needs you, in order.", subKey: "cr-home" })}
+    <div class="home-greet"><div class="hg-hi">Hi, ${esc(firstName)}</div><div class="hg-line">${esc(greetLine)}</div></div>
     ${strikeStatusHtml(u)}
-    ${readyCardHtml(queue)}
-    <h3 style="margin:20px 0 0">Feed</h3>
+    ${sigQueueHtml(queue, { links: caughtLinks })}
+    ${checklistHtml(steps)}
+    ${gateDone ? snapshotHtml(snapCells, "", "Numbers") : ""}
+    ${momentumCard}
+    <h3 style="margin:20px 0 0">Activity</h3>
     <div id="cr-feed">${crFeedHtml()}</div>
-    ${homeActiveVisitHtml(activeVisit)}
-    ${perfDue.map((b) => perfUpdateFormHtml(b, "home")).join("")}
-    ${homeOpportunitiesHtml(offers, u, bookings, applications)}
-    ${homeComingUpHtml(bookings)}
-    <h3 style="margin:26px 0 0">Your numbers</h3>
-    ${homeLocalSignalHtml(card, bookings)}
-    <div class="wcard"><h3>Your funnel</h3>${funnel2Html(funnelStages.map(([n, l, cap]) => ({ label: l, n, cap })))}</div>
-    <div class="wcard"><h3>On time, every time</h3><p style="margin:4px 0 0"><strong>${tr.onTimePct === null || tr.onTimePct === undefined ? "New" : tr.onTimePct + "%"}</strong> of your posts landed inside the 48 hour standard (${tr.postsDelivered || 0} delivered). The standard is 48 hours; the hard deadline is one week.</p></div>
-    ${seriesRows ? `<div class="wcard"><h3>Post performance, day 7 / 14 / 30</h3><table class="series-table"><tr><th>Post</th><th>Day 7</th><th>Day 14</th><th>Day 30</th><th>Latest views</th></tr>${seriesRows}</table><p class="ana-note">Views at each mark after the post, from the numbers on record. A dash means that mark has not been reported yet.</p></div>` : `<div class="wcard"><h3>Post performance</h3><p class="wc-sub" style="margin:4px 0 0">Your posts appear here once their first numbers are in, tracked at day 7, 14 and 30. We do not chart zeroes.</p></div>`}
-    ${homePaidLaneHtml(u.creator)}
-    ${homeMoneyHtml(money)}
-    ${momentumHtml(u)}
-    ${goalsCardHtml()}`;
-    wireReady(el);
-    startHomeCountdown();
+    ${askSigRowHtml()}`;
+    wireSigQueue(el, queue, caughtLinks);
+    wireChecklist(el, steps);
+    renderBottomNav();
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
 }
-
 function creatorProfileHtml(u) {
   const c = u.creator || {};
   const cats = state.boot.creatorCategories.map((x) => `<label><input type="checkbox" name="p-cat" value="${esc(x)}" ${c.categories && c.categories.includes(x) ? "checked" : ""}> ${esc(x)}</label>`).join("");
@@ -4829,24 +5503,74 @@ async function doUpdateCreator(e) {
   return false;
 }
 
+function crOffersSetSeg(seg) {
+  state.crOffersSeg = seg;
+  loadCreatorOffers();
+  return false;
+}
 async function loadCreatorOffers() {
   const el = document.getElementById("tab-body");
+  if (!el) return;
+  const u = state.user;
+  // The completion gate replaces the deck until the four
+  // basics are done (spec §6.2): a creator businesses cannot
+  // find yet does not see offers.
+  if (u.profileCompletion && !u.profileCompletion.complete) {
+    el.innerHTML = `${wsHead("Offers", { sub: "Flip through offers near you. Apply to the ones you want.", subKey: "cr-offers" })}${gateCardHtml(u)}`;
+    return;
+  }
+  try { localStorage.setItem("signl-offers-seen", String(Date.now())); } catch (e) { /* private mode */ }
+  if (!state.crOffersSeg) state.crOffersSeg = "foryou";
+  const seg = state.crOffersSeg;
   el.innerHTML = `
-    ${wsHead("Offers", { sub: `Open offers in ${esc(marketTalkNameClient(state.user.market))}, plus the ones sent directly to you.` })}
-    <div id="open-board">${skelHtml("Loading open offers in " + marketTalkNameClient(state.user.market) + "...", 2)}</div>
-    <div id="my-apps"></div>
-    <h3 style="margin:24px 0 0">Sent directly to you</h3>
-    <div id="direct-offers">${skelHtml("Loading your direct offers...", 1)}</div>
-    <div id="creator-notes" class="mt"></div>`;
-  loadOpenBoard();
-  loadMyApplications();
-  loadNotificationsInto("creator-notes");
+    ${wsHead("Offers", { sub: "Flip through offers near you. Apply to the ones you want.", subKey: "cr-offers" })}
+    <div id="cr-offers-segs"></div>
+    <div id="cr-seg-body">${skelHtml("Loading offers...", 2)}</div>`;
+  let directCount = 0, appliedCount = 0;
+  try {
+    const [od, bd, ad] = await Promise.all([
+      api("GET", "/offers").catch(() => ({ offers: [] })),
+      api("GET", "/bookings").catch(() => ({ bookings: [] })),
+      api("GET", "/applications").catch(() => ({ applications: [] })),
+    ]);
+    const bookedIds = new Set((bd.bookings || []).filter((b) => b.offerId && b.status !== "cancelled" && b.status !== "expired").map((b) => b.offerId));
+    directCount = (od.offers || []).filter((o) => o.lane !== "open" && !bookedIds.has(o.id)).length;
+    appliedCount = (ad.applications || []).filter((a) => a.status === "applied").length;
+    state.waitCounts = state.waitCounts || {};
+    state.waitCounts.crInvites = directCount;
+  } catch (e) { /* counts are an enhancement */ }
+  const segHost = document.getElementById("cr-offers-segs");
+  if (!segHost) return;
+  segHost.innerHTML = wsTabs([
+    { label: "For you", on: seg === "foryou", onclick: "return crOffersSetSeg('foryou')" },
+    { label: "Invited", count: directCount || null, on: seg === "invited", onclick: "return crOffersSetSeg('invited')" },
+    { label: "Applied", count: appliedCount || null, on: seg === "applied", onclick: "return crOffersSetSeg('applied')" },
+  ]);
+  renderBottomNav();
+  const body = document.getElementById("cr-seg-body");
+  if (!body) return;
+  if (seg === "foryou") {
+    body.innerHTML = `<div id="open-board"></div>`;
+    loadOpenBoard();
+  } else if (seg === "applied") {
+    body.innerHTML = `<div id="my-apps"></div><div id="creator-notes" class="mt"></div>`;
+    loadMyApplications();
+    loadNotificationsInto("creator-notes");
+  } else {
+    body.innerHTML = `<div id="direct-offers">${skelHtml("Loading your direct offers...", 1)}</div>`;
+    loadDirectOffers();
+  }
+}
+
+async function loadDirectOffers() {
   const direct = document.getElementById("direct-offers");
+  if (!direct) return;
   try {
     const [data, bkData] = await Promise.all([
       api("GET", "/offers"),
       api("GET", "/bookings").catch(() => ({ bookings: [] })),
     ]);
+    if (!document.getElementById("direct-offers")) return;
     // An offer the creator already booked out of this list reads
     // Booked (code in My Visits), never Accept/Decline again: the
     // server refuses a second accept, and declining a booked offer
@@ -4855,7 +5579,7 @@ async function loadCreatorOffers() {
     const bookedOfferIds = new Set((bkData.bookings || []).filter((b) => b.offerId && b.status !== "cancelled" && b.status !== "expired").map((b) => b.offerId));
     const mine = (data.offers || []).filter((o) => o.lane !== "open");
     if (!mine.length) {
-      direct.innerHTML = `<div class="empty-state"><span class="es-badge"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z"/></svg></span><h3>No direct offers yet</h3><p>Offers sent to you land here.</p></div>`;
+      direct.innerHTML = `<div class="empty-state"><span class="es-badge"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z"/></svg></span><h3>No invites yet</h3><p>When a business sends an offer straight to you, it lands here.</p></div>`;
       return;
     }
     direct.innerHTML = `<div class="vx-stagger">` + mine.map((o) => { const rights = o.visitRights || rightsForVisit(o.kind); const booked = bookedOfferIds.has(o.id); return `
@@ -4884,7 +5608,7 @@ async function loadCreatorOffers() {
               <button class="btn book" type="submit">Accept</button>
             </form>
             ${o.creatorId ? `<button class="btn small-btn danger" onclick="declineOffer('${o.id}')">Decline</button>` : ""}`}
-            <button class="btn small-btn ghost" onclick="openThread('${o.businessId}')">Message</button>
+            <button class="btn small-btn ghost" data-ctx="${esc(o.title)}" onclick="return openThreadCtx('${o.businessId}', this.dataset.ctx)">Message</button>
           </div>
         </div>
       </div>`; }).join("") + `</div>`;
@@ -4892,7 +5616,6 @@ async function loadCreatorOffers() {
     direct.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
 }
-
 // ---------- open offers board + my applications (offer flow v2) ----------
 // Applying is ONE TAP. There is no pitch box anywhere: the
 // application is the creator's profile card (local %, Impact,
@@ -4917,7 +5640,7 @@ async function loadOpenBoard() {
     const data = await api("GET", "/open-offers");
     if (!document.getElementById("open-board")) return;
     if (!data.offers.length) {
-      el.innerHTML = `<div class="empty-state"><span class="es-badge"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z"/></svg></span><h3>Open offers in ${esc(marketTalkNameClient(state.user.market))}</h3><p>No open offers right now. New offers land here first.</p></div>`;
+      el.innerHTML = `<div class="empty-state"><span class="es-badge"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z"/></svg></span><h3>Open offers in ${esc(marketTalkNameClient(state.user.market))}</h3><p>No new offers near you right now. New offers from businesses in ${esc(state.user.city || marketTalkNameClient(state.user.market))} show up here first.</p></div>`;
       return;
     }
     state.openOffers = data.offers;
@@ -4970,7 +5693,7 @@ function offerFeedCardHtml(o, opts) {
               : (preview
                 ? `<button class="btn book" onclick="pvApplyToOffer('${o.id}')">Apply</button>`
                 : `<button class="btn book" onclick="applyToOffer('${o.id}')">Apply</button>`)}
-            ${preview ? "" : `<button class="btn small-btn ghost" onclick="openThread('${o.businessId}')">Message</button>`}
+            ${preview ? "" : `<button class="btn small-btn ghost" data-ctx="${esc(o.title)}" onclick="return openThreadCtx('${o.businessId}', this.dataset.ctx)">Message</button>`}
           </div>
         </div>
         ${opts && opts.pileKey && !o.myApplication ? `<div class="offer-pile-row"><button type="button" class="btn small-btn ghost" onclick="cardLater('${opts.pileKey}','${o.id}')">Later</button><button type="button" class="btn small-btn ghost" onclick="cardHide('${opts.pileKey}','${o.id}')">Not for me</button></div>` : ""}
@@ -5454,6 +6177,37 @@ async function declineOffer(offerId) {
   } catch (err) { alert(err.message); }
 }
 
+function visitsSetSeg(seg) {
+  state.visitsSeg = seg;
+  loadMyVisits(state.user && state.user.role === "business" ? "business" : "creator");
+  return false;
+}
+function segEmptyLine(seg, role) {
+  if (role === "business") {
+    return {
+      needs: "Nothing needs a time. When a visit lands without a date or window, it shows up here.",
+      upcoming: "Nothing coming up. Booked visits with a date or window land here.",
+      waiting: "Nothing waiting on a post. Redeemed visits land here until the post arrives.",
+      done: "Nothing finished yet. Delivered visits land here.",
+    }[seg] || "";
+  }
+  return {
+    upcoming: "Nothing coming up. Booked visits land here.",
+    needs: "Nothing needs your post. Redeemed visits land here until you add the post link.",
+    done: "Nothing finished yet. Delivered visits land here.",
+  }[seg] || "";
+}
+function visitsRowWrap(b, role, seg) {
+  let top = "";
+  if (role === "business" && seg === "waiting") {
+    top = `<div class="visit-duebar"><span>${esc(postDueLine(b))}</span><button type="button" class="btn small-btn ws-outline" onclick="return sendNudge('${b.id}', this)">Send a nudge</button></div>`;
+  }
+  if (role === "creator" && seg === "needs") {
+    top = `<div class="visit-duebar"><span>Deliverable: 1 post + 1 story that shares it. ${esc(postDueLine(b))}</span></div>`;
+  }
+  return `<div class="visit-wrap">${top}${visitCard(b, role)}</div>`;
+}
+
 async function loadMyVisits(role) {
   const el = document.getElementById("tab-body");
   try {
@@ -5462,22 +6216,54 @@ async function loadMyVisits(role) {
     // card can show its license state (fail-soft: cards simply
     // show no license state if this read ever fails).
     try { const lr = await api("GET", "/license-requests"); state.licenseRequests = lr.licenseRequests || []; } catch (e) { state.licenseRequests = state.licenseRequests || []; }
+    if (role === "creator") {
+      state.waitCounts = state.waitCounts || {};
+      state.waitCounts.crLicense = (state.licenseRequests || []).filter((l) => l.status === "pending").length;
+    }
     const flash = state.postFlash
       ? `<div class="card mb"><div class="success-hero">${successCheckHtml()}<h3>Post submitted</h3><p>Your post is in and the visit is marked delivered. Your numbers build from here: update them as the post grows and they feed your track record.</p></div></div>`
       : "";
     state.postFlash = false;
-    const visitsHead = wsHead("Visits", { sub: role === "creator" ? "Your booked visits, codes and post deadlines." : "Every booking from your offers, with its post state." });
-    if (!data.bookings.length) {
-      el.innerHTML = flash + visitsHead + `<div class="empty-card"><div class="ec-t">No visits yet</div><div class="ec-s">${role === "creator" ? "Accept an offer and your visit, code, and post deadline will live here." : "Bookings from your offers will live here."}</div></div><p class="center">${role === "creator" ? `<button class="btn ws-primary" onclick="return go('dashboard','Offers')">Browse open offers</button>` : `<button class="btn ws-primary" onclick="return go('dashboard','My Offers')">Create an offer</button>`}</p>`;
-      return;
+    const bookings = data.bookings || [];
+    state.nudgeBookings = state.nudgeBookings || {};
+    for (const b of bookings) state.nudgeBookings[b.id] = b;
+    const segs = role === "business"
+      ? [["needs", "Needs a time"], ["upcoming", "Upcoming"], ["waiting", "Waiting on post"], ["done", "Done"]]
+      : [["upcoming", "Upcoming"], ["needs", "Needs your post"], ["done", "Done"]];
+    const counts = {};
+    for (const b of bookings) { const s = visitSegOf(b, role); counts[s] = (counts[s] || 0) + 1; }
+    let seg = state.visitsSeg;
+    if (!seg || !segs.some(([id]) => id === seg)) seg = segs[0][0];
+    state.visitsSeg = seg;
+    const rows = bookings.filter((b) => visitSegOf(b, role) === seg);
+    const head = wsHead("Visits", { sub: role === "creator" ? "Your visits, and what each one needs from you." : "Who is coming in, and what each visit still needs.", subKey: role === "creator" ? "cr-visits" : "biz-visits" });
+    let bizTop = "";
+    if (role === "business") {
+      let pinSet = null;
+      try { const sd = await api("GET", "/me/staff"); pinSet = !!sd.staffPinSet; } catch (e) { /* the line simply stays off */ }
+      bizTop = `<div class="counter-cta"><div><strong>At the register?</strong><p class="muted small" style="margin:4px 0 0">Open the counter to redeem a creator's code.</p></div><button type="button" class="btn ws-primary" onclick="return go('dashboard','Counter')">${bnIcon("keypad")} Counter</button></div>
+      ${pinSet === false ? `<div class="notice" style="margin-top:12px"><strong>Staff PIN is not set.</strong> Your team redeems visits with it, never your login. <button class="btn small-btn" onclick="return go('dashboard','Settings')">Set staff PIN</button></div>` : ""}`;
     }
-    el.innerHTML = flash + visitsHead + `<div class="vx-stagger">${data.bookings.map((b) => visitCard(b, role)).join("")}</div>`;
+    const segTabs = wsTabs(segs.map(([id, label]) => ({ label, count: counts[id] || null, on: seg === id, onclick: `return visitsSetSeg('${id}')` })));
+    let bodyHtml;
+    if (!bookings.length) {
+      bodyHtml = `<div class="empty-card"><div class="ec-t">No visits yet</div><div class="ec-s">${role === "creator" ? "When a business picks you, or you accept an invite, it lands here." : "When you select a creator or one accepts your invite, the visit lands here."}</div></div><p class="center">${role === "creator" ? `<button class="btn ws-primary" onclick="return go('dashboard','Offers')">See offers</button>` : `<button class="btn ws-primary" onclick="return go('dashboard','My Offers')">Post an offer</button>`}</p>`;
+    } else if (!rows.length) {
+      bodyHtml = `<div class="empty-card"><div class="ec-t">Nothing here</div><div class="ec-s">${esc(segEmptyLine(seg, role))}</div></div>`;
+    } else {
+      bodyHtml = `<div class="vx-stagger">${rows.map((b) => visitsRowWrap(b, role, seg)).join("")}</div>`;
+    }
+    el.innerHTML = flash + head + bizTop + segTabs + bodyHtml;
+    if (state.visitFocus) {
+      const target = document.getElementById("visit-" + state.visitFocus);
+      state.visitFocus = null;
+      if (target) setTimeout(() => target.scrollIntoView({ behavior: "smooth", block: "center" }), 60);
+    }
     if (role === "creator") startHomeCountdown();
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
 }
-
 function postStateBadge(stateName, b) {
   switch (stateName) {
     case "submitted_on_time": return `<span class="badge ok">Post submitted on time</span>`;
@@ -5525,7 +6311,7 @@ async function submitHonorReport(e, bookingId) {
 function visitCard(b, role) {
   const post = b.post;
   let html = `
-  <div class="card visit-card mb">
+  <div class="card visit-card mb" id="visit-${b.id}">
     <div class="flex-between"><strong>${esc(b.title)}</strong>${complianceBadge(b)}</div>
     <p class="small muted">${role === "creator" ? esc(b.businessName) : "@" + esc(b.creatorHandle) + " (" + esc(b.creatorName) + ")"} &middot; ${esc(marketDisplayName(b.market))} &middot; Comp: ${esc(b.whatComped)} (cap $${fmtMoney(b.dollarCap)})${b.kind === "paid" || b.paidLane ? "" : ` &middot; ${coversLine(b)}`} &middot; Visit: ${esc(b.visitDate || b.visitWindow || "Flexible")}</p>`;
   if (role === "creator" && b.redeemedAt && !post && b.postDeadline) {
@@ -5932,20 +6718,20 @@ async function requestLicense(postId, fee) {
   const total = Math.round(fee * 1.03 * 100) / 100;
   const net = Math.round(fee * 0.97 * 100) / 100;
   if (!confirm(`License this post for ads? The creator's fee is $${fmtPrice(fee)}: you pay $${fmtMoney(total)} (fee + 3%), the creator keeps $${fmtMoney(net)} (97%), held until they decide. If they approve, you can repost the post and run it as an ad for 90 days from their yes. Nothing is licensed unless they approve.`)) return;
-  try { await api("POST", `/posts/${postId}/license-request`, {}); loadMyVisits("business"); }
+  try { await api("POST", `/posts/${postId}/license-request`, {}); if (state.tab === "Content") renderContentTab(); else loadMyVisits("business"); }
   catch (err) { alert(err.message); }
 }
 
 async function respondLicense(id, decision) {
   const rec = (state.licenseRequests || []).find((l) => l.id === id);
   if (decision === "approve" && rec && !confirm(`Approve this license? ${rec.businessName || "The business"} can repost this post and run it as an ad for 90 days. You keep $${fmtMoney(rec.creatorNet)} (97% of your fee).`)) return;
-  try { await api("POST", `/license-requests/${id}/respond`, { decision }); loadMyVisits("creator"); }
+  try { await api("POST", `/license-requests/${id}/respond`, { decision }); if (state.tab === "Earnings") renderEarningsTab(); else loadMyVisits("creator"); }
   catch (err) { alert(err.message); }
 }
 
 // ---------- business ----------
 
-const BUSINESS_TABS = ["Home", "Requests", "Discover", "Favorites", "My Offers", "Counter", "Visits & Posts", "Content", "Analytics", "Plan", "Messages", "Profile"];
+const BUSINESS_TABS = ["Home", "Requests", "Discover", "Favorites", "My Offers", "Counter", "Visits & Posts", "Content", "Analytics", "Plan", "Messages", "Profile", "More", "Settings", "Help"];
 
 function renderBusinessDash() {
   const u = state.user;
@@ -5953,10 +6739,11 @@ function renderBusinessDash() {
   if (!BUSINESS_TABS.includes(tab)) tab = "Home";
   // A "Send offer" from Discover lands on the composer, as before.
   if (state.offerTarget) tab = "My Offers";
+  // V3: Requests is the Applicants segment of Offers (§5.2).
+  if (tab === "Requests") { state.offersSeg = "applicants"; tab = "My Offers"; }
   state.tab = tab;
   app.innerHTML = `<div class="wrap"><div id="tab-body"></div></div>`;
   if (tab === "Home") loadBusinessHome();
-  if (tab === "Requests") renderRequestsTab();
   if (tab === "Discover") loadDiscover();
   if (tab === "Favorites") loadFavorites();
   if (tab === "My Offers") loadMyOffers();
@@ -5967,6 +6754,9 @@ function renderBusinessDash() {
   if (tab === "Plan") renderPlanTab();
   if (tab === "Messages") loadThreads();
   if (tab === "Profile") renderBizProfileTab();
+  if (tab === "More") renderMoreScreen();
+  if (tab === "Settings") renderSettingsTab();
+  if (tab === "Help") renderHelpTab();
 }
 
 // Shared in-app notifications block (the no-ghosting surface):
@@ -6091,26 +6881,26 @@ function bizDashNextRowsHtml(h, tickWhen) {
 // to SIGNL's real notification kinds + content records). Events
 // only exist when a real record does; a chip with no records
 // shows its own explained empty state.
-const BIZ_FEED_KINDS = [["all", "All"], ["applications", "Applications"], ["messages", "Messages"], ["posts", "Posts"], ["visits", "Visits"], ["payments", "Payments"], ["licenses", "Licenses"]];
+const BIZ_FEED_KINDS = [["all", "All"], ["applications", "Applications"], ["invites", "Invites"], ["messages", "Messages"], ["posts", "Posts"], ["visits", "Visits"], ["licenses", "Licenses"]];
 function bizFeedKindOf(noteKind) {
   const k = String(noteKind || "");
   if (/^application_|^backfill_|creator_declined|offer_declined/.test(k)) return "applications";
   if (k === "message_received") return "messages";
   if (/^performance_/.test(k)) return "posts";
   if (/license/.test(k)) return "licenses";
-  if (/paid|payment|payout/.test(k)) return "payments";
-  if (/visit|redeem|clock|deadline/.test(k)) return "visits";
+  if (/^offer_received$|^invite/.test(k)) return "invites";
+  if (/visit|redeem|clock|deadline|booking|tally|window|overdue|complete|paid|payment|payout/.test(k)) return "visits";
   return "updates";
 }
 function bizFeedEvents(h, notes) {
   const evs = [];
-  const actFor = (kind) => kind === "applications" ? { label: "Review", onclick: "return go('dashboard','Requests')" }
+  const actFor = (kind) => kind === "applications" ? { label: "Review", onclick: "return goApplicants()" }
     : kind === "messages" ? { label: "Open", onclick: "return go('dashboard','Messages')" }
     : kind === "posts" || kind === "licenses" ? { label: "Review", onclick: "return go('dashboard','Content')" }
     : { label: "Review", onclick: "return go('dashboard','Visits & Posts')" };
   for (const n of notes || []) {
     const kind = bizFeedKindOf(n.kind);
-    const kindLabel = { applications: "Application", messages: "Message", posts: "Post", visits: "Visit", payments: "Payment", licenses: "License", updates: "Update" }[kind];
+    const kindLabel = { applications: "Application", invites: "Invite", messages: "Message", posts: "Post", visits: "Visit", licenses: "License", updates: "Update" }[kind];
     evs.push({ kind, at: n.createdAt, title: esc(n.text), meta: kindLabel, icon: kind === "messages" ? "chat" : kind === "applications" ? "inbox" : "visits", act: actFor(kind) });
   }
   for (const r of h.contentLibrary || []) {
@@ -6134,72 +6924,148 @@ function bizFeedHtml(events) {
   const shown = bizFeedKind === "all" ? events : events.filter((e) => e.kind === bizFeedKind);
   if (!shown.length) {
     const label = (BIZ_FEED_KINDS.find(([k]) => k === bizFeedKind) || [])[1] || "Activity";
-    return `${chips}<div class="feed-list"><div class="feed-empty"><div class="ec-t">Nothing here yet</div><div class="ec-s">${bizFeedKind === "all" ? "Applications, posts, visits and licenses land here as they happen." : `No ${label.toLowerCase()} events yet. They land here the moment they happen.`}</div></div></div>`;
+    return `${chips}<div class="feed-list"><div class="feed-empty"><div class="ec-t">Nothing here yet</div><div class="ec-s">${bizFeedKind === "all" ? "When a creator applies, visits, or posts, it shows up here." : `No ${label.toLowerCase()} events yet. They land here the moment they happen.`}</div></div></div>`;
   }
   return chips + feedListHtml(shown);
 }
 
+// Visit segments (spec §5.4 / §6.3): work organized by what
+// the visit still needs, not by object type. Shared by the
+// Visits screens and Sig's queue so the two never disagree.
+function visitSegOf(b, role) {
+  if (b.post) return "done";
+  if (b.honorReportedAt || b.replacementRequestedAt) return "done";
+  if (b.redeemedAt) return role === "business" ? "waiting" : "needs";
+  if (b.status === "cancelled" || b.status === "expired") return "done";
+  if (role === "business" && !b.visitDate && !b.redeemBy) return "needs";
+  return "upcoming";
+}
+
 async function loadBusinessHome() {
   const el = document.getElementById("tab-body");
+  if (!el) return;
+  const u = state.user;
+  el.innerHTML = `${wsHead("Home", { sub: "Start here. Sig shows you what needs you, in order.", subKey: "biz-home" })}${skelHtml("Loading your home...", 3)}`;
   try {
     const d = await api("GET", "/me/business-home");
     const h = d.home;
-    const u = state.user;
-    const needsCount = (h.attention ? h.attention.length : 0) + (d.staffPinSet === false ? 1 : 0);
-    el.classList.add("vx-stagger");
-    // Ready-for-you queue (Sig): the attention list plus the unset
-    // staff PIN, each with its real next step. Unchanged data from
-    // Stage 1; only the card grammar is new.
-    const queue = { count: needsCount, title: needsCount ? `${needsCount} thing${needsCount === 1 ? "" : "s"} ready for you` : "All caught up", rows: [], empty: "All caught up. Every visit is on track." };
-    for (const a of (h.attention || []).slice(0, 3)) {
-      queue.rows.push({
-        text: a.label, sub: a.detail, btn: "Review",
-        pill: a.kind === "applications" ? "Review applications" : a.kind === "offer_nudge" ? "Fix the offer" : "Review visits",
-        act: a.kind === "applications" && a.offerId ? () => goApplicants(a.offerId) : a.kind === "offer_nudge" ? () => go("dashboard", "My Offers") : () => go("dashboard", "Visits & Posts"),
-      });
-    }
-    if (d.staffPinSet === false) queue.rows.push({ text: "Set your staff PIN", sub: "Your team redeems visits with it, never your login.", btn: "Set PIN", act: () => go("dashboard", "Plan") });
-    setAgentFab(queue);
+    if (!document.getElementById("tab-body")) return;
     let notes = [];
     try {
       const nd = await api("GET", "/notifications");
       notes = nd.notifications || [];
       if (nd.unreadCount) state.notesReadPending = true;
-      if (nd.badges) { state.badges = nd.badges; renderRail(); }
+      if (nd.badges) state.badges = nd.badges;
     } catch (e) { /* the feed degrades to content events only */ }
+    let offers = [];
+    let bookings = [];
+    try { const od = await api("GET", "/offers"); offers = od.offers || []; } catch (e) { /* queue degrades */ }
+    try { const bd = await api("GET", "/bookings"); bookings = bd.bookings || []; } catch (e) { /* queue degrades */ }
+    const waiting = [];
+    for (const o of offers.filter((x) => (x.applicationCount || 0) > 0).slice(0, 12)) {
+      try {
+        const ad = await api("GET", `/offers/${o.id}/applications`);
+        for (const a of ad.applications || []) if (a.status === "applied") waiting.push({ offer: ad.offer || o, app: a });
+      } catch (e) { /* one offer's stack never blocks the home */ }
+    }
+    state.waitCounts = state.waitCounts || {};
+    state.waitCounts.bizApps = waiting.length;
+    state.myOffers = offers;
+    state.nudgeBookings = state.nudgeBookings || {};
+    for (const bk of bookings) state.nudgeBookings[bk.id] = bk;
+
+    // Sig's queue (spec §4.2/§4.3): deadlines first, then
+    // people waiting, then new results, then setup gaps.
+    // Within a class, oldest waiting first.
+    const now = Date.now();
+    const items = [];
+    const add = (cls, at, text, btn, act) => items.push({ cls, at: at || now, text, btn, act });
+    const due = waiting.filter((w) => addBizDays(Date.parse(w.app.createdAt) || now, 2) - now < 86400000)
+      .sort((a, b) => (Date.parse(a.app.createdAt) || 0) - (Date.parse(b.app.createdAt) || 0));
+    if (due.length) {
+      const first = due[0];
+      add(1, Date.parse(first.app.createdAt) || now, due.length === 1 ? `A decision is due today: ${first.app.creator.name} applied to "${first.offer.title}".` : `${due.length} decisions are due today. The oldest is ${first.app.creator.name} for "${first.offer.title}".`, "Decide", () => { if (!reqState) reqState = reqFreshState(); reqState.open[first.app.id] = true; goApplicants(first.offer.id); });
+    }
+    const startOfDay = new Date(); startOfDay.setHours(0, 0, 0, 0);
+    const sameDay = (iso) => { const t = Date.parse(iso || ""); return !Number.isNaN(t) && t >= startOfDay.getTime() && t < startOfDay.getTime() + 86400000; };
+    const visitToday = bookings.filter((b) => !b.redeemedAt && !b.post && b.status !== "cancelled" && b.status !== "expired" && (sameDay(b.visitDate) || sameDay(b.redeemBy)));
+    if (visitToday.length) {
+      add(1, now, visitToday.length === 1 ? `${visitToday[0].creatorName} is visiting today.` : `${visitToday.length} visits are happening today.`, "Open counter", () => go("dashboard", "Counter"));
+    }
+    const postDue = bookings.filter((b) => b.redeemedAt && !b.post && b.postDeadline && (Date.parse(b.postDeadline) - now) <= 48 * 3600000 && b.status !== "cancelled")
+      .sort((a, b) => (Date.parse(a.postDeadline) || 0) - (Date.parse(b.postDeadline) || 0));
+    if (postDue.length) {
+      const b = postDue[0];
+      const overdue = Date.parse(b.postDeadline) < now;
+      add(1, Date.parse(b.postDeadline) || now, `${b.creatorName} visited ${fmtDay(b.redeemedAt)} and the post is ${overdue ? "overdue" : "due " + dueDayWords(b.postDeadline)}.`, "Send a nudge", (btn) => sendNudge(b.id, btn));
+    }
+    if (waiting.length) {
+      const oldest = waiting.slice().sort((a, b) => (Date.parse(a.app.createdAt) || 0) - (Date.parse(b.app.createdAt) || 0))[0];
+      add(2, Date.parse(oldest.app.createdAt) || now, `${waiting.length} creator${waiting.length === 1 ? " is" : "s are"} waiting on your answer.`, "Review", () => goApplicants());
+    }
+    const needsTime = bookings.filter((b) => visitSegOf(b, "business") === "needs");
+    if (needsTime.length) add(2, now, `${needsTime.length} visit${needsTime.length === 1 ? " needs" : "s need"} a time.`, "Set the visit", () => { state.visitsSeg = "needs"; go("dashboard", "Visits & Posts"); });
+    const msgCount = (state.badges && state.badges.messages) || 0;
+    if (msgCount) add(2, now, `${msgCount} message${msgCount === 1 ? " is" : "s are"} waiting.`, "Read", () => go("dashboard", "Messages"));
+    const lib = h.contentLibrary || [];
+    const freshPost = lib.filter((r) => r.postedAt && now - Date.parse(r.postedAt) < 14 * 86400000).sort((a, b) => (Date.parse(b.postedAt) || 0) - (Date.parse(a.postedAt) || 0))[0];
+    if (freshPost) add(3, Date.parse(freshPost.postedAt) || now, `${freshPost.creatorName || "A creator"}'s post is live: "${freshPost.title}".`, "See the post", () => go("dashboard", "Content"));
+    const licRow = lib.find((r) => r.license && r.license.type === "native" && bookings.some((b) => b.post && b.id === r.bookingId && Number(b.creatorLicensingFee) > 0));
+    if (licRow) {
+      const bk = bookings.find((b) => b.id === licRow.bookingId);
+      add(3, Date.parse(licRow.postedAt) || now, `You can license ${licRow.creatorName}'s post for $${fmtPrice(bk.creatorLicensingFee)}.`, "License it", () => go("dashboard", "Content"));
+    }
+    const bz = u.business || {};
+    if (!bz.about) add(4, now, "Your business page is missing its About.", "Add about", () => go("dashboard", "Profile"));
+    if (d.staffPinSet === false) add(4, now, "Set your staff PIN so your team can redeem visits.", "Set PIN", () => go("dashboard", "Settings"));
+    if ((h.visitsCarried || 0) > 0 && h.carriedExpiresAt) add(4, now, `${h.visitsCarried} rolled visit${h.visitsCarried === 1 ? "" : "s"} expire ${dueDayWords(h.carriedExpiresAt)}.`, "See plan", () => go("dashboard", "Plan"));
+    else if ((h.visitsRemaining || 0) <= 1) add(4, now, `You have ${h.visitsRemaining || 0} visit${(h.visitsRemaining || 0) === 1 ? "" : "s"} left this month.`, "See plan", () => go("dashboard", "Plan"));
+    state.waitCounts.bizVisits = visitToday.length + postDue.length + needsTime.length;
+    items.sort((a, b) => a.cls - b.cls || a.at - b.at);
+    const queue = items.slice(0, 7);
+
+    // The launch checklist (spec §4.6): retires for good once
+    // every step is done.
+    const steps = [
+      { label: "Finish your business page", sub: "Your name, category, and what creators get.", done: !!(bz.businessName && bz.category && bz.about), btn: "Edit page", act: () => go("dashboard", "Profile") },
+      { label: "Post your first offer", sub: "Comped visit, paid booking, or open call.", done: offers.length > 0, btn: "Post offer", act: () => { state.offersSeg = "live"; go("dashboard", "My Offers"); } },
+      { label: "Find creators and send first invite", sub: "Flip through creators near you, invite the ones who fit.", done: offers.some((o) => o.lane === "direct") || bookings.length > 0, btn: "Find creators", act: () => go("dashboard", "Discover") },
+      { label: "You are live", sub: "When creators apply, Sig puts them at the top of this screen.", done: offers.some((o) => ["open", "filled", "closed"].includes(o.status)) },
+    ];
+    const fresh = !steps[0].done || !offers.length;
+    const greetLine = fresh ? "Let's get your first campaign live. Sig walks you through it, four steps." : (queue.length ? queue[0].text : "You're all caught up.");
+    const hasNumbers = (h.postsLive || 0) > 0 || (h.localReachDelivered || 0) > 0 || (h.visitsUsed || 0) > 0;
+    const snapCells = hasNumbers ? [
+      { num: fmtNum(h.localReachDelivered || 0), label: "Local reach delivered" },
+      { num: fmtNum(h.postsLive || 0), label: "Posts live" },
+      { num: `${h.visitsUsed || 0} of ${h.visitsAllowance || 0}`, label: "Visits this month" },
+    ] : null;
+    const caughtLinks = [
+      { label: "Find creators", act: () => go("dashboard", "Discover") },
+      { label: "Post an offer", act: () => { state.offersSeg = "live"; go("dashboard", "My Offers"); } },
+    ];
     state.bizFeedEvents = bizFeedEvents(h, notes);
     bizFeedKind = "all";
-    const r = h.roas || {};
-    const regKpi = r.registerValue > 0
-      ? kpiCard("Register value", `$${fmtMoney(r.registerValue)}`, { sub: "Tracked at the register from code tallies" })
-      : r.estimatedRegisterValue > 0
-        ? kpiCard("Register value", `≈ $${fmtMoney(r.estimatedRegisterValue)}`, { sub: "Estimated from code uses at your average ticket" })
-        : kpiCard("Register value", `<span style="font-size:1.15rem">No results yet</span>`, { sub: "Starts with your first register tally" });
     el.innerHTML = `
     <div data-dash>
-    ${wsHead("Home", { sub: `${esc(u.business.businessName)} · ${esc(marketTalkNameClient(u.market))} · ${esc(d.plan.name)} plan` })}
-    ${d.marketLive ? "" : `<div class="notice blue" style="margin-top:14px"><strong>Your market opens in 30–90 days.</strong> Draft offers now — publishing switches on at launch.</div>`}
-    ${readyCardHtml(queue)}
-    <div class="kpi-grid c4">
-      ${kpiCard("Local reach delivered", fmtNum(h.localReachDelivered || 0), { sub: h.postsLive ? `Across ${h.postsLive} live post${h.postsLive === 1 ? "" : "s"} — the share of each creator's audience that lives here` : "Your headline number once posts land" })}
-      ${kpiCard("Visits booked", `${h.visitsUsed}<span class="unit"> of ${h.visitsAllowance}</span>`, { sub: `${h.visitsRemaining} left this month${h.visitsCarried ? ` · ${h.visitsCarried} rolled in from last month` : ""}` })}
-      ${kpiCard("Posts published", fmtNum((h.funnel30 || {}).posted || 0), { sub: "Last 30 days", delta: deltaPill((h.funnel30 || {}).posted, (h.funnelPrev30 || {}).posted, "vs the 30 days before") })}
-      ${regKpi}
-    </div>
-    <h3 style="margin:20px 0 0">Feed</h3>
+    ${wsHead("Home", { sub: "Start here. Sig shows you what needs you, in order.", subKey: "biz-home" })}
+    <div class="home-greet"><div class="hg-hi">Hi, ${esc(bz.businessName || u.name || "")}</div><div class="hg-line">${esc(greetLine)}</div></div>
+    ${d.marketLive ? "" : `<div class="notice blue" style="margin-top:14px"><strong>Your market opens in 30–90 days.</strong> Draft offers now; publishing switches on at launch.</div>`}
+    ${sigQueueHtml(queue, { links: caughtLinks })}
+    ${checklistHtml(steps)}
+    ${snapshotHtml(snapCells, "This fills in once your campaigns are live. When creators start visiting and posting, you will see applications, visits, posts, and the local reach they delivered, right here.", "Analytics")}
+    <h3 style="margin:20px 0 0">Activity</h3>
     <div id="biz-feed">${bizFeedHtml(state.bizFeedEvents)}</div>
-    ${goalsCardHtml()}
-    <div class="wcard" style="display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap">
-      <div><strong>At the register?</strong><p class="muted small" style="margin:4px 0 0">Staff redeem with the PIN + creator code. No login needed.</p></div>
-      <button class="btn ws-primary" onclick="return goStaff()">Redeem a visit</button>
-    </div>
+    ${hasNumbers ? `<button type="button" class="more-row results-row" onclick="return go('dashboard','Analytics')"><span class="more-ic">${bnIcon("bars")}</span><span class="more-tx"><span class="more-label">Results</span><span class="more-sub">What your campaigns did.</span></span><span class="more-chev">›</span></button>` : ""}
+    ${askSigRowHtml()}
     </div>`;
-    wireReady(el);
+    wireSigQueue(el, queue, caughtLinks);
+    wireChecklist(el, steps);
+    renderBottomNav();
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
 }
-
 // ---------- Requests: the approvals queue (Grin Approvals) ----------
 // Tabs with counts (Waiting / Decided / Later), search + offer
 // filter + sort, aging with SIGNL's real decision window (2
@@ -6227,11 +7093,13 @@ function reqBuckets() {
   const decided = rows.filter((r) => r.app.status !== "applied");
   return { waiting, later, decided };
 }
-async function renderRequestsTab() {
-  const el = document.getElementById("tab-body");
+let reqEmbed = false;
+async function renderRequestsTab(embed) {
+  reqEmbed = !!embed;
+  const el = document.getElementById(embed ? "offers-seg-body" : "tab-body");
   if (!el) return;
   if (!reqState) reqState = reqFreshState();
-  el.innerHTML = `${wsHead("Requests", { sub: "Creators waiting on your decision. Every application gets an answer — that is the deal." })}<div id="req-main">${skelHtml("Loading requests...", 2)}</div>`;
+  el.innerHTML = `${embed ? `<div class="req-banner">Every applicant gets an answer within 2 business days. That is the deal.</div>` : wsHead("Requests", { sub: "Creators waiting on your decision." })}<div id="req-main">${skelHtml("Loading requests...", 2)}</div>`;
   try {
     if (!reqState.loaded) {
       const od = await api("GET", "/offers");
@@ -6244,13 +7112,18 @@ async function renderRequestsTab() {
       }
       reqState.rows = rows;
       reqState.loaded = true;
-      // Sig's queue on this screen is the real waiting list.
+      // One source of truth (spec §2.1): the waiting count
+      // computed here is the Offers tab badge and the Home
+      // queue count.
       const b = reqBuckets();
-      setAgentFab({ count: b.waiting.length, title: b.waiting.length ? `${b.waiting.length} application${b.waiting.length === 1 ? "" : "s"} waiting` : "All caught up", empty: "No applications waiting. New ones land here the moment a creator applies.", rows: b.waiting.slice(0, 4).map((r) => ({ text: `${r.app.creator.name} applied`, sub: r.offer.title, btn: "Review", act: () => { reqState.open[r.app.id] = true; renderReqMain(); } })) });
+      state.waitCounts = state.waitCounts || {};
+      state.waitCounts.bizApps = b.waiting.length;
+      renderOffersSegTabs();
+      renderBottomNav();
     }
     renderReqMain();
   } catch (err) {
-    el.innerHTML = `${wsHead("Requests")}<div class="error-box">${esc(err.message)}</div>`;
+    el.innerHTML = `${reqEmbed ? "" : wsHead("Requests")}<div class="error-box">${esc(err.message)}</div>`;
   }
 }
 function reqFiltered(bucket) {
@@ -6284,16 +7157,16 @@ function reqRowHtml(r) {
   const menu = `<div class="kebab-menu">
     <button type="button" onclick="openCreatorProfile('${c.userId}')">View creator profile</button>
     <button type="button" onclick="openAgentSheet()">Ask Sig</button>
-    ${a.status === "applied" ? `<button type="button" onclick="openThread('${c.userId}')">Request info</button>
+    ${a.status === "applied" ? `<button type="button" data-ctx="${esc(r.offer.title)}" onclick="return openThreadCtx('${c.userId}', this.dataset.ctx)">Request info</button>
     <button type="button" onclick="return reqLater('${a.id}')">${reqState.later[a.id] ? "Move back to waiting" : "Later"}</button>
     <div class="km-sep"></div>
-    <button type="button" class="danger" onclick="return reqReleaseOne('${r.offer.id}','${a.id}')">Release</button>` : `<button type="button" onclick="openThread('${c.userId}')">Message</button>`}
+    <button type="button" class="danger" onclick="return reqReleaseOne('${r.offer.id}','${a.id}')">Release</button>` : `<button type="button" data-ctx="${esc(r.offer.title)}" onclick="return openThreadCtx('${c.userId}', this.dataset.ctx)">Message</button>`}
   </div>`;
   return `<div class="req-row" id="reqrow-${a.id}">
     <div class="req-top">
       ${a.status === "applied" && reqState.tab === "waiting" ? `<input type="checkbox" class="req-check" ${reqState.sel[a.id] ? "checked" : ""} onchange="reqToggleSel('${a.id}', this.checked)" aria-label="Select ${esc(c.name || "creator")}">` : ""}
       <span class="req-ava">${esc((c.name || "?").trim().charAt(0).toUpperCase() || "?")}</span>
-      <div class="req-main">
+      <div class="req-main" onclick="return reqToggleOpen('${a.id}')" style="cursor:pointer">
         <div class="req-name">${esc(c.name || "")} ${statusBadge}</div>
         <div class="req-meta">@${esc(c.handle || "")} · for <strong>${esc(r.offer.title)}</strong></div>
       </div>
@@ -6304,7 +7177,10 @@ function reqRowHtml(r) {
       ${open ? reqWhyHtml(r) : ""}
       ${a.status === "applied" ? `<div class="req-acts">
         <button type="button" class="btn small-btn ws-primary" onclick="return reqSelectOne('${r.offer.id}','${a.id}')">Select</button>
+        <button type="button" class="btn small-btn ws-outline" data-ctx="${esc(r.offer.title)}" onclick="return openThreadCtx('${c.userId}', this.dataset.ctx)">Request info</button>
+        <button type="button" class="btn small-btn ws-outline" onclick="return reqLater('${a.id}')">${reqState.later[a.id] ? "Back to waiting" : "Later"}</button>
         <button type="button" class="btn small-btn ws-outline" onclick="return reqToggleOpen('${a.id}')">${open ? "Hide match" : "Why this match"}</button>
+        <button type="button" class="btn small-btn ws-outline danger" onclick="return reqReleaseOne('${r.offer.id}','${a.id}')">Release</button>
       </div>` : ""}
     </div>
   </div>`;
@@ -6333,7 +7209,7 @@ function renderReqMain() {
         <option value="local" ${reqState.sort === "local" ? "selected" : ""}>Local reach</option>
       </select>
     </div>
-    ${rows.length ? `<div class="req-list">${rows.map(reqRowHtml).join("")}</div>` : `<div class="empty-card"><div class="ec-t">No requests here</div><div class="ec-s">${reqState.tab === "waiting" ? "When a creator applies to one of your offers, they land here for your decision." : reqState.tab === "later" ? "Applications you park for later sit here. Parking never notifies the creator." : "Decisions you make show up here, so the record is never a mystery."}</div></div>`}
+    ${rows.length ? `<div class="req-list">${rows.map(reqRowHtml).join("")}</div>` : `<div class="empty-card"><div class="ec-t">${reqState.tab === "waiting" ? "No applicants yet" : "No requests here"}</div><div class="ec-s">${reqState.tab === "waiting" ? "Invite creators directly, or share your offer, and applications land here. Every applicant gets an answer within 2 business days." : reqState.tab === "later" ? "Applications you park for later sit here. Parking never notifies the creator." : "Decisions you make show up here, so the record is never a mystery."}</div></div>`}
     ${selCount ? `<div class="req-bulk"><span>${selCount} selected</span><button type="button" class="btn small-btn" onclick="return reqBulk('select')">Select all</button><button type="button" class="btn small-btn ghost" style="color:#fff;border-color:#3A443C" onclick="return reqBulk('release')">Release</button><button type="button" class="linklike" style="color:#C6CFC6" onclick="return reqClearSel()">Clear</button></div>` : ""}`;
   wireReady(host);
 }
@@ -6353,7 +7229,7 @@ async function reqSelectOne(offerId, appId) {
     await api("POST", `/offers/${offerId}/select`, { applicationId: appId });
   } catch (err) { alert(err.message); return false; }
   reqState.loaded = false; reqState.sel = {};
-  renderRequestsTab();
+  renderRequestsTab(reqEmbed);
   return false;
 }
 async function reqReleaseOne(offerId, appId) {
@@ -6362,7 +7238,7 @@ async function reqReleaseOne(offerId, appId) {
     await api("POST", `/offers/${offerId}/release`, { applicationId: appId });
   } catch (err) { alert(err.message); return false; }
   reqState.loaded = false; reqState.kebab = null;
-  renderRequestsTab();
+  renderRequestsTab(reqEmbed);
   return false;
 }
 async function reqBulk(which) {
@@ -6375,51 +7251,64 @@ async function reqBulk(which) {
     catch (e) { alert(e.message); break; }
   }
   reqState.loaded = false; reqState.sel = {};
-  renderRequestsTab();
+  renderRequestsTab(reqEmbed);
   return false;
 }
 
 // ---------- Content: posts + rights (Grin Content) ----------
 let contentTab = "creator";
 function contentSetTab(t) { contentTab = t; renderContentTab(); return false; }
-function libRowsHtml(h, mode) {
+function libRowsHtml(h, mode, licMap) {
   const lib = h.contentLibrary || [];
   const rows = mode === "yours" ? lib.filter((r) => r.license && r.license.type !== "native") : lib;
-  if (!rows.length) return `<div class="empty-card"><div class="ec-t">${mode === "yours" ? "Nothing licensed yet" : "No content yet"}</div><div class="ec-s">${mode === "yours" ? "Posts you can repost or run as ads appear here: paid bookings carry one 90-day license, and comped posts can be licensed from the creator." : "When a creator's post goes live it is captured here with its views, timing and license state."}</div></div>`;
-  return `<div class="wcard" style="padding-top:8px;padding-bottom:8px">${rows.map((r) => `
+  if (!rows.length) return `<div class="empty-card"><div class="ec-t">${mode === "yours" ? "Nothing licensed yet" : "No posts yet"}</div><div class="ec-s">${mode === "yours" ? "Posts you can repost or run as ads appear here: paid bookings carry one 90-day license, and comped posts can be licensed from the creator." : "When a creator posts about your business, it lands here, and you can license the ones you want to reuse."}</div></div>`;
+  return `<div class="wcard" style="padding-top:8px;padding-bottom:8px">${rows.map((r) => {
+    const lic = (licMap || {})[r.bookingId];
+    const canLicense = mode === "creator" && r.license && r.license.type === "native" && lic && lic.fee > 0 && lic.postId;
+    return `
     <div class="lib-row"><div class="lib-main"><div class="lib-title">${esc(r.title)}</div>
-    <div class="lib-meta">@${esc(r.creatorHandle)} · ${r.postedAt ? fmtDay(r.postedAt) : ""} · ${fmtNum(r.views)} views · ${fmtNum(r.likes)} likes · ${fmtNum(r.localReach || 0)} local reach · ${r.onTime ? "on time" : "late"}${r.redemptions && r.redemptions.count ? ` · ${r.redemptions.count} code uses · $${fmtMoney(r.redemptions.basketTotal)} rung up` : ""}${r.postUrl ? ` · <a href="${esc(r.postUrl)}" target="_blank" rel="noopener">View post</a>` : ""}</div></div>${licPillHtml(r)}</div>`).join("")}</div>`;
+    <div class="lib-meta">@${esc(r.creatorHandle)} · ${r.postedAt ? fmtDay(r.postedAt) : ""} · ${fmtNum(r.views)} views · ${fmtNum(r.likes)} likes · ${fmtNum(r.localReach || 0)} local reach · ${r.onTime ? "on time" : "late"}${r.redemptions && r.redemptions.count ? ` · ${r.redemptions.count} code uses · $${fmtMoney(r.redemptions.basketTotal)} rung up` : ""}${r.postUrl ? ` · <a href="${esc(r.postUrl)}" target="_blank" rel="noopener">View post</a>` : ""}</div></div>${licPillHtml(r.license)}${canLicense ? (lic.requested ? `<span class="lic-pill">License requested</span>` : `<button type="button" class="btn small-btn ws-primary" onclick="requestLicense('${lic.postId}', ${lic.fee})">Request license</button>`) : ""}</div>`;
+  }).join("")}</div>`;
 }
 async function renderContentTab() {
   const el = document.getElementById("tab-body");
   if (!el) return;
-  el.innerHTML = `${wsHead("Content")}${skelHtml("Loading content...", 2)}`;
+  el.innerHTML = `${wsHead("Posts & licenses")}${skelHtml("Loading posts...", 2)}`;
   try {
     const d = await api("GET", "/me/business-home");
     const h = d.home;
     const lib = h.contentLibrary || [];
     const usable = lib.filter((r) => r.license && r.license.type !== "native").length;
+    // License actions join each post to its booking: the fee
+    // and post id live on the booking, not the library row.
+    const licMap = {};
+    try {
+      const bd = await api("GET", "/bookings");
+      const lr = await api("GET", "/license-requests").catch(() => ({ licenseRequests: [] }));
+      const pendingPosts = new Set((lr.licenseRequests || []).filter((l) => l.status === "pending").map((l) => l.postId));
+      for (const b of bd.bookings || []) if (b.post) licMap[b.id] = { postId: b.post.id, fee: Number(b.creatorLicensingFee) || 0, requested: pendingPosts.has(b.post.id) };
+    } catch (e) { /* rows simply render without the action */ }
     el.innerHTML = `
-    ${wsHead("Content", { sub: "Every post your creators publish, and exactly what you may do with each one." })}
+    ${wsHead("Posts & licenses", { sub: "Every post about you, and the ones you can reuse.", subKey: "biz-content" })}
     <div class="rights-line">${bnIcon("shield")}<span><strong>Seeing a post here is not the right to reuse it.</strong> You may always reshare natively, with credit. Paid bookings include one standard license: 90 days to repost and run ads. A comped post can be licensed at the creator's listed fee, and the creator approves each use.</span></div>
-    <div class="track-card"><span class="feed-dot acc">${bnIcon("image")}</span><div class="tc-main"><div class="tc-t">Post tracking is on</div><div class="tc-s">Captured ${h.postsTracked30 || 0} post${(h.postsTracked30 || 0) === 1 ? "" : "s"} in the last 30 days. SIGNL tracks every visit's post from the creator's report, timed against the 48 hour standard.</div></div><button type="button" class="btn small-btn ws-outline" onclick="return go('dashboard','Visits & Posts')">Visits &amp; Posts</button></div>
+    ${lib.length ? `<div class="track-card"><span class="feed-dot acc">${bnIcon("image")}</span><div class="tc-main"><div class="tc-t">Post tracking is on</div><div class="tc-s">${h.postsTracked30 || 0} post${(h.postsTracked30 || 0) === 1 ? "" : "s"} tracked in the last 30 days. SIGNL tracks every visit's post from the creator's report, timed against the 48 hour standard.</div></div><button type="button" class="btn small-btn ws-outline" onclick="return go('dashboard','Visits & Posts')">Visits</button></div>`
+      : `<div class="track-card"><span class="feed-dot acc">${bnIcon("image")}</span><div class="tc-main"><div class="tc-t">Post tracking</div><div class="tc-s">Post tracking starts with your first visit.</div></div></div>`}
     ${wsTabs([
       { label: "Creator posts", count: lib.length, on: contentTab === "creator", onclick: "return contentSetTab('creator')" },
       { label: "Yours to use", count: usable, on: contentTab === "yours", onclick: "return contentSetTab('yours')" },
     ])}
-    ${libRowsHtml(h, contentTab)}`;
+    ${libRowsHtml(h, contentTab, licMap)}`;
   } catch (err) {
-    el.innerHTML = `${wsHead("Content")}<div class="error-box">${esc(err.message)}</div>`;
+    el.innerHTML = `${wsHead("Posts & licenses")}<div class="error-box">${esc(err.message)}</div>`;
   }
 }
-
 // ---------- Analytics: charts, funnel, leaderboard (Grin mirror) ----------
 let anaDays = 30;
 function anaSetDays(v) { anaDays = Number(v) || 30; renderAnalyticsTab(); return false; }
 async function renderAnalyticsTab() {
   const el = document.getElementById("tab-body");
   if (!el) return;
-  el.innerHTML = `${wsHead("Analytics")}${skelHtml("Loading analytics...", 2)}`;
+  el.innerHTML = `${wsHead("Results")}${skelHtml("Loading your results...", 2)}`;
   try {
     const d = await api("GET", "/me/business-home");
     const h = d.home;
@@ -6427,42 +7316,62 @@ async function renderAnalyticsTab() {
     const fp = anaDays === 7 ? h.funnelPrev7 : h.funnelPrev30;
     const series = h.series30 || [];
     const lb = h.leaderboard || [];
+    const lib = h.contentLibrary || [];
+    const head = wsHead("Results", { sub: "Your creator program in numbers, all from your real records.", subKey: "biz-results" });
+    const f30 = h.funnel30 || {};
+    const funnelSum = (f30.invited || 0) + (f30.claimed || 0) + (f30.visited || 0) + (f30.posted || 0);
+    const appsWin = anaDays === 7 ? (h.applications7 || 0) : (h.applications30 || 0);
+    const nothingLive = funnelSum === 0 && (h.applications30 || 0) === 0 && !lib.length && !(h.postsLive || 0);
+    if (nothingLive) {
+      // §8: the fills-in states, never a grid of zeros.
+      const hasLiveOffer = (d.openOffers || 0) > 0 || (state.myOffers || []).some((o) => o.status === "open" || o.status === "filled");
+      el.innerHTML = `${head}
+      <div class="empty-card"><div class="ec-t">Your results</div><div class="ec-s">${hasLiveOffer ? "Your offer is live. This fills in as creators apply, visit, and post." : "This fills in once your campaigns are live. When creators start visiting and posting, you will see applications, visits, posts, and the local reach they delivered, right here."}</div></div>
+      ${hasLiveOffer ? "" : `<p class="center"><button class="btn ws-primary" onclick="return go('dashboard','My Offers')">Post an offer</button></p>`}`;
+      return;
+    }
+    // KPI cards render only when their records exist (§7).
+    const r = h.roas || {};
+    const cards = [];
+    if (appsWin > 0) cards.push(kpiCard("Applications received", fmtNum(appsWin), { sub: `Last ${anaDays} days`, delta: deltaPill(appsWin, anaDays === 7 ? (h.applicationsPrev7 || 0) : (h.applicationsPrev30 || 0), "vs the prior period") }));
+    if ((f.visited || 0) > 0) cards.push(kpiCard("Visits completed", fmtNum(f.visited), { sub: `Last ${anaDays} days`, delta: deltaPill(f.visited, fp.visited, "vs the prior period") }));
+    if ((f.posted || 0) > 0) cards.push(kpiCard("Posts published", fmtNum(f.posted), { sub: `Last ${anaDays} days`, delta: deltaPill(f.posted, fp.posted, "vs the prior period") }));
+    if ((h.localReachDelivered || 0) > 0) cards.push(kpiCard("Local reach delivered", fmtNum(h.localReachDelivered || 0), { sub: "All time, across delivered posts" }));
+    if ((r.registerValue || 0) > 0) cards.push(kpiCard("Est. register value", `$${fmtMoney(r.registerValue)}`, { sub: "Tracked at the register from code tallies" }));
+    else if ((r.estimatedRegisterValue || 0) > 0) cards.push(kpiCard("Est. register value", `≈ $${fmtMoney(r.estimatedRegisterValue)}`, { sub: "Estimated from code uses at your average ticket" }));
     const stages = [
       { label: "Invited", n: f.invited, cap: "Bookings created for your offers" },
       { label: "Accepted", n: f.claimed, cap: "Creators claimed their visit code" },
       { label: "Visit completed", n: f.visited, cap: "Codes redeemed at your register" },
       { label: "Post live", n: f.posted, cap: "Posts reported inside the window" },
     ];
+    const seriesHas = series.some((row) => (row.invited || 0) > 0 || (row.decisions || 0) > 0);
+    const reachHas = series.some((row) => (row.reach || 0) > 0);
     el.innerHTML = `
-    ${wsHead("Analytics", { sub: "Your creator program in numbers, all from your real records." })}
-    <div class="kpi-grid c4">
-      ${kpiCard("Applications received", fmtNum(anaDays === 7 ? (h.applications7 || 0) : (h.applications30 || 0)), { sub: `Last ${anaDays} days`, delta: deltaPill(anaDays === 7 ? (h.applications7 || 0) : (h.applications30 || 0), anaDays === 7 ? (h.applicationsPrev7 || 0) : (h.applicationsPrev30 || 0), "vs the prior period") })}
-      ${kpiCard("Visits completed", fmtNum(f.visited), { sub: `Last ${anaDays} days`, delta: deltaPill(f.visited, fp.visited, "vs the prior period") })}
-      ${kpiCard("Posts published", fmtNum(f.posted), { sub: `Last ${anaDays} days`, delta: deltaPill(f.posted, fp.posted, "vs the prior period") })}
-      ${kpiCard("Local reach delivered", fmtNum(h.localReachDelivered || 0), { sub: "All time, across delivered posts" })}
-    </div>
-    <div class="chart-card"><h3>Invites &amp; decisions</h3><p class="wc-sub">Per day, last 30 days. Decisions are application answers, stamped when you make them.</p>
+    ${head}
+    ${cards.length ? `<div class="kpi-grid c${Math.min(4, Math.max(2, cards.length))}">${cards.join("")}</div>` : ""}
+    ${seriesHas ? `<div class="chart-card"><h3>Invites &amp; decisions</h3><p class="wc-sub">Per day, last 30 days. Decisions are application answers, stamped when you make them.</p>
       ${lineChartSvg(series, [{ k: "invited", color: "#006AFC" }, { k: "decisions", color: "#B9C6BB" }])}
       <div class="chart-legend"><span><span class="legend-dot" style="background:#006AFC"></span>Invites</span><span><span class="legend-dot" style="background:#B9C6BB"></span>Decisions</span></div>
-    </div>
-    <div class="chart-card"><h3>Local reach over time</h3><p class="wc-sub">Local audience reached by posts that went live each day.</p>
+    </div>` : ""}
+    ${reachHas ? `<div class="chart-card"><h3>Local reach over time</h3><p class="wc-sub">Local audience reached by posts that went live each day.</p>
       ${barsChartSvg(series, "reach", "#03C9AB")}
-    </div>
+    </div>` : ""}
+    ${!seriesHas && !reachHas ? `<div class="wcard"><h3>Charts</h3><p class="wc-sub" style="margin:4px 0 0">Charts fill in as your campaigns run: invites, decisions, and local reach, day by day.</p></div>` : ""}
     <div class="wcard"><div class="flex-between" style="flex-wrap:wrap;gap:10px"><h3 style="margin:0">Creator funnel</h3>${segSw([{ v: "7", label: "7 days" }, { v: "30", label: "30 days" }], String(anaDays), "anaSetDays")}</div>
-      ${funnel2Html(stages)}
-      <p class="ana-note">Stages count real SIGNL events only. There is no email-open stage: SIGNL does not track opens, so the funnel starts at the invite itself.</p>
+      ${((f.invited || 0) + (f.claimed || 0) + (f.visited || 0) + (f.posted || 0)) > 0 ? `${funnel2Html(stages)}
+      <p class="ana-note">Stages count real SIGNL events only. There is no email-open stage: SIGNL does not track opens, so the funnel starts at the invite itself.</p>` : `<p class="wc-sub" style="margin:6px 0 2px">Your funnel fills in once your campaigns are live: invited, accepted, visited, posted.</p>`}
     </div>
     <div class="wcard"><h3>Creators by local reach delivered</h3>
-      ${lb.length ? lb.map((r, i) => `<div class="lb-row"><span class="lb-rank">${i + 1}</span><div class="lb-main"><div class="lb-name">${esc(r.creatorName)} <span class="muted" style="font-weight:600">@${esc(r.creatorHandle)}</span></div><div class="lb-meta">${r.posts} post${r.posts === 1 ? "" : "s"}${r.onTimePct !== null && r.onTimePct !== undefined ? ` · ${r.onTimePct}% on time` : ""}</div></div><span class="lb-num">${fmtNum(r.localReach)}<span class="u">local reach</span></span></div>`).join("") : `<p class="wc-sub" style="margin:6px 0 2px">No posts yet. This board fills as your creators publish.</p>`}
+      ${lb.length ? lb.map((row, i) => `<div class="lb-row"><span class="lb-rank">${i + 1}</span><div class="lb-main"><div class="lb-name">${esc(row.creatorName)} <span class="muted" style="font-weight:600">@${esc(row.creatorHandle)}</span></div><div class="lb-meta">${row.posts} post${row.posts === 1 ? "" : "s"}${row.onTimePct !== null && row.onTimePct !== undefined ? ` · ${row.onTimePct}% on time` : ""}</div></div><span class="lb-num">${fmtNum(row.localReach)}<span class="u">local reach</span></span></div>`).join("") : `<p class="wc-sub" style="margin:6px 0 2px">Once posts land, your creators rank here by the local reach they delivered.</p>`}
     </div>
-    <div class="wcard"><h3>Cost per visit</h3>
-      ${h.costPerVisit ? `<p style="margin:4px 0 0">Your plan works out to <strong>$${fmtMoney(h.costPerVisit)}</strong> per visit in your allowance${h.postsLive ? `, and every live post cost exactly one visit` : ""}. Register value and media value ride in your ROAS score on Home.</p>` : `<p class="wc-sub" style="margin:4px 0 0">Plan math appears here with your plan.</p>`}
-    </div>`;
+    ${h.costPerVisit && h.pipeline && (h.pipeline.clockRunning || 0) > 0 ? `<div class="wcard"><h3>Cost per visit</h3>
+      <p style="margin:4px 0 0">Your plan works out to <strong>$${fmtMoney(h.costPerVisit)}</strong> per visit in your allowance${h.postsLive ? `, and every live post cost exactly one visit` : ""}. Register value and media value ride in your ROAS score on Home.</p>
+    </div>` : ""}`;
   } catch (err) {
-    el.innerHTML = `${wsHead("Analytics")}<div class="error-box">${esc(err.message)}</div>`;
+    el.innerHTML = `${wsHead("Results")}<div class="error-box">${esc(err.message)}</div>`;
   }
 }
-
 // ---------- Business Profile (Grin brand profile pattern) ----------
 let bizProfTab = "profile";
 function bizProfSet(t) { bizProfTab = t; renderBizProfileTab(); return false; }
@@ -6471,7 +7380,7 @@ async function renderBizProfileTab() {
   if (!el) return;
   const u = state.user;
   const b = u.business || {};
-  el.innerHTML = `${wsHead("Profile")}${skelHtml("Loading your profile...", 1)}`;
+  el.innerHTML = `${wsHead("Your business page")}${skelHtml("Loading your profile...", 1)}`;
   try {
     const d = await api("GET", "/me/business-home");
     const h = d.home;
@@ -6482,7 +7391,7 @@ async function renderBizProfileTab() {
     } catch (e) { /* reviews are a bonus surface */ }
     const live = businessAccessState(u) === "active";
     const head = `
-    ${wsHead("Profile", { chip: live ? livePill("Live") : `<span class="beta-pill">Founding list</span>`, sub: "Your business's home on SIGNL. This card is how creators see you.", action: `<button type="button" class="btn ws-primary" onclick="return bizProfSet('profile')">Edit profile &#9662;</button> <button type="button" class="btn ws-outline" onclick="return go('dashboard','My Offers')">See it on an offer</button>` })}
+    ${wsHead("Your business page", { chip: live ? livePill("Live") : `<span class="beta-pill">Founding list</span>`, sub: "Your business's home on SIGNL. This card is how creators see you.", action: `<button type="button" class="btn ws-outline" onclick="return go('dashboard','My Offers')">See it as creators see it</button>` })}
     <div class="prof-card"><div class="prof-cover"></div><div class="prof-in">
       <div class="prof-ava">${esc((b.businessName || "?").trim().charAt(0).toUpperCase() || "?")}</div>
       <div class="prof-name">${esc(b.businessName || "")}${live ? `<span class="verified-dot">${bnIcon("check")}</span>` : ""}</div>
@@ -6497,16 +7406,9 @@ async function renderBizProfileTab() {
     ${wsTabs([
       { label: "Profile", on: bizProfTab === "profile", onclick: "return bizProfSet('profile')" },
       { label: "Reviews", count: reviews.length, on: bizProfTab === "reviews", onclick: "return bizProfSet('reviews')" },
-      { label: "Analytics", on: bizProfTab === "analytics", onclick: "return bizProfSet('analytics')" },
     ])}`;
     if (bizProfTab === "reviews") {
-      el.innerHTML = head + (reviews.length ? `<div class="wcard">${reviews.map((r) => `<div class="lib-row"><div class="lib-main"><div class="lib-title">${starsHtml(r.stars)} ${esc(String(r.stars))} — ${esc(r.title || "Visit")}</div><div class="lib-meta">@${esc(r.handle || "")}${r.at ? ` · ${fmtDay(r.at)}` : ""}${r.text ? `<br>${esc(r.text)}` : ""}</div></div></div>`).join("")}</div>` : `<div class="empty-card"><div class="ec-t">No reviews yet</div><div class="ec-s">Creators review the visit after their post lands. Reviews appear here and build your standing with the roster.</div></div>`);
-    } else if (bizProfTab === "analytics") {
-      el.innerHTML = head + `<div class="kpi-grid c3">
-        ${kpiCard("Local reach delivered", fmtNum(h.localReachDelivered || 0), { sub: "Across delivered posts" })}
-        ${kpiCard("Posts published", fmtNum((h.funnel30 || {}).posted || 0), { sub: "Last 30 days", delta: deltaPill((h.funnel30 || {}).posted, (h.funnelPrev30 || {}).posted, "vs the 30 days before") })}
-        ${kpiCard("Posts on time", h.onTimeRatePct === null || h.onTimeRatePct === undefined ? "n/a" : h.onTimeRatePct + "%", { sub: "Inside the 48 hour standard" })}
-      </div><p><button type="button" class="btn ws-outline" onclick="return go('dashboard','Analytics')">Open full Analytics</button></p>`;
+      el.innerHTML = head + (reviews.length ? `<div class="wcard">${reviews.map((r) => `<div class="lib-row"><div class="lib-main"><div class="lib-title">${starsHtml(r.stars)} ${esc(String(r.stars))} — ${esc(r.title || "Visit")}</div><div class="lib-meta">@${esc(r.handle || "")}${r.at ? ` · ${fmtDay(r.at)}` : ""}${r.text ? `<br>${esc(r.text)}` : ""}</div></div></div>`).join("")}</div>` : `<div class="empty-card"><div class="ec-t">No reviews yet</div><div class="ec-s">Reviews come from completed visits.</div></div>`);
     } else {
       el.innerHTML = head + `
       <div class="wcard">
@@ -6525,7 +7427,7 @@ async function renderBizProfileTab() {
       </div>`;
     }
   } catch (err) {
-    el.innerHTML = `${wsHead("Profile")}<div class="error-box">${esc(err.message)}</div>`;
+    el.innerHTML = `${wsHead("Your business page")}<div class="error-box">${esc(err.message)}</div>`;
   }
 }
 
@@ -6570,12 +7472,12 @@ async function loadFavorites() {
   const el = document.getElementById("tab-body");
   try {
     const data = await api("GET", "/favorites");
-    const favHead = `${wsHead("Favorites", { sub: "Your saved creators. One tap invites them again, prefilled from your last visit together." })}${wsTabs([
+    const favHead = `${wsHead("Find creators", { sub: "Your saved creators. One tap invites them again, prefilled from your last visit together.", subKey: "biz-discover" })}${wsTabs([
       { label: "Discover", on: false, onclick: "return go('dashboard','Discover')" },
       { label: "Favorites", on: true, onclick: "return go('dashboard','Favorites')" },
     ])}`;
     if (!data.favorites.length) {
-      el.innerHTML = `${favHead}<div class="empty-card"><div class="ec-t">No favorites yet</div><div class="ec-s">Tap the heart on any creator while browsing Discover and they are saved here: your standing roster for repeat visits.</div></div><p class="center"><button class="btn ws-primary" onclick="return go('dashboard','Discover')">Browse creators</button></p>`;
+      el.innerHTML = `${favHead}<div class="empty-card"><div class="ec-t">No favorites yet</div><div class="ec-s">Tap the heart on any creator while browsing Find creators and they are saved here: your standing roster for repeat visits.</div></div><p class="center"><button class="btn ws-primary" onclick="return go('dashboard','Discover')">Browse creators</button></p>`;
       return;
     }
     el.innerHTML = `${favHead}
@@ -6585,17 +7487,29 @@ async function loadFavorites() {
   }
 }
 
+function discoverCatChip(cat, btn) {
+  const sel = document.getElementById("f-category");
+  if (sel) sel.value = cat;
+  document.querySelectorAll(".dcat-chip").forEach((b) => b.classList.toggle("on", b === btn));
+  runDiscover();
+  return false;
+}
+
 async function loadDiscover() {
   const el = document.getElementById("tab-body");
   const u = state.user;
   el.innerHTML = `
-    ${wsHead("Discover", { sub: "Local creators, ranked by local reach: how much of their audience actually lives in your market." })}
+    ${wsHead("Find creators", { sub: "Flip through creators near you. Invite the ones who fit.", subKey: "biz-discover" })}
     ${wsTabs([
       { label: "Discover", on: true, onclick: "return go('dashboard','Discover')" },
       { label: "Favorites", on: false, onclick: "return go('dashboard','Favorites')" },
     ])}
-    <div class="filters">
+    <div class="filters disc-top">
       <div><label>Market</label><select id="f-market">${marketOptions(u.market)}</select></div>
+    </div>
+    <div class="dcat-row">${[""].concat(state.boot.creatorCategories).map((c) => `<button type="button" class="dcat-chip${c === "" ? " on" : ""}" onclick="return discoverCatChip('${esc(c)}', this)">${c === "" ? "All" : esc(c)}</button>`).join("")}</div>
+    <details class="filters-fold"><summary>More filters</summary>
+    <div class="filters">
       <div><label>Neighborhood / area</label><input id="f-neighborhood" placeholder="For example: Oceanfront, Ghent"></div>
       <div><label>Tier</label><select id="f-tier"><option value="">All tiers</option>${state.boot.tiers.map((t) => `<option>${esc(t.id)}</option>`).join("")}</select></div>
       <div><label>Category</label><select id="f-category"><option value="">All categories</option>${state.boot.creatorCategories.map((c) => `<option>${esc(c)}</option>`).join("")}</select></div>
@@ -6610,6 +7524,7 @@ async function loadDiscover() {
       <div><label>&nbsp;</label><label style="font-weight:500"><input type="checkbox" id="f-paid" style="width:auto"> Has a paid rate (paid bookings) only</label></div>
       <div><label>&nbsp;</label><button class="btn small-btn" style="width:100%" onclick="runDiscover()">Search</button></div>
     </div>
+    </details>
     <div id="discover-toggle"></div>
     <div id="discover-results">${skelHtml("Loading creators...", 2)}</div>`;
   runDiscover();
@@ -6736,7 +7651,7 @@ function discoverEndHtml(passed, total) {
   const q = deckQueue("discover", (stackState.discover && stackState.discover.src) || []);
   const n = q.parked.length;
   const seen = q.visible.length;
-  return `<div class="stk-end"><h3>That's everyone nearby right now</h3><p class="small muted">You looked through ${seen} creator${seen === 1 ? "" : "s"} in this search. New approved creators land here as they join.</p><div class="stk-end-actions">${n ? `<button type="button" class="btn ghost" onclick="openLaterPile('discover')">Review Later (${n})</button>` : ""}<button type="button" class="btn" onclick="discoverClearFilters()">Clear filters</button></div></div>`;
+  return `<div class="stk-end"><h3>You have seen everyone near you for now</h3><p class="small muted">Your Later pile is below, and new creators in ${esc(marketTalkNameClient(state.user.market))} show up here first. You looked through ${seen} creator${seen === 1 ? "" : "s"} in this search.</p><div class="stk-end-actions">${n ? `<button type="button" class="btn ghost" onclick="openLaterPile('discover')">Review Later (${n})</button>` : ""}<button type="button" class="btn" onclick="discoverClearFilters()">Clear filters</button></div></div>`;
 }
 function discoverClearFilters() {
   ["f-neighborhood", "f-q", "f-fmin", "f-fmax", "f-minlocal"].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ""; });
@@ -6759,9 +7674,63 @@ async function toggleFav(creatorId) {
 }
 
 function goApplicants(offerId) {
+  // V3: applicants live in the Offers screen's Applicants
+  // segment, filtered to the offer when one is named.
+  state.offersSeg = "applicants";
+  if (offerId) {
+    if (!reqState) reqState = reqFreshState();
+    reqState.offerId = offerId;
+    reqState.loaded = false;
+  }
   state.tab = "My Offers";
-  state.applicantOffer = offerId;
   render();
+  return false;
+}
+
+// Offers segments (spec §5.2): Live / Applicants / Past over
+// one screen. Live carries the list, templates and composer;
+// Applicants is the Requests workspace; Past is read-only
+// except Duplicate.
+function renderOffersSegTabs() {
+  const host = document.getElementById("offers-segs");
+  if (!host) return;
+  const all = state.myOffers || [];
+  const wc = state.waitCounts || {};
+  host.innerHTML = wsTabs([
+    { label: "Live", count: all.filter((o) => !offerIsArchived(o)).length || null, on: state.offersSeg === "live", onclick: "return offersSetSeg('live')" },
+    { label: "Applicants", count: wc.bizApps || null, on: state.offersSeg === "applicants", onclick: "return offersSetSeg('applicants')" },
+    { label: "Past", count: all.filter(offerIsArchived).length || null, on: state.offersSeg === "past", onclick: "return offersSetSeg('past')" },
+  ]);
+}
+function offersSetSeg(seg) {
+  state.offersSeg = seg;
+  loadMyOffers();
+  return false;
+}
+function offersNew() {
+  const c = document.getElementById("offer-composer");
+  if (c) c.scrollIntoView({ behavior: "smooth" });
+  return false;
+}
+// Duplicate: the one write allowed from Past — the composer
+// opens pre-filled from the old offer.
+function duplicateOffer(offerId) {
+  const o = (state.myOffers || []).find((x) => x.id === offerId);
+  if (!o) return false;
+  state.offerTarget = null;
+  state.composerLane = "open";
+  state.offerDraft = {
+    title: o.title || "", comped: o.whatComped || "", cap: o.dollarCap != null ? String(o.dollarCap) : "",
+    rate: o.cashRate != null ? String(o.cashRate) : "", kind: o.kind || "comp", brief: o.paidBrief || "",
+    includes: o.includes || "", experience: o.experience || "", tiers: o.targetTiers || [],
+    spots: o.spots != null ? String(o.spots) : "", applydays: o.applyWindowDays != null ? String(o.applyWindowDays) : "",
+    windowdays: o.windowDays != null ? String(o.windowDays) : "", window: o.visitWindow || "",
+    covers: o.covers != null ? String(o.covers) : "",
+  };
+  state.offersSeg = "live";
+  state.tab = "My Offers";
+  render();
+  setTimeout(() => { const c = document.getElementById("offer-composer"); if (c) c.scrollIntoView({ behavior: "smooth" }); }, 60);
   return false;
 }
 
@@ -7050,6 +8019,35 @@ function offerCoachUpdate() {
 
 async function loadMyOffers() {
   const el = document.getElementById("tab-body");
+  if (state.offerTarget) state.offersSeg = "live";
+  if (!state.offersSeg) {
+    // Default segment (spec §5.2): Applicants when anyone is
+    // waiting, else Live. Decided from the same records the
+    // tab badge counts, so the three never disagree.
+    el.innerHTML = `${wsHead("Offers", { sub: "Your offers, and the creators who applied to them.", subKey: "biz-offers" })}${skelHtml("Loading your offers...", 2)}`;
+    state.offersSeg = "live";
+    try {
+      const od = await api("GET", "/offers");
+      state.myOffers = od.offers || [];
+      let waitingCount = 0;
+      for (const o of state.myOffers.filter((x) => (x.applicationCount || 0) > 0).slice(0, 12)) {
+        const ad = await api("GET", `/offers/${o.id}/applications`);
+        waitingCount += (ad.applications || []).filter((a) => a.status === "applied").length;
+      }
+      state.waitCounts = state.waitCounts || {};
+      state.waitCounts.bizApps = waitingCount;
+      if (waitingCount > 0) state.offersSeg = "applicants";
+    } catch (e) { /* the Live default stands */ }
+    if (!document.getElementById("tab-body")) return;
+    return loadMyOffers();
+  }
+  if (state.offersSeg === "applicants") {
+    el.innerHTML = `${wsHead("Offers", { sub: "Your offers, and the creators who applied to them.", subKey: "biz-offers" })}<div id="offers-segs"></div><div id="offers-seg-body"></div>`;
+    renderOffersSegTabs();
+    renderRequestsTab(true);
+    return;
+  }
+  bizOfferTab = state.offersSeg === "past" ? "archived" : "current";
   const target = state.offerTarget ? (state.discover || []).find((c) => c.userId === state.offerTarget) : null;
   const mode = target ? "direct" : composerMode();
   const g = offerGuidance();
@@ -7067,9 +8065,10 @@ async function loadMyOffers() {
     return `<label class="tier-toggle"><input type="checkbox" class="sw" name="o2-tier" value="${esc(t)}" ${(dft.tiers || []).includes(t) ? "checked" : ""} onchange="offerCoachUpdate()"><span class="tt-body"><span class="tt-name">${esc(t)}</span><span class="tt-line">floor $${fmtPrice(gd.floor)} &middot; typ. $${fmtPrice(gd.typicalLow)}&ndash;$${fmtPrice(gd.typicalHigh)}</span></span></label>`;
   }).join("")}</div>`;
   el.innerHTML = `
-  ${wsHead("Offers", { sub: "What creators can apply to, and the templates that start one in a tap.", action: `<button type="button" class="btn ws-primary" onclick="document.getElementById('offer-composer').scrollIntoView({behavior:'smooth'})">+ New offer</button>` })}
-  <div id="offer-tabs"></div>
+  ${wsHead("Offers", { sub: "Your offers, and the creators who applied to them.", subKey: "biz-offers", action: state.offersSeg === "live" ? `<button type="button" class="btn ws-primary" onclick="return offersNew()">+ New offer</button>` : "" })}
+  <div id="offers-segs"></div>
   <div id="offer-list">${skelHtml("Loading your offers...", 2)}</div>
+  <div id="offers-live-only">
   <h3 style="margin:24px 0 0">Templates</h3>
   ${bizTemplatesHtml()}
   <div class="panel" id="offer-composer" style="margin-top:18px">
@@ -7151,6 +8150,7 @@ async function loadMyOffers() {
       ${marketLive ? "" : `<p class="small muted">Market not open yet — offers save as drafts until it does.</p>`}
     </form>
   </div>
+  </div>
   <div id="offer-info-pop" class="sheet-overlay" style="display:none" onclick="if(event.target===this) closeOfferInfo()">
     <div class="sheet">
       <div class="flex-between"><strong id="offer-info-title"></strong><button type="button" class="linklike" onclick="closeOfferInfo()">Close</button></div>
@@ -7158,19 +8158,15 @@ async function loadMyOffers() {
     </div>
   </div>
   <div id="applicant-stack"></div>`;
+  if (state.offersSeg === "past") { const lo = document.getElementById("offers-live-only"); if (lo) lo.remove(); }
   offerCoachUpdate();
   try {
     const data = await api("GET", "/offers");
     const list = document.getElementById("offer-list");
     if (!list) return;
     state.myOffers = data.offers || [];
-    renderOfferTabs();
+    renderOffersSegTabs();
     renderOfferList();
-    if (state.applicantOffer) {
-      const id = state.applicantOffer;
-      state.applicantOffer = null;
-      viewApplicants(id);
-    }
   } catch (err) {
     const list = document.getElementById("offer-list");
     if (list) list.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
@@ -7240,7 +8236,8 @@ function offerCardHtml(o) {
     <div class="ws-offer-foot">
       <div><div class="ws-price">$${fmtPrice(o.kind === "paid" ? o.cashRate : o.dollarCap)}</div><div class="slot-note">${o.kind === "paid" ? "Rate" : "Comp cap"}</div></div>
       <div class="slot-actions">
-        ${o.lane === "open" && (o.status === "open" || o.status === "filled") ? `<button class="btn small-btn ws-primary" onclick="viewApplicants('${o.id}')">View applicants (${o.applicationCount || 0})</button>` : ""}
+        ${o.lane === "open" && (o.status === "open" || o.status === "filled") ? `<button class="btn small-btn ws-primary" onclick="return goApplicants('${o.id}')">Applicants (${o.applicationCount || 0})</button>` : ""}
+        ${offerIsArchived(o) ? `<button class="btn small-btn ws-outline" onclick="return duplicateOffer('${o.id}')">Duplicate</button>` : ""}
         ${o.status === "draft" ? `<button class="btn small-btn ws-primary" onclick="publishOffer('${o.id}')">Publish</button>` : ""}
         ${o.nudgeSentAt && o.status === "open" && !(o.applicationCount > 0) ? `<button class="btn small-btn ws-outline" onclick="fixOffer('${o.id}','raise')">Raise comp +$25</button><button class="btn small-btn ws-outline" onclick="fixOffer('${o.id}','widen')">Widen window +3 days</button>` : ""}
         ${(o.status === "open" || o.status === "draft") ? `<button class="btn small-btn ws-outline" onclick="closeOffer('${o.id}')">Close offer</button>` : ""}
@@ -7721,7 +8718,7 @@ function renderPlanTab() {
       ${u.business.plan === p.id ? `<p class="saved mt">Your current plan</p>` : ""}
     </div>`).join("");
   el.innerHTML = `
-  ${wsHead("Plan", { sub: "Your founding plan, billing, staff PIN and program settings." })}
+  ${wsHead("Plan & billing", { sub: "Your founding plan, your visits, and your billing.", subKey: "biz-plan" })}
   <div class="panel mt tint">
     <h3>Your plan</h3>
     <p>Current plan: <strong>${esc(u.business.planName)}</strong>, selected ${fmtDate(u.business.planSelectedAt)}.</p>
@@ -7734,52 +8731,7 @@ function renderPlanTab() {
     <input type="hidden" id="me-plan" value="${esc(u.business.plan)}">
     <button class="btn mt" onclick="savePlan()">Save plan selection</button>
     <p class="small muted mt">Until billing starts, your selection is recorded and your founding pricing stays locked while you stay subscribed.</p>
-  </div>
-  <div class="panel mt">
-    <h3>Your public review pages</h3>
-    <p class="small muted">Optional. When a creator completes a visit with you, your review pages appear in their visit flow as a courtesy ("Their review pages"), one tap out. Nothing is ever required, and no points attach to reviews left there.</p>
-    <div class="form-2col">
-      <div class="field"><label>Google review link</label><input id="rl-google" type="url" value="${esc(rl.google || "")}" placeholder="https://g.page/r/..."></div>
-      <div class="field"><label>Yelp page link</label><input id="rl-yelp" type="url" value="${esc(rl.yelp || "")}" placeholder="https://www.yelp.com/biz/..."></div>
-      <div class="field"><label>TripAdvisor page link</label><input id="rl-tripadvisor" type="url" value="${esc(rl.tripadvisor || "")}" placeholder="https://www.tripadvisor.com/..."></div>
-      <div class="field"><label>Facebook page link</label><input id="rl-facebook" type="url" value="${esc(rl.facebook || "")}" placeholder="https://www.facebook.com/..."></div>
-    </div>
-    <button class="btn" onclick="saveMyReviewLinks()">Save review pages</button> <span id="rl-ok" class="saved"></span>
-    ${u.business.plan === "managed" ? `
-    <h3 class="mt">Monthly creator talent budget</h3>
-    <p class="small muted">Your coordinator spends this on paid creator bookings for you. It is a spending cap and an authorization, not a deposit: each booking escrows on its own, and SIGNL holds each payment until the post is live.</p>
-    <div class="field"><label>Budget per month ($)</label><input type="number" id="me-talent-budget" min="0" step="1" value="${esc(String(u.business.monthlyTalentBudget == null ? 500 : u.business.monthlyTalentBudget))}"></div>
-    <button class="btn" onclick="saveTalentBudget()">Save budget</button> <span id="tb-ok" class="saved"></span>` : ""}
-  </div>
-  <div class="panel mt tint">
-    <h3>Your referral program</h3>
-    <p class="small muted">Already run a referral program in your booking or register system? Keep it, and let SIGNL feed it. Save your tracked referral link once and it rides on every opportunity and booked visit: creators see it on their cards and carry it in their posts, so the bookings land in the dashboard you already use. SIGNL never touches referral money, and any rewards stay yours to run, under your program's terms.</p>
-    <div class="field"><label>Your tracked referral link</label><input id="rp-url" type="url" value="${esc(u.business.referralUrl || "")}" placeholder="https://your-booking-or-register-link"></div>
-    <div class="form-2col">
-      <div class="field"><label>Referral code (optional)</label><input id="rp-code" value="${esc(u.business.referralCode || "")}" placeholder="Your program's code, if it uses one"></div>
-      <div class="field"><label>What it earns, in one line (optional)</label><input id="rp-note" maxlength="200" value="${esc(u.business.referralNote || "")}" placeholder="For example: Followers get 15% off a first visit; you earn $10 per booking"></div>
-    </div>
-    ${(u.business.referralUrl || u.business.referralCode) ? `<p class="small"><strong>Active:</strong> creators will see this on your opportunities and on their booked visits.</p>` : ""}
-    <button class="btn" onclick="saveMyReferralProgram()">Save referral program</button> <span id="rp-ok" class="saved"></span>
-  </div>
-  <div class="panel mt">
-    <h3>Audience code discount</h3>
-    <p class="small muted">Every creator who visits you gets a personal audience code, and the code counts the customers their post sends you whether or not it carries a discount. A discount is entirely your choice: it is off unless you turn it on, and the percentage is yours to pick (5 to 50). Nothing is ever applied by default. New bookings carry the setting you save here; bookings already made keep the setting they were created with.</p>
-    <label class="tgl-row"><input type="checkbox" class="sw" id="me-discount-enabled" ${u.business.discountEnabled ? "checked" : ""}><span>Offer a discount when customers use a creator's code</span></label>
-    <div class="field" style="margin-top:8px"><label>Discount percent (%)</label><input type="number" id="me-discount-pct" min="5" max="50" step="1" value="${esc(String(u.business.discountPct == null ? ((state.boot.roasModel && state.boot.roasModel.suggestedDiscountPct) || 20) : u.business.discountPct))}"></div>
-    <p class="small muted">Most businesses that turn this on start at ${esc(String((state.boot.roasModel && state.boot.roasModel.suggestedDiscountPct) || 20))}%. With codes off, the creator's card shows the code as a counting code and promises their audience nothing.</p>
-    <button class="btn" onclick="saveMyDiscount()">Save code discount</button> <span id="disc-ok" class="saved"></span>
-    <h3 class="mt">Your average ticket</h3>
-    <p class="small muted">What one customer typically spends. Code-use estimates use this until you enter an actual tally on a visit.${u.business.averageTicket ? ` Your average ticket: $${fmtMoney(u.business.averageTicket)}.` : ""}</p>
-    <div class="field"><label>Average ticket ($)</label><input type="number" id="me-avg-ticket" min="0" step="0.01" placeholder="40" value="${u.business.averageTicket ? esc(String(u.business.averageTicket)) : ""}"></div>
-    <button class="btn" onclick="saveMyAverageTicket()">Save average ticket</button> <span id="ticket-ok" class="saved"></span>
-  </div>
-  <div class="panel mt tint" id="staff-settings">
-    <h3>Staff redemption</h3>
-    <p class="muted">Loading...</p>
-  </div>
-  ${accountHtml(u)}`;
-  loadStaffSettings();
+  </div>`
 }
 
 // Staff redemption settings (owner): the staff PIN, the business
@@ -7948,6 +8900,27 @@ function openThread(otherId) {
   state.activeThread = otherId;
   render();
 }
+// Threads carry no context object in their payload, so the
+// offer/visit a thread is about is derived on the client
+// (Amendment B): stashed when the thread is opened from a
+// known context, otherwise matched against the user's own
+// bookings and offers. It reads "Re: <offer or visit title>".
+function openThreadCtx(otherId, title) {
+  state.threadContext = state.threadContext || {};
+  if (title) state.threadContext[otherId] = `Re: ${title}`;
+  openThread(otherId);
+  return false;
+}
+function threadContextFor(otherId) {
+  const stash = (state.threadContext || {})[otherId];
+  if (stash) return stash;
+  const mine = Object.values(state.nudgeBookings || {});
+  const b = mine.find((x) => (state.user.role === "business" ? x.creatorId : x.businessId) === otherId);
+  if (b) return `Re: ${b.title}`;
+  const o = (state.myOffers || []).find((x) => x.creatorId === otherId);
+  if (o) return `Re: ${o.title}`;
+  return "";
+}
 
 // Conversations (Grin pattern): search, a segmented switch, one
 // "New message" primary. SIGNL keeps no per-thread read state, so
@@ -7967,6 +8940,7 @@ function threadItemsHtml() {
   return `<div class="thread-list">${threads.map((t) => `
         <div class="thread-item" onclick="openThread('${t.otherId}')">
           <strong>${esc(t.otherBusinessName || t.otherName)}</strong> ${t.otherHandle ? `<span class="muted">@${esc(t.otherHandle)}</span>` : ""}${t.lastMessage && t.lastMessage.fromId !== me ? ` <span class="badge info">Waiting on you</span>` : ""}
+          ${threadContextFor(t.otherId) ? `<div class="small thread-ctx">${esc(threadContextFor(t.otherId))}</div>` : ""}
           <div class="small muted">${esc((t.lastMessage.body || "").slice(0, 90))}</div>
         </div>`).join("")}</div>`;
 }
@@ -7985,14 +8959,14 @@ async function loadThreads() {
     state.threads = data.threads;
     const newGo = state.user.role === "business" ? "return go('dashboard','Discover')" : "return go('dashboard','Offers')";
     el.innerHTML = `
-    ${wsHead("Conversations", { sub: "Every thread with your creators and businesses, in one place." })}
+    ${wsHead("Messages", { sub: state.user.role === "business" ? "Talk to a creator about a visit or an offer." : "Talk to a business about a visit or an offer.", subKey: "messages" })}
     <div class="ws-tools">
       <span class="ws-search">${bnIcon("search")}<input id="msg-q" type="search" placeholder="Search conversations" value="${esc(msgQ)}" oninput="msgSetQ(this.value)"></span>
       <span id="msg-seg">${segSw([{ v: "waiting", label: "Waiting on you" }, { v: "all", label: "All" }], msgMode, "msgSetMode")}</span>
       <span class="sp"></span>
-      <button type="button" class="btn ws-primary" onclick="${newGo}">New message</button>
+      <button type="button" class="btn ws-primary" onclick="${newGo}">${state.user.role === "business" ? "Find creators" : "See offers"}</button>
     </div>
-    <div class="grid cols-2"><div id="thread-list-wrap">${data.threads.length || state.activeThread ? threadItemsHtml() : `<div class="empty-card"><div class="ec-t">No conversations yet</div><div class="ec-s">${state.user.role === "business" ? "Find a creator in Discover and tap Message." : "Message a business from an offer or a visit."}</div></div>`}</div>
+    <div class="grid cols-2"><div id="thread-list-wrap">${data.threads.length || state.activeThread ? threadItemsHtml() : `<div class="empty-card"><div class="ec-t">No messages yet</div><div class="ec-s">When you invite a creator, apply to an offer, or answer an applicant, your conversation lives here.</div></div>`}</div>
     <div id="thread-view">${state.activeThread ? `<p class="muted">Loading conversation...</p>` : `<p class="muted">Pick a conversation.</p>`}</div></div>`;
     if (state.activeThread) loadConversation(state.activeThread);
   } catch (err) {
@@ -8005,7 +8979,10 @@ async function loadConversation(otherId) {
   if (!el) return;
   try {
     const data = await api("GET", "/messages?with=" + encodeURIComponent(otherId));
+    const t0 = (state.threads || []).find((t) => t.otherId === otherId) || {};
+    const ctxLine = threadContextFor(otherId);
     el.innerHTML = `
+      <div class="thread-head"><strong>${esc(t0.otherBusinessName || t0.otherName || "Conversation")}</strong>${ctxLine ? `<div class="small thread-ctx">${esc(ctxLine)}</div>` : ""}<div class="small muted">Contact about this visit or offer. Messages stay in SIGNL.</div></div>
       <div id="msg-list">${data.messages.map((m) => `
         <div class="msg ${m.fromId === state.user.id ? "mine" : ""}">
           <div class="meta">${m.fromId === state.user.id ? "You" : "Them"} &middot; ${fmtDate(m.createdAt)}</div>

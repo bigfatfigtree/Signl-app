@@ -300,7 +300,10 @@ try {
   const appJs = await anon("GET", "/app.js");
   const appJsText = String((appJs.data && appJs.data.raw) || "");
   check("client ships the business rating form on the visit card", appJsText.includes("Rate this creator") && appJsText.includes("submitCreatorReview") && appJsText.includes("crev-stars-"), "");
-  check("client ships the creator's own rating line (rated + neutral states)", appJsText.includes("Your rating:") && appJsText.includes("Businesses rate you after visits. Your rating appears here after your first rated visit."), "");
+  // V3 (2026-10-27): the creator's own rating line lives on My
+  // profile (both states) and in the Your numbers reviews
+  // summary; it no longer sits on Home.
+  check("client ships the creator's own rating line (rated + neutral states)", appJsText.includes("Businesses see your rating next to your Momentum points") && appJsText.includes("Businesses rate you after visits. Your rating appears here after your first rated visit.") && appJsText.includes("function renderCreatorNumbers("), "");
   check("client ships the applicant-stack rating", appJsText.includes("ratingBit") && appJsText.includes("ratingCount"), "");
 } catch (e) {
   failed += 1;

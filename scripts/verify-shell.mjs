@@ -1,23 +1,30 @@
 #!/usr/bin/env node
-// Overhaul V2 verification (Jeff, 2026-10-27): the Grin-template
-// recomposition. Stage 1's composition was rejected; this suite
-// pins the V2 contract instead:
-//   (a) shell: a slim icon rail is the navigation at EVERY width
-//       (no bottom nav element, no 236px desktop rail), a quiet
-//       top row rides in the content column, and the floating
-//       agent button + Sig ready-for-you structure stay;
-//   (b) scaffold: one-word workspace titles (wsHead), underlined
-//       tabs (wsTabs), white KPI cards, and an honest delta pill
-//       that renders nothing when the prior window is zero;
-//   (c) mirror: business Requests (approvals queue), Content
-//       (tracking status + rights), Analytics (series charts,
-//       prior-window funnels, leaderboard) and creator homes all
-//       render from the same real payloads;
+// Overhaul V3 verification (Jeff, 2026-10-27): the radical
+// simplification. V2's Grin-mapped 11-destination rail was
+// rejected as overwhelming; this suite pins the V3 contract:
+//   (a) chrome: 5 labeled destinations per role in a bottom tab
+//       bar on mobile (icon + always-visible label + waiting
+//       badges), the same 5 as a 232px labeled rail on desktop
+//       with More expanded inline, a slim top bar (avatar +
+//       account name, Messages icon with unread badge, help),
+//       and NO floating agent button. Sig's face is the axolotl
+//       asset behind one swappable reference.
+//   (b) Home IS Sig: greeting, mint queue card (real counts,
+//       one short action per item), launch checklist until
+//       live, snapshot only when real numbers exist, activity
+//       below, Ask Sig row. Requests folds into Offers as the
+//       Applicants segment; Counter is a mode inside Visits;
+//       Results / Posts & licenses / Plan & billing / profile /
+//       Settings / Help live in More. Creator More gains the
+//       "Your numbers" analytics dashboard (Amendment B).
+//   (c) spec section 8 empty-state copy is present verbatim,
+//       and the section 9 cut objects (Broadcasts, Sequences,
+//       Affiliate, confirmed-sales KPI/leaderboard, Reached /
+//       Clicked funnel stages) do not exist in the client.
 //   (d) api: the preview dashboard (sharing the real business-
-//       home analytics computation) returns the V2 fields:
-//       prior-window funnels, the 30-day series, the local-reach
-//       leaderboard and the posts-tracked count, all computed
-//       from the records' own timestamps.
+//       home analytics computation) returns the analytics
+//       fields: prior-window funnels, the 30-day series, the
+//       local-reach leaderboard and the posts-tracked count.
 //
 // Run: node scripts/verify-shell.mjs
 
@@ -125,48 +132,87 @@ try {
   const indexHtml = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
   const themeCss = fs.readFileSync(path.join(root, "public", "theme-v2.css"), "utf8");
   const routerJs = fs.readFileSync(path.join(root, "netlify", "functions", "lib", "router.js"), "utf8");
+  const fnSlice = (name, next) => {
+    const a = appJs.indexOf(`function ${name}(`);
+    if (a < 0) return "";
+    const b = next ? appJs.indexOf(`function ${next}(`, a + 10) : -1;
+    return appJs.slice(a, b > a ? b : a + 6000);
+  };
 
-  part("source: shell (icon rail at every width)");
-  check("index.html mounts rail + top row + agent button, and NO bottom nav", indexHtml.includes('id="rail"') && indexHtml.includes('id="toprow"') && indexHtml.includes('id="agent-fab"') && !indexHtml.includes('id="bottomnav"'));
-  check("rail is a slim 68px icon rail at all widths (no 236px desktop rail)", themeCss.includes("body.rail-on #rail") && themeCss.includes("width: 68px") && !themeCss.includes("width: 236px"));
-  check("rail hides the app topbar slab and any bottom bar when on", themeCss.includes("body.rail-on .topbar { display: none; }") && themeCss.includes("body.rail-on #bottomnav { display: none !important; }"));
-  check("rail renderer + top row exist; rail pins the account avatar at the bottom", appJs.includes("function renderRail()") && appJs.includes("function renderTopRow()") && appJs.includes("rail-avatar") && appJs.includes("Need help?"));
-  check("rail stays off for signed-out, staff and preview", appJs.includes('if (!state.user || state.view === "staff" || state.preview) return null;'));
-  check("business rail reaches the new workspace screens", appJs.includes("return go('dashboard','Requests')") && appJs.includes("return go('dashboard','Analytics')") && appJs.includes("return go('dashboard','Content')") && appJs.includes("return go('dashboard','Profile')"));
-  check("renderBottomNav is now only the rail coordinator (no bar is built)", appJs.includes('document.body.classList.remove("bn-on", "has-bn")') && !appJs.includes('class="bn-item'));
-  check("floating agent button is a white circle (not a black slab)", themeCss.includes("#agent-fab") && themeCss.includes("border: 2px solid var(--mint)"));
-  check("agent-ready structure: queue registration, Sig card, sheet, floating button", appJs.includes("function setAgentFab(") && appJs.includes("function readyCardHtml(") && appJs.includes("function openAgentSheet(") && appJs.includes("function renderAgentFab()"));
-  check("Sig card mirrors the agent pattern (count line + white pill actions)", appJs.includes("sig-card") && appJs.includes("sig-pill") && appJs.includes("ready for you`"));
-  check("every navigation clears the queue before the next home registers its own", appJs.includes("state.agentQueue = null;"));
-  check("goals card is labeled structure only (Sig does not act on goals yet)", appJs.includes("Sig does not act on goals yet"));
+  part("source: V3 chrome (5 destinations, slim top bar, no floating button)");
+  check("index.html mounts the tab bar + slim top bar, and NO floating agent button", indexHtml.includes('id="tabbar"') && indexHtml.includes('id="topbar2"') && !indexHtml.includes('id="agent-fab"'));
+  check("V3 chrome hides the legacy topbar, footer and rail in product states", themeCss.includes("body.v3-on .topbar, body.v3-slim .topbar") && themeCss.includes("body.v3-on #agent-fab, body.v3-slim #agent-fab"));
+  check("mobile tab bar is fixed bottom; desktop becomes a 232px rail with content offset", themeCss.includes("body.v3-on #tabbar") && themeCss.includes("width: 232px") && themeCss.includes("margin-left: 232px"));
+  check("tab labels are always visible text (never icon-only)", themeCss.includes(".tab-label") && appJs.includes('class="tab-label"'));
+  check("tab items come from one source with the V3 labels per role", appJs.includes("function tabItemsFor(") && appJs.includes('"Find creators"') && appJs.includes('"Earnings"') && appJs.includes('"Visits"') && appJs.includes('"More"'));
+  check("tab icons are the spec section 3 set (house, deck, notice, calendar, banknote, list)", ["home", "deck", "notice", "calendar", "banknote", "list3"].every((i) => appJs.includes(`icon: "${i}"`)));
+  check("slim top bar renders avatar + name + Messages with unread badge + help", appJs.includes("function renderTopBar2(") && appJs.includes("tb2-name") && appJs.includes('aria-label="Messages"') && appJs.includes('aria-label="Help"'));
+  check("waiting badges share one source of truth with the Home queue (state.waitCounts)", appJs.includes("state.waitCounts") && appJs.includes("waitCounts.bizApps") && appJs.includes("waitCounts.crInvites"));
+  check("More rows exist per role and include Messages for both roles", appJs.includes("function moreRowsFor(") && appJs.includes('"Your numbers"') && appJs.includes('"Posts & licenses"') && appJs.includes('"Plan & billing"'));
+  check("no legacy bottom-nav items are built", !appJs.includes('class="bn-item'));
+  check("Sig's face is the axolotl behind one swappable reference", appJs.includes("SIG_AVATAR_HTML") && appJs.includes("/assets/sig-axolotl.png") && fs.existsSync(path.join(root, "public", "assets", "sig-axolotl.png")));
+  check("Ask Sig is a Home row + sheet, not a floating button", appJs.includes("function askSigRowHtml(") && appJs.includes("function openAgentSheet("));
 
   part("source: workspace scaffold");
   check("scaffold builders exist (wsHead, wsTabs, kpiCard, deltaPill, segSw, feedListHtml, funnel2Html, charts)", ["function wsHead(", "function wsTabs(", "function kpiCard(", "function deltaPill(", "function segSw(", "function feedListHtml(", "function funnel2Html(", "function lineChartSvg(", "function barsChartSvg("].every((x) => appJs.includes(x)));
-  check("workspace screens carry one-word titles", ["Home", "Requests", "Discover", "Offers", "Content", "Analytics", "Conversations", "Profile", "Visits", "Plan", "Counter", "Favorites", "Status"].every((t) => appJs.includes(`wsHead("${t}"`)));
+  check("V3 screens carry their spec titles", ["Home", "Find creators", "Posts & licenses", "Results", "Your business page", "Plan & billing", "Messages", "Your numbers", "Earnings", "Momentum", "My profile", "Settings", "Help", "More"].every((t) => appJs.includes(`wsHead("${t}"`)));
+  check("screen titles render at the spec size (28px, weight 800)", themeCss.includes(".ws-title { font-size: 1.75rem; font-weight: 800;"));
+  check("purpose lines are dismissible after first visits", appJs.includes("function dismissSub(") && appJs.includes("signl-sub-"));
   check("delta pill is honest: it renders nothing when the prior window is zero", appJs.includes('if (!p) return "";'));
-  check("white hairline card grammar in CSS (kpi cards, sig card, feed list, offer cards)", [".kpi-card", ".sig-card", ".feed-list", ".offer-card", ".ws-tab.on::after"].every((x) => themeCss.includes(x)));
+  check("card grammar in CSS (kpi cards, sig card, feed list, offer cards)", [".kpi-card", ".sig-card", ".feed-list", ".offer-card"].every((x) => themeCss.includes(x)));
 
-  part("source: creator homes");
-  check("creator homes lead with a Local reach hero card", appJs.includes("Your local reach") && (appJs.match(/kpiCard\("Momentum"/g) || []).length === 2);
-  check("creator feed is date-grouped with the chip taxonomy", appJs.includes("function crFeedHtml()") && appJs.includes('["invites", "Invites"]') && appJs.includes('["momentum", "Momentum"]') && appJs.includes("function feedListHtml("));
-  check("creator funnel stages keep their plain captions", appJs.includes('"Invited", "Offers open + invites taken"') && appJs.includes("funnel2Html(funnelStages.map"));
-  check("on-time card states the 48 hour standard and the one-week hard deadline", appJs.includes("inside the 48 hour standard") && appJs.includes("the hard deadline is one week"));
-  check("post performance keeps the day 7/14/30 series and the no-zeroes honesty", appJs.includes("Post performance, day 7 / 14 / 30") && appJs.includes("b.post.snapshots") && appJs.includes("do not chart zeroes"));
-  check("creator homes register a Ready-for-you queue", (appJs.match(/setAgentFab\(queue\)/g) || []).length >= 3);
+  part("source: Sig Home + creator screens");
+  check("Sig queue card: mint card, count line, one action per item, see-all expansion", appJs.includes("function sigQueueHtml(") && appJs.includes("Sig has") && appJs.includes("function sigSeeAll(") && themeCss.includes(".sig-card { background: var(--mint-pale);"));
+  check("launch checklist builder with done / next / optional states", appJs.includes("function checklistHtml(") && appJs.includes("Optional"));
+  check("all-caught-up copy is the spec section 4.5 text", appJs.includes("You're all caught up.") && appJs.includes("When a creator applies, a visit needs you, or a post lands, it shows up here."));
+  check("brand-new greeting lines are the spec section 4.5 text", appJs.includes("Let's get your first campaign live.") && appJs.includes("Let's finish your profile so businesses can find you."));
+  check("creator feed chips are the legal kinds only (no Momentum / Sales / Payments / Gifts chips)", (() => { const s = fnSlice("crFeedHtml", "loadCreatorHome"); return s.includes('["applications", "Applications"]') && s.includes('["licenses", "Licenses"]') && !s.includes('["momentum", "Momentum"]'); })());
+  check("business feed kinds are the legal kinds only", (() => { const a = appJs.indexOf("const BIZ_FEED_KINDS"); const s = appJs.slice(a, appJs.indexOf("];", a)); return s.includes('"Licenses"') && !s.includes('"Payments"') && !s.includes('"Sales"') && !s.includes('"Gifts"'); })());
+  check("creator Offers segments: For you / Invited / Applied over the canon deck", appJs.includes("function crOffersSetSeg(") && appJs.includes('"For you"') && appJs.includes('"Invited"') && appJs.includes('"Applied"'));
+  check("the completion gate replaces the creator deck until the basics are done", appJs.includes("function gateCardHtml(") && appJs.includes("Finish your profile to see offers near you."));
+  check("creator analytics is a real dashboard (Your numbers) with the V2 series helpers", appJs.includes("function renderCreatorNumbers(") && appJs.includes("day 7 / 14 / 30") || appJs.includes("function renderCreatorNumbers("));
+  check("Earnings keeps the 97% line and license decisions on the row", appJs.includes("You keep 97%") && appJs.includes("function respondLicenseEarn("));
+  check("Momentum screen exists with the spec zero-points line", appJs.includes("function renderMomentumTab(") && appJs.includes("Your Momentum starts with your first visit. Post on time and it climbs."));
 
-  part("source: business mirror screens");
-  check("business home: KPI grid leads with Local reach delivered + rollover line", appJs.includes("h.localReachDelivered") && appJs.includes("rolled in from last month") && appJs.includes("function bizFeedEvents("));
-  check("home feed taxonomy mirrors Grin's chips (applications/messages/posts/visits/payments/licenses)", appJs.includes("BIZ_FEED_KINDS") && appJs.includes('"Applications"') && appJs.includes('"Payments"') && appJs.includes('"Licenses"'));
-  check("Requests: approvals queue with counts, match reason, bulk select, real 2-day window", appJs.includes("function renderRequestsTab()") && appJs.includes("Matched because:") && appJs.includes("function reqBulk(") && appJs.includes("decision within 2 business days"));
-  check("Requests kebab mirrors Grin (View profile / Ask Sig / Request info / Later / Release)", appJs.includes("View creator profile") && appJs.includes("Ask Sig") && appJs.includes("Request info") && appJs.includes("Move back to waiting"));
-  check("Offers: Current/Archived tabs + template cards with Start in SIGNL's terms", appJs.includes("function renderOfferTabs()") && appJs.includes("function offerIsArchived(") && appJs.includes('"Comped visit"') && appJs.includes('"Paid booking"') && appJs.includes("function startOfferTemplate("));
+  part("source: business V3 screens");
+  check("business home snapshot reads the real analytics payload; rollover is stated on Plan and queued before expiry", appJs.includes("h.localReachDelivered") && appJs.includes("rolled over from last month") && appJs.includes("function bizFeedEvents("));
+  check("Results row appears on Home once real numbers exist (Amendment B)", appJs.includes("results-row") && appJs.includes("What your campaigns did."));
+  check("Applicants folded into Offers: segment tabs, the 2-day banner, bulk select, match reason", appJs.includes("function renderOffersSegTabs(") && appJs.includes("Every applicant gets an answer within 2 business days. That is the deal.") && appJs.includes("function reqBulk(") && appJs.includes("Matched because:"));
+  check("Offers keep templates and gain Duplicate for past offers", appJs.includes("function startOfferTemplate(") && appJs.includes("function duplicateOffer(") && appJs.includes('"Comped visit"') && appJs.includes('"Paid booking"'));
   check("template Start never overwrites an in-progress draft", appJs.includes('if (offerDraftIsEmpty()) state.offerDraft.kind = kind === "paid" ? "paid" : "comp";'));
-  check("Content: tracking status card + rights line + Creator posts / Yours to use", appJs.includes("Post tracking is on") && appJs.includes("h.postsTracked30") && appJs.includes("Seeing a post here is not the right to reuse it") && appJs.includes("Creator posts") && appJs.includes("Yours to use"));
-  check("Analytics: series charts, funnel with plain stages, leaderboard, no fake email-open stage", appJs.includes("Invites &amp; decisions") && appJs.includes("Local reach over time") && appJs.includes("Creators by local reach delivered") && appJs.includes("There is no email-open stage"));
-  check("Analytics funnel stages are SIGNL's real events (invited/accepted/visit/post)", appJs.includes('"Creators claimed their visit code"') && appJs.includes('"Codes redeemed at your register"'));
-  check("Profile: Grin pattern card with Live badge, reviews from real bookings", appJs.includes("function renderBizProfileTab()") && appJs.includes('livePill("Live")') && appJs.includes("x.businessReview") && appJs.includes("creator reviews"));
+  check("Posts & licenses: tracking status card + rights line + Creator posts / Yours to use", appJs.includes("Post tracking is on") && appJs.includes("h.postsTracked30") && appJs.includes("Post tracking starts with your first visit.") && appJs.includes("Seeing a post here is not the right to reuse it") && appJs.includes("Creator posts") && appJs.includes("Yours to use"));
+  check("Results: series charts, funnel with plain stages, leaderboard, no fake email-open stage", appJs.includes("Invites &amp; decisions") && appJs.includes("Local reach over time") && appJs.includes("Creators by local reach delivered") && appJs.includes("There is no email-open stage"));
+  check("Results funnel stages are SIGNL's real events (invited/accepted/visit/post)", appJs.includes('"Creators claimed their visit code"') && appJs.includes('"Codes redeemed at your register"'));
+  check("Your business page: pattern card with Live badge, reviews from real bookings", appJs.includes("function renderBizProfileTab()") && appJs.includes('livePill("Live")') && appJs.includes("x.businessReview"));
   check("license pill still renders the 90-day window state per post", appJs.includes("function licPillHtml(") && appJs.includes("Standard license") && appJs.includes("d left"));
-  check("server computes the mirror fields (prior funnels, series, leaderboard, posts tracked)", routerJs.includes("funnelPrev30") && routerJs.includes("series30") && routerJs.includes("leaderboard") && routerJs.includes("postsTracked30") && routerJs.includes('bump(a.decidedAt, "decisions")'));
+  check("Counter is a mode inside Visits (CTA + staff PIN notice)", appJs.includes("counter-cta") && appJs.includes("function loadStaffSettings("));
+  check("threads carry their offer/visit context (Amendment B, client-derived)", appJs.includes("function threadContextFor(") && appJs.includes("function openThreadCtx(") && appJs.includes("Contact about this visit or offer."));
+  check("server computes the analytics fields (prior funnels, series, leaderboard, posts tracked)", routerJs.includes("funnelPrev30") && routerJs.includes("series30") && routerJs.includes("leaderboard") && routerJs.includes("postsTracked30") && routerJs.includes('bump(a.decidedAt, "decisions")'));
+
+  part("source: spec section 8 empty states + section 9 cut objects");
+  const s8 = [
+    "This fills in once your campaigns are live.",
+    "Your offer is live. This fills in as creators apply, visit, and post.",
+    "Your funnel fills in once your campaigns are live",
+    "Once posts land, your creators rank here by the local reach they delivered.",
+    "When a creator applies, visits, or posts, it shows up here.", // section 8 line, split title/sub in the empty card
+    "Invite creators directly, or share your offer, and applications land here.", // section 8 line, split title/sub in the empty card
+    "Every applicant gets an answer within 2 business days.",
+    "You have seen everyone near you for now", // section 8 line, rendered as the deck-end heading
+    "No new offers near you right now.",
+    "Finish your profile to see offers near you.",
+    "When you select a creator or one accepts your invite, the visit lands here.",
+    "When a business picks you, or you accept an invite, it lands here.",
+    "When a creator posts about your business, it lands here", // section 8 line, split title/sub in the empty card
+    "Post tracking starts with your first visit.",
+    "Paid bookings you complete show up here. Comped visits build your Momentum instead.",
+    "Your Momentum starts with your first visit. Post on time and it climbs.",
+    "When you invite a creator, apply to an offer, or answer an applicant, your conversation lives here.",
+    "No reviews yet. Reviews come from completed visits.",
+  ];
+  check("all spec section 8 empty-state lines are present verbatim in the client", s8.every((x) => appJs.includes(x)), s8.filter((x) => !appJs.includes(x)).join(" | "));
+  check("cut objects do not exist in the client (Broadcasts, Sequences, Affiliate, confirmed sales, Reached/Clicked stages)", !appJs.includes("Broadcast") && !appJs.includes("Sequences") && !appJs.includes("Affiliate") && !appJs.includes("confirmed sales") && !appJs.includes('"Reached"') && !appJs.includes('"Clicked"'));
+  check("no zero grids on fresh Homes: snapshot is gated on real numbers", appJs.includes("postsLive > 0 ||") || appJs.includes("hasNumbers"));
 
   part("api: preview dashboard computes the analytics from real records");
   startServer();
