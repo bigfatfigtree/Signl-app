@@ -172,6 +172,23 @@ function sanitizeClaimHandle(v) {
   return String(v || "").trim().replace(/^@/, "").replace(/[^A-Za-z0-9._]/g, "").slice(0, 30);
 }
 
+// Mirror of the server's normalizeHandle (Jeff, 2026-10-26): a
+// handle typed as @name or pasted as a full profile link becomes
+// the same clean handle before anything is sent, and the form
+// writes the clean value back so the creator sees what was
+// understood. The server normalizes again on arrival; the two
+// must stay in step.
+function normalizeHandleClient(raw) {
+  let h = String(raw == null ? "" : raw).trim();
+  if (!h) return "";
+  if (h.includes("/")) {
+    h = h.replace(/^https?:\/\//i, "").replace(/^www\./i, "");
+    const parts = h.split(/[/?#]/).map((x) => x.trim()).filter(Boolean);
+    h = parts.length ? parts[parts.length - 1] : "";
+  }
+  return h.replace(/^@/, "").trim();
+}
+
 function parseClaimParams(params) {
   const out = {};
   const handle = sanitizeClaimHandle(params.get("handle"));
@@ -1856,7 +1873,7 @@ function renderQuickClaim() {
       <div class="fgroup tint">
         <p class="fg-kicker">Your platform</p>
         <div class="field"><label>Where is your main audience?</label>${platformChipsHtml("qc-platform", pfPlatform, "syncQcPlatform")}<p class="small muted">Your main platform. Add the rest later.</p><p class="small muted" id="qc-proof-note" style="display:${pfPlatform !== "instagram" ? "" : "none"}">${PROOF_DISCLOSURE}</p></div>
-        <div class="field"><label id="qc-handle-label">Your ${esc(primaryLabelClient(pfPlatform))} handle (required)</label><input id="qc-handle" placeholder="yourhandle" required value="${esc(pf.handle || "")}" oninput="syncQcPlatform()"><p class="small muted" id="qc-ig-link">${pf.handle ? esc(primaryMetaClient(pfPlatform).host + pf.handle) : ""}</p></div>
+        <div class="field"><label id="qc-handle-label">Your ${esc(primaryLabelClient(pfPlatform))} handle (required)</label><input id="qc-handle" placeholder="yourhandle" required value="${esc(pf.handle || "")}" oninput="syncQcPlatform()"><p class="small muted" id="qc-ig-link">${pf.handle ? esc(primaryMetaClient(pfPlatform).host + pf.handle) : ""}</p><p class="small muted">Paste your handle or a link to your page, so businesses and our team can view your page.</p></div>
       </div>
       <div class="fgroup">
         <p class="fg-kicker">Your market</p>
@@ -1906,6 +1923,13 @@ async function doQuickClaim(e) {
   if (!document.getElementById("qc-agree-ftc").checked) { errBox("Please confirm the FTC disclosure agreement."); return false; }
   if (!document.getElementById("qc-agree-compliance").checked) { errBox("Please confirm the post rule: post within 48 hours for full credit, paste the link, and understand a post that never lands means the visit does not count, and repeated misses can pause your account."); return false; }
   if (!document.getElementById("qc-agree-terms").checked) { errBox("Please agree to the Terms of Service and email consent so we can reach you at launch."); return false; }
+  // The primary social link is required (Jeff, 2026-10-26): it is
+  // how businesses and our team view and verify the creator's
+  // page. A pasted profile link normalizes to the clean handle.
+  const qcHandleInput = document.getElementById("qc-handle");
+  const qcHandle = normalizeHandleClient(qcHandleInput.value);
+  if (!qcHandle) { errBox(`Your ${primaryLabelClient(document.getElementById("qc-platform").value)} handle is required: paste your handle or a link to your page.`); return false; }
+  qcHandleInput.value = qcHandle;
   const marketVal = document.getElementById("qc-market").value;
   const isUnlisted = marketVal === unlistedLabel();
   const customCity = isUnlisted ? document.getElementById("qc-city-text").value.trim() : "";
@@ -1925,7 +1949,7 @@ async function doQuickClaim(e) {
       customCity: isUnlisted ? customCity : undefined,
       customCountry: isUnlisted ? customCountry : undefined,
       customState: isUnlisted ? customState : undefined,
-      handle: document.getElementById("qc-handle").value,
+      handle: qcHandle,
       primaryPlatform: document.getElementById("qc-platform").value,
       agreedHonestPosts: true,
       agreedFtcDisclosure: true,
@@ -2003,7 +2027,7 @@ function renderJoinCreator() {
         <p class="fg-kicker">Your audience</p>
         <div class="field"><label>Where is your main audience?</label>${platformChipsHtml("jc-platform", pf.platform || "instagram", "syncJcPlatform")}<p class="small muted">Your main platform. The rest stack on top.</p><p class="small muted" id="jc-proof-note" style="display:${(pf.platform || "instagram") !== "instagram" ? "" : "none"}">${PROOF_DISCLOSURE}</p></div>
       <div class="form-2col">
-        <div class="field"><label id="jc-handle-label">${esc(primaryLabelClient(pf.platform || "instagram"))} handle (required)</label><input id="jc-handle" placeholder="yourhandle" required value="${esc(pf.handle || "")}" oninput="syncJcPlatform()"><p class="small muted" id="jc-ig-link"></p></div>
+        <div class="field"><label id="jc-handle-label">${esc(primaryLabelClient(pf.platform || "instagram"))} handle (required)</label><input id="jc-handle" placeholder="yourhandle" required value="${esc(pf.handle || "")}" oninput="syncJcPlatform()"><p class="small muted" id="jc-ig-link"></p><p class="small muted">Paste your handle or a link to your page, so businesses and our team can view your page.</p></div>
         <div class="field"><label>TikTok handle (optional)</label><input id="jc-tiktok" placeholder="yourhandle"></div>
       </div>
       <div class="field"><label>YouTube channel (optional)</label><input id="jc-youtube" placeholder="Channel name or URL"></div>
@@ -2197,6 +2221,13 @@ async function doRegisterCreator(e) {
     if (v > 0) stackFromForm[platform] = v;
   }
   if (!document.getElementById("jc-agree-terms").checked) { errBox("Please agree to the Terms of Service and email consent so we can reach you at launch."); return false; }
+  // The primary social link is required (Jeff, 2026-10-26): it is
+  // how businesses and our team view and verify the creator's
+  // page. A pasted profile link normalizes to the clean handle.
+  const jcHandleInput = document.getElementById("jc-handle");
+  const jcHandle = normalizeHandleClient(jcHandleInput.value);
+  if (!jcHandle) { errBox(`Your ${primaryLabelClient(primaryPlatform)} handle is required: paste your handle or a link to your page.`); return false; }
+  jcHandleInput.value = jcHandle;
   const autoBand = suggestedTierId(signupStackTotal());
   const paidBox = document.getElementById("jc-paid");
   if (autoBand === "Headliners" && paidBox && paidBox.checked && !comps.includes(PAID_COMP)) comps.push(PAID_COMP);
@@ -2233,7 +2264,7 @@ async function doRegisterCreator(e) {
       customCity: isUnlisted ? customCity : undefined,
       customCountry: isUnlisted ? customCountry : undefined,
       customState: isUnlisted ? customState : undefined,
-      handle: document.getElementById("jc-handle").value,
+      handle: jcHandle,
       primaryPlatform,
       tiktokHandle: document.getElementById("jc-tiktok").value,
       youtubeChannel: document.getElementById("jc-youtube").value,
@@ -2973,7 +3004,12 @@ function creatorShowcaseHtml(card) {
 // discovery card (and what the admin preview opens). Built entirely
 // from the same card payload discovery returns, so the detail view
 // can never disagree with the card.
-function creatorProfileDetailHtml(c, preview) {
+function creatorProfileDetailHtml(c, preview, opts) {
+  // Admin review mode (Jeff, 2026-10-26): the same profile a
+  // business sees, rendered from the Admin Requests queue. The
+  // business actions (offers, Later, Not a fit) are replaced by
+  // the way back to the queue; everything else is byte-identical.
+  const adminView = !!(opts && opts.admin);
   const p = c.profile || {};
   const localTxt = p.localAudiencePct === null || p.localAudiencePct === undefined
     ? "Local audience not reported yet"
@@ -2981,7 +3017,7 @@ function creatorProfileDetailHtml(c, preview) {
   const initial = esc((c.name || "?").trim().charAt(0).toUpperCase() || "?");
   return `
   <div class="panel">
-    <p><button class="btn small-btn ghost" onclick="${preview ? "previewBackToResults()" : "backToDiscover()"}">&larr; Back to results</button></p>
+    <p><button class="btn small-btn ghost" onclick="${adminView ? "adminBackToRequests()" : preview ? "previewBackToResults()" : "backToDiscover()"}">&larr; Back to ${adminView ? "Requests" : "results"}</button></p>
     <div class="creator-card full">
       <div class="cc-photo${c.photoUrl ? "" : " no-photo"}">
         ${c.photoUrl ? `<img src="${esc(c.photoUrl)}" alt="">` : `<div class="cc-mono"><span>${initial}</span></div>`}
@@ -3024,13 +3060,13 @@ function creatorProfileDetailHtml(c, preview) {
     ${p.bio ? `<p>${esc(p.bio)}</p>` : ""}
     <p class="small">${socialLinksHtml(p)}</p>
     ${creatorShowcaseHtml(c)}
-    <div class="cta-row" style="justify-content:flex-start">
+    ${adminView ? `<div class="cta-row" style="justify-content:flex-start"><button class="btn ghost" onclick="adminBackToRequests()">Back to Requests</button></div>` : `<div class="cta-row" style="justify-content:flex-start">
       ${preview
         ? `<button class="btn" onclick="previewStartOffer('${c.userId}')">Send offer</button>${p.paidRate ? ` <button class="btn ghost" onclick="previewPaidBooking('${c.userId}')">Preview paid booking ($${fmtPrice(p.paidRate)})</button>` : ""}`
         : `<button class="btn" onclick="startOffer('${c.userId}')">Send offer</button>${p.paidRate ? ` <button class="btn" onclick="bookPaidVisit('${c.userId}')">Book paid visit ($${fmtPrice(p.paidRate)})</button>` : ""} <button class="btn ghost" onclick="openThread('${c.userId}')">Message</button>`}
       <button class="btn small-btn ghost" onclick="profileLater('${c.userId}', ${preview ? "true" : "false"})">Later</button>
       <button class="btn small-btn ghost" onclick="profileNotFit('${c.userId}', ${preview ? "true" : "false"})">Not a fit</button>
-    </div>
+    </div>`}
     ${p.paidRate ? `<p class="small muted">Paid bookings: $${fmtPrice(p.paidRate)} &middot; you pay rate + 3% &middot; they keep 97% &middot; held until the post is live.</p>` : ""}
     ${preview ? `<p class="small muted">Preview: an offer sent from here is a simulation. It never reaches ${esc(c.name)} and nothing is saved.</p>` : ""}
     ${preview && c.trackRecord && c.trackRecord.postsDelivered > 0 ? `
@@ -4262,7 +4298,7 @@ async function doUpdateCreator(e) {
     const cityTextEl = document.getElementById("p-city-text");
     const data = await api("PATCH", "/me/profile", {
       name: document.getElementById("p-name").value,
-      handle: document.getElementById("p-handle").value,
+      handle: normalizeHandleClient(document.getElementById("p-handle").value),
       primaryPlatform: document.getElementById("p-platform").value,
       city: cityEl ? cityEl.value : cityTextEl ? cityTextEl.value : undefined,
       neighborhood: document.getElementById("p-neighborhood").value,
@@ -4273,7 +4309,7 @@ async function doUpdateCreator(e) {
       universityStatus: document.getElementById("p-university-status").value,
       state: document.getElementById("p-state-text") ? document.getElementById("p-state-text").value : undefined,
       country: document.getElementById("p-country-text") ? document.getElementById("p-country-text").value : undefined,
-      tiktokHandle: document.getElementById("p-tiktok").value,
+      tiktokHandle: normalizeHandleClient(document.getElementById("p-tiktok").value),
       youtubeChannel: document.getElementById("p-youtube").value,
       facebookUrl: document.getElementById("p-facebook").value,
       xHandle: document.getElementById("p-x").value,
@@ -7421,8 +7457,18 @@ async function loadApplications() {
       const businessState = u.role === "business"
         ? `<br><span class="badge ${businessAccessState(u) === "active" ? "ok" : "info"}">${businessAccessState(u) === "active" ? "Active" : "Founding list"}</span>`
         : "";
+      // The applicant's handle is a live link to their real page
+      // (Jeff, 2026-10-26: "they should have to link instagram so
+      // I can verify their page"). The server payload carries the
+      // computed primary profile URL; a record with no URL left
+      // renders the plain handle, never a fabricated link.
+      const handleHtml = u.role === "creator" && u.creator
+        ? (u.creator.primaryProfileUrl
+          ? `<a href="${esc(u.creator.primaryProfileUrl)}" target="_blank" rel="noopener">@${esc(u.creator.handle)}</a>`
+          : `@${esc(u.creator.handle)}`)
+        : "";
       const detail = u.role === "creator" && u.creator
-        ? `@${esc(u.creator.handle)} (${esc(primaryLabelClient(u.creator.primaryPlatform || "instagram"))}) &middot; ${fmtNum(u.creator.followerCount)} followers &middot; ${esc(u.creator.tierBand)} &middot; Local: ${u.creator.localAudiencePct === null ? "not reported" : u.creator.localAudiencePct + "% (Self-reported)"} &middot; ${(u.creator.categories || []).map(esc).join(", ")} &middot; Photo: ${u.creator.hasPhoto ? "yes" : "no"} &middot; Socials: IG${u.creator.tiktokHandle ? ", TikTok" : ""}${u.creator.youtubeChannel ? ", YouTube" : ""}${u.creator.facebookUrl ? ", Facebook" : ""}${u.creator.xUrl ? ", X" : ""}${u.creator.linkedinUrl ? ", LinkedIn" : ""}${u.creator.neighborhood ? ` &middot; Area: ${esc(u.creator.neighborhood)}` : ""}${u.creator.profession ? ` &middot; Profession: ${esc(u.creator.profession)}` : ""}${u.creator.profession === "Real estate agent" && u.creator.farmAreas && u.creator.farmAreas.length ? ` &middot; Neighborhoods: ${u.creator.farmAreas.map(esc).join(", ")}` : ""}${u.creator.profession === "Real estate agent" && u.creator.brokerage ? ` &middot; Brokered by: ${esc(u.creator.brokerage)}` : ""}${u.creator.university || u.university ? ` &middot; University: ${esc(u.creator.university || u.university)}${universityStatusSuffix(u)}${u.universityUnverified || (u.creator && u.creator.universityUnverified) ? " (unverified)" : ""}` : ""}${u.referredBy ? ` &middot; Via referral: @${esc(u.referredBy)}` : ""}${u.signupSource ? ` &middot; Source: ${esc(u.signupSource)}` : ""}${u.momentum && u.momentum.signups ? ` &middot; Momentum: ${u.momentum.points} pts (${u.momentum.signups} joined, ${u.momentum.approved} approved)` : ""}${u.rejectionReason ? ` &middot; Rejection reason: ${esc(u.rejectionReason)}` : ""}`
+        ? `${handleHtml} (${esc(primaryLabelClient(u.creator.primaryPlatform || "instagram"))}) &middot; ${fmtNum(u.creator.followerCount)} followers &middot; ${esc(u.creator.tierBand)} &middot; Local: ${u.creator.localAudiencePct === null ? "not reported" : u.creator.localAudiencePct + "% (Self-reported)"} &middot; ${(u.creator.categories || []).map(esc).join(", ")} &middot; Photo: ${u.creator.hasPhoto ? "yes" : "no"} &middot; Socials: IG${u.creator.tiktokHandle ? ", TikTok" : ""}${u.creator.youtubeChannel ? ", YouTube" : ""}${u.creator.facebookUrl ? ", Facebook" : ""}${u.creator.xUrl ? ", X" : ""}${u.creator.linkedinUrl ? ", LinkedIn" : ""}${u.creator.neighborhood ? ` &middot; Area: ${esc(u.creator.neighborhood)}` : ""}${u.creator.profession ? ` &middot; Profession: ${esc(u.creator.profession)}` : ""}${u.creator.profession === "Real estate agent" && u.creator.farmAreas && u.creator.farmAreas.length ? ` &middot; Neighborhoods: ${u.creator.farmAreas.map(esc).join(", ")}` : ""}${u.creator.profession === "Real estate agent" && u.creator.brokerage ? ` &middot; Brokered by: ${esc(u.creator.brokerage)}` : ""}${u.creator.university || u.university ? ` &middot; University: ${esc(u.creator.university || u.university)}${universityStatusSuffix(u)}${u.universityUnverified || (u.creator && u.creator.universityUnverified) ? " (unverified)" : ""}` : ""}${u.referredBy ? ` &middot; Via referral: @${esc(u.referredBy)}` : ""}${u.signupSource ? ` &middot; Source: ${esc(u.signupSource)}` : ""}${u.momentum && u.momentum.signups ? ` &middot; Momentum: ${u.momentum.points} pts (${u.momentum.signups} joined, ${u.momentum.approved} approved)` : ""}${u.rejectionReason ? ` &middot; Rejection reason: ${esc(u.rejectionReason)}` : ""}`
         : u.role === "business" && u.business
           ? `${esc(u.business.businessName)} &middot; ${esc(u.business.category)} &middot; ${esc(u.business.planName)} &middot; Access: ${businessAccessState(u) === "active" ? "Active" : "Founding list"}${u.business.subscription ? ` &middot; Subscription: ${esc(u.business.subscription.status || "unknown")}${u.business.subscription.planName ? ` (${esc(u.business.subscription.planName)})` : ""}` : ""}${u.referredBy ? ` &middot; Via referral: @${esc(u.referredBy)}` : ""}${u.signupSource ? ` &middot; Source: ${esc(u.signupSource)}` : ""}`
           : "";
@@ -7442,7 +7488,7 @@ async function loadApplications() {
         <td data-label="Applied">${fmtDate(u.createdAt)}</td>
         <td>${u.status === "pending"
           ? `<button class="btn small-btn" onclick="reviewApp('${u.id}','approve')">Approve</button> <button class="btn small-btn danger" onclick="toggleRejectEditor('${u.id}')">Reject</button><div id="rej-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px"><div class="field"><label>Reason (optional, named in their rejection email)</label><select id="rej-reason-${u.id}"><option value="">No reason given</option><option>Not local enough</option><option>Audience too small for this wave</option><option>Content not a fit</option><option>Market not open yet</option><option>Other</option></select></div><button class="btn small-btn danger" onclick="confirmRejectApp('${u.id}')">Send rejection</button></div>`
-          : `<span class="badge ${u.status === "approved" ? "ok" : "bad"}">${esc(u.status)}</span>${u.tester ? ` <span class="badge warn">Tester</span>` : ""}${u.role === "creator" && u.status === "approved" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="setTester('${u.id}', ${u.tester ? "false" : "true"}, 'creator')">${u.tester ? "Move to roster" : "Move to Tester"}</button>` : ""}`}${u.role === "business" && u.status === "approved" && businessAccessState(u) !== "active" ? `<br><button class="btn small-btn" style="margin-top:6px" onclick="activateBusiness('${u.id}')">Activate business</button>` : ""}${u.role === "business" && u.status === "approved" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="setTester('${u.id}', ${u.tester ? "false" : "true"}, 'business')">${u.tester ? "Move to roster" : "Move to Tester"}</button>` : ""}${u.role === "business" && u.business ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleReviewLinks('${u.id}')">Review links</button><div id="rl-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px">${["google", "yelp", "tripadvisor", "facebook"].map((k) => `<div class="field"><label>${esc(k)}</label><input id="rl-${k}-${u.id}" type="url" value="${esc((u.business.reviewLinks || {})[k] || "")}" placeholder="https://"></div>`).join("")}<button class="btn small-btn" onclick="saveReviewLinks('${u.id}')">Save review links</button></div><br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleDiscountEditor('${u.id}')">Code discount</button><div id="disc-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px"><label style="font-weight:500"><input type="checkbox" id="disc-enabled-${u.id}" style="width:auto" ${u.business.discountEnabled ? "checked" : ""}> Code discounts on (business's opt-in)</label><div class="field"><label>Discount percent (5 to 50)</label><input id="disc-pct-${u.id}" type="number" min="5" max="50" step="1" value="${esc(String(u.business.discountPct == null ? 20 : u.business.discountPct))}"></div><button class="btn small-btn" onclick="saveDiscountSetting('${u.id}')">Save code discount</button></div>` : ""}</td>
+          : `<span class="badge ${u.status === "approved" ? "ok" : "bad"}">${esc(u.status)}</span>${u.tester ? ` <span class="badge warn">Tester</span>` : ""}${u.role === "creator" && u.status === "approved" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="setTester('${u.id}', ${u.tester ? "false" : "true"}, 'creator')">${u.tester ? "Move to roster" : "Move to Tester"}</button>` : ""}`}${u.role === "business" && u.status === "approved" && businessAccessState(u) !== "active" ? `<br><button class="btn small-btn" style="margin-top:6px" onclick="activateBusiness('${u.id}')">Activate business</button>` : ""}${u.role === "business" && u.status === "approved" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="setTester('${u.id}', ${u.tester ? "false" : "true"}, 'business')">${u.tester ? "Move to roster" : "Move to Tester"}</button>` : ""}${u.role === "business" && u.business ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleReviewLinks('${u.id}')">Review links</button><div id="rl-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px">${["google", "yelp", "tripadvisor", "facebook"].map((k) => `<div class="field"><label>${esc(k)}</label><input id="rl-${k}-${u.id}" type="url" value="${esc((u.business.reviewLinks || {})[k] || "")}" placeholder="https://"></div>`).join("")}<button class="btn small-btn" onclick="saveReviewLinks('${u.id}')">Save review links</button></div><br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleDiscountEditor('${u.id}')">Code discount</button><div id="disc-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px"><label style="font-weight:500"><input type="checkbox" id="disc-enabled-${u.id}" style="width:auto" ${u.business.discountEnabled ? "checked" : ""}> Code discounts on (business's opt-in)</label><div class="field"><label>Discount percent (5 to 50)</label><input id="disc-pct-${u.id}" type="number" min="5" max="50" step="1" value="${esc(String(u.business.discountPct == null ? 20 : u.business.discountPct))}"></div><button class="btn small-btn" onclick="saveDiscountSetting('${u.id}')">Save code discount</button></div>` : ""}${u.role === "creator" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="adminViewCreator('${u.id}')">View profile</button>` : ""}</td>
       </tr>`;
     };
     const s = data.summary;
@@ -7465,6 +7511,30 @@ async function loadApplications() {
   }
 }
 
+// Admin profile view (Jeff, 2026-10-26): "View profile" on a
+// Requests card opens the applicant's full SIGNL profile exactly
+// as a business would see it, including pending applicants the
+// public /c/ page cannot show yet. The payload comes from
+// GET /admin/creators/:id (the Discover card shape); the renderer
+// runs in admin mode, so the only action is the way back.
+async function adminViewCreator(userId) {
+  const el = document.getElementById("tab-body");
+  if (!el) return;
+  el.innerHTML = `<p class="muted">Loading profile...</p>`;
+  try {
+    const data = await api("GET", "/admin/creators/" + encodeURIComponent(userId));
+    const c = data.creator;
+    if (!c) { el.innerHTML = `<div class="error-box">Creator not found</div>`; return; }
+    const statusLine = c.applicationStatus ? `<p class="small"><span class="badge ${c.applicationStatus === "approved" ? "ok" : c.applicationStatus === "rejected" ? "bad" : "info"}">${esc(c.applicationStatus)}</span> <span class="muted">Shown exactly as a business sees this profile.</span></p>` : "";
+    el.innerHTML = statusLine + creatorProfileDetailHtml(c, false, { admin: true });
+    window.scrollTo(0, 0);
+  } catch (err) {
+    el.innerHTML = `<div class="error-box">${esc(err.message)}</div><p><button class="btn small-btn ghost" onclick="adminBackToRequests()">Back to Requests</button></p>`;
+  }
+}
+
+function adminBackToRequests() { loadApplications(); return false; }
+
 async function loadLeaderboard() {
   const el = document.getElementById("tab-body");
   try {
@@ -7474,7 +7544,7 @@ async function loadLeaderboard() {
       <p class="muted small">Recruiters ranked by Momentum points: +3 for every creator who signs up through their invite link, +10 more when that creator is approved. Points come only from stored sign-up records.</p>
       ${rows.length ? `<div class="table-wrap panel"><table>
         <tr><th>#</th><th>Creator</th><th>Handle</th><th>Market</th><th>Sign-ups via link</th><th>Approved</th><th>Momentum points</th></tr>
-        ${rows.map((r, i) => `<tr><td data-label="Rank">${i + 1}</td><td><strong>${esc(r.name)}</strong></td><td>@${esc(r.handle)}</td><td>${esc(r.market)}</td><td data-label="Sign-ups via link">${r.signups}</td><td data-label="Approved">${r.approved}</td><td data-label="Momentum points"><strong>${r.points}</strong></td></tr>`).join("")}
+        ${rows.map((r, i) => `<tr><td data-label="Rank">${i + 1}</td><td><strong>${esc(r.name)}</strong></td><td>${r.primaryProfileUrl ? `<a href="${esc(r.primaryProfileUrl)}" target="_blank" rel="noopener">@${esc(r.handle)}</a>` : `@${esc(r.handle)}`}</td><td>${esc(r.market)}</td><td data-label="Sign-ups via link">${r.signups}</td><td data-label="Approved">${r.approved}</td><td data-label="Momentum points"><strong>${r.points}</strong></td></tr>`).join("")}
       </table></div>` : `<p class="muted">No creator has a credited sign-up yet. Leaderboard rows appear as soon as someone joins through an invite link.</p>`}`;
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;

@@ -807,6 +807,26 @@ function normalizePrimaryPlatform(raw) {
   return PRIMARY_PLATFORMS.some((p) => p.id === s) ? s : "instagram";
 }
 
+// Handle normalization (Jeff, 2026-10-26): a creator may type a
+// bare handle, an @handle, or paste a whole profile link
+// (instagram.com/foo, https://www.tiktok.com/@foo/, x.com/foo).
+// Every intake path stores the SAME clean handle, so the profile
+// URLs built from it (primaryPlatformUrl) always point at the
+// creator's real page, the one an admin or a business opens to
+// verify it is them. A pasted URL keeps its LAST path segment:
+// that is the handle on every supported platform, LinkedIn's
+// /in/<handle> included.
+function normalizeHandle(raw) {
+  let h = String(raw == null ? "" : raw).trim();
+  if (!h) return "";
+  if (h.includes("/")) {
+    h = h.replace(/^https?:\/\//i, "").replace(/^www\./i, "");
+    const parts = h.split(/[/?#]/).map((x) => x.trim()).filter(Boolean);
+    h = parts.length ? parts[parts.length - 1] : "";
+  }
+  return h.replace(/^@/, "").trim();
+}
+
 function primaryPlatformOf(creator) {
   const c = creator || {};
   return PRIMARY_PLATFORMS.some((p) => p.id === c.primaryPlatform) ? c.primaryPlatform : "instagram";
@@ -5860,7 +5880,7 @@ async function handleRegister(event) {
   // the full form. The agreement checks are the same four the full
   // form enforces, with the same words.
   const quickClaim = role === "creator" && b.quickClaim === true;
-  const claimHandle = quickClaim && typeof b.handle === "string" ? b.handle.replace(/^@/, "").trim() : "";
+  const claimHandle = quickClaim ? normalizeHandle(b.handle) : "";
   // The claim's handle belongs to the creator's PRIMARY platform
   // (Jeff, 2026-10-22): absent or unknown values read as Instagram,
   // exactly as every claim link already in the wild behaves.
@@ -6038,7 +6058,7 @@ async function handleRegister(event) {
     // self-reported local audience %, and both rule acknowledgments
     // (honest posts, FTC disclosure).
     const primaryPlatform = normalizePrimaryPlatform(b.primaryPlatform);
-    const handle = (b.handle || "").replace(/^@/, "").trim();
+    const handle = normalizeHandle(b.handle);
     if (!handle) return err(400, `Your ${primaryPlatformLabel(primaryPlatform)} handle is required`);
     const city = unlisted ? customCity : (b.city || "").trim();
     if (!unlisted && (!city || !market.cities.includes(city))) return err(400, `Choose your home city in the ${market.name} market`);
@@ -6076,7 +6096,7 @@ async function handleRegister(event) {
     const tier = suggestedTier;
     // The primary handle doubles as that platform's social link when
     // the creator did not fill the platform's own field separately.
-    const tiktok = (b.tiktokHandle || "").replace(/^@/, "").trim() || (primaryPlatform === "tiktok" ? handle : "");
+    const tiktok = normalizeHandle(b.tiktokHandle) || (primaryPlatform === "tiktok" ? handle : "");
     const youtube = (b.youtubeChannel || "").trim() || (primaryPlatform === "youtube" ? handle : "");
     const socials = normalizeSocials(b);
     if (!socials.facebookUrl && primaryPlatform === "facebook") socials.facebookUrl = `https://www.facebook.com/${handle}`;
@@ -7419,7 +7439,7 @@ async function route(event) {
         changes.primaryPlatform = [primaryPlatformOf(c), nextPlatform];
         c.primaryPlatform = nextPlatform;
       }
-      if (b.handle) { changes.handle = [c.handle, String(b.handle).replace(/^@/, "").trim()]; c.handle = changes.handle[1]; }
+      if (b.handle) { changes.handle = [c.handle, normalizeHandle(b.handle)]; c.handle = changes.handle[1]; }
       if (b.handle || b.primaryPlatform !== undefined) {
         const plat = primaryPlatformOf(c);
         c.primaryProfileUrl = primaryPlatformUrl(plat, c.handle);
@@ -7522,7 +7542,7 @@ async function route(event) {
         c.compCategories = c.compCategories.filter((x) => x !== PAID_COMP);
         c.openToPaidCampaigns = false;
       }
-      if (b.tiktokHandle !== undefined) { const tk = String(b.tiktokHandle).replace(/^@/, "").trim(); c.tiktokHandle = tk || null; c.tiktokUrl = tk ? `https://www.tiktok.com/@${tk}` : null; }
+      if (b.tiktokHandle !== undefined) { const tk = normalizeHandle(b.tiktokHandle); c.tiktokHandle = tk || null; c.tiktokUrl = tk ? `https://www.tiktok.com/@${tk}` : null; }
       if (b.youtubeChannel !== undefined) c.youtubeChannel = String(b.youtubeChannel).trim() || null;
       if (b.facebookUrl !== undefined || b.xHandle !== undefined || b.xUrl !== undefined || b.linkedinUrl !== undefined) {
         const socials = normalizeSocials({
@@ -7958,7 +7978,7 @@ async function route(event) {
           pub.universityStatus = universityStatusOfRecord(u);
           pub.universityUnverified = u.universityUnverified === true || !!(u.creator && u.creator.universityUnverified === true);
           pub.campusBadge = campusBadgeFor(u);
-          if (pub.creator) pub.creator = { ...pub.creator, university: pub.university, universityStatus: pub.universityStatus, universityUnverified: pub.universityUnverified, primaryPlatform: primaryPlatformOf(pub.creator), primaryPlatformLabel: primaryPlatformLabel(primaryPlatformOf(pub.creator)) };
+          if (pub.creator) pub.creator = { ...pub.creator, university: pub.university, universityStatus: pub.universityStatus, universityUnverified: pub.universityUnverified, primaryPlatform: primaryPlatformOf(pub.creator), primaryPlatformLabel: primaryPlatformLabel(primaryPlatformOf(pub.creator)), primaryProfileUrl: primaryProfileOf(pub.creator).url };
           pub.foundingPriority = approvedRank.get(u.id) || null;
           pub.queuePosition = pendingRank.get(u.id) || null;
           pub.momentum = momentum.summaryFor(u);
@@ -8010,6 +8030,28 @@ async function route(event) {
       };
       return json(200, { pending: pending.map(attach), decided: decided.map(attach), summary });
     }
+    // Admin profile view (Jeff, 2026-10-26): the Requests card's
+    // "View profile" opens the applicant's full SIGNL profile
+    // exactly as a business would see it. The public /c/ page only
+    // resolves for approved, profile-complete creators, so a
+    // pending applicant (the very person Jeff is deciding on) had
+    // no viewable profile at all. This endpoint serves the SAME
+    // Discover card payload (publicCreator + momentum + badges +
+    // standing) for any creator record, behind admin auth only.
+    if (method === "GET" && seg[1] === "creators" && seg[2]) {
+      const target = await store.get(`user:${seg[2]}`);
+      if (!target || target.role !== "creator") return err(404, "Creator not found");
+      const all = await allUsers();
+      const { approvedRank, pendingRank } = creatorRanks(all);
+      const [cpBk, cpPo, cpRv, cpBz] = await Promise.all([allBookings(), allPosts(), allReviews(), allBizReviews()]);
+      const momentum = createMomentum({ users: all, bookings: cpBk, posts: cpPo, reviews: cpRv, bizReviews: cpBz });
+      const card = await publicCreator(target, user, approvedRank.get(target.id) || pendingRank.get(target.id) || null);
+      card.momentum = momentum.summaryFor(target);
+      card.badges = momentum.badgesFor(target);
+      card.standing = standingState(target);
+      card.applicationStatus = target.status;
+      return json(200, { creator: card });
+    }
     if (method === "GET" && seg[1] === "leaderboard") {
       // Recruiter leaderboard (Jeff, 2026-10-18): every creator with
       // at least one credited sign-up, best Momentum first.
@@ -8025,6 +8067,7 @@ async function route(event) {
           userId: u.id,
           name: u.name,
           handle: u.creator.handle,
+          primaryProfileUrl: primaryProfileOf(u.creator).url,
           market: normalizeMarketName(u.market),
           city: u.city || "",
           status: u.status,

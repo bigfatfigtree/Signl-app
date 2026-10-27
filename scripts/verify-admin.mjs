@@ -227,6 +227,83 @@ try {
   const close2 = await biz("POST", `/api/offers/${closeFixture.data.offer.id}/close`, {});
   check("second close is a clean 409 error, not a silent no-op", close2.status === 409 && /already closed/.test(close2.data.error || ""), `${close2.status} ${JSON.stringify(close2.data).slice(0, 160)}`);
 
+  // ---------- clickable Requests cards + required social link (Jeff, 2026-10-26) ----------
+  // Jeff, from his phone, on the pending card: "I need to be able
+  // to see the profile and click on it and they should have to
+  // link instagram so I can verify their page." Pins:
+  //   - the applications payload carries a computed primary
+  //     profile URL for every creator row, so the card's handle
+  //     renders as a real link to the creator's actual page;
+  //   - a pasted profile LINK normalizes to the clean handle at
+  //     intake (Instagram and TikTok forms), so the stored record
+  //     links correctly;
+  //   - an application with no primary handle is refused by the
+  //     server (the client refuses too; static checks below);
+  //   - GET /admin/creators/:id serves the full business-shaped
+  //     profile for a PENDING applicant (the public /c/ page
+  //     cannot), admin only.
+  const urlForm = client();
+  const urlFormReg = await urlForm("POST", "/api/auth/register", {
+    role: "creator", quickClaim: true, email: "admurlform@fixtures.dev", password: "<MASKED_SECRET_002>",
+    market: "Hampton Roads", handle: "https://www.instagram.com/admurlform/", ...AGREE,
+  });
+  check("quick claim accepts a pasted Instagram profile link (201)", urlFormReg.status === 201, `${urlFormReg.status} ${JSON.stringify(urlFormReg.data).slice(0, 160)}`);
+  const tokForm = client();
+  const tokFormReg = await tokForm("POST", "/api/auth/register", {
+    role: "creator", quickClaim: true, email: "admtokform@fixtures.dev", password: "<MASKED_SECRET_002>",
+    market: "Hampton Roads", handle: "https://www.tiktok.com/@admtokform", primaryPlatform: "tiktok", ...AGREE,
+  });
+  check("quick claim accepts a pasted TikTok profile link (201)", tokFormReg.status === 201, `${tokFormReg.status} ${JSON.stringify(tokFormReg.data).slice(0, 160)}`);
+
+  const apps2 = await admin("GET", "/api/admin/applications");
+  const rows2 = [...((apps2.data && apps2.data.pending) || []), ...((apps2.data && apps2.data.decided) || [])];
+  const urlRow = rows2.find((r) => r.id === (urlFormReg.data.user || {}).id);
+  check("URL-form claim stores the clean handle", !!urlRow && !!urlRow.creator && urlRow.creator.handle === "admurlform", JSON.stringify(urlRow && urlRow.creator && urlRow.creator.handle));
+  check("applications payload carries the computed Instagram profile URL", !!urlRow && !!urlRow.creator && urlRow.creator.primaryProfileUrl === "https://instagram.com/admurlform" && urlRow.creator.instagramUrl === "https://instagram.com/admurlform", JSON.stringify(urlRow && urlRow.creator && { p: urlRow.creator.primaryProfileUrl, ig: urlRow.creator.instagramUrl }));
+  const tokRow = rows2.find((r) => r.id === (tokFormReg.data.user || {}).id);
+  check("TikTok URL-form claim stores the clean handle + TikTok profile URL", !!tokRow && !!tokRow.creator && tokRow.creator.handle === "admtokform" && tokRow.creator.primaryProfileUrl === "https://www.tiktok.com/@admtokform", JSON.stringify(tokRow && tokRow.creator && { h: tokRow.creator.handle, p: tokRow.creator.primaryProfileUrl }));
+  const plainRow2 = rows2.find((r) => r.id === plain.id);
+  check("plain claim row also carries its profile URL", !!plainRow2 && !!plainRow2.creator && plainRow2.creator.primaryProfileUrl === "https://instagram.com/admplain", JSON.stringify(plainRow2 && plainRow2.creator && plainRow2.creator.primaryProfileUrl));
+
+  const noHandle = client();
+  const noHandleRes = await noHandle("POST", "/api/auth/register", {
+    role: "creator", quickClaim: true, email: "admnohandle@fixtures.dev", password: "<MASKED_SECRET_002>",
+    market: "Hampton Roads", handle: "", ...AGREE,
+  });
+  check("quick claim with an empty handle is refused (400, handle required)", noHandleRes.status === 400 && /handle is required/.test(noHandleRes.data.error || ""), `${noHandleRes.status} ${JSON.stringify(noHandleRes.data).slice(0, 160)}`);
+  const atOnlyRes = await noHandle("POST", "/api/auth/register", {
+    role: "creator", quickClaim: true, email: "admatonly@fixtures.dev", password: "<MASKED_SECRET_002>",
+    market: "Hampton Roads", handle: " @ ", ...AGREE,
+  });
+  check("quick claim with only an @ is refused (400)", atOnlyRes.status === 400, `${atOnlyRes.status} ${JSON.stringify(atOnlyRes.data).slice(0, 160)}`);
+  const fullNoHandle = client();
+  const fullNoHandleRes = await fullNoHandle("POST", "/api/auth/register", {
+    role: "creator", name: "No Handle", email: "admfullnohandle@fixtures.dev", password: "<MASKED_SECRET_002>",
+    market: "Hampton Roads", city: "Norfolk", followerCount: 900, localAudiencePct: 40, categories: ["Food & Drink"], ...AGREE,
+  });
+  check("full signup with no handle is refused (400, handle required)", fullNoHandleRes.status === 400 && /handle is required/.test(fullNoHandleRes.data.error || ""), `${fullNoHandleRes.status} ${JSON.stringify(fullNoHandleRes.data).slice(0, 160)}`);
+
+  const profPending = await admin("GET", `/api/admin/creators/${plain.id}`);
+  check("admin profile view serves a PENDING applicant (200)", profPending.status === 200, `${profPending.status} ${JSON.stringify(profPending.data).slice(0, 160)}`);
+  const pc = profPending.data.creator || {};
+  check("admin profile payload is the business card shape (profile.handle + computed profile URL + status)",
+    pc.userId === plain.id && !!pc.profile && pc.profile.handle === "admplain" && pc.profile.primaryProfileUrl === "https://instagram.com/admplain" && pc.applicationStatus === "pending",
+    JSON.stringify({ u: pc.userId, h: pc.profile && pc.profile.handle, p: pc.profile && pc.profile.primaryProfileUrl, s: pc.applicationStatus }));
+  const profDecided = await admin("GET", `/api/admin/creators/${hrInc.id}`);
+  check("admin profile view serves a decided applicant too (approved)", profDecided.status === 200 && profDecided.data.creator && profDecided.data.creator.applicationStatus === "approved", `${profDecided.status}`);
+  const profBiz = await biz("GET", `/api/admin/creators/${plain.id}`);
+  check("admin profile view refuses a non-admin session (403)", profBiz.status === 403, String(profBiz.status));
+  const profMissing = await admin("GET", "/api/admin/creators/00000000-0000-0000-0000-000000000000");
+  check("admin profile view 404s an unknown creator id", profMissing.status === 404, String(profMissing.status));
+
+  // Leaderboard rows carry the same profile URL, so the handle
+  // links there too. A sponsor + one recruit credited to them.
+  await quickClaim("admsponsor", "Hampton Roads");
+  await quickClaim("admrecruit", "Hampton Roads", { referredBy: "admsponsor" });
+  const lb = await admin("GET", "/api/admin/leaderboard");
+  const lbRow = (lb.data.leaderboard || []).find((r) => r.handle === "admsponsor");
+  check("leaderboard row carries the sponsor's profile URL", !!lbRow && lbRow.primaryProfileUrl === "https://instagram.com/admsponsor", JSON.stringify(lbRow && lbRow.primaryProfileUrl));
+
   // ---------- static client wiring ----------
   const appJs = fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), "..", "public", "app.js"), "utf8");
   check("queue row Details render the Via referral label", appJs.includes("Via referral: @${esc(u.referredBy)}"));
@@ -242,6 +319,22 @@ try {
     appJs.includes("closeOffer('${o.id}')") && appJs.includes("function showConfirmSheet") &&
     stBody.includes("await showConfirmSheet(") && !stBody.includes("!confirm(") &&
     coBody.includes("await showConfirmSheet(") && !coBody.includes("!confirm("),
+    "");
+  // Clickable Requests cards + required social link (Jeff, 2026-10-26).
+  check("Requests card renders the applicant handle as an external link to their real page",
+    appJs.includes(`<a href="\${esc(u.creator.primaryProfileUrl)}" target="_blank" rel="noopener">@\${esc(u.creator.handle)}</a>`),
+    "");
+  check("Requests cards render a View profile action wired to the admin profile view",
+    appJs.includes("onclick=\"adminViewCreator('${u.id}')\">View profile</button>") && appJs.includes("async function adminViewCreator") && appJs.includes('"/admin/creators/" + encodeURIComponent(userId)') && appJs.includes("Shown exactly as a business sees this profile."),
+    "");
+  check("Leaderboard renders the recruiter handle as an external link when the payload carries a URL",
+    appJs.includes("r.primaryProfileUrl ? `<a href=\"${esc(r.primaryProfileUrl)}\" target=\"_blank\" rel=\"noopener\">@${esc(r.handle)}</a>`"),
+    "");
+  check("claim + full-join handle fields carry the view-your-page guidance",
+    (appJs.match(/Paste your handle or a link to your page, so businesses and our team can view your page\./g) || []).length >= 2,
+    "");
+  check("both application submits normalize the handle client-side and refuse an empty one",
+    appJs.includes("function normalizeHandleClient") && appJs.includes("const qcHandle = normalizeHandleClient") && appJs.includes("const jcHandle = normalizeHandleClient") && appJs.includes("handle is required: paste your handle or a link to your page."),
     "");
 } finally {
   server.kill("SIGKILL");
