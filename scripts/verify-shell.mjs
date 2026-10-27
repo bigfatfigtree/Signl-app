@@ -160,6 +160,13 @@ try {
   check("waiting badges share one source of truth with the Home queue (state.waitCounts)", appJs.includes("state.waitCounts") && appJs.includes("waitCounts.bizApps") && appJs.includes("waitCounts.crInvites"));
   check("More rows exist per role and include Messages for both roles", appJs.includes("function moreRowsFor(") && appJs.includes('"Your numbers"') && appJs.includes('"Posts & licenses"') && appJs.includes('"Plan & billing"'));
   check("no legacy bottom-nav items are built", !appJs.includes('class="bn-item'));
+  part("source: V4.2 admin + preview join the V4 system");
+  check("the shell marks the admin console and the Business Preview with their own body classes", appJs.includes('classList.add("admin-on")') && appJs.includes('classList.add("preview-on")') && appJs.includes('"admin-on", "preview-on"'));
+  check("V4.2 retires azure on admin + preview (deep SIGNL green tokens)", themeCss.includes("body.admin-on, body.preview-on") && themeCss.includes("--mint-deep: #0C7A43; --blue: #0C7A43"));
+  check("the admin rail wears the V4 chrome (ink rail, mint active, red count badge)", themeCss.includes("body.rail-on .rail-item.on") && themeCss.includes("body.rail-on .rail-badge"));
+  check("the preview's chrome is the banner: the legacy topbar + footer are hidden in preview mode", themeCss.includes("body.preview-on .topbar, body.preview-on .footer"));
+  check("phone fit: main can shrink and the tab row is capped at the viewport on admin + preview", themeCss.includes("body.rail-on main, body.preview-on main { min-width: 0; }") && themeCss.includes(".tabs { min-width: 0; max-width: 100%; }"));
+  check("the preview Discover step renders the live Find creators composition (market strip, category chips, filters fold)", appJs.includes("function previewDiscoverHtml(") && appJs.includes('class="filters disc-top"') && appJs.includes("pvDiscoverCatChip") && appJs.includes('class="filters-fold"') && appJs.includes("function pvDiscoverCatChip("));
   check("Sig's face is the axolotl behind one swappable reference", appJs.includes("SIG_AVATAR_HTML") && appJs.includes("/assets/sig-axolotl.png") && fs.existsSync(path.join(root, "public", "assets", "sig-axolotl.png")));
   check("Ask Sig is a Home row + sheet, not a floating button", appJs.includes("function askSigRowHtml(") && appJs.includes("function openAgentSheet("));
 

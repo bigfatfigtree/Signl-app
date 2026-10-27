@@ -2551,3 +2551,96 @@ body.v3-on .tab-item.on .tab-sig-img { box-shadow: 0 0 0 2px var(--ink); }
 .sig-ask-form .btn { border-radius: 999px; padding-left: 22px; padding-right: 22px; }
 .sig-panel { background: #fff; border: 1px solid var(--line); border-radius: 20px; padding: 2px 16px; }
 .sig-panel .sheet-row { width: 100%; background: none; font: inherit; color: var(--ink); text-align: left; cursor: pointer; }
+
+/* ============================================================
+   OVERHAUL V4.2 — the admin console and the Business Preview
+   join the V4 system (Jeff, 2026-10-27). Both surfaces were
+   left behind when V4 shipped: the whole V4/V4.1 layer above
+   is scoped to body.v3-on / body.v3-slim, and the shell
+   deliberately excluded admin ("the admin console keeps the
+   V2 icon rail") while preview mode drops the app chrome
+   entirely — so admin rendered the pre-V4 light rail with the
+   global azure tokens, and the preview rendered under the
+   logged-out .topbar with the old gradient logo. The shell
+   now marks these surfaces body.admin-on / body.preview-on
+   (renderBottomNav owns the classes); this layer does the
+   rest, without touching any admin data, panel or action.
+   ============================================================ */
+
+/* --- Tokens: azure retires on these surfaces too, exactly
+   the way body.v3-on retires it (deep SIGNL green #0C7A43),
+   plus the three hardcoded azure spots the V4 layer also
+   patches: notice text, Momentum points, lifetime stars. --- */
+body.admin-on, body.preview-on {
+  --mint-deep: #0C7A43; --blue: #0C7A43;
+}
+body.admin-on .notice.blue, body.preview-on .notice.blue { color: var(--mint-deep); }
+body.admin-on .earn-points, body.preview-on .earn-points { color: var(--mint-deep); }
+body.admin-on .sparks, body.preview-on .sparks { color: var(--mint-deep); }
+
+/* --- Admin rail: chrome is black in V4 (the icon rail is
+   admin-only by construction — renderRail returns early for
+   every other role — so rail-on rules cannot leak). Active
+   destination = the mint pill; the pending badge takes the
+   tab bar's red count badge. --- */
+body.rail-on #rail {
+  background: var(--ink);
+  border-right: 1px solid var(--hair-d);
+}
+body.rail-on .rail-brand img { box-shadow: 0 0 0 1px rgba(255, 255, 255, .18); }
+body.rail-on .rail-item { color: #9AA79E; }
+body.rail-on .rail-item:hover { background: rgba(255, 255, 255, .09); color: #fff; }
+body.rail-on .rail-item.on { background: var(--mint); color: var(--ink); }
+body.rail-on .rail-badge {
+  background: #D43D2A;
+  border-color: var(--ink);
+}
+body.rail-on .rail-sep { border-top-color: rgba(255, 255, 255, .14); }
+body.rail-on .rail-avatar { background: var(--mint); color: var(--ink); }
+body.rail-on .rail-avatar:hover { background: var(--mint-b); }
+body.rail-on .tr-ava { background: var(--mint); }
+
+/* --- Admin KPI tiles: the V4 stat tile (black, mint
+   numeral) — the same treatment body.v3-on gets above. --- */
+body.admin-on .kpi-card { background: var(--ink); border-color: var(--ink); }
+body.admin-on .kpi-card .kpi-num { color: var(--mint); }
+body.admin-on .kpi-card .kpi-label { color: rgba(255, 255, 255, .55); }
+body.admin-on .kpi-card .kpi-sub { color: rgba(255, 255, 255, .66); }
+
+/* --- Preview chrome: the ink preview banner IS the chrome
+   (it re-renders on every step and carries the PREVIEW tag,
+   the plan pill and Exit). The legacy logged-out header —
+   old gradient logo, marketing nav — and the marketing
+   footer no longer sit above a business surface. --- */
+body.preview-on .topbar, body.preview-on .footer { display: none; }
+body.preview-on main { padding-top: 20px; }
+
+/* --- Preview Discover mirrors the live chip row: one
+   scrolling row, active chip ink with mint text. --- */
+body.preview-on .dcat-row {
+  flex-wrap: nowrap; overflow-x: auto; padding-bottom: 8px;
+  scrollbar-width: none; -webkit-overflow-scrolling: touch;
+}
+body.preview-on .dcat-row::-webkit-scrollbar { display: none; }
+body.preview-on .dcat-chip { flex: 0 0 auto; }
+body.preview-on .dcat-chip.on { color: var(--mint); }
+.pv-step-head { margin: 2px 0 8px; }
+
+/* --- Phone fit (390px): the console was unusable on a
+   phone. #app is a flex item in the body's column; the rail
+   offset gives it a definite margin-left (68px) with width:
+   auto, which takes it out of stretch sizing — the item
+   shrink-wraps to its widest unbreakable content, the admin
+   tab row (.tabs never wraps below 900px), and every panel
+   inherits that desktop width (measured: main 818px on a
+   390px phone). A definite width beside the rail, main
+   allowed to shrink, and the tab row capped at the box put
+   the row's own horizontal scroll back in charge; the tab
+   content below then fits the phone on every admin tab and
+   every preview step. Desktop sizing is untouched. --- */
+body.rail-on main, body.preview-on main { min-width: 0; }
+.tabs { min-width: 0; max-width: 100%; }
+@media (max-width: 760px) {
+  body.rail-on main { width: calc(100% - 68px); }
+  body.preview-on main { width: 100%; }
+}

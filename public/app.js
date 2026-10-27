@@ -1392,8 +1392,13 @@ function renderBottomNav() {
   // rail on desktop, with the More rows expanded inline under a
   // hairline; a slim top bar (identity, Messages, help) rides
   // every app screen. V4.1 cut the set to four (Home, Explore,
-  // Sig, More — see tabItemsFor). The admin console keeps the
-  // V2 icon rail.
+  // Sig, More — see tabItemsFor). The admin console keeps its
+  // icon rail; V4.2 (2026-10-27) restyles that rail to the V4
+  // chrome (ink, mint active) under body.admin-on, and gives
+  // the Business Preview body.preview-on so its chrome is the
+  // preview banner, not the legacy logged-out topbar — both
+  // surfaces were left on the pre-V4 system when V4 shipped
+  // because the V4 layer is scoped to v3-on/v3-slim.
   // This entry point keeps its name because nav renders, badge
   // refreshes and sign-in/out all call it.
   const u = state.user;
@@ -1401,11 +1406,12 @@ function renderBottomNav() {
   const top2 = document.getElementById("topbar2");
   const rail = document.getElementById("rail");
   const toprow = document.getElementById("toprow");
-  document.body.classList.remove("bn-on", "has-bn");
+  document.body.classList.remove("bn-on", "has-bn", "admin-on", "preview-on");
   if (u && u.role === "admin" && !state.preview) {
     if (tabbar) tabbar.innerHTML = "";
     if (top2) top2.innerHTML = "";
     document.body.classList.remove("v3-on", "v3-slim");
+    document.body.classList.add("admin-on");
     renderRail();
     return;
   }
@@ -1417,6 +1423,7 @@ function renderBottomNav() {
     if (tabbar) tabbar.innerHTML = "";
     if (top2) top2.innerHTML = "";
     document.body.classList.remove("v3-on", "v3-slim");
+    if (u && u.role === "admin" && state.preview) document.body.classList.add("preview-on");
     return;
   }
   const full = u.status === "approved" && (u.role === "creator" || businessAccessState(u) === "active");
@@ -9924,7 +9931,7 @@ async function loadStats() {
 // console cleanly.
 function enterPreview() {
   if (!state.user || state.user.role !== "admin") return;
-  state.preview = { step: "plans", planId: "self-service", market: "Virginia Beach", creators: null, creator: null, targetId: "", sent: [], confirmation: null, dashboard: null, offersList: null };
+  state.preview = { step: "plans", planId: "self-service", market: "Virginia Beach", cat: "", creators: null, creator: null, targetId: "", sent: [], confirmation: null, dashboard: null, offersList: null };
   state.view = "dashboard";
   render();
 }
@@ -10002,8 +10009,8 @@ function previewPlansHtml() {
     </div>`).join("");
   return `
   <section class="panel">
-    <h3 style="margin-top:0"><span class="preview-tag">PREVIEW</span> What a business sees first: the founding plans</h3>
-    <p class="muted">A business joins the founding list and picks a plan (recorded at sign-up, no card charged during founding); when their market activates, they land in Discover with the founding roster ready. Pick a plan and a market, then walk the roster exactly as they would.</p>
+    <h3 style="margin-top:0"><span class="preview-tag">PREVIEW</span> The founding plans</h3>
+    <p class="muted">These are the live plan cards from the founding sign-up: a business picks one when it joins the founding list (recorded at sign-up, no card charged during founding), and when their market activates they land in Find creators with the founding roster ready. Pick a plan and a market here, then walk the roster exactly as they would.</p>
     <div class="field"><label>Market to preview</label><select id="pv-market">${state.boot.markets.map((m) => `<option ${pv.market === m.name ? "selected" : ""}>${esc(m.name)}</option>`).join("")}</select></div>
     <div class="plan-cards">${plans}</div>
     <p class="mt"><button class="btn" onclick="previewToDiscover()">Search the roster &rarr;</button>
@@ -10027,31 +10034,59 @@ function previewToDiscover() {
   renderPreview();
 }
 
+// V4.2 (2026-10-27): the preview Discover step renders the LIVE
+// Find creators composition — the market strip (.filters.disc-top),
+// the category chip row (.dcat-row) and the "More filters" fold
+// holding the same fields in the same order — instead of the flat
+// panel this step used to draw for itself. The results below the
+// controls already rode the live deck engine (discoverStackCard,
+// the Cards|List toggle, the Later pile); now the controls do
+// too. Only the ids (pvf-) and the search target (the preview
+// endpoint, which answers with the same server code over the
+// real roster) differ from loadDiscover.
 function previewDiscoverHtml() {
   const pv = state.preview;
+  const cat = pv.cat || "";
   return `
-  <section class="panel">
-    <h3 style="margin-top:0"><span class="preview-tag">PREVIEW</span> Discover: the roster a business searches</h3>
-    <p class="muted small">Every filter a real business gets, answered by the same server code, over the real approved roster.</p>
-    <div class="filters">
-      <div><label>Market</label><select id="pvf-market">${state.boot.markets.map((m) => `<option ${pv.market === m.name ? "selected" : ""}>${esc(m.name)}</option>`).join("")}</select></div>
-      <div><label>Neighborhood / area</label><input id="pvf-neighborhood" placeholder="For example: Oceanfront, Ghent"></div>
-      <div><label>Tier</label><select id="pvf-tier"><option value="">All tiers</option>${state.boot.tiers.map((t) => `<option>${esc(t.id)}</option>`).join("")}</select></div>
-      <div><label>Category</label><select id="pvf-category"><option value="">All categories</option>${state.boot.creatorCategories.map((c) => `<option>${esc(c)}</option>`).join("")}</select></div>
-      <div><label>Search</label><input id="pvf-q" placeholder="Name or handle"></div>
-    </div>
-    <div class="filters">
-      <div><label>Would accept (comp fit)</label><select id="pvf-comp"><option value="">Any comp</option>${state.boot.compCategories.map((c) => `<option>${esc(c)}</option>`).join("")}</select></div>
-      <div><label>Total audience min</label><input type="number" id="pvf-fmin" min="0" placeholder="Any"></div>
-      <div><label>Total audience max</label><input type="number" id="pvf-fmax" min="0" placeholder="Any"></div>
-      <div><label>Min % followers in market</label><input type="number" id="pvf-minlocal" min="0" max="100" placeholder="Any"></div>
-      <div><label>Sort by</label><select id="pvf-sort"><option value="">Founding order</option><option value="score">Local Impact Score</option><option value="momentum">Momentum (roster standing)</option><option value="fit">Best fit</option></select></div>
-      <div><label>&nbsp;</label><label style="font-weight:500"><input type="checkbox" id="pvf-paid" style="width:auto"> Has a paid rate (paid bookings) only</label></div>
-      <div><label>&nbsp;</label><button class="btn small-btn" style="width:100%" onclick="runPreviewDiscover()">Search</button></div>
-    </div>
-    <div id="pv-results"><p class="muted">Loading creators...</p></div>
-  </section>
+  <h3 class="pv-step-head"><span class="preview-tag">PREVIEW</span> Find creators</h3>
+  <p class="muted small">The live Find creators screen, run over the real approved roster. Searches are answered by the same server code a business hits; invites open the simulated composer and reach nobody.</p>
+  <div class="filters disc-top">
+    <div><label>Market</label><select id="pvf-market">${state.boot.markets.map((m) => `<option ${pv.market === m.name ? "selected" : ""}>${esc(m.name)}</option>`).join("")}</select></div>
+  </div>
+  <div class="dcat-row">${[""].concat(state.boot.creatorCategories).map((c) => `<button type="button" class="dcat-chip${c === cat ? " on" : ""}" onclick="return pvDiscoverCatChip('${esc(c)}', this)">${c === "" ? "All" : esc(c)}</button>`).join("")}</div>
+  <details class="filters-fold"><summary>More filters</summary>
+  <div class="filters">
+    <div><label>Neighborhood / area</label><input id="pvf-neighborhood" placeholder="For example: Oceanfront, Ghent"></div>
+    <div><label>Tier</label><select id="pvf-tier"><option value="">All tiers</option>${state.boot.tiers.map((t) => `<option>${esc(t.id)}</option>`).join("")}</select></div>
+    <div><label>Category</label><select id="pvf-category"><option value="">All categories</option>${state.boot.creatorCategories.map((c) => `<option ${cat === c ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></div>
+    <div><label>Search</label><input id="pvf-q" placeholder="Name or handle"></div>
+  </div>
+  <div class="filters">
+    <div><label>Would accept (comp fit)</label><select id="pvf-comp"><option value="">Any comp</option>${state.boot.compCategories.map((c) => `<option>${esc(c)}</option>`).join("")}</select></div>
+    <div><label>Total audience min</label><input type="number" id="pvf-fmin" min="0" placeholder="Any"></div>
+    <div><label>Total audience max</label><input type="number" id="pvf-fmax" min="0" placeholder="Any"></div>
+    <div><label>Min % followers in market</label><input type="number" id="pvf-minlocal" min="0" max="100" placeholder="Any"></div>
+    <div><label>Sort by</label><select id="pvf-sort"><option value="">Founding order</option><option value="score">Local Impact Score</option><option value="momentum">Momentum (roster standing)</option><option value="fit">Best fit</option></select></div>
+    <div><label>&nbsp;</label><label style="font-weight:500"><input type="checkbox" id="pvf-paid" style="width:auto"> Has a paid rate (paid bookings) only</label></div>
+    <div><label>&nbsp;</label><button class="btn small-btn" style="width:100%" onclick="runPreviewDiscover()">Search</button></div>
+  </div>
+  </details>
+  <div id="pv-results"><p class="muted">Loading creators...</p></div>
   ${previewSentHtml()}`;
+}
+
+// The preview twin of discoverCatChip: same behavior (the chip
+// sets the fold's category select and re-runs the search), aimed
+// at the preview state + endpoint.
+function pvDiscoverCatChip(cat, btn) {
+  const pv = state.preview;
+  if (!pv) return false;
+  pv.cat = cat;
+  const sel = document.getElementById("pvf-category");
+  if (sel) sel.value = cat;
+  document.querySelectorAll(".dcat-chip").forEach((b) => b.classList.toggle("on", b === btn));
+  runPreviewDiscover();
+  return false;
 }
 
 function previewSentHtml() {
@@ -10100,7 +10135,10 @@ function renderPreviewResults() {
   if (!el) return;
   const list = state.preview.creators || [];
   if (!list.length) {
-    el.innerHTML = `<div class="panel center"><h3>No approved creators match yet</h3><p class="muted">This is the same empty state a business sees while a market's founding roster is still filling.</p></div>`;
+    // The live Discover empty state, verbatim (V4.2): the
+    // preview shows what a business actually sees on no match,
+    // not a panel describing it.
+    el.innerHTML = `<div class="empty-state"><span class="es-badge"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z"/></svg></span><h3>No approved creators match yet</h3><p>SIGNL is building the founding roster in this market now. Creators who sign up and get approved will appear here automatically.</p></div>`;
     return;
   }
   el.innerHTML = `<div id="pv-discover-toggle">${pvDiscoverModeToggleHtml()}</div><div id="pv-discover-body"></div>`;
