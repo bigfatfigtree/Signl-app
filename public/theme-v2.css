@@ -2470,3 +2470,9 @@ body.v3-on .counter-cta .btn.ws-primary { background: var(--mint); color: var(--
 
 /* Dashboard links speak in the deep SIGNL green, never default blue. */
 body.v3-on #tab-body a:not(.btn) { color: var(--mint-deep); }
+
+/* Last azure remnants in the signed-in app: the legacy --blue token
+   (focus rings, info badges, notice text) and the success ring go
+   deep SIGNL green. Signed-out/public surfaces keep their palette. */
+body.v3-on { --blue: #0C7A43; }
+body.v3-on .success-check circle { stroke: #0C7A43; }
