@@ -33,7 +33,7 @@ const { buildProfilePageHtml } = require("./profile-meta");
 const TEST_MODE = process.env.SIGNL_TEST_ALLOW_BUSINESS === "1";
 const LAUNCH_WINDOW_TEXT = "30 to 90 days";
 const TERMS_VERSION = "2026-10-19";
-// Headliners tier (15k+) only: on top of comps, these creators can also be
+// Headliners tier (15k+) only: separate from comps, these creators can also be
 // hired for paid cash campaigns when a business runs one (Jeff, 2026-10-18).
 const PAID_COMP = "Paid cash campaigns";
 // Anyone, anywhere can sign up (Jeff, 2026-10-18): a creator whose city
@@ -1809,7 +1809,7 @@ function greetingName(user) {
 
 function paidCampaignLine(user) {
   if (!user || !user.creator || normalizeTierBand(user.creator.tierBand) !== "Headliners") return null;
-  return "One more thing, because you are in the Headliners tier (15k+ followers): you are also eligible for paid campaigns, where a business pays you cash on top of the comped experience. Headliners tier members are first in line for paid campaigns when they open in your market.";
+  return "One more thing, because you are in the Headliners tier (15k+ followers): you are also eligible for paid bookings. A paid booking is its own booking at your listed rate, and you keep 97% of it. A comped visit stays the experience itself, with no cash added to it. Headliners tier members are first in line for paid bookings when they open in your market.";
 }
 
 function signupConfirmationEmail(user, band) {

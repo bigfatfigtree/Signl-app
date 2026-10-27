@@ -3289,7 +3289,7 @@ function renderQuickClaim() {
     <div class="form-body">
     <p class="muted">About a minute: handle, market, email, password. Spots held in sign-up order — finish your profile after approval.</p>
     <div class="lrow"><span class="tg"></span><div><span class="lname">Comped</span> <span class="lline">— meals, services and experiences, for an honest post within 48 hours.</span></div></div>
-    <div class="lrow"><span class="tg off"></span><div><span class="lname">Paid</span> <span class="lline">— cash campaigns on top. Headliners first in line.</span></div></div>
+    <div class="lrow"><span class="tg off"></span><div><span class="lname">Paid</span> <span class="lline">— paid campaigns are separate bookings. Headliners first in line.</span></div></div>
     ${hasPrefill ? `<div class="notice blue">Pre-filled from your invite link — check it and claim.</div>` : ""}
     <div id="form-error"></div>
     <form onsubmit="return doQuickClaim(event)">
@@ -3416,7 +3416,7 @@ function renderJoinCreator() {
     <p class="muted">Build your full profile now. When your market opens (30–90 days), founding creators get priority. This is your real profile, not a waitlist.</p>
     <p class="small muted">City missing? Pick "My city is not listed yet" and sign up anyway.</p>
     <div class="lrow"><span class="tg"></span><div><span class="lname">Comped</span> <span class="lline">— meals, services and experiences, for an honest post within 48 hours.</span></div></div>
-    <div class="lrow"><span class="tg off"></span><div><span class="lname">Paid</span> <span class="lline">— cash campaigns on top. Headliners first in line.</span></div></div>
+    <div class="lrow"><span class="tg off"></span><div><span class="lname">Paid</span> <span class="lline">— paid campaigns are separate bookings. Headliners first in line.</span></div></div>
     ${hasPrefill ? `<div class="notice blue">Pre-filled from your invite link — check it and finish.</div>` : ""}
     <p class="small">In a hurry? <a href="#" onclick="return showQuickJoin()">Claim your spot with just your handle</a> and finish your profile after approval instead.</p>
     <div id="form-error"></div>
@@ -3488,8 +3488,8 @@ function renderJoinCreator() {
         <div class="field"><label>What do you create in? (pick at least one)</label><div class="checkrow">${cats}</div></div>
         <div class="field"><label>Comps you would accept (optional)</label><div class="checkrow">${comps}</div></div>
         <div class="field" id="jc-paid-wrap" style="display:none">
-          <label class="tgl-row"><input type="checkbox" class="sw" id="jc-paid"><span><strong>Paid cash campaigns</strong> (Headliners tier): on top of comps, businesses can hire me for paid campaigns when a business runs one.</span></label>
-          <p class="small muted">Paid campaigns depend on the business and the campaign. Comps are always part of SIGNL; cash work is extra when it is offered.</p>
+          <label class="tgl-row"><input type="checkbox" class="sw" id="jc-paid"><span><strong>Paid cash campaigns</strong> (Headliners tier): separate from comps, businesses can hire me for paid campaigns when a business runs one.</span></label>
+          <p class="small muted">Paid campaigns depend on the business and the campaign. Comps are always part of SIGNL; paid campaigns are separate bookings when a business offers one.</p>
         </div>
         <div class="field"><label>Short bio</label><textarea id="jc-bio" rows="2" placeholder="What do you post, where do you go, what do you love locally?"></textarea></div>
         <div class="field"><label>Profile photo (optional, add now or later)</label><input type="file" id="jc-photo" accept="image/png,image/jpeg,image/webp"><p class="small muted">PNG, JPEG, or WebP, under 2.5 MB. Businesses see this on your profile when your market opens.</p></div>
@@ -5777,7 +5777,7 @@ function creatorProfileHtml(u) {
       <div class="field"><label>What you create in</label><div class="checkrow">${cats}</div></div>
       <div class="field"><label>Comps you would accept</label><div class="checkrow">${comps}</div></div>
       <div class="field" id="p-paid-wrap" style="display:${c.tierBand === "Headliners" ? "" : "none"}">
-        <label class="tgl-row"><input type="checkbox" class="sw" id="p-paid" ${c.openToPaidCampaigns ? "checked" : ""}><span><strong>Paid cash campaigns</strong> (Headliners tier): businesses can hire me for paid campaigns when a business runs one, on top of comps.</span></label>
+        <label class="tgl-row"><input type="checkbox" class="sw" id="p-paid" ${c.openToPaidCampaigns ? "checked" : ""}><span><strong>Paid cash campaigns</strong> (Headliners tier): businesses can hire me for paid campaigns when a business runs one, separate from comps.</span></label>
       </div>
       <div class="showcase-block">
         <h4>How businesses can book you</h4>
