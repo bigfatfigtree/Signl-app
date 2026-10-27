@@ -93,6 +93,7 @@ const itemOf = (user, id) => ((user.momentum || {}).checklist || []).find((i) =>
 try {
   const appJs = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
   const themeCss = fs.readFileSync(path.join(root, "public", "theme-v2.css"), "utf8");
+  const stylesCss = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
   const routerJs = fs.readFileSync(path.join(root, "netlify", "functions", "lib", "router.js"), "utf8");
   const fnSlice = (name, next) => {
     const a = appJs.indexOf(`function ${name}(`);
@@ -128,6 +129,22 @@ try {
     themeCss.includes("button.earn-row") && themeCss.includes("cursor: pointer"));
   check("linked + sits in a filled mint circle; chevron trails",
     themeCss.includes(".earn-row.earn-link .earn-state") && themeCss.includes("background: var(--mint)") && themeCss.includes(".earn-chev"));
+
+  part("source: icon rule + signed-out sign-in (Jeff, 2026-10-27)");
+  check("the leading icon is resolved in one place: earnStateHtml, used by earnRowWrap",
+    appJs.includes("function earnStateHtml(") && fnSlice("earnRowWrap", "earnFindEl").includes("earnStateHtml(item, u)"));
+  check("three states: done check, actionable +, otherwise the empty earn-slot",
+    appJs.includes("earn-state earn-slot") && appJs.includes('aria-hidden="true"'));
+  check("renderers no longer bake a state glyph into the row body",
+    !fnSlice("momentumHtml", "fmtNum").includes("earn-state") && !fnSlice("profileCompletionHtml", "momentumHtml").includes("earn-state"));
+  check("slot css keeps the width and renders nothing",
+    themeCss.includes(".earn-state.earn-slot") && themeCss.includes("border-color: transparent"));
+  check("signed-out header: Sign in anchor carries nav-signin; anon class tracks auth state",
+    appJs.includes('class="nav-signin"') && appJs.includes('classList.toggle("anon", !state.user)') && appJs.includes('class="nav-biz"'));
+  check("redeem (staff pre-session) header carries a Sign in door too",
+    fnSlice("renderNav", "bnIcon").includes("Staff redemption") && fnSlice("renderNav", "bnIcon").includes('go(\'signin\')'));
+  check("mobile css: the anon topnav displays and only the founding links hide",
+    stylesCss.includes("#topnav.anon { display: flex; }") && stylesCss.includes("#topnav.anon a.nav-cta"));
 
   part("source: server due-state computation");
   check("router computes the review-due and performance-due visits",

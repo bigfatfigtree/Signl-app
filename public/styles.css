@@ -53,6 +53,12 @@ a { color: var(--blue); }
 #bottomnav { display: none; }
 @media (max-width: 720px) {
   #topnav { display: none; }
+  /* Logged out (.anon): "Sign in" stays in the header on phones
+     too — it is a returning user's only door back in, and the
+     hidden-row rule above removed it entirely (Jeff, 2026-10-27).
+     The founding links stay hidden here; the hero carries them. */
+  #topnav.anon { display: flex; }
+  #topnav.anon a.nav-cta, #topnav.anon a.nav-biz { display: none; }
   .topbar { padding: 12px 16px; }
   /* Content clears the fixed bar: bar height plus the home-indicator
      inset, so nothing ever hides behind it (Jeff, 2026-10-20). */

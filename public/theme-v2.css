@@ -329,6 +329,11 @@ tbody tr:hover td { background: rgba(227,245,234,.55); }
 /* ---------- momentum: earn list + ledger ---------- */
 .earn-row { border-bottom: 1px solid var(--line2); }
 .earn-state { border: 1px solid var(--line); color: var(--ink3); background: #fff; }
+/* Not actionable right now: no icon at all — an empty slot of
+   the same width keeps the labels aligned until the row either
+   becomes doable (filled mint +) or happens (mint check)
+   (Jeff, 2026-10-27). */
+.earn-state.earn-slot { background: transparent; border-color: transparent; color: transparent; }
 .earn-row.done .earn-state {
   background: var(--mint); color: var(--ink); border-color: transparent; font-weight: 800;
 }
@@ -339,9 +344,9 @@ tbody tr:hover td { background: rgba(227,245,234,.55); }
 /* Earn-row deep links (Jeff, 2026-10-27): a row that can be
    completed right now is a real button: the + sits in a filled
    mint circle (the done treatment, still open), a house chevron
-   trails the points, and the row warms on hover. Plain rows keep
-   the hollow circle and no chevron, so the difference reads at a
-   glance. */
+   trails the points, and the row warms on hover. Rows that
+   cannot be acted on render no icon at all (the .earn-slot
+   above), so the difference reads at a glance. */
 button.earn-row {
   width: 100%; text-align: left; font: inherit; color: inherit;
   background: transparent; border: 0; border-bottom: 1px solid var(--line2);

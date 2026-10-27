@@ -8,6 +8,10 @@ proves the behavior in the browser:
 
   - actionable rows render as BUTTON.earn-link; checkmarked and
     outcome rows render as plain DIVs;
+  - the leading icon follows Jeff's rule (2026-10-27): done rows
+    show the mint check, actionable rows the +, and rows that
+    cannot be acted on show NO icon — an empty .earn-slot keeps
+    the alignment and the row exposes no link;
   - clicking a profile row lands on the Profile tab with the exact
     field focused (stack / best-work pick their first empty field);
   - clicking "Accept your first offer" lands on the Offers deck;
@@ -223,12 +227,18 @@ def main():
         def rows(pg):
             return pg.evaluate("""() => [...document.querySelectorAll('#tab-body .earn-row')]
               .filter(r => r.querySelector('.earn-state'))
-              .map(r => ({
-                label: r.querySelector('.earn-label').textContent.trim(),
-                tag: r.tagName,
-                link: r.classList.contains('earn-link'),
-                done: r.classList.contains('done'),
-              }))""")
+              .map(r => {
+                const s = r.querySelector('.earn-state');
+                return {
+                  label: r.querySelector('.earn-label').textContent.trim(),
+                  tag: r.tagName,
+                  link: r.classList.contains('earn-link'),
+                  done: r.classList.contains('done'),
+                  state: s ? s.textContent.trim() : null,
+                  slot: !!r.querySelector('.earn-state.earn-slot'),
+                  chev: !!r.querySelector('.earn-chev'),
+                };
+              })""")
 
         def row_by_label(pg, needle):
             for r in rows(pg):
@@ -260,11 +270,12 @@ def main():
         for needle, want in expect:
             r = row_by_label(pa, needle)
             if want == "done":
-                check(f"A: '{needle}' is checkmarked and plain", bool(r) and r["done"] and not r["link"] and r["tag"] == "DIV", str(r))
+                check(f"A: '{needle}' is checkmarked and plain", bool(r) and r["done"] and not r["link"] and r["tag"] == "DIV" and r["state"] == "✓", str(r))
             elif want:
-                check(f"A: '{needle}' is a linked button", bool(r) and r["link"] and r["tag"] == "BUTTON", str(r))
+                check(f"A: '{needle}' is a linked button wearing the +", bool(r) and r["link"] and r["tag"] == "BUTTON" and r["state"] == "+" and r["chev"], str(r))
             else:
-                check(f"A: '{needle}' stays plain", bool(r) and not r["link"] and r["tag"] == "DIV", str(r))
+                check(f"A: '{needle}' stays plain with NO icon (empty slot, no link)",
+                      bool(r) and not r["link"] and r["tag"] == "DIV" and r["state"] == "" and r["slot"] and not r["chev"], str(r))
 
         os.makedirs(SHOT_DIR, exist_ok=True)
         pa.screenshot(path=SHOT, full_page=True)
@@ -344,6 +355,32 @@ def main():
         check("B: report row click lands on the visit with the views field focused",
               active_id(pb) == f"perf-views-{booking['id']}", active_id(pb))
         ctx_b.close()
+
+        # ---------- logged out: the Sign in door (Jeff, 2026-10-27) ----------
+        ctx_c = browser.new_context(
+            viewport={"width": 390, "height": 844},
+            device_scale_factor=2, is_mobile=True, has_touch=True,
+        )
+        pc = ctx_c.new_page()
+        pc.goto(BASE, wait_until="networkidle")
+        pc.wait_for_selector(".hero h1", timeout=10000)
+        signin = pc.evaluate("""() => {
+          const a = document.querySelector('#topnav a.nav-signin');
+          if (!a) return null;
+          const r = a.getBoundingClientRect();
+          const cs = getComputedStyle(a);
+          return { text: a.textContent.trim(), anon: document.getElementById('topnav').classList.contains('anon'),
+                   visible: cs.display !== 'none' && r.width > 0 && r.top < innerHeight && r.bottom > 0,
+                   ctaHidden: getComputedStyle(document.querySelector('#topnav a.nav-cta')).display === 'none' };
+        }""")
+        check("logged-out landing at 390px: 'Sign in' sits visible at the top of the header",
+              bool(signin) and signin["text"] == "Sign in" and signin["anon"] and signin["visible"], str(signin))
+        check("logged-out landing at 390px: the founding links stay out of the phone header (hero carries them)",
+              bool(signin) and signin["ctaHidden"], str(signin))
+        pc.click("#topnav a.nav-signin")
+        pc.wait_for_selector("form", timeout=8000)
+        check("tapping Sign in lands on the login form", True)
+        ctx_c.close()
         browser.close()
 
     print(f"\nverify-earnlinks-dom: {passed} passed, {failed} failed")

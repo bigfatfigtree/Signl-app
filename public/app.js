@@ -668,10 +668,23 @@ function earnActionFor(item, u) {
   }
 }
 
+// The leading icon follows the same rule as the link itself
+// (Jeff, 2026-10-27): done earns the mint check; a row you can
+// complete right now wears the filled mint "+"; a row you cannot
+// act on gets NO icon at all — an empty slot of the same width
+// keeps the labels aligned, the points still print, and the
+// check appears the moment the thing actually happens.
+function earnStateHtml(item, u) {
+  if (item.done) return `<span class="earn-state">&#10003;</span>`;
+  if (earnActionFor(item, u)) return `<span class="earn-state">+</span>`;
+  return `<span class="earn-state earn-slot" aria-hidden="true"></span>`;
+}
+
 function earnRowWrap(item, u, inner) {
   const cls = `earn-row ${item.done ? "done" : ""}`;
-  if (!earnActionFor(item, u)) return `<div class="${cls}">${inner}</div>`;
-  return `<button type="button" class="${cls} earn-link" onclick="return earnGo('${item.id}')">${inner}<span class="earn-chev">&#8250;</span></button>`;
+  const stateHtml = earnStateHtml(item, u);
+  if (!earnActionFor(item, u)) return `<div class="${cls}">${stateHtml}${inner}</div>`;
+  return `<button type="button" class="${cls} earn-link" onclick="return earnGo('${item.id}')">${stateHtml}${inner}<span class="earn-chev">&#8250;</span></button>`;
 }
 
 function earnFindEl(ids, selector, firstEmpty) {
@@ -745,7 +758,6 @@ function profileCompletionHtml(u) {
   const pc = u && u.profileCompletion;
   if (!pc || pc.complete || u.role !== "creator" || u.status !== "approved") return "";
   const rows = pc.items.map((item) => earnRowWrap(item, u, `
-      <span class="earn-state">${item.done ? "&#10003;" : "+"}</span>
       <span class="earn-label">${esc(item.label)}${item.required && !item.done ? ` <span class="badge info">Needed</span>` : ""}${item.detail ? ` <span class="muted">(${esc(item.detail)})</span>` : ""}</span>
       <span class="earn-points">${item.points ? "+" + item.points + " pts" : ""}</span>`)).join("");
   return `
@@ -766,7 +778,6 @@ function momentumHtml(u) {
   const m = u && u.momentum;
   if (!m) return "";
   const checklist = (m.checklist || []).map((item) => earnRowWrap(item, u, `
-      <span class="earn-state">${item.done ? "&#10003;" : "+"}</span>
       <span class="earn-label">${esc(item.label)}${item.detail ? ` <span class="muted">(${esc(item.detail)})</span>` : ""}</span>
       <span class="earn-points">${item.points > 0 ? "+" + item.points : item.points} pts</span>`)).join("");
   const ledger = (m.ledger || []).slice().reverse().slice(0, 30).map((e) => `
@@ -1281,19 +1292,30 @@ function renderNav() {
   if (state.view === "staff") {
     // Staff mode has no navigation of its own: the register screen
     // does one job. The bar carries the brand and the way out.
+    // The pre-session bar is an anonymous entry surface too: a
+    // returning user who lands on Redeem gets the Sign in door
+    // (Jeff, 2026-10-27 — the logged-out header had none).
+    topnav.classList.toggle("anon", !state.staff);
     topnav.innerHTML = state.staff
       ? `<span class="muted small">${esc(state.staff.businessName)} &middot; Staff mode</span>
          <button class="linklike" onclick="staffExit()">End staff session</button>`
       : `<span class="muted small">Staff redemption</span>
-         <a href="#" onclick="return go('home')">Back to SIGNL home</a>`;
+         <a href="#" onclick="return go('home')">Back to SIGNL home</a>
+         <a class="nav-signin" href="#" onclick="return go('signin')">Sign in</a>`;
     renderBottomNav();
     return;
   }
+  // Logged out: the header is the only way back in. The .anon
+  // class keeps "Sign in" visible in the top bar on phones, where
+  // the rest of the top link row is hidden (styles.css) — without
+  // it a returning user on mobile had no door back in at all
+  // (Jeff, 2026-10-27).
+  topnav.classList.toggle("anon", !state.user);
   if (!state.user) {
     topnav.innerHTML = `
-      <a href="#" onclick="return go('signin')">Sign in</a>
+      <a class="nav-signin" href="#" onclick="return go('signin')">Sign in</a>
       <a class="nav-cta" href="#" onclick="return go('join-creator')">Join as a Founding Creator</a>
-      <a href="#" onclick="return go('for-businesses')">For Businesses</a>`;
+      <a class="nav-biz" href="#" onclick="return go('for-businesses')">For Businesses</a>`;
   } else {
     const u = state.user;
     const label = u.role === "business" && u.business ? u.business.businessName : u.name;
