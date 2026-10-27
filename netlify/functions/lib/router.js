@@ -5659,6 +5659,13 @@ async function previewDashboard() {
     planPacePct: summary.visitsAllowance ? Math.round((summary.visitsUsed / summary.visitsAllowance) * 100) : 0,
     topContent: homeTopContent,
     nextVisits: homeNextVisits,
+    // Overhaul Stage 1 analytics extras: the same shared
+    // computation as the real Business Home, over the simulated
+    // bookings and the real roster records they point at.
+    ...(() => {
+      const byId = new Map(users.map((x) => [x.id, x]));
+      return homeAnalyticsExtras(bookings.map((b) => ({ booking: b, post: b.post || null, creator: byId.get(b.creatorId) || null })), plan, now);
+    })(),
   };
   // Staff redemption demo (refinement bundle, 2026-10-20): Jeff
   // presents with the Preview example accounts and needs to run
@@ -5694,6 +5701,93 @@ async function previewDashboard() {
     managedView,
     home,
     rosterEmpty: bookings.length === 0,
+  };
+}
+
+// ---------- Home analytics extras (overhaul Stage 1, 2026-10-27) ----------
+// One computation shared by the real Business Home and the
+// Preview dashboard, fed by normalized triples of
+// { booking, post, creator } so the sample and the real home can
+// never tell two different stories. Everything here is derived
+// from the records themselves: no stored counters, no estimates.
+// - localReachDelivered: for each delivered post, the creator's
+//   local audience (total audience x local audience %) from the
+//   creator's current record, summed. Local reach is the headline
+//   metric of the overhaul homes.
+// - funnel7 / funnel30: windowed stage counts by the records' own
+//   timestamps (invited = booking created, claimed = code issued
+//   at creation, visited = redeemed, posted = post reported).
+// - contentLibrary: every delivered post with its license state
+//   derived from the visit's own terms (a granted license on the
+//   post, the standard license a paid booking carries, or native
+//   share only for a comped visit), never from the plan.
+// - costPerVisit: the plan allocation (monthly price / visits per
+//   month), plan math labeled as plan math.
+function creatorTotalAudience(c) {
+  if (!c) return 0;
+  if (typeof c.totalAudience === "number" && Number.isFinite(c.totalAudience)) return c.totalAudience;
+  const stack = c.audienceStack || {};
+  return Object.values(stack).reduce((s, v) => s + (Number(v) || 0), 0) || Number(c.followerCount) || 0;
+}
+function homeAnalyticsExtras(triples, plan, now) {
+  const DAY = 24 * 3600 * 1000;
+  const postedAtOf = (post) => (post ? Date.parse(post.reportedAt || post.submittedAt || post.createdAt || "") || null : null);
+  let localReachDelivered = 0;
+  const contentLibrary = [];
+  for (const t of triples) {
+    if (!t.post) continue;
+    const c = t.creator && t.creator.creator ? t.creator.creator : null;
+    const total = creatorTotalAudience(c);
+    const pct = c && c.localAudiencePct !== null && c.localAudiencePct !== undefined ? Number(c.localAudiencePct) || 0 : 0;
+    const localReach = Math.round((total * pct) / 100);
+    localReachDelivered += localReach;
+    const postedAt = postedAtOf(t.post);
+    const paid = !!(t.booking.paidLane || t.booking.kind === "paid");
+    let license;
+    const granted = t.post.license && t.post.license.status === "granted" ? t.post.license : null;
+    if (granted) {
+      const end = Date.parse(granted.windowEndsAt || "") || null;
+      license = { type: "licensed", fee: granted.fee || null, windowEndsAt: granted.windowEndsAt || null, daysLeft: end ? Math.ceil((end - now) / DAY) : null };
+    } else if (paid && postedAt) {
+      const end = licenseWindowEnd(postedAt).getTime();
+      license = { type: "standard", windowEndsAt: new Date(end).toISOString(), daysLeft: Math.ceil((end - now) / DAY) };
+    } else {
+      license = { type: "native", windowEndsAt: null, daysLeft: null };
+    }
+    contentLibrary.push({
+      bookingId: t.booking.id,
+      title: t.booking.title,
+      creatorName: t.booking.creatorName,
+      creatorHandle: t.booking.creatorHandle,
+      postUrl: t.post.url || null,
+      postedAt: postedAt ? new Date(postedAt).toISOString() : null,
+      onTime: !!t.post.onTime,
+      views: Number(t.post.views) || 0,
+      likes: Number(t.post.likes) || 0,
+      kind: paid ? "paid" : "comp",
+      localReach,
+      redemptions: t.booking.redemptions ? { count: t.booking.redemptions.count, basketTotal: t.booking.redemptions.basketTotal } : null,
+      viewsGrowthPct: performanceSummary(t.post).viewsGrowthPct,
+      license,
+    });
+  }
+  contentLibrary.sort((a, b) => String(b.postedAt || "") < String(a.postedAt || "") ? -1 : 1);
+  const funnel = (days) => {
+    const cutoff = now - days * DAY;
+    const inWin = (iso) => { const ms = Date.parse(iso || ""); return Number.isFinite(ms) && ms >= cutoff; };
+    return {
+      invited: triples.filter((t) => inWin(t.booking.createdAt)).length,
+      claimed: triples.filter((t) => t.booking.code && inWin(t.booking.createdAt)).length,
+      visited: triples.filter((t) => inWin(t.booking.redeemedAt)).length,
+      posted: triples.filter((t) => t.post && inWin(t.post.reportedAt || t.post.submittedAt)).length,
+    };
+  };
+  return {
+    localReachDelivered,
+    funnel7: funnel(7),
+    funnel30: funnel(30),
+    contentLibrary,
+    costPerVisit: plan && plan.visitsPerMonth ? Math.round((plan.priceMonthly / plan.visitsPerMonth) * 100) / 100 : null,
   };
 }
 
@@ -5803,6 +5897,16 @@ async function businessHome(user) {
   }
   rebookPrompts.sort((a, b) => (Number(b.isFavorite) - Number(a.isFavorite)) || (a.source === b.source ? 0 : a.source === "delivered" ? -1 : 1));
 
+  // Overhaul Stage 1 analytics extras: one shared computation
+  // with the Preview dashboard (see homeAnalyticsExtras).
+  const allUsersList = await allUsers();
+  const userById = new Map(allUsersList.map((x) => [x.id, x]));
+  const extras = homeAnalyticsExtras(
+    bookings.map((b) => ({ booking: b, post: postByBooking.get(b.id) || null, creator: userById.get(b.creatorId) || null })),
+    plan,
+    now
+  );
+
   return {
     business: { name: user.business.businessName, category: user.business.category, market: user.market, planId: plan.id, planName: user.business.planName, billingStatus: user.business.billingStatus, accessState: businessAccessState(user) },
     plan: { id: plan.id, name: plan.name, priceMonthly: plan.priceMonthly, foundingCredit: plan.foundingCredit, firstMonthPriceMonthly: plan.firstMonthPriceMonthly, minMonths: plan.minMonths, visitsPerMonth: plan.visitsPerMonth },
@@ -5831,6 +5935,11 @@ async function businessHome(user) {
       planPacePct: allowance.allowance ? Math.round((allowance.used / allowance.allowance) * 100) : 0,
       topContent,
       nextVisits,
+      localReachDelivered: extras.localReachDelivered,
+      funnel7: extras.funnel7,
+      funnel30: extras.funnel30,
+      contentLibrary: extras.contentLibrary,
+      costPerVisit: extras.costPerVisit,
     },
     rebookPrompts,
     favoritesCount: favIds.size,

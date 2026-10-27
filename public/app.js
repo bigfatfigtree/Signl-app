@@ -28,6 +28,7 @@ const state = {
   publicHandle: null, // set when the URL is /c/<handle>
   resetToken: "", // password reset token from a /?reset= email link
   preview: null, // admin Business Preview session (see enterPreview)
+  agentQueue: null, // overhaul Stage 1: Ready-for-you queue the current home computed ({count, title, rows:[{text, sub, btn, act}], empty})
   discover: [],
   threads: [],
   activeThread: null, // other user id
@@ -1238,6 +1239,7 @@ function renderBottomNav() {
   const signedIn = !!state.user && state.view !== "staff";
   bottomnav.classList.toggle("signed-in", signedIn);
   document.body.classList.toggle("bn-on", signedIn);
+  renderRail();
   if (state.view === "staff") { bottomnav.innerHTML = ""; return; }
   const badgeBubble = (n) => (n ? `<span class="bn-badge">${n > 99 ? "99+" : n}</span>` : "");
   const item = (icon, label, onclick, active, badge) => `
@@ -1345,6 +1347,240 @@ function closeMoreSheet() {
   return false;
 }
 
+// ---------- Overhaul Stage 1 shell (Jeff, 2026-10-27) ----------
+// A persistent left rail at desktop widths carries the same
+// destinations as the phone's bottom bar (same labels, same
+// badges, same go() targets); below 1100px the rail hides and
+// the bottom bar carries the app exactly as before. The floating
+// spark button + Ready-for-you card are agent-ready STRUCTURE:
+// each home computes its real waiting queue (applications,
+// deadlines, licenses) and hands it over; there is no agent
+// logic behind the button in this stage.
+const SPARK_SVG = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.1 6.9L21 11l-6.9 2.1L12 20l-2.1-6.9L3 11l6.9-2.1z"/></svg>`;
+
+function railItems() {
+  if (!state.user || state.view === "staff" || state.preview) return null;
+  const u = state.user;
+  const t = state.tab;
+  const b = state.badges || {};
+  const items = [];
+  const add = (sec, icon, label, onclick, active, badge) => items.push({ sec, icon, label, onclick, active: !!active, badge: badge || 0 });
+  if (u.role === "admin") {
+    add("Menu", "requests", "Requests", "return go('dashboard','Applications')", t === "Applications" || !t);
+    add("Menu", "pin", "Markets", "return go('dashboard','Markets')", t === "Markets");
+    add("Menu", "list", "Event Log", "return go('dashboard','Event Log')", t === "Event Log");
+    add("Menu", "stats", "Stats", "return go('dashboard','Stats')", t === "Stats");
+    add("Operations", "heart", "Recruiters", "return go('dashboard','Recruiters')", t === "Recruiters");
+    add("Operations", "status", "Compliance", "return go('dashboard','Compliance')", t === "Compliance");
+    add("Operations", "stats", "Campaign", "return go('dashboard','Campaign')", t === "Campaign");
+    return items;
+  }
+  if (u.status !== "approved" || isFoundingBusiness(u)) {
+    add("Menu", "status", "Status", "return go('dashboard')", true);
+    return items;
+  }
+  if (u.role === "creator") {
+    const live = !!(u.founding && u.founding.marketLive);
+    add("Menu", "home", "Dashboard", "return go('dashboard','Dashboard')", t === "Dashboard" || !t);
+    add("Menu", "profile", "Profile", "return go('dashboard','Profile')", t === "Profile");
+    if (!live) {
+      add("Menu", "status", "Status", "return go('dashboard','Status')", t === "Status");
+    } else {
+      add("Menu", "offers", "Offers", "return go('dashboard','Offers')", t === "Offers", b.offers);
+      add("Menu", "visits", "My Visits", "return go('dashboard','My Visits')", t === "My Visits", b.visits);
+      add("Menu", "messages", "Messages", "return go('dashboard','Messages')", t === "Messages", b.messages);
+    }
+    return items;
+  }
+  if (u.role === "business") {
+    add("Menu", "home", "Home", "return go('dashboard','Home')", t === "Home" || !t, b.visits);
+    add("Menu", "pin", "Discover", "return go('dashboard','Discover')", t === "Discover");
+    add("Menu", "offers", "Offers", "return go('dashboard','My Offers')", t === "My Offers", b.offers);
+    add("Menu", "visits", "Counter", "return go('dashboard','Counter')", t === "Counter");
+    add("More", "heart", "Favorites", "return go('dashboard','Favorites')", t === "Favorites");
+    add("More", "list", "Visits & Posts", "return go('dashboard','Visits & Posts')", t === "Visits & Posts");
+    add("More", "building", "Plan", "return go('dashboard','Plan')", t === "Plan");
+    add("More", "messages", "Messages", "return go('dashboard','Messages')", t === "Messages", b.messages);
+    add("More", "profile", "Profile", "return go('profile')", state.view === "profile");
+    return items;
+  }
+  return null;
+}
+
+function renderRail() {
+  const rail = document.getElementById("rail");
+  if (!rail) return;
+  const items = railItems();
+  document.body.classList.toggle("rail-on", !!items);
+  if (!items) { rail.innerHTML = ""; return; }
+  const u = state.user;
+  const name = u.role === "business" && u.business ? u.business.businessName : u.name;
+  const sub = u.role === "admin" ? "Admin"
+    : u.role === "creator" ? `@${(u.creator && u.creator.handle) || ""} · ${marketDisplayName(u.market)}`
+    : u.role === "business" ? `${u.business ? u.business.planName : ""} · ${marketDisplayName(u.market)}`
+    : u.role;
+  let lastSec = "";
+  const rows = items.map((it) => {
+    const sec = it.sec !== lastSec ? `<div class="rail-sec">${esc(it.sec)}</div>` : "";
+    lastSec = it.sec;
+    return `${sec}<button type="button" class="rail-item ${it.active ? "on" : ""}" onclick="${it.onclick}"><span class="bn-icon">${bnIcon(it.icon)}</span><span>${esc(it.label)}</span>${it.badge ? `<span class="rail-badge">${it.badge > 99 ? "99+" : it.badge}</span>` : ""}</button>`;
+  }).join("");
+  rail.innerHTML = `
+    <div class="rail-brand"><img src="/assets/logo.png" alt="SIGNL"></div>
+    ${rows}
+    <div class="rail-foot">
+      <div class="rail-user"><div class="ru-name">${esc(name || "")}</div><div class="ru-sub">${esc(sub || "")}</div></div>
+      <button type="button" class="rail-item" onclick="signOut()"><span class="bn-icon">${bnIcon("signout")}</span><span>Sign out</span></button>
+    </div>`;
+}
+
+// Ready-for-you queue: homes compute it from real records and
+// register it here; the card renders inline on the home and the
+// floating button opens the same queue as a sheet.
+function setAgentFab(queue) {
+  state.agentQueue = queue || null;
+  renderAgentFab();
+}
+function renderAgentFab() {
+  const fab = document.getElementById("agent-fab");
+  if (!fab) return;
+  const q = state.agentQueue;
+  if (!q || !state.user || state.preview) { fab.classList.remove("show"); fab.innerHTML = ""; fab.onclick = null; return; }
+  fab.classList.add("show");
+  fab.innerHTML = `${SPARK_SVG}${q.count ? `<span class="fab-badge">${q.count}</span>` : ""}`;
+  fab.onclick = openAgentSheet;
+}
+function readyRowsHtml(q) {
+  if (!q.rows || !q.rows.length) return `<p class="rc-empty">${esc(q.empty || "All caught up. Nothing is waiting on you.")}</p>`;
+  return q.rows.map((r, i) => `
+    <div class="rc-row"><div class="rc-txt">${esc(r.text)}${r.sub ? `<div class="muted" style="font-size:.82rem">${esc(r.sub)}</div>` : ""}</div>${r.btn ? `<button type="button" class="btn small-btn" data-rq="${i}">${esc(r.btn)}</button>` : ""}</div>`).join("");
+}
+function readyCardHtml(q) {
+  if (!q) return "";
+  return `<div class="ready-card"><p class="rc-kicker">Ready for you</p><h3>${esc(q.title)}</h3>${readyRowsHtml(q)}</div>`;
+}
+function wireReady(root) {
+  if (!root || !state.agentQueue) return;
+  root.querySelectorAll("[data-rq]").forEach((btn) => {
+    btn.onclick = () => {
+      const r = state.agentQueue && state.agentQueue.rows[Number(btn.getAttribute("data-rq"))];
+      closeAgentSheet();
+      if (r && r.act) r.act();
+    };
+  });
+}
+function openAgentSheet() {
+  const q = state.agentQueue;
+  if (!q) return false;
+  closeAgentSheet();
+  const el = document.createElement("div");
+  el.id = "agent-sheet";
+  el.className = "sheet-overlay";
+  el.innerHTML = `
+  <div class="sheet" role="dialog" aria-label="Ready for you">
+    <div class="flex-between"><strong>${esc(q.title)}</strong><button class="linklike" onclick="closeAgentSheet()">Close</button></div>
+    <p class="small muted" style="margin:8px 0 4px">Your queue, from your real records. Work it here, or open the home it belongs to.</p>
+    ${q.rows && q.rows.length ? q.rows.map((r, i) => `
+    <div class="sheet-row"><span>${esc(r.text)}${r.sub ? `<br><span class="small muted">${esc(r.sub)}</span>` : ""}</span>${r.btn ? `<button type="button" class="btn small-btn" data-rq="${i}">${esc(r.btn)}</button>` : ""}</div>`).join("") : `<p class="small muted" style="margin:10px 0 2px">${esc(q.empty || "All caught up. Nothing is waiting on you.")}</p>`}
+  </div>`;
+  el.addEventListener("click", (e) => { if (e.target === el) closeAgentSheet(); });
+  document.body.appendChild(el);
+  wireReady(el);
+  return false;
+}
+function closeAgentSheet() {
+  const el = document.getElementById("agent-sheet");
+  if (el) el.remove();
+  return false;
+}
+
+// Generic home segments (same grammar as the business dashSegs):
+// buttons switch [data-seg] panels inside the [data-dash] root.
+function homeSegsHtml(segs) {
+  return `<div class="view-toggle dash-segs"><div class="vt-group">${segs.map(([id, label, badge], i) => `<button type="button" class="rchip${i === 0 ? " on" : ""}" data-segbtn="${id}" onclick="dashSeg('${id}', this)">${label}${badge ? ` <span class="seg-badge">${badge}</span>` : ""}</button>`).join("")}</div></div>`;
+}
+// Segmented panel switch for the analytics toggles (funnel
+// window, content library) — same show/hide grammar as dashSeg.
+function segPanels(btn, panelAttr, val, btnAttr) {
+  const root = btn && btn.closest ? btn.closest("[data-dash]") : null;
+  if (!root) return false;
+  root.querySelectorAll(`[${panelAttr}]`).forEach((p) => { p.hidden = p.getAttribute(panelAttr) !== String(val); });
+  root.querySelectorAll(`[${btnAttr}]`).forEach((b) => b.classList.toggle("on", b.getAttribute(btnAttr) === String(val)));
+  return false;
+}
+function bizFnWin(days, btn) { return segPanels(btn, "data-fnp", days, "data-fnbtn"); }
+function bizLibTab(which, btn) { return segPanels(btn, "data-libp", which, "data-libbtn"); }
+// Feed filter chips: hide cards whose data-fk does not match.
+function feedChip(btn, kind) {
+  const root = btn && btn.closest ? btn.closest("[data-dash]") : null;
+  if (!root) return false;
+  root.querySelectorAll("[data-fcbtn]").forEach((b) => b.classList.toggle("on", b === btn));
+  root.querySelectorAll("[data-fk]").forEach((c) => { c.hidden = kind !== "all" && c.getAttribute("data-fk") !== kind; });
+  return false;
+}
+// Offer template cards (Offers segment): land in the composer
+// with the lane preset. A draft the business already started is
+// never overwritten — the same rule as the two-tap prefill.
+function startOfferTemplate(kind) {
+  state.offerTarget = null;
+  state.composerLane = "open";
+  if (offerDraftIsEmpty()) state.offerDraft.kind = kind === "paid" ? "paid" : "comp";
+  state.tab = "My Offers";
+  render();
+  return false;
+}
+
+// License state pill for a delivered post (content library):
+// derived server-side from the visit's own terms.
+function licPillHtml(lic) {
+  if (!lic || lic.type === "native") return `<span class="lic-pill">Native share only</span>`;
+  const label = lic.type === "licensed" ? "Licensed" : "Standard license";
+  if (lic.daysLeft === null || lic.daysLeft === undefined) return `<span class="lic-pill live">${label}</span>`;
+  if (lic.daysLeft < 0) return `<span class="lic-pill over">${label} ended</span>`;
+  return `<span class="lic-pill live">${label} · ${lic.daysLeft}d left</span>`;
+}
+// Business funnel with the 7/30-day segmented toggle. Falls back
+// to the cumulative pipeline when windowed counts are absent.
+function bizFunnelHtml(h) {
+  const stage = (n, l, s) => `<div class="pv-stage"><div class="pv-stage-num">${n}</div><div class="pv-stage-lbl">${l}</div><div class="pv-stage-sub">${s}</div></div>`;
+  const fun = (f) => `<div class="pv-funnel">${stage(f.invited, "Invited", "Bookings created")}${stage(f.claimed, "Claimed", "Codes issued")}${stage(f.visited, "Visited", "Redeemed in store")}${stage(f.posted, "Posted", "Posts reported live")}</div>`;
+  if (h.funnel7 && h.funnel30) {
+    return `<div class="view-toggle lib-toggle"><div class="vt-group"><button type="button" class="rchip" data-fnbtn="7" onclick="return bizFnWin(7, this)">7 days</button><button type="button" class="rchip on" data-fnbtn="30" onclick="return bizFnWin(30, this)">30 days</button></div></div><div data-fnp="7" hidden>${fun(h.funnel7)}</div><div data-fnp="30">${fun(h.funnel30)}</div>`;
+  }
+  const p = h.pipeline || { invited: 0, claimed: 0, clockRunning: 0, live: 0 };
+  return `<div class="pv-funnel">${stage(p.invited, "Invited", "Bookings created")}${stage(p.claimed, "Claimed", "Codes issued")}${stage(p.clockRunning, "Visited", "Visits redeemed")}${stage(p.live, "Posted", "Posts delivered")}</div><p class="ana-note">All-time pipeline. Windowed counts arrive with your first full week of visits.</p>`;
+}
+// Content library: every delivered post with its license state,
+// split into the creator's posts and the ones the business can
+// actually use. Rights follow the visit, never the plan.
+function bizLibraryHtml(h) {
+  const lib = h.contentLibrary || [];
+  if (!lib.length) return `<div class="feed-empty"><strong>No posts yet</strong>Delivered posts land here with their license state.</div>`;
+  const row = (r) => `<div class="lib-row"><div class="lib-main"><div class="lib-title">${esc(r.title)}</div><div class="lib-meta">@${esc(r.creatorHandle)} · ${r.postedAt ? fmtDay(r.postedAt) : ""} · ${fmtNum(r.views)} views · ${r.onTime ? "on time" : "late"}${r.redemptions ? ` · ${r.redemptions.count} code uses · $${fmtMoney(r.redemptions.basketTotal)} rung up` : ""}</div></div>${licPillHtml(r.license)}${r.postUrl ? `<a class="btn small-btn ghost" href="${esc(r.postUrl)}" target="_blank" rel="noopener">View post</a>` : ""}</div>`;
+  const yours = lib.filter((r) => r.license && r.license.type !== "native");
+  return `<div class="view-toggle lib-toggle"><div class="vt-group"><button type="button" class="rchip on" data-libbtn="creator" onclick="return bizLibTab('creator', this)">Creator posts</button><button type="button" class="rchip" data-libbtn="yours" onclick="return bizLibTab('yours', this)">Yours to use</button></div></div>
+  <div data-libp="creator"><p class="small muted">Seeing a post here is not the right to reuse it. Comped posts are native share only, with credit, unless you license them from the creator.</p>${lib.map(row).join("")}</div>
+  <div data-libp="yours" hidden><p class="small muted">Posts you can repost and run as ads inside the window shown. The window runs 90 days from the post date.</p>${yours.length ? yours.map(row).join("") : `<div class="feed-empty"><strong>Nothing licensed yet</strong>Paid bookings carry a 90-day standard license. A comped post can be licensed at the creator's listed fee.</div>`}</div>`;
+}
+// Offers-segment template cards, in SIGNL's own terms.
+function bizTemplatesHtml() {
+  const card = (kind, icon, name, desc) => `<div class="tmpl-card"><div class="tmpl-tile">${bnIcon(icon)}</div><div class="tmpl-name">${name}</div><div class="tmpl-desc">${desc}</div><button type="button" class="btn small-btn" onclick="return startOfferTemplate('${kind}')">Start</button></div>`;
+  return `<div class="tmpl-grid">${card("comp", "offers", "Comped visit", "You cover the meal or service. The creator posts honestly within 48 hours.")}${card("paid", "visits", "Paid booking", "Book at the creator's listed rate. They keep 97%, and a 90-day license is included.")}${card("open", "join", "Open call", "Post it to your market and let matching creators apply. You pick from the stack.")}</div>`;
+}
+// Activity feed cards from delivered posts + their licenses.
+function bizActivityFeedHtml(h) {
+  const lib = h.contentLibrary || [];
+  if (!lib.length) return `<div class="feed-empty"><strong>Nothing here yet</strong>Posts and licenses land here as visits complete.</div>`;
+  const cards = [];
+  for (const r of lib) {
+    cards.push(`<div class="feed-card" data-fk="posts"><div class="feed-dot">${bnIcon("visits")}</div><div class="feed-main"><div class="feed-title">Post live: ${esc(r.title)}</div><div class="feed-meta">@${esc(r.creatorHandle)} · ${r.postedAt ? fmtDay(r.postedAt) : ""} · ${fmtNum(r.views)} views · ${r.onTime ? "on time" : "late"}</div></div>${r.postUrl ? `<span class="feed-act"><a class="btn small-btn ghost" href="${esc(r.postUrl)}" target="_blank" rel="noopener">View post</a></span>` : ""}</div>`);
+    if (r.license && r.license.type !== "native") {
+      cards.push(`<div class="feed-card" data-fk="licenses"><div class="feed-dot acc">${bnIcon("offers")}</div><div class="feed-main"><div class="feed-title">${r.license.type === "licensed" ? "Licensed post" : "Standard license"}: ${esc(r.title)}</div><div class="feed-meta">${r.license.daysLeft === null || r.license.daysLeft === undefined ? "90-day window from the post date" : r.license.daysLeft < 0 ? "The reuse window has ended" : `${r.license.daysLeft} days left to repost and run ads`}</div></div><span class="feed-act"><button type="button" class="btn small-btn ghost" onclick="return go('dashboard','Visits &amp; Posts')">Open</button></span></div>`);
+    }
+  }
+  return `<div class="feed-chips"><button type="button" class="chip on" data-fcbtn onclick="return feedChip(this,'all')">All</button><button type="button" class="chip" data-fcbtn onclick="return feedChip(this,'posts')">Posts</button><button type="button" class="chip" data-fcbtn onclick="return feedChip(this,'licenses')">Licenses</button></div>${cards.join("")}`;
+}
+
 function go(view, tab) {
   // Any navigation leaves Business Preview: the mode is a single
   // deliberate walk, and the admin lands back on the normal console.
@@ -1363,6 +1599,10 @@ function go(view, tab) {
 }
 
 async function render() {
+  // The Ready-for-you queue belongs to the home that computed it;
+  // every navigation clears it and the new home re-registers.
+  state.agentQueue = null;
+  renderAgentFab();
   renderNav();
   if (state.view === "public-profile") return renderPublicProfile();
   if (state.view === "public-proof") return renderPublicProof();
@@ -3248,14 +3488,43 @@ async function loadFoundingDashboard() {
     const hour = new Date().getHours();
     const greet = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
     const firstName = (u.name || "").trim().split(" ")[0] || u.name || "";
+    const totalAud = totalAudienceOf(card);
+    const pctSet = !(p.localAudiencePct === null || p.localAudiencePct === undefined);
+    const localReach = pctSet ? Math.round((totalAud * Number(p.localAudiencePct)) / 100) : null;
+    const momPts = (u.momentum || {}).points || 0;
+    // Ready-for-you queue (overhaul Stage 1): the real waiting
+    // items on this home, computed from the records on screen.
+    const queue = { count: 0, title: "", rows: [], empty: "All caught up. Nothing is waiting on you." };
+    if (u.profileCompletion && !u.profileCompletion.complete) {
+      queue.rows.push({ text: "Finish your profile", sub: "Businesses can only find finished profiles.", btn: "Open profile", act: () => go("dashboard", "Profile") });
+      queue.count++;
+    }
+    if (u.status !== "approved") {
+      queue.rows.push({ text: "Your application is in review", sub: "Decisions land within 2 business days.", btn: "View status", act: () => go("dashboard", "Status") });
+      queue.count++;
+    }
+    if (!queue.rows.length) {
+      queue.rows.push({ text: "You are on the founding roster", sub: isUnl ? `${f.city} opens when sign-ups pile up. We email you the moment it opens.` : `${marketTalkNameClient(f.market)} opens in the next ${f.launchWindow}. We email you the moment it opens.`, btn: "View status", act: () => go("dashboard", "Status") });
+    }
+    queue.title = queue.count ? `${queue.count} thing${queue.count === 1 ? "" : "s"} ready for you` : "You are founding-ready";
+    setAgentFab(queue);
     el.innerHTML = `
     <div class="dash-hero">
       <p class="dh-kicker">Creator dashboard &middot; ${place}</p>
       <div class="dh-name">${esc(greet)}, ${esc(firstName)}.</div>
       <p class="dh-sub">${isUnl ? `${esc(f.city)} opens when sign-ups pile up. Your numbers, paid lane and roster.` : `${esc(marketTalkNameClient(f.market))} opens in the next ${esc(f.launchWindow)}. Your numbers, paid lane and roster.`}</p>
-      <div class="dh-row"><div><div class="dh-num">${fmtNum(totalAudienceOf(card))}</div><div class="dh-num-lbl">Total audience across your platforms</div></div></div>
     </div>
     ${profileCompletionHtml(u)}
+    <div class="stat-band kpi-band">
+      <div class="stat-cell"><div class="stat-num">${localReach === null ? "Not set" : fmtNum(localReach)}</div><div class="stat-lbl">Local reach${pctSet ? ` &middot; ${p.localAudiencePct}% of your audience is local` : " &middot; add your local % in your profile"}</div></div>
+      <div class="stat-cell"><div class="stat-num">${fmtNum(totalAud)}</div><div class="stat-lbl">Total audience</div></div>
+      <div class="stat-cell"><div class="stat-num"><em>${momPts}</em></div><div class="stat-lbl">Momentum points</div></div>
+      <div class="stat-cell"><div class="stat-num">${card.localImpactScore !== null && card.localImpactScore !== undefined ? card.localImpactScore : "New"}</div><div class="stat-lbl">Local Impact Score / 100</div></div>
+    </div>
+    ${readyCardHtml(queue)}
+    <div data-dash>
+    ${homeSegsHtml([["activity", "Activity"], ["analytics", "Analytics"]])}
+    <div data-seg="activity">
     <div class="panel">
       <div class="flex-between">
         <div>
@@ -3268,9 +3537,24 @@ async function loadFoundingDashboard() {
       <p style="margin-bottom:0">${scoreBadge(card.localImpactScore)}</p>
       <div class="home-actions"><button class="btn small-btn ghost" onclick="return go('dashboard','Status')">See your full status</button></div>
     </div>
-    ${homeFoundingBlocksHtml(card, u)}
+    <div class="feed-card"><div class="feed-dot acc">${bnIcon("status")}</div><div class="feed-main"><div class="feed-title">Founding enrollment: ${u.status === "approved" ? "approved" : "in review"}</div><div class="feed-meta">${isUnl ? place : esc(marketDisplayName(f.market))}${u.createdAt ? ` &middot; joined ${fmtDate(u.createdAt)}` : ""}</div></div></div>
+    <div class="feed-card"><div class="feed-dot">${bnIcon("pin")}</div><div class="feed-main"><div class="feed-title">${isUnl ? `${esc(f.city)} opens when sign-ups pile up` : `${esc(marketTalkNameClient(f.market))} opens in the next ${esc(f.launchWindow)}`}</div><div class="feed-meta">We email you at ${esc(u.email)} the moment it opens.</div></div></div>
+    ${homePaidLaneHtml(u.creator)}
+    </div>
+    <div data-seg="analytics" hidden>
+    <div class="panel ana-block">
+      <h4>Your local reach</h4>
+      ${pctSet ? `<p class="small" style="margin:0"><strong>${fmtNum(localReach)}</strong> of your ${fmtNum(totalAud)} followers are local (${p.localAudiencePct}%). Businesses rank creators by this number, not by follower count: it is the headline on your card everywhere on SIGNL.</p>` : `<p class="small" style="margin:0">Local reach is the number businesses rank on: how much of your audience actually lives here. Add your local audience % in your profile and this fills in.</p><p style="margin:10px 0 0"><button class="btn small-btn" onclick="return go('dashboard','Profile')">Add your local %</button></p>`}
+    </div>
+    <div class="panel ana-block">
+      <h4>Your funnel</h4>
+      <p class="small muted" style="margin:0">Invites appear here once ${isUnl ? esc(f.city) : esc(marketTalkNameClient(f.market))} opens: invites received, visits booked, visits done, posts live. Nothing to count yet, and we do not chart zeroes.</p>
+    </div>
     ${momentumHtml(u)}
-    ${growRosterHtml(u)}`;
+    ${growRosterHtml(u)}
+    </div>
+    </div>`;
+    wireReady(el);
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
@@ -4000,32 +4284,97 @@ async function loadCreatorHome() {
     const hour = new Date().getHours();
     const greet = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
     const firstName = (u.name || "").trim().split(" ")[0] || u.name || "";
+    // KPI strip (overhaul Stage 1): local reach leads, Momentum
+    // appears exactly once, visits and earnings follow.
+    const cprof = card.profile || {};
+    const totalAud = totalAudienceOf(card);
+    const pctSet = !(cprof.localAudiencePct === null || cprof.localAudiencePct === undefined);
+    const localReach = pctSet ? Math.round((totalAud * Number(cprof.localAudiencePct)) / 100) : null;
+    const visitsDone = bookings.filter((b) => b.redeemedAt || b.post).length;
+    const delivered = bookings.filter((b) => b.post);
+    // Ready-for-you queue from the records on this screen.
+    const queue = { count: 0, title: "", rows: [], empty: "All caught up. Nothing is waiting on you." };
+    const activeVisit = homeActiveBooking(bookings);
+    if (activeVisit) { queue.rows.push({ text: `Visit in motion: ${activeVisit.title}`, sub: "The 48 hour post standard is the one that earns Momentum.", btn: "Open visit", act: () => go("dashboard", "My Visits") }); queue.count++; }
+    const perfDue = bookings.filter((b) => b.post && perfUpdateDue(b.post));
+    if (perfDue.length) { queue.rows.push({ text: `${perfDue.length} post${perfDue.length === 1 ? "" : "s"} ready for a numbers update`, sub: "Day 7, 14 and 30 numbers keep your posts working for you.", btn: "Update", act: () => go("dashboard", "My Visits") }); queue.count++; }
+    if (offers.length) { queue.rows.push({ text: `${offers.length} offer${offers.length === 1 ? "" : "s"} open to you`, sub: "Comped visits and paid bookings at your listed rate.", btn: "See offers", act: () => go("dashboard", "Offers") }); queue.count++; }
+    queue.title = queue.count ? `${queue.count} thing${queue.count === 1 ? "" : "s"} ready for you` : "All caught up";
+    setAgentFab(queue);
+    // Activity feed: invites, visit milestones, posts and
+    // Momentum events from real records, newest first.
+    const feed = [];
+    for (const o of offers) feed.push({ kind: "invites", icon: "offers", at: o.createdAt, title: `Offer: ${o.title || "Untitled offer"}`, meta: `${o.businessName || ""}${o.kind === "paid" ? " · Paid booking" : " · Comped visit"}`, btn: "View", act: () => go("dashboard", "Offers") });
+    for (const a of applications) if (a.status === "pending") feed.push({ kind: "invites", icon: "offers", at: a.createdAt, title: `Application sent: ${a.offerTitle || a.title || "an offer"}`, meta: "Waiting on the business", btn: null });
+    for (const b of bookings) {
+      if (b.post) feed.push({ kind: "posts", icon: "visits", at: b.post.firstAt || b.post.updatedAt, title: `Post live: ${b.title}`, meta: `${b.businessName || ""} · ${b.state === "posted_on_time" ? "on time" : b.state === "posted_late" ? "late" : "delivered"}`, btn: "Open", act: () => go("dashboard", "My Visits") });
+      else if (b.redeemedAt) feed.push({ kind: "visits", icon: "visits", at: b.redeemedAt, title: `Visit done: ${b.title}`, meta: `${b.businessName || ""} · post clock running`, btn: "Open", act: () => go("dashboard", "My Visits") });
+      else feed.push({ kind: "visits", icon: "visits", at: b.createdAt, title: `Visit booked: ${b.title}`, meta: `${b.businessName || ""} · code issued`, btn: "Open", act: () => go("dashboard", "My Visits") });
+    }
+    for (const e of (m.ledger || [])) feed.push({ kind: "momentum", icon: "status", at: e.at, title: `${e.points > 0 ? "+" : ""}${e.points} Momentum`, meta: e.label || "", btn: null });
+    feed.sort((x, y) => (String(y.at || "") < String(x.at || "") ? -1 : 1));
+    const feedTop = feed.slice(0, 14);
+    const feedCard = (f, i) => `<div class="feed-card" data-fk="${f.kind}"><div class="feed-dot${f.kind === "momentum" ? " acc" : ""}">${bnIcon(f.icon)}</div><div class="feed-main"><div class="feed-title">${esc(f.title)}</div><div class="feed-meta">${esc(f.meta)}${f.at ? ` &middot; ${fmtDate(f.at)}` : ""}</div></div>${f.btn ? `<span class="feed-act"><button type="button" class="btn small-btn ghost" data-cf="${i}">${f.btn}</button></span>` : ""}</div>`;
+    // Analytics: funnel + per-post day 7/14/30 series from the
+    // post snapshots that already auto-flow.
+    const funnelStages = [
+      [offers.length + bookings.length, "Invited", "Offers open + invites taken"],
+      [bookings.length, "Accepted", "Visits booked"],
+      [visitsDone, "Visited", "Visits happened"],
+      [delivered.length, "Posted", "Posts live"],
+    ];
+    const seriesRows = delivered.filter((b) => b.post && (b.post.snapshots || []).length).map((b) => {
+      const snaps = [...b.post.snapshots].sort((x, y) => String(x.at) < String(y.at) ? -1 : 1);
+      const base = Date.parse(b.post.firstAt || snaps[0].at);
+      const atDay = (d) => { let v = null; for (const s of snaps) { if (Date.parse(s.at) <= base + d * 24 * 3600 * 1000) v = s.views; } return v === null || v === undefined ? "&mdash;" : fmtNum(v); };
+      return `<tr><td>${esc(b.title)}</td><td>${atDay(7)}</td><td>${atDay(14)}</td><td>${atDay(30)}</td><td>${fmtNum(b.post.views || 0)}</td></tr>`;
+    }).join("");
     el.innerHTML = `
     <div class="dash-hero">
       <p class="dh-kicker">Creator dashboard &middot; ${esc(marketDisplayName(u.market))}</p>
       <div class="dh-name">${esc(greet)}, ${esc(firstName)}.</div>
       <p class="dh-sub">Your visit, offers and money.</p>
-      <div class="dh-row"><div><div class="dh-num">${m.points}</div><div class="dh-num-lbl">Momentum points</div></div></div>
     </div>
     ${profileCompletionHtml(u)}
-    <div class="stat-band home-metrics">
-      <div class="stat-cell"><div class="stat-num">$${fmtMoney(money.released)}</div><div class="stat-lbl">${money.released ? "Paid cash released" : "Your first paid visit puts money here."}</div></div>
-      <div class="stat-cell"><div class="stat-num">$${fmtMoney(money.compValue)}</div><div class="stat-lbl">${money.compValue ? "Comp value received" : "Your first comped visit lands here."}</div></div>
-      <div class="stat-cell"><div class="stat-num">${tr.onTimePct === null || tr.onTimePct === undefined ? "New" : tr.onTimePct + "%"}</div><div class="stat-lbl">On-time posts (${tr.postsDelivered || 0} delivered)</div></div>
+    <div class="stat-band kpi-band">
+      <div class="stat-cell"><div class="stat-num">${localReach === null ? "Not set" : fmtNum(localReach)}</div><div class="stat-lbl">Local reach${pctSet ? ` &middot; ${cprof.localAudiencePct}% of your audience is local` : " &middot; set your local % on your profile"}</div></div>
       <div class="stat-cell"><div class="stat-num"><em>${m.points}</em></div><div class="stat-lbl">Momentum points</div></div>
+      <div class="stat-cell"><div class="stat-num">${visitsDone}</div><div class="stat-lbl">Visits done</div></div>
+      <div class="stat-cell"><div class="stat-num">$${fmtMoney(money.released)}</div><div class="stat-lbl">${money.released ? "Paid cash released · you keep 97%" : "Earned · your first paid visit puts money here"}</div></div>
     </div>
     ${card.ratingCount >= 1 && card.ratingAvg !== null && card.ratingAvg !== undefined
       ? `<p class="small">${starsHtml(card.ratingAvg)} <strong>Your rating: ${esc(String(card.ratingAvg))}</strong> from ${card.ratingCount} business${card.ratingCount === 1 ? "" : "es"}, shown next to your Momentum points.</p>`
       : `<p class="small muted">Your rating appears after your first rated visit.</p>`}
     ${strikeStatusHtml(u)}
-    ${homeActiveVisitHtml(homeActiveBooking(bookings))}
-    ${bookings.filter((b) => b.post && perfUpdateDue(b.post)).map((b) => perfUpdateFormHtml(b, "home")).join("")}
+    ${readyCardHtml(queue)}
+    <div data-dash>
+    ${homeSegsHtml([["activity", "Activity"], ["analytics", "Analytics"]])}
+    <div data-seg="activity">
+    <div class="feed-chips"><button type="button" class="chip on" data-fcbtn onclick="return feedChip(this,'all')">All</button><button type="button" class="chip" data-fcbtn onclick="return feedChip(this,'invites')">Invites</button><button type="button" class="chip" data-fcbtn onclick="return feedChip(this,'visits')">Visits</button><button type="button" class="chip" data-fcbtn onclick="return feedChip(this,'posts')">Posts</button><button type="button" class="chip" data-fcbtn onclick="return feedChip(this,'momentum')">Momentum</button></div>
+    ${feedTop.length ? feedTop.map(feedCard).join("") : `<div class="feed-empty"><strong>Nothing here yet</strong>Invites, visits, posts and Momentum land here as they happen.</div>`}
+    ${homeActiveVisitHtml(activeVisit)}
+    ${perfDue.map((b) => perfUpdateFormHtml(b, "home")).join("")}
     ${homeOpportunitiesHtml(offers, u, bookings, applications)}
+    ${homeComingUpHtml(bookings)}
+    </div>
+    <div data-seg="analytics" hidden>
     ${homeLocalSignalHtml(card, bookings)}
+    <div class="panel ana-block">
+      <h4>Your funnel</h4>
+      <div class="pv-funnel">${funnelStages.map(([n, l, s]) => `<div class="pv-stage"><div class="pv-stage-num">${n}</div><div class="pv-stage-lbl">${l}</div><div class="pv-stage-sub">${s}</div></div>`).join("")}</div>
+    </div>
+    <div class="panel ana-block">
+      <h4>On time, every time</h4>
+      <p class="small" style="margin:0"><strong>${tr.onTimePct === null || tr.onTimePct === undefined ? "New" : tr.onTimePct + "%"}</strong> of your posts landed inside the 48 hour standard (${tr.postsDelivered || 0} delivered). The standard is 48 hours; the hard deadline is one week.</p>
+    </div>
+    ${seriesRows ? `<div class="panel ana-block"><h4>Post performance, day 7 / 14 / 30</h4><table class="series-table"><tr><th>Post</th><th>Day 7</th><th>Day 14</th><th>Day 30</th><th>Latest views</th></tr>${seriesRows}</table><p class="ana-note">Views at each mark after the post, from the numbers on record. A dash means that mark has not been reported yet.</p></div>` : `<div class="panel ana-block"><h4>Post performance</h4><p class="small muted" style="margin:0">Your posts appear here once their first numbers are in, tracked at day 7, 14 and 30.</p></div>`}
     ${homePaidLaneHtml(u.creator)}
     ${homeMoneyHtml(money)}
     ${momentumHtml(u)}
-    ${homeComingUpHtml(bookings)}`;
+    </div>
+    </div>`;
+    wireReady(el);
+    el.querySelectorAll("[data-cf]").forEach((btn) => { btn.onclick = () => { const f = feedTop[Number(btn.getAttribute("data-cf"))]; if (f && f.act) f.act(); }; });
     startHomeCountdown();
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
@@ -5567,8 +5916,9 @@ function roasCellHtml(h, navButton) {
 // The live Home and the preview twin build their segments from
 // these same builders, so the two never drift apart.
 function dashSegsHtml(needsCount) {
-  const seg = (id, label, badge) => `<button type="button" class="rchip${id === "overview" ? " on" : ""}" data-segbtn="${id}" onclick="dashSeg('${id}', this)">${label}${badge ? ` <span class="seg-badge">${badge}</span>` : ""}</button>`;
-  return `<div class="view-toggle dash-segs"><div class="vt-group">${seg("overview", "Overview")}${seg("needs", "Needs you", needsCount || 0)}${seg("campaigns", "Campaigns")}${seg("results", "Results")}</div></div>`;
+  // Overhaul Stage 1 segment names: Overview | Activity (badged
+  // with the needs-you count) | Offers | Analytics.
+  return homeSegsHtml([["overview", "Overview"], ["activity", "Activity", needsCount || 0], ["offers", "Offers"], ["analytics", "Analytics"]]);
 }
 function dashSeg(id, btn) {
   const root = btn && btn.closest ? btn.closest("[data-dash]") : null;
@@ -5631,26 +5981,26 @@ async function loadBusinessHome() {
     const rebook = (d.rebookPrompts || []).map((r) => `
       <div class="ui-row"><span class="k"><strong>${esc(r.name)}</strong> @${esc(r.handle)}${r.isFavorite ? ` <span class="badge tier">Favorite</span>` : ""}<br><span class="small muted">${r.source === "delivered" ? `Delivered for you before: ${esc(r.lastTitle || "")}` : "Saved in your favorites"}</span></span><span class="v"><button class="btn small-btn" onclick="rebookCreator('${esc(r.creatorId)}')">Invite again</button></span></div>`).join("");
     el.classList.add("vx-stagger");
-    const heroNum = h.roasScore !== null && h.roasScore !== undefined && Number(h.roasScore) !== 0
-      ? { num: Number(h.roasScore).toFixed(2) + "&times;", lbl: "SIGNL ROAS Score" }
-      : { num: `${h.visitsUsed} of ${h.visitsAllowance}`, lbl: "Creator visits booked this month" };
+    // Ready-for-you queue (overhaul Stage 1): the attention list
+    // plus the unset staff PIN, each with its real next step.
+    const queue = { count: needsCount, title: needsCount ? `${needsCount} thing${needsCount === 1 ? "" : "s"} ready for you` : "All caught up", rows: [], empty: "All caught up. Every visit is on track." };
+    for (const a of (h.attention || []).slice(0, 3)) {
+      queue.rows.push({
+        text: a.label, sub: a.detail, btn: "Review",
+        act: a.kind === "applications" && a.offerId ? () => goApplicants(a.offerId) : a.kind === "offer_nudge" ? () => go("dashboard", "My Offers") : () => go("dashboard", "Visits & Posts"),
+      });
+    }
+    if (d.staffPinSet === false) queue.rows.push({ text: "Set your staff PIN", sub: "Your team redeems visits with it, never your login.", btn: "Set PIN", act: () => go("dashboard", "Plan") });
+    setAgentFab(queue);
     el.innerHTML = `
     <div data-dash>
-    <div class="dash-hero">
-      <p class="dh-kicker">${esc(marketDisplayName(d.business.market))} &middot; ${esc(d.plan.name)} plan</p>
-      <div class="dh-name">${esc((state.user.business && state.user.business.businessName) || d.business.businessName || "")}</div>
-      <p class="dh-sub">Your visits, posts and results.</p>
-      <div class="dh-row"><div><div class="dh-num">${heroNum.num}</div><div class="dh-num-lbl">${heroNum.lbl}</div></div></div>
+    <div class="stat-band kpi-band">
+      <div class="stat-cell"><div class="stat-num"><em>${fmtNum(h.localReachDelivered || 0)}</em></div><div class="stat-lbl">Local reach delivered${h.postsLive ? ` &middot; across ${h.postsLive} live post${h.postsLive === 1 ? "" : "s"}` : " &middot; your number once posts land"}</div></div>
+      <div class="stat-cell"><div class="stat-num">${h.visitsUsed}<span class="small muted"> of ${h.visitsAllowance}</span></div><div class="stat-lbl">Visits booked this month &middot; ${h.visitsRemaining} left</div>${h.visitsCarried ? `<span class="kpi-sub">${h.visitsCarried} unused visit${h.visitsCarried === 1 ? "" : "s"} rolled in from last month</span>` : ""}</div>
+      ${roasCellHtml(h, true)}
+      <div class="stat-cell"><div class="stat-num">${h.onTimeRatePct === null ? "n/a" : h.onTimeRatePct + "%"}</div><div class="stat-lbl">Posts on time</div></div>
     </div>
-    <section class="panel">
-      <h3 style="margin-top:0">Business home</h3>
-      <div class="stat-band home-metrics">
-        <div class="stat-cell"><div class="stat-num">${h.visitsUsed}<span class="small muted"> of ${h.visitsAllowance}</span></div><div class="stat-lbl">Visits booked this month &middot; ${h.visitsRemaining} left</div></div>
-        <div class="stat-cell"><div class="stat-num">${h.postsLive}</div><div class="stat-lbl">Posts live</div></div>
-        ${roasCellHtml(h, true)}
-        <div class="stat-cell"><div class="stat-num">${h.onTimeRatePct === null ? "n/a" : h.onTimeRatePct + "%"}</div><div class="stat-lbl">Posts on time</div></div>
-      </div>
-    </section>
+    ${readyCardHtml(queue)}
     ${dashSegsHtml(needsCount)}
     <div data-seg="overview">
       ${d.marketLive ? "" : `<div class="notice blue"><strong>Your market opens in 30–90 days.</strong> Draft offers now — publishing switches on at launch.</div>`}
@@ -5658,35 +6008,47 @@ async function loadBusinessHome() {
         <div><strong>At the register?</strong><p class="muted small" style="margin:4px 0 0">Staff redeem with the PIN + creator code. No login needed.</p></div>
         <button class="btn" onclick="return goStaff()">Redeem a creator visit</button>
       </div>
-      ${bizDashAttentionHtml(h, { actions: true, limit: 3, pinItem: d.staffPinSet === false })}
       <section class="panel">
         <h3 style="margin-top:0">Snapshot</h3>
         ${bizDashPipelineHtml(h)}
         ${bizDashPaceHtml(h, d.plan.name, d.business.billingStatus)}
       </section>
     </div>
-    <div data-seg="needs" hidden>
-      ${d.staffPinSet === false ? `<div class="notice"><strong>Set your staff PIN.</strong> Your team redeems visits with it — never your login. <button class="btn small-btn" onclick="return go('dashboard','Plan')">Set the staff PIN</button></div>` : ""}
-      ${bizDashAttentionHtml(h, { actions: true })}
-    </div>
-    <div data-seg="campaigns" hidden>
+    <div data-seg="activity" hidden>
       <section class="panel">
-        <h3 style="margin-top:0">Active campaigns</h3>
+        <h3 style="margin-top:0">Activity</h3>
+        <h4>Needs you</h4>
+        ${bizDashAttentionHtml(h, { actions: true, pinItem: d.staffPinSet === false })}
+        <h4 style="margin:20px 0 0">Latest</h4>
+        ${bizActivityFeedHtml(h)}
+      </section>
+      <div id="biz-notes" class="mt"></div>
+    </div>
+    <div data-seg="offers" hidden>
+      <section class="panel">
+        <h3 style="margin-top:0">Offers</h3>
         ${next ? `<h4>Next visits</h4>${next}` : `<p class="small muted">No visits booked yet. Booked visits and their progress land here.</p>`}
         ${rebook ? `<div class="tint-block"><h4>Invite again</h4><p class="small muted">Your delivered creators + favorites.</p>${rebook}</div>` : ""}
+        <h4 style="margin:18px 0 0">Start an offer</h4>
+        ${bizTemplatesHtml()}
         <p style="margin-bottom:0"><button class="btn small-btn ghost" onclick="return go('dashboard','My Offers')">Open My Offers</button></p>
       </section>
     </div>
-    <div data-seg="results" hidden>
+    <div data-seg="analytics" hidden>
       <section class="panel">
-        <h3 style="margin-top:0">Results</h3>
-        ${content ? `<div class="tint-block"><h4>Content that is working</h4>
-${content}</div>` : `<p class="small muted">Delivered posts and what they returned land here.</p>`}
+        <h3 style="margin-top:0">Analytics</h3>
+        <div class="ana-block"><h4>Invite to post funnel</h4>${bizFunnelHtml(h)}</div>
+        <div class="ana-block"><h4>Cost per post</h4>
+        ${h.costPerVisit ? `<p class="small" style="margin:0">Your plan works out to <strong>$${fmtMoney(h.costPerVisit)}</strong> per visit in your allowance${h.postsLive ? `, and every live post cost exactly one visit` : ""}. Register value and media value ride in your ROAS score above.</p>` : `<p class="small muted" style="margin:0">Plan math appears here with your plan.</p>`}
+        </div>
+        ${content ? `<div class="ana-block"><h4>Content that is working</h4>
+${content}</div>` : ""}
+        <div class="ana-block"><h4>Content library</h4>${bizLibraryHtml(h)}</div>
         <p style="margin-bottom:0"><button class="btn small-btn ghost" onclick="return go('dashboard','Visits &amp; Posts')">Open Visits &amp; Posts</button></p>
       </section>
     </div>
-    </div>
-    <div id="biz-notes" class="mt"></div>`;
+    </div>`;
+    wireReady(el);
     loadNotificationsInto("biz-notes");
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
@@ -8502,7 +8864,7 @@ async function pvReportRedemptions(e, bookingId) {
 // preview dashboard composes them with its booking cards.
 function pvHomeHtml(d) {
   const h = d.home;
-  const empty = { overview: "", needs: "", campaigns: "", results: "" };
+  const empty = { overview: "", activity: "", offers: "", analytics: "" };
   if (!h) return empty;
   const content = bizDashContentRowsHtml(h);
   const next = bizDashNextRowsHtml(h, true);
@@ -8510,25 +8872,32 @@ function pvHomeHtml(d) {
     overview: `
   <section class="panel">
     <h3 style="margin-top:0"><span class="preview-tag">PREVIEW</span> Business home</h3>
-    ${bizDashAttentionHtml(h, { limit: 3 })}
     ${bizDashPipelineHtml(h)}
     ${bizDashPaceHtml(h, d.plan.name)}
   </section>`,
-    needs: `
+    activity: `
   <section class="panel">
-    <h3 style="margin-top:0">Needs you</h3>
+    <h3 style="margin-top:0">Activity</h3>
+    <h4>Needs you</h4>
     ${bizDashAttentionHtml(h, {})}
+    <h4 style="margin:20px 0 0">Latest</h4>
+    ${bizActivityFeedHtml(h)}
   </section>`,
-    campaigns: next ? `
+    offers: `
   <section class="panel">
-    <h3 style="margin-top:0">Next visits</h3>
-    ${next}
-  </section>` : "",
-    results: content ? `
+    <h3 style="margin-top:0">Offers</h3>
+    ${next ? `<h4>Next visits</h4>${next}` : `<p class="small muted">No visits booked yet.</p>`}
+    <h4 style="margin:18px 0 0">Start an offer</h4>
+    ${bizTemplatesHtml()}
+  </section>`,
+    analytics: `
   <section class="panel">
-    <h3 style="margin-top:0">Content that is working</h3>
-    ${content}
-  </section>` : "",
+    <h3 style="margin-top:0">Analytics</h3>
+    <div class="ana-block"><h4>Invite to post funnel</h4>${bizFunnelHtml(h)}</div>
+    ${content ? `<div class="ana-block"><h4>Content that is working</h4>
+${content}</div>` : ""}
+    <div class="ana-block"><h4>Content library</h4>${bizLibraryHtml(h)}</div>
+  </section>`,
   };
 }
 
@@ -8554,9 +8923,9 @@ function previewDashboardHtml(d) {
   </section>
   <section class="panel">
     <div class="stat-band home-metrics">
+      <div class="stat-cell"><div class="stat-num"><em>${fmtNum(d.home && d.home.localReachDelivered ? d.home.localReachDelivered : 0)}</em></div><div class="stat-lbl">Local reach delivered</div></div>
       <div class="stat-cell"><div class="stat-num">${s.visitsUsed}<span class="small muted"> of ${s.visitsAllowance}</span></div><div class="stat-lbl">Visits booked this month &middot; ${s.visitsRemaining} left</div></div>
       <div class="stat-cell"><div class="stat-num">${s.postsDelivered}</div><div class="stat-lbl">Posts live</div></div>
-      <div class="stat-cell"><div class="stat-num">$${fmtMoney(s.roas ? s.roas.redemptions.basketTotal : 0)}</div><div class="stat-lbl">Register rung up</div></div>
       <div class="stat-cell"><div class="stat-num grad-text">${s.roas && s.roas.score !== null ? s.roas.score.toFixed(2) + "&times;" : "n/a"}</div><div class="stat-lbl">SIGNL ROAS Score</div></div>
     </div>
   </section>
@@ -8565,16 +8934,16 @@ function previewDashboardHtml(d) {
     ${home.overview}
     ${pvStaffPanelHtml(d)}
   </div>
-  <div data-seg="needs" hidden>
-    ${home.needs}
+  <div data-seg="activity" hidden>
+    ${home.activity}
     ${overdue.length ? `<section class="panel"><h3 style="margin-top:0">Overdue visits (${overdue.length})</h3>${overdue.map((b) => pvBookingCard(b)).join("")}</section>` : ""}
   </div>
-  <div data-seg="campaigns" hidden>
-    ${home.campaigns}
+  <div data-seg="offers" hidden>
+    ${home.offers}
     ${active.length ? `<section class="panel"><h3 style="margin-top:0">Active bookings (${active.length})</h3>${active.map((b) => pvBookingCard(b)).join("")}</section>` : ""}
     ${d.managedView ? pvManagedHtml(d.managedView) : ""}
   </div>
-  <div data-seg="results" hidden>
+  <div data-seg="analytics" hidden>
   <section class="panel">
     <h3 style="margin-top:0">Tracking and returns, ${esc(s.cycleLabel)}</h3>
     <div class="stat-row">
@@ -8603,7 +8972,7 @@ function previewDashboardHtml(d) {
       <p class="small muted" style="margin:0">Rights follow the visit, not the plan. The creator always owns their content.</p>
     </div>
   </section>
-    ${home.results}
+    ${home.analytics}
     ${delivered.length ? `<section class="panel"><h3 style="margin-top:0">Delivered (${delivered.length})</h3>${delivered.map((b) => pvBookingCard(b)).join("")}<p class="small muted">In the live app these live in Visits &amp; Posts, fed by real bookings, codes and proof links.</p></section>` : ""}
   </div>
   </div>`;
