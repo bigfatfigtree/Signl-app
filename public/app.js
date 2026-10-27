@@ -1833,7 +1833,7 @@ function renderHelpTab() {
   ${biz ? `
     ${qa("How does a visit work?", "You post an offer or invite a creator. When you select an applicant, or a creator accepts your invite, the visit is booked with a code. Your staff redeem the code at the register with the staff PIN. The creator posts within 48 hours to be on time; one week is the hard deadline.")}
     ${qa("What do I owe the creator?", "Exactly what the offer says: the comped meal or service, up to the dollar cap. Paid bookings pay the creator's listed rate instead.")}
-    ${qa("Can I reuse a creator's post?", "A comped visit is native share only: reshare it with credit, nothing more. Paid bookings include one standard license: 90 days to repost and run ads. A comped post can be licensed at the creator's listed fee for 90 days; the creator approves each use and keeps 97%.")}
+    ${qa("Can I reuse a creator's post?", "A comped visit is native share only: reshare it with credit, nothing more. Paid bookings include one standard license: 90 days to repost and run ads. A comped post can be licensed at the creator's listed fee for 90 days; the creator approves each use and keeps 97%. That license is what makes the post UGC you can use — repost it and run it as an ad for those 90 days.")}
     ${qa("How fast do I have to answer applicants?", "Every applicant gets an answer within 2 business days. That is the deal. Anyone you do not pick is released with a note, never silence.")}
     ${qa("What if a creator does not show up?", esc(VISIT_GUARANTEE_LINE))}
     ${qa("What does SIGNL cost?", "Founding plans: Self-Service is $199 a month for 5 creators, Growth is $349 for 10, Managed is $699 for 20. Founding businesses get $100 off the first month and keep the founding rate while the plan stays active. The minimum is 3 months, there is no per-location charge, and unused visits roll into the next month, then expire.")}
@@ -2194,7 +2194,7 @@ function openAgentSheet() {
     <h4 style="margin:16px 0 4px">Straight answers</h4>
     ${biz ? `
     ${qa("What does SIGNL cost?", "Founding plans: Self-Service is $199 a month for 5 creators, Growth is $349 for 10, Managed is $699 for 20. Founding businesses get $100 off the first month and keep the founding rate while the plan stays active. The minimum is 3 months, there is no per-location charge, and unused visits roll into the next month, then expire.")}
-    ${qa("Can I reuse a creator's post?", "A comped visit is native share only: reshare it with credit, nothing more. Paid bookings include one standard license: 90 days to repost and run ads. A comped post can be licensed at the creator's listed fee for 90 days; the creator approves each use and keeps 97%.")}
+    ${qa("Can I reuse a creator's post?", "A comped visit is native share only: reshare it with credit, nothing more. Paid bookings include one standard license: 90 days to repost and run ads. A comped post can be licensed at the creator's listed fee for 90 days; the creator approves each use and keeps 97%. That license is what makes the post UGC you can use — repost it and run it as an ad for those 90 days.")}
     ${qa("How fast do I have to answer applicants?", "Every applicant gets an answer within 2 business days. That is the deal.")}
     ${qa("What if a creator does not show up?", esc(VISIT_GUARANTEE_LINE))}
     ` : `
@@ -7290,7 +7290,7 @@ async function renderContentTab() {
     } catch (e) { /* rows simply render without the action */ }
     el.innerHTML = `
     ${wsHead("Posts & licenses", { sub: "Every post about you, and the ones you can reuse.", subKey: "biz-content" })}
-    <div class="rights-line">${bnIcon("shield")}<span><strong>Seeing a post here is not the right to reuse it.</strong> You may always reshare natively, with credit. Paid bookings include one standard license: 90 days to repost and run ads. A comped post can be licensed at the creator's listed fee, and the creator approves each use.</span></div>
+    <div class="rights-line">${bnIcon("shield")}<span><strong>Seeing a post here is not the right to reuse it.</strong> You may always reshare natively, with credit. Paid bookings include one standard license: 90 days to repost and run ads. A comped post can be licensed at the creator's listed fee, and the creator approves each use. That license is what makes the post UGC you can use — repost it and run it as an ad for those 90 days.</span></div>
     ${lib.length ? `<div class="track-card"><span class="feed-dot acc">${bnIcon("image")}</span><div class="tc-main"><div class="tc-t">Post tracking is on</div><div class="tc-s">${h.postsTracked30 || 0} post${(h.postsTracked30 || 0) === 1 ? "" : "s"} tracked in the last 30 days. SIGNL tracks every visit's post from the creator's report, timed against the 48 hour standard.</div></div><button type="button" class="btn small-btn ws-outline" onclick="return go('dashboard','Visits & Posts')">Visits</button></div>`
       : `<div class="track-card"><span class="feed-dot acc">${bnIcon("image")}</span><div class="tc-main"><div class="tc-t">Post tracking</div><div class="tc-s">Post tracking starts with your first visit.</div></div></div>`}
     ${wsTabs([
