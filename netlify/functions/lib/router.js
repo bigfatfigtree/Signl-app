@@ -1645,6 +1645,17 @@ function createMomentum(data) {
     const rawTotal = effective.reduce((s, e) => s + e.points, 0);
     const points = Math.max(0, rawTotal);
 
+    // Deep-link targets for the two state-dependent earn rows
+    // (Jeff, 2026-10-27): the client links a row only when its
+    // action can be completed right now, so the payload names the
+    // visit that completes it: the oldest completed visit still
+    // missing its review, and the oldest post whose numbers were
+    // asked for and not yet reported. Absent when nothing is due,
+    // and the row then stays plain text.
+    const reviewedBookingIds = new Set(myBizReviews.map((r) => r.bookingId).filter(Boolean));
+    const reviewDueBooking = myBookings.find((b) => b.status === "completed" && !reviewedBookingIds.has(b.id));
+    const perfDuePost = myPosts.find((p) => p.performanceRequestedAt && !p.reportedAt);
+
     const checklist = [
       { id: "photo", label: "Add your profile photo", points: MOMENTUM_POINTS.profilePhoto, done: hasPhoto },
       { id: "bio", label: "Write your bio (40+ characters)", points: MOMENTUM_POINTS.profileBio, done: bioDone },
@@ -1655,9 +1666,9 @@ function createMomentum(data) {
       { id: "firstoffer", label: "Accept your first offer", points: MOMENTUM_POINTS.firstOfferAccepted, done: myBookings.length > 0 },
       { id: "ontime", label: "Deliver a post on time (+20 each)", points: MOMENTUM_POINTS.postOnTime, done: myPosts.some((p) => p.onTime), detail: `${myPosts.filter((p) => p.onTime).length} on-time posts` },
       { id: "streak", label: "Hit a 5-post on-time streak (+25 bonus)", points: MOMENTUM_POINTS.streakBonus, done: ledger.some((e) => e.kind === "streak_bonus") },
-      { id: "reviews", label: "Review a business after a completed visit (+10 each, any star rating)", points: MOMENTUM_POINTS.reviewGiven, done: myBizReviews.length > 0, detail: `${myBizReviews.length} reviewed` },
+      { id: "reviews", label: "Review a business after a completed visit (+10 each, any star rating)", points: MOMENTUM_POINTS.reviewGiven, done: myBizReviews.length > 0, detail: `${myBizReviews.length} reviewed`, ...(reviewDueBooking ? { dueBookingId: reviewDueBooking.id } : {}) },
       { id: "aduse", label: "Have a paid-visit post run as an ad by the business (+25 each)", points: MOMENTUM_POINTS.adUse, done: myPosts.some((p) => p.adUseDeclaredAt), detail: `${myPosts.filter((p) => p.adUseDeclaredAt).length} posts ran as ads` },
-      { id: "performance", label: "Report a post's views and likes when asked, 7 days after posting (+5 each)", points: MOMENTUM_POINTS.performanceReport, done: myPosts.some((p) => p.reportedAt), detail: `${myPosts.filter((p) => p.reportedAt).length} posts reported` },
+      { id: "performance", label: "Report a post's views and likes when asked, 7 days after posting (+5 each)", points: MOMENTUM_POINTS.performanceReport, done: myPosts.some((p) => p.reportedAt), detail: `${myPosts.filter((p) => p.reportedAt).length} posts reported`, ...(perfDuePost ? { dueBookingId: perfDuePost.bookingId } : {}) },
       { id: "referrals", label: "Invite creators (+3 per sign-up, +10 per approval)", points: MOMENTUM_POINTS.referralSignup, done: ref.signups > 0, detail: `${ref.signups} joined, ${ref.approved} approved` },
     ];
 

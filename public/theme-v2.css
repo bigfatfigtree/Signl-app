@@ -336,6 +336,22 @@ tbody tr:hover td { background: rgba(227,245,234,.55); }
   font-family: 'Manrope', sans-serif; font-weight: 700; color: #006AFC;
 }
 .earn-points.neg { color: var(--red); }
+/* Earn-row deep links (Jeff, 2026-10-27): a row that can be
+   completed right now is a real button: the + sits in a filled
+   mint circle (the done treatment, still open), a house chevron
+   trails the points, and the row warms on hover. Plain rows keep
+   the hollow circle and no chevron, so the difference reads at a
+   glance. */
+button.earn-row {
+  width: 100%; text-align: left; font: inherit; color: inherit;
+  background: transparent; border: 0; border-bottom: 1px solid var(--line2);
+  cursor: pointer;
+}
+.earn-row.earn-link .earn-state {
+  background: var(--mint); color: var(--ink); border-color: transparent; font-weight: 800;
+}
+.earn-row.earn-link:hover { background: rgba(169, 232, 201, .18); }
+.earn-row .earn-chev { color: var(--ink3); font-size: 1.2rem; line-height: 1; }
 .ledger { display: grid; }
 .ledger .lg-row {
   display: flex; justify-content: space-between; gap: 14px;
@@ -2476,3 +2492,57 @@ body.v3-on #tab-body a:not(.btn) { color: var(--mint-deep); }
    deep SIGNL green. Signed-out/public surfaces keep their palette. */
 body.v3-on { --blue: #0C7A43; }
 body.v3-on .success-check circle { stroke: #0C7A43; }
+
+
+/* ============================================================
+   OVERHAUL V4.1 — four doors + the Sig tab (Jeff, 2026-10-27)
+   Design: files/signl-overhaul-v4/DESIGN.md §12
+   The bar is now Home · Explore · Sig · More at every width.
+   Sig's face rides his tab; the Home ask box is a white pill in
+   the mint field; the Sig tab carries the queue, the chat and
+   the straight answers on the white field.
+   ============================================================ */
+
+/* Sig's tab icon is his face, sized like the line glyphs. */
+.tab-sig-img { width: 25px; height: 25px; border-radius: 50%; display: block; }
+body.v3-on .tab-item.on .tab-sig-img { box-shadow: 0 0 0 2px var(--ink); }
+
+/* The Home ask box: unmistakably a place to type. */
+.sig-askbox {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  background: #fff; border: 0; border-radius: 999px; cursor: pointer;
+  padding: 7px 8px 7px 7px; margin: 14px 0 2px; font: inherit; text-align: left;
+  box-shadow: 0 2px 10px rgba(11,13,12,.14);
+}
+.sig-askbox .sig-ava { width: 34px; height: 34px; }
+.sig-askbox-ph { flex: 1; color: var(--ink3, #7C877C); font-weight: 600; font-size: .98rem; }
+.sig-askbox-go {
+  width: 34px; height: 34px; border-radius: 50%; flex: none;
+  background: var(--ink); color: var(--mint);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.25rem; font-weight: 800; line-height: 1; padding-bottom: 2px;
+}
+.sig-askbox:active { transform: scale(.99); }
+
+/* The Sig tab: queue card keeps the mint field (global .sig-card
+   rule above), the chat is a white panel under it. */
+.sig-chat { background: #fff; border: 1px solid var(--line); border-radius: 20px; padding: 16px; margin-top: 4px; }
+.sig-chat-head { display: flex; align-items: center; gap: 12px; }
+.sig-chat-title { font-weight: 800; font-size: 1.05rem; }
+.sig-thread { margin-top: 12px; max-height: 46vh; overflow-y: auto; }
+.sig-turn { display: flex; gap: 8px; margin: 10px 0; align-items: flex-start; }
+.sig-turn.user { justify-content: flex-end; }
+.sig-turn-ava .sig-ava { width: 28px; height: 28px; }
+.sig-bub { padding: 10px 14px; border-radius: 16px; line-height: 1.45; max-width: 86%; }
+.sig-turn.sig .sig-bub { background: var(--tint, #E3F5EA); color: var(--ink); border-bottom-left-radius: 6px; }
+.sig-turn.user .sig-bub { background: var(--ink); color: #fff; border-bottom-right-radius: 6px; }
+.sig-turn-act { display: flex; margin-top: 10px; background: var(--ink); color: #fff; border-color: var(--ink); }
+.sig-ask-form { display: flex; gap: 8px; margin-top: 12px; }
+.sig-ask-form input {
+  flex: 1; min-width: 0; font: inherit; color: var(--ink);
+  border: 1px solid var(--line); border-radius: 999px; padding: 12px 16px; background: #fff;
+}
+.sig-ask-form input:focus { outline: 2px solid var(--mint-deep); outline-offset: 1px; }
+.sig-ask-form .btn { border-radius: 999px; padding-left: 22px; padding-right: 22px; }
+.sig-panel { background: #fff; border: 1px solid var(--line); border-radius: 20px; padding: 2px 16px; }
+.sig-panel .sheet-row { width: 100%; background: none; font: inherit; color: var(--ink); text-align: left; cursor: pointer; }

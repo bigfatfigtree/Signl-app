@@ -1,14 +1,24 @@
 #!/usr/bin/env node
 // Overhaul V3 verification (Jeff, 2026-10-27): the radical
 // simplification. V2's Grin-mapped 11-destination rail was
-// rejected as overwhelming; this suite pins the V3 contract:
-//   (a) chrome: 5 labeled destinations per role in a bottom tab
-//       bar on mobile (icon + always-visible label + waiting
-//       badges), the same 5 as a 232px labeled rail on desktop
-//       with More expanded inline, a slim top bar (avatar +
-//       account name, Messages icon with unread badge, help),
-//       and NO floating agent button. Sig's face is the axolotl
-//       asset behind one swappable reference.
+// rejected as overwhelming; this suite pins the V3 contract,
+// as amended by V4.1 (Jeff, later the same day, from using the
+// live app himself):
+//   (a) chrome: 4 labeled destinations per role (Home, Explore,
+//       Sig, More) in a bottom tab bar on mobile (icon +
+//       always-visible label + waiting badges), the same 4 as a
+//       232px labeled rail on desktop with More expanded inline,
+//       a slim top bar (avatar + account name, Messages icon
+//       with unread badge, help), and NO floating agent button.
+//       NO account state may shrink the destination set (the
+//       V3 founding branch hid Offers from pre-launch creators;
+//       Jeff's own account hit it). Visits / Earnings (and
+//       business Offers) are first-class rows at the top of
+//       More, badges carried. Sig is a full tab: the same queue
+//       Home shows, the conversation with a chat input, flows
+//       and straight answers; Home's mint field carries an
+//       obvious "Ask Sig anything" box that opens it. Sig's
+//       face is the axolotl asset behind one swappable reference.
 //   (b) Home IS Sig: greeting, mint queue card (real counts,
 //       one short action per item), launch checklist until
 //       live, snapshot only when real numbers exist, activity
@@ -139,7 +149,7 @@ try {
     return appJs.slice(a, b > a ? b : a + 6000);
   };
 
-  part("source: V3 chrome (5 destinations, slim top bar, no floating button)");
+  part("source: V4.1 chrome (4 destinations, slim top bar, no floating button)");
   check("index.html mounts the tab bar + slim top bar, and NO floating agent button", indexHtml.includes('id="tabbar"') && indexHtml.includes('id="topbar2"') && !indexHtml.includes('id="agent-fab"'));
   check("V3 chrome hides the legacy topbar, footer and rail in product states", themeCss.includes("body.v3-on .topbar, body.v3-slim .topbar") && themeCss.includes("body.v3-on #agent-fab, body.v3-slim #agent-fab"));
   check("mobile tab bar is fixed bottom; desktop becomes a 232px rail with content offset", themeCss.includes("body.v3-on #tabbar") && themeCss.includes("width: 232px") && themeCss.includes("margin-left: 232px"));
@@ -152,6 +162,26 @@ try {
   check("no legacy bottom-nav items are built", !appJs.includes('class="bn-item'));
   check("Sig's face is the axolotl behind one swappable reference", appJs.includes("SIG_AVATAR_HTML") && appJs.includes("/assets/sig-axolotl.png") && fs.existsSync(path.join(root, "public", "assets", "sig-axolotl.png")));
   check("Ask Sig is a Home row + sheet, not a floating button", appJs.includes("function askSigRowHtml(") && appJs.includes("function openAgentSheet("));
+
+  part("source: V4.1 nav + Sig tab (Jeff, from live use)");
+  const tabSlice = fnSlice("tabItemsFor", "moreRowsFor");
+  check("exactly four destinations per role: Home, Explore, Sig, More", (tabSlice.match(/label: "Home"/g) || []).length === 2 && (tabSlice.match(/label: "Sig"/g) || []).length === 2 && tabSlice.includes('label: "Find creators", tab: "Discover"') && tabSlice.includes('label: "Offers", tab: "Offers"') && tabSlice.includes('label: "More", tab: "More"'));
+  check("no account state shrinks the destination set (no market-live or founding branch in tabItemsFor)", !tabSlice.includes("marketLive") && !tabSlice.includes("founding"));
+  check("Visits and Earnings are NOT tabs any more (demoted to More rows)", !tabSlice.includes('label: "Visits", tab:') && !tabSlice.includes('label: "Earnings", tab:') && !tabSlice.includes('label: "Offers", tab: "My Offers"'));
+  check("Sig tab badge is the pending queue count (state.sigQueueCount)", tabSlice.includes("state.sigQueueCount") && tabSlice.includes('badge: sigBadge'));
+  check("Sig tab item renders Sig's face, not a line glyph", tabSlice.includes('icon: "sig"') && appJs.includes('class="tab-sig-img"') && appJs.includes("/assets/sig-axolotl.png"));
+  check("More tab stays lit on the demoted screens (per-role More on-sets)", appJs.includes("BIZ_MORE_TABS") && appJs.includes("CR_MORE_TABS") && appJs.includes('"Visits & Posts", "Counter"') && appJs.includes('"My Visits", "Earnings"'));
+  const moreSlice = fnSlice("moreRowsFor", "tabBarHtml");
+  check("creator More leads with Visits + Earnings rows, badges carried from waitCounts", moreSlice.indexOf('label: "Visits"') > -1 && moreSlice.indexOf('label: "Visits"') < moreSlice.indexOf('label: "My profile"') && moreSlice.indexOf('label: "Earnings"') < moreSlice.indexOf('label: "My profile"') && moreSlice.includes("wc.crVisits") && moreSlice.includes("wc.crLicense"));
+  check("business More leads with Offers + Visits rows, badges carried from waitCounts", moreSlice.indexOf('label: "Offers"') > -1 && moreSlice.indexOf('label: "Offers"') < moreSlice.indexOf('label: "Results"') && moreSlice.indexOf('label: "Visits"') < moreSlice.indexOf('label: "Results"') && moreSlice.includes("wc.bizApps") && moreSlice.includes("wc.bizVisits"));
+  check("founding creators route the full tab set (the Jeff case: Offers/My Visits/Earnings/Sig reachable pre-launch)", appJs.includes('const FOUNDING_TABS = ["Dashboard", "Profile", "Status", "More", "Momentum", "Numbers", "Messages", "Settings", "Help", "Offers", "My Visits", "Earnings", "Sig"]'));
+  check("Sig is a routed tab for live creators and businesses too", appJs.includes('"Settings", "Help", "Sig"]') && appJs.includes('"Settings", "Help", "Sig"]') && (appJs.match(/if \(tab === "Sig"\) renderSigTab\(\);/g) || []).length === 3);
+  check("Sig tab renders queue + conversation + chat input", appJs.includes("function renderSigTab(") && appJs.includes('id="sig-queue-host"') && appJs.includes('id="sig-thread"') && appJs.includes('id="sig-ask-input"') && appJs.includes("Ask Sig anything"));
+  check("Sig tab and Ask Sig sheet share one content source (flows + straight answers)", appJs.includes("function sigFlowsFor(") && appJs.includes("function sigQaFor(") && appJs.includes("function sigRouteAsk("));
+  check("chat routes typed words to answers and flows, and answers honestly on no match", appJs.includes("That lives under") && appJs.includes("I don't have that one yet."));
+  check("Home's mint field carries the ask box (all three Homes), opening the Sig tab focused", appJs.includes("function sigAskBoxHtml(") && appJs.includes("function goSigChat(") && (appJs.match(/askBox: true/g) || []).length === 3 && appJs.includes("state.sigFocusAsk"));
+  check("Homes register their queue for the Sig tab + badge (one queue, two doors)", (appJs.match(/state\.sigQueue = /g) || []).length >= 3 && (appJs.match(/state\.sigQueueCount = /g) || []).length >= 3);
+  check("sign-out clears Sig's queue and conversation", appJs.includes("state.sigThread = [];"));
 
   part("source: workspace scaffold");
   check("scaffold builders exist (wsHead, wsTabs, kpiCard, deltaPill, segSw, feedListHtml, funnel2Html, charts)", ["function wsHead(", "function wsTabs(", "function kpiCard(", "function deltaPill(", "function segSw(", "function feedListHtml(", "function funnel2Html(", "function lineChartSvg(", "function barsChartSvg("].every((x) => appJs.includes(x)));

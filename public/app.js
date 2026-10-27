@@ -29,6 +29,11 @@ const state = {
   resetToken: "", // password reset token from a /?reset= email link
   preview: null, // admin Business Preview session (see enterPreview)
   agentQueue: null, // overhaul Stage 1: Ready-for-you queue the current home computed ({count, title, rows:[{text, sub, btn, act}], empty})
+  sigQueue: null, // V4.1: the V3 queue items the current Home computed ([{text, short, btn, act}]) — shared by Home and the Sig tab (one queue, two doors)
+  sigQueueLinks: [], // V4.1: the caught-up links that ride the current Home's queue card
+  sigQueueCount: 0, // V4.1: pending queue count, carried as the Sig tab badge
+  sigThread: [], // V4.1: the Sig conversation on the Sig tab ([{who, text, flow}]) — session-only, like every other Sig surface
+  sigFocusAsk: false, // V4.1: set by the Home ask box so the Sig tab lands with its chat input focused
   discover: [],
   threads: [],
   activeThread: null, // other user id
@@ -616,7 +621,7 @@ function growRosterHtml(u) {
   const place = u.market === unlistedLabel() ? (u.city || "your city") : u.market;
   const m = u.momentum || { signups: 0, approved: 0, points: 0 };
   return `
-    <div class="panel mt" style="text-align:left">
+    <div class="panel mt" id="grow-roster" style="text-align:left">
       <h3 style="margin-top:0">Grow your roster</h3>
       <p class="small">Share your invite link — creators who join through it are credited to you.</p>
       <div class="field"><label>Your invite link</label><input type="text" readonly value="${esc(link)}" onclick="this.select()"></div>
@@ -629,6 +634,107 @@ function growRosterHtml(u) {
     </div>`;
 }
 
+// Earn-row deep links (Jeff, 2026-10-27): a checklist row is a
+// link only when its action can be completed right now, and the
+// tap lands on the exact surface (and field) that completes it.
+// Checkmarked rows stay plain. Outcome rows (an on-time post, a
+// streak, a business running a post as an ad) can never be
+// completed on demand, so they stay plain forever. The two
+// state-dependent rows (review a business, report post numbers)
+// link only while the server payload names a due visit for them
+// (item.dueBookingId); otherwise they are plain too.
+const EARN_STACK_IDS = ["p-followers", "p-stack-tiktok", "p-stack-facebook", "p-stack-x", "p-stack-linkedin", "p-stack-youtube", "p-stack-snapchat"];
+const EARN_WORK_IDS = ["p-work-0", "p-work-1", "p-work-2"];
+
+function earnActionFor(item, u) {
+  if (!item) return null;
+  if (item.id === "reviews" || item.id === "performance") {
+    return item.dueBookingId ? { visit: item.dueBookingId } : null;
+  }
+  if (item.done) return null;
+  switch (item.id) {
+    case "photo": return { tab: "Profile", scroll: "p-gallery" };
+    case "bio": return { tab: "Profile", focus: ["p-bio"] };
+    case "neighborhood": return { tab: "Profile", focus: ["p-neighborhood"] };
+    case "local": return { tab: "Profile", focus: ["p-localpct"] };
+    case "stack":
+    case "audience": return { tab: "Profile", focusFirstEmpty: EARN_STACK_IDS };
+    case "bestwork": return { tab: "Profile", focusFirstEmpty: EARN_WORK_IDS };
+    case "city": return { tab: "Profile", focus: ["p-city", "p-city-text"] };
+    case "categories": return { tab: "Profile", focusSelector: "input[name='p-cat']" };
+    case "firstoffer": return (!u || !u.founding || u.founding.marketLive) ? { tab: "Offers" } : null;
+    case "referrals": return { tab: "Momentum", scroll: "grow-roster" };
+    default: return null;
+  }
+}
+
+function earnRowWrap(item, u, inner) {
+  const cls = `earn-row ${item.done ? "done" : ""}`;
+  if (!earnActionFor(item, u)) return `<div class="${cls}">${inner}</div>`;
+  return `<button type="button" class="${cls} earn-link" onclick="return earnGo('${item.id}')">${inner}<span class="earn-chev">&#8250;</span></button>`;
+}
+
+function earnFindEl(ids, selector, firstEmpty) {
+  if (selector) return document.querySelector(selector);
+  if (!ids) return null;
+  let first = null;
+  for (const id of ids) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    if (!firstEmpty) return el;
+    if (!first) first = el;
+    const v = String(el.value || "").trim();
+    if (v === "" || v === "0") return el;
+  }
+  return first;
+}
+
+function earnFocusWhenReady(ids, selector, firstEmpty) {
+  let tries = 0;
+  const step = () => {
+    const el = earnFindEl(ids, selector, firstEmpty);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      setTimeout(() => { try { el.focus({ preventScroll: true }); } catch (e) { /* focus is an enhancement; the scroll already landed */ } }, 260);
+      return;
+    }
+    if (++tries < 24) setTimeout(step, 75);
+  };
+  setTimeout(step, 60);
+}
+
+function earnScrollWhenReady(id) {
+  let tries = 0;
+  const step = () => {
+    const el = document.getElementById(id);
+    if (el) { el.scrollIntoView({ behavior: "smooth", block: "start" }); return; }
+    if (++tries < 24) setTimeout(step, 75);
+  };
+  setTimeout(step, 60);
+}
+
+function earnGo(id) {
+  const u = state.user;
+  if (!u) return false;
+  const pools = [...(((u.momentum || {}).checklist) || []), ...(((u.profileCompletion || {}).items) || [])];
+  const item = pools.find((i) => i.id === id);
+  const act = earnActionFor(item, u);
+  if (!act) return false;
+  if (act.visit) {
+    state.visitsSeg = "done";
+    state.visitFocus = act.visit;
+    go("dashboard", "My Visits");
+    if (id === "performance") earnFocusWhenReady([`perf-views-${act.visit}`], null, false);
+    return false;
+  }
+  go("dashboard", act.tab);
+  if (act.focusFirstEmpty) earnFocusWhenReady(act.focusFirstEmpty, null, true);
+  else if (act.focus) earnFocusWhenReady(act.focus, null, false);
+  else if (act.focusSelector) earnFocusWhenReady(null, act.focusSelector, false);
+  else if (act.scroll) earnScrollWhenReady(act.scroll);
+  return false;
+}
+
 // Two-step claim, step two (Jeff, 2026-10-20): the finish-your-
 // profile card. It rides on an approved creator's dashboard until
 // the profile is complete: progress over the gate items, every
@@ -638,12 +744,10 @@ function growRosterHtml(u) {
 function profileCompletionHtml(u) {
   const pc = u && u.profileCompletion;
   if (!pc || pc.complete || u.role !== "creator" || u.status !== "approved") return "";
-  const rows = pc.items.map((item) => `
-    <div class="earn-row ${item.done ? "done" : ""}">
+  const rows = pc.items.map((item) => earnRowWrap(item, u, `
       <span class="earn-state">${item.done ? "&#10003;" : "+"}</span>
       <span class="earn-label">${esc(item.label)}${item.required && !item.done ? ` <span class="badge info">Needed</span>` : ""}${item.detail ? ` <span class="muted">(${esc(item.detail)})</span>` : ""}</span>
-      <span class="earn-points">${item.points ? "+" + item.points + " pts" : ""}</span>
-    </div>`).join("");
+      <span class="earn-points">${item.points ? "+" + item.points + " pts" : ""}</span>`)).join("");
   return `
   <div class="panel mt tint" style="text-align:left">
     <div class="flex-between"><h3 style="margin:0">Finish your profile to be launch-ready</h3><span class="badge info">${pc.requiredDone} of ${pc.requiredTotal} essentials done</span></div>
@@ -661,12 +765,10 @@ function profileCompletionHtml(u) {
 function momentumHtml(u) {
   const m = u && u.momentum;
   if (!m) return "";
-  const checklist = (m.checklist || []).map((item) => `
-    <div class="earn-row ${item.done ? "done" : ""}">
+  const checklist = (m.checklist || []).map((item) => earnRowWrap(item, u, `
       <span class="earn-state">${item.done ? "&#10003;" : "+"}</span>
       <span class="earn-label">${esc(item.label)}${item.detail ? ` <span class="muted">(${esc(item.detail)})</span>` : ""}</span>
-      <span class="earn-points">${item.points > 0 ? "+" + item.points : item.points} pts</span>
-    </div>`).join("");
+      <span class="earn-points">${item.points > 0 ? "+" + item.points : item.points} pts</span>`)).join("");
   const ledger = (m.ledger || []).slice().reverse().slice(0, 30).map((e) => `
     <div class="earn-row">
       <span class="earn-label">${esc(e.label)}${e.at ? ` <span class="muted">${esc(fmtDate(e.at))}</span>` : ""}</span>
@@ -1263,11 +1365,13 @@ function bnIcon(name) {
 // width on desktop); signed-out views keep the mobile-only bar.
 // Tab badges ride the counts GET /notifications returns.
 function renderBottomNav() {
-  // Overhaul V3 (2026-10-27): five labeled destinations in a
-  // bottom tab bar on phones; the same five as a labeled left
+  // Overhaul V3 (2026-10-27): labeled destinations in a
+  // bottom tab bar on phones; the same set as a labeled left
   // rail on desktop, with the More rows expanded inline under a
   // hairline; a slim top bar (identity, Messages, help) rides
-  // every app screen. The admin console keeps the V2 icon rail.
+  // every app screen. V4.1 cut the set to four (Home, Explore,
+  // Sig, More — see tabItemsFor). The admin console keeps the
+  // V2 icon rail.
   // This entry point keeps its name because nav renders, badge
   // refreshes and sign-in/out all call it.
   const u = state.user;
@@ -1300,39 +1404,42 @@ function renderBottomNav() {
   if (tabbar) tabbar.innerHTML = full ? tabBarHtml() : "";
 }
 
-// V3 destinations (spec §2): exactly five per role, icon plus an
-// always-visible text label, never renamed between widths. The
-// internal tab names stay the V2 ones; only the labels changed.
+// Destinations (V4.1, Jeff 2026-10-27, from using the live app
+// himself): exactly FOUR per role — Home, Explore, Sig, More —
+// icon plus an always-visible text label, never renamed between
+// widths. The internal tab names stay the V2 ones; only the
+// labels changed. NO account state may shrink this list: the V3
+// founding-creator branch returned only Home + More when the
+// creator's market was not live yet, which is how Jeff's own
+// account lost the Offers tab entirely — the explore door is
+// part of the app's shape, not a launch perk. Visits and
+// Earnings (and, for businesses, Offers) stopped being tabs:
+// they are first-class rows at the top of More, badges and all,
+// so the More tab lights up while you are on them.
 const MORE_TABS = ["More", "Analytics", "Content", "Plan", "Profile", "Messages", "Settings", "Help", "Momentum", "Status", "Numbers"];
+const BIZ_MORE_TABS = [...MORE_TABS, "My Offers", "Visits & Posts", "Counter"];
+const CR_MORE_TABS = [...MORE_TABS, "My Visits", "Earnings"];
 function tabItemsFor() {
   const u = state.user;
   if (!u) return [];
   const t = state.tab;
   const b = state.badges || {};
   const wc = state.waitCounts || {};
+  const sigBadge = state.sigQueueCount || 0;
   if (u.role === "business") {
     return [
       { icon: "home", label: "Home", tab: "Home", on: t === "Home" || !t },
       { icon: "deck", label: "Find creators", tab: "Discover", on: t === "Discover" || t === "Favorites" },
-      { icon: "notice", label: "Offers", tab: "My Offers", on: t === "My Offers" || t === "Requests", badge: wc.bizApps != null ? wc.bizApps : (b.offers || 0) },
-      { icon: "calendar", label: "Visits", tab: "Visits & Posts", on: t === "Visits & Posts" || t === "Counter", badge: wc.bizVisits != null ? wc.bizVisits : (b.visits || 0) },
-      { icon: "list3", label: "More", tab: "More", on: MORE_TABS.includes(t) },
+      { icon: "sig", label: "Sig", tab: "Sig", on: t === "Sig", badge: sigBadge },
+      { icon: "list3", label: "More", tab: "More", on: BIZ_MORE_TABS.includes(t) },
     ];
   }
   if (u.role === "creator") {
-    const live = !!(u.founding && u.founding.marketLive);
-    if (!live) {
-      return [
-        { icon: "home", label: "Home", tab: "Dashboard", on: t === "Dashboard" || !t },
-        { icon: "list3", label: "More", tab: "More", on: ["More", "Profile", "Status", "Settings", "Help", "Momentum", "Numbers", "Messages"].includes(t) },
-      ];
-    }
     return [
       { icon: "home", label: "Home", tab: "Dashboard", on: t === "Dashboard" || !t },
       { icon: "deck", label: "Offers", tab: "Offers", on: t === "Offers", badge: wc.crInvites != null ? wc.crInvites : (b.offers || 0) },
-      { icon: "calendar", label: "Visits", tab: "My Visits", on: t === "My Visits", badge: wc.crVisits != null ? wc.crVisits : (b.visits || 0) },
-      { icon: "banknote", label: "Earnings", tab: "Earnings", on: t === "Earnings", badge: wc.crLicense || 0 },
-      { icon: "list3", label: "More", tab: "More", on: MORE_TABS.includes(t) },
+      { icon: "sig", label: "Sig", tab: "Sig", on: t === "Sig", badge: sigBadge },
+      { icon: "list3", label: "More", tab: "More", on: CR_MORE_TABS.includes(t) },
     ];
   }
   return [];
@@ -1345,8 +1452,11 @@ function moreRowsFor() {
   const u = state.user;
   if (!u) return [];
   const b = state.badges || {};
+  const wc = state.waitCounts || {};
   if (u.role === "business") {
     return [
+      { icon: "notice", label: "Offers", sub: "Your offers and who is applying.", tab: "My Offers", badge: wc.bizApps != null ? wc.bizApps : (b.offers || 0) },
+      { icon: "calendar", label: "Visits", sub: "Visits and posts. The counter is inside.", tab: "Visits & Posts", badge: wc.bizVisits != null ? wc.bizVisits : (b.visits || 0) },
       { icon: "bars", label: "Results", sub: "What your campaigns did.", tab: "Analytics" },
       { icon: "play", label: "Posts & licenses", sub: "Every post about you, and the ones you can reuse.", tab: "Content" },
       { icon: "receipt", label: "Plan & billing", sub: "Your plan, your visits, your billing.", tab: "Plan" },
@@ -1358,6 +1468,8 @@ function moreRowsFor() {
   }
   if (u.role === "creator") {
     const rows = [
+      { icon: "calendar", label: "Visits", sub: "Your visits and post deadlines.", tab: "My Visits", badge: wc.crVisits != null ? wc.crVisits : (b.visits || 0) },
+      { icon: "banknote", label: "Earnings", sub: "Paid bookings and license requests.", tab: "Earnings", badge: wc.crLicense || 0 },
       { icon: "person", label: "My profile", sub: "What businesses see, your rate, your links.", tab: "Profile" },
       { icon: "bars", label: "Your numbers", sub: "What your posts and visits did.", tab: "Numbers" },
       { icon: "bolt", label: "Momentum", sub: "Your points, your tier, what earns more.", tab: "Momentum" },
@@ -1375,7 +1487,7 @@ function tabBarHtml() {
   if (!items.length) return "";
   const btns = items.map((it) => `
     <button type="button" class="tab-item ${it.on ? "on" : ""}" onclick="return go('dashboard','${it.tab}')" aria-label="${esc(it.label)}">
-      <span class="tab-ic">${bnIcon(it.icon)}${it.badge ? `<span class="tab-badge">${it.badge > 99 ? "99+" : it.badge}</span>` : ""}</span>
+      <span class="tab-ic">${it.icon === "sig" ? `<img class="tab-sig-img" src="/assets/sig-axolotl.png" alt="">` : bnIcon(it.icon)}${it.badge ? `<span class="tab-badge">${it.badge > 99 ? "99+" : it.badge}</span>` : ""}</span>
       <span class="tab-label">${esc(it.label)}</span>
     </button>`).join("");
   const more = moreRowsFor().map((r) => `
@@ -1625,13 +1737,14 @@ function sigQueueHtml(items, opts) {
   const o = opts || {};
   const n = items.length;
   if (!n) {
-    return `<div class="sig-card"><div class="sig-top">${SIG_AVATAR_HTML}<div><div class="sig-title">You're all caught up.</div><div class="sig-sub">When a creator applies, a visit needs you, or a post lands, it shows up here.</div></div></div>${(o.links || []).length ? `<div class="sig-links">${o.links.map((l, i) => `<button type="button" class="sig-link" data-sq="L${i}">${esc(l.label)}</button>`).join("")}</div>` : ""}</div>`;
+    return `<div class="sig-card"><div class="sig-top">${SIG_AVATAR_HTML}<div><div class="sig-title">You're all caught up.</div><div class="sig-sub">When a creator applies, a visit needs you, or a post lands, it shows up here.</div></div></div>${o.askBox ? sigAskBoxHtml() : ""}${(o.links || []).length ? `<div class="sig-links">${o.links.map((l, i) => `<button type="button" class="sig-link" data-sq="L${i}">${esc(l.label)}</button>`).join("")}</div>` : ""}</div>`;
   }
   // leadShort (Homes only): the greeting above the card already
   // carries the lead item's full sentence, so the lead row renders
   // its short task form instead — Home never shows a sentence twice.
   const row = (r, i) => `<div class="sig-item"><div class="sig-stxt">${esc(i === 0 && o.leadShort && r.short ? r.short : r.text)}</div>${r.btn ? `<button type="button" class="btn small-btn" data-sq="${i}">${esc(r.btn)}</button>` : ""}</div>`;
   return `<div class="sig-card"><div class="sig-top">${SIG_AVATAR_HTML}<div><div class="sig-title">Sig has ${n} thing${n === 1 ? "" : "s"} for you</div><div class="sig-sub">In the order they need you.</div></div></div>
+  ${o.askBox ? sigAskBoxHtml() : ""}
   ${items.slice(0, 3).map(row).join("")}
   ${n > 3 ? `<div class="sig-more" hidden>${items.slice(3).map((r, j) => row(r, j + 3)).join("")}</div><button type="button" class="sig-seeall" onclick="return sigSeeAll(this)">See all ${n}</button>` : ""}
   </div>`;
@@ -1688,6 +1801,20 @@ function snapshotHtml(cells, fillLine, tab) {
 // The Ask Sig row (spec §4.1): opens Sig's guided flows.
 function askSigRowHtml() {
   return `<button type="button" class="ask-sig" onclick="return openAgentSheet()">${SIG_AVATAR_HTML}<span class="ask-tx"><strong>Ask Sig</strong><span class="muted small">Walkthroughs and straight answers.</span></span><span class="ask-chev">›</span></button>`;
+}
+
+// The Home chat box (V4.1, Jeff 2026-10-27): Sig's field on Home
+// told you things but never LOOKED like you could talk back, so
+// the ask box sits at the top of the mint field — Sig's face, a
+// white pill that reads "Ask Sig anything", an ink send chip.
+// It is a door, not a form: one tap lands on the Sig tab with
+// the real chat input focused. Same Sig, same queue, two doors.
+function sigAskBoxHtml() {
+  return `<button type="button" class="sig-askbox" onclick="return goSigChat()" aria-label="Ask Sig anything">${SIG_AVATAR_HTML}<span class="sig-askbox-ph">Ask Sig anything</span><span class="sig-askbox-go">›</span></button>`;
+}
+function goSigChat() {
+  state.sigFocusAsk = true;
+  return go("dashboard", "Sig");
 }
 
 // Deadline helpers shared by the queue and the Visits screens.
@@ -2156,36 +2283,149 @@ function wireReady(root) {
     };
   });
 }
+// ---------- Sig: one queue, one conversation, two doors ----------
+// Ask Sig's content (guided flows + straight answers from
+// SIGNL's locked facts) is built ONCE here and shared by the
+// Ask Sig sheet (Home's foot row, the header's quick door) and
+// the Sig tab (V4.1). Sig never completes a consequential action
+// in chat; every flow lands you on the screen where you tap it.
+// `keys` are the words the Sig tab's chat input routes on.
+function sigFlowsFor() {
+  const u = state.user;
+  if (!u) return [];
+  const biz = u.role === "business";
+  const live = biz ? businessAccessState(u) === "active" : !!(u.founding && u.founding.marketLive);
+  const flow = (label, keys, act) => ({ label, keys, act });
+  if (biz) return [
+    flow("Post an offer", ["post an offer", "new offer", "create offer", "make an offer"], () => go("dashboard", "My Offers")),
+    flow("Review applicants", ["applicant", "review", "applied", "decide", "answer"], () => { state.offersSeg = "applicants"; go("dashboard", "My Offers"); }),
+    flow("Find creators", ["find creator", "browse creator", "discover", "invite a creator", "find creators"], () => go("dashboard", "Discover")),
+    flow("Redeem a visit", ["redeem", "counter", "code", "check in", "check-in"], () => go("dashboard", "Counter")),
+    flow("Set the staff PIN", ["pin", "staff"], () => go("dashboard", "Settings")),
+    flow("See your results", ["result", "analytics", "how am i doing", "numbers", "roas"], () => go("dashboard", "Analytics")),
+  ];
+  if (live) return [
+    flow("See offers near you", ["offer", "offers near", "see offers"], () => go("dashboard", "Offers")),
+    flow("Answer an invite", ["invite", "invited", "answer an"], () => { state.crOffersSeg = "invited"; go("dashboard", "Offers"); }),
+    flow("Add a post link", ["post link", "add a post", "submit post", "post is live", "deliver"], () => { state.visitsSeg = "needs"; go("dashboard", "My Visits"); }),
+    flow("See my earnings", ["earning", "paid", "money", "license request", "payout"], () => go("dashboard", "Earnings")),
+    flow("Check my Momentum", ["momentum", "points", "tier"], () => go("dashboard", "Momentum")),
+    flow("Finish my profile", ["profile", "finish", "complete my"], () => go("dashboard", "Profile")),
+  ];
+  return [
+    flow("Finish my profile", ["profile", "finish", "complete my"], () => go("dashboard", "Profile")),
+    flow("Check my Momentum", ["momentum", "points", "tier"], () => go("dashboard", "Momentum")),
+  ];
+}
+function sigQaFor() {
+  const u = state.user;
+  if (!u) return [];
+  if (u.role === "business") return [
+    { q: "What does SIGNL cost?", keys: ["cost", "price", "pricing", "plan cost", "subscription", "how much"], a: "Founding plans: Self-Service is $199 a month for 5 creators, Growth is $349 for 10, Managed is $699 for 20. Founding businesses get $100 off the first month and keep the founding rate while the plan stays active. The minimum is 3 months, there is no per-location charge, and unused visits roll into the next month, then expire." },
+    { q: "Can I reuse a creator's post?", keys: ["reuse", "repost", "license", "licence", "ugc", "ad use", "run it as an ad", "rights"], a: "A comped visit is native share only: reshare it with credit, nothing more. Paid bookings include one standard license: 90 days to repost and run ads. A comped post can be licensed at the creator's listed fee for 90 days; the creator approves each use and keeps 97%. That license is what makes the post UGC you can use — repost it and run it as an ad for those 90 days." },
+    { q: "How fast do I have to answer applicants?", keys: ["how fast", "answer applicants", "deadline to answer", "how long to decide"], a: "Every applicant gets an answer within 2 business days. That is the deal." },
+    { q: "What if a creator does not show up?", keys: ["show up", "no show", "no-show", "does not show", "ghost"], a: VISIT_GUARANTEE_LINE },
+  ];
+  return [
+    { q: "What do I owe after a visit?", keys: ["owe", "after a visit", "deliverable", "what do i have to post"], a: "One post plus one story that shares the post. Post within 48 hours to be on time; the hard deadline is one week." },
+    { q: "How does Momentum work?", keys: ["momentum work", "points work", "earn points", "how does momentum"], a: "Points for doing the work well: +20 for an on-time post, +10 when a business approves you, +25 when you approve a license, +3 when someone joins from your invite link." },
+    { q: "What is local reach?", keys: ["local reach", "local audience"], a: "The share of your audience that actually lives here, times your audience size. Businesses rank creators by local reach, not follower count." },
+    { q: "When do I get paid?", keys: ["get paid", "when do i get", "payout", "paid out"], a: "Paid bookings record your rate in the app: booked at your rate, you keep 97%. Payouts run outside the app for now, and nothing in the app promises a payout date." },
+  ];
+}
+// The chat router: typed words match a straight answer first
+// (a question deserves its answer), then a guided flow. No
+// match is answered honestly, never with invented capability.
+function sigRouteAsk(text) {
+  const t = " " + String(text || "").toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ") + " ";
+  const has = (k) => t.includes(" " + k) || t.includes(k + " ") || t.includes(k);
+  for (const item of sigQaFor()) if (item.keys.some(has)) return { text: item.a };
+  const flows = sigFlowsFor();
+  for (let i = 0; i < flows.length; i++) if (flows[i].keys.some(has)) return { text: `That lives under "${flows[i].label}". One tap takes you there.`, flow: i };
+  return { text: "I don't have that one yet. The things I can walk you to are listed right under this chat, and the straight answers are below them." };
+}
+function sigThreadHtml() {
+  const flows = sigFlowsFor();
+  return (state.sigThread || []).map((turn) => turn.who === "user"
+    ? `<div class="sig-turn user"><div class="sig-bub">${esc(turn.text)}</div></div>`
+    : `<div class="sig-turn sig"><span class="sig-turn-ava">${SIG_AVATAR_HTML}</span><div class="sig-bub">${esc(turn.text)}${turn.flow != null && flows[turn.flow] ? `<button type="button" class="btn small-btn sig-turn-act" data-sigflow="${turn.flow}">${esc(flows[turn.flow].label)}</button>` : ""}</div></div>`).join("");
+}
+function sigAskSubmit(ev) {
+  if (ev) ev.preventDefault();
+  const input = document.getElementById("sig-ask-input");
+  const text = input ? input.value.trim() : "";
+  if (!text) return false;
+  state.sigThread = state.sigThread || [];
+  state.sigThread.push({ who: "user", text });
+  const reply = sigRouteAsk(text);
+  state.sigThread.push({ who: "sig", text: reply.text, flow: reply.flow != null ? reply.flow : null });
+  const host = document.getElementById("sig-thread");
+  if (host) {
+    host.innerHTML = sigThreadHtml();
+    wireSigThread(host);
+    host.scrollTop = host.scrollHeight;
+  }
+  if (input) { input.value = ""; input.focus(); }
+  return false;
+}
+function wireSigThread(root) {
+  if (!root) return;
+  root.querySelectorAll("[data-sigflow]").forEach((btn) => {
+    btn.onclick = () => { const f = sigFlowsFor()[Number(btn.getAttribute("data-sigflow"))]; if (f && f.act) f.act(); };
+  });
+}
+
+// The Sig tab (V4.1): Sig's whole surface as a destination —
+// the same queue Home shows (same items, same actions), the
+// conversation with its chat input, the guided flows and the
+// straight answers. One Sig, one queue, one thread; Home's
+// field and this tab are two doors into it.
+function renderSigTab() {
+  const el = document.getElementById("tab-body");
+  if (!el) return;
+  const items = state.sigQueue || [];
+  const links = state.sigQueueLinks || [];
+  const flows = sigFlowsFor();
+  const qa = (item) => `<details class="help-qa"><summary>${esc(item.q)}</summary><p class="small">${esc(item.a)}</p></details>`;
+  el.innerHTML = `
+  ${wsHead("Sig", { sub: "Your queue, and straight answers.", subKey: "sig" })}
+  <div id="sig-queue-host">${sigQueueHtml(items, { links })}</div>
+  <div class="sig-chat">
+    <div class="sig-chat-head">${SIG_AVATAR_HTML}<div><div class="sig-chat-title">Chat with Sig</div><div class="muted small">Ask in plain words. Sig walks you to the exact screen.</div></div></div>
+    <div id="sig-thread" class="sig-thread">${sigThreadHtml() || `<div class="sig-turn sig"><span class="sig-turn-ava">${SIG_AVATAR_HTML}</span><div class="sig-bub">Ask me where something lives, or what something costs. If I can walk you to it, I will.</div></div>`}</div>
+    <form class="sig-ask-form" onsubmit="return sigAskSubmit(event)">
+      <input id="sig-ask-input" type="text" placeholder="Ask Sig anything" autocomplete="off" aria-label="Ask Sig anything">
+      <button class="btn" type="submit">Ask</button>
+    </form>
+  </div>
+  <h3 style="margin:22px 0 6px">Things Sig can walk you to</h3>
+  <div class="sig-panel">
+    ${flows.map((f, i) => `<button type="button" class="sheet-row ask-flow" data-flow="${i}"><span>${esc(f.label)}</span><span class="ask-chev">›</span></button>`).join("")}
+  </div>
+  <h3 style="margin:22px 0 2px">Straight answers</h3>
+  ${sigQaFor().map(qa).join("")}`;
+  wireSigQueue(el, items, links);
+  wireSigThread(el);
+  el.querySelectorAll("[data-flow]").forEach((btn) => {
+    btn.onclick = () => { const f = flows[Number(btn.getAttribute("data-flow"))]; if (f && f.act) f.act(); };
+  });
+  if (state.sigFocusAsk) {
+    state.sigFocusAsk = false;
+    setTimeout(() => { const i = document.getElementById("sig-ask-input"); if (i) i.focus(); }, 60);
+  }
+}
+
 function openAgentSheet() {
   // Ask Sig (V3, spec §4.1): guided flows that walk you to the
   // exact screen, plus straight answers from SIGNL's locked
   // facts. Sig never completes a consequential action here;
-  // every flow lands you on the screen where you tap it.
+  // every flow lands you on the screen where you tap it. The
+  // content is shared with the Sig tab (sigFlowsFor/sigQaFor).
   closeAgentSheet();
   const u = state.user;
   if (!u) return false;
-  const biz = u.role === "business";
-  const live = biz ? businessAccessState(u) === "active" : !!(u.founding && u.founding.marketLive);
-  const flow = (label, act) => ({ label, act });
-  const flows = biz ? [
-    flow("Post an offer", () => go("dashboard", "My Offers")),
-    flow("Review applicants", () => { state.offersSeg = "applicants"; go("dashboard", "My Offers"); }),
-    flow("Find creators", () => go("dashboard", "Discover")),
-    flow("Redeem a visit", () => go("dashboard", "Counter")),
-    flow("Set the staff PIN", () => go("dashboard", "Settings")),
-    flow("See your results", () => go("dashboard", "Analytics")),
-  ] : live ? [
-    flow("See offers near you", () => go("dashboard", "Offers")),
-    flow("Answer an invite", () => { state.crOffersSeg = "invited"; go("dashboard", "Offers"); }),
-    flow("Add a post link", () => { state.visitsSeg = "needs"; go("dashboard", "My Visits"); }),
-    flow("See my earnings", () => go("dashboard", "Earnings")),
-    flow("Check my Momentum", () => go("dashboard", "Momentum")),
-    flow("Finish my profile", () => go("dashboard", "Profile")),
-  ] : [
-    flow("Finish my profile", () => go("dashboard", "Profile")),
-    flow("Check my Momentum", () => go("dashboard", "Momentum")),
-  ];
-  const qa = (q, a) => `<details class="help-qa"><summary>${esc(q)}</summary><p class="small">${a}</p></details>`;
+  const flows = sigFlowsFor();
+  const qa = (item) => `<details class="help-qa"><summary>${esc(item.q)}</summary><p class="small">${esc(item.a)}</p></details>`;
   const el = document.createElement("div");
   el.id = "agent-sheet";
   el.className = "sheet-overlay";
@@ -2195,17 +2435,7 @@ function openAgentSheet() {
     <p class="small muted" style="margin:8px 0 4px">Tell Sig what you want to do. Sig walks you to the exact screen.</p>
     ${flows.map((f, i) => `<button type="button" class="sheet-row ask-flow" data-flow="${i}"><span>${esc(f.label)}</span><span class="ask-chev">›</span></button>`).join("")}
     <h4 style="margin:16px 0 4px">Straight answers</h4>
-    ${biz ? `
-    ${qa("What does SIGNL cost?", "Founding plans: Self-Service is $199 a month for 5 creators, Growth is $349 for 10, Managed is $699 for 20. Founding businesses get $100 off the first month and keep the founding rate while the plan stays active. The minimum is 3 months, there is no per-location charge, and unused visits roll into the next month, then expire.")}
-    ${qa("Can I reuse a creator's post?", "A comped visit is native share only: reshare it with credit, nothing more. Paid bookings include one standard license: 90 days to repost and run ads. A comped post can be licensed at the creator's listed fee for 90 days; the creator approves each use and keeps 97%. That license is what makes the post UGC you can use — repost it and run it as an ad for those 90 days.")}
-    ${qa("How fast do I have to answer applicants?", "Every applicant gets an answer within 2 business days. That is the deal.")}
-    ${qa("What if a creator does not show up?", esc(VISIT_GUARANTEE_LINE))}
-    ` : `
-    ${qa("What do I owe after a visit?", "One post plus one story that shares the post. Post within 48 hours to be on time; the hard deadline is one week.")}
-    ${qa("How does Momentum work?", "Points for doing the work well: +20 for an on-time post, +10 when a business approves you, +25 when you approve a license, +3 when someone joins from your invite link.")}
-    ${qa("What is local reach?", "The share of your audience that actually lives here, times your audience size. Businesses rank creators by local reach, not follower count.")}
-    ${qa("When do I get paid?", "Paid bookings record your rate in the app: booked at your rate, you keep 97%. Payouts run outside the app for now, and nothing in the app promises a payout date.")}
-    `}
+    ${sigQaFor().map(qa).join("")}
   </div>`;
   el.addEventListener("click", (e) => { if (e.target === el) closeAgentSheet(); });
   document.body.appendChild(el);
@@ -2647,6 +2877,12 @@ async function signOut() {
   try { await api("POST", "/auth/logout", {}); } catch (e) { /* ignore */ }
   state.user = null;
   state.view = "home";
+  // V4.1: Sig's queue + conversation belong to the signed-out
+  // account; the next person on this device starts clean.
+  state.sigQueue = null;
+  state.sigQueueLinks = [];
+  state.sigQueueCount = 0;
+  state.sigThread = [];
   render();
 }
 
@@ -4144,8 +4380,14 @@ function creatorCard(c, viewer, opts) {
 
 // ---------- creator ----------
 
-const LIVE_CREATOR_TABS = ["Dashboard", "Profile", "Offers", "My Visits", "Messages", "Earnings", "More", "Momentum", "Numbers", "Settings", "Help"];
-const FOUNDING_TABS = ["Dashboard", "Profile", "Status", "More", "Momentum", "Numbers", "Messages", "Settings", "Help"];
+const LIVE_CREATOR_TABS = ["Dashboard", "Profile", "Offers", "My Visits", "Messages", "Earnings", "More", "Momentum", "Numbers", "Settings", "Help", "Sig"];
+// V4.1: founding creators get the SAME tab set as live ones.
+// The old founding whitelist hid Offers / My Visits / Earnings
+// until the market launched — paired with the old 2-item tab
+// bar, a founding creator (Jeff's own account) had no way to
+// even see the explore door. The screens themselves carry the
+// honest pre-launch states (completion gate, empty decks).
+const FOUNDING_TABS = ["Dashboard", "Profile", "Status", "More", "Momentum", "Numbers", "Messages", "Settings", "Help", "Offers", "My Visits", "Earnings", "Sig"];
 
 function renderCreatorDash() {
   const u = state.user;
@@ -4172,6 +4414,7 @@ function renderCreatorDash() {
   if (tab === "Numbers") renderCreatorNumbers();
   if (tab === "Settings") renderSettingsTab();
   if (tab === "Help") renderHelpTab();
+  if (tab === "Sig") renderSigTab();
 }
 
 // The approved creator's home before their market activates. It is
@@ -4205,6 +4448,10 @@ function renderFoundingHome() {
   if (tab === "Messages") loadThreads();
   if (tab === "Settings") renderSettingsTab();
   if (tab === "Help") renderHelpTab();
+  if (tab === "Offers") loadCreatorOffers();
+  if (tab === "My Visits") loadMyVisits("creator");
+  if (tab === "Earnings") renderEarningsTab();
+  if (tab === "Sig") renderSigTab();
 }
 
 // The founding Dashboard tab: greeting, a compact founding status
@@ -4239,6 +4486,11 @@ async function loadFoundingDashboard() {
     if (!queueItems.length) {
       queueItems.push({ text: isUnl ? `You are on the founding roster. ${f.city} opens when sign-ups pile up; we email you the moment it opens.` : `You are on the founding roster. ${marketTalkNameClient(f.market)} opens in the next ${f.launchWindow}; we email you the moment it opens.`, btn: "View status", act: () => go("dashboard", "Status") });
     }
+    // V4.1: the Sig tab renders this same queue and badges its
+    // count — one queue, two doors (see renderSigTab).
+    state.sigQueue = queueItems;
+    state.sigQueueLinks = [];
+    state.sigQueueCount = queueItems.length;
     const fSteps = [
       { label: "Claim your profile", sub: "You are on the roster.", done: u.status === "approved" },
       { label: "Add the four basics", sub: "Home city, audience size, categories, local %.", done: !u.profileCompletion || u.profileCompletion.complete, btn: "Finish profile", act: () => go("dashboard", "Profile") },
@@ -4248,7 +4500,7 @@ async function loadFoundingDashboard() {
     el.innerHTML = `
     ${wsHead("Home", { sub: "Start here. Sig shows you what needs you, in order.", subKey: "cr-home" })}
     <div class="home-greet"><div class="hg-hi">Hi, ${esc(firstName)}</div><div class="hg-line">${esc(greet)}. ${isUnl ? `${esc(f.city)} opens when sign-ups pile up. We email you the moment it opens.` : `${esc(marketTalkNameClient(f.market))} opens in the next ${esc(f.launchWindow)}. We email you the moment it opens.`}</div></div>
-    ${sigQueueHtml(queueItems, { links: [] })}
+    ${sigQueueHtml(queueItems, { links: [], askBox: true })}
     ${checklistHtml(fSteps)}
     <div class="wcard">
       <div class="kpi-label">Your local reach</div>
@@ -4286,6 +4538,7 @@ async function loadFoundingDashboard() {
     ${askSigRowHtml()}`;
     wireSigQueue(el, queueItems, []);
     wireChecklist(el, fSteps);
+    renderBottomNav();
     loadFoundingStatus();
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
@@ -5179,11 +5432,16 @@ async function loadCreatorHome() {
       { label: "See offers near you", act: () => { state.crOffersSeg = "foryou"; go("dashboard", "Offers"); } },
       { label: "Check your Momentum", act: () => go("dashboard", "Momentum") },
     ];
+    // V4.1: the Sig tab renders this same queue and badges its
+    // count — one queue, two doors (see renderSigTab).
+    state.sigQueue = queue;
+    state.sigQueueLinks = caughtLinks;
+    state.sigQueueCount = queue.length;
     el.innerHTML = `
     ${wsHead("Home", { sub: "Start here. Sig shows you what needs you, in order.", subKey: "cr-home" })}
     <div class="home-greet"><div class="hg-hi">Hi, ${esc(firstName)}</div><div class="hg-line">${esc(greetLine)}</div></div>
     ${strikeStatusHtml(u)}
-    ${sigQueueHtml(queue, { links: caughtLinks, leadShort: greetDup })}
+    ${sigQueueHtml(queue, { links: caughtLinks, leadShort: greetDup, askBox: true })}
     ${checklistHtml(steps)}
     ${gateDone ? snapshotHtml(snapCells, "", "Numbers") : ""}
     ${momentumCard}
@@ -6759,7 +7017,7 @@ async function respondLicense(id, decision) {
 
 // ---------- business ----------
 
-const BUSINESS_TABS = ["Home", "Requests", "Discover", "Favorites", "My Offers", "Counter", "Visits & Posts", "Content", "Analytics", "Plan", "Messages", "Profile", "More", "Settings", "Help"];
+const BUSINESS_TABS = ["Home", "Requests", "Discover", "Favorites", "My Offers", "Counter", "Visits & Posts", "Content", "Analytics", "Plan", "Messages", "Profile", "More", "Settings", "Help", "Sig"];
 
 function renderBusinessDash() {
   const u = state.user;
@@ -6785,6 +7043,7 @@ function renderBusinessDash() {
   if (tab === "More") renderMoreScreen();
   if (tab === "Settings") renderSettingsTab();
   if (tab === "Help") renderHelpTab();
+  if (tab === "Sig") renderSigTab();
 }
 
 // Shared in-app notifications block (the no-ghosting surface):
@@ -7075,12 +7334,17 @@ async function loadBusinessHome() {
     ];
     state.bizFeedEvents = bizFeedEvents(h, notes);
     bizFeedKind = "all";
+    // V4.1: the Sig tab renders this same queue and badges its
+    // count — one queue, two doors (see renderSigTab).
+    state.sigQueue = queue;
+    state.sigQueueLinks = caughtLinks;
+    state.sigQueueCount = queue.length;
     el.innerHTML = `
     <div data-dash>
     ${wsHead("Home", { sub: "Start here. Sig shows you what needs you, in order.", subKey: "biz-home" })}
     <div class="home-greet"><div class="hg-hi">Hi, ${esc(bz.businessName || u.name || "")}</div><div class="hg-line">${esc(greetLine)}</div></div>
     ${d.marketLive ? "" : `<div class="notice blue" style="margin-top:14px"><strong>Your market opens in 30–90 days.</strong> Draft offers now; publishing switches on at launch.</div>`}
-    ${sigQueueHtml(queue, { links: caughtLinks, leadShort: greetDup })}
+    ${sigQueueHtml(queue, { links: caughtLinks, leadShort: greetDup, askBox: true })}
     ${checklistHtml(steps)}
     ${snapshotHtml(snapCells, "This fills in once your campaigns are live. When creators start visiting and posting, you will see applications, visits, posts, and the local reach they delivered, right here.", "Analytics")}
     <h3 style="margin:20px 0 0">Activity</h3>
