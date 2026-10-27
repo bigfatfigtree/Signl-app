@@ -2267,3 +2267,206 @@ body.v3-on #tabbar { display: block; position: fixed; left: 0; right: 0; bottom:
 .thread-ctx { color: var(--mint-deep); font-weight: 700; }
 .thread-head { border-bottom: 1px solid var(--line); padding-bottom: 10px; margin-bottom: 10px; }
 .stack-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+
+
+/* ============================================================
+   OVERHAUL V4 — SIGNL-native fields (Jeff, 2026-10-27)
+   Design: files/signl-overhaul-v4/DESIGN.md
+   Composition is full-bleed COLOR FIELDS (ink → mint → white →
+   photo), not cards on gray. Chrome is ink; the active
+   destination sits in a mint pill; headline numbers are mint
+   on black. This layer re-skins V3 only — every V3 rule and
+   every string the verify suite pins stays in place above.
+   ============================================================ */
+
+/* ---------- chrome: the top bar goes ink ---------- */
+body.v3-on #topbar2, body.v3-slim #topbar2 { background: var(--ink); border-bottom: 0; }
+body.v3-on .tb2-id, body.v3-slim .tb2-id { color: #fff; }
+body.v3-on .tb2-name, body.v3-slim .tb2-name { color: #fff; }
+body.v3-on .tb2-ava.txt, body.v3-slim .tb2-ava.txt { background: var(--mint); color: var(--ink); }
+body.v3-on .tb2-btn, body.v3-slim .tb2-btn { background: transparent; border-color: rgba(255,255,255,.30); color: #fff; }
+body.v3-on .tb2-btn .tab-badge, body.v3-slim .tb2-btn .tab-badge { box-shadow: 0 0 0 2px var(--ink); }
+
+/* ---------- chrome: the tab bar goes ink, active = mint pill ---------- */
+body.v3-on #tabbar { background: var(--ink); border-top: 0; box-shadow: 0 -10px 28px rgba(11,13,12,.22); }
+body.v3-on .tab-item { color: rgba(255,255,255,.58); margin: 6px 2px; padding: 6px 2px 5px; min-height: 58px; justify-content: center; border-radius: 16px; }
+body.v3-on .tab-item.on { background: var(--mint); color: var(--ink); }
+body.v3-on .tab-item.on .tab-ic { background: none; }
+body.v3-on .tab-item.on .tab-label { color: var(--ink); }
+body.v3-on .tab-badge { box-shadow: 0 0 0 2px var(--ink); }
+@media (min-width: 1024px) {
+  body.v3-on #tabbar { background: var(--ink); border-right: 0; box-shadow: none; }
+  body.v3-on .tab-item, body.v3-on .tab-more-row { color: rgba(255,255,255,.72); margin: 0; border-radius: 14px; justify-content: flex-start; }
+  body.v3-on .tab-item.on, body.v3-on .tab-more-row.on { background: var(--mint); color: var(--ink); }
+  body.v3-on .tab-item.on .tab-label, body.v3-on .tab-more-row.on .tab-label { color: var(--ink); }
+  .tab-more-sep { border-top-color: rgba(255,255,255,.14); }
+}
+
+/* ---------- Home: fields, not cards ----------
+   Home scope = the three home containers (business [data-dash],
+   creator #creator-home, founding #founding-dash). */
+body.v3-on :is([data-dash], #creator-home, #founding-dash) .ws-head { display: none; }
+body.v3-on :is([data-dash], #creator-home, #founding-dash) .home-greet {
+  background: var(--ink); color: #fff;
+  margin: -28px -18px 0; padding: 26px 18px 24px;
+}
+@media (min-width: 1024px) {
+  body.v3-on :is([data-dash], #creator-home, #founding-dash) .home-greet { margin-left: -24px; margin-right: -24px; padding-left: 24px; padding-right: 24px; }
+}
+body.v3-on :is([data-dash], #creator-home, #founding-dash) .home-greet::before {
+  content: "— SIG"; display: block; color: var(--mint);
+  font-size: .68rem; font-weight: 800; letter-spacing: .22em; margin-bottom: 12px;
+}
+body.v3-on :is([data-dash], #creator-home, #founding-dash) .hg-hi { font-size: 1.85rem; letter-spacing: -.02em; line-height: 1.12; }
+body.v3-on :is([data-dash], #creator-home, #founding-dash) .hg-line { color: rgba(255,255,255,.86); font-size: 1.05rem; line-height: 1.45; margin-top: 8px; max-width: 36ch; }
+
+/* Sig's queue is a full-mint field: in mint, you're in Sig's hands. */
+body.v3-on .sig-card { background: var(--mint); border: 0; border-radius: 24px; }
+body.v3-on :is([data-dash], #creator-home, #founding-dash) .sig-card {
+  border-radius: 0; margin: 0 -18px 18px; padding: 20px 18px 22px;
+}
+@media (min-width: 1024px) {
+  body.v3-on :is([data-dash], #creator-home, #founding-dash) .sig-card { margin-left: -24px; margin-right: -24px; padding-left: 24px; padding-right: 24px; }
+}
+body.v3-on .sig-sub { color: rgba(11,13,12,.62); }
+body.v3-on .sig-ava-img { box-shadow: 0 0 0 2px var(--ink); }
+body.v3-on .sig-item { border: 0; border-radius: 16px; padding: 14px; box-shadow: 0 1px 2px rgba(11,13,12,.08); }
+body.v3-on .sig-item .btn { background: var(--ink); color: #fff; border-color: var(--ink); }
+body.v3-on .sig-item .btn:hover { background: #232825; }
+body.v3-on .sig-empty { color: rgba(11,13,12,.75); }
+
+/* Checklist: white field, big mint numerals, one loud next step. */
+body.v3-on :is([data-dash], #creator-home, #founding-dash) .check-card { background: none; border: 0; border-radius: 0; padding: 6px 0 2px; margin-bottom: 18px; }
+body.v3-on .check-row.next .check-ic { width: 38px; height: 38px; background: var(--ink); color: var(--mint); border-color: var(--ink); font-size: 1.1rem; }
+body.v3-on .check-row.done .check-ic { background: var(--mint); border-color: var(--mint); color: var(--ink); }
+
+/* Snapshot: one black tile block, mint numerals (Jeff's surface). */
+body.v3-on .snap-strip { background: var(--ink); border-radius: 20px; padding: 18px 8px; gap: 0; }
+body.v3-on .snap-cell { background: none; border: 0; border-radius: 0; padding: 2px 14px; }
+body.v3-on .snap-cell + .snap-cell { border-left: 1px solid rgba(255,255,255,.12); }
+body.v3-on .snap-num { color: var(--mint); font-size: 1.85rem; letter-spacing: -.02em; }
+body.v3-on .snap-lbl { color: rgba(255,255,255,.60); }
+body.v3-on .snap-strip.fill { background: var(--bg2); }
+body.v3-on .snap-strip.fill .snap-fill { padding: 0 10px; }
+body.v3-on .snap-strip.fill .ask-chev { color: var(--ink3); padding-right: 8px; }
+
+/* Ask Sig: an ink row at the foot of Home. */
+body.v3-on .ask-sig { background: var(--ink); color: #fff; border: 0; border-radius: 20px; }
+body.v3-on .ask-sig .muted { color: rgba(255,255,255,.62); }
+body.v3-on .ask-sig .ask-chev { color: var(--mint); }
+body.v3-on .ask-sig .sig-ava-img { box-shadow: 0 0 0 2px var(--mint); }
+
+/* Activity: a hairline list on the white field, kicker day heads. */
+body.v3-on :is([data-dash], #creator-home, #founding-dash) .feed-list { background: none; border: 0; border-radius: 0; overflow: visible; }
+body.v3-on :is([data-dash], #creator-home, #founding-dash) .feed-day { background: none; text-transform: uppercase; letter-spacing: .14em; font-size: .68rem; padding: 14px 2px 2px; }
+body.v3-on :is([data-dash], #creator-home, #founding-dash) .feed-row { padding-left: 2px; padding-right: 2px; }
+body.v3-on .feed-dot.acc { background: var(--ink); color: var(--mint); }
+
+/* Creator Momentum card: a mint-on-black object. */
+body.v3-on #creator-home .mom-card { background: var(--ink); color: #fff; border-color: var(--ink); }
+body.v3-on #creator-home .mom-card .kpi-num { color: var(--mint); }
+body.v3-on #creator-home .mom-card .kpi-label { color: rgba(255,255,255,.55); }
+body.v3-on #creator-home .mom-card .kpi-sub { color: rgba(255,255,255,.70); }
+body.v3-on #creator-home .mom-card .btn.ws-outline { background: transparent; color: #fff; border-color: rgba(255,255,255,.42); }
+
+/* Founding home: KPI tiles and the local-reach hero go ink. */
+body.v3-on #founding-dash .kpi-card { background: var(--ink); border-color: var(--ink); }
+body.v3-on #founding-dash .kpi-card .kpi-num { color: var(--mint); }
+body.v3-on #founding-dash .kpi-card .kpi-label { color: rgba(255,255,255,.55); }
+body.v3-on #founding-dash .kpi-card .kpi-sub { color: rgba(255,255,255,.66); }
+body.v3-on #founding-dash .wcard:has(.kpi-num) { background: var(--ink); color: #fff; border-color: var(--ink); }
+body.v3-on #founding-dash .wcard:has(.kpi-num) .kpi-num { color: var(--mint); }
+body.v3-on #founding-dash .wcard:has(.kpi-num) .kpi-label { color: rgba(255,255,255,.55); }
+body.v3-on #founding-dash .wcard:has(.kpi-num) .kpi-sub { color: rgba(255,255,255,.72); }
+body.v3-on #founding-dash .wcard:has(.kpi-num) .btn { background: var(--mint); color: var(--ink); border-color: var(--mint); }
+
+/* ---------- segment tabs become pills ---------- */
+body.v3-on .ws-tabs { border-bottom: 0; gap: 8px; margin: 14px 0 10px; padding-bottom: 2px; }
+body.v3-on .ws-tab { border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 9px 15px; color: var(--ink2); }
+body.v3-on .ws-tab.on { background: var(--ink); border-color: var(--ink); color: #fff; }
+body.v3-on .ws-tab.on::after { display: none; }
+body.v3-on .ws-tab .cnt { color: #5F7265; }
+body.v3-on .ws-tab.on .cnt { color: var(--mint); }
+
+/* ---------- More rows: ink icon chips, mint glyphs ---------- */
+body.v3-on .more-ic { background: var(--ink); color: var(--mint); }
+body.v3-on .more-row { border-radius: 16px; }
+body.v3-on .counter-cta svg { color: var(--mint); }
+
+/* ---------- the deck: full-bleed photo, reach is the hero ---------- */
+.dcard { border-radius: 26px; box-shadow: 0 18px 44px rgba(11,13,12,.20); }
+.dcard-photo { aspect-ratio: 4 / 4.4; }
+.dcard-scrim {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 2;
+  padding: 46px 18px 16px; color: #fff;
+  background: linear-gradient(180deg, rgba(11,13,12,0) 0%, rgba(11,13,12,.52) 52%, rgba(11,13,12,.88) 100%);
+}
+.dcard-scrim .dcard-name { color: #fff; font-size: 1.65rem; }
+.dcard-scrim .dcard-handle { color: rgba(255,255,255,.78); margin-top: 1px; }
+.dcard-scrim .dcard-local { margin-top: 10px; }
+.dcard-scrim .dcard-pct { color: var(--mint); font-size: 3rem; }
+.dcard-scrim .dcard-local-lbl { color: rgba(255,255,255,.85); }
+.dcard-scrim .dcard-local-na { color: rgba(255,255,255,.88); }
+.dcard-rate {
+  display: inline-flex; margin-top: 12px; background: var(--mint); color: var(--ink);
+  font-weight: 800; font-size: .82rem; padding: 6px 12px; border-radius: 999px;
+}
+.dcard-photo.no-photo .dcard-scrim { background: none; color: var(--ink); }
+.dcard-photo.no-photo .dcard-name { color: var(--ink); }
+.dcard-photo.no-photo .dcard-handle { color: rgba(11,13,12,.60); }
+.dcard-photo.no-photo .dcard-pct { color: var(--ink); }
+.dcard-photo.no-photo .dcard-local-lbl { color: rgba(11,13,12,.55); }
+.dcard-photo.no-photo .dcard-local-na { color: var(--ink2); }
+.dcard-photo.no-photo .dcard-rate { background: var(--ink); color: var(--mint); }
+.dcard-body { padding: 16px 18px 18px; }
+.dcard-body .dcard-chips { margin-top: 0; }
+.dcard-body .dcard-meta { margin-top: 10px; }
+/* the action dock goes ink so it reads over any photo */
+.stk-actions { background: rgba(11,13,12,.92); border-color: rgba(255,255,255,.16); box-shadow: 0 14px 34px rgba(11,13,12,.35); }
+.stk-pass { background: transparent; border-color: rgba(255,255,255,.38); color: #fff; box-shadow: none; }
+.stk-go { background: var(--mint); color: var(--ink); }
+
+/* ---------- offer cards: the money leads ---------- */
+.slot-value {
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+  background: var(--ink); border-radius: 14px; padding: 13px 16px; margin-top: 14px;
+}
+.slot-value .sv-num { color: var(--mint); font-size: 2rem; font-weight: 800; letter-spacing: -.02em; line-height: 1; }
+.slot-value .sv-lbl { color: rgba(255,255,255,.72); font-size: .78rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.feed-card { border-radius: 22px; }
+.slot-foot:has(.slot-actions:only-child) { justify-content: flex-end; }
+
+
+/* ---------- V4 refinements (from the first screenshot pass) ---------- */
+/* The azure accent is retired: --mint-deep (repurposed to #006AFC by an
+   earlier theme) resolves to a deep SIGNL green everywhere in V4, so
+   icons, links and fit labels stay in the mint family. */
+body.v3-on { --mint-deep: #0C7A43; }
+
+/* Find creators: the deck is the screen. The filter band compresses to
+   a compact control strip — category chips become one swipeable row —
+   so the card and its dock own the phone. */
+body.v3-on .dcat-row { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 8px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+body.v3-on .dcat-row::-webkit-scrollbar { display: none; }
+body.v3-on .dcat-chip { flex: 0 0 auto; }
+body.v3-on .filters.disc-top { margin: 6px 0 10px; padding: 10px 12px; }
+body.v3-on .filters.disc-top select { padding: 10px 12px; }
+body.v3-on .filters-fold { margin: 2px 0 8px; }
+body.v3-on .view-toggle { margin: 8px 0 4px; }
+body.v3-on .deck-teach { margin: 2px 0 8px; }
+
+
+/* ---------- V4 refinements II (screenshot pass 2) ---------- */
+/* Every KPI tile is Jeff's signature object — black tile, mint
+   numeral — on Results, Earnings, Numbers and profile showcases. */
+body.v3-on .kpi-card { background: var(--ink); border-color: var(--ink); }
+body.v3-on .kpi-card .kpi-num { color: var(--mint); }
+body.v3-on .kpi-card .kpi-label { color: rgba(255,255,255,.55); }
+body.v3-on .kpi-card .kpi-sub { color: rgba(255,255,255,.66); }
+/* The counter banner is an ink field: its copy and button must read
+   as ink-field elements (muted light copy, mint action). */
+body.v3-on .counter-cta p, body.v3-on .counter-cta .muted { color: rgba(255,255,255,.72); }
+body.v3-on .counter-cta .btn.ws-primary { background: var(--mint); color: var(--ink); border-color: var(--mint); }
+
+/* Dashboard links speak in the deep SIGNL green, never default blue. */
+body.v3-on #tab-body a:not(.btn) { color: var(--mint-deep); }

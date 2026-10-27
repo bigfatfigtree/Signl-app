@@ -1984,7 +1984,7 @@ async function renderCreatorNumbers() {
         const cum = ledger.filter((e) => (Date.parse(e.at || "") || 0) < dayStart + 86400000).reduce((s, e) => s + (Number(e.points) || 0), 0);
         days.push({ date: new Date(dayStart).toISOString(), points: Math.max(cum, 0) });
       }
-      if (days.some((dd) => dd.points > 0)) trendHtml = `<div class="chart-card"><h3>Momentum trend</h3><p class="wc-sub">Your points, day by day, last 30 days.</p>${lineChartSvg(days, [{ k: "points", color: "#006AFC" }])}</div>`;
+      if (days.some((dd) => dd.points > 0)) trendHtml = `<div class="chart-card"><h3>Momentum trend</h3><p class="wc-sub">Your points, day by day, last 30 days.</p>${lineChartSvg(days, [{ k: "points", color: "#0B0D0C" }])}</div>`;
     }
     const reviewRows = bookings.filter((b) => b.creatorReview).map((b) => `<div class="lib-row"><div class="lib-main"><div class="lib-title">${starsHtml(b.creatorReview.stars)} ${esc(String(b.creatorReview.stars))} — ${esc(b.title || "Visit")}</div><div class="lib-meta">${esc(b.businessName || "")}${b.creatorReview.createdAt ? ` · ${fmtDay(b.creatorReview.createdAt)}` : ""}${b.creatorReview.comment ? `<br>${esc(b.creatorReview.comment)}` : ""}</div></div></div>`).join("");
     el.innerHTML = `${head}
@@ -5592,6 +5592,7 @@ async function loadDirectOffers() {
             <div class="slot-meta"><span>${o.bookedCount}/${o.spots} spots booked</span><span>${o.creatorId ? "Sent directly to you" : "Open to your market"}</span></div>
           </div>
         </div>
+        <div class="slot-value"><span class="sv-num">$${fmtPrice(o.kind === "paid" ? o.cashRate : o.dollarCap)}</span><span class="sv-lbl">${o.kind === "paid" ? "Your rate · you keep 97%" : "Comp value"}</span></div>
         <div class="slot-deal">
         ${dealRowsHtml(o)}
         ${o.kind === "paid" && o.paidBrief ? `<p class="small"><strong>Key points:</strong> ${esc(o.paidBrief)}</p>` : ""}
@@ -5601,7 +5602,6 @@ async function loadDirectOffers() {
         <p class="small muted">${o.windowMode === "thisweek" ? "Redeem this week — ends Sunday" : "Redeem within 7 days of accepting"} &middot; no appointment needed.${o.visitWindow ? ` Note from the business: ${esc(o.visitWindow)}` : ""}</p>
         </div>
         <div class="slot-foot">
-          <div><div class="slot-price">$${fmtPrice(o.kind === "paid" ? o.cashRate : o.dollarCap)}</div><div class="slot-note">${o.kind === "paid" ? "Rate" : "Comp cap"}</div></div>
           <div class="slot-actions">
             ${booked ? `<span class="badge ok">Booked</span>
             <button class="btn small-btn ghost" onclick="return go('dashboard','My Visits')">My Visits</button>` : `<form onsubmit="return acceptOffer(event, '${o.id}')">
@@ -5674,6 +5674,7 @@ function offerFeedCardHtml(o, opts) {
             <div class="slot-meta"><span>Redeem ${fmtDay(o.windowStartAt)} to ${fmtDay(o.windowEndAt)}</span><span>${spotsLeft} spot${spotsLeft === 1 ? "" : "s"} left</span>${o.businessNeighborhood ? `<span>${esc(o.businessNeighborhood)}</span>` : ""}</div>
           </div>
         </div>
+        <div class="slot-value"><span class="sv-num">$${fmtPrice(o.kind === "paid" ? o.cashRate : o.dollarCap)}</span><span class="sv-lbl">${o.kind === "paid" ? "Your rate · you keep 97%" : "Comp value"}</span></div>
         <div class="slot-deal">
         ${dealRowsHtml(o)}
         ${o.kind === "paid" && o.paidBrief ? `<p class="small"><strong>Key points:</strong> ${esc(o.paidBrief)}</p>` : ""}
@@ -5684,7 +5685,6 @@ function offerFeedCardHtml(o, opts) {
         ${o.businessAbout ? `<p class="small muted">${esc(o.businessAbout)}</p>` : ""}
         </div>
         <div class="slot-foot">
-          <div><div class="slot-price">$${fmtPrice(o.kind === "paid" ? o.cashRate : o.dollarCap)}</div><div class="slot-note">${o.kind === "paid" ? "Rate" : "Comp value"}</div></div>
           <div class="slot-actions">
             ${o.myApplication
               ? (preview
@@ -7351,8 +7351,8 @@ async function renderAnalyticsTab() {
     ${head}
     ${cards.length ? `<div class="kpi-grid c${Math.min(4, Math.max(2, cards.length))}">${cards.join("")}</div>` : ""}
     ${seriesHas ? `<div class="chart-card"><h3>Invites &amp; decisions</h3><p class="wc-sub">Per day, last 30 days. Decisions are application answers, stamped when you make them.</p>
-      ${lineChartSvg(series, [{ k: "invited", color: "#006AFC" }, { k: "decisions", color: "#B9C6BB" }])}
-      <div class="chart-legend"><span><span class="legend-dot" style="background:#006AFC"></span>Invites</span><span><span class="legend-dot" style="background:#B9C6BB"></span>Decisions</span></div>
+      ${lineChartSvg(series, [{ k: "invited", color: "#0B0D0C" }, { k: "decisions", color: "#5F7265" }])}
+      <div class="chart-legend"><span><span class="legend-dot" style="background:#0B0D0C"></span>Invites</span><span><span class="legend-dot" style="background:#5F7265"></span>Decisions</span></div>
     </div>` : ""}
     ${reachHas ? `<div class="chart-card"><h3>Local reach over time</h3><p class="wc-sub">Local audience reached by posts that went live each day.</p>
       ${barsChartSvg(series, "reach", "#03C9AB")}
@@ -7633,15 +7633,18 @@ function discoverStackCard(c) {
       ${c.photoUrl ? `<img src="${esc(c.photoUrl)}" alt="">` : `<div class="dcard-mono"><span>${initial}</span></div>`}
       ${p.tierBand ? `<span class="dcard-tier">${esc(p.tierBand)}</span>` : ""}
       ${c.previewPhoto ? `<span class="dcard-sample">Sample photo · preview</span>` : ""}
+      <div class="dcard-scrim">
+        <div class="dcard-name">${esc(c.name)}</div>
+        <div class="dcard-handle">@${esc(p.handle || "")}</div>
+        <div class="dcard-local">${p.localAudiencePct === null || p.localAudiencePct === undefined
+          ? `<span class="dcard-local-na">Local reach not reported yet</span>`
+          : `<span class="dcard-pct">${p.localAudiencePct}%</span><span class="dcard-local-lbl">local reach</span>`}</div>
+        <div class="dcard-rate">${rateLine}</div>
+      </div>
     </div>
     <div class="dcard-body">
-      <div class="dcard-name">${esc(c.name)}</div>
-      <div class="dcard-handle">@${esc(p.handle || "")}</div>
-      <div class="dcard-local">${p.localAudiencePct === null || p.localAudiencePct === undefined
-        ? `<span class="dcard-local-na">Local reach not reported yet</span>`
-        : `<span class="dcard-pct">${p.localAudiencePct}%</span><span class="dcard-local-lbl">local reach</span>`}</div>
       ${cats.length ? `<div class="dcard-chips">${cats.map((x) => `<span class="cc-chip">${esc(x)}</span>`).join("")}${extra > 0 ? `<span class="cc-chip">+${extra}</span>` : ""}</div>` : ""}
-      <div class="dcard-meta"><span>${rateLine}</span>${place ? `<span>${place}</span>` : ""}<span>${fmtNum(totalAudienceOf(c))} audience</span></div>
+      <div class="dcard-meta">${place ? `<span>${place}</span>` : ""}<span>${fmtNum(totalAudienceOf(c))} audience</span></div>
       ${c.bookedUp ? `<p class="small muted" style="margin:8px 0 0">Booked up this week — invites still land, accepting reopens next week.</p>` : ""}
       ${c.standing === "paused" ? `<p class="small muted" style="margin:8px 0 0">Paused: a late post is outstanding, so this creator cannot take new offers yet.</p>` : ""}
     </div>
