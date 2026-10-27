@@ -1,26 +1,23 @@
 #!/usr/bin/env node
-// Overhaul Stage 1 verification (Jeff, 2026-10-27).
-//
-// Pins the new app shell + rebuilt homes:
-//   (a) source: the rail (desktop) renders the same destinations
-//       as the bottom bar per role and hides in preview/staff;
-//       the floating agent button + Ready-for-you queue exist as
-//       structure only (homes register real queues; no agent
-//       logic ships in this stage);
-//   (b) source: creator homes lead with a Local reach KPI, show
-//       Momentum exactly once, and carry Activity | Analytics
-//       segments with a filter-chipped feed;
-//   (c) source: the business home (and its preview twin, same
-//       builders) uses Overview | Activity | Offers | Analytics,
-//       template cards in SIGNL's terms, a 7/30-day funnel
-//       toggle, and a content library split carrying the rights
-//       lines (native share only / 90-day windows);
-//   (d) api: the preview dashboard (which shares the real
-//       business-home analytics computation) returns the new
-//       fields computed from real records: localReachDelivered
-//       from creator audience x local %, windowed funnels,
-//       contentLibrary rows with license state, costPerVisit
-//       from the plan.
+// Overhaul V2 verification (Jeff, 2026-10-27): the Grin-template
+// recomposition. Stage 1's composition was rejected; this suite
+// pins the V2 contract instead:
+//   (a) shell: a slim icon rail is the navigation at EVERY width
+//       (no bottom nav element, no 236px desktop rail), a quiet
+//       top row rides in the content column, and the floating
+//       agent button + Sig ready-for-you structure stay;
+//   (b) scaffold: one-word workspace titles (wsHead), underlined
+//       tabs (wsTabs), white KPI cards, and an honest delta pill
+//       that renders nothing when the prior window is zero;
+//   (c) mirror: business Requests (approvals queue), Content
+//       (tracking status + rights), Analytics (series charts,
+//       prior-window funnels, leaderboard) and creator homes all
+//       render from the same real payloads;
+//   (d) api: the preview dashboard (sharing the real business-
+//       home analytics computation) returns the V2 fields:
+//       prior-window funnels, the 30-day series, the local-reach
+//       leaderboard and the posts-tracked count, all computed
+//       from the records' own timestamps.
 //
 // Run: node scripts/verify-shell.mjs
 
@@ -127,39 +124,51 @@ try {
   const appJs = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
   const indexHtml = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
   const themeCss = fs.readFileSync(path.join(root, "public", "theme-v2.css"), "utf8");
+  const routerJs = fs.readFileSync(path.join(root, "netlify", "functions", "lib", "router.js"), "utf8");
 
-  part("source: shell (rail + agent-ready structure)");
-  check("index.html carries the rail + agent button mounts", indexHtml.includes('id="rail"') && indexHtml.includes('id="agent-fab"'));
-  check("rail renderer exists and mirrors the bottom bar's go() targets", appJs.includes("function renderRail()") && appJs.includes("function railItems()") && appJs.includes("return go('dashboard','Applications')") && appJs.includes("return go('dashboard','My Visits')"));
+  part("source: shell (icon rail at every width)");
+  check("index.html mounts rail + top row + agent button, and NO bottom nav", indexHtml.includes('id="rail"') && indexHtml.includes('id="toprow"') && indexHtml.includes('id="agent-fab"') && !indexHtml.includes('id="bottomnav"'));
+  check("rail is a slim 68px icon rail at all widths (no 236px desktop rail)", themeCss.includes("body.rail-on #rail") && themeCss.includes("width: 68px") && !themeCss.includes("width: 236px"));
+  check("rail hides the app topbar slab and any bottom bar when on", themeCss.includes("body.rail-on .topbar { display: none; }") && themeCss.includes("body.rail-on #bottomnav { display: none !important; }"));
+  check("rail renderer + top row exist; rail pins the account avatar at the bottom", appJs.includes("function renderRail()") && appJs.includes("function renderTopRow()") && appJs.includes("rail-avatar") && appJs.includes("Need help?"));
   check("rail stays off for signed-out, staff and preview", appJs.includes('if (!state.user || state.view === "staff" || state.preview) return null;'));
-  check("rail re-renders with the bottom bar so badges stay in sync", appJs.includes("renderRail();"));
-  check("rail CSS: fixed left rail at >=1100px, bottom bar hidden there", themeCss.includes("body.rail-on #rail") && themeCss.includes("body.rail-on #bottomnav { display: none !important; }") && themeCss.includes("@media (min-width: 1100px)"));
-  check("agent-ready structure: queue registration, card, sheet, floating button", appJs.includes("function setAgentFab(") && appJs.includes("function readyCardHtml(") && appJs.includes("function openAgentSheet(") && appJs.includes("function renderAgentFab()"));
+  check("business rail reaches the new workspace screens", appJs.includes("return go('dashboard','Requests')") && appJs.includes("return go('dashboard','Analytics')") && appJs.includes("return go('dashboard','Content')") && appJs.includes("return go('dashboard','Profile')"));
+  check("renderBottomNav is now only the rail coordinator (no bar is built)", appJs.includes('document.body.classList.remove("bn-on", "has-bn")') && !appJs.includes('class="bn-item'));
+  check("floating agent button is a white circle (not a black slab)", themeCss.includes("#agent-fab") && themeCss.includes("border: 2px solid var(--mint)"));
+  check("agent-ready structure: queue registration, Sig card, sheet, floating button", appJs.includes("function setAgentFab(") && appJs.includes("function readyCardHtml(") && appJs.includes("function openAgentSheet(") && appJs.includes("function renderAgentFab()"));
+  check("Sig card mirrors the agent pattern (count line + white pill actions)", appJs.includes("sig-card") && appJs.includes("sig-pill") && appJs.includes("ready for you`"));
   check("every navigation clears the queue before the next home registers its own", appJs.includes("state.agentQueue = null;"));
-  check("no agent logic ships in this stage (no chat/composer hooks)", !appJs.includes("agentChat") && !appJs.includes("askAgent"));
+  check("goals card is labeled structure only (Sig does not act on goals yet)", appJs.includes("Sig does not act on goals yet"));
+
+  part("source: workspace scaffold");
+  check("scaffold builders exist (wsHead, wsTabs, kpiCard, deltaPill, segSw, feedListHtml, funnel2Html, charts)", ["function wsHead(", "function wsTabs(", "function kpiCard(", "function deltaPill(", "function segSw(", "function feedListHtml(", "function funnel2Html(", "function lineChartSvg(", "function barsChartSvg("].every((x) => appJs.includes(x)));
+  check("workspace screens carry one-word titles", ["Home", "Requests", "Discover", "Offers", "Content", "Analytics", "Conversations", "Profile", "Visits", "Plan", "Counter", "Favorites", "Status"].every((t) => appJs.includes(`wsHead("${t}"`)));
+  check("delta pill is honest: it renders nothing when the prior window is zero", appJs.includes('if (!p) return "";'));
+  check("white hairline card grammar in CSS (kpi cards, sig card, feed list, offer cards)", [".kpi-card", ".sig-card", ".feed-list", ".offer-card", ".ws-tab.on::after"].every((x) => themeCss.includes(x)));
 
   part("source: creator homes");
-  check("homes share the segment grammar (homeSegsHtml + dashSeg)", appJs.includes("function homeSegsHtml(") && appJs.includes('["activity", "Activity"], ["analytics", "Analytics"]'));
-  check("creator KPI strips lead with Local reach", (appJs.match(/Local reach/g) || []).length >= 4 && appJs.includes("of your audience is local"));
-  check("live creator home: feed chips cover invites/visits/posts/momentum", appJs.includes("feedChip(this,'invites')") && appJs.includes("feedChip(this,'visits')") && appJs.includes("feedChip(this,'posts')") && appJs.includes("feedChip(this,'momentum')"));
-  check("creator analytics: funnel stages + day 7/14/30 series from snapshots", appJs.includes('"Invited", "Offers open + invites taken"') && appJs.includes("Post performance, day 7 / 14 / 30") && appJs.includes("b.post.snapshots"));
-  check("on-time panel states the 48 hour standard and the one-week hard deadline", appJs.includes("inside the 48 hour standard") && appJs.includes("the hard deadline is one week"));
-  check("founding home carries the honest pre-launch funnel empty state", appJs.includes("we do not chart zeroes"));
+  check("creator homes lead with a Local reach hero card", appJs.includes("Your local reach") && (appJs.match(/kpiCard\("Momentum"/g) || []).length === 2);
+  check("creator feed is date-grouped with the chip taxonomy", appJs.includes("function crFeedHtml()") && appJs.includes('["invites", "Invites"]') && appJs.includes('["momentum", "Momentum"]') && appJs.includes("function feedListHtml("));
+  check("creator funnel stages keep their plain captions", appJs.includes('"Invited", "Offers open + invites taken"') && appJs.includes("funnel2Html(funnelStages.map"));
+  check("on-time card states the 48 hour standard and the one-week hard deadline", appJs.includes("inside the 48 hour standard") && appJs.includes("the hard deadline is one week"));
+  check("post performance keeps the day 7/14/30 series and the no-zeroes honesty", appJs.includes("Post performance, day 7 / 14 / 30") && appJs.includes("b.post.snapshots") && appJs.includes("do not chart zeroes"));
   check("creator homes register a Ready-for-you queue", (appJs.match(/setAgentFab\(queue\)/g) || []).length >= 3);
 
-  part("source: business home + preview twin");
-  check("segments are Overview | Activity | Offers | Analytics in the shared builder", appJs.includes('["overview", "Overview"], ["activity", "Activity", needsCount || 0], ["offers", "Offers"], ["analytics", "Analytics"]'));
-  check("preview twin uses the same segment keys", appJs.includes('data-seg="activity"') && appJs.includes("home.activity") && appJs.includes("home.offers") && appJs.includes("home.analytics"));
-  check("KPI band leads with Local reach delivered", appJs.includes("Local reach delivered") && appJs.includes("h.localReachDelivered"));
-  check("rollover state rides in the visits KPI", appJs.includes("rolled in from last month"));
-  check("offer template cards in SIGNL's terms with Start actions", appJs.includes('"Comped visit"') && appJs.includes('"Paid booking"') && appJs.includes('"Open call"') && appJs.includes("function startOfferTemplate("));
+  part("source: business mirror screens");
+  check("business home: KPI grid leads with Local reach delivered + rollover line", appJs.includes("h.localReachDelivered") && appJs.includes("rolled in from last month") && appJs.includes("function bizFeedEvents("));
+  check("home feed taxonomy mirrors Grin's chips (applications/messages/posts/visits/payments/licenses)", appJs.includes("BIZ_FEED_KINDS") && appJs.includes('"Applications"') && appJs.includes('"Payments"') && appJs.includes('"Licenses"'));
+  check("Requests: approvals queue with counts, match reason, bulk select, real 2-day window", appJs.includes("function renderRequestsTab()") && appJs.includes("Matched because:") && appJs.includes("function reqBulk(") && appJs.includes("decision within 2 business days"));
+  check("Requests kebab mirrors Grin (View profile / Ask Sig / Request info / Later / Release)", appJs.includes("View creator profile") && appJs.includes("Ask Sig") && appJs.includes("Request info") && appJs.includes("Move back to waiting"));
+  check("Offers: Current/Archived tabs + template cards with Start in SIGNL's terms", appJs.includes("function renderOfferTabs()") && appJs.includes("function offerIsArchived(") && appJs.includes('"Comped visit"') && appJs.includes('"Paid booking"') && appJs.includes("function startOfferTemplate("));
   check("template Start never overwrites an in-progress draft", appJs.includes('if (offerDraftIsEmpty()) state.offerDraft.kind = kind === "paid" ? "paid" : "comp";'));
-  check("funnel carries the 7/30-day segmented toggle", appJs.includes("function bizFunnelHtml(") && appJs.includes('data-fnbtn="7"') && appJs.includes('data-fnbtn="30"') && appJs.includes("h.funnel7 && h.funnel30"));
-  check("content library split carries the rights lines", appJs.includes("Seeing a post here is not the right to reuse it") && appJs.includes("Creator posts") && appJs.includes("Yours to use") && appJs.includes("Native share only"));
-  check("license pill renders the 90-day window state per post", appJs.includes("function licPillHtml(") && appJs.includes("Standard license") && appJs.includes("d left"));
-  check("cost per post is plan math, labeled as the plan rate", appJs.includes("per visit in your allowance") && appJs.includes("h.costPerVisit"));
+  check("Content: tracking status card + rights line + Creator posts / Yours to use", appJs.includes("Post tracking is on") && appJs.includes("h.postsTracked30") && appJs.includes("Seeing a post here is not the right to reuse it") && appJs.includes("Creator posts") && appJs.includes("Yours to use"));
+  check("Analytics: series charts, funnel with plain stages, leaderboard, no fake email-open stage", appJs.includes("Invites &amp; decisions") && appJs.includes("Local reach over time") && appJs.includes("Creators by local reach delivered") && appJs.includes("There is no email-open stage"));
+  check("Analytics funnel stages are SIGNL's real events (invited/accepted/visit/post)", appJs.includes('"Creators claimed their visit code"') && appJs.includes('"Codes redeemed at your register"'));
+  check("Profile: Grin pattern card with Live badge, reviews from real bookings", appJs.includes("function renderBizProfileTab()") && appJs.includes('livePill("Live")') && appJs.includes("x.businessReview") && appJs.includes("creator reviews"));
+  check("license pill still renders the 90-day window state per post", appJs.includes("function licPillHtml(") && appJs.includes("Standard license") && appJs.includes("d left"));
+  check("server computes the mirror fields (prior funnels, series, leaderboard, posts tracked)", routerJs.includes("funnelPrev30") && routerJs.includes("series30") && routerJs.includes("leaderboard") && routerJs.includes("postsTracked30") && routerJs.includes('bump(a.decidedAt, "decisions")'));
 
-  part("api: preview dashboard computes the new analytics from real records");
+  part("api: preview dashboard computes the analytics from real records");
   startServer();
   await waitUp();
   const admin = await adminClient();
@@ -176,6 +185,10 @@ try {
   check("comped preview posts carry native-share license state", (h.contentLibrary || []).every((r) => r.license && r.license.type === "native"), JSON.stringify((h.contentLibrary || []).map((r) => r.license)));
   check("library rows carry views, on-time and post URL", (h.contentLibrary || []).every((r) => typeof r.views === "number" && typeof r.onTime === "boolean" && !!r.postUrl));
   check("costPerVisit is the Growth plan allocation ($349 / 10 = $34.90)", h.costPerVisit === 34.9, String(h.costPerVisit));
+  check("prior-window funnels exist: prev30 is zero (all preview records are under 31 days old), prev7 never exceeds funnel30", h.funnelPrev30 && h.funnelPrev30.invited === 0 && h.funnelPrev30.posted === 0 && h.funnelPrev7 && h.funnelPrev7.invited <= h.funnel30.invited && h.funnelPrev7.posted <= h.funnel30.posted, JSON.stringify(h.funnelPrev7));
+  check("series30 covers 30 days and sums to the funnel (5 invited, 2 posts)", Array.isArray(h.series30) && h.series30.length === 30 && h.series30.reduce((a, r) => a + (r.invited || 0), 0) === 5 && h.series30.reduce((a, r) => a + (r.posts || 0), 0) === 2, JSON.stringify((h.series30 || []).length));
+  check("leaderboard ranks both creators and sums to localReachDelivered", Array.isArray(h.leaderboard) && h.leaderboard.length === 2 && h.leaderboard.reduce((a, r) => a + (r.localReach || 0), 0) === 8060 && h.leaderboard[0].localReach >= h.leaderboard[1].localReach, JSON.stringify(h.leaderboard));
+  check("postsTracked30 counts both delivered posts", h.postsTracked30 === 2, String(h.postsTracked30));
   await stopServer();
 } catch (err) {
   failed++;

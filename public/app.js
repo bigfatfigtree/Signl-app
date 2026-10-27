@@ -1225,6 +1225,14 @@ function bnIcon(name) {
     list: `<path d="M8.5 6h12M8.5 12h12M8.5 18h12"/><circle cx="4" cy="6" r="1" fill="currentColor" stroke="none"/><circle cx="4" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="4" cy="18" r="1" fill="currentColor" stroke="none"/>`,
     heart: `<path d="M12 20.5C7 16.5 3.5 13.2 3.5 9.3A4.6 4.6 0 0 1 8.1 4.7c1.6 0 3 .8 3.9 2 .9-1.2 2.3-2 3.9-2a4.6 4.6 0 0 1 4.6 4.6c0 3.9-3.5 7.2-8.5 11.2z"/>`,
     stats: `<path d="M3.5 20.5h17"/><path d="M6.5 20.5v-7M12 20.5V4.5M17.5 20.5v-10"/>`,
+    users: `<circle cx="9" cy="8.2" r="3.4"/><path d="M3.2 20c.7-3.1 2.9-4.7 5.8-4.7s5.1 1.6 5.8 4.7"/><path d="M16.2 5.4a3.4 3.4 0 0 1 0 5.9"/><path d="M18 15.6c1.6.6 2.6 2 3 4.4"/>`,
+    image: `<rect x="3.5" y="5" width="17" height="14.5" rx="2.5"/><circle cx="9" cy="10" r="1.7"/><path d="m5 19 5.2-5.2 3 3L17 13l3 3.4"/>`,
+    chat: `<path d="M20.5 12a8 8 0 0 1-8 8c-1.4 0-2.7-.3-3.9-.9L3.5 20.5l1.4-4.9A8 8 0 1 1 20.5 12Z"/>`,
+    wallet: `<rect x="3" y="6" width="18" height="13" rx="2.5"/><path d="M3 10.5h18"/><path d="M16.5 15.2h.9"/>`,
+    inbox: `<path d="M3.8 13.4 5.9 5h12.2l2.1 8.4V18a1.8 1.8 0 0 1-1.8 1.8H5.6A1.8 1.8 0 0 1 3.8 18Z"/><path d="M3.8 13.4h5.4l1.3 2.3h3l1.3-2.3h5.4"/>`,
+    shield: `<path d="M12 3.5 5 6v5.4c0 4.5 3 7.6 7 9.1 4-1.5 7-4.6 7-9.1V6Z"/><path d="m9 11.6 2.2 2.2 4-4.2"/>`,
+    search: `<circle cx="11" cy="11" r="6.5"/><path d="m20.5 20.5-4.6-4.6"/>`,
+    check: `<path d="m4.5 12.5 5 5 10-11"/>`,
   };
   return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || paths.home}</svg>`;
 }
@@ -1235,79 +1243,14 @@ function bnIcon(name) {
 // width on desktop); signed-out views keep the mobile-only bar.
 // Tab badges ride the counts GET /notifications returns.
 function renderBottomNav() {
-  if (!bottomnav) return;
-  const signedIn = !!state.user && state.view !== "staff";
-  bottomnav.classList.toggle("signed-in", signedIn);
-  document.body.classList.toggle("bn-on", signedIn);
+  // Overhaul V2 (2026-10-27): there is no bottom navigation bar.
+  // The icon rail is the navigation at every width (Grin
+  // template), and the quiet top row rides with it. This entry
+  // point keeps its name because nav renders, badge refreshes and
+  // sign-in/out all call it; it now just coordinates the rail.
   renderRail();
-  if (state.view === "staff") { bottomnav.innerHTML = ""; return; }
-  const badgeBubble = (n) => (n ? `<span class="bn-badge">${n > 99 ? "99+" : n}</span>` : "");
-  const item = (icon, label, onclick, active, badge) => `
-    <button class="bn-item ${active ? "on" : ""}" onclick="${onclick}">
-      <span class="bn-icon">${bnIcon(icon)}${badgeBubble(badge)}</span><span class="bn-label">${label}</span>
-    </button>`;
-  const v = state.view;
-  const t = state.tab;
-  if (!state.user) {
-    bottomnav.innerHTML =
-      item("home", "Home", "return go('home')", v === "home") +
-      item("join", "Join", "return go('join-creator')", v === "join-creator") +
-      item("signin", "Sign in", "return go('signin')", v === "signin") +
-      item("building", "Businesses", "return go('for-businesses')", v === "for-businesses" || v === "join-business");
-    return;
-  }
-  const u = state.user;
-  if (u.status !== "approved" || u.role === "admin" || isFoundingBusiness(u)) {
-    let items = "";
-    if (u.role === "admin") {
-      items =
-        item("requests", "Requests", "return go('dashboard','Applications')", t === "Applications" || !t) +
-        item("pin", "Markets", "return go('dashboard','Markets')", t === "Markets") +
-        item("list", "Events", "return go('dashboard','Event Log')", t === "Event Log") +
-        item("stats", "Stats", "return go('dashboard','Stats')", t === "Stats");
-    } else {
-      items = item("status", "Status", "return go('dashboard')", true);
-    }
-    bottomnav.innerHTML = items + item("signout", "Sign out", "signOut()", false);
-    return;
-  }
-  const b = state.badges || {};
-  if (u.role === "creator") {
-    const live = !!(u.founding && u.founding.marketLive);
-    if (!live) {
-      // Founding creators (Jeff's tab set, 2026-10-20): Dashboard /
-      // Profile / Status / Sign out, mirroring the founding tabs.
-      bottomnav.innerHTML =
-        item("home", "Dashboard", "return go('dashboard','Dashboard')", t === "Dashboard" || !t || (t !== "Profile" && t !== "Status")) +
-        item("profile", "Profile", "return go('dashboard','Profile')", t === "Profile") +
-        item("status", "Status", "return go('dashboard','Status')", t === "Status") +
-        item("signout", "Sign out", "signOut()", false);
-      return;
-    }
-    bottomnav.innerHTML =
-      item("home", "Dashboard", "return go('dashboard','Dashboard')", t === "Dashboard" || !t) +
-      item("profile", "Profile", "return go('dashboard','Profile')", t === "Profile") +
-      item("offers", "Offers", "return go('dashboard','Offers')", t === "Offers", b.offers) +
-      item("visits", "My Visits", "return go('dashboard','My Visits')", t === "My Visits", b.visits) +
-      item("messages", "Messages", "return go('dashboard','Messages')", t === "Messages", b.messages) +
-      item("signout", "Sign out", "signOut()", false);
-    return;
-  }
-  // business: Home, Discover, Offers, Counter, More. The rest of
-  // the sections (Favorites, Visits & Posts, Plan, Messages) live
-  // in the More sheet, so the bar stays at five targets.
-  const moreActive = ["Favorites", "Visits & Posts", "Plan", "Messages"].includes(t);
-  bottomnav.innerHTML =
-    item("home", "Home", "return go('dashboard','Home')", t === "Home" || !t, b.visits) +
-    item("pin", "Discover", "return go('dashboard','Discover')", t === "Discover") +
-    item("offers", "Offers", "return go('dashboard','My Offers')", t === "My Offers", b.offers) +
-    item("visits", "Counter", "return go('dashboard','Counter')", t === "Counter") +
-    item("list", "More", "return openMoreSheet()", moreActive, b.messages);
+  document.body.classList.remove("bn-on", "has-bn");
 }
-
-// Tab badges (UX redesign section 2): GET /notifications carries
-// { offers, visits, messages, total } counted over unread
-// notifications. Stored on state and the bar re-renders in place.
 async function refreshBadges() {
   if (!state.user) { state.badges = null; return; }
   try {
@@ -1319,6 +1262,7 @@ async function refreshBadges() {
 
 // The business More sheet: the sections that do not fit the bar,
 // each row a full-width tap target, Messages carrying its badge.
+
 function openMoreSheet() {
   closeMoreSheet();
   const b = state.badges || {};
@@ -1358,6 +1302,13 @@ function closeMoreSheet() {
 // logic behind the button in this stage.
 const SPARK_SVG = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.1 6.9L21 11l-6.9 2.1L12 20l-2.1-6.9L3 11l6.9-2.1z"/></svg>`;
 
+// Overhaul V2 rail item sets (2026-10-27): the slim icon rail is
+// the navigation at EVERY width, mirroring the Grin template —
+// grouped icons, hairline separators between groups, the active
+// icon in a soft tile with the accent glyph, a count bubble, and
+// the account avatar chip pinned at the bottom. Groups are marked
+// by sec changes ("a", "b", "c"); the renderer draws a hairline
+// when the group changes.
 function railItems() {
   if (!state.user || state.view === "staff" || state.preview) return null;
   const u = state.user;
@@ -1366,42 +1317,45 @@ function railItems() {
   const items = [];
   const add = (sec, icon, label, onclick, active, badge) => items.push({ sec, icon, label, onclick, active: !!active, badge: badge || 0 });
   if (u.role === "admin") {
-    add("Menu", "requests", "Requests", "return go('dashboard','Applications')", t === "Applications" || !t);
-    add("Menu", "pin", "Markets", "return go('dashboard','Markets')", t === "Markets");
-    add("Menu", "list", "Event Log", "return go('dashboard','Event Log')", t === "Event Log");
-    add("Menu", "stats", "Stats", "return go('dashboard','Stats')", t === "Stats");
-    add("Operations", "heart", "Recruiters", "return go('dashboard','Recruiters')", t === "Recruiters");
-    add("Operations", "status", "Compliance", "return go('dashboard','Compliance')", t === "Compliance");
-    add("Operations", "stats", "Campaign", "return go('dashboard','Campaign')", t === "Campaign");
+    add("a", "requests", "Requests", "return go('dashboard','Applications')", t === "Applications" || !t);
+    add("a", "pin", "Markets", "return go('dashboard','Markets')", t === "Markets");
+    add("a", "list", "Event Log", "return go('dashboard','Event Log')", t === "Event Log");
+    add("a", "stats", "Stats", "return go('dashboard','Stats')", t === "Stats");
+    add("b", "heart", "Recruiters", "return go('dashboard','Recruiters')", t === "Recruiters");
+    add("b", "shield", "Compliance", "return go('dashboard','Compliance')", t === "Compliance");
+    add("b", "users", "Campaign", "return go('dashboard','Campaign')", t === "Campaign");
     return items;
   }
   if (u.status !== "approved" || isFoundingBusiness(u)) {
-    add("Menu", "status", "Status", "return go('dashboard')", true);
+    add("a", "status", "Status", "return go('dashboard')", true);
     return items;
   }
   if (u.role === "creator") {
     const live = !!(u.founding && u.founding.marketLive);
-    add("Menu", "home", "Dashboard", "return go('dashboard','Dashboard')", t === "Dashboard" || !t);
-    add("Menu", "profile", "Profile", "return go('dashboard','Profile')", t === "Profile");
+    add("a", "home", "Home", "return go('dashboard','Dashboard')", t === "Dashboard" || !t);
     if (!live) {
-      add("Menu", "status", "Status", "return go('dashboard','Status')", t === "Status");
+      add("a", "profile", "Profile", "return go('dashboard','Profile')", t === "Profile");
+      add("a", "status", "Status", "return go('dashboard','Status')", t === "Status");
     } else {
-      add("Menu", "offers", "Offers", "return go('dashboard','Offers')", t === "Offers", b.offers);
-      add("Menu", "visits", "My Visits", "return go('dashboard','My Visits')", t === "My Visits", b.visits);
-      add("Menu", "messages", "Messages", "return go('dashboard','Messages')", t === "Messages", b.messages);
+      add("a", "offers", "Offers", "return go('dashboard','Offers')", t === "Offers", b.offers);
+      add("a", "visits", "My Visits", "return go('dashboard','My Visits')", t === "My Visits", b.visits);
+      add("b", "chat", "Messages", "return go('dashboard','Messages')", t === "Messages", b.messages);
+      add("b", "profile", "Profile", "return go('dashboard','Profile')", t === "Profile");
     }
     return items;
   }
   if (u.role === "business") {
-    add("Menu", "home", "Home", "return go('dashboard','Home')", t === "Home" || !t, b.visits);
-    add("Menu", "pin", "Discover", "return go('dashboard','Discover')", t === "Discover");
-    add("Menu", "offers", "Offers", "return go('dashboard','My Offers')", t === "My Offers", b.offers);
-    add("Menu", "visits", "Counter", "return go('dashboard','Counter')", t === "Counter");
-    add("More", "heart", "Favorites", "return go('dashboard','Favorites')", t === "Favorites");
-    add("More", "list", "Visits & Posts", "return go('dashboard','Visits & Posts')", t === "Visits & Posts");
-    add("More", "building", "Plan", "return go('dashboard','Plan')", t === "Plan");
-    add("More", "messages", "Messages", "return go('dashboard','Messages')", t === "Messages", b.messages);
-    add("More", "profile", "Profile", "return go('profile')", state.view === "profile");
+    add("a", "home", "Home", "return go('dashboard','Home')", t === "Home" || !t, b.visits);
+    add("a", "inbox", "Requests", "return go('dashboard','Requests')", t === "Requests", b.offers);
+    add("a", "stats", "Analytics", "return go('dashboard','Analytics')", t === "Analytics");
+    add("b", "users", "Discover", "return go('dashboard','Discover')", t === "Discover" || t === "Favorites");
+    add("b", "offers", "Offers", "return go('dashboard','My Offers')", t === "My Offers", b.offers);
+    add("b", "building", "Profile", "return go('dashboard','Profile')", t === "Profile");
+    add("c", "chat", "Messages", "return go('dashboard','Messages')", t === "Messages", b.messages);
+    add("c", "image", "Content", "return go('dashboard','Content')", t === "Content");
+    add("c", "list", "Visits & Posts", "return go('dashboard','Visits & Posts')", t === "Visits & Posts");
+    add("c", "visits", "Counter", "return go('dashboard','Counter')", t === "Counter");
+    add("c", "wallet", "Plan", "return go('dashboard','Plan')", t === "Plan");
     return items;
   }
   return null;
@@ -1415,23 +1369,36 @@ function renderRail() {
   if (!items) { rail.innerHTML = ""; return; }
   const u = state.user;
   const name = u.role === "business" && u.business ? u.business.businessName : u.name;
-  const sub = u.role === "admin" ? "Admin"
-    : u.role === "creator" ? `@${(u.creator && u.creator.handle) || ""} · ${marketDisplayName(u.market)}`
-    : u.role === "business" ? `${u.business ? u.business.planName : ""} · ${marketDisplayName(u.market)}`
-    : u.role;
+  const initial = String(name || u.name || "?").trim().charAt(0).toUpperCase() || "S";
+  const avatarGo = u.role === "business" ? "return go('profile')" : u.role === "creator" ? "return go('dashboard','Profile')" : "return go('dashboard')";
   let lastSec = "";
   const rows = items.map((it) => {
-    const sec = it.sec !== lastSec ? `<div class="rail-sec">${esc(it.sec)}</div>` : "";
+    const sec = lastSec && it.sec !== lastSec ? `<div class="rail-sep"></div>` : "";
     lastSec = it.sec;
-    return `${sec}<button type="button" class="rail-item ${it.active ? "on" : ""}" onclick="${it.onclick}"><span class="bn-icon">${bnIcon(it.icon)}</span><span>${esc(it.label)}</span>${it.badge ? `<span class="rail-badge">${it.badge > 99 ? "99+" : it.badge}</span>` : ""}</button>`;
+    return `${sec}<button type="button" class="rail-item ${it.active ? "on" : ""}" title="${esc(it.label)}" aria-label="${esc(it.label)}" onclick="${it.onclick}"><span class="bn-icon">${bnIcon(it.icon)}</span>${it.badge ? `<span class="rail-badge">${it.badge > 99 ? "99+" : it.badge}</span>` : ""}</button>`;
   }).join("");
   rail.innerHTML = `
-    <div class="rail-brand"><img src="/assets/logo.png" alt="SIGNL"></div>
+    <button type="button" class="rail-brand" title="SIGNL" aria-label="SIGNL home" onclick="return go('dashboard')"><img src="/assets/icon.png" alt="SIGNL"></button>
     ${rows}
     <div class="rail-foot">
-      <div class="rail-user"><div class="ru-name">${esc(name || "")}</div><div class="ru-sub">${esc(sub || "")}</div></div>
-      <button type="button" class="rail-item" onclick="signOut()"><span class="bn-icon">${bnIcon("signout")}</span><span>Sign out</span></button>
+      <button type="button" class="rail-item" title="Sign out" aria-label="Sign out" onclick="signOut()"><span class="bn-icon">${bnIcon("signout")}</span></button>
+      <button type="button" class="rail-avatar" title="${esc(name || "Account")}" aria-label="Your account" onclick="${avatarGo}">${esc(initial)}</button>
     </div>`;
+  renderTopRow();
+}
+
+// The quiet top row inside the content column (Grin pattern):
+// account identity left, a numbers shortcut + "Need help?" right.
+// Rendered by the rail pass so it appears and disappears with it.
+function renderTopRow() {
+  const el = document.getElementById("toprow");
+  if (!el) return;
+  const u = state.user;
+  if (!u || state.preview || state.view === "staff" || !document.body.classList.contains("rail-on")) { el.innerHTML = ""; return; }
+  const name = u.role === "business" && u.business ? u.business.businessName : u.name;
+  const initial = String(name || u.name || "?").trim().charAt(0).toUpperCase() || "S";
+  const statsGo = u.role === "business" ? "return go('dashboard','Analytics')" : "return go('dashboard')";
+  el.innerHTML = `<div class="wrap tr-in"><span class="tr-ava">${esc(initial)}</span><span class="tr-name">${esc(name || "")}</span><span class="tr-right"><button type="button" onclick="${statsGo}" title="Your numbers" aria-label="Your numbers">${bnIcon("stats")}</button><a href="mailto:hello@joinsignl.com">Need help?</a></span></div>`;
 }
 
 // Ready-for-you queue: homes compute it from real records and
@@ -1450,14 +1417,149 @@ function renderAgentFab() {
   fab.innerHTML = `${SPARK_SVG}${q.count ? `<span class="fab-badge">${q.count}</span>` : ""}`;
   fab.onclick = openAgentSheet;
 }
-function readyRowsHtml(q) {
-  if (!q.rows || !q.rows.length) return `<p class="rc-empty">${esc(q.empty || "All caught up. Nothing is waiting on you.")}</p>`;
-  return q.rows.map((r, i) => `
-    <div class="rc-row"><div class="rc-txt">${esc(r.text)}${r.sub ? `<div class="muted" style="font-size:.82rem">${esc(r.sub)}</div>` : ""}</div>${r.btn ? `<button type="button" class="btn small-btn" data-rq="${i}">${esc(r.btn)}</button>` : ""}</div>`).join("");
+// Overhaul V2: the ready-for-you card is the Grin agent card —
+// a soft accent-tint card, the agent's avatar, one bold line
+// ("Sig has N things ready for you"), and white pill actions.
+// In the sheet the same queue renders as full rows so long
+// explanations keep their room.
+function readyRowsHtml(q, opts) {
+  if (!q.rows || !q.rows.length) return `<p class="sig-empty">${esc(q.empty || "All caught up. Nothing is waiting on you.")}</p>`;
+  if (opts && opts.inSheet) {
+    return q.rows.map((r, i) => `
+    <div class="sig-srow"><div class="sig-stxt">${esc(r.text)}${r.sub ? `<div class="muted" style="font-size:.82rem">${esc(r.sub)}</div>` : ""}</div>${r.btn ? `<button type="button" class="btn small-btn" data-rq="${i}">${esc(r.btn)}</button>` : ""}</div>`).join("");
+  }
+  return `<div class="sig-pills">${q.rows.slice(0, 4).map((r, i) => `<button type="button" class="sig-pill" data-rq="${i}" title="${esc(r.text)}">${esc(r.pill || r.btn || r.text)}</button>`).join("")}${q.rows.length > 4 ? `<button type="button" class="sig-pill" onclick="openAgentSheet()">See all ${q.rows.length}</button>` : ""}</div>`;
 }
 function readyCardHtml(q) {
   if (!q) return "";
-  return `<div class="ready-card"><p class="rc-kicker">Ready for you</p><h3>${esc(q.title)}</h3>${readyRowsHtml(q)}</div>`;
+  const n = q.count || 0;
+  const title = n ? `Sig has ${n} thing${n === 1 ? "" : "s"} ready for you` : esc(q.title || "Your queue is clear");
+  const sub = n ? "One tap takes you straight to it." : esc(q.empty || "Sig is watching the queue. New items land here first.");
+  return `<div class="sig-card"><div class="sig-top"><span class="sig-ava">${SPARK_SVG}</span><div><div class="sig-title">${title}</div><div class="sig-sub">${sub}</div></div></div>${n ? readyRowsHtml(q) : ""}</div>`;
+}
+// The "Your goals" card (Grin pattern): a plain-language goal
+// slot on the home. Structure only in V2 — Sig does not act on
+// goals yet, and the card says so instead of implying it does.
+function goalsCardHtml() {
+  return `<div class="goals-card"><h3>Your goals</h3><p>No goals yet. Soon you will be able to tell Sig what you want, in plain words, and watch progress here. Sig does not act on goals yet.</p></div>`;
+}
+
+// ---------- Overhaul V2 workspace scaffold (Grin grammar) ----------
+// One huge one-word title, an underlined tab row, white hairline
+// cards, one strong filled primary per toolbar. Every renderer
+// below is presentation only; the numbers come from real payloads.
+
+// Screen head: title + optional chip (Live pill / beta) + one
+// gray subtitle line + optional action block under it.
+function wsHead(title, opts) {
+  const o = opts || {};
+  return `<div class="ws-head"><h1 class="ws-title">${esc(title)}${o.chip || ""}</h1>${o.sub ? `<p class="ws-sub">${o.sub}</p>` : ""}${o.action ? `<div class="ws-action">${o.action}</div>` : ""}</div>`;
+}
+function livePill(text) { return `<span class="live-pill"><i></i>${esc(text || "Live")}</span>`; }
+
+// Underlined tab row. items: {label, count, on, onclick}.
+function wsTabs(items) {
+  return `<div class="ws-tabs" role="tablist">${items.map((it) => `<button type="button" role="tab" aria-selected="${it.on ? "true" : "false"}" class="ws-tab ${it.on ? "on" : ""}" onclick="${it.onclick}">${esc(it.label)}${it.count != null ? `<span class="cnt">${it.count}</span>` : ""}</button>`).join("")}</div>`;
+}
+
+// Honest period delta: renders ONLY when both windows have real
+// counts and the prior window is non-zero. Anything else returns
+// "" and the KPI stands on its count alone — no invented %.
+function deltaPill(cur, prev, label) {
+  const c = Number(cur) || 0;
+  const p = Number(prev) || 0;
+  if (!p) return "";
+  const pct = Math.round(((c - p) / p) * 100);
+  if (pct === 0) return `<span class="delta-pill flat">— no change ${label || "vs prior period"}</span>`;
+  return `<span class="delta-pill ${pct < 0 ? "down" : ""}">${pct > 0 ? "↗" : "↘"} ${pct > 0 ? "+" : ""}${pct}% ${label || "vs prior period"}</span>`;
+}
+
+function kpiCard(label, numHtml, opts) {
+  const o = opts || {};
+  return `<div class="kpi-card"><div class="kpi-label">${esc(label)}</div><div class="kpi-num">${numHtml}</div>${o.sub ? `<div class="kpi-sub">${o.sub}</div>` : ""}${o.delta || ""}</div>`;
+}
+
+// iOS-style segmented switch. options: {v, label}; current value;
+// fn is a global function name called with the value.
+function segSw(options, current, fn) {
+  return `<span class="segsw">${options.map((o) => `<button type="button" class="${o.v === current ? "on" : ""}" onclick="${fn}('${o.v}')">${esc(o.label)}</button>`).join("")}</span>`;
+}
+
+function fmtDayFull(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const today = new Date(); const yday = new Date(Date.now() - 86400000);
+  const same = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  if (same(d, today)) return "Today";
+  if (same(d, yday)) return "Yesterday";
+  return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+}
+function fmtTime(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
+// Date-grouped event list (Grin Feed pattern). events:
+// {at, title, meta, initial, acc, act:{label, onclick}} — sorted
+// newest first by the caller; groups render in encounter order.
+function feedListHtml(events) {
+  if (!events || !events.length) return "";
+  let lastDay = "";
+  const rows = events.map((e) => {
+    const day = fmtDayFull(e.at);
+    const head = day && day !== lastDay ? `<div class="feed-day">${esc(day)}</div>` : "";
+    lastDay = day;
+    return `${head}<div class="feed-row"><span class="feed-dot ${e.acc ? "acc" : ""}">${e.icon ? bnIcon(e.icon) : esc(e.initial || "•")}</span><div class="feed-main"><div class="feed-title">${e.title}</div><div class="feed-meta">${esc(e.meta || "")}${e.at ? ` · ${esc(fmtTime(e.at))}` : ""}</div></div>${e.act ? `<span class="feed-act"><button type="button" class="btn small-btn ws-outline" onclick="${e.act.onclick}">${esc(e.act.label)}</button></span>` : ""}</div>`;
+  }).join("");
+  return `<div class="feed-list">${rows}</div>`;
+}
+
+// Minimal line chart over a daily series (dashed gridlines, one
+// accent line per key, no axes beyond first/last date). Honest by
+// construction: it plots exactly the values it is given.
+function lineChartSvg(series, keys, h) {
+  const W = 640, H = h || 170, PL = 6, PR = 6, PT = 10, PB = 20;
+  if (!series || !series.length) return "";
+  let max = 0;
+  for (const row of series) for (const k of keys) max = Math.max(max, Number(row[k.k]) || 0);
+  const top = Math.max(max, 1);
+  const x = (i) => PL + (i * (W - PL - PR)) / Math.max(series.length - 1, 1);
+  const y = (v) => PT + (1 - v / top) * (H - PT - PB);
+  const grid = [0.25, 0.5, 0.75, 1].map((f) => `<line x1="${PL}" x2="${W - PR}" y1="${y(top * f)}" y2="${y(top * f)}" stroke="#DFE7DF" stroke-width="1" stroke-dasharray="4 5"/>`).join("");
+  const lines = keys.map((k) => {
+    const pts = series.map((row, i) => `${x(i).toFixed(1)},${y(Number(row[k.k]) || 0).toFixed(1)}`).join(" ");
+    return `<polyline points="${pts}" fill="none" stroke="${k.color}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>`;
+  }).join("");
+  const d0 = series[0].date ? fmtDay(series[0].date) : "";
+  const d1 = series[series.length - 1].date ? fmtDay(series[series.length - 1].date) : "";
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Chart, peak ${top}">${grid}${lines}<text x="${PL}" y="${H - 5}" font-size="11" fill="#7C877C" font-weight="600">${esc(d0)}</text><text x="${W - PR}" y="${H - 5}" font-size="11" fill="#7C877C" font-weight="600" text-anchor="end">${esc(d1)}</text></svg>`;
+}
+function barsChartSvg(series, key, color, h) {
+  const W = 640, H = h || 170, PL = 6, PR = 6, PT = 10, PB = 20;
+  if (!series || !series.length) return "";
+  let max = 0;
+  for (const row of series) max = Math.max(max, Number(row[key]) || 0);
+  const top = Math.max(max, 1);
+  const bw = (W - PL - PR) / series.length;
+  const bars = series.map((row, i) => {
+    const v = Number(row[key]) || 0;
+    const bh = Math.max((v / top) * (H - PT - PB), v > 0 ? 3 : 0);
+    return `<rect x="${(PL + i * bw + 1.5).toFixed(1)}" y="${(H - PB - bh).toFixed(1)}" width="${Math.max(bw - 3, 2).toFixed(1)}" height="${bh.toFixed(1)}" rx="2.5" fill="${color}"/>`;
+  }).join("");
+  const grid = [0.5, 1].map((f) => `<line x1="${PL}" x2="${W - PR}" y1="${(PT + (1 - f) * (H - PT - PB)).toFixed(1)}" y2="${(PT + (1 - f) * (H - PT - PB)).toFixed(1)}" stroke="#DFE7DF" stroke-width="1" stroke-dasharray="4 5"/>`).join("");
+  const d0 = series[0].date ? fmtDay(series[0].date) : "";
+  const d1 = series[series.length - 1].date ? fmtDay(series[series.length - 1].date) : "";
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Chart, peak ${top}">${grid}${bars}<text x="${PL}" y="${H - 5}" font-size="11" fill="#7C877C" font-weight="600">${esc(d0)}</text><text x="${W - PR}" y="${H - 5}" font-size="11" fill="#7C877C" font-weight="600" text-anchor="end">${esc(d1)}</text></svg>`;
+}
+
+// The V2 funnel: big stage numbers, plain-language captions,
+// accent progress bars. stages: {label, n, cap}.
+function funnel2Html(stages) {
+  const top = Math.max(...stages.map((s) => s.n || 0), 1);
+  return stages.map((s) => `<div class="fn2-row"><span class="fn2-stage">${esc(s.label)}</span><span class="fn2-num">${fmtNum(s.n || 0)}</span><span class="fn2-cap">${esc(s.cap)}</span><span></span><span class="fn2-bar"><i style="width:${Math.round(((s.n || 0) / top) * 100)}%"></i></span></div>`).join("");
 }
 function wireReady(root) {
   if (!root || !state.agentQueue) return;
@@ -1478,7 +1580,7 @@ function openAgentSheet() {
   el.className = "sheet-overlay";
   el.innerHTML = `
   <div class="sheet" role="dialog" aria-label="Ready for you">
-    <div class="flex-between"><strong>${esc(q.title)}</strong><button class="linklike" onclick="closeAgentSheet()">Close</button></div>
+    <div class="flex-between"><span class="sig-top" style="gap:10px"><span class="sig-ava" style="width:36px;height:36px;background:#EAF2FE">${SPARK_SVG}</span><strong>Sig · ${esc(q.title)}</strong></span><button class="linklike" onclick="closeAgentSheet()">Close</button></div>
     <p class="small muted" style="margin:8px 0 4px">Your queue, from your real records. Work it here, or open the home it belongs to.</p>
     ${q.rows && q.rows.length ? q.rows.map((r, i) => `
     <div class="sheet-row"><span>${esc(r.text)}${r.sub ? `<br><span class="small muted">${esc(r.sub)}</span>` : ""}</span>${r.btn ? `<button type="button" class="btn small-btn" data-rq="${i}">${esc(r.btn)}</button>` : ""}</div>`).join("") : `<p class="small muted" style="margin:10px 0 2px">${esc(q.empty || "All caught up. Nothing is waiting on you.")}</p>`}
@@ -2750,8 +2852,9 @@ function renderBusinessFoundingStatus() {
   const bz = u.business || {};
   const inReview = u.status !== "approved";
   const bizPlace = u.market === unlistedLabel() ? (u.city || "your city") : marketTalkNameClient(u.market);
-  app.innerHTML = `
-  <section class="panel" style="max-width:640px;margin:24px auto">
+  app.innerHTML = `<div class="wrap" style="max-width:680px">
+  ${wsHead("Status", { sub: "Where your founding enrollment stands." })}
+  <section class="wcard" style="margin-top:14px">
     <p><span class="badge ${inReview ? "info" : "ok"}">${inReview ? "Application in review" : "Founding list"}</span></p>
     <h2 style="margin-top:8px">${esc(bz.businessName || "Your business")} is on the founding list</h2>
     <p>You joined the <strong>Founding business list, ${esc(bizPlace)}</strong>. Businesses do not get product access yet: the creator roster stays hidden until SIGNL activates your business by hand.</p>
@@ -2776,7 +2879,7 @@ function renderBusinessFoundingStatus() {
     <p class="muted small">Sign back in any time to check your status. Questions: hello@joinsignl.com</p>
     <div class="mt"><button class="btn ghost" onclick="signOut()">Sign out</button></div>
   </section>
-  <div style="max-width:640px;margin:0 auto">${accountHtml(u)}</div>`;
+  ${accountHtml(u)}</div>`;
 }
 
 function renderPending() {
@@ -3430,11 +3533,10 @@ function renderCreatorDash() {
   if (tab !== "Dashboard") stopHomeCountdown();
   let body = "";
   if (tab === "Dashboard") body = `<div id="creator-home" class="vx-stagger">${skelHtml("Loading your dashboard...", 2)}</div>`;
-  if (tab === "Profile") body = creatorProfileHtml(u) + momentumHtml(u) + growRosterHtml(u);
-  app.innerHTML = `
-    <h2>Creator dashboard <span class="badge ok">Founding Creator</span></h2>
+  if (tab === "Profile") body = wsHead("Profile", { chip: livePill("Live"), sub: "Your public creator profile. This is what businesses see when they find you." }) + creatorProfileHtml(u) + momentumHtml(u) + growRosterHtml(u);
+  app.innerHTML = `<div class="wrap">
     ${standingBannerHtml(u)}
-    <div id="tab-body">${body}</div>`;
+    <div id="tab-body">${body}</div></div>`;
   if (tab === "Dashboard") loadCreatorHome();
   if (tab === "Profile") { setTimeout(loadMyScore, 10); setTimeout(() => { setupUniversityAutocomplete("p-university", "p-university-results"); dragInit(); }, 10); }
   if (tab === "Offers") loadCreatorOffers();
@@ -3459,11 +3561,11 @@ function renderFoundingHome() {
   let body = "";
   if (tab === "Dashboard") body = `<div id="founding-dash" class="vx-stagger">${skelHtml("Loading your dashboard...", 2)}</div>`;
   if (tab === "Status") body = `<h3 style="margin-top:0">Your founding status</h3><div id="founding-body">${skelHtml("Loading your founding profile...", 1)}</div>`;
-  if (tab === "Profile") body = creatorProfileHtml(u);
-  app.innerHTML = `
-    <h2>Creator dashboard <span class="badge ok">Founding Creator</span></h2>
+  if (tab === "Profile") body = wsHead("Profile", { sub: "Your public creator profile. Complete profiles get booked first." }) + creatorProfileHtml(u);
+  if (tab === "Status") body = wsHead("Status", { sub: "Where your founding enrollment stands." }) + body;
+  app.innerHTML = `<div class="wrap">
     ${standingBannerHtml(u)}
-    <div id="tab-body">${body}</div>`;
+    <div id="tab-body">${body}</div></div>`;
   if (tab === "Dashboard") loadFoundingDashboard();
   if (tab === "Status") loadFoundingStatus();
   if (tab === "Profile") { setTimeout(loadMyScore, 10); setTimeout(() => { setupUniversityAutocomplete("p-university", "p-university-results"); dragInit(); }, 10); }
@@ -3509,27 +3611,25 @@ async function loadFoundingDashboard() {
     queue.title = queue.count ? `${queue.count} thing${queue.count === 1 ? "" : "s"} ready for you` : "You are founding-ready";
     setAgentFab(queue);
     el.innerHTML = `
-    <div class="dash-hero">
-      <p class="dh-kicker">Creator dashboard &middot; ${place}</p>
-      <div class="dh-name">${esc(greet)}, ${esc(firstName)}.</div>
-      <p class="dh-sub">${isUnl ? `${esc(f.city)} opens when sign-ups pile up. Your numbers, paid lane and roster.` : `${esc(marketTalkNameClient(f.market))} opens in the next ${esc(f.launchWindow)}. Your numbers, paid lane and roster.`}</p>
-    </div>
+    ${wsHead("Home", { sub: `${esc(greet)}, ${esc(firstName)}. ${isUnl ? `${esc(f.city)} opens when sign-ups pile up. We email you the moment it opens.` : `${esc(marketTalkNameClient(f.market))} opens in the next ${esc(f.launchWindow)}. We email you the moment it opens.`}` })}
     ${profileCompletionHtml(u)}
-    <div class="stat-band kpi-band">
-      <div class="stat-cell"><div class="stat-num">${localReach === null ? "Not set" : fmtNum(localReach)}</div><div class="stat-lbl">Local reach${pctSet ? ` &middot; ${p.localAudiencePct}% of your audience is local` : " &middot; add your local % in your profile"}</div></div>
-      <div class="stat-cell"><div class="stat-num">${fmtNum(totalAud)}</div><div class="stat-lbl">Total audience</div></div>
-      <div class="stat-cell"><div class="stat-num"><em>${momPts}</em></div><div class="stat-lbl">Momentum points</div></div>
-      <div class="stat-cell"><div class="stat-num">${card.localImpactScore !== null && card.localImpactScore !== undefined ? card.localImpactScore : "New"}</div><div class="stat-lbl">Local Impact Score / 100</div></div>
+    <div class="wcard">
+      <div class="kpi-label">Your local reach</div>
+      <div class="kpi-num" style="font-size:3.3rem">${localReach === null ? "Not set" : fmtNum(localReach)}</div>
+      <div class="kpi-sub">${pctSet ? `${p.localAudiencePct}% of your ${fmtNum(totalAud)} audience is local. Businesses rank creators by this number, not by follower count.` : "Add your local audience % in your profile and this fills in."}</div>
+      ${pctSet ? "" : `<p style="margin:12px 0 0"><button class="btn small-btn ws-primary" onclick="return go('dashboard','Profile')">Add your local %</button></p>`}
+    </div>
+    <div class="kpi-grid c3">
+      ${kpiCard("Total audience", fmtNum(totalAud), { sub: "Across your linked accounts" })}
+      ${kpiCard("Momentum", fmtNum(momPts), { sub: "Points from invites, approvals and on-time posts" })}
+      ${kpiCard("Local Impact Score", card.localImpactScore !== null && card.localImpactScore !== undefined ? String(card.localImpactScore) : "New", { sub: "Out of 100, from your profile and record" })}
     </div>
     ${readyCardHtml(queue)}
-    <div data-dash>
-    ${homeSegsHtml([["activity", "Activity"], ["analytics", "Analytics"]])}
-    <div data-seg="activity">
-    <div class="panel">
+    <div class="wcard">
       <div class="flex-between">
         <div>
           <h3 style="margin:0">${esc(u.name)} <span class="muted">@${esc(p.handle || "")}</span></h3>
-          <p class="muted small">${isUnl ? place : `${esc(marketDisplayName(f.market))} &middot; ${esc(f.city)}`}</p>
+          <p class="muted small" style="margin:4px 0 0">${isUnl ? place : `${esc(marketDisplayName(f.market))} &middot; ${esc(f.city)}`}</p>
         </div>
         <span class="badge ok" style="font-size:0.95rem;padding:6px 14px">Founding Creator</span>
       </div>
@@ -3537,23 +3637,15 @@ async function loadFoundingDashboard() {
       <p style="margin-bottom:0">${scoreBadge(card.localImpactScore)}</p>
       <div class="home-actions"><button class="btn small-btn ghost" onclick="return go('dashboard','Status')">See your full status</button></div>
     </div>
-    <div class="feed-card"><div class="feed-dot acc">${bnIcon("status")}</div><div class="feed-main"><div class="feed-title">Founding enrollment: ${u.status === "approved" ? "approved" : "in review"}</div><div class="feed-meta">${isUnl ? place : esc(marketDisplayName(f.market))}${u.createdAt ? ` &middot; joined ${fmtDate(u.createdAt)}` : ""}</div></div></div>
-    <div class="feed-card"><div class="feed-dot">${bnIcon("pin")}</div><div class="feed-main"><div class="feed-title">${isUnl ? `${esc(f.city)} opens when sign-ups pile up` : `${esc(marketTalkNameClient(f.market))} opens in the next ${esc(f.launchWindow)}`}</div><div class="feed-meta">We email you at ${esc(u.email)} the moment it opens.</div></div></div>
+    ${feedListHtml([
+      { at: u.createdAt, icon: "status", acc: true, title: `Founding enrollment: ${u.status === "approved" ? "approved" : "in review"}`, meta: isUnl ? unlistedPlace(f) : marketDisplayName(f.market) },
+      { icon: "pin", title: isUnl ? `${esc(f.city)} opens when sign-ups pile up` : `${esc(marketTalkNameClient(f.market))} opens in the next ${esc(f.launchWindow)}`, meta: `We email you at ${esc(u.email)} the moment it opens.` },
+    ])}
     ${homePaidLaneHtml(u.creator)}
-    </div>
-    <div data-seg="analytics" hidden>
-    <div class="panel ana-block">
-      <h4>Your local reach</h4>
-      ${pctSet ? `<p class="small" style="margin:0"><strong>${fmtNum(localReach)}</strong> of your ${fmtNum(totalAud)} followers are local (${p.localAudiencePct}%). Businesses rank creators by this number, not by follower count: it is the headline on your card everywhere on SIGNL.</p>` : `<p class="small" style="margin:0">Local reach is the number businesses rank on: how much of your audience actually lives here. Add your local audience % in your profile and this fills in.</p><p style="margin:10px 0 0"><button class="btn small-btn" onclick="return go('dashboard','Profile')">Add your local %</button></p>`}
-    </div>
-    <div class="panel ana-block">
-      <h4>Your funnel</h4>
-      <p class="small muted" style="margin:0">Invites appear here once ${isUnl ? esc(f.city) : esc(marketTalkNameClient(f.market))} opens: invites received, visits booked, visits done, posts live. Nothing to count yet, and we do not chart zeroes.</p>
-    </div>
+    <div class="wcard"><h3>Your funnel</h3><p class="wc-sub" style="margin:4px 0 0">Invites appear here once ${isUnl ? esc(f.city) : esc(marketTalkNameClient(f.market))} opens: invites received, visits booked, visits done, posts live. Nothing to count yet, and we do not chart zeroes.</p></div>
     ${momentumHtml(u)}
     ${growRosterHtml(u)}
-    </div>
-    </div>`;
+    ${goalsCardHtml()}`;
     wireReady(el);
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
@@ -4261,6 +4353,38 @@ function homeFoundingBlocksHtml(card, u) {
   ${homePaidLaneHtml(u.creator)}`;
 }
 
+// Creator home feed (Grin Feed pattern): date-grouped, chip
+// filtered (All / Invites / Visits / Posts / Momentum). Events
+// come from the home's real records; actions are closures kept
+// in state.crFeedActs because the list re-renders on filtering.
+let crFeedKind = "all";
+function crFeedSet(kind) {
+  crFeedKind = kind;
+  const host = document.getElementById("cr-feed");
+  if (host) host.innerHTML = crFeedHtml();
+  return false;
+}
+function crFeedAct(i) {
+  const act = (state.crFeedActs || [])[i];
+  if (act) act();
+  return false;
+}
+function crFeedHtml() {
+  const kinds = [["all", "All"], ["invites", "Invites"], ["visits", "Visits"], ["posts", "Posts"], ["momentum", "Momentum"]];
+  const chips = `<div class="feed-chips">${kinds.map(([k, label]) => `<button type="button" class="fchip ${crFeedKind === k ? "on" : ""}" onclick="return crFeedSet('${k}')">${label}</button>`).join("")}</div>`;
+  const all = state.crFeed || [];
+  const shown = all.map((f, i) => ({ f, i })).filter(({ f }) => crFeedKind === "all" || f.kind === crFeedKind);
+  if (!shown.length) return `${chips}<div class="feed-list"><div class="feed-empty"><div class="ec-t">Nothing here yet</div><div class="ec-s">Invites, visits, posts and Momentum land here as they happen.</div></div></div>`;
+  return chips + feedListHtml(shown.map(({ f, i }) => ({
+    at: f.at,
+    title: esc(f.title),
+    meta: esc(f.meta || ""),
+    icon: f.icon,
+    acc: f.kind === "momentum",
+    act: f.btn ? { label: f.btn, onclick: `return crFeedAct(${i})` } : null,
+  })));
+}
+
 async function loadCreatorHome() {
   const el = document.getElementById("creator-home");
   if (!el) return;
@@ -4329,52 +4453,42 @@ async function loadCreatorHome() {
       const atDay = (d) => { let v = null; for (const s of snaps) { if (Date.parse(s.at) <= base + d * 24 * 3600 * 1000) v = s.views; } return v === null || v === undefined ? "&mdash;" : fmtNum(v); };
       return `<tr><td>${esc(b.title)}</td><td>${atDay(7)}</td><td>${atDay(14)}</td><td>${atDay(30)}</td><td>${fmtNum(b.post.views || 0)}</td></tr>`;
     }).join("");
+    state.crFeed = feedTop;
+    state.crFeedActs = feedTop.map((f) => f.act || null);
     el.innerHTML = `
-    <div class="dash-hero">
-      <p class="dh-kicker">Creator dashboard &middot; ${esc(marketDisplayName(u.market))}</p>
-      <div class="dh-name">${esc(greet)}, ${esc(firstName)}.</div>
-      <p class="dh-sub">Your visit, offers and money.</p>
-    </div>
+    ${wsHead("Home", { sub: `${esc(greet)}, ${esc(firstName)}. Your local reach is the number businesses rank on.` })}
     ${profileCompletionHtml(u)}
-    <div class="stat-band kpi-band">
-      <div class="stat-cell"><div class="stat-num">${localReach === null ? "Not set" : fmtNum(localReach)}</div><div class="stat-lbl">Local reach${pctSet ? ` &middot; ${cprof.localAudiencePct}% of your audience is local` : " &middot; set your local % on your profile"}</div></div>
-      <div class="stat-cell"><div class="stat-num"><em>${m.points}</em></div><div class="stat-lbl">Momentum points</div></div>
-      <div class="stat-cell"><div class="stat-num">${visitsDone}</div><div class="stat-lbl">Visits done</div></div>
-      <div class="stat-cell"><div class="stat-num">$${fmtMoney(money.released)}</div><div class="stat-lbl">${money.released ? "Paid cash released · you keep 97%" : "Earned · your first paid visit puts money here"}</div></div>
+    <div class="wcard">
+      <div class="kpi-label">Your local reach</div>
+      <div class="kpi-num" style="font-size:3.3rem">${localReach === null ? "Not set" : fmtNum(localReach)}</div>
+      <div class="kpi-sub">${pctSet ? `${cprof.localAudiencePct}% of your ${fmtNum(totalAud)} audience lives in ${esc(marketTalkNameClient(u.market))}. That share is what businesses see first.` : "Set your local % on your profile and this becomes the number businesses rank you by."}</div>
+    </div>
+    <div class="kpi-grid c3">
+      ${kpiCard("Momentum", fmtNum(m.points), { sub: "Points from on-time posts, invites and approvals" })}
+      ${kpiCard("Visits done", fmtNum(visitsDone), { sub: "Visits completed on SIGNL" })}
+      ${kpiCard("Earned", `$${fmtMoney(money.released)}`, { sub: money.released ? "Paid cash released · you keep 97%" : "Your first paid visit puts money here · you keep 97%" })}
     </div>
     ${card.ratingCount >= 1 && card.ratingAvg !== null && card.ratingAvg !== undefined
       ? `<p class="small">${starsHtml(card.ratingAvg)} <strong>Your rating: ${esc(String(card.ratingAvg))}</strong> from ${card.ratingCount} business${card.ratingCount === 1 ? "" : "es"}, shown next to your Momentum points.</p>`
       : `<p class="small muted">Your rating appears after your first rated visit.</p>`}
     ${strikeStatusHtml(u)}
     ${readyCardHtml(queue)}
-    <div data-dash>
-    ${homeSegsHtml([["activity", "Activity"], ["analytics", "Analytics"]])}
-    <div data-seg="activity">
-    <div class="feed-chips"><button type="button" class="chip on" data-fcbtn onclick="return feedChip(this,'all')">All</button><button type="button" class="chip" data-fcbtn onclick="return feedChip(this,'invites')">Invites</button><button type="button" class="chip" data-fcbtn onclick="return feedChip(this,'visits')">Visits</button><button type="button" class="chip" data-fcbtn onclick="return feedChip(this,'posts')">Posts</button><button type="button" class="chip" data-fcbtn onclick="return feedChip(this,'momentum')">Momentum</button></div>
-    ${feedTop.length ? feedTop.map(feedCard).join("") : `<div class="feed-empty"><strong>Nothing here yet</strong>Invites, visits, posts and Momentum land here as they happen.</div>`}
+    <h3 style="margin:20px 0 0">Feed</h3>
+    <div id="cr-feed">${crFeedHtml()}</div>
     ${homeActiveVisitHtml(activeVisit)}
     ${perfDue.map((b) => perfUpdateFormHtml(b, "home")).join("")}
     ${homeOpportunitiesHtml(offers, u, bookings, applications)}
     ${homeComingUpHtml(bookings)}
-    </div>
-    <div data-seg="analytics" hidden>
+    <h3 style="margin:26px 0 0">Your numbers</h3>
     ${homeLocalSignalHtml(card, bookings)}
-    <div class="panel ana-block">
-      <h4>Your funnel</h4>
-      <div class="pv-funnel">${funnelStages.map(([n, l, s]) => `<div class="pv-stage"><div class="pv-stage-num">${n}</div><div class="pv-stage-lbl">${l}</div><div class="pv-stage-sub">${s}</div></div>`).join("")}</div>
-    </div>
-    <div class="panel ana-block">
-      <h4>On time, every time</h4>
-      <p class="small" style="margin:0"><strong>${tr.onTimePct === null || tr.onTimePct === undefined ? "New" : tr.onTimePct + "%"}</strong> of your posts landed inside the 48 hour standard (${tr.postsDelivered || 0} delivered). The standard is 48 hours; the hard deadline is one week.</p>
-    </div>
-    ${seriesRows ? `<div class="panel ana-block"><h4>Post performance, day 7 / 14 / 30</h4><table class="series-table"><tr><th>Post</th><th>Day 7</th><th>Day 14</th><th>Day 30</th><th>Latest views</th></tr>${seriesRows}</table><p class="ana-note">Views at each mark after the post, from the numbers on record. A dash means that mark has not been reported yet.</p></div>` : `<div class="panel ana-block"><h4>Post performance</h4><p class="small muted" style="margin:0">Your posts appear here once their first numbers are in, tracked at day 7, 14 and 30.</p></div>`}
+    <div class="wcard"><h3>Your funnel</h3>${funnel2Html(funnelStages.map(([n, l, cap]) => ({ label: l, n, cap })))}</div>
+    <div class="wcard"><h3>On time, every time</h3><p style="margin:4px 0 0"><strong>${tr.onTimePct === null || tr.onTimePct === undefined ? "New" : tr.onTimePct + "%"}</strong> of your posts landed inside the 48 hour standard (${tr.postsDelivered || 0} delivered). The standard is 48 hours; the hard deadline is one week.</p></div>
+    ${seriesRows ? `<div class="wcard"><h3>Post performance, day 7 / 14 / 30</h3><table class="series-table"><tr><th>Post</th><th>Day 7</th><th>Day 14</th><th>Day 30</th><th>Latest views</th></tr>${seriesRows}</table><p class="ana-note">Views at each mark after the post, from the numbers on record. A dash means that mark has not been reported yet.</p></div>` : `<div class="wcard"><h3>Post performance</h3><p class="wc-sub" style="margin:4px 0 0">Your posts appear here once their first numbers are in, tracked at day 7, 14 and 30. We do not chart zeroes.</p></div>`}
     ${homePaidLaneHtml(u.creator)}
     ${homeMoneyHtml(money)}
     ${momentumHtml(u)}
-    </div>
-    </div>`;
+    ${goalsCardHtml()}`;
     wireReady(el);
-    el.querySelectorAll("[data-cf]").forEach((btn) => { btn.onclick = () => { const f = feedTop[Number(btn.getAttribute("data-cf"))]; if (f && f.act) f.act(); }; });
     startHomeCountdown();
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
@@ -4718,9 +4832,10 @@ async function doUpdateCreator(e) {
 async function loadCreatorOffers() {
   const el = document.getElementById("tab-body");
   el.innerHTML = `
+    ${wsHead("Offers", { sub: `Open offers in ${esc(marketTalkNameClient(state.user.market))}, plus the ones sent directly to you.` })}
     <div id="open-board">${skelHtml("Loading open offers in " + marketTalkNameClient(state.user.market) + "...", 2)}</div>
     <div id="my-apps"></div>
-    <h3>Sent directly to you</h3>
+    <h3 style="margin:24px 0 0">Sent directly to you</h3>
     <div id="direct-offers">${skelHtml("Loading your direct offers...", 1)}</div>
     <div id="creator-notes" class="mt"></div>`;
   loadOpenBoard();
@@ -5351,11 +5466,12 @@ async function loadMyVisits(role) {
       ? `<div class="card mb"><div class="success-hero">${successCheckHtml()}<h3>Post submitted</h3><p>Your post is in and the visit is marked delivered. Your numbers build from here: update them as the post grows and they feed your track record.</p></div></div>`
       : "";
     state.postFlash = false;
+    const visitsHead = wsHead("Visits", { sub: role === "creator" ? "Your booked visits, codes and post deadlines." : "Every booking from your offers, with its post state." });
     if (!data.bookings.length) {
-      el.innerHTML = flash + `<div class="empty-state"><span class="es-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12.5l5 5L20 6.5"/></svg></span><h3>No visits yet</h3><p>${role === "creator" ? "Accept an offer and your visit, code, and post deadline will live here." : "Bookings from your offers will live here."}</p>${role === "creator" ? `<button class="btn" onclick="return go('dashboard','Offers')">Browse open offers</button>` : `<button class="btn" onclick="return go('dashboard','My Offers')">Create an offer</button>`}</div>`;
+      el.innerHTML = flash + visitsHead + `<div class="empty-card"><div class="ec-t">No visits yet</div><div class="ec-s">${role === "creator" ? "Accept an offer and your visit, code, and post deadline will live here." : "Bookings from your offers will live here."}</div></div><p class="center">${role === "creator" ? `<button class="btn ws-primary" onclick="return go('dashboard','Offers')">Browse open offers</button>` : `<button class="btn ws-primary" onclick="return go('dashboard','My Offers')">Create an offer</button>`}</p>`;
       return;
     }
-    el.innerHTML = flash + `<div class="vx-stagger">${data.bookings.map((b) => visitCard(b, role)).join("")}</div>`;
+    el.innerHTML = flash + visitsHead + `<div class="vx-stagger">${data.bookings.map((b) => visitCard(b, role)).join("")}</div>`;
     if (role === "creator") startHomeCountdown();
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
@@ -5829,7 +5945,7 @@ async function respondLicense(id, decision) {
 
 // ---------- business ----------
 
-const BUSINESS_TABS = ["Home", "Discover", "Favorites", "My Offers", "Counter", "Visits & Posts", "Plan", "Messages"];
+const BUSINESS_TABS = ["Home", "Requests", "Discover", "Favorites", "My Offers", "Counter", "Visits & Posts", "Content", "Analytics", "Plan", "Messages", "Profile"];
 
 function renderBusinessDash() {
   const u = state.user;
@@ -5838,18 +5954,19 @@ function renderBusinessDash() {
   // A "Send offer" from Discover lands on the composer, as before.
   if (state.offerTarget) tab = "My Offers";
   state.tab = tab;
-  app.innerHTML = `
-    <h2>${esc(u.business.businessName)}</h2>
-    <p class="muted small" style="margin-top:-8px">${esc(u.market)} &middot; ${esc(u.business.planName)}</p>
-    <div id="tab-body"></div>`;
+  app.innerHTML = `<div class="wrap"><div id="tab-body"></div></div>`;
   if (tab === "Home") loadBusinessHome();
+  if (tab === "Requests") renderRequestsTab();
   if (tab === "Discover") loadDiscover();
   if (tab === "Favorites") loadFavorites();
   if (tab === "My Offers") loadMyOffers();
   if (tab === "Counter") renderCounter();
   if (tab === "Visits & Posts") loadMyVisits("business");
+  if (tab === "Content") renderContentTab();
+  if (tab === "Analytics") renderAnalyticsTab();
   if (tab === "Plan") renderPlanTab();
   if (tab === "Messages") loadThreads();
+  if (tab === "Profile") renderBizProfileTab();
 }
 
 // Shared in-app notifications block (the no-ghosting surface):
@@ -5970,88 +6087,445 @@ function bizDashNextRowsHtml(h, tickWhen) {
     <div class="ui-row"><span class="k"><strong>${esc(n.title)}</strong> with @${esc(n.creatorHandle)}<br><span class="small muted">${esc(n.stateLabel)}${n.dueInLabel ? ` &middot; ${esc(n.dueInLabel)}` : ""}</span></span><span class="v">${esc(n.whenLabel)}<br>${tickWhen ? `<span class="pv-tick" data-kind="left" data-target="${esc(n.when || "")}"></span>` : esc(fmtDate(n.when))}</span></div>`).join("");
 }
 
+// Feed taxonomy for the business home (Grin Feed pattern mapped
+// to SIGNL's real notification kinds + content records). Events
+// only exist when a real record does; a chip with no records
+// shows its own explained empty state.
+const BIZ_FEED_KINDS = [["all", "All"], ["applications", "Applications"], ["messages", "Messages"], ["posts", "Posts"], ["visits", "Visits"], ["payments", "Payments"], ["licenses", "Licenses"]];
+function bizFeedKindOf(noteKind) {
+  const k = String(noteKind || "");
+  if (/^application_|^backfill_|creator_declined|offer_declined/.test(k)) return "applications";
+  if (k === "message_received") return "messages";
+  if (/^performance_/.test(k)) return "posts";
+  if (/license/.test(k)) return "licenses";
+  if (/paid|payment|payout/.test(k)) return "payments";
+  if (/visit|redeem|clock|deadline/.test(k)) return "visits";
+  return "updates";
+}
+function bizFeedEvents(h, notes) {
+  const evs = [];
+  const actFor = (kind) => kind === "applications" ? { label: "Review", onclick: "return go('dashboard','Requests')" }
+    : kind === "messages" ? { label: "Open", onclick: "return go('dashboard','Messages')" }
+    : kind === "posts" || kind === "licenses" ? { label: "Review", onclick: "return go('dashboard','Content')" }
+    : { label: "Review", onclick: "return go('dashboard','Visits & Posts')" };
+  for (const n of notes || []) {
+    const kind = bizFeedKindOf(n.kind);
+    const kindLabel = { applications: "Application", messages: "Message", posts: "Post", visits: "Visit", payments: "Payment", licenses: "License", updates: "Update" }[kind];
+    evs.push({ kind, at: n.createdAt, title: esc(n.text), meta: kindLabel, icon: kind === "messages" ? "chat" : kind === "applications" ? "inbox" : "visits", act: actFor(kind) });
+  }
+  for (const r of h.contentLibrary || []) {
+    evs.push({ kind: "posts", at: r.postedAt, title: `Post live: ${esc(r.title)}`, meta: `@${esc(r.creatorHandle)} · ${fmtNum(r.views || 0)} views · ${r.onTime ? "on time" : "late"}`, icon: "image", acc: true, act: actFor("posts") });
+    if (r.license && r.license.type !== "native") {
+      evs.push({ kind: "licenses", at: r.postedAt, title: `${r.license.type === "licensed" ? "Licensed post" : "Standard license"}: ${esc(r.title)}`, meta: r.license.daysLeft === null || r.license.daysLeft === undefined ? "90-day window from the post date" : r.license.daysLeft < 0 ? "The reuse window has ended" : `${r.license.daysLeft} days left to repost and run ads`, icon: "shield", acc: true, act: actFor("licenses") });
+    }
+  }
+  evs.sort((a, b) => (Date.parse(b.at || "") || 0) - (Date.parse(a.at || "") || 0));
+  return evs;
+}
+let bizFeedKind = "all";
+function bizFeedSet(kind) {
+  bizFeedKind = kind;
+  const host = document.getElementById("biz-feed");
+  if (host) host.innerHTML = bizFeedHtml(state.bizFeedEvents || []);
+  return false;
+}
+function bizFeedHtml(events) {
+  const chips = `<div class="feed-chips">${BIZ_FEED_KINDS.map(([k, label]) => `<button type="button" class="fchip ${bizFeedKind === k ? "on" : ""}" onclick="return bizFeedSet('${k}')">${label}</button>`).join("")}</div>`;
+  const shown = bizFeedKind === "all" ? events : events.filter((e) => e.kind === bizFeedKind);
+  if (!shown.length) {
+    const label = (BIZ_FEED_KINDS.find(([k]) => k === bizFeedKind) || [])[1] || "Activity";
+    return `${chips}<div class="feed-list"><div class="feed-empty"><div class="ec-t">Nothing here yet</div><div class="ec-s">${bizFeedKind === "all" ? "Applications, posts, visits and licenses land here as they happen." : `No ${label.toLowerCase()} events yet. They land here the moment they happen.`}</div></div></div>`;
+  }
+  return chips + feedListHtml(shown);
+}
+
 async function loadBusinessHome() {
   const el = document.getElementById("tab-body");
   try {
     const d = await api("GET", "/me/business-home");
     const h = d.home;
+    const u = state.user;
     const needsCount = (h.attention ? h.attention.length : 0) + (d.staffPinSet === false ? 1 : 0);
-    const content = bizDashContentRowsHtml(h);
-    const next = bizDashNextRowsHtml(h, false);
-    const rebook = (d.rebookPrompts || []).map((r) => `
-      <div class="ui-row"><span class="k"><strong>${esc(r.name)}</strong> @${esc(r.handle)}${r.isFavorite ? ` <span class="badge tier">Favorite</span>` : ""}<br><span class="small muted">${r.source === "delivered" ? `Delivered for you before: ${esc(r.lastTitle || "")}` : "Saved in your favorites"}</span></span><span class="v"><button class="btn small-btn" onclick="rebookCreator('${esc(r.creatorId)}')">Invite again</button></span></div>`).join("");
     el.classList.add("vx-stagger");
-    // Ready-for-you queue (overhaul Stage 1): the attention list
-    // plus the unset staff PIN, each with its real next step.
+    // Ready-for-you queue (Sig): the attention list plus the unset
+    // staff PIN, each with its real next step. Unchanged data from
+    // Stage 1; only the card grammar is new.
     const queue = { count: needsCount, title: needsCount ? `${needsCount} thing${needsCount === 1 ? "" : "s"} ready for you` : "All caught up", rows: [], empty: "All caught up. Every visit is on track." };
     for (const a of (h.attention || []).slice(0, 3)) {
       queue.rows.push({
         text: a.label, sub: a.detail, btn: "Review",
+        pill: a.kind === "applications" ? "Review applications" : a.kind === "offer_nudge" ? "Fix the offer" : "Review visits",
         act: a.kind === "applications" && a.offerId ? () => goApplicants(a.offerId) : a.kind === "offer_nudge" ? () => go("dashboard", "My Offers") : () => go("dashboard", "Visits & Posts"),
       });
     }
     if (d.staffPinSet === false) queue.rows.push({ text: "Set your staff PIN", sub: "Your team redeems visits with it, never your login.", btn: "Set PIN", act: () => go("dashboard", "Plan") });
     setAgentFab(queue);
+    let notes = [];
+    try {
+      const nd = await api("GET", "/notifications");
+      notes = nd.notifications || [];
+      if (nd.unreadCount) state.notesReadPending = true;
+      if (nd.badges) { state.badges = nd.badges; renderRail(); }
+    } catch (e) { /* the feed degrades to content events only */ }
+    state.bizFeedEvents = bizFeedEvents(h, notes);
+    bizFeedKind = "all";
+    const r = h.roas || {};
+    const regKpi = r.registerValue > 0
+      ? kpiCard("Register value", `$${fmtMoney(r.registerValue)}`, { sub: "Tracked at the register from code tallies" })
+      : r.estimatedRegisterValue > 0
+        ? kpiCard("Register value", `≈ $${fmtMoney(r.estimatedRegisterValue)}`, { sub: "Estimated from code uses at your average ticket" })
+        : kpiCard("Register value", `<span style="font-size:1.15rem">No results yet</span>`, { sub: "Starts with your first register tally" });
     el.innerHTML = `
     <div data-dash>
-    <div class="stat-band kpi-band">
-      <div class="stat-cell"><div class="stat-num"><em>${fmtNum(h.localReachDelivered || 0)}</em></div><div class="stat-lbl">Local reach delivered${h.postsLive ? ` &middot; across ${h.postsLive} live post${h.postsLive === 1 ? "" : "s"}` : " &middot; your number once posts land"}</div></div>
-      <div class="stat-cell"><div class="stat-num">${h.visitsUsed}<span class="small muted"> of ${h.visitsAllowance}</span></div><div class="stat-lbl">Visits booked this month &middot; ${h.visitsRemaining} left</div>${h.visitsCarried ? `<span class="kpi-sub">${h.visitsCarried} unused visit${h.visitsCarried === 1 ? "" : "s"} rolled in from last month</span>` : ""}</div>
-      ${roasCellHtml(h, true)}
-      <div class="stat-cell"><div class="stat-num">${h.onTimeRatePct === null ? "n/a" : h.onTimeRatePct + "%"}</div><div class="stat-lbl">Posts on time</div></div>
-    </div>
+    ${wsHead("Home", { sub: `${esc(u.business.businessName)} · ${esc(marketTalkNameClient(u.market))} · ${esc(d.plan.name)} plan` })}
+    ${d.marketLive ? "" : `<div class="notice blue" style="margin-top:14px"><strong>Your market opens in 30–90 days.</strong> Draft offers now — publishing switches on at launch.</div>`}
     ${readyCardHtml(queue)}
-    ${dashSegsHtml(needsCount)}
-    <div data-seg="overview">
-      ${d.marketLive ? "" : `<div class="notice blue"><strong>Your market opens in 30–90 days.</strong> Draft offers now — publishing switches on at launch.</div>`}
-      <div class="panel" style="display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap">
-        <div><strong>At the register?</strong><p class="muted small" style="margin:4px 0 0">Staff redeem with the PIN + creator code. No login needed.</p></div>
-        <button class="btn" onclick="return goStaff()">Redeem a creator visit</button>
-      </div>
-      <section class="panel">
-        <h3 style="margin-top:0">Snapshot</h3>
-        ${bizDashPipelineHtml(h)}
-        ${bizDashPaceHtml(h, d.plan.name, d.business.billingStatus)}
-      </section>
+    <div class="kpi-grid c4">
+      ${kpiCard("Local reach delivered", fmtNum(h.localReachDelivered || 0), { sub: h.postsLive ? `Across ${h.postsLive} live post${h.postsLive === 1 ? "" : "s"} — the share of each creator's audience that lives here` : "Your headline number once posts land" })}
+      ${kpiCard("Visits booked", `${h.visitsUsed}<span class="unit"> of ${h.visitsAllowance}</span>`, { sub: `${h.visitsRemaining} left this month${h.visitsCarried ? ` · ${h.visitsCarried} rolled in from last month` : ""}` })}
+      ${kpiCard("Posts published", fmtNum((h.funnel30 || {}).posted || 0), { sub: "Last 30 days", delta: deltaPill((h.funnel30 || {}).posted, (h.funnelPrev30 || {}).posted, "vs the 30 days before") })}
+      ${regKpi}
     </div>
-    <div data-seg="activity" hidden>
-      <section class="panel">
-        <h3 style="margin-top:0">Activity</h3>
-        <h4>Needs you</h4>
-        ${bizDashAttentionHtml(h, { actions: true, pinItem: d.staffPinSet === false })}
-        <h4 style="margin:20px 0 0">Latest</h4>
-        ${bizActivityFeedHtml(h)}
-      </section>
-      <div id="biz-notes" class="mt"></div>
-    </div>
-    <div data-seg="offers" hidden>
-      <section class="panel">
-        <h3 style="margin-top:0">Offers</h3>
-        ${next ? `<h4>Next visits</h4>${next}` : `<p class="small muted">No visits booked yet. Booked visits and their progress land here.</p>`}
-        ${rebook ? `<div class="tint-block"><h4>Invite again</h4><p class="small muted">Your delivered creators + favorites.</p>${rebook}</div>` : ""}
-        <h4 style="margin:18px 0 0">Start an offer</h4>
-        ${bizTemplatesHtml()}
-        <p style="margin-bottom:0"><button class="btn small-btn ghost" onclick="return go('dashboard','My Offers')">Open My Offers</button></p>
-      </section>
-    </div>
-    <div data-seg="analytics" hidden>
-      <section class="panel">
-        <h3 style="margin-top:0">Analytics</h3>
-        <div class="ana-block"><h4>Invite to post funnel</h4>${bizFunnelHtml(h)}</div>
-        <div class="ana-block"><h4>Cost per post</h4>
-        ${h.costPerVisit ? `<p class="small" style="margin:0">Your plan works out to <strong>$${fmtMoney(h.costPerVisit)}</strong> per visit in your allowance${h.postsLive ? `, and every live post cost exactly one visit` : ""}. Register value and media value ride in your ROAS score above.</p>` : `<p class="small muted" style="margin:0">Plan math appears here with your plan.</p>`}
-        </div>
-        ${content ? `<div class="ana-block"><h4>Content that is working</h4>
-${content}</div>` : ""}
-        <div class="ana-block"><h4>Content library</h4>${bizLibraryHtml(h)}</div>
-        <p style="margin-bottom:0"><button class="btn small-btn ghost" onclick="return go('dashboard','Visits &amp; Posts')">Open Visits &amp; Posts</button></p>
-      </section>
+    <h3 style="margin:20px 0 0">Feed</h3>
+    <div id="biz-feed">${bizFeedHtml(state.bizFeedEvents)}</div>
+    ${goalsCardHtml()}
+    <div class="wcard" style="display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap">
+      <div><strong>At the register?</strong><p class="muted small" style="margin:4px 0 0">Staff redeem with the PIN + creator code. No login needed.</p></div>
+      <button class="btn ws-primary" onclick="return goStaff()">Redeem a visit</button>
     </div>
     </div>`;
     wireReady(el);
-    loadNotificationsInto("biz-notes");
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+  }
+}
+
+// ---------- Requests: the approvals queue (Grin Approvals) ----------
+// Tabs with counts (Waiting / Decided / Later), search + offer
+// filter + sort, aging with SIGNL's real decision window (2
+// business days — no invented auto-close), checkbox bulk select,
+// expandable rows with a plain-words match reason, and a kebab
+// menu mirroring Grin's: View creator profile / Ask Sig / Select
+// / Request info / Later / Release. "Later" is a local park on
+// this device; it never changes the application itself.
+let reqState = null;
+function reqFreshState() {
+  return { tab: "waiting", q: "", offerId: "", sort: "fit", sel: {}, open: {}, later: JSON.parse(localStorage.getItem("signl-req-later") || "{}"), rows: [], offers: [], loaded: false };
+}
+function reqSaveLater() { try { localStorage.setItem("signl-req-later", JSON.stringify(reqState.later)); } catch (e) { /* private mode */ } }
+function reqAgeLabel(iso) {
+  const ms = Date.now() - (Date.parse(iso || "") || Date.now());
+  const days = Math.floor(ms / 86400000);
+  if (days >= 1) return `waiting ${days} day${days === 1 ? "" : "s"}`;
+  const hrs = Math.max(Math.floor(ms / 3600000), 0);
+  return hrs >= 1 ? `waiting ${hrs}h` : "just in";
+}
+function reqBuckets() {
+  const rows = reqState.rows;
+  const waiting = rows.filter((r) => r.app.status === "applied" && !reqState.later[r.app.id]);
+  const later = rows.filter((r) => r.app.status === "applied" && reqState.later[r.app.id]);
+  const decided = rows.filter((r) => r.app.status !== "applied");
+  return { waiting, later, decided };
+}
+async function renderRequestsTab() {
+  const el = document.getElementById("tab-body");
+  if (!el) return;
+  if (!reqState) reqState = reqFreshState();
+  el.innerHTML = `${wsHead("Requests", { sub: "Creators waiting on your decision. Every application gets an answer — that is the deal." })}<div id="req-main">${skelHtml("Loading requests...", 2)}</div>`;
+  try {
+    if (!reqState.loaded) {
+      const od = await api("GET", "/offers");
+      const offers = (od.offers || []).filter((o) => (o.applicationCount || 0) > 0);
+      reqState.offers = offers;
+      const rows = [];
+      for (const o of offers.slice(0, 12)) {
+        const d = await api("GET", `/offers/${o.id}/applications`);
+        for (const a of d.applications || []) rows.push({ offer: d.offer || o, app: a });
+      }
+      reqState.rows = rows;
+      reqState.loaded = true;
+      // Sig's queue on this screen is the real waiting list.
+      const b = reqBuckets();
+      setAgentFab({ count: b.waiting.length, title: b.waiting.length ? `${b.waiting.length} application${b.waiting.length === 1 ? "" : "s"} waiting` : "All caught up", empty: "No applications waiting. New ones land here the moment a creator applies.", rows: b.waiting.slice(0, 4).map((r) => ({ text: `${r.app.creator.name} applied`, sub: r.offer.title, btn: "Review", act: () => { reqState.open[r.app.id] = true; renderReqMain(); } })) });
+    }
+    renderReqMain();
+  } catch (err) {
+    el.innerHTML = `${wsHead("Requests")}<div class="error-box">${esc(err.message)}</div>`;
+  }
+}
+function reqFiltered(bucket) {
+  let rows = bucket.slice();
+  if (reqState.offerId) rows = rows.filter((r) => r.offer.id === reqState.offerId);
+  const q = reqState.q.trim().toLowerCase();
+  if (q) rows = rows.filter((r) => ((r.app.creator.name || "") + " " + (r.app.creator.handle || "")).toLowerCase().includes(q));
+  if (reqState.sort === "newest") rows.sort((a, b) => (Date.parse(b.app.createdAt) || 0) - (Date.parse(a.app.createdAt) || 0));
+  else if (reqState.sort === "local") rows.sort((a, b) => ((b.app.creator.localAudiencePct || 0) - (a.app.creator.localAudiencePct || 0)));
+  else rows.sort((a, b) => ((b.app.rankScore || 0) - (a.app.rankScore || 0)));
+  return rows;
+}
+function reqWhyHtml(r) {
+  const c = r.app.creator || {};
+  const rp = r.app.rankParts || {};
+  const tr = c.trackRecord || {};
+  const bits = [];
+  if (c.localAudiencePct !== null && c.localAudiencePct !== undefined) bits.push(`${c.localAudiencePct}% of their audience lives in your market`);
+  if (c.tierBand) bits.push(`${c.tierBand} tier`);
+  if (rp.impactScore !== null && rp.impactScore !== undefined) bits.push(`local impact score ${rp.impactScore}`);
+  if (tr.visitsCompleted) bits.push(`${tr.visitsCompleted} visit${tr.visitsCompleted === 1 ? "" : "s"} completed, ${tr.onTimePct === null || tr.onTimePct === undefined ? "no late posts" : tr.onTimePct + "% on time"}`);
+  else bits.push("new to SIGNL, no visits yet");
+  if (rp.momentum) bits.push(`${rp.momentum} Momentum points`);
+  return `<div class="req-why"><strong>Matched because:</strong> ${esc(bits.join(" · "))}.</div>`;
+}
+function reqRowHtml(r) {
+  const a = r.app;
+  const c = a.creator || {};
+  const open = !!reqState.open[a.id];
+  const statusBadge = { applied: `<span class="badge info">Waiting</span>`, selected: `<span class="badge ok">Selected</span>`, released: `<span class="badge">Released</span>`, expired: `<span class="badge">Window passed</span>`, backfill_offered: `<span class="badge warn">Backfill offered</span>`, backfill_accepted: `<span class="badge ok">Took backfill</span>` }[a.status] || esc(a.status);
+  const menu = `<div class="kebab-menu">
+    <button type="button" onclick="openCreatorProfile('${c.userId}')">View creator profile</button>
+    <button type="button" onclick="openAgentSheet()">Ask Sig</button>
+    ${a.status === "applied" ? `<button type="button" onclick="openThread('${c.userId}')">Request info</button>
+    <button type="button" onclick="return reqLater('${a.id}')">${reqState.later[a.id] ? "Move back to waiting" : "Later"}</button>
+    <div class="km-sep"></div>
+    <button type="button" class="danger" onclick="return reqReleaseOne('${r.offer.id}','${a.id}')">Release</button>` : `<button type="button" onclick="openThread('${c.userId}')">Message</button>`}
+  </div>`;
+  return `<div class="req-row" id="reqrow-${a.id}">
+    <div class="req-top">
+      ${a.status === "applied" && reqState.tab === "waiting" ? `<input type="checkbox" class="req-check" ${reqState.sel[a.id] ? "checked" : ""} onchange="reqToggleSel('${a.id}', this.checked)" aria-label="Select ${esc(c.name || "creator")}">` : ""}
+      <span class="req-ava">${esc((c.name || "?").trim().charAt(0).toUpperCase() || "?")}</span>
+      <div class="req-main">
+        <div class="req-name">${esc(c.name || "")} ${statusBadge}</div>
+        <div class="req-meta">@${esc(c.handle || "")} · for <strong>${esc(r.offer.title)}</strong></div>
+      </div>
+      <span class="kebab-wrap"><button type="button" class="kebab-btn" aria-label="More actions" onclick="return reqKebab(event,'${a.id}')">&#8943;</button>${reqState.kebab === a.id ? menu : ""}</span>
+    </div>
+    <div class="req-body">
+      <div class="req-meta">applied ${fmtDay(a.createdAt)}${a.status === "applied" ? ` · ${reqAgeLabel(a.createdAt)}` : a.decidedAt ? ` · decided ${fmtDay(a.decidedAt)}` : ""}${c.localAudiencePct !== null && c.localAudiencePct !== undefined ? ` · ${c.localAudiencePct}% local` : ""}${c.totalAudience ? ` · ${fmtNum(c.totalAudience)} audience` : ""}${c.tierBand ? ` · ${esc(c.tierBand)}` : ""}</div>
+      ${open ? reqWhyHtml(r) : ""}
+      ${a.status === "applied" ? `<div class="req-acts">
+        <button type="button" class="btn small-btn ws-primary" onclick="return reqSelectOne('${r.offer.id}','${a.id}')">Select</button>
+        <button type="button" class="btn small-btn ws-outline" onclick="return reqToggleOpen('${a.id}')">${open ? "Hide match" : "Why this match"}</button>
+      </div>` : ""}
+    </div>
+  </div>`;
+}
+function renderReqMain() {
+  const host = document.getElementById("req-main");
+  if (!host || !reqState) return;
+  const b = reqBuckets();
+  const bucket = reqState.tab === "waiting" ? b.waiting : reqState.tab === "later" ? b.later : b.decided;
+  const rows = reqFiltered(bucket);
+  const oldest = b.waiting.length ? Math.max(...b.waiting.map((r) => Date.now() - (Date.parse(r.app.createdAt) || Date.now()))) : 0;
+  const selCount = Object.keys(reqState.sel).filter((k) => reqState.sel[k]).length;
+  host.innerHTML = `
+    ${wsTabs([
+      { label: "Waiting", count: b.waiting.length, on: reqState.tab === "waiting", onclick: "return reqSetTab('waiting')" },
+      { label: "Decided", count: b.decided.length, on: reqState.tab === "decided", onclick: "return reqSetTab('decided')" },
+      { label: "Later", count: b.later.length, on: reqState.tab === "later", onclick: "return reqSetTab('later')" },
+    ])}
+    ${reqState.tab === "waiting" && b.waiting.length ? `<div class="req-alert"><strong>${b.waiting.length} unreviewed application${b.waiting.length === 1 ? "" : "s"}.</strong> SIGNL's promise is a decision within 2 business days${oldest >= 2 * 86400000 ? ` — the oldest has been waiting ${Math.floor(oldest / 86400000)} days` : ""}. Every applicant hears back, either way.</div>` : ""}
+    <div class="ws-tools">
+      <span class="ws-search">${bnIcon("search")}<input id="req-q" type="search" placeholder="Search creators" value="${esc(reqState.q)}" oninput="reqSetQ(this.value)"></span>
+      <select class="ws-select" onchange="reqSetOffer(this.value)" aria-label="Filter by offer"><option value="">All offers</option>${reqState.offers.map((o) => `<option value="${o.id}" ${reqState.offerId === o.id ? "selected" : ""}>${esc(o.title)}</option>`).join("")}</select>
+      <select class="ws-select" onchange="reqSetSort(this.value)" aria-label="Sort requests">
+        <option value="fit" ${reqState.sort === "fit" ? "selected" : ""}>Best fit</option>
+        <option value="newest" ${reqState.sort === "newest" ? "selected" : ""}>Newest</option>
+        <option value="local" ${reqState.sort === "local" ? "selected" : ""}>Local reach</option>
+      </select>
+    </div>
+    ${rows.length ? `<div class="req-list">${rows.map(reqRowHtml).join("")}</div>` : `<div class="empty-card"><div class="ec-t">No requests here</div><div class="ec-s">${reqState.tab === "waiting" ? "When a creator applies to one of your offers, they land here for your decision." : reqState.tab === "later" ? "Applications you park for later sit here. Parking never notifies the creator." : "Decisions you make show up here, so the record is never a mystery."}</div></div>`}
+    ${selCount ? `<div class="req-bulk"><span>${selCount} selected</span><button type="button" class="btn small-btn" onclick="return reqBulk('select')">Select all</button><button type="button" class="btn small-btn ghost" style="color:#fff;border-color:#3A443C" onclick="return reqBulk('release')">Release</button><button type="button" class="linklike" style="color:#C6CFC6" onclick="return reqClearSel()">Clear</button></div>` : ""}`;
+  wireReady(host);
+}
+function reqSetTab(t) { reqState.tab = t; reqState.kebab = null; renderReqMain(); return false; }
+function reqSetQ(v) { reqState.q = v; const host = document.getElementById("req-main"); renderReqMain(); const inp = document.getElementById("req-q"); if (inp) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); } return false; }
+function reqSetOffer(v) { reqState.offerId = v; renderReqMain(); return false; }
+function reqSetSort(v) { reqState.sort = v; renderReqMain(); return false; }
+function reqToggleSel(id, on) { reqState.sel[id] = on; renderReqMain(); return false; }
+function reqClearSel() { reqState.sel = {}; renderReqMain(); return false; }
+function reqToggleOpen(id) { reqState.open[id] = !reqState.open[id]; renderReqMain(); return false; }
+function reqKebab(e, id) { if (e) e.stopPropagation(); reqState.kebab = reqState.kebab === id ? null : id; renderReqMain(); return false; }
+function reqLater(id) { if (reqState.later[id]) delete reqState.later[id]; else reqState.later[id] = 1; reqSaveLater(); reqState.kebab = null; renderReqMain(); return false; }
+async function reqSelectOne(offerId, appId) {
+  // Direct API (not selectApplicant): that helper re-renders My
+  // Offers on success, which would fight this screen's refresh.
+  try {
+    await api("POST", `/offers/${offerId}/select`, { applicationId: appId });
+  } catch (err) { alert(err.message); return false; }
+  reqState.loaded = false; reqState.sel = {};
+  renderRequestsTab();
+  return false;
+}
+async function reqReleaseOne(offerId, appId) {
+  if (!window.confirm("Release this applicant? They are told right away, with the reason in plain words.")) return false;
+  try {
+    await api("POST", `/offers/${offerId}/release`, { applicationId: appId });
+  } catch (err) { alert(err.message); return false; }
+  reqState.loaded = false; reqState.kebab = null;
+  renderRequestsTab();
+  return false;
+}
+async function reqBulk(which) {
+  const b = reqBuckets();
+  const chosen = b.waiting.filter((r) => reqState.sel[r.app.id]);
+  if (!chosen.length) return false;
+  if (!window.confirm(`${which === "select" ? "Select" : "Release"} ${chosen.length} application${chosen.length === 1 ? "" : "s"}? ${which === "select" ? "Each one books its visit." : "Each creator is told, kindly and with a reason."}`)) return false;
+  for (const r of chosen) {
+    try { await api("POST", `/offers/${r.offer.id}/${which === "select" ? "select" : "release"}`, { applicationId: r.app.id }); }
+    catch (e) { alert(e.message); break; }
+  }
+  reqState.loaded = false; reqState.sel = {};
+  renderRequestsTab();
+  return false;
+}
+
+// ---------- Content: posts + rights (Grin Content) ----------
+let contentTab = "creator";
+function contentSetTab(t) { contentTab = t; renderContentTab(); return false; }
+function libRowsHtml(h, mode) {
+  const lib = h.contentLibrary || [];
+  const rows = mode === "yours" ? lib.filter((r) => r.license && r.license.type !== "native") : lib;
+  if (!rows.length) return `<div class="empty-card"><div class="ec-t">${mode === "yours" ? "Nothing licensed yet" : "No content yet"}</div><div class="ec-s">${mode === "yours" ? "Posts you can repost or run as ads appear here: paid bookings carry one 90-day license, and comped posts can be licensed from the creator." : "When a creator's post goes live it is captured here with its views, timing and license state."}</div></div>`;
+  return `<div class="wcard" style="padding-top:8px;padding-bottom:8px">${rows.map((r) => `
+    <div class="lib-row"><div class="lib-main"><div class="lib-title">${esc(r.title)}</div>
+    <div class="lib-meta">@${esc(r.creatorHandle)} · ${r.postedAt ? fmtDay(r.postedAt) : ""} · ${fmtNum(r.views)} views · ${fmtNum(r.likes)} likes · ${fmtNum(r.localReach || 0)} local reach · ${r.onTime ? "on time" : "late"}${r.redemptions && r.redemptions.count ? ` · ${r.redemptions.count} code uses · $${fmtMoney(r.redemptions.basketTotal)} rung up` : ""}${r.postUrl ? ` · <a href="${esc(r.postUrl)}" target="_blank" rel="noopener">View post</a>` : ""}</div></div>${licPillHtml(r)}</div>`).join("")}</div>`;
+}
+async function renderContentTab() {
+  const el = document.getElementById("tab-body");
+  if (!el) return;
+  el.innerHTML = `${wsHead("Content")}${skelHtml("Loading content...", 2)}`;
+  try {
+    const d = await api("GET", "/me/business-home");
+    const h = d.home;
+    const lib = h.contentLibrary || [];
+    const usable = lib.filter((r) => r.license && r.license.type !== "native").length;
+    el.innerHTML = `
+    ${wsHead("Content", { sub: "Every post your creators publish, and exactly what you may do with each one." })}
+    <div class="rights-line">${bnIcon("shield")}<span><strong>Seeing a post here is not the right to reuse it.</strong> You may always reshare natively, with credit. Paid bookings include one standard license: 90 days to repost and run ads. A comped post can be licensed at the creator's listed fee, and the creator approves each use.</span></div>
+    <div class="track-card"><span class="feed-dot acc">${bnIcon("image")}</span><div class="tc-main"><div class="tc-t">Post tracking is on</div><div class="tc-s">Captured ${h.postsTracked30 || 0} post${(h.postsTracked30 || 0) === 1 ? "" : "s"} in the last 30 days. SIGNL tracks every visit's post from the creator's report, timed against the 48 hour standard.</div></div><button type="button" class="btn small-btn ws-outline" onclick="return go('dashboard','Visits & Posts')">Visits &amp; Posts</button></div>
+    ${wsTabs([
+      { label: "Creator posts", count: lib.length, on: contentTab === "creator", onclick: "return contentSetTab('creator')" },
+      { label: "Yours to use", count: usable, on: contentTab === "yours", onclick: "return contentSetTab('yours')" },
+    ])}
+    ${libRowsHtml(h, contentTab)}`;
+  } catch (err) {
+    el.innerHTML = `${wsHead("Content")}<div class="error-box">${esc(err.message)}</div>`;
+  }
+}
+
+// ---------- Analytics: charts, funnel, leaderboard (Grin mirror) ----------
+let anaDays = 30;
+function anaSetDays(v) { anaDays = Number(v) || 30; renderAnalyticsTab(); return false; }
+async function renderAnalyticsTab() {
+  const el = document.getElementById("tab-body");
+  if (!el) return;
+  el.innerHTML = `${wsHead("Analytics")}${skelHtml("Loading analytics...", 2)}`;
+  try {
+    const d = await api("GET", "/me/business-home");
+    const h = d.home;
+    const f = anaDays === 7 ? h.funnel7 : h.funnel30;
+    const fp = anaDays === 7 ? h.funnelPrev7 : h.funnelPrev30;
+    const series = h.series30 || [];
+    const lb = h.leaderboard || [];
+    const stages = [
+      { label: "Invited", n: f.invited, cap: "Bookings created for your offers" },
+      { label: "Accepted", n: f.claimed, cap: "Creators claimed their visit code" },
+      { label: "Visit completed", n: f.visited, cap: "Codes redeemed at your register" },
+      { label: "Post live", n: f.posted, cap: "Posts reported inside the window" },
+    ];
+    el.innerHTML = `
+    ${wsHead("Analytics", { sub: "Your creator program in numbers, all from your real records." })}
+    <div class="kpi-grid c4">
+      ${kpiCard("Applications received", fmtNum(anaDays === 7 ? (h.applications7 || 0) : (h.applications30 || 0)), { sub: `Last ${anaDays} days`, delta: deltaPill(anaDays === 7 ? (h.applications7 || 0) : (h.applications30 || 0), anaDays === 7 ? (h.applicationsPrev7 || 0) : (h.applicationsPrev30 || 0), "vs the prior period") })}
+      ${kpiCard("Visits completed", fmtNum(f.visited), { sub: `Last ${anaDays} days`, delta: deltaPill(f.visited, fp.visited, "vs the prior period") })}
+      ${kpiCard("Posts published", fmtNum(f.posted), { sub: `Last ${anaDays} days`, delta: deltaPill(f.posted, fp.posted, "vs the prior period") })}
+      ${kpiCard("Local reach delivered", fmtNum(h.localReachDelivered || 0), { sub: "All time, across delivered posts" })}
+    </div>
+    <div class="chart-card"><h3>Invites &amp; decisions</h3><p class="wc-sub">Per day, last 30 days. Decisions are application answers, stamped when you make them.</p>
+      ${lineChartSvg(series, [{ k: "invited", color: "#006AFC" }, { k: "decisions", color: "#B9C6BB" }])}
+      <div class="chart-legend"><span><span class="legend-dot" style="background:#006AFC"></span>Invites</span><span><span class="legend-dot" style="background:#B9C6BB"></span>Decisions</span></div>
+    </div>
+    <div class="chart-card"><h3>Local reach over time</h3><p class="wc-sub">Local audience reached by posts that went live each day.</p>
+      ${barsChartSvg(series, "reach", "#03C9AB")}
+    </div>
+    <div class="wcard"><div class="flex-between" style="flex-wrap:wrap;gap:10px"><h3 style="margin:0">Creator funnel</h3>${segSw([{ v: "7", label: "7 days" }, { v: "30", label: "30 days" }], String(anaDays), "anaSetDays")}</div>
+      ${funnel2Html(stages)}
+      <p class="ana-note">Stages count real SIGNL events only. There is no email-open stage: SIGNL does not track opens, so the funnel starts at the invite itself.</p>
+    </div>
+    <div class="wcard"><h3>Creators by local reach delivered</h3>
+      ${lb.length ? lb.map((r, i) => `<div class="lb-row"><span class="lb-rank">${i + 1}</span><div class="lb-main"><div class="lb-name">${esc(r.creatorName)} <span class="muted" style="font-weight:600">@${esc(r.creatorHandle)}</span></div><div class="lb-meta">${r.posts} post${r.posts === 1 ? "" : "s"}${r.onTimePct !== null && r.onTimePct !== undefined ? ` · ${r.onTimePct}% on time` : ""}</div></div><span class="lb-num">${fmtNum(r.localReach)}<span class="u">local reach</span></span></div>`).join("") : `<p class="wc-sub" style="margin:6px 0 2px">No posts yet. This board fills as your creators publish.</p>`}
+    </div>
+    <div class="wcard"><h3>Cost per visit</h3>
+      ${h.costPerVisit ? `<p style="margin:4px 0 0">Your plan works out to <strong>$${fmtMoney(h.costPerVisit)}</strong> per visit in your allowance${h.postsLive ? `, and every live post cost exactly one visit` : ""}. Register value and media value ride in your ROAS score on Home.</p>` : `<p class="wc-sub" style="margin:4px 0 0">Plan math appears here with your plan.</p>`}
+    </div>`;
+  } catch (err) {
+    el.innerHTML = `${wsHead("Analytics")}<div class="error-box">${esc(err.message)}</div>`;
+  }
+}
+
+// ---------- Business Profile (Grin brand profile pattern) ----------
+let bizProfTab = "profile";
+function bizProfSet(t) { bizProfTab = t; renderBizProfileTab(); return false; }
+async function renderBizProfileTab() {
+  const el = document.getElementById("tab-body");
+  if (!el) return;
+  const u = state.user;
+  const b = u.business || {};
+  el.innerHTML = `${wsHead("Profile")}${skelHtml("Loading your profile...", 1)}`;
+  try {
+    const d = await api("GET", "/me/business-home");
+    const h = d.home;
+    let reviews = [];
+    try {
+      const bd = await api("GET", "/bookings");
+      reviews = (bd.bookings || []).filter((x) => x.businessReview).map((x) => ({ stars: x.businessReview.stars, text: x.businessReview.text, at: x.businessReview.createdAt, title: x.title, handle: x.creatorHandle }));
+    } catch (e) { /* reviews are a bonus surface */ }
+    const live = businessAccessState(u) === "active";
+    const head = `
+    ${wsHead("Profile", { chip: live ? livePill("Live") : `<span class="beta-pill">Founding list</span>`, sub: "Your business's home on SIGNL. This card is how creators see you.", action: `<button type="button" class="btn ws-primary" onclick="return bizProfSet('profile')">Edit profile &#9662;</button> <button type="button" class="btn ws-outline" onclick="return go('dashboard','My Offers')">See it on an offer</button>` })}
+    <div class="prof-card"><div class="prof-cover"></div><div class="prof-in">
+      <div class="prof-ava">${esc((b.businessName || "?").trim().charAt(0).toUpperCase() || "?")}</div>
+      <div class="prof-name">${esc(b.businessName || "")}${live ? `<span class="verified-dot">${bnIcon("check")}</span>` : ""}</div>
+      <div class="prof-meta">${esc(b.category || "Business")}${b.neighborhood ? ` · ${esc(b.neighborhood)}` : ""} · ${esc(marketDisplayName(u.market))}<br>${b.about ? esc(b.about) : "No about yet. A written-up experience fills offers faster."}</div>
+      <div class="prof-stats">
+        <span class="ps"><b>${fmtNum(h.localReachDelivered || 0)}</b><span>local reach delivered</span></span>
+        <span class="ps"><b>${h.postsLive || 0}</b><span>posts live</span></span>
+        <span class="ps"><b>${reviews.length}</b><span>creator reviews</span></span>
+        <span class="ps"><b>${esc(b.planName || "")}</b><span>plan</span></span>
+      </div>
+    </div></div>
+    ${wsTabs([
+      { label: "Profile", on: bizProfTab === "profile", onclick: "return bizProfSet('profile')" },
+      { label: "Reviews", count: reviews.length, on: bizProfTab === "reviews", onclick: "return bizProfSet('reviews')" },
+      { label: "Analytics", on: bizProfTab === "analytics", onclick: "return bizProfSet('analytics')" },
+    ])}`;
+    if (bizProfTab === "reviews") {
+      el.innerHTML = head + (reviews.length ? `<div class="wcard">${reviews.map((r) => `<div class="lib-row"><div class="lib-main"><div class="lib-title">${starsHtml(r.stars)} ${esc(String(r.stars))} — ${esc(r.title || "Visit")}</div><div class="lib-meta">@${esc(r.handle || "")}${r.at ? ` · ${fmtDay(r.at)}` : ""}${r.text ? `<br>${esc(r.text)}` : ""}</div></div></div>`).join("")}</div>` : `<div class="empty-card"><div class="ec-t">No reviews yet</div><div class="ec-s">Creators review the visit after their post lands. Reviews appear here and build your standing with the roster.</div></div>`);
+    } else if (bizProfTab === "analytics") {
+      el.innerHTML = head + `<div class="kpi-grid c3">
+        ${kpiCard("Local reach delivered", fmtNum(h.localReachDelivered || 0), { sub: "Across delivered posts" })}
+        ${kpiCard("Posts published", fmtNum((h.funnel30 || {}).posted || 0), { sub: "Last 30 days", delta: deltaPill((h.funnel30 || {}).posted, (h.funnelPrev30 || {}).posted, "vs the 30 days before") })}
+        ${kpiCard("Posts on time", h.onTimeRatePct === null || h.onTimeRatePct === undefined ? "n/a" : h.onTimeRatePct + "%", { sub: "Inside the 48 hour standard" })}
+      </div><p><button type="button" class="btn ws-outline" onclick="return go('dashboard','Analytics')">Open full Analytics</button></p>`;
+    } else {
+      el.innerHTML = head + `
+      <div class="wcard">
+        <h3>Your business profile</h3>
+        <p class="wc-sub">What creators see when they weigh your offers: your name, category, neighborhood, and a short about.</p>
+        <div class="form-2col">
+          <div class="field"><label>Business name</label><input id="bp-name" value="${esc(b.businessName || "")}"></div>
+          <div class="field"><label>Category</label>${chipSelectHtml("bp-category", state.boot.businessCategories.map((c) => ({ value: c, label: c })), b.category, null, false)}</div>
+        </div>
+        <div class="form-2col">
+          <div class="field"><label>City</label><input id="bp-city" value="${esc(u.city || "")}"></div>
+          <div class="field"><label>Neighborhood / area</label><input id="bp-neighborhood" value="${esc(b.neighborhood || "")}" placeholder="For example: Oceanfront, Ghent"></div>
+        </div>
+        <div class="field"><label>About your business</label><textarea id="bp-about" rows="3" placeholder="What you serve, what the visit feels like">${esc(b.about || "")}</textarea></div>
+        <button class="btn ws-primary" onclick="saveBusinessProfile()">Save profile</button> <span id="bp-ok" class="saved"></span>
+      </div>`;
+    }
+  } catch (err) {
+    el.innerHTML = `${wsHead("Profile")}<div class="error-box">${esc(err.message)}</div>`;
   }
 }
 
@@ -6096,11 +6570,15 @@ async function loadFavorites() {
   const el = document.getElementById("tab-body");
   try {
     const data = await api("GET", "/favorites");
+    const favHead = `${wsHead("Favorites", { sub: "Your saved creators. One tap invites them again, prefilled from your last visit together." })}${wsTabs([
+      { label: "Discover", on: false, onclick: "return go('dashboard','Discover')" },
+      { label: "Favorites", on: true, onclick: "return go('dashboard','Favorites')" },
+    ])}`;
     if (!data.favorites.length) {
-      el.innerHTML = `<div class="panel center"><h3>No favorites yet</h3><p class="muted">Tap the heart on any creator while browsing Discover and they are saved here: your standing roster for repeat visits. Favorites are also first in line in your Invite again prompts.</p><button class="btn mt" onclick="return go('dashboard','Discover')">Browse creators</button></div>`;
+      el.innerHTML = `${favHead}<div class="empty-card"><div class="ec-t">No favorites yet</div><div class="ec-s">Tap the heart on any creator while browsing Discover and they are saved here: your standing roster for repeat visits.</div></div><p class="center"><button class="btn ws-primary" onclick="return go('dashboard','Discover')">Browse creators</button></p>`;
       return;
     }
-    el.innerHTML = `<p class="muted small">Your saved creators. One tap invites them again, prefilled from your last visit together.</p>
+    el.innerHTML = `${favHead}
     <div class="creator-grid">${data.favorites.map((c) => `<div>${creatorCard(c, state.user)}<button class="btn small-btn mt" style="width:100%" onclick="rebookCreator('${c.userId}')">Invite again</button></div>`).join("")}</div>`;
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
@@ -6111,6 +6589,11 @@ async function loadDiscover() {
   const el = document.getElementById("tab-body");
   const u = state.user;
   el.innerHTML = `
+    ${wsHead("Discover", { sub: "Local creators, ranked by local reach: how much of their audience actually lives in your market." })}
+    ${wsTabs([
+      { label: "Discover", on: true, onclick: "return go('dashboard','Discover')" },
+      { label: "Favorites", on: false, onclick: "return go('dashboard','Favorites')" },
+    ])}
     <div class="filters">
       <div><label>Market</label><select id="f-market">${marketOptions(u.market)}</select></div>
       <div><label>Neighborhood / area</label><input id="f-neighborhood" placeholder="For example: Oceanfront, Ghent"></div>
@@ -6584,8 +7067,13 @@ async function loadMyOffers() {
     return `<label class="tier-toggle"><input type="checkbox" class="sw" name="o2-tier" value="${esc(t)}" ${(dft.tiers || []).includes(t) ? "checked" : ""} onchange="offerCoachUpdate()"><span class="tt-body"><span class="tt-name">${esc(t)}</span><span class="tt-line">floor $${fmtPrice(gd.floor)} &middot; typ. $${fmtPrice(gd.typicalLow)}&ndash;$${fmtPrice(gd.typicalHigh)}</span></span></label>`;
   }).join("")}</div>`;
   el.innerHTML = `
-  <div class="panel">
-    <h3>Create an offer</h3>
+  ${wsHead("Offers", { sub: "What creators can apply to, and the templates that start one in a tap.", action: `<button type="button" class="btn ws-primary" onclick="document.getElementById('offer-composer').scrollIntoView({behavior:'smooth'})">+ New offer</button>` })}
+  <div id="offer-tabs"></div>
+  <div id="offer-list">${skelHtml("Loading your offers...", 2)}</div>
+  <h3 style="margin:24px 0 0">Templates</h3>
+  ${bizTemplatesHtml()}
+  <div class="panel" id="offer-composer" style="margin-top:18px">
+    <h3 style="margin-top:0">Create an offer</h3>
     <div id="form-error"></div>
     ${packageSummaryHtml(myPlan, planObj ? planObj.name : null)}
     <div class="field"><label>Who sees this offer ${infoBtn("lane")}</label>
@@ -6669,15 +7157,15 @@ async function loadMyOffers() {
       <p class="small" id="offer-info-body"></p>
     </div>
   </div>
-  <div id="offer-list">${skelHtml("Loading your offers...", 2)}</div>
   <div id="applicant-stack"></div>`;
   offerCoachUpdate();
   try {
     const data = await api("GET", "/offers");
     const list = document.getElementById("offer-list");
     if (!list) return;
-    if (!data.offers.length) { list.innerHTML = `<div class="empty-state"><span class="es-badge"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z"/></svg></span><h3>No offers yet</h3><p>Your first offer goes out above.</p></div>`; return; }
-    list.innerHTML = `<div class="vx-stagger">${data.offers.map((o) => offerCardHtml(o)).join("")}</div>`;
+    state.myOffers = data.offers || [];
+    renderOfferTabs();
+    renderOfferList();
     if (state.applicantOffer) {
       const id = state.applicantOffer;
       state.applicantOffer = null;
@@ -6689,6 +7177,33 @@ async function loadMyOffers() {
   }
 }
 
+// Offers list state (Overhaul V2): Current / Archived underline
+// tabs over the fetched list. Current = draft, open or filled;
+// Archived = closed, expired or declined.
+let bizOfferTab = "current";
+function offerSetTab(t) { bizOfferTab = t; renderOfferTabs(); renderOfferList(); return false; }
+function offerIsArchived(o) { return ["closed", "expired", "declined"].includes(o.status); }
+function renderOfferTabs() {
+  const host = document.getElementById("offer-tabs");
+  if (!host) return;
+  const all = state.myOffers || [];
+  host.innerHTML = wsTabs([
+    { label: "Current", count: all.filter((o) => !offerIsArchived(o)).length, on: bizOfferTab === "current", onclick: "return offerSetTab('current')" },
+    { label: "Archived", count: all.filter(offerIsArchived).length, on: bizOfferTab === "archived", onclick: "return offerSetTab('archived')" },
+  ]);
+}
+function renderOfferList() {
+  const list = document.getElementById("offer-list");
+  if (!list) return;
+  const all = state.myOffers || [];
+  const rows = all.filter((o) => bizOfferTab === "archived" ? offerIsArchived(o) : !offerIsArchived(o));
+  if (!rows.length) {
+    list.innerHTML = `<div class="empty-card"><div class="ec-t">${bizOfferTab === "archived" ? "Nothing archived yet" : "No offers yet"}</div><div class="ec-s">${bizOfferTab === "archived" ? "Closed and expired offers collect here." : "Start from a template below, or build one in the composer."}</div></div>`;
+    return;
+  }
+  list.innerHTML = `<div class="vx-stagger">${rows.map((o) => offerCardHtml(o)).join("")}</div>`;
+}
+
 function offerCardHtml(o) {
   const statusBadge = { draft: "warn", open: "ok", filled: "info", closed: "", expired: "bad", declined: "bad" }[o.status] || "";
   const terms = o.kind === "paid"
@@ -6698,31 +7213,37 @@ function offerCardHtml(o) {
     ? `Redeem ${fmtDay(o.windowStartAt)} to ${fmtDay(o.windowEndAt)} &middot; Pick by ${fmtDay(o.selectionDeadline)}`
     : esc(o.visitWindow || "Flexible window");
   const firstMissing = o.strength && o.strength.checks ? (o.strength.checks.find((c) => !c.ok) || null) : null;
+  const deliverable = o.kind === "paid" ? "Paid booking" : "1 post + 1 story";
+  const pill = o.status === "open" ? livePill("Live") : o.status === "draft" ? `<span class="beta-pill">Draft</span>` : `<span class="beta-pill" style="background:var(--tint2);color:var(--ink2)">${esc(o.status)}</span>`;
   return `
-  <div class="card mb feed-card slot-card" id="offer-card-${o.id}">
-    <div class="slot-top">
-      <div class="slot-body">
-        <div class="slot-badges"><span class="badge ${statusBadge}">${esc(o.status)}</span><span class="chip-mini">${o.lane === "direct" ? (o.creatorHandle ? "Direct to @" + esc(o.creatorHandle) : "Direct") : "Open"}</span><span class="chip-mini">${o.filledCount || 0}/${o.spots} spots filled</span>${o.lane === "open" ? `<span class="chip-mini">${o.applicationCount || 0} applications</span>` : ""}</div>
-        <div class="slot-name">${esc(o.title)}</div>
-        <div class="slot-cat">${esc(o.whatComped)}</div>
-        <div class="slot-meta"><span>${when}</span></div>
+  <div class="offer-card" id="offer-card-${o.id}">
+    <div class="offer-top">
+      <span class="offer-tile">${bnIcon("offers")}</span>
+      <div style="flex:1;min-width:0">
+        <div class="flex-between" style="gap:10px"><span class="offer-name">${esc(o.title)}</span>${pill}</div>
+        <div class="offer-meta">${esc(o.whatComped)} · ${when}</div>
       </div>
     </div>
-    <div class="slot-deal">
-    <div class="deal-rows deal-terms">
+    <div class="set-chips">
+      <span class="set-chip">${o.lane === "direct" ? (o.creatorHandle ? "Direct to @" + esc(o.creatorHandle) : "Direct") : "Open offer"}</span>
+      <span class="set-chip">${o.kind === "paid" ? `Cash $${fmtPrice(o.cashRate)}` : `Comp up to $${fmtMoney(o.dollarCap)}`}</span>
+      <span class="set-chip">${deliverable}</span>
+      <span class="set-chip">${o.filledCount || 0}/${o.spots} spots filled</span>
+      ${o.lane === "open" ? `<span class="set-chip more">${o.applicationCount || 0} applications</span>` : ""}
+    </div>
+    <div class="ws-offer-terms">
     <p class="small muted">${terms}${o.kind === "paid" ? "" : ` &middot; ${coversLine(o)}`}</p>
     ${o.kind === "paid" && o.paidBrief ? `<p class="small"><strong>Key points for the creator:</strong> ${esc(o.paidBrief)}</p>` : ""}
     ${o.businessReferralProgram ? `<p class="small"><strong>Referral program active:</strong> creators will see your ${o.businessReferralProgram.url ? "referral link" : "referral code"}${o.businessReferralProgram.note ? " and your note" : ""} on this offer.</p>` : ""}
     ${o.strength ? `<p class="small muted">Offer checklist ${o.strength.score} of ${o.strength.total}: ${firstMissing ? esc(firstMissing.label) : "complete"}</p>` : ""}
     </div>
-    </div>
-    <div class="slot-foot">
-      <div><div class="slot-price">$${fmtPrice(o.kind === "paid" ? o.cashRate : o.dollarCap)}</div><div class="slot-note">${o.kind === "paid" ? "Rate" : "Comp cap"}</div></div>
+    <div class="ws-offer-foot">
+      <div><div class="ws-price">$${fmtPrice(o.kind === "paid" ? o.cashRate : o.dollarCap)}</div><div class="slot-note">${o.kind === "paid" ? "Rate" : "Comp cap"}</div></div>
       <div class="slot-actions">
-        ${o.lane === "open" && (o.status === "open" || o.status === "filled") ? `<button class="btn small-btn book" onclick="viewApplicants('${o.id}')">View applicants (${o.applicationCount || 0})</button>` : ""}
-        ${o.status === "draft" ? `<button class="btn small-btn book" onclick="publishOffer('${o.id}')">Publish</button>` : ""}
-        ${o.nudgeSentAt && o.status === "open" && !(o.applicationCount > 0) ? `<button class="btn small-btn" onclick="fixOffer('${o.id}','raise')">Raise comp +$25</button><button class="btn small-btn ghost" onclick="fixOffer('${o.id}','widen')">Widen window +3 days</button>` : ""}
-        ${(o.status === "open" || o.status === "draft") ? `<button class="btn small-btn ghost" onclick="closeOffer('${o.id}')">Close offer</button>` : ""}
+        ${o.lane === "open" && (o.status === "open" || o.status === "filled") ? `<button class="btn small-btn ws-primary" onclick="viewApplicants('${o.id}')">View applicants (${o.applicationCount || 0})</button>` : ""}
+        ${o.status === "draft" ? `<button class="btn small-btn ws-primary" onclick="publishOffer('${o.id}')">Publish</button>` : ""}
+        ${o.nudgeSentAt && o.status === "open" && !(o.applicationCount > 0) ? `<button class="btn small-btn ws-outline" onclick="fixOffer('${o.id}','raise')">Raise comp +$25</button><button class="btn small-btn ws-outline" onclick="fixOffer('${o.id}','widen')">Widen window +3 days</button>` : ""}
+        ${(o.status === "open" || o.status === "draft") ? `<button class="btn small-btn ws-outline" onclick="closeOffer('${o.id}')">Close offer</button>` : ""}
       </div>
     </div>
   </div>`;
@@ -6879,8 +7400,9 @@ function renderCounter(prefill) {
   const el = document.getElementById("tab-body");
   const code = prefill || state.counterCode || "";
   el.innerHTML = `
-  <div class="panel" style="max-width:560px;margin:0 auto">
-    <h3>Counter check-in</h3>
+  ${wsHead("Counter", { sub: "Check a creator in at the register. One tap burns the code and starts the 48 hour post clock." })}
+  <div class="panel" style="max-width:560px">
+    <h3 style="margin-top:0">Counter check-in</h3>
     <p class="muted">The creator shows their code or QR at the visit. Scan the QR with any phone camera (it lands back here), or type the short code. One tap burns the code and starts the 48 hour post clock. Your register is never involved: ring the comp in your own system the way you normally do.</p>
     <p class="small">Handing this device to staff? <button class="linklike" onclick="return goStaff()">Redeem a creator visit</button> in staff mode: PIN in, code in, done. They never see anything but the visit in front of them.</p>
     <form onsubmit="return counterLookup(event)">
@@ -7199,20 +7721,7 @@ function renderPlanTab() {
       ${u.business.plan === p.id ? `<p class="saved mt">Your current plan</p>` : ""}
     </div>`).join("");
   el.innerHTML = `
-  <div class="panel">
-    <h3>Your business profile</h3>
-    <p class="small muted">What creators see when they weigh your offers: your name, category, neighborhood, and a short about. A written-up experience fills offers faster.</p>
-    <div class="form-2col">
-      <div class="field"><label>Business name</label><input id="bp-name" value="${esc(u.business.businessName)}"></div>
-      <div class="field"><label>Category</label>${chipSelectHtml("bp-category", state.boot.businessCategories.map((c) => ({ value: c, label: c })), u.business.category, null, false)}</div>
-    </div>
-    <div class="form-2col">
-      <div class="field"><label>City</label><input id="bp-city" value="${esc(u.city || "")}"></div>
-      <div class="field"><label>Neighborhood / area</label><input id="bp-neighborhood" value="${esc(u.business.neighborhood || "")}" placeholder="For example: Oceanfront, Ghent"></div>
-    </div>
-    <div class="field"><label>About your business</label><textarea id="bp-about" rows="3" placeholder="What you serve, what the visit feels like">${esc(u.business.about || "")}</textarea></div>
-    <button class="btn" onclick="saveBusinessProfile()">Save profile</button> <span id="bp-ok" class="saved"></span>
-  </div>
+  ${wsHead("Plan", { sub: "Your founding plan, billing, staff PIN and program settings." })}
   <div class="panel mt tint">
     <h3>Your plan</h3>
     <p>Current plan: <strong>${esc(u.business.planName)}</strong>, selected ${fmtDate(u.business.planSelectedAt)}.</p>
@@ -7440,28 +7949,54 @@ function openThread(otherId) {
   render();
 }
 
+// Conversations (Grin pattern): search, a segmented switch, one
+// "New message" primary. SIGNL keeps no per-thread read state, so
+// the switch is honest about what it filters: "Waiting on you" =
+// threads where the last message came from the other side.
+let msgMode = "all";
+let msgQ = "";
+function msgSetMode(v) { msgMode = v; renderThreadList(); return false; }
+function msgSetQ(v) { msgQ = v; renderThreadList(true); return false; }
+function threadItemsHtml() {
+  const me = state.user.id;
+  let threads = state.threads || [];
+  if (msgMode === "waiting") threads = threads.filter((t) => t.lastMessage && t.lastMessage.fromId !== me);
+  const q = msgQ.trim().toLowerCase();
+  if (q) threads = threads.filter((t) => ((t.otherBusinessName || t.otherName || "") + " " + (t.otherHandle || "")).toLowerCase().includes(q));
+  if (!threads.length) return `<div class="empty-card"><div class="ec-t">No conversations here</div><div class="ec-s">${msgMode === "waiting" ? "Nothing is waiting on you. When someone writes and you have not answered yet, it lands here." : "No conversations match that search."}</div></div>`;
+  return `<div class="thread-list">${threads.map((t) => `
+        <div class="thread-item" onclick="openThread('${t.otherId}')">
+          <strong>${esc(t.otherBusinessName || t.otherName)}</strong> ${t.otherHandle ? `<span class="muted">@${esc(t.otherHandle)}</span>` : ""}${t.lastMessage && t.lastMessage.fromId !== me ? ` <span class="badge info">Waiting on you</span>` : ""}
+          <div class="small muted">${esc((t.lastMessage.body || "").slice(0, 90))}</div>
+        </div>`).join("")}</div>`;
+}
+function renderThreadList(keepFocus) {
+  const host = document.getElementById("thread-list-wrap");
+  if (!host) return;
+  host.innerHTML = threadItemsHtml();
+  const seg = document.getElementById("msg-seg");
+  if (seg) seg.innerHTML = segSw([{ v: "waiting", label: "Waiting on you" }, { v: "all", label: "All" }], msgMode, "msgSetMode");
+  if (keepFocus) { const inp = document.getElementById("msg-q"); if (inp) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); } }
+}
 async function loadThreads() {
   const el = document.getElementById("tab-body");
   try {
     const data = await api("GET", "/messages");
     state.threads = data.threads;
-    let html = `<div class="grid cols-2"><div>`;
-    if (!data.threads.length && !state.activeThread) {
-      html += `<div class="panel center"><h3>No conversations yet</h3><p class="muted">${state.user.role === "business" ? "Find a creator in Discover and tap Message." : "Message a business from an offer or a visit."}</p></div>`;
-    } else {
-      html += `<div class="thread-list">${data.threads.map((t) => `
-        <div class="thread-item" onclick="openThread('${t.otherId}')">
-          <strong>${esc(t.otherBusinessName || t.otherName)}</strong> ${t.otherHandle ? `<span class="muted">@${esc(t.otherHandle)}</span>` : ""}
-          <div class="small muted">${esc((t.lastMessage.body || "").slice(0, 90))}</div>
-        </div>`).join("")}</div>`;
-    }
-    html += `</div><div id="thread-view">`;
-    html += state.activeThread ? `<p class="muted">Loading conversation...</p>` : `<p class="muted">Pick a conversation.</p>`;
-    html += `</div></div>`;
-    el.innerHTML = html;
+    const newGo = state.user.role === "business" ? "return go('dashboard','Discover')" : "return go('dashboard','Offers')";
+    el.innerHTML = `
+    ${wsHead("Conversations", { sub: "Every thread with your creators and businesses, in one place." })}
+    <div class="ws-tools">
+      <span class="ws-search">${bnIcon("search")}<input id="msg-q" type="search" placeholder="Search conversations" value="${esc(msgQ)}" oninput="msgSetQ(this.value)"></span>
+      <span id="msg-seg">${segSw([{ v: "waiting", label: "Waiting on you" }, { v: "all", label: "All" }], msgMode, "msgSetMode")}</span>
+      <span class="sp"></span>
+      <button type="button" class="btn ws-primary" onclick="${newGo}">New message</button>
+    </div>
+    <div class="grid cols-2"><div id="thread-list-wrap">${data.threads.length || state.activeThread ? threadItemsHtml() : `<div class="empty-card"><div class="ec-t">No conversations yet</div><div class="ec-s">${state.user.role === "business" ? "Find a creator in Discover and tap Message." : "Message a business from an offer or a visit."}</div></div>`}</div>
+    <div id="thread-view">${state.activeThread ? `<p class="muted">Loading conversation...</p>` : `<p class="muted">Pick a conversation.</p>`}</div></div>`;
     if (state.activeThread) loadConversation(state.activeThread);
   } catch (err) {
-    el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+    el.innerHTML = `${wsHead("Conversations")}<div class="error-box">${esc(err.message)}</div>`;
   }
 }
 

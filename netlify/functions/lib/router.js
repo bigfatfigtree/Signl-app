@@ -5729,7 +5729,7 @@ function creatorTotalAudience(c) {
   const stack = c.audienceStack || {};
   return Object.values(stack).reduce((s, v) => s + (Number(v) || 0), 0) || Number(c.followerCount) || 0;
 }
-function homeAnalyticsExtras(triples, plan, now) {
+function homeAnalyticsExtras(triples, plan, now, apps = []) {
   const DAY = 24 * 3600 * 1000;
   const postedAtOf = (post) => (post ? Date.parse(post.reportedAt || post.submittedAt || post.createdAt || "") || null : null);
   let localReachDelivered = 0;
@@ -5782,10 +5782,85 @@ function homeAnalyticsExtras(triples, plan, now) {
       posted: triples.filter((t) => t.post && inWin(t.post.reportedAt || t.post.submittedAt)).length,
     };
   };
+  // Overhaul V2 (2026-10-27): prior equal windows, so the UI can
+  // show an honest period delta (current window vs the window
+  // right before it) computed from the same records. A delta is
+  // only meaningful when the prior window is non-zero; the UI
+  // suppresses the pill otherwise. Same stage definitions as
+  // funnel(), bounded on both ends.
+  const funnelPrev = (days) => {
+    const hi = now - days * DAY;
+    const lo = now - 2 * days * DAY;
+    const inWin = (iso) => { const ms = Date.parse(iso || ""); return Number.isFinite(ms) && ms >= lo && ms < hi; };
+    return {
+      invited: triples.filter((t) => inWin(t.booking.createdAt)).length,
+      claimed: triples.filter((t) => t.booking.code && inWin(t.booking.createdAt)).length,
+      visited: triples.filter((t) => inWin(t.booking.redeemedAt)).length,
+      posted: triples.filter((t) => t.post && inWin(t.post.reportedAt || t.post.submittedAt)).length,
+    };
+  };
+  // Daily series for the last 30 days (oldest first): invites
+  // sent (bookings created), decisions (applications decided —
+  // real business only; preview passes no applications and gets
+  // zeroes), posts live, and local reach delivered that day.
+  const dayKey = (ms) => new Date(ms).toISOString().slice(0, 10);
+  const series30 = [];
+  const bucketByDay = new Map();
+  for (let i = 29; i >= 0; i--) {
+    const b = { date: dayKey(now - i * DAY), invited: 0, decisions: 0, posts: 0, reach: 0 };
+    series30.push(b);
+    bucketByDay.set(b.date, b);
+  }
+  const bump = (iso, key, by) => {
+    const ms = Date.parse(iso || "");
+    if (!Number.isFinite(ms)) return;
+    const b = bucketByDay.get(dayKey(ms));
+    if (b) b[key] += by || 1;
+  };
+  for (const t of triples) {
+    bump(t.booking.createdAt, "invited");
+    if (t.post) bump(t.post.reportedAt || t.post.submittedAt, "posts");
+  }
+  for (const r of contentLibrary) bump(r.postedAt, "reach", r.localReach || 0);
+  for (const a of apps || []) if (a && a.decidedAt) bump(a.decidedAt, "decisions");
+  // Creators ranked by local reach delivered (the leaderboard):
+  // posts delivered and on-time share ride along per creator.
+  const lbByHandle = new Map();
+  for (const r of contentLibrary) {
+    const key = r.creatorHandle || r.creatorName || "";
+    if (!key) continue;
+    const row = lbByHandle.get(key) || { creatorName: r.creatorName || "", creatorHandle: r.creatorHandle || "", localReach: 0, posts: 0, onTime: 0 };
+    row.localReach += r.localReach || 0;
+    row.posts += 1;
+    if (r.onTime) row.onTime += 1;
+    lbByHandle.set(key, row);
+  }
+  const leaderboard = [...lbByHandle.values()]
+    .map((r) => ({ creatorName: r.creatorName, creatorHandle: r.creatorHandle, localReach: r.localReach, posts: r.posts, onTimePct: r.posts ? Math.round((r.onTime / r.posts) * 100) : null }))
+    .sort((a, b) => b.localReach - a.localReach)
+    .slice(0, 10);
+  const postsTracked30 = contentLibrary.filter((r) => { const ms = Date.parse(r.postedAt || ""); return Number.isFinite(ms) && ms >= now - 30 * DAY; }).length;
+  // Applications received (Grin-style KPI): every application to this
+  // business's offers by its own timestamp — distinct from the
+  // funnel's "invited" stage, which counts selected bookings.
+  const appMs = (a) => { const ms = Date.parse(a.createdAt || ""); return Number.isFinite(ms) ? ms : null; };
+  const applications30 = apps.filter((a) => { const ms = appMs(a); return ms !== null && ms >= now - 30 * DAY; }).length;
+  const applicationsPrev30 = apps.filter((a) => { const ms = appMs(a); return ms !== null && ms >= now - 60 * DAY && ms < now - 30 * DAY; }).length;
+  const applications7 = apps.filter((a) => { const ms = appMs(a); return ms !== null && ms >= now - 7 * DAY; }).length;
+  const applicationsPrev7 = apps.filter((a) => { const ms = appMs(a); return ms !== null && ms >= now - 14 * DAY && ms < now - 7 * DAY; }).length;
   return {
     localReachDelivered,
     funnel7: funnel(7),
     funnel30: funnel(30),
+    funnelPrev7: funnelPrev(7),
+    funnelPrev30: funnelPrev(30),
+    series30,
+    leaderboard,
+    postsTracked30,
+    applications30,
+    applicationsPrev30,
+    applications7,
+    applicationsPrev7,
     contentLibrary,
     costPerVisit: plan && plan.visitsPerMonth ? Math.round((plan.priceMonthly / plan.visitsPerMonth) * 100) / 100 : null,
   };
@@ -5904,7 +5979,8 @@ async function businessHome(user) {
   const extras = homeAnalyticsExtras(
     bookings.map((b) => ({ booking: b, post: postByBooking.get(b.id) || null, creator: userById.get(b.creatorId) || null })),
     plan,
-    now
+    now,
+    apps
   );
 
   return {
@@ -5938,6 +6014,15 @@ async function businessHome(user) {
       localReachDelivered: extras.localReachDelivered,
       funnel7: extras.funnel7,
       funnel30: extras.funnel30,
+      funnelPrev7: extras.funnelPrev7,
+      funnelPrev30: extras.funnelPrev30,
+      series30: extras.series30,
+      leaderboard: extras.leaderboard,
+      postsTracked30: extras.postsTracked30,
+      applications30: extras.applications30,
+      applicationsPrev30: extras.applicationsPrev30,
+      applications7: extras.applications7,
+      applicationsPrev7: extras.applicationsPrev7,
       contentLibrary: extras.contentLibrary,
       costPerVisit: extras.costPerVisit,
     },
