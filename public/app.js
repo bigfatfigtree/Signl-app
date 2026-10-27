@@ -2313,12 +2313,18 @@ function wireReady(root) {
   });
 }
 // ---------- Sig: one queue, one conversation, two doors ----------
-// Ask Sig's content (guided flows + straight answers from
-// SIGNL's locked facts) is built ONCE here and shared by the
-// Ask Sig sheet (Home's foot row, the header's quick door) and
-// the Sig tab (V4.1). Sig never completes a consequential action
-// in chat; every flow lands you on the screen where you tap it.
-// `keys` are the words the Sig tab's chat input routes on.
+// Ask Sig's content is built ONCE here and shared by the Ask Sig
+// sheet (Home's foot row, the header's quick door) and the Sig tab
+// (V4.1). Sig never completes a consequential action in chat;
+// every flow lands you on the screen where you tap it.
+//
+// How Sig answers (2026-10-27, Jeff: "He needs to be a real AI"):
+// the chat asks the server first (POST /api/sig/ask), where a
+// language model grounded in the locked canon answers with the
+// user's own state in context. The canon bank below is the
+// fallback: it answers when the AI is unreachable or not
+// configured, and it picks the walk-to button under AI answers.
+// One bank, three jobs, all fed by the same locked facts.
 function sigFlowsFor() {
   const u = state.user;
   if (!u) return [];
@@ -2346,61 +2352,247 @@ function sigFlowsFor() {
     flow("Check my Momentum", ["momentum", "points", "tier"], () => go("dashboard", "Momentum")),
   ];
 }
+
+// Sig's context: the handful of facts about THIS user that change
+// what the right answer is. Built client-side for the bank, and
+// rebuilt server-side (authoritative) for the AI.
+function sigCtx() {
+  const u = state.user || {};
+  const biz = u.role === "business";
+  const live = biz ? businessAccessState(u) === "active" : !!(u.founding && u.founding.marketLive);
+  const pc = u.profileCompletion || (u.creator ? { complete: u.creator.profileComplete === true, missing: [] } : { complete: false, missing: [] });
+  return { biz, live, profileComplete: !!pc.complete, missing: pc.missing || [], status: u.status || "", market: (u.founding && u.founding.market) || u.market || "" };
+}
+
+// The canon bank. Each topic: display question (q), strong phrases
+// (ph), word groups (g: a group scores when any variant appears,
+// with one-letter typo tolerance on longer words), solo tokens
+// (s: distinctive words that score on their own), the answer
+// (a: string or function of ctx), and the walk-to flow label
+// (flow: string or function of ctx returning a label or null).
+function sigBankFor(biz) {
+  if (biz) return [
+    { id: "cost", q: "What does SIGNL cost?", ph: ["how much does it cost", "what does it cost", "how much is it", "how much is", "per month", "cost", "price", "pricing"], g: [["plan", "subscription", "month"], ["cost", "price", "much", "pay"]], s: ["cost", "pricing"],
+      a: "Founding plans: Self-Service is $199 a month for 5 creators a month, Growth is $349 for 10, Managed is $699 for 20. Founding businesses get $100 off the first month, so $99, $249, or $599, and keep the founding rate while the plan stays active. The minimum is 3 months, there is no per-location charge, and unused visits roll into the next month, then expire." },
+    { id: "plans", q: "What is the difference between the plans?", ph: ["difference between", "which plan", "compare plans", "growth plan", "managed plan"], g: [["growth", "managed", "self-service", "self service", "tiers"], ["difference", "which", "compare", "best", "include", "get"]], s: ["growth", "managed"],
+      a: "The difference is volume and how much is done for you. Self-Service is $199 a month for 5 creators and you run it yourself. Growth is $349 for 10, built for businesses doing paid work and reusing posts, with the license library and renewal tracking. Managed is $699 for 20, the most done for you. Paid bookings and licensing are available on every plan." },
+    { id: "howitworks", q: "How does SIGNL work for a business?", ph: ["how does signl work", "how it works", "what is signl", "how does this work"], g: [["signl", "platform", "this"], ["work", "works", "start", "process"]], s: [],
+      a: "You post an offer, comped or paid, or browse the roster and invite a creator directly at their listed rate. The creator visits, your staff check them in with their visit code, and they post within 48 hours: one post plus one story that shares it. You see the post, its numbers, and your returns on your dashboard. Creators are ranked by local reach, the share of their audience that lives here, not follower count.", flow: "Post an offer" },
+    { id: "ugc", q: "Is this UGC? Can I reuse a creator's post?", ph: ["ugc", "reuse", "repost", "run it as an ad", "use their post", "whitelist"], g: [["post", "content", "photo", "video"], ["reuse", "repost", "ad", "ads", "marketing", "license", "licence", "rights", "use"]], s: ["ugc", "licensing", "licence"],
+      a: "In plain terms, yes: this is UGC, but local. Creators post on their own accounts, and the license is what lets you reuse it. A comped visit is native share only: you may reshare it with credit, nothing more. Paid bookings include one standard license: 90 days to repost and run ads. A comped post can be licensed at the creator's listed fee for 90 days; the creator approves each use and keeps 97%." },
+    { id: "paidlane", q: "How do paid bookings work?", ph: ["paid booking", "book a creator", "pay a creator", "how much do creators charge", "creator rate"], g: [["paid", "pay", "book", "rate", "charge"], ["creator", "booking", "how", "work"]], s: [],
+      a: "Two lanes. Comped: you cover the visit and the creator posts. Paid: you book a creator at the rate they list, which starts at a $50 floor. The paid lane carries a 6% total fee, split evenly between you and the creator, so the creator keeps 97% of their listed rate. Every paid booking includes one standard license: 90 days to repost the post and run it as an ad.", flow: "Find creators" },
+    { id: "invite", q: "How do I invite a creator?", ph: ["invite a creator", "find creators", "browse creators", "discover creators"], g: [["creator", "creators", "roster"], ["invite", "find", "browse", "choose", "pick", "discover"]], s: ["discover"],
+      a: "From Find creators. Creators are ranked by local reach, and each card shows their tier and their rate. Invite one directly at their listed rate, or post an open offer and let creators apply. A creator can voluntarily accept a lower posted rate; their listed rate otherwise stands, and there is no haggling on a post.", flow: "Find creators" },
+    { id: "applicants", q: "How fast do I have to answer applicants?", ph: ["answer applicants", "how fast", "how long to decide", "deadline to answer", "respond to applicants"], g: [["applicant", "applicants", "applications"], ["answer", "respond", "decide", "fast", "long", "deadline"]], s: [],
+      a: "Every applicant gets an answer within 2 business days. That is the deal, and the app tracks it. Fast, clear answers are how the roster stays strong for everyone.", flow: "Review applicants" },
+    { id: "noshow", q: "What if a creator does not show up?", ph: ["does not show", "doesn't show", "no show", "no-show", "ghost", "never posted", "did not post", "didn't post"], g: [["creator"], ["show", "ghost", "post", "turn up", "cancel"]], s: ["ghost"],
+      a: VISIT_GUARANTEE_LINE },
+    { id: "honesty", q: "Can I ask for a positive post?", ph: ["positive post", "good review", "approve the post", "what to say", "negative post", "bad post"], g: [["post", "review"], ["positive", "negative", "approve", "require", "script", "say", "honest"]], s: [],
+      a: "No, and that is deliberate. Creators post honestly, in their own words. A business can never require a positive post, a rating, or specific words, and posts are never pre-approved. A brief can give key points, never a script. That honesty is why local posts work. If a post is factually wrong about your business, email hello@joinsignl.com and a person looks at it." },
+    { id: "redeem", q: "How does redeeming a visit work?", ph: ["redeem", "visit code", "check in", "check-in", "counter code"], g: [["code", "counter", "redeem", "pin"], ["enter", "work", "staff", "scan", "check"]], s: ["redeem"],
+      a: "The creator arrives with a visit code. Your staff enter it at the counter, which checks the creator in and starts the 48 hour posting clock. If the code does not work, staff can confirm the visit from your side instead. Keeping your staff PIN set keeps the counter quick.", flow: "Redeem a visit" },
+    { id: "metrics", q: "How do I see my results?", ph: ["roas", "my results", "analytics", "metrics", "return on", "how am i doing", "track results"], g: [["results", "numbers", "performance", "sales", "returns"], ["see", "track", "measure", "show", "doing"]], s: ["roas", "analytics", "metrics"],
+      a: "Your dashboard follows every visit: the post, its reach and engagement, refreshed as a day 7, 14, and 30 series. When a visit code is redeemed, it converts to an estimated register value, so your return on spend is a number, not a guess. Nothing is shown before it is real, so a campaign that has not run shows no numbers at all.", flow: "See your results" },
+    { id: "marketbiz", q: "When does my market open?", ph: ["market open", "when can i start", "join now", "launch", "my city"], g: [["market", "city", "launch"], ["when", "open", "start", "live", "join", "coming"]], s: [],
+      a: (c) => c.live ? "Your market is open and your business is active. You can post offers and invite creators now." : "Businesses join the founding list now and pick a plan at sign-up; no card is charged during founding. Markets open in waves, 30 to 90 days out. When yours activates, you land in Find creators with the founding roster ready, and you get an email the moment it opens." },
+    { id: "help", q: "How do I reach a person?", ph: ["password", "contact", "human", "support", "talk to someone", "staff pin", "change my email"], g: [["password", "email", "account", "contact", "support", "human", "help", "pin"], ["change", "reset", "forgot", "update", "talk", "reach", "set"]], s: ["support"],
+      a: "Settings, staff, and counter basics live right in the app. For anything a person needs to handle, email hello@joinsignl.com and a person answers.", flow: "Set the staff PIN" },
+  ];
+  return [
+    { id: "payout", q: "When and how do I get paid?", ph: ["when do i get paid", "paid out", "payout", "pay out", "when do i get", "how do i get paid", "payment timing"], g: [["paid", "pay", "payout", "payment"], ["when", "how", "long", "timing", "arrive", "receive"]], s: ["payout"],
+      a: "For a paid booking, the rate you set is the rate the business books at, and you keep 97% of it. Payouts run outside the app for now, and the app does not promise a payout date. Your Earnings screen keeps the record of every booking and license, so it is always there to check.", flow: (c) => c.live ? "See my earnings" : null },
+    { id: "money", q: "How do I make money on SIGNL?", ph: ["make money", "earn money", "making money", "how do i earn", "can i make money", "make some money", "earn cash"], g: [["money", "earn", "earning", "income", "cash", "paid", "pay"], ["how", "can", "do i", "ways", "make", "get"]], s: ["money"],
+      a: (c) => {
+        let t = "Two ways. First, comped visits: a local business covers your meal, service, or experience, and you post honestly about it. Second, paid bookings: businesses book you at the rate you set, and you keep 97% of it. There is also licensing: if a business wants to reuse your post, they pay your licensing fee and you keep 97% of that too.";
+        if (!c.live) t += " Your market has not opened yet, so bookings start when it opens. A finished profile is what puts you first in line when it does.";
+        else if (!c.profileComplete) t += " One thing first: businesses only see finished profiles, so finishing yours is the step that makes all of this reachable.";
+        return t;
+      }, flow: (c) => !c.profileComplete ? "Finish my profile" : (c.live ? "See my earnings" : "Check my Momentum") },
+    { id: "rates", q: "How do I set my rate?", ph: ["set my rate", "my rate", "how much should i charge", "charge for", "rate"], g: [["rate", "charge", "price"], ["set", "my", "should", "how much", "change", "pick"]], s: ["rate"],
+      a: "Your paid rate is yours to set, on your profile. Paid bookings start at a $50 floor, and there is no SIGNL price list on top of that. Businesses weigh your rate against your local reach, so a strong local audience carries a smaller account a long way. You can also take comped visits whenever you would rather have the experience.", flow: "Finish my profile" },
+    { id: "localreach", q: "What is local reach?", ph: ["local reach", "local audience", "local percent", "local %"], g: [["local"], ["reach", "audience", "percent", "%", "share", "followers"]], s: ["reach"],
+      a: "Local reach is the share of your audience that actually lives in your market, applied to your audience size. It is the number businesses rank creators by on SIGNL, not follower count. A smaller account whose people are all here can outrank a huge account whose followers are spread across the country.", flow: (c) => !c.profileComplete ? "Finish my profile" : null },
+    { id: "momentum", q: "How does Momentum work?", ph: ["momentum", "points", "earn points", "how does momentum"], g: [["momentum", "points"], ["how", "earn", "work", "get", "mean"]], s: ["momentum"],
+      a: "Momentum is points for doing the work well. Points order the list businesses see, so they are priority, not cash, and they unlock badges. The big earners: +20 for a post on time, +25 every 5 on-time posts in a row, +25 for approving a license, +10 for each review you write, +5 for a late post inside the week and +5 for reporting a post's numbers. Your profile earns too: photo +10, bio +5, neighborhood +5, local audience +5, audience stack +10, best work links +5 each up to 3. Invites pay +3 when someone joins from your link and +10 when they are approved, and approved referrals unlock badge bonuses up to +150.", flow: "Check my Momentum" },
+    { id: "tiers", q: "How do tiers work?", ph: ["tier", "neighbors", "locals", "headliners", "what tier"], g: [["tier", "neighbors", "locals", "headliners"], ["what", "how", "am i", "mean", "work", "level"]], s: ["tier", "headliners"],
+      a: "Tiers come from your stacked audience, counted across all your platforms, and they set themselves. Neighbors is 500 to 2,000, Locals is 2,000 to 15,000, Headliners is 15,000 and up. Tier shapes which offers you are eligible for, and Headliners are first in line for paid campaigns when they open in a market.", flow: "Check my Momentum" },
+    { id: "visits", q: "How does a visit work, start to finish?", ph: ["visit work", "how does a visit", "visit code", "check in", "redeem", "how do visits work"], g: [["visit", "visits"], ["how", "work", "happen", "process", "code", "redeem"]], s: [],
+      a: "A business books you, or you apply to an offer and get picked. You receive a visit code; at the business, staff enter it to check you in. Then you post: one post plus one story that shares the post. Within 48 hours counts as on time; one week is the hard deadline. If anything goes wrong at the counter, the business can confirm your visit from their side instead.", flow: (c) => c.live ? "Add a post link" : null },
+    { id: "owe", q: "What do I owe after a visit?", ph: ["owe", "deliverable", "have to post", "after a visit", "what do i post"], g: [["owe", "deliver", "post", "required"], ["after", "what", "visit", "need"]], s: [],
+      a: "One post plus one story that shares the post. Post within 48 hours to be on time; the hard deadline is one week. Post honestly, in your own words: nobody can require a positive post or approve your words first, and every comped post gets disclosed, as the FTC requires.", flow: (c) => c.live ? "Add a post link" : null },
+    { id: "cantmake", q: "What if I can't make a visit?", ph: ["can't make", "cant make", "miss a visit", "running late", "cancel a visit", "reschedule", "something came up"], g: [["visit", "booking"], ["cancel", "miss", "late", "cant", "cannot", "reschedule", "sick", "emergency"]], s: [],
+      a: "Message the business in the app as early as you can; a heads-up before the visit is always better than silence. A visit you accept and skip costs Momentum points, and repeated no-shows can cost you your spot on the roster." },
+    { id: "licensing", q: "What is a license request?", ph: ["license request", "licensing", "license my post", "reuse my post", "license fee"], g: [["licens"], ["request", "what", "how", "fee", "approve", "work"]], s: ["licensing"],
+      a: "Licensing is how a business reuses a post you already made. They request a license at the fee you set, and you approve or decline each use. An approved license lets them repost it and run it as an ad for 90 days. You keep 97% of the fee, and approving one earns +25 Momentum.", flow: (c) => c.live ? "See my earnings" : null },
+    { id: "profilegate", q: "What do I need to finish my profile?", ph: ["finish my profile", "complete my profile", "profile complete", "businesses see me", "not showing up", "why can't businesses"], g: [["profile", "businesses", "roster"], ["finish", "complete", "need", "missing", "see", "visible", "showing"]], s: [],
+      a: (c) => {
+        let t = "Businesses only see creators with a finished profile, and approval is not the gate; a finished profile is. Finished means four things: your home city, an audience count above zero, at least one category, and your local audience share reported. A photo is not required, but it earns +10 Momentum and makes your card stronger.";
+        if (!c.profileComplete && c.missing && c.missing.length) t += " On yours, still missing: " + c.missing.join(", ") + ".";
+        return t;
+      }, flow: "Finish my profile" },
+    { id: "invites", q: "How do invites and referrals work?", ph: ["invite link", "referral", "invite a", "recruit", "invite friends", "invite other creators"], g: [["invit", "referral", "recruit", "link"], ["how", "work", "earn", "share", "get"]], s: ["referral"],
+      a: "Your invite link lives on your profile. When a creator joins through it, you earn +3 Momentum; when they are approved, +10. Approved referrals also climb the badge ladder: 1 approved referral is Connector with a +25 bonus, 3 is Super Connector +50, 5 is Roster Builder +75, 10 is City Lead +150. A milestone unlocks once that referral has delivered their first post.", flow: "Finish my profile" },
+    { id: "offers", q: "How do I get offers?", ph: ["get offers", "no offers", "offers yet", "find work", "get booked", "bookings", "get work"], g: [["offer", "offers", "booked", "work", "gigs", "jobs"], ["how", "get", "find", "none", "no", "why", "any"]], s: [],
+      a: (c) => c.live ? "Businesses post offers and invite creators straight from the roster. Finished profiles with strong local reach get invited first. Applying is one tap, and your profile card is the application, so a finished profile is the whole game." : "Offers start when your market opens. Until then the work is your profile: finished profiles are the roster businesses meet on day one, so finishing yours now is what gets you booked first.", flow: (c) => c.live ? "See offers near you" : "Finish my profile" },
+    { id: "reviews", q: "Do I review the business?", ph: ["review", "rating", "stars", "rate the business"], g: [["review", "rating", "stars"], ["how", "do i", "leave", "business", "write"]], s: ["review"],
+      a: "Yes. After a completed visit you review the business, any star rating you honestly give, and each review earns +10 Momentum. Businesses rate creators too, and your rating sits next to your points on your card." },
+    { id: "markets", q: "When does my market open?", ph: ["market open", "when does", "launch", "my city", "open in", "when will"], g: [["market", "city", "launch"], ["when", "open", "start", "live", "coming"]], s: [],
+      a: (c) => c.live ? "Your market is open, and offers are live now." : "Founding markets open in waves, 30 to 90 days out, and you get an email the moment yours opens. Being approved with a finished profile is what puts you on the roster when it does." },
+    { id: "help", q: "How do I reach a person?", ph: ["password", "contact", "human", "support", "talk to someone", "change my email", "delete my account", "log out"], g: [["password", "email", "account", "contact", "support", "human", "help"], ["change", "reset", "forgot", "update", "talk", "reach", "delete"]], s: ["support"],
+      a: "Account basics like your password and notifications live under More, and your profile details live on your Profile. For anything a person needs to handle, email hello@joinsignl.com and a person answers." },
+  ];
+}
+
+// The matcher: phrase hits are strongest, then word-group hits,
+// then solo tokens. Longer words tolerate a one-letter typo.
+// Scores are compared across the whole bank; a clear winner
+// answers, anything murky falls back honestly with suggestions.
+function sigNorm(text) {
+  return " " + String(text || "").toLowerCase().replace(/can't/g, "cant").replace(/don't/g, "dont").replace(/won't/g, "wont").replace(/[^a-z0-9% ]+/g, " ").replace(/\s+/g, " ").trim() + " ";
+}
+function sigLev(a, b) {
+  if (Math.abs(a.length - b.length) > 1) return 2;
+  let d = 0;
+  const m = Math.min(a.length, b.length);
+  for (let i = 0; i < m; i++) if (a[i] !== b[i]) d++;
+  d += Math.abs(a.length - b.length);
+  return d;
+}
+function sigTokenHit(t, toks, variant) {
+  if (variant.includes(" ")) return t.includes(" " + variant + " ") ? 3 : 0;
+  if (t.includes(" " + variant + " ") || t.includes(" " + variant)) return 3;
+  if (variant.length >= 5) for (const tok of toks) if (tok.length >= 4 && sigLev(tok, variant) <= 1) return 2;
+  return 0;
+}
+function sigScoreTopic(topic, t, toks) {
+  let score = 0;
+  for (const p of topic.ph || []) { const np = p.replace(/can't/g, "cant").replace(/don't/g, "dont").replace(/won't/g, "wont"); if (t.includes(np)) score += 10; }
+  for (const group of topic.g || []) {
+    let best = 0;
+    for (const v of group) best = Math.max(best, sigTokenHit(t, toks, v));
+    score += best === 3 ? 4 : best === 2 ? 3 : 0;
+  }
+  for (const s of topic.s || []) if (sigTokenHit(t, toks, s)) score += 6;
+  return score;
+}
+function sigMatch(text, biz) {
+  const bank = sigBankFor(biz);
+  const t = sigNorm(text);
+  const toks = t.split(" ").filter(Boolean);
+  const scored = bank.map((topic, i) => ({ topic, i, score: sigScoreTopic(topic, t, toks) })).sort((a, b) => b.score - a.score || a.i - b.i);
+  const top = scored[0];
+  const second = scored[1];
+  if (top && top.score >= 8 && (!second || top.score > second.score || top.score >= 14)) return { topic: top.topic, score: top.score, scored };
+  return { topic: null, score: top ? top.score : 0, scored };
+}
+// SIGBANK-END (verify-sig extracts the bank + matcher between
+// the sigBankFor definition and this marker)
+
+// The straight answers accordion (Sig tab + Ask Sig sheet) reads
+// the same bank, so what Sig says in chat and what is listed can
+// never drift apart.
 function sigQaFor() {
   const u = state.user;
   if (!u) return [];
-  if (u.role === "business") return [
-    { q: "What does SIGNL cost?", keys: ["cost", "price", "pricing", "plan cost", "subscription", "how much"], a: "Founding plans: Self-Service is $199 a month for 5 creators, Growth is $349 for 10, Managed is $699 for 20. Founding businesses get $100 off the first month and keep the founding rate while the plan stays active. The minimum is 3 months, there is no per-location charge, and unused visits roll into the next month, then expire." },
-    { q: "Can I reuse a creator's post?", keys: ["reuse", "repost", "license", "licence", "ugc", "ad use", "run it as an ad", "rights"], a: "A comped visit is native share only: reshare it with credit, nothing more. Paid bookings include one standard license: 90 days to repost and run ads. A comped post can be licensed at the creator's listed fee for 90 days; the creator approves each use and keeps 97%. That license is what makes the post UGC you can use — repost it and run it as an ad for those 90 days." },
-    { q: "How fast do I have to answer applicants?", keys: ["how fast", "answer applicants", "deadline to answer", "how long to decide"], a: "Every applicant gets an answer within 2 business days. That is the deal." },
-    { q: "What if a creator does not show up?", keys: ["show up", "no show", "no-show", "does not show", "ghost"], a: VISIT_GUARANTEE_LINE },
-  ];
-  return [
-    { q: "What do I owe after a visit?", keys: ["owe", "after a visit", "deliverable", "what do i have to post"], a: "One post plus one story that shares the post. Post within 48 hours to be on time; the hard deadline is one week." },
-    { q: "How does Momentum work?", keys: ["momentum work", "points work", "earn points", "how does momentum"], a: "Points for doing the work well: +20 for an on-time post, +10 when a business approves you, +25 when you approve a license, +3 when someone joins from your invite link." },
-    { q: "What is local reach?", keys: ["local reach", "local audience"], a: "The share of your audience that actually lives here, times your audience size. Businesses rank creators by local reach, not follower count." },
-    { q: "When do I get paid?", keys: ["get paid", "when do i get", "payout", "paid out"], a: "Paid bookings record your rate in the app: booked at your rate, you keep 97%. Payouts run outside the app for now, and nothing in the app promises a payout date." },
-  ];
+  const ctx = sigCtx();
+  return sigBankFor(ctx.biz).map((topic) => ({ q: topic.q, keys: topic.ph || [], a: typeof topic.a === "function" ? topic.a(ctx) : topic.a }));
 }
-// The chat router: typed words match a straight answer first
-// (a question deserves its answer), then a guided flow. No
-// match is answered honestly, never with invented capability.
-function sigRouteAsk(text) {
-  const t = " " + String(text || "").toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ") + " ";
-  const has = (k) => t.includes(" " + k) || t.includes(k + " ") || t.includes(k);
-  for (const item of sigQaFor()) if (item.keys.some(has)) return { text: item.a };
+
+function sigFlowIndex(label) {
+  if (!label) return null;
   const flows = sigFlowsFor();
-  for (let i = 0; i < flows.length; i++) if (flows[i].keys.some(has)) return { text: `That lives under "${flows[i].label}". One tap takes you there.`, flow: i };
-  return { text: "I don't have that one yet. The things I can walk you to are listed right under this chat, and the straight answers are below them." };
+  const i = flows.findIndex((f) => f.label === label);
+  return i > -1 ? i : null;
+}
+function sigTopicReply(topic, ctx) {
+  const text = typeof topic.a === "function" ? topic.a(ctx) : topic.a;
+  const label = typeof topic.flow === "function" ? topic.flow(ctx) : topic.flow;
+  return { text, flow: sigFlowIndex(label) };
+}
+function sigFallbackReply(match) {
+  const near = (match.scored || []).filter((s) => s.score >= 4).slice(0, 3).map((s) => s.topic);
+  const reply = { text: "I don't have that one yet.", suggest: [] };
+  if (near.length) {
+    reply.text += " The closest things I can answer are right here; tap one and I will tell you straight. For anything else, hello@joinsignl.com reaches a person.";
+    reply.suggest = near.map((topic) => topic.q);
+  } else {
+    reply.text += " Try me on how SIGNL works, what things cost, or how visits and points run. For anything else, hello@joinsignl.com reaches a person.";
+  }
+  return reply;
+}
+// The bank route: Sig's offline brain. Also used to pick the
+// walk-to button under an AI answer.
+function sigRouteAsk(text) {
+  const ctx = sigCtx();
+  const match = sigMatch(text, ctx.biz);
+  if (match.topic) return sigTopicReply(match.topic, ctx);
+  const t = sigNorm(text);
+  const flows = sigFlowsFor();
+  for (let i = 0; i < flows.length; i++) if (flows[i].keys.some((k) => t.includes(k))) return { text: `That lives under "${flows[i].label}". One tap takes you there.`, flow: i };
+  return sigFallbackReply(match);
+}
+// Ask Sig: the real AI first (server, canon-grounded, with the
+// user's state in context), the bank when the AI cannot answer.
+async function sigAsk(text) {
+  const ctx = sigCtx();
+  const history = (state.sigThread || []).filter((turn) => !turn.pending && (turn.who === "user" || turn.who === "sig")).map((turn) => ({ who: turn.who, text: turn.text }));
+  if (history.length && history[history.length - 1].who === "user" && history[history.length - 1].text === text) history.pop();
+  try {
+    const data = await Promise.race([
+      api("POST", "/sig/ask", { q: text, history }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("sig timeout")), 10000)),
+    ]);
+    if (data && data.source === "ai" && data.text) {
+      const match = sigMatch(text, ctx.biz);
+      let flow = null;
+      if (match.topic) {
+        const label = typeof match.topic.flow === "function" ? match.topic.flow(ctx) : match.topic.flow;
+        flow = sigFlowIndex(label);
+      }
+      return { text: data.text, flow };
+    }
+  } catch (e) { /* the bank answers instead */ }
+  return sigRouteAsk(text);
 }
 function sigThreadHtml() {
   const flows = sigFlowsFor();
   return (state.sigThread || []).map((turn) => turn.who === "user"
     ? `<div class="sig-turn user"><div class="sig-bub">${esc(turn.text)}</div></div>`
-    : `<div class="sig-turn sig"><span class="sig-turn-ava">${SIG_AVATAR_HTML}</span><div class="sig-bub">${esc(turn.text)}${turn.flow != null && flows[turn.flow] ? `<button type="button" class="btn small-btn sig-turn-act" data-sigflow="${turn.flow}">${esc(flows[turn.flow].label)}</button>` : ""}</div></div>`).join("");
+    : `<div class="sig-turn sig"><span class="sig-turn-ava">${SIG_AVATAR_HTML}</span><div class="sig-bub">${esc(turn.text)}${turn.flow != null && flows[turn.flow] ? `<button type="button" class="btn small-btn sig-turn-act" data-sigflow="${turn.flow}">${esc(flows[turn.flow].label)}</button>` : ""}${(turn.suggest || []).map((q) => `<button type="button" class="btn small-btn sig-turn-act" data-sigask="${esc(q)}">${esc(q)}</button>`).join("")}</div></div>`).join("");
 }
-function sigAskSubmit(ev) {
+async function sigAskSubmit(ev) {
   if (ev) ev.preventDefault();
   const input = document.getElementById("sig-ask-input");
   const text = input ? input.value.trim() : "";
   if (!text) return false;
   state.sigThread = state.sigThread || [];
   state.sigThread.push({ who: "user", text });
-  const reply = sigRouteAsk(text);
-  state.sigThread.push({ who: "sig", text: reply.text, flow: reply.flow != null ? reply.flow : null });
-  const host = document.getElementById("sig-thread");
-  if (host) {
-    host.innerHTML = sigThreadHtml();
-    wireSigThread(host);
-    host.scrollTop = host.scrollHeight;
-  }
-  if (input) { input.value = ""; input.focus(); }
+  const pending = { who: "sig", text: "One sec.", flow: null, pending: true };
+  state.sigThread.push(pending);
+  if (input) input.value = "";
+  const paint = () => {
+    const host = document.getElementById("sig-thread");
+    if (host) { host.innerHTML = sigThreadHtml(); wireSigThread(host); host.scrollTop = host.scrollHeight; }
+  };
+  paint();
+  const reply = await sigAsk(text);
+  pending.text = reply.text;
+  pending.flow = reply.flow != null ? reply.flow : null;
+  pending.suggest = reply.suggest || [];
+  delete pending.pending;
+  paint();
+  const inp2 = document.getElementById("sig-ask-input");
+  if (inp2) inp2.focus();
   return false;
 }
 function wireSigThread(root) {
   if (!root) return;
   root.querySelectorAll("[data-sigflow]").forEach((btn) => {
     btn.onclick = () => { const f = sigFlowsFor()[Number(btn.getAttribute("data-sigflow"))]; if (f && f.act) f.act(); };
+  });
+  root.querySelectorAll("[data-sigask]").forEach((btn) => {
+    btn.onclick = () => { const input = document.getElementById("sig-ask-input"); if (input) input.value = btn.getAttribute("data-sigask"); sigAskSubmit(); };
   });
 }
 
@@ -2421,7 +2613,7 @@ function renderSigTab() {
   <div id="sig-queue-host">${sigQueueHtml(items, { links })}</div>
   <div class="sig-chat">
     <div class="sig-chat-head">${SIG_AVATAR_HTML}<div><div class="sig-chat-title">Chat with Sig</div><div class="muted small">Ask in plain words. Sig walks you to the exact screen.</div></div></div>
-    <div id="sig-thread" class="sig-thread">${sigThreadHtml() || `<div class="sig-turn sig"><span class="sig-turn-ava">${SIG_AVATAR_HTML}</span><div class="sig-bub">Ask me where something lives, or what something costs. If I can walk you to it, I will.</div></div>`}</div>
+    <div id="sig-thread" class="sig-thread">${sigThreadHtml() || `<div class="sig-turn sig"><span class="sig-turn-ava">${SIG_AVATAR_HTML}</span><div class="sig-bub">Ask me anything about how SIGNL works: how you make money, what things cost, how visits and points run. If I can walk you to it, I will.</div></div>`}</div>
     <form class="sig-ask-form" onsubmit="return sigAskSubmit(event)">
       <input id="sig-ask-input" type="text" placeholder="Ask Sig anything" autocomplete="off" aria-label="Ask Sig anything">
       <button class="btn" type="submit">Ask</button>

@@ -1049,6 +1049,7 @@ production. Locally they go in the shell.
 | SIGNL_SWEEP_TOKEN | For the scheduled sweeps | Shared secret the Netlify scheduled functions (compliance-sweep.mjs, campaign-sweep.mjs) send as the `x-signl-sweep-token` header to POST /api/admin/compliance/sweep and /api/admin/campaign/sweep. Without it, the compliance sweep still runs via the admin endpoint and the opportunistic in-request trigger; the campaign sweep runs via the admin endpoint only. |
 | SIGNL_CAMPAIGN_PACE_MS | No | Delay in milliseconds between sends inside one campaign sweep run (batch pacing). Default 400. |
 | SIGNL_MAIL_STUB | Tests only | Set to 1 ONLY by verify-campaign.mjs: sendEmail never touches the network; addresses containing "stubfail" report failure, everything else reports sent. **Never set in Netlify.** |
+| SIG_AI_API_KEY / SIG_AI_BASE_URL / SIG_AI_MODEL | No | Explicit AI provider override for Ask Sig (lib/sigai.js). Normally unset: Netlify AI Gateway injects OPENAI_API_KEY and OPENAI_BASE_URL into the function runtime automatically and Sig uses those; the model defaults to gpt-5 and SIG_AI_MODEL overrides it. With no provider reachable, /api/sig/ask reports unavailable and the client answers from its built-in canon bank. |
 
 ## Data schema (Netlify Blobs, store "signl-data", one key per record)
 

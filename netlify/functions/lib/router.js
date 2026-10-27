@@ -13,6 +13,7 @@ const claimEvidence = require("./claim-evidence");
 const stripe = require("./stripe");
 const connect = require("./connect");
 const { runMetricsSync } = require("./metrics-sync");
+const { askSigAI } = require("./sigai");
 const { buildProfilePageHtml } = require("./profile-meta");
 
 // ------------------------------------------------------------------
@@ -7413,6 +7414,36 @@ async function route(event) {
   }
 
   if (!user) return err(401, "Sign in required");
+
+  // ---------- Ask Sig (real AI, Jeff 2026-10-27) ----------
+  // POST /api/sig/ask { q, history } -> { source: "ai", text } or
+  // { source: "unavailable" } when no AI provider is configured or
+  // the provider fails; the client then answers from its canon
+  // bank. AI trouble must never surface as an API error here.
+  if (method === "POST" && seg[0] === "sig" && seg[1] === "ask") {
+    const b = parseBody(event);
+    const q = String(b.q || "").trim();
+    if (!q) return err(400, "Ask a question first");
+    const full = await withFounding(user);
+    const lines = [];
+    if (user.role === "creator") {
+      const f = full.founding || {};
+      lines.push(`Their market is ${f.market || user.market || "unknown"} and it is ${f.marketLive ? "OPEN (live)" : "NOT open yet (founding)"}. Their application status is ${user.status || "unknown"}.`);
+      const pc = full.profileCompletion || {};
+      lines.push(pc.complete ? "Their profile is finished, so businesses can see them." : `Their profile is NOT finished yet; still missing: ${(pc.missing || []).join(", ") || "nothing recorded"}. A finished profile is the gate for being seen by businesses.`);
+      if (full.momentum) lines.push(`Their Momentum is ${full.momentum.points} points.`);
+      if (user.creator && user.creator.tierBand) lines.push(`Their tier is ${user.creator.tierBand}.`);
+      if (user.creator && user.creator.paidRate) lines.push(`Their listed paid rate is $${user.creator.paidRate}.`);
+    } else if (user.role === "business") {
+      const live = businessAccessState(user) === "active";
+      lines.push(`Their market is ${user.market || "unknown"} and their business is ${live ? "ACTIVE (market open)" : "on the founding list (market not open yet)"}.`);
+      if (user.business && user.business.planId) lines.push(`Their plan is ${user.business.planId}.`);
+    }
+    const history = Array.isArray(b.history) ? b.history.filter((t) => t && (t.who === "user" || t.who === "sig") && typeof t.text === "string").map((t) => ({ who: t.who, text: t.text })) : [];
+    const ans = await askSigAI({ role: user.role, stateLines: lines.join(" "), question: q, history });
+    if (ans.source === "ai") return json(200, { source: "ai", text: ans.text });
+    return json(200, { source: "unavailable" });
+  }
 
   // ---------- Stripe subscription checkout (Jeff, 2026-10-23) ----------
   // An ACTIVATED business (or an admin acting for one) starts a
