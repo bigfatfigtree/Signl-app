@@ -1627,7 +1627,10 @@ function sigQueueHtml(items, opts) {
   if (!n) {
     return `<div class="sig-card"><div class="sig-top">${SIG_AVATAR_HTML}<div><div class="sig-title">You're all caught up.</div><div class="sig-sub">When a creator applies, a visit needs you, or a post lands, it shows up here.</div></div></div>${(o.links || []).length ? `<div class="sig-links">${o.links.map((l, i) => `<button type="button" class="sig-link" data-sq="L${i}">${esc(l.label)}</button>`).join("")}</div>` : ""}</div>`;
   }
-  const row = (r, i) => `<div class="sig-item"><div class="sig-stxt">${esc(r.text)}</div>${r.btn ? `<button type="button" class="btn small-btn" data-sq="${i}">${esc(r.btn)}</button>` : ""}</div>`;
+  // leadShort (Homes only): the greeting above the card already
+  // carries the lead item's full sentence, so the lead row renders
+  // its short task form instead — Home never shows a sentence twice.
+  const row = (r, i) => `<div class="sig-item"><div class="sig-stxt">${esc(i === 0 && o.leadShort && r.short ? r.short : r.text)}</div>${r.btn ? `<button type="button" class="btn small-btn" data-sq="${i}">${esc(r.btn)}</button>` : ""}</div>`;
   return `<div class="sig-card"><div class="sig-top">${SIG_AVATAR_HTML}<div><div class="sig-title">Sig has ${n} thing${n === 1 ? "" : "s"} for you</div><div class="sig-sub">In the order they need you.</div></div></div>
   ${items.slice(0, 3).map(row).join("")}
   ${n > 3 ? `<div class="sig-more" hidden>${items.slice(3).map((r, j) => row(r, j + 3)).join("")}</div><button type="button" class="sig-seeall" onclick="return sigSeeAll(this)">See all ${n}</button>` : ""}
@@ -5022,6 +5025,30 @@ function crFeedHtml() {
   })));
 }
 
+// Naming an application’s offer, defensively: the /applications
+// payload nests the offer ({ title, businessName }); older shapes
+// flattened it. A nameless offer must never surface as the quoted
+// string "an offer" — fall back to the business, then to no name.
+function appOfferBits(a) {
+  const o = (a && a.offer) || {};
+  return {
+    title: o.title || (a && a.offerTitle) || (a && a.title) || "",
+    business: o.businessName || (a && a.businessName) || "",
+  };
+}
+function answeredApplicationText(a) {
+  const b = appOfferBits(a);
+  if (b.title) return `Your application to "${b.title}" was answered.`;
+  if (b.business) return `Your application to ${b.business} was answered.`;
+  return "Your application was answered.";
+}
+function answeredApplicationShort(a) {
+  const b = appOfferBits(a);
+  if (b.title) return `Application answered: "${b.title}"`;
+  if (b.business) return `Application answered: ${b.business}`;
+  return "Application answered";
+}
+
 async function loadCreatorHome() {
   const el = document.getElementById("creator-home");
   if (!el) return;
@@ -5066,13 +5093,13 @@ async function loadCreatorHome() {
     // people waiting, then new opportunities, then setup gaps.
     const now = Date.now();
     const items = [];
-    const add = (cls, at, text, btn, act) => items.push({ cls, at: at || now, text, btn, act });
+    const add = (cls, at, text, btn, act, short) => items.push({ cls, at: at || now, text, btn, act, short });
     const postDue = bookings.filter((b) => b.redeemedAt && !b.post && b.postDeadline && (Date.parse(b.postDeadline) - now) <= 48 * 3600000 && b.status !== "cancelled")
       .sort((a, b) => (Date.parse(a.postDeadline) || 0) - (Date.parse(b.postDeadline) || 0));
     if (postDue.length) {
       const b = postDue[0];
       const overdue = Date.parse(b.postDeadline) < now;
-      add(1, Date.parse(b.postDeadline) || now, `Your post for ${b.businessName} is ${overdue ? "overdue" : "due " + dueDayWords(b.postDeadline)}.`, "Add post link", () => { state.visitsSeg = "needs"; state.visitFocus = b.id; go("dashboard", "My Visits"); });
+      add(1, Date.parse(b.postDeadline) || now, `Your post for ${b.businessName} is ${overdue ? "overdue" : "due " + dueDayWords(b.postDeadline)}.`, "Add post link", () => { state.visitsSeg = "needs"; state.visitFocus = b.id; go("dashboard", "My Visits"); }, overdue ? `Post late: ${b.businessName}` : `Post due ${dueDayWords(b.postDeadline)}: ${b.businessName}`);
     }
     const startOfDay = new Date(); startOfDay.setHours(0, 0, 0, 0);
     const dayOffset = (iso) => { const t = Date.parse(iso || ""); if (Number.isNaN(t)) return null; const d0 = new Date(t); d0.setHours(0, 0, 0, 0); return Math.round((d0.getTime() - startOfDay.getTime()) / 86400000); };
@@ -5082,30 +5109,30 @@ async function loadCreatorHome() {
       .sort((a, b) => a.off - b.off);
     if (visitSoon.length) {
       const { b, off } = visitSoon[0];
-      add(1, now, `Visit ${off === 0 ? "today" : "tomorrow"}: ${b.title} at ${b.businessName}.`, "View visit", () => { state.visitsSeg = "upcoming"; state.visitFocus = b.id; go("dashboard", "My Visits"); });
+      add(1, now, `Visit ${off === 0 ? "today" : "tomorrow"}: ${b.title} at ${b.businessName}.`, "View visit", () => { state.visitsSeg = "upcoming"; state.visitFocus = b.id; go("dashboard", "My Visits"); }, `Visit ${off === 0 ? "today" : "tomorrow"}: ${b.title}`);
     }
     state.waitCounts.crVisits = postDue.length + visitSoon.length;
-    if (pendingLic.length) add(2, now, `${pendingLic.length} license request${pendingLic.length === 1 ? " is" : "s are"} waiting on you.`, "Review", () => go("dashboard", "Earnings"));
+    if (pendingLic.length) add(2, now, `${pendingLic.length} license request${pendingLic.length === 1 ? " is" : "s are"} waiting on you.`, "Review", () => go("dashboard", "Earnings"), `${pendingLic.length} license request${pendingLic.length === 1 ? "" : "s"} waiting`);
     if (invites.length) {
-      add(2, now, invites.length === 1 ? `${invites[0].businessName} invited you: "${invites[0].title}".` : `${invites.length} businesses invited you.`, "See invites", () => { state.crOffersSeg = "invited"; go("dashboard", "Offers"); });
+      add(2, now, invites.length === 1 ? `${invites[0].businessName} invited you: "${invites[0].title}".` : `${invites.length} businesses invited you.`, "See invites", () => { state.crOffersSeg = "invited"; go("dashboard", "Offers"); }, invites.length === 1 ? `Invite: "${invites[0].title}"` : `${invites.length} new invites`);
     }
     const answered = applications.filter((a) => a.status !== "applied" && a.decidedAt && now - Date.parse(a.decidedAt) < 3 * 86400000)
       .sort((a, b) => (Date.parse(b.decidedAt) || 0) - (Date.parse(a.decidedAt) || 0));
     if (answered.length) {
       const a = answered[0];
-      add(2, Date.parse(a.decidedAt) || now, `Your application to "${a.offerTitle || a.title || "an offer"}" was answered.`, "View", () => { state.crOffersSeg = "applied"; go("dashboard", "Offers"); });
+      add(2, Date.parse(a.decidedAt) || now, answeredApplicationText(a), "View", () => { state.crOffersSeg = "applied"; go("dashboard", "Offers"); }, answeredApplicationShort(a));
     }
     let seenMark = 0;
     try { seenMark = Number(localStorage.getItem("signl-offers-seen") || 0); } catch (e) { /* private mode */ }
     const freshOffers = openOffers.filter((o) => (Date.parse(o.createdAt) || 0) > seenMark);
     if (openOffers.length && (freshOffers.length || !seenMark)) {
       const n = freshOffers.length || openOffers.length;
-      add(3, now, seenMark ? `${n} new offer${n === 1 ? "" : "s"} near you.` : `${openOffers.length} offer${openOffers.length === 1 ? "" : "s"} open near you in ${u.city || marketTalkNameClient(u.market)}.`, "See offers", () => { state.crOffersSeg = "foryou"; go("dashboard", "Offers"); });
+      add(3, now, seenMark ? `${n} new offer${n === 1 ? "" : "s"} near you.` : `${openOffers.length} offer${openOffers.length === 1 ? "" : "s"} open near you in ${u.city || marketTalkNameClient(u.market)}.`, "See offers", () => { state.crOffersSeg = "foryou"; go("dashboard", "Offers"); }, `${n} new offer${n === 1 ? "" : "s"} near you`);
     }
-    if ((money.held || 0) > 0) add(3, now, `A paid booking is earning: $${fmtMoney(money.held)} held until the post is live.`, "See earnings", () => go("dashboard", "Earnings"));
-    if (pc && !pc.complete) add(4, now, `Your profile is missing essentials (${pc.requiredDone} of ${pc.requiredTotal} done). Businesses cannot find you yet.`, "Finish profile", () => go("dashboard", "Profile"));
+    if ((money.held || 0) > 0) add(3, now, `A paid booking is earning: $${fmtMoney(money.held)} held until the post is live.`, "See earnings", () => go("dashboard", "Earnings"), `$${fmtMoney(money.held)} held on a paid booking`);
+    if (pc && !pc.complete) add(4, now, `Your profile is missing essentials (${pc.requiredDone} of ${pc.requiredTotal} done). Businesses cannot find you yet.`, "Finish profile", () => go("dashboard", "Profile"), `Profile: ${pc.requiredDone} of ${pc.requiredTotal} done`);
     const paidRate = u.creator && u.creator.paidRate;
-    if (!paidRate) add(4, now, "Set your paid rate so businesses can book you paid.", "Set my rate", () => go("dashboard", "Profile"));
+    if (!paidRate) add(4, now, "Set your paid rate so businesses can book you paid.", "Set my rate", () => go("dashboard", "Profile"), "Paid rate not set");
     items.sort((a, b) => a.cls - b.cls || a.at - b.at);
     const queue = items.slice(0, 7);
 
@@ -5118,6 +5145,7 @@ async function loadCreatorHome() {
       { label: "Apply to your first offer", sub: "Flip through offers near you.", done: applications.length > 0 || bookings.length > 0, btn: "See offers", act: () => { state.crOffersSeg = "foryou"; go("dashboard", "Offers"); } },
     ];
     const greetLine = !gateDone ? "Let's finish your profile so businesses can find you." : (queue.length ? queue[0].text : "You're all caught up.");
+    const greetDup = gateDone && queue.length > 0;
     const snapCells = gateDone ? [
       { num: localReach === null ? "Not set" : fmtNum(localReach), label: "Your local reach" },
       { num: fmtNum(m.points || 0), label: "Momentum" },
@@ -5134,7 +5162,7 @@ async function loadCreatorHome() {
     // licenses, Momentum gains, and reviews — from real records.
     const feed = [];
     for (const o of invites) feed.push({ kind: "invites", icon: "deck", at: o.createdAt, title: `Invite: ${o.title || "Untitled offer"}`, meta: `${o.businessName || ""}${o.kind === "paid" ? " · Paid booking" : " · Comped visit"}`, btn: "View", act: () => { state.crOffersSeg = "invited"; go("dashboard", "Offers"); } });
-    for (const a of applications) feed.push({ kind: "applications", icon: "notice", at: a.createdAt, title: `Application sent: ${(a.offer && a.offer.title) || a.offerTitle || a.title || "an offer"}`, meta: a.status === "applied" ? "Waiting on the business" : a.status === "selected" ? "You're in" : "Not this time", btn: null });
+    for (const a of applications) { const ab = appOfferBits(a); feed.push({ kind: "applications", icon: "notice", at: a.createdAt, title: ab.title ? `Application sent: ${ab.title}` : ab.business ? `Application sent to ${ab.business}` : "Application sent", meta: a.status === "applied" ? "Waiting on the business" : a.status === "selected" ? "You're in" : "Not this time", btn: null }); }
     for (const b of bookings) {
       if (b.post) feed.push({ kind: "posts", icon: "visits", at: b.post.firstAt || b.post.updatedAt, title: `Post live: ${b.title}`, meta: `${b.businessName || ""} · ${b.state === "posted_on_time" ? "on time" : b.state === "posted_late" ? "late" : "delivered"}`, btn: "Open", act: () => { state.visitsSeg = "done"; state.visitFocus = b.id; go("dashboard", "My Visits"); } });
       else if (b.redeemedAt) feed.push({ kind: "visits", icon: "visits", at: b.redeemedAt, title: `Visit done: ${b.title}`, meta: `${b.businessName || ""} · post clock running`, btn: "Open", act: () => { state.visitsSeg = "needs"; state.visitFocus = b.id; go("dashboard", "My Visits"); } });
@@ -5155,7 +5183,7 @@ async function loadCreatorHome() {
     ${wsHead("Home", { sub: "Start here. Sig shows you what needs you, in order.", subKey: "cr-home" })}
     <div class="home-greet"><div class="hg-hi">Hi, ${esc(firstName)}</div><div class="hg-line">${esc(greetLine)}</div></div>
     ${strikeStatusHtml(u)}
-    ${sigQueueHtml(queue, { links: caughtLinks })}
+    ${sigQueueHtml(queue, { links: caughtLinks, leadShort: greetDup })}
     ${checklistHtml(steps)}
     ${gateDone ? snapshotHtml(snapCells, "", "Numbers") : ""}
     ${momentumCard}
@@ -6979,47 +7007,47 @@ async function loadBusinessHome() {
     // Within a class, oldest waiting first.
     const now = Date.now();
     const items = [];
-    const add = (cls, at, text, btn, act) => items.push({ cls, at: at || now, text, btn, act });
+    const add = (cls, at, text, btn, act, short) => items.push({ cls, at: at || now, text, btn, act, short });
     const due = waiting.filter((w) => addBizDays(Date.parse(w.app.createdAt) || now, 2) - now < 86400000)
       .sort((a, b) => (Date.parse(a.app.createdAt) || 0) - (Date.parse(b.app.createdAt) || 0));
     if (due.length) {
       const first = due[0];
-      add(1, Date.parse(first.app.createdAt) || now, due.length === 1 ? `A decision is due today: ${first.app.creator.name} applied to "${first.offer.title}".` : `${due.length} decisions are due today. The oldest is ${first.app.creator.name} for "${first.offer.title}".`, "Decide", () => { if (!reqState) reqState = reqFreshState(); reqState.open[first.app.id] = true; goApplicants(first.offer.id); });
+      add(1, Date.parse(first.app.createdAt) || now, due.length === 1 ? `A decision is due today: ${first.app.creator.name} applied to "${first.offer.title}".` : `${due.length} decisions are due today. The oldest is ${first.app.creator.name} for "${first.offer.title}".`, "Decide", () => { if (!reqState) reqState = reqFreshState(); reqState.open[first.app.id] = true; goApplicants(first.offer.id); }, due.length === 1 ? `Decision due: ${first.app.creator.name}` : `${due.length} decisions due today`);
     }
     const startOfDay = new Date(); startOfDay.setHours(0, 0, 0, 0);
     const sameDay = (iso) => { const t = Date.parse(iso || ""); return !Number.isNaN(t) && t >= startOfDay.getTime() && t < startOfDay.getTime() + 86400000; };
     const visitToday = bookings.filter((b) => !b.redeemedAt && !b.post && b.status !== "cancelled" && b.status !== "expired" && (sameDay(b.visitDate) || sameDay(b.redeemBy)));
     if (visitToday.length) {
-      add(1, now, visitToday.length === 1 ? `${visitToday[0].creatorName} is visiting today.` : `${visitToday.length} visits are happening today.`, "Open counter", () => go("dashboard", "Counter"));
+      add(1, now, visitToday.length === 1 ? `${visitToday[0].creatorName} is visiting today.` : `${visitToday.length} visits are happening today.`, "Open counter", () => go("dashboard", "Counter"), visitToday.length === 1 ? `Visit today: ${visitToday[0].creatorName}` : `${visitToday.length} visits today`);
     }
     const postDue = bookings.filter((b) => b.redeemedAt && !b.post && b.postDeadline && (Date.parse(b.postDeadline) - now) <= 48 * 3600000 && b.status !== "cancelled")
       .sort((a, b) => (Date.parse(a.postDeadline) || 0) - (Date.parse(b.postDeadline) || 0));
     if (postDue.length) {
       const b = postDue[0];
       const overdue = Date.parse(b.postDeadline) < now;
-      add(1, Date.parse(b.postDeadline) || now, `${b.creatorName} visited ${fmtDay(b.redeemedAt)} and the post is ${overdue ? "overdue" : "due " + dueDayWords(b.postDeadline)}.`, "Send a nudge", (btn) => sendNudge(b.id, btn));
+      add(1, Date.parse(b.postDeadline) || now, `${b.creatorName} visited ${fmtDay(b.redeemedAt)} and the post is ${overdue ? "overdue" : "due " + dueDayWords(b.postDeadline)}.`, "Send a nudge", (btn) => sendNudge(b.id, btn), overdue ? `Post late: ${b.creatorName}` : `Post due ${dueDayWords(b.postDeadline)}: ${b.creatorName}`);
     }
     if (waiting.length) {
       const oldest = waiting.slice().sort((a, b) => (Date.parse(a.app.createdAt) || 0) - (Date.parse(b.app.createdAt) || 0))[0];
-      add(2, Date.parse(oldest.app.createdAt) || now, `${waiting.length} creator${waiting.length === 1 ? " is" : "s are"} waiting on your answer.`, "Review", () => goApplicants());
+      add(2, Date.parse(oldest.app.createdAt) || now, `${waiting.length} creator${waiting.length === 1 ? " is" : "s are"} waiting on your answer.`, "Review", () => goApplicants(), `${waiting.length} waiting on your answer`);
     }
     const needsTime = bookings.filter((b) => visitSegOf(b, "business") === "needs");
-    if (needsTime.length) add(2, now, `${needsTime.length} visit${needsTime.length === 1 ? " needs" : "s need"} a time.`, "Set the visit", () => { state.visitsSeg = "needs"; go("dashboard", "Visits & Posts"); });
+    if (needsTime.length) add(2, now, `${needsTime.length} visit${needsTime.length === 1 ? " needs" : "s need"} a time.`, "Set the visit", () => { state.visitsSeg = "needs"; go("dashboard", "Visits & Posts"); }, `${needsTime.length} visit${needsTime.length === 1 ? "" : "s"} without a time`);
     const msgCount = (state.badges && state.badges.messages) || 0;
-    if (msgCount) add(2, now, `${msgCount} message${msgCount === 1 ? " is" : "s are"} waiting.`, "Read", () => go("dashboard", "Messages"));
+    if (msgCount) add(2, now, `${msgCount} message${msgCount === 1 ? " is" : "s are"} waiting.`, "Read", () => go("dashboard", "Messages"), `${msgCount} unread message${msgCount === 1 ? "" : "s"}`);
     const lib = h.contentLibrary || [];
     const freshPost = lib.filter((r) => r.postedAt && now - Date.parse(r.postedAt) < 14 * 86400000).sort((a, b) => (Date.parse(b.postedAt) || 0) - (Date.parse(a.postedAt) || 0))[0];
-    if (freshPost) add(3, Date.parse(freshPost.postedAt) || now, `${freshPost.creatorName || "A creator"}'s post is live: "${freshPost.title}".`, "See the post", () => go("dashboard", "Content"));
+    if (freshPost) add(3, Date.parse(freshPost.postedAt) || now, `${freshPost.creatorName || "A creator"}'s post is live: "${freshPost.title}".`, "See the post", () => go("dashboard", "Content"), `Post live: "${freshPost.title}"`);
     const licRow = lib.find((r) => r.license && r.license.type === "native" && bookings.some((b) => b.post && b.id === r.bookingId && Number(b.creatorLicensingFee) > 0));
     if (licRow) {
       const bk = bookings.find((b) => b.id === licRow.bookingId);
-      add(3, Date.parse(licRow.postedAt) || now, `You can license ${licRow.creatorName}'s post for $${fmtPrice(bk.creatorLicensingFee)}.`, "License it", () => go("dashboard", "Content"));
+      add(3, Date.parse(licRow.postedAt) || now, `You can license ${licRow.creatorName}'s post for $${fmtPrice(bk.creatorLicensingFee)}.`, "License it", () => go("dashboard", "Content"), `License ${licRow.creatorName}'s post · $${fmtPrice(bk.creatorLicensingFee)}`);
     }
     const bz = u.business || {};
-    if (!bz.about) add(4, now, "Your business page is missing its About.", "Add about", () => go("dashboard", "Profile"));
-    if (d.staffPinSet === false) add(4, now, "Set your staff PIN so your team can redeem visits.", "Set PIN", () => go("dashboard", "Settings"));
-    if ((h.visitsCarried || 0) > 0 && h.carriedExpiresAt) add(4, now, `${h.visitsCarried} rolled visit${h.visitsCarried === 1 ? "" : "s"} expire ${dueDayWords(h.carriedExpiresAt)}.`, "See plan", () => go("dashboard", "Plan"));
-    else if ((h.visitsRemaining || 0) <= 1) add(4, now, `You have ${h.visitsRemaining || 0} visit${(h.visitsRemaining || 0) === 1 ? "" : "s"} left this month.`, "See plan", () => go("dashboard", "Plan"));
+    if (!bz.about) add(4, now, "Your business page is missing its About.", "Add about", () => go("dashboard", "Profile"), "About missing on your page");
+    if (d.staffPinSet === false) add(4, now, "Set your staff PIN so your team can redeem visits.", "Set PIN", () => go("dashboard", "Settings"), "Staff PIN not set");
+    if ((h.visitsCarried || 0) > 0 && h.carriedExpiresAt) add(4, now, `${h.visitsCarried} rolled visit${h.visitsCarried === 1 ? "" : "s"} expire ${dueDayWords(h.carriedExpiresAt)}.`, "See plan", () => go("dashboard", "Plan"), `Rollover expires ${dueDayWords(h.carriedExpiresAt)}`);
+    else if ((h.visitsRemaining || 0) <= 1) add(4, now, `You have ${h.visitsRemaining || 0} visit${(h.visitsRemaining || 0) === 1 ? "" : "s"} left this month.`, "See plan", () => go("dashboard", "Plan"), `${h.visitsRemaining || 0} visit${(h.visitsRemaining || 0) === 1 ? "" : "s"} left this month`);
     state.waitCounts.bizVisits = visitToday.length + postDue.length + needsTime.length;
     items.sort((a, b) => a.cls - b.cls || a.at - b.at);
     const queue = items.slice(0, 7);
@@ -7034,6 +7062,7 @@ async function loadBusinessHome() {
     ];
     const fresh = !steps[0].done || !offers.length;
     const greetLine = fresh ? "Let's get your first campaign live. Sig walks you through it, four steps." : (queue.length ? queue[0].text : "You're all caught up.");
+    const greetDup = !fresh && queue.length > 0;
     const hasNumbers = (h.postsLive || 0) > 0 || (h.localReachDelivered || 0) > 0 || (h.visitsUsed || 0) > 0;
     const snapCells = hasNumbers ? [
       { num: fmtNum(h.localReachDelivered || 0), label: "Local reach delivered" },
@@ -7051,7 +7080,7 @@ async function loadBusinessHome() {
     ${wsHead("Home", { sub: "Start here. Sig shows you what needs you, in order.", subKey: "biz-home" })}
     <div class="home-greet"><div class="hg-hi">Hi, ${esc(bz.businessName || u.name || "")}</div><div class="hg-line">${esc(greetLine)}</div></div>
     ${d.marketLive ? "" : `<div class="notice blue" style="margin-top:14px"><strong>Your market opens in 30–90 days.</strong> Draft offers now; publishing switches on at launch.</div>`}
-    ${sigQueueHtml(queue, { links: caughtLinks })}
+    ${sigQueueHtml(queue, { links: caughtLinks, leadShort: greetDup })}
     ${checklistHtml(steps)}
     ${snapshotHtml(snapCells, "This fills in once your campaigns are live. When creators start visiting and posting, you will see applications, visits, posts, and the local reach they delivered, right here.", "Analytics")}
     <h3 style="margin:20px 0 0">Activity</h3>
