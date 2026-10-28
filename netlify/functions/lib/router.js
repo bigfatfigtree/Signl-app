@@ -13,6 +13,7 @@ const claimEvidence = require("./claim-evidence");
 const stripe = require("./stripe");
 const connect = require("./connect");
 const { runMetricsSync } = require("./metrics-sync");
+const platformConnect = require("./platform-connect");
 const { askSigAI } = require("./sigai");
 const { buildProfilePageHtml } = require("./profile-meta");
 
@@ -868,13 +869,135 @@ function primaryProfileOf(creator) {
 
 // Display/payload shape: total plus the per-platform breakdown,
 // biggest first, only platforms the creator actually reported.
+// A platform with a live Connect Accounts mirror on the record
+// (creator.platformSync, written only by a real provider fetch)
+// carries synced + syncedAt so business surfaces can show the
+// Synced mark; every other entry stays unlabeled, which every
+// surface reads as Self-reported. Records with no connection carry
+// no platformSync and this output is byte-identical to before.
 function audienceView(creator) {
   const stack = audienceStackOf(creator);
+  const sync = (creator && creator.platformSync) || {};
   const platforms = AUDIENCE_PLATFORMS
     .filter((p) => stack[p.id])
-    .map((p) => ({ platform: p.id, label: p.label, count: stack[p.id] }))
+    .map((p) => (sync[p.id] && sync[p.id].verified === true
+      ? { platform: p.id, label: p.label, count: stack[p.id], synced: true, syncedAt: sync[p.id].lastSyncAt || null }
+      : { platform: p.id, label: p.label, count: stack[p.id] }))
     .sort((a, b) => b.count - a.count);
   return { total: platforms.reduce((s, p) => s + p.count, 0), platforms };
+}
+
+// ---------- Connect Accounts: audience sync writes ----------
+// A provider fetch produced a count for one connected platform.
+// The synced value REPLACES that platform's stack entry (it is
+// authoritative over anything typed), then total, followerCount
+// mirror and the automatic tier band recompute exactly as they do
+// on a profile save. The display mirror (platformSync) is stamped
+// in the same write so no payload can show a Synced mark for a
+// count the stack does not hold.
+async function applySyncedAudienceCount(userId, conn, count) {
+  const record = await store.get(`user:${userId}`);
+  if (!record || !record.creator) return null;
+  const c = record.creator;
+  const stack = audienceStackOf(c);
+  const clean = Math.floor(Number(count));
+  if (Number.isFinite(clean) && clean > 0) stack[conn.platform] = Math.min(AUDIENCE_COUNT_CAP, clean);
+  else delete stack[conn.platform];
+  c.audienceStack = stack;
+  c.followerCount = stack.instagram || 0;
+  c.totalAudience = Object.values(stack).reduce((s, n) => s + n, 0);
+  c.computedTier = tierForFollowers(c.totalAudience);
+  c.suggestedTier = c.computedTier;
+  c.tierBand = c.computedTier;
+  c.platformSync = c.platformSync || {};
+  c.platformSync[conn.platform] = {
+    lastSyncAt: conn.lastSyncAt || nowIso(),
+    lastCount: stack[conn.platform] || 0,
+    accountLabel: conn.accountLabel || null,
+    verified: true,
+    syncStatus: "ok",
+  };
+  record.updatedAt = nowIso();
+  await store.set(`user:${userId}`, record);
+  return record;
+}
+
+// The connected-but-not-verified mirror: the connection exists but
+// the provider cannot supply the count (today: a YouTube channel
+// that hides its subscriber count). The row must show the
+// connection honestly while the count stays the creator's own
+// typed number, so the mirror lands with verified: false and
+// audienceView never marks it Synced.
+async function stampPlatformSyncMirror(userId, conn) {
+  const record = await store.get(`user:${userId}`);
+  if (!record || !record.creator) return null;
+  const c = record.creator;
+  c.platformSync = c.platformSync || {};
+  c.platformSync[conn.platform] = {
+    lastSyncAt: conn.lastSyncAt || nowIso(),
+    lastCount: (c.audienceStack && c.audienceStack[conn.platform]) || conn.lastCount || 0,
+    accountLabel: conn.accountLabel || null,
+    verified: false,
+    syncStatus: conn.lastSyncStatus || null,
+  };
+  record.updatedAt = nowIso();
+  await store.set(`user:${userId}`, record);
+  return record;
+}
+
+// Disconnect: the connection record is deleted by the caller; here
+// the display mirror comes off the creator record. The last synced
+// count STAYS in the stack as the creator's own number, editable
+// again and Self-reported from this moment (that is the deal the
+// disconnect copy states).
+async function clearPlatformSyncMirror(userId, platform) {
+  const record = await store.get(`user:${userId}`);
+  if (!record || !record.creator) return null;
+  if (record.creator.platformSync) {
+    delete record.creator.platformSync[platform];
+    record.updatedAt = nowIso();
+    await store.set(`user:${userId}`, record);
+  }
+  return record;
+}
+
+// One connection, one sync attempt. The provider module persists
+// the fresh count on the connection record; on success the count
+// is applied to the creator record in the same pass.
+async function syncYouTubeForConnection(conn) {
+  const res = await platformConnect.fetchYouTubeSubscriberCount(conn);
+  const fresh = (await platformConnect.getConnection(conn.userId, conn.platform)) || conn;
+  if (res.status !== "ok") {
+    // "hidden" is a permanent property of the channel, so the
+    // mirror is re-stamped unverified and the count stays typed.
+    // A plain provider "error" is transient: the last synced
+    // count (and its verified mark) stands untouched.
+    if (res.status === "hidden") await stampPlatformSyncMirror(conn.userId, fresh);
+    return { ok: false, status: res.status };
+  }
+  await applySyncedAudienceCount(conn.userId, fresh, res.count);
+  return { ok: true, status: "ok", count: res.count };
+}
+
+// The daily audience pass behind POST /api/admin/metrics/sync:
+// walk every stored connection and sync each one. YouTube is the
+// only live provider today; other platforms join this walk when
+// their gates open, and the summary says what actually happened.
+async function syncAllConnectedAudiences() {
+  const conns = await platformConnect.listAllConnections();
+  let synced = 0;
+  let failed = 0;
+  for (const conn of conns) {
+    if (!conn || conn.platform !== "youtube") continue;
+    try {
+      const r = await syncYouTubeForConnection(conn);
+      if (r.ok) synced += 1;
+      else failed += 1;
+    } catch (e) {
+      failed += 1;
+    }
+  }
+  return { providers: ["youtube"], connections: conns.length, synced, failed };
 }
 
 // ---------- Campus identity (Jeff, 2026-10-21) ----------
@@ -7308,6 +7431,15 @@ async function route(event) {
       // payout setup + card-on-file surfaces from this flag;
       // false keeps every money surface exactly as it was.
       payments: { connectLive: connect.connectConfigured() },
+      // Connect Accounts (2026-10-28): which audience platforms a
+      // creator can actually connect today. YouTube is live when
+      // the Google OAuth env is set; Meta stays "in_review" until
+      // its Access Verification clears. The client renders the
+      // Connect surface from these flags, never from a guess.
+      platformConnect: {
+        youtube: { oauthConfigured: platformConnect.youtubeConfigured() },
+        meta: { state: "in_review" },
+      },
       launch: {
         creatorSignupOpen: true,
         businessSignupOpen: true,
@@ -7467,7 +7599,7 @@ async function route(event) {
     const token = process.env.SIGNL_SWEEP_TOKEN;
     const tokenOk = !!token && (event.headers["x-signl-sweep-token"] || event.headers["X-Signl-Sweep-Token"]) === token;
     if (!tokenOk && (!user || user.role !== "admin")) return err(403, "Admin only");
-    const summary = await runMetricsSync();
+    const summary = await runMetricsSync({ syncAudience: syncAllConnectedAudiences });
     return json(200, summary);
   }
 
@@ -7716,6 +7848,70 @@ async function route(event) {
     return json(200, { payouts: { status: payouts.status, ready: payouts.ready, missing: payouts.missing, updatedAt: payouts.updatedAt }, paymentsLive: connect.connectConfigured() });
   }
 
+  // ---------- Connect Accounts (Jeff, 2026-10-28) ----------
+  // A creator connects a platform once; that platform's audience
+  // count then syncs from the provider and shows as Synced instead
+  // of Self-reported. Tokens live only in platconn: records (see
+  // lib/platform-connect.js); nothing below ever returns one. The
+  // OAuth start/callback are full-page navigations (the browser
+  // leaves for Google and comes back), so they answer with 302s to
+  // the app, carrying only a plain status word in the query.
+
+  if (method === "GET" && seg[0] === "me" && seg[1] === "platforms" && seg.length === 2) {
+    if (user.role !== "creator" || !user.creator) return err(403, "Creators only");
+    return json(200, { platforms: await platformConnect.publicStates(user.id), youtubeConfigured: platformConnect.youtubeConfigured() });
+  }
+
+  if (method === "GET" && seg[0] === "me" && seg[1] === "platforms" && seg[2] === "youtube" && seg[3] === "start" && seg.length === 4) {
+    if (user.role !== "creator" || !user.creator) return err(403, "Creators only");
+    const base = platformConnect.appBaseUrl();
+    if (!platformConnect.youtubeConfigured()) {
+      return { statusCode: 302, headers: { Location: `${base}/?yt=unavailable` }, body: "" };
+    }
+    const state = await platformConnect.createOAuthState(user.id, "youtube");
+    return { statusCode: 302, headers: { Location: platformConnect.buildYouTubeAuthUrl(state) }, body: "" };
+  }
+
+  if (method === "GET" && seg[0] === "me" && seg[1] === "platforms" && seg[2] === "youtube" && seg[3] === "callback" && seg.length === 4) {
+    const base = platformConnect.appBaseUrl();
+    if (!user || user.role !== "creator" || !user.creator) {
+      return { statusCode: 302, headers: { Location: `${base}/?yt=error` }, body: "" };
+    }
+    const stateRec = query.state ? await platformConnect.consumeOAuthState(query.state) : null;
+    if (!query.code || !stateRec || stateRec.userId !== user.id || stateRec.platform !== "youtube") {
+      return { statusCode: 302, headers: { Location: `${base}/?yt=error` }, body: "" };
+    }
+    try {
+      const tokens = await platformConnect.exchangeYouTubeCode(query.code);
+      const channel = await platformConnect.fetchYouTubeChannel(tokens.access_token);
+      if (!channel) return { statusCode: 302, headers: { Location: `${base}/?yt=error` }, body: "" };
+      const conn = await platformConnect.saveYouTubeConnection(user.id, tokens, channel);
+      const synced = await syncYouTubeForConnection(conn);
+      await logEvent({ type: "platform_connected", actorId: user.id, actorRole: "creator", subjectId: user.id, market: user.market || null, data: { platform: "youtube", accountLabel: channel.title || null, syncStatus: synced.status } });
+      return { statusCode: 302, headers: { Location: `${base}/?yt=connected` }, body: "" };
+    } catch (e) {
+      console.error("SIGNL YouTube connect error:", e);
+      return { statusCode: 302, headers: { Location: `${base}/?yt=error` }, body: "" };
+    }
+  }
+
+  if (method === "POST" && seg[0] === "me" && seg[1] === "platforms" && seg[2] === "youtube" && seg[3] === "sync" && seg.length === 4) {
+    if (user.role !== "creator" || !user.creator) return err(403, "Creators only");
+    const conn = await platformConnect.getConnection(user.id, "youtube");
+    if (!conn) return err(404, "YouTube is not connected");
+    const r = await syncYouTubeForConnection(conn);
+    const record = (await store.get(`user:${user.id}`)) || user;
+    return json(200, { ok: r.ok, status: r.status, user: await withFounding(record), platforms: await platformConnect.publicStates(user.id) });
+  }
+
+  if (method === "POST" && seg[0] === "me" && seg[1] === "platforms" && seg[2] === "youtube" && seg[3] === "disconnect" && seg.length === 4) {
+    if (user.role !== "creator" || !user.creator) return err(403, "Creators only");
+    await platformConnect.deleteConnection(user.id, "youtube");
+    const record = await clearPlatformSyncMirror(user.id, "youtube");
+    await logEvent({ type: "platform_disconnected", actorId: user.id, actorRole: "creator", subjectId: user.id, market: user.market || null, data: { platform: "youtube" } });
+    return json(200, { ok: true, user: await withFounding(record || user), platforms: await platformConnect.publicStates(user.id) });
+  }
+
   // ---------- Stripe Connect: business card on file (2026-10-26) ----------
   // A business never creates a Stripe account: it saves a card
   // once (Checkout in setup mode) and paid bookings confirm
@@ -7889,6 +8085,17 @@ async function route(event) {
           const fc = Math.max(0, parseInt(b.followerCount, 10) || 0);
           if (fc > 0) stack.instagram = Math.min(AUDIENCE_COUNT_CAP, fc);
           else delete stack.instagram;
+        }
+        // Connect Accounts (2026-10-28): a connected platform's
+        // count is authoritative. Whatever an older or stale client
+        // posts for that platform is replaced by the last synced
+        // count, so a hand edit can never fight the sync. The
+        // client disables those inputs anyway; this is the server
+        // keeping the same promise on its own side.
+        for (const conn of await platformConnect.listConnectionsForUser(user.id)) {
+          if (conn && typeof conn.lastCount === "number" && conn.lastCount > 0) {
+            stack[conn.platform] = Math.min(AUDIENCE_COUNT_CAP, conn.lastCount);
+          }
         }
         changes.followerCount = [c.followerCount, stack.instagram || 0];
         changes.totalAudience = [audienceTotalOf(c), Object.values(stack).reduce((s, n) => s + n, 0)];

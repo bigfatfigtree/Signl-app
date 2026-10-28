@@ -28,6 +28,9 @@
 //   bizapp:{uuid}                founding business application captured by the site safety net (POST /api/founding-application)
 //   campaign:{id}                outreach campaign config { armed, lastError, lastRunAt, totalSent, ... }
 //   campaign-recipient:{id}:{email}  one queued/sent/skipped outreach recipient
+//   platconn:{userId}:{platform} Connect Accounts connection: OAuth tokens (server-side ONLY,
+//                                never on a client payload) + last synced audience count
+//   oauthstate:{token}           single-use OAuth state for a platform connect flow (10 min TTL)
 
 const fs = require("fs");
 const path = require("path");

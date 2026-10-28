@@ -925,9 +925,10 @@ function stackList(source) {
   if (Array.isArray(source.audienceStack)) return source.audienceStack.filter((p) => p && p.count > 0);
   if (source.audienceStack && typeof source.audienceStack === "object") {
     const labels = { instagram: "Instagram", tiktok: "TikTok", facebook: "Facebook", x: "X", linkedin: "LinkedIn", youtube: "YouTube", snapchat: "Snapchat" };
+    const syncMap = (source.profile && source.profile.platformSync) || source.platformSync || {};
     return Object.entries(source.audienceStack)
       .filter(([, n]) => Number(n) > 0)
-      .map(([platform, count]) => ({ platform, label: labels[platform] || platform, count: Number(count) }))
+      .map(([platform, count]) => ({ platform, label: labels[platform] || platform, count: Number(count), synced: !!(syncMap[platform] && syncMap[platform].verified === true) }))
       .sort((a, b) => b.count - a.count);
   }
   return [];
@@ -1218,7 +1219,7 @@ function totalAudienceOf(source) {
 function stackChipsHtml(source) {
   const list = stackList(source);
   if (!list.length) return "";
-  return `<span class="stack-chips">${list.map((p) => `<span class="stack-chip">${esc(p.label)} ${fmtNum(p.count)}</span>`).join(" ")}</span>`;
+  return `<span class="stack-chips">${list.map((p) => `<span class="stack-chip">${esc(p.label)} ${fmtNum(p.count)}${p.synced ? " &middot; Synced" : ""}</span>`).join(" ")}</span>`;
 }
 
 function audienceLineHtml(source) {
@@ -4586,7 +4587,7 @@ function creatorProfileDetailHtml(c, preview, opts) {
           <div><div class="k">Total audience (all platforms)</div><div class="v">${fmtNum(totalAudienceOf(c))}</div></div>
           <div><div class="k">Typical views</div><div class="v">${fmtNum(p.avgViews)}</div></div>
         </div>
-        ${stackList(c).length ? `<div class="cc-platforms">${stackList(c).map((x) => `<span class="cc-plat">${esc(x.label)} ${fmtNum(x.count)}</span>`).join("")}</div>` : ""}
+        ${stackList(c).length ? `<div class="cc-platforms">${stackList(c).map((x) => `<span class="cc-plat">${esc(x.label)} ${fmtNum(x.count)}${x.synced ? " &middot; Synced" : ""}</span>`).join("")}</div>` : ""}
       </div>
     </div>
     ${c.standing === "paused" ? `<p><span class="badge warn">Paused: a late post is outstanding</span> <span class="small muted">Greyed out in search and unable to take new offers until the post is delivered.</span></p>` : ""}
@@ -5378,6 +5379,69 @@ function laneControlsHtml(c) {
     ${payoutsStepHtml(c)}
   </div>`;
 }
+// ---------- Connect Accounts: YouTube actions (2026-10-28) ----------
+// Connect is a full-page trip to Google and back (the server
+// answers /?yt=<status>); Sync now and Disconnect are in-place
+// calls that swap in the fresh user payload and re-render the
+// profile so the row states (locked input, Synced mark, buttons)
+// always match the server.
+function ytConnect() {
+  window.location.href = "/api/me/platforms/youtube/start";
+  return false;
+}
+
+function rerenderProfileTab() {
+  const u = state.user;
+  if (!u) return;
+  if (u.founding && u.founding.marketLive) renderCreatorDash();
+  else if (u.role === "creator") renderFoundingHome();
+}
+
+async function ytSyncNow() {
+  const note = document.getElementById("yt-note");
+  if (note) note.textContent = "Syncing...";
+  try {
+    const data = await api("POST", "/me/platforms/youtube/sync");
+    state.user = data.user;
+    if (data.ok === false && note) {
+      // The re-render below replaces the note element; carry the
+      // outcome in the notice slot instead so it survives.
+      state.ytNotice = data.status === "hidden" ? "hidden" : "syncerror";
+    }
+    rerenderProfileTab();
+  } catch (err) {
+    if (note) note.textContent = err.message;
+  }
+  return false;
+}
+
+async function ytDisconnect() {
+  if (!confirm("Disconnect YouTube? Your last synced subscriber count stays on your profile as a number you type and can edit, and it stops updating on its own.")) return false;
+  try {
+    const data = await api("POST", "/me/platforms/youtube/disconnect");
+    state.user = data.user;
+    rerenderProfileTab();
+  } catch (err) {
+    const note = document.getElementById("yt-note");
+    if (note) note.textContent = err.message;
+  }
+  return false;
+}
+
+// The one-shot notice the OAuth return (?yt=) leaves behind.
+// Rendered once by the profile form, then cleared.
+function ytNoticeHtml() {
+  const v = state.ytNotice;
+  if (!v) return "";
+  state.ytNotice = null;
+  if (v === "connected") return `<div class="notice"><strong>YouTube is connected.</strong> Your subscriber count now updates on its own and shows to businesses as Synced. Find it in your audience section below.</div>`;
+  if (v === "error") return `<div class="notice"><strong>YouTube connect did not finish.</strong> Nothing changed. You can try again from your audience section below.</div>`;
+  if (v === "unavailable") return `<div class="notice blue"><strong>YouTube connect is being switched on.</strong> Until it opens, your subscriber count stays typed by you and labeled Self-reported.</div>`;
+  if (v === "hidden") return `<div class="notice blue"><strong>Your YouTube channel hides its subscriber count,</strong> so there is nothing for the sync to read. Your typed count stays, labeled Self-reported.</div>`;
+  if (v === "syncerror") return `<div class="notice"><strong>That sync did not come through.</strong> Your last synced count stands. Try Sync now again in a bit.</div>`;
+  return "";
+}
+
 function laneErr(msg) {
   const e = document.getElementById("lane-err");
   if (e) { e.textContent = msg || ""; e.style.display = msg ? "block" : "none"; }
@@ -5855,6 +5919,38 @@ function creatorProfileHtml(u) {
     ["youtube", "YouTube subscribers", "p-stack-youtube"],
     ["snapchat", "Snapchat followers", "p-stack-snapchat"],
   ];
+  // Connect Accounts (2026-10-28): each audience row carries its
+  // connection state. A verified sync locks the input and shows the
+  // Synced mark with the account and the last update; a connection
+  // whose count the provider cannot read (a YouTube channel hiding
+  // its subscribers) stays editable with the connection named;
+  // everything else is editable and labeled Self-reported, with the
+  // platform's gate stated in plain words where one exists.
+  const stackRowHtml = ([id, label, inputId]) => {
+    const sync = (c.platformSync || {})[id] || null;
+    let note = "";
+    if (sync && sync.verified === true) {
+      note = `<p class="small" style="margin-top:6px"><span class="badge">Synced</span> <span class="muted">${esc(sync.accountLabel || label)} &middot; updated ${esc(fmtDate(sync.lastSyncAt))}</span></p>`
+        + (id === "youtube" ? `<p class="small" style="margin-top:4px"><button type="button" class="btn small-btn ghost" onclick="return ytSyncNow()">Sync now</button> <button type="button" class="btn small-btn ghost" onclick="return ytDisconnect()">Disconnect</button> <span class="saved" id="yt-note"></span></p>` : "");
+    } else if (sync) {
+      note = `<p class="small" style="margin-top:6px"><span class="badge info">Connected</span> <span class="muted">${esc(sync.accountLabel || label)} hides its subscriber count, so this one stays typed by you.</span></p>`
+        + (id === "youtube" ? `<p class="small" style="margin-top:4px"><button type="button" class="btn small-btn ghost" onclick="return ytSyncNow()">Sync now</button> <button type="button" class="btn small-btn ghost" onclick="return ytDisconnect()">Disconnect</button> <span class="saved" id="yt-note"></span></p>` : "");
+    } else if (id === "youtube") {
+      const ytCfg = (state.boot && state.boot.platformConnect && state.boot.platformConnect.youtube) || {};
+      note = ytCfg.oauthConfigured
+        ? `<p class="small muted" style="margin-top:6px">Self-reported. <button type="button" class="btn small-btn" onclick="return ytConnect()">Connect YouTube</button> and this count verifies itself and stays up to date on its own.</p>`
+        : `<p class="small muted" style="margin-top:6px">Self-reported. YouTube connect is being switched on; until it opens, this count stays typed by you.</p>`;
+    } else if (id === "instagram") {
+      note = `<p class="small muted" style="margin-top:6px">Self-reported. Instagram verification is in review with Meta, and connect opens the day it clears.</p>`;
+    } else if (id === "facebook") {
+      note = `<p class="small muted" style="margin-top:6px">Self-reported. Facebook is covered by the same Meta review as Instagram.</p>`;
+    } else if (id === "tiktok") {
+      note = `<p class="small muted" style="margin-top:6px">Self-reported. TikTok connect is being prepared; for now, this count stays typed by you.</p>`;
+    } else {
+      note = `<p class="small muted" style="margin-top:6px">Self-reported.</p>`;
+    }
+    return `<div class="field"><label>${label}</label><input type="number" id="${inputId}" min="0" value="${stackVal(id)}" oninput="syncStackTotal()"${sync && sync.verified === true ? " disabled" : ""}>${note}</div>`;
+  };
   return `
   <div class="panel">
     <div class="flex-between">
@@ -5878,6 +5974,7 @@ function creatorProfileHtml(u) {
       <p class="small muted">Share this link anywhere, including your Instagram bio. Visitors see your name, handle, market and neighborhood, tier, follower count, categories, local audience share, Local Impact Score, Momentum points, and founding standing. Your email and account details are never shown, and there is no public roster: this page exists only at your link.</p>
     </div>` : ""}
     <div id="form-error"></div>
+    ${ytNoticeHtml()}
     ${u.profileCompletion && !u.profileCompletion.complete ? `<div class="notice blue">Your profile is not finished yet. Still needed to go live: ${u.profileCompletion.items.filter((i) => i.required && !i.done).map((i) => esc(i.label)).join(", ")}. Fill in the fields below and save. Businesses cannot see you, and you cannot take offers, until your profile is finished.</div>` : ""}
     <form onsubmit="return doUpdateCreator(event)">
       <div class="fgroup tint">
@@ -5925,8 +6022,9 @@ function creatorProfileHtml(u) {
       <p class="fg-kicker">Your audience</p>
       <div class="field"><label>Your tier band</label><p style="margin:6px 0"><strong id="p-tier-band">${esc(c.tierBand || "")}</strong></p><p class="small muted">Set automatically from your total audience across platforms. It updates itself when your counts below change; nobody picks their own band.</p></div>
       <div class="field"><label>Your audience, platform by platform</label>
+        <p class="small muted">Connect a platform and its count is verified: it updates on its own, and businesses see a Synced mark next to it. Counts you type yourself are labeled Self-reported.</p>
         <div class="form-2col">
-          ${stackRows.map(([id, label, inputId]) => `<div class="field"><label>${label}</label><input type="number" id="${inputId}" min="0" value="${stackVal(id)}" oninput="syncStackTotal()"></div>`).join("")}
+          ${stackRows.map(stackRowHtml).join("")}
         </div>
         <p class="small muted">Total audience: <strong id="p-stack-total">${fmtNum(totalAudienceOf(c))}</strong> across every platform. Businesses see the total and the breakdown. Skip any platform you do not use (leave it at 0). Completing 3 or more platforms earns Momentum points.</p>
       </div>
@@ -11291,6 +11389,16 @@ function previewDashboardHtml(d) {
     const srcParam = params.get("src");
     if (srcParam) {
       try { localStorage.setItem("signl_src", srcParam.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 40)); } catch (e) { /* storage unavailable */ }
+    }
+    // A YouTube connect return (/?yt=<status>) lands a signed-in
+    // creator on their profile, where the audience section shows
+    // the outcome. The param is consumed here and stripped from
+    // the URL so a refresh does not replay the notice.
+    const ytParam = params.get("yt");
+    if (ytParam && state.user && state.user.role === "creator") {
+      state.ytNotice = ytParam.trim().slice(0, 24);
+      state.tab = "Profile";
+      try { history.replaceState(null, "", location.pathname + location.hash); } catch (e) { /* cosmetic only */ }
     }
     // A password reset link (/?reset=<token>) lands on the reset
     // screen ahead of every other interpretation of the URL.
