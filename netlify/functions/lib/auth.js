@@ -93,10 +93,16 @@ function parseCookies(header) {
 // The one admin account. Created on first boot from env vars:
 //   ADMIN_EMAIL     (default jeff@joinsignl.com)
 //   ADMIN_PASSWORD  (required to enable admin sign-in; never stored in code)
+// Perf (2026-10-28): once a warm container has seen the admin index
+// record, skip the store read on later requests. The account is
+// append-only in practice; a cold container still checks the store,
+// so a fresh deploy behaves exactly as before.
+let adminIndexSeen = false;
 async function ensureAdmin(logEvent) {
+  if (adminIndexSeen) return;
   const email = (process.env.ADMIN_EMAIL || "jeff@joinsignl.com").toLowerCase();
   const existing = await store.get(`email:${email}`);
-  if (existing) return;
+  if (existing) { adminIndexSeen = true; return; }
   const password = process.env.ADMIN_PASSWORD;
   if (!password) return; // Admin sign-in stays disabled until Jeff sets it.
   const { salt, hash } = hashPassword(password);
@@ -114,6 +120,7 @@ async function ensureAdmin(logEvent) {
     updatedAt: now,
   });
   await store.set(`email:${email}`, { userId: id });
+  adminIndexSeen = true;
   if (logEvent) {
     await logEvent({
       type: "admin_bootstrapped",

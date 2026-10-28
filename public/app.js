@@ -75,34 +75,67 @@ function esc(s) {
     .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
+// GET cache (perf, 2026-10-28): moving between sections re-renders
+// views that refetch the same endpoints seconds apart, and every
+// fetch used to pay a full function round trip. A short in-memory
+// cache plus in-flight dedupe makes repeat renders instant. Any
+// mutation clears the whole cache, so an action never reads state
+// it just changed; entries also expire on their own after 15s.
+// Callers receive a deep copy, never the cached object itself, so
+// view code mutating a result cannot poison the next render.
+const getCache = new Map();
+const getInflight = new Map();
+const GET_CACHE_TTL_MS = 15000;
+function cloneJson(x) {
+  return x === undefined ? x : JSON.parse(JSON.stringify(x));
+}
+
 async function api(method, path, body) {
-  let res;
+  const isGet = method === "GET";
+  if (!isGet) getCache.clear();
+  if (isGet) {
+    const hit = getCache.get(path);
+    if (hit && Date.now() - hit.at < GET_CACHE_TTL_MS) return cloneJson(hit.data);
+    if (getInflight.has(path)) return cloneJson(await getInflight.get(path));
+  }
+  const run = (async () => {
+    let res;
+    try {
+      res = await fetch("/api" + path, {
+        method,
+        headers: body ? { "Content-Type": "application/json" } : {},
+        body: body ? JSON.stringify(body) : undefined,
+        credentials: "same-origin",
+      });
+    } catch (e) {
+      // A network failure says so in plain words, never as a raw
+      // status or a browser exception string.
+      throw new Error("We could not reach SIGNL. Check your connection and try again.");
+    }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      // Server messages are plain language and pass through. A bare
+      // failure with no message becomes a friendly one: nobody should
+      // ever see "Request failed (502)" (UX audit fix, 2026-10-22).
+      // The parsed body rides along on the error so callers that need
+      // structured fields (the offer dedupe's existingOfferId) can
+      // read them without a second request.
+      const e = new Error(data.error || "Something went wrong on our side. Try again in a moment.");
+      e.data = data;
+      e.status = res.status;
+      throw e;
+    }
+    return data;
+  })();
+  if (!isGet) return run;
+  getInflight.set(path, run);
   try {
-    res = await fetch("/api" + path, {
-      method,
-      headers: body ? { "Content-Type": "application/json" } : {},
-      body: body ? JSON.stringify(body) : undefined,
-      credentials: "same-origin",
-    });
-  } catch (e) {
-    // A network failure says so in plain words, never as a raw
-    // status or a browser exception string.
-    throw new Error("We could not reach SIGNL. Check your connection and try again.");
+    const data = await run;
+    getCache.set(path, { at: Date.now(), data });
+    return cloneJson(data);
+  } finally {
+    getInflight.delete(path);
   }
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    // Server messages are plain language and pass through. A bare
-    // failure with no message becomes a friendly one: nobody should
-    // ever see "Request failed (502)" (UX audit fix, 2026-10-22).
-    // The parsed body rides along on the error so callers that need
-    // structured fields (the offer dedupe's existingOfferId) can
-    // read them without a second request.
-    const e = new Error(data.error || "Something went wrong on our side. Try again in a moment.");
-    e.data = data;
-    e.status = res.status;
-    throw e;
-  }
-  return data;
 }
 
 // Skeleton loading state (visual experience pass, 2026-10-24):
@@ -5528,8 +5561,11 @@ async function loadCreatorHome() {
   if (!el) return;
   const u = state.user;
   try {
-    await ensureDeckState();
-    const [bkData, offData, fData, appData, openData, lrData] = await Promise.all([
+    // Perf (2026-10-28): deck state used to load on its own round
+    // trip BEFORE the parallel batch below; it is independent, so
+    // it now rides along inside the same Promise.all.
+    const [, bkData, offData, fData, appData, openData, lrData] = await Promise.all([
+      ensureDeckState(),
       api("GET", "/bookings"),
       api("GET", "/offers"),
       api("GET", "/me/founding"),
@@ -7455,27 +7491,41 @@ async function loadBusinessHome() {
   const u = state.user;
   el.innerHTML = `${wsHead("Home", { sub: "Start here. Sig shows you what needs you, in order.", subKey: "biz-home" })}${skelHtml("Loading your home...", 3)}`;
   try {
+    // Perf (2026-10-28): notifications, offers and bookings do not
+    // depend on the business-home payload, so all four requests now
+    // fire together instead of as a sequential chain. Each keeps
+    // its own degrade-to-empty behavior.
+    const notesPromise = api("GET", "/notifications").catch(() => null);
+    const offersPromise = api("GET", "/offers").catch(() => null);
+    const bookingsPromise = api("GET", "/bookings").catch(() => null);
     const d = await api("GET", "/me/business-home");
     const h = d.home;
     if (!document.getElementById("tab-body")) return;
     let notes = [];
-    try {
-      const nd = await api("GET", "/notifications");
+    const nd = await notesPromise;
+    if (nd) {
       notes = nd.notifications || [];
       if (nd.unreadCount) state.notesReadPending = true;
       if (nd.badges) state.badges = nd.badges;
-    } catch (e) { /* the feed degrades to content events only */ }
+    } /* else the feed degrades to content events only */
     let offers = [];
     let bookings = [];
-    try { const od = await api("GET", "/offers"); offers = od.offers || []; } catch (e) { /* queue degrades */ }
-    try { const bd = await api("GET", "/bookings"); bookings = bd.bookings || []; } catch (e) { /* queue degrades */ }
+    const od = await offersPromise; if (od) offers = od.offers || []; /* else queue degrades */
+    const bd = await bookingsPromise; if (bd) bookings = bd.bookings || []; /* else queue degrades */
+    // Perf (2026-10-28): the per-offer application stacks used to
+    // load one sequential request at a time (up to 12 round trips);
+    // they are independent, so they now load in parallel and are
+    // flattened in the original offer order.
     const waiting = [];
-    for (const o of offers.filter((x) => (x.applicationCount || 0) > 0).slice(0, 12)) {
-      try {
-        const ad = await api("GET", `/offers/${o.id}/applications`);
-        for (const a of ad.applications || []) if (a.status === "applied") waiting.push({ offer: ad.offer || o, app: a });
-      } catch (e) { /* one offer's stack never blocks the home */ }
-    }
+    const stacks = await Promise.all(
+      offers.filter((x) => (x.applicationCount || 0) > 0).slice(0, 12).map(async (o) => {
+        try {
+          const ad = await api("GET", `/offers/${o.id}/applications`);
+          return (ad.applications || []).filter((a) => a.status === "applied").map((a) => ({ offer: ad.offer || o, app: a }));
+        } catch (e) { return []; /* one offer's stack never blocks the home */ }
+      })
+    );
+    for (const stack of stacks) waiting.push(...stack);
     state.waitCounts = state.waitCounts || {};
     state.waitCounts.bizApps = waiting.length;
     state.myOffers = offers;
@@ -11042,11 +11092,13 @@ function previewDashboardHtml(d) {
 
 (async function init() {
   try {
+    // Perf (2026-10-28): bootstrap and the session read do not
+    // depend on each other; run them in parallel instead of paying
+    // two sequential round trips before first paint.
+    const mePromise = api("GET", "/auth/me").catch(() => ({ user: null }));
     state.boot = await api("GET", "/bootstrap");
-    try {
-      const me = await api("GET", "/auth/me");
-      state.user = me.user;
-    } catch (e) { state.user = null; }
+    const me = await mePromise;
+    state.user = me.user;
     const params = new URLSearchParams(location.search);
     const refParam = params.get("ref");
     if (refParam) {

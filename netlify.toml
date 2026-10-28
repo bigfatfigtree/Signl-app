@@ -26,3 +26,34 @@
 
 [functions]
   node_bundler = "esbuild"
+
+# Perf (2026-10-28): static assets used to ship with Netlify's
+# default Cache-Control (max-age=0, must-revalidate), so browsers
+# revalidated every file on every app load. App code/CSS now cache
+# for an hour with stale-while-revalidate (deploys still propagate
+# within the hour); brand assets and the bundled dataset cache for
+# a day. index.html and /api/* are deliberately not covered here.
+[[headers]]
+  for = "/app.js"
+  [headers.values]
+    Cache-Control = "public, max-age=3600, stale-while-revalidate=86400"
+
+[[headers]]
+  for = "/styles.css"
+  [headers.values]
+    Cache-Control = "public, max-age=3600, stale-while-revalidate=86400"
+
+[[headers]]
+  for = "/theme-v2.css"
+  [headers.values]
+    Cache-Control = "public, max-age=3600, stale-while-revalidate=86400"
+
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=86400, stale-while-revalidate=604800"
+
+[[headers]]
+  for = "/data/*"
+  [headers.values]
+    Cache-Control = "public, max-age=86400, stale-while-revalidate=604800"

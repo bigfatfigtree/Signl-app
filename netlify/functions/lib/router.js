@@ -2143,9 +2143,25 @@ function recruiterKitEmail(user) {
   return { subject, text: lines.join("\n") };
 }
 
+// Perf (2026-10-28): the route() preamble used to pay one store
+// round trip per check below on EVERY /api/* request, sequentially.
+// These module-level memos let a warm container skip the read once
+// the answer is known: one-time jobs latch done forever (they never
+// un-complete), and throttled sweeps re-check the store at most once
+// a minute per container (their real throttles are 25-55 minutes, so
+// a due sweep can start up to a minute late, never early, and the
+// store-side claim still prevents double runs across containers).
+let recruiterKitDone = false;
+const SWEEP_MEMO_MS = 60 * 1000;
+const sweepMemoAt = Object.create(null);
+function sweepMemoFresh(key) {
+  return Date.now() - (sweepMemoAt[key] || 0) < SWEEP_MEMO_MS;
+}
+
 async function maybeSendRecruiterKit() {
+  if (recruiterKitDone) return;
   const existing = await store.get(RECRUITER_KIT_FLAG_KEY);
-  if (existing) return;
+  if (existing) { recruiterKitDone = true; return; }
   // Claim first, send second: the kit can never go out twice.
   const claimedAt = nowIso();
   await store.set(RECRUITER_KIT_FLAG_KEY, { version: 1, claimedAt, recipients: [] });
@@ -2160,6 +2176,7 @@ async function maybeSendRecruiterKit() {
     } catch (e) { /* one recipient must never block the rest */ }
   }
   await store.set(RECRUITER_KIT_FLAG_KEY, { version: 1, claimedAt, completedAt: nowIso(), recipients: sentTo });
+  recruiterKitDone = true;
   await logEvent({
     type: "recruiter_kit_email_run",
     actorId: null,
@@ -3453,12 +3470,16 @@ async function runProfileBackfill() {
   return audit;
 }
 
+let profileBackfillDone = false;
 async function maybeRunProfileBackfill() {
+  if (profileBackfillDone) return null;
   const rec = await store.get(PROFILE_BACKFILL_KEY);
-  if (rec && rec.done) return null;
+  if (rec && rec.done) { profileBackfillDone = true; return null; }
   // Claim before running so concurrent requests do not pile on.
   await store.set(PROFILE_BACKFILL_KEY, { claimedAt: nowIso(), done: false });
-  return runProfileBackfill();
+  const out = await runProfileBackfill();
+  profileBackfillDone = true;
+  return out;
 }
 
 // ---------- Claim auto-decisions (Jeff standing authority, 2026-10-22) ----------
@@ -3641,12 +3662,16 @@ async function runAutoDecisionCleanup() {
   return audit;
 }
 
+let autoDecisionCleanupDone = false;
 async function maybeRunAutoDecisionCleanup() {
+  if (autoDecisionCleanupDone) return null;
   const rec = await store.get(AUTO_DECISION_CLEANUP_KEY);
-  if (rec && rec.done) return null;
+  if (rec && rec.done) { autoDecisionCleanupDone = true; return null; }
   // Claim before running so concurrent requests do not pile on.
   await store.set(AUTO_DECISION_CLEANUP_KEY, { claimedAt: nowIso(), done: false });
-  return runAutoDecisionCleanup();
+  const out = await runAutoDecisionCleanup();
+  autoDecisionCleanupDone = true;
+  return out;
 }
 
 // ---------- visit windows + weekly cap (Jeff, 2026-10-19 r2) ----------
@@ -4259,6 +4284,8 @@ async function runOfferSweep() {
 
 const OFFER_SWEEP_THROTTLE_MS = 55 * 60 * 1000;
 async function maybeRunOfferSweep() {
+  if (sweepMemoFresh("offerSweep")) return null;
+  sweepMemoAt.offerSweep = Date.now();
   const rec = await store.get("config:offerSweep");
   const last = rec && rec.lastRunAt ? Date.parse(rec.lastRunAt) : 0;
   if (Date.now() - last < OFFER_SWEEP_THROTTLE_MS) return null;
@@ -4268,6 +4295,8 @@ async function maybeRunOfferSweep() {
 
 const SWEEP_THROTTLE_MS = 55 * 60 * 1000;
 async function maybeRunComplianceSweep() {
+  if (sweepMemoFresh("complianceSweep")) return;
+  sweepMemoAt.complianceSweep = Date.now();
   const rec = await store.get("config:complianceSweep");
   const last = rec && rec.lastRunAt ? Date.parse(rec.lastRunAt) : 0;
   if (Date.now() - last < SWEEP_THROTTLE_MS) return;
@@ -4279,6 +4308,8 @@ async function maybeRunComplianceSweep() {
 const CAMPAIGN_SWEEP_THROTTLE_MS = 25 * 60 * 1000;
 async function maybeRunCampaignSweep() {
   if (TEST_MODE) return;
+  if (sweepMemoFresh("campaignSweep")) return;
+  sweepMemoAt.campaignSweep = Date.now();
   const rec = await store.get("config:campaignSweep");
   const last = rec && rec.lastRunAt ? Date.parse(rec.lastRunAt) : 0;
   if (Date.now() - last < CAMPAIGN_SWEEP_THROTTLE_MS) return;
@@ -4328,6 +4359,8 @@ async function runProfileCompletionReminderSweep(opts = {}) {
 
 const PROFILE_REMINDER_SWEEP_THROTTLE_MS = 55 * 60 * 1000;
 async function maybeRunProfileReminderSweep() {
+  if (sweepMemoFresh("profileReminderSweep")) return null;
+  sweepMemoAt.profileReminderSweep = Date.now();
   const rec = await store.get("config:profileReminderSweep");
   const last = rec && rec.lastRunAt ? Date.parse(rec.lastRunAt) : 0;
   if (Date.now() - last < PROFILE_REMINDER_SWEEP_THROTTLE_MS) return null;
@@ -7074,42 +7107,47 @@ async function route(event) {
   // delayed" instead of taking down every route. Unguarded, this one
   // read caused the total /api/* outage of 2026-10-25 (expired Netlify
   // Blobs token) — see INCIDENT-2026-10-25.md.
-  try {
-    await auth.ensureAdmin(logEvent);
-  } catch (e) {
-    console.error("SIGNL ensureAdmin failed (continuing; admin bootstrap delayed):", e);
-  }
-  // One-time recruiter kit email: fires on the first request after
-  // deploy, guarded by a claimed blob flag, and never repeats. It
-  // must never break a request, hence the try/catch.
-  try { await maybeSendRecruiterKit(); } catch (e) { /* kit email is best-effort */ }
-  // One-time profileComplete backfill: recomputes the stored flag
-  // for records written before the two-step claim shipped, guarded
-  // by its own claimed flag, audit logged as an event.
-  try { await maybeRunProfileBackfill(); } catch (e) { /* backfill is best-effort on the request path */ }
-  // One-time auto-decision cleanup for pending records that
-  // predate the standing rules: same claimed-flag discipline, and
-  // it must never break a request either.
-  try { await maybeRunAutoDecisionCleanup(); } catch (e) { /* cleanup is best-effort on the request path */ }
-  // Profile completion reminders: same throttled opportunistic
-  // pattern as the compliance sweep below.
-  try { await maybeRunProfileReminderSweep(); } catch (e) { /* reminder sweep is best-effort on the request path */ }
-  // Post-compliance sweep: drives the 48h reminders, the day-8 pause,
-  // and the day-9 ban. Throttled to roughly hourly here (the Netlify
-  // scheduled function and the admin endpoint are the explicit
-  // triggers), and it must never break a request either.
-  try { await maybeRunComplianceSweep(); } catch (e) { /* sweep is best-effort on the request path */ }
-  // Offer lifecycle sweep: same opportunistic pattern (selection
-  // SLA releases, backfill advancement, offer expiry, the 48 hour
-  // coaching nudge).
-  try { await maybeRunOfferSweep(); } catch (e) { /* sweep is best-effort on the request path */ }
-  // Campaign sweep: same opportunistic pattern (Jeff fix, 2026-10-19).
-  // The scheduled function alone never fired in production: the armed
-  // founding-creator campaign sat at 0 sends for hours with no error
-  // recorded anywhere. Running a throttled pass on ordinary API
-  // traffic makes sending independent of Netlify's scheduler and of
-  // the sweep token, exactly like compliance above.
-  try { await maybeRunCampaignSweep(); } catch (e) { /* sweep is best-effort on the request path */ }
+  // Perf (2026-10-28): these eight preamble jobs are independent
+  // (disjoint config keys, claim-flag discipline inside each), so
+  // they now run CONCURRENTLY instead of as a sequential chain of
+  // store round trips on every request. Each keeps its own
+  // try/catch: every one of them is best-effort and must never
+  // break a request (see the per-job notes below).
+  await Promise.all([
+    // Admin bootstrap: opportunistically creates the one admin
+    // account, but if the store itself is failing it must degrade
+    // to "admin bootstrap delayed" instead of taking down every
+    // route. Unguarded, this one read caused the total /api/*
+    // outage of 2026-10-25 (expired Netlify Blobs token) — see
+    // INCIDENT-2026-10-25.md.
+    (async () => {
+      try {
+        await auth.ensureAdmin(logEvent);
+      } catch (e) {
+        console.error("SIGNL ensureAdmin failed (continuing; admin bootstrap delayed):", e);
+      }
+    })(),
+    // One-time recruiter kit email: fires on the first request
+    // after deploy, guarded by a claimed blob flag, never repeats.
+    (async () => { try { await maybeSendRecruiterKit(); } catch (e) { /* kit email is best-effort */ } })(),
+    // One-time profileComplete backfill, claimed-flag guarded.
+    (async () => { try { await maybeRunProfileBackfill(); } catch (e) { /* backfill is best-effort on the request path */ } })(),
+    // One-time auto-decision cleanup, claimed-flag guarded.
+    (async () => { try { await maybeRunAutoDecisionCleanup(); } catch (e) { /* cleanup is best-effort on the request path */ } })(),
+    // Profile completion reminders: throttled opportunistic sweep.
+    (async () => { try { await maybeRunProfileReminderSweep(); } catch (e) { /* reminder sweep is best-effort on the request path */ } })(),
+    // Post-compliance sweep: 48h reminders, day-8 pause, day-9 ban.
+    // Throttled to roughly hourly here (the Netlify scheduled
+    // function and the admin endpoint are the explicit triggers).
+    (async () => { try { await maybeRunComplianceSweep(); } catch (e) { /* sweep is best-effort on the request path */ } })(),
+    // Offer lifecycle sweep: selection SLA releases, backfill
+    // advancement, offer expiry, the 48 hour coaching nudge.
+    (async () => { try { await maybeRunOfferSweep(); } catch (e) { /* sweep is best-effort on the request path */ } })(),
+    // Campaign sweep (Jeff fix, 2026-10-19): the scheduled function
+    // alone never fired in production, so a throttled pass runs on
+    // ordinary API traffic, exactly like compliance above.
+    (async () => { try { await maybeRunCampaignSweep(); } catch (e) { /* sweep is best-effort on the request path */ } })(),
+  ]);
   const ctx = await getAuthUser(event);
   const user = ctx.user;
 
@@ -7157,7 +7195,11 @@ async function route(event) {
         applicationStackPerSpot: APPLICATION_STACK_PER_SPOT,
         templates: OFFER_TEMPLATES,
       },
-    });
+    // Perf (2026-10-28): bootstrap is static config plus launch
+    // flags that change rarely; let browsers reuse it for a minute
+    // (with stale-while-revalidate) instead of paying a function
+    // round trip on every single app load.
+    }, { "Cache-Control": "public, max-age=60, stale-while-revalidate=300" });
   }
 
   // Server-rendered profile page (netlify.toml /c/* rewrite).
