@@ -9153,6 +9153,66 @@ async function route(event) {
         if (bk && perMarket[bk.market]) perMarket[bk.market].posts += 1;
       }
       const onTime = posts.filter((p) => p.onTime).length;
+      // Spanish + campus layers readout (S4, Jeff, 2026-10-28):
+      // read-only, computed from the same records on every call;
+      // nothing here is stored. Per market: creator totals,
+      // approvals, finished profiles, the Spanish-content flag,
+      // how many carry a Spanish-reach %, and claims inside the
+      // window (?days=, default 30) with the Spanish subset
+      // (Spanish-content toggle OR a stored lang=es preference).
+      // Unlisted sign-ups group by typed city + country, exactly
+      // like unlistedByCity above, so non-launch markets (the
+      // LATAM radar) show up as their own rows. Testers are out
+      // of every count. Campus Leads come from the same momentum
+      // pass Admin applications uses (U2); business language is
+      // the S3 preferredLanguage split.
+      const daysParam = Number(query.days);
+      const periodDays = Number.isFinite(daysParam) && daysParam > 0 ? Math.max(1, Math.min(365, Math.floor(daysParam))) : 30;
+      const sinceMs = Date.now() - periodDays * 86400000;
+      const layerRows = {};
+      for (const u of users) {
+        if (u.role !== "creator" || isTester(u)) continue;
+        let key;
+        if (u.market === UNLISTED) {
+          const region = u.country || u.state || "";
+          key = `${u.city || "Unknown"}${region ? ", " + region : ""}`;
+        } else key = normalizeMarketName(u.market);
+        const row = layerRows[key] || (layerRows[key] = { market: key, creators: 0, approved: 0, complete: 0, spanishFlagged: 0, withSpanishPct: 0, claimsInPeriod: 0, spanishClaimsInPeriod: 0 });
+        row.creators += 1;
+        if (u.status === "approved") row.approved += 1;
+        if (profileCompleteOf(u)) row.complete += 1;
+        const spanish = !!(u.creator && u.creator.spanishContent === true);
+        if (spanish) row.spanishFlagged += 1;
+        if (u.creator && typeof u.creator.spanishAudiencePct === "number") row.withSpanishPct += 1;
+        const createdMs = Date.parse(u.createdAt || "");
+        if (Number.isFinite(createdMs) && createdMs >= sinceMs) {
+          row.claimsInPeriod += 1;
+          if (spanish || u.lang === "es") row.spanishClaimsInPeriod += 1;
+        }
+      }
+      const layersMomentum = createMomentum({ users, bookings, posts });
+      const leadMap = {};
+      for (const u of users) {
+        if (u.role !== "creator" || isTester(u)) continue;
+        const cl = layersMomentum.detailFor(u).campusLead;
+        if (cl && cl.qualified) {
+          const entry = leadMap[cl.university] || (leadMap[cl.university] = { university: cl.university, leads: 0, handles: [] });
+          entry.leads += 1;
+          if (u.creator && u.creator.handle) entry.handles.push(u.creator.handle);
+        }
+      }
+      const businessLanguage = { en: 0, es: 0 };
+      for (const u of users) {
+        if (u.role !== "business") continue;
+        if (u.business && u.business.preferredLanguage === "es") businessLanguage.es += 1;
+        else businessLanguage.en += 1;
+      }
+      const layers = {
+        periodDays,
+        markets: Object.values(layerRows).sort((a, b) => b.creators - a.creators),
+        campusLeads: Object.values(leadMap).sort((a, b) => b.leads - a.leads),
+        businessLanguage,
+      };
       return json(200, {
         users: {
           creators: users.filter((u) => u.role === "creator").length,
@@ -9173,6 +9233,7 @@ async function route(event) {
         posts: { total: posts.length, onTime, late: posts.length - onTime, onTimeRate: posts.length ? Math.round((onTime / posts.length) * 100) : null },
         perMarket,
         unlistedByCity,
+        layers,
       });
     }
     // Creator outreach campaigns (Jeff, 2026-10-19): status,

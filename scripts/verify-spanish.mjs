@@ -169,11 +169,54 @@ try {
   check("S1: an unsupported profile lang is ignored, stored value kept", langBad.status === 200 && langBad.data.user.lang === "es", "");
   check("S1: Sig carries the creator Spanish state line", (routerSrcS3.match(/This person prefers Spanish\. Answer in Spanish\./g) || []).length === 1 && routerSrcS3.includes('if (user.lang === "es")'), "");
 
+  // ---------- S4: Admin readout ----------
+  await creator("PATCH", "/api/me/profile", { spanishContent: true, spanishAudiencePct: 40 });
+  await business("PATCH", "/api/me/profile", { preferredLanguage: "es" });
+  const sjClaim = client();
+  const sjReg = await sjClaim("POST", "/api/auth/register", {
+    role: "creator", quickClaim: true, email: "isabela@example.com", password: "password1234",
+    market: "Not listed yet", customCity: "Ponce", customCountry: "Puerto Rico",
+    handle: "isabela.crea", primaryPlatform: "instagram", lang: "es", ...AGREE,
+  });
+  check("S4 setup: the unlisted Spanish claim registers", sjReg.status === 201, JSON.stringify(sjReg.data).slice(0, 140));
+  const founderPayload = (email, handle, extra) => ({
+    role: "creator", name: "ODU " + handle, email, password: "password1234", market: "Virginia Beach", city: "Norfolk",
+    handle, followerCount: 3000, localAudiencePct: 55, categories: ["Food & Drink"],
+    university: "Old Dominion University", universityStatus: "current_student", ...AGREE, ...(extra || {}),
+  });
+  const leadClient = client();
+  const leadReg = await leadClient("POST", "/api/auth/register", founderPayload("lead@odu.example", "oducampuslead", {}));
+  check("S4 setup: the campus lead registers as a current ODU student", leadReg.status === 201, JSON.stringify(leadReg.data).slice(0, 140));
+  for (let i = 1; i <= 5; i++) {
+    const rc = client();
+    const rr = await rc("POST", "/api/auth/register", founderPayload(`odu${i}@example.com`, `odustudent${i}`, { referredBy: "oducampuslead" }));
+    if (rr.status === 201) await admin("POST", "/api/admin/review", { userId: rr.data.user.id, decision: "approve" });
+  }
+  const s4 = await admin("GET", "/api/admin/stats");
+  const L = s4.data.layers;
+  check("S4: stats carries the layers block with the default 30-day window", !!L && L.periodDays === 30 && Array.isArray(L.markets) && Array.isArray(L.campusLeads), JSON.stringify(s4.data.layers).slice(0, 120));
+  const sjRow = L.markets.find((r) => r.market === "Ponce, Puerto Rico");
+  check("S4: the unlisted city is its own market row (the LATAM radar)", !!sjRow && sjRow.creators === 1 && sjRow.claimsInPeriod === 1 && sjRow.spanishClaimsInPeriod === 1, JSON.stringify(sjRow));
+  const totalCreators = L.markets.reduce((n, r) => n + r.creators, 0);
+  const totalClaims = L.markets.reduce((n, r) => n + r.claimsInPeriod, 0);
+  const totalSpanishClaims = L.markets.reduce((n, r) => n + r.spanishClaimsInPeriod, 0);
+  check("S4: every creator in the world was claimed inside the window", totalClaims === totalCreators && totalCreators >= 10, JSON.stringify({ totalCreators, totalClaims }));
+  check("S4: Spanish claims count the toggle, the stored preference, and the Spanish arrival", totalSpanishClaims >= 3, JSON.stringify(totalSpanishClaims));
+  const totalFlagged = L.markets.reduce((n, r) => n + r.spanishFlagged, 0);
+  const totalPct = L.markets.reduce((n, r) => n + r.withSpanishPct, 0);
+  check("S4: Spanish-flagged and Spanish-% counts read the records", totalFlagged >= 1 && totalPct >= 1, JSON.stringify({ totalFlagged, totalPct }));
+  const leadRow = L.campusLeads.find((e) => e.university === "Old Dominion University");
+  check("S4: Campus Leads aggregate per school with handles", !!leadRow && leadRow.leads === 1 && leadRow.handles.includes("oducampuslead"), JSON.stringify(L.campusLeads));
+  check("S4: business language counts the S3 preference", L.businessLanguage.es === 1 && L.businessLanguage.en === 0, JSON.stringify(L.businessLanguage));
+  const s4b = await admin("GET", "/api/admin/stats?days=7");
+  check("S4: ?days= sets the window and the readout is read-only (repeat call identical)", s4b.data.layers.periodDays === 7 && JSON.stringify(s4b.data.layers.markets) === JSON.stringify(L.markets), "");
+
   const appJsRes = await fetch(BASE + "/app.js");
   const appJs = await appJsRes.text();
   check("S2: client ships the panel field, the save handler, and the display phrase", appJs.includes("lane-spanish-pct") && appJs.includes("laneSpanishPctSave") && appJs.includes("Spanish-speaking audience"), "");
   check("S3: client ships the business language control and Admin marker", appJs.includes("bp-lang") && appJs.includes("preferredLanguage") && appJs.includes("Prefers Spanish"), "");
   check("S1: client ships the language capture, the T() helper, and the Spanish claim copy", appJs.includes("signl_lang") && appJs.includes("function T(en, es)") && appJs.includes("Reclama tu lugar de fundador") && appJs.includes("Reclamar mi lugar") && appJs.includes('lang: state.lang === "es" ? "es" : undefined'), "");
+  check("S4: client ships the Stats layers panel", appJs.includes("Spanish and campus layers") && appJs.includes("Campus Leads:") && appJs.includes("Business language:"), "");
 } catch (e) {
   failed += 1;
   failures.push("suite error: " + e.message);

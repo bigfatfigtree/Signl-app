@@ -10640,7 +10640,16 @@ async function loadStats() {
       <div class="table-wrap panel"><table>
         <tr><th>City, country</th><th>Creator sign-ups</th></tr>
         ${s.unlistedByCity.map((r) => `<tr><td>${esc(r.place)}</td><td data-label="Creator sign-ups">${r.creators}</td></tr>`).join("")}
-      </table></div>` : ""}`;
+      </table></div>` : ""}
+      ${s.layers ? `
+      <h3 class="mt">Spanish and campus layers</h3>
+      <p class="muted small">Read-only, from live records. Claims window: the last ${s.layers.periodDays} days. Cities outside the listed markets appear as their own rows.</p>
+      <div class="table-wrap panel"><table>
+        <tr><th>Market</th><th>Creators</th><th>Approved</th><th>Finished profiles</th><th>Spanish content</th><th>With Spanish %</th><th>Claims in window</th><th>Spanish claims</th></tr>
+        ${s.layers.markets.map((r) => `<tr><td>${esc(r.market)}</td><td data-label="Creators">${r.creators}</td><td data-label="Approved">${r.approved}</td><td data-label="Finished profiles">${r.complete}</td><td data-label="Spanish content">${r.spanishFlagged}</td><td data-label="With Spanish %">${r.withSpanishPct}</td><td data-label="Claims in window">${r.claimsInPeriod}</td><td data-label="Spanish claims">${r.spanishClaimsInPeriod}</td></tr>`).join("")}
+      </table></div>
+      <p class="small" style="margin-top:12px"><strong>Campus Leads:</strong> ${s.layers.campusLeads.length ? s.layers.campusLeads.map((e) => `${esc(e.university)}: ${e.leads} (${e.handles.map((h) => "@" + esc(h)).join(", ")})`).join(" &middot; ") : "none yet. A Campus Lead is a current student with 5 approved referrals from their own school."}</p>
+      <p class="small"><strong>Business language:</strong> ${s.layers.businessLanguage.es} ${s.layers.businessLanguage.es === 1 ? "business prefers" : "businesses prefer"} Spanish, ${s.layers.businessLanguage.en} English.</p>` : ""}`;
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
