@@ -205,7 +205,7 @@ try {
   // ---------- client strings ----------
   const appJsRes = await fetch(BASE + "/app.js");
   const appJs = await appJsRes.text();
-  check("client ships the profession selects on signup and profile edit", appJs.includes("jc-profession") && appJs.includes("p-profession") && appJs.includes("professionOptionsHtml"), "");
+  check("client ships the realtor switch on profile edit and no profession question anywhere", appJs.includes("p-realtor") && appJs.includes("I am a licensed real estate agent") && appJs.includes("realtorSwitchProfession") && !appJs.includes("jc-profession") && !appJs.includes("p-profession") && !appJs.includes("Also one of these") && !appJs.includes("What do you do"), "");
   check("client ships the realtor edit block with the neighborhoods label", appJs.includes("p-realtor-block") && appJs.includes("Your neighborhoods (up to 3)") && appJs.includes("p-brokerage") && appJs.includes("syncRealtorFields"), "");
   check("public profile renders the Realtor chip, the Neighborhoods row, and the Brokered by line, all realtor-gated", appJs.includes("Realtor</span>") && appJs.includes("Neighborhoods:") && appJs.includes("Brokered by") && appJs.includes("p.isRealtor && p.farmAreas") && appJs.includes("p.isRealtor && p.brokerage"), "");
   check("client ships the listing proof sheet: owner action, proof route, verified footer", appJs.includes("Listing proof sheet") && appJs.includes("renderPublicProof") && appJs.includes("public-proof") && appJs.includes("Activity verified by SIGNL") && appJs.includes("/proof"), "");

@@ -52,23 +52,36 @@ const topnav = document.getElementById("topnav");
 const bottomnav = document.getElementById("bottomnav");
 const PAID_COMP = "Paid cash campaigns";
 
-// Realtor layer (Jeff, 2026-10-22): one profession value carries
-// product behavior. It must match REALTOR_PROFESSION in the
-// server's markets.js exactly; the server is authoritative (it
-// sanitizes against its own list and gates the public payload).
+// Realtor layer (Jeff, 2026-10-22; switch form, 2026-10-28): the
+// stored profession value "Real estate agent" remains the carrier
+// the server reads (creatorIsRealtor, the public payload gate),
+// but creators no longer pick it from a "what do you do" list:
+// the profile form carries one switch, "I am a licensed real
+// estate agent", whose state derives from the stored value. Any
+// other stored profession value (the retired everyday list) is
+// never asked about again and rides through saves untouched; the
+// server stays authoritative (cleanProfession still accepts the
+// legacy values so old records keep loading and re-saving).
 const REALTOR_PROFESSION = "Real estate agent";
 function isRealtorProfile(c) {
   return !!c && c.profession === REALTOR_PROFESSION;
 }
-function professionOptionsHtml(selected) {
-  const list = (state.boot && state.boot.professions) || [];
-  return `<option value="">Select one (optional)</option>` + list.map((x) => `<option value="${esc(x)}" ${x === selected ? "selected" : ""}>${esc(x)}</option>`).join("");
-}
 function syncRealtorFields() {
   const block = document.getElementById("p-realtor-block");
-  const sel = document.getElementById("p-profession");
-  if (block && sel) block.style.display = sel.value === REALTOR_PROFESSION ? "" : "none";
+  const sw = document.getElementById("p-realtor");
+  if (block && sw) block.style.display = sw.checked ? "" : "none";
   return false;
+}
+// What the profile save sends for profession: only a deliberate
+// flip of the realtor switch writes (on = the realtor value, off
+// = blank). An untouched switch sends nothing, so a stored legacy
+// value is never erased by a save that was not about this.
+function realtorSwitchProfession() {
+  const sw = document.getElementById("p-realtor");
+  if (!sw) return undefined;
+  const was = isRealtorProfile(state.user && state.user.creator);
+  if (sw.checked === was) return undefined;
+  return sw.checked ? REALTOR_PROFESSION : "";
 }
 
 function esc(s) {
@@ -969,17 +982,6 @@ function chipSelectHtml(id, options, selected, syncName, optional) {
 }
 function platformChipsHtml(id, selected, syncName) {
   return chipSelectHtml(id, PRIMARY_PLATFORMS_CLIENT.map((p) => ({ value: p.id, label: p.label })), selected || "instagram", syncName, false);
-}
-function professionChipsHtml(id, selected, syncName) {
-  const list = ((state.boot && state.boot.professions) || []).slice();
-  const sel = selected || "";
-  // Legacy values (the pre-2026-10-28 everyday list) still live on
-  // stored profiles: when the saved value is not one of the three
-  // role options, it rides as its own chip so it loads, displays
-  // selected, and re-saves untouched until the creator picks a
-  // role (or taps it off) instead.
-  if (sel && !list.includes(sel)) list.push(sel);
-  return chipSelectHtml(id, list.map((x) => ({ value: x, label: x })), sel, syncName, true);
 }
 function universityStatusChipsHtml(id, selected) {
   return chipSelectHtml(id, [
@@ -3558,7 +3560,6 @@ function renderJoinCreator() {
           </div>
         </div>
         <div class="field"><label>Your neighborhood or area (optional)</label><input id="jc-neighborhood" placeholder="For example: Oceanfront, Ghent, Town Center" maxlength="80"><p class="small muted">Businesses search by neighborhood.</p></div>
-        <div class="field"><label>Also one of these? (optional)</label>${professionChipsHtml("jc-profession", "")}<p class="small muted">Realtors: pick Real estate agent for neighborhood tags + a listing proof sheet.</p></div>
         <div class="field"><label>Your university (if you are a student now)</label><input id="jc-university" placeholder="Start typing your school" maxlength="120"><div class="uni-results" id="jc-university-results"></div><p class="small muted">Current students get a campus badge. Pick from the list, or type it in full.</p></div>
         <div class="field"><label>Student status (optional)</label>${universityStatusChipsHtml("jc-university-status", "")}<p class="small muted">Badge is current students only.</p></div>
       </div>
@@ -3797,7 +3798,6 @@ async function doRegisterCreator(e) {
       market: marketVal,
       city: isUnlisted ? undefined : document.getElementById("jc-city").value,
       neighborhood: document.getElementById("jc-neighborhood").value,
-      profession: document.getElementById("jc-profession").value || undefined,
       university: document.getElementById("jc-university").value,
       universityStatus: document.getElementById("jc-university-status").value || undefined,
       customCity: isUnlisted ? customCity : undefined,
@@ -5995,7 +5995,7 @@ function creatorProfileHtml(u) {
           : `<div class="field"><label>Home city (${esc(marketDisplayName(u.market))})</label><select id="p-city">${cityOptions(u.market, u.city || "")}</select></div>`}
       </div>
       <div class="field"><label>Your neighborhood or area</label><input id="p-neighborhood" value="${esc(c.neighborhood || "")}" placeholder="Optional, for example: Oceanfront, Ghent, Town Center" maxlength="80"><p class="small muted">Businesses search by neighborhood. Keep it to the area you actually post from.</p></div>
-      <div class="field"><label>Also one of these? (optional)</label>${professionChipsHtml("p-profession", c.profession || "", "syncRealtorFields")}<p class="small muted">Realtors: pick Real estate agent and the fields below appear. Your profile gains a Realtor badge, your neighborhoods, and your brokerage line.</p></div>
+      <div class="field"><label class="tgl-row"><input type="checkbox" class="sw" id="p-realtor" ${isRealtorProfile(c) ? "checked" : ""} onchange="syncRealtorFields()"><span><strong>I am a licensed real estate agent</strong>: turning this on adds your brokerage and neighborhoods to your profile and shows businesses your Realtor badge.</span></label></div>
       <div id="p-realtor-block" style="display:${isRealtorProfile(c) ? "" : "none"}">
         <div class="field"><label>Your neighborhoods (up to 3)</label>
           ${[0, 1, 2].map((i) => `<input id="p-hood-${i}" value="${esc((c.farmAreas || [])[i] || "")}" placeholder="For example: Ghent" maxlength="60" style="margin-bottom:8px">`).join("")}
@@ -6210,7 +6210,7 @@ async function doUpdateCreator(e) {
       primaryPlatform: document.getElementById("p-platform").value,
       city: cityEl ? cityEl.value : cityTextEl ? cityTextEl.value : undefined,
       neighborhood: document.getElementById("p-neighborhood").value,
-      profession: document.getElementById("p-profession") ? document.getElementById("p-profession").value : undefined,
+      profession: realtorSwitchProfession(),
       farmAreas: [0, 1, 2].map((i) => { const el = document.getElementById("p-hood-" + i); return el ? el.value : ""; }),
       brokerage: document.getElementById("p-brokerage") ? document.getElementById("p-brokerage").value : undefined,
       university: document.getElementById("p-university").value,
