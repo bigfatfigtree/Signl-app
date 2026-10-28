@@ -7,6 +7,11 @@ local DB: seeds the demo partner through the Admin endpoint,
 gives it a known password locally, signs in through the real
 sign-in form, and walks every partner view plus the Admin
 Partners tab, saving inspected screenshots to the goal files.
+Extended 2026-10-28 for Sig everywhere: the partner Overview
+presence card, the read-only partner Sig surface (grounded in
+the demo funnel's real counts), Sig's mark on partner Help, the
+empty partner's Sig fills-in voice, and Admin's Sig attention
+list on the Admin home.
 
 Run: PYTHONPATH=~/workspace/xmedium-qa/pylibs python3 scripts/verify-partner-dom.py
 """
@@ -182,6 +187,36 @@ console.log("demo password set locally");
         check("home shows sample chip", has(body, "Sample data"))
         check("home shows attributed funnel numbers", has(body, "Creators claimed") and has(body, "Share accrued"), body[:300])
         shot(page, "signl-partner-qa-demo-home-390-2026-10-28.png")
+        # ---- Sig on the partner Overview + the partner Sig surface ----
+        hero = page.evaluate("""() => { const h = document.querySelector('.pt-sig-card [data-sig-hero-media]');
+          const img = h ? h.querySelector('img') : null;
+          const vid = h ? h.querySelector('video') : null;
+          return { host: !!h, poster: !!img && img.naturalWidth > 0,
+                   clip: vid ? vid.getAttribute('data-clip') : null }; }""")
+        check("sig presence card rides the hero stack on Home", hero["host"] and hero["poster"], hero)
+        check("home Sig line carries real counts", has(body, "4 creators claimed") and has(body, "2 complete"), body[:400])
+        page.click(".tab-item:has-text('More')")
+        page.wait_for_timeout(600)
+        page.click(".more-row:has(img.tab-sig-img)")
+        page.wait_for_timeout(1500)
+        body = page.inner_text("body")
+        check("partner Sig surface renders its brief", has(body, "Where things stand") and has(body, "What to do next"), body[:300])
+        check("partner Sig stand uses the demo funnel", has(body, "Virginia Beach") and has(body, "4 creators claimed") and has(body, "3 approved") and has(body, "2 complete"), body[:600])
+        check("partner Sig computes the completeness push", has(body, "Push completes in Virginia Beach"), body[:600])
+        check("partner Sig flags the unsigned agreement", has(body, "Agreement not signed yet"), body[:600])
+        check("partner Sig earnings stay honest when nothing accrued", has(body, "No business in your markets has a paid subscription on file yet"), body[:600])
+        check("partner Sig shows links with copy buttons", has(body, "Your links") and has(body, "Copy link") and has(body, "src=partner-demo"), body[:300])
+        check("partner Sig states its read-only line", has(body, "never send or change anything") or has(body, "never sends anything"), body[:300])
+        check("partner Sig notes Spanish is staged", has(body, "Spanish is staged"), body[:300])
+        shot(page, "signl-sig-partner-390.png")
+        page.click(".tab-item:has-text('More')")
+        page.wait_for_timeout(600)
+        page.click(".more-row:has-text('Help')")
+        page.wait_for_timeout(900)
+        mark = page.evaluate("""() => { const img = document.querySelector('#tab-body img[src*="head-idle.webp"]');
+          return { mark: !!img, open: document.body.innerText.includes('Open Sig') }; }""")
+        check("partner Help carries Sig's head-crop mark", mark["mark"] and mark["open"], mark)
+        shot(page, "signl-sig-partner-help-390.png")
         for tab, expect in [("Markets", "Creators claimed"), ("Earnings", "Your earnings"), ("More", "Links & assets")]:
             page.click(f".tab-item:has-text('{tab}')")
             page.wait_for_timeout(900)
@@ -232,6 +267,16 @@ console.log("demo password set locally");
         body = page.inner_text("body")
         check("desktop rail shows partner destinations", has(body, "Markets") and has(body, "Earnings"), body[:200])
         shot(page, "signl-partner-qa-demo-home-1280-2026-10-28.png")
+        rail = page.evaluate("""() => { const img = document.querySelector('.tab-more-row img.tab-sig-img');
+          const hero = document.querySelector('.pt-sig-card [data-sig-hero-media]');
+          return { sigRow: !!img, hero: !!hero }; }""")
+        check("desktop rail carries the Sig row with his head crop", rail["sigRow"], rail)
+        check("desktop Home carries the Sig presence card", rail["hero"], rail)
+        page.click(".tab-more-row:has(img.tab-sig-img)")
+        page.wait_for_timeout(1500)
+        body = page.inner_text("body")
+        check("desktop Sig surface renders from the rail", has(body, "Where things stand") and has(body, "Push completes in Virginia Beach"), body[:400])
+        shot(page, "signl-sig-partner-1280.png")
         ctx.close()
 
         # ---- real partner with no activity: fills-in voice ----
@@ -243,13 +288,31 @@ console.log("demo password set locally");
         check("empty partner sees the fills-in voice", has(body, "Your funnel fills in"), body[:300])
         check("empty partner sees no zero grid", not has(body, "Share accrued"), body[:200])
         shot(page, "signl-partner-qa-empty-home-390-2026-10-28.png")
+        page.click(".tab-item:has-text('More')")
+        page.wait_for_timeout(600)
+        page.click(".more-row:has(img.tab-sig-img)")
+        page.wait_for_timeout(1200)
+        body = page.inner_text("body")
+        check("empty partner Sig uses the fills-in voice", has(body, "Your funnel fills in") and has(body, "Share your creator link"), body[:400])
+        check("empty partner Sig invents no counts", not has(body, "0 creators claimed"), body[:300])
+        shot(page, "signl-sig-partner-empty-390.png")
         ctx.close()
 
         # ---- admin partners tab ----
         ctx = browser.new_context(viewport={"width": 1280, "height": 800})
         page = ctx.new_page()
         sign_in(page, ADMIN_EMAIL, ADMIN_PW)
-        page.wait_for_timeout(1200)
+        page.wait_for_selector("#admin-sig .admin-sig-panel", timeout=12000)
+        page.wait_for_timeout(600)
+        body = page.inner_text("body")
+        check("admin home carries Sig's attention list", has(body, "Attention list") and has(body, "Sig points; your taps decide"), body[:300])
+        check("admin Sig knows the demo partner is seeded", not has(body, "The demo partner is not seeded") and not has(body, "No partners yet"), body[:400])
+        sigadmin = page.evaluate("""() => { const h = document.querySelector('#admin-sig [data-sig-hero-media]');
+          const img = h ? h.querySelector('img') : null;
+          return { host: !!h, poster: !!img && img.naturalWidth > 0,
+                   items: document.querySelectorAll('#admin-sig .admin-sig-item').length }; }""")
+        check("admin Sig presence rides the hero stack", sigadmin["host"] and sigadmin["poster"], sigadmin)
+        shot(page, "signl-sig-admin-1280.png")
         page.click(".tabs button:has-text('Partners')")
         page.wait_for_timeout(1200)
         body = page.inner_text("body")

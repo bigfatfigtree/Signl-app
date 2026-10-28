@@ -2746,6 +2746,21 @@ body.rail-on main, body.preview-on main { min-width: 0; }
 .sig-celeb-media img, .sig-celeb-media video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
 /* Queue loading: Sig thinks over the dashboard skeleton. */
 .sig-load-row { display: flex; align-items: center; margin: 0 0 10px; }
+/* Sig everywhere (Jeff, 2026-10-28): the partner Overview
+   presence card and Help mark, the partner Sig surface, and
+   the Admin attention list all ride the same hero media stack
+   and head-crop stills as the Sig tab. No new media model. */
+.pt-sig-card { display: flex; gap: 16px; align-items: center; }
+.pt-sig-card .sig-hero-media { width: 84px; height: 84px; flex: none; }
+.pt-sig-card .sig-ava { flex: none; }
+.pt-sig-copy { flex: 1; min-width: 0; }
+@media (max-width: 520px) { .pt-sig-card .sig-hero-media { width: 72px; height: 72px; } }
+.admin-sig-panel { margin-top: 16px; }
+.admin-sig-head { display: flex; gap: 14px; align-items: center; }
+.admin-sig-head > div { flex: 1; min-width: 0; }
+.admin-sig-media .sig-hero-media { width: 72px; height: 72px; }
+.admin-sig-item { display: flex; gap: 10px; align-items: center; padding-top: 10px; margin-top: 10px; border-top: 1px solid var(--line2, #EAF2EA); }
+.admin-sig-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--mint-deep, #0C7A43); }
 @media (prefers-reduced-motion: reduce) {
   .sig-ava, .sig-ava *, .sig-hero-media .sig-hero-think { animation: none !important; }
 }
