@@ -10574,6 +10574,9 @@ async function route(event) {
         includes: String(b.includes || b.whatComped).trim().slice(0, 600),
         experience: String(b.experience || "").trim().slice(0, 600),
         templateId: typeof b.templateId === "string" ? b.templateId.slice(0, 40) : null,
+        // Packaged play (R1): template metadata only; the brief
+        // object carries everything the play decided.
+        play: typeof b.play === "string" ? b.play.slice(0, 40) : null,
         dollarCap,
         visitWindow: String(b.visitWindow || "").trim(),
         windowMode: b.windowMode === "thisweek" ? "thisweek" : "7days",
