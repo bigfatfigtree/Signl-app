@@ -51,7 +51,8 @@
     "verify-activation": "node scripts/verify-activation.mjs",
     "verify:partner": "node scripts/verify-partner.mjs",
     "verify:partner-dom": "PYTHONPATH=~/workspace/xmedium-qa/pylibs python3 scripts/verify-partner-dom.py",
-    "verify-igprefill": "node scripts/verify-igprefill.mjs"
+    "verify-igprefill": "node scripts/verify-igprefill.mjs",
+    "verify-handleonboarding": "node scripts/verify-handleonboarding.mjs"
   },
   "type": "commonjs",
   "version": "1.0.0"
