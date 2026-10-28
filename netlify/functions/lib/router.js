@@ -3422,6 +3422,17 @@ async function discoverCards(query, viewer) {
   // Spanish content filter (Jeff, 2026-10-28): the Discover
   // "Español" chip. Attribute only; unset means excluded here.
   if (query.spanish === "1" || query.spanish === "true") creators = creators.filter((u) => u.creator && u.creator.spanishContent === true);
+  // Musician filter (Sig activation layer, Jeff, 2026-10-28):
+  // the same attribute-read shape as the Spanish filter. Three
+  // modes ride the one parameter: "1" is the musician attribute
+  // (the Discover toggle), "perform" narrows to musicians open
+  // to performing live, "create" to musicians open to creating
+  // music for businesses. Sig's idea prompts deep-link the mode
+  // whose count their sentence states, so the landing search
+  // returns exactly the cohort the sentence counted.
+  if (query.musician === "1" || query.musician === "true") creators = creators.filter((u) => u.creator && u.creator.musician === true);
+  else if (query.musician === "perform") creators = creators.filter((u) => u.creator && u.creator.musician === true && u.creator.musicPerform === true);
+  else if (query.musician === "create") creators = creators.filter((u) => u.creator && u.creator.musician === true && u.creator.musicCreate === true);
   // Campus filter (U1): current students at one university. The
   // campus badge rule does the gating (university set AND status
   // current_student), so an alumnus at the same school never
@@ -6573,6 +6584,33 @@ async function businessHome(user) {
     apps
   );
 
+  // Sig activation signals (Jeff, 2026-10-28): the market
+  // inventory Sig's proactive prompts may cite, computed from
+  // the SAME roster the Discover query returns (approved, not
+  // tester, profile complete, not banned, in this business's
+  // market, normalized exactly as discoverCards normalizes it).
+  // A prompt renders only when the count behind its sentence is
+  // at least 1, and the count in the sentence is the count of
+  // the cohort its button's search returns.
+  const sigRoster = allUsersList.filter((x) => isRosterCreator(x) && profileCompleteOf(x) && standingState(x) !== "banned" && normalizeMarketName(x.market) === (marketByName(user.market) || {}).name);
+  const campusCounts = new Map();
+  for (const x of sigRoster) {
+    if (!campusBadgeFor(x)) continue;
+    const name = universityOfRecord(x);
+    if (name) campusCounts.set(name, (campusCounts.get(name) || 0) + 1);
+  }
+  const campusTop = [...campusCounts.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count || (a.name < b.name ? -1 : 1))[0] || null;
+  const sigSignals = {
+    roster: sigRoster.length,
+    campus: sigRoster.filter((x) => !!campusBadgeFor(x)).length,
+    campusTop,
+    musicians: sigRoster.filter((x) => x.creator && x.creator.musician === true).length,
+    musiciansPerform: sigRoster.filter((x) => x.creator && x.creator.musician === true && x.creator.musicPerform === true).length,
+    musiciansCreate: sigRoster.filter((x) => x.creator && x.creator.musician === true && x.creator.musicCreate === true).length,
+    spanish: sigRoster.filter((x) => x.creator && x.creator.spanishContent === true).length,
+    fresh: sigRoster.filter((x) => x.creator && x.creator.profileCompletedAt && now - Date.parse(x.creator.profileCompletedAt) < 14 * 86400000).length,
+  };
+
   return {
     business: { name: user.business.businessName, category: user.business.category, market: user.market, planId: plan.id, planName: user.business.planName, billingStatus: user.business.billingStatus, accessState: businessAccessState(user) },
     plan: { id: plan.id, name: plan.name, priceMonthly: plan.priceMonthly, foundingCredit: plan.foundingCredit, firstMonthPriceMonthly: plan.firstMonthPriceMonthly, minMonths: plan.minMonths, visitsPerMonth: plan.visitsPerMonth },
@@ -6614,6 +6652,7 @@ async function businessHome(user) {
       applications7: extras.applications7,
       applicationsPrev7: extras.applicationsPrev7,
       contentLibrary: extras.contentLibrary,
+      sigSignals,
       costPerVisit: extras.costPerVisit,
     },
     rebookPrompts,

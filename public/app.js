@@ -39,6 +39,7 @@ const state = {
   discover: [],
   discoverCats: [], // Discover category filter: the chip row owns it, multi-select, OR semantics
   discoverSpanish: false, // Discover filter: the "Spanish-speaking creators only" toggle
+  discoverMusician: "", // Discover filter (Sig activation): "" = off, "1" = musician attribute (the toggle), "perform"/"create" = the openness modes Sig's prompts deep-link
   discoverUniversity: "", // Discover filter (U1): canonical university name, "" = all; options come from the server facet
   lang: "", // Spanish claim path (S1): "es" when the creator arrived with ?lang=es (persisted) or their record carries lang=es
   threads: [],
@@ -2068,7 +2069,7 @@ function sigQueueHtml(items, opts) {
   // leadShort (Homes only): the greeting above the card already
   // carries the lead item's full sentence, so the lead row renders
   // its short task form instead — Home never shows a sentence twice.
-  const row = (r, i) => `<div class="sig-item">${o.speaker ? `<span class="sig-says">Sig</span>` : ""}<div class="sig-stxt">${esc(i === 0 && o.leadShort && r.short ? r.short : r.text)}</div>${r.btn ? `<button type="button" class="btn small-btn" data-sq="${i}">${esc(r.btn)}</button>` : ""}${r.dismissKey ? `<button type="button" class="sig-x" data-sqx="${i}" aria-label="Dismiss for this season">&times;</button>` : ""}</div>`;
+  const row = (r, i) => `<div class="sig-item">${o.speaker ? `<span class="sig-says">Sig</span>` : ""}<div class="sig-stxt">${esc(i === 0 && o.leadShort && r.short ? r.short : r.text)}</div>${r.btn ? `<button type="button" class="btn small-btn" data-sq="${i}">${esc(r.btn)}</button>` : ""}${r.dismissKey ? `<button type="button" class="sig-x" data-sqx="${i}" aria-label="Dismiss">&times;</button>` : ""}</div>`;
   return `<div class="sig-card"><div class="sig-top">${ava}<div><div class="sig-title">Sig has ${n} thing${n === 1 ? "" : "s"} for you</div><div class="sig-sub">In the order they need you.</div></div></div>
   ${o.askBox ? sigAskBoxHtml() : ""}
   ${items.slice(0, 3).map(row).join("")}
@@ -2091,13 +2092,17 @@ function wireSigQueue(root, items, links) {
     };
   });
   // Dismissal exists only on items that carry a dismissKey
-  // (today: the U4 campus-moment prompt, per season). The key
-  // is written to localStorage and the current view re-renders,
-  // so the queue, its count, and the Sig tab all agree.
+  // (the U4 campus-moment prompt per season, and Sig's idea
+  // prompts). The stored value is the dismissal TIMESTAMP:
+  // U4 only checks presence (its key carries the season id, so
+  // a timestamp still reads as dismissed for that season),
+  // while idea prompts compare it against their 14-day
+  // cooldown. The current view re-renders either way, so the
+  // queue, its count, and the Sig tab all agree.
   root.querySelectorAll("[data-sqx]").forEach((btn) => {
     btn.onclick = () => {
       const r = items[Number(btn.getAttribute("data-sqx"))];
-      if (r && r.dismissKey) { try { localStorage.setItem(r.dismissKey, "1"); } catch (e) { /* storage unavailable: the re-render below still hides it for this view */ } }
+      if (r && r.dismissKey) { try { localStorage.setItem(r.dismissKey, String(Date.now())); } catch (e) { /* storage unavailable: the re-render below still hides it for this view */ } }
       render();
     };
   });
@@ -6205,6 +6210,23 @@ async function loadFoundingDashboard() {
     if (!queueItems.length) {
       queueItems.push({ text: isUnl ? `You are on the founding roster. ${f.city} opens when sign-ups pile up; we email you the moment it opens.` : `You are on the founding roster. ${marketTalkNameClient(f.market)} opens in the next ${f.launchWindow}; we email you the moment it opens.`, btn: "View status", act: () => go("dashboard", "Status") });
     }
+    // Sig activation ideas (founding home): once the essentials
+    // are done, Sig prompts the two build-up moves a founding
+    // creator can actually take before the market opens — a
+    // photo, and inviting the next founding creator. Same
+    // dismissal + 14-day cooldown + 2-idea cap as the live home.
+    if (u.profileCompletion && u.profileCompletion.complete) {
+      const photoIt = (u.profileCompletion.items || []).find((i) => i.id === "photo");
+      if (photoIt && !photoIt.done) {
+        const it = sigIdeaItem(u.id, "cr_photo", `Add your profile photo.${photoIt.points ? ` It earns +${photoIt.points} Momentum.` : ""} Founding profiles with a face are the ones businesses meet first.`, "Add photo", () => go("dashboard", "Profile"), "Add a profile photo");
+        if (it) queueItems.push(it);
+      }
+      const inv = sigIdeaItem(u.id, "cr_invite", "Know a creator who should be founding with you? Your invite earns +3 Momentum when they join, +10 when they are approved.", "Share invite", () => { const g = document.getElementById("grow-roster"); if (g) g.scrollIntoView({ behavior: "smooth", block: "start" }); }, "Invite a founding creator");
+      if (inv) queueItems.push(inv);
+      const capped = capSigIdeas(queueItems);
+      queueItems.length = 0;
+      queueItems.push(...capped);
+    }
     // V4.1: the Sig tab renders this same queue and badges its
     // count — one queue, two doors (see renderSigTab).
     state.sigQueue = queueItems;
@@ -7262,8 +7284,39 @@ async function loadCreatorHome() {
     if (pc && !pc.complete) add(4, now, `Your profile is missing essentials (${pc.requiredDone} of ${pc.requiredTotal} done). Businesses cannot find you yet.`, "Finish profile", () => go("dashboard", "Profile"), `Profile: ${pc.requiredDone} of ${pc.requiredTotal} done`);
     const paidRate = u.creator && u.creator.paidRate;
     if (!paidRate) add(4, now, "Set your paid rate so businesses can book you paid.", "Set my rate", () => go("dashboard", "Profile"), "Paid rate not set");
+    // Sig activation ideas (class 5): build-up prompts for a
+    // finished profile, each keyed to a field that is actually
+    // empty on this creator's own record. Until the essentials
+    // are done the class-4 items above own the queue alone.
+    if (gateDone) {
+      const c = u.creator || {};
+      const pcItem = (id) => ((pc && pc.items) || []).find((i) => i.id === id);
+      const pushIdea = (id, text, btn, act, short) => { const it = sigIdeaItem(u.id, id, text, btn, act, short); if (it) items.push(it); };
+      const ptsBit = (item, fallback) => (item && item.points ? ` It earns +${item.points} Momentum.` : fallback || "");
+      const photoItem = pcItem("photo");
+      if (photoItem && !photoItem.done) pushIdea("cr_photo", `Add your profile photo.${ptsBit(photoItem)} Businesses see a face before they see numbers.`, "Add photo", () => go("dashboard", "Profile"), "Add a profile photo");
+      const workItem = pcItem("bestwork");
+      const workN = Math.min(3, (c.bestWork || []).length);
+      if (workItem && !workItem.done) pushIdea("cr_bestwork", `Add best-work links (${workN} of 3). Each one earns +5 Momentum and shows on your public profile.`, "Add links", () => go("dashboard", "Profile"), `Best-work links: ${workN} of 3`);
+      const bioItem = pcItem("bio");
+      if (bioItem && !bioItem.done) pushIdea("cr_bio", `Your bio is still short. Two honest lines${bioItem.points ? ` earn +${bioItem.points} Momentum` : ""}.`, "Write bio", () => go("dashboard", "Profile"), "Bio still short");
+      const hoodItem = pcItem("neighborhood");
+      if (hoodItem && !hoodItem.done) pushIdea("cr_neighborhood", `Set your neighborhood. Businesses search by neighborhood.${ptsBit(hoodItem)}`, "Set neighborhood", () => go("dashboard", "Profile"), "Neighborhood not set");
+      if (c.spanishContent === true && (c.spanishAudiencePct === null || c.spanishAudiencePct === undefined)) pushIdea("cr_spanish_pct", "You create content in Spanish. Add your Spanish-speaking share so businesses see the number, not a checkbox.", "Add percentage", () => go("dashboard", "Profile"), "Add your Spanish-speaking share");
+      if (c.musician === undefined) pushIdea("cr_musician", "Make music? Turn on the musician switch and businesses looking to book music can find you.", "Open panel", () => go("dashboard", "Profile"), "Make music? Open the panel");
+      const uniStatus = c.universityStatus || u.universityStatus || "";
+      const uniName = c.university || u.university || "";
+      if (uniStatus === "current_student" && !uniName) pushIdea("cr_university", "Add your university. Current students carry a campus badge businesses can filter by.", "Add university", () => go("dashboard", "Profile"), "Add your university");
+      const ytCfg = (state.boot && state.boot.platformConnect && state.boot.platformConnect.youtube) || {};
+      const ytSync = (c.platformSync || {}).youtube;
+      const ytPresent = Number((c.audienceStack || {}).youtube || 0) > 0 || !!String(c.youtubeChannel || "").trim();
+      if (ytCfg.oauthConfigured && !ytSync && ytPresent) pushIdea("cr_youtube", "Connect YouTube and your subscriber count verifies itself and stays current on its own.", "Connect YouTube", () => go("dashboard", "Profile"), "Connect YouTube");
+      const mm = u.momentum || {};
+      if ((mm.signups || 0) > 0) pushIdea("cr_invite", `${mm.signups} creator${mm.signups === 1 ? "" : "s"} joined through your link. Approved referrals climb the badge ladder: 1 is Connector, 5 is Roster Builder, 10 is City Lead.`, "Share invite", () => go("dashboard", "Momentum"), `${mm.signups} joined through you`);
+      else pushIdea("cr_invite", "Invite a creator you rate. You earn +3 Momentum when they join and +10 when they are approved.", "Share invite", () => go("dashboard", "Momentum"), "Invite a creator");
+    }
     items.sort((a, b) => a.cls - b.cls || a.at - b.at);
-    const queue = items.slice(0, 7);
+    const queue = capSigIdeas(items).slice(0, 7);
 
     // The launch checklist (spec §4.6): the paid-rate step is
     // optional; the card retires when the other three are done.
@@ -9170,6 +9223,66 @@ function visitSegOf(b, role) {
   return "upcoming";
 }
 
+// ---------- Sig activation prompts (Jeff, 2026-10-28) ----------
+// Sig as a proactive layer: deterministic queue items (class 5,
+// "ideas") computed from the account's real record state and,
+// for businesses, the market inventory in home.sigSignals. The
+// full bank lives in files/signl-sig-activation-catalog-2026-10-28.md.
+// Rules the builders below obey: a prompt renders only when its
+// action can succeed now (a deep-linked search returns at least
+// one real result; a named field is actually empty); every
+// number is a live count or a stored fact; at most 2 idea
+// prompts ride a queue at once (activation items for incomplete
+// essentials are class 4 and sit above this cap); every idea is
+// dismissible and a dismissal suppresses it for 14 days.
+const SIG_IDEA_COOLDOWN_MS = 14 * 86400000;
+function sigIdeaKey(userId, id) { return `signl_sig_idea:${userId}:${id}`; }
+function sigIdeaDismissed(userId, id) {
+  try {
+    const t = Number(localStorage.getItem(sigIdeaKey(userId, id)) || 0);
+    return !!t && (Date.now() - t) < SIG_IDEA_COOLDOWN_MS;
+  } catch (e) { return false; }
+}
+function sigIdeaItem(userId, id, text, btn, act, short) {
+  if (sigIdeaDismissed(userId, id)) return null;
+  return { cls: 5, at: Date.now(), idea: true, text, btn, act, short, dismissKey: sigIdeaKey(userId, id) };
+}
+function capSigIdeas(items) {
+  let n = 0;
+  return items.filter((it) => {
+    if (!it || !it.idea) return true;
+    n += 1;
+    return n <= 2;
+  });
+}
+// Business idea copy banks: the campus lead-in per stored
+// category, and the one category play per category (its button
+// is the offer composer, which always succeeds, so no inventory
+// gate applies to it).
+const SIG_CAMPUS_LEADINS = {
+  "Restaurant": "Students are your next regulars.",
+  "Bar": "Campus nights are built, not found.",
+  "Coffee & Bakery": "Study hours are your hours.",
+  "Salon & Barbershop": "Campus marketing is key for a salon like yours.",
+  "Fitness Studio": "A new term is a new membership season.",
+  "Retail": "Students shop where students post.",
+  "Attraction": "Campus groups look for things to do.",
+  "Local Services": "Students need local everything, fast.",
+  "Other": "Students are a market of their own.",
+};
+const SIG_CATEGORY_PLAYS = {
+  "Restaurant": "Weekend tables are the prize. Post an offer with a Friday or Saturday window and let creators compete for it.",
+  "Bar": "Slow nights are the opportunity. A creator visit on your quiet night turns it into content night.",
+  "Coffee & Bakery": "Morning regulars are made, not born. One creator's study-session post puts your shop on the map.",
+  "Salon & Barbershop": "A transformation post is your best ad. Book a creator before prom and homecoming weekends, when chairs fill anyway.",
+  "Fitness Studio": "First-week energy sells memberships. A creator's first class post reaches people a flyer never will.",
+  "Retail": "New arrivals deserve an audience. A creator unboxing or try-on turns stock into a story.",
+  "Attraction": "Groups book what groups see. A creator visit makes your place the plan, not an option.",
+  "Local Services": "Trust is the product. A creator showing the job done well is worth more than any review.",
+  "Other": "Your first offer teaches the roster what you love. Post it, and watch who applies.",
+};
+const SIG_MUSIC_CATEGORIES = ["Bar", "Restaurant", "Coffee & Bakery", "Attraction", "Local Services", "Retail", "Fitness Studio"];
+
 // Campus season windows (U4): generic US academic-calendar
 // windows, deliberately NOT any school's real dates. At most
 // one window matches at a time; the first match wins. The
@@ -9297,9 +9410,46 @@ async function loadBusinessHome() {
       try { dismissed = !!localStorage.getItem(dismissKey); } catch (e) { /* storage unavailable: show the prompt */ }
       if (!dismissed) items.push({ cls: 4, at: now, text: season.text, short: season.short, btn: "Find creators", act: () => go("dashboard", "Discover"), dismissKey });
     }
+    // Sig activation (Jeff, 2026-10-28): first-move prompts
+    // (class 4) for a set-up business with nothing posted yet,
+    // then the idea bank (class 5) driven by home.sigSignals.
+    // Every signal play cites the count of the exact cohort its
+    // button's Discover search returns and renders only when
+    // that count is at least 1; the category play's button is
+    // the offer composer, which always succeeds.
+    const sig = h.sigSignals || {};
+    const mktName = marketTalkNameClient(u.market);
+    const plural = (n) => (n === 1 ? "" : "s");
+    const pushIdea = (id, text, btn, act, short) => { const it = sigIdeaItem(u.id, id, text, btn, act, short); if (it) items.push(it); };
+    if (offers.length === 0 && bz.about && (sig.roster || 0) > 0) {
+      add(4, now, d.marketLive
+        ? `${sig.roster} creator${plural(sig.roster)} ${sig.roster === 1 ? "is" : "are"} on the roster in ${mktName}. Post your first offer and they can apply.`
+        : `${sig.roster} creator${plural(sig.roster)} ${sig.roster === 1 ? "is" : "are"} on the founding roster in ${mktName}. Draft your first offer now; publishing switches on at launch.`,
+        "Post offer", () => { state.offersSeg = "live"; go("dashboard", "My Offers"); }, "Post your first offer");
+    }
+    if (offers.length > 0 && !offers.some((o) => o.lane === "direct") && bookings.length === 0) {
+      add(4, now, "Invite a creator directly at their listed rate. An invite goes to one creator, by name.", "Find creators", () => go("dashboard", "Discover"), "Invite a creator directly");
+    }
+    if ((sig.campus || 0) > 0 && sig.campusTop) {
+      const lead = SIG_CAMPUS_LEADINS[bz.category] || SIG_CAMPUS_LEADINS.Other;
+      pushIdea("biz_campus", `${lead} ${sig.campusTop.name} has ${sig.campusTop.count} student creator${plural(sig.campusTop.count)} on the roster in ${mktName}.`, "Find students", () => { state.discoverUniversity = sig.campusTop.name; go("dashboard", "Discover"); }, "Student creators on the roster");
+    }
+    if ((sig.musiciansPerform || 0) > 0 && SIG_MUSIC_CATEGORIES.includes(bz.category)) {
+      pushIdea("biz_music_live", `A live set draws a crowd. ${sig.musiciansPerform} creator${plural(sig.musiciansPerform)} in ${mktName} ${sig.musiciansPerform === 1 ? "is" : "are"} open to performing live.`, "Find musicians", () => { state.discoverMusician = "perform"; go("dashboard", "Discover"); }, "Musicians open to live sets");
+    }
+    if ((sig.musiciansCreate || 0) > 0) {
+      pushIdea("biz_music_create", `A sound of your own: ${sig.musiciansCreate} creator${plural(sig.musiciansCreate)} in ${mktName} make${sig.musiciansCreate === 1 ? "s" : ""} music for businesses.`, "Find musicians", () => { state.discoverMusician = "create"; go("dashboard", "Discover"); }, "Creators who make music");
+    }
+    if ((sig.spanish || 0) > 0) {
+      pushIdea("biz_spanish", `Spanish-speaking customers are in ${mktName}: ${sig.spanish} creator${plural(sig.spanish)} here make${sig.spanish === 1 ? "s" : ""} content in Spanish.`, "Find creators", () => { state.discoverSpanish = true; go("dashboard", "Discover"); }, "Spanish-speaking creators here");
+    }
+    if ((sig.fresh || 0) > 0) {
+      pushIdea("biz_fresh", `New on the roster: ${sig.fresh} creator${plural(sig.fresh)} finished profiles in ${mktName} in the last two weeks.`, "Find creators", () => go("dashboard", "Discover"), "New creators on the roster");
+    }
+    pushIdea("biz_category_play", SIG_CATEGORY_PLAYS[bz.category] || SIG_CATEGORY_PLAYS.Other, "Post offer", () => { state.offersSeg = "live"; go("dashboard", "My Offers"); }, "An idea for your business");
     state.waitCounts.bizVisits = visitToday.length + postDue.length + needsTime.length;
     items.sort((a, b) => a.cls - b.cls || a.at - b.at);
-    const queue = items.slice(0, 7);
+    const queue = capSigIdeas(items).slice(0, 7);
 
     // The launch checklist (spec §4.6): retires for good once
     // every step is done.
@@ -9890,6 +10040,21 @@ function discoverSpanishChip(btn) {
   return false;
 }
 
+// Musicians toggle (Sig activation, Jeff, 2026-10-28): the
+// sibling of the Spanish toggle, same control, same grammar.
+// The toggle itself rides the musician attribute (mode "1");
+// Sig's idea prompts may set the "perform"/"create" modes,
+// which this toggle reflects as on and a tap clears.
+function discoverMusicianChip(btn) {
+  state.discoverMusician = state.discoverMusician ? "" : "1";
+  if (btn) {
+    btn.classList.toggle("on", !!state.discoverMusician);
+    btn.setAttribute("aria-pressed", state.discoverMusician ? "true" : "false");
+  }
+  runDiscover();
+  return false;
+}
+
 async function loadDiscover() {
   const el = document.getElementById("tab-body");
   const u = state.user;
@@ -9902,7 +10067,7 @@ async function loadDiscover() {
     <div class="filters disc-top">
       <div><label>Market</label><select id="f-market">${marketOptions(u.market)}</select></div>
     </div>
-    <div class="dspan-row"><button type="button" id="dchip-spanish" class="dspan-toggle${state.discoverSpanish ? " on" : ""}" aria-pressed="${state.discoverSpanish ? "true" : "false"}" onclick="return discoverSpanishChip(this)"><span class="dspan-check" aria-hidden="true">&#10003;</span><span class="dspan-main">Spanish-speaking creators only</span><span class="dspan-sub">Makes content in Spanish</span></button></div>
+    <div class="dspan-row"><button type="button" id="dchip-spanish" class="dspan-toggle${state.discoverSpanish ? " on" : ""}" aria-pressed="${state.discoverSpanish ? "true" : "false"}" onclick="return discoverSpanishChip(this)"><span class="dspan-check" aria-hidden="true">&#10003;</span><span class="dspan-main">Spanish-speaking creators only</span><span class="dspan-sub">Makes content in Spanish</span></button><button type="button" id="dchip-musician" class="dspan-toggle${state.discoverMusician ? " on" : ""}" style="margin-left:8px" aria-pressed="${state.discoverMusician ? "true" : "false"}" onclick="return discoverMusicianChip(this)"><span class="dspan-check" aria-hidden="true">&#10003;</span><span class="dspan-main">Musicians only</span><span class="dspan-sub">Creators who make music</span></button></div>
     <div class="dcat-row"><button type="button" data-cat="" class="dcat-chip${(state.discoverCats || []).length ? "" : " on"}" onclick="return discoverCatChip('', this)">All</button>${state.boot.creatorCategories.map((c) => `<button type="button" data-cat="${esc(c)}" class="dcat-chip${(state.discoverCats || []).includes(c) ? " on" : ""}" onclick="return discoverCatChip('${esc(c)}', this)">${esc(c)}</button>`).join("")}</div>
     <details class="filters-fold"><summary>More filters</summary>
     <div class="filters">
@@ -9969,6 +10134,7 @@ async function runDiscover() {
   if (sort) params.set("sort", sort);
   if (document.getElementById("f-paid").checked) params.set("paid", "1");
   if (state.discoverSpanish) params.set("spanish", "1");
+  if (state.discoverMusician) params.set("musician", state.discoverMusician);
   const uniSel = document.getElementById("f-university");
   state.discoverUniversity = uniSel ? uniSel.value : (state.discoverUniversity || "");
   if (state.discoverUniversity) params.set("university", state.discoverUniversity);
@@ -10088,6 +10254,9 @@ function discoverClearFilters() {
   state.discoverSpanish = false;
   const spChip = document.getElementById("dchip-spanish");
   if (spChip) { spChip.classList.remove("on"); spChip.setAttribute("aria-pressed", "false"); }
+  state.discoverMusician = "";
+  const muChip = document.getElementById("dchip-musician");
+  if (muChip) { muChip.classList.remove("on"); muChip.setAttribute("aria-pressed", "false"); }
   const mkt = document.getElementById("f-market");
   if (mkt && state.user) mkt.value = state.user.market;
   runDiscover();
