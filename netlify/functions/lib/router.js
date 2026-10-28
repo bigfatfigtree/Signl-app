@@ -2600,6 +2600,289 @@ function talentBudgetOf(business) {
   return Number.isFinite(n) && n >= 0 ? n : MANAGED_TALENT_BUDGET_DEFAULT;
 }
 
+// ---------- Sig Operator: Brief Builder + Asset Packet (Jeff, 2026-10-28) ----------
+// BRIEF BUILDER: every offer carries a normalized brief object
+// { goal, hook, mustMention, doNotSay, deliverable, timing,
+// callToAction }. The brief gives key points only, never a script
+// (the same honesty rule as the paid brief). The deliverable line
+// is SERVER-FORCED by visit kind and is never taken from input:
+// a comp visit is the Standard Visit package; a paid visit's
+// deliverables live in its booking terms. All other fields are
+// capped, never refused: over-long text truncates, list items
+// trim, drop when empty, dedupe, and cap at 3.
+const BRIEF_GOALS = ["more_weekend_customers", "launch_something_new", "fill_an_event", "grow_regulars"];
+const BRIEF_DELIVERABLES = {
+  comp: "1 post + 1 story that shares the post. Post within 48 hours; one week is the hard deadline.",
+  paid: "Deliverables are set in the booking terms. Post within 48 hours and keep the post live at least 30 days.",
+};
+function briefCleanText(value, max) {
+  return typeof value === "string" ? value.trim().slice(0, max) : "";
+}
+function briefCleanList(value) {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set();
+  const out = [];
+  for (const raw of value) {
+    const item = typeof raw === "string" ? raw.trim().slice(0, 80) : "";
+    if (!item) continue;
+    const key = item.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+    if (out.length >= 3) break;
+  }
+  return out;
+}
+// The seed a brief derives from an offer's own fields: the
+// experience becomes the hook, includes becomes the one
+// must-mention, the visit window becomes the timing.
+function briefSeedFromFields(fields) {
+  const f = fields && typeof fields === "object" ? fields : {};
+  return {
+    goal: null,
+    hook: typeof f.experience === "string" ? f.experience : "",
+    mustMention: f.includes ? [String(f.includes)] : [],
+    doNotSay: [],
+    timing: typeof f.visitWindow === "string" ? f.visitWindow : "",
+    callToAction: "",
+  };
+}
+// normalizeBriefInput(input, kind, seed): the composer and Sig
+// send a brief on EVERY offer create, possibly with empty fields
+// when the business skipped the brief section, so an EMPTY hook,
+// mustMention, or timing falls back to the seed (the offer's own
+// fields, via briefSeedFromFields). That way a blank brief section
+// and a legacy offer with no brief at all derive the identical
+// brief shape, byte for byte. Other fields take the seed only
+// when the input does not carry them at all.
+function normalizeBriefInput(input, kind, seed) {
+  const k = kind === "paid" ? "paid" : "comp";
+  const src = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  const sd = seed && typeof seed === "object" && !Array.isArray(seed) ? seed : {};
+  const pick = (key) => (src[key] !== undefined ? src[key] : sd[key]);
+  const goalRaw = pick("goal");
+  const hook = briefCleanText(pick("hook"), 140) || briefCleanText(sd.hook, 140);
+  let mustMention = briefCleanList(pick("mustMention"));
+  if (!mustMention.length) mustMention = briefCleanList(sd.mustMention);
+  const timing = briefCleanText(pick("timing"), 140) || briefCleanText(sd.timing, 140);
+  return {
+    goal: BRIEF_GOALS.includes(goalRaw) ? goalRaw : null,
+    hook,
+    mustMention,
+    doNotSay: briefCleanList(pick("doNotSay")),
+    deliverable: BRIEF_DELIVERABLES[k],
+    timing,
+    callToAction: briefCleanText(pick("callToAction"), 120),
+  };
+}
+// The brief an offer reads with: its stored brief normalized
+// against the offer's own fields as seed, which for a legacy
+// offer with no stored brief is exactly the derived brief.
+function briefForOffer(offer) {
+  if (!offer || typeof offer !== "object") return normalizeBriefInput(null, "comp");
+  const kind = kindOf(offer);
+  const stored = offer.brief && typeof offer.brief === "object" && !Array.isArray(offer.brief) ? offer.brief : null;
+  return normalizeBriefInput(stored, kind, briefSeedFromFields(offer));
+}
+// Whether an offer carries the business's asset packet to the
+// creator. New offers store the flag explicitly (paid defaults
+// attached, comp defaults not); legacy offers without the flag
+// read by the same default.
+function offerAssetPacketAttached(offer) {
+  if (!offer || typeof offer !== "object") return false;
+  if (typeof offer.assetPacketAttached === "boolean") return offer.assetPacketAttached;
+  return kindOf(offer) === "paid";
+}
+
+// ASSET PACKET: a business's reusable creator-facing kit, stored
+// nested on the business record as business.assetPacket =
+// { logoUrl, links: [{ label, url }], talkingPoints, handle,
+// hashtags }. Every URL in the packet must be a valid HTTPS URL:
+// creators follow these links from offer and visit cards, so an
+// http (or non-web) URL is refused at write time with a clear
+// error, never silently stored.
+function isHttpsUrl(value) {
+  if (typeof value !== "string" || !value) return false;
+  try {
+    return new URL(value).protocol === "https:";
+  } catch (e) {
+    return false;
+  }
+}
+function assetPacketEmpty() {
+  return { logoUrl: null, links: [], talkingPoints: "", handle: "", hashtags: [] };
+}
+function normalizeHashtagTokens(input) {
+  let parts = [];
+  if (Array.isArray(input)) {
+    for (const item of input) {
+      if (typeof item === "string") parts.push(...item.split(/[\s,]+/));
+    }
+  } else if (typeof input === "string") {
+    parts = input.split(/[\s,]+/);
+  }
+  const seen = new Set();
+  const out = [];
+  for (const raw of parts) {
+    const token = String(raw || "").trim().replace(/^#+/, "").slice(0, 40);
+    if (!token) continue;
+    const key = token.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(token);
+    if (out.length >= 6) break;
+  }
+  return out;
+}
+// Defensive normalization of a stored packet: bad shapes, non-HTTPS
+// URLs, and over-cap values are dropped or truncated, never thrown
+// on. This runs on creator-facing read paths (INCIDENT-2026-10-25
+// rule: a read path that throws can take the whole API down).
+function normalizeAssetPacketStored(raw) {
+  const packet = assetPacketEmpty();
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return packet;
+  if (typeof raw.logoUrl === "string") {
+    const logo = raw.logoUrl.trim().slice(0, 1000);
+    if (logo && isHttpsUrl(logo)) packet.logoUrl = logo;
+  }
+  if (Array.isArray(raw.links)) {
+    for (const entry of raw.links) {
+      if (packet.links.length >= 6) break;
+      const item = typeof entry === "string" ? { url: entry } : entry;
+      if (!item || typeof item !== "object") continue;
+      const url = typeof item.url === "string" ? item.url.trim() : "";
+      if (!url || !isHttpsUrl(url)) continue;
+      let label = typeof item.label === "string" ? item.label.trim().slice(0, 40) : "";
+      if (!label) {
+        try { label = new URL(url).hostname.replace(/^www\./, "").slice(0, 40); } catch (e) { label = ""; }
+      }
+      if (!label) continue;
+      packet.links.push({ label, url });
+    }
+  }
+  if (typeof raw.talkingPoints === "string") packet.talkingPoints = raw.talkingPoints.trim().slice(0, 600);
+  if (typeof raw.handle === "string") packet.handle = raw.handle.trim().replace(/^@+/, "").slice(0, 40);
+  packet.hashtags = normalizeHashtagTokens(raw.hashtags);
+  return packet;
+}
+function rawAssetPacketOf(source) {
+  if (!source || typeof source !== "object") return null;
+  if (source.assetPacket && typeof source.assetPacket === "object") return source.assetPacket;
+  if (source.business && typeof source.business === "object" && source.business.assetPacket && typeof source.business.assetPacket === "object") return source.business.assetPacket;
+  if ("logoUrl" in source || "links" in source || "talkingPoints" in source || "handle" in source || "hashtags" in source) return source;
+  return null;
+}
+// The creator-facing view of a business's packet. Accepts a user
+// record, a business record, or a packet itself. Null when the
+// packet is empty, so nothing renders for a business that has not
+// built one.
+function assetPacketView(business) {
+  try {
+    const raw = rawAssetPacketOf(business);
+    if (!raw) return null;
+    const packet = normalizeAssetPacketStored(raw);
+    if (!packet.logoUrl && !packet.links.length && !packet.talkingPoints && !packet.handle && !packet.hashtags.length) return null;
+    return packet;
+  } catch (e) { /* defensive: a bad record reads as no packet */ }
+  return null;
+}
+// Validate an asset-packet write against the current packet.
+// Input fields are optional (an omitted field keeps its current
+// value); an explicit empty logoUrl clears it. HTTPS is enforced
+// here, at write time, with a 400-style error string.
+function validateAssetPacket(input, current) {
+  if (input === null) return { ok: true, packet: assetPacketEmpty() };
+  if (input === undefined) {
+    const kept = assetPacketView(current);
+    return { ok: true, packet: kept || assetPacketEmpty() };
+  }
+  if (typeof input !== "object" || Array.isArray(input)) return { ok: false, error: "Asset packet must be an object" };
+  const packet = assetPacketView(current) || assetPacketEmpty();
+  packet.links = [...packet.links];
+  packet.hashtags = [...packet.hashtags];
+  if (input.logoUrl !== undefined) {
+    const value = typeof input.logoUrl === "string" ? input.logoUrl.trim() : "";
+    if (!value) {
+      packet.logoUrl = null;
+    } else {
+      if (value.length > 1000) return { ok: false, error: "Asset packet logo URL is too long (1000 characters max)" };
+      if (!isHttpsUrl(value)) return { ok: false, error: "Asset packet logo URL must be a valid HTTPS URL" };
+      packet.logoUrl = value;
+    }
+  }
+  if (input.links !== undefined) {
+    if (!Array.isArray(input.links)) return { ok: false, error: "Asset packet links must be a list of links" };
+    if (input.links.length > 6) return { ok: false, error: "Asset packet holds up to 6 links" };
+    const links = [];
+    for (const entry of input.links) {
+      const item = typeof entry === "string" ? { url: entry } : entry;
+      if (!item || typeof item !== "object") return { ok: false, error: "Asset packet links must be a list of links" };
+      const url = typeof item.url === "string" ? item.url.trim() : "";
+      if (!url) continue;
+      if (!isHttpsUrl(url)) return { ok: false, error: "Asset packet links must be valid HTTPS URLs" };
+      let label = typeof item.label === "string" ? item.label.trim().slice(0, 40) : "";
+      if (!label) {
+        try { label = new URL(url).hostname.replace(/^www\./, "").slice(0, 40); } catch (e) { label = ""; }
+      }
+      if (!label) return { ok: false, error: "Asset packet links must be valid HTTPS URLs" };
+      links.push({ label, url });
+    }
+    packet.links = links;
+  }
+  if (input.talkingPoints !== undefined) {
+    packet.talkingPoints = (typeof input.talkingPoints === "string" ? input.talkingPoints : String(input.talkingPoints == null ? "" : input.talkingPoints)).trim().slice(0, 600);
+  }
+  if (input.handle !== undefined) {
+    packet.handle = (typeof input.handle === "string" ? input.handle : String(input.handle == null ? "" : input.handle)).trim().replace(/^@+/, "").slice(0, 40);
+  }
+  if (input.hashtags !== undefined) {
+    packet.hashtags = normalizeHashtagTokens(input.hashtags);
+  }
+  return { ok: true, packet };
+}
+
+// ---------- Performance series (Sig Operator, Jeff, 2026-10-28) ----------
+// A post's views at the day 7 / 14 / 30 marks: for each mark, the
+// LAST snapshot taken at or before postBase + N days, where
+// postBase is when reporting started (the performance summary's
+// firstAt, else the first snapshot, else the post's own creation).
+// A mark with no qualifying snapshot is null, never zero-filled.
+function postSeries(post) {
+  const out = { day7: null, day14: null, day30: null };
+  if (!post || typeof post !== "object") return out;
+  const snaps = (Array.isArray(post.snapshots) ? post.snapshots : [])
+    .filter((s) => s && typeof s.views === "number" && Number.isFinite(s.views) && s.at && Number.isFinite(Date.parse(s.at)))
+    .slice()
+    .sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+  if (!snaps.length) return out;
+  const summary = performanceSummary(post);
+  const baseRaw = summary.firstAt || (snaps[0] && snaps[0].at) || post.createdAt || post.submittedAt || null;
+  const baseMs = baseRaw ? Date.parse(baseRaw) : NaN;
+  if (!Number.isFinite(baseMs)) return out;
+  for (const [key, days] of [["day7", 7], ["day14", 14], ["day30", 30]]) {
+    const cutoff = baseMs + days * DAY_MS;
+    let value = null;
+    for (const s of snaps) {
+      if (Date.parse(s.at) <= cutoff) value = s.views;
+      else break;
+    }
+    out[key] = value;
+  }
+  return out;
+}
+// The same marks summed across a set of posts: each mark sums the
+// posts that have a value at it, and stays null when none do.
+function seriesForPosts(posts) {
+  const out = { day7: null, day14: null, day30: null };
+  for (const post of posts || []) {
+    const s = postSeries(post);
+    for (const key of ["day7", "day14", "day30"]) {
+      if (s[key] !== null) out[key] = (out[key] === null ? 0 : out[key]) + s[key];
+    }
+  }
+  return out;
+}
+
 function normalizeSocials(b) {
   const out = { facebookUrl: null, xHandle: null, xUrl: null, linkedinUrl: null };
   const fb = (b.facebookUrl || "").trim();
@@ -2747,6 +3030,13 @@ async function createBookingForOffer({ offer, creator, via, applicationId = null
     discountPct: discountPctForBooking(business && business.business),
     redemptions: null,
     compCostActual: offer.dollarCap,
+    // Sig Operator (Jeff, 2026-10-28): the booking snapshots the
+    // offer's brief (normalized from the offer, derived for legacy
+    // offers) and, when the offer carries the business's asset
+    // packet, a snapshot of the packet as it stands at booking
+    // time, so later packet edits never rewrite a booked visit.
+    brief: briefForOffer(offer),
+    assetPacket: offerAssetPacketAttached(offer) ? assetPacketView(business) : null,
   };
   if (kind === "paid") {
     // Paid open offer: the business posted a cash rate for the
@@ -6337,6 +6627,178 @@ async function businessHome(user) {
   };
 }
 
+// ---------- Performance readout (Sig Operator, Jeff, 2026-10-28) ----------
+// GET /me/performance-readout: one plain readout of a person's own
+// numbers, for Sig and the results surfaces. Everything is computed
+// on read from stored offers, bookings, posts, and license rows,
+// the same inputs (and the same roasFor math) as Business Home, so
+// the readout can never tell a different story from the dashboard.
+// No earnings estimates anywhere: a creator's paid figure is the
+// sum of RECORDED paidLane.creatorNet on their paid bookings,
+// labeled recorded, never projected.
+function readoutLicenseCounts(licenses) {
+  const out = { pending: 0, granted: 0, declined: 0 };
+  for (const l of licenses || []) {
+    if (l && out[l.status] !== undefined) out[l.status] += 1;
+  }
+  return out;
+}
+async function readoutAggregates(bookingsSubset, postByBooking, licensesSubset, plan) {
+  const planAllocation = plan ? plan.priceMonthly / plan.visitsPerMonth : null;
+  const roasInputs = (bookingsSubset || []).map((b) => {
+    const input = { ...b, post: postByBooking.get(b.id) || null };
+    if (planAllocation !== null) input.planAllocation = planAllocation;
+    return input;
+  });
+  await enrichRoasEstimateInputs(roasInputs);
+  const roas = roasFor(roasInputs);
+  const postsSubset = (bookingsSubset || []).map((b) => postByBooking.get(b.id)).filter(Boolean);
+  const num = (v) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
+  return {
+    visitsBooked: (bookingsSubset || []).filter((b) => b.status !== "expired" && b.status !== "cancelled").length,
+    visitsRedeemed: (bookingsSubset || []).filter((b) => !!b.redeemedAt).length,
+    postsLive: postsSubset.length,
+    views: postsSubset.reduce((s, p) => s + num(p.views), 0),
+    likes: postsSubset.reduce((s, p) => s + num(p.likes), 0),
+    redemptions: roas.redemptions,
+    registerValue: roas.registerValue,
+    estimatedRegisterValue: roas.estimatedRegisterValue,
+    roasScore: roas.score,
+    series: seriesForPosts(postsSubset),
+    licenseRequests: readoutLicenseCounts(licensesSubset),
+  };
+}
+async function allLicenses() {
+  const rows = await store.list("license:");
+  return rows.map((r) => r.value);
+}
+async function businessPerformanceReadout(user) {
+  const now = Date.now();
+  const plan = planById(user.business.plan) || PLANS[0];
+  const offers = (await allOffers()).filter((o) => o.businessId === user.id);
+  const bookings = (await allBookings()).filter((b) => b.businessId === user.id);
+  const posts = await allPosts();
+  const postByBooking = new Map(posts.map((p) => [p.bookingId, p]));
+  const licenses = (await allLicenses()).filter((l) => l.businessId === user.id);
+  const rows = [];
+  for (const o of offers) {
+    const mine = bookings.filter((b) => b.offerId === o.id);
+    const mineIds = new Set(mine.map((b) => b.id));
+    const agg = await readoutAggregates(mine, postByBooking, licenses.filter((l) => mineIds.has(l.bookingId)), plan);
+    rows.push({ offerId: o.id, title: o.title, kind: kindOf(o), status: o.status, ...agg });
+  }
+  const allowance = planAllowanceFor(bookings, plan, now);
+  const overall = await readoutAggregates(bookings, postByBooking, licenses, plan);
+  overall.offersLive = offers.filter((o) => o.status === "open" || o.status === "filled").length;
+  overall.visitsUsed = allowance.used;
+  overall.visitsAllowance = allowance.allowance;
+  overall.planVisits = { used: allowance.used, allowance: allowance.allowance, base: allowance.base, carried: allowance.carried, remaining: allowance.remaining };
+  const delivered = bookings.filter((b) => postByBooking.has(b.id));
+  let recommendation;
+  if (!delivered.length) {
+    recommendation = { type: "next", text: "Your funnel fills in once your campaigns are live.", action: "create_offer" };
+  } else {
+    const planAllocation = plan.priceMonthly / plan.visitsPerMonth;
+    const candidates = [];
+    for (const b of delivered) {
+      const post = postByBooking.get(b.id);
+      const input = { ...b, post, planAllocation };
+      await enrichRoasEstimateInputs([input]);
+      const r = roasFor([input]);
+      candidates.push({
+        booking: b,
+        post,
+        redemptionsCount: b.redemptions ? Math.max(0, Math.floor(Number(b.redemptions.count) || 0)) : 0,
+        basketTotal: b.redemptions ? Math.max(0, Number(b.redemptions.basketTotal) || 0) : 0,
+        value: r.registerValue + r.estimatedRegisterValue,
+        score: r.score,
+        views: typeof post.views === "number" && Number.isFinite(post.views) ? post.views : 0,
+        postMs: Date.parse(post.submittedAt || post.createdAt || "") || 0,
+      });
+    }
+    // Deterministic best-first ranking: redemptions, then register
+    // + estimated value, then the per-booking ROAS score, then
+    // post views, then the most recent post.
+    candidates.sort((a, b) => {
+      if (b.redemptionsCount !== a.redemptionsCount) return b.redemptionsCount - a.redemptionsCount;
+      if (b.value !== a.value) return b.value - a.value;
+      const as = a.score === null ? -1 : a.score;
+      const bs = b.score === null ? -1 : b.score;
+      if (bs !== as) return bs - as;
+      if (b.views !== a.views) return b.views - a.views;
+      if (b.postMs !== a.postMs) return b.postMs - a.postMs;
+      if (String(b.booking.createdAt || "") !== String(a.booking.createdAt || "")) return String(b.booking.createdAt || "") < String(a.booking.createdAt || "") ? -1 : 1;
+      return String(a.booking.id) < String(b.booking.id) ? -1 : 1;
+    });
+    const win = candidates[0];
+    let reason;
+    if (win.redemptionsCount > 0) {
+      reason = `It brought ${win.redemptionsCount} code redemption${win.redemptionsCount === 1 ? "" : "s"} ($${fmtMoneyS(win.basketTotal)} in tracked register baskets), the strongest result on your readout.`;
+    } else if (win.value > 0) {
+      reason = `It brought $${fmtMoneyS(win.value)} in register and estimated value, the strongest result on your readout.`;
+    } else if (win.score !== null) {
+      reason = `It has the strongest SIGNL ROAS Score on your readout (${win.score}).`;
+    } else if (win.views > 0) {
+      reason = `It drew ${win.views} views, the most on your readout.`;
+    } else {
+      reason = "It is your most recent delivered post.";
+    }
+    recommendation = {
+      type: "repeat",
+      bookingId: win.booking.id,
+      offerId: win.booking.offerId || null,
+      title: win.booking.title,
+      creatorName: win.booking.creatorName,
+      creatorHandle: win.booking.creatorHandle,
+      reason,
+    };
+  }
+  return { role: "business", empty: delivered.length === 0, founding: false, offers: rows, overall, recommendation };
+}
+async function creatorPerformanceReadout(user) {
+  const bookings = (await allBookings()).filter((b) => b.creatorId === user.id);
+  const posts = (await allPosts()).filter((p) => p.creatorId === user.id);
+  const bookingById = new Map(bookings.map((b) => [b.id, b]));
+  const apps = (await allApplications()).filter((a) => a.creatorId === user.id);
+  const licenses = (await allLicenses()).filter((l) => l.creatorId === user.id);
+  const paidBookings = bookings.filter((b) => b.kind === "paid" || !!b.paidLane);
+  const paidRecordedNet = roasRound2(paidBookings.reduce((s, b) => s + (b.paidLane && typeof b.paidLane.creatorNet === "number" && Number.isFinite(b.paidLane.creatorNet) ? b.paidLane.creatorNet : 0), 0));
+  const overall = {
+    visitsBooked: bookings.filter((b) => b.status !== "expired" && b.status !== "cancelled").length,
+    visitsRedeemed: bookings.filter((b) => !!b.redeemedAt).length,
+    postsLive: posts.length,
+    onTimePct: posts.length ? Math.round((posts.filter((p) => p.onTime).length / posts.length) * 100) : null,
+    applicationsPending: apps.filter((a) => a.status === "applied" || a.status === "backfill_offered").length,
+    licenseRequestsPending: licenses.filter((l) => l.status === "pending").length,
+    paidBookings: paidBookings.length,
+    paidRecordedNet,
+  };
+  const postRows = posts
+    .slice()
+    .sort((a, b) => (String(a.submittedAt || "") < String(b.submittedAt || "") ? 1 : -1))
+    .map((p) => {
+      const booking = bookingById.get(p.bookingId) || {};
+      return {
+        bookingId: p.bookingId,
+        title: booking.title || "",
+        businessName: booking.businessName || "",
+        views: typeof p.views === "number" && Number.isFinite(p.views) ? p.views : null,
+        likes: typeof p.likes === "number" && Number.isFinite(p.likes) ? p.likes : null,
+        onTime: !!p.onTime,
+        series: postSeries(p),
+      };
+    });
+  let recommendation;
+  if (!profileCompleteOf(user)) {
+    recommendation = { type: "next", text: "Finish your profile so businesses can see you and book you.", action: "finish_profile" };
+  } else if (!bookings.length) {
+    recommendation = { type: "next", text: "Find an offer that fits and take it.", action: "find_offers" };
+  } else {
+    recommendation = { type: "next", text: "Track your posts and update their numbers as they grow.", action: "track" };
+  }
+  return { role: "creator", empty: posts.length === 0, overall, posts: postRows, recommendation };
+}
+
 // ---------- auth context ----------
 
 async function getAuthUser(event) {
@@ -8497,6 +8959,16 @@ async function route(event) {
         bz.referralCode = v.code;
         bz.referralNote = v.note;
       }
+      // Asset packet (Sig Operator, Jeff, 2026-10-28): the
+      // business's reusable creator-facing kit, stored nested as
+      // business.assetPacket. When the field is present it is
+      // validated (every URL must be HTTPS) and stored; an
+      // invalid packet is refused whole, never partially saved.
+      if (b.assetPacket !== undefined) {
+        const v = validateAssetPacket(b.assetPacket, bz);
+        if (!v.ok) return err(400, v.error);
+        bz.assetPacket = v.packet;
+      }
       // Musician openness (Jeff, 2026-10-28): the business-side
       // mirror of the creator's musician signals. Three optional
       // booleans, omitted fields keep their current values, and
@@ -9958,6 +10430,11 @@ async function route(event) {
         createdAt: ts,
         updatedAt: ts,
       };
+      // Sig Operator (Jeff, 2026-10-28): rebook offers carry a
+      // normalized brief and the asset-packet flag like every
+      // created offer (comp defaults to not attached).
+      offer.assetPacketAttached = b.assetPacketAttached !== undefined ? b.assetPacketAttached === true : false;
+      offer.brief = normalizeBriefInput(b.brief, "comp", briefSeedFromFields(offer));
       if (!offer.whatComped) return err(400, "Say what is comped on the invite. It prefilled from your last visit when there is one; this creator has none yet, so add it.");
       await store.set(`offer:${offer.id}`, offer);
       await logEvent({ type: "offer_created", actorId: user.id, actorRole: "business", subjectId: offer.id, market: offer.market, data: { title: offer.title, dollarCap: offer.dollarCap, spots: 1, targeted: true, creatorId: creator.id, category: offer.category, windowMode: offer.windowMode, lane: "direct", kind: "comp", via: "rebook" } });
@@ -10068,6 +10545,14 @@ async function route(event) {
         publishedAt: wantsDraft ? null : ts,
         nudgeSentAt: null,
       };
+      // Sig Operator (Jeff, 2026-10-28): EVERY created offer stores
+      // a normalized brief (the request's brief when one is sent,
+      // derived from the offer's own fields when absent) and the
+      // asset-packet flag: paid offers carry the business's packet
+      // by default, comp offers do not, and an explicit
+      // assetPacketAttached in the request overrides either way.
+      offer.assetPacketAttached = b.assetPacketAttached !== undefined ? b.assetPacketAttached === true : kind === "paid";
+      offer.brief = normalizeBriefInput(b.brief, kind, briefSeedFromFields(offer));
       if (lane === "open") {
         const tl = offerTimeline({ applyWindowDays: b.applyWindowDays, windowDays: b.windowDays, windowStartAt: b.windowStartAt }, Date.parse(ts));
         Object.assign(offer, tl);
@@ -10118,6 +10603,11 @@ async function route(event) {
         ...o,
         lane: laneOf(o),
         kind: kindOf(o),
+        // Sig Operator (Jeff, 2026-10-28): every offer reads with
+        // a brief (stored, or derived for legacy offers), and a
+        // businessAssetPacket slot the role branches fill below.
+        brief: briefForOffer(o),
+        businessAssetPacket: null,
         bookedCount: bookings.filter((bk) => bk.offerId === o.id).length,
         filledCount: filledCountFor(o.id, bookings),
         applicationCount: apps.filter((a) => a.offerId === o.id && a.status !== "withdrawn").length,
@@ -10131,6 +10621,10 @@ async function route(event) {
         // hand, so no extra read is needed.
         const ownReferral = referralProgramView(user.business);
         if (ownReferral) out = out.map((o) => ({ ...o, businessReferralProgram: ownReferral }));
+        // The business's own view also carries its own current
+        // asset packet on every offer.
+        const ownPacket = assetPacketView(user.business);
+        out = out.map((o) => ({ ...o, businessAssetPacket: ownPacket }));
       }
       else if (user.role === "creator") {
         out = out.filter((o) => o.market === user.market && o.status === "open" && (!o.creatorId || o.creatorId === user.id));
@@ -10145,6 +10639,7 @@ async function route(event) {
         const referralPrograms = {};
         const musicOpen = {};
         const studentOpen = {};
+        const assetPackets = {};
         for (const id of bizIds) {
           const biz = await store.get(`user:${id}`);
           plans[id] = biz && biz.business ? biz.business.plan : null;
@@ -10152,8 +10647,9 @@ async function route(event) {
           referralPrograms[id] = biz && biz.business ? referralProgramView(biz.business) : null;
           musicOpen[id] = biz && biz.business ? musicOpenView(biz.business) : null;
           studentOpen[id] = biz && biz.business ? studentOpenView(biz.business) : null;
+          assetPackets[id] = biz && biz.business ? assetPacketView(biz.business) : null;
         }
-        out = out.map((o) => ({ ...o, businessPlan: plans[o.businessId] || null, visitRights: visitRightsForVisit(kindOf(o)), businessReviewLinks: reviewLinks[o.businessId] || null, businessReferralProgram: referralPrograms[o.businessId] || null, businessMusicOpen: musicOpen[o.businessId] || null, businessStudentOpen: studentOpen[o.businessId] || null }));
+        out = out.map((o) => ({ ...o, businessPlan: plans[o.businessId] || null, visitRights: visitRightsForVisit(kindOf(o)), businessReviewLinks: reviewLinks[o.businessId] || null, businessReferralProgram: referralPrograms[o.businessId] || null, businessMusicOpen: musicOpen[o.businessId] || null, businessStudentOpen: studentOpen[o.businessId] || null, businessAssetPacket: offerAssetPacketAttached(o) ? (assetPackets[o.businessId] || null) : null }));
       }
       out.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
       return json(200, { offers: out });
@@ -10245,6 +10741,21 @@ async function route(event) {
           changes.paidBrief = [offer.paidBrief || null, String(b.paidBrief || "").trim().slice(0, PAID_BRIEF_MAX) || null];
           offer.paidBrief = changes.paidBrief[1];
         }
+      }
+      // Sig Operator (Jeff, 2026-10-28): a brief in the patch
+      // replaces the stored brief, normalized with the offer's
+      // own fields as the seed (empty hook / mustMention / timing
+      // fall back to experience / includes / visitWindow, exactly
+      // as at create time). The packet flag flips independently.
+      // Note: this brief object is a different field from
+      // paidBrief and IS allowed on comp offers.
+      if (b.brief !== undefined) {
+        changes.brief = [offer.brief || null, normalizeBriefInput(b.brief, kindOf(offer), briefSeedFromFields(offer))];
+        offer.brief = changes.brief[1];
+      }
+      if (b.assetPacketAttached !== undefined) {
+        changes.assetPacketAttached = [offerAssetPacketAttached(offer), b.assetPacketAttached === true];
+        offer.assetPacketAttached = changes.assetPacketAttached[1];
       }
       offer.updatedAt = nowIso();
       await store.set(`offer:${offer.id}`, offer);
@@ -10504,6 +11015,11 @@ async function route(event) {
         businessAbout: biz && biz.business ? (biz.business.about || "") : "",
         businessNeighborhood: biz && biz.business ? (biz.business.neighborhood || "") : "",
         paidMath: kindOf(o) === "paid" ? paidMath(Number(o.cashRate)) : null,
+        // Sig Operator (Jeff, 2026-10-28): every board offer reads
+        // with a brief, and the business's asset packet rides along
+        // only when the offer carries it.
+        brief: briefForOffer(o),
+        businessAssetPacket: offerAssetPacketAttached(o) ? (biz && biz.business ? assetPacketView(biz.business) : null) : null,
       });
     }
     out.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
@@ -10652,6 +11168,23 @@ async function route(event) {
     }
   }
 
+  // ---------- performance readout (Sig Operator, Jeff, 2026-10-28) ----------
+  if (method === "GET" && seg[0] === "me" && seg[1] === "performance-readout") {
+    if (user.role === "business") {
+      // A founding business has no live numbers yet: it gets the
+      // honest empty readout (200, the funnel line, no zero grid),
+      // not the founding gate's refusal.
+      if (isFoundingBusiness(user)) {
+        return json(200, { role: "business", empty: true, founding: true, recommendation: { type: "next", text: "Your funnel fills in once your campaigns are live.", action: "create_offer" } });
+      }
+      return json(200, await businessPerformanceReadout(user));
+    }
+    if (user.role === "creator") {
+      return json(200, await creatorPerformanceReadout(user));
+    }
+    return err(403, "The performance readout is for creators and businesses");
+  }
+
   // ---------- business home ----------
   if (method === "GET" && seg[0] === "me" && seg[1] === "business-home") {
     if (user.role !== "business") return err(403, "Businesses only");
@@ -10749,6 +11282,13 @@ async function route(event) {
       discountPct: discountPctForBooking(user.business),
       redemptions: null,
       compCostActual: math.businessTotal,
+      // Sig Operator (Jeff, 2026-10-28): a direct paid booking's
+      // brief derives from its paidBrief text (the hook is the
+      // paidBrief), and the business's current asset packet is
+      // snapshotted onto the booking (paid is attached by
+      // default). The paidBrief field itself is unchanged.
+      brief: normalizeBriefInput(b.brief, "paid", { hook: String(b.paidBrief || "").trim().slice(0, PAID_BRIEF_MAX) }),
+      assetPacket: assetPacketView(user.business),
       paidLane: {
         rate: math.rate,
         businessTotal: math.businessTotal,
@@ -11544,4 +12084,4 @@ async function route(event) {
 
 // The email builders are exported alongside the router so the verify
 // suites can assert on the exact copy a creator receives.
-module.exports = { route, passwordResetEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView, musicOpenView, studentOpenView };
+module.exports = { route, passwordResetEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, normalizeBriefInput, briefForOffer, validateAssetPacket, assetPacketView, postSeries, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView, musicOpenView, studentOpenView };
