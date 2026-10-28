@@ -2684,3 +2684,53 @@ body.rail-on main, body.preview-on main { min-width: 0; }
   body.rail-on main { width: calc(100% - 68px); }
   body.preview-on main { width: 100%; }
 }
+
+/* Sig, animated (Jeff, 2026-10-28): Sig is an inline SVG now
+   (sigSvgHtml in app.js) in the raster original's likeness.
+   Pure CSS, no libraries: an idle bob, gill sway and a blink on
+   every Sig; mood classes from sigAvatarHtml add a one-shot
+   greet pop, a thinking sway while Sig composes or the queue
+   loads, and a one-shot celebrate hop with sparkles. Sparkles
+   exist in the markup but stay invisible outside celebrate. */
+.sig-ava-svg { border-radius: 50%; overflow: hidden; background: var(--ink); }
+.sig-ava.sig-ava-svg svg { width: 100%; height: 100%; display: block; }
+body.v3-on .sig-ava-svg { box-shadow: 0 0 0 2px var(--ink); }
+body.v3-on .ask-sig .sig-ava-svg { box-shadow: 0 0 0 2px var(--mint); }
+.sig-spark { opacity: 0; }
+.sig-fig { transform-box: fill-box; transform-origin: 50% 62%; animation: sigBob 3.6s ease-in-out infinite; }
+.sig-gill { transform-box: fill-box; animation: sigGillSway 3.6s ease-in-out infinite alternate; }
+.sig-gill-l { transform-origin: 96% 50%; }
+.sig-gill-r { transform-origin: 4% 50%; animation-delay: -.55s; }
+.sig-gill.gd2 { animation-delay: -1.25s; }
+.sig-gill.gd3 { animation-delay: -2.35s; }
+.sig-gill-r.gd2 { animation-delay: -1.8s; }
+.sig-gill-r.gd3 { animation-delay: -2.9s; }
+.sig-eyes { transform-box: fill-box; transform-origin: 50% 50%; animation: sigBlink 5.4s ease-in-out infinite; }
+@keyframes sigBob { 0%, 100% { transform: translateY(.6px) rotate(-.5deg); } 50% { transform: translateY(-1.4px) rotate(.6deg); } }
+@keyframes sigGillSway { from { transform: rotate(-2.6deg); } to { transform: rotate(2.6deg); } }
+@keyframes sigBlink { 0%, 92%, 100% { transform: scaleY(1); } 95% { transform: scaleY(.08); } 98% { transform: scaleY(1); } }
+/* Greet: one pop on the wrapper, one wiggle across the gills. */
+.sig-mood-greet { animation: sigGreetPop 1.05s cubic-bezier(.34, 1.4, .64, 1) 1; }
+.sig-mood-greet .sig-gills, .sig-mood-celebrate .sig-gills { transform-box: fill-box; transform-origin: 50% 55%; }
+.sig-mood-greet .sig-gills { animation: sigGillsWiggle .55s ease-in-out 2 alternate; }
+@keyframes sigGreetPop { 0% { transform: scale(.8) translateY(3px); } 45% { transform: scale(1.09) translateY(-3px); } 70% { transform: scale(.97) translateY(0); } 100% { transform: scale(1) translateY(0); } }
+@keyframes sigGillsWiggle { from { transform: rotate(-3.5deg) scale(1); } to { transform: rotate(3.5deg) scale(1.06); } }
+/* Think: a slower tilt, quicker gills, eyes up. Loops while the
+   mood class is on the avatar (pending turns, queue loading). */
+.sig-mood-think .sig-fig { animation: sigThink 1.5s ease-in-out infinite; }
+.sig-mood-think .sig-gill { animation-duration: 1.05s; }
+.sig-mood-think .sig-eyes { animation: sigThinkEyes 1.5s ease-in-out infinite; }
+@keyframes sigThink { 0%, 100% { transform: rotate(-3.2deg) translateY(0); } 50% { transform: rotate(3.2deg) translateY(-1px); } }
+@keyframes sigThinkEyes { 0%, 100% { transform: translateY(-1.6px); } 50% { transform: translateY(-.6px); } }
+/* Celebrate: two hops with squash, gills wide, sparkles pop. */
+.sig-mood-celebrate { animation: sigCeleb 1.45s cubic-bezier(.28, .84, .42, 1) 1; }
+.sig-mood-celebrate .sig-gills { animation: sigGillsWiggle .48s ease-in-out 3 alternate; }
+.sig-mood-celebrate .sig-spark { transform-box: fill-box; transform-origin: 50% 50%; animation: sigSpark 1.45s ease-out 1; }
+.sig-mood-celebrate .sig-spark.sp2 { animation-delay: .12s; }
+@keyframes sigCeleb { 0% { transform: translateY(0) scale(1, 1); } 22% { transform: translateY(-8px) scale(.96, 1.05); } 40% { transform: translateY(0) scale(1.07, .9); } 58% { transform: translateY(-5px) scale(.98, 1.03); } 76% { transform: translateY(0) scale(1.03, .97); } 100% { transform: translateY(0) scale(1, 1); } }
+@keyframes sigSpark { 0%, 8% { opacity: 0; transform: scale(.3) rotate(0deg); } 26% { opacity: 1; transform: scale(1.15) rotate(20deg); } 55% { opacity: 1; transform: scale(1) rotate(35deg); } 78%, 100% { opacity: 0; transform: scale(.6) rotate(55deg); } }
+/* Queue loading: Sig thinks over the dashboard skeleton. */
+.sig-load-row { display: flex; align-items: center; margin: 0 0 10px; }
+@media (prefers-reduced-motion: reduce) {
+  .sig-ava, .sig-ava * { animation: none !important; }
+}

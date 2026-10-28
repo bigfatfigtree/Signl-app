@@ -1732,10 +1732,26 @@ const SPARK_SVG = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="tru
 
 // Sig's face lives in exactly ONE place (V3 spec §4): the
 // axolotl (Jeff's pick, 2026-10-27) — a gradient blue-to-green
-// axolotl whose gills fan like signal bursts, cropped from the
-// character artwork into public/assets/sig-axolotl.png. Swap
-// this constant and every Sig surface updates at once.
-const SIG_AVATAR_HTML = `<span class="sig-ava sig-ava-img"><img src="/assets/sig-axolotl.png" alt="Sig"></span>`;
+// axolotl whose gills fan like signal bursts. Animated pass
+// (Jeff, 2026-10-28): the raster crop could not move, so Sig is
+// now a hand-built inline SVG in the same likeness and palette,
+// animated by CSS (theme-v2.css, "Sig, animated"): an idle bob,
+// gill sway and blink everywhere; mood variants greet (first
+// Home / Sig-tab render of the session), think (a pending chat
+// turn, the dashboard queue loading), celebrate (a founding
+// spot just claimed). The raster original stays on disk and
+// still serves the 25px bottom-tab icon. Mood markup comes from
+// sigAvatarHtml(mood); SIG_AVATAR_HTML remains the idle swap-in
+// constant every Sig surface shares.
+let sigSvgSeq = 0;
+function sigSvgHtml() {
+  const g = "sigFace" + (++sigSvgSeq);
+  return `<svg viewBox="0 0 120 120" aria-hidden="true" focusable="false"><defs><linearGradient id="${g}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#35A6E8"/><stop offset=".45" stop-color="#24C2A8"/><stop offset="1" stop-color="#37D67F"/></linearGradient></defs><rect width="120" height="120" fill="#0B0D0C"/><g class="sig-fig"><g class="sig-gills"><g class="sig-gill sig-gill-l gd1"><path d="M40 46Q24 35.5 8.2 38.5M40 46Q24.4 34.5 6.9 35.8M40 46Q24.8 33.6 5.5 33.3M40 46Q25.2 32.6 10.3 33.1M40 46Q25.6 31.6 9.1 30.4M40 46Q26 30.6 7.8 27.7" fill="none" stroke="#2E9BE6" stroke-width="1.9" stroke-linecap="round"/></g><g class="sig-gill sig-gill-l gd2"><path d="M36 58Q18.9 59.1 5 64.6M36 58Q18.9 57.5 2.9 61.5M36 58Q19 56 0.7 58.7M36 58Q19 54.3 5.2 55.9M36 58Q19.1 52.7 3.1 52.8M36 58Q19.1 51 1 49.7" fill="none" stroke="#23BFA3" stroke-width="1.9" stroke-linecap="round"/></g><g class="sig-gill sig-gill-l gd3"><path d="M38 72Q26.1 86.5 15.8 94.3M38 72Q25.3 85.1 12.3 92.8M38 72Q24.5 83.8 9.1 91.7M38 72Q23.7 82.4 11.3 86.8M38 72Q22.8 81 7.8 85.4M38 72Q21.9 79.6 4.4 84" fill="none" stroke="#35C86E" stroke-width="1.9" stroke-linecap="round"/></g><g class="sig-gill sig-gill-r gd1"><path d="M80 46Q94 30.5 108.1 29.2M80 46Q94.4 31.5 110.9 30.2M80 46Q94.8 32.4 113.6 31.1M80 46Q95.2 33.4 110.3 34.6M80 46Q95.6 34.4 113.1 35.6M80 46Q96 35.4 115.8 36.6" fill="none" stroke="#2E9BE6" stroke-width="1.9" stroke-linecap="round"/></g><g class="sig-gill sig-gill-r gd2"><path d="M84 58Q100.9 50.9 114.6 49.6M84 58Q100.9 52.5 116.9 52.5M84 58Q101 54 119.1 55.1M84 58Q101 55.7 114.8 58.3M84 58Q101.1 57.3 117.1 61.2M84 58Q101.1 59 119.4 64.1" fill="none" stroke="#23BFA3" stroke-width="1.9" stroke-linecap="round"/></g><g class="sig-gill sig-gill-r gd3"><path d="M82 72Q98.1 79.5 112 81.4M82 72Q97.3 80.9 112.3 85.2M82 72Q96.5 82.2 112.8 88.6M82 72Q95.7 83.6 107.5 88.9M82 72Q94.8 85 107.8 92.6M82 72Q93.9 86.4 108.1 96.3" fill="none" stroke="#35C86E" stroke-width="1.9" stroke-linecap="round"/></g></g><circle cx="60" cy="43.5" r="4.2" fill="#35A6E8"/><ellipse cx="60" cy="66" rx="28" ry="25" fill="url(#${g})"/><g class="sig-eyes" fill="none" stroke="#0B0D0C" stroke-width="4" stroke-linecap="round"><path d="M44 64 Q50.5 56.5 57 64"/><path d="M63 64 Q69.5 56.5 76 64"/></g><path d="M42.5 76.5 Q60 89.5 77.5 76.5" fill="none" stroke="#0B0D0C" stroke-width="4" stroke-linecap="round"/><path d="M55.5 91.5 Q60 94.5 64.5 91.5" fill="none" stroke="#0B0D0C" stroke-width="2.2" stroke-linecap="round" opacity=".45"/><path class="sig-spark sp1" d="M23 17 C24.2 22, 25 22.8, 30 24 C25 25.2, 24.2 26, 23 31 C21.8 26, 21 25.2, 16 24 C21 22.8, 21.8 22, 23 17 Z" fill="#A9E8C9"/><path class="sig-spark sp2" d="M98 14.5 C99.2 18, 100 18.8, 103.5 20 C100 21.2, 99.2 22, 98 25.5 C96.8 22, 96 21.2, 92.5 20 C96 18.8, 96.8 18, 98 14.5 Z" fill="#A9E8C9"/></g></svg>`;
+}
+function sigAvatarHtml(mood) {
+  return `<span class="sig-ava sig-ava-svg${mood ? " sig-mood-" + mood : ""}" role="img" aria-label="Sig">${sigSvgHtml()}</span>`;
+}
+const SIG_AVATAR_HTML = sigAvatarHtml("");
 
 // Overhaul V2 rail item sets (2026-10-27): the slim icon rail is
 // the navigation at EVERY width, mirroring the Grin template —
@@ -1895,14 +1911,24 @@ function goalsCardHtml() {
 function sigQueueHtml(items, opts) {
   const o = opts || {};
   const n = items.length;
+  // Sig's mood on the queue card: a just-claimed founding spot
+  // celebrates once; otherwise the first queue render of each
+  // door (Home, then the Sig tab) greets once per session. Every
+  // later render is the plain idle avatar.
+  let ava = SIG_AVATAR_HTML;
+  if (state.sigCelebrate) { state.sigCelebrate = false; ava = sigAvatarHtml("celebrate"); }
+  else {
+    const gk = o.askBox ? "sigGreetHome" : "sigGreetTab";
+    if (!state[gk]) { state[gk] = 1; ava = sigAvatarHtml("greet"); }
+  }
   if (!n) {
-    return `<div class="sig-card"><div class="sig-top">${SIG_AVATAR_HTML}<div><div class="sig-title">You're all caught up.</div><div class="sig-sub">When a creator applies, a visit needs you, or a post lands, it shows up here.</div></div></div>${o.askBox ? sigAskBoxHtml() : ""}${(o.links || []).length ? `<div class="sig-links">${o.links.map((l, i) => `<button type="button" class="sig-link" data-sq="L${i}">${esc(l.label)}</button>`).join("")}</div>` : ""}</div>`;
+    return `<div class="sig-card"><div class="sig-top">${ava}<div><div class="sig-title">You're all caught up.</div><div class="sig-sub">When a creator applies, a visit needs you, or a post lands, it shows up here.</div></div></div>${o.askBox ? sigAskBoxHtml() : ""}${(o.links || []).length ? `<div class="sig-links">${o.links.map((l, i) => `<button type="button" class="sig-link" data-sq="L${i}">${esc(l.label)}</button>`).join("")}</div>` : ""}</div>`;
   }
   // leadShort (Homes only): the greeting above the card already
   // carries the lead item's full sentence, so the lead row renders
   // its short task form instead — Home never shows a sentence twice.
   const row = (r, i) => `<div class="sig-item"><div class="sig-stxt">${esc(i === 0 && o.leadShort && r.short ? r.short : r.text)}</div>${r.btn ? `<button type="button" class="btn small-btn" data-sq="${i}">${esc(r.btn)}</button>` : ""}${r.dismissKey ? `<button type="button" class="sig-x" data-sqx="${i}" aria-label="Dismiss for this season">&times;</button>` : ""}</div>`;
-  return `<div class="sig-card"><div class="sig-top">${SIG_AVATAR_HTML}<div><div class="sig-title">Sig has ${n} thing${n === 1 ? "" : "s"} for you</div><div class="sig-sub">In the order they need you.</div></div></div>
+  return `<div class="sig-card"><div class="sig-top">${ava}<div><div class="sig-title">Sig has ${n} thing${n === 1 ? "" : "s"} for you</div><div class="sig-sub">In the order they need you.</div></div></div>
   ${o.askBox ? sigAskBoxHtml() : ""}
   ${items.slice(0, 3).map(row).join("")}
   ${n > 3 ? `<div class="sig-more" hidden>${items.slice(3).map((r, j) => row(r, j + 3)).join("")}</div><button type="button" class="sig-seeall" onclick="return sigSeeAll(this)">See all ${n}</button>` : ""}
@@ -2700,7 +2726,7 @@ function sigThreadHtml() {
   const flows = sigFlowsFor();
   return (state.sigThread || []).map((turn) => turn.who === "user"
     ? `<div class="sig-turn user"><div class="sig-bub">${esc(turn.text)}</div></div>`
-    : `<div class="sig-turn sig"><span class="sig-turn-ava">${SIG_AVATAR_HTML}</span><div class="sig-bub">${esc(turn.text)}${turn.flow != null && flows[turn.flow] ? `<button type="button" class="btn small-btn sig-turn-act" data-sigflow="${turn.flow}">${esc(flows[turn.flow].label)}</button>` : ""}${(turn.suggest || []).map((q) => `<button type="button" class="btn small-btn sig-turn-act" data-sigask="${esc(q)}">${esc(q)}</button>`).join("")}</div></div>`).join("");
+    : `<div class="sig-turn sig"><span class="sig-turn-ava">${turn.pending ? sigAvatarHtml("think") : SIG_AVATAR_HTML}</span><div class="sig-bub">${esc(turn.text)}${turn.flow != null && flows[turn.flow] ? `<button type="button" class="btn small-btn sig-turn-act" data-sigflow="${turn.flow}">${esc(flows[turn.flow].label)}</button>` : ""}${(turn.suggest || []).map((q) => `<button type="button" class="btn small-btn sig-turn-act" data-sigask="${esc(q)}">${esc(q)}</button>`).join("")}</div></div>`).join("");
 }
 async function sigAskSubmit(ev) {
   if (ev) ev.preventDefault();
@@ -3533,6 +3559,7 @@ async function doQuickClaim(e) {
       lang: state.lang === "es" ? "es" : undefined,
     });
     state.user = data.user;
+    state.sigCelebrate = true;
     state.view = "dashboard";
     render();
   } catch (err) {
@@ -4123,8 +4150,18 @@ function renderPending() {
   // Two-step claim (Jeff, 2026-10-20): a quick claim is a claimed
   // spot, not a built profile, and the screen says so plainly.
   const claimedOnly = isCreator && u.creator && u.creator.signupPath === "quick_claim" && u.creator.profileComplete === false;
+  // The one celebration (animated Sig, 2026-10-28): the render
+  // right after a successful quick claim gets Sig celebrating
+  // at the head of this confirmation, once. The flag is set only
+  // by doQuickClaim and cleared here, so later visits to this
+  // screen render exactly as before. (A claim that lands already
+  // approved never reaches this screen; the queue card on the
+  // founding home consumes the same flag there instead.)
+  const celebAva = state.sigCelebrate ? `<div style="display:flex;justify-content:center;margin-bottom:12px">${sigAvatarHtml("celebrate")}</div>` : "";
+  if (state.sigCelebrate) state.sigCelebrate = false;
   app.innerHTML = `
   <section class="panel center" style="max-width:560px;margin:40px auto">
+    ${celebAva}
     <h2>${claimedOnly ? T("Your spot is claimed", "Tu lugar está reclamado") : T("Founding profile received", "Perfil fundador recibido")}</h2>
     ${claimedOnly
       ? `<p>${T("Thanks,", "Gracias,")} ${esc(u.name)}. ${T("Your founding spot in", "Tu lugar de fundador en")} <strong>${place}</strong> ${T("is claimed and your application is in the review queue. Every founding application gets a decision or a clear status within 2 business days.", "está reclamado y tu solicitud está en la fila de revisión. Cada solicitud fundadora recibe una decisión o un estado claro en 2 días laborables.")}</p>
@@ -4793,7 +4830,7 @@ function renderCreatorDash() {
   state.tab = tab;
   if (tab !== "Dashboard") stopHomeCountdown();
   let body = "";
-  if (tab === "Dashboard") body = `<div id="creator-home" class="vx-stagger">${skelHtml("Loading your dashboard...", 2)}</div>`;
+  if (tab === "Dashboard") body = `<div id="creator-home" class="vx-stagger"><div class="sig-load-row">${sigAvatarHtml("think")}</div>${skelHtml("Loading your dashboard...", 2)}</div>`;
   if (tab === "Profile") body = wsHead("My profile", { chip: livePill("Live"), sub: "Your public creator profile. This is what businesses see when they find you.", subKey: "cr-profile" }) + creatorProfileHtml(u) + momentumHtml(u) + growRosterHtml(u);
   app.innerHTML = `<div class="wrap">
     ${standingBannerHtml(u)}
@@ -4827,7 +4864,7 @@ function renderFoundingHome() {
   state.tab = tab;
   const placeBadge = u.market === unlistedLabel() ? esc(u.city || u.market) : esc(marketDisplayName(u.market));
   let body = "";
-  if (tab === "Dashboard") body = `<div id="founding-dash" class="vx-stagger">${skelHtml("Loading your dashboard...", 2)}</div>`;
+  if (tab === "Dashboard") body = `<div id="founding-dash" class="vx-stagger"><div class="sig-load-row">${sigAvatarHtml("think")}</div>${skelHtml("Loading your dashboard...", 2)}</div>`;
   if (tab === "Status") body = `<h3 style="margin-top:0">Your founding status</h3><div id="founding-body">${skelHtml("Loading your founding profile...", 1)}</div>`;
   if (tab === "Profile") body = wsHead("My profile", { sub: "Your public creator profile. Complete profiles get booked first.", subKey: "cr-profile" }) + creatorProfileHtml(u);
   if (tab === "Status") body = wsHead("Status", { sub: "Where your founding enrollment stands." }) + body;
