@@ -2459,6 +2459,23 @@ function referralProgramView(business) {
   if (!p.url && !p.code) return null;
   return { url: p.url || null, code: p.code || null, note: p.note || null };
 }
+// Musician openness, business side (Jeff, 2026-10-28): the
+// mirror of the creator's musician signals. A business flags
+// that it is open to booking musicians, and for what (live
+// performances, created music). Stored FLAT on the business
+// record (musicOpen, musicLive, musicCreated); all optional,
+// all unset = off. Signals only: no offer type, rate, or
+// booking flow reads them; creators just see the openness on
+// the business's offers and page. The view runs on
+// creator-facing read paths, so it must NEVER throw: a record
+// holding anything unexpected reads as closed.
+function musicOpenView(business) {
+  try {
+    if (!business || business.musicOpen !== true) return null;
+    return { live: business.musicLive === true, created: business.musicCreated === true };
+  } catch (e) { /* defensive: a bad record reads as closed */ }
+  return null;
+}
 // Validate a referral-program write against the record's
 // current state. Input fields are optional (an omitted field
 // keeps its current value); an explicit empty string clears
@@ -3312,6 +3329,13 @@ async function publicProfilePayload(u) {
     // yes/no the creator sets on their profile. Optional, never
     // part of the completeness gate.
     spanishContent: c.spanishContent === true,
+    // Musician openness (Jeff, 2026-10-28): the musician flag
+    // and what they are open to, so cards and the full profile
+    // can carry the Musician mark and the openness lines.
+    // Optional signals, never part of the completeness gate.
+    musician: c.musician === true,
+    musicPerform: c.musicPerform === true,
+    musicCreate: c.musicCreate === true,
     // Realtor layer (Jeff, 2026-10-22): the profession rides the
     // public payload for every creator; the neighborhood tags
     // and brokerage line are exposed ONLY while the profile is
@@ -8131,6 +8155,24 @@ async function route(event) {
         c.spanishContent = b.spanishContent === true;
         changes.spanishContent = [user.creator.spanishContent === true, c.spanishContent];
       }
+      // Musician openness (Jeff, 2026-10-28): three optional
+      // signals, mirroring the Spanish attribute. "I am a
+      // musician" plus what they are open to (performing live
+      // for businesses, creating music for businesses). Signals
+      // only: they change no booking flow, no offer type, no
+      // rate, and are deliberately NOT completeness fields.
+      if (b.musician !== undefined) {
+        c.musician = b.musician === true;
+        changes.musician = [user.creator.musician === true, c.musician];
+      }
+      if (b.musicPerform !== undefined) {
+        c.musicPerform = b.musicPerform === true;
+        changes.musicPerform = [user.creator.musicPerform === true, c.musicPerform];
+      }
+      if (b.musicCreate !== undefined) {
+        c.musicCreate = b.musicCreate === true;
+        changes.musicCreate = [user.creator.musicCreate === true, c.musicCreate];
+      }
       if (b.paidRate !== undefined) {
         if (b.paidRate === null || b.paidRate === "") {
           changes.paidRate = [c.paidRate == null ? null : c.paidRate, null];
@@ -8342,6 +8384,15 @@ async function route(event) {
         bz.referralCode = v.code;
         bz.referralNote = v.note;
       }
+      // Musician openness (Jeff, 2026-10-28): the business-side
+      // mirror of the creator's musician signals. Three optional
+      // booleans, omitted fields keep their current values, and
+      // nothing about offers, rates, or bookings reads them:
+      // they only mark the business as open to musicians on its
+      // offers and page (see musicOpenView).
+      if (b.musicOpen !== undefined) bz.musicOpen = b.musicOpen === true;
+      if (b.musicLive !== undefined) bz.musicLive = b.musicLive === true;
+      if (b.musicCreated !== undefined) bz.musicCreated = b.musicCreated === true;
       // Average ticket (UX redesign section 4, 2026-10-24): the
       // business's typical register spend per customer, set once
       // and editable here. ROAS code-use estimates multiply logged
@@ -9895,13 +9946,15 @@ async function route(event) {
         const plans = {};
         const reviewLinks = {};
         const referralPrograms = {};
+        const musicOpen = {};
         for (const id of bizIds) {
           const biz = await store.get(`user:${id}`);
           plans[id] = biz && biz.business ? biz.business.plan : null;
           reviewLinks[id] = biz && biz.business ? reviewLinksView(biz.business) : null;
           referralPrograms[id] = biz && biz.business ? referralProgramView(biz.business) : null;
+          musicOpen[id] = biz && biz.business ? musicOpenView(biz.business) : null;
         }
-        out = out.map((o) => ({ ...o, businessPlan: plans[o.businessId] || null, visitRights: visitRightsForVisit(kindOf(o)), businessReviewLinks: reviewLinks[o.businessId] || null, businessReferralProgram: referralPrograms[o.businessId] || null }));
+        out = out.map((o) => ({ ...o, businessPlan: plans[o.businessId] || null, visitRights: visitRightsForVisit(kindOf(o)), businessReviewLinks: reviewLinks[o.businessId] || null, businessReferralProgram: referralPrograms[o.businessId] || null, businessMusicOpen: musicOpen[o.businessId] || null }));
       }
       out.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
       return json(200, { offers: out });
@@ -10247,6 +10300,7 @@ async function route(event) {
         visitRights: visitRightsForVisit(kindOf(o)),
         businessReviewLinks: biz && biz.business ? reviewLinksView(biz.business) : null,
         businessReferralProgram: biz && biz.business ? referralProgramView(biz.business) : null,
+        businessMusicOpen: biz && biz.business ? musicOpenView(biz.business) : null,
         businessAbout: biz && biz.business ? (biz.business.about || "") : "",
         businessNeighborhood: biz && biz.business ? (biz.business.neighborhood || "") : "",
         paidMath: kindOf(o) === "paid" ? paidMath(Number(o.cashRate)) : null,
@@ -11290,4 +11344,4 @@ async function route(event) {
 
 // The email builders are exported alongside the router so the verify
 // suites can assert on the exact copy a creator receives.
-module.exports = { route, passwordResetEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView };
+module.exports = { route, passwordResetEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView, musicOpenView };

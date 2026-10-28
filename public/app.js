@@ -4347,6 +4347,18 @@ function reviewLinksBlockHtml(links) {
 // nothing at all for businesses without one. Any rewards are
 // the business's program under its own terms; SIGNL never
 // runs or guarantees them.
+// Musician openness, as creators see it (Jeff, 2026-10-28):
+// the business-side mirror of the creator's musician signals.
+// The payload view is null unless the business switched "Open
+// to booking musicians" on, so nothing renders for anyone
+// else. The pill names the openness; the line under it says
+// which kinds the business switched on.
+function musicOpenBlockHtml(view) {
+  if (!view) return "";
+  const kinds = [view.live ? "live performances" : "", view.created ? "created music" : ""].filter(Boolean);
+  return `<p class="small"><span class="badge ok">Open to musicians</span>${kinds.length ? ` <span class="muted">This business is open to booking musicians for ${kinds.join(" and ")}.</span>` : ""}</p>`;
+}
+
 function referralProgramBlockHtml(prog) {
   if (!prog || (!prog.url && !prog.code)) return "";
   return `<div class="showcase-block"><h4>This business runs its own referral program</h4>
@@ -4577,7 +4589,7 @@ function creatorProfileDetailHtml(c, preview, opts) {
             ${c.foundingBand ? `<span class="cc-chip">First ${c.foundingBand} founding</span>` : ""}
           </div>
         </div>
-        <p>${scoreBadge(c.localImpactScore)}${p.openToPaidCampaigns ? ` <span class="badge tier">Open to paid campaigns</span>` : ""}${p.spanishContent ? ` <span class="badge">Spanish content</span>` : ""}${paidLaneBadgesHtml(p)}${c.momentum && c.momentum.points ? ` <span class="badge info">Momentum ${c.momentum.points} pts</span>` : ""}${badgesHtml(c.badges)}</p>
+        <p>${scoreBadge(c.localImpactScore)}${p.openToPaidCampaigns ? ` <span class="badge tier">Open to paid campaigns</span>` : ""}${p.spanishContent ? ` <span class="badge">Spanish content</span>` : ""}${p.musician ? ` <span class="badge">Musician</span>` : ""}${paidLaneBadgesHtml(p)}${c.momentum && c.momentum.points ? ` <span class="badge info">Momentum ${c.momentum.points} pts</span>` : ""}${badgesHtml(c.badges)}</p>
         <div class="cc-local">
           ${p.localAudiencePct === null || p.localAudiencePct === undefined
             ? `<div class="lbl">Local audience not reported yet</div>`
@@ -4596,6 +4608,7 @@ function creatorProfileDetailHtml(c, preview, opts) {
     ${c.scoreComponents ? `<p class="small muted">Local Impact Score, in the open: local audience ${c.scoreComponents.localAudiencePct}% &middot; reliability ${c.scoreComponents.reliability} (${esc(c.scoreComponents.reliabilityBasis)}) &middot; engagement ${c.scoreComponents.engagement}.</p>` : ""}
     ${p.categories && p.categories.length ? `<p class="small">${p.categories.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
     ${p.compCategories && p.compCategories.filter((x) => x !== PAID_COMP).length ? `<p class="small muted">Open to comps: ${p.compCategories.filter((x) => x !== PAID_COMP).map(esc).join(", ")}</p>` : ""}
+    ${p.musician && (p.musicPerform || p.musicCreate) ? `<p class="small muted">${[p.musicPerform ? "Open to live performances" : "", p.musicCreate ? "Open to creating music for businesses" : ""].filter(Boolean).join(" &middot; ")}</p>` : ""}
     ${p.topAudienceCities && p.topAudienceCities.length ? `<p class="small muted">Top audience cities: ${p.topAudienceCities.map(esc).join(", ")}</p>` : ""}
     ${p.bio ? `<p>${esc(p.bio)}</p>` : ""}
     <p class="small">${socialLinksHtml(p)}</p>
@@ -4692,7 +4705,7 @@ function creatorCard(c, viewer, opts) {
     ${stackList(c).length ? `<div class="cc-platforms">${stackList(c).map((x) => `<span class="cc-plat">${esc(x.label)} ${fmtNum(x.count)}</span>`).join("")}</div>` : ""}
     ${c.standing === "paused" ? `<p><span class="badge warn">Paused: a late post is outstanding</span> <span class="small muted">This creator is greyed out and cannot take new offers until the post is delivered.</span></p>` : ""}
     ${c.bookedUp ? `<p><span class="badge info">Booked up this week</span> <span class="small muted">At their weekly visit max. You can still send offers; they can accept next week.</span></p>` : ""}
-    <p>${scoreBadge(c.localImpactScore)}${p.openToPaidCampaigns ? ` <span class="badge tier">Open to paid campaigns</span>` : ""}${p.spanishContent ? ` <span class="badge">Spanish content</span>` : ""}${paidLaneBadgesHtml(p)}${c.momentum && c.momentum.points ? ` <span class="badge info">Momentum ${c.momentum.points} pts</span>` : ""}${badgesHtml(c.badges)}</p>
+    <p>${scoreBadge(c.localImpactScore)}${p.openToPaidCampaigns ? ` <span class="badge tier">Open to paid campaigns</span>` : ""}${p.spanishContent ? ` <span class="badge">Spanish content</span>` : ""}${p.musician ? ` <span class="badge">Musician</span>` : ""}${paidLaneBadgesHtml(p)}${c.momentum && c.momentum.points ? ` <span class="badge info">Momentum ${c.momentum.points} pts</span>` : ""}${badgesHtml(c.badges)}</p>
     ${p.categories && p.categories.length ? `<p class="small">${p.categories.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
     ${p.compCategories && p.compCategories.filter((x) => x !== PAID_COMP).length ? `<p class="small muted">Open to comps: ${p.compCategories.filter((x) => x !== PAID_COMP).map(esc).join(", ")}</p>` : ""}
     ${p.bio ? `<p class="small muted">${esc(p.bio)}</p>` : ""}
@@ -5356,6 +5369,32 @@ function spanishPanelHtml(c) {
     <div class="lrow lane-row"><input type="checkbox" class="sw lane-sw" id="lane-spanish" ${on ? "checked" : ""} onchange="laneToggleSpanish(this)"><div><label class="lname" for="lane-spanish">Creates content in Spanish</label> <span class="lline" id="lane-spanish-line">— ${esc(laneSpanishLine(c || {}))}</span></div></div>
   </div>`;
 }
+function laneMusicLine(c) {
+  return c && c.musician ? "on. Your profile carries a Musician mark, and businesses can see what you are open to below." : "off. Turn this on if you make music, even sometimes.";
+}
+// Musician openness panel (Jeff, 2026-10-28): the creator's
+// musician signals live beside the Spanish panel, in the same
+// tint panel shape, and write through the same laneSave PATCH
+// /me/profile path. An adapter, not a new lane: the main switch
+// marks the creator as a musician, and the two sub-switches it
+// reveals say what they are open to (performing live for
+// businesses, creating music for businesses). Both are
+// optional; a musician with neither on is valid. Bookings,
+// offers, and rates never read these flags.
+function musicPanelHtml(c) {
+  const on = !!(c && c.musician);
+  const perform = !!(c && c.musicPerform);
+  const create = !!(c && c.musicCreate);
+  return `<div class="spanish-panel" id="music-panel">
+    <h4 class="spanish-panel-h">Are you a musician?</h4>
+    <p class="small spanish-panel-sub">Some businesses want a live set or music made for them. This only marks you as open to it; any booking still runs as a normal visit, at your normal rate.</p>
+    <div class="lrow lane-row"><input type="checkbox" class="sw lane-sw" id="lane-musician" ${on ? "checked" : ""} onchange="laneToggleMusician(this)"><div><label class="lname" for="lane-musician">I am a musician</label> <span class="lline" id="lane-musician-line">— ${esc(laneMusicLine(c || {}))}</span></div></div>
+    <div id="music-open-rows" style="display:${on ? "" : "none"}">
+      <div class="lrow lane-row"><input type="checkbox" class="sw lane-sw" id="lane-music-perform" ${perform ? "checked" : ""} onchange="laneToggleMusicPerform(this)"><div><label class="lname" for="lane-music-perform">Open to performing live for businesses</label></div></div>
+      <div class="lrow lane-row"><input type="checkbox" class="sw lane-sw" id="lane-music-create" ${create ? "checked" : ""} onchange="laneToggleMusicCreate(this)"><div><label class="lname" for="lane-music-create">Open to creating music for businesses</label></div></div>
+    </div>
+  </div>`;
+}
 
 function laneControlsHtml(c) {
   const compOn = !c || c.compOpen !== false;
@@ -5523,6 +5562,8 @@ function rerenderLaneControls() {
   host.outerHTML = laneControlsHtml(state.user.creator);
   const sp = document.getElementById("spanish-panel");
   if (sp) sp.outerHTML = spanishPanelHtml(state.user.creator);
+  const mp = document.getElementById("music-panel");
+  if (mp) mp.outerHTML = musicPanelHtml(state.user.creator);
   if (rowOpen) {
     const r2 = document.getElementById("lane-rate-row");
     if (r2) r2.style.display = "block";
@@ -5547,6 +5588,18 @@ async function laneSave(patch) {
 }
 function laneToggleSpanish(input) {
   laneSave({ spanishContent: !!input.checked });
+  return true;
+}
+function laneToggleMusician(input) {
+  laneSave({ musician: !!input.checked });
+  return true;
+}
+function laneToggleMusicPerform(input) {
+  laneSave({ musicPerform: !!input.checked });
+  return true;
+}
+function laneToggleMusicCreate(input) {
+  laneSave({ musicCreate: !!input.checked });
   return true;
 }
 function laneToggleComp(input) {
@@ -5609,6 +5662,7 @@ function homePaidLaneHtml(creator, footerHtml) {
     <p class="ui-kicker">Paid lane</p>
     <h3 class="home-h">Comp and paid, your choice</h3>
     ${spanishPanelHtml(creator || {})}
+    ${musicPanelHtml(creator || {})}
     ${laneControlsHtml(creator || {})}
     <p class="small muted">${paymentsLive() ? "Charged to the business's card at booking. Held until your post is live — released 48h after proof." : "Recorded in the app, no card charged. Held until your post is live — released 48h after proof."}</p>
     ${footerHtml || ""}
@@ -6046,6 +6100,7 @@ function creatorProfileHtml(u) {
         <h4>How businesses can book you</h4>
         <p class="small muted">These save the moment you flip them — the same switches as your dashboard.</p>
         ${spanishPanelHtml(c)}
+        ${musicPanelHtml(c)}
         ${laneControlsHtml(c)}
       </div>
       <div class="field"><label>Best work (up to 3 links)</label>
@@ -6369,6 +6424,7 @@ async function loadDirectOffers() {
         ${o.kind === "paid" && o.paidBrief ? `<p class="small"><strong>Key points:</strong> ${esc(o.paidBrief)}</p>` : ""}
         ${dealPlainWordsHtml(o)}
         ${reviewLinksBlockHtml(o.businessReviewLinks)}
+        ${musicOpenBlockHtml(o.businessMusicOpen)}
         ${referralProgramBlockHtml(o.businessReferralProgram)}
         <p class="small muted">${o.windowMode === "thisweek" ? "Redeem this week — ends Sunday" : "Redeem within 7 days of accepting"} &middot; no appointment needed.${o.visitWindow ? ` Note from the business: ${esc(o.visitWindow)}` : ""}</p>
         </div>
@@ -6451,6 +6507,7 @@ function offerFeedCardHtml(o, opts) {
         ${o.kind === "paid" && o.paidBrief ? `<p class="small"><strong>Key points:</strong> ${esc(o.paidBrief)}</p>` : ""}
         ${dealPlainWordsHtml(o)}
         ${reviewLinksBlockHtml(o.businessReviewLinks)}
+        ${musicOpenBlockHtml(o.businessMusicOpen)}
         ${referralProgramBlockHtml(o.businessReferralProgram)}
         <p class="small muted">Apply by ${fmtDay(o.applicationsCloseAt)} &middot; ${o.applicationCount} applied${o.visitWindow ? `<br>Note from the business: ${esc(o.visitWindow)}` : ""}</p>
         ${o.businessAbout ? `<p class="small muted">${esc(o.businessAbout)}</p>` : ""}
@@ -8194,6 +8251,7 @@ async function renderBizProfileTab() {
         <span class="ps"><b>${reviews.length}</b><span>creator reviews</span></span>
         <span class="ps"><b>${esc(b.planName || "")}</b><span>plan</span></span>
       </div>
+      ${b.musicOpen ? `<div style="margin-top:10px"><span class="badge ok">Open to musicians</span>${[b.musicLive ? "For live performances" : "", b.musicCreated ? "For created music" : ""].filter(Boolean).length ? ` <span class="small muted">${[b.musicLive ? "For live performances" : "", b.musicCreated ? "For created music" : ""].filter(Boolean).join(" · ")}</span>` : ""}</div>` : ""}
     </div></div>
     ${wsTabs([
       { label: "Profile", on: bizProfTab === "profile", onclick: "return bizProfSet('profile')" },
@@ -8215,6 +8273,11 @@ async function renderBizProfileTab() {
           <div class="field"><label>Neighborhood / area</label><input id="bp-neighborhood" value="${esc(b.neighborhood || "")}" placeholder="For example: Oceanfront, Ghent"></div>
         </div>
         <div class="field"><label>About your business</label><textarea id="bp-about" rows="3" placeholder="What you serve, what the visit feels like">${esc(b.about || "")}</textarea></div>
+        <div class="field"><label class="tgl-row"><input type="checkbox" class="sw" id="bp-music-open" ${b.musicOpen ? "checked" : ""} onchange="syncBizMusicRows()"><span><strong>Open to booking musicians</strong><br><span class="small muted">Marks your offers and your page as open to musicians. Any booking still runs as a normal visit, the same as any other creator.</span></span></label></div>
+        <div id="bp-music-rows" style="display:${b.musicOpen ? "" : "none"}">
+          <div class="field"><label class="tgl-row"><input type="checkbox" class="sw" id="bp-music-live" ${b.musicLive ? "checked" : ""}><span>For live performances</span></label></div>
+          <div class="field"><label class="tgl-row"><input type="checkbox" class="sw" id="bp-music-created" ${b.musicCreated ? "checked" : ""}><span>For created music</span></label></div>
+        </div>
         <button class="btn ws-primary" onclick="saveBusinessProfile()">Save profile</button> <span id="bp-ok" class="saved"></span>
       </div>`;
     }
@@ -8476,7 +8539,7 @@ function discoverStackCard(c) {
       </div>
     </div>
     <div class="dcard-body">
-      ${cats.length || p.spanishContent ? `<div class="dcard-chips">${cats.map((x) => `<span class="cc-chip">${esc(x)}</span>`).join("")}${extra > 0 ? `<span class="cc-chip">+${extra}</span>` : ""}${p.spanishContent ? `<span class="cc-chip">Spanish content</span>` : ""}</div>` : ""}
+      ${cats.length || p.spanishContent || p.musician ? `<div class="dcard-chips">${cats.map((x) => `<span class="cc-chip">${esc(x)}</span>`).join("")}${extra > 0 ? `<span class="cc-chip">+${extra}</span>` : ""}${p.spanishContent ? `<span class="cc-chip">Spanish content</span>` : ""}${p.musician ? `<span class="cc-chip">Musician</span>` : ""}</div>` : ""}
       <div class="dcard-meta">${place ? `<span>${place}</span>` : ""}<span>${fmtNum(totalAudienceOf(c))} audience</span></div>
       ${c.bookedUp ? `<p class="small muted" style="margin:8px 0 0">Booked up this week — invites still land, accepting reopens next week.</p>` : ""}
       ${c.standing === "paused" ? `<p class="small muted" style="margin:8px 0 0">Paused: a late post is outstanding, so this creator cannot take new offers yet.</p>` : ""}
@@ -9660,6 +9723,13 @@ async function printStaffCard() {
   } catch (err) { alert(err.message); }
 }
 
+function syncBizMusicRows() {
+  const rows = document.getElementById("bp-music-rows");
+  const main = document.getElementById("bp-music-open");
+  if (rows && main) rows.style.display = main.checked ? "" : "none";
+  return true;
+}
+
 async function saveBusinessProfile() {
   try {
     const data = await api("PATCH", "/me/profile", {
@@ -9668,6 +9738,9 @@ async function saveBusinessProfile() {
       city: document.getElementById("bp-city").value,
       neighborhood: document.getElementById("bp-neighborhood").value,
       about: document.getElementById("bp-about").value,
+      musicOpen: document.getElementById("bp-music-open").checked,
+      musicLive: document.getElementById("bp-music-live").checked,
+      musicCreated: document.getElementById("bp-music-created").checked,
     });
     state.user = data.user;
     render();
