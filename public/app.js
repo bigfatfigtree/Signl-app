@@ -1637,7 +1637,7 @@ function tabBarHtml() {
   if (!items.length) return "";
   const btns = items.map((it) => `
     <button type="button" class="tab-item ${it.tab === "More" ? "tab-item-more" : ""} ${it.on ? "on" : ""}" onclick="return go('dashboard','${it.tab}')" aria-label="${esc(it.label)}">
-      <span class="tab-ic">${it.icon === "sig" ? `<img class="tab-sig-img" src="/assets/sig-axolotl.png" alt="">` : bnIcon(it.icon)}${it.badge ? `<span class="tab-badge">${it.badge > 99 ? "99+" : it.badge}</span>` : ""}</span>
+      <span class="tab-ic">${it.icon === "sig" ? `<img class="tab-sig-img" src="/assets/sig-musician.svg" alt="">` : bnIcon(it.icon)}${it.badge ? `<span class="tab-badge">${it.badge > 99 ? "99+" : it.badge}</span>` : ""}</span>
       <span class="tab-label">${esc(it.label)}</span>
     </button>`).join("");
   const more = moreRowsFor().map((r) => `
@@ -1730,26 +1730,151 @@ function closeMoreSheet() {
 // logic behind the button in this stage.
 const SPARK_SVG = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.1 6.9L21 11l-6.9 2.1L12 20l-2.1-6.9L3 11l6.9-2.1z"/></svg>`;
 
-// Sig's face lives in exactly ONE place (V3 spec §4): the
-// axolotl (Jeff's pick, 2026-10-27) — a gradient blue-to-green
-// axolotl whose gills fan like signal bursts. Animated pass
-// (Jeff, 2026-10-28): the raster crop could not move, so Sig is
-// now a hand-built inline SVG in the same likeness and palette,
-// animated by CSS (theme-v2.css, "Sig, animated"): an idle bob,
-// gill sway and blink everywhere; mood variants greet (first
-// Home / Sig-tab render of the session), think (a pending chat
-// turn, the dashboard queue loading), celebrate (a founding
-// spot just claimed). The raster original stays on disk and
-// still serves the 25px bottom-tab icon. Mood markup comes from
-// sigAvatarHtml(mood); SIG_AVATAR_HTML remains the idle swap-in
-// constant every Sig surface shares.
+// Sig's face lives in exactly ONE place (V3 spec §4): a
+// cool 90s musician in a realistic-cartoon ink style (Jeff's
+// corrected pick, 2026-10-28) — elongated proportions, heavy
+// outlines, flat color with rough hatch shading, a backwards
+// coral cap, a chain, and big on-ear headphones as the
+// signature. Bust framing carries the avatar; the head stays
+// large enough that the face, cap and cups still read at the
+// 25px tab size. Mood markup comes from sigAvatarHtml(mood);
+// SIG_AVATAR_HTML remains the idle swap-in constant every Sig
+// surface shares. CSS in theme-v2.css ("Sig, animated") runs
+// the states on the -19 plumbing: idle head-nod and blink,
+// greet, think, talk (while an answer renders), and celebrate
+// on the one successful-quick-claim render.
 let sigSvgSeq = 0;
-function sigSvgHtml() {
-  const g = "sigFace" + (++sigSvgSeq);
-  return `<svg viewBox="0 0 120 120" aria-hidden="true" focusable="false"><defs><linearGradient id="${g}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#35A6E8"/><stop offset=".45" stop-color="#24C2A8"/><stop offset="1" stop-color="#37D67F"/></linearGradient></defs><rect width="120" height="120" fill="#0B0D0C"/><g class="sig-fig"><g class="sig-gills"><g class="sig-gill sig-gill-l gd1"><path d="M40 46Q24 35.5 8.2 38.5M40 46Q24.4 34.5 6.9 35.8M40 46Q24.8 33.6 5.5 33.3M40 46Q25.2 32.6 10.3 33.1M40 46Q25.6 31.6 9.1 30.4M40 46Q26 30.6 7.8 27.7" fill="none" stroke="#2E9BE6" stroke-width="1.9" stroke-linecap="round"/></g><g class="sig-gill sig-gill-l gd2"><path d="M36 58Q18.9 59.1 5 64.6M36 58Q18.9 57.5 2.9 61.5M36 58Q19 56 0.7 58.7M36 58Q19 54.3 5.2 55.9M36 58Q19.1 52.7 3.1 52.8M36 58Q19.1 51 1 49.7" fill="none" stroke="#23BFA3" stroke-width="1.9" stroke-linecap="round"/></g><g class="sig-gill sig-gill-l gd3"><path d="M38 72Q26.1 86.5 15.8 94.3M38 72Q25.3 85.1 12.3 92.8M38 72Q24.5 83.8 9.1 91.7M38 72Q23.7 82.4 11.3 86.8M38 72Q22.8 81 7.8 85.4M38 72Q21.9 79.6 4.4 84" fill="none" stroke="#35C86E" stroke-width="1.9" stroke-linecap="round"/></g><g class="sig-gill sig-gill-r gd1"><path d="M80 46Q94 30.5 108.1 29.2M80 46Q94.4 31.5 110.9 30.2M80 46Q94.8 32.4 113.6 31.1M80 46Q95.2 33.4 110.3 34.6M80 46Q95.6 34.4 113.1 35.6M80 46Q96 35.4 115.8 36.6" fill="none" stroke="#2E9BE6" stroke-width="1.9" stroke-linecap="round"/></g><g class="sig-gill sig-gill-r gd2"><path d="M84 58Q100.9 50.9 114.6 49.6M84 58Q100.9 52.5 116.9 52.5M84 58Q101 54 119.1 55.1M84 58Q101 55.7 114.8 58.3M84 58Q101.1 57.3 117.1 61.2M84 58Q101.1 59 119.4 64.1" fill="none" stroke="#23BFA3" stroke-width="1.9" stroke-linecap="round"/></g><g class="sig-gill sig-gill-r gd3"><path d="M82 72Q98.1 79.5 112 81.4M82 72Q97.3 80.9 112.3 85.2M82 72Q96.5 82.2 112.8 88.6M82 72Q95.7 83.6 107.5 88.9M82 72Q94.8 85 107.8 92.6M82 72Q93.9 86.4 108.1 96.3" fill="none" stroke="#35C86E" stroke-width="1.9" stroke-linecap="round"/></g></g><circle cx="60" cy="43.5" r="4.2" fill="#35A6E8"/><ellipse cx="60" cy="66" rx="28" ry="25" fill="url(#${g})"/><g class="sig-eyes" fill="none" stroke="#0B0D0C" stroke-width="4" stroke-linecap="round"><path d="M44 64 Q50.5 56.5 57 64"/><path d="M63 64 Q69.5 56.5 76 64"/></g><path d="M42.5 76.5 Q60 89.5 77.5 76.5" fill="none" stroke="#0B0D0C" stroke-width="4" stroke-linecap="round"/><path d="M55.5 91.5 Q60 94.5 64.5 91.5" fill="none" stroke="#0B0D0C" stroke-width="2.2" stroke-linecap="round" opacity=".45"/><path class="sig-spark sp1" d="M23 17 C24.2 22, 25 22.8, 30 24 C25 25.2, 24.2 26, 23 31 C21.8 26, 21 25.2, 16 24 C21 22.8, 21.8 22, 23 17 Z" fill="#A9E8C9"/><path class="sig-spark sp2" d="M98 14.5 C99.2 18, 100 18.8, 103.5 20 C100 21.2, 99.2 22, 98 25.5 C96.8 22, 96 21.2, 92.5 20 C96 18.8, 96.8 18, 98 14.5 Z" fill="#A9E8C9"/></g></svg>`;
+function sigSvgHtml(mood) {
+  const g = "sigMusician" + (++sigSvgSeq);
+  return `<svg viewBox="0 0 240 240" aria-hidden="true" focusable="false">
+<defs>
+  <clipPath id="disc-${g}"><circle cx="120" cy="120" r="120"/></clipPath>
+  
+</defs>
+<rect width="240" height="240" fill="#0B0D0C"/>
+<g clip-path="url(#disc-${g})">
+  <!-- shoulders / jacket -->
+  <g class="sig-body">
+    <path d="M18 240 C24 205 51 188 91 178 L106 166 L134 166 L151 179 C190 189 218 207 224 240 Z" fill="#14231D" stroke="#0B0D0C" stroke-width="5"/>
+    <path d="M91 178 L120 207 L151 179 L164 240 L76 240 Z" fill="#20362B" stroke="#0B0D0C" stroke-width="4"/>
+    <path d="M103 181 L120 201 L138 181 L133 240 L108 240 Z" fill="#A9E8C9" opacity=".92"/>
+    <path d="M91 178 L120 207 L108 240 M151 179 L120 207 L134 240" fill="none" stroke="#0B0D0C" stroke-width="4"/>
+    <path d="M82 199 l-17 10 M161 199 l17 10 M70 220 l-13 7 M172 220 l13 7" stroke="#000" stroke-width="3" opacity=".28"/>
+    <path d="M99 188 C108 201 132 201 142 188" fill="none" stroke="#D8FFF0" stroke-width="3.2" stroke-linecap="round"/>
+    <circle cx="120" cy="202" r="4.2" fill="#FF6B4A" stroke="#0B0D0C" stroke-width="2"/>
+  </g>
+  <!-- neck -->
+  <path d="M103 139 L104 176 C110 185 130 185 137 176 L137 139 C129 149 111 149 103 139Z" fill="#9C623C" stroke="#0B0D0C" stroke-width="4"/>
+  <path d="M105 154 C114 160 128 160 136 153 L136 174 C128 181 113 181 105 174Z" fill="#000" opacity=".13"/>
+  <g class="sig-head">
+    <!-- ears and side hair -->
+    <path d="M72 94 C58 88 49 99 52 112 C55 126 66 132 76 128 L76 100Z" fill="#C98B5F" stroke="#0B0D0C" stroke-width="4.5"/>
+    <path d="M168 94 C182 88 191 99 188 112 C185 126 174 132 164 128 L164 100Z" fill="#C98B5F" stroke="#0B0D0C" stroke-width="4.5"/>
+    <path d="M60 105 C65 104 68 108 67 114 M180 105 C175 104 172 108 173 114" fill="none" stroke="#0B0D0C" stroke-width="3" opacity=".55"/>
+    <circle cx="61" cy="126" r="3.4" fill="#FF6B4A" stroke="#0B0D0C" stroke-width="1.6"/>
+    <!-- elongated face -->
+    <path class="sig-face" d="M77 72 C79 43 95 27 120 27 C145 27 161 43 163 72 L161 112 C158 143 144 168 120 170 C96 168 82 143 79 112 Z" fill="#C98B5F" stroke="#0B0D0C" stroke-width="5" stroke-linejoin="round"/>
+    <path d="M84 52 C91 39 104 33 117 34 C103 43 94 55 89 72 C84 66 82 59 84 52Z" fill="#E0aa77" opacity=".36"/>
+    <path d="M153 72 C157 99 154 128 142 148 C155 143 165 124 166 99 C165 86 161 76 153 72Z" fill="#000" opacity=".10"/>
+    <!-- rough Hewlett-style hatch shading -->
+    <g stroke="#0B0D0C" stroke-width="2" stroke-linecap="round" opacity=".24">
+      <path d="M84 119 l10 4 M83 129 l9 3 M151 124 l-9 4 M154 112 l-8 3 M101 153 l8 2 M132 153 l-8 2"/>
+      <path d="M91 91 l7 2 M143 91 l-7 2 M89 141 l7 4 M151 141 l-7 4"/>
+    </g>
+    <g fill="#0B0D0C" opacity=".22"><circle cx="91" cy="111" r="1.15"/><circle cx="97" cy="116" r="1"/><circle cx="148" cy="110" r="1.1"/><circle cx="143" cy="117" r=".95"/><circle cx="105" cy="145" r="1"/><circle cx="136" cy="145" r="1"/></g>
+    <!-- short goatee / jaw stubble: adult, broken and inked -->
+    <path d="M101 151 C108 163 132 163 139 151 C137 164 129 170 120 170 C111 170 103 164 101 151Z" fill="#0B0D0C" opacity=".28"/>
+    <g stroke="#0B0D0C" stroke-width="2.2" stroke-linecap="round" opacity=".5">
+      <path d="M91 142 C97 154 105 161 113 164"/><path d="M149 142 C143 154 135 161 127 164"/>
+      <path d="M105 156 l4 5 M120 160 v6 M135 156 l-4 5 M110 148 l2 5 M130 148 l-2 5"/>
+    </g>
+    <!-- flatter fringe and side locks under the cap strap -->
+    <path d="M77 66 C91 55 149 55 163 66 L158 78 L145 66 L133 77 L121 65 L108 77 L96 66 L84 78 Z" fill="#111613" stroke="#0B0D0C" stroke-width="3" stroke-linejoin="round"/>
+    <path d="M77 70 L70 103 L80 94 L82 119 L77 137 L86 116 L84 80Z" fill="#111613"/>
+    <path d="M163 70 L170 103 L160 94 L158 119 L163 137 L154 116 L156 80Z" fill="#111613"/>
+    <!-- backwards cap: coral dome and black strap; no projecting brim in the bust crop -->
+    <path d="M69 58 C74 29 94 14 120 14 C146 14 166 29 171 58 L160 67 C149 52 136 46 120 46 C104 46 91 52 80 67 Z" fill="#FF6B4A" stroke="#0B0D0C" stroke-width="5" stroke-linejoin="round"/>
+    <path d="M82 50 C94 37 106 32 121 32 C138 32 151 38 160 50" fill="none" stroke="#B63A28" stroke-width="4" stroke-linecap="round" opacity=".65"/>
+    <path d="M94 22 C104 17 116 16 126 17 M140 20 C149 24 156 30 161 39" stroke="#7E2418" stroke-width="3" opacity=".5" fill="none"/>
+    <path d="M73 57 L167 57 L164 70 L76 70 Z" fill="#0B0D0C"/>
+    <circle cx="103" cy="63.5" r="2.2" fill="#A9E8C9"/><circle cx="120" cy="63.5" r="2.2" fill="#A9E8C9"/><circle cx="137" cy="63.5" r="2.2" fill="#A9E8C9"/>
+    <circle cx="120" cy="15" r="5" fill="#0B0D0C" stroke="#A9E8C9" stroke-width="2"/>
+    <!-- brows -->
+    <g class="sig-brows sig-brows-default" fill="none" stroke="#0B0D0C" stroke-width="5" stroke-linecap="round">
+      <path d="M84 83 L111 79"/><path d="M129 79 L157 84"/>
+    </g>
+    <g class="sig-brows sig-brows-raised" fill="none" stroke="#0B0D0C" stroke-width="5" stroke-linecap="round" opacity="0">
+      <path d="M84 77 L111 72"/><path d="M129 72 L157 78"/>
+    </g>
+    <!-- eyes: heavy-lidded, asymmetric, inked -->
+    <g class="sig-eyes sig-eyes-open">
+      <path d="M84 99 C91 92 105 91 112 97 C106 103 91 104 84 99Z" fill="#F4EFE3" stroke="#0B0D0C" stroke-width="3.4"/>
+      <path d="M128 97 C135 91 149 92 156 99 C149 104 134 103 128 97Z" fill="#F4EFE3" stroke="#0B0D0C" stroke-width="3.4"/>
+      <g class="sig-pupils" fill="#201612">
+        <circle cx="99" cy="98" r="4.4"/><circle cx="141" cy="98" r="4.4"/>
+        <circle cx="100.5" cy="96.5" r="1.25" fill="#fff"/><circle cx="142.5" cy="96.5" r="1.25" fill="#fff"/>
+      </g>
+      <path d="M82 94 C92 87 106 87 114 93" fill="none" stroke="#0B0D0C" stroke-width="6" stroke-linecap="round"/>
+      <path d="M126 93 C134 87 148 87 158 94" fill="none" stroke="#0B0D0C" stroke-width="6" stroke-linecap="round"/>
+      <path d="M87 104 C94 107 105 107 110 104 M130 104 C136 107 147 107 153 104" fill="none" stroke="#0B0D0C" stroke-width="2.2" opacity=".55"/>
+    </g>
+    <g class="sig-eyes sig-eyes-closed" fill="none" stroke="#0B0D0C" stroke-width="5" stroke-linecap="round" opacity="0">
+      <path d="M85 99 C93 105 104 105 112 99"/><path d="M128 99 C136 105 147 105 155 99"/>
+    </g>
+    <!-- nose -->
+    <path d="M121 96 L114 117 C113 122 117 125 124 124" fill="none" stroke="#0B0D0C" stroke-width="3.6" stroke-linecap="round"/>
+    <path d="M110 126 C113 123 117 123 120 126 M124 126 C127 123 131 123 133 126" fill="none" stroke="#0B0D0C" stroke-width="2.2" opacity=".65"/>
+    <!-- mouths by state -->
+    <g class="sig-mouth sig-mouth-default">
+      <path d="M99 139 C109 145 126 146 142 137" fill="none" stroke="#0B0D0C" stroke-width="4.4" stroke-linecap="round"/>
+      <path d="M106 147 C116 150 128 149 136 145" fill="none" stroke="#0B0D0C" stroke-width="2" opacity=".48"/>
+    </g>
+    <g class="sig-mouth sig-mouth-think" opacity="0">
+      <path d="M104 141 C114 138 128 139 139 141" fill="none" stroke="#0B0D0C" stroke-width="4.2" stroke-linecap="round"/>
+    </g>
+    <g class="sig-mouth sig-mouth-greet" opacity="0">
+      <path d="M100 136 C110 148 130 148 141 136 C131 142 110 142 100 136Z" fill="#351915" stroke="#0B0D0C" stroke-width="3.6"/>
+      <path d="M107 143 C115 146 126 146 134 143" stroke="#FF6B4A" stroke-width="3" fill="none"/>
+    </g>
+    <g class="sig-mouth sig-mouth-talk-a" opacity="0">
+      <path d="M101 137 C111 150 130 150 141 137 C132 143 110 143 101 137Z" fill="#351915" stroke="#0B0D0C" stroke-width="3.6"/>
+      <path d="M109 145 C116 148 126 148 133 145" stroke="#FF6B4A" stroke-width="3" fill="none"/>
+    </g>
+    <g class="sig-mouth sig-mouth-talk-b" opacity="0">
+      <path d="M104 138 C113 145 129 145 139 138 C130 141 112 141 104 138Z" fill="#351915" stroke="#0B0D0C" stroke-width="3.2"/>
+    </g>
+    <g class="sig-mouth sig-mouth-celebrate" opacity="0">
+      <path d="M97 135 C108 154 132 154 144 135 C132 143 109 143 97 135Z" fill="#351915" stroke="#0B0D0C" stroke-width="4"/>
+      <path d="M108 147 C116 151 127 151 134 147" stroke="#FF6B4A" stroke-width="4" fill="none" stroke-linecap="round"/>
+      <path d="M104 138 L137 138" stroke="#fff" stroke-width="3.4"/>
+    </g>
+    <!-- headphones over hair/ears -->
+    <path d="M55 104 C52 48 82 18 120 18 C158 18 188 48 185 104" fill="none" stroke="#0B0D0C" stroke-width="13" stroke-linecap="round"/>
+    <path d="M58 99 C57 53 84 25 120 25 C156 25 183 53 182 99" fill="none" stroke="#A9E8C9" stroke-width="3" opacity=".55"/>
+    <g class="sig-cup sig-cup-l">
+      <rect x="39" y="83" width="39" height="61" rx="17" fill="#101613" stroke="#000" stroke-width="4"/>
+      <rect x="45" y="90" width="26" height="47" rx="13" fill="none" stroke="#FF6B4A" stroke-width="4"/>
+      <rect x="53" y="99" width="10" height="29" rx="5" fill="#A9E8C9"/>
+      <path d="M48 94 C45 105 45 123 48 133 M68 94 C71 105 71 123 68 133" stroke="#fff" stroke-width="1.6" opacity=".13" fill="none"/>
+    </g>
+    <g class="sig-cup sig-cup-r">
+      <rect x="162" y="83" width="39" height="61" rx="17" fill="#101613" stroke="#000" stroke-width="4"/>
+      <rect x="169" y="90" width="26" height="47" rx="13" fill="none" stroke="#FF6B4A" stroke-width="4"/>
+      <rect x="177" y="99" width="10" height="29" rx="5" fill="#A9E8C9"/>
+      <path d="M172 94 C169 105 169 123 172 133 M192 94 C195 105 195 123 192 133" stroke="#fff" stroke-width="1.6" opacity=".13" fill="none"/>
+    </g>
+    <path d="M193 143 C197 166 192 181 199 197" fill="none" stroke="#0B0D0C" stroke-width="4" stroke-linecap="round"/>
+  </g>
+  <g class="sig-sparks" fill="#FF6B4A" opacity="0">
+    <path d="M24 42 l3 9 9 3 -9 3 -3 9 -3 -9 -9 -3 9 -3Z"/>
+    <path d="M211 35 l2.4 7 7 2.4 -7 2.4 -2.4 7 -2.4 -7 -7 -2.4 7 -2.4Z" fill="#A9E8C9"/>
+    <circle cx="216" cy="76" r="3.5"/><circle cx="25" cy="83" r="3" fill="#A9E8C9"/>
+  </g>
+</g>
+</svg>`;
 }
 function sigAvatarHtml(mood) {
-  return `<span class="sig-ava sig-ava-svg${mood ? " sig-mood-" + mood : ""}" role="img" aria-label="Sig">${sigSvgHtml()}</span>`;
+  return `<span class="sig-ava sig-ava-svg${mood ? " sig-mood-" + mood : ""}" role="img" aria-label="Sig">${sigSvgHtml(mood)}</span>`;
 }
 const SIG_AVATAR_HTML = sigAvatarHtml("");
 
@@ -1927,7 +2052,7 @@ function sigQueueHtml(items, opts) {
   // leadShort (Homes only): the greeting above the card already
   // carries the lead item's full sentence, so the lead row renders
   // its short task form instead — Home never shows a sentence twice.
-  const row = (r, i) => `<div class="sig-item"><div class="sig-stxt">${esc(i === 0 && o.leadShort && r.short ? r.short : r.text)}</div>${r.btn ? `<button type="button" class="btn small-btn" data-sq="${i}">${esc(r.btn)}</button>` : ""}${r.dismissKey ? `<button type="button" class="sig-x" data-sqx="${i}" aria-label="Dismiss for this season">&times;</button>` : ""}</div>`;
+  const row = (r, i) => `<div class="sig-item">${o.speaker ? `<span class="sig-says">Sig</span>` : ""}<div class="sig-stxt">${esc(i === 0 && o.leadShort && r.short ? r.short : r.text)}</div>${r.btn ? `<button type="button" class="btn small-btn" data-sq="${i}">${esc(r.btn)}</button>` : ""}${r.dismissKey ? `<button type="button" class="sig-x" data-sqx="${i}" aria-label="Dismiss for this season">&times;</button>` : ""}</div>`;
   return `<div class="sig-card"><div class="sig-top">${ava}<div><div class="sig-title">Sig has ${n} thing${n === 1 ? "" : "s"} for you</div><div class="sig-sub">In the order they need you.</div></div></div>
   ${o.askBox ? sigAskBoxHtml() : ""}
   ${items.slice(0, 3).map(row).join("")}
@@ -2726,7 +2851,7 @@ function sigThreadHtml() {
   const flows = sigFlowsFor();
   return (state.sigThread || []).map((turn) => turn.who === "user"
     ? `<div class="sig-turn user"><div class="sig-bub">${esc(turn.text)}</div></div>`
-    : `<div class="sig-turn sig"><span class="sig-turn-ava">${turn.pending ? sigAvatarHtml("think") : SIG_AVATAR_HTML}</span><div class="sig-bub">${esc(turn.text)}${turn.flow != null && flows[turn.flow] ? `<button type="button" class="btn small-btn sig-turn-act" data-sigflow="${turn.flow}">${esc(flows[turn.flow].label)}</button>` : ""}${(turn.suggest || []).map((q) => `<button type="button" class="btn small-btn sig-turn-act" data-sigask="${esc(q)}">${esc(q)}</button>`).join("")}</div></div>`).join("");
+    : `<div class="sig-turn sig"><span class="sig-turn-ava">${turn.pending ? sigAvatarHtml("think") : turn.talk ? sigAvatarHtml("talk") : SIG_AVATAR_HTML}</span><div class="sig-bub">${esc(turn.text)}${turn.pending ? `<span class="sig-typing" aria-hidden="true"><i></i><i></i><i></i></span>` : ""}${turn.flow != null && flows[turn.flow] ? `<button type="button" class="btn small-btn sig-turn-act" data-sigflow="${turn.flow}">${esc(flows[turn.flow].label)}</button>` : ""}${(turn.suggest || []).map((q) => `<button type="button" class="btn small-btn sig-turn-act" data-sigask="${esc(q)}">${esc(q)}</button>`).join("")}</div></div>`).join("");
 }
 async function sigAskSubmit(ev) {
   if (ev) ev.preventDefault();
@@ -2741,6 +2866,16 @@ async function sigAskSubmit(ev) {
   const paint = () => {
     const host = document.getElementById("sig-thread");
     if (host) { host.innerHTML = sigThreadHtml(); wireSigThread(host); host.scrollTop = host.scrollHeight; }
+    const anyPending = state.sigThread.some((t) => t.pending);
+    const anyTalk = state.sigThread.some((t) => t.talk);
+    const presText = document.querySelector("[data-sig-presence-text]");
+    const presSub = document.querySelector("[data-sig-presence-sub]");
+    const heroAva = document.querySelector("[data-sig-hero-ava]");
+    const dot = document.querySelector("[data-sig-presence-dot]");
+    if (presText) presText.textContent = anyPending ? "Thinking" : anyTalk ? "Talking" : "Ready";
+    if (presSub) presSub.textContent = anyPending ? "Lining up a straight answer." : anyTalk ? "Answering now." : "Listening. Your queue is in order.";
+    if (dot) dot.classList.toggle("thinking", anyPending);
+    if (heroAva) heroAva.innerHTML = anyPending ? sigAvatarHtml("think") : anyTalk ? sigAvatarHtml("talk") : SIG_AVATAR_HTML;
   };
   paint();
   const reply = await sigAsk(text);
@@ -2748,7 +2883,9 @@ async function sigAskSubmit(ev) {
   pending.flow = reply.flow != null ? reply.flow : null;
   pending.suggest = reply.suggest || [];
   delete pending.pending;
+  pending.talk = true;
   paint();
+  setTimeout(() => { pending.talk = false; paint(); }, 2000);
   const inp2 = document.getElementById("sig-ask-input");
   if (inp2) inp2.focus();
   return false;
@@ -2775,11 +2912,23 @@ function renderSigTab() {
   const links = state.sigQueueLinks || [];
   const flows = sigFlowsFor();
   const qa = (item) => `<details class="help-qa"><summary>${esc(item.q)}</summary><p class="small">${esc(item.a)}</p></details>`;
+  const anyPending = (state.sigThread || []).some((t) => t.pending);
+  const anyTalk = (state.sigThread || []).some((t) => t.talk);
+  const presence = anyPending ? "Thinking" : anyTalk ? "Talking" : "Ready";
+  const presenceSub = anyPending ? "Lining up a straight answer." : anyTalk ? "Answering now." : "Listening. Your queue is in order.";
   el.innerHTML = `
-  ${wsHead("Sig", { sub: "Your queue, and straight answers.", subKey: "sig" })}
-  <div id="sig-queue-host">${sigQueueHtml(items, { links })}</div>
+  <section class="sig-hero" aria-label="Sig">
+    <div class="sig-hero-ava" data-sig-hero-ava>${anyPending ? sigAvatarHtml("think") : anyTalk ? sigAvatarHtml("talk") : SIG_AVATAR_HTML}</div>
+    <div class="sig-hero-copy">
+      <div class="sig-hero-kicker">Your guide</div>
+      <h2>Sig</h2>
+      <div class="sig-presence"><span class="sig-live-dot${anyPending ? " thinking" : ""}" data-sig-presence-dot></span><strong data-sig-presence-text>${presence}</strong><span data-sig-presence-sub>${presenceSub}</span></div>
+      <p>Ask in plain words. I keep the queue in order and walk you to the exact screen.</p>
+    </div>
+  </section>
+  <div id="sig-queue-host">${sigQueueHtml(items, { links, speaker: true })}</div>
   <div class="sig-chat">
-    <div class="sig-chat-head">${SIG_AVATAR_HTML}<div><div class="sig-chat-title">Chat with Sig</div><div class="muted small">Ask in plain words. Sig walks you to the exact screen.</div></div></div>
+    <div class="sig-chat-head"><div><div class="sig-chat-title">Conversation</div><div class="muted small">Straight answers, with the next step attached.</div></div>${anyPending ? `<span class="sig-typing" aria-hidden="true"><i></i><i></i><i></i></span>` : ""}</div>
     <div id="sig-thread" class="sig-thread">${sigThreadHtml() || `<div class="sig-turn sig"><span class="sig-turn-ava">${SIG_AVATAR_HTML}</span><div class="sig-bub">Ask me anything about how SIGNL works: how you make money, what things cost, how visits and points run. If I can walk you to it, I will.</div></div>`}</div>
     <form class="sig-ask-form" onsubmit="return sigAskSubmit(event)">
       <input id="sig-ask-input" type="text" placeholder="Ask Sig anything" autocomplete="off" aria-label="Ask Sig anything">
