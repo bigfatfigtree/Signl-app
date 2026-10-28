@@ -1549,7 +1549,7 @@ function createMomentum(data) {
   // computation over the maps above; safe to call on any surface.
   function ladderFor(user) {
     const blankMilestones = REFERRAL_MILESTONES.map((m) => ({ milestone: m.milestone, id: m.id, name: m.name, bonus: m.bonus, state: "not_reached", trippingHandle: null }));
-    const blank = { signups: 0, approvedReferrals: 0, milestones: blankMilestones, badges: [], next: null, elite: { qualified: false, onTimePosts: 0, ratingAvg: null, ratingCount: 0 } };
+    const blank = { signups: 0, approvedReferrals: 0, milestones: blankMilestones, badges: [], next: null, elite: { qualified: false, onTimePosts: 0, ratingAvg: null, ratingCount: 0 }, campusLead: null };
     if (!user || user.role !== "creator" || !user.creator) return blank;
     const handleKey = String(user.creator.handle || "").trim().toLowerCase();
     const rec = (handleKey && referrals.get(handleKey)) || { signups: 0, approved: 0, list: [] };
@@ -1575,6 +1575,8 @@ function createMomentum(data) {
     if (qualified) badges.push({ id: "signl_elite", name: "SIGNL Elite", kind: "elite" });
     const nextM = milestones.find((m) => m.state !== "unlocked") || null;
     const next = nextM ? { milestone: nextM.milestone, name: nextM.name, state: nextM.state, needed: Math.max(0, nextM.milestone - approvedList.length), trippingHandle: nextM.trippingHandle } : null;
+    const campusLead = campusLeadFor(user);
+    if (campusLead && campusLead.qualified) badges.push({ id: "campus_lead", name: "Campus Lead", kind: "campus", university: campusLead.university });
     return {
       signups: rec.signups,
       approvedReferrals: approvedList.length,
@@ -1582,7 +1584,28 @@ function createMomentum(data) {
       badges,
       next,
       elite: { qualified, onTimePosts, ratingAvg: rating.ratingAvg, ratingCount: rating.ratingCount },
+      campusLead,
     };
+  }
+  // Campus Lead (university layers U2, Jeff, 2026-10-28): a
+  // per-school status riding the referral ladder's own rails.
+  // A CURRENT student whose credited approved referrals (the
+  // ladder's own list: approved, non-tester, self-referrals out)
+  // include CAMPUS_LEAD_THRESHOLD or more CURRENT students at
+  // the SAME university is that school's Campus Lead. Computed
+  // on read like every ladder fact, never stored, and worth NO
+  // Momentum points and no ledger entry: the same referrals
+  // already earn the standard +3/+10 and count toward the
+  // ordinary milestones, so the status itself is the reward.
+  // Both sides must be current students; an alumnus referrer or
+  // an alumnus referral never counts.
+  const CAMPUS_LEAD_THRESHOLD = 5;
+  function campusLeadFor(user) {
+    if (!user || user.role !== "creator" || !user.creator) return null;
+    const university = universityOfRecord(user);
+    if (!university || universityStatusOfRecord(user) !== "current_student") return null;
+    const count = approvedReferralList(user).filter((ref) => universityStatusOfRecord(ref) === "current_student" && sameUniversity(universityOfRecord(ref), university)).length;
+    return { qualified: count >= CAMPUS_LEAD_THRESHOLD, university, count, needed: Math.max(0, CAMPUS_LEAD_THRESHOLD - count), threshold: CAMPUS_LEAD_THRESHOLD };
   }
   function badgesFor(user) {
     return ladderFor(user).badges;
@@ -1609,7 +1632,7 @@ function createMomentum(data) {
   }
 
   function detailFor(user) {
-    const empty = { signups: 0, approved: 0, points: 0, ledger: [], checklist: [], floorApplied: false, campusCrew: null };
+    const empty = { signups: 0, approved: 0, points: 0, ledger: [], checklist: [], floorApplied: false, campusCrew: null, campusLead: null };
     if (!user || user.role !== "creator" || !user.creator) return empty;
     const c = user.creator;
     const ledger = [];
@@ -1804,12 +1827,13 @@ function createMomentum(data) {
       ledger: effective,
       checklist,
       campusCrew,
+      campusLead: campusLeadFor(user),
     };
   }
 
   function summaryFor(user) {
     const d = detailFor(user);
-    return { signups: d.signups, approved: d.approved, points: d.points, campusCrew: d.campusCrew };
+    return { signups: d.signups, approved: d.approved, points: d.points, campusCrew: d.campusCrew, campusLead: d.campusLead };
   }
 
   return { detailFor, summaryFor, ladderFor, badgesFor };

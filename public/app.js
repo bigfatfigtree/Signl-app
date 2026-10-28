@@ -731,6 +731,7 @@ function growRosterHtml(u) {
       <p class="small">${shareBlockHtml(u.creator && u.creator.handle, place, "Share your invite")}</p>
       <p class="small"><strong>Your roster:</strong> ${m.signups} ${m.signups === 1 ? "creator" : "creators"} joined through your link &middot; ${m.approved} approved &middot; <strong>${m.points} Momentum points</strong></p>
       ${m.campusCrew ? `<p class="small"><strong>Your campus crew: ${m.campusCrew.count} creator${m.campusCrew.count === 1 ? "" : "s"} from ${esc(m.campusCrew.university)}</strong></p>` : ""}
+      ${m.campusLead && m.campusLead.qualified ? `<p class="small"><strong>Campus Lead · ${esc(m.campusLead.university)}</strong> — ${m.campusLead.count} classmates you recruited are approved. The badge is on your profile.</p>` : m.campusLead && m.campusLead.count > 0 ? `<p class="small"><strong>Campus Lead at ${esc(m.campusLead.university)}:</strong> ${m.campusLead.count} of ${m.campusLead.threshold} classmates recruited and approved — ${m.campusLead.needed} more earns the badge.</p>` : ""}
       <p class="small">Points: +3 per sign-up &middot; +10 per approval. Roster builders get seen first.</p>
       ${ladderHtml(u)}
       <p class="small muted">Tap the link to copy it.</p>
@@ -4309,7 +4310,7 @@ function badgesHtml(badges) {
 function ladderHtml(u) {
   const l = u && u.ladder;
   if (!l) return "";
-  const earned = (l.badges || []).filter((b) => b.kind === "milestone");
+  const earned = (l.badges || []).filter((b) => b.kind === "milestone" || b.kind === "campus");
   let out = `<p class="small" style="margin-top:10px"><strong>Referral badges:</strong> approved referrals earn badges and bonus Momentum points. 1 approved referral: Connector badge, +25 points. 3: Super Connector, +50. 5: Roster Builder, +75. 10: City Lead, +150.</p>`;
   if (earned.length) out += `<p class="small">Your badges: ${earned.map((b) => esc(b.name)).join(" &middot; ")}</p>`;
   const pending = (l.milestones || []).find((m) => m.state === "pending_unlock");

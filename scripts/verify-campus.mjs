@@ -325,6 +325,48 @@ try {
   const u3OfferOff = (u3FeedOff.data.offers || []).find((o) => o.businessId === businessId);
   check("U3: switching the flag off returns the offers attach to null", u3Off.status === 200 && u3Off.data.user.business.studentOpen === false && !!u3OfferOff && u3OfferOff.businessStudentOpen === null, JSON.stringify(u3OfferOff && u3OfferOff.businessStudentOpen));
 
+  // ---------- U2: Campus Lead (5 same-school current-student approved referrals) ----------
+  const lead2 = client();
+  const lead2Reg = await lead2("POST", "/api/auth/register", fullCreatorBody({
+    name: "Duke Lead", email: "dukelead@fixtures.dev", handle: "dukelead",
+    university: "Duke University", universityStatus: "Current student",
+  }));
+  const lead2Id = lead2Reg.data.user.id;
+  await admin("POST", "/api/admin/review", { userId: lead2Id, decision: "approve" });
+  const u2Ref = async (n, overrides) => {
+    const c = client();
+    const r = await c("POST", "/api/auth/register", fullCreatorBody({
+      name: "Duke Ref " + n, email: `dukeref${n}@fixtures.dev`, handle: `dukeref${n}`,
+      university: "Duke University", universityStatus: "Current student", referredBy: "dukelead",
+      ...overrides,
+    }));
+    return { client: c, id: r.data.user.id };
+  };
+  const refs = [];
+  for (let i = 1; i <= 4; i++) refs.push(await u2Ref(i, {}));
+  const alumRef = await u2Ref(5, { universityStatus: "alumni" });
+  const otherRef = await u2Ref(6, { university: "VCU" });
+  let lead2Me = await lead2("GET", "/api/auth/me");
+  check("U2: no Campus Lead count before approvals land", !!lead2Me.data.user.ladder.campusLead && lead2Me.data.user.ladder.campusLead.count === 0 && lead2Me.data.user.ladder.campusLead.qualified === false, JSON.stringify(lead2Me.data.user.ladder.campusLead));
+  for (const r of refs) await admin("POST", "/api/admin/review", { userId: r.id, decision: "approve" });
+  lead2Me = await lead2("GET", "/api/auth/me");
+  check("U2: four same-school current-student approvals count, not yet qualified", lead2Me.data.user.ladder.campusLead.count === 4 && lead2Me.data.user.ladder.campusLead.qualified === false && lead2Me.data.user.ladder.campusLead.needed === 1, JSON.stringify(lead2Me.data.user.ladder.campusLead));
+  check("U2: momentum summary carries the same campusLead block", JSON.stringify(lead2Me.data.user.momentum.campusLead) === JSON.stringify(lead2Me.data.user.ladder.campusLead), JSON.stringify(lead2Me.data.user.momentum.campusLead));
+  await admin("POST", "/api/admin/review", { userId: alumRef.id, decision: "approve" });
+  await admin("POST", "/api/admin/review", { userId: otherRef.id, decision: "approve" });
+  lead2Me = await lead2("GET", "/api/auth/me");
+  check("U2: an alumnus at the school and a current student elsewhere never count", lead2Me.data.user.ladder.campusLead.count === 4 && lead2Me.data.user.ladder.campusLead.qualified === false, JSON.stringify(lead2Me.data.user.ladder.campusLead));
+  const fifth = await u2Ref(7, {});
+  await admin("POST", "/api/admin/review", { userId: fifth.id, decision: "approve" });
+  lead2Me = await lead2("GET", "/api/auth/me");
+  check("U2: the fifth qualifying referral earns Campus Lead", lead2Me.data.user.ladder.campusLead.count === 5 && lead2Me.data.user.ladder.campusLead.qualified === true && lead2Me.data.user.ladder.campusLead.university === "Duke University", JSON.stringify(lead2Me.data.user.ladder.campusLead));
+  check("U2: the Campus Lead badge rides the badges array", (lead2Me.data.user.badges || []).some((b) => b.id === "campus_lead" && b.kind === "campus" && b.university === "Duke University"), JSON.stringify(lead2Me.data.user.badges));
+  check("U2: Campus Lead pays no Momentum of its own (no campus entry ever lands in the ledger)", !(lead2Me.data.user.momentum.ledger || []).some((e) => String(e.kind).includes("campus")) && lead2Me.data.user.momentum.signups === 7 && lead2Me.data.user.momentum.approved === 7, JSON.stringify((lead2Me.data.user.momentum.ledger || []).map((e) => e.kind)));
+  const lead2Flip = await lead2("PATCH", "/api/me/profile", { universityStatus: "alumni" });
+  const lead2Me2 = await lead2("GET", "/api/auth/me");
+  check("U2: the status is computed, so an alumnus referrer loses it on the next read", lead2Flip.status === 200 && lead2Me2.data.user.ladder.campusLead === null && !(lead2Me2.data.user.badges || []).some((b) => b.id === "campus_lead"), JSON.stringify(lead2Me2.data.user.ladder.campusLead));
+  check("U2: profile completion is untouched by the layer", lead2Me.data.user.profileCompletion.complete === true, JSON.stringify(lead2Me.data.user.profileCompletion));
+
   const appJsRes = await fetch(BASE + "/app.js");
   const appJs = await appJsRes.text();
   check("U1: client ships the university filter on Discover and its preview twin", appJs.includes("f-university") && appJs.includes("discoverUniversity") && appJs.includes("syncUniversityOptions") && appJs.includes("pvf-university"), "");
