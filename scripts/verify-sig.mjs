@@ -130,7 +130,7 @@ check("reduced motion: stills everywhere, driven by the matchMedia gate", appJs.
 check("a failed clip hides itself and leaves its poster (error listener)", appJs.includes('addEventListener("error"') && appJs.includes('hasAttribute("data-sig-hero-video")'));
 check("the queue card still records its one-shot moods for the hero (triggers unchanged)", appJs.includes('sigQueueBeat = "celebrate"') && appJs.includes('sigQueueBeat = "greet"') && appJs.includes("state.sigCelebrate = false"));
 check("the claim win hook renders the celebrate clip component and kicks it once", appJs.includes("function sigCelebMediaHtml()") && appJs.includes("setTimeout(sigCelebKick, 30)"));
-check("hero + celeb media CSS ships (stack, ring, hidden-video guard)", themeCss.includes(".sig-hero-media") && themeCss.includes(".sig-celeb-media") && themeCss.includes("video[hidden]"));
+check("hero + celeb media CSS ships (stack, ring, hidden guards beat the layer display rules)", themeCss.includes(".sig-hero-media") && themeCss.includes(".sig-celeb-media") && themeCss.includes("video[hidden]") && themeCss.includes("img[hidden]"));
 for (const f of ["hero.webp", "still-greet.webp", "still-think.webp", "still-talk.webp", "still-celebrate.webp", "head-idle.webp", "head-greet.webp", "head-think.webp", "head-talk.webp", "head-celebrate.webp"]) {
   check(`still ships: ${f}`, sizeOf(f) > 0 && sizeOf(f) <= 120000, `${sizeOf(f)} bytes`);
 }
