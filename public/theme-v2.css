@@ -2293,11 +2293,23 @@ body.v3-on #tabbar { display: block; position: fixed; left: 0; right: 0; bottom:
 .dcat-row { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0; }
 .dcat-chip { border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 8px 14px; cursor: pointer; font: inherit; font-weight: 600; min-height: 40px; }
 .dcat-chip.on { background: var(--ink); color: #fff; border-color: var(--ink); }
-/* Language row (Jeff, 2026-10-28): Español is a language filter,
-   not a category, so it sits in its own labeled row above the
-   category chips. Wraps like the chip row; never clips. */
-.dlang-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 12px 0 0; }
-.dlang-label { font-size: .78rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--ink3); }
+/* Spanish-speaking creators toggle (Jeff, 2026-10-28): this is a
+   ROSTER filter, not a site-language switcher — the first pass at
+   it (a "Language" eyebrow over a bare "Español" chip) read as a
+   language switcher and confused exactly the person it was built
+   for. The toggle now spells out what it filters and wears the
+   deep SIGNL green (#0C7A43, the --blue/--mint-deep accent in V4)
+   filled at rest, so it stands apart from the white category
+   chips below it. ON goes a shade darker with an inset ring and
+   the check, so the state is unmistakable without borrowing the
+   category chips' black-pill treatment. */
+.dspan-row { display: flex; flex-wrap: wrap; margin: 12px 0 0; }
+.dspan-toggle { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; background: #0C7A43; color: #fff; border: 1px solid #0C7A43; border-radius: 999px; padding: 9px 16px; cursor: pointer; font: inherit; min-height: 40px; text-align: left; }
+.dspan-toggle .dspan-main { font-weight: 700; }
+.dspan-toggle .dspan-sub { font-weight: 500; font-size: .88em; opacity: .85; }
+.dspan-toggle .dspan-check { font-weight: 800; visibility: hidden; }
+.dspan-toggle.on { background: #075C31; border-color: #075C31; box-shadow: inset 0 0 0 2px #fff; }
+.dspan-toggle.on .dspan-check { visibility: visible; }
 /* Spanish highlights (Jeff, 2026-10-28): one tint treatment shared
    by the creator's Spanish panel and the business composer's
    Spanish callout, so the option reads as a featured section on

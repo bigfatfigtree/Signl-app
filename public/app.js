@@ -36,7 +36,7 @@ const state = {
   sigFocusAsk: false, // V4.1: set by the Home ask box so the Sig tab lands with its chat input focused
   discover: [],
   discoverCats: [], // Discover category filter: the chip row owns it, multi-select, OR semantics
-  discoverSpanish: false, // Discover Spanish-content filter (the Español chip)
+  discoverSpanish: false, // Discover filter: the "Spanish-speaking creators only" toggle
   threads: [],
   activeThread: null, // other user id
   counterCode: "",
@@ -8300,8 +8300,8 @@ function discoverCatChip(cat, btn) {
 
 // Re-paint chip states from state.discoverCats: "All" is on when
 // the set is empty, each category chip is on when it is in the
-// set. The Español chip carries no data-cat and is untouched here;
-// it keeps its own independent state.
+// set. The Spanish-speaking toggle is not a category chip and is
+// untouched here; it keeps its own independent state.
 function syncDiscoverCatChips() {
   const set = new Set(state.discoverCats || []);
   document.querySelectorAll(".dcat-chip[data-cat]").forEach((b) => {
@@ -8310,12 +8310,17 @@ function syncDiscoverCatChips() {
   });
 }
 
-// Spanish content filter chip (Jeff, 2026-10-28): independent
-// of the category chips; it narrows Discover to creators who
-// create content in Spanish.
+// Spanish-speaking creators toggle (Jeff, 2026-10-28): independent
+// of the category chips; it narrows Discover to creators who make
+// content in Spanish. The control spells that out in full ("Spanish-
+// speaking creators only") because the earlier bare "Español" chip
+// under a "Language" label read as a site-language switcher.
 function discoverSpanishChip(btn) {
   state.discoverSpanish = !state.discoverSpanish;
-  if (btn) btn.classList.toggle("on", !!state.discoverSpanish);
+  if (btn) {
+    btn.classList.toggle("on", !!state.discoverSpanish);
+    btn.setAttribute("aria-pressed", state.discoverSpanish ? "true" : "false");
+  }
   runDiscover();
   return false;
 }
@@ -8332,7 +8337,7 @@ async function loadDiscover() {
     <div class="filters disc-top">
       <div><label>Market</label><select id="f-market">${marketOptions(u.market)}</select></div>
     </div>
-    <div class="dlang-row"><span class="dlang-label">Language</span><button type="button" id="dchip-spanish" class="dcat-chip esp-chip${state.discoverSpanish ? " on" : ""}" onclick="return discoverSpanishChip(this)">Español</button></div>
+    <div class="dspan-row"><button type="button" id="dchip-spanish" class="dspan-toggle${state.discoverSpanish ? " on" : ""}" aria-pressed="${state.discoverSpanish ? "true" : "false"}" onclick="return discoverSpanishChip(this)"><span class="dspan-check" aria-hidden="true">&#10003;</span><span class="dspan-main">Spanish-speaking creators only</span><span class="dspan-sub">Makes content in Spanish</span></button></div>
     <div class="dcat-row"><button type="button" data-cat="" class="dcat-chip${(state.discoverCats || []).length ? "" : " on"}" onclick="return discoverCatChip('', this)">All</button>${state.boot.creatorCategories.map((c) => `<button type="button" data-cat="${esc(c)}" class="dcat-chip${(state.discoverCats || []).includes(c) ? " on" : ""}" onclick="return discoverCatChip('${esc(c)}', this)">${esc(c)}</button>`).join("")}</div>
     <details class="filters-fold"><summary>More filters</summary>
     <div class="filters">
@@ -8493,7 +8498,7 @@ function discoverClearFilters() {
   syncDiscoverCatChips();
   state.discoverSpanish = false;
   const spChip = document.getElementById("dchip-spanish");
-  if (spChip) spChip.classList.remove("on");
+  if (spChip) { spChip.classList.remove("on"); spChip.setAttribute("aria-pressed", "false"); }
   const mkt = document.getElementById("f-market");
   if (mkt && state.user) mkt.value = state.user.market;
   runDiscover();
