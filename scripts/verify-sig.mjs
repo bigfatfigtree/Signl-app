@@ -105,6 +105,39 @@ check("bank battery is at least 40 questions per side", CREATOR_QS.length >= 40 
   check("gibberish falls back (no topic)", gib.topic === null);
 }
 
+// ---------- 1b. The V4 asset model (Jeff, 2026-10-28) ----------
+// Sig is a rendered character delivered as generated video:
+// the Sig-tab hero is a video stack over the hero still, small
+// placements are head-crop stills, think has no clip, greet and
+// celebrate are one-shots on their existing triggers, reduced
+// motion means stills everywhere, and a failed clip must leave
+// its poster standing. These checks pin that model plus the
+// production weight budgets from the port plan.
+console.log("== V4 asset model ==");
+const themeCss = fs.readFileSync(path.join(ROOT, "public/theme-v2.css"), "utf8");
+const asset = (rel) => path.join(ROOT, "public/assets/sig-v4", rel);
+const sizeOf = (rel) => (fs.existsSync(asset(rel)) ? fs.statSync(asset(rel)).size : -1);
+check("the SVG character is retired from every surface", !appJs.includes("sigSvgHtml") && !appJs.includes("sig-musician") && !themeCss.includes("sig-ava-svg") && !fs.existsSync(path.join(ROOT, "public/assets/sig-musician.svg")));
+check("small Sig is the head-crop still of the state (sigAvatarHtml -> sig-ava-img webp, no video)", appJs.includes("SIG_HEAD") && appJs.includes("head-greet") && appJs.includes("head-think") && appJs.includes("head-talk") && appJs.includes("head-celebrate") && appJs.includes("sig-ava-img") && !appJs.slice(appJs.indexOf("function sigAvatarHtml"), appJs.indexOf("const SIG_AVATAR_HTML")).includes("<video"));
+check("the bottom tab icon is the idle head crop", appJs.includes('class="tab-sig-img" src="/assets/sig-v4/head-idle.webp"'));
+const heroSlice = appJs.slice(appJs.indexOf("function sigHeroMediaHtml"), appJs.indexOf("const SIG_HERO_CLIPS"));
+check("hero markup is a video stack over the hero poster, think still included", heroSlice.includes('data-sig-hero-video') && heroSlice.includes("muted") && heroSlice.includes("playsinline") && heroSlice.includes("autoplay") && heroSlice.includes('preload="none"') && heroSlice.includes('poster="${SIG_V4}/hero.webp"') && heroSlice.includes("still-think.webp"));
+check("hero markup ships NO clip sources (only the visible state's clips attach, in sigHeroSet)", !heroSlice.includes("<source") && appJs.includes('video.innerHTML = `<source src="${SIG_V4}/${name}.webm" type="video/webm"><source src="${SIG_V4}/${name}.mp4" type="video/mp4">`'));
+check("only idle and talk loop; greet and celebrate are one-shots", appJs.includes('video.loop = name === "idle" || name === "talk"') && appJs.includes('const SIG_HERO_CLIPS = { idle: 1, talk: 1, greet: 1, celebrate: 1 }'));
+check("think has NO clip: the think state swaps the video out for the think still", appJs.includes('if (mode === "think")') && !appJs.slice(appJs.indexOf("const SIG_HERO_CLIPS"), appJs.indexOf("let sigHeroMode")).includes("think"));
+check("one-shots return to idle on ended", appJs.includes('addEventListener("ended"') && appJs.includes('if (m === "greet" || m === "celebrate") sigHeroSet("idle")'));
+check("reduced motion: stills everywhere, driven by the matchMedia gate", appJs.includes("function sigReducedMotion()") && appJs.includes('matchMedia("(prefers-reduced-motion: reduce)")') && themeCss.includes("prefers-reduced-motion: reduce"));
+check("a failed clip hides itself and leaves its poster (error listener)", appJs.includes('addEventListener("error"') && appJs.includes('hasAttribute("data-sig-hero-video")'));
+check("the queue card still records its one-shot moods for the hero (triggers unchanged)", appJs.includes('sigQueueBeat = "celebrate"') && appJs.includes('sigQueueBeat = "greet"') && appJs.includes("state.sigCelebrate = false"));
+check("the claim win hook renders the celebrate clip component and kicks it once", appJs.includes("function sigCelebMediaHtml()") && appJs.includes("setTimeout(sigCelebKick, 30)"));
+check("hero + celeb media CSS ships (stack, ring, hidden-video guard)", themeCss.includes(".sig-hero-media") && themeCss.includes(".sig-celeb-media") && themeCss.includes("video[hidden]"));
+for (const f of ["hero.webp", "still-greet.webp", "still-think.webp", "still-talk.webp", "still-celebrate.webp", "head-idle.webp", "head-greet.webp", "head-think.webp", "head-talk.webp", "head-celebrate.webp"]) {
+  check(`still ships: ${f}`, sizeOf(f) > 0 && sizeOf(f) <= 120000, `${sizeOf(f)} bytes`);
+}
+for (const [f, cap] of [["idle.webm", 800000], ["idle.mp4", 800000], ["talk.webm", 400000], ["talk.mp4", 400000], ["greet.webm", 400000], ["greet.mp4", 400000], ["celebrate.webm", 400000], ["celebrate.mp4", 400000]]) {
+  check(`clip inside its weight budget: ${f} <= ${cap}`, sizeOf(f) > 0 && sizeOf(f) <= cap, `${sizeOf(f)} bytes`);
+}
+
 // ---------- 2. The AI path, against a local stub provider ----------
 let stubMode = "ok";
 let lastRequest = null;

@@ -2601,7 +2601,6 @@ body.v3-on .tab-item.on .tab-sig-img { box-shadow: 0 0 0 2px var(--ink); }
    The dot is mint while he is ready or talking, coral while he
    is thinking; the line itself is swapped by sigAskSubmit. */
 .sig-hero { display: grid; grid-template-columns: 104px 1fr; gap: 18px; align-items: center; background: var(--ink); color: #fff; border-radius: 26px; padding: 20px; margin: 4px 0 16px; overflow: hidden; }
-.sig-hero-ava .sig-ava { width: 104px; height: 104px; box-shadow: 0 0 0 2px var(--mint); }
 .sig-hero-kicker { color: var(--mint); font-size: .74rem; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
 .sig-hero h2 { margin: 2px 0 6px; font-size: 2rem; line-height: 1; letter-spacing: -.03em; color: #fff; }
 .sig-presence { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: .94rem; }
@@ -2619,7 +2618,6 @@ body.v3-on .tab-item.on .tab-sig-img { box-shadow: 0 0 0 2px var(--ink); }
 @keyframes sigTyping { 0%, 100% { transform: translateY(0); opacity: .45; } 50% { transform: translateY(-3px); opacity: 1; } }
 @media (max-width: 520px) {
   .sig-hero { grid-template-columns: 84px 1fr; gap: 14px; padding: 16px; border-radius: 22px; }
-  .sig-hero-ava .sig-ava { width: 84px; height: 84px; }
   .sig-hero h2 { font-size: 1.65rem; }
   .sig-hero p { font-size: .9rem; }
 }
@@ -2713,66 +2711,41 @@ body.rail-on main, body.preview-on main { min-width: 0; }
   body.preview-on main { width: 100%; }
 }
 
-/* Sig, animated (Jeff, 2026-10-28): Sig is an inline SVG
-   (sigSvgHtml in app.js): an influencer mid-live-video in a
-   clean realistic-cartoon ink style — gradient-shaded skin,
-   real eye/nose/lip structure, backwards coral cap, chain
-   over a hoodie, big on-ear headphones with the right cup
-   slipped off the ear. Pure CSS, no libraries, on the -19
-   mood plumbing: an idle beat-nod and blink everywhere; mood
-   classes from sigAvatarHtml add a one-shot greet pop, a
-   thinking tilt while Sig composes or the queue loads, a talk
-   state while an answer renders, and a one-shot celebrate hop
-   with sparkles on the successful-quick-claim render. */
-.sig-ava-svg { border-radius: 50%; overflow: hidden; background: var(--ink); }
-.sig-ava.sig-ava-svg svg { width: 100%; height: 100%; display: block; }
-body.v3-on .sig-ava-svg { box-shadow: 0 0 0 2px var(--ink); }
-body.v3-on .ask-sig .sig-ava-svg { box-shadow: 0 0 0 2px var(--mint); }
-.sig-sparks { opacity: 0; }
-.sig-head { transform-box: fill-box; transform-origin: 50% 88%; animation: sigHeadNod 3.8s ease-in-out infinite; }
-.sig-body { animation: sigBodyBreath 3.8s ease-in-out infinite; }
-.sig-eyes-open { transform-box: fill-box; transform-origin: 50% 50%; animation: sigBlink 5.4s ease-in-out infinite; }
-.sig-eyes-closed { opacity: 0; }
-.sig-pupils { transform-box: fill-box; }
-@keyframes sigHeadNod { 0%, 100% { transform: rotate(-.8deg) translateY(.4px); } 50% { transform: rotate(1.1deg) translateY(1.8px); } }
-@keyframes sigBodyBreath { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(.8px); } }
-@keyframes sigBlink { 0%, 92%, 100% { transform: scaleY(1); } 95% { transform: scaleY(.08); } 98% { transform: scaleY(1); } }
-/* Greet: one pop on the wrapper; brows lift and the open grin lands. */
+/* Sig (V4, Jeff, 2026-10-28): a rendered character delivered
+   as generated video. The Sig-tab hero is a video stack over
+   the hero still (sigHeroMediaHtml / sigHeroSet in app.js): an
+   idle loop, a talk loop while an answer renders, one-shot
+   greet and celebrate clips on their existing triggers, and
+   the think still while he is thinking (no think clip, by
+   design). Everywhere small, Sig is a tight head-crop still
+   of the state (sig-ava-img) carrying the mood presence
+   treatments below; no video at small sizes, ever. A clip
+   that fails hides itself and leaves its still standing. */
+/* Greet: one pop on the wrapper when the card renders. */
 .sig-mood-greet { animation: sigGreetPop 1.05s cubic-bezier(.34, 1.4, .64, 1) 1; }
-.sig-mood-greet .sig-head { animation: sigGreetNod .55s ease-in-out 2 alternate; }
-.sig-mood-greet .sig-brows-default, .sig-mood-celebrate .sig-brows-default { opacity: 0; }
-.sig-mood-greet .sig-brows-raised, .sig-mood-celebrate .sig-brows-raised { opacity: 1; }
-.sig-mood-greet .sig-mouth-default { opacity: 0; }
-.sig-mood-greet .sig-mouth-greet { opacity: 1; }
 @keyframes sigGreetPop { 0% { transform: scale(.86) translateY(3px); } 45% { transform: scale(1.07) translateY(-3px); } 70% { transform: scale(.98) translateY(0); } 100% { transform: scale(1) translateY(0); } }
-@keyframes sigGreetNod { from { transform: rotate(-2deg) translateY(0); } to { transform: rotate(2.4deg) translateY(1.6px); } }
-/* Think: head tilts, eyes ride up, mouth goes flat. Loops while
-   the mood class is on the avatar (pending turns, queue loading). */
-.sig-mood-think .sig-head { animation: sigThink 1.5s ease-in-out infinite; }
-.sig-mood-think .sig-pupils { transform: translate(2.5px, -3px); }
-.sig-mood-think .sig-mouth-default { opacity: 0; }
-.sig-mood-think .sig-mouth-think { opacity: 1; }
-@keyframes sigThink { 0%, 100% { transform: rotate(-3.4deg) translateY(0); } 50% { transform: rotate(2.6deg) translateY(-1px); } }
-/* Talk: a quick head bob while the two mouth shapes alternate
-   for the two seconds an answer renders. */
-.sig-mood-talk .sig-head { animation: sigTalkBob .36s ease-in-out infinite; }
-.sig-mood-talk .sig-mouth-default { opacity: 0; }
-.sig-mood-talk .sig-mouth-talk-a { animation: sigTalkA .72s linear infinite; }
-.sig-mood-talk .sig-mouth-talk-b { animation: sigTalkB .72s linear infinite; }
+/* Think: a gentle sway while Sig composes or the queue loads. */
+.sig-mood-think { animation: sigThinkSway 1.6s ease-in-out infinite; }
+@keyframes sigThinkSway { 0%, 100% { transform: rotate(-2.6deg) translateY(0); } 50% { transform: rotate(2deg) translateY(-1px); } }
+/* Talk: a quick bob while an answer renders. */
+.sig-mood-talk { animation: sigTalkBob .36s ease-in-out infinite; }
 @keyframes sigTalkBob { 0%, 100% { transform: rotate(-.7deg) translateY(0); } 50% { transform: rotate(.9deg) translateY(1.4px); } }
-@keyframes sigTalkA { 0%, 44% { opacity: 1; } 50%, 100% { opacity: 0; } }
-@keyframes sigTalkB { 0%, 44% { opacity: 0; } 50%, 94% { opacity: 1; } 100% { opacity: 0; } }
-/* Celebrate: two restrained hops, closed-eye grin, sparkles pop. */
+/* Celebrate: two restrained hops on the small still (the
+   claim confirmation renders the celebrate clip instead). */
 .sig-mood-celebrate { animation: sigCeleb 1.45s cubic-bezier(.28, .84, .42, 1) 1; }
-.sig-mood-celebrate .sig-eyes-open { opacity: 0; animation: none; }
-.sig-mood-celebrate .sig-eyes-closed { opacity: 1; }
-.sig-mood-celebrate .sig-mouth-default { opacity: 0; }
-.sig-mood-celebrate .sig-mouth-celebrate { opacity: 1; }
-.sig-mood-celebrate .sig-sparks { transform-box: fill-box; transform-origin: 50% 50%; animation: sigSpark 1.45s ease-out 1; }
 @keyframes sigCeleb { 0% { transform: translateY(0) scale(1, 1); } 22% { transform: translateY(-7px) scale(.97, 1.04); } 40% { transform: translateY(0) scale(1.05, .93); } 58% { transform: translateY(-4px) scale(.99, 1.02); } 76% { transform: translateY(0) scale(1.02, .98); } 100% { transform: translateY(0) scale(1, 1); } }
-@keyframes sigSpark { 0%, 8% { opacity: 0; transform: scale(.3) rotate(0deg); } 26% { opacity: 1; transform: scale(1.12) rotate(16deg); } 55% { opacity: 1; transform: scale(1) rotate(30deg); } 78%, 100% { opacity: 0; transform: scale(.65) rotate(48deg); } }
+/* The hero media stack: poster still under, video over,
+   think still for the thinking state. */
+.sig-hero-media { position: relative; display: block; width: 104px; height: 104px; border-radius: 50%; overflow: hidden; background: var(--ink); box-shadow: 0 0 0 2px var(--mint); }
+.sig-hero-media img, .sig-hero-media video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+.sig-hero-media video[hidden], .sig-celeb-media video[hidden] { display: none; }
+.sig-hero-media .sig-hero-think { animation: sigThinkSway 1.6s ease-in-out infinite; }
+@media (max-width: 520px) { .sig-hero-media { width: 84px; height: 84px; } }
+/* The claim confirmation's celebration clip. */
+.sig-celeb-media { position: relative; display: block; width: 96px; height: 96px; border-radius: 50%; overflow: hidden; background: var(--ink); box-shadow: 0 0 0 2px var(--mint); }
+.sig-celeb-media img, .sig-celeb-media video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
 /* Queue loading: Sig thinks over the dashboard skeleton. */
 .sig-load-row { display: flex; align-items: center; margin: 0 0 10px; }
 @media (prefers-reduced-motion: reduce) {
-  .sig-ava, .sig-ava * { animation: none !important; }
+  .sig-ava, .sig-ava *, .sig-hero-media .sig-hero-think { animation: none !important; }
 }
