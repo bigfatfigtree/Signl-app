@@ -1730,12 +1730,14 @@ function closeMoreSheet() {
 // logic behind the button in this stage.
 const SPARK_SVG = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.1 6.9L21 11l-6.9 2.1L12 20l-2.1-6.9L3 11l6.9-2.1z"/></svg>`;
 
-// Sig's face lives in exactly ONE place (V3 spec §4): a
-// cool 90s musician in a realistic-cartoon ink style (Jeff's
-// corrected pick, 2026-10-28) — elongated proportions, heavy
-// outlines, flat color with rough hatch shading, a backwards
-// coral cap, a chain, and big on-ear headphones as the
-// signature. Bust framing carries the avatar; the head stays
+// Sig's face lives in exactly ONE place (V3 spec §4): an
+// influencer mid-live-video in a clean realistic-cartoon ink
+// style (Jeff's realism pass, 2026-10-28) — gradient-shaded
+// skin with real eye, nose and lip structure, a backwards
+// coral cap, a chain over a hoodie, and big on-ear headphones
+// as the signature, the right cup slipped down off the ear
+// the way streamers listen to the room. Bust framing carries
+// the avatar; the head stays
 // large enough that the face, cap and cups still read at the
 // 25px tab size. Mood markup comes from sigAvatarHtml(mood);
 // SIG_AVATAR_HTML remains the idle swap-in constant every Sig
@@ -1749,122 +1751,209 @@ function sigSvgHtml(mood) {
   return `<svg viewBox="0 0 240 240" aria-hidden="true" focusable="false">
 <defs>
   <clipPath id="disc-${g}"><circle cx="120" cy="120" r="120"/></clipPath>
-  
+  <clipPath id="face-${g}"><path d="M120 28 C146 28 161 45 163 74 C164 92 163 104 161 116 C158 144 146 170 120 172 C94 170 82 144 79 116 C77 104 76 92 77 74 C79 45 94 28 120 28 Z"/></clipPath>
+  <linearGradient id="skin-${g}" gradientUnits="userSpaceOnUse" x1="120" y1="18" x2="120" y2="182">
+    <stop offset="0" stop-color="#E2AA72"/><stop offset=".45" stop-color="#CD905E"/><stop offset="1" stop-color="#B57A4C"/>
+  </linearGradient>
+  <linearGradient id="cap-${g}" gradientUnits="userSpaceOnUse" x1="120" y1="6" x2="120" y2="76">
+    <stop offset="0" stop-color="#FF8A68"/><stop offset=".6" stop-color="#F4532F"/><stop offset="1" stop-color="#DE3F20"/>
+  </linearGradient>
+  <linearGradient id="cup-${g}" gradientUnits="userSpaceOnUse" x1="120" y1="76" x2="120" y2="182">
+    <stop offset="0" stop-color="#26322C"/><stop offset="1" stop-color="#0B100D"/>
+  </linearGradient>
+  <linearGradient id="hood-${g}" gradientUnits="userSpaceOnUse" x1="120" y1="148" x2="120" y2="240">
+    <stop offset="0" stop-color="#263D2F"/><stop offset="1" stop-color="#121D16"/>
+  </linearGradient>
+  <linearGradient id="hair-${g}" gradientUnits="userSpaceOnUse" x1="120" y1="52" x2="120" y2="126">
+    <stop offset="0" stop-color="#232C2F"/><stop offset="1" stop-color="#0C1011"/>
+  </linearGradient>
+  <linearGradient id="eye-${g}" gradientUnits="userSpaceOnUse" x1="120" y1="88" x2="120" y2="110">
+    <stop offset="0" stop-color="#FCF8EE"/><stop offset="1" stop-color="#EADFC6"/>
+  </linearGradient>
+  <radialGradient id="iris-${g}" cx=".5" cy=".42" r=".65">
+    <stop offset="0" stop-color="#6B4426"/><stop offset=".55" stop-color="#3B2312"/><stop offset="1" stop-color="#201005"/>
+  </radialGradient>
+  <radialGradient id="glow-${g}" cx=".5" cy=".44" r=".55">
+    <stop offset="0" stop-color="#E4FFF1" stop-opacity=".17"/><stop offset=".55" stop-color="#E4FFF1" stop-opacity=".05"/><stop offset="1" stop-color="#E4FFF1" stop-opacity="0"/>
+  </radialGradient>
 </defs>
 <rect width="240" height="240" fill="#0B0D0C"/>
 <g clip-path="url(#disc-${g})">
-  <!-- shoulders / jacket -->
+  <!-- ring-light ambience: he is on camera -->
+  <rect width="240" height="240" fill="url(#glow-${g})"/>
+  <circle cx="120" cy="102" r="88" fill="none" stroke="#E4FFF1" stroke-width="13" opacity=".045"/>
+  <circle cx="120" cy="102" r="88" fill="none" stroke="#E4FFF1" stroke-width="2" opacity=".05"/>
+  <!-- shoulders / hoodie -->
   <g class="sig-body">
-    <path d="M18 240 C24 205 51 188 91 178 L106 166 L134 166 L151 179 C190 189 218 207 224 240 Z" fill="#14231D" stroke="#0B0D0C" stroke-width="5"/>
-    <path d="M91 178 L120 207 L151 179 L164 240 L76 240 Z" fill="#20362B" stroke="#0B0D0C" stroke-width="4"/>
-    <path d="M103 181 L120 201 L138 181 L133 240 L108 240 Z" fill="#A9E8C9" opacity=".92"/>
-    <path d="M91 178 L120 207 L108 240 M151 179 L120 207 L134 240" fill="none" stroke="#0B0D0C" stroke-width="4"/>
-    <path d="M82 199 l-17 10 M161 199 l17 10 M70 220 l-13 7 M172 220 l13 7" stroke="#000" stroke-width="3" opacity=".28"/>
-    <path d="M99 188 C108 201 132 201 142 188" fill="none" stroke="#D8FFF0" stroke-width="3.2" stroke-linecap="round"/>
-    <circle cx="120" cy="202" r="4.2" fill="#FF6B4A" stroke="#0B0D0C" stroke-width="2"/>
+    <path d="M14 240 C20 200 48 184 88 174 L104 162 L136 162 L152 174 C192 184 220 201 226 240 Z" fill="url(#hood-${g})" stroke="#0B0D0C" stroke-width="5"/>
+    <path d="M30 196 C52 186 76 181 92 179 M148 179 C170 182 196 189 212 199" fill="none" stroke="#8FB89E" stroke-width="3" opacity=".22" stroke-linecap="round"/>
+    <path d="M96 214 C108 220 132 220 144 214 C138 228 102 228 96 214Z" fill="#000" opacity=".16"/>
+    <path d="M52 226 C66 218 78 215 88 214 M188 214 C200 216 210 220 220 227" fill="none" stroke="#0B0D0C" stroke-width="3" opacity=".30" stroke-linecap="round"/>
+    <path d="M40 240 L76 212 M200 240 L164 212" fill="none" stroke="#0B0D0C" stroke-width="3.5" opacity=".45"/>
+    <path d="M106 166 L120 188 L134 166 L128 161 L120 169 L112 161 Z" fill="#EFE9DA"/>
+    <path d="M88 172 C96 158 108 152 120 152 C132 152 144 158 152 172 L146 179 C138 167 129 162 120 162 C111 162 102 167 94 179 Z" fill="#0D1712"/>
+    <path d="M94 168 C104 158 112 155 120 155" fill="none" stroke="#33513F" stroke-width="2.5" opacity=".8" stroke-linecap="round"/>
+    <!-- drawstrings -->
+    <path d="M107 178 C105 190 103 200 104 212" fill="none" stroke="#E9E2D0" stroke-width="4" stroke-linecap="round"/>
+    <path d="M133 178 C135 190 137 200 136 212" fill="none" stroke="#E9E2D0" stroke-width="4" stroke-linecap="round"/>
+    <circle cx="104" cy="215" r="3" fill="#E9E2D0" stroke="#0B0D0C" stroke-width="1.6"/>
+    <circle cx="136" cy="215" r="3" fill="#E9E2D0" stroke="#0B0D0C" stroke-width="1.6"/>
+    <!-- chain over the hoodie -->
+    <path d="M97 182 C107 203 133 203 143 182" fill="none" stroke="#9FB8AB" stroke-width="3.4" stroke-linecap="round"/>
+    <path d="M99 181 C108 199 132 199 141 181" fill="none" stroke="#E9FFF3" stroke-width="1.2" opacity=".8" stroke-linecap="round"/>
+    <circle cx="120" cy="203" r="5.4" fill="#FF6B4A" stroke="#0B0D0C" stroke-width="2"/>
+    <circle cx="118.2" cy="201.2" r="1.5" fill="#FFD9CF"/>
   </g>
   <!-- neck -->
-  <path d="M103 139 L104 176 C110 185 130 185 137 176 L137 139 C129 149 111 149 103 139Z" fill="#9C623C" stroke="#0B0D0C" stroke-width="4"/>
-  <path d="M105 154 C114 160 128 160 136 153 L136 174 C128 181 113 181 105 174Z" fill="#000" opacity=".13"/>
+  <path d="M103 138 L104 178 C110 187 130 187 137 178 L137 138 C129 148 111 148 103 138Z" fill="#A0683C" stroke="#0B0D0C" stroke-width="4"/>
+  <path d="M104 146 C112 152 128 152 137 145 L137 160 C128 166 112 166 104 159Z" fill="#5E3B1E" opacity=".35"/>
+  <path d="M96 169 C108 179 132 179 144 169 L146 183 C132 191 108 191 94 183 Z" fill="#122019" stroke="#0B0D0C" stroke-width="3.5"/>
   <g class="sig-head">
-    <!-- ears and side hair -->
-    <path d="M72 94 C58 88 49 99 52 112 C55 126 66 132 76 128 L76 100Z" fill="#C98B5F" stroke="#0B0D0C" stroke-width="4.5"/>
-    <path d="M168 94 C182 88 191 99 188 112 C185 126 174 132 164 128 L164 100Z" fill="#C98B5F" stroke="#0B0D0C" stroke-width="4.5"/>
-    <path d="M60 105 C65 104 68 108 67 114 M180 105 C175 104 172 108 173 114" fill="none" stroke="#0B0D0C" stroke-width="3" opacity=".55"/>
-    <circle cx="61" cy="126" r="3.4" fill="#FF6B4A" stroke="#0B0D0C" stroke-width="1.6"/>
-    <!-- elongated face -->
-    <path class="sig-face" d="M77 72 C79 43 95 27 120 27 C145 27 161 43 163 72 L161 112 C158 143 144 168 120 170 C96 168 82 143 79 112 Z" fill="#C98B5F" stroke="#0B0D0C" stroke-width="5" stroke-linejoin="round"/>
-    <path d="M84 52 C91 39 104 33 117 34 C103 43 94 55 89 72 C84 66 82 59 84 52Z" fill="#E0aa77" opacity=".36"/>
-    <path d="M153 72 C157 99 154 128 142 148 C155 143 165 124 166 99 C165 86 161 76 153 72Z" fill="#000" opacity=".10"/>
-    <!-- rough Hewlett-style hatch shading -->
-    <g stroke="#0B0D0C" stroke-width="2" stroke-linecap="round" opacity=".24">
-      <path d="M84 119 l10 4 M83 129 l9 3 M151 124 l-9 4 M154 112 l-8 3 M101 153 l8 2 M132 153 l-8 2"/>
-      <path d="M91 91 l7 2 M143 91 l-7 2 M89 141 l7 4 M151 141 l-7 4"/>
-    </g>
-    <g fill="#0B0D0C" opacity=".22"><circle cx="91" cy="111" r="1.15"/><circle cx="97" cy="116" r="1"/><circle cx="148" cy="110" r="1.1"/><circle cx="143" cy="117" r=".95"/><circle cx="105" cy="145" r="1"/><circle cx="136" cy="145" r="1"/></g>
-    <!-- short goatee / jaw stubble: adult, broken and inked -->
-    <path d="M101 151 C108 163 132 163 139 151 C137 164 129 170 120 170 C111 170 103 164 101 151Z" fill="#0B0D0C" opacity=".28"/>
-    <g stroke="#0B0D0C" stroke-width="2.2" stroke-linecap="round" opacity=".5">
-      <path d="M91 142 C97 154 105 161 113 164"/><path d="M149 142 C143 154 135 161 127 164"/>
-      <path d="M105 156 l4 5 M120 160 v6 M135 156 l-4 5 M110 148 l2 5 M130 148 l-2 5"/>
-    </g>
-    <!-- flatter fringe and side locks under the cap strap -->
-    <path d="M77 66 C91 55 149 55 163 66 L158 78 L145 66 L133 77 L121 65 L108 77 L96 66 L84 78 Z" fill="#111613" stroke="#0B0D0C" stroke-width="3" stroke-linejoin="round"/>
-    <path d="M77 70 L70 103 L80 94 L82 119 L77 137 L86 116 L84 80Z" fill="#111613"/>
-    <path d="M163 70 L170 103 L160 94 L158 119 L163 137 L154 116 L156 80Z" fill="#111613"/>
-    <!-- backwards cap: coral dome and black strap; no projecting brim in the bust crop -->
-    <path d="M69 58 C74 29 94 14 120 14 C146 14 166 29 171 58 L160 67 C149 52 136 46 120 46 C104 46 91 52 80 67 Z" fill="#FF6B4A" stroke="#0B0D0C" stroke-width="5" stroke-linejoin="round"/>
-    <path d="M82 50 C94 37 106 32 121 32 C138 32 151 38 160 50" fill="none" stroke="#B63A28" stroke-width="4" stroke-linecap="round" opacity=".65"/>
-    <path d="M94 22 C104 17 116 16 126 17 M140 20 C149 24 156 30 161 39" stroke="#7E2418" stroke-width="3" opacity=".5" fill="none"/>
-    <path d="M73 57 L167 57 L164 70 L76 70 Z" fill="#0B0D0C"/>
-    <circle cx="103" cy="63.5" r="2.2" fill="#A9E8C9"/><circle cx="120" cy="63.5" r="2.2" fill="#A9E8C9"/><circle cx="137" cy="63.5" r="2.2" fill="#A9E8C9"/>
-    <circle cx="120" cy="15" r="5" fill="#0B0D0C" stroke="#A9E8C9" stroke-width="2"/>
-    <!-- brows -->
-    <g class="sig-brows sig-brows-default" fill="none" stroke="#0B0D0C" stroke-width="5" stroke-linecap="round">
-      <path d="M84 83 L111 79"/><path d="M129 79 L157 84"/>
-    </g>
-    <g class="sig-brows sig-brows-raised" fill="none" stroke="#0B0D0C" stroke-width="5" stroke-linecap="round" opacity="0">
-      <path d="M84 77 L111 72"/><path d="M129 72 L157 78"/>
-    </g>
-    <!-- eyes: heavy-lidded, asymmetric, inked -->
-    <g class="sig-eyes sig-eyes-open">
-      <path d="M84 99 C91 92 105 91 112 97 C106 103 91 104 84 99Z" fill="#F4EFE3" stroke="#0B0D0C" stroke-width="3.4"/>
-      <path d="M128 97 C135 91 149 92 156 99 C149 104 134 103 128 97Z" fill="#F4EFE3" stroke="#0B0D0C" stroke-width="3.4"/>
-      <g class="sig-pupils" fill="#201612">
-        <circle cx="99" cy="98" r="4.4"/><circle cx="141" cy="98" r="4.4"/>
-        <circle cx="100.5" cy="96.5" r="1.25" fill="#fff"/><circle cx="142.5" cy="96.5" r="1.25" fill="#fff"/>
+    <!-- ears -->
+    <path d="M73 92 C59 86 50 97 52 111 C54 125 65 132 76 129 L77 99 Z" fill="url(#skin-${g})" stroke="#0B0D0C" stroke-width="4.5"/>
+    <path d="M60 101 C66 100 69 105 68 112 C67 118 64 121 60 122" fill="none" stroke="#0B0D0C" stroke-width="2.6" opacity=".6"/>
+    <path d="M167 92 C181 86 190 97 188 111 C186 125 175 132 164 129 L163 99 Z" fill="url(#skin-${g})" stroke="#0B0D0C" stroke-width="4.5"/>
+    <path d="M180 101 C174 100 171 105 172 112 C173 118 176 121 180 122" fill="none" stroke="#0B0D0C" stroke-width="2.6" opacity=".6"/>
+    <path d="M176 108 C179 111 179 116 176 119" fill="none" stroke="#7C4E2C" stroke-width="2.2" opacity=".55"/>
+    <!-- face -->
+    <path class="sig-face" d="M120 28 C146 28 161 45 163 74 C164 92 163 104 161 116 C158 144 146 170 120 172 C94 170 82 144 79 116 C77 104 76 92 77 74 C79 45 94 28 120 28 Z" fill="url(#skin-${g})" stroke="#0B0D0C" stroke-width="5" stroke-linejoin="round"/>
+    <g clip-path="url(#face-${g})">
+      <path d="M146 40 C160 60 166 92 162 124 C159 146 150 162 138 170 L166 176 L170 30 Z" fill="#8A5A34" opacity=".16"/>
+      <path d="M152 44 C163 66 167 94 164 120" fill="none" stroke="#8A5A34" stroke-width="7" opacity=".08"/>
+      <ellipse cx="96" cy="66" rx="27" ry="19" fill="#F2CD9F" opacity=".20" transform="rotate(-14 96 66)"/>
+      <ellipse cx="93" cy="112" rx="14" ry="7" fill="#F2CD9F" opacity=".15"/>
+      <ellipse cx="147" cy="112" rx="13" ry="7" fill="#F2CD9F" opacity=".12"/>
+      <path d="M78 76 L162 76 L162 90 C140 84 100 84 78 90 Z" fill="#7C4E2C" opacity=".15"/>
+      <ellipse cx="120" cy="163" rx="9" ry="4.5" fill="#F2CD9F" opacity=".14"/>
+      <ellipse cx="90" cy="124" rx="11" ry="6" fill="#D96F4A" opacity=".07"/>
+      <ellipse cx="150" cy="124" rx="11" ry="6" fill="#D96F4A" opacity=".07"/>
+      <path d="M84 148 C96 162 108 168 120 169 C132 168 144 162 156 148 L156 176 L84 176 Z" fill="#7C4E2C" opacity=".13"/>
+      <!-- goatee / stubble texture: softer, denser -->
+      <path d="M99 148 C106 162 134 162 141 148 C140 161 131 169 120 169 C109 169 100 161 99 148Z" fill="#2A1A10" opacity=".20"/>
+      <g stroke="#3A2415" stroke-width="1.7" stroke-linecap="round" opacity=".38">
+        <path d="M92 141 l4 6 M96 146 l4 6 M102 151 l3 6 M110 156 l2 6 M120 158 v7 M130 156 l-2 6 M138 151 l-3 6 M144 146 l-4 6 M148 141 l-4 6"/>
+        <path d="M98 143 l3 4 M142 143 l-3 4 M112 149 l2 4 M128 149 l-2 4"/>
       </g>
-      <path d="M82 94 C92 87 106 87 114 93" fill="none" stroke="#0B0D0C" stroke-width="6" stroke-linecap="round"/>
-      <path d="M126 93 C134 87 148 87 158 94" fill="none" stroke="#0B0D0C" stroke-width="6" stroke-linecap="round"/>
-      <path d="M87 104 C94 107 105 107 110 104 M130 104 C136 107 147 107 153 104" fill="none" stroke="#0B0D0C" stroke-width="2.2" opacity=".55"/>
+      <g fill="#3A2415" opacity=".28">
+        <circle cx="94" cy="138" r="1"/><circle cx="100" cy="144" r=".9"/><circle cx="146" cy="138" r="1"/><circle cx="140" cy="144" r=".9"/>
+        <circle cx="106" cy="152" r=".9"/><circle cx="134" cy="152" r=".9"/><circle cx="114" cy="158" r=".85"/><circle cx="126" cy="158" r=".85"/>
+      </g>
+    </g>
+    <!-- hair: smooth hairline + sideburns under the cap -->
+    <path d="M77 72 C84 58 100 51 120 51 C140 51 156 58 163 72 L161 82 C150 68 136 62 120 62 C104 62 90 68 79 82 Z" fill="url(#hair-${g})"/>
+    <path d="M77 72 L72 108 C71 116 73 122 76 126 L84 112 L82 78 Z" fill="url(#hair-${g})"/>
+    <path d="M163 72 L168 108 C169 116 167 122 164 126 L156 112 L158 78 Z" fill="url(#hair-${g})"/>
+    <path d="M88 66 C98 59 110 56 120 56 M128 56 C140 57 150 61 157 67" fill="none" stroke="#3D484D" stroke-width="2" opacity=".55" stroke-linecap="round"/>
+    <!-- backwards cap: lower, flatter dome; slim strap, dark buckle -->
+    <path d="M69 62 C73 34 94 17 120 17 C146 17 167 34 171 62 L162 71 C150 55 137 48 120 48 C103 48 90 55 78 71 Z" fill="url(#cap-${g})" stroke="#0B0D0C" stroke-width="5" stroke-linejoin="round"/>
+    <path d="M85 47 C95 33 107 28 120 28 M155 47 C145 33 133 28 120 28" fill="none" stroke="#C93A22" stroke-width="2.4" opacity=".75"/>
+    <ellipse cx="98" cy="30" rx="16" ry="6" fill="#fff" opacity=".13" transform="rotate(-18 98 30)"/>
+    <circle cx="120" cy="18" r="4.4" fill="#0B0D0C" stroke="#FF9A7E" stroke-width="1.6"/>
+    <path d="M73 57 L167 57 L165.5 69 L74.5 69 Z" fill="#10151B"/>
+    <rect x="113" y="60.5" width="14" height="6.5" rx="2" fill="#232B30" stroke="#5A6A63" stroke-width="1.4"/>
+    <circle cx="87" cy="63" r="1.7" fill="#A9E8C9"/><circle cx="153" cy="63" r="1.7" fill="#A9E8C9"/>
+    <!-- brows: shaped, tapered -->
+    <g class="sig-brows sig-brows-default" fill="#12181B">
+      <path d="M82 85 C91 79 105 78 114 81 L113 88 C103 85 92 86 83 90 Z"/>
+      <path d="M158 86 C149 80 135 79 126 82 L127 89 C137 86 148 87 157 91 Z"/>
+    </g>
+    <g class="sig-brows sig-brows-raised" fill="#12181B" opacity="0">
+      <path d="M82 78 C91 72 105 71 114 75 L113 82 C103 79 92 80 83 83 Z"/>
+      <path d="M158 79 C149 73 135 72 126 76 L127 83 C137 80 148 81 157 84 Z"/>
+    </g>
+    <!-- eyes -->
+    <g class="sig-eyes sig-eyes-open">
+      <path d="M83 100 C89 92 107 91 114 98 C108 105 90 106 83 100Z" fill="url(#eye-${g})"/>
+      <path d="M127 98 C134 91 151 92 157 100 C150 106 133 105 127 98Z" fill="url(#eye-${g})"/>
+      <path d="M83 100 C89 92 107 91 114 98 C104 95 92 95 83 100Z" fill="#B98A5E" opacity=".28"/>
+      <path d="M127 98 C134 91 151 92 157 100 C147 95 136 95 127 98Z" fill="#B98A5E" opacity=".28"/>
+      <g class="sig-pupils">
+        <circle cx="99" cy="100.5" r="5.7" fill="url(#iris-${g})"/>
+        <circle cx="141" cy="100.5" r="5.7" fill="url(#iris-${g})"/>
+        <circle cx="99" cy="100.5" r="2.7" fill="#0A0502"/>
+        <circle cx="141" cy="100.5" r="2.7" fill="#0A0502"/>
+        <circle cx="100.8" cy="98.4" r="1.6" fill="#fff" opacity=".95"/>
+        <circle cx="142.8" cy="98.4" r="1.6" fill="#fff" opacity=".95"/>
+        <circle cx="97.5" cy="102.8" r=".8" fill="#fff" opacity=".65"/>
+        <circle cx="139.5" cy="102.8" r=".8" fill="#fff" opacity=".65"/>
+      </g>
+      <!-- heavy upper lids: skin flaps resting over the iris tops -->
+      <path d="M83 100 C89 92 107 91 114 98 C105 94.5 92 94.5 83 100Z" fill="url(#skin-${g})"/>
+      <path d="M127 98 C134 91 151 92 157 100 C148 94.5 136 94.5 127 98Z" fill="url(#skin-${g})"/>
+      <path d="M82 98.5 C90 93 108 93 115 98" fill="none" stroke="#0B0D0C" stroke-width="5" stroke-linecap="round"/>
+      <path d="M126 98 C133 93 150 93 158 98.5" fill="none" stroke="#0B0D0C" stroke-width="5" stroke-linecap="round"/>
+      <path d="M86 91 C94 85 106 85 112 90" fill="none" stroke="#0B0D0C" stroke-width="2" opacity=".45" stroke-linecap="round"/>
+      <path d="M130 90 C136 85 148 85 154 91" fill="none" stroke="#0B0D0C" stroke-width="2" opacity=".45" stroke-linecap="round"/>
+      <path d="M86 104 C93 107 106 107 112 104" fill="none" stroke="#0B0D0C" stroke-width="2" opacity=".55" stroke-linecap="round"/>
+      <path d="M130 104 C136 107 147 107 153 104" fill="none" stroke="#0B0D0C" stroke-width="2" opacity=".55" stroke-linecap="round"/>
     </g>
     <g class="sig-eyes sig-eyes-closed" fill="none" stroke="#0B0D0C" stroke-width="5" stroke-linecap="round" opacity="0">
-      <path d="M85 99 C93 105 104 105 112 99"/><path d="M128 99 C136 105 147 105 155 99"/>
+      <path d="M85 100 C93 106 105 106 112 100"/><path d="M129 100 C136 106 148 106 156 100"/>
+      <path d="M90 104 l-2 3 M148 104 l2 3" stroke-width="3"/>
     </g>
     <!-- nose -->
-    <path d="M121 96 L114 117 C113 122 117 125 124 124" fill="none" stroke="#0B0D0C" stroke-width="3.6" stroke-linecap="round"/>
-    <path d="M110 126 C113 123 117 123 120 126 M124 126 C127 123 131 123 133 126" fill="none" stroke="#0B0D0C" stroke-width="2.2" opacity=".65"/>
+    <path d="M125 90 C127 100 128 109 127 117" fill="none" stroke="#8A5A34" stroke-width="7" opacity=".08" stroke-linecap="round"/>
+    <path d="M125 90 C127 100 128 109 127 117" fill="none" stroke="#8A5A34" stroke-width="3.4" opacity=".13" stroke-linecap="round"/>
+    <path d="M116 90 C115 99 114 107 113 114" fill="none" stroke="#F2CD9F" stroke-width="3" opacity=".26" stroke-linecap="round"/>
+    <path d="M114 107 C112 115 110 121 109 125" fill="none" stroke="#0B0D0C" stroke-width="3" opacity=".85" stroke-linecap="round"/>
+    <ellipse cx="120" cy="120" rx="5" ry="2.8" fill="#F2CD9F" opacity=".22"/>
+    <path d="M107 127 C110 122 115 121 119 124 M121 124 C125 121 130 122 133 127" fill="none" stroke="#0B0D0C" stroke-width="2.6" opacity=".8" stroke-linecap="round"/>
+    <ellipse cx="113" cy="127.5" rx="2.6" ry="1.6" fill="#4A2C17"/>
+    <ellipse cx="128" cy="127.5" rx="2.6" ry="1.6" fill="#4A2C17"/>
+    <path d="M110 131 C116 134 125 134 131 131" fill="none" stroke="#7C4E2C" stroke-width="2.4" opacity=".4" stroke-linecap="round"/>
     <!-- mouths by state -->
     <g class="sig-mouth sig-mouth-default">
-      <path d="M99 139 C109 145 126 146 142 137" fill="none" stroke="#0B0D0C" stroke-width="4.4" stroke-linecap="round"/>
-      <path d="M106 147 C116 150 128 149 136 145" fill="none" stroke="#0B0D0C" stroke-width="2" opacity=".48"/>
+      <path d="M105 148 C113 152 128 152 136 147" fill="none" stroke="#A85F40" stroke-width="4" opacity=".5" stroke-linecap="round"/>
+      <path d="M98 140 C108 146 124 147 143 138" fill="none" stroke="#0B0D0C" stroke-width="4.2" stroke-linecap="round"/>
+      <path d="M140 139 C142 138 143 137 144 135" fill="none" stroke="#0B0D0C" stroke-width="3" stroke-linecap="round"/>
+      <path d="M104 135 C114 133 128 133 137 135" fill="none" stroke="#7C4E2C" stroke-width="2.4" opacity=".22" stroke-linecap="round"/>
     </g>
     <g class="sig-mouth sig-mouth-think" opacity="0">
-      <path d="M104 141 C114 138 128 139 139 141" fill="none" stroke="#0B0D0C" stroke-width="4.2" stroke-linecap="round"/>
+      <path d="M109 147 C116 149 127 149 134 147" fill="none" stroke="#A85F40" stroke-width="3.4" opacity=".45" stroke-linecap="round"/>
+      <path d="M104 141 C114 138 130 139 142 141" fill="none" stroke="#0B0D0C" stroke-width="4" stroke-linecap="round"/>
     </g>
     <g class="sig-mouth sig-mouth-greet" opacity="0">
-      <path d="M100 136 C110 148 130 148 141 136 C131 142 110 142 100 136Z" fill="#351915" stroke="#0B0D0C" stroke-width="3.6"/>
-      <path d="M107 143 C115 146 126 146 134 143" stroke="#FF6B4A" stroke-width="3" fill="none"/>
+      <path d="M99 136 C108 152 132 152 142 136 C130 143 110 143 99 136Z" fill="#3A1B14" stroke="#0B0D0C" stroke-width="3.6"/>
+      <path d="M104 138 C112 142 129 142 137 138 L135 144 C124 147 115 147 106 144 Z" fill="#F7F3E8"/>
+      <path d="M120 141 L120 145" stroke="#0B0D0C" stroke-width="1.4" opacity=".25"/>
+      <path d="M110 148 C117 151 126 151 132 148 C126 149.5 116 149.5 110 148Z" fill="#C65B4A"/>
     </g>
     <g class="sig-mouth sig-mouth-talk-a" opacity="0">
-      <path d="M101 137 C111 150 130 150 141 137 C132 143 110 143 101 137Z" fill="#351915" stroke="#0B0D0C" stroke-width="3.6"/>
-      <path d="M109 145 C116 148 126 148 133 145" stroke="#FF6B4A" stroke-width="3" fill="none"/>
+      <path d="M101 136 C109 155 131 155 140 136 C131 142 110 142 101 136Z" fill="#3A1B14" stroke="#0B0D0C" stroke-width="3.6"/>
+      <path d="M106 138 C113 141 128 141 135 138 L133 143 C124 145 115 145 108 143 Z" fill="#F7F3E8"/>
+      <path d="M111 150 C117 153 125 153 131 150 C125 151.5 117 151.5 111 150Z" fill="#C65B4A"/>
     </g>
     <g class="sig-mouth sig-mouth-talk-b" opacity="0">
-      <path d="M104 138 C113 145 129 145 139 138 C130 141 112 141 104 138Z" fill="#351915" stroke="#0B0D0C" stroke-width="3.2"/>
+      <path d="M107 138 C112 148 129 148 134 138 C127 142 114 142 107 138Z" fill="#3A1B14" stroke="#0B0D0C" stroke-width="3.2"/>
+      <path d="M113 145 C117 147 124 147 128 145 C124 146 117 146 113 145Z" fill="#C65B4A"/>
     </g>
     <g class="sig-mouth sig-mouth-celebrate" opacity="0">
-      <path d="M97 135 C108 154 132 154 144 135 C132 143 109 143 97 135Z" fill="#351915" stroke="#0B0D0C" stroke-width="4"/>
-      <path d="M108 147 C116 151 127 151 134 147" stroke="#FF6B4A" stroke-width="4" fill="none" stroke-linecap="round"/>
-      <path d="M104 138 L137 138" stroke="#fff" stroke-width="3.4"/>
+      <path d="M96 134 C107 157 133 157 145 134 C133 142 108 142 96 134Z" fill="#3A1B14" stroke="#0B0D0C" stroke-width="4"/>
+      <path d="M103 137 L138 137 L136 144 C124 147 115 147 105 144 Z" fill="#F7F3E8"/>
+      <path d="M109 150 C117 154 126 154 133 150 C126 151.8 116 151.8 109 150Z" fill="#C65B4A"/>
     </g>
-    <!-- headphones over hair/ears -->
-    <path d="M55 104 C52 48 82 18 120 18 C158 18 188 48 185 104" fill="none" stroke="#0B0D0C" stroke-width="13" stroke-linecap="round"/>
-    <path d="M58 99 C57 53 84 25 120 25 C156 25 183 53 182 99" fill="none" stroke="#A9E8C9" stroke-width="3" opacity=".55"/>
+    <!-- headphones: left cup on the ear; right cup slipped down off the ear, streamer-style -->
+    <path d="M54 108 C50 46 82 16 120 16 C158 16 190 46 187 100" fill="none" stroke="#0B0D0C" stroke-width="12" stroke-linecap="round"/>
+    <path d="M58 103 C55 50 84 23 120 23 C156 23 183 50 184 96" fill="none" stroke="#54645C" stroke-width="2.4" opacity=".5"/>
     <g class="sig-cup sig-cup-l">
-      <rect x="39" y="83" width="39" height="61" rx="17" fill="#101613" stroke="#000" stroke-width="4"/>
-      <rect x="45" y="90" width="26" height="47" rx="13" fill="none" stroke="#FF6B4A" stroke-width="4"/>
-      <rect x="53" y="99" width="10" height="29" rx="5" fill="#A9E8C9"/>
-      <path d="M48 94 C45 105 45 123 48 133 M68 94 C71 105 71 123 68 133" stroke="#fff" stroke-width="1.6" opacity=".13" fill="none"/>
+      <rect x="36" y="82" width="42" height="62" rx="19" fill="url(#cup-${g})" stroke="#000" stroke-width="4"/>
+      <rect x="43" y="89" width="28" height="48" rx="14" fill="none" stroke="#FF6B4A" stroke-width="4"/>
+      <rect x="52" y="98" width="10" height="30" rx="5" fill="#A9E8C9"/>
+      <path d="M44 88 C50 84 60 82 68 84" fill="none" stroke="#fff" stroke-width="3" opacity=".16" stroke-linecap="round"/>
+      <circle cx="47" cy="136" r="1.8" fill="#3D4A44"/>
     </g>
+    <path d="M187 100 C193 106 195 112 193 120" fill="none" stroke="#0B0D0C" stroke-width="6" stroke-linecap="round"/>
     <g class="sig-cup sig-cup-r">
-      <rect x="162" y="83" width="39" height="61" rx="17" fill="#101613" stroke="#000" stroke-width="4"/>
-      <rect x="169" y="90" width="26" height="47" rx="13" fill="none" stroke="#FF6B4A" stroke-width="4"/>
-      <rect x="177" y="99" width="10" height="29" rx="5" fill="#A9E8C9"/>
-      <path d="M172 94 C169 105 169 123 172 133 M192 94 C195 105 195 123 192 133" stroke="#fff" stroke-width="1.6" opacity=".13" fill="none"/>
+      <g transform="rotate(-9 188 147)">
+        <rect x="167" y="117" width="42" height="60" rx="19" fill="url(#cup-${g})" stroke="#000" stroke-width="4"/>
+        <rect x="174" y="124" width="28" height="46" rx="14" fill="none" stroke="#FF6B4A" stroke-width="4"/>
+        <rect x="183" y="133" width="10" height="28" rx="5" fill="#A9E8C9"/>
+        <path d="M175 123 C181 119 191 118 199 120" fill="none" stroke="#fff" stroke-width="3" opacity=".16" stroke-linecap="round"/>
+      </g>
     </g>
-    <path d="M193 143 C197 166 192 181 199 197" fill="none" stroke="#0B0D0C" stroke-width="4" stroke-linecap="round"/>
+    <path d="M198 172 C204 186 200 200 208 214" fill="none" stroke="#0B0D0C" stroke-width="3.5" stroke-linecap="round"/>
   </g>
+  
   <g class="sig-sparks" fill="#FF6B4A" opacity="0">
     <path d="M24 42 l3 9 9 3 -9 3 -3 9 -3 -9 -9 -3 9 -3Z"/>
     <path d="M211 35 l2.4 7 7 2.4 -7 2.4 -2.4 7 -2.4 -7 -7 -2.4 7 -2.4Z" fill="#A9E8C9"/>

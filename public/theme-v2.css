@@ -2714,10 +2714,11 @@ body.rail-on main, body.preview-on main { min-width: 0; }
 }
 
 /* Sig, animated (Jeff, 2026-10-28): Sig is an inline SVG
-   (sigSvgHtml in app.js): a cool 90s musician in a realistic-
-   cartoon ink style — elongated face, heavy outlines, flat
-   color with hatch shading, backwards coral cap, chain, and
-   big on-ear headphones. Pure CSS, no libraries, on the -19
+   (sigSvgHtml in app.js): an influencer mid-live-video in a
+   clean realistic-cartoon ink style — gradient-shaded skin,
+   real eye/nose/lip structure, backwards coral cap, chain
+   over a hoodie, big on-ear headphones with the right cup
+   slipped off the ear. Pure CSS, no libraries, on the -19
    mood plumbing: an idle beat-nod and blink everywhere; mood
    classes from sigAvatarHtml add a one-shot greet pop, a
    thinking tilt while Sig composes or the queue loads, a talk
