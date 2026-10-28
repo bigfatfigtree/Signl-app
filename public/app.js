@@ -1882,7 +1882,7 @@ function sigQueueHtml(items, opts) {
   // leadShort (Homes only): the greeting above the card already
   // carries the lead item's full sentence, so the lead row renders
   // its short task form instead — Home never shows a sentence twice.
-  const row = (r, i) => `<div class="sig-item"><div class="sig-stxt">${esc(i === 0 && o.leadShort && r.short ? r.short : r.text)}</div>${r.btn ? `<button type="button" class="btn small-btn" data-sq="${i}">${esc(r.btn)}</button>` : ""}</div>`;
+  const row = (r, i) => `<div class="sig-item"><div class="sig-stxt">${esc(i === 0 && o.leadShort && r.short ? r.short : r.text)}</div>${r.btn ? `<button type="button" class="btn small-btn" data-sq="${i}">${esc(r.btn)}</button>` : ""}${r.dismissKey ? `<button type="button" class="sig-x" data-sqx="${i}" aria-label="Dismiss for this season">&times;</button>` : ""}</div>`;
   return `<div class="sig-card"><div class="sig-top">${SIG_AVATAR_HTML}<div><div class="sig-title">Sig has ${n} thing${n === 1 ? "" : "s"} for you</div><div class="sig-sub">In the order they need you.</div></div></div>
   ${o.askBox ? sigAskBoxHtml() : ""}
   ${items.slice(0, 3).map(row).join("")}
@@ -1902,6 +1902,17 @@ function wireSigQueue(root, items, links) {
       const k = btn.getAttribute("data-sq");
       const r = k.charAt(0) === "L" ? (links || [])[Number(k.slice(1))] : items[Number(k)];
       if (r && r.act) r.act(btn);
+    };
+  });
+  // Dismissal exists only on items that carry a dismissKey
+  // (today: the U4 campus-moment prompt, per season). The key
+  // is written to localStorage and the current view re-renders,
+  // so the queue, its count, and the Sig tab all agree.
+  root.querySelectorAll("[data-sqx]").forEach((btn) => {
+    btn.onclick = () => {
+      const r = items[Number(btn.getAttribute("data-sqx"))];
+      if (r && r.dismissKey) { try { localStorage.setItem(r.dismissKey, "1"); } catch (e) { /* storage unavailable: the re-render below still hides it for this view */ } }
+      render();
     };
   });
 }
@@ -7783,6 +7794,26 @@ function visitSegOf(b, role) {
   return "upcoming";
 }
 
+// Campus season windows (U4): generic US academic-calendar
+// windows, deliberately NOT any school's real dates. At most
+// one window matches at a time; the first match wins. The
+// prompt copy names seasons, never schools.
+const CAMPUS_SEASONS = [
+  { id: "move_in", from: [8, 1], to: [9, 10], short: "Students are moving back in", text: "Students are moving back in around local campuses. Student creators book fast in the first weeks of term." },
+  { id: "homecoming", from: [9, 25], to: [11, 10], short: "Homecoming season is on", text: "Homecoming season is on at local universities. It is one of the busiest stretches of the year for the businesses around a campus." },
+  { id: "spring_start", from: [1, 5], to: [1, 25], short: "A new term is starting", text: "A new term is starting at local universities. Student creators are settling their schedules now." },
+  { id: "graduation", from: [4, 20], to: [5, 20], short: "Graduation season is coming", text: "Graduation season is coming at local universities. Families in town means full tables for the businesses near campus." },
+];
+function campusSeasonNow(when) {
+  const d = when || new Date();
+  const md = (m, day) => m * 100 + day;
+  const cur = md(d.getMonth() + 1, d.getDate());
+  for (const s of CAMPUS_SEASONS) {
+    if (cur >= md(s.from[0], s.from[1]) && cur <= md(s.to[0], s.to[1])) return s;
+  }
+  return null;
+}
+
 async function loadBusinessHome() {
   const el = document.getElementById("tab-body");
   if (!el) return;
@@ -7876,6 +7907,20 @@ async function loadBusinessHome() {
     if (d.staffPinSet === false) add(4, now, "Set your staff PIN so your team can redeem visits.", "Set PIN", () => go("dashboard", "Settings"), "Staff PIN not set");
     if ((h.visitsCarried || 0) > 0 && h.carriedExpiresAt) add(4, now, `${h.visitsCarried} rolled visit${h.visitsCarried === 1 ? "" : "s"} expire ${dueDayWords(h.carriedExpiresAt)}.`, "See plan", () => go("dashboard", "Plan"), `Rollover expires ${dueDayWords(h.carriedExpiresAt)}`);
     else if ((h.visitsRemaining || 0) <= 1) add(4, now, `You have ${h.visitsRemaining || 0} visit${(h.visitsRemaining || 0) === 1 ? "" : "s"} left this month.`, "See plan", () => go("dashboard", "Plan"), `${h.visitsRemaining || 0} visit${(h.visitsRemaining || 0) === 1 ? "" : "s"} left this month`);
+    // Campus moments (university layers U4, Jeff, 2026-10-28):
+    // a business that flagged itself open to student creators
+    // (U3) gets one seasonal prompt in its Sig queue while a
+    // generic campus window is open. Seasons only: the copy
+    // never names a school and never states a real campus date.
+    // Dismissible per season (localStorage key carries the
+    // season id, so next season's prompt returns on its own).
+    const season = campusSeasonNow();
+    if (season && bz.studentOpen === true) {
+      const dismissKey = `signl_campus_prompt:${u.id}:${season.id}`;
+      let dismissed = false;
+      try { dismissed = !!localStorage.getItem(dismissKey); } catch (e) { /* storage unavailable: show the prompt */ }
+      if (!dismissed) items.push({ cls: 4, at: now, text: season.text, short: season.short, btn: "Find creators", act: () => go("dashboard", "Discover"), dismissKey });
+    }
     state.waitCounts.bizVisits = visitToday.length + postDue.length + needsTime.length;
     items.sort((a, b) => a.cls - b.cls || a.at - b.at);
     const queue = items.slice(0, 7);

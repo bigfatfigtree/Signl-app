@@ -2242,6 +2242,7 @@ body.v3-on #tabbar { display: block; position: fixed; left: 0; right: 0; bottom:
 .sig-stxt { flex: 1; font-size: 0.95rem; }
 .sig-item .btn { flex: none; }
 .sig-seeall { margin-top: 10px; background: none; border: 0; cursor: pointer; font: inherit; font-weight: 700; color: var(--ink); padding: 6px 2px; }
+.sig-x { flex: none; background: none; border: 0; cursor: pointer; font: inherit; font-size: 18px; line-height: 1; color: var(--ink3, #7C877C); padding: 4px 6px; }
 .sig-links { margin-top: 8px; display: flex; gap: 18px; flex-wrap: wrap; }
 .sig-link { background: none; border: 0; cursor: pointer; font: inherit; font-weight: 700; color: var(--ink); text-decoration: underline; text-underline-offset: 3px; padding: 4px 0; }
 .sig-empty { margin-top: 10px; }

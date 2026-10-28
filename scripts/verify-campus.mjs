@@ -367,6 +367,16 @@ try {
   check("U2: the status is computed, so an alumnus referrer loses it on the next read", lead2Flip.status === 200 && lead2Me2.data.user.ladder.campusLead === null && !(lead2Me2.data.user.badges || []).some((b) => b.id === "campus_lead"), JSON.stringify(lead2Me2.data.user.ladder.campusLead));
   check("U2: profile completion is untouched by the layer", lead2Me.data.user.profileCompletion.complete === true, JSON.stringify(lead2Me.data.user.profileCompletion));
 
+  // ---------- U4: Sig campus-moment prompts (client season table) ----------
+  const appSrcU4 = fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), "..", "public", "app.js"), "utf8");
+  const seasonsMatch = appSrcU4.match(/const CAMPUS_SEASONS = (\[[\s\S]*?\n\];)/);
+  check("U4: client ships the campus season table", !!seasonsMatch, "");
+  const CAMPUS_SEASONS_U4 = seasonsMatch ? Function("return " + seasonsMatch[1].replace(/;$/, ""))() : [];
+  const seasonAt = (m, d) => { const cur = m * 100 + d; for (const s of CAMPUS_SEASONS_U4) { if (cur >= s.from[0] * 100 + s.from[1] && cur <= s.to[0] * 100 + s.to[1]) return s.id; } return null; };
+  check("U4: season windows match the generic academic calendar", seasonAt(8, 15) === "move_in" && seasonAt(10, 28) === "homecoming" && seasonAt(1, 10) === "spring_start" && seasonAt(5, 1) === "graduation" && seasonAt(12, 25) === null && seasonAt(6, 15) === null, JSON.stringify(CAMPUS_SEASONS_U4.map((s) => s.id)));
+  check("U4: prompt copy names no school and states no month or date", CAMPUS_SEASONS_U4.every((s) => !UNIVERSITY_OPTIONS.some((u) => s.text.includes(u)) && !/January|February|March|April|May|June|July|August|September|October|November|December|\d/.test(s.text)), JSON.stringify(CAMPUS_SEASONS_U4.map((s) => s.text)));
+  check("U4: the prompt is gated on the business student flag and dismisses per season", appSrcU4.includes("bz.studentOpen === true") && appSrcU4.includes("signl_campus_prompt:") && appSrcU4.includes("campusSeasonNow()") && appSrcU4.includes("data-sqx"), "");
+
   const appJsRes = await fetch(BASE + "/app.js");
   const appJs = await appJsRes.text();
   check("U1: client ships the university filter on Discover and its preview twin", appJs.includes("f-university") && appJs.includes("discoverUniversity") && appJs.includes("syncUniversityOptions") && appJs.includes("pvf-university"), "");
