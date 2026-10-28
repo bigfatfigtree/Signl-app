@@ -94,7 +94,7 @@ const COMP_FIT = {
   "Fitness Studio": ["Fitness classes & passes", "Health & wellness services"],
   "Retail": ["Retail products"],
   "Attraction": ["Attractions & experiences"],
-  "Local Services": ["Local services"],
+  "Local Services": ["Local Services"],
   "Other": ["Other"],
 };
 
@@ -122,6 +122,9 @@ const CATEGORY_SHORT = {
   "Retail & Shopping": "shopping",
   "Attractions & Events": "events",
   "Local Services": "local services",
+  "Lifestyle": "lifestyle",
+  "Sports": "sports",
+  "Music": "music",
 };
 
 function norm(s) {

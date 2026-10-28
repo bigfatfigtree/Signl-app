@@ -5,7 +5,7 @@ const crypto = require("crypto");
 const store = require("./store");
 const auth = require("./auth");
 const { logEvent, listEvents } = require("./events");
-const { MARKETS, normalizeMarketName, resolveTypedCity, TIERS, CREATOR_CATEGORIES, COMP_CATEGORIES, BUSINESS_CATEGORIES, PLANS, PROFESSIONS, REALTOR_PROFESSION, tierForFollowers, normalizeTierBand } = require("./markets");
+const { MARKETS, normalizeMarketName, resolveTypedCity, TIERS, CREATOR_CATEGORIES, COMP_CATEGORIES, BUSINESS_CATEGORIES, PLANS, PROFESSIONS, LEGACY_PROFESSIONS, REALTOR_PROFESSION, canonicalFromList, tierForFollowers, normalizeTierBand } = require("./markets");
 const { computeLocalImpactScore, summarizeHistory } = require("./score");
 const { computeFit, buildFitNote } = require("./fit");
 const { emailEnabled, sendEmail, senderProfile } = require("./email");
@@ -2191,20 +2191,28 @@ function cleanStringList(value, allowed, maxItems) {
   let list = [];
   if (Array.isArray(value)) list = value;
   else if (typeof value === "string") list = value.split(",");
-  return list
+  const mapped = list
     .map((x) => String(x).trim())
-    .filter((x) => x && (!allowed || allowed.includes(x)))
-    .slice(0, maxItems || 8);
+    // With an allowed list, each value is canonicalized against it
+    // (case-insensitive, whitespace-collapsed: taxonomy integrity,
+    // 2026-10-28), so a variant spelling stores as the canonical
+    // string instead of being dropped; unknown values still drop.
+    .map((x) => (allowed ? canonicalFromList(x, allowed) : x))
+    .filter((x) => !!x);
+  return [...new Set(mapped)].slice(0, maxItems || 8);
 }
 
 // Profession + the realtor layer (Jeff, 2026-10-22). Profession is
-// an optional self-description from the fixed everyday list; junk
-// or a missing value stores "". Only REALTOR_PROFESSION carries
-// behavior: it flags the creator as a realtor, which unlocks the
-// neighborhood tags and the brokerage line on the public profile.
+// an optional self-description; junk or a missing value stores "".
+// Only REALTOR_PROFESSION carries behavior: it flags the creator as
+// a realtor, which unlocks the neighborhood tags and the brokerage
+// line on the public profile. The offered list was reduced to the
+// three role values on 2026-10-28, but LEGACY_PROFESSIONS stay
+// acceptable here so a profile stored with a retired value keeps
+// loading, displaying and re-saving with its value intact.
 function cleanProfession(value) {
   const v = typeof value === "string" ? value.trim() : "";
-  return PROFESSIONS.includes(v) ? v : "";
+  return PROFESSIONS.includes(v) || LEGACY_PROFESSIONS.includes(v) ? v : "";
 }
 
 function creatorIsRealtor(c) {
@@ -2901,8 +2909,30 @@ async function discoverCards(query, viewer) {
   const market = query.market || (viewer && viewer.role === "business" ? viewer.market : null);
   if (market) creators = creators.filter((u) => normalizeMarketName(u.market) === (marketByName(market) || {}).name);
   if (query.tier) creators = creators.filter((u) => u.creator && normalizeTierBand(u.creator.tierBand) === normalizeTierBand(query.tier));
-  if (query.category) creators = creators.filter((u) => u.creator && u.creator.categories.includes(query.category));
-  if (query.compCategory) creators = creators.filter((u) => u.creator && (u.creator.compCategories || []).includes(query.compCategory));
+  // Category filter (multi-select, Jeff, 2026-10-28): the Discover
+  // chip row sends the selected set as one comma-separated
+  // ?category= list and a creator matches when ANY selected
+  // category is among theirs (OR). ?categories= is accepted as the
+  // same list. A single value behaves exactly as the old exact
+  // match did, so existing links and callers keep working.
+  const catSet = new Set();
+  for (const raw of [query.category, query.categories]) {
+    if (raw) for (const piece of String(raw).split(",")) {
+      const c = piece.trim();
+      // Query values canonicalize too (taxonomy integrity): a
+      // variant spelling in a link still lands on the canonical
+      // category; unknown values pass through and match nothing.
+      if (c) catSet.add(canonicalFromList(c, CREATOR_CATEGORIES) || c);
+    }
+  }
+  // Stored values canonicalize at read as well, so a creator whose
+  // record carries a legacy variant spelling stays filterable even
+  // before their next save rewrites it canonically.
+  if (catSet.size) creators = creators.filter((u) => u.creator && (u.creator.categories || []).some((c) => catSet.has(canonicalFromList(c, CREATOR_CATEGORIES) || c)));
+  if (query.compCategory) {
+    const wantComp = canonicalFromList(query.compCategory, COMP_CATEGORIES) || query.compCategory;
+    creators = creators.filter((u) => u.creator && (u.creator.compCategories || []).some((x) => (canonicalFromList(x, COMP_CATEGORIES) || x) === wantComp));
+  }
   // Spanish content filter (Jeff, 2026-10-28): the Discover
   // "Español" chip. Attribute only; unset means excluded here.
   if (query.spanish === "1" || query.spanish === "true") creators = creators.filter((u) => u.creator && u.creator.spanishContent === true);
@@ -7929,11 +7959,15 @@ async function route(event) {
           c.licensingFee = fee;
         }
       }
-      if (Array.isArray(b.categories)) c.categories = b.categories.filter((x) => CREATOR_CATEGORIES.includes(x));
+      if (Array.isArray(b.categories)) c.categories = [...new Set(b.categories.map((x) => canonicalFromList(x, CREATOR_CATEGORIES)).filter((x) => !!x))];
       if (Array.isArray(b.compCategories)) {
         // Paid cash campaigns stay selectable only while the creator is
         // in the Headliners tier; dropping a tier drops the option.
-        c.compCategories = b.compCategories.filter((x) => COMP_CATEGORIES.includes(x) || (x === PAID_COMP && c.tierBand === "Headliners"));
+        // Values canonicalize against COMP_CATEGORIES first (taxonomy
+        // integrity); PAID_COMP rides outside that list as before.
+        c.compCategories = [...new Set(b.compCategories
+          .map((x) => (x === PAID_COMP ? PAID_COMP : canonicalFromList(x, COMP_CATEGORIES)))
+          .filter((x) => !!x && (COMP_CATEGORIES.includes(x) || (x === PAID_COMP && c.tierBand === "Headliners"))))];
         c.openToPaidCampaigns = c.compCategories.includes(PAID_COMP);
       }
       if (c.tierBand !== "Headliners" && Array.isArray(c.compCategories) && c.compCategories.includes(PAID_COMP)) {
@@ -9327,7 +9361,8 @@ async function route(event) {
   //   ?neighborhood=  case-insensitive text match on the creator's
   //                   neighborhood/area (also matches their city)
   //   ?tier=          tier band (Neighbors / Locals / Headliners)
-  //   ?category=      a creator content category
+  //   ?category=      creator content category, or a comma-separated
+  //                   list of them (matches ANY of them: OR)
   //   ?compCategory=  a comp category the creator accepts (business
   //                   category fit: "what would they take from us")
   //   ?followersMin= / ?followersMax=   follower-count range

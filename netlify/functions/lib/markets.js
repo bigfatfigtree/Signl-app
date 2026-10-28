@@ -331,22 +331,38 @@ function normalizeTierBand(b) {
 }
 
 // What creators create in (profile builder, launch spec 2026-10-18).
+// Lifestyle, Sports and Music added 2026-10-28 (Jeff): every surface
+// (join chips, profile editing, Discover chips, preview) reads this
+// one list through bootstrap, and every save path validates against
+// it, so new values land everywhere at once. "Other" stays last.
 const CREATOR_CATEGORIES = [
   "Food & Drink", "Nightlife", "Beauty & Grooming", "Fitness & Wellness",
   "Health & Wellness", "Retail & Shopping", "Attractions & Events",
-  "Local Services", "Other",
+  "Local Services", "Lifestyle", "Sports", "Music", "Other",
 ];
 
 // What the creator does off-platform (profile builder, Jeff,
 // 2026-10-22: the realtor layer). Optional everyday-language
 // self-description; it never gates completeness, offers, or tiers.
-// "Real estate agent" is the one value with product behavior: it
-// flags the profile as a realtor profile (neighborhood tags,
-// brokerage attribution, listing proof sheet).
+// Reduced 2026-10-28 (Jeff) to the three values that carry product
+// behavior or identity: "Real estate agent" flags a realtor profile
+// (neighborhood tags, brokerage attribution, listing proof sheet),
+// "Student" pairs with the university/campus fields, and
+// "Photographer / videographer" is a creator-type role. The themes
+// the old everyday values named are expressed through CREATOR_
+// CATEGORIES now ("What you create in"), Family & parenting
+// included via Lifestyle.
 const PROFESSIONS = [
+  "Real estate agent", "Student", "Photographer / videographer",
+];
+// Values retired from the offered list on 2026-10-28. They remain
+// VALID stored values: cleanProfession keeps accepting them so a
+// profile saved with one loads, displays and re-saves untouched.
+// They are never offered to new selections (bootstrap ships only
+// PROFESSIONS).
+const LEGACY_PROFESSIONS = [
   "Food & drink", "Beauty & style", "Fitness & wellness",
-  "Family & parenting", "Real estate agent",
-  "Photographer / videographer", "Student", "Other",
+  "Family & parenting", "Other",
 ];
 const REALTOR_PROFESSION = "Real estate agent";
 
@@ -355,13 +371,32 @@ const COMP_CATEGORIES = [
   "Restaurant meals", "Drinks & nightlife", "Beauty services",
   "Fitness classes & passes", "Health & wellness services",
   "Retail products", "Attractions & experiences",
-  "Local services", "Other",
+  "Local Services", "Other",
 ];
 
 const BUSINESS_CATEGORIES = [
   "Restaurant", "Bar", "Coffee & Bakery", "Salon & Barbershop",
   "Fitness Studio", "Retail", "Attraction", "Local Services", "Other",
 ];
+
+// Taxonomy string integrity (Jeff, 2026-10-28): category values
+// must match the canonical lists byte-for-byte on every surface.
+// COMP_CATEGORIES once spelled its last-but-one value "Local
+// services" while the creator and business lists use "Local
+// Services"; the comp list now uses the same spelling, and every
+// write/read path canonicalizes through canonicalFromList, which
+// matches case-insensitively (and collapses whitespace) so a
+// legacy stored variant like "Local services" still validates,
+// still saves as the canonical string, and still matches Discover
+// filters instead of silently dropping or going unfilterable.
+function canonicalFromList(value, list) {
+  if (typeof value !== "string") return null;
+  const norm = (s) => s.trim().replace(/\s+/g, " ").toLowerCase();
+  const v = norm(value);
+  if (!v) return null;
+  for (const item of list || []) if (norm(item) === v) return item;
+  return null;
+}
 
 // Three plans (Jeff, 2026-10-19; FOUNDING structure locked
 // 2026-10-26). Prices below are FOUNDING rates: a founding business
@@ -644,4 +679,4 @@ function resolveTypedCity(raw, hints, markets) {
   };
 }
 
-module.exports = { MARKETS, MARKET_NAME_ALIASES, normalizeMarketName, MARKET_STATES, parseTypedCity, resolveTypedCity, TIERS, CREATOR_CATEGORIES, COMP_CATEGORIES, BUSINESS_CATEGORIES, PLANS, PROFESSIONS, REALTOR_PROFESSION, tierForFollowers, normalizeTierBand };
+module.exports = { MARKETS, MARKET_NAME_ALIASES, normalizeMarketName, MARKET_STATES, parseTypedCity, resolveTypedCity, TIERS, CREATOR_CATEGORIES, COMP_CATEGORIES, BUSINESS_CATEGORIES, PLANS, PROFESSIONS, LEGACY_PROFESSIONS, REALTOR_PROFESSION, canonicalFromList, tierForFollowers, normalizeTierBand };

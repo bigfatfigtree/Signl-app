@@ -2293,6 +2293,19 @@ body.v3-on #tabbar { display: block; position: fixed; left: 0; right: 0; bottom:
 .dcat-row { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0; }
 .dcat-chip { border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 8px 14px; cursor: pointer; font: inherit; font-weight: 600; min-height: 40px; }
 .dcat-chip.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+/* Language row (Jeff, 2026-10-28): Español is a language filter,
+   not a category, so it sits in its own labeled row above the
+   category chips. Wraps like the chip row; never clips. */
+.dlang-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 12px 0 0; }
+.dlang-label { font-size: .78rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--ink3); }
+/* Spanish highlights (Jeff, 2026-10-28): one tint treatment shared
+   by the creator's Spanish panel and the business composer's
+   Spanish callout, so the option reads as a featured section on
+   both sides. Pale mint field, same family as the visit duebar. */
+.spanish-panel { background: var(--mint-pale); border: 1px solid #CDE9D8; border-radius: var(--r-md); padding: 14px 16px; margin: 0 0 12px; }
+.spanish-panel-h { margin: 0 0 4px; font-size: 1.02rem; }
+.spanish-panel-sub { margin: 0 0 10px; color: var(--ink2); }
+.spanish-panel .lane-row { margin-bottom: 0; }
 .filters-fold { border: 1px solid var(--line); border-radius: var(--r-md); padding: 10px 14px; margin: 10px 0; background: #fff; }
 .filters-fold summary { cursor: pointer; font-weight: 700; padding: 4px 0; }
 
@@ -2480,11 +2493,14 @@ body.v3-on .counter-cta svg { color: var(--mint); }
 body.v3-on { --mint-deep: #0C7A43; }
 
 /* Find creators: the deck is the screen. The filter band compresses to
-   a compact control strip — category chips become one swipeable row —
-   so the card and its dock own the phone. */
-body.v3-on .dcat-row { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 8px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
-body.v3-on .dcat-row::-webkit-scrollbar { display: none; }
+   a compact control strip, and the category chip row WRAPS inside the
+   content column (Jeff, 2026-10-28: the old single swipeable row
+   clipped off the rail column's right edge on desktop, hiding chips
+   including Español). Every chip stays visible and tappable at rail
+   and phone widths; chips never shrink, the row wraps instead. */
+body.v3-on .dcat-row { flex-wrap: wrap; overflow-x: visible; padding-bottom: 0; }
 body.v3-on .dcat-chip { flex: 0 0 auto; }
+body.v3-on .dcat-chip.on { color: var(--mint); }
 body.v3-on .filters.disc-top { margin: 6px 0 10px; padding: 10px 12px; }
 body.v3-on .filters.disc-top select { padding: 10px 12px; }
 body.v3-on .filters-fold { margin: 2px 0 8px; }
@@ -2630,13 +2646,9 @@ body.admin-on .kpi-card .kpi-sub { color: rgba(255, 255, 255, .66); }
 body.preview-on .topbar, body.preview-on .footer { display: none; }
 body.preview-on main { padding-top: 20px; }
 
-/* --- Preview Discover mirrors the live chip row: one
-   scrolling row, active chip ink with mint text. --- */
-body.preview-on .dcat-row {
-  flex-wrap: nowrap; overflow-x: auto; padding-bottom: 8px;
-  scrollbar-width: none; -webkit-overflow-scrolling: touch;
-}
-body.preview-on .dcat-row::-webkit-scrollbar { display: none; }
+/* --- Preview Discover mirrors the live chip row: a wrapped
+   row inside the column, active chip ink with mint text. --- */
+body.preview-on .dcat-row { flex-wrap: wrap; overflow-x: visible; padding-bottom: 0; }
 body.preview-on .dcat-chip { flex: 0 0 auto; }
 body.preview-on .dcat-chip.on { color: var(--mint); }
 .pv-step-head { margin: 2px 0 8px; }

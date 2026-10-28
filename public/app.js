@@ -35,6 +35,8 @@ const state = {
   sigThread: [], // V4.1: the Sig conversation on the Sig tab ([{who, text, flow}]) — session-only, like every other Sig surface
   sigFocusAsk: false, // V4.1: set by the Home ask box so the Sig tab lands with its chat input focused
   discover: [],
+  discoverCats: [], // Discover category filter: the chip row owns it, multi-select, OR semantics
+  discoverSpanish: false, // Discover Spanish-content filter (the Español chip)
   threads: [],
   activeThread: null, // other user id
   counterCode: "",
@@ -968,8 +970,15 @@ function platformChipsHtml(id, selected, syncName) {
   return chipSelectHtml(id, PRIMARY_PLATFORMS_CLIENT.map((p) => ({ value: p.id, label: p.label })), selected || "instagram", syncName, false);
 }
 function professionChipsHtml(id, selected, syncName) {
-  const list = (state.boot && state.boot.professions) || [];
-  return chipSelectHtml(id, list.map((x) => ({ value: x, label: x })), selected || "", syncName, true);
+  const list = ((state.boot && state.boot.professions) || []).slice();
+  const sel = selected || "";
+  // Legacy values (the pre-2026-10-28 everyday list) still live on
+  // stored profiles: when the saved value is not one of the three
+  // role options, it rides as its own chip so it loads, displays
+  // selected, and re-saves untouched until the creator picks a
+  // role (or taps it off) instead.
+  if (sel && !list.includes(sel)) list.push(sel);
+  return chipSelectHtml(id, list.map((x) => ({ value: x, label: x })), sel, syncName, true);
 }
 function universityStatusChipsHtml(id, selected) {
   return chipSelectHtml(id, [
@@ -3548,7 +3557,7 @@ function renderJoinCreator() {
           </div>
         </div>
         <div class="field"><label>Your neighborhood or area (optional)</label><input id="jc-neighborhood" placeholder="For example: Oceanfront, Ghent, Town Center" maxlength="80"><p class="small muted">Businesses search by neighborhood.</p></div>
-        <div class="field"><label>What do you do? (optional)</label>${professionChipsHtml("jc-profession", "")}<p class="small muted">Realtors: pick Real estate agent for neighborhood tags + a listing proof sheet.</p></div>
+        <div class="field"><label>Also one of these? (optional)</label>${professionChipsHtml("jc-profession", "")}<p class="small muted">Realtors: pick Real estate agent for neighborhood tags + a listing proof sheet.</p></div>
         <div class="field"><label>Your university (if you are a student now)</label><input id="jc-university" placeholder="Start typing your school" maxlength="120"><div class="uni-results" id="jc-university-results"></div><p class="small muted">Current students get a campus badge. Pick from the list, or type it in full.</p></div>
         <div class="field"><label>Student status (optional)</label>${universityStatusChipsHtml("jc-university-status", "")}<p class="small muted">Badge is current students only.</p></div>
       </div>
@@ -5330,6 +5339,23 @@ function laneFeeSave() {
   laneSave({ licensingFee: Math.round(v * 100) / 100 });
   return false;
 }
+// Spanish content panel (Jeff, 2026-10-28): the creator's Spanish
+// toggle lives HERE, in its own highlighted tint panel rendered
+// immediately above the lane controls, and nowhere else. It is the
+// one Spanish control (the row that used to sit inside
+// laneControlsHtml is gone) and it writes through the same
+// laneSave PATCH /me/profile spanishContent path as before.
+// rerenderLaneControls refreshes it alongside the lane stack after
+// every save, so its switch and helper line never go stale.
+function spanishPanelHtml(c) {
+  const on = !!(c && c.spanishContent);
+  return `<div class="spanish-panel" id="spanish-panel">
+    <h4 class="spanish-panel-h">¿Creas contenido en español?</h4>
+    <p class="small spanish-panel-sub">Businesses in Spanish-first markets filter for creators who make content in Spanish.</p>
+    <div class="lrow lane-row"><input type="checkbox" class="sw lane-sw" id="lane-spanish" ${on ? "checked" : ""} onchange="laneToggleSpanish(this)"><div><label class="lname" for="lane-spanish">Creates content in Spanish</label> <span class="lline" id="lane-spanish-line">— ${esc(laneSpanishLine(c || {}))}</span></div></div>
+  </div>`;
+}
+
 function laneControlsHtml(c) {
   const compOn = !c || c.compOpen !== false;
   const rate = laneRateOf(c || {});
@@ -5348,7 +5374,6 @@ function laneControlsHtml(c) {
       <div class="lane-rate-flex"><input type="number" id="lane-fee" min="1" step="1" inputmode="numeric" placeholder="75" value="${fee || ""}"><button type="button" class="btn small-btn" onclick="return laneFeeSave()">Save fee</button></div>
       <p class="small muted">A business can ask to license one of your delivered comped posts for 90 days of reposting and ad use at this fee. You approve or decline every request; nothing runs without your yes. Leave blank to keep comped posts native-share only.</p>
     </div>
-    <div class="lrow lane-row"><input type="checkbox" class="sw lane-sw" id="lane-spanish" ${c && c.spanishContent ? "checked" : ""} onchange="laneToggleSpanish(this)"><div><label class="lname" for="lane-spanish">Creates content in Spanish</label> <span class="lline" id="lane-spanish-line">— ${esc(laneSpanishLine(c || {}))}</span></div></div>
     <p class="small lane-err" id="lane-err" style="display:none"></p>
     ${payoutsStepHtml(c)}
   </div>`;
@@ -5432,6 +5457,8 @@ function rerenderLaneControls() {
   const row = document.getElementById("lane-rate-row");
   const rowOpen = !!row && row.style.display !== "none";
   host.outerHTML = laneControlsHtml(state.user.creator);
+  const sp = document.getElementById("spanish-panel");
+  if (sp) sp.outerHTML = spanishPanelHtml(state.user.creator);
   if (rowOpen) {
     const r2 = document.getElementById("lane-rate-row");
     if (r2) r2.style.display = "block";
@@ -5517,6 +5544,7 @@ function homePaidLaneHtml(creator, footerHtml) {
   <section class="panel">
     <p class="ui-kicker">Paid lane</p>
     <h3 class="home-h">Comp and paid, your choice</h3>
+    ${spanishPanelHtml(creator || {})}
     ${laneControlsHtml(creator || {})}
     <p class="small muted">${paymentsLive() ? "Charged to the business's card at booking. Held until your post is live — released 48h after proof." : "Recorded in the app, no card charged. Held until your post is live — released 48h after proof."}</p>
     ${footerHtml || ""}
@@ -5793,10 +5821,30 @@ async function loadCreatorHome() {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
 }
+// "All" chip atop the profile form's checkbox rows (Jeff,
+// 2026-10-28): tapping it selects or clears the whole row, and it
+// reads checked exactly when every box in the row is checked, so
+// unticking any single option drops All's active state. The All
+// inputs carry ids but no name, so the save collectors (which read
+// by name) never mistake them for values.
+function profileAllToggle(name, el) {
+  document.querySelectorAll(`input[name=${name}]`).forEach((b) => { b.checked = !!el.checked; });
+  return true;
+}
+function profileRowSync(name) {
+  const all = document.getElementById(name + "-all");
+  if (!all) return true;
+  const boxes = Array.from(document.querySelectorAll(`input[name=${name}]`));
+  all.checked = boxes.length > 0 && boxes.every((b) => b.checked);
+  return true;
+}
+
 function creatorProfileHtml(u) {
   const c = u.creator || {};
-  const cats = state.boot.creatorCategories.map((x) => `<label><input type="checkbox" name="p-cat" value="${esc(x)}" ${c.categories && c.categories.includes(x) ? "checked" : ""}> ${esc(x)}</label>`).join("");
-  const comps = state.boot.compCategories.map((x) => `<label><input type="checkbox" name="p-comp" value="${esc(x)}" ${c.compCategories && c.compCategories.includes(x) ? "checked" : ""}> ${esc(x)}</label>`).join("");
+  const allCatsOn = state.boot.creatorCategories.length > 0 && state.boot.creatorCategories.every((x) => (c.categories || []).includes(x));
+  const allCompsOn = state.boot.compCategories.length > 0 && state.boot.compCategories.every((x) => (c.compCategories || []).includes(x));
+  const cats = `<label><input type="checkbox" id="p-cat-all" ${allCatsOn ? "checked" : ""} onchange="profileAllToggle('p-cat', this)"> All</label>` + state.boot.creatorCategories.map((x) => `<label><input type="checkbox" name="p-cat" value="${esc(x)}" onchange="profileRowSync('p-cat')" ${c.categories && c.categories.includes(x) ? "checked" : ""}> ${esc(x)}</label>`).join("");
+  const comps = `<label><input type="checkbox" id="p-comp-all" ${allCompsOn ? "checked" : ""} onchange="profileAllToggle('p-comp', this)"> All</label>` + state.boot.compCategories.map((x) => `<label><input type="checkbox" name="p-comp" value="${esc(x)}" onchange="profileRowSync('p-comp')" ${c.compCategories && c.compCategories.includes(x) ? "checked" : ""}> ${esc(x)}</label>`).join("");
   const stackVal = (id) => (c.audienceStack && c.audienceStack[id]) || (id === "instagram" ? c.followerCount || 0 : 0);
   const stackRows = [
     ["instagram", "Instagram followers", "p-followers"],
@@ -5850,7 +5898,7 @@ function creatorProfileHtml(u) {
           : `<div class="field"><label>Home city (${esc(marketDisplayName(u.market))})</label><select id="p-city">${cityOptions(u.market, u.city || "")}</select></div>`}
       </div>
       <div class="field"><label>Your neighborhood or area</label><input id="p-neighborhood" value="${esc(c.neighborhood || "")}" placeholder="Optional, for example: Oceanfront, Ghent, Town Center" maxlength="80"><p class="small muted">Businesses search by neighborhood. Keep it to the area you actually post from.</p></div>
-      <div class="field"><label>What do you do? (optional)</label>${professionChipsHtml("p-profession", c.profession || "", "syncRealtorFields")}<p class="small muted">Realtors: pick Real estate agent and the fields below appear. Your profile gains a Realtor badge, your neighborhoods, and your brokerage line.</p></div>
+      <div class="field"><label>Also one of these? (optional)</label>${professionChipsHtml("p-profession", c.profession || "", "syncRealtorFields")}<p class="small muted">Realtors: pick Real estate agent and the fields below appear. Your profile gains a Realtor badge, your neighborhoods, and your brokerage line.</p></div>
       <div id="p-realtor-block" style="display:${isRealtorProfile(c) ? "" : "none"}">
         <div class="field"><label>Your neighborhoods (up to 3)</label>
           ${[0, 1, 2].map((i) => `<input id="p-hood-${i}" value="${esc((c.farmAreas || [])[i] || "")}" placeholder="For example: Ghent" maxlength="60" style="margin-bottom:8px">`).join("")}
@@ -5899,6 +5947,7 @@ function creatorProfileHtml(u) {
       <div class="showcase-block">
         <h4>How businesses can book you</h4>
         <p class="small muted">These save the moment you flip them — the same switches as your dashboard.</p>
+        ${spanishPanelHtml(c)}
         ${laneControlsHtml(c)}
       </div>
       <div class="field"><label>Best work (up to 3 links)</label>
@@ -8132,12 +8181,35 @@ async function loadFavorites() {
   }
 }
 
+// Category selection lives in the chip row and nowhere else
+// (Jeff, 2026-10-28): there is no Category control in the More
+// filters fold anymore. The chips are MULTI-SELECT: a tap toggles
+// the category in or out of state.discoverCats, results match ANY
+// selected category (OR), and the "All" chip clears the set (it is
+// the active chip exactly when the set is empty).
 function discoverCatChip(cat, btn) {
-  const sel = document.getElementById("f-category");
-  if (sel) sel.value = cat;
-  document.querySelectorAll(".dcat-chip:not(.esp-chip)").forEach((b) => b.classList.toggle("on", b === btn));
+  if (cat === "") {
+    state.discoverCats = [];
+  } else {
+    const set = new Set(state.discoverCats || []);
+    if (set.has(cat)) set.delete(cat); else set.add(cat);
+    state.discoverCats = [...set];
+  }
+  syncDiscoverCatChips();
   runDiscover();
   return false;
+}
+
+// Re-paint chip states from state.discoverCats: "All" is on when
+// the set is empty, each category chip is on when it is in the
+// set. The Español chip carries no data-cat and is untouched here;
+// it keeps its own independent state.
+function syncDiscoverCatChips() {
+  const set = new Set(state.discoverCats || []);
+  document.querySelectorAll(".dcat-chip[data-cat]").forEach((b) => {
+    const c = b.getAttribute("data-cat");
+    b.classList.toggle("on", c === "" ? set.size === 0 : set.has(c));
+  });
 }
 
 // Spanish content filter chip (Jeff, 2026-10-28): independent
@@ -8162,12 +8234,12 @@ async function loadDiscover() {
     <div class="filters disc-top">
       <div><label>Market</label><select id="f-market">${marketOptions(u.market)}</select></div>
     </div>
-    <div class="dcat-row">${[""].concat(state.boot.creatorCategories).map((c) => `<button type="button" class="dcat-chip${c === "" ? " on" : ""}" onclick="return discoverCatChip('${esc(c)}', this)">${c === "" ? "All" : esc(c)}</button>`).join("")}<button type="button" id="dchip-spanish" class="dcat-chip esp-chip${state.discoverSpanish ? " on" : ""}" onclick="return discoverSpanishChip(this)">Español</button></div>
+    <div class="dlang-row"><span class="dlang-label">Language</span><button type="button" id="dchip-spanish" class="dcat-chip esp-chip${state.discoverSpanish ? " on" : ""}" onclick="return discoverSpanishChip(this)">Español</button></div>
+    <div class="dcat-row"><button type="button" data-cat="" class="dcat-chip${(state.discoverCats || []).length ? "" : " on"}" onclick="return discoverCatChip('', this)">All</button>${state.boot.creatorCategories.map((c) => `<button type="button" data-cat="${esc(c)}" class="dcat-chip${(state.discoverCats || []).includes(c) ? " on" : ""}" onclick="return discoverCatChip('${esc(c)}', this)">${esc(c)}</button>`).join("")}</div>
     <details class="filters-fold"><summary>More filters</summary>
     <div class="filters">
       <div><label>Neighborhood / area</label><input id="f-neighborhood" placeholder="For example: Oceanfront, Ghent"></div>
       <div><label>Tier</label><select id="f-tier"><option value="">All tiers</option>${state.boot.tiers.map((t) => `<option>${esc(t.id)}</option>`).join("")}</select></div>
-      <div><label>Category</label><select id="f-category"><option value="">All categories</option>${state.boot.creatorCategories.map((c) => `<option>${esc(c)}</option>`).join("")}</select></div>
       <div><label>Search</label><input id="f-q" placeholder="Name or handle"></div>
     </div>
     <div class="filters">
@@ -8191,11 +8263,13 @@ async function runDiscover() {
   const params = new URLSearchParams();
   const market = document.getElementById("f-market").value;
   const tier = document.getElementById("f-tier").value;
-  const category = document.getElementById("f-category").value;
+  // Category comes from the chip row alone (multi-select set),
+  // sent as one comma-separated list the server ORs.
+  const cats = state.discoverCats || [];
   const q = document.getElementById("f-q").value;
   if (market) params.set("market", market);
   if (tier) params.set("tier", tier);
-  if (category) params.set("category", category);
+  if (cats.length) params.set("category", cats.join(","));
   if (q) params.set("q", q);
   const neighborhood = document.getElementById("f-neighborhood").value.trim();
   const comp = document.getElementById("f-comp").value;
@@ -8314,9 +8388,11 @@ function discoverEndHtml(passed, total) {
 }
 function discoverClearFilters() {
   ["f-neighborhood", "f-q", "f-fmin", "f-fmax", "f-minlocal"].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ""; });
-  ["f-tier", "f-category", "f-comp", "f-sort"].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ""; });
+  ["f-tier", "f-comp", "f-sort"].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ""; });
   const paid = document.getElementById("f-paid");
   if (paid) paid.checked = false;
+  state.discoverCats = [];
+  syncDiscoverCatChips();
   state.discoverSpanish = false;
   const spChip = document.getElementById("dchip-spanish");
   if (spChip) spChip.classList.remove("on");
@@ -8781,7 +8857,7 @@ async function loadMyOffers() {
       </div>
       <div class="field"><label>What is included <span class="opt-tag">Optional</span> ${infoBtn("includes")}</label><textarea id="o2-includes" rows="2" placeholder="Any two entrees, two drinks each, dessert to share" oninput="offerCoachUpdate()">${esc(dft.includes || "")}</textarea></div>
       <div class="field"><label>The experience <span class="opt-tag">Optional</span> ${infoBtn("experience")}</label><textarea id="o2-experience" rows="2" placeholder="Chef's counter seats, open kitchen" oninput="offerCoachUpdate()">${esc(dft.experience || "")}</textarea></div>
-      <div class="field"><div class="lrow"><input type="checkbox" class="sw" id="o2-spanish" ${dft.spanish ? "checked" : ""} onchange="offerDraftSync()"><div><label for="o2-spanish"><strong>Content in Spanish</strong></label> <span class="opt-tag">Optional</span><p class="small muted" style="margin:2px 0 0">Turn on if this offer needs a creator who creates content in Spanish. The offer is marked; it never blocks anyone from applying.</p></div></div></div>
+      <div class="field spanish-panel"><div class="lrow"><input type="checkbox" class="sw" id="o2-spanish" ${dft.spanish ? "checked" : ""} onchange="offerDraftSync()"><div><label for="o2-spanish"><strong>Content in Spanish</strong></label> <span class="opt-tag">Optional</span><p class="small muted" style="margin:2px 0 0">Reach Spanish-speaking customers with content made in Spanish. The offer is marked; it never blocks anyone from applying.</p></div></div></div>
       </div>
       ${mode === "open" ? `
       <div class="fgroup tint">
@@ -10274,7 +10350,7 @@ async function loadStats() {
 // console cleanly.
 function enterPreview() {
   if (!state.user || state.user.role !== "admin") return;
-  state.preview = { step: "plans", planId: "self-service", market: "Virginia Beach", cat: "", creators: null, creator: null, targetId: "", sent: [], confirmation: null, dashboard: null, offersList: null };
+  state.preview = { step: "plans", planId: "self-service", market: "Virginia Beach", cats: [], creators: null, creator: null, targetId: "", sent: [], confirmation: null, dashboard: null, offersList: null };
   state.view = "dashboard";
   render();
 }
@@ -10389,19 +10465,18 @@ function previewToDiscover() {
 // real roster) differ from loadDiscover.
 function previewDiscoverHtml() {
   const pv = state.preview;
-  const cat = pv.cat || "";
+  const pvCats = pv.cats || [];
   return `
   <h3 class="pv-step-head"><span class="preview-tag">PREVIEW</span> Find creators</h3>
   <p class="muted small">The live Find creators screen, run over the real approved roster. Searches are answered by the same server code a business hits; invites open the simulated composer and reach nobody.</p>
   <div class="filters disc-top">
     <div><label>Market</label><select id="pvf-market">${state.boot.markets.map((m) => `<option ${pv.market === m.name ? "selected" : ""}>${esc(m.name)}</option>`).join("")}</select></div>
   </div>
-  <div class="dcat-row">${[""].concat(state.boot.creatorCategories).map((c) => `<button type="button" class="dcat-chip${c === cat ? " on" : ""}" onclick="return pvDiscoverCatChip('${esc(c)}', this)">${c === "" ? "All" : esc(c)}</button>`).join("")}</div>
+  <div class="dcat-row"><button type="button" data-pvcat="" class="dcat-chip${pvCats.length ? "" : " on"}" onclick="return pvDiscoverCatChip('', this)">All</button>${state.boot.creatorCategories.map((c) => `<button type="button" data-pvcat="${esc(c)}" class="dcat-chip${pvCats.includes(c) ? " on" : ""}" onclick="return pvDiscoverCatChip('${esc(c)}', this)">${esc(c)}</button>`).join("")}</div>
   <details class="filters-fold"><summary>More filters</summary>
   <div class="filters">
     <div><label>Neighborhood / area</label><input id="pvf-neighborhood" placeholder="For example: Oceanfront, Ghent"></div>
     <div><label>Tier</label><select id="pvf-tier"><option value="">All tiers</option>${state.boot.tiers.map((t) => `<option>${esc(t.id)}</option>`).join("")}</select></div>
-    <div><label>Category</label><select id="pvf-category"><option value="">All categories</option>${state.boot.creatorCategories.map((c) => `<option ${cat === c ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></div>
     <div><label>Search</label><input id="pvf-q" placeholder="Name or handle"></div>
   </div>
   <div class="filters">
@@ -10419,15 +10494,23 @@ function previewDiscoverHtml() {
 }
 
 // The preview twin of discoverCatChip: same behavior (the chip
-// sets the fold's category select and re-runs the search), aimed
-// at the preview state + endpoint.
+// row owns category selection, multi-select with OR semantics),
+// aimed at the preview state + endpoint.
 function pvDiscoverCatChip(cat, btn) {
   const pv = state.preview;
   if (!pv) return false;
-  pv.cat = cat;
-  const sel = document.getElementById("pvf-category");
-  if (sel) sel.value = cat;
-  document.querySelectorAll(".dcat-chip").forEach((b) => b.classList.toggle("on", b === btn));
+  if (cat === "") {
+    pv.cats = [];
+  } else {
+    const set = new Set(pv.cats || []);
+    if (set.has(cat)) set.delete(cat); else set.add(cat);
+    pv.cats = [...set];
+  }
+  const set = new Set(pv.cats || []);
+  document.querySelectorAll(".dcat-chip[data-pvcat]").forEach((b) => {
+    const c = b.getAttribute("data-pvcat");
+    b.classList.toggle("on", c === "" ? set.size === 0 : set.has(c));
+  });
   runPreviewDiscover();
   return false;
 }
@@ -10446,7 +10529,7 @@ async function runPreviewDiscover() {
   if (market) { params.set("market", market); state.preview.market = market; }
   const neighborhood = val("pvf-neighborhood").trim();
   const tier = val("pvf-tier");
-  const category = val("pvf-category");
+  const category = (state.preview.cats || []).join(",");
   const q = val("pvf-q");
   const comp = val("pvf-comp");
   const fmin = val("pvf-fmin");
