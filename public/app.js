@@ -1588,7 +1588,7 @@ function renderBottomNav() {
 const MORE_TABS = ["More", "Analytics", "Content", "Plan", "Profile", "Messages", "Settings", "Help", "Momentum", "Status", "Numbers"];
 const BIZ_MORE_TABS = [...MORE_TABS, "My Offers", "Visits & Posts", "Counter"];
 const CR_MORE_TABS = [...MORE_TABS, "My Visits", "Earnings"];
-const PT_MORE_TABS = ["More", "Markets", "Creators", "Businesses", "Performance", "Earnings", "Links", "Account", "Help"];
+const PT_MORE_TABS = ["More", "Markets", "Creators", "Businesses", "Performance", "Earnings", "Links", "Account", "Help", "Sig"];
 function tabItemsFor() {
   const u = state.user;
   if (!u) return [];
@@ -1659,6 +1659,7 @@ function moreRowsFor() {
   }
   if (u.role === "partner") {
     return [
+      { icon: "sig", label: "Sig", sub: "Your numbers and next moves, in plain sentences.", tab: "Sig" },
       { icon: "pin", label: "Markets", sub: "Each market's funnel, end to end.", tab: "Markets" },
       { icon: "person", label: "Creators", sub: "The bench your links brought in.", tab: "Creators" },
       { icon: "deck", label: "Businesses", sub: "Businesses your links brought in.", tab: "Businesses" },
@@ -1681,7 +1682,7 @@ function tabBarHtml() {
     </button>`).join("");
   const more = moreRowsFor().map((r) => `
     <button type="button" class="tab-more-row ${state.tab === r.tab ? "on" : ""}" onclick="return go('dashboard','${r.tab}')">
-      <span class="tab-ic">${bnIcon(r.icon)}</span><span class="tab-label">${esc(r.label)}</span>${r.badge ? `<span class="tab-badge inline">${r.badge > 99 ? "99+" : r.badge}</span>` : ""}
+      <span class="tab-ic">${r.icon === "sig" ? `<img class="tab-sig-img" src="/assets/sig-v4/head-idle.webp" alt="">` : bnIcon(r.icon)}</span><span class="tab-label">${esc(r.label)}</span>${r.badge ? `<span class="tab-badge inline">${r.badge > 99 ? "99+" : r.badge}</span>` : ""}
     </button>`).join("");
   // Sign out rides directly under Help in the rail's More cluster
   // (Jeff, 2026-10-28): an action, not a destination, so it never
@@ -2220,7 +2221,7 @@ function renderMoreScreen() {
   el.innerHTML = `
   ${wsHead("More", { sub: "The things you check, not the things you work.", subKey: "more" })}
   <div class="more-list">
-    ${rows.map((r) => `<button type="button" class="more-row" onclick="return go('dashboard','${r.tab}')"><span class="more-ic">${bnIcon(r.icon)}</span><span class="more-tx"><span class="more-label">${esc(r.label)}</span><span class="more-sub">${esc(r.sub)}</span></span>${r.badge ? `<span class="tab-badge inline">${r.badge > 99 ? "99+" : r.badge}</span>` : ""}<span class="more-chev">›</span></button>`).join("")}
+    ${rows.map((r) => `<button type="button" class="more-row" onclick="return go('dashboard','${r.tab}')"><span class="more-ic">${r.icon === "sig" ? `<img class="tab-sig-img" src="/assets/sig-v4/head-idle.webp" alt="">` : bnIcon(r.icon)}</span><span class="more-tx"><span class="more-label">${esc(r.label)}</span><span class="more-sub">${esc(r.sub)}</span></span>${r.badge ? `<span class="tab-badge inline">${r.badge > 99 ? "99+" : r.badge}</span>` : ""}<span class="more-chev">›</span></button>`).join("")}
   </div>
   <button type="button" class="more-row logout" onclick="signOut()"><span class="more-ic">${bnIcon("signout")}</span><span class="more-tx"><span class="more-label">Log out</span></span></button>`;
 }
@@ -9587,7 +9588,7 @@ function renderBusinessDash() {
 // (GET /partner/summary) computed from the records stamped with
 // the partner's own signup source. A partner with no activity
 // yet gets the fills-in voice, never a grid of zeros.
-const PARTNER_TABS = ["Home", "Markets", "Creators", "Businesses", "Performance", "Earnings", "Links", "Account", "More", "Help"];
+const PARTNER_TABS = ["Home", "Markets", "Creators", "Businesses", "Performance", "Earnings", "Links", "Account", "More", "Help", "Sig"];
 
 function renderPartnerDash() {
   const u = state.user;
@@ -9621,6 +9622,15 @@ function renderPartnerTab(tab) {
   if (tab === "Links") el.innerHTML = partnerLinksHtml(d);
   if (tab === "Account") el.innerHTML = partnerAccountHtml(d);
   if (tab === "Help") el.innerHTML = partnerHelpHtml(d);
+  if (tab === "Sig") el.innerHTML = partnerSigHtml(d);
+  // Sig's living face rides the same hero stack as the Sig tab
+  // (sigHeroSet): idle on the Overview presence card; a greet
+  // one-shot the first time the partner opens their Sig, idle
+  // after. Reduced motion and failed clips leave the poster.
+  if (el.querySelector("[data-sig-hero-media]")) {
+    if (tab === "Sig" && !state._ptSigGreeted) { state._ptSigGreeted = 1; sigHeroSet("greet"); }
+    else sigHeroSet("idle");
+  }
 }
 
 function partnerSampleChip(d) {
@@ -9631,6 +9641,33 @@ function partnerFillsIn(what) {
   return `<div class="panel"><h3 style="margin-top:0">Your funnel fills in</h3><p class="muted">Nothing here yet. ${esc(what)} When the first one lands, it shows up on this page the same day.</p></div>`;
 }
 
+// Sig's one line on the partner Overview: real counts from the
+// summary payload, or the fills-in voice when nothing has come
+// through the partner's links yet. Never an invented number.
+function partnerSigLine(d) {
+  const t = d.totals;
+  const cs = d.creators.stages;
+  const bs = d.businesses.stages;
+  if (t.creatorsAttributed === 0 && t.businessesAttributed === 0) return "Your funnel fills in here. Share your creator link and I will keep count from the first claim.";
+  return `${cs.claimed} creators claimed, ${cs.complete} complete, ${bs.applied} businesses in through your links. Ask me what to do next.`;
+}
+
+// Sig's presence on the partner Overview (Jeff, 2026-10-28): the
+// same hero media stack as the Sig tab (poster + idle loop,
+// stills under reduced motion), his line, and the door into the
+// partner Sig surface.
+function partnerSigCardHtml(d) {
+  return `
+  <div class="card mb pt-sig-card">
+    <div class="pt-sig-media">${sigHeroMediaHtml()}</div>
+    <div class="pt-sig-copy">
+      <div class="flex-between"><strong>Sig</strong><span class="badge info">Your guide</span></div>
+      <p class="small" style="margin:6px 0 10px">${esc(partnerSigLine(d))}</p>
+      <button class="btn small-btn" onclick="return go('dashboard','Sig')">Ask Sig</button>
+    </div>
+  </div>`;
+}
+
 function partnerHomeHtml(d) {
   const p = d.partner;
   const t = d.totals;
@@ -9639,6 +9676,7 @@ function partnerHomeHtml(d) {
   const empty = t.creatorsAttributed === 0 && t.businessesAttributed === 0;
   return `
   ${wsHead(p.name, { chip: partnerSampleChip(d), sub: "Your markets, your bench, your share. Everything here came in through your links.", subKey: "pt-home" })}
+  ${partnerSigCardHtml(d)}
   ${empty ? "" : `
   <div class="stat-band home-metrics">
     <div class="stat-cell"><div class="stat-num">${cs.claimed}</div><div class="stat-lbl">Creators claimed</div></div>
@@ -9785,11 +9823,106 @@ function partnerAccountHtml(d) {
   ${accountHtml(u)}`;
 }
 
+// Sig for partners (Jeff, 2026-10-28): a read-only brief built
+// entirely from this partner's own GET /partner/summary payload.
+// Real counts only, honest empties in the fills-in voice, and
+// next actions computed from the data. Sig explains and points;
+// every write stays behind the existing buttons on the pages he
+// points to. Nothing here sends, posts, or saves.
+function partnerSigActions(d) {
+  const t = d.totals;
+  const cs = d.creators.stages;
+  const bs = d.businesses.stages;
+  const acts = [];
+  if (t.creatorsAttributed === 0 && t.businessesAttributed === 0) {
+    acts.push({ h: "Share your creator link", p: "Nothing has come through your links yet. Your creator claim link is the front door: every claim through it is credited to you, permanently.", btn: "Get links", tab: "Links" });
+  }
+  let gap = null;
+  for (const m of d.markets) {
+    const g = (m.creators.claimed || 0) - (m.creators.complete || 0);
+    if (g > 0 && (!gap || g > gap.g)) gap = { market: m.market, claimed: m.creators.claimed, complete: m.creators.complete, g };
+  }
+  if (gap) acts.push({ h: `Push completes in ${gap.market}`, p: `${gap.claimed} creators have claimed in ${gap.market} and ${gap.complete} are complete. Share your creator link there again this week: complete creators are the bench businesses book.`, btn: "Get links", tab: "Links" });
+  const zb = d.markets.find((m) => (m.businesses.applied || 0) === 0);
+  if (zb && t.creatorsAttributed + t.businessesAttributed > 0) acts.push({ h: `Send your business link in ${zb.market}`, p: "No businesses have joined through you there yet. One business on a paid plan starts your share accruing.", btn: "Get links", tab: "Links" });
+  if (bs.applied > 0 && bs.active === 0) acts.push({ h: "Founding businesses are waiting", p: `${bs.applied} ${bs.applied === 1 ? "business has" : "businesses have"} joined through you and ${bs.applied === 1 ? "sits" : "sit"} on the founding list. They activate at launch; nothing for you to do but keep the bench growing.`, btn: "See businesses", tab: "Businesses" });
+  if (d.partner.agreementStatus !== "signed") acts.push({ h: "Agreement not signed yet", p: "Your agreement is handled with Jeff directly. Payouts wait on it; recruiting does not.", btn: "See account", tab: "Account" });
+  if (bs.active > 0 && t.offersLive === 0) acts.push({ h: "No offers live yet", p: "Businesses are active in your markets but no campaigns are live. When the first offer posts, it shows under Performance.", btn: "See performance", tab: "Performance" });
+  if (!acts.length) acts.push({ h: "Nothing needs you", p: "Your funnel is moving and your links are working. Performance has the latest numbers.", btn: "See performance", tab: "Performance" });
+  return acts.slice(0, 4);
+}
+
+function partnerSigHtml(d) {
+  const p = d.partner;
+  const t = d.totals;
+  const cs = d.creators.stages;
+  const bs = d.businesses.stages;
+  const e = d.earnings;
+  const empty = t.creatorsAttributed === 0 && t.businessesAttributed === 0;
+  const jump = (id, label) => `<button type="button" class="btn small-btn ghost" onclick="document.getElementById('${id}').scrollIntoView({behavior:'smooth'});return false">${label}</button>`;
+  return `
+  <section class="sig-hero" aria-label="Sig">
+    <div class="sig-hero-ava">${sigHeroMediaHtml()}</div>
+    <div class="sig-hero-copy">
+      <div class="sig-hero-kicker">Your guide</div>
+      <h2>Sig</h2>
+      <div class="sig-presence"><span class="sig-live-dot"></span><strong>Ready</strong><span>Your numbers, in plain sentences.</span></div>
+      <p>I read only your dashboard data: your funnel, your earnings, your links. I explain and point. I never send or change anything.</p>
+    </div>
+  </section>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin:0 0 18px">
+    ${jump("pt-sig-stand", "Where things stand")}
+    ${jump("pt-sig-next", "What to do next")}
+    ${jump("pt-sig-earn", "Your earnings")}
+    ${jump("pt-sig-links", "Your links")}
+  </div>
+  <h3 id="pt-sig-stand" style="margin:0 0 8px">Where things stand</h3>
+  ${empty ? partnerFillsIn("Share your creator link and your bench starts here. Sig keeps count from the first claim.") : `
+  <div class="card mb">
+    ${d.markets.map((m) => `<p class="small" style="margin:0 0 8px"><strong>${esc(m.market)}:</strong> ${m.creators.claimed} creators claimed, ${m.creators.approved} approved, ${m.creators.complete} complete. ${m.businesses.applied} businesses joined. ${m.offersLive} offers live, ${m.postsLive} posts live.</p>`).join("")}
+    <p class="small" style="margin:0">Across your markets: ${t.visitsCompleted} visits completed and ${t.postsLive} posts live so far.</p>
+  </div>`}
+  <h3 id="pt-sig-next" style="margin:18px 0 8px">What to do next</h3>
+  ${partnerSigActions(d).map((a) => `
+  <div class="card mb">
+    <div class="flex-between"><strong>${esc(a.h)}</strong><span class="badge ok">Next step</span></div>
+    <p class="small muted" style="margin:6px 0 10px">${esc(a.p)}</p>
+    <button class="btn small-btn ghost" onclick="return go('dashboard','${a.tab}')">${esc(a.btn)}</button>
+  </div>`).join("")}
+  <h3 id="pt-sig-earn" style="margin:18px 0 8px">Your earnings</h3>
+  <div class="card mb">
+    <p class="small" style="margin:0 0 8px">Your share is <strong>${e.sharePct}%</strong> of subscription revenue from businesses credited to you.</p>
+    ${e.hasPaidRevenue ? `<p class="small" style="margin:0 0 8px">Subscriptions on file run <strong>$${fmtPrice(e.monthlyRevenue)}</strong> a month, so <strong>$${fmtPrice(e.accruedMonthly)}</strong> a month is accrued to you. Paid to date: $${fmtPrice(e.paidTotal)}.</p>
+    <p class="small muted" style="margin:0">Accrued means earned on paper from the subscriptions on file. It is never shown as paid until a payment actually happens; payouts begin once partner payments are switched on.</p>` : `<p class="small" style="margin:0">No business in your markets has a paid subscription on file yet, so nothing has accrued. The moment one does, it appears here at your ${e.sharePct}% share, labeled accrued until a payment actually happens.</p>`}
+    <p class="small muted" style="margin:10px 0 0">At full fill, your share runs about $${fmtNum(d.atFill.partnerYearly)} a year across your ${d.atFill.markets === 1 ? "market" : `${d.atFill.markets} markets`}. Modeled, not promised: markets fill over time.</p>
+  </div>
+  <h3 id="pt-sig-links" style="margin:18px 0 8px">Your links</h3>
+  ${d.links.map((l) => `
+  <div class="card mb">
+    <div class="flex-between"><strong>${esc(l.market)}</strong>${d.partner.demo ? `<span class="badge warn">Sample</span>` : ""}</div>
+    <p class="small" style="margin:10px 0 4px"><strong>Creator claim link</strong></p>
+    <p class="small muted" style="word-break:break-all;margin:0 0 8px">${esc(l.creator)}</p>
+    <button class="btn small-btn" onclick="copyPartnerLink('${esc(l.creator)}', this)">Copy link</button>
+    <p class="small" style="margin:14px 0 4px"><strong>Business signup link</strong></p>
+    <p class="small muted" style="word-break:break-all;margin:0 0 8px">${esc(l.business)}</p>
+    <button class="btn small-btn ghost" onclick="copyPartnerLink('${esc(l.business)}', this)">Copy link</button>
+  </div>`).join("")}
+  <p class="small muted">Sig reads only this dashboard's data and never sends anything. The buttons here just take you to the page that does the work. Spanish is staged for a later partner release. Still stuck? Email <a href="mailto:hello@joinsignl.com">hello@joinsignl.com</a>.</p>`;
+}
+
 function partnerHelpHtml(d) {
   const p = (state.partnerData || {}).partner || {};
   const qa = (q, a) => `<details class="help-qa"><summary>${esc(q)}</summary><p class="small">${a}</p></details>`;
   return `
   ${wsHead("Help", { sub: "How partnering with SIGNL works, in plain words.", subKey: "pt-help" })}
+  <div class="card mb pt-sig-card">
+    ${sigAvatarHtml("")}
+    <div class="pt-sig-copy">
+      <div class="flex-between"><strong>Sig</strong><span class="badge info">Your guide</span></div>
+      <p class="small" style="margin:6px 0 10px">Questions about your numbers? Sig reads your dashboard and answers in plain sentences, with your next move attached.</p>
+      <button class="btn small-btn" onclick="return go('dashboard','Sig')">Open Sig</button>
+    </div>
+  </div>
   <div class="wcard">
     ${qa("What do I actually do?", "Share your links. Creators claim through your creator link and join the bench in your markets. Businesses sign up through your business link. SIGNL runs everything else: the platform, the campaigns, the payments, the guarantees.")}
     ${qa("How do I earn?", `You keep ${p.sharePct || 60}% of subscription revenue from businesses credited to you in your markets, for as long as they stay subscribed. It accrues monthly and shows under Earnings, labeled accrued until a payment actually happens.`)}
@@ -12597,8 +12730,10 @@ function renderAdmin() {
       <button class="btn" onclick="enterPreview()">Preview as business &rarr;</button>
       <button class="btn ghost" onclick="enterPreviewDashboard()">Business dashboard &rarr;</button>
     </div>
+    <div id="admin-sig"><div class="panel"><div class="sig-load-row">${sigAvatarHtml("think")}</div><p class="muted small" style="margin:0">Sig is reading the same numbers Admin shows...</p></div></div>
     ${tabsHtml(["Applications", "Markets", "Recruiters", "Partners", "Event Log", "Compliance", "Campaign", "Stats"], tab)}
     <div id="tab-body"><p class="muted">Loading...</p></div>`;
+  loadAdminSig();
   if (tab === "Applications") loadApplications();
   if (tab === "Markets") loadMarkets();
   if (tab === "Partners") loadAdminPartners();
@@ -12607,6 +12742,77 @@ function renderAdmin() {
   if (tab === "Compliance") loadCompliance();
   if (tab === "Campaign") loadCampaign();
   if (tab === "Stats") loadStats();
+}
+
+// Sig in Admin (Jeff, 2026-10-28): Jeff's attention list, in
+// plain sentences with real counts, computed from the same three
+// payloads Admin already loads (applications, markets, partners).
+// No new endpoints. READ-ONLY guidance: each item routes to the
+// Admin tab where the action lives, and Jeff's taps there remain
+// the only writes. Sig's face rides the shared hero stack (poster
+// + idle loop; stills under reduced motion).
+function adminSigItems(apps, marketsData, partnersData) {
+  const items = [];
+  if (apps) {
+    const pending = apps.pending || [];
+    const pendCreators = pending.filter((u) => u.role === "creator").length;
+    const pendBiz = pending.filter((u) => u.role === "business").length;
+    if (pendCreators) items.push({ text: `${pendCreators} creator ${pendCreators === 1 ? "application is" : "applications are"} waiting for a decision.`, tab: "Applications", btn: "Review queue" });
+    if (pendBiz) items.push({ text: `${pendBiz} founding business ${pendBiz === 1 ? "application is" : "applications are"} waiting for a decision.`, tab: "Applications", btn: "Review queue" });
+    const all = pending.concat(apps.decided || []);
+    const now = new Date();
+    const isToday = (iso) => { const dt = new Date(iso || ""); return dt.getFullYear() === now.getFullYear() && dt.getMonth() === now.getMonth() && dt.getDate() === now.getDate(); };
+    const claimsToday = all.filter((u) => u.role === "creator" && isToday(u.createdAt));
+    if (claimsToday.length) {
+      const byMarket = new Map();
+      for (const u of claimsToday) byMarket.set(u.market || "Unlisted", (byMarket.get(u.market || "Unlisted") || 0) + 1);
+      const parts = [...byMarket.entries()].sort((a, b) => b[1] - a[1]).map(([m, n]) => `${marketDisplayName(m)} ${n}`).join(" · ");
+      items.push({ text: `Claims today: ${claimsToday.length} (${parts}).`, tab: "Applications", btn: "Review queue" });
+    }
+  }
+  if (marketsData) {
+    for (const m of marketsData.markets || []) {
+      if (m.businessesFounding > 0) items.push({ text: `${m.businessesFounding} approved founding ${m.businessesFounding === 1 ? "business" : "businesses"} in ${m.label} ${m.businessesFounding === 1 ? "is" : "are"} waiting on activation.`, tab: "Markets", btn: "Open Markets" });
+    }
+  }
+  if (partnersData) {
+    const partners = partnersData.partners || [];
+    if (!partners.length) items.push({ text: "No partners yet. Create the first one, or seed the demo to show the partner dashboard.", tab: "Partners", btn: "Open Partners" });
+    else {
+      if (!partners.some((p) => p.demo)) items.push({ text: "The demo partner is not seeded. Seed Demo Media Group before you demo the partner dashboard.", tab: "Partners", btn: "Open Partners" });
+      const paused = partners.filter((p) => p.status !== "active").length;
+      if (paused) items.push({ text: `${paused} ${paused === 1 ? "partner is" : "partners are"} paused.`, tab: "Partners", btn: "Open Partners" });
+    }
+  }
+  return items;
+}
+
+async function loadAdminSig() {
+  const host = document.getElementById("admin-sig");
+  if (!host) return;
+  const grab = async (path) => { try { return await api("GET", path); } catch (e) { return null; } };
+  const [apps, marketsData, partnersData] = await Promise.all([grab("/admin/applications"), grab("/admin/markets"), grab("/admin/partners")]);
+  if (!document.getElementById("admin-sig")) return;
+  const items = adminSigItems(apps, marketsData, partnersData);
+  const loaded = apps || marketsData || partnersData;
+  host.innerHTML = `
+  <div class="panel admin-sig-panel">
+    <div class="admin-sig-head">
+      <span class="admin-sig-media">${sigHeroMediaHtml()}</span>
+      <div>
+        <div class="flex-between"><strong>Sig</strong><span class="badge info">Attention list</span></div>
+        <p class="small muted" style="margin:4px 0 0">Plain sentences, real counts, from the same records Admin shows. Sig points; your taps decide.</p>
+      </div>
+    </div>
+    ${items.length ? items.map((it) => `
+    <div class="admin-sig-item">
+      <span class="admin-sig-dot" aria-hidden="true"></span>
+      <p class="small" style="margin:0;flex:1">${esc(it.text)}</p>
+      <button class="btn small-btn ghost" onclick="return go('dashboard','${it.tab}')">${esc(it.btn)}</button>
+    </div>`).join("") : `<p class="small" style="margin:10px 0 0">${loaded ? "Nothing needs a decision right now. Approvals, claims, activations, and partners are all caught up." : "Sig could not load the Admin numbers just now. The tabs below carry the same records."}</p>`}
+    ${loaded && (!apps || !marketsData || !partnersData) ? `<p class="small muted" style="margin:8px 0 0">Some Admin numbers could not load; this list covers what answered.</p>` : ""}
+  </div>`;
+  sigHeroSet("idle");
 }
 
 // Admin: distribution partners (Jeff, 2026-10-28). Create and
