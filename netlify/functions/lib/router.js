@@ -6469,6 +6469,15 @@ async function handleRegister(event) {
   const signupSource = typeof b.signupSource === "string" ? b.signupSource.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 40) : "";
   if (signupSource) user.signupSource = signupSource;
 
+  // Language preference (Spanish layers S1, Jeff, 2026-10-28):
+  // a creator who arrived through the Spanish claim path
+  // (?lang=es on the link, persisted by the client like the
+  // signup source) is recorded as Spanish-preferring. Only the
+  // exact value "es" stores anything; every other value, and
+  // absence, stores nothing (English is the unmarked default).
+  // Sig reads it (see /api/sig/ask); nothing gates on it.
+  if (role === "creator" && b.lang === "es") user.lang = "es";
+
   // Typed-city resolution (Jeff, 2026-10-23): a not-listed sign-up
   // whose typed city already belongs to a market is filed under
   // that metro at intake (Portsmouth -> Virginia Beach), keeping
@@ -7848,6 +7857,7 @@ async function route(event) {
     const lines = [];
     if (user.role === "creator") {
       const f = full.founding || {};
+      if (user.lang === "es") lines.push("This person prefers Spanish. Answer in Spanish.");
       lines.push(`Their market is ${f.market || user.market || "unknown"} and it is ${f.marketLive ? "OPEN (live)" : "NOT open yet (founding)"}. Their application status is ${user.status || "unknown"}.`);
       const pc = full.profileCompletion || {};
       lines.push(pc.complete ? "Their profile is finished, so businesses can see them." : `Their profile is NOT finished yet; still missing: ${(pc.missing || []).join(", ") || "nothing recorded"}. A finished profile is the gate for being seen by businesses.`);
@@ -8248,6 +8258,15 @@ async function route(event) {
         const pct = Number.isFinite(numPct) ? Math.max(0, Math.min(100, numPct)) : null;
         changes.spanishAudiencePct = [user.creator.spanishAudiencePct === undefined ? null : user.creator.spanishAudiencePct, pct];
         c.spanishAudiencePct = pct;
+      }
+      // Language preference (S1): the profile can also set or
+      // clear the stored preference (a claim finished on a
+      // second device, a support correction). "es" stores it on
+      // the user record; "en" clears it back to the unmarked
+      // default; anything else is ignored, never an error.
+      if (b.lang !== undefined) {
+        if (b.lang === "es") user.lang = "es";
+        else if (b.lang === "en" || b.lang === "") delete user.lang;
       }
       // Musician openness (Jeff, 2026-10-28): three optional
       // signals, mirroring the Spanish attribute. "I am a

@@ -141,10 +141,39 @@ try {
   const routerSrcS3 = fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), "..", "netlify", "functions", "lib", "router.js"), "utf8");
   check("S3: Sig carries the business Spanish state line", routerSrcS3.includes("This business owner prefers Spanish. Answer in Spanish."), "");
 
+  // ---------- S1: Spanish claim path ----------
+  const qcPayload = (email, handle, extra) => ({
+    role: "creator", quickClaim: true, email, password: "password1234", market: "Virginia Beach",
+    handle, primaryPlatform: "instagram",
+    agreedHonestPosts: true, agreedFtcDisclosure: true, agreedPostCompliance: true, agreedTerms: true, ...(extra || {}),
+  });
+  const esClaim = client();
+  const esReg = await esClaim("POST", "/api/auth/register", qcPayload("lucia@example.com", "lucia.crea", { lang: "es" }));
+  check("S1: a quick claim arriving with lang=es registers", esReg.status === 201 && !!esReg.data.user, JSON.stringify(esReg.data).slice(0, 160));
+  const esMe = await esClaim("GET", "/api/auth/me");
+  check("S1: the preference is stored on the creator record (user.lang)", esMe.data.user.lang === "es", JSON.stringify(esMe.data.user.lang));
+  const enClaim = client();
+  const enReg = await enClaim("POST", "/api/auth/register", qcPayload("emma@example.com", "emma.crea", {}));
+  const enMe = await enClaim("GET", "/api/auth/me");
+  check("S1: a claim without the signal stores nothing (English is the unmarked default)", enReg.status === 201 && enMe.data.user.lang === undefined, JSON.stringify(enMe.data.user.lang));
+  const frClaim = client();
+  await frClaim("POST", "/api/auth/register", qcPayload("chloe@example.com", "chloe.crea", { lang: "fr" }));
+  const frMe = await frClaim("GET", "/api/auth/me");
+  check("S1: only the exact value es stores anything (fr ignored)", frMe.data.user.lang === undefined, JSON.stringify(frMe.data.user.lang));
+  check("S1: completion is identical for the Spanish claim and the English claim", JSON.stringify((esMe.data.user.profileCompletion || {}).missing) === JSON.stringify((enMe.data.user.profileCompletion || {}).missing) && esMe.data.user.profileCompletion.complete === false, "");
+  const langOff = await esClaim("PATCH", "/api/me/profile", { lang: "en" });
+  check("S1: the profile can clear the preference (lang en)", langOff.data.user.lang === undefined, JSON.stringify(langOff.data.user.lang));
+  const langOn = await esClaim("PATCH", "/api/me/profile", { lang: "es" });
+  check("S1: the profile can set the preference (lang es)", langOn.data.user.lang === "es", "");
+  const langBad = await esClaim("PATCH", "/api/me/profile", { lang: "pt" });
+  check("S1: an unsupported profile lang is ignored, stored value kept", langBad.status === 200 && langBad.data.user.lang === "es", "");
+  check("S1: Sig carries the creator Spanish state line", (routerSrcS3.match(/This person prefers Spanish\. Answer in Spanish\./g) || []).length === 1 && routerSrcS3.includes('if (user.lang === "es")'), "");
+
   const appJsRes = await fetch(BASE + "/app.js");
   const appJs = await appJsRes.text();
   check("S2: client ships the panel field, the save handler, and the display phrase", appJs.includes("lane-spanish-pct") && appJs.includes("laneSpanishPctSave") && appJs.includes("Spanish-speaking audience"), "");
   check("S3: client ships the business language control and Admin marker", appJs.includes("bp-lang") && appJs.includes("preferredLanguage") && appJs.includes("Prefers Spanish"), "");
+  check("S1: client ships the language capture, the T() helper, and the Spanish claim copy", appJs.includes("signl_lang") && appJs.includes("function T(en, es)") && appJs.includes("Reclama tu lugar de fundador") && appJs.includes("Reclamar mi lugar") && appJs.includes('lang: state.lang === "es" ? "es" : undefined'), "");
 } catch (e) {
   failed += 1;
   failures.push("suite error: " + e.message);

@@ -38,6 +38,7 @@ const state = {
   discoverCats: [], // Discover category filter: the chip row owns it, multi-select, OR semantics
   discoverSpanish: false, // Discover filter: the "Spanish-speaking creators only" toggle
   discoverUniversity: "", // Discover filter (U1): canonical university name, "" = all; options come from the server facet
+  lang: "", // Spanish claim path (S1): "es" when the creator arrived with ?lang=es (persisted) or their record carries lang=es
   threads: [],
   activeThread: null, // other user id
   counterCode: "",
@@ -267,6 +268,21 @@ function storedRef() {
 // registration, so each applicant's origin page is on the record.
 function storedSrc() {
   try { return localStorage.getItem("signl_src") || ""; } catch (e) { return ""; }
+}
+
+// Spanish claim path (S1, Jeff, 2026-10-28): T(en, es) returns
+// the Spanish string when this session is a Spanish one
+// (state.lang === "es", set at init from the ?lang=es arrival
+// signal or the signed-in record) and the English otherwise.
+// ONLY the claim flow and the profile-completion essentials
+// read T(); the rest of the app is English for now, by design,
+// and the Spanish site pages say so. A missing Spanish string
+// falls back to the English, never to a blank.
+function T(en, es) {
+  return state.lang === "es" && es ? es : en;
+}
+function storedLang() {
+  try { return localStorage.getItem("signl_lang") === "es" ? "es" : ""; } catch (e) { return ""; }
 }
 
 // Claim-link prefill (Jeff, 2026-10-19): per-target links from email
@@ -869,10 +885,10 @@ function profileCompletionHtml(u) {
       <span class="earn-points">${item.points ? "+" + item.points + " pts" : ""}</span>`)).join("");
   return `
   <div class="panel mt tint" style="text-align:left">
-    <div class="flex-between"><h3 style="margin:0">Finish your profile to be launch-ready</h3><span class="badge info">${pc.requiredDone} of ${pc.requiredTotal} essentials done</span></div>
-    <p class="small">Businesses can't see you until the essentials are done.</p>
+    <div class="flex-between"><h3 style="margin:0">${T("Finish your profile to be launch-ready", "Termina tu perfil para estar listo al lanzar")}</h3><span class="badge info">${pc.requiredDone} ${T("of", "de")} ${pc.requiredTotal} ${T("essentials done", "esenciales listos")}</span></div>
+    <p class="small">${T("Businesses can't see you until the essentials are done.", "Los negocios no pueden verte hasta que termines lo esencial.")}</p>
     ${rows}
-    <div class="mt"><button class="btn" onclick="return go('dashboard','Profile')">Finish my profile</button></div>
+    <div class="mt"><button class="btn" onclick="return go('dashboard','Profile')">${T("Finish my profile", "Terminar mi perfil")}</button></div>
   </div>`;
 }
 
@@ -1290,7 +1306,7 @@ function dealRowsHtml(o) {
 
 function dealPlainWordsHtml(o) {
   const rights = o.visitRights || rightsForVisit(o.kind);
-  return `<details class="deal-details"><summary>The deal, in plain words</summary><div class="dd-body">
+  return `<details class="deal-details"><summary>${T("The deal, in plain words", "El trato, en palabras simples")}</summary><div class="dd-body">
     <div class="showcase-block">
       ${o.kind === "paid"
         ? `<p class="small"><strong>You get paid:</strong> $${fmtPrice(o.cashRate)} for this paid booking, on the deliverables set in its terms. You keep $${o.paidMath ? fmtMoney(o.paidMath.creatorNet) : ""} (97% of the rate); SIGNL holds the payment and releases it when your post is live.</p>`
@@ -3316,9 +3332,9 @@ function syncJcPlatform() {
   syncProofDisclosure("jc-platform", "jc-proof-note");
   const meta = primaryMetaClient(jcPrimary());
   const handleLabel = document.getElementById("jc-handle-label");
-  if (handleLabel) handleLabel.textContent = `${meta.label} handle (required)`;
+  if (handleLabel) handleLabel.textContent = `${meta.label} ${T("handle (required)", "usuario (obligatorio)")}`;
   const followersLabel = document.getElementById("jc-followers-label");
-  if (followersLabel) followersLabel.textContent = `${meta.label} followers (required)`;
+  if (followersLabel) followersLabel.textContent = `${meta.label} ${T("followers (required)", "seguidores (obligatorio)")}`;
   const input = document.getElementById("jc-handle");
   const link = document.getElementById("jc-ig-link");
   if (link) link.textContent = input && input.value ? meta.host + input.value.replace(/^@/, "") : "";
@@ -3402,7 +3418,7 @@ function syncQcPlatform() {
   syncProofDisclosure("qc-platform", "qc-proof-note");
   const meta = primaryMetaClient(sel ? sel.value : "instagram");
   const label = document.getElementById("qc-handle-label");
-  if (label) label.textContent = `Your ${meta.label} handle (required)`;
+  if (label) label.textContent = `${T("Your", "Tu")} ${meta.label} ${T("handle (required)", "usuario (obligatorio)")}`;
   const input = document.getElementById("qc-handle");
   const link = document.getElementById("qc-ig-link");
   if (link) link.textContent = input && input.value ? meta.host + input.value.replace(/^@/, "") : "";
@@ -3416,54 +3432,54 @@ function renderQuickClaim() {
   app.innerHTML = `
   <section class="panel form-panel" style="max-width:680px;margin:10px auto">
     <div class="form-head">
-    <h2>Claim your founding spot</h2>
-    <p><strong>${CREATOR_FREE_LINE}</strong></p>
+    <h2>${T("Claim your founding spot", "Reclama tu lugar de fundador")}</h2>
+    <p><strong>${T(CREATOR_FREE_LINE, "Unirte a SIGNL es gratis para los creadores. Siempre.")}</strong></p>
     </div>
-    <div class="form-mint">Ranked by local reach, not followers — the share of your audience that lives here.</div>
+    <div class="form-mint">${T("Ranked by local reach, not followers — the share of your audience that lives here.", "Ordenado por alcance local, no por seguidores: la parte de tu audiencia que vive aquí.")}</div>
     <div class="form-body">
-    <p class="muted">About a minute: handle, market, email, password. Spots held in sign-up order — finish your profile after approval.</p>
-    <div class="lrow"><span class="tg"></span><div><span class="lname">Comped</span> <span class="lline">— meals, services and experiences, for an honest post within 48 hours.</span></div></div>
-    <div class="lrow"><span class="tg off"></span><div><span class="lname">Paid</span> <span class="lline">— paid campaigns are separate bookings. Headliners first in line.</span></div></div>
-    ${hasPrefill ? `<div class="notice blue">Pre-filled from your invite link — check it and claim.</div>` : ""}
+    <p class="muted">${T("About a minute: handle, market, email, password. Spots held in sign-up order — finish your profile after approval.", "Como un minuto: usuario, mercado, correo, contraseña. Los lugares se guardan en orden de registro. Termina tu perfil después de la aprobación.")}</p>
+    <div class="lrow"><span class="tg"></span><div><span class="lname">${T("Comped", "Cortesía")}</span> <span class="lline">${T("— meals, services and experiences, for an honest post within 48 hours.", "— comidas, servicios y experiencias, por una publicación honesta dentro de 48 horas.")}</span></div></div>
+    <div class="lrow"><span class="tg off"></span><div><span class="lname">${T("Paid", "Pagado")}</span> <span class="lline">${T("— paid campaigns are separate bookings. Headliners first in line.", "— las campañas pagadas son reservas aparte. Los Headliners van primero.")}</span></div></div>
+    ${hasPrefill ? `<div class="notice blue">${T("Pre-filled from your invite link — check it and claim.", "Ya viene lleno desde tu enlace de invitación. Revísalo y reclama tu lugar.")}</div>` : ""}
     <div id="form-error"></div>
     <form onsubmit="return doQuickClaim(event)">
       <div class="fgroup tint">
-        <p class="fg-kicker">Your platform</p>
-        <div class="field"><label>Where is your main audience?</label>${platformChipsHtml("qc-platform", pfPlatform, "syncQcPlatform")}<p class="small muted">Your main platform. Add the rest later.</p><p class="small muted" id="qc-proof-note" style="display:${pfPlatform !== "instagram" ? "" : "none"}">${PROOF_DISCLOSURE}</p></div>
-        <div class="field"><label id="qc-handle-label">Your ${esc(primaryLabelClient(pfPlatform))} handle (required)</label><input id="qc-handle" placeholder="yourhandle" required value="${esc(pf.handle || "")}" oninput="syncQcPlatform()"><p class="small muted" id="qc-ig-link">${pf.handle ? esc(primaryMetaClient(pfPlatform).host + pf.handle) : ""}</p><p class="small muted">Paste your handle or a link to your page, so businesses and our team can view your page.</p></div>
+        <p class="fg-kicker">${T("Your platform", "Tu plataforma")}</p>
+        <div class="field"><label>${T("Where is your main audience?", "¿Dónde está tu audiencia principal?")}</label>${platformChipsHtml("qc-platform", pfPlatform, "syncQcPlatform")}<p class="small muted">${T("Your main platform. Add the rest later.", "Tu plataforma principal. Agrega las demás después.")}</p><p class="small muted" id="qc-proof-note" style="display:${pfPlatform !== "instagram" ? "" : "none"}">${PROOF_DISCLOSURE}</p></div>
+        <div class="field"><label id="qc-handle-label">${T("Your", "Tu")} ${esc(primaryLabelClient(pfPlatform))} ${T("handle (required)", "usuario (obligatorio)")}</label><input id="qc-handle" placeholder="yourhandle" required value="${esc(pf.handle || "")}" oninput="syncQcPlatform()"><p class="small muted" id="qc-ig-link">${pf.handle ? esc(primaryMetaClient(pfPlatform).host + pf.handle) : ""}</p><p class="small muted">${T("Paste your handle or a link to your page, so businesses and our team can view your page.", "Pega tu usuario o un enlace a tu página, para que los negocios y nuestro equipo puedan verla.")}</p></div>
       </div>
       <div class="fgroup">
-        <p class="fg-kicker">Your market</p>
-        <div class="field"><label>Your market</label><input id="qc-market-search" placeholder="Search markets, for example: Dubai" oninput="filterQuickMarketOptions()" style="margin-bottom:6px"><select id="qc-market" onchange="syncQuickMarketChoice()">${marketOptions(pfMarket, true)}</select><p class="small muted">Grouped by country. City missing? Pick "My city is not listed yet".</p></div>
+        <p class="fg-kicker">${T("Your market", "Tu mercado")}</p>
+        <div class="field"><label>${T("Your market", "Tu mercado")}</label><input id="qc-market-search" placeholder="${T("Search markets, for example: Dubai", "Busca mercados, por ejemplo: Dubái")}" oninput="filterQuickMarketOptions()" style="margin-bottom:6px"><select id="qc-market" onchange="syncQuickMarketChoice()">${marketOptions(pfMarket, true)}</select><p class="small muted">${T("Grouped by country. City missing? Pick \"My city is not listed yet\".", "Agrupados por país. ¿No está tu ciudad? Elige \"Mi ciudad aún no está en la lista\".")}</p></div>
         <div id="qc-custom-wrap" style="display:none">
-          <div class="field"><label>Your city</label><input id="qc-city-text" placeholder="For example: Tulsa"></div>
-          <div class="field"><label>Your country</label><input id="qc-country-text" placeholder="For example: United States"></div>
-          <div class="field"><label>Your state or province (optional)</label><input id="qc-state-text" placeholder="Optional, for example: OK"></div>
-          <p class="small muted">Not open there yet — your sign-up counts toward opening it. Founding sign-ups go first.</p>
+          <div class="field"><label>${T("Your city", "Tu ciudad")}</label><input id="qc-city-text" placeholder="${T("For example: Tulsa", "Por ejemplo: Tulsa")}"></div>
+          <div class="field"><label>${T("Your country", "Tu país")}</label><input id="qc-country-text" placeholder="${T("For example: United States", "Por ejemplo: Estados Unidos")}"></div>
+          <div class="field"><label>${T("Your state or province (optional)", "Tu estado o provincia (opcional)")}</label><input id="qc-state-text" placeholder="${T("Optional, for example: OK", "Opcional, por ejemplo: OK")}"></div>
+          <p class="small muted">${T("Not open there yet — your sign-up counts toward opening it. Founding sign-ups go first.", "Todavía no abrimos ahí. Tu registro cuenta para abrirlo. Los registros fundadores van primero.")}</p>
         </div>
       </div>
       <div class="fgroup tint">
-        <p class="fg-kicker">Your account</p>
+        <p class="fg-kicker">${T("Your account", "Tu cuenta")}</p>
         <div class="form-2col">
-          <div class="field"><label>Email (how we reach you at launch)</label><input type="email" id="qc-email" required autocomplete="email"></div>
-          <div class="field"><label>Password (10+ characters)</label><input type="password" id="qc-password" required minlength="10" autocomplete="new-password"></div>
+          <div class="field"><label>${T("Email (how we reach you at launch)", "Correo electrónico (así te contactamos al lanzar)")}</label><input type="email" id="qc-email" required autocomplete="email"></div>
+          <div class="field"><label>${T("Password (10+ characters)", "Contraseña (10 o más caracteres)")}</label><input type="password" id="qc-password" required minlength="10" autocomplete="new-password"></div>
         </div>
       </div>
-      <details class="deal-details"><summary>The deal, in plain words</summary>
+      <details class="deal-details"><summary>${T("The deal, in plain words", "El trato, en palabras simples")}</summary>
         <div class="dd-body"><ul style="margin:8px 0 0;padding-left:18px">
-          <li>A business comps you. You post honestly within 48 hours and disclose the comp. Nobody can require a positive post.</li>
-          <li>Check off by pasting your post link in My Visits.</li>
-          <li>Post within 48 hours for full credit. Late inside the catch-up window still counts.</li>
-          <li>No post, no credit. Repeated misses can pause your account.</li>
+          <li>${T("A business comps you. You post honestly within 48 hours and disclose the comp. Nobody can require a positive post.", "Un negocio te da una cortesía. Publicas con honestidad dentro de 48 horas y revelas la cortesía. Nadie puede exigirte una publicación positiva.")}</li>
+          <li>${T("Check off by pasting your post link in My Visits.", "Marca la visita pegando el enlace de tu publicación en Mis Visitas.")}</li>
+          <li>${T("Post within 48 hours for full credit. Late inside the catch-up window still counts.", "Publica dentro de 48 horas para crédito completo. Tarde, dentro del periodo de gracia, también cuenta.")}</li>
+          <li>${T("No post, no credit. Repeated misses can pause your account.", "Sin publicación, no hay crédito. Las faltas repetidas pueden pausar tu cuenta.")}</li>
         </ul></div>
       </details>
-      <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="qc-agree-honest" required><span>No business can require me to post positively. My posts stay my honest opinion.</span></label></div>
-      <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="qc-agree-ftc" required><span>I disclose every comp, as the FTC requires.</span></label></div>
-      <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="qc-agree-compliance" required><span>I post within 48 hours of each comped visit and paste the link in the app. A post that never lands doesn't count; repeated misses can pause my account.</span></label></div>
-      <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="qc-agree-terms" required><span>I agree to the <a href="https://joinsignl.com/terms.html" target="_blank" rel="noopener">Terms of Service</a> and <a href="https://joinsignl.com/privacy.html" target="_blank" rel="noopener">Privacy Policy</a>, and to account and launch emails. I can unsubscribe from marketing anytime.</span></label></div>
-      <button class="btn" type="submit" style="width:100%">Claim my founding spot</button>
-      <p class="small muted mt">Reviewed by a person — decision or clear status within 2 business days.</p>
-      <p class="small">Prefer to complete everything now? <a href="#" onclick="return showFullJoin()">Build your full profile instead</a>.</p>
+      <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="qc-agree-honest" required><span>${T("No business can require me to post positively. My posts stay my honest opinion.", "Ningún negocio puede exigirme publicar en positivo. Mis publicaciones son mi opinión honesta.")}</span></label></div>
+      <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="qc-agree-ftc" required><span>${T("I disclose every comp, as the FTC requires.", "Revelo cada cortesía, como lo exige la FTC.")}</span></label></div>
+      <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="qc-agree-compliance" required><span>${T("I post within 48 hours of each comped visit and paste the link in the app. A post that never lands doesn't count; repeated misses can pause my account.", "Publico dentro de 48 horas de cada visita de cortesía y pego el enlace en la app. Una publicación que nunca llega no cuenta; las faltas repetidas pueden pausar mi cuenta.")}</span></label></div>
+      <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="qc-agree-terms" required><span>${T("I agree to the", "Acepto los")} <a href="https://joinsignl.com/terms.html" target="_blank" rel="noopener">${T("Terms of Service", "Términos de Servicio")}</a> ${T("and", "y la")} <a href="https://joinsignl.com/privacy.html" target="_blank" rel="noopener">${T("Privacy Policy", "Política de Privacidad")}</a>${T(", and to account and launch emails. I can unsubscribe from marketing anytime.", ", y los correos de cuenta y de lanzamiento. Puedo cancelar los correos de marketing cuando quiera.")}</span></label></div>
+      <button class="btn" type="submit" style="width:100%">${T("Claim my founding spot", "Reclamar mi lugar")}</button>
+      <p class="small muted mt">${T("Reviewed by a person — decision or clear status within 2 business days.", "Lo revisa una persona. Decisión o estado claro en 2 días laborables.")}</p>
+      <p class="small">${T("Prefer to complete everything now?", "¿Prefieres completar todo ahora?")} <a href="#" onclick="return showFullJoin()">${T("Build your full profile instead", "Crea tu perfil completo")}</a>.</p>
     </form>
     </div>
   </section>`;
@@ -3476,24 +3492,24 @@ async function doQuickClaim(e) {
     document.getElementById("form-error").innerHTML = `<div class="error-box">${esc(msg)}</div>`;
     window.scrollTo(0, 0);
   };
-  if (!document.getElementById("qc-agree-honest").checked) { errBox("Please confirm the honest-post rule."); return false; }
-  if (!document.getElementById("qc-agree-ftc").checked) { errBox("Please confirm the FTC disclosure agreement."); return false; }
-  if (!document.getElementById("qc-agree-compliance").checked) { errBox("Please confirm the post rule: post within 48 hours for full credit, paste the link, and understand a post that never lands means the visit does not count, and repeated misses can pause your account."); return false; }
-  if (!document.getElementById("qc-agree-terms").checked) { errBox("Please agree to the Terms of Service and email consent so we can reach you at launch."); return false; }
+  if (!document.getElementById("qc-agree-honest").checked) { errBox(T("Please confirm the honest-post rule.", "Confirma la regla de publicaciones honestas, por favor.")); return false; }
+  if (!document.getElementById("qc-agree-ftc").checked) { errBox(T("Please confirm the FTC disclosure agreement.", "Confirma el acuerdo de revelación de la FTC, por favor.")); return false; }
+  if (!document.getElementById("qc-agree-compliance").checked) { errBox(T("Please confirm the post rule: post within 48 hours for full credit, paste the link, and understand a post that never lands means the visit does not count, and repeated misses can pause your account.", "Confirma la regla de publicación: publica dentro de 48 horas para crédito completo, pega el enlace, y entiende que una publicación que nunca llega significa que la visita no cuenta, y que las faltas repetidas pueden pausar tu cuenta.")); return false; }
+  if (!document.getElementById("qc-agree-terms").checked) { errBox(T("Please agree to the Terms of Service and email consent so we can reach you at launch.", "Acepta los Términos de Servicio y el consentimiento de correo para poder contactarte al lanzar, por favor.")); return false; }
   // The primary social link is required (Jeff, 2026-10-26): it is
   // how businesses and our team view and verify the creator's
   // page. A pasted profile link normalizes to the clean handle.
   const qcHandleInput = document.getElementById("qc-handle");
   const qcHandle = normalizeHandleClient(qcHandleInput.value);
-  if (!qcHandle) { errBox(`Your ${primaryLabelClient(document.getElementById("qc-platform").value)} handle is required: paste your handle or a link to your page.`); return false; }
+  if (!qcHandle) { errBox(`${T("Your", "Tu")} ${primaryLabelClient(document.getElementById("qc-platform").value)} ${T("handle is required: paste your handle or a link to your page.", "usuario es obligatorio: pega tu usuario o un enlace a tu página.")}`); return false; }
   qcHandleInput.value = qcHandle;
   const marketVal = document.getElementById("qc-market").value;
   const isUnlisted = marketVal === unlistedLabel();
   const customCity = isUnlisted ? document.getElementById("qc-city-text").value.trim() : "";
   const customCountry = isUnlisted ? document.getElementById("qc-country-text").value.trim() : "";
   const customState = isUnlisted ? document.getElementById("qc-state-text").value.trim() : "";
-  if (isUnlisted && !customCity) { errBox("Tell us your city, so your sign-up counts toward opening SIGNL there."); return false; }
-  if (isUnlisted && !customCountry) { errBox("Tell us your country, so your sign-up counts toward opening SIGNL there."); return false; }
+  if (isUnlisted && !customCity) { errBox(T("Tell us your city, so your sign-up counts toward opening SIGNL there.", "Dinos tu ciudad, para que tu registro cuente para abrir SIGNL ahí.")); return false; }
+  if (isUnlisted && !customCountry) { errBox(T("Tell us your country, so your sign-up counts toward opening SIGNL there.", "Dinos tu país, para que tu registro cuente para abrir SIGNL ahí.")); return false; }
   const form = e.target;
   if (!submitBusy(form, true)) return false;
   try {
@@ -3514,6 +3530,7 @@ async function doQuickClaim(e) {
       agreedTerms: true,
       referredBy: storedRef() || undefined,
       signupSource: storedSrc() || undefined,
+      lang: state.lang === "es" ? "es" : undefined,
     });
     state.user = data.user;
     state.view = "dashboard";
@@ -3542,106 +3559,106 @@ function renderJoinCreator() {
   app.innerHTML = `
   <section class="panel form-panel" style="max-width:680px;margin:10px auto">
     <div class="form-head">
-    <h2>Become a Founding Creator</h2>
-    <p><strong>${CREATOR_FREE_LINE}</strong></p>
+    <h2>${T("Become a Founding Creator", "Conviértete en Creador Fundador")}</h2>
+    <p><strong>${T(CREATOR_FREE_LINE, "Unirte a SIGNL es gratis para los creadores. Siempre.")}</strong></p>
     </div>
-    <div class="form-mint">Ranked by local reach, not followers — the share of your audience that lives here.</div>
+    <div class="form-mint">${T("Ranked by local reach, not followers — the share of your audience that lives here.", "Ordenado por alcance local, no por seguidores: la parte de tu audiencia que vive aquí.")}</div>
     <div class="form-body">
-    <p class="muted">Build your full profile now. When your market opens (30–90 days), founding creators get priority. This is your real profile, not a waitlist.</p>
-    <p class="small muted">City missing? Pick "My city is not listed yet" and sign up anyway.</p>
-    <div class="lrow"><span class="tg"></span><div><span class="lname">Comped</span> <span class="lline">— meals, services and experiences, for an honest post within 48 hours.</span></div></div>
-    <div class="lrow"><span class="tg off"></span><div><span class="lname">Paid</span> <span class="lline">— paid campaigns are separate bookings. Headliners first in line.</span></div></div>
-    ${hasPrefill ? `<div class="notice blue">Pre-filled from your invite link — check it and finish.</div>` : ""}
-    <p class="small">In a hurry? <a href="#" onclick="return showQuickJoin()">Claim your spot with just your handle</a> and finish your profile after approval instead.</p>
+    <p class="muted">${T("Build your full profile now. When your market opens (30 to 90 days), founding creators get priority. This is your real profile, not a waitlist.", "Crea tu perfil completo ahora. Cuando tu mercado abra (de 30 a 90 días), los creadores fundadores tienen prioridad. Este es tu perfil real, no una lista de espera.")}</p>
+    <p class="small muted">${T("City missing? Pick \"My city is not listed yet\" and sign up anyway.", "¿No está tu ciudad? Elige \"Mi ciudad aún no está en la lista\" y regístrate igual.")}</p>
+    <div class="lrow"><span class="tg"></span><div><span class="lname">${T("Comped", "Cortesía")}</span> <span class="lline">${T("— meals, services and experiences, for an honest post within 48 hours.", "— comidas, servicios y experiencias, por una publicación honesta dentro de 48 horas.")}</span></div></div>
+    <div class="lrow"><span class="tg off"></span><div><span class="lname">${T("Paid", "Pagado")}</span> <span class="lline">${T("— paid campaigns are separate bookings. Headliners first in line.", "— las campañas pagadas son reservas aparte. Los Headliners van primero.")}</span></div></div>
+    ${hasPrefill ? `<div class="notice blue">${T("Pre-filled from your invite link. Check it and finish.", "Ya viene lleno desde tu enlace de invitación. Revísalo y termina.")}</div>` : ""}
+    <p class="small">${T("In a hurry?", "¿Tienes prisa?")} <a href="#" onclick="return showQuickJoin()">${T("Claim your spot with just your handle", "Reclama tu lugar solo con tu usuario")}</a> ${T("and finish your profile after approval instead.", "y termina tu perfil después de la aprobación.")}</p>
     <div id="form-error"></div>
     <form onsubmit="return doRegisterCreator(event)">
       <div class="fgroup tint">
-        <p class="fg-kicker">About you</p>
+        <p class="fg-kicker">${T("About you", "Sobre ti")}</p>
         <div class="form-2col">
-          <div class="field"><label>Full name</label><input id="jc-name" required autocomplete="name"></div>
-          <div class="field"><label>Email (how we reach you at launch)</label><input type="email" id="jc-email" required autocomplete="email"></div>
+          <div class="field"><label>${T("Full name", "Nombre completo")}</label><input id="jc-name" required autocomplete="name"></div>
+          <div class="field"><label>${T("Email (how we reach you at launch)", "Correo electrónico (así te contactamos al lanzar)")}</label><input type="email" id="jc-email" required autocomplete="email"></div>
         </div>
-        <div class="field"><label>Password (10+ characters)</label><input type="password" id="jc-password" required minlength="10" autocomplete="new-password"></div>
+        <div class="field"><label>${T("Password (10+ characters)", "Contraseña (10 o más caracteres)")}</label><input type="password" id="jc-password" required minlength="10" autocomplete="new-password"></div>
       </div>
       <div class="fgroup">
-        <p class="fg-kicker">Where you are</p>
+        <p class="fg-kicker">${T("Where you are", "Dónde estás")}</p>
         <div class="form-2col">
-          <div class="field"><label>Your market</label><input id="jc-market-search" placeholder="Search markets, for example: Dubai" oninput="filterMarketOptions()" style="margin-bottom:6px"><select id="jc-market" onchange="syncMarketChoice()">${marketOptions(pfMarket, true)}</select><p class="small muted">Grouped by country. City missing? Pick "My city is not listed yet".</p></div>
-          <div class="field" id="jc-city-wrap"><label>Your home city</label><select id="jc-city">${cityOptions(pfMarket)}</select></div>
+          <div class="field"><label>${T("Your market", "Tu mercado")}</label><input id="jc-market-search" placeholder="${T("Search markets, for example: Dubai", "Busca mercados, por ejemplo: Dubái")}" oninput="filterMarketOptions()" style="margin-bottom:6px"><select id="jc-market" onchange="syncMarketChoice()">${marketOptions(pfMarket, true)}</select><p class="small muted">${T("Grouped by country. City missing? Pick \"My city is not listed yet\".", "Agrupados por país. ¿No está tu ciudad? Elige \"Mi ciudad aún no está en la lista\".")}</p></div>
+          <div class="field" id="jc-city-wrap"><label>${T("Your home city", "Tu ciudad")}</label><select id="jc-city">${cityOptions(pfMarket)}</select></div>
           <div id="jc-custom-wrap" style="display:none">
-            <div class="field"><label>Your city</label><input id="jc-city-text" placeholder="For example: Tulsa"></div>
-            <div class="field"><label>Your country</label><input id="jc-country-text" placeholder="For example: United States"></div>
-            <div class="field"><label>Your state or province (optional)</label><input id="jc-state-text" placeholder="Optional, for example: OK"></div>
-            <p class="small muted">Not open there yet — your sign-up counts toward opening it. Founding sign-ups go first.</p>
+            <div class="field"><label>${T("Your city", "Tu ciudad")}</label><input id="jc-city-text" placeholder="${T("For example: Tulsa", "Por ejemplo: Tulsa")}"></div>
+            <div class="field"><label>${T("Your country", "Tu país")}</label><input id="jc-country-text" placeholder="${T("For example: United States", "Por ejemplo: Estados Unidos")}"></div>
+            <div class="field"><label>${T("Your state or province (optional)", "Tu estado o provincia (opcional)")}</label><input id="jc-state-text" placeholder="${T("Optional, for example: OK", "Opcional, por ejemplo: OK")}"></div>
+            <p class="small muted">${T("Not open there yet — your sign-up counts toward opening it. Founding sign-ups go first.", "Todavía no abrimos ahí. Tu registro cuenta para abrirlo. Los registros fundadores van primero.")}</p>
           </div>
         </div>
-        <div class="field"><label>Your neighborhood or area (optional)</label><input id="jc-neighborhood" placeholder="For example: Oceanfront, Ghent, Town Center" maxlength="80"><p class="small muted">Businesses search by neighborhood.</p></div>
-        <div class="field"><label>Your university (if you are a student now)</label><input id="jc-university" placeholder="Start typing your school" maxlength="120"><div class="uni-results" id="jc-university-results"></div><p class="small muted">Current students get a campus badge. Pick from the list, or type it in full.</p></div>
-        <div class="field"><label>Student status (optional)</label>${universityStatusChipsHtml("jc-university-status", "")}<p class="small muted">Badge is current students only.</p></div>
+        <div class="field"><label>${T("Your neighborhood or area (optional)", "Tu vecindario o zona (opcional)")}</label><input id="jc-neighborhood" placeholder="${T("For example: Oceanfront, Ghent, Town Center", "Por ejemplo: Oceanfront, Ghent, Town Center")}" maxlength="80"><p class="small muted">${T("Businesses search by neighborhood.", "Los negocios buscan por vecindario.")}</p></div>
+        <div class="field"><label>${T("Your university (if you are a student now)", "Tu universidad (si eres estudiante ahora)")}</label><input id="jc-university" placeholder="${T("Start typing your school", "Empieza a escribir tu universidad")}" maxlength="120"><div class="uni-results" id="jc-university-results"></div><p class="small muted">${T("Current students get a campus badge. Pick from the list, or type it in full.", "Los estudiantes actuales reciben una insignia de campus. Elige de la lista o escríbela completa.")}</p></div>
+        <div class="field"><label>${T("Student status (optional)", "Estado de estudiante (opcional)")}</label>${universityStatusChipsHtml("jc-university-status", "")}<p class="small muted">${T("Badge is current students only.", "La insignia es solo para estudiantes actuales.")}</p></div>
       </div>
       <div class="fgroup tint">
-        <p class="fg-kicker">Your audience</p>
-        <div class="field"><label>Where is your main audience?</label>${platformChipsHtml("jc-platform", pf.platform || "instagram", "syncJcPlatform")}<p class="small muted">Your main platform. The rest stack on top.</p><p class="small muted" id="jc-proof-note" style="display:${(pf.platform || "instagram") !== "instagram" ? "" : "none"}">${PROOF_DISCLOSURE}</p></div>
+        <p class="fg-kicker">${T("Your audience", "Tu audiencia")}</p>
+        <div class="field"><label>${T("Where is your main audience?", "¿Dónde está tu audiencia principal?")}</label>${platformChipsHtml("jc-platform", pf.platform || "instagram", "syncJcPlatform")}<p class="small muted">${T("Your main platform. The rest stack on top.", "Tu plataforma principal. Las demás se suman encima.")}</p><p class="small muted" id="jc-proof-note" style="display:${(pf.platform || "instagram") !== "instagram" ? "" : "none"}">${PROOF_DISCLOSURE}</p></div>
       <div class="form-2col">
-        <div class="field"><label id="jc-handle-label">${esc(primaryLabelClient(pf.platform || "instagram"))} handle (required)</label><input id="jc-handle" placeholder="yourhandle" required value="${esc(pf.handle || "")}" oninput="syncJcPlatform()"><p class="small muted" id="jc-ig-link"></p><p class="small muted">Paste your handle or a link to your page, so businesses and our team can view your page.</p></div>
-        <div class="field"><label>TikTok handle (optional)</label><input id="jc-tiktok" placeholder="yourhandle"></div>
+        <div class="field"><label id="jc-handle-label">${esc(primaryLabelClient(pf.platform || "instagram"))} ${T("handle (required)", "usuario (obligatorio)")}</label><input id="jc-handle" placeholder="yourhandle" required value="${esc(pf.handle || "")}" oninput="syncJcPlatform()"><p class="small muted" id="jc-ig-link"></p><p class="small muted">${T("Paste your handle or a link to your page, so businesses and our team can view your page.", "Pega tu usuario o un enlace a tu página, para que los negocios y nuestro equipo puedan verla.")}</p></div>
+        <div class="field"><label>${T("TikTok handle (optional)", "Usuario de TikTok (opcional)")}</label><input id="jc-tiktok" placeholder="yourhandle"></div>
       </div>
-      <div class="field"><label>YouTube channel (optional)</label><input id="jc-youtube" placeholder="Channel name or URL"></div>
+      <div class="field"><label>${T("YouTube channel (optional)", "Canal de YouTube (opcional)")}</label><input id="jc-youtube" placeholder="${T("Channel name or URL", "Nombre del canal o URL")}"></div>
       <div class="form-2col">
-        <div class="field"><label>Facebook profile or Page (optional)</label><input id="jc-facebook" placeholder="facebook.com/yourpage or full URL"></div>
-        <div class="field"><label>X (Twitter) handle or URL (optional)</label><input id="jc-x" placeholder="yourhandle or x.com/yourhandle"></div>
+        <div class="field"><label>${T("Facebook profile or Page (optional)", "Perfil o Página de Facebook (opcional)")}</label><input id="jc-facebook" placeholder="facebook.com/yourpage or full URL"></div>
+        <div class="field"><label>${T("X (Twitter) handle or URL (optional)", "Usuario o URL de X (Twitter) (opcional)")}</label><input id="jc-x" placeholder="yourhandle or x.com/yourhandle"></div>
       </div>
-      <div class="field"><label>LinkedIn profile (optional)</label><input id="jc-linkedin" placeholder="linkedin.com/in/yourname or full URL"></div>
+      <div class="field"><label>${T("LinkedIn profile (optional)", "Perfil de LinkedIn (opcional)")}</label><input id="jc-linkedin" placeholder="linkedin.com/in/yourname or full URL"></div>
       <div class="form-2col">
-        <div class="field"><label id="jc-followers-label">${esc(primaryLabelClient(pf.platform || "instagram"))} followers (required)</label><input type="number" id="jc-followers" min="0" required placeholder="For example 8400" oninput="syncSuggestedTier()"></div>
-        <div class="field"><label>Your tier band</label><p id="jc-tier-line" style="margin:6px 0">Your band is set automatically from your total audience across platforms.</p><p class="small muted">Neighbors 500–2k &middot; Locals 2k–15k &middot; Headliners 15k+. Set automatically.</p></div>
+        <div class="field"><label id="jc-followers-label">${esc(primaryLabelClient(pf.platform || "instagram"))} ${T("followers (required)", "seguidores (obligatorio)")}</label><input type="number" id="jc-followers" min="0" required placeholder="${T("For example 8400", "Por ejemplo 8400")}" oninput="syncSuggestedTier()"></div>
+        <div class="field"><label>${T("Your tier band", "Tu nivel")}</label><p id="jc-tier-line" style="margin:6px 0">${T("Your band is set automatically from your total audience across platforms.", "Tu nivel se fija solo, según tu audiencia total en todas las plataformas.")}</p><p class="small muted">${T("Neighbors 500 to 2k · Locals 2k to 15k · Headliners 15k+. Set automatically.", "Neighbors de 500 a 2 mil · Locals de 2 mil a 15 mil · Headliners más de 15 mil. Se fija solo.")}</p></div>
       </div>
-      <div class="field"><label>Your audience on other platforms (optional)</label>
+      <div class="field"><label>${T("Your audience on other platforms (optional)", "Tu audiencia en otras plataformas (opcional)")}</label>
         <div class="form-2col">
-          <div class="field" id="jc-stackrow-tiktok"><label>TikTok followers</label><input type="number" id="jc-stack-tiktok" min="0" placeholder="Optional" oninput="syncSuggestedTier()"></div>
-          <div class="field" id="jc-stackrow-facebook"><label>Facebook followers</label><input type="number" id="jc-stack-facebook" min="0" placeholder="Optional" oninput="syncSuggestedTier()"></div>
-          <div class="field" id="jc-stackrow-x"><label>X followers</label><input type="number" id="jc-stack-x" min="0" placeholder="Optional" oninput="syncSuggestedTier()"></div>
-          <div class="field" id="jc-stackrow-linkedin"><label>LinkedIn connections</label><input type="number" id="jc-stack-linkedin" min="0" placeholder="Optional" oninput="syncSuggestedTier()"></div>
-          <div class="field" id="jc-stackrow-youtube"><label>YouTube subscribers</label><input type="number" id="jc-stack-youtube" min="0" placeholder="Optional" oninput="syncSuggestedTier()"></div>
-          <div class="field" id="jc-stackrow-snapchat"><label>Snapchat followers</label><input type="number" id="jc-stack-snapchat" min="0" placeholder="Optional" oninput="syncSuggestedTier()"></div>
+          <div class="field" id="jc-stackrow-tiktok"><label>${T("TikTok followers", "Seguidores en TikTok")}</label><input type="number" id="jc-stack-tiktok" min="0" placeholder="Optional" oninput="syncSuggestedTier()"></div>
+          <div class="field" id="jc-stackrow-facebook"><label>${T("Facebook followers", "Seguidores en Facebook")}</label><input type="number" id="jc-stack-facebook" min="0" placeholder="Optional" oninput="syncSuggestedTier()"></div>
+          <div class="field" id="jc-stackrow-x"><label>${T("X followers", "Seguidores en X")}</label><input type="number" id="jc-stack-x" min="0" placeholder="Optional" oninput="syncSuggestedTier()"></div>
+          <div class="field" id="jc-stackrow-linkedin"><label>${T("LinkedIn connections", "Contactos en LinkedIn")}</label><input type="number" id="jc-stack-linkedin" min="0" placeholder="Optional" oninput="syncSuggestedTier()"></div>
+          <div class="field" id="jc-stackrow-youtube"><label>${T("YouTube subscribers", "Suscriptores en YouTube")}</label><input type="number" id="jc-stack-youtube" min="0" placeholder="Optional" oninput="syncSuggestedTier()"></div>
+          <div class="field" id="jc-stackrow-snapchat"><label>${T("Snapchat followers", "Seguidores en Snapchat")}</label><input type="number" id="jc-stack-snapchat" min="0" placeholder="Optional" oninput="syncSuggestedTier()"></div>
         </div>
-        <p class="small muted">Your tier reads your TOTAL across platforms. Add the ones you use.</p>
+        <p class="small muted">${T("Your tier reads your TOTAL across platforms. Add the ones you use.", "Tu nivel lee tu TOTAL en todas las plataformas. Agrega las que usas.")}</p>
       </div>
       <div class="form-2col">
-        <div class="field"><label>Typical post views (optional)</label><input type="number" id="jc-avgviews" min="0" placeholder="For example 6000"></div>
-        <div class="field"><label>Your local reach: what share of your followers live in your market? (%)</label>
-          <input type="number" id="jc-localpct" min="0" max="100" required placeholder="For example 60">
+        <div class="field"><label>${T("Typical post views (optional)", "Vistas típicas por publicación (opcional)")}</label><input type="number" id="jc-avgviews" min="0" placeholder="${T("For example 6000", "Por ejemplo 6000")}"></div>
+        <div class="field"><label>${T("Your local reach: what share of your followers live in your market? (%)", "Tu alcance local: ¿qué parte de tus seguidores vive en tu mercado? (%)")}</label>
+          <input type="number" id="jc-localpct" min="0" max="100" required placeholder="${T("For example 60", "Por ejemplo 60")}">
           <p class="small muted">${LOCAL_PCT_HELP}</p>
         </div>
       </div>
-        <div class="field"><label>Top audience cities (optional)</label><input id="jc-topcities" placeholder="For example: Virginia Beach, Norfolk, Chesapeake"><p class="small muted">Up to 5, comma separated.</p></div>
+        <div class="field"><label>${T("Top audience cities (optional)", "Ciudades principales de tu audiencia (opcional)")}</label><input id="jc-topcities" placeholder="For example: Virginia Beach, Norfolk, Chesapeake"><p class="small muted">${T("Up to 5, comma separated.", "Hasta 5, separadas por comas.")}</p></div>
       </div>
       <div class="fgroup">
-        <p class="fg-kicker">What you create</p>
-        <div class="field"><label>What do you create in? (pick at least one)</label><div class="checkrow">${cats}</div></div>
-        <div class="field"><label>Comps you would accept (optional)</label><div class="checkrow">${comps}</div></div>
+        <p class="fg-kicker">${T("What you create", "Lo que creas")}</p>
+        <div class="field"><label>${T("What do you create in? (pick at least one)", "¿En qué categorías creas? (elige al menos una)")}</label><div class="checkrow">${cats}</div></div>
+        <div class="field"><label>${T("Comps you would accept (optional)", "Cortesías que aceptarías (opcional)")}</label><div class="checkrow">${comps}</div></div>
         <div class="field" id="jc-paid-wrap" style="display:none">
-          <label class="tgl-row"><input type="checkbox" class="sw" id="jc-paid"><span><strong>Paid cash campaigns</strong> (Headliners tier): separate from comps, businesses can hire me for paid campaigns when a business runs one.</span></label>
-          <p class="small muted">Paid campaigns depend on the business and the campaign. Comps are always part of SIGNL; paid campaigns are separate bookings when a business offers one.</p>
+          <label class="tgl-row"><input type="checkbox" class="sw" id="jc-paid"><span><strong>${T("Paid cash campaigns", "Campañas pagadas en efectivo")}</strong> ${T("(Headliners tier): separate from comps, businesses can hire me for paid campaigns when a business runs one.", "(nivel Headliners): aparte de las cortesías, los negocios pueden contratarme para campañas pagadas cuando un negocio lance una.")}</span></label>
+          <p class="small muted">${T("Paid campaigns depend on the business and the campaign. Comps are always part of SIGNL; paid campaigns are separate bookings when a business offers one.", "Las campañas pagadas dependen del negocio y de la campaña. Las cortesías siempre son parte de SIGNL; las campañas pagadas son reservas aparte cuando un negocio ofrece una.")}</p>
         </div>
-        <div class="field"><label>Short bio</label><textarea id="jc-bio" rows="2" placeholder="What do you post, where do you go, what do you love locally?"></textarea></div>
-        <div class="field"><label>Profile photo (optional, add now or later)</label><input type="file" id="jc-photo" accept="image/png,image/jpeg,image/webp"><p class="small muted">PNG, JPEG, or WebP, under 2.5 MB. Businesses see this on your profile when your market opens.</p></div>
+        <div class="field"><label>${T("Short bio", "Biografía corta")}</label><textarea id="jc-bio" rows="2" placeholder="${T("What do you post, where do you go, what do you love locally?", "¿Qué publicas, a dónde vas, qué te encanta de tu ciudad?")}"></textarea></div>
+        <div class="field"><label>${T("Profile photo (optional, add now or later)", "Foto de perfil (opcional, ahora o después)")}</label><input type="file" id="jc-photo" accept="image/png,image/jpeg,image/webp"><p class="small muted">${T("PNG, JPEG, or WebP, under 2.5 MB. Businesses see this on your profile when your market opens.", "PNG, JPEG o WebP, menos de 2.5 MB. Los negocios la ven en tu perfil cuando tu mercado abra.")}</p></div>
       </div>
-      <div class="notice blue">The deal, in plain words:
+      <div class="notice blue">${T("The deal, in plain words:", "El trato, en palabras simples:")}
         <ul style="margin:8px 0 0;padding-left:18px">
-          <li>A business comps you a meal or service. You post your honest experience within 48 hours of the visit and disclose the comp. Nobody can ask you for a positive post. Ever.</li>
-          <li>Your check-off is the post link: you paste it in the app under My Visits. The link is the proof.</li>
-          <li>Post within 48 hours of the visit for full credit. A late post inside the catch-up window still counts.</li>
-          <li>If a post never lands, the visit does not count, and repeated misses can pause your account. Showing up matters here.</li>
+          <li>${T("A business comps you a meal or service. You post your honest experience within 48 hours of the visit and disclose the comp. Nobody can ask you for a positive post. Ever.", "Un negocio te da una comida o un servicio en cortesía. Publicas tu experiencia honesta dentro de 48 horas de la visita y revelas la cortesía. Nadie puede pedirte una publicación positiva. Nunca.")}</li>
+          <li>${T("Your check-off is the post link: you paste it in the app under My Visits. The link is the proof.", "Tu marca de visita es el enlace de la publicación: lo pegas en la app, en Mis Visitas. El enlace es la prueba.")}</li>
+          <li>${T("Post within 48 hours of the visit for full credit. A late post inside the catch-up window still counts.", "Publica dentro de 48 horas de la visita para crédito completo. Una publicación tarde, dentro del periodo de gracia, también cuenta.")}</li>
+          <li>${T("If a post never lands, the visit does not count, and repeated misses can pause your account. Showing up matters here.", "Si una publicación nunca llega, la visita no cuenta, y las faltas repetidas pueden pausar tu cuenta. Aquí importa que cumplas.")}</li>
         </ul>
       </div>
-      <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="jc-agree-honest" required><span>I understand no business can require me to post positively. My posts stay my honest opinion.</span></label></div>
-      <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="jc-agree-ftc" required><span>I agree to clearly disclose every comp in my posts, as the FTC requires.</span></label></div>
-      <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="jc-agree-compliance" required><span>I agree to post within 48 hours of every comped visit for full credit and paste the post link in the app. I understand a post that never lands means the visit does not count, and repeated misses can pause my account.</span></label></div>
-      <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="jc-agree-terms" required><span>I agree to the <a href="https://joinsignl.com/terms.html" target="_blank" rel="noopener">Terms of Service</a> and <a href="https://joinsignl.com/privacy.html" target="_blank" rel="noopener">Privacy Policy</a>, and I agree SIGNL can email me about my account, launch updates and offers. I can unsubscribe from marketing emails at any time.</span></label></div>
+      <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="jc-agree-honest" required><span>${T("I understand no business can require me to post positively. My posts stay my honest opinion.", "Entiendo que ningún negocio puede exigirme publicar en positivo. Mis publicaciones son mi opinión honesta.")}</span></label></div>
+      <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="jc-agree-ftc" required><span>${T("I agree to clearly disclose every comp in my posts, as the FTC requires.", "Acepto revelar con claridad cada cortesía en mis publicaciones, como lo exige la FTC.")}</span></label></div>
+      <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="jc-agree-compliance" required><span>${T("I agree to post within 48 hours of every comped visit for full credit and paste the post link in the app. I understand a post that never lands means the visit does not count, and repeated misses can pause my account.", "Acepto publicar dentro de 48 horas de cada visita de cortesía para crédito completo y pegar el enlace en la app. Entiendo que una publicación que nunca llega significa que la visita no cuenta, y que las faltas repetidas pueden pausar mi cuenta.")}</span></label></div>
+      <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="jc-agree-terms" required><span>${T("I agree to the", "Acepto los")} <a href="https://joinsignl.com/terms.html" target="_blank" rel="noopener">${T("Terms of Service", "Términos de Servicio")}</a> ${T("and", "y la")} <a href="https://joinsignl.com/privacy.html" target="_blank" rel="noopener">${T("Privacy Policy", "Política de Privacidad")}</a>${T(", and I agree SIGNL can email me about my account, launch updates and offers. I can unsubscribe from marketing emails at any time.", ", y acepto que SIGNL me escriba sobre mi cuenta, novedades del lanzamiento y ofertas. Puedo cancelar los correos de marketing cuando quiera.")}</span></label></div>
       <div id="jc-save-warn"></div>
-      <button class="btn" type="submit" style="width:100%">Create my profile</button>
-      <p class="small muted mt">Every application is reviewed by a person, and every founding application gets a decision or a clear status within 2 business days. Founding spots are held in sign-up order.</p>
+      <button class="btn" type="submit" style="width:100%">${T("Create my profile", "Crear mi perfil")}</button>
+      <p class="small muted mt">${T("Every application is reviewed by a person, and every founding application gets a decision or a clear status within 2 business days. Founding spots are held in sign-up order.", "Cada solicitud la revisa una persona, y cada solicitud fundadora recibe una decisión o un estado claro en 2 días laborables. Los lugares de fundador se guardan en orden de registro.")}</p>
     </form>
     </div>
   </section>`;
@@ -3763,10 +3780,10 @@ async function doRegisterCreator(e) {
   };
   const cats = Array.from(document.querySelectorAll("input[name=c-cat]:checked")).map((x) => x.value);
   const comps = Array.from(document.querySelectorAll("input[name=c-comp]:checked")).map((x) => x.value);
-  if (!cats.length) { errBox("Pick at least one category you create in."); return false; }
-  if (!document.getElementById("jc-agree-honest").checked) { errBox("Please confirm the honest-post rule."); return false; }
-  if (!document.getElementById("jc-agree-ftc").checked) { errBox("Please confirm the FTC disclosure agreement."); return false; }
-  if (!document.getElementById("jc-agree-compliance").checked) { errBox("Please confirm the post rule: post within 48 hours for full credit, paste the link, and understand a post that never lands means the visit does not count, and repeated misses can pause your account."); return false; }
+  if (!cats.length) { errBox(T("Pick at least one category you create in.", "Elige al menos una categoría en la que creas.")); return false; }
+  if (!document.getElementById("jc-agree-honest").checked) { errBox(T("Please confirm the honest-post rule.", "Confirma la regla de publicaciones honestas, por favor.")); return false; }
+  if (!document.getElementById("jc-agree-ftc").checked) { errBox(T("Please confirm the FTC disclosure agreement.", "Confirma el acuerdo de revelación de la FTC, por favor.")); return false; }
+  if (!document.getElementById("jc-agree-compliance").checked) { errBox(T("Please confirm the post rule: post within 48 hours for full credit, paste the link, and understand a post that never lands means the visit does not count, and repeated misses can pause your account.", "Confirma la regla de publicación: publica dentro de 48 horas para crédito completo, pega el enlace, y entiende que una publicación que nunca llega significa que la visita no cuenta, y que las faltas repetidas pueden pausar tu cuenta.")); return false; }
   const primaryPlatform = jcPrimary();
   const stackFromForm = {};
   const primaryCount = parseInt(document.getElementById("jc-followers").value, 10) || 0;
@@ -3776,13 +3793,13 @@ async function doRegisterCreator(e) {
     const v = parseInt(document.getElementById(id).value, 10) || 0;
     if (v > 0) stackFromForm[platform] = v;
   }
-  if (!document.getElementById("jc-agree-terms").checked) { errBox("Please agree to the Terms of Service and email consent so we can reach you at launch."); return false; }
+  if (!document.getElementById("jc-agree-terms").checked) { errBox(T("Please agree to the Terms of Service and email consent so we can reach you at launch.", "Acepta los Términos de Servicio y el consentimiento de correo para poder contactarte al lanzar, por favor.")); return false; }
   // The primary social link is required (Jeff, 2026-10-26): it is
   // how businesses and our team view and verify the creator's
   // page. A pasted profile link normalizes to the clean handle.
   const jcHandleInput = document.getElementById("jc-handle");
   const jcHandle = normalizeHandleClient(jcHandleInput.value);
-  if (!jcHandle) { errBox(`Your ${primaryLabelClient(primaryPlatform)} handle is required: paste your handle or a link to your page.`); return false; }
+  if (!jcHandle) { errBox(`${T("Your", "Tu")} ${primaryLabelClient(primaryPlatform)} ${T("handle is required: paste your handle or a link to your page.", "usuario es obligatorio: pega tu usuario o un enlace a tu página.")}`); return false; }
   jcHandleInput.value = jcHandle;
   const autoBand = suggestedTierId(signupStackTotal());
   const paidBox = document.getElementById("jc-paid");
@@ -3793,8 +3810,8 @@ async function doRegisterCreator(e) {
   const customCity = isUnlisted ? document.getElementById("jc-city-text").value.trim() : "";
   const customCountry = isUnlisted ? document.getElementById("jc-country-text").value.trim() : "";
   const customState = isUnlisted ? document.getElementById("jc-state-text").value.trim() : "";
-  if (isUnlisted && !customCity) { errBox("Tell us your city, so your sign-up counts toward opening SIGNL there."); return false; }
-  if (isUnlisted && !customCountry) { errBox("Tell us your country, so your sign-up counts toward opening SIGNL there."); return false; }
+  if (isUnlisted && !customCity) { errBox(T("Tell us your city, so your sign-up counts toward opening SIGNL there.", "Dinos tu ciudad, para que tu registro cuente para abrir SIGNL ahí.")); return false; }
+  if (isUnlisted && !customCountry) { errBox(T("Tell us your country, so your sign-up counts toward opening SIGNL there.", "Dinos tu país, para que tu registro cuente para abrir SIGNL ahí.")); return false; }
   // Zero-audience warning (audit F9 twin): an all-zero stack is a
   // valid sign-up but an unbookable profile. Say so inline before
   // it submits, and let the creator choose.
@@ -3840,6 +3857,7 @@ async function doRegisterCreator(e) {
       agreedTerms: true,
       referredBy: storedRef() || undefined,
       signupSource: storedSrc() || undefined,
+      lang: state.lang === "es" ? "es" : undefined,
     });
     state.user = data.user;
     await uploadPhotoInput("jc-photo");
@@ -3886,7 +3904,7 @@ function renderForBusinesses() {
         </div>
         <div class="form-2col">
           <div class="field"><label>Email</label><input id="jb-email" type="email" required placeholder="you@yourbusiness.com"></div>
-          <div class="field"><label>Password (10+ characters)</label><input id="jb-password" type="password" required minlength="10"></div>
+          <div class="field"><label>${T("Password (10+ characters)", "Contraseña (10 o más caracteres)")}</label><input id="jb-password" type="password" required minlength="10"></div>
         </div>
       </div>
       <div class="fgroup">
@@ -4002,8 +4020,8 @@ async function registerBusiness(e) {
   const customCity = isUnlisted ? document.getElementById("jb-city-text").value.trim() : "";
   const customCountry = isUnlisted ? document.getElementById("jb-country-text").value.trim() : "";
   const customState = isUnlisted ? document.getElementById("jb-state-text").value.trim() : "";
-  if (isUnlisted && !customCity) { errBox("Tell us your city, so your sign-up counts toward opening SIGNL there."); return false; }
-  if (isUnlisted && !customCountry) { errBox("Tell us your country, so your sign-up counts toward opening SIGNL there."); return false; }
+  if (isUnlisted && !customCity) { errBox(T("Tell us your city, so your sign-up counts toward opening SIGNL there.", "Dinos tu ciudad, para que tu registro cuente para abrir SIGNL ahí.")); return false; }
+  if (isUnlisted && !customCountry) { errBox(T("Tell us your country, so your sign-up counts toward opening SIGNL there.", "Dinos tu país, para que tu registro cuente para abrir SIGNL ahí.")); return false; }
   if (!submitBusy(form, true)) return false;
   try {
     const data = await api("POST", "/auth/register", {
@@ -4107,27 +4125,27 @@ function renderPending() {
   const claimedOnly = isCreator && u.creator && u.creator.signupPath === "quick_claim" && u.creator.profileComplete === false;
   app.innerHTML = `
   <section class="panel center" style="max-width:560px;margin:40px auto">
-    <h2>${claimedOnly ? "Your spot is claimed" : "Founding profile received"}</h2>
+    <h2>${claimedOnly ? T("Your spot is claimed", "Tu lugar está reclamado") : T("Founding profile received", "Perfil fundador recibido")}</h2>
     ${claimedOnly
-      ? `<p>Thanks, ${esc(u.name)}. Your founding spot in <strong>${place}</strong> is claimed and your application is in the review queue. Every founding application gets a decision or a clear status within 2 business days.</p>
-    <p class="muted" style="text-align:left">Your profile is not finished yet, and that is by design: when you are approved, we email you, and you finish your profile from the checklist on your dashboard (your home city, your audience counts, what share of it is local, your photo). A finished profile is what businesses see, so that step is what makes you bookable.</p>`
-      : `<p>Thanks, ${esc(u.name)}. Your founding creator profile for <strong>${place}</strong> is built and in the review queue. Every founding application gets a decision or a clear status within 2 business days.</p>`}
-    ${isCreator ? `<p><strong>${CREATOR_FREE_LINE}</strong></p>` : ""}
+      ? `<p>${T("Thanks,", "Gracias,")} ${esc(u.name)}. ${T("Your founding spot in", "Tu lugar de fundador en")} <strong>${place}</strong> ${T("is claimed and your application is in the review queue. Every founding application gets a decision or a clear status within 2 business days.", "está reclamado y tu solicitud está en la fila de revisión. Cada solicitud fundadora recibe una decisión o un estado claro en 2 días laborables.")}</p>
+    <p class="muted" style="text-align:left">${T("Your profile is not finished yet, and that is by design: when you are approved, we email you, and you finish your profile from the checklist on your dashboard (your home city, your audience counts, what share of it is local, your photo). A finished profile is what businesses see, so that step is what makes you bookable.", "Tu perfil aún no está terminado, y es así a propósito: cuando te aprobemos, te escribimos por correo, y terminas tu perfil desde la lista de tu panel (tu ciudad, tus conteos de audiencia, qué parte es local, tu foto). Un perfil terminado es lo que ven los negocios, así que ese paso es lo que te hace contratable.")}</p>`
+      : `<p>${T("Thanks,", "Gracias,")} ${esc(u.name)}. ${T("Your founding creator profile for", "Tu perfil de creador fundador para")} <strong>${place}</strong> ${T("is built and in the review queue. Every founding application gets a decision or a clear status within 2 business days.", "está creado y en la fila de revisión. Cada solicitud fundadora recibe una decisión o un estado claro en 2 días laborables.")}</p>`}
+    ${isCreator ? `<p><strong>${T(CREATOR_FREE_LINE, "Unirte a SIGNL es gratis para los creadores. Siempre.")}</strong></p>` : ""}
     ${isCreator ? marketResolvedNote(u) : ""}
     ${isCreator && isUnlisted && Array.isArray(u.marketCandidates) && u.marketCandidates.length ? `
     <div style="text-align:left;margin-top:16px">
-      <p class="small" style="margin:0"><strong>One quick thing:</strong> ${esc(typedCityDisplay(u))} is in more than one SIGNL market. Which one is yours?</p>
+      <p class="small" style="margin:0"><strong>${T("One quick thing:", "Una cosa rápida:")}</strong> ${esc(typedCityDisplay(u))} ${T("is in more than one SIGNL market. Which one is yours?", "está en más de un mercado de SIGNL. ¿Cuál es el tuyo?")}</p>
       <div style="margin-top:8px">${u.marketCandidates.map((m) => `<button class="btn small-btn" style="margin:0 8px 8px 0" onclick="return pickCandidateMarket(event, '${esc(m)}')">${esc(marketDisplayName(m))}</button>`).join("")}</div>
-      <p class="small muted" style="margin:0">Your typed city stays as your home city either way.</p>
+      <p class="small muted" style="margin:0">${T("Your typed city stays as your home city either way.", "Tu ciudad escrita se queda como tu ciudad de todos modos.")}</p>
     </div>` : ""}
     ${isCreator && f.queueBand ? `<p><span class="badge info">${isUnlisted ? `You are in the first ${f.queueBand} to sign up in ${esc(u.city)}` : `You are in the first ${f.queueBand} founding creators in ${esc(marketTalkNameClient(u.market))}`}</span></p>` : ""}
     <p class="muted">${isUnlisted
-      ? `SIGNL is not open in ${esc(u.city)} yet, and your sign-up counts toward opening it: we open new markets where creator sign-ups pile up, and founding sign-ups there go first. Every application is reviewed by a person. The moment you are approved, your founding status page opens here, and we will email you at ${esc(u.email)} the moment ${esc(u.city)} opens. Sign back in any time to check your status.${state.boot && state.boot.email && state.boot.email.enabled ? ` A confirmation email is on its way to ${esc(u.email)}.` : ""}`
-      : `Every application is reviewed by a person. The moment you are approved, your founding status page opens here, and we will email you at ${esc(u.email)} when ${esc(marketTalkNameClient(u.market))} opens to businesses in the next 30 to 90 days. Sign back in any time to check your status.${state.boot && state.boot.email && state.boot.email.enabled ? ` A confirmation email is on its way to ${esc(u.email)}.` : ""}`}</p>
+      ? `${T("SIGNL is not open in", "SIGNL aún no abrió en")} ${esc(u.city)} ${T("yet, and your sign-up counts toward opening it: we open new markets where creator sign-ups pile up, and founding sign-ups there go first. Every application is reviewed by a person. The moment you are approved, your founding status page opens here, and we will email you at", "y tu registro cuenta para abrirlo: abrimos mercados nuevos donde se juntan registros de creadores, y los registros fundadores de ahí van primero. Cada solicitud la revisa una persona. En cuanto te aprobemos, tu página de estado fundador se abre aquí, y te escribimos a")} ${esc(u.email)} ${T("the moment", "en cuanto")} ${esc(u.city)} ${T("opens. Sign back in any time to check your status.", "abra. Entra cuando quieras para ver tu estado.")}${state.boot && state.boot.email && state.boot.email.enabled ? ` ${T("A confirmation email is on its way to", "Un correo de confirmación va en camino a")} ${esc(u.email)}.` : ""}`
+      : `${T("Every application is reviewed by a person. The moment you are approved, your founding status page opens here, and we will email you at", "Cada solicitud la revisa una persona. En cuanto te aprobemos, tu página de estado fundador se abre aquí, y te escribimos a")} ${esc(u.email)} ${T("when", "cuando")} ${esc(marketTalkNameClient(u.market))} ${T("opens to businesses in the next 30 to 90 days. Sign back in any time to check your status.", "abra para los negocios en los próximos 30 a 90 días. Entra cuando quieras para ver tu estado.")}${state.boot && state.boot.email && state.boot.email.enabled ? ` ${T("A confirmation email is on its way to", "Un correo de confirmación va en camino a")} ${esc(u.email)}.` : ""}`}</p>
     ${isCreator && !(u.creator && u.creator.hasPhoto) ? `
     <div style="text-align:left">
-      <div class="field"><label>Add your profile photo now (optional)</label><input type="file" id="pending-photo" accept="image/png,image/jpeg,image/webp"></div>
-      <button class="btn small-btn" onclick="return uploadPendingPhoto(event)">Upload photo</button> <span id="pending-photo-ok" class="saved"></span>
+      <div class="field"><label>${T("Add your profile photo now (optional)", "Agrega tu foto de perfil ahora (opcional)")}</label><input type="file" id="pending-photo" accept="image/png,image/jpeg,image/webp"></div>
+      <button class="btn small-btn" onclick="return uploadPendingPhoto(event)">${T("Upload photo", "Subir foto")}</button> <span id="pending-photo-ok" class="saved"></span>
     </div>` : ""}
     ${isCreator ? `
     <div style="text-align:left;margin-top:16px">
@@ -4140,7 +4158,7 @@ function renderPending() {
           <div class="field"><label>Your city</label><input id="pm-city-text" value="${esc(u.city || "")}" placeholder="For example: Tulsa"></div>
           <div class="field"><label>Your country</label><input id="pm-country-text" value="${esc(u.country || "")}" placeholder="For example: United States"></div>
           <div class="field"><label>Your state or province (optional)</label><input id="pm-state-text" value="${esc(u.state || "")}" placeholder="Optional, for example: OK"></div>
-          <p class="small muted">Not open there yet — your sign-up counts toward opening it. Founding sign-ups go first.</p>
+          <p class="small muted">${T("Not open there yet — your sign-up counts toward opening it. Founding sign-ups go first.", "Todavía no abrimos ahí. Tu registro cuenta para abrirlo. Los registros fundadores van primero.")}</p>
         </div>
         <button class="btn small-btn" onclick="return savePendingMarket(event)">Move my application</button>
         <p class="small muted" style="margin-top:8px">Your sign-up time moves with you, so your place in line is kept.</p>
@@ -4229,8 +4247,8 @@ async function savePendingMarket(e) {
     body.customCity = document.getElementById("pm-city-text").value.trim();
     body.customCountry = document.getElementById("pm-country-text").value.trim();
     body.customState = document.getElementById("pm-state-text").value.trim();
-    if (!body.customCity) { errBox("Tell us your city, so your sign-up counts toward opening SIGNL there."); return false; }
-    if (!body.customCountry) { errBox("Tell us your country, so your sign-up counts toward opening SIGNL there."); return false; }
+    if (!body.customCity) { errBox(T("Tell us your city, so your sign-up counts toward opening SIGNL there.", "Dinos tu ciudad, para que tu registro cuente para abrir SIGNL ahí.")); return false; }
+    if (!body.customCountry) { errBox(T("Tell us your country, so your sign-up counts toward opening SIGNL there.", "Dinos tu país, para que tu registro cuente para abrir SIGNL ahí.")); return false; }
   } else {
     body.city = document.getElementById("pm-city").value;
   }
@@ -6078,26 +6096,26 @@ function creatorProfileHtml(u) {
     </div>` : ""}
     <div id="form-error"></div>
     ${ytNoticeHtml()}
-    ${u.profileCompletion && !u.profileCompletion.complete ? `<div class="notice blue">Your profile is not finished yet. Still needed to go live: ${u.profileCompletion.items.filter((i) => i.required && !i.done).map((i) => esc(i.label)).join(", ")}. Fill in the fields below and save. Businesses cannot see you, and you cannot take offers, until your profile is finished.</div>` : ""}
+    ${u.profileCompletion && !u.profileCompletion.complete ? `<div class="notice blue">${T("Your profile is not finished yet. Still needed to go live:", "Tu perfil aún no está terminado. Todavía falta para estar activo:")} ${u.profileCompletion.items.filter((i) => i.required && !i.done).map((i) => esc(i.label)).join(", ")}. ${T("Fill in the fields below and save. Businesses cannot see you, and you cannot take offers, until your profile is finished.", "Llena los campos de abajo y guarda. Los negocios no pueden verte, y no puedes aceptar ofertas, hasta que tu perfil esté terminado.")}</div>` : ""}
     <form onsubmit="return doUpdateCreator(event)">
       <div class="fgroup tint">
-      <p class="fg-kicker">The basics</p>
-      <div class="field"><label>Your name</label><input id="p-name" value="${esc(u.name || "")}"><p class="small muted">Shown to businesses next to your handle. A quick claim starts with your handle here; put your real name in.</p></div>
-      <div class="field"><label>Your photos</label>
+      <p class="fg-kicker">${T("The basics", "Lo básico")}</p>
+      <div class="field"><label>${T("Your name", "Tu nombre")}</label><input id="p-name" value="${esc(u.name || "")}"><p class="small muted">${T("Shown to businesses next to your handle. A quick claim starts with your handle here; put your real name in.", "Se muestra a los negocios junto a tu usuario. Un reclamo rápido empieza con tu usuario aquí; pon tu nombre real.")}</p></div>
+      <div class="field"><label>${T("Your photos", "Tus fotos")}</label>
         <div id="p-gallery">${galleryHtml(u)}</div>
-        <p class="small muted">Up to 6 photos. The first is your cover: the one on your cards. Changes save as you make them. PNG, JPEG, or WebP, under 2.5 MB each.</p>
+        <p class="small muted">${T("Up to 6 photos. The first is your cover: the one on your cards. Changes save as you make them. PNG, JPEG, or WebP, under 2.5 MB each.", "Hasta 6 fotos. La primera es tu portada: la de tus tarjetas. Los cambios se guardan al hacerlos. PNG, JPEG o WebP, menos de 2.5 MB cada una.")}</p>
         <p class="small lane-err" id="gallery-err" style="display:none"></p>
       </div>
       <div class="form-2col">
-        <div class="field"><label>Where is your main audience?</label>${platformChipsHtml("p-platform", c.primaryPlatform || "instagram", "syncPPlatform")}<p class="small muted" id="p-proof-note" style="display:${(c.primaryPlatform || "instagram") !== "instagram" ? "" : "none"}">${PROOF_DISCLOSURE}</p></div>
-        <div class="field"><label>Your main handle</label><input id="p-handle" value="${esc(c.handle || "")}"><p class="small muted">Your handle on your main platform. Your public profile and claim links point there.</p></div>
+        <div class="field"><label>${T("Where is your main audience?", "¿Dónde está tu audiencia principal?")}</label>${platformChipsHtml("p-platform", c.primaryPlatform || "instagram", "syncPPlatform")}<p class="small muted" id="p-proof-note" style="display:${(c.primaryPlatform || "instagram") !== "instagram" ? "" : "none"}">${PROOF_DISCLOSURE}</p></div>
+        <div class="field"><label>${T("Your main handle", "Tu usuario principal")}</label><input id="p-handle" value="${esc(c.handle || "")}"><p class="small muted">${T("Your handle on your main platform. Your public profile and claim links point there.", "Tu usuario en tu plataforma principal. Tu perfil público y tus enlaces de reclamo apuntan ahí.")}</p></div>
         ${u.market === unlistedLabel()
-          ? `<div class="field"><label>Your city (not an open market yet)</label><input id="p-city-text" value="${esc(u.city || "")}"></div>
-             <div class="field"><label>Your country</label><input id="p-country-text" value="${esc(u.country || "")}"></div>
-             <div class="field"><label>Your state or province (optional)</label><input id="p-state-text" value="${esc(u.state || "")}"></div>`
-          : `<div class="field"><label>Home city (${esc(marketDisplayName(u.market))})</label><select id="p-city">${cityOptions(u.market, u.city || "")}</select></div>`}
+          ? `<div class="field"><label>${T("Your city (not an open market yet)", "Tu ciudad (aún no es un mercado abierto)")}</label><input id="p-city-text" value="${esc(u.city || "")}"></div>
+             <div class="field"><label>${T("Your country", "Tu país")}</label><input id="p-country-text" value="${esc(u.country || "")}"></div>
+             <div class="field"><label>${T("Your state or province (optional)", "Tu estado o provincia (opcional)")}</label><input id="p-state-text" value="${esc(u.state || "")}"></div>`
+          : `<div class="field"><label>${T("Home city", "Ciudad")} (${esc(marketDisplayName(u.market))})</label><select id="p-city">${cityOptions(u.market, u.city || "")}</select></div>`}
       </div>
-      <div class="field"><label>Your neighborhood or area</label><input id="p-neighborhood" value="${esc(c.neighborhood || "")}" placeholder="Optional, for example: Oceanfront, Ghent, Town Center" maxlength="80"><p class="small muted">Businesses search by neighborhood. Keep it to the area you actually post from.</p></div>
+      <div class="field"><label>${T("Your neighborhood or area", "Tu vecindario o zona")}</label><input id="p-neighborhood" value="${esc(c.neighborhood || "")}" placeholder="${T("Optional, for example: Oceanfront, Ghent, Town Center", "Opcional, por ejemplo: Oceanfront, Ghent, Town Center")}" maxlength="80"><p class="small muted">${T("Businesses search by neighborhood. Keep it to the area you actually post from.", "Los negocios buscan por vecindario. Déjalo en la zona desde donde publicas de verdad.")}</p></div>
       <div class="field"><label class="tgl-row"><input type="checkbox" class="sw" id="p-realtor" ${isRealtorProfile(c) ? "checked" : ""} onchange="syncRealtorFields()"><span><strong>I am a licensed real estate agent</strong>: turning this on adds your brokerage and neighborhoods to your profile and shows businesses your Realtor badge.</span></label></div>
       <div id="p-realtor-block" style="display:${isRealtorProfile(c) ? "" : "none"}">
         <div class="field"><label>Your neighborhoods (up to 3)</label>
@@ -6106,42 +6124,42 @@ function creatorProfileHtml(u) {
         </div>
         <div class="field"><label>Brokerage or firm (optional)</label><input id="p-brokerage" value="${esc(c.brokerage || "")}" placeholder="Your brokerage, as licensed" maxlength="120"><p class="small muted">Shown on your public profile and proof sheet as "Brokered by", so your pages carry your firm the way your broker requires.</p></div>
       </div>
-      <div class="field"><label>Your university (if you are a student now)</label><input id="p-university" value="${esc(c.university || u.university || "")}" placeholder="Start typing your school" maxlength="120"><div class="uni-results" id="p-university-results"></div><p class="small muted">Adding your school groups same-school referrals into your campus crew.${(c.university || u.university) && (c.universityStatus || u.universityStatus) === "current_student" ? ` Current badge: <strong>Campus: ${esc(c.university || u.university)}</strong>.` : ""}</p></div>
-      <div class="field"><label>Student status (optional)</label>${universityStatusChipsHtml("p-university-status", c.universityStatus || u.universityStatus || "")}<p class="small muted">The campus badge is for current students only, so it shows while your status is Current student.</p></div>
+      <div class="field"><label>${T("Your university (if you are a student now)", "Tu universidad (si eres estudiante ahora)")}</label><input id="p-university" value="${esc(c.university || u.university || "")}" placeholder="${T("Start typing your school", "Empieza a escribir tu universidad")}" maxlength="120"><div class="uni-results" id="p-university-results"></div><p class="small muted">${T("Adding your school groups same-school referrals into your campus crew.", "Agregar tu universidad agrupa a tus referidos de la misma escuela en tu grupo de campus.")}${(c.university || u.university) && (c.universityStatus || u.universityStatus) === "current_student" ? ` Current badge: <strong>Campus: ${esc(c.university || u.university)}</strong>.` : ""}</p></div>
+      <div class="field"><label>${T("Student status (optional)", "Estado de estudiante (opcional)")}</label>${universityStatusChipsHtml("p-university-status", c.universityStatus || u.universityStatus || "")}<p class="small muted">${T("The campus badge is for current students only, so it shows while your status is Current student.", "La insignia de campus es solo para estudiantes actuales, así que se muestra mientras tu estado sea Estudiante actual.")}</p></div>
       </div>
       <div class="fgroup">
-      <p class="fg-kicker">Your links</p>
+      <p class="fg-kicker">${T("Your links", "Tus enlaces")}</p>
       <div class="form-2col">
-        <div class="field"><label>TikTok handle</label><input id="p-tiktok" value="${esc(c.tiktokHandle || "")}" placeholder="Optional"></div>
-        <div class="field"><label>YouTube channel</label><input id="p-youtube" value="${esc(c.youtubeChannel || "")}" placeholder="Optional"></div>
+        <div class="field"><label>${T("TikTok handle", "Usuario de TikTok")}</label><input id="p-tiktok" value="${esc(c.tiktokHandle || "")}" placeholder="${T("Optional", "Opcional")}"></div>
+        <div class="field"><label>${T("YouTube channel", "Canal de YouTube")}</label><input id="p-youtube" value="${esc(c.youtubeChannel || "")}" placeholder="${T("Optional", "Opcional")}"></div>
       </div>
       <div class="form-2col">
-        <div class="field"><label>Facebook profile or Page</label><input id="p-facebook" value="${esc(c.facebookUrl || "")}" placeholder="Optional"></div>
-        <div class="field"><label>X (Twitter) handle or URL</label><input id="p-x" value="${esc(c.xHandle || "")}" placeholder="Optional"></div>
+        <div class="field"><label>${T("Facebook profile or Page", "Perfil o Página de Facebook")}</label><input id="p-facebook" value="${esc(c.facebookUrl || "")}" placeholder="${T("Optional", "Opcional")}"></div>
+        <div class="field"><label>${T("X (Twitter) handle or URL", "Usuario o URL de X (Twitter)")}</label><input id="p-x" value="${esc(c.xHandle || "")}" placeholder="${T("Optional", "Opcional")}"></div>
       </div>
-      <div class="field"><label>LinkedIn profile URL</label><input id="p-linkedin" value="${esc(c.linkedinUrl || "")}" placeholder="Optional"></div>
+      <div class="field"><label>${T("LinkedIn profile URL", "URL de tu perfil de LinkedIn")}</label><input id="p-linkedin" value="${esc(c.linkedinUrl || "")}" placeholder="${T("Optional", "Opcional")}"></div>
       </div>
       <div class="fgroup tint">
-      <p class="fg-kicker">Your audience</p>
-      <div class="field"><label>Your tier band</label><p style="margin:6px 0"><strong id="p-tier-band">${esc(c.tierBand || "")}</strong></p><p class="small muted">Set automatically from your total audience across platforms. It updates itself when your counts below change; nobody picks their own band.</p></div>
-      <div class="field"><label>Your audience, platform by platform</label>
+      <p class="fg-kicker">${T("Your audience", "Tu audiencia")}</p>
+      <div class="field"><label>${T("Your tier band", "Tu nivel")}</label><p style="margin:6px 0"><strong id="p-tier-band">${esc(c.tierBand || "")}</strong></p><p class="small muted">${T("Set automatically from your total audience across platforms. It updates itself when your counts below change; nobody picks their own band.", "Se fija solo, según tu audiencia total en todas las plataformas. Se actualiza cuando cambian tus conteos de abajo; nadie elige su propio nivel.")}</p></div>
+      <div class="field"><label>${T("Your audience, platform by platform", "Tu audiencia, plataforma por plataforma")}</label>
         <p class="small muted">Connect a platform and its count is verified: it updates on its own, and businesses see a Synced mark next to it. Counts you type yourself are labeled Self-reported.</p>
         <div class="form-2col">
           ${stackRows.map(stackRowHtml).join("")}
         </div>
         <p class="small muted">Total audience: <strong id="p-stack-total">${fmtNum(totalAudienceOf(c))}</strong> across every platform. Businesses see the total and the breakdown. Skip any platform you do not use (leave it at 0). Completing 3 or more platforms earns Momentum points.</p>
       </div>
-      <div class="field"><label>Max visits per week</label>${dragBarHtml("p-maxvisits", 1, 7, `value="${c.maxVisitsPerWeek || 3}"`)}<p class="small muted">Your pace, your call: 1 to 7 comped visits a week. At your max, offers still arrive but accepting waits until next week, and businesses see you as booked up this week.</p></div>
+      <div class="field"><label>${T("Max visits per week", "Visitas máximas por semana")}</label>${dragBarHtml("p-maxvisits", 1, 7, `value="${c.maxVisitsPerWeek || 3}"`)}<p class="small muted">Your pace, your call: 1 to 7 comped visits a week. At your max, offers still arrive but accepting waits until next week, and businesses see you as booked up this week.</p></div>
       <div class="form-2col">
-        <div class="field"><label>Typical post views</label><input type="number" id="p-avgviews" min="0" value="${c.avgViews || 0}"></div>
-        <div class="field"><label>Your local reach (local audience share, %)</label><input type="number" id="p-localpct" min="0" max="100" value="${c.localAudiencePct === null || c.localAudiencePct === undefined ? "" : c.localAudiencePct}"><p class="small muted">${LOCAL_PCT_HELP}</p></div>
+        <div class="field"><label>${T("Typical post views", "Vistas típicas por publicación")}</label><input type="number" id="p-avgviews" min="0" value="${c.avgViews || 0}"></div>
+        <div class="field"><label>${T("Your local reach (local audience share, %)", "Tu alcance local (parte local de tu audiencia, %)")}</label><input type="number" id="p-localpct" min="0" max="100" value="${c.localAudiencePct === null || c.localAudiencePct === undefined ? "" : c.localAudiencePct}"><p class="small muted">${LOCAL_PCT_HELP}</p></div>
       </div>
-      <div class="field"><label>Top audience cities</label><input id="p-topcities" value="${esc((c.topAudienceCities || []).join(", "))}" placeholder="Up to 5, comma separated"></div>
+      <div class="field"><label>${T("Top audience cities", "Ciudades principales de tu audiencia")}</label><input id="p-topcities" value="${esc((c.topAudienceCities || []).join(", "))}" placeholder="${T("Up to 5, comma separated", "Hasta 5, separadas por comas")}"></div>
       </div>
       <div class="fgroup">
-      <p class="fg-kicker">What you create</p>
-      <div class="field"><label>What you create in</label><div class="checkrow">${cats}</div></div>
-      <div class="field"><label>Comps you would accept</label><div class="checkrow">${comps}</div></div>
+      <p class="fg-kicker">${T("What you create", "Lo que creas")}</p>
+      <div class="field"><label>${T("What you create in", "En qué categorías creas")}</label><div class="checkrow">${cats}</div></div>
+      <div class="field"><label>${T("Comps you would accept", "Cortesías que aceptarías")}</label><div class="checkrow">${comps}</div></div>
       <div class="field" id="p-paid-wrap" style="display:${c.tierBand === "Headliners" ? "" : "none"}">
         <label class="tgl-row"><input type="checkbox" class="sw" id="p-paid" ${c.openToPaidCampaigns ? "checked" : ""}><span><strong>Paid cash campaigns</strong> (Headliners tier): businesses can hire me for paid campaigns when a business runs one, separate from comps.</span></label>
       </div>
@@ -6156,10 +6174,10 @@ function creatorProfileHtml(u) {
         ${[0, 1, 2].map((i) => `<input id="p-work-${i}" type="url" placeholder="https://www.instagram.com/reel/... or a TikTok or YouTube link" value="${esc((c.bestWork || [])[i] || "")}" style="margin-bottom:8px">`).join("")}
         <p class="small muted">Your strongest posts, shown on your public profile and to businesses in search results as Watch cards. Instagram, TikTok, or YouTube links only. Clear a box to remove that link.</p>
       </div>
-      <div class="field"><label>Bio</label><textarea id="p-bio" rows="2">${esc(c.bio || "")}</textarea></div>
+      <div class="field"><label>${T("Bio", "Biografía")}</label><textarea id="p-bio" rows="2">${esc(c.bio || "")}</textarea></div>
       </div>
       <div id="save-warn"></div>
-      <button class="btn" type="submit">Save profile</button> <span id="save-ok" class="saved"></span><span id="profile-complete-share"></span>
+      <button class="btn" type="submit">${T("Save profile", "Guardar perfil")}</button> <span id="save-ok" class="saved"></span><span id="profile-complete-share"></span>
     </form>
     ${accountHtml(u)}
     <div id="my-showcase"></div>
@@ -11595,6 +11613,17 @@ function previewDashboardHtml(d) {
     if (srcParam) {
       try { localStorage.setItem("signl_src", srcParam.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 40)); } catch (e) { /* storage unavailable */ }
     }
+    // Spanish claim path (S1): a claim link carrying ?lang=es
+    // (the Spanish site pages send it) persists the preference
+    // exactly like the signup source, and the signed-in record's
+    // own lang=es (set on any device) turns it on too. Only the
+    // exact value "es" counts; the claim and profile-completion
+    // screens read state.lang through T().
+    if (params.get("lang") === "es") {
+      try { localStorage.setItem("signl_lang", "es"); } catch (e) { /* storage unavailable */ }
+    }
+    try { state.lang = localStorage.getItem("signl_lang") === "es" ? "es" : ""; } catch (e) { state.lang = ""; }
+    if (state.user && state.user.role === "creator" && state.user.lang === "es") state.lang = "es";
     // A YouTube connect return (/?yt=<status>) lands a signed-in
     // creator on their profile, where the audience section shows
     // the outcome. The param is consumed here and stripped from
