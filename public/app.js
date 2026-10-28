@@ -1611,7 +1611,16 @@ function tabBarHtml() {
     <button type="button" class="tab-more-row ${state.tab === r.tab ? "on" : ""}" onclick="return go('dashboard','${r.tab}')">
       <span class="tab-ic">${bnIcon(r.icon)}</span><span class="tab-label">${esc(r.label)}</span>${r.badge ? `<span class="tab-badge inline">${r.badge > 99 ? "99+" : r.badge}</span>` : ""}
     </button>`).join("");
-  return `<div class="tab-main">${btns}</div>${more ? `<div class="tab-more"><div class="tab-more-sep"></div>${more}</div>` : ""}`;
+  // Sign out rides directly under Help in the rail's More cluster
+  // (Jeff, 2026-10-28): an action, not a destination, so it never
+  // takes an .on state. The .tab-more container only displays at
+  // rail widths (>=768px); phones keep their own More screen,
+  // which already carries its sign-out row, completely untouched.
+  const signout = `
+    <button type="button" class="tab-more-row" onclick="signOut()">
+      <span class="tab-ic">${bnIcon("signout")}</span><span class="tab-label">Sign out</span>
+    </button>`;
+  return `<div class="tab-main">${btns}</div>${more ? `<div class="tab-more"><div class="tab-more-sep"></div>${more}${signout}</div>` : ""}`;
 }
 
 // The slim V3 top bar: avatar chip + account name on the left;
