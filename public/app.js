@@ -1603,7 +1603,7 @@ function tabBarHtml() {
   const items = tabItemsFor();
   if (!items.length) return "";
   const btns = items.map((it) => `
-    <button type="button" class="tab-item ${it.on ? "on" : ""}" onclick="return go('dashboard','${it.tab}')" aria-label="${esc(it.label)}">
+    <button type="button" class="tab-item ${it.tab === "More" ? "tab-item-more" : ""} ${it.on ? "on" : ""}" onclick="return go('dashboard','${it.tab}')" aria-label="${esc(it.label)}">
       <span class="tab-ic">${it.icon === "sig" ? `<img class="tab-sig-img" src="/assets/sig-axolotl.png" alt="">` : bnIcon(it.icon)}${it.badge ? `<span class="tab-badge">${it.badge > 99 ? "99+" : it.badge}</span>` : ""}</span>
       <span class="tab-label">${esc(it.label)}</span>
     </button>`).join("");

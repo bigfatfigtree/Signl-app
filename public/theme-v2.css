@@ -2203,6 +2203,11 @@ body.v3-on #tabbar { display: block; position: fixed; left: 0; right: 0; bottom:
   body.v3-on .wrap { max-width: min(1080px, 100%); margin-left: auto; margin-right: auto; }
   body.v3-on #tabbar .tab-main { display: flex; flex-direction: column; gap: 2px; }
   body.v3-on #tabbar .tab-more { display: flex; flex-direction: column; gap: 2px; }
+  /* Jeff, 2026-10-28: on the rail, the More item duplicates the
+     expanded destination list directly below it, so the primary
+     group drops it at rail widths. Phones keep More in the bottom
+     bar; their destination list lives behind it. */
+  body.v3-on #tabbar .tab-main .tab-item-more { display: none; }
   .tab-more-sep { border-top: 1px solid var(--line); margin: 10px 4px; }
   .tab-item, .tab-more-row { flex-direction: row; align-items: center; gap: 12px; min-height: 48px; padding: 10px 12px; border-radius: 14px; text-align: left; width: 100%; }
   .tab-item .tab-ic { padding: 0; }
