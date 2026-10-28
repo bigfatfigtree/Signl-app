@@ -1266,6 +1266,7 @@ function dealRowsHtml(o) {
   if (o.experience) main.push(["Experience", esc(o.experience)]);
   terms.push(["Post", o.kind === "paid" ? "Per booking terms &middot; 48h &middot; live 30 days" : "1 post/reel + 1 story &middot; 48h &middot; honest, disclosed &middot; live 30 days"]);
   terms.push(["Rights", o.kind === "paid" ? "Share + repost + ads for 90 days &middot; no edits" : "Native share only &middot; no edits, downloads or ads"]);
+  if (o.requiresSpanish) terms.push(["Language", "Content in Spanish"]);
   const render = (rows) => rows.map(([k, v]) => `<div class="drow"><span class="dk">${k}</span><span class="dv">${v}</span></div>`).join("");
   return `<div class="deal-rows deal-main">${render(main)}</div><div class="deal-rows deal-terms">${render(terms)}</div>`;
 }
@@ -4557,7 +4558,7 @@ function creatorProfileDetailHtml(c, preview, opts) {
             ${c.foundingBand ? `<span class="cc-chip">First ${c.foundingBand} founding</span>` : ""}
           </div>
         </div>
-        <p>${scoreBadge(c.localImpactScore)}${p.openToPaidCampaigns ? ` <span class="badge tier">Open to paid campaigns</span>` : ""}${paidLaneBadgesHtml(p)}${c.momentum && c.momentum.points ? ` <span class="badge info">Momentum ${c.momentum.points} pts</span>` : ""}${badgesHtml(c.badges)}</p>
+        <p>${scoreBadge(c.localImpactScore)}${p.openToPaidCampaigns ? ` <span class="badge tier">Open to paid campaigns</span>` : ""}${p.spanishContent ? ` <span class="badge">Spanish content</span>` : ""}${paidLaneBadgesHtml(p)}${c.momentum && c.momentum.points ? ` <span class="badge info">Momentum ${c.momentum.points} pts</span>` : ""}${badgesHtml(c.badges)}</p>
         <div class="cc-local">
           ${p.localAudiencePct === null || p.localAudiencePct === undefined
             ? `<div class="lbl">Local audience not reported yet</div>`
@@ -4672,7 +4673,7 @@ function creatorCard(c, viewer, opts) {
     ${stackList(c).length ? `<div class="cc-platforms">${stackList(c).map((x) => `<span class="cc-plat">${esc(x.label)} ${fmtNum(x.count)}</span>`).join("")}</div>` : ""}
     ${c.standing === "paused" ? `<p><span class="badge warn">Paused: a late post is outstanding</span> <span class="small muted">This creator is greyed out and cannot take new offers until the post is delivered.</span></p>` : ""}
     ${c.bookedUp ? `<p><span class="badge info">Booked up this week</span> <span class="small muted">At their weekly visit max. You can still send offers; they can accept next week.</span></p>` : ""}
-    <p>${scoreBadge(c.localImpactScore)}${p.openToPaidCampaigns ? ` <span class="badge tier">Open to paid campaigns</span>` : ""}${paidLaneBadgesHtml(p)}${c.momentum && c.momentum.points ? ` <span class="badge info">Momentum ${c.momentum.points} pts</span>` : ""}${badgesHtml(c.badges)}</p>
+    <p>${scoreBadge(c.localImpactScore)}${p.openToPaidCampaigns ? ` <span class="badge tier">Open to paid campaigns</span>` : ""}${p.spanishContent ? ` <span class="badge">Spanish content</span>` : ""}${paidLaneBadgesHtml(p)}${c.momentum && c.momentum.points ? ` <span class="badge info">Momentum ${c.momentum.points} pts</span>` : ""}${badgesHtml(c.badges)}</p>
     ${p.categories && p.categories.length ? `<p class="small">${p.categories.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
     ${p.compCategories && p.compCategories.filter((x) => x !== PAID_COMP).length ? `<p class="small muted">Open to comps: ${p.compCategories.filter((x) => x !== PAID_COMP).map(esc).join(", ")}</p>` : ""}
     ${p.bio ? `<p class="small muted">${esc(p.bio)}</p>` : ""}
@@ -5294,6 +5295,9 @@ function lanePaidLine(c) {
   const total = Math.round(rate * 1.03 * 100) / 100;
   return `your rate $${fmtPrice(rate)} · you keep $${fmtMoney(keep)} (97%). Business pays $${fmtMoney(total)}.`;
 }
+function laneSpanishLine(c) {
+  return c && c.spanishContent ? "on. Businesses can find you with the Spanish content filter, and offers that need Spanish content are marked." : "off. Turn this on if you create content in Spanish, even sometimes.";
+}
 function laneFeeOf(c) {
   const f = Number(c && c.licensingFee);
   return Number.isFinite(f) && f >= 1 ? f : null;
@@ -5335,6 +5339,7 @@ function laneControlsHtml(c) {
       <div class="lane-rate-flex"><input type="number" id="lane-fee" min="1" step="1" inputmode="numeric" placeholder="75" value="${fee || ""}"><button type="button" class="btn small-btn" onclick="return laneFeeSave()">Save fee</button></div>
       <p class="small muted">A business can ask to license one of your delivered comped posts for 90 days of reposting and ad use at this fee. You approve or decline every request; nothing runs without your yes. Leave blank to keep comped posts native-share only.</p>
     </div>
+    <div class="lrow lane-row"><input type="checkbox" class="sw lane-sw" id="lane-spanish" ${c && c.spanishContent ? "checked" : ""} onchange="laneToggleSpanish(this)"><div><label class="lname" for="lane-spanish">Creates content in Spanish</label> <span class="lline" id="lane-spanish-line">— ${esc(laneSpanishLine(c || {}))}</span></div></div>
     <p class="small lane-err" id="lane-err" style="display:none"></p>
     ${payoutsStepHtml(c)}
   </div>`;
@@ -5439,6 +5444,10 @@ async function laneSave(patch) {
     laneErr((err && err.message) || "That didn't save. Try again.");
     return false;
   }
+}
+function laneToggleSpanish(input) {
+  laneSave({ spanishContent: !!input.checked });
+  return true;
 }
 function laneToggleComp(input) {
   laneSave({ compOpen: !!input.checked });
@@ -8117,7 +8126,17 @@ async function loadFavorites() {
 function discoverCatChip(cat, btn) {
   const sel = document.getElementById("f-category");
   if (sel) sel.value = cat;
-  document.querySelectorAll(".dcat-chip").forEach((b) => b.classList.toggle("on", b === btn));
+  document.querySelectorAll(".dcat-chip:not(.esp-chip)").forEach((b) => b.classList.toggle("on", b === btn));
+  runDiscover();
+  return false;
+}
+
+// Spanish content filter chip (Jeff, 2026-10-28): independent
+// of the category chips; it narrows Discover to creators who
+// create content in Spanish.
+function discoverSpanishChip(btn) {
+  state.discoverSpanish = !state.discoverSpanish;
+  if (btn) btn.classList.toggle("on", !!state.discoverSpanish);
   runDiscover();
   return false;
 }
@@ -8134,7 +8153,7 @@ async function loadDiscover() {
     <div class="filters disc-top">
       <div><label>Market</label><select id="f-market">${marketOptions(u.market)}</select></div>
     </div>
-    <div class="dcat-row">${[""].concat(state.boot.creatorCategories).map((c) => `<button type="button" class="dcat-chip${c === "" ? " on" : ""}" onclick="return discoverCatChip('${esc(c)}', this)">${c === "" ? "All" : esc(c)}</button>`).join("")}</div>
+    <div class="dcat-row">${[""].concat(state.boot.creatorCategories).map((c) => `<button type="button" class="dcat-chip${c === "" ? " on" : ""}" onclick="return discoverCatChip('${esc(c)}', this)">${c === "" ? "All" : esc(c)}</button>`).join("")}<button type="button" id="dchip-spanish" class="dcat-chip esp-chip${state.discoverSpanish ? " on" : ""}" onclick="return discoverSpanishChip(this)">Español</button></div>
     <details class="filters-fold"><summary>More filters</summary>
     <div class="filters">
       <div><label>Neighborhood / area</label><input id="f-neighborhood" placeholder="For example: Oceanfront, Ghent"></div>
@@ -8182,6 +8201,7 @@ async function runDiscover() {
   if (minlocal) params.set("minLocalPct", minlocal);
   if (sort) params.set("sort", sort);
   if (document.getElementById("f-paid").checked) params.set("paid", "1");
+  if (state.discoverSpanish) params.set("spanish", "1");
   try {
     const data = await api("GET", "/discover?" + params.toString());
     state.discover = data.creators;
@@ -8270,7 +8290,7 @@ function discoverStackCard(c) {
       </div>
     </div>
     <div class="dcard-body">
-      ${cats.length ? `<div class="dcard-chips">${cats.map((x) => `<span class="cc-chip">${esc(x)}</span>`).join("")}${extra > 0 ? `<span class="cc-chip">+${extra}</span>` : ""}</div>` : ""}
+      ${cats.length || p.spanishContent ? `<div class="dcard-chips">${cats.map((x) => `<span class="cc-chip">${esc(x)}</span>`).join("")}${extra > 0 ? `<span class="cc-chip">+${extra}</span>` : ""}${p.spanishContent ? `<span class="cc-chip">Spanish content</span>` : ""}</div>` : ""}
       <div class="dcard-meta">${place ? `<span>${place}</span>` : ""}<span>${fmtNum(totalAudienceOf(c))} audience</span></div>
       ${c.bookedUp ? `<p class="small muted" style="margin:8px 0 0">Booked up this week — invites still land, accepting reopens next week.</p>` : ""}
       ${c.standing === "paused" ? `<p class="small muted" style="margin:8px 0 0">Paused: a late post is outstanding, so this creator cannot take new offers yet.</p>` : ""}
@@ -8288,6 +8308,9 @@ function discoverClearFilters() {
   ["f-tier", "f-category", "f-comp", "f-sort"].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ""; });
   const paid = document.getElementById("f-paid");
   if (paid) paid.checked = false;
+  state.discoverSpanish = false;
+  const spChip = document.getElementById("dchip-spanish");
+  if (spChip) spChip.classList.remove("on");
   const mkt = document.getElementById("f-market");
   if (mkt && state.user) mkt.value = state.user.market;
   runDiscover();
@@ -8356,6 +8379,7 @@ function duplicateOffer(offerId) {
     spots: o.spots != null ? String(o.spots) : "", applydays: o.applyWindowDays != null ? String(o.applyWindowDays) : "",
     windowdays: o.windowDays != null ? String(o.windowDays) : "", window: o.visitWindow || "",
     covers: o.covers != null ? String(o.covers) : "",
+    spanish: !!o.requiresSpanish,
   };
   state.offersSeg = "live";
   state.tab = "My Offers";
@@ -8516,6 +8540,8 @@ function offerDraftSync() {
   const covers = (document.querySelector("input[name='o2-covers']:checked") || {}).value;
   if (covers) d.covers = covers;
   if (document.querySelector("input[name='o2-tier']")) d.tiers = [...document.querySelectorAll("input[name='o2-tier']:checked")].map((x) => x.value);
+  const spanish = document.getElementById("o2-spanish");
+  if (spanish) d.spanish = !!spanish.checked;
 }
 
 // Per-field inline validation: the error lands in a
@@ -8746,6 +8772,7 @@ async function loadMyOffers() {
       </div>
       <div class="field"><label>What is included <span class="opt-tag">Optional</span> ${infoBtn("includes")}</label><textarea id="o2-includes" rows="2" placeholder="Any two entrees, two drinks each, dessert to share" oninput="offerCoachUpdate()">${esc(dft.includes || "")}</textarea></div>
       <div class="field"><label>The experience <span class="opt-tag">Optional</span> ${infoBtn("experience")}</label><textarea id="o2-experience" rows="2" placeholder="Chef's counter seats, open kitchen" oninput="offerCoachUpdate()">${esc(dft.experience || "")}</textarea></div>
+      <div class="field"><div class="lrow"><input type="checkbox" class="sw" id="o2-spanish" ${dft.spanish ? "checked" : ""} onchange="offerDraftSync()"><div><label for="o2-spanish"><strong>Content in Spanish</strong></label> <span class="opt-tag">Optional</span><p class="small muted" style="margin:2px 0 0">Turn on if this offer needs a creator who creates content in Spanish. The offer is marked; it never blocks anyone from applying.</p></div></div></div>
       </div>
       ${mode === "open" ? `
       <div class="fgroup tint">
@@ -8854,6 +8881,7 @@ function offerCardHtml(o) {
       <span class="set-chip">${o.lane === "direct" ? (o.creatorHandle ? "Direct to @" + esc(o.creatorHandle) : "Direct") : "Open offer"}</span>
       <span class="set-chip">${o.kind === "paid" ? `Cash $${fmtPrice(o.cashRate)}` : `Comp up to $${fmtMoney(o.dollarCap)}`}</span>
       <span class="set-chip">${deliverable}</span>
+      ${o.requiresSpanish ? `<span class="set-chip">Spanish content</span>` : ""}
       <span class="set-chip">${o.filledCount || 0}/${o.spots} spots filled</span>
       ${o.lane === "open" ? `<span class="set-chip more">${o.applicationCount || 0} applications</span>` : ""}
     </div>
@@ -8920,6 +8948,7 @@ async function createOfferV2(e, draft) {
     draft: draft === true,
     creatorId: mode === "direct" ? (target || null) : null,
   };
+  payload.requiresSpanish = !!d.spanish;
   if (kind === "paid") {
     payload.cashRate = parseFloat(d.rate);
     if (d.brief && d.brief.trim()) payload.paidBrief = d.brief.trim();

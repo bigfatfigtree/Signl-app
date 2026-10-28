@@ -2903,6 +2903,9 @@ async function discoverCards(query, viewer) {
   if (query.tier) creators = creators.filter((u) => u.creator && normalizeTierBand(u.creator.tierBand) === normalizeTierBand(query.tier));
   if (query.category) creators = creators.filter((u) => u.creator && u.creator.categories.includes(query.category));
   if (query.compCategory) creators = creators.filter((u) => u.creator && (u.creator.compCategories || []).includes(query.compCategory));
+  // Spanish content filter (Jeff, 2026-10-28): the Discover
+  // "Español" chip. Attribute only; unset means excluded here.
+  if (query.spanish === "1" || query.spanish === "true") creators = creators.filter((u) => u.creator && u.creator.spanishContent === true);
   if (query.neighborhood) {
     const nb = String(query.neighborhood).trim().toLowerCase();
     if (nb) creators = creators.filter((u) => {
@@ -3152,6 +3155,10 @@ async function publicProfilePayload(u) {
     totalAudience: audience.total,
     audienceStack: audience.platforms,
     categories: c.categories || [],
+    // Spanish content attribute (Jeff, 2026-10-28): a simple
+    // yes/no the creator sets on their profile. Optional, never
+    // part of the completeness gate.
+    spanishContent: c.spanishContent === true,
     // Realtor layer (Jeff, 2026-10-22): the profession rides the
     // public payload for every creator; the neighborhood tags
     // and brokerage line are exposed ONLY while the profile is
@@ -7879,6 +7886,14 @@ async function route(event) {
         c.compOpen = b.compOpen !== false;
         changes.compOpen = [user.creator.compOpen !== false, c.compOpen];
       }
+      // Spanish content (Jeff, 2026-10-28): optional creator
+      // attribute, simple yes/no (creates content in Spanish at
+      // all = yes). Deliberately NOT a completeness field, so
+      // existing profiles stay complete whether set or not.
+      if (b.spanishContent !== undefined) {
+        c.spanishContent = b.spanishContent === true;
+        changes.spanishContent = [user.creator.spanishContent === true, c.spanishContent];
+      }
       if (b.paidRate !== undefined) {
         if (b.paidRate === null || b.paidRate === "") {
           changes.paidRate = [c.paidRate == null ? null : c.paidRate, null];
@@ -9542,6 +9557,10 @@ async function route(event) {
         kind,
         covers,
         paidBrief,
+        // Spanish content requirement (Jeff, 2026-10-28):
+        // optional, defaults off, never required. Display and
+        // Discover filtering only; it never blocks an application.
+        requiresSpanish: b.requiresSpanish === true,
         cashRate,
         targetTiers,
         title: String(b.title).trim().slice(0, 140),
