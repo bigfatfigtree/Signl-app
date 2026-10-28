@@ -312,6 +312,19 @@ try {
   const u1Preview = await admin("GET", "/api/admin/preview/discover?market=Hampton%20Roads&university=VCU");
   check("U1: admin preview discover answers with the same filter and facet", (u1Preview.data.creators || []).length === 1 && Array.isArray(u1Preview.data.universities), JSON.stringify(u1Preview.data.universities));
 
+  // ---------- U3: business campus flag (Open to student creators) ----------
+  const u3On = await business("PATCH", "/api/me/profile", { studentOpen: true });
+  check("U3: business profile PATCH stores studentOpen on the business record", u3On.status === 200 && u3On.data.user.business.studentOpen === true, JSON.stringify(u3On.data.user && u3On.data.user.business));
+  const u3Unrelated = await business("PATCH", "/api/me/profile", { about: "A campus table, updated." });
+  check("U3: an unrelated profile save never clears the flag", u3Unrelated.status === 200 && u3Unrelated.data.user.business.studentOpen === true, JSON.stringify(u3Unrelated.data.user && u3Unrelated.data.user.business));
+  const u3Feed = await lead("GET", "/api/offers");
+  const u3Offer = (u3Feed.data.offers || []).find((o) => o.businessId === businessId);
+  check("U3: the creator offers feed carries businessStudentOpen for a flagged business", !!u3Offer && JSON.stringify(u3Offer.businessStudentOpen) === JSON.stringify({ open: true }), JSON.stringify(u3Offer && u3Offer.businessStudentOpen));
+  const u3Off = await business("PATCH", "/api/me/profile", { studentOpen: false });
+  const u3FeedOff = await lead("GET", "/api/offers");
+  const u3OfferOff = (u3FeedOff.data.offers || []).find((o) => o.businessId === businessId);
+  check("U3: switching the flag off returns the offers attach to null", u3Off.status === 200 && u3Off.data.user.business.studentOpen === false && !!u3OfferOff && u3OfferOff.businessStudentOpen === null, JSON.stringify(u3OfferOff && u3OfferOff.businessStudentOpen));
+
   const appJsRes = await fetch(BASE + "/app.js");
   const appJs = await appJsRes.text();
   check("U1: client ships the university filter on Discover and its preview twin", appJs.includes("f-university") && appJs.includes("discoverUniversity") && appJs.includes("syncUniversityOptions") && appJs.includes("pvf-university"), "");

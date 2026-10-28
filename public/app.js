@@ -4360,6 +4360,15 @@ function musicOpenBlockHtml(view) {
   return `<p class="small"><span class="badge ok">Open to musicians</span>${kinds.length ? ` <span class="muted">This business is open to booking musicians for ${kinds.join(" and ")}.</span>` : ""}</p>`;
 }
 
+// Student openness, as creators see it (university layers U3,
+// Jeff, 2026-10-28): the campus mirror of the musician block.
+// The payload view is null unless the business switched "Open
+// to student creators" on, so nothing renders for anyone else.
+function studentOpenBlockHtml(view) {
+  if (!view) return "";
+  return `<p class="small"><span class="badge ok">Open to student creators</span></p>`;
+}
+
 function referralProgramBlockHtml(prog) {
   if (!prog || (!prog.url && !prog.code)) return "";
   return `<div class="showcase-block"><h4>This business runs its own referral program</h4>
@@ -6426,6 +6435,7 @@ async function loadDirectOffers() {
         ${dealPlainWordsHtml(o)}
         ${reviewLinksBlockHtml(o.businessReviewLinks)}
         ${musicOpenBlockHtml(o.businessMusicOpen)}
+        ${studentOpenBlockHtml(o.businessStudentOpen)}
         ${referralProgramBlockHtml(o.businessReferralProgram)}
         <p class="small muted">${o.windowMode === "thisweek" ? "Redeem this week — ends Sunday" : "Redeem within 7 days of accepting"} &middot; no appointment needed.${o.visitWindow ? ` Note from the business: ${esc(o.visitWindow)}` : ""}</p>
         </div>
@@ -6509,6 +6519,7 @@ function offerFeedCardHtml(o, opts) {
         ${dealPlainWordsHtml(o)}
         ${reviewLinksBlockHtml(o.businessReviewLinks)}
         ${musicOpenBlockHtml(o.businessMusicOpen)}
+        ${studentOpenBlockHtml(o.businessStudentOpen)}
         ${referralProgramBlockHtml(o.businessReferralProgram)}
         <p class="small muted">Apply by ${fmtDay(o.applicationsCloseAt)} &middot; ${o.applicationCount} applied${o.visitWindow ? `<br>Note from the business: ${esc(o.visitWindow)}` : ""}</p>
         ${o.businessAbout ? `<p class="small muted">${esc(o.businessAbout)}</p>` : ""}
@@ -8253,6 +8264,7 @@ async function renderBizProfileTab() {
         <span class="ps"><b>${esc(b.planName || "")}</b><span>plan</span></span>
       </div>
       ${b.musicOpen ? `<div style="margin-top:10px"><span class="badge ok">Open to musicians</span>${[b.musicLive ? "For live performances" : "", b.musicCreated ? "For created music" : ""].filter(Boolean).length ? ` <span class="small muted">${[b.musicLive ? "For live performances" : "", b.musicCreated ? "For created music" : ""].filter(Boolean).join(" · ")}</span>` : ""}</div>` : ""}
+      ${b.studentOpen ? `<div style="margin-top:10px"><span class="badge ok">Open to student creators</span></div>` : ""}
     </div></div>
     ${wsTabs([
       { label: "Profile", on: bizProfTab === "profile", onclick: "return bizProfSet('profile')" },
@@ -8279,6 +8291,7 @@ async function renderBizProfileTab() {
           <div class="field"><label class="tgl-row"><input type="checkbox" class="sw" id="bp-music-live" ${b.musicLive ? "checked" : ""}><span>For live performances</span></label></div>
           <div class="field"><label class="tgl-row"><input type="checkbox" class="sw" id="bp-music-created" ${b.musicCreated ? "checked" : ""}><span>For created music</span></label></div>
         </div>
+        <div class="field"><label class="tgl-row"><input type="checkbox" class="sw" id="bp-student-open" ${b.studentOpen ? "checked" : ""}><span><strong>Open to student creators</strong><br><span class="small muted">Marks your offers and your page as open to creators who are current students. Any booking still runs as a normal visit, the same as any other creator.</span></span></label></div>
         <button class="btn ws-primary" onclick="saveBusinessProfile()">Save profile</button> <span id="bp-ok" class="saved"></span>
       </div>`;
     }
@@ -9765,6 +9778,7 @@ async function saveBusinessProfile() {
       musicOpen: document.getElementById("bp-music-open").checked,
       musicLive: document.getElementById("bp-music-live").checked,
       musicCreated: document.getElementById("bp-music-created").checked,
+      studentOpen: document.getElementById("bp-student-open").checked,
     });
     state.user = data.user;
     render();

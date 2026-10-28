@@ -2476,6 +2476,21 @@ function musicOpenView(business) {
   } catch (e) { /* defensive: a bad record reads as closed */ }
   return null;
 }
+// Student openness, business side (university layers U3, Jeff,
+// 2026-10-28): the same adapter shape as the musician flags. A
+// business marks that it is open to student creators; one
+// boolean on the business record (studentOpen), unset = off.
+// A signal only: no offer, rate, or booking flow reads it;
+// creators see the openness on the business's offers and page.
+// Same defensive contract as musicOpenView: never throws, a bad
+// record reads as closed.
+function studentOpenView(business) {
+  try {
+    if (!business || business.studentOpen !== true) return null;
+    return { open: true };
+  } catch (e) { /* defensive: a bad record reads as closed */ }
+  return null;
+}
 // Validate a referral-program write against the record's
 // current state. Input fields are optional (an omitted field
 // keeps its current value); an explicit empty string clears
@@ -8422,6 +8437,12 @@ async function route(event) {
       if (b.musicOpen !== undefined) bz.musicOpen = b.musicOpen === true;
       if (b.musicLive !== undefined) bz.musicLive = b.musicLive === true;
       if (b.musicCreated !== undefined) bz.musicCreated = b.musicCreated === true;
+      // Student openness (U3): the business-side campus flag,
+      // same write discipline as the musician flags above: only
+      // a present field writes, so an unrelated profile save can
+      // never clear it. Nothing but the offers/page marks read
+      // it (see studentOpenView).
+      if (b.studentOpen !== undefined) bz.studentOpen = b.studentOpen === true;
       // Average ticket (UX redesign section 4, 2026-10-24): the
       // business's typical register spend per customer, set once
       // and editable here. ROAS code-use estimates multiply logged
@@ -9977,14 +9998,16 @@ async function route(event) {
         const reviewLinks = {};
         const referralPrograms = {};
         const musicOpen = {};
+        const studentOpen = {};
         for (const id of bizIds) {
           const biz = await store.get(`user:${id}`);
           plans[id] = biz && biz.business ? biz.business.plan : null;
           reviewLinks[id] = biz && biz.business ? reviewLinksView(biz.business) : null;
           referralPrograms[id] = biz && biz.business ? referralProgramView(biz.business) : null;
           musicOpen[id] = biz && biz.business ? musicOpenView(biz.business) : null;
+          studentOpen[id] = biz && biz.business ? studentOpenView(biz.business) : null;
         }
-        out = out.map((o) => ({ ...o, businessPlan: plans[o.businessId] || null, visitRights: visitRightsForVisit(kindOf(o)), businessReviewLinks: reviewLinks[o.businessId] || null, businessReferralProgram: referralPrograms[o.businessId] || null, businessMusicOpen: musicOpen[o.businessId] || null }));
+        out = out.map((o) => ({ ...o, businessPlan: plans[o.businessId] || null, visitRights: visitRightsForVisit(kindOf(o)), businessReviewLinks: reviewLinks[o.businessId] || null, businessReferralProgram: referralPrograms[o.businessId] || null, businessMusicOpen: musicOpen[o.businessId] || null, businessStudentOpen: studentOpen[o.businessId] || null }));
       }
       out.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
       return json(200, { offers: out });
@@ -10331,6 +10354,7 @@ async function route(event) {
         businessReviewLinks: biz && biz.business ? reviewLinksView(biz.business) : null,
         businessReferralProgram: biz && biz.business ? referralProgramView(biz.business) : null,
         businessMusicOpen: biz && biz.business ? musicOpenView(biz.business) : null,
+        businessStudentOpen: biz && biz.business ? studentOpenView(biz.business) : null,
         businessAbout: biz && biz.business ? (biz.business.about || "") : "",
         businessNeighborhood: biz && biz.business ? (biz.business.neighborhood || "") : "",
         paidMath: kindOf(o) === "paid" ? paidMath(Number(o.cashRate)) : null,
@@ -11374,4 +11398,4 @@ async function route(event) {
 
 // The email builders are exported alongside the router so the verify
 // suites can assert on the exact copy a creator receives.
-module.exports = { route, passwordResetEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView, musicOpenView };
+module.exports = { route, passwordResetEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView, musicOpenView, studentOpenView };
