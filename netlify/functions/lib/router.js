@@ -3419,6 +3419,9 @@ async function publicProfilePayload(u) {
     licensingFee: typeof c.licensingFee === "number" && c.licensingFee > 0 ? c.licensingFee : null,
     localAudiencePct: c.localAudiencePct === undefined ? null : c.localAudiencePct,
     localAudienceSource: c.localAudienceSource || "Self-reported",
+    // Spanish-speaking audience share (S2): self-reported,
+    // rides beside the local % on the public profile payload.
+    spanishAudiencePct: c.spanishAudiencePct === undefined ? null : c.spanishAudiencePct,
     localImpactScore: impact ? impact.score : null,
     momentumPoints: momentum.summaryFor(u).points,
     badges: momentum.badgesFor(u),
@@ -8222,6 +8225,19 @@ async function route(event) {
       if (b.spanishContent !== undefined) {
         c.spanishContent = b.spanishContent === true;
         changes.spanishContent = [user.creator.spanishContent === true, c.spanishContent];
+      }
+      // Spanish-speaking audience share (Spanish layers S2,
+      // Jeff, 2026-10-28): optional self-reported percentage,
+      // the Spanish twin of localAudiencePct. Same write
+      // discipline: an omitted field keeps the stored value,
+      // null/empty clears, a number clamps to 0..100, and
+      // non-numeric input resolves to null rather than erroring.
+      // Deliberately NOT a completeness field.
+      if (b.spanishAudiencePct !== undefined) {
+        const numPct = b.spanishAudiencePct === null || b.spanishAudiencePct === "" ? NaN : Number(b.spanishAudiencePct);
+        const pct = Number.isFinite(numPct) ? Math.max(0, Math.min(100, numPct)) : null;
+        changes.spanishAudiencePct = [user.creator.spanishAudiencePct === undefined ? null : user.creator.spanishAudiencePct, pct];
+        c.spanishAudiencePct = pct;
       }
       // Musician openness (Jeff, 2026-10-28): three optional
       // signals, mirroring the Spanish attribute. "I am a

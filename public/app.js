@@ -536,6 +536,9 @@ async function renderPublicProof() {
   if (p.localAudiencePct !== null && p.localAudiencePct !== undefined) {
     statCells.push(`<div class="stat-cell"><div class="stat-num">${p.localAudiencePct}%</div><div class="stat-lbl">Local reach (${esc(p.localAudienceSource || "Self-reported")})</div></div>`);
   }
+  if (p.spanishAudiencePct !== null && p.spanishAudiencePct !== undefined) {
+    statCells.push(`<div class="stat-cell"><div class="stat-num">${p.spanishAudiencePct}%</div><div class="stat-lbl">Spanish-speaking audience (self-reported)</div></div>`);
+  }
   if (typeof p.momentumPoints === "number") {
     statCells.push(`<div class="stat-cell"><div class="stat-num">${p.momentumPoints}</div><div class="stat-lbl">Momentum points (reliability and referrals)</div></div>`);
   }
@@ -4631,6 +4634,7 @@ function creatorProfileDetailHtml(c, preview, opts) {
     ${p.categories && p.categories.length ? `<p class="small">${p.categories.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
     ${p.compCategories && p.compCategories.filter((x) => x !== PAID_COMP).length ? `<p class="small muted">Open to comps: ${p.compCategories.filter((x) => x !== PAID_COMP).map(esc).join(", ")}</p>` : ""}
     ${p.musician && (p.musicPerform || p.musicCreate) ? `<p class="small muted">${[p.musicPerform ? "Open to live performances" : "", p.musicCreate ? "Open to creating music for businesses" : ""].filter(Boolean).join(" &middot; ")}</p>` : ""}
+    ${p.spanishAudiencePct !== null && p.spanishAudiencePct !== undefined ? `<p class="small muted">${p.spanishAudiencePct}% Spanish-speaking audience</p>` : ""}
     ${p.topAudienceCities && p.topAudienceCities.length ? `<p class="small muted">Top audience cities: ${p.topAudienceCities.map(esc).join(", ")}</p>` : ""}
     ${p.bio ? `<p>${esc(p.bio)}</p>` : ""}
     <p class="small">${socialLinksHtml(p)}</p>
@@ -4720,6 +4724,7 @@ function creatorCard(c, viewer, opts) {
         ? `<div class="lbl">Local audience not reported yet</div>`
         : `<div class="big">${p.localAudiencePct}%</div><div class="lbl">of their followers are local</div><div class="src">${esc(p.localAudienceSource || "Self-reported")}</div>`}
     </div>
+    ${p.spanishAudiencePct !== null && p.spanishAudiencePct !== undefined ? `<p class="small muted" style="margin-top:6px">${p.spanishAudiencePct}% Spanish-speaking audience</p>` : ""}
     <div class="cc-meta">
       <div><div class="k">Stacked audience</div><div class="v">${fmtNum(totalAudienceOf(c))}</div></div>
       <div><div class="k">Typical views</div><div class="v">${fmtNum(p.avgViews)}</div></div>
@@ -5385,11 +5390,33 @@ function laneFeeSave() {
 // every save, so its switch and helper line never go stale.
 function spanishPanelHtml(c) {
   const on = !!(c && c.spanishContent);
+  const pct = c && c.spanishAudiencePct !== null && c.spanishAudiencePct !== undefined ? c.spanishAudiencePct : "";
   return `<div class="spanish-panel" id="spanish-panel">
     <h4 class="spanish-panel-h">¿Creas contenido en español?</h4>
     <p class="small spanish-panel-sub">Businesses in Spanish-first markets filter for creators who make content in Spanish.</p>
     <div class="lrow lane-row"><input type="checkbox" class="sw lane-sw" id="lane-spanish" ${on ? "checked" : ""} onchange="laneToggleSpanish(this)"><div><label class="lname" for="lane-spanish">Creates content in Spanish</label> <span class="lline" id="lane-spanish-line">— ${esc(laneSpanishLine(c || {}))}</span></div></div>
+    <div class="lane-rate" style="margin-top:10px">
+      <label for="lane-spanish-pct">Share of your audience that speaks Spanish (optional)</label>
+      <div class="lane-rate-flex"><input type="number" id="lane-spanish-pct" min="0" max="100" step="1" inputmode="numeric" placeholder="For example: 40" value="${pct}"><button type="button" class="btn small-btn" onclick="return laneSpanishPctSave()">Save</button></div>
+      <p class="small muted">The toggle above is about the content you make; this number is about the audience you reach. Businesses see it beside your local reach %. Your best estimate is fine. Leave it blank if you would rather not say.</p>
+    </div>
   </div>`;
+}
+// Spanish audience % save (S2): blank clears, a number saves
+// (the server clamps to 0..100), junk is refused here with the
+// lane error line rather than silently stored.
+function laneSpanishPctSave() {
+  const inp = document.getElementById("lane-spanish-pct");
+  const raw = inp ? inp.value.trim() : "";
+  if (raw === "") { laneSave({ spanishAudiencePct: null }); return false; }
+  const v = Number(raw);
+  if (!Number.isFinite(v) || v < 0 || v > 100) {
+    laneErr("Use a share between 0 and 100, or leave it blank.");
+    if (inp) inp.focus();
+    return false;
+  }
+  laneSave({ spanishAudiencePct: Math.round(v) });
+  return false;
 }
 function laneMusicLine(c) {
   return c && c.musician ? "on. Your profile carries a Musician mark, and businesses can see what you are open to below." : "off. Turn this on if you make music, even sometimes.";
@@ -8621,6 +8648,7 @@ function discoverStackCard(c) {
     <div class="dcard-body">
       ${cats.length || p.spanishContent || p.musician ? `<div class="dcard-chips">${cats.map((x) => `<span class="cc-chip">${esc(x)}</span>`).join("")}${extra > 0 ? `<span class="cc-chip">+${extra}</span>` : ""}${p.spanishContent ? `<span class="cc-chip">Spanish content</span>` : ""}${p.musician ? `<span class="cc-chip">Musician</span>` : ""}</div>` : ""}
       <div class="dcard-meta">${place ? `<span>${place}</span>` : ""}<span>${fmtNum(totalAudienceOf(c))} audience</span></div>
+      ${p.spanishAudiencePct !== null && p.spanishAudiencePct !== undefined ? `<div class="dcard-meta"><span>${p.spanishAudiencePct}% Spanish-speaking audience</span></div>` : ""}
       ${c.bookedUp ? `<p class="small muted" style="margin:8px 0 0">Booked up this week — invites still land, accepting reopens next week.</p>` : ""}
       ${c.standing === "paused" ? `<p class="small muted" style="margin:8px 0 0">Paused: a late post is outstanding, so this creator cannot take new offers yet.</p>` : ""}
     </div>
