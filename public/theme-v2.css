@@ -2149,8 +2149,8 @@ body.rail-on #toprow { display: block; margin-left: 68px; padding-top: 12px; }
 
 /* ============================================================
    V3 (overhaul/v3-simple): 5-destination chrome, Sig Home,
-   and the V3 component set. Mobile-first; the same five
-   destinations become a 232px labeled rail at >=1024px.
+   and the V3 component set. Mobile-first; the same
+   destinations become a 232px labeled rail at >=768px (V4.3).
    ============================================================ */
 body.v3-on .topbar, body.v3-slim .topbar,
 body.v3-on .footer, body.v3-slim .footer,
@@ -2187,9 +2187,19 @@ body.v3-on #tabbar { display: block; position: fixed; left: 0; right: 0; bottom:
 .tab-item.on .tab-label { font-weight: 800; }
 .tab-badge { position: absolute; top: -4px; right: -8px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: #D43D2A; color: #fff; font-size: 0.66rem; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; }
 .tab-badge.inline { position: static; margin-left: auto; }
-@media (min-width: 1024px) {
+/* V4.3 (Jeff, 2026-10-28): one navigation system, two forms —
+   bottom tab bar on phones, this labeled rail from 768px up, so
+   iPad portrait gets the rail too, not only wide desktops. The rail
+   breakpoint lives in exactly four blocks (this one, the V4 ink
+   rail colors, and the two Home field bleeds that widen because
+   main gains 24px padding beside the rail); keep them in step. */
+@media (min-width: 768px) {
   body.v3-on #tabbar { top: 0; right: auto; bottom: 0; width: 232px; border-top: 0; border-right: 1px solid var(--line); padding: 76px 12px 16px; overflow-y: auto; }
-  body.v3-on main { margin-left: 232px; padding-left: 24px; padding-right: 24px; width: auto; }
+  /* Definite width, not auto: main is a flex item in the body's
+     column, so margin-left + width:auto shrink-wraps it to its
+     widest content (a stuck 600px column at every rail width —
+     the same flex trap V4.2 fixed for the admin rail). */
+  body.v3-on main { margin-left: 232px; padding-left: 24px; padding-right: 24px; width: calc(100% - 232px); }
   body.v3-on .wrap { max-width: min(1080px, 100%); margin-left: auto; margin-right: auto; }
   body.v3-on #tabbar .tab-main { display: flex; flex-direction: column; gap: 2px; }
   body.v3-on #tabbar .tab-more { display: flex; flex-direction: column; gap: 2px; }
@@ -2315,7 +2325,7 @@ body.v3-on .tab-item.on { background: var(--mint); color: var(--ink); }
 body.v3-on .tab-item.on .tab-ic { background: none; }
 body.v3-on .tab-item.on .tab-label { color: var(--ink); }
 body.v3-on .tab-badge { box-shadow: 0 0 0 2px var(--ink); }
-@media (min-width: 1024px) {
+@media (min-width: 768px) {
   body.v3-on #tabbar { background: var(--ink); border-right: 0; box-shadow: none; }
   body.v3-on .tab-item, body.v3-on .tab-more-row { color: rgba(255,255,255,.72); margin: 0; border-radius: 14px; justify-content: flex-start; }
   body.v3-on .tab-item.on, body.v3-on .tab-more-row.on { background: var(--mint); color: var(--ink); }
@@ -2331,7 +2341,7 @@ body.v3-on :is([data-dash], #creator-home, #founding-dash) .home-greet {
   background: var(--ink); color: #fff;
   margin: -28px -18px 0; padding: 26px 18px 24px;
 }
-@media (min-width: 1024px) {
+@media (min-width: 768px) {
   body.v3-on :is([data-dash], #creator-home, #founding-dash) .home-greet { margin-left: -24px; margin-right: -24px; padding-left: 24px; padding-right: 24px; }
 }
 body.v3-on :is([data-dash], #creator-home, #founding-dash) .home-greet::before {
@@ -2346,7 +2356,7 @@ body.v3-on .sig-card { background: var(--mint); border: 0; border-radius: 24px; 
 body.v3-on :is([data-dash], #creator-home, #founding-dash) .sig-card {
   border-radius: 0; margin: 0 -18px 18px; padding: 20px 18px 22px;
 }
-@media (min-width: 1024px) {
+@media (min-width: 768px) {
   body.v3-on :is([data-dash], #creator-home, #founding-dash) .sig-card { margin-left: -24px; margin-right: -24px; padding-left: 24px; padding-right: 24px; }
 }
 body.v3-on .sig-sub { color: rgba(11,13,12,.62); }
