@@ -172,9 +172,17 @@ try {
 
   part("source: V4.1 nav + Sig tab (Jeff, from live use)");
   const tabSlice = fnSlice("tabItemsFor", "moreRowsFor");
-  check("exactly four destinations per role: Home, Explore, Sig, More", (tabSlice.match(/label: "Home"/g) || []).length === 2 && (tabSlice.match(/label: "Sig"/g) || []).length === 2 && tabSlice.includes('label: "Find creators", tab: "Discover"') && tabSlice.includes('label: "Offers", tab: "Offers"') && tabSlice.includes('label: "More", tab: "More"'));
+  // Partner role (2026-10-28): a third role with its own four
+  // destinations (Home, Markets, Earnings, More) joined the shell.
+  // The V4.1 counts below scope to the business + creator branches
+  // (everything before the partner branch); the partner set is
+  // asserted on its own line.
+  const tabSliceBizCr = tabSlice.split('if (u.role === "partner")')[0];
+  const tabSlicePartner = tabSlice.split('if (u.role === "partner")')[1] || "";
+  check("exactly four destinations per role: Home, Explore, Sig, More", (tabSliceBizCr.match(/label: "Home"/g) || []).length === 2 && (tabSliceBizCr.match(/label: "Sig"/g) || []).length === 2 && tabSliceBizCr.includes('label: "Find creators", tab: "Discover"') && tabSliceBizCr.includes('label: "Offers", tab: "Offers"') && tabSliceBizCr.includes('label: "More", tab: "More"'));
+  check("partner destinations are exactly Home, Markets, Earnings, More", tabSlicePartner.includes('label: "Home", tab: "Home"') && tabSlicePartner.includes('label: "Markets", tab: "Markets"') && tabSlicePartner.includes('label: "Earnings", tab: "Earnings"') && tabSlicePartner.includes('label: "More", tab: "More"') && !tabSlicePartner.includes('label: "Sig"'));
   check("no account state shrinks the destination set (no market-live or founding branch in tabItemsFor)", !tabSlice.includes("marketLive") && !tabSlice.includes("founding"));
-  check("Visits and Earnings are NOT tabs any more (demoted to More rows)", !tabSlice.includes('label: "Visits", tab:') && !tabSlice.includes('label: "Earnings", tab:') && !tabSlice.includes('label: "Offers", tab: "My Offers"'));
+  check("Visits and Earnings are NOT tabs any more (demoted to More rows)", !tabSliceBizCr.includes('label: "Visits", tab:') && !tabSliceBizCr.includes('label: "Earnings", tab:') && !tabSliceBizCr.includes('label: "Offers", tab: "My Offers"'));
   check("Sig tab badge is the pending queue count (state.sigQueueCount)", tabSlice.includes("state.sigQueueCount") && tabSlice.includes('badge: sigBadge'));
   check("Sig tab item renders Sig's face, not a line glyph", tabSlice.includes('icon: "sig"') && appJs.includes('class="tab-sig-img"') && appJs.includes("/assets/sig-musician.svg"));
   check("More tab stays lit on the demoted screens (per-role More on-sets)", appJs.includes("BIZ_MORE_TABS") && appJs.includes("CR_MORE_TABS") && appJs.includes('"Visits & Posts", "Counter"') && appJs.includes('"My Visits", "Earnings"'));

@@ -28,6 +28,7 @@ const state = {
   publicHandle: null, // set when the URL is /c/<handle>
   resetToken: "", // password reset token from a /?reset= email link
   preview: null, // admin Business Preview session (see enterPreview)
+  partnerData: null, // partner dashboard: the /partner/summary payload, fetched once per session
   agentQueue: null, // overhaul Stage 1: Ready-for-you queue the current home computed ({count, title, rows:[{text, sub, btn, act}], empty})
   sigQueue: null, // V4.1: the V3 queue items the current Home computed ([{text, short, btn, act}]) — shared by Home and the Sig tab (one queue, two doors)
   sigQueueLinks: [], // V4.1: the caught-up links that ride the current Home's queue card
@@ -1556,7 +1557,7 @@ function renderBottomNav() {
   if (rail) rail.innerHTML = "";
   if (toprow) toprow.innerHTML = "";
   document.body.classList.remove("rail-on");
-  const inApp = !!u && state.view !== "staff" && (u.role === "business" || u.role === "creator");
+  const inApp = !!u && state.view !== "staff" && (u.role === "business" || u.role === "creator" || u.role === "partner");
   if (!inApp) {
     if (tabbar) tabbar.innerHTML = "";
     if (top2) top2.innerHTML = "";
@@ -1564,7 +1565,7 @@ function renderBottomNav() {
     if (u && u.role === "admin" && state.preview) document.body.classList.add("preview-on");
     return;
   }
-  const full = u.status === "approved" && (u.role === "creator" || businessAccessState(u) === "active");
+  const full = u.status === "approved" && (u.role === "creator" || u.role === "partner" || businessAccessState(u) === "active");
   document.body.classList.toggle("v3-on", full);
   document.body.classList.toggle("v3-slim", !full);
   renderTopBar2(full);
@@ -1586,6 +1587,7 @@ function renderBottomNav() {
 const MORE_TABS = ["More", "Analytics", "Content", "Plan", "Profile", "Messages", "Settings", "Help", "Momentum", "Status", "Numbers"];
 const BIZ_MORE_TABS = [...MORE_TABS, "My Offers", "Visits & Posts", "Counter"];
 const CR_MORE_TABS = [...MORE_TABS, "My Visits", "Earnings"];
+const PT_MORE_TABS = ["More", "Markets", "Creators", "Businesses", "Performance", "Earnings", "Links", "Account", "Help"];
 function tabItemsFor() {
   const u = state.user;
   if (!u) return [];
@@ -1607,6 +1609,14 @@ function tabItemsFor() {
       { icon: "deck", label: "Offers", tab: "Offers", on: t === "Offers", badge: wc.crInvites != null ? wc.crInvites : (b.offers || 0) },
       { icon: "sig", label: "Sig", tab: "Sig", on: t === "Sig", badge: sigBadge },
       { icon: "list3", label: "More", tab: "More", on: CR_MORE_TABS.includes(t) },
+    ];
+  }
+  if (u.role === "partner") {
+    return [
+      { icon: "home", label: "Home", tab: "Home", on: t === "Home" || !t },
+      { icon: "pin", label: "Markets", tab: "Markets", on: t === "Markets" },
+      { icon: "banknote", label: "Earnings", tab: "Earnings", on: t === "Earnings" },
+      { icon: "list3", label: "More", tab: "More", on: PT_MORE_TABS.includes(t) },
     ];
   }
   return [];
@@ -1646,6 +1656,17 @@ function moreRowsFor() {
     ];
     return rows;
   }
+  if (u.role === "partner") {
+    return [
+      { icon: "pin", label: "Markets", sub: "Each market's funnel, end to end.", tab: "Markets" },
+      { icon: "person", label: "Creators", sub: "The bench your links brought in.", tab: "Creators" },
+      { icon: "deck", label: "Businesses", sub: "Businesses your links brought in.", tab: "Businesses" },
+      { icon: "bars", label: "Performance", sub: "Visits, posts, and what they earned.", tab: "Performance" },
+      { icon: "play", label: "Links & assets", sub: "Your tracked links, QR codes, and the one-pager.", tab: "Links" },
+      { icon: "sliders", label: "Account", sub: "Your partner profile and agreement.", tab: "Account" },
+      { icon: "help", label: "Help", sub: "How your share works, in plain words.", tab: "Help" },
+    ];
+  }
   return [];
 }
 
@@ -1680,7 +1701,7 @@ function renderTopBar2(full) {
   const el = document.getElementById("topbar2");
   if (!el) return;
   const u = state.user;
-  const name = u.role === "business" && u.business ? u.business.businessName : u.name;
+  const name = u.role === "business" && u.business ? u.business.businessName : u.role === "partner" && u.partner ? u.partner.name : u.name;
   const photo = u.role === "creator" && u.creator ? u.creator.photoUrl : null;
   const initial = String(name || "?").trim().charAt(0).toUpperCase() || "S";
   const b = state.badges || {};
@@ -5857,6 +5878,7 @@ function renderDashboard() {
   if (u.role === "admin" && state.preview) return renderPreview();
   if (u.role === "admin") return renderAdmin();
   if (u.role === "creator") return renderCreatorDash();
+  if (u.role === "partner") return renderPartnerDash();
   if (isFoundingBusiness(u)) return renderBusinessFoundingStatus();
   return renderBusinessDash();
 }
@@ -9290,6 +9312,225 @@ function renderBusinessDash() {
   if (tab === "Sig") renderSigTab();
 }
 
+// ---------- partner dashboard (Jeff, 2026-10-28) ----------
+// A distribution partner's home: the same shell, cards, and
+// tokens as the business dashboard, fed by one payload
+// (GET /partner/summary) computed from the records stamped with
+// the partner's own signup source. A partner with no activity
+// yet gets the fills-in voice, never a grid of zeros.
+const PARTNER_TABS = ["Home", "Markets", "Creators", "Businesses", "Performance", "Earnings", "Links", "Account", "More", "Help"];
+
+function renderPartnerDash() {
+  const u = state.user;
+  let tab = state.tab || "Home";
+  if (!PARTNER_TABS.includes(tab)) tab = "Home";
+  state.tab = tab;
+  app.innerHTML = `<div class="wrap"><div id="tab-body"><div class="sig-load-row">${sigAvatarHtml("think")}</div>${skelHtml("Loading your dashboard...", 2)}</div></div>`;
+  loadPartnerSummary().then(() => renderPartnerTab(tab)).catch((e) => {
+    const el = document.getElementById("tab-body");
+    if (el) el.innerHTML = `<div class="error-box">${esc(e.message)}</div>`;
+  });
+}
+
+async function loadPartnerSummary(force) {
+  if (state.partnerData && !force) return state.partnerData;
+  state.partnerData = await api("GET", "/partner/summary");
+  return state.partnerData;
+}
+
+function renderPartnerTab(tab) {
+  const el = document.getElementById("tab-body");
+  if (!el || !state.partnerData) return;
+  const d = state.partnerData;
+  if (tab === "More") { renderMoreScreen(); return; }
+  if (tab === "Home") el.innerHTML = partnerHomeHtml(d);
+  if (tab === "Markets") el.innerHTML = partnerMarketsHtml(d);
+  if (tab === "Creators") el.innerHTML = partnerCreatorsHtml(d);
+  if (tab === "Businesses") el.innerHTML = partnerBusinessesHtml(d);
+  if (tab === "Performance") el.innerHTML = partnerPerformanceHtml(d);
+  if (tab === "Earnings") el.innerHTML = partnerEarningsHtml(d);
+  if (tab === "Links") el.innerHTML = partnerLinksHtml(d);
+  if (tab === "Account") el.innerHTML = partnerAccountHtml(d);
+  if (tab === "Help") el.innerHTML = partnerHelpHtml(d);
+}
+
+function partnerSampleChip(d) {
+  return d.partner.demo ? ` <span class="badge warn">Sample data</span>` : "";
+}
+
+function partnerFillsIn(what) {
+  return `<div class="panel"><h3 style="margin-top:0">Your funnel fills in</h3><p class="muted">Nothing here yet. ${esc(what)} When the first one lands, it shows up on this page the same day.</p></div>`;
+}
+
+function partnerHomeHtml(d) {
+  const p = d.partner;
+  const t = d.totals;
+  const cs = d.creators.stages;
+  const bs = d.businesses.stages;
+  const empty = t.creatorsAttributed === 0 && t.businessesAttributed === 0;
+  return `
+  ${wsHead(p.name, { chip: partnerSampleChip(d), sub: "Your markets, your bench, your share. Everything here came in through your links.", subKey: "pt-home" })}
+  ${empty ? "" : `
+  <div class="stat-band home-metrics">
+    <div class="stat-cell"><div class="stat-num">${cs.claimed}</div><div class="stat-lbl">Creators claimed</div></div>
+    <div class="stat-cell"><div class="stat-num">${cs.complete}</div><div class="stat-lbl">Creators complete</div></div>
+    <div class="stat-cell"><div class="stat-num">${bs.applied}</div><div class="stat-lbl">Businesses joined</div></div>
+    <div class="stat-cell"><div class="stat-num"><em>$${fmtPrice(d.earnings.accruedMonthly)}</em></div><div class="stat-lbl">Share accrued / mo</div></div>
+  </div>`}
+  ${empty ? partnerFillsIn("Share your creator link and your bench starts here.") : `
+  <div class="card mb">
+    <div class="flex-between"><strong>The funnel so far</strong><span class="badge info">${esc(p.markets.join(" · "))}</span></div>
+    <p class="small" style="margin:8px 0 0">Creators: ${cs.claimed} claimed, ${cs.approved} approved, ${cs.complete} complete. Businesses: ${bs.applied} joined, ${bs.active} active. ${t.offersLive} offers live, ${t.visitsCompleted} visits completed, ${t.postsLive} posts live.</p>
+  </div>`}
+  <div class="card mb">
+    <div class="flex-between"><strong>Share your link</strong><span class="badge ok">Next step</span></div>
+    <p class="small muted" style="margin:6px 0 10px">Every creator who claims through your link is credited to you, permanently. Your QR codes and business link are under Links &amp; assets.</p>
+    <button class="btn" onclick="return go('dashboard','Links')">Get your links</button>
+  </div>
+  <div class="card mb">
+    <div class="flex-between"><strong>Invite a business</strong><span class="badge ok">Next step</span></div>
+    <p class="small muted" style="margin:6px 0 10px">Businesses in your markets earn you ${p.sharePct}% of their subscription while they stay subscribed. Send one your business link today.</p>
+    <button class="btn ghost" onclick="return go('dashboard','Links')">Copy business link</button>
+  </div>
+  <p class="small muted">At full fill, ${d.atFill.markets === 1 ? "your market holds" : `your ${d.atFill.markets} markets hold`} about ${fmtNum(d.atFill.businessesPerMarket * d.atFill.markets)} businesses, and your share runs about $${fmtNum(d.atFill.partnerYearly)} a year. Modeled, not promised: markets fill over time.</p>`;
+}
+
+function partnerMarketsHtml(d) {
+  return `
+  ${wsHead("Your markets", { sub: "Each market's funnel, end to end.", subKey: "pt-markets" })}
+  ${d.markets.map((m) => `
+  <div class="card mb">
+    <div class="flex-between"><strong>${esc(m.market)}</strong>${d.partner.demo ? `<span class="badge warn">Sample</span>` : ""}</div>
+    <div class="stat-row" style="margin-top:10px">
+      <div class="stat"><div class="num">${m.creators.claimed}</div><div class="lbl">Creators claimed</div></div>
+      <div class="stat"><div class="num">${m.creators.complete}</div><div class="lbl">Complete</div></div>
+      <div class="stat"><div class="num">${m.businesses.applied}</div><div class="lbl">Businesses</div></div>
+      <div class="stat"><div class="num">${m.offersLive}</div><div class="lbl">Offers live</div></div>
+      <div class="stat"><div class="num">${m.postsLive}</div><div class="lbl">Posts live</div></div>
+    </div>
+  </div>`).join("")}`;
+}
+
+function partnerCreatorsHtml(d) {
+  const rows = d.creators.roster;
+  return `
+  ${wsHead("Your creators", { sub: "The bench your links brought in. Contact details stay private, always.", subKey: "pt-creators" })}
+  ${rows.length ? rows.map((c) => `
+  <div class="card mb">
+    <div class="flex-between"><strong>@${esc(c.handle)}</strong><span class="badge ${c.status === "approved" ? "ok" : "info"}">${c.status === "approved" ? (c.complete ? "Complete" : "Approved") : "Claimed"}</span></div>
+    <p class="small muted" style="margin:6px 0 0">${esc(c.tier || "")}${c.localAudiencePct !== null ? ` · Local ${c.localAudiencePct}%` : ""}${c.spanishAudiencePct !== null && c.spanishAudiencePct !== undefined ? ` · Spanish ${c.spanishAudiencePct}%` : ""} · ${esc(c.market)}${c.sample ? ` · <span class="badge warn">Sample</span>` : ""}</p>
+  </div>`).join("") : partnerFillsIn("Share your creator link and your bench starts here.")}`;
+}
+
+function partnerBusinessesHtml(d) {
+  const rows = d.businesses.list;
+  return `
+  ${wsHead("Your businesses", { sub: "Businesses that joined through your links, and where they stand.", subKey: "pt-businesses" })}
+  ${rows.length ? rows.map((b) => `
+  <div class="card mb">
+    <div class="flex-between"><strong>${esc(b.businessName)}</strong><span class="badge ${b.accessState === "active" ? "ok" : "info"}">${b.accessState === "active" ? "Active" : "Founding list"}</span></div>
+    <p class="small muted" style="margin:6px 0 0">${esc(b.category || "")}${b.planName ? ` · ${esc(b.planName)} plan` : ""} · ${esc(b.market)}${b.sample ? ` · <span class="badge warn">Sample</span>` : ""}</p>
+  </div>`).join("") : partnerFillsIn("Send a business your link and it appears here.")}`;
+}
+
+function partnerPerformanceHtml(d) {
+  const f = d.performance;
+  const mile = (label, m) => `<div class="stat"><div class="num">${m ? fmtNum(m.views) : "—"}</div><div class="lbl">${label}${m ? ` (${m.posts} posts)` : ""}</div></div>`;
+  const any = f.offersTotal > 0 || f.postsLive > 0 || f.visitsBooked > 0;
+  return `
+  ${wsHead("Performance", { sub: "What your markets delivered: visits, posts, and the value they created.", subKey: "pt-performance" })}
+  ${any ? `
+  <div class="card mb">
+    <div class="stat-row">
+      <div class="stat"><div class="num">${f.offersLive}</div><div class="lbl">Offers live</div></div>
+      <div class="stat"><div class="num">${f.visitsBooked}</div><div class="lbl">Visits booked</div></div>
+      <div class="stat"><div class="num">${f.visitsRedeemed}</div><div class="lbl">Redeemed</div></div>
+      <div class="stat"><div class="num">${f.postsLive}</div><div class="lbl">Posts live</div></div>
+    </div>
+    <div class="stat-row" style="margin-top:12px">
+      ${mile("Views, day 7", f.milestones.d7)}
+      ${mile("Views, day 14", f.milestones.d14)}
+      ${mile("Views, day 30", f.milestones.d30)}
+    </div>
+    <p class="small" style="margin:12px 0 0">Register value tracked: <strong>$${fmtPrice(f.registerValue)}</strong>${f.estimatedRegisterValue ? ` · Estimated from code uses: <strong>$${fmtPrice(f.estimatedRegisterValue)}</strong>` : ""} · Redemptions: ${f.redemptions.count}. Media value is modeled at SIGNL's published rates on creator-reported numbers.</p>
+  </div>` : partnerFillsIn("When visits and posts land in your markets, their results collect here.")}`;
+}
+
+function partnerEarningsHtml(d) {
+  const e = d.earnings;
+  return `
+  ${wsHead("Your earnings", { sub: "Your share of subscription revenue in your markets.", subKey: "pt-earnings" })}
+  <div class="stat-band home-metrics">
+    <div class="stat-cell"><div class="stat-num">${e.sharePct}%</div><div class="stat-lbl">Your share</div></div>
+    <div class="stat-cell"><div class="stat-num">$${fmtPrice(e.monthlyRevenue)}</div><div class="stat-lbl">Subscription revenue / mo</div></div>
+    <div class="stat-cell"><div class="stat-num"><em>$${fmtPrice(e.accruedMonthly)}</em></div><div class="stat-lbl">Accrued to you / mo</div></div>
+    <div class="stat-cell"><div class="stat-num">$${fmtPrice(e.paidTotal)}</div><div class="stat-lbl">Paid to date</div></div>
+  </div>
+  ${e.hasPaidRevenue ? `
+  <div class="panel mt"><h3 style="margin-top:0">Accrued, not yet paid</h3>
+  <p class="small muted">These amounts accrue from the subscriptions on file in your markets. Payouts begin once partner payments are switched on; until then this page is the ledger, and accrued amounts are never shown as paid.</p></div>` : `
+  <div class="panel mt"><h3 style="margin-top:0">No paid revenue yet</h3>
+  <p class="small muted">No business in your markets has a paid subscription on file yet, so nothing has accrued. The moment one does, it appears here at your ${e.sharePct}% share. Amounts on this page are always labeled accrued until a payment actually happens.</p></div>`}
+  <p class="small muted">At full fill, your share runs about $${fmtNum(d.atFill.partnerYearly)} a year across your ${d.atFill.markets === 1 ? "market" : `${d.atFill.markets} markets`}. Modeled from the average partner market (about ${fmtNum(d.atFill.businessesPerMarket)} businesses at $2,958 a year), not a promise.</p>`;
+}
+
+function partnerLinksHtml(d) {
+  return `
+  ${wsHead("Links & assets", { sub: "Your tracked links. Anyone who joins through them is credited to you, permanently.", subKey: "pt-links" })}
+  ${d.links.map((l) => `
+  <div class="card mb">
+    <div class="flex-between"><strong>${esc(l.market)}</strong>${d.partner.demo ? `<span class="badge warn">Sample</span>` : ""}</div>
+    <p class="small" style="margin:10px 0 4px"><strong>Creator claim link</strong></p>
+    <p class="small muted" style="word-break:break-all;margin:0 0 8px">${esc(l.creator)}</p>
+    <button class="btn small-btn" onclick="copyPartnerLink('${esc(l.creator)}', this)">Copy link</button>
+    <span class="qr-box" style="display:inline-block;vertical-align:top;margin-left:12px"><img src="/api/partner/qr?kind=creator&market=${encodeURIComponent(l.market)}" alt="QR code for your creator claim link" style="width:110px;height:110px" onerror="this.parentElement.style.display='none'"></span>
+    <p class="small" style="margin:14px 0 4px"><strong>Business signup link</strong></p>
+    <p class="small muted" style="word-break:break-all;margin:0 0 8px">${esc(l.business)}</p>
+    <button class="btn small-btn ghost" onclick="copyPartnerLink('${esc(l.business)}', this)">Copy link</button>
+  </div>`).join("")}
+  <div class="panel">
+    <h3 style="margin-top:0">How your share works</h3>
+    <p class="small">You keep <strong>${d.partner.sharePct}%</strong> of the subscription revenue from businesses in your assigned markets that joined through your links or are credited to you. Creators cost you nothing and earn you nothing directly; they are the bench that makes businesses stay. Paid bookings and post licenses are the creator's and the business's money, not subscription revenue, so they are not shared. Accrued amounts appear under Earnings the month a subscription is on file.</p>
+    <p class="small muted">The partner one-pager lives here as soon as it is published. Ask Jeff for the current copy any time: jeff@joinsignl.com.</p>
+  </div>`;
+}
+
+async function copyPartnerLink(url, btn) {
+  try {
+    await navigator.clipboard.writeText(url);
+    if (btn) { const old = btn.textContent; btn.textContent = "Copied"; setTimeout(() => { btn.textContent = old; }, 1600); }
+  } catch (e) { /* clipboard unavailable; the link text is on screen */ }
+}
+
+function partnerAccountHtml(d) {
+  const u = state.user;
+  const p = d.partner;
+  return `
+  ${wsHead("Your account", { sub: "Your partner profile, markets, and agreement.", subKey: "pt-account" })}
+  <div class="panel">
+    <h3 style="margin-top:0">${esc(p.name)}${partnerSampleChip(d)}</h3>
+    <p class="small" style="margin:0">Type: ${p.type === "profile" ? "Local profile" : "Media group"} · Contact: ${esc(p.contactName || u.name || "")} · Status: ${p.status === "active" ? "Active" : "Paused"}</p>
+    <p class="small muted">Markets: ${esc(p.markets.join(", "))} · Your share: ${p.sharePct}% · Agreement: ${p.agreementStatus === "signed" ? "Signed" : "Not signed yet"}</p>
+    ${p.agreementStatus !== "signed" ? `<p class="small muted">Your agreement is handled with Jeff directly; this page updates the moment it is signed. Nothing here waits on it except payouts.</p>` : ""}
+  </div>
+  ${accountHtml(u)}`;
+}
+
+function partnerHelpHtml(d) {
+  const p = (state.partnerData || {}).partner || {};
+  const qa = (q, a) => `<details class="help-qa"><summary>${esc(q)}</summary><p class="small">${a}</p></details>`;
+  return `
+  ${wsHead("Help", { sub: "How partnering with SIGNL works, in plain words.", subKey: "pt-help" })}
+  <div class="wcard">
+    ${qa("What do I actually do?", "Share your links. Creators claim through your creator link and join the bench in your markets. Businesses sign up through your business link. SIGNL runs everything else: the platform, the campaigns, the payments, the guarantees.")}
+    ${qa("How do I earn?", `You keep ${p.sharePct || 60}% of subscription revenue from businesses credited to you in your markets, for as long as they stay subscribed. It accrues monthly and shows under Earnings, labeled accrued until a payment actually happens.`)}
+    ${qa("Why do creators matter to my earnings?", "Businesses subscribe because the bench is worth booking. Every complete creator your link brings in makes your markets easier to sell and likelier to renew.")}
+    ${qa("Can I see who joined through me?", "Yes: Creators and Businesses show everyone credited to your links, with their status. Contact details stay private; SIGNL runs the relationships inside the app.")}
+    ${qa("What does SIGNL cost my audience?", "Joining is free for creators, and comped visits are always free. Businesses pay the subscription; that is the revenue you share in.")}
+    <p class="small muted" style="margin-top:14px">Still stuck? Email <a href="mailto:hello@joinsignl.com">hello@joinsignl.com</a> and a person answers.</p>
+  </div>`;
+}
+
 // Shared in-app notifications block (the no-ghosting surface):
 // application outcomes, backfill offers, nudges, and decisions
 // land here for both roles, newest first.
@@ -12086,15 +12327,115 @@ function renderAdmin() {
       <button class="btn" onclick="enterPreview()">Preview as business &rarr;</button>
       <button class="btn ghost" onclick="enterPreviewDashboard()">Business dashboard &rarr;</button>
     </div>
-    ${tabsHtml(["Applications", "Markets", "Recruiters", "Event Log", "Compliance", "Campaign", "Stats"], tab)}
+    ${tabsHtml(["Applications", "Markets", "Recruiters", "Partners", "Event Log", "Compliance", "Campaign", "Stats"], tab)}
     <div id="tab-body"><p class="muted">Loading...</p></div>`;
   if (tab === "Applications") loadApplications();
   if (tab === "Markets") loadMarkets();
+  if (tab === "Partners") loadAdminPartners();
   if (tab === "Recruiters") loadLeaderboard();
   if (tab === "Event Log") loadEvents();
   if (tab === "Compliance") loadCompliance();
   if (tab === "Campaign") loadCampaign();
   if (tab === "Stats") loadStats();
+}
+
+// Admin: distribution partners (Jeff, 2026-10-28). Create and
+// manage partners, their markets, share, and status; their
+// tracked links ride the signup source (src=partner-<code>).
+// Creation makes the login; the partner sets their own password
+// through Forgot password, like any account recovery.
+async function loadAdminPartners() {
+  const el = document.getElementById("tab-body");
+  if (!el) return;
+  try {
+    const data = await api("GET", "/admin/partners");
+    const markets = (state.boot && state.boot.markets) || [];
+    const cards = (data.partners || []).map((p) => `
+    <div class="card mb">
+      <div class="flex-between"><strong>${esc(p.name)}</strong><span class="badge ${p.status === "active" ? "ok" : "warn"}">${p.status === "active" ? "Active" : "Paused"}</span></div>
+      <p class="small muted" style="margin:6px 0">${p.type === "profile" ? "Local profile" : "Media group"} · ${esc(p.contactName || "")} · ${esc(p.email)} · Code: <span class="code">${esc(p.code)}</span>${p.demo ? ` · <span class="badge warn">Demo</span>` : ""}</p>
+      <p class="small" style="margin:0 0 6px">Markets: ${esc((p.markets || []).join(", "))} · Share: ${p.sharePct}% · Agreement: ${esc(p.agreementStatus || "unsigned")}</p>
+      ${(p.links || []).map((l) => `<p class="small muted" style="word-break:break-all;margin:2px 0">${esc(l.market)} creators: ${esc(l.creator)}</p>`).join("")}
+      <div class="form-2col" style="margin-top:10px">
+        <div class="field"><label>Share %</label><input type="number" id="pt-share-${p.id}" min="1" max="100" value="${p.sharePct}"></div>
+        <div class="field"><label>Status</label><select id="pt-status-${p.id}"><option value="active" ${p.status === "active" ? "selected" : ""}>Active</option><option value="paused" ${p.status === "paused" ? "selected" : ""}>Paused</option></select></div>
+      </div>
+      <div class="field"><label>Markets (comma separated, exact names)</label><input type="text" id="pt-markets-${p.id}" value="${esc((p.markets || []).join(", "))}"></div>
+      <button class="btn small-btn" onclick="saveAdminPartner('${p.id}')">Save partner</button> <span id="pt-ok-${p.id}" class="saved"></span>
+    </div>`).join("");
+    el.innerHTML = `
+      <h3 style="margin:0 0 8px">Partners</h3>
+      <p class="small muted">Partners recruit through tracked links and keep their share of subscription revenue in their markets. Creating one makes their login; they set their own password from the sign-in page with Forgot password.</p>
+      ${cards || `<p class="muted">No partners yet.</p>`}
+      <div class="panel mt">
+        <h3 style="margin-top:0">New partner</h3>
+        <div class="form-2col">
+          <div class="field"><label>Partner name</label><input type="text" id="pt-new-name" placeholder="OnlyInDade"></div>
+          <div class="field"><label>Type</label><select id="pt-new-type"><option value="media">Media group</option><option value="profile">Local profile</option></select></div>
+          <div class="field"><label>Contact person</label><input type="text" id="pt-new-contact" placeholder="Full name"></div>
+          <div class="field"><label>Login email</label><input type="email" id="pt-new-email" placeholder="name@company.com"></div>
+          <div class="field"><label>Share %</label><input type="number" id="pt-new-share" min="1" max="100" value="60"></div>
+        </div>
+        <div class="field"><label>Markets</label>
+          <div>${markets.map((m) => `<label class="small" style="display:inline-block;margin:0 12px 6px 0"><input type="checkbox" class="pt-new-market" value="${esc(m.name)}"> ${esc(m.name)}</label>`).join("")}</div>
+        </div>
+        <div id="pt-new-error"></div>
+        <button class="btn" onclick="createAdminPartner()">Create partner</button>
+      </div>
+      <div class="panel mt">
+        <h3 style="margin-top:0">Demo partner</h3>
+        <p class="small muted">One fictional partner (Demo Media Group, Virginia Beach) seeded with Sample-tagged creators, businesses, and a completed visit, so the partner dashboard can be shown end to end. Its login email is jeff+partnerdemo@joinsignl.com, which lands in Jeff's own inbox: set its password from the sign-in page with Forgot password. Samples are tester-flagged and never enter a real count.</p>
+        <button class="btn ghost" onclick="seedDemoPartner()">Seed demo partner</button> <span id="pt-demo-ok" class="saved"></span>
+      </div>`;
+  } catch (err) {
+    el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+  }
+}
+
+async function createAdminPartner() {
+  const errEl = document.getElementById("pt-new-error");
+  const markets = [...document.querySelectorAll(".pt-new-market:checked")].map((c) => c.value);
+  try {
+    await api("POST", "/admin/partners", {
+      name: document.getElementById("pt-new-name").value,
+      type: document.getElementById("pt-new-type").value,
+      contactName: document.getElementById("pt-new-contact").value,
+      email: document.getElementById("pt-new-email").value,
+      sharePct: Number(document.getElementById("pt-new-share").value),
+      markets,
+    });
+    loadAdminPartners();
+  } catch (e) {
+    if (errEl) errEl.innerHTML = `<div class="error-box">${esc(e.message)}</div>`;
+  }
+}
+
+async function saveAdminPartner(id) {
+  const markets = document.getElementById(`pt-markets-${id}`).value.split(",").map((s) => s.trim()).filter(Boolean);
+  try {
+    await api("PATCH", `/admin/partners/${id}`, {
+      sharePct: Number(document.getElementById(`pt-share-${id}`).value),
+      status: document.getElementById(`pt-status-${id}`).value,
+      markets,
+    });
+    const ok = document.getElementById(`pt-ok-${id}`);
+    if (ok) ok.textContent = "Saved";
+  } catch (e) {
+    const ok = document.getElementById(`pt-ok-${id}`);
+    if (ok) ok.textContent = e.message;
+  }
+}
+
+async function seedDemoPartner() {
+  try {
+    const data = await api("POST", "/admin/partners/demo");
+    const ok = document.getElementById("pt-demo-ok");
+    if (ok) ok.textContent = data.created ? "Seeded. Set its password with Forgot password." : "Already seeded.";
+    loadAdminPartners();
+  } catch (e) {
+    const ok = document.getElementById("pt-demo-ok");
+    if (ok) ok.textContent = e.message;
+  }
 }
 
 // Outreach campaigns (Jeff, 2026-10-19; business wave added

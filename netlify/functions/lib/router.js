@@ -1345,6 +1345,9 @@ function publicUser(u) {
       updatedAt: p && p.updatedAt ? p.updatedAt : null,
     };
   }
+  if (rest.role === "partner" && rest.partner) {
+    rest.partner = publicPartner(rest.partner);
+  }
   return rest;
 }
 
@@ -7961,6 +7964,466 @@ async function handleFoundingApplication(event) {
   return json(200, { ok: true, id: rec.id }, cors);
 }
 
+// ---------- partners (Jeff, 2026-10-28) ----------
+// A partner is a distribution partner (a media group or a large
+// local profile) assigned one or more markets. They recruit
+// creators and businesses through tracked links and earn a share
+// of the subscription revenue in their markets (their own %,
+// default 60, set in Admin). Attribution rides the existing
+// signup-source mechanism: partner links carry ?src=partner-<code>,
+// the client persists it exactly like every other source, and
+// registration stamps it on the record as signupSource. The partner
+// code on the user record (user.partner) is the partner's identity;
+// the stamp on an attributed record is its signupSource. Records
+// with no code are untouched. A partner sees ONLY records stamped
+// with their own code, and never another partner's anything.
+const PARTNER_SRC_PREFIX = "partner-";
+const PARTNER_DEMO_CODE = "demo";
+const PARTNER_DEMO_EMAIL = "jeff+partnerdemo@joinsignl.com";
+// The locked model's average partner market at full fill (Jeff's
+// investment model, 2026-10-28): about 330 businesses at the
+// blended $2,958 a year. Used once, labeled modeled, for the
+// at-fill line; it is a model figure, never a measured one.
+const PARTNER_MODEL = { businessesPerMarket: 330, arpuYearly: 2958 };
+
+function partnerSrcFor(code) {
+  return PARTNER_SRC_PREFIX + code;
+}
+
+function partnerCodeOf(user) {
+  return user && user.role === "partner" && user.partner ? user.partner.code : null;
+}
+
+function publicPartner(p) {
+  if (!p) return null;
+  return {
+    name: p.name || "",
+    type: p.type === "profile" ? "profile" : "media",
+    contactName: p.contactName || "",
+    code: p.code || "",
+    markets: Array.isArray(p.markets) ? p.markets : [],
+    sharePct: typeof p.sharePct === "number" ? p.sharePct : 60,
+    status: p.status === "paused" ? "paused" : "active",
+    agreementStatus: p.agreementStatus || "unsigned",
+    demo: !!p.demo,
+    sample: !!p.demo,
+    createdAt: p.createdAt || null,
+  };
+}
+
+async function allPartners(users) {
+  const list = users || (await allUsers());
+  return list.filter((u) => u.role === "partner" && u.partner);
+}
+
+async function findPartnerByCode(code, users) {
+  const list = await allPartners(users);
+  return list.find((u) => u.partner.code === code) || null;
+}
+
+function partnerLinksFor(partner, origin) {
+  const base = origin || process.env.APP_URL || "https://app.joinsignl.com";
+  const src = partnerSrcFor(partner.code);
+  return (partner.markets || []).map((market) => ({
+    market,
+    creator: `${base}/?market=${encodeURIComponent(market)}&src=${encodeURIComponent(src)}`,
+    business: `${base}/?market=${encodeURIComponent(market)}&src=${encodeURIComponent(src)}`,
+  }));
+}
+
+// The partner's whole world, computed from records stamped with
+// their code. Real partners never see tester records; the demo
+// partner sees exactly its own Sample-tagged seed records (also
+// tester-flagged, so they stay out of every real count in the app)
+// and nothing else.
+async function partnerSummary(user) {
+  const partner = publicPartner(user.partner);
+  const code = partner.code;
+  const src = partnerSrcFor(code);
+  const [users, bookingsAll, postsAll, offersAll] = await Promise.all([allUsers(), allBookings(), allPosts(), allOffers()]);
+  const attributed = users.filter((u) => (u.role === "creator" || u.role === "business") && u.signupSource === src && u.id !== user.id && (partner.demo ? isTester(u) : !isTester(u)));
+  const creators = attributed.filter((u) => u.role === "creator");
+  const businesses = attributed.filter((u) => u.role === "business");
+  const bizIds = new Set(businesses.map((u) => u.id));
+  const bookings = bookingsAll.filter((b) => bizIds.has(b.businessId));
+  const bookingIds = new Set(bookings.map((b) => b.id));
+  const posts = postsAll.filter((p) => bookingIds.has(p.bookingId));
+  const offers = offersAll.filter((o) => bizIds.has(o.businessId));
+
+  const creatorStages = {
+    claimed: creators.length,
+    pending: creators.filter((u) => u.status === "pending").length,
+    approved: creators.filter((u) => u.status === "approved").length,
+    complete: creators.filter((u) => u.status === "approved" && profileCompleteOf(u)).length,
+  };
+  const businessStages = {
+    applied: businesses.length,
+    pending: businesses.filter((u) => u.status === "pending").length,
+    approved: businesses.filter((u) => u.status === "approved").length,
+    active: businesses.filter((u) => businessAccessState(u) === "active").length,
+  };
+  const byMarket = (partner.markets || []).map((market) => {
+    const mc = creators.filter((u) => normalizeMarketName(u.market) === normalizeMarketName(market));
+    const mb = businesses.filter((u) => normalizeMarketName(u.market) === normalizeMarketName(market));
+    const mbIds = new Set(mb.map((u) => u.id));
+    const mBookings = bookings.filter((b) => mbIds.has(b.businessId));
+    const mBookingIds = new Set(mBookings.map((b) => b.id));
+    return {
+      market,
+      creators: { claimed: mc.length, approved: mc.filter((u) => u.status === "approved").length, complete: mc.filter((u) => u.status === "approved" && profileCompleteOf(u)).length },
+      businesses: { applied: mb.length, active: mb.filter((u) => businessAccessState(u) === "active").length },
+      offersLive: offers.filter((o) => mbIds.has(o.businessId) && o.status === "open").length,
+      visitsCompleted: mBookings.filter((b) => b.status === "completed").length,
+      postsLive: posts.filter((p) => mBookingIds.has(p.bookingId)).length,
+    };
+  });
+
+  // Performance: the same value math the business side sees
+  // (roasFor), over the attributed bookings with their posts
+  // attached, plus the day 7 / 14 / 30 view milestones read off
+  // each post's own snapshot series. A milestone exists only when
+  // a snapshot at or past that age exists; otherwise it stays null.
+  const postByBooking = new Map(posts.map((p) => [p.bookingId, p]));
+  const roas = roasFor(bookings.map((b) => ({ ...b, post: postByBooking.get(b.id) || null })));
+  const milestones = { d7: null, d14: null, d30: null };
+  for (const d of [7, 14, 30]) {
+    let views = 0;
+    let counted = 0;
+    for (const p of posts) {
+      const snaps = Array.isArray(p.snapshots) ? p.snapshots : [];
+      const start = Date.parse(p.submittedAt || p.createdAt || "");
+      if (!snaps.length || !Number.isFinite(start)) continue;
+      const hit = snaps.find((s) => Date.parse(s.at) - start >= d * 86400000);
+      if (hit && typeof hit.views === "number") { views += hit.views; counted += 1; }
+    }
+    milestones[`d${d}`] = counted ? { views, posts: counted } : null;
+  }
+  const performance = {
+    offersTotal: offers.length,
+    offersLive: offers.filter((o) => o.status === "open").length,
+    visitsBooked: bookings.filter((b) => b.status === "booked").length,
+    visitsRedeemed: bookings.filter((b) => !!b.redeemedAt).length,
+    visitsCompleted: bookings.filter((b) => b.status === "completed").length,
+    postsLive: posts.length,
+    postsReported: posts.filter((p) => !!p.reportedAt).length,
+    milestones,
+    registerValue: roas.registerValue,
+    estimatedRegisterValue: roas.estimatedRegisterValue,
+    mediaValue: roas.mediaValue,
+    redemptions: roas.redemptions,
+  };
+
+  // Earnings: subscription revenue from attributed businesses
+  // whose subscription record is live. Amounts are ACCRUED from
+  // the plan on file, never paid: no payout exists until a real
+  // subscription payment exists, and the payload says so.
+  let monthlyRevenue = 0;
+  let payingBusinesses = 0;
+  for (const b of businesses) {
+    const sub = b.business && b.business.subscription;
+    if (sub && (sub.status === "active" || sub.status === "trialing" || sub.status === "past_due")) {
+      const price = typeof b.business.planPriceMonthly === "number" ? b.business.planPriceMonthly : 0;
+      if (price > 0) { monthlyRevenue += price; payingBusinesses += 1; }
+    }
+  }
+  const sharePct = partner.sharePct;
+  const earnings = {
+    sharePct,
+    monthlyRevenue,
+    payingBusinesses,
+    accruedMonthly: Math.round(monthlyRevenue * (sharePct / 100) * 100) / 100,
+    accruedTotal: Math.round(monthlyRevenue * (sharePct / 100) * 100) / 100,
+    paidTotal: 0,
+    hasPaidRevenue: monthlyRevenue > 0,
+  };
+  const atFill = {
+    markets: (partner.markets || []).length,
+    businessesPerMarket: PARTNER_MODEL.businessesPerMarket,
+    grossYearly: PARTNER_MODEL.businessesPerMarket * PARTNER_MODEL.arpuYearly * (partner.markets || []).length,
+  };
+  atFill.partnerYearly = Math.round(atFill.grossYearly * (sharePct / 100));
+
+  return {
+    partner,
+    links: partnerLinksFor(partner),
+    creators: {
+      stages: creatorStages,
+      roster: creators.map((u) => ({
+        handle: u.creator ? u.creator.handle || "" : "",
+        name: u.name || "",
+        tier: u.creator ? normalizeTierBand(u.creator.tierBand) : "",
+        localAudiencePct: u.creator && typeof u.creator.localAudiencePct === "number" ? u.creator.localAudiencePct : null,
+        spanishAudiencePct: u.creator && typeof u.creator.spanishAudiencePct === "number" ? u.creator.spanishAudiencePct : null,
+        status: u.status || "",
+        complete: u.status === "approved" && profileCompleteOf(u),
+        market: normalizeMarketName(u.market),
+        sample: !!isTester(u),
+        createdAt: u.createdAt || null,
+      })).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)),
+    },
+    businesses: {
+      stages: businessStages,
+      list: businesses.map((u) => ({
+        businessName: u.business ? u.business.businessName || u.name : u.name,
+        category: u.business ? u.business.category || "" : "",
+        planName: u.business ? u.business.planName || "" : "",
+        status: u.status || "",
+        accessState: businessAccessState(u),
+        market: normalizeMarketName(u.market),
+        sample: !!isTester(u),
+        createdAt: u.createdAt || null,
+      })).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)),
+    },
+    markets: byMarket,
+    performance,
+    earnings,
+    atFill,
+    totals: {
+      creatorsAttributed: creators.length,
+      businessesAttributed: businesses.length,
+      offersLive: performance.offersLive,
+      visitsCompleted: performance.visitsCompleted,
+      postsLive: performance.postsLive,
+    },
+  };
+}
+
+function validPartnerMarkets(names) {
+  if (!Array.isArray(names)) return null;
+  const out = [];
+  for (const n of names) {
+    const m = marketByName(String(n || ""));
+    if (!m) return null;
+    if (!out.includes(m.name)) out.push(m.name);
+  }
+  return out;
+}
+
+function partnerCodeFromName(name) {
+  return String(name || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 24) || "partner";
+}
+
+async function createPartnerUser({ name, type, contactName, email, markets, sharePct, actorId }) {
+  const existing = await store.get(`email:${email}`);
+  if (existing) return { error: "An account with this email already exists" };
+  let code = partnerCodeFromName(name);
+  const users = await allUsers();
+  let n = 2;
+  while (await findPartnerByCode(code, users)) { code = `${partnerCodeFromName(name)}-${n}`; n += 1; }
+  // The login is created through the app's normal account shape
+  // with a random password nobody knows; the partner sets their
+  // own through the standard Forgot password flow, exactly like
+  // any account recovery. No password is ever stored in plain
+  // text or reported anywhere.
+  const tempPassword = crypto.randomBytes(24).toString("hex");
+  const { salt, hash } = auth.hashPassword(tempPassword);
+  const ts = nowIso();
+  const user = {
+    id: crypto.randomUUID(),
+    role: "partner",
+    email,
+    name: contactName || name,
+    passwordSalt: salt,
+    passwordHash: hash,
+    status: "approved",
+    tester: false,
+    market: markets[0] || "",
+    createdAt: ts,
+    updatedAt: ts,
+    reviewedAt: ts,
+    reviewedBy: actorId || null,
+    termsVersion: TERMS_VERSION,
+    termsAcceptedAt: ts,
+    creator: null,
+    business: null,
+    partner: {
+      name,
+      type: type === "profile" ? "profile" : "media",
+      contactName: contactName || "",
+      code,
+      markets,
+      sharePct: typeof sharePct === "number" && sharePct > 0 && sharePct <= 100 ? sharePct : 60,
+      status: "active",
+      agreementStatus: "unsigned",
+      demo: false,
+      createdAt: ts,
+    },
+  };
+  await store.set(`user:${user.id}`, user);
+  await store.set(`email:${email}`, { userId: user.id });
+  await logEvent({ type: "partner_created", actorId: actorId || null, actorRole: "admin", subjectId: user.id, data: { code, markets, sharePct: user.partner.sharePct, type: user.partner.type } });
+  return { user };
+}
+
+// The demo partner (Jeff, 2026-10-28): ONE fictional partner Jeff
+// can log into and show, seeded with Sample-tagged records across
+// the lifecycle. Every seed user is tester-flagged, so the app's
+// existing exclusions keep them out of rosters, founding counts,
+// Admin stats, and every real partner's view; the demo partner's
+// own summary is the one surface that reads its testers. Seeding
+// is idempotent: an existing demo partner is returned untouched.
+async function ensureDemoPartner(actorId) {
+  const users = await allUsers();
+  const existing = users.find((u) => u.role === "partner" && u.partner && u.partner.demo);
+  if (existing) return { user: existing, created: false };
+  const market = "Virginia Beach";
+  const ts = nowIso();
+  const tempPassword = crypto.randomBytes(24).toString("hex");
+  const { salt, hash } = auth.hashPassword(tempPassword);
+  const partnerUser = {
+    id: crypto.randomUUID(),
+    role: "partner",
+    email: PARTNER_DEMO_EMAIL,
+    name: "Demo Partner",
+    passwordSalt: salt,
+    passwordHash: hash,
+    status: "approved",
+    tester: false,
+    market,
+    createdAt: ts,
+    updatedAt: ts,
+    reviewedAt: ts,
+    reviewedBy: actorId || null,
+    termsVersion: TERMS_VERSION,
+    termsAcceptedAt: ts,
+    creator: null,
+    business: null,
+    partner: {
+      name: "Demo Media Group",
+      type: "media",
+      contactName: "Demo Partner",
+      code: PARTNER_DEMO_CODE,
+      markets: [market],
+      sharePct: 60,
+      status: "active",
+      agreementStatus: "unsigned",
+      demo: true,
+      createdAt: ts,
+    },
+  };
+  await store.set(`user:${partnerUser.id}`, partnerUser);
+  await store.set(`email:${PARTNER_DEMO_EMAIL}`, { userId: partnerUser.id });
+
+  const src = partnerSrcFor(PARTNER_DEMO_CODE);
+  const mkUser = async (partial) => {
+    const u = {
+      id: crypto.randomUUID(),
+      status: "approved",
+      tester: true,
+      market,
+      city: "Virginia Beach",
+      country: "United States",
+      createdAt: ts,
+      updatedAt: ts,
+      reviewedAt: ts,
+      termsVersion: TERMS_VERSION,
+      termsAcceptedAt: ts,
+      signupSource: src,
+      passwordSalt: salt,
+      passwordHash: hash,
+      creator: null,
+      business: null,
+      ...partial,
+    };
+    await store.set(`user:${u.id}`, u);
+    await store.set(`email:${u.email}`, { userId: u.id });
+    return u;
+  };
+  const sampleCreators = [
+    { handle: "samplebeachfoodie", name: "Sample Creator One", followers: 4200, local: 78, spanish: 12, status: "approved", complete: true },
+    { handle: "samplevbcreates", name: "Sample Creator Two", followers: 1350, local: 85, spanish: null, status: "approved", complete: true },
+    { handle: "samplesurfmom", name: "Sample Creator Three", followers: 22100, local: null, spanish: 31, status: "approved", complete: false },
+    { handle: "samplecoastaleats", name: "Sample Creator Four", followers: 860, local: 91, spanish: null, status: "pending", complete: false },
+  ];
+  const creatorUsers = [];
+  for (const c of sampleCreators) {
+    creatorUsers.push(await mkUser({
+      role: "creator",
+      email: `${c.handle}@sample.signl.demo`,
+      name: c.name,
+      status: c.status,
+      creator: {
+        handle: c.handle,
+        followerCount: c.followers,
+        audienceStack: { instagram: c.followers },
+        totalAudience: c.followers,
+        tierBand: tierForFollowers(c.followers),
+        categories: ["Food & Drink"],
+        localAudiencePct: c.local,
+        localAudienceSource: "Self-reported",
+        spanishAudiencePct: c.spanish,
+        profileComplete: c.complete,
+        hasPhoto: false,
+      },
+    }));
+  }
+  const bizA = await mkUser({
+    role: "business",
+    email: "samplecafe@sample.signl.demo",
+    name: "Sample Cafe Owner",
+    business: { businessName: "Sample Cafe", category: "Coffee & Bakery", plan: "growth", planName: "Growth", planPriceMonthly: 349, accessState: "active", subscription: null },
+  });
+  const bizB = await mkUser({
+    role: "business",
+    email: "sampletacos@sample.signl.demo",
+    name: "Sample Tacos Owner",
+    business: { businessName: "Sample Tacos", category: "Restaurants", plan: "self-service", planName: "Self-Service", planPriceMonthly: 199, accessState: "founding", subscription: null },
+  });
+  const offer = {
+    id: crypto.randomUUID(),
+    businessId: bizA.id,
+    market,
+    title: "Sample visit: try the new seasonal menu",
+    status: "open",
+    spots: 3,
+    createdAt: ts,
+    updatedAt: ts,
+    sample: true,
+  };
+  await store.set(`offer:${offer.id}`, offer);
+  const dayMs = 86400000;
+  const visitAt = new Date(Date.parse(ts) - 12 * dayMs).toISOString();
+  const booking = {
+    id: crypto.randomUUID(),
+    businessId: bizA.id,
+    creatorId: creatorUsers[0].id,
+    offerId: offer.id,
+    market,
+    code: "SGNL-SAMPLE1",
+    status: "completed",
+    createdAt: visitAt,
+    redeemedAt: visitAt,
+    postDeadline: new Date(Date.parse(visitAt) + 2 * dayMs).toISOString(),
+    dollarCap: 40,
+    redemptions: { count: 6, basketTotal: 212.4, discountPct: 0 },
+    sample: true,
+  };
+  await store.set(`booking:${booking.id}`, booking);
+  const post = {
+    id: crypto.randomUUID(),
+    bookingId: booking.id,
+    businessId: bizA.id,
+    creatorId: creatorUsers[0].id,
+    market,
+    url: "https://www.instagram.com/p/sample/",
+    submittedAt: visitAt,
+    createdAt: visitAt,
+    reportedAt: visitAt,
+    views: 12400,
+    likes: 860,
+    comments: 74,
+    shares: 39,
+    snapshots: [
+      { at: visitAt, views: 8200, likes: 540, comments: 41, shares: 22, source: "creator_report" },
+      { at: new Date(Date.parse(visitAt) + 8 * dayMs).toISOString(), views: 12400, likes: 860, comments: 74, shares: 39, source: "creator_report" },
+    ],
+    sample: true,
+  };
+  await store.set(`post:${post.id}`, post);
+  await logEvent({ type: "partner_demo_seeded", actorId: actorId || null, actorRole: "admin", subjectId: partnerUser.id, data: { code: PARTNER_DEMO_CODE, market } });
+  return { user: partnerUser, created: true };
+}
+
 async function route(event) {
   const method = event.httpMethod || "GET";
   let path = event.path || "/";
@@ -9279,6 +9742,65 @@ async function route(event) {
   }
   if (seg[0] === "admin") {
     if (user.role !== "admin") return err(403, "Admin only");
+    // Partners (Jeff, 2026-10-28): Admin creates and manages
+    // distribution partners. Creation makes the login through the
+    // normal account shape; the partner sets their own password
+    // through Forgot password. Edits cover markets, share, and
+    // status only; a partner's code never changes once issued.
+    if (seg[1] === "partners" && seg.length === 2 && method === "GET") {
+      const partners = await allPartners();
+      return json(200, {
+        partners: partners.map((u) => ({
+          id: u.id,
+          email: u.email,
+          ...publicPartner(u.partner),
+          links: partnerLinksFor(publicPartner(u.partner), query.origin || undefined),
+        })),
+      });
+    }
+    if (seg[1] === "partners" && seg.length === 2 && method === "POST") {
+      const b = parseBody(event);
+      if (!b.name || typeof b.name !== "string" || !b.name.trim()) return err(400, "Partner name is required");
+      if (!isEmail(b.email || "")) return err(400, "A valid login email is required");
+      const markets = validPartnerMarkets(b.markets);
+      if (!markets || !markets.length) return err(400, "Assign at least one real market");
+      const sharePct = b.sharePct === undefined ? 60 : Number(b.sharePct);
+      if (!Number.isFinite(sharePct) || sharePct <= 0 || sharePct > 100) return err(400, "Share must be between 1 and 100");
+      const made = await createPartnerUser({ name: b.name.trim(), type: b.type, contactName: typeof b.contactName === "string" ? b.contactName.trim() : "", email: String(b.email).toLowerCase(), markets, sharePct, actorId: user.id });
+      if (made.error) return err(409, made.error);
+      return json(201, { partner: { id: made.user.id, email: made.user.email, ...publicPartner(made.user.partner), links: partnerLinksFor(publicPartner(made.user.partner)) } });
+    }
+    if (seg[1] === "partners" && seg[2] === "demo" && seg.length === 3 && method === "POST") {
+      const seeded = await ensureDemoPartner(user.id);
+      const p = publicPartner(seeded.user.partner);
+      return json(200, { created: seeded.created, partner: { id: seeded.user.id, email: seeded.user.email, ...p, links: partnerLinksFor(p) } });
+    }
+    if (seg[1] === "partners" && seg.length === 3 && method === "PATCH") {
+      const target = await store.get(`user:${seg[2]}`);
+      if (!target || target.role !== "partner" || !target.partner) return err(404, "Partner not found");
+      const b = parseBody(event);
+      if (b.markets !== undefined) {
+        const markets = validPartnerMarkets(b.markets);
+        if (!markets || !markets.length) return err(400, "Assign at least one real market");
+        target.partner.markets = markets;
+        target.market = markets[0];
+      }
+      if (b.sharePct !== undefined) {
+        const sharePct = Number(b.sharePct);
+        if (!Number.isFinite(sharePct) || sharePct <= 0 || sharePct > 100) return err(400, "Share must be between 1 and 100");
+        target.partner.sharePct = sharePct;
+      }
+      if (b.status !== undefined) {
+        if (b.status !== "active" && b.status !== "paused") return err(400, "Status must be active or paused");
+        target.partner.status = b.status;
+      }
+      if (typeof b.contactName === "string") target.partner.contactName = b.contactName.trim();
+      if (typeof b.name === "string" && b.name.trim()) target.partner.name = b.name.trim();
+      target.updatedAt = nowIso();
+      await store.set(`user:${target.id}`, target);
+      await logEvent({ type: "partner_updated", actorId: user.id, actorRole: "admin", subjectId: target.id, data: { code: target.partner.code } });
+      return json(200, { partner: { id: target.id, email: target.email, ...publicPartner(target.partner), links: partnerLinksFor(publicPartner(target.partner)) } });
+    }
     if (method === "GET" && seg[1] === "applications") {
       const all = await allUsers();
       const users = all.filter((u) => u.role !== "admin");
@@ -10279,6 +10801,32 @@ async function route(event) {
   // completed profile, founding standing, priority position, and the
   // launch window. Viewed events are logged at most once per creator
   // per day so the log stays meaningful.
+  // ---------- partner self-service (Jeff, 2026-10-28) ----------
+  // A partner reads only their own summary, computed from records
+  // stamped with their own code. There is no partner-id parameter
+  // anywhere on these routes: the session decides whose data it is.
+  if (seg[0] === "partner" && seg[1] === "summary" && seg.length === 2 && method === "GET") {
+    if (!user || user.role !== "partner" || !user.partner) return err(403, "Partners only");
+    return json(200, await partnerSummary(user));
+  }
+  if (seg[0] === "partner" && seg[1] === "qr" && seg.length === 2 && method === "GET") {
+    if (!user || user.role !== "partner" || !user.partner) return err(403, "Partners only");
+    const partner = publicPartner(user.partner);
+    const kind = query.kind === "business" ? "business" : "creator";
+    const link = partnerLinksFor(partner).find((l) => l.market === query.market);
+    if (!link) return err(404, "No link for that market");
+    try {
+      const qrcode = require("qrcode-generator");
+      const qr = qrcode(0, "M");
+      qr.addData(link[kind]);
+      qr.make();
+      const svg = qr.createSvgTag({ cellSize: 6, margin: 8, scalable: true });
+      return { statusCode: 200, headers: { "Content-Type": "image/svg+xml", "Cache-Control": "no-store" }, body: svg };
+    } catch (e) {
+      return err(501, "QR generation is unavailable on this deployment; the link works on its own.");
+    }
+  }
+
   if (method === "GET" && seg[0] === "me" && seg[1] === "founding") {
     if (user.role !== "creator") return err(403, "Creators only");
     const summaryRaw = await foundingSummary(user);
