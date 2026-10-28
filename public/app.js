@@ -90,6 +90,59 @@ function cloneJson(x) {
   return x === undefined ? x : JSON.parse(JSON.stringify(x));
 }
 
+// Stale-build self-heal (2026-10-28): the shell stamps the build
+// it loaded with (window.__SIGNL_BUILD__ in index.html) and the
+// server stamps every API response with its build (x-signl-build,
+// lib/build.js). A tab that outlives a deploy is running old code
+// against a new server, the mixed state behind the stuck-nav
+// report; on the first response that proves it, reload once into
+// the fresh asset set. Two guards keep it tame: it only heals
+// toward a NEWER build (a stale browser-cached bootstrap response
+// still carries the old build's stamp and must not drag a fresh
+// client backwards; rollback deploys bump the id like any other
+// deploy, per lib/build.js), and a sessionStorage record of the
+// build already healed toward caps it at one automatic reload
+// per new server build per tab session, so a permanently
+// mismatched deploy can never become a reload loop.
+const RUNNING_BUILD = window.__SIGNL_BUILD__ || null;
+function buildOrder(id) {
+  const m = /^(\d{4}\.\d{2}\.\d{2})-(\d+)$/.exec(String(id || ""));
+  return m ? { day: m[1], n: parseInt(m[2], 10) } : null;
+}
+function isNewerBuild(serverBuild, runningBuild) {
+  const s = buildOrder(serverBuild), r = buildOrder(runningBuild);
+  if (!s || !r) return serverBuild !== runningBuild; // unparseable: any mismatch heals
+  if (s.day !== r.day) return s.day > r.day;
+  return s.n > r.n;
+}
+function noteServerBuild(serverBuild) {
+  try {
+    if (!serverBuild || !RUNNING_BUILD) return;
+    if (!isNewerBuild(serverBuild, RUNNING_BUILD)) return;
+    const KEY = "signlBuildReloadFor";
+    if (sessionStorage.getItem(KEY) === serverBuild) return;
+    sessionStorage.setItem(KEY, serverBuild);
+    location.reload();
+  } catch (e) { /* healing is best-effort; never break a request */ }
+}
+// Views that render from already-loaded state make no request, so
+// a returning user might click through local views for a while
+// before any response can report a deploy. When the tab or window
+// comes back to the foreground, probe the bootstrap header
+// directly (no-store, so the 60s bootstrap cache cannot answer
+// with a stale stamp), at most once a minute.
+let lastBuildProbeAt = 0;
+function probeServerBuild() {
+  const now = Date.now();
+  if (now - lastBuildProbeAt < 60000) return;
+  lastBuildProbeAt = now;
+  fetch("/api/bootstrap", { cache: "no-store", credentials: "same-origin" })
+    .then((res) => noteServerBuild(res.headers && res.headers.get ? res.headers.get("x-signl-build") : null))
+    .catch(() => {});
+}
+document.addEventListener("visibilitychange", () => { if (!document.hidden) probeServerBuild(); });
+window.addEventListener("focus", probeServerBuild);
+
 async function api(method, path, body) {
   const isGet = method === "GET";
   if (!isGet) getCache.clear();
@@ -112,6 +165,7 @@ async function api(method, path, body) {
       // status or a browser exception string.
       throw new Error("We could not reach SIGNL. Check your connection and try again.");
     }
+    noteServerBuild(res.headers && res.headers.get ? res.headers.get("x-signl-build") : null);
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       // Server messages are plain language and pass through. A bare
@@ -2803,6 +2857,15 @@ function go(view, tab) {
     api("POST", "/notifications/read", {}).then(() => refreshBadges()).catch(() => {});
   }
   state.view = view;
+  // A direct invite (startOffer) latches the Offers composer for
+  // the render that follows it. Deliberate navigation anywhere
+  // else releases the latch: without this, one Invite tap in
+  // Discover pinned EVERY later tab to My Offers until a refresh
+  // reset the in-memory state (Jeff's stuck-nav report,
+  // 2026-10-28, reproduced in the seed world). The draft itself
+  // is kept (state.offerDraft survives re-renders); only the
+  // direct targeting ends when the business walks away from it.
+  if (tab && tab !== "My Offers") state.offerTarget = null;
   if (tab) state.tab = tab;
   render();
   return false;
