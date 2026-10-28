@@ -25,6 +25,7 @@
 //   event:{yyyy-mm-dd}:{uuid}    append-only event log record
 //   photo:{userId}               creator profile photo { contentType, dataBase64, bytes, uploadedAt }
 //   config:markets               { flags: { [marketName]: true } } market activation; absent = not live
+//   bizapp:{uuid}                founding business application captured by the site safety net (POST /api/founding-application)
 //   campaign:{id}                outreach campaign config { armed, lastError, lastRunAt, totalSent, ... }
 //   campaign-recipient:{id}:{email}  one queued/sent/skipped outreach recipient
 

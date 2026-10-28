@@ -7091,6 +7091,102 @@ async function handleStripeWebhook(event) {
   return json(200, { received: true });
 }
 
+// ---------- Founding business applications (site safety net) ----------
+// The founding business application form lives on joinsignl.com and
+// posts to Netlify Forms as its system of record. On 2026-10-28 a real
+// applicant (GleekOps, Denver) hit the form's error state and her
+// submission never reached Netlify: no record, no notification. This
+// endpoint is the independent second capture path the site falls back
+// to when the Netlify POST fails (after one retry): it stores the
+// application in our own store (key bizapp:{uuid}) and emails the
+// team inbox. The save never depends on the email step: a mail
+// failure is noted on the record and the applicant still succeeds.
+// Validation contract: a malformed payload gets a 400 and writes
+// nothing, which doubles as the daily health check's safe probe.
+const FOUNDING_APPLICATION_ORIGINS = ["https://joinsignl.com", "https://www.joinsignl.com"];
+
+function foundingApplicationCors(event) {
+  const origin = (event.headers && (event.headers.origin || event.headers.Origin)) || "";
+  const allow = FOUNDING_APPLICATION_ORIGINS.indexOf(origin) > -1 ? origin : FOUNDING_APPLICATION_ORIGINS[0];
+  return {
+    "Access-Control-Allow-Origin": allow,
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type",
+    Vary: "Origin",
+  };
+}
+
+async function handleFoundingApplication(event) {
+  const cors = foundingApplicationCors(event);
+  const b = parseBody(event);
+  // Honeypot (same field name as the site form): a filled bot-field
+  // means a bot. Mirror the primary path's behavior: report success,
+  // store nothing, send nothing.
+  if (typeof b["bot-field"] === "string" && b["bot-field"].trim() !== "") {
+    return json(200, { ok: true }, cors);
+  }
+  const clean = (v, n) => (typeof v === "string" ? v.trim().slice(0, n) : "");
+  const rec = {
+    businessName: clean(b.business_name != null ? b.business_name : b.businessName, 200),
+    category: clean(b["business-category"] != null ? b["business-category"] : b.category, 120),
+    type: clean(b["business-type"] != null ? b["business-type"] : b.type, 120),
+    contactName: clean(b.contact_name != null ? b.contact_name : b.contactName, 120),
+    email: clean(b.email, 200),
+    phone: clean(b.phone, 60),
+    city: clean(b.city, 160),
+    tierInterest: clean(b.tier_interest != null ? b.tier_interest : b.tierInterest, 120),
+    source: "site-fallback",
+    createdAt: nowIso(),
+  };
+  const missing = [];
+  if (!rec.businessName) missing.push("business_name");
+  if (!rec.contactName) missing.push("contact_name");
+  if (!isEmail(rec.email)) missing.push("email");
+  if (!rec.city) missing.push("city");
+  if (missing.length) {
+    return json(400, { error: "Missing or invalid fields: " + missing.join(", ") }, cors);
+  }
+  rec.id = crypto.randomUUID();
+  await store.set(`bizapp:${rec.id}`, rec);
+  // Team notification is best-effort and never gates the save.
+  let emailSent = false;
+  let emailReason = null;
+  try {
+    const result = await sendEmail({
+      to: "hello@joinsignl.com",
+      subject: `Founding business application: ${rec.businessName}`,
+      text: [
+        "A founding business application arrived through the site safety net (the primary form path failed for this visitor, so the site used the backup capture).",
+        "",
+        `Business name: ${rec.businessName}`,
+        `Category: ${rec.category || "(not given)"}`,
+        `Business type: ${rec.type || "(not given)"}`,
+        `Contact name: ${rec.contactName}`,
+        `Email: ${rec.email}`,
+        `Phone: ${rec.phone || "(not given)"}`,
+        `Business city & state: ${rec.city}`,
+        `Tier interest: ${rec.tierInterest || "(not given)"}`,
+        "",
+        `Record: bizapp:${rec.id}`,
+      ].join("\n"),
+    });
+    emailSent = !!(result && result.sent);
+    emailReason = result && result.reason ? result.reason : null;
+  } catch (e) {
+    emailReason = String(e && e.message ? e.message : e);
+    console.error("SIGNL founding application notification failed (application saved):", e);
+  }
+  if (!emailSent) {
+    try {
+      await store.set(`bizapp:${rec.id}`, Object.assign({}, rec, { notifyEmailSent: false, notifyEmailReason: emailReason }));
+    } catch (e) { /* the application record itself is already saved */ }
+  }
+  try {
+    await logEvent({ type: "founding_application_received", actorRole: "business", data: { bizappId: rec.id, businessName: rec.businessName, email: rec.email, source: rec.source, emailSent } });
+  } catch (e) { /* event log is best-effort; the record is saved */ }
+  return json(200, { ok: true, id: rec.id }, cors);
+}
+
 async function route(event) {
   const method = event.httpMethod || "GET";
   let path = event.path || "/";
@@ -7200,6 +7296,15 @@ async function route(event) {
     // (with stale-while-revalidate) instead of paying a function
     // round trip on every single app load.
     }, { "Cache-Control": "public, max-age=60, stale-while-revalidate=300" });
+  }
+
+  // Founding business application safety net: public, cross-origin
+  // from joinsignl.com (see handleFoundingApplication above).
+  if (seg[0] === "founding-application" && seg.length === 1) {
+    if (method === "OPTIONS") {
+      return { statusCode: 204, headers: foundingApplicationCors(event), body: "" };
+    }
+    if (method === "POST") return handleFoundingApplication(event);
   }
 
   // Server-rendered profile page (netlify.toml /c/* rewrite).
