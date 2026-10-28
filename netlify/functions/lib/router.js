@@ -7393,6 +7393,14 @@ async function handleFoundingApplication(event) {
     source: "site-fallback",
     createdAt: nowIso(),
   };
+  // Preferred language (Spanish layers S3, Jeff, 2026-10-28):
+  // the Spanish business page (negocios.html) routes its
+  // applicants through the same form carrying lang=es, so the
+  // application is recorded as Spanish and the team answers in
+  // Spanish. Recorded only when it is exactly "es"; never
+  // required, never part of validation (the malformed-payload
+  // 400 contract above is unchanged).
+  if (clean(b.lang, 10).toLowerCase() === "es") rec.lang = "es";
   const missing = [];
   if (!rec.businessName) missing.push("business_name");
   if (!rec.contactName) missing.push("contact_name");
@@ -7421,6 +7429,7 @@ async function handleFoundingApplication(event) {
         `Phone: ${rec.phone || "(not given)"}`,
         `Business city & state: ${rec.city}`,
         `Tier interest: ${rec.tierInterest || "(not given)"}`,
+        ...(rec.lang === "es" ? ["Preferred language: Spanish (application arrived via the Spanish page; answer in Spanish)"] : []),
         "",
         `Record: bizapp:${rec.id}`,
       ].join("\n"),
@@ -7437,7 +7446,7 @@ async function handleFoundingApplication(event) {
     } catch (e) { /* the application record itself is already saved */ }
   }
   try {
-    await logEvent({ type: "founding_application_received", actorRole: "business", data: { bizappId: rec.id, businessName: rec.businessName, email: rec.email, source: rec.source, emailSent } });
+    await logEvent({ type: "founding_application_received", actorRole: "business", data: { bizappId: rec.id, businessName: rec.businessName, email: rec.email, source: rec.source, emailSent, lang: rec.lang || null } });
   } catch (e) { /* event log is best-effort; the record is saved */ }
   return json(200, { ok: true, id: rec.id }, cors);
 }
@@ -7849,6 +7858,7 @@ async function route(event) {
       const live = businessAccessState(user) === "active";
       lines.push(`Their market is ${user.market || "unknown"} and their business is ${live ? "ACTIVE (market open)" : "on the founding list (market not open yet)"}.`);
       if (user.business && user.business.planId) lines.push(`Their plan is ${user.business.planId}.`);
+      if (user.business && user.business.preferredLanguage === "es") lines.push("This business owner prefers Spanish. Answer in Spanish.");
     }
     const history = Array.isArray(b.history) ? b.history.filter((t) => t && (t.who === "user" || t.who === "sig") && typeof t.text === "string").map((t) => ({ who: t.who, text: t.text })) : [];
     const ans = await askSigAI({ role: user.role, stateLines: lines.join(" "), question: q, history });
@@ -8483,6 +8493,17 @@ async function route(event) {
       // never clear it. Nothing but the offers/page marks read
       // it (see studentOpenView).
       if (b.studentOpen !== undefined) bz.studentOpen = b.studentOpen === true;
+      // Preferred language (Spanish layers S3, Jeff,
+      // 2026-10-28): the business owner's own language
+      // preference, "en" or "es" (absent = "en"). Strictly
+      // validated: any other value is ignored and the stored
+      // value kept, never an error. Sig honors it (see
+      // /api/sig/ask) and Admin can see it; nothing gates on it
+      // and the app UI does not re-render for it in this layer.
+      if (b.preferredLanguage !== undefined) {
+        const pl = String(b.preferredLanguage || "").trim().toLowerCase();
+        if (pl === "en" || pl === "es") bz.preferredLanguage = pl;
+      }
       // Average ticket (UX redesign section 4, 2026-10-24): the
       // business's typical register spend per customer, set once
       // and editable here. ROAS code-use estimates multiply logged
@@ -8762,6 +8783,11 @@ async function route(event) {
           pub.foundingPriority = approvedRank.get(u.id) || null;
           pub.queuePosition = pendingRank.get(u.id) || null;
           pub.momentum = momentum.summaryFor(u);
+        }
+        if (u.role === "business") {
+          // Preferred language (S3): attached explicitly so
+          // Admin sees it before anyone writes to this business.
+          pub.preferredLanguage = (u.business && u.business.preferredLanguage) || "en";
         }
         return pub;
       };
