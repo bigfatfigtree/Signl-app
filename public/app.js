@@ -34,9 +34,12 @@ const state = {
   sigQueueCount: 0, // V4.1: pending queue count, carried as the Sig tab badge
   sigThread: [], // V4.1: the Sig conversation on the Sig tab ([{who, text, flow}]) — session-only, like every other Sig surface
   sigFocusAsk: false, // V4.1: set by the Home ask box so the Sig tab lands with its chat input focused
+  sigFlow: null, // Sig Operator: the active in-chat action flow ({id, step, data}) — memory only until the user confirms; exiting writes nothing
+  sigOpData: null, // Sig Operator: scratch data for the active flow (search results, readout, gaps) — session-only, never persisted
   discover: [],
   discoverCats: [], // Discover category filter: the chip row owns it, multi-select, OR semantics
   discoverSpanish: false, // Discover filter: the "Spanish-speaking creators only" toggle
+  discoverMusician: "", // Discover filter (Sig activation): "" = off, "1" = musician attribute (the toggle), "perform"/"create" = the openness modes Sig's prompts deep-link
   discoverUniversity: "", // Discover filter (U1): canonical university name, "" = all; options come from the server facet
   lang: "", // Spanish claim path (S1): "es" when the creator arrived with ?lang=es (persisted) or their record carries lang=es
   threads: [],
@@ -280,6 +283,20 @@ function storedSrc() {
 // falls back to the English, never to a blank.
 function T(en, es) {
   return state.lang === "es" && es ? es : en;
+}
+// Sig Operator language (Jeff, 2026-10-28): the operator speaks
+// the user's stored language end to end. Creators ride state.lang
+// (the S1 claim path / record lang); businesses ride their S3
+// preferredLanguage. ST() is T() keyed to that combined answer,
+// used by the operator engine, the brief builder, and the
+// performance readout — surfaces the plain T() never reached.
+function sigLang() {
+  const u = state.user;
+  if (u && u.role === "business" && u.business && u.business.preferredLanguage === "es") return "es";
+  return state.lang === "es" ? "es" : "en";
+}
+function ST(en, es) {
+  return sigLang() === "es" && es ? es : en;
 }
 function storedLang() {
   try { return localStorage.getItem("signl_lang") === "es" ? "es" : ""; } catch (e) { return ""; }
@@ -2141,7 +2158,7 @@ function sigQueueHtml(items, opts) {
   // leadShort (Homes only): the greeting above the card already
   // carries the lead item's full sentence, so the lead row renders
   // its short task form instead — Home never shows a sentence twice.
-  const row = (r, i) => `<div class="sig-item">${o.speaker ? `<span class="sig-says">Sig</span>` : ""}<div class="sig-stxt">${esc(i === 0 && o.leadShort && r.short ? r.short : r.text)}</div>${r.btn ? `<button type="button" class="btn small-btn" data-sq="${i}">${esc(r.btn)}</button>` : ""}${r.dismissKey ? `<button type="button" class="sig-x" data-sqx="${i}" aria-label="Dismiss for this season">&times;</button>` : ""}</div>`;
+  const row = (r, i) => `<div class="sig-item">${o.speaker ? `<span class="sig-says">Sig</span>` : ""}<div class="sig-stxt">${esc(i === 0 && o.leadShort && r.short ? r.short : r.text)}</div>${r.btn ? `<button type="button" class="btn small-btn" data-sq="${i}">${esc(r.btn)}</button>` : ""}${r.dismissKey ? `<button type="button" class="sig-x" data-sqx="${i}" aria-label="Dismiss">&times;</button>` : ""}</div>`;
   return `<div class="sig-card"><div class="sig-top">${ava}<div><div class="sig-title">Sig has ${n} thing${n === 1 ? "" : "s"} for you</div><div class="sig-sub">In the order they need you.</div></div></div>
   ${o.askBox ? sigAskBoxHtml() : ""}
   ${items.slice(0, 3).map(row).join("")}
@@ -2164,13 +2181,17 @@ function wireSigQueue(root, items, links) {
     };
   });
   // Dismissal exists only on items that carry a dismissKey
-  // (today: the U4 campus-moment prompt, per season). The key
-  // is written to localStorage and the current view re-renders,
-  // so the queue, its count, and the Sig tab all agree.
+  // (the U4 campus-moment prompt per season, and Sig's idea
+  // prompts). The stored value is the dismissal TIMESTAMP:
+  // U4 only checks presence (its key carries the season id, so
+  // a timestamp still reads as dismissed for that season),
+  // while idea prompts compare it against their 14-day
+  // cooldown. The current view re-renders either way, so the
+  // queue, its count, and the Sig tab all agree.
   root.querySelectorAll("[data-sqx]").forEach((btn) => {
     btn.onclick = () => {
       const r = items[Number(btn.getAttribute("data-sqx"))];
-      if (r && r.dismissKey) { try { localStorage.setItem(r.dismissKey, "1"); } catch (e) { /* storage unavailable: the re-render below still hides it for this view */ } }
+      if (r && r.dismissKey) { try { localStorage.setItem(r.dismissKey, String(Date.now())); } catch (e) { /* storage unavailable: the re-render below still hides it for this view */ } }
       render();
     };
   });
@@ -2696,8 +2717,9 @@ function wireReady(root) {
 // ---------- Sig: one queue, one conversation, two doors ----------
 // Ask Sig's content is built ONCE here and shared by the Ask Sig
 // sheet (Home's foot row, the header's quick door) and the Sig tab
-// (V4.1). Sig never completes a consequential action in chat;
-// every flow lands you on the screen where you tap it.
+// (V4.1). These flows are the walk-to doors. The Sig tab ALSO
+// carries the operator (below): Sig does the doing in chat there,
+// always behind a plain summary and an explicit yes.
 //
 // How Sig answers (2026-10-27, Jeff: "He needs to be a real AI"):
 // the chat asks the server first (POST /api/sig/ask), where a
@@ -2938,15 +2960,31 @@ async function sigAsk(text) {
 }
 function sigThreadHtml() {
   const flows = sigFlowsFor();
-  return (state.sigThread || []).map((turn) => turn.who === "user"
+  // Operator chips render ONLY on the newest turn that carries
+  // them: an old step's buttons staying live would let a stray
+  // tap rewind or corrupt the active flow. One live step at a
+  // time, like every other chat surface.
+  const turns = state.sigThread || [];
+  let lastActionTurn = -1;
+  turns.forEach((t, i) => { if (t.who !== "user" && (t.actions || []).length) lastActionTurn = i; });
+  return turns.map((turn, ti) => turn.who === "user"
     ? `<div class="sig-turn user"><div class="sig-bub">${esc(turn.text)}</div></div>`
-    : `<div class="sig-turn sig"><span class="sig-turn-ava">${turn.pending ? sigAvatarHtml("think") : turn.talk ? sigAvatarHtml("talk") : SIG_AVATAR_HTML}</span><div class="sig-bub">${esc(turn.text)}${turn.pending ? `<span class="sig-typing" aria-hidden="true"><i></i><i></i><i></i></span>` : ""}${turn.flow != null && flows[turn.flow] ? `<button type="button" class="btn small-btn sig-turn-act" data-sigflow="${turn.flow}">${esc(flows[turn.flow].label)}</button>` : ""}${(turn.suggest || []).map((q) => `<button type="button" class="btn small-btn sig-turn-act" data-sigask="${esc(q)}">${esc(q)}</button>`).join("")}</div></div>`).join("");
+    : `<div class="sig-turn sig"><span class="sig-turn-ava">${turn.pending ? sigAvatarHtml("think") : turn.talk ? sigAvatarHtml("talk") : SIG_AVATAR_HTML}</span><div class="sig-bub">${esc(turn.text)}${turn.pending ? `<span class="sig-typing" aria-hidden="true"><i></i><i></i><i></i></span>` : ""}${turn.flow != null && flows[turn.flow] ? `<button type="button" class="btn small-btn sig-turn-act" data-sigflow="${turn.flow}">${esc(flows[turn.flow].label)}</button>` : ""}${(turn.suggest || []).map((q) => `<button type="button" class="btn small-btn sig-turn-act" data-sigask="${esc(q)}">${esc(q)}</button>`).join("")}${ti === lastActionTurn ? (turn.actions || []).map((a, ai) => `<button type="button" class="btn small-btn sig-turn-act${a.primary ? "" : " ghost"}" data-opact="${ti}:${ai}">${esc(a.label)}</button>`).join("") : ""}</div></div>`).join("");
 }
 async function sigAskSubmit(ev) {
   if (ev) ev.preventDefault();
   const input = document.getElementById("sig-ask-input");
   const text = input ? input.value.trim() : "";
   if (!text) return false;
+  // Sig Operator routing (Jeff, 2026-10-28): an active flow
+  // consumes the message first; then action intents; only then
+  // does the question path (AI, then the canon bank) run. The
+  // operator never writes anything before a plain summary and
+  // an explicit yes.
+  if (typeof sigOpTry === "function" && (await sigOpTry(text))) {
+    if (input) input.value = "";
+    return false;
+  }
   state.sigThread = state.sigThread || [];
   state.sigThread.push({ who: "user", text });
   const pending = { who: "sig", text: "One sec.", flow: null, pending: true };
@@ -2987,6 +3025,20 @@ function wireSigThread(root) {
   root.querySelectorAll("[data-sigask]").forEach((btn) => {
     btn.onclick = () => { const input = document.getElementById("sig-ask-input"); if (input) input.value = btn.getAttribute("data-sigask"); sigAskSubmit(); };
   });
+  // Sig Operator action chips: a turn's actions are closures
+  // held in memory with the thread (session-only, like the
+  // thread itself). A tap runs the step; the flow repaints.
+  root.querySelectorAll("[data-opact]").forEach((btn) => {
+    btn.onclick = async () => {
+      const parts = btn.getAttribute("data-opact").split(":");
+      const turn = (state.sigThread || [])[Number(parts[0])];
+      const act = turn && turn.actions && turn.actions[Number(parts[1])];
+      if (!act || typeof act.run !== "function") return;
+      btn.disabled = true;
+      try { await act.run(); } catch (e) { /* flows surface their own errors as turns */ }
+      if (typeof sigOpPaint === "function") sigOpPaint();
+    };
+  });
 }
 
 // The Sig tab (V4.1): Sig's whole surface as a destination —
@@ -3012,17 +3064,22 @@ function renderSigTab() {
       <div class="sig-hero-kicker">Your guide</div>
       <h2>Sig</h2>
       <div class="sig-presence"><span class="sig-live-dot${anyPending ? " thinking" : ""}" data-sig-presence-dot></span><strong data-sig-presence-text>${presence}</strong><span data-sig-presence-sub>${presenceSub}</span></div>
-      <p>Ask in plain words. I keep the queue in order and walk you to the exact screen.</p>
+      <p>Ask in plain words, or tell me to do it: campaigns, people, numbers, right here. I keep the queue in order, and I confirm before anything is saved.</p>
     </div>
   </section>
   <div id="sig-queue-host">${sigQueueHtml(items, { links, speaker: true })}</div>
   <div class="sig-chat">
-    <div class="sig-chat-head"><div><div class="sig-chat-title">Conversation</div><div class="muted small">Straight answers, with the next step attached.</div></div>${anyPending ? `<span class="sig-typing" aria-hidden="true"><i></i><i></i><i></i></span>` : ""}</div>
-    <div id="sig-thread" class="sig-thread">${sigThreadHtml() || `<div class="sig-turn sig"><span class="sig-turn-ava">${SIG_AVATAR_HTML}</span><div class="sig-bub">Ask me anything about how SIGNL works: how you make money, what things cost, how visits and points run. If I can walk you to it, I will.</div></div>`}</div>
+    <div class="sig-chat-head"><div><div class="sig-chat-title">Conversation</div><div class="muted small">Straight answers and real actions, with the next step attached. Nothing posts, sends, or saves until you confirm a plain summary.</div></div>${anyPending ? `<span class="sig-typing" aria-hidden="true"><i></i><i></i><i></i></span>` : ""}</div>
+    <div id="sig-thread" class="sig-thread">${sigThreadHtml() || `<div class="sig-turn sig"><span class="sig-turn-ava">${SIG_AVATAR_HTML}</span><div class="sig-bub">Ask me anything about how SIGNL works: how you make money, what things cost, how visits and points run. Or tell me to do something: set up a campaign, find creators, show your numbers. I confirm before anything is saved.</div></div>`}</div>
     <form class="sig-ask-form" onsubmit="return sigAskSubmit(event)">
       <input id="sig-ask-input" type="text" placeholder="Ask Sig anything" autocomplete="off" aria-label="Ask Sig anything">
       <button class="btn" type="submit">Ask</button>
     </form>
+  </div>
+  <h3 style="margin:22px 0 6px">${esc(ST("What Sig can do", "Lo que Sig puede hacer"))}</h3>
+  <div class="sig-panel">
+    ${sigOpCapabilities().map((c) => `<div class="sheet-row" style="cursor:default"><span>${esc(c)}</span></div>`).join("")}
+    <div style="padding:10px 2px 2px;display:flex;gap:8px;flex-wrap:wrap">${sigOpHomeActions().map((a, i) => `<button type="button" class="btn small-btn" data-opstart="${i}">${esc(a.label)}</button>`).join("")}</div>
   </div>
   <h3 style="margin:22px 0 6px">Things Sig can walk you to</h3>
   <div class="sig-panel">
@@ -3035,6 +3092,9 @@ function renderSigTab() {
   el.querySelectorAll("[data-flow]").forEach((btn) => {
     btn.onclick = () => { const f = flows[Number(btn.getAttribute("data-flow"))]; if (f && f.act) f.act(); };
   });
+  el.querySelectorAll("[data-opstart]").forEach((btn) => {
+    btn.onclick = async () => { const a = sigOpHomeActions()[Number(btn.getAttribute("data-opstart"))]; if (a && a.run) { btn.disabled = true; try { await a.run(); } catch (e) { /* flows surface errors as turns */ } } };
+  });
   if (state.sigFocusAsk) {
     state.sigFocusAsk = false;
     setTimeout(() => { const i = document.getElementById("sig-ask-input"); if (i) i.focus(); }, 60);
@@ -3044,9 +3104,9 @@ function renderSigTab() {
 function openAgentSheet() {
   // Ask Sig (V3, spec §4.1): guided flows that walk you to the
   // exact screen, plus straight answers from SIGNL's locked
-  // facts. Sig never completes a consequential action here;
-  // every flow lands you on the screen where you tap it. The
-  // content is shared with the Sig tab (sigFlowsFor/sigQaFor).
+  // facts. This sheet stays a walk-to surface; the operator
+  // (Sig doing the doing, confirm-first) lives on the Sig tab.
+  // The content is shared with the Sig tab (sigFlowsFor/sigQaFor).
   closeAgentSheet();
   const u = state.user;
   if (!u) return false;
@@ -3637,6 +3697,1249 @@ function profileStackTotal() {
 function syncPaidOptionProfile() {
   const wrap = document.getElementById("p-paid-wrap");
   if (wrap) wrap.style.display = suggestedTierId(profileStackTotal()) === "Headliners" ? "" : "none";
+}
+
+// ================= Sig Operator (Jeff, 2026-10-28) =================
+// Sig does the doing in this chat: set up campaigns, find
+// people, track data, prompt the next move, on both sides.
+// The contract, from the actions catalog:
+//  - routing: active flow first, then operator intents, then
+//    the existing question path (AI, then the canon bank).
+//  - confirm-before-commit on every write; reads need none.
+//  - commits are the exact api() calls the screens make, so a
+//    server refusal surfaces with the server's own reason, and
+//    Sig offers the compliant fix in the same turn.
+//  - flow state lives in memory only until confirmation;
+//    "never mind" exits any flow with nothing written.
+//  - English/Spanish end to end via ST(), keyed to the stored
+//    language (creator record lang from S1, business
+//    preferredLanguage from S3). Server error strings surface
+//    as written; that is the named S1 limit.
+// Operator text matching folds accents first (sigOpNorm), so
+// Spanish phrasing matches with or without them.
+function sigOpNorm(text) {
+  return sigNorm(String(text || "").normalize("NFD").replace(/[\u0300-\u036f]/g, ""));
+}
+function sigOpSay(text, actions) {
+  state.sigThread = state.sigThread || [];
+  state.sigThread.push({ who: "sig", text, actions: actions && actions.length ? actions : undefined });
+}
+function sigOpUserTurn(text) {
+  state.sigThread = state.sigThread || [];
+  state.sigThread.push({ who: "user", text });
+}
+function sigOpPaint() {
+  const host = document.getElementById("sig-thread");
+  if (host) { host.innerHTML = sigThreadHtml(); wireSigThread(host); host.scrollTop = host.scrollHeight; }
+  const inp = document.getElementById("sig-ask-input");
+  if (inp) inp.focus();
+}
+async function sigOpPick(label, fn) {
+  sigOpUserTurn(label);
+  await fn();
+  sigOpPaint();
+}
+function sigOpCancelAction() {
+  const label = ST("Never mind", "Cancelar");
+  return { label, run: () => sigOpPick(label, async () => {
+    state.sigFlow = null;
+    state.sigOpData = null;
+    sigOpSay(ST("Stopped. Nothing was saved, sent, or posted.", "Listo. No se guardó, envió ni publicó nada."), sigOpHomeActions());
+  }) };
+}
+function sigOpAsk(text, actions) {
+  sigOpSay(text, [...(actions || []), sigOpCancelAction()]);
+}
+function sigOpIsCancel(norm) {
+  return [" never mind ", " cancel ", " cancelar ", " olvida ", " olvidalo ", " forget it ", " stop here ", " detente "].some((p) => norm.includes(p));
+}
+function sigOpNum(text) {
+  const m = String(text || "").replace(/[$,]/g, "").match(/(\d+(?:\.\d+)?)/);
+  return m ? Number(m[1]) : null;
+}
+function sigOpHomeActions() {
+  const u = state.user;
+  if (!u) return [];
+  if (u.role === "business") return [
+    { label: ST("Set up a campaign", "Crear una campaña"), primary: true, run: async () => { sigB1Start(); sigOpPaint(); } },
+    { label: ST("Find creators", "Buscar creadores"), run: async () => { sigB2Start(); sigOpPaint(); } },
+    { label: ST("How am I doing?", "¿Cómo voy?"), run: async () => { await sigB3Run(); sigOpPaint(); } },
+    { label: ST("Build my asset packet", "Crear mi paquete"), run: async () => { sigPacketStart(); sigOpPaint(); } },
+  ];
+  return [
+    { label: ST("Find offers for me", "Buscar ofertas para mí"), primary: true, run: async () => { await sigC1Start(); sigOpPaint(); } },
+    { label: ST("Finish my profile", "Terminar mi perfil"), run: async () => { await sigC2Start(); sigOpPaint(); } },
+    { label: ST("How am I doing?", "¿Cómo voy?"), run: async () => { await sigC3Run(); sigOpPaint(); } },
+    { label: ST("Invite a creator", "Invitar a un creador"), run: async () => { sigC4Run(); sigOpPaint(); } },
+  ];
+}
+function sigOpCapabilities() {
+  const u = state.user;
+  if (!u) return [];
+  if (u.role === "business") return [
+    ST("Set up a campaign here, brief included. I confirm before anything posts.", "Crear una campaña aquí, con el brief incluido. Confirmas antes de que se publique nada."),
+    ST("Find creators by category, local reach, Spanish content, musicians, and more.", "Buscar creadores por categoría, alcance local, contenido en español, músicos y más."),
+    ST("Track your campaigns: visits, posts, day 7 / 14 / 30 numbers, redemptions, and one clear next move.", "Seguir tus campañas: visitas, publicaciones, números al día 7 / 14 / 30, canjes y un siguiente paso claro."),
+    ST("Build your asset packet: logo link, key links, talking points, handle, hashtags.", "Crear tu paquete: enlace del logo, enlaces clave, puntos de conversación, usuario y hashtags."),
+    ST("Answer questions about plans, rights, and how SIGNL works.", "Responder preguntas sobre planes, derechos y cómo funciona SIGNL."),
+  ];
+  return [
+    ST("Find offers that fit you, with the reason, and apply or accept after a summary.", "Buscar ofertas que te convienen, con el motivo, y aplicar o aceptar tras un resumen."),
+    ST("Finish your profile with me, one gap at a time, saved in one go.", "Terminar tu perfil conmigo, un dato a la vez, guardado de una vez."),
+    ST("Track your numbers: posts live, on-time record, day 7 / 14 / 30, Momentum.", "Seguir tus números: publicaciones, puntualidad, día 7 / 14 / 30, Momentum."),
+    ST("Invite other creators with your link and a ready-to-send message.", "Invitar a otros creadores con tu enlace y un mensaje listo para enviar."),
+    ST("Answer questions about pay, visits, licensing, and how SIGNL works.", "Responder preguntas sobre pagos, visitas, licencias y cómo funciona SIGNL."),
+  ];
+}
+function sigOpIntent(norm) {
+  const u = state.user;
+  if (!u) return null;
+  const has = (...ps) => ps.some((p) => norm.includes(p));
+  if (u.role === "business") {
+    if (has("asset packet", "paquete de recursos", "paquete", "brand assets", "mis enlaces")) return async () => sigPacketStart();
+    if (has("how am i doing", "como voy", "my numbers", "mis numeros", "my results", "mis resultados", "rendimiento", "track my data", "performance")) return async () => sigB3Run();
+    if (has("find creator", "find me creator", "buscar creador", "encuentra creador", "show me creator", "ver creadores", "buscar creadores")) return async () => sigB2Start();
+    if (has("set up a campaign", "create an offer", "post an offer", "new offer", "make an offer", "start a campaign", "crear una oferta", "publicar una oferta", "nueva oferta", "crear campana", "una campana", "quiero una oferta", "lanzar una oferta")) return async () => sigB1Start();
+    return null;
+  }
+  if (u.role === "creator") {
+    if (has("invite a creator", "invite link", "invitar a un creador", "mi enlace de invitacion", "referral link", "invite creators")) return async () => sigC4Run();
+    if (has("finish my profile", "complete my profile", "build my profile", "terminar mi perfil", "completar mi perfil", "completar perfil")) return async () => sigC2Start();
+    if (has("how am i doing", "como voy", "my numbers", "mis numeros", "my momentum", "track my data", "mis resultados")) return async () => sigC3Run();
+    if (has("find offers", "offers for me", "find work", "find gigs", "buscar ofertas", "ofertas para mi", "see offers", "show me offers", "ver ofertas")) return async () => sigC1Start();
+    return null;
+  }
+  return null;
+}
+// The routing entry sigAskSubmit calls first. Returns true when
+// the operator consumed the message (a flow step or an intent).
+async function sigOpTry(text) {
+  const u = state.user;
+  if (!u || (u.role !== "business" && u.role !== "creator")) return false;
+  const norm = sigOpNorm(text);
+  if (state.sigFlow) {
+    if (sigOpIsCancel(norm)) {
+      sigOpUserTurn(text);
+      state.sigFlow = null;
+      state.sigOpData = null;
+      sigOpSay(ST("Stopped. Nothing was saved, sent, or posted.", "Listo. No se guardó, envió ni publicó nada."), sigOpHomeActions());
+      sigOpPaint();
+      return true;
+    }
+    sigOpUserTurn(text);
+    try { await sigOpStep(text, norm); } catch (e) { sigOpSay(ST("Something hiccuped on my side. Your flow is still open; answer again, or say never mind to stop.", "Algo falló de mi lado. Tu proceso sigue abierto; responde de nuevo, o di cancelar para parar."), [sigOpCancelAction()]); }
+    sigOpPaint();
+    return true;
+  }
+  const intent = sigOpIntent(norm);
+  if (intent) {
+    sigOpUserTurn(text);
+    await intent();
+    sigOpPaint();
+    return true;
+  }
+  return false;
+}
+async function sigOpStep(text, norm) {
+  const f = state.sigFlow;
+  if (!f) return;
+  if (f.id === "b1") return sigB1Step(f, text, norm);
+  if (f.id === "b2") return sigB2Step(f, text, norm);
+  if (f.id === "packet") return sigPacketStep(f, text, norm);
+  if (f.id === "c1") return sigC1Step(f, text, norm);
+  if (f.id === "c2") return sigC2Step(f, text, norm);
+}
+
+// ---------- B1: set up a campaign (business) ----------
+// Walks the composer's exact questions, adds ONE brief goal
+// question, drafts the rest of the brief from the answers, and
+// commits the composer's exact payload after a plain summary
+// and a yes. Direct mode starts from B2's Invite (a creator is
+// already picked) or explains the pick-first path.
+function sigB1Start(prefill) {
+  const f = { id: "b1", step: "lane", data: Object.assign({ lane: "open", kind: "comp", spots: 1, covers: 1, tiers: [], spanish: false, packetAttach: null, paidBrief: "" }, prefill || {}) };
+  state.sigFlow = f;
+  if (prefill && prefill.creatorId) {
+    f.data.lane = "direct";
+    sigB1AskKind();
+    return;
+  }
+  sigOpAsk(ST("Let's set up the campaign. An open offer goes to your market and creators apply; you pick. A direct invite goes to one creator you choose first.", "Vamos a crear la campaña. Una oferta abierta llega a tu mercado y los creadores aplican; tú eliges. Una invitación directa va a un creador que eliges primero."), [
+    { label: ST("Open offer", "Oferta abierta"), primary: true, run: () => sigOpPick(ST("Open offer", "Oferta abierta"), async () => { f.data.lane = "open"; sigB1AskKind(); }) },
+    { label: ST("Direct invite", "Invitación directa"), run: () => sigOpPick(ST("Direct invite", "Invitación directa"), async () => {
+      state.sigFlow = null;
+      sigOpSay(ST("For a direct invite, pick the creator first and I will build the offer around them.", "Para una invitación directa, elige primero al creador y armo la oferta a su medida."), [
+        { label: ST("Find creators", "Buscar creadores"), primary: true, run: async () => { sigB2Start(); sigOpPaint(); } },
+        { label: ST("Open Discover", "Abrir Descubrir"), run: async () => go("dashboard", "Discover") },
+      ]);
+    }) },
+  ]);
+}
+function sigB1AskKind() {
+  const f = state.sigFlow;
+  const d = f.data;
+  f.step = "kind";
+  const who = d.creatorName ? ` for ${d.creatorName}` : "";
+  if (d.lane === "direct" && d.creatorRate) {
+    sigOpAsk(ST(`How do you want to book${who}? At their listed rate of $${fmtPrice(d.creatorRate)} (they keep 97%), or a comp offer, your product on you?`, `¿Cómo quieres reservar${who}? A su tarifa publicada de $${fmtPrice(d.creatorRate)} (se queda con el 97%), o una oferta de cortesía, tu producto por tu cuenta?`), [
+      { label: ST(`Paid at $${fmtPrice(d.creatorRate)}`, `Pagado a $${fmtPrice(d.creatorRate)}`), primary: true, run: () => sigOpPick(ST("Paid", "Pagado"), async () => { d.kind = "paid"; d.rate = d.creatorRate; sigB1AskTitle(); }) },
+      { label: ST("Comp offer", "Oferta de cortesía"), run: () => sigOpPick(ST("Comp offer", "Oferta de cortesía"), async () => { d.kind = "comp"; sigB1AskPlay(); }) },
+    ]);
+    return;
+  }
+  sigOpAsk(ST(`How is the creator paid${who}? Comp means your product is the payment. Cash means you pay a rate for a paid booking.`, `¿Cómo se paga al creador${who}? Cortesía significa que tu producto es el pago. En efectivo pagas una tarifa por una reserva pagada.`), [
+    { label: ST("Comp", "Cortesía"), primary: true, run: () => sigOpPick(ST("Comp", "Cortesía"), async () => { d.kind = "comp"; sigB1AskPlay(); }) },
+    { label: ST("Cash", "Efectivo"), run: () => sigOpPick(ST("Cash", "Efectivo"), async () => { d.kind = "paid"; sigB1AskPlay(); }) },
+  ]);
+}
+// R1: packaged plays. Offered on open offers, matched to the
+// business's category; a play presets the goal, the spots and
+// window pattern, and (at brief-draft time) the brief text.
+function sigB1AskPlay() {
+  const f = state.sigFlow;
+  const d = f.data;
+  if (d.lane === "direct") { sigB1AskTitle(); return; }
+  f.step = "play";
+  const cat = (state.user && state.user.business && state.user.business.category) || "";
+  const recId = SIG_PLAY_BY_CATEGORY[cat] || "weekend_fill";
+  const rec = sigPlay(recId);
+  sigOpAsk(ST(`Start from a play? Most ${cat ? cat.toLowerCase() + " spots" : "businesses"} here start with ${rec.name}. ${rec.mix}`, `¿Empezamos con una jugada preparada? La mayoría de los negocios como el tuyo empieza con ${rec.name}.`), [
+    ...SIG_PLAYS.map((p) => ({ label: p.name + (p.id === recId ? ST(" · fits you", " · para ti") : ""), primary: p.id === recId, run: () => sigOpPick(p.name, async () => { d.play = p.id; d.briefGoal = p.goal; d.spots = p.spots; d.applyDays = p.applyDays; d.windowDays = p.windowDays; sigB1AskTitle(); }) })),
+    { label: ST("No play, freeform", "Sin jugada, libre"), run: () => sigOpPick(ST("No play", "Sin jugada"), async () => { d.play = null; sigB1AskTitle(); }) },
+  ]);
+}
+function sigB1AskTitle() {
+  const f = state.sigFlow;
+  f.step = "title";
+  const d = f.data;
+  const actions = [];
+  if (d.lane === "direct" && d.kind === "comp") {
+    for (const s of compSuggestions(d.creatorTier)) {
+      actions.push({ label: s.label, run: () => sigOpPick(s.label, async () => { d.title = s.label; d.comped = s.comp; d.cap = s.cap; sigB1AskCovers(); }) });
+    }
+  }
+  sigOpAsk(ST("What should the offer be called? Name the experience, not the deal. For example: Dinner for two on us.", "¿Cómo se llama la oferta? Nombra la experiencia, no el trato. Por ejemplo: Cena para dos por nuestra cuenta."), actions);
+}
+function sigB1AskComped() {
+  const f = state.sigFlow;
+  f.step = "comped";
+  sigOpAsk(ST("Exactly what is included? One line: what the creator gets. For example: Two entrees and two drinks.", "¿Qué incluye exactamente? Una línea: lo que recibe el creador. Por ejemplo: Dos platos fuertes y dos bebidas."));
+}
+function sigB1AskValue() {
+  const f = state.sigFlow;
+  const d = f.data;
+  if (d.kind === "paid") {
+    f.step = "rate";
+    sigOpAsk(ST("What cash rate, in dollars? Paid bookings start at $50. You pay the rate plus 3%; the creator keeps 97%.", "¿Qué tarifa en efectivo, en dólares? Las reservas pagadas empiezan en $50. Pagas la tarifa más 3%; el creador se queda con el 97%."));
+  } else {
+    f.step = "cap";
+    sigOpAsk(ST("What is the comp value, in dollars? The most it can ring up, at menu value. For example: 100.", "¿Cuál es el valor de la cortesía, en dólares? Lo máximo que puede sumar, a precio de menú. Por ejemplo: 100."));
+  }
+}
+function sigB1AskCovers() {
+  const f = state.sigFlow;
+  f.step = "covers";
+  sigOpAsk(ST("How many people does the comp cover?", "¿A cuántas personas cubre la cortesía?"), [
+    { label: ST("Just the creator", "Solo el creador"), run: () => sigOpPick("1", async () => { f.data.covers = 1; sigB1AskSpots(); }) },
+    { label: ST("Creator + a guest", "Creador + un invitado"), primary: true, run: () => sigOpPick("2", async () => { f.data.covers = 2; sigB1AskSpots(); }) },
+  ]);
+}
+function sigB1AskPaidBrief() {
+  const f = state.sigFlow;
+  f.step = "paidbrief";
+  sigOpAsk(ST("Key points for the creator on this paid booking: what to feature, names, dates. Short is fine, or skip.", "Puntos clave para el creador en esta reserva pagada: qué destacar, nombres, fechas. Corto está bien, o salta."), [
+    { label: ST("Skip", "Saltar"), run: () => sigOpPick(ST("Skip", "Saltar"), async () => { f.data.paidBrief = ""; sigB1AskSpots(); }) },
+  ]);
+}
+function sigB1AskSpots() {
+  const f = state.sigFlow;
+  f.step = "spots";
+  const chips = [1, 2, 3, 5].map((n) => ({ label: String(n), primary: n === 1, run: () => sigOpPick(String(n), async () => { f.data.spots = n; sigB1AfterSpots(); }) }));
+  sigOpAsk(ST("How many creators will you pick? (Spots.) You can also type a number.", "¿A cuántos creadores elegirás? (Cupos.) También puedes escribir un número."), chips);
+}
+function sigB1AfterSpots() {
+  const f = state.sigFlow;
+  if (f.data.lane === "open") sigB1AskTiers();
+  else sigB1AskWindowMode();
+}
+function sigB1AskTiers() {
+  const f = state.sigFlow;
+  f.step = "tiers";
+  const sel = f.data.tiers || [];
+  const toggle = (t) => ({ label: `${sel.includes(t) ? "✓ " : ""}${t}`, run: () => sigOpPick(t, async () => {
+    const i = f.data.tiers.indexOf(t);
+    if (i >= 0) f.data.tiers.splice(i, 1); else f.data.tiers.push(t);
+    sigB1AskTiers();
+  }) });
+  sigOpAsk(ST(`Who can apply? Tap tiers to narrow, or leave all off and every tier your comp fits can apply. Selected: ${sel.length ? sel.join(", ") : "all tiers"}.`, `¿Quién puede aplicar? Toca los niveles para limitar, o déjalo vacío y aplica todo nivel que encaje. Seleccionados: ${sel.length ? sel.join(", ") : "todos"}.`), [
+    toggle("Neighbors"), toggle("Locals"), toggle("Headliners"),
+    { label: ST("Done", "Listo"), primary: true, run: () => sigOpPick(ST("Done", "Listo"), async () => sigB1AskApplyDays()) },
+  ]);
+}
+function sigB1AskApplyDays() {
+  const f = state.sigFlow;
+  f.step = "applydays";
+  sigOpAsk(ST("Applications open for how many days? Three is the usual.", "¿Cuántos días abiertas las aplicaciones? Tres es lo usual."), [1, 3, 5, 7].map((n) => ({ label: `${n}`, primary: n === 3, run: () => sigOpPick(String(n), async () => { f.data.applyDays = n; sigB1AskWindowDays(); }) })));
+}
+function sigB1AskWindowDays() {
+  const f = state.sigFlow;
+  f.step = "windowdays";
+  sigOpAsk(ST("After you pick, how many days do creators have to come in? Seven is the usual.", "Tras elegir, ¿cuántos días tienen los creadores para venir? Siete es lo usual."), [3, 7, 14, 30].map((n) => ({ label: `${n}`, primary: n === 7, run: () => sigOpPick(String(n), async () => { f.data.windowDays = n; sigB1AskWindowNote(); }) })));
+}
+function sigB1AskWindowMode() {
+  const f = state.sigFlow;
+  f.step = "windowmode";
+  sigOpAsk(ST("When should the visit happen?", "¿Cuándo debe ser la visita?"), [
+    { label: ST("Within 7 days", "En 7 días"), primary: true, run: () => sigOpPick(ST("Within 7 days", "En 7 días"), async () => { f.data.windowMode = "7days"; sigB1AskWindowNote(); }) },
+    { label: ST("This week", "Esta semana"), run: () => sigOpPick(ST("This week", "Esta semana"), async () => { f.data.windowMode = "thisweek"; sigB1AskWindowNote(); }) },
+  ]);
+}
+function sigB1AskWindowNote() {
+  const f = state.sigFlow;
+  f.step = "windownote";
+  sigOpAsk(ST("Any note about timing for the creator? For example: Evenings are best. Or skip.", "¿Alguna nota sobre el horario para el creador? Por ejemplo: Las tardes son mejores. O salta."), [
+    { label: ST("Skip", "Saltar"), run: () => sigOpPick(ST("Skip", "Saltar"), async () => { f.data.windowNote = ""; sigB1AskSpanish(); }) },
+  ]);
+}
+function sigB1AskSpanish() {
+  const f = state.sigFlow;
+  f.step = "spanish";
+  sigOpAsk(ST("Should this offer ask for content in Spanish? It marks the offer; it never blocks anyone from applying.", "¿Esta oferta pide contenido en español? Marca la oferta; nunca bloquea a nadie."), [
+    { label: ST("Yes, Spanish content", "Sí, en español"), run: () => sigOpPick(ST("Yes", "Sí"), async () => { f.data.spanish = true; sigB1AskBriefGoal(); }) },
+    { label: ST("No", "No"), primary: true, run: () => sigOpPick(ST("No", "No"), async () => { f.data.spanish = false; sigB1AskBriefGoal(); }) },
+  ]);
+}
+function sigB1AskBriefGoal() {
+  const f = state.sigFlow;
+  f.step = "briefgoal";
+  const goalActs = BRIEF_GOALS.map((g) => { const gl = ST(g.label, g.labelEs || g.label); return { label: gl + (f.data.briefGoal === g.id ? ST(" · your play's pick", " · de tu jugada") : ""), primary: f.data.briefGoal === g.id, run: () => sigOpPick(gl, async () => { f.data.briefGoal = g.id; sigB1DraftBrief(); }) }; });
+  goalActs.push({ label: ST("No set goal", "Sin objetivo"), run: () => sigOpPick(ST("No set goal", "Sin objetivo"), async () => { f.data.briefGoal = null; sigB1DraftBrief(); }) });
+  const playNote = f.data.play && sigPlay(f.data.play) ? ST(` Your ${sigPlay(f.data.play).name} play already picked one; keep it or choose another.`, ` Tu jugada ${sigPlay(f.data.play).name} ya eligió uno; déjalo o elige otro.`) : "";
+  sigOpAsk(ST("Last thing, the brief: what is this offer for? I will draft the creator's brief from your answers and you can edit it before the yes.", "Lo último, el brief: ¿para qué es esta oferta? Redacto el brief del creador con tus respuestas y puedes editarlo antes del sí.") + playNote, goalActs);
+}
+// The drafted brief: hook from what is comped, must-mention the
+// business's own name, timing from the window note, and the
+// locked deliverable the server will stamp. Editable here and
+// again at the summary.
+function sigB1DraftBrief() {
+  const f = state.sigFlow;
+  const d = f.data;
+  if (!d.briefDrafted) {
+    const bizName = (state.user.business && state.user.business.businessName) || "";
+    d.briefHook = d.comped || d.title || "";
+    d.briefMust = bizName ? [bizName] : [];
+    d.briefDont = [];
+    d.briefTiming = d.windowNote || "";
+    d.briefCta = "";
+    // R1: a chosen play drafts the brief from its templates
+    // (the business still edits every field at this step).
+    const play = sigPlay(d.play);
+    if (play) {
+      d.briefHook = playFill(play.hook, bizName, d.comped || d.title || "");
+      d.briefTiming = d.briefTiming || play.timing;
+      d.briefCta = play.cta;
+      d.briefMust = [...new Set([...d.briefMust, ...play.mustExtra])].slice(0, 3);
+    }
+    d.briefDrafted = true;
+  }
+  f.step = "briefdraft";
+  const lines = [
+    ST("Here is the brief creators will see:", "Este es el brief que verán los creadores:"),
+    `${ST("Goal", "Objetivo")}: ${d.briefGoal ? briefGoalLabel(d.briefGoal) : ST("no set goal", "sin objetivo")}`,
+    `${ST("Hook", "Gancho")}: ${d.briefHook || "—"}`,
+    `${ST("Must mention", "Debe mencionar")}: ${(d.briefMust || []).join(" · ") || "—"}`,
+    ...(d.briefDont && d.briefDont.length ? [`${ST("Do not say", "No decir")}: ${d.briefDont.join(" · ")}`] : []),
+    `${ST("Deliverable", "Entrega")}: ${d.kind === "paid" ? ST("set in the booking terms; post within 48 hours, live at least 30 days", "según los términos de la reserva; publicar en 48 horas, activo al menos 30 días") : ST("1 post + 1 story that shares the post; post within 48 hours", "1 publicación + 1 historia que la comparte; publicar en 48 horas")}`,
+    ...(d.briefTiming ? [`${ST("Timing", "Tiempo")}: ${d.briefTiming}`] : []),
+    ...(d.briefCta ? [`${ST("Call to action", "Llamada a la acción")}: ${d.briefCta}`] : []),
+  ];
+  sigOpAsk(lines.join("\n"), [
+    { label: ST("Use this brief", "Usar este brief"), primary: true, run: () => sigOpPick(ST("Use this brief", "Usar este brief"), async () => sigB1AskPacket()) },
+    { label: ST("Change the hook", "Cambiar el gancho"), run: () => sigOpPick(ST("Change the hook", "Cambiar el gancho"), async () => { f.step = "briefhook"; sigOpAsk(ST("Say the hook in one line: the one thing that makes this visit worth posting about.", "Di el gancho en una línea: lo que hace que esta visita valga una publicación.")); }) },
+    { label: ST("Change must-mention", "Cambiar debe-mencionar"), run: () => sigOpPick(ST("Change must-mention", "Cambiar debe-mencionar"), async () => { f.step = "briefmust"; sigOpAsk(ST("Up to 3 must-mentions, one per line, or separated by commas.", "Hasta 3 puntos obligatorios, uno por línea, o separados por comas.")); }) },
+    { label: ST("Add a do-not-say", "Añadir un no-decir"), run: () => sigOpPick(ST("Add a do-not-say", "Añadir un no-decir"), async () => { f.step = "briefdont"; sigOpAsk(ST("Up to 3 things the creator should not say, one per line, or separated by commas.", "Hasta 3 cosas que el creador no debe decir, una por línea, o separadas por comas.")); }) },
+  ]);
+}
+function sigB1AskPacket() {
+  const f = state.sigFlow;
+  f.step = "packet";
+  const pk = state.user.business && state.user.business.assetPacket;
+  const hasPacket = !!pk && (!!(pk.links || []).length || !!pk.logoUrl || !!pk.talkingPoints);
+  if (!hasPacket) {
+    sigOpAsk(ST("You do not have an asset packet yet (logo link, key links, talking points). Paid offers attach it by default; it helps creators post well. Build it now, or skip and add it later on your Profile.", "Aún no tienes un paquete (enlace del logo, enlaces clave, puntos de conversación). Las ofertas pagadas lo adjuntan por defecto; ayuda a publicar bien. Créalo ahora, o salta y añádelo luego en tu Perfil."), [
+      { label: ST("Skip for now", "Saltar por ahora"), primary: true, run: () => sigOpPick(ST("Skip for now", "Saltar por ahora"), async () => { f.data.packetAttach = false; sigB1Summary(); }) },
+      { label: ST("Build my packet", "Crear mi paquete"), run: () => sigOpPick(ST("Build my packet", "Crear mi paquete"), async () => { sigPacketStart({ resumeFlow: f }); }) },
+    ]);
+    return;
+  }
+  const dflt = f.data.kind === "paid";
+  sigOpAsk(ST(`Attach your asset packet to this offer? The creator sees your links and talking points in their visit view. ${dflt ? "Paid offers attach it by default." : "Comp offers do not, unless you say so."}`, `¿Adjuntar tu paquete a esta oferta? El creador ve tus enlaces y puntos en su visita. ${dflt ? "Las pagadas lo adjuntan por defecto." : "Las de cortesía no, salvo que lo pidas."}`), [
+    { label: ST("Attach it", "Adjuntarlo"), primary: dflt, run: () => sigOpPick(ST("Attach it", "Adjuntarlo"), async () => { f.data.packetAttach = true; sigB1Summary(); }) },
+    { label: ST("Leave it off", "No adjuntar"), primary: !dflt, run: () => sigOpPick(ST("Leave it off", "No adjuntar"), async () => { f.data.packetAttach = false; sigB1Summary(); }) },
+  ]);
+}
+function sigB1SummaryText() {
+  const d = state.sigFlow.data;
+  const bizName = (state.user.business && state.user.business.businessName) || "";
+  const lines = [
+    ST("Here is the campaign. Nothing posts until you say yes:", "Esta es la campaña. Nada se publica hasta que digas que sí:"),
+    ...(d.play && sigPlay(d.play) ? [`Play: ${sigPlay(d.play).name}`] : []),
+    `${ST("Offer", "Oferta")}: "${d.title}" (${d.lane === "direct" ? ST(`direct to ${d.creatorName || "one creator"}`, `directa a ${d.creatorName || "un creador"}`) : ST("open to your market", "abierta a tu mercado")})`,
+    d.kind === "paid" ? `${ST("Paid", "Pago")}: $${fmtPrice(d.rate)} cash${d.lane === "direct" && d.creatorRate ? ST(" at their listed rate", " a su tarifa publicada") : ""}` : `${ST("Comp", "Cortesía")}: ${d.comped} (cap $${fmtMoney(d.cap)}, covers ${d.covers})`,
+    `${ST("Spots", "Cupos")}: ${d.spots}${d.lane === "open" && (d.tiers || []).length ? ` · ${ST("tiers", "niveles")}: ${d.tiers.join(", ")}` : ""}`,
+    d.lane === "open" ? `${ST("Timing", "Tiempo")}: ${ST("applications", "aplicaciones")} ${d.applyDays || 3}d · ${ST("visits within", "visitas en")} ${d.windowDays || 7}d` : `${ST("Timing", "Tiempo")}: ${d.windowMode === "thisweek" ? ST("this week", "esta semana") : ST("within 7 days", "en 7 días")}`,
+    ...(d.paidBrief ? [`${ST("Key points", "Puntos clave")}: ${d.paidBrief}`] : []),
+    `${ST("Brief", "Brief")}: ${d.briefGoal ? briefGoalLabel(d.briefGoal) + " · " : ""}${d.briefHook || ""}${(d.briefMust || []).length ? ` · ${ST("must mention", "debe mencionar")}: ${d.briefMust.join(" · ")}` : ""}`,
+    `${ST("Asset packet", "Paquete")}: ${d.packetAttach ? ST("attached", "adjunto") : ST("not attached", "no adjunto")}`,
+    ...(d.spanish ? [ST("Spanish content requested.", "Contenido en español solicitado.")] : []),
+    ...(bizName ? [`${ST("From", "De")}: ${bizName}`] : []),
+  ];
+  return lines.join("\n");
+}
+function sigB1Summary() {
+  const f = state.sigFlow;
+  f.step = "summary";
+  sigOpAsk(sigB1SummaryText(), [
+    { label: ST("Yes, post it", "Sí, publícala"), primary: true, run: () => sigOpPick(ST("Yes, post it", "Sí, publícala"), async () => sigB1Commit()) },
+    { label: ST("Edit the brief", "Editar el brief"), run: () => sigOpPick(ST("Edit the brief", "Editar el brief"), async () => sigB1DraftBrief()) },
+    { label: ST("Start over", "Empezar de nuevo"), run: () => sigOpPick(ST("Start over", "Empezar de nuevo"), async () => { state.sigFlow = null; sigB1Start(); }) },
+  ]);
+}
+async function sigB1Commit() {
+  const f = state.sigFlow;
+  const d = f.data;
+  const payload = {
+    title: d.title || "",
+    whatComped: d.comped || "",
+    includes: "",
+    experience: "",
+    kind: d.kind,
+    spots: d.spots || 1,
+    visitWindow: d.windowNote || "",
+    templateId: null,
+    draft: false,
+    creatorId: d.lane === "direct" ? (d.creatorId || null) : null,
+    requiresSpanish: !!d.spanish,
+    play: d.play || null,
+    brief: briefFromParts({ goal: d.briefGoal || null, hook: d.briefHook, mustMention: d.briefMust, doNotSay: d.briefDont, timing: d.briefTiming, callToAction: d.briefCta }),
+    assetPacketAttached: d.packetAttach !== null && d.packetAttach !== undefined ? !!d.packetAttach : d.kind === "paid",
+  };
+  if (d.kind === "paid") {
+    payload.cashRate = Number(d.rate);
+    if (d.paidBrief && d.paidBrief.trim()) payload.paidBrief = d.paidBrief.trim();
+  } else {
+    payload.dollarCap = Number(d.cap);
+    payload.covers = d.covers || 1;
+  }
+  if (d.lane === "open") {
+    payload.targetTiers = d.tiers || [];
+    payload.applyWindowDays = d.applyDays || 3;
+    payload.windowDays = d.windowDays || 7;
+  } else {
+    payload.windowMode = d.windowMode || "7days";
+  }
+  try {
+    const res = await api("POST", "/offers", payload);
+    state.sigFlow = null;
+    state.sigOpData = null;
+    refreshBadges();
+    const created = res && res.offer ? res.offer : null;
+    sigOpSay(ST(`Done. "${d.title}" is live${created && created.status === "draft" ? " as a draft (your market is still founding; it publishes at launch)" : ""}. Creators can ${d.lane === "direct" ? "answer it now" : "apply now"}.`, `Listo. "${d.title}" está activa. Los creadores ya pueden ${d.lane === "direct" ? "responder" : "aplicar"}.`), [
+      { label: ST("See it in My Offers", "Verla en Mis ofertas"), primary: true, run: async () => go("dashboard", "My Offers") },
+      { label: ST("Set up another", "Crear otra"), run: async () => { sigB1Start(); sigOpPaint(); } },
+      { label: ST("How am I doing?", "¿Cómo voy?"), run: async () => { await sigB3Run(); sigOpPaint(); } },
+    ]);
+  } catch (err) {
+    if (err.data && err.data.existingOfferId) {
+      // Double-confirm guard: the 409 IS the dedupe. Nothing
+      // new was created; point at the one that exists.
+      const existingId = err.data.existingOfferId;
+      state.sigFlow = null;
+      state.sigOpData = null;
+      sigOpSay(ST("That offer is already open, so I did not create a second one.", "Esa oferta ya está abierta, así que no creé una segunda."), [
+        { label: ST("Jump to that offer", "Ir a esa oferta"), primary: true, run: async () => { state.offersSeg = "live"; go("dashboard", "My Offers"); setTimeout(() => jumpToOffer(existingId), 80); } },
+      ]);
+      return;
+    }
+    const msg = err.message || "";
+    const dign = /dignity floor for (.+?) \(floor \$([\d,]+)/.exec(msg);
+    if (dign && d.kind === "comp") {
+      // Refusal recovery in the same turn: the server's reason,
+      // plus the two compliant fixes it names. Nothing written.
+      const tier = dign[1];
+      const floor = Number(dign[2].replace(/,/g, ""));
+      f.step = "summary";
+      sigOpAsk(`${msg}\n${ST("Nothing was posted. Fix it one of these ways:", "No se publicó nada. Corrígelo de una de estas formas:")}`, [
+        { label: ST(`Raise the comp to $${fmtPrice(floor)}`, `Subir la cortesía a $${fmtPrice(floor)}`), primary: true, run: () => sigOpPick(ST(`Raise the comp to $${fmtPrice(floor)}`, `Subir a $${fmtPrice(floor)}`), async () => { d.cap = floor; sigB1Summary(); }) },
+        { label: ST(`Remove ${tier}`, `Quitar ${tier}`), run: () => sigOpPick(ST(`Remove ${tier}`, `Quitar ${tier}`), async () => { d.tiers = (d.tiers || []).filter((t) => t !== tier); sigB1Summary(); }) },
+        { label: ST("Edit the value myself", "Editar el valor yo"), run: () => sigOpPick(ST("Edit the value myself", "Editar el valor yo"), async () => sigB1AskValue()) },
+      ]);
+      return;
+    }
+    f.step = "summary";
+    sigOpAsk(`${msg}\n${ST("Nothing was posted. Review the summary and try again, or stop here.", "No se publicó nada. Revisa el resumen e inténtalo de nuevo, o para aquí.")}`, [
+      { label: ST("Review the summary", "Revisar el resumen"), primary: true, run: () => sigOpPick(ST("Review the summary", "Revisar el resumen"), async () => sigB1Summary()) },
+    ]);
+  }
+}
+async function sigB1Step(f, text, norm) {
+  const d = f.data;
+  const t = String(text || "").trim();
+  switch (f.step) {
+    case "title":
+      if (!t) { sigOpAsk(ST("Give the offer a title first: name the experience.", "Ponle un título primero: nombra la experiencia.")); return; }
+      d.title = t.slice(0, 120);
+      sigB1AskComped();
+      return;
+    case "comped":
+      if (!t) { sigOpAsk(ST("Say exactly what the creator gets, in one line.", "Di exactamente lo que recibe el creador, en una línea.")); return; }
+      d.comped = t.slice(0, 200);
+      if (d.kind === "paid" && d.lane === "direct" && d.creatorRate) { d.rate = d.creatorRate; sigB1AskPaidBrief(); }
+      else sigB1AskValue();
+      return;
+    case "cap": {
+      const n = sigOpNum(t);
+      if (!(n > 0)) { sigOpAsk(ST("I need a dollar amount for the comp value. For example: 100.", "Necesito una cantidad en dólares. Por ejemplo: 100.")); return; }
+      d.cap = Math.round(n);
+      sigB1AskCovers();
+      return;
+    }
+    case "rate": {
+      const n = sigOpNum(t);
+      if (!(n > 0)) { sigOpAsk(ST("I need a dollar amount for the rate. Paid bookings start at $50.", "Necesito una cantidad en dólares. Las pagadas empiezan en $50.")); return; }
+      d.rate = Math.round(n);
+      sigB1AskPaidBrief();
+      return;
+    }
+    case "paidbrief":
+      d.paidBrief = t.slice(0, 500);
+      sigB1AskSpots();
+      return;
+    case "spots": {
+      const n = sigOpNum(t);
+      if (n && n >= 1 && n <= 30) { d.spots = Math.round(n); sigB1AfterSpots(); return; }
+      sigOpAsk(ST("Pick a spot count: 1, 2, 3, or 5, or type a number up to 30.", "Elige cupos: 1, 2, 3 o 5, o escribe un número hasta 30."), [1, 2, 3, 5].map((n) => ({ label: String(n), run: () => sigOpPick(String(n), async () => { d.spots = n; sigB1AfterSpots(); }) })));
+      return;
+    }
+    case "windownote":
+      d.windowNote = t.slice(0, 140);
+      sigB1AskSpanish();
+      return;
+    case "briefhook":
+      d.briefHook = t.slice(0, 140);
+      sigB1DraftBrief();
+      return;
+    case "briefmust":
+      d.briefMust = t.split(/[,\n]+/).map((x) => x.trim()).filter(Boolean).slice(0, 3);
+      sigB1DraftBrief();
+      return;
+    case "briefdont":
+      d.briefDont = t.split(/[,\n]+/).map((x) => x.trim()).filter(Boolean).slice(0, 3);
+      sigB1DraftBrief();
+      return;
+    default:
+      sigOpAsk(ST("Tap one of the options above, or say never mind to stop. Nothing is saved until you confirm at the end.", "Toca una de las opciones de arriba, o di cancelar para parar. Nada se guarda hasta que confirmes al final."));
+      return;
+  }
+}
+// ---------- B2: find creators (business) ----------
+// Criteria in plain words (or chips), the real Discover query
+// behind it, cards Sig can state a reason for, and Invite,
+// which starts B1 in direct mode at the creator's listed rate.
+function sigB2Start() {
+  const f = { id: "b2", step: "criteria", data: {} };
+  state.sigFlow = f;
+  const catActs = (state.boot.creatorCategories || []).slice(0, 4).map((c) => ({ label: c, run: () => sigOpPick(c, async () => sigB2Run({ category: c })) }));
+  sigOpAsk(ST("Who are you looking for? Say it in plain words: a category, Spanish-speaking, musicians, students, a local reach floor like 50% local, or paid-ready. Or tap a starting point.", "¿A quién buscas? Dilo en palabras simples: una categoría, que hable español, músicos, estudiantes, un mínimo de alcance local como 50%, o listos para pagados. O toca un punto de partida."), [
+    ...catActs,
+    { label: ST("Spanish-speaking", "Habla español"), run: () => sigOpPick(ST("Spanish-speaking", "Habla español"), async () => sigB2Run({ spanish: true })) },
+    { label: ST("Musicians", "Músicos"), run: () => sigOpPick(ST("Musicians", "Músicos"), async () => sigB2Run({ musician: "1" })) },
+    { label: ST("Top local reach", "Mayor alcance local"), run: () => sigOpPick(ST("Top local reach", "Mayor alcance local"), async () => sigB2Run({ sort: "momentum" })) },
+  ]);
+}
+async function sigB2Step(f, text, norm) {
+  if (f.step !== "criteria") { sigOpAsk(ST("Tap Invite on a creator above to build their offer, start a new search, or say never mind.", "Toca Invitar en un creador para armar su oferta, inicia otra búsqueda, o di cancelar.")); return; }
+  const crit = {};
+  const cats = state.boot.creatorCategories || [];
+  for (const c of cats) { if (norm.includes(" " + sigOpNorm(c).trim() + " ") || norm.includes(sigOpNorm(c).trim())) { crit.category = c; break; } }
+  if (norm.includes("spanish") || norm.includes("espanol")) crit.spanish = true;
+  if (norm.includes("perform")) crit.musician = "perform";
+  else if (norm.includes("musician") || norm.includes("musico") || norm.includes("music")) crit.musician = "1";
+  if (norm.includes("creat") && norm.includes("music")) crit.musician = "create";
+  const pct = /(\d{1,3})\s*%/.exec(norm) || /(\d{1,3})\s*(?:percent|por ciento)/.exec(norm);
+  if (pct) crit.minLocalPct = Number(pct[1]);
+  if (norm.includes("paid")) crit.paid = true;
+  if (norm.includes("student") || norm.includes("estudiant") || norm.includes("campus")) crit.students = true;
+  await sigB2Run(crit);
+}
+async function sigB2Run(crit) {
+  const f = state.sigFlow;
+  if (f) f.step = "results";
+  const u = state.user;
+  const params = new URLSearchParams();
+  params.set("market", u.market || "");
+  if (crit.category) params.set("category", crit.category);
+  if (crit.spanish) params.set("spanish", "1");
+  if (crit.musician) params.set("musician", crit.musician);
+  if (crit.minLocalPct) params.set("minLocalPct", String(crit.minLocalPct));
+  if (crit.paid) params.set("paid", "1");
+  if (crit.sort) params.set("sort", crit.sort);
+  let cards = [];
+  try {
+    const data = await api("GET", `/discover?${params.toString()}`);
+    cards = data.creators || [];
+    state.sigOpData = { cards, universities: data.universities || [] };
+  } catch (e) {
+    sigOpSay(`${e.message}`, sigOpHomeActions());
+    state.sigFlow = null;
+    return;
+  }
+  // Client-side refinement for the modes the base query may not
+  // know yet (musician modes, students): the card carries the
+  // same stored flags, so the cohort Sig states is the cohort
+  // shown. Spanish rides the same belt-and-braces filter.
+  if (crit.musician === "perform") cards = cards.filter((c) => c.profile && c.profile.musician && c.profile.musicPerform);
+  if (crit.musician === "create") cards = cards.filter((c) => c.profile && c.profile.musician && c.profile.musicCreate);
+  if (crit.musician === "1") cards = cards.filter((c) => c.profile && c.profile.musician);
+  if (crit.spanish) cards = cards.filter((c) => c.profile && c.profile.spanishContent === true);
+  if (crit.students) cards = cards.filter((c) => c.campusBadge);
+  if (!cards.length) {
+    sigOpAsk(ST("Nobody on the roster matches that today. That is the real count, not a placeholder. Widen the search, or post an open offer and let creators come to you.", "Nadie en la lista coincide hoy. Es el conteo real, no un relleno. Amplía la búsqueda, o publica una oferta abierta y deja que vengan a ti."), [
+      { label: ST("New search", "Nueva búsqueda"), primary: true, run: () => sigOpPick(ST("New search", "Nueva búsqueda"), async () => sigB2Start()) },
+      { label: ST("Post an open offer", "Publicar oferta abierta"), run: () => sigOpPick(ST("Post an open offer", "Publicar oferta abierta"), async () => { state.sigFlow = null; sigB1Start(); }) },
+    ]);
+    return;
+  }
+  const top = cards.slice(0, 5);
+  const lines = top.map((c, i) => {
+    const p = c.profile || {};
+    const local = p.localAudiencePct === null || p.localAudiencePct === undefined ? ST("local % not reported", "sin % local") : `${p.localAudiencePct}% ${ST("local", "local")}`;
+    const why = c.fit && c.fit.reasons && c.fit.reasons.length ? c.fit.reasons[0] : ST(`${local} reach`, `alcance ${local}`);
+    return `${i + 1}. ${c.name} (@${p.handle || ""}) — ${p.tierBand || ""} · ${local} · ${fmtNum(c.totalAudience || 0)} ${ST("audience", "audiencia")} · ${p.paidRate ? `$${fmtPrice(p.paidRate)} ${ST("paid rate", "tarifa pagada")}` : ST("comp visits", "visitas de cortesía")} · ${why}`;
+  });
+  const acts = top.slice(0, 3).map((c) => ({ label: `${ST("Invite", "Invitar")} @${(c.profile || {}).handle || c.name}`, run: () => sigOpPick(`${ST("Invite", "Invitar")} @${(c.profile || {}).handle || ""}`, async () => {
+    state.sigFlow = null;
+    sigB1Start({ creatorId: c.userId, creatorName: c.name, creatorRate: (c.profile || {}).paidRate || null, creatorTier: (c.profile || {}).tierBand || null });
+  }) }));
+  acts.push({ label: ST("See them in Discover", "Verlos en Descubrir"), run: async () => {
+    if (crit.category) state.discoverCats = [crit.category];
+    if (crit.spanish) state.discoverSpanish = true;
+    state.sigFlow = null;
+    go("dashboard", "Discover");
+  } });
+  acts.push({ label: ST("New search", "Nueva búsqueda"), run: () => sigOpPick(ST("New search", "Nueva búsqueda"), async () => sigB2Start()) });
+  sigOpSay(`${ST(`Found ${cards.length} creator${cards.length === 1 ? "" : "s"} in ${marketTalkNameClient(u.market)}. Top matches:`, `Encontré ${cards.length} creador${cards.length === 1 ? "" : "es"} en ${marketTalkNameClient(u.market)}. Mejores:`)}\n${lines.join("\n")}`, acts);
+}
+
+// ---------- B3: track my data (business) ----------
+// Read-only. The same normalized readout the Home Performance
+// card renders (GET /me/performance-readout), spoken as lines.
+// No completed data = the honest empty line + the next action.
+async function sigB3Run() {
+  let ro = null;
+  try { ro = await api("GET", "/me/performance-readout"); } catch (e) { ro = null; }
+  if (!ro || ro.empty) {
+    let openCount = 0;
+    try { const od = await api("GET", "/offers"); openCount = (od.offers || []).filter((o) => o.status === "open").length; } catch (e) { /* the empty line stands alone */ }
+    sigOpSay(ST(`Your funnel fills in once your campaigns are live. No completed visits yet${openCount ? `, and you have ${openCount} open offer${openCount === 1 ? "" : "s"} working` : ""}. The next best action: ${openCount ? "invite a creator directly so the first visit lands sooner" : "post your first offer"}.`, `Tu embudo se llena cuando tus campañas estén activas. Aún no hay visitas completadas${openCount ? `, y tienes ${openCount} oferta${openCount === 1 ? "" : "s"} abierta${openCount === 1 ? "" : "s"}` : ""}. El mejor siguiente paso: ${openCount ? "invita a un creador directamente para que la primera visita llegue antes" : "publica tu primera oferta"}.`), [
+      openCount
+        ? { label: ST("Find creators", "Buscar creadores"), primary: true, run: async () => { sigB2Start(); sigOpPaint(); } }
+        : { label: ST("Set up a campaign", "Crear una campaña"), primary: true, run: async () => { sigB1Start(); sigOpPaint(); } },
+      { label: ST("See Analytics", "Ver Analíticas"), run: async () => go("dashboard", "Analytics") },
+    ]);
+    return;
+  }
+  const o = ro.overall || {};
+  const lines = [
+    ST(`Here is where things stand: ${o.visitsRedeemed || 0} of ${o.visitsBooked || 0} visits redeemed, ${o.postsLive || 0} posts live.`, `Así van las cosas: ${o.visitsRedeemed || 0} de ${o.visitsBooked || 0} visitas canjeadas, ${o.postsLive || 0} publicaciones activas.`),
+  ];
+  const series = perfSeriesText(o.series);
+  if (series) lines.push(`${ST("Post views over time", "Vistas en el tiempo")}: ${series}.`);
+  if (o.redemptions && o.redemptions.count > 0) lines.push(`${ST("Redemptions rung up", "Canjes registrados")}: ${o.redemptions.count} ($${fmtMoney(o.redemptions.basketTotal || 0)}).`);
+  if (o.registerValue) lines.push(`${ST("Register value", "Valor en caja")}: $${fmtMoney(o.registerValue)}${o.roasScore !== null && o.roasScore !== undefined ? ` · ROAS ${o.roasScore}` : ""}.`);
+  else if (o.estimatedRegisterValue) lines.push(`${ST("Estimated register value", "Valor estimado en caja")}: $${fmtMoney(o.estimatedRegisterValue)}.`);
+  const topRows = (ro.offers || []).filter((r) => (r.postsLive || 0) > 0 || (r.visitsBooked || 0) > 0).slice(0, 3);
+  for (const r of topRows) lines.push(`"${r.title}": ${r.visitsBooked || 0} ${ST("booked", "reservadas")} · ${r.postsLive || 0} ${ST("posts live", "publicaciones")}${r.views ? ` · ${fmtNum(r.views)} ${ST("views", "vistas")}` : ""}.`);
+  const lic = o.licenseRequests || {};
+  if ((lic.pending || 0) > 0) lines.push(`${lic.pending} ${ST("license request(s) waiting on a creator's answer", "solicitud(es) de licencia esperando respuesta del creador")}.`);
+  if (o.visitsAllowance) lines.push(`${ST("Plan", "Plan")}: ${o.visitsUsed || 0} ${ST("of", "de")} ${o.visitsAllowance} ${ST("visits used this month", "visitas usadas este mes")}.`);
+  const rec = ro.recommendation || {};
+  const acts = [];
+  if (rec.type === "repeat") {
+    lines.push(`${ST("Repeat this", "Repite esto")}: "${rec.title}"${rec.creatorName ? ` ${ST("with", "con")} ${rec.creatorName}` : ""}. ${rec.reason || ""}`);
+    if (rec.offerId) acts.push({ label: ST("Run it again", "Repetirla"), primary: true, run: async () => sigRepeatProposal(ro) });
+  }
+  acts.push({ label: ST("Open the Performance card", "Abrir la tarjeta de Rendimiento"), run: async () => go("dashboard", "Home") });
+  acts.push({ label: ST("Set up a campaign", "Crear una campaña"), run: async () => { sigB1Start(); sigOpPaint(); } });
+  sigOpSay(lines.join("\n"), acts);
+}
+
+// ---------- R2: closed-loop repeat (Jeff, 2026-10-28) ----------
+// The readout's deterministic best performer becomes a proposal,
+// never an autopost: Sig quotes the real result, and one tap
+// clones the winning offer (brief + play + packet attachment
+// ride along) into the standard B1 confirmation summary.
+// Nothing posts until the business says yes there.
+function sigRepeatProposal(ro) {
+  const rec = (ro && ro.recommendation) || {};
+  if (rec.type !== "repeat" || !rec.offerId) return;
+  const quote = `${rec.creatorName ? rec.creatorName + "'s post" : "That post"} ${ST("for", "para")} "${rec.title}" ${rec.reason ? rec.reason.charAt(0).toLowerCase() + rec.reason.slice(1) : ""}`;
+  sigOpSay(`${ST("Run it again?", "¿La repetimos?")} ${quote} ${ST("I can clone that offer, brief and packet attached, into a fresh one. You review the summary before anything posts.", "Puedo clonar esa oferta, con brief y paquete adjuntos, en una nueva. Revisas el resumen antes de que se publique nada.")}`, [
+    { label: ST("Repeat it", "Repetirla"), primary: true, run: async () => sigRepeatClone(rec) },
+    { label: ST("Not now", "Ahora no"), run: async () => { sigOpSay(ST("Left as is. Say the word any time and I will set it up.", "Queda como está. Dime cuando sea y la armo.")); } },
+  ]);
+}
+// The Performance card's button routes through the same Sig
+// proposal (one behavior everywhere); returns false for the
+// inline onclick.
+function perfRepeatFromCard() {
+  go("dashboard", "Sig");
+  setTimeout(async () => {
+    const ro = await api("GET", "/me/performance-readout").catch(() => null);
+    if (ro) sigRepeatProposal(ro);
+  }, 400);
+  return false;
+}
+async function sigRepeatClone(rec) {
+  let offer = null;
+  try { const res = await api("GET", "/offers"); offer = (res.offers || []).find((o) => o.id === rec.offerId) || null; } catch (e) { /* handled below */ }
+  if (!offer) {
+    sigOpSay(ST("That offer is no longer on your list, so there is nothing to clone. Start a fresh campaign and I will rebuild it with you.", "Esa oferta ya no está en tu lista, así que no hay nada que clonar. Crea una campaña nueva y la reconstruimos juntos."), [
+      { label: ST("Set up a campaign", "Crear una campaña"), primary: true, run: async () => { sigB1Start(); sigOpPaint(); } },
+    ]);
+    return;
+  }
+  const b = offer.brief || {};
+  const f = { id: "b1", step: "summary", data: {
+    lane: offer.creatorId ? "direct" : "open", kind: offer.kind || "comp",
+    creatorId: offer.creatorId || null, creatorName: "",
+    title: offer.title || "", comped: offer.whatComped || "", cap: offer.dollarCap || 0, rate: offer.cashRate || 0,
+    covers: offer.covers || 1, spots: offer.spots || 1, tiers: offer.targetTiers || [],
+    applyDays: offer.applyWindowDays || 3, windowDays: offer.windowDays || 7, windowMode: offer.windowMode || "7days",
+    windowNote: offer.visitWindow || "", spanish: !!offer.requiresSpanish, paidBrief: offer.paidBrief || "",
+    briefGoal: b.goal || null, briefHook: b.hook || "", briefMust: (b.mustMention || []).slice(), briefDont: (b.doNotSay || []).slice(),
+    briefTiming: b.timing || "", briefCta: b.callToAction || "", briefDrafted: true,
+    packetAttach: !!offer.assetPacketAttached, play: offer.play || null,
+  } };
+  state.sigFlow = f;
+  sigOpSay(ST(`Cloned "${offer.title}" with its brief${offer.assetPacketAttached ? " and asset packet" : ""}. Here is the fresh copy; post it only if it still reads right:`, `Cloné "${offer.title}" con su brief${offer.assetPacketAttached ? " y paquete" : ""}. Esta es la copia nueva; publícala solo si todo se lee bien:`));
+  sigB1Summary();
+}
+
+// ---------- Asset packet (business) ----------
+// The C2-style walk for the packet: collect, summarize,
+// confirm, save with ONE PATCH. Prefilled from the stored
+// packet; every URL must be https or Sig refuses in the turn
+// (and the server refuses again at save). Can run inside B1
+// (opts.resumeFlow): saving hands the flow back to B1's packet
+// question.
+function sigPacketStart(opts) {
+  const pk = (state.user.business && state.user.business.assetPacket) || {};
+  const f = { id: "packet", step: "logo", resumeFlow: (opts && opts.resumeFlow) || null, data: {
+    logoUrl: pk.logoUrl || "",
+    links: (pk.links || []).map((l) => ({ label: l.label || "", url: l.url || "" })),
+    talkingPoints: pk.talkingPoints || "",
+    handle: pk.handle || "",
+    hashtags: (pk.hashtags || []).slice(),
+  } };
+  state.sigFlow = f;
+  // R3 (packet assist): a cold packet starts from the business's
+  // own links; an existing packet edits step by step as before.
+  const empty = !f.data.logoUrl && !f.data.links.length && !f.data.talkingPoints && !f.data.handle;
+  if (empty) sigPacketAskAssist(); else sigPacketAskLogo();
+}
+// R3: the assist. The business hands Sig its links; Sig classifies
+// them (menu, Instagram, booking page, website), pulls the handle
+// out of the Instagram URL, and prefills the tag line from the
+// business's own name and city. Everything lands in the summary
+// for a per-field confirm or fix. Only business-provided data is
+// used; nothing is scraped or invented.
+function sigPacketAskAssist() {
+  const f = state.sigFlow;
+  f.step = "assist";
+  sigOpAsk(ST("Hand me your links: your menu, your Instagram, your website, your booking page. Paste them here, one per line (plain addresses are fine), and I will set the packet up from them. You confirm or fix each piece before anything saves.", "Pásame tus enlaces: tu menú, tu Instagram, tu sitio web, tu página de reservas. Pégalos aquí, uno por línea (direcciones simples sirven), y armo el paquete con ellos. Confirmas o corriges cada parte antes de guardar."), [
+    { label: ST("Build it step by step instead", "Armarlo paso a paso"), run: () => sigOpPick(ST("Step by step", "Paso a paso"), async () => sigPacketAskLogo()) },
+  ]);
+}
+function sigPacketAssistParse(text) {
+  const biz = (state.user && state.user.business) || {};
+  const tokens = String(text || "").split(/[\s,;]+/).map((x) => x.trim()).filter(Boolean);
+  const links = [];
+  let handle = "";
+  for (const tok of tokens) {
+    let url = tok;
+    if (!/^https?:\/\//i.test(url)) {
+      if (!/^[a-z0-9-]+(\.[a-z0-9-]+)+(\/\S*)?$/i.test(url)) continue;
+      url = "https://" + url;
+    }
+    if (!/^https:\/\//i.test(url)) continue;
+    let host = "", path = "";
+    try { const u = new URL(url); host = u.hostname.replace(/^www\./, ""); path = u.pathname || ""; } catch (e) { continue; }
+    let label = "Website";
+    if (host.includes("instagram.com")) {
+      label = "Instagram";
+      const seg = path.split("/").filter(Boolean)[0];
+      if (seg && !["p", "reel", "reels", "explore", "stories"].includes(seg)) handle = seg.replace(/^@/, "").slice(0, 40);
+    } else if (/menu/i.test(path) || /menu/i.test(host)) label = "Menu";
+    else if (/resy|opentable|toasttab|square\.site|tock/i.test(host) || /book|reserv/i.test(path)) label = "Booking";
+    else if (/photo|gallery/i.test(path)) label = "Photos";
+    else if (links.some((l) => l.label === "Website")) label = host.split(".")[0].slice(0, 40) || "Link";
+    if (!links.some((l) => l.url === url)) links.push({ label, url: url.slice(0, 1000) });
+    if (links.length >= 6) break;
+  }
+  const camel = (s) => String(s || "").split(/[^A-Za-z0-9]+/).filter(Boolean).map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join("");
+  const hashtags = [];
+  const nameTag = camel(biz.businessName);
+  if (nameTag) hashtags.push(nameTag);
+  const cityTag = camel(biz.city || (state.user && state.user.city));
+  if (cityTag && cityTag !== nameTag) hashtags.push(cityTag);
+  return { links, handle, hashtags: hashtags.slice(0, 6), talkingPoints: (biz.about || "").slice(0, 600) };
+}
+function sigPacketAskLogo() {
+  const f = state.sigFlow;
+  f.step = "logo";
+  const cur = f.data.logoUrl;
+  sigOpAsk(`${ST("Your asset packet: the links and lines a creator needs to post well. It rides with paid offers by default and the creator sees it in their visit view.", "Tu paquete: los enlaces y textos que un creador necesita para publicar bien. Viaja con las ofertas pagadas por defecto y el creador lo ve en su visita.")}\n${ST("First, your logo link (an https URL), or skip.", "Primero, el enlace de tu logo (una URL https), o salta.")}${cur ? `\n${ST("Current", "Actual")}: ${cur}` : ""}`, [
+    ...(cur ? [{ label: ST("Keep current", "Mantener actual"), run: () => sigOpPick(ST("Keep current", "Mantener actual"), async () => sigPacketAskLinks()) }] : []),
+    { label: ST("Skip", "Saltar"), run: () => sigOpPick(ST("Skip", "Saltar"), async () => { f.data.logoUrl = ""; sigPacketAskLinks(); }) },
+  ]);
+}
+function sigPacketAskLinks(asFixTarget) {
+  const f = state.sigFlow;
+  if (f.data.fixReturn && !asFixTarget) { f.data.fixReturn = false; sigPacketSummary(); return; }
+  f.step = "links";
+  const cur = (f.data.links || []).length;
+  sigOpAsk(ST(`Key links, up to 6, one per line: Label | https://... (menu, photos, booking page). ${cur ? `You have ${cur} saved; type new ones to replace them, or keep them.` : "Or skip."}`, `Enlaces clave, hasta 6, uno por línea: Etiqueta | https://... (menú, fotos, reservas). ${cur ? `Tienes ${cur} guardados; escribe nuevos para reemplazarlos, o manténlos.` : "O salta."}`), [
+    ...(cur ? [{ label: ST("Keep current", "Mantener actuales"), run: () => sigOpPick(ST("Keep current", "Mantener actuales"), async () => sigPacketAskPoints()) }] : []),
+    { label: ST("Skip", "Saltar"), run: () => sigOpPick(ST("Skip", "Saltar"), async () => { f.data.links = []; sigPacketAskPoints(); }) },
+  ]);
+}
+function sigPacketAskPoints(asFixTarget) {
+  const f = state.sigFlow;
+  if (f.data.fixReturn && !asFixTarget) { f.data.fixReturn = false; sigPacketSummary(); return; }
+  f.step = "points";
+  sigOpAsk(ST("Talking points: the short version of what makes you worth posting about. Two or three honest lines, or skip.", "Puntos de conversación: la versión corta de por qué vale la pena publicar sobre ti. Dos o tres líneas honestas, o salta."), [
+    { label: ST("Skip", "Saltar"), run: () => sigOpPick(ST("Skip", "Saltar"), async () => { f.data.talkingPoints = ""; sigPacketAskHandle(); }) },
+  ]);
+}
+function sigPacketAskHandle(asFixTarget) {
+  const f = state.sigFlow;
+  if (f.data.fixReturn && !asFixTarget) { f.data.fixReturn = false; sigPacketSummary(); return; }
+  f.step = "handle";
+  sigOpAsk(ST("Your handle, so creators tag the right account. For example: yourbusiness. And hashtags, space separated, up to 6, on the next line if you want both.", "Tu usuario, para que los creadores etiqueten la cuenta correcta. Por ejemplo: tunegocio. Y hashtags, separados por espacios, hasta 6."), [
+    { label: ST("Skip", "Saltar"), run: () => sigOpPick(ST("Skip", "Saltar"), async () => sigPacketSummary()) },
+  ]);
+}
+function sigPacketSummary() {
+  const f = state.sigFlow;
+  f.step = "summary";
+  const d = f.data;
+  const lines = [
+    d.assisted
+      ? ST("I set this up from the links you gave me, plus your own profile words. Check each piece and fix anything that is off. Nothing saves until you say yes:", "Armé esto con los enlaces que me diste, más las palabras de tu propio perfil. Revisa cada parte y corrige lo que no esté bien. Nada se guarda hasta que digas que sí:")
+      : ST("Here is your packet. Nothing saves until you say yes:", "Este es tu paquete. Nada se guarda hasta que digas que sí:"),
+    `${ST("Logo", "Logo")}: ${d.logoUrl || "—"}`,
+    `${ST("Links", "Enlaces")}: ${(d.links || []).length ? d.links.map((l) => `${l.label || l.url} (${l.url})`).join(" · ") : "—"}`,
+    `${ST("Talking points", "Puntos")}: ${d.talkingPoints || "—"}`,
+    `${ST("Tag", "Etiqueta")}: ${d.handle ? "@" + d.handle : "—"}${(d.hashtags || []).length ? " · " + d.hashtags.map((h) => "#" + h).join(" ") : ""}`,
+  ];
+  sigOpAsk(lines.join("\n"), [
+    { label: ST("Yes, save it", "Sí, guardarlo"), primary: true, run: () => sigOpPick(ST("Yes, save it", "Sí, guardarlo"), async () => sigPacketCommit()) },
+    { label: ST("Fix links", "Corregir enlaces"), run: () => sigOpPick(ST("Fix links", "Corregir enlaces"), async () => { f.data.fixReturn = true; sigPacketAskLinks(true); }) },
+    { label: ST("Fix tag", "Corregir etiqueta"), run: () => sigOpPick(ST("Fix tag", "Corregir etiqueta"), async () => { f.data.fixReturn = true; sigPacketAskHandle(true); }) },
+    { label: ST("Fix points", "Corregir puntos"), run: () => sigOpPick(ST("Fix points", "Corregir puntos"), async () => { f.data.fixReturn = true; sigPacketAskPoints(true); }) },
+    { label: ST("Logo link", "Enlace del logo"), run: () => sigOpPick(ST("Logo link", "Enlace del logo"), async () => { f.data.fixReturn = true; sigPacketAskLogo(); }) },
+    { label: ST("Start over", "Empezar de nuevo"), run: () => sigOpPick(ST("Start over", "Empezar de nuevo"), async () => { const rf = f.resumeFlow; state.sigFlow = null; sigPacketStart({ resumeFlow: rf }); }) },
+  ]);
+}
+async function sigPacketCommit() {
+  const f = state.sigFlow;
+  const d = f.data;
+  try {
+    const res = await api("PATCH", "/me/profile", { assetPacket: { logoUrl: d.logoUrl, links: d.links, talkingPoints: d.talkingPoints, handle: d.handle, hashtags: d.hashtags } });
+    if (res && res.user) state.user = res.user;
+    const resume = f.resumeFlow;
+    state.sigFlow = null;
+    if (resume) {
+      state.sigFlow = resume;
+      sigOpSay(ST("Packet saved. Back to your campaign:", "Paquete guardado. Volvemos a tu campaña:"));
+      sigB1AskPacket();
+      return;
+    }
+    sigOpSay(ST("Packet saved. It now rides with your paid offers by default, and you can attach it to any offer from the composer or right here.", "Paquete guardado. Ahora viaja con tus ofertas pagadas por defecto, y puedes adjuntarlo a cualquier oferta desde el compositor o aquí."), [
+      { label: ST("Set up a campaign", "Crear una campaña"), primary: true, run: async () => { sigB1Start(); sigOpPaint(); } },
+    ]);
+  } catch (err) {
+    f.step = "summary";
+    sigOpAsk(`${err.message}\n${ST("Nothing was saved. Fix the link and try again, or stop here.", "No se guardó nada. Corrige el enlace e inténtalo de nuevo, o para aquí.")}`, [
+      { label: ST("Review the packet", "Revisar el paquete"), primary: true, run: () => sigOpPick(ST("Review the packet", "Revisar el paquete"), async () => sigPacketSummary()) },
+    ]);
+  }
+}
+async function sigPacketStep(f, text, norm) {
+  const d = f.data;
+  const t = String(text || "").trim();
+  const httpsOk = (u) => /^https:\/\/[^\s]+\.[^\s]+$/i.test(u);
+  switch (f.step) {
+    case "assist": {
+      const parsed = sigPacketAssistParse(t);
+      if (!parsed.links.length) {
+        sigOpAsk(ST("I could not find a usable link in that. Paste addresses like yoursite.com/menu or instagram.com/yourname, one per line. Plain addresses are fine; only https links can be saved.", "No encontré un enlace usable ahí. Pega direcciones como tusitio.com/menu o instagram.com/tunombre, una por línea. Las direcciones simples sirven; solo se pueden guardar enlaces https."));
+        return;
+      }
+      d.links = parsed.links;
+      if (parsed.handle) d.handle = parsed.handle;
+      if (parsed.hashtags.length) d.hashtags = parsed.hashtags;
+      if (parsed.talkingPoints && !d.talkingPoints) d.talkingPoints = parsed.talkingPoints;
+      d.assisted = true;
+      sigPacketSummary();
+      return;
+    }
+    case "logo":
+      if (!httpsOk(t)) { sigOpAsk(ST("That is not an https link. Links must start with https:// so creators land somewhere safe. Try again, or skip.", "Ese no es un enlace https. Los enlaces deben empezar con https:// para que los creadores lleguen a un sitio seguro. Inténtalo de nuevo, o salta."), [{ label: ST("Skip", "Saltar"), run: () => sigOpPick(ST("Skip", "Saltar"), async () => { d.logoUrl = ""; sigPacketAskLinks(); }) }]); return; }
+      d.logoUrl = t.slice(0, 1000);
+      sigPacketAskLinks();
+      return;
+    case "links": {
+      const lines = t.split(/\n+/).map((x) => x.trim()).filter(Boolean);
+      const parsed = [];
+      for (const line of lines) {
+        const parts = line.split("|").map((x) => x.trim());
+        const url = parts.length > 1 ? parts.slice(1).join("|") : parts[0];
+        const label = parts.length > 1 ? parts[0] : "";
+        if (!httpsOk(url)) { sigOpAsk(ST(`That link is not https: ${url}. Every packet link must start with https://. Nothing was saved. Fix the line and send the list again, or skip.`, `Ese enlace no es https: ${url}. Todo enlace del paquete debe empezar con https://. No se guardó nada. Corrige la línea y envía la lista de nuevo, o salta.`), [{ label: ST("Skip links", "Saltar enlaces"), run: () => sigOpPick(ST("Skip links", "Saltar enlaces"), async () => { d.links = []; sigPacketAskPoints(); }) }]); return; }
+        parsed.push({ label: label.slice(0, 40), url });
+      }
+      if (parsed.length > 6) { sigOpAsk(ST("That is more than 6 links. Send your best 6.", "Son más de 6 enlaces. Envía tus mejores 6.")); return; }
+      d.links = parsed;
+      sigPacketAskPoints();
+      return;
+    }
+    case "points":
+      d.talkingPoints = t.slice(0, 600);
+      sigPacketAskHandle();
+      return;
+    case "handle": {
+      const parts = t.split(/\s+/).filter(Boolean);
+      const tags = parts.filter((x) => x.startsWith("#")).map((x) => x.replace(/^#/, "")).slice(0, 6);
+      const handleTok = parts.find((x) => !x.startsWith("#")) || "";
+      d.handle = handleTok.replace(/^@/, "").slice(0, 40);
+      if (tags.length) d.hashtags = tags;
+      sigPacketSummary();
+      return;
+    }
+    default:
+      sigOpAsk(ST("Tap one of the options above, or say never mind to stop. Nothing is saved until you confirm at the end.", "Toca una de las opciones de arriba, o di cancelar para parar. Nada se guarda hasta que confirmes al final."));
+      return;
+  }
+}
+
+// ---------- C1: find offers (creator) ----------
+// Direct invites plus open offers, fit-ranked with the reason
+// stated; apply/accept only after a summary and a yes.
+async function sigC1Start() {
+  const u = state.user;
+  if (u.profileCompletion && !u.profileCompletion.complete) {
+    sigOpSay(ST("Businesses only see finished profiles, so offers open up once yours is finished. Let me walk you through what is missing.", "Los negocios solo ven perfiles terminados, así que las ofertas se abren cuando el tuyo lo esté. Te guío por lo que falta."), [
+      { label: ST("Finish my profile", "Terminar mi perfil"), primary: true, run: async () => { await sigC2Start(); sigOpPaint(); } },
+    ]);
+    return;
+  }
+  if (!(u.founding && u.founding.marketLive)) {
+    sigOpSay(ST("Your market has not opened yet, so there are no live offers to apply to today. Finished profiles are the roster businesses meet on day one, and your invite link works right now.", "Tu mercado aún no abrió, así que hoy no hay ofertas activas. Los perfiles terminados son la lista que los negocios conocen el primer día, y tu enlace de invitación ya funciona."), [
+      { label: ST("Invite a creator", "Invitar a un creador"), primary: true, run: async () => { sigC4Run(); sigOpPaint(); } },
+      { label: ST("Check my profile", "Revisar mi perfil"), run: async () => { await sigC2Start(); sigOpPaint(); } },
+    ]);
+    return;
+  }
+  const f = { id: "c1", step: "list", data: {} };
+  state.sigFlow = f;
+  let direct = [], open = [], appliedIds = new Set(), bookedIds = new Set();
+  try {
+    const [od, oo, ad, bd] = await Promise.all([
+      api("GET", "/offers").catch(() => ({ offers: [] })),
+      api("GET", "/open-offers").catch(() => ({ offers: [] })),
+      api("GET", "/applications").catch(() => ({ applications: [] })),
+      api("GET", "/bookings").catch(() => ({ bookings: [] })),
+    ]);
+    bookedIds = new Set((bd.bookings || []).filter((b) => b.offerId && b.status !== "cancelled" && b.status !== "expired").map((b) => b.offerId));
+    appliedIds = new Set((ad.applications || []).filter((a) => a.status === "applied").map((a) => a.offerId));
+    direct = (od.offers || []).filter((o) => o.lane !== "open" && !bookedIds.has(o.id));
+    const myCats = (u.creator && u.creator.categories) || [];
+    open = (oo.offers || []).filter((o) => !appliedIds.has(o.id) && !bookedIds.has(o.id)).map((o) => {
+      let score = 0;
+      const bizCats = o.businessCategory ? [o.businessCategory] : [];
+      if (bizCats.some((c) => myCats.includes(c))) score += 2;
+      if (o.requiresSpanish && u.creator && u.creator.spanishContent) score += 2;
+      if (o.fitNote) score += 1;
+      return { o, score };
+    }).sort((a, b) => b.score - a.score).map((x) => x.o);
+  } catch (e) { /* the empty line below covers a failed read */ }
+  const picks = [
+    ...direct.map((o) => ({ o, mode: "accept" })),
+    ...open.slice(0, 4).map((o) => ({ o, mode: "apply" })),
+  ].slice(0, 5);
+  f.data.picks = picks;
+  if (!picks.length) {
+    state.sigFlow = null;
+    sigOpSay(ST("No open offers fit you in your market right now. That is the real board, not a placeholder. New offers land here first, and a stronger profile gets invited directly.", "Ninguna oferta abierta te conviene en tu mercado ahora. Es el tablero real, no un relleno. Las nuevas llegan aquí primero, y un perfil más fuerte recibe invitaciones directas."), [
+      { label: ST("Strengthen my profile", "Mejorar mi perfil"), primary: true, run: async () => { await sigC2Start(); sigOpPaint(); } },
+      { label: ST("Invite a creator", "Invitar a un creador"), run: async () => { sigC4Run(); sigOpPaint(); } },
+    ]);
+    return;
+  }
+  const lines = picks.map((p, i) => {
+    const o = p.o;
+    const why = p.mode === "accept" ? ST("sent directly to you", "enviada directamente a ti") : (o.fitNote || ST("open in your market", "abierta en tu mercado"));
+    return `${i + 1}. "${o.title}" — ${o.businessName} · $${fmtPrice(o.kind === "paid" ? o.cashRate : o.dollarCap)} ${o.kind === "paid" ? ST("paid", "pagada") : ST("comp", "cortesía")} · ${why}`;
+  });
+  const acts = picks.map((p, i) => ({ label: `${p.mode === "accept" ? ST("Accept", "Aceptar") : ST("Apply", "Aplicar")}: ${String(p.o.title).slice(0, 26)}`, primary: i === 0, run: () => sigOpPick(`${p.mode === "accept" ? ST("Accept", "Aceptar") : ST("Apply", "Aplicar")}: ${p.o.title}`, async () => sigC1Confirm(p)) }));
+  sigOpSay(`${ST("Here is what fits you, best first:", "Esto te conviene, lo mejor primero:")}\n${lines.join("\n")}`, acts);
+}
+function sigC1Confirm(p) {
+  const f = state.sigFlow;
+  const o = p.o;
+  f.step = "confirm";
+  f.data.picked = p;
+  const b = o.brief || {};
+  const briefLines = [
+    ...(b.goal ? [`${ST("Goal", "Objetivo")}: ${briefGoalLabel(b.goal)}`] : []),
+    ...(b.hook ? [`${ST("Hook", "Gancho")}: ${b.hook}`] : []),
+    ...(b.mustMention && b.mustMention.length ? [`${ST("Must mention", "Debe mencionar")}: ${b.mustMention.join(" · ")}`] : []),
+    ...(b.deliverable ? [`${ST("Deliverable", "Entrega")}: ${b.deliverable}`] : []),
+  ];
+  const packetLine = o.businessAssetPacket ? `\n${ST("Their asset packet (links and talking points) will be inside your visit view.", "Su paquete (enlaces y puntos) estará en tu vista de visita.")}` : "";
+  sigOpAsk(`${p.mode === "accept" ? ST("Accept this invite?", "¿Aceptar esta invitación?") : ST("Apply to this offer?", "¿Aplicar a esta oferta?")}\n"${o.title}" — ${o.businessName} · ${o.kind === "paid" ? `$${fmtPrice(o.cashRate)} ${ST("paid; you keep 97%", "pagada; te quedas con el 97%")}` : `${o.whatComped} (${ST("comp value", "valor")} $${fmtMoney(o.dollarCap)})`}${briefLines.length ? `\n${briefLines.join("\n")}` : ""}${packetLine}\n${ST("Nothing is sent until you say yes.", "Nada se envía hasta que digas que sí.")}`, [
+    { label: p.mode === "accept" ? ST("Yes, accept", "Sí, aceptar") : ST("Yes, apply", "Sí, aplicar"), primary: true, run: () => sigOpPick(ST("Yes", "Sí"), async () => sigC1Commit()) },
+    { label: ST("Back to offers", "Volver a ofertas"), run: () => sigOpPick(ST("Back to offers", "Volver a ofertas"), async () => { state.sigFlow = null; await sigC1Start(); }) },
+  ]);
+}
+async function sigC1Commit() {
+  const f = state.sigFlow;
+  const p = f.data.picked;
+  const o = p.o;
+  try {
+    if (p.mode === "accept") await api("POST", `/offers/${o.id}/accept`, {});
+    else await api("POST", "/applications", { offerId: o.id });
+    state.sigFlow = null;
+    refreshBadges();
+    sigOpSay(p.mode === "accept"
+      ? ST(`Accepted. "${o.title}" is booked; your visit code and the brief are in My Visits.`, `Aceptada. "${o.title}" está reservada; tu código de visita y el brief están en Mis Visitas.`)
+      : ST(`Applied to "${o.title}". The business answers within 2 business days; your application is in Offers, under Applied.`, `Aplicaste a "${o.title}". El negocio responde en 2 días hábiles; tu aplicación está en Ofertas, en Aplicadas.`), [
+      { label: p.mode === "accept" ? ST("Open My Visits", "Abrir Mis Visitas") : ST("See my applications", "Ver mis aplicaciones"), primary: true, run: async () => { if (p.mode !== "accept") state.crOffersSeg = "applied"; go("dashboard", p.mode === "accept" ? "My Visits" : "Offers"); } },
+      { label: ST("More offers", "Más ofertas"), run: async () => { await sigC1Start(); sigOpPaint(); } },
+    ]);
+  } catch (err) {
+    f.step = "confirm";
+    sigOpAsk(`${err.message}\n${ST("Nothing was sent. Try again, or go back to the list.", "No se envió nada. Inténtalo de nuevo, o vuelve a la lista.")}`, [
+      { label: ST("Try again", "Intentar de nuevo"), primary: true, run: () => sigOpPick(ST("Try again", "Intentar de nuevo"), async () => sigC1Commit()) },
+      { label: ST("Back to offers", "Volver a ofertas"), run: () => sigOpPick(ST("Back to offers", "Volver a ofertas"), async () => { state.sigFlow = null; await sigC1Start(); }) },
+    ]);
+  }
+}
+async function sigC1Step(f, text, norm) {
+  sigOpAsk(ST("Tap one of the offers above, or say never mind to stop.", "Toca una de las ofertas de arriba, o di cancelar para parar."));
+}
+
+// ---------- C2: build my profile (creator) ----------
+// Walks the server-computed completion gaps in order, collects
+// the answers, and saves them in ONE PATCH after one summary.
+// Photo cannot be done in chat (it is a file), so that gap ends
+// in a walk-to chip, stated plainly.
+const SIG_C2_TEXT_GAPS = {
+  city: { ask: () => ST("Which city is home? Use the city your audience thinks of as yours.", "¿Qué ciudad es tu casa? Usa la ciudad que tu audiencia asocia contigo."), set: (f, t) => { f.data.patch.city = t.slice(0, 60); }, label: (v) => `${ST("Home city", "Ciudad")}: ${v}` },
+  audience: { ask: () => ST("How many followers on your main platform? A plain number is fine; you can split platforms on your Profile screen later.", "¿Cuántos seguidores en tu plataforma principal? Un número simple basta; luego puedes dividir plataformas en tu Perfil."), set: (f, t) => { const n = sigOpNum(t); if (!(n > 0)) return false; const key = (state.user.creator && state.user.creator.primaryPlatform) || "instagram"; f.data.patch.audienceStack = { [key]: Math.round(n) }; return true; }, label: (v) => `${ST("Audience", "Audiencia")}: ${fmtNum(Object.values(v)[0] || 0)}` },
+  local: { ask: () => ST("What share of your audience lives in your market? A percent, 0 to 100. Your best honest estimate; it is labeled self-reported.", "¿Qué parte de tu audiencia vive en tu mercado? Un porcentaje, 0 a 100. Tu mejor estimación honesta; se marca como autodeclarada."), set: (f, t) => { const n = sigOpNum(t); if (n === null || n < 0 || n > 100) return false; f.data.patch.localAudiencePct = Math.round(n); return true; }, label: (v) => `${ST("Local audience", "Audiencia local")}: ${v}%` },
+  bio: { ask: () => ST("Write your bio: two honest lines about what you post and where. 40 characters or more.", "Escribe tu bio: dos líneas honestas sobre lo que publicas y dónde. 40 caracteres o más."), set: (f, t) => { f.data.patch.bio = t.slice(0, 600); return true; }, label: (v) => `${ST("Bio", "Bio")}: ${String(v).slice(0, 80)}` },
+  neighborhood: { ask: () => ST("Your neighborhood or area: the part of town you actually post from.", "Tu vecindario o zona: la parte de la ciudad desde donde publicas de verdad."), set: (f, t) => { f.data.patch.neighborhood = t.slice(0, 80); }, label: (v) => `${ST("Neighborhood", "Vecindario")}: ${v}` },
+};
+async function sigC2Start() {
+  try { const me = await api("GET", "/auth/me"); if (me && me.user) state.user = me.user; } catch (e) { /* the loaded record stands */ }
+  const u = state.user;
+  const pc = u.profileCompletion || { items: [], complete: false };
+  const items = pc.items || [];
+  const gapOrder = ["city", "audience", "categories", "local", "bio", "neighborhood", "bestwork"];
+  const gaps = gapOrder.filter((id) => { const it = items.find((i) => i.id === id); return it && !it.done; });
+  const photoMissing = (() => { const it = items.find((i) => i.id === "photo"); return it && !it.done; })();
+  if (!gaps.length && pc.complete) {
+    sigOpSay(ST(`Your profile is finished${photoMissing ? ", and the one thing chat cannot do is your photo: it is a file upload on your Profile screen" : ""}. Businesses can find you, and offers can reach you.`, `Tu perfil está terminado${photoMissing ? ", y lo único que el chat no puede hacer es tu foto: se sube en tu pantalla de Perfil" : ""}. Los negocios pueden encontrarte y las ofertas pueden llegarte.`), [
+      ...(photoMissing ? [{ label: ST("Add my photo", "Añadir mi foto"), primary: true, run: async () => go("dashboard", "Profile") }] : []),
+      { label: ST("Find offers for me", "Buscar ofertas para mí"), primary: !photoMissing, run: async () => { await sigC1Start(); sigOpPaint(); } },
+    ]);
+    return;
+  }
+  if (!gaps.length) {
+    sigOpSay(ST("Nothing is missing that chat can fill. Your remaining items live on your Profile screen.", "No falta nada que el chat pueda llenar. Lo que queda vive en tu pantalla de Perfil."), [
+      { label: ST("Open my Profile", "Abrir mi Perfil"), primary: true, run: async () => go("dashboard", "Profile") },
+    ]);
+    return;
+  }
+  const f = { id: "c2", step: "gap", data: { gaps, idx: 0, patch: {}, photoMissing } };
+  state.sigFlow = f;
+  sigOpSay(ST(`Let's finish your profile. ${gaps.length} thing${gaps.length === 1 ? "" : "s"} to fill, one at a time. I save everything in one go at the end, after you confirm. Say never mind any time and nothing is saved.`, `Terminemos tu perfil. ${gaps.length} dato${gaps.length === 1 ? "" : "s"} por llenar, uno a la vez. Guardo todo de una vez al final, tras tu confirmación. Di cancelar cuando quieras y no se guarda nada.`));
+  sigC2AskGap();
+}
+function sigC2AskGap() {
+  const f = state.sigFlow;
+  const gap = f.data.gaps[f.data.idx];
+  if (!gap) { sigC2Summary(); return; }
+  f.step = "gap";
+  if (gap === "categories") {
+    const sel = f.data.patch.categories || ((state.user.creator && state.user.creator.categories) || []).slice();
+    f.data.patch.categories = sel;
+    const toggle = (c) => ({ label: `${sel.includes(c) ? "✓ " : ""}${c}`, run: () => sigOpPick(c, async () => {
+      const i = sel.indexOf(c);
+      if (i >= 0) sel.splice(i, 1); else sel.push(c);
+      sigC2AskGap();
+    }) });
+    sigOpAsk(ST(`What do you create in? Tap your categories (at least one), then Done. Selected: ${sel.length ? sel.join(", ") : "none yet"}.`, `¿En qué categorías creas? Toca las tuyas (al menos una) y luego Listo. Seleccionadas: ${sel.length ? sel.join(", ") : "ninguna aún"}.`), [
+      ...(state.boot.creatorCategories || []).map(toggle),
+      { label: ST("Done", "Listo"), primary: true, run: () => sigOpPick(ST("Done", "Listo"), async () => {
+        if (!sel.length) { sigOpAsk(ST("Pick at least one category: it is one of the four things a finished profile needs.", "Elige al menos una categoría: es una de las cuatro cosas que un perfil terminado necesita.")); return; }
+        f.data.idx += 1;
+        sigC2AskGap();
+      }) },
+    ]);
+    return;
+  }
+  if (gap === "bestwork") {
+    const have = ((state.user.creator && state.user.creator.bestWork) || []).length;
+    const added = (f.data.newWork || []).length;
+    sigOpAsk(ST(`Best-work links: send one link to a post that shows your work (${have + added} of 3). Send them one at a time; tap Done when you have sent what you have.`, `Enlaces de tu mejor trabajo: envía un enlace a una publicación que muestre tu trabajo (${have + added} de 3). Uno a la vez; toca Listo cuando hayas enviado los que tengas.`), [
+      { label: ST("Done", "Listo"), primary: true, run: () => sigOpPick(ST("Done", "Listo"), async () => { f.data.idx += 1; sigC2AskGap(); }) },
+    ]);
+    f.step = "bestwork";
+    return;
+  }
+  const spec = SIG_C2_TEXT_GAPS[gap];
+  if (!spec) { f.data.idx += 1; sigC2AskGap(); return; }
+  sigOpAsk(spec.ask());
+}
+function sigC2Summary() {
+  const f = state.sigFlow;
+  f.step = "summary";
+  if ((f.data.newWork || []).length && !f.data.patch.bestWork) {
+    const cur = ((state.user.creator && state.user.creator.bestWork) || []).slice();
+    f.data.patch.bestWork = [...new Set([...cur, ...f.data.newWork])].slice(0, 3);
+  }
+  const patch = f.data.patch;
+  const lines = [ST("Here is what I will save to your profile. Nothing is saved until you say yes:", "Esto guardaré en tu perfil. Nada se guarda hasta que digas que sí:")];
+  for (const [k, v] of Object.entries(patch)) {
+    if (k === "categories") lines.push(`${ST("Categories", "Categorías")}: ${(v || []).join(", ")}`);
+    else if (k === "bestWork") lines.push(`${ST("Best work", "Mejor trabajo")}: ${(v || []).length} ${ST("link(s)", "enlace(s)")}`);
+    else if (k === "audienceStack") lines.push(SIG_C2_TEXT_GAPS.audience.label(v));
+    else if (SIG_C2_TEXT_GAPS[k]) lines.push(SIG_C2_TEXT_GAPS[k].label(v));
+  }
+  if (f.data.photoMissing) lines.push(ST("Still to do after this: your profile photo, a file upload on your Profile screen.", "Pendiente tras esto: tu foto de perfil, una subida de archivo en tu pantalla de Perfil."));
+  sigOpAsk(lines.join("\n"), [
+    { label: ST("Yes, save it", "Sí, guardarlo"), primary: true, run: () => sigOpPick(ST("Yes, save it", "Sí, guardarlo"), async () => sigC2Commit()) },
+    { label: ST("Start over", "Empezar de nuevo"), run: () => sigOpPick(ST("Start over", "Empezar de nuevo"), async () => { state.sigFlow = null; await sigC2Start(); }) },
+  ]);
+}
+async function sigC2Commit() {
+  const f = state.sigFlow;
+  try {
+    const res = await api("PATCH", "/me/profile", f.data.patch);
+    if (res && res.user) state.user = res.user;
+    state.sigFlow = null;
+    const pc = state.user.profileCompletion;
+    if (pc && pc.complete) {
+      sigOpSay(ST("Saved, and your profile is finished. Businesses can find you now, and offers can reach you.", "Guardado, y tu perfil está terminado. Los negocios ya pueden encontrarte y las ofertas pueden llegarte."), [
+        { label: ST("Find offers for me", "Buscar ofertas para mí"), primary: true, run: async () => { await sigC1Start(); sigOpPaint(); } },
+        ...(f.data.photoMissing ? [{ label: ST("Add my photo", "Añadir mi foto"), run: async () => go("dashboard", "Profile") }] : []),
+      ]);
+    } else {
+      const missing = pc && pc.missing ? pc.missing.join(", ") : "";
+      sigOpSay(ST(`Saved. Still missing before businesses can find you: ${missing || "a couple of items on your Profile screen"}.`, `Guardado. Aún falta antes de que los negocios te encuentren: ${missing || "un par de datos en tu pantalla de Perfil"}.`), [
+        { label: ST("Open my Profile", "Abrir mi Perfil"), primary: true, run: async () => go("dashboard", "Profile") },
+      ]);
+    }
+  } catch (err) {
+    f.step = "summary";
+    sigOpAsk(`${err.message}\n${ST("Nothing was saved. Review the summary and try again, or stop here.", "No se guardó nada. Revisa el resumen e inténtalo de nuevo, o para aquí.")}`, [
+      { label: ST("Review the summary", "Revisar el resumen"), primary: true, run: () => sigOpPick(ST("Review the summary", "Revisar el resumen"), async () => sigC2Summary()) },
+    ]);
+  }
+}
+async function sigC2Step(f, text, norm) {
+  const t = String(text || "").trim();
+  const gap = f.data.gaps[f.data.idx];
+  if (f.step === "bestwork") {
+    if (!/^https:\/\/[^\s]+\.[^\s]+$/i.test(t)) { sigOpAsk(ST("That is not a link I can save. Send a full https:// link to a post, or tap Done.", "Ese no es un enlace que pueda guardar. Envía un enlace https:// completo a una publicación, o toca Listo."), [{ label: ST("Done", "Listo"), primary: true, run: () => sigOpPick(ST("Done", "Listo"), async () => { f.data.idx += 1; sigC2AskGap(); }) }]); return; }
+    // New links collect in data.newWork; the summary folds them
+    // into the full replacement list (the server replaces
+    // bestWork wholesale, so the PATCH carries stored + new).
+    f.data.newWork = [...new Set([...(f.data.newWork || []), t])];
+    const total = ((state.user.creator && state.user.creator.bestWork) || []).length + f.data.newWork.length;
+    if (total >= 3) { f.data.idx += 1; sigC2AskGap(); return; }
+    sigC2AskGap();
+    return;
+  }
+  if (f.step !== "gap" || !gap) { sigOpAsk(ST("Tap one of the options above, or say never mind to stop.", "Toca una de las opciones de arriba, o di cancelar para parar.")); return; }
+  const spec = SIG_C2_TEXT_GAPS[gap];
+  if (!spec) { f.data.idx += 1; sigC2AskGap(); return; }
+  if (!t) { sigOpAsk(spec.ask()); return; }
+  const ok = spec.set(f, t);
+  if (ok === false) { sigOpAsk(ST("I could not use that answer. Try again in plain words or a plain number.", "No pude usar esa respuesta. Inténtalo de nuevo en palabras simples o un número simple.")); return; }
+  if (gap === "bio" && String(f.data.patch.bio || "").length < 40) {
+    sigOpAsk(ST("That bio is under 40 characters, and a finished bio needs 40 or more. Add a line and send it again, or use it as is and finish it later on your Profile.", "Esa bio tiene menos de 40 caracteres, y una bio terminada necesita 40 o más. Añade una línea y envíala de nuevo, o úsala así y termínala luego en tu Perfil."), [
+      { label: ST("Use it as is", "Usarla así"), run: () => sigOpPick(ST("Use it as is", "Usarla así"), async () => { f.data.idx += 1; sigC2AskGap(); }) },
+    ]);
+    return;
+  }
+  f.data.idx += 1;
+  sigC2AskGap();
+}
+
+// ---------- C3: track my data (creator) ----------
+// Read-only mirror of B3: founding standing, bookings,
+// applications, license requests, Momentum. Real lines only.
+async function sigC3Run() {
+  const u = state.user;
+  let ro = null;
+  try { ro = await api("GET", "/me/performance-readout"); } catch (e) { ro = null; }
+  const m = u.momentum || {};
+  const acts = [
+    { label: ST("Open Your numbers", "Abrir Tus números"), run: async () => go("dashboard", "Numbers") },
+    { label: ST("Find offers for me", "Buscar ofertas para mí"), primary: true, run: async () => { await sigC1Start(); sigOpPaint(); } },
+  ];
+  if (!ro || ro.empty) {
+    sigOpSay(ST(`No visits or posts on record yet, so there are no numbers to show. That is the honest state, not a placeholder. Your Momentum stands at ${fmtNum(m.points || 0)} points. The fastest way to change the record: a finished profile, then your first visit.`, `Aún no hay visitas ni publicaciones en tu registro, así que no hay números que mostrar. Es el estado honesto, no un relleno. Tu Momentum está en ${fmtNum(m.points || 0)} puntos. La vía más rápida de cambiar el registro: un perfil terminado y luego tu primera visita.`), acts);
+    return;
+  }
+  const o = ro.overall || {};
+  const lines = [
+    ST(`Your record: ${o.visitsRedeemed || 0} of ${o.visitsBooked || 0} visits done, ${o.postsLive || 0} posts live${o.onTimePct !== null && o.onTimePct !== undefined ? `, ${o.onTimePct}% on time` : ""}. Momentum: ${fmtNum(m.points || 0)} points.`, `Tu registro: ${o.visitsRedeemed || 0} de ${o.visitsBooked || 0} visitas hechas, ${o.postsLive || 0} publicaciones activas${o.onTimePct !== null && o.onTimePct !== undefined ? `, ${o.onTimePct}% a tiempo` : ""}. Momentum: ${fmtNum(m.points || 0)} puntos.`),
+  ];
+  for (const p of (ro.posts || []).slice(0, 3)) {
+    const s = perfSeriesText(p.series);
+    lines.push(`"${p.title}": ${fmtNum(p.views || 0)} ${ST("views", "vistas")}${s ? ` (${s})` : ""}${p.onTime ? ` · ${ST("on time", "a tiempo")}` : ""}.`);
+  }
+  if ((o.applicationsPending || 0) > 0) lines.push(`${o.applicationsPending} ${ST("application(s) waiting on a business answer", "aplicación(es) esperando respuesta de un negocio")}.`);
+  if ((o.licenseRequestsPending || 0) > 0) lines.push(`${o.licenseRequestsPending} ${ST("license request(s) waiting on your answer", "solicitud(es) de licencia esperando tu respuesta")}.`);
+  if ((o.paidBookings || 0) > 0) lines.push(`${ST("Paid bookings on record", "Reservas pagadas en registro")}: ${o.paidBookings} · $${fmtMoney(o.paidRecordedNet || 0)} ${ST("recorded as yours (97% of your rate)", "registrado como tuyo (97% de tu tarifa)")}.`);
+  sigOpSay(lines.join("\n"), acts);
+}
+
+// ---------- C4: invite creators (creator) ----------
+// Read-only: the existing referral link plus a ready-to-send
+// message that leads with both lanes. Nothing is sent by Sig.
+function sigC4Run() {
+  const u = state.user;
+  const handle = u.creator && u.creator.handle;
+  if (!handle) {
+    sigOpSay(ST("Your invite link rides on your handle, and yours is not set yet. Set it on your Profile and the link is yours.", "Tu enlace de invitación va con tu usuario, y el tuyo aún no está fijado. Fíjalo en tu Perfil y el enlace es tuyo."), [
+      { label: ST("Open my Profile", "Abrir mi Perfil"), primary: true, run: async () => go("dashboard", "Profile") },
+    ]);
+    return;
+  }
+  const url = `https://app.joinsignl.com/?ref=${encodeURIComponent(handle)}`;
+  const market = marketTalkNameClient(u.market);
+  const msg = ST(`I am a founding creator on SIGNL in ${market}. Local businesses book local creators here: comped visits (a meal, service, or experience on the business) or paid bookings at your own listed rate, and you keep 97% of paid work. Join through my link: ${url}`, `Soy creador fundador en SIGNL en ${market}. Los negocios locales reservan creadores locales aquí: visitas de cortesía (una comida, servicio o experiencia por cuenta del negocio) o reservas pagadas a tu propia tarifa, y te quedas con el 97% del trabajo pagado. Únete con mi enlace: ${url}`);
+  sigOpSay(`${ST("Your invite link:", "Tu enlace de invitación:")} ${url}\n${ST("You earn +3 Momentum when a creator joins through it, +10 when they are approved.", "Ganas +3 Momentum cuando un creador se une con él, +10 cuando es aprobado.")}\n${ST("Ready-to-send message (copy it into any app):", "Mensaje listo para enviar (cópialo en cualquier app):")}\n${msg}`, [
+    { label: ST("Copy invite link", "Copiar enlace"), primary: true, run: async () => { try { await navigator.clipboard.writeText(url); sigOpSay(ST("Copied. Send it anywhere.", "Copiado. Envíalo donde quieras."), sigOpHomeActions()); } catch (e) { sigOpSay(ST("Copy did not work here; the link is in the message above, ready to select.", "La copia no funcionó aquí; el enlace está en el mensaje de arriba, listo para seleccionar."), sigOpHomeActions()); } } },
+    { label: ST("See my Momentum", "Ver mi Momentum"), run: async () => go("dashboard", "Momentum") },
+  ]);
 }
 
 // ---------- two-step claim, step one (Jeff, 2026-10-20) ----------
@@ -5156,6 +6459,23 @@ async function loadFoundingDashboard() {
     if (!queueItems.length) {
       queueItems.push({ text: isUnl ? `You are on the founding roster. ${f.city} opens when sign-ups pile up; we email you the moment it opens.` : `You are on the founding roster. ${marketTalkNameClient(f.market)} opens in the next ${f.launchWindow}; we email you the moment it opens.`, btn: "View status", act: () => go("dashboard", "Status") });
     }
+    // Sig activation ideas (founding home): once the essentials
+    // are done, Sig prompts the two build-up moves a founding
+    // creator can actually take before the market opens — a
+    // photo, and inviting the next founding creator. Same
+    // dismissal + 14-day cooldown + 2-idea cap as the live home.
+    if (u.profileCompletion && u.profileCompletion.complete) {
+      const photoIt = (u.profileCompletion.items || []).find((i) => i.id === "photo");
+      if (photoIt && !photoIt.done) {
+        const it = sigIdeaItem(u.id, "cr_photo", `Add your profile photo.${photoIt.points ? ` It earns +${photoIt.points} Momentum.` : ""} Founding profiles with a face are the ones businesses meet first.`, "Add photo", () => go("dashboard", "Profile"), "Add a profile photo");
+        if (it) queueItems.push(it);
+      }
+      const inv = sigIdeaItem(u.id, "cr_invite", "Know a creator who should be founding with you? Your invite earns +3 Momentum when they join, +10 when they are approved.", "Share invite", () => { const g = document.getElementById("grow-roster"); if (g) g.scrollIntoView({ behavior: "smooth", block: "start" }); }, "Invite a founding creator");
+      if (inv) queueItems.push(inv);
+      const capped = capSigIdeas(queueItems);
+      queueItems.length = 0;
+      queueItems.push(...capped);
+    }
     // V4.1: the Sig tab renders this same queue and badges its
     // count — one queue, two doors (see renderSigTab).
     state.sigQueue = queueItems;
@@ -5556,6 +6876,7 @@ function homeOpportunitiesHtml(offers, u, bookings, applications) {
       ${dealRowsHtml(o)}
       ${o.kind === "paid" && o.paidBrief ? `<p class="small"><strong>Key points:</strong> ${esc(o.paidBrief)}</p>` : ""}
       ${dealPlainWordsHtml(o)}
+      ${briefBlockHtml(o)}
       <p class="small muted">${o.windowMode === "thisweek" ? "Visit this week — ends Sunday" : "Within 7 days of accepting"} &middot; ${left} of ${o.spots} spot${o.spots === 1 ? "" : "s"} left.${o.visitWindow ? ` Note from the business: ${esc(o.visitWindow)}` : ""}</p>
       <div class="slot-foot">
         <div><div class="slot-price">$${fmtPrice(o.kind === "paid" ? o.cashRate : o.dollarCap)}</div><div class="slot-note">${o.kind === "paid" ? "Rate" : "Comp value"}</div></div>
@@ -6212,8 +7533,39 @@ async function loadCreatorHome() {
     if (pc && !pc.complete) add(4, now, `Your profile is missing essentials (${pc.requiredDone} of ${pc.requiredTotal} done). Businesses cannot find you yet.`, "Finish profile", () => go("dashboard", "Profile"), `Profile: ${pc.requiredDone} of ${pc.requiredTotal} done`);
     const paidRate = u.creator && u.creator.paidRate;
     if (!paidRate) add(4, now, "Set your paid rate so businesses can book you paid.", "Set my rate", () => go("dashboard", "Profile"), "Paid rate not set");
+    // Sig activation ideas (class 5): build-up prompts for a
+    // finished profile, each keyed to a field that is actually
+    // empty on this creator's own record. Until the essentials
+    // are done the class-4 items above own the queue alone.
+    if (gateDone) {
+      const c = u.creator || {};
+      const pcItem = (id) => ((pc && pc.items) || []).find((i) => i.id === id);
+      const pushIdea = (id, text, btn, act, short) => { const it = sigIdeaItem(u.id, id, text, btn, act, short); if (it) items.push(it); };
+      const ptsBit = (item, fallback) => (item && item.points ? ` It earns +${item.points} Momentum.` : fallback || "");
+      const photoItem = pcItem("photo");
+      if (photoItem && !photoItem.done) pushIdea("cr_photo", `Add your profile photo.${ptsBit(photoItem)} Businesses see a face before they see numbers.`, "Add photo", () => go("dashboard", "Profile"), "Add a profile photo");
+      const workItem = pcItem("bestwork");
+      const workN = Math.min(3, (c.bestWork || []).length);
+      if (workItem && !workItem.done) pushIdea("cr_bestwork", `Add best-work links (${workN} of 3). Each one earns +5 Momentum and shows on your public profile.`, "Add links", () => go("dashboard", "Profile"), `Best-work links: ${workN} of 3`);
+      const bioItem = pcItem("bio");
+      if (bioItem && !bioItem.done) pushIdea("cr_bio", `Your bio is still short. Two honest lines${bioItem.points ? ` earn +${bioItem.points} Momentum` : ""}.`, "Write bio", () => go("dashboard", "Profile"), "Bio still short");
+      const hoodItem = pcItem("neighborhood");
+      if (hoodItem && !hoodItem.done) pushIdea("cr_neighborhood", `Set your neighborhood. Businesses search by neighborhood.${ptsBit(hoodItem)}`, "Set neighborhood", () => go("dashboard", "Profile"), "Neighborhood not set");
+      if (c.spanishContent === true && (c.spanishAudiencePct === null || c.spanishAudiencePct === undefined)) pushIdea("cr_spanish_pct", "You create content in Spanish. Add your Spanish-speaking share so businesses see the number, not a checkbox.", "Add percentage", () => go("dashboard", "Profile"), "Add your Spanish-speaking share");
+      if (c.musician === undefined) pushIdea("cr_musician", "Make music? Turn on the musician switch and businesses looking to book music can find you.", "Open panel", () => go("dashboard", "Profile"), "Make music? Open the panel");
+      const uniStatus = c.universityStatus || u.universityStatus || "";
+      const uniName = c.university || u.university || "";
+      if (uniStatus === "current_student" && !uniName) pushIdea("cr_university", "Add your university. Current students carry a campus badge businesses can filter by.", "Add university", () => go("dashboard", "Profile"), "Add your university");
+      const ytCfg = (state.boot && state.boot.platformConnect && state.boot.platformConnect.youtube) || {};
+      const ytSync = (c.platformSync || {}).youtube;
+      const ytPresent = Number((c.audienceStack || {}).youtube || 0) > 0 || !!String(c.youtubeChannel || "").trim();
+      if (ytCfg.oauthConfigured && !ytSync && ytPresent) pushIdea("cr_youtube", "Connect YouTube and your subscriber count verifies itself and stays current on its own.", "Connect YouTube", () => go("dashboard", "Profile"), "Connect YouTube");
+      const mm = u.momentum || {};
+      if ((mm.signups || 0) > 0) pushIdea("cr_invite", `${mm.signups} creator${mm.signups === 1 ? "" : "s"} joined through your link. Approved referrals climb the badge ladder: 1 is Connector, 5 is Roster Builder, 10 is City Lead.`, "Share invite", () => go("dashboard", "Momentum"), `${mm.signups} joined through you`);
+      else pushIdea("cr_invite", "Invite a creator you rate. You earn +3 Momentum when they join and +10 when they are approved.", "Share invite", () => go("dashboard", "Momentum"), "Invite a creator");
+    }
     items.sort((a, b) => a.cls - b.cls || a.at - b.at);
-    const queue = items.slice(0, 7);
+    const queue = capSigIdeas(items).slice(0, 7);
 
     // The launch checklist (spec §4.6): the paid-rate step is
     // optional; the card retires when the other three are done.
@@ -6765,6 +8117,8 @@ async function loadDirectOffers() {
         ${dealRowsHtml(o)}
         ${o.kind === "paid" && o.paidBrief ? `<p class="small"><strong>Key points:</strong> ${esc(o.paidBrief)}</p>` : ""}
         ${dealPlainWordsHtml(o)}
+        ${briefBlockHtml(o)}
+        ${assetPacketBlockHtml(o.businessAssetPacket)}
         ${reviewLinksBlockHtml(o.businessReviewLinks)}
         ${musicOpenBlockHtml(o.businessMusicOpen)}
         ${studentOpenBlockHtml(o.businessStudentOpen)}
@@ -6849,6 +8203,8 @@ function offerFeedCardHtml(o, opts) {
         ${dealRowsHtml(o)}
         ${o.kind === "paid" && o.paidBrief ? `<p class="small"><strong>Key points:</strong> ${esc(o.paidBrief)}</p>` : ""}
         ${dealPlainWordsHtml(o)}
+        ${briefBlockHtml(o)}
+        ${assetPacketBlockHtml(o.businessAssetPacket)}
         ${reviewLinksBlockHtml(o.businessReviewLinks)}
         ${musicOpenBlockHtml(o.businessMusicOpen)}
         ${studentOpenBlockHtml(o.businessStudentOpen)}
@@ -7498,6 +8854,8 @@ function visitCard(b, role) {
   if (b.paidBrief) {
     html += `<p class="small"><strong>Key points from the business:</strong> ${esc(b.paidBrief)}</p>`;
   }
+  html += briefBlockHtml(b);
+  if (role === "creator") html += assetPacketBlockHtml(b.assetPacket);
   if (b.paidLane) {
     const lane = b.paidLane;
     const escrowBadge = lane.escrowState === "released"
@@ -8114,6 +9472,66 @@ function visitSegOf(b, role) {
   return "upcoming";
 }
 
+// ---------- Sig activation prompts (Jeff, 2026-10-28) ----------
+// Sig as a proactive layer: deterministic queue items (class 5,
+// "ideas") computed from the account's real record state and,
+// for businesses, the market inventory in home.sigSignals. The
+// full bank lives in files/signl-sig-activation-catalog-2026-10-28.md.
+// Rules the builders below obey: a prompt renders only when its
+// action can succeed now (a deep-linked search returns at least
+// one real result; a named field is actually empty); every
+// number is a live count or a stored fact; at most 2 idea
+// prompts ride a queue at once (activation items for incomplete
+// essentials are class 4 and sit above this cap); every idea is
+// dismissible and a dismissal suppresses it for 14 days.
+const SIG_IDEA_COOLDOWN_MS = 14 * 86400000;
+function sigIdeaKey(userId, id) { return `signl_sig_idea:${userId}:${id}`; }
+function sigIdeaDismissed(userId, id) {
+  try {
+    const t = Number(localStorage.getItem(sigIdeaKey(userId, id)) || 0);
+    return !!t && (Date.now() - t) < SIG_IDEA_COOLDOWN_MS;
+  } catch (e) { return false; }
+}
+function sigIdeaItem(userId, id, text, btn, act, short) {
+  if (sigIdeaDismissed(userId, id)) return null;
+  return { cls: 5, at: Date.now(), idea: true, text, btn, act, short, dismissKey: sigIdeaKey(userId, id) };
+}
+function capSigIdeas(items) {
+  let n = 0;
+  return items.filter((it) => {
+    if (!it || !it.idea) return true;
+    n += 1;
+    return n <= 2;
+  });
+}
+// Business idea copy banks: the campus lead-in per stored
+// category, and the one category play per category (its button
+// is the offer composer, which always succeeds, so no inventory
+// gate applies to it).
+const SIG_CAMPUS_LEADINS = {
+  "Restaurant": "Students are your next regulars.",
+  "Bar": "Campus nights are built, not found.",
+  "Coffee & Bakery": "Study hours are your hours.",
+  "Salon & Barbershop": "Campus marketing is key for a salon like yours.",
+  "Fitness Studio": "A new term is a new membership season.",
+  "Retail": "Students shop where students post.",
+  "Attraction": "Campus groups look for things to do.",
+  "Local Services": "Students need local everything, fast.",
+  "Other": "Students are a market of their own.",
+};
+const SIG_CATEGORY_PLAYS = {
+  "Restaurant": "Weekend tables are the prize. Post an offer with a Friday or Saturday window and let creators compete for it.",
+  "Bar": "Slow nights are the opportunity. A creator visit on your quiet night turns it into content night.",
+  "Coffee & Bakery": "Morning regulars are made, not born. One creator's study-session post puts your shop on the map.",
+  "Salon & Barbershop": "A transformation post is your best ad. Book a creator before prom and homecoming weekends, when chairs fill anyway.",
+  "Fitness Studio": "First-week energy sells memberships. A creator's first class post reaches people a flyer never will.",
+  "Retail": "New arrivals deserve an audience. A creator unboxing or try-on turns stock into a story.",
+  "Attraction": "Groups book what groups see. A creator visit makes your place the plan, not an option.",
+  "Local Services": "Trust is the product. A creator showing the job done well is worth more than any review.",
+  "Other": "Your first offer teaches the roster what you love. Post it, and watch who applies.",
+};
+const SIG_MUSIC_CATEGORIES = ["Bar", "Restaurant", "Coffee & Bakery", "Attraction", "Local Services", "Retail", "Fitness Studio"];
+
 // Campus season windows (U4): generic US academic-calendar
 // windows, deliberately NOT any school's real dates. At most
 // one window matches at a time; the first match wins. The
@@ -8147,6 +9565,7 @@ async function loadBusinessHome() {
     const notesPromise = api("GET", "/notifications").catch(() => null);
     const offersPromise = api("GET", "/offers").catch(() => null);
     const bookingsPromise = api("GET", "/bookings").catch(() => null);
+    const readoutPromise = api("GET", "/me/performance-readout").catch(() => null);
     const d = await api("GET", "/me/business-home");
     const h = d.home;
     if (!document.getElementById("tab-body")) return;
@@ -8241,9 +9660,57 @@ async function loadBusinessHome() {
       try { dismissed = !!localStorage.getItem(dismissKey); } catch (e) { /* storage unavailable: show the prompt */ }
       if (!dismissed) items.push({ cls: 4, at: now, text: season.text, short: season.short, btn: "Find creators", act: () => go("dashboard", "Discover"), dismissKey });
     }
+    // Sig activation (Jeff, 2026-10-28): first-move prompts
+    // (class 4) for a set-up business with nothing posted yet,
+    // then the idea bank (class 5) driven by home.sigSignals.
+    // Every signal play cites the count of the exact cohort its
+    // button's Discover search returns and renders only when
+    // that count is at least 1; the category play's button is
+    // the offer composer, which always succeeds.
+    const sig = h.sigSignals || {};
+    const mktName = marketTalkNameClient(u.market);
+    const plural = (n) => (n === 1 ? "" : "s");
+    const pushIdea = (id, text, btn, act, short) => { const it = sigIdeaItem(u.id, id, text, btn, act, short); if (it) items.push(it); };
+    if (offers.length === 0 && bz.about && (sig.roster || 0) > 0) {
+      add(4, now, d.marketLive
+        ? `${sig.roster} creator${plural(sig.roster)} ${sig.roster === 1 ? "is" : "are"} on the roster in ${mktName}. Post your first offer and they can apply.`
+        : `${sig.roster} creator${plural(sig.roster)} ${sig.roster === 1 ? "is" : "are"} on the founding roster in ${mktName}. Draft your first offer now; publishing switches on at launch.`,
+        "Post offer", () => { state.offersSeg = "live"; go("dashboard", "My Offers"); }, "Post your first offer");
+    }
+    if (offers.length > 0 && !offers.some((o) => o.lane === "direct") && bookings.length === 0) {
+      add(4, now, "Invite a creator directly at their listed rate. An invite goes to one creator, by name.", "Find creators", () => go("dashboard", "Discover"), "Invite a creator directly");
+    }
+    if ((sig.campus || 0) > 0 && sig.campusTop) {
+      const lead = SIG_CAMPUS_LEADINS[bz.category] || SIG_CAMPUS_LEADINS.Other;
+      pushIdea("biz_campus", `${lead} ${sig.campusTop.name} has ${sig.campusTop.count} student creator${plural(sig.campusTop.count)} on the roster in ${mktName}.`, "Find students", () => { state.discoverUniversity = sig.campusTop.name; go("dashboard", "Discover"); }, "Student creators on the roster");
+    }
+    if ((sig.musiciansPerform || 0) > 0 && SIG_MUSIC_CATEGORIES.includes(bz.category)) {
+      pushIdea("biz_music_live", `A live set draws a crowd. ${sig.musiciansPerform} creator${plural(sig.musiciansPerform)} in ${mktName} ${sig.musiciansPerform === 1 ? "is" : "are"} open to performing live.`, "Find musicians", () => { state.discoverMusician = "perform"; go("dashboard", "Discover"); }, "Musicians open to live sets");
+    }
+    if ((sig.musiciansCreate || 0) > 0) {
+      pushIdea("biz_music_create", `A sound of your own: ${sig.musiciansCreate} creator${plural(sig.musiciansCreate)} in ${mktName} make${sig.musiciansCreate === 1 ? "s" : ""} music for businesses.`, "Find musicians", () => { state.discoverMusician = "create"; go("dashboard", "Discover"); }, "Creators who make music");
+    }
+    if ((sig.spanish || 0) > 0) {
+      pushIdea("biz_spanish", `Spanish-speaking customers are in ${mktName}: ${sig.spanish} creator${plural(sig.spanish)} here make${sig.spanish === 1 ? "s" : ""} content in Spanish.`, "Find creators", () => { state.discoverSpanish = true; go("dashboard", "Discover"); }, "Spanish-speaking creators here");
+    }
+    if ((sig.fresh || 0) > 0) {
+      pushIdea("biz_fresh", `New on the roster: ${sig.fresh} creator${plural(sig.fresh)} finished profiles in ${mktName} in the last two weeks.`, "Find creators", () => go("dashboard", "Discover"), "New creators on the roster");
+    }
+    pushIdea("biz_category_play", SIG_CATEGORY_PLAYS[bz.category] || SIG_CATEGORY_PLAYS.Other, "Post offer", () => { state.offersSeg = "live"; go("dashboard", "My Offers"); }, "An idea for your business");
+    // R2 closed-loop repeat (Jeff, 2026-10-28): when the
+    // readout's deterministic best performer exists, propose
+    // running it again as a queue idea (14-day suppression and
+    // the 2-idea cap apply via sigIdeaItem/capSigIdeas). The
+    // button opens Sig's proposal; the clone still passes the
+    // standard confirmation summary before anything posts.
+    const rod = await readoutPromise;
+    if (rod && !rod.empty && rod.recommendation && rod.recommendation.type === "repeat" && rod.recommendation.bookingId) {
+      const recR = rod.recommendation;
+      pushIdea("biz_repeat_" + recR.bookingId, `Repeat what worked: "${recR.title}"${recR.creatorName ? ` with ${recR.creatorName}` : ""}. ${recR.reason || ""}`, "Repeat it", () => { go("dashboard", "Sig"); setTimeout(() => sigRepeatProposal(rod), 400); }, `Repeat: "${recR.title}"`);
+    }
     state.waitCounts.bizVisits = visitToday.length + postDue.length + needsTime.length;
     items.sort((a, b) => a.cls - b.cls || a.at - b.at);
-    const queue = items.slice(0, 7);
+    const queue = capSigIdeas(items).slice(0, 7);
 
     // The launch checklist (spec §4.6): retires for good once
     // every step is done.
@@ -8281,6 +9748,7 @@ async function loadBusinessHome() {
     ${sigQueueHtml(queue, { links: caughtLinks, leadShort: greetDup, askBox: true })}
     ${checklistHtml(steps)}
     ${snapshotHtml(snapCells, "This fills in once your campaigns are live. When creators start visiting and posting, you will see applications, visits, posts, and the local reach they delivered, right here.", "Analytics")}
+    <div id="perf-card"></div>
     <h3 style="margin:20px 0 0">Activity</h3>
     <div id="biz-feed">${bizFeedHtml(state.bizFeedEvents)}</div>
     ${hasNumbers ? `<button type="button" class="more-row results-row" onclick="return go('dashboard','Analytics')"><span class="more-ic">${bnIcon("bars")}</span><span class="more-tx"><span class="more-label">Results</span><span class="more-sub">What your campaigns did.</span></span><span class="more-chev">›</span></button>` : ""}
@@ -8288,10 +9756,64 @@ async function loadBusinessHome() {
     </div>`;
     wireSigQueue(el, queue, caughtLinks);
     wireChecklist(el, steps);
+    loadPerformanceCard(el);
     renderBottomNav();
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
+}
+// ---------- Performance clarity (Jeff, 2026-10-28) ----------
+// One readout, two doors: Sig speaks these exact numbers in chat
+// (B3), and this card renders them on Home. The server computes
+// (GET /me/performance-readout); nothing here estimates. With no
+// completed data the card is the honest empty line plus the next
+// action, never a zero grid.
+function perfSeriesText(series) {
+  if (!series) return "";
+  const marks = [["Day 7", series.day7], ["Day 14", series.day14], ["Day 30", series.day30]].filter(([, v]) => v !== null && v !== undefined);
+  return marks.length ? marks.map(([k, v]) => `${k} ${fmtNum(v)} views`).join(" · ") : "";
+}
+function performanceCardHtml(ro) {
+  if (!ro) return "";
+  if (ro.empty) {
+    return `<div class="wcard"><h3>Performance</h3><p class="wc-sub" style="margin:4px 0 10px">Your funnel fills in once your campaigns are live. When a visit is redeemed and a post lands, your visits, posts, day 7 / 14 / 30 numbers, redemptions, and register value show up here, with one clear next move.</p><button type="button" class="btn small-btn" onclick="state.offersSeg='live'; return go('dashboard','My Offers')">Post an offer</button></div>`;
+  }
+  const o = ro.overall || {};
+  const cells = [
+    { num: `${o.visitsRedeemed || 0} of ${o.visitsBooked || 0}`, label: "Visits redeemed" },
+    { num: fmtNum(o.postsLive || 0), label: "Posts live" },
+  ];
+  if (o.redemptions && o.redemptions.count > 0) cells.push({ num: `${fmtNum(o.redemptions.count)} · $${fmtMoney(o.redemptions.basketTotal || 0)}`, label: "Redemptions rung up" });
+  if (o.registerValue) cells.push({ num: `$${fmtMoney(o.registerValue)}`, label: "Register value" });
+  else if (o.estimatedRegisterValue) cells.push({ num: `$${fmtMoney(o.estimatedRegisterValue)}`, label: "Estimated register value" });
+  if (o.roasScore !== null && o.roasScore !== undefined) cells.push({ num: `${o.roasScore}`, label: "ROAS score" });
+  const series = perfSeriesText(o.series);
+  const rows = (ro.offers || []).filter((r) => (r.visitsBooked || 0) > 0 || (r.postsLive || 0) > 0).slice(0, 5).map((r) => {
+    const s = perfSeriesText(r.series);
+    return `<div class="lib-row"><div class="lib-main"><div class="lib-title">${esc(r.title)}</div><div class="lib-meta">${r.visitsBooked || 0} booked · ${r.visitsRedeemed || 0} redeemed · ${r.postsLive || 0} posts live${r.views ? ` · ${fmtNum(r.views)} views` : ""}${(r.redemptions && r.redemptions.count) ? ` · ${r.redemptions.count} redemptions ($${fmtMoney(r.redemptions.basketTotal || 0)})` : ""}${s ? `<br>${esc(s)}` : ""}</div></div></div>`;
+  }).join("");
+  const rec = ro.recommendation || {};
+  const recHtml = rec.type === "repeat"
+    ? `<div class="notice blue" style="margin-top:12px"><strong>Repeat this:</strong> ${esc(rec.title || "")}${rec.creatorName ? ` with ${esc(rec.creatorName)}` : ""}. ${esc(rec.reason || "")}${rec.offerId ? `<br><button type="button" class="btn small-btn" style="margin-top:8px" onclick="return perfRepeatFromCard()">Run it again</button>` : ""}</div>`
+    : "";
+  const lic = o.licenseRequests || {};
+  const licLine = (lic.pending || 0) > 0 ? `<p class="small muted" style="margin:8px 0 0">${lic.pending} license request${lic.pending === 1 ? "" : "s"} waiting on a creator's answer.</p>` : "";
+  return `<div class="wcard"><h3>Performance</h3>
+  <div class="snap-strip" style="--snap-n:${cells.length};cursor:default">${cells.map((c) => `<span class="snap-cell"><span class="snap-num">${esc(c.num)}</span><span class="snap-lbl">${esc(c.label)}</span></span>`).join("")}</div>
+  ${series ? `<p class="small muted" style="margin:8px 0 0">Post views over time: ${esc(series)}.</p>` : ""}
+  ${rows}
+  ${licLine}
+  ${recHtml}
+  </div>`;
+}
+async function loadPerformanceCard(root) {
+  const host = (root || document).querySelector ? (root || document).querySelector("#perf-card") : document.getElementById("perf-card");
+  if (!host) return;
+  try {
+    const ro = await api("GET", "/me/performance-readout");
+    if (!document.getElementById("perf-card")) return;
+    host.innerHTML = performanceCardHtml(ro);
+  } catch (e) { /* the card is an enhancement; the home stands without it */ }
 }
 // ---------- Requests: the approvals queue (Grin Approvals) ----------
 // Tabs with counts (Waiting / Decided / Later), search + offer
@@ -8659,6 +10181,16 @@ async function renderBizProfileTab() {
           <div class="field"><label class="tgl-row"><input type="checkbox" class="sw" id="bp-music-created" ${b.musicCreated ? "checked" : ""}><span>For created music</span></label></div>
         </div>
         <div class="field"><label class="tgl-row"><input type="checkbox" class="sw" id="bp-student-open" ${b.studentOpen ? "checked" : ""}><span><strong>Open to student creators</strong><br><span class="small muted">Marks your offers and your page as open to creators who are current students. Any booking still runs as a normal visit, the same as any other creator.</span></span></label></div>
+        <h3 style="margin:18px 0 4px">Asset packet</h3>
+        <p class="wc-sub" style="margin:0 0 10px">The links and lines a creator needs to post well: your logo, your key pages, your talking points. It rides with paid offers by default (your choice per offer) and the creator sees it inside their visit view. Links must start with https://. Sig can build this with you in chat, too.</p>
+        ${(() => { const pk = b.assetPacket || {}; return `
+        <div class="field"><label>Logo link (https URL)</label><input id="bp-pk-logo" value="${esc(pk.logoUrl || "")}" placeholder="https://your-site.com/logo.png"></div>
+        <div class="field"><label>Key links (up to 6, one per line: Label | https://...)</label><textarea id="bp-pk-links" rows="4" placeholder="Menu | https://your-site.com/menu&#10;Book a table | https://your-site.com/book">${esc((pk.links || []).map((l) => `${l.label || ""} | ${l.url || ""}`).join("\n"))}</textarea></div>
+        <div class="form-2col">
+          <div class="field"><label>Your handle (for tagging)</label><input id="bp-pk-handle" value="${esc(pk.handle || "")}" placeholder="yourbusiness"></div>
+          <div class="field"><label>Hashtags (space separated, up to 6)</label><input id="bp-pk-tags" value="${esc((pk.hashtags || []).join(" "))}" placeholder="virginiabeach eatslocal"></div>
+        </div>
+        <div class="field"><label>Talking points</label><textarea id="bp-pk-points" rows="3" maxlength="600" placeholder="Family owned since 1998. The patio seats 40 and dogs are welcome.">${esc(pk.talkingPoints || "")}</textarea></div>`; })()}
         <button class="btn ws-primary" onclick="saveBusinessProfile()">Save profile</button> <span id="bp-ok" class="saved"></span>
       </div>`;
     }
@@ -8769,6 +10301,21 @@ function discoverSpanishChip(btn) {
   return false;
 }
 
+// Musicians toggle (Sig activation, Jeff, 2026-10-28): the
+// sibling of the Spanish toggle, same control, same grammar.
+// The toggle itself rides the musician attribute (mode "1");
+// Sig's idea prompts may set the "perform"/"create" modes,
+// which this toggle reflects as on and a tap clears.
+function discoverMusicianChip(btn) {
+  state.discoverMusician = state.discoverMusician ? "" : "1";
+  if (btn) {
+    btn.classList.toggle("on", !!state.discoverMusician);
+    btn.setAttribute("aria-pressed", state.discoverMusician ? "true" : "false");
+  }
+  runDiscover();
+  return false;
+}
+
 async function loadDiscover() {
   const el = document.getElementById("tab-body");
   const u = state.user;
@@ -8781,7 +10328,7 @@ async function loadDiscover() {
     <div class="filters disc-top">
       <div><label>Market</label><select id="f-market">${marketOptions(u.market)}</select></div>
     </div>
-    <div class="dspan-row"><button type="button" id="dchip-spanish" class="dspan-toggle${state.discoverSpanish ? " on" : ""}" aria-pressed="${state.discoverSpanish ? "true" : "false"}" onclick="return discoverSpanishChip(this)"><span class="dspan-check" aria-hidden="true">&#10003;</span><span class="dspan-main">Spanish-speaking creators only</span><span class="dspan-sub">Makes content in Spanish</span></button></div>
+    <div class="dspan-row"><button type="button" id="dchip-spanish" class="dspan-toggle${state.discoverSpanish ? " on" : ""}" aria-pressed="${state.discoverSpanish ? "true" : "false"}" onclick="return discoverSpanishChip(this)"><span class="dspan-check" aria-hidden="true">&#10003;</span><span class="dspan-main">Spanish-speaking creators only</span><span class="dspan-sub">Makes content in Spanish</span></button><button type="button" id="dchip-musician" class="dspan-toggle${state.discoverMusician ? " on" : ""}" style="margin-left:8px" aria-pressed="${state.discoverMusician ? "true" : "false"}" onclick="return discoverMusicianChip(this)"><span class="dspan-check" aria-hidden="true">&#10003;</span><span class="dspan-main">Musicians only</span><span class="dspan-sub">Creators who make music</span></button></div>
     <div class="dcat-row"><button type="button" data-cat="" class="dcat-chip${(state.discoverCats || []).length ? "" : " on"}" onclick="return discoverCatChip('', this)">All</button>${state.boot.creatorCategories.map((c) => `<button type="button" data-cat="${esc(c)}" class="dcat-chip${(state.discoverCats || []).includes(c) ? " on" : ""}" onclick="return discoverCatChip('${esc(c)}', this)">${esc(c)}</button>`).join("")}</div>
     <details class="filters-fold"><summary>More filters</summary>
     <div class="filters">
@@ -8848,6 +10395,7 @@ async function runDiscover() {
   if (sort) params.set("sort", sort);
   if (document.getElementById("f-paid").checked) params.set("paid", "1");
   if (state.discoverSpanish) params.set("spanish", "1");
+  if (state.discoverMusician) params.set("musician", state.discoverMusician);
   const uniSel = document.getElementById("f-university");
   state.discoverUniversity = uniSel ? uniSel.value : (state.discoverUniversity || "");
   if (state.discoverUniversity) params.set("university", state.discoverUniversity);
@@ -8967,6 +10515,9 @@ function discoverClearFilters() {
   state.discoverSpanish = false;
   const spChip = document.getElementById("dchip-spanish");
   if (spChip) { spChip.classList.remove("on"); spChip.setAttribute("aria-pressed", "false"); }
+  state.discoverMusician = "";
+  const muChip = document.getElementById("dchip-musician");
+  if (muChip) { muChip.classList.remove("on"); muChip.setAttribute("aria-pressed", "false"); }
   const mkt = document.getElementById("f-market");
   if (mkt && state.user) mkt.value = state.user.market;
   runDiscover();
@@ -9036,6 +10587,15 @@ function duplicateOffer(offerId) {
     windowdays: o.windowDays != null ? String(o.windowDays) : "", window: o.visitWindow || "",
     covers: o.covers != null ? String(o.covers) : "",
     spanish: !!o.requiresSpanish,
+    briefGoal: (o.brief && o.brief.goal) || "",
+    briefHook: (o.brief && o.brief.hook) || "",
+    briefMust: o.brief && o.brief.mustMention ? o.brief.mustMention.join("\n") : "",
+    briefDont: o.brief && o.brief.doNotSay ? o.brief.doNotSay.join("\n") : "",
+    briefTiming: (o.brief && o.brief.timing) || "",
+    briefCta: (o.brief && o.brief.callToAction) || "",
+    packetAttach: !!o.assetPacketAttached,
+    packetManual: true,
+    play: o.play || null,
   };
   state.offersSeg = "live";
   state.tab = "My Offers";
@@ -9191,13 +10751,136 @@ function offerDraftSync() {
   set("brief", "o2-brief"); set("includes", "o2-includes"); set("experience", "o2-experience");
   set("spots", "o2-spots"); set("applydays", "o2-applydays"); set("windowdays", "o2-windowdays");
   set("window", "o2-window"); set("windowmode", "o2-windowmode"); set("template", "o2-template");
+  // Brief Builder fields (Jeff, 2026-10-28): keys are prefixed
+  // so they never collide with d.brief, the paid key-points text.
+  set("briefHook", "o2-bhook"); set("briefMust", "o2-bmust"); set("briefDont", "o2-bdont");
+  set("briefTiming", "o2-btiming"); set("briefCta", "o2-bcta");
   const kind = (document.querySelector("input[name='o2-kind']:checked") || {}).value;
   if (kind) d.kind = kind;
   const covers = (document.querySelector("input[name='o2-covers']:checked") || {}).value;
   if (covers) d.covers = covers;
+  const bgoal = (document.querySelector("input[name='o2-bgoal']:checked") || {}).value;
+  if (bgoal !== undefined) d.briefGoal = bgoal || "";
+  const packet = document.getElementById("o2-packet");
+  if (packet) d.packetAttach = !!packet.checked;
   if (document.querySelector("input[name='o2-tier']")) d.tiers = [...document.querySelectorAll("input[name='o2-tier']:checked")].map((x) => x.value);
   const spanish = document.getElementById("o2-spanish");
   if (spanish) d.spanish = !!spanish.checked;
+}
+
+// Packaged plays (Sig Operator refinement R1, Jeff, 2026-10-28):
+// a play is a template over the existing brief object, never a
+// new offer type: it presets the brief goal, drafts the brief
+// fields, suggests the spots/window pattern, and names the
+// creator mix that fits. Sig offers plays during B1 (matched to
+// the business's category); the manual composer exposes the same
+// plays and produces the identical offer+brief shape.
+const SIG_PLAYS = [
+  { id: "weekend_fill", name: "Weekend Fill", goal: "more_weekend_customers", spots: 3, applyDays: 3, windowDays: 7,
+    hook: "{comped}, this weekend", mustExtra: [], timing: "Post by Friday noon so the weekend crowd sees it.",
+    cta: "Tag us and tell them to book ahead.", mix: "Locals and strong Neighbors with 40%+ local reach fill weekends best." },
+  { id: "grand_opening", name: "Grand Opening", goal: "launch_something_new", spots: 4, applyDays: 5, windowDays: 10,
+    hook: "First look at {biz}: {comped}", mustExtra: ["Opening date"], timing: "Post on opening day, early.",
+    cta: "Tell them opening week is the time to come.", mix: "A spread of tiers works here: one Headliner for reach, Locals for trust." },
+  { id: "event_night", name: "Event Night", goal: "fill_an_event", spots: 3, applyDays: 4, windowDays: 7,
+    hook: "One night only: {comped}", mustExtra: ["Event date"], timing: "Post two days before the event, and again in stories that day.",
+    cta: "Tell them seats are limited and to reserve.", mix: "Creators who post fast and often in stories fill event nights best." },
+  { id: "build_regulars", name: "Build Regulars", goal: "grow_regulars", spots: 2, applyDays: 3, windowDays: 14,
+    hook: "My new regular spot: {comped}", mustExtra: [], timing: "Post midweek, when regulars plan their week.",
+    cta: "Ask followers what their usual order is.", mix: "Small, local-heavy Neighbors and Locals read as real regulars, not ads." },
+];
+const SIG_PLAY_BY_CATEGORY = { "Restaurant": "weekend_fill", "Coffee & Bakery": "weekend_fill", "Bar": "event_night",
+  "Attraction": "event_night", "Retail": "grand_opening", "Salon & Barbershop": "build_regulars",
+  "Fitness Studio": "build_regulars", "Local Services": "build_regulars", "Other": "weekend_fill" };
+function sigPlay(id) { return SIG_PLAYS.find((p) => p.id === id) || null; }
+function playFill(tpl, bizName, comped) { return String(tpl || "").replaceAll("{biz}", bizName || "us").replaceAll("{comped}", comped || "the experience"); }
+// Applying a play to the manual composer draft: presets only
+// what the play owns (goal, brief fields, pattern numbers) and
+// leaves the business's own title/comped/tiers untouched.
+function applyPlayToDraft(playId) {
+  const d = state.offerDraft || (state.offerDraft = {});
+  const play = sigPlay(playId);
+  d.play = playId || null;
+  if (!play) { renderMyOffersPage(); return; }
+  const bizName = (state.user && state.user.business && state.user.business.businessName) || "";
+  d.briefGoal = play.goal;
+  d.briefHook = playFill(play.hook, bizName, d.comped || "");
+  d.briefMust = [bizName, ...play.mustExtra].filter(Boolean).join("\n");
+  d.briefDont = "";
+  d.briefTiming = play.timing;
+  d.briefCta = play.cta;
+  if (!d.spots) d.spots = String(play.spots);
+  renderMyOffersPage();
+  toast(`Play set: ${play.name}. The brief below is drafted from it; edit anything.`);
+}
+function composerPlaysHtml() {
+  const d = state.offerDraft || {};
+  const rec = SIG_PLAY_BY_CATEGORY[(state.user && state.user.business && state.user.business.category) || ""] || "weekend_fill";
+  return `<div class="showcase-block"><h4>Start from a play</h4><p class="small muted" style="margin:0 0 8px">A play presets the goal, the brief and the timing pattern. ${esc(sigPlay(rec).mix)}</p><div class="chiprow">${SIG_PLAYS.map((p) => `<button type="button" class="rchip${d.play === p.id ? " on" : ""}" onclick="applyPlayToDraft('${p.id}')">${esc(p.name)}${p.id === rec ? " · fits you" : ""}</button>`).join("")}${d.play ? `<button type="button" class="rchip" onclick="applyPlayToDraft(null)">No play</button>` : ""}</div>${d.play ? `<p class="small" style="margin:8px 0 0"><strong>Play: ${esc(sigPlay(d.play).name)}.</strong> <span class="muted">${esc(sigPlay(d.play).mix)}</span></p>` : ""}</div>`;
+}
+
+// Brief Builder (Jeff, 2026-10-28): the structured brief every
+// offer carries. The composer and Sig's B1 flow build the SAME
+// object through briefFromParts; the server normalizes it
+// (caps, dedupe, the locked deliverable line per kind) so both
+// paths store byte-identical shapes.
+const BRIEF_GOALS = [
+  { id: "more_weekend_customers", label: "More weekend customers", labelEs: "Más clientes el fin de semana" },
+  { id: "launch_something_new", label: "Launch something new", labelEs: "Lanzar algo nuevo" },
+  { id: "fill_an_event", label: "Fill an event", labelEs: "Llenar un evento" },
+  { id: "grow_regulars", label: "Grow regulars", labelEs: "Más clientes habituales" },
+];
+function briefGoalLabel(id) {
+  const g = BRIEF_GOALS.find((x) => x.id === id);
+  return g ? g.label : "";
+}
+function briefLines(text) {
+  return String(text || "").split(/\n+/).map((x) => x.trim()).filter(Boolean).slice(0, 3);
+}
+function briefFromParts(parts) {
+  const p = parts || {};
+  return {
+    goal: p.goal || null,
+    hook: String(p.hook || "").trim().slice(0, 140),
+    mustMention: Array.isArray(p.mustMention) ? p.mustMention.map((x) => String(x).trim()).filter(Boolean).slice(0, 3) : briefLines(p.mustMention),
+    doNotSay: Array.isArray(p.doNotSay) ? p.doNotSay.map((x) => String(x).trim()).filter(Boolean).slice(0, 3) : briefLines(p.doNotSay),
+    timing: String(p.timing || "").trim().slice(0, 140),
+    callToAction: String(p.callToAction || "").trim().slice(0, 120),
+  };
+}
+function briefFromDraft(d) {
+  return briefFromParts({ goal: d.briefGoal || null, hook: d.briefHook, mustMention: d.briefMust, doNotSay: d.briefDont, timing: d.briefTiming, callToAction: d.briefCta });
+}
+// The creator-facing "Your brief" block: renders an offer's or a
+// booking's stored brief (both carry .brief). Honest-posting line
+// rides with it: key points, never a script.
+function briefBlockHtml(x) {
+  const b = x && x.brief;
+  if (!b) return "";
+  const rows = [];
+  if (b.goal) rows.push(`<div class="ui-row"><span class="k">Goal</span><span class="v">${esc(briefGoalLabel(b.goal) || b.goal)}</span></div>`);
+  if (b.hook) rows.push(`<div class="ui-row"><span class="k">The hook</span><span class="v">${esc(b.hook)}</span></div>`);
+  if ((b.mustMention || []).length) rows.push(`<div class="ui-row"><span class="k">Must mention</span><span class="v">${b.mustMention.map(esc).join(" · ")}</span></div>`);
+  if ((b.doNotSay || []).length) rows.push(`<div class="ui-row"><span class="k">Do not say</span><span class="v">${b.doNotSay.map(esc).join(" · ")}</span></div>`);
+  if (b.deliverable) rows.push(`<div class="ui-row"><span class="k">Deliverable</span><span class="v">${esc(b.deliverable)}</span></div>`);
+  if (b.timing) rows.push(`<div class="ui-row"><span class="k">Timing</span><span class="v">${esc(b.timing)}</span></div>`);
+  if (b.callToAction) rows.push(`<div class="ui-row"><span class="k">Call to action</span><span class="v">${esc(b.callToAction)}</span></div>`);
+  if (!rows.length) return "";
+  return `<div class="showcase-block"><h4>Your brief</h4><div class="stack-list">${rows.join("")}</div><p class="small muted" style="margin:6px 0 0">Key points, never a script. Post honestly, in your own words.</p></div>`;
+}
+// The asset packet block (creator visit view): the business's
+// logo link, key links, talking points, handle and hashtags,
+// snapshotted onto the booking at booking time.
+function assetPacketBlockHtml(packet) {
+  const p = packet;
+  if (!p || (!(p.links || []).length && !p.logoUrl && !p.talkingPoints && !p.handle && !(p.hashtags || []).length)) return "";
+  const links = (p.links || []).map((l) => `<a href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.label || l.url)}</a>`).join(" · ");
+  return `<div class="showcase-block"><h4>From the business: links and assets</h4>
+  ${p.logoUrl ? `<p class="small" style="margin:0 0 4px">Logo: <a href="${esc(p.logoUrl)}" target="_blank" rel="noopener">${esc(p.logoUrl)}</a></p>` : ""}
+  ${links ? `<p class="small" style="margin:0 0 4px">${links}</p>` : ""}
+  ${p.talkingPoints ? `<p class="small" style="margin:0 0 4px">${esc(p.talkingPoints)}</p>` : ""}
+  ${p.handle || (p.hashtags || []).length ? `<p class="small muted" style="margin:0">Tag ${p.handle ? "@" + esc(p.handle) : "the business"}${(p.hashtags || []).length ? " · " + p.hashtags.map((h) => "#" + esc(h)).join(" ") : ""}</p>` : ""}
+  </div>`;
 }
 
 // Per-field inline validation: the error lands in a
@@ -9386,6 +11069,7 @@ async function loadMyOffers() {
   <div class="panel" id="offer-composer" style="margin-top:18px">
     <h3 style="margin-top:0">Create an offer</h3>
     <div id="form-error"></div>
+    ${composerPlaysHtml()}
     ${packageSummaryHtml(myPlan, planObj ? planObj.name : null)}
     <div class="field"><label>Who sees this offer ${infoBtn("lane")}</label>
     <div class="chip-row" role="tablist">
@@ -9429,6 +11113,27 @@ async function loadMyOffers() {
       <div class="field"><label>What is included <span class="opt-tag">Optional</span> ${infoBtn("includes")}</label><textarea id="o2-includes" rows="2" placeholder="Any two entrees, two drinks each, dessert to share" oninput="offerCoachUpdate()">${esc(dft.includes || "")}</textarea></div>
       <div class="field"><label>The experience <span class="opt-tag">Optional</span> ${infoBtn("experience")}</label><textarea id="o2-experience" rows="2" placeholder="Chef's counter seats, open kitchen" oninput="offerCoachUpdate()">${esc(dft.experience || "")}</textarea></div>
       <div class="field spanish-panel"><div class="lrow"><input type="checkbox" class="sw" id="o2-spanish" ${dft.spanish ? "checked" : ""} onchange="offerDraftSync()"><div><label for="o2-spanish"><strong>Content in Spanish</strong></label> <span class="opt-tag">Optional</span><p class="small muted" style="margin:2px 0 0">Reach Spanish-speaking customers with content made in Spanish. The offer is marked; it never blocks anyone from applying.</p></div></div></div>
+      </div>
+      <div class="fgroup">
+      <p class="fg-kicker">The brief</p>
+      <p class="small muted" style="margin:0 0 10px">The creator's instructions, in one block. Sig can draft this with you in chat; here it is by hand. Key points, never a script: creators post honestly, in their own words.</p>
+      <div class="field"><label>What is this offer for?</label>
+        <div class="radio-stack">
+        ${BRIEF_GOALS.map((g) => `<label class="radio-chip"><input type="radio" name="o2-bgoal" value="${g.id}" ${dft.briefGoal === g.id ? "checked" : ""} onchange="offerDraftSync()"><span>${esc(g.label)}</span></label>`).join("")}
+        <label class="radio-chip"><input type="radio" name="o2-bgoal" value="" ${!dft.briefGoal ? "checked" : ""} onchange="offerDraftSync()"><span>No set goal</span></label>
+        </div>
+      </div>
+      <div class="field"><label>The hook <span class="opt-tag">Optional</span></label><input id="o2-bhook" maxlength="140" value="${dv(dft.briefHook)}" placeholder="The one thing that makes this visit worth posting about" oninput="offerDraftSync()"></div>
+      <div class="form-2col">
+        <div class="field"><label>Must mention (up to 3, one per line)</label><textarea id="o2-bmust" rows="3" placeholder="Our full name&#10;The new patio" oninput="offerDraftSync()">${esc(dft.briefMust || "")}</textarea></div>
+        <div class="field"><label>Do not say (up to 3, one per line)</label><textarea id="o2-bdont" rows="3" placeholder="Do not call it the best in town" oninput="offerDraftSync()">${esc(dft.briefDont || "")}</textarea></div>
+      </div>
+      <div class="form-2col">
+        <div class="field"><label>Timing <span class="opt-tag">Optional</span></label><input id="o2-btiming" maxlength="140" value="${dv(dft.briefTiming)}" placeholder="Post by Sunday night" oninput="offerDraftSync()"></div>
+        <div class="field"><label>Call to action <span class="opt-tag">Optional</span></label><input id="o2-bcta" maxlength="120" value="${dv(dft.briefCta)}" placeholder="Tell followers to book through the link" oninput="offerDraftSync()"></div>
+      </div>
+      <p class="small muted">Deliverable: ${dft.kind === "paid" ? "set in the booking terms. Post within 48 hours and keep the post live at least 30 days." : "1 post + 1 story that shares the post. Post within 48 hours; one week is the hard deadline."}</p>
+      <div class="field"><label class="tgl-row"><input type="checkbox" class="sw" id="o2-packet" ${dft.packetManual ? (dft.packetAttach ? "checked" : "") : (dft.kind === "paid" ? "checked" : "")} onchange="offerDraftSync(); state.offerDraft.packetManual = true;"><span><strong>Attach my asset packet</strong>: your logo link, key links, talking points, handle and hashtags ride with the offer, and the creator sees them in their visit view. On by default for paid offers. Build or edit the packet on your business Profile.</span></label></div>
       </div>
       ${mode === "open" ? `
       <div class="fgroup tint">
@@ -9544,6 +11249,8 @@ function offerCardHtml(o) {
     <div class="ws-offer-terms">
     <p class="small muted">${terms}${o.kind === "paid" ? "" : ` &middot; ${coversLine(o)}`}</p>
     ${o.kind === "paid" && o.paidBrief ? `<p class="small"><strong>Key points for the creator:</strong> ${esc(o.paidBrief)}</p>` : ""}
+    ${briefBlockHtml(o)}
+    ${o.assetPacketAttached ? `<p class="small muted">Your asset packet rides with this offer: the creator sees your links and talking points in their visit view.</p>` : ""}
     ${o.businessReferralProgram ? `<p class="small"><strong>Referral program active:</strong> creators will see your ${o.businessReferralProgram.url ? "referral link" : "referral code"}${o.businessReferralProgram.note ? " and your note" : ""} on this offer.</p>` : ""}
     ${o.strength ? `<p class="small muted">Offer checklist ${o.strength.score} of ${o.strength.total}: ${firstMissing ? esc(firstMissing.label) : "complete"}</p>` : ""}
     </div>
@@ -9605,6 +11312,14 @@ async function createOfferV2(e, draft) {
     creatorId: mode === "direct" ? (target || null) : null,
   };
   payload.requiresSpanish = !!d.spanish;
+  // Brief Builder + asset packet (Jeff, 2026-10-28): every offer
+  // carries the structured brief; the server normalizes it and
+  // forces the locked deliverable line. The packet rides when
+  // the business chose it (their manual toggle wins; otherwise
+  // paid offers attach by default, comp offers do not).
+  payload.brief = briefFromDraft(d);
+  payload.play = d.play || null;
+  payload.assetPacketAttached = d.packetManual ? !!d.packetAttach : kind === "paid";
   if (kind === "paid") {
     payload.cashRate = parseFloat(d.rate);
     if (d.brief && d.brief.trim()) payload.paidBrief = d.brief.trim();
@@ -10135,6 +11850,27 @@ function syncBizMusicRows() {
   return true;
 }
 
+// Asset packet form reader (Jeff, 2026-10-28): links are one
+// per line, "Label | https://..." or a bare URL. The server
+// validates (https only, 6 max) and its refusal is what the
+// business sees; this reader only shapes the input.
+function packetFromForm() {
+  const val = (id) => { const el = document.getElementById(id); return el ? el.value.trim() : ""; };
+  const links = val("bp-pk-links").split(/\n+/).map((line) => {
+    const t = line.trim();
+    if (!t) return null;
+    const parts = t.split("|").map((x) => x.trim());
+    return parts.length > 1 ? { label: parts[0], url: parts.slice(1).join("|") } : { label: "", url: parts[0] };
+  }).filter(Boolean).slice(0, 6);
+  return {
+    logoUrl: val("bp-pk-logo"),
+    links,
+    talkingPoints: val("bp-pk-points"),
+    handle: val("bp-pk-handle").replace(/^@/, ""),
+    hashtags: val("bp-pk-tags").split(/[\s,]+/).map((x) => x.replace(/^#/, "")).filter(Boolean).slice(0, 6),
+  };
+}
+
 async function saveBusinessProfile() {
   try {
     const data = await api("PATCH", "/me/profile", {
@@ -10148,6 +11884,7 @@ async function saveBusinessProfile() {
       musicCreated: document.getElementById("bp-music-created").checked,
       studentOpen: document.getElementById("bp-student-open").checked,
       preferredLanguage: document.getElementById("bp-lang").value,
+      assetPacket: packetFromForm(),
     });
     state.user = data.user;
     render();
