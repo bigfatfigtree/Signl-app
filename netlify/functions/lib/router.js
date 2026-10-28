@@ -3048,6 +3048,23 @@ async function discoverCards(query, viewer) {
   let creators = users.filter((u) => isRosterCreator(u) && profileCompleteOf(u) && standingState(u) !== "banned");
   const market = query.market || (viewer && viewer.role === "business" ? viewer.market : null);
   if (market) creators = creators.filter((u) => normalizeMarketName(u.market) === (marketByName(market) || {}).name);
+  // Campus facet (university layers U1, Jeff, 2026-10-28): the
+  // universities a business can filter this market by — the
+  // canonical schools of roster, profile-complete CURRENT students
+  // in the effective market, with counts. Computed here, before
+  // the remaining filters (including the university filter
+  // itself), so the option list stays stable while the business
+  // narrows the roster. Schools with no current-student roster
+  // creator in the market never appear.
+  const universityFacet = (() => {
+    const counts = new Map();
+    for (const u of creators) {
+      if (!campusBadgeFor(u)) continue;
+      const name = universityOfRecord(u);
+      if (name) counts.set(name, (counts.get(name) || 0) + 1);
+    }
+    return [...counts.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count || (a.name < b.name ? -1 : 1));
+  })();
   if (query.tier) creators = creators.filter((u) => u.creator && normalizeTierBand(u.creator.tierBand) === normalizeTierBand(query.tier));
   // Category filter (multi-select, Jeff, 2026-10-28): the Discover
   // chip row sends the selected set as one comma-separated
@@ -3076,6 +3093,15 @@ async function discoverCards(query, viewer) {
   // Spanish content filter (Jeff, 2026-10-28): the Discover
   // "Español" chip. Attribute only; unset means excluded here.
   if (query.spanish === "1" || query.spanish === "true") creators = creators.filter((u) => u.creator && u.creator.spanishContent === true);
+  // Campus filter (U1): current students at one university. The
+  // campus badge rule does the gating (university set AND status
+  // current_student), so an alumnus at the same school never
+  // matches; the value canonicalizes through sameUniversity, so
+  // alias spellings land on the stored canonical name.
+  if (query.university) {
+    const wantUniversity = String(query.university).trim();
+    if (wantUniversity) creators = creators.filter((u) => !!campusBadgeFor(u) && sameUniversity(universityOfRecord(u), wantUniversity));
+  }
   if (query.neighborhood) {
     const nb = String(query.neighborhood).trim().toLowerCase();
     if (nb) creators = creators.filter((u) => {
@@ -3154,10 +3180,13 @@ async function discoverCards(query, viewer) {
   // Paused creators stay visible but sink below creators in good
   // standing on EVERY sort (stable partition applied last): greyed
   // out and deprioritized until they deliver the missing post.
-  return [
-    ...out.filter((c) => c.standing !== "paused"),
-    ...out.filter((c) => c.standing === "paused"),
-  ];
+  return {
+    creators: [
+      ...out.filter((c) => c.standing !== "paused"),
+      ...out.filter((c) => c.standing === "paused"),
+    ],
+    universities: universityFacet,
+  };
 }
 
 async function publicCreator(u, viewer, foundingPriority) {
@@ -9312,8 +9341,8 @@ async function route(event) {
     // nothing is written to the store and no event is logged, so a
     // preview offer can never reach a creator, a count, or a metric.
     if (method === "GET" && seg[1] === "preview" && seg[2] === "discover") {
-      const creators = await discoverCards(query, { id: "__preview__", role: "business", market: null });
-      return json(200, { creators: creators.map(decoratePreviewCard), preview: true });
+      const disc = await discoverCards(query, { id: "__preview__", role: "business", market: null });
+      return json(200, { creators: disc.creators.map(decoratePreviewCard), universities: disc.universities, preview: true });
     }
     if (method === "GET" && seg[1] === "preview" && seg[2] === "creator" && seg[3]) {
       const target = await store.get(`user:${seg[3]}`);
@@ -9635,7 +9664,8 @@ async function route(event) {
   if (method === "GET" && seg[0] === "discover") {
     // The query itself lives in discoverCards() so the admin Business
     // Preview answers with the identical roster, filters, and sorts.
-    return json(200, { creators: await discoverCards(query, user) });
+    const disc = await discoverCards(query, user);
+    return json(200, { creators: disc.creators, universities: disc.universities });
   }
 
   // ---------- deck state: Later piles + not-a-fit (Jeff, 2026-10-26) ----------

@@ -298,8 +298,23 @@ try {
   const freeFix = await free("PATCH", "/api/me/profile", { university: "VCU" });
   check("editing a free entry into a dataset school clears the flag and stores city/state", freeFix.status === 200 && freeFix.data.user.university === "VCU" && freeFix.data.user.universityUnverified === false && freeFix.data.user.creator.universityUnverified === false && freeFix.data.user.universityCity === "Richmond", JSON.stringify(freeFix.data.user));
 
+  // ---------- U1: Discover campus filter + universities facet ----------
+  const u1All = await business("GET", "/api/discover?market=Hampton%20Roads");
+  check("U1: discover response carries the universities facet", Array.isArray(u1All.data.universities), JSON.stringify(u1All.data.universities));
+  check("U1: facet lists only schools with current-student roster creators (VCU x1)", JSON.stringify(u1All.data.universities) === JSON.stringify([{ name: "VCU", count: 1 }]), JSON.stringify(u1All.data.universities));
+  const u1Vcu = await business("GET", "/api/discover?market=Hampton%20Roads&university=VCU");
+  check("U1: filtering by VCU returns exactly the current student", (u1Vcu.data.creators || []).length === 1 && u1Vcu.data.creators[0].userId === leadId, JSON.stringify((u1Vcu.data.creators || []).map((c) => c.userId)));
+  check("U1: the alumnus at the same school never matches the campus filter", !(u1Vcu.data.creators || []).some((c) => c.userId === alumId), "");
+  const u1Alias = await business("GET", "/api/discover?market=Hampton%20Roads&university=" + encodeURIComponent("Virginia Commonwealth University"));
+  check("U1: an alias spelling canonicalizes onto the stored school", (u1Alias.data.creators || []).length === 1 && u1Alias.data.creators[0].userId === leadId, "");
+  const u1Duke = await business("GET", "/api/discover?market=Hampton%20Roads&university=" + encodeURIComponent("Duke University"));
+  check("U1: a school with roster creators but no current students filters to zero", (u1Duke.data.creators || []).length === 0, JSON.stringify((u1Duke.data.creators || []).map((c) => c.userId)));
+  const u1Preview = await admin("GET", "/api/admin/preview/discover?market=Hampton%20Roads&university=VCU");
+  check("U1: admin preview discover answers with the same filter and facet", (u1Preview.data.creators || []).length === 1 && Array.isArray(u1Preview.data.universities), JSON.stringify(u1Preview.data.universities));
+
   const appJsRes = await fetch(BASE + "/app.js");
   const appJs = await appJsRes.text();
+  check("U1: client ships the university filter on Discover and its preview twin", appJs.includes("f-university") && appJs.includes("discoverUniversity") && appJs.includes("syncUniversityOptions") && appJs.includes("pvf-university"), "");
   check("client ships dataset autocomplete on signup and profile university fields", appJs.includes("jc-university") && appJs.includes("p-university") && appJs.includes("setupUniversityAutocomplete") && appJs.includes("/data/us-colleges.json") && !appJs.includes("universityDatalistHtml"), "");
   check("client ships the unverified marker for admin", appJs.includes("(unverified)"), "");
   check("client ships the campus badge and exact campus crew line", appJs.includes("campusBadgeHtml") && appJs.includes("Your campus crew:") && appJs.includes("Campus: VCU") === false && appJs.includes("m.campusCrew.university"), "");

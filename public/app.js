@@ -37,6 +37,7 @@ const state = {
   discover: [],
   discoverCats: [], // Discover category filter: the chip row owns it, multi-select, OR semantics
   discoverSpanish: false, // Discover filter: the "Spanish-speaking creators only" toggle
+  discoverUniversity: "", // Discover filter (U1): canonical university name, "" = all; options come from the server facet
   threads: [],
   activeThread: null, // other user id
   counterCode: "",
@@ -8407,6 +8408,7 @@ async function loadDiscover() {
       <div><label>Neighborhood / area</label><input id="f-neighborhood" placeholder="For example: Oceanfront, Ghent"></div>
       <div><label>Tier</label><select id="f-tier"><option value="">All tiers</option>${state.boot.tiers.map((t) => `<option>${esc(t.id)}</option>`).join("")}</select></div>
       <div><label>Search</label><input id="f-q" placeholder="Name or handle"></div>
+      <div><label>University (current students)</label><select id="f-university"><option value="">All universities</option>${state.discoverUniversity ? `<option selected>${esc(state.discoverUniversity)}</option>` : ""}</select></div>
     </div>
     <div class="filters">
       <div><label>Would accept (comp fit)</label><select id="f-comp"><option value="">Any comp</option>${state.boot.compCategories.map((c) => `<option>${esc(c)}</option>`).join("")}</select></div>
@@ -8421,6 +8423,21 @@ async function loadDiscover() {
     <div id="discover-toggle"></div>
     <div id="discover-results">${skelHtml("Loading creators...", 2)}</div>`;
   runDiscover();
+}
+
+// Campus filter options (U1): the server facet lists the
+// universities with current-student roster creators in the
+// selected market. Rebuild the select from each response; a
+// selection that is not in the facet (the market changed, the
+// school's students left the roster) resets to All universities
+// instead of silently filtering to zero.
+function syncUniversityOptions(facet) {
+  const sel = document.getElementById("f-university");
+  if (!sel) return;
+  const names = (facet || []).map((f) => f.name);
+  const keep = state.discoverUniversity && names.includes(state.discoverUniversity) ? state.discoverUniversity : "";
+  state.discoverUniversity = keep;
+  sel.innerHTML = `<option value="">All universities</option>` + (facet || []).map((f) => `<option value="${esc(f.name)}"${f.name === keep ? " selected" : ""}>${esc(f.name)} (${f.count})</option>`).join("");
 }
 
 async function runDiscover() {
@@ -8451,9 +8468,13 @@ async function runDiscover() {
   if (sort) params.set("sort", sort);
   if (document.getElementById("f-paid").checked) params.set("paid", "1");
   if (state.discoverSpanish) params.set("spanish", "1");
+  const uniSel = document.getElementById("f-university");
+  state.discoverUniversity = uniSel ? uniSel.value : (state.discoverUniversity || "");
+  if (state.discoverUniversity) params.set("university", state.discoverUniversity);
   try {
     const data = await api("GET", "/discover?" + params.toString());
     state.discover = data.creators;
+    syncUniversityOptions(data.universities);
     if (!data.creators.length) {
       el.innerHTML = `<div class="empty-state"><span class="es-badge"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z"/></svg></span><h3>No approved creators match yet</h3><p>SIGNL is building the founding roster in this market now. Creators who sign up and get approved will appear here automatically.</p></div>`;
       return;
@@ -8557,6 +8578,9 @@ function discoverClearFilters() {
   ["f-tier", "f-comp", "f-sort"].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ""; });
   const paid = document.getElementById("f-paid");
   if (paid) paid.checked = false;
+  state.discoverUniversity = "";
+  const uniSel = document.getElementById("f-university");
+  if (uniSel) uniSel.value = "";
   state.discoverCats = [];
   syncDiscoverCatChips();
   state.discoverSpanish = false;
@@ -10654,6 +10678,7 @@ function previewDiscoverHtml() {
     <div><label>Neighborhood / area</label><input id="pvf-neighborhood" placeholder="For example: Oceanfront, Ghent"></div>
     <div><label>Tier</label><select id="pvf-tier"><option value="">All tiers</option>${state.boot.tiers.map((t) => `<option>${esc(t.id)}</option>`).join("")}</select></div>
     <div><label>Search</label><input id="pvf-q" placeholder="Name or handle"></div>
+    <div><label>University (current students)</label><select id="pvf-university"><option value="">All universities</option>${pv.university ? `<option selected>${esc(pv.university)}</option>` : ""}</select></div>
   </div>
   <div class="filters">
     <div><label>Would accept (comp fit)</label><select id="pvf-comp"><option value="">Any comp</option>${state.boot.compCategories.map((c) => `<option>${esc(c)}</option>`).join("")}</select></div>
@@ -10723,9 +10748,21 @@ async function runPreviewDiscover() {
   if (sort) params.set("sort", sort);
   const paidBox = document.getElementById("pvf-paid");
   if (paidBox && paidBox.checked) params.set("paid", "1");
+  const pvUni = val("pvf-university");
+  state.preview.university = pvUni || "";
+  if (pvUni) params.set("university", pvUni);
   try {
     const data = await api("GET", "/admin/preview/discover?" + params.toString());
     state.preview.creators = data.creators || [];
+    // Facet sync, twin of syncUniversityOptions for the preview.
+    const pvSel = document.getElementById("pvf-university");
+    if (pvSel) {
+      const facet = data.universities || [];
+      const names = facet.map((f) => f.name);
+      const keep = state.preview.university && names.includes(state.preview.university) ? state.preview.university : "";
+      state.preview.university = keep;
+      pvSel.innerHTML = `<option value="">All universities</option>` + facet.map((f) => `<option value="${esc(f.name)}"${f.name === keep ? " selected" : ""}>${esc(f.name)} (${f.count})</option>`).join("");
+    }
     renderPreviewResults();
   } catch (err) {
     if (el) el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
