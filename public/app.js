@@ -3787,10 +3787,12 @@ function sigOpHomeActions() {
     { label: ST("Find creators", "Buscar creadores"), run: async () => { sigB2Start(); sigOpPaint(); } },
     { label: ST("How am I doing?", "¿Cómo voy?"), run: async () => { await sigB3Run(); sigOpPaint(); } },
     { label: ST("Build my asset packet", "Crear mi paquete"), run: async () => { sigPacketStart(); sigOpPaint(); } },
+    { label: ST("Setup from Instagram", "Configúrame desde Instagram"), run: async () => { sigSetupStart("business"); sigOpPaint(); } },
   ];
   return [
     { label: ST("Find offers for me", "Buscar ofertas para mí"), primary: true, run: async () => { await sigC1Start(); sigOpPaint(); } },
     { label: ST("Finish my profile", "Terminar mi perfil"), run: async () => { await sigC2Start(); sigOpPaint(); } },
+    { label: ST("Setup from Instagram", "Configúrame desde Instagram"), run: async () => { sigSetupStart("creator"); sigOpPaint(); } },
     { label: ST("How am I doing?", "¿Cómo voy?"), run: async () => { await sigC3Run(); sigOpPaint(); } },
     { label: ST("Invite a creator", "Invitar a un creador"), run: async () => { sigC4Run(); sigOpPaint(); } },
   ];
