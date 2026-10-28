@@ -36,6 +36,7 @@ const state = {
   sigThread: [], // V4.1: the Sig conversation on the Sig tab ([{who, text, flow}]) — session-only, like every other Sig surface
   sigFocusAsk: false, // V4.1: set by the Home ask box so the Sig tab lands with its chat input focused
   sigFlow: null, // Sig Operator: the active in-chat action flow ({id, step, data}) — memory only until the user confirms; exiting writes nothing
+  igDrafts: null, // Handle onboarding: per-surface fetched drafts ({side, draft}) — session memory only until the summary's confirm copies values into a form; never persisted
   sigOpData: null, // Sig Operator: scratch data for the active flow (search results, readout, gaps) — session-only, never persisted
   discover: [],
   discoverCats: [], // Discover category filter: the chip row owns it, multi-select, OR semantics
@@ -3786,10 +3787,12 @@ function sigOpHomeActions() {
     { label: ST("Find creators", "Buscar creadores"), run: async () => { sigB2Start(); sigOpPaint(); } },
     { label: ST("How am I doing?", "¿Cómo voy?"), run: async () => { await sigB3Run(); sigOpPaint(); } },
     { label: ST("Build my asset packet", "Crear mi paquete"), run: async () => { sigPacketStart(); sigOpPaint(); } },
+    { label: ST("Setup from Instagram", "Configúrame desde Instagram"), run: async () => { sigSetupStart("business"); sigOpPaint(); } },
   ];
   return [
     { label: ST("Find offers for me", "Buscar ofertas para mí"), primary: true, run: async () => { await sigC1Start(); sigOpPaint(); } },
     { label: ST("Finish my profile", "Terminar mi perfil"), run: async () => { await sigC2Start(); sigOpPaint(); } },
+    { label: ST("Setup from Instagram", "Configúrame desde Instagram"), run: async () => { sigSetupStart("creator"); sigOpPaint(); } },
     { label: ST("How am I doing?", "¿Cómo voy?"), run: async () => { await sigC3Run(); sigOpPaint(); } },
     { label: ST("Invite a creator", "Invitar a un creador"), run: async () => { sigC4Run(); sigOpPaint(); } },
   ];
@@ -3798,6 +3801,7 @@ function sigOpCapabilities() {
   const u = state.user;
   if (!u) return [];
   if (u.role === "business") return [
+    ST("Set you up from your Instagram handle: profile, asset packet and a first play, after one summary.", "Configurarte desde tu usuario de Instagram: perfil, paquete y una primera jugada, tras un resumen."),
     ST("Set up a campaign here, brief included. I confirm before anything posts.", "Crear una campaña aquí, con el brief incluido. Confirmas antes de que se publique nada."),
     ST("Find creators by category, local reach, Spanish content, musicians, and more.", "Buscar creadores por categoría, alcance local, contenido en español, músicos y más."),
     ST("Track your campaigns: visits, posts, day 7 / 14 / 30 numbers, redemptions, and one clear next move.", "Seguir tus campañas: visitas, publicaciones, números al día 7 / 14 / 30, canjes y un siguiente paso claro."),
@@ -3806,6 +3810,7 @@ function sigOpCapabilities() {
   ];
   return [
     ST("Find offers that fit you, with the reason, and apply or accept after a summary.", "Buscar ofertas que te convienen, con el motivo, y aplicar o aceptar tras un resumen."),
+    ST("Set you up from your Instagram handle: name and audience pulled for your confirmation, the rest asked here.", "Configurarte desde tu usuario de Instagram: nombre y audiencia traídos para tu confirmación, lo demás se pregunta aquí."),
     ST("Finish your profile with me, one gap at a time, saved in one go.", "Terminar tu perfil conmigo, un dato a la vez, guardado de una vez."),
     ST("Track your numbers: posts live, on-time record, day 7 / 14 / 30, Momentum.", "Seguir tus números: publicaciones, puntualidad, día 7 / 14 / 30, Momentum."),
     ST("Invite other creators with your link and a ready-to-send message.", "Invitar a otros creadores con tu enlace y un mensaje listo para enviar."),
@@ -3821,10 +3826,12 @@ function sigOpIntent(norm) {
     if (has("how am i doing", "como voy", "my numbers", "mis numeros", "my results", "mis resultados", "rendimiento", "track my data", "performance")) return async () => sigB3Run();
     if (has("find creator", "find me creator", "buscar creador", "encuentra creador", "show me creator", "ver creadores", "buscar creadores")) return async () => sigB2Start();
     if (has("set up a campaign", "create an offer", "post an offer", "new offer", "make an offer", "start a campaign", "crear una oferta", "publicar una oferta", "nueva oferta", "crear campana", "una campana", "quiero una oferta", "lanzar una oferta")) return async () => sigB1Start();
+    if (has("set me up", "set up my business", "setup my business", "set up from instagram", "use my instagram", "from my instagram", "configura mi negocio", "configurar mi negocio")) return async () => sigSetupStart("business");
     return null;
   }
   if (u.role === "creator") {
     if (has("invite a creator", "invite link", "invitar a un creador", "mi enlace de invitacion", "referral link", "invite creators")) return async () => sigC4Run();
+    if (has("set me up", "set up from instagram", "use my instagram", "from my instagram", "set up my profile from", "configura mi perfil")) return async () => sigSetupStart("creator");
     if (has("finish my profile", "complete my profile", "build my profile", "terminar mi perfil", "completar mi perfil", "completar perfil")) return async () => sigC2Start();
     if (has("how am i doing", "como voy", "my numbers", "mis numeros", "my momentum", "track my data", "mis resultados")) return async () => sigC3Run();
     if (has("find offers", "offers for me", "find work", "find gigs", "buscar ofertas", "ofertas para mi", "see offers", "show me offers", "ver ofertas")) return async () => sigC1Start();
@@ -3867,6 +3874,7 @@ async function sigOpStep(text, norm) {
   if (f.id === "b1") return sigB1Step(f, text, norm);
   if (f.id === "b2") return sigB2Step(f, text, norm);
   if (f.id === "packet") return sigPacketStep(f, text, norm);
+  if (f.id === "bsetup" || f.id === "csetup") return sigSetupStep(f, text, norm);
   if (f.id === "c1") return sigC1Step(f, text, norm);
   if (f.id === "c2") return sigC2Step(f, text, norm);
 }
@@ -3920,6 +3928,10 @@ function sigB1AskPlay() {
   const f = state.sigFlow;
   const d = f.data;
   if (d.lane === "direct") { sigB1AskTitle(); return; }
+  // A play seeded into the flow (the handle-setup suggestion
+  // routes here) is a decision already made with the business;
+  // honor it instead of asking the play question twice.
+  if (d.play && sigPlay(d.play)) { sigB1AskTitle(); return; }
   f.step = "play";
   const cat = (state.user && state.user.business && state.user.business.category) || "";
   const recId = SIG_PLAY_BY_CATEGORY[cat] || "weekend_fill";
@@ -4655,6 +4667,258 @@ async function sigPacketStep(f, text, norm) {
   }
 }
 
+// ---------- Handle setup (business + creator) ----------
+// One input, an Instagram handle, becomes a draft setup the
+// user confirms (spec: signl-handle-onboarding-spec-2026-10-28).
+// The draft lives in this flow's memory only: nothing is saved
+// until the summary's yes, and the save goes through PATCH
+// /me/profile, the same endpoint C2 and the packet flow use.
+// What public data cannot see is never in the draft: a
+// creator's categories, city, local % and rates are asked by
+// C2 exactly as today; a business's category, city and links
+// are asked in this flow's ladder.
+const IG_OWNERSHIP_LINE = () => ST("Pulled from your public profile. It does not prove the account is yours.", "Tomado de tu perfil público. No prueba que la cuenta sea tuya.");
+async function sigIgFetch(handle, side) {
+  try {
+    const res = await api("POST", "/ig-prefill", { handle, side });
+    return res || { draft: null, reason: "fetch_failed" };
+  } catch (e) {
+    return { draft: null, reason: "fetch_failed" };
+  }
+}
+function sigSetupAskHandle(side) {
+  const f = state.sigFlow;
+  f.step = "handle";
+  sigOpAsk(ST("Give me your Instagram handle and I will draft your setup from your public profile: your name, your photo, the basics. You check and fix everything before anything saves. No Instagram, or rather type it yourself? Start blank instead.", "Dame tu usuario de Instagram y armo tu configuración desde tu perfil público: tu nombre, tu foto, lo básico. Revisas y corriges todo antes de guardar. ¿Sin Instagram, o prefieres escribirlo tú? Empieza en blanco."), [
+    { label: ST("Start blank instead", "Empezar en blanco"), run: () => sigOpPick(ST("Blank", "En blanco"), async () => sigSetupBlank()) },
+  ]);
+}
+async function sigSetupBlank() {
+  const f = state.sigFlow;
+  if (!f) return;
+  if (f.id === "csetup") {
+    state.sigFlow = null;
+    sigOpSay(ST("Blank it is. We will build it the regular way, one answer at a time.", "En blanco, entonces. Lo armamos de la forma regular, una respuesta a la vez."));
+    await sigC2Start();
+    sigOpPaint();
+    return;
+  }
+  f.data.values = { businessName: "", photoUrl: null, handle: "" };
+  f.step = "name";
+  sigOpAsk(ST("Blank it is. What is your business called, exactly as customers know it?", "En blanco, entonces. ¿Cómo se llama tu negocio, tal como lo conocen tus clientes?"));
+}
+async function sigSetupHandleResult(side, res) {
+  const f = state.sigFlow;
+  if (!res || !res.draft) {
+    const reason = res && res.reason;
+    f.step = "handle";
+    if (reason === "not_found") {
+      sigOpAsk(ST("That handle did not come back. Check the spelling and send it again, or start blank instead and we type everything.", "Ese usuario no apareció. Revisa cómo se escribe y envíalo de nuevo, o empieza en blanco y lo escribimos todo."), [
+        { label: ST("Start blank instead", "Empezar en blanco"), run: () => sigOpPick(ST("Blank", "En blanco"), async () => sigSetupBlank()) },
+      ]);
+    } else {
+      sigOpAsk(ST("The lookup is not answering right now, so I cannot pull your profile. Send the handle again in a moment, or start blank instead and we type everything.", "La búsqueda no responde ahora mismo, así que no puedo traer tu perfil. Envía el usuario de nuevo en un momento, o empieza en blanco y lo escribimos todo."), [
+        { label: ST("Start blank instead", "Empezar en blanco"), run: () => sigOpPick(ST("Blank", "En blanco"), async () => sigSetupBlank()) },
+      ]);
+    }
+    return;
+  }
+  const d = res.draft;
+  f.data.draft = d;
+  const fv = (k) => (d.fields[k] && d.fields[k].value !== undefined ? d.fields[k].value : null);
+  if (side === "business") {
+    f.data.values = { businessName: fv("businessName") || "", photoUrl: fv("photoUrl"), handle: d.handle };
+    f.step = "review";
+    sigOpAsk(`${ST("Here is what your public profile gives me", "Esto es lo que me da tu perfil público")}:\n${ST("Name", "Nombre")}: ${f.data.values.businessName}\n@${d.handle}${fv("photoUrl") ? `\n${ST("Photo: pulled. It can ride as your asset packet logo if you keep it.", "Foto: traída. Puede ir como el logo de tu paquete si la dejas.")}` : ""}\n${IG_OWNERSHIP_LINE()}`, [
+      ...(fv("photoUrl") ? [{ label: ST("Looks right, keep the photo", "Se ve bien, deja la foto"), primary: true, run: () => sigOpPick(ST("Looks right", "Se ve bien"), async () => { f.data.keepLogo = true; sigSetupAskCategory(); }) }] : []),
+      { label: fv("photoUrl") ? ST("Looks right, no photo", "Se ve bien, sin foto") : ST("Looks right", "Se ve bien"), primary: !fv("photoUrl"), run: () => sigOpPick(ST("Looks right", "Se ve bien"), async () => { f.data.keepLogo = false; sigSetupAskCategory(); }) },
+      { label: ST("Fix the name", "Corregir el nombre"), run: () => sigOpPick(ST("Fix name", "Corregir nombre"), async () => { f.step = "fixname"; sigOpAsk(ST("What should the name be, exactly as customers know it?", "¿Cómo debe ser el nombre, tal como lo conocen tus clientes?")); }) },
+      { label: ST("Different handle", "Otro usuario"), run: () => sigOpPick(ST("Different handle", "Otro usuario"), async () => sigSetupAskHandle("business")) },
+    ]);
+    return;
+  }
+  const fc = d.fields.followerCount;
+  f.data.values = { name: fv("displayName") || "", followerCount: fc ? fc.value : null, followerApprox: fc ? !!fc.approx : false };
+  f.step = "review";
+  sigOpAsk(`${ST("Here is what your public profile gives me", "Esto es lo que me da tu perfil público")}:\n${ST("Name", "Nombre")}: ${f.data.values.name}\n@${d.handle}${f.data.values.followerCount !== null ? ` · ${f.data.values.followerApprox ? "~" : ""}${fmtNum(f.data.values.followerCount)} ${ST("followers", "seguidores")}` : ""}\n${IG_OWNERSHIP_LINE()}\n${ST("Your categories, your city and your local reach are not public, so I will ask those the regular way right after.", "Tus categorías, tu ciudad y tu alcance local no son públicos, así que te los pregunto de la forma regular justo después.")}`, [
+    { label: ST("Looks right, save it", "Se ve bien, guardarlo"), primary: true, run: () => sigOpPick(ST("Save it", "Guardarlo"), async () => sigCSetupCommit()) },
+    { label: ST("Fix the name", "Corregir el nombre"), run: () => sigOpPick(ST("Fix name", "Corregir nombre"), async () => { f.step = "fixname"; sigOpAsk(ST("What name should your profile carry?", "¿Qué nombre debe llevar tu perfil?")); }) },
+    { label: ST("Different handle", "Otro usuario"), run: () => sigOpPick(ST("Different handle", "Otro usuario"), async () => sigSetupAskHandle("creator")) },
+  ]);
+}
+function sigSetupAskCategory() {
+  const f = state.sigFlow;
+  f.step = "category";
+  const cats = state.boot.businessCategories || [];
+  sigOpAsk(ST("What kind of business is it? Tap your category.", "¿Qué tipo de negocio es? Toca tu categoría."), cats.map((c) => ({
+    label: c,
+    run: () => sigOpPick(c, async () => { f.data.category = c; sigSetupAskCity(); }),
+  })));
+}
+function sigSetupAskCity() {
+  const f = state.sigFlow;
+  f.step = "city";
+  sigOpAsk(ST("Which city is the business in?", "¿En qué ciudad está el negocio?"));
+}
+function sigSetupAskAbout() {
+  const f = state.sigFlow;
+  f.step = "about";
+  sigOpAsk(ST("Last piece: one line about the business. It becomes your talking points, the short version creators read. Or skip.", "La última pieza: una línea sobre el negocio. Se vuelve tus puntos de conversación, la versión corta que leen los creadores. O salta."), [
+    { label: ST("Skip", "Saltar"), run: () => sigOpPick(ST("Skip", "Saltar"), async () => { f.data.about = ""; sigBSetupSummary(); }) },
+  ]);
+}
+function sigBSetupSummary() {
+  const f = state.sigFlow;
+  f.step = "summary";
+  const v = f.data.values;
+  const lines = [
+    ST("Here is your setup. Nothing is saved until you say yes:", "Esta es tu configuración. Nada se guarda hasta que digas que sí:"),
+    `${ST("Business", "Negocio")}: ${v.businessName}`,
+    `${ST("Category", "Categoría")}: ${f.data.category}`,
+    `${ST("City", "Ciudad")}: ${f.data.city}`,
+    ...(v.handle ? [`Instagram: @${v.handle}`] : []),
+    ...(f.data.keepLogo && v.photoUrl ? [ST("Packet logo: your profile photo", "Logo del paquete: tu foto de perfil")] : []),
+    `${ST("Talking points", "Puntos")}: ${f.data.about || "—"}`,
+    ...(v.handle ? [IG_OWNERSHIP_LINE()] : []),
+  ];
+  sigOpAsk(lines.join("\n"), [
+    { label: ST("Yes, save it", "Sí, guardarlo"), primary: true, run: () => sigOpPick(ST("Yes, save it", "Sí, guardarlo"), async () => sigBSetupCommit()) },
+    { label: ST("Fix about", "Corregir la línea"), run: () => sigOpPick(ST("Fix about", "Corregir la línea"), async () => { f.data.fixReturn = true; sigSetupAskAbout(); }) },
+    { label: ST("Start over", "Empezar de nuevo"), run: () => sigOpPick(ST("Start over", "Empezar de nuevo"), async () => { const id = f.id; state.sigFlow = null; sigSetupStart(id === "bsetup" ? "business" : "creator"); }) },
+  ]);
+}
+async function sigBSetupCommit() {
+  const f = state.sigFlow;
+  const v = f.data.values;
+  const cur = (state.user.business && state.user.business.assetPacket) || {};
+  const packet = {
+    logoUrl: f.data.keepLogo && v.photoUrl ? v.photoUrl : (cur.logoUrl || ""),
+    links: (cur.links || []).map((l) => ({ label: l.label || "", url: l.url || "" })),
+    talkingPoints: f.data.about || cur.talkingPoints || "",
+    handle: v.handle || cur.handle || "",
+    hashtags: (cur.hashtags || []).slice(),
+  };
+  try {
+    const res = await api("PATCH", "/me/profile", { businessName: v.businessName, category: f.data.category, city: f.data.city, about: f.data.about || "", assetPacket: packet });
+    if (res && res.user) state.user = res.user;
+    f.data.saved = true;
+    sigSetupAskPlaySignal();
+  } catch (err) {
+    f.step = "summary";
+    sigOpAsk(`${err.message}\n${ST("Nothing was saved. Review the setup and try again, or stop here.", "No se guardó nada. Revisa la configuración e inténtalo de nuevo, o para aquí.")}`, [
+      { label: ST("Review the setup", "Revisar la configuración"), primary: true, run: () => sigOpPick(ST("Review the setup", "Revisar la configuración"), async () => sigBSetupSummary()) },
+    ]);
+  }
+}
+// The one-play suggestion (Phase 1's deterministic rule, served
+// by the endpoint so the rule lives in exactly one place).
+// Signals come from confirmed answers only.
+function sigSetupAskPlaySignal() {
+  const f = state.sigFlow;
+  const cat = f.data.category || "";
+  if (cat === "Attraction") { sigSetupSuggest({ category: cat }); return; }
+  f.step = "opening";
+  sigOpAsk(ST("Saved. One last question so I can point your first campaign the right way: are you opening soon, or already open?", "Guardado. Una última pregunta para orientar bien tu primera campaña: ¿abres pronto, o ya estás abierto?"), [
+    { label: ST("Opening soon", "Abro pronto"), primary: true, run: () => sigOpPick(ST("Opening soon", "Abro pronto"), async () => sigSetupSuggest({ category: cat, opening: true })) },
+    { label: ST("Already open", "Ya abierto"), run: () => sigOpPick(ST("Already open", "Ya abierto"), async () => {
+      if (["Restaurant", "Bar", "Coffee & Bakery"].includes(cat)) {
+        f.step = "weekend";
+        sigOpAsk(ST("Are weekends your big days?", "¿Los fines de semana son tus días fuertes?"), [
+          { label: ST("Yes", "Sí"), primary: true, run: () => sigOpPick(ST("Yes", "Sí"), async () => sigSetupSuggest({ category: cat, weekendHeavy: true })) },
+          { label: ST("Not really", "No mucho"), run: () => sigOpPick(ST("Not really", "No mucho"), async () => sigSetupSuggest({ category: cat })) },
+        ]);
+      } else sigSetupSuggest({ category: cat });
+    }) },
+  ]);
+}
+async function sigSetupSuggest(signals) {
+  const f = state.sigFlow;
+  let sug = null;
+  try { const res = await api("POST", "/ig-prefill", { suggest: signals }); sug = res && res.suggestion; } catch (e) { sug = null; }
+  state.sigFlow = null;
+  if (!sug || !sigPlay(sug.play)) {
+    sigOpSay(ST("You are set up. When you are ready, say set up a campaign and we build your first offer together.", "Ya estás configurado. Cuando quieras, di crear una campaña y armamos tu primera oferta juntos."), [
+      { label: ST("Set up a campaign", "Crear una campaña"), primary: true, run: async () => { sigB1Start(); sigOpPaint(); } },
+    ]);
+    return;
+  }
+  const play = sigPlay(sug.play);
+  sigOpSay(`${ST("You are set up. Your first play", "Ya estás configurado. Tu primera jugada")}: ${sug.playLabel}. ${sug.reason}`, [
+    { label: ST("Start this play", "Empezar esta jugada"), primary: true, run: async () => { sigB1Start({ play: play.id, briefGoal: play.goal, spots: play.spots, applyDays: play.applyDays, windowDays: play.windowDays }); sigOpPaint(); } },
+    { label: ST("Not now", "Ahora no"), run: async () => { sigOpSay(ST("Left as is. The play is here whenever you are; say set up a campaign and we start from it.", "Queda así. La jugada está aquí cuando quieras; di crear una campaña y empezamos con ella.")); } },
+  ]);
+}
+async function sigCSetupCommit() {
+  const f = state.sigFlow;
+  const v = f.data.values;
+  const patch = {};
+  if (v.name) patch.name = v.name;
+  if (v.followerCount) patch.followerCount = v.followerCount;
+  try {
+    if (Object.keys(patch).length) {
+      const res = await api("PATCH", "/me/profile", patch);
+      if (res && res.user) state.user = res.user;
+    }
+    state.sigFlow = null;
+    sigOpSay(ST("Saved. Now the parts only you can answer, the same as always:", "Guardado. Ahora las partes que solo tú puedes responder, como siempre:"));
+    await sigC2Start();
+    sigOpPaint();
+  } catch (err) {
+    f.step = "review";
+    sigOpAsk(`${err.message}\n${ST("Nothing was saved. Check the details and try again, or stop here.", "No se guardó nada. Revisa los datos e inténtalo de nuevo, o para aquí.")}`, [
+      { label: ST("Try again", "Intentar de nuevo"), primary: true, run: () => sigOpPick(ST("Try again", "Intentar de nuevo"), async () => sigCSetupCommit()) },
+    ]);
+  }
+}
+function sigSetupStart(side) {
+  const f = { id: side === "business" ? "bsetup" : "csetup", step: "handle", data: {} };
+  state.sigFlow = f;
+  sigSetupAskHandle(side);
+}
+async function sigSetupStep(f, text, norm) {
+  const side = f.id === "bsetup" ? "business" : "creator";
+  const t = String(text || "").trim();
+  switch (f.step) {
+    case "handle": {
+      if (!t) { sigSetupAskHandle(side); return; }
+      const res = await sigIgFetch(t, side);
+      await sigSetupHandleResult(side, res);
+      return;
+    }
+    case "fixname": {
+      if (!t) { sigOpAsk(ST("Send the name as it should read.", "Envía el nombre como debe leerse.")); return; }
+      if (side === "business") { f.data.values.businessName = t.slice(0, 120); sigSetupAskCategory(); }
+      else {
+        f.data.values.name = t.slice(0, 80);
+        f.step = "review";
+        sigOpAsk(`${ST("Name set to", "Nombre fijado en")} ${f.data.values.name}. ${IG_OWNERSHIP_LINE()}`, [
+          { label: ST("Looks right, save it", "Se ve bien, guardarlo"), primary: true, run: () => sigOpPick(ST("Save it", "Guardarlo"), async () => sigCSetupCommit()) },
+          { label: ST("Different handle", "Otro usuario"), run: () => sigOpPick(ST("Different handle", "Otro usuario"), async () => sigSetupAskHandle("creator")) },
+        ]);
+      }
+      return;
+    }
+    case "name":
+      if (!t) { sigOpAsk(ST("Send the business name as customers know it.", "Envía el nombre del negocio como lo conocen los clientes.")); return; }
+      f.data.values.businessName = t.slice(0, 120);
+      sigSetupAskCategory();
+      return;
+    case "city":
+      if (!t) { sigOpAsk(ST("Which city is the business in?", "¿En qué ciudad está el negocio?")); return; }
+      f.data.city = t.slice(0, 60);
+      sigSetupAskAbout();
+      return;
+    case "about":
+      f.data.about = t.slice(0, 600);
+      if (f.data.fixReturn) { f.data.fixReturn = false; sigBSetupSummary(); return; }
+      sigBSetupSummary();
+      return;
+    default:
+      sigOpAsk(ST("Tap one of the options above, or say never mind to stop. Nothing is saved until you confirm at the end.", "Toca una de las opciones de arriba, o di cancelar para parar. Nada se guarda hasta que confirmes al final."));
+      return;
+  }
+}
+
 // ---------- C1: find offers (creator) ----------
 // Direct invites plus open offers, fit-ranked with the reason
 // stated; apply/accept only after a summary and a yes.
@@ -5012,6 +5276,112 @@ function syncQcPlatform() {
   if (link) link.textContent = input && input.value ? meta.host + input.value.replace(/^@/, "") : "";
 }
 
+// ---------- Instagram handle assist (screens) ----------
+// The form-surface twin of Sig's handle setup (spec:
+// signl-handle-onboarding-spec-2026-10-28). One input, a
+// handle, becomes a draft summary the user confirms; only
+// then do the confirmed values land in the host form, whose
+// own save does the writing through the existing endpoints.
+// The draft lives in state.igDrafts[uid], memory only, and
+// "Start blank instead" discards it and writes nothing. What
+// public data cannot see is never in the draft: a creator's
+// categories, city and local reach, a business's category,
+// city and links stay the form's own questions.
+function igAssistCardHtml(uid, side, opts = {}) {
+  const handleField = opts.handleFrom ? `<p class="small muted">${T("Uses the handle you typed above.", "Usa el usuario que escribiste arriba.")}</p>` : `<div class="field"><label>${T("Your Instagram handle", "Tu usuario de Instagram")}</label><input id="${uid}-ig-handle" placeholder="yourhandle"></div>`;
+  return `<div class="fgroup tint" id="${uid}-ig-card">
+    <p class="fg-kicker">${T("Fast setup", "Configuración rápida")}</p>
+    <p class="small muted">${T("Give Sig your Instagram handle and it drafts your details from your public profile. You check and fix everything before any of it is used. Nothing is saved from this card.", "Dale a Sig tu usuario de Instagram y arma tus datos desde tu perfil público. Revisas y corriges todo antes de que se use. Nada se guarda desde esta tarjeta.")}</p>
+    ${handleField}
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button type="button" class="btn" onclick="igAssistLookup('${uid}','${side}')">${T("Draft my setup", "Arma mi configuración")}</button>
+      <button type="button" class="btn ws-outline" onclick="igAssistBlank('${uid}')">${T("Start blank instead", "Empezar en blanco")}</button>
+    </div>
+    <div id="${uid}-ig-result" style="margin-top:10px"></div>
+  </div>`;
+}
+async function igAssistLookup(uid, side) {
+  const box = document.getElementById(uid + "-ig-result");
+  if (!box) return;
+  if (uid === "qc") {
+    const p = document.getElementById("qc-platform");
+    if (p && p.value !== "instagram") {
+      box.innerHTML = `<div class="notice blue">${esc(T("The fast setup reads Instagram. For other platforms, the form is the way in.", "La configuración rápida lee Instagram. Para otras plataformas, el formulario es el camino."))}</div>`;
+      return;
+    }
+  }
+  const src = document.getElementById(uid + "-ig-handle") || document.getElementById("qc-handle");
+  const handle = (src && src.value ? src.value : "").trim();
+  if (!handle) {
+    box.innerHTML = `<div class="error-box">${esc(T("Add your Instagram handle first.", "Primero agrega tu usuario de Instagram."))}</div>`;
+    return;
+  }
+  box.innerHTML = `<p class="small muted">${esc(T("Looking up your public profile...", "Buscando tu perfil público..."))}</p>`;
+  let res = null;
+  try { res = await api("POST", "/ig-prefill", { handle, side }); } catch (e) { res = null; }
+  if (!res || !res.draft) {
+    const reason = res && res.reason;
+    box.innerHTML = `<div class="notice blue">${esc(reason === "not_found"
+      ? T("That handle did not come back. Check the spelling, or start blank instead; the form works the same.", "Ese usuario no apareció. Revisa cómo se escribe, o empieza en blanco; el formulario funciona igual.")
+      : T("The lookup is not answering right now. Start blank instead, or fill the form; it works the same.", "La búsqueda no responde ahora mismo. Empieza en blanco, o llena el formulario; funciona igual."))}</div>`;
+    return;
+  }
+  (state.igDrafts = state.igDrafts || {})[uid] = { side, draft: res.draft };
+  box.innerHTML = igAssistSummaryHtml(uid, res.draft);
+}
+function igAssistSummaryHtml(uid, draft) {
+  const fv = (k) => (draft.fields[k] && draft.fields[k].value !== undefined ? draft.fields[k].value : null);
+  const photo = fv("photoUrl");
+  const name = draft.side === "business" ? fv("businessName") : fv("displayName");
+  const fc = draft.side === "creator" ? draft.fields.followerCount : null;
+  return `<div class="wcard" style="margin:0">
+    <div style="display:flex;gap:12px;align-items:center">
+      ${photo ? `<img src="${esc(photo)}" alt="" style="width:52px;height:52px;border-radius:50%;object-fit:cover" onerror="this.style.display='none'">` : ""}
+      <div><strong>@${esc(draft.handle)}</strong><div class="small muted">${esc(T("Pulled from your public profile. It does not prove the account is yours.", "Tomado de tu perfil público. No prueba que la cuenta sea tuya."))}</div></div>
+    </div>
+    <div class="field" style="margin-top:10px"><label>${draft.side === "business" ? T("Business name", "Nombre del negocio") : T("Your name", "Tu nombre")}</label><input id="${uid}-ig-name" value="${esc(name || "")}"></div>
+    ${fc && fc.value !== null ? `<div class="field"><label>${T("Instagram followers", "Seguidores en Instagram")}</label><input type="number" id="${uid}-ig-followers" min="0" value="${fc.value}">${fc.approx ? `<p class="small muted">${esc(T("Instagram shows this rounded. Type the exact count if you know it.", "Instagram lo muestra redondeado. Escribe el número exacto si lo sabes."))}</p>` : ""}</div>` : ""}
+    ${uid === "bp" && photo ? `<div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="bp-ig-logo" checked><span>${T("Use this photo as my asset packet logo", "Usa esta foto como el logo de mi paquete")}</span></label></div>` : ""}
+    <p class="small muted">${esc(draft.side === "business"
+      ? T("Your category, city and links are not public, so they stay yours to add in the form. Sig never guesses them.", "Tu categoría, ciudad y enlaces no son públicos, así que los agregas tú en el formulario. Sig nunca los adivina.")
+      : T("Your categories, your city and your local reach are not public, so they stay yours to add in the form. Sig never guesses them.", "Tus categorías, tu ciudad y tu alcance local no son públicos, así que los agregas tú en el formulario. Sig nunca los adivina."))}</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button type="button" class="btn" onclick="igAssistUse('${uid}')">${T("Use these details", "Usar estos datos")}</button>
+      <button type="button" class="btn ws-outline" onclick="igAssistBlank('${uid}')">${T("Start blank instead", "Empezar en blanco")}</button>
+    </div>
+  </div>`;
+}
+function igAssistUse(uid) {
+  const st = state.igDrafts && state.igDrafts[uid];
+  const box = document.getElementById(uid + "-ig-result");
+  if (!st || !box) return;
+  const nameEl = document.getElementById(uid + "-ig-name");
+  const name = nameEl ? nameEl.value.trim() : "";
+  const set = (id, v) => { const el = document.getElementById(id); if (el && v) el.value = v; };
+  if (uid === "jc") {
+    set("jc-name", name);
+    set("jc-handle", st.draft.handle);
+    const fcEl = document.getElementById("jc-ig-followers");
+    if (fcEl && fcEl.value) set("jc-followers", fcEl.value);
+    if (typeof syncJcPlatform === "function") syncJcPlatform();
+    if (typeof syncSuggestedTier === "function") syncSuggestedTier();
+  }
+  if (uid === "jb") set("jb-business", name);
+  if (uid === "bp") {
+    set("bp-name", name);
+    set("bp-pk-handle", st.draft.handle);
+    const keepLogo = document.getElementById("bp-ig-logo");
+    const photo = st.draft.fields.photoUrl && st.draft.fields.photoUrl.value;
+    if (keepLogo && keepLogo.checked && photo) set("bp-pk-logo", photo);
+  }
+  box.innerHTML = `<div class="notice blue">${esc(T("Added to the form. Check everything, then save the form; that save is the one that counts.", "Agregado al formulario. Revisa todo y guarda el formulario; ese guardado es el que cuenta."))}</div>`;
+}
+function igAssistBlank(uid) {
+  if (state.igDrafts) delete state.igDrafts[uid];
+  const box = document.getElementById(uid + "-ig-result");
+  if (box) box.innerHTML = `<p class="small muted">${esc(T("Blank it is. The form is the whole flow.", "En blanco, entonces. El formulario es todo el proceso."))}</p>`;
+}
+
 function renderQuickClaim() {
   const pf = state.prefill || {};
   const pfMarket = pf.market || "Virginia Beach";
@@ -5036,6 +5406,7 @@ function renderQuickClaim() {
         <div class="field"><label>${T("Where is your main audience?", "¿Dónde está tu audiencia principal?")}</label>${platformChipsHtml("qc-platform", pfPlatform, "syncQcPlatform")}<p class="small muted">${T("Your main platform. Add the rest later.", "Tu plataforma principal. Agrega las demás después.")}</p><p class="small muted" id="qc-proof-note" style="display:${pfPlatform !== "instagram" ? "" : "none"}">${PROOF_DISCLOSURE}</p></div>
         <div class="field"><label id="qc-handle-label">${T("Your", "Tu")} ${esc(primaryLabelClient(pfPlatform))} ${T("handle (required)", "usuario (obligatorio)")}</label><input id="qc-handle" placeholder="yourhandle" required value="${esc(pf.handle || "")}" oninput="syncQcPlatform()"><p class="small muted" id="qc-ig-link">${pf.handle ? esc(primaryMetaClient(pfPlatform).host + pf.handle) : ""}</p><p class="small muted">${T("Paste your handle or a link to your page, so businesses and our team can view your page.", "Pega tu usuario o un enlace a tu página, para que los negocios y nuestro equipo puedan verla.")}</p></div>
       </div>
+      ${igAssistCardHtml("qc", "creator", { handleFrom: true })}
       <div class="fgroup">
         <p class="fg-kicker">${T("Your market", "Tu mercado")}</p>
         <div class="field"><label>${T("Your market", "Tu mercado")}</label><input id="qc-market-search" placeholder="${T("Search markets, for example: Dubai", "Busca mercados, por ejemplo: Dubái")}" oninput="filterQuickMarketOptions()" style="margin-bottom:6px"><select id="qc-market" onchange="syncQuickMarketChoice()">${marketOptions(pfMarket, true)}</select><p class="small muted">${T("Grouped by country. City missing? Pick \"My city is not listed yet\".", "Agrupados por país. ¿No está tu ciudad? Elige \"Mi ciudad aún no está en la lista\".")}</p></div>
@@ -5161,6 +5532,7 @@ function renderJoinCreator() {
     <p class="small">${T("In a hurry?", "¿Tienes prisa?")} <a href="#" onclick="return showQuickJoin()">${T("Claim your spot with just your handle", "Reclama tu lugar solo con tu usuario")}</a> ${T("and finish your profile after approval instead.", "y termina tu perfil después de la aprobación.")}</p>
     <div id="form-error"></div>
     <form onsubmit="return doRegisterCreator(event)">
+      ${igAssistCardHtml("jc", "creator")}
       <div class="fgroup tint">
         <p class="fg-kicker">${T("About you", "Sobre ti")}</p>
         <div class="form-2col">
@@ -5485,6 +5857,7 @@ function renderForBusinesses() {
     <div id="jb-prefill"></div>
     <div id="jb-error"></div>
     <form onsubmit="return registerBusiness(event)">
+      ${igAssistCardHtml("jb", "business")}
       <div class="fgroup tint">
         <p class="fg-kicker">Your business</p>
         <div class="form-2col">
@@ -10403,6 +10776,7 @@ async function renderBizProfileTab() {
       el.innerHTML = head + (reviews.length ? `<div class="wcard">${reviews.map((r) => `<div class="lib-row"><div class="lib-main"><div class="lib-title">${starsHtml(r.stars)} ${esc(String(r.stars))} — ${esc(r.title || "Visit")}</div><div class="lib-meta">@${esc(r.handle || "")}${r.at ? ` · ${fmtDay(r.at)}` : ""}${r.text ? `<br>${esc(r.text)}` : ""}</div></div></div>`).join("")}</div>` : `<div class="empty-card"><div class="ec-t">No reviews yet</div><div class="ec-s">Reviews come from completed visits.</div></div>`);
     } else {
       el.innerHTML = head + `
+      ${igAssistCardHtml("bp", "business")}
       <div class="wcard">
         <h3>Your business profile</h3>
         <p class="wc-sub">What creators see when they weigh your offers: your name, category, neighborhood, and a short about.</p>

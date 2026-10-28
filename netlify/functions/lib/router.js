@@ -16,6 +16,7 @@ const { runMetricsSync } = require("./metrics-sync");
 const platformConnect = require("./platform-connect");
 const { askSigAI } = require("./sigai");
 const { buildProfilePageHtml } = require("./profile-meta");
+const igPrefill = require("./ig-prefill");
 
 // ------------------------------------------------------------------
 // Launch shape (Jeff, 2026-10-18): creator founding sign-up is the
@@ -7363,6 +7364,7 @@ async function handleRegister(event) {
   return json(201, { user: await withFounding(user) }, { "Set-Cookie": auth.sessionCookie(token, secure) });
 }
 
+const igPrefillHits = new Map();
 const loginAttempts = new Map();
 async function handleLogin(event) {
   const b = parseBody(event);
@@ -8551,6 +8553,34 @@ async function route(event) {
       return { statusCode: 204, headers: foundingApplicationCors(event), body: "" };
     }
     if (method === "POST") return handleFoundingApplication(event);
+  }
+
+  // Instagram handle onboarding (Phase 2, Jeff, 2026-10-28;
+  // spec: signl-handle-onboarding-spec-2026-10-28.md). POST
+  // /api/ig-prefill turns a public handle into a DRAFT the user
+  // confirms field by field, or answers the deterministic
+  // one-play suggestion from confirmed signals. This endpoint
+  // NEVER writes to the store: a draft lives only in the
+  // caller's session until the user confirms and the save goes
+  // through the existing profile endpoints. Public profile data
+  // only; per-IP rate limited like sign-in (the upstream fetch
+  // carries its own cache and cooldown in ig-prefill.js).
+  if (method === "POST" && seg[0] === "ig-prefill" && seg.length === 1) {
+    const ip = (event.headers["x-nf-client-connection-ip"] || event.headers["x-forwarded-for"] || "unknown").toString();
+    const nowMs = Date.now();
+    const hits = (igPrefillHits.get(ip) || []).filter((t) => nowMs - t < 10 * 60 * 1000);
+    if (hits.length >= 20) return err(429, "Too many lookups in a row. Wait a few minutes and try again.");
+    hits.push(nowMs);
+    igPrefillHits.set(ip, hits);
+    const b = parseBody(event);
+    if (b.suggest && typeof b.suggest === "object") {
+      return json(200, { suggestion: igPrefill.suggestPlayForBusiness(b.suggest) });
+    }
+    const side = b.side === "business" ? "business" : "creator";
+    const res = await igPrefill.fetchIgProfile(typeof b.handle === "string" ? b.handle : "");
+    if (!res.ok) return json(200, { draft: null, reason: res.reason });
+    const draft = side === "business" ? igPrefill.businessPrefill(res.profile) : igPrefill.creatorPrefill(res.profile);
+    return json(200, { draft, cached: !!res.cached });
   }
 
   // Server-rendered profile page (netlify.toml /c/* rewrite).
