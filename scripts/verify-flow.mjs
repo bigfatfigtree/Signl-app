@@ -330,7 +330,11 @@ try {
   check("creators cannot review visits (403)", creatorReview.status === 403, String(creatorReview.status));
 
   // --- track record + reviews compute from the real visit ---
-  const pubFlow = await anon("GET", "/api/c/verifyeats757");
+  // Build -31: the proof fields (track record, reviews, best work)
+  // ride the owner view of the book-me payload; logged out sees
+  // the showcase only.
+  await creator("PATCH", "/api/me/profile", { publicPage: true });
+  const pubFlow = await creator("GET", "/api/c/verifyeats757");
   const pf = pubFlow.data.profile || {};
   check("public profile track record counts the real visit (1 visit, 1 post, 100% on time, business named)", !!pf.trackRecord && pf.trackRecord.visitsCompleted === 1 && pf.trackRecord.postsDelivered === 1 && pf.trackRecord.onTimePct === 100 && pf.trackRecord.isNew === false && (pf.trackRecord.businessesWorkedWith || []).includes("Verify Table"), JSON.stringify(pf.trackRecord));
   // Public rating threshold (Jeff, 2026-10-20 late; supersedes the
@@ -345,7 +349,7 @@ try {
   // --- best work round-trips in the full marketplace shape too ---
   const bwFlow = await creator("PATCH", "/api/me/profile", { bestWork: ["https://www.instagram.com/p/VERIFYPOST/"] });
   check("best work saves through profile edit", bwFlow.status === 200 && (bwFlow.data.user.creator.bestWork || []).length === 1, JSON.stringify(bwFlow.data.user && bwFlow.data.user.creator && bwFlow.data.user.creator.bestWork));
-  const pubFlow2 = await anon("GET", "/api/c/verifyeats757");
+  const pubFlow2 = await creator("GET", "/api/c/verifyeats757");
   check("public profile labels the best work card from the host", ((pubFlow2.data.profile || {}).bestWork || []).length === 1 && pubFlow2.data.profile.bestWork[0].label === "Watch: Instagram post" && pubFlow2.data.profile.bestWork[0].platform === "Instagram", JSON.stringify((pubFlow2.data.profile || {}).bestWork));
 
   // --- preview isolation inside the live marketplace ---

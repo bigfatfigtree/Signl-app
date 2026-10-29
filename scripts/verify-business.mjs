@@ -85,6 +85,9 @@ async function makeCreator(admin, { name, email, handle, followers, localPct }) 
   });
   if (reg.status !== 201) throw new Error(`creator ${handle} failed: ${JSON.stringify(reg.data)}`);
   await admin("POST", "/api/admin/review", { userId: reg.data.user.id, decision: "approve" });
+  // Charter stamp (Build -31): fixtures finish pre-launch; the
+  // founding read seals Charter before the market toggle below.
+  await c("GET", "/api/me/founding");
   return { client: c, id: reg.data.user.id, handle };
 }
 

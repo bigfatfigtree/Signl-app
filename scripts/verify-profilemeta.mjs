@@ -129,6 +129,7 @@ try {
   });
   check("complete creator registers", (regComplete.status === 200 || regComplete.status === 201) && !!regComplete.data.user, JSON.stringify(regComplete.data).slice(0, 200));
   await admin("POST", "/api/admin/review", { userId: regComplete.data.user.id, decision: "approve" });
+  await complete("PATCH", "/api/me/profile", { publicPage: true });
   const incomplete = makeClient();
   const regIncomplete = await incomplete("POST", "/api/auth/register", {
     role: "creator", name: "Meta Incomplete", email: "metaincomplete@fixtures.dev", password: "<MASKED_SECRET_002>",

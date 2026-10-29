@@ -266,6 +266,9 @@ try {
   const c1 = await registerCreator(`opmain${u}`);
   const c2 = await registerCreator(`opsecond${u}`);
   await approve(c1.user.id); await approve(c2.user.id);
+  // Charter stamps (Build -31): both finished pre-launch.
+  await c1.client("GET", "/api/me/founding");
+  await c2.client("GET", "/api/me/founding");
   await approve(biz.user.id); await approve(foundingBiz.user.id);
   await activate(biz.user.id);
   // foundingBiz is approved but deliberately NOT activated.

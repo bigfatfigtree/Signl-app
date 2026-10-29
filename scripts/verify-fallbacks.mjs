@@ -57,6 +57,9 @@ try {
   const creator = client();
   const rc = await creator("POST", "/api/auth/register", { role: "creator", name: "Fallback Creator", email: "fc@fixtures.dev", password: "creator-pass-123", market: "Richmond", city: "Richmond", handle: "fallbackeats", tierBand: "Neighbors", followerCount: 900, localAudiencePct: 80, categories: ["Food & Drink"], agreedHonestPosts: true, agreedFtcDisclosure: true, agreedPostCompliance: true, agreedTerms: true });
   await admin("POST", "/api/admin/review", { userId: rc.data.user.id, decision: "approve" });
+  // Charter stamp (Build -31): finished pre-launch, so the founding
+  // read seals Charter and the 24h window never hides offers here.
+  await creator("GET", "/api/me/founding");
 
   const business = client();
   const rb = await business("POST", "/api/auth/register", { role: "business", name: "Fallback Owner", businessName: "Fallback Cafe", email: "fbiz@fixtures.dev", password: "business-pass-123", market: "Richmond", city: "Richmond", category: "Coffee & Bakery", planId: "self-service", agreedTerms: true });

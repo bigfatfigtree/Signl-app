@@ -102,6 +102,13 @@ try {
   check("creator registers", regCre.status === 201, JSON.stringify(regCre.data).slice(0, 120));
   const creApprove = await admin("POST", "/api/admin/review", { userId: regCre.data.user.id, decision: "approve" });
   check("creator approved", creApprove.status === 200);
+  // Charter stamp (Build -31): this suite flipped the market live
+  // before the creator existed, so flip it back off for the
+  // founding read that seals Charter, then restore it. The window
+  // must not hide the open offers makeRedeemedBooking applies to.
+  await admin("POST", "/api/admin/markets/toggle", { market: "Virginia Beach", live: false });
+  await cre("GET", "/api/me/founding");
+  await admin("POST", "/api/admin/markets/toggle", { market: "Virginia Beach", live: true });
 
   const offerRes = await biz("POST", "/api/offers", {
     lane: "direct", creatorId: regCre.data.user.id, title: "Pass dinner", whatComped: "Dinner for two",

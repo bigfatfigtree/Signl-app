@@ -272,8 +272,15 @@ try {
   const flipEvent = (eventsPc2.data.events || []).find((e) => e.subjectId === claimerId);
   check("the completion flip is logged as profile_completed via completion_flow", !!flipEvent && flipEvent.data.via === "completion_flow", JSON.stringify(flipEvent && flipEvent.data));
 
+  const pubAfter0 = await anon("GET", "/api/c/quickclaim757");
+  check("public /c/ page still 404s once complete, until the creator turns the book-me page on (opt-in)", pubAfter0.status === 404, String(pubAfter0.status));
+  await claimer("PATCH", "/api/me/profile", { publicPage: true });
+  // Charter stamp: the claimer finished while the market is
+  // pre-launch, so the founding read seals Charter status (the
+  // 24h early-access window then never hides offers from them).
+  await claimer("GET", "/api/me/founding");
   const pubAfter = await anon("GET", "/api/c/quickclaim757");
-  check("public /c/ page serves 200 once complete", pubAfter.status === 200 && pubAfter.data.profile && pubAfter.data.profile.handle === "quickclaim757", String(pubAfter.status));
+  check("public /c/ page serves 200 once complete and opted in", pubAfter.status === 200 && pubAfter.data.profile && pubAfter.data.profile.handle === "quickclaim757", String(pubAfter.status));
   const disc2 = await business("GET", "/api/discover?market=Hampton%20Roads");
   check("discovery shows the creator once complete", (disc2.data.creators || []).some((c) => c.userId === claimerId));
   const applyOk = await claimer("POST", `/api/offers/${openOfferId}/apply`, {});

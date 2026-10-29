@@ -122,6 +122,7 @@ try {
   check("realtor layer starts empty at signup (neighborhoods and brokerage are profile-edit fields)", rReg.status === 201 && JSON.stringify(rReg.data.user.creator.farmAreas) === "[]" && rReg.data.user.creator.brokerage === "", JSON.stringify(rReg.data.user.creator));
   const realtorId = rReg.data.user.id;
   await admin("POST", "/api/admin/review", { userId: realtorId, decision: "approve" });
+  await realtor("PATCH", "/api/me/profile", { publicPage: true });
 
   const pubBefore = await client()("GET", "/api/c/raerealtor");
   check("public payload flags the realtor with empty layer values before the edit", pubBefore.status === 200 && pubBefore.data.profile.profession === "Real estate agent" && pubBefore.data.profile.isRealtor === true && JSON.stringify(pubBefore.data.profile.farmAreas) === "[]" && pubBefore.data.profile.brokerage === "", JSON.stringify(pubBefore.data.profile));
@@ -134,8 +135,12 @@ try {
 
   const pub = await client()("GET", "/api/c/raerealtor");
   check("public /c/ payload carries the neighborhoods and brokerage for a realtor", pub.status === 200 && pub.data.profile.isRealtor === true && JSON.stringify(pub.data.profile.farmAreas) === JSON.stringify(["Ghent", "Ocean Lakes", "Town Center"]) && pub.data.profile.brokerage === "Harbor Lights Realty", JSON.stringify(pub.data.profile));
-  check("proof-sheet source numbers are the real stored ones (stacked audience, local pct with source)", pub.status === 200 && pub.data.profile.totalAudience === 4200 && pub.data.profile.localAudiencePct === 64 && pub.data.profile.localAudienceSource === "Self-reported", JSON.stringify(pub.data.profile));
-  check("proof-sheet gated metrics are null/zero in the payload, never invented (rating below 3, no posts yet)", pub.status === 200 && pub.data.profile.ratingAvg === null && pub.data.profile.ratingCount === 0 && pub.data.profile.trackRecord.postsDelivered === 0 && pub.data.profile.trackRecord.visitsCompleted === 0, JSON.stringify(pub.data.profile));
+  // Build -31 tiers: the proof-sheet numbers ride the owner view;
+  // the logged-out book-me payload carries none of them.
+  const pubOwn = await realtor("GET", "/api/c/raerealtor");
+  check("book-me tiers: the logged-out payload carries no stacked audience or rating fields", pub.data.profile.totalAudience === undefined && pub.data.profile.ratingAvg === undefined, JSON.stringify(pub.data.profile));
+  check("proof-sheet source numbers are the real stored ones (stacked audience, local pct with source)", pubOwn.status === 200 && pubOwn.data.profile.totalAudience === 4200 && pubOwn.data.profile.localAudiencePct === 64 && pubOwn.data.profile.localAudienceSource === "Self-reported", JSON.stringify(pubOwn.data.profile));
+  check("proof-sheet gated metrics are null/zero in the payload, never invented (rating below 3, no posts yet)", pubOwn.status === 200 && pubOwn.data.profile.ratingAvg === null && pubOwn.data.profile.ratingCount === 0 && pubOwn.data.profile.trackRecord.postsDelivered === 0 && pubOwn.data.profile.trackRecord.visitsCompleted === 0, JSON.stringify(pubOwn.data.profile));
 
   const apps = await admin("GET", "/api/admin/applications");
   const adminRow = [...(apps.data.pending || []), ...(apps.data.decided || [])].find((u) => u.id === realtorId);
@@ -164,7 +169,7 @@ try {
   check("signup without a profession stores it blank and still completes", pReg.status === 201 && pReg.data.user.creator.profession === "" && pReg.data.user.creator.profileComplete === true, JSON.stringify(pReg.data.user && pReg.data.user.creator));
   const plainId = pReg.data.user.id;
   await admin("POST", "/api/admin/review", { userId: plainId, decision: "approve" });
-  const plainSave = await plain("PATCH", "/api/me/profile", { farmAreas: ["Ghent"], brokerage: "Should Not Surface LLC" });
+  const plainSave = await plain("PATCH", "/api/me/profile", { farmAreas: ["Ghent"], brokerage: "Should Not Surface LLC", publicPage: true });
   check("a non-realtor can store layer values without error", plainSave.status === 200, JSON.stringify(plainSave.data));
   const plainPub = await client()("GET", "/api/c/plainfoodie");
   check("non-realtor public payload: not flagged, layer values never surface", plainPub.status === 200 && plainPub.data.profile.profession === "" && plainPub.data.profile.isRealtor === false && JSON.stringify(plainPub.data.profile.farmAreas) === "[]" && plainPub.data.profile.brokerage === "", JSON.stringify(plainPub.data.profile));

@@ -2838,3 +2838,47 @@ body.rail-on main, body.preview-on main { min-width: 0; }
 .charter-class { font-size: 1.05rem; font-weight: 800; color: #A9E8C9; margin-top: 6px; }
 .charter-class-sub { color: rgba(255, 255, 255, .62); font-size: .88rem; margin-top: 2px; letter-spacing: .06em; text-transform: uppercase; }
 .charter-scarcity { color: rgba(255, 255, 255, .78); font-size: .88rem; margin: 14px 0 0; }
+
+/* ---------- Build -31 (2026-10-29): proximity, first month,
+   book-me page, Charter perk ---------- */
+.charter-perk { color: #A9E8C9; font-weight: 700; font-size: .95rem; margin: 10px 0 0; }
+.charter-prompt { color: rgba(255, 255, 255, .78); font-size: .88rem; margin: 10px 0 0; }
+.charter-seal.sm { width: auto; height: auto; border-radius: 999px; padding: 5px 12px; transform: none; font-size: .68rem; letter-spacing: .08em; }
+
+.bookme-cover { display: flex; gap: 16px; align-items: center; padding: 22px; border-radius: 18px; background: #0B0D0C; color: #fff; }
+.bookme.theme-mint .bookme-cover { background: #A9E8C9; color: #0B0D0C; }
+.bookme.theme-deep .bookme-cover { background: #8FD3AC; color: #0B0D0C; }
+.bookme.theme-pale .bookme-cover { background: #E3F5EA; color: #0B0D0C; }
+.bookme.theme-mint .charter-seal.sm, .bookme.theme-deep .charter-seal.sm, .bookme.theme-pale .charter-seal.sm { border-color: #0B0D0C; color: #0B0D0C; }
+.bookme-photo { width: 84px; height: 84px; border-radius: 50%; object-fit: cover; flex: none; }
+.bookme-mono { width: 84px; height: 84px; border-radius: 50%; flex: none; }
+.bookme-name { color: inherit; }
+.bookme-handle { opacity: .75; font-size: .95rem; margin-top: 2px; }
+.bookme-cover-id .charter-seal.sm { margin-top: 8px; }
+.bookme-body { margin-top: 16px; }
+.bookme-bio { font-size: 1rem; margin: 12px 0 0; }
+.bookme-h { margin: 20px 0 10px; font-size: 1.05rem; }
+.bookme-featured { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.bookme-embed iframe { width: 100%; height: 420px; border: 1px solid #DDE7DD; border-radius: 12px; background: #fff; }
+.bookme-locked { border: 1.5px dashed #B9CDB9; background: #F4F7F4; border-radius: 12px; padding: 14px 16px; margin-top: 16px; color: #40513F; font-size: .92rem; }
+.bookme-socials { margin-top: 4px; }
+.bookme-channel { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; border: 1px solid #DDE7DD; border-radius: 12px; margin-bottom: 8px; text-decoration: none; color: #0B0D0C; background: #FAFCFA; }
+.bookme-channel-name { font-weight: 700; }
+.bookme-channel-go { color: #0C7A43; font-weight: 700; font-size: .88rem; }
+.bookme-message textarea { width: 100%; box-sizing: border-box; }
+
+.fm-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 12px; }
+.fm-week { background: #F4F7F4; border: 1px solid #DDE7DD; border-radius: 12px; padding: 10px; min-height: 92px; }
+.fm-week-h { font-size: .78rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: #40513F; margin-bottom: 8px; }
+.fm-slot { background: #fff; border: 1px solid #A9E8C9; border-radius: 10px; padding: 8px 10px; margin-bottom: 8px; }
+.fm-slot:last-child { margin-bottom: 0; }
+.fm-slot-cat { font-weight: 700; font-size: .9rem; }
+.fm-slot-type { font-size: .8rem; color: #5B6B5B; }
+@media (max-width: 560px) { .fm-grid { grid-template-columns: repeat(2, 1fr); } }
+
+.band-group { margin-bottom: 22px; }
+.band-h { font-size: 1.05rem; margin: 0 0 10px; }
+.cc-chip.band { background: #0C7A43; color: #fff; }
+.dcard-band { background: #0C7A43; color: #fff; border-radius: 999px; padding: 2px 9px; font-weight: 700; }
+
+.msg-system { text-align: center; color: #5B6B5B; font-size: .83rem; background: #F4F7F4; border: 1px dashed #B9CDB9; border-radius: 10px; padding: 8px 12px; margin: 10px auto; max-width: 88%; }

@@ -17,6 +17,131 @@ const platformConnect = require("./platform-connect");
 const { askSigAI } = require("./sigai");
 const { buildProfilePageHtml } = require("./profile-meta");
 const igPrefill = require("./ig-prefill");
+const ZIP_CENTROIDS = require("./zip-centroids.json");
+
+// ---------- Build -31: proximity, book-me page, Charter early access ----------
+// Proximity (Jeff, 2026-10-29): creators and businesses each store
+// a 5-digit ZIP only, never a street address for a creator.
+// Distances are computed from ZIP centroids (US Census Gazetteer
+// ZCTA interior points, public domain) and only ever SURFACED as
+// coarse bands. No exact distance, no pin, no per-band count ever
+// leaves the server.
+const PROXIMITY_BANDS = ["Same neighborhood", "Under 2 miles", "Under 5 miles"];
+function zipCentroid(zip) {
+  const z = String(zip || "").trim();
+  if (!/^\d{5}$/.test(z)) return null;
+  const c = ZIP_CENTROIDS[z];
+  return Array.isArray(c) ? { lat: c[0], lng: c[1] } : null;
+}
+function zipDistanceMiles(a, b) {
+  const rad = (d) => (d * Math.PI) / 180;
+  const dLat = rad(b.lat - a.lat);
+  const dLng = rad(b.lng - a.lng);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng / 2) ** 2;
+  return 3958.8 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+}
+// The band a creator falls into for one business viewer, or null.
+// A creator who turned "Show me in near-you results" off
+// (proximityOptOut) never bands; they stay on the normal roster.
+// "Same neighborhood" wins first: same ZIP, or the same typed
+// neighborhood name on both records.
+function proximityBandFor(businessUser, creatorUser) {
+  const c = (creatorUser && creatorUser.creator) || {};
+  if (c.proximityOptOut === true) return null;
+  const bz = (businessUser && businessUser.business) || {};
+  const bizZip = String(bz.zip || "").trim();
+  const crZip = String(c.zip || "").trim();
+  if (bizZip && crZip && bizZip === crZip) return "Same neighborhood";
+  const bizNb = String(bz.neighborhood || "").trim().toLowerCase();
+  const crNb = String(c.neighborhood || "").trim().toLowerCase();
+  if (bizNb && crNb && bizNb === crNb) return "Same neighborhood";
+  const a = zipCentroid(bizZip);
+  const b = zipCentroid(crZip);
+  if (a && b) {
+    const d = zipDistanceMiles(a, b);
+    if (d < 2) return "Under 2 miles";
+    if (d < 5) return "Under 5 miles";
+  }
+  return null;
+}
+// Paid, active business (Amendment 2, Jeff, 2026-10-29): the
+// business has been activated by an admin AND carries a live
+// subscription on a founding plan. past_due is revenue on the
+// partner ledger but it is not "paid", so it does not unlock.
+function businessPaidActive(u) {
+  if (!u || u.role !== "business" || !u.business) return false;
+  if (businessAccessState(u) !== "active") return false;
+  const sub = u.business.subscription;
+  return !!sub && (sub.status === "active" || sub.status === "trialing");
+}
+// Charter 24-hour early access (Jeff, 2026-10-29): in a live
+// market, a newly posted OPEN offer is visible to Charter
+// (founding) creators for its first 24 hours before non-Charter
+// creators see it. The window anchors on when the offer actually
+// went open (publishedAt, falling back to createdAt). Direct
+// offers are addressed to one named creator and are never
+// windowed. The rule is scoped to live markets only: in a market
+// that has not launched, no window applies.
+const CHARTER_EARLY_ACCESS_MS = 24 * 60 * 60 * 1000;
+function isCharterCreator(u) {
+  return !!(u && u.creator && u.creator.charter === true);
+}
+function offerVisibleToCreator(offer, creatorUser, nowMs, marketLive) {
+  if (!offer || laneOf(offer) !== "open") return true;
+  if (!marketLive) return true;
+  if (isCharterCreator(creatorUser)) return true;
+  const anchor = Date.parse(offer.publishedAt || offer.createdAt || "");
+  if (Number.isNaN(anchor)) return true;
+  return nowMs >= anchor + CHARTER_EARLY_ACCESS_MS;
+}
+// Book-me page themes (SIGNL palette only) and featured posts.
+const PAGE_THEMES = ["ink", "mint", "deep", "pale"];
+function pageThemeOf(c) {
+  return c && PAGE_THEMES.includes(c.pageTheme) ? c.pageTheme : "ink";
+}
+// Featured posts: up to 3 Instagram post/reel URLs the creator
+// pasted. Returns the normalized list, or null when any entry is
+// not an Instagram post link (the save is refused whole).
+function normalizeFeaturedPosts(list) {
+  if (!Array.isArray(list)) return null;
+  const out = [];
+  for (const raw of list) {
+    const url = String(raw || "").trim();
+    if (!url) continue;
+    const m = url.match(/^https?:\/\/(www\.)?instagram\.com\/(p|reel|reels)\/([A-Za-z0-9_-]{5,24})\/?([?#].*)?$/);
+    if (!m) return null;
+    out.push(`https://www.instagram.com/${m[2] === "reels" ? "reel" : m[2]}/${m[3]}/`);
+    if (out.length > 3) return null;
+  }
+  return [...new Set(out)];
+}
+// The social channels a Tier 2 (paid, active) business may see on
+// a book-me page: only the channels on the creator's own record,
+// only Instagram / TikTok / YouTube (Jeff's amendment list).
+function creatorSocialLinks(c) {
+  const links = [];
+  const seen = new Set();
+  const push = (platform, label, url) => {
+    if (!url || seen.has(platform)) return;
+    seen.add(platform);
+    links.push({ platform, label, url });
+  };
+  const primary = primaryProfileOf(c);
+  if (primary.platform === "instagram") push("instagram", "Instagram", primary.url);
+  else if (c.instagramUrl) push("instagram", "Instagram", c.instagramUrl);
+  if (primary.platform === "tiktok") push("tiktok", "TikTok", primary.url);
+  else if (c.tiktokUrl) push("tiktok", "TikTok", c.tiktokUrl);
+  if (c.youtubeChannel) {
+    const yc = String(c.youtubeChannel).trim();
+    push("youtube", "YouTube", /^https?:\/\//.test(yc) ? yc : `https://www.youtube.com/@${yc.replace(/^@/, "")}`);
+  }
+  return links;
+}
+// Non-circumvention reminder lines (Amendment 1, Jeff,
+// 2026-10-29). One line, plain and friendly, at the two moments
+// a booking relationship starts in-product.
+const THREAD_STARTED_LINE = "This conversation started on SIGNL, so bookings from it run through SIGNL, where the Visit Guarantee and payment protection apply.";
+const BOOKING_STARTED_LINE = "This booking started on SIGNL, so it runs through SIGNL, where the Visit Guarantee and payment protection apply.";
 
 // ------------------------------------------------------------------
 // Launch shape (Jeff, 2026-10-18): creator founding sign-up is the
@@ -1390,6 +1515,15 @@ async function isMarketLive(marketName) {
   return !!flags[normalizeMarketName(marketName)];
 }
 
+// The launch fact itself, without the TEST_MODE override: has
+// this market's live flag actually been set? Used where the
+// record matters (the Charter stamp), not for display gating.
+async function marketLaunchedByFlag(marketName) {
+  if (!marketName) return false;
+  const flags = await getMarketFlags();
+  return !!flags[normalizeMarketName(marketName)];
+}
+
 async function marketLiveMap() {
   const flags = await getMarketFlags();
   const out = {};
@@ -1967,7 +2101,11 @@ async function creatorBuzz(user) {
   const storedCharterAt = (user.creator && user.creator.charterAt) || null;
   if (storedCharterAt) {
     charter = { at: storedCharterAt };
-  } else if (user.status === "approved" && profileCompleteOf(user) && !marketLive) {
+  } else if (user.status === "approved" && profileCompleteOf(user) && !(await marketLaunchedByFlag(user.market))) {
+    // The stamp turns on the market's actual launch record (the
+    // flags), not the TEST_MODE display override in isMarketLive:
+    // a creator who finished before the launch flag was set is
+    // founding class, in every environment.
     const at = nowIso();
     const rec = await store.get(`user:${user.id}`);
     if (rec && rec.creator && !rec.creator.charterAt) {
@@ -3559,6 +3697,11 @@ async function discoverCards(query, viewer) {
   const out = [];
   for (const c of creators) {
     const card = await publicCreator(c, viewer, approvedRank.get(c.id) || null);
+    // Proximity (Build -31): a business viewer gets a coarse
+    // distance BAND per card, computed from ZIP centroids. The
+    // band is a label only: no distance, no ZIP, no pin ever
+    // rides the card. Non-business viewers get no band field.
+    if (viewer && viewer.role === "business") card.distanceBand = proximityBandFor(viewer, c);
     // Roster standing rides on the card: it is part of the order
     // businesses were promised creators would be seen in.
     card.momentum = momentum.summaryFor(c);
@@ -3637,7 +3780,7 @@ async function publicCreator(u, viewer, foundingPriority) {
     // defaults true for legacy records, paidRate is a number or
     // null (null = no paid bookings at any price).
     profile: u.creator
-      ? { ...u.creator, university, primaryPlatform: primaryProfileOf(u.creator).platform, primaryPlatformLabel: primaryProfileOf(u.creator).label, primaryProfileUrl: primaryProfileOf(u.creator).url, compOpen: u.creator.compOpen !== false, paidRate: typeof u.creator.paidRate === "number" && u.creator.paidRate > 0 ? u.creator.paidRate : null, licensingFee: typeof u.creator.licensingFee === "number" && u.creator.licensingFee > 0 ? u.creator.licensingFee : null }
+      ? { ...u.creator, university, primaryPlatform: primaryProfileOf(u.creator).platform, primaryPlatformLabel: primaryProfileOf(u.creator).label, primaryProfileUrl: primaryProfileOf(u.creator).url, compOpen: u.creator.compOpen !== false, paidRate: typeof u.creator.paidRate === "number" && u.creator.paidRate > 0 ? u.creator.paidRate : null, licensingFee: typeof u.creator.licensingFee === "number" && u.creator.licensingFee > 0 ? u.creator.licensingFee : null, zip: undefined }
       : u.creator,
     totalAudience: audienceTotalOf(u.creator || {}),
     audienceStack: audienceView(u.creator || {}).platforms,
@@ -3677,10 +3820,15 @@ function sanitizePublicHandle(raw) {
 // banned creator's page stops resolving, exactly like a pending
 // or rejected one: they are not bookable, so the public page
 // comes down until an admin reinstates them.
+// Book-me opt-in (Build -31, Jeff, 2026-10-29): the page is the
+// creator's choice. creator.publicPage must be exactly true or
+// the page does not exist (404, identical to an unknown handle).
+// The toggle lives on their Profile; the Charter card and the
+// profile itself prompt them to turn it on.
 async function findPublicProfileUser(handleKey) {
   if (!handleKey) return null;
   const matches = (await allUsers())
-    .filter((u) => isRosterCreator(u) && profileCompleteOf(u) && standingState(u) !== "banned" && u.creator && String(u.creator.handle || "").toLowerCase() === handleKey)
+    .filter((u) => isRosterCreator(u) && profileCompleteOf(u) && standingState(u) !== "banned" && u.creator && u.creator.publicPage === true && String(u.creator.handle || "").toLowerCase() === handleKey)
     .sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
   return matches[0] || null;
 }
@@ -3815,6 +3963,103 @@ async function publicProfilePayload(u) {
     ratingCount: showPublicRating ? rating.ratingCount : 0,
     visitIncludes: STANDARD_VISIT.summary,
   };
+}
+
+// ---------- book-me payload (Build -31 + Amendments 1 and 2) ----------
+// The /c/<handle> page is a gated showcase, tiered by viewer:
+//   Tier 0 (logged out, creators, partners, anyone else): the
+//     showcase only. Handle, Charter seal, local %, categories,
+//     featured posts, theme. NO rate, NO follower counts, NO
+//     social profile links, NO contact path of any kind.
+//   Tier 1 (signed-in business without a paid, active account):
+//     the showcase plus the creator's SIGNL listed rate and the
+//     Book on SIGNL action. Socials stay hidden, no messaging.
+//   Tier 2 (business with a paid, active account): Tier 1 plus
+//     the creator's social channel links (unless the creator
+//     hid them) and the in-platform Message action.
+// The owner and admins keep the full legacy stat fields so the
+// proof sheet (which reads this same payload) keeps working for
+// the person the sheet belongs to.
+function publicViewerTier(u, viewer) {
+  if (viewer && viewer.id === u.id) return { tier: 1, owner: true, canBook: false, canMessage: false };
+  if (!viewer) return { tier: 0, owner: false, canBook: false, canMessage: false };
+  if (viewer.role === "admin") return { tier: 2, owner: false, canBook: false, canMessage: false };
+  if (viewer.role === "business") {
+    if (businessPaidActive(viewer)) return { tier: 2, owner: false, canBook: true, canMessage: true };
+    return { tier: 1, owner: false, canBook: true, canMessage: false };
+  }
+  return { tier: 0, owner: false, canBook: false, canMessage: false };
+}
+
+async function bookMePayload(u, viewer) {
+  const c = u.creator || {};
+  const full = await publicProfilePayload(u);
+  const t = publicViewerTier(u, viewer);
+  const payload = {
+    name: full.name,
+    handle: full.handle,
+    university: full.university,
+    campusBadge: full.campusBadge,
+    primaryPlatform: full.primaryPlatform,
+    primaryPlatformLabel: full.primaryPlatformLabel,
+    photoUrl: full.photoUrl,
+    photos: full.photos,
+    market: full.market,
+    unlisted: full.unlisted,
+    city: full.city,
+    neighborhood: full.neighborhood,
+    tierBand: full.tierBand,
+    categories: full.categories,
+    spanishContent: full.spanishContent,
+    spanishAudiencePct: full.spanishAudiencePct,
+    musician: full.musician,
+    musicPerform: full.musicPerform,
+    musicCreate: full.musicCreate,
+    profession: full.profession,
+    isRealtor: full.isRealtor,
+    farmAreas: full.farmAreas,
+    brokerage: full.brokerage,
+    compCategories: full.compCategories,
+    compOpen: full.compOpen,
+    localAudiencePct: full.localAudiencePct,
+    localAudienceSource: full.localAudienceSource,
+    foundingBand: full.foundingBand,
+    visitIncludes: full.visitIncludes,
+    bio: c.bio || "",
+    charter: c.charter === true,
+    pageTheme: pageThemeOf(c),
+    featuredPosts: (Array.isArray(c.featuredPosts) ? c.featuredPosts : []).map((url) => ({ url, embedUrl: `${String(url).replace(/\/?$/, "/")}embed` })),
+    viewerTier: t.tier,
+    viewerIsOwner: !!t.owner,
+    canBook: !!t.canBook,
+  };
+  if (t.tier >= 1) {
+    payload.paidRate = full.paidRate;
+    payload.licensingFee = full.licensingFee;
+    payload.creatorUserId = u.id;
+  }
+  if (t.tier >= 2) {
+    payload.socialLinks = c.showSocials === false ? [] : creatorSocialLinks(c);
+    payload.socialsHiddenByCreator = c.showSocials === false;
+    payload.canMessage = !!t.canMessage;
+  }
+  if (t.owner || (viewer && viewer.role === "admin")) {
+    payload.followerCount = full.followerCount;
+    payload.totalAudience = full.totalAudience;
+    payload.audienceStack = full.audienceStack;
+    payload.primaryProfileUrl = full.primaryProfileUrl;
+    payload.instagramUrl = full.instagramUrl;
+    payload.localImpactScore = full.localImpactScore;
+    payload.momentumPoints = full.momentumPoints;
+    payload.badges = full.badges;
+    payload.bestWork = full.bestWork;
+    payload.trackRecord = full.trackRecord;
+    payload.reviewSummary = full.reviewSummary;
+    payload.reviews = full.reviews;
+    payload.ratingAvg = full.ratingAvg;
+    payload.ratingCount = full.ratingCount;
+  }
+  return payload;
 }
 
 function postState(booking, post) {
@@ -7278,6 +7523,10 @@ async function handleRegister(event) {
       // neighborhood/area and a short about, editable any time
       // from the profile settings.
       neighborhood: typeof b.neighborhood === "string" ? b.neighborhood.trim().slice(0, 80) : "",
+      // Business ZIP (Build -31): optional at sign-up, editable
+      // from the profile; the anchor proximity bands measure
+      // from. Invalid values store nothing.
+      zip: typeof b.zip === "string" && /^\d{5}$/.test(b.zip.trim()) ? b.zip.trim() : "",
       about: typeof b.about === "string" ? b.about.trim().slice(0, 600) : "",
       plan: plan.id,
       planName: `${plan.name} $${plan.priceMonthly}/mo`,
@@ -8690,12 +8939,93 @@ async function route(event) {
     }));
   }
 
-  // Public creator profile: GET /api/c/<handle>. No sign-in required;
-  // approved creators only, whitelist payload (see publicProfilePayload).
+  // Book-me page: GET /api/c/<handle>. Opted-in, approved,
+  // profile-complete creators only (findPublicProfileUser), and
+  // the payload is tiered by viewer (see bookMePayload): the
+  // public sees a showcase, businesses see the rate, and paid,
+  // active businesses additionally see socials and can message.
   if (method === "GET" && seg[0] === "c" && seg.length === 2) {
     const target = await findPublicProfileUser(sanitizePublicHandle(seg[1]));
     if (!target) return err(404, "Creator not found");
-    return json(200, { profile: await publicProfilePayload(target) });
+    return json(200, { profile: await bookMePayload(target, user) });
+  }
+
+  // Message a creator from their book-me page (Amendment 2,
+  // Jeff, 2026-10-29): a paid, active business starts an
+  // in-platform thread with the creator right from the page.
+  // The first message in a brand-new thread is preceded by the
+  // non-circumvention system line, stored as a system record
+  // the conversation view renders as a divider. This route sits
+  // before the sign-in wall and the marketplace gates on
+  // purpose: it enforces its own stricter rule (paid + active),
+  // which by definition only exists once a market is live.
+  if (method === "POST" && seg[0] === "c" && seg.length === 3 && seg[2] === "message") {
+    if (!user) return err(401, "Sign in required");
+    if (user.role !== "business") return err(403, "Businesses only");
+    if (!businessPaidActive(user)) return err(403, "Messaging a creator from their page opens with a paid, active SIGNL account.");
+    const target = await findPublicProfileUser(sanitizePublicHandle(seg[1]));
+    if (!target) return err(404, "Creator not found");
+    if (target.id === user.id) return err(400, "You cannot message yourself");
+    const b = parseBody(event);
+    const body = String(b.body || "").trim();
+    if (!body) return err(400, "Message cannot be empty");
+    if (body.length > 2000) return err(400, "That message is too long. Keep it under 2000 characters.");
+    const threadId = [user.id, target.id].sort().join("__");
+    const rows = await store.list("message:");
+    const hasPrior = rows.some((r) => r.value && r.value.threadId === threadId);
+    const ts = nowIso();
+    if (!hasPrior) {
+      // One second before the first real message, so the line
+      // always renders at the top of the conversation.
+      const sys = { id: crypto.randomUUID(), threadId, fromId: "system", toId: target.id, body: THREAD_STARTED_LINE, system: true, createdAt: new Date(Date.parse(ts) - 1000).toISOString() };
+      await store.set(`message:${sys.id}`, sys);
+    }
+    const msg = { id: crypto.randomUUID(), threadId, fromId: user.id, toId: target.id, body, createdAt: ts };
+    await store.set(`message:${msg.id}`, msg);
+    const priorNotes = await store.list(`note:${target.id}:`);
+    const alreadySignaled = priorNotes.some((r) => r.value && r.value.kind === "message_received" && !r.value.readAt && r.value.data && r.value.data.threadId === threadId);
+    if (!alreadySignaled) {
+      await notifyUser(target.id, "message_received", `${user.name} sent you a message.`, { threadId, messageId: msg.id, fromId: user.id });
+    }
+    await logEvent({ type: "message_sent", actorId: user.id, actorRole: user.role, subjectId: msg.id, market: user.market, data: { toId: target.id, toRole: "creator", threadId, bodyLength: body.length, via: "bookme_page" } });
+    return json(201, { message: msg, threadId });
+  }
+
+  // The Local List (Build -31, Jeff, 2026-10-29): the public,
+  // cross-origin feed behind joinsignl.com/local-list pages.
+  // Opted-in book-me creators only, grouped by category, and the
+  // payload carries NO counts: no totals, no per-category
+  // numbers, nothing a page could print as a roster size.
+  if (seg[0] === "public" && seg[1] === "local-list" && seg.length === 2) {
+    const cors = Object.assign(foundingApplicationCors(event), { "Access-Control-Allow-Methods": "GET, OPTIONS" });
+    if (method === "OPTIONS") return { statusCode: 204, headers: cors, body: "" };
+    if (method === "GET") {
+      const marketName = normalizeMarketName(query.market || "");
+      const users = await allUsers();
+      const opted = users
+        .filter((u) => isRosterCreator(u) && profileCompleteOf(u) && standingState(u) !== "banned" && u.creator && u.creator.publicPage === true && normalizeMarketName(u.market) === marketName)
+        .sort((a, b) => ((b.creator.localAudiencePct || 0) - (a.creator.localAudiencePct || 0)) || (a.createdAt < b.createdAt ? -1 : 1));
+      const byCategory = new Map();
+      for (const u of opted) {
+        const entry = {
+          handle: u.creator.handle,
+          localAudiencePct: u.creator.localAudiencePct === undefined ? null : u.creator.localAudiencePct,
+          categories: u.creator.categories || [],
+          charter: u.creator.charter === true,
+          neighborhood: u.creator.neighborhood || "",
+        };
+        for (const raw of entry.categories) {
+          const canon = canonicalFromList(raw, CREATOR_CATEGORIES) || raw;
+          if (!byCategory.has(canon)) byCategory.set(canon, []);
+          byCategory.get(canon).push(entry);
+        }
+      }
+      return json(200, {
+        market: marketName,
+        allCategories: CREATOR_CATEGORIES,
+        categories: CREATOR_CATEGORIES.filter((name) => byCategory.has(name)).map((name) => ({ name, creators: byCategory.get(name) })),
+      }, cors);
+    }
   }
 
   // Creator photo serving (Jeff, 2026-10-19). An APPROVED creator's
@@ -9485,6 +9815,50 @@ async function route(event) {
         changes.neighborhood = [c.neighborhood || "", nb];
         c.neighborhood = nb;
       }
+      // Proximity (Build -31): the creator's home-base ZIP. Five
+      // digits only; a street address is never asked for and
+      // never stored. Deliberately NOT a completeness field: it
+      // is prompted at completion and from home until set, and
+      // profiles stay complete with or without it.
+      if (b.zip !== undefined) {
+        const z = String(b.zip || "").trim();
+        if (z === "") { changes.zip = [c.zip || "", ""]; c.zip = ""; }
+        else if (/^\d{5}$/.test(z)) { changes.zip = [c.zip || "", z]; c.zip = z; }
+        else return err(400, "ZIP is the 5 digit code for your home base. Nothing more exact than that, ever.");
+      }
+      // "Show me in near-you results": default ON once a ZIP
+      // exists; OFF removes the creator from proximity grouping
+      // only, never from the roster itself.
+      if (b.proximityOptOut !== undefined) {
+        c.proximityOptOut = b.proximityOptOut === true;
+        changes.proximityOptOut = [user.creator.proximityOptOut === true, c.proximityOptOut];
+      }
+      // Book-me page (Build -31): opt-in public page at
+      // /c/<handle>, default OFF. Turning it on stamps when, so
+      // the prompts can stop asking.
+      if (b.publicPage !== undefined) {
+        c.publicPage = b.publicPage === true;
+        changes.publicPage = [user.creator.publicPage === true, c.publicPage];
+        if (c.publicPage && !c.publicPageAt) c.publicPageAt = ts;
+      }
+      if (b.pageTheme !== undefined) {
+        if (PAGE_THEMES.includes(b.pageTheme)) { changes.pageTheme = [pageThemeOf(user.creator), b.pageTheme]; c.pageTheme = b.pageTheme; }
+      }
+      // Featured posts: up to 3 Instagram post or reel links,
+      // validated whole (one bad link refuses the save).
+      if (b.featuredPosts !== undefined) {
+        const v = normalizeFeaturedPosts(b.featuredPosts);
+        if (!v) return err(400, "Featured posts are up to 3 Instagram post or reel links. Paste the full link to the post itself.");
+        changes.featuredPosts = [(c.featuredPosts || []).length, v.length];
+        c.featuredPosts = v;
+      }
+      // "Show my social channels to paying businesses": default
+      // ON when socials exist; OFF hides the channel rows even
+      // from paid, active businesses.
+      if (b.showSocials !== undefined) {
+        c.showSocials = b.showSocials !== false;
+        changes.showSocials = [user.creator.showSocials === false, c.showSocials];
+      }
       // Profession + realtor layer (Jeff, 2026-10-22): profession
       // is optional color from the fixed list; the realtor fields
       // (neighborhood tags, brokerage) are stored sanitized
@@ -9560,6 +9934,15 @@ async function route(event) {
       if (b.businessName) bz.businessName = String(b.businessName).trim();
       if (b.category && BUSINESS_CATEGORIES.includes(b.category)) bz.category = b.category;
       if (b.neighborhood !== undefined) bz.neighborhood = String(b.neighborhood || "").trim().slice(0, 80);
+      // Business ZIP (Build -31): the business's own address ZIP
+      // on file, the anchor proximity bands are measured from.
+      // Five digits; empty clears it.
+      if (b.zip !== undefined) {
+        const z = String(b.zip || "").trim();
+        if (z === "") delete bz.zip;
+        else if (/^\d{5}$/.test(z)) bz.zip = z;
+        else return err(400, "ZIP is the 5 digit code for your business address.");
+      }
       if (b.about !== undefined) bz.about = String(b.about || "").trim().slice(0, 600);
       // Public review-page links: host-validated, optional, shown
       // to creators as a courtesy block. No points ever attach.
@@ -10937,11 +11320,28 @@ async function route(event) {
         if (canon) present.add(canon);
       }
     }
+    // Proximity preview (Build -31): which distance bands have
+    // finished creators in them for THIS business, and which
+    // categories those bands cover. Bands and categories only:
+    // no band ever carries a creator count.
+    const bandCats = new Map();
+    for (const card of disc.creators) {
+      if (!card.distanceBand) continue;
+      if (!bandCats.has(card.distanceBand)) bandCats.set(card.distanceBand, new Set());
+      for (const raw of (card.profile && card.profile.categories) || []) {
+        const canon = canonicalFromList(raw, CREATOR_CATEGORIES) || raw;
+        if (canon) bandCats.get(card.distanceBand).add(canon);
+      }
+    }
     return json(200, {
       preview: true,
       market: user.market,
       marketLive: await isMarketLive(user.market),
       categories: CREATOR_CATEGORIES.filter((name) => present.has(name)),
+      proximity: {
+        hasZip: !!zipCentroid(user.business && user.business.zip),
+        bands: PROXIMITY_BANDS.filter((band) => bandCats.has(band)).map((band) => ({ band, categories: CREATOR_CATEGORIES.filter((name) => bandCats.get(band).has(name)) })),
+      },
     });
   }
 
@@ -11388,6 +11788,11 @@ async function route(event) {
       }
       else if (user.role === "creator") {
         out = out.filter((o) => o.market === user.market && o.status === "open" && (!o.creatorId || o.creatorId === user.id));
+        // Charter early access (Build -31): a fresh open offer is
+        // simply not in a non-Charter creator's feed yet. No
+        // marker, no "you missed out" copy: it appears at +24h.
+        const feedMarketLive = await isMarketLive(user.market);
+        out = out.filter((o) => offerVisibleToCreator(o, user, Date.now(), feedMarketLive));
         // The creator's checklist ("They can / They can't") depends on
         // the visit type (rights follow the visit, never the plan;
         // see visitRightsForVisit). Attach both per offer, plus the
@@ -11619,6 +12024,10 @@ async function route(event) {
       if (!profileCompleteOf(user)) return err(403, "Finish your founding profile before applying: businesses can only pick creators with finished profiles. Your checklist is on your dashboard, under Profile.");
       const offer = await store.get(`offer:${seg[1]}`);
       if (!offer || laneOf(offer) !== "open") return err(404, "Offer not available");
+      // Charter early access (Build -31): inside the window the
+      // offer is not available to a non-Charter creator at all,
+      // exactly as if it were not posted yet.
+      if (!offerVisibleToCreator(offer, user, Date.now(), await isMarketLive(offer.market))) return err(404, "Offer not available");
       if (offer.status !== "open") return err(409, "This offer is not taking applications right now");
       if (offer.market !== user.market) return err(403, "This offer is in a different market");
       if (offer.applicationsCloseAt && Date.now() > Date.parse(offer.applicationsCloseAt)) return err(409, "Applications for this offer have closed");
@@ -11740,6 +12149,9 @@ async function route(event) {
       // tiers whose floor its value clears (see COMP_GUIDANCE).
       if (kindOf(o) === "comp" && !(Array.isArray(o.targetTiers) && o.targetTiers.length) && Number(o.dollarCap) < (COMP_GUIDANCE[tier] || {}).floor) continue;
       if (o.applicationsCloseAt && now > Date.parse(o.applicationsCloseAt)) continue;
+      // Charter early access (Build -31): the board hides a fresh
+      // open offer from non-Charter creators for its first 24h.
+      if (!offerVisibleToCreator(o, user, now, await isMarketLive(o.market))) continue;
       const mine = apps.filter((a) => a.offerId === o.id);
       const myApp = mine.find((a) => a.creatorId === user.id && a.status !== "withdrawn");
       const biz = await store.get(`user:${o.businessId}`);
@@ -12788,7 +13200,10 @@ async function route(event) {
     }
     if (method === "GET" && seg.length === 1) {
       const rows = await store.list("message:");
-      const mine = rows.map((r) => r.value).filter((m) => m.fromId === user.id || m.toId === user.id);
+      // System records (the book-me thread opener line) render
+      // inside a conversation but never form a thread of their
+      // own in the list.
+      const mine = rows.map((r) => r.value).filter((m) => !m.system && (m.fromId === user.id || m.toId === user.id));
       const byThread = {};
       for (const m of mine) {
         const otherId = m.fromId === user.id ? m.toId : m.fromId;

@@ -121,6 +121,9 @@ async function makeCreator(handle, email, name) {
   if (reg.status !== 201) throw new Error(`creator ${handle} registration failed: ${JSON.stringify(reg.data)}`);
   const approve = await admin("POST", "/api/admin/review", { userId: reg.data.user.id, decision: "approve" });
   if (approve.status !== 200) throw new Error(`creator ${handle} approval failed`);
+  // Book-me opt-in + Charter stamp (Build -31).
+  await c("PATCH", "/api/me/profile", { publicPage: true });
+  await c("GET", "/api/me/founding");
   return { client: c, id: reg.data.user.id, handle };
 }
 
@@ -202,7 +205,7 @@ try {
   check("unrated creator: discovery ratingAvg is null and ratingCount 0 (never 0.0)", cardU0.ratingAvg === null && cardU0.ratingCount === 0, JSON.stringify([cardU0.ratingAvg, cardU0.ratingCount]));
   const foundingU = await unrated.client("GET", "/api/me/founding");
   check("unrated creator: own founding card ratingAvg null, ratingCount 0", foundingU.data.card && foundingU.data.card.ratingAvg === null && foundingU.data.card.ratingCount === 0, JSON.stringify(foundingU.data.card && [foundingU.data.card.ratingAvg, foundingU.data.card.ratingCount]));
-  const pubU = await client()("GET", "/api/c/unratedeats757");
+  const pubU = await unrated.client("GET", "/api/c/unratedeats757");
   check("unrated creator: public profile carries no rating", pubU.data.profile && pubU.data.profile.ratingAvg === null && pubU.data.profile.ratingCount === 0 && (pubU.data.profile.reviews || []).length === 0, JSON.stringify(pubU.data.profile && pubU.data.profile.ratingAvg));
 
   // --- visit 1: rating stays shut until the post proof is in ---
@@ -232,7 +235,7 @@ try {
   // --- aggregate at 1 rating: businesses see it, the public does not ---
   const cardR1 = await discoveryCard(biz1, rated.id);
   check("discovery card: ratingAvg 5, ratingCount 1 after the first rating", cardR1.ratingAvg === 5 && cardR1.ratingCount === 1, JSON.stringify([cardR1.ratingAvg, cardR1.ratingCount]));
-  const pubR1 = await client()("GET", "/api/c/ratedeats757");
+  const pubR1 = await rated.client("GET", "/api/c/ratedeats757");
   const pf1 = pubR1.data.profile || {};
   check("public profile at 1 rating: no rating data at all (threshold is 3)", pf1.ratingAvg === null && pf1.ratingCount === 0 && (pf1.reviews || []).length === 0 && !!pf1.reviewSummary && pf1.reviewSummary.count === 0 && pf1.reviewSummary.average === null, JSON.stringify([pf1.ratingAvg, pf1.ratingCount, pf1.reviewSummary]));
   const foundingR = await rated.client("GET", "/api/me/founding");
@@ -256,7 +259,7 @@ try {
   const cardR3 = await discoveryCard(biz1, rated.id);
   check("discovery card: ratingAvg 4.3 (1 decimal), ratingCount 3", cardR3.ratingAvg === 4.3 && cardR3.ratingCount === 3, JSON.stringify([cardR3.ratingAvg, cardR3.ratingCount]));
   check("discovery reviewSummary agrees with the rating fields", !!cardR3.reviewSummary && cardR3.reviewSummary.count === 3 && cardR3.reviewSummary.average === 4.3, JSON.stringify(cardR3.reviewSummary));
-  const pubR3 = await client()("GET", "/api/c/ratedeats757");
+  const pubR3 = await rated.client("GET", "/api/c/ratedeats757");
   const pf3 = pubR3.data.profile || {};
   check("public profile at 3 ratings: rating shows (avg 4.3, count 3, 3 reviews listed)", pf3.ratingAvg === 4.3 && pf3.ratingCount === 3 && (pf3.reviews || []).length === 3 && !!pf3.reviewSummary && pf3.reviewSummary.average === 4.3, JSON.stringify([pf3.ratingAvg, pf3.ratingCount, (pf3.reviews || []).length]));
 

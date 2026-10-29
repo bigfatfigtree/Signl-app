@@ -249,9 +249,13 @@ try {
   });
   const legacyId = legacyReg.data.user.id;
   await admin("POST", "/api/admin/review", { userId: legacyId, decision: "approve" });
+  await legacy("PATCH", "/api/me/profile", { publicPage: true });
   const anon = client();
-  const legacyPub = await anon("GET", "/api/c/legacy757");
-  check("legacy /c/ payload: instagram primary, primaryProfileUrl === instagramUrl (unchanged)", legacyPub.status === 200 && legacyPub.data.profile.primaryPlatform === "instagram" && legacyPub.data.profile.primaryProfileUrl === "https://instagram.com/legacy757" && legacyPub.data.profile.instagramUrl === "https://instagram.com/legacy757", JSON.stringify(legacyPub.data.profile));
+  const legacyPubAnon = await anon("GET", "/api/c/legacy757");
+  check("book-me tiers: the logged-out showcase carries the platform name but NO profile URL (no link-out)",
+    legacyPubAnon.status === 200 && legacyPubAnon.data.profile.primaryPlatform === "instagram" && legacyPubAnon.data.profile.primaryProfileUrl === undefined && legacyPubAnon.data.profile.instagramUrl === undefined, JSON.stringify(legacyPubAnon.data.profile));
+  const legacyPub = await legacy("GET", "/api/c/legacy757");
+  check("legacy /c/ payload (owner view): instagram primary, primaryProfileUrl === instagramUrl (unchanged)", legacyPub.status === 200 && legacyPub.data.profile.primaryPlatform === "instagram" && legacyPub.data.profile.primaryProfileUrl === "https://instagram.com/legacy757" && legacyPub.data.profile.instagramUrl === "https://instagram.com/legacy757", JSON.stringify(legacyPub.data.profile));
 
   // ---------- public /c/: TikTok-primary creator links TikTok ----------
   await admin("POST", "/api/admin/review", { userId: ttId, decision: "approve" });
@@ -261,10 +265,11 @@ try {
     categories: ["Food & Drink"],
     audienceStack: { tiktok: 2500 },
     localAudiencePct: 55,
+    publicPage: true,
   });
   check("tiktok claimer completes the profile through the normal gate", ttFinish.status === 200 && ttFinish.data.user.creator.profileComplete === true, JSON.stringify(ttFinish.data.user && ttFinish.data.user.creator));
-  const ttPub = await anon("GET", "/api/c/ttclaim757");
-  check("tiktok /c/ payload links the tiktok profile and carries NO instagramUrl", ttPub.status === 200 && ttPub.data.profile.primaryPlatform === "tiktok" && ttPub.data.profile.primaryPlatformLabel === "TikTok" && ttPub.data.profile.primaryProfileUrl === "https://www.tiktok.com/@ttclaim757" && !ttPub.data.profile.instagramUrl, JSON.stringify(ttPub.data.profile));
+  const ttPub = await tt("GET", "/api/c/ttclaim757");
+  check("tiktok /c/ payload (owner view) links the tiktok profile and carries NO instagramUrl", ttPub.status === 200 && ttPub.data.profile.primaryPlatform === "tiktok" && ttPub.data.profile.primaryPlatformLabel === "TikTok" && ttPub.data.profile.primaryProfileUrl === "https://www.tiktok.com/@ttclaim757" && !ttPub.data.profile.instagramUrl, JSON.stringify(ttPub.data.profile));
   check("tiktok /c/ audience stack shows the tiktok count", (ttPub.data.profile.audienceStack || []).some((p) => p.platform === "tiktok" && p.count === 2500), JSON.stringify(ttPub.data.profile.audienceStack));
 
   // ---------- profile edit: switch primary platform both ways ----------
