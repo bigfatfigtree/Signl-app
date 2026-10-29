@@ -138,6 +138,14 @@ function creatorSocialLinks(c) {
     const yc = String(c.youtubeChannel).trim();
     push("youtube", "YouTube", /^https?:\/\//.test(yc) ? yc : `https://www.youtube.com/@${yc.replace(/^@/, "")}`);
   }
+  // Build -37: LinkedIn (and the other stored channels) reveal
+  // alongside the original three, same toggle, present-only.
+  if (primary.platform === "linkedin") push("linkedin", "LinkedIn", primary.url);
+  else if (c.linkedinUrl) push("linkedin", "LinkedIn", c.linkedinUrl);
+  if (primary.platform === "facebook") push("facebook", "Facebook", primary.url);
+  else if (c.facebookUrl) push("facebook", "Facebook", c.facebookUrl);
+  if (primary.platform === "x") push("x", "X", primary.url);
+  else if (c.xUrl) push("x", "X", c.xUrl);
   return links;
 }
 // Non-circumvention reminder lines (Amendment 1, Jeff,
@@ -3193,6 +3201,11 @@ const BEST_WORK_HOSTS = [
   { hosts: ["instagram.com"], platform: "Instagram" },
   { hosts: ["tiktok.com", "vm.tiktok.com", "vt.tiktok.com"], platform: "TikTok" },
   { hosts: ["youtube.com", "m.youtube.com", "youtu.be"], platform: "YouTube" },
+  // Build -37: every primary platform is a full citizen, so
+  // post links validate on the creator's own platform hosts.
+  { hosts: ["linkedin.com"], platform: "LinkedIn" },
+  { hosts: ["facebook.com", "fb.watch"], platform: "Facebook" },
+  { hosts: ["x.com", "twitter.com"], platform: "X" },
 ];
 function bestWorkPlatform(url) {
   let u;
@@ -9402,6 +9415,8 @@ async function route(event) {
           portfolioSample: u.creator.portfolioSample || null,
           level: lvl36.level >= 2 ? lvl36.level : null,
           levelName: lvl36.level >= 2 ? lvl36.name : null,
+          primaryPlatform: primaryPlatformOf(u.creator),
+          primaryPlatformLabel: primaryPlatformLabel(primaryPlatformOf(u.creator)),
         };
         for (const raw of entry.categories) {
           const canon = canonicalFromList(raw, CREATOR_CATEGORIES) || raw;
@@ -13211,10 +13226,13 @@ async function route(event) {
     if (booking.status === "completed") return err(409, "A post was already submitted for this visit");
     const url = (b.url || "").trim();
     // The pasted link IS the check-off (Jeff, 2026-10-19): proof of
-    // the post, not a bare checkbox. It must be the Instagram post
-    // or reel itself, host-validated the same way best-work links
+    // the post, not a bare checkbox. Build -37: the link must be a
+    // post on the creator's OWN primary platform (Instagram stays
+    // the default), host-validated the same way best-work links
     // are, so the business can open exactly what was delivered.
-    if (bestWorkPlatform(url) !== "Instagram") return err(400, "Paste the full link to your Instagram post or reel. That link is your proof of delivery.");
+    const proofPlatform = bestWorkPlatform(url);
+    const myPlatformLabel = primaryPlatformLabel(primaryPlatformOf(user.creator));
+    if (proofPlatform !== myPlatformLabel) return err(400, `Paste the full link to your ${myPlatformLabel} post. That link is your proof of delivery.`);
     const ts = nowIso();
     const onTime = Date.parse(ts) <= Date.parse(booking.postDeadline);
     const post = {
@@ -13223,6 +13241,7 @@ async function route(event) {
       creatorId: user.id,
       businessId: booking.businessId,
       url,
+      platform: proofPlatform,
       submittedAt: ts,
       deadline: booking.postDeadline,
       redeemedAt: booking.redeemedAt,

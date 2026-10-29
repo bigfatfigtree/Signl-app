@@ -1097,6 +1097,23 @@ function chipSelectHtml(id, options, selected, syncName, optional) {
   const sel = selected === undefined || selected === null ? "" : String(selected);
   return `<div class="chiprow" data-chipfor="${esc(id)}"${optional ? ` data-optional="1"` : ""}>${options.map((o) => `<button type="button" class="rchip${String(o.value) === sel ? " on" : ""}" data-val="${esc(String(o.value))}" onclick="pickChip(this,'${esc(id)}'${syncName ? `,'${esc(syncName)}'` : ""})">${esc(o.label)}</button>`).join("")}</div><input type="hidden" id="${esc(id)}" value="${esc(sel)}">`;
 }
+// Pro Categories Moment (Build -37): when a creator picks a
+// professional category, the platform step surfaces LinkedIn
+// as a first-class choice. A nudge only: no default changes,
+// no preselect overrides.
+const PRO_CATS = ["Health & Wellness", "Local Services"];
+function proHintSync(prefix) {
+  const el = document.getElementById(prefix + "-pro-hint");
+  if (!el) return;
+  const name = prefix === "p" ? "p-cat" : "c-cat";
+  const picked = Array.from(document.querySelectorAll(`input[name=${name}]:checked`)).map((x) => x.value);
+  let show = picked.some((c) => PRO_CATS.includes(c));
+  if (!show && prefix === "p") {
+    const sw = document.getElementById("p-realtor");
+    if (sw && sw.checked) show = true;
+  }
+  el.style.display = show ? "" : "none";
+}
 function platformChipsHtml(id, selected, syncName) {
   return chipSelectHtml(id, PRIMARY_PLATFORMS_CLIENT.map((p) => ({ value: p.id, label: p.label })), selected || "instagram", syncName, false);
 }
@@ -1301,7 +1318,7 @@ const LOCAL_PCT_HELP = "Instagram: Insights → Audience → top cities. Add the
 // When the picked primary platform is not Instagram, this one
 // small-print line says so at the picker, instead of the creator
 // finding out at their first visit with the clock running.
-const PROOF_DISCLOSURE = "Heads up: visit proof is an Instagram post link for now, so SIGNL visits get posted on Instagram.";
+const PROOF_DISCLOSURE = "Heads up: visit proof is a post link from your main platform, so SIGNL visits get posted where your audience is.";
 function syncProofDisclosure(selectId, noteId) {
   const sel = document.getElementById(selectId);
   const note = document.getElementById(noteId);
@@ -5517,7 +5534,7 @@ function renderJoinCreator() {
   // checkboxes); the full founding profile form below stays one
   // tap away for creators who would rather do it all now.
   if (state.joinMode !== "full") return renderQuickClaim();
-  const cats = state.boot.creatorCategories.map((c) => `<label><input type="checkbox" name="c-cat" value="${esc(c)}"> ${esc(c)}</label>`).join("");
+  const cats = state.boot.creatorCategories.map((c) => `<label><input type="checkbox" name="c-cat" value="${esc(c)}" onchange="proHintSync('jc')"> ${esc(c)}</label>`).join("");
   const comps = state.boot.compCategories.map((c) => `<label><input type="checkbox" name="c-comp" value="${esc(c)}"> ${esc(c)}</label>`).join("");
   const pf = state.prefill || {};
   const pfMarket = pf.market || "Virginia Beach";
@@ -5565,7 +5582,7 @@ function renderJoinCreator() {
       </div>
       <div class="fgroup tint">
         <p class="fg-kicker">${T("Your audience", "Tu audiencia")}</p>
-        <div class="field"><label>${T("Where is your main audience?", "¿Dónde está tu audiencia principal?")}</label>${platformChipsHtml("jc-platform", pf.platform || "instagram", "syncJcPlatform")}<p class="small muted">${T("Your main platform. The rest stack on top.", "Tu plataforma principal. Las demás se suman encima.")}</p><p class="small muted" id="jc-proof-note" style="display:${(pf.platform || "instagram") !== "instagram" ? "" : "none"}">${PROOF_DISCLOSURE}</p></div>
+        <div class="field"><label>${T("Where is your main audience?", "¿Dónde está tu audiencia principal?")}</label>${platformChipsHtml("jc-platform", pf.platform || "instagram", "syncJcPlatform")}<p class="small muted">${T("Your main platform. The rest stack on top.", "Tu plataforma principal. Las demás se suman encima.")}</p><p class="small muted" id="jc-proof-note" style="display:${(pf.platform || "instagram") !== "instagram" ? "" : "none"}">${PROOF_DISCLOSURE}</p><p class="small" id="jc-pro-hint" style="display:none">${T("A lot of pros here run on LinkedIn.", "Muchos profesionales aquí usan LinkedIn.")}</p></div>
       <div class="form-2col">
         <div class="field"><label id="jc-handle-label">${esc(primaryLabelClient(pf.platform || "instagram"))} ${T("handle (required)", "usuario (obligatorio)")}</label><input id="jc-handle" placeholder="yourhandle" required value="${esc(pf.handle || "")}" oninput="syncJcPlatform()"><p class="small muted" id="jc-ig-link"></p><p class="small muted">${T("Paste your handle or a link to your page, so businesses and our team can view your page.", "Pega tu usuario o un enlace a tu página, para que los negocios y nuestro equipo puedan verla.")}</p></div>
         <div class="field"><label>${T("TikTok handle (optional)", "Usuario de TikTok (opcional)")}</label><input id="jc-tiktok" placeholder="yourhandle"></div>
@@ -9253,7 +9270,7 @@ function creatorProfileHtml(u) {
   const c = u.creator || {};
   const allCatsOn = state.boot.creatorCategories.length > 0 && state.boot.creatorCategories.every((x) => (c.categories || []).includes(x));
   const allCompsOn = state.boot.compCategories.length > 0 && state.boot.compCategories.every((x) => (c.compCategories || []).includes(x));
-  const cats = `<label><input type="checkbox" id="p-cat-all" ${allCatsOn ? "checked" : ""} onchange="profileAllToggle('p-cat', this)"> All</label>` + state.boot.creatorCategories.map((x) => `<label><input type="checkbox" name="p-cat" value="${esc(x)}" onchange="profileRowSync('p-cat')" ${c.categories && c.categories.includes(x) ? "checked" : ""}> ${esc(x)}</label>`).join("");
+  const cats = `<label><input type="checkbox" id="p-cat-all" ${allCatsOn ? "checked" : ""} onchange="profileAllToggle('p-cat', this)"> All</label>` + state.boot.creatorCategories.map((x) => `<label><input type="checkbox" name="p-cat" value="${esc(x)}" onchange="profileRowSync('p-cat');proHintSync('p')" ${c.categories && c.categories.includes(x) ? "checked" : ""}> ${esc(x)}</label>`).join("");
   const comps = `<label><input type="checkbox" id="p-comp-all" ${allCompsOn ? "checked" : ""} onchange="profileAllToggle('p-comp', this)"> All</label>` + state.boot.compCategories.map((x) => `<label><input type="checkbox" name="p-comp" value="${esc(x)}" onchange="profileRowSync('p-comp')" ${c.compCategories && c.compCategories.includes(x) ? "checked" : ""}> ${esc(x)}</label>`).join("");
   const stackVal = (id) => (c.audienceStack && c.audienceStack[id]) || (id === "instagram" ? c.followerCount || 0 : 0);
   const stackRows = [
@@ -9332,7 +9349,7 @@ function creatorProfileHtml(u) {
         <p class="small lane-err" id="gallery-err" style="display:none"></p>
       </div>
       <div class="form-2col">
-        <div class="field"><label>${T("Where is your main audience?", "¿Dónde está tu audiencia principal?")}</label>${platformChipsHtml("p-platform", c.primaryPlatform || "instagram", "syncPPlatform")}<p class="small muted" id="p-proof-note" style="display:${(c.primaryPlatform || "instagram") !== "instagram" ? "" : "none"}">${PROOF_DISCLOSURE}</p></div>
+        <div class="field"><label>${T("Where is your main audience?", "¿Dónde está tu audiencia principal?")}</label>${platformChipsHtml("p-platform", c.primaryPlatform || "instagram", "syncPPlatform")}<p class="small muted" id="p-proof-note" style="display:${(c.primaryPlatform || "instagram") !== "instagram" ? "" : "none"}">${PROOF_DISCLOSURE}</p><p class="small" id="p-pro-hint" style="display:${(c.categories || []).some((x) => PRO_CATS.includes(x)) || c.profession === "Real estate agent" ? "" : "none"}">${T("A lot of pros here run on LinkedIn.", "Muchos profesionales aquí usan LinkedIn.")}</p></div>
         <div class="field"><label>${T("Your main handle", "Tu usuario principal")}</label><input id="p-handle" value="${esc(c.handle || "")}"><p class="small muted">${T("Your handle on your main platform. Your public profile and claim links point there.", "Tu usuario en tu plataforma principal. Tu perfil público y tus enlaces de reclamo apuntan ahí.")}</p></div>
         ${u.market === unlistedLabel()
           ? `<div class="field"><label>${T("Your city (not an open market yet)", "Tu ciudad (aún no es un mercado abierto)")}</label><input id="p-city-text" value="${esc(u.city || "")}"></div>
@@ -10547,7 +10564,7 @@ function visitCard(b, role) {
     <form onsubmit="return submitPost(event, '${b.id}')">
       <h4 style="margin:10px 0 4px">Post your proof</h4>
       ${late ? `<p class="small"><strong>This post is past its 48 hour deadline.</strong> Post within 48 hours for full credit. A late post inside the catch-up window still counts, and the missed deadline stays on your record. No link, no check-off.</p>` : `<p class="small muted">Your check-off is the post link itself. Paste it here and the visit is marked delivered${b.compliance && b.compliance.deadline ? ` (deadline ${esc(fmtDate(b.compliance.deadline))})` : ""}. Post within 48 hours for full credit. A late post inside the catch-up window still counts.</p>`}
-      <div class="field"><label>Link to your Instagram post or reel</label><input id="post-url-${b.id}" type="url" placeholder="https://www.instagram.com/p/..." required></div>
+      <div class="field"><label>Link to your ${esc(primaryLabelClient((state.user && state.user.creator && state.user.creator.primaryPlatform) || "instagram"))} post</label><input id="post-url-${b.id}" type="url" placeholder="https://${esc(primaryMetaClient((state.user && state.user.creator && state.user.creator.primaryPlatform) || "instagram").host)}..." required></div>
       <label class="ckrow"><input type="checkbox" class="ckbox" id="post-disc-${b.id}"><span>My post clearly discloses the comp (for example #ad or "comped by the business"), as the FTC requires.</span></label>
       <p class="small muted">Post your honest experience. Nobody can require a positive post.</p>
       <div class="field"><label>Your disclosure line, done for you</label><div style="display:flex;gap:8px;flex-wrap:wrap"><input type="text" readonly value="${esc(disclosureLine(b))}" onclick="this.select()" style="flex:1;min-width:220px"><button type="button" class="btn small-btn ghost" onclick="return disclosureCopy(this)">Copy the line</button></div><p class="small muted">One tap copies it. Paste it at the top of your caption, then confirm on this card after the post is live.</p></div>
