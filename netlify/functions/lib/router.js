@@ -92,7 +92,10 @@ function offerVisibleToCreator(offer, creatorUser, nowMs, marketLive) {
   if (isCharterCreator(creatorUser)) return true;
   const anchor = Date.parse(offer.publishedAt || offer.createdAt || "");
   if (Number.isNaN(anchor)) return true;
-  return nowMs >= anchor + CHARTER_EARLY_ACCESS_MS;
+  // Build -36: level perks open the window early (Level 2 at
+  // 12 hours early, the top level the full 24, like Charter).
+  const earlyMs = Math.min(CHARTER_EARLY_ACCESS_MS, earlyAccessHoursFor(creatorUser) * 3600000);
+  return nowMs >= anchor + CHARTER_EARLY_ACCESS_MS - earlyMs;
 }
 // Book-me page themes (SIGNL palette only) and featured posts.
 const PAGE_THEMES = ["ink", "mint", "deep", "pale"];
@@ -3399,11 +3402,14 @@ async function rankApplications(apps) {
     const localPct = c.creator.localAudiencePct === null || c.creator.localAudiencePct === undefined ? 0 : Number(c.creator.localAudiencePct);
     const reliability = history.redeemed > 0 ? Math.round(((history.postsOnTime + history.postsLate * 0.5) / history.redeemed) * 100) : 50;
     const mom = momentum.summaryFor(c);
-    const rankScore = Math.round((0.35 * localPct + 0.25 * (impact ? impact.score : 0) + 0.2 * Math.min(100, mom.points) + 0.2 * reliability) * 100) / 100;
+    // Build -36: total Points (Momentum + Your Line) feed the
+    // stack's Momentum weight.
+    const totalPts = mom.points + lineFor(c, users).points;
+    const rankScore = Math.round((0.35 * localPct + 0.25 * (impact ? impact.score : 0) + 0.2 * Math.min(100, totalPts) + 0.2 * reliability) * 100) / 100;
     out.push({
       ...app,
       rankScore,
-      rankParts: { localPct, impactScore: impact ? impact.score : null, momentum: mom.points, reliability },
+      rankParts: { localPct, impactScore: impact ? impact.score : null, momentum: totalPts, reliability },
       creator: {
         userId: c.id,
         name: c.name,
@@ -3757,6 +3763,7 @@ async function discoverCards(query, viewer) {
   const momentum = createMomentum({ users, bookings, posts, reviews, bizReviews });
   const bookedUp = await bookedUpCreatorIds(users, bookings);
   const fitBusiness = businessFitInputOf(viewer);
+  const rosterUsers36 = await allUsers();
   const out = [];
   for (const c of creators) {
     const card = await publicCreator(c, viewer, approvedRank.get(c.id) || null);
@@ -3768,6 +3775,9 @@ async function discoverCards(query, viewer) {
     // Roster standing rides on the card: it is part of the order
     // businesses were promised creators would be seen in.
     card.momentum = momentum.summaryFor(c);
+    // Build -36: total Points (Momentum + Your Line) ride the
+    // card; the momentum re-sort orders by them.
+    card.pointsTotal = card.momentum.points + lineFor(c, rosterUsers36).points;
     card.badges = momentum.badgesFor(c);
     card.standing = standingState(c);
     // Matching fit (lib/fit.js): per-viewer, computed live from
@@ -3797,7 +3807,7 @@ async function discoverCards(query, viewer) {
   if (query.sort === "score") {
     out.sort((a, b) => (b.localImpactScore || 0) - (a.localImpactScore || 0));
   } else if (query.sort === "momentum") {
-    out.sort((a, b) => (b.momentum.points - a.momentum.points) || (a.createdAt < b.createdAt ? -1 : 1));
+    out.sort((a, b) => ((b.pointsTotal || 0) - (a.pointsTotal || 0)) || (a.createdAt < b.createdAt ? -1 : 1));
   } else if (query.sort === "fit") {
     out.sort((a, b) => ((b.fit ? b.fit.score : -1) - (a.fit ? a.fit.score : -1)) || (b.momentum.points - a.momentum.points) || (a.createdAt < b.createdAt ? -1 : 1));
   } else {
@@ -4038,6 +4048,10 @@ async function publicProfilePayload(u) {
     // Real People Check (Build -35): shown only where a human
     // on the SIGNL team actually checked this account.
     realPeopleChecked: !!c.realPeopleCheck,
+    // Build -36: the level badge (Level 2 and up) rides public
+    // payloads from the stamped level; the points number itself
+    // stays owner-side, like Momentum.
+    levelBadge: c.pointsLevel && c.pointsLevel.level >= 2 ? { level: c.pointsLevel.level, name: c.pointsLevel.name, earlyAccessHours: c.pointsLevel.earlyAccessHours || 0 } : null,
   };
 }
 
@@ -4110,6 +4124,7 @@ async function bookMePayload(u, viewer) {
     // checked this account. Business-facing reassurance, shown
     // only where it is true.
     realPeopleChecked: !!c.realPeopleCheck,
+    levelBadge: c.pointsLevel && c.pointsLevel.level >= 2 ? { level: c.pointsLevel.level, name: c.pointsLevel.name, earlyAccessHours: c.pointsLevel.earlyAccessHours || 0 } : null,
     pageTheme: pageThemeOf(c),
     featuredPosts: (Array.isArray(c.featuredPosts) ? c.featuredPosts : []).map((url) => ({ url, embedUrl: `${String(url).replace(/\/?$/, "/")}embed` })),
     viewerTier: t.tier,
@@ -8483,6 +8498,79 @@ async function issueComeBackPass(booking, firstEvent) {
   await store.set(`pass:${pass.id}`, pass);
   return pass;
 }
+// ---------- Build -36: Points and Your Line ----------
+// Points are the plain activity score: Momentum points for work
+// done (on-time posts, approvals, licenses, the existing table)
+// PLUS invite points from Your Line. An invite counts only when
+// the invited creator FINISHES (approved + complete profile):
+// generation 1 earns the full award, generation 2 a quarter,
+// generation 3 a tenth, nothing beyond. Nothing is ever awarded
+// for a click. Levels are a small plain ladder over the total;
+// Charter stays a separate identity and keeps its own 24 hours.
+const INVITE_FINISH_POINTS = [100, 25, 10];
+const LEVELS = [
+  { level: 1, name: "Starter", at: 0, earlyAccessHours: 0 },
+  { level: 2, name: "Regular", at: 100, earlyAccessHours: 12 },
+  { level: 3, name: "Standout", at: 300, earlyAccessHours: 18 },
+  { level: 4, name: "Cornerstone", at: 750, earlyAccessHours: 24 },
+];
+function levelForPoints(points) {
+  let cur = LEVELS[0];
+  for (const l of LEVELS) if (points >= l.at) cur = l;
+  const idx = LEVELS.indexOf(cur);
+  const next = LEVELS[idx + 1] || null;
+  return { level: cur.level, name: cur.name, at: cur.at, earlyAccessHours: cur.earlyAccessHours, nextAt: next ? next.at : null, nextName: next ? next.name : null };
+}
+function handleKey(h) { return String(h || "").trim().toLowerCase(); }
+function finishedCreatorOf(u) {
+  return !!(u && u.role === "creator" && u.status === "approved" && profileCompleteOf(u));
+}
+// Your Line for one creator, computed on read from the stored
+// referral chain (referredBy handles). Finished creators only.
+function lineFor(user, users) {
+  const myHandle = handleKey(user && user.creator && user.creator.handle);
+  const gens = [[], [], []];
+  if (myHandle) {
+    gens[0] = users.filter((u) => u.id !== user.id && finishedCreatorOf(u) && handleKey(u.referredBy) === myHandle);
+    const g1 = new Set(gens[0].map((u) => handleKey(u.creator && u.creator.handle)).filter(Boolean));
+    gens[1] = users.filter((u) => u.id !== user.id && finishedCreatorOf(u) && g1.has(handleKey(u.referredBy)));
+    const g2 = new Set(gens[1].map((u) => handleKey(u.creator && u.creator.handle)).filter(Boolean));
+    gens[2] = users.filter((u) => u.id !== user.id && finishedCreatorOf(u) && g2.has(handleKey(u.referredBy)));
+  }
+  const counts = gens.map((g) => g.length);
+  const points = counts[0] * INVITE_FINISH_POINTS[0] + counts[1] * INVITE_FINISH_POINTS[1] + counts[2] * INVITE_FINISH_POINTS[2];
+  return { counts, points, gens };
+}
+async function pointsContext() {
+  const [users, bookings, posts, reviews, bizReviews] = await Promise.all([allUsers(), allBookings(), allPosts(), allReviews(), allBizReviews()]);
+  return { users, momentum: createMomentum({ users, bookings, posts, reviews, bizReviews }) };
+}
+function totalPointsFor(user, ctx) {
+  const line = lineFor(user, ctx.users);
+  const momentumPoints = ctx.momentum.summaryFor(user).points;
+  return { total: momentumPoints + line.points, momentumPoints, linePoints: line.points, line };
+}
+// The level stamp rides the creator record so sync readers
+// (offer visibility) can use it; refreshed on the creator's
+// own reads (founding home, points, profile saves).
+async function refreshPointsLevel(user) {
+  const ctx = await pointsContext();
+  const t = totalPointsFor(user, ctx);
+  const lvl = levelForPoints(t.total);
+  const rec = await store.get(`user:${user.id}`);
+  if (rec && rec.creator) {
+    rec.creator.pointsLevel = { level: lvl.level, name: lvl.name, earlyAccessHours: lvl.earlyAccessHours, total: t.total, at: nowIso() };
+    rec.updatedAt = nowIso();
+    await store.set(`user:${user.id}`, rec);
+    if (user.creator) user.creator.pointsLevel = rec.creator.pointsLevel;
+  }
+  return { ...t, levelInfo: lvl };
+}
+function earlyAccessHoursFor(user) {
+  const pl = user && user.creator && user.creator.pointsLevel;
+  return pl && typeof pl.earlyAccessHours === "number" ? pl.earlyAccessHours : 0;
+}
+
 // Per-booking counted money from a set of redemption events:
 // events win when they exist (M1); the legacy reported tally is
 // the fallback for bookings that never used event capture.
@@ -9293,11 +9381,17 @@ async function route(event) {
     if (method === "GET") {
       const marketName = normalizeMarketName(query.market || "");
       const users = await allUsers();
+      // Build -36: total Points order the list within a market
+      // (after local reach, before seniority), and the level
+      // badge rides each entry.
+      const ctx36 = await pointsContext();
+      const pointsById = new Map(users.filter((u) => u.role === "creator").map((u) => [u.id, totalPointsFor(u, ctx36).total]));
       const opted = users
         .filter((u) => isRosterCreator(u) && profileCompleteOf(u) && standingState(u) !== "banned" && u.creator && u.creator.publicPage === true && normalizeMarketName(u.market) === marketName)
-        .sort((a, b) => ((b.creator.localAudiencePct || 0) - (a.creator.localAudiencePct || 0)) || (a.createdAt < b.createdAt ? -1 : 1));
+        .sort((a, b) => ((b.creator.localAudiencePct || 0) - (a.creator.localAudiencePct || 0)) || ((pointsById.get(b.id) || 0) - (pointsById.get(a.id) || 0)) || (a.createdAt < b.createdAt ? -1 : 1));
       const byCategory = new Map();
       for (const u of opted) {
+        const lvl36 = levelForPoints(pointsById.get(u.id) || 0);
         const entry = {
           handle: u.creator.handle,
           localAudiencePct: u.creator.localAudiencePct === undefined ? null : u.creator.localAudiencePct,
@@ -9306,6 +9400,8 @@ async function route(event) {
           neighborhood: u.creator.neighborhood || "",
           streets: Array.isArray(u.creator.streets) ? u.creator.streets : [],
           portfolioSample: u.creator.portfolioSample || null,
+          level: lvl36.level >= 2 ? lvl36.level : null,
+          levelName: lvl36.level >= 2 ? lvl36.name : null,
         };
         for (const raw of entry.categories) {
           const canon = canonicalFromList(raw, CREATOR_CATEGORIES) || raw;
@@ -10720,6 +10816,28 @@ async function route(event) {
       const rated = rows.filter((r) => r.firsts >= RETURN_RATE_MIN_BASE && r.rate !== null).map((r) => r.rate).sort((a, b) => a - b);
       return json(200, { creators: rows, medianRate: rated.length ? rated[Math.floor(rated.length / 2)] : null, rateMinBase: RETURN_RATE_MIN_BASE });
     }
+    // Your Line tree (Build -36): who brought whom under one
+    // creator, points by generation. Admin only, inside the
+    // creator record tooling.
+    if (method === "GET" && seg[1] === "line" && seg[2]) {
+      let target = await store.get(`user:${seg[2]}`);
+      if (!target) {
+        const all = await allUsers();
+        target = all.find((u) => u.role === "creator" && u.creator && handleKey(u.creator.handle) === handleKey(seg[2].replace(/^@/, ""))) || null;
+      }
+      if (!target || target.role !== "creator") return err(404, "Creator not found");
+      const ctx = await pointsContext();
+      const t = totalPointsFor(target, ctx);
+      return json(200, {
+        creator: { userId: target.id, handle: target.creator.handle, name: target.name },
+        total: t.total, momentumPoints: t.momentumPoints, linePoints: t.linePoints,
+        level: levelForPoints(t.total),
+        generations: t.line.gens.map((members, i) => ({
+          generation: i + 1, pointsEach: INVITE_FINISH_POINTS[i],
+          members: members.map((u) => ({ userId: u.id, handle: u.creator.handle, name: u.name })),
+        })),
+      });
+    }
     if (method === "GET" && seg[1] === "applications") {
       const all = await allUsers();
       await ensureBusinessAnchors(all);
@@ -11815,6 +11933,7 @@ async function route(event) {
     const { approvedRank } = creatorRanks(await allUsers());
     const card = await publicCreator(user, user, approvedRank.get(user.id) || null);
     const buzz = await creatorBuzz(user);
+    await refreshPointsLevel(user);
     const today = nowIso().slice(0, 10);
     if (user.foundingViewedOn !== today) {
       user.foundingViewedOn = today;
@@ -13897,6 +14016,30 @@ async function route(event) {
       }
     }
     return json(200, { range, floor: PAID_LANE.minRate, market: user.market });
+  }
+
+  // Points and Your Line (Build -36): the creator's own totals,
+  // level and line, computed on read. Reading also refreshes
+  // the level stamp offer visibility uses.
+  if (method === "GET" && seg[0] === "me" && seg[1] === "points" && seg.length === 2) {
+    if (user.role !== "creator") return err(403, "Creators only");
+    const t = await refreshPointsLevel(user);
+    return json(200, {
+      total: t.total,
+      momentumPoints: t.momentumPoints,
+      linePoints: t.linePoints,
+      level: t.levelInfo,
+      byGeneration: t.line.counts.map((count, i) => ({ generation: i + 1, count, pointsEach: INVITE_FINISH_POINTS[i], points: count * INVITE_FINISH_POINTS[i] })),
+      waysToEarn: [
+        { label: "A creator you invite finishes signing up", points: INVITE_FINISH_POINTS[0] },
+        { label: "Their invites finish signing up", points: INVITE_FINISH_POINTS[1] },
+        { label: "One more step out", points: INVITE_FINISH_POINTS[2] },
+        { label: "Deliver a post on time", points: MOMENTUM_POINTS.postOnTime },
+        { label: "A business runs your post as an ad", points: MOMENTUM_POINTS.adUse },
+        { label: "An invite gets approved", points: MOMENTUM_POINTS.referralApproved },
+        { label: "Give a review after a visit", points: MOMENTUM_POINTS.reviewGiven },
+      ],
+    });
   }
 
   // Audience offers + codes (Build -35): a business attaches

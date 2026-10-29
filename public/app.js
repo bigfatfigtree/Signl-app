@@ -569,6 +569,7 @@ async function renderPublicProfile() {
       </div>
     </div>
     ${p.realPeopleChecked ? `<p class="small" style="margin:10px 0 0"><span class="badge ok">Checked by a person</span> Real posts, real local life.</p>` : ""}
+    ${p.levelBadge ? `<p class="small" style="margin:10px 0 0"><span class="badge">Level ${p.levelBadge.level} · ${esc(p.levelBadge.name)}</span> Sees new offers ${p.levelBadge.earlyAccessHours} hours early.</p>` : ""}
     ${galleryRowHtml(p.photos)}
     <section class="panel bookme-body">
       <div class="cc-chips">
@@ -7440,6 +7441,7 @@ async function loadFoundingDashboard() {
     ${growRosterHtml(u)}
     ${goldenTicketsSectionHtml()}
     ${proofSectionHtml()}
+    ${pointsSectionHtml()}
     <h3 style="margin:22px 0 0">Your founding status</h3>
     <div id="founding-body">${skelHtml("Loading your founding profile...", 1)}</div>
     ${askSigRowHtml()}`;
@@ -7449,6 +7451,7 @@ async function loadFoundingDashboard() {
     loadFoundingStatus();
     loadGoldenTickets();
     loadProofCard();
+    loadPointsCard();
     loadRateRange();
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
@@ -7555,6 +7558,36 @@ function receiptHtml(r) {
     ${receiptSettingsHtml(r)}
   </section>`;
 }
+// ---------- Points and Your Line (Build -36) ----------
+// Plain activity score on the founding home: the total, the
+// level with its perk, the line by generation, and the ways
+// to earn. No new tab; it lives with the rest of Home.
+function pointsSectionHtml() {
+  return `<section class="panel" id="points-card" style="margin-top:14px">
+    <h3 style="margin:0">Points and Your Line</h3>
+    <div id="points-body"><p class="small">Loading your points...</p></div>
+  </section>`;
+}
+async function loadPointsCard() {
+  const body = document.getElementById("points-body");
+  if (!body) return;
+  try {
+    const d = await api("GET", "/api/me/points");
+    const lvl = d.level || {};
+    const gens = (d.byGeneration || []).map((g) => `<div class="kv"><span>Line ${g.generation} (${g.pointsEach} points each)</span><b>${g.count} finished · ${g.points} points</b></div>`).join("");
+    const ways = (d.waysToEarn || []).map((w) => `<div class="kv"><span>${esc(w.label)}</span><b>+${w.points}</b></div>`).join("");
+    body.innerHTML = `
+      <div class="kv"><span>Your points</span><b>${d.total}</b></div>
+      <div class="kv"><span>Level</span><b>Level ${lvl.level} · ${esc(lvl.name || "")}</b></div>
+      ${lvl.earlyAccessHours ? `<p class="small" style="margin:8px 0 0">Your level sees new offers ${lvl.earlyAccessHours} hours early.</p>` : ""}
+      ${lvl.nextAt ? `<p class="small" style="margin:4px 0 0">Next level, ${esc(lvl.nextName || "")}, at ${lvl.nextAt} points.</p>` : `<p class="small" style="margin:4px 0 0">Top level. Nice work.</p>`}
+      <h4 style="margin:14px 0 6px">Your Line</h4>
+      ${gens || `<p class="small">Nobody yet. Points land when a creator you invite finishes signing up.</p>`}
+      <h4 style="margin:14px 0 6px">Ways to earn</h4>
+      ${ways}`;
+  } catch { body.innerHTML = `<p class="small">Points are having a moment. Check back in a bit.</p>`; }
+}
+
 function proofSectionHtml() {
   return `<div class="wcard" id="proof-card"><h3>Your Proof Card</h3><p class="wc-sub" style="margin:4px 0 0">Loading your counted record...</p></div>`;
 }
@@ -15046,8 +15079,31 @@ async function loadStats() {
       </table></div>
       <p class="small" style="margin-top:12px"><strong>Campus Leads:</strong> ${s.layers.campusLeads.length ? s.layers.campusLeads.map((e) => `${esc(e.university)}: ${e.leads} (${e.handles.map((h) => "@" + esc(h)).join(", ")})`).join(" &middot; ") : "none yet. A Campus Lead is a current student with 5 approved referrals from their own school."}</p>
       <p class="small"><strong>Business language:</strong> ${s.layers.businessLanguage.es} ${s.layers.businessLanguage.es === 1 ? "business prefers" : "businesses prefer"} Spanish, ${s.layers.businessLanguage.en} English.</p>` : ""}`;
+    el.innerHTML += `
+      <div class="panel" style="margin-top:14px"><h3 style="margin:0 0 8px">Your Line lookup</h3>
+      <p class="small">Who brought whom under one creator, and the points by generation. Points land only when an invite finishes signing up.</p>
+      <div class="row" style="gap:8px;align-items:center"><input id="line-pick" type="text" placeholder="Creator handle" style="max-width:240px"><button class="btn" onclick="adminLineLookup()">View line</button></div>
+      <div id="line-out" style="margin-top:10px"></div></div>`;
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+  }
+}
+
+// Your Line lookup (Build -36, Admin Stats): who brought whom
+// under one creator, points by generation.
+async function adminLineLookup() {
+  const out = document.getElementById("line-out");
+  const input = document.getElementById("line-pick");
+  if (!out || !input) return;
+  const handle = (input.value || "").trim();
+  if (!handle) { out.innerHTML = `<p class="small">Type a creator handle first.</p>`; return; }
+  out.innerHTML = `<p class="small">Loading...</p>`;
+  try {
+    const d = await api("GET", "/admin/line/" + encodeURIComponent(handle.replace(/^@/, "")));
+    const gens = (d.generations || []).map((g) => `<div class="kv"><span>Line ${g.generation} (${g.pointsEach} points each)</span><b>${g.members.length ? g.members.map((m) => "@" + esc(m.handle)).join(", ") : "nobody yet"}</b></div>`).join("");
+    out.innerHTML = `<div class="kv"><span>@${esc(d.creator.handle)}</span><b>${d.total} points · Level ${d.level.level} ${esc(d.level.name)}</b></div>${gens}<div class="kv"><span>Invite points</span><b>${d.linePoints}</b></div>`;
+  } catch (err) {
+    out.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
 }
 
