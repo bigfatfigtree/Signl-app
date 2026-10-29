@@ -2764,3 +2764,24 @@ body.rail-on main, body.preview-on main { min-width: 0; }
 @media (prefers-reduced-motion: reduce) {
   .sig-ava, .sig-ava *, .sig-hero-media .sig-hero-think { animation: none !important; }
 }
+/* Sig in Admin (Jeff, 2026-10-28): the rail grows the Sig
+   destination with the v4 head crop, and below 768px the rail
+   steps aside for a real bottom tab bar carrying all nine
+   Admin destinations. The bar mirrors the ink chrome of the
+   business/creator bar; nine compact items scroll horizontally
+   rather than shrink below tappable size. */
+.rail-sig-img { width: 25px; height: 25px; border-radius: 50%; display: block; }
+.rail-item.on .rail-sig-img { box-shadow: 0 0 0 2px var(--mint); }
+@media (max-width: 767px) {
+  body.admin-on #rail { display: none; }
+  body.admin-on main, body.admin-on .footer { margin-left: 0; }
+  body.admin-on #toprow { margin-left: 0; }
+  body.admin-on main { padding-bottom: calc(88px + env(safe-area-inset-bottom)); }
+  body.admin-on #tabbar { display: block; position: fixed; left: 0; right: 0; bottom: 0; z-index: 80; background: var(--ink); box-shadow: 0 -10px 28px rgba(11,13,12,.22); padding-bottom: env(safe-area-inset-bottom); }
+  body.admin-on #tabbar .tab-main { display: flex; overflow-x: auto; scrollbar-width: none; }
+  body.admin-on #tabbar .tab-main::-webkit-scrollbar { display: none; }
+  body.admin-on #tabbar .tab-main .tab-item { flex: none; min-width: 64px; color: rgba(255,255,255,.58); margin: 6px 2px; padding: 6px 2px 5px; min-height: 58px; justify-content: center; border-radius: 16px; }
+  body.admin-on #tabbar .tab-main .tab-item.on { background: var(--mint); color: var(--ink); }
+  body.admin-on #tabbar .tab-main .tab-item.on .tab-label { color: var(--ink); }
+  body.admin-on #tabbar .tab-badge { box-shadow: 0 0 0 2px var(--ink); }
+}

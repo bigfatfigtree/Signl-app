@@ -8863,6 +8863,29 @@ async function route(event) {
       lines.push(`Their market is ${user.market || "unknown"} and their business is ${live ? "ACTIVE (market open)" : "on the founding list (market not open yet)"}.`);
       if (user.business && user.business.planId) lines.push(`Their plan is ${user.business.planId}.`);
       if (user.business && user.business.preferredLanguage === "es") lines.push("This business owner prefers Spanish. Answer in Spanish.");
+    } else if (user.role === "admin") {
+      // Sig in Admin (Jeff, 2026-10-28): ground the console chat
+      // in the same records the Admin endpoints serve, counted
+      // the same way (/admin/applications, /admin/markets,
+      // /admin/partners). Read-only: the admin Sig surface gives
+      // answers and points at tabs; it takes no actions.
+      try {
+        const all = await allUsers();
+        const flags = await getMarketFlags();
+        const today = new Date().toISOString().slice(0, 10);
+        const pendC = all.filter((u) => u.role === "creator" && u.status === "pending").length;
+        const pendB = all.filter((u) => u.role === "business" && u.status === "pending").length;
+        const apprC = all.filter((u) => u.role === "creator" && u.status === "approved" && !isTester(u)).length;
+        const apprB = all.filter((u) => u.role === "business" && u.status === "approved").length;
+        const foundingWaiting = all.filter((u) => u.role === "business" && u.status === "approved" && businessAccessState(u) !== "active").length;
+        const claimsToday = all.filter((u) => u.role === "creator" && String(u.createdAt || "").startsWith(today)).length;
+        const liveMarkets = Object.values(flags).filter(Boolean).length;
+        const partners = await allPartners(all);
+        const paused = partners.filter((p) => p.partner.status === "paused").length;
+        const demoSeeded = partners.some((p) => p.partner.code === "demo");
+        lines.push(`Live console counts right now: ${pendC} creator applications pending, ${pendB} business applications pending, ${apprC} approved creators, ${apprB} approved businesses, ${foundingWaiting} approved founding businesses not yet activated, ${claimsToday} creator claims today, ${liveMarkets} live markets, ${partners.length} partners (${paused} paused${demoSeeded ? ", demo partner seeded" : ", no demo partner seeded yet"}).`);
+        lines.push("This admin surface is read-only for you: answer and explain, and point to the Admin tab where an action lives. Never claim you approved, sent, activated, or changed anything.");
+      } catch (e) { /* counts are grounding, never a blocker */ }
     }
     const history = Array.isArray(b.history) ? b.history.filter((t) => t && (t.who === "user" || t.who === "sig") && typeof t.text === "string").map((t) => ({ who: t.who, text: t.text })) : [];
     const ans = await askSigAI({ role: user.role, stateLines: lines.join(" "), question: q, history });

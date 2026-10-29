@@ -1548,7 +1548,10 @@ function renderBottomNav() {
   const toprow = document.getElementById("toprow");
   document.body.classList.remove("bn-on", "has-bn", "admin-on", "preview-on");
   if (u && u.role === "admin" && !state.preview) {
-    if (tabbar) tabbar.innerHTML = "";
+    // Admin mobile gets a real bottom tab bar (Jeff, 2026-10-28):
+    // the same nine destinations as the rail, Sig included. CSS
+    // shows it only below 768px, where the rail steps aside.
+    if (tabbar) tabbar.innerHTML = adminTabBarHtml();
     if (top2) top2.innerHTML = "";
     document.body.classList.remove("v3-on", "v3-slim");
     document.body.classList.add("admin-on");
@@ -1670,6 +1673,41 @@ function moreRowsFor() {
     ];
   }
   return [];
+}
+
+// Admin mobile bottom bar (Jeff, 2026-10-28): exactly the nine
+// Admin destinations, Sig included, in the same order as the
+// Admin tab strip, navigating by the same go('dashboard', tab)
+// mechanism as every other bar. Compact items in a horizontally
+// scrollable row (nine destinations do not fit 390px at readable
+// size); Sign out rides at the end as an action, not a
+// destination, so the phone keeps the sign-out the rail foot
+// carries at wider widths. CSS (body.admin-on) shows this bar
+// only below 768px.
+function adminTabBarHtml() {
+  const t = state.tab;
+  const items = [
+    { icon: "requests", label: "Requests", tab: "Applications", on: t === "Applications" || !t },
+    { icon: "pin", label: "Markets", tab: "Markets", on: t === "Markets" },
+    { icon: "heart", label: "Recruiters", tab: "Recruiters", on: t === "Recruiters" },
+    { icon: "building", label: "Partners", tab: "Partners", on: t === "Partners" },
+    { icon: "list", label: "Events", tab: "Event Log", on: t === "Event Log" },
+    { icon: "shield", label: "Compliance", tab: "Compliance", on: t === "Compliance" },
+    { icon: "users", label: "Campaign", tab: "Campaign", on: t === "Campaign" },
+    { icon: "stats", label: "Stats", tab: "Stats", on: t === "Stats" },
+    { icon: "sig", label: "Sig", tab: "Sig", on: t === "Sig" },
+  ];
+  const btns = items.map((it) => `
+    <button type="button" class="tab-item ${it.on ? "on" : ""}" onclick="return go('dashboard','${it.tab}')" aria-label="${esc(it.label)}">
+      <span class="tab-ic">${it.icon === "sig" ? `<img class="tab-sig-img" src="/assets/sig-v4/head-idle.webp" alt="">` : bnIcon(it.icon)}</span>
+      <span class="tab-label">${esc(it.label)}</span>
+    </button>`).join("");
+  return `<div class="tab-main">${btns}
+    <button type="button" class="tab-item" onclick="signOut()" aria-label="Sign out">
+      <span class="tab-ic">${bnIcon("signout")}</span>
+      <span class="tab-label">Sign out</span>
+    </button>
+  </div>`;
 }
 
 function tabBarHtml() {
@@ -1915,13 +1953,20 @@ function railItems() {
   const items = [];
   const add = (sec, icon, label, onclick, active, badge) => items.push({ sec, icon, label, onclick, active: !!active, badge: badge || 0 });
   if (u.role === "admin") {
+    // The full Admin destination set (Jeff, 2026-10-28): nine,
+    // no more, no fewer — Applications, Markets, Recruiters,
+    // Partners, Event Log, Compliance, Campaign, Stats, Sig.
+    // Partners and Sig were missing from this rail entirely;
+    // every item navigates by the same go('dashboard', tab).
     add("a", "requests", "Requests", "return go('dashboard','Applications')", t === "Applications" || !t);
     add("a", "pin", "Markets", "return go('dashboard','Markets')", t === "Markets");
-    add("a", "list", "Event Log", "return go('dashboard','Event Log')", t === "Event Log");
-    add("a", "stats", "Stats", "return go('dashboard','Stats')", t === "Stats");
-    add("b", "heart", "Recruiters", "return go('dashboard','Recruiters')", t === "Recruiters");
+    add("a", "heart", "Recruiters", "return go('dashboard','Recruiters')", t === "Recruiters");
+    add("a", "building", "Partners", "return go('dashboard','Partners')", t === "Partners");
+    add("b", "list", "Event Log", "return go('dashboard','Event Log')", t === "Event Log");
     add("b", "shield", "Compliance", "return go('dashboard','Compliance')", t === "Compliance");
     add("b", "users", "Campaign", "return go('dashboard','Campaign')", t === "Campaign");
+    add("b", "stats", "Stats", "return go('dashboard','Stats')", t === "Stats");
+    add("c", "sig", "Sig", "return go('dashboard','Sig')", t === "Sig");
     return items;
   }
   if (u.status !== "approved" || isFoundingBusiness(u)) {
@@ -1978,7 +2023,7 @@ function renderRail() {
   const rows = items.map((it) => {
     const sec = lastSec && it.sec !== lastSec ? `<div class="rail-sep"></div>` : "";
     lastSec = it.sec;
-    return `${sec}<button type="button" class="rail-item ${it.active ? "on" : ""}" title="${esc(it.label)}" aria-label="${esc(it.label)}" onclick="${it.onclick}"><span class="bn-icon">${bnIcon(it.icon)}</span>${it.badge ? `<span class="rail-badge">${it.badge > 99 ? "99+" : it.badge}</span>` : ""}</button>`;
+    return `${sec}<button type="button" class="rail-item ${it.active ? "on" : ""}" title="${esc(it.label)}" aria-label="${esc(it.label)}" onclick="${it.onclick}"><span class="bn-icon">${it.icon === "sig" ? `<img class="rail-sig-img" src="/assets/sig-v4/head-idle.webp" alt="">` : bnIcon(it.icon)}</span>${it.badge ? `<span class="rail-badge">${it.badge > 99 ? "99+" : it.badge}</span>` : ""}</button>`;
   }).join("");
   rail.innerHTML = `
     <button type="button" class="rail-brand" title="SIGNL" aria-label="SIGNL home" onclick="return go('dashboard')"><img src="/assets/icon.png" alt="SIGNL"></button>
@@ -2855,6 +2900,7 @@ function sigRouteAsk(text) {
 // user's state in context), the bank when the AI cannot answer.
 async function sigAsk(text) {
   const ctx = sigCtx();
+  const isAdmin = !!state.user && state.user.role === "admin";
   const history = (state.sigThread || []).filter((turn) => !turn.pending && (turn.who === "user" || turn.who === "sig")).map((turn) => ({ who: turn.who, text: turn.text }));
   if (history.length && history[history.length - 1].who === "user" && history[history.length - 1].text === text) history.pop();
   try {
@@ -2863,6 +2909,12 @@ async function sigAsk(text) {
       new Promise((_, reject) => setTimeout(() => reject(new Error("sig timeout")), 10000)),
     ]);
     if (data && data.source === "ai" && data.text) {
+      // Admin: the answer stands on its own. The walk-to flow
+      // picker below is keyed to business/creator flows and must
+      // never hand the console a button into someone else's
+      // surface; the admin fallback bank answers instead of the
+      // creator bank when the AI cannot.
+      if (isAdmin) return { text: data.text, flow: null };
       const match = sigMatch(text, ctx.biz);
       let flow = null;
       if (match.topic) {
@@ -2872,7 +2924,7 @@ async function sigAsk(text) {
       return { text: data.text, flow };
     }
   } catch (e) { /* the bank answers instead */ }
-  return sigRouteAsk(text);
+  return isAdmin ? sigAdminRouteAsk(text) : sigRouteAsk(text);
 }
 function sigThreadHtml() {
   const flows = sigFlowsFor();
@@ -12730,10 +12782,11 @@ function renderAdmin() {
       <button class="btn" onclick="enterPreview()">Preview as business &rarr;</button>
       <button class="btn ghost" onclick="enterPreviewDashboard()">Business dashboard &rarr;</button>
     </div>
-    <div id="admin-sig"><div class="panel"><div class="sig-load-row">${sigAvatarHtml("think")}</div><p class="muted small" style="margin:0">Sig is reading the same numbers Admin shows...</p></div></div>
-    ${tabsHtml(["Applications", "Markets", "Recruiters", "Partners", "Event Log", "Compliance", "Campaign", "Stats"], tab)}
+    ${tab === "Sig" ? "" : `<div id="admin-sig"><div class="panel"><div class="sig-load-row">${sigAvatarHtml("think")}</div><p class="muted small" style="margin:0">Sig is reading the same numbers Admin shows...</p></div></div>`}
+    ${tabsHtml(["Applications", "Markets", "Recruiters", "Partners", "Event Log", "Compliance", "Campaign", "Stats", "Sig"], tab)}
     <div id="tab-body"><p class="muted">Loading...</p></div>`;
-  loadAdminSig();
+  if (tab !== "Sig") loadAdminSig();
+  if (tab === "Sig") renderAdminSig();
   if (tab === "Applications") loadApplications();
   if (tab === "Markets") loadMarkets();
   if (tab === "Partners") loadAdminPartners();
@@ -12787,12 +12840,13 @@ function adminSigItems(apps, marketsData, partnersData) {
   return items;
 }
 
-async function loadAdminSig() {
-  const host = document.getElementById("admin-sig");
+async function loadAdminSig(hostId) {
+  const hid = hostId || "admin-sig";
+  const host = document.getElementById(hid);
   if (!host) return;
   const grab = async (path) => { try { return await api("GET", path); } catch (e) { return null; } };
   const [apps, marketsData, partnersData] = await Promise.all([grab("/admin/applications"), grab("/admin/markets"), grab("/admin/partners")]);
-  if (!document.getElementById("admin-sig")) return;
+  if (!document.getElementById(hid)) return;
   const items = adminSigItems(apps, marketsData, partnersData);
   const loaded = apps || marketsData || partnersData;
   host.innerHTML = `
@@ -12813,6 +12867,109 @@ async function loadAdminSig() {
     ${loaded && (!apps || !marketsData || !partnersData) ? `<p class="small muted" style="margin:8px 0 0">Some Admin numbers could not load; this list covers what answered.</p>` : ""}
   </div>`;
   sigHeroSet("idle");
+}
+
+// Sig in Admin, the destination (Jeff, 2026-10-28): the rail
+// and the mobile bottom bar both land here. Same chat machinery
+// as the business and creator Sig tab (one thread, sigAskSubmit,
+// POST /sig/ask with the admin counts as grounding), with the
+// Admin attention list as the starting brief on top. READ-ONLY
+// by contract: Sig answers, explains, and points; the attention
+// buttons and the destination rows navigate, and Jeff's taps on
+// those screens remain the only writes. The operator never runs
+// here (sigOpTry already refuses non-business/creator roles).
+function renderAdminSig() {
+  const el = document.getElementById("tab-body");
+  if (!el) return;
+  const anyPending = (state.sigThread || []).some((t) => t.pending);
+  const anyTalk = (state.sigThread || []).some((t) => t.talk);
+  const presence = anyPending ? "Thinking" : anyTalk ? "Talking" : "Ready";
+  const presenceSub = anyPending ? "Lining up a straight answer." : anyTalk ? "Answering now." : "Listening. The console is in order.";
+  const dests = [
+    ["Applications", "Review queue"], ["Markets", "Markets"], ["Recruiters", "Recruiters"], ["Partners", "Partners"],
+    ["Event Log", "Event Log"], ["Compliance", "Compliance"], ["Campaign", "Campaign"], ["Stats", "Stats"],
+  ];
+  el.innerHTML = `
+  <section class="sig-hero" aria-label="Sig">
+    <div class="sig-hero-ava">${sigHeroMediaHtml()}</div>
+    <div class="sig-hero-copy">
+      <div class="sig-hero-kicker">Admin console</div>
+      <h2>Sig</h2>
+      <div class="sig-presence"><span class="sig-live-dot${anyPending ? " thinking" : ""}" data-sig-presence-dot></span><strong data-sig-presence-text>${presence}</strong><span data-sig-presence-sub>${presenceSub}</span></div>
+      <p>Ask me what needs you, what a number means, or how a rule works. I read the same records Admin shows, and I point; your taps stay the only writes.</p>
+    </div>
+  </section>
+  <div id="admin-sig-brief"><div class="panel"><div class="sig-load-row">${sigAvatarHtml("think")}</div><p class="muted small" style="margin:0">Sig is reading the same numbers Admin shows...</p></div></div>
+  <div class="sig-chat">
+    <div class="sig-chat-head"><div><div class="sig-chat-title">Conversation</div><div class="muted small">Straight answers from the locked rules and the live Admin counts. Nothing here approves, sends, or changes anything.</div></div>${anyPending ? `<span class="sig-typing" aria-hidden="true"><i></i><i></i><i></i></span>` : ""}</div>
+    <div id="sig-thread" class="sig-thread">${sigThreadHtml() || `<div class="sig-turn sig"><span class="sig-turn-ava">${SIG_AVATAR_HTML}</span><div class="sig-bub">I'm Sig, on your side of the console. Ask me what's waiting on you, what any number here means, or how a SIGNL rule works. The brief above is your live attention list; this chat is where you ask about it.</div></div>`}</div>
+    <form class="sig-ask-form" onsubmit="return sigAskSubmit(event)">
+      <input id="sig-ask-input" type="text" placeholder="Ask Sig anything" autocomplete="off" aria-label="Ask Sig anything">
+      <button class="btn" type="submit">Ask</button>
+    </form>
+  </div>
+  <h3 style="margin:22px 0 6px">Where things live</h3>
+  <div class="sig-panel">
+    ${dests.map(([tab, label]) => `<button type="button" class="sheet-row ask-flow" onclick="return go('dashboard','${tab}')"><span>${esc(label)}</span><span class="ask-chev">›</span></button>`).join("")}
+  </div>`;
+  loadAdminSig("admin-sig-brief");
+  wireSigThread(el);
+  sigHeroSet(anyPending ? "think" : anyTalk ? "talk" : "idle");
+  if (state.sigFocusAsk) {
+    state.sigFocusAsk = false;
+    setTimeout(() => { const i = document.getElementById("sig-ask-input"); if (i) i.focus(); }, 60);
+  }
+}
+
+// The admin fallback bank: Sig's offline brain on the console,
+// used only when the AI path cannot answer. Same topic shape
+// and scorer as the canon bank, Admin facts only. The live
+// counts ride the AI path (the router grounds admin asks in
+// the same records Admin shows); these answers explain the
+// machinery and the locked rules, and never invent a number.
+const SIG_ADMIN_BANK = [
+  { id: "attention", q: "What needs my attention?", ph: ["what needs", "attention", "waiting on me", "whats waiting", "to decide", "decisions"], g: [["pending", "waiting", "queue", "attention"], ["what", "need", "needs", "how many", "count"]], s: ["attention"],
+    a: "The brief at the top of this tab is the live list, computed from the same records Admin shows: creator and business applications waiting on a decision, claims that landed today, approved founding businesses waiting on activation, and partner state. The Review queue under Applications is where the decisions themselves live." },
+  { id: "approvals", q: "How do approvals work?", ph: ["how do approvals work", "approve", "pending mean", "what does pending mean", "review queue", "reject"], g: [["approv", "pending", "reject", "application"], ["how", "work", "mean", "decide", "long"]], s: [],
+    a: "Applications land in the queue as pending. Approving a creator puts them on the founding roster. Approving a business puts it on the founding list; it still needs activation, per business or for a whole market at once, before it gets full access. Every applicant is owed an answer within 2 business days, and the app tracks that." },
+  { id: "marketsadmin", q: "How do markets and activation work?", ph: ["activate a market", "market live", "founding only", "launch number", "profile complete"], g: [["market", "markets", "activation"], ["activate", "live", "open", "work", "mean"]], s: [],
+    a: "A market that is not live shows creators their founding status page only: no offers, no discovery. Activating a market opens publishing and bookings there, but founding businesses activate separately, per business or for every founding business in the market. The launch number is approved creators with a finished profile: home city, an audience count above zero, at least one category, and local audience share reported." },
+  { id: "partnersadmin", q: "How do partners work?", ph: ["partner", "demo partner", "share", "tracked link"], g: [["partner", "partners", "demo"], ["how", "work", "create", "share", "seed"]], s: ["partner"],
+    a: "Partners recruit creators and businesses through tracked links and keep their share of subscription revenue in their markets. Create one under Partners; the partner sets their own password from the sign-in page with Forgot password. Demo Media Group is the seeded demo partner: its records are Sample-tagged and tester-flagged, so they stay out of every real count while the partner dashboard demos end to end." },
+  { id: "pricing", q: "What do the plans cost?", ph: ["cost", "price", "pricing", "plans", "per month"], g: [["plan", "plans", "cost", "price"], ["what", "how much", "difference", "include"]], s: ["pricing"],
+    a: "Founding plans: Self-Service is $199 a month for 5 creators a month, Growth is $349 for 10, Managed is $699 for 20. Founding businesses get $100 off the first month, so $99, $249, or $599, and keep the founding rate while the plan stays active. The minimum is 3 months, there is no per-location charge, and unused visits roll into the next month, then expire." },
+  { id: "recruitersadmin", q: "How does the Recruiters leaderboard work?", ph: ["recruiter", "leaderboard", "momentum points"], g: [["recruiter", "leaderboard", "momentum"], ["how", "work", "rank", "points"]], s: ["leaderboard"],
+    a: "Recruiters ranks creators by Momentum earned from recruiting: +3 when a creator signs up through their invite link, +10 more when that creator is approved, with badge bonuses up the ladder. Points are priority, not money: they order the list businesses see." },
+  { id: "complianceadmin", q: "What does Compliance do?", ph: ["compliance", "sweep", "post checks"], g: [["compliance", "sweep"], ["what", "how", "work", "run"]], s: ["compliance", "sweep"],
+    a: "Compliance watches delivered visits: the 48-hour reminder, the day-5 reminder, and the one-week hard deadline. The sweep runs on a schedule; Run sweep now forces a pass. A visit with no post after the week falls under the Visit Guarantee and is replaced for the business, in credits, not cash." },
+  { id: "campaignadmin", q: "How do campaigns send?", ph: ["campaign", "outreach sends", "email lanes"], g: [["campaign", "campaigns", "sends"], ["how", "work", "lane", "send"]], s: ["campaign"],
+    a: "Campaign runs the founding creator outreach: both campaigns send through the same sweep, up to 8 emails per campaign every 30 minutes, split across the creators@signlteam.com and hello@joinsignl.com lanes. Sends, bounces, and skips are counted from the stored recipient records." },
+  { id: "eventsadmin", q: "What is the Event Log?", ph: ["event log", "audit", "history"], g: [["event", "events", "log", "audit"], ["what", "show", "history"]], s: [],
+    a: "Event Log is the audit trail: applications, approvals, market activations, campaign sends, and system jobs, newest first. If something happened in Admin, its record is there." },
+  { id: "statsadmin", q: "What does Stats count?", ph: ["stats", "totals", "platform numbers"], g: [["stats", "numbers", "totals"], ["what", "count", "show", "mean"]], s: ["stats"],
+    a: "Stats counts the whole platform from stored records: creators, businesses, pending applications, offers, visits, and posts. Testers are excluded from roster counts and shown on their own line, so the headline numbers are always the real roster." },
+  { id: "visitsrules", q: "What does a creator owe for a visit?", ph: ["visit owe", "deliverable", "48 hours", "post deadline", "visit guarantee", "no show"], g: [["visit", "post"], ["owe", "deadline", "late", "guarantee", "replace"]], s: [],
+    a: "A comped visit is one post plus one story that shares the post. Post within 48 hours is on time; one week is the hard deadline. If a booked creator does not show or does not post, the visit does not count against the business's monthly visits: it is replaced under the Visit Guarantee, in credits, not cash." },
+  { id: "rights", q: "What are the usage rights?", ph: ["rights", "license", "reuse", "ad use", "native share"], g: [["rights", "license", "licensing"], ["what", "how", "work", "mean"]], s: ["licensing"],
+    a: "A comped visit is native share only on every plan: the business may reshare the post natively with credit, and gets no ad use. A paid booking includes one standard license: 90 days to repost the post and run it as an ad, never perpetuity. Licensing a comped post runs at the creator's listed fee for 90 days; the creator approves each use and keeps 97%." },
+  { id: "help", q: "How do I reach a person?", ph: ["human", "contact", "support", "real person"], g: [["human", "person", "contact", "support"], ["reach", "talk", "email"]], s: ["support"],
+    a: "For anything a person needs to handle, hello@joinsignl.com and a person answers. Inside the console, every action lives on its own tab; this chat and the brief above are read-only guidance on top of those same records." },
+];
+function sigAdminRouteAsk(text) {
+  const t = sigNorm(text);
+  const toks = t.split(" ").filter(Boolean);
+  const scored = SIG_ADMIN_BANK.map((topic, i) => ({ topic, i, score: sigScoreTopic(topic, t, toks) })).sort((a, b) => b.score - a.score || a.i - b.i);
+  const top = scored[0];
+  if (top && top.score >= 8) return { text: top.topic.a, flow: null };
+  const near = scored.filter((s) => s.score >= 4).slice(0, 3).map((s) => s.topic);
+  const reply = { text: "I don't have that one yet.", flow: null, suggest: [] };
+  if (near.length) {
+    reply.text += " The closest things I can answer are right here; tap one and I will tell you straight.";
+    reply.suggest = near.map((topic) => topic.q);
+  } else {
+    reply.text += " Try me on what needs attention, how approvals, markets, partners, compliance, and campaigns work, or the locked rules: pricing, visits, rights, Momentum.";
+  }
+  return reply;
 }
 
 // Admin: distribution partners (Jeff, 2026-10-28). Create and
@@ -13166,22 +13323,51 @@ async function reinstateCreator(userId) {
 async function loadMarkets() {
   const el = document.getElementById("tab-body");
   try {
-    const data = await api("GET", "/admin/markets");
-    el.innerHTML = `
+    state.adminMarkets = await api("GET", "/admin/markets");
+    renderAdminMarkets();
+  } catch (err) {
+    el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+  }
+}
+
+// Market ordering (Jeff, 2026-10-28): "Most creators" reorders
+// the rows by creators signed up, most first. The count is the
+// payload's own per-market creator sign-ups: approved plus
+// pending, the two numbers every row already shows. The sort
+// is stable: equal counts keep the default order, and no count
+// itself ever changes. Default restores the standard order.
+function setAdminMarketSort(value) {
+  state.adminMarketsSort = value === "creators" ? "creators" : "default";
+  renderAdminMarkets();
+  return false;
+}
+
+function renderAdminMarkets() {
+  const el = document.getElementById("tab-body");
+  const data = state.adminMarkets;
+  if (!el || !data) return;
+  const sort = state.adminMarketsSort || "default";
+  const rows = (data.markets || []).map((m, i) => ({ m, i }));
+  if (sort === "creators") {
+    const signedUp = (m) => (m.creatorsApproved || 0) + (m.creatorsPending || 0);
+    rows.sort((a, b) => signedUp(b.m) - signedUp(a.m) || a.i - b.i);
+  }
+  el.innerHTML = `
       <p class="muted small">A market that is not live shows creators their founding status page only: no offers, no discovery. Activating a market opens publishing and bookings there, but it does NOT activate founding businesses: business activation is a separate admin action, per business or for every founding business in a market. Founding creators keep sign-up-order priority in discovery.</p>
       ${data.testMode ? `<div class="error-box">TEST MODE is on (SIGNL_TEST_ALLOW_BUSINESS): every market reads live. Never run production this way.</div>` : ""}
+      <div class="flex-between" style="margin:10px 0">
+        <span class="muted small">${sort === "creators" ? "Ordered by creators signed up, most first." : "Markets in their standard order."}</span>
+        <label class="small" style="display:flex;align-items:center;gap:6px">Sort <select id="admin-market-sort" onchange="setAdminMarketSort(this.value)"><option value="default"${sort === "default" ? " selected" : ""}>Default</option><option value="creators"${sort === "creators" ? " selected" : ""}>Most creators</option></select></label>
+      </div>
       <div class="table-wrap panel"><table>
         <tr><th>Market</th><th>Status</th><th>Roster</th><th>Action</th></tr>
-        ${data.markets.map((m) => `<tr>
+        ${rows.map(({ m }) => `<tr>
           <td><strong>${esc(m.label)}</strong><br><span class="muted small">${esc(m.country || "United States")}</span></td>
           <td>${m.live ? `<span class="badge ok">Live</span>` : `<span class="badge info">Founding only</span>`}</td>
           <td><strong>${m.creatorsApproved}</strong> approved creators &middot; <strong>${m.creatorsApprovedComplete || 0}</strong> complete &middot; <strong>${m.creatorsPending}</strong> pending<br><span class="muted small"><strong>${m.businessesApproved}</strong> approved businesses &middot; ${m.businessesFounding || 0} on the founding list &middot; ${m.businessesActive || 0} active</span></td>
           <td><button class="btn small-btn ${m.live ? "danger" : ""}" onclick="toggleMarket('${esc(m.name)}', ${m.live ? "false" : "true"})">${m.live ? "Deactivate" : "Activate market"}</button><div class="muted small" style="margin-top:4px">${m.live ? "Back to founding only: no new offers or bookings there." : "Opens publishing and bookings here. Founding businesses still activate separately."}</div>${m.businessesFounding ? `<button class="btn small-btn ghost" style="margin-top:6px" onclick="activateMarketBusinesses('${esc(m.name)}')">Activate founding businesses (${m.businessesFounding})</button>` : ""}</td>
         </tr>`).join("")}
       </table></div>`;
-  } catch (err) {
-    el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
-  }
 }
 
 async function toggleMarket(market, live) {
