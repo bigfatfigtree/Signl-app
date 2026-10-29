@@ -6997,6 +6997,7 @@ async function loadFoundingDashboard() {
       <p style="margin-bottom:0">${scoreBadge(card.localImpactScore)}</p>
       <div class="home-actions"><button class="btn small-btn ghost" onclick="return go('dashboard','Status')">See your full status</button></div>
     </div>
+    ${creatorBuzzHtml(u, card, f, data.buzz)}
     ${feedListHtml([
       { at: u.createdAt, icon: "status", acc: true, title: `Founding enrollment: ${u.status === "approved" ? "approved" : "in review"}`, meta: isUnl ? unlistedPlace(f) : marketDisplayName(f.market) },
       { icon: "pin", title: isUnl ? `${esc(f.city)} opens when sign-ups pile up` : `${esc(marketTalkNameClient(f.market))} opens in the next ${esc(f.launchWindow)}`, meta: `We email you at ${esc(u.email)} the moment it opens.` },
@@ -7015,6 +7016,96 @@ async function loadFoundingDashboard() {
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
+}
+
+// ---------- creator excitement layer (Jeff, 2026-10-29) ----------
+// Rendered on the founding home the moment a creator is approved:
+// their rank by local reach, a shareable founding stat card, their
+// city's unlock meter, and the plain statement of what Momentum
+// actually does. Every number comes from GET /me/founding's buzz
+// object, computed server-side from stored records. Nothing here
+// invents a figure, and no line promises money.
+function creatorBuzzHtml(u, card, f, buzz) {
+  if (!buzz) return "";
+  const placeRaw = f.unlisted ? (f.city || "your city") : marketTalkNameClient(f.market);
+  return [
+    creatorStatCardHtml(u, card, f, buzz, placeRaw),
+    creatorUnlockHtml(f, buzz, placeRaw),
+    creatorMomentumPayoffHtml(),
+  ].join("");
+}
+
+function creatorStatCardHtml(u, card, f, buzz, placeRaw) {
+  const p = card.profile || {};
+  const rank = buzz.localRank;
+  const pct = p.localAudiencePct === null || p.localAudiencePct === undefined ? null : p.localAudiencePct;
+  const complete = !!(u.profileCompletion && u.profileCompletion.complete);
+  const rankLine = rank
+    ? `#${rank.rank} in ${placeRaw} by local reach`
+    : (pct === null ? "Set your local % to get your rank" : (!complete ? "Finish your profile to take your rank" : "Your rank lands as finished profiles report their local %"));
+  const bits = [`I am a founding creator on SIGNL in ${placeRaw}.`];
+  if (pct !== null) bits.push(`${pct}% of my audience is local${rank ? `, and I rank #${rank.rank} here by local reach` : ""}.`);
+  bits.push("SIGNL ranks creators by local reach, not follower count. Local businesses book us for comped visits or paid bookings at our own rates.");
+  const link = inviteUrlFor(u);
+  if (link) bits.push(`Creators: join through my link: ${link}`);
+  return `<section class="stat-card">
+    <div class="stat-top"><span class="stat-brand">SIGNL</span><span class="badge ok">Founding Creator</span></div>
+    <div class="stat-name">${esc(u.name)} <span class="stat-handle">@${esc(p.handle || "")}</span></div>
+    <div class="stat-place">${esc(placeRaw)}${p.tierBand ? ` &middot; ${esc(p.tierBand)} tier` : ""} &middot; ${fmtNum(totalAudienceOf(card))} total audience</div>
+    <div class="stat-big">${pct === null ? "Local % not set" : `${pct}%`}</div>
+    <div class="stat-lbl">${pct === null ? "Add your local audience % in your profile and this card fills in." : "of my audience is local"}</div>
+    <div class="stat-rank">${esc(rankLine)}</div>
+    <div class="stat-sub">Ranked by local reach, not follower count.${f.priorityBand ? ` In the first ${f.priorityBand} founding creators in ${esc(placeRaw)}.` : ""}</div>
+    <div class="stat-actions"><button type="button" class="btn small-btn" onclick="return shareStatCard(this)" data-stat-text="${esc(bits.join(" "))}">Share my stat card</button></div>
+  </section>`;
+}
+
+function shareStatCard(btn) {
+  const text = btn.getAttribute("data-stat-text") || "";
+  if (!text) return false;
+  if (navigator.share) { navigator.share({ title: "My SIGNL founding stats", text }).catch(() => {}); return false; }
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text).then(() => {
+      const old = btn.textContent;
+      btn.textContent = "Copied";
+      setTimeout(() => { btn.textContent = old; }, 2000);
+    }).catch(() => {});
+  }
+  return false;
+}
+
+function creatorUnlockHtml(f, buzz, placeRaw) {
+  const un = buzz.unlock;
+  if (!un) return "";
+  const width = Math.max(0, Math.min(100, Math.round((un.complete / un.launchBar) * 100)));
+  const toGo = Math.max(0, un.launchBar - un.complete);
+  const state = un.marketLive
+    ? `${esc(placeRaw)} is live. Businesses are booking now.`
+    : (un.complete >= un.launchBar
+      ? `The bar is met: ${un.complete} finished founding profiles. ${esc(placeRaw)} is in launch position, and businesses activate as the market opens.`
+      : `<strong>${un.complete} of ${un.launchBar}</strong> finished founding profiles &middot; ${un.approved} approved &middot; <strong>${toGo} to go.</strong>`);
+  return `<section class="wcard">
+    <p class="ui-kicker">City unlock meter</p>
+    <h3 style="margin:2px 0 0">${esc(placeRaw)} launches at ${un.launchBar} finished profiles</h3>
+    <div class="meter"><i style="width:${width}%"></i></div>
+    <p class="small" style="margin:10px 0 0">${state}</p>
+    <p class="small muted" style="margin:6px 0 0">A finished profile is one a business can actually book: home city, audience, categories, and local % all set. Every finished profile moves this meter, including yours, and inviting creators through your link below is the fastest way to move it.</p>
+  </section>`;
+}
+
+// The Momentum payoff, stated exactly as the product applies it
+// (Jeff, 2026-10-29): Momentum rides on the roster card and is a
+// sort businesses can choose, and it is one weighted part of the
+// applicant stack order (local reach first, then Local Impact
+// Score, then Momentum and reliability). The creator offer feed
+// itself is newest-first and is NOT Momentum-ordered, so no line
+// here claims creators see campaigns earlier by Momentum.
+function creatorMomentumPayoffHtml() {
+  return `<section class="wcard">
+    <p class="ui-kicker">Why Momentum matters</p>
+    <h3 style="margin:2px 0 0">Momentum moves you up</h3>
+    <p class="small" style="margin:6px 0 0">Momentum is part of how businesses find you. It rides on your roster card next to your local reach, businesses can sort the roster by Momentum, and when you apply to an offer, Momentum is part of the stack order the business picks from. Local reach counts most in that stack, then your Local Impact Score, then Momentum and reliability. Your points and ways to earn are in the Momentum section below.</p>
+  </section>`;
 }
 
 // The founding Status tab: the full founding status detail (status,
@@ -7552,7 +7643,7 @@ function laneControlsHtml(c) {
     <div class="lane-rate" id="lane-rate-row" style="display:${rate ? "block" : "none"}">
       <label for="lane-rate">Your paid rate (min $50)</label>
       <div class="lane-rate-flex"><input type="number" id="lane-rate" min="50" step="1" inputmode="numeric" placeholder="150" value="${rate || ""}" onchange="laneRateAuto()"><button type="button" class="btn small-btn" onclick="return laneRateSave()">Save rate</button></div>
-      <p class="small muted" id="lane-rate-note">${rate ? `At $${fmtMoney(rate)} you keep $${fmtMoney(Math.round(rate * 0.97 * 100) / 100)} (97%).` : "Paid bookings turn on when a rate is saved."}</p>
+      <p class="small muted" id="lane-rate-note">${rate ? `Businesses pay your listed rate of $${fmtMoney(rate)}. You keep $${fmtMoney(Math.round(rate * 0.97 * 100) / 100)} (97%), and SIGNL holds the payment until your post is live.` : "Set a rate and businesses can book you paid at that rate. You keep 97%, and SIGNL holds the payment until your post is live. Paid bookings turn on when a rate is saved."}</p>
     </div>
     <div class="lrow lane-row"><div><span class="lname">Post licensing</span> <span class="lline" id="lane-fee-line">— ${esc(laneFeeLine(c || {}))}</span></div></div>
     <div class="lane-rate">

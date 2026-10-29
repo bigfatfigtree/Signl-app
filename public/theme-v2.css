@@ -2810,3 +2810,20 @@ body.rail-on main, body.preview-on main { min-width: 0; }
 .rp-plan.on { border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink); }
 .rp-plan-name { font-weight: 800; }
 .rp-plan-price { font-size: 1.4rem; font-weight: 800; margin-top: 4px; }
+
+/* Creator excitement layer (2026-10-29): the founding stat card
+   on the creator founding home. Ink field with a mint accent,
+   the same tokens as the founding identity card; the city
+   unlock meter reuses the shared .meter component above. */
+.stat-card { background: #0B0D0C; color: #fff; border-radius: 18px; padding: 20px 22px; margin: 14px 0; }
+.stat-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.stat-brand { font-weight: 800; letter-spacing: .14em; }
+.stat-name { font-size: 1.25rem; font-weight: 800; margin-top: 14px; }
+.stat-handle { color: #A9E8C9; font-weight: 600; }
+.stat-place { color: rgba(255, 255, 255, .62); font-size: .88rem; margin-top: 2px; }
+.stat-big { font-size: 3rem; font-weight: 800; line-height: 1.05; margin-top: 14px; color: #A9E8C9; }
+.stat-lbl { color: rgba(255, 255, 255, .62); font-size: .85rem; }
+.stat-rank { font-size: 1.05rem; font-weight: 800; margin-top: 12px; }
+.stat-sub { color: rgba(255, 255, 255, .72); font-size: .86rem; margin-top: 4px; }
+.stat-actions { margin-top: 14px; }
+.stat-actions .btn { background: #A9E8C9; border-color: #A9E8C9; color: #0B0D0C; font-weight: 700; }

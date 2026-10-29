@@ -1312,6 +1312,15 @@ function isFoundingBusiness(u) {
 // real total alongside, so the cap never inflates or hides it.
 const ROSTER_PREVIEW_LIMIT = 12;
 
+// Founding launch bar (creator excitement layer, Jeff, 2026-10-29):
+// the finished-profile count a market's founding roster is built
+// to before businesses open there (the 25 to 30 finished-creator
+// gate the launch plan runs on, stated at its floor). The city
+// unlock meter on the creator founding home reads this number;
+// it is a planning bar shown honestly as progress, not a promise
+// that a market opens the day the count lands.
+const FOUNDING_LAUNCH_BAR = 25;
+
 const FOUNDING_BUSINESS_MESSAGE = "Your business is on the founding list, so the creator roster and the product tools are not open yet. Every founding application gets a decision or a clear status within 2 business days. Your Founding Status page shows your plan, your place in line, and what happens next.";
 
 function publicUser(u) {
@@ -1917,6 +1926,45 @@ function publicFounding(summary) {
     ...rest,
     priorityBand: foundingBand(priorityPosition),
     queueBand: foundingBand(queuePosition),
+  };
+}
+
+// Creator excitement layer (Jeff, 2026-10-29): the numbers a
+// founding creator's home celebrates with, computed live from
+// stored records only. Two pieces:
+//   localRank: the creator's rank in their market BY LOCAL REACH
+//     (the ordering SIGNL sells), among approved, profile-complete
+//     creators who have reported a local %. Ties break by founding
+//     order (earliest sign-up first), the platform's standing
+//     fairness rule. Null until the creator is approved, complete,
+//     and has a local % on file: there is no rank to show before
+//     the profile businesses would rank exists.
+//   unlock: the market's founding progress toward the launch bar:
+//     approved count, finished-profile count, the bar, and the
+//     live flag. Jeff ordered these exact counts shown to
+//     creators for this meter (2026-10-29), superseding the
+//     band-only treatment foundingSummary gives sign-up counts;
+//     queue positions stay banded, only roster progress is exact.
+//     Unlisted markets get no meter: their creators share one
+//     stored label across many cities, so a single count would
+//     mix cities and mislead.
+async function creatorBuzz(user) {
+  const users = await allUsers();
+  const inMarket = users.filter((x) => x.role === "creator" && !isTester(x) && normalizeMarketName(x.market) === normalizeMarketName(user.market));
+  const approved = inMarket.filter((x) => x.status === "approved");
+  const complete = approved.filter((x) => profileCompleteOf(x));
+  const ranked = complete
+    .filter((x) => x.creator && typeof x.creator.localAudiencePct === "number")
+    .sort((a, b) => (b.creator.localAudiencePct - a.creator.localAudiencePct) || (a.createdAt < b.createdAt ? -1 : 1));
+  const idx = ranked.findIndex((x) => x.id === user.id);
+  return {
+    localRank: idx > -1 ? { rank: idx + 1, field: ranked.length, localAudiencePct: ranked[idx].creator.localAudiencePct } : null,
+    unlock: user.market === UNLISTED ? null : {
+      approved: approved.length,
+      complete: complete.length,
+      launchBar: FOUNDING_LAUNCH_BAR,
+      marketLive: await isMarketLive(user.market),
+    },
   };
 }
 
@@ -10951,6 +10999,7 @@ async function route(event) {
     const summary = publicFounding(summaryRaw);
     const { approvedRank } = creatorRanks(await allUsers());
     const card = await publicCreator(user, user, approvedRank.get(user.id) || null);
+    const buzz = await creatorBuzz(user);
     const today = nowIso().slice(0, 10);
     if (user.foundingViewedOn !== today) {
       user.foundingViewedOn = today;
@@ -10958,7 +11007,7 @@ async function route(event) {
       await store.set(`user:${user.id}`, user);
       await logEvent({ type: "founding_status_viewed", actorId: user.id, actorRole: "creator", subjectId: user.id, market: user.market, data: { priorityPosition: summaryRaw.priorityPosition, marketLive: summaryRaw.marketLive } });
     }
-    return json(200, { founding: summary, card });
+    return json(200, { founding: summary, card, buzz });
   }
 
   // ---------- market activation gate ----------

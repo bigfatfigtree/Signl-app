@@ -174,6 +174,44 @@ try {
   check("build stamp is the new build on both sides",
     fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), "..", "netlify", "functions", "lib", "build.js"), "utf8").includes("2026.10.29-29")
     && fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), "..", "public", "index.html"), "utf8").includes("2026.10.29-29"), "");
+
+  // ================================================================
+  // Part B: creator excitement layer (Jeff, 2026-10-29).
+  // GET /me/founding carries buzz: the creator's rank in their
+  // market BY LOCAL REACH plus the market's unlock progress,
+  // computed from the same three Richmond fixtures Part A seeded.
+  // ================================================================
+  const qFounding = await cHigh.client("GET", "/api/me/founding");
+  check("creator founding payload carries the buzz object", qFounding.status === 200 && !!(qFounding.data && qFounding.data.buzz), JSON.stringify(qFounding.data).slice(0, 200));
+  const qRank = qFounding.data && qFounding.data.buzz ? qFounding.data.buzz.localRank : null;
+  check("local rank is by local reach: 90% ranks #1 of 3", !!qRank && qRank.rank === 1 && qRank.field === 3 && qRank.localAudiencePct === 90, JSON.stringify(qRank));
+  const rFounding = await cMid.client("GET", "/api/me/founding");
+  const rRank = rFounding.data && rFounding.data.buzz ? rFounding.data.buzz.localRank : null;
+  check("70% local ranks #2: follower count (6,000 vs 900) does not move the rank", !!rRank && rRank.rank === 2 && rRank.localAudiencePct === 70, JSON.stringify(rRank));
+  const pFounding = await cLow.client("GET", "/api/me/founding");
+  const pRank = pFounding.data && pFounding.data.buzz ? pFounding.data.buzz.localRank : null;
+  check("40% local (8,000 followers) ranks #3: reach beats audience size", !!pRank && pRank.rank === 3, JSON.stringify(pRank));
+  const qUnlock = qFounding.data && qFounding.data.buzz ? qFounding.data.buzz.unlock : null;
+  check("unlock meter carries real counts against the launch bar", !!qUnlock && qUnlock.approved === 3 && qUnlock.complete === 3 && qUnlock.launchBar === 25 && qUnlock.marketLive === false, JSON.stringify(qUnlock));
+  const bizFounding = await biz.client("GET", "/api/me/founding");
+  check("businesses cannot read the creator founding payload (403)", bizFounding.status === 403, String(bizFounding.status));
+
+  // Client pins for the creator layer.
+  const buzzFrom = appJs.indexOf("creator excitement layer");
+  const buzzTo = appJs.indexOf("The founding Status tab", buzzFrom);
+  const buzzSlice = buzzFrom > -1 && buzzTo > buzzFrom ? appJs.slice(buzzFrom, buzzTo) : "";
+  check("client ships the excitement layer (stat card, unlock meter, momentum payoff)",
+    buzzSlice.includes("creatorStatCardHtml") && buzzSlice.includes("Share my stat card") && buzzSlice.includes("City unlock meter") && buzzSlice.includes("Momentum moves you up") && buzzSlice.includes("stack order the business picks from"),
+    `slice ${buzzSlice.length} chars`);
+  check("founding home renders the excitement layer from data.buzz", appJs.includes("${creatorBuzzHtml(u, card, f, data.buzz)}"), "");
+  check("excitement layer code carries no em dashes", buzzSlice.length > 0 && !buzzSlice.includes("—"), "");
+  check("no surface claims Momentum shows creators paid campaigns first (the creator feed is newest-first)", !appJs.includes("see paid campaigns first") && !appJs.includes("paid campaigns first"), "");
+  check("rate moment states pay-at-rate, keep 97%, held until post live at the rate field",
+    appJs.includes("Businesses pay your listed rate of") && appJs.includes("SIGNL holds the payment until your post is live"), "");
+  const routerSrc = fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), "..", "netlify", "functions", "lib", "router.js"), "utf8");
+  const buzzFnFrom = routerSrc.indexOf("async function creatorBuzz");
+  const buzzFn = buzzFnFrom > -1 ? routerSrc.slice(buzzFnFrom, buzzFnFrom + 2600) : "";
+  check("server buzz computation is present and carries no em dashes", buzzFn.length > 0 && !buzzFn.includes("—"), `slice ${buzzFn.length} chars`);
 } catch (e) {
   failed += 1;
   failures.push("suite crashed: " + e.message);
