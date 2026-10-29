@@ -587,6 +587,7 @@ async function renderPublicProfile() {
           ? `<div class="lbl">Local audience not reported yet</div>`
           : `<div class="big">${p.localAudiencePct}%</div><div class="lbl">of their audience is local</div><div class="src">${esc(p.localAudienceSource || "Self-reported")}</div>`}
       </div>
+      ${p.proof && p.proof.visitsCompleted > 0 ? `<div class="wcard" style="margin:14px 0 0"><p style="margin:0"><span class="badge ok">Verified on SIGNL</span></p><p style="margin:8px 0 0"><strong>${p.proof.visitsCompleted} visit${p.proof.visitsCompleted === 1 ? "" : "s"} completed</strong>, ${p.proof.onTimePosts} on time · <strong>${p.proof.customersCounted} customers counted</strong> at the register · <strong>${p.proof.cameBacks} came back</strong> within a month · at least <strong>$${fmtMoney(p.proof.trackedSpend)}</strong> tracked spend</p><p class="small muted" style="margin:6px 0 0">Counted by SIGNL from register events, not claimed by the creator. Book me on SIGNL and this is the receipt you'll get.</p></div>` : ""}
       ${p.categories && p.categories.length ? `<p class="small">${p.categories.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
       ${p.isRealtor && p.farmAreas && p.farmAreas.length ? `<p class="small">Neighborhoods: ${p.farmAreas.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
       ${p.streets && p.streets.length ? `<p class="small">My streets: ${p.streets.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
@@ -5893,6 +5894,11 @@ function renderForBusinesses() {
         <div class="field"><label>About your business (optional)</label><textarea id="jb-about" rows="3" placeholder="What you serve, what the visit feels like, anything SIGNL should know when reviewing your application"></textarea></div>
         <div class="field"><label>What is your first month about? (optional)</label><select id="jb-moment"><option value="">Not sure yet</option>${momentsClient().map((m) => `<option value="${m.id}">${esc(m.label)}</option>`).join("")}</select><p class="small muted">The moment names the play your first month runs. You can change it any time after you join.</p></div>
       </div>
+        <div class="form-2col">
+          <div class="field"><label>Your usual night: which weeknight?</label><select id="jb-baseline-day"><option value="">Pick a weeknight</option><option>Monday</option><option>Tuesday</option><option>Wednesday</option><option>Thursday</option><option>Friday</option><option>Saturday</option><option>Sunday</option></select></div>
+          <div class="field"><label>About how many tables or customers?</label><input id="jb-baseline-count" type="number" min="0" placeholder="For example: 40"></div>
+        </div>
+        <p class="small muted" style="margin:0 0 10px">Optional, one remembered number. It is the starting line your receipt measures visit nights against, and it only works if it predates your first visit.</p>
       <input type="hidden" id="jb-plan" value="${esc(state.boot.plans[0].id)}">
       <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="jb-terms" required><span>I agree to the Terms of Service and Privacy Policy, including keeping bookings that start on SIGNL on SIGNL, and to account and marketing emails from SIGNL.</span></label></div>
       <button class="btn mt" type="submit" style="width:100%">Join founding list</button>
@@ -6141,6 +6147,8 @@ async function registerBusiness(e) {
       about: document.getElementById("jb-about").value,
       planId: document.getElementById("jb-plan").value,
       moment: (document.getElementById("jb-moment") || {}).value || undefined,
+      baselineDay: (document.getElementById("jb-baseline-day") || {}).value || undefined,
+      baselineCount: (document.getElementById("jb-baseline-count") || {}).value || undefined,
       applicationSource: window.__jbAppSource || undefined,
       agreedTerms: document.getElementById("jb-terms").checked,
       signupSource: storedSrc() || undefined,
@@ -6247,6 +6255,7 @@ async function loadFoundingBusinessPreview() {
   const host = document.getElementById("fbz-preview");
   if (!host) return;
   host.innerHTML = foundingPreviewHtml(data);
+  loadReceipt();
 }
 
 function foundingPreviewHtml(data) {
@@ -6260,6 +6269,7 @@ function foundingPreviewHtml(data) {
     foundingFirstOfferHtml(u),
     foundingFirstMonthHtml(u, data),
     foundingLastAdHtml(),
+    receiptFoundingHtml(),
     foundingBenefitsHtml(u),
     foundingPlansHtml(u),
   ].join("");
@@ -7428,6 +7438,7 @@ async function loadFoundingDashboard() {
     ${momentumHtml(u)}
     ${growRosterHtml(u)}
     ${goldenTicketsSectionHtml()}
+    ${proofSectionHtml()}
     <h3 style="margin:22px 0 0">Your founding status</h3>
     <div id="founding-body">${skelHtml("Loading your founding profile...", 1)}</div>
     ${askSigRowHtml()}`;
@@ -7436,9 +7447,135 @@ async function loadFoundingDashboard() {
     renderBottomNav();
     loadFoundingStatus();
     loadGoldenTickets();
+    loadProofCard();
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
+}
+
+// ---------- The Receipt + Proof Card (Build -34) ----------
+// Every number on these surfaces is a counted floor with its
+// method in plain words beside it. Nothing here projects,
+// estimates silently, or says "caused": register events are
+// counted, tallies are labeled as reported, Google's numbers
+// stay under Google's name, and mentions ride their own line.
+function receiptFoundingHtml() {
+  return `<div id="biz-receipt"></div>`;
+}
+async function loadReceipt() {
+  const host = document.getElementById("biz-receipt");
+  if (!host) return;
+  let r = null;
+  try { const data = await api("GET", "/me/receipt"); r = data.receipt; } catch (e) { r = null; }
+  if (!document.getElementById("biz-receipt")) return;
+  if (!r) { host.innerHTML = ""; return; }
+  state._receiptTop = (r.topCreators || [])[0] || null;
+  host.innerHTML = receiptHtml(r);
+}
+function receiptSettingsHtml(r) {
+  const b = (state.user && state.user.business) || {};
+  const base = r.baseline || null;
+  const g = (r.google && r.google.current) || {};
+  const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+  return `<details style="margin-top:14px"><summary class="small"><strong>Your receipt's starting lines</strong></summary>
+    <div class="form-2col" style="margin-top:10px">
+      <div class="field"><label>Your usual night</label><select id="rc-base-day">${days.map((d) => `<option ${base && base.dayLabel === d ? "selected" : ""}>${d}</option>`).join("")}</select></div>
+      <div class="field"><label>Usual tables or customers</label><input id="rc-base-count" type="number" min="0" value="${base ? base.usual : ""}" placeholder="For example: 40"></div>
+    </div>
+    <button class="btn small-btn ghost" type="button" onclick="receiptSaveBaseline()">Save usual night</button> <span class="small muted" id="rc-base-note"></span>
+    <div class="form-2col" style="margin-top:12px">
+      <div class="field"><label>Google searches this month</label><input id="rc-g-searches" type="number" min="0" value="${g.searches !== undefined ? g.searches : ""}"></div>
+      <div class="field"><label>Direction requests</label><input id="rc-g-directions" type="number" min="0" value="${g.directions !== undefined ? g.directions : ""}"></div>
+      <div class="field"><label>Calls from Google</label><input id="rc-g-calls" type="number" min="0" value="${g.calls !== undefined ? g.calls : ""}"></div>
+      <div class="field"><label>New reviews</label><input id="rc-g-reviews" type="number" min="0" value="${g.reviews !== undefined ? g.reviews : ""}"></div>
+    </div>
+    <button class="btn small-btn ghost" type="button" onclick="receiptSaveGoogle()">Save Google numbers</button> <span class="small muted" id="rc-g-note"></span>
+    <p class="small" style="margin-top:12px"><label class="ckrow"><input type="checkbox" class="ckbox" id="rc-optin" ${r.proofNameOptIn ? "checked" : ""} onchange="receiptSaveOptIn()"><span>Let creators name my business on their proof cards. Until I check this, their proof shows my category and city only.</span></label></p>
+  </details>`;
+}
+async function receiptSaveBaseline() {
+  const day = (document.getElementById("rc-base-day") || {}).value;
+  const count = (document.getElementById("rc-base-count") || {}).value;
+  const note = document.getElementById("rc-base-note");
+  try {
+    const data = await api("PATCH", "/me/profile", { baseline: { dayLabel: day, count: Number(count) } });
+    state.user = data.user;
+    if (note) note.textContent = "Saved. Visit nights now line up against your usual " + day + ".";
+    loadReceipt();
+  } catch (e) { if (note) note.textContent = e.message; }
+}
+async function receiptSaveGoogle() {
+  const val = (id) => { const el = document.getElementById(id); return el && el.value !== "" ? Number(el.value) : undefined; };
+  const note = document.getElementById("rc-g-note");
+  const gs = {};
+  const map = { searches: "rc-g-searches", directions: "rc-g-directions", calls: "rc-g-calls", reviews: "rc-g-reviews" };
+  for (const k of Object.keys(map)) { const v = val(map[k]); if (v !== undefined) gs[k] = v; }
+  try {
+    const data = await api("PATCH", "/me/profile", { googleStats: gs });
+    state.user = data.user;
+    if (note) note.textContent = "Saved under this month, labeled as Google's numbers.";
+    loadReceipt();
+  } catch (e) { if (note) note.textContent = e.message; }
+}
+async function receiptSaveOptIn() {
+  const el = document.getElementById("rc-optin");
+  try { const data = await api("PATCH", "/me/profile", { proofNameOptIn: !!(el && el.checked) }); state.user = data.user; } catch (e) { /* the checkbox state stands */ }
+}
+function receiptBookTop() {
+  const top = state._receiptTop;
+  if (top && typeof sigB1Start === "function") { sigB1Start({ creatorId: top.creatorId, creatorName: top.creatorName, creatorRate: null, creatorTier: null }); return false; }
+  return go("dashboard", "Find Creators");
+}
+function receiptHtml(r) {
+  const hasLedger = (r.ledger || []).length > 0;
+  const cb = r.cameBack || {};
+  const base = r.baseline;
+  const g = r.google || {};
+  const gLine = (cur, prev, label) => (cur && cur[label] !== undefined ? `<div class="lrow"><span>${label === "searches" ? "Searches" : label === "directions" ? "Direction requests" : label === "calls" ? "Calls" : "New reviews"}</span><strong>${cur[label]}${prev && prev[label] !== undefined ? ` <span class="muted" style="font-weight:400">(last month ${prev[label]})</span>` : ""}</strong></div>` : "");
+  return `<section class="wcard">
+    <p class="ui-kicker">Your receipt</p>
+    <h3>What SIGNL brought you</h3>
+    ${hasLedger ? `
+    <p style="margin:8px 0 0;font-size:1.08rem">In ${esc(r.monthLabel)}, SIGNL brought you <strong>at least $${fmtMoney(r.trackedSpend)}</strong> in tracked register spend from <strong>${r.customersCounted} counted customer${r.customersCounted === 1 ? "" : "s"}</strong>.</p>
+    <p class="small muted">Counted how: every dollar above is a register event your team logged with its check total, or your reported tally where you used it instead. It is a floor, not a projection: customers who never used a code are invisible to everyone, us included.</p>
+    <div style="margin-top:10px">${r.ledger.map((l) => `<div class="lrow" style="margin-top:8px"><div style="flex:1"><span class="lname">${esc(l.title || "Visit")}</span> <span class="muted">with @${esc(l.creatorHandle)}</span><div class="small muted">${l.customers} counted customer${l.customers === 1 ? "" : "s"} · $${fmtMoney(l.spend)} tracked${l.source === "tally" ? " (your reported tally)" : ""}${l.returns ? ` · ${l.returns} came back ($${fmtMoney(l.returnSpend)})` : ""}${l.mentions ? ` · ${l.mentions} told staff a post sent them` : ""}${l.nightCount !== null && l.nightCount !== undefined ? ` · ${l.nightCount} tables or customers that night` : ""}</div></div></div>`).join("")}</div>
+    <div style="margin-top:14px"><h4 style="margin:0 0 4px">Came-backs</h4>
+    ${cb.returns > 0 ? `<p style="margin:0">${cb.returns} of the customers a creator brought in <strong>came back within 30 days</strong> and spent $${fmtMoney(cb.returnSpend)} more, at full price unless you chose a perk. ${cb.rate !== null && cb.rate !== undefined ? `That is a return rate of ${Math.round(cb.rate * 100)}% on ${cb.firstVisits} counted first visits.` : `The rate prints once ${cb.rateMinBase} first visits are counted, so it never rests on two friends.`}</p>` : `<p class="muted" style="margin:0">No come-backs counted yet. Every first redemption with a check total hands the customer a pass, good for 30 days here; returns land on this line as they happen. The line says came back, because that is what was counted.</p>`}
+    </div>
+    ${base ? `<p style="margin:12px 0 0">${base.visitAvg !== null && base.visitAvg !== undefined ? `${esc(base.dayLabel)}s with a creator visit ran about <strong>${base.visitAvg}</strong> tables or customers, against your usual ${esc(base.dayLabel)} of about <strong>${base.usual}</strong>. Your numbers, your usual, counted from the night counts you saved.` : `Your usual ${esc(base.dayLabel)} is about <strong>${base.usual}</strong> tables or customers, recorded before your first visits. Save a night count after a visit and this line starts comparing.`}</p>` : ""}
+    ${r.whoBrought && r.whoBrought.length ? `<h4 style="margin:14px 0 4px">Who brought them</h4>${r.whoBrought.map((w) => `<div class="lrow"><div style="flex:1"><span class="lname">@${esc(w.creatorHandle)}</span><div class="small muted">${w.visits} visit${w.visits === 1 ? "" : "s"} counted</div></div><span>${w.customers} customers · $${fmtMoney(w.spend)}${w.cameBacks ? ` · ${w.cameBacks} came back` : ""}</span></div>`).join("")}` : ""}
+    ${r.mentions && r.mentions.month > 0 ? `<p class="small muted" style="margin:12px 0 0">Plus ${r.mentions.month} more customer${r.mentions.month === 1 ? "" : "s"} told your staff a post sent them. Told-us counts ride their own line and never mix into register money.</p>` : ""}
+    <div style="margin-top:14px"><h4 style="margin:0 0 4px">What it cost</h4>
+    <p style="margin:0">Plan so far this month: $${fmtMoney(r.cost.planAllocation)} of your ${r.cost.planPrice ? `$${fmtMoney(r.cost.planPrice)}` : ""} plan counted against counted visits · comps at cost $${fmtMoney(r.cost.compCost)} · code discounts $${fmtMoney(r.cost.discountCost)}. ${r.roas.score !== null && r.roas.score !== undefined ? `<strong>SIGNL ROAS Score: ${Number(r.roas.score).toFixed(2)}&times;</strong> (tracked register value plus modeled media value over your costs; the all-in score with the plan counted is ${r.roas.allInScore !== null && r.roas.allInScore !== undefined ? Number(r.roas.allInScore).toFixed(2) + "&times;" : "not ready yet"}).` : "Your SIGNL ROAS Score appears once a visit carries costs and counted value."}</p></div>
+    <p style="margin:14px 0 0"><button class="btn" type="button" onclick="return receiptBookTop()">Book next month's creators</button></p>`
+    : `<p class="wc-sub" style="margin:6px 0 0">This is the screen your first visits pay into. Every number will be a counted floor with its method beside it: register events as they happen, come-backs inside 30 days, your usual night as the comparison line. Nothing here is ever projected or padded.${r.cost && r.cost.planPrice ? ` Your founding plan is $${fmtMoney(r.cost.planPrice)} a month, held at the founding rate while it stays active.` : ""}${base ? ` Your usual ${esc(base.dayLabel)} (about ${base.usual}) is already recorded, so the comparison line is ready before your first visit.` : " Set your usual night below and the comparison line is ready before your first visit."}</p>`}
+    ${g.current ? `<div style="margin-top:14px"><h4 style="margin:0 0 4px">People looking you up</h4><p class="small muted" style="margin:0 0 6px">Google's numbers, not ours. They corroborate a good month; they never add to tracked spend.</p>${gLine(g.current, g.previous, "searches")}${gLine(g.current, g.previous, "directions")}${gLine(g.current, g.previous, "calls")}${gLine(g.current, g.previous, "reviews")}</div>` : ""}
+    ${receiptSettingsHtml(r)}
+  </section>`;
+}
+function proofSectionHtml() {
+  return `<div class="wcard" id="proof-card"><h3>Your Proof Card</h3><p class="wc-sub" style="margin:4px 0 0">Loading your counted record...</p></div>`;
+}
+async function loadProofCard() {
+  const host = document.getElementById("proof-card");
+  if (!host) return;
+  let data = null;
+  try { data = await api("GET", "/me/proof-card"); } catch (e) { data = null; }
+  if (!document.getElementById("proof-card")) return;
+  const pf = data && data.proof;
+  if (!pf) { host.innerHTML = `<h3>Your Proof Card</h3><p class="wc-sub" style="margin:4px 0 0">Your counted record could not load just now.</p>`; return; }
+  const u = state.user;
+  const handle = (u.creator && u.creator.handle) || "";
+  if (!pf.visitsCompleted && !pf.customersCounted) {
+    host.innerHTML = `<h3>Your Proof Card</h3><p class="wc-sub" style="margin:4px 0 0">Your first verified results land with your first completed visit. When they do, this card carries what SIGNL counted at the register: visits, customers, came-backs, tracked spend. It is issued by the system, so no business has to take your word for any of it.</p>`;
+    return;
+  }
+  host.innerHTML = `<h3>Your Proof Card</h3>
+    <p style="margin:6px 0 0"><span class="badge ok">Verified on SIGNL</span></p>
+    <p style="margin:8px 0 0"><strong>${pf.visitsCompleted} visit${pf.visitsCompleted === 1 ? "" : "s"} completed</strong>, ${pf.onTimePosts} on time · <strong>${pf.customersCounted} customers counted</strong> at the register · <strong>${pf.cameBacks} came back</strong> within a month · at least <strong>$${fmtMoney(pf.trackedSpend)}</strong> tracked spend${pf.mentions ? ` · ${pf.mentions} more told staff a post sent them (a told-us line, never register money)` : ""}</p>
+    ${(pf.lines || []).length ? `<div style="margin-top:10px">${pf.lines.map((l) => `<div class="lrow"><div style="flex:1"><span class="lname">${esc(l.label)}</span><div class="small muted">${l.visits} visit${l.visits === 1 ? "" : "s"} counted there</div></div><span>${l.customers} customers${l.cameBacks ? ` · ${l.cameBacks} came back` : ""}</span></div>`).join("")}</div><p class="small muted" style="margin-top:8px">A business is named only when it chose to be. Otherwise your proof shows its category and city, and its register totals never travel.</p>` : ""}
+    <p class="small" style="margin-top:10px">Share it: <a href="${esc(location.origin + (pf.sharePath || ""))}" target="_blank" rel="noopener">${esc(location.origin + (pf.sharePath || ""))}</a></p>
+    <p class="small muted">Book me on SIGNL and this is the receipt you'll get.</p>`;
 }
 
 // ---------- Golden Ticket invites (Build -33) ----------
@@ -10237,6 +10374,23 @@ function visitCard(b, role) {
       ? `<p class="small" style="margin-top:12px">So far: ${uses} code use${uses === 1 ? "" : "s"} logged. At your $${fmtMoney(ticket)} average ticket that is about $${fmtMoney(uses * ticket)} of register value, estimated until you save this tally.</p>`
       : `<p class="small" style="margin-top:12px">So far: ${uses} code use${uses === 1 ? "" : "s"} logged. Set your average ticket under Plan and SIGNL estimates the register value until you save this tally.</p>`) : ""}
     <p style="margin-top:8px"><button class="btn small-btn ghost" type="button" onclick="logCodeUse('${b.id}')">Log a code use</button> <span class="small muted">${uses} logged so far at the counter</span></p>
+    <div class="form-2col" style="margin-top:10px">
+      <div class="field"><label>Check total for this customer ($)</label><input type="number" id="redeem-amt-${b.id}" min="0" step="0.01" placeholder="0.00"></div>
+      <div class="field"><label>&nbsp;</label><button class="btn small-btn" type="button" onclick="logCodeUseAmount('${b.id}')">Log it with the total</button></div>
+    </div>
+    <p class="small muted">Logging the total makes this redemption a counted event on your receipt, and hands the customer a come-back pass, good for 30 days here.</p>
+    <div class="form-2col" style="margin-top:6px">
+      <div class="field"><label>Come-back pass code</label><input id="pass-code-${b.id}" placeholder="BACK-XXXXXX" style="text-transform:uppercase"></div>
+      <div class="field"><label>Return check total ($)</label><input type="number" id="pass-amt-${b.id}" min="0" step="0.01" placeholder="0.00"></div>
+    </div>
+    <p style="margin-top:4px"><button class="btn small-btn ghost" type="button" onclick="redeemPassUi('${b.id}')">Redeem the pass</button>
+    <button class="btn small-btn ghost" type="button" onclick="countMention('${b.id}')">Someone mentioned the post</button>
+    <span class="small muted">A mention is a "told us" count. It never mixes into register money.</span></p>
+    <div class="form-2col" style="margin-top:6px">
+      <div class="field"><label>How many tables or customers tonight?</label><input type="number" id="night-count-${b.id}" min="0" placeholder="${b.nightCount ? b.nightCount.count : "Tonight's count"}"></div>
+      <div class="field"><label>&nbsp;</label><button class="btn small-btn ghost" type="button" onclick="saveNightCount('${b.id}')">Save tonight's count</button></div>
+    </div>
+    <p class="small" id="counter-note-${b.id}" style="margin-top:6px"></p>
     <form onsubmit="return submitCodeRedemptions(event, '${b.id}')">
       <h4 style="margin:10px 0 4px">Code tally for this visit</h4>
       <p class="small muted">One question settles it: how many customers used ${b.creatorCode ? `<strong>${esc(b.creatorCode)}</strong>` : "the creator's audience code"} at your register. Saving replaces the last tally and completes this visit's SIGNL ROAS Score.</p>
@@ -10393,6 +10547,52 @@ async function logCodeUse(bookingId) {
     await api("POST", `/bookings/${bookingId}/code-uses`, { count: 1 });
     loadMyVisits("business");
   } catch (err) { alert(err.message); }
+}
+
+// ---------- The Receipt counter tools (Build -34) ----------
+function counterNote(bookingId, html) { const el = document.getElementById("counter-note-" + bookingId); if (el) el.innerHTML = html; }
+async function logCodeUseAmount(bookingId) {
+  const amtEl = document.getElementById("redeem-amt-" + bookingId);
+  const amount = amtEl ? Number(amtEl.value) : NaN;
+  if (!Number.isFinite(amount) || amount < 0) { counterNote(bookingId, "Enter the check total first."); return; }
+  try {
+    const data = await api("POST", `/bookings/${bookingId}/code-uses`, { count: 1, amount });
+    if (data.issuedPass) {
+      counterNote(bookingId, `Counted: $${fmtMoney(amount)} at the register. <strong>Come-back pass for this customer: ${esc(data.issuedPass.code)}</strong>, good for 30 days here. Show it to them now so they can screenshot it.`);
+    } else {
+      counterNote(bookingId, `Counted: $${fmtMoney(amount)} at the register. It is on your receipt as a counted event.`);
+    }
+    if (amtEl) amtEl.value = "";
+  } catch (err) { counterNote(bookingId, esc(err.message)); }
+}
+async function redeemPassUi(bookingId) {
+  const codeEl = document.getElementById("pass-code-" + bookingId);
+  const amtEl = document.getElementById("pass-amt-" + bookingId);
+  const code = codeEl ? codeEl.value.trim() : "";
+  const amount = amtEl ? Number(amtEl.value) : NaN;
+  if (!code) { counterNote(bookingId, "Enter the customer's come-back pass code."); return; }
+  if (!Number.isFinite(amount) || amount <= 0) { counterNote(bookingId, "Enter the return visit's check total."); return; }
+  try {
+    await api("POST", "/me/passes/redeem", { code, amount });
+    counterNote(bookingId, `Come-back counted: $${fmtMoney(amount)} on the return visit. It lands on your receipt under came-backs, credited to the creator who brought them in.`);
+    if (codeEl) codeEl.value = "";
+    if (amtEl) amtEl.value = "";
+  } catch (err) { counterNote(bookingId, esc(err.message)); }
+}
+async function countMention(bookingId) {
+  try {
+    const data = await api("POST", "/me/mentions", { bookingId });
+    counterNote(bookingId, `Counted as a "told us" mention. That makes ${data.bookingMentions} for this visit. Mentions stay on their own line, never in register money.`);
+  } catch (err) { counterNote(bookingId, esc(err.message)); }
+}
+async function saveNightCount(bookingId) {
+  const el = document.getElementById("night-count-" + bookingId);
+  const count = el ? parseInt(el.value, 10) : NaN;
+  if (!Number.isFinite(count) || count < 0) { counterNote(bookingId, "Enter tonight's table or customer count."); return; }
+  try {
+    await api("POST", `/bookings/${bookingId}/night-count`, { count });
+    counterNote(bookingId, `Saved: ${count} tonight. Your receipt lines visit nights up against your usual night.`);
+  } catch (err) { counterNote(bookingId, esc(err.message)); }
 }
 
 // While the owner types the tally count, the total follows count x
@@ -11644,7 +11844,9 @@ async function renderAnalyticsTab() {
       const hasLiveOffer = (d.openOffers || 0) > 0 || (state.myOffers || []).some((o) => o.status === "open" || o.status === "filled");
       el.innerHTML = `${head}
       <div class="empty-card"><div class="ec-t">Your results</div><div class="ec-s">${hasLiveOffer ? "Your offer is live. This fills in as creators apply, visit, and post." : "This fills in once your campaigns are live. When creators start visiting and posting, you will see applications, visits, posts, and the local reach they delivered, right here."}</div></div>
-      ${hasLiveOffer ? "" : `<p class="center"><button class="btn ws-primary" onclick="return go('dashboard','My Offers')">Post an offer</button></p>`}`;
+      ${hasLiveOffer ? "" : `<p class="center"><button class="btn ws-primary" onclick="return go('dashboard','My Offers')">Post an offer</button></p>`}
+      <div id="biz-receipt"></div>`;
+      loadReceipt();
       return;
     }
     // KPI cards render only when their records exist (§7).
@@ -11684,7 +11886,9 @@ async function renderAnalyticsTab() {
     </div>
     ${h.costPerVisit && h.pipeline && (h.pipeline.clockRunning || 0) > 0 ? `<div class="wcard"><h3>Cost per visit</h3>
       <p style="margin:4px 0 0">Your plan works out to <strong>$${fmtMoney(h.costPerVisit)}</strong> per visit in your allowance${h.postsLive ? `, and every live post cost exactly one visit` : ""}. Register value and media value ride in your ROAS score on Home.</p>
-    </div>` : ""}`;
+    </div>` : ""}
+    <div id="biz-receipt"></div>`;
+    loadReceipt();
   } catch (err) {
     el.innerHTML = `${wsHead("Results")}<div class="error-box">${esc(err.message)}</div>`;
   }
