@@ -4102,6 +4102,10 @@ async function bookMePayload(u, viewer) {
     viewerTier: t.tier,
     viewerIsOwner: !!t.owner,
     canBook: !!t.canBook,
+    // Proof Card (Build -34, M7): SIGNL-counted aggregates only,
+    // safe at every tier: visits, register counts, came-backs,
+    // tracked spend in total. No business is named here, ever.
+    proof: await proofForCreator(u),
   };
   if (t.tier >= 1) {
     payload.paidRate = full.paidRate;
@@ -7626,6 +7630,10 @@ async function handleRegister(event) {
       // way; only the stamp differs. Anything but the exact
       // conversation stamp reads as the form.
       applicationSource: b.applicationSource === "conversation" ? "conversation" : "form",
+      // Usual-weeknight baseline (Build -34, M4): ONE remembered
+      // number from founding setup, captured before any visit
+      // runs. Optional; invalid stores null.
+      baseline: validBaseline(b.baselineDay, b.baselineCount),
       about: typeof b.about === "string" ? b.about.trim().slice(0, 600) : "",
       plan: plan.id,
       planName: `${plan.name} $${plan.priceMonthly}/mo`,
@@ -8421,6 +8429,80 @@ async function goldenTicketsFor(issuerId) {
   return rows.map((r) => r.value).filter((t) => t && t.issuerId === issuerId)
     .sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
 }
+// ---------- Build -34: The Receipt (the ROI stack, M1-M7) ----------
+// The claim ladder governs every number here: counted floors
+// only ("at least"), each with its method, never "caused" or
+// "generated". M1 turns the typed tally into per-redemption
+// events; M2 issues a personal come-back pass at a validated
+// first redemption; M3 counts "told us" mentions on their own
+// line; M4 stores the business's usual-weeknight baseline; M5
+// stores the business's own Google numbers under their own
+// label; M6 assembles the receipt; M7 mints the creator's
+// proof from the same events. Came-backs are captured as
+// events only and never feed ranking weights (Jeff's ruling
+// pending, 2026-10-29).
+const RETURN_WINDOW_DAYS = 30;
+const RETURN_RATE_MIN_BASE = 5;
+const REDEEM_FLAG_AMOUNT = 1000;
+const WEEKDAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+function monthKeyOf(iso) { const v = String(iso || ""); return v.length >= 7 ? v.slice(0, 7) : ""; }
+function prevMonthKey(key) { const parts = key.split("-").map(Number); const d = new Date(Date.UTC(parts[0], parts[1] - 2, 1)); return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`; }
+function monthLabelOf(key) { const parts = key.split("-").map(Number); return new Date(Date.UTC(parts[0], parts[1] - 1, 1)).toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" }); }
+function validBaseline(dayRaw, countRaw) {
+  const day = WEEKDAY_NAMES.find((d) => d.toLowerCase() === String(dayRaw || "").trim().toLowerCase()) || null;
+  const count = Math.round(Number(countRaw));
+  if (!day || !Number.isFinite(count) || count < 0 || count > 100000) return null;
+  return { dayLabel: day, count };
+}
+async function allRedemptionEvents() { return (await store.list("redevent:")).map((r) => r.value).filter(Boolean); }
+async function allPasses() { return (await store.list("pass:")).map((r) => r.value).filter(Boolean); }
+async function allMentions() { return (await store.list("mention:")).map((r) => r.value).filter(Boolean); }
+async function issueComeBackPass(booking, firstEvent) {
+  const ts = nowIso();
+  let code = "";
+  const existing = await allPasses();
+  for (let tries = 0; tries < 8 && !code; tries++) {
+    const candidate = "BACK-" + Array.from({ length: 6 }, () => CODE_CHARS[crypto.randomInt(CODE_CHARS.length)]).join("");
+    if (!existing.some((x) => x.code === candidate)) code = candidate;
+  }
+  if (!code) return null;
+  const pass = { id: crypto.randomUUID(), code, businessId: booking.businessId, creatorId: booking.creatorId, firstBookingId: booking.id, firstEventId: firstEvent.id, issuedAt: ts, expiresAt: new Date(Date.parse(ts) + RETURN_WINDOW_DAYS * 86400000).toISOString(), status: "issued", redeemedAt: null, returnEventId: null };
+  await store.set(`pass:${pass.id}`, pass);
+  return pass;
+}
+// Per-booking counted money from a set of redemption events:
+// events win when they exist (M1); the legacy reported tally is
+// the fallback for bookings that never used event capture.
+function bookingMoneyFrom(booking, events) {
+  const evs = events.filter((e) => e.bookingId === booking.id);
+  const firsts = evs.filter((e) => e.kind !== "return");
+  const returns = evs.filter((e) => e.kind === "return");
+  if (evs.length) {
+    return { source: "events", customers: firsts.length, spend: roasRound2(firsts.reduce((a, e) => a + (Number(e.amount) || 0), 0)), returns: returns.length, returnSpend: roasRound2(returns.reduce((a, e) => a + (Number(e.amount) || 0), 0)) };
+  }
+  const red = booking.redemptions || null;
+  if (red && (Number(red.count) > 0 || Number(red.basketTotal) > 0)) {
+    return { source: "tally", customers: Math.floor(Number(red.count) || 0), spend: roasRound2(Number(red.basketTotal) || 0), returns: 0, returnSpend: 0 };
+  }
+  return { source: "none", customers: 0, spend: 0, returns: 0, returnSpend: 0 };
+}
+// M7: the creator's proof, minted from SIGNL's own counted
+// records only. Aggregates travel; a business's identity and
+// raw totals never do (per-business lines live on /me/proof-card
+// and follow the opt-in rule there).
+async function proofForCreator(creatorUser) {
+  const cid = creatorUser.id;
+  const posts = (await allPosts()).filter((x) => x.creatorId === cid && x.verifiedAt);
+  const bookings = (await store.list("booking:")).map((r) => r.value).filter((b) => b && b.creatorId === cid);
+  const events = (await allRedemptionEvents()).filter((e) => e.creatorId === cid);
+  const mentions = (await allMentions()).filter((m) => m.creatorId === cid);
+  let customers = 0;
+  let spend = 0;
+  let cameBacks = 0;
+  for (const b of bookings) { const m = bookingMoneyFrom(b, events); customers += m.customers; spend += m.spend; cameBacks += m.returns; }
+  return { verified: true, visitsCompleted: posts.length, onTimePosts: posts.filter((x) => x.onTime).length, postsCounted: posts.length, customersCounted: customers, cameBacks, trackedSpend: roasRound2(spend), mentions: mentions.length };
+}
+
 async function goldenTicketView(t, marketLive) {
   let status = t.status;
   if (status === "issued" && marketLive) status = "expired";
@@ -10222,6 +10304,28 @@ async function route(event) {
           bz.averageTicket = roasRound2(ticket);
         }
       }
+      // Usual-weeknight baseline (Build -34, M4): one remembered
+      // number, editable here; an explicit null clears it.
+      if (b.baseline !== undefined) {
+        if (b.baseline === null) delete bz.baseline;
+        else { const base = validBaseline(b.baseline.dayLabel || b.baseline.day, b.baseline.count); if (base) bz.baseline = base; }
+      }
+      // Looking-You-Up numbers (Build -34, M5): the business's
+      // own Google figures for the current month, entered by the
+      // business, stored under the month key, and always labeled
+      // as Google's numbers on the receipt, never SIGNL's.
+      if (b.googleStats !== undefined && b.googleStats && typeof b.googleStats === "object") {
+        const gs = {};
+        for (const k of ["searches", "directions", "calls", "reviews"]) {
+          const v = Math.round(Number(b.googleStats[k]));
+          if (Number.isFinite(v) && v >= 0 && v <= 100000000) gs[k] = v;
+        }
+        bz.googleStats = { ...(bz.googleStats || {}), [monthKeyOf(ts)]: gs };
+      }
+      // Proof naming opt-in (Build -34, M7): may a creator's
+      // proof card name this business? Default no; the card
+      // shows category and city instead.
+      if (b.proofNameOptIn !== undefined) bz.proofNameOptIn = b.proofNameOptIn === true;
       // Managed talent budget: a cap + authorization, not a
       // deposit. Editable any time; spends only on Managed.
       if (b.monthlyTalentBudget !== undefined) {
@@ -10511,6 +10615,27 @@ async function route(event) {
       await store.set(`user:${target.id}`, target);
       await logEvent({ type: "partner_updated", actorId: user.id, actorRole: "admin", subjectId: target.id, data: { code: target.partner.code } });
       return json(200, { partner: { id: target.id, email: target.email, ...publicPartner(target.partner), links: partnerLinksFor(publicPartner(target.partner)) } });
+    }
+    // Return rates against the market distribution (Build -34,
+    // M2 guard): Admin only. A gamed rate reads as an outlier
+    // against the median instead of a triumph. Businesses see a
+    // rate only past the minimum first-visit base, on their own
+    // receipt.
+    if (method === "GET" && seg[1] === "return-rates") {
+      const events = await allRedemptionEvents();
+      const byCreator = new Map();
+      for (const e of events) {
+        const m = byCreator.get(e.creatorId) || { creatorId: e.creatorId, firsts: 0, returns: 0 };
+        if (e.kind === "return") m.returns += 1; else m.firsts += 1;
+        byCreator.set(e.creatorId, m);
+      }
+      const rows = [];
+      for (const m of byCreator.values()) {
+        const u = await store.get(`user:${m.creatorId}`);
+        rows.push({ creatorId: m.creatorId, handle: u && u.creator ? u.creator.handle : null, firsts: m.firsts, returns: m.returns, rate: m.firsts > 0 ? Math.round((m.returns / m.firsts) * 100) / 100 : null });
+      }
+      const rated = rows.filter((r) => r.firsts >= RETURN_RATE_MIN_BASE && r.rate !== null).map((r) => r.rate).sort((a, b) => a - b);
+      return json(200, { creators: rows, medianRate: rated.length ? rated[Math.floor(rated.length / 2)] : null, rateMinBase: RETURN_RATE_MIN_BASE });
     }
     if (method === "GET" && seg[1] === "applications") {
       const all = await allUsers();
@@ -13358,6 +13483,24 @@ async function route(event) {
       count = Number(b.count);
       if (!Number.isInteger(count) || count < 1 || count > 500) return err(400, "Code use count must be a whole number from 1 to 500");
     }
+    // Moment-of-sale capture (Build -34, M1): a call carrying a
+    // check total is ONE redemption, captured as its own
+    // time-stamped event with the amount, replacing the typed
+    // aggregate for this booking from here on. A validated first
+    // redemption with a real amount also issues the customer a
+    // Came-Back Pass (M2) on the spot.
+    if (b.amount !== undefined && b.amount !== null && b.amount !== "") {
+      const amount = Number(b.amount);
+      if (!Number.isFinite(amount) || amount < 0 || amount > 100000) return err(400, "Check total must be a dollar amount between 0 and 100000");
+      if (count !== 1) return err(400, "A redemption with a check total is one customer at a time");
+      const ts = nowIso();
+      const ev = { id: crypto.randomUUID(), bookingId: booking.id, businessId: booking.businessId, creatorId: booking.creatorId, kind: "first", channel: "in_store", amount: roasRound2(amount), passId: null, at: ts, by: user.id, via: user.role === "staff" ? "staff" : "owner", flagged: amount > REDEEM_FLAG_AMOUNT };
+      await store.set(`redevent:${ev.id}`, ev);
+      await logCodeUse(booking, 1, user.id, ev.via, user.role);
+      const pass = amount > 0 ? await issueComeBackPass(booking, ev) : null;
+      await logEvent({ type: "redemption_event_logged", actorId: user.id, actorRole: user.role, subjectId: booking.id, market: booking.market, data: { creatorId: booking.creatorId, businessId: booking.businessId, amount: ev.amount, passIssued: !!pass, flagged: ev.flagged } });
+      return json(201, { booking: await withPostState(booking), redemptionEvent: ev, issuedPass: pass ? { code: pass.code, expiresAt: pass.expiresAt } : null });
+    }
     await logCodeUse(booking, count, user.id, "owner", user.role);
     return json(200, { booking: await withPostState(booking) });
   }
@@ -13410,6 +13553,176 @@ async function route(event) {
         { bookingId: booking.id });
     }
     return json(200, { booking: await withPostState(booking) });
+  }
+
+  // Came-Back Pass redemption (Build -34, M2): the customer
+  // shows their personal return code at the same business within
+  // 30 days; staff enter the code and the return visit's check
+  // total on the same validation habit. The return event hangs
+  // on the original visit, so the creator who brought the
+  // customer in carries the came-back. Single use; a pass with
+  // no register amount never counts.
+  if (method === "POST" && seg[0] === "me" && seg[1] === "passes" && seg[2] === "redeem" && seg.length === 3) {
+    if (user.role === "creator") return err(403, "Businesses redeem come-back passes; creators share codes");
+    const b = parseBody(event);
+    const code = String(b.code || "").trim().toUpperCase();
+    const amount = Number(b.amount);
+    if (!code) return err(400, "Enter the come-back pass code");
+    if (!Number.isFinite(amount) || amount <= 0 || amount > 100000) return err(400, "Enter the check total for the return visit");
+    const pass = (await allPasses()).find((x) => x.code === code) || null;
+    if (!pass) return err(404, "That pass code was not found");
+    if (user.role === "business" && pass.businessId !== user.id) return err(404, "That pass code was not found");
+    if (pass.status === "redeemed") return err(400, "That pass was already used");
+    if (pass.status !== "issued" || Date.parse(pass.expiresAt) < Date.now()) {
+      if (pass.status === "issued") { pass.status = "expired"; await store.set(`pass:${pass.id}`, pass); }
+      return err(400, "That pass has expired");
+    }
+    const booking = await store.get(`booking:${pass.firstBookingId}`);
+    if (!booking) return err(404, "The original visit for that pass was not found");
+    const ts = nowIso();
+    const ev = { id: crypto.randomUUID(), bookingId: booking.id, businessId: booking.businessId, creatorId: booking.creatorId, kind: "return", channel: "in_store", amount: roasRound2(amount), passId: pass.id, at: ts, by: user.id, via: user.role === "staff" ? "staff" : "owner", flagged: amount > REDEEM_FLAG_AMOUNT };
+    await store.set(`redevent:${ev.id}`, ev);
+    pass.status = "redeemed";
+    pass.redeemedAt = ts;
+    pass.returnEventId = ev.id;
+    await store.set(`pass:${pass.id}`, pass);
+    await logCodeUse(booking, 1, user.id, ev.via, user.role);
+    await logEvent({ type: "comeback_redeemed", actorId: user.id, actorRole: user.role, subjectId: booking.id, market: booking.market, data: { creatorId: booking.creatorId, businessId: booking.businessId, amount: ev.amount, passId: pass.id } });
+    return json(200, { pass: { code: pass.code, status: pass.status, redeemedAt: ts }, redemptionEvent: ev });
+  }
+
+  // Mention Board (Build -34, M3): a customer told staff a post
+  // sent them; staff tap the creator from the business's own
+  // bookings (the booking names the creator). Mentions are a
+  // soft "told us" line, stored apart, never merged into
+  // register money and never ranked on.
+  if (method === "POST" && seg[0] === "me" && seg[1] === "mentions" && seg.length === 2) {
+    if (user.role === "creator") return err(403, "Businesses count mentions; creators earn them");
+    const b = parseBody(event);
+    const booking = await store.get(`booking:${String(b.bookingId || "")}`);
+    if (!booking) return err(404, "Booking not found");
+    if (user.role === "business" && booking.businessId !== user.id) return err(404, "Booking not found");
+    const rec = { id: crypto.randomUUID(), bookingId: booking.id, businessId: booking.businessId, creatorId: booking.creatorId, at: nowIso(), by: user.id, via: user.role === "staff" ? "staff" : "owner" };
+    await store.set(`mention:${rec.id}`, rec);
+    const count = (await allMentions()).filter((m) => m.bookingId === booking.id).length;
+    await logEvent({ type: "mention_counted", actorId: user.id, actorRole: user.role, subjectId: booking.id, market: booking.market, data: { creatorId: booking.creatorId, businessId: booking.businessId } });
+    return json(201, { mention: rec, bookingMentions: count });
+  }
+
+  // Visit-night count (Build -34, M4): after a visit night the
+  // business reports how many tables or customers the night did;
+  // the receipt lines it up against the usual-weeknight baseline
+  // the business set at founding. The business's own numbers,
+  // shown only to the business.
+  if (method === "POST" && seg[0] === "bookings" && seg.length === 3 && seg[2] === "night-count") {
+    if (user.role === "creator") return err(403, "Businesses report their own night counts");
+    const booking = await store.get(`booking:${seg[1]}`);
+    if (!booking) return err(404, "Booking not found");
+    if (user.role === "business" && booking.businessId !== user.id) return err(404, "Booking not found");
+    const b = parseBody(event);
+    const count = Math.round(Number(b.count));
+    if (!Number.isFinite(count) || count < 0 || count > 100000) return err(400, "Night count must be a whole number, 0 or more");
+    booking.nightCount = { count, at: nowIso(), by: user.id };
+    booking.updatedAt = nowIso();
+    await store.set(`booking:${booking.id}`, booking);
+    return json(200, { booking: await withPostState(booking) });
+  }
+
+  // The Receipt (Build -34, M6): "What SIGNL brought you" for
+  // the current month. Every number is a counted floor with its
+  // method available to the client copy: event sums where M1
+  // captured them, the reported tally as the labeled fallback,
+  // came-backs as their own block, the usual-weeknight line
+  // against the business's own baseline, mentions on a separate
+  // soft line, Google's numbers under Google's label, and the
+  // SIGNL ROAS Score from the one shared helper. A business
+  // with no counted activity yet gets its plan, baseline, and
+  // Google strip and nothing invented.
+  if (method === "GET" && seg[0] === "me" && seg[1] === "receipt" && seg.length === 2) {
+    if (user.role !== "business") return err(403, "Businesses only");
+    const biz = user.business || {};
+    const month = monthKeyOf(nowIso());
+    const monthEvents = (await allRedemptionEvents()).filter((e) => e.businessId === user.id && monthKeyOf(e.at) === month);
+    const mentionsAll = (await allMentions()).filter((m) => m.businessId === user.id);
+    const myBookings = (await store.list("booking:")).map((r) => r.value).filter((b) => b && b.businessId === user.id);
+    const ledger = [];
+    const ledgerBookings = [];
+    const whoMap = new Map();
+    let customers = 0;
+    let spend = 0;
+    let returns = 0;
+    let returnSpend = 0;
+    for (const b of myBookings) {
+      let m = bookingMoneyFrom(b, monthEvents);
+      if (m.source === "tally" && monthKeyOf((b.redemptions || {}).reportedAt) !== month) m = { source: "none", customers: 0, spend: 0, returns: 0, returnSpend: 0 };
+      const night = b.nightCount && monthKeyOf(b.nightCount.at) === month ? b.nightCount.count : null;
+      if (m.source === "none" && night === null) continue;
+      ledgerBookings.push(b);
+      const creator = await store.get(`user:${b.creatorId}`);
+      const handle = creator && creator.creator ? creator.creator.handle : b.creatorHandle || "";
+      const name = creator ? creator.name : "";
+      ledger.push({ bookingId: b.id, title: b.title || "", creatorHandle: handle, creatorName: name, customers: m.customers, spend: m.spend, returns: m.returns, returnSpend: m.returnSpend, source: m.source, nightCount: night, mentions: mentionsAll.filter((x) => x.bookingId === b.id && monthKeyOf(x.at) === month).length });
+      customers += m.customers;
+      spend += m.spend;
+      returns += m.returns;
+      returnSpend += m.returnSpend;
+      const w = whoMap.get(b.creatorId) || { creatorId: b.creatorId, creatorHandle: handle, creatorName: name, visits: 0, customers: 0, spend: 0, cameBacks: 0 };
+      w.visits += 1;
+      w.customers += m.customers;
+      w.spend += m.spend;
+      w.cameBacks += m.returns;
+      whoMap.set(b.creatorId, w);
+    }
+    const whoBrought = [...whoMap.values()].sort((a, b2) => b2.spend - a.spend || b2.customers - a.customers);
+    const withPosts = [];
+    for (const b of ledgerBookings) withPosts.push(await withPostState(b));
+    await enrichRoasEstimateInputs(withPosts);
+    const roas = roasFor(withPosts);
+    const planIdOf = biz.planId || biz.plan || null;
+    const plan = PLANS[planIdOf] || null;
+    const nightCounts = ledger.map((l) => l.nightCount).filter((n) => typeof n === "number");
+    const g = biz.googleStats || {};
+    return json(200, { receipt: {
+      month, monthLabel: monthLabelOf(month),
+      trackedSpend: roasRound2(spend), customersCounted: customers,
+      cameBack: { returns, returnSpend: roasRound2(returnSpend), firstVisits: customers, rate: customers >= RETURN_RATE_MIN_BASE ? Math.round((returns / customers) * 100) / 100 : null, rateMinBase: RETURN_RATE_MIN_BASE },
+      ledger, whoBrought,
+      mentions: { month: mentionsAll.filter((m) => monthKeyOf(m.at) === month).length, total: mentionsAll.length },
+      baseline: biz.baseline ? { dayLabel: biz.baseline.dayLabel, usual: biz.baseline.count, visitAvg: nightCounts.length ? Math.round((nightCounts.reduce((a, n) => a + n, 0) / nightCounts.length) * 10) / 10 : null, visitNights: nightCounts.length } : null,
+      cost: { planId: planIdOf, planPrice: plan ? plan.priceMonthly : (typeof biz.planPriceMonthly === "number" ? biz.planPriceMonthly : null), compCost: roas.compCost, discountCost: roas.discountCost, planAllocation: roas.planAllocation },
+      roas: { score: roas.score, allInScore: roas.allInScore, mediaValue: roas.mediaValue, label: roas.label },
+      google: { current: g[month] || null, previous: g[prevMonthKey(month)] || null },
+      topCreators: whoBrought.slice(0, 3).map((w) => ({ creatorId: w.creatorId, creatorHandle: w.creatorHandle, creatorName: w.creatorName })),
+      proofNameOptIn: biz.proofNameOptIn === true,
+    } });
+  }
+
+  // Proof Card data (Build -34, M7): the creator's own view of
+  // the same counted record, with per-business lines in the
+  // anonymized form (category and city) unless that business
+  // opted in to be named. Counts ride the lines; one business's
+  // register total never does.
+  if (method === "GET" && seg[0] === "me" && seg[1] === "proof-card" && seg.length === 2) {
+    if (user.role !== "creator") return err(403, "Creators only");
+    const proof = await proofForCreator(user);
+    const bookings = (await store.list("booking:")).map((r) => r.value).filter((b) => b && b.creatorId === user.id);
+    const events = (await allRedemptionEvents()).filter((e) => e.creatorId === user.id);
+    const lineMap = new Map();
+    for (const b of bookings) {
+      const m = bookingMoneyFrom(b, events);
+      if (m.source === "none") continue;
+      const bizUser = await store.get(`user:${b.businessId}`);
+      const bz = bizUser && bizUser.business ? bizUser.business : {};
+      const named = bz.proofNameOptIn === true && bz.businessName ? bz.businessName : null;
+      const label = named || `${bz.category || "Local business"} in ${b.city || b.market || "your city"}`;
+      const line = lineMap.get(b.businessId) || { label, named: !!named, visits: 0, customers: 0, cameBacks: 0 };
+      line.visits += 1;
+      line.customers += m.customers;
+      line.cameBacks += m.returns;
+      lineMap.set(b.businessId, line);
+    }
+    const handle = user.creator ? user.creator.handle : "";
+    return json(200, { proof: { ...proof, lines: [...lineMap.values()], sharePath: `/c/${handle}` } });
   }
 
   // Business-didn't-honor report (Jeff, 2026-10-19 r2): the creator
