@@ -3304,6 +3304,12 @@ async function createBookingForOffer({ offer, creator, via, applicationId = null
     creatorCode,
     discountPct: discountPctForBooking(business && business.business),
     redemptions: null,
+    countedResult: offer.countedResult || "door",
+    // Deal Card + disclosure state (Build -35): both sides tap
+    // "Looks right" once on the plain-words card; the creator
+    // confirms the paid-partnership disclosure was added.
+    dealCard: null,
+    disclosureAt: null,
     compCostActual: offer.dollarCap,
     // Sig Operator (Jeff, 2026-10-28): the booking snapshots the
     // offer's brief (normalized from the offer, derived for legacy
@@ -4029,6 +4035,9 @@ async function publicProfilePayload(u) {
     ratingAvg: showPublicRating ? rating.ratingAvg : null,
     ratingCount: showPublicRating ? rating.ratingCount : 0,
     visitIncludes: STANDARD_VISIT.summary,
+    // Real People Check (Build -35): shown only where a human
+    // on the SIGNL team actually checked this account.
+    realPeopleChecked: !!c.realPeopleCheck,
   };
 }
 
@@ -4097,6 +4106,10 @@ async function bookMePayload(u, viewer) {
     visitIncludes: full.visitIncludes,
     bio: c.bio || "",
     charter: c.charter === true,
+    // Real People Check (Build -35): a human on the SIGNL team
+    // checked this account. Business-facing reassurance, shown
+    // only where it is true.
+    realPeopleChecked: !!c.realPeopleCheck,
     pageTheme: pageThemeOf(c),
     featuredPosts: (Array.isArray(c.featuredPosts) ? c.featuredPosts : []).map((url) => ({ url, embedUrl: `${String(url).replace(/\/?$/, "/")}embed` })),
     viewerTier: t.tier,
@@ -8503,6 +8516,48 @@ async function proofForCreator(creatorUser) {
   return { verified: true, visitsCompleted: posts.length, onTimePosts: posts.filter((x) => x.onTime).length, postsCounted: posts.length, customersCounted: customers, cameBacks, trackedSpend: roasRound2(spend), mentions: mentions.length };
 }
 
+// ---------- Build -35: Round-2 approved set ----------
+// One Number: the single result a booking counts, picked at
+// setup. Audience codes: a business attaches an audience offer
+// to a booking or stands one alone; each creator gets a unique
+// code; redemptions land on the same validation habit with a
+// channel tap and feed the receipt as events.
+const COUNTED_RESULTS = ["door", "link", "orders"];
+const AUDIENCE_CHANNELS = ["in_store", "pickup", "delivery"];
+function validCountedResult(v) { return COUNTED_RESULTS.includes(v) ? v : "door"; }
+function validChannel(v) { return AUDIENCE_CHANNELS.includes(v) ? v : "in_store"; }
+async function allAudienceOffers() { return (await store.list("aoffer:")).map((r) => r.value).filter(Boolean); }
+async function allAudienceCodes() { return (await store.list("acode:")).map((r) => r.value).filter(Boolean); }
+async function newAudienceCode() {
+  const existing = await allAudienceCodes();
+  for (let tries = 0; tries < 8; tries++) {
+    const candidate = "AUD-" + Array.from({ length: 6 }, () => CODE_CHARS[crypto.randomInt(CODE_CHARS.length)]).join("");
+    if (!existing.some((x) => x.code === candidate)) return candidate;
+  }
+  return null;
+}
+// Fake-flag engine (Build -35): account signals a human should
+// eyeball, computed from the creator's own record only. Flags
+// live on a separate flag: record, are served ONLY to Admin,
+// and never act on their own: no auto-punishment, ever.
+function fakeFlagsFor(user) {
+  const c = user.creator || {};
+  const flags = [];
+  const followers = Number(c.followerCount) || 0;
+  const views = Number(c.avgViews) || 0;
+  if (followers >= 1000 && views > 0 && views / followers < 0.01) flags.push({ signal: "low_engagement", detail: `Average views run under 1% of the follower count (${views} views vs ${followers} followers)` });
+  if (typeof c.localAudiencePct === "number" && c.localAudiencePct < 5 && followers >= 5000) flags.push({ signal: "geography_mismatch", detail: `Self-reported local audience is ${c.localAudiencePct}% at ${followers} followers` });
+  const ageDays = (Date.now() - Date.parse(user.createdAt || "")) / 86400000;
+  if (Number.isFinite(ageDays) && ageDays < 30 && followers >= 20000) flags.push({ signal: "burst_pattern", detail: "A large audience on an account created in the last 30 days" });
+  return flags;
+}
+async function refreshFakeFlags(user) {
+  const flags = fakeFlagsFor(user);
+  const rec = { userId: user.id, handle: user.creator ? user.creator.handle : null, flags, computedAt: nowIso() };
+  await store.set(`flag:${user.id}`, rec);
+  return rec;
+}
+
 async function goldenTicketView(t, marketLive) {
   let status = t.status;
   if (status === "issued" && marketLive) status = "expired";
@@ -10621,6 +10676,34 @@ async function route(event) {
     // against the median instead of a triumph. Businesses see a
     // rate only past the minimum first-visit base, on their own
     // receipt.
+    // Real People Check (Build -35): an Admin marks that a
+    // human checked this creator's account. The flag itself is
+    // the whole feature: shown to businesses only where true.
+    if (method === "POST" && seg[1] === "real-check") {
+      const b = parseBody(event);
+      const target = await store.get(`user:${String(b.userId || "")}`);
+      if (!target || target.role !== "creator") return err(404, "Creator not found");
+      target.creator = target.creator || {};
+      target.creator.realPeopleCheck = b.checked === true ? { at: nowIso(), by: user.id } : null;
+      target.updatedAt = nowIso();
+      await store.set(`user:${target.id}`, target);
+      await logEvent({ type: "real_people_check", actorId: user.id, actorRole: "admin", subjectId: target.id, market: target.market, data: { checked: b.checked === true } });
+      return json(200, { userId: target.id, realPeopleChecked: !!target.creator.realPeopleCheck });
+    }
+    // Fake-flag queue (Build -35): PRIVATE, Admin only. The
+    // engine refreshes each creator's signals from their own
+    // record; a flag asks for a human look and does nothing
+    // else. Nothing here is ever shown to a user or automated
+    // against an account.
+    if (method === "GET" && seg[1] === "flag-queue") {
+      const creators = (await allUsers()).filter((u) => u.role === "creator");
+      const flagged = [];
+      for (const u of creators) {
+        const rec = await refreshFakeFlags(u);
+        if (rec.flags.length) flagged.push({ userId: u.id, handle: rec.handle, name: u.name, market: u.market, status: u.status, flags: rec.flags, computedAt: rec.computedAt });
+      }
+      return json(200, { flagged });
+    }
     if (method === "GET" && seg[1] === "return-rates") {
       const events = await allRedemptionEvents();
       const byCreator = new Map();
@@ -12080,6 +12163,10 @@ async function route(event) {
         // Menu of Moments (Build -32): the moment this offer is
         // for, picked in the composer. Packaging only.
         moment: validMoment(b.moment),
+        // One Number (Build -35): the one result this booking
+        // counts, picked at setup: door redemptions, link
+        // bookings, or code orders.
+        countedResult: validCountedResult(b.countedResult),
         dollarCap,
         visitWindow: String(b.visitWindow || "").trim(),
         windowMode: b.windowMode === "thisweek" ? "thisweek" : "7days",
@@ -13494,7 +13581,7 @@ async function route(event) {
       if (!Number.isFinite(amount) || amount < 0 || amount > 100000) return err(400, "Check total must be a dollar amount between 0 and 100000");
       if (count !== 1) return err(400, "A redemption with a check total is one customer at a time");
       const ts = nowIso();
-      const ev = { id: crypto.randomUUID(), bookingId: booking.id, businessId: booking.businessId, creatorId: booking.creatorId, kind: "first", channel: "in_store", amount: roasRound2(amount), passId: null, at: ts, by: user.id, via: user.role === "staff" ? "staff" : "owner", flagged: amount > REDEEM_FLAG_AMOUNT };
+      const ev = { id: crypto.randomUUID(), bookingId: booking.id, businessId: booking.businessId, creatorId: booking.creatorId, kind: "first", channel: validChannel(b.channel), amount: roasRound2(amount), passId: null, at: ts, by: user.id, via: user.role === "staff" ? "staff" : "owner", flagged: amount > REDEEM_FLAG_AMOUNT };
       await store.set(`redevent:${ev.id}`, ev);
       await logCodeUse(booking, 1, user.id, ev.via, user.role);
       const pass = amount > 0 ? await issueComeBackPass(booking, ev) : null;
@@ -13580,7 +13667,7 @@ async function route(event) {
     const booking = await store.get(`booking:${pass.firstBookingId}`);
     if (!booking) return err(404, "The original visit for that pass was not found");
     const ts = nowIso();
-    const ev = { id: crypto.randomUUID(), bookingId: booking.id, businessId: booking.businessId, creatorId: booking.creatorId, kind: "return", channel: "in_store", amount: roasRound2(amount), passId: pass.id, at: ts, by: user.id, via: user.role === "staff" ? "staff" : "owner", flagged: amount > REDEEM_FLAG_AMOUNT };
+    const ev = { id: crypto.randomUUID(), bookingId: booking.id, businessId: booking.businessId, creatorId: booking.creatorId, kind: "return", channel: validChannel(b.channel), amount: roasRound2(amount), passId: pass.id, at: ts, by: user.id, via: user.role === "staff" ? "staff" : "owner", flagged: amount > REDEEM_FLAG_AMOUNT };
     await store.set(`redevent:${ev.id}`, ev);
     pass.status = "redeemed";
     pass.redeemedAt = ts;
@@ -13673,6 +13760,35 @@ async function route(event) {
       w.cameBacks += m.returns;
       whoMap.set(b.creatorId, w);
     }
+    // Audience-code events (Build -35) feed the same receipt:
+    // counted customers and tracked spend, grouped per audience
+    // offer on the ledger, credited per creator in who-brought.
+    const audEvents = monthEvents.filter((e) => e.kind === "audience");
+    if (audEvents.length) {
+      const codesAll = await allAudienceCodes();
+      const offersAll = await allAudienceOffers();
+      const byOffer = new Map();
+      for (const e of audEvents) {
+        customers += 1;
+        spend += Number(e.amount) || 0;
+        const code = codesAll.find((x) => x.id === e.audienceCodeId);
+        const offerId = code ? code.offerId : "unknown";
+        const g = byOffer.get(offerId) || { customers: 0, spend: 0 };
+        g.customers += 1;
+        g.spend += Number(e.amount) || 0;
+        byOffer.set(offerId, g);
+        const creator = await store.get(`user:${e.creatorId}`);
+        const handle = creator && creator.creator ? creator.creator.handle : "";
+        const w = whoMap.get(e.creatorId) || { creatorId: e.creatorId, creatorHandle: handle, creatorName: creator ? creator.name : "", visits: 0, customers: 0, spend: 0, cameBacks: 0 };
+        w.customers += 1;
+        w.spend += Number(e.amount) || 0;
+        whoMap.set(e.creatorId, w);
+      }
+      for (const [offerId, g] of byOffer) {
+        const offer = offersAll.find((o) => o.id === offerId);
+        ledger.push({ audience: true, title: offer ? offer.title : "Audience offer", creatorHandle: "", creatorName: "", customers: g.customers, spend: roasRound2(g.spend), returns: 0, returnSpend: 0, source: "events", nightCount: null, mentions: 0 });
+      }
+    }
     const whoBrought = [...whoMap.values()].sort((a, b2) => b2.spend - a.spend || b2.customers - a.customers);
     const withPosts = [];
     for (const b of ledgerBookings) withPosts.push(await withPostState(b));
@@ -13723,6 +13839,187 @@ async function route(event) {
     }
     const handle = user.creator ? user.creator.handle : "";
     return json(200, { proof: { ...proof, lines: [...lineMap.values()], sharePath: `/c/${handle}` } });
+  }
+
+  // The Deal Card (Build -35): both sides tap "Looks right"
+  // once on the plain-words card pinned to the booking. The
+  // card itself is rendered from the booking's facts client
+  // side; the server stores only the two confirmations.
+  if (method === "POST" && seg[0] === "bookings" && seg.length === 3 && seg[2] === "deal-confirm") {
+    const booking = await store.get(`booking:${seg[1]}`);
+    if (!booking) return err(404, "Booking not found");
+    const isBiz = user.id === booking.businessId;
+    const isCreator = user.id === booking.creatorId;
+    if (!isBiz && !isCreator && user.role !== "admin") return err(404, "Booking not found");
+    booking.dealCard = booking.dealCard || { businessAt: null, creatorAt: null };
+    if (isBiz && !booking.dealCard.businessAt) booking.dealCard.businessAt = nowIso();
+    if (isCreator && !booking.dealCard.creatorAt) booking.dealCard.creatorAt = nowIso();
+    booking.updatedAt = nowIso();
+    await store.set(`booking:${booking.id}`, booking);
+    await logEvent({ type: "deal_card_confirmed", actorId: user.id, actorRole: user.role, subjectId: booking.id, market: booking.market, data: { side: isBiz ? "business" : "creator", businessAt: booking.dealCard.businessAt, creatorAt: booking.dealCard.creatorAt } });
+    return json(200, { booking: await withPostState(booking) });
+  }
+
+  // Disclosure Done For You (Build -35): the creator confirms
+  // the paid-partnership disclosure line went on the post; the
+  // business sees it confirmed on the booking.
+  if (method === "POST" && seg[0] === "bookings" && seg.length === 3 && seg[2] === "disclosure") {
+    if (user.role !== "creator") return err(403, "Creators confirm their own disclosure");
+    const booking = await store.get(`booking:${seg[1]}`);
+    if (!booking || booking.creatorId !== user.id) return err(404, "Booking not found");
+    booking.disclosureAt = nowIso();
+    booking.updatedAt = nowIso();
+    await store.set(`booking:${booking.id}`, booking);
+    await logEvent({ type: "disclosure_confirmed", actorId: user.id, actorRole: "creator", subjectId: booking.id, market: booking.market, data: { businessId: booking.businessId } });
+    return json(200, { booking: await withPostState(booking) });
+  }
+
+  // Rate Range (Build -35): the going range for creators in the
+  // creator's own city, from real paid bookings where enough
+  // exist, else from listed rates labeled as guidance. Ranges
+  // only: a range is computed across at least 3 (booked) or 4
+  // (listed) distinct creators, so no individual's rate can be
+  // read back out of it.
+  if (method === "GET" && seg[0] === "me" && seg[1] === "rate-range" && seg.length === 2) {
+    if (user.role !== "creator") return err(403, "Creators only");
+    const paidBookings = (await store.list("booking:")).map((r) => r.value).filter((b) => b && b.market === user.market && b.paidLane && typeof b.paidLane.rate === "number");
+    const byCreator = new Map();
+    for (const b of paidBookings) if (!byCreator.has(b.creatorId)) byCreator.set(b.creatorId, b.paidLane.rate);
+    let range = null;
+    if (byCreator.size >= 3) {
+      const rates = [...byCreator.values()].sort((a, b) => a - b);
+      range = { low: rates[0], high: rates[rates.length - 1], source: "bookings" };
+    } else {
+      const listed = (await allUsers()).filter((u) => u.role === "creator" && u.market === user.market && u.status === "approved" && u.creator && typeof u.creator.paidRate === "number" && u.creator.paidRate > 0);
+      if (listed.length >= 4) {
+        const rs = listed.map((u) => u.creator.paidRate).sort((a, b) => a - b);
+        range = { low: rs[Math.floor(rs.length * 0.25)], high: rs[Math.min(rs.length - 1, Math.floor(rs.length * 0.75))], source: "listed" };
+      }
+    }
+    return json(200, { range, floor: PAID_LANE.minRate, market: user.market });
+  }
+
+  // Audience offers + codes (Build -35): a business attaches
+  // an audience offer to a booking (the booking's creator gets
+  // their code at once) or stands one alone for creators in
+  // the market to take. Each creator's code is unique; staff
+  // redeem it on the same habit as everything else, with a
+  // channel tap: in store, pickup, or delivery.
+  if (method === "POST" && seg[0] === "me" && seg[1] === "audience-offers" && seg.length === 2) {
+    if (user.role !== "business") return err(403, "Businesses create audience offers");
+    const b = parseBody(event);
+    const title = String(b.title || "").trim().slice(0, 80);
+    const perk = String(b.perk || "").trim().slice(0, 140);
+    if (!title || !perk) return err(400, "Name the offer and say what their audience gets");
+    let booking = null;
+    if (b.bookingId) {
+      booking = await store.get(`booking:${String(b.bookingId)}`);
+      if (!booking || booking.businessId !== user.id) return err(404, "Booking not found");
+    }
+    const ts = nowIso();
+    const offer = { id: crypto.randomUUID(), businessId: user.id, businessName: (user.business || {}).businessName || "", market: user.market, title, perk, bookingId: booking ? booking.id : null, status: "open", createdAt: ts };
+    await store.set(`aoffer:${offer.id}`, offer);
+    let code = null;
+    if (booking) {
+      const codeStr = await newAudienceCode();
+      if (codeStr) {
+        code = { id: crypto.randomUUID(), offerId: offer.id, businessId: user.id, creatorId: booking.creatorId, bookingId: booking.id, code: codeStr, status: "active", createdAt: ts };
+        await store.set(`acode:${code.id}`, code);
+      }
+    }
+    await logEvent({ type: "audience_offer_created", actorId: user.id, actorRole: "business", subjectId: offer.id, market: user.market, data: { bookingId: offer.bookingId, title } });
+    return json(201, { offer, code });
+  }
+  if (method === "GET" && seg[0] === "me" && seg[1] === "audience-offers" && seg.length === 2) {
+    const offers = await allAudienceOffers();
+    const codes = await allAudienceCodes();
+    if (user.role === "business") {
+      const mine = offers.filter((o) => o.businessId === user.id);
+      return json(200, { offers: mine.map((o) => ({ ...o, codes: codes.filter((c) => c.offerId === o.id) })) });
+    }
+    if (user.role === "creator") {
+      const open = offers.filter((o) => o.market === user.market && o.status === "open" && !o.bookingId);
+      const myCodes = codes.filter((c) => c.creatorId === user.id).map((c) => { const o = offers.find((x) => x.id === c.offerId); return { ...c, offerTitle: o ? o.title : "", perk: o ? o.perk : "", businessName: o ? o.businessName : "" }; });
+      return json(200, { offers: open, codes: myCodes });
+    }
+    return err(403, "Sign in as a business or creator");
+  }
+  if (method === "POST" && seg[0] === "me" && seg[1] === "audience-offers" && seg.length === 4 && seg[3] === "take") {
+    if (user.role !== "creator") return err(403, "Creators take audience offers");
+    const offer = (await allAudienceOffers()).find((o) => o.id === seg[2]);
+    if (!offer || offer.status !== "open") return err(404, "That audience offer is not open");
+    if (offer.bookingId) return err(400, "That offer is attached to a booking; its creator already has their code");
+    if (offer.market !== user.market) return err(404, "That audience offer is not open");
+    const existing = (await allAudienceCodes()).find((c) => c.offerId === offer.id && c.creatorId === user.id);
+    if (existing) return json(200, { code: existing, offer });
+    const codeStr = await newAudienceCode();
+    if (!codeStr) return err(500, "Could not make a code just now");
+    const code = { id: crypto.randomUUID(), offerId: offer.id, businessId: offer.businessId, creatorId: user.id, bookingId: null, code: codeStr, status: "active", createdAt: nowIso() };
+    await store.set(`acode:${code.id}`, code);
+    await logEvent({ type: "audience_code_taken", actorId: user.id, actorRole: "creator", subjectId: offer.id, market: offer.market, data: { businessId: offer.businessId, codeId: code.id } });
+    return json(201, { code, offer });
+  }
+  if (method === "POST" && seg[0] === "me" && seg[1] === "audience-codes" && seg[2] === "redeem" && seg.length === 3) {
+    if (user.role === "creator") return err(403, "Businesses redeem audience codes; creators share them");
+    const b = parseBody(event);
+    const codeStr = String(b.code || "").trim().toUpperCase();
+    const amount = Number(b.amount);
+    if (!codeStr) return err(400, "Enter the audience code");
+    if (!Number.isFinite(amount) || amount < 0 || amount > 100000) return err(400, "Enter the order total (0 if the perk carried no spend)");
+    const code = (await allAudienceCodes()).find((c) => c.code === codeStr);
+    if (!code) return err(404, "That audience code was not found");
+    if (user.role === "business" && code.businessId !== user.id) return err(404, "That audience code was not found");
+    if (code.status !== "active") return err(400, "That audience code is not active");
+    const ts = nowIso();
+    const ev = { id: crypto.randomUUID(), bookingId: code.bookingId || null, businessId: code.businessId, creatorId: code.creatorId, kind: "audience", channel: validChannel(b.channel), amount: roasRound2(amount), audienceCodeId: code.id, passId: null, at: ts, by: user.id, via: user.role === "staff" ? "staff" : "owner", flagged: amount > REDEEM_FLAG_AMOUNT };
+    await store.set(`redevent:${ev.id}`, ev);
+    await logEvent({ type: "audience_redemption", actorId: user.id, actorRole: user.role, subjectId: code.id, market: user.market, data: { creatorId: code.creatorId, businessId: code.businessId, amount: ev.amount, channel: ev.channel } });
+    return json(201, { redemptionEvent: ev, code: { code: code.code, offerId: code.offerId } });
+  }
+
+  // The Swap Bench (Build -35): a cancelled visit offers the
+  // business the closest matching creators from the real
+  // roster (same lead category, nearest local reach), and one
+  // tap sends the chosen creator the same visit as a direct
+  // offer for the same week. Consent stays the creator's: the
+  // swap is an offer, accepted the normal way.
+  if (seg[0] === "bookings" && seg.length === 3 && seg[2] === "swap" && (method === "GET" || method === "POST")) {
+    const booking = await store.get(`booking:${seg[1]}`);
+    if (!booking || booking.businessId !== user.id) return err(404, "Booking not found");
+    if (booking.status !== "cancelled") return err(400, "Swaps open when a visit is cancelled");
+    const orig = await store.get(`user:${booking.creatorId}`);
+    const origCats = orig && orig.creator && Array.isArray(orig.creator.categories) ? orig.creator.categories : [];
+    const origLocal = orig && orig.creator && typeof orig.creator.localAudiencePct === "number" ? orig.creator.localAudiencePct : null;
+    if (method === "GET") {
+      const candidates = (await allUsers()).filter((u) => u.role === "creator" && u.id !== booking.creatorId && u.market === booking.market && u.status === "approved" && profileCompleteOf(u) && standingState(u) === "good");
+      const scored = candidates.map((u) => {
+        const cats = (u.creator && u.creator.categories) || [];
+        const catMatch = origCats.length ? (cats.includes(origCats[0]) ? 0 : 1) : 0;
+        const lp = u.creator && typeof u.creator.localAudiencePct === "number" ? u.creator.localAudiencePct : null;
+        const dist = origLocal !== null && lp !== null ? Math.abs(lp - origLocal) : 50;
+        return { u, catMatch, dist };
+      }).sort((a, b2) => a.catMatch - b2.catMatch || a.dist - b2.dist);
+      return json(200, { suggestions: scored.slice(0, 3).map(({ u }) => ({ creatorId: u.id, handle: u.creator.handle, name: u.name, localAudiencePct: u.creator.localAudiencePct, categories: u.creator.categories || [] })) });
+    }
+    const b = parseBody(event);
+    const target = await store.get(`user:${String(b.creatorId || "")}`);
+    if (!target || target.role !== "creator" || target.status !== "approved" || !profileCompleteOf(target)) return err(400, "That creator is not available for a swap");
+    const origOffer = booking.offerId ? await store.get(`offer:${booking.offerId}`) : null;
+    const ts = nowIso();
+    const offer = {
+      id: crypto.randomUUID(), businessId: user.id, businessName: (user.business || {}).businessName || booking.businessName || "", market: booking.market, category: (user.business || {}).category || "",
+      creatorId: target.id, creatorHandle: target.creator ? target.creator.handle : null, lane: "direct", kind: booking.kind === "paid" ? "paid" : "comp",
+      covers: origOffer ? origOffer.covers : null, paidBrief: origOffer ? origOffer.paidBrief : null, requiresSpanish: origOffer ? !!origOffer.requiresSpanish : false,
+      cashRate: booking.kind === "paid" && booking.paidLane ? booking.paidLane.rate : null, targetTiers: null,
+      title: origOffer ? origOffer.title : booking.title, whatComped: origOffer ? origOffer.whatComped : booking.title, includes: origOffer ? origOffer.includes : "", experience: origOffer ? origOffer.experience : "",
+      templateId: null, play: origOffer ? origOffer.play : null, moment: origOffer ? origOffer.moment : null, countedResult: booking.countedResult || "door",
+      dollarCap: booking.dollarCap || (origOffer ? origOffer.dollarCap : 0), visitWindow: "This week (swap)", windowMode: "thisweek", spots: 1,
+      status: "open", createdAt: ts, updatedAt: ts, publishedAt: ts, nudgeSentAt: null, swapFromBookingId: booking.id,
+      brief: origOffer ? origOffer.brief : null, assetPacketAttached: booking.kind === "paid",
+    };
+    await store.set(`offer:${offer.id}`, offer);
+    await logEvent({ type: "swap_offer_sent", actorId: user.id, actorRole: "business", subjectId: offer.id, market: booking.market, data: { fromBookingId: booking.id, toCreatorId: target.id, fromCreatorId: booking.creatorId } });
+    return json(201, { offer });
   }
 
   // Business-didn't-honor report (Jeff, 2026-10-19 r2): the creator
