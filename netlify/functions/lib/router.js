@@ -3978,6 +3978,12 @@ async function publicProfilePayload(u) {
     // out, shown as "My streets" on the profile, the book-me
     // page, and the Local List.
     streets: Array.isArray(c.streets) ? c.streets : [],
+    // Sig Writes Your Pitch (Build -33): the creator's own
+    // one-line intro, shown at the top of the profile.
+    pitchLine: c.pitchLine || null,
+    // Portfolio Sample Post (Build -33): one existing post,
+    // labeled a sample everywhere, never a SIGNL visit.
+    portfolioSample: c.portfolioSample ? { url: c.portfolioSample, embedUrl: `${String(c.portfolioSample).replace(/\/?$/, "/")}embed` } : null,
     tierBand: normalizeTierBand(c.tierBand) || null,
     followerCount: c.followerCount || 0,
     totalAudience: audience.total,
@@ -4070,6 +4076,8 @@ async function bookMePayload(u, viewer) {
     city: full.city,
     neighborhood: full.neighborhood,
     streets: full.streets || [],
+    pitchLine: full.pitchLine || null,
+    portfolioSample: full.portfolioSample || null,
     tierBand: full.tierBand,
     categories: full.categories,
     spanishContent: full.spanishContent,
@@ -7357,6 +7365,25 @@ async function handleRegister(event) {
   const signupSource = typeof b.signupSource === "string" ? b.signupSource.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 40) : "";
   if (signupSource) user.signupSource = signupSource;
 
+  // Golden Ticket claim (Build -33): a creator who registers
+  // through a named ticket claims the held seat. The ticket
+  // flips to claimed, and the issuer is credited through the
+  // same referredBy attribution every invite link uses, unless
+  // the sign-up already carries a referral. A ticket for a
+  // different market, or one already claimed, changes nothing.
+  if (role === "creator" && typeof b.goldenTicket === "string" && b.goldenTicket.trim()) {
+    try {
+      const ticket = await store.get(`gticket:${b.goldenTicket.trim().slice(0, 60)}`);
+      if (ticket && ticket.status === "issued" && normalizeMarketName(ticket.market) === normalizeMarketName(user.market)) {
+        if (!user.referredBy) user.referredBy = ticket.issuerHandle;
+        ticket.status = "claimed";
+        ticket.claimedByUserId = user.id;
+        ticket.claimedAt = ts;
+        await store.set(`gticket:${ticket.id}`, ticket);
+      }
+    } catch (e) { /* a ticket problem never blocks a sign-up */ }
+  }
+
   // Language preference (Spanish layers S1, Jeff, 2026-10-28):
   // a creator who arrived through the Spanish claim path
   // (?lang=es on the link, persisted by the client like the
@@ -8363,6 +8390,43 @@ async function handleFoundingApplication(event) {
   return json(200, { ok: true, id: rec.id }, cors);
 }
 
+// Sig Writes Your Pitch (Build -33, Jeff, 2026-10-29): a
+// one-line intro drafted from the creator's REAL record only:
+// their categories, their market, their self-reported local
+// percentage, and their three streets. Nothing is invented: a
+// field that is not on the record never appears in the line.
+function pitchDraftFor(user) {
+  const c = (user && user.creator) || {};
+  const cats = (c.categories || []).slice(0, 2);
+  const place = user.market === UNLISTED ? (user.city || "my city") : marketTalkName(user.market);
+  let line = `${cats.length ? cats.join(" and ") + " stories" : "Local stories"} from ${place}`;
+  if (typeof c.localAudiencePct === "number") line += `, with ${c.localAudiencePct}% of my audience right here`;
+  const streets = Array.isArray(c.streets) ? c.streets.filter(Boolean) : [];
+  if (streets.length) line += `. Usually found around ${streets.slice(0, 2).join(" and ")}`;
+  line += ".";
+  return line.slice(0, 200);
+}
+
+// Golden Ticket invites (Build -33, Jeff, 2026-10-29): each
+// finished creator holds TWO named invites. A ticket names one
+// person; the claim link carries the ticket, registration marks
+// it claimed and credits the issuer through the existing
+// referral attribution (referredBy), so Momentum follows the
+// existing rails. An unused ticket expires quietly when the
+// market launches: the status simply reads closed, nothing is
+// announced and nobody is chased.
+const GOLDEN_TICKET_LIMIT = 2;
+async function goldenTicketsFor(issuerId) {
+  const rows = await store.list("gticket:");
+  return rows.map((r) => r.value).filter((t) => t && t.issuerId === issuerId)
+    .sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
+}
+async function goldenTicketView(t, marketLive) {
+  let status = t.status;
+  if (status === "issued" && marketLive) status = "expired";
+  return { id: t.id, name: t.name, status, createdAt: t.createdAt, claimedAt: t.claimedAt || null, linkPath: `/claim?ticket=${t.id}` };
+}
+
 // ---------- partners (Jeff, 2026-10-28) ----------
 // A partner is a distribution partner (a media group or a large
 // local profile) assigned one or more markets. They recruit
@@ -9069,6 +9133,23 @@ async function route(event) {
   // Opted-in book-me creators only, grouped by category, and the
   // payload carries NO counts: no totals, no per-category
   // numbers, nothing a page could print as a roster size.
+  // Golden Ticket landing read (Build -33): the claim page
+  // shows the held seat by name. Only the fields the landing
+  // prints: the recipient's name (which the link holder was
+  // given by the issuer), the market, the issuer's handle, and
+  // the ticket's standing. An unused ticket in a live market
+  // reads expired: it closed quietly at launch.
+  if (seg[0] === "public" && seg[1] === "golden-ticket" && seg.length === 3) {
+    const cors = Object.assign(foundingApplicationCors(event), { "Access-Control-Allow-Methods": "GET, OPTIONS" });
+    if (method === "OPTIONS") return { statusCode: 204, headers: cors, body: "" };
+    if (method !== "GET") return json(405, { error: "Method not allowed" }, cors);
+    const t = await store.get(`gticket:${String(seg[2]).slice(0, 60)}`);
+    if (!t) return json(404, { error: "That ticket does not exist." }, cors);
+    const live = await isMarketLive(t.market);
+    const view = await goldenTicketView(t, live);
+    return json(200, { ticket: { name: view.name, market: t.market, issuerHandle: t.issuerHandle, status: view.status } }, cors);
+  }
+
   if (seg[0] === "public" && seg[1] === "local-list" && seg.length === 2) {
     const cors = Object.assign(foundingApplicationCors(event), { "Access-Control-Allow-Methods": "GET, OPTIONS" });
     if (method === "OPTIONS") return { statusCode: 204, headers: cors, body: "" };
@@ -9087,6 +9168,7 @@ async function route(event) {
           charter: u.creator.charter === true,
           neighborhood: u.creator.neighborhood || "",
           streets: Array.isArray(u.creator.streets) ? u.creator.streets : [],
+          portfolioSample: u.creator.portfolioSample || null,
         };
         for (const raw of entry.categories) {
           const canon = canonicalFromList(raw, CREATOR_CATEGORIES) || raw;
@@ -9930,6 +10012,30 @@ async function route(event) {
       }
       // Featured posts: up to 3 Instagram post or reel links,
       // validated whole (one bad link refuses the save).
+      // Portfolio Sample Post (Build -33): ONE existing post
+      // about a place the creator loves, validated with the
+      // same Instagram post rules as featured posts. It is
+      // labeled a portfolio sample everywhere it shows and is
+      // never presented as a SIGNL visit. Empty clears it.
+      if (b.portfolioSample !== undefined) {
+        if (b.portfolioSample === null || b.portfolioSample === "") {
+          changes.portfolioSample = [c.portfolioSample || null, null];
+          c.portfolioSample = null;
+        } else {
+          const v = normalizeFeaturedPosts([b.portfolioSample]);
+          if (!v || !v.length) return err(400, "That link is not an Instagram post or reel link. Paste the full link to one post.");
+          changes.portfolioSample = [c.portfolioSample || null, v[0]];
+          c.portfolioSample = v[0];
+        }
+      }
+      // Sig Writes Your Pitch (Build -33): the creator's
+      // one-line intro, accepted from Sig's draft, edited, or
+      // written from scratch. Plain text, capped, empty clears.
+      if (b.pitchLine !== undefined) {
+        const pl = String(b.pitchLine || "").trim().slice(0, 200);
+        changes.pitchLine = [c.pitchLine || "", pl];
+        c.pitchLine = pl || null;
+      }
       if (b.featuredPosts !== undefined) {
         const v = normalizeFeaturedPosts(b.featuredPosts);
         if (!v) return err(400, "Featured posts are up to 3 Instagram post or reel links. Paste the full link to the post itself.");
@@ -11509,6 +11615,58 @@ async function route(event) {
       await logEvent({ type: "founding_status_viewed", actorId: user.id, actorRole: "creator", subjectId: user.id, market: user.market, data: { priorityPosition: summaryRaw.priorityPosition, marketLive: summaryRaw.marketLive } });
     }
     return json(200, { founding: summary, card, buzz });
+  }
+
+  // Sig Writes Your Pitch (Build -33): the draft Sig writes
+  // from the creator's real record. Read-only: accepting,
+  // editing, or replacing it saves through the profile PATCH.
+  if (method === "GET" && seg[0] === "me" && seg[1] === "pitch-draft" && seg.length === 2) {
+    if (user.role !== "creator") return err(403, "Creators only");
+    return json(200, { draft: pitchDraftFor(user), current: (user.creator && user.creator.pitchLine) || null });
+  }
+
+  // Golden Ticket invites (Build -33): the creator's two named
+  // invites and their status. Issuing requires an approved,
+  // finished profile: a finished creator is who the ticket
+  // vouches for.
+  if (seg[0] === "me" && seg[1] === "golden-tickets" && seg.length === 2) {
+    if (user.role !== "creator") return err(403, "Creators only");
+    const live = await isMarketLive(user.market);
+    if (method === "GET") {
+      const mine = await goldenTicketsFor(user.id);
+      const canIssue = user.status === "approved" && profileCompleteOf(user);
+      return json(200, {
+        tickets: await Promise.all(mine.map((t) => goldenTicketView(t, live))),
+        remaining: Math.max(0, GOLDEN_TICKET_LIMIT - mine.length),
+        limit: GOLDEN_TICKET_LIMIT,
+        canIssue,
+        marketLive: live,
+      });
+    }
+    if (method === "POST") {
+      if (user.status !== "approved" || !profileCompleteOf(user)) {
+        return err(400, "Golden Tickets unlock when your profile is finished and approved. Your finished profile is what the ticket vouches for.");
+      }
+      const b = parseBody(event);
+      const name = String(b.name || "").trim().slice(0, 80);
+      if (!name) return err(400, "Name the person this ticket holds a seat for.");
+      const mine = await goldenTicketsFor(user.id);
+      if (mine.length >= GOLDEN_TICKET_LIMIT) return err(400, "Both of your Golden Tickets are already out. Each finished creator gets two.");
+      const ticket = {
+        id: crypto.randomUUID(),
+        issuerId: user.id,
+        issuerHandle: (user.creator && user.creator.handle) || "",
+        name,
+        market: user.market,
+        status: "issued",
+        createdAt: nowIso(),
+        claimedByUserId: null,
+        claimedAt: null,
+      };
+      await store.set(`gticket:${ticket.id}`, ticket);
+      await logEvent({ type: "golden_ticket_issued", actorId: user.id, actorRole: "creator", subjectId: ticket.id, market: user.market, data: { name } });
+      return json(201, { ticket: await goldenTicketView(ticket, live) });
+    }
   }
 
   // ---------- market activation gate ----------
