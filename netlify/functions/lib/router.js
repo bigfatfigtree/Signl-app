@@ -1306,6 +1306,12 @@ function isFoundingBusiness(u) {
   return !!u && u.role === "business" && businessAccessState(u) !== "active";
 }
 
+// Founding business roster preview cap (first 60 seconds,
+// 2026-10-29): the preview shows the top of the market's roster
+// by local reach, never the whole book. The payload states the
+// real total alongside, so the cap never inflates or hides it.
+const ROSTER_PREVIEW_LIMIT = 12;
+
 const FOUNDING_BUSINESS_MESSAGE = "Your business is on the founding list, so the creator roster and the product tools are not open yet. Every founding application gets a decision or a clear status within 2 business days. Your Founding Status page shows your plan, your place in line, and what happens next.";
 
 function publicUser(u) {
@@ -3530,6 +3536,33 @@ async function discoverCards(query, viewer) {
       ...out.filter((c) => c.standing === "paused"),
     ],
     universities: universityFacet,
+  };
+}
+
+// The founding roster preview card (first 60 seconds, 2026-10-29):
+// a display-only slimming of a discoverCards card for the founding
+// business preview. Whitelisted field by field, like the public
+// profile: no reviews, no track record, no contact data, nothing a
+// business could act on before activation. Rates ride only as the
+// same public card states them on Discover.
+function rosterPreviewCard(card) {
+  const p = card.profile || {};
+  return {
+    userId: card.userId,
+    name: card.name,
+    photoUrl: card.photoUrl || null,
+    city: card.city || "",
+    neighborhood: card.neighborhood || "",
+    handle: p.handle || "",
+    tierBand: p.tierBand || "",
+    categories: Array.isArray(p.categories) ? p.categories.slice(0, 3) : [],
+    spanishContent: p.spanishContent === true,
+    musician: p.musician === true,
+    totalAudience: card.totalAudience || 0,
+    localAudiencePct: typeof p.localAudiencePct === "number" ? p.localAudiencePct : null,
+    compOpen: p.compOpen !== false,
+    paidRate: typeof p.paidRate === "number" && p.paidRate > 0 ? p.paidRate : null,
+    foundingBand: card.foundingBand || null,
   };
 }
 
@@ -10827,6 +10860,38 @@ async function route(event) {
       return json(200, { dashboard, preview: true });
     }
     return err(404, "Unknown admin route");
+  }
+
+  // ---------- founding business roster preview (first 60 seconds, Jeff, 2026-10-29) ----------
+  // The ONE read a founding business gets before activation, and
+  // it is a preview, not product access: the real founding roster
+  // in its own market (the same discoverCards query Discover
+  // answers, re-ranked by local reach and capped), slimmed to
+  // display fields. It exists so a business that just signed up
+  // can SEE what SIGNL is before any payment decision: who is on
+  // the roster, how local their audiences are, and what it would
+  // book. It creates nothing, favorites nothing, and opens no
+  // marketplace section: the founding gate below still refuses
+  // discover, favorites, offers, bookings and the rest exactly as
+  // before. Placed ahead of that gate and ahead of the approved
+  // gate on purpose: a business whose application is still in
+  // review sees the same Founding Status page, so it gets the
+  // same preview.
+  if (method === "GET" && seg[0] === "me" && seg[1] === "roster-preview" && seg.length === 2) {
+    if (!user || user.role !== "business") return err(403, "Businesses only");
+    if (!isFoundingBusiness(user)) return err(403, "Your business is active. Your full roster is under Find creators.");
+    const disc = await discoverCards({ market: user.market }, user);
+    const localPct = (c) => (c.profile && typeof c.profile.localAudiencePct === "number" ? c.profile.localAudiencePct : -1);
+    const ranked = [...disc.creators].sort((a, b) => (localPct(b) - localPct(a)) || (a.createdAt < b.createdAt ? -1 : 1));
+    const creators = ranked.slice(0, ROSTER_PREVIEW_LIMIT).map(rosterPreviewCard);
+    return json(200, {
+      preview: true,
+      market: user.market,
+      marketLive: await isMarketLive(user.market),
+      totalInMarket: disc.creators.length,
+      shown: creators.length,
+      creators,
+    });
   }
 
   // ---------- founding business gate ----------
