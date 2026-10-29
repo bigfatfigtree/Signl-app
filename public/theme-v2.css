@@ -2786,3 +2786,44 @@ body.rail-on main, body.preview-on main { min-width: 0; }
    body.v3-on ever shows it, and admin strips v3 classes). */
 .rail-sig-img { width: 25px; height: 25px; border-radius: 50%; display: block; }
 .rail-item.on .rail-sig-img { box-shadow: 0 0 0 2px var(--mint); }
+
+/* Founding business preview (first 60 seconds, 2026-10-29):
+   the roster rows, plan cards and local-reach figure on the
+   founding status page. Compact data rows, not deck cards: the
+   preview is a list a business scans, and the local reach
+   figure is the headline number on every row. */
+.rp-list { display: grid; gap: 10px; margin-top: 12px; }
+.rp-card { display: flex; gap: 12px; align-items: flex-start; border: 1px solid var(--line); border-radius: 14px; padding: 12px; background: #fff; }
+.rp-photo { width: 56px; height: 56px; border-radius: 12px; overflow: hidden; flex: 0 0 56px; background: var(--ink); color: var(--mint); display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1.25rem; }
+.rp-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.rp-main { flex: 1 1 auto; min-width: 0; }
+.rp-main .dcard-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.rp-name { font-weight: 800; }
+.rp-sub { color: var(--ink3); font-size: .84rem; margin-top: 2px; }
+.rp-local { text-align: right; flex: 0 0 auto; }
+.rp-pct { display: block; font-size: 1.3rem; font-weight: 800; line-height: 1.1; color: #0C7A43; }
+.rp-local-lbl { font-size: .7rem; color: var(--ink3); text-transform: uppercase; letter-spacing: .05em; }
+.rp-local-na { display: block; font-size: .76rem; color: var(--ink3); max-width: 92px; }
+.rp-plans { display: grid; gap: 10px; margin-top: 12px; }
+@media (min-width: 700px) { .rp-plans { grid-template-columns: repeat(3, 1fr); } }
+.rp-plan { border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
+.rp-plan.on { border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink); }
+.rp-plan-name { font-weight: 800; }
+.rp-plan-price { font-size: 1.4rem; font-weight: 800; margin-top: 4px; }
+
+/* Creator excitement layer (2026-10-29): the founding stat card
+   on the creator founding home. Ink field with a mint accent,
+   the same tokens as the founding identity card; the city
+   unlock meter reuses the shared .meter component above. */
+.stat-card { background: #0B0D0C; color: #fff; border-radius: 18px; padding: 20px 22px; margin: 14px 0; }
+.stat-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.stat-brand { font-weight: 800; letter-spacing: .14em; }
+.stat-name { font-size: 1.25rem; font-weight: 800; margin-top: 14px; }
+.stat-handle { color: #A9E8C9; font-weight: 600; }
+.stat-place { color: rgba(255, 255, 255, .62); font-size: .88rem; margin-top: 2px; }
+.stat-big { font-size: 3rem; font-weight: 800; line-height: 1.05; margin-top: 14px; color: #A9E8C9; }
+.stat-lbl { color: rgba(255, 255, 255, .62); font-size: .85rem; }
+.stat-rank { font-size: 1.05rem; font-weight: 800; margin-top: 12px; }
+.stat-sub { color: rgba(255, 255, 255, .72); font-size: .86rem; margin-top: 4px; }
+.stat-actions { margin-top: 14px; }
+.stat-actions .btn { background: #A9E8C9; border-color: #A9E8C9; color: #0B0D0C; font-weight: 700; }
