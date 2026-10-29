@@ -1,23 +1,25 @@
 #!/usr/bin/env node
 // Founding business first-60-seconds preview verification
 // (Jeff, 2026-10-29): a business that has signed up but is NOT
-// activated gets exactly one read, GET /api/me/roster-preview:
-// the real founding roster in its own market (the Discover
-// query), re-ranked by local reach, capped at 12, slimmed to
-// display fields. This suite pins:
+// activated gets exactly one read, GET /api/me/roster-preview.
+// BUILD -30 re-ruled the payload (Jeff, 2026-10-29): NO roster
+// counts and NO creator cards (totals and thin-market framing
+// are anti-marketing while rosters are small); the payload
+// carries category presence only, the canonical categories with
+// at least one finished creator in the business's own market.
+// This suite pins:
 //   - pending AND approved founding businesses can read it
 //     (their Founding Status page is the same screen);
-//   - ranking is by local reach desc, founding order breaks ties;
-//   - totals are the market's real roster count, creators are
-//     scoped to the business's own market, empty markets answer
-//     an honest zero;
-//   - cards carry display fields only (no email, no reviews, no
-//     track record, nothing actionable);
+//   - categories are presence only: no totals, no shown count,
+//     no creator list rides the payload, and an empty market
+//     answers an empty category list;
 //   - the founding gate still refuses Discover and the rest;
 //   - creators and anonymous callers cannot read it, and an
 //     ACTIVATED business no longer can (it has the real roster);
-//   - the client ships the preview sections with locked copy
-//     and no em dashes in the new code.
+//   - the client ships the preview sections with locked copy,
+//     no count or thin-market strings, and no em dashes in the
+//     new code. (Roster ranking by local reach is pinned on the
+//     creator side in Part B and by Discover's own suites.)
 // Run: node scripts/verify-first60.mjs
 import { spawn } from "node:child_process";
 import fs from "node:fs";
@@ -118,16 +120,12 @@ try {
   const pendingPreview = await biz.client("GET", "/api/me/roster-preview");
   check("pending founding business can read the roster preview (200)", pendingPreview.status === 200, JSON.stringify(pendingPreview.data).slice(0, 200));
   check("preview is labeled a preview for its own market", pendingPreview.data.preview === true && pendingPreview.data.market === "Richmond", JSON.stringify(pendingPreview.data).slice(0, 160));
-  check("preview total is the real roster count (3)", pendingPreview.data.totalInMarket === 3 && pendingPreview.data.shown === 3, JSON.stringify({ total: pendingPreview.data.totalInMarket, shown: pendingPreview.data.shown }));
-  const order = (pendingPreview.data.creators || []).map((c) => c.handle);
-  check("preview ranks by local reach desc (90, 70, 40)", JSON.stringify(order) === JSON.stringify(["previewquinn", "previewrob", "previewpam"]), JSON.stringify(order));
-  const top = (pendingPreview.data.creators || [])[0] || {};
-  check("preview cards carry the display fields (handle, tier, categories, audience, local pct, rate state)",
-    top.handle === "previewquinn" && typeof top.tierBand === "string" && Array.isArray(top.categories) && typeof top.totalAudience === "number" && top.localAudiencePct === 90 && "compOpen" in top && "paidRate" in top,
-    JSON.stringify(top).slice(0, 240));
-  check("preview cards carry NO private or actionable fields (no email, reviews, track record, history)",
-    (pendingPreview.data.creators || []).every((c) => !("email" in c) && !("reviews" in c) && !("trackRecord" in c) && !("history" in c) && !("reviewSummary" in c)),
-    JSON.stringify((pendingPreview.data.creators || [])[0]).slice(0, 240));
+  check("preview carries category presence for the market (Food & Drink from the finished roster)",
+    Array.isArray(pendingPreview.data.categories) && pendingPreview.data.categories.includes("Food & Drink"),
+    JSON.stringify(pendingPreview.data).slice(0, 200));
+  check("preview carries NO counts and NO creator list (no totals, no shown, no creators key)",
+    !("totalInMarket" in pendingPreview.data) && !("shown" in pendingPreview.data) && !("creators" in pendingPreview.data) && !JSON.stringify(pendingPreview.data).includes("totalInMarket"),
+    JSON.stringify(pendingPreview.data).slice(0, 200));
 
   // ---------- the founding gate is untouched ----------
   const gate = await biz.client("GET", "/api/discover");
@@ -136,7 +134,7 @@ try {
   // ---------- approved founding business still reads it ----------
   await admin("POST", "/api/admin/review", { userId: biz.id, decision: "approve" });
   const approvedPreview = await biz.client("GET", "/api/me/roster-preview");
-  check("approved (still founding) business can read the preview (200, same roster)", approvedPreview.status === 200 && approvedPreview.data.totalInMarket === 3, JSON.stringify(approvedPreview.data).slice(0, 160));
+  check("approved (still founding) business can read the preview (200, same categories)", approvedPreview.status === 200 && Array.isArray(approvedPreview.data.categories) && approvedPreview.data.categories.includes("Food & Drink"), JSON.stringify(approvedPreview.data).slice(0, 160));
 
   // ---------- other roles cannot ----------
   const creatorRead = await cHigh.client("GET", "/api/me/roster-preview");
@@ -148,8 +146,8 @@ try {
   // ---------- empty market answers an honest zero ----------
   const emptyBiz = await makeBusiness({ businessName: "Nashville Empty", email: "empty@fixtures.dev", market: "Nashville", city: "Nashville", category: "Retail", planId: "self-service" });
   const emptyPreview = await emptyBiz.client("GET", "/api/me/roster-preview");
-  check("a market with no finished profiles answers total 0 and an empty list (200)",
-    emptyPreview.status === 200 && emptyPreview.data.totalInMarket === 0 && Array.isArray(emptyPreview.data.creators) && emptyPreview.data.creators.length === 0,
+  check("a market with no finished profiles answers an empty category list and no counts (200)",
+    emptyPreview.status === 200 && Array.isArray(emptyPreview.data.categories) && emptyPreview.data.categories.length === 0 && !("creators" in emptyPreview.data) && !("totalInMarket" in emptyPreview.data),
     JSON.stringify(emptyPreview.data).slice(0, 200));
 
   // ---------- activation closes the preview ----------
@@ -169,11 +167,14 @@ try {
     slice.includes("Your first offer is already drafted") && slice.includes("Ranked by local reach") && slice.includes("The Visit Guarantee") && slice.includes("Results on day 7, 14, and 30") && slice.includes("Locked founding rates"),
     "");
   check("client labels the offer draft an unsaved preview", slice.includes("Nothing is saved, nothing is sent"), "");
-  check("client never pads an empty roster (honest zero copy present)", slice.includes("will never be padded with stand-ins"), "");
+  check("client ships category presence, the labeled local-reach example, and the founding scarcity line",
+    slice.includes("foundingCategoriesHtml") && slice.includes("Categories recruiting now") && slice.includes("Example: a 2,000-follower creator whose audience is 90% local outranks a 50,000-follower account at 12% local") && slice.includes("Founding businesses get first access to the roster"), "");
+  check("client founding page carries no roster totals, no thin-market copy, no stand-ins line (BUILD -30)",
+    !slice.includes("totalInMarket") && !slice.includes("will never be padded with stand-ins") && !slice.includes("roster is being built now") && !slice.includes("Showing the top"), "");
   check("no em dashes anywhere in the new founding preview code", !slice.includes("—"), "");
   check("build stamp is the new build on both sides",
-    fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), "..", "netlify", "functions", "lib", "build.js"), "utf8").includes("2026.10.29-29")
-    && fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), "..", "public", "index.html"), "utf8").includes("2026.10.29-29"), "");
+    fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), "..", "netlify", "functions", "lib", "build.js"), "utf8").includes("2026.10.29-30")
+    && fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), "..", "public", "index.html"), "utf8").includes("2026.10.29-30"), "");
 
   // ================================================================
   // Part B: creator excitement layer (Jeff, 2026-10-29).

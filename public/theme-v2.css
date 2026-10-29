@@ -2827,3 +2827,14 @@ body.rail-on main, body.preview-on main { min-width: 0; }
 .stat-sub { color: rgba(255, 255, 255, .72); font-size: .86rem; margin-top: 4px; }
 .stat-actions { margin-top: 14px; }
 .stat-actions .btn { background: #A9E8C9; border-color: #A9E8C9; color: #0B0D0C; font-weight: 700; }
+
+/* Charter Creator card (BUILD -30, 2026-10-29): the founding
+   artifact. Same ink field and mint as the stat card, with a
+   circular seal in the top row, the handle as the headline, and
+   the class named, never numbered. */
+.charter-card { border: 1px solid #A9E8C9; box-shadow: 0 0 0 1px rgba(169, 232, 201, .25); }
+.charter-seal { display: inline-flex; align-items: center; justify-content: center; width: 66px; height: 66px; border: 2px solid #A9E8C9; border-radius: 50%; color: #A9E8C9; font-weight: 800; font-size: .6rem; letter-spacing: .1em; line-height: 1.35; text-align: center; transform: rotate(-8deg); flex: none; }
+.charter-handle { font-size: 1.7rem; font-weight: 800; margin-top: 16px; color: #fff; word-break: break-word; }
+.charter-class { font-size: 1.05rem; font-weight: 800; color: #A9E8C9; margin-top: 6px; }
+.charter-class-sub { color: rgba(255, 255, 255, .62); font-size: .88rem; margin-top: 2px; letter-spacing: .06em; text-transform: uppercase; }
+.charter-scarcity { color: rgba(255, 255, 255, .78); font-size: .88rem; margin: 14px 0 0; }

@@ -1306,12 +1306,6 @@ function isFoundingBusiness(u) {
   return !!u && u.role === "business" && businessAccessState(u) !== "active";
 }
 
-// Founding business roster preview cap (first 60 seconds,
-// 2026-10-29): the preview shows the top of the market's roster
-// by local reach, never the whole book. The payload states the
-// real total alongside, so the cap never inflates or hides it.
-const ROSTER_PREVIEW_LIMIT = 12;
-
 // Founding launch bar (creator excitement layer, Jeff, 2026-10-29):
 // the finished-profile count a market's founding roster is built
 // to before businesses open there (the 25 to 30 finished-creator
@@ -1941,13 +1935,24 @@ function publicFounding(summary) {
 //     the profile businesses would rank exists.
 //   unlock: the market's founding progress toward the launch bar:
 //     approved count, finished-profile count, the bar, and the
-//     live flag. Jeff ordered these exact counts shown to
-//     creators for this meter (2026-10-29), superseding the
-//     band-only treatment foundingSummary gives sign-up counts;
-//     queue positions stay banded, only roster progress is exact.
-//     Unlisted markets get no meter: their creators share one
-//     stored label across many cities, so a single count would
-//     mix cities and mislead.
+//     live flag. The counts ride the payload because the meter's
+//     bar and its percentage gate are computed from them, but the
+//     client renders them qualitatively while a market is small
+//     (Jeff, BUILD -30, 2026-10-29: low raw counts discourage;
+//     a percentage of the founding goal may show only once the
+//     finished count reaches double digits). Unlisted markets
+//     get no meter: their creators share one stored label across
+//     many cities, so a single count would mix cities and
+//     mislead.
+//   charter: Charter Creator status (Jeff, BUILD -30,
+//     2026-10-29). A named founding class, never a numbered one:
+//     a creator who is approved with a finished profile BEFORE
+//     their market launches holds Charter status permanently.
+//     The moment eligibility is first observed it is stamped on
+//     the creator record (creator.charter + creator.charterAt),
+//     so it survives the market opening and rides the record in
+//     Admin payloads. No cohort count or sign-up sequence is
+//     ever computed or exposed for it.
 async function creatorBuzz(user) {
   const users = await allUsers();
   const inMarket = users.filter((x) => x.role === "creator" && !isTester(x) && normalizeMarketName(x.market) === normalizeMarketName(user.market));
@@ -1957,14 +1962,31 @@ async function creatorBuzz(user) {
     .filter((x) => x.creator && typeof x.creator.localAudiencePct === "number")
     .sort((a, b) => (b.creator.localAudiencePct - a.creator.localAudiencePct) || (a.createdAt < b.createdAt ? -1 : 1));
   const idx = ranked.findIndex((x) => x.id === user.id);
+  const marketLive = await isMarketLive(user.market);
+  let charter = null;
+  const storedCharterAt = (user.creator && user.creator.charterAt) || null;
+  if (storedCharterAt) {
+    charter = { at: storedCharterAt };
+  } else if (user.status === "approved" && profileCompleteOf(user) && !marketLive) {
+    const at = nowIso();
+    const rec = await store.get(`user:${user.id}`);
+    if (rec && rec.creator && !rec.creator.charterAt) {
+      rec.creator.charter = true;
+      rec.creator.charterAt = at;
+      rec.updatedAt = at;
+      await store.set(`user:${user.id}`, rec);
+    }
+    charter = { at };
+  }
   return {
     localRank: idx > -1 ? { rank: idx + 1, field: ranked.length, localAudiencePct: ranked[idx].creator.localAudiencePct } : null,
     unlock: user.market === UNLISTED ? null : {
       approved: approved.length,
       complete: complete.length,
       launchBar: FOUNDING_LAUNCH_BAR,
-      marketLive: await isMarketLive(user.market),
+      marketLive,
     },
+    charter,
   };
 }
 
@@ -3584,33 +3606,6 @@ async function discoverCards(query, viewer) {
       ...out.filter((c) => c.standing === "paused"),
     ],
     universities: universityFacet,
-  };
-}
-
-// The founding roster preview card (first 60 seconds, 2026-10-29):
-// a display-only slimming of a discoverCards card for the founding
-// business preview. Whitelisted field by field, like the public
-// profile: no reviews, no track record, no contact data, nothing a
-// business could act on before activation. Rates ride only as the
-// same public card states them on Discover.
-function rosterPreviewCard(card) {
-  const p = card.profile || {};
-  return {
-    userId: card.userId,
-    name: card.name,
-    photoUrl: card.photoUrl || null,
-    city: card.city || "",
-    neighborhood: card.neighborhood || "",
-    handle: p.handle || "",
-    tierBand: p.tierBand || "",
-    categories: Array.isArray(p.categories) ? p.categories.slice(0, 3) : [],
-    spanishContent: p.spanishContent === true,
-    musician: p.musician === true,
-    totalAudience: card.totalAudience || 0,
-    localAudiencePct: typeof p.localAudiencePct === "number" ? p.localAudiencePct : null,
-    compOpen: p.compOpen !== false,
-    paidRate: typeof p.paidRate === "number" && p.paidRate > 0 ? p.paidRate : null,
-    foundingBand: card.foundingBand || null,
   };
 }
 
@@ -10912,13 +10907,19 @@ async function route(event) {
 
   // ---------- founding business roster preview (first 60 seconds, Jeff, 2026-10-29) ----------
   // The ONE read a founding business gets before activation, and
-  // it is a preview, not product access: the real founding roster
-  // in its own market (the same discoverCards query Discover
-  // answers, re-ranked by local reach and capped), slimmed to
-  // display fields. It exists so a business that just signed up
-  // can SEE what SIGNL is before any payment decision: who is on
-  // the roster, how local their audiences are, and what it would
-  // book. It creates nothing, favorites nothing, and opens no
+  // it is a preview, not product access. It exists so a business
+  // that just signed up can SEE what SIGNL is before any payment
+  // decision. As of BUILD -30 (Jeff, 2026-10-29) the payload
+  // carries NO roster counts and NO creator cards: totals and
+  // thin-market framing are anti-marketing while rosters are
+  // small, and counts only become an asset at scale. What it
+  // carries instead is category presence: the canonical creator
+  // categories that have at least one finished creator in the
+  // business's own market (presence only, never a count), from
+  // the same discoverCards query Discover answers. The client
+  // pairs it with mechanics and personalization (the Sig-drafted
+  // first offer, the local-reach explainer, founding pricing).
+  // It creates nothing, favorites nothing, and opens no
   // marketplace section: the founding gate below still refuses
   // discover, favorites, offers, bookings and the rest exactly as
   // before. Placed ahead of that gate and ahead of the approved
@@ -10929,16 +10930,18 @@ async function route(event) {
     if (!user || user.role !== "business") return err(403, "Businesses only");
     if (!isFoundingBusiness(user)) return err(403, "Your business is active. Your full roster is under Find creators.");
     const disc = await discoverCards({ market: user.market }, user);
-    const localPct = (c) => (c.profile && typeof c.profile.localAudiencePct === "number" ? c.profile.localAudiencePct : -1);
-    const ranked = [...disc.creators].sort((a, b) => (localPct(b) - localPct(a)) || (a.createdAt < b.createdAt ? -1 : 1));
-    const creators = ranked.slice(0, ROSTER_PREVIEW_LIMIT).map(rosterPreviewCard);
+    const present = new Set();
+    for (const c of disc.creators) {
+      for (const raw of (c.profile && c.profile.categories) || []) {
+        const canon = canonicalFromList(raw, CREATOR_CATEGORIES) || raw;
+        if (canon) present.add(canon);
+      }
+    }
     return json(200, {
       preview: true,
       market: user.market,
       marketLive: await isMarketLive(user.market),
-      totalInMarket: disc.creators.length,
-      shown: creators.length,
-      creators,
+      categories: CREATOR_CATEGORIES.filter((name) => present.has(name)),
     });
   }
 

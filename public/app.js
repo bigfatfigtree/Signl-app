@@ -5809,7 +5809,7 @@ function renderForBusinesses() {
       <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="jb-terms" required><span>I agree to the Terms of Service and Privacy Policy, and to account and marketing emails from SIGNL.</span></label></div>
       <button class="btn mt" type="submit" style="width:100%">Join founding list</button>
     </form>
-    <p class="small muted mt">Reviewed by a person. Decision within 2 business days. Once you join, your status page previews your market's real founding roster and your first drafted offer; booking itself opens at activation. Creators join separately: <a href="#" onclick="return go('join-creator')">become a founding creator</a>.</p>
+    <p class="small muted mt">Reviewed by a person. Decision within 2 business days. Once you join, your status page previews your first drafted offer and exactly how SIGNL works; booking itself opens at activation. Creators join separately: <a href="#" onclick="return go('join-creator')">become a founding creator</a>.</p>
     </div>
   </section>`;
   bizCityOptions();
@@ -5959,10 +5959,13 @@ function selectPlan(id) {
 // interest, the promises, and what happens next. No product
 // tools, no payment link: payment stays concierge. First 60
 // seconds (Jeff, 2026-10-29): below the status card, the page
-// carries a PREVIEW of the real thing (the market's founding
-// roster ranked by local reach, a Sig-drafted first offer, the
-// benefit layer, founding pricing) so a business sees what
-// SIGNL does before any payment decision. The preview is
+// carries a PREVIEW of the real thing (the creator categories
+// live in the market, a Sig-drafted first offer, the benefit
+// layer, founding pricing) so a business sees what SIGNL does
+// before any payment decision. BUILD -30 (Jeff, 2026-10-29):
+// the page shows NO roster counts and no thin-market framing
+// anywhere; counts are an asset only at scale, so the page
+// sells mechanics and personalization instead. The preview is
 // read-only: it books nothing, saves nothing, and the founding
 // gate still refuses every product surface server-side.
 function renderBusinessFoundingStatus() {
@@ -5975,7 +5978,7 @@ function renderBusinessFoundingStatus() {
   <section class="wcard" style="margin-top:14px">
     <p><span class="badge ${inReview ? "info" : "ok"}">${inReview ? "Application in review" : "Founding list"}</span></p>
     <h2 style="margin-top:8px">${esc(bz.businessName || "Your business")} is on the founding list</h2>
-    <p>You joined the <strong>Founding business list, ${esc(bizPlace)}</strong>. Booking opens when SIGNL activates your business by hand. Until then, this page is your preview: your market's real founding roster, your first offer already drafted by Sig, and exactly how it works, all before you pay anything.</p>
+    <p>You joined the <strong>Founding business list, ${esc(bizPlace)}</strong>. Booking opens when SIGNL activates your business by hand. Until then, this page is your preview: your first offer already drafted by Sig, the kinds of creators being lined up in ${esc(bizPlace)}, and exactly how it works, all before you pay anything.</p>
     ${marketResolvedNote(u)}
     <p>${inReview
       ? `Your application is in review. Every founding application gets a decision or a clear status within 2 business days.`
@@ -5990,7 +5993,7 @@ function renderBusinessFoundingStatus() {
     <h3 class="mt">What happens next</h3>
     <ol style="padding-left:20px">
       <li>${inReview ? "SIGNL reviews your application. You will get a decision or a clear status within 2 business days." : "Your application is approved. There is nothing else you need to send right now."}</li>
-      <li>SIGNL keeps building the founding creator roster in ${esc(marketTalkNameClient(u.market))}. The preview below is live: it grows as more founding creators finish their profiles.</li>
+      <li>Founding creators in ${esc(marketTalkNameClient(u.market))} are finishing their profiles now, across the categories below. Founding businesses get first access to the roster when the market activates.</li>
       <li>When your market opens, SIGNL activates founding businesses by hand, in application order. A pilot business can be activated sooner.</li>
       <li>The moment your business is activated, this page opens into the full app: the full roster, favorites, and your first offer as a real draft you can publish.</li>
     </ol>
@@ -6003,13 +6006,16 @@ function renderBusinessFoundingStatus() {
 }
 
 // ---------- founding business preview (first 60 seconds, Jeff, 2026-10-29) ----------
-// The value reveal under the founding status card. Everything in
-// it is real: the roster comes from GET /me/roster-preview (the
-// server's own Discover query for this business's market, ranked
-// by local reach, capped, display fields only), the first offer
-// is drafted by the same play machinery Sig's B1 flow and the
-// composer use (SIG_PLAYS + briefFromParts, nothing new), and the
-// benefit lines state the product exactly as it works. Nothing
+// The value reveal under the founding status card. BUILD -30
+// (Jeff, 2026-10-29): no roster counts, no creator cards, no
+// thin-market framing anywhere on this page. What carries it
+// instead: category presence from GET /me/roster-preview (the
+// categories with at least one finished creator in this
+// business's market, presence only), the local-reach explainer
+// with one clearly labeled example, the first offer drafted by
+// the same play machinery Sig's B1 flow and the composer use
+// (SIG_PLAYS + briefFromParts, nothing new), and the benefit
+// lines, which state the product exactly as it works. Nothing
 // here is saved, sent, or booked: it is a preview, labeled one.
 async function loadFoundingBusinessPreview() {
   if (!document.getElementById("fbz-preview")) return;
@@ -6024,55 +6030,58 @@ function foundingPreviewHtml(data) {
   const u = state.user;
   const bizPlace = u.market === unlistedLabel() ? (u.city || "your city") : marketTalkNameClient(u.market);
   return [
-    foundingRosterPreviewHtml(data, bizPlace),
+    foundingCategoriesHtml(data, bizPlace),
+    foundingLocalReachHtml(),
     foundingFirstOfferHtml(u),
     foundingBenefitsHtml(u),
     foundingPlansHtml(u),
   ].join("");
 }
 
-function foundingPreviewCardHtml(c) {
-  const initial = esc((c.name || "?").trim().charAt(0).toUpperCase() || "?");
-  const cats = (c.categories || []).slice(0, 3);
-  const place = [c.neighborhood, c.city].filter(Boolean).map(esc).join(" &middot; ");
-  const rateLine = c.compOpen === false ? "Paid visits only" : (c.paidRate ? `Listed rate $${fmtPrice(c.paidRate)}` : "Comp friendly");
-  return `<div class="rp-card">
-    <div class="rp-photo">${c.photoUrl ? `<img src="${esc(c.photoUrl)}" alt="">` : `<span>${initial}</span>`}</div>
-    <div class="rp-main">
-      <div class="rp-name">${esc(c.name)}${c.tierBand ? ` <span class="badge info">${esc(c.tierBand)}</span>` : ""}</div>
-      <div class="rp-sub">@${esc(c.handle || "")}${place ? ` &middot; ${place}` : ""}</div>
-      ${cats.length || c.spanishContent || c.musician ? `<div class="dcard-chips">${cats.map((x) => `<span class="cc-chip">${esc(x)}</span>`).join("")}${c.spanishContent ? `<span class="cc-chip">Spanish content</span>` : ""}${c.musician ? `<span class="cc-chip">Musician</span>` : ""}</div>` : ""}
-      <div class="rp-sub">${fmtNum(c.totalAudience || 0)} audience &middot; ${rateLine}</div>
-    </div>
-    <div class="rp-local">${c.localAudiencePct === null || c.localAudiencePct === undefined
-      ? `<span class="rp-local-na">Local reach not reported yet</span>`
-      : `<span class="rp-pct">${c.localAudiencePct}%</span><span class="rp-local-lbl">local reach</span>`}</div>
-  </div>`;
-}
-
-function foundingRosterPreviewHtml(data, bizPlace) {
+// Category presence, never counts: tiles name the kinds of
+// creators a business will book in this market. When the market
+// already has finished creators, the tiles are the categories
+// they cover; when it has none yet, the full category set rides
+// as what is being recruited, stated as recruiting, which is
+// true either way the roster stands.
+function foundingCategoriesHtml(data, bizPlace) {
   if (!data) {
     return `<section class="wcard">
-    <p class="ui-kicker">Preview &middot; your founding roster</p>
-    <h3>The creators already in ${esc(bizPlace)}</h3>
-    <p class="wc-sub">We could not load your roster preview just now. Your founding spot is unaffected; sign back in to see it.</p>
+    <p class="ui-kicker">Preview &middot; who you will book</p>
+    <h3>The creators being lined up in ${esc(bizPlace)}</h3>
+    <p class="wc-sub">We could not load your preview just now. Your founding spot is unaffected; sign back in to see it.</p>
   </section>`;
   }
-  const total = data.totalInMarket || 0;
-  const shown = (data.creators || []).length;
-  if (!total) {
-    return `<section class="wcard">
-    <p class="ui-kicker">Preview &middot; your founding roster</p>
-    <h3>The ${esc(bizPlace)} roster is being built now</h3>
-    <p class="wc-sub">No founding creator in ${esc(bizPlace)} has finished a profile yet, and this page will never be padded with stand-ins. Founding creators are finishing profiles now, and businesses go live as the founding roster completes. Your spot is held in application order, and the roster appears here the moment the first profiles land.</p>
-  </section>`;
-  }
+  const present = Array.isArray(data.categories) ? data.categories : [];
+  const all = (state.boot && state.boot.creatorCategories) || [];
+  const recruiting = !present.length;
+  const tiles = recruiting ? all : present;
   return `<section class="wcard">
-    <p class="ui-kicker">Preview &middot; your founding roster</p>
-    <h3>The creators already in ${esc(bizPlace)}</h3>
-    <p class="wc-sub">${total} founding creator${total === 1 ? " has" : "s have"} finished a profile in ${esc(bizPlace)} so far. Ranked by local reach: the share of each creator's audience that actually lives here, not by follower count. The roster is still completing, and businesses go live as it completes.</p>
-    <div class="rp-list">${(data.creators || []).map(foundingPreviewCardHtml).join("")}</div>
-    ${total > shown ? `<p class="small muted" style="margin:10px 0 0">Showing the top ${shown} by local reach of ${total}. The full roster opens at activation.</p>` : ""}
+    <p class="ui-kicker">Preview &middot; who you will book</p>
+    <h3>${recruiting ? `Creators are being recruited in ${esc(bizPlace)} now` : `The creators already lining up in ${esc(bizPlace)}`}</h3>
+    <p class="wc-sub">${recruiting
+      ? `Founding creators across every category below are being recruited in ${esc(bizPlace)} right now, and each one is ranked by local reach, not follower count.`
+      : `Finished founding creators in ${esc(bizPlace)} already cover the ground below, and recruiting continues across every category. Each creator is ranked by local reach, not follower count.`}</p>
+    ${tiles.length ? `<div class="dcard-chips" style="margin-top:10px">${tiles.map((x) => `<span class="cc-chip">${esc(x)}</span>`).join("")}</div>` : ""}
+    ${recruiting ? `<p class="small muted" style="margin:10px 0 0">Categories recruiting now in ${esc(bizPlace)}.</p>` : ""}
+    <p style="margin:12px 0 0"><strong>Founding businesses get first access to the roster when ${esc(bizPlace)} activates.</strong> Your spot is held in application order, ahead of every business that joins after you.</p>
+  </section>`;
+}
+
+// The local-reach explainer: how the ranking actually works,
+// taught with ONE illustrative comparison. The example is
+// labeled an example in the copy itself, uses no real creator,
+// no handle, and no roster figure, so it can never be mistaken
+// for market data.
+function foundingLocalReachHtml() {
+  return `<section class="wcard">
+    <p class="ui-kicker">How ranking works</p>
+    <h3>Ranked by local reach, not followers</h3>
+    <p class="wc-sub">Every creator on SIGNL is ranked by the share of their audience that actually lives in your market, ranked over follower count. What matters is how many of a creator's people are your neighbors, not how big the account is.</p>
+    <div class="panel" style="margin-top:12px">
+      <p style="margin:0"><span class="badge info">Example</span></p>
+      <p style="margin:8px 0 0">Example: a 2,000-follower creator whose audience is 90% local outranks a 50,000-follower account at 12% local, because the smaller creator's crowd is the one that can walk through your door.</p>
+    </div>
   </section>`;
 }
 
@@ -6991,7 +7000,7 @@ async function loadFoundingDashboard() {
           <h3 style="margin:0">${esc(u.name)} <span class="muted">@${esc(p.handle || "")}</span></h3>
           <p class="muted small" style="margin:4px 0 0">${isUnl ? place : `${esc(marketDisplayName(f.market))} &middot; ${esc(f.city)}`}</p>
         </div>
-        <span class="badge ok" style="font-size:0.95rem;padding:6px 14px">Founding Creator</span>
+        <span class="badge ok" style="font-size:0.95rem;padding:6px 14px">${p.charter ? "Charter Creator" : "Founding Creator"}</span>
       </div>
       <p class="small">${p.localAudiencePct === null || p.localAudiencePct === undefined ? `Add your local audience % in your profile` : `${p.localAudiencePct}% local audience`} &middot; ${esc(p.tierBand || "")} tier &middot; ${fmtNum(totalAudienceOf(card))} total audience${f.priorityBand ? ` &middot; first ${f.priorityBand} founding` : ""}${campusBadgeHtml(card)}</p>
       <p style="margin-bottom:0">${scoreBadge(card.localImpactScore)}</p>
@@ -7029,10 +7038,44 @@ function creatorBuzzHtml(u, card, f, buzz) {
   if (!buzz) return "";
   const placeRaw = f.unlisted ? (f.city || "your city") : marketTalkNameClient(f.market);
   return [
+    creatorCharterCardHtml(u, card, f, buzz, placeRaw),
     creatorStatCardHtml(u, card, f, buzz, placeRaw),
     creatorUnlockHtml(f, buzz, placeRaw),
     creatorMomentumPayoffHtml(),
   ].join("");
+}
+
+// Charter Creator card (Jeff, BUILD -30, 2026-10-29): the
+// founding artifact an approved creator with a finished profile
+// takes away from this screen. A NAMED class, never a numbered
+// one: no sign-up sequence, no cohort count, and no rank appears
+// on this card, because small numbers discourage. The flex
+// statistic is the creator's OWN local reach percentage, taken
+// from their real profile. The seal is permanent: the server
+// stamps creator.charter + charterAt on the record the first
+// time eligibility is observed (approved, finished profile,
+// market not yet launched), and buzz.charter carries that stamp
+// here. Scarcity is the deadline, stated without a date:
+// founding status closes when the market launches.
+function creatorCharterCardHtml(u, card, f, buzz, placeRaw) {
+  if (!buzz.charter) return "";
+  const p = card.profile || {};
+  const pct = p.localAudiencePct === null || p.localAudiencePct === undefined ? null : p.localAudiencePct;
+  const bits = [`I am a Charter Creator on SIGNL in ${placeRaw}, Founding Class of 2026.`];
+  if (pct !== null) bits.push(`${pct}% of my audience is local.`);
+  bits.push("SIGNL ranks creators by local reach, not follower count. Local businesses book us for comped visits or paid bookings at our own rates.");
+  const link = inviteUrlFor(u);
+  if (link) bits.push(`Creators: join through my link: ${link}`);
+  return `<section class="stat-card charter-card">
+    <div class="stat-top"><span class="stat-brand">SIGNL</span><span class="charter-seal">CHARTER<br>CREATOR</span></div>
+    <div class="charter-handle">@${esc(p.handle || "")}</div>
+    <div class="charter-class">Charter Creator &middot; ${esc(placeRaw)}</div>
+    <div class="charter-class-sub">Founding Class of 2026</div>
+    <div class="stat-big">${pct === null ? "Local % not set" : `${pct}%`}</div>
+    <div class="stat-lbl">${pct === null ? "Add your local audience % in your profile and this card fills in." : "of my audience is local"}</div>
+    <p class="charter-scarcity">Founding status closes when ${esc(placeRaw)} launches. This seal is yours for good: only creators who finished their profile and were approved before launch hold it.</p>
+    <div class="stat-actions"><button type="button" class="btn small-btn" onclick="return shareStatCard(this)" data-stat-text="${esc(bits.join(" "))}">Share my Charter card</button></div>
+  </section>`;
 }
 
 function creatorStatCardHtml(u, card, f, buzz, placeRaw) {
@@ -7049,7 +7092,7 @@ function creatorStatCardHtml(u, card, f, buzz, placeRaw) {
   const link = inviteUrlFor(u);
   if (link) bits.push(`Creators: join through my link: ${link}`);
   return `<section class="stat-card">
-    <div class="stat-top"><span class="stat-brand">SIGNL</span><span class="badge ok">Founding Creator</span></div>
+    <div class="stat-top"><span class="stat-brand">SIGNL</span><span class="badge ok">${buzz.charter ? "Charter Creator" : "Founding Creator"}</span></div>
     <div class="stat-name">${esc(u.name)} <span class="stat-handle">@${esc(p.handle || "")}</span></div>
     <div class="stat-place">${esc(placeRaw)}${p.tierBand ? ` &middot; ${esc(p.tierBand)} tier` : ""} &middot; ${fmtNum(totalAudienceOf(card))} total audience</div>
     <div class="stat-big">${pct === null ? "Local % not set" : `${pct}%`}</div>
@@ -7077,19 +7120,28 @@ function shareStatCard(btn) {
 function creatorUnlockHtml(f, buzz, placeRaw) {
   const un = buzz.unlock;
   if (!un) return "";
-  const width = Math.max(0, Math.min(100, Math.round((un.complete / un.launchBar) * 100)));
-  const toGo = Math.max(0, un.launchBar - un.complete);
+  const pct = Math.max(0, Math.min(100, Math.round((un.complete / un.launchBar) * 100)));
+  // BUILD -30 (Jeff, 2026-10-29): the meter shows NO raw counts
+  // while a market is small, because a small number discourages
+  // the very people it is meant to excite. Below double digits
+  // the readout is the bar plus a qualitative state; a percentage
+  // of the founding goal may show once the finished count reaches
+  // double digits; the bar itself carries the progress at every
+  // size. The server payload still carries the real counts: they
+  // drive this gate, they are just not printed.
   const state = un.marketLive
     ? `${esc(placeRaw)} is live. Businesses are booking now.`
     : (un.complete >= un.launchBar
-      ? `The bar is met: ${un.complete} finished founding profiles. ${esc(placeRaw)} is in launch position, and businesses activate as the market opens.`
-      : `<strong>${un.complete} of ${un.launchBar}</strong> finished founding profiles &middot; ${un.approved} approved &middot; <strong>${toGo} to go.</strong>`);
+      ? `The founding roster is built. ${esc(placeRaw)} is in launch position, and businesses activate as the market opens.`
+      : (un.complete >= 10
+        ? `<strong>${pct}% of the founding goal is in.</strong> Finished founding profiles keep landing, and every one moves this bar, including yours.`
+        : `Founding class forming. Finished founding profiles are landing now, and every one moves this bar, including yours.`));
   return `<section class="wcard">
     <p class="ui-kicker">City unlock meter</p>
-    <h3 style="margin:2px 0 0">${esc(placeRaw)} launches at ${un.launchBar} finished profiles</h3>
-    <div class="meter"><i style="width:${width}%"></i></div>
+    <h3 style="margin:2px 0 0">${esc(placeRaw)}'s founding class</h3>
+    <div class="meter"><i style="width:${pct}%"></i></div>
     <p class="small" style="margin:10px 0 0">${state}</p>
-    <p class="small muted" style="margin:6px 0 0">A finished profile is one a business can actually book: home city, audience, categories, and local % all set. Every finished profile moves this meter, including yours, and inviting creators through your link below is the fastest way to move it.</p>
+    <p class="small muted" style="margin:6px 0 0">A finished profile is one a business can actually book: home city, audience, categories, and local % all set. Inviting creators through your link below is the fastest way to move this bar.</p>
   </section>`;
 }
 
@@ -7130,7 +7182,7 @@ async function loadFoundingStatus() {
           <h3 style="margin:0">${esc(state.user.name)} <span class="muted">@${esc(p.handle || "")}</span></h3>
           <p class="muted small">${isUnl ? place : `${esc(marketDisplayName(f.market))} &middot; ${esc(f.city)}`}</p>
         </div>
-        <span class="badge ok" style="font-size:0.95rem;padding:6px 14px">Founding Creator</span>
+        <span class="badge ok" style="font-size:0.95rem;padding:6px 14px">${p.charter ? "Charter Creator" : "Founding Creator"}</span>
       </div>
       <p class="small">You are in. Know a creator who should be on the founding roster with you? ${shareBlockHtml(p.handle, isUnl ? (f.city || "") : (f.market || ""), "Share your invite")}</p>
       <div class="grid cols-2 mt">
