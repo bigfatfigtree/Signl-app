@@ -274,6 +274,12 @@ function storedRef() {
 function storedSrc() {
   try { return localStorage.getItem("signl_src") || ""; } catch (e) { return ""; }
 }
+// Golden Ticket (Build -33): a claim link carrying ?ticket=
+// persists the ticket id like the referral and the source, so
+// registration can claim the held seat server-side.
+function storedTicket() {
+  try { return localStorage.getItem("signl_ticket") || ""; } catch (e) { return ""; }
+}
 
 // Spanish claim path (S1, Jeff, 2026-10-28): T(en, es) returns
 // the Spanish string when this session is a Spanish one
@@ -574,6 +580,7 @@ async function renderPublicProfile() {
         ${p.charter ? "" : `<span class="cc-chip">Founding Creator</span>`}
         ${p.foundingBand ? `<span class="cc-chip">First ${p.foundingBand} founding</span>` : ""}
       </div>
+      ${p.pitchLine ? `<p class="bookme-pitch" style="font-size:1.05rem;margin:10px 0 0"><em>${esc(p.pitchLine)}</em></p>` : ""}
       ${p.bio ? `<p class="bookme-bio">${esc(p.bio)}</p>` : ""}
       <div class="cc-local">
         ${p.localAudiencePct === null || p.localAudiencePct === undefined
@@ -584,6 +591,7 @@ async function renderPublicProfile() {
       ${p.isRealtor && p.farmAreas && p.farmAreas.length ? `<p class="small">Neighborhoods: ${p.farmAreas.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
       ${p.streets && p.streets.length ? `<p class="small">My streets: ${p.streets.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
       ${p.compCategories && p.compCategories.length ? `<p class="small muted">Open to comps: ${p.compCategories.map(esc).join(", ")}</p>` : ""}
+      ${p.portfolioSample ? `<h3 class="bookme-h">Portfolio sample</h3><div class="bookme-featured"><div class="bookme-embed"><iframe src="${esc(p.portfolioSample.embedUrl)}" loading="lazy" frameborder="0" scrolling="no" allowtransparency="true" title="Portfolio sample by @${esc(p.handle)}"></iframe></div></div><p class="small muted">A post @${esc(p.handle)} made about a place they love. A portfolio sample, not a SIGNL visit.</p>` : ""}
       ${featured ? `<h3 class="bookme-h">Featured posts</h3><div class="bookme-featured">${featured}</div>` : ""}
       ${rateBlock}
       ${socialsBlock}
@@ -5391,6 +5399,7 @@ function renderQuickClaim() {
     <div class="lrow"><span class="tg"></span><div><span class="lname">${T("Comped", "Cortesía")}</span> <span class="lline">${T("— meals, services and experiences, for an honest post within 48 hours.", "— comidas, servicios y experiencias, por una publicación honesta dentro de 48 horas.")}</span></div></div>
     <div class="lrow"><span class="tg off"></span><div><span class="lname">${T("Paid", "Pagado")}</span> <span class="lline">${T("— paid campaigns are separate bookings. Headliners first in line.", "— las campañas pagadas son reservas aparte. Los Headliners van primero.")}</span></div></div>
     ${hasPrefill ? `<div class="notice blue">${T("Pre-filled from your invite link — check it and claim.", "Ya viene lleno desde tu enlace de invitación. Revísalo y reclama tu lugar.")}</div>` : ""}
+    <div id="qc-ticket"></div>
     <div id="form-error"></div>
     <form onsubmit="return doQuickClaim(event)">
       <div class="fgroup tint">
@@ -5435,6 +5444,7 @@ function renderQuickClaim() {
     </div>
   </section>`;
   if (pf.market === unlistedLabel()) syncQuickMarketChoice();
+  loadTicketBanner();
 }
 
 async function doQuickClaim(e) {
@@ -5480,6 +5490,7 @@ async function doQuickClaim(e) {
       agreedPostCompliance: true,
       agreedTerms: true,
       referredBy: storedRef() || undefined,
+      goldenTicket: storedTicket() || undefined,
       signupSource: storedSrc() || undefined,
       lang: state.lang === "es" ? "es" : undefined,
     });
@@ -5809,6 +5820,7 @@ async function doRegisterCreator(e) {
       agreedPostCompliance: true,
       agreedTerms: true,
       referredBy: storedRef() || undefined,
+      goldenTicket: storedTicket() || undefined,
       signupSource: storedSrc() || undefined,
       lang: state.lang === "es" ? "es" : undefined,
     });
@@ -7415,6 +7427,7 @@ async function loadFoundingDashboard() {
     <div class="wcard"><h3>Your funnel</h3><p class="wc-sub" style="margin:4px 0 0">Invites appear here once ${isUnl ? esc(f.city) : esc(marketTalkNameClient(f.market))} opens: invites received, visits booked, visits done, posts live. Nothing to count yet, and we do not chart zeroes.</p></div>
     ${momentumHtml(u)}
     ${growRosterHtml(u)}
+    ${goldenTicketsSectionHtml()}
     <h3 style="margin:22px 0 0">Your founding status</h3>
     <div id="founding-body">${skelHtml("Loading your founding profile...", 1)}</div>
     ${askSigRowHtml()}`;
@@ -7422,9 +7435,74 @@ async function loadFoundingDashboard() {
     wireChecklist(el, fSteps);
     renderBottomNav();
     loadFoundingStatus();
+    loadGoldenTickets();
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
+}
+
+// ---------- Golden Ticket invites (Build -33) ----------
+// Two named invites per finished creator, shown on the founding
+// home. A ticket holds a founding seat BY NAME until the market
+// launches; an unused ticket closes quietly at launch.
+function goldenTicketsSectionHtml() {
+  return `<div class="wcard" id="golden-tickets"><h3>Your Golden Tickets</h3><p class="wc-sub" style="margin:4px 0 0">Loading your tickets...</p></div>`;
+}
+async function loadGoldenTickets() {
+  const host = document.getElementById("golden-tickets");
+  if (!host) return;
+  let data = null;
+  try { data = await api("GET", "/me/golden-tickets"); } catch (e) { data = null; }
+  if (!document.getElementById("golden-tickets")) return;
+  if (!data) { host.innerHTML = `<h3>Your Golden Tickets</h3><p class="wc-sub" style="margin:4px 0 0">Your tickets could not load just now. Your founding spot is unaffected; sign back in to see them.</p>`; return; }
+  const u = state.user;
+  const place = marketTalkNameClient(u.market);
+  const statusLine = (t) => t.status === "claimed" ? `<span class="badge ok">Claimed</span>` : t.status === "expired" ? `<span class="badge">Closed at launch</span>` : `<span class="badge info">Seat held for them</span>`;
+  const rows = (data.tickets || []).map((t) => `<div class="lrow" style="margin-top:10px"><div style="flex:1"><span class="lname">${esc(t.name)}</span> ${statusLine(t)}<div class="small muted">A founding seat in ${esc(place)} is held in their name until the market launches.</div></div>${t.status === "issued" ? `<button type="button" class="btn small-btn ghost" onclick="return gtCopyLink('${t.id}', this)">Copy their link</button>` : ""}</div>`).join("");
+  host.innerHTML = `<h3>Your Golden Tickets</h3>
+    <p class="wc-sub" style="margin:4px 0 0">Two seats you can hold for two people by name. Send a ticket to a creator who should be founding with you: their seat in ${esc(place)} is held in their name until the market launches, and the invite credit is yours through your referral link, the way every invite works here.</p>
+    ${rows}
+    ${data.canIssue && data.remaining > 0 ? `<div class="field" style="margin-top:14px"><label>Name a person (${data.remaining} ticket${data.remaining === 1 ? "" : "s"} left)</label><div style="display:flex;gap:8px;flex-wrap:wrap"><input id="gt-name" placeholder="Their name" maxlength="80" style="flex:1;min-width:200px"><button type="button" class="btn small-btn" onclick="return gtIssue()">Hold their seat</button></div><p class="small muted" id="gt-note"></p></div>`
+      : data.canIssue ? `<p class="small muted" style="margin-top:12px">Both of your tickets are out. When one is claimed, the credit lands on your Momentum like every invite.</p>`
+      : `<p class="small muted" style="margin-top:12px">Finish your profile and your two Golden Tickets unlock. A finished profile is what a ticket vouches for.</p>`}`;
+}
+async function gtIssue() {
+  const inp = document.getElementById("gt-name");
+  const note = document.getElementById("gt-note");
+  const name = inp ? inp.value.trim() : "";
+  if (!name) { if (note) note.textContent = "Name the person first."; return false; }
+  try {
+    await api("POST", "/me/golden-tickets", { name });
+    loadGoldenTickets();
+  } catch (e) {
+    if (note) note.textContent = (e && e.message) || "That ticket did not go out. Try again.";
+  }
+  return false;
+}
+function gtCopyLink(id, btn) {
+  const u = state.user;
+  const handle = (u.creator && u.creator.handle) || "";
+  const link = `${location.origin}/claim?ticket=${encodeURIComponent(id)}${handle ? `&ref=${encodeURIComponent(handle)}` : ""}`;
+  const done = () => { if (btn) { const old = btn.textContent; btn.textContent = "Link copied"; setTimeout(() => { btn.textContent = old; }, 1800); } };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(link).then(done).catch(done);
+  else done();
+  return false;
+}
+// The claim landing banner: a ticket holder sees the seat held
+// in their name before they claim. Read-only and quiet: an
+// unknown or spent ticket shows nothing at all.
+async function loadTicketBanner() {
+  const host = document.getElementById("qc-ticket");
+  if (!host) return;
+  const id = storedTicket();
+  if (!id) return;
+  let data = null;
+  try { data = await api("GET", `/public/golden-ticket/${encodeURIComponent(id)}`); } catch (e) { data = null; }
+  if (!data || !data.ticket || !document.getElementById("qc-ticket")) return;
+  const t = data.ticket;
+  if (t.status === "claimed") { host.innerHTML = `<div class="notice blue">This Golden Ticket has already been claimed. You can still claim a founding spot below; spots are held in sign-up order.</div>`; return; }
+  if (t.status === "expired") { host.innerHTML = `<div class="notice blue">This Golden Ticket closed when ${esc(marketTalkNameClient(t.market))} launched. You can still join below.</div>`; return; }
+  host.innerHTML = `<div class="notice blue"><strong>A founding seat is held for ${esc(t.name)}</strong> in ${esc(marketTalkNameClient(t.market))}, saved by @${esc(t.issuerHandle)}. It stays held in your name until the market launches. Claim it below and it is yours.</div>`;
 }
 
 // ---------- creator excitement layer (Jeff, 2026-10-29) ----------
@@ -8140,6 +8218,12 @@ function bookMePanelHtml(c) {
       <button type="button" class="btn small-btn" onclick="return laneFeaturedSave()">Save featured posts</button>
       <p class="small muted">Your best work, embedded right on the page. Clear a box to remove that post.</p>
     </div>
+    <div class="lane-rate">
+      <label>Portfolio sample post</label>
+      <input id="lane-sample" type="url" placeholder="https://www.instagram.com/p/..." value="${esc((c && c.portfolioSample) || "")}">
+      <button type="button" class="btn small-btn" onclick="return laneSampleSave()">Save sample post</button>
+      <p class="small muted">One post you already made about a place you love. It shows on your profile, your book-me page, and the Local List, always labeled a portfolio sample, never a SIGNL visit. Clear the box and save to remove it.</p>
+    </div>
     <div class="lrow lane-row"><input type="checkbox" class="sw lane-sw" id="lane-socials" ${socialsOn ? "checked" : ""} onchange="laneToggleSocials(this)"><div><label class="lname" for="lane-socials">Show my social channels to paying businesses</label> <span class="lline">— the channels on your record, shown only to businesses with a paid, active SIGNL account.</span></div></div>
   </div>`;
 }
@@ -8154,6 +8238,19 @@ function laneThemePick(theme) {
 function laneToggleSocials(input) {
   laneSave({ showSocials: !!input.checked });
   return true;
+}
+function laneSampleSave() {
+  const el = document.getElementById("lane-sample");
+  laneSave({ portfolioSample: el ? el.value.trim() || null : null });
+  return false;
+}
+function pitchDraftFill() {
+  const note = document.getElementById("p-pitch-note");
+  api("GET", "/me/pitch-draft").then((d) => {
+    const inp = document.getElementById("p-pitch");
+    if (inp && d && d.draft) { inp.value = d.draft; if (note) note.textContent = "Drafted from your profile. Edit it, then save."; }
+  }).catch(() => { if (note) note.textContent = "Sig could not draft just now. Write your own line and save."; });
+  return false;
 }
 function laneFeaturedSave() {
   const vals = [0, 1, 2].map((i) => { const el = document.getElementById("lane-feat-" + i); return el ? el.value.trim() : ""; }).filter(Boolean);
@@ -8659,6 +8756,7 @@ async function loadCreatorHome() {
       if (bioItem && !bioItem.done) pushIdea("cr_bio", `Your bio is still short. Two honest lines${bioItem.points ? ` earn +${bioItem.points} Momentum` : ""}.`, "Write bio", () => go("dashboard", "Profile"), "Bio still short");
       const hoodItem = pcItem("neighborhood");
       if (hoodItem && !hoodItem.done) pushIdea("cr_neighborhood", `Set your neighborhood. Businesses search by neighborhood.${ptsBit(hoodItem)}`, "Set neighborhood", () => go("dashboard", "Profile"), "Neighborhood not set");
+      if (!c.portfolioSample) pushIdea("cr_sample", "Link one post you already made about a place you love. It sits on your profile and book-me page labeled as your portfolio sample, so businesses can see your work before your first SIGNL visit.", "Add my sample post", () => go("dashboard", "Profile"), "Add a portfolio sample post");
       if (!Array.isArray(c.streets) || !c.streets.length) pushIdea("cr_streets", "Name your three streets: the streets and neighborhoods where you actually hang out. Businesses nearby see them on your profile and your book-me page.", "Add my streets", () => go("dashboard", "Profile"), "Add your three streets");
       if (c.spanishContent === true && (c.spanishAudiencePct === null || c.spanishAudiencePct === undefined)) pushIdea("cr_spanish_pct", "You create content in Spanish. Add your Spanish-speaking share so businesses see the number, not a checkbox.", "Add percentage", () => go("dashboard", "Profile"), "Add your Spanish-speaking share");
       if (c.musician === undefined) pushIdea("cr_musician", "Make music? Turn on the musician switch and businesses looking to book music can find you.", "Open panel", () => go("dashboard", "Profile"), "Make music? Open the panel");
@@ -8917,6 +9015,7 @@ function creatorProfileHtml(u) {
         <p class="small muted">Your strongest posts, shown on your public profile and to businesses in search results as Watch cards. Instagram, TikTok, or YouTube links only. Clear a box to remove that link.</p>
       </div>
       <div class="field"><label>${T("Bio", "Biografía")}</label><textarea id="p-bio" rows="2">${esc(c.bio || "")}</textarea></div>
+      <div class="field"><label>${T("Your pitch line", "Tu línea de presentación")}</label><input id="p-pitch" value="${esc(c.pitchLine || "")}" maxlength="200" placeholder="${T("One line that introduces you, at the top of your profile", "Una línea que te presenta, arriba de tu perfil")}"><p class="small muted">${T("Sig can draft it from your real profile: your categories, your local percentage, your streets. Accept it, edit it, or write your own.", "Sig puede redactarla desde tu perfil real: tus categorías, tu porcentaje local, tus calles. Acéptala, edítala o escribe la tuya.")}</p><button type="button" class="btn small-btn ghost" onclick="return pitchDraftFill()">${T("Draft it with Sig", "Redactarla con Sig")}</button> <span id="p-pitch-note" class="small muted"></span></div>
       </div>
       <div id="save-warn"></div>
       <button class="btn" type="submit">${T("Save profile", "Guardar perfil")}</button> <span id="save-ok" class="saved"></span><span id="profile-complete-share"></span>
@@ -9075,6 +9174,7 @@ async function doUpdateCreator(e) {
       city: cityEl ? cityEl.value : cityTextEl ? cityTextEl.value : undefined,
       neighborhood: document.getElementById("p-neighborhood").value,
       streets: [0, 1, 2].map((i) => { const el = document.getElementById("p-street-" + i); return el ? el.value : ""; }),
+      pitchLine: (document.getElementById("p-pitch") || {}).value || "",
       profession: realtorSwitchProfession(),
       farmAreas: [0, 1, 2].map((i) => { const el = document.getElementById("p-hood-" + i); return el ? el.value : ""; }),
       brokerage: document.getElementById("p-brokerage") ? document.getElementById("p-brokerage").value : undefined,
@@ -15431,6 +15531,10 @@ function previewDashboardHtml(d) {
     const refParam = params.get("ref");
     if (refParam) {
       try { localStorage.setItem("signl_ref", refParam.trim().replace(/^@/, "").slice(0, 40)); } catch (e) { /* storage unavailable */ }
+    }
+    const ticketParam = params.get("ticket");
+    if (ticketParam) {
+      try { localStorage.setItem("signl_ticket", ticketParam.trim().slice(0, 60)); } catch (e) { /* storage unavailable */ }
     }
     const srcParam = params.get("src");
     if (srcParam) {
