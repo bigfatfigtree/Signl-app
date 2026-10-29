@@ -139,6 +139,7 @@ try {
     });
     const ownerId = reg.data.user.id;
     await admin("POST", "/api/admin/review", { userId: ownerId, decision: "approve" });
+    await creator("PATCH", "/api/me/profile", { publicPage: true });
     const pub = await client()("GET", "/api/c/shareowner");
     check("public /c/ payload carries the owner's handle and market for the share", pub.status === 200 && pub.data.profile.handle === "shareowner" && pub.data.profile.market === "Virginia Beach", JSON.stringify(pub.data.profile && { handle: pub.data.profile.handle, market: pub.data.profile.market }));
     const servedJs = await (await fetch(BASE + "/app.js")).text();

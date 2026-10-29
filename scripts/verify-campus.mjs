@@ -124,6 +124,9 @@ try {
   check("university is optional color, not a profile-completion gate", leadReg.status === 201 && leadReg.data.user.creator.profileComplete === true && leadReg.data.user.profileCompletion.complete === true, JSON.stringify(leadReg.data.user && leadReg.data.user.profileCompletion));
   const leadId = leadReg.data.user.id;
   await admin("POST", "/api/admin/review", { userId: leadId, decision: "approve" });
+  // Book-me opt-in + Charter stamp (Build -31).
+  await lead("PATCH", "/api/me/profile", { publicPage: true });
+  await lead("GET", "/api/me/founding");
 
   const same = client();
   const sameReg = await same("POST", "/api/auth/register", fullCreatorBody({
@@ -234,6 +237,7 @@ try {
   check("alumni signup stores the status on both record levels", alumReg.status === 201 && alumReg.data.user.universityStatus === "alumni" && alumReg.data.user.creator.universityStatus === "alumni", JSON.stringify(alumReg.data.user));
   const alumId = alumReg.data.user.id;
   await admin("POST", "/api/admin/review", { userId: alumId, decision: "approve" });
+  await alum("PATCH", "/api/me/profile", { publicPage: true });
   const alumPub = await client()("GET", "/api/c/campusalum");
   check("alumni public /c/ profile: university yes, campus badge NO", alumPub.status === 200 && alumPub.data.profile.university === "VCU" && alumPub.data.profile.campusBadge === null, JSON.stringify(alumPub.data.profile));
   const alumMe = await alum("GET", "/api/auth/me");
@@ -249,6 +253,7 @@ try {
   }));
   const nostatId = nostatReg.data.user.id;
   await admin("POST", "/api/admin/review", { userId: nostatId, decision: "approve" });
+  await nostat("PATCH", "/api/me/profile", { publicPage: true });
   const nostatPub = await client()("GET", "/api/c/campusnostatus");
   check("unset status: university recorded, status blank, campus badge NO", nostatReg.status === 201 && nostatReg.data.user.universityStatus === "" && nostatPub.status === 200 && nostatPub.data.profile.campusBadge === null, JSON.stringify(nostatPub.data.profile));
 

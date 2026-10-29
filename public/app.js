@@ -452,6 +452,48 @@ function clearShareShell() {
   document.head.querySelectorAll("meta[data-signl-meta], link[data-signl-meta]").forEach((el) => el.remove());
 }
 
+// Book-me page (Build -31 + Amendments 1 and 2, Jeff,
+// 2026-10-29): the creator's public page at /c/<handle>, shown
+// only when the creator turned it on. The server tiers the
+// payload by viewer, and this render follows the tier exactly:
+//   Tier 0 (logged out / creators / anyone else): showcase
+//     only. No rate, no follower counts, no social links, no
+//     contact path. The handle is text, never a link out.
+//   Tier 1 (signed-in business, not paid/active): rate + the
+//     Book on SIGNL action, plus the locked socials panel.
+//   Tier 2 (paid, active business): rate, Book, the creator's
+//     social channel rows, and an in-platform Message box.
+// The ONLY booking action routes inside SIGNL. Nothing on this
+// page links to the creator's off-platform profiles except the
+// Tier 2 channel rows, which are the paid unlock itself.
+const BOOKME_GUARANTEE_LINE = "Bookings through SIGNL carry the Visit Guarantee and payment protection: payment is held until the post is live. Deals arranged outside SIGNL carry neither.";
+const BOOKME_STAYS_LINE = "Bookings that start on SIGNL stay on SIGNL.";
+const BOOKME_LOCKED_LINE = "Paying businesses see this creator's social channels and can message them here.";
+const BOOKING_STARTED_LINE = "This booking started on SIGNL, so it runs through SIGNL, where the Visit Guarantee and payment protection apply.";
+
+function bookMeBook() {
+  const u = state.user;
+  if (!u) return go("signin");
+  if (u.role === "business" && businessAccessState(u) === "active" && state.bookMeCreatorId) {
+    startOffer(state.bookMeCreatorId);
+    return false;
+  }
+  return go("dashboard");
+}
+
+async function bookMeSendMessage(handle) {
+  const ta = document.getElementById("bm-msg");
+  const note = document.getElementById("bm-msg-note");
+  const body = ta ? ta.value.trim() : "";
+  if (!body) { if (note) note.textContent = "Write a short first message first."; return; }
+  try {
+    const data = await api("POST", "/c/" + encodeURIComponent(handle) + "/message", { body });
+    if (data && data.message) openThread(data.message.toId);
+  } catch (e) {
+    if (note) note.textContent = (e && e.message) || "That message did not send. Try again.";
+  }
+}
+
 async function renderPublicProfile() {
   const handle = state.publicHandle || "";
   app.innerHTML = `<section class="panel center" style="max-width:560px;margin:40px auto"><p class="muted">Loading @${esc(handle)}...</p></section>`;
@@ -465,68 +507,88 @@ async function renderPublicProfile() {
     app.innerHTML = `
     <section class="panel center" style="max-width:560px;margin:40px auto">
       <h2>Profile not public</h2>
-      <p class="muted">There is no public SIGNL profile at this link. The creator may still be in review, or the link may be wrong.</p>
+      <p class="muted">There is no public SIGNL page at this link. The creator may not have turned their page on, may still be in review, or the link may be wrong.</p>
       <div class="cta-row" style="justify-content:center">
         ${state.user ? `<a class="btn" href="#" onclick="return go('dashboard')">Back to my dashboard</a>` : `<a class="btn" href="#" onclick="return go('join-creator')">Become a Founding Creator</a>`}
       </div>
     </section>`;
     return;
   }
+  state.bookMeCreatorId = p.creatorUserId || null;
   const place = p.unlisted ? esc(p.city) : esc(marketDisplayName(p.market));
   applyProfileShareShell(p, p.unlisted ? (p.city || "") : (p.market || ""));
   const initial = esc((p.name || "?").trim().charAt(0).toUpperCase() || "?");
-  app.innerHTML = `
-  <div style="max-width:720px;margin:20px auto">
-    <div class="creator-card full">
-      <div class="cc-photo${p.photoUrl ? "" : " no-photo"}">
-        ${p.photoUrl ? `<img src="${esc(p.photoUrl)}" alt="">` : `<div class="cc-mono"><span>${initial}</span></div>`}
-        ${p.tierBand ? `<span class="cc-tier">${esc(p.tierBand)}</span>` : ""}
-        ${p.paidRate ? `<span class="cc-paid">Paid bookings: $${fmtPrice(p.paidRate)}</span>` : ""}${p.licensingFee ? ` <span class="cc-paid">Licenses posts: $${fmtPrice(p.licensingFee)}</span>` : ""}
-      </div>
-      ${galleryRowHtml(p.photos)}
-      <div class="cc-body">
-        <div class="cc-id">
-          <div class="cc-name">${esc(p.name)}</div>
-          ${ccHandleHtml(p)}
-          <div class="cc-chips">
-            <span class="cc-chip market">${place}</span>
-            ${!p.unlisted && p.city ? `<span class="cc-chip">${esc(p.city)}</span>` : ""}
-            ${p.neighborhood ? `<span class="cc-chip">${esc(p.neighborhood)}</span>` : ""}
-            ${p.campusBadge ? `<span class="cc-chip">${esc(p.campusBadge)}</span>` : ""}
-            ${p.isRealtor ? `<span class="cc-chip">Realtor</span>` : ""}
-            <span class="cc-chip">Founding Creator</span>
-            ${p.foundingBand ? `<span class="cc-chip">First ${p.foundingBand} founding</span>` : ""}
-          </div>
-        </div>
-        <p>${scoreBadge(p.localImpactScore)}${p.momentumPoints ? ` <span class="badge info">Momentum ${p.momentumPoints} pts</span>` : ""}${badgesHtml(p.badges)}</p>
-        <p>${shareBlockHtml(p.handle, p.unlisted ? (p.city || "") : (p.market || ""), "Share", p.name)}</p>
-        <div class="cc-local">
-          ${p.localAudiencePct === null || p.localAudiencePct === undefined
-            ? `<div class="lbl">Local audience not reported yet</div>`
-            : `<div class="big">${p.localAudiencePct}%</div><div class="lbl">of their followers are local</div><div class="src">${esc(p.localAudienceSource || "Self-reported")}</div>`}
-        </div>
-        <div class="cc-meta">
-          <div><div class="k">Stacked audience</div><div class="v">${fmtNum(totalAudienceOf(p))}</div></div>
-        </div>
-        ${stackList(p).length ? `<div class="cc-platforms">${stackList(p).map((x) => `<span class="cc-plat">${esc(x.label)} ${fmtNum(x.count)}</span>`).join("")}</div>` : ""}
-      </div>
-    </div>
-    <section class="panel" style="margin-top:20px">
+  const tier = typeof p.viewerTier === "number" ? p.viewerTier : 0;
+  const featured = (p.featuredPosts || []).map((f) => `
+      <div class="bookme-embed"><iframe src="${esc(f.embedUrl)}" loading="lazy" frameborder="0" scrolling="no" allowtransparency="true" title="Featured post by @${esc(p.handle)}"></iframe></div>`).join("");
+  const rateBlock = tier >= 1 ? `
     <div class="tint-block" style="margin-top:0">
-    ${p.categories && p.categories.length ? `<p class="small">${p.categories.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
-    ${p.isRealtor && p.farmAreas && p.farmAreas.length ? `<p class="small">Neighborhoods: ${p.farmAreas.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
-    ${p.compCategories && p.compCategories.length ? `<p class="small muted">Open to comps: ${p.compCategories.map(esc).join(", ")}</p>` : ""}
-    <p class="small">${p.paidRate ? `<span class="badge tier">Paid bookings: $${fmtPrice(p.paidRate)}</span> ` : ""}${p.compOpen === false ? `<span class="badge warn">Paid visits only</span>` : `<span class="badge info">Open to comp visits</span>`}</p>
-    ${p.paidRate ? `<p class="small muted">Books at $${fmtPrice(p.paidRate)} &middot; creator keeps 97% &middot; held until the post is live.</p>` : ""}${p.licensingFee ? `<p class="small muted">Licenses a comped post for 90 days of repost and ad use at $${fmtPrice(p.licensingFee)} &middot; creator approves each one &middot; keeps 97%.</p>` : ""}
+      <p class="small" style="margin-top:0">${p.paidRate ? `<span class="badge tier">Paid bookings: $${fmtPrice(p.paidRate)}</span> ` : ""}${p.compOpen === false ? `<span class="badge warn">Paid visits only</span>` : `<span class="badge info">Open to comp visits</span>`}</p>
+      ${p.paidRate ? `<p class="small muted">Books at $${fmtPrice(p.paidRate)} &middot; creator keeps 97% &middot; payment held until the post is live.</p>` : ""}
+      ${p.licensingFee ? `<p class="small muted">Licenses a comped post for 90 days of repost and ad use at $${fmtPrice(p.licensingFee)} &middot; creator approves each one &middot; keeps 97%.</p>` : ""}
+      ${p.canBook ? `<div class="cta-row" style="justify-content:flex-start"><button class="btn" onclick="return bookMeBook()">Book on SIGNL</button></div>` : ""}
+      <p class="small muted">${BOOKME_GUARANTEE_LINE}</p>
+      <p class="small muted">${BOOKME_STAYS_LINE}</p>
+    </div>` : `
+    <div class="tint-block" style="margin-top:0">
+      <p style="margin:0 0 8px"><strong>Businesses: sign in to see rates and book.</strong></p>
+      <div class="cta-row" style="justify-content:flex-start">
+        ${state.user ? `<a class="btn ghost" href="#" onclick="return go('dashboard')">Back to my dashboard</a>` : `<a class="btn" href="#" onclick="return go('signin')">Business sign in</a> <a class="btn ghost" href="#" onclick="return go('join-business')">Join as a founding business</a>`}
+      </div>
+    </div>`;
+  const socialsBlock = tier >= 2 ? `
+    ${p.socialsHiddenByCreator ? "" : (p.socialLinks && p.socialLinks.length ? `
+    <div class="bookme-socials">
+      <h3 class="bookme-h">Their channels</h3>
+      ${p.socialLinks.map((s) => `<a class="bookme-channel" href="${esc(s.url)}" target="_blank" rel="noopener"><span class="bookme-channel-name">${esc(s.label)}</span><span class="bookme-channel-go">View channel</span></a>`).join("")}
+    </div>` : "")}
+    ${p.canMessage ? `
+    <div class="bookme-message">
+      <h3 class="bookme-h">Message ${esc(p.name.split(" ")[0] || "them")} on SIGNL</h3>
+      <textarea id="bm-msg" rows="3" maxlength="2000" placeholder="Say hello and what you have in mind. Booking talk stays here, in SIGNL."></textarea>
+      <div class="cta-row" style="justify-content:flex-start"><button class="btn" onclick="bookMeSendMessage('${esc(p.handle)}')">Message</button></div>
+      <p class="small muted" id="bm-msg-note"></p>
+    </div>` : ""}` : `
+    <div class="bookme-locked">
+      <p style="margin:0">${BOOKME_LOCKED_LINE}</p>
+    </div>`;
+  app.innerHTML = `
+  <div class="public-profile bookme theme-${esc(p.pageTheme || "ink")}" style="max-width:720px;margin:20px auto">
+    <div class="bookme-cover">
+      ${p.photoUrl ? `<img class="bookme-photo" src="${esc(p.photoUrl)}" alt="">` : `<div class="cc-mono bookme-mono"><span>${initial}</span></div>`}
+      <div class="bookme-cover-id">
+        <div class="cc-name bookme-name">${esc(p.name)}</div>
+        <div class="bookme-handle">@${esc(p.handle)} &middot; ${esc(p.primaryPlatformLabel || "Instagram")}</div>
+        ${p.charter ? `<span class="charter-seal sm">Charter Creator</span>` : ""}
+      </div>
     </div>
-    ${bestWorkHtml(p.bestWork)}
-    ${trackRecordHtml(p)}
-    ${reviewsHtml(p)}
-    ${visitIncludesHtml(p.visitIncludes)}
-    ${p.isRealtor && p.brokerage ? `<p class="small muted">Brokered by ${esc(p.brokerage)}</p>` : ""}
-    <div class="cta-row" style="justify-content:flex-start">
-      ${state.user ? `<a class="btn ghost" href="#" onclick="return go('dashboard')">Back to my dashboard</a>` : `<a class="btn" href="#" onclick="return go('join-creator')">Become a Founding Creator</a> <a class="btn ghost" href="#" onclick="return go('for-businesses')">For Businesses</a>`}
-    </div>
+    ${galleryRowHtml(p.photos)}
+    <section class="panel bookme-body">
+      <div class="cc-chips">
+        <span class="cc-chip market">${place}</span>
+        ${!p.unlisted && p.city ? `<span class="cc-chip">${esc(p.city)}</span>` : ""}
+        ${p.neighborhood ? `<span class="cc-chip">${esc(p.neighborhood)}</span>` : ""}
+        ${p.campusBadge ? `<span class="cc-chip">${esc(p.campusBadge)}</span>` : ""}
+        ${p.tierBand ? `<span class="cc-chip">${esc(p.tierBand)}</span>` : ""}
+        ${p.isRealtor ? `<span class="cc-chip">Realtor</span>` : ""}
+        ${p.charter ? "" : `<span class="cc-chip">Founding Creator</span>`}
+        ${p.foundingBand ? `<span class="cc-chip">First ${p.foundingBand} founding</span>` : ""}
+      </div>
+      ${p.bio ? `<p class="bookme-bio">${esc(p.bio)}</p>` : ""}
+      <div class="cc-local">
+        ${p.localAudiencePct === null || p.localAudiencePct === undefined
+          ? `<div class="lbl">Local audience not reported yet</div>`
+          : `<div class="big">${p.localAudiencePct}%</div><div class="lbl">of their audience is local</div><div class="src">${esc(p.localAudienceSource || "Self-reported")}</div>`}
+      </div>
+      ${p.categories && p.categories.length ? `<p class="small">${p.categories.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
+      ${p.isRealtor && p.farmAreas && p.farmAreas.length ? `<p class="small">Neighborhoods: ${p.farmAreas.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
+      ${p.compCategories && p.compCategories.length ? `<p class="small muted">Open to comps: ${p.compCategories.map(esc).join(", ")}</p>` : ""}
+      ${featured ? `<h3 class="bookme-h">Featured posts</h3><div class="bookme-featured">${featured}</div>` : ""}
+      ${rateBlock}
+      ${socialsBlock}
+      ${visitIncludesHtml(p.visitIncludes)}
+      ${p.isRealtor && p.brokerage ? `<p class="small muted">Brokered by ${esc(p.brokerage)}</p>` : ""}
+      ${p.viewerIsOwner ? `<p class="small muted">This is your book-me page, exactly as visitors see it. Edit it any time under Profile.</p><p class="small">${shareBlockHtml(p.handle, p.market || "", "Share your invite")}</p>` : ""}
     </section>
   </div>`;
 }
@@ -567,7 +629,9 @@ async function renderPublicProof() {
   const tr = p.trackRecord || {};
   const generated = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
   const statCells = [];
-  statCells.push(`<div class="stat-cell"><div class="stat-num">${fmtNum(totalAudienceOf(p))}</div><div class="stat-lbl">Stacked audience, all platforms</div></div>`);
+  if (totalAudienceOf(p) > 0) {
+    statCells.push(`<div class="stat-cell"><div class="stat-num">${fmtNum(totalAudienceOf(p))}</div><div class="stat-lbl">Stacked audience, all platforms</div></div>`);
+  }
   if (p.localAudiencePct !== null && p.localAudiencePct !== undefined) {
     statCells.push(`<div class="stat-cell"><div class="stat-num">${p.localAudiencePct}%</div><div class="stat-lbl">Local reach (${esc(p.localAudienceSource || "Self-reported")})</div></div>`);
   }
@@ -2694,7 +2758,7 @@ function sigCtx() {
   const biz = u.role === "business";
   const live = biz ? businessAccessState(u) === "active" : !!(u.founding && u.founding.marketLive);
   const pc = u.profileCompletion || (u.creator ? { complete: u.creator.profileComplete === true, missing: [] } : { complete: false, missing: [] });
-  return { biz, live, profileComplete: !!pc.complete, missing: pc.missing || [], status: u.status || "", market: (u.founding && u.founding.market) || u.market || "" };
+  return { biz, live, profileComplete: !!pc.complete, missing: pc.missing || [], status: u.status || "", market: (u.founding && u.founding.market) || u.market || "", charter: !!(u.creator && u.creator.charter) };
 }
 
 // The canon bank. Each topic: display question (q), strong phrases
@@ -2710,7 +2774,7 @@ function sigBankFor(biz) {
     { id: "plans", q: "What is the difference between the plans?", ph: ["difference between", "which plan", "compare plans", "growth plan", "managed plan"], g: [["growth", "managed", "self-service", "self service", "tiers"], ["difference", "which", "compare", "best", "include", "get"]], s: ["growth", "managed"],
       a: "The difference is volume and how much is done for you. Self-Service is $199 a month for 5 creators and you run it yourself. Growth is $349 for 10, built for businesses doing paid work and reusing posts, with the license library and renewal tracking. Managed is $699 for 20, the most done for you. Paid bookings and licensing are available on every plan." },
     { id: "howitworks", q: "How does SIGNL work for a business?", ph: ["how does signl work", "how it works", "what is signl", "how does this work"], g: [["signl", "platform", "this"], ["work", "works", "start", "process"]], s: [],
-      a: "You post an offer, comped or paid, or browse the roster and invite a creator directly at their listed rate. The creator visits, your staff check them in with their visit code, and they post within 48 hours: one post plus one story that shares it. You see the post, its numbers, and your returns on your dashboard. Creators are ranked by local reach, the share of their audience that lives here, not follower count.", flow: "Post an offer" },
+      a: "You post an offer, comped or paid, or browse the roster and invite a creator directly at their listed rate. The creator visits, your staff check them in with their visit code, and they post within 48 hours: one post plus one story that shares it. You see the post, its numbers, and your returns on your dashboard. Creators are ranked by local reach, the share of their audience that lives here, not follower count. Bookings that start on SIGNL stay on SIGNL, where the Visit Guarantee and payment protection apply.", flow: "Post an offer" },
     { id: "ugc", q: "Is this UGC? Can I reuse a creator's post?", ph: ["ugc", "reuse", "repost", "run it as an ad", "use their post", "whitelist"], g: [["post", "content", "photo", "video"], ["reuse", "repost", "ad", "ads", "marketing", "license", "licence", "rights", "use"]], s: ["ugc", "licensing", "licence"],
       a: "In plain terms, yes: this is UGC, but local. Creators post on their own accounts, and the license is what lets you reuse it. A comped visit is native share only: you may reshare it with credit, nothing more. Paid bookings include one standard license: 90 days to repost and run ads. A comped post can be licensed at the creator's listed fee for 90 days; the creator approves each use and keeps 97%." },
     { id: "paidlane", q: "How do paid bookings work?", ph: ["paid booking", "book a creator", "pay a creator", "how much do creators charge", "creator rate"], g: [["paid", "pay", "book", "rate", "charge"], ["creator", "booking", "how", "work"]], s: [],
@@ -2766,8 +2830,16 @@ function sigBankFor(biz) {
       }, flow: "Finish my profile" },
     { id: "invites", q: "How do invites and referrals work?", ph: ["invite link", "referral", "invite a", "recruit", "invite friends", "invite other creators"], g: [["invit", "referral", "recruit", "link"], ["how", "work", "earn", "share", "get"]], s: ["referral"],
       a: "Your invite link lives on your profile. When a creator joins through it, you earn +3 Momentum; when they are approved, +10. Approved referrals also climb the badge ladder: 1 approved referral is Connector with a +25 bonus, 3 is Super Connector +50, 5 is Roster Builder +75, 10 is City Lead +150. A milestone unlocks once that referral has delivered their first post.", flow: "Finish my profile" },
+    { id: "charter", q: "What is a Charter Creator?", ph: ["charter", "founding class", "early access", "24 hours before", "see offers first"], g: [["charter", "founding"], ["what", "mean", "perk", "get", "class"]], s: ["charter"],
+      a: "Charter Creators are the founding class: creators who finished their profile and were approved before their market launched. The seal is permanent. The headline perk: you see new paid offers 24 hours before everyone else once your market is live. Your Charter card is on your founding home, and your book-me page settings are on your Profile.", flow: "Finish my profile" },
+    { id: "bookme", q: "What is my book-me page?", ph: ["book-me", "book me page", "public page", "my page", "share my link"], g: [["page", "link"], ["public", "book", "share", "turn on", "my"]], s: [],
+      a: "Your book-me page is your public SIGNL page at your profile link. Turn it on under Profile: it shows your handle, your local reach, your categories, and your featured posts, and nothing private. Signed-in businesses see your listed rate and book you inside SIGNL. Businesses with a paid, active account can also see your social channels and message you in the app. Bookings that start on SIGNL stay on SIGNL.", flow: "Finish my profile" },
     { id: "offers", q: "How do I get offers?", ph: ["get offers", "no offers", "offers yet", "find work", "get booked", "bookings", "get work"], g: [["offer", "offers", "booked", "work", "gigs", "jobs"], ["how", "get", "find", "none", "no", "why", "any"]], s: [],
-      a: (c) => c.live ? "Businesses post offers and invite creators straight from the roster. Finished profiles with strong local reach get invited first. Applying is one tap, and your profile card is the application, so a finished profile is the whole game." : "Offers start when your market opens. Until then the work is your profile: finished profiles are the roster businesses meet on day one, so finishing yours now is what gets you booked first.", flow: (c) => c.live ? "See offers near you" : "Finish my profile" },
+      a: (c) => {
+        let t = c.live ? "Businesses post offers and invite creators straight from the roster. Finished profiles with strong local reach get invited first. Applying is one tap, and your profile card is the application, so a finished profile is the whole game." : "Offers start when your market opens. Until then the work is your profile: finished profiles are the roster businesses meet on day one, so finishing yours now is what gets you booked first.";
+        if (c.charter) t += " And as a Charter Creator, you see new paid offers 24 hours before everyone else" + (c.live ? "." : " once your market is live.");
+        return t;
+      }, flow: (c) => c.live ? "See offers near you" : "Finish my profile" },
     { id: "reviews", q: "Do I review the business?", ph: ["review", "rating", "stars", "rate the business"], g: [["review", "rating", "stars"], ["how", "do i", "leave", "business", "write"]], s: ["review"],
       a: "Yes. After a completed visit you review the business, any star rating you honestly give, and each review earns +10 Momentum. Businesses rate creators too, and your rating sits next to your points on your card." },
     { id: "markets", q: "When does my market open?", ph: ["market open", "when does", "launch", "my city", "open in", "when will"], g: [["market", "city", "launch"], ["when", "open", "start", "live", "coming"]], s: [],
@@ -5353,7 +5425,7 @@ function renderQuickClaim() {
       <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="qc-agree-honest" required><span>${T("No business can require me to post positively. My posts stay my honest opinion.", "Ningún negocio puede exigirme publicar en positivo. Mis publicaciones son mi opinión honesta.")}</span></label></div>
       <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="qc-agree-ftc" required><span>${T("I disclose every comp, as the FTC requires.", "Revelo cada cortesía, como lo exige la FTC.")}</span></label></div>
       <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="qc-agree-compliance" required><span>${T("I post within 48 hours of each comped visit and paste the link in the app. A post that never lands doesn't count; repeated misses can pause my account.", "Publico dentro de 48 horas de cada visita de cortesía y pego el enlace en la app. Una publicación que nunca llega no cuenta; las faltas repetidas pueden pausar mi cuenta.")}</span></label></div>
-      <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="qc-agree-terms" required><span>${T("I agree to the", "Acepto los")} <a href="https://joinsignl.com/terms.html" target="_blank" rel="noopener">${T("Terms of Service", "Términos de Servicio")}</a> ${T("and", "y la")} <a href="https://joinsignl.com/privacy.html" target="_blank" rel="noopener">${T("Privacy Policy", "Política de Privacidad")}</a>${T(", and to account and launch emails. I can unsubscribe from marketing anytime.", ", y los correos de cuenta y de lanzamiento. Puedo cancelar los correos de marketing cuando quiera.")}</span></label></div>
+      <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="qc-agree-terms" required><span>${T("I agree to the", "Acepto los")} <a href="https://joinsignl.com/terms.html" target="_blank" rel="noopener">${T("Terms of Service", "Términos de Servicio")}</a> ${T("and", "y la")} <a href="https://joinsignl.com/privacy.html" target="_blank" rel="noopener">${T("Privacy Policy", "Política de Privacidad")}</a>${T(", including keeping bookings that start on SIGNL on SIGNL, and to account and launch emails. I can unsubscribe from marketing anytime.", ", incluyendo mantener en SIGNL las reservas que empiezan en SIGNL, y los correos de cuenta y de lanzamiento. Puedo cancelar los correos de marketing cuando quiera.")}</span></label></div>
       <button class="btn" type="submit" style="width:100%">${T("Claim my founding spot", "Reclamar mi lugar")}</button>
       <p class="small muted mt">${T("Reviewed by a person — decision or clear status within 2 business days.", "Lo revisa una persona. Decisión o estado claro en 2 días laborables.")}</p>
       <p class="small">${T("Prefer to complete everything now?", "¿Prefieres completar todo ahora?")} <a href="#" onclick="return showFullJoin()">${T("Build your full profile instead", "Crea tu perfil completo")}</a>.</p>
@@ -5534,7 +5606,7 @@ function renderJoinCreator() {
       <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="jc-agree-honest" required><span>${T("I understand no business can require me to post positively. My posts stay my honest opinion.", "Entiendo que ningún negocio puede exigirme publicar en positivo. Mis publicaciones son mi opinión honesta.")}</span></label></div>
       <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="jc-agree-ftc" required><span>${T("I agree to clearly disclose every comp in my posts, as the FTC requires.", "Acepto revelar con claridad cada cortesía en mis publicaciones, como lo exige la FTC.")}</span></label></div>
       <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="jc-agree-compliance" required><span>${T("I agree to post within 48 hours of every comped visit for full credit and paste the post link in the app. I understand a post that never lands means the visit does not count, and repeated misses can pause my account.", "Acepto publicar dentro de 48 horas de cada visita de cortesía para crédito completo y pegar el enlace en la app. Entiendo que una publicación que nunca llega significa que la visita no cuenta, y que las faltas repetidas pueden pausar mi cuenta.")}</span></label></div>
-      <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="jc-agree-terms" required><span>${T("I agree to the", "Acepto los")} <a href="https://joinsignl.com/terms.html" target="_blank" rel="noopener">${T("Terms of Service", "Términos de Servicio")}</a> ${T("and", "y la")} <a href="https://joinsignl.com/privacy.html" target="_blank" rel="noopener">${T("Privacy Policy", "Política de Privacidad")}</a>${T(", and I agree SIGNL can email me about my account, launch updates and offers. I can unsubscribe from marketing emails at any time.", ", y acepto que SIGNL me escriba sobre mi cuenta, novedades del lanzamiento y ofertas. Puedo cancelar los correos de marketing cuando quiera.")}</span></label></div>
+      <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="jc-agree-terms" required><span>${T("I agree to the", "Acepto los")} <a href="https://joinsignl.com/terms.html" target="_blank" rel="noopener">${T("Terms of Service", "Términos de Servicio")}</a> ${T("and", "y la")} <a href="https://joinsignl.com/privacy.html" target="_blank" rel="noopener">${T("Privacy Policy", "Política de Privacidad")}</a>${T(", including keeping bookings that start on SIGNL on SIGNL, and I agree SIGNL can email me about my account, launch updates and offers. I can unsubscribe from marketing emails at any time.", ", incluyendo mantener en SIGNL las reservas que empiezan en SIGNL, y acepto que SIGNL me escriba sobre mi cuenta, novedades del lanzamiento y ofertas. Puedo cancelar los correos de marketing cuando quiera.")}</span></label></div>
       <div id="jc-save-warn"></div>
       <button class="btn" type="submit" style="width:100%">${T("Create my profile", "Crear mi perfil")}</button>
       <p class="small muted mt">${T("Every application is reviewed by a person, and every founding application gets a decision or a clear status within 2 business days. Founding spots are held in sign-up order.", "Cada solicitud la revisa una persona, y cada solicitud fundadora recibe una decisión o un estado claro en 2 días laborables. Los lugares de fundador se guardan en orden de registro.")}</p>
@@ -5802,11 +5874,12 @@ function renderForBusinesses() {
       <div class="form-2col" id="jb-city-row">
         <div class="field"><label>City</label><select id="jb-city"></select></div>
         <div class="field"><label>Neighborhood / area (optional)</label><input id="jb-neighborhood" placeholder="For example: Oceanfront, Ghent"></div>
+        <div class="field"><label>Business ZIP (optional)</label><input id="jb-zip" inputmode="numeric" maxlength="5" placeholder="For example: 23452"><p class="small muted">Used to group nearby creators by distance bands. Bands only, never an exact distance.</p></div>
       </div>
         <div class="field"><label>About your business (optional)</label><textarea id="jb-about" rows="3" placeholder="What you serve, what the visit feels like, anything SIGNL should know when reviewing your application"></textarea></div>
       </div>
       <input type="hidden" id="jb-plan" value="${esc(state.boot.plans[0].id)}">
-      <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="jb-terms" required><span>I agree to the Terms of Service and Privacy Policy, and to account and marketing emails from SIGNL.</span></label></div>
+      <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="jb-terms" required><span>I agree to the Terms of Service and Privacy Policy, including keeping bookings that start on SIGNL on SIGNL, and to account and marketing emails from SIGNL.</span></label></div>
       <button class="btn mt" type="submit" style="width:100%">Join founding list</button>
     </form>
     <p class="small muted mt">Reviewed by a person. Decision within 2 business days. Once you join, your status page previews your first drafted offer and exactly how SIGNL works; booking itself opens at activation. Creators join separately: <a href="#" onclick="return go('join-creator')">become a founding creator</a>.</p>
@@ -5917,6 +5990,7 @@ async function registerBusiness(e) {
       city: isUnlisted ? undefined : document.getElementById("jb-city").value,
       category: document.getElementById("jb-category").value,
       neighborhood: document.getElementById("jb-neighborhood").value,
+      zip: document.getElementById("jb-zip").value,
       about: document.getElementById("jb-about").value,
       planId: document.getElementById("jb-plan").value,
       agreedTerms: document.getElementById("jb-terms").checked,
@@ -6031,11 +6105,86 @@ function foundingPreviewHtml(data) {
   const bizPlace = u.market === unlistedLabel() ? (u.city || "your city") : marketTalkNameClient(u.market);
   return [
     foundingCategoriesHtml(data, bizPlace),
+    foundingNearYouHtml(data, bizPlace),
     foundingLocalReachHtml(),
     foundingFirstOfferHtml(u),
+    foundingFirstMonthHtml(u, data),
     foundingBenefitsHtml(u),
     foundingPlansHtml(u),
   ].join("");
+}
+
+// Near your door (Build -31): the founding roster grouped by
+// distance BANDS from the business's own ZIP. Bands and the
+// categories inside them only: no creator names, no counts per
+// band, no exact distance, no pin. Without a ZIP on file the
+// section is the prompt to add one (profile PATCH, same record
+// the business profile edits).
+function foundingNearYouHtml(data, bizPlace) {
+  if (!data) return "";
+  const prox = data.proximity || { hasZip: false, bands: [] };
+  if (!prox.hasZip) {
+    return `<section class="wcard">
+    <p class="ui-kicker">Preview &middot; near your door</p>
+    <h3>Creators close to your door</h3>
+    <p class="wc-sub">Add your business ZIP and this preview groups the founding roster by how close creators are to you: same neighborhood, under 2 miles, under 5 miles. Bands only. You never see a creator's exact location, and they never see yours.</p>
+    <div class="field" style="max-width:260px"><label>Your business ZIP</label><input id="fbz-zip" inputmode="numeric" maxlength="5" placeholder="For example: 23452"></div>
+    <button class="btn small-btn" onclick="foundingSaveZip()">Save ZIP</button> <span id="fbz-zip-note" class="small muted"></span>
+  </section>`;
+  }
+  const bands = Array.isArray(prox.bands) ? prox.bands : [];
+  return `<section class="wcard">
+    <p class="ui-kicker">Preview &middot; near your door</p>
+    <h3>Creators close to your door</h3>
+    <p class="wc-sub">Grouped by distance from your business ZIP. Bands only: no exact distances, no pins, and a creator can opt out of near-you grouping without leaving the roster.</p>
+    ${bands.length ? bands.map((b) => `<div style="margin-top:12px"><p style="margin:0"><span class="badge info">${esc(b.band)}</span></p>${b.categories && b.categories.length ? `<div class="dcard-chips" style="margin-top:8px">${b.categories.map((x) => `<span class="cc-chip">${esc(x)}</span>`).join("")}</div>` : ""}</div>`).join("") : `<p class="small muted" style="margin:10px 0 0">No finished creators fall inside the near bands yet. The full roster opens at activation, and recruiting continues across every category.</p>`}
+  </section>`;
+}
+
+async function foundingSaveZip() {
+  const el = document.getElementById("fbz-zip");
+  const note = document.getElementById("fbz-zip-note");
+  const zip = el ? el.value.trim() : "";
+  if (!/^\d{5}$/.test(zip)) { if (note) note.textContent = "Enter the 5 digit ZIP for your business address."; return; }
+  try {
+    const data = await api("PATCH", "/me/profile", { zip });
+    if (data && data.user) state.user = data.user;
+    renderBusinessFoundingStatus();
+  } catch (e) {
+    if (note) note.textContent = (e && e.message) || "That ZIP did not save. Try again.";
+  }
+}
+
+// Your first month, planned (Build -31): the first-offer
+// preview extended into a one-month plan. Five visit slots on a
+// Week 1 to Week 4 grid, labeled by creator category and visit
+// type only: no creator names, no counts, no calendar dates.
+// The whole panel is a plan preview and says so, with the Visit
+// Guarantee line attached.
+function foundingFirstMonthHtml(u, data) {
+  const bz = u.business || {};
+  const covered = data && Array.isArray(data.categories) && data.categories.length ? data.categories : [];
+  const all = (state.boot && state.boot.creatorCategories) || [];
+  const planCats = covered.length ? covered : all;
+  if (!planCats.length) return "";
+  const slots = [
+    { week: "Week 1", cat: planCats[0], type: "Comped visit" },
+    { week: "Week 1", cat: planCats[1 % planCats.length], type: "Comped visit" },
+    { week: "Week 2", cat: planCats[2 % planCats.length], type: "Paid booking" },
+    { week: "Week 3", cat: planCats[3 % planCats.length], type: "Comped visit" },
+    { week: "Week 4", cat: planCats[4 % planCats.length], type: "Paid booking" },
+  ];
+  const weeks = ["Week 1", "Week 2", "Week 3", "Week 4"];
+  return `<section class="wcard">
+    <p class="ui-kicker">Plan preview &middot; your first month</p>
+    <h3>Your first month, planned</h3>
+    <p class="wc-sub">Five visits across your first month on your founding plan, spread over the categories lining up in ${esc(u.market === unlistedLabel() ? (u.city || "your city") : marketTalkNameClient(u.market))}. Paid slots book at each creator's listed rate, and the creator keeps 97%.</p>
+    <div class="fm-grid">
+      ${weeks.map((w) => `<div class="fm-week"><div class="fm-week-h">${w}</div>${slots.filter((s) => s.week === w).map((s) => `<div class="fm-slot"><div class="fm-slot-cat">${esc(s.cat)}</div><div class="fm-slot-type">${esc(s.type)}</div></div>`).join("")}</div>`).join("")}
+    </div>
+    <p class="small muted" style="margin:12px 0 0">Your first month, planned. Nothing is saved, nothing is booked.</p>
+    <p class="small" style="margin:6px 0 0"><strong>Visit Guarantee:</strong> if a booked creator does not show up or does not post, that visit does not count against your plan and is replaced.</p>
+  </section>`;
 }
 
 // Category presence, never counts: tiles name the kinds of
@@ -6162,6 +6311,7 @@ function foundingPlansHtml(u) {
     <p class="ui-kicker">Founding pricing</p>
     <h3>Locked founding rates</h3>
     <p class="wc-sub">Nothing is due now. Businesses activate at market launch, founding rates are held while a plan stays active, and unused visits roll into the next month, then expire. 3 month minimum. No per-location charge.</p>
+    <p style="margin:10px 0 0"><strong>The founding business class is limited in every market. Founding businesses get first access when their market activates.</strong></p>
     <div class="rp-plans">${plans.map((p) => `<div class="rp-plan${p.id === chosen ? " on" : ""}">
       <div class="rp-plan-name">${esc(p.name)}${p.id === chosen ? ` <span class="badge ok">Your pick</span>` : ""}</div>
       <div class="rp-plan-price">$${fmtPrice(p.priceMonthly)}<span class="muted"> / month</span></div>
@@ -6802,6 +6952,7 @@ function creatorCard(c, viewer, opts) {
         <span class="cc-chip market">${esc(marketDisplayName(c.market))}</span>
         ${c.city ? `<span class="cc-chip">${esc(c.city)}</span>` : ""}
         ${c.neighborhood ? `<span class="cc-chip">${esc(c.neighborhood)}</span>` : ""}
+        ${c.distanceBand ? `<span class="cc-chip band">${esc(c.distanceBand)}</span>` : ""}
         ${campusBadgeHtml(c) ? `<span class="cc-chip">${esc(c.campusBadge || (c.profile && c.profile.campusBadge) || "")}</span>` : ""}
         ${c.foundingBand ? `<span class="cc-chip">First ${c.foundingBand} founding</span>` : ""}
       </div>
@@ -7074,7 +7225,10 @@ function creatorCharterCardHtml(u, card, f, buzz, placeRaw) {
     <div class="stat-big">${pct === null ? "Local % not set" : `${pct}%`}</div>
     <div class="stat-lbl">${pct === null ? "Add your local audience % in your profile and this card fills in." : "of my audience is local"}</div>
     <p class="charter-scarcity">Founding status closes when ${esc(placeRaw)} launches. This seal is yours for good: only creators who finished their profile and were approved before launch hold it.</p>
-    <div class="stat-actions"><button type="button" class="btn small-btn" onclick="return shareStatCard(this)" data-stat-text="${esc(bits.join(" "))}">Share my Charter card</button></div>
+    <p class="charter-perk">You see new paid offers 24 hours before everyone else.</p>
+    ${p.publicPage === true ? "" : `<p class="charter-prompt">Your book-me page is off. Turn it on under Profile and businesses can book you right from your link, at your listed rate, with every booking protected on SIGNL.</p>`}
+    ${(u.creator && u.creator.zip) ? "" : `<p class="charter-prompt">Add your ZIP under Profile so nearby businesses see you in near-you results. ZIP only, never your address.</p>`}
+    <div class="stat-actions"><button type="button" class="btn small-btn" onclick="return shareStatCard(this)" data-stat-text="${esc(bits.join(" "))}">Share my Charter card</button>${p.publicPage === true ? "" : ` <button type="button" class="btn small-btn ghost" onclick="return go('dashboard','Profile')">Turn on my book-me page</button>`}</div>
   </section>`;
 }
 
@@ -7184,6 +7338,7 @@ async function loadFoundingStatus() {
         </div>
         <span class="badge ok" style="font-size:0.95rem;padding:6px 14px">${p.charter ? "Charter Creator" : "Founding Creator"}</span>
       </div>
+      ${p.charter ? `<p class="small" style="margin-top:10px"><strong>Your Charter perk:</strong> You see new paid offers 24 hours before everyone else.</p>` : ""}
       <p class="small">You are in. Know a creator who should be on the founding roster with you? ${shareBlockHtml(p.handle, isUnl ? (f.city || "") : (f.market || ""), "Share your invite")}</p>
       <div class="grid cols-2 mt">
         <div>
@@ -7684,6 +7839,79 @@ function musicPanelHtml(c) {
   </div>`;
 }
 
+// ---------- proximity + book-me panels (Build -31) ----------
+// Both live inside the existing Profile surfaces (the profile
+// form's showcase block and the founding home / dashboard paid
+// lane panel), write through the same laneSave PATCH path, and
+// re-render through rerenderLaneControls like their neighbors.
+function proximityPanelHtml(c) {
+  const zip = (c && c.zip) || "";
+  const nearOn = !(c && c.proximityOptOut === true);
+  return `<div class="spanish-panel" id="proximity-panel">
+    <h4 class="spanish-panel-h">Near your door</h4>
+    <p class="small spanish-panel-sub">Businesses see creators grouped by distance bands: same neighborhood, under 2 miles, under 5 miles. Distance comes from ZIP codes only. Your ZIP is never shown to anyone, and SIGNL never asks for or stores a street address for creators.</p>
+    <div class="lane-rate">
+      <label for="lane-zip">Your home-base ZIP</label>
+      <div class="lane-rate-flex"><input type="text" id="lane-zip" inputmode="numeric" maxlength="5" placeholder="For example: 23452" value="${esc(zip)}"><button type="button" class="btn small-btn" onclick="return laneZipSave()">Save ZIP</button></div>
+    </div>
+    <div class="lrow lane-row"><input type="checkbox" class="sw lane-sw" id="lane-nearyou" ${nearOn ? "checked" : ""} onchange="laneToggleNearYou(this)"><div><label class="lname" for="lane-nearyou">Show me in near-you results</label> <span class="lline">— on while your ZIP is set, unless you turn it off. Off hides you from distance grouping only; you stay on the roster.</span></div></div>
+  </div>`;
+}
+function laneZipSave() {
+  const inp = document.getElementById("lane-zip");
+  const raw = inp ? inp.value.trim() : "";
+  if (raw !== "" && !/^\d{5}$/.test(raw)) { laneErr("ZIP is 5 digits, or blank to clear it."); if (inp) inp.focus(); return false; }
+  laneSave({ zip: raw });
+  return false;
+}
+function laneToggleNearYou(input) {
+  laneSave({ proximityOptOut: !input.checked });
+  return true;
+}
+const PAGE_THEME_OPTIONS = [["ink", "Ink"], ["mint", "Mint"], ["deep", "Deep mint"], ["pale", "Pale mint"]];
+function bookMePanelHtml(c) {
+  const on = !!(c && c.publicPage);
+  const url = publicProfileUrl(state.user || {});
+  const theme = (c && c.pageTheme) || "ink";
+  const socialsOn = !(c && c.showSocials === false);
+  const feats = (c && c.featuredPosts) || [];
+  return `<div class="spanish-panel" id="bookme-panel">
+    <h4 class="spanish-panel-h">Your book-me page</h4>
+    <p class="small spanish-panel-sub">A public page at your SIGNL link where businesses book you inside SIGNL, at your listed rate. It shows your handle, your local reach, your categories, and your featured posts. It never shows your email, your phone, or your follower counts, and the public never gets a link out to your social profiles from it.</p>
+    <div class="lrow lane-row"><input type="checkbox" class="sw lane-sw" id="lane-bookme" ${on ? "checked" : ""} onchange="laneToggleBookMe(this)"><div><label class="lname" for="lane-bookme">Book-me page is on</label> <span class="lline">— ${on ? "live at your link below." : "off. Your public link shows nothing until you turn this on."}</span></div></div>
+    <p class="small muted">Businesses with a paid SIGNL account can see your social channels and message you here. Bookings that start on SIGNL stay on SIGNL, with the Visit Guarantee and payment protection on every booking.</p>
+    ${on ? `<div class="field"><label>Your page</label><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><input type="text" readonly value="${esc(url)}" onclick="this.select()" style="flex:1;min-width:220px"><a class="btn small-btn ghost" href="${esc(url)}" target="_blank" rel="noopener">View</a></div></div>` : ""}
+    <div class="lane-rate">
+      <label>Cover theme</label>
+      <div class="chiprow">${PAGE_THEME_OPTIONS.map(([k, label]) => `<button type="button" class="rchip${theme === k ? " on" : ""}" onclick="return laneThemePick('${k}')">${label}</button>`).join("")}</div>
+    </div>
+    <div class="lane-rate">
+      <label>Featured posts (up to 3 Instagram post or reel links)</label>
+      ${[0, 1, 2].map((i) => `<input id="lane-feat-${i}" type="url" placeholder="https://www.instagram.com/p/..." value="${esc(feats[i] || "")}" style="margin-bottom:8px">`).join("")}
+      <button type="button" class="btn small-btn" onclick="return laneFeaturedSave()">Save featured posts</button>
+      <p class="small muted">Your best work, embedded right on the page. Clear a box to remove that post.</p>
+    </div>
+    <div class="lrow lane-row"><input type="checkbox" class="sw lane-sw" id="lane-socials" ${socialsOn ? "checked" : ""} onchange="laneToggleSocials(this)"><div><label class="lname" for="lane-socials">Show my social channels to paying businesses</label> <span class="lline">— the channels on your record, shown only to businesses with a paid, active SIGNL account.</span></div></div>
+  </div>`;
+}
+function laneToggleBookMe(input) {
+  laneSave({ publicPage: !!input.checked });
+  return true;
+}
+function laneThemePick(theme) {
+  laneSave({ pageTheme: theme });
+  return false;
+}
+function laneToggleSocials(input) {
+  laneSave({ showSocials: !!input.checked });
+  return true;
+}
+function laneFeaturedSave() {
+  const vals = [0, 1, 2].map((i) => { const el = document.getElementById("lane-feat-" + i); return el ? el.value.trim() : ""; }).filter(Boolean);
+  laneSave({ featuredPosts: vals });
+  return false;
+}
+
 function laneControlsHtml(c) {
   const compOn = !c || c.compOpen !== false;
   const rate = laneRateOf(c || {});
@@ -7852,6 +8080,10 @@ function rerenderLaneControls() {
   if (sp) sp.outerHTML = spanishPanelHtml(state.user.creator);
   const mp = document.getElementById("music-panel");
   if (mp) mp.outerHTML = musicPanelHtml(state.user.creator);
+  const pp = document.getElementById("proximity-panel");
+  if (pp) pp.outerHTML = proximityPanelHtml(state.user.creator);
+  const bp = document.getElementById("bookme-panel");
+  if (bp) bp.outerHTML = bookMePanelHtml(state.user.creator);
   if (rowOpen) {
     const r2 = document.getElementById("lane-rate-row");
     if (r2) r2.style.display = "block";
@@ -7952,6 +8184,8 @@ function homePaidLaneHtml(creator, footerHtml) {
     ${spanishPanelHtml(creator || {})}
     ${musicPanelHtml(creator || {})}
     ${laneControlsHtml(creator || {})}
+    ${proximityPanelHtml(creator || {})}
+    ${bookMePanelHtml(creator || {})}
     <p class="small muted">${paymentsLive() ? "Charged to the business's card at booking. Held until your post is live — released 48h after proof." : "Recorded in the app, no card charged. Held until your post is live — released 48h after proof."}</p>
     ${footerHtml || ""}
   </section>`;
@@ -8344,7 +8578,7 @@ function creatorProfileHtml(u) {
         <a class="btn small-btn ghost" href="${esc(publicProfileUrl(u))}/proof" target="_blank" rel="noopener">Listing proof sheet</a>
         <span id="pp-copied" class="saved"></span>
       </div>
-      <p class="small muted">Share this link anywhere, including your Instagram bio. Visitors see your name, handle, market and neighborhood, tier, follower count, categories, local audience share, Local Impact Score, Momentum points, and founding standing. Your email and account details are never shown, and there is no public roster: this page exists only at your link.</p>
+      <p class="small muted">Share this link anywhere, including your Instagram bio. Your page is live only while you keep it on, in the book-me page settings below. Visitors see your name, handle, market and neighborhood, categories, and local audience share. Signed-in businesses see your listed rate and book you inside SIGNL. Your email and account details are never shown, and there is no public roster: this page exists only at your link.</p>
     </div>` : ""}
     <div id="form-error"></div>
     ${ytNoticeHtml()}
@@ -8421,6 +8655,8 @@ function creatorProfileHtml(u) {
         ${spanishPanelHtml(c)}
         ${musicPanelHtml(c)}
         ${laneControlsHtml(c)}
+        ${proximityPanelHtml(c)}
+        ${bookMePanelHtml(c)}
       </div>
       <div class="field"><label>Best work (up to 3 links)</label>
         ${[0, 1, 2].map((i) => `<input id="p-work-${i}" type="url" placeholder="https://www.instagram.com/reel/... or a TikTok or YouTube link" value="${esc((c.bestWork || [])[i] || "")}" style="margin-bottom:8px">`).join("")}
@@ -8755,6 +8991,7 @@ async function loadDirectOffers() {
             ${booked ? `<span class="badge ok">Booked</span>
             <button class="btn small-btn ghost" onclick="return go('dashboard','My Visits')">My Visits</button>` : `<form onsubmit="return acceptOffer(event, '${o.id}')">
               <button class="btn book" type="submit">Accept</button>
+              <p class="small muted" style="margin:6px 0 0">${BOOKING_STARTED_LINE}</p>
             </form>
             ${o.creatorId ? `<button class="btn small-btn danger" onclick="declineOffer('${o.id}')">Decline</button>` : ""}`}
             <button class="btn small-btn ghost" data-ctx="${esc(o.title)}" onclick="return openThreadCtx('${o.businessId}', this.dataset.ctx)">Message</button>
@@ -11149,6 +11386,7 @@ async function renderBizProfileTab() {
         <div class="form-2col">
           <div class="field"><label>City</label><input id="bp-city" value="${esc(u.city || "")}"></div>
           <div class="field"><label>Neighborhood / area</label><input id="bp-neighborhood" value="${esc(b.neighborhood || "")}" placeholder="For example: Oceanfront, Ghent"></div>
+          <div class="field"><label>Business ZIP</label><input id="bp-zip" inputmode="numeric" maxlength="5" value="${esc(b.zip || "")}" placeholder="For example: 23452"><p class="small muted">Groups creators by distance bands from your door. Bands only, never an exact distance.</p></div>
         </div>
         <div class="field"><label>About your business</label><textarea id="bp-about" rows="3" placeholder="What you serve, what the visit feels like">${esc(b.about || "")}</textarea></div>
         <div class="field"><label>Preferred language / Idioma preferido</label><select id="bp-lang"><option value="en"${b.preferredLanguage !== "es" ? " selected" : ""}>English</option><option value="es"${b.preferredLanguage === "es" ? " selected" : ""}>Español</option></select><p class="small muted">Sig answers you in this language, and our team writes to you in it.</p></div>
@@ -11425,7 +11663,7 @@ function renderDiscoverResults() {
   if ((state.discoverMode || "cards") === "list") {
     const pos = document.querySelector('[data-stackpos="discover"]');
     if (pos) pos.textContent = "";
-    el.innerHTML = `<div class="creator-grid vx-stagger">${q.visible.map((c) => creatorCard(c, state.user)).join("")}</div>`;
+    el.innerHTML = discoverListHtml(q.visible);
     syncDeckChrome("discover");
     return;
   }
@@ -11442,6 +11680,21 @@ function renderDiscoverResults() {
   el.innerHTML = `<div class="stk-wrap" data-stack="discover"></div>`;
   renderStack(el.firstElementChild);
   syncDeckChrome("discover");
+}
+// List mode grouping (Build -31): when the server banded any
+// card for this business, the list groups by distance band in
+// band order, with everyone unbanded after. Band headings carry
+// no counts. Without bands (no ZIP on file, or nobody in range)
+// the list renders exactly as before.
+function discoverListHtml(list) {
+  const bands = ["Same neighborhood", "Under 2 miles", "Under 5 miles"];
+  if (!list.some((c) => c.distanceBand)) {
+    return `<div class="creator-grid vx-stagger">${list.map((c) => creatorCard(c, state.user)).join("")}</div>`;
+  }
+  const groups = bands.map((b) => ({ band: b, items: list.filter((c) => c.distanceBand === b) })).filter((g) => g.items.length);
+  const rest = list.filter((c) => !c.distanceBand);
+  return groups.map((g) => `<div class="band-group"><h3 class="band-h">${esc(g.band)}</h3><div class="creator-grid vx-stagger">${g.items.map((c) => creatorCard(c, state.user)).join("")}</div></div>`).join("")
+    + (rest.length ? `<div class="band-group"><h3 class="band-h">Everyone else in ${esc(marketTalkNameClient(state.user.market))}</h3><div class="creator-grid vx-stagger">${rest.map((c) => creatorCard(c, state.user)).join("")}</div></div>` : "");
 }
 function discoverStackCard(c) {
   const p = c.profile || {};
@@ -11466,7 +11719,7 @@ function discoverStackCard(c) {
     </div>
     <div class="dcard-body">
       ${cats.length || p.spanishContent || p.musician ? `<div class="dcard-chips">${cats.map((x) => `<span class="cc-chip">${esc(x)}</span>`).join("")}${extra > 0 ? `<span class="cc-chip">+${extra}</span>` : ""}${p.spanishContent ? `<span class="cc-chip">Spanish content</span>` : ""}${p.musician ? `<span class="cc-chip">Musician</span>` : ""}</div>` : ""}
-      <div class="dcard-meta">${place ? `<span>${place}</span>` : ""}<span>${fmtNum(totalAudienceOf(c))} audience</span></div>
+      <div class="dcard-meta">${place ? `<span>${place}</span>` : ""}<span>${fmtNum(totalAudienceOf(c))} audience</span>${c.distanceBand ? `<span class="dcard-band">${esc(c.distanceBand)}</span>` : ""}</div>
       ${p.spanishAudiencePct !== null && p.spanishAudiencePct !== undefined ? `<div class="dcard-meta"><span>${p.spanishAudiencePct}% Spanish-speaking audience</span></div>` : ""}
       ${c.bookedUp ? `<p class="small muted" style="margin:8px 0 0">Booked up this week — invites still land, accepting reopens next week.</p>` : ""}
       ${c.standing === "paused" ? `<p class="small muted" style="margin:8px 0 0">Paused: a late post is outstanding, so this creator cannot take new offers yet.</p>` : ""}
@@ -12138,6 +12391,7 @@ async function loadMyOffers() {
       <div id="o2-strength" class="showcase-block"></div>
       <p class="small muted">Describe the experience, never the opinion.</p>
       <p class="small muted">${VISIT_GUARANTEE_LINE}</p>
+      <p class="small muted">${BOOKING_STARTED_LINE}</p>
       <div class="cta-row" style="justify-content:flex-start">
         <button class="btn" type="submit">Publish offer</button>
         <button class="btn ghost" type="button" onclick="return createOfferV2(event, true)">Save as draft</button>
@@ -12855,6 +13109,7 @@ async function saveBusinessProfile() {
       category: document.getElementById("bp-category").value,
       city: document.getElementById("bp-city").value,
       neighborhood: document.getElementById("bp-neighborhood").value,
+      zip: document.getElementById("bp-zip").value,
       about: document.getElementById("bp-about").value,
       musicOpen: document.getElementById("bp-music-open").checked,
       musicLive: document.getElementById("bp-music-live").checked,
@@ -13024,7 +13279,8 @@ async function loadConversation(otherId) {
     const ctxLine = threadContextFor(otherId);
     el.innerHTML = `
       <div class="thread-head"><strong>${esc(t0.otherBusinessName || t0.otherName || "Conversation")}</strong>${ctxLine ? `<div class="small thread-ctx">${esc(ctxLine)}</div>` : ""}<div class="small muted">Contact about this visit or offer. Messages stay in SIGNL.</div></div>
-      <div id="msg-list">${data.messages.map((m) => `
+      <div id="msg-list">${data.messages.map((m) => m.system ? `
+        <div class="msg-system">${esc(m.body)}</div>` : `
         <div class="msg ${m.fromId === state.user.id ? "mine" : ""}">
           <div class="meta">${m.fromId === state.user.id ? "You" : "Them"} &middot; ${fmtDate(m.createdAt)}</div>
           ${esc(m.body)}

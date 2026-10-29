@@ -96,6 +96,10 @@ try {
   });
   check("creator registers (201)", cReg.status === 201, JSON.stringify(cReg.data).slice(0, 160));
   await admin("POST", "/api/admin/review", { userId: cReg.data.user.id, decision: "approve" });
+  // Charter stamp (Build -31): the founding creator finished
+  // pre-launch; the founding read seals Charter so the referral
+  // offer is visible to them inside its first 24 hours.
+  await creator("GET", "/api/me/founding");
 
   async function makeBusiness(email, businessName) {
     const c = client();

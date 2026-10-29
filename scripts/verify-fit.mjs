@@ -164,6 +164,10 @@ async function makeCreator(admin, fields) {
   const reg = await c("POST", "/api/auth/register", { role: "creator", password: PW, market: "Richmond", ...fields, ...AGREE });
   if (reg.status !== 201) throw new Error(`creator ${fields.handle} failed: ${JSON.stringify(reg.data)}`);
   await admin("POST", "/api/admin/review", { userId: reg.data.user.id, decision: "approve" });
+  // Charter stamp (Build -31): these fixtures finish pre-launch, so
+  // the founding read seals Charter and the 24h early-access window
+  // never hides the board from them.
+  await c("GET", "/api/me/founding");
   return { client: c, id: reg.data.user.id };
 }
 

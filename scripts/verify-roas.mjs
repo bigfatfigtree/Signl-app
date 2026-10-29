@@ -135,6 +135,7 @@ try {
   const c1 = await registerCreator(`roascooks${u}`);
   const c2 = await registerCreator(`roastable${u}`);
   await approve(c1.user.id); await approve(c2.user.id);
+  await c1.client("PATCH", "/api/me/profile", { publicPage: true });
   await approve(biz.user.id); await approve(biz2.user.id);
   await admin("POST", "/api/admin/businesses/activate", { userId: biz.user.id });
   await admin("POST", "/api/admin/businesses/activate", { userId: biz2.user.id });

@@ -243,8 +243,15 @@ try {
   check("paid=1 discovery excludes a creator with no rate", !paidIds.includes(Q.user.id), "");
   const pCard = (discPaid.data.creators || []).find((c) => c.userId === P.user.id);
   check("discovery card carries paidRate + compOpen", !!pCard && pCard.profile.paidRate === 250 && pCard.profile.compOpen === false, JSON.stringify(pCard && pCard.profile));
+  const pubAnon = await anon("GET", `/api/c/${P.payload.handle}`);
+  check("book-me page is opt-in: before P turns the page on, the public profile 404s", pubAnon.status === 404, `${pubAnon.status}`);
+  await P.client("PATCH", "/api/me/profile", { publicPage: true });
   const pub = await anon("GET", `/api/c/${P.payload.handle}`);
-  check("public profile shows the paid rate and paid-only state", pub.status === 200 && pub.data.profile.paidRate === 250 && pub.data.profile.compOpen === false, `${pub.status} ${JSON.stringify(pub.data.profile && { paidRate: pub.data.profile.paidRate, compOpen: pub.data.profile.compOpen })}`);
+  check("book-me tiers: logged out sees the showcase with NO rate (rate is gated to businesses)",
+    pub.status === 200 && pub.data.profile.paidRate === undefined && pub.data.profile.licensingFee === undefined, `${pub.status}`);
+  const pubBiz = await G.client("GET", `/api/c/${P.payload.handle}`);
+  check("book-me tiers: a signed-in business sees the paid rate and paid-only state",
+    pubBiz.status === 200 && pubBiz.data.profile.paidRate === 250 && pubBiz.data.profile.compOpen === false, `${pubBiz.status} ${JSON.stringify(pubBiz.data.profile && { paidRate: pubBiz.data.profile.paidRate, compOpen: pubBiz.data.profile.compOpen })}`);
 
   // ---------- Part C: paid booking + escrow release ----------
   part("C: paid booking + escrow");
@@ -333,6 +340,7 @@ try {
   part("E: review momentum correction");
   const M = await registerCreator({});
   await approve(admin, M.user.id);
+  await M.client("PATCH", "/api/me/profile", { publicPage: true });
   const off = await G3("POST", "/api/offers", { title: "Review visit", whatComped: "Meal for two, on us", dollarCap: 100, spots: 1, creatorId: M.user.id });
   const acc = await M.client("POST", `/api/offers/${off.data.offer.id}/accept`, {});
   const mBookingId = acc.data.booking.id;

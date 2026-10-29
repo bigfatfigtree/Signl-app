@@ -83,6 +83,7 @@ try {
   check("creator fixture registers profile-complete", reg.status === 201 && reg.data.user.profileCompletion.complete === true, JSON.stringify(reg.data.user && reg.data.user.profileCompletion));
   const creatorId = reg.data.user.id;
   await admin("POST", "/api/admin/review", { userId: creatorId, decision: "approve" });
+  await creator("PATCH", "/api/me/profile", { publicPage: true });
 
   const business = client();
   const bizReg = await business("POST", "/api/auth/register", {

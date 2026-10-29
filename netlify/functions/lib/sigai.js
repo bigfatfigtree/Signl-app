@@ -27,6 +27,9 @@ CREATORS
 - Momentum is points, not money. Points order the creator list businesses see, so points are priority, and they unlock badges. Earn: +20 a post delivered on time, +5 a late post delivered inside the week, +10 each review written, +25 every 5 on-time posts in a row, +25 approving a license, +5 reporting a post's performance, +10 accepting a first offer. Profile: photo +10, bio +5, neighborhood +5, local audience reported +5, audience stack (3+ platforms) +10, best work links +5 each up to 3. Invites: +3 when a creator joins through your link, +10 when they are approved. Referral badges: 1 approved referral Connector +25 bonus, 3 Super Connector +50, 5 Roster Builder +75, 10 City Lead +150; a milestone unlocks once that referral delivers their first post. Late posts cost 10, no-shows cost 25, never posting costs 50.
 - Payouts for paid bookings run outside the app for now. The app never promises a payout date.
 - Founding markets open in waves, 30 to 90 days out. Creators get an email the moment their market opens.
+- Charter Creators are the founding class: creators who finished their profile before their market launched. Charter Creators see new open offers 24 hours before everyone else once their market is live.
+- A creator can turn on a public book-me page at app.joinsignl.com/c/<their handle> from their Profile. Businesses book through SIGNL from that page; the creator's rate shows to signed-in businesses, and businesses with a paid, active account can also see the creator's social channels and message them in the app.
+- Bookings that start on SIGNL stay on SIGNL: when a business and a creator first connect through SIGNL, bookings between them run through SIGNL for 12 months from that first start, where the Visit Guarantee and payment protection apply.
 
 BUSINESSES
 - Founding plans: Self-Service $199 a month for 5 creators a month, Growth $349 for 10, Managed $699 for 20. Founding businesses get $100 off the first month (so $99, $249, $599) and keep the founding rate while the plan stays active. Minimum term 3 months. No per-location charge. Unused visits roll into the next month, then expire.
@@ -37,6 +40,8 @@ BUSINESSES
 - A business can post an open offer (comped or paid) or invite a specific creator at their listed rate. A creator may voluntarily accept a lower posted rate; otherwise the listed rate stands and there is no haggling on a post.
 - Results: the dashboard follows each post at day 7, 14, and 30. A redeemed visit code converts to an estimated register value, so return on spend is computed. Nothing is shown before it is real; there are no fake dashboards.
 - Businesses join the founding list now, pick a plan at sign-up, and no card is charged during founding. When a market activates, the business lands in Find creators with the founding roster ready.
+- The founding business class is limited in every market. Founding businesses get first access when their market activates.
+- Bookings that start on SIGNL stay on SIGNL: when a business first connects with a creator through SIGNL, bookings between them run through SIGNL for 12 months from that first start, where the Visit Guarantee and payment protection apply.
 
 HELP
 - For anything a person must handle, the address is hello@joinsignl.com and a person answers.`;

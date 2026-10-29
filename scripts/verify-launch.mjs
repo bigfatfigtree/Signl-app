@@ -263,17 +263,25 @@ try {
   check("founding card exposes the neighborhood (card + profile)", card.neighborhood === "Ghent" && card.profile.neighborhood === "Ghent", JSON.stringify([card.neighborhood, card.profile && card.profile.neighborhood]));
 
   // --- public creator profile: /c/<handle>, approved only, whitelist only ---
+  // Build -31: the book-me page is opt-in. The creator turns it on;
+  // before that the page 404s like any non-public profile.
+  const pubOff = await anon("GET", "/api/c/launcheats");
+  check("book-me page is opt-in: an approved creator who has not turned it on has no public page", pubOff.status === 404, String(pubOff.status));
+  await creatorA("PATCH", "/api/me/profile", { publicPage: true });
   const pubRaw = await anon.raw("/api/c/launcheats");
   check("public profile answers for an approved creator, no sign-in", pubRaw.status === 200, String(pubRaw.status));
   check("public profile leaks no email, password material, or internal fields", !pubRaw.text.includes("launch-a@fixtures.dev") && !pubRaw.text.includes("passwordHash") && !pubRaw.text.includes("passwordSalt") && !pubRaw.text.includes("reviewedBy") && !pubRaw.text.includes("referredBy") && !pubRaw.text.includes("agreedTerms"), pubRaw.text.slice(0, 200));
   const pub = (JSON.parse(pubRaw.text) || {}).profile || {};
-  check("public profile carries the public-safe fields", pub.name === "Launch Creator" && pub.handle === "launcheats" && pub.market === "Virginia Beach" && pub.city === "Norfolk" && pub.neighborhood === "Ghent" && pub.tierBand === "Locals" && pub.followerCount === 8400, JSON.stringify(pub));
+  check("public profile carries the public-safe fields", pub.name === "Launch Creator" && pub.handle === "launcheats" && pub.market === "Virginia Beach" && pub.city === "Norfolk" && pub.neighborhood === "Ghent" && pub.tierBand === "Locals", JSON.stringify(pub));
+  check("book-me rule: the logged-out page shows NO follower count", pub.followerCount === undefined && pub.totalAudience === undefined, JSON.stringify([pub.followerCount, pub.totalAudience]));
   check("public profile shows local audience % with its source label", pub.localAudiencePct === 62 && pub.localAudienceSource === "Self-reported", JSON.stringify([pub.localAudiencePct, pub.localAudienceSource]));
   check("public profile carries categories and comp categories", Array.isArray(pub.categories) && pub.categories.includes("Food & Drink") && Array.isArray(pub.compCategories) && pub.compCategories.includes("Restaurant meals"), JSON.stringify([pub.categories, pub.compCategories]));
   // Momentum (expanded 2026-10-19): creator A already earns from
   // their own profile: photo +10, bio (66 chars) +5, neighborhood +5,
   // local audience % +5 = 25, before any referral or visit exists.
-  check("public profile carries Local Impact Score and Momentum points (25 from profile completion)", typeof pub.localImpactScore === "number" && pub.momentumPoints === 25, JSON.stringify([pub.localImpactScore, pub.momentumPoints]));
+  const pubOwn = await creatorA("GET", "/api/c/launcheats");
+  const po = (pubOwn.data || {}).profile || {};
+  check("owner view carries follower count, Local Impact Score and Momentum points (25 from profile completion)", po.followerCount === 8400 && typeof po.localImpactScore === "number" && po.momentumPoints === 25, JSON.stringify([po.followerCount, po.localImpactScore, po.momentumPoints]));
   check("public profile shows the founding standing band, never an exact position", pub.foundingBand === 100 && pub.foundingPriority === undefined && pub.priorityPosition === undefined, JSON.stringify(pub.foundingBand));
   const pubCase = await anon("GET", "/api/c/LaunchEats");
   check("public profile handle lookup is case-insensitive", pubCase.status === 200 && !!pubCase.data.profile && pubCase.data.profile.handle === "launcheats", String(pubCase.status));
@@ -303,7 +311,7 @@ try {
   check("best work caps at 3 links (400)", bwTooMany.status === 400, String(bwTooMany.status));
   const bwBadProto = await creatorA("PATCH", "/api/me/profile", { bestWork: ["javascript:alert(1)"] });
   check("best work rejects non-http(s) URLs (400)", bwBadProto.status === 400, String(bwBadProto.status));
-  const pubRich = await anon("GET", "/api/c/launcheats");
+  const pubRich = await creatorA("GET", "/api/c/launcheats");
   const pr = pubRich.data.profile || {};
   check("public profile now carries the creator photo URL", pr.photoUrl === `/api/users/${creatorAId}/photo`, String(pr.photoUrl));
   check("public profile renders best work as labeled outbound cards", Array.isArray(pr.bestWork) && pr.bestWork.length === 3 && pr.bestWork[0].platform === "Instagram" && pr.bestWork[0].label === "Watch: Instagram reel" && pr.bestWork[1].platform === "TikTok" && pr.bestWork[2].platform === "YouTube", JSON.stringify(pr.bestWork));
@@ -510,6 +518,7 @@ try {
   const tPhotoUp = await testerC("POST", "/api/me/photo", { dataUrl: TINY_PNG });
   check("tester candidate uploads a photo", tPhotoUp.status === 200, JSON.stringify(tPhotoUp.data));
   await admin("POST", "/api/admin/review", { userId: testerId, decision: "approve" });
+  await testerC("PATCH", "/api/me/profile", { publicPage: true });
   const statsWithT = await admin("GET", "/api/admin/stats");
   check("before the flag: stats count 3 approved creators in Virginia Beach, 0 testers", statsWithT.data.perMarket["Virginia Beach"].creators === 3 && statsWithT.data.users.testers === 0, JSON.stringify([statsWithT.data.perMarket["Virginia Beach"], statsWithT.data.users]));
   check("before the flag: the tester's public profile resolves", (await anon("GET", "/api/c/tonytester")).status === 200);
