@@ -1867,13 +1867,13 @@ input.sw:focus-visible { outline: 2px solid var(--mint-deep); outline-offset: 2p
 #rail { display: none; }
 body.rail-on #rail {
   display: flex; flex-direction: column; align-items: center; gap: 3px;
-  position: fixed; left: 0; top: 0; bottom: 0; width: 68px; z-index: 60;
+  position: fixed; left: 0; top: 0; bottom: 0; width: 78px; z-index: 60;
   background: #fff; border-right: 1px solid var(--line);
   padding: 12px 0 calc(10px + env(safe-area-inset-bottom));
   overflow-y: auto; overflow-x: hidden; scrollbar-width: none;
 }
 body.rail-on #rail::-webkit-scrollbar { display: none; }
-body.rail-on main, body.rail-on .footer { margin-left: 68px; }
+body.rail-on main, body.rail-on .footer { margin-left: 78px; }
 body.rail-on main { width: auto; padding-top: 6px; padding-bottom: 44px; }
 @media (max-width: 760px) { body.rail-on main { padding-left: 12px; padding-right: 12px; } #toprow .wrap { width: calc(100% - 24px); } }
 body.rail-on .footer { width: auto; }
@@ -1883,14 +1883,23 @@ body.rail-on #bottomnav { display: none !important; }
 .rail-brand img { width: 36px; height: 36px; border-radius: 10px; display: block; }
 .rail-sep { width: 34px; border-top: 1px solid var(--line); margin: 8px 0; flex: none; }
 .rail-item {
-  width: 44px; height: 44px; border-radius: 12px; flex: none;
-  display: flex; align-items: center; justify-content: center;
+  width: 64px; min-height: 54px; border-radius: 14px; flex: none;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  padding: 7px 2px 6px;
   background: transparent; border: 0; color: #8A968C; cursor: pointer; position: relative;
 }
 .rail-item:hover { background: var(--tint2); color: var(--ink); }
 .rail-item.on { background: #EDF2ED; color: var(--mint-deep); }
 .rail-item svg { width: 22px; height: 22px; }
 .rail-item .bn-icon { display: flex; position: relative; }
+/* Word label under every rail icon (Jeff, 2026-10-29): bare
+   icons "don't mean anything" — every destination names
+   itself, at every width, phones included. Long labels wrap
+   to two short lines inside the 78px rail. */
+.rail-label {
+  font: 700 .58rem 'Manrope', sans-serif; letter-spacing: .01em;
+  line-height: 1.08; text-align: center; white-space: normal;
+}
 .rail-badge {
   position: absolute; top: 1px; right: 1px; min-width: 17px; height: 17px; padding: 0 4px;
   border-radius: 999px; background: var(--mint-deep); color: #fff;
@@ -1907,7 +1916,7 @@ body.rail-on #bottomnav { display: none !important; }
 
 /* --- Quiet top row inside the content column --- */
 #toprow { display: none; }
-body.rail-on #toprow { display: block; margin-left: 68px; padding-top: 12px; }
+body.rail-on #toprow { display: block; margin-left: 78px; padding-top: 12px; }
 .tr-in { display: flex; align-items: center; gap: 10px; }
 .tr-ava { width: 34px; height: 34px; border-radius: 50%; background: var(--mint-pale); color: var(--ink); font-weight: 800; font-size: .8rem; display: flex; align-items: center; justify-content: center; flex: none; }
 .tr-name { font-weight: 700; font-size: .9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -2694,7 +2703,7 @@ body.preview-on .dcat-chip.on { color: var(--mint); }
 
 /* --- Phone fit (390px): the console was unusable on a
    phone. #app is a flex item in the body's column; the rail
-   offset gives it a definite margin-left (68px) with width:
+   offset gives it a definite margin-left (78px) with width:
    auto, which takes it out of stretch sizing — the item
    shrink-wraps to its widest unbreakable content, the admin
    tab row (.tabs never wraps below 900px), and every panel
@@ -2707,7 +2716,7 @@ body.preview-on .dcat-chip.on { color: var(--mint); }
 body.rail-on main, body.preview-on main { min-width: 0; }
 .tabs { min-width: 0; max-width: 100%; }
 @media (max-width: 760px) {
-  body.rail-on main { width: calc(100% - 68px); }
+  body.rail-on main { width: calc(100% - 78px); }
   body.preview-on main { width: 100%; }
 }
 
@@ -2765,23 +2774,15 @@ body.rail-on main, body.preview-on main { min-width: 0; }
   .sig-ava, .sig-ava *, .sig-hero-media .sig-hero-think { animation: none !important; }
 }
 /* Sig in Admin (Jeff, 2026-10-28): the rail grows the Sig
-   destination with the v4 head crop, and below 768px the rail
-   steps aside for a real bottom tab bar carrying all nine
-   Admin destinations. The bar mirrors the ink chrome of the
-   business/creator bar; nine compact items scroll horizontally
-   rather than shrink below tappable size. */
+   destination with the v4 head crop. BUILD -28 (Jeff,
+   2026-10-29): there is NO admin bottom bar at any width.
+   -27 hid this rail below 768px behind a horizontally
+   scrolling bottom bar; Jeff rejected it on sight ("I wanted
+   to keep it on the left nav bar — this bottom one is garbage
+   having to scroll like that"). The labeled left rail above
+   is the admin nav on phones exactly as on desktop: all nine
+   destinations, icon + word label, sign out in the rail foot.
+   #tabbar stays display:none for admin (the base rule; only
+   body.v3-on ever shows it, and admin strips v3 classes). */
 .rail-sig-img { width: 25px; height: 25px; border-radius: 50%; display: block; }
 .rail-item.on .rail-sig-img { box-shadow: 0 0 0 2px var(--mint); }
-@media (max-width: 767px) {
-  body.admin-on #rail { display: none; }
-  body.admin-on main, body.admin-on .footer { margin-left: 0; }
-  body.admin-on #toprow { margin-left: 0; }
-  body.admin-on main { padding-bottom: calc(88px + env(safe-area-inset-bottom)); }
-  body.admin-on #tabbar { display: block; position: fixed; left: 0; right: 0; bottom: 0; z-index: 80; background: var(--ink); box-shadow: 0 -10px 28px rgba(11,13,12,.22); padding-bottom: env(safe-area-inset-bottom); }
-  body.admin-on #tabbar .tab-main { display: flex; overflow-x: auto; scrollbar-width: none; }
-  body.admin-on #tabbar .tab-main::-webkit-scrollbar { display: none; }
-  body.admin-on #tabbar .tab-main .tab-item { flex: none; min-width: 64px; color: rgba(255,255,255,.58); margin: 6px 2px; padding: 6px 2px 5px; min-height: 58px; justify-content: center; border-radius: 16px; }
-  body.admin-on #tabbar .tab-main .tab-item.on { background: var(--mint); color: var(--ink); }
-  body.admin-on #tabbar .tab-main .tab-item.on .tab-label { color: var(--ink); }
-  body.admin-on #tabbar .tab-badge { box-shadow: 0 0 0 2px var(--ink); }
-}

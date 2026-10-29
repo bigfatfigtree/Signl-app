@@ -1548,10 +1548,14 @@ function renderBottomNav() {
   const toprow = document.getElementById("toprow");
   document.body.classList.remove("bn-on", "has-bn", "admin-on", "preview-on");
   if (u && u.role === "admin" && !state.preview) {
-    // Admin mobile gets a real bottom tab bar (Jeff, 2026-10-28):
-    // the same nine destinations as the rail, Sig included. CSS
-    // shows it only below 768px, where the rail steps aside.
-    if (tabbar) tabbar.innerHTML = adminTabBarHtml();
+    // Admin nav is the left rail at EVERY width (Jeff,
+    // 2026-10-29, BUILD -28): -27 put a horizontally scrolling
+    // bottom bar on phones and Jeff killed it the morning it
+    // shipped ("this bottom one is garbage having to scroll
+    // like that"). The rail carries all nine destinations with
+    // word labels, Sig included, and sign out in its foot, on
+    // phones exactly as on desktop. No bottom bar, ever.
+    if (tabbar) tabbar.innerHTML = "";
     if (top2) top2.innerHTML = "";
     document.body.classList.remove("v3-on", "v3-slim");
     document.body.classList.add("admin-on");
@@ -1673,41 +1677,6 @@ function moreRowsFor() {
     ];
   }
   return [];
-}
-
-// Admin mobile bottom bar (Jeff, 2026-10-28): exactly the nine
-// Admin destinations, Sig included, in the same order as the
-// Admin tab strip, navigating by the same go('dashboard', tab)
-// mechanism as every other bar. Compact items in a horizontally
-// scrollable row (nine destinations do not fit 390px at readable
-// size); Sign out rides at the end as an action, not a
-// destination, so the phone keeps the sign-out the rail foot
-// carries at wider widths. CSS (body.admin-on) shows this bar
-// only below 768px.
-function adminTabBarHtml() {
-  const t = state.tab;
-  const items = [
-    { icon: "requests", label: "Requests", tab: "Applications", on: t === "Applications" || !t },
-    { icon: "pin", label: "Markets", tab: "Markets", on: t === "Markets" },
-    { icon: "heart", label: "Recruiters", tab: "Recruiters", on: t === "Recruiters" },
-    { icon: "building", label: "Partners", tab: "Partners", on: t === "Partners" },
-    { icon: "list", label: "Events", tab: "Event Log", on: t === "Event Log" },
-    { icon: "shield", label: "Compliance", tab: "Compliance", on: t === "Compliance" },
-    { icon: "users", label: "Campaign", tab: "Campaign", on: t === "Campaign" },
-    { icon: "stats", label: "Stats", tab: "Stats", on: t === "Stats" },
-    { icon: "sig", label: "Sig", tab: "Sig", on: t === "Sig" },
-  ];
-  const btns = items.map((it) => `
-    <button type="button" class="tab-item ${it.on ? "on" : ""}" onclick="return go('dashboard','${it.tab}')" aria-label="${esc(it.label)}">
-      <span class="tab-ic">${it.icon === "sig" ? `<img class="tab-sig-img" src="/assets/sig-v4/head-idle.webp" alt="">` : bnIcon(it.icon)}</span>
-      <span class="tab-label">${esc(it.label)}</span>
-    </button>`).join("");
-  return `<div class="tab-main">${btns}
-    <button type="button" class="tab-item" onclick="signOut()" aria-label="Sign out">
-      <span class="tab-ic">${bnIcon("signout")}</span>
-      <span class="tab-label">Sign out</span>
-    </button>
-  </div>`;
 }
 
 function tabBarHtml() {
@@ -2023,13 +1992,13 @@ function renderRail() {
   const rows = items.map((it) => {
     const sec = lastSec && it.sec !== lastSec ? `<div class="rail-sep"></div>` : "";
     lastSec = it.sec;
-    return `${sec}<button type="button" class="rail-item ${it.active ? "on" : ""}" title="${esc(it.label)}" aria-label="${esc(it.label)}" onclick="${it.onclick}"><span class="bn-icon">${it.icon === "sig" ? `<img class="rail-sig-img" src="/assets/sig-v4/head-idle.webp" alt="">` : bnIcon(it.icon)}</span>${it.badge ? `<span class="rail-badge">${it.badge > 99 ? "99+" : it.badge}</span>` : ""}</button>`;
+    return `${sec}<button type="button" class="rail-item ${it.active ? "on" : ""}" title="${esc(it.label)}" aria-label="${esc(it.label)}" onclick="${it.onclick}"><span class="bn-icon">${it.icon === "sig" ? `<img class="rail-sig-img" src="/assets/sig-v4/head-idle.webp" alt="">` : bnIcon(it.icon)}</span><span class="rail-label">${esc(it.label)}</span>${it.badge ? `<span class="rail-badge">${it.badge > 99 ? "99+" : it.badge}</span>` : ""}</button>`;
   }).join("");
   rail.innerHTML = `
     <button type="button" class="rail-brand" title="SIGNL" aria-label="SIGNL home" onclick="return go('dashboard')"><img src="/assets/icon.png" alt="SIGNL"></button>
     ${rows}
     <div class="rail-foot">
-      <button type="button" class="rail-item" title="Sign out" aria-label="Sign out" onclick="signOut()"><span class="bn-icon">${bnIcon("signout")}</span></button>
+      <button type="button" class="rail-item" title="Sign out" aria-label="Sign out" onclick="signOut()"><span class="bn-icon">${bnIcon("signout")}</span><span class="rail-label">Sign out</span></button>
       <button type="button" class="rail-avatar" title="${esc(name || "Account")}" aria-label="Your account" onclick="${avatarGo}">${esc(initial)}</button>
     </div>`;
   renderTopRow();
@@ -12870,7 +12839,7 @@ async function loadAdminSig(hostId) {
 }
 
 // Sig in Admin, the destination (Jeff, 2026-10-28): the rail
-// and the mobile bottom bar both land here. Same chat machinery
+// rail destination lands here. Same chat machinery
 // as the business and creator Sig tab (one thread, sigAskSubmit,
 // POST /sig/ask with the admin counts as grounding), with the
 // Admin attention list as the starting brief on top. READ-ONLY
