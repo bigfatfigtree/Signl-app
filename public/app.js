@@ -582,6 +582,7 @@ async function renderPublicProfile() {
       </div>
       ${p.categories && p.categories.length ? `<p class="small">${p.categories.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
       ${p.isRealtor && p.farmAreas && p.farmAreas.length ? `<p class="small">Neighborhoods: ${p.farmAreas.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
+      ${p.streets && p.streets.length ? `<p class="small">My streets: ${p.streets.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
       ${p.compCategories && p.compCategories.length ? `<p class="small muted">Open to comps: ${p.compCategories.map(esc).join(", ")}</p>` : ""}
       ${featured ? `<h3 class="bookme-h">Featured posts</h3><div class="bookme-featured">${featured}</div>` : ""}
       ${rateBlock}
@@ -670,6 +671,7 @@ async function renderPublicProof() {
       <div class="proof-brand">SIGNL</div>
     </div>
     ${p.isRealtor && p.farmAreas && p.farmAreas.length ? `<p class="proof-hoods">Neighborhoods: ${p.farmAreas.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
+    ${p.streets && p.streets.length ? `<p class="proof-hoods">My streets: ${p.streets.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
     <div class="stat-band proof-stats">${statCells.join("")}</div>
     ${tr.businessesWorkedWith && tr.businessesWorkedWith.length ? `<p class="proof-biz">Businesses posted for: ${tr.businessesWorkedWith.map(esc).join(", ")}</p>` : ""}
     ${p.isRealtor && p.brokerage ? `<p class="proof-brokerage">Brokered by ${esc(p.brokerage)}</p>` : ""}
@@ -5877,11 +5879,18 @@ function renderForBusinesses() {
         <div class="field"><label>Business ZIP (optional)</label><input id="jb-zip" inputmode="numeric" maxlength="5" placeholder="For example: 23452"><p class="small muted">Used to group nearby creators by distance bands. Bands only, never an exact distance.</p></div>
       </div>
         <div class="field"><label>About your business (optional)</label><textarea id="jb-about" rows="3" placeholder="What you serve, what the visit feels like, anything SIGNL should know when reviewing your application"></textarea></div>
+        <div class="field"><label>What is your first month about? (optional)</label><select id="jb-moment"><option value="">Not sure yet</option>${momentsClient().map((m) => `<option value="${m.id}">${esc(m.label)}</option>`).join("")}</select><p class="small muted">The moment names the play your first month runs. You can change it any time after you join.</p></div>
       </div>
       <input type="hidden" id="jb-plan" value="${esc(state.boot.plans[0].id)}">
       <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="jb-terms" required><span>I agree to the Terms of Service and Privacy Policy, including keeping bookings that start on SIGNL on SIGNL, and to account and marketing emails from SIGNL.</span></label></div>
       <button class="btn mt" type="submit" style="width:100%">Join founding list</button>
     </form>
+    <div class="panel" id="jb-convo-card" style="margin-top:16px">
+      <h4 style="margin-top:0">Rather talk it through?</h4>
+      <p class="small muted">Apply by conversation: Sig asks one question at a time and files the same founding application this form files. Nothing different is created; it is the same application, answered out loud instead of typed into boxes.</p>
+      <div id="jb-convo"></div>
+      <button class="btn ghost" type="button" id="jb-convo-start" onclick="jbConvoStart()">Apply by conversation</button>
+    </div>
     <p class="small muted mt">Reviewed by a person. Decision within 2 business days. Once you join, your status page previews your first drafted offer and exactly how SIGNL works; booking itself opens at activation. Creators join separately: <a href="#" onclick="return go('join-creator')">become a founding creator</a>.</p>
     </div>
   </section>`;
@@ -5964,6 +5973,132 @@ function syncBizMarketChoice() {
   if (!unlisted) bizCityOptions();
 }
 
+
+// Apply by Conversation (Build -32): a Sig-guided version of the
+// founding business application. One question at a time; the
+// answers file through the SAME /auth/register call the form
+// makes, with applicationSource "conversation" stamped on the
+// record server-side. There is one application record; this is
+// a second way to answer it, never a fork of it.
+let jbConvoState = null;
+function jbConvoSteps(a) {
+  const steps = [
+    { key: "businessName", q: "What is your business called?", type: "text", ph: "Your business as customers know it" },
+    { key: "name", q: "And your name, the person running this account?", type: "text", ph: "Your name" },
+    { key: "email", q: "What email should the account use?", type: "email", ph: "you@yourbusiness.com" },
+    { key: "password", q: "Set a password, 10 characters or more.", type: "password", ph: "Password" },
+    { key: "category", q: "What kind of business is it?", type: "chips", options: () => (state.boot.businessCategories || []).map((c) => ({ value: c, label: c })) },
+    { key: "market", q: "Which market are you in?", type: "chips", options: () => (state.boot.markets || []).map((m) => ({ value: m.name, label: m.label || m.name })).concat([{ value: unlistedLabel(), label: "My city is not listed yet" }]) },
+  ];
+  if (a.market === unlistedLabel()) {
+    steps.push({ key: "customCity", q: "What city are you in? Your sign-up counts toward opening SIGNL there.", type: "text", ph: "For example: Tulsa" });
+    steps.push({ key: "customCountry", q: "And the country?", type: "text", ph: "For example: United States" });
+    steps.push({ key: "customState", q: "State or province? Optional, say skip by leaving it empty.", type: "text", optional: true, ph: "Optional" });
+  } else if (a.market) {
+    const mkt = (state.boot.markets || []).find((m) => m.name === a.market);
+    steps.push({ key: "city", q: "Which city?", type: "chips", options: () => ((mkt && mkt.cities) || []).map((c) => ({ value: c, label: c })) });
+  }
+  steps.push({ key: "neighborhood", q: "Neighborhood or area? Optional, leave it empty to skip.", type: "text", optional: true, ph: "For example: Oceanfront, Ghent" });
+  steps.push({ key: "planId", q: "Which founding plan fits? No card is taken, and billing starts at activation.", type: "chips", options: () => (state.boot.plans || []).map((pl) => ({ value: pl.id, label: `${pl.name}: $${pl.priceMonthly}/mo for ${pl.visitsPerMonth} creators a month` })) });
+  steps.push({ key: "moment", q: "Last question: what is your first month about? The moment names the play your first month runs.", type: "chips", options: () => momentsClient().map((m) => ({ value: m.id, label: m.label })).concat([{ value: "", label: "Not sure yet" }]) });
+  steps.push({ key: "terms", q: "That is everything. Agree to the terms and Sig files your founding application.", type: "terms" });
+  return steps;
+}
+function jbConvoStart() {
+  const host = document.getElementById("jb-convo");
+  const startBtn = document.getElementById("jb-convo-start");
+  if (startBtn) startBtn.style.display = "none";
+  jbConvoState = { answers: {}, idx: 0, log: [] };
+  jbConvoRender();
+  if (host) host.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+function jbConvoRender() {
+  const host = document.getElementById("jb-convo");
+  if (!host || !jbConvoState) return;
+  const st = jbConvoState;
+  const steps = jbConvoSteps(st.answers);
+  const step = steps[st.idx];
+  const logHtml = st.log.map((m) => m.who === "sig"
+    ? `<p class="small" style="margin:6px 0"><strong>Sig:</strong> ${esc(m.text)}</p>`
+    : `<p class="small muted" style="margin:6px 0 6px 18px"><strong>You:</strong> ${esc(m.text)}</p>`).join("");
+  if (!step) { host.innerHTML = logHtml; return; }
+  let inputHtml = "";
+  if (step.type === "chips") {
+    inputHtml = `<div class="chip-row">${step.options().map((o) => `<button type="button" class="chip" onclick="jbConvoAnswer('${esc(step.key)}', '${esc(o.value)}', '${esc(o.label)}')">${esc(o.label)}</button>`).join("")}</div>`;
+  } else if (step.type === "terms") {
+    inputHtml = `<label class="ckrow" style="display:flex;gap:8px;align-items:flex-start"><input type="checkbox" class="ckbox" id="jb-convo-terms"><span>I agree to the Terms of Service and Privacy Policy, including keeping bookings that start on SIGNL on SIGNL, and to account and marketing emails from SIGNL.</span></label>
+      <div id="jb-convo-error"></div>
+      <button class="btn mt" type="button" onclick="jbConvoFile()">File my founding application</button>`;
+  } else {
+    inputHtml = `<div style="display:flex;gap:8px;flex-wrap:wrap"><input id="jb-convo-input" type="${step.type}" placeholder="${esc(step.ph || "")}" style="flex:1;min-width:200px" onkeydown="if(event.key==='Enter'){event.preventDefault();jbConvoAnswerText('${esc(step.key)}');}"><button class="btn small-btn" type="button" onclick="jbConvoAnswerText('${esc(step.key)}')">${step.optional ? "Continue" : "Next"}</button></div>`;
+  }
+  host.innerHTML = `${logHtml}<p class="small" style="margin:10px 0 6px"><strong>Sig:</strong> ${esc(step.q)}</p>${inputHtml}`;
+  const inp = document.getElementById("jb-convo-input");
+  if (inp) inp.focus();
+}
+function jbConvoAnswer(key, value, label) {
+  const st = jbConvoState;
+  if (!st) return;
+  const steps = jbConvoSteps(st.answers);
+  const step = steps[st.idx];
+  st.log.push({ who: "sig", text: step.q });
+  st.log.push({ who: "you", text: label || value || "(skipped)" });
+  st.answers[key] = value;
+  st.idx += 1;
+  jbConvoRender();
+}
+function jbConvoAnswerText(key) {
+  const inp = document.getElementById("jb-convo-input");
+  const val = inp ? inp.value.trim() : "";
+  const st = jbConvoState;
+  if (!st) return;
+  const steps = jbConvoSteps(st.answers);
+  const step = steps[st.idx];
+  if (!step.optional && !val) { if (inp) inp.focus(); return; }
+  if (key === "password" && val.length < 10) { st.log.push({ who: "sig", text: "That password is short. Set one with 10 characters or more." }); jbConvoRender(); return; }
+  st.log.push({ who: "sig", text: step.q });
+  st.log.push({ who: "you", text: key === "password" ? "(password set)" : (val || "(skipped)") });
+  st.answers[key] = val;
+  st.idx += 1;
+  jbConvoRender();
+}
+async function jbConvoFile() {
+  const st = jbConvoState;
+  const errHost = document.getElementById("jb-convo-error");
+  const terms = document.getElementById("jb-convo-terms");
+  if (!terms || !terms.checked) { if (errHost) errHost.innerHTML = `<div class="error-box">Agree to the terms and Sig can file it.</div>`; return; }
+  const a = st.answers;
+  const isUnlisted = a.market === unlistedLabel();
+  try {
+    const data = await api("POST", "/auth/register", {
+      role: "business",
+      name: a.name,
+      businessName: a.businessName,
+      email: a.email,
+      password: a.password,
+      market: a.market,
+      customCity: isUnlisted ? a.customCity : undefined,
+      customCountry: isUnlisted ? a.customCountry : undefined,
+      customState: isUnlisted ? (a.customState || undefined) : undefined,
+      city: isUnlisted ? undefined : a.city,
+      category: a.category,
+      neighborhood: a.neighborhood || "",
+      planId: a.planId,
+      moment: a.moment || undefined,
+      applicationSource: "conversation",
+      agreedTerms: true,
+      signupSource: storedSrc() || undefined,
+    });
+    state.user = data.user;
+    state.view = "dashboard";
+    state.tab = null;
+    render();
+  } catch (err) {
+    if (errHost) errHost.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+  }
+  return false;
+}
+
 async function registerBusiness(e) {
   e.preventDefault();
   const form = e.target;
@@ -5993,6 +6128,8 @@ async function registerBusiness(e) {
       zip: document.getElementById("jb-zip").value,
       about: document.getElementById("jb-about").value,
       planId: document.getElementById("jb-plan").value,
+      moment: (document.getElementById("jb-moment") || {}).value || undefined,
+      applicationSource: window.__jbAppSource || undefined,
       agreedTerms: document.getElementById("jb-terms").checked,
       signupSource: storedSrc() || undefined,
     });
@@ -6104,11 +6241,13 @@ function foundingPreviewHtml(data) {
   const u = state.user;
   const bizPlace = u.market === unlistedLabel() ? (u.city || "your city") : marketTalkNameClient(u.market);
   return [
+    foundingAnchorHtml(data),
     foundingCategoriesHtml(data, bizPlace),
     foundingNearYouHtml(data, bizPlace),
     foundingLocalReachHtml(),
     foundingFirstOfferHtml(u),
     foundingFirstMonthHtml(u, data),
+    foundingLastAdHtml(),
     foundingBenefitsHtml(u),
     foundingPlansHtml(u),
   ].join("");
@@ -6155,14 +6294,120 @@ async function foundingSaveZip() {
   }
 }
 
+// Menu of Moments (Build -32): the moment list the server
+// ships in the bootstrap, with a local fallback copy so the
+// founding page never depends on one payload field. Each moment
+// names the play the First Month Plan frames itself as.
+const MOMENTS_CLIENT = [
+  { id: "slow_weeknight", label: "A slow weeknight", play: "The Slow Tuesday Fix" },
+  { id: "new_menu_drop", label: "A new menu or launch drop", play: "The First Taste" },
+  { id: "reopening", label: "A reopening", play: "The Grand Reopening" },
+  { id: "game_day", label: "Game day", play: "The Game Day Play" },
+  { id: "tourist_weekend", label: "A tourist weekend", play: "The Tourist Weekend" },
+  { id: "other", label: "Something else", play: "The First Month Play" },
+];
+function momentsClient() {
+  const boot = (state.boot && state.boot.moments) || [];
+  return boot.length ? boot : MOMENTS_CLIENT;
+}
+function momentOf(id) {
+  return momentsClient().find((m) => m.id === id) || null;
+}
+async function foundingSetMoment(id) {
+  try {
+    const data = await api("PATCH", "/me/profile", { moment: id || null });
+    if (data && data.user) state.user = data.user;
+    renderBusinessFoundingStatus();
+  } catch (e) { /* the picker simply stays as it was */ }
+}
+
 // Your first month, planned (Build -31): the first-offer
 // preview extended into a one-month plan. Five visit slots on a
 // Week 1 to Week 4 grid, labeled by creator category and visit
 // type only: no creator names, no counts, no calendar dates.
 // The whole panel is a plan preview and says so, with the Visit
 // Guarantee line attached.
+// Neighborhood Anchor (Build -32): the badge renders from the
+// roster-preview payload (viewerAnchor), which the server stamps
+// on the first founding business in a category + neighborhood.
+// The copy states the one thing it must never hide: the badge
+// blocks nobody and changes nobody else's terms.
+function foundingAnchorHtml(data) {
+  const a = data && data.viewerAnchor;
+  if (!a || !a.label) return "";
+  return `<section class="wcard">
+    <p class="ui-kicker">Founding Anchor</p>
+    <p style="margin:6px 0 0"><span class="badge info">${esc(a.label)}</span></p>
+    <p class="wc-sub" style="margin-top:10px">Your business was the first founding business in its category and neighborhood, so the badge is yours and it is permanent. It never blocks anyone: every business joins on the same terms, and the badge changes nothing about anyone else's spot.</p>
+  </section>`;
+}
+
+// Your Last Ad, Graded (Build -32): the owner enters their last
+// promo and Sig hands back their own receipt, restated, plus the
+// honest arithmetic of the same dollars at founding rates. The
+// panel prices what the money buys: visits, the guarantee, the
+// tracking. It never projects an outcome and never quotes a
+// SIGNL statistic, because there is nothing honest to project
+// from yet.
+function foundingLastAdHtml() {
+  return `<section class="wcard">
+    <p class="ui-kicker">Your last ad, graded</p>
+    <h3>What did your last ad actually buy?</h3>
+    <p class="wc-sub">Tell Sig about the last promo you paid for. You get your own receipt back, restated plainly, and the same dollars priced at founding rates.</p>
+    <div class="form-2col" style="margin-top:12px">
+      <div class="field"><label>What was it?</label><select id="la-type">
+        <option>An influencer post</option>
+        <option>A boosted social post</option>
+        <option>Radio</option>
+        <option>Print or a magazine ad</option>
+        <option>A coupon mailer</option>
+        <option>A discount deal site</option>
+        <option>Something else</option>
+      </select></div>
+      <div class="field"><label>What did it cost? ($)</label><input id="la-cost" type="number" min="1" placeholder="For example: 400"></div>
+    </div>
+    <div class="field"><label>What can you point to from it?</label><select id="la-point">
+      <option>Nothing I can point to</option>
+      <option>A busy spell, maybe</option>
+      <option>Some new regulars</option>
+      <option>Sales I can track</option>
+    </select></div>
+    <button class="btn small-btn" type="button" onclick="gradeLastAd()">Grade it</button>
+    <div id="la-result" style="margin-top:12px"></div>
+  </section>`;
+}
+
+function gradeLastAd() {
+  const out = document.getElementById("la-result");
+  if (!out) return;
+  const type = (document.getElementById("la-type") || {}).value || "Something else";
+  const point = (document.getElementById("la-point") || {}).value || "Nothing I can point to";
+  const cost = Math.round(Number((document.getElementById("la-cost") || {}).value) || 0);
+  if (!(cost > 0)) { out.innerHTML = `<p class="small muted">Enter what it cost and Sig will grade it.</p>`; return; }
+  const plan = (state.boot.plans || []).find((x) => x.id === "self-service") || { priceMonthly: 199, visitsPerMonth: 5, firstMonthPriceMonthly: 99 };
+  const verdicts = {
+    "Nothing I can point to": "Grade: unproven. Not because the ad was bad, because nothing about it could be counted.",
+    "A busy spell, maybe": "Grade: a feeling. Busy is good, but a feeling is not a number you can renew on.",
+    "Some new regulars": "Grade: promising, still uncounted. Regulars are the prize. The open questions are how many, and whether they came back.",
+    "Sales I can track": "Grade: counted. That puts you ahead of most local ads. SIGNL counts it per creator, per visit, automatically.",
+  };
+  const months = Math.floor(cost / plan.priceMonthly);
+  const sameDollars = months >= 1
+    ? `The same $${fmtMoney(cost)} covers ${months} month${months === 1 ? "" : "s"} of the founding ${plan.name || "Self-Service"} plan: ${months * plan.visitsPerMonth} creator visits, and your first month is $${plan.firstMonthPriceMonthly} with the founding credit.`
+    : `The founding ${plan.name || "Self-Service"} plan is $${plan.priceMonthly} a month for ${plan.visitsPerMonth} creator visits, and the first month is $${plan.firstMonthPriceMonthly} with the founding credit. Your $${fmtMoney(cost)} is most of a first month of tracked visits.`;
+  out.innerHTML = `<div class="panel" style="margin:0">
+    <p style="margin:0"><strong>Your last ad, restated:</strong> $${fmtMoney(cost)} on ${esc(type.toLowerCase())}. What you can point to from it: ${esc(point.toLowerCase())}.</p>
+    <p style="margin:8px 0 0"><strong>${esc(verdicts[point] || verdicts["Nothing I can point to"])}</strong></p>
+    <p style="margin:8px 0 0">${esc(sameDollars)}</p>
+    <p class="small muted" style="margin:8px 0 0">What the money buys on SIGNL: creator visits from your market's roster, the Visit Guarantee on every visit (a creator who does not post does not burn the visit), and a receipt for every visit: a check-in, a verified post, and code redemptions counted at your register. This is what the money buys, priced. It is not a projection of results, and SIGNL does not quote its own stats at you.</p>
+    <p style="margin:10px 0 0"><strong>Your founding plan is priced below, and your spot is held in application order.</strong></p>
+  </div>`;
+}
+
 function foundingFirstMonthHtml(u, data) {
   const bz = u.business || {};
+  const moment = momentOf(bz.moment);
+  const playName = moment ? moment.play : null;
   const covered = data && Array.isArray(data.categories) && data.categories.length ? data.categories : [];
   const all = (state.boot && state.boot.creatorCategories) || [];
   const planCats = covered.length ? covered : all;
@@ -6176,14 +6421,18 @@ function foundingFirstMonthHtml(u, data) {
   ];
   const weeks = ["Week 1", "Week 2", "Week 3", "Week 4"];
   return `<section class="wcard">
-    <p class="ui-kicker">Plan preview &middot; your first month</p>
-    <h3>Your first month, planned</h3>
-    <p class="wc-sub">Five visits across your first month on your founding plan, spread over the categories lining up in ${esc(u.market === unlistedLabel() ? (u.city || "your city") : marketTalkNameClient(u.market))}. Paid slots book at each creator's listed rate, and the creator keeps 97%.</p>
+    <p class="ui-kicker">Plan preview &middot; ${playName ? esc(playName) : "your first month"}</p>
+    <h3>${playName ? `Your first month: ${esc(playName)}` : "Your first month, planned"}</h3>
+    <p class="wc-sub">Five visits across your first month on your founding plan, spread over the categories lining up in ${esc(u.market === unlistedLabel() ? (u.city || "your city") : marketTalkNameClient(u.market))}. Paid slots book at each creator's listed rate, and the creator keeps 97%.${moment ? ` The moment you picked: ${esc(moment.label.toLowerCase())}. The plan runs it as ${esc(playName)}.` : ""}</p>
     <div class="fm-grid">
       ${weeks.map((w) => `<div class="fm-week"><div class="fm-week-h">${w}</div>${slots.filter((s) => s.week === w).map((s) => `<div class="fm-slot"><div class="fm-slot-cat">${esc(s.cat)}</div><div class="fm-slot-type">${esc(s.type)}</div></div>`).join("")}</div>`).join("")}
     </div>
     <p class="small muted" style="margin:12px 0 0">Your first month, planned. Nothing is saved, nothing is booked.</p>
     <p class="small" style="margin:6px 0 0"><strong>Visit Guarantee:</strong> if a booked creator does not show up or does not post, that visit does not count against your plan and is replaced.</p>
+    <div class="field" style="margin-top:14px"><label>What is this first month about?</label>
+      <div class="chip-row">${momentsClient().map((m) => `<button type="button" class="chip ${bz.moment === m.id ? "on" : ""}" onclick="foundingSetMoment('${m.id}')">${esc(m.label)}</button>`).join("")}</div>
+      <p class="small muted" style="margin-top:6px">Pick the moment and the plan names its play. Change it any time; it is packaging for the same five visits, never a different product.</p>
+    </div>
   </section>`;
 }
 
@@ -8410,6 +8659,7 @@ async function loadCreatorHome() {
       if (bioItem && !bioItem.done) pushIdea("cr_bio", `Your bio is still short. Two honest lines${bioItem.points ? ` earn +${bioItem.points} Momentum` : ""}.`, "Write bio", () => go("dashboard", "Profile"), "Bio still short");
       const hoodItem = pcItem("neighborhood");
       if (hoodItem && !hoodItem.done) pushIdea("cr_neighborhood", `Set your neighborhood. Businesses search by neighborhood.${ptsBit(hoodItem)}`, "Set neighborhood", () => go("dashboard", "Profile"), "Neighborhood not set");
+      if (!Array.isArray(c.streets) || !c.streets.length) pushIdea("cr_streets", "Name your three streets: the streets and neighborhoods where you actually hang out. Businesses nearby see them on your profile and your book-me page.", "Add my streets", () => go("dashboard", "Profile"), "Add your three streets");
       if (c.spanishContent === true && (c.spanishAudiencePct === null || c.spanishAudiencePct === undefined)) pushIdea("cr_spanish_pct", "You create content in Spanish. Add your Spanish-speaking share so businesses see the number, not a checkbox.", "Add percentage", () => go("dashboard", "Profile"), "Add your Spanish-speaking share");
       if (c.musician === undefined) pushIdea("cr_musician", "Make music? Turn on the musician switch and businesses looking to book music can find you.", "Open panel", () => go("dashboard", "Profile"), "Make music? Open the panel");
       const uniStatus = c.universityStatus || u.universityStatus || "";
@@ -8602,6 +8852,10 @@ function creatorProfileHtml(u) {
           : `<div class="field"><label>${T("Home city", "Ciudad")} (${esc(marketDisplayName(u.market))})</label><select id="p-city">${cityOptions(u.market, u.city || "")}</select></div>`}
       </div>
       <div class="field"><label>${T("Your neighborhood or area", "Tu vecindario o zona")}</label><input id="p-neighborhood" value="${esc(c.neighborhood || "")}" placeholder="${T("Optional, for example: Oceanfront, Ghent, Town Center", "Opcional, por ejemplo: Oceanfront, Ghent, Town Center")}" maxlength="80"><p class="small muted">${T("Businesses search by neighborhood. Keep it to the area you actually post from.", "Los negocios buscan por vecindario. Déjalo en la zona desde donde publicas de verdad.")}</p></div>
+      <div class="field"><label>${T("Your three streets", "Tus tres calles")}</label>
+        ${[0, 1, 2].map((i) => `<input id="p-street-${i}" value="${esc((c.streets || [])[i] || "")}" placeholder="${T("For example: Granby Street", "Por ejemplo: Granby Street")}" maxlength="60" style="margin-bottom:8px">`).join("")}
+        <p class="small muted">${T("Up to 3 streets or neighborhoods where you hang out, not where you live. They show on your profile, your book-me page, and the Local List as: My streets.", "Hasta 3 calles o vecindarios donde pasas el tiempo, no donde vives. Aparecen en tu perfil, tu página de reservas y la Lista Local como: Mis calles.")}</p>
+      </div>
       <div class="field"><label class="tgl-row"><input type="checkbox" class="sw" id="p-realtor" ${isRealtorProfile(c) ? "checked" : ""} onchange="syncRealtorFields()"><span><strong>I am a licensed real estate agent</strong>: turning this on adds your brokerage and neighborhoods to your profile and shows businesses your Realtor badge.</span></label></div>
       <div id="p-realtor-block" style="display:${isRealtorProfile(c) ? "" : "none"}">
         <div class="field"><label>Your neighborhoods (up to 3)</label>
@@ -8820,6 +9074,7 @@ async function doUpdateCreator(e) {
       primaryPlatform: document.getElementById("p-platform").value,
       city: cityEl ? cityEl.value : cityTextEl ? cityTextEl.value : undefined,
       neighborhood: document.getElementById("p-neighborhood").value,
+      streets: [0, 1, 2].map((i) => { const el = document.getElementById("p-street-" + i); return el ? el.value : ""; }),
       profession: realtorSwitchProfession(),
       farmAreas: [0, 1, 2].map((i) => { const el = document.getElementById("p-hood-" + i); return el ? el.value : ""; }),
       brokerage: document.getElementById("p-brokerage") ? document.getElementById("p-brokerage").value : undefined,
@@ -12318,6 +12573,12 @@ async function loadMyOffers() {
       <div class="fgroup tint">
       <p class="fg-kicker">The offer</p>
       <div class="field"><label>Offer title <span class="req-tag">Required</span> ${infoBtn("title")}</label><input id="o2-title" value="${dv(dft.title)}" placeholder="Dinner for two on us" oninput="offerDraftSync()" onblur="offerValidateField('title')"><p class="field-err" id="err-o2-title"></p></div>
+      <div class="field"><label>What moment is this for? <span class="opt-tag">Optional</span></label>
+        <div class="radio-stack">
+        ${momentsClient().map((m) => `<label class="radio-chip"><input type="radio" name="o2-moment" value="${m.id}" ${dft.moment === m.id ? "checked" : ""} onchange="state.offerDraft.moment=this.value"><span>${esc(m.label)}</span></label>`).join("")}
+        <label class="radio-chip"><input type="radio" name="o2-moment" value="" ${!dft.moment ? "checked" : ""} onchange="state.offerDraft.moment=''"><span>No set moment</span></label>
+        </div>
+      </div>
       <div class="field"><label>How is the creator paid? <span class="req-tag">Required</span> ${infoBtn("kind")}</label>
         <div class="radio-stack">
         <label class="radio-chip"><input type="radio" name="o2-kind" value="comp" ${dft.kind === "paid" ? "" : "checked"} onchange="offerCoachUpdate()"><span>Comp: your product, on you</span></label>
@@ -12550,6 +12811,7 @@ async function createOfferV2(e, draft) {
   // paid offers attach by default, comp offers do not).
   payload.brief = briefFromDraft(d);
   payload.play = d.play || null;
+  payload.moment = d.moment || undefined;
   payload.assetPacketAttached = d.packetManual ? !!d.packetAttach : kind === "paid";
   if (kind === "paid") {
     payload.cashRate = parseFloat(d.rate);

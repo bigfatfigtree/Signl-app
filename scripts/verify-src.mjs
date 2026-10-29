@@ -178,7 +178,7 @@ try {
   const appJs = fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), "..", "public", "app.js"), "utf8");
   check("client reads ?src= on landing", appJs.includes('params.get("src")'));
   check("client persists src alongside the referral credit", appJs.includes('localStorage.setItem("signl_src"') && appJs.includes('localStorage.getItem("signl_src")'));
-  check("all three signup payloads send signupSource (2 creator + business founding, 2026-10-23)", (appJs.match(/signupSource: storedSrc\(\) \|\| undefined/g) || []).length === 3);
+  check("all four signup payloads send signupSource (2 creator + business founding + conversation, 2026-10-23, Build -32)", (appJs.match(/signupSource: storedSrc\(\) \|\| undefined/g) || []).length === 4);
   check("admin applicant detail shows the Source label", appJs.includes("Source: ${esc(u.signupSource)}"));
   check("client copy has no em dashes in the src block", !/storedSrc[\s\S]{0,400}—/.test(appJs));
 } finally {
