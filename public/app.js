@@ -531,7 +531,7 @@ async function renderPublicProfile() {
     <div class="tint-block" style="margin-top:0">
       <p class="small" style="margin-top:0">${p.paidRate ? `<span class="badge tier">Paid bookings: $${fmtPrice(p.paidRate)}</span> ` : ""}${p.compOpen === false ? `<span class="badge warn">Paid visits only</span>` : `<span class="badge info">Open to comp visits</span>`}</p>
       ${p.paidRate ? `<p class="small muted">Books at $${fmtPrice(p.paidRate)} &middot; creator keeps 97% &middot; payment held until the post is live.</p>` : ""}
-      ${p.licensingFee ? `<p class="small muted">Licenses a comped post for 90 days of repost and ad use at $${fmtPrice(p.licensingFee)} &middot; creator approves each one &middot; keeps 97%.</p>` : ""}
+      ${p.licensingFee ? `<p class="small muted">Run my post as an ad for 90 days: $${fmtPrice(p.licensingFee)} &middot; I approve each use &middot; I keep 97%.</p>` : ""}
       ${p.canBook ? `<div class="cta-row" style="justify-content:flex-start"><button class="btn" onclick="return bookMeBook()">Book on SIGNL</button></div>` : ""}
       <p class="small muted">${BOOKME_GUARANTEE_LINE}</p>
       <p class="small muted">${BOOKME_STAYS_LINE}</p>
@@ -568,6 +568,7 @@ async function renderPublicProfile() {
         ${p.charter ? `<span class="charter-seal sm">Charter Creator</span>` : ""}
       </div>
     </div>
+    ${p.realPeopleChecked ? `<p class="small" style="margin:10px 0 0"><span class="badge ok">Checked by a person</span> Real posts, real local life.</p>` : ""}
     ${galleryRowHtml(p.photos)}
     <section class="panel bookme-body">
       <div class="cc-chips">
@@ -7448,6 +7449,7 @@ async function loadFoundingDashboard() {
     loadFoundingStatus();
     loadGoldenTickets();
     loadProofCard();
+    loadRateRange();
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
@@ -7576,6 +7578,224 @@ async function loadProofCard() {
     ${(pf.lines || []).length ? `<div style="margin-top:10px">${pf.lines.map((l) => `<div class="lrow"><div style="flex:1"><span class="lname">${esc(l.label)}</span><div class="small muted">${l.visits} visit${l.visits === 1 ? "" : "s"} counted there</div></div><span>${l.customers} customers${l.cameBacks ? ` · ${l.cameBacks} came back` : ""}</span></div>`).join("")}</div><p class="small muted" style="margin-top:8px">A business is named only when it chose to be. Otherwise your proof shows its category and city, and its register totals never travel.</p>` : ""}
     <p class="small" style="margin-top:10px">Share it: <a href="${esc(location.origin + (pf.sharePath || ""))}" target="_blank" rel="noopener">${esc(location.origin + (pf.sharePath || ""))}</a></p>
     <p class="small muted">Book me on SIGNL and this is the receipt you'll get.</p>`;
+}
+
+// ---------- Build -35: Deal Card, disclosure, audience codes, swaps, rate range ----------
+// The Deal Card states the whole visit in plain words on the
+// booking itself: what gets posted, by when, one round of
+// edits, the rights included, when money moves, and the one
+// number counted. Both sides tap Looks right once; that is the
+// entire interaction.
+function dealCardHtml(b, role) {
+  if (!b || b.status === "cancelled") return "";
+  const lane = b.paidLane || null;
+  const counted = { door: "customers at the door with the code", link: "bookings from the link", orders: "orders with the code" }[b.countedResult || "door"];
+  const rights = lane
+    ? "Rights: the standard license is included, repost and ad use for 90 days from the post date, never longer."
+    : "Rights: native share only, with credit. Ad use is a separate license at the creator's listed fee, only with their approval.";
+  let money;
+  if (lane) {
+    const signlGets = Math.round((lane.rate - lane.creatorNet) * 100) / 100;
+    money = `<div>Creator gets $${fmtMoney(lane.creatorNet)}. SIGNL gets $${fmtMoney(signlGets)}. That is the whole fee.</div>`
+      + (role === "creator"
+        ? (lane.escrowState === "held" ? `<div style="margin-top:4px"><strong>Money's in.</strong> Post by ${b.postDeadline ? fmtDate(b.postDeadline) : "the deadline on this card"}, paid the day it goes live.</div>` : lane.escrowState === "released" ? `<div style="margin-top:4px">Paid out: the post went live and the money moved.</div>` : `<div style="margin-top:4px">This booking was refunded to the business.</div>`)
+        : `<div style="margin-top:4px">Money is held by SIGNL now and paid to the creator the day the post goes live.</div>`);
+  } else {
+    money = `<div>The comp: ${esc(b.whatComped || "the experience")}, worth $${fmtMoney(b.dollarCap)}. No cash changes hands on a comped visit.</div>`;
+  }
+  const dc = b.dealCard || {};
+  const mine = role === "business" ? dc.businessAt : dc.creatorAt;
+  const theirs = role === "business" ? dc.creatorAt : dc.businessAt;
+  return `<div class="wcard" style="margin:12px 0 0">
+    <p style="margin:0"><strong>The deal, in plain words</strong></p>
+    <div class="small" style="margin-top:6px">
+      <div>What gets posted: 1 post plus 1 story that shares the post${b.postDeadline ? `, by ${fmtDate(b.postDeadline)}` : ", within 48 hours of the visit (a week at the outside)"}.</div>
+      <div>Edits: one round of small fixes if something factual is off. Nobody can require a positive post.</div>
+      <div>${rights}</div>
+      ${money}
+      <div>The one number we count: ${counted}.</div>
+    </div>
+    <p style="margin:8px 0 0">${mine ? `<span class="badge ok">You confirmed: looks right</span>` : `<button class="btn small-btn" type="button" onclick="dealConfirm('${b.id}')">Looks right</button>`} ${theirs ? `<span class="badge ok">${role === "business" ? "Creator" : "Business"} confirmed</span>` : `<span class="small muted">Waiting on the ${role === "business" ? "creator" : "business"}.</span>`}</p>
+  </div>`;
+}
+async function dealConfirm(bookingId) {
+  try {
+    await api("POST", `/bookings/${bookingId}/deal-confirm`, {});
+    loadMyVisits(state.user && state.user.role === "business" ? "business" : "creator");
+  } catch (err) { alert(err.message); }
+}
+// Disclosure Done For You: the line itself, one tap to copy,
+// and a confirmation the business can see on the booking.
+function disclosureLine(b) {
+  return b.kind === "paid" || b.paidLane
+    ? `#ad — paid partnership with ${b.businessName || "this business"} through SIGNL`
+    : `#ad — comped by ${b.businessName || "this business"} through SIGNL`;
+}
+function disclosureCopy(btn) {
+  const wrap = btn && btn.closest(".field");
+  const input = wrap ? wrap.querySelector("input") : null;
+  const line = input ? input.value : "";
+  if (navigator.clipboard && navigator.clipboard.writeText && line) navigator.clipboard.writeText(line).catch(() => {});
+  if (btn) { const old = btn.textContent; btn.textContent = "Copied"; setTimeout(() => { btn.textContent = old; }, 1600); }
+  return false;
+}
+async function disclosureConfirm(bookingId) {
+  try {
+    await api("POST", `/bookings/${bookingId}/disclosure`, {});
+    loadMyVisits("creator");
+  } catch (err) { alert(err.message); }
+}
+// The Swap Bench: closest matching creators for a cancelled
+// visit, one tap to send the same visit as a direct offer.
+function swapBlockHtml(b) {
+  return `<div class="wcard" style="margin:12px 0 0"><p style="margin:0"><strong>The Swap Bench</strong></p><p class="small muted" style="margin:4px 0 0">This visit was cancelled. The bench finds the closest matching creators on the roster: same lead category, nearest local reach. One tap sends the same visit as a direct offer for this week.</p><p style="margin:8px 0 0"><button class="btn small-btn" type="button" onclick="swapLoad('${b.id}')">Find a swap</button></p><div id="swap-list-${b.id}"></div></div>`;
+}
+async function swapLoad(bookingId) {
+  const host = document.getElementById("swap-list-" + bookingId);
+  if (!host) return;
+  host.innerHTML = `<p class="small muted">Checking the roster...</p>`;
+  try {
+    const data = await api("GET", `/bookings/${bookingId}/swap`);
+    if (!document.getElementById("swap-list-" + bookingId)) return;
+    const list = data.suggestions || [];
+    host.innerHTML = list.length
+      ? list.map((sg) => `<div class="lrow" style="margin-top:8px"><div style="flex:1"><span class="lname">@${esc(sg.handle)}</span><div class="small muted">${typeof sg.localAudiencePct === "number" ? `${sg.localAudiencePct}% local audience` : "Local audience not reported"} · ${(sg.categories || []).slice(0, 2).join(", ")}</div></div><button class="btn small-btn" type="button" onclick="swapSend('${bookingId}', '${sg.creatorId}', this)">Send the swap</button></div>`).join("")
+      : `<p class="small muted">No matching creator is available this week. The roster keeps growing; your founding team can also rebook from Discover.</p>`;
+  } catch (err) { host.innerHTML = `<p class="small">${esc(err.message)}</p>`; }
+}
+async function swapSend(bookingId, creatorId, btn) {
+  try {
+    await api("POST", `/bookings/${bookingId}/swap`, { creatorId });
+    if (btn) { btn.textContent = "Swap sent"; btn.disabled = true; }
+  } catch (err) { alert(err.message); }
+}
+// Rate Range: the going range near the creator, from real paid
+// bookings where enough exist, else labeled guidance from
+// listed rates. Ranges only, never a person's rate.
+async function loadRateRange() {
+  const el = document.getElementById("lane-range-line");
+  if (!el) return;
+  try {
+    const d = await api("GET", "/me/rate-range");
+    const host = document.getElementById("lane-range-line");
+    if (!host) return;
+    host.textContent = d.range
+      ? (d.range.source === "bookings"
+        ? `The going range near you, from real paid bookings: $${fmtPrice(d.range.low)} to $${fmtPrice(d.range.high)}. Ranges only; nobody's individual rate is ever shown.`
+        : `Guidance from listed rates near you: $${fmtPrice(d.range.low)} to $${fmtPrice(d.range.high)}. It is guidance until more paid bookings land.`)
+      : "Not enough local booking data yet to show a going range. The floor is $50, and you keep 97% of your rate.";
+  } catch (e) { /* the line is an enhancement */ }
+}
+// Audience offers: one block, role-aware, appended inside the
+// Offers surfaces. Businesses create standalone offers and log
+// redemptions with a channel tap; creators take offers, get a
+// unique code, and carry a ready-to-post card.
+const AUD_PERK_IDEAS = ["Free appetizer with an entree", "10% off the first order", "A free class pass", "Free dessert with dinner", "A free drink with any entree"];
+async function loadAudienceBlock() {
+  const host = document.getElementById("aud-block");
+  if (!host || !state.user) return;
+  let data = null;
+  try { data = await api("GET", "/me/audience-offers"); } catch (e) { data = null; }
+  if (!document.getElementById("aud-block")) return;
+  if (!data) { host.innerHTML = ""; return; }
+  const u = state.user;
+  if (u.role === "business") {
+    const offers = data.offers || [];
+    host.innerHTML = `<section class="wcard">
+      <h3>Audience offers</h3>
+      <p class="wc-sub" style="margin:4px 0 0">Give their audience a reason to come in. A standalone offer goes to creators in your market; each creator gets a unique code, and every redemption counts on your receipt.</p>
+      <div class="form-2col" style="margin-top:10px">
+        <div class="field"><label>Offer name</label><input id="auds-title" placeholder="For example: First visit invite"></div>
+        <div class="field"><label>What their audience gets</label><input id="auds-perk" placeholder="Free appetizer with an entree"></div>
+      </div>
+      <div class="chip-row">${AUD_PERK_IDEAS.map((x) => `<button type="button" class="chip" onclick="document.getElementById('auds-perk').value='${esc(x)}'">${esc(x)}</button>`).join("")}</div>
+      <p style="margin-top:8px"><button class="btn small-btn" type="button" onclick="audCreateStandalone()">Create the offer</button> <span class="small" id="auds-note"></span></p>
+      ${offers.length ? `<div style="margin-top:10px">${offers.map((o) => `<div class="lrow" style="margin-top:8px"><div style="flex:1"><span class="lname">${esc(o.title)}</span> <span class="badge">${o.bookingId ? "On a booking" : "Standalone"}</span><div class="small muted">${esc(o.perk)}</div></div><span class="small muted">${(o.codes || []).length} code${(o.codes || []).length === 1 ? "" : "s"} out</span></div>`).join("")}</div>` : ""}
+      <div style="margin-top:14px;border-top:1px solid var(--hairline,#DFE7DF);padding-top:10px">
+        <h4 style="margin:0 0 6px">Log an audience redemption</h4>
+        <div class="form-2col">
+          <div class="field"><label>Audience code</label><input id="auds-code" placeholder="AUD-XXXXXX" style="text-transform:uppercase"></div>
+          <div class="field"><label>Order total ($)</label><input id="auds-amt" type="number" min="0" step="0.01" placeholder="0.00"></div>
+        </div>
+        <div class="chip-row" role="radiogroup" aria-label="Channel">
+          <label class="radio-chip"><input type="radio" name="auds-chan" value="in_store" checked><span>In store</span></label>
+          <label class="radio-chip"><input type="radio" name="auds-chan" value="pickup"><span>Pickup</span></label>
+          <label class="radio-chip"><input type="radio" name="auds-chan" value="delivery"><span>Delivery</span></label>
+        </div>
+        <p style="margin-top:6px"><button class="btn small-btn ghost" type="button" onclick="audRedeem('auds-','')">Log the redemption</button> <span class="small" id="auds-rnote"></span></p>
+      </div>
+    </section>`;
+    return;
+  }
+  if (u.role === "creator") {
+    const offers = data.offers || [];
+    const codes = data.codes || [];
+    host.innerHTML = `<section class="wcard">
+      <h3>Audience offers</h3>
+      <p class="wc-sub" style="margin:4px 0 0">Businesses near you, giving your audience a reason to come in. Take one and your unique code is ready to post.</p>
+      ${codes.length ? `<div style="margin-top:10px">${codes.map((cd) => `<div class="lrow" style="margin-top:10px"><div style="flex:1"><span class="lname">${esc(cd.offerTitle || "Audience offer")}</span> <span class="muted">at ${esc(cd.businessName || "a local business")}</span><div class="small muted">${esc(cd.perk || "")}</div><div style="margin-top:4px">Your code: <strong>${esc(cd.code)}</strong></div></div><span><button class="btn small-btn ghost" type="button" onclick="audCopyLine('${cd.id}')">Copy my post line</button> <button class="btn small-btn ghost" type="button" onclick="audDownloadCard('${cd.id}')">Save the card</button></span></div>`).join("")}</div>` : ""}
+      ${offers.length ? `<div style="margin-top:10px">${offers.map((o) => `<div class="lrow" style="margin-top:8px"><div style="flex:1"><span class="lname">${esc(o.title)}</span> <span class="muted">at ${esc(o.businessName || "a local business")}</span><div class="small muted">${esc(o.perk)}</div></div>${codes.some((c) => c.offerId === o.id) ? `<span class="badge ok">Your code is above</span>` : `<button class="btn small-btn" type="button" onclick="audTake('${o.id}')">Take it</button>`}</div>`).join("")}</div>` : (codes.length ? "" : `<p class="small muted" style="margin-top:8px">No audience offers are open near you yet. They appear here the moment a business posts one.</p>`)}
+    </section>`;
+    state._audCodes = codes;
+    state._audOffers = offers;
+  }
+}
+async function audCreateStandalone() {
+  const title = (document.getElementById("auds-title") || {}).value || "";
+  const perk = (document.getElementById("auds-perk") || {}).value || "";
+  const note = document.getElementById("auds-note");
+  try {
+    await api("POST", "/me/audience-offers", { title: title.trim(), perk: perk.trim() });
+    if (note) note.textContent = "Live. Creators in your market can take it now.";
+    loadAudienceBlock();
+  } catch (err) { if (note) note.textContent = err.message; }
+}
+async function audCreateForBooking(bookingId) {
+  const title = (document.getElementById("aud-title-" + bookingId) || {}).value || "";
+  const perk = (document.getElementById("aud-perk-" + bookingId) || {}).value || "";
+  const note = document.getElementById("aud-note-" + bookingId);
+  try {
+    const data = await api("POST", "/me/audience-offers", { title: title.trim(), perk: perk.trim(), bookingId });
+    if (note) note.innerHTML = data.code ? `Live. The creator's unique code is <strong>${esc(data.code.code)}</strong>; it rides their visit card and their Offers, ready to post.` : "Live.";
+  } catch (err) { if (note) note.textContent = err.message; }
+}
+async function audTake(offerId) {
+  try {
+    await api("POST", `/me/audience-offers/${offerId}/take`, {});
+    loadAudienceBlock();
+  } catch (err) { alert(err.message); }
+}
+async function audRedeem(prefix, bookingId) {
+  const code = ((document.getElementById(prefix + "code-" + bookingId) || document.getElementById(prefix + "code") || {}).value || "").trim();
+  const amtEl = document.getElementById(prefix + "amt-" + bookingId) || document.getElementById(prefix + "amt");
+  const amount = amtEl ? Number(amtEl.value) : NaN;
+  const chanEl = document.querySelector(`input[name='${prefix}chan${bookingId ? "-" + bookingId : ""}']:checked`) || document.querySelector(`input[name='${prefix}chan']:checked`);
+  const note = document.getElementById(prefix + (bookingId ? "note-" + bookingId : "rnote")) || document.getElementById(prefix + "rnote");
+  if (!code) { if (note) note.textContent = "Enter the audience code."; return; }
+  if (!Number.isFinite(amount) || amount < 0) { if (note) note.textContent = "Enter the order total (0 if the perk carried no spend)."; return; }
+  try {
+    const data = await api("POST", "/me/audience-codes/redeem", { code, amount, channel: chanEl ? chanEl.value : "in_store" });
+    if (note) note.textContent = `Counted: $${fmtMoney(data.redemptionEvent.amount)} on the ${data.redemptionEvent.channel === "in_store" ? "in store" : data.redemptionEvent.channel} channel. It feeds your receipt as a counted event.`;
+  } catch (err) { if (note) note.textContent = err.message; }
+}
+function audCopyLine(codeId) {
+  const cd = (state._audCodes || []).find((c) => c.id === codeId);
+  if (!cd) return false;
+  const line = `${cd.perk} at ${cd.businessName} with my code ${cd.code}. Show it when you order.`;
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(line).catch(() => {});
+  return false;
+}
+function audDownloadCard(codeId) {
+  const cd = (state._audCodes || []).find((c) => c.id === codeId);
+  if (!cd) return false;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080" viewBox="0 0 1080 1080"><rect width="1080" height="1080" fill="#0B0D0C"/><rect x="60" y="60" width="960" height="960" rx="36" fill="#A9E8C9"/><text x="540" y="330" font-family="Arial, sans-serif" font-size="64" font-weight="700" fill="#0B0D0C" text-anchor="middle">${esc(cd.businessName || "A local business")}</text><text x="540" y="440" font-family="Arial, sans-serif" font-size="52" fill="#0B0D0C" text-anchor="middle">${esc(cd.perk || "")}</text><text x="540" y="640" font-family="Arial, sans-serif" font-size="44" fill="#0B0D0C" text-anchor="middle">Use my code</text><text x="540" y="760" font-family="Arial, sans-serif" font-size="96" font-weight="800" fill="#0B0D0C" text-anchor="middle">${esc(cd.code)}</text><text x="540" y="880" font-family="Arial, sans-serif" font-size="36" fill="#0B0D0C" text-anchor="middle">Show it when you order · SIGNL</text></svg>`;
+  const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `signl-code-${cd.code}.svg`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+  return false;
 }
 
 // ---------- Golden Ticket invites (Build -33) ----------
@@ -8221,9 +8441,9 @@ function laneFeeOf(c) {
 }
 function laneFeeLine(c) {
   const fee = laneFeeOf(c || {});
-  if (!fee) return "not set. Set a fee and businesses can license your comped posts for ads, only with your approval.";
+  if (!fee) return "not set. Name one price and a business can ask to run your post as an ad for 90 days, only with your approval.";
   const keep = Math.round(fee * 0.97 * 100) / 100;
-  return `your fee $${fmtPrice(fee)} · you keep $${fmtMoney(keep)} (97%) per license.`;
+  return `run my post as an ad for 90 days: $${fmtPrice(fee)} · you keep $${fmtMoney(keep)} (97%) per license.`;
 }
 function laneFeeSave() {
   const inp = document.getElementById("lane-fee");
@@ -8407,11 +8627,12 @@ function laneControlsHtml(c) {
       <label for="lane-rate">Your paid rate (min $50)</label>
       <div class="lane-rate-flex"><input type="number" id="lane-rate" min="50" step="1" inputmode="numeric" placeholder="150" value="${rate || ""}" onchange="laneRateAuto()"><button type="button" class="btn small-btn" onclick="return laneRateSave()">Save rate</button></div>
       <p class="small muted" id="lane-rate-note">${rate ? `Businesses pay your listed rate of $${fmtMoney(rate)}. You keep $${fmtMoney(Math.round(rate * 0.97 * 100) / 100)} (97%), and SIGNL holds the payment until your post is live.` : "Set a rate and businesses can book you paid at that rate. You keep 97%, and SIGNL holds the payment until your post is live. Paid bookings turn on when a rate is saved."}</p>
+      <p class="small" id="lane-range-line"></p>
     </div>
-    <div class="lrow lane-row"><div><span class="lname">Post licensing</span> <span class="lline" id="lane-fee-line">— ${esc(laneFeeLine(c || {}))}</span></div></div>
+    <div class="lrow lane-row"><div><span class="lname">Run my post as an ad</span> <span class="lline" id="lane-fee-line">— ${esc(laneFeeLine(c || {}))}</span></div></div>
     <div class="lane-rate">
       <div class="lane-rate-flex"><input type="number" id="lane-fee" min="1" step="1" inputmode="numeric" placeholder="75" value="${fee || ""}"><button type="button" class="btn small-btn" onclick="return laneFeeSave()">Save fee</button></div>
-      <p class="small muted">A business can ask to license one of your delivered comped posts for 90 days of reposting and ad use at this fee. You approve or decline every request; nothing runs without your yes. Leave blank to keep comped posts native-share only.</p>
+      <p class="small muted">One price, in plain words: what a business pays to run your post as an ad for 90 days. It is a term, with a paper trail on the booking, and it ends when the 90 days end. You approve or decline every request; nothing runs without your yes. Leave blank to keep comped posts native-share only.</p>
     </div>
     <p class="small lane-err" id="lane-err" style="display:none"></p>
     ${payoutsStepHtml(c)}
@@ -9398,7 +9619,8 @@ async function loadCreatorOffers() {
   el.innerHTML = `
     ${wsHead("Offers", { sub: "Flip through offers near you. Apply to the ones you want.", subKey: "cr-offers" })}
     <div id="cr-offers-segs"></div>
-    <div id="cr-seg-body">${skelHtml("Loading offers...", 2)}</div>`;
+    <div id="cr-seg-body">${skelHtml("Loading offers...", 2)}</div>
+    <div id="aud-block"></div>`;
   let directCount = 0, appliedCount = 0;
   try {
     const [od, bd, ad] = await Promise.all([
@@ -9433,6 +9655,7 @@ async function loadCreatorOffers() {
     body.innerHTML = `<div id="direct-offers">${skelHtml("Loading your direct offers...", 1)}</div>`;
     loadDirectOffers();
   }
+  loadAudienceBlock();
 }
 
 async function loadDirectOffers() {
@@ -10209,6 +10432,8 @@ function visitCard(b, role) {
     html += `<p class="small"><strong>Key points from the business:</strong> ${esc(b.paidBrief)}</p>`;
   }
   html += briefBlockHtml(b);
+  html += dealCardHtml(b, role);
+  if (role === "business" && b.status === "cancelled") html += swapBlockHtml(b);
   if (role === "creator") html += assetPacketBlockHtml(b.assetPacket);
   if (b.paidLane) {
     const lane = b.paidLane;
@@ -10292,6 +10517,7 @@ function visitCard(b, role) {
       <div class="field"><label>Link to your Instagram post or reel</label><input id="post-url-${b.id}" type="url" placeholder="https://www.instagram.com/p/..." required></div>
       <label class="ckrow"><input type="checkbox" class="ckbox" id="post-disc-${b.id}"><span>My post clearly discloses the comp (for example #ad or "comped by the business"), as the FTC requires.</span></label>
       <p class="small muted">Post your honest experience. Nobody can require a positive post.</p>
+      <div class="field"><label>Your disclosure line, done for you</label><div style="display:flex;gap:8px;flex-wrap:wrap"><input type="text" readonly value="${esc(disclosureLine(b))}" onclick="this.select()" style="flex:1;min-width:220px"><button type="button" class="btn small-btn ghost" onclick="return disclosureCopy(this)">Copy the line</button></div><p class="small muted">One tap copies it. Paste it at the top of your caption, then confirm on this card after the post is live.</p></div>
       <button class="btn small-btn" type="submit">Submit post</button>
     </form>`;
   }
@@ -10300,6 +10526,15 @@ function visitCard(b, role) {
   }
   if (post) {
     html += `<p class="small">Post: <a href="${esc(post.url)}" target="_blank" rel="noopener">${esc(post.url)}</a> &middot; submitted ${fmtDate(post.submittedAt)} (${post.hoursAfterRedeem}h after redemption) ${post.verifiedAt ? "&middot; <span class='saved'>Verified by the business</span>" : ""}</p>`;
+    if (role === "creator") {
+      html += b.disclosureAt
+        ? `<p class="small"><span class="badge ok">Disclosure confirmed</span> You confirmed the paid-partnership line is on the post, ${fmtDate(b.disclosureAt)}.</p>`
+        : `<p class="small">One last tap: <button class="btn small-btn ghost" type="button" onclick="disclosureConfirm('${b.id}')">I added the disclosure line</button> <span class="muted">${esc(disclosureLine(b))}</span></p>`;
+    } else {
+      html += b.disclosureAt
+        ? `<p class="small"><span class="badge ok">Disclosure confirmed</span> The creator confirmed the paid-partnership disclosure is on the post.</p>`
+        : `<p class="small muted">Disclosure: not confirmed by the creator yet.</p>`;
+    }
     const lic = post.license && post.license.status === "granted" ? post.license : null;
     const licActive = !!lic && Date.parse(lic.windowEndsAt) > Date.now();
     const licReq = (state.licenseRequests || []).filter((l) => l.postId === post.id).slice().sort((x, y) => (x.createdAt < y.createdAt ? 1 : -1))[0] || null;
@@ -10391,6 +10626,25 @@ function visitCard(b, role) {
       <div class="field"><label>&nbsp;</label><button class="btn small-btn ghost" type="button" onclick="saveNightCount('${b.id}')">Save tonight's count</button></div>
     </div>
     <p class="small" id="counter-note-${b.id}" style="margin-top:6px"></p>
+    <div style="margin-top:12px;border-top:1px solid var(--hairline,#DFE7DF);padding-top:10px">
+      <h4 style="margin:0 0 4px">Give their audience a reason to come in</h4>
+      <p class="small muted" style="margin:0 0 8px">Attach an audience offer to this visit: @${esc(b.creatorHandle)} gets a unique code to share, and every redemption counts on your receipt.</p>
+      <div class="form-2col">
+        <div class="field"><label>Offer name</label><input id="aud-title-${b.id}" placeholder="For example: Taco Tuesday invite"></div>
+        <div class="field"><label>What their audience gets</label><input id="aud-perk-${b.id}" placeholder="Free appetizer with an entree"></div>
+      </div>
+      <p style="margin:0 0 8px"><button class="btn small-btn" type="button" onclick="audCreateForBooking('${b.id}')">Create the audience offer</button> <span class="small" id="aud-note-${b.id}"></span></p>
+      <div class="form-2col">
+        <div class="field"><label>Audience code</label><input id="audr-code-${b.id}" placeholder="AUD-XXXXXX" style="text-transform:uppercase"></div>
+        <div class="field"><label>Order total ($)</label><input id="audr-amt-${b.id}" type="number" min="0" step="0.01" placeholder="0.00"></div>
+      </div>
+      <div class="chip-row" role="radiogroup" aria-label="Channel">
+        <label class="radio-chip"><input type="radio" name="audr-chan-${b.id}" value="in_store" checked><span>In store</span></label>
+        <label class="radio-chip"><input type="radio" name="audr-chan-${b.id}" value="pickup"><span>Pickup</span></label>
+        <label class="radio-chip"><input type="radio" name="audr-chan-${b.id}" value="delivery"><span>Delivery</span></label>
+      </div>
+      <p style="margin-top:6px"><button class="btn small-btn ghost" type="button" onclick="audRedeem('audr-','${b.id}')">Log the redemption</button> <span class="small" id="audr-note-${b.id}"></span></p>
+    </div>
     <form onsubmit="return submitCodeRedemptions(event, '${b.id}')">
       <h4 style="margin:10px 0 4px">Code tally for this visit</h4>
       <p class="small muted">One question settles it: how many customers used ${b.creatorCode ? `<strong>${esc(b.creatorCode)}</strong>` : "the creator's audience code"} at your register. Saving replaces the last tally and completes this visit's SIGNL ROAS Score.</p>
@@ -12745,8 +12999,21 @@ function jumpToOffer(offerId) {
   return false;
 }
 
+function compNudgeUpdate() {
+  const el = document.getElementById("o2-compnudge");
+  if (!el) return;
+  const kind = (document.querySelector("input[name='o2-kind']:checked") || {}).value || "comp";
+  const cap = parseInt((document.getElementById("o2-cap") || {}).value, 10) || 0;
+  if (kind !== "comp" || !cap) { el.textContent = ""; return; }
+  el.textContent = cap < 50
+    ? "That is a light comp for a post and a story that shares it. Creators weigh the value before they decide, and at this level a paid booking usually lands better."
+    : cap < 100
+      ? "A fair comp for many local spots. Bigger experiences pull stronger creators; a paid booking is the other lane."
+      : "That value reads strong for a post and a story. It will get weighed seriously.";
+}
 function offerCoachUpdate() {
   offerDraftSync();
+  compNudgeUpdate();
   const g = offerGuidance();
   const kind = (document.querySelector("input[name='o2-kind']:checked") || {}).value || "comp";
   const cap = parseInt((document.getElementById("o2-cap") || {}).value, 10) || 0;
@@ -12852,6 +13119,7 @@ async function loadMyOffers() {
   ${wsHead("Offers", { sub: "Your offers, and the creators who applied to them.", subKey: "biz-offers", action: state.offersSeg === "live" ? `<button type="button" class="btn ws-primary" onclick="return offersNew()">+ New offer</button>` : "" })}
   <div id="offers-segs"></div>
   <div id="offer-list">${skelHtml("Loading your offers...", 2)}</div>
+  <div id="aud-block"></div>
   <div id="offers-live-only">
   <h3 style="margin:24px 0 0">Templates</h3>
   ${bizTemplatesHtml()}
@@ -12883,6 +13151,14 @@ async function loadMyOffers() {
         <label class="radio-chip"><input type="radio" name="o2-moment" value="" ${!dft.moment ? "checked" : ""} onchange="state.offerDraft.moment=''"><span>No set moment</span></label>
         </div>
       </div>
+      <div class="field"><label>The one number we count <span class="req-tag">Required</span></label>
+        <div class="radio-stack">
+        <label class="radio-chip"><input type="radio" name="o2-counted" value="door" ${!dft.countedResult || dft.countedResult === "door" ? "checked" : ""} onchange="state.offerDraft.countedResult=this.value"><span>Customers at the door</span></label>
+        <label class="radio-chip"><input type="radio" name="o2-counted" value="orders" ${dft.countedResult === "orders" ? "checked" : ""} onchange="state.offerDraft.countedResult=this.value"><span>Orders with the code</span></label>
+        <label class="radio-chip"><input type="radio" name="o2-counted" value="link" ${dft.countedResult === "link" ? "checked" : ""} onchange="state.offerDraft.countedResult=this.value"><span>Bookings from the link</span></label>
+        </div>
+        <p class="small muted">Pick one. Your receipt counts that one, so the number stays honest.</p>
+      </div>
       <div class="field"><label>How is the creator paid? <span class="req-tag">Required</span> ${infoBtn("kind")}</label>
         <div class="radio-stack">
         <label class="radio-chip"><input type="radio" name="o2-kind" value="comp" ${dft.kind === "paid" ? "" : "checked"} onchange="offerCoachUpdate()"><span>Comp: your product, on you</span></label>
@@ -12902,7 +13178,7 @@ async function loadMyOffers() {
       <div class="fgroup">
       <p class="fg-kicker">The value</p>
       <div class="form-2col">
-        <div class="field" id="o2-cap-wrap"><label>Comp value / dollar cap ($) <span class="req-tag">Required</span> ${infoBtn("cap")}</label><input type="number" id="o2-cap" min="1" placeholder="100" value="${dv(dft.cap)}" oninput="offerCoachUpdate()" onblur="offerValidateField('cap')"><p class="field-err" id="err-o2-cap"></p></div>
+        <div class="field" id="o2-cap-wrap"><label>Comp value / dollar cap ($) <span class="req-tag">Required</span> ${infoBtn("cap")}</label><input type="number" id="o2-cap" min="1" placeholder="100" value="${dv(dft.cap)}" oninput="offerCoachUpdate()" onblur="offerValidateField('cap')"><p class="field-err" id="err-o2-cap"></p><p class="small" id="o2-compnudge" style="margin:4px 0 0"></p></div>
         <div class="field" id="o2-rate-wrap" style="display:none"><label>Cash rate ($) <span class="req-tag">Required</span> ${infoBtn("rate")}</label><input type="number" id="o2-rate" min="50" step="1" placeholder="150" value="${dv(dft.rate)}" oninput="offerCoachUpdate()" onblur="offerValidateField('rate')"><p class="field-err" id="err-o2-rate"></p><p class="small muted">You pay rate + 3%. Creator keeps 97%. Min $50.</p></div>
       </div>
       <div class="field"><label>What is included <span class="opt-tag">Optional</span> ${infoBtn("includes")}</label><textarea id="o2-includes" rows="2" placeholder="Any two entrees, two drinks each, dessert to share" oninput="offerCoachUpdate()">${esc(dft.includes || "")}</textarea></div>
@@ -12985,6 +13261,7 @@ async function loadMyOffers() {
     const list = document.getElementById("offer-list");
     if (list) list.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
+  loadAudienceBlock();
 }
 
 // Offers list state (Overhaul V2): Current / Archived underline
@@ -13116,6 +13393,7 @@ async function createOfferV2(e, draft) {
   payload.brief = briefFromDraft(d);
   payload.play = d.play || null;
   payload.moment = d.moment || undefined;
+  payload.countedResult = d.countedResult || undefined;
   payload.assetPacketAttached = d.packetManual ? !!d.packetAttach : kind === "paid";
   if (kind === "paid") {
     payload.cashRate = parseFloat(d.rate);
