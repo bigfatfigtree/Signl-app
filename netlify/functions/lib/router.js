@@ -494,6 +494,27 @@ const SELECTION_SLA_HOURS = 72;
 const BACKFILL_ACCEPT_HOURS = 24;
 const OFFER_NUDGE_HOURS = 48;
 const APPLICATION_STACK_PER_SPOT = 3;
+// Menu of Moments (Build -32, Jeff, 2026-10-29): the moment a
+// business is booking for, asked in the offer flow and on the
+// founding application, stored on the record. Packaging only:
+// each moment names the play the First Month Plan frames itself
+// as. No new offer machinery rides on this field.
+const MOMENTS = [
+  { id: "slow_weeknight", label: "A slow weeknight", play: "The Slow Tuesday Fix" },
+  { id: "new_menu_drop", label: "A new menu or launch drop", play: "The First Taste" },
+  { id: "reopening", label: "A reopening", play: "The Grand Reopening" },
+  { id: "game_day", label: "Game day", play: "The Game Day Play" },
+  { id: "tourist_weekend", label: "A tourist weekend", play: "The Tourist Weekend" },
+  { id: "other", label: "Something else", play: "The First Month Play" },
+];
+function validMoment(v) {
+  return MOMENTS.some((m) => m.id === v) ? v : null;
+}
+function momentPlay(id) {
+  const m = MOMENTS.find((x) => x.id === id);
+  return m ? m.play : null;
+}
+
 const OFFER_TEMPLATES = [
   { id: "grand-opening", label: "Grand Opening", title: "Grand opening: be one of our first guests", spots: 3, windowDays: 7, note: "Opening week: come any time we are open." },
   { id: "new-menu", label: "New Menu", title: "New menu tasting", spots: 2, windowDays: 7, note: "Our new menu just launched." },
@@ -1439,6 +1460,42 @@ function isFoundingBusiness(u) {
 // it is a planning bar shown honestly as progress, not a promise
 // that a market opens the day the count lands.
 const FOUNDING_LAUNCH_BAR = 25;
+
+
+// Neighborhood Anchor (Build -32, Jeff, 2026-10-29): the FIRST
+// founding business in a category + neighborhood earns a
+// permanent badge, "Founding Anchor" for that category and
+// neighborhood. Computed from application order (createdAt)
+// across business accounts; the stamp, once written, never
+// moves and is never taken away. There is NO lockout: every
+// other business joins normally, and nothing in any copy may
+// imply exclusivity. A business only competes for the badge
+// once it has both a category and a neighborhood on its record.
+async function ensureBusinessAnchors(users) {
+  const list = (users || []).filter((u) => u && u.role === "business" && u.business && u.status !== "rejected"
+    && String(u.business.category || "").trim() && String(u.business.neighborhood || "").trim());
+  const groups = new Map();
+  for (const u of list) {
+    const key = [normalizeMarketName(u.market || ""), String(u.business.category).trim().toLowerCase(), String(u.business.neighborhood).trim().toLowerCase()].join("|");
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(u);
+  }
+  for (const group of groups.values()) {
+    group.sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0));
+    const first = group[0];
+    if (first && !first.business.anchor) {
+      first.business = Object.assign({}, first.business, {
+        anchor: {
+          category: first.business.category,
+          neighborhood: first.business.neighborhood,
+          label: `Founding Anchor \u2014 ${first.business.category}, ${first.business.neighborhood}`,
+          at: nowIso(),
+        },
+      });
+      try { await store.set(`user:${first.id}`, first); } catch (e) { /* the badge recomputes on the next read */ }
+    }
+  }
+}
 
 const FOUNDING_BUSINESS_MESSAGE = "Your business is on the founding list, so the creator roster and the product tools are not open yet. Every founding application gets a decision or a clear status within 2 business days. Your Founding Status page shows your plan, your place in line, and what happens next.";
 
@@ -3917,6 +3974,10 @@ async function publicProfilePayload(u) {
     unlisted,
     city: u.city || "",
     neighborhood: c.neighborhood || "",
+    // Your Three Streets (Build -32): where this creator hangs
+    // out, shown as "My streets" on the profile, the book-me
+    // page, and the Local List.
+    streets: Array.isArray(c.streets) ? c.streets : [],
     tierBand: normalizeTierBand(c.tierBand) || null,
     followerCount: c.followerCount || 0,
     totalAudience: audience.total,
@@ -4008,6 +4069,7 @@ async function bookMePayload(u, viewer) {
     unlisted: full.unlisted,
     city: full.city,
     neighborhood: full.neighborhood,
+    streets: full.streets || [],
     tierBand: full.tierBand,
     categories: full.categories,
     spanishContent: full.spanishContent,
@@ -7527,6 +7589,16 @@ async function handleRegister(event) {
       // from the profile; the anchor proximity bands measure
       // from. Invalid values store nothing.
       zip: typeof b.zip === "string" && /^\d{5}$/.test(b.zip.trim()) ? b.zip.trim() : "",
+      // Menu of Moments (Build -32): the moment chosen on the
+      // founding application, when one was picked. Optional,
+      // validated against the shared list; anything else stores
+      // null.
+      moment: validMoment(b.moment),
+      // Apply by Conversation (Build -32): which surface filed
+      // this application. The record is the SAME record either
+      // way; only the stamp differs. Anything but the exact
+      // conversation stamp reads as the form.
+      applicationSource: b.applicationSource === "conversation" ? "conversation" : "form",
       about: typeof b.about === "string" ? b.about.trim().slice(0, 600) : "",
       plan: plan.id,
       planName: `${plan.name} $${plan.priceMonthly}/mo`,
@@ -8828,6 +8900,7 @@ async function route(event) {
       standardVisit: STANDARD_VISIT,
       roasModel: { ...ROAS_MODEL, label: ROAS_LABEL },
       audiencePlatforms: AUDIENCE_PLATFORMS,
+      moments: MOMENTS,
       termsVersion: TERMS_VERSION,
       email: { enabled: emailEnabled() },
       // Stripe Connect paid-lane rail (2026-10-26): true only
@@ -9013,6 +9086,7 @@ async function route(event) {
           categories: u.creator.categories || [],
           charter: u.creator.charter === true,
           neighborhood: u.creator.neighborhood || "",
+          streets: Array.isArray(u.creator.streets) ? u.creator.streets : [],
         };
         for (const raw of entry.categories) {
           const canon = canonicalFromList(raw, CREATOR_CATEGORIES) || raw;
@@ -9744,6 +9818,16 @@ async function route(event) {
           c.licensingFee = fee;
         }
       }
+      // Your Three Streets (Build -32): up to 3 streets or
+      // neighborhoods where the creator HANGS OUT (not where
+      // they live). Free text, deduped, capped at 3. Deliberately
+      // NOT a completeness field: nothing gates on it.
+      if (b.streets !== undefined) {
+        const raw = Array.isArray(b.streets) ? b.streets : [];
+        const cleanStreets = [...new Set(raw.map((x) => String(x || "").trim().slice(0, 60)).filter(Boolean))].slice(0, 3);
+        changes.streets = [Array.isArray(c.streets) ? c.streets : [], cleanStreets];
+        c.streets = cleanStreets;
+      }
       if (Array.isArray(b.categories)) c.categories = [...new Set(b.categories.map((x) => canonicalFromList(x, CREATOR_CATEGORIES)).filter((x) => !!x))];
       if (Array.isArray(b.compCategories)) {
         // Paid cash campaigns stay selectable only while the creator is
@@ -9942,6 +10026,15 @@ async function route(event) {
         if (z === "") delete bz.zip;
         else if (/^\d{5}$/.test(z)) bz.zip = z;
         else return err(400, "ZIP is the 5 digit code for your business address.");
+      }
+      // Menu of Moments (Build -32): the business's standing
+      // moment, picked on the founding page or the application.
+      // A valid id stores; null or empty clears; anything else
+      // is ignored and the stored value kept.
+      if (b.moment !== undefined) {
+        const m = validMoment(b.moment);
+        if (m) bz.moment = m;
+        else if (b.moment === null || b.moment === "") delete bz.moment;
       }
       if (b.about !== undefined) bz.about = String(b.about || "").trim().slice(0, 600);
       // Public review-page links: host-validated, optional, shown
@@ -10315,6 +10408,7 @@ async function route(event) {
     }
     if (method === "GET" && seg[1] === "applications") {
       const all = await allUsers();
+      await ensureBusinessAnchors(all);
       const users = all.filter((u) => u.role !== "admin");
       const { approvedRank, pendingRank } = creatorRanks(all);
       const [allBk, allPo, allRv, allBz] = await Promise.all([allBookings(), allPosts(), allReviews(), allBizReviews()]);
@@ -11312,6 +11406,9 @@ async function route(event) {
   if (method === "GET" && seg[0] === "me" && seg[1] === "roster-preview" && seg.length === 2) {
     if (!user || user.role !== "business") return err(403, "Businesses only");
     if (!isFoundingBusiness(user)) return err(403, "Your business is active. Your full roster is under Find creators.");
+    await ensureBusinessAnchors(await allUsers());
+    const freshMe = await store.get(`user:${user.id}`);
+    const myAnchor = (freshMe && freshMe.business && freshMe.business.anchor) || (user.business && user.business.anchor) || null;
     const disc = await discoverCards({ market: user.market }, user);
     const present = new Set();
     for (const c of disc.creators) {
@@ -11335,6 +11432,7 @@ async function route(event) {
     }
     return json(200, {
       preview: true,
+      viewerAnchor: myAnchor,
       market: user.market,
       marketLive: await isMarketLive(user.market),
       categories: CREATOR_CATEGORIES.filter((name) => present.has(name)),
@@ -11584,6 +11682,7 @@ async function route(event) {
         spots: 1,
         status: "open",
         rebookOfBookingId: last ? last.id : null,
+        moment: validMoment(b.moment) || validMoment(user.business && user.business.moment),
         createdAt: ts,
         updatedAt: ts,
       };
@@ -11695,6 +11794,9 @@ async function route(event) {
         // Packaged play (R1): template metadata only; the brief
         // object carries everything the play decided.
         play: typeof b.play === "string" ? b.play.slice(0, 40) : null,
+        // Menu of Moments (Build -32): the moment this offer is
+        // for, picked in the composer. Packaging only.
+        moment: validMoment(b.moment),
         dollarCap,
         visitWindow: String(b.visitWindow || "").trim(),
         windowMode: b.windowMode === "thisweek" ? "thisweek" : "7days",

@@ -173,8 +173,8 @@ try {
     !slice.includes("totalInMarket") && !slice.includes("will never be padded with stand-ins") && !slice.includes("roster is being built now") && !slice.includes("Showing the top"), "");
   check("no em dashes anywhere in the new founding preview code", !slice.includes("—"), "");
   check("build stamp is the new build on both sides",
-    fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), "..", "netlify", "functions", "lib", "build.js"), "utf8").includes("2026.10.29-31")
-    && fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), "..", "public", "index.html"), "utf8").includes("2026.10.29-31"), "");
+    fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), "..", "netlify", "functions", "lib", "build.js"), "utf8").includes("2026.10.29-32")
+    && fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), "..", "public", "index.html"), "utf8").includes("2026.10.29-32"), "");
 
   // ================================================================
   // Part B: creator excitement layer (Jeff, 2026-10-29).
