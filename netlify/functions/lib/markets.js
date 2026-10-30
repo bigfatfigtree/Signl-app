@@ -39,6 +39,17 @@
 // lists on purpose: the resolver's tie outcome and the one-tap
 // candidate pick handle them, with state/country hints breaking
 // the tie at intake.
+// Build -59 (Jeff, 2026-10-30): Miami RESTORED as a full market.
+// Jeff removed Miami in the 2026-10-23 reset above and reversed
+// that call the same day as -52 ("add miami and all surrounding
+// locations of metro area"): the Miami market below carries the
+// full tri-county metro footprint - Miami-Dade, Broward and Palm
+// Beach counties, 48 places people type - so a sign-up typing
+// Fort Lauderdale or Boca Raton files into Miami exactly the way
+// a Clarksville sign-up files into Nashville. The roster is 38
+// markets; the country set is unchanged. Miami starts NOT live,
+// like every unlaunched market (the live-flag default lives in
+// router.js): it files and counts, it does not launch itself.
 
 const MARKETS = [
   {
@@ -208,6 +219,13 @@ const MARKETS = [
     label: "Orlando, Florida",
     country: "United States",
     cities: ["Orlando", "Winter Park", "Altamonte Springs", "Kissimmee", "Sanford", "Winter Garden", "Ocoee", "Apopka", "Oviedo", "Lake Mary", "Longwood", "Casselberry", "Maitland", "Winter Springs", "Clermont", "St. Cloud", "Celebration", "Davenport", "Haines City", "Mount Dora"],
+  },
+  {
+    id: "miami",
+    name: "Miami",
+    label: "Miami, Florida",
+    country: "United States",
+    cities: ["Miami", "Miami Beach", "Hialeah", "Miami Gardens", "Doral", "Coral Gables", "Kendall", "Homestead", "Florida City", "North Miami", "North Miami Beach", "Aventura", "Sunny Isles Beach", "Miami Lakes", "Hialeah Gardens", "Sweetwater", "Cutler Bay", "Pinecrest", "Palmetto Bay", "Miami Springs", "Opa-locka", "Key Biscayne", "Fort Lauderdale", "Hollywood", "Pembroke Pines", "Miramar", "Coral Springs", "Pompano Beach", "Davie", "Plantation", "Sunrise", "Weston", "Coconut Creek", "Margate", "Lauderhill", "Tamarac", "Deerfield Beach", "Cooper City", "West Palm Beach", "Boca Raton", "Delray Beach", "Boynton Beach", "Lake Worth Beach", "Palm Beach Gardens", "Jupiter", "Wellington", "Riviera Beach", "Greenacres"],
   },
   {
     id: "houston",
@@ -577,6 +595,7 @@ const MARKET_STATES = {
   columbus: ["OH"],
   "new-orleans": ["LA"],
   orlando: ["FL"],
+  miami: ["FL"],
   houston: ["TX"],
   "san-antonio": ["TX"],
   "las-vegas": ["NV"],

@@ -185,7 +185,9 @@ const BOOKING_STARTED_LINE = "This booking started on SIGNL, so it runs through 
 // disabled (businesses join the founding list on joinsignl.com), and
 // the marketplace (discovery, offers, bookings, counter, posts,
 // messages) stays inactive in a market until an admin flips that
-// market's "live" flag. All 37 markets default to NOT live.
+// market's "live" flag. All 38 markets default to NOT live
+// (37 through Build -58; Miami restored in Build -59 starts NOT
+// live like every other unlaunched market).
 //
 // SIGNL_TEST_ALLOW_BUSINESS=1 is a TEST-ONLY override used by the
 // verify suites: it re-enables business registration and treats every

@@ -3422,7 +3422,7 @@ function renderHome() {
       <a class="btn ghost" href="#" onclick="return go('for-businesses')">For Businesses</a>
     </div>
     <p class="small muted mt">Working the register at a SIGNL business? <a href="#" onclick="return goStaff()">Redeem a creator visit</a>: staff mode, your PIN and the creator's code, nothing else.</p>
-    <p class="small muted mt">Founding sign-ups open in all ${(state.boot && state.boot.markets ? state.boot.markets.length : 37)} markets &middot; Decisions within 2 business days</p>
+    <p class="small muted mt">Founding sign-ups open in all ${(state.boot && state.boot.markets ? state.boot.markets.length : 38)} markets &middot; Decisions within 2 business days</p>
   </section>
   <section style="margin-top:44px">
     <p class="ui-kicker">How it works</p>
@@ -3524,7 +3524,8 @@ async function pickCandidateMarket(e, market) {
 
 // Market options are grouped by country (United States first, then the
 // rest alphabetically), cities alphabetical inside each country, so the
-// picker stays scannable as SIGNL goes universal (37 markets, 2026-10-18).
+// picker stays scannable as SIGNL goes universal (38 markets: universal
+// 2026-10-18, roster reset 2026-10-23, Miami restored 2026-10-30).
 function marketOptions(selected, forJoin) {
   const byCountry = {};
   for (const m of state.boot.markets) {

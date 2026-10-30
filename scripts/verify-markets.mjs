@@ -1,8 +1,10 @@
 // Verification of the 2026-10-23 market roster reset and the
 // Hampton Roads -> Virginia Beach rename (Jeff, 2026-10-23).
 // Pins:
-//   - the roster is exactly the 37 markets of the reset, with the
-//     removed markets gone and the 16 added markets present;
+//   - the roster is the 37 markets of the reset PLUS Miami,
+//     restored by Jeff on 2026-10-30 (Build -59): 38 markets,
+//     with the other removed markets gone and the 16 added
+//     markets present;
 //   - the Virginia Beach market keeps the full Hampton Roads metro
 //     city list (coverage did not shrink);
 //   - normalizeMarketName maps the legacy name to the canonical
@@ -77,7 +79,7 @@ const AGREE = { agreedHonestPosts: true, agreedFtcDisclosure: true, agreedPostCo
 
 // ---------- unit level: the roster and the alias ----------
 const names = MARKETS.map((m) => m.name);
-check("roster has exactly 37 markets", names.length === 37, String(names.length));
+check("roster has exactly 38 markets (37 of the reset + Miami restored in Build -59)", names.length === 38, String(names.length));
 check("Virginia Beach is a market; Hampton Roads is not a market name", names.includes("Virginia Beach") && !names.includes("Hampton Roads"));
 const vb = MARKETS.find((m) => m.name === "Virginia Beach");
 check("Virginia Beach keeps the stable id hampton-roads", !!vb && vb.id === "hampton-roads");
@@ -86,8 +88,12 @@ check("Virginia Beach covers the full Hampton Roads metro (10 cities incl. Norfo
   JSON.stringify(vb && vb.cities));
 const ADDED = ["Philadelphia", "Pittsburgh", "Cincinnati", "Columbus", "New Orleans", "Orlando", "Houston", "San Antonio", "Las Vegas", "Detroit", "San Juan", "Paris", "Barcelona", "Lisbon", "Toronto", "Montreal"];
 check("all 16 markets added 2026-10-23 are present", ADDED.every((n) => names.includes(n)));
-const REMOVED = ["Charlottesville", "Roanoke", "Greensboro", "Wilmington", "Miami", "Abu Dhabi", "Riyadh", "Doha", "Astana", "Bishkek", "Sydney", "Melbourne", "Perth", "Auckland", "Singapore", "Hong Kong", "Beijing", "Shanghai"];
-check("all 18 removed markets are gone", REMOVED.every((n) => !names.includes(n)));
+// Miami was on this removed list until Build -59 (2026-10-30):
+// Jeff restored it as a full market, so it leaves the list and
+// the other 17 removals of the 2026-10-23 reset still stand.
+const REMOVED = ["Charlottesville", "Roanoke", "Greensboro", "Wilmington", "Abu Dhabi", "Riyadh", "Doha", "Astana", "Bishkek", "Sydney", "Melbourne", "Perth", "Auckland", "Singapore", "Hong Kong", "Beijing", "Shanghai"];
+check("all 17 still-removed markets are gone (Miami restored in Build -59)", REMOVED.every((n) => !names.includes(n)));
+check("Miami is back on the roster (restored in Build -59)", names.includes("Miami"));
 check("normalizeMarketName maps the legacy name", normalizeMarketName("Hampton Roads") === "Virginia Beach");
 check("normalizeMarketName trims and maps", normalizeMarketName("  Hampton Roads ") === "Virginia Beach");
 check("normalizeMarketName leaves other names and non-strings alone",
@@ -146,7 +152,9 @@ try {
   check("claim with the canonical name stores Virginia Beach",
     canonical.r.status === 201 && !!canonical.r.data.user && canonical.r.data.user.market === "Virginia Beach");
 
-  const removed = await quickClaim("removed@fixtures.dev", "removed757", "Miami");
+  // The removed-market refusal fixture used Miami until Build
+  // -59 restored it; Sydney is still removed and carries the pin.
+  const removed = await quickClaim("removed@fixtures.dev", "removed757", "Sydney");
   check("claim with a removed market is refused (400)", removed.r.status === 400, String(removed.r.status));
 
   const added = await quickClaim("toronto@fixtures.dev", "torontoeats", "Toronto");

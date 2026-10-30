@@ -90,11 +90,11 @@ try {
 
   const anon = client();
   const boot = await anon("GET", "/api/bootstrap");
-  check("bootstrap lists 37 markets (the 2026-10-23 roster)", boot.data.markets && boot.data.markets.length === 37, JSON.stringify(boot.data.markets && boot.data.markets.length));
+  check("bootstrap lists 38 markets (the 2026-10-23 roster + Miami, restored 2026-10-30 in Build -59)", boot.data.markets && boot.data.markets.length === 38, JSON.stringify(boot.data.markets && boot.data.markets.length));
   // Roster reset (2026-10-23): the markets added that day, on top of the founding metros and the 2026-10-18 core markets that survived (Nashville..Dubai).
   const NEW_MARKETS = ["Philadelphia", "Pittsburgh", "Cincinnati", "Columbus", "New Orleans", "Orlando", "Houston", "San Antonio", "Las Vegas", "Detroit", "San Juan", "Paris", "Barcelona", "Lisbon", "Toronto", "Montreal"];
   check("all 16 markets added 2026-10-23 are in bootstrap", NEW_MARKETS.every((n) => (boot.data.markets || []).some((m) => m.name === n)), JSON.stringify((boot.data.markets || []).map((m) => m.name)));
-  check("bootstrap exposes a country on every market (grouped picker data)", (boot.data.markets || []).length === 37 && boot.data.markets.every((m) => !!m.country), JSON.stringify((boot.data.markets || []).map((m) => [m.name, m.country])));
+  check("bootstrap exposes a country on every market (grouped picker data)", (boot.data.markets || []).length === 38 && boot.data.markets.every((m) => !!m.country), JSON.stringify((boot.data.markets || []).map((m) => [m.name, m.country])));
   const EXPECTED_COUNTRIES = { "Paris": "France", "Barcelona": "Spain", "Lisbon": "Portugal", "Toronto": "Canada", "Montreal": "Canada", "San Juan": "Puerto Rico", "London": "United Kingdom", "Manchester": "United Kingdom", "Dubai": "United Arab Emirates" };
   check("the international markets carry the right countries", Object.entries(EXPECTED_COUNTRIES).every(([n, c]) => (boot.data.markets || []).some((m) => m.name === n && m.country === c)), JSON.stringify(EXPECTED_COUNTRIES));
   check("bootstrap spans exactly 8 countries and territories", new Set((boot.data.markets || []).map((m) => m.country)).size === 8, JSON.stringify([...new Set((boot.data.markets || []).map((m) => m.country))]));
@@ -374,7 +374,7 @@ try {
   // --- admin market controls, then activation opens the gate ---
   const markets = await admin("GET", "/api/admin/markets");
   const hr = (markets.data.markets || []).find((m) => m.name === "Virginia Beach");
-  check("admin markets list: 37 markets, Virginia Beach founding-only with 2 approved creators", (markets.data.markets || []).length === 37 && !!hr && hr.live === false && hr.creatorsApproved === 2, JSON.stringify(hr));
+  check("admin markets list: 38 markets, Virginia Beach founding-only with 2 approved creators", (markets.data.markets || []).length === 38 && !!hr && hr.live === false && hr.creatorsApproved === 2, JSON.stringify(hr));
   const dubaiRow = (markets.data.markets || []).find((m) => m.name === "Dubai");
   check("admin markets list: Dubai present, United Arab Emirates, not live", !!dubaiRow && dubaiRow.country === "United Arab Emirates" && dubaiRow.live === false, JSON.stringify(dubaiRow));
   const toggle = await admin("POST", "/api/admin/markets/toggle", { market: "Hampton Roads", live: true });

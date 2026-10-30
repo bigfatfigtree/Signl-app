@@ -1,4 +1,4 @@
-// Build 2026.10.30-58 verification: the market footprint fix.
+// Build 2026.10.30-59 verification: the market footprint fix.
 // Jeff flagged a live approval email (2026-10-30): a Clarksville
 // creator was filed "Not listed yet" and told Clarksville is not
 // an open market, when Clarksville, TN is Nashville area. Root
@@ -113,9 +113,9 @@ const ROOT = path.join(path.dirname(new URL(import.meta.url).pathname), "..");
 // ---------- unit level: stamp, lists, resolver ----------
 const buildJs = fs.readFileSync(path.join(ROOT, "netlify/functions/lib/build.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(ROOT, "public/index.html"), "utf8");
-check("stamp: BUILD_ID is 2026.10.30-58 on server and shell", buildJs.includes('BUILD_ID = "2026.10.30-58"') && indexHtml.includes("2026.10.30-58"));
+check("stamp: BUILD_ID is 2026.10.30-59 on server and shell", buildJs.includes('BUILD_ID = "2026.10.30-59"') && indexHtml.includes("2026.10.30-59"));
 
-check("the roster is still 37 markets", MARKETS.length === 37, String(MARKETS.length));
+check("the roster is 38 markets (37 when -52 shipped; Miami restored in Build -59)", MARKETS.length === 38, String(MARKETS.length));
 const short = MARKETS.filter((m) => m.cities.length < 10).map((m) => m.name);
 check("every market carries a real metro list; the only short list is Dubai (city-emirate, 3)", short.length === 1 && short[0] === "Dubai", JSON.stringify(short));
 const nash = MARKETS.find((m) => m.id === "nashville");
@@ -200,7 +200,7 @@ const SPOTS = [
 for (const [town, hints, market] of SPOTS) {
   check(`${town} resolves unique to ${market}`, isU(U(town, hints || undefined), market), JSON.stringify(U(town, hints || undefined)));
 }
-check("Miami resolves none (not an app market on this roster)", U("Miami").status === "none", JSON.stringify(U("Miami")));
+check("Miami resolves unique to Miami (restored as a full market in Build -59; this pin asserted none through -58)", isU(U("Miami"), "Miami"), JSON.stringify(U("Miami")));
 check("Tulsa still resolves none", U("Tulsa").status === "none");
 
 // ---------- server level, phase 1: intake ----------
@@ -212,7 +212,7 @@ try {
   if (!up) throw new Error("server did not start");
   const boot = await client()("GET", "/api/bootstrap");
   const UNLISTED_NAME = boot.data.unlistedMarket;
-  check("bootstrap carries the -52 build stamp", boot.headers.get("x-signl-build") === "2026.10.30-58", String(boot.headers.get("x-signl-build")));
+  check("bootstrap carries the -52 build stamp", boot.headers.get("x-signl-build") === "2026.10.30-59", String(boot.headers.get("x-signl-build")));
   const nashBoot = (boot.data.markets || []).find((m) => m.name === "Nashville");
   check("bootstrap ships Nashville's full footprint list (Clarksville included)", !!nashBoot && nashBoot.cities.includes("Clarksville") && nashBoot.cities.length >= 20, JSON.stringify(nashBoot && nashBoot.cities.length));
 
