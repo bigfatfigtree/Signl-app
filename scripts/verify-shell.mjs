@@ -5,9 +5,10 @@
 // as amended by V4.1 (Jeff, later the same day, from using the
 // live app himself):
 //   (a) chrome: 4 labeled destinations per role (Home, Explore,
-//       Sig, More) in a bottom tab bar on mobile (icon +
-//       always-visible label + waiting badges), the same 4 as a
-//       232px labeled rail on desktop with More expanded inline,
+//       Sig, More) in a labeled left rail at EVERY width (icon +
+//       always-visible label + waiting badges; slim 72px rail on
+//       phones, 232px on desktop with More expanded inline;
+//       BUILD -38 replaced the phone bottom tab bar),
 //       a slim top bar (avatar + account name, Messages icon
 //       with unread badge, help), and NO floating agent button.
 //       NO account state may shrink the destination set (the
@@ -152,7 +153,7 @@ try {
   part("source: V4.1 chrome (4 destinations, slim top bar, no floating button)");
   check("index.html mounts the tab bar + slim top bar, and NO floating agent button", indexHtml.includes('id="tabbar"') && indexHtml.includes('id="topbar2"') && !indexHtml.includes('id="agent-fab"'));
   check("V3 chrome hides the legacy topbar, footer and rail in product states", themeCss.includes("body.v3-on .topbar, body.v3-slim .topbar") && themeCss.includes("body.v3-on #agent-fab, body.v3-slim #agent-fab"));
-  check("mobile tab bar is fixed bottom; desktop becomes a 232px rail with content offset", themeCss.includes("body.v3-on #tabbar") && themeCss.includes("width: 232px") && themeCss.includes("margin-left: 232px"));
+  check("left rail at every width: slim 72px rail + content offset on phones, 232px rail at desktop (BUILD -38)", themeCss.includes("body.v3-on #tabbar") && themeCss.includes("width: 72px") && themeCss.includes("margin-left: 72px") && themeCss.includes("width: 232px") && themeCss.includes("margin-left: 232px") && !themeCss.includes("body.v3-on #tabbar { display: block; position: fixed; left: 0; right: 0; bottom: 0;"));
   check("tab labels are always visible text (never icon-only)", themeCss.includes(".tab-label") && appJs.includes('class="tab-label"'));
   check("tab items come from one source with the V3 labels per role", appJs.includes("function tabItemsFor(") && appJs.includes('"Find creators"') && appJs.includes('"Earnings"') && appJs.includes('"Visits"') && appJs.includes('"More"'));
   check("tab icons are the spec section 3 set (house, deck, notice, calendar, banknote, list)", ["home", "deck", "notice", "calendar", "banknote", "list3"].every((i) => appJs.includes(`icon: "${i}"`)));

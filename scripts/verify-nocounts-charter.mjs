@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// BUILD 2026.10.29-37 verification (Jeff, 2026-10-29):
+// BUILD 2026.10.29-38 verification (Jeff, 2026-10-29):
 // Part A: the founding business page drops every roster count
 // and all thin-market framing. GET /api/me/roster-preview now
 // carries category presence only (canonical categories with at
@@ -231,9 +231,9 @@ try {
     routerSrc.includes("rec.creator.charter = true") && routerSrc.includes("rec.creator.charterAt = at"), "");
   check("the forbidden Momentum phrase stays out of the client (feed is newest-first)",
     !appJs.includes("see paid campaigns first") && !appJs.includes("paid campaigns first"), "");
-  check("build stamp is 2026.10.29-37 on both sides",
-    fs.readFileSync(path.join(ROOT, "netlify", "functions", "lib", "build.js"), "utf8").includes("2026.10.29-37")
-    && fs.readFileSync(path.join(ROOT, "public", "index.html"), "utf8").includes("2026.10.29-37"), "");
+  check("build stamp is 2026.10.29-38 on both sides",
+    fs.readFileSync(path.join(ROOT, "netlify", "functions", "lib", "build.js"), "utf8").includes("2026.10.29-38")
+    && fs.readFileSync(path.join(ROOT, "public", "index.html"), "utf8").includes("2026.10.29-38"), "");
 } catch (e) {
   failed += 1;
   failures.push("suite crashed: " + e.message);

@@ -135,20 +135,20 @@ try {
   check("subject names the market", hr.subject === "A founding creator spot in Hampton Roads", hr.subject);
   check("greeting uses the first name only", hr.text.startsWith("Hi Maya,"), hr.text.slice(0, 40));
   check("opener slot is filled", hr.text.includes("I found you through your Oceanfront food posts."));
-  check("legacy Hampton Roads recipient gets the Hampton Roads paragraph carrying the Black Friday launch", hr.text.includes("Hampton Roads launches in November, and our opening push is Black Friday weekend."));
+  check("legacy Hampton Roads recipient gets the Hampton Roads founding paragraph, with no launch date promised (Build -38)", hr.text.includes("Hampton Roads is a founding market: sign-ups are open now and offers open as the founding roster fills.") && !hr.text.includes("Black Friday") && !hr.text.includes("launches in November"));
   check("claim link is prefilled with handle + market", hr.text.includes("app.joinsignl.com/?handle=maya757&market=Hampton%20Roads"));
   check("founding email carries the approval status sentence", hr.text.includes("If you apply, you will get a decision or a clear status within 2 business days."));
   check("founding pitch leads with both lanes: comp or the creator's own paid rate at 97%", hr.text.includes("Local businesses book creators two ways on SIGNL: they comp you a meal, service or experience for an honest post, or they pay your own listed rate (you keep 97%). Most founding creators do both."));
   check("founding pitch keeps the mechanics after the lanes: 48 hours, no script, full disclosure, live founding profile", hr.text.includes("you post honestly about it within 48 hours. No script, no required praise, full disclosure.") && hr.text.includes("your founding profile is live and shareable from day one."));
   check("founding email carries the local-reach line verbatim (Jeff, 2026-10-25)", hr.text.includes("We don't rank you by followers. We rank you by how much of your audience actually lives here. That share is your local reach, and it is the number businesses look at first."));
   check("founding email carries the Momentum clause: on-time posts earn points that raise visibility", hr.text.includes("Every post you deliver on time earns Momentum points, and those points raise your visibility to businesses."));
-  check("local-reach paragraph sits between the both-lanes pitch and the market paragraph", hr.text.indexOf("Local businesses book creators two ways") > -1 && hr.text.indexOf("We don't rank you by followers") > hr.text.indexOf("Local businesses book creators two ways") && hr.text.indexOf("Hampton Roads launches in November") > hr.text.indexOf("We don't rank you by followers"));
+  check("local-reach paragraph sits between the both-lanes pitch and the market paragraph", hr.text.indexOf("Local businesses book creators two ways") > -1 && hr.text.indexOf("We don't rank you by followers") > hr.text.indexOf("Local businesses book creators two ways") && hr.text.indexOf("Hampton Roads is a founding market") > hr.text.indexOf("We don't rank you by followers"));
   check("sign-off is Jeff, Founder, SIGNL, with the tagline", hr.text.includes("\nJeff\nFounder, SIGNL\nhello@joinsignl.com | joinsignl.com\nNational platforms sell reach. We sell regulars."));
   check("no last name anywhere in the email", !hr.text.includes("Rimmer") && !hr.subject.includes("Rimmer"));
   check("no em dashes anywhere in the email", !hr.text.includes("—") && !hr.subject.includes("—"));
   const rva = campaignEmail({ name: "", handle: "rvabites", market: "Richmond", opener: "your Carytown posts" });
   check("missing name falls back to Hi there,", rva.text.startsWith("Hi there,"), rva.text.slice(0, 40));
-  check("other markets get the founding paragraph", rva.text.includes("Richmond is a founding market: sign-ups are open now and offers open city by city as the roster fills, in the next 30 to 90 days."));
+  check("other markets get the founding paragraph", rva.text.includes("Richmond is a founding market: sign-ups are open now and offers open city by city as the roster fills."));
   check("other markets never mention Black Friday", !rva.text.includes("Black Friday"));
   check("other-market claim link encodes its market", rva.text.includes("app.joinsignl.com/?handle=rvabites&market=Richmond"));
 
@@ -400,7 +400,7 @@ try {
   check("local money route 1: own paid rate, keep 97 percent, business covers 3 percent, escrow released when the post is live", xo.text.includes("set a paid rate on your SIGNL profile") && xo.text.includes("you keep 97 percent of your rate") && xo.text.includes("the business covers another 3 percent") && xo.text.includes("SIGNL holds the payment and releases it when your post is live"));
   check("local money route 2: 15k+ followers first in line for paid cash campaigns", xo.text.includes("15k+ followers are first in line for paid cash campaigns"));
   check("why local pays: the audience share in the market is the number SIGNL leads with", xo.text.includes("cannot tell a business what share of a creator's audience lives in its market") && xo.text.includes("SIGNL leads with exactly that number"));
-  check("founding mechanics: free profile, spot held in sign-up order, founding-market paragraph", xo.text.includes("Your founding profile is free") && xo.text.includes("your spot is held in sign-up order") && xo.text.includes("Richmond is a founding market: sign-ups are open now and offers open city by city as the roster fills, in the next 30 to 90 days."));
+  check("founding mechanics: free profile, spot held in sign-up order, founding-market paragraph", xo.text.includes("Your founding profile is free") && xo.text.includes("your spot is held in sign-up order") && xo.text.includes("Richmond is a founding market: sign-ups are open now and offers open city by city as the roster fills."));
   check("crossover claim link is the full prefilled URL", xo.text.includes("https://app.joinsignl.com/?handle=jordancreates&market=Richmond"));
   check("crossover email carries the approval status sentence", xo.text.includes("If you apply, you will get a decision or a clear status within 2 business days."));
   check("crossover sign-off is Jeff, Founder, SIGNL, with the tagline", xo.text.includes("\nJeff\nFounder, SIGNL\nhello@joinsignl.com | joinsignl.com\nNational platforms sell reach. We sell regulars."));
@@ -408,7 +408,7 @@ try {
   check("no em dashes anywhere in the crossover email", !xo.text.includes("—") && !xo.subject.includes("—"));
   const xoHr = crossoverEmail({ name: "", handle: "hrfoodie", market: "Hampton Roads", opener: "your Momfluence posts" });
   check("crossover missing name falls back to Hi there,", xoHr.text.startsWith("Hi there,"), xoHr.text.slice(0, 40));
-  check("crossover legacy Hampton Roads recipient gets the Hampton Roads paragraph carrying the November launch", xoHr.text.includes("Hampton Roads launches in November, and our opening push is Black Friday weekend."));
+  check("crossover legacy Hampton Roads recipient gets the Hampton Roads founding paragraph, with no launch date promised (Build -38)", xoHr.text.includes("Hampton Roads is a founding market: sign-ups are open now and offers open as the founding roster fills.") && !xoHr.text.includes("Black Friday"));
   check("template dispatch: the crossover id renders the crossover subject", campaignEmailFor(CROSSOVER_CAMPAIGN_ID, { name: "A B", handle: "ab", market: "Richmond", opener: "your posts" }).subject === "Your national platforms, plus a local layer in Richmond");
   check("template dispatch: the founding id renders the founding subject", campaignEmailFor("founding-creators-2026-10", { name: "A B", handle: "ab", market: "Richmond", opener: "your posts" }).subject === "A founding creator spot in Richmond");
   // The hello@ lane (Jeff, 2026-10-25): a second founding-creators

@@ -586,9 +586,10 @@ mail already does.
   lib/router.js) with the recipient's slots; Jeff approved the copy
   on 2026-10-19. Subject: "A founding creator spot in {Market}".
   Greeting "Hi {FirstName}," (first token of the name; "Hi there,"
-  when missing). Hampton Roads gets the November / Black Friday
-  launch paragraph; every other market gets the founding-market
-  paragraph (30 to 90 days, sign-up order). The claim link is
+  when missing). Every market gets the founding-market paragraph
+  (sign-up order, no opening date or window promised; Build -38
+  removed the earlier November / Black Friday and 30-to-90-day
+  framings). The claim link is
   prefilled per recipient (`?handle=&market=`). Sign-off is "Jeff",
   first name only. No em dashes.
 - **Second campaign: platform crossover.** Campaign id
@@ -1239,8 +1240,8 @@ Everything below assumes this directory is the repo root.
    current Netlify forms stay as a fallback during the switchover.
 8. **Do NOT activate any market yet, and do not activate businesses
    except deliberate pilots.** All 39 markets ship founding-only.
-   When a market's founding roster is ready (30 to 90 day window),
-   the launch sequence is two separate admin actions, in either
+   When a market's founding roster is ready, the launch sequence
+   is two separate admin actions, in either
    order: activate the market in Admin, Markets tab, AND activate
    its founding businesses (per business with **Activate business**
    on the Admin record, or **Activate founding businesses** for

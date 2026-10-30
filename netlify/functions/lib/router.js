@@ -169,7 +169,6 @@ const BOOKING_STARTED_LINE = "This booking started on SIGNL, so it runs through 
 // not in netlify.toml and must never be added there).
 // ------------------------------------------------------------------
 const TEST_MODE = process.env.SIGNL_TEST_ALLOW_BUSINESS === "1";
-const LAUNCH_WINDOW_TEXT = "30 to 90 days";
 const TERMS_VERSION = "2026-10-19";
 // Headliners tier (15k+) only: separate from comps, these creators can also be
 // hired for paid cash campaigns when a business runs one (Jeff, 2026-10-18).
@@ -2097,7 +2096,6 @@ async function foundingSummary(user) {
     country: user.country || null,
     unlisted: user.market === UNLISTED,
     marketLive: await isMarketLive(user.market),
-    launchWindow: LAUNCH_WINDOW_TEXT,
     status: user.status,
     priorityPosition: user.status === "approved" ? approvedRank.get(user.id) || null : null,
     queuePosition: user.status === "pending" ? pendingRank.get(user.id) || null : null,
@@ -2288,7 +2286,7 @@ function signupConfirmationEmail(user, band) {
   if (band) lines.push(`You are in the first ${band} creators to sign up in ${user.market}. That founding standing never expires.`);
   lines.push(
     "",
-    `What happens next: when you are approved, we email you again and your founding status page opens at app.joinsignl.com. ${marketTalkName(user.market)} opens to businesses in the next ${LAUNCH_WINDOW_TEXT}, and founding creators get first pick of offers when it does.`,
+    `What happens next: when you are approved, we email you again and your founding status page opens at app.joinsignl.com. ${marketTalkName(user.market)} is a founding market, and founding creators get first pick of offers when it opens to businesses.`,
     "",
     "The deal, as agreed: businesses comp you a meal or service, you post your honest experience within 48 hours, and you disclose the comp in the post. Nobody can ever ask you for a positive post.",
     "",
@@ -2369,7 +2367,7 @@ function claimConfirmationEmail(user, band) {
   if (band) lines.push(`You are in the first ${band} creators to sign up in ${user.market}. Founding spots are held in sign-up order, and that standing never expires.`);
   lines.push(
     "",
-    `What happens next: when you are approved, we email you again, and that is when you finish your profile: your home city, your audience counts, your local audience percentage, your categories, and the rest of what businesses see. A finished profile is what makes you visible to businesses, so the approval email is the one to act on. ${marketTalkName(user.market)} opens to businesses in the next ${LAUNCH_WINDOW_TEXT}, and founding creators with finished profiles get first pick of offers when it does.`,
+    `What happens next: when you are approved, we email you again, and that is when you finish your profile: your home city, your audience counts, your local audience percentage, your categories, and the rest of what businesses see. A finished profile is what makes you visible to businesses, so the approval email is the one to act on. ${marketTalkName(user.market)} is a founding market, and founding creators with finished profiles get first pick of offers when it opens to businesses.`,
     "",
     "The deal, as agreed: businesses comp you a meal or service, you post your honest experience within 48 hours, and you disclose the comp in the post. Nobody can ever ask you for a positive post.",
     "",
@@ -2411,7 +2409,7 @@ function profileCompletionReminderEmail(user) {
     "",
     unlisted
       ? `We open new markets where creator sign-ups pile up, and when ${user.city} opens, founding creators with finished profiles go first.`
-      : `${marketTalkName(user.market)} opens to businesses in the next ${LAUNCH_WINDOW_TEXT}, and founding creators with finished profiles get first pick of every offer.`,
+      : `${marketTalkName(user.market)} is a founding market, and founding creators with finished profiles get first pick of every offer.`,
     "",
     "National platforms sell reach. We sell regulars.",
     "Jeff",
@@ -2472,7 +2470,7 @@ function approvalEmail(user, band) {
   ];
   if (band) lines.push(`You are in the first ${band} founding creators in ${user.market}. Founding spots are held in sign-up order, and founding creators are shown to businesses in that order.`);
   lines.push(
-    ...finishLines(`${marketTalkName(user.market)} opens to businesses in the next ${LAUNCH_WINDOW_TEXT}. The moment it opens, we email you again, and founding creators get first pick of every offer. Your local audience percentage is the number businesses look at first, so keep it honest and current.`),
+    ...finishLines(`${marketTalkName(user.market)} is a founding market. The moment it opens to businesses, we email you again, and founding creators get first pick of every offer. Your local audience percentage is the number businesses look at first, so keep it honest and current.`),
     ...rosterBenefitsLines(user, user.market),
     "Momentum points order the creator list businesses see, and Headliners are first in line for paid campaigns.",
     ...(paidLine ? [paidLine, ""] : []),
@@ -2565,7 +2563,7 @@ function recruiterKitEmail(user) {
     "",
     unlisted
       ? `${user.city} opens when sign-ups there pile up, and every creator who joins through you makes that happen sooner. The moment it opens, you hear from me.`
-      : `${marketTalkName(user.market)} opens to businesses in the next ${LAUNCH_WINDOW_TEXT}. The moment it opens, you hear from me.`,
+      : `${marketTalkName(user.market)} is a founding market. The moment it opens to businesses, you hear from me.`,
     "",
     "National platforms sell reach. We sell regulars.",
     "",
@@ -5547,13 +5545,13 @@ function marketTalkName(market) {
 }
 
 // The founding mechanics paragraph, shared by both campaign
-// templates: Virginia Beach (the November / Black Friday launch
-// market) vs every other founding market, which opens in waves in
-// the following 30 to 90 days.
+// templates. No opening date or window is ever promised (Build
+// -38): every market is framed as a founding market whose offers
+// open as the roster fills.
 function campaignMarketParagraph(market) {
   return normalizeMarketName(market) === "Virginia Beach"
-    ? "Hampton Roads launches in November, and our opening push is Black Friday weekend. Founding creators are joining now, in sign-up order, and the first ones in get seen first when businesses start choosing."
-    : `${market} is a founding market: sign-ups are open now and offers open city by city as the roster fills, in the next 30 to 90 days. Founding creators join in sign-up order, and the first ones in get seen first when businesses start choosing.`;
+    ? "Hampton Roads is a founding market: sign-ups are open now and offers open as the founding roster fills. Founding creators are joining now, in sign-up order, and the first ones in get seen first when businesses start choosing."
+    : `${market} is a founding market: sign-ups are open now and offers open city by city as the roster fills. Founding creators join in sign-up order, and the first ones in get seen first when businesses start choosing.`;
 }
 
 function campaignClaimLink(recipient) {
@@ -5563,8 +5561,8 @@ function campaignClaimLink(recipient) {
 
 // The Jeff-approved outreach email (2026-10-19), rendered server
 // side from the recipient's slots. Plain text, first name only,
-// no em dashes. The market paragraph differs for Virginia Beach
-// (the November / Black Friday launch market) vs everywhere else.
+// no em dashes. The market paragraph names Hampton Roads for the
+// Virginia Beach market and the market itself everywhere else.
 function campaignEmail(recipient) {
   const market = String(recipient.market || "");
   const subject = `A founding creator spot in ${market}`;
@@ -9222,7 +9220,6 @@ async function route(event) {
       launch: {
         creatorSignupOpen: true,
         businessSignupOpen: true,
-        launchWindow: LAUNCH_WINDOW_TEXT,
         marketLive: await marketLiveMap(),
       },
       // Offer composer guidance (offer flow v2): tier comp floors
@@ -12029,7 +12026,7 @@ async function route(event) {
         (seg[0] === "offers" && (method === "GET" || method === "POST" || method === "PATCH"))
       );
       if (!businessPrelaunchOk) {
-        return err(403, `The ${marketTalkName(user.market)} market has not launched yet. Founding creators keep priority in the order they signed up, and ${marketTalkName(user.market)} opens to businesses in the next ${LAUNCH_WINDOW_TEXT}.`);
+        return err(403, `The ${marketTalkName(user.market)} market has not launched yet. Founding creators keep priority in the order they signed up, and we email them the moment it opens to businesses.`);
       }
     }
   }
@@ -12433,7 +12430,7 @@ async function route(event) {
       const offer = await store.get(`offer:${seg[1]}`);
       if (!offer || offer.businessId !== user.id) return err(404, "Offer not found");
       if (offer.status !== "draft") return err(409, "Only a draft can be published");
-      if (!(await isMarketLive(user.market))) return err(403, `Offers go live when your market opens. ${marketTalkName(user.market)} opens to businesses in the next ${LAUNCH_WINDOW_TEXT}; your draft is saved and ready to publish that day.`);
+      if (!(await isMarketLive(user.market))) return err(403, `Offers go live when your market opens. Businesses sign up when we are ready to launch; your draft is saved and ready to publish the day your market opens.`);
       if (kindOf(offer) === "comp" && Array.isArray(offer.targetTiers) && offer.targetTiers.length) {
         const block = dignityBlock(offer.dollarCap, offer.targetTiers);
         if (block) return err(400, `A $${fmtMoneyS(offer.dollarCap)} comp is below the dignity floor for ${block.tier} (floor $${fmtPriceS(block.floor)}). Raise the comp value or remove ${block.tier} from who can apply before publishing.`);

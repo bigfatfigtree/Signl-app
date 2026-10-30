@@ -105,7 +105,7 @@ try {
   check("bootstrap: creator sign-up open, business sign-up open (real accounts, Jeff 2026-10-20)", boot.data.launch && boot.data.launch.creatorSignupOpen === true && boot.data.launch.businessSignupOpen === true, JSON.stringify(boot.data.launch));
   check("bootstrap publishes the offer guidance (tier floors, paid floor, SLA, templates)", !!boot.data.offerGuidance && boot.data.offerGuidance.compGuidance.Headliners.floor === 100 && boot.data.offerGuidance.compGuidance.Neighbors.floor === 25 && boot.data.offerGuidance.paidFloor === 50 && boot.data.offerGuidance.selectionSlaHours === 72 && (boot.data.offerGuidance.templates || []).length === 4, JSON.stringify(boot.data.offerGuidance));
   check("bootstrap: every market starts not live", boot.data.launch && Object.values(boot.data.launch.marketLive).every((v) => v === false));
-  check("bootstrap: launch window is 30 to 90 days", boot.data.launch && boot.data.launch.launchWindow === "30 to 90 days");
+  check("bootstrap: no launch window is published (Build -38: no opening date or window is ever promised)", boot.data.launch && boot.data.launch.launchWindow === undefined);
   check("creator categories are the launch set", Array.isArray(boot.data.creatorCategories) && boot.data.creatorCategories.includes("Beauty & Grooming") && boot.data.creatorCategories.includes("Food & Drink") && !boot.data.creatorCategories.includes("Lifestyle"));
   check("comp categories published", Array.isArray(boot.data.compCategories) && boot.data.compCategories.includes("Restaurant meals"));
   check("health and wellness is a creator category and a comp category", boot.data.creatorCategories.includes("Health & Wellness") && boot.data.compCategories.includes("Health & wellness services"), JSON.stringify([boot.data.creatorCategories, boot.data.compCategories]));
@@ -256,7 +256,7 @@ try {
   check("founding status names the market and city", f.market === "Virginia Beach" && f.city === "Norfolk", JSON.stringify(f));
   check("founding status: market not live yet", f.marketLive === false);
   check("founding status shows the first-100 band, never the exact position or market counts", f.priorityBand === 100 && f.priorityPosition === undefined && f.foundingCreatorsInMarket === undefined, JSON.stringify(f));
-  check("launch window on the founding page is 30 to 90 days", f.launchWindow === "30 to 90 days");
+  check("founding status carries no launch window (Build -38)", f.launchWindow === undefined);
   check("founding card carries the computed Local Impact Score", typeof card.localImpactScore === "number", String(card.localImpactScore));
   check("founding card shows the photo URL", typeof card.photoUrl === "string" && card.photoUrl.endsWith("/photo"), String(card.photoUrl));
   check("founding card displays all six socials", card.profile.instagramUrl === "https://instagram.com/launcheats" && card.profile.tiktokUrl === "https://www.tiktok.com/@launcheats" && card.profile.youtubeChannel === "Launch Eats TV" && card.profile.facebookUrl === "https://www.facebook.com/launcheatspage" && card.profile.xUrl === "https://x.com/launcheats" && card.profile.linkedinUrl === "https://www.linkedin.com/in/launcheats");
@@ -344,7 +344,7 @@ try {
   check("offers are gated before market launch (403)", gatedOffers.status === 403, String(gatedOffers.status));
   const gatedDiscover = await creatorA("GET", "/api/discover?market=Hampton%20Roads");
   check("discovery is gated before market launch (403)", gatedDiscover.status === 403, String(gatedDiscover.status));
-  check("gate message names the launch window", /30 to 90 days/.test((gatedOffers.data && gatedOffers.data.error) || ""), gatedOffers.data && gatedOffers.data.error);
+  check("gate message promises no opening window and points at the opening email (Build -38)", !/30 to 90|30–90|30-90/.test((gatedOffers.data && gatedOffers.data.error) || "") && /moment it opens/.test((gatedOffers.data && gatedOffers.data.error) || ""), gatedOffers.data && gatedOffers.data.error);
 
   // --- second founding creator: priority follows sign-up order ---
   const creatorB = client();
