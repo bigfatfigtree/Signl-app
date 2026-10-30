@@ -15411,6 +15411,106 @@ async function renderAdminMessages() {
     if (adminMsgRenderAgain) { adminMsgRenderAgain = false; renderAdminMessages(); }
   }
 }
+// ---------- Admin: Finish Engine (BUILD -50) ----------
+// The rescue sequence, the Sig Concierge, and the finish moment:
+// state per creator, the global on/off, and the message copy.
+// Copy is edited here by a person; the engine never edits it.
+let adminFinish = { data: null };
+async function renderAdminFinishEngine() {
+  const host = document.getElementById("admin-finish-panel");
+  if (!host) return;
+  try {
+    const data = await api("GET", "/admin/finish-engine");
+    adminFinish.data = data.finishEngine;
+    host.innerHTML = adminFinishPanelHtml();
+  } catch (err) {
+    host.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+  }
+}
+function adminFinishStateText(row) {
+  if (row.optedOut) return "Opted out";
+  if (row.concierge === "active") return "Concierge: finishing by message";
+  if (row.concierge === "paused") return "Concierge: paused";
+  if (row.concierge === "cancelled") return "Concierge: stopped";
+  if (row.step > 0) return `Touch ${row.step} sent${row.lastSentAt ? " " + String(row.lastSentAt).slice(0, 10) : ""}`;
+  if (row.doneReason === "market_launched") return "Closed: market opened before touch 3";
+  return "Not started";
+}
+function adminFinishPanelHtml() {
+  const d = adminFinish.data;
+  if (!d) return `<p class="muted">Loading the finish engine...</p>`;
+  const c = d.counts || {};
+  const tpl = d.templates || {};
+  const tplField = (key, label, rows) => `
+    <label class="small" style="display:block;margin-top:10px"><strong>${label}</strong></label>
+    <textarea id="admin-finish-tpl-${key}" rows="${rows}" style="width:100%">${esc(tpl[key] || "")}</textarea>`;
+  const rosterRows = (d.roster || []).map((row) => {
+    const canStart = !row.optedOut && row.concierge !== "active" && row.concierge !== "done";
+    return `<tr>
+      <td>${esc(row.name || "")}${row.handle ? ` <span class="muted">@${esc(row.handle)}</span>` : ""}</td>
+      <td>${esc(row.market || "")}</td>
+      <td>${esc(adminFinishStateText(row))}</td>
+      <td>${esc((row.missing || []).join(", ") || "none")}</td>
+      <td>${canStart ? `<button type="button" class="btn small-btn" onclick="return adminFinishStartConcierge('${row.id}', this)">Start concierge</button>` : ""}</td>
+    </tr>`;
+  }).join("");
+  return `
+  <h3 class="mt">Finish Engine</h3>
+  <p class="muted small">Unfinished creators get up to three messages (the blunt truth, the booking page, the founding first look), Sig can finish a profile with a creator inside their message thread, and finishing fires one finish-moment message. The engine is <strong>${d.enabled ? "on" : "off"}</strong>${d.epochAt ? ` since ${String(d.epochAt).slice(0, 10)}` : ""}.
+  <button type="button" class="btn small-btn ${d.enabled ? "ghost" : ""}" onclick="return adminFinishToggle(this)">${d.enabled ? "Turn engine off" : "Turn engine on"}</button></p>
+  <p class="muted small">${c.audience || 0} approved and unfinished &middot; ${c.inSequence || 0} in the sequence &middot; ${c.conciergeActive || 0} finishing by message &middot; ${c.conciergePaused || 0} paused &middot; ${c.optedOut || 0} opted out &middot; ${c.finishMoments || 0} finish moments sent &middot; ${c.finished || 0} finished</p>
+  ${(d.roster || []).length ? `<div class="table-wrap panel"><table><tr><th>Creator</th><th>Market</th><th>State</th><th>Still missing</th><th></th></tr>${rosterRows}</table></div>${d.rosterTruncated ? `<p class="muted small">Roster trimmed to the first 100.</p>` : ""}` : `<p class="muted">No unfinished approved creators right now.</p>`}
+  <details style="margin-top:12px"><summary><strong>Message copy</strong> <span class="muted small">(yours to edit; the engine never changes it)</span></summary>
+    <p class="muted small">Slots filled at send: {firstName}, {market}, {city}, {handle}, {pageUrl}. The finish moment also takes {pageLine}, {turnedOnLine} and {charterLine}, which the engine composes from the creator's real state.</p>
+    ${tplField("rescue1", "Rescue touch 1: the blunt truth", 6)}
+    ${tplField("rescue2", "Rescue touch 2: the booking page", 6)}
+    ${tplField("rescue3", "Rescue touch 3: the founding first look (unlaunched markets only)", 6)}
+    ${tplField("finishMoment", "Finish moment", 5)}
+    <p style="margin-top:10px"><button type="button" class="btn small-btn" onclick="return adminFinishSaveTemplates(this)">Save copy</button> <span id="admin-finish-tpl-result" class="muted small"></span></p>
+  </details>`;
+}
+async function adminFinishToggle(btn) {
+  const d = adminFinish.data;
+  if (!d) return false;
+  if (btn) btn.disabled = true;
+  try {
+    await api("POST", "/admin/finish-engine", { enabled: !d.enabled });
+    await renderAdminFinishEngine();
+  } catch (err) {
+    alert(err.message);
+    if (btn) btn.disabled = false;
+  }
+  return false;
+}
+async function adminFinishSaveTemplates(btn) {
+  const result = document.getElementById("admin-finish-tpl-result");
+  const templates = {};
+  for (const key of ["rescue1", "rescue2", "rescue3", "finishMoment"]) {
+    const ta = document.getElementById("admin-finish-tpl-" + key);
+    if (ta) templates[key] = ta.value;
+  }
+  if (btn) btn.disabled = true;
+  try {
+    await api("POST", "/admin/finish-engine", { templates });
+    if (result) result.textContent = "Saved.";
+    await renderAdminFinishEngine();
+  } catch (err) {
+    if (result) result.textContent = err.message;
+    if (btn) btn.disabled = false;
+  }
+  return false;
+}
+async function adminFinishStartConcierge(creatorId, btn) {
+  if (btn) btn.disabled = true;
+  try {
+    await api("POST", "/admin/finish-engine", { action: "start_concierge", creatorId });
+    await renderAdminFinishEngine();
+  } catch (err) {
+    alert(err.message);
+    if (btn) btn.disabled = false;
+  }
+  return false;
+}
 function adminMsgComposeTo(userId) {
   adminMsg.targetId = userId;
   renderAdminMessages().then(() => {
@@ -16203,12 +16303,14 @@ async function loadApplications() {
       ${s.auto ? `<p class="muted small">Auto-decided under the standing rules: ${s.auto.approved} approved, ${s.auto.rejected} rejected all time; today ${s.auto.approvedToday} approved, ${s.auto.rejectedToday} rejected. Referred claims always wait for a person.</p>` : ""}` : "";
     el.innerHTML = `
       <div id="admin-msg-panel"><p class="muted">Loading creator messages...</p></div>
+      <div id="admin-finish-panel"></div>
       ${summaryStrip}
       <h3>Pending (${data.pending.length})</h3>
       ${data.pending.length ? `<div class="table-wrap panel"><table><tr><th>Applicant</th><th>Type</th><th>Market</th><th>Details</th><th>Applied</th><th>Decision</th></tr>${data.pending.map(row).join("")}</table></div>` : `<p class="muted">No pending applications.</p>`}
       <h3 class="mt">Decided (${data.decided.length})</h3>
       ${data.decided.length ? `<div class="table-wrap panel"><table><tr><th>Applicant</th><th>Type</th><th>Market</th><th>Details</th><th>Applied</th><th>Status</th></tr>${data.decided.map(row).join("")}</table></div>` : `<p class="muted">None yet.</p>`}`;
     renderAdminMessages();
+    renderAdminFinishEngine();
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }

@@ -2448,11 +2448,13 @@ async function sendPlatformMessage(adminUser, creator, body, meta = {}) {
   }
   await logEvent({
     type: "platform_message_sent",
-    actorId: adminUser.id,
-    actorRole: "admin",
+    // adminUser is null for system sends (the Finish Engine,
+    // BUILD -50); the event then honestly records a system actor.
+    actorId: adminUser ? adminUser.id : null,
+    actorRole: adminUser ? "admin" : "system",
     subjectId: msg.id,
     market: creator.market || null,
-    data: { toId: creator.id, scope: meta.scope || "single", segmentMarket: meta.segmentMarket || null, templateId: meta.templateId || null },
+    data: { toId: creator.id, scope: meta.scope || "single", segmentMarket: meta.segmentMarket || null, templateId: meta.templateId || null, engine: meta.engine || null, touch: meta.touch || null },
   });
   // The email ping rides after the in-app message is durable.
   // Any failure here (send refused, transport down, even a store
@@ -5620,6 +5622,608 @@ async function maybeRunProfileReminderSweep() {
   return runProfileCompletionReminderSweep();
 }
 
+// ---------- Finish Engine (BUILD -50, Jeff, 2026-10-30) ----------
+// Jeff approved five of the v2 creator-onboarding ideas on
+// 2026-10-30: #1 finish-or-no-paid-work messaging, #2 the booking
+// page turns on at finish, #3 first look at paid offers for
+// founding finishers, #5 Sig finishes the profile with the creator
+// by message, #8 the stalled-profile rescue sequence. Ideas #4,
+// #6 and #7 were excluded by Jeff and are NOT built here.
+//
+//   A. SIG CONCIERGE. Inside the creator's SIGNL team platform
+//      thread, Sig asks for the profile-completion gate fields
+//      one question at a time; each answer writes into the real
+//      profile through the same primitives a profile save uses.
+//      Only gate fields are asked (handle, home city, audience,
+//      categories, local %); photo is NOT in the gate and is never
+//      asked. The local % is always the creator's own number:
+//      never suggested, prefilled, or inferred. The flow is
+//      resumable and skippable per question, and a creator who
+//      volunteers more than asked gets every field parsed.
+//   B. RESCUE SEQUENCE. An approved creator who has not finished
+//      gets at most three platform messages (each carries the
+//      Build -40 email ping): touch 1 at day 0 (the later of the
+//      engine's first run and approval + 3 days, right behind the
+//      existing day-3 email reminder), touch 2 three days after
+//      touch 1, touch 3 seven days after touch 1. Touch 3 (the
+//      founding first look) is sent ONLY while the creator's
+//      market has not launched, because Charter is earned by
+//      criteria (approved + finished before launch, Build -47):
+//      the promise is never made where the code cannot honor it.
+//      The sequence stops the instant the creator finishes, and
+//      forever; a clear opt-out reply exits immediately. Copy
+//      lives in config:finishEngine, editable in Admin; the
+//      engine never changes copy on its own.
+//   C. FINISH MOMENT. The moment a creator crosses the completion
+//      gate by any path, exactly one platform message marks it:
+//      the booking page state (the real link), what turned on,
+//      and the founding first-look status where the record
+//      supports it.
+//
+// Every send and state change lands in the Event Log. The engine
+// runs off the scheduled sweep endpoint plus an opportunistic
+// throttled pass, like every other sweep in this file.
+
+const FINISH_ENGINE_KEY = "config:finishEngine";
+const FINISH_TOUCH2_AFTER_MS = 3 * DAY_MS;
+const FINISH_TOUCH3_AFTER_MS = 7 * DAY_MS;
+const FINISH_ENGINE_TEMPLATE_KEYS = ["rescue1", "rescue2", "rescue3", "finishMoment"];
+const FINISH_ENGINE_DEFAULT_TEMPLATES = {
+  rescue1: "Hi {firstName}, Sig from the SIGNL team. Straight with you: your profile is not finished, and while it is unfinished, no business can book you. Not for a comped visit (a meal, a service, or an experience in exchange for your post) and not for paid work at your own rate, where you keep 97%.\n\nFinished creators are the ones businesses can find, book, and pay. Finishing takes a few minutes.\n\nWant me to finish it with you right here? Reply and I will walk you through it, one question at a time.",
+  rescue2: "Hi {firstName}, Sig again. When you finish your profile, you get your own booking page: your name on it, your categories, your local audience, your rate. It is sitting there switched off until your profile is finished, and it turns on the moment you finish.\n\nThen your page is one switch away in your profile, ready to send anywhere.\n\nReply here and I will finish your profile with you, one question at a time. Or open the app and finish it there, either way works.",
+  rescue3: "Hi {firstName}, one more from Sig. {market} has not opened yet, and creators who finish before it opens hold founding status for good: when offers start posting, you see each new one a full day before everyone else.\n\nThat window closes the day the market opens, and it does not come back.\n\nYour profile is still unfinished. Reply here and I will finish it with you now, one question at a time.",
+  finishMoment: "{firstName}, you finished. Your profile is complete.\n\n{pageLine}\n\n{turnedOnLine}\n{charterLine}",
+};
+const FINISH_OPTOUT_RE = /^(stop|unsubscribe|opt[ -]?out|end|quit|leave me alone|no more messages?)$/;
+const FINISH_PAUSE_RE = /^(later|pause|not now|not right now|busy|brb)$/;
+
+function finishAppBase() {
+  return (process.env.APP_URL || "https://app.joinsignl.com").replace(/\/+$/, "");
+}
+
+async function finishEngineRaw() {
+  return (await store.get(FINISH_ENGINE_KEY)) || {};
+}
+
+async function finishEngineConfig() {
+  const raw = await finishEngineRaw();
+  return {
+    enabled: raw.enabled !== false,
+    epochAt: raw.epochAt || null,
+    templates: { ...FINISH_ENGINE_DEFAULT_TEMPLATES, ...(raw.templates || {}) },
+    updatedAt: raw.updatedAt || null,
+    updatedBy: raw.updatedBy || null,
+  };
+}
+
+async function saveFinishEngineRaw(patch, actorId) {
+  const raw = await finishEngineRaw();
+  const next = { ...raw, ...patch, updatedAt: nowIso(), updatedBy: actorId || raw.updatedBy || null };
+  await store.set(FINISH_ENGINE_KEY, next);
+  return next;
+}
+
+function fillFinishTemplate(tpl, user, extra = {}) {
+  const c = (user && user.creator) || {};
+  const slots = {
+    "{firstName}": greetingName(user),
+    "{market}": marketTalkName(user.market),
+    "{city}": user.city || "",
+    "{handle}": c.handle ? `@${c.handle}` : "",
+    "{pageUrl}": `${finishAppBase()}/c/${c.handle || ""}`,
+    ...extra,
+  };
+  let out = String(tpl || "");
+  for (const [k, v] of Object.entries(slots)) out = out.split(k).join(String(v));
+  return out.replace(/\n{3,}/g, "\n\n").trim();
+}
+
+// The concierge asks only for what the completion gate requires
+// (profileCompletionItems' required rows plus the handle that
+// profileCompleteOf checks), in this order.
+const CONCIERGE_FIELD_ORDER = ["handle", "city", "audience", "categories", "local"];
+function conciergeMissingFields(user) {
+  const c = (user && user.creator) || {};
+  const missing = [];
+  if (!String(c.handle || "").trim()) missing.push("handle");
+  if (!String((user && user.city) || "").trim()) missing.push("city");
+  if (!(audienceTotalOf(c) > 0)) missing.push("audience");
+  if (!Array.isArray(c.categories) || c.categories.length === 0) missing.push("categories");
+  if (c.localAudiencePct === null || c.localAudiencePct === undefined) missing.push("local");
+  return missing;
+}
+
+function conciergeQuestionFor(user, field) {
+  const c = (user && user.creator) || {};
+  const label = primaryPlatformLabel(primaryPlatformOf(c));
+  switch (field) {
+    case "handle": return `What is your handle on ${label}? Just the name, like @name.`;
+    case "city": return "Which city do you call home? Businesses see it as your home city.";
+    case "audience": return `How many followers do you have on ${label}? Just the number, roughly is fine.`;
+    case "categories": return `What do you post about? Name any of these that fit: ${CREATOR_CATEGORIES.join(", ")}.`;
+    case "local": return `Out of every 100 followers you have, about how many live in or near ${user.city || "your home city"}? A number from 0 to 100. It is your own estimate, nobody here sets it for you.`;
+    default: return "";
+  }
+}
+
+const CONCIERGE_HINTS = {
+  handle: "Just the name is fine, like @yourname.",
+  city: "Just the city name is fine.",
+  audience: "Just the number is fine, like 12000 or 12k.",
+  categories: "One or more from the list, in your own words is fine.",
+  local: "Just a number from 0 to 100, your best guess.",
+};
+
+const CONCIERGE_CATEGORY_ALIASES = [
+  ["Food & Drink", ["food", "drink", "drinks", "restaurant", "restaurants", "eating", "eats", "cooking", "chef", "coffee", "bakery", "brunch", "recipes"]],
+  ["Nightlife", ["nightlife", "night life", "bars", "bar scene", "clubs", "clubbing", "dj", "djs"]],
+  ["Beauty & Grooming", ["beauty", "grooming", "makeup", "hair", "salon", "barber", "nails", "skincare", "lashes"]],
+  ["Fitness & Wellness", ["fitness", "gym", "workout", "workouts", "yoga", "training", "pilates", "running", "crossfit"]],
+  ["Health & Wellness", ["health", "wellness", "med spa", "medspa", "therapy", "massage", "chiropractic"]],
+  ["Retail & Shopping", ["retail", "shopping", "shop", "fashion", "boutique", "clothing", "store"]],
+  ["Attractions & Events", ["attractions", "events", "things to do", "tourism", "tours", "tour guide"]],
+  ["Local Services", ["services", "photography", "photographer", "videographer", "real estate", "realtor", "cleaning", "repair", "plumbing", "landscaping"]],
+  ["Lifestyle", ["lifestyle", "mom life", "family life", "travel", "daily life", "parenting"]],
+  ["Sports", ["sports", "sport", "athlete", "football", "basketball", "baseball", "soccer", "golf", "fishing"]],
+  ["Music", ["music", "musician", "singer", "singing", "band", "rapper", "producer", "songwriter"]],
+];
+
+function conciergeCategoriesIn(body) {
+  const lower = ` ${String(body || "").toLowerCase().replace(/[^a-z0-9& ]+/g, " ")} `;
+  const found = [];
+  for (const cat of CREATOR_CATEGORIES) {
+    const variants = [cat.toLowerCase(), cat.toLowerCase().replace(/&/g, "and")];
+    if (variants.some((v) => lower.includes(` ${v} `) || lower.includes(` ${v},`))) { found.push(cat); continue; }
+    const aliases = (CONCIERGE_CATEGORY_ALIASES.find(([name]) => name === cat) || [null, []])[1];
+    if (aliases.some((a) => lower.includes(` ${a} `))) found.push(cat);
+  }
+  return found;
+}
+
+const CONCIERGE_PLATFORM_WORDS = [
+  ["instagram", ["instagram", "insta"]],
+  ["tiktok", ["tiktok", "tik tok"]],
+  ["facebook", ["facebook"]],
+  ["youtube", ["youtube"]],
+  ["snapchat", ["snapchat", "snap"]],
+  ["x", ["twitter"]],
+  ["linkedin", ["linkedin"]],
+];
+
+function conciergeCountToken(raw, suffix) {
+  let n = Number(String(raw).replace(/,/g, ""));
+  if (!Number.isFinite(n) || n <= 0) return null;
+  if (suffix === "k") n *= 1000;
+  if (suffix === "m") n *= 1000000;
+  n = Math.floor(n);
+  return n > 0 ? Math.min(AUDIENCE_COUNT_CAP, n) : null;
+}
+
+function conciergeAudienceIn(body, pending, creator) {
+  const lower = String(body || "").toLowerCase();
+  const numRe = /(\d[\d,]*(?:\.\d+)?)\s*([km])?\b/g;
+  const nums = [];
+  let m;
+  while ((m = numRe.exec(lower)) !== null) {
+    const n = conciergeCountToken(m[1], m[2]);
+    if (n) nums.push(n);
+  }
+  if (!nums.length) return null;
+  for (const [platform, words] of CONCIERGE_PLATFORM_WORDS) {
+    if (words.some((w) => lower.includes(w))) return { platform, count: nums[0] };
+  }
+  if (pending === "audience") return { platform: primaryPlatformOf(creator), count: nums[0] };
+  return null;
+}
+
+function conciergeCityIn(body, hasOtherWrites) {
+  let t = String(body || "").trim().replace(/^(i'?m in|i am in|i live in|based in|home is|it'?s|that'?s)\s+/i, "");
+  if (hasOtherWrites) t = t.split(",")[0];
+  t = t.replace(/[.!?]+$/, "").trim();
+  if (!t || t.length > 48 || /\d/.test(t) || t.split(/\s+/).length > 4) return null;
+  if (FINISH_OPTOUT_RE.test(t.toLowerCase()) || FINISH_PAUSE_RE.test(t.toLowerCase())) return null;
+  if (/^(yes|yeah|yep|no|nope|ok|okay|sure|please|thanks|thank you|hi|hello|hey|go|go ahead)$/i.test(t)) return null;
+  return t.replace(/\b\w/g, (ch) => ch.toUpperCase());
+}
+
+// Parse one reply into profile writes. Opportunistic by design:
+// whatever gate fields the reply answers get written, asked for
+// or not. The local % is taken ONLY from the creator's own
+// number (an explicit percent, or a bare number while the local
+// question is the pending one); it is never derived from
+// anything else in the reply.
+function parseConciergeAnswers(user, body, pending) {
+  const c = (user && user.creator) || {};
+  const writes = [];
+  const atMatch = String(body).match(/@([a-zA-Z0-9._]{2,30})/);
+  if (atMatch && (!String(c.handle || "").trim() || pending === "handle")) {
+    writes.push({ field: "handle", value: atMatch[1] });
+  } else if (pending === "handle") {
+    const bare = String(body).trim().match(/^@?([a-zA-Z0-9._]{2,30})$/);
+    if (bare) writes.push({ field: "handle", value: bare[1] });
+  }
+  const cats = conciergeCategoriesIn(body);
+  if (cats.length) writes.push({ field: "categories", value: cats });
+  const pctMatch = String(body).match(/(\d{1,3})\s*(%|percent|per cent)/i);
+  if (pctMatch) {
+    const n = parseInt(pctMatch[1], 10);
+    if (n >= 0 && n <= 100) writes.push({ field: "local", value: n });
+  } else if (pending === "local") {
+    const bare = String(body).trim().match(/^(\d{1,3})$/);
+    if (bare) { const n = parseInt(bare[1], 10); if (n <= 100) writes.push({ field: "local", value: n }); }
+  }
+  const aud = conciergeAudienceIn(body, pending, c);
+  if (aud) writes.push({ field: "audience", platform: aud.platform, count: aud.count });
+  if (pending === "city") {
+    const city = conciergeCityIn(body, writes.length > 0);
+    if (city) writes.push({ field: "city", value: city });
+  }
+  return writes;
+}
+
+// Apply parsed writes with the same primitives a profile save
+// uses (normalizeHandle, the audience stack + tier recompute,
+// canonicalFromList, the self-reported local % stamp).
+function applyConciergeWrites(rec, writes) {
+  const c = rec.creator;
+  const ts = nowIso();
+  const confirms = [];
+  for (const w of writes) {
+    if (w.field === "handle") {
+      const h = normalizeHandle(w.value);
+      if (!h) continue;
+      c.handle = h;
+      rec.handle = h;
+      c.primaryPlatformUrl = primaryPlatformUrl(primaryPlatformOf(c), h);
+      confirms.push(`@${h} saved as your handle.`);
+    } else if (w.field === "city") {
+      rec.city = w.value;
+      confirms.push(`${w.value} saved as your home city.`);
+    } else if (w.field === "audience") {
+      const stack = audienceStackOf(c);
+      stack[w.platform] = Math.min(AUDIENCE_COUNT_CAP, w.count);
+      c.audienceStack = stack;
+      c.followerCount = stack.instagram || 0;
+      c.totalAudience = Object.values(stack).reduce((s, n) => s + n, 0);
+      c.computedTier = tierForFollowers(c.totalAudience);
+      c.suggestedTier = c.computedTier;
+      c.tierBand = c.computedTier;
+      confirms.push(`${w.count.toLocaleString("en-US")} followers on ${primaryPlatformLabel(w.platform)} saved.`);
+    } else if (w.field === "categories") {
+      const cur = Array.isArray(c.categories) ? c.categories : [];
+      const merged = [...new Set([...cur, ...w.value.map((x) => canonicalFromList(x, CREATOR_CATEGORIES) || x)])];
+      c.categories = merged;
+      confirms.push(`Saved what you post about: ${merged.join(", ")}.`);
+    } else if (w.field === "local") {
+      c.localAudiencePct = w.value;
+      c.localAudienceSource = "Self-reported";
+      c.localAudienceAsOf = ts.slice(0, 10);
+      confirms.push(`${w.value}% local saved. That number is always your own call.`);
+    }
+  }
+  return confirms;
+}
+
+// Component C: the finish moment. Fires exactly once per creator
+// (guarded by finishMomentSentAt on the record), from any finish
+// path: profile save, signup, the concierge, or the sweep
+// backstop for a finish the live paths missed.
+async function maybeFireFinishMoment(user, via) {
+  const rec = await store.get(`user:${user.id}`);
+  if (!rec || !rec.creator) return false;
+  if (rec.finishMomentSentAt) return false;
+  if (!profileCompleteOf(rec)) return false;
+  if (isTester(rec) || standingState(rec) === "banned") return false;
+  const cfg = await finishEngineConfig();
+  if (!cfg.enabled) return false;
+  const launched = await marketLaunchedByFlag(rec.market);
+  let charterLine = "";
+  if (rec.status === "approved" && !launched) {
+    // Build -47: Charter is earned by criteria (approved +
+    // finished before the market launched). At this finish, in
+    // an unlaunched market, the second criterion just landed, so
+    // the stamp is written here exactly as creatorBuzz writes it.
+    if (!rec.creator.charter) {
+      rec.creator.charter = true;
+      rec.creator.charterAt = nowIso();
+    }
+    charterLine = `And because you finished before ${marketTalkName(rec.market)} opens, you hold founding status for good: when offers start posting, you see each new one a full day before everyone else.`;
+  }
+  const pageUrl = `${finishAppBase()}/c/${rec.creator.handle}`;
+  const pageLine = rec.creator.publicPage === true
+    ? `Your booking page is live: ${pageUrl}`
+    : `Your booking page turns on in your Profile: switch on your book-me page there and it is live at ${pageUrl}. Send it anywhere.`;
+  const turnedOnLine = launched
+    ? "What turned on: businesses can now find you and book you, for a comped visit (a meal, a service, or an experience in exchange for your post) or for paid work at your own rate. On paid bookings you keep 97% of your rate."
+    : `What turned on: the moment ${marketTalkName(rec.market)} opens, businesses can find you and book you, for a comped visit (a meal, a service, or an experience in exchange for your post) or for paid work at your own rate. On paid bookings you keep 97% of your rate. You are ready from day one.`;
+  const body = fillFinishTemplate(cfg.templates.finishMoment, rec, {
+    "{pageLine}": pageLine,
+    "{turnedOnLine}": turnedOnLine,
+    "{charterLine}": charterLine,
+  });
+  rec.finishMomentSentAt = nowIso();
+  rec.updatedAt = nowIso();
+  if (rec.finishRescue && !rec.finishRescue.done) {
+    rec.finishRescue.done = true;
+    rec.finishRescue.doneReason = "finished";
+  }
+  if (rec.sigConcierge && rec.sigConcierge.state !== "done") {
+    rec.sigConcierge.state = "done";
+    rec.sigConcierge.updatedAt = nowIso();
+  }
+  await store.set(`user:${rec.id}`, rec);
+  await sendPlatformMessage(null, rec, body, { engine: "finish_moment" });
+  await logEvent({ type: "finish_moment_sent", actorId: null, actorRole: "system", subjectId: rec.id, market: rec.market, data: { via, charter: !!charterLine, publicPage: rec.creator.publicPage === true } });
+  return true;
+}
+
+// Component A start, Admin-armed: the opener and the first
+// question go out as one platform message and the concierge is
+// armed on the record. Also cancels any live rescue sequence.
+async function startFinishConcierge(adminUser, creatorId, via) {
+  const rec = await store.get(`user:${creatorId}`);
+  if (!rec || rec.role !== "creator" || !rec.creator) return { error: "Creator not found" };
+  if (profileCompleteOf(rec)) return { error: "That creator already finished their profile" };
+  if (isTester(rec) || standingState(rec) === "banned") return { error: "That creator cannot be messaged" };
+  if (rec.sigConcierge && rec.sigConcierge.state === "active") return { error: "The concierge is already running for this creator" };
+  const missing = conciergeMissingFields(rec);
+  if (!missing.length) return { error: "That creator already finished their profile" };
+  rec.sigConcierge = { state: "active", currentField: missing[0], startedAt: nowIso(), startedVia: via, updatedAt: nowIso(), answers: 0 };
+  if (rec.finishRescue && !rec.finishRescue.done) {
+    rec.finishRescue.done = true;
+    rec.finishRescue.doneReason = "concierge";
+  }
+  rec.updatedAt = nowIso();
+  await store.set(`user:${rec.id}`, rec);
+  await logEvent({ type: "sig_concierge_started", actorId: adminUser ? adminUser.id : null, actorRole: adminUser ? "admin" : "system", subjectId: rec.id, market: rec.market, data: { via, currentField: missing[0] } });
+  const body = `Hi ${greetingName(rec)}, Sig from the SIGNL team. I can finish your profile with you right here, one question at a time. Every answer saves straight to your profile, and you can stop any time.\n\nFirst one: ${conciergeQuestionFor(rec, missing[0])}`;
+  await sendPlatformMessage(adminUser, rec, body, { engine: "sig_concierge" });
+  return { ok: true };
+}
+
+// Component A core: one creator reply in the platform thread.
+// Returns true when the engine consumed the reply (opt-out,
+// pause, concierge turn). Ordinary replies with no engine state
+// return false and stay plain team-thread messages for Jeff.
+async function handleFinishEngineReply(user, rawBody) {
+  const cfg = await finishEngineConfig();
+  if (!cfg.enabled) return false;
+  const rec = await store.get(`user:${user.id}`);
+  if (!rec || rec.role !== "creator" || !rec.creator) return false;
+  const body = String(rawBody || "").trim();
+  if (!body) return false;
+  const lower = body.toLowerCase().replace(/\s+/g, " ").replace(/[.!?]+$/, "");
+  if (FINISH_OPTOUT_RE.test(lower)) {
+    let touched = false;
+    if (rec.finishRescue && !rec.finishRescue.optedOut) {
+      rec.finishRescue.optedOut = true;
+      rec.finishRescue.done = true;
+      touched = true;
+    }
+    if (rec.sigConcierge && rec.sigConcierge.state !== "done" && rec.sigConcierge.state !== "cancelled") {
+      rec.sigConcierge.state = "cancelled";
+      rec.sigConcierge.updatedAt = nowIso();
+      touched = true;
+    }
+    if (touched) {
+      rec.updatedAt = nowIso();
+      await store.set(`user:${rec.id}`, rec);
+      await logEvent({ type: "finish_rescue_opted_out", actorId: rec.id, actorRole: "creator", subjectId: rec.id, market: rec.market, data: { reply: body.slice(0, 40) } });
+    }
+    return touched;
+  }
+  if (profileCompleteOf(rec)) {
+    if (rec.sigConcierge && (rec.sigConcierge.state === "active" || rec.sigConcierge.state === "paused")) {
+      rec.sigConcierge.state = "done";
+      rec.sigConcierge.updatedAt = nowIso();
+      rec.updatedAt = nowIso();
+      await store.set(`user:${rec.id}`, rec);
+    }
+    return false;
+  }
+  let st = rec.sigConcierge || null;
+  if (st && st.state === "active" && FINISH_PAUSE_RE.test(lower)) {
+    st.state = "paused";
+    st.updatedAt = nowIso();
+    rec.updatedAt = nowIso();
+    await store.set(`user:${rec.id}`, rec);
+    await logEvent({ type: "sig_concierge_paused", actorId: rec.id, actorRole: "creator", subjectId: rec.id, market: rec.market, data: { currentField: st.currentField || null } });
+    await sendPlatformMessage(null, rec, "No problem, we will pause there. Everything you told me is saved on your profile. Reply here any time and we pick up right where we left off.", { engine: "sig_concierge" });
+    return true;
+  }
+  let startedNow = false;
+  if (!st || (st.state !== "active" && st.state !== "paused")) {
+    const rescue = rec.finishRescue || null;
+    const offerOutstanding = !!rescue && (rescue.step || 0) >= 1 && !rescue.done && !rescue.optedOut;
+    if (!offerOutstanding) return false;
+    st = { state: "active", currentField: null, startedAt: nowIso(), startedVia: "rescue_reply", updatedAt: nowIso(), answers: 0 };
+    if (rescue) { rescue.done = true; rescue.doneReason = "concierge"; rec.finishRescue = rescue; }
+    rec.sigConcierge = st;
+    rec.updatedAt = nowIso();
+    await store.set(`user:${rec.id}`, rec);
+    await logEvent({ type: "sig_concierge_started", actorId: null, actorRole: "system", subjectId: rec.id, market: rec.market, data: { via: "rescue_reply" } });
+    startedNow = true;
+  }
+  if (st.state === "paused") { st.state = "active"; st.updatedAt = nowIso(); }
+  const missing = conciergeMissingFields(rec);
+  if (!missing.length) return true;
+  const pending = missing.includes(st.currentField) ? st.currentField : missing[0];
+  let writes = parseConciergeAnswers(rec, body, pending);
+  // A first reply that carries no field signal beyond a possible
+  // city is consent to start, not an answer: the opener and the
+  // first question go out and nothing is written from it.
+  if (startedNow && writes.length && writes.every((w) => w.field === "city")) writes = [];
+  const confirms = applyConciergeWrites(rec, writes);
+  const nowComplete = profileCompleteOf(rec);
+  if (nowComplete) {
+    rec.creator.profileComplete = true;
+    if (!rec.creator.profileCompletedAt) rec.creator.profileCompletedAt = nowIso();
+    st.state = "done";
+    st.updatedAt = nowIso();
+    rec.sigConcierge = st;
+    if (rec.finishRescue && !rec.finishRescue.done) { rec.finishRescue.done = true; rec.finishRescue.doneReason = "finished"; }
+    rec.updatedAt = nowIso();
+    await store.set(`user:${rec.id}`, rec);
+    await logEvent({ type: "profile_completed", actorId: rec.id, actorRole: "creator", subjectId: rec.id, market: rec.market, data: { via: "sig_concierge", handle: rec.creator.handle, city: rec.city, audienceStack: rec.creator.audienceStack, totalAudience: rec.creator.totalAudience, localAudiencePct: rec.creator.localAudiencePct, categories: rec.creator.categories } });
+    await logEvent({ type: "sig_concierge_completed", actorId: rec.id, actorRole: "creator", subjectId: rec.id, market: rec.market, data: { answers: st.answers || 0 } });
+    await maybeFireFinishMoment(rec, "sig_concierge");
+    return true;
+  }
+  const missingAfter = conciergeMissingFields(rec);
+  st.currentField = missingAfter[0];
+  st.answers = (st.answers || 0) + writes.length;
+  st.updatedAt = nowIso();
+  rec.sigConcierge = st;
+  rec.updatedAt = nowIso();
+  await store.set(`user:${rec.id}`, rec);
+  await logEvent({ type: "sig_concierge_answer", actorId: rec.id, actorRole: "creator", subjectId: rec.id, market: rec.market, data: { fields: writes.map((w) => w.field), parsed: writes.length > 0, currentField: st.currentField } });
+  const parts = [];
+  if (startedNow) parts.push("Good, let's finish it right here. I will ask one question at a time, and every answer saves straight to your profile. You can stop any time and pick it back up later.");
+  if (confirms.length) parts.push(confirms.join(" "));
+  // The simpler-way re-ask is only for a creator already in the
+  // flow whose answer did not parse; on the consent turn the
+  // question has not been asked yet, so there is nothing to
+  // re-ask (render QA catch, Build -50).
+  if (!writes.length && !startedNow) parts.push(`Let me ask that one a simpler way. ${CONCIERGE_HINTS[st.currentField] || ""}`.trim());
+  parts.push(conciergeQuestionFor(rec, st.currentField));
+  await sendPlatformMessage(null, rec, parts.join("\n\n"), { engine: "sig_concierge" });
+  return true;
+}
+
+// Components B + C backstop: one engine pass over every creator.
+async function runFinishEngineSweep(opts = {}) {
+  const summary = { checked: 0, touch1: 0, touch2: 0, touch3: 0, finishMoments: 0, touch3HeldLaunched: 0 };
+  const cfg = await finishEngineConfig();
+  if (!cfg.enabled) return summary;
+  const nowMs = opts.now ? opts.now.getTime() : Date.now();
+  let epochAt = cfg.epochAt;
+  if (!epochAt) {
+    epochAt = new Date(nowMs).toISOString();
+    await saveFinishEngineRaw({ epochAt }, null);
+  }
+  const epochMs = Date.parse(epochAt);
+  const users = await allUsers();
+  for (const u of users) {
+    if (u.role !== "creator" || !u.creator || isTester(u)) continue;
+    if (standingState(u) === "banned") continue;
+    if (profileCompleteOf(u)) {
+      if (!u.finishMomentSentAt && u.creator.profileCompletedAt) {
+        const doneMs = Date.parse(u.creator.profileCompletedAt);
+        if (Number.isFinite(doneMs) && doneMs >= epochMs && nowMs - doneMs <= 7 * DAY_MS) {
+          if (await maybeFireFinishMoment(u, "sweep_backstop")) summary.finishMoments += 1;
+        }
+      }
+      continue;
+    }
+    if (u.status !== "approved") continue;
+    let r = u.finishRescue || null;
+    if (r && (r.done || r.optedOut)) continue;
+    if (u.sigConcierge && (u.sigConcierge.state === "active" || u.sigConcierge.state === "paused")) {
+      if (r && !r.done) {
+        r.done = true;
+        r.doneReason = "concierge";
+        u.finishRescue = r;
+        u.updatedAt = nowIso();
+        await store.set(`user:${u.id}`, u);
+      }
+      continue;
+    }
+    summary.checked += 1;
+    if (!r) {
+      const enrollMs = Math.max(epochMs, (u.reviewedAt ? Date.parse(u.reviewedAt) : 0) + 3 * DAY_MS);
+      if (nowMs < enrollMs) continue;
+      r = { step: 0, startedAt: new Date(nowMs).toISOString(), touch1At: null, lastSentAt: null, optedOut: false, done: false, doneReason: null };
+    }
+    const step = r.step || 0;
+    let touch = 0;
+    if (step === 0) touch = 1;
+    else if (step === 1 && r.touch1At && nowMs >= Date.parse(r.touch1At) + FINISH_TOUCH2_AFTER_MS) touch = 2;
+    else if (step === 2 && r.touch1At && nowMs >= Math.max(Date.parse(r.touch1At) + FINISH_TOUCH3_AFTER_MS, Date.parse(r.lastSentAt || r.touch1At) + FINISH_TOUCH2_AFTER_MS)) touch = 3;
+    if (!touch) { u.finishRescue = r; continue; }
+    if (touch === 3 && (await marketLaunchedByFlag(u.market))) {
+      r.done = true;
+      r.doneReason = "market_launched";
+      u.finishRescue = r;
+      u.updatedAt = nowIso();
+      await store.set(`user:${u.id}`, u);
+      summary.touch3HeldLaunched += 1;
+      await logEvent({ type: "finish_rescue_closed", actorId: null, actorRole: "system", subjectId: u.id, market: u.market, data: { reason: "market_launched_before_touch3", step } });
+      continue;
+    }
+    const body = fillFinishTemplate(cfg.templates[`rescue${touch}`], u);
+    r.step = touch;
+    r.lastSentAt = new Date(nowMs).toISOString();
+    if (touch === 1) r.touch1At = r.lastSentAt;
+    if (touch === 3) { r.done = true; r.doneReason = "sequence_complete"; }
+    u.finishRescue = r;
+    u.updatedAt = nowIso();
+    await store.set(`user:${u.id}`, u);
+    await sendPlatformMessage(null, u, body, { engine: "finish_rescue", touch });
+    await logEvent({ type: "finish_rescue_sent", actorId: null, actorRole: "system", subjectId: u.id, market: u.market, data: { touch, handle: u.creator.handle || null } });
+    summary[`touch${touch}`] += 1;
+  }
+  return summary;
+}
+
+const FINISH_ENGINE_SWEEP_THROTTLE_MS = 55 * 60 * 1000;
+async function maybeRunFinishEngineSweep() {
+  if (sweepMemoFresh("finishEngineSweep")) return null;
+  sweepMemoAt.finishEngineSweep = Date.now();
+  const rec = await store.get("config:finishEngineSweep");
+  const last = rec && rec.lastRunAt ? Date.parse(rec.lastRunAt) : 0;
+  if (Date.now() - last < FINISH_ENGINE_SWEEP_THROTTLE_MS) return null;
+  await store.set("config:finishEngineSweep", { lastRunAt: nowIso() });
+  return runFinishEngineSweep();
+}
+
+// Admin state: config, counts, and the engine's roster (approved
+// creators who have not finished, plus anyone with engine state).
+async function finishEngineAdminState() {
+  const cfg = await finishEngineConfig();
+  const users = await allUsers();
+  const counts = { audience: 0, inSequence: 0, conciergeActive: 0, conciergePaused: 0, optedOut: 0, finishMoments: 0, finished: 0 };
+  const roster = [];
+  for (const u of users) {
+    if (u.role !== "creator" || !u.creator || isTester(u)) continue;
+    const complete = profileCompleteOf(u);
+    if (complete) counts.finished += 1;
+    if (u.finishMomentSentAt) counts.finishMoments += 1;
+    const r = u.finishRescue || null;
+    const st = u.sigConcierge || null;
+    if (st && st.state === "active") counts.conciergeActive += 1;
+    if (st && st.state === "paused") counts.conciergePaused += 1;
+    if (r && r.optedOut) counts.optedOut += 1;
+    if (r && !r.done && !r.optedOut && !complete) counts.inSequence += 1;
+    if (!complete && (u.status === "approved" || r || st)) {
+      if (u.status === "approved") counts.audience += 1;
+      roster.push({
+        id: u.id,
+        handle: u.creator.handle || null,
+        name: u.name || null,
+        market: u.market,
+        status: u.status,
+        step: r ? r.step || 0 : 0,
+        lastSentAt: r ? r.lastSentAt : null,
+        doneReason: r ? r.doneReason : null,
+        optedOut: !!(r && r.optedOut),
+        concierge: st ? st.state : null,
+        missing: profileCompletionFor(u).missing,
+      });
+    }
+  }
+  roster.sort((a, b) => String(b.lastSentAt || "").localeCompare(String(a.lastSentAt || "")));
+  return {
+    enabled: cfg.enabled,
+    epochAt: cfg.epochAt,
+    templates: cfg.templates,
+    updatedAt: cfg.updatedAt,
+    updatedBy: cfg.updatedBy,
+    counts,
+    roster: roster.slice(0, 100),
+    rosterTruncated: roster.length > 100,
+  };
+}
+
 // ---------- Creator outreach campaign sender (Jeff, 2026-10-19) ----------
 // Jeff approved a creator outreach email and wants it sent WITHOUT
 // per-send approval cards. The Gmail connector pops a card per
@@ -8084,6 +8688,12 @@ async function handleRegister(event) {
       },
     });
   }
+  if (role === "creator" && !quickClaim && (!autoDecision || autoDecision.action !== "rejected")) {
+    // Finish Engine (BUILD -50): a full-form registration crosses
+    // the completion gate at signup, so the finish moment fires
+    // here too (exactly once; the record stamp guards it).
+    try { await maybeFireFinishMoment(user, "signup"); } catch (e) { console.error("finish moment (signup) failed", e && e.message); }
+  }
   if (role === "business") {
     await logEvent({
       type: "plan_selected",
@@ -10369,6 +10979,7 @@ async function route(event) {
     (async () => { try { await maybeRunAutoDecisionCleanup(); } catch (e) { /* cleanup is best-effort on the request path */ } })(),
     // Profile completion reminders: throttled opportunistic sweep.
     (async () => { try { await maybeRunProfileReminderSweep(); } catch (e) { /* reminder sweep is best-effort on the request path */ } })(),
+    (async () => { try { await maybeRunFinishEngineSweep(); } catch (e) { /* finish engine is best-effort on the request path */ } })(),
     // Post-compliance sweep: 48h reminders, day-8 pause, day-9 ban.
     // Throttled to roughly hourly here (the Netlify scheduled
     // function and the admin endpoint are the explicit triggers).
@@ -11691,6 +12302,11 @@ async function route(event) {
       if (nowComplete && !wasComplete) {
         await logEvent({ type: "profile_completed", actorId: user.id, actorRole: "creator", subjectId: user.id, market: user.market, data: { via: "completion_flow", handle: c.handle, city: user.city, neighborhood: c.neighborhood, university: c.university, followerCount: c.followerCount, audienceStack: c.audienceStack, totalAudience: c.totalAudience, avgViews: c.avgViews, tierBand: normalizeTierBand(c.tierBand), localAudiencePct: c.localAudiencePct, localAudienceSource: c.localAudienceSource, categories: c.categories, compCategories: c.compCategories, topAudienceCities: c.topAudienceCities, hasTiktok: !!c.tiktokHandle, hasYoutube: !!c.youtubeChannel, facebookUrl: c.facebookUrl, xHandle: c.xHandle, xUrl: c.xUrl, linkedinUrl: c.linkedinUrl, hasPhoto: !!c.hasPhoto, openToPaidCampaigns: c.openToPaidCampaigns } });
       }
+      if (nowComplete && !wasComplete) {
+        // Finish Engine (BUILD -50): crossing the gate fires the
+        // one-time finish moment, whatever path finished it.
+        try { await maybeFireFinishMoment(user, "profile"); } catch (e) { console.error("finish moment (profile) failed", e && e.message); }
+      }
       if (changes.localAudiencePct) {
         await logEvent({ type: "local_audience_updated", actorId: user.id, actorRole: "creator", subjectId: user.id, market: user.market, data: { from: changes.localAudiencePct[0], to: changes.localAudiencePct[1], source: "Self-reported" } });
       }
@@ -12068,7 +12684,11 @@ async function route(event) {
     }
     const profileReminders = await runProfileCompletionReminderSweep(remOpts);
     await store.set("config:profileReminderSweep", { lastRunAt: nowIso() });
-    return json(200, { ok: true, sweep: summary, offerSweep, profileReminders });
+    // Finish Engine (BUILD -50): the rescue sequence and the
+    // finish-moment backstop ride the same scheduled clock.
+    const finishEngine = await runFinishEngineSweep(remOpts);
+    await store.set("config:finishEngineSweep", { lastRunAt: nowIso() });
+    return json(200, { ok: true, sweep: summary, offerSweep, profileReminders, finishEngine });
   }
   // Offer lifecycle sweep: same trigger discipline as compliance
   // (scheduled token or admin session). Drives the selection SLA,
@@ -12274,6 +12894,44 @@ async function route(event) {
         await logEvent({ type: "platform_message_segment", actorId: user.id, actorRole: "admin", subjectId: null, market: segmentMarket, data: { market: segmentMarket, recipients: recipients.length, emailSent, emailFailed, templateId } });
       }
       return json(201, { sent: recipients.length, recipients: recipients.map((u) => u.id), emailSent, emailFailed, scope, market: segmentMarket });
+    }
+    // Finish Engine (BUILD -50): config, roster, the global
+    // on/off, template edits (prefill-and-edit, like the message
+    // templates above), and arming the Sig Concierge per creator.
+    if (method === "GET" && seg[1] === "finish-engine" && seg.length === 2) {
+      return json(200, { finishEngine: await finishEngineAdminState() });
+    }
+    if (method === "POST" && seg[1] === "finish-engine" && seg.length === 2) {
+      const b = parseBody(event);
+      if (b.action === "start_concierge") {
+        if (!b.creatorId) return err(400, "creatorId is required");
+        const started = await startFinishConcierge(user, String(b.creatorId), "admin");
+        if (started.error) return err(400, started.error);
+        return json(200, { ok: true });
+      }
+      if (typeof b.enabled === "boolean") {
+        await saveFinishEngineRaw({ enabled: b.enabled }, user.id);
+        await logEvent({ type: "finish_engine_toggled", actorId: user.id, actorRole: "admin", subjectId: null, market: null, data: { enabled: b.enabled } });
+        return json(200, { ok: true, finishEngine: await finishEngineAdminState() });
+      }
+      if (b.templates && typeof b.templates === "object") {
+        const raw = await finishEngineRaw();
+        const current = { ...FINISH_ENGINE_DEFAULT_TEMPLATES, ...(raw.templates || {}) };
+        const keys = [];
+        for (const key of FINISH_ENGINE_TEMPLATE_KEYS) {
+          if (b.templates[key] === undefined) continue;
+          const val = String(b.templates[key] || "").trim();
+          if (!val) return err(400, `Template ${key} cannot be empty`);
+          if (val.length > PLATFORM_MESSAGE_MAX) return err(400, `Template ${key} is too long (max ${PLATFORM_MESSAGE_MAX} characters)`);
+          current[key] = val;
+          keys.push(key);
+        }
+        if (!keys.length) return err(400, "No templates to save");
+        await saveFinishEngineRaw({ templates: current }, user.id);
+        await logEvent({ type: "finish_engine_templates_saved", actorId: user.id, actorRole: "admin", subjectId: null, market: null, data: { keys } });
+        return json(200, { ok: true, finishEngine: await finishEngineAdminState() });
+      }
+      return err(400, "Unknown finish engine action");
     }
     // Your Line tree (Build -36): who brought whom under one
     // creator, points by generation. Admin only, inside the
@@ -16231,6 +16889,10 @@ async function route(event) {
         };
         await store.set(`message:${msg.id}`, msg);
         await logEvent({ type: "platform_message_reply", actorId: user.id, actorRole: "creator", subjectId: msg.id, market: user.market, data: { threadId, bodyLength: replyBody.length } });
+        // Finish Engine (BUILD -50): the reply may be an opt-out,
+        // a pause, or a Sig Concierge answer. Engine failures must
+        // never break the reply itself.
+        try { await handleFinishEngineReply(user, replyBody); } catch (e) { console.error("finish engine reply failed", e && e.message); }
         return json(201, { message: msg });
       }
       const other = await store.get(`user:${b.toUserId}`);
@@ -16269,4 +16931,4 @@ async function route(event) {
 
 // The email builders are exported alongside the router so the verify
 // suites can assert on the exact copy a creator receives.
-module.exports = { route, passwordResetEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, normalizeBriefInput, briefForOffer, validateAssetPacket, assetPacketView, postSeries, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView, musicOpenView, studentOpenView, PLATFORM_PEER_ID, platformThreadId, platformMessageEmail, MESSAGE_TEMPLATES };
+module.exports = { route, passwordResetEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, normalizeBriefInput, briefForOffer, validateAssetPacket, assetPacketView, postSeries, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView, musicOpenView, studentOpenView, PLATFORM_PEER_ID, platformThreadId, platformMessageEmail, MESSAGE_TEMPLATES, runFinishEngineSweep, maybeFireFinishMoment, handleFinishEngineReply, finishEngineConfig };

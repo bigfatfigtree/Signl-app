@@ -149,8 +149,12 @@ try {
     !!threadA && threadA.otherName === "SIGNL" && threadA.otherRole === "platform" && threadA.otherId === "signl-team",
     JSON.stringify(listA.data.threads).slice(0, 240));
   const convoA = await nashA.client("GET", "/api/messages?with=signl-team");
+  // BUILD -50 pin update: a full-form signup now also receives
+  // the Finish Engine's finish-moment message at register, so the
+  // thread opens with it and the Admin send lands second.
   check("(1) the thread holds the message, flagged platform, from the SIGNL peer",
-    convoA.data.messages.length === 1 && convoA.data.messages[0].platform === true && convoA.data.messages[0].fromId === "signl-team" && convoA.data.messages[0].body === bodyA,
+    convoA.data.messages.length === 2 && convoA.data.messages[0].body.includes("you finished. Your profile is complete.")
+      && convoA.data.messages[1].platform === true && convoA.data.messages[1].fromId === "signl-team" && convoA.data.messages[1].body === bodyA,
     JSON.stringify(convoA.data).slice(0, 240));
   const sentEvents = await eventsOf(admin, "platform_message_sent");
   check("(1) the send is in the Event Log with recipient, scope and template",
@@ -180,8 +184,10 @@ try {
     sendB.status === 201 && sendB.data.sent === 1 && sendB.data.emailSent === 0 && sendB.data.emailFailed === 1,
     `${sendB.status} ${JSON.stringify(sendB.data)}`);
   const convoB = await nashB.client("GET", "/api/messages?with=signl-team");
+  // BUILD -50 pin update: the finish moment from signup is the
+  // first message in the thread; the stored send follows it.
   check("(3) the in-app message is stored despite the failed ping",
-    convoB.data.messages.length === 1 && convoB.data.messages[0].platform === true,
+    convoB.data.messages.length === 2 && convoB.data.messages[1].platform === true && convoB.data.messages[1].body === "Your ping will fail; this message must still land.",
     JSON.stringify(convoB.data).slice(0, 200));
   const failEvents = await eventsOf(admin, "platform_message_email_not_sent");
   check("(3) the failure is logged loudly as an email_not_sent event with its reason",
@@ -199,15 +205,23 @@ try {
     seg.data.emailSent === 1 && seg.data.emailFailed === 1, JSON.stringify(seg.data));
   const convoA2 = await nashA.client("GET", "/api/messages?with=signl-team");
   const convoB2 = await nashB.client("GET", "/api/messages?with=signl-team");
+  // BUILD -50 pin update: both threads open with the creator's
+  // own finish moment (signup), so counts are +1 and the segment
+  // copy is the last message in each.
   check("(4) each recipient's copy lives in their OWN thread",
-    convoA2.data.messages.length === 3 && convoB2.data.messages.length === 2
+    convoA2.data.messages.length === 4 && convoB2.data.messages.length === 3
       && convoA2.data.messages[0].threadId !== convoB2.data.messages[0].threadId
-      && convoA2.data.messages[2].body === "Segment note for finished Nashville creators."
-      && convoB2.data.messages[1].body === "Segment note for finished Nashville creators.",
+      && convoA2.data.messages[3].body === "Segment note for finished Nashville creators."
+      && convoB2.data.messages[2].body === "Segment note for finished Nashville creators.",
     `A=${convoA2.data.messages.length} B=${convoB2.data.messages.length}`);
-  const listC = await richC.client("GET", "/api/messages");
-  check("(4) a finished creator in another market gets nothing",
-    !(listC.data.threads || []).some((t) => t.platform), JSON.stringify(listC.data.threads).slice(0, 160));
+  const convoC = await richC.client("GET", "/api/messages?with=signl-team");
+  // BUILD -50 pin update: richC finished at signup, so his thread
+  // holds his own finish moment; the Nashville segment copy must
+  // never reach it.
+  check("(4) a finished creator in another market gets no segment copy (only his own finish moment)",
+    convoC.data.messages.length === 1 && convoC.data.messages[0].body.includes("you finished. Your profile is complete.")
+      && !convoC.data.messages.some((m) => m.body === "Segment note for finished Nashville creators."),
+    JSON.stringify(convoC.data).slice(0, 200));
   const listP = await nashPending.client("GET", "/api/messages");
   const listI = await nashIncomplete.client("GET", "/api/messages");
   check("(4) pending and approved-but-unfinished creators are excluded",
@@ -249,8 +263,10 @@ try {
     JSON.stringify(replyEvents).slice(0, 200));
   const adminReply = await admin("POST", "/api/admin/platform-messages", { creatorId: nashA.id, body: "Perfect — send them over." });
   const convoA3 = await nashA.client("GET", "/api/messages?with=signl-team");
+  // BUILD -50 pin update: the thread carries one extra message
+  // throughout, the signup finish moment.
   check("(5) an Admin reply from the thread view lands in the same thread",
-    adminReply.status === 201 && convoA3.data.messages.length === 5 && convoA3.data.messages[4].fromId === "signl-team",
+    adminReply.status === 201 && convoA3.data.messages.length === 6 && convoA3.data.messages[5].fromId === "signl-team",
     `len=${convoA3.data.messages.length}`);
 
   // (6) Pre-launch: Denver is never toggled live in this suite.
@@ -266,8 +282,10 @@ try {
     listD.status === 200 && (listD.data.threads || []).some((t) => t.platform && t.otherName === "SIGNL"),
     `${listD.status} ${JSON.stringify(listD.data).slice(0, 200)}`);
   const convoD = await denD.client("GET", "/api/messages?with=signl-team");
+  // BUILD -50 pin update: denD's thread opens with his signup
+  // finish moment; the Admin send follows it.
   check("(6) a pre-launch creator can read the platform thread",
-    convoD.status === 200 && convoD.data.messages.length === 1,
+    convoD.status === 200 && convoD.data.messages.length === 2 && convoD.data.messages[1].body === "Denver is still founding — this thread works anyway.",
     `${convoD.status} ${JSON.stringify(convoD.data).slice(0, 160)}`);
   const notesD = await denD.client("GET", "/api/notifications");
   check("(6) the badge counts the platform thread pre-launch too",
@@ -296,8 +314,8 @@ try {
     appJs.includes("Creator messages") && appJs.includes("adminMsgComposeTo") && appJs.includes("admin-msg-template") && appJs.includes("renderAdminMessages"), "admin compose missing");
   const buildJs = readFileSync(join(ROOT, "netlify/functions/lib/build.js"), "utf8");
   const indexHtml = readFileSync(join(ROOT, "public/index.html"), "utf8");
-  check("(9) the build stamp is 2026.10.30-49 on server and shell",
-    buildJs.includes('BUILD_ID = "2026.10.30-49"') && indexHtml.includes("2026.10.30-49"), "stamp mismatch");
+  check("(9) the build stamp is 2026.10.30-50 on server and shell",
+    buildJs.includes('BUILD_ID = "2026.10.30-50"') && indexHtml.includes("2026.10.30-50"), "stamp mismatch");
 } catch (e) {
   failures.push(`suite crashed: ${e.message}`);
   console.error(e);
