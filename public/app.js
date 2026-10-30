@@ -12235,6 +12235,9 @@ function partnerEarningsHtml(d) {
     <div class="stat-cell"><div class="stat-num"><em>$${fmtPrice(e.accruedMonthly)}</em></div><div class="stat-lbl">Accrued to you / mo</div></div>
     <div class="stat-cell"><div class="stat-num">$${fmtPrice(e.paidTotal)}</div><div class="stat-lbl">Paid to date</div></div>
   </div>
+  ${e.basis === "deal" ? `
+  <div class="panel mt"><h3 style="margin-top:0">Your deal${e.dealLabel ? `: ${esc(e.dealLabel)}` : ""}</h3>
+  <p class="small muted">Accrued to date: <strong>$${fmtPrice(e.accruedTotal)}</strong> · Paid to date: <strong>$${fmtPrice(e.paidTotal)}</strong> · Still outstanding: <strong>$${fmtPrice(e.owedTotal)}</strong>. These are the same figures SIGNL's own books show, computed from your deal terms.${e.guaranteeState ? ` Right now: ${esc(e.guaranteeState.toLowerCase())} on your guarantee.` : ""}</p></div>` : ""}
   ${e.hasPaidRevenue ? `
   <div class="panel mt"><h3 style="margin-top:0">Accrued, not yet paid</h3>
   <p class="small muted">These amounts accrue from the subscriptions on file in your markets. Payouts begin once partner payments are switched on; until then this page is the ledger, and accrued amounts are never shown as paid.</p></div>` : `
@@ -15832,14 +15835,16 @@ async function loadAdminPartners() {
     <div class="card mb">
       <div class="flex-between"><strong>${esc(p.name)}</strong><span class="badge ${p.status === "active" ? "ok" : "warn"}">${p.status === "active" ? "Active" : "Paused"}</span></div>
       <p class="small muted" style="margin:6px 0">${p.type === "profile" ? "Local profile" : "Media group"} · ${esc(p.contactName || "")} · ${esc(p.email)} · Code: <span class="code">${esc(p.code)}</span>${p.demo ? ` · <span class="badge warn">Demo</span>` : ""}</p>
-      <p class="small" style="margin:0 0 6px">Markets: ${esc((p.markets || []).join(", "))} · Share: ${p.sharePct}% · Agreement: ${esc(p.agreementStatus || "unsigned")}</p>
+      <p class="small" style="margin:0 0 6px">Markets: ${esc((p.markets || []).join(", "))} · Share: ${p.sharePct}% · Agreement: ${esc(p.agreementStatus || "unsigned")}${p.agreementSignedAt ? ` (signed ${esc(fmtDay(p.agreementSignedAt))})` : ""}</p>
       ${(p.links || []).map((l) => `<p class="small muted" style="word-break:break-all;margin:2px 0">${esc(l.market)} creators: ${esc(l.creator)}</p>`).join("")}
       <div class="form-2col" style="margin-top:10px">
         <div class="field"><label>Share %</label><input type="number" id="pt-share-${p.id}" min="1" max="100" value="${p.sharePct}"></div>
         <div class="field"><label>Status</label><select id="pt-status-${p.id}"><option value="active" ${p.status === "active" ? "selected" : ""}>Active</option><option value="paused" ${p.status === "paused" ? "selected" : ""}>Paused</option></select></div>
+        <div class="field"><label>Agreement</label><select id="pt-agree-${p.id}"><option value="unsigned" ${(p.agreementStatus || "unsigned") === "unsigned" ? "selected" : ""}>Unsigned</option><option value="signed" ${p.agreementStatus === "signed" ? "selected" : ""}>Signed</option><option value="countersigned" ${p.agreementStatus === "countersigned" ? "selected" : ""}>Countersigned</option></select></div>
       </div>
       <div class="field"><label>Markets (comma separated, exact names)</label><input type="text" id="pt-markets-${p.id}" value="${esc((p.markets || []).join(", "))}"></div>
       <button class="btn small-btn" onclick="saveAdminPartner('${p.id}')">Save partner</button> <span id="pt-ok-${p.id}" class="saved"></span>
+      <div id="pt-deals-${p.id}" style="margin-top:12px"><p class="small muted">Loading deals…</p></div>
     </div>`).join("");
     el.innerHTML = `
       <h3 style="margin:0 0 8px">Partners</h3>
@@ -15865,6 +15870,7 @@ async function loadAdminPartners() {
         <p class="small muted">One fictional partner (Demo Media Group, Virginia Beach) seeded with Sample-tagged creators, businesses, and a completed visit, so the partner dashboard can be shown end to end. Its login email is jeff+partnerdemo@joinsignl.com, which lands in Jeff's own inbox: set its password from the sign-in page with Forgot password. Samples are tester-flagged and never enter a real count.</p>
         <button class="btn ghost" onclick="seedDemoPartner()">Seed demo partner</button> <span id="pt-demo-ok" class="saved"></span>
       </div>`;
+    for (const p of (data.partners || [])) loadPartnerDeals(p.id);
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
@@ -15894,6 +15900,7 @@ async function saveAdminPartner(id) {
     await api("PATCH", `/admin/partners/${id}`, {
       sharePct: Number(document.getElementById(`pt-share-${id}`).value),
       status: document.getElementById(`pt-status-${id}`).value,
+      agreementStatus: document.getElementById(`pt-agree-${id}`).value,
       markets,
     });
     const ok = document.getElementById(`pt-ok-${id}`);
@@ -15914,6 +15921,190 @@ async function seedDemoPartner() {
     const ok = document.getElementById("pt-demo-ok");
     if (ok) ok.textContent = e.message;
   }
+}
+
+// ---------- Partner Deal editor (Build -56) ----------
+// Terms are data on a versioned deal record. This editor writes
+// a NEW version on every save and never edits history; the
+// server diffs each version against the last and keeps the
+// prior values. A partner with no deal shows exactly that —
+// no schedule is ever pre-filled or assumed here.
+let adminDealsCache = {};
+
+function dealTermsOf(deal) {
+  const vs = (deal && deal.versions) || [];
+  return vs.length ? vs[vs.length - 1].terms : null;
+}
+function dealSplitSummary(deal) {
+  const t = dealTermsOf(deal);
+  if (!t) return "No terms entered yet";
+  const parts = [];
+  if (typeof t.partnerPct === "number") parts.push(`Partner ${t.partnerPct}% · SIGNL ${100 - t.partnerPct}%`);
+  if (t.guarantee) parts.push(`greater-of guarantee (${t.guarantee.beneficiary === "partner" ? "partner" : "SIGNL"} side)`);
+  parts.push(`${(t.markets || []).length} ${(t.markets || []).length === 1 ? "market" : "markets"}`);
+  parts.push(t.attributionScope === "sourced_only" ? "their sign-ups only" : "whole market");
+  return parts.join(" · ");
+}
+
+async function loadPartnerDeals(partnerId) {
+  const host = document.getElementById(`pt-deals-${partnerId}`);
+  if (!host) return;
+  try {
+    const data = await api("GET", `/admin/partners/${partnerId}/deals`);
+    adminDealsCache[partnerId] = data.deals || [];
+    renderPartnerDeals(partnerId);
+  } catch (e) {
+    host.innerHTML = `<p class="small muted">Deals could not load: ${esc(e.message)}</p>`;
+  }
+}
+
+function renderPartnerDeals(partnerId) {
+  const host = document.getElementById(`pt-deals-${partnerId}`);
+  if (!host) return;
+  const deals = adminDealsCache[partnerId] || [];
+  const dealHtml = deals.map((d) => {
+    const vs = [...(d.versions || [])].reverse();
+    return `
+    <div class="panel" style="margin:10px 0;padding:12px">
+      <div class="flex-between"><strong>${esc(d.label || "Partner deal")}</strong><span class="badge ${d.status === "live" || d.status === "signed" ? "ok" : "warn"}">${esc(d.status)}</span></div>
+      <p class="small muted" style="margin:4px 0">${esc(dealSplitSummary(d))} · Version ${d.currentVersion || (d.versions || []).length}${d.governingDocument ? ` · <a href="${esc(d.governingDocument)}" target="_blank" rel="noopener">Governing document</a>` : ""}</p>
+      <p class="small muted" style="margin:4px 0">${vs.map((v) => `v${v.n} · ${esc(fmtDay(v.at))}${(v.changedFields || []).length ? ` · changed: ${esc(v.changedFields.join(", "))}` : ""}`).join("<br>")}</p>
+      <button class="btn small-btn ghost" onclick="dfToggle('${partnerId}','${d.id}')">Edit terms</button>
+      <div id="df-wrap-${partnerId}-${d.id}" style="display:none">${dealFormHtml(partnerId, d)}</div>
+    </div>`;
+  }).join("");
+  host.innerHTML = `
+    <h4 style="margin:8px 0 2px">Deals</h4>
+    ${deals.length ? dealHtml : `<p class="small muted">No deal on file. Until terms are entered here, this partner's earnings run on their standing share only, and the Command Center says "deal terms not entered yet" — nothing is assumed.</p>`}
+    <button class="btn small-btn" onclick="dfToggle('${partnerId}','new')">New deal</button>
+    <div id="df-wrap-${partnerId}-new" style="display:none">${dealFormHtml(partnerId, null)}</div>`;
+}
+
+function dfToggle(partnerId, key) {
+  const w = document.getElementById(`df-wrap-${partnerId}-${key}`);
+  if (w) w.style.display = w.style.display === "none" ? "" : "none";
+  return false;
+}
+
+function dealMarketRowHtml(dm) {
+  const markets = (state.boot && state.boot.markets) || [];
+  return `<div class="df-mrow form-2col" style="gap:8px;margin-bottom:6px">
+    <div class="field"><label>Market</label><select class="dfm-market"><option value="">— pick a market —</option>${markets.map((m) => `<option value="${esc(m.name)}" ${dm && dm.market === m.name ? "selected" : ""}>${esc(m.name)}</option>`).join("")}</select></div>
+    <div class="field"><label>Status</label><select class="dfm-status"><option value="pending" ${!dm || dm.status === "pending" ? "selected" : ""}>Pending</option><option value="live" ${dm && dm.status === "live" ? "selected" : ""}>Live</option><option value="ended" ${dm && dm.status === "ended" ? "selected" : ""}>Ended</option></select></div>
+    <div class="field"><label>Went live</label><input type="date" class="dfm-live" value="${dm && dm.liveAt ? esc(String(dm.liveAt).slice(0, 10)) : ""}"></div>
+    <div class="field"><label>Activation fee $ (blank = to be set)</label><input type="number" class="dfm-fee" min="0" step="any" value="${dm && typeof dm.activationFee === "number" ? dm.activationFee : ""}"></div>
+    <div class="field"><label>Activation</label><select class="dfm-astatus"><option value="unbilled" ${!dm || dm.activationStatus === "unbilled" ? "selected" : ""}>Unbilled</option><option value="invoiced" ${dm && dm.activationStatus === "invoiced" ? "selected" : ""}>Invoiced</option><option value="paid" ${dm && dm.activationStatus === "paid" ? "selected" : ""}>Paid</option><option value="waived" ${dm && dm.activationStatus === "waived" ? "selected" : ""}>Waived</option></select></div>
+  </div>`;
+}
+
+function dfAddMarketRow(partnerId, key) {
+  const host = document.getElementById(`df-${partnerId}-${key}-markets`);
+  if (host) host.insertAdjacentHTML("beforeend", dealMarketRowHtml(null));
+  return false;
+}
+
+function dealFormHtml(partnerId, deal) {
+  const key = deal ? deal.id : "new";
+  const t = deal ? (dealTermsOf(deal) || {}) : {};
+  const g = t.guarantee || null;
+  const bands = (g && g.bands) || [];
+  const bandRow = (i) => { const bd = bands[i] || {}; return `<div class="form-2col" style="gap:8px">
+      <div class="field"><label>Band ${i + 1} from month</label><input type="number" id="df-${partnerId}-${key}-b${i}-from" min="1" value="${bd.fromMonth ?? ""}"></div>
+      <div class="field"><label>To month (blank = open)</label><input type="number" id="df-${partnerId}-${key}-b${i}-to" min="1" value="${bd.toMonth ?? ""}"></div>
+      <div class="field"><label>Floor $/mo</label><input type="number" id="df-${partnerId}-${key}-b${i}-floor" min="0" step="any" value="${bd.floorMonthly ?? ""}"></div>
+      <div class="field"><label>% to beneficiary</label><input type="number" id="df-${partnerId}-${key}-b${i}-pct" min="0" max="100" value="${bd.pctToBeneficiary ?? ""}"></div>
+    </div>`; };
+  const mrows = ((t.markets && t.markets.length) ? t.markets : [null]).map((dm) => dealMarketRowHtml(dm)).join("");
+  return `
+  <div style="margin-top:10px;border-top:1px solid var(--line,#DFE7DF);padding-top:10px">
+    <div class="form-2col">
+      <div class="field"><label>Deal label</label><input type="text" id="df-${partnerId}-${key}-label" value="${esc(deal ? deal.label || "" : "")}" placeholder="Hampton Roads pilot"></div>
+      <div class="field"><label>Status</label><select id="df-${partnerId}-${key}-status">${["negotiating", "term_sheet", "signed", "live", "ended"].map((s) => `<option value="${s}" ${deal && deal.status === s ? "selected" : ""}>${s}</option>`).join("")}</select></div>
+      <div class="field"><label>Governing document (link)</label><input type="text" id="df-${partnerId}-${key}-doc" value="${esc(deal ? deal.governingDocument || "" : "")}" placeholder="Drive link to the signed terms"></div>
+      <div class="field"><label>Partner share % (of subscriptions)</label><input type="number" id="df-${partnerId}-${key}-pct" min="0" max="100" value="${typeof t.partnerPct === "number" ? t.partnerPct : ""}"></div>
+      <div class="field"><label>Attribution</label><select id="df-${partnerId}-${key}-scope"><option value="market_wide" ${t.attributionScope !== "sourced_only" ? "selected" : ""}>Whole market (every business in it)</option><option value="sourced_only" ${t.attributionScope === "sourced_only" ? "selected" : ""}>Only businesses this partner brought in</option></select></div>
+      <div class="field"><label>Term (months, blank = open)</label><input type="number" id="df-${partnerId}-${key}-term" min="1" value="${t.termMonths ?? ""}"></div>
+      <div class="field"><label>Starts</label><input type="date" id="df-${partnerId}-${key}-start" value="${t.startAt ? esc(String(t.startAt).slice(0, 10)) : ""}"></div>
+      <div class="field"><label>Renewal</label><input type="text" id="df-${partnerId}-${key}-renewal" value="${esc(t.renewal || "")}" placeholder="Auto-renews monthly after the pilot"></div>
+      <div class="field"><label>Exclusivity</label><select id="df-${partnerId}-${key}-exscope"><option value="none" ${!t.exclusivity || t.exclusivity.scope !== "market_conditional" ? "selected" : ""}>None</option><option value="market_conditional" ${t.exclusivity && t.exclusivity.scope === "market_conditional" ? "selected" : ""}>Conditional, per market</option></select></div>
+      <div class="field"><label>Exclusivity conditions</label><input type="text" id="df-${partnerId}-${key}-excond" value="${esc((t.exclusivity && t.exclusivity.conditions) || "")}" placeholder="SIGNL signs no competing group while targets hold"></div>
+      <div class="field"><label>Promo commitments</label><input type="text" id="df-${partnerId}-${key}-promo" value="${esc(t.promoCommitments || "")}"></div>
+      <div class="field"><label>Sales targets</label><input type="text" id="df-${partnerId}-${key}-targets" value="${esc(t.salesTargets || "")}"></div>
+    </div>
+    <h4 style="margin:12px 0 4px">Guarantee (greater-of)</h4>
+    <div class="form-2col">
+      <div class="field"><label>Guarantee protects</label><select id="df-${partnerId}-${key}-gben"><option value="none" ${!g ? "selected" : ""}>No guarantee</option><option value="signl" ${g && g.beneficiary !== "partner" ? "selected" : ""}>SIGNL's monthly take</option><option value="partner" ${g && g.beneficiary === "partner" ? "selected" : ""}>The partner's monthly receipts</option></select></div>
+      <div class="field"><label>Pilot floor $ (blank = none)</label><input type="number" id="df-${partnerId}-${key}-gpilot" min="0" step="any" value="${g && typeof g.pilotFloor === "number" ? g.pilotFloor : ""}"></div>
+    </div>
+    ${bandRow(0)}${bandRow(1)}${bandRow(2)}
+    <h4 style="margin:12px 0 4px">Markets in this deal</h4>
+    <div id="df-${partnerId}-${key}-markets">${mrows}</div>
+    <button class="btn small-btn ghost" onclick="return dfAddMarketRow('${partnerId}','${key}')">Add a market row</button>
+    <div class="field" style="margin-top:10px"><label>Version note</label><input type="text" id="df-${partnerId}-${key}-note" placeholder="Why these terms changed"></div>
+    <div id="df-${partnerId}-${key}-err"></div>
+    <button class="btn" onclick="dfSave('${partnerId}','${key}')">${deal ? "Save as a new version" : "Create deal"}</button>
+    <span class="small muted">Saving never edits history: it appends a version, and past months keep the math of the version in force for them.</span>
+  </div>`;
+}
+
+function dfCollect(partnerId, key) {
+  const v = (id) => { const el = document.getElementById(`df-${partnerId}-${key}-${id}`); return el ? el.value : ""; };
+  const numOrNull = (s) => { const n = Number(s); return s === "" || s === null || !Number.isFinite(n) ? null : n; };
+  const bands = [];
+  for (let i = 0; i < 3; i += 1) {
+    const from = v(`b${i}-from`);
+    if (from === "") continue;
+    bands.push({ fromMonth: Number(from), toMonth: numOrNull(v(`b${i}-to`)), floorMonthly: numOrNull(v(`b${i}-floor`)), pctToBeneficiary: numOrNull(v(`b${i}-pct`)) });
+  }
+  const gben = v("gben");
+  const markets = [...document.querySelectorAll(`#df-${partnerId}-${key}-markets .df-mrow`)].map((row) => ({
+    market: row.querySelector(".dfm-market").value,
+    status: row.querySelector(".dfm-status").value,
+    liveAt: row.querySelector(".dfm-live").value || null,
+    activationFee: numOrNull(row.querySelector(".dfm-fee").value),
+    activationStatus: row.querySelector(".dfm-astatus").value,
+  })).filter((m) => m.market);
+  return {
+    label: v("label"), status: v("status"), governingDocument: v("doc"), note: v("note"),
+    terms: {
+      partnerPct: numOrNull(v("pct")),
+      attributionScope: v("scope"),
+      termMonths: numOrNull(v("term")),
+      startAt: v("start") || null,
+      renewal: v("renewal"),
+      exclusivity: { scope: v("exscope"), conditions: v("excond") },
+      promoCommitments: v("promo"),
+      salesTargets: v("targets"),
+      guarantee: gben === "none" ? null : { beneficiary: gben, pilotFloor: numOrNull(v("gpilot")), bands },
+      markets,
+    },
+  };
+}
+
+async function dfSave(partnerId, key) {
+  const errEl = document.getElementById(`df-${partnerId}-${key}-err`);
+  const payload = dfCollect(partnerId, key);
+  try {
+    let note = "";
+    if (key === "new") {
+      await api("POST", `/admin/partners/${partnerId}/deals`, payload);
+    } else {
+      await api("PATCH", `/admin/deals/${key}`, { label: payload.label, status: payload.status, governingDocument: payload.governingDocument });
+      const r = await api("POST", `/admin/deals/${key}/versions`, { terms: payload.terms, note: payload.note });
+      if (r.version) note = `Saved as version ${r.version.n}${(r.version.changedFields || []).length ? ` · changed: ${esc(r.version.changedFields.join(", "))}` : " · no term changed"}.`;
+    }
+    const shareInput = document.getElementById(`pt-share-${partnerId}`);
+    if (shareInput && typeof payload.terms.partnerPct === "number") shareInput.value = payload.terms.partnerPct;
+    await loadPartnerDeals(partnerId);
+    if (key !== "new" && note) {
+      dfToggle(partnerId, key);
+      const fresh = document.getElementById(`df-${partnerId}-${key}-err`);
+      if (fresh) fresh.innerHTML = `<p class="small saved">${note}</p>`;
+    }
+  } catch (e) {
+    if (errEl) errEl.innerHTML = `<div class="error-box">${esc(e.message)}</div>`;
+  }
+  return false;
 }
 
 // Outreach campaigns (Jeff, 2026-10-19; business wave added
@@ -16775,20 +16966,26 @@ function adminSignupBoardHtml(b) {
 // (market table, layers, Your Line, register connections) stays
 // on Overview below it.
 let ccTab = "overview";
-let ccFilters = { period: "all", market: "", testers: false };
+let ccFilters = { period: "all", market: "", testers: false, partner: "" };
 let ccAttentionCache = [];
+let ccPartnerId = null;
+let ccPartnerOpts = null;
 
 function ccQuery() {
   const q = new URLSearchParams();
   q.set("period", ccFilters.period);
   if (ccFilters.market) q.set("market", ccFilters.market);
   if (ccFilters.testers) q.set("testers", "1");
+  if (ccFilters.partner) q.set("partner", ccFilters.partner);
   return q.toString();
 }
 function ccMoneyFmt(n) {
   return "$" + (Number(n) || 0).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 }
-function ccSetTab(tab) { ccTab = tab; loadStats(); return false; }
+function ccSetTab(tab) { ccTab = tab; if (tab !== "partners") ccPartnerId = null; loadStats(); return false; }
+function ccSetPartnerFilter(v) { ccFilters.partner = v; ccPartnerId = null; loadStats(); return false; }
+async function ccOpenPartner(id) { ccPartnerId = id; await ccShowTab(); return false; }
+async function ccBackPartners() { ccPartnerId = null; await ccShowTab(); return false; }
 function ccSetPeriod(v) { ccFilters.period = v; loadStats(); return false; }
 function ccSetMarket(v) { ccFilters.market = v; loadStats(); return false; }
 function ccSetTesters(on) { ccFilters.testers = !!on; loadStats(); return false; }
@@ -16796,6 +16993,9 @@ function ccSetTesters(on) { ccFilters.testers = !!on; loadStats(); return false;
 async function loadStats() {
   const el = document.getElementById("tab-body");
   try {
+    if (!ccPartnerOpts) {
+      try { const pd = await api("GET", "/admin/partners"); ccPartnerOpts = (pd.partners || []).map((p) => ({ id: p.id, name: p.name })); } catch (e) { ccPartnerOpts = []; }
+    }
     const marketOpts = [`<option value="">All markets</option>`]
       .concat(((state.boot && state.boot.markets) || []).map((m) => `<option value="${esc(m.name)}" ${ccFilters.market === m.name ? "selected" : ""}>${esc(m.label || m.name)}</option>`))
       .concat([`<option value="${esc(unlistedLabel())}" ${ccFilters.market === unlistedLabel() ? "selected" : ""}>${esc(unlistedLabel())}</option>`])
@@ -16816,7 +17016,10 @@ async function loadStats() {
             <select onchange="ccSetMarket(this.value)">${marketOpts}</select>
           </label>
           <label class="cc-flabel">Partner
-            <select disabled title="Partner filtering arrives with the Partners view"><option>All partners</option></select>
+            <select onchange="ccSetPartnerFilter(this.value)">
+              <option value="">All partners</option>
+              ${(ccPartnerOpts || []).map((p) => `<option value="${esc(p.id)}" ${ccFilters.partner === p.id ? "selected" : ""}>${esc(p.name)}</option>`).join("")}
+            </select>
           </label>
           <label class="cc-flabel cc-check"><input type="checkbox" ${ccFilters.testers ? "checked" : ""} onchange="ccSetTesters(this.checked)"> Include testers &amp; demo</label>
         </div>
@@ -16882,6 +17085,16 @@ async function ccShowTab() {
     if (ccTab === "businesses") {
       const d = await api("GET", "/admin/command/businesses?" + ccQuery());
       host.innerHTML = ccBusinessesHtml(d);
+      return;
+    }
+    if (ccTab === "partners") {
+      if (ccPartnerId) {
+        const d = await api("GET", `/admin/command/partners/${encodeURIComponent(ccPartnerId)}?` + ccQuery());
+        host.innerHTML = ccPartnerDetailHtml(d);
+      } else {
+        const d = await api("GET", "/admin/command/partners?" + ccQuery());
+        host.innerHTML = ccPartnersHtml(d);
+      }
       return;
     }
     host.innerHTML = ccFormingHtml(ccTab);
@@ -17173,21 +17386,222 @@ function ccBusinessesHtml(d) {
     </table></div></div>`;
 }
 
+// Partners (Build -56): the deal records and the greater-of
+// engine, rendered from GET /admin/command/partners — the same
+// math the partner sees on their own Earnings page. A partner
+// with no terms entered says exactly that; no schedule is ever
+// assumed for them.
+function ccPartnersHtml(d) {
+  const rows = d.partners || [];
+  const t = d.totals || { accrued: 0, paid: 0, owed: 0 };
+  const periodName = ccFilters.period === "all" ? "all time" : ((d.filters && d.filters.periodLabel) || "this period");
+  if (!rows.length) return `<div class="panel cc-waiting"><strong>No partners yet.</strong> When the first partner is created on the Partners tab, their deal and its math land here.</div>`;
+  return `
+    <div class="cc-tiles">
+      <div class="cc-tile"><div class="cc-tlabel">Accrued to partners</div><div class="cc-tnum">${ccMoneyFmt(t.accrued)}</div><div class="cc-tsub">Computed from the deal records, all time</div></div>
+      <div class="cc-tile"><div class="cc-tlabel">Paid to partners</div><div class="cc-tnum">${ccMoneyFmt(t.paid)}</div><div class="cc-tsub">Real payouts, recorded when they happen</div></div>
+      <div class="cc-tile"><div class="cc-tlabel">Owed to partners</div><div class="cc-tnum">${ccMoneyFmt(t.owed)}</div><div class="cc-tsub">Accrued and not yet paid</div></div>
+    </div>
+    <p class="muted small" style="margin:2px 0 10px">Every figure is computed from the deal records — the same math each partner sees on their own Earnings page. Period figures follow the filter: ${esc(periodName)}.
+      <button type="button" class="btn small-btn ghost" onclick="return ccAccrueSnapshot()">Snapshot accruals</button></p>
+    <div class="panel"><div class="table-wrap"><table>
+      <tr><th>Partner</th><th>The deal</th><th>Markets</th><th>Status</th><th>Period split</th><th>Earned to date</th><th></th></tr>
+      ${rows.map((r) => {
+        const deal0 = (r.deals || [])[0];
+        const dealCell = r.termsState === "entered" && deal0
+          ? `<strong>${esc(deal0.label || "Partner deal")}</strong><br><span class="small">${typeof deal0.partnerPct === "number" ? `Partner ${deal0.partnerPct}% · SIGNL ${100 - deal0.partnerPct}%` : "Split in the deal terms"}${deal0.hasGuarantee ? " · greater-of guarantee" : ""}</span><br><span class="small muted">Version ${deal0.currentVersion} · ${esc(deal0.status)}</span>`
+          : `<strong>Deal terms not entered yet</strong><br><span class="small muted">Earnings run on the standing share (${r.sharePct == null ? "—" : r.sharePct + "%"}) until the deal is entered on the Partners tab. No schedule is assumed.</span>`;
+        const status = r.guaranteeState
+          ? `<span class="badge ${r.guaranteeState.indexOf("Guarantee") === 0 ? "warn" : "ok"}">${esc(r.guaranteeState)}</span>`
+          : `<span class="badge">${esc(r.agreementStatus || "unsigned")}</span>`;
+        return `<tr>
+          <td><strong>${esc(r.name)}</strong><br><span class="small muted">${esc(r.type === "profile" ? "Profile partner" : "Media partner")} · ${esc(r.code)}</span><br><span class="small muted">${r.attributedBusinesses} ${r.attributedBusinesses === 1 ? "business" : "businesses"} came through them</span></td>
+          <td data-label="The deal">${dealCell}</td>
+          <td data-label="Markets">${esc((r.markets || []).join(", ") || "—")}</td>
+          <td data-label="Status">${status}</td>
+          <td data-label="Period split">Partner ${ccMoneyFmt(r.period.partnerShare)} · SIGNL ${ccMoneyFmt(r.period.signlShare)}<br><span class="small muted">of ${ccMoneyFmt(r.period.gross)} in</span></td>
+          <td data-label="Earned to date"><strong>${ccMoneyFmt(r.accrued)}</strong><br><span class="small muted">${ccMoneyFmt(r.paid)} paid · ${ccMoneyFmt(r.owed)} owed</span></td>
+          <td><button type="button" class="btn small-btn" onclick="return ccOpenPartner('${r.id}')">Open</button></td>
+        </tr>`;
+      }).join("")}
+    </table></div></div>`;
+}
+
+async function ccAccrueSnapshot() {
+  try {
+    const r = await api("POST", "/admin/command/partners/accrue", {});
+    const a = r.accruals || {};
+    alert(`Accrual snapshot: ${a.written || 0} new, ${a.refreshed || 0} refreshed, ${a.skippedClosed || 0} closed months left untouched.`);
+  } catch (e) { alert(e.message); }
+  return false;
+}
+
+function ccSplitBarHtml(partnerShare, signlShare, partnerName) {
+  const total = Math.max(0, partnerShare) + Math.max(0, signlShare);
+  const pPct = total > 0 ? Math.round((Math.max(0, partnerShare) / total) * 100) : 0;
+  return `<div class="cc-splitbar" style="display:flex;height:34px;border-radius:8px;overflow:hidden;margin:8px 0 4px">
+      <div style="background:#A9E8C9;color:#0B0D0C;width:${pPct}%;display:flex;align-items:center;padding:0 10px;font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden">${esc(partnerName)} · ${ccMoneyFmt(partnerShare)} · ${pPct}%</div>
+      <div style="background:#0B0D0C;color:#fff;flex:1;display:flex;align-items:center;justify-content:flex-end;padding:0 10px;font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden">SIGNL · ${ccMoneyFmt(signlShare)} · ${100 - pPct}%</div>
+    </div>`;
+}
+
+function ccDealMonthsTable(deal, partnerName) {
+  const benName = deal.terms && deal.terms.guarantee ? (deal.terms.guarantee.beneficiary === "partner" ? partnerName : "SIGNL") : null;
+  const sections = (deal.markets || []).map((mr) => {
+    if (!mr.months.length) return `<h4 style="margin:14px 0 4px">${esc(mr.market)}</h4><p class="small muted">No months yet${mr.liveAt ? "" : " — the market has no live date on the deal, so guarantee months cannot be counted"}.</p>`;
+    return `<h4 style="margin:14px 0 4px">${esc(mr.market)}</h4>
+    <div class="table-wrap"><table>
+      <tr><th>Month</th><th>Businesses</th><th>Money in</th><th>% amount${benName ? ` (to ${esc(benName)})` : ""}</th><th>Guarantee</th><th>${esc(partnerName)} receives</th><th>SIGNL keeps</th><th>Governs</th></tr>
+      ${mr.months.map((row) => `<tr>
+        <td><strong>${esc(row.label)}</strong>${row.monthIndex ? `<br><span class="small muted">Month ${row.monthIndex} of the deal</span>` : ""}</td>
+        <td data-label="Businesses">${row.businesses}</td>
+        <td data-label="Money in">${ccMoneyFmt(row.gross)}${row.chargedGross && row.recordedGross ? `<br><span class="small muted">${ccMoneyFmt(row.chargedGross)} charged · ${ccMoneyFmt(row.recordedGross)} recorded</span>` : ""}</td>
+        <td data-label="% amount">${row.band ? ccMoneyFmt(row.band.pctAmount) : "—"}</td>
+        <td data-label="Guarantee">${row.band ? ccMoneyFmt(row.band.floorMonthly) : "—"}</td>
+        <td data-label="${esc(partnerName)} receives"><strong>${ccMoneyFmt(row.partnerShare)}</strong></td>
+        <td data-label="SIGNL keeps">${ccMoneyFmt(row.signlShare)}</td>
+        <td data-label="Governs">${row.band ? `<span class="badge ${row.governedBy === "guarantee" ? "warn" : "ok"}">${row.governedBy === "guarantee" ? "Guarantee" : "Percentage"}</span>` : `<span class="small muted">Percentage</span>`}</td>
+      </tr>`).join("")}
+    </table></div>`;
+  }).join("");
+  return sections;
+}
+
+function ccPartnerDealHtml(d, deal) {
+  const p = d.partner;
+  const t = deal.terms || {};
+  const cm = deal.currentMonth;
+  const tiles = [];
+  const liveMarkets = (t.markets || []).filter((m) => m.status === "live");
+  tiles.push(`<div class="cc-tile"><div class="cc-tlabel">Markets in this deal</div><div class="cc-tnum">${(t.markets || []).length}</div><div class="cc-tsub">${(t.markets || []).map((m) => esc(m.market)).join(", ") || "—"}${liveMarkets.length ? ` · ${liveMarkets.length} live` : ""}</div></div>`);
+  for (const m of (t.markets || [])) {
+    tiles.push(`<div class="cc-tile"><div class="cc-tlabel">Activation · ${esc(m.market)}</div><div class="cc-tnum">${typeof m.activationFee === "number" ? ccMoneyFmt(m.activationFee) : "To be set"}</div><div class="cc-tsub">${typeof m.activationFee === "number" ? esc(m.activationStatus || "unbilled") : "No amount is on the deal yet — never assumed"}</div></div>`);
+  }
+  if (t.guarantee) {
+    for (const bd of (t.guarantee.bands || [])) {
+      tiles.push(`<div class="cc-tile"><div class="cc-tlabel">Months ${bd.fromMonth}–${bd.toMonth == null ? "…" : bd.toMonth}</div><div class="cc-tnum">${ccMoneyFmt(bd.floorMonthly)}</div><div class="cc-tsub">The greater of ${ccMoneyFmt(bd.floorMonthly)} or ${bd.pctToBeneficiary}% — to ${t.guarantee.beneficiary === "partner" ? esc(p.name) : "SIGNL"}</div></div>`);
+    }
+    if (typeof t.guarantee.pilotFloor === "number") tiles.push(`<div class="cc-tile"><div class="cc-tlabel">Pilot floor</div><div class="cc-tnum">${ccMoneyFmt(t.guarantee.pilotFloor)}</div><div class="cc-tsub">Across the whole pilot, activation included</div></div>`);
+  }
+  if (cm && cm.monthIndex && t.termMonths) tiles.push(`<div class="cc-tile"><div class="cc-tlabel">Where the deal stands</div><div class="cc-tnum">Month ${cm.monthIndex} of ${t.termMonths}</div><div class="cc-tsub">${esc(cm.label)} · ${esc(cm.market)}</div></div>`);
+  let callout = "";
+  if (cm && cm.band && t.guarantee) {
+    const benIsSignl = t.guarantee.beneficiary !== "partner";
+    const benName = benIsSignl ? "SIGNL" : p.name;
+    const benShare = benIsSignl ? cm.signlShare : cm.partnerShare;
+    const otherShare = benIsSignl ? cm.partnerShare : cm.signlShare;
+    const otherName = benIsSignl ? p.name : "SIGNL";
+    callout = `<div class="panel" style="background:#0B0D0C;color:#F4F7F4;margin-top:14px">
+      <h3 style="margin:0 0 6px;color:#fff">${cm.governedBy === "guarantee" ? "This month, the guarantee governs." : "This month, the percentage governs."}</h3>
+      <p class="small" style="margin:0;color:#DDE7DD">${esc(benName)}'s ${cm.band.pctToBeneficiary}% of ${ccMoneyFmt(cm.gross)} comes to ${ccMoneyFmt(cm.band.pctAmount)}. ${cm.governedBy === "guarantee" ? `The guarantee pays ${ccMoneyFmt(cm.band.floorMonthly)} instead, so ${esc(benName)} receives ${ccMoneyFmt(benShare)} and ${esc(otherName)} receives the remaining ${ccMoneyFmt(otherShare)}.` : `That is above the ${ccMoneyFmt(cm.band.floorMonthly)} guarantee, so the split runs on percentages: ${esc(benName)} receives ${ccMoneyFmt(benShare)}, ${esc(otherName)} the remaining ${ccMoneyFmt(otherShare)}.`}</p>
+      ${deal.crossoverBusinesses ? `<p class="small" style="margin:6px 0 0;color:#DDE7DD">The percentage takes over at about ${deal.crossoverBusinesses} businesses a month in this market.</p>` : ""}
+    </div>`;
+  }
+  const splitBar = cm ? `<div class="panel" style="margin-top:14px"><h3 style="margin:0 0 2px">This month's split</h3><p class="small muted" style="margin:0">${esc(cm.label)} · ${esc(cm.market)} · ${ccMoneyFmt(cm.gross)} of subscription money in</p>${ccSplitBarHtml(cm.partnerShare, cm.signlShare, p.name)}</div>` : "";
+  const pilot = deal.pilotFloor ? `<div class="panel" style="margin-top:14px"><h3 style="margin:0 0 4px">Pilot floor</h3>
+    <p class="small" style="margin:0">The deal promises ${deal.pilotFloor.beneficiary === "partner" ? esc(p.name) : "SIGNL"} at least ${ccMoneyFmt(deal.pilotFloor.floor)} across the pilot. Counted so far: <strong>${ccMoneyFmt(deal.pilotFloor.counted)}</strong> (${ccMoneyFmt(deal.pilotFloor.activationCounted)} activation + ${ccMoneyFmt(deal.pilotFloor.receiptsCounted)} of monthly takes). ${deal.pilotFloor.met ? `<strong>The floor is met.</strong>` : `${ccMoneyFmt(deal.pilotFloor.shortfall)} to go.`}</p></div>` : "";
+  const runRate = deal.runRate ? `<div class="panel" style="margin-top:14px"><div class="flex-between"><h3 style="margin:0">Run-rate at fill</h3><span class="cc-chip modeled">Modeled</span></div>
+    <p class="small muted" style="margin:4px 0 8px">The standard model at this deal's split: about ${deal.runRate.businessesPerMarket} businesses a market at $${Number(deal.runRate.arpuYearly).toLocaleString()} a year, ramped 40% / 75% / 100% across the first three years. An estimate for planning, never an accrual.</p>
+    <div class="table-wrap"><table><tr><th>Year</th><th>Gross</th><th>${esc(p.name)} at ${typeof t.partnerPct === "number" ? t.partnerPct : 0}%</th></tr>
+    <tr><td>Year 1 · 40%</td><td data-label="Gross">${ccMoneyFmt(deal.runRate.ramp.fill40.gross)}</td><td data-label="Partner">${ccMoneyFmt(deal.runRate.ramp.fill40.partner)}</td></tr>
+    <tr><td>Year 2 · 75%</td><td data-label="Gross">${ccMoneyFmt(deal.runRate.ramp.fill75.gross)}</td><td data-label="Partner">${ccMoneyFmt(deal.runRate.ramp.fill75.partner)}</td></tr>
+    <tr><td>Year 3 · 100%</td><td data-label="Gross">${ccMoneyFmt(deal.runRate.ramp.fill100.gross)}</td><td data-label="Partner">${ccMoneyFmt(deal.runRate.ramp.fill100.partner)}</td></tr></table></div></div>` : "";
+  const termsRows = [
+    ["The split", typeof t.partnerPct === "number" ? `${esc(p.name)} keeps ${t.partnerPct}% of subscription revenue · SIGNL keeps ${100 - t.partnerPct}%` : "Not entered"],
+    ["Attribution", t.attributionScope === "sourced_only" ? "Only businesses this partner brought in" : "The whole market — every business with subscription revenue in it"],
+    ["Term", t.termMonths ? `${t.termMonths} months${t.startAt ? ` from ${esc(fmtDay(t.startAt))}` : ""}` : "Open"],
+    ["Renewal", esc(t.renewal || "—")],
+    ["Exclusivity", t.exclusivity && t.exclusivity.scope === "market_conditional" ? `Per market, conditional — ${esc(t.exclusivity.conditions || "")}` : "None"],
+    ["Guarantee", t.guarantee ? `Greater-of bands protect ${t.guarantee.beneficiary === "partner" ? esc(p.name) : "SIGNL"}'s side` : "None"],
+    ["Governing document", deal.governingDocument ? `<a href="${esc(deal.governingDocument)}" target="_blank" rel="noopener">Open the signed terms</a>` : "Not linked yet"],
+    ["Version", `${deal.currentVersion} — terms are versioned; past months keep the math of the version in force for them`],
+  ];
+  return `
+    <h3 style="margin:16px 0 2px">${esc(deal.label || "Partner deal")} <span class="badge ${deal.status === "live" || deal.status === "signed" ? "ok" : "warn"}">${esc(deal.status)}</span></h3>
+    <div class="cc-tiles">${tiles.join("")}</div>
+    ${callout}
+    ${splitBar}
+    ${pilot}
+    ${ccDealMonthsTable(deal, p.name)}
+    <div class="panel" style="margin-top:14px"><h3 style="margin:0 0 8px">The deal, in plain terms</h3>
+      <div class="table-wrap"><table>${termsRows.map(([k, v]) => `<tr><td style="width:170px"><strong>${k}</strong></td><td>${v}</td></tr>`).join("")}</table></div>
+      ${(deal.versions || []).length ? `<p class="small muted" style="margin:8px 0 0">${[...deal.versions].reverse().map((v) => `v${v.n} · ${esc(fmtDay(v.at))}${(v.changedFields || []).length ? ` · changed: ${esc(v.changedFields.join(", "))}` : ""}`).join("<br>")}</p>` : ""}
+      <p style="margin:10px 0 0"><button type="button" class="btn small-btn" onclick="return go('dashboard','Partners')">Edit terms on the Partners tab</button></p>
+    </div>
+    ${runRate}`;
+}
+
+function ccPartnerDetailHtml(d) {
+  const p = d.partner || {};
+  const head = `<button type="button" class="btn small-btn ghost" onclick="return ccBackPartners()">← All partners</button>
+    <h3 style="margin:10px 0 2px">${esc(p.name)}</h3>
+    <p class="muted small" style="margin:0 0 6px">The full deal, the math, and which side of it is paying right now. The same numbers ${esc(p.name)} sees on their Earnings page.</p>`;
+  if (d.termsState !== "entered") {
+    return `${head}
+    <div class="panel"><h3 style="margin:0 0 4px">Deal terms not entered yet</h3>
+    <p class="small">No deal record carries terms for ${esc(p.name)}, so nothing here is estimated and no schedule is assumed. Their earnings run on the standing share (${p.sharePct == null ? "—" : p.sharePct + "%"}) in the meantime. Enter the terms in the Deal editor and this page becomes the full breakdown: the split, the guarantee math, and what has accrued.</p>
+    <p style="margin:8px 0 0"><button type="button" class="btn small-btn" onclick="return go('dashboard','Partners')">Open the Deal editor</button></p></div>`;
+  }
+  const payouts = (d.payouts || []).length ? `<div class="table-wrap"><table>
+      <tr><th>Paid</th><th>Amount</th><th>For</th><th>How</th></tr>
+      ${d.payouts.map((po) => `<tr><td>${po.markedPaidAt ? esc(fmtDay(po.markedPaidAt)) : ""}</td><td data-label="Amount"><strong>${ccMoneyFmt(po.amount)}</strong></td><td data-label="For">${po.period ? esc(po.period) : "—"}${po.note ? `<br><span class="small muted">${esc(po.note)}</span>` : ""}</td><td data-label="How">${esc(po.method || "")}${po.reference ? ` · ${esc(po.reference)}` : ""}</td></tr>`).join("")}
+    </table></div>` : `<p class="small muted">No payout has been recorded yet. Accrued is not paid until a real payment is recorded here.</p>`;
+  return `${head}
+    <div class="cc-tiles">
+      <div class="cc-tile"><div class="cc-tlabel">Accrued to date</div><div class="cc-tnum">${ccMoneyFmt(d.totals.accrued)}</div><div class="cc-tsub">Across every month and market on the deal</div></div>
+      <div class="cc-tile"><div class="cc-tlabel">Paid to date</div><div class="cc-tnum">${ccMoneyFmt(d.totals.paid)}</div><div class="cc-tsub">Recorded payouts only</div></div>
+      <div class="cc-tile"><div class="cc-tlabel">Owed</div><div class="cc-tnum">${ccMoneyFmt(d.totals.owed)}</div><div class="cc-tsub">Accrued, not yet paid</div></div>
+      <div class="cc-tile"><div class="cc-tlabel">Agreement</div><div class="cc-tnum" style="font-size:20px">${esc(p.agreementStatus || "unsigned")}</div><div class="cc-tsub">${p.agreementSignedAt ? `Signed ${esc(fmtDay(p.agreementSignedAt))}` : "Set it on the Partners tab"}</div></div>
+    </div>
+    ${(d.deals || []).map((deal) => ccPartnerDealHtml(d, deal)).join("")}
+    <div class="panel" style="margin-top:14px"><h3 style="margin:0 0 8px">Payouts</h3>
+      ${payouts}
+      <h4 style="margin:14px 0 6px">Record a payment</h4>
+      <div class="form-2col">
+        <div class="field"><label>Amount $</label><input type="number" id="cp-amount" min="0" step="any"></div>
+        <div class="field"><label>For month</label><input type="month" id="cp-period"></div>
+        <div class="field"><label>Method</label><input type="text" id="cp-method" placeholder="ACH"></div>
+        <div class="field"><label>Reference</label><input type="text" id="cp-reference" placeholder="Transfer id"></div>
+      </div>
+      <div class="field"><label>Note</label><input type="text" id="cp-note"></div>
+      <div id="cp-err"></div>
+      <button type="button" class="btn small-btn" onclick="return ccRecordPayout('${p.id}')">Record payment</button>
+      <span class="small muted">Record only money that actually moved. This is the ledger the partner's Paid to date reads.</span>
+    </div>`;
+}
+
+async function ccRecordPayout(partnerId) {
+  const errEl = document.getElementById("cp-err");
+  try {
+    await api("POST", "/admin/command/partners/payouts", {
+      partnerId,
+      amount: Number(document.getElementById("cp-amount").value),
+      period: document.getElementById("cp-period").value || null,
+      method: document.getElementById("cp-method").value,
+      reference: document.getElementById("cp-reference").value,
+      note: document.getElementById("cp-note").value,
+    });
+    await ccShowTab();
+  } catch (e) {
+    if (errEl) errEl.innerHTML = `<div class="error-box">${esc(e.message)}</div>`;
+  }
+  return false;
+}
+
 // The forming states (spec §7): the structure is real, the copy
 // says exactly what exists today and what lands it — never a
 // zero dressed up as a total.
 function ccFormingHtml(tab) {
   const head = (title, sub) => `<div class="panel"><h3 style="margin:0 0 4px">${title}</h3><p class="muted small" style="margin:0 0 10px">${sub}</p>`;
   if (tab === "partners") return `${head("Partners", "What each partner's deal is, and what it has earned.")}
-    <p class="small">Partners and their markets are managed on the <button type="button" class="btn small-btn" onclick="return go('dashboard','Partners')">Partners tab</button> today, and sign-ups through partner links are stamped to the partner on the record.</p>
-    <p class="small">Forming: deal terms (share, floors, guarantees), accruals and partner statements land with the deal records — the next Command Center phase. Nothing here is estimated in the meantime.</p></div>`;
+    <p class="small">Partners and their deals live on the Partners view above — this fallback never renders in the normal flow.</p></div>`;
   if (tab === "creators") return `${head("Creators", "Every creator, what they have finished, and what they have earned.")}
     <p class="small">The roster lives in Applications, and finished-profile counts by market are on the Markets view.</p>
     <p class="small">Forming: per-creator lifetime value and payout history land with the money views.</p></div>`;
   if (tab === "owed") return `${head("Owed", "Money SIGNL owes, and money owed to SIGNL — never a surprise at close.")}
     <div class="cc-form-rows">
       <p><strong>Creators</strong> — forming. Paid-booking funds release on the existing 48-hour hold after proof today; the owed ledger lands with the payout records.</p>
-      <p><strong>Partners</strong> — forming. Accruals land with the deal records.</p>
+      <p><strong>Partners</strong> — accruals are live on the Partners view; the owed ledger (accrued less paid, per partner) lands with the close phase.</p>
       <p><strong>Businesses</strong> — forming. Credits and refunds are on the Money and Businesses views today; what a business owes lands with the close phase.</p>
     </div></div>`;
   if (tab === "close") return `${head("Close &amp; export", "Month-end, done once and done right.")}

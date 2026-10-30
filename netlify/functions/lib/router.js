@@ -10726,6 +10726,7 @@ function publicPartner(p) {
     sharePct: typeof p.sharePct === "number" ? p.sharePct : 60,
     status: p.status === "paused" ? "paused" : "active",
     agreementStatus: p.agreementStatus || "unsigned",
+    agreementSignedAt: p.agreementSignedAt || null,
     demo: !!p.demo,
     sample: !!p.demo,
     createdAt: p.createdAt || null,
@@ -10845,29 +10846,66 @@ async function partnerSummary(user) {
     redemptions: roas.redemptions,
   };
 
-  // Earnings: subscription revenue from attributed businesses
-  // whose subscription record is live. Amounts are ACCRUED from
-  // the plan on file, never paid: no payout exists until a real
-  // subscription payment exists, and the payload says so.
-  let monthlyRevenue = 0;
-  let payingBusinesses = 0;
-  for (const b of businesses) {
-    const sub = b.business && b.business.subscription;
-    if (sub && (sub.status === "active" || sub.status === "trialing" || sub.status === "past_due")) {
-      const price = typeof b.business.planPriceMonthly === "number" ? b.business.planPriceMonthly : 0;
-      if (price > 0) { monthlyRevenue += price; payingBusinesses += 1; }
+  // Earnings (Build -56): computed by the SAME greater-of
+  // engine Admin's Command Center runs, over the partner's deal
+  // record — Jeff and the partner see identical numbers, from
+  // identical math, by construction. Amounts are ACCRUED until a
+  // payout is recorded against them; paidTotal is the sum of the
+  // partner's real payout records, never a hardcoded zero.
+  // A partner with no deal on file keeps the share-only basis:
+  // their standing share of the subscription revenue on file
+  // from businesses their links brought in.
+  const [dealsAll, payoutsAll, chargeRows] = await Promise.all([allDeals(), allPayouts(), store.list("charge:")]);
+  const paidTotal = partnerPayoutTotals(payoutsAll, user.id);
+  const myDeals = dealsAll.filter((d) => d.partnerId === user.id && dealAccrues(d));
+  let earnings;
+  if (myDeals.length) {
+    const revUsers = users.filter((u) => u.role === "business" && (partner.demo ? isTester(u) : !isTester(u)));
+    const revBizIds = new Set(revUsers.map((u) => u.id));
+    const revCharges = chargeRows.map((r) => r.value).filter((c) => c && revBizIds.has(c.businessId));
+    const rev = subRevenueByBizMonth(revUsers, revCharges);
+    const curKey = monthKeyOf(new Date().toISOString());
+    let accruedTotal = 0; let accruedMonthly = 0; let monthlyRevenue = 0; let payingBusinesses = 0; let gState = null;
+    for (const deal of myDeals) {
+      const bd = dealBreakdown(deal, rev);
+      accruedTotal = ccMoney(accruedTotal + bd.totals.partnerShare);
+      if (bd.guaranteeState) gState = bd.guaranteeState;
+      for (const mr of bd.markets) for (const row of mr.months) if (row.month === curKey) { accruedMonthly = ccMoney(accruedMonthly + row.partnerShare); monthlyRevenue = ccMoney(monthlyRevenue + row.gross); payingBusinesses += row.businesses; }
     }
+    const terms0 = dealCurrentTerms(myDeals[0]) || {};
+    earnings = {
+      basis: "deal",
+      dealLabel: myDeals[0].label || "",
+      sharePct: typeof terms0.partnerPct === "number" ? terms0.partnerPct : partner.sharePct,
+      monthlyRevenue, payingBusinesses, accruedMonthly, accruedTotal,
+      paidTotal, owedTotal: ccMoney(accruedTotal - paidTotal),
+      guaranteeState: gState,
+      hasPaidRevenue: monthlyRevenue > 0,
+    };
+  } else {
+    let monthlyRevenue = 0;
+    let payingBusinesses = 0;
+    for (const b of businesses) {
+      const sub = b.business && b.business.subscription;
+      if (sub && (sub.status === "active" || sub.status === "trialing" || sub.status === "past_due")) {
+        const price = typeof b.business.planPriceMonthly === "number" ? b.business.planPriceMonthly : 0;
+        if (price > 0) { monthlyRevenue += price; payingBusinesses += 1; }
+      }
+    }
+    const accruedTotal = Math.round(monthlyRevenue * (partner.sharePct / 100) * 100) / 100;
+    earnings = {
+      basis: "share_only",
+      sharePct: partner.sharePct,
+      monthlyRevenue,
+      payingBusinesses,
+      accruedMonthly: accruedTotal,
+      accruedTotal,
+      paidTotal,
+      owedTotal: ccMoney(accruedTotal - paidTotal),
+      hasPaidRevenue: monthlyRevenue > 0,
+    };
   }
-  const sharePct = partner.sharePct;
-  const earnings = {
-    sharePct,
-    monthlyRevenue,
-    payingBusinesses,
-    accruedMonthly: Math.round(monthlyRevenue * (sharePct / 100) * 100) / 100,
-    accruedTotal: Math.round(monthlyRevenue * (sharePct / 100) * 100) / 100,
-    paidTotal: 0,
-    hasPaidRevenue: monthlyRevenue > 0,
-  };
+  const sharePct = earnings.sharePct;
   const atFill = {
     markets: (partner.markets || []).length,
     businessesPerMarket: PARTNER_MODEL.businessesPerMarket,
@@ -10962,9 +11000,9 @@ async function ccPrep(query) {
   const includeTesters = !!(query && (query.testers === "1" || query.testers === "true"));
   const period = ccPeriodOf(query && query.period);
   const marketScope = query && query.market ? normalizeMarketName(String(query.market)) : null;
-  const [users, bookings, posts, licenses, redEvents, flagsRec, sqRows, chargeRows] = await Promise.all([
+  const [users, bookings, posts, licenses, redEvents, flagsRec, sqRows, chargeRows, dealRows, payoutRows] = await Promise.all([
     allUsers(), allBookings(), allPosts(), allLicenses(), allRedemptionEvents(),
-    store.get("config:markets"), store.list("sqconn:"), store.list("charge:"),
+    store.get("config:markets"), store.list("sqconn:"), store.list("charge:"), store.list("deal:"), store.list("payout:"),
   ]);
   const flags = (flagsRec && flagsRec.flags) || {};
   const visible = (u) => !!u && u.role !== "admin" && (includeTesters || (!isTester(u) && !(u.role === "partner" && u.partner && u.partner.demo)));
@@ -11024,6 +11062,8 @@ async function ccPrep(query) {
     postByBooking, bookingById, userById, completedAtOf, isComp, compBookings,
     firstCounted, countedByBooking, countedInPeriod, countedEvents, firstsByBooking, paidFinished, licensesGranted, finishedDeals, dealMarketOf,
     charges: visCharges, allCharges: allChargeRecs,
+    deals: dealRows.map((r) => r.value).filter(Boolean),
+    payouts: payoutRows.map((r) => r.value).filter(Boolean),
     connectedBizIds: new Set(sqRows.map((r) => (r.value && r.value.businessId) || String(r.key || "").slice("sqconn:".length)).filter(Boolean)),
   };
 }
@@ -11165,11 +11205,10 @@ function ccMarkets(P) {
 // records, Charged from the Stripe charge ledger (Build -55
 // capture), Modeled from the Halo engine — and no total anywhere
 // in this payload sums across classes. Partner percentages apply
-// to subscription revenue only and their accruals are computed
-// by the partner-deal phase (-56): until then the partner column
-// on subscription rows answers null (not yet computed), never an
-// invented figure; on paid and license rows partners earn nothing
-// by the model's own rule, which is a real zero.
+// to subscription revenue only; their accruals come from the
+// greater-of engine (Build -56) — the same figures the Partners
+// view and the partner's own Earnings show. On paid and license
+// rows partners earn nothing by the model's own rule, a real zero.
 function ccPlanOf(u) {
   const b = (u && u.business) || {};
   const sub = b.subscription || {};
@@ -11243,14 +11282,29 @@ function ccMoneyAgg(P) {
     if (selAt ? !inP(selAt) : P.period.key !== "all") continue;
     subFlowed += monthly; subCount += 1;
   }
-  const subRow = { flowed: ccMoney(subFlowed), signlKept: ccMoney(subFlowed), creatorsEarned: 0, partnersEarned: null, count: subCount };
+  // Partner accrual for the period (Build -56): the greater-of
+  // engine run over the visible deals, month rows inside the
+  // period only. With no deal terms entered anywhere this is a
+  // computed zero, and it says so via dealCount.
+  let partnersAccruedPeriod = 0;
+  let accruingDeals = 0;
+  {
+    const rev = subRevenueByBizMonth(P.visUsers, P.charges);
+    for (const deal of (P.deals || [])) {
+      if (!dealAccrues(deal)) continue;
+      accruingDeals += 1;
+      const bd = dealBreakdown(deal, rev);
+      for (const mr of bd.markets) for (const row of mr.months) if (inP(monthStartIso(row.month))) partnersAccruedPeriod = ccMoney(partnersAccruedPeriod + row.partnerShare);
+    }
+  }
+  const subRow = { flowed: ccMoney(subFlowed), signlKept: ccMoney(subFlowed), creatorsEarned: 0, partnersEarned: partnersAccruedPeriod, partnerDealCount: accruingDeals, count: subCount };
   const recorded = {
     rows: { subscriptions: subRow, paidBookings: paidRow, licenses: licRow },
     totals: {
       flowed: ccMoney(subRow.flowed + paidRow.flowed + licRow.flowed),
       signlKept: ccMoney(subRow.signlKept + paidRow.signlKept + licRow.signlKept),
       creatorsEarned: ccMoney(paidRow.creatorsEarned + licRow.creatorsEarned),
-      partnersEarned: null,
+      partnersEarned: partnersAccruedPeriod,
     },
     splitsHold,
     escrow: {
@@ -11434,6 +11488,391 @@ function ccBusinesses(P) {
       recordedOnly: rows.filter((r) => r.billing.state === "recorded").length,
       pastDue: rows.filter((r) => r.billing.state === "past-due").length,
     },
+  };
+}
+
+// ---------- Command Center: partner deals + the greater-of engine (Build -56) ----------
+// The deal record (spec §2.3) is the partner system's source of
+// truth: terms live as DATA on a versioned record, never in code,
+// and nothing here seeds or assumes any partner's real terms — a
+// deal with no terms entered renders exactly that state and earns
+// nothing in the engine. Versioning is APPEND-ONLY: editing terms
+// appends a version; accruals for a month compute against the
+// version in force for that month, so an edit can never rewrite a
+// past month. The pre--56 sharePct PATCH overwrite-with-no-history
+// dies here for any partner who has a deal.
+//
+// The engine (spec §5.2): per partner, per market, per month —
+// gross attributable subscription revenue (charged months win
+// over recorded months for the same business, the -55 rule),
+// then either a plain percentage split or, where the deal carries
+// a guarantee, the GREATER OF the percentage amount and the
+// band's floor, paid to the guarantee's beneficiary (a DEAL
+// FIELD, never a constant). Both candidates are always returned;
+// the governing one is flagged. The residual party's share is the
+// remainder and can go negative in a short month — that is the
+// make-whole the guarantor owes, surfaced as makeWhole on the
+// row, never hidden. Partner percentages apply to subscription
+// revenue only (§4.2): paid bookings and licenses earn partners
+// nothing, by the model's own rule.
+const DEAL_STATUSES = ["negotiating", "term_sheet", "signed", "live", "ended"];
+const DEAL_ACTIVATION_STATUSES = ["unbilled", "invoiced", "paid", "waived"];
+// The founding blended rate (spec §5.3: $246.50/mo), used ONLY
+// for the crossover estimate and the Modeled run-rate panel —
+// never for an accrual.
+const PARTNER_ARPU_MONTHLY = 246.5;
+
+async function allDeals() { return (await store.list("deal:")).map((r) => r.value).filter(Boolean); }
+async function allPayouts() { return (await store.list("payout:")).map((r) => r.value).filter(Boolean); }
+
+function dealVersions(deal) { return deal && Array.isArray(deal.versions) ? deal.versions : []; }
+function dealCurrentTerms(deal) { const vs = dealVersions(deal); return vs.length ? vs[vs.length - 1].terms : null; }
+function dealTermsAt(deal, iso) {
+  const vs = dealVersions(deal);
+  if (!vs.length) return null;
+  const t = String(iso || "");
+  let chosen = vs[0];
+  for (const v of vs) { if (String(v.at || "") <= t) chosen = v; else break; }
+  return chosen.terms;
+}
+function dealVersionAt(deal, iso) {
+  const vs = dealVersions(deal);
+  if (!vs.length) return null;
+  const t = String(iso || "");
+  let chosen = vs[0];
+  for (const v of vs) { if (String(v.at || "") <= t) chosen = v; else break; }
+  return chosen.n;
+}
+function dealHasTerms(deal) {
+  const t = dealCurrentTerms(deal);
+  if (!t) return false;
+  return typeof t.partnerPct === "number" || !!t.guarantee || (Array.isArray(t.markets) && t.markets.length > 0);
+}
+function dealAccrues(deal) { return !!deal && (deal.status === "signed" || deal.status === "live") && dealHasTerms(deal); }
+
+function monthKeyAdd(key, n) { const parts = key.split("-").map(Number); const d = new Date(Date.UTC(parts[0], parts[1] - 1 + n, 1)); return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`; }
+function monthStartIso(key) { return `${key}-01T00:00:00.000Z`; }
+function monthEndIso(key) { return new Date(Date.parse(monthStartIso(monthKeyAdd(key, 1))) - 1).toISOString(); }
+function monthIndexOf(key, baseKey) { const a = key.split("-").map(Number); const b = baseKey.split("-").map(Number); return (a[0] - b[0]) * 12 + (a[1] - b[1]) + 1; }
+
+// Subscription revenue substrate: per business, per month, the
+// gross in its honesty class. A business-month with a real Stripe
+// charge is Charged (gross less refunds); otherwise a business
+// with a live plan on file accrues Recorded at its monthly rate
+// from the month its subscription starts through the current
+// month (or its cancellation month). Tester/demo filtering is
+// the caller's: pass only the users and charges in scope.
+function subRevenueByBizMonth(users, charges) {
+  const okStatus = (c) => c.status === "succeeded" || c.status === "partially_refunded" || c.status === "refunded";
+  const charged = new Map();
+  for (const c of charges || []) {
+    if (!c || c.kind !== "subscription" || !c.businessId || !okStatus(c)) continue;
+    const mk = monthKeyOf(c.chargedAt);
+    if (!mk) continue;
+    if (!charged.has(c.businessId)) charged.set(c.businessId, new Map());
+    const m = charged.get(c.businessId);
+    m.set(mk, ccMoney((m.get(mk) || 0) + (Number(c.gross) || 0) - (Number(c.refundedAmount) || 0)));
+  }
+  const out = new Map();
+  const curKey = monthKeyOf(new Date().toISOString());
+  for (const u of users || []) {
+    if (!u || u.role !== "business") continue;
+    const months = new Map();
+    const cmap = charged.get(u.id);
+    if (cmap) for (const [mk, amt] of cmap) months.set(mk, { gross: amt, cls: "charged" });
+    const { monthly, b, sub } = ccPlanOf(u);
+    if (typeof monthly === "number" && monthly > 0) {
+      const liveState = sub && ["active", "trialing", "past_due"].includes(sub.status);
+      const recordedState = !sub || !sub.status || !!b.planSelectedAt;
+      if (liveState || recordedState) {
+        const startIso = (sub && (sub.createdAt || sub.startedAt)) || b.planSelectedAt || b.activatedAt || u.createdAt || null;
+        const startKey = startIso ? monthKeyOf(startIso) : null;
+        const endKey = (sub && (sub.canceledAt || sub.endedAt)) ? monthKeyOf(sub.canceledAt || sub.endedAt) : curKey;
+        if (startKey && startKey <= endKey && monthIndexOf(endKey, startKey) <= 60) {
+          for (let k = startKey; k <= endKey && k <= curKey; k = monthKeyAdd(k, 1)) {
+            if (!months.has(k)) months.set(k, { gross: ccMoney(monthly), cls: "recorded" });
+          }
+        }
+      }
+    }
+    if (months.size) out.set(u.id, { market: normalizeMarketName(u.market || ""), partnerId: u.partnerId || null, months });
+  }
+  return out;
+}
+
+function guaranteeBandFor(guarantee, monthIndex) {
+  if (!guarantee || !Array.isArray(guarantee.bands) || monthIndex == null) return null;
+  return guarantee.bands.find((bd) => monthIndex >= bd.fromMonth && (bd.toMonth == null || monthIndex <= bd.toMonth)) || null;
+}
+
+// One deal's full breakdown: per market, per month rows with both
+// greater-of candidates printed, plus totals, the guarantee
+// state word for the current month, the pilot-floor check and
+// the crossover estimate. Pure over the revenue substrate.
+function dealBreakdown(deal, revByBiz) {
+  const out = {
+    dealId: deal.id, partnerId: deal.partnerId, label: deal.label || "", status: deal.status,
+    governingDocument: deal.governingDocument || null, currentVersion: deal.currentVersion || dealVersions(deal).length || 0,
+    accrues: dealAccrues(deal), termsState: dealHasTerms(deal) ? "entered" : "not_entered",
+    markets: [], totals: { gross: 0, partnerShare: 0, signlShare: 0, activationDue: 0, activationPaid: 0 },
+    guaranteeState: null, guaranteeGovernedBy: null, pilotFloor: null, crossoverBusinesses: null, currentMonth: null,
+  };
+  if (!out.accrues) return out;
+  const curTerms = dealCurrentTerms(deal);
+  const curKey = monthKeyOf(new Date().toISOString());
+  // Revenue by market | month, kept whole-market and sourced-only
+  // side by side so the deal's attribution scope is a read-time
+  // choice, exactly as the terms say.
+  const revMM = new Map();
+  for (const [bizId, rec] of revByBiz) {
+    for (const [mk, cell] of rec.months) {
+      const key = `${rec.market}|${mk}`;
+      let slot = revMM.get(key);
+      if (!slot) { slot = { gross: 0, charged: 0, recorded: 0, biz: new Set(), sGross: 0, sCharged: 0, sRecorded: 0, sBiz: new Set() }; revMM.set(key, slot); }
+      slot.gross = ccMoney(slot.gross + cell.gross); slot[cell.cls] = ccMoney(slot[cell.cls] + cell.gross); slot.biz.add(bizId);
+      if (rec.partnerId && rec.partnerId === deal.partnerId) { slot.sGross = ccMoney(slot.sGross + cell.gross); slot.sCharged = ccMoney(slot.sCharged + (cell.cls === "charged" ? cell.gross : 0)); slot.sRecorded = ccMoney(slot.sRecorded + (cell.cls === "recorded" ? cell.gross : 0)); slot.sBiz.add(bizId); }
+    }
+  }
+  const bizCount = (slot, sourced) => (sourced ? slot.sBiz : slot.biz).size;
+  let beneficiaryReceipts = 0;
+  let activationPaid = 0;
+  let activationDue = 0;
+  for (const dm of (curTerms.markets || [])) {
+    const mName = normalizeMarketName(dm.market || "");
+    const liveKey = dm.liveAt ? monthKeyOf(dm.liveAt) : null;
+    if (typeof dm.activationFee === "number") {
+      if (dm.activationStatus === "paid") activationPaid = ccMoney(activationPaid + dm.activationFee);
+      else if (dm.activationStatus !== "waived") activationDue = ccMoney(activationDue + dm.activationFee);
+    }
+    const revMonths = [];
+    for (const key of revMM.keys()) { const [mm, mk] = key.split("|"); if (mm === mName) revMonths.push(mk); }
+    revMonths.sort();
+    let startKey = liveKey || (revMonths.length ? revMonths[0] : null);
+    let endKey = curKey;
+    if (curTerms.termMonths && liveKey) { const termEnd = monthKeyAdd(liveKey, curTerms.termMonths - 1); if (termEnd < endKey) endKey = termEnd; }
+    const mrow = { market: dm.market, status: dm.status || "pending", liveAt: dm.liveAt || null, activationFee: typeof dm.activationFee === "number" ? dm.activationFee : null, activationStatus: dm.activationStatus || "unbilled", months: [], totals: { gross: 0, partnerShare: 0, signlShare: 0 } };
+    if (startKey) {
+      const enumerateAll = !!(curTerms.guarantee && liveKey);
+      for (let k = startKey; k <= endKey; k = monthKeyAdd(k, 1)) {
+        const slot = revMM.get(`${mName}|${k}`) || { gross: 0, charged: 0, recorded: 0, biz: new Set(), sGross: 0, sCharged: 0, sRecorded: 0, sBiz: new Set() };
+        const terms = dealTermsAt(deal, monthEndIso(k)) || curTerms;
+        const sourced = terms.attributionScope === "sourced_only";
+        const gross = sourced ? slot.sGross : slot.gross;
+        if (!enumerateAll && gross <= 0) continue;
+        const idx = liveKey ? monthIndexOf(k, liveKey) : null;
+        let partnerShare; let signlShare; let governing = null; let governedBy = "percentage"; let bandInfo = null;
+        const band = terms.guarantee ? guaranteeBandFor(terms.guarantee, idx) : null;
+        if (terms.guarantee && band) {
+          const pctAmount = ccMoney(gross * (band.pctToBeneficiary / 100));
+          const floorAmount = ccMoney(band.floorMonthly);
+          governing = Math.max(pctAmount, floorAmount);
+          governedBy = floorAmount > pctAmount ? "guarantee" : "percentage";
+          if (terms.guarantee.beneficiary === "partner") { partnerShare = governing; signlShare = ccMoney(gross - governing); }
+          else { signlShare = governing; partnerShare = ccMoney(gross - governing); }
+          bandInfo = { fromMonth: band.fromMonth, toMonth: band.toMonth == null ? null : band.toMonth, floorMonthly: floorAmount, pctToBeneficiary: band.pctToBeneficiary, pctAmount };
+        } else {
+          partnerShare = ccMoney(gross * ((typeof terms.partnerPct === "number" ? terms.partnerPct : 0) / 100));
+          signlShare = ccMoney(gross - partnerShare);
+        }
+        const row = {
+          month: k, label: monthLabelOf(k), monthIndex: idx, businesses: bizCount(slot, sourced),
+          gross, chargedGross: sourced ? slot.sCharged : slot.charged, recordedGross: sourced ? slot.sRecorded : slot.recorded,
+          partnerShare, signlShare, governing, governedBy, band: bandInfo,
+          makeWhole: governing != null ? ccMoney(Math.max(0, governing - gross)) : 0,
+          attributionScope: terms.attributionScope || "market_wide", termsVersion: dealVersionAt(deal, monthEndIso(k)), state: "accruing",
+        };
+        mrow.months.push(row);
+        mrow.totals.gross = ccMoney(mrow.totals.gross + gross);
+        mrow.totals.partnerShare = ccMoney(mrow.totals.partnerShare + partnerShare);
+        mrow.totals.signlShare = ccMoney(mrow.totals.signlShare + signlShare);
+        if (terms.guarantee) beneficiaryReceipts = ccMoney(beneficiaryReceipts + (terms.guarantee.beneficiary === "partner" ? partnerShare : signlShare));
+        if (k === curKey && !out.currentMonth) {
+          out.currentMonth = { month: k, label: row.label, monthIndex: idx, market: dm.market, gross, partnerShare, signlShare, governedBy, band: bandInfo };
+          if (terms.guarantee) { out.guaranteeState = governedBy === "guarantee" ? "Guarantee is governing" : "Percentage is governing"; out.guaranteeGovernedBy = governedBy; }
+          if (bandInfo && bandInfo.pctToBeneficiary > 0) out.crossoverBusinesses = Math.ceil(bandInfo.floorMonthly / (bandInfo.pctToBeneficiary / 100) / PARTNER_ARPU_MONTHLY);
+        }
+      }
+    }
+    out.markets.push(mrow);
+    out.totals.gross = ccMoney(out.totals.gross + mrow.totals.gross);
+    out.totals.partnerShare = ccMoney(out.totals.partnerShare + mrow.totals.partnerShare);
+    out.totals.signlShare = ccMoney(out.totals.signlShare + mrow.totals.signlShare);
+  }
+  out.totals.activationPaid = activationPaid;
+  out.totals.activationDue = activationDue;
+  if (curTerms.guarantee && typeof curTerms.guarantee.pilotFloor === "number") {
+    const counted = ccMoney(activationPaid + beneficiaryReceipts);
+    out.pilotFloor = { floor: curTerms.guarantee.pilotFloor, counted, activationCounted: activationPaid, receiptsCounted: beneficiaryReceipts, shortfall: ccMoney(Math.max(0, curTerms.guarantee.pilotFloor - counted)), met: counted >= curTerms.guarantee.pilotFloor, beneficiary: curTerms.guarantee.beneficiary || "signl" };
+  }
+  if (!out.guaranteeState && curTerms.guarantee) out.guaranteeState = "No revenue month yet";
+  return out;
+}
+
+// The Modeled run-rate for one deal (spec §3.2): the standard
+// model at the deal's own split, quarantined as Modeled wherever
+// it renders. A guarantee deal's percentage governs at fill, so
+// the run-rate runs on the percentage.
+function dealRunRate(terms) {
+  const markets = Math.max(1, (terms.markets || []).length);
+  const grossYearly = PARTNER_MODEL.businessesPerMarket * PARTNER_MODEL.arpuYearly * markets;
+  const pct = typeof terms.partnerPct === "number" ? terms.partnerPct : 0;
+  const at = (fill) => ({ gross: Math.round(grossYearly * fill), partner: Math.round(grossYearly * fill * (pct / 100)) });
+  return { businessesPerMarket: PARTNER_MODEL.businessesPerMarket, arpuYearly: PARTNER_MODEL.arpuYearly, markets, ramp: { fill40: at(0.4), fill75: at(0.75), fill100: at(1) } };
+}
+
+// Terms arrive from the editor as data and are validated +
+// allow-listed here; anything else is dropped, never stored.
+function sanitizeDealTerms(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { error: "Terms must be an object" };
+  const num = (v) => (v === null || v === undefined || v === "" ? null : Number(v));
+  const pct = num(raw.partnerPct);
+  if (pct !== null && (!Number.isFinite(pct) || pct < 0 || pct > 100)) return { error: "Partner share must be between 0 and 100" };
+  const scope = raw.attributionScope === "sourced_only" ? "sourced_only" : "market_wide";
+  let guarantee = null;
+  if (raw.guarantee && typeof raw.guarantee === "object") {
+    const bands = [];
+    for (const bd of (Array.isArray(raw.guarantee.bands) ? raw.guarantee.bands : [])) {
+      const fromMonth = Math.floor(Number(bd && bd.fromMonth));
+      const toMonth = bd && bd.toMonth !== null && bd.toMonth !== undefined && bd.toMonth !== "" ? Math.floor(Number(bd.toMonth)) : null;
+      const floorMonthly = num(bd && bd.floorMonthly);
+      const pctB = num(bd && bd.pctToBeneficiary);
+      if (!Number.isFinite(fromMonth) || fromMonth < 1) return { error: "Guarantee bands start at month 1 or later" };
+      if (toMonth !== null && (!Number.isFinite(toMonth) || toMonth < fromMonth)) return { error: "A guarantee band cannot end before it starts" };
+      if (floorMonthly === null || !Number.isFinite(floorMonthly) || floorMonthly < 0) return { error: "Guarantee floors must be zero or more" };
+      if (pctB === null || !Number.isFinite(pctB) || pctB < 0 || pctB > 100) return { error: "Guarantee percentages must be between 0 and 100" };
+      bands.push({ fromMonth, toMonth, floorMonthly, pctToBeneficiary: pctB });
+    }
+    bands.sort((a, b) => a.fromMonth - b.fromMonth);
+    const pilotFloor = num(raw.guarantee.pilotFloor);
+    if (pilotFloor !== null && (!Number.isFinite(pilotFloor) || pilotFloor < 0)) return { error: "The pilot floor must be zero or more" };
+    guarantee = { beneficiary: raw.guarantee.beneficiary === "partner" ? "partner" : "signl", bands, pilotFloor };
+    if (!bands.length) guarantee = { ...guarantee, bands: [] };
+  }
+  const markets = [];
+  for (const dm of (Array.isArray(raw.markets) ? raw.markets : [])) {
+    const m = marketByName(String((dm && dm.market) || ""));
+    if (!m) return { error: `Unknown market in the deal: ${(dm && dm.market) || ""}` };
+    const liveAt = dm.liveAt ? new Date(dm.liveAt) : null;
+    if (dm.liveAt && (!liveAt || !Number.isFinite(liveAt.getTime()))) return { error: "A market live date must be a real date" };
+    const fee = num(dm.activationFee);
+    if (fee !== null && (!Number.isFinite(fee) || fee < 0)) return { error: "Activation fees must be zero or more" };
+    markets.push({
+      market: m.name,
+      status: ["pending", "live", "ended"].includes(dm.status) ? dm.status : "pending",
+      liveAt: liveAt ? liveAt.toISOString() : null,
+      activationFee: fee,
+      activationStatus: DEAL_ACTIVATION_STATUSES.includes(dm.activationStatus) ? dm.activationStatus : "unbilled",
+      activationPaidAt: dm.activationPaidAt || null,
+      notes: typeof dm.notes === "string" ? dm.notes.slice(0, 500) : "",
+    });
+  }
+  const termMonths = num(raw.termMonths);
+  if (termMonths !== null && (!Number.isFinite(termMonths) || termMonths < 1)) return { error: "The term must be at least one month" };
+  const startAt = raw.startAt ? new Date(raw.startAt) : null;
+  if (raw.startAt && (!startAt || !Number.isFinite(startAt.getTime()))) return { error: "The start date must be a real date" };
+  return {
+    terms: {
+      splitBasis: "subscriptions",
+      partnerPct: pct,
+      attributionScope: scope,
+      guarantee,
+      termMonths: termMonths === null ? null : Math.floor(termMonths),
+      startAt: startAt ? startAt.toISOString() : null,
+      renewal: typeof raw.renewal === "string" ? raw.renewal.slice(0, 300) : "",
+      exclusivity: { scope: raw.exclusivity && raw.exclusivity.scope === "market_conditional" ? "market_conditional" : "none", conditions: raw.exclusivity && typeof raw.exclusivity.conditions === "string" ? raw.exclusivity.conditions.slice(0, 1000) : "" },
+      promoCommitments: typeof raw.promoCommitments === "string" ? raw.promoCommitments.slice(0, 1000) : "",
+      salesTargets: typeof raw.salesTargets === "string" ? raw.salesTargets.slice(0, 1000) : "",
+      markets,
+      pilot: raw.pilot && typeof raw.pilot === "object" ? { negotiationWindowDays: num(raw.pilot.negotiationWindowDays), gateMetrics: typeof raw.pilot.gateMetrics === "string" ? raw.pilot.gateMetrics.slice(0, 1000) : "" } : null,
+    },
+  };
+}
+
+const DEAL_TERM_KEYS = ["splitBasis", "partnerPct", "attributionScope", "guarantee", "termMonths", "startAt", "renewal", "exclusivity", "promoCommitments", "salesTargets", "markets", "pilot"];
+function diffDealTerms(oldT, newT) {
+  const changedFields = [];
+  const priorValues = {};
+  for (const k of DEAL_TERM_KEYS) {
+    if (JSON.stringify((oldT || {})[k] ?? null) !== JSON.stringify((newT || {})[k] ?? null)) { changedFields.push(k); priorValues[k] = (oldT || {})[k] ?? null; }
+  }
+  return { changedFields, priorValues };
+}
+
+// The partner record's sharePct is a display cache of the active
+// deal's split (one source of truth: the deal). Synced whenever
+// terms are written; never the other way.
+async function syncPartnerShareCache(partnerUser, deal) {
+  if (!partnerUser || !partnerUser.partner || !deal) return;
+  const terms = dealCurrentTerms(deal);
+  if (terms && typeof terms.partnerPct === "number" && partnerUser.partner.sharePct !== terms.partnerPct) {
+    partnerUser.partner.sharePct = terms.partnerPct;
+    partnerUser.updatedAt = nowIso();
+    await store.set(`user:${partnerUser.id}`, partnerUser);
+  }
+}
+
+function partnerPayoutTotals(payouts, partnerId) {
+  return ccMoney((payouts || []).filter((p) => p.payeeId === partnerId).reduce((s, p) => s + (Number(p.amount) || 0), 0));
+}
+
+// Partners view (§3.2): every partner, their deals' plain state,
+// the period split and the cumulative truth. A partner with no
+// deal terms entered says exactly that — no schedule is ever
+// assumed for them.
+function ccPartnersPayload(P, revByBiz) {
+  const periodRows = (bd) => {
+    let gross = 0; let partnerShare = 0; let signlShare = 0;
+    for (const mr of bd.markets) for (const row of mr.months) if (P.period.inPeriod(monthStartIso(row.month))) { gross = ccMoney(gross + row.gross); partnerShare = ccMoney(partnerShare + row.partnerShare); signlShare = ccMoney(signlShare + row.signlShare); }
+    return { gross, partnerShare, signlShare };
+  };
+  const rows = P.partners.map((u) => {
+    const deals = (P.deals || []).filter((d) => d.partnerId === u.id);
+    const bds = deals.map((d) => dealBreakdown(d, revByBiz));
+    const paid = partnerPayoutTotals(P.payouts, u.id);
+    const accrued = ccMoney(bds.reduce((s, bd) => s + bd.totals.partnerShare, 0));
+    const period = bds.reduce((acc, bd) => { const pr = periodRows(bd); acc.gross = ccMoney(acc.gross + pr.gross); acc.partnerShare = ccMoney(acc.partnerShare + pr.partnerShare); acc.signlShare = ccMoney(acc.signlShare + pr.signlShare); return acc; }, { gross: 0, partnerShare: 0, signlShare: 0 });
+    const primary = bds.find((bd) => bd.guaranteeState) || bds[0] || null;
+    return {
+      id: u.id, name: (u.partner && u.partner.name) || u.name || "", code: (u.partner && u.partner.code) || "", type: (u.partner && u.partner.type) || "",
+      markets: (u.partner && u.partner.markets) || [], agreementStatus: (u.partner && u.partner.agreementStatus) || "unsigned",
+      sharePct: typeof (u.partner && u.partner.sharePct) === "number" ? u.partner.sharePct : null,
+      termsState: deals.some((d) => dealHasTerms(d)) ? "entered" : "not_entered",
+      deals: bds.map((bd) => { const t = dealCurrentTerms(deals.find((d) => d.id === bd.dealId)) || {}; return { id: bd.dealId, label: bd.label, status: bd.status, termsState: bd.termsState, currentVersion: bd.currentVersion, partnerPct: typeof t.partnerPct === "number" ? t.partnerPct : null, hasGuarantee: !!t.guarantee, guaranteeState: bd.guaranteeState }; }),
+      attributedBusinesses: P.visUsers.filter((x) => x.role === "business" && x.partnerId === u.id).length,
+      period, accrued, paid, owed: ccMoney(accrued - paid),
+      guaranteeState: primary ? primary.guaranteeState : null,
+    };
+  });
+  rows.sort((a, b) => (b.accrued - a.accrued) || (a.name < b.name ? -1 : 1));
+  return { filters: ccFiltersEcho(P), partners: rows, totals: { accrued: ccMoney(rows.reduce((s, r) => s + r.accrued, 0)), paid: ccMoney(rows.reduce((s, r) => s + r.paid, 0)), owed: ccMoney(rows.reduce((s, r) => s + r.owed, 0)) } };
+}
+
+function ccPartnerDetailPayload(P, partnerId, revByBiz) {
+  const u = P.partners.find((x) => x.id === partnerId);
+  if (!u) return null;
+  const deals = (P.deals || []).filter((d) => d.partnerId === partnerId);
+  const payouts = (P.payouts || []).filter((p) => p.payeeId === partnerId).sort((a, b) => String(b.markedPaidAt || b.createdAt || "") < String(a.markedPaidAt || a.createdAt || "") ? -1 : 1);
+  const paid = partnerPayoutTotals(P.payouts, partnerId);
+  const dealPayloads = deals.map((d) => {
+    const bd = dealBreakdown(d, revByBiz);
+    const terms = dealCurrentTerms(d);
+    return {
+      ...bd,
+      terms,
+      versions: dealVersions(d).map((v) => ({ n: v.n, at: v.at, by: v.by, changedFields: v.changedFields || [], note: v.note || "" })),
+      runRate: terms && dealHasTerms(d) ? dealRunRate(terms) : null,
+      paid: ccMoney(payouts.filter((p) => p.dealId === d.id).reduce((s, p) => s + (Number(p.amount) || 0), 0)),
+    };
+  });
+  const accrued = ccMoney(dealPayloads.reduce((s, bd) => s + bd.totals.partnerShare, 0));
+  return {
+    filters: ccFiltersEcho(P),
+    partner: { id: u.id, name: (u.partner && u.partner.name) || u.name || "", code: (u.partner && u.partner.code) || "", type: (u.partner && u.partner.type) || "", markets: (u.partner && u.partner.markets) || [], agreementStatus: (u.partner && u.partner.agreementStatus) || "unsigned", agreementSignedAt: (u.partner && u.partner.agreementSignedAt) || null, sharePct: typeof (u.partner && u.partner.sharePct) === "number" ? u.partner.sharePct : null },
+    termsState: deals.some((d) => dealHasTerms(d)) ? "entered" : "not_entered",
+    deals: dealPayloads,
+    payouts: payouts.map((p) => ({ id: p.id, dealId: p.dealId || null, amount: p.amount, period: p.period || null, method: p.method || "", reference: p.reference || "", note: p.note || "", markedPaidAt: p.markedPaidAt || p.createdAt || null })),
+    totals: { accrued, paid, owed: ccMoney(accrued - paid) },
+    attributedBusinesses: P.visUsers.filter((x) => x.role === "business" && x.partnerId === partnerId).length,
   };
 }
 
@@ -13485,6 +13924,7 @@ async function route(event) {
       const target = await store.get(`user:${seg[2]}`);
       if (!target || target.role !== "partner" || !target.partner) return err(404, "Partner not found");
       const b = parseBody(event);
+      let sharePatch = null;
       if (b.markets !== undefined) {
         const markets = validPartnerMarkets(b.markets);
         if (!markets || !markets.length) return err(400, "Assign at least one real market");
@@ -13494,7 +13934,24 @@ async function route(event) {
       if (b.sharePct !== undefined) {
         const sharePct = Number(b.sharePct);
         if (!Number.isFinite(sharePct) || sharePct <= 0 || sharePct > 100) return err(400, "Share must be between 1 and 100");
+        // Build -56: the silent overwrite dies. With a deal on
+        // file, the share lives in the versioned deal terms —
+        // editing it here would rewrite history, so the request
+        // is refused and pointed at the Deal editor. Deal-less
+        // partners keep the legacy edit, and the prior value is
+        // preserved on the partner_updated event either way.
+        const liveDeals = (await allDeals()).filter((d) => d.partnerId === target.id && d.status !== "ended");
+        if (liveDeals.length) return err(409, "This partner's share lives in their deal terms now. Edit it in the Deal editor on this card, so the change is kept in the version history.");
+        sharePatch = { from: typeof target.partner.sharePct === "number" ? target.partner.sharePct : null, to: sharePct };
         target.partner.sharePct = sharePct;
+      }
+      let agreementPatch = null;
+      if (b.agreementStatus !== undefined) {
+        if (b.agreementStatus !== "unsigned" && b.agreementStatus !== "signed" && b.agreementStatus !== "countersigned") return err(400, "Agreement status must be unsigned, signed or countersigned");
+        agreementPatch = { from: target.partner.agreementStatus || "unsigned", to: b.agreementStatus };
+        target.partner.agreementStatus = b.agreementStatus;
+        if (b.agreementStatus === "unsigned") target.partner.agreementSignedAt = null;
+        else if (!target.partner.agreementSignedAt) target.partner.agreementSignedAt = nowIso();
       }
       if (b.status !== undefined) {
         if (b.status !== "active" && b.status !== "paused") return err(400, "Status must be active or paused");
@@ -13504,8 +13961,75 @@ async function route(event) {
       if (typeof b.name === "string" && b.name.trim()) target.partner.name = b.name.trim();
       target.updatedAt = nowIso();
       await store.set(`user:${target.id}`, target);
-      await logEvent({ type: "partner_updated", actorId: user.id, actorRole: "admin", subjectId: target.id, data: { code: target.partner.code } });
+      await logEvent({ type: "partner_updated", actorId: user.id, actorRole: "admin", subjectId: target.id, data: { code: target.partner.code, sharePct: sharePatch || undefined } });
+      if (agreementPatch && agreementPatch.from !== agreementPatch.to) {
+        await logEvent({ type: "partner_agreement_updated", actorId: user.id, actorRole: "admin", subjectId: target.id, data: { from: agreementPatch.from, to: agreementPatch.to, signedAt: target.partner.agreementSignedAt || null } });
+      }
       return json(200, { partner: { id: target.id, email: target.email, ...publicPartner(target.partner), links: partnerLinksFor(publicPartner(target.partner)) } });
+    }
+    // Partner deals (Build -56): the versioned deal record. Terms
+    // are written ONLY here (create + append-version); the PATCH
+    // on the deal itself touches metadata (label, status,
+    // governing document) and can never rewrite a term.
+    if (seg[1] === "partners" && seg.length === 4 && seg[3] === "deals" && method === "GET") {
+      const target = await store.get(`user:${seg[2]}`);
+      if (!target || target.role !== "partner" || !target.partner) return err(404, "Partner not found");
+      const deals = (await allDeals()).filter((d) => d.partnerId === target.id);
+      return json(200, { deals });
+    }
+    if (seg[1] === "partners" && seg.length === 4 && seg[3] === "deals" && method === "POST") {
+      const target = await store.get(`user:${seg[2]}`);
+      if (!target || target.role !== "partner" || !target.partner) return err(404, "Partner not found");
+      const b = parseBody(event);
+      const status = DEAL_STATUSES.includes(b.status) ? b.status : "negotiating";
+      const { terms, error } = sanitizeDealTerms(b.terms || {});
+      if (error) return err(400, error);
+      const ts = nowIso();
+      const deal = {
+        id: crypto.randomUUID(), partnerId: target.id,
+        label: typeof b.label === "string" && b.label.trim() ? b.label.trim().slice(0, 120) : "Partner deal",
+        status, governingDocument: typeof b.governingDocument === "string" ? b.governingDocument.slice(0, 300) : "",
+        createdAt: ts, updatedAt: ts, createdBy: user.id, currentVersion: 1,
+        versions: [{ n: 1, at: ts, by: user.id, changedFields: ["created"], priorValues: {}, note: typeof b.note === "string" ? b.note.slice(0, 500) : "", terms }],
+      };
+      await store.set(`deal:${deal.id}`, deal);
+      await syncPartnerShareCache(target, deal);
+      await logEvent({ type: "deal_created", actorId: user.id, actorRole: "admin", subjectId: target.id, data: { dealId: deal.id, label: deal.label, status } });
+      return json(201, { deal });
+    }
+    if (seg[1] === "deals" && seg.length === 3 && method === "PATCH") {
+      const deal = await store.get(`deal:${seg[2]}`);
+      if (!deal) return err(404, "Deal not found");
+      const b = parseBody(event);
+      if (typeof b.label === "string" && b.label.trim()) deal.label = b.label.trim().slice(0, 120);
+      if (typeof b.governingDocument === "string") deal.governingDocument = b.governingDocument.slice(0, 300);
+      let statusChange = null;
+      if (b.status !== undefined) {
+        if (!DEAL_STATUSES.includes(b.status)) return err(400, "Deal status must be negotiating, term_sheet, signed, live or ended");
+        if (b.status !== deal.status) { statusChange = { from: deal.status, to: b.status }; deal.status = b.status; }
+      }
+      deal.updatedAt = nowIso();
+      await store.set(`deal:${deal.id}`, deal);
+      await logEvent({ type: "deal_updated", actorId: user.id, actorRole: "admin", subjectId: deal.partnerId, data: { dealId: deal.id, statusChange } });
+      return json(200, { deal });
+    }
+    if (seg[1] === "deals" && seg.length === 4 && seg[3] === "versions" && method === "POST") {
+      const deal = await store.get(`deal:${seg[2]}`);
+      if (!deal) return err(404, "Deal not found");
+      const b = parseBody(event);
+      const { terms, error } = sanitizeDealTerms(b.terms || {});
+      if (error) return err(400, error);
+      const prior = dealCurrentTerms(deal);
+      const { changedFields, priorValues } = diffDealTerms(prior, terms);
+      const version = { n: dealVersions(deal).length + 1, at: nowIso(), by: user.id, changedFields, priorValues, note: typeof b.note === "string" ? b.note.slice(0, 500) : "", terms };
+      deal.versions = [...dealVersions(deal), version];
+      deal.currentVersion = version.n;
+      deal.updatedAt = nowIso();
+      await store.set(`deal:${deal.id}`, deal);
+      const partnerUser = await store.get(`user:${deal.partnerId}`);
+      await syncPartnerShareCache(partnerUser, deal);
+      await logEvent({ type: "deal_terms_changed", actorId: user.id, actorRole: "admin", subjectId: deal.partnerId, data: { dealId: deal.id, version: version.n, changedFields, priorValues } });
+      return json(201, { deal, version: { n: version.n, changedFields } });
     }
     // Return rates against the market distribution (Build -34,
     // M2 guard): Admin only. A gamed rate reads as an outlier
@@ -14204,6 +14728,77 @@ async function route(event) {
     if (seg[1] === "command" && seg[2] === "businesses" && method === "GET") {
       const P = await ccPrep(query);
       return json(200, ccBusinesses(P));
+    }
+    // Partners (Build -56): the deal record + the greater-of
+    // engine. The list carries every partner (terms entered or
+    // honestly not), the detail carries one partner's full
+    // per-market, per-month breakdown with both greater-of
+    // candidates, and payouts are recorded against real money
+    // only — marking one paid is an admin act on a payment that
+    // happened outside the app, never an automatic state.
+    if (seg[1] === "command" && seg[2] === "partners" && seg.length === 3 && method === "GET") {
+      const P = await ccPrep(query);
+      const rev = subRevenueByBizMonth(P.visUsers, P.charges);
+      const payload = ccPartnersPayload(P, rev);
+      if (query.partner) payload.partners = payload.partners.filter((r) => r.id === String(query.partner));
+      return json(200, payload);
+    }
+    if (seg[1] === "command" && seg[2] === "partners" && seg[3] === "payouts" && method === "POST") {
+      const b = parseBody(event);
+      const partnerUser = await store.get(`user:${String(b.partnerId || "")}`);
+      if (!partnerUser || partnerUser.role !== "partner" || !partnerUser.partner) return err(404, "Partner not found");
+      const amount = Number(b.amount);
+      if (!Number.isFinite(amount) || amount <= 0) return err(400, "A payout needs a real amount over zero");
+      if (b.dealId) {
+        const deal = await store.get(`deal:${String(b.dealId)}`);
+        if (!deal || deal.partnerId !== partnerUser.id) return err(400, "That deal does not belong to this partner");
+      }
+      const payout = {
+        id: crypto.randomUUID(), payeeType: "partner", payeeId: partnerUser.id, dealId: b.dealId ? String(b.dealId) : null,
+        amount: ccMoney(amount), period: typeof b.period === "string" && /^\d{4}-\d{2}$/.test(b.period) ? b.period : null,
+        method: typeof b.method === "string" ? b.method.slice(0, 60) : "", reference: typeof b.reference === "string" ? b.reference.slice(0, 120) : "",
+        note: typeof b.note === "string" ? b.note.slice(0, 500) : "",
+        markedPaidBy: user.id, markedPaidAt: nowIso(), createdAt: nowIso(),
+      };
+      await store.set(`payout:${payout.id}`, payout);
+      await logEvent({ type: "partner_payout_recorded", actorId: user.id, actorRole: "admin", subjectId: partnerUser.id, data: { payoutId: payout.id, amount: payout.amount, dealId: payout.dealId, period: payout.period } });
+      const all = await allPayouts();
+      return json(201, { payout, paidTotal: partnerPayoutTotals(all, partnerUser.id) });
+    }
+    if (seg[1] === "command" && seg[2] === "partners" && seg[3] === "accrue" && method === "POST") {
+      // Snapshot the live accruals into accrual records (§2.5).
+      // Records still accruing refresh in place; a closed month
+      // (the close phase, -57) is never overwritten.
+      const P = await ccPrep({});
+      const rev = subRevenueByBizMonth(P.visUsers, P.charges);
+      let written = 0; let refreshed = 0; let skippedClosed = 0;
+      for (const deal of (P.deals || [])) {
+        if (!dealAccrues(deal)) continue;
+        const bd = dealBreakdown(deal, rev);
+        for (const mr of bd.markets) {
+          for (const row of mr.months) {
+            const key = `accrual:${deal.partnerId}:${row.month}:${normalizeMarketName(mr.market || "")}`;
+            const existing = await store.get(key);
+            if (existing && existing.state === "closed") { skippedClosed += 1; continue; }
+            await store.set(key, {
+              id: key.slice("accrual:".length), partnerId: deal.partnerId, dealId: deal.id, month: row.month, market: mr.market,
+              gross: row.gross, partnerShare: row.partnerShare, signlShare: row.signlShare,
+              countedBasis: row.chargedGross > 0 && row.recordedGross > 0 ? "mixed" : row.chargedGross > 0 ? "charged" : "recorded",
+              governing: row.governing, governedBy: row.governedBy, state: "accruing", snapshotAt: nowIso(),
+            });
+            if (existing) refreshed += 1; else written += 1;
+          }
+        }
+      }
+      await logEvent({ type: "partner_accrual_snapshot", actorId: user.id, actorRole: "admin", subjectId: null, data: { written, refreshed, skippedClosed } });
+      return json(200, { accruals: { written, refreshed, skippedClosed } });
+    }
+    if (seg[1] === "command" && seg[2] === "partners" && seg.length === 4 && method === "GET") {
+      const P = await ccPrep(query);
+      const rev = subRevenueByBizMonth(P.visUsers, P.charges);
+      const detail = ccPartnerDetailPayload(P, decodeURIComponent(seg[3]), rev);
+      if (!detail) return err(404, "Partner not found");
+      return json(200, detail);
     }
     // Subject-scoped event read (§6.7): one record's own trail for
     // the drill-downs — events where the record is the subject or

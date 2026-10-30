@@ -135,7 +135,7 @@ try {
   check("dev server boots", await waitUp());
   const admin = client();
   const boot = await admin("GET", "/api/bootstrap");
-  check("stamp: API responses carry 2026.10.30-55", boot.headers.get("x-signl-build") === "2026.10.30-55", String(boot.headers.get("x-signl-build")));
+  check("stamp: API responses carry 2026.10.30-56", boot.headers.get("x-signl-build") === "2026.10.30-56", String(boot.headers.get("x-signl-build")));
   await admin("POST", "/api/auth/login", { email: ADMIN_EMAIL, password: ADMIN_PASSWORD });
   await admin("POST", "/api/admin/markets/toggle", { market: "Richmond", live: true });
 
@@ -270,9 +270,9 @@ try {
   const creditBlock = slice("function creditPanelHtml", "function scoreV2Html");
   const scoreBlock = slice("function scoreV2Html", "function receiptHtml");
   const srcChecks = [
-    ["stamp: build stamp is 2026.10.30-55 on server and shell",
-      fs.readFileSync(path.join(ROOT, "netlify", "functions", "lib", "build.js"), "utf8").includes('BUILD_ID = "2026.10.30-55"')
-      && fs.readFileSync(path.join(ROOT, "public", "index.html"), "utf8").includes("2026.10.30-55")],
+    ["stamp: build stamp is 2026.10.30-56 on server and shell",
+      fs.readFileSync(path.join(ROOT, "netlify", "functions", "lib", "build.js"), "utf8").includes('BUILD_ID = "2026.10.30-56"')
+      && fs.readFileSync(path.join(ROOT, "public", "index.html"), "utf8").includes("2026.10.30-56")],
     ["tickets: the panel leads with the two seats being only yours to give",
       gtPanel.includes("Two seats, and only you can give them") && gtPanel.includes("You hold exactly two tickets") && gtPanel.includes("held in their name until the market launches")],
     ["tickets: the panel prints the four real awards with the points surface's own labels",

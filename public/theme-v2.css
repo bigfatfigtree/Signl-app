@@ -3106,3 +3106,19 @@ details.roas-x > summary::-webkit-details-marker { display: none; }
   .cc-att-row { flex-wrap: wrap; }
   .cc-att-row .btn { margin-top: 2px; }
 }
+/* Command Center Partners (Build -56): at phone width the tile
+   grid goes single-column — a 2rem money figure ("$31,661.5")
+   cannot fit a half-width tile beside the rail, and the -54
+   two-column rule clipped the second column's numbers without
+   ever overflowing the page, so the scrollWidth check could not
+   see it (found in the -56 render pass, partner detail at 390).
+   Applies to every Command Center view's tiles: one stack,
+   nothing cut. */
+@media (max-width: 560px) {
+  .cc-tiles { grid-template-columns: 1fr; }
+  /* The split bar stacks its two sides full-width: side by side
+     at phone width, the mint side's label was clipped mid-figure
+     by the black side (same render pass). */
+  .cc-splitbar { flex-direction: column; height: auto !important; }
+  .cc-splitbar > div { width: 100% !important; padding-top: 7px !important; padding-bottom: 7px !important; }
+}

@@ -120,8 +120,8 @@ const webhook = async (obj) => {
 };
 
 console.log("verify-build55: Command Center Money + Businesses + charge capture");
-check("build stamp is 2026.10.30-55", BUILD_ID === "2026.10.30-55", BUILD_ID);
-check("index.html carries the -55 stamp", fs.readFileSync(new URL("../public/index.html", import.meta.url), "utf8").includes("2026.10.30-55"));
+check("build stamp is 2026.10.30-56", BUILD_ID === "2026.10.30-56", BUILD_ID);
+check("index.html carries the -55 stamp", fs.readFileSync(new URL("../public/index.html", import.meta.url), "utf8").includes("2026.10.30-56"));
 
 const login = await handler(evt("POST", "/api/auth/login", { body: { email: process.env.ADMIN_EMAIL, password: process.env.ADMIN_PASSWORD } }));
 check("admin login succeeds", login.statusCode === 200, `got ${login.statusCode}`);
@@ -200,8 +200,14 @@ check("recorded paid bookings: flowed 206, SIGNL kept 12, creators 194, released
 check("recorded licenses: flowed 154.50, kept 9, creators 145.50",
   !!money && money.recorded.rows.licenses.flowed === 154.5 && money.recorded.rows.licenses.signlKept === 9 && money.recorded.rows.licenses.creatorsEarned === 145.5,
   money && JSON.stringify(money.recorded.rows.licenses));
-check("recorded totals: flowed 908.50 (548 plans + 206 paid + 154.50 licenses), splits hold, partners answer null on subscriptions (accruals land with deals)",
-  !!money && money.recorded.totals.flowed === 908.5 && money.recorded.splitsHold === true && money.recorded.rows.subscriptions.partnersEarned === null && money.recorded.rows.paidBookings.partnersEarned === 0,
+// Doctrine update (Build -56): the accruals this check waited
+// for HAVE landed with the deal records — the subscriptions
+// partner column now answers the greater-of engine's computed
+// figure. This fixture carries a partner but NO deal record, so
+// the computed figure is an honest 0 with partnerDealCount 0
+// (the pre--56 contract answered null = not yet computed).
+check("recorded totals: flowed 908.50 (548 plans + 206 paid + 154.50 licenses), splits hold, partners computed by the -56 engine on subscriptions (0 here: no deal on file)",
+  !!money && money.recorded.totals.flowed === 908.5 && money.recorded.splitsHold === true && money.recorded.rows.subscriptions.partnersEarned === 0 && money.recorded.rows.subscriptions.partnerDealCount === 0 && money.recorded.rows.paidBookings.partnersEarned === 0,
   money && JSON.stringify(money.recorded.totals));
 check("escrow sub-block: the held booking's $103 is recorded-not-flowed, counted apart",
   !!money && money.recorded.escrow.paidHeld.count === 1 && money.recorded.escrow.paidHeld.businessTotal === 103,

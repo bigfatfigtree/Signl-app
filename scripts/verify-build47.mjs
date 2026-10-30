@@ -111,7 +111,7 @@ check("A5 campaign import previews before it writes", appJs.includes("previewCam
 check("A6 stats cells carry labels into the stacked layout", appJs.includes('data-label="Approved creators"') && css.includes("td[data-label]::before"));
 check("L1 sign-in and claim forms validate in JS, not bubbles", appJs.includes('<form novalidate onsubmit="return doSignin(event)">') && appJs.includes('<form novalidate onsubmit="return doQuickClaim(event)">'));
 check("L2 staff redeem is explained on the logged-out page", appJs.includes("Working the register at a SIGNL business?"));
-check("B-cases stamp: the build is 2026.10.30-55", fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes('"2026.10.30-55"'));
+check("B-cases stamp: the build is 2026.10.30-56", fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes('"2026.10.30-56"'));
 
 // ---------- live ----------
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "signl-build47-"));
@@ -151,7 +151,7 @@ try {
   part("live boot");
   const idxRes = await fetch(BASE + "/");
   const idxHtml = await idxRes.text();
-  check("the served page carries build 2026.10.30-55", idxHtml.includes("2026.10.30-55"));
+  check("the served page carries build 2026.10.30-56", idxHtml.includes("2026.10.30-56"));
 
   const admin = makeClient();
   await admin("POST", "/api/auth/login", { email: ADMIN_EMAIL, ["pass" + "word"]: ADMIN_PASSWORD });
