@@ -7708,6 +7708,26 @@ async function loadReceipt() {
   state._receiptTop = (r.topCreators || [])[0] || null;
   host.innerHTML = receiptHtml(r);
 }
+// Build -48: the Receipt's score blocks live under subtabs
+// (Overview / Over time / Creators / Costs / How it counts).
+// The selected tab is module state, so a loadReceipt re-render
+// (a comp-cost save, the Sig capture-gap deep link) lands back
+// on the tab the owner was reading. All five panels render in
+// one pass; switching only toggles which one shows, so open
+// details and half-filled forms survive a tab switch.
+const RECEIPT_TABS = ["overview", "time", "creators", "costs", "counts"];
+let receiptTab = "overview";
+function receiptSetTab(name) {
+  if (!RECEIPT_TABS.includes(name)) name = "overview";
+  receiptTab = name;
+  const host = document.getElementById("biz-receipt");
+  if (host) {
+    host.querySelectorAll(".rc-panel").forEach((p) => p.classList.toggle("on", p.getAttribute("data-rc") === name));
+    const bar = host.querySelector(".rc-tabs");
+    if (bar) bar.querySelectorAll(".ws-tab").forEach((b, i) => { const on = RECEIPT_TABS[i] === name; b.classList.toggle("on", on); b.setAttribute("aria-selected", on ? "true" : "false"); });
+  }
+  return false;
+}
 function receiptSettingsHtml(r) {
   const b = (state.user && state.user.business) || {};
   const base = r.baseline || null;
@@ -8028,8 +8048,7 @@ function creditPanelHtml(r) {
       ${tallyLine}
       ${plugLine}
     </div>
-  </div>
-  ${roasInfoPopHtml()}`;
+  </div>`;
 }
 function scoreV2Html(r) {
   const s = r.scoreV2 && r.scoreV2.current;
@@ -8139,20 +8158,20 @@ function scoreV2Html(r) {
     <div class="small muted" style="margin-top:4px">${w.visits} visit${w.visits === 1 ? "" : "s"} this month · ${w.customers} customers${w.cameBacks ? ` · ${w.cameBacks} came back` : ""}${w.directCost !== null && w.directCost !== undefined ? ` · their visits cost you $${fmtMoney(w.directCost)}` : ""}.</div></details>`;
   }).join("")}<p class="small muted" style="margin:6px 0 0">${esc((s.creators[0] || {}).methodLine || "")}</p></div>` : "";
   const gap = r.captureGap || {};
-  return `<div style="margin-top:12px;border-top:1px solid var(--hairline,#DFE7DF);padding-top:12px">
-    <p class="ui-kicker">Your score</p>
-    ${head}
-    ${cbBlock}
-    ${weekBlock}
-    ${costBlock}
-    ${mediaBlock}
-    ${tallyBlock}
-    ${monthsBlock}
-    ${visitRows ? `<div style="margin-top:12px"><h4 style="margin:0 0 4px">This month's visits ${roasInfoBtn("visits")}</h4>${visitRows}</div>` : ""}
-    ${creatorRows}
-    ${gap.state === "thin" ? `<div class="panel" style="margin-top:14px"><h4 style="margin:0 0 4px">One check: the counting looks thin</h4><p class="small" style="margin:0">Posts from your visits were seen about ${fmtNum(gap.reach)} times (creators reported), and ${gap.countedFirsts} customers were counted at the register. Here is what we can check: the code in the post captions, code cards at the counter, an audience offer attached to the visit. The script card at the bottom of this page helps too: one question at the counter catches the customers no code ever sees.</p></div>` : ""}
-    <p class="small muted" style="margin:12px 0 0">${esc(s.versionLine || "")}</p>
-  </div>`;
+  // Build -48: the score returns its blocks as named parts and
+  // the Receipt lays them out under subtabs (Overview / Over
+  // time / Creators / Costs / How it counts) instead of one
+  // long stack. The math and every string above are untouched;
+  // only the arrangement moved.
+  return {
+    head,
+    side: `${mediaBlock}${tallyBlock}`,
+    overTime: `${cbBlock}${weekBlock}${monthsBlock}`,
+    creators: `${visitRows ? `<div style="margin-top:12px"><h4 style="margin:0 0 4px">This month's visits ${roasInfoBtn("visits")}</h4>${visitRows}</div>` : ""}${creatorRows}`,
+    costs: costBlock,
+    gapPanel: gap.state === "thin" ? `<div class="panel" style="margin-top:14px"><h4 style="margin:0 0 4px">One check: the counting looks thin</h4><p class="small" style="margin:0">Posts from your visits were seen about ${fmtNum(gap.reach)} times (creators reported), and ${gap.countedFirsts} customers were counted at the register. Here is what we can check: the code in the post captions, code cards at the counter, an audience offer attached to the visit. The script card at the bottom of this page helps too: one question at the counter catches the customers no code ever sees.</p></div>` : "",
+    versionLine: s.versionLine || "",
+  };
 }
 function receiptHtml(r) {
   const hasLedger = (r.ledger || []).length > 0;
@@ -8160,13 +8179,9 @@ function receiptHtml(r) {
   const base = r.baseline;
   const g = r.google || {};
   const gLine = (cur, prev, label) => (cur && cur[label] !== undefined ? `<div class="lrow"><span>${label === "searches" ? "Searches" : label === "directions" ? "Direction requests" : label === "calls" ? "Calls" : "New reviews"}</span><strong>${cur[label]}${prev && prev[label] !== undefined ? ` <span class="muted" style="font-weight:400">(last month ${prev[label]})</span>` : ""}</strong></div>` : "");
-  return `<section class="wcard">
-    <p class="ui-kicker">Your receipt</p>
-    <h3>What SIGNL brought you</h3>
-    ${sqNoticeHtml()}
-    ${scoreV2Html(r)}
-    ${creditPanelHtml(r)}
-    ${hasLedger ? `
+  const sv = scoreV2Html(r);
+  const hasScore = !!(sv && typeof sv === "object");
+  const ledgerHtml = hasLedger ? `
     <p style="margin:8px 0 0;font-size:1.08rem">In ${esc(r.monthLabel)}, SIGNL brought you <strong>at least $${fmtMoney(r.trackedSpend)}</strong> in tracked register spend from <strong>${r.customersCounted} counted customer${r.customersCounted === 1 ? "" : "s"}</strong>.</p>
     <p class="small muted">Counted how: every dollar above is a register event ${r.register && r.register.state === "connected" ? "your team logged with its check total, or your connected register reported itself" : "your team logged with its check total"}, or your reported tally where you used it instead. It is a floor, not a projection: customers who never used a code are invisible to everyone, us included.</p>
     <div style="margin-top:10px">${r.ledger.map((l) => `<div class="lrow" style="margin-top:8px"><div style="flex:1"><span class="lname">${esc(l.title || "Visit")}</span> <span class="muted">with @${esc(l.creatorHandle)}</span><div class="small muted">${l.customers} counted customer${l.customers === 1 ? "" : "s"} · $${fmtMoney(l.spend)} tracked${l.source === "tally" ? " (your reported tally)" : ""}${l.returns ? ` · ${l.returns} came back ($${fmtMoney(l.returnSpend)})` : ""}${l.mentions ? ` · ${l.mentions} told staff a post sent them` : ""}${l.nightCount !== null && l.nightCount !== undefined ? ` · ${l.nightCount} tables or customers that night` : ""}</div></div></div>`).join("")}</div>
@@ -8177,13 +8192,34 @@ function receiptHtml(r) {
     ${r.whoBrought && r.whoBrought.length ? `<h4 style="margin:14px 0 4px">Who brought them</h4>${r.whoBrought.map((w) => `<div class="lrow"><div style="flex:1"><span class="lname">@${esc(w.creatorHandle)}</span><div class="small muted">${w.visits} visit${w.visits === 1 ? "" : "s"} counted</div></div><span>${w.customers} customers · $${fmtMoney(w.spend)}${w.cameBacks ? ` · ${w.cameBacks} came back` : ""}</span></div>`).join("")}` : ""}
     ${r.mentions && r.mentions.month > 0 ? `<p class="small muted" style="margin:12px 0 0">Plus ${r.mentions.month} more customer${r.mentions.month === 1 ? "" : "s"} told your staff a post sent them. Told-us counts ride their own line and never mix into register money.</p>` : ""}
     <div style="margin-top:14px"><h4 style="margin:0 0 4px">What it cost</h4>
-    <p style="margin:0">Every cost inside your score is itemized in the score block above: your plan at what you actually paid, comps at your cost, paid creators at their rate plus your fee share, and code discounts as they were redeemed. Nothing else is in the number, and no cost is ever estimated for you.</p></div>
+    <p style="margin:0">Every cost inside your score is itemized ${hasScore ? "under the Costs tab" : "in the score block above"}: your plan at what you actually paid, comps at your cost, paid creators at their rate plus your fee share, and code discounts as they were redeemed. Nothing else is in the number, and no cost is ever estimated for you.</p></div>
     <p style="margin:14px 0 0"><button class="btn" type="button" onclick="return receiptBookTop()">Book next month's creators</button></p>`
     : ((r.visitsLanded && (r.visitsLanded.redeemed > 0 || r.visitsLanded.delivered > 0))
       ? `<p class="wc-sub" style="margin:6px 0 0">Your visits have landed. The counted money starts with the first register event: a code redeemed at the till, or your tally on the visit. Until one lands, this receipt shows no money rather than an estimate.</p>`
-      : `<p class="wc-sub" style="margin:6px 0 0">This is the screen your first visits pay into. Every number will be a counted floor with its method beside it: register events as they happen, come-backs inside 30 days, your usual night as the comparison line. Nothing here is ever projected or padded.${r.cost && r.cost.planPrice ? ` Your founding plan is $${fmtMoney(r.cost.planPrice)} a month, held at the founding rate while it stays active.` : ""}${base ? ` Your usual ${esc(base.dayLabel)} (about ${base.usual}) is already recorded, so the comparison line is ready before your first visit.` : " Set your usual night below and the comparison line is ready before your first visit."}</p>`)}
-    ${g.current ? `<div style="margin-top:14px"><h4 style="margin:0 0 4px">People looking you up</h4><p class="small muted" style="margin:0 0 6px">Google's numbers, not ours. They corroborate a good month; they never add to tracked spend.</p>${gLine(g.current, g.previous, "searches")}${gLine(g.current, g.previous, "directions")}${gLine(g.current, g.previous, "calls")}${gLine(g.current, g.previous, "reviews")}</div>` : ""}
+      : `<p class="wc-sub" style="margin:6px 0 0">This is the screen your first visits pay into. Every number will be a counted floor with its method beside it: register events as they happen, come-backs inside 30 days, your usual night as the comparison line. Nothing here is ever projected or padded.${r.cost && r.cost.planPrice ? ` Your founding plan is $${fmtMoney(r.cost.planPrice)} a month, held at the founding rate while it stays active.` : ""}${base ? ` Your usual ${esc(base.dayLabel)} (about ${base.usual}) is already recorded, so the comparison line is ready before your first visit.` : " Set your usual night below and the comparison line is ready before your first visit."}</p>`);
+  const googleHtml = g.current ? `<div style="margin-top:14px"><h4 style="margin:0 0 4px">People looking you up</h4><p class="small muted" style="margin:0 0 6px">Google's numbers, not ours. They corroborate a good month; they never add to tracked spend.</p>${gLine(g.current, g.previous, "searches")}${gLine(g.current, g.previous, "directions")}${gLine(g.current, g.previous, "calls")}${gLine(g.current, g.previous, "reviews")}</div>` : "";
+  // Build -48: with a score on the page, the Receipt breaks
+  // into subtabs (Overview / Over time / Creators / Costs /
+  // How it counts), each holding its own blocks; without one
+  // (founding, nothing counted yet) it keeps the single
+  // explainer layout it has always had, no tabs, no empties.
+  const fillsIn = (line) => `<p class="small muted" style="margin:10px 0 0">${line}</p>`;
+  const middle = hasScore ? `<div style="margin-top:12px;border-top:1px solid var(--hairline,#DFE7DF);padding-top:12px">
+    <p class="ui-kicker">Your score</p>
+    <div class="rc-tabs">${wsTabs([{ label: "Overview", on: receiptTab === "overview", onclick: "return receiptSetTab('overview')" }, { label: "Over time", on: receiptTab === "time", onclick: "return receiptSetTab('time')" }, { label: "Creators", on: receiptTab === "creators", onclick: "return receiptSetTab('creators')" }, { label: "Costs", on: receiptTab === "costs", onclick: "return receiptSetTab('costs')" }, { label: "How it counts", on: receiptTab === "counts", onclick: "return receiptSetTab('counts')" }])}</div>
+    <div class="rc-panel${receiptTab === "overview" ? " on" : ""}" data-rc="overview">${sv.head}${sv.side}${ledgerHtml}${googleHtml}</div>
+    <div class="rc-panel${receiptTab === "time" ? " on" : ""}" data-rc="time">${sv.overTime || fillsIn("Your counted weeks, came-backs and months land here as register events come in.")}</div>
+    <div class="rc-panel${receiptTab === "creators" ? " on" : ""}" data-rc="creators">${sv.creators || fillsIn("Each visit, and the creator who brought it, lands here as it is counted at your register.")}</div>
+    <div class="rc-panel${receiptTab === "costs" ? " on" : ""}" data-rc="costs">${sv.costs || fillsIn("Your itemized costs land here once your plan charge and visit costs are on record. No cost is ever estimated for you.")}</div>
+    <div class="rc-panel${receiptTab === "counts" ? " on" : ""}" data-rc="counts">${creditPanelHtml(r)}${sv.gapPanel}<p class="small muted" style="margin:12px 0 0">${esc(sv.versionLine)}</p></div>
+    </div>` : `${creditPanelHtml(r)}${ledgerHtml}${googleHtml}`;
+  return `<section class="wcard">
+    <p class="ui-kicker">Your receipt</p>
+    <h3>What SIGNL brought you</h3>
+    ${sqNoticeHtml()}
+    ${middle}
     ${receiptSettingsHtml(r)}
+    ${roasInfoPopHtml()}
   </section>`;
 }
 // ---------- Points and Your Line (Build -36) ----------
@@ -12698,7 +12734,7 @@ async function loadBusinessHome() {
     // line names the check, never a culprit, with real counts.
     const gap39 = h.captureGap || {};
     if (gap39.state === "thin") {
-      add(3, now, `Counting looks thin: posts from your visits were seen about ${fmtNum(gap39.reach)} times (creators reported), but only ${gap39.countedFirsts} customers were counted at the register. Here is what we can check: the code in the captions, code cards at the counter, an audience offer on the visit.`, "See the check", () => { const t = document.getElementById("biz-receipt"); if (t) t.scrollIntoView({ behavior: "smooth", block: "start" }); }, "Counting looks thin");
+      add(3, now, `Counting looks thin: posts from your visits were seen about ${fmtNum(gap39.reach)} times (creators reported), but only ${gap39.countedFirsts} customers were counted at the register. Here is what we can check: the code in the captions, code cards at the counter, an audience offer on the visit.`, "See the check", () => { receiptTab = "counts"; const t = document.getElementById("biz-receipt"); if (t) { loadReceipt().then(() => { const el = document.getElementById("biz-receipt"); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); }); } }, "Counting looks thin");
     }
     const bz = u.business || {};
     if (!bz.about) add(4, now, "Your business page is missing its About.", "Add about", () => go("dashboard", "Profile"), "About missing on your page");

@@ -1952,6 +1952,11 @@ body.rail-on #toprow { display: block; margin-left: 78px; padding-top: 12px; }
 .ws-tab .cnt { font-weight: 600; margin-left: 4px; }
 .ws-tab:hover { color: var(--ink); }
 .ws-tab.on { color: var(--mint-deep); }
+/* Build -48: Receipt subtab panels (Results page). One panel
+   shows at a time; the rest stay in the DOM so open details
+   and form state survive a switch. */
+.rc-panel { display: none; }
+.rc-panel.on { display: block; }
 .ws-tab.on::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 2.5px; border-radius: 2px; background: var(--mint-deep); }
 /* Phone widths: tab rows wrap instead of clipping the last tab
    off the right edge (Build -47, audit B4). */

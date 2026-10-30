@@ -236,7 +236,7 @@ try {
 
   const boot = await client()("GET", "/api/bootstrap");
   check("bootstrap flags Square as configured, sandbox labeled", boot.data.platformConnect && boot.data.platformConnect.square && boot.data.platformConnect.square.oauthConfigured === true && boot.data.platformConnect.square.env === "sandbox", JSON.stringify(boot.data.platformConnect));
-  check("bootstrap carries the -44 build stamp", boot.headers.get("x-signl-build") === "2026.10.30-47", boot.headers.get("x-signl-build"));
+  check("bootstrap carries the -44 build stamp", boot.headers.get("x-signl-build") === "2026.10.30-48", boot.headers.get("x-signl-build"));
 
   const amy = await makeCreator(admin, { name: "Square Amy", email: "sqamy@fixtures.dev", handle: "sqamy" });
   const kitchen = await makeBusiness(admin, BASE, { name: "Kai Owner", businessName: "Square Kitchen", email: "sqkai@fixtures.dev" });
