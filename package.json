@@ -63,7 +63,8 @@
     "verify-build37": "node scripts/verify-build37.mjs",
     "verify-build38": "node scripts/verify-build38.mjs",
     "verify-build39": "node scripts/verify-build39.mjs",
-    "verify-build40": "node scripts/verify-build40.mjs"
+    "verify-build40": "node scripts/verify-build40.mjs",
+    "verify-build41": "node scripts/verify-build38.mjs"
   },
   "type": "commonjs",
   "version": "1.0.0"

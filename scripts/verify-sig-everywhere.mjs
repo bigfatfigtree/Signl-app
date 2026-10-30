@@ -36,8 +36,8 @@ const region = (from, to) => {
 
 // --- partner surface exists and is wired into the shell
 check("partner Sig tab is a valid destination", appJs.includes('"Help", "Sig"]') || appJs.includes('"Sig"]'));
-check("partner More includes Sig", /PT_MORE_TABS = \[[^\]]*"Sig"/.test(appJs));
-check("partner More rows lead with Sig", appJs.includes('{ icon: "sig", label: "Sig"'));
+check("partner rail lists Sig as a destination (BUILD -41: a composed row item, no More)", appJs.includes("function railRowItems(") && appJs.includes('...extra(["Home", "Markets", "Earnings"])') && !appJs.includes("PT_MORE_TABS"));
+check("partner rows lead with Sig (the rail inherits the order)", appJs.includes('{ icon: "sig", label: "Sig"'));
 check("renderPartnerTab renders the Sig surface", appJs.includes('if (tab === "Sig") el.innerHTML = partnerSigHtml(d);'));
 check("partner Overview carries the Sig presence card", appJs.includes("partnerSigCardHtml(d)") && appJs.includes('go(\'dashboard\',\'Sig\')'));
 const helpRegion = appJs.slice(appJs.indexOf("function partnerHelpHtml"), appJs.indexOf("function partnerHelpHtml") + 1400);

@@ -150,13 +150,13 @@ try {
     return appJs.slice(a, b > a ? b : a + 6000);
   };
 
-  part("source: V4.1 chrome (4 destinations, slim top bar, no floating button)");
+  part("source: V4.1 chrome (BUILD -41: full rail list, slim top bar, no floating button)");
   check("index.html mounts the tab bar + slim top bar, and NO floating agent button", indexHtml.includes('id="tabbar"') && indexHtml.includes('id="topbar2"') && !indexHtml.includes('id="agent-fab"'));
   check("V3 chrome hides the legacy topbar, footer and rail in product states", themeCss.includes("body.v3-on .topbar, body.v3-slim .topbar") && themeCss.includes("body.v3-on #agent-fab, body.v3-slim #agent-fab"));
   check("left rail at every width: slim 72px rail + content offset on phones, 232px rail at desktop (BUILD -38)", themeCss.includes("body.v3-on #tabbar") && themeCss.includes("width: 72px") && themeCss.includes("margin-left: 72px") && themeCss.includes("width: 232px") && themeCss.includes("margin-left: 232px") && !themeCss.includes("body.v3-on #tabbar { display: block; position: fixed; left: 0; right: 0; bottom: 0;"));
   check("tab labels are always visible text (never icon-only)", themeCss.includes(".tab-label") && appJs.includes('class="tab-label"'));
-  check("tab items come from one source with the V3 labels per role", appJs.includes("function tabItemsFor(") && appJs.includes('"Find creators"') && appJs.includes('"Earnings"') && appJs.includes('"Visits"') && appJs.includes('"More"'));
-  check("tab icons are the spec section 3 set (house, deck, notice, calendar, banknote, list)", ["home", "deck", "notice", "calendar", "banknote", "list3"].every((i) => appJs.includes(`icon: "${i}"`)));
+  check("tab items come from one source with the V3 labels per role", appJs.includes("function tabItemsFor(") && appJs.includes('"Find creators"') && appJs.includes('"Earnings"') && appJs.includes('"Visits"') && appJs.includes('"Momentum"'));
+  check("tab icons are the spec section 3 set (house, deck, notice, calendar, banknote, pin)", ["home", "deck", "notice", "calendar", "banknote", "pin"].every((i) => appJs.includes(`icon: "${i}"`)));
   check("slim top bar renders avatar + name + Messages with unread badge + help", appJs.includes("function renderTopBar2(") && appJs.includes("tb2-name") && appJs.includes('aria-label="Messages"') && appJs.includes('aria-label="Help"'));
   check("waiting badges share one source of truth with the Home queue (state.waitCounts)", appJs.includes("state.waitCounts") && appJs.includes("waitCounts.bizApps") && appJs.includes("waitCounts.crInvites"));
   check("More rows exist per role and include Messages for both roles", appJs.includes("function moreRowsFor(") && appJs.includes('"Your numbers"') && appJs.includes('"Posts & licenses"') && appJs.includes('"Plan & billing"'));
@@ -171,22 +171,25 @@ try {
   check("Sig's face is the V4 rendered character behind one swappable reference", appJs.includes("SIG_AVATAR_HTML") && appJs.includes("/assets/sig-v4/head-idle.webp") && fs.existsSync(path.join(root, "public", "assets", "sig-v4", "head-idle.webp")) && !fs.existsSync(path.join(root, "public", "assets", "sig-musician.svg")));
   check("Ask Sig is a Home row + sheet, not a floating button", appJs.includes("function askSigRowHtml(") && appJs.includes("function openAgentSheet("));
 
-  part("source: V4.1 nav + Sig tab (Jeff, from live use)");
+  part("source: nav + Sig tab (Jeff, from live use; BUILD -41 full rail)");
   const tabSlice = fnSlice("tabItemsFor", "moreRowsFor");
-  // Partner role (2026-10-28): a third role with its own four
-  // destinations (Home, Markets, Earnings, More) joined the shell.
-  // The V4.1 counts below scope to the business + creator branches
-  // (everything before the partner branch); the partner set is
-  // asserted on its own line.
+  // Partner role (2026-10-28): a third role with its own
+  // destinations joined the shell. The counts below scope to
+  // the business + creator branches (everything before the
+  // partner branch); the partner set is asserted on its own
+  // line. BUILD -41 (2026-10-30): the rail lists EVERY
+  // destination — tabItemsFor returns the primaries plus the
+  // composed row items (railRowItems over moreRowsFor); there
+  // is no More item.
   const tabSliceBizCr = tabSlice.split('if (u.role === "partner")')[0];
   const tabSlicePartner = tabSlice.split('if (u.role === "partner")')[1] || "";
-  check("exactly four destinations per role: Home, Explore, Sig, More", (tabSliceBizCr.match(/label: "Home"/g) || []).length === 2 && (tabSliceBizCr.match(/label: "Sig"/g) || []).length === 2 && tabSliceBizCr.includes('label: "Find creators", tab: "Discover"') && tabSliceBizCr.includes('label: "Offers", tab: "Offers"') && tabSliceBizCr.includes('label: "More", tab: "More"'));
-  check("partner destinations are exactly Home, Markets, Earnings, More", tabSlicePartner.includes('label: "Home", tab: "Home"') && tabSlicePartner.includes('label: "Markets", tab: "Markets"') && tabSlicePartner.includes('label: "Earnings", tab: "Earnings"') && tabSlicePartner.includes('label: "More", tab: "More"') && !tabSlicePartner.includes('label: "Sig"'));
+  check("rail primaries per role, composed with the full row list, no More item (BUILD -41)", (tabSliceBizCr.match(/label: "Home"/g) || []).length === 2 && (tabSliceBizCr.match(/label: "Sig"/g) || []).length === 2 && tabSliceBizCr.includes('label: "Find creators", tab: "Discover"') && tabSliceBizCr.includes('label: "Offers", tab: "Offers"') && tabSlice.includes("railRowItems()") && tabSlice.includes("...extra([") && !tabSlice.includes('label: "More"') && !tabSlice.includes('tab: "More"'));
+  check("partner rail primaries are Home, Markets, Earnings (Sig arrives via the rows)", tabSlicePartner.includes('label: "Home", tab: "Home"') && tabSlicePartner.includes('label: "Markets", tab: "Markets"') && tabSlicePartner.includes('label: "Earnings", tab: "Earnings"') && !tabSlicePartner.includes('label: "More"') && !tabSlicePartner.includes('label: "Sig"'));
   check("no account state shrinks the destination set (no market-live or founding branch in tabItemsFor)", !tabSlice.includes("marketLive") && !tabSlice.includes("founding"));
-  check("Visits and Earnings are NOT tabs any more (demoted to More rows)", !tabSliceBizCr.includes('label: "Visits", tab:') && !tabSliceBizCr.includes('label: "Earnings", tab:') && !tabSliceBizCr.includes('label: "Offers", tab: "My Offers"'));
+  check("Visits and Earnings ride the rail as composed row items, not a second hard-coded list", !tabSliceBizCr.includes('label: "Visits", tab:') && !tabSliceBizCr.includes('label: "Earnings", tab:') && !tabSliceBizCr.includes('label: "Offers", tab: "My Offers"') && tabSlice.includes("railRowItems()"));
   check("Sig tab badge is the pending queue count (state.sigQueueCount)", tabSlice.includes("state.sigQueueCount") && tabSlice.includes('badge: sigBadge'));
   check("Sig tab item renders Sig's face, not a line glyph", tabSlice.includes('icon: "sig"') && appJs.includes('class="tab-sig-img"') && appJs.includes("/assets/sig-v4/head-idle.webp"));
-  check("More tab stays lit on the demoted screens (per-role More on-sets)", appJs.includes("BIZ_MORE_TABS") && appJs.includes("CR_MORE_TABS") && appJs.includes('"Visits & Posts", "Counter"') && appJs.includes('"My Visits", "Earnings"'));
+  check("every destination lights itself; Counter rides the business Visits item (BUILD -41)", appJs.includes("function railRowItems(") && appJs.includes('r.tab === "Visits & Posts" && t === "Counter"') && appJs.includes("on: t === r.tab") && !appJs.includes("BIZ_MORE_TABS") && !appJs.includes("CR_MORE_TABS") && !appJs.includes("PT_MORE_TABS"));
   const moreSlice = fnSlice("moreRowsFor", "tabBarHtml");
   check("creator More leads with Visits + Earnings rows, badges carried from waitCounts", moreSlice.indexOf('label: "Visits"') > -1 && moreSlice.indexOf('label: "Visits"') < moreSlice.indexOf('label: "My profile"') && moreSlice.indexOf('label: "Earnings"') < moreSlice.indexOf('label: "My profile"') && moreSlice.includes("wc.crVisits") && moreSlice.includes("wc.crLicense"));
   check("business More leads with Offers + Visits rows, badges carried from waitCounts", moreSlice.indexOf('label: "Offers"') > -1 && moreSlice.indexOf('label: "Offers"') < moreSlice.indexOf('label: "Results"') && moreSlice.indexOf('label: "Visits"') < moreSlice.indexOf('label: "Results"') && moreSlice.includes("wc.bizApps") && moreSlice.includes("wc.bizVisits"));

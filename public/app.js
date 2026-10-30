@@ -1623,11 +1623,12 @@ function bnIcon(name) {
 // lives entirely in theme-v2.css, the destinations and badges are
 // unchanged. Tab badges ride the counts GET /notifications returns.
 function renderBottomNav() {
-  // Overhaul V3 (2026-10-27): labeled destinations, four per role;
-  // on the wide rail the More rows expand inline under a hairline;
+  // Overhaul V3 (2026-10-27): labeled destinations per role and
   // a slim top bar (identity, Messages, help) rides
-  // every app screen. V4.1 cut the set to four (Home, Explore,
-  // Sig, More — see tabItemsFor). The admin console keeps its
+  // every app screen. V4.1 cut the rail to four (Home, Explore,
+  // Sig, More); BUILD -41 (Jeff, 2026-10-30) killed the More
+  // item — the rail now lists every destination (see
+  // tabItemsFor). The admin console keeps its
   // icon rail; V4.2 (2026-10-27) restyles that rail to the V4
   // chrome (ink, mint active) under body.admin-on, and gives
   // the Business Preview body.preview-on so its chrome is the
@@ -1676,21 +1677,47 @@ function renderBottomNav() {
 }
 
 // Destinations (V4.1, Jeff 2026-10-27, from using the live app
-// himself): exactly FOUR per role — Home, Explore, Sig, More —
-// icon plus an always-visible text label, never renamed between
-// widths. The internal tab names stay the V2 ones; only the
-// labels changed. NO account state may shrink this list: the V3
-// founding-creator branch returned only Home + More when the
-// creator's market was not live yet, which is how Jeff's own
-// account lost the Offers tab entirely — the explore door is
-// part of the app's shape, not a launch perk. Visits and
-// Earnings (and, for businesses, Offers) stopped being tabs:
-// they are first-class rows at the top of More, badges and all,
-// so the More tab lights up while you are on them.
-const MORE_TABS = ["More", "Analytics", "Content", "Plan", "Profile", "Messages", "Settings", "Help", "Momentum", "Status", "Numbers"];
-const BIZ_MORE_TABS = [...MORE_TABS, "My Offers", "Visits & Posts", "Counter"];
-const CR_MORE_TABS = [...MORE_TABS, "My Visits", "Earnings"];
-const PT_MORE_TABS = ["More", "Markets", "Creators", "Businesses", "Performance", "Earnings", "Links", "Account", "Help", "Sig"];
+// himself): icon plus an always-visible text label, never
+// renamed between widths. The internal tab names stay the V2
+// ones; only the labels changed. NO account state may shrink
+// this list: the V3 founding-creator branch returned only
+// Home + More when the creator's market was not live yet,
+// which is how Jeff's own account lost the Offers tab
+// entirely — the explore door is part of the app's shape, not
+// a launch perk.
+// BUILD -41 (Jeff, 2026-10-30, from his phone on the -38
+// screenshot): "Don't want it to say more. Want it to list
+// out all options on the left. More is not needed." The rail
+// now lists EVERY destination as its own item at every width:
+// the primary three per role, then the rows that used to hide
+// behind the More item — composed from moreRowsFor() so the
+// labels, order and badges have exactly one source (the More
+// SCREEN still renders from the same rows and stays routable;
+// nothing links to it any more). Each item lights itself;
+// the Counter screen rides the business Visits item, the way
+// it used to ride More. RAIL_SHORT is the one-word form the
+// 72px phone rail shows for the few labels that cannot fit
+// it; the wide rail and the aria-label always carry the full
+// label.
+const RAIL_SHORT = { Content: "Posts", Plan: "Plan", Profile: "Profile", Numbers: "Numbers", Links: "Links" };
+function railRowItems() {
+  const t = state.tab;
+  const seen = new Set();
+  return moreRowsFor()
+    .filter((r) => {
+      if (seen.has(r.tab)) return false;
+      seen.add(r.tab);
+      return true;
+    })
+    .map((r) => ({
+      icon: r.icon,
+      label: r.label,
+      short: RAIL_SHORT[r.tab] || null,
+      tab: r.tab,
+      on: t === r.tab || (r.tab === "Visits & Posts" && t === "Counter"),
+      badge: r.badge || 0,
+    }));
+}
 function tabItemsFor() {
   const u = state.user;
   if (!u) return [];
@@ -1698,12 +1725,14 @@ function tabItemsFor() {
   const b = state.badges || {};
   const wc = state.waitCounts || {};
   const sigBadge = state.sigQueueCount || 0;
+  const rows = railRowItems();
+  const extra = (mainTabs) => rows.filter((r) => !mainTabs.includes(r.tab));
   if (u.role === "business") {
     return [
       { icon: "home", label: "Home", tab: "Home", on: t === "Home" || !t },
       { icon: "deck", label: "Find creators", tab: "Discover", on: t === "Discover" || t === "Favorites" },
       { icon: "sig", label: "Sig", tab: "Sig", on: t === "Sig", badge: sigBadge },
-      { icon: "list3", label: "More", tab: "More", on: BIZ_MORE_TABS.includes(t) },
+      ...extra(["Home", "Discover", "Sig"]),
     ];
   }
   if (u.role === "creator") {
@@ -1711,7 +1740,7 @@ function tabItemsFor() {
       { icon: "home", label: "Home", tab: "Dashboard", on: t === "Dashboard" || !t },
       { icon: "deck", label: "Offers", tab: "Offers", on: t === "Offers", badge: wc.crInvites != null ? wc.crInvites : (b.offers || 0) },
       { icon: "sig", label: "Sig", tab: "Sig", on: t === "Sig", badge: sigBadge },
-      { icon: "list3", label: "More", tab: "More", on: CR_MORE_TABS.includes(t) },
+      ...extra(["Dashboard", "Offers", "Sig"]),
     ];
   }
   if (u.role === "partner") {
@@ -1719,15 +1748,17 @@ function tabItemsFor() {
       { icon: "home", label: "Home", tab: "Home", on: t === "Home" || !t },
       { icon: "pin", label: "Markets", tab: "Markets", on: t === "Markets" },
       { icon: "banknote", label: "Earnings", tab: "Earnings", on: t === "Earnings" },
-      { icon: "list3", label: "More", tab: "More", on: PT_MORE_TABS.includes(t) },
+      ...extra(["Home", "Markets", "Earnings"]),
     ];
   }
   return [];
 }
 
-// The More rows (spec §5.7 / §6.6): the things you check, not
-// the things you work. Rendered as the More screen on phones
-// and expanded inline in the desktop rail.
+// The secondary destinations (spec §5.7 / §6.6): the things
+// you check, not the things you work. BUILD -41: these are
+// rail items in their own right at every width, composed into
+// tabItemsFor() via railRowItems(); this list remains their
+// single source, and the More screen still renders from it.
 function moreRowsFor() {
   const u = state.user;
   if (!u) return [];
@@ -1778,24 +1809,21 @@ function tabBarHtml() {
   const items = tabItemsFor();
   if (!items.length) return "";
   const btns = items.map((it) => `
-    <button type="button" class="tab-item ${it.tab === "More" ? "tab-item-more" : ""} ${it.on ? "on" : ""}" onclick="return go('dashboard','${it.tab}')" aria-label="${esc(it.label)}">
+    <button type="button" class="tab-item ${it.on ? "on" : ""}" onclick="return go('dashboard','${it.tab}')" aria-label="${esc(it.label)}">
       <span class="tab-ic">${it.icon === "sig" ? `<img class="tab-sig-img" src="/assets/sig-v4/head-idle.webp" alt="">` : bnIcon(it.icon)}${it.badge ? `<span class="tab-badge">${it.badge > 99 ? "99+" : it.badge}</span>` : ""}</span>
-      <span class="tab-label">${esc(it.label)}</span>
+      <span class="tab-label">${it.short && it.short !== it.label ? `<span class="lbl-full">${esc(it.label)}</span><span class="lbl-short">${esc(it.short)}</span>` : esc(it.label)}</span>
     </button>`).join("");
-  const more = moreRowsFor().map((r) => `
-    <button type="button" class="tab-more-row ${state.tab === r.tab ? "on" : ""}" onclick="return go('dashboard','${r.tab}')">
-      <span class="tab-ic">${r.icon === "sig" ? `<img class="tab-sig-img" src="/assets/sig-v4/head-idle.webp" alt="">` : bnIcon(r.icon)}</span><span class="tab-label">${esc(r.label)}</span>${r.badge ? `<span class="tab-badge inline">${r.badge > 99 ? "99+" : r.badge}</span>` : ""}
-    </button>`).join("");
-  // Sign out rides directly under Help in the rail's More cluster
-  // (Jeff, 2026-10-28): an action, not a destination, so it never
-  // takes an .on state. The .tab-more container only displays at
-  // rail widths (>=768px); phones keep their own More screen,
-  // which already carries its sign-out row, completely untouched.
+  // Sign out rides directly under the last destination, below
+  // a hairline (Jeff, 2026-10-28): an action, not a
+  // destination, so it never takes an .on state. BUILD -41:
+  // it sits in the rail at every width — phones used to reach
+  // sign-out only through the More screen.
   const signout = `
-    <button type="button" class="tab-more-row" onclick="signOut()">
+    <div class="tab-more-sep" aria-hidden="true"></div>
+    <button type="button" class="tab-item tab-signout" onclick="signOut()">
       <span class="tab-ic">${bnIcon("signout")}</span><span class="tab-label">Sign out</span>
     </button>`;
-  return `<div class="tab-main">${btns}</div>${more ? `<div class="tab-more"><div class="tab-more-sep"></div>${more}${signout}</div>` : ""}`;
+  return `<div class="tab-main">${btns}${signout}</div>`;
 }
 
 // The slim V3 top bar: avatar chip + account name on the left;

@@ -2218,7 +2218,14 @@ body.v3-on #topbar2, body.v3-slim #topbar2 { display: block; position: sticky; t
 body.v3-on #tabbar { display: block; position: fixed; left: 0; top: 0; right: auto; bottom: 0; width: 72px; z-index: 80; background: #fff; border-top: 0; border-right: 1px solid var(--line); padding: 72px 4px calc(10px + env(safe-area-inset-bottom)); overflow-y: auto; overflow-x: hidden; }
 #tabbar .tab-main { display: flex; flex-direction: column; gap: 2px; }
 #tabbar .tab-main .tab-item { flex: none; width: 100%; }
-#tabbar .tab-more { display: none; }
+/* BUILD -41: the rail lists every destination (no More item,
+   no .tab-more cluster); the hairline now sits only above
+   Sign out, at every width. On the 72px rail the short label
+   form shows (see RAIL_SHORT in app.js); the full label
+   returns from 768px up. */
+#tabbar .tab-more-sep { border-top: 1px solid var(--line); margin: 10px 4px; }
+.tab-item .lbl-full { display: none; }
+.tab-item .lbl-short { display: inline; }
 .tab-item { background: none; border: 0; cursor: pointer; font: inherit; color: var(--ink3); display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 2px 7px; min-height: 60px; }
 .tab-item .tab-ic { position: relative; display: inline-flex; padding: 3px 10px; border-radius: 999px; }
 .tab-item .tab-ic svg { width: 24px; height: 24px; display: block; }
@@ -2246,13 +2253,10 @@ body.v3-on #tabbar { display: block; position: fixed; left: 0; top: 0; right: au
   body.v3-on main { margin-left: 232px; padding-left: 24px; padding-right: 24px; width: calc(100% - 232px); }
   body.v3-on .wrap { max-width: min(1080px, 100%); margin-left: auto; margin-right: auto; }
   body.v3-on #tabbar .tab-main { display: flex; flex-direction: column; gap: 2px; }
-  body.v3-on #tabbar .tab-more { display: flex; flex-direction: column; gap: 2px; }
-  /* Jeff, 2026-10-28: on the wide rail, the More item duplicates
-     the expanded destination list directly below it, so the
-     primary group drops it at wide widths. On the slim phone rail
-     More stays; its destination list lives behind it (the More
-     screen). */
-  body.v3-on #tabbar .tab-main .tab-item-more { display: none; }
+  /* BUILD -41: full labels on the wide rail; the short forms
+     are a 72px-rail concession only. */
+  .tab-item .lbl-full { display: inline; }
+  .tab-item .lbl-short { display: none; }
   .tab-more-sep { border-top: 1px solid var(--line); margin: 10px 4px; }
   .tab-item, .tab-more-row { flex-direction: row; align-items: center; gap: 12px; min-height: 48px; padding: 10px 12px; border-radius: 14px; text-align: left; width: 100%; }
   .tab-item .tab-ic { padding: 0; }
@@ -2401,6 +2405,7 @@ body.v3-on .tab-item.on { background: var(--mint); color: var(--ink); }
 body.v3-on .tab-item.on .tab-ic { background: none; }
 body.v3-on .tab-item.on .tab-label { color: var(--ink); }
 body.v3-on .tab-badge { box-shadow: 0 0 0 2px var(--ink); }
+body.v3-on .tab-more-sep { border-top-color: rgba(255,255,255,.14); }
 @media (min-width: 768px) {
   body.v3-on #tabbar { background: var(--ink); border-right: 0; box-shadow: none; }
   body.v3-on .tab-item, body.v3-on .tab-more-row { color: rgba(255,255,255,.72); margin: 0; border-radius: 14px; justify-content: flex-start; }

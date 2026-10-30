@@ -20,6 +20,17 @@
 //   side). The launchWindow field is gone from both API payloads
 //   that carried it, and the campaign paragraph no longer promises
 //   a November / Black Friday launch either.
+// EXTENDED BY BUILD -41 (Jeff, 2026-10-30, on the -38 creator
+// phone screenshot): "Don't want it to say more. Want it to
+// list out all options on the left. More is not needed." The
+// destination block below now pins the -41 contract: the rail
+// lists EVERY destination per role as its own item (the -38
+// primaries plus the rows that hid behind More, composed from
+// moreRowsFor via railRowItems), there is no More item and no
+// .tab-more cluster in the rail markup, each item lights
+// itself, short label forms ride the 72px rail, and Sign out
+// sits in the rail at every width. The DOM proof runs in
+// ~/workspace/signl-qa-2026-10-29/build41/qa41.py.
 import { spawn } from "node:child_process";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -117,21 +128,60 @@ check("index.html still mounts the nav containers", indexHtml.includes('id="tabb
 check("phone grid floors shrink to the container (no past-edge cards)", themeCss.includes("minmax(min(300px, 100%), 1fr)") && themeCss.includes("minmax(min(240px, 100%), 1fr)"));
 check("the founding sentence-badge wraps instead of overflowing", themeCss.includes(".badge.badge-line { white-space: normal; }") && appJs.includes('class="badge tier badge-line"'));
 
-// Destinations per role are exactly the pre--38 sets (placement fix, not an IA change).
+// Destinations: BUILD -41 — the rail lists every destination
+// per role. Parity contract: rail(after) == primaries(before)
+// union More-rows(before), one tap each, no More item anywhere
+// in the rail path.
 {
-  const start = appJs.indexOf("function tabItemsFor(");
-  const end = appJs.indexOf("function moreRowsFor(", start);
-  const slice = appJs.slice(start, end);
-  const partnerAt = slice.indexOf('u.role === "partner"');
-  const bizCr = slice.slice(0, partnerAt);
-  const partner = slice.slice(partnerAt);
-  check("creator destinations unchanged: Home, Offers, Sig, More", bizCr.includes('label: "Home", tab: "Dashboard"') && bizCr.includes('label: "Offers", tab: "Offers"') && (bizCr.match(/label: "Sig"/g) || []).length === 2 && (bizCr.match(/label: "More", tab: "More"/g) || []).length === 2, slice.slice(0, 300));
-  check("business destinations unchanged: Home, Find creators, Sig, More", bizCr.includes('label: "Find creators", tab: "Discover"'));
-  check("partner destinations unchanged: Home, Markets, Earnings, More", partner.includes('label: "Home", tab: "Home"') && partner.includes('label: "Markets", tab: "Markets"') && partner.includes('label: "Earnings", tab: "Earnings"') && partner.includes('label: "More", tab: "More"'));
+  const tStart = appJs.indexOf("function tabItemsFor(");
+  const tEnd = appJs.indexOf("function moreRowsFor(", tStart);
+  const tSlice = appJs.slice(tStart, tEnd);
+  const rStart = tEnd;
+  const rEnd = appJs.indexOf("function tabBarHtml(", rStart);
+  const rSlice = appJs.slice(rStart, rEnd);
+  const hSlice = appJs.slice(rEnd, appJs.indexOf("function renderTopBar2(", rEnd));
+  const tabsOf = (s) => [...s.matchAll(/tab: "([^"]+)"/g)].map((m) => m[1]);
+  const seg = (s, role) => {
+    const at = s.indexOf(`u.role === "${role}"`);
+    if (at < 0) return "";
+    const next = s.indexOf('u.role === "', at + 10);
+    return s.slice(at, next < 0 ? s.length : next);
+  };
+  // Per role: primaries from tabItemsFor + rows from
+  // moreRowsFor, deduped, sorted == the full reachable set.
+  const EXPECTED = {
+    business: ["Analytics", "Content", "Discover", "Help", "Home", "Messages", "My Offers", "Plan", "Profile", "Settings", "Sig", "Visits & Posts"],
+    creator: ["Dashboard", "Earnings", "Help", "Messages", "Momentum", "My Visits", "Numbers", "Offers", "Profile", "Settings", "Sig"],
+    partner: ["Account", "Businesses", "Creators", "Earnings", "Help", "Home", "Links", "Markets", "Performance", "Sig"],
+  };
+  for (const role of ["business", "creator", "partner"]) {
+    const union = [...new Set([...tabsOf(seg(tSlice, role)), ...tabsOf(seg(rSlice, role))])].sort();
+    check(`-41 parity: ${role} rail set == old rail + old More rows (${EXPECTED[role].length} destinations)`,
+      JSON.stringify(union) === JSON.stringify(EXPECTED[role]), JSON.stringify(union));
+  }
+  check("-41: the rail composes its rows from moreRowsFor (one source for labels, order, badges)",
+    tSlice.includes("railRowItems()") && appJs.includes("function railRowItems()") && appJs.includes("moreRowsFor()"));
+  check("-41: no More item in the rail path (tabItemsFor, railRowItems, tabBarHtml)",
+    !tSlice.includes('"More"') && !hSlice.includes('"More"') && !appJs.includes("tab-item-more"));
+  check("-41: no .tab-more cluster in the rail markup; Sign out rides the rail itself",
+    !hSlice.includes('class="tab-more"') && hSlice.includes('onclick="signOut()"') && hSlice.includes("tab-signout"));
+  check("-41: each row item lights itself, and Counter rides the business Visits item",
+    appJs.includes('r.tab === "Visits & Posts" && t === "Counter"') && appJs.includes("on: t === r.tab"));
+  check("-41: short label forms exist for the labels that cannot fit the 72px rail",
+    appJs.includes('const RAIL_SHORT = { Content: "Posts", Plan: "Plan", Profile: "Profile", Numbers: "Numbers", Links: "Links" }')
+      && hSlice.includes("lbl-full") && hSlice.includes("lbl-short"));
+  check("-41: short forms show only on the slim rail; full labels from 768px up",
+    themeCss.includes(".tab-item .lbl-full { display: none; }") && themeCss.includes(".tab-item .lbl-short { display: none; }"));
+  check("-41: the wide rail no longer hides or expands a More cluster in CSS",
+    !themeCss.includes("tab-item-more") && !themeCss.includes("#tabbar .tab-more {"));
+  check("-41: primary destinations kept their labels and tabs",
+    tSlice.includes('label: "Home", tab: "Dashboard"') && tSlice.includes('label: "Offers", tab: "Offers"')
+      && tSlice.includes('label: "Find creators", tab: "Discover"') && tSlice.includes('label: "Markets", tab: "Markets"')
+      && tSlice.includes('label: "Earnings", tab: "Earnings"') && (tSlice.match(/label: "Sig"/g) || []).length >= 2);
 }
 
 // Build stamp.
-check("build stamp is 2026.10.30-40 on both sides", read("netlify/functions/lib/build.js").includes("2026.10.30-40") && indexHtml.includes("2026.10.30-40"));
+check("build stamp is 2026.10.30-41 on both sides", read("netlify/functions/lib/build.js").includes("2026.10.30-41") && indexHtml.includes("2026.10.30-41"));
 
 // ---------- Part B: live API contract (production shape, no test override) ----------
 let server;
@@ -149,7 +199,7 @@ try {
   const boot = await anon("GET", "/api/bootstrap");
   check("bootstrap answers", boot.status === 200, String(boot.status));
   check("bootstrap publishes no launch window", boot.data && boot.data.launch && boot.data.launch.launchWindow === undefined, JSON.stringify(boot.data && boot.data.launch));
-  check("server stamps the -38 build on API responses", boot.headers.get("x-signl-build") === "2026.10.30-40", String(boot.headers.get("x-signl-build")));
+  check("server stamps the -41 build on API responses", boot.headers.get("x-signl-build") === "2026.10.30-41", String(boot.headers.get("x-signl-build")));
 
   const admin = client();
   const login = await admin("POST", "/api/auth/login", { email: ADMIN_EMAIL, password: ADMIN_PASSWORD });
