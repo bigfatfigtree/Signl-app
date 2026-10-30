@@ -430,7 +430,7 @@ const PLANS = [
       "Up to 5 visits / month",
       "Unused visits roll over one month",
       "Post tracking + results",
-      "Share comp posts natively, creator tagged",
+      "Share comp posts inside Instagram, creator tagged",
     ],
   },
   {

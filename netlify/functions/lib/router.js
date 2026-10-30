@@ -930,7 +930,7 @@ function visitRightsForVisit(kind) {
   if (kind === "paid") {
     return {
       basis: "paid",
-      can: ["Share your post natively, with you tagged", "Repost it on their own feed", "Run it as an ad for 90 days from the post date (never longer)"],
+      can: ["Share your post inside Instagram, with you tagged", "Repost it on their own feed", "Run it as an ad for 90 days from the post date (never longer)"],
       cannot: ["Edit your post", "Use it in ads after the 90-day window"],
       adUse: true,
       licenseDays: LICENSE_WINDOW_DAYS,
@@ -938,7 +938,7 @@ function visitRightsForVisit(kind) {
   }
   return {
     basis: "comp",
-    can: ["Share your post natively, with you tagged"],
+    can: ["Share your post inside Instagram, with you tagged"],
     cannot: ["Edit it", "Download it or post it as their own content", "Run it as an ad"],
     adUse: false,
   };

@@ -141,7 +141,11 @@ try {
   // the duplicate small-print first-month line is gone, and the
   // surviving small line carries only the minimum + rate-held.
   check("plan cards lead with the standard rate as the hero figure", appJs.includes('<div class="price">$${fmtPrice(p.priceMonthly)}<span class="small muted">/mo</span></div>'));
-  check("the founding badge sits directly under the hero price on all three plan-card renders", (appJs.match(/founding-badge-row/g) || []).length === 3 && appJs.includes('class="founding-badge">FOUNDING: FIRST MONTH $${fmtPrice(p.firstMonthPriceMonthly)}'));
+  // Build -51 (fresh-eyes X-07): the badge now carries both
+  // frames in one breath — the $100 credit AND the resulting
+  // first-month price — instead of the bare price alone, which
+  // read as the plan's price to a brand-new visitor.
+  check("the founding badge sits directly under the hero price on all three plan-card renders", (appJs.match(/founding-badge-row/g) || []).length === 3 && appJs.includes('class="founding-badge">FOUNDING: $100 CREDIT — FIRST MONTH $${fmtPrice(p.firstMonthPriceMonthly)}'));
   check("no plan card restates the first-month price in small print", !appJs.includes("with the $100 founding credit.</p>") && !appJs.includes('<p class="small">First month'));
   check("the surviving small line keeps only the minimum + founding-rate-held meaning", appJs.includes('-month minimum. Founding rate, locked while your plan stays active.'));
   const stylesCss = fs.readFileSync(path.join(import.meta.dirname, "..", "public", "styles.css"), "utf8");

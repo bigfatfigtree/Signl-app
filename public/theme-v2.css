@@ -1405,6 +1405,13 @@ th, td { padding: 11px 10px; }
 .tg::after { content: ""; position: absolute; top: 4px; right: 4px; width: 21px; height: 21px; border-radius: 50%; background: var(--mint); }
 .tg.off { background: #D9E9DE; }
 .tg.off::after { right: auto; left: 4px; background: #fff; }
+/* Build -51 (fresh-eyes A-02): plain lane dots for the static
+   lane-explainer rows (landing + claim forms). The .tg switch
+   pill there read as a control a new visitor could toggle; a
+   dot says "this is a list," not "this is a switch." The real
+   lane control (.tgrow) is untouched. */
+.ldot { width: 14px; height: 14px; border-radius: 50%; background: var(--black); flex: none; margin: 5px 18px 0 18px; }
+.ldot.off { background: #fff; border: 2px solid var(--black); width: 10px; height: 10px; margin-top: 7px; }
 .lname { font-weight: 800; }
 .lline { color: var(--ink2); font-size: .95rem; }
 label.lname { cursor: pointer; }
@@ -2335,6 +2342,10 @@ body.v3-on #tabbar { display: block; position: fixed; left: 0; top: 0; right: au
 .snap-cell { display: block; background: #fff; border: 1px solid var(--line); border-radius: var(--r-md); padding: 14px 12px; }
 .snap-num { display: block; font-size: 1.5rem; font-weight: 800; line-height: 1.1; }
 .snap-lbl { display: block; color: var(--ink3); font-size: 0.8rem; margin-top: 2px; }
+/* Build -51 (fresh-eyes A-06): the plain-words sub-line under a
+   snapshot number, for cells whose term needs one breath of
+   explanation (local reach, Momentum). */
+.snap-sub { display: block; color: var(--ink3); font-size: 0.72rem; margin-top: 1px; }
 .snap-fill { display: block; grid-column: 1 / -1; color: var(--ink2); font-size: 0.92rem; }
 
 /* More list */
@@ -2497,6 +2508,7 @@ body.v3-on .snap-strip[style*="--snap-n:4"] .snap-lbl { font-size: .72rem; }
 body.v3-on .snap-cell + .snap-cell { border-left: 1px solid rgba(255,255,255,.12); }
 body.v3-on .snap-num { color: var(--mint); font-size: 1.85rem; letter-spacing: -.02em; }
 body.v3-on .snap-lbl { color: rgba(255,255,255,.60); }
+body.v3-on .snap-sub { color: rgba(255,255,255,.45); }
 body.v3-on .snap-strip.fill { background: var(--bg2); }
 body.v3-on .snap-strip.fill .snap-fill { padding: 0 10px; }
 body.v3-on .snap-strip.fill .ask-chev { color: var(--ink3); padding-right: 8px; }

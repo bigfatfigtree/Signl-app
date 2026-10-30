@@ -587,7 +587,7 @@ async function renderPublicProfile() {
       <div class="cc-local">
         ${p.localAudiencePct === null || p.localAudiencePct === undefined
           ? `<div class="lbl">Local audience not reported yet</div>`
-          : `<div class="big">${p.localAudiencePct}%</div><div class="lbl">of their audience is local</div><div class="src">${esc(p.localAudienceSource || "Self-reported")}</div>`}
+          : `<div class="big">${p.localAudiencePct}%</div><div class="lbl">of their audience is local</div><div class="src">${(p.localAudienceSource || "Self-reported") === "Self-reported" ? "Self-reported: the creator's own number" : esc(p.localAudienceSource)}</div>`}
       </div>
       ${p.proof && p.proof.countsForming ? `<div class="wcard" style="margin:14px 0 0"><p style="margin:0"><span class="badge ok">Verified on SIGNL</span></p><p style="margin:8px 0 0"><strong>${p.proof.visitsCompleted} visit${p.proof.visitsCompleted === 1 ? "" : "s"} completed</strong>, ${p.proof.onTimePosts} on time. Their counted record is forming: it opens at 5 counted customers.</p><p class="small muted" style="margin:6px 0 0">Counted by SIGNL from register events, not claimed by the creator. Book me on SIGNL and this is the receipt you'll get.</p></div>` : p.proof && p.proof.visitsCompleted > 0 ? `<div class="wcard" style="margin:14px 0 0"><p style="margin:0"><span class="badge ok">Verified on SIGNL</span></p><p style="margin:8px 0 0"><strong>${p.proof.visitsCompleted} visit${p.proof.visitsCompleted === 1 ? "" : "s"} completed</strong>, ${p.proof.onTimePosts} on time · <strong>${p.proof.customersCounted} customers counted</strong> at the register · <strong>${p.proof.cameBacks} came back</strong> within a month · at least <strong>$${fmtMoney(p.proof.trackedSpend)}</strong> tracked spend</p><p class="small muted" style="margin:6px 0 0">Counted by SIGNL from register events, not claimed by the creator. Book me on SIGNL and this is the receipt you'll get.</p></div>` : ""}
       ${p.categories && p.categories.length ? `<p class="small">${p.categories.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
@@ -645,7 +645,7 @@ async function renderPublicProof() {
     statCells.push(`<div class="stat-cell"><div class="stat-num">${fmtNum(totalAudienceOf(p))}</div><div class="stat-lbl">Stacked audience, all platforms</div></div>`);
   }
   if (p.localAudiencePct !== null && p.localAudiencePct !== undefined) {
-    statCells.push(`<div class="stat-cell"><div class="stat-num">${p.localAudiencePct}%</div><div class="stat-lbl">Local reach (${esc(p.localAudienceSource || "Self-reported")})</div></div>`);
+    statCells.push(`<div class="stat-cell"><div class="stat-num">${p.localAudiencePct}%</div><div class="stat-lbl">Local reach (${(p.localAudienceSource || "Self-reported") === "Self-reported" ? "self-reported: their own number" : esc(p.localAudienceSource)})</div></div>`);
   }
   if (p.spanishAudiencePct !== null && p.spanishAudiencePct !== undefined) {
     statCells.push(`<div class="stat-cell"><div class="stat-num">${p.spanishAudiencePct}%</div><div class="stat-lbl">Spanish-speaking audience (self-reported)</div></div>`);
@@ -1474,12 +1474,12 @@ function coversLine(record) {
 function rightsForVisit(kind) {
   if (kind === "paid") {
     return {
-      can: ["Share your post natively, with you tagged", "Repost it on their own feed", "Run it as an ad for 90 days from the post date (never longer)"],
+      can: ["Share your post inside Instagram, with you tagged", "Repost it on their own feed", "Run it as an ad for 90 days from the post date (never longer)"],
       cannot: ["Edit your post", "Use it in ads after the 90-day window"],
     };
   }
   return {
-    can: ["Share your post natively, with you tagged"],
+    can: ["Share your post inside Instagram, with you tagged"],
     cannot: ["Edit it", "Download it or post it as their own content", "Run it as an ad"],
   };
 }
@@ -2301,7 +2301,7 @@ function wireChecklist(root, steps) {
 // never a row of zeros.
 function snapshotHtml(cells, fillLine, tab) {
   if (!cells || !cells.length) return `<button type="button" class="snap-strip fill" onclick="return go('dashboard','${tab}')"><span class="snap-fill">${esc(fillLine)}</span><span class="ask-chev">›</span></button>`;
-  return `<button type="button" class="snap-strip" style="--snap-n:${cells.length}" onclick="return go('dashboard','${tab}')">${cells.map((c) => `<span class="snap-cell"><span class="snap-num">${c.num}</span><span class="snap-lbl">${esc(c.label)}</span></span>`).join("")}</button>`;
+  return `<button type="button" class="snap-strip" style="--snap-n:${cells.length}" onclick="return go('dashboard','${tab}')">${cells.map((c) => `<span class="snap-cell"><span class="snap-num">${c.num}</span><span class="snap-lbl">${esc(c.label)}</span>${c.sub ? `<span class="snap-sub">${esc(c.sub)}</span>` : ""}</span>`).join("")}</button>`;
 }
 
 // The Ask Sig row (spec §4.1): opens Sig's guided flows.
@@ -2925,13 +2925,13 @@ function sigBankFor(biz) {
     { id: "localreach", q: "What is local reach?", ph: ["local reach", "local audience", "local percent", "local %"], g: [["local"], ["reach", "audience", "percent", "%", "share", "followers"]], s: ["reach"],
       a: "Local reach is the share of your audience that actually lives in your market, applied to your audience size. It is the number businesses rank creators by on SIGNL, not follower count. A smaller account whose people are all here can outrank a huge account whose followers are spread across the country.", flow: (c) => !c.profileComplete ? "Finish my profile" : null },
     { id: "momentum", q: "How does Momentum work?", ph: ["momentum", "points", "earn points", "how does momentum"], g: [["momentum", "points"], ["how", "earn", "work", "get", "mean"]], s: ["momentum"],
-      a: "Momentum is points for doing the work well. Points order the list businesses see, so they are priority, not cash, and they unlock badges. The big earners: +20 for a post on time, +25 every 5 on-time posts in a row, +25 when a business runs your post as an ad, +10 for each review you write, +5 for a late post inside the week and +5 for reporting a post's numbers. Your profile earns too: photo +10, bio +5, neighborhood +5, local audience +5, audience stack +10, best work links +5 each up to 3. Invites pay +3 when someone joins from your link and +10 when they are approved, and approved referrals unlock badge bonuses up to +150.", flow: "Check my Momentum" },
+      a: "Momentum is points for doing the work well. Points order the list businesses see, so they are priority, not cash; they also raise your level, and higher levels see new offers earlier. The big earners: +20 for a post on time, +25 every 5 on-time posts in a row, +25 when a business runs your post as an ad, +10 for each review you write, +5 for a late post inside the week and +5 for reporting a post's numbers. Your profile earns too: photo +10, bio +5, neighborhood +5, local audience +5, audience stack +10, best work links +5 each up to 3. Invites pay +3 when someone joins from your link and +10 when they are approved, and approved referrals unlock badge bonuses up to +150.", flow: "Check my Momentum" },
     { id: "tiers", q: "How do tiers work?", ph: ["tier", "neighbors", "locals", "headliners", "what tier"], g: [["tier", "neighbors", "locals", "headliners"], ["what", "how", "am i", "mean", "work", "level"]], s: ["tier", "headliners"],
-      a: "Tiers come from your stacked audience, counted across all your platforms, and they set themselves. Neighbors is 500 to 2,000, Locals is 2,000 to 15,000, Headliners is 15,000 and up. Tier shapes which offers you are eligible for, and Headliners are first in line for paid campaigns when they open in a market.", flow: "Check my Momentum" },
+      a: "Tiers come from your stacked audience, counted across all your platforms, and they set themselves. Neighbors is 500 to 2,000, Locals is 2,000 to 15,000, Headliners is 15,000 and up. Tier shapes which offers you are eligible for. Paid bookings at your own rate are open to every tier; paid campaigns are a Headliners extra.", flow: "Check my Momentum" },
     { id: "visits", q: "How does a visit work, start to finish?", ph: ["visit work", "how does a visit", "visit code", "check in", "redeem", "how do visits work"], g: [["visit", "visits"], ["how", "work", "happen", "process", "code", "redeem"]], s: [],
       a: "A business books you, or you apply to an offer and get picked. You receive a visit code; at the business, staff enter it to check you in. Then you post: one post plus one story that shares the post. Within 48 hours counts as on time; one week is the hard deadline. If anything goes wrong at the counter, the business can confirm your visit from their side instead.", flow: (c) => c.live ? "Add a post link" : null },
     { id: "owe", q: "What do I owe after a visit?", ph: ["owe", "deliverable", "have to post", "after a visit", "what do i post"], g: [["owe", "deliver", "post", "required"], ["after", "what", "visit", "need"]], s: [],
-      a: "One post plus one story that shares the post. Post within 48 hours to be on time; the hard deadline is one week. Post honestly, in your own words: nobody can require a positive post or approve your words first, and every comped post gets disclosed, as the FTC requires.", flow: (c) => c.live ? "Add a post link" : null },
+      a: "One post plus one story that shares the post. Post within 48 hours to be on time; the hard deadline is one week. Post honestly, in your own words: nobody can require a positive post or approve your words first, and every comped post gets disclosed, as the FTC requires. Keep the post live for at least 30 days.", flow: (c) => c.live ? "Add a post link" : null },
     { id: "cantmake", q: "What if I can't make a visit?", ph: ["can't make", "cant make", "miss a visit", "running late", "cancel a visit", "reschedule", "something came up"], g: [["visit", "booking"], ["cancel", "miss", "late", "cant", "cannot", "reschedule", "sick", "emergency"]], s: [],
       a: "Message the business in the app as early as you can; a heads-up before the visit is always better than silence. A visit you accept and skip costs Momentum points, and repeated no-shows can cost you your spot on the roster." },
     { id: "licensing", q: "What is a license request?", ph: ["license request", "licensing", "license my post", "reuse my post", "license fee"], g: [["licens"], ["request", "what", "how", "fee", "approve", "work"]], s: ["licensing"],
@@ -3424,8 +3424,8 @@ function renderHome() {
   <section style="margin-top:40px">
     <p class="ui-kicker">The two lanes</p>
     <h2 style="margin:6px 0 4px">Comped, or <span style="color:var(--mint-deep)">paid.</span></h2>
-    <div class="lrow"><span class="tg"></span><div><span class="lname">Comped visits</span> <span class="lline">— the business covers it. You post honestly within 48 hours.</span></div></div>
-    <div class="lrow"><span class="tg off"></span><div><span class="lname">Paid bookings</span> <span class="lline">— booked at your rate. You keep 97%.</span></div></div>
+    <div class="lrow"><span class="ldot"></span><div><span class="lname">Comped visits</span> <span class="lline">— the business covers it. You post honestly within 48 hours.</span></div></div>
+    <div class="lrow"><span class="ldot off"></span><div><span class="lname">Paid bookings</span> <span class="lline">— booked at your rate. You keep 97%.</span></div></div>
   </section>
   <section class="fld fld-mint" style="margin-top:52px">
     <p class="ui-kicker">The rules</p>
@@ -5416,7 +5416,7 @@ function syncQcPlatform() {
   const intro = document.getElementById("qc-ig-intro");
   if (intro) {
     intro.textContent = !sel || sel.value === "instagram"
-      ? T("Give Sig your Instagram handle and it drafts your details from your public profile. You check and fix everything before any of it is used. The draft isn't kept: you review and save what you like.", "Dale a Sig tu usuario de Instagram y arma tus datos desde tu perfil público. Revisas y corriges todo antes de que se use. El borrador no se guarda: revisas y guardas lo que quieras.")
+      ? T("Sig is SIGNL's built-in helper. Give Sig your Instagram handle and it drafts your details from your public profile. You check and fix everything before any of it is used. The draft isn't kept: you review and save what you like.", "Sig es el asistente integrado de SIGNL. Dale a Sig tu usuario de Instagram y arma tus datos desde tu perfil público. Revisas y corriges todo antes de que se use. El borrador no se guarda: revisas y guardas lo que quieras.")
       : T(`Fast setup reads Instagram only. Your main platform here is ${meta.label}, so the form below is the way in; it asks for the same details.`, `La configuración rápida solo lee Instagram. Tu plataforma principal aquí es ${meta.label}, así que el formulario de abajo es el camino; pide los mismos datos.`);
   }
   const label = document.getElementById("qc-handle-label");
@@ -5441,7 +5441,7 @@ function igAssistCardHtml(uid, side, opts = {}) {
   const handleField = opts.handleFrom ? `<p class="small muted">${T("Uses the handle you typed above.", "Usa el usuario que escribiste arriba.")}</p>` : `<div class="field"><label>${T("Your Instagram handle", "Tu usuario de Instagram")}</label><input id="${uid}-ig-handle" placeholder="yourhandle"></div>`;
   return `<div class="fgroup tint" id="${uid}-ig-card">
     <p class="fg-kicker">${T("Fast setup", "Configuración rápida")}</p>
-    <p class="small muted"${uid === "qc" ? ` id="qc-ig-intro"` : ""}>${T("Give Sig your Instagram handle and it drafts your details from your public profile. You check and fix everything before any of it is used. The draft isn't kept: you review and save what you like.", "Dale a Sig tu usuario de Instagram y arma tus datos desde tu perfil público. Revisas y corriges todo antes de que se use. El borrador no se guarda: revisas y guardas lo que quieras.")}</p>
+    <p class="small muted"${uid === "qc" ? ` id="qc-ig-intro"` : ""}>${T("Sig is SIGNL's built-in helper. Give Sig your Instagram handle and it drafts your details from your public profile. You check and fix everything before any of it is used. The draft isn't kept: you review and save what you like.", "Sig es el asistente integrado de SIGNL. Dale a Sig tu usuario de Instagram y arma tus datos desde tu perfil público. Revisas y corriges todo antes de que se use. El borrador no se guarda: revisas y guardas lo que quieras.")}</p>
     ${handleField}
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button type="button" class="btn" onclick="igAssistLookup('${uid}','${side}')">${T("Draft my setup", "Arma mi configuración")}</button>
@@ -5546,8 +5546,8 @@ function renderQuickClaim() {
     <div class="form-mint">${T("Ranked by local reach, not followers — the share of your audience that lives here.", "Ordenado por alcance local, no por seguidores: la parte de tu audiencia que vive aquí.")}</div>
     <div class="form-body">
     <p class="muted">${T("About a minute: handle, market, email, password. Spots held in sign-up order — finish your profile after approval.", "Como un minuto: usuario, mercado, correo, contraseña. Los lugares se guardan en orden de registro. Termina tu perfil después de la aprobación.")}</p>
-    <div class="lrow"><span class="tg"></span><div><span class="lname">${T("Comped", "Cortesía")}</span> <span class="lline">${T("— meals, services and experiences, for an honest post within 48 hours.", "— comidas, servicios y experiencias, por una publicación honesta dentro de 48 horas.")}</span></div></div>
-    <div class="lrow"><span class="tg off"></span><div><span class="lname">${T("Paid", "Pagado")}</span> <span class="lline">${T("— paid campaigns are separate bookings. Headliners first in line.", "— las campañas pagadas son reservas aparte. Los Headliners van primero.")}</span></div></div>
+    <div class="lrow"><span class="ldot"></span><div><span class="lname">${T("Comped", "Cortesía")}</span> <span class="lline">${T("— meals, services and experiences, for an honest post within 48 hours.", "— comidas, servicios y experiencias, por una publicación honesta dentro de 48 horas.")}</span></div></div>
+    <div class="lrow"><span class="ldot off"></span><div><span class="lname">${T("Paid", "Pagado")}</span> <span class="lline">${T("— separate bookings at your own rate. You keep 97%.", "— reservas aparte a tu tarifa. Te quedas con el 97%.")}</span></div></div>
     ${hasPrefill ? `<div class="notice blue">${T("Pre-filled from your invite link — check it and claim.", "Ya viene lleno desde tu enlace de invitación. Revísalo y reclama tu lugar.")}</div>` : ""}
     <div id="qc-ticket"></div>
     <div id="form-error"></div>
@@ -5679,8 +5679,8 @@ function renderJoinCreator() {
     <div class="form-body">
     <p class="muted">${T("Build your full profile now. When your market opens, founding creators get priority. This is your real profile, not a waitlist.", "Crea tu perfil completo ahora. Cuando tu mercado abra, los creadores fundadores tienen prioridad. Este es tu perfil real, no una lista de espera.")}</p>
     <p class="small muted">${T("City missing? Pick \"My city is not listed yet\" and sign up anyway.", "¿No está tu ciudad? Elige \"Mi ciudad aún no está en la lista\" y regístrate igual.")}</p>
-    <div class="lrow"><span class="tg"></span><div><span class="lname">${T("Comped", "Cortesía")}</span> <span class="lline">${T("— meals, services and experiences, for an honest post within 48 hours.", "— comidas, servicios y experiencias, por una publicación honesta dentro de 48 horas.")}</span></div></div>
-    <div class="lrow"><span class="tg off"></span><div><span class="lname">${T("Paid", "Pagado")}</span> <span class="lline">${T("— paid campaigns are separate bookings. Headliners first in line.", "— las campañas pagadas son reservas aparte. Los Headliners van primero.")}</span></div></div>
+    <div class="lrow"><span class="ldot"></span><div><span class="lname">${T("Comped", "Cortesía")}</span> <span class="lline">${T("— meals, services and experiences, for an honest post within 48 hours.", "— comidas, servicios y experiencias, por una publicación honesta dentro de 48 horas.")}</span></div></div>
+    <div class="lrow"><span class="ldot off"></span><div><span class="lname">${T("Paid", "Pagado")}</span> <span class="lline">${T("— separate bookings at your own rate. You keep 97%.", "— reservas aparte a tu tarifa. Te quedas con el 97%.")}</span></div></div>
     ${hasPrefill ? `<div class="notice blue">${T("Pre-filled from your invite link. Check it and finish.", "Ya viene lleno desde tu enlace de invitación. Revísalo y termina.")}</div>` : ""}
     <p class="small">${T("In a hurry?", "¿Tienes prisa?")} <a href="#" onclick="return showQuickJoin()">${T("Claim your spot with just your handle", "Reclama tu lugar solo con tu usuario")}</a> ${T("and finish your profile after approval instead.", "y termina tu perfil después de la aprobación.")}</p>
     <div id="form-error"></div>
@@ -6321,7 +6321,7 @@ async function registerBusiness(e) {
 // and the founding-rate-held line only: the first-month price
 // is stated once, in the badge.
 function foundingBadgeHtml(p) {
-  return `<span class="founding-badge">FOUNDING: FIRST MONTH $${fmtPrice(p.firstMonthPriceMonthly)}</span>`;
+  return `<span class="founding-badge">FOUNDING: $100 CREDIT — FIRST MONTH $${fmtPrice(p.firstMonthPriceMonthly)}</span>`;
 }
 
 function selectPlan(id) {
@@ -6373,7 +6373,7 @@ function renderBusinessFoundingStatus() {
       <div class="ui-row"><span class="k">Category spot</span><span class="v">Your ${esc(bz.category || "business")} spot is held in application order</span></div>
       <div class="ui-row"><span class="k">Founding pricing</span><span class="v">Locked while you stay subscribed</span></div>
       <div class="ui-row"><span class="k">Activation</span><span class="v">When ${esc(bizPlace)} opens, or sooner if SIGNL activates your business by hand for a pilot</span></div>
-      <div class="ui-row"><span class="k">Payment</span><span class="v">Nothing is due now. Payment stays concierge: Jeff sends the payment step by hand at activation</span></div>
+      <div class="ui-row"><span class="k">Payment</span><span class="v">Nothing is due now. Payment stays concierge: Jeff, SIGNL's founder, sends the payment step by hand at activation</span></div>
     </div>
     <h3 class="mt">What happens next</h3>
     <ol style="padding-left:20px">
@@ -6384,7 +6384,7 @@ function renderBusinessFoundingStatus() {
     </ol>
     <div class="panel" style="margin-top:16px">
       <h4 style="margin:0 0 4px">For the counter: the one question</h4>
-      <p class="small" style="margin:0">When your first visits start, teach the team one line, asked at the natural moment: <strong>"First time in? How'd you hear about us?"</strong> When a creator or a post comes up, they tap the mention button on that visit. Those told-us counts ride their own line on your receipt, apart from register money, and they are how the customers nobody handed a code still get counted. No competitor shows a business a counted receipt like yours; this question is part of why yours stays full. Set your usual comp cost in the proof controls below, and every visit close-out after that is one tap.</p>
+      <p class="small" style="margin:0">When your first visits start, teach the team one line, asked at the natural moment: <strong>"First time in? How'd you hear about us?"</strong> When a creator or a post comes up, they tap the mention button on that visit. Those answers count on their own line of your receipt, separate from register money: they are how the customers nobody handed a code still get counted. No competitor shows a business a counted receipt like yours; this question is part of why yours stays full. Set your usual comp cost below, and every visit close-out after that is one tap.</p>
     </div>
     <p class="muted small">Sign back in any time to check your status. Questions: hello@joinsignl.com</p>
     <div class="mt"><button class="btn ghost" onclick="signOut()">Sign out</button></div>
@@ -6693,7 +6693,7 @@ function foundingFirstOfferHtml(u) {
         <h3 style="margin:2px 0 0">Your first offer is already drafted</h3>
       </div>
     </div>
-    <p class="wc-sub" style="margin-top:10px">Sig picked the <strong>${esc(play.name)}</strong> play${bz.category ? ` for a ${esc(String(bz.category).toLowerCase())} business` : ""}. ${esc(play.mix)} You never start from a blank screen here.</p>
+    <p class="wc-sub" style="margin-top:10px">Sig picked the <strong>${esc(play.name)}</strong> play${bz.category && bz.category !== "Other" ? ` for a ${esc(String(bz.category).toLowerCase())} business` : " for your business"}. A play is a ready-made offer pattern: the goal, the brief and the timing are preset, and you can edit every word. ${esc(play.mix)} You never start from a blank screen here.</p>
     <div class="panel" style="margin-top:12px">
       <div class="ui-row"><span class="k">Play</span><span class="v">${esc(play.name)}</span></div>
       <div class="ui-row"><span class="k">Spots</span><span class="v">${play.spots} creators, picked by you</span></div>
@@ -6718,7 +6718,7 @@ function foundingBenefitsHtml(u) {
     ["Results on day 7, 14, and 30", "Reach, engagement, and redemptions land on one page on a set rhythm after every visit, so you can see what a visit did instead of guessing."],
     ["The Visit Guarantee", "If a creator no-shows or never posts, the visit does not count against your plan and is replaced. No-shows are tracked with strikes."],
     ["One tap to run it again", "When a visit works, one tap clones it, brief and content packet attached, into a fresh offer. No starting over, no re-briefing."],
-    ["A content packet from every visit", "Finished visits assemble into a packet of the post and its license terms, ready to reuse. A comped post is yours to share natively, with the creator tagged. A paid booking includes one standard license: 90 days of repost and paid ad use."],
+    ["A content packet from every visit", "Finished visits assemble into a packet of the post and its license terms, ready to reuse. A comped post is yours to share inside Instagram, with the creator tagged. A paid booking includes one standard license: 90 days of repost and paid ad use."],
   ];
   return `<section class="wcard">
     <p class="ui-kicker">Why businesses join</p>
@@ -7197,7 +7197,7 @@ function closeoutPacketHtml(b) {
     </details>
     <div class="panel" style="margin-top:12px">
       <h4 style="margin:0 0 4px">For the counter: the one question</h4>
-      <p class="small" style="margin:0">Ask it at the natural moment, ringing up or seating: <strong>"First time in? How'd you hear about us?"</strong> When a creator or a post comes up, tap "Someone mentioned the post" above. Those told-us counts ride their own line on your receipt, apart from register money, and they are how the customers nobody handed a code still get counted.</p>
+      <p class="small" style="margin:0">Ask it at the natural moment, ringing up or seating: <strong>"First time in? How'd you hear about us?"</strong> When a creator or a post comes up, tap "Someone mentioned the post" above. Those answers count on their own line of your receipt, separate from register money: they are how the customers nobody handed a code still get counted.</p>
     </div>`;
 }
 async function saveCloseoutCompCost(bookingId) {
@@ -7623,7 +7623,7 @@ async function loadFoundingDashboard() {
         const intro = bench.introduction;
         let introDismissed = false;
         try { introDismissed = !!localStorage.getItem(`benchintro:${intro.creator.userId}`); } catch (e) { /* storage unavailable: show it */ }
-        if (!introDismissed) queueItems.push({ text: `${benchMeetLine(intro)} Sig thinks you two would make a strong +1 pair.`, btn: "Meet them", act: () => go("dashboard", "Bench"), dismissKey: `benchintro:${intro.creator.userId}`, onDismiss: () => benchDismissIntro(intro.creator.userId) });
+        if (!introDismissed) queueItems.push({ text: `${benchMeetLine(intro)} I think you two would make a strong +1 pair: visit together, and you each post your own post and story.`, btn: "Meet them", act: () => go("dashboard", "Bench"), dismissKey: `benchintro:${intro.creator.userId}`, onDismiss: () => benchDismissIntro(intro.creator.userId) });
       }
     } catch (e) { /* no introduction today */ }
     // V4.1: the Sig tab renders this same queue and badges its
@@ -7662,6 +7662,7 @@ async function loadFoundingDashboard() {
         <span class="badge ok" style="font-size:0.95rem;padding:6px 14px">${p.charter ? "Charter Creator" : "Founding Creator"}</span>
       </div>
       <p class="small">${p.localAudiencePct === null || p.localAudiencePct === undefined ? `Add your local audience % in your profile` : `${p.localAudiencePct}% local audience`} &middot; ${esc(p.tierBand || "")} tier &middot; ${fmtNum(totalAudienceOf(card))} total audience${f.priorityBand ? ` &middot; first ${f.priorityBand} founding` : ""}${campusBadgeHtml(card)}</p>
+      ${p.tierBand ? `<p class="small muted" style="margin:2px 0 0">Your tier is your size band, set automatically from your total audience across platforms.</p>` : ""}
       <p style="margin-bottom:0">${scoreBadge(card.localImpactScore)}</p>
       <div class="home-actions"><button class="btn small-btn ghost" onclick="return go('dashboard','Status')">See your full status</button></div>
     </div>
@@ -7748,7 +7749,7 @@ function receiptSettingsHtml(r) {
   const base = r.baseline || null;
   const g = (r.google && r.google.current) || {};
   const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
-  return `<details style="margin-top:14px"><summary class="small"><strong>Your receipt's starting lines and proof controls</strong></summary>
+  return `<details style="margin-top:14px"><summary class="small"><strong>Your receipt's starting lines and proof controls</strong> <span class="muted">(the settings that decide what counts: your usual night, your comp costs, your register connection)</span></summary>
     <div class="form-2col" style="margin-top:10px">
       <div class="field"><label>Your usual night</label><select id="rc-base-day">${days.map((d) => `<option ${base && base.dayLabel === d ? "selected" : ""}>${d}</option>`).join("")}</select></div>
       <div class="field"><label>Usual tables or customers</label><input id="rc-base-count" type="number" min="0" value="${base ? base.usual : ""}" placeholder="For example: 40"></div>
@@ -8211,7 +8212,7 @@ function receiptHtml(r) {
     <p style="margin:14px 0 0"><button class="btn" type="button" onclick="return receiptBookTop()">Book next month's creators</button></p>`
     : ((r.visitsLanded && (r.visitsLanded.redeemed > 0 || r.visitsLanded.delivered > 0))
       ? `<p class="wc-sub" style="margin:6px 0 0">Your visits have landed. The counted money starts with the first register event: a code redeemed at the till, or your tally on the visit. Until one lands, this receipt shows no money rather than an estimate.</p>`
-      : `<p class="wc-sub" style="margin:6px 0 0">This is the screen your first visits pay into. Every number will be a counted floor with its method beside it: register events as they happen, come-backs inside 30 days, your usual night as the comparison line. Nothing here is ever projected or padded.${r.cost && r.cost.planPrice ? ` Your founding plan is $${fmtMoney(r.cost.planPrice)} a month, held at the founding rate while it stays active.` : ""}${base ? ` Your usual ${esc(base.dayLabel)} (about ${base.usual}) is already recorded, so the comparison line is ready before your first visit.` : " Set your usual night below and the comparison line is ready before your first visit."}</p>`);
+      : `<p class="wc-sub" style="margin:6px 0 0">This is the screen your first visits pay into. Every number will be counted from something real, with its method beside it. Counted means a customer showed the creator's code at your register, and it counts dollar by dollar. A come-back is a customer who first came in on a code and returns within 30 days. Your usual night is the comparison line: how a normal night does, so a visit night has something honest to beat. Nothing here is ever projected or padded.${r.cost && r.cost.planPrice ? ` Your founding plan is $${fmtMoney(r.cost.planPrice)} a month, held at the founding rate while it stays active.` : ""}${base ? ` Your usual ${esc(base.dayLabel)} (about ${base.usual}) is already recorded, so the comparison line is ready before your first visit.` : " Set your usual night below and the comparison line is ready before your first visit."}</p>`);
   const googleHtml = g.current ? `<div style="margin-top:14px"><h4 style="margin:0 0 4px">People looking you up</h4><p class="small muted" style="margin:0 0 6px">Google's numbers, not ours. They corroborate a good month; they never add to tracked spend.</p>${gLine(g.current, g.previous, "searches")}${gLine(g.current, g.previous, "directions")}${gLine(g.current, g.previous, "calls")}${gLine(g.current, g.previous, "reviews")}</div>` : "";
   // Build -48: with a score on the page, the Receipt breaks
   // into subtabs (Overview / Over time / Creators / Costs /
@@ -8425,7 +8426,7 @@ async function loadAudienceBlock() {
     const offers = data.offers || [];
     host.innerHTML = `<section class="wcard">
       <h3>Audience offers</h3>
-      <p class="wc-sub" style="margin:4px 0 0">Give their audience a reason to come in. A standalone offer goes to creators in your market; each creator gets a unique code, and every redemption counts on your receipt.</p>
+      <p class="wc-sub" style="margin:4px 0 0">Give their audience a reason to come in. This is a deal for a creator's followers, not a visit booking: creators in your market post it with their own unique code, and every redemption counts on your receipt.</p>
       <div class="form-2col" style="margin-top:10px">
         <div class="field"><label>Offer name</label><input id="auds-title" placeholder="For example: First visit invite"></div>
         <div class="field"><label>What their audience gets</label><input id="auds-perk" placeholder="Free appetizer with an entree"></div>
@@ -8454,7 +8455,7 @@ async function loadAudienceBlock() {
     const codes = data.codes || [];
     host.innerHTML = `<section class="wcard">
       <h3>Audience offers</h3>
-      <p class="wc-sub" style="margin:4px 0 0">Businesses near you, giving your audience a reason to come in. Take one and your unique code is ready to post.</p>
+      <p class="wc-sub" style="margin:4px 0 0">Businesses near you, giving your audience a reason to come in. Take one and your unique code is ready to post. This is a deal for your followers, not a visit for you: you post the code, they get the perk.</p>
       ${codes.length ? `<div style="margin-top:10px">${codes.map((cd) => `<div class="lrow" style="margin-top:10px"><div style="flex:1"><span class="lname">${esc(cd.offerTitle || "Audience offer")}</span> <span class="muted">at ${esc(cd.businessName || "a local business")}</span><div class="small muted">${esc(cd.perk || "")}</div><div style="margin-top:4px">Your code: <strong>${esc(cd.code)}</strong></div></div><span><button class="btn small-btn ghost" type="button" onclick="audCopyLine('${cd.id}')">Copy my post line</button> <button class="btn small-btn ghost" type="button" onclick="audDownloadCard('${cd.id}')">Save the card</button></span></div>`).join("")}</div>` : ""}
       ${offers.length ? `<div style="margin-top:10px">${offers.map((o) => `<div class="lrow" style="margin-top:8px"><div style="flex:1"><span class="lname">${esc(o.title)}</span> <span class="muted">at ${esc(o.businessName || "a local business")}</span><div class="small muted">${esc(o.perk)}</div></div>${codes.some((c) => c.offerId === o.id) ? `<span class="badge ok">Your code is above</span>` : `<button class="btn small-btn" type="button" onclick="audTake('${o.id}')">Take it</button>`}</div>`).join("")}</div>` : (codes.length ? "" : `<p class="small muted" style="margin-top:8px">No audience offers are open near you yet. They appear here the moment a business posts one.</p>`)}
     </section>`;
@@ -10114,7 +10115,7 @@ async function loadCreatorHome() {
       const intro = benchData.introduction;
       let introDismissed = false;
       try { introDismissed = !!localStorage.getItem(`benchintro:${intro.creator.userId}`); } catch (e) { /* storage unavailable: show it */ }
-      if (!introDismissed) items.push({ cls: 3, at: now, text: `${benchMeetLine(intro)} Sig thinks you two would make a strong +1 pair.`, short: `Meet ${intro.creator.name}`, btn: "Meet them", act: () => go("dashboard", "Bench"), dismissKey: `benchintro:${intro.creator.userId}`, onDismiss: () => benchDismissIntro(intro.creator.userId) });
+      if (!introDismissed) items.push({ cls: 3, at: now, text: `${benchMeetLine(intro)} I think you two would make a strong +1 pair: visit together, and you each post your own post and story.`, short: `Meet ${intro.creator.name}`, btn: "Meet them", act: () => go("dashboard", "Bench"), dismissKey: `benchintro:${intro.creator.userId}`, onDismiss: () => benchDismissIntro(intro.creator.userId) });
     }
     if ((money.held || 0) > 0) add(3, now, `A paid booking is earning: $${fmtMoney(money.held)} held until the post is live.`, "See earnings", () => go("dashboard", "Earnings"), `$${fmtMoney(money.held)} held on a paid booking`);
     if (pc && !pc.complete) add(4, now, `Your profile is missing essentials (${pc.requiredDone} of ${pc.requiredTotal} done). Businesses cannot find you yet.`, "Finish profile", () => go("dashboard", "Profile"), `Profile: ${pc.requiredDone} of ${pc.requiredTotal} done`);
@@ -10167,8 +10168,8 @@ async function loadCreatorHome() {
     const greetLine = !gateDone ? "Let's finish your profile so businesses can find you." : (queue.length ? queue[0].text : "You're all caught up.");
     const greetDup = gateDone && queue.length > 0;
     const snapCells = gateDone ? [
-      { num: localReach === null ? "Not set" : fmtNum(localReach), label: "Your local reach" },
-      { num: fmtNum(m.points || 0), label: "Momentum" },
+      { num: localReach === null ? "Not set" : fmtNum(localReach), label: "Your local reach", sub: "share of your audience living here" },
+      { num: fmtNum(m.points || 0), label: "Momentum", sub: "points that move you up" },
       ...(money.released > 0 ? [{ num: `$${fmtMoney(money.released)}`, label: "Earned" }] : []),
     ] : null;
     const tier = cprof.tierBand || (u.creator && u.creator.tierBand) || "";
@@ -10177,6 +10178,7 @@ async function loadCreatorHome() {
       <div class="flex-between"><div><div class="kpi-label">Momentum</div><div class="kpi-num" style="font-size:2.6rem">${fmtNum(m.points || 0)}</div></div>${tier ? `<span class="badge tier" style="font-size:1rem;padding:6px 14px">${esc(tier)}</span>` : ""}</div>
       <div class="kpi-sub">${m.points ? (nextEarn ? `Next: ${esc(nextEarn.label)} (+${nextEarn.points}).` : "Every way to earn is done. Keep the streak going.") : "Your Momentum starts with your first visit. Post on time and it climbs."}</div>
       <p class="small" style="margin:8px 0 0">${POINTS_WHY_SHORT}</p>
+      ${tier ? `<p class="small muted" style="margin:6px 0 0">${esc(tier)} is your size band, set automatically from your total audience across platforms.</p>` : ""}
       <p style="margin:10px 0 0"><button class="btn small-btn ws-outline" onclick="return go('dashboard','Momentum')">See Momentum</button></p>
     </div>`;
     // Activity (§6.1): invites, applications, visits, posts,
@@ -10298,7 +10300,7 @@ function creatorProfileHtml(u) {
       </div>
       <div id="my-score"><span class="badge info">Loading score...</span></div>
     </div>
-    <p class="small muted">Your Local Impact Score is computed only from your stored profile and your real visit history on SIGNL. Your local audience figure shows as <strong>Self-reported</strong> until Instagram verification is available.</p>
+    <p class="small muted">Your Local Impact Score is computed only from your stored profile and your real visit history on SIGNL. Both scores run 0 to 100. Reliability starts at a neutral 50 before you have any visits; your real visits move it from there. Your local audience figure shows as <strong>Self-reported</strong> until Instagram verification is available: self-reported means it is your own number, typed by you, not yet checked against Instagram.</p>
     <p class="small muted">Your market is set from your application and cannot be changed here. Wrong market? Email hello@joinsignl.com and we will move it for you.</p>
     ${u.status === "approved" && c.handle ? `
     <div class="field"><label>Your public profile</label>
@@ -10309,7 +10311,7 @@ function creatorProfileHtml(u) {
         <a class="btn small-btn ghost" href="${esc(publicProfileUrl(u))}/proof" target="_blank" rel="noopener">Listing proof sheet</a>
         <span id="pp-copied" class="saved"></span>
       </div>
-      <p class="small muted">Share this link anywhere, including your Instagram bio. Your page is live only while you keep it on, in the book-me page settings below. Visitors see your name, handle, market and neighborhood, categories, and local audience share. Signed-in businesses see your listed rate and book you inside SIGNL. Your email and account details are never shown, and there is no public roster: this page exists only at your link.</p>
+      <p class="small muted">Share this link anywhere, including your Instagram bio. Your page is live only while you keep it on, in the book-me page settings below. Visitors see your name, handle, market and neighborhood, categories, and local audience share. Signed-in businesses see your listed rate and book you inside SIGNL. Your email and account details are never shown, and there is no public roster: this page exists only at your link. The listing proof sheet is the one-page version of your record (visits done, on-time posts, customers counted), made to send to a business.</p>
     </div>` : ""}
     <div id="form-error"></div>
     ${ytNoticeHtml()}
@@ -10335,7 +10337,7 @@ function creatorProfileHtml(u) {
       <div class="field"><label>${T("Your neighborhood or area", "Tu vecindario o zona")}</label><input id="p-neighborhood" value="${esc(c.neighborhood || "")}" placeholder="${T("Optional, for example: Oceanfront, Ghent, Town Center", "Opcional, por ejemplo: Oceanfront, Ghent, Town Center")}" maxlength="80"><p class="small muted">${T("Businesses search by neighborhood. Keep it to the area you actually post from.", "Los negocios buscan por vecindario. Déjalo en la zona desde donde publicas de verdad.")}</p></div>
       <div class="field"><label>${T("Your three streets", "Tus tres calles")}</label>
         ${[0, 1, 2].map((i) => `<input id="p-street-${i}" value="${esc((c.streets || [])[i] || "")}" placeholder="${T("For example: Granby Street", "Por ejemplo: Granby Street")}" maxlength="60" style="margin-bottom:8px">`).join("")}
-        <p class="small muted">${T("Up to 3 streets or neighborhoods where you hang out, not where you live. They show on your profile, your book-me page, and the Local List as: My streets.", "Hasta 3 calles o vecindarios donde pasas el tiempo, no donde vives. Aparecen en tu perfil, tu página de reservas y la Lista Local como: Mis calles.")}</p>
+        <p class="small muted">${T("Up to 3 streets or neighborhoods where you hang out, not where you live. They show on your profile, your book-me page (the page businesses book you through), and the Local List (the public list of bookable creators in your market), labeled My streets.", "Hasta 3 calles o vecindarios donde pasas el tiempo, no donde vives. Aparecen en tu perfil, tu página de reservas (la página donde los negocios te contratan) y la Lista Local (la lista pública de creadores contratables en tu mercado), como: Mis calles.")}</p>
       </div>
       <div class="field"><label class="tgl-row"><input type="checkbox" class="sw" id="p-realtor" ${isRealtorProfile(c) ? "checked" : ""} onchange="syncRealtorFields()"><span><strong>I am a licensed real estate agent</strong>: turning this on adds your brokerage and neighborhoods to your profile and shows businesses your Realtor badge.</span></label></div>
       <div id="p-realtor-block" style="display:${isRealtorProfile(c) ? "" : "none"}">
@@ -10759,6 +10761,19 @@ const RELEASE_TEXT = {
   creator_declined: "You gave this spot back.",
 };
 
+// The open-board empty line (Build -51, fresh-eyes A-07): in a
+// market that has not launched yet, "no new offers right now"
+// pretends the market is open and the creator is missing them.
+// An unlaunched market says so, and says there is nothing to
+// miss until it opens.
+function offersEmptyLine() {
+  const mkt = marketTalkNameClient(state.user.market);
+  if (state.user && state.user.founding && state.user.founding.marketLive === false) {
+    return `<p>No offers until ${esc(mkt)} opens. Your market has not launched yet, so there is nothing to miss: when it opens, offers from businesses across the market show up here first.</p>`;
+  }
+  return `<p>No new offers in ${esc(mkt)} right now. Offers here come from businesses across the whole market, and new ones show up here first.</p>`;
+}
+
 async function loadOpenBoard() {
   const el = document.getElementById("open-board");
   if (!el) return;
@@ -10772,7 +10787,7 @@ async function loadOpenBoard() {
     const ea = data.earlyAccess && data.earlyAccess.opensAt ? data.earlyAccess : null;
     const eaLine = ea ? `<p class="small" style="margin-top:10px">A new offer just posted in ${esc(marketTalkNameClient(state.user.market))}. Charter creators, the founding class, see new offers first; this one opens to you ${esc(fmtDay(ea.opensAt))} at ${esc(fmtTime(ea.opensAt))}.</p>` : "";
     if (!data.offers.length) {
-      el.innerHTML = `<div class="empty-state"><span class="es-badge"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z"/></svg></span><h3>Open offers in ${esc(marketTalkNameClient(state.user.market))}</h3>${ea ? eaLine : `<p>No new offers in ${esc(marketTalkNameClient(state.user.market))} right now. Offers here come from businesses across the whole market, and new ones show up here first.</p>`}</div>`;
+      el.innerHTML = `<div class="empty-state"><span class="es-badge"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z"/></svg></span><h3>Open offers in ${esc(marketTalkNameClient(state.user.market))}</h3>${ea ? eaLine : offersEmptyLine()}</div>`;
       return;
     }
     state.openOffers = data.offers;
@@ -12105,7 +12120,7 @@ function partnerHomeHtml(d) {
   const bs = d.businesses.stages;
   const empty = t.creatorsAttributed === 0 && t.businessesAttributed === 0;
   return `
-  ${wsHead(p.name, { chip: partnerSampleChip(d), sub: "Your markets, your bench, your share. Everything here came in through your links.", subKey: "pt-home" })}
+  ${wsHead(p.name, { chip: partnerSampleChip(d), sub: "Your markets, your bench, your share: the creators and businesses who came in through your links, and the share they earn you.", subKey: "pt-home" })}
   ${partnerSigCardHtml(d)}
   ${empty ? "" : `
   <div class="stat-band home-metrics">
@@ -12755,7 +12770,7 @@ async function loadBusinessHome() {
     }
     const bz = u.business || {};
     if (!bz.about) add(4, now, "Your business page is missing its About.", "Add about", () => go("dashboard", "Profile"), "About missing on your page");
-    if (d.staffPinSet === false) add(4, now, "Set your staff PIN so your team can redeem visits.", "Set PIN", () => go("dashboard", "Settings"), "Staff PIN not set");
+    if (d.staffPinSet === false) add(4, now, "Set your staff PIN so your team can redeem visits: the creator shows their visit code at your counter, your team enters it with this PIN, and that is what counts the visit.", "Set PIN", () => go("dashboard", "Settings"), "Staff PIN not set");
     if ((h.visitsCarried || 0) > 0 && h.carriedExpiresAt) add(4, now, `${h.visitsCarried} rolled visit${h.visitsCarried === 1 ? "" : "s"} expire ${dueDayWords(h.carriedExpiresAt)}.`, "See plan", () => go("dashboard", "Plan"), `Rollover expires ${dueDayWords(h.carriedExpiresAt)}`);
     else if ((h.visitsRemaining || 0) <= 1) add(4, now, `You have ${h.visitsRemaining || 0} visit${(h.visitsRemaining || 0) === 1 ? "" : "s"} left this month.`, "See plan", () => go("dashboard", "Plan"), `${h.visitsRemaining || 0} visit${(h.visitsRemaining || 0) === 1 ? "" : "s"} left this month`);
     // Campus moments (university layers U4, Jeff, 2026-10-28):
@@ -12806,7 +12821,15 @@ async function loadBusinessHome() {
       pushIdea("biz_spanish", `Spanish-speaking customers are in ${mktName}: ${sig.spanish} creator${plural(sig.spanish)} here make${sig.spanish === 1 ? "s" : ""} content in Spanish.`, "Find creators", () => { state.discoverSpanish = true; go("dashboard", "Discover"); }, "Spanish-speaking creators here");
     }
     if ((sig.fresh || 0) > 0) {
-      pushIdea("biz_fresh", `New on the roster: ${sig.fresh} creator${plural(sig.fresh)} finished profiles in ${mktName} in the last two weeks.`, "Find creators", () => go("dashboard", "Discover"), "New creators on the roster");
+      // Fresh-eyes A-14 + Jeff's no-small-counts rule: the number
+      // only rides along at 10 or more; below that the fact stands
+      // without a count (the named form at exactly one).
+      const freshLine = sig.fresh >= 10
+        ? `New on the roster: ${sig.fresh} creators finished profiles in ${mktName} in the last two weeks.`
+        : sig.fresh === 1
+          ? `New on the roster: a creator finished their profile in ${mktName} in the last two weeks.`
+          : `New on the roster: new creators finished profiles in ${mktName} in the last two weeks.`;
+      pushIdea("biz_fresh", freshLine, "Find creators", () => go("dashboard", "Discover"), "New creators on the roster");
     }
     pushIdea("biz_category_play", SIG_CATEGORY_PLAYS[bz.category] || SIG_CATEGORY_PLAYS.Other, "Post offer", () => { state.offersSeg = "live"; go("dashboard", "My Offers"); }, "An idea for your business");
     // R2 closed-loop repeat (Jeff, 2026-10-28): when the
@@ -13163,7 +13186,7 @@ async function renderContentTab() {
     } catch (e) { /* rows simply render without the action */ }
     el.innerHTML = `
     ${wsHead("Posts & licenses", { sub: "Every post about you, and the ones you can reuse.", subKey: "biz-content" })}
-    <div class="rights-line">${bnIcon("shield")}<span><strong>Seeing a post here is not the right to reuse it.</strong> You may always reshare natively, with credit. Paid bookings include one standard license: 90 days to repost and run ads. A comped post can be licensed at the creator's listed fee, and the creator approves each use. That license is what makes the post UGC you can use — repost it and run it as an ad for those 90 days.</span></div>
+    <div class="rights-line">${bnIcon("shield")}<span><strong>Seeing a post here is not the right to reuse it.</strong> You may always reshare the post inside Instagram, with credit. Paid bookings include one standard license: 90 days to repost and run ads. A comped post can be licensed at the creator's listed fee, and the creator approves each use. That license is what makes the post UGC you can use — repost it and run it as an ad for those 90 days.</span></div>
     ${lib.length ? `<div class="track-card"><span class="feed-dot acc">${bnIcon("image")}</span><div class="tc-main"><div class="tc-t">Post tracking is on</div><div class="tc-s">${h.postsTracked30 || 0} post${(h.postsTracked30 || 0) === 1 ? "" : "s"} tracked in the last 30 days. SIGNL tracks every visit's post from the creator's report, timed against the 48 hour standard.</div></div><button type="button" class="btn small-btn ws-outline" onclick="return go('dashboard','Visits & Posts')">Visits</button></div>`
       : `<div class="track-card"><span class="feed-dot acc">${bnIcon("image")}</span><div class="tc-main"><div class="tc-t">Post tracking</div><div class="tc-s">Post tracking starts with your first visit.</div></div></div>`}
     ${wsTabs([
@@ -14936,13 +14959,13 @@ function renderPlanTab() {
     <p class="small"><strong>${VISIT_GUARANTEE_LINE}</strong></p>
     ${paymentsLive()
       ? `<p class="small">The card below is for paid creator bookings: saved once, charged when you book, held until the post is live.${billingLive() ? " Your plan subscription starts through Stripe's secure checkout below." : " Your plan itself still starts by hand at activation."}</p>${cardOnFileSectionHtml()}`
-      : `<p class="small">Payment stays concierge: when billing starts, Jeff sends the payment step by hand. Nothing is charged before then, and SIGNL never takes a card in the app.</p>`}
+      : `<p class="small">Payment stays concierge: when billing starts, Jeff, SIGNL's founder, sends the payment step by hand. Nothing is charged before then, and SIGNL never takes a card in the app.</p>`}
     <div class="plan-cards">${plans}</div>
     <input type="hidden" id="me-plan" value="${esc(u.business.plan)}">
     <button class="btn mt" onclick="savePlan()">${billingLive() ? "Start subscription" : "Save plan selection"}</button> <span id="plan-save-note" class="saved"></span>
     ${billingLive()
       ? `<p class="small muted mt">Starts your subscription on Stripe's secure checkout page. Your founding rate stays locked while your plan stays active.</p>`
-      : `<p class="small muted mt">Billing is not live yet, so saving only records your selection: no card is charged, and your founding pricing stays locked while you stay subscribed. When billing opens, Jeff sends the payment step by hand.</p>`}
+      : `<p class="small muted mt">Billing is not live yet, so saving only records your selection: no card is charged, and your founding pricing stays locked while you stay subscribed. When billing opens, Jeff, SIGNL's founder, sends the payment step by hand.</p>`}
   </div>`
 }
 
@@ -15759,7 +15782,7 @@ const SIG_ADMIN_BANK = [
   { id: "visitsrules", q: "What does a creator owe for a visit?", ph: ["visit owe", "deliverable", "48 hours", "post deadline", "visit guarantee", "no show"], g: [["visit", "post"], ["owe", "deadline", "late", "guarantee", "replace"]], s: [],
     a: "A comped visit is one post plus one story that shares the post. Post within 48 hours is on time; one week is the hard deadline. If a booked creator does not show or does not post, the visit does not count against the business's monthly visits: it is replaced under the Visit Guarantee, in credits, not cash." },
   { id: "rights", q: "What are the usage rights?", ph: ["rights", "license", "reuse", "ad use", "native share"], g: [["rights", "license", "licensing"], ["what", "how", "work", "mean"]], s: ["licensing"],
-    a: "A comped visit is native share only on every plan: the business may reshare the post natively with credit, and gets no ad use. A paid booking includes one standard license: 90 days to repost the post and run it as an ad, never perpetuity. Licensing a comped post runs at the creator's listed fee for 90 days; the creator approves each use and keeps 97%." },
+    a: "A comped visit is native share only on every plan: the business may reshare the post inside Instagram, with credit, and gets no ad use. A paid booking includes one standard license: 90 days to repost the post and run it as an ad, never perpetuity. Licensing a comped post runs at the creator's listed fee for 90 days; the creator approves each use and keeps 97%." },
   { id: "help", q: "How do I reach a person?", ph: ["human", "contact", "support", "real person"], g: [["human", "person", "contact", "support"], ["reach", "talk", "email"]], s: ["support"],
     a: "For anything a person needs to handle, hello@joinsignl.com and a person answers. Inside the console, every action lives on its own tab; this chat and the brief above are read-only guidance on top of those same records." },
 ];
@@ -17540,7 +17563,7 @@ function previewDashboardHtml(d) {
       ${d.business.discountCodes && d.business.discountCodes.enabled ? `<p class="small" style="margin-bottom:0"><strong>Audience-code discounts: on.</strong> ${d.business.discountCodes.pct}% off, the business's call. Tallies above carry the discount cost.</p>` : ""}
     </div>` : ""}
     <div class="showcase-block"><h4>Content rights: they follow the visit</h4>
-      <p class="small" style="margin:0 0 4px"><span class="rules">On a comp visit (every plan, including ${esc(plan.name)}):</span> share a delivered post natively, with the creator tagged. No downloads, no reposting the file, no ads.</p>
+      <p class="small" style="margin:0 0 4px"><span class="rules">On a comp visit (every plan, including ${esc(plan.name)}):</span> share a delivered post inside Instagram, with the creator tagged. No downloads, no reposting the file, no ads.</p>
       <p class="small" style="margin:0 0 4px"><span class="rules">On a paid visit:</span> you can also repost the post on your own feed and run it as an ad for 90 days from the post date.</p>
       <p class="small muted" style="margin:0">Rights follow the visit, not the plan. The creator always owns their content.</p>
     </div>

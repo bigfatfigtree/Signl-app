@@ -509,7 +509,10 @@ try {
   check("business card surfaces ship", appJs.includes("Card on file") && appJs.includes("Add a card") && appJs.includes("Add a card to book"), "");
   check("booking funds status lines ship for both sides", appJs.includes("Held · releases when your post is live") && appJs.includes("Released · on its way to your bank") && appJs.includes("Paid · held until the post is live") && appJs.includes("Paid · released to the creator") && appJs.includes("Paid · refunded in full"), "");
   check("return-landing handling ships", appJs.includes('params.get("payouts")') && appJs.includes('params.get("card")'), "");
-  check("concierge copy still ships for the gate-off world", appJs.includes("Payment stays concierge: when billing starts, Jeff sends the payment step by hand."), "");
+  // Build -51 (fresh-eyes A-18): the concierge line now names
+  // Jeff as SIGNL's founder in the same breath, so a stranger
+  // reading the Plan screen knows who "Jeff" is.
+  check("concierge copy still ships for the gate-off world", appJs.includes("Payment stays concierge: when billing starts, Jeff, SIGNL's founder, sends the payment step by hand."), "");
   check("Admin Campaigns no longer claims 40 sends per day", !appJs.includes("40 sends per day"), "");
   check("Admin Campaigns renders the true ceiling + warm-up figures from the server config", appJs.includes("One daily ceiling covers everything:") && appJs.includes("warm-up cap of") && appJs.includes("teamMailDailyCap"), "");
   const connectSrc = fs.readFileSync(path.join(root, "netlify/functions/lib/connect.js"), "utf8");
