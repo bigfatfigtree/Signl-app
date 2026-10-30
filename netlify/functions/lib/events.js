@@ -37,4 +37,47 @@ async function listEvents({ limit = 500 } = {}) {
   return events.slice(0, cap);
 }
 
-module.exports = { logEvent, listEvents };
+// Subject-scoped read (Command Center spec §6.7, Build -54): one
+// record's own trail — every event where the record is the subject
+// (things done to it) or the actor (things it did) — newest first.
+// The general read above caps at the newest 1,000 events, which
+// silently drops a long-lived record's early history; this read
+// instead walks the key list newest → oldest in bounded chunks and
+// keeps scanning until it has the requested matches or the scan
+// cap is reached. The result reports how many events were scanned
+// and whether the scan stopped early, so a truncated trail is
+// labeled, never silent.
+const SUBJECT_SCAN_CAP = 5000;
+const SUBJECT_CHUNK = 500;
+
+async function listEventsForSubject(subjectId, { limit = 100 } = {}) {
+  const want = Math.max(1, Math.min(500, parseInt(limit, 10) || 100));
+  const keys = await store.listKeys("event:");
+  const matches = [];
+  let scanned = 0;
+  let truncated = false;
+  for (let end = keys.length; end > 0 && matches.length < want; end -= SUBJECT_CHUNK) {
+    if (scanned >= SUBJECT_SCAN_CAP) { truncated = true; break; }
+    const start = Math.max(0, end - SUBJECT_CHUNK);
+    const chunkKeys = keys.slice(start, end).slice(-(SUBJECT_SCAN_CAP - scanned));
+    const rows = await store.getMany(chunkKeys);
+    scanned += chunkKeys.length;
+    const events = rows.map((r) => r.value).filter((e) => e && typeof e.ts === "string");
+    events.sort((a, b) => (a.ts < b.ts ? 1 : -1)); // newest first within the chunk
+    for (const e of events) {
+      if (e.subjectId === subjectId || e.actorId === subjectId) {
+        matches.push({ ...e, matchedOn: e.subjectId === subjectId ? "subject" : "actor" });
+        if (matches.length >= want) break;
+      }
+    }
+    if (start === 0) break;
+  }
+  // Truncated means the scan did not cover the whole log (scan cap
+  // hit, or the match limit stopped the walk early): older matches
+  // may exist beyond what was read.
+  if (keys.length - scanned > 0) truncated = true;
+  matches.sort((a, b) => (a.ts < b.ts ? 1 : -1));
+  return { events: matches.slice(0, want), scanned, truncated };
+}
+
+module.exports = { logEvent, listEvents, listEventsForSubject };

@@ -3046,3 +3046,50 @@ details.roas-x > summary::-webkit-details-marker { display: none; }
 .sb-counts { display: block; font-weight: 700; font-size: .9rem; }
 .sb-splits { display: block; margin-top: 2px; font-size: .8rem; color: var(--ink3); line-height: 1.55; }
 .sb-filterbar { display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; margin-bottom: 12px; }
+
+/* Command Center (Build -54): the Stats shell's tiles, honesty
+   chips, filter bar, attention strip, market blocks and launch
+   gate. Same palette as the sign-up board above: mint is the
+   hero accent, ink carries the numbers, chips carry the honesty
+   classes and are never decoration. */
+.cc-filters { margin-bottom: 12px; }
+.cc-filter-row { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-end; }
+.cc-flabel { display: flex; flex-direction: column; gap: 4px; font-size: .78rem; font-weight: 700; color: var(--ink3); text-transform: uppercase; letter-spacing: .04em; }
+.cc-flabel select { font: inherit; text-transform: none; letter-spacing: 0; font-weight: 500; }
+.cc-flabel.cc-check { flex-direction: row; align-items: center; gap: 6px; min-width: 170px; justify-content: flex-start; text-transform: none; letter-spacing: 0; font-size: .85rem; color: inherit; font-weight: 500; padding-bottom: 6px; }
+.cc-flabel.cc-check input { width: auto; flex: none; margin: 0; }
+.cc-legend { margin-top: 10px; font-size: .8rem; color: var(--ink3); display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
+.cc-chip { display: inline-block; font-size: .66rem; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; padding: 2px 7px; border-radius: 999px; vertical-align: middle; white-space: nowrap; }
+.cc-chip.counted { background: #0C7A43; color: #fff; }
+.cc-chip.recorded { background: var(--ink); color: #fff; }
+.cc-chip.charged { background: #7A4FD0; color: #fff; }
+.cc-chip.modeled { background: #E8E2D2; color: #6B5E33; }
+.cc-chip.live { background: var(--mint); color: var(--black); }
+.cc-chip.founding { background: #EDF3ED; color: var(--ink3); }
+.cc-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; margin-bottom: 12px; }
+.cc-tile { border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; background: #fff; }
+.cc-tile.cc-hero { background: var(--mint-pale); border-color: var(--mint-soft); }
+.cc-tile.forming { background: #FAFBFA; }
+.cc-tlabel { font-size: .72rem; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: var(--ink3); }
+.cc-tnum { font-size: 2rem; font-weight: 800; line-height: 1.15; }
+.cc-tform { font-size: 1.05rem; font-weight: 700; color: var(--ink3); line-height: 1.5; }
+.cc-tsub { font-size: .8rem; color: var(--ink3); line-height: 1.45; }
+.cc-attention { margin-bottom: 12px; }
+.cc-att-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); }
+.cc-att-row .btn { flex-shrink: 0; }
+.cc-waiting { margin-bottom: 12px; }
+.cc-market { margin-bottom: 12px; }
+.cc-mhead { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 1.02rem; }
+.cc-gate { display: flex; gap: 10px; align-items: center; }
+.cc-gatebar { display: block; flex: 0 0 180px; height: 10px; border-radius: 999px; background: #EDF3ED; overflow: hidden; }
+.cc-gatebar i { display: block; height: 100%; background: #0C7A43; }
+.cc-unlisted-row { display: flex; justify-content: space-between; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); }
+.cc-unlisted-n { text-align: right; font-weight: 700; white-space: nowrap; }
+.cc-form-rows p { margin: 0 0 8px; font-size: .9rem; line-height: 1.55; }
+@media (max-width: 560px) {
+  .cc-tiles { grid-template-columns: 1fr 1fr; }
+  .cc-gate { flex-wrap: wrap; }
+  .cc-gatebar { flex-basis: 100%; }
+  .cc-unlisted-row { flex-direction: column; }
+  .cc-unlisted-n { text-align: left; }
+}

@@ -4,7 +4,7 @@
 const crypto = require("crypto");
 const store = require("./store");
 const auth = require("./auth");
-const { logEvent, listEvents } = require("./events");
+const { logEvent, listEvents, listEventsForSubject } = require("./events");
 const { MARKETS, normalizeMarketName, resolveTypedCity, TIERS, CREATOR_CATEGORIES, COMP_CATEGORIES, BUSINESS_CATEGORIES, PLANS, PROFESSIONS, LEGACY_PROFESSIONS, REALTOR_PROFESSION, canonicalFromList, tierForFollowers, normalizeTierBand } = require("./markets");
 const { computeLocalImpactScore, summarizeHistory } = require("./score");
 const { computeFit, buildFitNote } = require("./fit");
@@ -1576,6 +1576,12 @@ function publicUser(u) {
   delete rest.decisionReason;
   delete rest.decisionNote;
   delete rest.rejectionReason;
+  // Partner attribution (Command Center spec §2.2, Build -54): the
+  // record carries a partnerId foreign key so deal changes never
+  // orphan history. It is an internal accounting field: stripped
+  // here like the decision markers, and re-added only by Admin
+  // serializers behind admin auth.
+  delete rest.partnerId;
   if (rest.role === "business" && rest.business) {
     rest.business = { ...rest.business, accessState: businessAccessState(rest) };
     delete rest.business.paymentLink;
@@ -8292,6 +8298,22 @@ async function handleRegister(event) {
   const signupSource = typeof b.signupSource === "string" ? b.signupSource.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 40) : "";
   if (signupSource) user.signupSource = signupSource;
 
+  // Partner attribution (Command Center spec §2.2, Build -54): a
+  // sign-up through a partner link also stamps the partner's user
+  // id as a real foreign key, resolved from the same source string
+  // that sets signupSource. signupSource itself is untouched (it
+  // stays the raw display string); partnerId is what accounting
+  // joins on, so a renamed or re-dealt partner never orphans the
+  // history. An unknown code stamps nothing — the record keeps its
+  // source string and the Command Center's repair flow can stamp
+  // it later, with the reason logged.
+  if (signupSource.startsWith(PARTNER_SRC_PREFIX)) {
+    try {
+      const partnerUser = await findPartnerByCode(signupSource.slice(PARTNER_SRC_PREFIX.length));
+      if (partnerUser) user.partnerId = partnerUser.id;
+    } catch (e) { /* attribution never blocks a sign-up */ }
+  }
+
   // Golden Ticket claim (Build -33): a creator who registers
   // through a named ticket claims the held seat. The ticket
   // flips to claimed, and the issuer is credited through the
@@ -10698,6 +10720,227 @@ async function partnerSummary(user) {
   };
 }
 
+// ---------- Command Center aggregates (Build -54) ----------
+// The Admin Command Center's counting core (spec
+// signl-admin-command-center-spec-2026-10-30.md §3/§4/§6). Every
+// number is computed from the source records (users, bookings,
+// posts, licenses, register events) on every read — never from
+// the event log, whose general read caps at the newest 1,000 —
+// and nothing is stored, so no figure can drift. Honesty classes
+// (§4.1) are kept apart end to end: register dollars are Counted,
+// paid-lane and license splits are Recorded, and the two are
+// never summed into one figure anywhere in these payloads.
+//
+// Tester/demo exclusion (§6.6): tester-flagged records and the
+// demo partner's world stay out of every count by default; the
+// caller can include them explicitly, and the payload says which.
+// Comp lifecycle (§4.4): a comp booking is a booking whose kind
+// reads comp through kindOf and which is not a +1 companion
+// (collabRole "plusone" companions never count). "Completed" is
+// the headline stage; "counted" adds at least one non-voided
+// first register event. Finished deals (§4.5) print their three
+// kinds separately and summed: comp visits completed, paid
+// bookings whose funds were released, licenses granted.
+const CC_LAUNCH_GATE = { low: 25, high: 30 };
+
+function ccPeriodOf(raw) {
+  const key = raw === "last_month" ? "last_month" : raw === "this_month" ? "this_month" : "all";
+  const curKey = monthKeyOf(new Date().toISOString());
+  const target = key === "this_month" ? curKey : key === "last_month" ? prevMonthKey(curKey) : null;
+  return {
+    key,
+    label: key === "all" ? "All time" : monthLabelOf(target),
+    inPeriod: (iso) => (target === null ? true : monthKeyOf(iso) === target),
+  };
+}
+
+function ccMoney(n) { return Math.round((Number(n) || 0) * 100) / 100; }
+
+// One load + one prep shared by the overview and markets reads,
+// so the two views can never disagree about the same record.
+async function ccPrep(query) {
+  const includeTesters = !!(query && (query.testers === "1" || query.testers === "true"));
+  const period = ccPeriodOf(query && query.period);
+  const marketScope = query && query.market ? normalizeMarketName(String(query.market)) : null;
+  const [users, bookings, posts, licenses, redEvents, flagsRec, sqRows] = await Promise.all([
+    allUsers(), allBookings(), allPosts(), allLicenses(), allRedemptionEvents(),
+    store.get("config:markets"), store.list("sqconn:"),
+  ]);
+  const flags = (flagsRec && flagsRec.flags) || {};
+  const visible = (u) => !!u && u.role !== "admin" && (includeTesters || (!isTester(u) && !(u.role === "partner" && u.partner && u.partner.demo)));
+  const visUsers = users.filter(visible);
+  const testerBizIds = new Set(users.filter((u) => u.role === "business" && !visible(u)).map((u) => u.id));
+  const testerCreatorIds = new Set(users.filter((u) => u.role === "creator" && !visible(u)).map((u) => u.id));
+  const recordVisible = (businessId, creatorId) => !testerBizIds.has(businessId) && !testerCreatorIds.has(creatorId);
+  const visBookings = bookings.filter((b) => b && recordVisible(b.businessId, b.creatorId));
+  const visLicenses = licenses.filter((l) => l && recordVisible(l.businessId, l.creatorId));
+  const postByBooking = new Map(posts.map((p) => [p.bookingId, p]));
+  const bookingById = new Map(bookings.map((b) => [b.id, b]));
+  const userById = new Map(users.map((u) => [u.id, u]));
+  const completedAtOf = (b) => visitCompletedAt(b, postByBooking.get(b.id) || null);
+  const isComp = (b) => kindOf(b) === "comp" && b.collabRole !== "plusone";
+  const compBookings = visBookings.filter(isComp);
+  const firstCounted = new Set();
+  const countedByBooking = new Map();
+  for (const ev of redEvents) {
+    if (!ev || ev.voided || !ev.bookingId) continue;
+    const bk = bookingById.get(ev.bookingId);
+    if (!bk || !recordVisible(ev.businessId || bk.businessId, ev.creatorId || bk.creatorId)) continue;
+    if (ev.kind === "first") firstCounted.add(ev.bookingId);
+    countedByBooking.set(ev.bookingId, (countedByBooking.get(ev.bookingId) || 0) + (Number(ev.amount) || 0));
+  }
+  const countedInPeriod = (marketName) => {
+    let sum = 0;
+    for (const ev of redEvents) {
+      if (!ev || ev.voided || !ev.bookingId || !period.inPeriod(ev.at)) continue;
+      const bk = bookingById.get(ev.bookingId);
+      if (!bk || !recordVisible(ev.businessId || bk.businessId, ev.creatorId || bk.creatorId)) continue;
+      if (marketName && normalizeMarketName(bk.market) !== marketName) continue;
+      sum += Number(ev.amount) || 0;
+    }
+    return ccMoney(sum);
+  };
+  const paidFinished = visBookings.filter((b) => isPaidVisit(b) && b.paidLane && b.paidLane.escrowState === "released");
+  const licensesGranted = visLicenses.filter((l) => l.status === "granted");
+  const dealMarketOf = (rec, booking) => normalizeMarketName((booking && booking.market) || rec.market || (userById.get(rec.businessId) || {}).market || "");
+  const finishedDeals = (inScope) => {
+    const comp = compBookings.filter((b) => b.status === "completed" && period.inPeriod(completedAtOf(b)) && inScope(b, null)).length;
+    const paid = paidFinished.filter((b) => period.inPeriod((b.paidLane && (b.paidLane.releasedAt || b.paidLane.fundsReleasedAt)) || b.updatedAt || b.createdAt) && inScope(b, null)).length;
+    const lic = licensesGranted.filter((l) => period.inPeriod(l.grantedAt || l.respondedAt || l.updatedAt || l.createdAt) && inScope(l, bookingById.get(l.bookingId) || null)).length;
+    return { compVisits: comp, paidBookings: paid, licenses: lic, total: comp + paid + lic };
+  };
+  const partners = visUsers.filter((u) => u.role === "partner" && u.partner);
+  return {
+    includeTesters, period, marketScope, flags,
+    users, visUsers, visBookings, visLicenses, partners,
+    postByBooking, bookingById, userById, completedAtOf, isComp, compBookings,
+    firstCounted, countedByBooking, countedInPeriod, paidFinished, licensesGranted, finishedDeals, dealMarketOf,
+    connectedBizIds: new Set(sqRows.map((r) => (r.value && r.value.businessId) || String(r.key || "").slice("sqconn:".length)).filter(Boolean)),
+  };
+}
+
+function ccFiltersEcho(P) {
+  return {
+    period: P.period.key, periodLabel: P.period.label,
+    market: P.marketScope, testersIncluded: P.includeTesters,
+    excludedByDefault: "Tester accounts and the demo partner's records are excluded from every count.",
+  };
+}
+
+// Overview (§3.0): headline tiles + the needs-attention strip.
+// Dollars flowing and money owed are later-phase views (Money in
+// -55, Owed in -57): their tiles answer null with the forming
+// note, never an invented zero dressed as a total.
+function ccOverview(P) {
+  const scoped = (u) => !P.marketScope || normalizeMarketName(u.market) === P.marketScope;
+  const people = P.visUsers.filter((u) => (u.role === "creator" || u.role === "business") && scoped(u));
+  const creators = people.filter((u) => u.role === "creator");
+  const businesses = people.filter((u) => u.role === "business");
+  const partners = P.marketScope
+    ? P.partners.filter((u) => (u.partner.markets || []).some((m) => normalizeMarketName(m) === P.marketScope))
+    : P.partners;
+  const inMarket = (b) => !P.marketScope || normalizeMarketName(b.market) === P.marketScope;
+  const comps = P.compBookings.filter(inMarket);
+  const compsCompletedList = comps.filter((b) => b.status === "completed" && P.period.inPeriod(P.completedAtOf(b)));
+  const deals = P.finishedDeals((rec, booking) => !P.marketScope || P.dealMarketOf(rec, booking) === P.marketScope);
+  // Needs-attention strip (§3.0): plain sentences, real counts,
+  // one action each. Zero-count items never render.
+  const attention = [];
+  const awaiting = people.filter((u) => u.status === "pending").length;
+  if (awaiting > 0) attention.push({ kind: "awaiting_review", count: awaiting, text: `${awaiting} ${awaiting === 1 ? "application is" : "applications are"} waiting for a decision.`, target: { view: "applications" } });
+  const partnerByCode = new Map(P.partners.map((u) => [u.partner.code, u]));
+  let unstamped = 0; let unknownCode = 0;
+  for (const u of P.visUsers) {
+    if ((u.role !== "creator" && u.role !== "business") || u.partnerId) continue;
+    if (typeof u.signupSource === "string" && u.signupSource.startsWith(PARTNER_SRC_PREFIX)) {
+      if (partnerByCode.has(u.signupSource.slice(PARTNER_SRC_PREFIX.length))) unstamped += 1; else unknownCode += 1;
+    }
+  }
+  if (unstamped > 0) attention.push({ kind: "unstamped_attribution", count: unstamped, text: `${unstamped} ${unstamped === 1 ? "sign-up came" : "sign-ups came"} through a partner link but ${unstamped === 1 ? "is" : "are"} not stamped to the partner yet.`, target: { view: "command", subtab: "overview", action: "backfill" } });
+  if (unknownCode > 0) attention.push({ kind: "unknown_partner_code", count: unknownCode, text: `${unknownCode} ${unknownCode === 1 ? "sign-up carries" : "sign-ups carry"} a partner link code that matches no partner on file.`, target: { view: "applications" } });
+  const unlisted = P.visUsers.filter((u) => (u.role === "creator" || u.role === "business") && normalizeMarketName(u.market) === UNLISTED);
+  if (unlisted.length > 0) attention.push({ kind: "unlisted_records", count: unlisted.length, text: `${unlisted.length} ${unlisted.length === 1 ? "sign-up is" : "sign-ups are"} not in a market yet.`, target: { view: "command", subtab: "markets" } });
+  const unsigned = P.partners.filter((u) => (u.partner.agreementStatus || "unsigned") !== "signed");
+  if (unsigned.length > 0) attention.push({ kind: "unsigned_partners", count: unsigned.length, text: `${unsigned.length} ${unsigned.length === 1 ? "partner has" : "partners have"} not signed their agreement yet.`, target: { view: "partners" } });
+  const completedBizIds = new Set(P.compBookings.filter((b) => b.status === "completed").map((b) => b.businessId));
+  const unconnected = [...completedBizIds].filter((id) => !P.connectedBizIds.has(id)).length;
+  if (unconnected > 0) attention.push({ kind: "unconnected_registers", count: unconnected, text: `${unconnected} ${unconnected === 1 ? "business has" : "businesses have"} completed visits and no register connected.`, target: { view: "command", subtab: "overview", anchor: "registers" } });
+  return {
+    filters: ccFiltersEcho(P),
+    tiles: {
+      usersTotal: people.length,
+      creators: creators.length,
+      businesses: businesses.length,
+      partners: partners.length,
+      awaitingReview: awaiting,
+      compsBookedNow: comps.filter((b) => b.status !== "completed" && b.status !== "cancelled" && b.status !== "expired").length,
+      compsCompleted: compsCompletedList.length,
+      compsCounted: compsCompletedList.filter((b) => P.firstCounted.has(b.id)).length,
+      finishedDeals: deals,
+      countedRegister: P.countedInPeriod(P.marketScope),
+      dollarsFlowing: null,
+      moneyOwed: null,
+      alerts: attention.reduce((n, a) => n + a.count, 0),
+    },
+    attention,
+  };
+}
+
+// Markets (§3.6): one row per market — the same counting core as
+// the sign-up board for the people columns (testers out unless
+// included), plus live state, the launch gate, activity in the
+// period, counted register dollars, the attached partner, and
+// the unlisted typed cities whose names resolve into the area.
+function ccMarkets(P) {
+  const rows = MARKETS.map((m) => {
+    const name = m.name;
+    const inM = (u) => normalizeMarketName(u.market) === name;
+    const mc = P.visUsers.filter((u) => u.role === "creator" && inM(u));
+    const mb = P.visUsers.filter((u) => u.role === "business" && inM(u));
+    const finished = mc.filter((u) => u.status === "approved" && profileCompleteOf(u)).length;
+    const mComps = P.compBookings.filter((b) => normalizeMarketName(b.market) === name);
+    const mCompleted = mComps.filter((b) => b.status === "completed" && P.period.inPeriod(P.completedAtOf(b)));
+    const deals = P.finishedDeals((rec, booking) => normalizeMarketName(P.dealMarketOf(rec, booking)) === name);
+    return {
+      market: name,
+      label: m.label || m.name,
+      live: !!P.flags[name],
+      signups: {
+        creators: { signedUp: mc.length, awaitingReview: mc.filter((u) => u.status === "pending").length, approved: mc.filter((u) => u.status === "approved").length, finished },
+        businesses: { signedUp: mb.length, awaitingReview: mb.filter((u) => u.status === "pending").length, approved: mb.filter((u) => u.status === "approved").length, active: mb.filter((u) => businessAccessState(u) === "active").length },
+      },
+      launchGate: { finished, low: CC_LAUNCH_GATE.low, high: CC_LAUNCH_GATE.high, met: finished >= CC_LAUNCH_GATE.low },
+      businessesActive: mb.filter((u) => u.status === "approved" && businessAccessState(u) === "active").length,
+      compsCompleted: mCompleted.length,
+      compsCounted: mCompleted.filter((b) => P.firstCounted.has(b.id)).length,
+      finishedDeals: deals,
+      countedRegister: P.countedInPeriod(name),
+      signlTake: null,
+      partners: P.partners.filter((u) => (u.partner.markets || []).some((mm) => normalizeMarketName(mm) === name)).map((u) => ({ id: u.id, name: u.partner.name || u.name || "", code: u.partner.code || "" })),
+      unlistedClaiming: [],
+    };
+  });
+  const byName = new Map(rows.map((r) => [r.market, r]));
+  const unlistedMap = {};
+  for (const u of P.visUsers) {
+    if ((u.role !== "creator" && u.role !== "business") || normalizeMarketName(u.market) !== UNLISTED) continue;
+    const region = u.country || u.state || "";
+    const place = `${u.city || "Unknown"}${region ? ", " + region : ""}`;
+    const row = unlistedMap[place] || (unlistedMap[place] = { place, city: u.city || "Unknown", state: u.state || null, country: u.country || null, creators: 0, businesses: 0, awaitingReview: 0, total: 0, resolvesTo: null, resolveStatus: "none" });
+    if (u.role === "creator") row.creators += 1; else row.businesses += 1;
+    if (u.status === "pending") row.awaitingReview += 1;
+    row.total += 1;
+  }
+  const unlisted = Object.values(unlistedMap).sort((a, b) => b.total - a.total || (a.place < b.place ? -1 : 1));
+  for (const row of unlisted) {
+    const res = resolveTypedCity(row.city || "", { state: row.state, country: row.country });
+    if (res.status === "unique") { row.resolvesTo = res.market; row.resolveStatus = "unique"; }
+    else if (res.status === "ambiguous") { row.resolveStatus = "ambiguous"; row.candidateMarkets = res.markets; }
+    if (row.resolvesTo && byName.has(row.resolvesTo)) byName.get(row.resolvesTo).unlistedClaiming.push({ place: row.place, city: row.city, total: row.total });
+  }
+  return { filters: ccFiltersEcho(P), markets: rows, unlisted };
+}
+
 function validPartnerMarkets(names) {
   if (!Array.isArray(names)) return null;
   const out = [];
@@ -12971,6 +13214,15 @@ async function route(event) {
         if (u.decisionReason) pub.decisionReason = u.decisionReason;
         if (u.decisionNote) pub.decisionNote = u.decisionNote;
         if (u.rejectionReason) pub.rejectionReason = u.rejectionReason;
+        // Partner attribution (Build -54): publicUser strips
+        // partnerId from every client payload; the Admin queue
+        // re-adds it (plus the partner's display name) so the
+        // repair action on the row can show and change it.
+        if (u.partnerId) {
+          pub.partnerId = u.partnerId;
+          const p = all.find((x) => x.id === u.partnerId);
+          pub.partnerName = p && p.partner ? (p.partner.name || p.name || "") : "";
+        }
         // Typed-city suggestion (Jeff, 2026-10-23): an unlisted
         // record whose typed city already belongs to a market gets
         // the resolver's suggestion inline, so it can be filed
@@ -13349,6 +13601,32 @@ async function route(event) {
       await logEvent({ type: "market_refile_sweep", actorId: user.id, actorRole: "admin", market: null, data: { scanned, filed: filedRecords.length, perMarket, skippedAmbiguous, skippedNone } });
       return json(200, { sweep: { scanned, filed: filedRecords.length, perMarket, skippedAmbiguous, skippedNone, records: filedRecords } });
     }
+    // Attribution repair (Command Center spec §2.2, Build -54):
+    // an Admin action on a user row that sets or clears the
+    // record's partner attribution by hand. Never silent: the
+    // change is event-logged with the actor and a required reason,
+    // and signupSource is left exactly as recorded — the stamp is
+    // accounting state, the source string is history.
+    if (method === "POST" && seg[1] === "users" && seg[2] === "attribute-partner") {
+      const b = parseBody(event);
+      const target = b.userId ? await store.get(`user:${b.userId}`) : null;
+      if (!target || target.role === "admin" || target.role === "partner") return err(404, "Record not found");
+      const reason = typeof b.reason === "string" ? b.reason.trim().slice(0, 300) : "";
+      if (!reason) return err(400, "Say why the attribution is changing — the reason is kept with the change.");
+      let partner = null;
+      if (b.partnerId) {
+        partner = await store.get(`user:${b.partnerId}`);
+        if (!partner || partner.role !== "partner" || !partner.partner) return err(400, "That partner is not on file");
+      }
+      const from = target.partnerId || null;
+      const to = partner ? partner.id : null;
+      if (from === to) return json(200, { user: { id: target.id, partnerId: from }, unchanged: true });
+      if (to) target.partnerId = to; else delete target.partnerId;
+      target.updatedAt = nowIso();
+      await store.set(`user:${target.id}`, target);
+      await logEvent({ type: "partner_attribution_set", actorId: user.id, actorRole: "admin", subjectId: target.id, market: target.market || null, data: { from, to, toCode: partner ? partner.partner.code : null, reason, via: "admin_repair" } });
+      return json(200, { user: { id: target.id, partnerId: to, partnerName: partner ? (partner.partner.name || partner.name || "") : "" } });
+    }
     if (method === "GET" && seg[1] === "events") {
       // Guarded like the rest of Hardening A (INCIDENT-2026-10-25):
       // if the event-log read fails, the tab must still render —
@@ -13404,6 +13682,52 @@ async function route(event) {
         console.error("SIGNL admin email-health read failed (degraded):", e);
         return json(200, { transport: { configured: emailEnabled() }, senders: {}, lastFailure: null, outcomes: [], degraded: true });
       }
+    }
+    // Command Center (Build -54): the aggregate foundation. All
+    // routes live inside this admin block, so a non-admin never
+    // reaches them (403 above), and no non-admin payload carries
+    // these fields (spec §6.8). Reads compute from source records
+    // via ccPrep/ccOverview/ccMarkets — never the capped log.
+    if (seg[1] === "command" && seg[2] === "overview" && method === "GET") {
+      const P = await ccPrep(query);
+      return json(200, ccOverview(P));
+    }
+    if (seg[1] === "command" && seg[2] === "markets" && method === "GET") {
+      const P = await ccPrep(query);
+      return json(200, ccMarkets(P));
+    }
+    // Subject-scoped event read (§6.7): one record's own trail for
+    // the drill-downs — events where the record is the subject or
+    // the actor, scanned past the general read's 1,000 cap.
+    if (seg[1] === "command" && seg[2] === "events" && seg.length === 4 && method === "GET") {
+      const subjectId = decodeURIComponent(seg[3]);
+      const { events, scanned, truncated } = await listEventsForSubject(subjectId, { limit: query.limit });
+      return json(200, { subjectId, events, scanned, truncated });
+    }
+    // Attribution backfill (§2.2): stamps partnerId on every
+    // creator/business record that carries a partner signup source
+    // but no stamp yet, where the code resolves to a partner on
+    // file. Idempotent; records whose code matches no partner are
+    // reported, never guessed. One summary event per run — the
+    // stamp itself is the per-record trail.
+    if (seg[1] === "command" && seg[2] === "backfill-attribution" && method === "POST") {
+      const users = await allUsers();
+      const partners = await allPartners(users);
+      const byCode = new Map(partners.map((p) => [p.partner.code, p]));
+      let stamped = 0; let alreadyStamped = 0; let unknownCode = 0;
+      for (const u of users) {
+        if (!u || (u.role !== "creator" && u.role !== "business")) continue;
+        if (u.partnerId) { alreadyStamped += 1; continue; }
+        if (typeof u.signupSource !== "string" || !u.signupSource.startsWith(PARTNER_SRC_PREFIX)) continue;
+        const partner = byCode.get(u.signupSource.slice(PARTNER_SRC_PREFIX.length));
+        if (!partner) { unknownCode += 1; continue; }
+        u.partnerId = partner.id;
+        u.updatedAt = nowIso();
+        await store.set(`user:${u.id}`, u);
+        stamped += 1;
+      }
+      await logEvent({ type: "partner_attribution_backfill", actorId: user.id, actorRole: "admin", subjectId: null, market: null, data: { stamped, alreadyStamped, unknownCode } });
+      return json(200, { backfill: { stamped, alreadyStamped, unknownCode } });
     }
     if (method === "GET" && seg[1] === "stats") {
       const users = (await allUsers()).filter((u) => u.role !== "admin");

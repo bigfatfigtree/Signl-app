@@ -392,8 +392,8 @@ try {
     appSrc.includes('"Bench"') && appSrc.includes('label: "Bench"') && appSrc.includes('tab: "Bench"'), "");
   check("client: the +1 picker, pair block, and visibility toggle ship",
     appSrc.includes("poToggleHtml") && appSrc.includes("declinePairApplicant") && appSrc.includes("laneToggleCreators") && appSrc.includes("collabVisitHtml"), "");
-  check("stamp: the build stamp is 2026.10.30-53 on server and shell",
-    buildJs.includes('BUILD_ID = "2026.10.30-53"') && indexHtml.includes("2026.10.30-53"), "stamp mismatch");
+  check("stamp: the build stamp is 2026.10.30-54 on server and shell",
+    buildJs.includes('BUILD_ID = "2026.10.30-54"') && indexHtml.includes("2026.10.30-54"), "stamp mismatch");
 
   console.log(`\nverify-build42: ${passed} passed, ${failures.length} failed`);
   if (failures.length) { console.log(`FAILED: ${failures.join(" | ")}`); process.exitCode = 1; }

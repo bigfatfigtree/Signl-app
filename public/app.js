@@ -16314,6 +16314,13 @@ async function loadApplications() {
   const el = document.getElementById("tab-body");
   try {
     const data = await api("GET", "/admin/applications");
+    // Partner choices for the attribution repair control on each
+    // row (Build -54). A failed read leaves the control with the
+    // Direct option only; the queue itself never depends on it.
+    try {
+      const pd = await api("GET", "/admin/partners");
+      adminPartnerChoices = (pd.partners || []).map((p) => ({ id: p.id, name: p.name || p.code || "", code: p.code || "" }));
+    } catch (e) { adminPartnerChoices = []; }
     // The platform-message compose box targets creators from
     // these rows; keep the records by id so "Message" knows the
     // creator's name and market without another fetch.
@@ -16357,7 +16364,7 @@ async function loadApplications() {
         <td data-label="Applied">${fmtDate(u.createdAt)}</td>
         <td>${u.status === "pending"
           ? `<button class="btn small-btn" onclick="reviewApp('${u.id}','approve')">Approve</button> <button class="btn small-btn danger" onclick="toggleRejectEditor('${u.id}')">Reject</button><div id="rej-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px"><div class="field"><label>Reason (optional, named in their rejection email)</label><select id="rej-reason-${u.id}"><option value="">No reason given</option><option>Not local enough</option><option>Audience too small for this wave</option><option>Content not a fit</option><option>Market not open yet</option><option>Other</option></select></div><button class="btn small-btn danger" onclick="confirmRejectApp('${u.id}')">Send rejection</button></div>`
-          : `<span class="badge ${u.status === "approved" ? "ok" : "bad"}">${esc(u.status)}</span>${u.tester ? ` <span class="badge warn">Tester</span>` : ""}${u.role === "creator" && u.status === "approved" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="setTester('${u.id}', ${u.tester ? "false" : "true"}, 'creator')">${u.tester ? "Move to roster" : "Move to Tester"}</button>` : ""}${u.role === "creator" && u.status === "approved" ? `<br><button class="btn small-btn" style="margin-top:6px" onclick="adminMsgComposeTo('${u.id}')">Message</button>` : ""}`}${u.role === "business" && u.status === "approved" && businessAccessState(u) !== "active" ? `<br><button class="btn small-btn" style="margin-top:6px" onclick="activateBusiness('${u.id}')">Activate business</button>` : ""}${u.role === "business" && u.status === "approved" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="setTester('${u.id}', ${u.tester ? "false" : "true"}, 'business')">${u.tester ? "Move to roster" : "Move to Tester"}</button>` : ""}${u.role === "business" && u.business ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleReviewLinks('${u.id}')">Review links</button><div id="rl-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px">${["google", "yelp", "tripadvisor", "facebook"].map((k) => `<div class="field"><label>${esc(k)}</label><input id="rl-${k}-${u.id}" type="url" value="${esc((u.business.reviewLinks || {})[k] || "")}" placeholder="https://"></div>`).join("")}<button class="btn small-btn" onclick="saveReviewLinks('${u.id}')">Save review links</button></div><br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleDiscountEditor('${u.id}')">Code discount</button><div id="disc-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px"><label style="font-weight:500"><input type="checkbox" id="disc-enabled-${u.id}" style="width:auto" ${u.business.discountEnabled ? "checked" : ""}> Code discounts on (business's opt-in)</label><div class="field"><label>Discount percent (5 to 50)</label><input id="disc-pct-${u.id}" type="number" min="5" max="50" step="1" value="${esc(String(u.business.discountPct == null ? 20 : u.business.discountPct))}"></div><button class="btn small-btn" onclick="saveDiscountSetting('${u.id}')">Save code discount</button></div>` : ""}${u.role === "creator" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="adminViewCreator('${u.id}')">View profile</button>` : ""}</td>
+          : `<span class="badge ${u.status === "approved" ? "ok" : "bad"}">${esc(u.status)}</span>${u.tester ? ` <span class="badge warn">Tester</span>` : ""}${u.role === "creator" && u.status === "approved" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="setTester('${u.id}', ${u.tester ? "false" : "true"}, 'creator')">${u.tester ? "Move to roster" : "Move to Tester"}</button>` : ""}${u.role === "creator" && u.status === "approved" ? `<br><button class="btn small-btn" style="margin-top:6px" onclick="adminMsgComposeTo('${u.id}')">Message</button>` : ""}`}${u.role === "business" && u.status === "approved" && businessAccessState(u) !== "active" ? `<br><button class="btn small-btn" style="margin-top:6px" onclick="activateBusiness('${u.id}')">Activate business</button>` : ""}${u.role === "business" && u.status === "approved" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="setTester('${u.id}', ${u.tester ? "false" : "true"}, 'business')">${u.tester ? "Move to roster" : "Move to Tester"}</button>` : ""}${u.role === "business" && u.business ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleReviewLinks('${u.id}')">Review links</button><div id="rl-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px">${["google", "yelp", "tripadvisor", "facebook"].map((k) => `<div class="field"><label>${esc(k)}</label><input id="rl-${k}-${u.id}" type="url" value="${esc((u.business.reviewLinks || {})[k] || "")}" placeholder="https://"></div>`).join("")}<button class="btn small-btn" onclick="saveReviewLinks('${u.id}')">Save review links</button></div><br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleDiscountEditor('${u.id}')">Code discount</button><div id="disc-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px"><label style="font-weight:500"><input type="checkbox" id="disc-enabled-${u.id}" style="width:auto" ${u.business.discountEnabled ? "checked" : ""}> Code discounts on (business's opt-in)</label><div class="field"><label>Discount percent (5 to 50)</label><input id="disc-pct-${u.id}" type="number" min="5" max="50" step="1" value="${esc(String(u.business.discountPct == null ? 20 : u.business.discountPct))}"></div><button class="btn small-btn" onclick="saveDiscountSetting('${u.id}')">Save code discount</button></div>` : ""}${u.role === "creator" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="adminViewCreator('${u.id}')">View profile</button>` : ""}${(u.role === "creator" || u.role === "business") ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleAttributionEditor('${u.id}')">Partner attribution</button><div id="attr-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px"><div class="small" style="margin-bottom:6px">${u.partnerId ? `Attributed to <strong>${esc(u.partnerName || "a partner")}</strong>` : (u.signupSource && u.signupSource.indexOf("partner-") === 0 ? "Came through a partner link, but is not stamped to the partner yet" : "Not attributed to a partner (direct)")}</div><div class="field"><label>Attribute to</label><select id="attr-partner-${u.id}"><option value="">Direct — no partner</option>${adminPartnerChoices.map((p) => `<option value="${p.id}" ${u.partnerId === p.id ? "selected" : ""}>${esc(p.name)} (${esc(p.code)})</option>`).join("")}</select></div><div class="field"><label>Reason (kept with the change)</label><input id="attr-reason-${u.id}" type="text" placeholder="Why is this changing?"></div><button class="btn small-btn" onclick="saveAttribution('${u.id}')">Save attribution</button></div>` : ""}</td>
       </tr>`;
     };
     const pend = (data.pending || []).filter(adminAppInFilter);
@@ -16476,6 +16483,29 @@ async function reviewApp(userId, decision) {
 // button on the applications queue. The server re-derives the
 // candidates from the record's typed city and refuses anything
 // else, and the typed city stays as the record's home city.
+// Partner attribution repair (Build -54): the Admin action on a
+// queue row that sets or clears which partner a record is
+// attributed to. The server requires a reason and event-logs the
+// change with the actor; nothing about it is silent, and the
+// record's signup source string is never rewritten.
+let adminPartnerChoices = [];
+function toggleAttributionEditor(userId) {
+  const d = document.getElementById("attr-edit-" + userId);
+  if (d) d.style.display = d.style.display === "none" ? "block" : "none";
+  return false;
+}
+async function saveAttribution(userId) {
+  const sel = document.getElementById("attr-partner-" + userId);
+  const reasonEl = document.getElementById("attr-reason-" + userId);
+  const reason = reasonEl ? reasonEl.value.trim() : "";
+  if (!reason) { alert("Add the reason — it is kept with the change."); return false; }
+  try {
+    await api("POST", "/admin/users/attribute-partner", { userId, partnerId: sel && sel.value ? sel.value : null, reason });
+    loadApplications();
+  } catch (err) { alert(err.message); }
+  return false;
+}
+
 async function fileUnderMarket(userId, market) {
   try {
     await api("POST", "/admin/users/file-market", { userId, market });
@@ -16730,12 +16760,156 @@ function adminSignupBoardHtml(b) {
   </div>`;
 }
 
+// ---------- Admin Command Center (Build -54) ----------
+// Stats becomes the Command Center (spec
+// signl-admin-command-center-spec-2026-10-30.md): a shell with
+// the subtab bar (Overview · Money · Partners · Businesses ·
+// Creators · Markets · Owed · Close), the global filters and the
+// honesty-class legend, over views fed by GET /admin/command/*.
+// This phase ships the shell, Overview and Markets; the money
+// views render their designed forming states until their phases
+// land (-55 Money, -56 partner deals, -57 Owed/Close). The -53
+// sign-up board stays the top of Overview, consuming the same
+// /admin/stats aggregate, and everything Stats already carried
+// (market table, layers, Your Line, register connections) stays
+// on Overview below it.
+let ccTab = "overview";
+let ccFilters = { period: "all", market: "", testers: false };
+let ccAttentionCache = [];
+
+function ccQuery() {
+  const q = new URLSearchParams();
+  q.set("period", ccFilters.period);
+  if (ccFilters.market) q.set("market", ccFilters.market);
+  if (ccFilters.testers) q.set("testers", "1");
+  return q.toString();
+}
+function ccMoneyFmt(n) {
+  return "$" + (Number(n) || 0).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+}
+function ccSetTab(tab) { ccTab = tab; loadStats(); return false; }
+function ccSetPeriod(v) { ccFilters.period = v; loadStats(); return false; }
+function ccSetMarket(v) { ccFilters.market = v; loadStats(); return false; }
+function ccSetTesters(on) { ccFilters.testers = !!on; loadStats(); return false; }
+
 async function loadStats() {
   const el = document.getElementById("tab-body");
   try {
-    const s = await api("GET", "/admin/stats");
+    const marketOpts = [`<option value="">All markets</option>`]
+      .concat(((state.boot && state.boot.markets) || []).map((m) => `<option value="${esc(m.name)}" ${ccFilters.market === m.name ? "selected" : ""}>${esc(m.label || m.name)}</option>`))
+      .concat([`<option value="${esc(unlistedLabel())}" ${ccFilters.market === unlistedLabel() ? "selected" : ""}>${esc(unlistedLabel())}</option>`])
+      .join("");
     el.innerHTML = `
-      ${adminSignupBoardHtml(s.signupBoard)}
+      <h2 style="margin:0 0 2px">Command Center</h2>
+      <p class="muted" style="margin:0 0 12px">Every number in SIGNL, kept honest. One glance, kept current.</p>
+      <div class="panel cc-filters">
+        <div class="cc-filter-row">
+          <label class="cc-flabel">Period
+            <select onchange="ccSetPeriod(this.value)">
+              <option value="all" ${ccFilters.period === "all" ? "selected" : ""}>All time</option>
+              <option value="this_month" ${ccFilters.period === "this_month" ? "selected" : ""}>This month</option>
+              <option value="last_month" ${ccFilters.period === "last_month" ? "selected" : ""}>Last month</option>
+            </select>
+          </label>
+          <label class="cc-flabel">Market
+            <select onchange="ccSetMarket(this.value)">${marketOpts}</select>
+          </label>
+          <label class="cc-flabel">Partner
+            <select disabled title="Partner filtering arrives with the Partners view"><option>All partners</option></select>
+          </label>
+          <label class="cc-flabel cc-check"><input type="checkbox" ${ccFilters.testers ? "checked" : ""} onchange="ccSetTesters(this.checked)"> Include testers &amp; demo</label>
+        </div>
+        <p class="small muted" style="margin:8px 0 0">${ccFilters.testers ? "Testers and demo records are INCLUDED in these counts." : "Tester accounts and the demo partner are excluded from every count."} Totals are stocks (true today); activity counts follow the period.</p>
+        <div class="cc-legend">
+          <span class="cc-chip counted">Counted</span> register dollars SIGNL counted at a till
+          <span class="cc-chip recorded">Recorded</span> written on a booking, license or plan record
+          <span class="cc-chip charged">Charged</span> a real card charge
+          <span class="cc-chip modeled">Modeled</span> an estimate, always labeled
+        </div>
+      </div>
+      ${wsTabs([
+        { label: "Overview", on: ccTab === "overview", onclick: "return ccSetTab('overview')" },
+        { label: "Money", on: ccTab === "money", onclick: "return ccSetTab('money')" },
+        { label: "Partners", on: ccTab === "partners", onclick: "return ccSetTab('partners')" },
+        { label: "Businesses", on: ccTab === "businesses", onclick: "return ccSetTab('businesses')" },
+        { label: "Creators", on: ccTab === "creators", onclick: "return ccSetTab('creators')" },
+        { label: "Markets", on: ccTab === "markets", onclick: "return ccSetTab('markets')" },
+        { label: "Owed", on: ccTab === "owed", onclick: "return ccSetTab('owed')" },
+        { label: "Close", on: ccTab === "close", onclick: "return ccSetTab('close')" },
+      ])}
+      <div id="cc-body"><p class="muted">Loading…</p></div>`;
+    await ccShowTab();
+  } catch (err) {
+    el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+  }
+}
+
+async function ccShowTab() {
+  const host = document.getElementById("cc-body");
+  if (!host) return;
+  try {
+    if (ccTab === "overview") {
+      const [s, ov] = await Promise.all([api("GET", "/admin/stats"), api("GET", "/admin/command/overview?" + ccQuery())]);
+      host.innerHTML = ccOverviewHtml(s, ov);
+      // Register connections (Square, Build -44): the environment
+      // is labeled on purpose; a sandbox connection is a test
+      // register and must never be mistaken for a live one.
+      try {
+        const sqData = await api("GET", "/admin/square");
+        const sq = sqData.square || {};
+        host.innerHTML += `
+      <div class="panel" id="cc-registers" style="margin-top:14px"><h3 style="margin:0 0 8px">Register connections (Square)</h3>
+      <p class="small">Server ${sq.configured ? "carries the Square app credentials" : "does not carry the Square app credentials, so connect renders the concierge state"}. Environment: <strong>${esc(sq.env || "")}</strong>${sq.env === "sandbox" ? " — SANDBOX: connections here are test registers, not live ones." : ""}</p>
+      ${sq.connections && sq.connections.length ? `<div class="table-wrap"><table>
+        <tr><th>Business</th><th>Environment</th><th>Status</th><th>Connected</th><th>Last read-back</th><th>Locations</th></tr>
+        ${sq.connections.map((c) => `<tr><td>${esc(c.businessName || c.businessId)}</td><td data-label="Environment">${esc(c.env || "")}</td><td data-label="Status">${esc(c.status || "")}</td><td data-label="Connected">${c.connectedAt ? esc(fmtDay(c.connectedAt)) : ""}</td><td data-label="Last read-back">${c.lastSyncAt ? esc(fmtDay(c.lastSyncAt)) : "never"}</td><td data-label="Locations">${(c.locations || []).map(esc).join(", ")}</td></tr>`).join("")}
+      </table></div>` : `<p class="small muted">No business has connected a register yet.</p>`}
+      </div>`;
+      } catch (e) { /* Stats stand without the register block */ }
+      return;
+    }
+    if (ccTab === "markets") {
+      const d = await api("GET", "/admin/command/markets?" + ccQuery());
+      host.innerHTML = ccMarketsHtml(d);
+      return;
+    }
+    host.innerHTML = ccFormingHtml(ccTab);
+  } catch (err) {
+    host.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+  }
+}
+
+function ccOverviewHtml(s, ov) {
+  const t = ov.tiles || {};
+  const fd = t.finishedDeals || { compVisits: 0, paidBookings: 0, licenses: 0, total: 0 };
+  ccAttentionCache = ov.attention || [];
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  const periodName = ccFilters.period === "all" ? "all time" : (ov.filters && ov.filters.periodLabel ? ov.filters.periodLabel.toLowerCase() : "this period");
+  const formingTile = (label, note) => `<div class="cc-tile forming"><div class="cc-tlabel">${label}</div><div class="cc-tform">Forming</div><div class="cc-tsub">${note}</div></div>`;
+  const tiles = `
+    <div class="cc-tiles">
+      <div class="cc-tile cc-hero"><div class="cc-tlabel">Users</div><div class="cc-tnum">${t.usersTotal || 0}</div><div class="cc-tsub">${plural(t.creators || 0, "creator", "creators")} &middot; ${plural(t.businesses || 0, "business", "businesses")} &middot; ${plural(t.partners || 0, "partner", "partners")}</div></div>
+      <div class="cc-tile"><div class="cc-tlabel">Businesses</div><div class="cc-tnum">${t.businesses || 0}</div><div class="cc-tsub">Every business signed up</div></div>
+      <div class="cc-tile"><div class="cc-tlabel">Comps booked now</div><div class="cc-tnum">${t.compsBookedNow || 0}</div><div class="cc-tsub">Visits on the books right now</div></div>
+      <div class="cc-tile"><div class="cc-tlabel">Comps completed</div><div class="cc-tnum">${t.compsCompleted || 0}</div><div class="cc-tsub">${plural(t.compsCounted || 0, "visit", "visits")} counted at a register &middot; ${periodName}</div></div>
+      <div class="cc-tile"><div class="cc-tlabel">Finished deals</div><div class="cc-tnum">${fd.total}</div><div class="cc-tsub">${plural(fd.compVisits, "comp visit", "comp visits")} &middot; ${plural(fd.paidBookings, "paid booking", "paid bookings")} &middot; ${plural(fd.licenses, "license", "licenses")} &middot; ${periodName}</div></div>
+      <div class="cc-tile"><div class="cc-tlabel">Register dollars <span class="cc-chip counted">Counted</span></div><div class="cc-tnum">${ccMoneyFmt(t.countedRegister || 0)}</div><div class="cc-tsub">Counted at business registers &middot; ${periodName}</div></div>
+      ${formingTile("Dollars flowing", "The all-money view lands with charge capture, on the Money tab.")}
+      ${formingTile("Money owed", "The owed ledger lands with the Owed tab.")}
+      <div class="cc-tile"><div class="cc-tlabel">Alerts</div><div class="cc-tnum">${t.alerts || 0}</div><div class="cc-tsub">${(t.alerts || 0) ? "Things that need a look, below" : "All clear"}</div></div>
+    </div>`;
+  const attention = ccAttentionCache.length ? `
+    <div class="panel cc-attention">
+      <h3 style="margin:0 0 6px">Needs attention</h3>
+      ${ccAttentionCache.map((a, i) => `<div class="cc-att-row"><span>${esc(a.text)}</span><button type="button" class="btn small-btn" onclick="return ccAttentionGo(${i})">${esc(ccAttentionLabel(a))}</button></div>`).join("")}
+    </div>` : "";
+  const waiting = (t.compsCompleted || 0) === 0 && fd.total === 0 ? `
+    <div class="panel cc-waiting"><strong>Waiting for launch.</strong> No visits have completed yet, so comps, finished deals and register dollars are zero. When the first market launches, they land here.</div>` : "";
+  return `
+    ${tiles}
+    ${attention}
+    ${waiting}
+    ${adminSignupBoardHtml(s.signupBoard)}
       <div class="panel"><div class="stat-row">
         <div class="stat"><div class="num">${s.users.creators}</div><div class="lbl">Creators</div></div>
         <div class="stat"><div class="num">${s.users.businesses}</div><div class="lbl">Businesses</div></div>
@@ -16765,30 +16939,130 @@ async function loadStats() {
         ${s.layers.markets.map((r) => `<tr><td>${esc(r.market)}</td><td data-label="Creators">${r.creators}</td><td data-label="Approved">${r.approved}</td><td data-label="Finished profiles">${r.complete}</td><td data-label="Spanish content">${r.spanishFlagged}</td><td data-label="With Spanish %">${r.withSpanishPct}</td><td data-label="Claims in window">${r.claimsInPeriod}</td><td data-label="Spanish claims">${r.spanishClaimsInPeriod}</td></tr>`).join("")}
       </table></div>
       <p class="small" style="margin-top:12px"><strong>Campus Leads:</strong> ${s.layers.campusLeads.length ? s.layers.campusLeads.map((e) => `${esc(e.university)}: ${e.leads} (${e.handles.map((h) => "@" + esc(h)).join(", ")})`).join(" &middot; ") : "none yet. A Campus Lead is a current student with 5 approved referrals from their own school."}</p>
-      <p class="small"><strong>Business language:</strong> ${s.layers.businessLanguage.es} ${s.layers.businessLanguage.es === 1 ? "business prefers" : "businesses prefer"} Spanish, ${s.layers.businessLanguage.en} English.</p>` : ""}`;
-    el.innerHTML += `
+      <p class="small"><strong>Business language:</strong> ${s.layers.businessLanguage.es} ${s.layers.businessLanguage.es === 1 ? "business prefers" : "businesses prefer"} Spanish, ${s.layers.businessLanguage.en} English.</p>` : ""}
       <div class="panel" style="margin-top:14px"><h3 style="margin:0 0 8px">Your Line lookup</h3>
       <p class="small">Who brought whom under one creator, and the points by generation. Points land only when an invite finishes signing up. ${POINTS_WHY_SHORT}</p>
       <div class="row" style="gap:8px;align-items:center"><input id="line-pick" type="text" placeholder="Creator handle" style="max-width:240px"><button class="btn" onclick="adminLineLookup()">View line</button></div>
       <div id="line-out" style="margin-top:10px"></div></div>`;
-    // Register connections (Square, Build -44): the environment
-    // is labeled on purpose; a sandbox connection is a test
-    // register and must never be mistaken for a live one.
-    try {
-      const sqData = await api("GET", "/admin/square");
-      const sq = sqData.square || {};
-      el.innerHTML += `
-      <div class="panel" style="margin-top:14px"><h3 style="margin:0 0 8px">Register connections (Square)</h3>
-      <p class="small">Server ${sq.configured ? "carries the Square app credentials" : "does not carry the Square app credentials, so connect renders the concierge state"}. Environment: <strong>${esc(sq.env || "")}</strong>${sq.env === "sandbox" ? " — SANDBOX: connections here are test registers, not live ones." : ""}</p>
-      ${sq.connections && sq.connections.length ? `<div class="table-wrap"><table>
-        <tr><th>Business</th><th>Environment</th><th>Status</th><th>Connected</th><th>Last read-back</th><th>Locations</th></tr>
-        ${sq.connections.map((c) => `<tr><td>${esc(c.businessName || c.businessId)}</td><td data-label="Environment">${esc(c.env || "")}</td><td data-label="Status">${esc(c.status || "")}</td><td data-label="Connected">${c.connectedAt ? esc(fmtDay(c.connectedAt)) : ""}</td><td data-label="Last read-back">${c.lastSyncAt ? esc(fmtDay(c.lastSyncAt)) : "never"}</td><td data-label="Locations">${(c.locations || []).map(esc).join(", ")}</td></tr>`).join("")}
-      </table></div>` : `<p class="small muted">No business has connected a register yet.</p>`}
-      </div>`;
-    } catch (e) { /* Stats stand without the register block */ }
-  } catch (err) {
-    el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+}
+
+function ccAttentionLabel(a) {
+  if (a.kind === "awaiting_review" || a.kind === "unknown_partner_code") return "Review applications";
+  if (a.kind === "unstamped_attribution") return "Stamp them now";
+  if (a.kind === "unlisted_records") return "See the Markets view";
+  if (a.kind === "unsigned_partners") return "Open Partners";
+  if (a.kind === "unconnected_registers") return "See register connections";
+  return "Open";
+}
+
+async function ccAttentionGo(i) {
+  const a = ccAttentionCache[i];
+  if (!a) return false;
+  const target = a.target || {};
+  if (a.kind === "unstamped_attribution") return ccRunBackfill();
+  if (target.view === "applications") return go("dashboard", "Applications");
+  if (target.view === "partners") return go("dashboard", "Partners");
+  if (target.view === "command" && target.subtab) {
+    ccTab = target.subtab;
+    await loadStats();
+    if (target.anchor) {
+      const anchor = document.getElementById("cc-" + target.anchor);
+      if (anchor) anchor.scrollIntoView({ block: "start" });
+    }
+    return false;
   }
+  return false;
+}
+
+async function ccRunBackfill() {
+  try {
+    const r = await api("POST", "/admin/command/backfill-attribution", {});
+    const b = r.backfill || {};
+    alert(`Attribution backfill: ${b.stamped || 0} ${b.stamped === 1 ? "record" : "records"} stamped${b.unknownCode ? `, ${b.unknownCode} with a code that matches no partner (left for manual repair in Applications)` : ""}.`);
+    await loadStats();
+  } catch (err) {
+    alert(err.message);
+  }
+  return false;
+}
+
+function ccMarketsHtml(d) {
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  const periodName = ccFilters.period === "all" ? "all time" : ((d.filters && d.filters.periodLabel) || "this period").toLowerCase();
+  const hasSignal = (m) => m.signups.creators.signedUp + m.signups.businesses.signedUp + m.compsCompleted + (m.finishedDeals ? m.finishedDeals.total : 0) > 0 || m.live || (m.partners || []).length > 0;
+  const active = (d.markets || []).filter(hasSignal).sort((a, b) => (b.signups.creators.signedUp + b.signups.businesses.signedUp) - (a.signups.creators.signedUp + a.signups.businesses.signedUp));
+  const empty = (d.markets || []).filter((m) => !hasSignal(m));
+  const marketBlock = (m) => {
+    const c = m.signups.creators; const b = m.signups.businesses; const fd = m.finishedDeals || { total: 0 };
+    const gatePct = Math.max(0, Math.min(100, (m.launchGate.finished / m.launchGate.high) * 100)).toFixed(1);
+    return `
+    <div class="panel cc-market">
+      <div class="cc-mhead"><strong>${esc(m.label || m.market)}</strong>
+        ${m.live ? `<span class="cc-chip live">Live</span>` : `<span class="cc-chip founding">Founding — not launched</span>`}
+        ${(m.partners || []).length ? `<span class="muted small">with ${m.partners.map((p) => esc(p.name)).join(", ")}</span>` : `<span class="muted small">No partner attached</span>`}
+      </div>
+      <p class="small" style="margin:6px 0 2px">${plural(c.signedUp, "creator", "creators")} signed up &middot; ${c.awaitingReview} awaiting review &middot; ${c.approved} approved &middot; ${c.finished} finished setting up</p>
+      <p class="small" style="margin:0 0 8px">${plural(b.signedUp, "business", "businesses")} signed up &middot; ${b.awaitingReview} awaiting review &middot; ${b.approved} approved &middot; ${b.active} active</p>
+      <div class="cc-gate"><span class="cc-gatebar"><i style="width:${gatePct}%"></i></span><span class="small">${m.launchGate.finished} of ${m.launchGate.low}–${m.launchGate.high} finished creators — the launch gate${m.launchGate.met ? " — met" : ""}</span></div>
+      <p class="small" style="margin:8px 0 0">${periodName}: ${plural(m.compsCompleted, "comp", "comps")} completed (${m.compsCounted} counted) &middot; ${plural(fd.total, "finished deal", "finished deals")} &middot; ${ccMoneyFmt(m.countedRegister || 0)} counted at registers <span class="cc-chip counted">Counted</span> &middot; SIGNL take: forming with partner deals</p>
+      ${(m.unlistedClaiming || []).length ? `<p class="small" style="margin:4px 0 0">Typed cities that belong here, waiting to be filed: ${m.unlistedClaiming.map((x) => `${esc(x.city)} (${x.total})`).join(", ")}</p>` : ""}
+    </div>`;
+  };
+  const unlistedRow = (r) => `
+    <div class="cc-unlisted-row">
+      <span><strong>${esc(r.place)}</strong><br><span class="small muted">${r.resolveStatus === "unique" ? `${esc(r.city)} sits in the ${esc(r.resolvesTo)} area — these records file under ${esc(r.resolvesTo)}.` : r.resolveStatus === "ambiguous" ? `${esc(r.city)} could be ${(r.candidateMarkets || []).map(esc).join(" or ")} — each person picks.` : `No market covers ${esc(r.city)} yet — these sign-ups count toward opening one.`}</span></span>
+      <span class="cc-unlisted-n">${plural(r.total, "sign-up", "sign-ups")}<br><span class="small muted">${r.creators} creators &middot; ${r.businesses} businesses${r.awaitingReview ? ` &middot; ${r.awaitingReview} awaiting review` : ""}</span></span>
+    </div>`;
+  return `
+    <p class="muted small" style="margin:2px 0 10px">Every market: who has signed up, how close it is to launching, and what has actually happened there. The launch gate — 25 to 30 finished creators — is Admin-only and never shown to creators or businesses.</p>
+    ${active.length ? active.map(marketBlock).join("") : `<div class="panel cc-waiting"><strong>Waiting for launch.</strong> No market has sign-ups yet. When the first creator or business signs up, their market appears here.</div>`}
+    ${(d.unlisted || []).length ? `
+    <div class="panel">
+      <h3 style="margin:0 0 2px">Not in a market yet</h3>
+      <p class="muted small" style="margin:0 0 6px">Sign-ups from cities outside every market, counted by the city they typed.</p>
+      ${(d.unlisted || []).map(unlistedRow).join("")}
+    </div>` : ""}
+    ${empty.length ? `<p class="muted small">No sign-ups yet in: ${empty.map((m) => esc(m.label || m.market)).join(" &middot; ")}</p>` : ""}`;
+}
+
+// The forming states (spec §7): the structure is real, the copy
+// says exactly what exists today and what lands it — never a
+// zero dressed up as a total.
+function ccFormingHtml(tab) {
+  const head = (title, sub) => `<div class="panel"><h3 style="margin:0 0 4px">${title}</h3><p class="muted small" style="margin:0 0 10px">${sub}</p>`;
+  if (tab === "money") return `${head("Money", "Every dollar, by how sure we are it is real. The classes are never added together.")}
+    <div class="cc-form-rows">
+      <p><span class="cc-chip counted">Counted</span> <strong>Register dollars</strong> — live today, on the Overview and Markets views.</p>
+      <p><span class="cc-chip recorded">Recorded</span> <strong>Paid bookings &amp; licenses</strong> — the splits are written on every booking and license record today; their money view lands with charge capture.</p>
+      <p><span class="cc-chip charged">Charged</span> <strong>Subscriptions</strong> — forming. Plan selections sit on business records now; the charged view arrives when Stripe charge capture lands, so the first real charge is never lost.</p>
+      <p><span class="cc-chip modeled">Modeled</span> <strong>Halo &amp; run-rates</strong> — estimates live on the business Receipt today, labeled as estimates. They are never summed with counted money.</p>
+    </div></div>`;
+  if (tab === "partners") return `${head("Partners", "What each partner's deal is, and what it has earned.")}
+    <p class="small">Partners and their markets are managed on the <button type="button" class="btn small-btn" onclick="return go('dashboard','Partners')">Partners tab</button> today, and sign-ups through partner links are stamped to the partner on the record.</p>
+    <p class="small">Forming: deal terms (share, floors, guarantees), accruals and partner statements land with the deal records — the next Command Center phase. Nothing here is estimated in the meantime.</p></div>`;
+  if (tab === "businesses") return `${head("Businesses", "Every business, its agreement, and what it owes and is owed.")}
+    <p class="small">Each business's plan, state and subscription status are on its record today — see the queue in Applications and the board on Overview.</p>
+    <p class="small">Forming: the agreements view (plan, founding terms, first-month credit, rollover balance) lands with subscription capture.</p></div>`;
+  if (tab === "creators") return `${head("Creators", "Every creator, what they have finished, and what they have earned.")}
+    <p class="small">The roster lives in Applications, and finished-profile counts by market are on the Markets view.</p>
+    <p class="small">Forming: per-creator lifetime value and payout history land with the money views.</p></div>`;
+  if (tab === "owed") return `${head("Owed", "Money SIGNL owes, and money owed to SIGNL — never a surprise at close.")}
+    <div class="cc-form-rows">
+      <p><strong>Creators</strong> — forming. Paid-booking funds release on the existing 48-hour hold after proof today; the owed ledger lands with charge capture.</p>
+      <p><strong>Partners</strong> — forming. Accruals land with the deal records.</p>
+      <p><strong>Businesses</strong> — forming. Credits, refunds and rollover balances land with subscription capture.</p>
+    </div></div>`;
+  if (tab === "close") return `${head("Close &amp; export", "Month-end, done once and done right.")}
+    <div class="cc-form-rows">
+      <p>☐ Counted register totals locked for the month</p>
+      <p>☐ Stripe reconciled to the charge</p>
+      <p>☐ Square reconciled to the register event</p>
+      <p>☐ Partner accruals match their statements</p>
+      <p>☐ Rollover liability carried into next month</p>
+      <p>☐ Export pack generated</p>
+    </div>
+    <p class="small">Forming: close and reconciliation land with charge capture and the owed ledger. Nothing here can be run yet — a close with nothing to reconcile would be theater.</p></div>`;
+  return `${head("Forming", "")}<p class="small">This view is on its way.</p></div>`;
 }
 
 // Your Line lookup (Build -36, Admin Stats): who brought whom
