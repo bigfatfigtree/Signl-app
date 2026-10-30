@@ -31,6 +31,12 @@
 //   platconn:{userId}:{platform} Connect Accounts connection: OAuth tokens (server-side ONLY,
 //                                never on a client payload) + last synced audience count
 //   oauthstate:{token}           single-use OAuth state for a platform connect flow (10 min TTL)
+//   sqconn:{businessId}          Square Connect register connection (Build -44): OAuth tokens
+//                                ENCRYPTED at rest (server-side ONLY, never on a client payload),
+//                                merchant + locations, code->discount catalog map, sync state
+//   sqloy:{businessId}:{hmac}:{firstEventId}  Square loyalty came-back match key (Build -44):
+//                                an HMAC of the loyalty account id (never the id itself, never
+//                                on any payload) -> the counted first visit it may match
 
 const fs = require("fs");
 const path = require("path");

@@ -7601,6 +7601,17 @@ async function loadFoundingDashboard() {
 function receiptFoundingHtml() {
   return `<div id="biz-receipt"></div>`;
 }
+// The one-shot notice the Square OAuth return (?sq=) leaves
+// behind, rendered once at the top of the receipt (Build -44).
+function sqNoticeHtml() {
+  const v = state.sqNotice;
+  if (!v) return "";
+  state.sqNotice = null;
+  if (v === "connected") return `<div class="notice"><strong>Your register is connected.</strong> Code visits and come-backs now count themselves. Your proof controls below hold the connection, its locations, and the disconnect.</div>`;
+  if (v === "error") return `<div class="notice"><strong>Square connect did not finish.</strong> Nothing changed, and your codes still count at the till. You can try again from your proof controls below.</div>`;
+  if (v === "unavailable") return `<div class="notice blue"><strong>The register plug-in opens on your setup call.</strong> We plug into your POS with you, one tap on your end. Until then your codes count on the register you already have.</div>`;
+  return "";
+}
 async function loadReceipt() {
   const host = document.getElementById("biz-receipt");
   if (!host) return;
@@ -7690,7 +7701,76 @@ function proofControlsHtml(r) {
     <p class="small muted" style="margin:4px 0 0">The discount stamps onto new bookings from here. Its cost counts in your score only when a customer actually uses it, figured on the full check.</p>
     <p class="small" style="margin-top:10px"><label class="ckrow"><input type="checkbox" class="ckbox" id="rc-pass-on" ${bz.comeBackPassEnabled === false ? "" : "checked"}><span>Hand a Came-Back Pass to each counted first customer, good for a return within 30 days.</span></label></p>
     <p class="small" style="margin-top:6px"><label class="ckrow"><input type="checkbox" class="ckbox" id="rc-share-on" ${bz.proofSharing === false ? "" : "checked"}><span>Let my counted results appear on creators' proof cards, as my category and city, or my name if I allow it above.</span></label></p>
-    <button class="btn small-btn ghost" type="button" onclick="receiptSaveControls()">Save proof controls</button> <span class="small muted" id="rc-ctl-note"></span>`;
+    <button class="btn small-btn ghost" type="button" onclick="receiptSaveControls()">Save proof controls</button> <span class="small muted" id="rc-ctl-note"></span>
+    ${squareControlsHtml(r)}`;
+}
+// Your register (Build -44, Square Connect): the connect
+// control from the POS blueprint, living in Proof Controls
+// where the owner already keeps every other counting knob.
+// The states are the server's (r.register, never a guess):
+// not switched on yet (the approved concierge words), ready
+// to connect, connected (with locations and the last
+// read-back), or paused (the plain sentence, never an error
+// code). Sandbox connections say sandbox.
+function squareControlsHtml(r) {
+  const reg = r.register || null;
+  if (!reg) return "";
+  const head = `<h4 style="margin:16px 0 4px">Your register</h4>`;
+  if (!reg.configured) {
+    return `${head}
+    <p class="small" style="margin:0">On our setup call, we plug into your POS with you: it takes one tap on your end, and we stay on the line until your panel says connected. If your system isn't one we connect to yet, nothing waits on that: your codes start counting on the register you already have, the day your first creator posts.</p>`;
+  }
+  const sandboxTag = reg.env === "sandbox" ? ` <span class="badge">Square sandbox: a test register, not a live one</span>` : "";
+  if (reg.state === "paused") {
+    return `${head}
+    <p class="small" style="margin:0 0 8px"><strong>Register paused.</strong> Square stopped sharing checks on ${esc(fmtDate(reg.pausedAt))}. Your codes still count at the till. Tap to reconnect.${sandboxTag}</p>
+    <a class="btn small-btn" href="/api/me/square/start">Reconnect Square</a>
+    <button class="btn small-btn ghost" type="button" onclick="squareDisconnect()">Disconnect register</button> <span class="small muted" id="rc-sq-note"></span>`;
+  }
+  if (!reg.connected) {
+    return `${head}
+    <p class="small" style="margin:0 0 6px">If your register is Square, tap once and sign in. After that, SIGNL counts code visits and come-backs from the register itself: nobody types anything. Not on Square? Skip it. The codes count your visits either way; your team just taps the amount at the till.</p>
+    <p class="small muted" style="margin:0 0 8px">We read only the checks your codes touch: the orders they were rung on, whether a counted customer came back, and refunds, so a refunded check comes out of the count. Your other sales are yours.${sandboxTag}</p>
+    <a class="btn small-btn" href="/api/me/square/start">Connect Square</a>`;
+  }
+  const locs = (reg.locations || []).map((l) => `<label class="ckrow" style="display:block;margin-top:4px"><input type="checkbox" class="ckbox sq-loc" value="${esc(l.id)}" ${l.selected ? "checked" : ""}><span>${esc(l.name)}</span></label>`).join("");
+  const sum = reg.lastSyncSummary || {};
+  const counted = (sum.firsts || 0) + (sum.audience || 0) + (sum.returns || 0);
+  return `${head}
+    <p class="small" style="margin:0 0 6px"><strong>Register connected · ${esc(reg.businessName || "Square")} · counting from ${esc(fmtDate(reg.connectedAt))}</strong>${sandboxTag}</p>
+    <p class="small muted" style="margin:0 0 6px">${reg.codesProvisioned || 0} of your codes sit on the register as discounts, named exactly the code, so staff pick the word the customer says.${reg.lastSyncAt ? ` Last read from your register ${esc(fmtDate(reg.lastSyncAt))}${counted ? `, ${counted} counted event${counted === 1 ? "" : "s"} on that read` : ""}.` : ""} Counting reads only the locations you pick:</p>
+    ${locs}
+    <div style="margin-top:8px">
+      <button class="btn small-btn ghost" type="button" onclick="squareSaveLocations()">Save locations</button>
+      <button class="btn small-btn ghost" type="button" onclick="squareSyncNow()">Read the register now</button>
+      <button class="btn small-btn ghost" type="button" onclick="squareDisconnect()">Disconnect register</button> <span class="small muted" id="rc-sq-note"></span>
+    </div>
+    <p class="small muted" style="margin:6px 0 0">Disconnecting stops the reads and deletes the connection on our side at once. Everything already counted stays counted.</p>`;
+}
+async function squareSaveLocations() {
+  const note = document.getElementById("rc-sq-note");
+  const ids = [...document.querySelectorAll(".sq-loc")].filter((el) => el.checked).map((el) => el.value);
+  try {
+    await api("POST", "/me/square/locations", { locationIds: ids });
+    if (note) note.textContent = "Saved. Counting reads the locations you picked, from here on.";
+    loadReceipt();
+  } catch (e) { if (note) note.textContent = e.message; }
+}
+async function squareSyncNow() {
+  const note = document.getElementById("rc-sq-note");
+  if (note) note.textContent = "Reading your register...";
+  try {
+    const data = await api("POST", "/me/square/sync", {});
+    if (note) note.textContent = data.ok ? "Read. Anything new is counted." : "Your register paused: reconnect above and the count carries on at the till meanwhile.";
+    loadReceipt();
+  } catch (e) { if (note) note.textContent = e.message; }
+}
+async function squareDisconnect() {
+  const note = document.getElementById("rc-sq-note");
+  try {
+    await api("POST", "/me/square/disconnect", {});
+    loadReceipt();
+  } catch (e) { if (note) note.textContent = e.message; }
 }
 async function receiptSaveControls() {
   const note = document.getElementById("rc-ctl-note");
@@ -7831,20 +7911,36 @@ function roasWeekChart(weeks) {
 // How SIGNL gets credit (Build -43): the counting chain in
 // three plain steps, plus the honest status of each way of
 // counting for this business. The register plug-in is
-// described in the approved concierge words only: there is no
-// live POS integration, and this panel never claims one.
+// described in the approved concierge words until this
+// business's own register is actually connected (Build -44):
+// the panel then reports the real connection state from the
+// server (r.register), never a claim ahead of the fact.
 function creditPanelHtml(r) {
+  const reg = r.register || null;
+  const regConnected = !!(reg && reg.state === "connected");
+  const regPaused = !!(reg && reg.state === "paused");
+  const step3 = regConnected
+    ? `<strong>Your register reports the check itself, and the visit counts in your score, dollar by dollar.</strong> First visits and came-backs alike, each one time-stamped by the register.`
+    : `<strong>Your team logs the check total, and the visit counts in your score, dollar by dollar.</strong> First visits and came-backs alike, each one time-stamped.`;
+  const tallyLine = regConnected
+    ? `<p class="small" style="margin:0 0 6px"><strong>Your register does the tally now.</strong> Checks rung with a code count themselves. The close-out tally stays as the fallback for anything the register never saw, and a check counted both ways counts once: the register's copy wins. <button type="button" class="btn small-btn ghost" onclick="return go('dashboard','Visits &amp; Posts')">Open Visits &amp; Posts</button></p>`
+    : `<p class="small" style="margin:0 0 6px"><strong>At close-out, the tally takes about 30 seconds.</strong> Your team reports the code uses and check totals on the visit card, and the numbers land here. <button type="button" class="btn small-btn ghost" onclick="return go('dashboard','Visits &amp; Posts')">Open Visits &amp; Posts</button></p>`;
+  const plugLine = regConnected
+    ? `<p class="small" style="margin:0"><strong>Your register is connected</strong>${reg.businessName ? ` (${esc(reg.businessName)})` : ""}, counting from ${esc(fmtDate(reg.connectedAt))}. Code visits and came-backs count themselves.${reg.lastSyncAt ? ` Last read from your register ${esc(fmtDate(reg.lastSyncAt))}.` : ""} Manage it in your proof controls below.</p>`
+    : regPaused
+      ? `<p class="small" style="margin:0"><strong>Register paused.</strong> Your register stopped sharing checks on ${esc(fmtDate(reg.pausedAt))}. Your codes still count at the till. Reconnect from your proof controls below.</p>`
+      : `<p class="small" style="margin:0"><strong>Register plug-in:</strong> we plug into your POS with you on the setup call, one tap on your end, we stay on the line until your panel says connected; if your system isn't one we connect to yet, your codes start counting on the register you already have.</p>`;
   return `<div style="margin-top:16px;border-top:1px solid var(--hairline,#DFE7DF);padding-top:12px">
     <h4 style="margin:0 0 4px">How SIGNL gets credit</h4>
     <p class="small muted" style="margin:0">Your score only counts what your register can prove. Here is the whole chain.</p>
     <div class="credit-step"><span class="credit-n">1</span><p class="small" style="margin:0"><strong>Every creator post carries that creator's own code.</strong> Each booking gives its creator a code of their own, and it rides in their post.</p></div>
     <div class="credit-step"><span class="credit-n">2</span><p class="small" style="margin:0"><strong>The customer shows the code at the register when they pay.</strong> No app for the customer, nothing new at the counter but the code.</p></div>
-    <div class="credit-step"><span class="credit-n">3</span><p class="small" style="margin:0"><strong>Your team logs the check total, and the visit counts in your score, dollar by dollar.</strong> First visits and came-backs alike, each one time-stamped.</p></div>
+    <div class="credit-step"><span class="credit-n">3</span><p class="small" style="margin:0">${step3}</p></div>
     <div class="panel" style="margin-top:12px">
       <h4 style="margin:0 0 6px">How counting works for you</h4>
       <p class="small" style="margin:0 0 6px"><strong>Your codes are live.</strong> Every booking carries its creator's own code from the moment it is booked, and every audience offer carries one too.</p>
-      <p class="small" style="margin:0 0 6px"><strong>At close-out, the tally takes about 30 seconds.</strong> Your team reports the code uses and check totals on the visit card, and the numbers land here. <button type="button" class="btn small-btn ghost" onclick="return go('dashboard','Visits &amp; Posts')">Open Visits &amp; Posts</button></p>
-      <p class="small" style="margin:0"><strong>Register plug-in:</strong> we plug into your POS with you on the setup call, one tap on your end, we stay on the line until your panel says connected; if your system isn't one we connect to yet, your codes start counting on the register you already have.</p>
+      ${tallyLine}
+      ${plugLine}
     </div>
   </div>
   ${roasInfoPopHtml()}`;
@@ -7967,11 +8063,12 @@ function receiptHtml(r) {
   return `<section class="wcard">
     <p class="ui-kicker">Your receipt</p>
     <h3>What SIGNL brought you</h3>
+    ${sqNoticeHtml()}
     ${scoreV2Html(r)}
     ${creditPanelHtml(r)}
     ${hasLedger ? `
     <p style="margin:8px 0 0;font-size:1.08rem">In ${esc(r.monthLabel)}, SIGNL brought you <strong>at least $${fmtMoney(r.trackedSpend)}</strong> in tracked register spend from <strong>${r.customersCounted} counted customer${r.customersCounted === 1 ? "" : "s"}</strong>.</p>
-    <p class="small muted">Counted how: every dollar above is a register event your team logged with its check total, or your reported tally where you used it instead. It is a floor, not a projection: customers who never used a code are invisible to everyone, us included.</p>
+    <p class="small muted">Counted how: every dollar above is a register event ${r.register && r.register.state === "connected" ? "your team logged with its check total, or your connected register reported itself" : "your team logged with its check total"}, or your reported tally where you used it instead. It is a floor, not a projection: customers who never used a code are invisible to everyone, us included.</p>
     <div style="margin-top:10px">${r.ledger.map((l) => `<div class="lrow" style="margin-top:8px"><div style="flex:1"><span class="lname">${esc(l.title || "Visit")}</span> <span class="muted">with @${esc(l.creatorHandle)}</span><div class="small muted">${l.customers} counted customer${l.customers === 1 ? "" : "s"} · $${fmtMoney(l.spend)} tracked${l.source === "tally" ? " (your reported tally)" : ""}${l.returns ? ` · ${l.returns} came back ($${fmtMoney(l.returnSpend)})` : ""}${l.mentions ? ` · ${l.mentions} told staff a post sent them` : ""}${l.nightCount !== null && l.nightCount !== undefined ? ` · ${l.nightCount} tables or customers that night` : ""}</div></div></div>`).join("")}</div>
     <div style="margin-top:14px"><h4 style="margin:0 0 4px">Came-backs</h4>
     ${cb.returns > 0 ? `<p style="margin:0">${cb.returns} of the customers a creator brought in <strong>came back within 30 days</strong> and spent $${fmtMoney(cb.returnSpend)} more, at full price unless you chose a perk. ${cb.rate !== null && cb.rate !== undefined ? `That is a return rate of ${Math.round(cb.rate * 100)}% on ${cb.firstVisits} counted first visits.` : `The rate prints once ${cb.rateMinBase} first visits are counted, so it never rests on two friends.`}</p>` : `<p class="muted" style="margin:0">No come-backs counted yet. Every first redemption with a check total hands the customer a pass, good for 30 days here; returns land on this line as they happen. The line says came back, because that is what was counted.</p>`}
@@ -16008,6 +16105,21 @@ async function loadStats() {
       <p class="small">Who brought whom under one creator, and the points by generation. Points land only when an invite finishes signing up.</p>
       <div class="row" style="gap:8px;align-items:center"><input id="line-pick" type="text" placeholder="Creator handle" style="max-width:240px"><button class="btn" onclick="adminLineLookup()">View line</button></div>
       <div id="line-out" style="margin-top:10px"></div></div>`;
+    // Register connections (Square, Build -44): the environment
+    // is labeled on purpose; a sandbox connection is a test
+    // register and must never be mistaken for a live one.
+    try {
+      const sqData = await api("GET", "/admin/square");
+      const sq = sqData.square || {};
+      el.innerHTML += `
+      <div class="panel" style="margin-top:14px"><h3 style="margin:0 0 8px">Register connections (Square)</h3>
+      <p class="small">Server ${sq.configured ? "carries the Square app credentials" : "does not carry the Square app credentials, so connect renders the concierge state"}. Environment: <strong>${esc(sq.env || "")}</strong>${sq.env === "sandbox" ? " — SANDBOX: connections here are test registers, not live ones." : ""}</p>
+      ${sq.connections && sq.connections.length ? `<div class="table-wrap"><table>
+        <tr><th>Business</th><th>Environment</th><th>Status</th><th>Connected</th><th>Last read-back</th><th>Locations</th></tr>
+        ${sq.connections.map((c) => `<tr><td>${esc(c.businessName || c.businessId)}</td><td data-label="Environment">${esc(c.env || "")}</td><td data-label="Status">${esc(c.status || "")}</td><td data-label="Connected">${c.connectedAt ? esc(fmtDay(c.connectedAt)) : ""}</td><td data-label="Last read-back">${c.lastSyncAt ? esc(fmtDay(c.lastSyncAt)) : "never"}</td><td data-label="Locations">${(c.locations || []).map(esc).join(", ")}</td></tr>`).join("")}
+      </table></div>` : `<p class="small muted">No business has connected a register yet.</p>`}
+      </div>`;
+    } catch (e) { /* Stats stand without the register block */ }
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
@@ -17021,6 +17133,15 @@ function previewDashboardHtml(d) {
     if (ytParam && state.user && state.user.role === "creator") {
       state.ytNotice = ytParam.trim().slice(0, 24);
       state.tab = "Profile";
+      try { history.replaceState(null, "", location.pathname + location.hash); } catch (e) { /* cosmetic only */ }
+    }
+    // A Square connect return (/?sq=<status>, Build -44) leaves
+    // a one-shot notice on the business's receipt, where Proof
+    // Controls and the register panel live. Consumed and
+    // stripped like the YouTube return above.
+    const sqParam = params.get("sq");
+    if (sqParam && state.user && state.user.role === "business") {
+      state.sqNotice = sqParam.trim().slice(0, 24);
       try { history.replaceState(null, "", location.pathname + location.hash); } catch (e) { /* cosmetic only */ }
     }
     // A platform-message email link (/?open=messages, Build -40)

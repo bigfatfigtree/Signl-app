@@ -14,6 +14,7 @@ const stripe = require("./stripe");
 const connect = require("./connect");
 const { runMetricsSync } = require("./metrics-sync");
 const platformConnect = require("./platform-connect");
+const square = require("./square");
 const { askSigAI } = require("./sigai");
 const { buildProfilePageHtml } = require("./profile-meta");
 const igPrefill = require("./ig-prefill");
@@ -10014,6 +10015,11 @@ async function route(event) {
       platformConnect: {
         youtube: { oauthConfigured: platformConnect.youtubeConfigured() },
         meta: { state: "in_review" },
+        // Square Connect (Build -44): configured only when the
+        // server carries the Square app credentials; env names
+        // the Square environment so a sandbox connection is
+        // labeled as one everywhere it shows, Admin included.
+        square: { oauthConfigured: square.squareConfigured(), env: square.squareEnv() },
       },
       launch: {
         creatorSignupOpen: true,
@@ -10313,6 +10319,22 @@ async function route(event) {
     if (!tokenOk && (!user || user.role !== "admin")) return err(403, "Admin only");
     const summary = await runMetricsSync({ syncAudience: syncAllConnectedAudiences });
     return json(200, summary);
+  }
+
+  // Square read-back sweep (Build -44). Same auth and placement
+  // discipline as the metrics sync above: the Netlify scheduled
+  // function (netlify/functions/square-sync.mjs) POSTs here with
+  // no session, carrying the x-signl-sweep-token header when
+  // SIGNL_SWEEP_TOKEN is set; without a matching token, only an
+  // admin session may trigger it. Each connected business's
+  // register is read back into counted events; a business whose
+  // grant died lands in the paused state, never in silence.
+  if (method === "POST" && seg[0] === "admin" && seg[1] === "square" && seg[2] === "sync") {
+    const token = process.env.SIGNL_SWEEP_TOKEN;
+    const tokenOk = !!token && (event.headers["x-signl-sweep-token"] || event.headers["X-Signl-Sweep-Token"]) === token;
+    if (!tokenOk && (!user || user.role !== "admin")) return err(403, "Admin only");
+    const summary = await square.syncAllSquare();
+    return json(200, { ok: true, sweep: summary });
   }
 
   // Stripe webhook (Jeff, 2026-10-23). Deliberately BEFORE the
@@ -10647,6 +10669,83 @@ async function route(event) {
     const record = await clearPlatformSyncMirror(user.id, "youtube");
     await logEvent({ type: "platform_disconnected", actorId: user.id, actorRole: "creator", subjectId: user.id, market: user.market || null, data: { platform: "youtube" } });
     return json(200, { ok: true, user: await withFounding(record || user), platforms: await platformConnect.publicStates(user.id) });
+  }
+
+  // ---------- Square Connect: the business's register (Build -44) ----------
+  // The Proof Controls register plug-in (POS blueprint §2). A
+  // business connects its Square register through Square's own
+  // OAuth screen; SIGNL never sees the owner's Square password
+  // and stores only encrypted tokens (lib/square.js). Start and
+  // callback are full-page navigations answering 302s, exactly
+  // like the YouTube connect above. With the Square app
+  // credentials absent from the server, start bounces back with
+  // ?sq=unavailable and the panel keeps the approved concierge
+  // wording: no dead button, no fake connection.
+  if (method === "GET" && seg[0] === "me" && seg[1] === "square" && seg.length === 2) {
+    if (user.role !== "business") return err(403, "Businesses connect a register");
+    return json(200, { register: await square.publicSquareState(user.id) });
+  }
+
+  if (method === "GET" && seg[0] === "me" && seg[1] === "square" && seg[2] === "start" && seg.length === 3) {
+    const base = platformConnect.appBaseUrl();
+    if (user.role !== "business") return { statusCode: 302, headers: { Location: `${base}/?sq=error` }, body: "" };
+    if (!square.squareConfigured()) {
+      return { statusCode: 302, headers: { Location: `${base}/?sq=unavailable` }, body: "" };
+    }
+    const state = await platformConnect.createOAuthState(user.id, "square");
+    return { statusCode: 302, headers: { Location: square.buildSquareAuthUrl(state) }, body: "" };
+  }
+
+  if (method === "GET" && seg[0] === "me" && seg[1] === "square" && seg[2] === "callback" && seg.length === 3) {
+    const base = platformConnect.appBaseUrl();
+    if (!user || user.role !== "business") {
+      return { statusCode: 302, headers: { Location: `${base}/?sq=error` }, body: "" };
+    }
+    const stateRec = query.state ? await platformConnect.consumeOAuthState(query.state) : null;
+    if (!query.code || !stateRec || stateRec.userId !== user.id || stateRec.platform !== "square") {
+      return { statusCode: 302, headers: { Location: `${base}/?sq=error` }, body: "" };
+    }
+    try {
+      const { conn } = await square.connectSquare(user.id, query.code);
+      await logEvent({ type: "square_connected", actorId: user.id, actorRole: "business", subjectId: user.id, market: user.market || null, data: { env: conn.env || square.squareEnv(), businessName: conn.businessName || null, locations: (conn.locations || []).map((l) => l.name), codesProvisioned: Object.keys(conn.catalog || {}).length } });
+      return { statusCode: 302, headers: { Location: `${base}/?sq=connected` }, body: "" };
+    } catch (e) {
+      console.error("SIGNL Square connect error:", e);
+      return { statusCode: 302, headers: { Location: `${base}/?sq=error` }, body: "" };
+    }
+  }
+
+  if (method === "POST" && seg[0] === "me" && seg[1] === "square" && seg[2] === "disconnect" && seg.length === 3) {
+    if (user.role !== "business") return err(403, "Businesses connect a register");
+    const r = await square.disconnectSquare(user.id);
+    if (r.wasConnected) {
+      await logEvent({ type: "square_disconnected", actorId: user.id, actorRole: "business", subjectId: user.id, market: user.market || null, data: {} });
+    }
+    return json(200, { ok: true, register: await square.publicSquareState(user.id) });
+  }
+
+  if (method === "POST" && seg[0] === "me" && seg[1] === "square" && seg[2] === "locations" && seg.length === 3) {
+    if (user.role !== "business") return err(403, "Businesses connect a register");
+    const conn = await square.getSquareConnection(user.id);
+    if (!conn) return err(404, "Your register is not connected");
+    const b = parseBody(event);
+    const wanted = Array.isArray(b.locationIds) ? b.locationIds.map(String) : [];
+    const valid = (conn.locations || []).map((l) => l.id);
+    const selected = wanted.filter((id) => valid.includes(id));
+    if (!selected.length) return err(400, "Keep at least one register location selected: counting reads the locations you pick");
+    conn.selectedLocationIds = selected;
+    conn.updatedAt = nowIso();
+    await store.set(`sqconn:${user.id}`, conn);
+    await logEvent({ type: "square_locations_updated", actorId: user.id, actorRole: "business", subjectId: user.id, market: user.market || null, data: { locations: (conn.locations || []).filter((l) => selected.includes(l.id)).map((l) => l.name) } });
+    return json(200, { ok: true, register: await square.publicSquareState(user.id) });
+  }
+
+  if (method === "POST" && seg[0] === "me" && seg[1] === "square" && seg[2] === "sync" && seg.length === 3) {
+    if (user.role !== "business") return err(403, "Businesses connect a register");
+    const conn = await square.getSquareConnection(user.id);
+    if (!conn) return err(404, "Your register is not connected");
+    const r = await square.syncSquareBusiness(user.id);
+    return json(200, { ok: r.state === "ok", sync: r, register: await square.publicSquareState(user.id) });
   }
 
   // ---------- Stripe Connect: business card on file (2026-10-26) ----------
@@ -11540,6 +11639,12 @@ async function route(event) {
   }
   if (seg[0] === "admin") {
     if (user.role !== "admin") return err(403, "Admin only");
+    // Square Connect (Build -44): register connections at a
+    // glance, environment labeled (a sandbox connection says
+    // sandbox), tokens never included.
+    if (seg[1] === "square" && seg.length === 2 && method === "GET") {
+      return json(200, { square: await square.adminSquareState() });
+    }
     // Partners (Jeff, 2026-10-28): Admin creates and manages
     // distribution partners. Creation makes the login through the
     // normal account shape; the partner sets their own password
@@ -15180,6 +15285,11 @@ async function route(event) {
       cost: { planId: planIdOf, planPrice: plan ? plan.priceMonthly : (typeof biz.planPriceMonthly === "number" ? biz.planPriceMonthly : null), compCost: roas.compCost, discountCost: roas.discountCost, planAllocation: roas.planAllocation },
       roas: { score: roas.score, allInScore: roas.allInScore, mediaValue: roas.mediaValue, label: roas.label },
       scoreV2, captureGap,
+      // Square Connect (Build -44): the register's public state
+      // (never tokens), so the Receipt's counting panel can say
+      // whether this month's events were read from the register
+      // itself, and since when.
+      register: await square.publicSquareState(user.id),
       google: { current: g[month] || null, previous: g[prevMonthKey(month)] || null },
       topCreators: whoBrought.slice(0, 3).map((w) => ({ creatorId: w.creatorId, creatorHandle: w.creatorHandle, creatorName: w.creatorName })),
       proofNameOptIn: biz.proofNameOptIn === true,
