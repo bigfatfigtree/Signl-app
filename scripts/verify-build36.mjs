@@ -195,8 +195,13 @@ try {
   const banned = ["downline", "upline", "team volume", "multi-level", "multilevel", "MLM", "pyramid"];
   const hits = banned.filter((w) => appJs.includes(w) || routerJs.includes(w));
   check("no MLM vocabulary anywhere in the app or the API", hits.length === 0, hits.join(","));
+  // Build -49 doctrine update: the old pin asserted the literal
+  // "/api/me/points" call, which was itself the bug — api()
+  // prefixes /api, so the card requested /api/api/me/points,
+  // 404'd, and rendered its fallback text on every load. The
+  // pin now asserts the corrected call the helper resolves.
   check("client: the Points and Your Line section ships on the founding home",
-    appJs.includes("Points and Your Line") && appJs.includes("pointsSectionHtml") && appJs.includes("Ways to earn") && appJs.includes("/api/me/points"), "missing points UI");
+    appJs.includes("Points and Your Line") && appJs.includes("pointsSectionHtml") && appJs.includes("Ways to earn") && appJs.includes('api("GET", "/me/points")'), "missing points UI");
   check("client: the level badge renders with its early-access perk",
     appJs.includes("levelBadge") && appJs.includes("Sees new offers"), "missing badge render");
   check("client: the Admin line lookup ships in Stats",

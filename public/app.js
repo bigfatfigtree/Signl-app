@@ -651,7 +651,7 @@ async function renderPublicProof() {
     statCells.push(`<div class="stat-cell"><div class="stat-num">${p.spanishAudiencePct}%</div><div class="stat-lbl">Spanish-speaking audience (self-reported)</div></div>`);
   }
   if (typeof p.momentumPoints === "number") {
-    statCells.push(`<div class="stat-cell"><div class="stat-num">${p.momentumPoints}</div><div class="stat-lbl">Momentum points (reliability and referrals)</div></div>`);
+    statCells.push(`<div class="stat-cell"><div class="stat-num">${p.momentumPoints}</div><div class="stat-lbl">Momentum points · part of the order businesses see</div></div>`);
   }
   if (p.ratingCount >= 3 && p.ratingAvg !== null && p.ratingAvg !== undefined) {
     statCells.push(`<div class="stat-cell"><div class="stat-num">${esc(String(p.ratingAvg))} / 5</div><div class="stat-lbl">Rating from ${p.ratingCount} businesses</div></div>`);
@@ -847,7 +847,7 @@ function growRosterHtml(u) {
       ${m.signups > 0 ? `<p class="small"><strong>Your roster:</strong> ${m.signups} ${m.signups === 1 ? "creator" : "creators"} joined through your link &middot; ${m.approved} approved &middot; <strong>${m.points} Momentum points</strong></p>` : ""}
       ${m.campusCrew ? `<p class="small"><strong>Your campus crew: ${m.campusCrew.count} creator${m.campusCrew.count === 1 ? "" : "s"} from ${esc(m.campusCrew.university)}</strong></p>` : ""}
       ${m.campusLead && m.campusLead.qualified ? `<p class="small"><strong>Campus Lead · ${esc(m.campusLead.university)}</strong> — ${m.campusLead.count} classmates you recruited are approved. The badge is on your profile.</p>` : m.campusLead && m.campusLead.count > 0 ? `<p class="small"><strong>Campus Lead at ${esc(m.campusLead.university)}:</strong> ${m.campusLead.count} of ${m.campusLead.threshold} classmates recruited and approved — ${m.campusLead.needed} more earns the badge.</p>` : ""}
-      <p class="small">Points: +3 per sign-up &middot; +10 per approval. Roster builders get seen first.</p>
+      <p class="small">Points: +3 per sign-up &middot; +10 per approval. Roster builders get seen first. ${POINTS_WHY_SHORT}</p>
       ${ladderHtml(u)}
       <p class="small muted">Tap the link to copy it.</p>
     </div>`;
@@ -993,6 +993,19 @@ function profileCompletionHtml(u) {
 // done/available state, and the ledger that explains the total. All
 // of it comes from the server payload (state.user.momentum), which
 // is computed from stored records only.
+
+// Points-why canon (Build -49, Jeff's standing order: always
+// explain why points matter, everywhere we can). One wording,
+// defined once, rendered next to every points number. Built ONLY
+// from mechanics verified in the code (see build49 REPORT.md):
+// total points are 20% of the applicant stack a business picks
+// from, they ride the roster card businesses can sort by, and
+// they set the level whose hours open new offers early in a live
+// market. Points are not money and never promise a booking.
+const POINTS_WHY_LONG = "Points are priority. They move you up the list businesses choose from when you apply, they ride on your roster card where businesses can sort by them, and they raise your level: Regular, Standout and Cornerstone see new offers 12, 18 and 24 hours early once your market is live. Points are not money, and they never promise a booking.";
+const POINTS_WHY_SHORT = "Points are priority: they move you up the list businesses choose from, and they raise your level.";
+const POINTS_WHY_POP = "Points move you up the list businesses choose from and raise your level; higher levels see new offers earlier.";
+
 function momentumHtml(u) {
   const m = u && u.momentum;
   if (!m) return "";
@@ -1008,6 +1021,7 @@ function momentumHtml(u) {
   <div class="panel mt" style="text-align:left">
     <div class="flex-between"><h3 style="margin:0">Momentum points</h3><span class="badge info" style="font-size:1rem;padding:6px 14px">${m.points > 0 ? `${m.points} points` : "Just starting"}</span></div>
     <p class="small">Earned for on-time posts, a complete profile, reviews and invites.${m.floorApplied ? " Your total never drops below zero." : ""}</p>
+    <p class="small" style="margin-top:6px">${POINTS_WHY_LONG}</p>
     <h4 style="margin:14px 0 6px">Ways to earn</h4>
     ${checklist || `<p class="small muted">Loading...</p>`}
     ${ledger ? `<h4 style="margin:16px 0 6px">Points history</h4>${ledger}` : ""}
@@ -2512,6 +2526,7 @@ function renderMomentumTab() {
     <div class="kpi-label">Your Momentum</div>
     <div class="kpi-num" style="font-size:3rem">${fmtNum(m.points || 0)}</div>
     <div class="kpi-sub">${m.points ? `${tier ? `You are in the ${esc(tier)} tier. ` : ""}${next ? `Next: ${esc(next.label)} (+${next.points}).` : "Every way to earn is done. Keep the streak going."}` : "Your Momentum starts with your first visit. Post on time and it climbs."}</div>
+    <p class="small" style="margin:10px 0 0">${POINTS_WHY_LONG}</p>
   </div>
   ${momentumHtml(u)}
   ${growRosterHtml(u)}`;
@@ -2634,7 +2649,7 @@ async function renderCreatorNumbers() {
         const cum = ledger.filter((e) => (Date.parse(e.at || "") || 0) < dayStart + 86400000).reduce((s, e) => s + (Number(e.points) || 0), 0);
         days.push({ date: new Date(dayStart).toISOString(), points: Math.max(cum, 0) });
       }
-      if (days.some((dd) => dd.points > 0)) trendHtml = `<div class="chart-card"><h3>Momentum trend</h3><p class="wc-sub">Your points, day by day, last 30 days.</p>${lineChartSvg(days, [{ k: "points", color: "#0B0D0C" }])}</div>`;
+      if (days.some((dd) => dd.points > 0)) trendHtml = `<div class="chart-card"><h3>Momentum trend</h3><p class="wc-sub">Your points, day by day, last 30 days. ${POINTS_WHY_SHORT}</p>${lineChartSvg(days, [{ k: "points", color: "#0B0D0C" }])}</div>`;
     }
     const reviewRows = bookings.filter((b) => b.creatorReview).map((b) => `<div class="lib-row"><div class="lib-main"><div class="lib-title">${starsHtml(b.creatorReview.stars)} ${esc(String(b.creatorReview.stars))} — ${esc(b.title || "Visit")}</div><div class="lib-meta">${esc(b.businessName || "")}${b.creatorReview.createdAt ? ` · ${fmtDay(b.creatorReview.createdAt)}` : ""}${b.creatorReview.comment ? `<br>${esc(b.creatorReview.comment)}` : ""}</div></div></div>`).join("");
     el.innerHTML = `${head}
@@ -2642,7 +2657,7 @@ async function renderCreatorNumbers() {
     <div class="kpi-grid c3">
       ${kpiCard("Posts delivered", fmtNum(tr.postsDelivered || delivered.length), { sub: "Posts live from your visits" })}
       ${kpiCard("On time", tr.onTimePct === null || tr.onTimePct === undefined ? "New" : tr.onTimePct + "%", { sub: "Inside the 48 hour standard" })}
-      ${kpiCard("Momentum", fmtNum(m.points || 0), { sub: "Points from on-time posts, invites and approvals" })}
+      ${kpiCard("Momentum", fmtNum(m.points || 0), { sub: POINTS_WHY_SHORT })}
     </div>
     ${trendHtml}
     ${seriesRows ? `<div class="wcard"><h3>Post performance, day 7 / 14 / 30</h3><table class="series-table"><tr><th>Post</th><th>Day 7</th><th>Day 14</th><th>Day 30</th><th>Latest views</th></tr>${seriesRows}</table><p class="ana-note">Views at each mark after the post, from the numbers on record. A dash means that mark has not been reported yet.</p></div>` : `<div class="wcard"><h3>Post performance</h3><p class="wc-sub" style="margin:4px 0 0">Your posts appear here once their first numbers are in, tracked at day 7, 14 and 30. We do not chart zeroes.</p></div>`}
@@ -5314,12 +5329,12 @@ async function sigC3Run() {
     { label: ST("Find offers for me", "Buscar ofertas para mí"), primary: true, run: async () => { await sigC1Start(); sigOpPaint(); } },
   ];
   if (!ro || ro.empty) {
-    sigOpSay(ST(`No visits or posts on record yet, so there are no numbers to show. That is the honest state, not a placeholder. Your Momentum stands at ${fmtNum(m.points || 0)} points. The fastest way to change the record: a finished profile, then your first visit.`, `Aún no hay visitas ni publicaciones en tu registro, así que no hay números que mostrar. Es el estado honesto, no un relleno. Tu Momentum está en ${fmtNum(m.points || 0)} puntos. La vía más rápida de cambiar el registro: un perfil terminado y luego tu primera visita.`), acts);
+    sigOpSay(ST(`No visits or posts on record yet, so there are no numbers to show. That is the honest state, not a placeholder. Your Momentum stands at ${fmtNum(m.points || 0)} points. Points are priority: they move you up the list businesses choose from, and they raise your level. The fastest way to change the record: a finished profile, then your first visit.`, `Aún no hay visitas ni publicaciones en tu registro, así que no hay números que mostrar. Es el estado honesto, no un relleno. Tu Momentum está en ${fmtNum(m.points || 0)} puntos. Los puntos son prioridad: te suben en la lista de la que eligen los negocios, y suben tu nivel. La vía más rápida de cambiar el registro: un perfil terminado y luego tu primera visita.`), acts);
     return;
   }
   const o = ro.overall || {};
   const lines = [
-    ST(`Your record: ${o.visitsRedeemed || 0} of ${o.visitsBooked || 0} visits done, ${o.postsLive || 0} posts live${o.onTimePct !== null && o.onTimePct !== undefined ? `, ${o.onTimePct}% on time` : ""}. Momentum: ${fmtNum(m.points || 0)} points.`, `Tu registro: ${o.visitsRedeemed || 0} de ${o.visitsBooked || 0} visitas hechas, ${o.postsLive || 0} publicaciones activas${o.onTimePct !== null && o.onTimePct !== undefined ? `, ${o.onTimePct}% a tiempo` : ""}. Momentum: ${fmtNum(m.points || 0)} puntos.`),
+    ST(`Your record: ${o.visitsRedeemed || 0} of ${o.visitsBooked || 0} visits done, ${o.postsLive || 0} posts live${o.onTimePct !== null && o.onTimePct !== undefined ? `, ${o.onTimePct}% on time` : ""}. Momentum: ${fmtNum(m.points || 0)} points. Points are priority: they move you up the list businesses choose from, and they raise your level.`, `Tu registro: ${o.visitsRedeemed || 0} de ${o.visitsBooked || 0} visitas hechas, ${o.postsLive || 0} publicaciones activas${o.onTimePct !== null && o.onTimePct !== undefined ? `, ${o.onTimePct}% a tiempo` : ""}. Momentum: ${fmtNum(m.points || 0)} puntos. Los puntos son prioridad: te suben en la lista de la que eligen los negocios, y suben tu nivel.`),
   ];
   for (const p of (ro.posts || []).slice(0, 3)) {
     const s = perfSeriesText(p.series);
@@ -5346,7 +5361,7 @@ function sigC4Run() {
   const url = `https://app.joinsignl.com/?ref=${encodeURIComponent(handle)}`;
   const market = marketTalkNameClient(u.market);
   const msg = ST(`I am a founding creator on SIGNL in ${market}. Local businesses book local creators here: comped visits (a meal, service, or experience on the business) or paid bookings at your own listed rate, and you keep 97% of paid work. Join through my link: ${url}`, `Soy creador fundador en SIGNL en ${market}. Los negocios locales reservan creadores locales aquí: visitas de cortesía (una comida, servicio o experiencia por cuenta del negocio) o reservas pagadas a tu propia tarifa, y te quedas con el 97% del trabajo pagado. Únete con mi enlace: ${url}`);
-  sigOpSay(`${ST("Your invite link:", "Tu enlace de invitación:")} ${url}\n${ST("You earn +3 Momentum when a creator joins through it, +10 when they are approved.", "Ganas +3 Momentum cuando un creador se une con él, +10 cuando es aprobado.")}\n${ST("Ready-to-send message (copy it into any app):", "Mensaje listo para enviar (cópialo en cualquier app):")}\n${msg}`, [
+  sigOpSay(`${ST("Your invite link:", "Tu enlace de invitación:")} ${url}\n${ST("You earn +3 Momentum when a creator joins through it, +10 when they are approved. Points are priority: they move you up the list businesses choose from, and they raise your level.", "Ganas +3 Momentum cuando un creador se une con él, +10 cuando es aprobado. Los puntos son prioridad: te suben en la lista de la que eligen los negocios, y suben tu nivel.")}\n${ST("Ready-to-send message (copy it into any app):", "Mensaje listo para enviar (cópialo en cualquier app):")}\n${msg}`, [
     { label: ST("Copy invite link", "Copiar enlace"), primary: true, run: async () => { try { await navigator.clipboard.writeText(url); sigOpSay(ST("Copied. Send it anywhere.", "Copiado. Envíalo donde quieras."), sigOpHomeActions()); } catch (e) { sigOpSay(ST("Copy did not work here; the link is in the message above, ready to select.", "La copia no funcionó aquí; el enlace está en el mensaje de arriba, listo para seleccionar."), sigOpHomeActions()); } } },
     { label: ST("See my Momentum", "Ver mi Momentum"), run: async () => go("dashboard", "Momentum") },
   ]);
@@ -7635,7 +7650,7 @@ async function loadFoundingDashboard() {
     </div>
     <div class="kpi-grid c3">
       ${kpiCard("Total audience", fmtNum(totalAud), { sub: "Across your linked accounts" })}
-      ${kpiCard("Momentum", fmtNum(momPts), { sub: "Points from invites, approvals and on-time posts" })}
+      ${kpiCard("Momentum", fmtNum(momPts), { sub: POINTS_WHY_SHORT })}
       ${kpiCard("Local Impact Score", card.localImpactScore !== null && card.localImpactScore !== undefined ? String(card.localImpactScore) : "New", { sub: "Out of 100, from your profile and record" })}
     </div>
     <div class="wcard">
@@ -8236,7 +8251,7 @@ async function loadPointsCard() {
   const body = document.getElementById("points-body");
   if (!body) return;
   try {
-    const d = await api("GET", "/api/me/points");
+    const d = await api("GET", "/me/points");
     const lvl = d.level || {};
     const gens = (d.byGeneration || []).map((g) => `<div class="kv"><span>Line ${g.generation} (${g.pointsEach} points each)</span><b>${g.count} finished · ${g.points} points</b></div>`).join("");
     const ways = (d.waysToEarn || []).map((w) => `<div class="kv"><span>${esc(w.label)}</span><b>+${w.points}</b></div>`).join("");
@@ -8245,6 +8260,7 @@ async function loadPointsCard() {
       <div class="kv"><span>Level</span><b>Level ${lvl.level} · ${esc(lvl.name || "")}</b></div>
       ${lvl.earlyAccessHours ? `<p class="small" style="margin:8px 0 0">Your level sees new offers ${lvl.earlyAccessHours} hours early.</p>` : ""}
       ${lvl.nextAt ? `<p class="small" style="margin:4px 0 0">Next level, ${esc(lvl.nextName || "")}, at ${lvl.nextAt} points.</p>` : `<p class="small" style="margin:4px 0 0">Top level. Nice work.</p>`}
+      <p class="small" style="margin:8px 0 0">${POINTS_WHY_LONG}</p>
       <h4 style="margin:14px 0 6px">Your Line</h4>
       ${gens || `<p class="small">Nobody yet. Points land when a creator you invite finishes signing up.</p>`}
       <h4 style="margin:14px 0 6px">Ways to earn</h4>
@@ -8777,7 +8793,7 @@ async function loadGoldenTickets() {
       <div class="kv"><span>An invite gets approved</span><b>+10 points</b></div>
       <div class="kv"><span>A creator joins through your link</span><b>+3 points</b></div>
     </div>
-    <p class="small muted" style="margin:8px 0 0">The big points land when your person finishes: approved, profile complete, a founding creator like you. Points land on your total the moment they happen and move you up when businesses choose. Nothing is paid for a click or a share.</p>
+    <p class="small muted" style="margin:8px 0 0">The big points land when your person finishes: approved, profile complete, a founding creator like you. Points land on your total the moment they happen. ${POINTS_WHY_SHORT} Nothing is paid for a click or a share.</p>
     ${rows}
     ${data.canIssue && data.remaining > 0 ? `<div class="field" style="margin-top:14px"><label>Name a person (${data.remaining} ticket${data.remaining === 1 ? "" : "s"} left)</label><div style="display:flex;gap:8px;flex-wrap:wrap"><input id="gt-name" placeholder="Their name" maxlength="80" style="flex:1;min-width:200px"><button type="button" class="btn small-btn" onclick="return gtIssue()">Hold their seat</button></div><p class="small muted" id="gt-note"></p></div>`
       : data.canIssue ? `<p class="small muted" style="margin-top:12px">Both of your tickets are out. Your points land when each person finishes signing up.</p>`
@@ -10160,6 +10176,7 @@ async function loadCreatorHome() {
     const momentumCard = `<div class="wcard mom-card">
       <div class="flex-between"><div><div class="kpi-label">Momentum</div><div class="kpi-num" style="font-size:2.6rem">${fmtNum(m.points || 0)}</div></div>${tier ? `<span class="badge tier" style="font-size:1rem;padding:6px 14px">${esc(tier)}</span>` : ""}</div>
       <div class="kpi-sub">${m.points ? (nextEarn ? `Next: ${esc(nextEarn.label)} (+${nextEarn.points}).` : "Every way to earn is done. Keep the streak going.") : "Your Momentum starts with your first visit. Post on time and it climbs."}</div>
+      <p class="small" style="margin:8px 0 0">${POINTS_WHY_SHORT}</p>
       <p style="margin:10px 0 0"><button class="btn small-btn ws-outline" onclick="return go('dashboard','Momentum')">See Momentum</button></p>
     </div>`;
     // Activity (§6.1): invites, applications, visits, posts,
@@ -16444,7 +16461,7 @@ async function loadStats() {
       <p class="small"><strong>Business language:</strong> ${s.layers.businessLanguage.es} ${s.layers.businessLanguage.es === 1 ? "business prefers" : "businesses prefer"} Spanish, ${s.layers.businessLanguage.en} English.</p>` : ""}`;
     el.innerHTML += `
       <div class="panel" style="margin-top:14px"><h3 style="margin:0 0 8px">Your Line lookup</h3>
-      <p class="small">Who brought whom under one creator, and the points by generation. Points land only when an invite finishes signing up.</p>
+      <p class="small">Who brought whom under one creator, and the points by generation. Points land only when an invite finishes signing up. ${POINTS_WHY_SHORT}</p>
       <div class="row" style="gap:8px;align-items:center"><input id="line-pick" type="text" placeholder="Creator handle" style="max-width:240px"><button class="btn" onclick="adminLineLookup()">View line</button></div>
       <div id="line-out" style="margin-top:10px"></div></div>`;
     // Register connections (Square, Build -44): the environment
