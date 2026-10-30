@@ -2634,8 +2634,10 @@ async function renderCreatorNumbers() {
     </div>`;
     if (!bookings.length && !delivered.length && !(m.points > 0)) {
       el.innerHTML = `${head}
+      <div id="cr-stats"></div>
       ${reachCard}
       <div class="empty-card"><div class="ec-t">Your numbers</div><div class="ec-s">This fills in once your visits and posts land. When businesses book you and your posts go live, you will see your posts, your on-time record, and your Momentum here.</div></div>`;
+      loadCreatorStats();
       return;
     }
     const seriesRows = delivered.filter((b) => b.post && (b.post.snapshots || []).length).map((b) => {
@@ -2658,6 +2660,7 @@ async function renderCreatorNumbers() {
     }
     const reviewRows = bookings.filter((b) => b.creatorReview).map((b) => `<div class="lib-row"><div class="lib-main"><div class="lib-title">${starsHtml(b.creatorReview.stars)} ${esc(String(b.creatorReview.stars))} — ${esc(b.title || "Visit")}</div><div class="lib-meta">${esc(b.businessName || "")}${b.creatorReview.createdAt ? ` · ${fmtDay(b.creatorReview.createdAt)}` : ""}${b.creatorReview.comment ? `<br>${esc(b.creatorReview.comment)}` : ""}</div></div></div>`).join("");
     el.innerHTML = `${head}
+    <div id="cr-stats"></div>
     ${reachCard}
     <div class="kpi-grid c3">
       ${kpiCard("Posts delivered", fmtNum(tr.postsDelivered || delivered.length), { sub: "Posts live from your visits" })}
@@ -2669,6 +2672,7 @@ async function renderCreatorNumbers() {
     <div class="wcard"><h3>Reviews</h3>
       ${card.ratingCount >= 1 && card.ratingAvg !== null && card.ratingAvg !== undefined ? `<p style="margin:4px 0 10px">${starsHtml(card.ratingAvg)} <strong>${esc(String(card.ratingAvg))}</strong> from ${card.ratingCount} business${card.ratingCount === 1 ? "" : "es"}.</p>${reviewRows}` : `<p class="wc-sub" style="margin:4px 0 0">No reviews yet. Reviews come from completed visits.</p>`}
     </div>`;
+    loadCreatorStats();
   } catch (err) {
     el.innerHTML = `${wsHead("Your numbers")}<div class="error-box">${esc(err.message)}</div>`;
   }
@@ -12067,7 +12071,7 @@ function renderPartnerTab(tab) {
   if (tab === "Markets") el.innerHTML = partnerMarketsHtml(d);
   if (tab === "Creators") el.innerHTML = partnerCreatorsHtml(d);
   if (tab === "Businesses") el.innerHTML = partnerBusinessesHtml(d);
-  if (tab === "Performance") el.innerHTML = partnerPerformanceHtml(d);
+  if (tab === "Performance") { el.innerHTML = `<div id="pt-stats"></div>` + partnerPerformanceHtml(d); loadPartnerStats(); }
   if (tab === "Earnings") el.innerHTML = partnerEarningsHtml(d);
   if (tab === "Links") el.innerHTML = partnerLinksHtml(d);
   if (tab === "Account") el.innerHTML = partnerAccountHtml(d);
@@ -13209,6 +13213,183 @@ async function renderContentTab() {
 // ---------- Analytics: charts, funnel, leaderboard (Grin mirror) ----------
 let anaDays = 30;
 function anaSetDays(v) { anaDays = Number(v) || 30; renderAnalyticsTab(); return false; }
+// ---------- Build -58: role stats views ----------
+// The Command Center's Money-overview discipline, scoped to
+// the signed-in record owner: one stats card inside each
+// role's existing surface (business Results, partner
+// Performance, creator Your numbers), fed by GET /me/stats
+// and re-fetched on the Week / Month / Year / All time
+// toggle. Classes never blend in the rendering either:
+// counted, recorded and charged get their own panels and
+// chips, exactly as on Admin's Money view.
+const ROLE_PERIODS = [
+  { v: "week", label: "Week" }, { v: "month", label: "Month" },
+  { v: "year", label: "Year" }, { v: "all", label: "All time" },
+];
+let bizStatsP = "month", ptStatsP = "month", crStatsP = "month";
+const rsPl = (n, one) => n + " " + one + (n === 1 ? "" : "s");
+function roleStatsHead(title, cur, fn) {
+  return `<div class="flex-between" style="align-items:flex-start;gap:10px;flex-wrap:wrap"><h3 style="margin:0">${esc(title)}</h3>${segSw(ROLE_PERIODS, cur, fn)}</div>`;
+}
+
+// Business — "Your numbers" at the top of Results. The
+// Receipt stays below it as the proof deep-view; the counted
+// figure here and the Receipt's counted figure are the same
+// records, so the two always agree.
+async function loadBizStats() {
+  if (!document.getElementById("biz-stats")) return;
+  try {
+    const d = await api("GET", `/me/stats?period=${bizStatsP}`);
+    const host = document.getElementById("biz-stats");
+    if (host) host.innerHTML = bizStatsHtml(d);
+  } catch (e) { /* Results still carries the Receipt; a stats failure never breaks the page */ }
+}
+function bizStatsPeriod(v) { bizStatsP = v; loadBizStats(); return false; }
+function bizStatsHtml(d) {
+  const s = d.stats || {};
+  const per = d.period || {};
+  const head = roleStatsHead("Your numbers", per.key || bizStatsP, "bizStatsPeriod");
+  if (!s.hasData) {
+    return `<div class="panel">${head}
+      <p class="small" style="margin:8px 0 0">Nothing has landed yet — and nothing here is invented to fill the space. When your first offer runs, this fills in with what you spent (your plan at what was actually charged, comp costs, paid bookings, licenses), what came back counted at your register, and the deals that finished. Your Receipt below carries the proof, visit by visit.</p></div>`;
+  }
+  const cnt = s.counted || {};
+  const rec = s.recorded || { rows: {} };
+  const rr = rec.rows || {};
+  const chg = s.charged || { rows: {} };
+  const cr = chg.rows || {};
+  const cc = s.compCosts || {};
+  const deals = s.deals || {};
+  const escw = s.escrow || {};
+  const sub = rr.subscriptions || {};
+  const tiles = `<div class="cc-tiles" style="margin-top:10px">
+    <div class="cc-tile cc-hero"><div class="cc-tlabel">Counted at your register <span class="cc-chip counted">Counted</span></div><div class="cc-tnum">${ccMoneyFmt(cnt.total || 0)}</div><div class="cc-tsub">${ccMoneyFmt(cnt.firsts || 0)} on first visits (${cnt.visitsCounted || 0} counted) &middot; ${ccMoneyFmt(cnt.returns || 0)} on come-backs</div></div>
+    <div class="cc-tile"><div class="cc-tlabel">Money out, on cards <span class="cc-chip charged">Charged</span></div><div class="cc-tnum">${ccMoneyFmt(chg.netTotal || 0)}</div><div class="cc-tsub">Real charges this period, refunds out</div></div>
+    <div class="cc-tile"><div class="cc-tlabel">Money out, on the books <span class="cc-chip recorded">Recorded</span></div><div class="cc-tnum">${ccMoneyFmt((rec.totals || {}).flowed || 0)}</div><div class="cc-tsub">Plan, paid bookings and licenses on record</div></div>
+    <div class="cc-tile"><div class="cc-tlabel">Deals finished</div><div class="cc-tnum">${deals.total || 0}</div><div class="cc-tsub">${rsPl(deals.compVisits || 0, "comp visit")} &middot; ${rsPl(deals.paidBookings || 0, "paid booking")} &middot; ${rsPl(deals.licenses || 0, "license")}</div></div>
+    <div class="cc-tile"><div class="cc-tlabel">Comps posted</div><div class="cc-tnum">${s.compsCompleted || 0}</div><div class="cc-tsub">${s.compsCounted || 0} counted at the register &middot; costs entered on ${cc.entered || 0} of ${cc.completed || 0}${cc.missing ? ` &middot; ${cc.missing} still missing theirs` : ""}</div></div>
+    <div class="cc-tile"><div class="cc-tlabel">Offers live now</div><div class="cc-tnum">${s.offersLive || 0}</div><div class="cc-tsub">Open right now, in every period</div></div>
+  </div>`;
+  const recordedPanel = `<div class="panel">
+    <h3 style="margin:0 0 2px">Money out — on the books <span class="cc-chip recorded">Recorded</span></h3>
+    <p class="muted small" style="margin:0 0 8px">What your records say moved this period, whether or not a card was charged.</p>
+    <div class="table-wrap"><table>
+      <tr><th>What</th><th>Amount</th><th>Notes</th></tr>
+      ${typeof sub.monthlyRate === "number" ? `<tr><td>Your plan${sub.planName ? ` — ${esc(sub.planName)}` : ""} <span class="cc-chip recorded">Recorded</span></td><td data-label="Amount">${ccMoneyFmt(sub.monthlyRate)}/mo</td><td data-label="Notes">On record; the Charged panel below shows what a card actually paid</td></tr>` : ""}
+      <tr><td>Paid bookings <span class="cc-chip recorded">Recorded</span></td><td data-label="Amount">${ccMoneyFmt((rr.paidBookings || {}).flowed || 0)}</td><td data-label="Notes">${(rr.paidBookings || {}).count || 0} released &middot; creators kept ${ccMoneyFmt((rr.paidBookings || {}).creatorsEarned || 0)}</td></tr>
+      <tr><td>Licenses <span class="cc-chip recorded">Recorded</span></td><td data-label="Amount">${ccMoneyFmt((rr.licenses || {}).flowed || 0)}</td><td data-label="Notes">${(rr.licenses || {}).count || 0} granted &middot; creators kept ${ccMoneyFmt((rr.licenses || {}).creatorsEarned || 0)}</td></tr>
+      <tr><td>Comp costs <span class="cc-chip recorded">Recorded</span></td><td data-label="Amount">${ccMoneyFmt(cc.total || 0)}</td><td data-label="Notes">Costs you entered on ${cc.entered || 0} of ${cc.completed || 0} completed comps${cc.missing ? ` — ${cc.missing} still to enter (a visit's cap is an estimate, never counted as a cost)` : ""}</td></tr>
+    </table></div>
+    ${(escw.paidHeld || {}).count ? `<p class="small" style="margin:6px 0 0">In escrow right now: ${ccMoneyFmt((escw.paidHeld || {}).businessTotal || 0)} across ${(escw.paidHeld || {}).count} paid booking${(escw.paidHeld || {}).count === 1 ? "" : "s"} — recorded, not yet flowed.</p>` : ""}
+  </div>`;
+  const chargedPanel = `<div class="panel">
+    <h3 style="margin:0 0 2px">Money out — on cards <span class="cc-chip charged">Charged</span></h3>
+    <p class="muted small" style="margin:0 0 8px">Real card charges this period. A plan with no charge yet lives in Recorded above, never here.</p>
+    <div class="table-wrap"><table>
+      <tr><th>Source</th><th>Gross</th><th>Founding credit</th><th>Net charged</th></tr>
+      <tr><td>Plan charges (${(cr.subscriptions || {}).count || 0})</td><td data-label="Gross">${ccMoneyFmt((cr.subscriptions || {}).gross || 0)}</td><td data-label="Founding credit">&minus;${ccMoneyFmt((cr.subscriptions || {}).creditApplied || 0)}</td><td data-label="Net charged">${ccMoneyFmt((cr.subscriptions || {}).net || 0)}</td></tr>
+      <tr><td>Paid bookings (${(cr.paidBookings || {}).count || 0})</td><td data-label="Gross">&mdash;</td><td data-label="Founding credit">&mdash;</td><td data-label="Net charged">${ccMoneyFmt((cr.paidBookings || {}).net || 0)}</td></tr>
+      <tr><td>Licenses (${(cr.licenses || {}).count || 0})</td><td data-label="Gross">&mdash;</td><td data-label="Founding credit">&mdash;</td><td data-label="Net charged">${ccMoneyFmt((cr.licenses || {}).net || 0)}</td></tr>
+      <tr><td>Refunds</td><td data-label="Gross">&mdash;</td><td data-label="Founding credit">&mdash;</td><td data-label="Net charged">${ccMoneyFmt((cr.refunds || {}).net || 0)}</td></tr>
+      <tr class="cc-total-row"><td><strong>Net charged</strong></td><td data-label="Gross">&mdash;</td><td data-label="Founding credit">&mdash;</td><td data-label="Net charged"><strong>${ccMoneyFmt(chg.netTotal || 0)}</strong></td></tr>
+    </table></div>
+    ${chg.failedCount ? `<p class="small" style="margin:6px 0 0">${chg.failedCount} failed charge attempt${chg.failedCount === 1 ? "" : "s"} this period — never in the totals.</p>` : ""}
+  </div>`;
+  const countedPanel = `<div class="panel">
+    <h3 style="margin:0 0 2px">Counted at your register <span class="cc-chip counted">Counted</span></h3>
+    <p class="small" style="margin:0">${ccMoneyFmt(cnt.total || 0)} counted at your register this period — ${ccMoneyFmt(cnt.firsts || 0)} on first visits and ${ccMoneyFmt(cnt.returns || 0)} on come-backs. Register dollars are your revenue, counted by SIGNL; they are never added to the money-out panels above. Your Receipt below proves them visit by visit, and the two always agree.</p>
+  </div>`;
+  return `<div class="panel">${head}${tiles}</div>${recordedPanel}${chargedPanel}${countedPanel}`;
+}
+
+// Partner — "Your markets" at the top of Performance. The
+// money here is the -56 greater-of engine's output for this
+// partner alone: the same numbers Admin's Partners view
+// prints, never another partner's.
+async function loadPartnerStats() {
+  if (!document.getElementById("pt-stats")) return;
+  try {
+    const d = await api("GET", `/me/stats?period=${ptStatsP}`);
+    const host = document.getElementById("pt-stats");
+    if (host) host.innerHTML = ptStatsHtml(d);
+  } catch (e) { /* Performance keeps its own figures below */ }
+}
+function ptStatsPeriod(v) { ptStatsP = v; loadPartnerStats(); return false; }
+function ptStatsHtml(d) {
+  const s = d.stats || {};
+  const per = d.period || {};
+  const head = roleStatsHead("Your markets", per.key || ptStatsP, "ptStatsPeriod");
+  if (!s.hasData) {
+    return `<div class="panel">${head}
+      <p class="small" style="margin:8px 0 0">Nothing has come through your links yet. When the first business signs in one of your markets, this fills in with your sign-ups, the gross they bring, and your share of it — the same figures SIGNL's own books show for you.</p></div>`;
+  }
+  const pa = s.periodAgg || {};
+  const deals = s.deals || {};
+  const govLine = pa.guaranteeMonths ? `${pa.guaranteeMonths} month${pa.guaranteeMonths === 1 ? "" : "s"} governed by the guarantee` : (pa.percentageMonths ? "the percentage governed every month in this period" : "");
+  const tiles = `<div class="cc-tiles" style="margin-top:10px">
+    <div class="cc-tile cc-hero"><div class="cc-tlabel">Your share this period <span class="cc-chip recorded">Recorded</span></div><div class="cc-tnum">${ccMoneyFmt(pa.partnerShare || 0)}</div><div class="cc-tsub">Of ${ccMoneyFmt(pa.gross || 0)} gross attributable${govLine ? ` &middot; ${esc(govLine)}` : ""}</div></div>
+    <div class="cc-tile"><div class="cc-tlabel">Accrued to date</div><div class="cc-tnum">${ccMoneyFmt(s.accrued || 0)}</div><div class="cc-tsub">Paid ${ccMoneyFmt(s.paid || 0)} &middot; still owed ${ccMoneyFmt(s.owed || 0)}</div></div>
+    <div class="cc-tile"><div class="cc-tlabel">Businesses signed</div><div class="cc-tnum">${s.businessesSigned || 0}</div><div class="cc-tsub">${s.businessesSignedInPeriod || 0} new this period &middot; through your links &middot; ${rsPl(s.creatorsAttributed || 0, "creator")} attributed</div></div>
+    <div class="cc-tile"><div class="cc-tlabel">Deals finished</div><div class="cc-tnum">${deals.total || 0}</div><div class="cc-tsub">${rsPl(deals.compVisits || 0, "comp visit")} &middot; ${rsPl(deals.paidBookings || 0, "paid booking")} &middot; ${rsPl(deals.licenses || 0, "license")} &middot; ${s.offersLive || 0} offers live now</div></div>
+  </div>`;
+  let greaterOf = "";
+  if (pa.pctCandidate !== null && pa.pctCandidate !== undefined || pa.floorCandidate !== null && pa.floorCandidate !== undefined) {
+    const governing = (s.currentMonth && s.currentMonth.governedBy) || (pa.guaranteeMonths ? "guarantee" : "percentage");
+    greaterOf = `<div class="panel" style="background:var(--ink);color:#fff">
+      <h3 style="margin:0 0 6px;color:#fff">The greater of the two — ${governing === "guarantee" ? "the guarantee" : "the percentage"} governs</h3>
+      <p class="small" style="margin:0;color:#E8EDE9">Percentage side: <strong>${ccMoneyFmt(pa.pctCandidate || 0)}</strong> &middot; Guarantee side: <strong>${ccMoneyFmt(pa.floorCandidate || 0)}</strong>. Your share is whichever is larger, month by month — exactly the math on SIGNL's books.</p></div>`;
+  }
+  const dealPanel = (s.dealCards || []).length ? `<div class="panel"><h3 style="margin:0 0 8px">Your deals</h3>
+    ${(s.dealCards || []).map((dc) => `<div class="cc-att-row"><span><strong>${esc(dc.label || "Deal")}</strong> &middot; ${dc.termsState === "entered" ? `terms entered${typeof dc.partnerPct === "number" ? ` &middot; your share ${dc.partnerPct}%` : ""}` : "terms not entered yet — nothing accrues until they are"}${dc.guaranteeState ? ` &middot; ${esc(dc.guaranteeState)}` : ""}<br><span class="small muted">${(dc.markets || []).map((m) => `${esc(m.market)}: ${esc(m.status)}${m.liveAt ? `, live ${esc(fmtDay(m.liveAt))}` : ""}${typeof m.activationFee === "number" ? ` &middot; activation ${ccMoneyFmt(m.activationFee)} (${esc(m.activationStatus)})` : ", activation fee to be set"}`).join(" &middot; ")}</span></span></div>`).join("")}
+  </div>` : (s.basis === "no_deal" ? `<div class="panel"><h3 style="margin:0 0 4px">No deal on file yet</h3><p class="small muted" style="margin:0">Your share starts accruing the moment your deal terms are entered — until then this page tracks your sign-ups and their activity only, and shows no share figures it cannot back.</p></div>` : "");
+  const marketRows = (s.markets || []).filter((m) => m.businesses || m.creators || m.gross);
+  const marketPanel = marketRows.length ? `<div class="panel"><h3 style="margin:0 0 8px">By market</h3><div class="table-wrap"><table>
+    <tr><th>Market</th><th>Businesses</th><th>Signed this period</th><th>Gross</th><th>Your share</th></tr>
+    ${marketRows.map((m) => `<tr><td>${esc(m.market)}</td><td data-label="Businesses">${m.businesses}</td><td data-label="Signed this period">${m.businessesSignedInPeriod}</td><td data-label="Gross">${ccMoneyFmt(m.gross || 0)}</td><td data-label="Your share">${ccMoneyFmt(m.partnerShare || 0)}</td></tr>`).join("")}
+  </table></div><p class="small muted" style="margin:6px 0 0">${esc(s.shareNote || "")}${per.key === "week" ? " This week's money rows are the current month's — share math settles monthly." : ""}</p></div>` : "";
+  return `<div class="panel">${head}${tiles}</div>${greaterOf}${dealPanel}${marketPanel}`;
+}
+
+// Creator — "Money, offers & deals" at the top of Your
+// numbers. Money rides by state: held (each item with its
+// named reason), released, paid. Points are a stock and are
+// labeled all-time; the -49 why lines stay as written.
+async function loadCreatorStats() {
+  if (!document.getElementById("cr-stats")) return;
+  try {
+    const d = await api("GET", `/me/stats?period=${crStatsP}`);
+    const host = document.getElementById("cr-stats");
+    if (host) host.innerHTML = crStatsHtml(d);
+  } catch (e) { /* Your numbers keeps its own cards below */ }
+}
+function crStatsPeriod(v) { crStatsP = v; loadCreatorStats(); return false; }
+function crStatsHtml(d) {
+  const s = d.stats || {};
+  const per = d.period || {};
+  const head = roleStatsHead("Money, offers & deals", per.key || crStatsP, "crStatsPeriod");
+  const money = s.money || { held: {}, released: {} };
+  const held = money.held || {};
+  const rel = money.released || {};
+  const deals = s.deals || {};
+  const pts = s.points || {};
+  const lvlName = typeof pts.level === "string" ? pts.level : ((pts.level || {}).name || "");
+  const pointsStrip = `<p class="small" style="margin:10px 0 0">Momentum: <strong>${fmtNum(pts.total || 0)} points</strong>${lvlName ? ` &middot; Level: <strong>${esc(lvlName)}</strong>` : ""} (all time — points never reset by period). ${POINTS_WHY_SHORT}</p>`;
+  if (!s.hasData) {
+    return `<div class="panel">${head}
+      <p class="small" style="margin:8px 0 0">Nothing has landed yet. When businesses book you and your posts go live, this fills in with your money — held, released and paid, each with its reason — plus your offers, deals and comps for the period you pick.</p>${pointsStrip}</div>`;
+  }
+  const tiles = `<div class="cc-tiles" style="margin-top:10px">
+    <div class="cc-tile cc-hero"><div class="cc-tlabel">Paid out this period</div><div class="cc-tnum">${ccMoneyFmt(money.paidOut || 0)}</div><div class="cc-tsub">Money that reached you${(money.releasedNotPaid || 0) > 0 ? ` &middot; ${ccMoneyFmt(money.releasedNotPaid)} released, on its way` : ""}</div></div>
+    <div class="cc-tile"><div class="cc-tlabel">Held for you now</div><div class="cc-tnum">${ccMoneyFmt(held.total || 0)}</div><div class="cc-tsub">${(held.items || []).length} item${(held.items || []).length === 1 ? "" : "s"} — each with its reason below</div></div>
+    <div class="cc-tile"><div class="cc-tlabel">Released this period</div><div class="cc-tnum">${ccMoneyFmt(rel.total || 0)}</div><div class="cc-tsub">Out of escrow, on its way to you</div></div>
+    <div class="cc-tile"><div class="cc-tlabel">Deals finished</div><div class="cc-tnum">${deals.total || 0}</div><div class="cc-tsub">${rsPl(deals.compVisits || 0, "comp visit")} &middot; ${rsPl(deals.paidBookings || 0, "paid booking")} &middot; ${rsPl(deals.licenses || 0, "license")}</div></div>
+    <div class="cc-tile"><div class="cc-tlabel">Offers received</div><div class="cc-tnum">${s.offersReceived || 0}</div><div class="cc-tsub">${s.offersAccepted || 0} accepted &middot; ${s.visitsCompleted || 0} visits completed &middot; ${s.compsCompleted || 0} comps done</div></div>
+  </div>`;
+  const heldPanel = (held.items || []).length ? `<div class="panel"><h3 style="margin:0 0 4px">Held, and why</h3><p class="muted small" style="margin:0 0 6px">Money that is yours but has not released yet — every item names its reason.</p>
+    ${(held.items || []).map((r) => `<div class="cc-att-row"><span>${ccMoneyFmt(r.amount || 0)} — ${esc(r.businessName || "A business")} &middot; ${esc(r.blocker || "")}${r.releasesAt ? ` Releases ${esc(fmtDay(r.releasesAt))}.` : ""}</span></div>`).join("")}</div>` : "";
+  return `<div class="panel">${head}${tiles}${pointsStrip}</div>${heldPanel}`;
+}
+
 async function renderAnalyticsTab() {
   const el = document.getElementById("tab-body");
   if (!el) return;
@@ -13230,10 +13411,12 @@ async function renderAnalyticsTab() {
       // §8: the fills-in states, never a grid of zeros.
       const hasLiveOffer = (d.openOffers || 0) > 0 || (state.myOffers || []).some((o) => o.status === "open" || o.status === "filled");
       el.innerHTML = `${head}
+      <div id="biz-stats"></div>
       <div class="empty-card"><div class="ec-t">Your results</div><div class="ec-s">${hasLiveOffer ? "Your offer is live. This fills in as creators apply, visit, and post." : "This fills in once your campaigns are live. When creators start visiting and posting, you will see applications, visits, posts, and the local reach they delivered, right here."}</div></div>
       ${hasLiveOffer ? "" : `<p class="center"><button class="btn ws-primary" onclick="return go('dashboard','My Offers')">Post an offer</button></p>`}
       <div id="biz-receipt"></div>`;
       loadReceipt();
+      loadBizStats();
       return;
     }
     // KPI cards render only when their records exist (§7).
@@ -13255,6 +13438,7 @@ async function renderAnalyticsTab() {
     const reachHas = series.some((row) => (row.reach || 0) > 0);
     el.innerHTML = `
     ${head}
+    <div id="biz-stats"></div>
     ${cards.length ? `<div class="kpi-grid c${Math.min(4, Math.max(2, cards.length))}">${cards.join("")}</div>` : ""}
     ${seriesHas ? `<div class="chart-card"><h3>Invites &amp; decisions</h3><p class="wc-sub">Per day, last 30 days. Decisions are application answers, stamped when you make them.</p>
       ${lineChartSvg(series, [{ k: "invited", color: "#0B0D0C" }, { k: "decisions", color: "#5F7265" }])}
@@ -13276,6 +13460,7 @@ async function renderAnalyticsTab() {
     </div>` : ""}
     <div id="biz-receipt"></div>`;
     loadReceipt();
+    loadBizStats();
   } catch (err) {
     el.innerHTML = `${wsHead("Results")}<div class="error-box">${esc(err.message)}</div>`;
   }

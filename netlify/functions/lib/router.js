@@ -10989,6 +10989,29 @@ function ccPeriodOf(raw) {
   if (typeof raw === "string" && /^\d{4}-\d{2}$/.test(raw)) {
     return { key: raw, label: monthLabelOf(raw), inPeriod: (iso) => monthKeyOf(iso) === raw };
   }
+  // Week and year (Build -58): the role stats views' toggle
+  // speaks week / month / year / all time. These two presets
+  // exist so a role view and an Admin view of the same span run
+  // through this one door; the Admin shell never sends them.
+  // Week is a trailing 7 days; year is the current calendar
+  // year. Month stays the this_month preset above, unchanged.
+  if (raw === "week") {
+    const now = Date.now();
+    const from = now - 7 * 86400000;
+    return {
+      key: "week", label: "Last 7 days",
+      from: new Date(from).toISOString(), to: new Date(now).toISOString(),
+      inPeriod: (iso) => { const t = Date.parse(iso || ""); return Number.isFinite(t) && t >= from && t <= now; },
+    };
+  }
+  if (raw === "year") {
+    const y = new Date().toISOString().slice(0, 4);
+    return {
+      key: "year", label: y,
+      from: `${y}-01-01T00:00:00.000Z`, to: new Date().toISOString(),
+      inPeriod: (iso) => typeof iso === "string" && iso.slice(0, 4) === y,
+    };
+  }
   const key = raw === "last_month" ? "last_month" : raw === "this_month" ? "this_month" : "all";
   const curKey = monthKeyOf(new Date().toISOString());
   const target = key === "this_month" ? curKey : key === "last_month" ? prevMonthKey(curKey) : null;
@@ -12533,6 +12556,236 @@ async function ccExportCsv(P, ledger) {
     return ccCsvOf(["type", "who", "counterparty", "market", "amount", "detail", "age_days"], rows);
   }
   return null;
+}
+
+// ---------- Build -58: role stats views ----------
+// Jeff's order (2026-10-30): businesses, partners and creators
+// see stats like the Command Center's Money overview — their
+// own money, offers and deals, under the same Week / Month /
+// Year / All time toggle. These aggregators read the SAME
+// ccPrep the Admin views read and reuse its classifications
+// (ccMoneyAgg's counted/recorded/charged rules, ccBusinesses'
+// plan read, dealBreakdown's greater-of engine,
+// ccCreatorMoneyRows' held/released rows), filtered to one
+// record owner — so a role figure and the Admin figure for
+// the same scope + period are the same number by construction.
+// Honesty classes never blend: counted, recorded and charged
+// ride in separate objects; modeled (Halo) never enters a role
+// total — it stays in the business's Results/Receipt panels
+// where it already lives. A business's payload carries no
+// partner figures at all; a partner's carries only its own
+// deals; a creator's only their own money and points.
+
+function rolePeriodEcho(P, user, key) {
+  const now = new Date().toISOString();
+  if (key === "week") return { key, label: "Last 7 days", from: P.period.from || null, to: P.period.to || now };
+  if (key === "year") return { key, label: P.period.label, from: P.period.from || null, to: P.period.to || now };
+  if (key === "month") { const ck = monthKeyOf(now); return { key, label: monthLabelOf(ck), from: `${ck}-01T00:00:00.000Z`, to: now }; }
+  return { key: "all", label: "All time", from: user.createdAt || null, to: now };
+}
+
+function ccBizStats(P, user, offers) {
+  const me = user.id;
+  const inP = (iso) => P.period.inPeriod(iso);
+  const sum = (arr, f) => ccMoney(arr.reduce((s, x) => s + (f(x) || 0), 0));
+  // Counted — this business's register events only.
+  const cEv = P.countedEvents.filter((e) => e.businessId === me && inP(e.at));
+  const firstEv = cEv.filter((e) => e.kind === "first");
+  const returnEv = cEv.filter((e) => e.kind === "return");
+  const counted = {
+    total: sum(cEv, (e) => e.amount),
+    firsts: sum(firstEv, (e) => e.amount), firstCount: firstEv.length,
+    returns: sum(returnEv, (e) => e.amount), returnCount: returnEv.length,
+    visitsCounted: new Set(firstEv.map((e) => e.bookingId)).size,
+  };
+  // Recorded — this business's bookings, licenses and plan,
+  // under ccMoneyAgg's rules (released/granted inside the
+  // period; a plan selection counts in the period it was
+  // selected, or in all-time when it carries no date).
+  const relAt = (b) => (b.paidLane && (b.paidLane.releasedAt || b.paidLane.fundsReleasedAt)) || b.updatedAt || b.createdAt;
+  const paidRel = P.paidFinished.filter((b) => b.businessId === me && inP(relAt(b)));
+  const licGr = P.licensesGranted.filter((l) => l.businessId === me && inP(l.grantedAt || l.respondedAt || l.updatedAt || l.createdAt));
+  const { monthly, planName, b: planRec } = ccPlanOf(user);
+  const selAt = planRec && planRec.planSelectedAt ? planRec.planSelectedAt : null;
+  const subIn = typeof monthly === "number" && (selAt ? inP(selAt) : P.period.key === "all");
+  const recorded = {
+    rows: {
+      subscriptions: { flowed: subIn ? monthly : 0, count: subIn ? 1 : 0, monthlyRate: typeof monthly === "number" ? monthly : null, planName: planName || null },
+      paidBookings: { flowed: sum(paidRel, (b) => b.paidLane.businessTotal), creatorsEarned: sum(paidRel, (b) => b.paidLane.creatorNet), count: paidRel.length },
+      licenses: { flowed: sum(licGr, (l) => l.businessTotal), creatorsEarned: sum(licGr, (l) => l.creatorNet), count: licGr.length },
+    },
+  };
+  recorded.totals = {
+    flowed: ccMoney(recorded.rows.subscriptions.flowed + recorded.rows.paidBookings.flowed + recorded.rows.licenses.flowed),
+    creatorsEarned: ccMoney(recorded.rows.paidBookings.creatorsEarned + recorded.rows.licenses.creatorsEarned),
+  };
+  // Comp costs — the entered cost entries on this business's
+  // completed comp visits in the period, with their coverage:
+  // a visit with no entry is named as missing, never priced
+  // from its cap (the cap is an estimate, not a cost).
+  const myCompsDone = P.compBookings.filter((b) => b.businessId === me && b.status === "completed" && inP(P.completedAtOf(b)));
+  const costed = myCompsDone.filter((b) => b.compCostEntry && typeof b.compCostEntry.amount === "number");
+  const compCosts = { total: sum(costed, (b) => b.compCostEntry.amount), entered: costed.length, completed: myCompsDone.length, missing: myCompsDone.length - costed.length };
+  // Charged — this business's Stripe charges, ccMoneyAgg's
+  // rules (succeeded family only; refunds net on their parent;
+  // a refund row whose parent is not on file subtracts once).
+  const okStatus = (c) => c.status === "succeeded" || c.status === "partially_refunded" || c.status === "refunded";
+  const effNet = (c) => (Number(c.net) || 0) - (Number(c.refundedAmount) || 0);
+  const chIn = P.charges.filter((c) => c.businessId === me && inP(c.chargedAt));
+  const byKind = (k) => chIn.filter((c) => c.kind === k && okStatus(c));
+  const subCh = byKind("subscription");
+  const paidCh = byKind("paid");
+  const licCh = byKind("license");
+  const refundRowsList = chIn.filter((c) => c.kind === "refund");
+  const coveredParents = new Set();
+  for (const r of refundRowsList) { if (r.stripePaymentIntentId) coveredParents.add(r.stripePaymentIntentId); if (r.stripeInvoiceId) coveredParents.add(r.stripeInvoiceId); }
+  const uncoveredParentRefunds = chIn.filter((c) => c.kind !== "refund" && (Number(c.refundedAmount) || 0) > 0 && !coveredParents.has(c.id)).reduce((s, c) => s + c.refundedAmount, 0);
+  const refundsTotal = ccMoney(refundRowsList.reduce((s, r) => s + Math.abs(Number(r.net) || 0), 0) + uncoveredParentRefunds);
+  const myChargeIds = new Set(P.charges.filter((c) => c.businessId === me).map((c) => c.id));
+  const orphanRefunds = refundRowsList.filter((r) => !myChargeIds.has(r.stripePaymentIntentId) && !myChargeIds.has(r.stripeInvoiceId)).reduce((s, r) => s + Math.abs(Number(r.net) || 0), 0);
+  const charged = {
+    rows: {
+      subscriptions: { gross: sum(subCh, (c) => c.gross), creditApplied: sum(subCh, (c) => c.creditApplied), net: sum(subCh, effNet), count: subCh.length },
+      paidBookings: { net: sum(paidCh, effNet), count: paidCh.length },
+      licenses: { net: sum(licCh, effNet), count: licCh.length },
+      refunds: { net: -refundsTotal, count: refundRowsList.length },
+    },
+    failedCount: chIn.filter((c) => c.status === "failed").length,
+  };
+  charged.netTotal = ccMoney(charged.rows.subscriptions.net + charged.rows.paidBookings.net + charged.rows.licenses.net - orphanRefunds);
+  // Escrow is a stock, not a period figure: this business's
+  // money sitting held right now.
+  const heldPaid = P.visBookings.filter((b) => b.businessId === me && isPaidVisit(b) && b.paidLane && b.paidLane.escrowState === "held");
+  const licPend = P.visLicenses.filter((l) => l.businessId === me && l.status === "pending");
+  const escrow = {
+    paidHeld: { count: heldPaid.length, businessTotal: sum(heldPaid, (b) => b.paidLane.businessTotal) },
+    licensesPending: { count: licPend.length, businessTotal: sum(licPend, (l) => l.businessTotal) },
+  };
+  const deals = P.finishedDeals((rec) => rec.businessId === me);
+  const offersLive = offers.filter((o) => o.businessId === me && o.status === "open").length;
+  const hasData = !!(counted.total || recorded.totals.flowed || charged.netTotal || deals.total || myCompsDone.length || offersLive || escrow.paidHeld.count);
+  return {
+    counted, recorded, charged, compCosts, escrow, deals,
+    compsCompleted: myCompsDone.length,
+    compsCounted: myCompsDone.filter((b) => P.firstCounted.has(b.id)).length,
+    offersLive, hasData,
+  };
+}
+
+function ccPartnerStats(P, user, offers) {
+  const me = user.id;
+  const inP = (iso) => P.period.inPeriod(iso);
+  const sum = (arr, f) => ccMoney(arr.reduce((s, x) => s + (f(x) || 0), 0));
+  // The -56 engine over this partner's deals only — the same
+  // breakdown Admin's Partners view prints for this partner.
+  const rev = subRevenueByBizMonth(P.visUsers, P.charges);
+  const myDeals = (P.deals || []).filter((d) => d.partnerId === me);
+  const bds = myDeals.map((d) => dealBreakdown(d, rev));
+  // Share math settles monthly: a period holds the engine
+  // month rows whose month starts inside it — except Week,
+  // whose money row is the current month's row (a month that
+  // started eight days ago is still this week's money).
+  const curMonthKey = monthKeyOf(new Date().toISOString());
+  const rowInPeriod = (row) => (P.period.key === "week" ? row.month === curMonthKey : inP(monthStartIso(row.month)));
+  const rows = [];
+  for (const bd of bds) for (const mr of bd.markets) for (const row of mr.months) {
+    if (!rowInPeriod(row)) continue;
+    rows.push({
+      dealId: bd.dealId, market: mr.market, month: row.month, label: row.label, businesses: row.businesses,
+      gross: row.gross, partnerShare: row.partnerShare, signlShare: row.signlShare,
+      governedBy: row.governedBy, governing: row.governing,
+      pctCandidate: row.band ? row.band.pctAmount : null,
+      floorCandidate: row.band ? row.band.floorMonthly : null,
+    });
+  }
+  const periodAgg = {
+    gross: sum(rows, (r) => r.gross), partnerShare: sum(rows, (r) => r.partnerShare), signlShare: sum(rows, (r) => r.signlShare),
+    months: rows.length,
+    pctCandidate: rows.some((r) => r.pctCandidate !== null) ? sum(rows, (r) => r.pctCandidate || 0) : null,
+    floorCandidate: rows.some((r) => r.floorCandidate !== null) ? sum(rows, (r) => r.floorCandidate || 0) : null,
+    guaranteeMonths: rows.filter((r) => r.governedBy === "guarantee").length,
+    percentageMonths: rows.filter((r) => r.governedBy === "percentage").length,
+  };
+  const accrued = ccMoney(bds.reduce((s, bd) => s + bd.totals.partnerShare, 0));
+  const grossAll = ccMoney(bds.reduce((s, bd) => s + bd.totals.gross, 0));
+  const paid = partnerPayoutTotals(P.payouts, me);
+  // Activity inside this partner's own attributed scope.
+  const myBiz = P.visUsers.filter((u) => u.role === "business" && u.partnerId === me);
+  const myCreators = P.visUsers.filter((u) => u.role === "creator" && u.partnerId === me);
+  const myBizIds = new Set(myBiz.map((u) => u.id));
+  const markets = (user.partner.markets || []).map((m) => {
+    const name = normalizeMarketName(m);
+    const mb = myBiz.filter((u) => normalizeMarketName(u.market || "") === name);
+    const mRows = rows.filter((r) => normalizeMarketName(r.market || "") === name);
+    return {
+      market: m, businesses: mb.length,
+      businessesSignedInPeriod: mb.filter((u) => inP(u.createdAt)).length,
+      creators: myCreators.filter((u) => normalizeMarketName(u.market || "") === name).length,
+      gross: sum(mRows, (r) => r.gross), partnerShare: sum(mRows, (r) => r.partnerShare),
+    };
+  });
+  const dealCards = bds.map((bd) => {
+    const deal = myDeals.find((d) => d.id === bd.dealId);
+    const terms = deal ? (dealCurrentTerms(deal) || {}) : {};
+    return {
+      id: bd.dealId, label: bd.label, status: bd.status, termsState: bd.termsState,
+      partnerPct: typeof terms.partnerPct === "number" ? terms.partnerPct : null,
+      guaranteeState: bd.guaranteeState, governedBy: bd.guaranteeGovernedBy || null,
+      crossoverBusinesses: bd.crossoverBusinesses, pilotFloor: bd.pilotFloor,
+      activationDue: bd.totals.activationDue, activationPaid: bd.totals.activationPaid,
+      markets: bd.markets.map((mr) => ({ market: mr.market, status: mr.status, liveAt: mr.liveAt, activationFee: mr.activationFee, activationStatus: mr.activationStatus })),
+    };
+  });
+  const hasData = !!(myBiz.length || myCreators.length || accrued || rows.length);
+  return {
+    basis: myDeals.length ? "deal" : "no_deal",
+    termsState: myDeals.some((d) => dealHasTerms(d)) ? "entered" : "not_entered",
+    periodAgg, rows, accrued, grossAll, paid, owed: ccMoney(accrued - paid),
+    currentMonth: bds.map((bd) => bd.currentMonth).find(Boolean) || null,
+    businessesSigned: myBiz.length,
+    businessesSignedInPeriod: myBiz.filter((u) => inP(u.createdAt)).length,
+    creatorsAttributed: myCreators.length,
+    deals: P.finishedDeals((rec) => myBizIds.has(rec.businessId)),
+    offersLive: offers.filter((o) => myBizIds.has(o.businessId) && o.status === "open").length,
+    markets, dealCards, hasData,
+    shareNote: "Share math settles monthly, under the deal version in force for each month.",
+  };
+}
+
+async function ccCreatorStats(P, user) {
+  const me = user.id;
+  const inP = (iso) => P.period.inPeriod(iso);
+  const sum = (arr, f) => ccMoney(arr.reduce((s, x) => s + (f(x) || 0), 0));
+  const myBookings = P.visBookings.filter((b) => b.creatorId === me);
+  const money = ccCreatorMoneyRows(P);
+  const held = money.held.filter((r) => r.creatorId === me);
+  const released = money.released.filter((r) => r.creatorId === me);
+  // Paid out is released money that actually reached the
+  // creator: a granted license pays at grant; a paid booking
+  // pays when its funds state is released — or at escrow
+  // release when no real-money funds record rides on it
+  // (billing recorded, rails off: release IS the payout).
+  const relAt = (b) => (b.paidLane && (b.paidLane.releasedAt || b.paidLane.fundsReleasedAt)) || b.updatedAt || b.createdAt;
+  const paidOutBookings = P.paidFinished.filter((b) => b.creatorId === me && inP(relAt(b)) && (!b.paidLane.funds || b.paidLane.funds.state === "released"));
+  const licPaid = P.licensesGranted.filter((l) => l.creatorId === me && inP(l.grantedAt || l.respondedAt || l.updatedAt || l.createdAt));
+  const paidOut = ccMoney(sum(paidOutBookings, (b) => b.paidLane.creatorNet) + sum(licPaid, (l) => l.creatorNet));
+  const releasedTotal = sum(released, (r) => r.amount);
+  const t = await refreshPointsLevel(user);
+  const hasData = !!(myBookings.length || held.length || released.length);
+  return {
+    offersReceived: myBookings.filter((b) => inP(b.createdAt)).length,
+    offersAccepted: myBookings.filter((b) => ["accepted", "confirmed", "completed"].includes(b.status) && inP(b.updatedAt || b.createdAt)).length,
+    visitsCompleted: myBookings.filter((b) => b.status === "completed" && inP(P.completedAtOf(b))).length,
+    compsCompleted: P.compBookings.filter((b) => b.creatorId === me && b.status === "completed" && inP(P.completedAtOf(b))).length,
+    deals: P.finishedDeals((rec) => rec.creatorId === me),
+    money: {
+      held: { total: sum(held, (r) => r.amount), items: held },
+      released: { total: releasedTotal, items: released },
+      paidOut, releasedNotPaid: ccMoney(Math.max(0, releasedTotal - paidOut)),
+    },
+    points: { total: t.total, momentumPoints: t.momentumPoints, linePoints: t.linePoints, level: t.levelInfo },
+    hasData,
+  };
 }
 
 function validPartnerMarkets(names) {
@@ -18652,6 +18905,31 @@ async function route(event) {
     booking.updatedAt = nowIso();
     await store.set(`booking:${booking.id}`, booking);
     return json(200, { booking: await withPostState(booking) });
+  }
+
+  // Role stats (Build -58): the Command Center's view of YOUR
+  // scope — a business, partner or creator reads their own
+  // numbers under a Week / Month / Year / All time toggle, from
+  // the same ccPrep and the same aggregators Admin reads, so
+  // the figures reconcile with the Command Center exactly.
+  // Scope is the session, never a parameter: naming another
+  // record owner's id is a 403, and every aggregator filters
+  // to the session user's own records.
+  if (method === "GET" && seg[0] === "me" && seg[1] === "stats" && seg.length === 2) {
+    if (!["business", "partner", "creator"].includes(user.role)) return err(403, "Stats are for businesses, partners and creators");
+    for (const k of ["businessId", "creatorId", "partnerId", "userId"]) {
+      if (query[k] && String(query[k]) !== user.id) return err(403, "You can only see your own numbers");
+    }
+    const key = query.period === "week" ? "week" : query.period === "year" ? "year" : query.period === "month" ? "month" : "all";
+    const P = await ccPrep({
+      period: key === "month" ? "this_month" : key,
+      testers: (isTester(user) || (user.partner && user.partner.demo)) ? "1" : undefined,
+    });
+    const offers = await allOffers();
+    const period = rolePeriodEcho(P, user, key);
+    if (user.role === "business") return json(200, { role: "business", period, stats: ccBizStats(P, user, offers) });
+    if (user.role === "partner") return json(200, { role: "partner", period, stats: ccPartnerStats(P, user, offers) });
+    return json(200, { role: "creator", period, stats: await ccCreatorStats(P, user) });
   }
 
   // The Receipt (Build -34, M6): "What SIGNL brought you" for
