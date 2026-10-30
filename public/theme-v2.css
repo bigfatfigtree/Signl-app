@@ -294,6 +294,13 @@ tbody tr:hover td { background: rgba(227,245,234,.55); }
 .msg.mine { background: var(--grad-soft); border-color: var(--line); }
 .msg .meta { color: var(--ink3); }
 
+/* Platform thread (Build -40): the SIGNL team conversation is
+   visually distinct from offer/visit threads on both sides. */
+.thread-platform { border-left: 4px solid var(--mint-dot); }
+.msg.platform-msg { background: var(--mint-pale); border-color: var(--mint-soft); }
+.admin-msg-item { padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; margin-bottom: 8px; background: var(--card); cursor: pointer; }
+.admin-msg-item:hover { border-color: var(--ink3); }
+
 /* ---------- profile media ---------- */
 .profile-photo {
   border: 1px solid var(--line); border-radius: 18px;

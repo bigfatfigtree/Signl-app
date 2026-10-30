@@ -14312,6 +14312,11 @@ async function savePlan() {
 
 // ---------- messages ----------
 
+// The platform thread's peer id (Build -40): the SIGNL team
+// identity on the other side of a creator's platform thread.
+// Mirrors PLATFORM_PEER_ID in the router.
+const SIGNL_TEAM_PEER = "signl-team";
+
 function openThread(otherId) {
   state.tab = "Messages";
   state.activeThread = otherId;
@@ -14355,8 +14360,8 @@ function threadItemsHtml() {
   if (q) threads = threads.filter((t) => ((t.otherBusinessName || t.otherName || "") + " " + (t.otherHandle || "")).toLowerCase().includes(q));
   if (!threads.length) return `<div class="empty-card"><div class="ec-t">No conversations here</div><div class="ec-s">${msgMode === "waiting" ? "Nothing is waiting on you. When someone writes and you have not answered yet, it lands here." : "No conversations match that search."}</div></div>`;
   return `<div class="thread-list">${threads.map((t) => `
-        <div class="thread-item" onclick="openThread('${t.otherId}')">
-          <strong>${esc(t.otherBusinessName || t.otherName)}</strong> ${t.otherHandle ? `<span class="muted">@${esc(t.otherHandle)}</span>` : ""}${t.lastMessage && t.lastMessage.fromId !== me ? ` <span class="badge info">Waiting on you</span>` : ""}
+        <div class="thread-item${t.platform ? " thread-platform" : ""}" onclick="openThread('${t.otherId}')">
+          <strong>${esc(t.otherBusinessName || t.otherName)}</strong>${t.platform ? ` <span class="badge ok">SIGNL team</span>` : ""} ${t.otherHandle ? `<span class="muted">@${esc(t.otherHandle)}</span>` : ""}${t.lastMessage && t.lastMessage.fromId !== me ? ` <span class="badge info">Waiting on you</span>` : ""}
           ${threadContextFor(t.otherId) ? `<div class="small thread-ctx">${esc(threadContextFor(t.otherId))}</div>` : ""}
           <div class="small muted">${esc((t.lastMessage.body || "").slice(0, 90))}</div>
         </div>`).join("")}</div>`;
@@ -14397,13 +14402,14 @@ async function loadConversation(otherId) {
   try {
     const data = await api("GET", "/messages?with=" + encodeURIComponent(otherId));
     const t0 = (state.threads || []).find((t) => t.otherId === otherId) || {};
-    const ctxLine = threadContextFor(otherId);
+    const isPlatform = otherId === SIGNL_TEAM_PEER || !!t0.platform;
+    const ctxLine = isPlatform ? "" : threadContextFor(otherId);
     el.innerHTML = `
-      <div class="thread-head"><strong>${esc(t0.otherBusinessName || t0.otherName || "Conversation")}</strong>${ctxLine ? `<div class="small thread-ctx">${esc(ctxLine)}</div>` : ""}<div class="small muted">Contact about this visit or offer. Messages stay in SIGNL.</div></div>
+      <div class="thread-head"><strong>${esc(isPlatform ? "SIGNL" : (t0.otherBusinessName || t0.otherName || "Conversation"))}</strong>${isPlatform ? ` <span class="badge ok">SIGNL team</span>` : ""}${ctxLine ? `<div class="small thread-ctx">${esc(ctxLine)}</div>` : ""}<div class="small muted">${isPlatform ? "Messages from the SIGNL team. Reply here any time." : "Contact about this visit or offer. Messages stay in SIGNL."}</div></div>
       <div id="msg-list">${data.messages.map((m) => m.system ? `
         <div class="msg-system">${esc(m.body)}</div>` : `
-        <div class="msg ${m.fromId === state.user.id ? "mine" : ""}">
-          <div class="meta">${m.fromId === state.user.id ? "You" : "Them"} &middot; ${fmtDate(m.createdAt)}</div>
+        <div class="msg ${m.fromId === state.user.id ? "mine" : ""}${m.platform ? " platform-msg" : ""}">
+          <div class="meta">${m.fromId === state.user.id ? "You" : (m.fromId === SIGNL_TEAM_PEER ? "SIGNL" : "Them")} &middot; ${fmtDate(m.createdAt)}</div>
           ${esc(m.body)}
         </div>`).join("") || '<p class="muted">No messages yet. Say hello.</p>'}</div>
       <form onsubmit="return sendMessage(event, '${otherId}')" class="mt">
@@ -14424,6 +14430,190 @@ async function sendMessage(e, otherId) {
     await api("POST", "/messages", { toUserId: otherId, body: document.getElementById("msg-body").value });
     refreshBadges();
     loadConversation(otherId);
+  } catch (err) { alert(err.message); }
+  return false;
+}
+
+// ---------- admin: platform messages (Build -40) ----------
+// Jeff writes to creators as the SIGNL team, from inside the
+// Requests tab: a compose box (one creator, or a whole market's
+// finished creators as individual threads), the template picker,
+// and the thread list with unread reply counts. Nothing here
+// sends on its own: every send is Jeff's tap on Send, and the
+// server records each one in the Event Log.
+let adminMsg = { templates: [], threads: [], markets: [], targetId: null, segmentMarket: "", openCreatorId: null, threadCreator: null, threadMessages: [], lastTemplateFill: null };
+
+function adminMsgTargetUser() {
+  if (!adminMsg.targetId) return null;
+  const map = state.adminMsgUsers || {};
+  if (map[adminMsg.targetId]) return map[adminMsg.targetId];
+  const t = (adminMsg.threads || []).find((x) => x.creatorId === adminMsg.targetId);
+  if (t) return { id: t.creatorId, name: t.creatorName, market: t.creatorMarket, creator: { handle: t.creatorHandle } };
+  return { id: adminMsg.targetId, name: "Creator", market: "", creator: null };
+}
+function adminMsgTemplateBody() {
+  const sel = document.getElementById("admin-msg-template");
+  const t = (adminMsg.templates || []).find((x) => x.id === (sel ? sel.value : "blank"));
+  if (!t) return "";
+  let market = "";
+  if (adminMsg.targetId) { const u = adminMsgTargetUser(); market = u ? (u.market || "") : ""; }
+  else { const msel = document.getElementById("admin-msg-market"); market = msel ? msel.value : adminMsg.segmentMarket; }
+  return (t.body || "").replaceAll("{market}", market || "your market");
+}
+function adminMsgTemplateChanged() {
+  const ta = document.getElementById("admin-msg-body");
+  if (!ta) return false;
+  const body = adminMsgTemplateBody();
+  ta.value = body;
+  adminMsg.lastTemplateFill = body;
+  ta.focus();
+  return false;
+}
+function adminMsgMarketChanged(v) {
+  adminMsg.segmentMarket = v;
+  // Keep an untouched template prefill honest to the new market;
+  // words Jeff has edited are never overwritten.
+  const ta = document.getElementById("admin-msg-body");
+  if (ta && adminMsg.lastTemplateFill !== null && ta.value === adminMsg.lastTemplateFill) {
+    const body = adminMsgTemplateBody();
+    ta.value = body;
+    adminMsg.lastTemplateFill = body;
+  }
+  return false;
+}
+function adminMsgPanelHtml() {
+  const target = adminMsgTargetUser();
+  const threadRows = (adminMsg.threads || []).map((t) => `
+    <div class="admin-msg-item" onclick="adminMsgOpenThread('${t.creatorId}')">
+      <strong>${esc(t.creatorName)}</strong> ${t.creatorHandle ? `<span class="muted">@${esc(t.creatorHandle)}</span>` : ""} <span class="muted small">${esc(t.creatorMarket || "")}</span>${t.unreadReplies ? ` <span class="badge info">${t.unreadReplies} unread ${t.unreadReplies === 1 ? "reply" : "replies"}</span>` : ""}
+      ${t.lastMessage ? `<div class="small muted">${t.lastMessage.fromId === SIGNL_TEAM_PEER ? "SIGNL: " : ""}${esc((t.lastMessage.body || "").slice(0, 90))}</div>` : ""}
+    </div>`).join("");
+  let threadView = "";
+  if (adminMsg.openCreatorId && adminMsg.threadCreator) {
+    const c = adminMsg.threadCreator;
+    threadView = `
+    <div class="mt">
+      <h4 style="margin:0 0 6px">Thread with ${esc(c.name)} ${c.handle ? `<span class="muted">@${esc(c.handle)}</span>` : ""}</h4>
+      <div id="admin-msg-list">${(adminMsg.threadMessages || []).map((m) => `
+        <div class="msg ${m.fromId === SIGNL_TEAM_PEER ? "platform-msg" : ""}">
+          <div class="meta">${m.fromId === SIGNL_TEAM_PEER ? "SIGNL" : esc(c.name)} &middot; ${fmtDate(m.createdAt)}</div>
+          ${esc(m.body)}
+        </div>`).join("") || '<p class="muted">No messages yet.</p>'}</div>
+      <form onsubmit="return adminMsgSendReply(event)" class="mt">
+        <div class="field"><textarea id="admin-msg-reply" rows="2" placeholder="Reply as SIGNL..." required></textarea></div>
+        <button class="btn small-btn" type="submit">Send reply</button>
+      </form>
+    </div>`;
+  }
+  return `
+  <div class="panel">
+    <h3 style="margin-top:0">Creator messages</h3>
+    <p class="muted small">Messages land in the creator's SIGNL inbox as the SIGNL team, and each one also emails them a short notification. A market send gives every finished creator in that market their own thread.</p>
+    ${target ? `<p><span class="badge ok">To: ${esc(target.name)}${target.creator && target.creator.handle ? ` (@${esc(target.creator.handle)})` : ""}${target.market ? ` &middot; ${esc(target.market)}` : ""}</span> <button type="button" class="btn small-btn ghost" onclick="adminMsgClearTarget()">Clear</button></p>`
+      : `<div class="field"><label>Market segment (finished creators)</label><select id="admin-msg-market" onchange="adminMsgMarketChanged(this.value)">${(adminMsg.markets || []).map((m) => `<option value="${esc(m)}" ${m === adminMsg.segmentMarket ? "selected" : ""}>${esc(m)}</option>`).join("")}</select></div>`}
+    <div class="field"><label>Template</label><select id="admin-msg-template" onchange="adminMsgTemplateChanged()">${(adminMsg.templates || []).map((t) => `<option value="${esc(t.id)}">${esc(t.label)}</option>`).join("")}</select></div>
+    <div class="field"><label>Message</label><textarea id="admin-msg-body" rows="4" placeholder="Write to ${target ? esc(target.name) : "the segment"}..."></textarea></div>
+    <button type="button" class="btn" onclick="adminMsgSendCompose(this)">${target ? "Send message" : "Send to segment"}</button>
+    <span id="admin-msg-result" class="small" style="margin-left:8px"></span>
+    ${threadRows ? `<h4 class="mt">Threads</h4>${threadRows}` : `<p class="muted small mt">No platform threads yet. The first message you send starts one.</p>`}
+    ${threadView}
+  </div>`;
+}
+let adminMsgRendering = false;
+let adminMsgRenderAgain = false;
+async function renderAdminMessages() {
+  const host = document.getElementById("admin-msg-panel");
+  if (!host) return;
+  // Serialize renders: the panel refreshes on load, on sends,
+  // and on thread opens, and two overlapping passes would
+  // interleave their fetches — the slower pass would repaint
+  // with its older thread list (a stale unread count over a
+  // fresh thread view). A pass requested mid-render simply
+  // runs again right after, with the latest state.
+  if (adminMsgRendering) { adminMsgRenderAgain = true; return; }
+  adminMsgRendering = true;
+  try {
+    // This panel is a working surface, not a snapshot: opening a
+    // thread marks it read server-side, so the overview read that
+    // follows must never be served from the client's 15-second
+    // GET cache (a cached overview would repaint the just-read
+    // thread as still unread). Drop both keys before fetching.
+    getCache.delete("/admin/platform-messages");
+    if (adminMsg.openCreatorId) getCache.delete("/admin/platform-messages?creatorId=" + encodeURIComponent(adminMsg.openCreatorId));
+    if (adminMsg.openCreatorId) {
+      const detail = await api("GET", "/admin/platform-messages?creatorId=" + encodeURIComponent(adminMsg.openCreatorId));
+      adminMsg.threadCreator = detail.creator;
+      adminMsg.threadMessages = detail.messages;
+    }
+    const [overview, templates] = await Promise.all([api("GET", "/admin/platform-messages"), api("GET", "/admin/message-templates")]);
+    adminMsg.threads = overview.threads || [];
+    adminMsg.markets = overview.markets || [];
+    adminMsg.templates = templates.templates || [];
+    if (!adminMsg.segmentMarket && adminMsg.markets.length) adminMsg.segmentMarket = adminMsg.markets[0];
+    host.innerHTML = adminMsgPanelHtml();
+  } catch (err) {
+    host.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+  } finally {
+    adminMsgRendering = false;
+    if (adminMsgRenderAgain) { adminMsgRenderAgain = false; renderAdminMessages(); }
+  }
+}
+function adminMsgComposeTo(userId) {
+  adminMsg.targetId = userId;
+  renderAdminMessages().then(() => {
+    const panel = document.getElementById("admin-msg-panel");
+    if (panel) panel.scrollIntoView({ behavior: "smooth", block: "start" });
+    const ta = document.getElementById("admin-msg-body");
+    if (ta) ta.focus();
+  });
+  return false;
+}
+function adminMsgClearTarget() { adminMsg.targetId = null; renderAdminMessages(); return false; }
+async function adminMsgOpenThread(creatorId) {
+  adminMsg.openCreatorId = creatorId;
+  await renderAdminMessages();
+  const host = document.getElementById("admin-msg-list");
+  if (host) host.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  return false;
+}
+async function adminMsgSendCompose(btn) {
+  const ta = document.getElementById("admin-msg-body");
+  const result = document.getElementById("admin-msg-result");
+  const body = ta ? ta.value.trim() : "";
+  if (!body) { if (result) result.textContent = "Write a message first."; return false; }
+  const sel = document.getElementById("admin-msg-template");
+  const payload = { body, templateId: sel ? sel.value : "blank" };
+  if (adminMsg.targetId) payload.creatorId = adminMsg.targetId;
+  else {
+    const msel = document.getElementById("admin-msg-market");
+    payload.market = msel ? msel.value : adminMsg.segmentMarket;
+  }
+  if (btn) btn.disabled = true;
+  try {
+    const data = await api("POST", "/admin/platform-messages", payload);
+    if (result) result.textContent = `Sent to ${data.sent} creator${data.sent === 1 ? "" : "s"}. Email notifications: ${data.emailSent} sent, ${data.emailFailed} failed.`;
+    if (ta) { ta.value = ""; adminMsg.lastTemplateFill = null; }
+    const keepTarget = adminMsg.targetId;
+    const keepMarket = adminMsg.segmentMarket;
+    await renderAdminMessages();
+    adminMsg.targetId = keepTarget;
+    adminMsg.segmentMarket = keepMarket;
+    const r2 = document.getElementById("admin-msg-result");
+    if (r2) r2.textContent = `Sent to ${data.sent} creator${data.sent === 1 ? "" : "s"}. Email notifications: ${data.emailSent} sent, ${data.emailFailed} failed.`;
+  } catch (err) {
+    if (result) result.textContent = err.message;
+    if (btn) btn.disabled = false;
+  }
+  return false;
+}
+async function adminMsgSendReply(e) {
+  e.preventDefault();
+  const ta = document.getElementById("admin-msg-reply");
+  const body = ta ? ta.value.trim() : "";
+  if (!body || !adminMsg.openCreatorId) return false;
+  try {
+    await api("POST", "/admin/platform-messages", { creatorId: adminMsg.openCreatorId, body });
+    await renderAdminMessages();
   } catch (err) { alert(err.message); }
   return false;
 }
@@ -15049,6 +15239,11 @@ async function loadApplications() {
   const el = document.getElementById("tab-body");
   try {
     const data = await api("GET", "/admin/applications");
+    // The platform-message compose box targets creators from
+    // these rows; keep the records by id so "Message" knows the
+    // creator's name and market without another fetch.
+    state.adminMsgUsers = {};
+    for (const u of [...(data.pending || []), ...(data.decided || [])]) state.adminMsgUsers[u.id] = u;
     const row = (u) => {
       const standing = u.role === "creator"
         ? (u.foundingPriority ? `<br><span class="badge tier">Founding priority #${u.foundingPriority}</span>` : u.queuePosition ? `<br><span class="badge info">Queue #${u.queuePosition} in market</span>` : "")
@@ -15087,7 +15282,7 @@ async function loadApplications() {
         <td data-label="Applied">${fmtDate(u.createdAt)}</td>
         <td>${u.status === "pending"
           ? `<button class="btn small-btn" onclick="reviewApp('${u.id}','approve')">Approve</button> <button class="btn small-btn danger" onclick="toggleRejectEditor('${u.id}')">Reject</button><div id="rej-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px"><div class="field"><label>Reason (optional, named in their rejection email)</label><select id="rej-reason-${u.id}"><option value="">No reason given</option><option>Not local enough</option><option>Audience too small for this wave</option><option>Content not a fit</option><option>Market not open yet</option><option>Other</option></select></div><button class="btn small-btn danger" onclick="confirmRejectApp('${u.id}')">Send rejection</button></div>`
-          : `<span class="badge ${u.status === "approved" ? "ok" : "bad"}">${esc(u.status)}</span>${u.tester ? ` <span class="badge warn">Tester</span>` : ""}${u.role === "creator" && u.status === "approved" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="setTester('${u.id}', ${u.tester ? "false" : "true"}, 'creator')">${u.tester ? "Move to roster" : "Move to Tester"}</button>` : ""}`}${u.role === "business" && u.status === "approved" && businessAccessState(u) !== "active" ? `<br><button class="btn small-btn" style="margin-top:6px" onclick="activateBusiness('${u.id}')">Activate business</button>` : ""}${u.role === "business" && u.status === "approved" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="setTester('${u.id}', ${u.tester ? "false" : "true"}, 'business')">${u.tester ? "Move to roster" : "Move to Tester"}</button>` : ""}${u.role === "business" && u.business ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleReviewLinks('${u.id}')">Review links</button><div id="rl-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px">${["google", "yelp", "tripadvisor", "facebook"].map((k) => `<div class="field"><label>${esc(k)}</label><input id="rl-${k}-${u.id}" type="url" value="${esc((u.business.reviewLinks || {})[k] || "")}" placeholder="https://"></div>`).join("")}<button class="btn small-btn" onclick="saveReviewLinks('${u.id}')">Save review links</button></div><br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleDiscountEditor('${u.id}')">Code discount</button><div id="disc-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px"><label style="font-weight:500"><input type="checkbox" id="disc-enabled-${u.id}" style="width:auto" ${u.business.discountEnabled ? "checked" : ""}> Code discounts on (business's opt-in)</label><div class="field"><label>Discount percent (5 to 50)</label><input id="disc-pct-${u.id}" type="number" min="5" max="50" step="1" value="${esc(String(u.business.discountPct == null ? 20 : u.business.discountPct))}"></div><button class="btn small-btn" onclick="saveDiscountSetting('${u.id}')">Save code discount</button></div>` : ""}${u.role === "creator" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="adminViewCreator('${u.id}')">View profile</button>` : ""}</td>
+          : `<span class="badge ${u.status === "approved" ? "ok" : "bad"}">${esc(u.status)}</span>${u.tester ? ` <span class="badge warn">Tester</span>` : ""}${u.role === "creator" && u.status === "approved" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="setTester('${u.id}', ${u.tester ? "false" : "true"}, 'creator')">${u.tester ? "Move to roster" : "Move to Tester"}</button>` : ""}${u.role === "creator" && u.status === "approved" ? `<br><button class="btn small-btn" style="margin-top:6px" onclick="adminMsgComposeTo('${u.id}')">Message</button>` : ""}`}${u.role === "business" && u.status === "approved" && businessAccessState(u) !== "active" ? `<br><button class="btn small-btn" style="margin-top:6px" onclick="activateBusiness('${u.id}')">Activate business</button>` : ""}${u.role === "business" && u.status === "approved" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="setTester('${u.id}', ${u.tester ? "false" : "true"}, 'business')">${u.tester ? "Move to roster" : "Move to Tester"}</button>` : ""}${u.role === "business" && u.business ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleReviewLinks('${u.id}')">Review links</button><div id="rl-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px">${["google", "yelp", "tripadvisor", "facebook"].map((k) => `<div class="field"><label>${esc(k)}</label><input id="rl-${k}-${u.id}" type="url" value="${esc((u.business.reviewLinks || {})[k] || "")}" placeholder="https://"></div>`).join("")}<button class="btn small-btn" onclick="saveReviewLinks('${u.id}')">Save review links</button></div><br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleDiscountEditor('${u.id}')">Code discount</button><div id="disc-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px"><label style="font-weight:500"><input type="checkbox" id="disc-enabled-${u.id}" style="width:auto" ${u.business.discountEnabled ? "checked" : ""}> Code discounts on (business's opt-in)</label><div class="field"><label>Discount percent (5 to 50)</label><input id="disc-pct-${u.id}" type="number" min="5" max="50" step="1" value="${esc(String(u.business.discountPct == null ? 20 : u.business.discountPct))}"></div><button class="btn small-btn" onclick="saveDiscountSetting('${u.id}')">Save code discount</button></div>` : ""}${u.role === "creator" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="adminViewCreator('${u.id}')">View profile</button>` : ""}</td>
       </tr>`;
     };
     const s = data.summary;
@@ -15100,11 +15295,13 @@ async function loadApplications() {
       </table></div>
       ${s.auto ? `<p class="muted small">Auto-decided under the standing rules: ${s.auto.approved} approved, ${s.auto.rejected} rejected all time; today ${s.auto.approvedToday} approved, ${s.auto.rejectedToday} rejected. Referred claims always wait for a person.</p>` : ""}` : "";
     el.innerHTML = `
+      <div id="admin-msg-panel"><p class="muted">Loading creator messages...</p></div>
       ${summaryStrip}
       <h3>Pending (${data.pending.length})</h3>
       ${data.pending.length ? `<div class="table-wrap panel"><table><tr><th>Applicant</th><th>Type</th><th>Market</th><th>Details</th><th>Applied</th><th>Decision</th></tr>${data.pending.map(row).join("")}</table></div>` : `<p class="muted">No pending applications.</p>`}
       <h3 class="mt">Decided (${data.decided.length})</h3>
       ${data.decided.length ? `<div class="table-wrap panel"><table><tr><th>Applicant</th><th>Type</th><th>Market</th><th>Details</th><th>Applied</th><th>Status</th></tr>${data.decided.map(row).join("")}</table></div>` : `<p class="muted">None yet.</p>`}`;
+    renderAdminMessages();
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
@@ -16341,6 +16538,15 @@ function previewDashboardHtml(d) {
     if (ytParam && state.user && state.user.role === "creator") {
       state.ytNotice = ytParam.trim().slice(0, 24);
       state.tab = "Profile";
+      try { history.replaceState(null, "", location.pathname + location.hash); } catch (e) { /* cosmetic only */ }
+    }
+    // A platform-message email link (/?open=messages, Build -40)
+    // lands a signed-in creator or business straight on their
+    // Messages view, where the SIGNL team thread waits. Same
+    // consume-and-strip discipline as the YouTube return above.
+    if (params.get("open") === "messages" && state.user && (state.user.role === "creator" || state.user.role === "business")) {
+      state.tab = "Messages";
+      if (state.user.role === "creator") state.activeThread = "signl-team";
       try { history.replaceState(null, "", location.pathname + location.hash); } catch (e) { /* cosmetic only */ }
     }
     // A password reset link (/?reset=<token>) lands on the reset

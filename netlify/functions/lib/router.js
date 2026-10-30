@@ -2232,6 +2232,96 @@ async function deliverEmail(kind, user, subject, text, band, opts) {
   return result;
 }
 
+// ---------- platform messages (Build -40, Jeff, 2026-10-30) ----------
+// A direct line from the SIGNL team to a creator, inside the
+// creator's existing Messages surface. The sender is a platform
+// identity, not Jeff's personal user record: every creator has
+// exactly one platform thread, keyed by the same sorted-pair
+// convention as person-to-person threads, with the constant peer
+// id below as the other side. Admin is the only sender; creators
+// can reply in the thread. Each admin send also pings the creator
+// by email on the hello@ lane (deliverEmail, kind
+// "platform_message"): the email is a notification with a short
+// preview and a link back to the app's Messages view, never the
+// conversation itself. A failed or unconfigured email transport
+// is logged loudly (the email-health pattern: the *_email_not_sent
+// event plus a console.error for the function log) and never
+// blocks or rolls back the stored in-app message.
+const PLATFORM_PEER_ID = "signl-team";
+const PLATFORM_MESSAGE_MAX = 4000;
+const MESSAGE_TEMPLATES = [
+  { id: "blank", label: "Blank", body: "" },
+  {
+    id: "golden_ticket",
+    label: "Golden Ticket reminder",
+    body: "Quick one. When you finished your SIGNL profile you got two Golden Tickets, founding seats you can hand to two creators by name. The seat is held for them until {market} launches, and when they finish, it earns you 100 points, which moves you up when businesses search.\n\nWho are your two? Send the tickets from your founding page, or just tell me the names and I will make sure the right people get them.",
+  },
+];
+function platformThreadId(creatorId) {
+  return [String(creatorId), PLATFORM_PEER_ID].sort().join("__");
+}
+function platformMessageEmail(creator, body) {
+  const preview = String(body || "").trim().slice(0, 120).replace(/\s+/g, " ");
+  const base = (process.env.APP_URL || "https://app.joinsignl.com").replace(/\/+$/, "");
+  return {
+    subject: "You have a new message on SIGNL",
+    text: [
+      "Jeff from SIGNL sent you a message.",
+      "",
+      `"${preview}"`,
+      "",
+      "Read and reply in SIGNL:",
+      `${base}/?open=messages`,
+      "",
+      "This email is only a notification; the conversation lives in SIGNL.",
+    ].join("\n"),
+  };
+}
+async function sendPlatformMessage(adminUser, creator, body, meta = {}) {
+  const threadId = platformThreadId(creator.id);
+  const msg = {
+    id: crypto.randomUUID(),
+    threadId,
+    fromId: PLATFORM_PEER_ID,
+    toId: creator.id,
+    body,
+    platform: true,
+    createdAt: nowIso(),
+  };
+  await store.set(`message:${msg.id}`, msg);
+  // Same badge signal as person-to-person messages: one live
+  // "message_received" note per thread while unread.
+  const priorNotes = await store.list(`note:${creator.id}:`);
+  const alreadySignaled = priorNotes.some((r) => r.value && r.value.kind === "message_received" && !r.value.readAt && r.value.data && r.value.data.threadId === threadId);
+  if (!alreadySignaled) {
+    await notifyUser(creator.id, "message_received", "SIGNL sent you a message.", { threadId, messageId: msg.id, fromId: PLATFORM_PEER_ID, platform: true });
+  }
+  await logEvent({
+    type: "platform_message_sent",
+    actorId: adminUser.id,
+    actorRole: "admin",
+    subjectId: msg.id,
+    market: creator.market || null,
+    data: { toId: creator.id, scope: meta.scope || "single", segmentMarket: meta.segmentMarket || null, templateId: meta.templateId || null },
+  });
+  // The email ping rides after the in-app message is durable.
+  // Any failure here (send refused, transport down, even a store
+  // hiccup while logging) is loud in the function log and leaves
+  // the message standing: the ping is a knock, not the delivery.
+  let emailResult;
+  try {
+    const mail = platformMessageEmail(creator, body);
+    emailResult = await deliverEmail("platform_message", creator, mail.subject, mail.text, null);
+    if (!emailResult.sent) {
+      console.error(`SIGNL platform message email not sent: to=${creator.email} reason=${emailResult.reason || "unknown"}`);
+    }
+  } catch (e) {
+    console.error(`SIGNL platform message email failed: to=${creator.email}:`, e);
+    emailResult = { sent: false, reason: String(e && e.message || e).slice(0, 200) };
+  }
+  return { message: msg, email: emailResult };
+}
+
 function greetingName(user) {
   const first = ((user && user.name) || "").trim().split(/\s+/)[0] || "";
   if (!first || first.includes("@") || (user.email && first.toLowerCase() === String(user.email).toLowerCase())) return "there";
@@ -11163,6 +11253,100 @@ async function route(event) {
       }
       return json(200, { flagged });
     }
+    // Platform messages (Build -40): Admin writes to creators in
+    // their SIGNL Messages, as the SIGNL team. One creator gets a
+    // message in their own platform thread; a market segment fans
+    // out to one individual thread per finished creator (approved,
+    // profile complete, on the roster, in good standing) — never
+    // a group thread, never a visible recipient list. Every send
+    // is an Event Log record (platform_message_sent per recipient;
+    // platform_message_segment for the fan-out itself).
+    if (method === "GET" && seg[1] === "message-templates") {
+      return json(200, { templates: MESSAGE_TEMPLATES });
+    }
+    if (method === "GET" && seg[1] === "platform-messages" && seg.length === 2) {
+      const rows = await store.list("message:");
+      const byCreator = new Map();
+      for (const r of rows) {
+        const m = r.value;
+        if (!m || !m.platform) continue;
+        const creatorId = m.fromId === PLATFORM_PEER_ID ? m.toId : m.fromId;
+        if (!creatorId || creatorId === PLATFORM_PEER_ID) continue;
+        if (!byCreator.has(creatorId)) byCreator.set(creatorId, []);
+        byCreator.get(creatorId).push(m);
+      }
+      if (query.creatorId) {
+        const creator = await store.get(`user:${query.creatorId}`);
+        if (!creator || creator.role !== "creator") return err(404, "Creator not found");
+        const messages = (byCreator.get(creator.id) || []).slice().sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
+        await store.set(`pmstate:${creator.id}`, { creatorId: creator.id, adminLastReadAt: nowIso(), updatedAt: nowIso() });
+        return json(200, {
+          creator: { id: creator.id, name: creator.name, email: creator.email, market: creator.market, handle: creator.creator ? creator.creator.handle : null },
+          messages,
+        });
+      }
+      const users = await allUsers();
+      const usersById = new Map(users.map((u) => [u.id, u]));
+      const threads = [];
+      for (const [creatorId, msgs] of byCreator.entries()) {
+        const creator = usersById.get(creatorId);
+        if (!creator) continue;
+        const sorted = msgs.slice().sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
+        const state = await store.get(`pmstate:${creatorId}`);
+        const readAt = state && state.adminLastReadAt ? state.adminLastReadAt : "";
+        threads.push({
+          creatorId,
+          creatorName: creator.name,
+          creatorHandle: creator.creator ? creator.creator.handle : null,
+          creatorMarket: creator.market,
+          lastMessage: sorted[sorted.length - 1] || null,
+          unreadReplies: sorted.filter((m) => m.fromId === creatorId && m.createdAt > readAt).length,
+        });
+      }
+      threads.sort((a, b) => ((a.lastMessage && a.lastMessage.createdAt) < (b.lastMessage && b.lastMessage.createdAt) ? 1 : -1));
+      const markets = [...new Set(users
+        .filter((u) => isRosterCreator(u) && profileCompleteOf(u) && standingState(u) !== "banned")
+        .map((u) => normalizeMarketName(u.market))
+        .filter(Boolean))].sort();
+      return json(200, { threads, markets });
+    }
+    if (method === "POST" && seg[1] === "platform-messages" && seg.length === 2) {
+      const b = parseBody(event);
+      const body = String(b.body || "").trim();
+      if (!body) return err(400, "Message cannot be empty");
+      if (body.length > PLATFORM_MESSAGE_MAX) return err(400, `Message is too long (max ${PLATFORM_MESSAGE_MAX} characters)`);
+      const templateId = b.templateId ? String(b.templateId) : null;
+      if (templateId && !MESSAGE_TEMPLATES.some((t) => t.id === templateId)) return err(400, "Unknown template");
+      let recipients;
+      let scope;
+      let segmentMarket = null;
+      if (b.creatorId) {
+        const target = await store.get(`user:${String(b.creatorId)}`);
+        if (!target || target.role !== "creator") return err(404, "Creator not found");
+        if (target.status !== "approved") return err(400, "That creator is not active yet");
+        recipients = [target];
+        scope = "single";
+      } else if (b.market) {
+        const market = marketByName(String(b.market));
+        if (!market) return err(400, "Unknown market");
+        segmentMarket = market.name;
+        const all = await allUsers();
+        recipients = all.filter((u) => normalizeMarketName(u.market) === market.name && isRosterCreator(u) && profileCompleteOf(u) && standingState(u) !== "banned");
+        scope = "segment";
+      } else {
+        return err(400, "Choose a creator or a market segment");
+      }
+      let emailSent = 0;
+      let emailFailed = 0;
+      for (const creator of recipients) {
+        const sent = await sendPlatformMessage(user, creator, body, { scope, segmentMarket, templateId });
+        if (sent.email && sent.email.sent) emailSent += 1; else emailFailed += 1;
+      }
+      if (scope === "segment") {
+        await logEvent({ type: "platform_message_segment", actorId: user.id, actorRole: "admin", subjectId: null, market: segmentMarket, data: { market: segmentMarket, recipients: recipients.length, emailSent, emailFailed, templateId } });
+      }
+      return json(201, { sent: recipients.length, recipients: recipients.map((u) => u.id), emailSent, emailFailed, scope, market: segmentMarket });
+    }
     if (method === "GET" && seg[1] === "return-rates") {
       const events = await allRedemptionEvents();
       const byCreator = new Map();
@@ -12376,7 +12560,24 @@ async function route(event) {
         (seg[0] === "discover" && method === "GET") ||
         (seg[0] === "offers" && (method === "GET" || method === "POST" || method === "PATCH"))
       );
-      if (!businessPrelaunchOk) {
+      // Platform messages (Build -40, Jeff: "open up the message
+      // feature for creators"): the SIGNL team thread is the one
+      // message surface that has to work BEFORE a market launches
+      // — it is how founding creators get their Golden Ticket
+      // reminders and every other platform note. A creator in a
+      // market that has not launched may read their thread list,
+      // open the platform thread, and reply to the platform peer.
+      // Person-to-person threads stay behind the launch gate
+      // like everything else in this section.
+      let creatorPlatformMsgOk = false;
+      if (user.role === "creator" && seg[0] === "messages") {
+        if (method === "GET") creatorPlatformMsgOk = !query.with || query.with === PLATFORM_PEER_ID;
+        else if (method === "POST") {
+          const gateBody = parseBody(event);
+          creatorPlatformMsgOk = String(gateBody.toUserId || "") === PLATFORM_PEER_ID;
+        }
+      }
+      if (!businessPrelaunchOk && !creatorPlatformMsgOk) {
         return err(403, `The ${marketTalkName(user.market)} market has not launched yet. Founding creators keep priority in the order they signed up, and we email them the moment it opens to businesses.`);
       }
     }
@@ -14690,6 +14891,12 @@ async function route(event) {
       }
       const threads = [];
       for (const t of Object.values(byThread)) {
+        // The platform thread (Build -40): the other side is the
+        // SIGNL team identity, not a user record.
+        if (t.otherId === PLATFORM_PEER_ID) {
+          threads.push({ ...t, otherName: "SIGNL", otherRole: "platform", otherBusinessName: null, otherHandle: null, platform: true });
+          continue;
+        }
         const other = await store.get(`user:${t.otherId}`);
         threads.push({ ...t, otherName: other ? other.name : "Unknown", otherRole: other ? other.role : null, otherBusinessName: other && other.business ? other.business.businessName : null, otherHandle: other && other.creator ? other.creator.handle : null });
       }
@@ -14698,6 +14905,28 @@ async function route(event) {
     }
     if (method === "POST" && seg.length === 1) {
       const b = parseBody(event);
+      // Platform thread reply (Build -40): a creator writing to
+      // the SIGNL team. The reply lands in Admin's platform
+      // messages view and the Event Log; it sends no email.
+      if (String(b.toUserId || "") === PLATFORM_PEER_ID) {
+        if (user.role !== "creator") return err(403, "Platform messages are for creators");
+        const replyBody = String(b.body || "").trim();
+        if (!replyBody) return err(400, "Message cannot be empty");
+        if (replyBody.length > PLATFORM_MESSAGE_MAX) return err(400, `Message is too long (max ${PLATFORM_MESSAGE_MAX} characters)`);
+        const threadId = platformThreadId(user.id);
+        const msg = {
+          id: crypto.randomUUID(),
+          threadId,
+          fromId: user.id,
+          toId: PLATFORM_PEER_ID,
+          body: replyBody,
+          platform: true,
+          createdAt: nowIso(),
+        };
+        await store.set(`message:${msg.id}`, msg);
+        await logEvent({ type: "platform_message_reply", actorId: user.id, actorRole: "creator", subjectId: msg.id, market: user.market, data: { threadId, bodyLength: replyBody.length } });
+        return json(201, { message: msg });
+      }
       const other = await store.get(`user:${b.toUserId}`);
       if (!other || other.role === "admin") return err(404, "Recipient not found");
       if (other.status !== "approved") return err(400, "That account is not active yet");
@@ -14734,4 +14963,4 @@ async function route(event) {
 
 // The email builders are exported alongside the router so the verify
 // suites can assert on the exact copy a creator receives.
-module.exports = { route, passwordResetEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, normalizeBriefInput, briefForOffer, validateAssetPacket, assetPacketView, postSeries, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView, musicOpenView, studentOpenView };
+module.exports = { route, passwordResetEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, normalizeBriefInput, briefForOffer, validateAssetPacket, assetPacketView, postSeries, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView, musicOpenView, studentOpenView, PLATFORM_PEER_ID, platformThreadId, platformMessageEmail, MESSAGE_TEMPLATES };
