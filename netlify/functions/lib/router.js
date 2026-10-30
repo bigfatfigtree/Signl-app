@@ -13498,6 +13498,58 @@ async function route(event) {
         campusLeads: Object.values(leadMap).sort((a, b) => b.leads - a.leads),
         businessLanguage,
       };
+      // Sign-up board (Build -53, Jeff, 2026-10-30): the top of
+      // Admin Stats — "how many users total and where, business
+      // total and where". Computed from the same records on every
+      // read; nothing is stored, so it cannot drift. Testers are
+      // out of every count, matching the roster doctrine used by
+      // the rest of Admin. Splits per market and role: signed up
+      // (every record), awaiting review (pending), approved, and
+      // profile finished — approved creators whose profile is
+      // complete, the launch number (profileCompleteOf is
+      // creator-only, so business rows carry the first three).
+      // Unlisted sign-ups group by typed city + region exactly
+      // like unlistedByCity above, for creators AND businesses,
+      // so the next Clarksville is visible before it festers.
+      // This rides ONLY this admin-gated payload; no public,
+      // creator, business or partner payload carries these counts.
+      const boardCounts = () => ({ signedUp: 0, awaitingReview: 0, approved: 0, profileFinished: 0 });
+      const boardByMarket = new Map();
+      for (const m of MARKETS) boardByMarket.set(m.name, { market: m.name, label: m.label || m.name, creators: boardCounts(), businesses: boardCounts(), total: 0 });
+      const boardUnlistedMap = {};
+      const boardTotals = { users: 0, creators: 0, businesses: 0, awaitingCreators: 0, awaitingBusinesses: 0 };
+      for (const u of users) {
+        if (isTester(u)) continue;
+        if (u.role !== "creator" && u.role !== "business") continue;
+        boardTotals.users += 1;
+        if (u.role === "creator") { boardTotals.creators += 1; if (u.status === "pending") boardTotals.awaitingCreators += 1; }
+        else { boardTotals.businesses += 1; if (u.status === "pending") boardTotals.awaitingBusinesses += 1; }
+        if (u.market === UNLISTED) {
+          const region = u.country || u.state || "";
+          const place = `${u.city || "Unknown"}${region ? ", " + region : ""}`;
+          const row = boardUnlistedMap[place] || (boardUnlistedMap[place] = { place, city: u.city || "Unknown", country: u.country || null, state: u.state || null, creators: 0, businesses: 0, awaitingReview: 0, total: 0 });
+          if (u.role === "creator") row.creators += 1; else row.businesses += 1;
+          if (u.status === "pending") row.awaitingReview += 1;
+          row.total += 1;
+          continue;
+        }
+        const mrow = boardByMarket.get(normalizeMarketName(u.market));
+        if (!mrow) continue;
+        const counts = u.role === "creator" ? mrow.creators : mrow.businesses;
+        counts.signedUp += 1;
+        if (u.status === "pending") counts.awaitingReview += 1;
+        if (u.status === "approved") {
+          counts.approved += 1;
+          if (u.role === "creator" && profileCompleteOf(u)) counts.profileFinished += 1;
+        }
+        mrow.total += 1;
+      }
+      const signupBoard = {
+        totals: boardTotals,
+        markets: [...boardByMarket.values()].filter((r) => r.total > 0).sort((a, b) => b.total - a.total || (a.market < b.market ? -1 : 1)),
+        unlisted: Object.values(boardUnlistedMap).sort((a, b) => b.total - a.total || (a.place < b.place ? -1 : 1)),
+        emptyMarkets: [...boardByMarket.values()].filter((r) => r.total === 0).map((r) => r.market),
+      };
       return json(200, {
         users: {
           creators: users.filter((u) => u.role === "creator").length,
@@ -13519,6 +13571,7 @@ async function route(event) {
         perMarket,
         unlistedByCity,
         layers,
+        signupBoard,
       });
     }
     // Creator outreach campaigns (Jeff, 2026-10-19): status,

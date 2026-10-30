@@ -3025,3 +3025,24 @@ details.roas-x > summary::-webkit-details-marker { display: none; }
 .roas-sum-v { text-align: right; }
 .credit-step { display: flex; gap: 10px; margin-top: 10px; align-items: flex-start; }
 .credit-n { width: 24px; height: 24px; border-radius: 999px; background: var(--mint); color: var(--ink); font-weight: 800; font-size: .85rem; display: flex; align-items: center; justify-content: center; flex: none; margin-top: 1px; }
+
+/* Build -53: Admin Stats sign-up board (Jeff, 2026-10-30) — one
+   row per market, a two-segment bar (creators in the deep green,
+   businesses in ink) sized against the biggest market, counts in
+   plain words, state split as quiet sub-lines. Rows are buttons:
+   they open Applications filtered to the market (or the unlisted
+   city). .sb-filterbar is the queue's filter banner. */
+.sb-row { display: block; width: 100%; text-align: left; background: none; border: 0; border-top: 1px solid var(--line); padding: 12px 2px; cursor: pointer; font: inherit; color: inherit; }
+.sb-row:hover { background: #F4F7F4; }
+.sb-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.sb-total { font-weight: 800; white-space: nowrap; }
+.sb-bar { display: flex; height: 10px; border-radius: 999px; background: #EDF3ED; overflow: hidden; margin: 8px 0 6px; }
+.sb-seg { display: block; height: 100%; }
+.sb-seg.sb-creators { background: #0C7A43; }
+.sb-seg.sb-biz { background: var(--ink); }
+.sb-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin: 0 1px; vertical-align: baseline; }
+.sb-dot.sb-creators { background: #0C7A43; }
+.sb-dot.sb-biz { background: var(--ink); }
+.sb-counts { display: block; font-weight: 700; font-size: .9rem; }
+.sb-splits { display: block; margin-top: 2px; font-size: .8rem; color: var(--ink3); line-height: 1.55; }
+.sb-filterbar { display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; margin-bottom: 12px; }

@@ -2063,12 +2063,17 @@ function railItems() {
   const items = [];
   const add = (sec, icon, label, onclick, active, badge) => items.push({ sec, icon, label, onclick, active: !!active, badge: badge || 0 });
   if (u.role === "admin") {
-    // The full Admin destination set (Jeff, 2026-10-28): nine,
-    // no more, no fewer — Applications, Markets, Recruiters,
-    // Partners, Event Log, Compliance, Campaign, Stats, Sig.
-    // Partners and Sig were missing from this rail entirely;
-    // every item navigates by the same go('dashboard', tab).
-    add("a", "requests", "Requests", "return go('dashboard','Applications')", t === "Applications" || !t);
+    // The full Admin destination set: TEN (Jeff, 2026-10-30 —
+    // supersedes his 2026-10-28 "nine, no more, no fewer").
+    // Applications is the review queue under its own tab now;
+    // Requests keeps its label and everything else that used to
+    // share the queue's destination (platform messages, the
+    // Finish Engine, the founding roster counts). Then Markets,
+    // Recruiters, Partners, Event Log, Compliance, Campaign,
+    // Stats, Sig. Every item navigates by the same
+    // go('dashboard', tab).
+    add("a", "inbox", "Applications", "return go('dashboard','Applications')", t === "Applications" || !t);
+    add("a", "requests", "Requests", "return go('dashboard','Requests')", t === "Requests");
     add("a", "pin", "Markets", "return go('dashboard','Markets')", t === "Markets");
     add("a", "heart", "Recruiters", "return go('dashboard','Recruiters')", t === "Recruiters");
     add("a", "building", "Partners", "return go('dashboard','Partners')", t === "Partners");
@@ -7311,7 +7316,7 @@ function creatorShowcaseHtml(card) {
 // can never disagree with the card.
 function creatorProfileDetailHtml(c, preview, opts) {
   // Admin review mode (Jeff, 2026-10-26): the same profile a
-  // business sees, rendered from the Admin Requests queue. The
+  // business sees, rendered from the Admin Applications queue. The
   // business actions (offers, Later, Not a fit) are replaced by
   // the way back to the queue; everything else is byte-identical.
   const adminView = !!(opts && opts.admin);
@@ -7322,7 +7327,7 @@ function creatorProfileDetailHtml(c, preview, opts) {
   const initial = esc((c.name || "?").trim().charAt(0).toUpperCase() || "?");
   return `
   <div class="panel">
-    <p><button class="btn small-btn ghost" onclick="${adminView ? "adminBackToRequests()" : preview ? "previewBackToResults()" : "backToDiscover()"}">&larr; Back to ${adminView ? "Requests" : "results"}</button></p>
+    <p><button class="btn small-btn ghost" onclick="${adminView ? "adminBackToRequests()" : preview ? "previewBackToResults()" : "backToDiscover()"}">&larr; Back to ${adminView ? "Applications" : "results"}</button></p>
     <div class="creator-card full">
       <div class="cc-photo${c.photoUrl ? "" : " no-photo"}">
         ${c.photoUrl ? `<img src="${esc(c.photoUrl)}" alt="">` : `<div class="cc-mono"><span>${initial}</span></div>`}
@@ -7367,7 +7372,7 @@ function creatorProfileDetailHtml(c, preview, opts) {
     ${p.bio ? `<p>${esc(p.bio)}</p>` : ""}
     <p class="small">${socialLinksHtml(p)}</p>
     ${creatorShowcaseHtml(c)}
-    ${adminView ? `<div class="cta-row" style="justify-content:flex-start"><button class="btn ghost" onclick="adminBackToRequests()">Back to Requests</button></div>` : `<div class="cta-row" style="justify-content:flex-start">
+    ${adminView ? `<div class="cta-row" style="justify-content:flex-start"><button class="btn ghost" onclick="adminBackToRequests()">Back to Applications</button></div>` : `<div class="cta-row" style="justify-content:flex-start">
       ${preview
         ? `<button class="btn" onclick="previewStartOffer('${c.userId}')">Send offer</button>${p.paidRate ? ` <button class="btn ghost" onclick="previewPaidBooking('${c.userId}')">Preview paid booking ($${fmtPrice(p.paidRate)})</button>` : ""}`
         : `<button class="btn" onclick="startOffer('${c.userId}')">Send offer</button>${p.paidRate ? ` <button class="btn" onclick="bookPaidVisit('${c.userId}')">Book paid visit ($${fmtPrice(p.paidRate)})</button>` : ""} <button class="btn ghost" onclick="openThread('${c.userId}')">Message</button>`}
@@ -15536,6 +15541,14 @@ async function adminFinishStartConcierge(creatorId, btn) {
 }
 function adminMsgComposeTo(userId) {
   adminMsg.targetId = userId;
+  if (!document.getElementById("admin-msg-panel")) {
+    // The compose box lives under Requests since the Build -53
+    // split; a Message tap on the Applications queue crosses
+    // tabs with the target already set, and loadAdminRequests
+    // scrolls the compose into view once the panel renders.
+    adminMsg.scrollToCompose = true;
+    return go("dashboard", "Requests");
+  }
   renderAdminMessages().then(() => {
     const panel = document.getElementById("admin-msg-panel");
     if (panel) panel.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -15603,7 +15616,7 @@ function renderAdmin() {
   // the Admin nav (Jeff's standing call), so the in-page tab
   // strip that duplicated it is gone, and the Business Preview
   // card + Sig attention list open only the landing destination
-  // instead of crowding all nine. The full attention list lives
+  // instead of crowding all ten. The full attention list lives
   // on the Sig destination.
   const landing = tab === "Applications";
   app.innerHTML = `
@@ -15619,6 +15632,7 @@ function renderAdmin() {
   if (landing) loadAdminSig();
   if (tab === "Sig") renderAdminSig();
   if (tab === "Applications") loadApplications();
+  if (tab === "Requests") loadAdminRequests();
   if (tab === "Markets") loadMarkets();
   if (tab === "Partners") loadAdminPartners();
   if (tab === "Recruiters") loadLeaderboard();
@@ -16265,6 +16279,37 @@ async function activateMarketBusinesses(market) {
   } catch (err) { alert(err.message); }
 }
 
+// ---------- Admin: Applications (Build -53) ----------
+// The application queue has its own rail tab (Jeff, 2026-10-30:
+// "I want just applications. Separately from the full requests
+// tabs."). This tab is ONLY the queue: pending + decided creator
+// and business applications, the typed-city resolver suggestion
+// with its file-market tap on each unlisted row, and the -52
+// refile sweep. Everything else that shared this destination —
+// the platform-message panel, the Finish Engine panel, the
+// founding roster counts — lives under Requests now (see
+// loadAdminRequests). Nothing was deleted; it moved.
+// The Stats sign-up board sets adminAppFilter when Jeff taps a
+// market row or an unlisted city, and the queue renders filtered
+// until he clears it.
+let adminAppFilter = null; // { kind: "market", market, label } | { kind: "unlisted", city, place }
+
+function adminCanonMarket(name) {
+  // Client mirror of the one legacy alias the server resolves
+  // (markets.js MARKET_NAME_ALIASES): records stored before the
+  // 2026-10-23 rename carry "Hampton Roads" for Virginia Beach.
+  return name === "Hampton Roads" ? "Virginia Beach" : name;
+}
+function adminAppInFilter(u) {
+  const f = adminAppFilter;
+  if (!f) return true;
+  if (f.kind === "market") return u.market !== unlistedLabel() && adminCanonMarket(u.market) === f.market;
+  // Unlisted: the same typed city + region the Stats board
+  // grouped the record under.
+  return u.market === unlistedLabel() && unlistedPlace(u) === f.place;
+}
+function adminAppClearFilter() { adminAppFilter = null; loadApplications(); return false; }
+
 async function loadApplications() {
   const el = document.getElementById("tab-body");
   try {
@@ -16315,6 +16360,38 @@ async function loadApplications() {
           : `<span class="badge ${u.status === "approved" ? "ok" : "bad"}">${esc(u.status)}</span>${u.tester ? ` <span class="badge warn">Tester</span>` : ""}${u.role === "creator" && u.status === "approved" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="setTester('${u.id}', ${u.tester ? "false" : "true"}, 'creator')">${u.tester ? "Move to roster" : "Move to Tester"}</button>` : ""}${u.role === "creator" && u.status === "approved" ? `<br><button class="btn small-btn" style="margin-top:6px" onclick="adminMsgComposeTo('${u.id}')">Message</button>` : ""}`}${u.role === "business" && u.status === "approved" && businessAccessState(u) !== "active" ? `<br><button class="btn small-btn" style="margin-top:6px" onclick="activateBusiness('${u.id}')">Activate business</button>` : ""}${u.role === "business" && u.status === "approved" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="setTester('${u.id}', ${u.tester ? "false" : "true"}, 'business')">${u.tester ? "Move to roster" : "Move to Tester"}</button>` : ""}${u.role === "business" && u.business ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleReviewLinks('${u.id}')">Review links</button><div id="rl-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px">${["google", "yelp", "tripadvisor", "facebook"].map((k) => `<div class="field"><label>${esc(k)}</label><input id="rl-${k}-${u.id}" type="url" value="${esc((u.business.reviewLinks || {})[k] || "")}" placeholder="https://"></div>`).join("")}<button class="btn small-btn" onclick="saveReviewLinks('${u.id}')">Save review links</button></div><br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleDiscountEditor('${u.id}')">Code discount</button><div id="disc-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px"><label style="font-weight:500"><input type="checkbox" id="disc-enabled-${u.id}" style="width:auto" ${u.business.discountEnabled ? "checked" : ""}> Code discounts on (business's opt-in)</label><div class="field"><label>Discount percent (5 to 50)</label><input id="disc-pct-${u.id}" type="number" min="5" max="50" step="1" value="${esc(String(u.business.discountPct == null ? 20 : u.business.discountPct))}"></div><button class="btn small-btn" onclick="saveDiscountSetting('${u.id}')">Save code discount</button></div>` : ""}${u.role === "creator" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="adminViewCreator('${u.id}')">View profile</button>` : ""}</td>
       </tr>`;
     };
+    const pend = (data.pending || []).filter(adminAppInFilter);
+    const dec = (data.decided || []).filter(adminAppInFilter);
+    const filterBanner = adminAppFilter ? `
+      <div class="panel sb-filterbar"><span><strong>${adminAppFilter.kind === "market" ? esc(adminAppFilter.label || adminAppFilter.market) : esc(adminAppFilter.place)}</strong> <span class="muted small">${adminAppFilter.kind === "market" ? "applications only" : "sign-ups only — not in a market yet"} &middot; showing ${pend.length + dec.length} of ${(data.pending || []).length + (data.decided || []).length}</span></span><button type="button" class="btn small-btn ghost" onclick="return adminAppClearFilter()">Show all applications</button></div>` : "";
+    el.innerHTML = `
+      <div id="admin-refile-panel"></div>
+      ${filterBanner}
+      <h3>Pending (${pend.length})</h3>
+      ${pend.length ? `<div class="table-wrap panel"><table><tr><th>Applicant</th><th>Type</th><th>Market</th><th>Details</th><th>Applied</th><th>Decision</th></tr>${pend.map(row).join("")}</table></div>` : `<p class="muted">${adminAppFilter ? "No pending applications match this filter." : "No pending applications."}</p>`}
+      <h3 class="mt">Decided (${dec.length})</h3>
+      ${dec.length ? `<div class="table-wrap panel"><table><tr><th>Applicant</th><th>Type</th><th>Market</th><th>Details</th><th>Applied</th><th>Status</th></tr>${dec.map(row).join("")}</table></div>` : `<p class="muted">None yet.</p>`}`;
+    renderAdminRefilePanel();
+  } catch (err) {
+    el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+  }
+}
+
+// ---------- Admin: Requests (Build -53) ----------
+// Everything that shared the old Applications destination and is
+// not the application queue: the platform-message panel (the
+// compose box the queue's Message buttons target), the Finish
+// Engine panel, and the founding roster counts strip — moved
+// here verbatim when Applications became the queue's own tab.
+async function loadAdminRequests() {
+  const el = document.getElementById("tab-body");
+  try {
+    const data = await api("GET", "/admin/applications");
+    // The compose box targets creators from these rows; keep the
+    // records by id so "Message" knows the creator's name and
+    // market without another fetch (same map the queue builds).
+    state.adminMsgUsers = {};
+    for (const u of [...(data.pending || []), ...(data.decided || [])]) state.adminMsgUsers[u.id] = u;
     const s = data.summary;
     const summaryStrip = s ? `
       <h3>Founding roster counts</h3>
@@ -16327,22 +16404,28 @@ async function loadApplications() {
     el.innerHTML = `
       <div id="admin-msg-panel"><p class="muted">Loading creator messages...</p></div>
       <div id="admin-finish-panel"></div>
-      <div id="admin-refile-panel"></div>
-      ${summaryStrip}
-      <h3>Pending (${data.pending.length})</h3>
-      ${data.pending.length ? `<div class="table-wrap panel"><table><tr><th>Applicant</th><th>Type</th><th>Market</th><th>Details</th><th>Applied</th><th>Decision</th></tr>${data.pending.map(row).join("")}</table></div>` : `<p class="muted">No pending applications.</p>`}
-      <h3 class="mt">Decided (${data.decided.length})</h3>
-      ${data.decided.length ? `<div class="table-wrap panel"><table><tr><th>Applicant</th><th>Type</th><th>Market</th><th>Details</th><th>Applied</th><th>Status</th></tr>${data.decided.map(row).join("")}</table></div>` : `<p class="muted">None yet.</p>`}`;
-    renderAdminMessages();
+      ${summaryStrip}`;
+    const rendered = renderAdminMessages();
     renderAdminFinishEngine();
-    renderAdminRefilePanel();
+    // A queue-row Message tap that crossed tabs (adminMsgComposeTo)
+    // lands here with the target set: once the panel has rendered,
+    // bring the compose box into view and focus it.
+    if (adminMsg.scrollToCompose) {
+      adminMsg.scrollToCompose = false;
+      Promise.resolve(rendered).then(() => {
+        const panel = document.getElementById("admin-msg-panel");
+        if (panel) panel.scrollIntoView({ behavior: "smooth", block: "start" });
+        const ta = document.getElementById("admin-msg-body");
+        if (ta) ta.focus();
+      });
+    }
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
 }
 
-// Admin profile view (Jeff, 2026-10-26): "View profile" on a
-// Requests card opens the applicant's full SIGNL profile exactly
+// Admin profile view (Jeff, 2026-10-26): "View profile" on an
+// Applications card opens the applicant's full SIGNL profile exactly
 // as a business would see it, including pending applicants the
 // public /c/ page cannot show yet. The payload comes from
 // GET /admin/creators/:id (the Discover card shape); the renderer
@@ -16359,7 +16442,7 @@ async function adminViewCreator(userId) {
     el.innerHTML = statusLine + creatorProfileDetailHtml(c, false, { admin: true });
     window.scrollTo(0, 0);
   } catch (err) {
-    el.innerHTML = `<div class="error-box">${esc(err.message)}</div><p><button class="btn small-btn ghost" onclick="adminBackToRequests()">Back to Requests</button></p>`;
+    el.innerHTML = `<div class="error-box">${esc(err.message)}</div><p><button class="btn small-btn ghost" onclick="adminBackToRequests()">Back to Applications</button></p>`;
   }
 }
 
@@ -16581,11 +16664,78 @@ async function loadEvents() {
   }
 }
 
+// ---------- Admin Stats: sign-up board (Build -53) ----------
+// The top of Stats (Jeff, 2026-10-30): totals in plain words,
+// then one row per market — a two-segment bar (green creators,
+// dark businesses) sized against the biggest market, the counts
+// in words, and the state split under the row. Tapping a market
+// opens the Applications tab filtered to that market. The
+// Unlisted section lists the typed cities collecting outside
+// every market — where the next Clarksville shows up first —
+// and taps through to that city's queue. Data: the signupBoard
+// aggregate on GET /admin/stats (admin-gated, computed from the
+// records on every read; it rides no other payload). Everything
+// Stats already carried stays below the board.
+let adminBoardMarkets = [];
+let adminBoardUnlistedRows = [];
+
+function adminBoardGoMarket(i) {
+  const m = adminBoardMarkets[i];
+  if (!m) return false;
+  adminAppFilter = { kind: "market", market: m.market, label: m.label || m.market };
+  return go("dashboard", "Applications");
+}
+function adminBoardGoUnlisted(i) {
+  const r = adminBoardUnlistedRows[i];
+  if (!r) return false;
+  adminAppFilter = { kind: "unlisted", city: r.city, place: r.place };
+  return go("dashboard", "Applications");
+}
+function adminSignupBoardHtml(b) {
+  if (!b) return "";
+  adminBoardMarkets = b.markets || [];
+  adminBoardUnlistedRows = b.unlisted || [];
+  const t = b.totals || { users: 0, creators: 0, businesses: 0, awaitingCreators: 0, awaitingBusinesses: 0 };
+  const max = Math.max(1, ...adminBoardMarkets.map((m) => m.total));
+  const pct = (n) => Math.max(0, Math.min(100, (n / max) * 100)).toFixed(1);
+  const splits = (c, isCreator) => `${c.awaitingReview} awaiting review &middot; ${c.approved} approved${isCreator ? ` &middot; ${c.profileFinished} profile finished` : ""}`;
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  const marketRow = (m, i) => `
+    <button type="button" class="sb-row" onclick="return adminBoardGoMarket(${i})">
+      <span class="sb-head"><strong>${esc(m.label || m.market)}</strong><span class="sb-total">${m.total} signed up</span></span>
+      <span class="sb-bar"><i class="sb-seg sb-creators" style="width:${pct(m.creators.signedUp)}%"></i><i class="sb-seg sb-biz" style="width:${pct(m.businesses.signedUp)}%"></i></span>
+      <span class="sb-counts">${plural(m.creators.signedUp, "creator", "creators")} &middot; ${plural(m.businesses.signedUp, "business", "businesses")}</span>
+      <span class="sb-splits">Creators: ${splits(m.creators, true)}<br>Businesses: ${splits(m.businesses, false)}</span>
+    </button>`;
+  const unlistedRow = (r, i) => `
+    <button type="button" class="sb-row" onclick="return adminBoardGoUnlisted(${i})">
+      <span class="sb-head"><strong>${esc(r.place)}</strong><span class="sb-total">${r.total} signed up</span></span>
+      <span class="sb-counts">${plural(r.creators, "creator", "creators")} &middot; ${plural(r.businesses, "business", "businesses")}${r.awaitingReview ? ` &middot; ${r.awaitingReview} awaiting review` : ""}</span>
+    </button>`;
+  return `
+  <div class="panel sb-board">
+    <h3 style="margin:0 0 4px">Sign-ups by market</h3>
+    <p class="muted small" style="margin:0 0 12px">Everyone who has signed up, and where. <span class="sb-dot sb-creators"></span> Creators &middot; <span class="sb-dot sb-biz"></span> Businesses. Bars are sized against the biggest market. Tap a market to review its applications.</p>
+    <div class="stat-row">
+      <div class="stat"><div class="num">${t.users}</div><div class="lbl">Signed up</div></div>
+      <div class="stat"><div class="num">${t.creators}</div><div class="lbl">Creators (${t.awaitingCreators} awaiting review)</div></div>
+      <div class="stat"><div class="num">${t.businesses}</div><div class="lbl">Businesses (${t.awaitingBusinesses} awaiting review)</div></div>
+    </div>
+    ${adminBoardMarkets.length ? adminBoardMarkets.map(marketRow).join("") : `<p class="muted">No market sign-ups yet.</p>`}
+    ${adminBoardUnlistedRows.length ? `
+    <h4 style="margin:16px 0 2px">Not in a market yet</h4>
+    <p class="muted small" style="margin:0 0 4px">Sign-ups from cities outside every market, counted by the city they typed. Tap one to see those applications.</p>
+    ${adminBoardUnlistedRows.map(unlistedRow).join("")}` : ""}
+    ${(b.emptyMarkets || []).length ? `<p class="muted small" style="margin-top:12px">No sign-ups yet in: ${(b.emptyMarkets || []).map(esc).join(" &middot; ")}</p>` : ""}
+  </div>`;
+}
+
 async function loadStats() {
   const el = document.getElementById("tab-body");
   try {
     const s = await api("GET", "/admin/stats");
     el.innerHTML = `
+      ${adminSignupBoardHtml(s.signupBoard)}
       <div class="panel"><div class="stat-row">
         <div class="stat"><div class="num">${s.users.creators}</div><div class="lbl">Creators</div></div>
         <div class="stat"><div class="num">${s.users.businesses}</div><div class="lbl">Businesses</div></div>

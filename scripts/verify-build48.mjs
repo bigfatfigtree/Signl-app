@@ -132,7 +132,7 @@ try {
   startServer();
   check("dev server boots", await waitUp());
   const boot = await fetch(BASE + "/api/bootstrap");
-  check("bootstrap carries the -48 build stamp", boot.headers.get("x-signl-build") === "2026.10.30-52", String(boot.headers.get("x-signl-build")));
+  check("bootstrap carries the -48 build stamp", boot.headers.get("x-signl-build") === "2026.10.30-53", String(boot.headers.get("x-signl-build")));
   const admin = client();
   await admin("POST", "/api/auth/login", { email: ADMIN_EMAIL, password: ADMIN_PASSWORD });
   await admin("POST", "/api/admin/markets/toggle", { market: "Richmond", live: true });
@@ -211,9 +211,9 @@ try {
   const creditBlock = slice("function creditPanelHtml", "function scoreV2Html");
   const count = (s, sub) => (s.match(new RegExp(sub.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g")) || []).length;
   const srcChecks = [
-    ["stamp: build stamp is 2026.10.30-52 on server and shell",
-      fs.readFileSync(path.join(ROOT, "netlify", "functions", "lib", "build.js"), "utf8").includes('BUILD_ID = "2026.10.30-52"')
-      && fs.readFileSync(path.join(ROOT, "public", "index.html"), "utf8").includes("2026.10.30-52")],
+    ["stamp: build stamp is 2026.10.30-53 on server and shell",
+      fs.readFileSync(path.join(ROOT, "netlify", "functions", "lib", "build.js"), "utf8").includes('BUILD_ID = "2026.10.30-53"')
+      && fs.readFileSync(path.join(ROOT, "public", "index.html"), "utf8").includes("2026.10.30-53")],
     ["tabs: the Receipt renders the subtab bar with the five plain labels",
       receiptBlock.includes("wsTabs(") && ["Overview", "Over time", "Creators", "Costs", "How it counts"].every((l) => receiptBlock.includes(`label: "${l}"`))],
     ["tabs: five panels render in one pass, one per tab, switched by class",

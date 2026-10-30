@@ -17,6 +17,16 @@
 //     both endpoints answer 200 with a degraded, empty payload
 //     instead of hanging or 500ing — the Hardening A pattern
 //   - anonymous reads are still refused
+// Build -53 doctrine note (2026-10-30): this suite never pinned
+// rail labels — it covers the Events + Campaign endpoints only.
+// The Admin rail itself changed in Build -53 by Jeff's explicit
+// order: TEN destinations now (Applications split out of the old
+// queue destination as its own tab; Requests keeps its label and
+// the panels that shared the queue), superseding the 2026-10-28
+// "nine, no more, no fewer" set. Rail labels, destinations and
+// order are pinned by scripts/verify-build53.mjs. Nothing in
+// this suite's endpoint scope changed, so its checks — and its
+// long-standing result — stand as they were.
 // Run: node scripts/verify-admintabs.mjs
 import { createRequire } from "node:module";
 import fs from "node:fs";
