@@ -3093,3 +3093,16 @@ details.roas-x > summary::-webkit-details-marker { display: none; }
   .cc-unlisted-row { flex-direction: column; }
   .cc-unlisted-n { text-align: left; }
 }
+/* Command Center Money + Businesses (Build -55): class-table
+   total rows and the quarantined Modeled panel — dashed and
+   warm-toned so an estimate can never be mistaken for a total. */
+.cc-total-row td { border-top: 2px solid var(--line); }
+.cc-modeled-panel { border-style: dashed; background: #FBF9F1; }
+@media (max-width: 560px) {
+  /* Attention/reconciliation rows stack at phone width instead
+     of squeezing the sentence into a one-word column beside the
+     button (found in the -55 render pass; the Overview strip
+     uses the same row). */
+  .cc-att-row { flex-wrap: wrap; }
+  .cc-att-row .btn { margin-top: 2px; }
+}

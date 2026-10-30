@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Build 2026.10.30-54 verification: the Finish Engine.
+// Build 2026.10.30-55 verification: the Finish Engine.
 // Jeff approved v2 onboarding ideas #1 (finish-or-no-paid-work),
 // #2 (the booking page turns on at finish), #3 (first look for
 // founding finishers), #5 (Sig finishes it with you by message)
@@ -99,8 +99,8 @@ const appSrc = readFileSync(join(ROOT, "public/app.js"), "utf8");
 const buildJs = readFileSync(join(ROOT, "netlify/functions/lib/build.js"), "utf8");
 const indexHtml = readFileSync(join(ROOT, "public/index.html"), "utf8");
 
-check("stamp: build stamp is 2026.10.30-54 on server and shell",
-  buildJs.includes('BUILD_ID = "2026.10.30-54"') && indexHtml.includes("2026.10.30-54"));
+check("stamp: build stamp is 2026.10.30-55 on server and shell",
+  buildJs.includes('BUILD_ID = "2026.10.30-55"') && indexHtml.includes("2026.10.30-55"));
 check("server: the finish engine section exists with all three components",
   routerSrc.includes("runFinishEngineSweep") && routerSrc.includes("handleFinishEngineReply") && routerSrc.includes("maybeFireFinishMoment") && routerSrc.includes("startFinishConcierge"));
 check("server: admin finish-engine routes exist (state, toggle, templates, arm)",

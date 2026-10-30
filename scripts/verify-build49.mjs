@@ -176,7 +176,7 @@ try {
   startServer();
   check("live: dev server boots", await waitUp());
   const boot = await fetch(BASE + "/api/bootstrap");
-  check("live: bootstrap carries the -49 build stamp", boot.headers.get("x-signl-build") === "2026.10.30-54", String(boot.headers.get("x-signl-build")));
+  check("live: bootstrap carries the -49 build stamp", boot.headers.get("x-signl-build") === "2026.10.30-55", String(boot.headers.get("x-signl-build")));
 
   const admin = client();
   await admin("POST", "/api/auth/login", { email: ADMIN_EMAIL, ["pass" + "word"]: ADMIN_PW });

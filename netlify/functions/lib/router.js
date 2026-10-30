@@ -9168,6 +9168,200 @@ async function findBusinessForStripe({ businessId = null, customerId = null, sub
       || (customerId && u.business.subscription.customerId === customerId))) || null;
 }
 
+// ---------- Stripe charge capture (Build -55) ----------
+// The app kept NO record of actual Stripe charges before this
+// build: subscription snapshots lived on the business record, but
+// the charge itself — amount, founding credit applied, refunds —
+// existed only inside Stripe, so revenue history would have been
+// lost from activation day one. Capture fixes that: every charge
+// and refund the webhook sees is written to a stored charge
+// ledger (keys charge:stripe:<objectId>) BEFORE Jeff's activation
+// sitting, so the first real charge is on SIGNL's own books.
+//
+// The ledger key is Stripe's own object id — the invoice id for a
+// subscription charge, the PaymentIntent id for a paid booking or
+// license charge, the refund id for a refund — so every event
+// about one charge (the invoice event, the checkout completion,
+// Stripe's retries and replays) converges on ONE record, and the
+// stripeEventIds list keeps the full trail. Capture is idempotent
+// on event ids and on object ids; a replay changes nothing.
+// Honesty: a record exists only because Stripe reported the
+// charge. Plan selections without a charge stay Recorded (they
+// live on the business record, never here) — capture never
+// fabricates a charge, and a charge whose business cannot be
+// resolved is still recorded, with businessId null, so the Money
+// view's reconciliation list can surface it instead of losing it.
+function centsDollars(cents) { return Math.round(Number(cents) || 0) / 100; }
+function secsIso(secs) { const n = Number(secs); return Number.isFinite(n) && n > 0 ? new Date(n * 1000).toISOString() : null; }
+
+const CHARGE_STATUS_RANK = { failed: 1, succeeded: 2, partially_refunded: 3, refunded: 4 };
+async function upsertCharge(objectId, patch, evtId) {
+  if (!objectId) return null;
+  const key = `charge:stripe:${objectId}`;
+  const existing = await store.get(key);
+  const rec = existing || { id: objectId, provider: "stripe", stripeEventIds: [], createdAt: nowIso() };
+  // Snapshot the pre-merge state first: the store may hand back
+  // the very object being merged into, so reading "existing"
+  // after the loop could read the patch's own values.
+  const prevStatus = existing ? existing.status : null;
+  const prevRefunded = existing ? existing.refundedAmount : undefined;
+  const prevChargedAt = existing ? existing.chargedAt : null;
+  for (const [k, v] of Object.entries(patch || {})) {
+    if (v !== undefined && v !== null) rec[k] = v;
+  }
+  // A weaker later event never erases a stronger state: a
+  // replayed "succeeded" cannot un-refund a charge, and a failed
+  // attempt cannot overwrite a success.
+  if (prevStatus && patch && patch.status
+    && (CHARGE_STATUS_RANK[patch.status] || 0) < (CHARGE_STATUS_RANK[prevStatus] || 0)) {
+    rec.status = prevStatus;
+  }
+  // Refunds only ever grow, and the first charge time stands.
+  if (typeof prevRefunded === "number" && typeof rec.refundedAmount === "number") {
+    rec.refundedAmount = Math.max(prevRefunded, rec.refundedAmount);
+  }
+  if (prevChargedAt && patch && patch.chargedAt) rec.chargedAt = prevChargedAt;
+  if (evtId && !rec.stripeEventIds.includes(evtId)) rec.stripeEventIds.push(evtId);
+  rec.updatedAt = nowIso();
+  await store.set(key, rec);
+  return rec;
+}
+
+async function captureStripeCharge(evt, obj) {
+  const type = (evt && evt.type) || "";
+  const eid = (evt && evt.id) || null;
+  if (type === "invoice.payment_succeeded" || type === "invoice.paid") {
+    // A subscription charge. The invoice carries the truth: what
+    // was paid (amount_paid), what the founding credit covered
+    // (total_discount_amounts — the $100 credit lands here), and
+    // which plan price was charged (the invoice line).
+    const biz = await findBusinessForStripe({ businessId: (obj.metadata && obj.metadata.businessId) || null, customerId: obj.customer || null, subscriptionId: obj.subscription || null });
+    const line = obj.lines && Array.isArray(obj.lines.data) ? obj.lines.data[0] : null;
+    const plan = (line && line.price && stripePlanForPrice(line.price.id)) || (line && line.plan && stripePlanForPrice(line.plan.id)) || null;
+    const creditCents = (Array.isArray(obj.total_discount_amounts) ? obj.total_discount_amounts : []).reduce((s, d) => s + (Number(d && d.amount) || 0), 0);
+    const paidCents = Number(obj.amount_paid) || 0;
+    await upsertCharge(obj.id, {
+      kind: "subscription",
+      businessId: biz ? biz.id : null,
+      creatorId: null,
+      bookingId: null,
+      licenseId: null,
+      stripeCustomerId: obj.customer || null,
+      stripeSubscriptionId: obj.subscription || null,
+      stripeInvoiceId: obj.id,
+      stripePaymentIntentId: obj.payment_intent || null,
+      planId: plan ? plan.id : ((biz && biz.business && ((biz.business.subscription && biz.business.subscription.plan) || biz.business.plan)) || null),
+      gross: centsDollars(paidCents + creditCents),
+      creditApplied: centsDollars(creditCents),
+      net: centsDollars(paidCents),
+      status: "succeeded",
+      currency: obj.currency || "usd",
+      periodStart: secsIso(obj.period_start),
+      periodEnd: secsIso(obj.period_end),
+      chargedAt: secsIso(obj.status_transitions && obj.status_transitions.paid_at) || secsIso(obj.created) || nowIso(),
+      description: plan ? `${plan.name} plan` : "Subscription",
+    }, eid);
+    return;
+  }
+  if (type === "checkout.session.completed" && obj.mode !== "setup" && obj.invoice && obj.payment_status === "paid") {
+    // The subscription checkout completed. The invoice event
+    // carries the fuller truth and refines this same record (one
+    // key: the invoice id); the session's own amounts keep the
+    // charge on the books even if that event is delayed or missed.
+    const biz = await findBusinessForStripe({ businessId: obj.client_reference_id || (obj.metadata && obj.metadata.businessId) || null, customerId: obj.customer || null, subscriptionId: obj.subscription || null });
+    const totalC = Number(obj.amount_total) || 0;
+    const subtotalC = typeof obj.amount_subtotal === "number" ? obj.amount_subtotal : totalC;
+    await upsertCharge(obj.invoice, {
+      kind: "subscription",
+      businessId: biz ? biz.id : null,
+      creatorId: null,
+      bookingId: null,
+      licenseId: null,
+      stripeCustomerId: obj.customer || null,
+      stripeSubscriptionId: obj.subscription || null,
+      stripeInvoiceId: obj.invoice,
+      planId: (stripePlanForPrice(obj.metadata && obj.metadata.priceId) || {}).id || ((biz && biz.business && ((biz.business.subscription && biz.business.subscription.plan) || biz.business.plan)) || null),
+      gross: centsDollars(Math.max(subtotalC, totalC)),
+      creditApplied: centsDollars(Math.max(0, subtotalC - totalC)),
+      net: centsDollars(totalC),
+      status: "succeeded",
+      currency: obj.currency || "usd",
+      chargedAt: secsIso(obj.created) || nowIso(),
+      description: "Subscription",
+    }, eid);
+    return;
+  }
+  if (type === "payment_intent.succeeded" || type === "payment_intent.payment_failed") {
+    // A paid-booking or license charge: SIGNL's own PaymentIntents
+    // carry the booking, business and creator in metadata
+    // (lib/connect.js createHeldCharge). Intents without that
+    // metadata — a subscription's own intent, a concierge link —
+    // are not ours to classify: subscription charges arrive on
+    // their invoices, and skipping keeps a foreign charge out of
+    // the paid-lane rows.
+    const md = obj.metadata || {};
+    if (!md.bookingId || obj.invoice) return;
+    const amount = centsDollars(obj.amount);
+    let kind = "paid";
+    let licenseId = null;
+    const licenses = (await store.list("license:")).map((r) => r.value).filter((l) => l && l.bookingId === md.bookingId && l.status === "granted");
+    const lic = licenses.find((l) => Math.abs((Number(l.businessTotal) || 0) - amount) < 0.005);
+    if (lic) { kind = "license"; licenseId = lic.id; }
+    await upsertCharge(obj.id, {
+      kind,
+      businessId: md.businessId || null,
+      creatorId: md.creatorId || null,
+      bookingId: md.bookingId,
+      licenseId,
+      stripePaymentIntentId: obj.id,
+      stripeCustomerId: obj.customer || null,
+      gross: amount,
+      creditApplied: 0,
+      net: amount,
+      status: type === "payment_intent.succeeded" ? "succeeded" : "failed",
+      currency: obj.currency || "usd",
+      chargedAt: secsIso(obj.created) || nowIso(),
+      description: kind === "license" ? "License" : "Paid booking",
+    }, eid);
+    return;
+  }
+  if (type === "charge.refunded") {
+    // A refund against a charge we may already hold: the parent
+    // record (keyed by PaymentIntent, or by invoice for a
+    // subscription) gains the refunded total and its status, and
+    // the refund itself lands as its own negative row so the
+    // Money view can print refunds as their own line.
+    const refundedTotal = centsDollars(obj.amount_refunded);
+    const full = obj.refunded === true || refundedTotal >= centsDollars(obj.amount);
+    const patch = { status: full ? "refunded" : "partially_refunded", refundedAmount: refundedTotal, stripeChargeId: obj.id };
+    if (obj.payment_intent) await upsertCharge(obj.payment_intent, patch, eid);
+    if (obj.invoice) await upsertCharge(obj.invoice, patch, eid);
+    const refunds = obj.refunds && Array.isArray(obj.refunds.data) ? obj.refunds.data : [];
+    const latest = refunds[refunds.length - 1];
+    if (latest && latest.id) {
+      const parent = (obj.payment_intent && await store.get(`charge:stripe:${obj.payment_intent}`)) || (obj.invoice && await store.get(`charge:stripe:${obj.invoice}`)) || null;
+      await upsertCharge(latest.id, {
+        kind: "refund",
+        businessId: parent ? parent.businessId : null,
+        creatorId: parent ? parent.creatorId : null,
+        bookingId: parent ? parent.bookingId : null,
+        licenseId: parent ? parent.licenseId : null,
+        parentKind: parent ? parent.kind : null,
+        stripePaymentIntentId: obj.payment_intent || null,
+        stripeInvoiceId: obj.invoice || null,
+        stripeChargeId: obj.id,
+        gross: 0,
+        creditApplied: 0,
+        net: -centsDollars(latest.amount),
+        status: "succeeded",
+        currency: obj.currency || "usd",
+        chargedAt: secsIso(latest.created) || nowIso(),
+        description: "Refund",
+      }, eid);
+    }
+  }
+}
+
 async function handleStripeWebhook(event) {
   if (!stripe.webhookConfigured()) return err(503, "Billing is not configured.");
   let raw = event.body || "";
@@ -9180,6 +9374,11 @@ async function handleStripeWebhook(event) {
     return err(400, "Webhook signature verification failed");
   }
   const obj = (evt && evt.data && evt.data.object) || {};
+  // Charge capture (Build -55) runs first and on its own guard:
+  // the ledger write must never be lost because a snapshot update
+  // below failed, and a capture fault must never block the
+  // subscription state the rest of this handler maintains.
+  try { await captureStripeCharge(evt, obj); } catch (e) { console.error("SIGNL Stripe charge capture error:", e); }
   try {
     if (evt.type === "checkout.session.completed" && obj.mode === "setup") {
       // Card on file (Connect phase 2, 2026-10-26): a setup-mode
@@ -9423,6 +9622,7 @@ function validBaseline(dayRaw, countRaw) {
   return { dayLabel: day, count };
 }
 async function allRedemptionEvents() { return (await store.list("redevent:")).map((r) => r.value).filter(Boolean); }
+async function allCharges() { return (await store.list("charge:")).map((r) => r.value).filter(Boolean); }
 async function allPasses() { return (await store.list("pass:")).map((r) => r.value).filter(Boolean); }
 async function allMentions() { return (await store.list("mention:")).map((r) => r.value).filter(Boolean); }
 async function issueComeBackPass(booking, firstEvent) {
@@ -10762,9 +10962,9 @@ async function ccPrep(query) {
   const includeTesters = !!(query && (query.testers === "1" || query.testers === "true"));
   const period = ccPeriodOf(query && query.period);
   const marketScope = query && query.market ? normalizeMarketName(String(query.market)) : null;
-  const [users, bookings, posts, licenses, redEvents, flagsRec, sqRows] = await Promise.all([
+  const [users, bookings, posts, licenses, redEvents, flagsRec, sqRows, chargeRows] = await Promise.all([
     allUsers(), allBookings(), allPosts(), allLicenses(), allRedemptionEvents(),
-    store.get("config:markets"), store.list("sqconn:"),
+    store.get("config:markets"), store.list("sqconn:"), store.list("charge:"),
   ]);
   const flags = (flagsRec && flagsRec.flags) || {};
   const visible = (u) => !!u && u.role !== "admin" && (includeTesters || (!isTester(u) && !(u.role === "partner" && u.partner && u.partner.demo)));
@@ -10782,13 +10982,21 @@ async function ccPrep(query) {
   const compBookings = visBookings.filter(isComp);
   const firstCounted = new Set();
   const countedByBooking = new Map();
+  const countedEvents = [];
+  const firstsByBooking = new Map();
   for (const ev of redEvents) {
     if (!ev || ev.voided || !ev.bookingId) continue;
     const bk = bookingById.get(ev.bookingId);
     if (!bk || !recordVisible(ev.businessId || bk.businessId, ev.creatorId || bk.creatorId)) continue;
-    if (ev.kind === "first") firstCounted.add(ev.bookingId);
+    if (ev.kind === "first") { firstCounted.add(ev.bookingId); firstsByBooking.set(ev.bookingId, (firstsByBooking.get(ev.bookingId) || 0) + 1); }
     countedByBooking.set(ev.bookingId, (countedByBooking.get(ev.bookingId) || 0) + (Number(ev.amount) || 0));
+    countedEvents.push({ kind: ev.kind || "first", amount: Number(ev.amount) || 0, at: ev.at || null, bookingId: ev.bookingId, businessId: ev.businessId || bk.businessId, creatorId: ev.creatorId || bk.creatorId, market: bk.market || null });
   }
+  // Charge ledger (Build -55): the Stripe charge records, under
+  // the same tester exclusion as every other record class — a
+  // tester business's charges are not revenue.
+  const allChargeRecs = chargeRows.map((r) => r.value).filter(Boolean);
+  const visCharges = allChargeRecs.filter((c) => recordVisible(c.businessId, c.creatorId));
   const countedInPeriod = (marketName) => {
     let sum = 0;
     for (const ev of redEvents) {
@@ -10812,9 +11020,10 @@ async function ccPrep(query) {
   const partners = visUsers.filter((u) => u.role === "partner" && u.partner);
   return {
     includeTesters, period, marketScope, flags,
-    users, visUsers, visBookings, visLicenses, partners,
+    users, visUsers, visBookings, visLicenses, partners, posts,
     postByBooking, bookingById, userById, completedAtOf, isComp, compBookings,
-    firstCounted, countedByBooking, countedInPeriod, paidFinished, licensesGranted, finishedDeals, dealMarketOf,
+    firstCounted, countedByBooking, countedInPeriod, countedEvents, firstsByBooking, paidFinished, licensesGranted, finishedDeals, dealMarketOf,
+    charges: visCharges, allCharges: allChargeRecs,
     connectedBizIds: new Set(sqRows.map((r) => (r.value && r.value.businessId) || String(r.key || "").slice("sqconn:".length)).filter(Boolean)),
   };
 }
@@ -10828,9 +11037,10 @@ function ccFiltersEcho(P) {
 }
 
 // Overview (§3.0): headline tiles + the needs-attention strip.
-// Dollars flowing and money owed are later-phase views (Money in
-// -55, Owed in -57): their tiles answer null with the forming
-// note, never an invented zero dressed as a total.
+// Dollars flowing landed with the Money view (Build -55) and
+// reads the money aggregate's Recorded total with Charged as its
+// own sub-figure. Money owed is -57's view: its tile answers null
+// with the forming note, never an invented zero dressed as a total.
 function ccOverview(P) {
   const scoped = (u) => !P.marketScope || normalizeMarketName(u.market) === P.marketScope;
   const people = P.visUsers.filter((u) => (u.role === "creator" || u.role === "business") && scoped(u));
@@ -10878,7 +11088,12 @@ function ccOverview(P) {
       compsCounted: compsCompletedList.filter((b) => P.firstCounted.has(b.id)).length,
       finishedDeals: deals,
       countedRegister: P.countedInPeriod(P.marketScope),
-      dollarsFlowing: null,
+      // Dollars flowing (Build -55): the Recorded class total,
+      // with the Charged class printed as its own sub-figure —
+      // the two classes sit side by side on the tile and are
+      // never added together. Money owed stays -57's forming
+      // state until the owed ledger lands.
+      dollarsFlowing: (() => { const agg = ccMoneyAgg(P); return { recorded: agg.recorded.totals.flowed, charged: agg.charged.netTotal }; })(),
       moneyOwed: null,
       alerts: attention.reduce((n, a) => n + a.count, 0),
     },
@@ -10939,6 +11154,287 @@ function ccMarkets(P) {
     if (row.resolvesTo && byName.has(row.resolvesTo)) byName.get(row.resolvesTo).unlistedClaiming.push({ place: row.place, city: row.city, total: row.total });
   }
   return { filters: ccFiltersEcho(P), markets: rows, unlisted };
+}
+
+// ---------- Command Center: Money + Businesses (Build -55) ----------
+// The Money view (§3.1) and the Businesses agreement ledger
+// (§3.3), computed from the same shared prep as Overview and
+// Markets so the views can never disagree. The four honesty
+// classes (§4.1) are computed apart and returned apart: Counted
+// from register events, Recorded from booking / license / plan
+// records, Charged from the Stripe charge ledger (Build -55
+// capture), Modeled from the Halo engine — and no total anywhere
+// in this payload sums across classes. Partner percentages apply
+// to subscription revenue only and their accruals are computed
+// by the partner-deal phase (-56): until then the partner column
+// on subscription rows answers null (not yet computed), never an
+// invented figure; on paid and license rows partners earn nothing
+// by the model's own rule, which is a real zero.
+function ccPlanOf(u) {
+  const b = (u && u.business) || {};
+  const sub = b.subscription || {};
+  let planId = b.plan || sub.plan || null;
+  let plan = planId ? planById(planId) : null;
+  const monthly = typeof b.planPriceMonthly === "number" ? b.planPriceMonthly
+    : typeof sub.planPriceMonthly === "number" ? sub.planPriceMonthly
+    : plan ? plan.priceMonthly : null;
+  if (!plan && typeof monthly === "number") {
+    plan = ["self-service", "growth", "managed"].map(planById).find((p) => p && p.priceMonthly === monthly) || null;
+    if (plan) planId = plan.id;
+  }
+  const rawName = b.planName || sub.planName || (plan ? plan.name : null);
+  const planName = rawName ? String(rawName).replace(/\s*\$.*$/, "").trim() : null;
+  return { b, sub, planId, plan, planName, monthly };
+}
+
+function ccChargeMarket(P, c) {
+  const biz = c.businessId ? P.userById.get(c.businessId) : null;
+  if (biz) return normalizeMarketName(biz.market || "");
+  const bk = c.bookingId ? P.bookingById.get(c.bookingId) : null;
+  return bk ? normalizeMarketName(bk.market || "") : "";
+}
+
+function ccMoneyAgg(P) {
+  const inP = (iso) => P.period.inPeriod(iso);
+  const dealIn = (rec, booking) => !P.marketScope || P.dealMarketOf(rec, booking) === P.marketScope;
+  const sum = (arr, f) => ccMoney(arr.reduce((s, x) => s + (f(x) || 0), 0));
+
+  // COUNTED — register events only.
+  const cEv = P.countedEvents.filter((e) => inP(e.at) && (!P.marketScope || normalizeMarketName(e.market || "") === P.marketScope));
+  const firstEv = cEv.filter((e) => e.kind === "first");
+  const returnEv = cEv.filter((e) => e.kind === "return");
+  const counted = {
+    total: sum(cEv, (e) => e.amount),
+    firsts: sum(firstEv, (e) => e.amount), firstCount: firstEv.length,
+    returns: sum(returnEv, (e) => e.amount), returnCount: returnEv.length,
+    visitsCounted: new Set(firstEv.map((e) => e.bookingId)).size,
+    businesses: new Set(cEv.map((e) => e.businessId)).size,
+  };
+
+  // RECORDED — the platform's own books.
+  const relAt = (b) => (b.paidLane && (b.paidLane.releasedAt || b.paidLane.fundsReleasedAt)) || b.updatedAt || b.createdAt;
+  const paidRel = P.paidFinished.filter((b) => inP(relAt(b)) && dealIn(b, null));
+  const paidHeld = P.visBookings.filter((b) => isPaidVisit(b) && b.paidLane && b.paidLane.escrowState === "held" && dealIn(b, null));
+  const licGr = P.licensesGranted.filter((l) => inP(l.grantedAt || l.respondedAt || l.updatedAt || l.createdAt) && dealIn(l, P.bookingById.get(l.bookingId) || null));
+  const licPend = P.visLicenses.filter((l) => l.status === "pending" && dealIn(l, P.bookingById.get(l.bookingId) || null));
+  const paidRow = {
+    flowed: sum(paidRel, (b) => b.paidLane.businessTotal), signlKept: sum(paidRel, (b) => b.paidLane.platformFee),
+    creatorsEarned: sum(paidRel, (b) => b.paidLane.creatorNet), partnersEarned: 0, count: paidRel.length,
+  };
+  const licRow = {
+    flowed: sum(licGr, (l) => l.businessTotal), signlKept: sum(licGr, (l) => l.platformFee),
+    creatorsEarned: sum(licGr, (l) => l.creatorNet), partnersEarned: 0, count: licGr.length,
+  };
+  // Split invariant (§4.2): what the business paid is exactly
+  // what the creator kept plus what SIGNL kept, on every record.
+  const invariantHolds = (list, get) => list.every((x) => { const m = get(x); return Math.abs((m.businessTotal || 0) - ((m.creatorNet || 0) + (m.platformFee || 0))) < 0.005; });
+  const splitsHold = invariantHolds(paidRel, (b) => b.paidLane) && invariantHolds(licGr, (l) => l);
+  // Recorded subscriptions: plan selections on business records,
+  // at their monthly rate, counted in the period they were
+  // selected (a selection with no date on record counts only in
+  // the all-time view — nothing is backdated by guesswork).
+  let subFlowed = 0; let subCount = 0;
+  for (const u of P.visUsers) {
+    if (u.role !== "business") continue;
+    if (P.marketScope && normalizeMarketName(u.market || "") !== P.marketScope) continue;
+    const { monthly, b } = ccPlanOf(u);
+    if (typeof monthly !== "number") continue;
+    const selAt = b.planSelectedAt || null;
+    if (selAt ? !inP(selAt) : P.period.key !== "all") continue;
+    subFlowed += monthly; subCount += 1;
+  }
+  const subRow = { flowed: ccMoney(subFlowed), signlKept: ccMoney(subFlowed), creatorsEarned: 0, partnersEarned: null, count: subCount };
+  const recorded = {
+    rows: { subscriptions: subRow, paidBookings: paidRow, licenses: licRow },
+    totals: {
+      flowed: ccMoney(subRow.flowed + paidRow.flowed + licRow.flowed),
+      signlKept: ccMoney(subRow.signlKept + paidRow.signlKept + licRow.signlKept),
+      creatorsEarned: ccMoney(paidRow.creatorsEarned + licRow.creatorsEarned),
+      partnersEarned: null,
+    },
+    splitsHold,
+    escrow: {
+      paidHeld: { count: paidHeld.length, businessTotal: sum(paidHeld, (b) => b.paidLane.businessTotal) },
+      licensesPending: { count: licPend.length, businessTotal: sum(licPend, (l) => l.businessTotal) },
+    },
+  };
+
+  // CHARGED — the Stripe charge ledger.
+  const okStatus = (c) => c.status === "succeeded" || c.status === "partially_refunded" || c.status === "refunded";
+  const chIn = P.charges.filter((c) => inP(c.chargedAt) && (!P.marketScope || ccChargeMarket(P, c) === P.marketScope));
+  const byKind = (k) => chIn.filter((c) => c.kind === k && okStatus(c));
+  const effNet = (c) => (Number(c.net) || 0) - (Number(c.refundedAmount) || 0);
+  const subCh = byKind("subscription");
+  const paidCh = byKind("paid");
+  const licCh = byKind("license");
+  const refundRowsList = chIn.filter((c) => c.kind === "refund");
+  const chargeIds = new Set(P.charges.map((c) => c.id));
+  const coveredParents = new Set();
+  for (const r of refundRowsList) { if (r.stripePaymentIntentId) coveredParents.add(r.stripePaymentIntentId); if (r.stripeInvoiceId) coveredParents.add(r.stripeInvoiceId); }
+  const uncoveredParentRefunds = chIn.filter((c) => c.kind !== "refund" && (Number(c.refundedAmount) || 0) > 0 && !coveredParents.has(c.id)).reduce((s, c) => s + c.refundedAmount, 0);
+  const orphanRefunds = refundRowsList.filter((r) => !chargeIds.has(r.stripePaymentIntentId) && !chargeIds.has(r.stripeInvoiceId)).reduce((s, r) => s + Math.abs(Number(r.net) || 0), 0);
+  const refundsTotal = ccMoney(refundRowsList.reduce((s, r) => s + Math.abs(Number(r.net) || 0), 0) + uncoveredParentRefunds);
+  const chargedSubs = { gross: sum(subCh, (c) => c.gross), creditApplied: sum(subCh, (c) => c.creditApplied), net: sum(subCh, effNet), count: subCh.length };
+  const chargedPaid = { net: sum(paidCh, effNet), count: paidCh.length };
+  const chargedLic = { net: sum(licCh, effNet), count: licCh.length };
+  const charged = {
+    rows: {
+      subscriptions: chargedSubs,
+      paidBookings: chargedPaid,
+      licenses: chargedLic,
+      activationFees: { net: 0, count: 0, note: "No activation fee has been charged yet. Max Media's sits in its deal terms, which are not final." },
+      refunds: { net: -refundsTotal, count: refundRowsList.length + chIn.filter((c) => c.kind !== "refund" && (Number(c.refundedAmount) || 0) > 0).length },
+    },
+    netTotal: ccMoney(chargedSubs.net + chargedPaid.net + chargedLic.net - orphanRefunds),
+    failedCount: chIn.filter((c) => c.status === "failed").length,
+  };
+
+  // Reconciliation (§3.8, this phase's slice): the recorded and
+  // charged classes disagreeing, in plain sight.
+  const unmatched = P.charges.filter((c) => okStatus(c) && !c.businessId)
+    .map((c) => ({ id: c.id, kind: c.kind, amount: ccMoney(effNet(c)), at: c.chargedAt || null, stripeCustomerId: c.stripeCustomerId || null }));
+  const chargedBizIds = new Set(P.charges.filter((c) => c.kind === "subscription" && okStatus(c)).map((c) => c.businessId).filter(Boolean));
+  let recordedUncharged = 0;
+  for (const u of P.visUsers) {
+    if (u.role !== "business" || chargedBizIds.has(u.id)) continue;
+    if (typeof ccPlanOf(u).monthly === "number") recordedUncharged += 1;
+  }
+  const firstSubChargeAt = new Map();
+  for (const c of P.charges) {
+    if (c.kind !== "subscription" || !c.businessId || !okStatus(c)) continue;
+    const at = c.chargedAt || "";
+    if (!firstSubChargeAt.has(c.businessId) || at < firstSubChargeAt.get(c.businessId)) firstSubChargeAt.set(c.businessId, at);
+  }
+  const creditFlags = [];
+  for (const c of chIn) {
+    if (c.kind !== "subscription" || !c.businessId || !okStatus(c)) continue;
+    if ((Number(c.creditApplied) || 0) === 0 && firstSubChargeAt.get(c.businessId) === (c.chargedAt || "")) {
+      const u = P.userById.get(c.businessId);
+      creditFlags.push({ businessId: c.businessId, businessName: (u && u.business && u.business.businessName) || (u && u.name) || "", amount: ccMoney(c.net), at: c.chargedAt || null });
+    }
+  }
+  return {
+    counted, recorded, charged,
+    reconciliation: { chargedUnmatched: unmatched.slice(0, 50), chargedUnmatchedCount: unmatched.length, recordedUnchargedCount: recordedUncharged, creditNotApplied: creditFlags },
+  };
+}
+
+// The Modeled block: Halo's platform estimate, computed with the
+// engine's own per-visit function over the visible completed
+// comp visits, and quarantined in its own object — the client
+// renders it in its own panel and nothing above reads from it.
+async function ccModeled(P) {
+  const model = await haloModelState();
+  const firstEv = P.countedEvents.filter((e) => e.kind === "first" && (!P.marketScope || normalizeMarketName(e.market || "") === P.marketScope));
+  const avgCheck = firstEv.length
+    ? { amount: roasRound2(firstEv.reduce((s, e) => s + e.amount, 0) / firstEv.length), source: "register" }
+    : { amount: HALO_PRIOR_AVG_CHECK, source: "prior" };
+  const ctx = { haloModel: model, avgCheck, platformFirsts: firstEv.length };
+  let postsMeasured = 0; let estVisits = 0; let estDollars = 0;
+  for (const b of P.compBookings) {
+    if (b.status !== "completed") continue;
+    if (P.marketScope && normalizeMarketName(b.market || "") !== P.marketScope) continue;
+    const post = P.postByBooking.get(b.id);
+    if (!post) continue;
+    const perf = roasPerformanceOf({ ...b, post });
+    if (!perf.reported) continue;
+    postsMeasured += 1;
+    const creator = P.userById.get(b.creatorId);
+    const pct = creator && creator.creator && typeof creator.creator.localAudiencePct === "number" ? creator.creator.localAudiencePct : null;
+    const halo = haloForVisit(perf, pct, P.completedAtOf(b), P.firstsByBooking.get(b.id) || 0, ctx);
+    estVisits += halo.estVisits; estDollars += halo.estDollars;
+  }
+  const conf = haloConfidenceFor(ctx);
+  return {
+    postsMeasured,
+    estVisits: round1(estVisits),
+    countedFirsts: firstEv.length,
+    estValue: avgCheck.source === "prior" ? null : ccMoney(estDollars),
+    valueBasis: avgCheck.source,
+    avgCheck: avgCheck.amount,
+    intentRate: model.intentRate,
+    confidence: conf.level,
+    confidenceWords: conf.words,
+  };
+}
+
+function ccMoneyView(P, modeled) {
+  return { filters: ccFiltersEcho(P), ...ccMoneyAgg(P), modeled };
+}
+
+// Businesses (§3.3): the agreement ledger. Every figure on a row
+// is computed from that business's own records — plan and
+// subscription on the user record, charges in the ledger,
+// rollover from its bookings through the same planAllowanceFor
+// the business's own home reads — so the row can never drift
+// from what the business sees.
+function ccAddMonthsIso(iso, months) {
+  const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) return null;
+  d.setMonth(d.getMonth() + months);
+  return d.toISOString();
+}
+function ccBusinesses(P) {
+  const nowMs = Date.now();
+  const rows = [];
+  for (const u of P.visUsers) {
+    if (u.role !== "business") continue;
+    if (P.marketScope && normalizeMarketName(u.market || "") !== P.marketScope) continue;
+    const { b, sub, planId, plan, planName, monthly } = ccPlanOf(u);
+    const hasAgreement = typeof monthly === "number";
+    const bizCharges = P.charges.filter((c) => c.businessId === u.id);
+    const subCharges = bizCharges.filter((c) => c.kind === "subscription" && c.status !== "failed");
+    const hasCharge = subCharges.some((c) => c.status === "succeeded" || c.status === "partially_refunded" || c.status === "refunded");
+    const creditTotal = plan && typeof plan.foundingCredit === "number" ? plan.foundingCredit : 100;
+    const creditUsed = Math.min(creditTotal, ccMoney(subCharges.reduce((s, c) => s + (Number(c.creditApplied) || 0), 0)));
+    const minMonths = typeof b.planMinMonths === "number" ? b.planMinMonths : plan && typeof plan.minMonths === "number" ? plan.minMonths : 3;
+    const anchor = b.planSelectedAt || b.activatedAt || u.createdAt || null;
+    const minimumEnd = hasAgreement && anchor ? ccAddMonthsIso(anchor, minMonths) : null;
+    const monthsLeft = minimumEnd ? Math.max(0, Math.ceil((Date.parse(minimumEnd) - nowMs) / (30.44 * 86400000))) : 0;
+    const billingState = !hasAgreement ? "no-plan"
+      : sub.status === "past_due" ? "past-due"
+      : hasCharge ? (sub.status === "canceled" ? "charged-canceled" : "charged")
+      : "recorded";
+    const bizBookings = P.visBookings.filter((x) => x.businessId === u.id);
+    const roll = plan ? planAllowanceFor(bizBookings, plan, nowMs) : { base: 0, carried: 0, allowance: 0, used: 0, remaining: 0, carriedExpiresAt: null };
+    const partnerUser = u.partnerId ? P.userById.get(u.partnerId) : null;
+    const lastChargeAt = bizCharges.reduce((m, c) => (c.chargedAt && c.chargedAt > m ? c.chargedAt : m), "");
+    const lastBookingAt = bizBookings.reduce((m, x) => ((x.updatedAt || "") > m ? x.updatedAt : m), "");
+    rows.push({
+      id: u.id,
+      name: b.businessName || u.name || "",
+      market: u.market || "",
+      partner: partnerUser && partnerUser.partner ? { id: partnerUser.id, name: partnerUser.partner.name || partnerUser.name || "", code: partnerUser.partner.code || "" } : null,
+      accessState: businessAccessState(u),
+      plan: hasAgreement ? { id: planId, name: planName, monthly, foundingRate: true, selectedAt: b.planSelectedAt || null } : null,
+      credit: hasAgreement ? { total: creditTotal, used: creditUsed, remaining: ccMoney(creditTotal - creditUsed), applied: creditUsed > 0 } : null,
+      minimum: hasAgreement ? { months: minMonths, end: minimumEnd, monthsLeft } : null,
+      billing: { state: billingState, subscriptionStatus: sub.status || null, currentPeriodEnd: sub.currentPeriodEnd || null, lastChargeAt: lastChargeAt || null, chargesCount: subCharges.length },
+      rollover: { base: roll.base, carriedIn: roll.carried, available: roll.remaining, allowance: roll.allowance, used: roll.used, carriedExpiresAt: roll.carriedExpiresAt },
+      lifetime: {
+        compsCompleted: P.compBookings.filter((x) => x.businessId === u.id && x.status === "completed").length,
+        paidReleased: P.paidFinished.filter((x) => x.businessId === u.id).length,
+        counted: ccMoney(bizBookings.reduce((s, x) => s + (P.countedByBooking.get(x.id) || 0), 0)),
+        signlRevenue: ccMoney(
+          P.paidFinished.filter((x) => x.businessId === u.id).reduce((s, x) => s + (Number(x.paidLane.platformFee) || 0), 0)
+          + P.licensesGranted.filter((x) => x.businessId === u.id).reduce((s, x) => s + (Number(x.platformFee) || 0), 0)),
+      },
+      lastActivity: lastChargeAt || lastBookingAt || u.updatedAt || u.createdAt || "",
+    });
+  }
+  const rank = (r) => (r.billing.state === "past-due" ? 0 : r.billing.state === "recorded" ? 1 : 2);
+  rows.sort((a, z) => rank(a) - rank(z) || (z.lastActivity < a.lastActivity ? -1 : z.lastActivity > a.lastActivity ? 1 : 0));
+  return {
+    filters: ccFiltersEcho(P),
+    businesses: rows,
+    totals: {
+      count: rows.length,
+      withPlan: rows.filter((r) => r.plan).length,
+      charged: rows.filter((r) => r.billing.state === "charged").length,
+      recordedOnly: rows.filter((r) => r.billing.state === "recorded").length,
+      pastDue: rows.filter((r) => r.billing.state === "past-due").length,
+    },
+  };
 }
 
 function validPartnerMarkets(names) {
@@ -13695,6 +14191,19 @@ async function route(event) {
     if (seg[1] === "command" && seg[2] === "markets" && method === "GET") {
       const P = await ccPrep(query);
       return json(200, ccMarkets(P));
+    }
+    // Money + Businesses (Build -55): the four honesty classes
+    // computed apart from the same prep, and the agreement
+    // ledger. Modeled is computed with the Halo engine's own
+    // function and returned quarantined in its own object.
+    if (seg[1] === "command" && seg[2] === "money" && method === "GET") {
+      const P = await ccPrep(query);
+      const modeled = await ccModeled(P);
+      return json(200, ccMoneyView(P, modeled));
+    }
+    if (seg[1] === "command" && seg[2] === "businesses" && method === "GET") {
+      const P = await ccPrep(query);
+      return json(200, ccBusinesses(P));
     }
     // Subject-scoped event read (§6.7): one record's own trail for
     // the drill-downs — events where the record is the subject or

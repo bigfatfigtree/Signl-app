@@ -10,8 +10,8 @@
 //    §4.4 lifecycle — a +1 companion never counts, a voided first
 //    register event never counts), finished deals printed by
 //    kind and summed (§4.5), counted register dollars kept in
-//    their own honesty class, dollars-flowing and money-owed
-//    answering their forming state (null), the needs-attention
+//    their own honesty class, money-owed answering its forming
+//    state (null) and dollars-flowing live since -55, the needs-attention
 //    strip with real counts, tester/demo exclusion by default
 //    and inclusion on request, market scoping, period windows,
 //    the per-market launch gate, live flags, attached partners
@@ -121,8 +121,8 @@ const cookieOf = (res) => (((res.headers || {})["Set-Cookie"] || (res.headers ||
 
 console.log("verify-build54: Command Center foundation + Overview + Markets");
 
-check("build stamp is 2026.10.30-54", BUILD_ID === "2026.10.30-54", BUILD_ID);
-check("index.html carries the -54 stamp", fs.readFileSync(new URL("../public/index.html", import.meta.url), "utf8").includes("2026.10.30-54"));
+check("build stamp is 2026.10.30-55", BUILD_ID === "2026.10.30-55", BUILD_ID);
+check("index.html carries the -54 stamp", fs.readFileSync(new URL("../public/index.html", import.meta.url), "utf8").includes("2026.10.30-55"));
 
 const login = await handler(evt("POST", "/api/auth/login", { body: { email: process.env.ADMIN_EMAIL, password: process.env.ADMIN_PASSWORD } }));
 check("admin login succeeds", login.statusCode === 200, `got ${login.statusCode}`);
@@ -143,8 +143,8 @@ check("finished deals print by kind and sum: 2 comp + 1 paid (released only) + 1
   !!t.finishedDeals && t.finishedDeals.compVisits === 2 && t.finishedDeals.paidBookings === 1 && t.finishedDeals.licenses === 1 && t.finishedDeals.total === 4,
   JSON.stringify(t.finishedDeals));
 check("counted register dollars 160.50 (first 120.50 + return 40; the voided 999 excluded)", t.countedRegister === 160.5, JSON.stringify(t.countedRegister));
-check("dollars flowing and money owed answer their forming state (null), never an invented zero",
-  t.dollarsFlowing === null && t.moneyOwed === null, JSON.stringify({ d: t.dollarsFlowing, m: t.moneyOwed }));
+check("dollars flowing landed with -55 (Recorded $754 = $548 of plan selections on record + the $206 released booking, Charged $0 — no charges exist); money owed still answers its forming state (null)",
+  !!t.dollarsFlowing && t.dollarsFlowing.recorded === 754 && t.dollarsFlowing.charged === 0 && t.moneyOwed === null, JSON.stringify({ d: t.dollarsFlowing, m: t.moneyOwed }));
 const att = Object.fromEntries(((ov && ov.attention) || []).map((a) => [a.kind, a.count]));
 check("attention strip: awaiting 2, unstamped 1, unknown code 1, unlisted 1, unsigned partners 1, unconnected registers 1",
   att.awaiting_review === 2 && att.unstamped_attribution === 1 && att.unknown_partner_code === 1 && att.unlisted_records === 1 && att.unsigned_partners === 1 && att.unconnected_registers === 1,
@@ -288,8 +288,8 @@ check("subtab bar carries Jeff's eight: Overview · Money · Partners · Busines
   ["Overview", "Money", "Partners", "Businesses", "Creators", "Markets", "Owed", "Close"].every((l) => shell.includes(`ccSetTab('${l.toLowerCase()}')`)));
 check("Overview renders tiles, attention strip, waiting-for-launch state and the board",
   shell.includes("ccOverviewHtml") && shell.includes("Needs attention") && shell.includes("Waiting for launch") && shell.includes("Finished deals") && shell.includes("Register dollars"));
-check("money views render forming states, never invented totals",
-  shell.includes("ccFormingHtml") && shell.includes("Forming") && shell.includes("lands with charge capture"));
+check("money and businesses render their real views since -55; the later-phase views still render forming states, never invented totals",
+  shell.includes("ccFormingHtml") && shell.includes("Forming") && shell.includes("ccMoneyHtml") && shell.includes("ccBusinessesHtml") && shell.includes("/admin/command/money") && shell.includes("/admin/command/businesses"));
 check("Markets view renders the gate bar, live state, counted dollars and the unlisted resolution lines",
   shell.includes("ccMarketsHtml") && shell.includes("the launch gate") && shell.includes("Founding — not launched") && shell.includes("counted at registers") && shell.includes("Not in a market yet"));
 check("the queue row carries the attribution repair control with partner select and required reason",

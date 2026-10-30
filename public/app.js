@@ -16766,9 +16766,10 @@ function adminSignupBoardHtml(b) {
 // the subtab bar (Overview · Money · Partners · Businesses ·
 // Creators · Markets · Owed · Close), the global filters and the
 // honesty-class legend, over views fed by GET /admin/command/*.
-// This phase ships the shell, Overview and Markets; the money
-// views render their designed forming states until their phases
-// land (-55 Money, -56 partner deals, -57 Owed/Close). The -53
+// -54 shipped the shell, Overview and Markets; Build -55 landed
+// Money and Businesses on the charge ledger; the remaining views
+// render their designed forming states until their phases land
+// (-56 partner deals, -57 Owed/Close). The -53
 // sign-up board stays the top of Overview, consuming the same
 // /admin/stats aggregate, and everything Stats already carried
 // (market table, layers, Your Line, register connections) stays
@@ -16873,6 +16874,16 @@ async function ccShowTab() {
       host.innerHTML = ccMarketsHtml(d);
       return;
     }
+    if (ccTab === "money") {
+      const d = await api("GET", "/admin/command/money?" + ccQuery());
+      host.innerHTML = ccMoneyHtml(d);
+      return;
+    }
+    if (ccTab === "businesses") {
+      const d = await api("GET", "/admin/command/businesses?" + ccQuery());
+      host.innerHTML = ccBusinessesHtml(d);
+      return;
+    }
     host.innerHTML = ccFormingHtml(ccTab);
   } catch (err) {
     host.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
@@ -16894,7 +16905,9 @@ function ccOverviewHtml(s, ov) {
       <div class="cc-tile"><div class="cc-tlabel">Comps completed</div><div class="cc-tnum">${t.compsCompleted || 0}</div><div class="cc-tsub">${plural(t.compsCounted || 0, "visit", "visits")} counted at a register &middot; ${periodName}</div></div>
       <div class="cc-tile"><div class="cc-tlabel">Finished deals</div><div class="cc-tnum">${fd.total}</div><div class="cc-tsub">${plural(fd.compVisits, "comp visit", "comp visits")} &middot; ${plural(fd.paidBookings, "paid booking", "paid bookings")} &middot; ${plural(fd.licenses, "license", "licenses")} &middot; ${periodName}</div></div>
       <div class="cc-tile"><div class="cc-tlabel">Register dollars <span class="cc-chip counted">Counted</span></div><div class="cc-tnum">${ccMoneyFmt(t.countedRegister || 0)}</div><div class="cc-tsub">Counted at business registers &middot; ${periodName}</div></div>
-      ${formingTile("Dollars flowing", "The all-money view lands with charge capture, on the Money tab.")}
+      ${t.dollarsFlowing
+        ? `<div class="cc-tile"><div class="cc-tlabel">Dollars flowing <span class="cc-chip recorded">Recorded</span></div><div class="cc-tnum">${ccMoneyFmt(t.dollarsFlowing.recorded || 0)}</div><div class="cc-tsub">Recorded on platform records &middot; ${ccMoneyFmt(t.dollarsFlowing.charged || 0)} charged on cards so far <span class="cc-chip charged">Charged</span> &middot; the classes are never added together &middot; ${periodName}</div></div>`
+        : formingTile("Dollars flowing", "The all-money view lands with charge capture, on the Money tab.")}
       ${formingTile("Money owed", "The owed ledger lands with the Owed tab.")}
       <div class="cc-tile"><div class="cc-tlabel">Alerts</div><div class="cc-tnum">${t.alerts || 0}</div><div class="cc-tsub">${(t.alerts || 0) ? "Things that need a look, below" : "All clear"}</div></div>
     </div>`;
@@ -17025,32 +17038,157 @@ function ccMarketsHtml(d) {
     ${empty.length ? `<p class="muted small">No sign-ups yet in: ${empty.map((m) => esc(m.label || m.market)).join(" &middot; ")}</p>` : ""}`;
 }
 
+// Money (Build -55, spec §3.1): every dollar by how sure we are
+// it is real. The four classes render in their own panels with
+// their own totals; nothing on this view ever adds across
+// classes. Modeled sits in its own quarantined panel at the end.
+function ccMonthYear(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return Number.isFinite(d.getTime()) ? d.toLocaleDateString("en-US", { month: "short", year: "numeric" }) : "";
+}
+function ccMoneyHtml(d) {
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  const rec = d.recorded || { rows: {}, totals: {}, escrow: {} };
+  const chg = d.charged || { rows: {}, netTotal: 0 };
+  const cnt = d.counted || {};
+  const mo = d.modeled || {};
+  const recon = d.reconciliation || {};
+  const rr = rec.rows || {};
+  const cr = chg.rows || {};
+  const partnerCell = (v) => (v === null || v === undefined ? `<span class="muted">accrues with partner deals</span>` : ccMoneyFmt(v));
+  const tiles = `
+    <div class="cc-tiles">
+      <div class="cc-tile cc-hero"><div class="cc-tlabel">Through the platform <span class="cc-chip recorded">Recorded</span></div><div class="cc-tnum">${ccMoneyFmt((rec.totals || {}).flowed || 0)}</div><div class="cc-tsub">Written on plan, booking and license records</div></div>
+      <div class="cc-tile"><div class="cc-tlabel">On cards <span class="cc-chip charged">Charged</span></div><div class="cc-tnum">${ccMoneyFmt(chg.netTotal || 0)}</div><div class="cc-tsub">Real Stripe charges, refunds out</div></div>
+      <div class="cc-tile"><div class="cc-tlabel">At registers <span class="cc-chip counted">Counted</span></div><div class="cc-tnum">${ccMoneyFmt(cnt.total || 0)}</div><div class="cc-tsub">Counted at business registers</div></div>
+      <div class="cc-tile"><div class="cc-tlabel">SIGNL kept <span class="cc-chip recorded">Recorded</span></div><div class="cc-tnum">${ccMoneyFmt((rec.totals || {}).signlKept || 0)}</div><div class="cc-tsub">Before partner accruals, which land with the deal records</div></div>
+    </div>`;
+  const splitCheck = rec.splitsHold === false
+    ? `<p class="small" style="color:#B3261E"><strong>Split check failed:</strong> at least one paid record's splits do not add up (business total should equal creator kept + SIGNL kept). It is listed in Reconciliation &amp; alerts when that view lands; the records above are printed as written.</p>`
+    : `<p class="small muted">Split check: on every paid booking and license, what the business paid equals what the creator kept plus what SIGNL kept.</p>`;
+  const recordedPanel = `
+    <div class="panel">
+      <h3 style="margin:0 0 2px">Recorded <span class="cc-chip recorded">Recorded</span></h3>
+      <p class="muted small" style="margin:0 0 8px">On SIGNL's books: what the records say moved, whether or not a card was charged.</p>
+      <div class="table-wrap"><table>
+        <tr><th>Source</th><th>Flowed</th><th>SIGNL kept</th><th>Creators earned</th><th>Partners earned</th></tr>
+        <tr><td>Subscriptions <span class="muted small">(${plural((rr.subscriptions || {}).count || 0, "plan", "plans")} selected)</span></td><td data-label="Flowed">${ccMoneyFmt((rr.subscriptions || {}).flowed || 0)}</td><td data-label="SIGNL kept">${ccMoneyFmt((rr.subscriptions || {}).signlKept || 0)}</td><td data-label="Creators earned">${ccMoneyFmt((rr.subscriptions || {}).creatorsEarned || 0)}</td><td data-label="Partners earned">${partnerCell((rr.subscriptions || {}).partnersEarned)}</td></tr>
+        <tr><td>Paid bookings <span class="muted small">(${plural((rr.paidBookings || {}).count || 0, "booking", "bookings")} released)</span></td><td data-label="Flowed">${ccMoneyFmt((rr.paidBookings || {}).flowed || 0)}</td><td data-label="SIGNL kept">${ccMoneyFmt((rr.paidBookings || {}).signlKept || 0)}</td><td data-label="Creators earned">${ccMoneyFmt((rr.paidBookings || {}).creatorsEarned || 0)}</td><td data-label="Partners earned">${ccMoneyFmt((rr.paidBookings || {}).partnersEarned || 0)}</td></tr>
+        <tr><td>Licenses <span class="muted small">(${plural((rr.licenses || {}).count || 0, "license", "licenses")} granted)</span></td><td data-label="Flowed">${ccMoneyFmt((rr.licenses || {}).flowed || 0)}</td><td data-label="SIGNL kept">${ccMoneyFmt((rr.licenses || {}).signlKept || 0)}</td><td data-label="Creators earned">${ccMoneyFmt((rr.licenses || {}).creatorsEarned || 0)}</td><td data-label="Partners earned">${ccMoneyFmt((rr.licenses || {}).partnersEarned || 0)}</td></tr>
+        <tr class="cc-total-row"><td><strong>Recorded total</strong></td><td data-label="Flowed"><strong>${ccMoneyFmt((rec.totals || {}).flowed || 0)}</strong></td><td data-label="SIGNL kept"><strong>${ccMoneyFmt((rec.totals || {}).signlKept || 0)}</strong></td><td data-label="Creators earned"><strong>${ccMoneyFmt((rec.totals || {}).creatorsEarned || 0)}</strong></td><td data-label="Partners earned">${partnerCell((rec.totals || {}).partnersEarned)}</td></tr>
+      </table></div>
+      ${splitCheck}
+      <p class="small" style="margin:6px 0 0">In escrow right now: ${ccMoneyFmt(((rec.escrow || {}).paidHeld || {}).businessTotal || 0)} across ${plural(((rec.escrow || {}).paidHeld || {}).count || 0, "paid booking", "paid bookings")} &middot; ${ccMoneyFmt(((rec.escrow || {}).licensesPending || {}).businessTotal || 0)} across ${plural(((rec.escrow || {}).licensesPending || {}).count || 0, "license", "licenses")} waiting on creators. Recorded, not yet flowed, and never in the totals above.</p>
+    </div>`;
+  const chargedPanel = `
+    <div class="panel">
+      <h3 style="margin:0 0 2px">Charged <span class="cc-chip charged">Charged</span></h3>
+      <p class="muted small" style="margin:0 0 8px">Real card charges, from the Stripe charge ledger. A plan with no charge is Recorded, above, and never appears here.</p>
+      <div class="table-wrap"><table>
+        <tr><th>Source</th><th>Gross</th><th>Founding credit</th><th>Net charged</th></tr>
+        <tr><td>Subscriptions <span class="muted small">(${plural((cr.subscriptions || {}).count || 0, "charge", "charges")})</span></td><td data-label="Gross">${ccMoneyFmt((cr.subscriptions || {}).gross || 0)}</td><td data-label="Founding credit">&minus;${ccMoneyFmt((cr.subscriptions || {}).creditApplied || 0)}</td><td data-label="Net charged">${ccMoneyFmt((cr.subscriptions || {}).net || 0)}</td></tr>
+        <tr><td>Paid bookings <span class="muted small">(${plural((cr.paidBookings || {}).count || 0, "charge", "charges")})</span></td><td data-label="Gross">&mdash;</td><td data-label="Founding credit">&mdash;</td><td data-label="Net charged">${ccMoneyFmt((cr.paidBookings || {}).net || 0)}</td></tr>
+        <tr><td>Licenses <span class="muted small">(${plural((cr.licenses || {}).count || 0, "charge", "charges")})</span></td><td data-label="Gross">&mdash;</td><td data-label="Founding credit">&mdash;</td><td data-label="Net charged">${ccMoneyFmt((cr.licenses || {}).net || 0)}</td></tr>
+        <tr><td>Activation fees</td><td data-label="Gross">&mdash;</td><td data-label="Founding credit">&mdash;</td><td data-label="Net charged">${ccMoneyFmt(((cr.activationFees || {}).net) || 0)} <span class="muted small">${esc((cr.activationFees || {}).note || "")}</span></td></tr>
+        <tr><td>Refunds &amp; voids</td><td data-label="Gross">&mdash;</td><td data-label="Founding credit">&mdash;</td><td data-label="Net charged">${ccMoneyFmt(((cr.refunds || {}).net) || 0)}</td></tr>
+        <tr class="cc-total-row"><td><strong>Net charged</strong></td><td data-label="Gross">&mdash;</td><td data-label="Founding credit">&mdash;</td><td data-label="Net charged"><strong>${ccMoneyFmt(chg.netTotal || 0)}</strong></td></tr>
+      </table></div>
+      ${chg.failedCount ? `<p class="small" style="margin:6px 0 0">${plural(chg.failedCount, "failed charge attempt", "failed charge attempts")} in this period. Failed attempts are never in the totals.</p>` : ""}
+    </div>`;
+  const countedPanel = `
+    <div class="panel">
+      <h3 style="margin:0 0 2px">Counted <span class="cc-chip counted">Counted</span></h3>
+      <p class="small" style="margin:0">${ccMoneyFmt(cnt.total || 0)} counted at registers: ${ccMoneyFmt(cnt.firsts || 0)} on first visits (${plural(cnt.visitsCounted || 0, "visit", "visits")} counted) and ${ccMoneyFmt(cnt.returns || 0)} on come-backs, across ${plural(cnt.businesses || 0, "business", "businesses")}. Register dollars are the businesses' revenue, counted by SIGNL — never SIGNL's money, and never added to the classes above.</p>
+    </div>`;
+  const reconRows = [];
+  for (const c of (recon.chargedUnmatched || [])) reconRows.push(`<div class="cc-att-row"><span>A ${esc(c.kind)} charge of ${ccMoneyFmt(c.amount)}${c.at ? ` on ${esc(fmtDay(c.at))}` : ""} is on the books but matches no business yet.</span></div>`);
+  if ((recon.recordedUnchargedCount || 0) > 0) reconRows.push(`<div class="cc-att-row"><span>${plural(recon.recordedUnchargedCount, "business has", "businesses have")} a plan recorded with no card charge yet — expected until billing activates; the Businesses view carries each one.</span><button type="button" class="btn small-btn" onclick="return ccSetTab('businesses')">Open Businesses</button></div>`);
+  for (const f of (recon.creditNotApplied || [])) reconRows.push(`<div class="cc-att-row"><span>${esc(f.businessName || "A business")} was charged ${ccMoneyFmt(f.amount)}${f.at ? ` on ${esc(fmtDay(f.at))}` : ""} with no founding credit applied. If that was their first charge, the $100 credit is owed.</span></div>`);
+  const reconPanel = `
+    <div class="panel">
+      <h3 style="margin:0 0 2px">Reconciliation</h3>
+      <p class="muted small" style="margin:0 0 6px">Where the recorded books and the card charges disagree, in plain sight. The full reconciliation view lands with the close phase.</p>
+      ${reconRows.length ? reconRows.join("") : `<p class="small">Every charge on the books matches a business, and no credit is missing. Nothing to reconcile.</p>`}
+    </div>`;
+  const modeledPanel = `
+    <div class="panel cc-modeled-panel">
+      <h3 style="margin:0 0 2px">Modeled <span class="cc-chip modeled">Modeled</span></h3>
+      <p class="muted small" style="margin:0 0 6px">Halo estimates: visits the posts likely caused beyond the ones the registers counted. Estimates only — quarantined here, never added to any total above.</p>
+      <p class="small" style="margin:0">${plural(mo.postsMeasured || 0, "post", "posts")} measured &middot; about ${mo.estVisits || 0} more visits modeled beyond ${plural(mo.countedFirsts || 0, "counted first", "counted firsts")} &middot; ${mo.estValue === null || mo.estValue === undefined ? "not priced yet (the average check is still the starting estimate)" : `about ${ccMoneyFmt(mo.estValue)} at the register average check`} &middot; confidence: ${esc(mo.confidence || "early")}${mo.confidenceWords ? ` — ${esc(mo.confidenceWords)}` : ""}</p>
+    </div>`;
+  const nothingYet = ((rec.totals || {}).flowed || 0) === 0 && (chg.netTotal || 0) === 0 && (cnt.total || 0) === 0
+    ? `<div class="panel cc-waiting"><strong>No money has moved yet.</strong> Billing is recorded, not live: plans businesses pick are written on their records, and the first real card charge lands in the Charged panel the moment it happens — charge capture is already running, so nothing will be missed.</div>` : "";
+  return `${tiles}${nothingYet}${recordedPanel}${chargedPanel}${countedPanel}${reconPanel}${modeledPanel}`;
+}
+
+// Businesses (Build -55, spec §3.3): the agreement ledger — one
+// row per business with its plan, founding terms, credit state,
+// minimum, billing honesty state and rollover balance, every
+// figure computed from the business's own records.
+function ccBusinessesHtml(d) {
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  const rows = d.businesses || [];
+  const tt = d.totals || {};
+  const billingWords = (r) => {
+    const st = r.billing || {};
+    if (st.state === "charged") return `<strong>Charged</strong> <span class="cc-chip charged">Charged</span>${st.currentPeriodEnd ? `<br><span class="small muted">Paid through ${esc(fmtDay(st.currentPeriodEnd))}</span>` : ""}`;
+    if (st.state === "charged-canceled") return `<strong>Charged, then canceled</strong>${st.lastChargeAt ? `<br><span class="small muted">Last charge ${esc(fmtDay(st.lastChargeAt))}</span>` : ""}`;
+    if (st.state === "past-due") return `<strong>Past due</strong><br><span class="small muted">A charge failed; the subscription is past due</span>`;
+    if (st.state === "recorded") return `<strong>Recorded only</strong> <span class="cc-chip recorded">Recorded</span><br><span class="small muted">Plan on record, no card charged yet</span>`;
+    return `<span class="muted">No plan yet</span>`;
+  };
+  const rowHtml = (r) => {
+    const planCell = r.plan
+      ? `<strong>${esc(r.plan.name || "Plan")}</strong> &middot; ${ccMoneyFmt(r.plan.monthly)}/mo${r.plan.foundingRate ? `<br><span class="small">Founding rate, locked while the plan stays active</span>` : ""}${r.plan.selectedAt ? `<br><span class="small muted">Picked ${esc(fmtDay(r.plan.selectedAt))}</span>` : ""}`
+      : `<span class="muted">No plan yet</span>`;
+    const creditCell = r.credit
+      ? (r.credit.applied ? `${ccMoneyFmt(r.credit.total)} credit &middot; ${ccMoneyFmt(r.credit.used)} used &middot; <strong>${ccMoneyFmt(r.credit.remaining)} left</strong>` : `${ccMoneyFmt(r.credit.total)} credit &middot; not used yet`)
+      : `<span class="muted">—</span>`;
+    const minCell = r.minimum
+      ? (r.minimum.monthsLeft > 0 ? `${r.minimum.months}-month minimum<br><span class="small muted">Ends ${esc(ccMonthYear(r.minimum.end))} &middot; ${plural(r.minimum.monthsLeft, "month", "months")} left</span>` : `${r.minimum.months}-month minimum<br><span class="small muted">Met ${esc(ccMonthYear(r.minimum.end))}</span>`)
+      : `<span class="muted">—</span>`;
+    const roll = r.rollover || {};
+    const rollCell = r.plan
+      ? `<strong>${roll.available || 0} visits available</strong><br><span class="small muted">${roll.base || 0} this month${roll.carriedIn ? ` + ${roll.carriedIn} rolled in` : ""}${roll.carriedExpiresAt && roll.carriedIn ? ` &middot; rolled visits lapse ${esc(fmtDay(roll.carriedExpiresAt))}` : ""}</span>`
+      : `<span class="muted">—</span>`;
+    const lt = r.lifetime || {};
+    const lifeCell = `${plural(lt.compsCompleted || 0, "comp", "comps")} &middot; ${plural(lt.paidReleased || 0, "paid booking", "paid bookings")}<br><span class="small muted">${ccMoneyFmt(lt.counted || 0)} counted &middot; ${ccMoneyFmt(lt.signlRevenue || 0)} to SIGNL</span>`;
+    return `<tr>
+      <td><strong>${esc(r.name || "Business")}</strong><br><span class="small muted">${esc(r.market || "")} &middot; ${r.partner ? `with ${esc(r.partner.name)}` : "Direct"}</span></td>
+      <td data-label="Plan">${planCell}</td>
+      <td data-label="Founding credit">${creditCell}</td>
+      <td data-label="Minimum">${minCell}</td>
+      <td data-label="Billing">${billingWords(r)}</td>
+      <td data-label="Rollover">${rollCell}</td>
+      <td data-label="Lifetime">${lifeCell}</td>
+    </tr>`;
+  };
+  if (!rows.length) return `<div class="panel cc-waiting"><strong>No businesses yet.</strong> When the first business signs up, its agreement — plan, founding terms, credit, minimum, billing state and rollover — lands here.</div>`;
+  return `
+    <p class="muted small" style="margin:2px 0 10px">${plural(tt.count || 0, "business", "businesses")} &middot; ${plural(tt.withPlan || 0, "agreement", "agreements")} on record &middot; ${tt.charged || 0} charged &middot; ${tt.recordedOnly || 0} recorded only &middot; ${tt.pastDue || 0} past due. Rows that need a look (past due, then recorded-not-charged) sort first.</p>
+    <div class="panel"><div class="table-wrap"><table>
+      <tr><th>Business</th><th>Plan</th><th>Founding credit</th><th>Minimum</th><th>Billing</th><th>Rollover</th><th>Lifetime</th></tr>
+      ${rows.map(rowHtml).join("")}
+    </table></div></div>`;
+}
+
 // The forming states (spec §7): the structure is real, the copy
 // says exactly what exists today and what lands it — never a
 // zero dressed up as a total.
 function ccFormingHtml(tab) {
   const head = (title, sub) => `<div class="panel"><h3 style="margin:0 0 4px">${title}</h3><p class="muted small" style="margin:0 0 10px">${sub}</p>`;
-  if (tab === "money") return `${head("Money", "Every dollar, by how sure we are it is real. The classes are never added together.")}
-    <div class="cc-form-rows">
-      <p><span class="cc-chip counted">Counted</span> <strong>Register dollars</strong> — live today, on the Overview and Markets views.</p>
-      <p><span class="cc-chip recorded">Recorded</span> <strong>Paid bookings &amp; licenses</strong> — the splits are written on every booking and license record today; their money view lands with charge capture.</p>
-      <p><span class="cc-chip charged">Charged</span> <strong>Subscriptions</strong> — forming. Plan selections sit on business records now; the charged view arrives when Stripe charge capture lands, so the first real charge is never lost.</p>
-      <p><span class="cc-chip modeled">Modeled</span> <strong>Halo &amp; run-rates</strong> — estimates live on the business Receipt today, labeled as estimates. They are never summed with counted money.</p>
-    </div></div>`;
   if (tab === "partners") return `${head("Partners", "What each partner's deal is, and what it has earned.")}
     <p class="small">Partners and their markets are managed on the <button type="button" class="btn small-btn" onclick="return go('dashboard','Partners')">Partners tab</button> today, and sign-ups through partner links are stamped to the partner on the record.</p>
     <p class="small">Forming: deal terms (share, floors, guarantees), accruals and partner statements land with the deal records — the next Command Center phase. Nothing here is estimated in the meantime.</p></div>`;
-  if (tab === "businesses") return `${head("Businesses", "Every business, its agreement, and what it owes and is owed.")}
-    <p class="small">Each business's plan, state and subscription status are on its record today — see the queue in Applications and the board on Overview.</p>
-    <p class="small">Forming: the agreements view (plan, founding terms, first-month credit, rollover balance) lands with subscription capture.</p></div>`;
   if (tab === "creators") return `${head("Creators", "Every creator, what they have finished, and what they have earned.")}
     <p class="small">The roster lives in Applications, and finished-profile counts by market are on the Markets view.</p>
     <p class="small">Forming: per-creator lifetime value and payout history land with the money views.</p></div>`;
   if (tab === "owed") return `${head("Owed", "Money SIGNL owes, and money owed to SIGNL — never a surprise at close.")}
     <div class="cc-form-rows">
-      <p><strong>Creators</strong> — forming. Paid-booking funds release on the existing 48-hour hold after proof today; the owed ledger lands with charge capture.</p>
+      <p><strong>Creators</strong> — forming. Paid-booking funds release on the existing 48-hour hold after proof today; the owed ledger lands with the payout records.</p>
       <p><strong>Partners</strong> — forming. Accruals land with the deal records.</p>
-      <p><strong>Businesses</strong> — forming. Credits, refunds and rollover balances land with subscription capture.</p>
+      <p><strong>Businesses</strong> — forming. Credits and refunds are on the Money and Businesses views today; what a business owes lands with the close phase.</p>
     </div></div>`;
   if (tab === "close") return `${head("Close &amp; export", "Month-end, done once and done right.")}
     <div class="cc-form-rows">
@@ -17061,7 +17199,7 @@ function ccFormingHtml(tab) {
       <p>☐ Rollover liability carried into next month</p>
       <p>☐ Export pack generated</p>
     </div>
-    <p class="small">Forming: close and reconciliation land with charge capture and the owed ledger. Nothing here can be run yet — a close with nothing to reconcile would be theater.</p></div>`;
+    <p class="small">Forming: the close run lands with the owed ledger (charge capture and the reconciliation list are already live on the Money view). Nothing here can be run yet — a close with nothing to reconcile would be theater.</p></div>`;
   return `${head("Forming", "")}<p class="small">This view is on its way.</p></div>`;
 }
 
