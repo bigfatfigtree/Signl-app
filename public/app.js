@@ -3583,12 +3583,28 @@ async function doForgot(e) {
   const form = e.target;
   if (!submitBusy(form, true)) return false;
   try {
-    await api("POST", "/auth/forgot", { email: document.getElementById("fp-email").value });
+    const data = await api("POST", "/auth/forgot", { email: document.getElementById("fp-email").value });
+    // Transport honesty (Build -46): when the server says email
+    // itself is down, no link can go out to anyone, so the screen
+    // says that instead of promising one — with a human way
+    // forward, never a loop of fresh requests that cannot send.
+    if (data && data.emailDown) {
+      app.innerHTML = `
+    <section class="panel center" style="max-width:460px;margin:30px auto">
+      <h2>Email is down on our side</h2>
+      <p>We cannot send a reset link right now, so none went out. This is a problem on our end, not with your account.</p>
+      <p class="muted">Try again in a little while, or email hello@joinsignl.com and we will help you set a new password by hand.</p>
+      <div class="cta-row" style="justify-content:center">
+        <a class="btn ghost" href="#" onclick="return go('signin')">Back to sign in</a>
+      </div>
+    </section>`;
+      return false;
+    }
     app.innerHTML = `
     <section class="panel center" style="max-width:460px;margin:30px auto">
       <h2>Check your email</h2>
       <p>If an account exists for that email, a reset link is on its way. The link works once and expires in one hour.</p>
-      <p class="muted">Nothing arrived after a few minutes? Check spam, then request a fresh link.</p>
+      <p class="muted">Nothing arrived after a few minutes? Check spam, then request a fresh link. If it keeps not arriving, email hello@joinsignl.com and we will sort it out with you.</p>
       <div class="cta-row" style="justify-content:center">
         <a class="btn" href="#" onclick="return go('forgot')">Request another link</a>
         <a class="btn ghost" href="#" onclick="return go('signin')">Back to sign in</a>
@@ -9231,6 +9247,14 @@ function laneRateOf(c) {
 function paymentsLive() {
   return !!(state.boot && state.boot.payments && state.boot.payments.connectLive);
 }
+// Subscription billing (Build -46): live only when the server
+// says Stripe billing is configured. While it is off, the Plan
+// screen says so plainly and saving a plan only records the
+// selection; the checkout endpoint itself also refuses with a
+// 503, and savePlan treats that as the record-only signal.
+function billingLive() {
+  return !!(state.boot && state.boot.payments && state.boot.payments.billingLive);
+}
 function cardOnFileView() {
   const b = state.user && state.user.business && state.user.business.billing;
   return (b && b.card) || null;
@@ -14701,12 +14725,14 @@ function renderPlanTab() {
     <p class="muted">${esc(u.business.billingStatus)}</p>
     <p class="small"><strong>${VISIT_GUARANTEE_LINE}</strong></p>
     ${paymentsLive()
-      ? `<p class="small">The card below is for paid creator bookings: saved once, charged when you book, held until the post is live. Your plan itself still starts by hand at activation.</p>${cardOnFileSectionHtml()}`
+      ? `<p class="small">The card below is for paid creator bookings: saved once, charged when you book, held until the post is live.${billingLive() ? " Your plan subscription starts through Stripe's secure checkout below." : " Your plan itself still starts by hand at activation."}</p>${cardOnFileSectionHtml()}`
       : `<p class="small">Payment stays concierge: when billing starts, Jeff sends the payment step by hand. Nothing is charged before then, and SIGNL never takes a card in the app.</p>`}
     <div class="plan-cards">${plans}</div>
     <input type="hidden" id="me-plan" value="${esc(u.business.plan)}">
-    <button class="btn mt" onclick="savePlan()">Save plan selection</button>
-    <p class="small muted mt">Until billing starts, your selection is recorded and your founding pricing stays locked while you stay subscribed.</p>
+    <button class="btn mt" onclick="savePlan()">${billingLive() ? "Start subscription" : "Save plan selection"}</button> <span id="plan-save-note" class="saved"></span>
+    ${billingLive()
+      ? `<p class="small muted mt">Starts your subscription on Stripe's secure checkout page. Your founding rate stays locked while your plan stays active.</p>`
+      : `<p class="small muted mt">Billing is not live yet, so saving only records your selection: no card is charged, and your founding pricing stays locked while you stay subscribed. When billing opens, Jeff sends the payment step by hand.</p>`}
   </div>`
 }
 
@@ -14896,12 +14922,33 @@ async function saveTalentBudget() {
   } catch (err) { alert(err.message); }
 }
 
+// Plan save (Build -46): the button now goes through the real
+// subscription checkout endpoint first. Three honest outcomes:
+//   - 200 with a URL: billing is live, hand off to Stripe.
+//   - 503: billing is not configured yet, so fall back to the
+//     record-only path (POST /me/plan) and say plainly that no
+//     card was charged and the selection is what got saved.
+//   - anything else (the founding gate's 403, a bad plan's 400,
+//     Stripe's 502): show the server's message and record nothing,
+//     so a refusal is never papered over as a save.
 async function savePlan() {
+  const planId = document.getElementById("me-plan").value;
   try {
-    const data = await api("POST", "/me/plan", { planId: document.getElementById("me-plan").value });
-    state.user = data.user;
-    render();
-  } catch (err) { alert(err.message); }
+    const co = await api("POST", "/billing/checkout", { planId });
+    if (co && co.url) { location.href = co.url; return; }
+    alert("Checkout did not return a payment link. Nothing was charged; try again in a moment.");
+  } catch (err) {
+    if (err.status !== 503) { alert(err.message); return; }
+    try {
+      const data = await api("POST", "/me/plan", { planId });
+      state.user = data.user;
+      render();
+      setTimeout(() => {
+        const note = document.getElementById("plan-save-note");
+        if (note) note.textContent = "Saved. Billing is not live yet, so no card was charged: your selection is recorded and your founding rate stays locked.";
+      }, 30);
+    } catch (err2) { alert(err2.message); }
+  }
 }
 
 // ---------- messages ----------

@@ -8,7 +8,7 @@ const { logEvent, listEvents } = require("./events");
 const { MARKETS, normalizeMarketName, resolveTypedCity, TIERS, CREATOR_CATEGORIES, COMP_CATEGORIES, BUSINESS_CATEGORIES, PLANS, PROFESSIONS, LEGACY_PROFESSIONS, REALTOR_PROFESSION, canonicalFromList, tierForFollowers, normalizeTierBand } = require("./markets");
 const { computeLocalImpactScore, summarizeHistory } = require("./score");
 const { computeFit, buildFitNote } = require("./fit");
-const { emailEnabled, sendEmail, senderProfile } = require("./email");
+const { emailEnabled, sendEmail, senderProfile, SENDER_PROFILE_NAMES } = require("./email");
 const claimEvidence = require("./claim-evidence");
 const stripe = require("./stripe");
 const connect = require("./connect");
@@ -2224,13 +2224,33 @@ async function withFounding(user) {
 // Every outbound email is an event first (the dataset keeps the full
 // record), then a send attempt when the SMTP transport is configured.
 // A missing transport queues the email; it is never reported as sent.
+// Domain only, for log lines (Build -46): function logs and other
+// non-admin surfaces name WHERE mail was headed, never the full
+// address. The full address stays in the admin-only event dataset.
+function emailDomainOf(addr) {
+  const s = String(addr || "");
+  const i = s.lastIndexOf("@");
+  return i >= 0 ? s.slice(i + 1) : "(none)";
+}
+
 async function deliverEmail(kind, user, subject, text, band, opts) {
-  const base = { kind, to: user.email, subject, band: band || null };
+  // The sender profile this send will use, resolved the same way
+  // sendEmail resolves it, so the event dataset (and therefore
+  // GET /api/admin/email-health) can report outcomes per sender.
+  const profile = (opts && opts.profile) || (opts && opts.fromMailbox) || "default";
+  const base = { kind, to: user.email, subject, band: band || null, profile };
   await logEvent({ type: `${kind}_email_queued`, actorId: user.id, actorRole: user.role, subjectId: user.id, market: user.market || null, data: base });
   const result = await sendEmail({ to: user.email, subject, text, listUnsubscribe: !!(opts && opts.listUnsubscribe), profile: opts && opts.profile, fromMailbox: opts && opts.fromMailbox, replyTo: opts && opts.replyTo });
   if (result.sent) {
     await logEvent({ type: `${kind}_email_sent`, actorId: user.id, actorRole: user.role, subjectId: user.id, market: user.market || null, data: base });
   } else {
+    // Loud on purpose (Build -46): a failed send used to exist ONLY
+    // as this event row, which nobody watches — a dead transport
+    // hid there while user-facing surfaces reported success. The
+    // event stays (it is the dataset); the failure ALSO goes to the
+    // function log, where Netlify surfaces it, and is readable in
+    // one call through GET /api/admin/email-health.
+    console.error(`SIGNL email not sent: kind=${kind} profile=${profile} domain=${emailDomainOf(user.email)} reason=${result.reason || "unknown"}`);
     await logEvent({ type: `${kind}_email_not_sent`, actorId: user.id, actorRole: user.role, subjectId: user.id, market: user.market || null, data: { ...base, reason: result.reason || "unknown" } });
   }
   return result;
@@ -8044,6 +8064,13 @@ async function handleForgot(event) {
   // The response never changes shape: account or no account,
   // throttled or not, the caller hears the same thing.
   const payload = { ok: true };
+  // Transport honesty (Build -46): whether email can go out at all
+  // does not depend on the address submitted, so it is safe to say
+  // out loud — when the default sender is not configured, NO reset
+  // link can be sent to anyone, and the client must not promise
+  // one. Computed before any account lookup; identical for real
+  // and unknown addresses, so it leaks nothing about accounts.
+  if (!senderProfile("default") || !senderProfile("default").available) payload.emailDown = true;
   try {
     const idx = email ? await store.get(`email:${email}`) : null;
     const user = idx ? await store.get(`user:${idx.userId}`) : null;
@@ -8065,7 +8092,17 @@ async function handleForgot(event) {
       // responses never include it.
       if (TEST_MODE) payload.devResetToken = token;
     }
-  } catch (e) { /* a store or mail hiccup never changes the neutral answer */ }
+  } catch (e) {
+    // The neutral answer never changes (anti-enumeration), but a
+    // failure here used to leave NO trace anywhere: no event, no
+    // log line — the request simply vanished (Build -46). Log it
+    // loudly and record the failure event best-effort, so a broken
+    // store or mail path is diagnosable after the fact.
+    console.error(`SIGNL password reset request failed: domain=${emailDomainOf(email)} error=${String(e && e.message || e).slice(0, 200)}`);
+    try {
+      await logEvent({ type: "password_reset_failed", actorId: null, actorRole: null, subjectId: null, market: null, data: { domain: emailDomainOf(email), error: String(e && e.message || e).slice(0, 200) } });
+    } catch (logErr) { /* the failure log must never throw */ }
+  }
   return json(200, payload);
 }
 
@@ -10226,7 +10263,7 @@ async function route(event) {
       // when the server carries Stripe keys. The client renders
       // payout setup + card-on-file surfaces from this flag;
       // false keeps every money surface exactly as it was.
-      payments: { connectLive: connect.connectConfigured() },
+      payments: { connectLive: connect.connectConfigured(), billingLive: stripe.billingConfigured() },
       // Connect Accounts (2026-10-28): which audience platforms a
       // creator can actually connect today. YouTube is live when
       // the Google OAuth env is set; Meta stays "in_review" until
@@ -12076,22 +12113,6 @@ async function route(event) {
       }
       return json(201, { sent: recipients.length, recipients: recipients.map((u) => u.id), emailSent, emailFailed, scope, market: segmentMarket });
     }
-    if (method === "GET" && seg[1] === "return-rates") {
-      const events = await allRedemptionEvents();
-      const byCreator = new Map();
-      for (const e of events) {
-        const m = byCreator.get(e.creatorId) || { creatorId: e.creatorId, firsts: 0, returns: 0 };
-        if (e.kind === "return") m.returns += 1; else m.firsts += 1;
-        byCreator.set(e.creatorId, m);
-      }
-      const rows = [];
-      for (const m of byCreator.values()) {
-        const u = await store.get(`user:${m.creatorId}`);
-        rows.push({ creatorId: m.creatorId, handle: u && u.creator ? u.creator.handle : null, firsts: m.firsts, returns: m.returns, rate: m.firsts > 0 ? Math.round((m.returns / m.firsts) * 100) / 100 : null });
-      }
-      const rated = rows.filter((r) => r.firsts >= RETURN_RATE_MIN_BASE && r.rate !== null).map((r) => r.rate).sort((a, b) => a - b);
-      return json(200, { creators: rows, medianRate: rated.length ? rated[Math.floor(rated.length / 2)] : null, rateMinBase: RETURN_RATE_MIN_BASE });
-    }
     // Your Line tree (Build -36): who brought whom under one
     // creator, points by generation. Admin only, inside the
     // creator record tooling.
@@ -12361,18 +12382,6 @@ async function route(event) {
       const audit = await runProfileBackfill();
       return json(200, { ok: true, audit });
     }
-    // Auto-decision cleanup on demand: re-runs the standing-rule
-    // pass over pending records and returns its audit (the same
-    // pass runs once on its own after deploy). Admin only, like
-    // every decision surface.
-    if (method === "POST" && seg[1] === "auto-decisions" && seg[2] === "run") {
-      const audit = await runAutoDecisionCleanup();
-      return json(200, { ok: true, audit });
-    }
-    if (method === "GET" && seg[1] === "auto-decisions") {
-      const rec = await store.get(AUTO_DECISION_CLEANUP_KEY);
-      return json(200, { cleanup: rec || null });
-    }
     // Business activation (Jeff, 2026-10-20 correction): approval
     // puts a business on the founding list; ACTIVATION is a
     // separate admin action that flips accessState to "active"
@@ -12486,6 +12495,47 @@ async function route(event) {
       } catch (e) {
         console.error("SIGNL admin events read failed (rendering empty, degraded):", e);
         return json(200, { events: [], total: 0, degraded: true });
+      }
+    }
+    if (method === "GET" && seg[1] === "email-health") {
+      // Email transport health (Build -46): transactional sends
+      // fail quietly by design at the user surface (forgot-password
+      // answers neutrally; other flows record a *_email_not_sent
+      // event and move on), so a dead sender used to surface only
+      // if someone read the Event Log row by row. This one admin
+      // call says, per sender profile: is it configured, and what
+      // did its recent sends do — the check that names a lane-down
+      // state in seconds. Outcomes carry the recipient DOMAIN only;
+      // the full address stays in the event dataset itself.
+      try {
+        const senders = {};
+        for (const name of SENDER_PROFILE_NAMES) {
+          const p = senderProfile(name);
+          senders[name] = { configured: !!(p && p.available), lastOutcome: null, lastAt: null, lastReason: null, recentSent: 0, recentFailed: 0 };
+        }
+        const events = await listEvents({ limit: 500 });
+        const outcomes = [];
+        for (const e of events) {
+          if (!/_email_(sent|not_sent)$/.test(e.type || "")) continue;
+          const failed = e.type.endsWith("_not_sent");
+          const profile = (e.data && e.data.profile) || "default";
+          if (!senders[profile]) senders[profile] = { configured: false, lastOutcome: null, lastAt: null, lastReason: null, recentSent: 0, recentFailed: 0 };
+          const s = senders[profile];
+          if (failed) s.recentFailed += 1; else s.recentSent += 1;
+          if (s.lastAt === null) {
+            s.lastOutcome = failed ? "not_sent" : "sent";
+            s.lastAt = e.ts || null;
+            s.lastReason = failed ? ((e.data && e.data.reason) || null) : null;
+          }
+          if (outcomes.length < 20) {
+            outcomes.push({ ts: e.ts || null, type: e.type, kind: (e.data && e.data.kind) || null, profile, domain: emailDomainOf(e.data && e.data.to), reason: (e.data && e.data.reason) || null });
+          }
+        }
+        const lastFailure = outcomes.find((o) => o.type.endsWith("_not_sent")) || null;
+        return json(200, { transport: { configured: emailEnabled() }, senders, lastFailure, outcomes });
+      } catch (e) {
+        console.error("SIGNL admin email-health read failed (degraded):", e);
+        return json(200, { transport: { configured: emailEnabled() }, senders: {}, lastFailure: null, outcomes: [], degraded: true });
       }
     }
     if (method === "GET" && seg[1] === "stats") {

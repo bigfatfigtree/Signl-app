@@ -181,12 +181,17 @@ check("known-test handle: rejected at sign-up", testHandle.r.status === 201 && t
   check("strip auto counts: 2 approved, 3 rejected, all today", !!auto && auto.approved === 2 && auto.rejected === 3 && auto.approvedToday === 2 && auto.rejectedToday === 3, `auto=${JSON.stringify(auto)}`);
 }
 
-// Exactly-once: re-running the pass over decided records must not
-// re-fire anything, and manual review still works afterwards.
+// Exactly-once: the pass over decided records must not re-fire
+// anything, and manual review still works afterwards. Build -46
+// deleted the dead GET / run endpoints (no UI consumer; the
+// engine still runs internally on claim events and in the
+// one-time cleanup, phase 2 below) — the pins now prove the
+// endpoints are gone and the side effects stay exactly once.
 {
   const r = await admin.req("POST", "/api/admin/auto-decisions/run", {});
-  check("cleanup re-run endpoint responds", r.status === 200 && r.data && r.data.audit, `status=${r.status}`);
-  check("cleanup re-run decides nothing new", r.data.audit.decidedCount === 0, `decided=${r.data.audit && r.data.audit.decidedCount}`);
+  check("dead auto-decisions run endpoint is gone (404)", r.status === 404, `status=${r.status}`);
+  const g = await admin.req("GET", "/api/admin/auto-decisions");
+  check("dead auto-decisions read endpoint is gone (404)", g.status === 404, `status=${g.status}`);
   const approved = (await eventsOf("application_approved")).filter((e) => e.subjectId === ruleAId);
   const queued = (await eventsOf("approval_email_queued")).filter((e) => e.subjectId === ruleAId);
   check("side effects stay exactly once after a re-run", approved.length === 1 && queued.length === 1, `approved=${approved.length} queued=${queued.length}`);

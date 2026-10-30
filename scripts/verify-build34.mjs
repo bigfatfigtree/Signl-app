@@ -220,11 +220,13 @@ try {
     r2.data.receipt.cameBack.firstVisits === 5 && r2.data.receipt.cameBack.rate === 0.2, JSON.stringify(r2.data.receipt.cameBack));
 
   // ---------- Admin distribution ----------
+  // Build -46: GET /api/admin/return-rates was deleted as a dead
+  // endpoint (no UI consumer; came-back data reaches the product
+  // through the Receipt and performance payloads, asserted above).
+  // The pin now proves it is gone, not that it answers.
   const rates = await admin("GET", "/api/admin/return-rates");
-  const ritaRate = (rates.data.creators || []).find((x) => x.creatorId === rita.id);
-  check("M2 guard: Admin sees the creator's rate against the market median",
-    rates.status === 200 && ritaRate && ritaRate.firsts === 5 && ritaRate.returns === 1 && ritaRate.rate === 0.2 && rates.data.medianRate === 0.2,
-    JSON.stringify(rates.data).slice(0, 300));
+  check("M2 guard: the dead return-rates endpoint is gone (404)",
+    rates.status === 404, `status=${rates.status}`);
 
   // ---------- M7: proof ----------
   const proof = await rita.client("GET", "/api/me/proof-card");
