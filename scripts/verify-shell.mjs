@@ -230,7 +230,7 @@ try {
   check("Offers keep templates and gain Duplicate for past offers", appJs.includes("function startOfferTemplate(") && appJs.includes("function duplicateOffer(") && appJs.includes('"Comped visit"') && appJs.includes('"Paid booking"'));
   check("template Start never overwrites an in-progress draft", appJs.includes('if (offerDraftIsEmpty()) state.offerDraft.kind = kind === "paid" ? "paid" : "comp";'));
   check("Posts & licenses: tracking status card + rights line + Creator posts / Yours to use", appJs.includes("Post tracking is on") && appJs.includes("h.postsTracked30") && appJs.includes("Post tracking starts with your first visit.") && appJs.includes("Seeing a post here is not the right to reuse it") && appJs.includes("Creator posts") && appJs.includes("Yours to use"));
-  check("Results: series charts, funnel with plain stages, leaderboard, no fake email-open stage", appJs.includes("Invites &amp; decisions") && appJs.includes("Local reach over time") && appJs.includes("Creators by local reach delivered") && appJs.includes("There is no email-open stage"));
+  check("Results: series charts, funnel with plain stages, leaderboard, no fake email-open stage", appJs.includes("Invites &amp; decisions") && appJs.includes("Local reach over time") && appJs.includes("Creators by local audience") && appJs.includes("There is no email-open stage"));
   check("Results funnel stages are SIGNL's real events (invited/accepted/visit/post)", appJs.includes('"Creators claimed their visit code"') && appJs.includes('"Codes redeemed at your register"'));
   check("Your business page: pattern card with Live badge, reviews from real bookings", appJs.includes("function renderBizProfileTab()") && appJs.includes('livePill("Live")') && appJs.includes("x.businessReview"));
   check("license pill still renders the 90-day window state per post", appJs.includes("function licPillHtml(") && appJs.includes("Standard license") && appJs.includes("d left"));
@@ -248,7 +248,7 @@ try {
     "Invite creators directly, or share your offer, and applications land here.", // section 8 line, split title/sub in the empty card
     "Every applicant gets an answer within 2 business days.",
     "You have seen everyone near you for now", // section 8 line, rendered as the deck-end heading
-    "No new offers near you right now.",
+    "Offers here come from businesses across the whole market, and new ones show up here first.", // Build -47 (audit C3): the board empty state is market-wide, not city-named
     "Finish your profile to see offers near you.",
     "When you select a creator or one accepts your invite, the visit lands here.",
     "When a business picks you, or you accept an invite, it lands here.",
@@ -256,7 +256,7 @@ try {
     "Post tracking starts with your first visit.",
     "Paid bookings you complete show up here. Comped visits build your Momentum instead.",
     "Your Momentum starts with your first visit. Post on time and it climbs.",
-    "When you invite a creator, apply to an offer, or answer an applicant, your conversation lives here.",
+    "Conversations attach to a visit or an offer.", // Build -47 (audit B6): business empty state names how conversations start
     "No reviews yet. Reviews come from completed visits.",
   ];
   check("all spec section 8 empty-state lines are present verbatim in the client", s8.every((x) => appJs.includes(x)), s8.filter((x) => !appJs.includes(x)).join(" | "));

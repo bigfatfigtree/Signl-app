@@ -168,7 +168,7 @@ check("the founding sentence-badge wraps instead of overflowing", themeCss.inclu
   check("-41: each row item lights itself, and Counter rides the business Visits item",
     appJs.includes('r.tab === "Visits & Posts" && t === "Counter"') && appJs.includes("on: t === r.tab"));
   check("-41: short label forms exist for the labels that cannot fit the 72px rail",
-    appJs.includes('const RAIL_SHORT = { Content: "Posts", Plan: "Plan", Profile: "Profile", Numbers: "Numbers", Links: "Links" }')
+    appJs.includes('const RAIL_SHORT = { Content: "Posts", Plan: "Plan", Profile: "Profile", Numbers: "Numbers", Links: "Links", Performance: "Perform\u00ADance" }')
       && hSlice.includes("lbl-full") && hSlice.includes("lbl-short"));
   check("-41: short forms show only on the slim rail; full labels from 768px up",
     themeCss.includes(".tab-item .lbl-full { display: none; }") && themeCss.includes(".tab-item .lbl-short { display: none; }"));
@@ -181,7 +181,7 @@ check("the founding sentence-badge wraps instead of overflowing", themeCss.inclu
 }
 
 // Build stamp.
-check("build stamp is 2026.10.30-46 on both sides", read("netlify/functions/lib/build.js").includes("2026.10.30-46") && indexHtml.includes("2026.10.30-46"));
+check("build stamp is 2026.10.30-47 on both sides", read("netlify/functions/lib/build.js").includes("2026.10.30-47") && indexHtml.includes("2026.10.30-47"));
 
 // ---------- Part B: live API contract (production shape, no test override) ----------
 let server;
@@ -199,7 +199,7 @@ try {
   const boot = await anon("GET", "/api/bootstrap");
   check("bootstrap answers", boot.status === 200, String(boot.status));
   check("bootstrap publishes no launch window", boot.data && boot.data.launch && boot.data.launch.launchWindow === undefined, JSON.stringify(boot.data && boot.data.launch));
-  check("server stamps the -41 build on API responses", boot.headers.get("x-signl-build") === "2026.10.30-46", String(boot.headers.get("x-signl-build")));
+  check("server stamps the -41 build on API responses", boot.headers.get("x-signl-build") === "2026.10.30-47", String(boot.headers.get("x-signl-build")));
 
   const admin = client();
   const login = await admin("POST", "/api/auth/login", { email: ADMIN_EMAIL, password: ADMIN_PASSWORD });
@@ -219,9 +219,14 @@ try {
   check("founding payload answers for the approved creator", founding.status === 200, String(founding.status));
   check("founding payload carries no launch window", founding.data && founding.data.founding && founding.data.founding.launchWindow === undefined, JSON.stringify(founding.data && founding.data.founding).slice(0, 200));
 
+  // Build -47 (audit C10): a founding creator's own offer READS
+  // pass pre-launch (real empty states); discovery and writes
+  // stay gated, and the gate message is unchanged.
   const gated = await cr("GET", "/api/offers");
-  check("pre-launch offers stay gated (403)", gated.status === 403, String(gated.status));
-  check("the gate message promises no window and points at the opening email", !WINDOW_RE.test((gated.data && gated.data.error) || "") && /moment it opens/.test((gated.data && gated.data.error) || ""), String(gated.data && gated.data.error));
+  check("pre-launch creator offer reads open (200, Build -47 C10)", gated.status === 200, String(gated.status));
+  const gatedDiscover = await cr("GET", "/api/discover?market=Hampton%20Roads");
+  check("pre-launch discovery stays gated (403)", gatedDiscover.status === 403, String(gatedDiscover.status));
+  check("the gate message promises no window and points at the opening email", !WINDOW_RE.test((gatedDiscover.data && gatedDiscover.data.error) || "") && /moment it opens/.test((gatedDiscover.data && gatedDiscover.data.error) || ""), String(gatedDiscover.data && gatedDiscover.data.error));
 } catch (e) {
   failures.push("suite crashed: " + e.message);
   console.error(e);

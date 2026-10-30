@@ -166,8 +166,15 @@ try {
   check("C: admin can flip Richmond live for the post-launch negative", toggle.status === 200 && toggle.data.live === true, JSON.stringify(toggle.data).slice(0, 160));
   const laraFounding = await lara.client("GET", "/api/me/founding");
   const laraCharter = laraFounding.data && laraFounding.data.buzz ? laraFounding.data.buzz.charter : undefined;
-  check("C: a creator who finishes after the market launched gets no charter seal",
-    laraFounding.status === 200 && laraCharter === null, JSON.stringify(laraFounding.data && laraFounding.data.buzz));
+  // Build -47 (audit C1) supersedes the old reading of this
+  // case: Lara finished and was approved BEFORE the toggle and
+  // only READ the founding payload after it. Charter is decided
+  // by when the criteria were met, never by the first read, so
+  // she IS Charter, stamped at the criteria moment. The true
+  // negative (criteria met only after launch) is covered by
+  // verify-build47's derivation checks.
+  check("C: criteria met pre-launch + first read post-launch still earns the seal (Build -47, audit C1)",
+    laraFounding.status === 200 && !!(laraCharter && typeof laraCharter.at === "string"), JSON.stringify(laraFounding.data && laraFounding.data.buzz));
   const q3 = await quinn.client("GET", "/api/me/founding");
   const charter3 = q3.data && q3.data.buzz ? q3.data.buzz.charter : null;
   check("C: charter earned before launch is permanent: it survives the market opening with the same stamp",
@@ -231,9 +238,9 @@ try {
     routerSrc.includes("rec.creator.charter = true") && routerSrc.includes("rec.creator.charterAt = at"), "");
   check("the forbidden Momentum phrase stays out of the client (feed is newest-first)",
     !appJs.includes("see paid campaigns first") && !appJs.includes("paid campaigns first"), "");
-  check("build stamp is 2026.10.30-46 on both sides",
-    fs.readFileSync(path.join(ROOT, "netlify", "functions", "lib", "build.js"), "utf8").includes("2026.10.30-46")
-    && fs.readFileSync(path.join(ROOT, "public", "index.html"), "utf8").includes("2026.10.30-46"), "");
+  check("build stamp is 2026.10.30-47 on both sides",
+    fs.readFileSync(path.join(ROOT, "netlify", "functions", "lib", "build.js"), "utf8").includes("2026.10.30-47")
+    && fs.readFileSync(path.join(ROOT, "public", "index.html"), "utf8").includes("2026.10.30-47"), "");
 } catch (e) {
   failed += 1;
   failures.push("suite crashed: " + e.message);

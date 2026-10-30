@@ -181,8 +181,12 @@ try {
   const tgl = await admin("POST", "/api/admin/markets/bench-toggle", { market: "Richmond", open: true });
   check("override: the Admin bench toggle answers open", tgl.status === 200 && tgl.data.benchOpen === true, JSON.stringify(tgl.data).slice(0, 160));
   const richOpen = await benchOf(richA);
-  check("override: the Bench opens without launch and lists the other creator",
-    richOpen.state === "bench" && richOpen.launched === false && richOpen.creators.length === 1 && richOpen.creators[0].userId === richB.id,
+  // Build -47 (audit C6): at one other creator the named
+  // introduction carries the page; the roster list stays home
+  // instead of rendering a list of one (and the introduced
+  // creator never repeats as a roster row).
+  check("override: the Bench opens without launch; the introduction carries it, no one-person list (Build -47 C6)",
+    richOpen.state === "bench" && richOpen.launched === false && richOpen.creators.length === 0 && richOpen.introduction && richOpen.introduction.creator.userId === richB.id,
     JSON.stringify(richOpen).slice(0, 240));
   const mkts = await admin("GET", "/api/admin/markets");
   const row = (n) => (mkts.data.markets || []).find((m) => m.name === n) || {};
@@ -206,8 +210,11 @@ try {
   await admin("POST", "/api/admin/markets/toggle", { market: "Nashville", live: true });
   const benchA = await benchOf(nashA);
   check("bench: a launched market serves the browsable state", benchA.state === "bench" && benchA.launched === true, benchA.state);
-  check("bench: the roster holds the other finished creators, ordered by local reach (local % first)",
-    benchA.creators.map((c) => c.userId).join(",") === [nashB.id, nashC.id, nashD.id, nashE.id].join(","),
+  // Build -47 (audit C6): the introduced creator (Nash Ben,
+  // the scored introduction for Ann) is suppressed from the
+  // roster rows in the same view; the rest stay local-first.
+  check("bench: the roster holds the other finished creators minus the introduction, ordered by local reach (Build -47 C6)",
+    benchA.creators.map((c) => c.userId).join(",") === [nashC.id, nashD.id, nashE.id].join(","),
     benchA.creators.map((c) => c.handle).join(","));
   check("bench: cards carry the business-facing fields and nothing private",
     benchA.creators.every((c) => typeof c.localAudiencePct === "number" && typeof c.handle === "string" && Array.isArray(c.categories) && !("email" in c) && !("paidRate" in c) && !("earnings" in c)),
@@ -385,8 +392,8 @@ try {
     appSrc.includes('"Bench"') && appSrc.includes('label: "Bench"') && appSrc.includes('tab: "Bench"'), "");
   check("client: the +1 picker, pair block, and visibility toggle ship",
     appSrc.includes("poToggleHtml") && appSrc.includes("declinePairApplicant") && appSrc.includes("laneToggleCreators") && appSrc.includes("collabVisitHtml"), "");
-  check("stamp: the build stamp is 2026.10.30-46 on server and shell",
-    buildJs.includes('BUILD_ID = "2026.10.30-46"') && indexHtml.includes("2026.10.30-46"), "stamp mismatch");
+  check("stamp: the build stamp is 2026.10.30-47 on server and shell",
+    buildJs.includes('BUILD_ID = "2026.10.30-47"') && indexHtml.includes("2026.10.30-47"), "stamp mismatch");
 
   console.log(`\nverify-build42: ${passed} passed, ${failures.length} failed`);
   if (failures.length) { console.log(`FAILED: ${failures.join(" | ")}`); process.exitCode = 1; }

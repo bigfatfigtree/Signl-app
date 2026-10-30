@@ -1953,6 +1953,9 @@ body.rail-on #toprow { display: block; margin-left: 78px; padding-top: 12px; }
 .ws-tab:hover { color: var(--ink); }
 .ws-tab.on { color: var(--mint-deep); }
 .ws-tab.on::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 2.5px; border-radius: 2px; background: var(--mint-deep); }
+/* Phone widths: tab rows wrap instead of clipping the last tab
+   off the right edge (Build -47, audit B4). */
+@media (max-width: 560px) { .ws-tabs { flex-wrap: wrap; overflow-x: visible; row-gap: 2px; column-gap: 18px; } }
 .ws-tools { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 16px 0 6px; }
 .ws-tools .sp { flex: 1; }
 .ws-search { flex: 1 1 200px; min-width: 170px; display: flex; align-items: center; gap: 8px; background: #fff; border: 1px solid var(--line); border-radius: 11px; padding: 0 13px; color: var(--ink3); }
@@ -2229,7 +2232,7 @@ body.v3-on #tabbar { display: block; position: fixed; left: 0; top: 0; right: au
 .tab-item { background: none; border: 0; cursor: pointer; font: inherit; color: var(--ink3); display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 2px 7px; min-height: 60px; }
 .tab-item .tab-ic { position: relative; display: inline-flex; padding: 3px 10px; border-radius: 999px; }
 .tab-item .tab-ic svg { width: 24px; height: 24px; display: block; }
-.tab-item .tab-label { font-size: 0.68rem; font-weight: 600; line-height: 1.1; text-align: center; }
+.tab-item .tab-label { font-size: 0.68rem; font-weight: 600; line-height: 1.1; text-align: center; overflow-wrap: break-word; max-width: 100%; }
 .tab-item.on { color: var(--ink); }
 .tab-item.on .tab-ic { background: var(--mint-pale); }
 .tab-item.on .tab-label { font-weight: 800; }
@@ -2292,6 +2295,18 @@ body.v3-on #tabbar { display: block; position: fixed; left: 0; top: 0; right: au
 .sig-item .btn { flex: none; }
 .sig-seeall { margin-top: 10px; background: none; border: 0; cursor: pointer; font: inherit; font-weight: 700; color: var(--ink); padding: 6px 2px; }
 .sig-x { flex: none; background: none; border: 0; cursor: pointer; font: inherit; font-size: 18px; line-height: 1; color: var(--ink3, #7C877C); padding: 4px 6px; }
+/* Build -47 (audit C14): on phones the queue row stacked its
+   button beside the sentence, squeezing the text into ~55% of
+   the card and breaking sentences mid-thought. The sentence
+   takes the full row; the button drops underneath it. */
+@media (max-width: 560px) {
+  .sig-item { flex-wrap: wrap; }
+  .sig-item .sig-stxt { flex: 1 1 100%; }
+  .sig-item .sig-x { position: absolute; }
+  .sig-item { position: relative; }
+  .sig-item .sig-x { top: 6px; right: 6px; }
+  .sig-item:has(.sig-x) .sig-stxt { padding-right: 26px; }
+}
 .sig-links { margin-top: 8px; display: flex; gap: 18px; flex-wrap: wrap; }
 .sig-link { background: none; border: 0; cursor: pointer; font: inherit; font-weight: 700; color: var(--ink); text-decoration: underline; text-underline-offset: 3px; padding: 4px 0; }
 .sig-empty { margin-top: 10px; }
@@ -2303,6 +2318,9 @@ body.v3-on #tabbar { display: block; position: fixed; left: 0; top: 0; right: au
 .check-row:first-of-type { border-top: 0; }
 .check-ic { width: 26px; height: 26px; border-radius: 50%; border: 2px solid var(--line); color: var(--mint-dot); display: inline-flex; align-items: center; justify-content: center; font-weight: 800; flex: none; margin-top: 1px; }
 .check-row.done .check-ic { background: var(--mint-pale); border-color: var(--mint-soft); }
+/* Build -47 (audit B12): done rows keep their step number so the
+   numbering never jumps; the check rides at the row's end. */
+.check-done-mark { color: var(--mint-dot); display: inline-flex; flex: none; margin-left: auto; }
 .check-row.next { background: var(--bg2); border-radius: var(--r-md); padding: 12px; border-top: 0; }
 .check-tx { flex: 1; }
 .check-tx .btn { margin-top: 8px; }
@@ -2354,12 +2372,20 @@ body.v3-on #tabbar { display: block; position: fixed; left: 0; top: 0; right: au
    the check, so the state is unmistakable without borrowing the
    category chips' black-pill treatment. */
 .dspan-row { display: flex; flex-wrap: wrap; margin: 12px 0 0; }
-.dspan-toggle { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; background: #0C7A43; color: #fff; border: 1px solid #0C7A43; border-radius: 999px; padding: 9px 16px; cursor: pointer; font: inherit; min-height: 40px; text-align: left; }
+/* Build -47 (audit B11): the toggles used to sit filled deep
+   green in BOTH states, so off read as on. They now speak the
+   filter-chip language: quiet tint when off, black pill with
+   mint text when on, check visible only when on. */
+.dspan-toggle { display: inline-flex; align-items: center; justify-content: flex-start; gap: 8px; flex-wrap: wrap; background: var(--tint, #E3F5EA); color: var(--ink); border: 1px solid var(--line, #DDE7DD); border-radius: 999px; padding: 9px 16px; cursor: pointer; font: inherit; min-height: 40px; text-align: left; }
 .dspan-toggle .dspan-main { font-weight: 700; }
-.dspan-toggle .dspan-sub { font-weight: 500; font-size: .88em; opacity: .85; }
+.dspan-toggle .dspan-sub { font-weight: 500; font-size: .88em; opacity: .75; }
 .dspan-toggle .dspan-check { font-weight: 800; visibility: hidden; }
-.dspan-toggle.on { background: #075C31; border-color: #075C31; box-shadow: inset 0 0 0 2px #fff; }
+.dspan-toggle.on { background: var(--ink); border-color: var(--ink); color: var(--mint, #A9E8C9); }
 .dspan-toggle.on .dspan-check { visibility: visible; }
+/* The market select gets the full row so the current market's
+   name never truncates (audit B11). */
+.filters.disc-top > div { flex: 1 1 100%; }
+.filters.disc-top select { width: 100%; }
 /* Spanish highlights (Jeff, 2026-10-28): one tint treatment shared
    by the creator's Spanish panel and the business composer's
    Spanish callout, so the option reads as a featured section on

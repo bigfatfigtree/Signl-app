@@ -38,7 +38,7 @@ BUSINESSES
 - Every applicant gets an answer within 2 business days.
 - Visit Guarantee: if a booked creator does not show up or does not post, that visit does not count against the business's monthly visits. It is replaced. Credits, not cash.
 - A business can post an open offer (comped or paid) or invite a specific creator at their listed rate. A creator may voluntarily accept a lower posted rate; otherwise the listed rate stands and there is no haggling on a post.
-- Results: the dashboard follows each post at day 7, 14, and 30. A redeemed visit code converts to an estimated register value, so return on spend is computed. Nothing is shown before it is real; there are no fake dashboards.
+- Results: the dashboard follows each post at day 7, 14, and 30. A redeemed visit code is a sale the staff rang up, counted in dollars, so return on spend is computed from counted register dollars only. Nothing is shown before it is real; there are no fake dashboards.
 - Businesses join the founding list now, pick a plan at sign-up, and no card is charged during founding. When a market activates, the business lands in Find creators with the founding roster ready.
 - The founding business class is limited in every market. Founding businesses get first access when their market activates.
 - Bookings that start on SIGNL stay on SIGNL: when a business first connects with a creator through SIGNL, bookings between them run through SIGNL for 12 months from that first start, where the Visit Guarantee and payment protection apply.

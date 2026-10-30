@@ -173,8 +173,8 @@ try {
     !slice.includes("totalInMarket") && !slice.includes("will never be padded with stand-ins") && !slice.includes("roster is being built now") && !slice.includes("Showing the top"), "");
   check("no em dashes anywhere in the new founding preview code", !slice.includes("—"), "");
   check("build stamp is the new build on both sides",
-    fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), "..", "netlify", "functions", "lib", "build.js"), "utf8").includes("2026.10.30-46")
-    && fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), "..", "public", "index.html"), "utf8").includes("2026.10.30-46"), "");
+    fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), "..", "netlify", "functions", "lib", "build.js"), "utf8").includes("2026.10.30-47")
+    && fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), "..", "public", "index.html"), "utf8").includes("2026.10.30-47"), "");
 
   // ================================================================
   // Part B: creator excitement layer (Jeff, 2026-10-29).
@@ -182,10 +182,17 @@ try {
   // market BY LOCAL REACH plus the market's unlock progress,
   // computed from the same three Richmond fixtures Part A seeded.
   // ================================================================
+  // Build -47 (audit C16): rank claims now gate on a field of
+  // 10 finished creators, so seven more Richmond creators (all
+  // below the original three on local %) join before the rank
+  // reads; the original three keep ranks 1, 2, 3 in a field of 10.
+  for (let i = 0; i < 7; i++) {
+    await makeCreator(admin, { name: "Rank Extra " + (i + 1), email: `extra${i + 1}@fixtures.dev`, handle: `rankextra${i + 1}`, followers: 1200 + i * 100, localPct: 35 - i });
+  }
   const qFounding = await cHigh.client("GET", "/api/me/founding");
   check("creator founding payload carries the buzz object", qFounding.status === 200 && !!(qFounding.data && qFounding.data.buzz), JSON.stringify(qFounding.data).slice(0, 200));
   const qRank = qFounding.data && qFounding.data.buzz ? qFounding.data.buzz.localRank : null;
-  check("local rank is by local reach: 90% ranks #1 of 3", !!qRank && qRank.rank === 1 && qRank.field === 3 && qRank.localAudiencePct === 90, JSON.stringify(qRank));
+  check("local rank is by local reach: 90% ranks #1 of 10", !!qRank && qRank.rank === 1 && qRank.field === 10 && qRank.localAudiencePct === 90, JSON.stringify(qRank));
   const rFounding = await cMid.client("GET", "/api/me/founding");
   const rRank = rFounding.data && rFounding.data.buzz ? rFounding.data.buzz.localRank : null;
   check("70% local ranks #2: follower count (6,000 vs 900) does not move the rank", !!rRank && rRank.rank === 2 && rRank.localAudiencePct === 70, JSON.stringify(rRank));
@@ -193,7 +200,7 @@ try {
   const pRank = pFounding.data && pFounding.data.buzz ? pFounding.data.buzz.localRank : null;
   check("40% local (8,000 followers) ranks #3: reach beats audience size", !!pRank && pRank.rank === 3, JSON.stringify(pRank));
   const qUnlock = qFounding.data && qFounding.data.buzz ? qFounding.data.buzz.unlock : null;
-  check("unlock meter carries real counts against the launch bar", !!qUnlock && qUnlock.approved === 3 && qUnlock.complete === 3 && qUnlock.launchBar === 25 && qUnlock.marketLive === false, JSON.stringify(qUnlock));
+  check("unlock meter carries real counts against the launch bar", !!qUnlock && qUnlock.approved === 10 && qUnlock.complete === 10 && qUnlock.launchBar === 25 && qUnlock.marketLive === false, JSON.stringify(qUnlock));
   const bizFounding = await biz.client("GET", "/api/me/founding");
   check("businesses cannot read the creator founding payload (403)", bizFounding.status === 403, String(bizFounding.status));
 

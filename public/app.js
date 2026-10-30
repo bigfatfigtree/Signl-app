@@ -844,7 +844,7 @@ function growRosterHtml(u) {
       <p class="small">Share your invite link — creators who join through it are credited to you.</p>
       <div class="field"><label>Your invite link</label><input type="text" readonly value="${esc(link)}" onclick="this.select()"></div>
       <p class="small">${shareBlockHtml(u.creator && u.creator.handle, place, "Share your invite")}</p>
-      <p class="small"><strong>Your roster:</strong> ${m.signups} ${m.signups === 1 ? "creator" : "creators"} joined through your link &middot; ${m.approved} approved &middot; <strong>${m.points} Momentum points</strong></p>
+      ${m.signups > 0 ? `<p class="small"><strong>Your roster:</strong> ${m.signups} ${m.signups === 1 ? "creator" : "creators"} joined through your link &middot; ${m.approved} approved &middot; <strong>${m.points} Momentum points</strong></p>` : ""}
       ${m.campusCrew ? `<p class="small"><strong>Your campus crew: ${m.campusCrew.count} creator${m.campusCrew.count === 1 ? "" : "s"} from ${esc(m.campusCrew.university)}</strong></p>` : ""}
       ${m.campusLead && m.campusLead.qualified ? `<p class="small"><strong>Campus Lead · ${esc(m.campusLead.university)}</strong> — ${m.campusLead.count} classmates you recruited are approved. The badge is on your profile.</p>` : m.campusLead && m.campusLead.count > 0 ? `<p class="small"><strong>Campus Lead at ${esc(m.campusLead.university)}:</strong> ${m.campusLead.count} of ${m.campusLead.threshold} classmates recruited and approved — ${m.campusLead.needed} more earns the badge.</p>` : ""}
       <p class="small">Points: +3 per sign-up &middot; +10 per approval. Roster builders get seen first.</p>
@@ -1006,7 +1006,7 @@ function momentumHtml(u) {
     </div>`).join("");
   return `
   <div class="panel mt" style="text-align:left">
-    <div class="flex-between"><h3 style="margin:0">Momentum points</h3><span class="badge info" style="font-size:1rem;padding:6px 14px">${m.points} points</span></div>
+    <div class="flex-between"><h3 style="margin:0">Momentum points</h3><span class="badge info" style="font-size:1rem;padding:6px 14px">${m.points > 0 ? `${m.points} points` : "Just starting"}</span></div>
     <p class="small">Earned for on-time posts, a complete profile, reviews and invites.${m.floorApplied ? " Your total never drops below zero." : ""}</p>
     <h4 style="margin:14px 0 6px">Ways to earn</h4>
     ${checklist || `<p class="small muted">Loading...</p>`}
@@ -1219,13 +1219,16 @@ function renderStack(wrap) {
   if (!s) return;
   const total = s.items.length;
   const pos = document.querySelector(`[data-stackpos="${key}"]`);
+  // Position prints only when the full set is big enough that a
+  // position is not a roster-size leak (Build -47, audit B3).
+  const posOk = (s.src || []).length >= 10;
   if (s.idx >= total) {
     if (s.onRoundEnd && s.onRoundEnd(wrap)) return;
     wrap.innerHTML = s.endHtml(s.passed, total);
-    if (pos) pos.textContent = total ? `${total} of ${total}` : "";
+    if (pos) pos.textContent = total && posOk ? `${total} of ${total}` : "";
     return;
   }
-  if (pos) pos.textContent = `${s.idx + 1} of ${total}`;
+  if (pos) pos.textContent = posOk ? `${s.idx + 1} of ${total}` : "";
   const behind = s.idx + 1 < total ? `<div class="stk-behind" aria-hidden="true">${s.cardHtml(s.items[s.idx + 1], s.idx + 1)}</div>` : "";
   wrap.innerHTML = behind + `<div class="stk-card">${s.round === 2 ? `<span class="stk-secondlook">Second look</span>` : ""}${s.cardHtml(s.items[s.idx], s.idx)}</div>`
     + `<div class="stk-actions"><button type="button" class="stk-pass" aria-label="Later: park this card" onclick="stackButton('${key}','pass')">Later</button><button type="button" class="stk-go" onclick="stackButton('${key}','go')">${esc(s.goLabelFor ? s.goLabelFor(s.items[s.idx]) : s.goLabel)}</button></div>`;
@@ -1699,7 +1702,7 @@ function renderBottomNav() {
 // 72px phone rail shows for the few labels that cannot fit
 // it; the wide rail and the aria-label always carry the full
 // label.
-const RAIL_SHORT = { Content: "Posts", Plan: "Plan", Profile: "Profile", Numbers: "Numbers", Links: "Links" };
+const RAIL_SHORT = { Content: "Posts", Plan: "Plan", Profile: "Profile", Numbers: "Numbers", Links: "Links", Performance: "Perform­ance" };
 function railRowItems() {
   const t = state.tab;
   const seen = new Set();
@@ -2266,7 +2269,7 @@ function checklistHtml(steps) {
   const nextIdx = steps.findIndex((s) => !s.done);
   return `<div class="check-card"><div class="check-head"><strong>Getting set up</strong><span class="muted small">${done} of ${steps.length} done</span></div>
   ${steps.map((s, i) => s.done
-    ? `<div class="check-row done"><span class="check-ic">${bnIcon("check")}</span><span class="check-tx">${esc(s.label)}</span></div>`
+    ? `<div class="check-row done"><span class="check-ic num done-n">${i + 1}</span><span class="check-tx">${esc(s.label)}</span><span class="check-done-mark">${bnIcon("check")}</span></div>`
     : i === nextIdx
       ? `<div class="check-row next"><span class="check-ic num">${i + 1}</span><div class="check-tx"><div>${esc(s.label)}${s.optional ? ` <span class="badge info">Optional</span>` : ""}</div>${s.sub ? `<div class="muted small">${esc(s.sub)}</div>` : ""}</div>${s.btn ? `<button type="button" class="btn small-btn" data-ck="${i}">${esc(s.btn)}</button>` : ""}</div>`
       : `<div class="check-row"><span class="check-ic num dim">${i + 1}</span><span class="check-tx muted">${esc(s.label)}</span></div>`).join("")}
@@ -2375,10 +2378,7 @@ function renderSettingsTab() {
   if (u.role !== "business") {
     el.innerHTML = `
   ${wsHead("Settings", { sub: "Account and notifications.", subKey: "settings" })}
-  <div class="panel mt">
-    <h3>Notifications</h3>
-    <p class="small muted">SIGNL emails you when a business invites you, answers your application, or sends a license request. In-app badges count what is waiting on you. There are no notification switches yet; the emails are the record.</p>
-  </div>
+  ${notificationPrefsHtml(u)}
   <div class="panel mt">
     <h3>Payout details</h3>
     <p class="small muted">Paid bookings record your rate in the app: booked at your rate, you keep 97%. Payouts run outside the app for now, so there is nothing to set up here yet, and nothing in the app promises a payout date.</p>
@@ -2432,12 +2432,43 @@ function renderSettingsTab() {
     <div class="field"><label>Average ticket ($)</label><input type="number" id="me-avg-ticket" min="0" step="0.01" placeholder="40" value="${u.business.averageTicket ? esc(String(u.business.averageTicket)) : ""}"></div>
     <button class="btn" onclick="saveMyAverageTicket()">Save average ticket</button> <span id="ticket-ok" class="saved"></span>
   </div>
-  <div class="panel mt">
-    <h3>Notifications</h3>
-    <p class="small muted">SIGNL emails you when a creator applies, a visit is booked, and a post lands. In-app badges count what is waiting on you. There are no notification switches yet; the emails are the record.</p>
-  </div>
+  ${notificationPrefsHtml(u)}
   ${accountHtml(u)}`;
   loadStaffSettings();
+}
+
+// Notification email switches (Build -47, audit C11): three
+// toggles over the email copies of in-app notifications. The
+// in-app notes themselves always record (they are the
+// no-ghosting record and drive the tab badges); account and
+// payment emails always send and are not switched here.
+function notificationPrefsHtml(u) {
+  const p = u.notifyPrefs || {};
+  const on = (v) => (v === false ? "" : " checked");
+  return `
+  <div class="panel mt">
+    <h3>Notifications</h3>
+    <p class="small muted">Choose which updates also reach your email. Everything still lands in the app either way; the tab badges count what is waiting on you. Account emails (approval, password resets) and payment emails always send.</p>
+    <label class="tgl-row" style="overflow:hidden;margin:8px 0"><input type="checkbox" class="sw" id="np-activity"${on(p.emailActivity)}><span>Activity: offers, applications, bookings and posts</span></label>
+    <label class="tgl-row" style="overflow:hidden;margin:8px 0"><input type="checkbox" class="sw" id="np-messages"${on(p.emailMessages)}><span>New messages</span></label>
+    <label class="tgl-row" style="overflow:hidden;margin:8px 0"><input type="checkbox" class="sw" id="np-reminders"${on(p.emailReminders)}><span>Reminders and deadlines</span></label>
+    <div style="margin-top:10px"><button class="btn" onclick="saveNotificationPrefs()">Save notifications</button> <span id="np-ok" class="saved"></span></div>
+  </div>`;
+}
+
+async function saveNotificationPrefs() {
+  const ok = document.getElementById("np-ok");
+  try {
+    const data = await api("PATCH", "/me/notifications", {
+      emailActivity: !!document.getElementById("np-activity").checked,
+      emailMessages: !!document.getElementById("np-messages").checked,
+      emailReminders: !!document.getElementById("np-reminders").checked,
+    });
+    if (state.user) state.user.notifyPrefs = data.notifyPrefs;
+    if (ok) ok.textContent = "Saved.";
+  } catch (err) {
+    if (ok) ok.textContent = err.message;
+  }
 }
 
 function renderHelpTab() {
@@ -2532,7 +2563,7 @@ async function renderEarningsTab() {
   ${pending.length ? `<div class="wcard" style="padding-top:8px;padding-bottom:8px">${pending.map((l) => licRow(l, true)).join("")}</div>` : `<p class="small muted" style="margin:8px 2px 0">No license requests waiting. When a business wants to reuse one of your posts, it lands here at your listed fee.</p>`}
   ${decided.length ? `<div class="wcard" style="padding-top:8px;padding-bottom:8px;margin-top:12px">${decided.map((l) => licRow(l, false)).join("")}</div>` : ""}
   <h3 style="margin:22px 0 0">Paid bookings</h3>
-  ${paidBookings.length ? `<div class="wcard" style="padding-top:8px;padding-bottom:8px">${paidBookings.map((b) => `<div class="lib-row"><div class="lib-main"><div class="lib-title">${esc(b.title)}</div><div class="lib-meta">${esc(b.businessName || "")} · Booked at your rate of $${fmtPrice(b.paidLane.rate)}. You keep $${fmtMoney(b.paidLane.creatorNet)}.</div></div><span class="badge ${b.paidLane.escrowState === "released" ? "ok" : b.paidLane.escrowState === "refunded" ? "warn" : "info"}">${stateWord(b)}</span></div>`).join("")}</div>` : `<p class="small muted" style="margin:8px 2px 0">No paid bookings yet. Set your rate on your profile and businesses can book you paid.</p>`}`;
+  ${paidBookings.length ? `<div class="wcard" style="padding-top:8px;padding-bottom:8px">${paidBookings.map((b) => `<div class="lib-row"><div class="lib-main"><div class="lib-title">${esc(b.title)}</div><div class="lib-meta">${esc(b.businessName || "")} · Booked at your rate of $${fmtPrice(b.paidLane.rate)}. You keep $${fmtMoney(b.paidLane.creatorNet)}.</div></div><span class="badge ${b.paidLane.escrowState === "released" ? "ok" : b.paidLane.escrowState === "refunded" ? "warn" : "info"}">${stateWord(b)}</span></div>`).join("")}</div>` : `<p class="small muted" style="margin:8px 2px 0">${(state.user.creator || {}).paidRate ? `No paid bookings yet. Your rate is set at $${fmtPrice(state.user.creator.paidRate)}; when a business books you paid, it lands here.` : "No paid bookings yet. Set your rate on your profile and businesses can book you paid."}</p>`}`;
     renderBottomNav();
   } catch (err) {
     el.innerHTML = `${wsHead("Earnings")}<div class="error-box">${esc(err.message)}</div>`;
@@ -2713,7 +2744,11 @@ function feedListHtml(events) {
     const day = fmtDayFull(e.at);
     const head = day && day !== lastDay ? `<div class="feed-day">${esc(day)}</div>` : "";
     lastDay = day;
-    return `${head}<div class="feed-row"><span class="feed-dot ${e.acc ? "acc" : ""}">${e.icon ? bnIcon(e.icon) : esc(e.initial || "•")}</span><div class="feed-main"><div class="feed-title">${e.title}</div><div class="feed-meta">${esc(e.meta || "")}${e.at ? ` · ${esc(fmtTime(e.at))}` : ""}</div></div>${e.act ? `<span class="feed-act"><button type="button" class="btn small-btn ws-outline" onclick="${e.act.onclick}">${esc(e.act.label)}</button></span>` : ""}</div>`;
+    // Escape contract (Build -47, audit C2): feedListHtml escapes
+    // title AND meta exactly once, here. Callers pass RAW strings;
+    // a caller that pre-escapes double-escapes (the raw "You&#39;re"
+    // that printed in the creator Home feed).
+    return `${head}<div class="feed-row"><span class="feed-dot ${e.acc ? "acc" : ""}">${e.icon ? bnIcon(e.icon) : esc(e.initial || "•")}</span><div class="feed-main"><div class="feed-title">${esc(e.title || "")}</div><div class="feed-meta">${esc(e.meta || "")}${e.at ? ` · ${esc(fmtTime(e.at))}` : ""}</div></div>${e.act ? `<span class="feed-act"><button type="button" class="btn small-btn ws-outline" onclick="${e.act.onclick}">${esc(e.act.label)}</button></span>` : ""}</div>`;
   }).join("");
   return `<div class="feed-list">${rows}</div>`;
 }
@@ -2854,7 +2889,7 @@ function sigBankFor(biz) {
     { id: "redeem", q: "How does redeeming a visit work?", ph: ["redeem", "visit code", "check in", "check-in", "counter code"], g: [["code", "counter", "redeem", "pin"], ["enter", "work", "staff", "scan", "check"]], s: ["redeem"],
       a: "The creator arrives with a visit code. Your staff enter it at the counter, which checks the creator in and starts the 48 hour posting clock. If the code does not work, staff can confirm the visit from your side instead. Keeping your staff PIN set keeps the counter quick.", flow: "Redeem a visit" },
     { id: "metrics", q: "How do I see my results?", ph: ["roas", "my results", "analytics", "metrics", "return on", "how am i doing", "track results"], g: [["results", "numbers", "performance", "sales", "returns"], ["see", "track", "measure", "show", "doing"]], s: ["roas", "analytics", "metrics"],
-      a: "Your dashboard follows every visit: the post, its reach and engagement, refreshed as a day 7, 14, and 30 series. When a visit code is redeemed, it converts to an estimated register value, so your return on spend is a number, not a guess. Nothing is shown before it is real, so a campaign that has not run shows no numbers at all.", flow: "See your results" },
+      a: "Your dashboard follows every visit: the post, its reach and engagement, refreshed as a day 7, 14, and 30 series. When a visit code is redeemed, the sale your staff rang up is counted in dollars on your dashboard, so your return on spend is a number, not a guess. Nothing is shown before it is real, so a campaign that has not run shows no numbers at all.", flow: "See your results" },
     { id: "marketbiz", q: "When does my market open?", ph: ["market open", "when can i start", "join now", "launch", "my city"], g: [["market", "city", "launch"], ["when", "open", "start", "live", "join", "coming"]], s: [],
       a: (c) => c.live ? "Your market is open and your business is active. You can post offers and invite creators now." : "Businesses join the founding list now and pick a plan at sign-up; no card is charged during founding. Businesses sign up when we are ready to launch, market by market as each founding roster completes. When yours activates, you land in Find creators with the founding roster ready, and you get an email the moment it opens." },
     { id: "help", q: "How do I reach a person?", ph: ["password", "contact", "human", "support", "talk to someone", "staff pin", "change my email"], g: [["password", "email", "account", "contact", "support", "human", "help", "pin"], ["change", "reset", "forgot", "update", "talk", "reach", "set"]], s: ["support"],
@@ -3361,8 +3396,8 @@ function renderHome() {
     <div class="cta-row">
       <a class="btn" href="#" onclick="return go('join-creator')">Become a Founding Creator</a>
       <a class="btn ghost" href="#" onclick="return go('for-businesses')">For Businesses</a>
-      <a class="btn ghost" href="#" onclick="return goStaff()">Redeem a creator visit</a>
     </div>
+    <p class="small muted mt">Working the register at a SIGNL business? <a href="#" onclick="return goStaff()">Redeem a creator visit</a>: staff mode, your PIN and the creator's code, nothing else.</p>
     <p class="small muted mt">Founding sign-ups open in all ${(state.boot && state.boot.markets ? state.boot.markets.length : 37)} markets &middot; Decisions within 2 business days</p>
   </section>
   <section style="margin-top:44px">
@@ -3401,6 +3436,18 @@ function unlistedLabel() {
 function marketDisplayName(name) {
   const m = state.boot && state.boot.markets ? state.boot.markets.find((x) => x.name === name) : null;
   return (m && m.label) || name;
+}
+
+// Market naming rule (Build -47, audit C15): identity and meta
+// lines use the display label ("Virginia Beach (Hampton
+// Roads)"); prose uses the talk name ("Hampton Roads"). One
+// form per context, held everywhere. An identity line never
+// repeats the market's own lead city after the label.
+function marketPlaceLine(market, city) {
+  const label = marketDisplayName(market);
+  const leadCity = String(market || "").split(" (")[0];
+  if (!city || city === leadCity) return label;
+  return `${label} · ${city}`;
 }
 
 // Conversational name for the Virginia Beach market in creator
@@ -3523,7 +3570,7 @@ function renderSignin() {
     </div>
     <div class="form-body">
     <div id="form-error"></div>
-    <form onsubmit="return doSignin(event)">
+    <form novalidate onsubmit="return doSignin(event)">
       <div class="field"><label>Email</label><input type="email" id="si-email" required autocomplete="email"></div>
       <div class="field"><label>Password</label><input type="password" id="si-password" required autocomplete="current-password"></div>
       <button class="btn" type="submit" style="width:100%">Sign in</button>
@@ -3539,6 +3586,14 @@ function renderSignin() {
 async function doSignin(e) {
   e.preventDefault();
   const form = e.target;
+  // Empty submit speaks (Build -47, audit L1): the form is
+  // novalidate so this check, not a browser bubble, answers.
+  const siEmail = (document.getElementById("si-email").value || "").trim();
+  const siPw = document.getElementById("si-password").value || "";
+  if (!siEmail || !siPw) {
+    document.getElementById("form-error").innerHTML = `<div class="error-box">${!siEmail && !siPw ? "Enter your email and password to sign in." : !siEmail ? "Enter your email to sign in." : "Enter your password to sign in."}</div>`;
+    return false;
+  }
   if (!submitBusy(form, true)) return false;
   try {
     const data = await api("POST", "/auth/login", {
@@ -4459,7 +4514,7 @@ async function sigB3Run() {
   const series = perfSeriesText(o.series);
   if (series) lines.push(`${ST("Post views over time", "Vistas en el tiempo")}: ${series}.`);
   if (o.redemptions && o.redemptions.count > 0) lines.push(`${ST("Redemptions rung up", "Canjes registrados")}: ${o.redemptions.count} ($${fmtMoney(o.redemptions.basketTotal || 0)}).`);
-  if (o.registerValue) lines.push(`${ST("Register value", "Valor en caja")}: $${fmtMoney(o.registerValue)}${o.roasScore !== null && o.roasScore !== undefined ? ` · ${ST("modeled estimate", "estimación modelada")} ${o.roasScore}` : ""}.`);
+  if (o.registerValue) lines.push(`${ST("Register value", "Valor en caja")}: $${fmtMoney(o.registerValue)}${o.roasScore !== null && o.roasScore !== undefined && Number(o.roasScore) > 0 ? ` · ${ST("modeled estimate", "estimación modelada")} ${o.roasScore}` : ""}.`);
   else if (o.estimatedRegisterValue) lines.push(`${ST("Estimated register value", "Valor estimado en caja")}: $${fmtMoney(o.estimatedRegisterValue)}.`);
   const topRows = (ro.offers || []).filter((r) => (r.postsLive || 0) > 0 || (r.visitsBooked || 0) > 0).slice(0, 3);
   for (const r of topRows) lines.push(`"${r.title}": ${r.visitsBooked || 0} ${ST("booked", "reservadas")} · ${r.postsLive || 0} ${ST("posts live", "publicaciones")}${r.views ? ` · ${fmtNum(r.views)} ${ST("views", "vistas")}` : ""}.`);
@@ -5339,6 +5394,16 @@ function syncQcPlatform() {
   const sel = document.getElementById("qc-platform");
   syncProofDisclosure("qc-platform", "qc-proof-note");
   const meta = primaryMetaClient(sel ? sel.value : "instagram");
+  // Fast Setup copy follows the chosen platform (Build -47,
+  // audit C9): the card drafted from Instagram no matter what
+  // was picked, which read as a broken form. Non-Instagram
+  // picks get the honest version up front.
+  const intro = document.getElementById("qc-ig-intro");
+  if (intro) {
+    intro.textContent = !sel || sel.value === "instagram"
+      ? T("Give Sig your Instagram handle and it drafts your details from your public profile. You check and fix everything before any of it is used. The draft isn't kept: you review and save what you like.", "Dale a Sig tu usuario de Instagram y arma tus datos desde tu perfil público. Revisas y corriges todo antes de que se use. El borrador no se guarda: revisas y guardas lo que quieras.")
+      : T(`Fast setup reads Instagram only. Your main platform here is ${meta.label}, so the form below is the way in; it asks for the same details.`, `La configuración rápida solo lee Instagram. Tu plataforma principal aquí es ${meta.label}, así que el formulario de abajo es el camino; pide los mismos datos.`);
+  }
   const label = document.getElementById("qc-handle-label");
   if (label) label.textContent = `${T("Your", "Tu")} ${meta.label} ${T("handle (required)", "usuario (obligatorio)")}`;
   const input = document.getElementById("qc-handle");
@@ -5361,7 +5426,7 @@ function igAssistCardHtml(uid, side, opts = {}) {
   const handleField = opts.handleFrom ? `<p class="small muted">${T("Uses the handle you typed above.", "Usa el usuario que escribiste arriba.")}</p>` : `<div class="field"><label>${T("Your Instagram handle", "Tu usuario de Instagram")}</label><input id="${uid}-ig-handle" placeholder="yourhandle"></div>`;
   return `<div class="fgroup tint" id="${uid}-ig-card">
     <p class="fg-kicker">${T("Fast setup", "Configuración rápida")}</p>
-    <p class="small muted">${T("Give Sig your Instagram handle and it drafts your details from your public profile. You check and fix everything before any of it is used. Nothing is saved from this card.", "Dale a Sig tu usuario de Instagram y arma tus datos desde tu perfil público. Revisas y corriges todo antes de que se use. Nada se guarda desde esta tarjeta.")}</p>
+    <p class="small muted"${uid === "qc" ? ` id="qc-ig-intro"` : ""}>${T("Give Sig your Instagram handle and it drafts your details from your public profile. You check and fix everything before any of it is used. The draft isn't kept: you review and save what you like.", "Dale a Sig tu usuario de Instagram y arma tus datos desde tu perfil público. Revisas y corriges todo antes de que se use. El borrador no se guarda: revisas y guardas lo que quieras.")}</p>
     ${handleField}
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button type="button" class="btn" onclick="igAssistLookup('${uid}','${side}')">${T("Draft my setup", "Arma mi configuración")}</button>
@@ -5471,7 +5536,7 @@ function renderQuickClaim() {
     ${hasPrefill ? `<div class="notice blue">${T("Pre-filled from your invite link — check it and claim.", "Ya viene lleno desde tu enlace de invitación. Revísalo y reclama tu lugar.")}</div>` : ""}
     <div id="qc-ticket"></div>
     <div id="form-error"></div>
-    <form onsubmit="return doQuickClaim(event)">
+    <form novalidate onsubmit="return doQuickClaim(event)">
       <div class="fgroup tint">
         <p class="fg-kicker">${T("Your platform", "Tu plataforma")}</p>
         <div class="field"><label>${T("Where is your main audience?", "¿Dónde está tu audiencia principal?")}</label>${platformChipsHtml("qc-platform", pfPlatform, "syncQcPlatform")}<p class="small muted">${T("Your main platform. Add the rest later.", "Tu plataforma principal. Agrega las demás después.")}</p><p class="small muted" id="qc-proof-note" style="display:${pfPlatform !== "instagram" ? "" : "none"}">${PROOF_DISCLOSURE}</p></div>
@@ -6275,6 +6340,11 @@ function renderBusinessFoundingStatus() {
   const bizPlace = u.market === unlistedLabel() ? (u.city || "your city") : marketTalkNameClient(u.market);
   app.innerHTML = `<div class="wrap" style="max-width:680px">
   ${wsHead("Status", { sub: "Where your founding enrollment stands." })}
+  <div class="chiprow" style="margin-top:10px">
+    <button type="button" class="rchip on" onclick="window.scrollTo({top:0,behavior:'smooth'});return false">Your status</button>
+    <button type="button" class="rchip" onclick="document.getElementById('fbz-preview').scrollIntoView({behavior:'smooth'});return false">Your preview</button>
+    <button type="button" class="rchip" onclick="document.getElementById('fbz-account').scrollIntoView({behavior:'smooth'});return false">Account &amp; password</button>
+  </div>
   <section class="wcard" style="margin-top:14px">
     <p><span class="badge ${inReview ? "info" : "ok"}">${inReview ? "Application in review" : "Founding list"}</span></p>
     <h2 style="margin-top:8px">${esc(bz.businessName || "Your business")} is on the founding list</h2>
@@ -6305,7 +6375,7 @@ function renderBusinessFoundingStatus() {
     <div class="mt"><button class="btn ghost" onclick="signOut()">Sign out</button></div>
   </section>
   <div id="fbz-preview">${skelHtml("Loading your preview...", 3)}</div>
-  ${accountHtml(u)}</div>`;
+  <div id="fbz-account">${accountHtml(u)}</div></div>`;
   loadFoundingBusinessPreview();
 }
 
@@ -6629,7 +6699,7 @@ function foundingBenefitsHtml(u) {
   const items = [
     ["Ranked by local reach", "Every creator is ranked by the share of their audience that actually lives here, ranked over follower count. A smaller creator whose crowd is your neighbors beats a big account whose crowd is somewhere else."],
     ["Booked in two taps, both lanes", "Comp a creator a meal, a service, or an experience, or book them paid at their own listed rate. On paid bookings, SIGNL holds the payment until the post is live, and the creator keeps 97%."],
-    ["Proof at your register", "Every visit carries a redemption code your staff scans or keys in at the register. Your point of sale is never touched, and each redemption converts to an estimated register value on your dashboard."],
+    ["Proof at your register", "Every visit carries a redemption code your staff scans or keys in at the register. Your point of sale is never touched. Each redemption is a sale your staff rang up, and your dashboard adds up exactly those counted dollars."],
     ["Results on day 7, 14, and 30", "Reach, engagement, and redemptions land on one page on a set rhythm after every visit, so you can see what a visit did instead of guessing."],
     ["The Visit Guarantee", "If a creator no-shows or never posts, the visit does not count against your plan and is replaced. No-shows are tracked with strikes."],
     ["One tap to run it again", "When a visit works, one tap clones it, brief and content packet attached, into a fresh offer. No starting over, no re-briefing."],
@@ -6700,7 +6770,7 @@ function renderPending() {
       <div style="margin-top:8px">${u.marketCandidates.map((m) => `<button class="btn small-btn" style="margin:0 8px 8px 0" onclick="return pickCandidateMarket(event, '${esc(m)}')">${esc(marketDisplayName(m))}</button>`).join("")}</div>
       <p class="small muted" style="margin:0">${T("Your typed city stays as your home city either way.", "Tu ciudad escrita se queda como tu ciudad de todos modos.")}</p>
     </div>` : ""}
-    ${isCreator && f.queueBand ? `<p><span class="badge info">${isUnlisted ? `You are in the first ${f.queueBand} to sign up in ${esc(u.city)}` : `You are in the first ${f.queueBand} founding creators in ${esc(marketTalkNameClient(u.market))}`}</span></p>` : ""}
+    ${isCreator && f.queueBand ? `<p><span class="badge info">${isUnlisted ? `You are in the first ${f.queueBand} to sign up in ${esc(u.city)}` : `You are in the first ${f.queueBand} to sign up in ${esc(marketTalkNameClient(u.market))}`}</span></p><p class="small muted">Applications are reviewed in sign-up order. Founding status starts at approval, not at sign-up.</p>` : ""}
     <p class="muted">${isUnlisted
       ? `${T("SIGNL is not open in", "SIGNL aún no abrió en")} ${esc(u.city)} ${T("yet, and your sign-up counts toward opening it: we open new markets where creator sign-ups pile up, and founding sign-ups there go first. Every application is reviewed by a person. The moment you are approved, your founding status page opens here, and we will email you at", "y tu registro cuenta para abrirlo: abrimos mercados nuevos donde se juntan registros de creadores, y los registros fundadores de ahí van primero. Cada solicitud la revisa una persona. En cuanto te aprobemos, tu página de estado fundador se abre aquí, y te escribimos a")} ${esc(u.email)} ${T("the moment", "en cuanto")} ${esc(u.city)} ${T("opens. Sign back in any time to check your status.", "abra. Entra cuando quieras para ver tu estado.")}${state.boot && state.boot.email && state.boot.email.enabled ? ` ${T("A confirmation email is on its way to", "Un correo de confirmación va en camino a")} ${esc(u.email)}.` : ""}`
       : `${T("Every application is reviewed by a person. The moment you are approved, your founding status page opens here, and we will email you at", "Cada solicitud la revisa una persona. En cuanto te aprobemos, tu página de estado fundador se abre aquí, y te escribimos a")} ${esc(u.email)} ${T("when", "cuando")} ${esc(marketTalkNameClient(u.market))} ${T("opens to businesses. Sign back in any time to check your status.", "abra para los negocios. Entra cuando quieras para ver tu estado.")}${state.boot && state.boot.email && state.boot.email.enabled ? ` ${T("A confirmation email is on its way to", "Un correo de confirmación va en camino a")} ${esc(u.email)}.` : ""}`}</p>
@@ -7331,7 +7401,7 @@ function creatorCard(c, viewer, opts) {
   const trackLine = tr
     ? (tr.isNew
       ? `<span class="badge info">New to SIGNL: no visits yet</span>`
-      : `<span class="muted">${tr.visitsCompleted} visits completed &middot; ${tr.postsDelivered} posts delivered &middot; ${tr.onTimePct === null || tr.onTimePct === undefined ? "—" : tr.onTimePct + "% on time"}</span>`)
+      : `<span class="muted">${tr.visitsCompleted} visit${tr.visitsCompleted === 1 ? "" : "s"} completed &middot; ${tr.postsDelivered} post${tr.postsDelivered === 1 ? "" : "s"} delivered &middot; ${tr.onTimePct === null || tr.onTimePct === undefined ? "—" : tr.onTimePct + "% on time"}</span>`)
     : "";
   const ratingAvg = c.ratingAvg !== undefined && c.ratingAvg !== null ? c.ratingAvg : (c.reviewSummary ? c.reviewSummary.average : null);
   const ratingCount = c.ratingCount !== undefined ? c.ratingCount : (c.reviewSummary ? c.reviewSummary.count : 0);
@@ -7550,7 +7620,7 @@ async function loadFoundingDashboard() {
       { label: "Claim your profile", sub: "You are on the roster.", done: u.status === "approved" },
       { label: "Add the four basics", sub: "Home city, audience size, categories, local %.", done: !u.profileCompletion || u.profileCompletion.complete, btn: "Finish profile", act: () => go("dashboard", "Profile") },
       { label: "Set your paid rate", sub: "Comped visits work without it.", done: !!(u.creator && u.creator.paidRate), optional: true, btn: "Set my rate", act: () => go("dashboard", "Profile") },
-      { label: "Apply to your first offer", sub: "Offers open when your market launches.", done: false },
+      { label: "Apply to your first offer", sub: "Offers open when your market launches. The Offers tab shows how they work.", done: false, btn: "See Offers", act: () => go("dashboard", "Offers") },
     ];
     el.innerHTML = `
     ${wsHead("Home", { sub: "Start here. Sig shows you what needs you, in order.", subKey: "cr-home" })}
@@ -7572,7 +7642,7 @@ async function loadFoundingDashboard() {
       <div class="flex-between">
         <div>
           <h3 style="margin:0">${esc(u.name)} <span class="muted">@${esc(p.handle || "")}</span></h3>
-          <p class="muted small" style="margin:4px 0 0">${isUnl ? place : `${esc(marketDisplayName(f.market))} &middot; ${esc(f.city)}`}</p>
+          <p class="muted small" style="margin:4px 0 0">${isUnl ? place : esc(marketPlaceLine(f.market, f.city))}</p>
         </div>
         <span class="badge ok" style="font-size:0.95rem;padding:6px 14px">${p.charter ? "Charter Creator" : "Founding Creator"}</span>
       </div>
@@ -7583,9 +7653,9 @@ async function loadFoundingDashboard() {
     ${creatorBuzzHtml(u, card, f, data.buzz)}
     ${feedListHtml([
       { at: u.createdAt, icon: "status", acc: true, title: `Founding enrollment: ${u.status === "approved" ? "approved" : "in review"}`, meta: isUnl ? unlistedPlace(f) : marketDisplayName(f.market) },
-      { icon: "pin", title: isUnl ? `${esc(f.city)} opens when sign-ups pile up` : `${esc(marketTalkNameClient(f.market))} is a founding market`, meta: `We email you at ${esc(u.email)} the moment it opens.` },
+      { icon: "pin", title: isUnl ? `${f.city} opens when sign-ups pile up` : `${marketTalkNameClient(f.market)} is a founding market`, meta: `We email you at ${u.email} the moment it opens.` },
     ])}
-    ${homePaidLaneHtml(u.creator)}
+    ${homePaidLaneSummaryHtml(u.creator)}
     <div class="wcard"><h3>Your funnel</h3><p class="wc-sub" style="margin:4px 0 0">Invites appear here once ${isUnl ? esc(f.city) : esc(marketTalkNameClient(f.market))} opens: invites received, visits booked, visits done, posts live. Nothing to count yet, and we do not chart zeroes.</p></div>
     ${momentumHtml(u)}
     ${growRosterHtml(u)}
@@ -8109,7 +8179,9 @@ function receiptHtml(r) {
     <div style="margin-top:14px"><h4 style="margin:0 0 4px">What it cost</h4>
     <p style="margin:0">Every cost inside your score is itemized in the score block above: your plan at what you actually paid, comps at your cost, paid creators at their rate plus your fee share, and code discounts as they were redeemed. Nothing else is in the number, and no cost is ever estimated for you.</p></div>
     <p style="margin:14px 0 0"><button class="btn" type="button" onclick="return receiptBookTop()">Book next month's creators</button></p>`
-    : `<p class="wc-sub" style="margin:6px 0 0">This is the screen your first visits pay into. Every number will be a counted floor with its method beside it: register events as they happen, come-backs inside 30 days, your usual night as the comparison line. Nothing here is ever projected or padded.${r.cost && r.cost.planPrice ? ` Your founding plan is $${fmtMoney(r.cost.planPrice)} a month, held at the founding rate while it stays active.` : ""}${base ? ` Your usual ${esc(base.dayLabel)} (about ${base.usual}) is already recorded, so the comparison line is ready before your first visit.` : " Set your usual night below and the comparison line is ready before your first visit."}</p>`}
+    : ((r.visitsLanded && (r.visitsLanded.redeemed > 0 || r.visitsLanded.delivered > 0))
+      ? `<p class="wc-sub" style="margin:6px 0 0">Your visits have landed. The counted money starts with the first register event: a code redeemed at the till, or your tally on the visit. Until one lands, this receipt shows no money rather than an estimate.</p>`
+      : `<p class="wc-sub" style="margin:6px 0 0">This is the screen your first visits pay into. Every number will be a counted floor with its method beside it: register events as they happen, come-backs inside 30 days, your usual night as the comparison line. Nothing here is ever projected or padded.${r.cost && r.cost.planPrice ? ` Your founding plan is $${fmtMoney(r.cost.planPrice)} a month, held at the founding rate while it stays active.` : ""}${base ? ` Your usual ${esc(base.dayLabel)} (about ${base.usual}) is already recorded, so the comparison line is ready before your first visit.` : " Set your usual night below and the comparison line is ready before your first visit."}</p>`)}
     ${g.current ? `<div style="margin-top:14px"><h4 style="margin:0 0 4px">People looking you up</h4><p class="small muted" style="margin:0 0 6px">Google's numbers, not ours. They corroborate a good month; they never add to tracked spend.</p>${gLine(g.current, g.previous, "searches")}${gLine(g.current, g.previous, "directions")}${gLine(g.current, g.previous, "calls")}${gLine(g.current, g.previous, "reviews")}</div>` : ""}
     ${receiptSettingsHtml(r)}
   </section>`;
@@ -8430,8 +8502,16 @@ function benchIntroDismiss() {
   return false;
 }
 function benchIntroBring() {
-  go("dashboard", "Offers");
-  showToast("Pick an offer, then tap Bring a +1: Sig has your introduction ready.");
+  // Founding state has no offers board to land on (Build -47,
+  // audit C7): routing there dead-ended the tap. Pre-launch the
+  // tap explains where the control will live; post-launch it
+  // routes to the board, whose offer cards carry the button.
+  if (state.bench && state.bench.state === "bench") {
+    go("dashboard", "Offers");
+    showToast("Pick an offer, then tap Bring a +1 on its card.");
+    return false;
+  }
+  showToast("Visits open when your market launches. Every offer card gets a Bring a +1 button, and this introduction stays saved here.");
   return false;
 }
 function benchIntroCardHtml(intro) {
@@ -8522,7 +8602,10 @@ function benchRender() {
   ${benchVisibilityHtml(data)}
   ${data.introduction ? benchIntroCardHtml(data.introduction) : ""}
   ${cats.length ? `<div class="chiprow" style="margin-bottom:12px"><button type="button" class="rchip${!filter ? " on" : ""}" onclick="return benchFilter('')">All</button>${cats.map((cat) => `<button type="button" class="rchip${filter === cat.name ? " on" : ""}" onclick="return benchFilter('${esc(cat.name)}')">${esc(cat.name)}</button>`).join("")}</div>` : ""}
-  <div class="vx-stagger">${list.map(benchCardHtml).join("")}</div>`;
+  <div class="vx-stagger">${list.map(benchCardHtml).join("")}</div>
+  ${!list.length && !data.introduction ? `<div class="wcard"><p class="small" style="margin:0">The Bench fills in as more creators finish their profiles in ${esc(marketName)}.</p></div>` : ""}
+  ${goldenTicketsSectionHtml()}`;
+  setTimeout(loadGoldenTickets, 10);
 }
 function benchFilter(cat) { state.benchFilter = cat || ""; benchRender(); return false; }
 
@@ -8640,9 +8723,18 @@ async function loadGoldenTickets() {
   const u = state.user;
   const place = marketTalkNameClient(u.market);
   const statusLine = (t) => t.status === "claimed" ? `<span class="badge ok">Claimed</span>` : t.status === "expired" ? `<span class="badge">Closed at launch</span>` : `<span class="badge info">Seat held for them</span>`;
-  const rows = (data.tickets || []).map((t) => `<div class="lrow" style="margin-top:10px"><div style="flex:1"><span class="lname">${esc(t.name)}</span> ${statusLine(t)}<div class="small muted">A founding seat in ${esc(place)} is held in their name until the market launches.</div></div>${t.status === "issued" ? `<button type="button" class="btn small-btn ghost" onclick="return gtCopyLink('${t.id}', this)">Copy their link</button>` : ""}</div>`).join("");
+  // Post-launch, the section is the issuer's record (Build -47,
+  // audit C12): who claimed, and whose seat closed at launch,
+  // stays visible on the Bench instead of vanishing with the
+  // founding frame.
+  const rowSub = (t) => t.status === "claimed"
+    ? `They claimed their founding seat in ${esc(place)}${t.claimedAt ? ` on ${esc(fmtDay(t.claimedAt))}` : ""}. Your points landed when they finished signing up.`
+    : t.status === "expired"
+      ? `This seat closed when ${esc(place)} launched, unclaimed. It stays on your record.`
+      : `A founding seat in ${esc(place)} is held in their name until the market launches.`;
+  const rows = (data.tickets || []).map((t) => `<div class="lrow" style="margin-top:10px"><div style="flex:1"><span class="lname">${esc(t.name)}</span> ${statusLine(t)}<div class="small muted">${rowSub(t)}</div></div>${t.status === "issued" ? `<button type="button" class="btn small-btn ghost" onclick="return gtCopyLink('${t.id}', this)">Copy their link</button>` : ""}</div>`).join("");
   host.innerHTML = `<h3>Your Golden Tickets</h3>
-    <p class="wc-sub" style="margin:4px 0 0">Two seats, and only you can give them. You hold exactly two tickets. Nobody else can hand out your seats, and nobody can take them. Name a creator who should be founding with you and their seat in ${esc(place)} is held in their name until the market launches.</p>
+    <p class="wc-sub" style="margin:4px 0 0">${data.marketLive ? `Your two founding seats, on the record: who claimed theirs, and whose closed when ${esc(place)} launched.` : `Two seats, and only you can give them. You hold exactly two tickets. Nobody else can hand out your seats, and nobody can take them. Name a creator who should be founding with you and their seat in ${esc(place)} is held in their name until the market launches.`}</p>
     <div style="margin-top:10px">
       <div class="kv"><span>A creator you invite finishes signing up</span><b>+100 points</b></div>
       <div class="kv"><span>Their invites finish signing up</span><b>+25 points</b></div>
@@ -8755,7 +8847,7 @@ function creatorStatCardHtml(u, card, f, buzz, placeRaw) {
   const complete = !!(u.profileCompletion && u.profileCompletion.complete);
   const rankLine = rank
     ? `#${rank.rank} in ${placeRaw} by local reach`
-    : (pct === null ? "Set your local % to get your rank" : (!complete ? "Finish your profile to take your rank" : "Your rank lands as finished profiles report their local %"));
+    : (pct === null ? "Set your local % to get your rank" : (!complete ? "Finish your profile to take your rank" : "Your rank shows once the founding class here fills in"));
   const bits = [`I am a founding creator on SIGNL in ${placeRaw}.`];
   if (pct !== null) bits.push(`${pct}% of my audience is local${rank ? `, and I rank #${rank.rank} here by local reach` : ""}.`);
   bits.push("SIGNL ranks creators by local reach, not follower count. Local businesses book us for comped visits or paid bookings at our own rates.");
@@ -8850,11 +8942,11 @@ async function loadFoundingStatus() {
       <div class="flex-between">
         <div>
           <h3 style="margin:0">${esc(state.user.name)} <span class="muted">@${esc(p.handle || "")}</span></h3>
-          <p class="muted small">${isUnl ? place : `${esc(marketDisplayName(f.market))} &middot; ${esc(f.city)}`}</p>
+          <p class="muted small">${isUnl ? place : esc(marketPlaceLine(f.market, f.city))}</p>
         </div>
         <span class="badge ok" style="font-size:0.95rem;padding:6px 14px">${p.charter ? "Charter Creator" : "Founding Creator"}</span>
       </div>
-      ${p.charter ? `<p class="small" style="margin-top:10px"><strong>Your Charter perk:</strong> You see new paid offers 24 hours before everyone else.</p>` : ""}
+      ${p.charter ? `<p class="small" style="margin-top:10px"><strong>Your Charter perk:</strong> You see new paid offers 24 hours before everyone else.</p><p class="small" style="margin-top:6px">You earned Charter by finishing your profile and being approved before ${isUnl ? esc(f.city || "your market") : esc(marketTalkNameClient(f.market))} launched. Charter is the founding class, and it never expires.</p>` : ""}
       <p class="small">You are in. Know a creator who should be on the founding roster with you? ${shareBlockHtml(p.handle, isUnl ? (f.city || "") : (f.market || ""), "Share your invite")}</p>
       <div class="grid cols-2 mt">
         <div>
@@ -9212,7 +9304,7 @@ function homeLocalSignalHtml(card, bookings) {
       <div style="font-weight:700;color:#fff;margin-top:5px">Local reach</div>
       <div class="muted small">Impact Score ${card && card.localImpactScore !== null && card.localImpactScore !== undefined ? card.localImpactScore + " / 100" : "pending"}</div>
     </div>
-    ${comp ? `<div class="ui-row"><span class="k">Reliability</span><span class="v">${esc(String(comp.reliability))}</span></div>` : ""}
+    ${comp ? `<div class="ui-row"><span class="k">Reliability</span><span class="v">${comp.reliabilityBasis === "No redeemed visits yet" ? "Starts with your first visit" : esc(String(comp.reliability))}</span></div>` : ""}
     <div class="ui-row"><span class="k">On-time delivery</span><span class="v">${tr.onTimePct === null || tr.onTimePct === undefined ? "No posts yet" : tr.onTimePct + "%"}</span></div>
     <div class="ui-row"><span class="k">Track record</span><span class="v">${tr.visitsCompleted || 0} visits &middot; ${tr.postsDelivered || 0} posts</span></div>
     <div class="ui-row"><span class="k">Register actions</span><span class="v">${tallyCount ? `${tallyCount} customers &middot; $${fmtMoney(tallyTotal)} rung up` : "None reported yet"}</span></div>
@@ -9726,6 +9818,24 @@ function laneBothOn() {
 // The paid lane panel, shown the same way in the founding home and
 // the live Dashboard tab: the live lane control (the exact switches
 // from the profile's lane section) plus the honest hold line.
+// Build -47 (audit C13): Home carried the full Paid Lane
+// settings panel (five control groups) AND Profile carried the
+// same five — Home ran ~14 screens and doubled as a settings
+// page. The controls live on Profile only now; Home shows the
+// one-line state and the door to them.
+function homePaidLaneSummaryHtml(creator) {
+  const c = creator || {};
+  const rate = laneRateOf(c);
+  const compOn = c.compOpen !== false;
+  return `
+  <section class="panel">
+    <p class="ui-kicker">Paid lane</p>
+    <h3 class="home-h">Comp and paid, your choice</h3>
+    <p class="small" style="margin:0">Comp visits ${compOn ? "on" : "off"} &middot; Paid rate ${rate ? "$" + fmtMoney(rate) : "not set"} &middot; Book-me page ${c.publicPage ? "on" : "off"}</p>
+    <div class="home-actions"><button class="btn small-btn ghost" onclick="return go('dashboard','Profile')">Edit on Profile</button></div>
+  </section>`;
+}
+
 function homePaidLaneHtml(creator, footerHtml) {
   return `
   <section class="panel">
@@ -9796,7 +9906,7 @@ function homeFoundingBlocksHtml(card, u) {
     <div class="stat-cell"><div class="stat-num">${card && card.localImpactScore !== null && card.localImpactScore !== undefined ? card.localImpactScore : "New"}</div><div class="stat-lbl">Impact Score / 100</div></div>
     <div class="stat-cell"><div class="stat-num">${fmtNum(totalAudienceOf(card))}</div><div class="stat-lbl">Total audience</div></div>
   </div>
-  ${homePaidLaneHtml(u.creator)}`;
+  ${homePaidLaneSummaryHtml(u.creator)}`;
 }
 
 // Creator home feed (Grin Feed pattern): date-grouped, chip
@@ -9823,8 +9933,8 @@ function crFeedHtml() {
   if (!shown.length) return `${chips}<div class="feed-list"><div class="feed-empty"><div class="ec-t">Nothing here yet</div><div class="ec-s">Invites, visits, posts and licenses land here as they happen.</div></div></div>`;
   return chips + feedListHtml(shown.map(({ f, i }) => ({
     at: f.at,
-    title: esc(f.title),
-    meta: esc(f.meta || ""),
+    title: f.title,
+    meta: f.meta || "",
     icon: f.icon,
     acc: f.kind === "momentum",
     act: f.btn ? { label: f.btn, onclick: `return crFeedAct(${i})` } : null,
@@ -9937,7 +10047,12 @@ async function loadCreatorHome() {
     const freshOffers = openOffers.filter((o) => (Date.parse(o.createdAt) || 0) > seenMark);
     if (openOffers.length && (freshOffers.length || !seenMark)) {
       const n = freshOffers.length || openOffers.length;
-      add(3, now, seenMark ? `${n} new offer${n === 1 ? "" : "s"} near you.` : `${openOffers.length} offer${openOffers.length === 1 ? "" : "s"} open near you in ${u.city || marketTalkNameClient(u.market)}.`, "See offers", () => { state.crOffersSeg = "foryou"; go("dashboard", "Offers"); }, `${n} new offer${n === 1 ? "" : "s"} near you`);
+      // Build -47 (audit C17): a count of one reads as a thin
+      // market; the named format stays true at any depth. The
+      // newest offer's business carries the line instead.
+      const newest = (freshOffers[0] || openOffers[0]) || {};
+      const namedLine = `An offer is open near you: ${newest.businessName || "a local business"} is booking${newest.title ? ` (${newest.title})` : ""}.`;
+      add(3, now, n === 1 ? namedLine : (seenMark ? `${n} new offers near you.` : `${openOffers.length} offers open near you in ${u.city || marketTalkNameClient(u.market)}.`), "See offers", () => { state.crOffersSeg = "foryou"; go("dashboard", "Offers"); }, n === 1 ? "New offer near you" : `${n} new offer${n === 1 ? "" : "s"} near you`);
     }
     // Build -42: Sig's introduction rides the queue at class 3.
     // One named creator, correct at any roster size; dismissal
@@ -10126,7 +10241,7 @@ function creatorProfileHtml(u) {
     <div class="flex-between">
       <div>
         <h3 style="margin:0">${esc(u.name)} <span class="muted">@${esc(c.handle || "")}</span></h3>
-        <p class="muted small">${esc(marketDisplayName(u.market))} &middot; ${esc(u.city || "")}${c.neighborhood ? ` &middot; ${esc(c.neighborhood)}` : ""}</p>
+        <p class="muted small">${esc(marketPlaceLine(u.market, u.city || ""))}${c.neighborhood ? ` &middot; ${esc(c.neighborhood)}` : ""}</p>
       </div>
       <div id="my-score"><span class="badge info">Loading score...</span></div>
     </div>
@@ -10597,14 +10712,21 @@ async function loadOpenBoard() {
   try {
     const data = await api("GET", "/open-offers");
     if (!document.getElementById("open-board")) return;
+    // Early access (Build -47, audit C3): when a fresh offer is
+    // inside its first-24-hours Charter window, the board says so
+    // instead of reading as an empty market. Charter is explained
+    // in place: the founding class sees new offers first.
+    const ea = data.earlyAccess && data.earlyAccess.opensAt ? data.earlyAccess : null;
+    const eaLine = ea ? `<p class="small" style="margin-top:10px">A new offer just posted in ${esc(marketTalkNameClient(state.user.market))}. Charter creators, the founding class, see new offers first; this one opens to you ${esc(fmtDay(ea.opensAt))} at ${esc(fmtTime(ea.opensAt))}.</p>` : "";
     if (!data.offers.length) {
-      el.innerHTML = `<div class="empty-state"><span class="es-badge"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z"/></svg></span><h3>Open offers in ${esc(marketTalkNameClient(state.user.market))}</h3><p>No new offers near you right now. New offers from businesses in ${esc(state.user.city || marketTalkNameClient(state.user.market))} show up here first.</p></div>`;
+      el.innerHTML = `<div class="empty-state"><span class="es-badge"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z"/></svg></span><h3>Open offers in ${esc(marketTalkNameClient(state.user.market))}</h3>${ea ? eaLine : `<p>No new offers in ${esc(marketTalkNameClient(state.user.market))} right now. Offers here come from businesses across the whole market, and new ones show up here first.</p>`}</div>`;
       return;
     }
     state.openOffers = data.offers;
     await ensureDeckState();
     el.innerHTML = `<h3>Open offers in ${esc(state.user.market)}</h3>
     <p class="small muted">One tap applies — your profile card is the application.</p>
+    ${eaLine}
     <div id="offers-toggle">${offersModeToggleHtml()}</div>
     <div id="open-list"></div>`;
     renderOpenBoard();
@@ -10802,12 +10924,17 @@ function syncDeckChrome(key) {
   if (!DECKS[key]) return;
   const s = stackState[key];
   const q = deckQueue(key, s ? s.src : deckSrcOf(key));
-  document.querySelectorAll(`[data-deckcounts="${key}"]`).forEach((el) => { el.textContent = `${q.unseen.length} new · ${q.parked.length} in Later`; });
-  document.querySelectorAll(`[data-laterchip="${key}"]`).forEach((el) => { el.textContent = `Later (${q.parked.length})`; });
+  // Small sets show no counts at all (Build -47, audit B3): on a
+  // thin roster, "2 new · 0 in Later" and "1 of 2" print the
+  // market's size on the page. Below double digits the chrome is
+  // just "Later"; the counts return when the set can carry them.
+  const deckTotal = q.unseen.length + q.parked.length;
+  document.querySelectorAll(`[data-deckcounts="${key}"]`).forEach((el) => { el.textContent = deckTotal >= 10 ? `${q.unseen.length} new · ${q.parked.length} in Later` : ""; });
+  document.querySelectorAll(`[data-laterchip="${key}"]`).forEach((el) => { el.textContent = deckTotal >= 10 ? `Later (${q.parked.length})` : "Later"; });
   document.querySelectorAll(`[data-deckteach="${key}"]`).forEach((el) => { el.style.display = pileOf(key).usedLater ? "none" : ""; });
 }
 function deckChromeHtml(key) {
-  return `<span class="deck-counts" data-deckcounts="${key}"></span><button type="button" class="later-chip" data-laterchip="${key}" onclick="openLaterPile('${key}')">Later (0)</button>`;
+  return `<span class="deck-counts" data-deckcounts="${key}"></span><button type="button" class="later-chip" data-laterchip="${key}" onclick="openLaterPile('${key}')">Later</button>`;
 }
 function deckTeachHtml(key) {
   return `<p class="small muted deck-teach" data-deckteach="${key}">Swipe left to park in Later. Nothing is a no until you say so.</p>`;
@@ -10842,7 +10969,7 @@ function openLaterPile(key) {
   const q = deckQueue(key, all);
   const hiddenItems = pile.hidden.map((id) => (all || []).find((it) => meta.idOf(it) === id)).filter(Boolean);
   const gridCls = key === "offers" || key === "pvoffers" ? "vx-stagger" : "creator-grid";
-  el.innerHTML = `<div class="later-head"><button type="button" class="btn small-btn ghost" onclick="laterBackToDeck('${key}')">&larr; Back to deck</button><h3 style="margin:0">Later (${q.parked.length})</h3></div>
+  el.innerHTML = `<div class="later-head"><button type="button" class="btn small-btn ghost" onclick="laterBackToDeck('${key}')">&larr; Back to deck</button><h3 style="margin:0">Later${(all || []).length >= 10 ? ` (${q.parked.length})` : ""}</h3></div>
     <p class="small muted">Parked cards, in the order you parked them. Open one to act on it, send it back to the deck, or mark it ${meta.notFit === "Not for me" ? "not for you" : "not a fit"}.</p>
     ${q.parked.length ? `<div class="${gridCls}">${q.parked.map((it) => laterItemHtml(key, it)).join("")}</div>` : `<div class="panel center"><p class="muted">Nothing parked yet. Swipe left on a card and it waits here.</p></div>`}
     ${hiddenItems.length ? `<div class="hidden-block"><h4>Hidden (${hiddenItems.length})</h4>${hiddenItems.map((it) => `<div class="hidden-row"><span>${esc(laterLabelOf(key, it))}</span><button type="button" class="btn small-btn ghost" onclick="laterRestoreItem('${key}','${meta.idOf(it)}')">Restore</button></div>`).join("")}</div>` : ""}`;
@@ -11201,7 +11328,13 @@ async function loadMyVisits(role) {
     const counts = {};
     for (const b of bookings) { const s = visitSegOf(b, role); counts[s] = (counts[s] || 0) + 1; }
     let seg = state.visitsSeg;
-    if (!seg || !segs.some(([id]) => id === seg)) seg = segs[0][0];
+    if (!seg || !segs.some(([id]) => id === seg)) {
+      // Default to the first segment that actually holds visits
+      // (Build -47, audit B4): landing on an empty "Needs a time"
+      // while Upcoming and Waiting hold the visits reads as
+      // "nothing is happening" when plenty is.
+      seg = (segs.find(([id]) => (counts[id] || 0) > 0) || segs[0])[0];
+    }
     state.visitsSeg = seg;
     const rows = bookings.filter((b) => visitSegOf(b, role) === seg);
     const head = wsHead("Visits", { sub: role === "creator" ? "Your visits, and what each one needs from you." : "Who is coming in, and what each visit still needs.", subKey: role === "creator" ? "cr-visits" : "biz-visits" });
@@ -11893,7 +12026,7 @@ function partnerSigLine(d) {
   const cs = d.creators.stages;
   const bs = d.businesses.stages;
   if (t.creatorsAttributed === 0 && t.businessesAttributed === 0) return "Your funnel fills in here. Share your creator link and I will keep count from the first claim.";
-  return `${cs.claimed} creators claimed, ${cs.complete} complete, ${bs.applied} businesses in through your links. Ask me what to do next.`;
+  return `${cs.claimed} creator${cs.claimed === 1 ? "" : "s"} claimed, ${cs.complete} complete, ${bs.applied} business${bs.applied === 1 ? "" : "es"} in through your links. Ask me what to do next.`;
 }
 
 // Sig's presence on the partner Overview (Jeff, 2026-10-28): the
@@ -11931,7 +12064,7 @@ function partnerHomeHtml(d) {
   ${empty ? partnerFillsIn("Share your creator link and your bench starts here.") : `
   <div class="card mb">
     <div class="flex-between"><strong>The funnel so far</strong><span class="badge info">${esc(p.markets.join(" · "))}</span></div>
-    <p class="small" style="margin:8px 0 0">Creators: ${cs.claimed} claimed, ${cs.approved} approved, ${cs.complete} complete. Businesses: ${bs.applied} joined, ${bs.active} active. ${t.offersLive} offers live, ${t.visitsCompleted} visits completed, ${t.postsLive} posts live.</p>
+    <p class="small" style="margin:8px 0 0">Creators: ${cs.claimed} claimed, ${cs.approved} approved, ${cs.complete} complete. Businesses: ${bs.applied} joined, ${bs.active} active. ${t.offersLive} offer${t.offersLive === 1 ? "" : "s"} live, ${t.visitsCompleted} visit${t.visitsCompleted === 1 ? "" : "s"} completed, ${t.postsLive} post${t.postsLive === 1 ? "" : "s"} live.</p>
   </div>`}
   <div class="card mb">
     <div class="flex-between"><strong>Share your link</strong><span class="badge ok">Next step</span></div>
@@ -11947,9 +12080,19 @@ function partnerHomeHtml(d) {
 }
 
 function partnerMarketsHtml(d) {
+  // Each tile carries its own next step (Build -47, audit P3),
+  // computed from that market's funnel the same way Home's
+  // next-step cards are: the emptiest stage is the step.
+  const nextFor = (m) => {
+    if ((m.creators.claimed || 0) === 0) return { text: `No creators have claimed in ${m.market} yet. Your claim link is the front door.`, btn: "Get links", tab: "Links" };
+    if ((m.creators.complete || 0) < (m.creators.claimed || 0)) return { text: `${m.creators.claimed} claimed in ${m.market}, ${m.creators.complete} complete. Complete creators are the bench businesses book, so the link is worth another share here.`, btn: "Get links", tab: "Links" };
+    if ((m.businesses.applied || 0) === 0) return { text: `The bench is forming in ${m.market} and no business has joined through you there yet. One business on a paid plan starts your share accruing.`, btn: "Get links", tab: "Links" };
+    if ((m.offersLive || 0) === 0) return { text: `Creators and businesses are in for ${m.market}. The first live offer shows up under Performance.`, btn: "See performance", tab: "Performance" };
+    return { text: `${m.market} is moving. Performance has the latest numbers.`, btn: "See performance", tab: "Performance" };
+  };
   return `
-  ${wsHead("Your markets", { sub: "Each market's funnel, end to end.", subKey: "pt-markets" })}
-  ${d.markets.map((m) => `
+  ${wsHead("Your markets", { sub: "Each market's funnel, end to end, and the next step in each.", subKey: "pt-markets" })}
+  ${d.markets.map((m) => { const n = nextFor(m); return `
   <div class="card mb">
     <div class="flex-between"><strong>${esc(m.market)}</strong>${d.partner.demo ? `<span class="badge warn">Sample</span>` : ""}</div>
     <div class="stat-row" style="margin-top:10px">
@@ -11959,7 +12102,9 @@ function partnerMarketsHtml(d) {
       <div class="stat"><div class="num">${m.offersLive}</div><div class="lbl">Offers live</div></div>
       <div class="stat"><div class="num">${m.postsLive}</div><div class="lbl">Posts live</div></div>
     </div>
-  </div>`).join("")}`;
+    <p class="small muted" style="margin:12px 0 8px"><strong>Next step:</strong> ${esc(n.text)}</p>
+    <button class="btn small-btn" onclick="return go('dashboard','${n.tab}')">${n.btn}</button>
+  </div>`; }).join("")}`;
 }
 
 function partnerCreatorsHtml(d) {
@@ -12003,7 +12148,7 @@ function partnerPerformanceHtml(d) {
       ${mile("Views, day 14", f.milestones.d14)}
       ${mile("Views, day 30", f.milestones.d30)}
     </div>
-    <p class="small" style="margin:12px 0 0">Register value tracked: <strong>$${fmtPrice(f.registerValue)}</strong>${f.estimatedRegisterValue ? ` · Estimated from code uses: <strong>$${fmtPrice(f.estimatedRegisterValue)}</strong>` : ""} · Redemptions: ${f.redemptions.count}. Media value is modeled at SIGNL's published rates on creator-reported numbers.</p>
+    <p class="small" style="margin:12px 0 0">Register value tracked: <strong>$${fmtPrice(f.registerValue)}</strong>${f.estimatedRegisterValue ? ` · Estimated from code uses: <strong>$${fmtPrice(f.estimatedRegisterValue)}</strong>` : ""} · Visits redeemed: ${f.visitsRedeemed}${f.redemptions && f.redemptions.count ? ` · Audience code uses: ${f.redemptions.count}` : ""}. Media value is modeled at SIGNL's published rates on creator-reported numbers.</p>
   </div>` : partnerFillsIn("When visits and posts land in your markets, their results collect here.")}`;
 }
 
@@ -12032,17 +12177,19 @@ function partnerLinksHtml(d) {
   <div class="card mb">
     <div class="flex-between"><strong>${esc(l.market)}</strong>${d.partner.demo ? `<span class="badge warn">Sample</span>` : ""}</div>
     <p class="small" style="margin:10px 0 4px"><strong>Creator claim link</strong></p>
+    <p class="small muted" style="margin:0 0 4px">For creators: lands on the founding creator claim for ${esc(l.market)}, credited to you.</p>
     <p class="small muted" style="word-break:break-all;margin:0 0 8px">${esc(l.creator)}</p>
     <button class="btn small-btn" onclick="copyPartnerLink('${esc(l.creator)}', this)">Copy link</button>
     <span class="qr-box" style="display:inline-block;vertical-align:top;margin-left:12px"><img src="/api/partner/qr?kind=creator&market=${encodeURIComponent(l.market)}" alt="QR code for your creator claim link" style="width:110px;height:110px" onerror="this.parentElement.style.display='none'"></span>
     <p class="small" style="margin:14px 0 4px"><strong>Business signup link</strong></p>
+    <p class="small muted" style="margin:0 0 4px">For businesses: lands on the founding business signup for ${esc(l.market)}, credited to you. Different link, different landing.</p>
     <p class="small muted" style="word-break:break-all;margin:0 0 8px">${esc(l.business)}</p>
     <button class="btn small-btn ghost" onclick="copyPartnerLink('${esc(l.business)}', this)">Copy link</button>
   </div>`).join("")}
   <div class="panel">
     <h3 style="margin-top:0">How your share works</h3>
     <p class="small">You keep <strong>${d.partner.sharePct}%</strong> of the subscription revenue from businesses in your assigned markets that joined through your links or are credited to you. Creators cost you nothing and earn you nothing directly; they are the bench that makes businesses stay. Paid bookings and post licenses are the creator's and the business's money, not subscription revenue, so they are not shared. Accrued amounts appear under Earnings the month a subscription is on file.</p>
-    <p class="small muted">The partner one-pager lives here as soon as it is published. Ask Jeff for the current copy any time: jeff@joinsignl.com.</p>
+    <p class="small muted">The partner one-pager lives here as soon as it is published. Ask the SIGNL team for the current copy any time: hello@joinsignl.com.</p>
   </div>`;
 }
 
@@ -12062,7 +12209,7 @@ function partnerAccountHtml(d) {
     <h3 style="margin-top:0">${esc(p.name)}${partnerSampleChip(d)}</h3>
     <p class="small" style="margin:0">Type: ${p.type === "profile" ? "Local profile" : "Media group"} · Contact: ${esc(p.contactName || u.name || "")} · Status: ${p.status === "active" ? "Active" : "Paused"}</p>
     <p class="small muted">Markets: ${esc(p.markets.join(", "))} · Your share: ${p.sharePct}% · Agreement: ${p.agreementStatus === "signed" ? "Signed" : "Not signed yet"}</p>
-    ${p.agreementStatus !== "signed" ? `<p class="small muted">Your agreement is handled with Jeff directly; this page updates the moment it is signed. Nothing here waits on it except payouts.</p>` : ""}
+    ${p.agreementStatus !== "signed" ? `<p class="small muted">Your agreement is handled with the SIGNL team directly (hello@joinsignl.com); this page updates the moment it is signed. Nothing here waits on it except payouts.</p>` : ""}
   </div>
   ${accountHtml(u)}`;
 }
@@ -12090,7 +12237,7 @@ function partnerSigActions(d) {
   const zb = d.markets.find((m) => (m.businesses.applied || 0) === 0);
   if (zb && t.creatorsAttributed + t.businessesAttributed > 0) acts.push({ h: `Send your business link in ${zb.market}`, p: "No businesses have joined through you there yet. One business on a paid plan starts your share accruing.", btn: "Get links", tab: "Links" });
   if (bs.applied > 0 && bs.active === 0) acts.push({ h: "Founding businesses are waiting", p: `${bs.applied} ${bs.applied === 1 ? "business has" : "businesses have"} joined through you and ${bs.applied === 1 ? "sits" : "sit"} on the founding list. They activate at launch; nothing for you to do but keep the bench growing.`, btn: "See businesses", tab: "Businesses" });
-  if (d.partner.agreementStatus !== "signed") acts.push({ h: "Agreement not signed yet", p: "Your agreement is handled with Jeff directly. Payouts wait on it; recruiting does not.", btn: "See account", tab: "Account" });
+  if (d.partner.agreementStatus !== "signed") acts.push({ h: "Agreement not signed yet", p: "Your agreement is handled with the SIGNL team directly. Payouts wait on it; recruiting does not.", btn: "See account", tab: "Account" });
   if (bs.active > 0 && t.offersLive === 0) acts.push({ h: "No offers live yet", p: "Businesses are active in your markets but no campaigns are live. When the first offer posts, it shows under Performance.", btn: "See performance", tab: "Performance" });
   if (!acts.length) acts.push({ h: "Nothing needs you", p: "Your funnel is moving and your links are working. Performance has the latest numbers.", btn: "See performance", tab: "Performance" });
   return acts.slice(0, 4);
@@ -12123,8 +12270,8 @@ function partnerSigHtml(d) {
   <h3 id="pt-sig-stand" style="margin:0 0 8px">Where things stand</h3>
   ${empty ? partnerFillsIn("Share your creator link and your bench starts here. Sig keeps count from the first claim.") : `
   <div class="card mb">
-    ${d.markets.map((m) => `<p class="small" style="margin:0 0 8px"><strong>${esc(m.market)}:</strong> ${m.creators.claimed} creators claimed, ${m.creators.approved} approved, ${m.creators.complete} complete. ${m.businesses.applied} businesses joined. ${m.offersLive} offers live, ${m.postsLive} posts live.</p>`).join("")}
-    <p class="small" style="margin:0">Across your markets: ${t.visitsCompleted} visits completed and ${t.postsLive} posts live so far.</p>
+    ${d.markets.map((m) => `<p class="small" style="margin:0 0 8px"><strong>${esc(m.market)}:</strong> ${m.creators.claimed} creator${m.creators.claimed === 1 ? "" : "s"} claimed, ${m.creators.approved} approved, ${m.creators.complete} complete. ${m.businesses.applied} business${m.businesses.applied === 1 ? "" : "es"} joined. ${m.offersLive} offer${m.offersLive === 1 ? "" : "s"} live, ${m.postsLive} post${m.postsLive === 1 ? "" : "s"} live.</p>`).join("")}
+    <p class="small" style="margin:0">Across your markets: ${t.visitsCompleted} visit${t.visitsCompleted === 1 ? "" : "s"} completed and ${t.postsLive} post${t.postsLive === 1 ? "" : "s"} live so far.</p>
   </div>`}
   <h3 id="pt-sig-next" style="margin:18px 0 8px">What to do next</h3>
   ${partnerSigActions(d).map((a) => `
@@ -12145,9 +12292,11 @@ function partnerSigHtml(d) {
   <div class="card mb">
     <div class="flex-between"><strong>${esc(l.market)}</strong>${d.partner.demo ? `<span class="badge warn">Sample</span>` : ""}</div>
     <p class="small" style="margin:10px 0 4px"><strong>Creator claim link</strong></p>
+    <p class="small muted" style="margin:0 0 4px">For creators: lands on the founding creator claim, credited to you.</p>
     <p class="small muted" style="word-break:break-all;margin:0 0 8px">${esc(l.creator)}</p>
     <button class="btn small-btn" onclick="copyPartnerLink('${esc(l.creator)}', this)">Copy link</button>
     <p class="small" style="margin:14px 0 4px"><strong>Business signup link</strong></p>
+    <p class="small muted" style="margin:0 0 4px">For businesses: lands on the founding business signup, credited to you.</p>
     <p class="small muted" style="word-break:break-all;margin:0 0 8px">${esc(l.business)}</p>
     <button class="btn small-btn ghost" onclick="copyPartnerLink('${esc(l.business)}', this)">Copy link</button>
   </div>`).join("")}
@@ -12628,14 +12777,18 @@ async function loadBusinessHome() {
       { label: "Finish your business page", sub: "Your name, category, and what creators get.", done: !!(bz.businessName && bz.category && bz.about), btn: "Edit page", act: () => go("dashboard", "Profile") },
       { label: "Post your first offer", sub: "Comped visit, paid booking, or open call.", done: offers.length > 0, btn: "Post offer", act: () => { state.offersSeg = "live"; go("dashboard", "My Offers"); } },
       { label: "Find creators and send first invite", sub: "Flip through creators near you, invite the ones who fit.", done: offers.some((o) => o.lane === "direct") || bookings.length > 0, btn: "Find creators", act: () => go("dashboard", "Discover") },
-      { label: "You are live", sub: "When creators apply, Sig puts them at the top of this screen.", done: offers.some((o) => ["open", "filled", "closed"].includes(o.status)) },
     ];
+    // (Build -47, audit B12: "You are live" was a fourth "step"
+    // that is really a state, and it kept the header at "3 of 4
+    // done" next to work the owner had finished. The list is
+    // three real steps now; when all three are done the card
+    // retires, which IS the live state.)
     const fresh = !steps[0].done || !offers.length;
-    const greetLine = fresh ? "Let's get your first campaign live. Sig walks you through it, four steps." : (queue.length ? queue[0].text : "You're all caught up.");
+    const greetLine = fresh ? "Let's get your first campaign live. Sig walks you through it, three steps." : (queue.length ? queue[0].text : "You're all caught up.");
     const greetDup = !fresh && queue.length > 0;
     const hasNumbers = (h.postsLive || 0) > 0 || (h.localReachDelivered || 0) > 0 || (h.visitsUsed || 0) > 0;
     const snapCells = hasNumbers ? [
-      { num: fmtNum(h.localReachDelivered || 0), label: "Local reach delivered" },
+      { num: fmtNum(h.localReachDelivered || 0), label: "Local audience" },
       { num: fmtNum(h.postsLive || 0), label: "Posts live" },
       { num: `${h.visitsUsed || 0} of ${h.visitsAllowance || 0}`, label: "Visits this month" },
       // Build -43 (FIX A): when Score v2 has a figure, it rides
@@ -12701,7 +12854,10 @@ function performanceCardHtml(ro) {
   if (o.redemptions && o.redemptions.count > 0) cells.push({ num: `${fmtNum(o.redemptions.count)} · $${fmtMoney(o.redemptions.basketTotal || 0)}`, label: "Redemptions rung up" });
   if (o.registerValue) cells.push({ num: `$${fmtMoney(o.registerValue)}`, label: "Register value" });
   else if (o.estimatedRegisterValue) cells.push({ num: `$${fmtMoney(o.estimatedRegisterValue)}`, label: "Estimated register value" });
-  if (o.roasScore !== null && o.roasScore !== undefined) cells.push({ num: `${o.roasScore}`, label: "Modeled estimate" });
+  // Never a bare 0 (Build -47, audit B1): a zero modeled estimate
+  // is not a result; the cell appears once the estimate is real,
+  // matching the Receipt's Forming doctrine.
+  if (o.roasScore !== null && o.roasScore !== undefined && Number(o.roasScore) > 0) cells.push({ num: `${o.roasScore}`, label: "Modeled estimate" });
   const series = perfSeriesText(o.series);
   const rows = (ro.offers || []).filter((r) => (r.visitsBooked || 0) > 0 || (r.postsLive || 0) > 0).slice(0, 5).map((r) => {
     const s = perfSeriesText(r.series);
@@ -13002,7 +13158,7 @@ async function renderAnalyticsTab() {
     if (appsWin > 0) cards.push(kpiCard("Applications received", fmtNum(appsWin), { sub: `Last ${anaDays} days`, delta: deltaPill(appsWin, anaDays === 7 ? (h.applicationsPrev7 || 0) : (h.applicationsPrev30 || 0), "vs the prior period") }));
     if ((f.visited || 0) > 0) cards.push(kpiCard("Visits completed", fmtNum(f.visited), { sub: `Last ${anaDays} days`, delta: deltaPill(f.visited, fp.visited, "vs the prior period") }));
     if ((f.posted || 0) > 0) cards.push(kpiCard("Posts published", fmtNum(f.posted), { sub: `Last ${anaDays} days`, delta: deltaPill(f.posted, fp.posted, "vs the prior period") }));
-    if ((h.localReachDelivered || 0) > 0) cards.push(kpiCard("Local reach delivered", fmtNum(h.localReachDelivered || 0), { sub: "All time, across delivered posts" }));
+    if ((h.localReachDelivered || 0) > 0) cards.push(kpiCard("Local audience", fmtNum(h.localReachDelivered || 0), { sub: "The local audience of the creators who posted" }));
     if ((r.registerValue || 0) > 0) cards.push(kpiCard("Est. register value", `$${fmtMoney(r.registerValue)}`, { sub: "Tracked at the register from code tallies" }));
     else if ((r.estimatedRegisterValue || 0) > 0) cards.push(kpiCard("Est. register value", `≈ $${fmtMoney(r.estimatedRegisterValue)}`, { sub: "Estimated from code uses at your average ticket" }));
     const stages = [
@@ -13028,7 +13184,7 @@ async function renderAnalyticsTab() {
       ${((f.invited || 0) + (f.claimed || 0) + (f.visited || 0) + (f.posted || 0)) > 0 ? `${funnel2Html(stages)}
       <p class="ana-note">Stages count real SIGNL events only. There is no email-open stage: SIGNL does not track opens, so the funnel starts at the invite itself.</p>` : `<p class="wc-sub" style="margin:6px 0 2px">Your funnel fills in once your campaigns are live: invited, accepted, visited, posted.</p>`}
     </div>
-    <div class="wcard"><h3>Creators by local reach delivered</h3>
+    <div class="wcard"><h3>Creators by local audience</h3>
       ${lb.length ? lb.map((row, i) => `<div class="lb-row"><span class="lb-rank">${i + 1}</span><div class="lb-main"><div class="lb-name">${esc(row.creatorName)} <span class="muted" style="font-weight:600">@${esc(row.creatorHandle)}</span></div><div class="lb-meta">${row.posts} post${row.posts === 1 ? "" : "s"}${row.onTimePct !== null && row.onTimePct !== undefined ? ` · ${row.onTimePct}% on time` : ""}</div></div><span class="lb-num">${fmtNum(row.localReach)}<span class="u">local reach</span></span></div>`).join("") : `<p class="wc-sub" style="margin:6px 0 2px">Once posts land, your creators rank here by the local reach they delivered.</p>`}
     </div>
     ${h.costPerVisit && h.pipeline && (h.pipeline.clockRunning || 0) > 0 ? `<div class="wcard"><h3>Cost per visit</h3>
@@ -13065,7 +13221,7 @@ async function renderBizProfileTab() {
       <div class="prof-name">${esc(b.businessName || "")}${live ? `<span class="verified-dot">${bnIcon("check")}</span>` : ""}</div>
       <div class="prof-meta">${esc(b.category || "Business")}${b.neighborhood ? ` · ${esc(b.neighborhood)}` : ""} · ${esc(marketDisplayName(u.market))}<br>${b.about ? esc(b.about) : "No about yet. A written-up experience fills offers faster."}</div>
       <div class="prof-stats">
-        <span class="ps"><b>${fmtNum(h.localReachDelivered || 0)}</b><span>local reach delivered</span></span>
+        <span class="ps"><b>${fmtNum(h.localReachDelivered || 0)}</b><span>local audience</span></span>
         <span class="ps"><b>${h.postsLive || 0}</b><span>posts live</span></span>
         <span class="ps"><b>${reviews.length}</b><span>creator reviews</span></span>
         <span class="ps"><b>${esc(b.planName || "")}</b><span>plan</span></span>
@@ -13362,7 +13518,7 @@ function renderDiscoverResults() {
   if (!q.visible.length) {
     const pos = document.querySelector('[data-stackpos="discover"]');
     if (pos) pos.textContent = "";
-    el.innerHTML = `<div class="stk-end"><h3>Nothing new in this search</h3><p class="small muted">Everyone here is parked in your Later pile or hidden.</p><div class="stk-end-actions">${q.parked.length ? `<button type="button" class="btn ghost" onclick="openLaterPile('discover')">Review Later (${q.parked.length})</button>` : ""}<button type="button" class="btn" onclick="discoverClearFilters()">Clear filters</button></div></div>`;
+    el.innerHTML = `<div class="stk-end"><h3>Nothing new in this search</h3><p class="small muted">Everyone here is parked in your Later pile or hidden.</p><div class="stk-end-actions">${q.parked.length ? `<button type="button" class="btn ghost" onclick="openLaterPile('discover')">Review Later${q.parked.length >= 10 ? ` (${q.parked.length})` : ""}</button>` : ""}<button type="button" class="btn" onclick="discoverClearFilters()">Clear filters</button></div></div>`;
     syncDeckChrome("discover");
     return;
   }
@@ -14210,7 +14366,7 @@ function offerCardHtml(o) {
       <span class="set-chip">${deliverable}</span>
       ${o.requiresSpanish ? `<span class="set-chip">Spanish content</span>` : ""}
       <span class="set-chip">${o.filledCount || 0}/${o.spots} spots filled</span>
-      ${o.lane === "open" ? `<span class="set-chip more">${o.applicationCount || 0} applications</span>` : ""}
+      ${o.lane === "open" ? `<span class="set-chip more">${o.applicationCount || 0} application${(o.applicationCount || 0) === 1 ? "" : "s"}</span>` : ""}
     </div>
     <div class="ws-offer-terms">
     <p class="small muted">${terms}${o.kind === "paid" ? "" : ` &middot; ${coversLine(o)}`}</p>
@@ -14218,7 +14374,7 @@ function offerCardHtml(o) {
     ${briefBlockHtml(o)}
     ${o.assetPacketAttached ? `<p class="small muted">Your asset packet rides with this offer: the creator sees your links and talking points in their visit view.</p>` : ""}
     ${o.businessReferralProgram ? `<p class="small"><strong>Referral program active:</strong> creators will see your ${o.businessReferralProgram.url ? "referral link" : "referral code"}${o.businessReferralProgram.note ? " and your note" : ""} on this offer.</p>` : ""}
-    ${o.strength ? `<p class="small muted">Offer checklist ${o.strength.score} of ${o.strength.total}: ${firstMissing ? esc(firstMissing.label) : "complete"}</p>` : ""}
+    ${o.strength ? `<p class="small muted">Offer checklist ${o.strength.score} of ${o.strength.total}${firstMissing ? `: still missing: <strong>${esc(firstMissing.action || firstMissing.label)}</strong>` : ": complete"}</p>` : ""}
     </div>
     <div class="ws-offer-foot">
       <div><div class="ws-price">$${fmtPrice(o.kind === "paid" ? o.cashRate : o.dollarCap)}</div><div class="slot-note">${o.kind === "paid" ? "Rate" : "Comp cap"}</div></div>
@@ -14340,6 +14496,7 @@ async function viewApplicants(offerId) {
     <div class="panel">
       <div class="flex-between"><h3 style="margin:0">Applicants: ${esc(o.title)}</h3><button class="btn small-btn ghost" onclick="document.getElementById('applicant-stack').innerHTML=''">Close</button></div>
       <p class="small muted">${o.filledCount || 0} of ${o.spots} spots filled &middot; selection deadline ${fmtDate(o.selectionDeadline)}. Ranked by local fit, Local Impact Score, Momentum, and reliability; founding order breaks ties. Anyone you do not pick is released with a notification when spots fill or the deadline passes.</p>
+      ${o.earlyAccessUntil ? `<p class="small"><strong>In early access until ${esc(fmtDay(o.earlyAccessUntil))} at ${esc(fmtTime(o.earlyAccessUntil))}.</strong> Charter creators, the founding class, see new offers first, so this stack is still small on purpose. It opens to every creator at that time.</p>` : ""}
       ${apps.length ? apps.map((a) => applicantCardHtml(o, a)).join("") : `<p class="muted">No applications yet. Offers with a value in the typical range for their tier and a window of 3+ days fill first.</p>`}
       ${waiting.length ? "" : apps.length ? `<p class="small muted">Nobody is waiting on this offer right now.</p>` : ""}
     </div>`;
@@ -14977,6 +15134,8 @@ function openThreadCtx(otherId, title) {
 function threadContextFor(otherId) {
   const stash = (state.threadContext || {})[otherId];
   if (stash) return stash;
+  const tRow = (state.threads || []).find((x) => x.otherId === otherId);
+  if (tRow && tRow.contextTitle) return `Re: ${tRow.contextTitle}`;
   const mine = Object.values(state.nudgeBookings || {});
   const b = mine.find((x) => (state.user.role === "business" ? x.creatorId : x.businessId) === otherId);
   if (b) return `Re: ${b.title}`;
@@ -15029,7 +15188,7 @@ async function loadThreads() {
       <span class="sp"></span>
       <button type="button" class="btn ws-primary" onclick="${newGo}">${state.user.role === "business" ? "Find creators" : "See offers"}</button>
     </div>
-    <div class="grid cols-2"><div id="thread-list-wrap">${data.threads.length || state.activeThread ? threadItemsHtml() : `<div class="empty-card"><div class="ec-t">No messages yet</div><div class="ec-s">When you invite a creator, apply to an offer, or answer an applicant, your conversation lives here.</div></div>`}</div>
+    <div class="grid cols-2"><div id="thread-list-wrap">${data.threads.length || state.activeThread ? threadItemsHtml() : `<div class="empty-card"><div class="ec-t">No messages yet</div><div class="ec-s">${state.user.role === "business" ? "Conversations attach to a visit or an offer. Invite a creator from Find creators, or answer an applicant, and the conversation lives here." : "Conversations attach to a visit or an offer. Apply to an offer, or accept an invite, and the conversation lives here."}</div></div>`}</div>
     <div id="thread-view">${state.activeThread ? `<p class="muted">Loading conversation...</p>` : `<p class="muted">Pick a conversation.</p>`}</div></div>`;
     if (state.activeThread) loadConversation(state.activeThread);
   } catch (err) {
@@ -15264,17 +15423,24 @@ async function adminMsgSendReply(e) {
 function renderAdmin() {
   const tab = state.tab || "Applications";
   state.tab = tab;
+  // One nav system (Build -47, audit A1/A2): the left rail is
+  // the Admin nav (Jeff's standing call), so the in-page tab
+  // strip that duplicated it is gone, and the Business Preview
+  // card + Sig attention list open only the landing destination
+  // instead of crowding all nine. The full attention list lives
+  // on the Sig destination.
+  const landing = tab === "Applications";
   app.innerHTML = `
     <h2>SIGNL Admin</h2>
+    ${landing ? `
     <div class="panel preview-cta">
       <div><strong>Business Preview</strong><p class="muted small" style="margin:4px 0 0">Walk the app exactly as a business does: the founding plans, roster search with every filter, full creator profiles, the offer composer, and the business dashboard with bookings, codes, tracking and returns. Offers sent in preview are simulations that never reach a creator and are never saved.</p></div>
       <button class="btn" onclick="enterPreview()">Preview as business &rarr;</button>
       <button class="btn ghost" onclick="enterPreviewDashboard()">Business dashboard &rarr;</button>
     </div>
-    ${tab === "Sig" ? "" : `<div id="admin-sig"><div class="panel"><div class="sig-load-row">${sigAvatarHtml("think")}</div><p class="muted small" style="margin:0">Sig is reading the same numbers Admin shows...</p></div></div>`}
-    ${tabsHtml(["Applications", "Markets", "Recruiters", "Partners", "Event Log", "Compliance", "Campaign", "Stats", "Sig"], tab)}
+    <div id="admin-sig"><div class="panel"><div class="sig-load-row">${sigAvatarHtml("think")}</div><p class="muted small" style="margin:0">Sig is reading the same numbers Admin shows...</p></div></div>` : ""}
     <div id="tab-body"><p class="muted">Loading...</p></div>`;
-  if (tab !== "Sig") loadAdminSig();
+  if (landing) loadAdminSig();
   if (tab === "Sig") renderAdminSig();
   if (tab === "Applications") loadApplications();
   if (tab === "Markets") loadMarkets();
@@ -15664,7 +15830,9 @@ function campaignSectionHtml(meta, data) {
     <h3 class="mt">Import recipients</h3>
     <p class="small muted">${importHelp}</p>
     <div class="field"><label>Paste recipients (JSON array)</label><textarea id="campaign-import-text${meta.suffix}" rows="8" placeholder='${importPlaceholder}'></textarea></div>
+    <button class="btn ghost" onclick="previewCampaignImport('${meta.key}')">Preview import</button>
     <button class="btn" onclick="importCampaignRecipients('${meta.key}')">Import recipients</button>
+    <div id="campaign-import-preview${meta.suffix}" class="small" style="margin-top:8px"></div>
     <div id="campaign-import-note${meta.suffix}" class="small saved"></div>
     ${sends ? `<h3 class="mt">Recent sends</h3>${sends}` : `<p class="muted mt">No sends yet.</p>`}
   </div>`;
@@ -15707,6 +15875,44 @@ async function toggleCampaignArm(arm, campaignId) {
       if (note && (!campaignId || meta.campaignId === campaignId)) note.textContent = err.message;
     }
   }
+}
+
+// Import preview (Build -47, audit A5): parse + per-row
+// validation + counts BEFORE anything is written, so a bad
+// paste is caught on screen instead of after the import call.
+// The preview is keyed to the exact pasted text; editing the
+// box after previewing sends Import back through validation.
+const campaignImportPreview = {};
+function previewCampaignImport(sectionKey) {
+  const meta = CAMPAIGN_SECTIONS.find((s) => s.key === sectionKey) || CAMPAIGN_SECTIONS[0];
+  const box = document.getElementById("campaign-import-text" + meta.suffix);
+  const host = document.getElementById("campaign-import-preview" + meta.suffix);
+  if (!box || !host) return false;
+  let recipients;
+  try { recipients = JSON.parse(box.value || ""); } catch (e) {
+    host.innerHTML = `<span class="error-box" style="display:block">That is not valid JSON. Nothing was imported.</span>`;
+    delete campaignImportPreview[meta.key];
+    return false;
+  }
+  if (!Array.isArray(recipients)) {
+    host.innerHTML = `<span class="error-box" style="display:block">Paste a JSON array of recipients (it starts with [ and ends with ]). Nothing was imported.</span>`;
+    delete campaignImportPreview[meta.key];
+    return false;
+  }
+  const required = meta.kind === "business" ? ["email", "businessName", "market"] : ["email", "handle", "market", "opener"];
+  const problems = [];
+  let valid = 0;
+  recipients.forEach((r, i) => {
+    if (!r || typeof r !== "object") { problems.push(`Row ${i + 1}: not an object`); return; }
+    const missing = required.filter((k) => !String(r[k] || "").trim());
+    if (missing.length) { problems.push(`Row ${i + 1}: missing ${missing.join(", ")}`); return; }
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(r.email))) { problems.push(`Row ${i + 1}: email does not look like an email`); return; }
+    valid += 1;
+  });
+  campaignImportPreview[meta.key] = { text: box.value, valid };
+  const sample = recipients.slice(0, 5).map((r) => esc(r && (r.email || "(no email)"))).join(", ");
+  host.innerHTML = `<div class="panel" style="padding:10px 12px"><strong>Preview:</strong> ${recipients.length} row${recipients.length === 1 ? "" : "s"} pasted · ${valid} valid · ${problems.length} with problems.${problems.length ? `<br>${problems.slice(0, 8).map((p) => esc(p)).join("<br>")}${problems.length > 8 ? `<br>…and ${problems.length - 8} more` : ""}` : ""}<br><span class="muted">First rows: ${sample}${recipients.length > 5 ? ", …" : ""}</span><br><span class="muted">Import below sends the valid rows through the same endpoint as always; the server still dedupes and reports its own counts back.</span></div>`;
+  return false;
 }
 
 // Paste-import for a campaign queue: the operator pastes a JSON
@@ -15780,7 +15986,7 @@ async function loadCompliance() {
       </div>`).join("");
     el.innerHTML = `
       <div class="flex-between"><h3 style="margin:0">Post compliance</h3><button class="btn small-btn" onclick="runSweepNow()">Run sweep now</button></div>
-      <p class="small muted" style="margin-top:8px">The sweep runs on a schedule and sends the 48-hour reminder, the day-5 reminder, and the day-6 final warning; it pauses creators at the one-week hard stop and bans at two weeks when a redeemed comp never gets a post. Counts: ${Object.entries(data.counts || {}).map(([k, v]) => `${esc(k)} ${v}`).join(" &middot; ") || "none yet"}</p>
+      <p class="small muted" style="margin-top:8px">The sweep runs on a schedule and sends the 48-hour reminder, the day-5 reminder, and the day-6 final warning; it pauses creators at the one-week hard stop and bans at two weeks when a redeemed comp never gets a post. Counts: ${Object.entries(data.counts || {}).map(([k, v]) => `${esc(statusLabel[k] || k)} ${v}`).join(" &middot; ") || "none yet"}</p>
       <div id="sweep-note" class="small saved"></div>
       ${rows || `<p class="muted">No redeemed visits yet. Compliance rows appear here the moment a comp is redeemed.</p>`}
       ${bizRows ? `<h3 class="mt">Businesses with honor reports</h3><p class="small muted">Creator reports that a business did not honor a comp. Admin only; there is no public surface for this.</p>${bizRows}` : ""}`;
@@ -16112,22 +16318,54 @@ async function setTester(userId, tester, role) {
   } catch (err) { alert(err.message); }
 }
 
+// Event Log search (Build -47, audit A3): the type filter was
+// server-side already; the page gains a text search over the
+// loaded rows (type, actor, market, and the data payload), and
+// the Data cell truncates long payloads instead of running one
+// row to thousands of characters. Full payload stays one tap
+// away on the row's toggle.
+let adminEventsCache = [];
+let adminEventsQ = "";
+function adminEventRowHtml(e, i) {
+  const raw = JSON.stringify(e.data || {});
+  const long = raw.length > 240;
+  return `<tr><td class="small" data-label="When">${fmtDate(e.ts)}</td><td><span class="badge info">${esc(e.type)}</span></td><td class="small">${esc(e.actorRole || "")}</td><td class="small">${esc(e.market || "")}</td><td class="small"><span id="ev-data-${i}">${esc(long ? raw.slice(0, 240) + "…" : raw)}</span>${long ? ` <button type="button" class="linklike" onclick="return adminEventToggleData(${i})">Show all</button>` : ""}</td></tr>`;
+}
+function adminEventToggleData(i) {
+  const e = adminEventsCache[i];
+  const host = document.getElementById("ev-data-" + i);
+  if (e && host) host.textContent = JSON.stringify(e.data || {});
+  return false;
+}
+function adminEventsRenderRows() {
+  const host = document.getElementById("ev-rows");
+  if (!host) return;
+  const q = adminEventsQ.trim().toLowerCase();
+  const shown = adminEventsCache.map((e, i) => ({ e, i })).filter(({ e }) => !q || `${e.type} ${e.actorRole || ""} ${e.market || ""} ${JSON.stringify(e.data || {})}`.toLowerCase().includes(q));
+  host.innerHTML = shown.length ? shown.map(({ e, i }) => adminEventRowHtml(e, i)).join("") : `<tr><td colspan="5" class="small muted">No events match that search in the loaded page.</td></tr>`;
+  const cnt = document.getElementById("ev-count");
+  if (cnt) cnt.textContent = q ? `${shown.length} of ${adminEventsCache.length} loaded events match.` : "";
+}
+function adminEventsSetQ(v) { adminEventsQ = v || ""; adminEventsRenderRows(); return false; }
 async function loadEvents() {
   const el = document.getElementById("tab-body");
   try {
     const type = document.getElementById("ev-type") ? document.getElementById("ev-type").value : "";
     const data = await api("GET", "/admin/events?limit=300" + (type ? "&type=" + encodeURIComponent(type) : ""));
     const types = [...new Set(data.events.map((e) => e.type))].sort();
+    adminEventsCache = data.events || [];
     el.innerHTML = `
       <div class="filters">
         <div><label>Event type</label><select id="ev-type" onchange="loadEvents()"><option value="">All types</option>${types.map((t) => `<option ${t === type ? "selected" : ""}>${esc(t)}</option>`).join("")}</select></div>
+        <div><label>Search</label><input id="ev-q" type="search" placeholder="Type, actor, market, or data" value="${esc(adminEventsQ)}" oninput="adminEventsSetQ(this.value)"></div>
       </div>
       ${data.degraded ? `<div class="error-box">The event log could not be loaded just now. Refresh in a moment; nothing here was changed.</div>` : ""}
-      <p class="muted small">${data.total} events, newest first. Every state change in the product writes one of these. This is the dataset.</p>
+      <p class="muted small">${data.total} events, newest first. Every state change in the product writes one of these. This is the dataset. <span id="ev-count"></span></p>
       <div class="table-wrap panel"><table>
         <tr><th>When</th><th>Type</th><th>Actor</th><th>Market</th><th>Data</th></tr>
-        ${data.events.map((e) => `<tr><td class="small" data-label="When">${fmtDate(e.ts)}</td><td><span class="badge info">${esc(e.type)}</span></td><td class="small">${esc(e.actorRole || "")}</td><td class="small">${esc(e.market || "")}</td><td class="small">${esc(JSON.stringify(e.data || {}))}</td></tr>`).join("")}
+        <tbody id="ev-rows"></tbody>
       </table></div>`;
+    adminEventsRenderRows();
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
@@ -17103,7 +17341,7 @@ function previewDashboardHtml(d) {
   </section>
   <section class="panel">
     <div class="stat-band home-metrics">
-      <div class="stat-cell"><div class="stat-num"><em>${fmtNum(d.home && d.home.localReachDelivered ? d.home.localReachDelivered : 0)}</em></div><div class="stat-lbl">Local reach delivered</div></div>
+      <div class="stat-cell"><div class="stat-num"><em>${fmtNum(d.home && d.home.localReachDelivered ? d.home.localReachDelivered : 0)}</em></div><div class="stat-lbl">Local audience</div></div>
       <div class="stat-cell"><div class="stat-num">${s.visitsUsed}<span class="small muted"> of ${s.visitsAllowance}</span></div><div class="stat-lbl">Visits booked this month &middot; ${s.visitsRemaining} left</div></div>
       <div class="stat-cell"><div class="stat-num">${s.postsDelivered}</div><div class="stat-lbl">Posts live</div></div>
       <div class="stat-cell"><div class="stat-num grad-text">${s.roas && s.roas.score !== null ? s.roas.score.toFixed(2) + "&times;" : "n/a"}</div><div class="stat-lbl">Modeled estimate</div></div>
@@ -17253,7 +17491,7 @@ function previewDashboardHtml(d) {
     // a business fact: the wave link's name or category, or the
     // business-wave source tag itself (perfection pass, 2026-10-26).
     const bizParams = parseBizParams(params);
-    if (!claim.handle && (bizParams.businessName || bizParams.category || (srcParam || "").trim().toLowerCase() === "business-wave")) {
+    if (!claim.handle && (bizParams.businessName || bizParams.category || (srcParam || "").trim().toLowerCase() === "business-wave" || (params.get("join") || "").trim().toLowerCase() === "business")) {
       state.bizPrefill = bizParams;
       if (!state.user) state.view = "join-business";
     }

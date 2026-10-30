@@ -98,6 +98,30 @@ function offerVisibleToCreator(offer, creatorUser, nowMs, marketLive) {
   const earlyMs = Math.min(CHARTER_EARLY_ACCESS_MS, earlyAccessHoursFor(creatorUser) * 3600000);
   return nowMs >= anchor + CHARTER_EARLY_ACCESS_MS - earlyMs;
 }
+// When a windowed offer becomes visible to this creator
+// (Build -47, audit C3): the same math as offerVisibleToCreator,
+// returned as a timestamp so the feed can SAY an offer exists and
+// when it opens to this creator, instead of the 24-hour Charter
+// window being invisible. Null when no window applies.
+function offerVisibleAtMs(offer, creatorUser) {
+  if (!offer || laneOf(offer) !== "open") return null;
+  if (isCharterCreator(creatorUser)) return null;
+  const anchor = Date.parse(offer.publishedAt || offer.createdAt || "");
+  if (Number.isNaN(anchor)) return null;
+  const earlyMs = Math.min(CHARTER_EARLY_ACCESS_MS, earlyAccessHoursFor(creatorUser) * 3600000);
+  return anchor + CHARTER_EARLY_ACCESS_MS - earlyMs;
+}
+// The public end of an offer's early-access window (Build -47,
+// audit B5): while it is in the future, the business's own views
+// say the offer is in early access instead of letting an empty
+// applicant stack read as no interest.
+function offerEarlyAccessUntil(offer, marketLive, nowMs) {
+  if (!offer || laneOf(offer) !== "open" || offer.status !== "open" || !marketLive) return null;
+  const anchor = Date.parse(offer.publishedAt || offer.createdAt || "");
+  if (Number.isNaN(anchor)) return null;
+  const until = anchor + CHARTER_EARLY_ACCESS_MS;
+  return nowMs < until ? new Date(until).toISOString() : null;
+}
 // Book-me page themes (SIGNL palette only) and featured posts.
 const PAGE_THEMES = ["ink", "mint", "deep", "pale"];
 function pageThemeOf(c) {
@@ -561,11 +585,34 @@ async function notifyUser(userId, kind, text, data = {}) {
 // same deliverEmail transport as every other lifecycle email, so
 // the Admin event log shows each one fire. Email stays
 // best-effort, exactly like the rest of the lifecycle mail.
+// Notification email preferences (Build -47, audit C11): the
+// in-app note is always written (it is the no-ghosting record
+// and drives the tab badges); the EMAIL copy honors the user's
+// three switches from Settings. Kinds map to categories:
+// messages, reminders (nudges and deadlines), and activity
+// (everything else). Account and payment mail never flows
+// through here and always sends.
+const NOTIFY_EMAIL_CATEGORY = {
+  message_received: "messages",
+  offer_deadline: "reminders",
+  offer_nudge: "reminders",
+  performance_ask: "reminders",
+  performance_update_ask: "reminders",
+  payout_setup_needed: "reminders",
+};
+function notifyEmailAllowed(u, kind) {
+  const prefs = (u && u.notifyPrefs) || {};
+  const cat = NOTIFY_EMAIL_CATEGORY[kind] || "activity";
+  if (cat === "messages") return prefs.emailMessages !== false;
+  if (cat === "reminders") return prefs.emailReminders !== false;
+  return prefs.emailActivity !== false;
+}
+
 async function notifyMilestone(userId, kind, noteText, subject, mailText, data = {}) {
   await notifyUser(userId, kind, noteText, data);
   try {
     const u = await store.get(`user:${userId}`);
-    if (u && u.email) await deliverEmail(kind, u, subject, mailText, null);
+    if (u && u.email && notifyEmailAllowed(u, kind)) await deliverEmail(kind, u, subject, mailText, null);
   } catch (e) { /* best-effort; the in-app note is the guaranteed record */ }
 }
 
@@ -601,11 +648,15 @@ function offerStrength(offer) {
   const windowDays = offer.windowEndAt && offer.windowStartAt
     ? Math.max(0, Math.round((Date.parse(offer.windowEndAt) - Date.parse(offer.windowStartAt)) / DAY_MS))
     : offer.windowMode === "thisweek" ? 7 : 7;
+  // Labels state the finished fact (the composer's checklist);
+  // actions phrase the same check as the step to take, so a
+  // surface naming the MISSING item reads as a to-do, not as a
+  // done item (Build -47, audit B7).
   const checks = [
-    { key: "value", label: "Comp value (or cash rate) is stated", ok: kindOf(offer) === "paid" ? Number(offer.cashRate) >= PAID_LANE.minRate : Number(offer.dollarCap) > 0 },
-    { key: "window", label: "Redemption window is 3+ days", ok: windowDays >= 3 },
-    { key: "includes", label: "What is included is written out", ok: String(offer.includes || offer.whatComped || "").trim().length >= 12 },
-    { key: "experience", label: "The experience is described", ok: String(offer.experience || "").trim().length >= 12 },
+    { key: "value", label: "Comp value (or cash rate) is stated", action: "state the comp value or cash rate", ok: kindOf(offer) === "paid" ? Number(offer.cashRate) >= PAID_LANE.minRate : Number(offer.dollarCap) > 0 },
+    { key: "window", label: "Redemption window is 3+ days", action: "give the visit a window of 3+ days", ok: windowDays >= 3 },
+    { key: "includes", label: "What is included is written out", action: "write out what is included", ok: String(offer.includes || offer.whatComped || "").trim().length >= 12 },
+    { key: "experience", label: "The experience is described", action: "describe the experience", ok: String(offer.experience || "").trim().length >= 12 },
   ];
   return { checks, score: checks.filter((c) => c.ok).length, total: checks.length, windowDays };
 }
@@ -2034,7 +2085,9 @@ function createMomentum(data) {
       { id: "reviews", label: "Review a business after a completed visit (+10 each, any star rating)", points: MOMENTUM_POINTS.reviewGiven, done: myBizReviews.length > 0, detail: `${myBizReviews.length} reviewed`, ...(reviewDueBooking ? { dueBookingId: reviewDueBooking.id } : {}) },
       { id: "aduse", label: "Have a paid-visit post run as an ad by the business (+25 each)", points: MOMENTUM_POINTS.adUse, done: myPosts.some((p) => p.adUseDeclaredAt), detail: `${myPosts.filter((p) => p.adUseDeclaredAt).length} posts ran as ads` },
       { id: "performance", label: "Report a post's views and likes when asked, 7 days after posting (+5 each)", points: MOMENTUM_POINTS.performanceReport, done: myPosts.some((p) => p.reportedAt), detail: `${myPosts.filter((p) => p.reportedAt).length} posts reported`, ...(perfDuePost ? { dueBookingId: perfDuePost.bookingId } : {}) },
-      { id: "referrals", label: "Invite creators (+3 per sign-up, +10 per approval)", points: MOMENTUM_POINTS.referralSignup, done: ref.signups > 0, detail: `${ref.signups} joined, ${ref.approved} approved` },
+      // No zero-count lines on creator surfaces (Build -47,
+      // audit C4): at zero the row carries the payoff, not a tally.
+      { id: "referrals", label: "Invite creators (+3 per sign-up, +10 per approval)", points: MOMENTUM_POINTS.referralSignup, done: ref.signups > 0, detail: ref.signups > 0 ? `${ref.signups} joined, ${ref.approved} approved` : "Your link is on your Home page" },
     ];
 
     return {
@@ -2152,11 +2205,61 @@ function publicFounding(summary) {
 //     2026-10-29). A named founding class, never a numbered one:
 //     a creator who is approved with a finished profile BEFORE
 //     their market launches holds Charter status permanently.
-//     The moment eligibility is first observed it is stamped on
-//     the creator record (creator.charter + creator.charterAt),
-//     so it survives the market opening and rides the record in
-//     Admin payloads. No cohort count or sign-up sequence is
-//     ever computed or exposed for it.
+//     It is stamped on the creator record (creator.charter +
+//     creator.charterAt), so it survives the market opening and
+//     rides the record in Admin payloads. No cohort count or
+//     sign-up sequence is ever computed or exposed for it.
+//     Build -47 (UX audit C1): the stamp is earned by CRITERIA,
+//     never by app-open timing. Pre-launch, an approved +
+//     finished creator is stamped on sight. Post-launch, a
+//     creator with no stamp is checked against the record:
+//     their approval time (user.reviewedAt) and their first
+//     profile-finish time (earliest profile_completed event,
+//     else creator.profileCompletedAt) must BOTH precede the
+//     market's launch time (earliest market_activated event,
+//     else the flags record's updatedAt). When they do, the
+//     stamp lands with charterAt = the moment the second
+//     criterion was met, so the same record earns the same
+//     status no matter when the app was first opened.
+// Charter criteria check for an already-launched market
+// (Build -47, audit C1). Returns the ISO moment the creator met
+// BOTH criteria (approved + profile finished) when that moment
+// precedes the market's launch, else null. One event-log read
+// serves both lookups; the log is newest-first and capped, so
+// the launch time falls back to the flags record's updatedAt
+// when no activation event is inside the fetched window.
+async function deriveCharterAt(user) {
+  if (!user || user.role !== "creator" || user.status !== "approved") return null;
+  const approvalMs = Date.parse(user.reviewedAt || "");
+  if (!Number.isFinite(approvalMs)) return null;
+  const events = await listEvents({ limit: 1000 });
+  const key = normalizeMarketName(user.market);
+  let launchTs = null;
+  let finishTs = null;
+  for (const e of events) {
+    if (e.type === "market_activated" && normalizeMarketName(e.market || (e.data && e.data.market) || "") === key) {
+      if (!launchTs || e.ts < launchTs) launchTs = e.ts;
+    }
+    if (e.type === "profile_completed" && e.subjectId === user.id) {
+      if (!finishTs || e.ts < finishTs) finishTs = e.ts;
+    }
+  }
+  let launchMs = launchTs ? Date.parse(launchTs) : NaN;
+  if (!Number.isFinite(launchMs)) {
+    const rec = await store.get("config:markets");
+    if (rec && rec.flags && rec.flags[key] && rec.updatedAt) launchMs = Date.parse(rec.updatedAt);
+  }
+  if (!Number.isFinite(launchMs)) return null;
+  let finishMs = finishTs ? Date.parse(finishTs) : NaN;
+  if (!Number.isFinite(finishMs)) {
+    const stored = user.creator && user.creator.profileCompletedAt;
+    finishMs = stored ? Date.parse(stored) : NaN;
+  }
+  if (!Number.isFinite(finishMs)) return null;
+  if (approvalMs >= launchMs || finishMs >= launchMs) return null;
+  return new Date(Math.max(approvalMs, finishMs)).toISOString();
+}
+
 async function creatorBuzz(user) {
   const users = await allUsers();
   const inMarket = users.filter((x) => x.role === "creator" && !isTester(x) && normalizeMarketName(x.market) === normalizeMarketName(user.market));
@@ -2185,9 +2288,32 @@ async function creatorBuzz(user) {
       await store.set(`user:${user.id}`, rec);
     }
     charter = { at };
+  } else if (user.status === "approved") {
+    // Launched market, no stamp (Build -47, audit C1): derive
+    // from the record. A creator who was approved AND finished
+    // before launch is Charter even if they first opened the
+    // app after launch day; the stamp is written once, with
+    // charterAt = when the criteria were met, and is permanent
+    // from then on like any other Charter stamp.
+    const derivedAt = await deriveCharterAt(user);
+    if (derivedAt) {
+      const rec = await store.get(`user:${user.id}`);
+      if (rec && rec.creator && !rec.creator.charterAt) {
+        rec.creator.charter = true;
+        rec.creator.charterAt = derivedAt;
+        rec.updatedAt = nowIso();
+        await store.set(`user:${user.id}`, rec);
+      }
+      charter = { at: derivedAt };
+    }
   }
   return {
-    localRank: idx > -1 ? { rank: idx + 1, field: ranked.length, localAudiencePct: ranked[idx].creator.localAudiencePct } : null,
+    // Rank claims gate on a meaningful field (Build -47, audit
+    // C16): below double digits there is no rank to claim, the
+    // same instinct as the unlock meter below: "#1" of two is a
+    // public promise of depth that is not there. The local %
+    // itself still rides the card payloads; only the rank goes.
+    localRank: idx > -1 && ranked.length >= 10 ? { rank: idx + 1, field: ranked.length, localAudiencePct: ranked[idx].creator.localAudiencePct } : null,
     unlock: user.market === UNLISTED ? null : {
       approved: approved.length,
       complete: complete.length,
@@ -7354,27 +7480,35 @@ async function businessPerformanceReadout(user) {
       return String(a.booking.id) < String(b.booking.id) ? -1 : 1;
     });
     const win = candidates[0];
-    let reason;
-    if (win.redemptionsCount > 0) {
-      reason = `It brought ${win.redemptionsCount} code redemption${win.redemptionsCount === 1 ? "" : "s"} ($${fmtMoneyS(win.basketTotal)} in tracked register baskets), the strongest result on your readout.`;
-    } else if (win.value > 0) {
-      reason = `It brought $${fmtMoneyS(win.value)} in register and estimated value, the strongest result on your readout.`;
-    } else if (win.score !== null) {
-      reason = `It has the strongest modeled estimate on your readout (${win.score}).`;
-    } else if (win.views > 0) {
-      reason = `It drew ${win.views} views, the most on your readout.`;
+    // A repeat recommendation needs a real signal (Build -47,
+    // audit B1): with zero redemptions, zero value, a modeled
+    // estimate of 0 and no views, there is nothing to repeat
+    // yet — Sig says the results are still forming instead of
+    // blessing the score-0 offer.
+    const hasSignal = win.redemptionsCount > 0 || win.value > 0 || (win.score !== null && win.score > 0) || win.views > 0;
+    if (!hasSignal) {
+      recommendation = { type: "next", text: "Your results are still forming. Run the next visit and this readout sharpens.", action: "create_offer" };
     } else {
-      reason = "It is your most recent delivered post.";
+      let reason;
+      if (win.redemptionsCount > 0) {
+        reason = `It brought ${win.redemptionsCount} code redemption${win.redemptionsCount === 1 ? "" : "s"} ($${fmtMoneyS(win.basketTotal)} in tracked register baskets), the strongest result on your readout.`;
+      } else if (win.value > 0) {
+        reason = `It brought $${fmtMoneyS(win.value)} in register and estimated value, the strongest result on your readout.`;
+      } else if (win.score !== null && win.score > 0) {
+        reason = `It has the strongest modeled estimate on your readout (${win.score}).`;
+      } else {
+        reason = `It drew ${win.views} views, the most on your readout.`;
+      }
+      recommendation = {
+        type: "repeat",
+        bookingId: win.booking.id,
+        offerId: win.booking.offerId || null,
+        title: win.booking.title,
+        creatorName: win.booking.creatorName,
+        creatorHandle: win.booking.creatorHandle,
+        reason,
+      };
     }
-    recommendation = {
-      type: "repeat",
-      bookingId: win.booking.id,
-      offerId: win.booking.offerId || null,
-      title: win.booking.title,
-      creatorName: win.booking.creatorName,
-      creatorHandle: win.booking.creatorHandle,
-      reason,
-    };
   }
   return { role: "business", empty: delivered.length === 0, founding: false, offers: rows, overall, recommendation };
 }
@@ -9779,10 +9913,16 @@ async function findPartnerByCode(code, users) {
 function partnerLinksFor(partner, origin) {
   const base = origin || process.env.APP_URL || "https://app.joinsignl.com";
   const src = partnerSrcFor(partner.code);
+  // Two links, two landings (Build -47, audit P2): a bare
+  // market+src arrival belongs to the CREATOR claim by the
+  // boot rules, so the business link carries join=business,
+  // which the boot honors as the business signal while src
+  // keeps the partner attribution. They were the same URL
+  // before, which landed businesses on the creator claim.
   return (partner.markets || []).map((market) => ({
     market,
     creator: `${base}/?market=${encodeURIComponent(market)}&src=${encodeURIComponent(src)}`,
-    business: `${base}/?market=${encodeURIComponent(market)}&src=${encodeURIComponent(src)}`,
+    business: `${base}/?market=${encodeURIComponent(market)}&src=${encodeURIComponent(src)}&join=business`,
   }));
 }
 
@@ -9856,7 +9996,12 @@ async function partnerSummary(user) {
   const performance = {
     offersTotal: offers.length,
     offersLive: offers.filter((o) => o.status === "open").length,
-    visitsBooked: bookings.filter((b) => b.status === "booked").length,
+    // Booked counts every booking that has not died (Build -47,
+    // audit P1): a redeemed or completed visit has moved PAST
+    // "booked", so counting only the literal status made the
+    // page report more redemptions than bookings. Same rule the
+    // business readout uses.
+    visitsBooked: bookings.filter((b) => b.status !== "expired" && b.status !== "cancelled").length,
     visitsRedeemed: bookings.filter((b) => !!b.redeemedAt).length,
     visitsCompleted: bookings.filter((b) => b.status === "completed").length,
     postsLive: posts.length,
@@ -11811,6 +11956,23 @@ async function route(event) {
     return json(200, { user: publicUser(user) });
   }
 
+  // ---------- notification email preferences (Build -47, C11) ----------
+  // Three switches (activity / messages / reminders) governing
+  // the email copies of milestone notifications. The in-app
+  // notes always record; account and payment mail is separate
+  // and always sends.
+  if (method === "PATCH" && seg[0] === "me" && seg[1] === "notifications") {
+    const b = parseBody(event);
+    user.notifyPrefs = {
+      emailActivity: b.emailActivity !== false,
+      emailMessages: b.emailMessages !== false,
+      emailReminders: b.emailReminders !== false,
+    };
+    user.updatedAt = nowIso();
+    await store.set(`user:${user.id}`, user);
+    return json(200, { ok: true, notifyPrefs: user.notifyPrefs });
+  }
+
   // ---------- staff redemption settings (owner) ----------
   // Owner-login only: set or rotate the staff PIN, read the
   // business's staff code and register link, and sign out every
@@ -13305,7 +13467,10 @@ async function route(event) {
   // vouches for.
   if (seg[0] === "me" && seg[1] === "golden-tickets" && seg.length === 2) {
     if (user.role !== "creator") return err(403, "Creators only");
-    const live = await isMarketLive(user.market);
+    // Launch here means the market's actual flag, not the
+    // display-gating read: ticket expiry and the issue cutoff
+    // are record facts (marketLaunchedByFlag exists for this).
+    const live = await marketLaunchedByFlag(user.market);
     if (method === "GET") {
       const mine = await goldenTicketsFor(user.id);
       const canIssue = user.status === "approved" && profileCompleteOf(user);
@@ -13385,18 +13550,42 @@ async function route(event) {
       const ctx = await pointsContext();
       const pts = new Map(visible.map((u) => [u.id, totalPointsFor(u, ctx).total]));
       const sorted = [...visible].sort((a, b) => (((b.creator || {}).localAudiencePct || 0) - ((a.creator || {}).localAudiencePct || 0)) || ((pts.get(b.id) || 0) - (pts.get(a.id) || 0)) || (a.createdAt < b.createdAt ? -1 : 1));
-      payload.creators = sorted.map((u) => benchCardFor(u, pts.get(u.id)));
-      // Chip gate: a category earns a filter only when at least
-      // 3 visible creators carry it. The counts stay server-side;
-      // only the names ride the payload.
-      const tally = new Map();
-      for (const u of visible) {
-        for (const raw of ((u.creator || {}).categories || [])) {
-          const canon = canonicalFromList(raw, CREATOR_CATEGORIES) || raw;
-          tally.set(canon, (tally.get(canon) || 0) + 1);
+      let cards = sorted.map((u) => benchCardFor(u, pts.get(u.id)));
+      // One person, one appearance (Build -47, audit C6): the
+      // introduced creator leaves the roster list (their card is
+      // the introduction above), and a roster that would render
+      // as a list of one stays home entirely — the named
+      // introduction format, correct at n=1, carries the page
+      // (the audit's case was exactly that list of one, shown
+      // twice). Two or more remaining cards render as the list.
+      // When no scored introduction exists, the strongest
+      // visible creator is presented as the introduction
+      // (display only; the +1 picker keeps working through
+      // lookup either way).
+      const introId = payload.introduction && payload.introduction.creator ? payload.introduction.creator.userId : null;
+      if (introId) cards = cards.filter((c) => c.userId !== introId);
+      if (cards.length <= 1) {
+        if (!payload.introduction && cards.length) {
+          payload.introduction = { creator: cards[0], sharedStreets: [], sharedCategories: [] };
         }
+        payload.creators = [];
+        payload.categories = [];
+      } else {
+        payload.creators = cards;
+        // Chip gate: a category earns a filter only when at
+        // least 3 listed creators carry it. The counts stay
+        // server-side; only the names ride the payload.
+        const listedIds = new Set(cards.map((c) => c.userId));
+        const tally = new Map();
+        for (const u of visible) {
+          if (!listedIds.has(u.id)) continue;
+          for (const raw of ((u.creator || {}).categories || [])) {
+            const canon = canonicalFromList(raw, CREATOR_CATEGORIES) || raw;
+            tally.set(canon, (tally.get(canon) || 0) + 1);
+          }
+        }
+        payload.categories = CREATOR_CATEGORIES.filter((name) => (tally.get(name) || 0) >= 3).map((name) => ({ name }));
       }
-      payload.categories = CREATOR_CATEGORIES.filter((name) => (tally.get(name) || 0) >= 3).map((name) => ({ name }));
     }
     return json(200, payload);
   }
@@ -13468,7 +13657,18 @@ async function route(event) {
           creatorPlatformMsgOk = String(gateBody.toUserId || "") === PLATFORM_PEER_ID;
         }
       }
-      if (!businessPrelaunchOk && !creatorPlatformMsgOk) {
+      // Founding creator READS (Build -47, audit C10): the
+      // founding tabs (Offers, Visits, Earnings) read the
+      // creator's OWN records, which are necessarily empty
+      // before launch. Walling those GETs behind this 403 turned
+      // three tabs into a single red sentence; the reads now
+      // pass and each tab renders its real empty/preview state.
+      // Every WRITE stays behind the gate exactly as before.
+      const creatorPrelaunchReadOk = user.role === "creator" && method === "GET" && (
+        seg[0] === "bookings" || seg[0] === "open-offers" || seg[0] === "offers" ||
+        seg[0] === "applications" || seg[0] === "posts"
+      );
+      if (!businessPrelaunchOk && !creatorPlatformMsgOk && !creatorPrelaunchReadOk) {
         return err(403, `The ${marketTalkName(user.market)} market has not launched yet. Founding creators keep priority in the order they signed up, and we email them the moment it opens to businesses.`);
       }
     }
@@ -13819,8 +14019,17 @@ async function route(event) {
         applicationCount: apps.filter((a) => a.offerId === o.id && a.status !== "withdrawn").length,
         strength: offerStrength(o),
       }));
+      let feedEarlyAccessOpensAtMs = null;
       if (user.role === "business") {
         out = out.filter((o) => o.businessId === user.id);
+        // Early-access state on the business's own offers
+        // (Build -47, audit B5): while an offer is inside its
+        // first-24h Charter window the payload says so, so an
+        // empty applicant stack reads as the window, not as no
+        // interest.
+        const bizMarketLive = await isMarketLive(user.market);
+        const bizNow = Date.now();
+        out = out.map((o) => ({ ...o, earlyAccessUntil: offerEarlyAccessUntil(o, bizMarketLive, bizNow) }));
         // The business's own view of its offers carries its
         // referral program as active (it rides on every offer;
         // see referralProgramView). Their own record is in
@@ -13837,8 +14046,16 @@ async function route(event) {
         // Charter early access (Build -31): a fresh open offer is
         // simply not in a non-Charter creator's feed yet. No
         // marker, no "you missed out" copy: it appears at +24h.
+        // Build -47 (audit C3): the earliest withheld offer's
+        // open time rides the response so the feed can say so.
         const feedMarketLive = await isMarketLive(user.market);
-        out = out.filter((o) => offerVisibleToCreator(o, user, Date.now(), feedMarketLive));
+        const feedNow = Date.now();
+        out = out.filter((o) => {
+          if (offerVisibleToCreator(o, user, feedNow, feedMarketLive)) return true;
+          const visAt = offerVisibleAtMs(o, user);
+          if (visAt && (feedEarlyAccessOpensAtMs === null || visAt < feedEarlyAccessOpensAtMs)) feedEarlyAccessOpensAtMs = visAt;
+          return false;
+        });
         // The creator's checklist ("They can / They can't") depends on
         // the visit type (rights follow the visit, never the plan;
         // see visitRightsForVisit). Attach both per offer, plus the
@@ -13863,7 +14080,7 @@ async function route(event) {
         out = out.map((o) => ({ ...o, businessPlan: plans[o.businessId] || null, visitRights: visitRightsForVisit(kindOf(o)), businessReviewLinks: reviewLinks[o.businessId] || null, businessReferralProgram: referralPrograms[o.businessId] || null, businessMusicOpen: musicOpen[o.businessId] || null, businessStudentOpen: studentOpen[o.businessId] || null, businessAssetPacket: offerAssetPacketAttached(o) ? (assetPackets[o.businessId] || null) : null }));
       }
       out.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
-      return json(200, { offers: out });
+      return json(200, { offers: out, ...(feedEarlyAccessOpensAtMs ? { earlyAccess: { active: true, opensAt: new Date(feedEarlyAccessOpensAtMs).toISOString() } } : {}) });
     }
 
     // Publish a draft (the market must be live: drafts are how a
@@ -14000,7 +14217,7 @@ async function route(event) {
       const bookings = await allBookings();
       const mine = (await allApplications()).filter((a) => a.offerId === offer.id && a.status !== "withdrawn");
       const ranked = await rankApplications(mine);
-      return json(200, { offer: { ...offer, filledCount: filledCountFor(offer.id, bookings) }, applications: ranked });
+      return json(200, { offer: { ...offer, filledCount: filledCountFor(offer.id, bookings), earlyAccessUntil: offerEarlyAccessUntil(offer, await isMarketLive(offer.market), Date.now()) }, applications: ranked });
     }
 
     // Select an applicant: creates the booking through the same
@@ -14251,6 +14468,7 @@ async function route(event) {
     const tier = normalizeTierBand(user.creator ? user.creator.tierBand : "");
     const now = Date.now();
     const out = [];
+    let earlyAccessOpensAtMs = null;
     for (const o of offers) {
       if (laneOf(o) !== "open" || o.status !== "open" || o.market !== user.market) continue;
       if (Array.isArray(o.targetTiers) && o.targetTiers.length && !o.targetTiers.includes(tier)) continue;
@@ -14260,7 +14478,14 @@ async function route(event) {
       if (o.applicationsCloseAt && now > Date.parse(o.applicationsCloseAt)) continue;
       // Charter early access (Build -31): the board hides a fresh
       // open offer from non-Charter creators for its first 24h.
-      if (!offerVisibleToCreator(o, user, now, await isMarketLive(o.market))) continue;
+      // Build -47 (audit C3): the window is no longer invisible —
+      // the earliest withheld offer's open time rides the payload
+      // so the board can say an offer exists and when it opens.
+      if (!offerVisibleToCreator(o, user, now, await isMarketLive(o.market))) {
+        const visAt = offerVisibleAtMs(o, user);
+        if (visAt && (earlyAccessOpensAtMs === null || visAt < earlyAccessOpensAtMs)) earlyAccessOpensAtMs = visAt;
+        continue;
+      }
       const mine = apps.filter((a) => a.offerId === o.id);
       const myApp = mine.find((a) => a.creatorId === user.id && a.status !== "withdrawn");
       const biz = await store.get(`user:${o.businessId}`);
@@ -14304,7 +14529,7 @@ async function route(event) {
       });
     }
     out.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
-    return json(200, { offers: out });
+    return json(200, { offers: out, ...(earlyAccessOpensAtMs ? { earlyAccess: { active: true, opensAt: new Date(earlyAccessOpensAtMs).toISOString() } } : {}) });
   }
 
   if (seg[0] === "applications") {
@@ -15570,7 +15795,15 @@ async function route(event) {
     const plan = PLANS[planIdOf] || null;
     const nightCounts = ledger.map((l) => l.nightCount).filter((n) => typeof n === "number");
     const g = biz.googleStats || {};
+    // Build -47 (audit B10): whether any visit has actually
+    // landed, all time, so the Receipt can retire its founding
+    // explainer the moment the first visit does.
+    const visitsLanded = {
+      redeemed: myBookings.filter((b) => b.status === "redeemed" || b.redeemedAt).length,
+      delivered: myBookings.filter((b) => ["delivered", "posted", "completed"].includes(b.status) || b.postLiveAt || b.deliveredAt).length,
+    };
     return json(200, { receipt: {
+      visitsLanded,
       month, monthLabel: monthLabelOf(month),
       trackedSpend: roasRound2(spend), customersCounted: customers,
       cameBack: { returns, returnSpend: roasRound2(returnSpend), firstVisits: customers, rate: customers >= RETURN_RATE_MIN_BASE ? Math.round((returns / customers) * 100) / 100 : null, rateMinBase: RETURN_RATE_MIN_BASE },
@@ -15953,6 +16186,14 @@ async function route(event) {
         }
       }
       const threads = [];
+      // Thread context (Build -47, audit B6): conversations
+      // attach to a visit or an offer, and the list says which —
+      // computed from the pair's own records, so the context is
+      // there even before the user has opened Visits this
+      // session. Newest booking wins; a direct offer is next.
+      const ctxBookings = await allBookings();
+      const ctxOffers = await allOffers();
+      const pairNewest = (rows, pred) => rows.filter(pred).sort((a, b) => (String(a.createdAt || "") < String(b.createdAt || "") ? 1 : -1))[0] || null;
       for (const t of Object.values(byThread)) {
         // The platform thread (Build -40): the other side is the
         // SIGNL team identity, not a user record.
@@ -15961,7 +16202,9 @@ async function route(event) {
           continue;
         }
         const other = await store.get(`user:${t.otherId}`);
-        threads.push({ ...t, otherName: other ? other.name : "Unknown", otherRole: other ? other.role : null, otherBusinessName: other && other.business ? other.business.businessName : null, otherHandle: other && other.creator ? other.creator.handle : null });
+        const pairBooking = pairNewest(ctxBookings, (b) => (b.businessId === user.id && b.creatorId === t.otherId) || (b.creatorId === user.id && b.businessId === t.otherId));
+        const pairOffer = pairBooking ? null : pairNewest(ctxOffers, (o) => (o.businessId === user.id && o.creatorId === t.otherId) || (o.businessId === t.otherId && o.creatorId === user.id));
+        threads.push({ ...t, otherName: other ? other.name : "Unknown", otherRole: other ? other.role : null, otherBusinessName: other && other.business ? other.business.businessName : null, otherHandle: other && other.creator ? other.creator.handle : null, contextTitle: pairBooking ? (pairBooking.title || null) : pairOffer ? (pairOffer.title || null) : null });
       }
       threads.sort((a, b) => (a.lastMessage.createdAt < b.lastMessage.createdAt ? 1 : -1));
       return json(200, { threads });

@@ -296,8 +296,8 @@ try {
     appJs.includes("Creator messages") && appJs.includes("adminMsgComposeTo") && appJs.includes("admin-msg-template") && appJs.includes("renderAdminMessages"), "admin compose missing");
   const buildJs = readFileSync(join(ROOT, "netlify/functions/lib/build.js"), "utf8");
   const indexHtml = readFileSync(join(ROOT, "public/index.html"), "utf8");
-  check("(9) the build stamp is 2026.10.30-46 on server and shell",
-    buildJs.includes('BUILD_ID = "2026.10.30-46"') && indexHtml.includes("2026.10.30-46"), "stamp mismatch");
+  check("(9) the build stamp is 2026.10.30-47 on server and shell",
+    buildJs.includes('BUILD_ID = "2026.10.30-47"') && indexHtml.includes("2026.10.30-47"), "stamp mismatch");
 } catch (e) {
   failures.push(`suite crashed: ${e.message}`);
   console.error(e);

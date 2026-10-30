@@ -340,11 +340,17 @@ try {
   check("client renders Facebook, X, and LinkedIn links on profiles", appJs.text.includes("Facebook") && appJs.text.includes("LinkedIn") && appJs.text.includes('>X</a>'));
 
   // --- marketplace stays closed in a not-live market ---
+  // Build -47 (audit C10) narrowed this on purpose: a founding
+  // creator's own offer READS (their addressed offers, bookings,
+  // applications, posts) now pass pre-launch so the tabs render
+  // real empty states instead of one red 403 sentence. Discovery
+  // and every write stay gated, which is what the checks below
+  // now pin.
   const gatedOffers = await creatorA("GET", "/api/offers");
-  check("offers are gated before market launch (403)", gatedOffers.status === 403, String(gatedOffers.status));
+  check("creator offer reads open before market launch (200, Build -47 C10)", gatedOffers.status === 200, String(gatedOffers.status));
   const gatedDiscover = await creatorA("GET", "/api/discover?market=Hampton%20Roads");
   check("discovery is gated before market launch (403)", gatedDiscover.status === 403, String(gatedDiscover.status));
-  check("gate message promises no opening window and points at the opening email (Build -38)", !/30 to 90|30–90|30-90/.test((gatedOffers.data && gatedOffers.data.error) || "") && /moment it opens/.test((gatedOffers.data && gatedOffers.data.error) || ""), gatedOffers.data && gatedOffers.data.error);
+  check("gate message promises no opening window and points at the opening email (Build -38)", !/30 to 90|30–90|30-90/.test((gatedDiscover.data && gatedDiscover.data.error) || "") && /moment it opens/.test((gatedDiscover.data && gatedDiscover.data.error) || ""), gatedDiscover.data && gatedDiscover.data.error);
 
   // --- second founding creator: priority follows sign-up order ---
   const creatorB = client();
