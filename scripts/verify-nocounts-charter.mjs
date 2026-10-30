@@ -238,9 +238,9 @@ try {
     routerSrc.includes("rec.creator.charter = true") && routerSrc.includes("rec.creator.charterAt = at"), "");
   check("the forbidden Momentum phrase stays out of the client (feed is newest-first)",
     !appJs.includes("see paid campaigns first") && !appJs.includes("paid campaigns first"), "");
-  check("build stamp is 2026.10.30-51 on both sides",
-    fs.readFileSync(path.join(ROOT, "netlify", "functions", "lib", "build.js"), "utf8").includes("2026.10.30-51")
-    && fs.readFileSync(path.join(ROOT, "public", "index.html"), "utf8").includes("2026.10.30-51"), "");
+  check("build stamp is 2026.10.30-52 on both sides",
+    fs.readFileSync(path.join(ROOT, "netlify", "functions", "lib", "build.js"), "utf8").includes("2026.10.30-52")
+    && fs.readFileSync(path.join(ROOT, "public", "index.html"), "utf8").includes("2026.10.30-52"), "");
 } catch (e) {
   failed += 1;
   failures.push("suite crashed: " + e.message);

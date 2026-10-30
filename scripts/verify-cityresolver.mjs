@@ -22,12 +22,15 @@
 //     moved without that tap: the legacy records here are seeded
 //     straight into the local store the way production records
 //     predating the resolver look.
-// Note on the ambiguity fixture: on today's roster the only town
-// in two markets' lists is College Park (Washington DC + Atlanta).
-// Arlington sits only in Washington DC's list (Dallas's list is
-// just "Dallas"), so the Arlington tie from the design brief is
-// pinned against a synthetic market set whose Dallas list does
-// carry Arlington, exactly as the resolver would see it.
+// Note on the ambiguity fixture: College Park sits in exactly
+// two markets' lists (Washington DC + Atlanta). DOCTRINE UPDATE
+// (Build -52): Dallas now carries its real metro list, Arlington
+// included, so the Arlington tie is pinned on the REAL roster
+// below (the pre--52 version of this suite pinned it against a
+// synthetic set because Dallas's list was just "Dallas"). The
+// -52 footprint lists put many genuine town names in two or more
+// metros (Columbia, Bellevue, Aurora, Lakewood, Smyrna); those
+// ties are pinned in verify-build52, not here.
 // Run: node scripts/verify-cityresolver.mjs
 import { spawn } from "node:child_process";
 import fs from "node:fs";
@@ -138,16 +141,17 @@ check("normalizeMarketName resolves the listed label ('Virginia Beach (Hampton R
 check("normalizeMarketName still resolves the legacy alias ('Hampton Roads' -> 'Virginia Beach')", normalizeMarketName("Hampton Roads") === "Virginia Beach");
 const rWash = resolveTypedCity("Washington, DC");
 check("city + state recombine (Washington, DC -> Washington DC)", rWash.status === "unique" && rWash.market === "Washington DC", JSON.stringify(rWash));
-const rArlReal = resolveTypedCity("Arlington");
-check("on the real roster Arlington is Washington DC only (Dallas's list is just Dallas)", rArlReal.status === "unique" && rArlReal.market === "Washington DC", JSON.stringify(rArlReal));
-const SYNTH = MARKETS.map((m) => (m.id === "dallas" ? { ...m, cities: ["Dallas", "Arlington", "Fort Worth"] } : m));
-const rArl = resolveTypedCity("Arlington", null, SYNTH);
-check("with Arlington in a Dallas-area list too, Arlington is ambiguous (Washington DC + Dallas)",
+// Build -52 doctrine: Arlington is now a genuine two-metro town
+// on the real roster (Arlington VA in Washington DC's list,
+// Arlington TX in Dallas's), so the tie and both state-broken
+// resolutions pin against the real lists, no synthetic set.
+const rArl = resolveTypedCity("Arlington");
+check("on the real roster Arlington is ambiguous (Washington DC + Dallas)",
   rArl.status === "ambiguous" && rArl.markets.length === 2 && rArl.markets.includes("Washington DC") && rArl.markets.includes("Dallas"), JSON.stringify(rArl));
-const rArlTx = resolveTypedCity("Arlington, TX", null, SYNTH);
-check("Arlington, TX resolves to Dallas on the synthetic set", rArlTx.status === "unique" && rArlTx.market === "Dallas", JSON.stringify(rArlTx));
-const rArlVa = resolveTypedCity("Arlington, Virginia", null, SYNTH);
-check("Arlington, Virginia resolves to Washington DC on the synthetic set", rArlVa.status === "unique" && rArlVa.market === "Washington DC", JSON.stringify(rArlVa));
+const rArlTx = resolveTypedCity("Arlington, TX");
+check("Arlington, TX resolves to Dallas", rArlTx.status === "unique" && rArlTx.market === "Dallas", JSON.stringify(rArlTx));
+const rArlVa = resolveTypedCity("Arlington, Virginia");
+check("Arlington, Virginia resolves to Washington DC", rArlVa.status === "unique" && rArlVa.market === "Washington DC", JSON.stringify(rArlVa));
 
 // ---------- server level, phase 1: intake wiring ----------
 let server = bootServer();

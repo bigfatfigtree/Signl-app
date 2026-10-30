@@ -16327,6 +16327,7 @@ async function loadApplications() {
     el.innerHTML = `
       <div id="admin-msg-panel"><p class="muted">Loading creator messages...</p></div>
       <div id="admin-finish-panel"></div>
+      <div id="admin-refile-panel"></div>
       ${summaryStrip}
       <h3>Pending (${data.pending.length})</h3>
       ${data.pending.length ? `<div class="table-wrap panel"><table><tr><th>Applicant</th><th>Type</th><th>Market</th><th>Details</th><th>Applied</th><th>Decision</th></tr>${data.pending.map(row).join("")}</table></div>` : `<p class="muted">No pending applications.</p>`}
@@ -16334,6 +16335,7 @@ async function loadApplications() {
       ${data.decided.length ? `<div class="table-wrap panel"><table><tr><th>Applicant</th><th>Type</th><th>Market</th><th>Details</th><th>Applied</th><th>Status</th></tr>${data.decided.map(row).join("")}</table></div>` : `<p class="muted">None yet.</p>`}`;
     renderAdminMessages();
     renderAdminFinishEngine();
+    renderAdminRefilePanel();
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
@@ -16396,6 +16398,36 @@ async function fileUnderMarket(userId, market) {
     await api("POST", "/admin/users/file-market", { userId, market });
     loadApplications();
   } catch (err) { alert(err.message); }
+}
+
+// ---------- Admin: Market refile sweep (BUILD -52) ----------
+// One action that files every "Not listed yet" record (creators
+// and businesses) whose typed city belongs to exactly one market
+// (Jeff, 2026-10-30: "auto-file everyone", after the footprint
+// lists shipped). Records whose city fits two markets or none
+// stay where they are. The server answers with the run summary;
+// it is kept in adminRefileLast so it survives the queue reload
+// the run triggers.
+let adminRefileLast = null;
+function renderAdminRefilePanel() {
+  const host = document.getElementById("admin-refile-panel");
+  if (!host) return;
+  const s = adminRefileLast;
+  const per = s ? Object.entries(s.perMarket || {}).map(([m, n]) => `${esc(m)}: ${n}`).join(" &middot; ") : "";
+  host.innerHTML = `
+  <h3 class="mt">Market refile sweep</h3>
+  <p class="muted small">Some sign-ups typed a city that belongs to a market but were filed as "Not listed yet" (Clarksville filed as its own market instead of Nashville). This files every one of those records, creators and businesses, under the market their city belongs to, and logs a market_filed event for each. Records whose city fits two markets or none stay put. Safe to run again: once a record is filed it no longer counts.</p>
+  ${s ? `<p class="small"><strong>Last sweep:</strong> scanned ${s.scanned || 0} not-listed records &middot; filed ${s.filed || 0}${per ? ` (${per})` : ""} &middot; left for a one-tap pick: ${s.skippedAmbiguous || 0} &middot; no market fits: ${s.skippedNone || 0}.</p>` : ""}
+  <p><button type="button" class="btn small-btn" onclick="return runRefileSweep(this)">File everyone in their market</button></p>`;
+}
+async function runRefileSweep(btn) {
+  try {
+    if (btn) btn.disabled = true;
+    const data = await api("POST", "/admin/users/refile-sweep", {});
+    adminRefileLast = data.sweep || null;
+    loadApplications();
+  } catch (err) { alert(err.message); if (btn) btn.disabled = false; }
+  return false;
 }
 
 // Rejection with an optional reason (audit F4): the Reject button

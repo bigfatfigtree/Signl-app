@@ -23,6 +23,22 @@
 // Perth, Auckland, Singapore, Hong Kong, Beijing, Shanghai.
 // A creator's "local audience" is measured against the city list of
 // their market. Do not edit these lists without updating the website.
+// Build -52 (Jeff, 2026-10-30): the markets added after the founding
+// seven (Nashville onward) shipped with a namesake-only city list,
+// so a sign-up typing a metro town (Clarksville for Nashville) fell
+// into the "Not listed yet" pool even though the town sits inside
+// the market's area. Jeff's ruling: at sign-up, people go in the
+// correct market regardless of the city they typed - if the city
+// sits in a market's area, they ARE that market. Every market now
+// carries its genuine metro-area city list (real commutable towns
+// only), and the typed-city resolver below files against them.
+// Dubai is the one short list by geography: a city-emirate whose
+// metro is the Dubai-Sharjah-Ajman corridor. Town names that
+// genuinely belong to two metros (Columbia MD/TN, Bellevue WA/KY,
+// Aurora IL/CO/ON, Lakewood CA/CO/WA, Smyrna GA/TN) stay in both
+// lists on purpose: the resolver's tie outcome and the one-tap
+// candidate pick handle them, with state/country hints breaking
+// the tie at intake.
 
 const MARKETS = [
   {
@@ -79,210 +95,210 @@ const MARKETS = [
     name: "Nashville",
     label: "Nashville, Tennessee",
     country: "United States",
-    cities: ["Nashville"],
+    cities: ["Nashville", "Clarksville", "Murfreesboro", "Franklin", "Hendersonville", "Smyrna", "Brentwood", "Gallatin", "Mt. Juliet", "Lebanon", "Spring Hill", "Columbia", "Dickson", "Goodlettsville", "La Vergne", "Nolensville", "Springfield", "White House", "Portland", "Ashland City", "Fairview", "Thompson's Station", "Greenbrier", "Pleasant View"],
   },
   {
     id: "austin",
     name: "Austin",
     label: "Austin, Texas",
     country: "United States",
-    cities: ["Austin"],
+    cities: ["Austin", "Round Rock", "Cedar Park", "Pflugerville", "Georgetown", "Leander", "San Marcos", "Kyle", "Buda", "Lakeway", "Bee Cave", "Dripping Springs", "Manor", "Elgin", "Taylor", "Hutto", "Liberty Hill", "West Lake Hills", "Sunset Valley"],
   },
   {
     id: "dallas",
     name: "Dallas",
     label: "Dallas, Texas",
     country: "United States",
-    cities: ["Dallas"],
+    cities: ["Dallas", "Fort Worth", "Arlington", "Plano", "Irving", "Garland", "Grand Prairie", "McKinney", "Frisco", "Richardson", "Mesquite", "Carrollton", "Denton", "Lewisville", "Allen", "Flower Mound", "Mansfield", "Grapevine", "Coppell", "Rockwall", "Keller", "The Colony", "Duncanville", "Southlake", "Hurst"],
   },
   {
     id: "chicago",
     name: "Chicago",
     label: "Chicago, Illinois",
     country: "United States",
-    cities: ["Chicago"],
+    cities: ["Chicago", "Evanston", "Skokie", "Oak Park", "Cicero", "Naperville", "Aurora", "Joliet", "Schaumburg", "Wheaton", "Downers Grove", "Elmhurst", "Oak Lawn", "Tinley Park", "Orland Park", "Bolingbrook", "Hoffman Estates", "Palatine", "Arlington Heights", "Waukegan", "Elgin", "Glenview", "Des Plaines", "Highland Park", "Gary", "Hammond"],
   },
   {
     id: "los-angeles",
     name: "Los Angeles",
     label: "Los Angeles, California",
     country: "United States",
-    cities: ["Los Angeles"],
+    cities: ["Los Angeles", "Long Beach", "Santa Monica", "Pasadena", "Glendale", "Burbank", "Inglewood", "Torrance", "Pomona", "Downey", "West Covina", "El Monte", "Whittier", "Alhambra", "Culver City", "Beverly Hills", "Manhattan Beach", "Redondo Beach", "Compton", "Lakewood", "Norwalk", "Carson", "Santa Clarita", "Arcadia", "Monterey Park"],
   },
   {
     id: "san-diego",
     name: "San Diego",
     label: "San Diego, California",
     country: "United States",
-    cities: ["San Diego"],
+    cities: ["San Diego", "Chula Vista", "Oceanside", "Escondido", "Carlsbad", "El Cajon", "Vista", "San Marcos", "Encinitas", "La Mesa", "Santee", "Poway", "National City", "Solana Beach", "Del Mar", "Coronado", "Imperial Beach", "Lemon Grove", "Fallbrook"],
   },
   {
     id: "seattle",
     name: "Seattle",
     label: "Seattle, Washington",
     country: "United States",
-    cities: ["Seattle"],
+    cities: ["Seattle", "Bellevue", "Tacoma", "Everett", "Renton", "Kent", "Federal Way", "Redmond", "Kirkland", "Shoreline", "Burien", "Auburn", "Lakewood", "Lynnwood", "Bothell", "Edmonds", "Sammamish", "Issaquah", "Tukwila", "SeaTac", "Woodinville", "Marysville"],
   },
   {
     id: "tampa",
     name: "Tampa",
     label: "Tampa, Florida",
     country: "United States",
-    cities: ["Tampa"],
+    cities: ["Tampa", "St. Petersburg", "Clearwater", "Brandon", "Largo", "Lakeland", "Palm Harbor", "Pinellas Park", "Plant City", "Dunedin", "Safety Harbor", "Seminole", "Tarpon Springs", "Wesley Chapel", "Riverview", "Valrico", "Temple Terrace", "Oldsmar", "New Port Richey", "Zephyrhills", "Spring Hill"],
   },
   {
     id: "phoenix",
     name: "Phoenix",
     label: "Phoenix, Arizona",
     country: "United States",
-    cities: ["Phoenix"],
+    cities: ["Phoenix", "Scottsdale", "Mesa", "Chandler", "Gilbert", "Glendale", "Tempe", "Peoria", "Surprise", "Goodyear", "Avondale", "Buckeye", "Queen Creek", "Apache Junction", "Fountain Hills", "Paradise Valley", "Cave Creek", "Sun City", "El Mirage", "Tolleson", "Maricopa"],
   },
   {
     id: "denver",
     name: "Denver",
     label: "Denver, Colorado",
     country: "United States",
-    cities: ["Denver"],
+    cities: ["Denver", "Aurora", "Lakewood", "Arvada", "Westminster", "Thornton", "Centennial", "Boulder", "Longmont", "Broomfield", "Littleton", "Englewood", "Parker", "Castle Rock", "Commerce City", "Brighton", "Northglenn", "Golden", "Wheat Ridge", "Greenwood Village", "Lone Tree", "Louisville"],
   },
   {
     id: "minneapolis",
     name: "Minneapolis",
     label: "Minneapolis, Minnesota",
     country: "United States",
-    cities: ["Minneapolis"],
+    cities: ["Minneapolis", "St. Paul", "Bloomington", "Plymouth", "Brooklyn Park", "Maple Grove", "Woodbury", "Eden Prairie", "Burnsville", "Blaine", "Lakeville", "Minnetonka", "Apple Valley", "Edina", "St. Louis Park", "Shakopee", "Eagan", "Coon Rapids", "Richfield", "Roseville", "Fridley"],
   },
   {
     id: "philadelphia",
     name: "Philadelphia",
     label: "Philadelphia, Pennsylvania",
     country: "United States",
-    cities: ["Philadelphia"],
+    cities: ["Philadelphia", "Camden", "Cherry Hill", "Wilmington", "Norristown", "Chester", "Upper Darby", "King of Prussia", "Conshohocken", "Ardmore", "Bryn Mawr", "Wayne", "Media", "West Chester", "Doylestown", "Lansdale", "Pottstown", "Phoenixville", "Bensalem", "Levittown", "Collingswood", "Haddonfield", "Moorestown", "Mount Laurel"],
   },
   {
     id: "pittsburgh",
     name: "Pittsburgh",
     label: "Pittsburgh, Pennsylvania",
     country: "United States",
-    cities: ["Pittsburgh"],
+    cities: ["Pittsburgh", "Monroeville", "Bethel Park", "Mount Lebanon", "Penn Hills", "Cranberry Township", "McCandless", "Moon Township", "Upper St. Clair", "Plum", "Murrysville", "Wexford", "Sewickley", "Canonsburg", "Washington", "Beaver", "New Kensington", "Carnegie", "Bridgeville", "West Mifflin"],
   },
   {
     id: "cincinnati",
     name: "Cincinnati",
     label: "Cincinnati, Ohio",
     country: "United States",
-    cities: ["Cincinnati"],
+    cities: ["Cincinnati", "Covington", "Newport", "Florence", "Mason", "West Chester", "Fairfield", "Hamilton", "Springdale", "Blue Ash", "Sharonville", "Milford", "Loveland", "Lebanon", "Middletown", "Fort Thomas", "Bellevue", "Erlanger", "Independence", "Lawrenceburg", "Montgomery", "Madeira", "Norwood"],
   },
   {
     id: "columbus",
     name: "Columbus",
     label: "Columbus, Ohio",
     country: "United States",
-    cities: ["Columbus"],
+    cities: ["Columbus", "Dublin", "Westerville", "Grove City", "Reynoldsburg", "Upper Arlington", "Hilliard", "Gahanna", "Pickerington", "Worthington", "Bexley", "Whitehall", "Delaware", "Powell", "New Albany", "Canal Winchester", "Marysville", "Lancaster", "Newark", "London"],
   },
   {
     id: "new-orleans",
     name: "New Orleans",
     label: "New Orleans, Louisiana",
     country: "United States",
-    cities: ["New Orleans"],
+    cities: ["New Orleans", "Metairie", "Kenner", "Gretna", "Harvey", "Marrero", "Westwego", "Chalmette", "Arabi", "Terrytown", "Belle Chasse", "Slidell", "Mandeville", "Covington", "Laplace", "Destrehan", "Luling", "River Ridge", "Harahan"],
   },
   {
     id: "orlando",
     name: "Orlando",
     label: "Orlando, Florida",
     country: "United States",
-    cities: ["Orlando"],
+    cities: ["Orlando", "Winter Park", "Altamonte Springs", "Kissimmee", "Sanford", "Winter Garden", "Ocoee", "Apopka", "Oviedo", "Lake Mary", "Longwood", "Casselberry", "Maitland", "Winter Springs", "Clermont", "St. Cloud", "Celebration", "Davenport", "Haines City", "Mount Dora"],
   },
   {
     id: "houston",
     name: "Houston",
     label: "Houston, Texas",
     country: "United States",
-    cities: ["Houston"],
+    cities: ["Houston", "Pasadena", "Pearland", "League City", "Sugar Land", "The Woodlands", "Conroe", "Baytown", "Missouri City", "Friendswood", "Katy", "Humble", "Spring", "Tomball", "Atascocita", "Channelview", "Deer Park", "La Porte", "Stafford", "Bellaire", "Webster", "Alvin"],
   },
   {
     id: "san-antonio",
     name: "San Antonio",
     label: "San Antonio, Texas",
     country: "United States",
-    cities: ["San Antonio"],
+    cities: ["San Antonio", "New Braunfels", "Boerne", "Schertz", "Cibolo", "Converse", "Universal City", "Live Oak", "Selma", "Helotes", "Fair Oaks Ranch", "Leon Valley", "Alamo Heights", "Windcrest", "Floresville", "Seguin", "Bulverde", "Canyon Lake"],
   },
   {
     id: "las-vegas",
     name: "Las Vegas",
     label: "Las Vegas, Nevada",
     country: "United States",
-    cities: ["Las Vegas"],
+    cities: ["Las Vegas", "Henderson", "North Las Vegas", "Boulder City", "Enterprise", "Spring Valley", "Paradise", "Summerlin South", "Sunrise Manor", "Winchester", "Whitney", "Pahrump"],
   },
   {
     id: "detroit",
     name: "Detroit",
     label: "Detroit, Michigan",
     country: "United States",
-    cities: ["Detroit"],
+    cities: ["Detroit", "Warren", "Sterling Heights", "Livonia", "Dearborn", "Troy", "Westland", "Farmington Hills", "Rochester Hills", "Southfield", "Taylor", "Pontiac", "Royal Oak", "Novi", "St. Clair Shores", "Roseville", "Ferndale", "Birmingham", "Auburn Hills", "Canton", "Plymouth", "Clinton Township", "Shelby Township"],
   },
   {
     id: "san-juan",
     name: "San Juan",
     label: "San Juan, Puerto Rico",
     country: "Puerto Rico",
-    cities: ["San Juan"],
+    cities: ["San Juan", "Bayamón", "Carolina", "Caguas", "Guaynabo", "Toa Baja", "Toa Alta", "Dorado", "Trujillo Alto", "Canóvanas", "Río Grande", "Gurabo", "Vega Baja", "Catano", "Loíza", "Juncos"],
   },
   {
     id: "london",
     name: "London",
     label: "London, United Kingdom",
     country: "United Kingdom",
-    cities: ["London"],
+    cities: ["London", "Croydon", "Bromley", "Romford", "Ilford", "Enfield", "Harrow", "Wembley", "Ealing", "Kingston upon Thames", "Richmond upon Thames", "Hounslow", "Uxbridge", "Watford", "Dartford", "Sutton", "St Albans", "Woking", "Slough"],
   },
   {
     id: "manchester",
     name: "Manchester",
     label: "Manchester, United Kingdom",
     country: "United Kingdom",
-    cities: ["Manchester"],
+    cities: ["Manchester", "Salford", "Stockport", "Bolton", "Bury", "Oldham", "Rochdale", "Altrincham", "Sale", "Stretford", "Ashton-under-Lyne", "Wigan", "Eccles", "Prestwich", "Middleton", "Hyde", "Stalybridge", "Wilmslow", "Macclesfield", "Denton"],
   },
   {
     id: "dubai",
     name: "Dubai",
     label: "Dubai, United Arab Emirates",
     country: "United Arab Emirates",
-    cities: ["Dubai"],
+    cities: ["Dubai", "Sharjah", "Ajman"],
   },
   {
     id: "paris",
     name: "Paris",
     label: "Paris, France",
     country: "France",
-    cities: ["Paris"],
+    cities: ["Paris", "Saint-Denis", "Boulogne-Billancourt", "Argenteuil", "Montreuil", "Nanterre", "Créteil", "Versailles", "Colombes", "Asnières-sur-Seine", "Aulnay-sous-Bois", "Rueil-Malmaison", "Aubervilliers", "Champigny-sur-Marne", "Issy-les-Moulineaux", "Levallois-Perret", "Noisy-le-Grand", "Neuilly-sur-Seine", "Antony", "Cergy", "Saint-Germain-en-Laye"],
   },
   {
     id: "barcelona",
     name: "Barcelona",
     label: "Barcelona, Spain",
     country: "Spain",
-    cities: ["Barcelona"],
+    cities: ["Barcelona", "L'Hospitalet de Llobregat", "Badalona", "Terrassa", "Sabadell", "Mataró", "Santa Coloma de Gramenet", "Sant Cugat del Vallès", "Cornellà de Llobregat", "Sant Boi de Llobregat", "Rubí", "Cerdanyola del Vallès", "Esplugues de Llobregat", "Granollers", "El Prat de Llobregat", "Gavà", "Castelldefels", "Viladecans", "Sant Adrià de Besòs"],
   },
   {
     id: "lisbon",
     name: "Lisbon",
     label: "Lisbon, Portugal",
     country: "Portugal",
-    cities: ["Lisbon"],
+    cities: ["Lisbon", "Amadora", "Oeiras", "Loures", "Cascais", "Sintra", "Almada", "Setúbal", "Barreiro", "Seixal", "Odivelas", "Vila Franca de Xira", "Mafra", "Montijo", "Palmela", "Sesimbra", "Moita", "Alcochete"],
   },
   {
     id: "toronto",
     name: "Toronto",
     label: "Toronto, Canada",
     country: "Canada",
-    cities: ["Toronto"],
+    cities: ["Toronto", "Mississauga", "Brampton", "Markham", "Vaughan", "Richmond Hill", "Oakville", "Burlington", "Milton", "Ajax", "Pickering", "Whitby", "Oshawa", "Newmarket", "Aurora", "Caledon", "Georgetown"],
   },
   {
     id: "montreal",
     name: "Montreal",
     label: "Montreal, Canada",
     country: "Canada",
-    cities: ["Montreal"],
+    cities: ["Montreal", "Laval", "Longueuil", "Terrebonne", "Brossard", "Repentigny", "Saint-Jean-sur-Richelieu", "Boucherville", "Dollard-des-Ormeaux", "Blainville", "Châteauguay", "Saint-Eustache", "Mascouche", "Vaudreuil-Dorion", "Kirkland", "Pointe-Claire", "Sainte-Thérèse", "Mirabel", "La Prairie", "Candiac"],
   },
 ];
 
@@ -494,7 +510,18 @@ const PLANS = [
 // State/country filtering is lenient by design: a filter that
 // would empty the candidate pool is ignored rather than punishing
 // a mistyped state, so resolution never does worse than the
-// unfiltered match.
+// unfiltered match. One exception (Build -52): when the pool has
+// narrowed to exactly ONE market - the auto-file case - an
+// explicit state the market does not sit in, or an explicit
+// country different from the market's, VETOES the match and the
+// outcome is none. Clarksville is the case: it sits only in
+// Nashville's list, so bare "Clarksville" files to Nashville,
+// but "Clarksville, VA" is a different real town (Mecklenburg
+// County) in no market's footprint, and filing that person into
+// Nashville would be the mirror image of the bug -52 fixes. The
+// veto never applies to an ambiguous pool: a tie never auto-files,
+// and the person's own one-tap pick stays available exactly as
+// designed.
 
 // US states and territories a typed suffix or form hint can carry,
 // as full name -> USPS code. The reverse lookup is derived.
@@ -519,7 +546,12 @@ for (const [name, code] of Object.entries(US_STATE_CODES)) US_STATE_BY_CODE[code
 // The state(s) each market sits in, for tie-breaking only. Most
 // SIGNL markets are single-state; Washington DC spans DC/MD/VA and
 // Charlotte reaches into South Carolina (Rock Hill, Fort Mill).
-// International markets carry none: their country does the work.
+// The Build -52 footprint lists added three more cross-state
+// metros: Chicago reaches into Indiana (Gary, Hammond),
+// Philadelphia into New Jersey and Delaware (Camden, Cherry Hill,
+// Wilmington), and Cincinnati into Kentucky and Indiana
+// (Covington, Newport, Lawrenceburg). International markets
+// carry none: their country does the work.
 const MARKET_STATES = {
   "hampton-roads": ["VA"],
   richmond: ["VA"],
@@ -531,7 +563,7 @@ const MARKET_STATES = {
   nashville: ["TN"],
   austin: ["TX"],
   dallas: ["TX"],
-  chicago: ["IL"],
+  chicago: ["IL", "IN"],
   "los-angeles": ["CA"],
   "san-diego": ["CA"],
   seattle: ["WA"],
@@ -539,9 +571,9 @@ const MARKET_STATES = {
   phoenix: ["AZ"],
   denver: ["CO"],
   minneapolis: ["MN"],
-  philadelphia: ["PA"],
+  philadelphia: ["PA", "NJ", "DE"],
   pittsburgh: ["PA"],
-  cincinnati: ["OH"],
+  cincinnati: ["OH", "KY", "IN"],
   columbus: ["OH"],
   "new-orleans": ["LA"],
   orlando: ["FL"],
@@ -667,6 +699,18 @@ function resolveTypedCity(raw, hints, markets) {
   }
   if (pool.length === 1) {
     const hit = pool[0];
+    // Build -52 veto (see the design note above): an explicit
+    // state or country that contradicts the one surviving market
+    // means the typed town is a same-named place elsewhere; the
+    // record stays unlisted with its typed city as the demand
+    // signal instead of being auto-filed into the wrong metro.
+    if (parsed.country && (hit.market.country || "United States") !== parsed.country) {
+      return { status: "none", city: parsed.city };
+    }
+    const homeStates = MARKET_STATES[hit.market.id] || [];
+    if (parsed.state && homeStates.length && !homeStates.includes(parsed.state)) {
+      return { status: "none", city: parsed.city };
+    }
     return { status: "unique", market: hit.market.name, marketId: hit.market.id, city: hit.matchedCity, state: parsed.state, country: parsed.country };
   }
   return {

@@ -13302,6 +13302,53 @@ async function route(event) {
       await logEvent({ type: "market_filed", actorId: user.id, actorRole: "admin", subjectId: target.id, market: target.market, data: { from: UNLISTED, to: target.market, typedCity: fromCity, via: "admin_suggestion" } });
       return json(200, { user: publicUser(target) });
     }
+    // Refile sweep (Build -52, Jeff, 2026-10-30: "auto-file
+    // everyone"): ONE admin action that files EVERY unlisted
+    // record - creators and businesses - whose typed city the
+    // resolver places in exactly one market, in a single run.
+    // Ordered after the Build -52 footprint lists shipped, for
+    // the records the namesake-only lists stranded (Clarksville
+    // filed as its own unopened market instead of Nashville).
+    // Each filing follows the file-market endpoint's shape and
+    // invariant exactly (the record's market becomes the market
+    // its own typed city resolves to; the typed city stays as the
+    // home city), stamps marketResolvedFrom "refile_sweep", and
+    // logs its own market_filed event with via "refile_sweep".
+    // Ambiguous records are never swept: a tie stays for the
+    // person's one-tap candidate pick. The run is idempotent -
+    // filed records leave the unlisted pool, so a second run
+    // files nothing - and answers with the run summary: how many
+    // records were scanned, how many filed per market, and how
+    // many were skipped as ambiguous or as resolving nowhere.
+    if (method === "POST" && seg[1] === "users" && seg[2] === "refile-sweep") {
+      const rows = await allUsers();
+      const perMarket = {};
+      const filedRecords = [];
+      let scanned = 0;
+      let skippedAmbiguous = 0;
+      let skippedNone = 0;
+      for (const target of rows) {
+        if (!target || target.role === "admin" || target.market !== UNLISTED) continue;
+        scanned += 1;
+        const res = resolveTypedCity(target.city || "", { state: target.state, country: target.country });
+        if (res.status === "ambiguous") { skippedAmbiguous += 1; continue; }
+        if (res.status !== "unique") { skippedNone += 1; continue; }
+        const fromCity = target.city || "";
+        target.market = res.market;
+        target.marketResolvedFrom = "refile_sweep";
+        target.marketResolvedCity = res.city;
+        target.marketFiledBy = user.id;
+        target.marketFiledAt = nowIso();
+        delete target.marketCandidates;
+        target.updatedAt = nowIso();
+        await store.set(`user:${target.id}`, target);
+        await logEvent({ type: "market_filed", actorId: user.id, actorRole: "admin", subjectId: target.id, market: target.market, data: { from: UNLISTED, to: target.market, typedCity: fromCity, via: "refile_sweep" } });
+        perMarket[res.market] = (perMarket[res.market] || 0) + 1;
+        filedRecords.push({ userId: target.id, role: target.role, city: fromCity, market: res.market });
+      }
+      await logEvent({ type: "market_refile_sweep", actorId: user.id, actorRole: "admin", market: null, data: { scanned, filed: filedRecords.length, perMarket, skippedAmbiguous, skippedNone } });
+      return json(200, { sweep: { scanned, filed: filedRecords.length, perMarket, skippedAmbiguous, skippedNone, records: filedRecords } });
+    }
     if (method === "GET" && seg[1] === "events") {
       // Guarded like the rest of Hardening A (INCIDENT-2026-10-25):
       // if the event-log read fails, the tab must still render —
