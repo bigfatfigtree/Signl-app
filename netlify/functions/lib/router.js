@@ -802,7 +802,10 @@ function roasFor(bookings) {
   const allInScore = planKnown && roasRound2(costTotal + planAllocation) > 0 ? roasRound2(value / (costTotal + planAllocation)) : null;
   const registerSource = registerValue > 0 && estimatedRegisterValue > 0 ? "mixed" : registerValue > 0 ? "tracked" : estimatedRegisterValue > 0 ? "estimated" : "none";
   return {
-    label: ROAS_LABEL,
+    // Build -43 (FIX A): the legacy figure is a modeled estimate
+    // and wears that name. "SIGNL ROAS Score" belongs to Score v2
+    // alone (scoreV2ForBusiness keeps ROAS_LABEL).
+    label: "Modeled estimate, our own model",
     value,
     registerValue,
     estimatedRegisterValue,
@@ -6755,7 +6758,7 @@ async function previewDashboard() {
   }
   for (const b of bookings) {
     if (b.post && !b.redemptions) {
-      homeAttention.push({ kind: "tally", bookingId: b.id, label: "Code tally not in yet", detail: `${b.title} with @${b.creatorHandle}: the post is live. Enter how many customers used the code and the tally completes its SIGNL ROAS Score.` });
+      homeAttention.push({ kind: "tally", bookingId: b.id, label: "Code tally not in yet", detail: `${b.title} with @${b.creatorHandle}: the post is live. Enter how many customers used the code and the tally completes this visit's modeled estimate.` });
     }
   }
   for (const b of bookings) {
@@ -7046,6 +7049,16 @@ async function businessHome(user) {
   await enrichRoasEstimateInputs(roasInputs);
   const roasInputById = new Map(roasInputs.map((x) => [x.id, x]));
   const roas = roasFor(roasInputs);
+  // Build -43 (FIX A): Home's stat cell wears the one ROAS label,
+  // so it carries Score v2's current cohort, computed exactly as
+  // the Receipt computes it. The legacy roas above stays in the
+  // payload as the modeled estimate, labeled as one.
+  let roasV2 = null;
+  try {
+    const v2ctx = await scoreV2Context(user.id, now);
+    const v2cur = scoreV2ForBusiness(user, v2ctx).current;
+    roasV2 = { score: v2cur.score, state: v2cur.state, stateLabel: v2cur.state === "forming" ? "Forming" : v2cur.state === "counting" ? "Still counting" : "Final", countedBack: v2cur.countedBack, putIn: v2cur.cost ? v2cur.cost.total : 0, month: v2cur.month };
+  } catch { roasV2 = null; }
   const totalViews = delivered.reduce((s, b) => s + (Number(postByBooking.get(b.id).views) || 0), 0);
 
   const attention = [];
@@ -7057,7 +7070,7 @@ async function businessHome(user) {
       attention.push({ kind: "clock", bookingId: b.id, label: "A post clock is running", detail: `${b.title} with @${b.creatorHandle}: redeemed, post due by ${previewFmtDate(b.postDeadline)}.` });
     }
     if (post && !b.redemptions) {
-      attention.push({ kind: "tally", bookingId: b.id, label: "Code tally not in yet", detail: `${b.title} with @${b.creatorHandle}: the post is live. Enter how many customers used the code and the tally completes its SIGNL ROAS Score.` });
+      attention.push({ kind: "tally", bookingId: b.id, label: "Code tally not in yet", detail: `${b.title} with @${b.creatorHandle}: the post is live. Enter how many customers used the code and the tally completes this visit's modeled estimate.` });
     }
     if (!b.redeemedAt && b.status === "booked" && b.redeemBy && Date.parse(b.redeemBy) - now < 48 * 3600 * 1000 && Date.parse(b.redeemBy) > now) {
       attention.push({ kind: "window", bookingId: b.id, label: "A visit window closes soon", detail: `${b.title} with @${b.creatorHandle}: the redemption window closes ${previewFmtDate(b.redeemBy)}.` });
@@ -7173,6 +7186,7 @@ async function businessHome(user) {
       roasScore: roas.score,
       roasAllInScore: roas.allInScore,
       roas,
+      roasV2,
       totalViews,
       attention,
       pipeline: {
@@ -7325,7 +7339,7 @@ async function businessPerformanceReadout(user) {
     } else if (win.value > 0) {
       reason = `It brought $${fmtMoneyS(win.value)} in register and estimated value, the strongest result on your readout.`;
     } else if (win.score !== null) {
-      reason = `It has the strongest SIGNL ROAS Score on your readout (${win.score}).`;
+      reason = `It has the strongest modeled estimate on your readout (${win.score}).`;
     } else if (win.views > 0) {
       reason = `It drew ${win.views} views, the most on your readout.`;
     } else {
@@ -9025,7 +9039,34 @@ function scoreV2ForBusiness(user, ctx, calendarCounted) {
     countedBack: roasRound2(scored.reduce((a, c) => a + c.countedBack, 0)),
   } : null;
   const current = { ...cohorts[0], calendarCounted: roasRound2(calendarCounted || 0) };
-  return { current, cohorts: cohorts.map((c) => ({ month: c.month, monthLabel: c.monthLabel, state: c.state, score: c.score, countedBack: c.countedBack })), trailing3 };
+  // Build -43 (presentation only): the current month's counted
+  // dollars by week, rung-time basis, off the same live events:
+  // every check total rung this month, first visits and
+  // came-backs together, each bucket also carrying its customer
+  // and return counts. The Score v2 math above is untouched;
+  // these buckets only group counted money for the chart.
+  const weeklyCounted = [];
+  {
+    const [wy, wm] = month.split("-").map(Number);
+    const daysInMonth = new Date(Date.UTC(wy, wm, 0)).getUTCDate();
+    const monthShort = monthLabelOf(month).split(" ")[0].slice(0, 3);
+    for (const start of [1, 8, 15, 22, 29]) {
+      if (start > daysInMonth) break;
+      const end = Math.min(start + 6, daysInMonth);
+      let total = 0;
+      let customers = 0;
+      let returns = 0;
+      for (const e of ctx.events) {
+        if (e.voided || monthKeyOf(e.at) !== month) continue;
+        const day = Number(String(e.at || "").slice(8, 10));
+        if (!(day >= start && day <= end)) continue;
+        total += Number(e.amount) || 0;
+        if (e.kind === "return") returns += 1; else customers += 1;
+      }
+      weeklyCounted.push({ label: `${monthShort} ${start} to ${end}`, total: roasRound2(total), customers, returns });
+    }
+  }
+  return { current, weeklyCounted, cohorts: cohorts.map((c) => ({ month: c.month, monthLabel: c.monthLabel, state: c.state, score: c.score, countedBack: c.countedBack, countedCustomers: c.countedCustomers, countedEvents: c.countedEvents, costTotal: c.cost.total, cameBackReturns: c.cameBack.returns })), trailing3 };
 }
 
 // The capture-gap diagnostic (strategy gap 3, audit A7: the
@@ -9955,7 +9996,7 @@ async function route(event) {
       paidCampaignsComp: PAID_COMP,
       unlistedMarket: UNLISTED,
       standardVisit: STANDARD_VISIT,
-      roasModel: { ...ROAS_MODEL, label: ROAS_LABEL },
+      roasModel: { ...ROAS_MODEL, label: "Modeled estimate, our own model" },
       audiencePlatforms: AUDIENCE_PLATFORMS,
       moments: MOMENTS,
       termsVersion: TERMS_VERSION,
@@ -14398,7 +14439,7 @@ async function route(event) {
     await notifyMilestone(booking.businessId, "proof_submitted",
       `${user.name} posted for "${booking.title}"${post.onTime ? " (on time)" : " (late)"}. Open the link, confirm it is live under Posts, then report register tallies as they come in.`,
       `${user.name} posted for your SIGNL visit`,
-      [`${user.name} just submitted their post for "${booking.title}"${post.onTime ? ", on time" : ", late"}.`, "", `Post: ${url}`, "", "Open it, confirm it is live in the app under Posts, and report register tallies as customers use the creator's code: the tally is what builds your SIGNL ROAS Score.", "", "Open SIGNL: https://app.joinsignl.com", "", "SIGNL"].join("\n"),
+      [`${user.name} just submitted their post for "${booking.title}"${post.onTime ? ", on time" : ", late"}.`, "", `Post: ${url}`, "", "Open it, confirm it is live in the app under Posts, and report register tallies as customers use the creator's code: the tally is what builds this visit's modeled estimate.", "", "Open SIGNL: https://app.joinsignl.com", "", "SIGNL"].join("\n"),
       { bookingId: booking.id, postId: post.id });
     // A paused creator who delivers unpauses automatically; a banned
     // creator does not (reinstatement is a human decision).
@@ -14778,7 +14819,7 @@ async function route(event) {
       await notifyMilestone(booking.businessId, "performance_reported",
         `${user.name} reported their post numbers for "${booking.title}" (${post.views == null ? "no views figure" : `${post.views} views`}). Your results on this booking are updated.`,
         `${user.name} reported post numbers for your visit`,
-        [`${user.name} reported the numbers on their post for "${booking.title}": ${post.views == null ? "views not reported" : `${post.views} views`}, ${post.likes == null ? "likes not reported" : `${post.likes} likes`}, ${post.comments == null ? "comments not reported" : `${post.comments} comments`}, ${post.shares == null ? "shares not reported" : `${post.shares} shares`}.`, "", "They feed the media-value side of your SIGNL ROAS Score on this booking. The register side is still yours to report under Bookings.", "", "Open SIGNL: https://app.joinsignl.com", "", "SIGNL"].join("\n"),
+        [`${user.name} reported the numbers on their post for "${booking.title}": ${post.views == null ? "views not reported" : `${post.views} views`}, ${post.likes == null ? "likes not reported" : `${post.likes} likes`}, ${post.comments == null ? "comments not reported" : `${post.comments} comments`}, ${post.shares == null ? "shares not reported" : `${post.shares} shares`}.`, "", "They feed the media-value side of this booking's modeled estimate. The register side is still yours to report under Bookings.", "", "Open SIGNL: https://app.joinsignl.com", "", "SIGNL"].join("\n"),
         { bookingId: booking.id, postId: post.id });
     } else {
       // Later snapshot updates are quieter: an in-app note for the

@@ -101,7 +101,7 @@ try {
   if (loginRes.status !== 200) throw new Error(`admin login failed: ${loginRes.status}`);
 
   const boot = await anon("GET", "/api/bootstrap");
-  check("bootstrap publishes the ROAS model rates and label", boot.data.roasModel && boot.data.roasModel.cpm === 22 && boot.data.roasModel.like === 0.1 && boot.data.roasModel.comment === 0.5 && boot.data.roasModel.share === 1 && boot.data.roasModel.suggestedDiscountPct === 20 && boot.data.roasModel.defaultDiscountPct === undefined && /SIGNL ROAS Score/.test(boot.data.roasModel.label || ""), JSON.stringify(boot.data.roasModel || null));
+  check("bootstrap publishes the ROAS model rates and label", boot.data.roasModel && boot.data.roasModel.cpm === 22 && boot.data.roasModel.like === 0.1 && boot.data.roasModel.comment === 0.5 && boot.data.roasModel.share === 1 && boot.data.roasModel.suggestedDiscountPct === 20 && boot.data.roasModel.defaultDiscountPct === undefined && boot.data.roasModel.label === "Modeled estimate, our own model", JSON.stringify(boot.data.roasModel || null));
 
   async function registerCreator(handle) {
     const client = makeClient();

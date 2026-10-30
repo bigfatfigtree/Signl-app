@@ -2460,7 +2460,7 @@ function renderHelpTab() {
     ${qa("What do I owe after a visit?", "One post plus one story that shares the post. Post within 48 hours to be on time; the hard deadline is one week. Always disclose the comp, that is the law and the deal.")}
     ${qa("How do comped visits and paid bookings differ?", "A comped visit covers the meal or service, on the business. A paid booking pays your listed rate, and you keep 97%. Joining is free and comped visits are always free; the only fee is 3% on paid bookings.")}
     ${qa("What is local reach?", "The share of your audience that actually lives here, times your audience size. Businesses rank creators by local reach, not follower count.")}
-    ${qa("How does Momentum work?", "Points for doing the work well: +20 for an on-time post, +10 when a business approves you, +25 when you approve a license, +3 when someone joins from your invite link. Late posts and no-shows cost points.")}
+    ${qa("How does Momentum work?", "Points for doing the work well: +20 for an on-time post, +25 when a business runs your post as an ad, +3 when someone joins from your invite link, +10 when a creator you invited is approved. Late posts and no-shows cost points.")}
     ${qa("What is a license request?", "A business asks to repost your post and run it as an ad for 90 days, at your listed licensing fee. You approve each use and keep 97%. It lives under Earnings.")}
     ${qa("When do I get paid?", "Paid bookings record your rate in the app: booked at your rate, you keep 97%. Payouts run outside the app for now, and nothing in the app promises a payout date.")}
   `}
@@ -2875,7 +2875,7 @@ function sigBankFor(biz) {
     { id: "localreach", q: "What is local reach?", ph: ["local reach", "local audience", "local percent", "local %"], g: [["local"], ["reach", "audience", "percent", "%", "share", "followers"]], s: ["reach"],
       a: "Local reach is the share of your audience that actually lives in your market, applied to your audience size. It is the number businesses rank creators by on SIGNL, not follower count. A smaller account whose people are all here can outrank a huge account whose followers are spread across the country.", flow: (c) => !c.profileComplete ? "Finish my profile" : null },
     { id: "momentum", q: "How does Momentum work?", ph: ["momentum", "points", "earn points", "how does momentum"], g: [["momentum", "points"], ["how", "earn", "work", "get", "mean"]], s: ["momentum"],
-      a: "Momentum is points for doing the work well. Points order the list businesses see, so they are priority, not cash, and they unlock badges. The big earners: +20 for a post on time, +25 every 5 on-time posts in a row, +25 for approving a license, +10 for each review you write, +5 for a late post inside the week and +5 for reporting a post's numbers. Your profile earns too: photo +10, bio +5, neighborhood +5, local audience +5, audience stack +10, best work links +5 each up to 3. Invites pay +3 when someone joins from your link and +10 when they are approved, and approved referrals unlock badge bonuses up to +150.", flow: "Check my Momentum" },
+      a: "Momentum is points for doing the work well. Points order the list businesses see, so they are priority, not cash, and they unlock badges. The big earners: +20 for a post on time, +25 every 5 on-time posts in a row, +25 when a business runs your post as an ad, +10 for each review you write, +5 for a late post inside the week and +5 for reporting a post's numbers. Your profile earns too: photo +10, bio +5, neighborhood +5, local audience +5, audience stack +10, best work links +5 each up to 3. Invites pay +3 when someone joins from your link and +10 when they are approved, and approved referrals unlock badge bonuses up to +150.", flow: "Check my Momentum" },
     { id: "tiers", q: "How do tiers work?", ph: ["tier", "neighbors", "locals", "headliners", "what tier"], g: [["tier", "neighbors", "locals", "headliners"], ["what", "how", "am i", "mean", "work", "level"]], s: ["tier", "headliners"],
       a: "Tiers come from your stacked audience, counted across all your platforms, and they set themselves. Neighbors is 500 to 2,000, Locals is 2,000 to 15,000, Headliners is 15,000 and up. Tier shapes which offers you are eligible for, and Headliners are first in line for paid campaigns when they open in a market.", flow: "Check my Momentum" },
     { id: "visits", q: "How does a visit work, start to finish?", ph: ["visit work", "how does a visit", "visit code", "check in", "redeem", "how do visits work"], g: [["visit", "visits"], ["how", "work", "happen", "process", "code", "redeem"]], s: [],
@@ -2885,7 +2885,7 @@ function sigBankFor(biz) {
     { id: "cantmake", q: "What if I can't make a visit?", ph: ["can't make", "cant make", "miss a visit", "running late", "cancel a visit", "reschedule", "something came up"], g: [["visit", "booking"], ["cancel", "miss", "late", "cant", "cannot", "reschedule", "sick", "emergency"]], s: [],
       a: "Message the business in the app as early as you can; a heads-up before the visit is always better than silence. A visit you accept and skip costs Momentum points, and repeated no-shows can cost you your spot on the roster." },
     { id: "licensing", q: "What is a license request?", ph: ["license request", "licensing", "license my post", "reuse my post", "license fee"], g: [["licens"], ["request", "what", "how", "fee", "approve", "work"]], s: ["licensing"],
-      a: "Licensing is how a business reuses a post you already made. They request a license at the fee you set, and you approve or decline each use. An approved license lets them repost it and run it as an ad for 90 days. You keep 97% of the fee, and approving one earns +25 Momentum.", flow: (c) => c.live ? "See my earnings" : null },
+      a: "Licensing is how a business reuses a post you already made. They request a license at the fee you set, and you approve or decline each use. An approved license lets them repost it and run it as an ad for 90 days. You keep 97% of the fee, and when the business runs your post as an ad, you earn +25 Momentum.", flow: (c) => c.live ? "See my earnings" : null },
     { id: "profilegate", q: "What do I need to finish my profile?", ph: ["finish my profile", "complete my profile", "profile complete", "businesses see me", "not showing up", "why can't businesses"], g: [["profile", "businesses", "roster"], ["finish", "complete", "need", "missing", "see", "visible", "showing"]], s: [],
       a: (c) => {
         let t = "Businesses only see creators with a finished profile, and approval is not the gate; a finished profile is. Finished means four things: your home city, an audience count above zero, at least one category, and your local audience share reported. A photo is not required, but it earns +10 Momentum and makes your card stronger.";
@@ -4443,7 +4443,7 @@ async function sigB3Run() {
   const series = perfSeriesText(o.series);
   if (series) lines.push(`${ST("Post views over time", "Vistas en el tiempo")}: ${series}.`);
   if (o.redemptions && o.redemptions.count > 0) lines.push(`${ST("Redemptions rung up", "Canjes registrados")}: ${o.redemptions.count} ($${fmtMoney(o.redemptions.basketTotal || 0)}).`);
-  if (o.registerValue) lines.push(`${ST("Register value", "Valor en caja")}: $${fmtMoney(o.registerValue)}${o.roasScore !== null && o.roasScore !== undefined ? ` · ROAS ${o.roasScore}` : ""}.`);
+  if (o.registerValue) lines.push(`${ST("Register value", "Valor en caja")}: $${fmtMoney(o.registerValue)}${o.roasScore !== null && o.roasScore !== undefined ? ` · ${ST("modeled estimate", "estimación modelada")} ${o.roasScore}` : ""}.`);
   else if (o.estimatedRegisterValue) lines.push(`${ST("Estimated register value", "Valor estimado en caja")}: $${fmtMoney(o.estimatedRegisterValue)}.`);
   const topRows = (ro.offers || []).filter((r) => (r.postsLive || 0) > 0 || (r.visitsBooked || 0) > 0).slice(0, 3);
   for (const r of topRows) lines.push(`"${r.title}": ${r.visitsBooked || 0} ${ST("booked", "reservadas")} · ${r.postsLive || 0} ${ST("posts live", "publicaciones")}${r.views ? ` · ${fmtNum(r.views)} ${ST("views", "vistas")}` : ""}.`);
@@ -7753,6 +7753,102 @@ function v2CostCaptureHtml(v) {
   </div>
   <label class="ckrow small"><input type="checkbox" class="ckbox" id="v2-zero-${v.bookingId}"><span>It genuinely cost us nothing</span></label> <span class="small" id="v2-cost-note-${v.bookingId}"></span>`;
 }
+// ---------- Build -43: ROAS presentation ----------
+// The Score v2 math did not change. What changed is the
+// presentation: visual numbers first, prose second, an info
+// button on every figure, and tap-to-expand detail. The info
+// text is one or two plain sentences per figure: what it is
+// and how it is counted. The popover mirrors the offer form's
+// info sheet.
+const ROAS_INFO = {
+  score: { title: "Your SIGNL ROAS Score", body: "For every $1 your month cost you, all in, this is how many counted dollars came back through your register. It counts register events only. It never counts estimates, and it never counts the posts as money." },
+  back: { title: "Counted back", body: "Check totals your team logged at the register with a creator's code: first visits and came-backs, every one time-stamped. Customers who came in without a code are not in this number, so the real figure is higher." },
+  putin: { title: "All in", body: "Everything the month cost you: your plan at what you actually paid, comps at your cost, paid creators at their rate plus your fee share, and code discounts your customers used. Nothing else is in it, and no cost is ever estimated for you." },
+  week: { title: "Counted by week", body: "Every check total your team logged, grouped by the week it was rung at your register. Your score groups the same dollars by the visits that earned them; this chart groups them by when they were rung." },
+  cameback: { title: "Came-backs", body: "A counted first customer gets a pass, good for a return visit within 30 days. When they come back and spend, it counts here, at full price unless you chose a perk. The rate prints on first customers whose 30 days have closed, so it never rests on a window still running." },
+  costs: { title: "What it cost, all in", body: "Every cost inside your score, itemized: your plan at what you actually paid, comps at your cost, paid creators, and code discounts as they were redeemed. A discount is figured on the full check, before the discount comes off." },
+  media: { title: "The posts, priced as media", body: "What this month's posts would cost at our published rates. It is a model, not register money, so it rides on its own line and never enters your score." },
+  tally: { title: "Your reported tally", body: "Numbers your team reported as one total instead of check by check. They print here as facts. Your score counts register events only, so a tally never enters the number." },
+  months: { title: "Your months", body: "A score belongs to the month whose visits earned it, and the plan counts once, whole, in that month. Tap a month to see its counted events and its all-in cost." },
+  visits: { title: "Visits, scored", body: "Each visit's counted register dollars against what that visit itself cost you, before your plan. Tap a visit for its counted customers, its cost, and how its number was counted." },
+  creators: { title: "Who brought them", body: "Each creator's counted register dollars against their own visits' costs, before your plan. Tap a creator for their visits, customers, and came-backs. It is counted the same way for every creator." },
+  forming: { title: "Why there is no score yet", body: "A score prints when a month has enough counted at the register to mean something: at least 3 visits counted at the register, at least 10 register events, every visit's cost on record, and your plan charge on record. Until then, you see the counted dollars themselves." },
+};
+function roasInfoBtn(topic) {
+  return `<button type="button" class="info-btn" aria-label="About this number" onclick="return showRoasInfo('${topic}')">i</button>`;
+}
+function showRoasInfo(topic) {
+  const info = ROAS_INFO[topic];
+  const pop = document.getElementById("roas-info-pop");
+  if (!info || !pop) return false;
+  document.getElementById("roas-info-title").textContent = info.title;
+  document.getElementById("roas-info-body").textContent = info.body;
+  pop.style.display = "";
+  return false;
+}
+function closeRoasInfo() {
+  const pop = document.getElementById("roas-info-pop");
+  if (pop) pop.style.display = "none";
+  return false;
+}
+function roasInfoPopHtml() {
+  return `<div id="roas-info-pop" class="sheet-overlay" style="display:none" onclick="if(event.target===this) closeRoasInfo()">
+    <div class="sheet">
+      <div class="flex-between"><strong id="roas-info-title"></strong><button type="button" class="linklike" onclick="return closeRoasInfo()">Close</button></div>
+      <p class="small" id="roas-info-body"></p>
+    </div>
+  </div>`;
+}
+// The versus bars are segment stacks, not single fills: each
+// row renders one or more { amount, cls } segments into one
+// track, widths against the shared max, the row total being the
+// segments' sum. A later component can stack into a row as one
+// more segment with its own class, with no markup change here.
+// Today the Back row carries exactly one segment (counted) and
+// the All in row one (in).
+function roasBarRow(label, topic, segments, max) {
+  const segs = (segments || []).filter((sg) => sg && Number(sg.amount) > 0);
+  const total = segs.reduce((a, sg) => a + Number(sg.amount), 0);
+  const fills = segs.map((sg) => {
+    const pct = max > 0 ? Math.max(2, Math.round((Number(sg.amount) / max) * 100)) : 0;
+    return `<i class="${sg.cls || "counted"}" style="width:${pct}%"></i>`;
+  }).join("");
+  return `<div class="roas-vs-row"><div class="roas-vs-head"><span>${label} ${roasInfoBtn(topic)}</span><strong>$${fmtMoney(total)}</strong></div><div class="roas-bar stack">${fills}</div></div>`;
+}
+function roasWeekChart(weeks) {
+  if (!weeks || !weeks.length) return "";
+  const max = Math.max(...weeks.map((w) => w.total), 0);
+  if (max <= 0) return "";
+  const cols = weeks.map((w) => {
+    const h = Math.max(3, Math.round((w.total / max) * 84));
+    // Chart labels run compact (whole dollars when whole): at
+    // phone width five full-cent labels collide with each other.
+    const v = Number.isInteger(w.total) ? "$" + fmtNum(w.total) : "$" + fmtMoney(w.total);
+    return `<div class="roas-wk"><span class="roas-wk-v">${w.total > 0 ? v : "&nbsp;"}</span><div class="roas-wk-bar" style="height:${h}px"></div><span class="roas-wk-l">${esc(w.label)}</span></div>`;
+  }).join("");
+  return `<div class="roas-wks">${cols}</div>`;
+}
+// How SIGNL gets credit (Build -43): the counting chain in
+// three plain steps, plus the honest status of each way of
+// counting for this business. The register plug-in is
+// described in the approved concierge words only: there is no
+// live POS integration, and this panel never claims one.
+function creditPanelHtml(r) {
+  return `<div style="margin-top:16px;border-top:1px solid var(--hairline,#DFE7DF);padding-top:12px">
+    <h4 style="margin:0 0 4px">How SIGNL gets credit</h4>
+    <p class="small muted" style="margin:0">Your score only counts what your register can prove. Here is the whole chain.</p>
+    <div class="credit-step"><span class="credit-n">1</span><p class="small" style="margin:0"><strong>Every creator post carries that creator's own code.</strong> Each booking gives its creator a code of their own, and it rides in their post.</p></div>
+    <div class="credit-step"><span class="credit-n">2</span><p class="small" style="margin:0"><strong>The customer shows the code at the register when they pay.</strong> No app for the customer, nothing new at the counter but the code.</p></div>
+    <div class="credit-step"><span class="credit-n">3</span><p class="small" style="margin:0"><strong>Your team logs the check total, and the visit counts in your score, dollar by dollar.</strong> First visits and came-backs alike, each one time-stamped.</p></div>
+    <div class="panel" style="margin-top:12px">
+      <h4 style="margin:0 0 6px">How counting works for you</h4>
+      <p class="small" style="margin:0 0 6px"><strong>Your codes are live.</strong> Every booking carries its creator's own code from the moment it is booked, and every audience offer carries one too.</p>
+      <p class="small" style="margin:0 0 6px"><strong>At close-out, the tally takes about 30 seconds.</strong> Your team reports the code uses and check totals on the visit card, and the numbers land here. <button type="button" class="btn small-btn ghost" onclick="return go('dashboard','Visits &amp; Posts')">Open Visits &amp; Posts</button></p>
+      <p class="small" style="margin:0"><strong>Register plug-in:</strong> we plug into your POS with you on the setup call, one tap on your end, we stay on the line until your panel says connected; if your system isn't one we connect to yet, your codes start counting on the register you already have.</p>
+    </div>
+  </div>
+  ${roasInfoPopHtml()}`;
+}
 function scoreV2Html(r) {
   const s = r.scoreV2 && r.scoreV2.current;
   if (!s) return "";
@@ -7769,15 +7865,50 @@ function scoreV2Html(r) {
     if (fr.kind === "tally_only") return `Your score starts when redemptions are counted at the register. This month rode on your reported tally, which rides below as a fact, never in the number.`;
     return "";
   };
-  const head = s.state === "forming"
-    ? `<p style="margin:8px 0 0;font-size:1.08rem"><strong>$${fmtMoney(s.countedBack)} counted back so far</strong>, from ${s.countedCustomers} customer${s.countedCustomers === 1 ? "" : "s"}, every one time-stamped.</p>
-    <p class="small muted" style="margin:6px 0 0">Your score starts when there is enough counted to mean something. It is on its way, and every dollar above is a counted dollar. Most first months sit here while the counting builds.</p>
-    ${reasons.map((fr) => `<p class="small" style="margin:6px 0 0">${esc(reasonLine(fr))}</p>`).join("")}`
-    : `<p style="margin:8px 0 0;font-size:1.08rem">At least <strong>$${fmtMoney(s.countedBack)}</strong> came back through your register from ${esc(s.monthLabel)}'s visits, counted dollar by dollar.</p>
-    <p style="margin:8px 0 0;font-size:1.15rem"><strong>SIGNL ROAS Score: ${Number(s.score).toFixed(1)}&times;</strong> ${esc(s.sentence || "")}${s.state === "counting" ? ` <span class="badge info">Still counting</span>` : ""}</p>
+  let head;
+  if (s.state === "forming") {
+    const meters = reasons.filter((fr) => fr.kind === "visits" || fr.kind === "events").map((fr) => {
+      const pct = Math.min(100, Math.max(3, Math.round((fr.counted / fr.needed) * 100)));
+      return `<div class="roas-vs-row"><div class="roas-vs-head"><span>${fr.kind === "visits" ? "Visits counted at the register" : "Register events counted"}</span><strong>${fr.counted} of ${fr.needed}</strong></div><div class="roas-bar"><i style="width:${pct}%"></i></div><p class="small muted" style="margin:4px 0 0">${esc(reasonLine(fr))}</p></div>`;
+    }).join("");
+    const otherReasons = reasons.filter((fr) => fr.kind !== "visits" && fr.kind !== "events").map((fr) => `<p class="small" style="margin:8px 0 0">${esc(reasonLine(fr))}</p>`).join("");
+    head = `<div class="roas-big-label">Counted back so far ${roasInfoBtn("back")}</div>
+    <div class="roas-big">$${fmtMoney(s.countedBack)}</div>
+    <p class="small muted" style="margin:4px 0 0">From ${s.countedCustomers} counted customer${s.countedCustomers === 1 ? "" : "s"}, every one time-stamped.</p>
+    <p class="small" style="margin:10px 0 0">Your score starts when there is enough counted to mean something. It is on its way, and every dollar above is a counted dollar. Most first months sit here while the counting builds. ${roasInfoBtn("forming")}</p>
+    ${meters}${otherReasons}`;
+  } else {
+    const vsMax = Math.max(s.countedBack, cost.total || 0);
+    head = `<div class="roas-score-top">
+      <div>
+        <div class="roas-big-label">SIGNL ROAS Score ${roasInfoBtn("score")}</div>
+        <div class="roas-big" aria-label="SIGNL ROAS Score: ${Number(s.score).toFixed(1)}&times;">${Number(s.score).toFixed(1)}&times;</div>
+      </div>
+      <div class="roas-score-side">
+        ${s.state === "counting" ? `<span class="badge info">Still counting</span>` : `<span class="badge ok">Final</span>`}
+        <p class="small" style="margin:6px 0 0">${esc(s.sentence || "")}</p>
+      </div>
+    </div>
+    <p class="small muted" style="margin:8px 0 0">At least <strong>$${fmtMoney(s.countedBack)}</strong> came back through your register from ${esc(s.monthLabel)}'s visits, counted dollar by dollar, from ${s.countedEvents} register events. Customers who came in without a code are not in this number, so the real figure is higher.</p>
     ${cost.planCredit > 0 ? `<p class="small" style="margin:6px 0 0">This month carries your $100 founding credit, so the score runs high. It is not the run rate.</p>` : ""}
-    <p class="small muted" style="margin:6px 0 0">Counted from ${s.countedEvents} register events, each one time-stamped. Customers who came in without a code are not in this number, so the real figure is higher.</p>
-    ${cb.returns > 0 ? `<p style="margin:8px 0 0">And <strong>${cb.returns} of the ${cb.firsts} customers</strong> your creators brought in came back within a month and spent <strong>$${fmtMoney(cb.returnSpend)}</strong> more, at full price.${cb.rate !== null && cb.rate !== undefined ? ` Of the first customers whose month has closed (${cb.closedFirsts}), ${Math.round(cb.rate * 100)}% came back${cb.stillInWindow ? `, and ${cb.stillInWindow} more are still inside theirs` : ""}.` : ""}</p>` : `<p class="small muted" style="margin:8px 0 0">No came-backs counted yet for this month's visits. Every first redemption with a check total hands the customer a pass, good for 30 days here.</p>`}`;
+    <div class="roas-vs">
+      ${roasBarRow("Back through your register", "back", [{ amount: s.countedBack, cls: "counted" }], vsMax)}
+      ${cost.total !== null && cost.total !== undefined ? roasBarRow("All in, what you put in", "putin", [{ amount: cost.total, cls: "in" }], vsMax) : ""}
+    </div>`;
+  }
+  const segBar = cb.firsts > 0 ? `<div class="roas-seg" aria-hidden="true">${Array.from({ length: Math.min(cb.firsts, 40) }, (_, i) => `<i class="${i < cb.returns ? "on" : ""}"></i>`).join("")}</div>` : "";
+  const cbBlock = cb.firsts > 0
+    ? `<div style="margin-top:14px"><h4 style="margin:0 0 2px">Came back ${roasInfoBtn("cameback")}</h4>
+    <p style="margin:4px 0 0;font-size:1.05rem"><strong>${cb.returns} of ${cb.firsts}</strong> customers your creators brought in came back within a month${cb.returnSpend > 0 ? ` and spent <strong>$${fmtMoney(cb.returnSpend)}</strong> more, at full price` : ""}.</p>
+    ${segBar}
+    ${cb.rate !== null && cb.rate !== undefined ? `<p class="small muted" style="margin:6px 0 0">Of the first customers whose month has closed (${cb.closedFirsts}), ${Math.round(cb.rate * 100)}% came back${cb.stillInWindow ? `, and ${cb.stillInWindow} more are still inside theirs` : ""}.</p>` : ""}</div>`
+    : s.state !== "forming" ? `<p class="small muted" style="margin:10px 0 0">No came-backs counted yet for this month's visits. Every first redemption with a check total hands the customer a pass, good for 30 days here.</p>` : "";
+  const weeks = r.scoreV2.weeklyCounted || [];
+  const weekBlock = weeks.some((w) => w.total > 0)
+    ? `<div style="margin-top:14px"><h4 style="margin:0 0 2px">Counted at your register, by week ${roasInfoBtn("week")}</h4>
+    ${roasWeekChart(weeks)}
+    <p class="small muted" style="margin:6px 0 0">Counted at your register this month, whenever it was rung: $${fmtMoney(weeks.reduce((a, w) => a + w.total, 0))}, first visits and came-backs together. Your score is by the visits that earned it; this chart is by when it was rung.</p></div>`
+    : "";
   const costRows = [
     cost.planRecorded ? `<div class="lrow"><span>Your plan, at what you actually paid</span><strong>$${fmtMoney(cost.plan)}</strong></div>` : "",
     cost.planCredit > 0 ? `<div class="lrow"><span>Founding credit applied</span><strong>-$${fmtMoney(cost.planCredit)}</strong></div>` : "",
@@ -7786,23 +7917,42 @@ function scoreV2Html(r) {
     cost.discountCosts > 0 ? `<div class="lrow"><span>Code discounts your customers used</span><strong>$${fmtMoney(cost.discountCosts)}</strong></div>` : "",
     cost.total !== null && cost.total !== undefined ? `<div class="lrow"><span><strong>All in</strong></span><strong>$${fmtMoney(cost.total)}</strong></div>` : "",
   ].join("");
-  const visitRows = (s.visits || []).map((v) => `<div class="lrow" style="margin-top:8px"><div style="flex:1"><span class="lname">${esc(v.title || "Visit")}</span> <span class="muted">with @${esc(v.creatorHandle)}</span>
-    <div class="small muted">${v.source === "events" ? `${v.customers} counted customer${v.customers === 1 ? "" : "s"} · $${fmtMoney(v.spend + v.returnSpend)} counted${v.returns ? ` · ${v.returns} came back` : ""}` : v.source === "tally" ? `${v.customers} customers · $${fmtMoney(v.spend)} on your reported tally` : "Nothing counted yet"}${v.score !== null && v.score !== undefined ? ` · <strong>Visit score ${Number(v.score).toFixed(1)}&times;</strong>${v.state === "counting" ? " (still counting)" : ""}` : v.state === "no_cost" ? " · it cost you nothing, so there is no multiple to print" : ""}</div>
-    <div class="small muted">${esc(v.methodLine || "")}</div>
-    ${v.costState === "missing" ? v2CostCaptureHtml(v) : v.directCost !== null && v.directCost !== undefined && !v.paid ? `<div class="small muted">This visit's cost is on record at $${fmtMoney(v.directCost)}. Adjust it on the visit while this month's books stay open.</div>` : ""}
-  </div></div>`).join("");
-  const creatorRows = (s.creators || []).length ? `<h4 style="margin:14px 0 4px">Who brought them, scored</h4>${s.creators.map((w) => `<div class="lrow"><div style="flex:1"><span class="lname">@${esc(w.creatorHandle)}</span><div class="small muted">${w.visits} visit${w.visits === 1 ? "" : "s"} this month</div></div><span>${w.customers} customers · $${fmtMoney(w.spend)}${w.cameBacks ? ` · ${w.cameBacks} came back` : ""}${w.score !== null && w.score !== undefined ? ` · <strong>${Number(w.score).toFixed(1)}&times;</strong>` : ` · <span class="muted">score forming</span>`}</span></div>`).join("")}<p class="small muted" style="margin:6px 0 0">${esc((s.creators[0] || {}).methodLine || "")}</p>` : "";
+  const costBlock = costRows ? `<div style="margin-top:14px"><h4 style="margin:0 0 4px">What it cost, all in ${roasInfoBtn("costs")}</h4>${costRows}<p class="small muted" style="margin:6px 0 0">${esc(s.discountWords || "")}</p></div>` : "";
+  const mediaBlock = s.media && s.media.value > 0 ? `<div style="margin-top:12px"><span class="chip-mini">Modeled, never counted</span> <span class="small">The posts themselves, priced at our published rates: <strong>$${fmtMoney(s.media.value)}</strong>. ${roasInfoBtn("media")}</span><p class="small muted" style="margin:4px 0 0">${esc(s.media.words)}${s.media.withPostsValued !== null && s.media.withPostsValued !== undefined ? ` With posts valued in, the same month reads ${Number(s.media.withPostsValued).toFixed(1)}&times;. It rides second, on purpose.` : ""}</p></div>` : "";
+  const tallyBlock = s.tallyFacts ? `<div style="margin-top:10px"><span class="chip-mini">Reported tally, a fact</span> <span class="small">Your reported tally says ${s.tallyFacts.customers} customers and $${fmtMoney(s.tallyFacts.spend)} rung across ${s.tallyFacts.visits} visit${s.tallyFacts.visits === 1 ? "" : "s"}. Tallies ride as facts; the score counts register events only. ${roasInfoBtn("tally")}</span></div>` : "";
+  const monthRows = (r.scoreV2.cohorts || []).map((c) => {
+    if (c.month === s.month) return `<div class="roas-month-cur"><span><strong>${esc(c.monthLabel)}</strong> <span class="badge info">This month</span></span><strong>${c.state === "forming" ? "Forming" : `${Number(c.score).toFixed(1)}&times;`}</strong></div>`;
+    const scoreTxt = c.state === "forming" ? "score forming" : c.state === "counting" ? `score ${Number(c.score).toFixed(1)}&times;, still counting` : `final score ${Number(c.score).toFixed(1)}&times;`;
+    return `<details class="roas-x"><summary><span style="flex:1 1 130px;min-width:0"><strong>${esc(c.monthLabel)}</strong> <span class="muted">${scoreTxt}</span></span><strong>$${fmtMoney(c.countedBack)}</strong></summary><div class="small muted" style="margin-top:4px">${c.countedEvents} register events · ${c.countedCustomers} counted customers${c.cameBackReturns ? ` · ${c.cameBackReturns} came back` : ""}${c.costTotal !== null && c.costTotal !== undefined ? ` · all in $${fmtMoney(c.costTotal)}` : ""}. Counted back: $${fmtMoney(c.countedBack)}.</div></details>`;
+  }).join("");
+  const monthsBlock = monthRows ? `<div style="margin-top:14px"><h4 style="margin:0 0 4px">Your months ${roasInfoBtn("months")}</h4>${monthRows}${r.scoreV2.trailing3 ? `<p class="small" style="margin:8px 0 0">Your scored months together (${esc(r.scoreV2.trailing3.months.join(", "))}): <strong>${Number(r.scoreV2.trailing3.score).toFixed(1)}&times;</strong>, returns and costs summed, never averaged.</p>` : ""}</div>` : "";
+  const visitRows = (s.visits || []).map((v) => {
+    const counted = v.source === "events" ? `$${fmtMoney(v.spend + v.returnSpend)} counted` : v.source === "tally" ? `$${fmtMoney(v.spend)} on your tally` : "Nothing counted yet";
+    const chip = v.score !== null && v.score !== undefined ? `<span class="chip-mini">${Number(v.score).toFixed(1)}&times; before your plan</span>` : v.state === "no_cost" ? `<span class="chip-mini">Cost you nothing</span>` : "";
+    return `<details class="roas-x"${v.costState === "missing" ? " open" : ""}><summary><span style="flex:1 1 130px;min-width:0"><span class="lname">${esc(v.title || "Visit")}</span> <span class="muted">with @${esc(v.creatorHandle)}</span></span><span class="roas-sum-v"><strong>${counted}</strong>${chip ? ` ${chip}` : ""}</span></summary>
+    <div style="margin-top:4px">
+      <div class="small muted">${v.source === "events" ? `${v.customers} counted customer${v.customers === 1 ? "" : "s"} · $${fmtMoney(v.spend + v.returnSpend)} counted${v.returns ? ` · ${v.returns} came back ($${fmtMoney(v.returnSpend)})` : ""}` : v.source === "tally" ? `${v.customers} customers · $${fmtMoney(v.spend)} on your reported tally` : "Nothing counted yet"}${v.score !== null && v.score !== undefined ? ` · <strong>Visit score ${Number(v.score).toFixed(1)}&times;</strong>${v.state === "counting" ? " (still counting)" : ""}` : v.state === "no_cost" ? " · it cost you nothing, so there is no multiple to print" : ""}</div>
+      <div class="small muted">${esc(v.methodLine || "")}</div>
+      ${v.costState === "missing" ? v2CostCaptureHtml(v) : v.directCost !== null && v.directCost !== undefined && !v.paid ? `<div class="small muted">This visit's cost is on record at $${fmtMoney(v.directCost)}. Adjust it on the visit while this month's books stay open.</div>` : ""}
+    </div></details>`;
+  }).join("");
+  const creatorMax = Math.max(...(s.creators || []).map((w) => w.spend || 0), 0);
+  const creatorRows = (s.creators || []).length ? `<div style="margin-top:14px"><h4 style="margin:0 0 4px">Who brought them ${roasInfoBtn("creators")}</h4>${s.creators.map((w) => {
+    const pct = creatorMax > 0 ? Math.max(3, Math.round(((w.spend || 0) / creatorMax) * 100)) : 0;
+    return `<details class="roas-x"><summary><span style="flex:1 1 130px;min-width:0"><span class="lname">@${esc(w.creatorHandle)}</span><span class="roas-bar slim"><i style="width:${pct}%"></i></span></span><span class="roas-sum-v"><strong>$${fmtMoney(w.spend)}</strong> ${w.score !== null && w.score !== undefined ? `<span class="chip-mini">${Number(w.score).toFixed(1)}&times; before your plan</span>` : `<span class="chip-mini">Score forming</span>`}</span></summary>
+    <div class="small muted" style="margin-top:4px">${w.visits} visit${w.visits === 1 ? "" : "s"} this month · ${w.customers} customers${w.cameBacks ? ` · ${w.cameBacks} came back` : ""}${w.directCost !== null && w.directCost !== undefined ? ` · their visits cost you $${fmtMoney(w.directCost)}` : ""}.</div></details>`;
+  }).join("")}<p class="small muted" style="margin:6px 0 0">${esc((s.creators[0] || {}).methodLine || "")}</p></div>` : "";
   const gap = r.captureGap || {};
   return `<div style="margin-top:12px;border-top:1px solid var(--hairline,#DFE7DF);padding-top:12px">
     <p class="ui-kicker">Your score</p>
     ${head}
-    ${costRows ? `<div style="margin-top:12px"><h4 style="margin:0 0 4px">What it cost, all in</h4>${costRows}<p class="small muted" style="margin:6px 0 0">${esc(s.discountWords || "")}</p></div>` : ""}
-    ${s.media && s.media.value > 0 ? `<p class="small" style="margin:12px 0 0">The posts themselves, priced at our published rates: <strong>$${fmtMoney(s.media.value)}</strong>. ${esc(s.media.words)}${s.media.withPostsValued !== null && s.media.withPostsValued !== undefined ? ` With posts valued in, the same month reads ${Number(s.media.withPostsValued).toFixed(1)}&times;. It rides second, on purpose.` : ""}</p>` : ""}
-    ${s.tallyFacts ? `<p class="small" style="margin:10px 0 0">Also this month: your reported tally says ${s.tallyFacts.customers} customers and $${fmtMoney(s.tallyFacts.spend)} rung across ${s.tallyFacts.visits} visit${s.tallyFacts.visits === 1 ? "" : "s"}. Tallies ride as facts; the score counts register events only.</p>` : ""}
-    <p class="small muted" style="margin:10px 0 0">Counted at your register this month, whenever it was rung: $${fmtMoney(s.calendarCounted)}. Your score is by the visits that earned it; this line is by when it was rung.</p>
-    ${r.scoreV2.trailing3 ? `<p class="small" style="margin:6px 0 0">Your scored months together (${esc(r.scoreV2.trailing3.months.join(", "))}): <strong>${Number(r.scoreV2.trailing3.score).toFixed(1)}&times;</strong>, returns and costs summed, never averaged.</p>` : ""}
-    ${(r.scoreV2.cohorts || []).filter((c) => c.month !== s.month).map((c) => `<p class="small muted" style="margin:4px 0 0">${esc(c.monthLabel)}: ${c.state === "forming" ? "score forming" : c.state === "counting" ? `score ${Number(c.score).toFixed(1)}&times;, still counting` : `final score ${Number(c.score).toFixed(1)}&times;`}.</p>`).join("")}
-    ${visitRows ? `<div style="margin-top:12px"><h4 style="margin:0 0 4px">This month's visits, scored</h4>${visitRows}</div>` : ""}
+    ${cbBlock}
+    ${weekBlock}
+    ${costBlock}
+    ${mediaBlock}
+    ${tallyBlock}
+    ${monthsBlock}
+    ${visitRows ? `<div style="margin-top:12px"><h4 style="margin:0 0 4px">This month's visits ${roasInfoBtn("visits")}</h4>${visitRows}</div>` : ""}
     ${creatorRows}
     ${gap.state === "thin" ? `<div class="panel" style="margin-top:14px"><h4 style="margin:0 0 4px">One check: the counting looks thin</h4><p class="small" style="margin:0">Posts from your visits were seen about ${fmtNum(gap.reach)} times (creators reported), and ${gap.countedFirsts} customers were counted at the register. Here is what we can check: the code in the post captions, code cards at the counter, an audience offer attached to the visit. The script card at the bottom of this page helps too: one question at the counter catches the customers no code ever sees.</p></div>` : ""}
     <p class="small muted" style="margin:12px 0 0">${esc(s.versionLine || "")}</p>
@@ -7818,6 +7968,7 @@ function receiptHtml(r) {
     <p class="ui-kicker">Your receipt</p>
     <h3>What SIGNL brought you</h3>
     ${scoreV2Html(r)}
+    ${creditPanelHtml(r)}
     ${hasLedger ? `
     <p style="margin:8px 0 0;font-size:1.08rem">In ${esc(r.monthLabel)}, SIGNL brought you <strong>at least $${fmtMoney(r.trackedSpend)}</strong> in tracked register spend from <strong>${r.customersCounted} counted customer${r.customersCounted === 1 ? "" : "s"}</strong>.</p>
     <p class="small muted">Counted how: every dollar above is a register event your team logged with its check total, or your reported tally where you used it instead. It is a floor, not a projection: customers who never used a code are invisible to everyone, us included.</p>
@@ -8193,6 +8344,32 @@ async function loadBench() {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
 }
+// The Bench carries its own visibility switch (Build -43, Jeff:
+// the control belongs on this page, not only in Profile). It
+// drives the SAME creator.showToCreators flag the Profile lane
+// toggle saves, through the same PATCH, so the two surfaces can
+// never disagree: state.user and state.bench both update here,
+// and the Profile toggle reads the same record on its render.
+function benchVisibilityHtml(data) {
+  const on = !data || data.showToCreators !== false;
+  return `<div class="wcard" style="margin-bottom:12px">
+    <div class="lrow lane-row" style="margin:0"><input type="checkbox" class="sw lane-sw" id="bench-creators" ${on ? "checked" : ""} onchange="benchToggleCreators(this)"><div><label class="lname" for="bench-creators">Show me to other creators</label> <span class="lline">Turning this off removes you from the roster, introductions, exact search, and +1 picking. It is the same switch as in your Profile.</span></div></div>
+  </div>`;
+}
+async function benchToggleCreators(input) {
+  const on = !!input.checked;
+  try {
+    const data = await api("PATCH", "/me/profile", { showToCreators: on });
+    if (data && data.user) state.user = data.user;
+    if (state.bench) state.bench.showToCreators = on;
+    showToast(on ? "You are showing to other creators in your market." : "You are hidden now: off the roster, out of introductions, search, and +1 picking.");
+  } catch (e) {
+    if (state.bench) state.bench.showToCreators = !on;
+    showToast("That did not save. Try again.");
+  }
+  benchRender();
+  return true;
+}
 function benchRender() {
   const el = document.getElementById("bench-body");
   const data = state.bench;
@@ -8200,6 +8377,7 @@ function benchRender() {
   const marketName = marketDisplayName(data.market);
   if (data.state !== "bench") {
     el.innerHTML = `${wsHead("Bench", { sub: "The creators in your market, and the ones you visit with.", subKey: "cr-bench" })}
+    ${benchVisibilityHtml(data)}
     <div class="wcard">
       <h3 style="margin-top:0">The Bench opens when ${esc(marketName)} launches</h3>
       <p class="small" style="margin-bottom:0">This is where the creators in your market live: the people you can visit with and bring as a +1. It opens with the market, so it never opens to an empty room.${data.charter ? ` You are a founding creator in ${esc(marketName)}: your name is on the first roster this city ever sees.` : ""}</p>
@@ -8213,6 +8391,7 @@ function benchRender() {
   const cats = data.categories || [];
   const list = (data.creators || []).filter((c) => !filter || (c.categories || []).includes(filter));
   el.innerHTML = `${wsHead("Bench", { sub: "The creators in your market. Bring one as a +1 on any visit.", subKey: "cr-bench" })}
+  ${benchVisibilityHtml(data)}
   ${data.introduction ? benchIntroCardHtml(data.introduction) : ""}
   ${cats.length ? `<div class="chiprow" style="margin-bottom:12px"><button type="button" class="rchip${!filter ? " on" : ""}" onclick="return benchFilter('')">All</button>${cats.map((cat) => `<button type="button" class="rchip${filter === cat.name ? " on" : ""}" onclick="return benchFilter('${esc(cat.name)}')">${esc(cat.name)}</button>`).join("")}</div>` : ""}
   <div class="vx-stagger">${list.map(benchCardHtml).join("")}</div>`;
@@ -8335,10 +8514,17 @@ async function loadGoldenTickets() {
   const statusLine = (t) => t.status === "claimed" ? `<span class="badge ok">Claimed</span>` : t.status === "expired" ? `<span class="badge">Closed at launch</span>` : `<span class="badge info">Seat held for them</span>`;
   const rows = (data.tickets || []).map((t) => `<div class="lrow" style="margin-top:10px"><div style="flex:1"><span class="lname">${esc(t.name)}</span> ${statusLine(t)}<div class="small muted">A founding seat in ${esc(place)} is held in their name until the market launches.</div></div>${t.status === "issued" ? `<button type="button" class="btn small-btn ghost" onclick="return gtCopyLink('${t.id}', this)">Copy their link</button>` : ""}</div>`).join("");
   host.innerHTML = `<h3>Your Golden Tickets</h3>
-    <p class="wc-sub" style="margin:4px 0 0">Two seats you can hold for two people by name. Send a ticket to a creator who should be founding with you: their seat in ${esc(place)} is held in their name until the market launches, and the invite credit is yours through your referral link, the way every invite works here.</p>
+    <p class="wc-sub" style="margin:4px 0 0">Two seats, and only you can give them. You hold exactly two tickets. Nobody else can hand out your seats, and nobody can take them. Name a creator who should be founding with you and their seat in ${esc(place)} is held in their name until the market launches.</p>
+    <div style="margin-top:10px">
+      <div class="kv"><span>A creator you invite finishes signing up</span><b>+100 points</b></div>
+      <div class="kv"><span>Their invites finish signing up</span><b>+25 points</b></div>
+      <div class="kv"><span>An invite gets approved</span><b>+10 points</b></div>
+      <div class="kv"><span>A creator joins through your link</span><b>+3 points</b></div>
+    </div>
+    <p class="small muted" style="margin:8px 0 0">The big points land when your person finishes: approved, profile complete, a founding creator like you. Points land on your total the moment they happen and move you up when businesses choose. Nothing is paid for a click or a share.</p>
     ${rows}
     ${data.canIssue && data.remaining > 0 ? `<div class="field" style="margin-top:14px"><label>Name a person (${data.remaining} ticket${data.remaining === 1 ? "" : "s"} left)</label><div style="display:flex;gap:8px;flex-wrap:wrap"><input id="gt-name" placeholder="Their name" maxlength="80" style="flex:1;min-width:200px"><button type="button" class="btn small-btn" onclick="return gtIssue()">Hold their seat</button></div><p class="small muted" id="gt-note"></p></div>`
-      : data.canIssue ? `<p class="small muted" style="margin-top:12px">Both of your tickets are out. When one is claimed, the credit lands on your Momentum like every invite.</p>`
+      : data.canIssue ? `<p class="small muted" style="margin-top:12px">Both of your tickets are out. Your points land when each person finishes signing up.</p>`
       : `<p class="small muted" style="margin-top:12px">Finish your profile and your two Golden Tickets unlock. A finished profile is what a ticket vouches for.</p>`}`;
 }
 async function gtIssue() {
@@ -11012,8 +11198,8 @@ function visitCard(b, role) {
     </div>`;
     } else {
       html += pct > 0
-        ? `<p class="small">Audience code for this visit: <strong>${esc(b.creatorCode)}</strong> (${pct}% off for customers who use it, your chosen code discount). It is rung up at your own register; report the tally on this card after the visit and it feeds the visit's SIGNL ROAS Score.</p>`
-        : `<p class="small">Audience code for this visit: <strong>${esc(b.creatorCode)}</strong>. You have not turned on a code discount, so it is a counting code only: no percentage off for customers who use it. It is rung up at your own register; report the tally on this card after the visit and it feeds the visit's SIGNL ROAS Score.</p>`;
+        ? `<p class="small">Audience code for this visit: <strong>${esc(b.creatorCode)}</strong> (${pct}% off for customers who use it, your chosen code discount). It is rung up at your own register; report the tally on this card after the visit and it feeds this visit's modeled estimate.</p>`
+        : `<p class="small">Audience code for this visit: <strong>${esc(b.creatorCode)}</strong>. You have not turned on a code discount, so it is a counting code only: no percentage off for customers who use it. It is rung up at your own register; report the tally on this card after the visit and it feeds this visit's modeled estimate.</p>`;
     }
   }
   if (role === "creator" && b.codeStatus === "issued") {
@@ -11120,7 +11306,7 @@ function visitCard(b, role) {
       html += `
     <form onsubmit="return submitPostPerformance(event, '${b.id}')">
       <h4 style="margin:10px 0 4px">Add post numbers</h4>
-      <p class="small muted">A week in, how did the post do? Optional numbers; reporting earns +5 Momentum points, and they price the media side of the business's SIGNL ROAS Score.</p>
+      <p class="small muted">A week in, how did the post do? Optional numbers; reporting earns +5 Momentum points, and they price the media side of the business's modeled estimate.</p>
       <div class="form-2col">
         <div class="field"><label>Views</label><input type="number" id="perf-views-${b.id}" min="0" placeholder="Optional"></div>
         <div class="field"><label>Likes</label><input type="number" id="perf-likes-${b.id}" min="0" placeholder="Optional"></div>
@@ -11136,7 +11322,7 @@ function visitCard(b, role) {
   }
   if (post && b.roas && (b.redemptions || post.reportedAt)) {
     const r = b.roas;
-    const scoreLine = `<strong>SIGNL ROAS Score: ${r.score === null ? "n/a yet" : r.score.toFixed(2) + "&times;"}</strong> <span class="muted">(our own model)</span> &middot; $${fmtMoney(r.registerValue)} tracked through the code + $${fmtMoney(r.mediaValue)} modeled media value, against $${fmtMoney(r.compCost)} comp at cost + $${fmtMoney(r.discountCost)} code discounts${r.allInScore !== null && r.allInScore !== undefined ? ` &middot; all-in ${r.allInScore.toFixed(2)}&times; with the plan counted` : ""}`;
+    const scoreLine = `<strong>Modeled estimate: ${r.score === null ? "n/a yet" : r.score.toFixed(2) + "&times;"}</strong> <span class="muted">(this visit: tallies plus modeled media value; your SIGNL ROAS Score is on your Receipt)</span> &middot; $${fmtMoney(r.registerValue)} tracked through the code + $${fmtMoney(r.mediaValue)} modeled media value, against $${fmtMoney(r.compCost)} comp at cost + $${fmtMoney(r.discountCost)} code discounts${r.allInScore !== null && r.allInScore !== undefined ? ` &middot; all-in ${r.allInScore.toFixed(2)}&times; with the plan counted` : ""}`;
     html += role === "business"
       ? `<p class="small">${scoreLine}.</p>`
       : `<p class="small">${b.redemptions ? `Your code brought <strong>${b.redemptions.count} customer${b.redemptions.count === 1 ? "" : "s"}, $${fmtMoney(b.redemptions.basketTotal)} rung up</strong> at ${esc(b.businessName)}. ` : ""}${scoreLine}.</p>`;
@@ -11189,7 +11375,7 @@ function visitCard(b, role) {
     </div>
     <form onsubmit="return submitCodeRedemptions(event, '${b.id}')">
       <h4 style="margin:10px 0 4px">Code tally for this visit</h4>
-      <p class="small muted">One question settles it: how many customers used ${b.creatorCode ? `<strong>${esc(b.creatorCode)}</strong>` : "the creator's audience code"} at your register. Saving replaces the last tally and completes this visit's SIGNL ROAS Score.</p>
+      <p class="small muted">One question settles it: how many customers used ${b.creatorCode ? `<strong>${esc(b.creatorCode)}</strong>` : "the creator's audience code"} at your register. Saving replaces the last tally and completes this visit's modeled estimate.</p>
       <div class="form-2col">
         <div class="field"><label>How many customers used the code?</label><input type="number" id="redeem-count-${b.id}" min="0" placeholder="0" value="${tallyCount}" oninput="tallyCountChanged('${b.id}')"></div>
         <div class="field"><label>Total rung up with the code ($)</label><input type="number" id="redeem-basket-${b.id}" min="0" step="0.01" placeholder="0.00" value="${tallyBasket}" oninput="this.dataset.touched='1'"></div>
@@ -11313,7 +11499,7 @@ function perfUpdateFormHtml(b, ctx) {
   <div class="card mb perf-update-card">
     <form onsubmit="return submitPostPerformanceUpdate(event, '${b.id}', '${ctx}')">
       <h4 style="margin:4px 0">Update post numbers</h4>
-      <p class="small muted">${esc(b.title)} at ${esc(b.businessName)}: posts keep growing after week one. Fresh numbers keep the business's SIGNL ROAS Score honest, and updating earns +5 Momentum.</p>
+      <p class="small muted">${esc(b.title)} at ${esc(b.businessName)}: posts keep growing after week one. Fresh numbers keep the business's modeled estimate honest, and updating earns +5 Momentum.</p>
       ${growth}
       <div class="form-2col">
         <div class="field"><label>Views</label><input type="number" id="perfu-views-${b.id}" min="0" value="${num(perf.views)}"></div>
@@ -11889,26 +12075,36 @@ function perfSourceLabel(source) {
   return source === "meta_sync" ? "Synced from Instagram" : "Creator-reported";
 }
 
-// The ROAS stat cell (UX redesign section 7): with nothing
-// tracked, estimated, or modeled yet, show the starting state and
-// the way in, never a bare 0.00x. Otherwise the score rides with
-// its basis lines: what is tracked, what is estimated from code
-// uses at the business's average ticket, what is modeled media.
+// The Home stat cell (Build -43, FIX A): the "SIGNL ROAS Score"
+// label belongs to Score v2 alone. When the payload carries v2
+// (the live Home does), the cell shows the v2 current cohort with
+// its state. Without v2 (the preview twin, older payloads) the
+// legacy figure still renders, but under its honest name: a
+// modeled estimate, with its basis lines (what is tracked, what
+// is estimated from code uses at the average ticket, what is
+// modeled media), and never a bare 0.00x.
 function roasCellHtml(h, navButton) {
+  const v2 = h.roasV2 || null;
+  if (v2) {
+    if (v2.state === "forming" || v2.score === null || v2.score === undefined) {
+      return `<div class="stat-cell"><div class="stat-num grad-text" style="font-size:1.1rem">Forming</div><div class="stat-lbl">SIGNL ROAS Score · $${fmtMoney(v2.countedBack)} counted back through your register so far. Your score starts when there is enough counted to mean something.</div>${navButton ? `<button class="btn small-btn" style="margin-top:6px" onclick="return go('dashboard','Visits &amp; Posts')">Go to Visits &amp; Posts</button>` : ""}</div>`;
+    }
+    return `<div class="stat-cell"><div class="stat-num grad-text">${Number(v2.score).toFixed(1)}&times;</div><div class="stat-lbl">SIGNL ROAS Score · ${esc(v2.stateLabel || "")}<br>$${fmtMoney(v2.countedBack)} counted back through your register, on $${fmtMoney(v2.putIn)} all in. The full breakdown is on your Receipt.</div></div>`;
+  }
   const r = h.roas || null;
   const score = h.roasScore;
   const hasTracked = !!(r && r.registerValue > 0);
   const hasEstimate = !!(r && r.estimatedRegisterValue > 0);
   const hasMedia = !!(r && r.mediaValue > 0);
   if ((score === null || score === undefined || Number(score) === 0) && !hasTracked && !hasEstimate && !hasMedia) {
-    return `<div class="stat-cell"><div class="stat-num grad-text" style="font-size:1.1rem">No results yet</div><div class="stat-lbl">SIGNL ROAS Score — starts with your first register tally.</div>${navButton ? `<button class="btn small-btn" style="margin-top:6px" onclick="return go('dashboard','Visits &amp; Posts')">Go to Visits &amp; Posts</button>` : ""}</div>`;
+    return `<div class="stat-cell"><div class="stat-num grad-text" style="font-size:1.1rem">No results yet</div><div class="stat-lbl">Modeled estimate — starts with your first register tally.</div>${navButton ? `<button class="btn small-btn" style="margin-top:6px" onclick="return go('dashboard','Visits &amp; Posts')">Go to Visits &amp; Posts</button>` : ""}</div>`;
   }
   const basis = [
     hasTracked ? `Register $${fmtMoney(r.registerValue)} tracked` : null,
     hasEstimate && r.registerEstimate ? `About $${fmtMoney(r.estimatedRegisterValue)} estimated from ${r.registerEstimate.uses} code uses at your $${fmtMoney(r.registerEstimate.avgTicket)} average ticket` : null,
     hasMedia ? `Media $${fmtMoney(r.mediaValue)} modeled` : null,
   ].filter(Boolean).join("<br>");
-  return `<div class="stat-cell"><div class="stat-num grad-text">${score === null || score === undefined ? "n/a" : Number(score).toFixed(2) + "&times;"}</div><div class="stat-lbl">SIGNL ROAS Score (register tallies plus modeled media value)${basis ? `<br>${basis}` : ""}</div></div>`;
+  return `<div class="stat-cell"><div class="stat-num grad-text">${score === null || score === undefined ? "n/a" : Number(score).toFixed(2) + "&times;"}</div><div class="stat-lbl">Modeled estimate (register tallies plus modeled media value)${basis ? `<br>${basis}` : ""}</div></div>`;
 }
 
 // ---------- business dashboard: a segmented report ----------
@@ -11966,7 +12162,7 @@ function bizDashPaceHtml(h, planName, billingStatus) {
 }
 function bizDashContentRowsHtml(h) {
   return (h.topContent || []).map((c) => `
-    <div class="ui-row"><span class="k"><strong>${esc(c.title)}</strong> with @${esc(c.creatorHandle)}<br><span class="small muted">${fmtNum(c.views)} views &middot; ${fmtNum(c.likes)} likes &middot; ${c.onTime ? "posted on time" : "posted late"}${c.roasScore !== null && c.roasScore !== undefined && c.redemptions && c.redemptions.count > 0 ? ` &middot; SIGNL ROAS ${c.roasScore.toFixed(2)}&times;` : ""}${c.performanceUpdatedAt ? `<br>${perfSourceLabel(c.performanceSource)}, updated ${fmtDay(c.performanceUpdatedAt)}` : ""}</span></span><span class="v">${c.redemptions ? `${c.redemptions.count} code uses<br>$${fmtMoney(c.redemptions.basketTotal)} rung up` : "No tally yet"}</span></div>`).join("");
+    <div class="ui-row"><span class="k"><strong>${esc(c.title)}</strong> with @${esc(c.creatorHandle)}<br><span class="small muted">${fmtNum(c.views)} views &middot; ${fmtNum(c.likes)} likes &middot; ${c.onTime ? "posted on time" : "posted late"}${c.roasScore !== null && c.roasScore !== undefined && c.redemptions && c.redemptions.count > 0 ? ` &middot; modeled est. ${c.roasScore.toFixed(2)}&times;` : ""}${c.performanceUpdatedAt ? `<br>${perfSourceLabel(c.performanceSource)}, updated ${fmtDay(c.performanceUpdatedAt)}` : ""}</span></span><span class="v">${c.redemptions ? `${c.redemptions.count} code uses<br>$${fmtMoney(c.redemptions.basketTotal)} rung up` : "No tally yet"}</span></div>`).join("");
 }
 function bizDashNextRowsHtml(h, tickWhen) {
   return (h.nextVisits || []).map((n) => `
@@ -12300,6 +12496,11 @@ async function loadBusinessHome() {
       { num: fmtNum(h.localReachDelivered || 0), label: "Local reach delivered" },
       { num: fmtNum(h.postsLive || 0), label: "Posts live" },
       { num: `${h.visitsUsed || 0} of ${h.visitsAllowance || 0}`, label: "Visits this month" },
+      // Build -43 (FIX A): when Score v2 has a figure, it rides
+      // the Home snapshot under its own name and state. The
+      // legacy estimate never appears here; it lives, labeled as
+      // a modeled estimate, on the Performance card below.
+      ...(h.roasV2 && h.roasV2.score !== null && h.roasV2.score !== undefined ? [{ num: `${Number(h.roasV2.score).toFixed(1)}&times;`, label: `SIGNL ROAS Score · ${h.roasV2.stateLabel || ""}` }] : []),
     ] : null;
     const caughtLinks = [
       { label: "Find creators", act: () => go("dashboard", "Discover") },
@@ -12358,7 +12559,7 @@ function performanceCardHtml(ro) {
   if (o.redemptions && o.redemptions.count > 0) cells.push({ num: `${fmtNum(o.redemptions.count)} · $${fmtMoney(o.redemptions.basketTotal || 0)}`, label: "Redemptions rung up" });
   if (o.registerValue) cells.push({ num: `$${fmtMoney(o.registerValue)}`, label: "Register value" });
   else if (o.estimatedRegisterValue) cells.push({ num: `$${fmtMoney(o.estimatedRegisterValue)}`, label: "Estimated register value" });
-  if (o.roasScore !== null && o.roasScore !== undefined) cells.push({ num: `${o.roasScore}`, label: "ROAS score" });
+  if (o.roasScore !== null && o.roasScore !== undefined) cells.push({ num: `${o.roasScore}`, label: "Modeled estimate" });
   const series = perfSeriesText(o.series);
   const rows = (ro.offers || []).filter((r) => (r.visitsBooked || 0) > 0 || (r.postsLive || 0) > 0).slice(0, 5).map((r) => {
     const s = perfSeriesText(r.series);
@@ -12689,7 +12890,7 @@ async function renderAnalyticsTab() {
       ${lb.length ? lb.map((row, i) => `<div class="lb-row"><span class="lb-rank">${i + 1}</span><div class="lb-main"><div class="lb-name">${esc(row.creatorName)} <span class="muted" style="font-weight:600">@${esc(row.creatorHandle)}</span></div><div class="lb-meta">${row.posts} post${row.posts === 1 ? "" : "s"}${row.onTimePct !== null && row.onTimePct !== undefined ? ` · ${row.onTimePct}% on time` : ""}</div></div><span class="lb-num">${fmtNum(row.localReach)}<span class="u">local reach</span></span></div>`).join("") : `<p class="wc-sub" style="margin:6px 0 2px">Once posts land, your creators rank here by the local reach they delivered.</p>`}
     </div>
     ${h.costPerVisit && h.pipeline && (h.pipeline.clockRunning || 0) > 0 ? `<div class="wcard"><h3>Cost per visit</h3>
-      <p style="margin:4px 0 0">Your plan works out to <strong>$${fmtMoney(h.costPerVisit)}</strong> per visit in your allowance${h.postsLive ? `, and every live post cost exactly one visit` : ""}. Register value and media value ride in your ROAS score on Home.</p>
+      <p style="margin:4px 0 0">Your plan works out to <strong>$${fmtMoney(h.costPerVisit)}</strong> per visit in your allowance${h.postsLive ? `, and every live post cost exactly one visit` : ""}. Register value and media value ride in the modeled estimate; your SIGNL ROAS Score on Home counts register events only.</p>
     </div>` : ""}
     <div id="biz-receipt"></div>`;
     loadReceipt();
@@ -16347,7 +16548,7 @@ function pvBookingCard(b) {
     }
     if (b.roas) {
       const r = b.roas;
-      html += `<p class="small"><strong>SIGNL ROAS Score: ${r.score === null ? "n/a" : r.score.toFixed(2) + "&times;"}</strong> <span class="muted">(our own model)</span> &middot; $${fmtMoney(r.registerValue)} tracked at the register + $${fmtMoney(r.mediaValue)} modeled media value, against $${fmtMoney(r.compCost)} comp at cost + $${fmtMoney(r.discountCost)} code discounts${r.allInScore !== null ? ` &middot; all-in ${r.allInScore.toFixed(2)}&times; with the plan counted` : ""}.</p>`;
+      html += `<p class="small"><strong>Modeled estimate: ${r.score === null ? "n/a" : r.score.toFixed(2) + "&times;"}</strong> <span class="muted">(this visit: tallies plus modeled media value; the business's SIGNL ROAS Score is on their Receipt)</span> &middot; $${fmtMoney(r.registerValue)} tracked at the register + $${fmtMoney(r.mediaValue)} modeled media value, against $${fmtMoney(r.compCost)} comp at cost + $${fmtMoney(r.discountCost)} code discounts${r.allInScore !== null ? ` &middot; all-in ${r.allInScore.toFixed(2)}&times; with the plan counted` : ""}.</p>`;
     }
     html += `
     <form onsubmit="return pvReportRedemptions(event, '${b.id}')">
@@ -16725,7 +16926,7 @@ function previewDashboardHtml(d) {
       <div class="stat-cell"><div class="stat-num"><em>${fmtNum(d.home && d.home.localReachDelivered ? d.home.localReachDelivered : 0)}</em></div><div class="stat-lbl">Local reach delivered</div></div>
       <div class="stat-cell"><div class="stat-num">${s.visitsUsed}<span class="small muted"> of ${s.visitsAllowance}</span></div><div class="stat-lbl">Visits booked this month &middot; ${s.visitsRemaining} left</div></div>
       <div class="stat-cell"><div class="stat-num">${s.postsDelivered}</div><div class="stat-lbl">Posts live</div></div>
-      <div class="stat-cell"><div class="stat-num grad-text">${s.roas && s.roas.score !== null ? s.roas.score.toFixed(2) + "&times;" : "n/a"}</div><div class="stat-lbl">SIGNL ROAS Score</div></div>
+      <div class="stat-cell"><div class="stat-num grad-text">${s.roas && s.roas.score !== null ? s.roas.score.toFixed(2) + "&times;" : "n/a"}</div><div class="stat-lbl">Modeled estimate</div></div>
     </div>
   </section>
   ${dashSegsHtml(needsCount)}
@@ -16756,7 +16957,7 @@ function previewDashboardHtml(d) {
     ${s.roas ? `
     <div class="showcase-block"><h4>${esc(s.roas.label)}</h4>
       <div class="stat-row">
-        <div class="stat"><div class="num grad-text">${s.roas.score === null ? "n/a" : s.roas.score.toFixed(2) + "&times;"}</div><div class="lbl">SIGNL ROAS Score</div></div>
+        <div class="stat"><div class="num grad-text">${s.roas.score === null ? "n/a" : s.roas.score.toFixed(2) + "&times;"}</div><div class="lbl">Modeled estimate</div></div>
         <div class="stat"><div class="num grad-text">${s.roas.allInScore === null ? "n/a" : s.roas.allInScore.toFixed(2) + "&times;"}</div><div class="lbl">All-in, with the plan counted</div></div>
         <div class="stat"><div class="num">$${fmtMoney(s.roas.registerValue)}</div><div class="lbl">Register value, tracked through creator codes (${s.roas.redemptions.count} redemptions, $${fmtMoney(s.roas.redemptions.basketTotal)} rung up)</div></div>
         <div class="stat"><div class="num">$${fmtMoney(s.roas.mediaValue)}</div><div class="lbl">Media value, modeled at the published rates</div></div>

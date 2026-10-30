@@ -10,4 +10,4 @@
 // matching one in index.html) on any deploy that changes client
 // or server behavior; both live in the same commit, so a bump
 // is one search-and-replace.
-exports.BUILD_ID = "2026.10.30-42";
+exports.BUILD_ID = "2026.10.30-43";
