@@ -151,7 +151,7 @@ check("the founding sentence-badge wraps instead of overflowing", themeCss.inclu
   // moreRowsFor, deduped, sorted == the full reachable set.
   const EXPECTED = {
     business: ["Analytics", "Content", "Discover", "Help", "Home", "Messages", "My Offers", "Plan", "Profile", "Settings", "Sig", "Visits & Posts"],
-    creator: ["Dashboard", "Earnings", "Help", "Messages", "Momentum", "My Visits", "Numbers", "Offers", "Profile", "Settings", "Sig"],
+    creator: ["Bench", "Dashboard", "Earnings", "Help", "Messages", "Momentum", "My Visits", "Numbers", "Offers", "Profile", "Settings", "Sig"],
     partner: ["Account", "Businesses", "Creators", "Earnings", "Help", "Home", "Links", "Markets", "Performance", "Sig"],
   };
   for (const role of ["business", "creator", "partner"]) {
@@ -181,7 +181,7 @@ check("the founding sentence-badge wraps instead of overflowing", themeCss.inclu
 }
 
 // Build stamp.
-check("build stamp is 2026.10.30-41 on both sides", read("netlify/functions/lib/build.js").includes("2026.10.30-41") && indexHtml.includes("2026.10.30-41"));
+check("build stamp is 2026.10.30-42 on both sides", read("netlify/functions/lib/build.js").includes("2026.10.30-42") && indexHtml.includes("2026.10.30-42"));
 
 // ---------- Part B: live API contract (production shape, no test override) ----------
 let server;
@@ -199,7 +199,7 @@ try {
   const boot = await anon("GET", "/api/bootstrap");
   check("bootstrap answers", boot.status === 200, String(boot.status));
   check("bootstrap publishes no launch window", boot.data && boot.data.launch && boot.data.launch.launchWindow === undefined, JSON.stringify(boot.data && boot.data.launch));
-  check("server stamps the -41 build on API responses", boot.headers.get("x-signl-build") === "2026.10.30-41", String(boot.headers.get("x-signl-build")));
+  check("server stamps the -41 build on API responses", boot.headers.get("x-signl-build") === "2026.10.30-42", String(boot.headers.get("x-signl-build")));
 
   const admin = client();
   const login = await admin("POST", "/api/auth/login", { email: ADMIN_EMAIL, password: ADMIN_PASSWORD });

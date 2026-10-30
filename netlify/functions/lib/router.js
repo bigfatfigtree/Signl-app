@@ -3473,7 +3473,9 @@ async function createBookingForOffer({ offer, creator, via, applicationId = null
 // only (an expired or cancelled booking frees its spot, which is
 // what makes backfill possible).
 function filledCountFor(offerId, bookings) {
-  return bookings.filter((bk) => bk.offerId === offerId && bk.status !== "expired" && bk.status !== "cancelled").length;
+  // Build -42: a collab companion (+1) is a guest on a booked
+  // visit, never a spot of its own, so it never fills one.
+  return bookings.filter((bk) => bk.offerId === offerId && bk.collabRole !== "plusone" && bk.status !== "expired" && bk.status !== "cancelled").length;
 }
 
 // The applicant stack ranking (design note: local fit, Impact,
@@ -4370,7 +4372,21 @@ async function withPostState(booking) {
   const roasBooking = { ...booking, post, planAllocation };
   await enrichRoasEstimateInputs([roasBooking]);
   const roas = roasFor([roasBooking]);
-  return { ...booking, post: postWithPerformance(post), creatorLicensingFee, postState: postState(booking, post), compliance: complianceStatusFor(booking, post, creatorStanding), businessReviewLinks, businessReferralProgram, businessReview, creatorReview, roas };
+  // Collab view (Build -42): the pair, resolved for display.
+  // The primary's card names its live +1; the +1's card names
+  // the creator who booked the visit. A cancelled or expired
+  // companion resolves to no pair at all — the visit reads solo.
+  let collab = null;
+  let collabPrimaryName = null;
+  if (booking.collabRole === "primary") {
+    const comp = await liveCompanionOf(booking);
+    if (comp) collab = { creatorId: comp.creatorId, creatorName: comp.creatorName, creatorHandle: comp.creatorHandle, bookingId: comp.id, compedPresence: !!comp.collabCompedPresence };
+  }
+  if (booking.collabRole === "plusone" && booking.collabPrimaryBookingId) {
+    const prim = await store.get(`booking:${booking.collabPrimaryBookingId}`);
+    if (prim) collabPrimaryName = prim.creatorName || null;
+  }
+  return { ...booking, post: postWithPerformance(post), creatorLicensingFee, postState: postState(booking, post), compliance: complianceStatusFor(booking, post, creatorStanding), businessReviewLinks, businessReferralProgram, businessReview, creatorReview, roas, collab, collabPrimaryName };
 }
 
 // ---------- Post compliance (Jeff, 2026-10-19; timeline final) ----------
@@ -9090,6 +9106,320 @@ async function goldenTicketView(t, marketLive) {
   return { id: t.id, name: t.name, status, createdAt: t.createdAt, claimedAt: t.claimedAt || null, linkPath: `/claim?ticket=${t.id}` };
 }
 
+// ---------- Build -42: The Bench + Collabs (Jeff, 2026-10-30) ----------
+// Creators can see each other, and a creator can bring one other
+// creator on a visit as a +1. Three rulings govern the shape:
+//   1. Visibility is BY DEFAULT with a hide toggle: a finished
+//      creator (approved + profile-complete) shows to other
+//      finished creators in their own market unless they turn
+//      "Show me to other creators" off (creator.showToCreators).
+//   2. NO ONE ever sees how small the roster is: no creator-facing
+//      payload carries a creator count — no totals, no "showing
+//      X", no filter counts, no pagination counts (the -30 rule,
+//      extended to every bench surface and lookup).
+//   3. SIGNL never renders an empty or near-empty collection. The
+//      bench slot is state-based: FOUNDING (no list at all, the
+//      founding frame + Golden Tickets), INTRODUCTION (Sig names
+//      ONE person as a personal card — correct at n=1), and BENCH
+//      (the browsable roster, only once the market has launched
+//      or Admin opens it by hand). A surface that cannot be
+//      filled honestly is absent, never padded.
+// Collabs ride the existing visit machinery (Adapter Principle):
+// a +1 is a companion BOOKING on the same offer (same record
+// shape, its own code, its own proof/Momentum/reliability), so
+// everything downstream of a booking already treats the two
+// creators independently. A companion never counts toward the
+// offer's spots: it is a guest on the booked visit, not a spot.
+
+const BENCH_FLAG_KEY = "config:bench";
+async function getBenchFlags() {
+  try {
+    const rec = await store.get(BENCH_FLAG_KEY);
+    return (rec && rec.open) || {};
+  } catch (e) {
+    return {};
+  }
+}
+// The Bench opens on the market's actual launch record (the
+// flags), not the TEST_MODE display override — the same
+// discipline as the Charter stamp — or when Admin opens it for
+// that market by hand.
+async function isBenchOpen(marketName) {
+  if (!marketName || marketName === UNLISTED) return false;
+  if (await marketLaunchedByFlag(marketName)) return true;
+  const flags = await getBenchFlags();
+  return !!flags[normalizeMarketName(marketName)];
+}
+async function setBenchOpen(marketName, open) {
+  const rec = (await store.get(BENCH_FLAG_KEY)) || { open: {} };
+  rec.open = rec.open || {};
+  if (open) rec.open[marketName] = true;
+  else delete rec.open[marketName];
+  rec.updatedAt = nowIso();
+  await store.set(BENCH_FLAG_KEY, rec);
+  return rec.open;
+}
+
+// Unlisted creators share one stored label across many cities, so
+// their bench world is their own city (the creatorBuzz rule).
+function benchMarketKey(u) {
+  if (!u) return "";
+  return u.market === UNLISTED ? `city:${String(u.city || "").trim().toLowerCase()}` : normalizeMarketName(u.market);
+}
+
+function visibleToCreators(u) {
+  return !!(u && u.role === "creator" && finishedCreatorOf(u) && standingState(u) !== "banned" && !(u.creator && u.creator.showToCreators === false));
+}
+// A +1 must be able to TAKE the visit, so the compliance pause
+// gates picking even though a paused creator still shows on a
+// launched bench.
+function collabEligible(u) {
+  return visibleToCreators(u) && standingState(u) !== "paused";
+}
+
+// The creator-facing card: exactly what a business sees on the
+// profile (the Local List field set), never earnings, deal
+// terms, scores, or contact details.
+function benchCardFor(u, pointsTotal) {
+  const c = (u && u.creator) || {};
+  const lvl = levelForPoints(pointsTotal || 0);
+  return {
+    userId: u.id,
+    name: u.name,
+    handle: c.handle || "",
+    photoUrl: c.photoUrl || null,
+    hasPhoto: !!c.hasPhoto,
+    categories: c.categories || [],
+    localAudiencePct: c.localAudiencePct === undefined ? null : c.localAudiencePct,
+    tier: normalizeTierBand(c.tierBand),
+    charter: c.charter === true,
+    level: lvl.level >= 2 ? lvl.level : null,
+    levelName: lvl.level >= 2 ? lvl.name : null,
+    neighborhood: c.neighborhood || "",
+    streets: Array.isArray(c.streets) ? c.streets : [],
+    primaryPlatform: primaryPlatformOf(c),
+    primaryPlatformLabel: primaryPlatformLabel(primaryPlatformOf(c)),
+  };
+}
+
+async function benchCandidatesFor(user, { forCollab = true } = {}) {
+  const users = await allUsers();
+  const key = benchMarketKey(user);
+  const pred = forCollab ? collabEligible : visibleToCreators;
+  return users.filter((u) => u.id !== user.id && benchMarketKey(u) === key && pred(u));
+}
+
+function benchPairScore(me, other) {
+  const norm = (v) => String(v || "").trim().toLowerCase();
+  const myStreets = new Set((((me.creator || {}).streets) || []).map(norm).filter(Boolean));
+  const sharedStreets = (((other.creator || {}).streets) || []).filter((s) => myStreets.has(norm(s)));
+  const myCats = new Set((((me.creator || {}).categories) || []).map(norm).filter(Boolean));
+  const sharedCategories = (((other.creator || {}).categories) || []).filter((s) => myCats.has(norm(s)));
+  let score = 0;
+  if (sharedStreets.length) score += 2;
+  score += Math.min(2, sharedCategories.length);
+  if (norm((me.creator || {}).neighborhood) && norm((me.creator || {}).neighborhood) === norm((other.creator || {}).neighborhood)) score += 1;
+  return { score, sharedStreets, sharedCategories };
+}
+
+function benchPairKey(aId, bId) { return [aId, bId].sort().join(":"); }
+// The current Sig introduction for a creator: the best-scoring
+// eligible pair (street or category overlap) that has not been
+// dismissed. Deterministic, so Home, the Bench tab, and the +1
+// suggestion all name the same person until the pair is acted
+// on or dismissed; a dismissed pair is never suggested again.
+async function benchIntroductionFor(user) {
+  const cands = await benchCandidatesFor(user);
+  const scored = [];
+  for (const u of cands) {
+    const s = benchPairScore(user, u);
+    if (s.score > 0) scored.push({ u, ...s });
+  }
+  scored.sort((a, b) => (b.score - a.score)
+    || (((b.u.creator || {}).localAudiencePct || 0) - ((a.u.creator || {}).localAudiencePct || 0))
+    || (a.u.createdAt < b.u.createdAt ? -1 : 1));
+  for (const s of scored) {
+    const rec = await store.get(`benchpair:${benchPairKey(user.id, s.u.id)}`);
+    if (rec && rec.dismissedAt) continue;
+    return s;
+  }
+  return null;
+}
+
+// Validate a +1 target for a creator in a market. Returns
+// { target } or { error } — one plain-words reason, never silent.
+async function collabTargetFor(user, targetId, marketName) {
+  if (!targetId || targetId === user.id) return { error: "Your +1 has to be another creator." };
+  const target = await store.get(`user:${targetId}`);
+  if (!target || target.role !== "creator") return { error: "That creator is not on the roster." };
+  // The +1 lives in the visit's market, which for every collab
+  // flow (apply, accept, an existing booking) is the primary
+  // creator's own market — offers and bookings are same-market
+  // by construction. Unlisted creators match on city via the key.
+  void marketName;
+  if (benchMarketKey(target) !== benchMarketKey(user)) return { error: "Your +1 has to be a creator in your market." };
+  if (!finishedCreatorOf(target)) return { error: "Your +1 has to be a finished creator: approved, with a complete profile." };
+  if (target.creator && target.creator.showToCreators === false) return { error: "That creator is not showing themselves to other creators right now." };
+  if (standingState(target) === "banned") return { error: "That creator cannot take visits right now." };
+  if (standingState(target) === "paused") return { error: "That creator is paused until a missing post lands, so they cannot take a visit yet." };
+  return { target };
+}
+
+function plusOneSnapshotOf(target) {
+  const c = (target && target.creator) || {};
+  return {
+    creatorId: target.id,
+    name: target.name,
+    handle: c.handle || "",
+    localAudiencePct: c.localAudiencePct === undefined ? null : c.localAudiencePct,
+  };
+}
+
+// Create the companion booking for a +1 and link the pair both
+// ways. The companion is a full booking (own code, own clock,
+// own proof) minted through the shared path; on a PAID primary
+// the companion is comped-presence only — the paid lane is
+// stripped so no second escrow, fee, or payout can ever form
+// (to pay the +1, the business books them at their rate through
+// the normal flow; there is no split-payment mechanic).
+async function createCollabCompanion({ offer, primaryBooking, applicationId = null, primary, target }) {
+  let booking;
+  if (offer) {
+    booking = await createBookingForOffer({ offer, creator: target, via: "collab", applicationId });
+  } else {
+    // Offer-less primary (a direct paid booking carries no
+    // offer record; the visit lives on the booking itself): the
+    // companion clones the visit — same business, title, window
+    // and redeem-by — with the +1's own code and clock, as
+    // comped presence (the paid-strip below has nothing to
+    // strip here, so the flag is set directly).
+    const code = await genCode();
+    const creatorCode = await genCreatorCode(target.creator ? target.creator.handle : "");
+    const ts = nowIso();
+    booking = {
+      ...primaryBooking,
+      id: crypto.randomUUID(),
+      applicationId,
+      creatorId: target.id,
+      creatorName: target.name,
+      creatorHandle: target.creator ? target.creator.handle : "",
+      kind: "comp",
+      paidLane: null,
+      paidBrief: null,
+      covers: 1,
+      compCostActual: 0,
+      collabCompedPresence: true,
+      code,
+      codeStatus: "issued",
+      status: "booked",
+      createdAt: ts,
+      updatedAt: ts,
+      checkinAt: null,
+      redeemedAt: null,
+      redeemMethod: null,
+      postDeadline: null,
+      replacementRequestedAt: null,
+      creatorCode,
+      redemptions: null,
+      dealCard: null,
+      disclosureAt: null,
+    };
+    delete booking.collabRole;
+    delete booking.collabPlusOneBookingId;
+    delete booking.collabPlusOneCreatorId;
+    delete booking.collabPlusOneHandle;
+    delete booking.compliance;
+    delete booking.honorReportedAt;
+    delete booking.businessReview;
+    delete booking.creatorReview;
+    await store.set(`booking:${booking.id}`, booking);
+    await store.set(`code:${code}`, { bookingId: booking.id });
+    await store.set(`ccode:${creatorCode}`, { bookingId: booking.id });
+    await logEvent({ type: "booking_code_issued", actorId: target.id, actorRole: "creator", subjectId: booking.id, market: booking.market, data: { code, offerId: null, businessId: booking.businessId, dollarCap: booking.dollarCap, covers: booking.covers, via: "collab" } });
+  }
+  booking.collabRole = "plusone";
+  booking.collabPrimaryBookingId = primaryBooking.id;
+  booking.collabPrimaryCreatorId = primary.id;
+  booking.collabPrimaryHandle = (primary.creator && primary.creator.handle) || "";
+  if (booking.kind === "paid" || booking.paidLane) {
+    booking.kind = "comp";
+    booking.paidLane = null;
+    booking.compCostActual = 0;
+    booking.collabCompedPresence = true;
+  }
+  booking.updatedAt = nowIso();
+  await store.set(`booking:${booking.id}`, booking);
+  primaryBooking.collabRole = "primary";
+  primaryBooking.collabPlusOneBookingId = booking.id;
+  primaryBooking.collabPlusOneCreatorId = target.id;
+  primaryBooking.collabPlusOneHandle = (target.creator && target.creator.handle) || "";
+  primaryBooking.updatedAt = nowIso();
+  await store.set(`booking:${primaryBooking.id}`, primaryBooking);
+  // The visit thread includes both creators: the +1's thread
+  // with the business opens with the visit context line, the
+  // same system-opener pattern as the book-me thread. An
+  // offer-less primary (direct paid booking) reads its visit
+  // fields off the booking itself.
+  const oBizId = offer ? offer.businessId : primaryBooking.businessId;
+  const oTitle = offer ? offer.title : primaryBooking.title;
+  const oBizName = offer ? offer.businessName : primaryBooking.businessName;
+  const oId = offer ? offer.id : null;
+  const oMarket = offer ? offer.market : primaryBooking.market;
+  const threadId = [oBizId, target.id].sort().join("__");
+  const ts = nowIso();
+  const sys = {
+    id: crypto.randomUUID(),
+    threadId,
+    fromId: "system",
+    toId: target.id,
+    body: `${primary.name} is bringing ${target.name} (@${(target.creator && target.creator.handle) || "creator"}) as their +1 on "${oTitle}". Both creators post from this visit.`,
+    system: true,
+    bookingId: booking.id,
+    createdAt: ts,
+  };
+  await store.set(`message:${sys.id}`, sys);
+  await notifyUser(target.id, "collab_booked", `${primary.name} is bringing you as their +1 to "${oTitle}" at ${oBizName}. Your own visit code is in My Visits: redeem it at the visit and post within 48 hours, same as any visit.`, { offerId: oId, applicationId, bookingId: booking.id });
+  await logEvent({ type: "collab_booked", actorId: primary.id, actorRole: "creator", subjectId: booking.id, market: oMarket, data: { offerId: oId, applicationId, primaryBookingId: primaryBooking.id, primaryCreatorId: primary.id, plusOneCreatorId: target.id, businessId: oBizId } });
+  return booking;
+}
+
+async function liveCompanionOf(booking) {
+  if (!booking || !booking.collabPlusOneBookingId) return null;
+  const c = await store.get(`booking:${booking.collabPlusOneBookingId}`);
+  return c && c.status !== "cancelled" && c.status !== "expired" ? c : null;
+}
+
+// Cancel a companion booking and unlink the pair. Returns the
+// primary booking (updated) or null.
+async function cancelCompanionBooking(companion, { reason } = {}) {
+  companion.status = "cancelled";
+  companion.codeStatus = "cancelled";
+  companion.updatedAt = nowIso();
+  await store.set(`booking:${companion.id}`, companion);
+  let primary = null;
+  if (companion.collabPrimaryBookingId) {
+    primary = await store.get(`booking:${companion.collabPrimaryBookingId}`);
+    if (primary && primary.collabPlusOneBookingId === companion.id) {
+      primary.collabPlusOneBookingId = null;
+      primary.collabPlusOneCreatorId = null;
+      primary.collabPlusOneHandle = null;
+      primary.updatedAt = nowIso();
+      await store.set(`booking:${primary.id}`, primary);
+    }
+  }
+  await logEvent({ type: "collab_plusone_cancelled", actorId: null, actorRole: "system", subjectId: companion.id, market: companion.market, data: { primaryBookingId: companion.collabPrimaryBookingId || null, plusOneCreatorId: companion.creatorId, reason: reason || "pair_changed" } });
+  return primary;
+}
+
+// When a primary booking dies, its +1 dies with it: the +1 was
+// a guest on that visit, never a spot of their own.
+async function cancelCompanionForPrimary(primaryBooking) {
+  const companion = await liveCompanionOf(primaryBooking);
+  if (!companion) return;
+  await cancelCompanionBooking(companion, { reason: "primary_cancelled" });
+  await notifyUser(companion.creatorId, "collab_plusone_cancelled", `The visit "${primaryBooking.title}" at ${primaryBooking.businessName} was cancelled, so the +1 spot on it closed too.`, { bookingId: companion.id });
+}
+
 // ---------- partners (Jeff, 2026-10-28) ----------
 // A partner is a distribution partner (a media group or a large
 // local profile) assigned one or more markets. They recruit
@@ -10679,6 +11009,14 @@ async function route(event) {
         changes.publicPage = [user.creator.publicPage === true, c.publicPage];
         if (c.publicPage && !c.publicPageAt) c.publicPageAt = ts;
       }
+      // Bench visibility (Build -42): creators see each other by
+      // default; turning this OFF removes the creator from every
+      // creator-facing discovery surface and from +1 picking.
+      // It never touches the business roster or the book-me page.
+      if (b.showToCreators !== undefined) {
+        c.showToCreators = b.showToCreators === true;
+        changes.showToCreators = [user.creator.showToCreators !== false, c.showToCreators];
+      }
       if (b.pageTheme !== undefined) {
         if (PAGE_THEMES.includes(b.pageTheme)) { changes.pageTheme = [pageThemeOf(user.creator), b.pageTheme]; c.pageTheme = b.pageTheme; }
       }
@@ -11526,6 +11864,7 @@ async function route(event) {
     if (method === "GET" && seg[1] === "markets") {
       const all = await allUsers();
       const flags = await getMarketFlags();
+      const benchFlags = await getBenchFlags();
       const out = MARKETS.map((m) => {
         const inMarket = all.filter((u) => u.market === m.name && u.role !== "admin");
         return {
@@ -11534,6 +11873,7 @@ async function route(event) {
           label: m.label,
           country: m.country || "United States",
           live: TEST_MODE ? true : !!flags[m.name],
+          benchOpen: !!flags[m.name] || !!benchFlags[m.name],
           creatorsApproved: inMarket.filter((u) => u.role === "creator" && u.status === "approved" && !isTester(u)).length,
           creatorsApprovedComplete: inMarket.filter((u) => u.role === "creator" && u.status === "approved" && !isTester(u) && profileCompleteOf(u)).length,
           creatorsPending: inMarket.filter((u) => u.role === "creator" && u.status === "pending").length,
@@ -11559,6 +11899,25 @@ async function route(event) {
         data: { market: market.name, label: market.label },
       });
       return json(200, { market: market.name, label: market.label, live });
+    }
+    // Bench override (Build -42): open a market's creator Bench
+    // by hand, ahead of (or without) launch. A launched market's
+    // Bench is open by definition; this flag only adds.
+    if (method === "POST" && seg[1] === "markets" && seg[2] === "bench-toggle") {
+      const b = parseBody(event);
+      const market = marketByName(b.market || "");
+      if (!market) return err(400, "Unknown market");
+      const open = b.open === true;
+      await setBenchOpen(market.name, open);
+      await logEvent({
+        type: open ? "bench_opened" : "bench_closed",
+        actorId: user.id,
+        actorRole: "admin",
+        subjectId: null,
+        market: market.name,
+        data: { market: market.name, label: market.label },
+      });
+      return json(200, { market: market.name, label: market.label, benchOpen: open || (await marketLaunchedByFlag(market.name)) });
     }
     if (method === "POST" && seg[1] === "review") {
       const b = parseBody(event);
@@ -12543,6 +12902,97 @@ async function route(event) {
     }
   }
 
+  // The Bench (Build -42): the creator-facing slot where
+  // creators see each other. State-based, never a bare list:
+  //   founding — market not launched and the Bench not opened:
+  //     no roster at all, just the state + the introduction.
+  //   bench — launched (or Admin-opened): the market's finished,
+  //     non-hidden creators, local reach first, then Points.
+  // The payload carries NO creator count in any field: the
+  // category chips are names only, gated server-side to
+  // categories with at least 3 visible creators (no dead
+  // filters, and no way to read a roster size off the surface).
+  if (seg[0] === "me" && seg[1] === "bench" && seg.length === 2 && method === "GET") {
+    if (user.role !== "creator") return err(403, "Creators only");
+    const open = await isBenchOpen(user.market);
+    const launched = user.market === UNLISTED ? false : await marketLaunchedByFlag(user.market);
+    const finished = finishedCreatorOf(user);
+    const payload = {
+      market: normalizeMarketName(user.market),
+      state: open ? "bench" : "founding",
+      launched,
+      finished,
+      charter: !!(user.creator && user.creator.charter),
+      showToCreators: !(user.creator && user.creator.showToCreators === false),
+      introduction: null,
+      creators: [],
+      categories: [],
+    };
+    if (finished) {
+      const intro = await benchIntroductionFor(user);
+      if (intro) {
+        const ctx = await pointsContext();
+        payload.introduction = {
+          creator: benchCardFor(intro.u, totalPointsFor(intro.u, ctx).total),
+          sharedStreets: intro.sharedStreets,
+          sharedCategories: intro.sharedCategories,
+        };
+      }
+    }
+    if (open) {
+      const visible = await benchCandidatesFor(user, { forCollab: false });
+      const ctx = await pointsContext();
+      const pts = new Map(visible.map((u) => [u.id, totalPointsFor(u, ctx).total]));
+      const sorted = [...visible].sort((a, b) => (((b.creator || {}).localAudiencePct || 0) - ((a.creator || {}).localAudiencePct || 0)) || ((pts.get(b.id) || 0) - (pts.get(a.id) || 0)) || (a.createdAt < b.createdAt ? -1 : 1));
+      payload.creators = sorted.map((u) => benchCardFor(u, pts.get(u.id)));
+      // Chip gate: a category earns a filter only when at least
+      // 3 visible creators carry it. The counts stay server-side;
+      // only the names ride the payload.
+      const tally = new Map();
+      for (const u of visible) {
+        for (const raw of ((u.creator || {}).categories || [])) {
+          const canon = canonicalFromList(raw, CREATOR_CATEGORIES) || raw;
+          tally.set(canon, (tally.get(canon) || 0) + 1);
+        }
+      }
+      payload.categories = CREATOR_CATEGORIES.filter((name) => (tally.get(name) || 0) >= 3).map((name) => ({ name }));
+    }
+    return json(200, payload);
+  }
+
+  // Dismiss the current introduction: the pair is never
+  // suggested again, on any surface.
+  if (seg[0] === "me" && seg[1] === "bench" && seg[2] === "dismiss" && seg.length === 3 && method === "POST") {
+    if (user.role !== "creator") return err(403, "Creators only");
+    const b = parseBody(event);
+    const otherId = String(b.creatorId || "");
+    if (!otherId || otherId === user.id) return err(400, "Name the creator this introduction was for.");
+    const key = `benchpair:${benchPairKey(user.id, otherId)}`;
+    const rec = (await store.get(key)) || { aId: user.id, bId: otherId };
+    rec.dismissedBy = user.id;
+    rec.dismissedAt = nowIso();
+    rec.updatedAt = nowIso();
+    await store.set(key, rec);
+    await logEvent({ type: "bench_intro_dismissed", actorId: user.id, actorRole: "creator", subjectId: otherId, market: user.market, data: { otherId } });
+    return json(200, { ok: true });
+  }
+
+  // +1 lookup: EXACT handle or full-name match only, inside the
+  // creator's own market, finished + visible + able to take a
+  // visit. There is deliberately no browsable picker: with a
+  // handful of creators a list would be a census, and a census
+  // is exactly what the Bench never shows before launch.
+  if (seg[0] === "me" && seg[1] === "bench" && seg[2] === "lookup" && seg.length === 3 && method === "GET") {
+    if (user.role !== "creator") return err(403, "Creators only");
+    const q = String(query.q || "").trim().toLowerCase().replace(/^@/, "");
+    if (!q) return json(200, { creator: null });
+    const cands = await benchCandidatesFor(user);
+    const hit = cands.find((u) => String((u.creator || {}).handle || "").toLowerCase() === q || String(u.name || "").trim().toLowerCase() === q);
+    if (!hit) return json(200, { creator: null });
+    const ctx = await pointsContext();
+    return json(200, { creator: benchCardFor(hit, totalPointsFor(hit, ctx).total) });
+  }
+
   // ---------- market activation gate ----------
   // Bookings, the counter, posts, and messages only operate in
   // markets an admin has activated, for everyone. Creators are
@@ -13141,9 +13591,25 @@ async function route(event) {
       app.decidedAt = nowIso();
       app.updatedAt = nowIso();
       await store.set(`application:${app.id}`, app);
+      // Collab pair (Build -42): selecting an application with a
+      // +1 books BOTH creators — the business decided on the
+      // pair. If the +1 has become ineligible since applying
+      // (paused, hidden, unfinished), the selection still stands
+      // solo and the primary is told; the pick never fails over
+      // the guest.
+      let companion = null;
+      if (app.plusOne && app.plusOne.creatorId) {
+        const target = await store.get(`user:${app.plusOne.creatorId}`);
+        if (target && collabEligible(target) && benchMarketKey(target) === benchMarketKey(creator)) {
+          companion = await createCollabCompanion({ offer, primaryBooking: booking, applicationId: app.id, primary: creator, target });
+        } else {
+          await logEvent({ type: "collab_plusone_skipped", actorId: user.id, actorRole: "business", subjectId: app.id, market: offer.market, data: { offerId: offer.id, creatorId: creator.id, plusOneCreatorId: app.plusOne.creatorId, reason: "plusone_ineligible_at_selection" } });
+          await notifyUser(creator.id, "collab_plusone_skipped", `Your +1 for "${offer.title}" could not be booked with you (their profile is not in a state to take a visit right now), so the visit is booked for you on your own.`, { offerId: offer.id, applicationId: app.id, bookingId: booking.id });
+        }
+      }
       await logEvent({ type: "application_selected", actorId: user.id, actorRole: "business", subjectId: app.id, market: offer.market, data: { offerId: offer.id, creatorId: creator.id, bookingId: booking.id } });
       await logEvent({ type: "offer_accepted", actorId: creator.id, actorRole: "creator", subjectId: offer.id, market: offer.market, data: { businessId: offer.businessId, visitDate: "", via: "selection" } });
-      await notifyUser(creator.id, "application_selected", `You were picked for "${offer.title}" at ${offer.businessName}. Your visit code is in My Visits; redeem it inside the window and post within 48 hours of the visit.`, { offerId: offer.id, applicationId: app.id, bookingId: booking.id });
+      await notifyUser(creator.id, "application_selected", `You were picked for "${offer.title}" at ${offer.businessName}. Your visit code is in My Visits; redeem it inside the window and post within 48 hours of the visit.${companion ? ` Your +1, ${companion.creatorName}, is booked on the same visit with their own code.` : ""}`, { offerId: offer.id, applicationId: app.id, bookingId: booking.id });
       const after = await allBookings();
       if (filledCountFor(offer.id, after) >= offer.spots) {
         offer.status = "filled";
@@ -13169,6 +13635,29 @@ async function route(event) {
       return json(200, { application: app });
     }
 
+    // Decline the pair, keep the creator (Build -42): the
+    // business takes the application on its own. The application
+    // stays live in the stack; the creator is told in plain
+    // words and may add a different +1 or leave it solo.
+    if (method === "POST" && seg.length === 3 && seg[2] === "decline-pair") {
+      if (user.role !== "business") return err(403, "Businesses only");
+      const offer = await store.get(`offer:${seg[1]}`);
+      if (!offer || offer.businessId !== user.id) return err(404, "Offer not found");
+      const b = parseBody(event);
+      const app = await store.get(`application:${b.applicationId}`);
+      if (!app || app.offerId !== offer.id) return err(404, "Application not found");
+      if (app.status !== "applied" && app.status !== "backfill_offered") return err(409, "That application already ended");
+      if (!app.plusOne || !app.plusOne.creatorId) return err(409, "That application has no +1 to decline");
+      const dropped = app.plusOne;
+      app.plusOne = null;
+      app.plusOneDeclinedAt = nowIso();
+      app.updatedAt = nowIso();
+      await store.set(`application:${app.id}`, app);
+      await logEvent({ type: "collab_pair_declined", actorId: user.id, actorRole: "business", subjectId: app.id, market: offer.market, data: { offerId: offer.id, creatorId: app.creatorId, plusOneCreatorId: dropped.creatorId } });
+      await notifyUser(app.creatorId, "collab_pair_declined", `${offer.businessName} took your application for "${offer.title}" on its own, without the +1. Your application is still in their stack. You can add a different +1, or leave it solo.`, { offerId: offer.id, applicationId: app.id });
+      return json(200, { application: app });
+    }
+
     // One-tap apply (creator, open lane). No free-text pitch: the
     // application IS the creator's profile card, snapshotted here
     // and ranked live from the same records discovery uses.
@@ -13177,6 +13666,7 @@ async function route(event) {
       if (standingState(user) === "banned") return err(403, "Your account was closed to offers after a comped visit was redeemed and no post was delivered. Contact hello@joinsignl.com if you believe this is wrong.");
       if (standingState(user) === "paused") return err(403, pausedSelfMessage(user));
       if (!profileCompleteOf(user)) return err(403, "Finish your founding profile before applying: businesses can only pick creators with finished profiles. Your checklist is on your dashboard, under Profile.");
+      const b = parseBody(event);
       const offer = await store.get(`offer:${seg[1]}`);
       if (!offer || laneOf(offer) !== "open") return err(404, "Offer not available");
       // Charter early access (Build -31): inside the window the
@@ -13198,6 +13688,15 @@ async function route(event) {
       if (live.length >= capApps) return err(409, "This offer's application stack is full. Spots free up as the business decides; check the board again soon.");
       const bookings = await allBookings();
       if (bookings.some((bk) => bk.offerId === offer.id && bk.creatorId === user.id && bk.status !== "expired" && bk.status !== "cancelled")) return err(409, "You already have this visit booked");
+      // Collab +1 (Build -42): the applicant may name ONE other
+      // finished creator to bring on the visit. The business
+      // sees both on the stack and decides on the pair.
+      let plusOne = null;
+      if (b.plusOneCreatorId) {
+        const chk = await collabTargetFor(user, String(b.plusOneCreatorId));
+        if (chk.error) return err(400, chk.error);
+        plusOne = plusOneSnapshotOf(chk.target);
+      }
       const ts = nowIso();
       const app = {
         id: crypto.randomUUID(),
@@ -13206,6 +13705,7 @@ async function route(event) {
         creatorId: user.id,
         market: offer.market,
         status: "applied",
+        plusOne,
         appliedAt: ts,
         createdAt: ts,
         updatedAt: ts,
@@ -13225,7 +13725,7 @@ async function route(event) {
       };
       await store.set(`application:${app.id}`, app);
       await logEvent({ type: "application_submitted", actorId: user.id, actorRole: "creator", subjectId: app.id, market: offer.market, data: { offerId: offer.id, businessId: offer.businessId, tierBand: tier, localAudiencePct: app.snapshot.localAudiencePct, totalAudience: app.snapshot.totalAudience } });
-      await notifyUser(offer.businessId, "application_received", `${user.name} (@${app.snapshot.handle}) applied to "${offer.title}". The stack is under My Offers.`, { offerId: offer.id, applicationId: app.id });
+      await notifyUser(offer.businessId, "application_received", `${user.name} (@${app.snapshot.handle}) applied to "${offer.title}"${plusOne ? ` and is bringing a +1, ${plusOne.name} (@${plusOne.handle})` : ""}. The stack is under My Offers.`, { offerId: offer.id, applicationId: app.id });
       return json(201, { application: app });
     }
 
@@ -13252,15 +13752,28 @@ async function route(event) {
       if (visitsThisWeek(allBk, user.id, Date.now()) >= cap) {
         return err(403, `You are at your max of ${cap} visit${cap === 1 ? "" : "s"} this week (your setting, under Profile). This offer stays in your Offers tab: accept it next week, or raise your weekly max if you want more.`);
       }
+      // Collab +1 (Build -42): a direct accept can name a +1
+      // too. Validate BEFORE the booking exists so a bad +1 can
+      // never orphan a booked visit behind an error.
+      let plusTarget = null;
+      if (b.plusOneCreatorId) {
+        const chk = await collabTargetFor(user, String(b.plusOneCreatorId));
+        if (chk.error) return err(400, chk.error);
+        plusTarget = chk.target;
+      }
       const booking = await createBookingForOffer({ offer, creator: user, via: "direct_accept" });
       if (b.visitDate) {
         booking.visitDate = String(b.visitDate).trim();
         booking.updatedAt = nowIso();
         await store.set(`booking:${booking.id}`, booking);
       }
+      let companion = null;
+      if (plusTarget) {
+        companion = await createCollabCompanion({ offer, primaryBooking: booking, primary: user, target: plusTarget });
+      }
       await logEvent({ type: "offer_accepted", actorId: user.id, actorRole: "creator", subjectId: offer.id, market: offer.market, data: { businessId: offer.businessId, visitDate: booking.visitDate } });
       await notifyMilestone(offer.businessId, "booking_confirmed",
-        `${user.name} (@${(user.creator && user.creator.handle) || "creator"}) accepted "${offer.title}". Visit code ${booking.code} is live: redeem it at the counter when they visit.`,
+        `${user.name} (@${(user.creator && user.creator.handle) || "creator"}) accepted "${offer.title}". Visit code ${booking.code} is live: redeem it at the counter when they visit.${companion ? ` They are bringing a +1, ${companion.creatorName} (@${companion.creatorHandle}), who is booked on the same visit with their own code and posts their own post and story.` : ""}`,
         `Booked: ${user.name} accepted your SIGNL offer`,
         [`Good news: ${user.name} (@${(user.creator && user.creator.handle) || "creator"}) accepted your offer "${offer.title}" and the visit is booked.`, "", `Their visit code is ${booking.code}. When they visit, redeem the code at the counter (the Counter tab, or staff mode with your PIN). Redemption starts their 48 hour post clock.`, "", "Open SIGNL: https://app.joinsignl.com", "", "SIGNL"].join("\n"),
         { bookingId: booking.id, offerId: offer.id });
@@ -13429,6 +13942,10 @@ async function route(event) {
         await store.set(`booking:${booking.id}`, booking);
         await refundPaidEscrow(booking, "creator_declined", { escrowRefunded: 0 });
         await logEvent({ type: "booking_cancelled", actorId: user.id, actorRole: "creator", subjectId: booking.id, market: booking.market, data: { offerId: app.offerId, businessId: app.businessId, via: "application_decline" } });
+        // Build -42: a +1 was a guest on this visit; the spot
+        // closing takes the companion with it (a cancellation,
+        // never a no-show on the +1's record).
+        await cancelCompanionForPrimary(booking);
       }
       app.status = "released";
       app.releaseReason = "creator_declined";
@@ -13450,6 +13967,42 @@ async function route(event) {
       app.updatedAt = nowIso();
       await store.set(`application:${app.id}`, app);
       await logEvent({ type: "application_withdrawn", actorId: user.id, actorRole: "creator", subjectId: app.id, market: app.market, data: { offerId: app.offerId, businessId: app.businessId } });
+      return json(200, { application: app });
+    }
+    // Add a +1 to a waiting application (Build -42) — the path
+    // the Sig introduction's "Bring on a visit" lands on when
+    // the creator already applied, and the recovery after a
+    // business declines a pair.
+    if (method === "POST" && seg.length === 3 && seg[2] === "plus-one") {
+      if (user.role !== "creator") return err(403, "Creators only");
+      const app = await store.get(`application:${seg[1]}`);
+      if (!app || app.creatorId !== user.id) return err(404, "Application not found");
+      if (app.status !== "applied" && app.status !== "backfill_offered") return err(409, "A +1 can only ride on a waiting application");
+      if (app.plusOne && app.plusOne.creatorId) return err(409, "This application already has a +1. Remove them first to bring someone else.");
+      const b = parseBody(event);
+      const chk = await collabTargetFor(user, String(b.plusOneCreatorId || ""));
+      if (chk.error) return err(400, chk.error);
+      app.plusOne = plusOneSnapshotOf(chk.target);
+      app.plusOneDeclinedAt = null;
+      app.updatedAt = nowIso();
+      await store.set(`application:${app.id}`, app);
+      const offer = await store.get(`offer:${app.offerId}`);
+      await logEvent({ type: "collab_plusone_added", actorId: user.id, actorRole: "creator", subjectId: app.id, market: app.market, data: { offerId: app.offerId, businessId: app.businessId, plusOneCreatorId: chk.target.id, via: "application" } });
+      await notifyUser(app.businessId, "collab_plusone_added", `${user.name} added a +1, ${chk.target.name} (@${(chk.target.creator && chk.target.creator.handle) || ""}), to their application${offer ? ` for "${offer.title}"` : ""}. You will see both creators on the stack.`, { offerId: app.offerId, applicationId: app.id });
+      return json(200, { application: app });
+    }
+    // Remove the +1 from a waiting application (Build -42).
+    if (method === "POST" && seg.length === 3 && seg[2] === "plus-one-remove") {
+      if (user.role !== "creator") return err(403, "Creators only");
+      const app = await store.get(`application:${seg[1]}`);
+      if (!app || app.creatorId !== user.id) return err(404, "Application not found");
+      if (app.status !== "applied" && app.status !== "backfill_offered") return err(409, "That application already ended");
+      if (!app.plusOne) return err(409, "This application has no +1");
+      const dropped = app.plusOne;
+      app.plusOne = null;
+      app.updatedAt = nowIso();
+      await store.set(`application:${app.id}`, app);
+      await logEvent({ type: "collab_plusone_removed", actorId: user.id, actorRole: "creator", subjectId: app.id, market: app.market, data: { offerId: app.offerId, businessId: app.businessId, plusOneCreatorId: dropped.creatorId, via: "application" } });
       return json(200, { application: app });
     }
   }
@@ -14862,6 +15415,70 @@ async function route(event) {
       bizUser.updatedAt = nowIso();
       await store.set(`user:${bizUser.id}`, bizUser);
     }
+    return json(200, { booking: await withPostState(booking) });
+  }
+
+  // ---------- collab +1 on a booking (Build -42) ----------
+  // Add a +1 to a visit the creator already holds.
+  if (seg[0] === "bookings" && seg.length === 3 && seg[2] === "plus-one" && method === "POST") {
+    if (user.role !== "creator") return err(403, "Creators only");
+    const booking = await store.get(`booking:${seg[1]}`);
+    if (!booking || booking.creatorId !== user.id) return err(404, "Booking not found");
+    if (booking.collabRole === "plusone") return err(400, "You are the +1 on this visit. Only the booked creator can change who the +1 is.");
+    if (booking.status !== "booked" || booking.redeemedAt) return err(409, "A +1 can only be added before the visit happens.");
+    if (await liveCompanionOf(booking)) return err(409, "This visit already has a +1. Remove them first to bring someone else.");
+    const b = parseBody(event);
+    const chk = await collabTargetFor(user, String(b.plusOneCreatorId || ""));
+    if (chk.error) return err(400, chk.error);
+    const offer = booking.offerId ? await store.get(`offer:${booking.offerId}`) : null;
+    if (booking.offerId && !offer) return err(409, "That visit's offer is gone, so a +1 cannot be added.");
+    const companion = await createCollabCompanion({ offer, primaryBooking: booking, applicationId: booking.applicationId || null, primary: user, target: chk.target });
+    await notifyUser(booking.businessId, "collab_plusone_added", `${user.name} is bringing a +1, ${chk.target.name} (@${(chk.target.creator && chk.target.creator.handle) || ""}), to "${booking.title}". They are booked on the same visit with their own code and post their own post and story.`, { bookingId: booking.id, offerId: booking.offerId });
+    return json(201, { booking: await withPostState(booking), companion: await withPostState(companion) });
+  }
+
+  // Remove a booking's +1: the primary creator changes their
+  // mind, or the +1 leaves the visit themselves (called with
+  // the companion booking's own id in that case).
+  if (seg[0] === "bookings" && seg.length === 4 && seg[2] === "plus-one" && seg[3] === "remove" && method === "POST") {
+    const booking = await store.get(`booking:${seg[1]}`);
+    if (!booking) return err(404, "Booking not found");
+    let companion = null;
+    let primary = null;
+    if (booking.collabRole === "plusone") {
+      if (user.role !== "creator" || booking.creatorId !== user.id) return err(403, "Only the +1 can leave their own +1 spot");
+      companion = booking;
+    } else {
+      if (user.role !== "creator" || booking.creatorId !== user.id) return err(403, "Only the booked creator can remove their +1");
+      companion = await liveCompanionOf(booking);
+      if (!companion) return err(409, "This visit has no +1 to remove");
+    }
+    if (companion.status !== "booked" || companion.redeemedAt) return err(409, "The +1 spot can only change before the visit happens.");
+    const leftByPlusOne = user.id === companion.creatorId;
+    primary = await cancelCompanionBooking(companion, { reason: leftByPlusOne ? "plusone_left" : "primary_removed" });
+    if (leftByPlusOne) {
+      if (primary) await notifyUser(primary.creatorId, "collab_plusone_cancelled", `${companion.creatorName} left the +1 spot on "${companion.title}". Your visit is unchanged.`, { bookingId: primary.id });
+    } else {
+      await notifyUser(companion.creatorId, "collab_plusone_cancelled", `Your +1 spot on "${companion.title}" at ${companion.businessName} was removed by the creator who booked the visit.`, { bookingId: companion.id });
+    }
+    if (primary) await notifyUser(companion.businessId, "collab_plusone_cancelled", `The +1 on "${companion.title}" (${companion.creatorName}) is no longer coming. The booked visit itself is unchanged.`, { bookingId: primary.id });
+    return json(200, { booking: await withPostState(primary || booking) });
+  }
+
+  // The business declines a booking's +1: the visit stands,
+  // solo. Both creators are told in plain words.
+  if (seg[0] === "bookings" && seg.length === 4 && seg[2] === "plus-one" && seg[3] === "decline" && method === "POST") {
+    if (user.role !== "business") return err(403, "Businesses only");
+    const booking = await store.get(`booking:${seg[1]}`);
+    if (!booking || booking.businessId !== user.id) return err(404, "Booking not found");
+    if (booking.collabRole === "plusone") return err(400, "Decline the +1 from the booked visit, not the +1's own booking.");
+    const companion = await liveCompanionOf(booking);
+    if (!companion) return err(409, "This visit has no +1 to decline");
+    if (companion.status !== "booked" || companion.redeemedAt) return err(409, "The +1 spot can only change before the visit happens.");
+    await cancelCompanionBooking(companion, { reason: "business_declined" });
+    await logEvent({ type: "collab_pair_declined", actorId: user.id, actorRole: "business", subjectId: booking.id, market: booking.market, data: { offerId: booking.offerId, creatorId: booking.creatorId, plusOneCreatorId: companion.creatorId, via: "booking" } });
+    await notifyUser(booking.creatorId, "collab_pair_declined", `${booking.businessName} took the visit "${booking.title}" for you on your own, without the +1. Your visit is unchanged. You can add a different +1, or leave it solo.`, { bookingId: booking.id });
+    await notifyUser(companion.creatorId, "collab_plusone_cancelled", `The business took "${companion.title}" at ${companion.businessName} for the booked creator on their own, so the +1 spot closed.`, { bookingId: companion.id });
     return json(200, { booking: await withPostState(booking) });
   }
 

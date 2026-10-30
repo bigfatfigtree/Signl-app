@@ -1784,6 +1784,7 @@ function moreRowsFor() {
       { icon: "person", label: "My profile", sub: "What businesses see, your rate, your links.", tab: "Profile" },
       { icon: "bars", label: "Your numbers", sub: "What your posts and visits did.", tab: "Numbers" },
       { icon: "bolt", label: "Momentum", sub: "Your points, your tier, what earns more.", tab: "Momentum" },
+      { icon: "users", label: "Bench", sub: "Creators in your market.", tab: "Bench" },
       { icon: "bubble", label: "Messages", sub: "Talk to a business about a visit or an offer.", tab: "Messages", badge: b.messages || 0 },
       { icon: "sliders", label: "Settings", sub: "Account and notifications.", tab: "Settings" },
       { icon: "help", label: "Help", sub: "How SIGNL works, in plain words.", tab: "Help" },
@@ -2245,6 +2246,10 @@ function wireSigQueue(root, items, links) {
     btn.onclick = () => {
       const r = items[Number(btn.getAttribute("data-sqx"))];
       if (r && r.dismissKey) { try { localStorage.setItem(r.dismissKey, String(Date.now())); } catch (e) { /* storage unavailable: the re-render below still hides it for this view */ } }
+      // Build -42: an item may carry a server-side dismissal
+      // (the Bench introduction: a dismissed pair is never
+      // re-suggested, which localStorage alone cannot promise).
+      if (r && typeof r.onDismiss === "function") { try { r.onDismiss(); } catch (e) { /* the local hide above already covers this view */ } }
       render();
     };
   });
@@ -7380,14 +7385,14 @@ function creatorCard(c, viewer, opts) {
 
 // ---------- creator ----------
 
-const LIVE_CREATOR_TABS = ["Dashboard", "Profile", "Offers", "My Visits", "Messages", "Earnings", "More", "Momentum", "Numbers", "Settings", "Help", "Sig"];
+const LIVE_CREATOR_TABS = ["Dashboard", "Profile", "Offers", "My Visits", "Messages", "Earnings", "More", "Momentum", "Numbers", "Settings", "Help", "Sig", "Bench"];
 // V4.1: founding creators get the SAME tab set as live ones.
 // The old founding whitelist hid Offers / My Visits / Earnings
 // until the market launched — paired with the old 2-item tab
 // bar, a founding creator (Jeff's own account) had no way to
 // even see the explore door. The screens themselves carry the
 // honest pre-launch states (completion gate, empty decks).
-const FOUNDING_TABS = ["Dashboard", "Profile", "Status", "More", "Momentum", "Numbers", "Messages", "Settings", "Help", "Offers", "My Visits", "Earnings", "Sig"];
+const FOUNDING_TABS = ["Dashboard", "Profile", "Status", "More", "Momentum", "Numbers", "Messages", "Settings", "Help", "Offers", "My Visits", "Earnings", "Sig", "Bench"];
 
 function renderCreatorDash() {
   const u = state.user;
@@ -7399,6 +7404,7 @@ function renderCreatorDash() {
   if (tab !== "Dashboard") stopHomeCountdown();
   let body = "";
   if (tab === "Dashboard") body = `<div id="creator-home" class="vx-stagger"><div class="sig-load-row">${sigAvatarHtml("think")}</div>${skelHtml("Loading your dashboard...", 2)}</div>`;
+  if (tab === "Bench") body = `<div id="bench-body">${skelHtml("Loading the bench...", 1)}</div>`;
   if (tab === "Profile") body = wsHead("My profile", { chip: livePill("Live"), sub: "Your public creator profile. This is what businesses see when they find you.", subKey: "cr-profile" }) + creatorProfileHtml(u) + momentumHtml(u) + growRosterHtml(u);
   app.innerHTML = `<div class="wrap">
     ${standingBannerHtml(u)}
@@ -7415,6 +7421,7 @@ function renderCreatorDash() {
   if (tab === "Settings") renderSettingsTab();
   if (tab === "Help") renderHelpTab();
   if (tab === "Sig") renderSigTab();
+  if (tab === "Bench") loadBench();
 }
 
 // The approved creator's home before their market activates. It is
@@ -7433,6 +7440,7 @@ function renderFoundingHome() {
   const placeBadge = u.market === unlistedLabel() ? esc(u.city || u.market) : esc(marketDisplayName(u.market));
   let body = "";
   if (tab === "Dashboard") body = `<div id="founding-dash" class="vx-stagger"><div class="sig-load-row">${sigAvatarHtml("think")}</div>${skelHtml("Loading your dashboard...", 2)}</div>`;
+  if (tab === "Bench") body = `<div id="bench-body">${skelHtml("Loading the bench...", 1)}</div>`;
   if (tab === "Status") body = `<h3 style="margin-top:0">Your founding status</h3><div id="founding-body">${skelHtml("Loading your founding profile...", 1)}</div>`;
   if (tab === "Profile") body = wsHead("My profile", { sub: "Your public creator profile. Complete profiles get booked first.", subKey: "cr-profile" }) + creatorProfileHtml(u);
   if (tab === "Status") body = wsHead("Status", { sub: "Where your founding enrollment stands." }) + body;
@@ -7452,6 +7460,7 @@ function renderFoundingHome() {
   if (tab === "My Visits") loadMyVisits("creator");
   if (tab === "Earnings") renderEarningsTab();
   if (tab === "Sig") renderSigTab();
+  if (tab === "Bench") loadBench();
 }
 
 // The founding Dashboard tab: greeting, a compact founding status
@@ -7503,6 +7512,19 @@ async function loadFoundingDashboard() {
       queueItems.length = 0;
       queueItems.push(...capped);
     }
+    // Build -42: Sig's introduction, when Sig has one, rides
+    // the founding queue too. The Bench never blocks this home:
+    // a failed read simply means no introduction today.
+    try {
+      const bench = await api("GET", "/me/bench");
+      if (bench && bench.introduction && bench.introduction.creator) {
+        state.bench = bench;
+        const intro = bench.introduction;
+        let introDismissed = false;
+        try { introDismissed = !!localStorage.getItem(`benchintro:${intro.creator.userId}`); } catch (e) { /* storage unavailable: show it */ }
+        if (!introDismissed) queueItems.push({ text: `${benchMeetLine(intro)} Sig thinks you two would make a strong +1 pair.`, btn: "Meet them", act: () => go("dashboard", "Bench"), dismissKey: `benchintro:${intro.creator.userId}`, onDismiss: () => benchDismissIntro(intro.creator.userId) });
+      }
+    } catch (e) { /* no introduction today */ }
     // V4.1: the Sig tab renders this same queue and badges its
     // count — one queue, two doors (see renderSigTab).
     state.sigQueue = queueItems;
@@ -8095,6 +8117,205 @@ function audDownloadCard(codeId) {
   return false;
 }
 
+// ---------- The Bench + collabs (Build -42) ----------
+// Creators see each other in their own market, by default,
+// exactly as a business sees them (photo, handle, categories,
+// local %, tier/Charter/level badges, three streets, primary
+// platform) — never earnings, terms, scores, or contact
+// details, and never a count of creators anywhere. The Bench
+// slot is state-based because SIGNL never renders an empty or
+// near-empty collection: pre-launch it is a founding frame with
+// Golden Tickets and Sig introductions; at launch (or on the
+// Admin override) it becomes the browsable roster. A +1 rides
+// on an application or a booking: one other finished,
+// non-hidden creator from the same market, picked only from a
+// Sig suggestion or an exact name/handle search — there is no
+// browsable picker. The business approves or declines the
+// PAIR; declining leaves the application/visit standing solo.
+function benchMeetLine(intro) {
+  const c = (intro && intro.creator) || {};
+  const bits = [];
+  if (c.categories && c.categories.length) bits.push(c.categories[0]);
+  const place = c.neighborhood || (c.streets && c.streets[0]);
+  if (place) bits.push(place);
+  return `Meet ${c.name || "a creator"}${bits.length ? `. ${bits.join(", ")}` : ""}, ${c.localAudiencePct}% local.`;
+}
+async function benchDismissIntro(creatorId) {
+  try { await api("POST", "/me/bench/dismiss", { creatorId }); } catch (e) { /* the local hide still applies for this view */ }
+  if (state.bench && state.bench.introduction && state.bench.introduction.creator && state.bench.introduction.creator.userId === creatorId) state.bench.introduction = null;
+}
+function benchIntroDismiss() {
+  const intro = state.bench && state.bench.introduction;
+  if (!intro || !intro.creator) return false;
+  benchDismissIntro(intro.creator.userId).then(() => { if (document.getElementById("bench-body")) benchRender(); else render(); });
+  return false;
+}
+function benchIntroBring() {
+  go("dashboard", "Offers");
+  showToast("Pick an offer, then tap Bring a +1: Sig has your introduction ready.");
+  return false;
+}
+function benchIntroCardHtml(intro) {
+  const shared = [];
+  if (intro.sharedStreets && intro.sharedStreets.length) shared.push(intro.sharedStreets[0]);
+  if (intro.sharedCategories && intro.sharedCategories.length) shared.push(intro.sharedCategories[0]);
+  return `<div class="wcard bench-intro">
+    <div class="kpi-label">Sig introduction</div>
+    <h3 style="margin:6px 0 4px">${esc(benchMeetLine(intro))}</h3>
+    <p class="small muted" style="margin:0 0 10px">You share ground${shared.length ? `: ${esc(shared.join(", "))}` : ""}. Bring them on a visit as your +1 and you each post your own post and story.</p>
+    <div class="cta-row" style="justify-content:flex-start"><button type="button" class="btn small-btn" onclick="return benchIntroBring()">Bring on a visit</button><button type="button" class="btn small-btn ghost" onclick="return benchIntroDismiss()">Not now</button></div>
+  </div>`;
+}
+function benchCardHtml(c) {
+  const initial = esc((c.name || "?").trim().charAt(0).toUpperCase() || "?");
+  return `<div class="card mb bench-card">
+    <div style="display:flex;gap:12px;align-items:flex-start">
+      ${c.photoUrl ? `<img class="avatar" style="width:56px;height:56px" src="${esc(c.photoUrl)}" alt="">` : `<span class="avatar avatar-initial" style="width:56px;height:56px;font-size:1.4rem">${initial}</span>`}
+      <div style="flex:1;min-width:0">
+        <div class="flex-between"><strong>${esc(c.name)} <span class="muted">@${esc(c.handle)}</span></strong><span class="badge tier">${esc(c.tier || "")}</span></div>
+        <p class="small" style="margin:4px 0 0">${c.localAudiencePct}% local &middot; ${esc(c.primaryPlatformLabel || "Instagram")}${c.charter ? ` &middot; <span class="badge ok">Charter Creator</span>` : ""}${c.levelName ? ` &middot; <span class="badge info">${esc(c.levelName)}</span>` : ""}</p>
+        ${c.categories && c.categories.length ? `<p class="small muted" style="margin:2px 0 0">${c.categories.map((x) => esc(x)).join(" &middot; ")}</p>` : ""}
+        ${c.streets && c.streets.length ? `<p class="small muted" style="margin:2px 0 0">${c.streets.map((x) => esc(x)).join(" &middot; ")}</p>` : ""}
+        ${c.neighborhood ? `<p class="small muted" style="margin:2px 0 0">${esc(c.neighborhood)}</p>` : ""}
+      </div>
+    </div>
+  </div>`;
+}
+async function loadBench() {
+  const el = document.getElementById("bench-body");
+  if (!el) return;
+  try {
+    const data = await api("GET", "/me/bench");
+    if (!document.getElementById("bench-body")) return;
+    state.bench = data;
+    benchRender();
+  } catch (err) {
+    el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+  }
+}
+function benchRender() {
+  const el = document.getElementById("bench-body");
+  const data = state.bench;
+  if (!el || !data) return;
+  const marketName = marketDisplayName(data.market);
+  if (data.state !== "bench") {
+    el.innerHTML = `${wsHead("Bench", { sub: "The creators in your market, and the ones you visit with.", subKey: "cr-bench" })}
+    <div class="wcard">
+      <h3 style="margin-top:0">The Bench opens when ${esc(marketName)} launches</h3>
+      <p class="small" style="margin-bottom:0">This is where the creators in your market live: the people you can visit with and bring as a +1. It opens with the market, so it never opens to an empty room.${data.charter ? ` You are a founding creator in ${esc(marketName)}: your name is on the first roster this city ever sees.` : ""}</p>
+    </div>
+    ${data.introduction ? benchIntroCardHtml(data.introduction) : ""}
+    ${goldenTicketsSectionHtml()}`;
+    setTimeout(loadGoldenTickets, 10);
+    return;
+  }
+  const filter = state.benchFilter || "";
+  const cats = data.categories || [];
+  const list = (data.creators || []).filter((c) => !filter || (c.categories || []).includes(filter));
+  el.innerHTML = `${wsHead("Bench", { sub: "The creators in your market. Bring one as a +1 on any visit.", subKey: "cr-bench" })}
+  ${data.introduction ? benchIntroCardHtml(data.introduction) : ""}
+  ${cats.length ? `<div class="chiprow" style="margin-bottom:12px"><button type="button" class="rchip${!filter ? " on" : ""}" onclick="return benchFilter('')">All</button>${cats.map((cat) => `<button type="button" class="rchip${filter === cat.name ? " on" : ""}" onclick="return benchFilter('${esc(cat.name)}')">${esc(cat.name)}</button>`).join("")}</div>` : ""}
+  <div class="vx-stagger">${list.map(benchCardHtml).join("")}</div>`;
+}
+function benchFilter(cat) { state.benchFilter = cat || ""; benchRender(); return false; }
+
+// ----- the +1 picker: suggestion or exact search, never a list -----
+const plusOneSel = {};
+const plusOneFound = {};
+const plusOneKind = {};
+function poToggleHtml(ctx, kind) {
+  plusOneKind[ctx] = kind || "";
+  return `<div class="plusone" id="po-${ctx}"><button type="button" class="btn small-btn ghost" onclick="poOpen('${ctx}')">Bring a +1</button></div>`;
+}
+async function poOpen(ctx) {
+  if (!state.bench) { try { state.bench = await api("GET", "/me/bench"); } catch (e) { state.bench = null; } }
+  poRenderPicker(ctx);
+}
+function poRenderPicker(ctx) {
+  const host = document.getElementById("po-" + ctx);
+  if (!host) return;
+  const intro = state.bench && state.bench.introduction;
+  const sel = plusOneSel[ctx];
+  host.innerHTML = `<div class="plusone-box">
+    <p class="small" style="margin-top:0"><strong>Bring a +1.</strong> Another finished creator from your market joins the visit. You each post your own post and story, and the business approves you as a pair.${plusOneKind[ctx] === "paid" ? " On a paid visit your +1 is a guest (comped presence) unless the business books them at their own rate too." : ""}</p>
+    ${sel ? `<div class="lrow"><div style="flex:1"><span class="lname">${esc(sel.name)}</span>${sel.handle ? ` <span class="muted">@${esc(sel.handle)}</span>` : ""}<div class="small muted">Your +1 on this one.</div></div><button type="button" class="btn small-btn ghost" onclick="poClear('${ctx}')">Change</button></div>`
+    : `${intro && intro.creator ? `<div class="lrow"><div style="flex:1"><span class="lname">Sig suggests ${esc(intro.creator.name)}</span> <span class="muted">@${esc(intro.creator.handle)}</span><div class="small muted">${esc(benchMeetLine(intro))}</div></div><button type="button" class="btn small-btn" onclick="poPick('${ctx}','${intro.creator.userId}')">Bring them</button></div>` : ""}
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><input id="po-q-${ctx}" placeholder="Exact name or @handle" maxlength="80" style="flex:1;min-width:180px"><button type="button" class="btn small-btn ghost" onclick="poSearch('${ctx}')">Find</button></div>
+    <div id="po-res-${ctx}"></div>`}
+  </div>`;
+}
+async function poSearch(ctx) {
+  const inp = document.getElementById("po-q-" + ctx);
+  const res = document.getElementById("po-res-" + ctx);
+  const q = inp ? inp.value.trim() : "";
+  if (!q || !res) return;
+  res.innerHTML = `<p class="small muted">Looking...</p>`;
+  try {
+    const data = await api("GET", "/me/bench/lookup?q=" + encodeURIComponent(q));
+    if (!data.creator) { plusOneFound[ctx] = null; res.innerHTML = `<p class="small muted">No creator matched that name or handle. A +1 is a finished creator in your market who has not hidden from other creators.</p>`; return; }
+    plusOneFound[ctx] = data.creator;
+    const c = data.creator;
+    res.innerHTML = `<div class="lrow" style="margin-top:8px"><div style="flex:1"><span class="lname">${esc(c.name)}</span> <span class="muted">@${esc(c.handle)}</span><div class="small muted">${c.localAudiencePct}% local${c.categories && c.categories.length ? ` &middot; ${esc(c.categories.slice(0, 2).join(", "))}` : ""}</div></div><button type="button" class="btn small-btn" onclick="poPick('${ctx}','${c.userId}')">Bring them</button></div>`;
+  } catch (e) { res.innerHTML = `<p class="small muted">${esc(e.message)}</p>`; }
+}
+async function poPick(ctx, creatorId) {
+  if (ctx.indexOf("offer-") === 0) {
+    const intro = state.bench && state.bench.introduction;
+    const introCard = intro && intro.creator && intro.creator.userId === creatorId ? intro.creator : null;
+    const foundCard = plusOneFound[ctx] && plusOneFound[ctx].userId === creatorId ? plusOneFound[ctx] : null;
+    const card = introCard || foundCard;
+    plusOneSel[ctx] = card ? { creatorId, name: card.name, handle: card.handle } : { creatorId, name: "Your +1", handle: "" };
+    poRenderPicker(ctx);
+    return;
+  }
+  try {
+    if (ctx.indexOf("app-") === 0) { await api("POST", `/applications/${ctx.slice(4)}/plus-one`, { plusOneCreatorId: creatorId }); loadMyApplications(); }
+    else if (ctx.indexOf("booking-") === 0) { await api("POST", `/bookings/${ctx.slice(8)}/plus-one`, { plusOneCreatorId: creatorId }); loadMyVisits("creator"); }
+  } catch (e) { alert(e.message); }
+}
+function poClear(ctx) { delete plusOneSel[ctx]; poRenderPicker(ctx); }
+function poSelectedFor(offerId) {
+  const sel = plusOneSel["offer-" + offerId];
+  return sel && sel.creatorId ? { plusOneCreatorId: sel.creatorId } : {};
+}
+async function poRemoveApp(appId) {
+  try { await api("POST", `/applications/${appId}/plus-one-remove`, {}); loadMyApplications(); } catch (e) { alert(e.message); }
+}
+async function poRemoveBooking(bookingId) {
+  if (!confirm("Remove the +1 from this visit? Their spot closes; your visit is unchanged.")) return;
+  try { await api("POST", `/bookings/${bookingId}/plus-one/remove`, {}); loadMyVisits("creator"); } catch (e) { alert(e.message); }
+}
+async function poLeaveBooking(bookingId) {
+  if (!confirm("Leave the +1 spot on this visit? The booked visit itself is unchanged.")) return;
+  try { await api("POST", `/bookings/${bookingId}/plus-one/remove`, {}); loadMyVisits("creator"); } catch (e) { alert(e.message); }
+}
+async function poDeclineBooking(bookingId) {
+  if (!confirm("Decline the +1 on this visit? The visit itself stands, for the booked creator on their own.")) return;
+  try { await api("POST", `/bookings/${bookingId}/plus-one/decline`, {}); loadMyVisits("business"); } catch (e) { alert(e.message); }
+}
+async function declinePairApplicant(offerId, applicationId) {
+  if (!confirm("Decline the +1 only? The creator's application stays in your stack, on its own.")) return;
+  try {
+    await api("POST", `/offers/${offerId}/decline-pair`, { applicationId });
+    viewApplicants(offerId);
+  } catch (err) { alert(err.message); }
+}
+// The collab block on a visit card (both roles): the +1's own
+// framing, the pair framing, or the Bring a +1 control.
+function collabVisitHtml(b, role) {
+  if (b.collabRole === "plusone") {
+    if (role === "business") return `<p class="small"><span class="badge info">+1</span> This creator is the +1 on ${esc(b.collabPrimaryName || "the booked creator")}'s visit. They redeem their own code and post their own post and story.</p>`;
+    const canLeave = b.status === "booked" && !b.redeemedAt;
+    return `<div class="showcase-block"><h4>You are the +1 on this visit</h4><p class="small" style="margin:0">${esc(b.collabPrimaryName || "Another creator")} booked this visit and brought you along. Your own code is on this card; redeem it at the visit and post your own post and story, on the same clocks as any visit.${b.collabCompedPresence ? " This booking is paid for the booked creator; you are here as their guest, so for you this visit is comped presence." : ""}</p>${canLeave ? `<p style="margin:10px 0 0"><button type="button" class="btn small-btn ghost" onclick="poLeaveBooking('${b.id}')">Leave the +1 spot</button></p>` : ""}</div>`;
+  }
+  if (b.collab && b.collab.creatorId) {
+    const canChange = b.status === "booked" && !b.redeemedAt;
+    return `<div class="showcase-block"><h4>Your +1: ${esc(b.collab.creatorName)} <span class="muted">@${esc(b.collab.creatorHandle)}</span></h4><p class="small" style="margin:0">They visit with you on their own code and post their own post and story.${b.collab.compedPresence ? " On this paid booking they are a guest (comped presence), not a second paid booking." : ""}</p>${canChange && role === "creator" ? `<p style="margin:10px 0 0"><button type="button" class="btn small-btn ghost" onclick="poRemoveBooking('${b.id}')">Remove +1</button></p>` : ""}${canChange && role === "business" ? `<p style="margin:10px 0 0"><button type="button" class="btn small-btn ghost" onclick="poDeclineBooking('${b.id}')">Decline the +1</button></p>` : ""}</div>`;
+  }
+  if (role === "creator" && b.status === "booked" && !b.redeemedAt) return poToggleHtml("booking-" + b.id, b.kind);
+  return "";
+}
+
 // ---------- Golden Ticket invites (Build -33) ----------
 // Two named invites per finished creator, shown on the founding
 // home. A ticket holds a founding seat BY NAME until the market
@@ -8582,7 +8803,8 @@ async function homeAcceptOffer(e, offerId) {
 // re-renders after, and the card then reads Applied.
 async function homeApplyOffer(offerId) {
   try {
-    await api("POST", `/offers/${offerId}/apply`, {});
+    await api("POST", `/offers/${offerId}/apply`, poSelectedFor(offerId));
+    delete plusOneSel["offer-" + offerId];
     refreshBadges();
     loadCreatorHome();
   } catch (err) { alert(err.message); }
@@ -8879,7 +9101,12 @@ function bookMePanelHtml(c) {
       <p class="small muted">One post you already made about a place you love. It shows on your profile, your book-me page, and the Local List, always labeled a portfolio sample, never a SIGNL visit. Clear the box and save to remove it.</p>
     </div>
     <div class="lrow lane-row"><input type="checkbox" class="sw lane-sw" id="lane-socials" ${socialsOn ? "checked" : ""} onchange="laneToggleSocials(this)"><div><label class="lname" for="lane-socials">Show my social channels to paying businesses</label> <span class="lline">— the channels on your record, shown only to businesses with a paid, active SIGNL account.</span></div></div>
+    <div class="lrow lane-row"><input type="checkbox" class="sw lane-sw" id="lane-creators" ${c && c.showToCreators === false ? "" : "checked"} onchange="laneToggleCreators(this)"><div><label class="lname" for="lane-creators">Show me to other creators</label> <span class="lline">— finished creators in your market see your profile on the Bench and can bring you as a +1. Off removes you from both. Separate from your book-me page above.</span></div></div>
   </div>`;
+}
+function laneToggleCreators(input) {
+  laneSave({ showToCreators: !!input.checked });
+  return true;
 }
 function laneToggleBookMe(input) {
   laneSave({ publicPage: !!input.checked });
@@ -9314,7 +9541,7 @@ async function loadCreatorHome() {
     // Perf (2026-10-28): deck state used to load on its own round
     // trip BEFORE the parallel batch below; it is independent, so
     // it now rides along inside the same Promise.all.
-    const [, bkData, offData, fData, appData, openData, lrData] = await Promise.all([
+    const [, bkData, offData, fData, appData, openData, lrData, benchData] = await Promise.all([
       ensureDeckState(),
       api("GET", "/bookings"),
       api("GET", "/offers"),
@@ -9322,6 +9549,7 @@ async function loadCreatorHome() {
       api("GET", "/applications").catch(() => ({ applications: [] })),
       api("GET", "/open-offers").catch(() => ({ offers: [] })),
       api("GET", "/license-requests").catch(() => ({ licenseRequests: [] })),
+      api("GET", "/me/bench").catch(() => null),
     ]);
     if (!document.getElementById("creator-home")) return; // navigated away mid-load
     const bookings = bkData.bookings || [];
@@ -9388,6 +9616,16 @@ async function loadCreatorHome() {
     if (openOffers.length && (freshOffers.length || !seenMark)) {
       const n = freshOffers.length || openOffers.length;
       add(3, now, seenMark ? `${n} new offer${n === 1 ? "" : "s"} near you.` : `${openOffers.length} offer${openOffers.length === 1 ? "" : "s"} open near you in ${u.city || marketTalkNameClient(u.market)}.`, "See offers", () => { state.crOffersSeg = "foryou"; go("dashboard", "Offers"); }, `${n} new offer${n === 1 ? "" : "s"} near you`);
+    }
+    // Build -42: Sig's introduction rides the queue at class 3.
+    // One named creator, correct at any roster size; dismissal
+    // is recorded server-side so the pair is never re-suggested.
+    if (benchData && benchData.introduction && benchData.introduction.creator) {
+      state.bench = benchData;
+      const intro = benchData.introduction;
+      let introDismissed = false;
+      try { introDismissed = !!localStorage.getItem(`benchintro:${intro.creator.userId}`); } catch (e) { /* storage unavailable: show it */ }
+      if (!introDismissed) items.push({ cls: 3, at: now, text: `${benchMeetLine(intro)} Sig thinks you two would make a strong +1 pair.`, short: `Meet ${intro.creator.name}`, btn: "Meet them", act: () => go("dashboard", "Bench"), dismissKey: `benchintro:${intro.creator.userId}`, onDismiss: () => benchDismissIntro(intro.creator.userId) });
     }
     if ((money.held || 0) > 0) add(3, now, `A paid booking is earning: $${fmtMoney(money.held)} held until the post is live.`, "See earnings", () => go("dashboard", "Earnings"), `$${fmtMoney(money.held)} held on a paid booking`);
     if (pc && !pc.complete) add(4, now, `Your profile is missing essentials (${pc.requiredDone} of ${pc.requiredTotal} done). Businesses cannot find you yet.`, "Finish profile", () => go("dashboard", "Profile"), `Profile: ${pc.requiredDone} of ${pc.requiredTotal} done`);
@@ -10098,6 +10336,7 @@ function offerFeedCardHtml(o, opts) {
             ${preview ? "" : `<button class="btn small-btn ghost" data-ctx="${esc(o.title)}" onclick="return openThreadCtx('${o.businessId}', this.dataset.ctx)">Message</button>`}
           </div>
         </div>
+        ${!preview && !o.myApplication ? poToggleHtml("offer-" + o.id, o.kind) : ""}
         ${opts && opts.pileKey && !o.myApplication ? `<div class="offer-pile-row"><button type="button" class="btn small-btn ghost" onclick="cardLater('${opts.pileKey}','${o.id}')">Later</button><button type="button" class="btn small-btn ghost" onclick="cardHide('${opts.pileKey}','${o.id}')">Not for me</button></div>` : ""}
       </div>`;
 }
@@ -10339,7 +10578,8 @@ function renderOpenBoard() {
       onGo: async (o) => {
         if (o.myApplication) { stackAdvance("offers", "go"); return; }
         try {
-          await api("POST", `/offers/${o.id}/apply`, {});
+          await api("POST", `/offers/${o.id}/apply`, poSelectedFor(o.id));
+          delete plusOneSel["offer-" + o.id];
           o.myApplication = true;
           pileUnlater("offers", o.id);
           refreshBadges();
@@ -10469,7 +10709,8 @@ function pvOffersEndHtml(passed, total) {
 
 async function applyToOffer(offerId) {
   try {
-    await api("POST", `/offers/${offerId}/apply`, {});
+    await api("POST", `/offers/${offerId}/apply`, poSelectedFor(offerId));
+    delete plusOneSel["offer-" + offerId];
     pileUnlater("offers", offerId);
     delete stackState.offers;
     refreshBadges();
@@ -10506,6 +10747,9 @@ async function loadMyApplications() {
         </div>
         ${(a.status === "released" || a.status === "expired") && a.releaseReason ? `<p class="small">${esc(RELEASE_TEXT[a.releaseReason] || "This application ended.")}</p>` : ""}
         ${a.status === "selected" || a.status === "backfill_accepted" ? `<p class="small">Code + deadline in My Visits.</p>` : ""}
+        ${(a.status === "applied" || a.status === "backfill_offered") ? (a.plusOne
+          ? `<div class="showcase-block"><h4>Bringing a +1: ${esc(a.plusOne.name)} <span class="muted">@${esc(a.plusOne.handle)}</span></h4><p class="small" style="margin:0">${a.plusOne.localAudiencePct}% local. If the business picks you, both of you are booked on the visit and you each post your own post and story.${a.offer.kind === "paid" ? " On a paid application your +1 is a guest (comped presence) unless the business books them at their own rate too." : ""} The business can also take your application on its own, without the +1.</p><p style="margin:10px 0 0"><button type="button" class="btn small-btn ghost" onclick="poRemoveApp('${a.id}')">Remove +1</button></p></div>`
+          : poToggleHtml("app-" + a.id, a.offer.kind)) : ""}
         <div class="slot-foot">
           <div><div class="slot-price">$${fmtPrice(a.offer.kind === "paid" ? a.offer.cashRate : a.offer.dollarCap)}</div><div class="slot-note">${a.offer.kind === "paid" ? "Rate" : "Comp value"}</div></div>
           <div class="slot-actions">
@@ -10730,6 +10974,7 @@ function visitCard(b, role) {
   }
   html += briefBlockHtml(b);
   html += dealCardHtml(b, role);
+  html += collabVisitHtml(b, role);
   if (role === "business" && b.status === "cancelled") html += swapBlockHtml(b);
   if (role === "creator") html += assetPacketBlockHtml(b.assetPacket);
   if (b.paidLane) {
@@ -13781,7 +14026,9 @@ function applicantCardHtml(offer, a) {
     ${campusBadgeHtml(c) ? `<p class="small" style="margin-top:6px">${campusBadgeHtml(c)}</p>` : ""}
     <p class="small">${esc(c.tierBand || a.snapshot.tierBand || "")} &middot; ${c.localAudiencePct === null || c.localAudiencePct === undefined ? "local % not reported" : c.localAudiencePct + "% local audience"} &middot; Impact ${c.impact !== undefined && a.rankParts ? a.rankParts.impactScore : ""} &middot; Momentum ${a.rankParts ? a.rankParts.momentum : ""} pts${ratingBit}${badgesHtml(c.badges)} &middot; reliability ${a.rankParts ? a.rankParts.reliability : ""}</p>
     <p class="small muted">${tr.isNew || !tr.visitsCompleted ? "New to SIGNL: no visits yet." : `${tr.visitsCompleted} visits completed &middot; ${tr.postsDelivered} posts delivered &middot; ${tr.onTimePct === null || tr.onTimePct === undefined ? "on-time n/a" : tr.onTimePct + "% on time"}`} &middot; ${fmtNum(c.totalAudience || a.snapshot.totalAudience)} total audience${c.paidRate ? ` &middot; paid rate $${fmtPrice(c.paidRate)}` : ""}</p>
-    ${(a.status === "applied" || a.status === "backfill_offered") ? `<div class="cta-row" style="justify-content:flex-start"><button class="btn small-btn" onclick="selectApplicant('${offer.id}','${a.id}')">Select this creator</button><button class="btn small-btn ghost" onclick="releaseApplicant('${offer.id}','${a.id}')">Release</button></div>` : ""}
+    ${a.plusOne ? `<div class="showcase-block"><h4>Bringing a +1: ${esc(a.plusOne.name)} <span class="muted">@${esc(a.plusOne.handle)}</span></h4><p class="small" style="margin:0">${a.plusOne.localAudiencePct}% local. Selecting books both creators on this visit; each redeems their own code and posts their own post and story.${offer.kind === "paid" ? " On a paid offer the +1 is comped presence only, unless you book them at their own rate through the normal flow." : ""}</p>
+    ${(a.status === "applied" || a.status === "backfill_offered") ? `<div class="cta-row" style="justify-content:flex-start;margin-top:10px"><button class="btn small-btn" onclick="selectApplicant('${offer.id}','${a.id}')">Select the pair</button><button class="btn small-btn ghost" onclick="declinePairApplicant('${offer.id}','${a.id}')">Decline the +1 only</button><button class="btn small-btn ghost" onclick="releaseApplicant('${offer.id}','${a.id}')">Release</button></div><p class="small muted" style="margin:6px 0 0">Declining the +1 leaves ${esc(c.name || a.snapshot.name)}'s application standing on its own.</p>` : ""}</div>` : ""}
+    ${!a.plusOne && (a.status === "applied" || a.status === "backfill_offered") ? `<div class="cta-row" style="justify-content:flex-start"><button class="btn small-btn" onclick="selectApplicant('${offer.id}','${a.id}')">Select this creator</button><button class="btn small-btn ghost" onclick="releaseApplicant('${offer.id}','${a.id}')">Release</button></div>` : ""}
   </div>`;
 }
 
@@ -15241,9 +15488,16 @@ function renderAdminMarkets() {
           <td><strong>${esc(m.label)}</strong><br><span class="muted small">${esc(m.country || "United States")}</span></td>
           <td>${m.live ? `<span class="badge ok">Live</span>` : `<span class="badge info">Founding only</span>`}</td>
           <td><strong>${m.creatorsApproved}</strong> approved creators &middot; <strong>${m.creatorsApprovedComplete || 0}</strong> complete &middot; <strong>${m.creatorsPending}</strong> pending<br><span class="muted small"><strong>${m.businessesApproved}</strong> approved businesses &middot; ${m.businessesFounding || 0} on the founding list &middot; ${m.businessesActive || 0} active</span></td>
-          <td><button class="btn small-btn ${m.live ? "danger" : ""}" onclick="toggleMarket('${esc(m.name)}', ${m.live ? "false" : "true"})">${m.live ? "Deactivate" : "Activate market"}</button><div class="muted small" style="margin-top:4px">${m.live ? "Back to founding only: no new offers or bookings there." : "Opens publishing and bookings here. Founding businesses still activate separately."}</div>${m.businessesFounding ? `<button class="btn small-btn ghost" style="margin-top:6px" onclick="activateMarketBusinesses('${esc(m.name)}')">Activate founding businesses (${m.businessesFounding})</button>` : ""}</td>
+          <td><button class="btn small-btn ${m.live ? "danger" : ""}" onclick="toggleMarket('${esc(m.name)}', ${m.live ? "false" : "true"})">${m.live ? "Deactivate" : "Activate market"}</button><div class="muted small" style="margin-top:4px">${m.live ? "Back to founding only: no new offers or bookings there." : "Opens publishing and bookings here. Founding businesses still activate separately."}</div>${m.businessesFounding ? `<button class="btn small-btn ghost" style="margin-top:6px" onclick="activateMarketBusinesses('${esc(m.name)}')">Activate founding businesses (${m.businessesFounding})</button>` : ""}<button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleBench('${esc(m.name)}', ${m.benchOpen ? "false" : "true"})">${m.benchOpen ? "Close bench" : "Open bench"}</button><div class="muted small" style="margin-top:4px">Bench: creators seeing each other in this market. ${m.live ? "Open while the market is live." : m.benchOpen ? "Open by override, ahead of launch." : "Opens at launch unless you open it here."}</div></td>
         </tr>`).join("")}
       </table></div>`;
+}
+
+async function toggleBench(market, open) {
+  try {
+    await api("POST", "/admin/markets/bench-toggle", { market, open });
+    loadMarkets();
+  } catch (err) { alert(err.message); }
 }
 
 async function toggleMarket(market, live) {
