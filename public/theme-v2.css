@@ -3065,6 +3065,12 @@ details.roas-x > summary::-webkit-details-marker { display: none; }
 .cc-chip.charged { background: #7A4FD0; color: #fff; }
 .cc-chip.modeled { background: #E8E2D2; color: #6B5E33; }
 .cc-chip.live { background: var(--mint); color: var(--black); }
+.cc-chip.cc-ready { background: var(--mint); color: var(--ink); }
+.cc-chip.cc-blocked { background: #B3261E; color: #fff; }
+.cc-recon-items { margin: 2px 0 8px; border-top: 1px dashed var(--line); }
+.cc-recon-item { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 5px 0 5px 14px; border-bottom: 1px dashed var(--line); font-size: .86rem; }
+.cc-recon-amt { font-weight: 800; white-space: nowrap; }
+.cc-sel-row { background: #F4F7F4; }
 .cc-chip.founding { background: #EDF3ED; color: var(--ink3); }
 .cc-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; margin-bottom: 12px; }
 .cc-tile { border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; background: #fff; }

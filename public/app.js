@@ -16970,6 +16970,9 @@ let ccFilters = { period: "all", market: "", testers: false, partner: "" };
 let ccAttentionCache = [];
 let ccPartnerId = null;
 let ccPartnerOpts = null;
+let ccCloseMonth = null;
+let ccCloseSel = null;
+let ccReconCache = [];
 
 function ccQuery() {
   const q = new URLSearchParams();
@@ -17097,6 +17100,19 @@ async function ccShowTab() {
       }
       return;
     }
+    if (ccTab === "owed") {
+      const d = await api("GET", "/admin/command/owed?" + ccQuery());
+      host.innerHTML = ccOwedHtml(d);
+      return;
+    }
+    if (ccTab === "close") {
+      const [recon, close] = await Promise.all([
+        api("GET", "/admin/command/reconciliation?" + ccQuery()),
+        api("GET", "/admin/command/close?" + ccQuery() + (ccCloseMonth ? "&month=" + encodeURIComponent(ccCloseMonth) : "")),
+      ]);
+      host.innerHTML = ccCloseHtml(recon, close);
+      return;
+    }
     host.innerHTML = ccFormingHtml(ccTab);
   } catch (err) {
     host.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
@@ -17121,7 +17137,9 @@ function ccOverviewHtml(s, ov) {
       ${t.dollarsFlowing
         ? `<div class="cc-tile"><div class="cc-tlabel">Dollars flowing <span class="cc-chip recorded">Recorded</span></div><div class="cc-tnum">${ccMoneyFmt(t.dollarsFlowing.recorded || 0)}</div><div class="cc-tsub">Recorded on platform records &middot; ${ccMoneyFmt(t.dollarsFlowing.charged || 0)} charged on cards so far <span class="cc-chip charged">Charged</span> &middot; the classes are never added together &middot; ${periodName}</div></div>`
         : formingTile("Dollars flowing", "The all-money view lands with charge capture, on the Money tab.")}
-      ${formingTile("Money owed", "The owed ledger lands with the Owed tab.")}
+      ${t.moneyOwed
+        ? `<div class="cc-tile"><div class="cc-tlabel">Money owed</div><div class="cc-tnum">${ccMoneyFmt(t.moneyOwed.owedOut || 0)}</div><div class="cc-tsub">Owed out: ${ccMoneyFmt(t.moneyOwed.toCreators || 0)} to creators &middot; ${ccMoneyFmt(t.moneyOwed.toPartners || 0)} to partners &middot; businesses owe ${ccMoneyFmt(t.moneyOwed.byBusinessesMonthly || 0)}/mo on paper &middot; <a href="#" onclick="return ccSetTab('owed')">Open the Owed view</a></div></div>`
+        : formingTile("Money owed", "The owed ledger lands with the Owed tab.")}
       <div class="cc-tile"><div class="cc-tlabel">Alerts</div><div class="cc-tnum">${t.alerts || 0}</div><div class="cc-tsub">${(t.alerts || 0) ? "Things that need a look, below" : "All clear"}</div></div>
     </div>`;
   const attention = ccAttentionCache.length ? `
@@ -17278,7 +17296,7 @@ function ccMoneyHtml(d) {
       <div class="cc-tile"><div class="cc-tlabel">SIGNL kept <span class="cc-chip recorded">Recorded</span></div><div class="cc-tnum">${ccMoneyFmt((rec.totals || {}).signlKept || 0)}</div><div class="cc-tsub">Before partner accruals, which land with the deal records</div></div>
     </div>`;
   const splitCheck = rec.splitsHold === false
-    ? `<p class="small" style="color:#B3261E"><strong>Split check failed:</strong> at least one paid record's splits do not add up (business total should equal creator kept + SIGNL kept). It is listed in Reconciliation &amp; alerts when that view lands; the records above are printed as written.</p>`
+    ? `<p class="small" style="color:#B3261E"><strong>Split check failed:</strong> at least one paid record's splits do not add up (business total should equal creator kept + SIGNL kept). The records are named under Reconciliation &amp; alerts on the Close tab; the figures above are printed as written.</p>`
     : `<p class="small muted">Split check: on every paid booking and license, what the business paid equals what the creator kept plus what SIGNL kept.</p>`;
   const recordedPanel = `
     <div class="panel">
@@ -17321,7 +17339,8 @@ function ccMoneyHtml(d) {
   const reconPanel = `
     <div class="panel">
       <h3 style="margin:0 0 2px">Reconciliation</h3>
-      <p class="muted small" style="margin:0 0 6px">Where the recorded books and the card charges disagree, in plain sight. The full reconciliation view lands with the close phase.</p>
+      <p class="muted small" style="margin:0 0 6px">Where the recorded books and the card charges disagree, in plain sight. The full list — every alert with its records named — is under Reconciliation &amp; alerts on the Close tab.</p>
+      <div class="cc-att-row"><span>Reconciliation &amp; alerts: the whole argument, one list.</span><button type="button" class="btn small-btn" onclick="return ccSetTab('close')">Open Reconciliation</button></div>
       ${reconRows.length ? reconRows.join("") : `<p class="small">Every charge on the books matches a business, and no credit is missing. Nothing to reconcile.</p>`}
     </div>`;
   const modeledPanel = `
@@ -17591,6 +17610,241 @@ async function ccRecordPayout(partnerId) {
 // The forming states (spec §7): the structure is real, the copy
 // says exactly what exists today and what lands it — never a
 // zero dressed up as a total.
+// Owed (Build -57, spec §3.7): the owed ledger — creator money
+// held with its blocker in plain words, partner shares accrued
+// less paid, what businesses owe on paper, and the promises
+// that are not cash, labeled as promises.
+function ccOwedHtml(d) {
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  const cr = d.creators || {};
+  const pa = d.partners || {};
+  const bz = d.businesses || {};
+  const li = d.liabilities || {};
+  const pastDue = bz.pastDue || { count: 0, monthly: 0, rows: [] };
+  const recorded = bz.recordedNeverCharged || { count: 0, monthly: 0, rows: [] };
+  const roll = li.rollover || { visits: 0, planValue: 0, carriedVisits: 0, carriedExpiresAt: null };
+  const credits = li.foundingCredits || { count: 0, total: 0 };
+  const promised = li.compPromised || { count: 0, menuValue: 0 };
+  const periodName = (d.filters && d.filters.periodLabel) || "this period";
+  const allZero = !(cr.heldTotal || 0) && !(pa.owed || 0) && !pastDue.count && !recorded.count;
+  const chip = (r) => r.state === "ready" ? `<span class="cc-chip cc-ready">Ready</span>` : r.state === "blocked" ? `<span class="cc-chip cc-blocked">Blocked</span>` : `<span class="cc-chip recorded">Waiting</span>`;
+  const tiles = `
+    <div class="cc-tiles">
+      <div class="cc-tile cc-hero"><div class="cc-tlabel">Owed to creators</div><div class="cc-tnum">${ccMoneyFmt(cr.heldTotal || 0)}</div><div class="cc-tsub">${plural(cr.heldCount || 0, "hold", "holds")} &middot; ${ccMoneyFmt(cr.releasableNow || 0)} ready to release now</div></div>
+      <div class="cc-tile"><div class="cc-tlabel">Owed to partners</div><div class="cc-tnum">${ccMoneyFmt(pa.owed || 0)}</div><div class="cc-tsub">Accrued ${ccMoneyFmt(pa.accrued || 0)} &middot; paid ${ccMoneyFmt(pa.paid || 0)} so far</div></div>
+      <div class="cc-tile"><div class="cc-tlabel">Owed by businesses</div><div class="cc-tnum">${ccMoneyFmt((pastDue.monthly || 0) + (recorded.monthly || 0))}<span class="small muted">/mo</span></div><div class="cc-tsub">On paper, per month: ${plural(pastDue.count || 0, "past-due plan", "past-due plans")} &middot; ${plural(recorded.count || 0, "recorded plan", "recorded plans")} never charged</div></div>
+      <div class="cc-tile"><div class="cc-tlabel">Released to creators</div><div class="cc-tnum">${ccMoneyFmt(cr.releasedTotal || 0)}</div><div class="cc-tsub">${plural(cr.releasedCount || 0, "release", "releases")} &middot; ${esc(periodName.toLowerCase())}</div></div>
+    </div>`;
+  const heldPanel = `
+    <div class="panel">
+      <h3 style="margin:0 0 2px">Money waiting for creators</h3>
+      <p class="muted small" style="margin:0 0 8px">Every held dollar with the reason it is held, oldest first. A hold with no named reason would be a surprise; there are none here.</p>
+      ${(cr.held || []).length ? `<div class="table-wrap"><table>
+        <tr><th>Creator</th><th>Business</th><th>Market</th><th>Creator gets</th><th>Why it is waiting</th><th>Age</th></tr>
+        ${(cr.held || []).map((r) => `<tr>
+          <td><strong>${esc(r.creatorName || "Creator")}</strong><br><span class="small muted">${r.kind === "license" ? "License" : "Paid booking"}</span></td>
+          <td data-label="Business">${esc(r.businessName || "")}</td>
+          <td data-label="Market">${esc(r.market || "")}${r.marketLive ? "" : `<br><span class="small muted">market not open yet</span>`}</td>
+          <td data-label="Creator gets">${ccMoneyFmt(r.amount || 0)}</td>
+          <td data-label="Why it is waiting">${chip(r)} ${esc(r.blocker || "")}${r.releasesAt ? `<br><span class="small muted">Releases ${esc(fmtDay(r.releasesAt))}</span>` : ""}</td>
+          <td data-label="Age">${r.ageDays === null || r.ageDays === undefined ? "" : r.ageDays === 0 ? "today" : `${r.ageDays} ${r.ageDays === 1 ? "day" : "days"}`}</td>
+        </tr>`).join("")}
+      </table></div>` : `<p class="small">No creator money is being held right now.</p>`}
+    </div>`;
+  const releasedPanel = (cr.released || []).length ? `
+    <div class="panel">
+      <h3 style="margin:0 0 2px">Released in ${esc(periodName.toLowerCase())}</h3>
+      <p class="muted small" style="margin:0 0 8px">${ccMoneyFmt(cr.releasedTotal || 0)} reached creators across ${plural(cr.releasedCount || 0, "release", "releases")}.</p>
+      <div class="table-wrap"><table>
+        <tr><th>Creator</th><th>Business</th><th>Amount</th><th>When</th></tr>
+        ${(cr.released || []).map((r) => `<tr><td><strong>${esc(r.creatorName || "Creator")}</strong> <span class="small muted">${r.kind === "license" ? "license" : "paid booking"}</span></td><td data-label="Business">${esc(r.businessName || "")}</td><td data-label="Amount">${ccMoneyFmt(r.amount || 0)}</td><td data-label="When">${r.at ? esc(fmtDay(r.at)) : ""}</td></tr>`).join("")}
+      </table></div>
+    </div>` : "";
+  const partnerPanel = `
+    <div class="panel">
+      <h3 style="margin:0 0 2px">Owed to partners</h3>
+      <p class="muted small" style="margin:0 0 8px">Accrued under each partner's deal terms, less the payouts recorded on the Partners view. The same figures the partner sees on their own Earnings page.</p>
+      ${(pa.rows || []).length ? `<div class="table-wrap"><table>
+        <tr><th>Partner</th><th>Deal</th><th>Accrued</th><th>Paid</th><th>Still owed</th></tr>
+        ${(pa.rows || []).map((r) => `<tr>
+          <td><strong>${esc(r.name || "Partner")}</strong></td>
+          <td data-label="Deal">${r.termsState === "not_entered" ? `<span class="muted">No terms entered yet</span>` : (r.deals || []).map((dd) => `${esc(dd.label || "Deal")} <span class="muted small">terms v${dd.currentVersion || "?"}</span>`).join("<br>")}</td>
+          <td data-label="Accrued">${ccMoneyFmt(r.accrued || 0)}</td>
+          <td data-label="Paid">${ccMoneyFmt(r.paid || 0)}</td>
+          <td data-label="Still owed"><strong>${ccMoneyFmt(r.owed || 0)}</strong></td>
+        </tr>`).join("")}
+      </table></div>` : `<p class="small">No partner has accrued anything yet.</p>`}
+    </div>`;
+  const bizRows = [
+    ...(pastDue.rows || []).map((r) => ({ ...r, stateWords: `<strong>Past due</strong><br><span class="small muted">The subscription charge failed</span>`, since: "" })),
+    ...(recorded.rows || []).map((r) => ({ ...r, stateWords: `<strong>Recorded, never charged</strong><br><span class="small muted">Plan on record; billing has not taken a dollar</span>`, since: r.selectedAt ? `Picked ${esc(fmtDay(r.selectedAt))}${r.ageDays ? ` · ${r.ageDays} days ago` : ""}` : "" })),
+  ];
+  const bizPanel = `
+    <div class="panel">
+      <h3 style="margin:0 0 2px">Owed by businesses</h3>
+      <p class="muted small" style="margin:0 0 8px">Money on paper: plans whose charges failed, and plans recorded before billing ever charged them. Listed until each one is charged or closed out.</p>
+      ${bizRows.length ? `<div class="table-wrap"><table>
+        <tr><th>Business</th><th>Market</th><th>Per month</th><th>State</th></tr>
+        ${bizRows.map((r) => `<tr><td><strong>${esc(r.name || "Business")}</strong>${r.since ? `<br><span class="small muted">${r.since}</span>` : ""}</td><td data-label="Market">${esc(r.market || "")}</td><td data-label="Per month">${r.monthly === null || r.monthly === undefined ? "—" : ccMoneyFmt(r.monthly)}</td><td data-label="State">${r.stateWords}</td></tr>`).join("")}
+      </table></div>` : `<p class="small">No business owes anything on paper right now.</p>`}
+    </div>`;
+  const liabPanel = `
+    <div class="panel">
+      <h3 style="margin:0 0 2px">Promises, not cash</h3>
+      <p class="muted small" style="margin:0 0 8px">Service SIGNL owes, in the open. None of this is money out the door; it is visits, credits and menu value already promised.</p>
+      <div class="cc-att-row"><span><strong>Visit credits:</strong> ${plural(roll.visits || 0, "unused visit", "unused visits")} sitting on business plans, about ${ccMoneyFmt(roll.planValue || 0)} at plan value.${roll.carriedVisits ? ` ${plural(roll.carriedVisits, "visit", "visits")} rolled in from last month${roll.carriedExpiresAt ? ` and lapse ${esc(fmtDay(roll.carriedExpiresAt))}` : ""} if unused.` : ""}</span></div>
+      <div class="cc-att-row"><span><strong>Founding credits:</strong> ${ccMoneyFmt(credits.total || 0)} still owed to ${plural(credits.count || 0, "business", "businesses")} — $100 off a first month each, until each one is used.</span></div>
+      <div class="cc-att-row"><span><strong>Comp visits booked, not yet redeemed:</strong> ${plural(promised.count || 0, "visit", "visits")} carrying ${ccMoneyFmt(promised.menuValue || 0)} of menu value promised. Menu value promised — never a cost, never owed in cash.</span></div>
+    </div>`;
+  const waiting = allZero ? `<div class="panel cc-waiting"><strong>Nothing is owed yet.</strong> No creator money is held, no partner share has accrued, and no business is behind. The first held booking, accrual or past-due plan lands here the moment it exists — with its reason named.</div>` : "";
+  return `${tiles}${waiting}${heldPanel}${releasedPanel}${partnerPanel}${bizPanel}${liabPanel}`;
+}
+
+// Reconciliation & alerts (Build -57, spec §3.8): every check
+// that ran, the ones that found something with their records
+// named, and the ones that passed — silence is a result here,
+// never an omission.
+let ccReconLabel = (a) => {
+  const t = (a && a.target) || {};
+  if (t.view === "applications") return "Review applications";
+  if (t.view === "partners") return "Open Partners";
+  if (t.subtab === "businesses") return "Open Businesses";
+  if (t.subtab === "money") return "Open Money";
+  if (t.subtab === "markets") return "See the Markets view";
+  if (t.subtab === "partners") return "Open Partners";
+  if (t.subtab === "overview") return "See register connections";
+  return "Open";
+};
+async function ccReconGo(i) {
+  const a = ccReconCache[i];
+  if (!a) return false;
+  const target = a.target || {};
+  if (target.view === "applications") return go("dashboard", "Applications");
+  if (target.view === "partners") return go("dashboard", "Partners");
+  if (target.view === "command" && target.subtab) {
+    ccTab = target.subtab;
+    await loadStats();
+    if (target.anchor) {
+      const anchor = document.getElementById("cc-" + target.anchor);
+      if (anchor) anchor.scrollIntoView({ block: "start" });
+    }
+    return false;
+  }
+  return false;
+}
+function ccReconHtml(d) {
+  ccReconCache = d.alerts || [];
+  const s = d.summary || {};
+  const itemHtml = (it) => `<div class="cc-recon-item"><span><strong>${esc(it.label || "")}</strong>${it.detail ? ` — ${esc(it.detail)}` : ""}${it.count ? ` · ${it.count} ${it.count === 1 ? "record" : "records"}` : ""}</span>${it.amount !== null && it.amount !== undefined ? `<span class="cc-recon-amt">${ccMoneyFmt(it.amount)}</span>` : ""}</div>`;
+  const alerts = (d.alerts || []).map((a, i) => `
+    <div class="cc-att-row"><span>${esc(a.text)}</span>${a.target ? `<button type="button" class="btn small-btn" onclick="return ccReconGo(${i})">${esc(ccReconLabel(a))}</button>` : ""}</div>
+    ${(a.items || []).length ? `<div class="cc-recon-items">${(a.items || []).map(itemHtml).join("")}</div>` : ""}`).join("");
+  return `
+    <div class="panel" id="cc-reconciliation">
+      <h3 style="margin:0 0 2px">Reconciliation &amp; alerts</h3>
+      <p class="muted small" style="margin:0 0 8px">Where Stripe, Square and the platform's own records disagree — each one a sentence, a count, and the records named. ${s.alertCount ? `${s.alertCount} ${s.alertCount === 1 ? "thing needs" : "things need"} a look.` : "All clear."} ${s.checksPassing || 0} ${s.checksPassing === 1 ? "check" : "checks"} passed.</p>
+      ${alerts || `<p class="small">Every check that ran found nothing. The books agree.</p>`}
+      ${(d.passing || []).length ? `<div style="margin-top:10px">${(d.passing || []).map((t) => `<p class="small muted" style="margin:0 0 2px">✓ ${esc(t)}</p>`).join("")}</div>` : ""}
+      ${(d.waiting || []).length ? `<div style="margin-top:6px">${(d.waiting || []).map((t) => `<p class="small muted" style="margin:0 0 2px">… ${esc(t)}</p>`).join("")}</div>` : ""}
+    </div>`;
+}
+
+// Close & Export (Build -57, spec §3.9/§6.4): reconcile first
+// (above), then freeze the month, then export what the ledgers
+// show. A closed month's numbers never move again; changes that
+// land later stand as adjustments in the month they arrive.
+async function ccSetCloseMonth(m) { ccCloseMonth = m; await loadStats(); return false; }
+async function ccDoClose(kind) {
+  if (!ccCloseSel) return false;
+  try {
+    const r = await api("POST", "/admin/command/close/" + kind, { period: ccCloseSel });
+    alert(kind === "soft"
+      ? `${r.period} is soft-closed: a preliminary snapshot is frozen. It can be refreshed until the hard close.`
+      : `${r.period} is closed. Its numbers stand from here on; anything that changes later lands as an adjustment in the month it happens.`);
+  } catch (e) { alert(e.message); }
+  await loadStats();
+  return false;
+}
+async function ccSaveCloseNote() {
+  const ta = document.getElementById("cc-close-note");
+  if (!ta || !ccCloseSel) return false;
+  try { await api("POST", "/admin/command/close/note", { period: ccCloseSel, note: ta.value }); alert("Quoted-figures note saved."); }
+  catch (e) { alert(e.message); }
+  return false;
+}
+function ccExport(ledger) {
+  const a = document.createElement("a");
+  a.href = "/api/admin/command/export/" + ledger + "?" + ccQuery() + (ledger === "pack" && ccCloseMonth ? "&month=" + encodeURIComponent(ccCloseMonth) : "");
+  a.download = "";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  return false;
+}
+function ccCloseHtml(recon, d) {
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  const sel = d.selected || {};
+  ccCloseSel = sel.period || null;
+  if (ccCloseSel) ccCloseMonth = ccCloseSel;
+  const h = sel.headline || {};
+  const fd = h.finishedDeals || { compVisits: 0, paidBookings: 0, licenses: 0, total: 0 };
+  const pill = (st) => st === "closed" ? `<span class="cc-chip charged">Closed</span>` : st === "soft_closed" ? `<span class="cc-chip recorded">Soft-closed</span>` : `<span class="cc-chip counted">Open</span>`;
+  const headSummary = (hh) => hh ? `${hh.usersTotal || 0} people &middot; ${(hh.finishedDeals || {}).total || 0} finished deals &middot; ${ccMoneyFmt(hh.recordedFlowed || 0)} recorded &middot; ${ccMoneyFmt(hh.chargedNet || 0)} charged` : `<span class="muted">Not closed yet</span>`;
+  const selRow = (d.months || []).find((m) => m.period === sel.period) || {};
+  const monthsPanel = `
+    <div class="panel">
+      <h3 style="margin:0 0 2px">Close the books</h3>
+      <p class="muted small" style="margin:0 0 8px">Soft close freezes a preliminary snapshot. Hard close freezes it for good — after that, a correction lands as an adjustment in the month it happens, and the closed month never changes.</p>
+      <div class="table-wrap"><table>
+        <tr><th>Month</th><th>State</th><th>Frozen headline</th><th></th></tr>
+        ${(d.months || []).map((m) => `<tr${m.period === sel.period ? ` class="cc-sel-row"` : ""}>
+          <td><strong>${esc(m.label || m.period)}</strong></td>
+          <td data-label="State">${pill(m.state)}</td>
+          <td data-label="Frozen headline">${m.headline ? headSummary(m.headline) : `<span class="muted">Open — nothing frozen</span>`}</td>
+          <td>${m.period === sel.period ? `<span class="small muted">Viewing</span>` : `<button type="button" class="btn small-btn" onclick="return ccSetCloseMonth('${esc(m.period)}')">View</button>`}</td>
+        </tr>`).join("")}
+      </table></div>
+    </div>`;
+  const selPanel = `
+    <div class="panel">
+      <h3 style="margin:0 0 2px">${esc(sel.label || "")} ${pill(sel.state)}</h3>
+      <p class="muted small" style="margin:0 0 8px">${sel.headlineIsLive ? "Live figures — this month is not closed, so they move as records change." : `Frozen at close${sel.snapshot && sel.snapshot.computedAt ? ` · computed ${esc(fmtDay(sel.snapshot.computedAt))}` : ""}. These numbers do not move again.`} Typed register corrections for this month stay open until ${esc(selRow.tallyWindowEnds || "")}.</p>
+      <div class="cc-tiles">
+        <div class="cc-tile"><div class="cc-tlabel">People at month end</div><div class="cc-tnum">${h.usersTotal || 0}</div><div class="cc-tsub">${plural(h.creators || 0, "creator", "creators")} &middot; ${plural(h.businesses || 0, "business", "businesses")} &middot; ${plural(h.partners || 0, "partner", "partners")}</div></div>
+        <div class="cc-tile"><div class="cc-tlabel">Finished deals</div><div class="cc-tnum">${fd.total || 0}</div><div class="cc-tsub">${plural(fd.compVisits || 0, "comp visit", "comp visits")} &middot; ${plural(fd.paidBookings || 0, "paid booking", "paid bookings")} &middot; ${plural(fd.licenses || 0, "license", "licenses")}</div></div>
+        <div class="cc-tile"><div class="cc-tlabel">Recorded <span class="cc-chip recorded">Recorded</span></div><div class="cc-tnum">${ccMoneyFmt(h.recordedFlowed || 0)}</div><div class="cc-tsub">SIGNL kept ${ccMoneyFmt(h.recordedSignlKept || 0)} &middot; partners accrued ${ccMoneyFmt(h.partnersAccrued || 0)}</div></div>
+        <div class="cc-tile"><div class="cc-tlabel">Charged <span class="cc-chip charged">Charged</span></div><div class="cc-tnum">${ccMoneyFmt(h.chargedNet || 0)}</div><div class="cc-tsub">Net on cards &middot; ${ccMoneyFmt(h.countedRegister || 0)} counted at registers, apart</div></div>
+        <div class="cc-tile"><div class="cc-tlabel">Owed at the close</div><div class="cc-tnum">${ccMoneyFmt(h.owedToCreators || 0)}</div><div class="cc-tsub">To creators &middot; ${ccMoneyFmt(h.owedToPartners || 0)} to partners</div></div>
+      </div>
+      ${sel.state === "closed" ? `<p class="small">This month is closed. Its snapshot stands; nothing below can change it.</p>` : `
+      <div class="cc-actions" style="margin:10px 0">
+        ${sel.state === "open" ? `<button type="button" class="btn small-btn" onclick="return ccDoClose('soft')">Soft close ${esc(sel.label || "")}</button>` : `<button type="button" class="btn small-btn" onclick="return ccDoClose('soft')">Refresh the soft close</button>`}
+        <button type="button" class="btn small-btn" onclick="return ccDoClose('hard')">Hard close ${esc(sel.label || "")}</button>
+      </div>`}
+      <label class="cc-flabel" for="cc-close-note">Quoted figures — what you actually quoted from this month, in your words</label>
+      <textarea id="cc-close-note" rows="2" style="width:100%" placeholder="e.g. Told VistaMedia the roster count on Oct 28. Quoted $87k steady-state to Max, not the year-one band.">${esc(sel.quotedNote || "")}</textarea>
+      <div class="cc-actions" style="margin-top:6px"><button type="button" class="btn small-btn" onclick="return ccSaveCloseNote()">Save note</button></div>
+      ${(sel.adjustments || []).length ? `
+      <h4 style="margin:14px 0 4px">Adjustments landed in ${esc(sel.label || "")}</h4>
+      <p class="muted small" style="margin:0 0 6px">Changes that arrived this month for months already closed. The closed months never move; the change stands here, traced to its record.</p>
+      ${(sel.adjustments || []).map((a) => `<div class="cc-att-row"><span>${esc(a.detail)}</span><span class="cc-recon-amt">${ccMoneyFmt(a.amount || 0)}</span></div>`).join("")}` : `<p class="small muted" style="margin:12px 0 0">No adjustments landed in ${esc(sel.label || "")}.</p>`}
+    </div>`;
+  const exportsPanel = `
+    <div class="panel">
+      <h3 style="margin:0 0 2px">Exports</h3>
+      <p class="muted small" style="margin:0 0 8px">Each file is exactly what its ledger shows, under the filters at the top. The accountant pack is every ledger plus the close snapshot for ${esc(sel.label || "the selected month")} in one download.</p>
+      <div class="cc-actions">
+        <button type="button" class="btn small-btn" onclick="return ccExport('pack')">Accountant pack (all of it)</button>
+        <button type="button" class="btn small-btn" onclick="return ccExport('partners')">Partners CSV</button>
+        <button type="button" class="btn small-btn" onclick="return ccExport('businesses')">Businesses CSV</button>
+        <button type="button" class="btn small-btn" onclick="return ccExport('creators')">Creators CSV</button>
+        <button type="button" class="btn small-btn" onclick="return ccExport('money')">Money CSV</button>
+        <button type="button" class="btn small-btn" onclick="return ccExport('owed')">Owed CSV</button>
+      </div>
+    </div>`;
+  return `${ccReconHtml(recon)}${monthsPanel}${selPanel}${exportsPanel}`;
+}
+
 function ccFormingHtml(tab) {
   const head = (title, sub) => `<div class="panel"><h3 style="margin:0 0 4px">${title}</h3><p class="muted small" style="margin:0 0 10px">${sub}</p>`;
   if (tab === "partners") return `${head("Partners", "What each partner's deal is, and what it has earned.")}

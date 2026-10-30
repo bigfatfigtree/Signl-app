@@ -120,8 +120,8 @@ const webhook = async (obj) => {
 };
 
 console.log("verify-build55: Command Center Money + Businesses + charge capture");
-check("build stamp is 2026.10.30-56", BUILD_ID === "2026.10.30-56", BUILD_ID);
-check("index.html carries the -55 stamp", fs.readFileSync(new URL("../public/index.html", import.meta.url), "utf8").includes("2026.10.30-56"));
+check("build stamp is 2026.10.30-57", BUILD_ID === "2026.10.30-57", BUILD_ID);
+check("index.html carries the -55 stamp", fs.readFileSync(new URL("../public/index.html", import.meta.url), "utf8").includes("2026.10.30-57"));
 
 const login = await handler(evt("POST", "/api/auth/login", { body: { email: process.env.ADMIN_EMAIL, password: process.env.ADMIN_PASSWORD } }));
 check("admin login succeeds", login.statusCode === 200, `got ${login.statusCode}`);
@@ -277,8 +277,13 @@ check("the recorded-only business sorts ahead of the charged one (needs a look f
 
 // ---------- overview tile reads the same aggregate ----------
 const ov = parse(await handler(evt("GET", "/api/admin/command/overview", { cookie: adminCookie })));
-check("overview dollars-flowing tile: Recorded 908.50 with Charged 348 as its own figure (never summed)",
-  !!ov && ov.tiles.dollarsFlowing && ov.tiles.dollarsFlowing.recorded === 908.5 && ov.tiles.dollarsFlowing.charged === 348 && ov.tiles.moneyOwed === null,
+// Doctrine update (Build -57): the money-owed tile reads the
+// owed ledger now. On these fixtures the held paid booking's
+// $97 creatorNet is what SIGNL owes out (no partner deals), and
+// Recorded Tacos' $199/mo is what businesses owe on paper.
+check("overview dollars-flowing tile: Recorded 908.50 with Charged 348 as its own figure (never summed); money owed reads the -57 ledger",
+  !!ov && ov.tiles.dollarsFlowing && ov.tiles.dollarsFlowing.recorded === 908.5 && ov.tiles.dollarsFlowing.charged === 348
+  && !!ov.tiles.moneyOwed && ov.tiles.moneyOwed.owedOut === 97 && ov.tiles.moneyOwed.toCreators === 97 && ov.tiles.moneyOwed.recordedMonthly === 199,
   ov && JSON.stringify(ov.tiles.dollarsFlowing));
 
 // ---------- guardrail ----------

@@ -121,8 +121,8 @@ const cookieOf = (res) => (((res.headers || {})["Set-Cookie"] || (res.headers ||
 
 console.log("verify-build54: Command Center foundation + Overview + Markets");
 
-check("build stamp is 2026.10.30-56", BUILD_ID === "2026.10.30-56", BUILD_ID);
-check("index.html carries the -54 stamp", fs.readFileSync(new URL("../public/index.html", import.meta.url), "utf8").includes("2026.10.30-56"));
+check("build stamp is 2026.10.30-57", BUILD_ID === "2026.10.30-57", BUILD_ID);
+check("index.html carries the -54 stamp", fs.readFileSync(new URL("../public/index.html", import.meta.url), "utf8").includes("2026.10.30-57"));
 
 const login = await handler(evt("POST", "/api/auth/login", { body: { email: process.env.ADMIN_EMAIL, password: process.env.ADMIN_PASSWORD } }));
 check("admin login succeeds", login.statusCode === 200, `got ${login.statusCode}`);
@@ -143,8 +143,16 @@ check("finished deals print by kind and sum: 2 comp + 1 paid (released only) + 1
   !!t.finishedDeals && t.finishedDeals.compVisits === 2 && t.finishedDeals.paidBookings === 1 && t.finishedDeals.licenses === 1 && t.finishedDeals.total === 4,
   JSON.stringify(t.finishedDeals));
 check("counted register dollars 160.50 (first 120.50 + return 40; the voided 999 excluded)", t.countedRegister === 160.5, JSON.stringify(t.countedRegister));
-check("dollars flowing landed with -55 (Recorded $754 = $548 of plan selections on record + the $206 released booking, Charged $0 — no charges exist); money owed still answers its forming state (null)",
-  !!t.dollarsFlowing && t.dollarsFlowing.recorded === 754 && t.dollarsFlowing.charged === 0 && t.moneyOwed === null, JSON.stringify({ d: t.dollarsFlowing, m: t.moneyOwed }));
+// Doctrine update (Build -57): the money-owed tile went live
+// with the owed ledger — it answers the ledger's own totals
+// object now, not the forming null. On these fixtures: $194 is
+// held for a creator (the held paid booking's creatorNet), no
+// partner has a deal so nothing is owed there, and the two
+// recorded plans make $548/mo owed by businesses on paper.
+check("dollars flowing landed with -55 (Recorded $754 = $548 of plan selections on record + the $206 released booking, Charged $0 — no charges exist); money owed answers the -57 ledger totals",
+  !!t.dollarsFlowing && t.dollarsFlowing.recorded === 754 && t.dollarsFlowing.charged === 0
+  && !!t.moneyOwed && t.moneyOwed.toCreators === 194 && t.moneyOwed.toPartners === 0 && t.moneyOwed.owedOut === 194 && t.moneyOwed.recordedMonthly === 548 && t.moneyOwed.byBusinessesMonthly === 548,
+  JSON.stringify({ d: t.dollarsFlowing, m: t.moneyOwed }));
 const att = Object.fromEntries(((ov && ov.attention) || []).map((a) => [a.kind, a.count]));
 check("attention strip: awaiting 2, unstamped 1, unknown code 1, unlisted 1, unsigned partners 1, unconnected registers 1",
   att.awaiting_review === 2 && att.unstamped_attribution === 1 && att.unknown_partner_code === 1 && att.unlisted_records === 1 && att.unsigned_partners === 1 && att.unconnected_registers === 1,

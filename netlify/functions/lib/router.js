@@ -10982,6 +10982,13 @@ async function partnerSummary(user) {
 const CC_LAUNCH_GATE = { low: 25, high: 30 };
 
 function ccPeriodOf(raw) {
+  // A bare month key (YYYY-MM) is a period too — the close
+  // phase (Build -57) computes snapshots one named month at a
+  // time, through this same door, so a snapshot and a live view
+  // of the same month can never count differently.
+  if (typeof raw === "string" && /^\d{4}-\d{2}$/.test(raw)) {
+    return { key: raw, label: monthLabelOf(raw), inPeriod: (iso) => monthKeyOf(iso) === raw };
+  }
   const key = raw === "last_month" ? "last_month" : raw === "this_month" ? "this_month" : "all";
   const curKey = monthKeyOf(new Date().toISOString());
   const target = key === "this_month" ? curKey : key === "last_month" ? prevMonthKey(curKey) : null;
@@ -11079,8 +11086,9 @@ function ccFiltersEcho(P) {
 // Overview (§3.0): headline tiles + the needs-attention strip.
 // Dollars flowing landed with the Money view (Build -55) and
 // reads the money aggregate's Recorded total with Charged as its
-// own sub-figure. Money owed is -57's view: its tile answers null
-// with the forming note, never an invented zero dressed as a total.
+// own sub-figure. Money owed landed with Build -57 and reads the
+// owed ledger's totals (ccOwedTile) — the tile and the Owed view
+// are the same numbers by construction.
 function ccOverview(P) {
   const scoped = (u) => !P.marketScope || normalizeMarketName(u.market) === P.marketScope;
   const people = P.visUsers.filter((u) => (u.role === "creator" || u.role === "business") && scoped(u));
@@ -11131,10 +11139,13 @@ function ccOverview(P) {
       // Dollars flowing (Build -55): the Recorded class total,
       // with the Charged class printed as its own sub-figure —
       // the two classes sit side by side on the tile and are
-      // never added together. Money owed stays -57's forming
-      // state until the owed ledger lands.
+      // never added together.
       dollarsFlowing: (() => { const agg = ccMoneyAgg(P); return { recorded: agg.recorded.totals.flowed, charged: agg.charged.netTotal }; })(),
-      moneyOwed: null,
+      // Money owed (Build -57): the owed ledger's own totals —
+      // what SIGNL owes out (creators held + partners accrued
+      // less paid) with what businesses owe kept as its own
+      // figure beside it, never netted against it.
+      moneyOwed: ccOwedTile(P),
       alerts: attention.reduce((n, a) => n + a.count, 0),
     },
     attention,
@@ -11346,7 +11357,7 @@ function ccMoneyAgg(P) {
   // Reconciliation (§3.8, this phase's slice): the recorded and
   // charged classes disagreeing, in plain sight.
   const unmatched = P.charges.filter((c) => okStatus(c) && !c.businessId)
-    .map((c) => ({ id: c.id, kind: c.kind, amount: ccMoney(effNet(c)), at: c.chargedAt || null, stripeCustomerId: c.stripeCustomerId || null }));
+    .map((c) => ({ id: c.id, kind: c.kind || "unattributed", amount: ccMoney(effNet(c)), at: c.chargedAt || null, stripeCustomerId: c.stripeCustomerId || null }));
   const chargedBizIds = new Set(P.charges.filter((c) => c.kind === "subscription" && okStatus(c)).map((c) => c.businessId).filter(Boolean));
   let recordedUncharged = 0;
   for (const u of P.visUsers) {
@@ -11874,6 +11885,654 @@ function ccPartnerDetailPayload(P, partnerId, revByBiz) {
     totals: { accrued, paid, owed: ccMoney(accrued - paid) },
     attributedBusinesses: P.visUsers.filter((x) => x.role === "business" && x.partnerId === partnerId).length,
   };
+}
+
+// ---------- Command Center: Owed + Reconciliation + Close & Export (Build -57) ----------
+// The last three Command Center surfaces (spec §3.7/§3.8/§3.9,
+// §6.3/§6.4). OWED is a stock ledger — true today, like the user
+// totals: what is held for creators and why (the blocker in
+// plain words, from the record's own funds/post state), what
+// partners have accrued less what they have been paid (the -56
+// engine and payout records — the same figures the Partners
+// view and the partner's own Earnings print), what businesses
+// owe on paper (past-due subscriptions; plans recorded but
+// never charged), and the service liabilities that are NOT cash
+// (unused visit credits at plan value, founding credits
+// outstanding, menu value promised on booked-not-redeemed
+// comps — labeled as promises wherever they print).
+//
+// RECONCILIATION is where the numbers argue: every check runs
+// over the source records and reports a sentence, a count and
+// the differing records BY NAME. A check that finds nothing
+// lands on the passing list, so silence is a result, not an
+// omission. CLOSE freezes a month: the snapshot is computed
+// from live records at close time and stored on
+// periodclose:{yyyy-mm}; once a month is hard-closed the frozen
+// figures are never recomputed or rewritten — a later change
+// whose subject sits in a closed month surfaces as an
+// ADJUSTMENT in the month the change landed (register
+// corrections from the -39 trail, Stripe refund rows, late
+// comp cost entries), each traceable to its record. EXPORTS
+// print exactly what the ledgers show, same filters, same
+// classes; the accountant pack is those CSVs plus the close
+// snapshot in one zip.
+
+function ccAgeDays(iso) {
+  const t = Date.parse(iso || "");
+  if (!Number.isFinite(t)) return null;
+  return Math.max(0, Math.floor((Date.now() - t) / 86400000));
+}
+
+// One held paid booking's release state, read off the record
+// itself: the rail state when Stripe Connect ran (funds), else
+// the ledger rule the sweep applies — post live, then the
+// 48-hour hold. The blocker is a sentence Jeff can act on.
+function ccHeldState(P, b) {
+  const lane = b.paidLane || {};
+  const funds = lane.funds || null;
+  if (funds) {
+    if (funds.state === "needs_card") return { state: "blocked", code: "needs_card", blocker: "The business has no card on file, so the charge was never made." };
+    if (funds.state === "charge_failed") return { state: "blocked", code: "charge_failed", blocker: "The business's card charge failed." };
+    if (funds.state === "held" && funds.blockedReason === "payouts_not_ready") return { state: "blocked", code: "payouts_not_ready", blocker: "The creator has not finished payout setup, so the money cannot reach their bank yet." };
+    if (funds.state === "held" && funds.blockedReason === "stripe_error") return { state: "blocked", code: "stripe_error", blocker: "Stripe hit an error on the last release try; it retries on its own." };
+    if (funds.state === "held" && funds.blockedReason) return { state: "blocked", code: String(funds.blockedReason), blocker: "The release is blocked; the booking record names the reason." };
+  }
+  const post = P.postByBooking.get(b.id);
+  const postLive = !!(post && post.submittedAt);
+  if (!postLive) return { state: "waiting", code: "post_not_live", blocker: "Waiting for the post — money releases after the post is live." };
+  const holdUntil = Date.parse(post.submittedAt) + PAID_LANE.escrowHoldHoursAfterProof * 3600000;
+  if (Date.now() < holdUntil) return { state: "waiting", code: "in_hold", blocker: "The post is live; the money releases when the 48-hour hold passes.", releasesAt: new Date(holdUntil).toISOString() };
+  return { state: "ready", code: "ready", blocker: "Ready to release — the post is live and the hold has passed." };
+}
+
+// Held and released creator money: paid bookings in escrow and
+// licenses waiting on a decision are the held side; paid
+// bookings released and licenses granted in the period are the
+// released side. Rows carry the blocker and the age so an old
+// hold is visible before it becomes a dispute (§6.2).
+function ccCreatorMoneyRows(P) {
+  const nameOf = (u, role) => {
+    if (!u) return "";
+    if (role === "business") return (u.business && u.business.businessName) || u.name || "";
+    return (u.creator && u.creator.handle) ? `@${u.creator.handle}` : (u.name || "");
+  };
+  const inScope = (rec, booking) => !P.marketScope || P.dealMarketOf(rec, booking) === P.marketScope;
+  const held = [];
+  for (const b of P.visBookings) {
+    if (!isPaidVisit(b) || !b.paidLane || b.paidLane.escrowState !== "held") continue;
+    if (!inScope(b, null)) continue;
+    const st = ccHeldState(P, b);
+    const since = b.paidLane.bookedAt || b.createdAt || null;
+    held.push({
+      kind: "paid", id: b.id, creatorId: b.creatorId, creatorName: nameOf(P.userById.get(b.creatorId), "creator"),
+      businessId: b.businessId, businessName: nameOf(P.userById.get(b.businessId), "business"),
+      market: b.market || "", amount: ccMoney(b.paidLane.creatorNet), businessTotal: ccMoney(b.paidLane.businessTotal),
+      state: st.state, code: st.code, blocker: st.blocker, releasesAt: st.releasesAt || null,
+      since, ageDays: ccAgeDays(since), marketLive: !!P.flags[normalizeMarketName(b.market || "")],
+    });
+  }
+  for (const l of P.visLicenses) {
+    if (l.status !== "pending") continue;
+    if (l.escrowState && l.escrowState !== "held") continue;
+    if (!inScope(l, P.bookingById.get(l.bookingId) || null)) continue;
+    held.push({
+      kind: "license", id: l.id, creatorId: l.creatorId, creatorName: nameOf(P.userById.get(l.creatorId), "creator"),
+      businessId: l.businessId, businessName: nameOf(P.userById.get(l.businessId), "business"),
+      market: (P.bookingById.get(l.bookingId) || {}).market || "", amount: ccMoney(l.creatorNet), businessTotal: ccMoney(l.businessTotal),
+      state: "waiting", code: "license_decision", blocker: "Waiting for the creator to approve this license.",
+      releasesAt: null, since: l.createdAt || null, ageDays: ccAgeDays(l.createdAt),
+      marketLive: !!P.flags[normalizeMarketName((P.bookingById.get(l.bookingId) || {}).market || "")],
+    });
+  }
+  held.sort((a, z) => (z.ageDays || 0) - (a.ageDays || 0) || z.amount - a.amount);
+  const released = [];
+  const relAt = (b) => (b.paidLane && (b.paidLane.releasedAt || b.paidLane.fundsReleasedAt)) || b.updatedAt || b.createdAt;
+  for (const b of P.paidFinished) {
+    if (!P.period.inPeriod(relAt(b)) || !inScope(b, null)) continue;
+    released.push({ kind: "paid", id: b.id, creatorId: b.creatorId, creatorName: nameOf(P.userById.get(b.creatorId), "creator"), businessId: b.businessId, businessName: nameOf(P.userById.get(b.businessId), "business"), market: b.market || "", amount: ccMoney(b.paidLane.creatorNet), at: relAt(b) });
+  }
+  for (const l of P.licensesGranted) {
+    if (!P.period.inPeriod(l.grantedAt || l.respondedAt || l.updatedAt || l.createdAt)) continue;
+    if (!inScope(l, P.bookingById.get(l.bookingId) || null)) continue;
+    released.push({ kind: "license", id: l.id, creatorId: l.creatorId, creatorName: nameOf(P.userById.get(l.creatorId), "creator"), businessId: l.businessId, businessName: nameOf(P.userById.get(l.businessId), "business"), market: (P.bookingById.get(l.bookingId) || {}).market || "", amount: ccMoney(l.creatorNet), at: l.grantedAt || l.respondedAt || l.updatedAt || l.createdAt });
+  }
+  released.sort((a, z) => String(z.at || "") < String(a.at || "") ? -1 : 1);
+  return { held, released };
+}
+
+function ccOwedAgg(P) {
+  const { held, released } = ccCreatorMoneyRows(P);
+  const heldTotal = ccMoney(held.reduce((s, r) => s + r.amount, 0));
+  const releasableNow = ccMoney(held.filter((r) => r.state === "ready").reduce((s, r) => s + r.amount, 0));
+  const blockedTotal = ccMoney(heldTotal - releasableNow);
+  const releasedTotal = ccMoney(released.reduce((s, r) => s + r.amount, 0));
+
+  // Partners: the -56 list payload is the one math — accrued,
+  // paid from payout records, owed = the difference, with the
+  // governing deal version noted per deal.
+  const rev = subRevenueByBizMonth(P.visUsers, P.charges);
+  const partnersPayload = ccPartnersPayload(P, rev);
+  const dealVersionOf = new Map();
+  for (const d of (P.deals || [])) dealVersionOf.set(d.id, d.currentVersion || dealVersions(d).length || 0);
+  const partnerRows = partnersPayload.partners.map((r) => ({
+    id: r.id, name: r.name, accrued: r.accrued, paid: r.paid, owed: r.owed, termsState: r.termsState,
+    deals: (r.deals || []).map((dd) => ({ id: dd.id, label: dd.label, status: dd.status, currentVersion: dealVersionOf.get(dd.id) || dd.currentVersion || null })),
+  }));
+
+  // Businesses owe, and the service liabilities, both read off
+  // the Businesses agreement ledger so the figures can never
+  // drift from that view's rows.
+  const biz = ccBusinesses(P);
+  const pastDueRows = biz.businesses.filter((r) => r.billing.state === "past-due")
+    .map((r) => ({ id: r.id, name: r.name, market: r.market, monthly: r.plan ? r.plan.monthly : null, subscriptionStatus: r.billing.subscriptionStatus || "past_due" }));
+  const recordedRows = biz.businesses.filter((r) => r.billing.state === "recorded")
+    .map((r) => ({ id: r.id, name: r.name, market: r.market, monthly: r.plan ? r.plan.monthly : null, selectedAt: r.plan ? r.plan.selectedAt : null, ageDays: ccAgeDays(r.plan && r.plan.selectedAt) }));
+  const rollRows = biz.businesses.filter((r) => r.plan && r.rollover && r.rollover.available > 0)
+    .map((r) => {
+      const perVisit = r.rollover.base > 0 ? (r.plan.monthly || 0) / r.rollover.base : 0;
+      return { id: r.id, name: r.name, market: r.market, visits: r.rollover.available, carriedIn: r.rollover.carriedIn || 0, carriedExpiresAt: r.rollover.carriedExpiresAt || null, planValue: ccMoney(r.rollover.available * perVisit) };
+    })
+    .sort((a, z) => z.visits - a.visits);
+  const creditRows = biz.businesses.filter((r) => r.credit && r.credit.remaining > 0)
+    .map((r) => ({ id: r.id, name: r.name, market: r.market, remaining: r.credit.remaining, applied: r.credit.applied }));
+
+  // Booked-not-redeemed comps: the menu value promised, at the
+  // booking's own cap (the offer's cap when the booking carries
+  // none). A promise, never a cost — labeled wherever it prints.
+  const offers = new Map();
+  const compPromisedRows = [];
+  let compPromisedValue = 0;
+  for (const b of P.compBookings) {
+    if (b.status !== "booked" && b.status !== "redeemed") continue;
+    if (P.marketScope && normalizeMarketName(b.market || "") !== P.marketScope) continue;
+    let cap = Number(b.dollarCap);
+    if (!Number.isFinite(cap) && b.offerId) {
+      if (!offers.has(b.offerId)) offers.set(b.offerId, null);
+      compPromisedRows.push({ needsOffer: b.offerId, row: b });
+      continue;
+    }
+    compPromisedValue += Number.isFinite(cap) ? cap : 0;
+    compPromisedRows.push({ cap: Number.isFinite(cap) ? cap : 0, row: b });
+  }
+
+  return {
+    creators: {
+      heldTotal, releasableNow, blockedTotal, heldCount: held.length,
+      held: held.slice(0, 100), releasedTotal, releasedCount: released.length, released: released.slice(0, 50),
+    },
+    partners: { accrued: partnersPayload.totals.accrued, paid: partnersPayload.totals.paid, owed: partnersPayload.totals.owed, rows: partnerRows },
+    businesses: {
+      pastDue: { count: pastDueRows.length, monthly: ccMoney(pastDueRows.reduce((s, r) => s + (r.monthly || 0), 0)), rows: pastDueRows },
+      recordedNeverCharged: { count: recordedRows.length, monthly: ccMoney(recordedRows.reduce((s, r) => s + (r.monthly || 0), 0)), rows: recordedRows },
+    },
+    liabilities: {
+      rollover: {
+        visits: rollRows.reduce((s, r) => s + r.visits, 0),
+        planValue: ccMoney(rollRows.reduce((s, r) => s + r.planValue, 0)),
+        carriedVisits: rollRows.reduce((s, r) => s + r.carriedIn, 0),
+        carriedExpiresAt: rollRows.map((r) => r.carriedExpiresAt).filter(Boolean).sort()[0] || null,
+        rows: rollRows.slice(0, 50),
+      },
+      foundingCredits: { count: creditRows.length, total: ccMoney(creditRows.reduce((s, r) => s + r.remaining, 0)), rows: creditRows.slice(0, 50) },
+      compPromised: { count: compPromisedRows.length, menuValue: ccMoney(compPromisedValue), pendingOfferCaps: compPromisedRows.filter((r) => r.needsOffer).length },
+    },
+    totals: {
+      toCreators: heldTotal,
+      toPartners: partnersPayload.totals.owed,
+      owedOut: ccMoney(heldTotal + partnersPayload.totals.owed),
+      pastDueMonthly: ccMoney(pastDueRows.reduce((s, r) => s + (r.monthly || 0), 0)),
+      recordedMonthly: ccMoney(recordedRows.reduce((s, r) => s + (r.monthly || 0), 0)),
+    },
+  };
+}
+
+async function ccOwedPayload(P) {
+  const owed = ccOwedAgg(P);
+  // Resolve any promised-comp caps that live only on the offer.
+  if (owed.liabilities.compPromised.pendingOfferCaps > 0) {
+    const offers = await allOffers();
+    const byId = new Map(offers.map((o) => [o.id, o]));
+    let extra = 0;
+    for (const b of P.compBookings) {
+      if (b.status !== "booked" && b.status !== "redeemed") continue;
+      if (Number.isFinite(Number(b.dollarCap))) continue;
+      const o = b.offerId ? byId.get(b.offerId) : null;
+      if (o && Number.isFinite(Number(o.dollarCap))) extra += Number(o.dollarCap);
+    }
+    owed.liabilities.compPromised.menuValue = ccMoney(owed.liabilities.compPromised.menuValue + extra);
+  }
+  delete owed.liabilities.compPromised.pendingOfferCaps;
+  return { filters: ccFiltersEcho(P), ...owed };
+}
+
+// The owed tile figures for the Overview: the same aggregate,
+// so the tile and the Owed view can never disagree.
+function ccOwedTile(P) {
+  const t = ccOwedAgg(P).totals;
+  return {
+    toCreators: t.toCreators, toPartners: t.toPartners, owedOut: t.owedOut,
+    pastDueMonthly: t.pastDueMonthly, recordedMonthly: t.recordedMonthly,
+    byBusinessesMonthly: ccMoney(t.pastDueMonthly + t.recordedMonthly),
+  };
+}
+
+// ---------- Reconciliation & alerts (§3.8) ----------
+async function ccReconAgg(P) {
+  const alerts = [];
+  const passing = [];
+  const waiting = [];
+  const money = ccMoneyAgg(P);
+  const biz = ccBusinesses(P);
+  const bizName = (id) => { const u = id ? P.userById.get(id) : null; return u ? ((u.business && u.business.businessName) || u.name || "") : ""; };
+  const creatorName = (id) => { const u = id ? P.userById.get(id) : null; return u ? ((u.creator && u.creator.handle) ? `@${u.creator.handle}` : (u.name || "")) : ""; };
+  const okStatus = (c) => c.status === "succeeded" || c.status === "partially_refunded" || c.status === "refunded";
+  const inP = (iso) => P.period.inPeriod(iso);
+
+  // Stripe vs platform: charges that name no business.
+  const unmatched = money.reconciliation.chargedUnmatched;
+  if (unmatched.length) alerts.push({ kind: "charges_unmatched", count: money.reconciliation.chargedUnmatchedCount, text: `${money.reconciliation.chargedUnmatchedCount} ${money.reconciliation.chargedUnmatchedCount === 1 ? "charge is" : "charges are"} on the Stripe books but match no business yet.`, target: { view: "command", subtab: "money" }, items: unmatched.map((c) => ({ id: c.id, label: `${c.kind} charge`, detail: c.stripeCustomerId ? `Stripe customer ${c.stripeCustomerId}` : "No business on the charge", amount: c.amount, at: c.at })) });
+  else passing.push("Every charge names the business it belongs to.");
+
+  // Recorded vs charged: plans on record that no charge has
+  // ever backed — Jeff's activation-sitting list.
+  const recordedRows = biz.businesses.filter((r) => r.billing.state === "recorded");
+  if (recordedRows.length) alerts.push({ kind: "recorded_never_charged", count: recordedRows.length, text: `${recordedRows.length} ${recordedRows.length === 1 ? "business has" : "businesses have"} a plan recorded but no card charge has ever landed. This is the list to work when billing activates.`, target: { view: "command", subtab: "businesses" }, items: recordedRows.slice(0, 50).map((r) => ({ id: r.id, label: r.name, detail: `${r.plan ? r.plan.name : "Plan"} · ${r.market || ""} · picked ${r.plan && r.plan.selectedAt ? String(r.plan.selectedAt).slice(0, 10) : "on record"}`, amount: r.plan ? r.plan.monthly : null })) });
+  else passing.push("No business is sitting recorded-but-never-charged.");
+
+  // Active businesses with no charge in the period — only a
+  // discrepancy once charging is real somewhere.
+  const anySubCharge = P.charges.some((c) => c.kind === "subscription" && okStatus(c));
+  if (P.period.key !== "all" && anySubCharge) {
+    const chargedInPeriod = new Set(P.charges.filter((c) => c.kind === "subscription" && okStatus(c) && inP(c.chargedAt)).map((c) => c.businessId).filter(Boolean));
+    const missing = biz.businesses.filter((r) => r.plan && r.accessState === "active" && !chargedInPeriod.has(r.id));
+    if (missing.length) alerts.push({ kind: "businesses_no_charge", count: missing.length, text: `${missing.length} active ${missing.length === 1 ? "business has" : "businesses have"} a plan but no subscription charge in ${P.period.label.toLowerCase()}.`, target: { view: "command", subtab: "businesses" }, items: missing.slice(0, 50).map((r) => ({ id: r.id, label: r.name, detail: `${r.plan.name} · ${r.market || ""}`, amount: r.plan.monthly })) });
+    else passing.push(`Every active business has a charge in ${P.period.label.toLowerCase()}.`);
+  } else if (P.period.key !== "all") {
+    waiting.push("Charges vs active businesses waits for the first real subscription charge.");
+  }
+
+  // Subscription snapshot vs the latest charge state.
+  const stateMismatch = [];
+  for (const r of biz.businesses) {
+    const u = P.userById.get(r.id);
+    const sub = (u && u.business && u.business.subscription) || {};
+    const subs = P.charges.filter((c) => c.businessId === r.id && c.kind === "subscription").sort((a, z) => String(z.chargedAt || "") < String(a.chargedAt || "") ? -1 : 1);
+    const latest = subs[0] || null;
+    if (latest && !sub.id && !sub.status) stateMismatch.push({ id: r.id, label: r.name, detail: "Stripe has charged this business but no subscription snapshot is on its record." });
+    else if (sub.status === "active" && latest && latest.status === "failed") stateMismatch.push({ id: r.id, label: r.name, detail: "The record says the subscription is active; the latest charge failed." });
+    else if (sub.status === "canceled" && sub.canceledAt && latest && latest.status === "succeeded" && String(latest.chargedAt || "") > String(sub.canceledAt)) stateMismatch.push({ id: r.id, label: r.name, detail: "The record says canceled, but a charge landed after the cancellation." });
+  }
+  if (stateMismatch.length) alerts.push({ kind: "subscription_state_mismatch", count: stateMismatch.length, text: `${stateMismatch.length} ${stateMismatch.length === 1 ? "business has" : "businesses have"} a subscription snapshot that disagrees with its latest charge.`, target: { view: "command", subtab: "businesses" }, items: stateMismatch.slice(0, 50) });
+  else passing.push("Every subscription snapshot agrees with its latest charge.");
+
+  // The paid-lane split check, with the offenders named (§4.2).
+  const splitBad = [];
+  const splitOf = (x) => ({ businessTotal: Number(x.businessTotal), creatorNet: Number(x.creatorNet), platformFee: Number(x.platformFee) });
+  const splitBroken = (x) => { const s = splitOf(x); return [s.businessTotal, s.creatorNet, s.platformFee].every(Number.isFinite) && Math.abs(s.businessTotal - (s.creatorNet + s.platformFee)) >= 0.005; };
+  for (const b of P.visBookings) { if (isPaidVisit(b) && b.paidLane && splitBroken(b.paidLane)) splitBad.push({ id: b.id, label: `Paid booking · ${bizName(b.businessId) || "business"} → ${creatorName(b.creatorId) || "creator"}`, detail: `Business paid ${splitOf(b.paidLane).businessTotal}, creator keeps ${splitOf(b.paidLane).creatorNet}, SIGNL keeps ${splitOf(b.paidLane).platformFee} — they do not add up.` }); }
+  for (const l of P.visLicenses) { if (splitBroken(l)) splitBad.push({ id: l.id, label: `License · ${bizName(l.businessId) || "business"} → ${creatorName(l.creatorId) || "creator"}`, detail: `Business paid ${splitOf(l).businessTotal}, creator keeps ${splitOf(l).creatorNet}, SIGNL keeps ${splitOf(l).platformFee} — they do not add up.` }); }
+  if (splitBad.length) alerts.push({ kind: "split_mismatch", count: splitBad.length, text: `${splitBad.length} paid ${splitBad.length === 1 ? "record's splits do" : "records' splits do"} not add up — what the business paid should equal what the creator kept plus what SIGNL kept.`, items: splitBad.slice(0, 50) });
+  else passing.push("Every paid booking and license split adds up.");
+
+  // Money events with no matching record.
+  const noRecord = [];
+  for (const c of P.charges) { if (c.bookingId && !P.bookingById.has(c.bookingId)) noRecord.push({ id: c.id, label: `${c.kind} charge`, detail: "The charge names a booking that is not on record." , amount: ccMoney(c.net) }); }
+  for (const l of P.visLicenses) { if (l.bookingId && !P.bookingById.has(l.bookingId)) noRecord.push({ id: l.id, label: "License", detail: "The license names a booking that is not on record." }); }
+  const reds = await allRedemptionEvents();
+  const visBookingIds = new Set(P.visBookings.map((b) => b.id));
+  const visUserIds = new Set(P.visUsers.map((u) => u.id));
+  const excludedUser = (id) => !!id && P.userById.has(id) && !visUserIds.has(id);
+  const evVisible = (ev) => !excludedUser(ev.businessId) && !excludedUser(ev.creatorId) && (!ev.bookingId || visBookingIds.has(ev.bookingId) || !P.bookingById.has(ev.bookingId));
+  for (const ev of reds) { if (ev && ev.bookingId && !P.bookingById.has(ev.bookingId) && evVisible(ev)) noRecord.push({ id: ev.id, label: "Register count", detail: "The register count names a booking that is not on record.", amount: ccMoney(ev.amount), at: ev.at || null }); }
+  if (noRecord.length) alerts.push({ kind: "money_event_no_record", count: noRecord.length, text: `${noRecord.length} money ${noRecord.length === 1 ? "event names" : "events name"} a record that is not on file.`, items: noRecord.slice(0, 50) });
+  else passing.push("Every money event joins to a record on file.");
+
+  // Records with no market: the unlisted groups, with the why.
+  const mk = ccMarkets(P);
+  const unlistedTotal = (mk.unlisted || []).reduce((s, r) => s + r.total, 0);
+  if (unlistedTotal > 0) alerts.push({ kind: "unlisted_records", count: unlistedTotal, text: `${unlistedTotal} ${unlistedTotal === 1 ? "sign-up sits" : "sign-ups sit"} outside every market.`, target: { view: "command", subtab: "markets" }, items: (mk.unlisted || []).map((r) => ({ id: r.place, label: r.place, detail: r.resolveStatus === "unique" ? `The refile sweep can file these under ${r.resolvesTo}.` : r.resolveStatus === "ambiguous" ? `The name matches more than one market (${(r.candidateMarkets || []).join(", ")}) — a person has to pick.` : "No market covers this city yet.", amount: null, count: r.total })) });
+  else passing.push("Every sign-up sits in a market.");
+
+  // Counted events that cannot join a market.
+  const noMarket = [];
+  for (const ev of reds) {
+    if (!ev || ev.voided || !ev.bookingId || !evVisible(ev)) continue;
+    const bk = P.bookingById.get(ev.bookingId);
+    if (!bk) continue;
+    const mkt = normalizeMarketName(bk.market || ((P.userById.get(bk.businessId) || {}).market) || "");
+    if (!mkt || mkt === UNLISTED) noMarket.push({ id: ev.id, label: `Register count · ${bizName(ev.businessId || bk.businessId) || "business"}`, detail: "The booking behind this count sits in no market, so the count joins none.", amount: ccMoney(ev.amount), at: ev.at || null });
+  }
+  if (noMarket.length) alerts.push({ kind: "counted_no_market", count: noMarket.length, text: `${noMarket.length} counted register ${noMarket.length === 1 ? "event joins" : "events join"} no market.`, items: noMarket.slice(0, 50) });
+  else passing.push("Every counted register event joins a market.");
+
+  // Completed comps missing their cost entry (COGS coverage).
+  const completedComps = P.compBookings.filter((b) => b.status === "completed" && inP(P.completedAtOf(b)));
+  const missingCost = completedComps.filter((b) => !b.compCostEntry);
+  if (missingCost.length) alerts.push({ kind: "comps_missing_cost", count: missingCost.length, text: `${missingCost.length} of ${completedComps.length} finished comps in this period ${missingCost.length === 1 ? "has" : "have"} no cost entry — cost is confirmed on ${completedComps.length - missingCost.length} of ${completedComps.length}, and the cap is never filled in as a cost.`, items: missingCost.slice(0, 50).map((b) => ({ id: b.id, label: `${bizName(b.businessId) || "Business"} · ${creatorName(b.creatorId) || "creator"}`, detail: `Finished ${P.completedAtOf(b) ? String(P.completedAtOf(b)).slice(0, 10) : "on record"} · ${b.market || ""}` })) });
+  else if (completedComps.length) passing.push(`Cost is confirmed on all ${completedComps.length} finished comps in this period.`);
+
+  // Square: paused connections and the register correcting us.
+  const sqRows = (await store.list("sqconn:")).map((r) => r.value).filter(Boolean);
+  const sqProjected = sqRows.filter((c) => c.businessId && !excludedUser(c.businessId)).map((c) => ({
+    businessId: c.businessId, businessName: bizName(c.businessId) || c.businessId, status: c.status || "connected",
+    pausedAt: c.pausedAt || null, pausedReason: c.pausedReason || null, lastSyncAt: c.lastSyncAt || null,
+    summary: c.lastSyncSummary ? { ordersSeen: c.lastSyncSummary.ordersSeen || 0, firsts: c.lastSyncSummary.firsts || 0, returns: c.lastSyncSummary.returns || 0, typedVoided: c.lastSyncSummary.typedVoided || 0, registerVoided: c.lastSyncSummary.registerVoided || 0, lateEvents: c.lastSyncSummary.lateEvents || 0, at: c.lastSyncSummary.at || null } : null,
+  }));
+  const paused = sqProjected.filter((c) => c.status === "paused");
+  if (paused.length) alerts.push({ kind: "square_paused", count: paused.length, text: `${paused.length} Square ${paused.length === 1 ? "connection is" : "connections are"} paused — those registers have stopped sharing checks.`, target: { view: "command", subtab: "overview", anchor: "registers" }, items: paused.map((c) => ({ id: c.businessId, label: c.businessName, detail: `Paused ${c.pausedAt ? String(c.pausedAt).slice(0, 10) : "on record"}${c.pausedReason ? ` · ${c.pausedReason}` : ""}` })) });
+  const voidedTotal = sqProjected.reduce((s, c) => s + (c.summary ? c.summary.typedVoided + c.summary.registerVoided : 0), 0);
+  if (voidedTotal > 0) alerts.push({ kind: "square_voids", count: voidedTotal, text: `Registers corrected us ${voidedTotal} ${voidedTotal === 1 ? "time" : "times"} at the last sync — typed entries and register orders voided after the fact. The corrections stand in the counts; they are never hidden.`, items: sqProjected.filter((c) => c.summary && (c.summary.typedVoided + c.summary.registerVoided) > 0).map((c) => ({ id: c.businessId, label: c.businessName, detail: `${c.summary.typedVoided} typed voided · ${c.summary.registerVoided} register voided · last sync ${c.summary.at ? String(c.summary.at).slice(0, 10) : "on record"}` })) });
+  if (sqProjected.length && !paused.length && voidedTotal === 0) passing.push("Every Square connection is live, and no register corrected us at the last sync.");
+
+  // Flagged register counts awaiting a look.
+  const flagged = reds.filter((ev) => ev && ev.flagged && !ev.voided && evVisible(ev));
+  if (flagged.length) alerts.push({ kind: "flagged_redevents", count: flagged.length, text: `${flagged.length} register ${flagged.length === 1 ? "count is" : "counts are"} over $1,000 and ${flagged.length === 1 ? "is" : "are"} waiting for a look.`, items: flagged.slice(0, 50).map((ev) => ({ id: ev.id, label: `${bizName(ev.businessId) || "Business"} · ${creatorName(ev.creatorId) || "creator"}`, detail: `${ev.kind || "first"} count · ${ev.at ? String(ev.at).slice(0, 10) : "on record"}`, amount: ccMoney(ev.amount), at: ev.at || null })) });
+  else passing.push("No register count over $1,000 is waiting for a look.");
+
+  // Partner-attributed businesses in markets the partner's
+  // deals do not cover.
+  const noDealMarket = [];
+  for (const u of P.partners) {
+    const deals = (P.deals || []).filter((d) => d.partnerId === u.id && dealAccrues(d));
+    if (!deals.length) continue;
+    const covered = new Set();
+    for (const d of deals) for (const dm of ((dealCurrentTerms(d) || {}).markets || [])) covered.add(normalizeMarketName(dm.market || ""));
+    for (const b of P.visUsers) {
+      if (b.role !== "business" || b.partnerId !== u.id) continue;
+      if (!covered.has(normalizeMarketName(b.market || ""))) noDealMarket.push({ id: b.id, label: `${bizName(b.id) || b.name || "Business"} · ${b.market || ""}`, detail: `Stamped to ${(u.partner && u.partner.name) || u.name}, whose deals do not cover this market.` });
+    }
+  }
+  if (noDealMarket.length) alerts.push({ kind: "partner_market_no_deal", count: noDealMarket.length, text: `${noDealMarket.length} partner-stamped ${noDealMarket.length === 1 ? "business sits" : "businesses sit"} in a market that partner's deals do not cover — their revenue accrues to nobody there.`, target: { view: "command", subtab: "partners" }, items: noDealMarket.slice(0, 50) });
+  else passing.push("Every partner-stamped business sits in a market its partner's deals cover.");
+
+  // Deal terms pointing at a market the platform has not opened.
+  const dealNotLive = [];
+  for (const d of (P.deals || [])) {
+    const terms = dealCurrentTerms(d);
+    if (!terms) continue;
+    const partner = P.userById.get(d.partnerId);
+    for (const dm of (terms.markets || [])) {
+      if (dm.status === "live" && !P.flags[normalizeMarketName(dm.market || "")]) dealNotLive.push({ id: d.id, label: `${(partner && partner.partner && partner.partner.name) || "Partner"} · ${d.label || "deal"}`, detail: `The deal calls ${dm.market} live; the market itself is still founding.` });
+    }
+  }
+  if (dealNotLive.length) alerts.push({ kind: "deal_market_not_live", count: dealNotLive.length, text: `${dealNotLive.length} ${dealNotLive.length === 1 ? "deal calls" : "deals call"} a market live that the platform still shows as founding.`, target: { view: "command", subtab: "partners" }, items: dealNotLive.slice(0, 50) });
+
+  return {
+    filters: ccFiltersEcho(P),
+    summary: { alertCount: alerts.reduce((s, a) => s + a.count, 0), alertKinds: alerts.length, checksPassing: passing.length },
+    alerts, passing, waiting,
+    square: { connections: sqProjected },
+  };
+}
+
+// ---------- Period close + exports (§3.9/§6.3/§6.4) ----------
+async function ccCloseRecords() {
+  return (await store.list("periodclose:")).map((r) => r.value).filter(Boolean);
+}
+
+function ccSnapshotHeadline(P, monthKey, money, partnersPayload, owedTotals) {
+  const endMs = Date.parse(monthEndIso(monthKey));
+  const asOf = (role) => P.visUsers.filter((u) => u.role === role && Date.parse(u.createdAt || "") <= endMs).length;
+  const ov = ccOverview(P);
+  return {
+    usersTotal: asOf("creator") + asOf("business"), creators: asOf("creator"), businesses: asOf("business"),
+    partners: P.partners.filter((u) => Date.parse(u.createdAt || "") <= endMs).length,
+    compsCompleted: ov.tiles.compsCompleted, compsCounted: ov.tiles.compsCounted,
+    finishedDeals: ov.tiles.finishedDeals, countedRegister: ov.tiles.countedRegister,
+    recordedFlowed: money.recorded.totals.flowed, recordedSignlKept: money.recorded.totals.signlKept,
+    chargedNet: money.charged.netTotal,
+    partnersAccrued: ccMoney(partnersPayload.partners.reduce((s, r) => s + ((r.period || {}).partnerShare || 0), 0)),
+    owedToCreators: owedTotals.toCreators, owedToPartners: owedTotals.toPartners,
+  };
+}
+
+async function ccBuildSnapshot(monthKey, actorId) {
+  const P = await ccPrep({ period: monthKey });
+  const money = ccMoneyAgg(P);
+  const rev = subRevenueByBizMonth(P.visUsers, P.charges);
+  const partnersPayload = ccPartnersPayload(P, rev);
+  const owed = ccOwedAgg(P);
+  const markets = ccMarkets(P).markets.map((m) => ({
+    market: m.market, live: m.live,
+    creators: m.signups.creators, businesses: m.signups.businesses,
+    compsCompleted: m.compsCompleted, compsCounted: m.compsCounted,
+    finishedDeals: m.finishedDeals, countedRegister: m.countedRegister,
+  }));
+  return {
+    period: monthKey, label: monthLabelOf(monthKey),
+    computedAt: nowIso(), computedBy: actorId || null,
+    headline: ccSnapshotHeadline(P, monthKey, money, partnersPayload, owed.totals),
+    money: { recorded: money.recorded, charged: money.charged, counted: money.counted },
+    partners: partnersPayload.partners.map((r) => ({ id: r.id, name: r.name, period: r.period, accrued: r.accrued, paid: r.paid, owed: r.owed })),
+    markets,
+    owed: { totals: owed.totals, creatorsHeld: owed.creators.heldTotal, partnersOwed: owed.partners.owed, liabilities: { rolloverVisits: owed.liabilities.rollover.visits, rolloverPlanValue: owed.liabilities.rollover.planValue, foundingCredits: owed.liabilities.foundingCredits.total, compPromisedValue: owed.liabilities.compPromised.menuValue } },
+  };
+}
+
+// Adjustments for one month: changes that LANDED in the month
+// whose subject sits in a hard-closed month. The frozen month
+// never moves; the change stands here, traced to its record.
+async function ccAdjustmentsFor(P, monthKey) {
+  const closes = await ccCloseRecords();
+  const closedKeys = new Set(closes.filter((c) => c.state === "closed").map((c) => c.period));
+  if (!closedKeys.size) return [];
+  // An adjustment is a change about a closed month that was NOT part of
+  // that month's own books: either it belongs to a different month than
+  // the closed one (it landed later), or — when a month is closed early,
+  // mid-month — it is timestamped after the freeze moment. A record
+  // timestamped inside the closed month at or before the freeze was in
+  // the books the snapshot froze, and is never re-shown as an adjustment.
+  const closedAtByPeriod = {};
+  for (const c of closes) if (c.state === "closed") closedAtByPeriod[c.period] = c.closedAt || "";
+  const isAdjustment = (period, at) => {
+    if (monthKeyOf(at) !== period) return true;
+    const ca = Date.parse(closedAtByPeriod[period] || ""), t = Date.parse(at || "");
+    return !(Number.isFinite(ca) && Number.isFinite(t)) || t > ca;
+  };
+  const rows = [];
+  const visBookingIds = new Set(P.visBookings.map((b) => b.id));
+  const visUserIds = new Set(P.visUsers.map((u) => u.id));
+  const excludedUser = (id) => !!id && P.userById.has(id) && !visUserIds.has(id);
+  const bizName = (id) => { const u = id ? P.userById.get(id) : null; return u ? ((u.business && u.business.businessName) || u.name || "") : ""; };
+  const reds = await allRedemptionEvents();
+  for (const ev of reds) {
+    if (!ev || !Array.isArray(ev.corrections) || !ev.corrections.length) continue;
+    if (excludedUser(ev.businessId) || excludedUser(ev.creatorId)) continue;
+    if (ev.bookingId && P.bookingById.has(ev.bookingId) && !visBookingIds.has(ev.bookingId)) continue;
+    const subjectMonth = monthKeyOf(ev.at);
+    if (!closedKeys.has(subjectMonth)) continue;
+    for (const c of ev.corrections) {
+      if (monthKeyOf(c.at) !== monthKey) continue;
+      if (!isAdjustment(subjectMonth, c.at)) continue;
+      const before = c.wasVoided ? 0 : (Number(c.oldAmount) || 0);
+      const after = c.voided ? 0 : (c.newAmount === null || c.newAmount === undefined ? before : (Number(c.newAmount) || 0));
+      rows.push({
+        kind: "register_correction", at: c.at, period: subjectMonth, amount: ccMoney(after - before),
+        eventId: ev.id, bookingId: ev.bookingId || null, businessId: ev.businessId || null, businessName: bizName(ev.businessId),
+        detail: `A register count from ${monthLabelOf(subjectMonth)} was corrected from $${ccMoney(before)} to ${c.voided ? "voided" : "$" + ccMoney(after)}${c.by === "square" ? " by the register itself (Square sync)" : ""}. ${monthLabelOf(subjectMonth)} is closed, so the change stands here instead of rewriting it.`,
+      });
+    }
+  }
+  for (const r of P.charges) {
+    if (r.kind !== "refund" || monthKeyOf(r.chargedAt) !== monthKey) continue;
+    const parent = P.allCharges.find((c) => c.id === r.stripePaymentIntentId || c.id === r.stripeInvoiceId);
+    const pm = parent ? monthKeyOf(parent.chargedAt) : null;
+    if (!pm || !closedKeys.has(pm)) continue;
+    if (!isAdjustment(pm, r.chargedAt)) continue;
+    rows.push({
+      kind: "late_refund", at: r.chargedAt, period: pm, amount: ccMoney(r.net),
+      chargeId: r.id, parentId: parent.id, businessId: r.businessId || parent.businessId || null, businessName: bizName(r.businessId || parent.businessId),
+      detail: `A charge from ${monthLabelOf(pm)} was refunded in ${monthLabelOf(monthKey)}. ${monthLabelOf(pm)} is closed, so the refund stands here instead of rewriting it.`,
+    });
+  }
+  for (const b of P.visBookings) {
+    if (!P.isComp(b) || b.status !== "completed" || !b.compCostEntry || !b.compCostEntry.at) continue;
+    const cm = monthKeyOf(P.completedAtOf(b));
+    if (!closedKeys.has(cm) || monthKeyOf(b.compCostEntry.at) !== monthKey) continue;
+    if (!isAdjustment(cm, b.compCostEntry.at)) continue;
+    rows.push({
+      kind: "comp_cost_late", at: b.compCostEntry.at, period: cm, amount: ccMoney(b.compCostEntry.amount),
+      bookingId: b.id, businessId: b.businessId, businessName: bizName(b.businessId),
+      detail: `A cost entry landed in ${monthLabelOf(monthKey)} for a comp finished in ${monthLabelOf(cm)}, which is closed — the coverage change stands here.`,
+    });
+  }
+  rows.sort((a, z) => String(a.at || "") < String(z.at || "") ? -1 : 1);
+  return rows;
+}
+
+async function ccClosePayload(P, selectedMonth) {
+  const closes = await ccCloseRecords();
+  const byPeriod = new Map(closes.map((c) => [c.period, c]));
+  const curKey = monthKeyOf(new Date().toISOString());
+  const keys = new Set([curKey]);
+  for (const c of P.charges) { const k = monthKeyOf(c.chargedAt); if (k) keys.add(k); }
+  for (const b of P.visBookings) { const k = monthKeyOf(b.createdAt); if (k) keys.add(k); const ck = monthKeyOf(P.completedAtOf(b)); if (ck) keys.add(ck); }
+  for (const e of P.countedEvents) { const k = monthKeyOf(e.at); if (k) keys.add(k); }
+  for (const c of closes) if (c.period) keys.add(c.period);
+  const months = [...keys].sort().reverse().slice(0, 24).map((k) => {
+    const rec = byPeriod.get(k) || null;
+    return {
+      period: k, label: monthLabelOf(k), state: rec ? rec.state : "open",
+      tallyWindowEnds: new Date(tallyWindowEndMs(k)).toISOString().slice(0, 10),
+      headline: rec && rec.snapshot ? rec.snapshot.headline : null,
+      softClosedAt: rec ? rec.softClosedAt || null : null, closedAt: rec ? rec.closedAt || null : null,
+      closedBy: rec ? rec.closedBy || null : null, quotedNote: rec ? rec.quotedNote || "" : "",
+    };
+  });
+  const sel = selectedMonth && keys.has(selectedMonth) ? selectedMonth : curKey;
+  const rec = byPeriod.get(sel) || null;
+  let liveHeadline = null;
+  if (!rec || rec.state === "open") {
+    const snap = await ccBuildSnapshot(sel, null);
+    liveHeadline = snap.headline;
+  }
+  const adjustments = await ccAdjustmentsFor(P, sel);
+  return {
+    filters: ccFiltersEcho(P),
+    months,
+    selected: {
+      period: sel, label: monthLabelOf(sel), state: rec ? rec.state : "open",
+      headline: rec && rec.snapshot ? rec.snapshot.headline : liveHeadline,
+      headlineIsLive: !(rec && rec.snapshot),
+      snapshot: rec && rec.snapshot ? { computedAt: rec.snapshot.computedAt, computedBy: rec.snapshot.computedBy } : null,
+      quotedNote: rec ? rec.quotedNote || "" : "",
+      adjustments,
+    },
+  };
+}
+
+// ---------- CSV + zip (the accountant pack) ----------
+function ccCsvEscape(v) {
+  const s = v === null || v === undefined ? "" : String(v);
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+function ccCsvOf(headers, rows) {
+  return [headers.join(","), ...rows.map((r) => r.map(ccCsvEscape).join(","))].join("\n") + "\n";
+}
+const CC_CRC_TABLE = (() => { const t = []; for (let n = 0; n < 256; n += 1) { let c = n; for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function ccCrc32(buf) { let c = 0xFFFFFFFF; for (let i = 0; i < buf.length; i += 1) c = CC_CRC_TABLE[(c ^ buf[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+// A minimal ZIP writer (STORE method, no compression): the
+// pack is a handful of small text files; the format is simple
+// enough to write directly rather than take a dependency.
+function ccZipStore(files) {
+  const chunks = []; const central = []; let offset = 0;
+  for (const f of files) {
+    const data = Buffer.isBuffer(f.data) ? f.data : Buffer.from(String(f.data), "utf8");
+    const name = Buffer.from(f.name, "utf8");
+    const crc = ccCrc32(data);
+    const lh = Buffer.alloc(30);
+    lh.writeUInt32LE(0x04034b50, 0); lh.writeUInt16LE(20, 4); lh.writeUInt16LE(0x0800, 6); lh.writeUInt16LE(0, 8);
+    lh.writeUInt16LE(0, 10); lh.writeUInt16LE(0x21, 12); lh.writeUInt32LE(crc, 14);
+    lh.writeUInt32LE(data.length, 18); lh.writeUInt32LE(data.length, 22); lh.writeUInt16LE(name.length, 26); lh.writeUInt16LE(0, 28);
+    chunks.push(lh, name, data);
+    const ch = Buffer.alloc(46);
+    ch.writeUInt32LE(0x02014b50, 0); ch.writeUInt16LE(20, 4); ch.writeUInt16LE(20, 6); ch.writeUInt16LE(0x0800, 8); ch.writeUInt16LE(0, 10);
+    ch.writeUInt16LE(0, 12); ch.writeUInt16LE(0x21, 14); ch.writeUInt32LE(crc, 16);
+    ch.writeUInt32LE(data.length, 20); ch.writeUInt32LE(data.length, 24); ch.writeUInt16LE(name.length, 28); ch.writeUInt32LE(offset, 42);
+    central.push(ch, name);
+    offset += 30 + name.length + data.length;
+  }
+  const centralSize = central.reduce((s, b) => s + b.length, 0);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(files.length, 8); end.writeUInt16LE(files.length, 10);
+  end.writeUInt32LE(centralSize, 12); end.writeUInt32LE(offset, 16);
+  return Buffer.concat([...chunks, ...central, end]);
+}
+
+function ccPeriodSlug(P) {
+  const cur = monthKeyOf(new Date().toISOString());
+  if (P.period.key === "this_month") return cur;
+  if (P.period.key === "last_month") return prevMonthKey(cur);
+  return "all-time";
+}
+
+async function ccExportCsv(P, ledger) {
+  if (ledger === "partners") {
+    const rev = subRevenueByBizMonth(P.visUsers, P.charges);
+    const d = ccPartnersPayload(P, rev);
+    return ccCsvOf(
+      ["partner", "code", "terms_state", "deals", "period_gross", "period_partner_share", "period_signl_share", "accrued_total", "paid_total", "owed", "guarantee_state"],
+      d.partners.map((r) => [r.name, r.code, r.termsState, (r.deals || []).map((x) => `${x.label} (v${x.currentVersion || "?"})`).join("; "), r.period.gross, r.period.partnerShare, r.period.signlShare, r.accrued, r.paid, r.owed, r.guaranteeState || ""]),
+    );
+  }
+  if (ledger === "businesses") {
+    const d = ccBusinesses(P);
+    return ccCsvOf(
+      ["business", "market", "partner", "plan", "monthly", "credit_total", "credit_used", "credit_remaining", "minimum_end", "billing_state", "subscription_status", "rollover_available", "rollover_carried", "comps_completed", "paid_released", "counted_register", "signl_revenue"],
+      d.businesses.map((r) => [r.name, r.market, r.partner ? r.partner.name : "Direct", r.plan ? r.plan.name : "", r.plan ? r.plan.monthly : "", r.credit ? r.credit.total : "", r.credit ? r.credit.used : "", r.credit ? r.credit.remaining : "", r.minimum ? r.minimum.end : "", r.billing.state, r.billing.subscriptionStatus || "", r.rollover.available, r.rollover.carriedIn, r.lifetime.compsCompleted, r.lifetime.paidReleased, r.lifetime.counted, r.lifetime.signlRevenue]),
+    );
+  }
+  if (ledger === "creators") {
+    const { held } = ccCreatorMoneyRows(P);
+    const heldByCreator = new Map();
+    for (const r of held) heldByCreator.set(r.creatorId, ccMoney((heldByCreator.get(r.creatorId) || 0) + r.amount));
+    const partnerName = (id) => { const u = id ? P.userById.get(id) : null; return u && u.partner ? (u.partner.name || u.name || "") : ""; };
+    const rows = [];
+    for (const u of P.visUsers) {
+      if (u.role !== "creator") continue;
+      if (P.marketScope && normalizeMarketName(u.market || "") !== P.marketScope) continue;
+      const c = u.creator || {};
+      const mine = P.visBookings.filter((b) => b.creatorId === u.id);
+      const earnedReleased = ccMoney(
+        P.paidFinished.filter((b) => b.creatorId === u.id).reduce((s, b) => s + (Number(b.paidLane.creatorNet) || 0), 0)
+        + P.licensesGranted.filter((l) => l.creatorId === u.id).reduce((s, l) => s + (Number(l.creatorNet) || 0), 0));
+      rows.push([u.id, u.name || "", c.handle || "", u.email || "", u.market || "", u.city || "", typeof c.followerCount === "number" ? tierForFollowers(c.followerCount) : "", u.status || "", profileCompleteOf(u) ? "yes" : "no", partnerName(u.partnerId), u.referredBy || "", mine.filter((b) => P.isComp(b) && b.status === "completed").length, P.paidFinished.filter((b) => b.creatorId === u.id).length, earnedReleased, heldByCreator.get(u.id) || 0, c.standing || "good", c.noShowStrikes || 0]);
+    }
+    rows.sort((a, z) => String(a[2]) < String(z[2]) ? -1 : 1);
+    return ccCsvOf(["creator_id", "name", "handle", "email", "market", "typed_city", "tier", "status", "profile_finished", "partner", "referred_by", "visits_completed", "paid_released", "earned_released", "earned_held", "standing", "no_show_strikes"], rows);
+  }
+  if (ledger === "money") {
+    const money = ccMoneyAgg(P);
+    const modeled = await ccModeled(P);
+    const rows = [
+      ["Recorded", "Subscriptions", money.recorded.rows.subscriptions.count, money.recorded.rows.subscriptions.flowed, money.recorded.rows.subscriptions.signlKept, money.recorded.rows.subscriptions.creatorsEarned, money.recorded.rows.subscriptions.partnersEarned, ""],
+      ["Recorded", "Paid bookings", money.recorded.rows.paidBookings.count, money.recorded.rows.paidBookings.flowed, money.recorded.rows.paidBookings.signlKept, money.recorded.rows.paidBookings.creatorsEarned, 0, ""],
+      ["Recorded", "Licenses", money.recorded.rows.licenses.count, money.recorded.rows.licenses.flowed, money.recorded.rows.licenses.signlKept, money.recorded.rows.licenses.creatorsEarned, 0, ""],
+      ["Recorded", "Total", "", money.recorded.totals.flowed, money.recorded.totals.signlKept, money.recorded.totals.creatorsEarned, money.recorded.totals.partnersEarned, money.recorded.splitsHold ? "Splits add up on every record" : "SPLIT CHECK FAILED — see Reconciliation"],
+      ["Charged", "Subscriptions", money.charged.rows.subscriptions.count, money.charged.rows.subscriptions.net, money.charged.rows.subscriptions.gross, money.charged.rows.subscriptions.creditApplied, "", "Net of refunds; gross and founding credit shown in the notes columns"],
+      ["Charged", "Paid bookings", money.charged.rows.paidBookings.count, money.charged.rows.paidBookings.net, "", "", "", ""],
+      ["Charged", "Licenses", money.charged.rows.licenses.count, money.charged.rows.licenses.net, "", "", "", ""],
+      ["Charged", "Refunds", money.charged.rows.refunds.count, money.charged.rows.refunds.net, "", "", "", ""],
+      ["Charged", "Net total", "", money.charged.netTotal, "", "", "", ""],
+      ["Counted", "Register counts", money.counted.visitsCounted, money.counted.total, "", "", "", "Businesses' till money, counted by SIGNL — not platform revenue"],
+      ["Modeled", "Halo estimate", modeled.postsMeasured, modeled.estValue === null ? "" : modeled.estValue, "", "", "", `ESTIMATE ONLY — never in any total. Confidence ${modeled.confidence}`],
+    ];
+    return ccCsvOf(["class", "line", "count", "amount", "signl_kept_or_gross", "creators_or_credit", "partners", "note"], rows);
+  }
+  if (ledger === "owed") {
+    const d = await ccOwedPayload(P);
+    const rows = [];
+    for (const r of d.creators.held) rows.push(["creator_held", r.creatorName, r.businessName, r.market, r.amount, r.blocker, r.ageDays === null ? "" : r.ageDays]);
+    for (const r of d.creators.released) rows.push(["creator_released", r.creatorName, r.businessName, r.market, r.amount, "Released in this period", ""]);
+    for (const r of d.partners.rows) rows.push(["partner_owed", r.name, "", "", r.owed, `Accrued ${r.accrued} less paid ${r.paid}`, ""]);
+    for (const r of d.businesses.pastDue.rows) rows.push(["business_past_due", r.name, "", r.market, r.monthly, "Past-due subscription, per month", ""]);
+    for (const r of d.businesses.recordedNeverCharged.rows) rows.push(["business_recorded_never_charged", r.name, "", r.market, r.monthly, "Plan recorded, never charged, per month", r.ageDays === null ? "" : r.ageDays]);
+    rows.push(["liability_rollover_visits", "All businesses", "", "", d.liabilities.rollover.planValue, `${d.liabilities.rollover.visits} unused visit credits at plan value — a service promise, not cash`, ""]);
+    rows.push(["liability_founding_credits", "All businesses", "", "", d.liabilities.foundingCredits.total, `${d.liabilities.foundingCredits.count} founding credits outstanding — not cash`, ""]);
+    rows.push(["liability_comp_promised", "All businesses", "", "", d.liabilities.compPromised.menuValue, `${d.liabilities.compPromised.count} booked-not-redeemed comps at menu cap — menu value promised, never a cost`, ""]);
+    return ccCsvOf(["type", "who", "counterparty", "market", "amount", "detail", "age_days"], rows);
+  }
+  return null;
 }
 
 function validPartnerMarkets(names) {
@@ -14832,6 +15491,108 @@ async function route(event) {
       }
       await logEvent({ type: "partner_attribution_backfill", actorId: user.id, actorRole: "admin", subjectId: null, market: null, data: { stamped, alreadyStamped, unknownCode } });
       return json(200, { backfill: { stamped, alreadyStamped, unknownCode } });
+    }
+    // Owed + Reconciliation + Close & Export (Build -57): the
+    // owed ledger (§3.7), the full reconciliation & alerts list
+    // (§3.8), period close (§6.4) and the ledger exports (§6.3).
+    // Closes are the only writes here, and they are append-only
+    // in effect: a closed month's snapshot is never rewritten —
+    // the routes refuse, and later changes surface as
+    // adjustments in the month they land.
+    if (seg[1] === "command" && seg[2] === "owed" && method === "GET") {
+      const P = await ccPrep(query);
+      const payload = await ccOwedPayload(P);
+      if (query.partner) payload.partners.rows = payload.partners.rows.filter((r) => r.id === String(query.partner));
+      return json(200, payload);
+    }
+    if (seg[1] === "command" && seg[2] === "reconciliation" && method === "GET") {
+      const P = await ccPrep(query);
+      return json(200, await ccReconAgg(P));
+    }
+    if (seg[1] === "command" && seg[2] === "close" && seg.length === 3 && method === "GET") {
+      const P = await ccPrep(query);
+      return json(200, await ccClosePayload(P, query.month ? String(query.month) : null));
+    }
+    if (seg[1] === "command" && seg[2] === "close" && seg.length === 4 && method === "POST") {
+      const b = parseBody(event);
+      const period = String((b && b.period) || "");
+      const curKey = monthKeyOf(new Date().toISOString());
+      if (!/^\d{4}-\d{2}$/.test(period) || period > curKey) return err(400, "Name a real month, this one or earlier");
+      const key = `periodclose:${period}`;
+      const existing = await store.get(key);
+      if (seg[3] === "note") {
+        const note = typeof b.note === "string" ? b.note.slice(0, 1000) : "";
+        const rec = existing || { period, state: "open", snapshot: null, quotedNote: "" };
+        rec.quotedNote = note;
+        rec.noteUpdatedAt = nowIso();
+        rec.noteUpdatedBy = user.id;
+        await store.set(key, rec);
+        await logEvent({ type: "period_close_note", actorId: user.id, actorRole: "admin", subjectId: null, data: { period, noteLength: note.length } });
+        return json(200, { period, state: rec.state, quotedNote: rec.quotedNote });
+      }
+      if (seg[3] !== "soft" && seg[3] !== "hard") return err(404, "Unknown close action");
+      if (existing && existing.state === "closed") return err(409, "That month is closed. Its numbers stand; later changes land as adjustments in the month they happen.");
+      if (seg[3] === "soft") {
+        const snapshot = await ccBuildSnapshot(period, user.id);
+        const rec = {
+          ...(existing || {}), period, state: "soft_closed", snapshot,
+          softClosedAt: nowIso(), softClosedBy: user.id, quotedNote: (existing && existing.quotedNote) || "",
+        };
+        await store.set(key, rec);
+        await logEvent({ type: "period_soft_closed", actorId: user.id, actorRole: "admin", subjectId: null, data: { period, headline: snapshot.headline } });
+        return json(200, { period, state: rec.state, headline: snapshot.headline, softClosedAt: rec.softClosedAt });
+      }
+      // Hard close: freeze the snapshot (fresh if the month was
+      // never soft-closed), then close the month's accrual
+      // records so the -56 snapshot action can never refresh
+      // them again.
+      const snapshot = (existing && existing.snapshot) || await ccBuildSnapshot(period, user.id);
+      const rec = {
+        ...(existing || {}), period, state: "closed", snapshot,
+        softClosedAt: (existing && existing.softClosedAt) || nowIso(), softClosedBy: (existing && existing.softClosedBy) || user.id,
+        closedAt: nowIso(), closedBy: user.id, quotedNote: (existing && existing.quotedNote) || "",
+      };
+      await store.set(key, rec);
+      let accrualsClosed = 0;
+      for (const row of await store.list("accrual:")) {
+        if (row.value && row.value.month === period && row.value.state !== "closed") {
+          row.value.state = "closed";
+          row.value.closedAt = rec.closedAt;
+          await store.set(row.key, row.value);
+          accrualsClosed += 1;
+        }
+      }
+      await logEvent({ type: "period_hard_closed", actorId: user.id, actorRole: "admin", subjectId: null, data: { period, headline: snapshot.headline, accrualsClosed } });
+      return json(200, { period, state: rec.state, headline: snapshot.headline, closedAt: rec.closedAt, accrualsClosed });
+    }
+    if (seg[1] === "command" && seg[2] === "export" && seg.length === 4 && method === "GET") {
+      const ledger = seg[3];
+      const P = await ccPrep(query);
+      if (ledger === "pack") {
+        const month = query.month && /^\d{4}-\d{2}$/.test(String(query.month)) ? String(query.month) : ccPeriodSlug(P) === "all-time" ? monthKeyOf(new Date().toISOString()) : ccPeriodSlug(P);
+        const files = [];
+        for (const name of ["partners", "businesses", "creators", "money", "owed"]) {
+          const csv = await ccExportCsv(P, name);
+          if (csv) files.push({ name: `${name}.csv`, data: csv });
+        }
+        const closes = await ccCloseRecords();
+        const rec = closes.find((c) => c.period === month && c.snapshot);
+        const snapshot = rec ? { state: rec.state, ...rec.snapshot } : { period: month, label: monthLabelOf(month), state: "open", note: "This month is not closed; this is a live snapshot computed at export time, not a frozen close.", ...(await ccBuildSnapshot(month, user.id)) };
+        files.push({ name: "close-snapshot.json", data: JSON.stringify(snapshot, null, 2) });
+        const zip = ccZipStore(files);
+        return {
+          statusCode: 200,
+          headers: { "Content-Type": "application/zip", "Content-Disposition": `attachment; filename="signl-accountant-pack-${month}.zip"` },
+          body: zip.toString("base64"), isBase64Encoded: true,
+        };
+      }
+      const csv = await ccExportCsv(P, ledger);
+      if (csv === null) return err(404, "Unknown ledger");
+      return {
+        statusCode: 200,
+        headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="signl-${ledger}-${ccPeriodSlug(P)}.csv"` },
+        body: csv,
+      };
     }
     if (method === "GET" && seg[1] === "stats") {
       const users = (await allUsers()).filter((u) => u.role !== "admin");

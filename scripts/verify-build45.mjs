@@ -1,4 +1,4 @@
-// Build 2026.10.30-56 verification: Halo, the modeled
+// Build 2026.10.30-57 verification: Halo, the modeled
 // influence layer inside the SIGNL ROAS Score (Jeff's order,
 // 2026-10-30). Spec: signl-halo-model-2026-10-30.md.
 //
@@ -143,7 +143,7 @@ try {
   startServer();
   check("dev server boots", await waitUp());
   const boot = await fetch(BASE + "/api/bootstrap");
-  check("bootstrap carries the -45 build stamp", boot.headers.get("x-signl-build") === "2026.10.30-56", String(boot.headers.get("x-signl-build")));
+  check("bootstrap carries the -45 build stamp", boot.headers.get("x-signl-build") === "2026.10.30-57", String(boot.headers.get("x-signl-build")));
   const admin = client();
   await admin("POST", "/api/auth/login", { email: ADMIN_EMAIL, password: ADMIN_PASSWORD });
   const anon = client();
