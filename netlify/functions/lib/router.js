@@ -4144,7 +4144,9 @@ async function bookMePayload(u, viewer) {
     // Proof Card (Build -34, M7): SIGNL-counted aggregates only,
     // safe at every tier: visits, register counts, came-backs,
     // tracked spend in total. No business is named here, ever.
-    proof: await proofForCreator(u),
+    // Build -39: the public view honors Proof Card sharing and
+    // the single-business forming gate inside proofForCreator.
+    proof: await proofForCreator(u, { publicView: true }),
   };
   if (t.tier >= 1) {
     payload.paidRate = full.paidRate;
@@ -7092,6 +7094,9 @@ async function businessHome(user) {
       contentLibrary: extras.contentLibrary,
       sigSignals,
       costPerVisit: extras.costPerVisit,
+      // Build -39: the capture-gap diagnostic rides home so
+      // Sig's queue can name the check with real counts.
+      captureGap: await captureGapFor(user),
     },
     rebookPrompts,
     favoritesCount: favIds.size,
@@ -8586,7 +8591,10 @@ function earlyAccessHoursFor(user) {
 // events win when they exist (M1); the legacy reported tally is
 // the fallback for bookings that never used event capture.
 function bookingMoneyFrom(booking, events) {
-  const evs = events.filter((e) => e.bookingId === booking.id);
+  // Voided events (Build -39 correction path) never count as
+  // money or customers anywhere; this helper is the chokepoint
+  // every counted-money surface reads through.
+  const evs = events.filter((e) => e.bookingId === booking.id && !e.voided);
   const firsts = evs.filter((e) => e.kind !== "return");
   const returns = evs.filter((e) => e.kind === "return");
   if (evs.length) {
@@ -8602,17 +8610,346 @@ function bookingMoneyFrom(booking, events) {
 // records only. Aggregates travel; a business's identity and
 // raw totals never do (per-business lines live on /me/proof-card
 // and follow the opt-in rule there).
-async function proofForCreator(creatorUser) {
+async function proofForCreator(creatorUser, opts) {
   const cid = creatorUser.id;
+  const publicView = !!(opts && opts.publicView);
   const posts = (await allPosts()).filter((x) => x.creatorId === cid && x.verifiedAt);
-  const bookings = (await store.list("booking:")).map((r) => r.value).filter((b) => b && b.creatorId === cid);
-  const events = (await allRedemptionEvents()).filter((e) => e.creatorId === cid);
+  let bookings = (await store.list("booking:")).map((r) => r.value).filter((b) => b && b.creatorId === cid);
+  let events = (await allRedemptionEvents()).filter((e) => e.creatorId === cid);
   const mentions = (await allMentions()).filter((m) => m.creatorId === cid);
+  // Proof Controls (Build -39): a business with Proof Card
+  // sharing off contributes nothing to the PUBLIC aggregates:
+  // no counts, no dollars, no passes from its register.
+  let sharingOffBiz = new Set();
+  if (publicView) {
+    const users = await allUsers();
+    sharingOffBiz = new Set(users.filter((u) => u.role === "business" && u.business && u.business.proofSharing === false).map((u) => u.id));
+    if (sharingOffBiz.size) {
+      bookings = bookings.filter((b) => !sharingOffBiz.has(b.businessId));
+      events = events.filter((e) => !sharingOffBiz.has(e.businessId));
+    }
+  }
   let customers = 0;
   let spend = 0;
   let cameBacks = 0;
-  for (const b of bookings) { const m = bookingMoneyFrom(b, events); customers += m.customers; spend += m.spend; cameBacks += m.returns; }
-  return { verified: true, visitsCompleted: posts.length, onTimePosts: posts.filter((x) => x.onTime).length, postsCounted: posts.length, customersCounted: customers, cameBacks, trackedSpend: roasRound2(spend), mentions: mentions.length };
+  const countedBiz = new Set();
+  for (const b of bookings) { const m = bookingMoneyFrom(b, events); customers += m.customers; spend += m.spend; cameBacks += m.returns; if (m.source !== "none") countedBiz.add(b.businessId); }
+  // Build -39: the came-back RATE on creator surfaces uses
+  // window-closed firsts only (a redeemed pass, or a pass whose
+  // 30 days ran out), so a fresh first visit never dilutes it;
+  // the rate prints past the same base of 5 the Receipt uses.
+  // Counts and the rate are all a creator ever sees: never a
+  // score, never a cost (return divided by a score would hand
+  // back a business's private costs).
+  const passes = (await allPasses()).filter((p) => p.creatorId === cid && (!publicView || !sharingOffBiz.has(p.businessId)));
+  const nowMs = Date.now();
+  const closedFirsts = passes.filter((p) => p.status === "redeemed" || Date.parse(p.expiresAt || "") <= nowMs).length;
+  const stillInWindow = passes.filter((p) => p.status === "issued" && Date.parse(p.expiresAt || "") > nowMs).length;
+  const redeemedPasses = passes.filter((p) => p.status === "redeemed").length;
+  const cameBackRate = closedFirsts >= RETURN_RATE_MIN_BASE ? Math.round((redeemedPasses / closedFirsts) * 100) / 100 : null;
+  // Completeness audit §1.4: while a creator's counted history
+  // spans a SINGLE business below the counted-firsts base, the
+  // aggregate lines are that business's register results wearing
+  // an aggregate's clothes. The card's shareable surfaces sit in
+  // "forming" until the base is met or a second business counts.
+  const singleBusiness = countedBiz.size === 1;
+  const countsForming = singleBusiness && customers < RETURN_RATE_MIN_BASE;
+  const out = { verified: true, visitsCompleted: posts.length, onTimePosts: posts.filter((x) => x.onTime).length, postsCounted: posts.length, customersCounted: customers, cameBacks, trackedSpend: roasRound2(spend), mentions: mentions.length, cameBackRate, cameBackClosedFirsts: closedFirsts, cameBackStillInWindow: stillInWindow, singleBusiness, countsForming };
+  // On the public page the forming gate withholds the numbers
+  // themselves, not just their display: below the base, at one
+  // business, the aggregate IS that business's register line.
+  if (publicView && countsForming) { out.customersCounted = null; out.cameBacks = null; out.trackedSpend = null; out.cameBackRate = null; }
+  return out;
+}
+
+// ---------- Build -39: ROAS Score v2 ----------
+// The redefinition (strategy 2026-10-30 + completeness audit
+// §1, both binding): the headline score's numerator is counted
+// register dollars ONLY, and only from moment-of-sale EVENTS.
+// Reported tallies print as tagged facts beside the score and
+// never enter it (audit item 1: a tally-fed "100% counted"
+// claim is the one screenshot that ends the honesty brand).
+// Media value keeps its own labeled line, outside every ratio.
+// The denominator is everything the client actually put in:
+// the plan at the amount actually charged (founding credit
+// itemized), comp costs the business confirmed at close-out,
+// paid rates plus the business's 3% fee share, and discount
+// cost figured on the FULL pre-discount check (audit item 2:
+// the rung amount is post-discount, so the discount given is
+// amount x pct / (1 - pct), printed in the method line).
+// The monthly score is a COHORT: the visits that completed
+// that month, the plan counted once and whole, provisional
+// ("still counting") until the cohort's 30-day came-back
+// windows close. Below the minimums the score does not print
+// at all: the state is Forming, with what is missing named.
+// Per-visit and per-creator scores use direct costs only and
+// carry the "before your plan" label. Sets sum first, divide
+// once; zero cost is no score, never an infinite multiple.
+const SCORE_V2_MIN_VISITS = 3;
+const SCORE_V2_MIN_EVENTS = 10;
+const SCORE_V2_VERSION_LINE = "Score v2: register money only, every cost in. Media value sits on its own line now, and tallies ride as facts, never in the number. If the formula ever changes again, the change prints here.";
+const SCORE_V2_MEDIA_WORDS = "The posts themselves, priced at our published rates. This is a model, on numbers creators reported. It is not counted in your score.";
+const SCORE_V2_DISCOUNT_WORDS = "Discount cost is figured on the full check before the code came off.";
+const CAPTURE_GAP_MIN_REACH = 2000;
+
+function round1(n) { return Math.round((Number(n) || 0) * 10) / 10; }
+function visitCompletedAt(booking, post) {
+  return (post && post.submittedAt) || booking.updatedAt || booking.createdAt || "";
+}
+function isPaidVisit(booking) {
+  return !!(booking.paidLane && typeof booking.paidLane.rate === "number" && booking.paidLane.rate > 0);
+}
+// The tally window: a month's books stay open 30 days after
+// the month ends. Comp costs are editable and register events
+// correctable inside it; after it, the record stands.
+function tallyWindowEndMs(monthKey) {
+  const parts = String(monthKey || "").split("-").map(Number);
+  if (parts.length < 2 || !parts[0] || !parts[1]) return 0;
+  return Date.UTC(parts[0], parts[1], 1) + 30 * 86400000;
+}
+// The plan line of the denominator: the amount ACTUALLY
+// charged for the month, read off the activation record (the
+// billing record of truth while payment stays concierge):
+// the activation month carries the founding credit, itemized;
+// later months carry the plan price. No activation record
+// covering the month means the charge is unrecorded, and the
+// score stays Forming rather than guessing a price.
+function planChargeFor(biz, monthKey) {
+  const b = biz || {};
+  const planId = b.planId || b.plan || null;
+  const plan = planId ? planById(planId) : null;
+  const listPrice = typeof b.planPriceMonthly === "number" ? b.planPriceMonthly : plan ? plan.priceMonthly : null;
+  if (typeof listPrice !== "number" || !Number.isFinite(listPrice)) return { amount: null, credit: 0, recorded: false };
+  if (b.accessState !== "active" || !b.activatedAt) return { amount: null, credit: 0, recorded: false };
+  const actMonth = monthKeyOf(b.activatedAt);
+  if (!actMonth || monthKey < actMonth) return { amount: null, credit: 0, recorded: false };
+  if (monthKey === actMonth) {
+    const credit = plan && typeof plan.foundingCredit === "number" ? plan.foundingCredit : 100;
+    const first = plan && typeof plan.firstMonthPriceMonthly === "number" ? Math.min(plan.firstMonthPriceMonthly, listPrice) : Math.max(0, listPrice - credit);
+    return { amount: roasRound2(first), credit: roasRound2(listPrice - first), recorded: true };
+  }
+  return { amount: roasRound2(listPrice), credit: 0, recorded: true };
+}
+// Discount cost of a booking's counted events, on the full
+// pre-discount check (audit item 2). The percentage is the
+// booking's stamp; no stamp promised no discount. Only first
+// (code) events carry the code's discount: a came-back pass
+// redemption is a full-price return unless the business chose
+// a perk, and audience codes carry their own perk, not a %.
+function discountCostForEvents(booking, evs) {
+  const pct = typeof booking.discountPct === "number" ? booking.discountPct : booking.redemptions && typeof booking.redemptions.discountPct === "number" ? booking.redemptions.discountPct : 0;
+  if (!(pct > 0) || pct >= 100) return 0;
+  const p = pct / 100;
+  const rung = evs.filter((e) => e.kind === "first").reduce((a, e) => a + (Number(e.amount) || 0), 0);
+  return roasRound2(rung * (p / (1 - p)));
+}
+
+// Proof Controls (Build -39, Jeff 2026-10-30): the business's
+// usual comp cost, set once, pre-filled at every close-out so
+// closing a visit is one tap unless this visit differed. The
+// per-category map covers a business whose comps genuinely
+// differ by visit category; the category wins over the default.
+function validCompCostDefaults(raw) {
+  if (raw === null) return { ok: true, defaults: null };
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { ok: false, error: "Comp cost defaults must be an object" };
+  const amt = (v) => { if (v === null || v === undefined || v === "") return null; const n = Number(v); return Number.isFinite(n) && n >= 0 && n <= 1000000 ? roasRound2(n) : "invalid"; };
+  const dflt = amt(raw.default);
+  if (dflt === "invalid") return { ok: false, error: "Default comp cost must be a dollar amount, 0 or more" };
+  const byCategory = {};
+  if (raw.byCategory && typeof raw.byCategory === "object") {
+    for (const [k, v] of Object.entries(raw.byCategory)) {
+      const a = amt(v);
+      if (a === "invalid") return { ok: false, error: "Comp cost by category must be dollar amounts, 0 or more" };
+      if (a !== null) byCategory[String(k).slice(0, 60)] = a;
+    }
+  }
+  const out = {};
+  if (dflt !== null) out.default = dflt;
+  if (Object.keys(byCategory).length) out.byCategory = byCategory;
+  return { ok: true, defaults: Object.keys(out).length ? out : null };
+}
+function compCostDefaultFor(biz, category) {
+  const d = (biz || {}).compCostDefaults || null;
+  if (!d) return null;
+  if (category && d.byCategory && typeof d.byCategory[category] === "number") return d.byCategory[category];
+  return typeof d.default === "number" ? d.default : null;
+}
+
+async function scoreV2Context(businessId) {
+  const [bookingsRaw, posts, eventsAll, passesAll] = await Promise.all([store.list("booking:"), allPosts(), allRedemptionEvents(), allPasses()]);
+  return {
+    bookings: bookingsRaw.map((r) => r.value).filter((b) => b && b.businessId === businessId),
+    postByBooking: new Map(posts.map((p) => [p.bookingId, p])),
+    events: eventsAll.filter((e) => e.businessId === businessId),
+    passes: passesAll.filter((p) => p.businessId === businessId),
+  };
+}
+
+// One cohort month of Score v2 for one business. Pure over the
+// context so the Receipt can price the current month and the
+// two before it off one load.
+function scoreV2Cohort(user, monthKey, ctx) {
+  const biz = user.business || {};
+  const now = Date.now();
+  const liveEvents = ctx.events.filter((e) => !e.voided);
+  const visits = [];
+  for (const b of ctx.bookings) {
+    if (b.status !== "completed") continue;
+    const post = ctx.postByBooking.get(b.id) || null;
+    const completedAt = visitCompletedAt(b, post);
+    if (monthKeyOf(completedAt) !== monthKey) continue;
+    const money = bookingMoneyFrom(b, ctx.events);
+    const bEvents = liveEvents.filter((e) => e.bookingId === b.id);
+    const paid = isPaidVisit(b);
+    let directCost = null;
+    let costState = "entered";
+    if (paid) { directCost = roasRound2(b.paidLane.rate * 1.03); costState = "paid_rate"; }
+    else if (b.compCostEntry && typeof b.compCostEntry.amount === "number" && Number.isFinite(b.compCostEntry.amount)) { directCost = roasRound2(b.compCostEntry.amount); costState = b.compCostEntry.confirmedZero ? "confirmed_zero" : "entered"; }
+    else costState = "missing";
+    const disc = money.source === "events" ? discountCostForEvents(b, bEvents) : 0;
+    if (directCost !== null) directCost = roasRound2(directCost + disc);
+    const passEnds = ctx.passes.filter((p) => p.firstBookingId === b.id).map((p) => Date.parse(p.expiresAt || "") || 0);
+    const windowEnd = Math.max(Date.parse(completedAt || "") + RETURN_WINDOW_DAYS * 86400000 || 0, ...passEnds);
+    const perf = roasPerformanceOf({ ...b, post });
+    const media = perf.reported ? roasRound2((perf.views * ROAS_MODEL.cpm) / 1000 + perf.likes * ROAS_MODEL.like + perf.comments * ROAS_MODEL.comment + perf.shares * ROAS_MODEL.share) : 0;
+    visits.push({
+      bookingId: b.id, title: b.title || "", category: b.category || "", creatorId: b.creatorId, creatorHandle: b.creatorHandle || "", completedAt,
+      source: money.source, customers: money.customers, spend: money.spend, returns: money.returns, returnSpend: money.returnSpend,
+      paid, directCost, costState, discountCost: disc, mature: now >= windowEnd, media, eventCount: bEvents.length,
+    });
+  }
+  const eventVisits = visits.filter((v) => v.source === "events");
+  const tallyVisits = visits.filter((v) => v.source === "tally");
+  const countedBack = roasRound2(eventVisits.reduce((a, v) => a + v.spend + v.returnSpend, 0));
+  const countedCustomers = eventVisits.reduce((a, v) => a + v.customers, 0);
+  const countedEvents = eventVisits.reduce((a, v) => a + v.eventCount, 0);
+  const missingCostVisits = eventVisits.filter((v) => v.costState === "missing");
+  const compCosts = roasRound2(eventVisits.filter((v) => !v.paid && v.directCost !== null).reduce((a, v) => a + v.directCost - v.discountCost, 0));
+  const paidCosts = roasRound2(eventVisits.filter((v) => v.paid).reduce((a, v) => a + v.directCost - v.discountCost, 0));
+  const discountCosts = roasRound2(eventVisits.reduce((a, v) => a + v.discountCost, 0));
+  const directCosts = roasRound2(compCosts + paidCosts + discountCosts);
+  const plan = planChargeFor(biz, monthKey);
+  const formingReasons = [];
+  if (eventVisits.length < SCORE_V2_MIN_VISITS) formingReasons.push({ kind: "visits", counted: eventVisits.length, needed: SCORE_V2_MIN_VISITS });
+  if (countedEvents < SCORE_V2_MIN_EVENTS) formingReasons.push({ kind: "events", counted: countedEvents, needed: SCORE_V2_MIN_EVENTS });
+  if (missingCostVisits.length) formingReasons.push({ kind: "comp_cost", counted: missingCostVisits.length, bookingIds: missingCostVisits.map((v) => v.bookingId) });
+  if (!plan.recorded) formingReasons.push({ kind: "plan" });
+  if (!eventVisits.length && tallyVisits.length) formingReasons.push({ kind: "tally_only", counted: tallyVisits.length });
+  const state = formingReasons.length ? "forming" : eventVisits.every((v) => v.mature) ? "final" : "counting";
+  const totalCost = plan.recorded ? roasRound2(plan.amount + directCosts) : null;
+  const score = state !== "forming" && totalCost !== null && totalCost > 0 ? round1(countedBack / totalCost) : null;
+  const mediaValue = roasRound2(visits.reduce((a, v) => a + v.media, 0));
+  const withPostsValued = score !== null && totalCost > 0 ? round1((countedBack + mediaValue) / totalCost) : null;
+  // The cohort's came-back rate, on window-closed firsts only.
+  const cohortIds = new Set(visits.map((v) => v.bookingId));
+  const cohortPasses = ctx.passes.filter((p) => cohortIds.has(p.firstBookingId));
+  const closedFirsts = cohortPasses.filter((p) => p.status === "redeemed" || (Date.parse(p.expiresAt || "") || 0) <= now).length;
+  const stillInWindow = cohortPasses.filter((p) => p.status === "issued" && (Date.parse(p.expiresAt || "") || 0) > now).length;
+  const cameBackCount = cohortPasses.filter((p) => p.status === "redeemed").length;
+  const cameBackRate = closedFirsts >= RETURN_RATE_MIN_BASE ? Math.round((cameBackCount / closedFirsts) * 100) / 100 : null;
+  // Per-visit scores: direct costs only, before the plan.
+  const visitRows = visits.map((v) => {
+    let vScore = null;
+    let vState = "forming";
+    if (v.source === "tally") vState = "tally";
+    else if (v.source === "events" && v.costState !== "missing" && v.directCost !== null && v.directCost > 0) { vScore = round1((v.spend + v.returnSpend) / v.directCost); vState = v.mature ? "final" : "counting"; }
+    else if (v.source === "events" && v.directCost === 0) vState = "no_cost";
+    return {
+      bookingId: v.bookingId, title: v.title, category: v.category, creatorHandle: v.creatorHandle, completedAt: v.completedAt, source: v.source,
+      customers: v.customers, spend: v.spend, returns: v.returns, returnSpend: v.returnSpend,
+      directCost: v.directCost, costState: v.costState, score: vScore, state: vState,
+      methodLine: v.source === "events" ? `Counted from ${v.eventCount} register event${v.eventCount === 1 ? "" : "s"} · against what this visit itself cost you, before your plan.` : v.source === "tally" ? "Your reported tally. Tallies ride as facts; the score counts register events only." : "Nothing counted for this visit yet.",
+    };
+  });
+  // Per-creator scores over the same cohort, the same way for
+  // every creator: their event-captured returns over their
+  // visits' direct costs, before the plan.
+  const byCreator = new Map();
+  for (const v of visits) {
+    const row = byCreator.get(v.creatorId) || { creatorId: v.creatorId, creatorHandle: v.creatorHandle, visits: 0, customers: 0, spend: 0, cameBacks: 0, directCost: 0, costKnown: true, countedEvents: 0, immature: false };
+    row.visits += 1;
+    if (v.source === "events") {
+      row.customers += v.customers;
+      row.spend = roasRound2(row.spend + v.spend + v.returnSpend);
+      row.cameBacks += v.returns;
+      row.countedEvents += v.eventCount;
+      if (v.costState === "missing" || v.directCost === null) row.costKnown = false;
+      else row.directCost = roasRound2(row.directCost + v.directCost);
+      if (!v.mature) row.immature = true;
+    }
+    byCreator.set(v.creatorId, row);
+  }
+  const creatorRows = [...byCreator.values()].map((row) => {
+    const canScore = row.costKnown && row.countedEvents >= 1 && row.directCost > 0;
+    return {
+      creatorId: row.creatorId, creatorHandle: row.creatorHandle, visits: row.visits, customers: row.customers, spend: row.spend, cameBacks: row.cameBacks,
+      directCost: row.costKnown ? row.directCost : null,
+      score: canScore ? round1(row.spend / row.directCost) : null,
+      state: canScore ? (row.immature ? "counting" : "final") : "forming",
+      methodLine: "Counted the same way for every creator: their counted register dollars over their visits' own costs, before your plan.",
+    };
+  }).sort((a, b2) => (b2.spend || 0) - (a.spend || 0));
+  return {
+    version: "Score v2", label: ROAS_LABEL, versionLine: SCORE_V2_VERSION_LINE,
+    month: monthKey, monthLabel: monthLabelOf(monthKey), state, score,
+    sentence: score !== null ? `For every $1 you put in, at least $${score.toFixed(2)} came back through your register that we counted.` : null,
+    countedBack, countedCustomers, countedEvents,
+    cameBack: { firsts: countedCustomers, returns: eventVisits.reduce((a, v) => a + v.returns, 0), returnSpend: roasRound2(eventVisits.reduce((a, v) => a + v.returnSpend, 0)), closedFirsts, stillInWindow, rate: cameBackRate, rateBase: RETURN_RATE_MIN_BASE },
+    cost: { plan: plan.amount, planCredit: plan.credit, planRecorded: plan.recorded, compCosts, paidCosts, discountCosts, directCosts, total: totalCost },
+    media: { value: mediaValue, words: SCORE_V2_MEDIA_WORDS, basis: ROAS_MEDIA_BASIS, withPostsValued },
+    discountWords: SCORE_V2_DISCOUNT_WORDS,
+    tallyFacts: tallyVisits.length ? { visits: tallyVisits.length, customers: tallyVisits.reduce((a, v) => a + v.customers, 0), spend: roasRound2(tallyVisits.reduce((a, v) => a + v.spend, 0)) } : null,
+    formingReasons, visits: visitRows, creators: creatorRows,
+  };
+}
+
+// The Receipt's Score v2 assembly: this month's cohort, the
+// two before it, and the trailing aggregate (returns and
+// costs summed across scored cohorts, months named; never an
+// average of scores).
+function scoreV2ForBusiness(user, ctx, calendarCounted) {
+  const month = monthKeyOf(nowIso());
+  const m1 = prevMonthKey(month);
+  const m2 = prevMonthKey(m1);
+  const cohorts = [scoreV2Cohort(user, month, ctx), scoreV2Cohort(user, m1, ctx), scoreV2Cohort(user, m2, ctx)];
+  const scored = cohorts.filter((c) => c.score !== null);
+  const trailing3 = scored.length >= 2 ? {
+    months: scored.map((c) => c.monthLabel),
+    score: round1(scored.reduce((a, c) => a + c.countedBack, 0) / scored.reduce((a, c) => a + c.cost.total, 0)),
+    countedBack: roasRound2(scored.reduce((a, c) => a + c.countedBack, 0)),
+  } : null;
+  const current = { ...cohorts[0], calendarCounted: roasRound2(calendarCounted || 0) };
+  return { current, cohorts: cohorts.map((c) => ({ month: c.month, monthLabel: c.monthLabel, state: c.state, score: c.score, countedBack: c.countedBack })), trailing3 };
+}
+
+// The capture-gap diagnostic (strategy gap 3, audit A7: the
+// wording stays at "here is what we can check" — creator-
+// reported reach can be inflated, and inflation widens this
+// gap, so the state names the check, never a culprit): posts
+// from completed visits were seen widely (creators reported),
+// few customers were counted at the register.
+async function captureGapFor(user, prebuiltCtx) {
+  const ctx = prebuiltCtx || (await scoreV2Context(user.id));
+  const since = Date.now() - 90 * 86400000;
+  let reach = 0;
+  let countedFirsts = 0;
+  let visitCount = 0;
+  for (const b of ctx.bookings) {
+    if (b.status !== "completed") continue;
+    const post = ctx.postByBooking.get(b.id) || null;
+    if (Date.parse(visitCompletedAt(b, post) || "") < since) continue;
+    const perf = roasPerformanceOf({ ...b, post });
+    if (!perf.reported || !(perf.views > 0)) continue;
+    visitCount += 1;
+    reach += perf.views;
+    countedFirsts += ctx.events.filter((e) => e.bookingId === b.id && !e.voided && e.kind !== "return").length;
+  }
+  const thin = visitCount > 0 && reach >= CAPTURE_GAP_MIN_REACH && countedFirsts * 100 < reach;
+  return {
+    state: thin ? "thin" : visitCount ? "ok" : "none",
+    reach, countedFirsts, visits: visitCount,
+    fixes: ["the code in the post captions", "code cards at the counter", "an audience offer attached to the visit"],
+  };
 }
 
 // ---------- Build -35: Round-2 approved set ----------
@@ -10489,6 +10826,20 @@ async function route(event) {
       // proof card name this business? Default no; the card
       // shows category and city instead.
       if (b.proofNameOptIn !== undefined) bz.proofNameOptIn = b.proofNameOptIn === true;
+      // Proof Controls (Build -39): the standing defaults and
+      // switches from the Receipt's control panel, each wired
+      // to real behavior. compCostDefaults pre-fills every
+      // visit close-out; comeBackPassEnabled off stops pass
+      // issuance at the register; proofSharing off keeps this
+      // business's results off creators' proof cards entirely.
+      if (b.compCostDefaults !== undefined) {
+        const v = validCompCostDefaults(b.compCostDefaults);
+        if (!v.ok) return err(400, v.error);
+        if (v.defaults === null) delete bz.compCostDefaults;
+        else bz.compCostDefaults = v.defaults;
+      }
+      if (b.comeBackPassEnabled !== undefined) bz.comeBackPassEnabled = b.comeBackPassEnabled === true;
+      if (b.proofSharing !== undefined) bz.proofSharing = b.proofSharing === true;
       // Managed talent budget: a cap + authorization, not a
       // deposit. Editable any time; spends only on Managed.
       if (b.monthlyTalentBudget !== undefined) {
@@ -13719,7 +14070,12 @@ async function route(event) {
       const ev = { id: crypto.randomUUID(), bookingId: booking.id, businessId: booking.businessId, creatorId: booking.creatorId, kind: "first", channel: validChannel(b.channel), amount: roasRound2(amount), passId: null, at: ts, by: user.id, via: user.role === "staff" ? "staff" : "owner", flagged: amount > REDEEM_FLAG_AMOUNT };
       await store.set(`redevent:${ev.id}`, ev);
       await logCodeUse(booking, 1, user.id, ev.via, user.role);
-      const pass = amount > 0 ? await issueComeBackPass(booking, ev) : null;
+      // Proof Controls (Build -39): the business's Came-Back
+      // Pass switch is real. Off (an explicit false) means this
+      // counted redemption hands the customer no pass.
+      const bizRec = await store.get(`user:${booking.businessId}`);
+      const passOn = !(bizRec && bizRec.business && bizRec.business.comeBackPassEnabled === false);
+      const pass = amount > 0 && passOn ? await issueComeBackPass(booking, ev) : null;
       await logEvent({ type: "redemption_event_logged", actorId: user.id, actorRole: user.role, subjectId: booking.id, market: booking.market, data: { creatorId: booking.creatorId, businessId: booking.businessId, amount: ev.amount, passIssued: !!pass, flagged: ev.flagged } });
       return json(201, { booking: await withPostState(booking), redemptionEvent: ev, issuedPass: pass ? { code: pass.code, expiresAt: pass.expiresAt } : null });
     }
@@ -13775,6 +14131,87 @@ async function route(event) {
         { bookingId: booking.id });
     }
     return json(200, { booking: await withPostState(booking) });
+  }
+
+  // Comp-cost capture at visit close-out (Build -39, strategy
+  // gap 1): when a comped visit completes, the business states
+  // what the comp actually cost them, at their cost, never the
+  // menu price. Score v2 reads ONLY this confirmed entry: the
+  // seeded cap from the offer is an estimate, and an unentered
+  // cost is missing, never zero. Zero is a real answer only
+  // when the business confirms it genuinely cost them nothing.
+  // Editable while the visit's tally month stays open; the
+  // capture never blocks the creator's proof or payment flows.
+  if (method === "POST" && seg[0] === "bookings" && seg.length === 3 && seg[2] === "comp-cost") {
+    if (user.role === "creator") return err(403, "Businesses state their own comp costs");
+    const booking = await store.get(`booking:${seg[1]}`);
+    if (!booking) return err(404, "Booking not found");
+    if (user.role === "business" && booking.businessId !== user.id) return err(404, "Booking not found");
+    if (isPaidVisit(booking)) return err(400, "A paid visit carries its rate as its cost; there is no comp to price");
+    if (booking.status !== "completed") return err(400, "The comp cost lands when the visit closes out, once the post is in");
+    const post = (await allPosts()).find((p) => p.bookingId === booking.id) || null;
+    const cohortMonth = monthKeyOf(visitCompletedAt(booking, post));
+    if (Date.now() > tallyWindowEndMs(cohortMonth)) return err(400, "That month's books are closed, so the cost on record stands");
+    const b = parseBody(event);
+    const confirmedZero = b.confirmedZero === true;
+    let amount = null;
+    if (b.amount !== undefined && b.amount !== null && b.amount !== "") {
+      amount = Number(b.amount);
+      if (!Number.isFinite(amount) || amount < 0 || amount > 100000000) return err(400, "Comp cost must be a dollar amount, 0 or more");
+      amount = roasRound2(amount);
+    }
+    if (amount === null && !confirmedZero) return err(400, "Enter what the visit cost you, or confirm it genuinely cost you nothing");
+    if (amount !== null && amount > 0 && confirmedZero) return err(400, "A visit with a cost is not a zero-cost visit");
+    if (amount === null) amount = 0;
+    if (amount === 0 && !confirmedZero) return err(400, "A zero cost needs the confirmation that it genuinely cost you nothing");
+    booking.compCostEntry = { amount, confirmedZero: amount === 0, at: nowIso(), by: user.id };
+    booking.updatedAt = nowIso();
+    await store.set(`booking:${booking.id}`, booking);
+    await logEvent({ type: "comp_cost_captured", actorId: user.id, actorRole: user.role, subjectId: booking.id, market: booking.market, data: { creatorId: booking.creatorId, businessId: booking.businessId, amount, confirmedZero: booking.compCostEntry.confirmedZero } });
+    return json(200, { booking: await withPostState(booking), compCostEntry: booking.compCostEntry });
+  }
+
+  // A booking's counted register events (Build -39): the
+  // owner-facing trail behind the Receipt's numbers, with each
+  // event's correction state. Owner or admin only; creators
+  // never see a business's register trail.
+  if (method === "GET" && seg[0] === "bookings" && seg.length === 3 && seg[2] === "events") {
+    if (user.role === "creator") return err(403, "Businesses read their own register trail");
+    const booking = await store.get(`booking:${seg[1]}`);
+    if (!booking) return err(404, "Booking not found");
+    if (user.role === "business" && booking.businessId !== user.id) return err(404, "Booking not found");
+    const evs = (await allRedemptionEvents()).filter((e) => e.bookingId === booking.id).sort((a, b2) => (a.at < b2.at ? -1 : 1));
+    return json(200, { events: evs.map((e) => ({ ...e, correctable: Date.now() <= tallyWindowEndMs(monthKeyOf(e.at)) })) });
+  }
+
+  // Event correction path (Build -39, strategy gap 4): a
+  // mis-entered check total ($410 typed for $41) is correctable
+  // while the event's tally month stays open. The correction
+  // rides the event itself (old, new, who, when) and totals
+  // recompute on read, because every counted surface derives
+  // from the events. Voiding keeps the record and drops the
+  // money: the trail is the trust.
+  if (method === "POST" && seg[0] === "me" && seg[1] === "redeem-events" && seg.length === 4 && seg[3] === "correct") {
+    if (user.role === "creator") return err(403, "Businesses correct their own register entries");
+    const ev = await store.get(`redevent:${seg[2]}`);
+    if (!ev) return err(404, "That register event was not found");
+    if (user.role === "business" && ev.businessId !== user.id) return err(404, "That register event was not found");
+    if (Date.now() > tallyWindowEndMs(monthKeyOf(ev.at))) return err(400, "That month's books are closed, so this entry stands");
+    const b = parseBody(event);
+    const voidIt = b.void === true;
+    let newAmount = null;
+    if (!voidIt) {
+      newAmount = Number(b.amount);
+      if (!Number.isFinite(newAmount) || newAmount < 0 || newAmount > 100000) return err(400, "Corrected total must be a dollar amount between 0 and 100000");
+      newAmount = roasRound2(newAmount);
+    }
+    ev.corrections = Array.isArray(ev.corrections) ? ev.corrections : [];
+    ev.corrections.push({ at: nowIso(), by: user.id, oldAmount: ev.amount, newAmount: voidIt ? null : newAmount, voided: voidIt, wasVoided: !!ev.voided });
+    if (voidIt) ev.voided = true;
+    else { ev.amount = newAmount; ev.voided = false; ev.flagged = newAmount > REDEEM_FLAG_AMOUNT; }
+    await store.set(`redevent:${ev.id}`, ev);
+    await logEvent({ type: "redemption_corrected", actorId: user.id, actorRole: user.role, subjectId: ev.bookingId, market: user.market, data: { eventId: ev.id, businessId: ev.businessId, creatorId: ev.creatorId, voided: voidIt, newAmount } });
+    return json(200, { redemptionEvent: { ...ev, correctable: true } });
   }
 
   // Came-Back Pass redemption (Build -34, M2): the customer
@@ -13864,7 +14301,7 @@ async function route(event) {
     if (user.role !== "business") return err(403, "Businesses only");
     const biz = user.business || {};
     const month = monthKeyOf(nowIso());
-    const monthEvents = (await allRedemptionEvents()).filter((e) => e.businessId === user.id && monthKeyOf(e.at) === month);
+    const monthEvents = (await allRedemptionEvents()).filter((e) => e.businessId === user.id && !e.voided && monthKeyOf(e.at) === month);
     const mentionsAll = (await allMentions()).filter((m) => m.businessId === user.id);
     const myBookings = (await store.list("booking:")).map((r) => r.value).filter((b) => b && b.businessId === user.id);
     const ledger = [];
@@ -13929,6 +14366,11 @@ async function route(event) {
     for (const b of ledgerBookings) withPosts.push(await withPostState(b));
     await enrichRoasEstimateInputs(withPosts);
     const roas = roasFor(withPosts);
+    // Build -39: Score v2 rides the same receipt (cohort
+    // computation off one load), plus the capture-gap state.
+    const v2ctx = await scoreV2Context(user.id);
+    const scoreV2 = scoreV2ForBusiness(user, v2ctx, spend);
+    const captureGap = await captureGapFor(user, v2ctx);
     const planIdOf = biz.planId || biz.plan || null;
     const plan = PLANS[planIdOf] || null;
     const nightCounts = ledger.map((l) => l.nightCount).filter((n) => typeof n === "number");
@@ -13942,6 +14384,7 @@ async function route(event) {
       baseline: biz.baseline ? { dayLabel: biz.baseline.dayLabel, usual: biz.baseline.count, visitAvg: nightCounts.length ? Math.round((nightCounts.reduce((a, n) => a + n, 0) / nightCounts.length) * 10) / 10 : null, visitNights: nightCounts.length } : null,
       cost: { planId: planIdOf, planPrice: plan ? plan.priceMonthly : (typeof biz.planPriceMonthly === "number" ? biz.planPriceMonthly : null), compCost: roas.compCost, discountCost: roas.discountCost, planAllocation: roas.planAllocation },
       roas: { score: roas.score, allInScore: roas.allInScore, mediaValue: roas.mediaValue, label: roas.label },
+      scoreV2, captureGap,
       google: { current: g[month] || null, previous: g[prevMonthKey(month)] || null },
       topCreators: whoBrought.slice(0, 3).map((w) => ({ creatorId: w.creatorId, creatorHandle: w.creatorHandle, creatorName: w.creatorName })),
       proofNameOptIn: biz.proofNameOptIn === true,
@@ -13964,6 +14407,9 @@ async function route(event) {
       if (m.source === "none") continue;
       const bizUser = await store.get(`user:${b.businessId}`);
       const bz = bizUser && bizUser.business ? bizUser.business : {};
+      // Proof Controls (Build -39): sharing off means no line
+      // for this business on any proof card, named or not.
+      if (bz.proofSharing === false) continue;
       const named = bz.proofNameOptIn === true && bz.businessName ? bz.businessName : null;
       const label = named || `${bz.category || "Local business"} in ${b.city || b.market || "your city"}`;
       const line = lineMap.get(b.businessId) || { label, named: !!named, visits: 0, customers: 0, cameBacks: 0 };

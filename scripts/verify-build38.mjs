@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Build 2026.10.29-38 verification (Jeff, 2026-10-29, from his own
+// Build 2026.10.30-39 verification (Jeff, 2026-10-29, from his own
 // phone): two jobs.
 //   JOB 1 — the labeled LEFT RAIL is the nav for every login at
 //   every width. Admin already had it (Build -28); creators,
@@ -131,7 +131,7 @@ check("the founding sentence-badge wraps instead of overflowing", themeCss.inclu
 }
 
 // Build stamp.
-check("build stamp is 2026.10.29-38 on both sides", read("netlify/functions/lib/build.js").includes("2026.10.29-38") && indexHtml.includes("2026.10.29-38"));
+check("build stamp is 2026.10.30-39 on both sides", read("netlify/functions/lib/build.js").includes("2026.10.30-39") && indexHtml.includes("2026.10.30-39"));
 
 // ---------- Part B: live API contract (production shape, no test override) ----------
 let server;
@@ -149,7 +149,7 @@ try {
   const boot = await anon("GET", "/api/bootstrap");
   check("bootstrap answers", boot.status === 200, String(boot.status));
   check("bootstrap publishes no launch window", boot.data && boot.data.launch && boot.data.launch.launchWindow === undefined, JSON.stringify(boot.data && boot.data.launch));
-  check("server stamps the -38 build on API responses", boot.headers.get("x-signl-build") === "2026.10.29-38", String(boot.headers.get("x-signl-build")));
+  check("server stamps the -38 build on API responses", boot.headers.get("x-signl-build") === "2026.10.30-39", String(boot.headers.get("x-signl-build")));
 
   const admin = client();
   const login = await admin("POST", "/api/auth/login", { email: ADMIN_EMAIL, password: ADMIN_PASSWORD });

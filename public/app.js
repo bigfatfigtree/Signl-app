@@ -589,7 +589,7 @@ async function renderPublicProfile() {
           ? `<div class="lbl">Local audience not reported yet</div>`
           : `<div class="big">${p.localAudiencePct}%</div><div class="lbl">of their audience is local</div><div class="src">${esc(p.localAudienceSource || "Self-reported")}</div>`}
       </div>
-      ${p.proof && p.proof.visitsCompleted > 0 ? `<div class="wcard" style="margin:14px 0 0"><p style="margin:0"><span class="badge ok">Verified on SIGNL</span></p><p style="margin:8px 0 0"><strong>${p.proof.visitsCompleted} visit${p.proof.visitsCompleted === 1 ? "" : "s"} completed</strong>, ${p.proof.onTimePosts} on time · <strong>${p.proof.customersCounted} customers counted</strong> at the register · <strong>${p.proof.cameBacks} came back</strong> within a month · at least <strong>$${fmtMoney(p.proof.trackedSpend)}</strong> tracked spend</p><p class="small muted" style="margin:6px 0 0">Counted by SIGNL from register events, not claimed by the creator. Book me on SIGNL and this is the receipt you'll get.</p></div>` : ""}
+      ${p.proof && p.proof.countsForming ? `<div class="wcard" style="margin:14px 0 0"><p style="margin:0"><span class="badge ok">Verified on SIGNL</span></p><p style="margin:8px 0 0"><strong>${p.proof.visitsCompleted} visit${p.proof.visitsCompleted === 1 ? "" : "s"} completed</strong>, ${p.proof.onTimePosts} on time. Their counted record is forming: it opens at 5 counted customers.</p><p class="small muted" style="margin:6px 0 0">Counted by SIGNL from register events, not claimed by the creator. Book me on SIGNL and this is the receipt you'll get.</p></div>` : p.proof && p.proof.visitsCompleted > 0 ? `<div class="wcard" style="margin:14px 0 0"><p style="margin:0"><span class="badge ok">Verified on SIGNL</span></p><p style="margin:8px 0 0"><strong>${p.proof.visitsCompleted} visit${p.proof.visitsCompleted === 1 ? "" : "s"} completed</strong>, ${p.proof.onTimePosts} on time · <strong>${p.proof.customersCounted} customers counted</strong> at the register · <strong>${p.proof.cameBacks} came back</strong> within a month · at least <strong>$${fmtMoney(p.proof.trackedSpend)}</strong> tracked spend</p><p class="small muted" style="margin:6px 0 0">Counted by SIGNL from register events, not claimed by the creator. Book me on SIGNL and this is the receipt you'll get.</p></div>` : ""}
       ${p.categories && p.categories.length ? `<p class="small">${p.categories.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
       ${p.isRealtor && p.farmAreas && p.farmAreas.length ? `<p class="small">Neighborhoods: ${p.farmAreas.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
       ${p.streets && p.streets.length ? `<p class="small">My streets: ${p.streets.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
@@ -6248,6 +6248,10 @@ function renderBusinessFoundingStatus() {
       <li>When your market opens, SIGNL activates founding businesses by hand, in application order. A pilot business can be activated sooner.</li>
       <li>The moment your business is activated, this page opens into the full app: the full roster, favorites, and your first offer as a real draft you can publish.</li>
     </ol>
+    <div class="panel" style="margin-top:16px">
+      <h4 style="margin:0 0 4px">For the counter: the one question</h4>
+      <p class="small" style="margin:0">When your first visits start, teach the team one line, asked at the natural moment: <strong>"First time in? How'd you hear about us?"</strong> When a creator or a post comes up, they tap the mention button on that visit. Those told-us counts ride their own line on your receipt, apart from register money, and they are how the customers nobody handed a code still get counted. No competitor shows a business a counted receipt like yours; this question is part of why yours stays full. Set your usual comp cost in the proof controls below, and every visit close-out after that is one tap.</p>
+    </div>
     <p class="muted small">Sign back in any time to check your status. Questions: hello@joinsignl.com</p>
     <div class="mt"><button class="btn ghost" onclick="signOut()">Sign out</button></div>
   </section>
@@ -7031,6 +7035,68 @@ async function submitCreatorReview(e, bookingId) {
   return false;
 }
 
+// Visit close-out packet (Build -39): the comp cost at close
+// (pre-filled from the business's usual cost, one tap to
+// confirm), the counted-events trail with its correction
+// controls, and the counter script card.
+function closeoutPacketHtml(b) {
+  const paid = !!(b.paidLane && typeof b.paidLane.rate === "number" && b.paidLane.rate > 0);
+  let comp = "";
+  if (b.status === "completed" && !paid) {
+    const entry = b.compCostEntry || null;
+    const dflt = compCostDefaultClient(b.category);
+    const prefill = entry ? entry.amount : dflt;
+    comp = `<div style="margin-top:12px;border-top:1px solid var(--hairline,#DFE7DF);padding-top:10px">
+      <h4 style="margin:0 0 4px">Close out this visit: what did the comp cost you?</h4>
+      <p class="small muted" style="margin:0 0 8px">${entry ? `On record: $${fmtMoney(entry.amount)} at your cost${entry.confirmedZero ? " (you confirmed it cost you nothing)" : ""}. Adjust it here while this month's books stay open.` : "One number, at your cost, not the menu price. It completes this visit's score, and it never touches the creator's side of anything."}</p>
+      <div class="form-2col">
+        <div class="field"><label>What the comp cost you ($)</label><input type="number" id="co-cost-${b.id}" min="0" step="0.01" placeholder="At your cost" value="${prefill !== null && prefill !== undefined ? prefill : ""}"></div>
+        <div class="field"><label>&nbsp;</label><button class="btn small-btn" type="button" onclick="saveCloseoutCompCost('${b.id}')">${!entry && dflt !== null ? `Confirm $${fmtMoney(dflt)}` : "Save the cost"}</button></div>
+      </div>
+      <label class="ckrow small"><input type="checkbox" class="ckbox" id="co-zero-${b.id}" ${entry && entry.confirmedZero ? "checked" : ""}><span>It genuinely cost us nothing</span></label> <span class="small" id="co-note-${b.id}"></span>
+    </div>`;
+  }
+  return `${comp}
+    <details style="margin-top:12px">
+      <summary class="small" onclick="loadBookingEvents('${b.id}')"><strong>Counted events for this visit</strong></summary>
+      <div id="evlist-${b.id}"><p class="small muted">Loading the register trail...</p></div>
+    </details>
+    <div class="panel" style="margin-top:12px">
+      <h4 style="margin:0 0 4px">For the counter: the one question</h4>
+      <p class="small" style="margin:0">Ask it at the natural moment, ringing up or seating: <strong>"First time in? How'd you hear about us?"</strong> When a creator or a post comes up, tap "Someone mentioned the post" above. Those told-us counts ride their own line on your receipt, apart from register money, and they are how the customers nobody handed a code still get counted.</p>
+    </div>`;
+}
+async function saveCloseoutCompCost(bookingId) {
+  const amtEl = document.getElementById(`co-cost-${bookingId}`);
+  const zeroEl = document.getElementById(`co-zero-${bookingId}`);
+  const note = document.getElementById(`co-note-${bookingId}`);
+  const body = zeroEl && zeroEl.checked ? { confirmedZero: true } : { amount: amtEl && amtEl.value !== "" ? Number(amtEl.value) : null };
+  if ((!zeroEl || !zeroEl.checked) && (body.amount === null || !Number.isFinite(body.amount))) { if (note) note.textContent = "Enter the cost, or check the box if it genuinely cost you nothing."; return; }
+  try { await api("POST", `/bookings/${bookingId}/comp-cost`, body); loadMyVisits("business"); }
+  catch (e) { if (note) note.textContent = e.message; }
+}
+async function loadBookingEvents(bookingId) {
+  const host = document.getElementById(`evlist-${bookingId}`);
+  if (!host || host.dataset.loaded) return;
+  host.dataset.loaded = "1";
+  try {
+    const data = await api("GET", `/bookings/${bookingId}/events`);
+    const evs = data.events || [];
+    if (!evs.length) { host.innerHTML = `<p class="small muted">No counted events yet for this visit. A check total logged at the counter becomes one.</p>`; return; }
+    host.innerHTML = evs.map((e) => `<div class="lrow" style="margin-top:6px"><div style="flex:1"><span>${e.kind === "return" ? "Came back" : e.kind === "audience" ? "Audience code" : "First visit"} · $${fmtMoney(e.amount)}${e.voided ? ` · <strong>voided</strong>` : ""}</span><div class="small muted">${fmtDate(e.at)}${e.channel ? ` · ${e.channel === "in_store" ? "in store" : e.channel}` : ""}${(e.corrections || []).length ? ` · corrected ${e.corrections.length} time${e.corrections.length === 1 ? "" : "s"}, trail on the event` : ""}</div></div>
+      ${e.correctable ? `<span><input type="number" id="ev-amt-${e.id}" min="0" step="0.01" style="width:90px" value="${e.voided ? "" : e.amount}"> <button class="btn small-btn ghost" type="button" onclick="correctEventUi('${e.id}','${bookingId}',false)">Fix</button>${e.voided ? "" : ` <button class="btn small-btn ghost" type="button" onclick="correctEventUi('${e.id}','${bookingId}',true)">Void</button>`}</span>` : `<span class="small muted">Books closed for its month</span>`}
+    </div>`).join("") + `<p class="small muted" style="margin-top:6px">A mistyped total is fixable while its month's books stay open. Corrections ride the event, and your receipt recomputes from the trail.</p>`;
+  } catch (err) { host.innerHTML = `<p class="small muted">${esc(err.message)}</p>`; }
+}
+async function correctEventUi(eventId, bookingId, voidIt) {
+  try {
+    const body = voidIt ? { void: true } : { amount: Number((document.getElementById(`ev-amt-${eventId}`) || {}).value) };
+    await api("POST", `/me/redeem-events/${eventId}/correct`, body);
+    const host = document.getElementById(`evlist-${bookingId}`);
+    if (host) { delete host.dataset.loaded; loadBookingEvents(bookingId); }
+  } catch (err) { alert(err.message); }
+}
+
 // Creator reviews the business after a completed visit: +10
 // Momentum at ANY star rating (honest reviews, never paid praise).
 async function submitBusinessReview(e, bookingId) {
@@ -7500,7 +7566,7 @@ function receiptSettingsHtml(r) {
   const base = r.baseline || null;
   const g = (r.google && r.google.current) || {};
   const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
-  return `<details style="margin-top:14px"><summary class="small"><strong>Your receipt's starting lines</strong></summary>
+  return `<details style="margin-top:14px"><summary class="small"><strong>Your receipt's starting lines and proof controls</strong></summary>
     <div class="form-2col" style="margin-top:10px">
       <div class="field"><label>Your usual night</label><select id="rc-base-day">${days.map((d) => `<option ${base && base.dayLabel === d ? "selected" : ""}>${d}</option>`).join("")}</select></div>
       <div class="field"><label>Usual tables or customers</label><input id="rc-base-count" type="number" min="0" value="${base ? base.usual : ""}" placeholder="For example: 40"></div>
@@ -7514,6 +7580,7 @@ function receiptSettingsHtml(r) {
     </div>
     <button class="btn small-btn ghost" type="button" onclick="receiptSaveGoogle()">Save Google numbers</button> <span class="small muted" id="rc-g-note"></span>
     <p class="small" style="margin-top:12px"><label class="ckrow"><input type="checkbox" class="ckbox" id="rc-optin" ${r.proofNameOptIn ? "checked" : ""} onchange="receiptSaveOptIn()"><span>Let creators name my business on their proof cards. Until I check this, their proof shows my category and city only.</span></label></p>
+    ${proofControlsHtml(r)}
   </details>`;
 }
 async function receiptSaveBaseline() {
@@ -7544,10 +7611,152 @@ async function receiptSaveOptIn() {
   const el = document.getElementById("rc-optin");
   try { const data = await api("PATCH", "/me/profile", { proofNameOptIn: !!(el && el.checked) }); state.user = data.user; } catch (e) { /* the checkbox state stands */ }
 }
+// Proof Controls (Build -39): one panel, real knobs. The usual
+// comp cost pre-fills every visit close-out; the code discount
+// is the business's standing offer setting; the pass switch
+// stops or starts pass issuance at the register; the sharing
+// switch keeps this business's results off proof cards. Every
+// control saves to the business record and bites immediately.
+function proofControlsHtml(r) {
+  const bz = (state.user && state.user.business) || {};
+  const dflts = bz.compCostDefaults || {};
+  const cats = new Set(Object.keys(dflts.byCategory || {}));
+  for (const v of (r.scoreV2 && r.scoreV2.current && r.scoreV2.current.visits) || []) if (v.category) cats.add(v.category);
+  const catRows = [...cats].map((cat) => `<div class="form-2col" style="margin-top:6px">
+      <div class="field"><label>Usual comp cost for ${esc(cat)} visits ($)</label><input class="rc-comp-cat" data-cat="${esc(cat)}" type="number" min="0" step="0.01" placeholder="Uses your usual cost" value="${dflts.byCategory && typeof dflts.byCategory[cat] === "number" ? dflts.byCategory[cat] : ""}"></div>
+      <div class="field"><label>&nbsp;</label><p class="small muted" style="margin:0">Only if ${esc(cat)} comps cost you something different.</p></div>
+    </div>`).join("");
+  return `<h4 style="margin:16px 0 4px">Proof controls</h4>
+    <p class="small muted" style="margin:0 0 8px">Set these once. They run quietly under every visit after that.</p>
+    <div class="form-2col">
+      <div class="field"><label>Your usual comp cost ($)</label><input id="rc-comp-default" type="number" min="0" step="0.01" placeholder="For example: 30" value="${typeof dflts.default === "number" ? dflts.default : ""}"></div>
+      <div class="field"><label>&nbsp;</label><p class="small muted" style="margin:0">What a comped visit usually costs you, at your cost. It pre-fills when a visit closes out, so closing is one tap unless that visit ran different.</p></div>
+    </div>
+    ${catRows}
+    <div class="form-2col" style="margin-top:10px">
+      <div class="field"><label>Code discount for customers (%)</label><input id="rc-disc-pct" type="number" min="0" max="100" step="0.5" placeholder="0" value="${bz.discountPct ? bz.discountPct : ""}"></div>
+      <div class="field"><label>&nbsp;</label><label class="ckrow"><input type="checkbox" class="ckbox" id="rc-disc-on" ${bz.discountEnabled ? "checked" : ""}><span>Give code users this discount</span></label></div>
+    </div>
+    <p class="small muted" style="margin:4px 0 0">The discount stamps onto new bookings from here. Its cost counts in your score only when a customer actually uses it, figured on the full check.</p>
+    <p class="small" style="margin-top:10px"><label class="ckrow"><input type="checkbox" class="ckbox" id="rc-pass-on" ${bz.comeBackPassEnabled === false ? "" : "checked"}><span>Hand a Came-Back Pass to each counted first customer, good for a return within 30 days.</span></label></p>
+    <p class="small" style="margin-top:6px"><label class="ckrow"><input type="checkbox" class="ckbox" id="rc-share-on" ${bz.proofSharing === false ? "" : "checked"}><span>Let my counted results appear on creators' proof cards, as my category and city, or my name if I allow it above.</span></label></p>
+    <button class="btn small-btn ghost" type="button" onclick="receiptSaveControls()">Save proof controls</button> <span class="small muted" id="rc-ctl-note"></span>`;
+}
+async function receiptSaveControls() {
+  const note = document.getElementById("rc-ctl-note");
+  const numOrNull = (id) => { const el = document.getElementById(id); if (!el || el.value === "") return null; const n = Number(el.value); return Number.isFinite(n) ? n : null; };
+  const byCategory = {};
+  document.querySelectorAll(".rc-comp-cat").forEach((el) => { if (el.value !== "" && Number.isFinite(Number(el.value))) byCategory[el.dataset.cat] = Number(el.value); });
+  const compCostDefaults = {};
+  const dflt = numOrNull("rc-comp-default");
+  if (dflt !== null) compCostDefaults.default = dflt;
+  if (Object.keys(byCategory).length) compCostDefaults.byCategory = byCategory;
+  const discPct = numOrNull("rc-disc-pct");
+  try {
+    const data = await api("PATCH", "/me/profile", {
+      compCostDefaults: Object.keys(compCostDefaults).length ? compCostDefaults : null,
+      discountEnabled: !!((document.getElementById("rc-disc-on") || {}).checked),
+      // Only a typed percentage travels: an empty field leaves
+      // the stored choice alone (0 is not a settable percent).
+      ...(discPct !== null ? { discountPct: discPct } : {}),
+      comeBackPassEnabled: !!((document.getElementById("rc-pass-on") || {}).checked),
+      proofSharing: !!((document.getElementById("rc-share-on") || {}).checked),
+    });
+    state.user = data.user;
+    if (note) note.textContent = "Saved. These run under every visit from here.";
+    loadReceipt();
+  } catch (e) { if (note) note.textContent = e.message; }
+}
 function receiptBookTop() {
   const top = state._receiptTop;
   if (top && typeof sigB1Start === "function") { sigB1Start({ creatorId: top.creatorId, creatorName: top.creatorName, creatorRate: null, creatorTier: null }); return false; }
   return go("dashboard", "Find Creators");
+}
+// ---------- Build -39: ROAS Score v2 on the Receipt ----------
+// The headline block: the counted floor first, the score with
+// its sentence, the came-back line, every cost itemized, media
+// value on its own labeled line, tallies as facts. Forming is
+// a normal first-month state and says exactly what is missing.
+function compCostDefaultClient(category) {
+  const d = (state.user && state.user.business && state.user.business.compCostDefaults) || null;
+  if (!d) return null;
+  if (category && d.byCategory && typeof d.byCategory[category] === "number") return d.byCategory[category];
+  return typeof d.default === "number" ? d.default : null;
+}
+async function saveVisitCompCost(bookingId) {
+  const amtEl = document.getElementById(`v2-cost-${bookingId}`);
+  const zeroEl = document.getElementById(`v2-zero-${bookingId}`);
+  const note = document.getElementById(`v2-cost-note-${bookingId}`);
+  const body = zeroEl && zeroEl.checked ? { confirmedZero: true } : { amount: amtEl && amtEl.value !== "" ? Number(amtEl.value) : null };
+  if (!zeroEl || !zeroEl.checked) { if (body.amount === null || !Number.isFinite(body.amount)) { if (note) note.textContent = "Enter the cost, or check the box if it genuinely cost you nothing."; return; } }
+  try {
+    await api("POST", `/bookings/${bookingId}/comp-cost`, body);
+    if (note) note.textContent = "Saved. Your score updates with it.";
+    loadReceipt();
+  } catch (e) { if (note) note.textContent = e.message; }
+}
+function v2CostCaptureHtml(v) {
+  const dflt = compCostDefaultClient(v.category);
+  return `<div class="form-2col" style="margin-top:6px">
+    <div class="field"><label>What did it cost you, at your cost? ($)</label><input type="number" id="v2-cost-${v.bookingId}" min="0" step="0.01" placeholder="At your cost" value="${dflt !== null ? dflt : ""}"></div>
+    <div class="field"><label>&nbsp;</label><button class="btn small-btn" type="button" onclick="saveVisitCompCost('${v.bookingId}')">${dflt !== null ? `Confirm $${fmtMoney(dflt)}` : "Save its cost"}</button></div>
+  </div>
+  <label class="ckrow small"><input type="checkbox" class="ckbox" id="v2-zero-${v.bookingId}"><span>It genuinely cost us nothing</span></label> <span class="small" id="v2-cost-note-${v.bookingId}"></span>`;
+}
+function scoreV2Html(r) {
+  const s = r.scoreV2 && r.scoreV2.current;
+  if (!s) return "";
+  const anyCohort = (r.scoreV2.cohorts || []).some((c) => c.score !== null);
+  if (!((s.visits || []).length || s.tallyFacts || s.countedBack > 0 || anyCohort)) return "";
+  const cb = s.cameBack || {};
+  const cost = s.cost || {};
+  const reasons = s.formingReasons || [];
+  const reasonLine = (fr) => {
+    if (fr.kind === "visits") return `Your score starts at ${fr.needed} visits counted at the register in a month. So far: ${fr.counted}.`;
+    if (fr.kind === "events") return `It also needs ${fr.needed} counted register events to mean something. So far: ${fr.counted}. Every check total your team logs is one.`;
+    if (fr.kind === "comp_cost") return `${fr.counted} visit${fr.counted === 1 ? " is" : "s are"} missing their cost. Add ${fr.counted === 1 ? "it" : "them"} below and the score can print.`;
+    if (fr.kind === "plan") return `Your plan charge is not on record yet, so there is no honest denominator. It lands the month your business activates.`;
+    if (fr.kind === "tally_only") return `Your score starts when redemptions are counted at the register. This month rode on your reported tally, which rides below as a fact, never in the number.`;
+    return "";
+  };
+  const head = s.state === "forming"
+    ? `<p style="margin:8px 0 0;font-size:1.08rem"><strong>$${fmtMoney(s.countedBack)} counted back so far</strong>, from ${s.countedCustomers} customer${s.countedCustomers === 1 ? "" : "s"}, every one time-stamped.</p>
+    <p class="small muted" style="margin:6px 0 0">Your score starts when there is enough counted to mean something. It is on its way, and every dollar above is a counted dollar. Most first months sit here while the counting builds.</p>
+    ${reasons.map((fr) => `<p class="small" style="margin:6px 0 0">${esc(reasonLine(fr))}</p>`).join("")}`
+    : `<p style="margin:8px 0 0;font-size:1.08rem">At least <strong>$${fmtMoney(s.countedBack)}</strong> came back through your register from ${esc(s.monthLabel)}'s visits, counted dollar by dollar.</p>
+    <p style="margin:8px 0 0;font-size:1.15rem"><strong>SIGNL ROAS Score: ${Number(s.score).toFixed(1)}&times;</strong> ${esc(s.sentence || "")}${s.state === "counting" ? ` <span class="badge info">Still counting</span>` : ""}</p>
+    ${cost.planCredit > 0 ? `<p class="small" style="margin:6px 0 0">This month carries your $100 founding credit, so the score runs high. It is not the run rate.</p>` : ""}
+    <p class="small muted" style="margin:6px 0 0">Counted from ${s.countedEvents} register events, each one time-stamped. Customers who came in without a code are not in this number, so the real figure is higher.</p>
+    ${cb.returns > 0 ? `<p style="margin:8px 0 0">And <strong>${cb.returns} of the ${cb.firsts} customers</strong> your creators brought in came back within a month and spent <strong>$${fmtMoney(cb.returnSpend)}</strong> more, at full price.${cb.rate !== null && cb.rate !== undefined ? ` Of the first customers whose month has closed (${cb.closedFirsts}), ${Math.round(cb.rate * 100)}% came back${cb.stillInWindow ? `, and ${cb.stillInWindow} more are still inside theirs` : ""}.` : ""}</p>` : `<p class="small muted" style="margin:8px 0 0">No came-backs counted yet for this month's visits. Every first redemption with a check total hands the customer a pass, good for 30 days here.</p>`}`;
+  const costRows = [
+    cost.planRecorded ? `<div class="lrow"><span>Your plan, at what you actually paid</span><strong>$${fmtMoney(cost.plan)}</strong></div>` : "",
+    cost.planCredit > 0 ? `<div class="lrow"><span>Founding credit applied</span><strong>-$${fmtMoney(cost.planCredit)}</strong></div>` : "",
+    cost.compCosts > 0 ? `<div class="lrow"><span>Comps, at your cost</span><strong>$${fmtMoney(cost.compCosts)}</strong></div>` : "",
+    cost.paidCosts > 0 ? `<div class="lrow"><span>Paid creators, their rate plus your fee share</span><strong>$${fmtMoney(cost.paidCosts)}</strong></div>` : "",
+    cost.discountCosts > 0 ? `<div class="lrow"><span>Code discounts your customers used</span><strong>$${fmtMoney(cost.discountCosts)}</strong></div>` : "",
+    cost.total !== null && cost.total !== undefined ? `<div class="lrow"><span><strong>All in</strong></span><strong>$${fmtMoney(cost.total)}</strong></div>` : "",
+  ].join("");
+  const visitRows = (s.visits || []).map((v) => `<div class="lrow" style="margin-top:8px"><div style="flex:1"><span class="lname">${esc(v.title || "Visit")}</span> <span class="muted">with @${esc(v.creatorHandle)}</span>
+    <div class="small muted">${v.source === "events" ? `${v.customers} counted customer${v.customers === 1 ? "" : "s"} · $${fmtMoney(v.spend + v.returnSpend)} counted${v.returns ? ` · ${v.returns} came back` : ""}` : v.source === "tally" ? `${v.customers} customers · $${fmtMoney(v.spend)} on your reported tally` : "Nothing counted yet"}${v.score !== null && v.score !== undefined ? ` · <strong>Visit score ${Number(v.score).toFixed(1)}&times;</strong>${v.state === "counting" ? " (still counting)" : ""}` : v.state === "no_cost" ? " · it cost you nothing, so there is no multiple to print" : ""}</div>
+    <div class="small muted">${esc(v.methodLine || "")}</div>
+    ${v.costState === "missing" ? v2CostCaptureHtml(v) : v.directCost !== null && v.directCost !== undefined && !v.paid ? `<div class="small muted">This visit's cost is on record at $${fmtMoney(v.directCost)}. Adjust it on the visit while this month's books stay open.</div>` : ""}
+  </div></div>`).join("");
+  const creatorRows = (s.creators || []).length ? `<h4 style="margin:14px 0 4px">Who brought them, scored</h4>${s.creators.map((w) => `<div class="lrow"><div style="flex:1"><span class="lname">@${esc(w.creatorHandle)}</span><div class="small muted">${w.visits} visit${w.visits === 1 ? "" : "s"} this month</div></div><span>${w.customers} customers · $${fmtMoney(w.spend)}${w.cameBacks ? ` · ${w.cameBacks} came back` : ""}${w.score !== null && w.score !== undefined ? ` · <strong>${Number(w.score).toFixed(1)}&times;</strong>` : ` · <span class="muted">score forming</span>`}</span></div>`).join("")}<p class="small muted" style="margin:6px 0 0">${esc((s.creators[0] || {}).methodLine || "")}</p>` : "";
+  const gap = r.captureGap || {};
+  return `<div style="margin-top:12px;border-top:1px solid var(--hairline,#DFE7DF);padding-top:12px">
+    <p class="ui-kicker">Your score</p>
+    ${head}
+    ${costRows ? `<div style="margin-top:12px"><h4 style="margin:0 0 4px">What it cost, all in</h4>${costRows}<p class="small muted" style="margin:6px 0 0">${esc(s.discountWords || "")}</p></div>` : ""}
+    ${s.media && s.media.value > 0 ? `<p class="small" style="margin:12px 0 0">The posts themselves, priced at our published rates: <strong>$${fmtMoney(s.media.value)}</strong>. ${esc(s.media.words)}${s.media.withPostsValued !== null && s.media.withPostsValued !== undefined ? ` With posts valued in, the same month reads ${Number(s.media.withPostsValued).toFixed(1)}&times;. It rides second, on purpose.` : ""}</p>` : ""}
+    ${s.tallyFacts ? `<p class="small" style="margin:10px 0 0">Also this month: your reported tally says ${s.tallyFacts.customers} customers and $${fmtMoney(s.tallyFacts.spend)} rung across ${s.tallyFacts.visits} visit${s.tallyFacts.visits === 1 ? "" : "s"}. Tallies ride as facts; the score counts register events only.</p>` : ""}
+    <p class="small muted" style="margin:10px 0 0">Counted at your register this month, whenever it was rung: $${fmtMoney(s.calendarCounted)}. Your score is by the visits that earned it; this line is by when it was rung.</p>
+    ${r.scoreV2.trailing3 ? `<p class="small" style="margin:6px 0 0">Your scored months together (${esc(r.scoreV2.trailing3.months.join(", "))}): <strong>${Number(r.scoreV2.trailing3.score).toFixed(1)}&times;</strong>, returns and costs summed, never averaged.</p>` : ""}
+    ${(r.scoreV2.cohorts || []).filter((c) => c.month !== s.month).map((c) => `<p class="small muted" style="margin:4px 0 0">${esc(c.monthLabel)}: ${c.state === "forming" ? "score forming" : c.state === "counting" ? `score ${Number(c.score).toFixed(1)}&times;, still counting` : `final score ${Number(c.score).toFixed(1)}&times;`}.</p>`).join("")}
+    ${visitRows ? `<div style="margin-top:12px"><h4 style="margin:0 0 4px">This month's visits, scored</h4>${visitRows}</div>` : ""}
+    ${creatorRows}
+    ${gap.state === "thin" ? `<div class="panel" style="margin-top:14px"><h4 style="margin:0 0 4px">One check: the counting looks thin</h4><p class="small" style="margin:0">Posts from your visits were seen about ${fmtNum(gap.reach)} times (creators reported), and ${gap.countedFirsts} customers were counted at the register. Here is what we can check: the code in the post captions, code cards at the counter, an audience offer attached to the visit. The script card at the bottom of this page helps too: one question at the counter catches the customers no code ever sees.</p></div>` : ""}
+    <p class="small muted" style="margin:12px 0 0">${esc(s.versionLine || "")}</p>
+  </div>`;
 }
 function receiptHtml(r) {
   const hasLedger = (r.ledger || []).length > 0;
@@ -7558,6 +7767,7 @@ function receiptHtml(r) {
   return `<section class="wcard">
     <p class="ui-kicker">Your receipt</p>
     <h3>What SIGNL brought you</h3>
+    ${scoreV2Html(r)}
     ${hasLedger ? `
     <p style="margin:8px 0 0;font-size:1.08rem">In ${esc(r.monthLabel)}, SIGNL brought you <strong>at least $${fmtMoney(r.trackedSpend)}</strong> in tracked register spend from <strong>${r.customersCounted} counted customer${r.customersCounted === 1 ? "" : "s"}</strong>.</p>
     <p class="small muted">Counted how: every dollar above is a register event your team logged with its check total, or your reported tally where you used it instead. It is a floor, not a projection: customers who never used a code are invisible to everyone, us included.</p>
@@ -7569,7 +7779,7 @@ function receiptHtml(r) {
     ${r.whoBrought && r.whoBrought.length ? `<h4 style="margin:14px 0 4px">Who brought them</h4>${r.whoBrought.map((w) => `<div class="lrow"><div style="flex:1"><span class="lname">@${esc(w.creatorHandle)}</span><div class="small muted">${w.visits} visit${w.visits === 1 ? "" : "s"} counted</div></div><span>${w.customers} customers · $${fmtMoney(w.spend)}${w.cameBacks ? ` · ${w.cameBacks} came back` : ""}</span></div>`).join("")}` : ""}
     ${r.mentions && r.mentions.month > 0 ? `<p class="small muted" style="margin:12px 0 0">Plus ${r.mentions.month} more customer${r.mentions.month === 1 ? "" : "s"} told your staff a post sent them. Told-us counts ride their own line and never mix into register money.</p>` : ""}
     <div style="margin-top:14px"><h4 style="margin:0 0 4px">What it cost</h4>
-    <p style="margin:0">Plan so far this month: $${fmtMoney(r.cost.planAllocation)} of your ${r.cost.planPrice ? `$${fmtMoney(r.cost.planPrice)}` : ""} plan counted against counted visits · comps at cost $${fmtMoney(r.cost.compCost)} · code discounts $${fmtMoney(r.cost.discountCost)}. ${r.roas.score !== null && r.roas.score !== undefined ? `<strong>SIGNL ROAS Score: ${Number(r.roas.score).toFixed(2)}&times;</strong> (tracked register value plus modeled media value over your costs; the all-in score with the plan counted is ${r.roas.allInScore !== null && r.roas.allInScore !== undefined ? Number(r.roas.allInScore).toFixed(2) + "&times;" : "not ready yet"}).` : "Your SIGNL ROAS Score appears once a visit carries costs and counted value."}</p></div>
+    <p style="margin:0">Every cost inside your score is itemized in the score block above: your plan at what you actually paid, comps at your cost, paid creators at their rate plus your fee share, and code discounts as they were redeemed. Nothing else is in the number, and no cost is ever estimated for you.</p></div>
     <p style="margin:14px 0 0"><button class="btn" type="button" onclick="return receiptBookTop()">Book next month's creators</button></p>`
     : `<p class="wc-sub" style="margin:6px 0 0">This is the screen your first visits pay into. Every number will be a counted floor with its method beside it: register events as they happen, come-backs inside 30 days, your usual night as the comparison line. Nothing here is ever projected or padded.${r.cost && r.cost.planPrice ? ` Your founding plan is $${fmtMoney(r.cost.planPrice)} a month, held at the founding rate while it stays active.` : ""}${base ? ` Your usual ${esc(base.dayLabel)} (about ${base.usual}) is already recorded, so the comparison line is ready before your first visit.` : " Set your usual night below and the comparison line is ready before your first visit."}</p>`}
     ${g.current ? `<div style="margin-top:14px"><h4 style="margin:0 0 4px">People looking you up</h4><p class="small muted" style="margin:0 0 6px">Google's numbers, not ours. They corroborate a good month; they never add to tracked spend.</p>${gLine(g.current, g.previous, "searches")}${gLine(g.current, g.previous, "directions")}${gLine(g.current, g.previous, "calls")}${gLine(g.current, g.previous, "reviews")}</div>` : ""}
@@ -7619,13 +7829,21 @@ async function loadProofCard() {
   if (!pf) { host.innerHTML = `<h3>Your Proof Card</h3><p class="wc-sub" style="margin:4px 0 0">Your counted record could not load just now.</p>`; return; }
   const u = state.user;
   const handle = (u.creator && u.creator.handle) || "";
+  if (pf.countsForming) {
+    host.innerHTML = `<h3>Your Proof Card</h3>
+    <p style="margin:6px 0 0"><span class="badge ok">Verified on SIGNL</span></p>
+    <p style="margin:8px 0 0"><strong>${pf.visitsCompleted} visit${pf.visitsCompleted === 1 ? "" : "s"} completed</strong>, ${pf.onTimePosts} on time.</p>
+    <p class="wc-sub" style="margin:6px 0 0">Your counted lines are forming. They open at 5 counted customers, or the moment a second business counts you. Until then, everything counted sits with one business, and its register would read straight off this card. That is theirs to share, not ours, so the card waits until the numbers are yours alone.</p>
+    <p class="small muted">Book me on SIGNL and this is the receipt you'll get.</p>`;
+    return;
+  }
   if (!pf.visitsCompleted && !pf.customersCounted) {
     host.innerHTML = `<h3>Your Proof Card</h3><p class="wc-sub" style="margin:4px 0 0">Your first verified results land with your first completed visit. When they do, this card carries what SIGNL counted at the register: visits, customers, came-backs, tracked spend. It is issued by the system, so no business has to take your word for any of it.</p>`;
     return;
   }
   host.innerHTML = `<h3>Your Proof Card</h3>
     <p style="margin:6px 0 0"><span class="badge ok">Verified on SIGNL</span></p>
-    <p style="margin:8px 0 0"><strong>${pf.visitsCompleted} visit${pf.visitsCompleted === 1 ? "" : "s"} completed</strong>, ${pf.onTimePosts} on time · <strong>${pf.customersCounted} customers counted</strong> at the register · <strong>${pf.cameBacks} came back</strong> within a month · at least <strong>$${fmtMoney(pf.trackedSpend)}</strong> tracked spend${pf.mentions ? ` · ${pf.mentions} more told staff a post sent them (a told-us line, never register money)` : ""}</p>
+    <p style="margin:8px 0 0"><strong>${pf.visitsCompleted} visit${pf.visitsCompleted === 1 ? "" : "s"} completed</strong>, ${pf.onTimePosts} on time · <strong>${pf.customersCounted} customers counted</strong> at the register · <strong>${pf.cameBacks} came back</strong> within a month · at least <strong>$${fmtMoney(pf.trackedSpend)}</strong> tracked spend${pf.cameBackRate !== null && pf.cameBackRate !== undefined ? ` · <strong>${Math.round(pf.cameBackRate * 100)}%</strong> of first customers came back within a month (${pf.cameBackClosedFirsts} first months closed${pf.cameBackStillInWindow ? `, ${pf.cameBackStillInWindow} still running` : ""})` : ""}${pf.mentions ? ` · ${pf.mentions} more told staff a post sent them (a told-us line, never register money)` : ""}</p>
     ${(pf.lines || []).length ? `<div style="margin-top:10px">${pf.lines.map((l) => `<div class="lrow"><div style="flex:1"><span class="lname">${esc(l.label)}</span><div class="small muted">${l.visits} visit${l.visits === 1 ? "" : "s"} counted there</div></div><span>${l.customers} customers${l.cameBacks ? ` · ${l.cameBacks} came back` : ""}</span></div>`).join("")}</div><p class="small muted" style="margin-top:8px">A business is named only when it chose to be. Otherwise your proof shows its category and city, and its register totals never travel.</p>` : ""}
     <p class="small" style="margin-top:10px">Share it: <a href="${esc(location.origin + (pf.sharePath || ""))}" target="_blank" rel="noopener">${esc(location.origin + (pf.sharePath || ""))}</a></p>
     <p class="small muted">Book me on SIGNL and this is the receipt you'll get.</p>`;
@@ -10712,7 +10930,8 @@ function visitCard(b, role) {
           <div class="field"><label>What the comp cost you ($)</label><input type="number" id="redeem-cost-${b.id}" min="0" step="0.01" placeholder="At your cost" value="${typeof b.compCostActual === "number" ? b.compCostActual : ""}"></div>
         </div>
       </details>
-    </form>`;
+    </form>
+    ${closeoutPacketHtml(b)}`;
   }
   if (role === "business" && b.postState === "overdue" && !b.replacementRequestedAt && b.compliance && b.compliance.pauseAt && Date.now() >= Date.parse(b.compliance.pauseAt)) {
     // The Visit Guarantee replacement opens at the week, not at
@@ -11713,6 +11932,13 @@ async function loadBusinessHome() {
     if (licRow) {
       const bk = bookings.find((b) => b.id === licRow.bookingId);
       add(3, Date.parse(licRow.postedAt) || now, `You can license ${licRow.creatorName}'s post for $${fmtPrice(bk.creatorLicensingFee)}.`, "License it", () => go("dashboard", "Content"), `License ${licRow.creatorName}'s post · $${fmtPrice(bk.creatorLicensingFee)}`);
+    }
+    // Capture-gap diagnostic (Build -39): creator-reported
+    // reach ran far ahead of counted register customers. The
+    // line names the check, never a culprit, with real counts.
+    const gap39 = h.captureGap || {};
+    if (gap39.state === "thin") {
+      add(3, now, `Counting looks thin: posts from your visits were seen about ${fmtNum(gap39.reach)} times (creators reported), but only ${gap39.countedFirsts} customers were counted at the register. Here is what we can check: the code in the captions, code cards at the counter, an audience offer on the visit.`, "See the check", () => { const t = document.getElementById("biz-receipt"); if (t) t.scrollIntoView({ behavior: "smooth", block: "start" }); }, "Counting looks thin");
     }
     const bz = u.business || {};
     if (!bz.about) add(4, now, "Your business page is missing its About.", "Add about", () => go("dashboard", "Profile"), "About missing on your page");
