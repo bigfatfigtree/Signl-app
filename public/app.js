@@ -7841,7 +7841,7 @@ function v2CostCaptureHtml(v) {
 // and how it is counted. The popover mirrors the offer form's
 // info sheet.
 const ROAS_INFO = {
-  score: { title: "Your SIGNL ROAS Score", body: "For every $1 your month cost you, all in, this is how many counted dollars came back through your register. It counts register events only. It never counts estimates, and it never counts the posts as money." },
+  score: { title: "Your SIGNL ROAS Score", body: "For every $1 your month cost you, all in, this is how many dollars came back. It blends two labeled parts: dollars counted at your register, and Halo's estimate of the visits the posts likely brought in that no code caught. The counted part always prints on its own, with its own score, in the split right under the headline, so you can hold us to either number." },
   back: { title: "Counted back", body: "Check totals your team logged at the register with a creator's code: first visits and came-backs, every one time-stamped. Customers who came in without a code are not in this number, so the real figure is higher." },
   putin: { title: "All in", body: "Everything the month cost you: your plan at what you actually paid, comps at your cost, paid creators at their rate plus your fee share, and code discounts your customers used. Nothing else is in it, and no cost is ever estimated for you." },
   week: { title: "Counted by week", body: "Every check total your team logged, grouped by the week it was rung at your register. Your score groups the same dollars by the visits that earned them; this chart groups them by when they were rung." },
@@ -7972,23 +7972,35 @@ function scoreV2Html(r) {
     <div class="roas-big">$${fmtMoney(s.countedBack)}</div>
     <p class="small muted" style="margin:4px 0 0">From ${s.countedCustomers} counted customer${s.countedCustomers === 1 ? "" : "s"}, every one time-stamped.</p>
     <p class="small" style="margin:10px 0 0">Your score starts when there is enough counted to mean something. It is on its way, and every dollar above is a counted dollar. Most first months sit here while the counting builds. ${roasInfoBtn("forming")}</p>
+    ${s.halo && s.halo.estDollars > 0 ? `<div class="roas-split"><div class="lrow"><span><i class="roas-dot counted"></i>Counted at register</span><strong>$${fmtMoney(s.countedBack)}</strong></div><div class="lrow"><span><i class="roas-dot halo"></i>Halo estimated</span><strong>about $${fmtMoney(s.halo.estDollars)}</strong></div><p class="small muted" style="margin:6px 0 0">Halo estimates about ${fmtNum(s.halo.estVisits)} more visits from this month's posts so far, worth about $${fmtMoney(s.halo.estDollars)} at your average check. An estimate never prints as a counted dollar; it joins the score once there is enough counted for the score to print.</p></div>` : ""}
     ${meters}${otherReasons}`;
   } else {
-    const vsMax = Math.max(s.countedBack, cost.total || 0);
+    // Build -45 (Halo): the headline figure is the blend,
+    // counted + Halo estimated, when Halo has anything to add.
+    // The counted-only score stays printed in the split, and
+    // the floor paragraph under the headline is the -39 one,
+    // verbatim: at least this much was counted, dollar by
+    // dollar, no matter what the estimate says.
+    const hl = s.headline || null;
+    const halo = s.halo || null;
+    const showBlend = !!(hl && hl.score !== null && hl.score !== undefined && (hl.haloDollars || 0) > 0);
+    const bigScore = showBlend ? hl.score : s.score;
+    const vsMax = Math.max(showBlend ? hl.back : s.countedBack, cost.total || 0);
     head = `<div class="roas-score-top">
       <div>
         <div class="roas-big-label">SIGNL ROAS Score ${roasInfoBtn("score")}</div>
-        <div class="roas-big" aria-label="SIGNL ROAS Score: ${Number(s.score).toFixed(1)}&times;">${Number(s.score).toFixed(1)}&times;</div>
+        <div class="roas-big" aria-label="SIGNL ROAS Score: ${Number(bigScore).toFixed(1)}&times;">${Number(bigScore).toFixed(1)}&times;</div>
       </div>
       <div class="roas-score-side">
         ${s.state === "counting" ? `<span class="badge info">Still counting</span>` : `<span class="badge ok">Final</span>`}
-        <p class="small" style="margin:6px 0 0">${esc(s.sentence || "")}</p>
+        <p class="small" style="margin:6px 0 0">${esc((showBlend ? hl.sentence : s.sentence) || "")}</p>
       </div>
     </div>
     <p class="small muted" style="margin:8px 0 0">At least <strong>$${fmtMoney(s.countedBack)}</strong> came back through your register from ${esc(s.monthLabel)}'s visits, counted dollar by dollar, from ${s.countedEvents} register events. Customers who came in without a code are not in this number, so the real figure is higher.</p>
+    ${showBlend ? `<div class="roas-split"><div class="lrow"><span><i class="roas-dot counted"></i>Counted at register</span><strong>$${fmtMoney(s.countedBack)}</strong></div><div class="lrow"><span><i class="roas-dot halo"></i>Halo estimated</span><strong>about $${fmtMoney(hl.haloDollars)}</strong></div><p class="small muted" style="margin:6px 0 0">On counted dollars alone, this month's score is ${Number(s.score).toFixed(1)}&times;. Halo estimates about ${fmtNum(hl.haloVisits)} more visits from the posts, at your $${fmtMoney(halo && halo.avgCheck ? halo.avgCheck.amount : 0)} average check${halo && halo.avgCheck && halo.avgCheck.source === "prior" ? " (the platform starting figure, until your register sets its own)" : ""}. ${esc(halo && halo.confidence ? halo.confidence.words : "")} ${esc(halo ? halo.version : "")} · intent rate ${halo ? (halo.model.intentRate * 100).toFixed(2) : "0"}%.</p></div>` : ""}
     ${cost.planCredit > 0 ? `<p class="small" style="margin:6px 0 0">This month carries your $100 founding credit, so the score runs high. It is not the run rate.</p>` : ""}
     <div class="roas-vs">
-      ${roasBarRow("Back through your register", "back", [{ amount: s.countedBack, cls: "counted" }], vsMax)}
+      ${roasBarRow("Back through your register", "back", showBlend ? [{ amount: s.countedBack, cls: "counted" }, { amount: hl.haloDollars, cls: "halo" }] : [{ amount: s.countedBack, cls: "counted" }], vsMax)}
       ${cost.total !== null && cost.total !== undefined ? roasBarRow("All in, what you put in", "putin", [{ amount: cost.total, cls: "in" }], vsMax) : ""}
     </div>`;
   }
@@ -8019,15 +8031,17 @@ function scoreV2Html(r) {
   const monthRows = (r.scoreV2.cohorts || []).map((c) => {
     if (c.month === s.month) return `<div class="roas-month-cur"><span><strong>${esc(c.monthLabel)}</strong> <span class="badge info">This month</span></span><strong>${c.state === "forming" ? "Forming" : `${Number(c.score).toFixed(1)}&times;`}</strong></div>`;
     const scoreTxt = c.state === "forming" ? "score forming" : c.state === "counting" ? `score ${Number(c.score).toFixed(1)}&times;, still counting` : `final score ${Number(c.score).toFixed(1)}&times;`;
-    return `<details class="roas-x"><summary><span style="flex:1 1 130px;min-width:0"><strong>${esc(c.monthLabel)}</strong> <span class="muted">${scoreTxt}</span></span><strong>$${fmtMoney(c.countedBack)}</strong></summary><div class="small muted" style="margin-top:4px">${c.countedEvents} register events · ${c.countedCustomers} counted customers${c.cameBackReturns ? ` · ${c.cameBackReturns} came back` : ""}${c.costTotal !== null && c.costTotal !== undefined ? ` · all in $${fmtMoney(c.costTotal)}` : ""}. Counted back: $${fmtMoney(c.countedBack)}.</div></details>`;
+    return `<details class="roas-x"><summary><span style="flex:1 1 130px;min-width:0"><strong>${esc(c.monthLabel)}</strong> <span class="muted">${scoreTxt}</span></span><strong>$${fmtMoney(c.countedBack)}</strong></summary><div class="small muted" style="margin-top:4px">${c.countedEvents} register events · ${c.countedCustomers} counted customers${c.cameBackReturns ? ` · ${c.cameBackReturns} came back` : ""}${c.costTotal !== null && c.costTotal !== undefined ? ` · all in $${fmtMoney(c.costTotal)}` : ""}. Counted back: $${fmtMoney(c.countedBack)}.${c.haloDollars ? ` Plus about $${fmtMoney(c.haloDollars)} Halo estimated${c.headlineScore !== null && c.headlineScore !== undefined ? `, for a blended ${Number(c.headlineScore).toFixed(1)}&times;` : ""}.` : ""}</div></details>`;
   }).join("");
   const monthsBlock = monthRows ? `<div style="margin-top:14px"><h4 style="margin:0 0 4px">Your months ${roasInfoBtn("months")}</h4>${monthRows}${r.scoreV2.trailing3 ? `<p class="small" style="margin:8px 0 0">Your scored months together (${esc(r.scoreV2.trailing3.months.join(", "))}): <strong>${Number(r.scoreV2.trailing3.score).toFixed(1)}&times;</strong>, returns and costs summed, never averaged.</p>` : ""}</div>` : "";
   const visitRows = (s.visits || []).map((v) => {
     const counted = v.source === "events" ? `$${fmtMoney(v.spend + v.returnSpend)} counted` : v.source === "tally" ? `$${fmtMoney(v.spend)} on your tally` : "Nothing counted yet";
     const chip = v.score !== null && v.score !== undefined ? `<span class="chip-mini">${Number(v.score).toFixed(1)}&times; before your plan</span>` : v.state === "no_cost" ? `<span class="chip-mini">Cost you nothing</span>` : "";
-    return `<details class="roas-x"${v.costState === "missing" ? " open" : ""}><summary><span style="flex:1 1 130px;min-width:0"><span class="lname">${esc(v.title || "Visit")}</span> <span class="muted">with @${esc(v.creatorHandle)}</span></span><span class="roas-sum-v"><strong>${counted}</strong>${chip ? ` ${chip}` : ""}</span></summary>
+    const haloChip = v.halo && v.halo.estDollars > 0 ? ` <span class="chip-mini">Halo est. +$${fmtMoney(v.halo.estDollars)}</span>` : "";
+    return `<details class="roas-x"${v.costState === "missing" ? " open" : ""}><summary><span style="flex:1 1 130px;min-width:0"><span class="lname">${esc(v.title || "Visit")}</span> <span class="muted">with @${esc(v.creatorHandle)}</span></span><span class="roas-sum-v"><strong>${counted}</strong>${chip ? ` ${chip}` : ""}${haloChip}</span></summary>
     <div style="margin-top:4px">
       <div class="small muted">${v.source === "events" ? `${v.customers} counted customer${v.customers === 1 ? "" : "s"} · $${fmtMoney(v.spend + v.returnSpend)} counted${v.returns ? ` · ${v.returns} came back ($${fmtMoney(v.returnSpend)})` : ""}` : v.source === "tally" ? `${v.customers} customers · $${fmtMoney(v.spend)} on your reported tally` : "Nothing counted yet"}${v.score !== null && v.score !== undefined ? ` · <strong>Visit score ${Number(v.score).toFixed(1)}&times;</strong>${v.state === "counting" ? " (still counting)" : ""}` : v.state === "no_cost" ? " · it cost you nothing, so there is no multiple to print" : ""}</div>
+      ${v.halo && v.halo.estDollars > 0 ? `<div class="small muted">Halo estimates about ${fmtNum(v.halo.estVisits)} more visits from this post (${Math.round(v.halo.maturity * 100)}% through its 90 days), worth about $${fmtMoney(v.halo.estDollars)} at your average check. Halo only estimates past the customers your register already counted, never over them.</div>` : ""}
       <div class="small muted">${esc(v.methodLine || "")}</div>
       ${v.costState === "missing" ? v2CostCaptureHtml(v) : v.directCost !== null && v.directCost !== undefined && !v.paid ? `<div class="small muted">This visit's cost is on record at $${fmtMoney(v.directCost)}. Adjust it on the visit while this month's books stay open.</div>` : ""}
     </div></details>`;
@@ -8142,6 +8156,7 @@ async function loadProofCard() {
   host.innerHTML = `<h3>Your Proof Card</h3>
     <p style="margin:6px 0 0"><span class="badge ok">Verified on SIGNL</span></p>
     <p style="margin:8px 0 0"><strong>${pf.visitsCompleted} visit${pf.visitsCompleted === 1 ? "" : "s"} completed</strong>, ${pf.onTimePosts} on time · <strong>${pf.customersCounted} customers counted</strong> at the register · <strong>${pf.cameBacks} came back</strong> within a month · at least <strong>$${fmtMoney(pf.trackedSpend)}</strong> tracked spend${pf.cameBackRate !== null && pf.cameBackRate !== undefined ? ` · <strong>${Math.round(pf.cameBackRate * 100)}%</strong> of first customers came back within a month (${pf.cameBackClosedFirsts} first months closed${pf.cameBackStillInWindow ? `, ${pf.cameBackStillInWindow} still running` : ""})` : ""}${pf.mentions ? ` · ${pf.mentions} more told staff a post sent them (a told-us line, never register money)` : ""}</p>
+    ${pf.viewsRollup && pf.viewsRollup.allTime > 0 ? `<p class="small" style="margin:8px 0 0">Your posts were seen <strong>${fmtNum(pf.viewsRollup.week)}</strong> times this week · <strong>${fmtNum(pf.viewsRollup.month)}</strong> this month · <strong>${fmtNum(pf.viewsRollup.year)}</strong> this year, across every campaign. Those are your reported numbers, shown as reach; the record above is what SIGNL counted.</p>` : ""}
     ${(pf.lines || []).length ? `<div style="margin-top:10px">${pf.lines.map((l) => `<div class="lrow"><div style="flex:1"><span class="lname">${esc(l.label)}</span><div class="small muted">${l.visits} visit${l.visits === 1 ? "" : "s"} counted there</div></div><span>${l.customers} customers${l.cameBacks ? ` · ${l.cameBacks} came back` : ""}</span></div>`).join("")}</div><p class="small muted" style="margin-top:8px">A business is named only when it chose to be. Otherwise your proof shows its category and city, and its register totals never travel.</p>` : ""}
     <p class="small" style="margin-top:10px">Share it: <a href="${esc(location.origin + (pf.sharePath || ""))}" target="_blank" rel="noopener">${esc(location.origin + (pf.sharePath || ""))}</a></p>
     <p class="small muted">Book me on SIGNL and this is the receipt you'll get.</p>`;
@@ -12186,7 +12201,13 @@ function roasCellHtml(h, navButton) {
     if (v2.state === "forming" || v2.score === null || v2.score === undefined) {
       return `<div class="stat-cell"><div class="stat-num grad-text" style="font-size:1.1rem">Forming</div><div class="stat-lbl">SIGNL ROAS Score · $${fmtMoney(v2.countedBack)} counted back through your register so far. Your score starts when there is enough counted to mean something.</div>${navButton ? `<button class="btn small-btn" style="margin-top:6px" onclick="return go('dashboard','Visits &amp; Posts')">Go to Visits &amp; Posts</button>` : ""}</div>`;
     }
-    return `<div class="stat-cell"><div class="stat-num grad-text">${Number(v2.score).toFixed(1)}&times;</div><div class="stat-lbl">SIGNL ROAS Score · ${esc(v2.stateLabel || "")}<br>$${fmtMoney(v2.countedBack)} counted back through your register, on $${fmtMoney(v2.putIn)} all in. The full breakdown is on your Receipt.</div></div>`;
+    // Build -45 (Halo): Home prints the same headline the
+    // Receipt prints (the blend, when Halo has anything to
+    // add), with the split in the label. One number, one
+    // label, everywhere; the counted-only figure stays on
+    // the Receipt's split, one tap away.
+    const headNum = v2.headlineScore !== null && v2.headlineScore !== undefined && (v2.haloDollars || 0) > 0 ? v2.headlineScore : v2.score;
+    return `<div class="stat-cell"><div class="stat-num grad-text">${Number(headNum).toFixed(1)}&times;</div><div class="stat-lbl">SIGNL ROAS Score · ${esc(v2.stateLabel || "")}<br>$${fmtMoney(v2.countedBack)} counted back through your register${(v2.haloDollars || 0) > 0 ? ` · about $${fmtMoney(v2.haloDollars)} more Halo estimated` : ""}, on $${fmtMoney(v2.putIn)} all in. The full breakdown is on your Receipt.</div></div>`;
   }
   const r = h.roas || null;
   const score = h.roasScore;
@@ -12597,7 +12618,7 @@ async function loadBusinessHome() {
       // the Home snapshot under its own name and state. The
       // legacy estimate never appears here; it lives, labeled as
       // a modeled estimate, on the Performance card below.
-      ...(h.roasV2 && h.roasV2.score !== null && h.roasV2.score !== undefined ? [{ num: `${Number(h.roasV2.score).toFixed(1)}&times;`, label: `SIGNL ROAS Score · ${h.roasV2.stateLabel || ""}` }] : []),
+      ...(h.roasV2 && h.roasV2.score !== null && h.roasV2.score !== undefined ? [{ num: `${Number(h.roasV2.headlineScore !== null && h.roasV2.headlineScore !== undefined && (h.roasV2.haloDollars || 0) > 0 ? h.roasV2.headlineScore : h.roasV2.score).toFixed(1)}&times;`, label: `SIGNL ROAS Score · ${h.roasV2.stateLabel || ""}${(h.roasV2.haloDollars || 0) > 0 ? ` · $${fmtMoney(h.roasV2.countedBack)} counted, about $${fmtMoney(h.roasV2.haloDollars)} Halo est.` : ""}` }] : []),
     ] : null;
     const caughtLinks = [
       { label: "Find creators", act: () => go("dashboard", "Discover") },

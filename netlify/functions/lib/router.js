@@ -7058,7 +7058,7 @@ async function businessHome(user) {
   try {
     const v2ctx = await scoreV2Context(user.id, now);
     const v2cur = scoreV2ForBusiness(user, v2ctx).current;
-    roasV2 = { score: v2cur.score, state: v2cur.state, stateLabel: v2cur.state === "forming" ? "Forming" : v2cur.state === "counting" ? "Still counting" : "Final", countedBack: v2cur.countedBack, putIn: v2cur.cost ? v2cur.cost.total : 0, month: v2cur.month };
+    roasV2 = { score: v2cur.score, state: v2cur.state, stateLabel: v2cur.state === "forming" ? "Forming" : v2cur.state === "counting" ? "Still counting" : "Final", countedBack: v2cur.countedBack, putIn: v2cur.cost ? v2cur.cost.total : 0, month: v2cur.month, headlineScore: v2cur.headline ? v2cur.headline.score : null, haloDollars: v2cur.halo ? v2cur.halo.estDollars : 0, haloVisits: v2cur.halo ? v2cur.halo.estVisits : 0 };
   } catch { roasV2 = null; }
   const totalViews = delivered.reduce((s, b) => s + (Number(postByBooking.get(b.id).views) || 0), 0);
 
@@ -8776,6 +8776,27 @@ async function proofForCreator(creatorUser, opts) {
   const singleBusiness = countedBiz.size === 1;
   const countsForming = singleBusiness && customers < RETURN_RATE_MIN_BASE;
   const out = { verified: true, visitsCompleted: posts.length, onTimePosts: posts.filter((x) => x.onTime).length, postsCounted: posts.length, customersCounted: customers, cameBacks, trackedSpend: roasRound2(spend), mentions: mentions.length, cameBackRate, cameBackClosedFirsts: closedFirsts, cameBackStillInWindow: stillInWindow, singleBusiness, countsForming };
+  // Build -45 (Halo): the creator's own views, all campaigns
+  // combined, by when the post went live. Their reported reach
+  // is context for the creator; it is not register data and it
+  // never carries an estimate or a score (Halo stays off this
+  // card by Jeff's guardrail).
+  {
+    const allCreatorPosts = (await allPosts()).filter((p) => p.creatorId === cid);
+    const roll = { week: 0, month: 0, year: 0, allTime: 0 };
+    for (const p of allCreatorPosts) {
+      const v = typeof p.views === "number" && Number.isFinite(p.views) && p.views > 0 ? p.views : 0;
+      if (!v) continue;
+      roll.allTime += v;
+      const ageDays = (nowMs - (Date.parse(p.submittedAt || "") || 0)) / 86400000;
+      if (Number.isFinite(ageDays) && ageDays >= 0) {
+        if (ageDays <= 7) roll.week += v;
+        if (ageDays <= 30) roll.month += v;
+        if (ageDays <= 365) roll.year += v;
+      }
+    }
+    out.viewsRollup = roll;
+  }
   // On the public page the forming gate withholds the numbers
   // themselves, not just their display: below the base, at one
   // business, the aggregate IS that business's register line.
@@ -8896,13 +8917,178 @@ function compCostDefaultFor(biz, category) {
   return typeof d.default === "number" ? d.default : null;
 }
 
-async function scoreV2Context(businessId) {
-  const [bookingsRaw, posts, eventsAll, passesAll] = await Promise.all([store.list("booking:"), allPosts(), allRedemptionEvents(), allPasses()]);
+// ---------- Build -45: Halo, the modeled influence layer ----------
+// Jeff's model (2026-10-30, spec: files/signl-halo-model-2026-10-30.md):
+// people won't always show codes, so per post take views +
+// engagement (weighted), x the creator's local %, -> expected
+// visits x the business's average check = estimated influenced
+// dollars. Halo is the bulk of the HEADLINE score, blended with
+// counted register dollars. This supersedes the -39 doctrine
+// ("modeled never inside the ratio") BY JEFF'S ORDER, with his
+// accepted guardrails: Score v2's own fields stay counted-only
+// and untouched (Halo lands as additive payload fields and the
+// client renders the blend); the de-dup rule below is binding;
+// the "at least $X counted" floor sentence survives; Halo never
+// reaches the Proof Card. The "AI" element is recalibration:
+// the intent rate recalibrates from real register data as the
+// platform grows, every adjustment logged (halocal: records),
+// with a confidence indicator on every payload.
+const HALO_MODEL_VERSION = "Halo v1";
+const HALO_PRIOR_INTENT_RATE = 0.004;
+const HALO_INTENT_MIN = 0.0005;
+const HALO_INTENT_MAX = 0.02;
+const HALO_CAPTURE_TARGET = 3.0;
+const HALO_ENGAGEMENT_WEIGHTS = { like: 2, comment: 8, share: 15 };
+const HALO_WINDOW_DAYS = 90;
+const HALO_MATURITY_HALF_LIFE = 21;
+const HALO_PRIOR_AVG_CHECK = 40;
+const HALO_CAL_MIN_POSTS = 30;
+const HALO_CAL_MIN_COUNTED = 100;
+const HALO_CAL_MIN_AGE_DAYS = 30;
+const HALO_CAL_MAX_STEP = 1.25;
+const HALO_WORDS = "Halo estimates the visits a post likely brought in that no code caught: the post's views and engagement, weighted, times the creator's local audience share, at the model's intent rate, grown over the post's first 90 days. It only ever estimates past the customers your register already counted, never over them.";
+const HALO_CONFIDENCE_WORDS = {
+  early: "Halo is young. Treat the estimate as a rough sketch until more registers report in.",
+  building: "The estimate is learning from real registers, yours included.",
+  established: "The estimate is tuned on a thousand-plus counted first visits across SIGNL.",
+};
+
+function haloMaturity(ageDays) {
+  const age = Number(ageDays);
+  if (!Number.isFinite(age) || age <= 0) return 0;
+  if (age >= HALO_WINDOW_DAYS) return 1;
+  const denom = 1 - Math.pow(2, -HALO_WINDOW_DAYS / HALO_MATURITY_HALF_LIFE);
+  return Math.min(1, Math.max(0, (1 - Math.pow(2, -age / HALO_MATURITY_HALF_LIFE)) / denom));
+}
+function haloEffectiveViews(perf) {
+  return (perf.views || 0) + HALO_ENGAGEMENT_WEIGHTS.like * (perf.likes || 0) + HALO_ENGAGEMENT_WEIGHTS.comment * (perf.comments || 0) + HALO_ENGAGEMENT_WEIGHTS.share * (perf.shares || 0);
+}
+function haloMoney(n) {
+  return "$" + Number(n || 0).toLocaleString("en-US", { maximumFractionDigits: 2 });
+}
+// The live model state: the calibrated intent rate when a
+// calibration has set one, else the published prior. The rate
+// a payload used always rides the payload, so no estimate is
+// ever separated from the rate that produced it.
+async function haloModelState() {
+  const rec = await store.get("halomodel:current");
+  if (rec && typeof rec.intentRate === "number" && Number.isFinite(rec.intentRate)) {
+    return { intentRate: Math.min(HALO_INTENT_MAX, Math.max(HALO_INTENT_MIN, rec.intentRate)), version: HALO_MODEL_VERSION, updatedAt: rec.updatedAt || null, adjustments: rec.adjustments || 0 };
+  }
+  return { intentRate: HALO_PRIOR_INTENT_RATE, version: HALO_MODEL_VERSION, updatedAt: null, adjustments: 0 };
+}
+// One visit's Halo estimate. De-dup is per visit and binding:
+// recognized modeled visits minus the firsts the register (or
+// the tally) already counted for THIS visit, floored at zero.
+function haloForVisit(perf, localPct, completedAt, countedFirsts, ctx) {
+  const zero = { effViews: 0, localViews: 0, ultimateVisits: 0, maturity: 0, recognizedVisits: 0, estVisits: 0, estDollars: 0 };
+  if (!perf || !perf.reported) return zero;
+  if (typeof localPct !== "number" || !(localPct > 0)) return zero;
+  const effViews = haloEffectiveViews(perf);
+  if (!(effViews > 0)) return zero;
+  const localViews = (effViews * Math.min(100, localPct)) / 100;
+  const ultimateVisits = localViews * ctx.haloModel.intentRate;
+  const ageDays = (Date.now() - (Date.parse(completedAt || "") || 0)) / 86400000;
+  const maturity = haloMaturity(ageDays);
+  const recognizedVisits = ultimateVisits * maturity;
+  const estVisits = round1(Math.max(0, recognizedVisits - (countedFirsts || 0)));
   return {
-    bookings: bookingsRaw.map((r) => r.value).filter((b) => b && b.businessId === businessId),
+    effViews, localViews: roasRound2(localViews), ultimateVisits: roasRound2(ultimateVisits),
+    maturity: Math.round(maturity * 1000) / 1000, recognizedVisits: roasRound2(recognizedVisits),
+    estVisits, estDollars: roasRound2(estVisits * ctx.avgCheck.amount),
+  };
+}
+function haloConfidenceFor(ctx) {
+  const firsts = ctx.platformFirsts || 0;
+  const level = ctx.avgCheck.source === "prior" || firsts < 100 ? "early" : firsts < 1000 ? "building" : "established";
+  return { level, words: HALO_CONFIDENCE_WORDS[level], platformCountedFirsts: firsts, calibrations: ctx.haloModel.adjustments || 0 };
+}
+// Calibration sample: matured posts (30+ days) on event-counted
+// visits, platform-wide. Modeled ultimate visits at the CURRENT
+// rate vs the firsts the registers actually counted.
+async function haloCalibrationStats(model) {
+  const [bookingsRaw, posts, eventsAll, users] = await Promise.all([store.list("booking:"), allPosts(), allRedemptionEvents(), allUsers()]);
+  const postByBooking = new Map(posts.map((p) => [p.bookingId, p]));
+  const localOf = new Map(users.filter((u) => u.role === "creator").map((u) => [u.id, u.creator && typeof u.creator.localAudiencePct === "number" ? u.creator.localAudiencePct : null]));
+  const now = Date.now();
+  let samplePosts = 0;
+  let counted = 0;
+  let modeled = 0;
+  for (const r of bookingsRaw) {
+    const b = r.value;
+    if (!b || b.status !== "completed") continue;
+    const post = postByBooking.get(b.id) || null;
+    if (!post) continue;
+    const perf = roasPerformanceOf({ ...b, post });
+    if (!perf.reported) continue;
+    const liveAt = Date.parse(visitCompletedAt(b, post) || "") || 0;
+    if (!liveAt || (now - liveAt) / 86400000 < HALO_CAL_MIN_AGE_DAYS) continue;
+    const money = bookingMoneyFrom(b, eventsAll);
+    if (money.source !== "events") continue;
+    const pct = localOf.get(b.creatorId);
+    if (typeof pct !== "number" || !(pct > 0)) continue;
+    samplePosts += 1;
+    counted += money.customers;
+    modeled += (haloEffectiveViews(perf) * Math.min(100, pct) * model.intentRate) / 100;
+  }
+  return { samplePosts, countedFirsts: counted, modeledUltimate: roasRound2(modeled), observedRatio: counted > 0 ? Math.round((modeled / counted) * 100) / 100 : null };
+}
+// One recalibration run. Damped (square-root) approach to the
+// published capture target, step-capped, rate-bounded, and
+// LOGGED either way: an adjustment, a no-change check, or a
+// skip with its reason. No silent drift is possible.
+async function runHaloCalibration(actor) {
+  const model = await haloModelState();
+  const stats = await haloCalibrationStats(model);
+  const at = nowIso();
+  const base = { at, actor: actor || "sweep", captureTarget: HALO_CAPTURE_TARGET, samplePosts: stats.samplePosts, sampleCounted: stats.countedFirsts, sampleModeled: stats.modeledUltimate, observedRatio: stats.observedRatio, oldRate: model.intentRate };
+  let rec;
+  if (stats.samplePosts < HALO_CAL_MIN_POSTS || stats.countedFirsts < HALO_CAL_MIN_COUNTED || !stats.observedRatio) {
+    rec = { ...base, kind: "skipped", newRate: model.intentRate, reason: `Needs ${HALO_CAL_MIN_POSTS} matured posts and ${HALO_CAL_MIN_COUNTED} counted firsts before the rate moves.` };
+  } else {
+    const factor = Math.min(HALO_CAL_MAX_STEP, Math.max(1 / HALO_CAL_MAX_STEP, Math.sqrt(HALO_CAPTURE_TARGET / stats.observedRatio)));
+    const newRate = Math.min(HALO_INTENT_MAX, Math.max(HALO_INTENT_MIN, model.intentRate * factor));
+    if (Math.abs(newRate - model.intentRate) / model.intentRate < 0.01) {
+      rec = { ...base, kind: "nochange", newRate: model.intentRate, factor: Math.round(factor * 1000) / 1000 };
+    } else {
+      await store.set("halomodel:current", { intentRate: newRate, updatedAt: at, adjustments: (model.adjustments || 0) + 1 });
+      rec = { ...base, kind: "adjustment", newRate, factor: Math.round(factor * 1000) / 1000 };
+    }
+  }
+  const key = `halocal:${at.replace(/[^0-9]/g, "").slice(0, 14)}-${crypto.randomInt(0xffffff).toString(16).padStart(6, "0")}`;
+  await store.set(key, rec);
+  return rec;
+}
+
+async function scoreV2Context(businessId) {
+  const [bookingsRaw, posts, eventsAll, passesAll, users, haloModel] = await Promise.all([store.list("booking:"), allPosts(), allRedemptionEvents(), allPasses(), allUsers(), haloModelState()]);
+  const bookings = bookingsRaw.map((r) => r.value).filter((b) => b && b.businessId === businessId);
+  // Build -45: the Halo inputs ride the same context. The
+  // business's average check prefers its own register (counted
+  // first-visit spend over counted firsts), falls back to its
+  // tally average, and only then to the published prior.
+  const liveFirsts = eventsAll.filter((e) => e.businessId === businessId && !e.voided && e.kind !== "return");
+  let avgCheck;
+  if (liveFirsts.length) {
+    avgCheck = { amount: roasRound2(liveFirsts.reduce((a, e) => a + (Number(e.amount) || 0), 0) / liveFirsts.length), source: "register", firsts: liveFirsts.length };
+  } else {
+    let tSpend = 0;
+    let tCount = 0;
+    for (const b of bookings) {
+      const red = b.redemptions || null;
+      if (red && Number(red.count) > 0) { tSpend += Number(red.basketTotal) || 0; tCount += Math.floor(Number(red.count) || 0); }
+    }
+    avgCheck = tCount > 0 ? { amount: roasRound2(tSpend / tCount), source: "tally", firsts: tCount } : { amount: HALO_PRIOR_AVG_CHECK, source: "prior", firsts: 0 };
+  }
+  return {
+    bookings,
     postByBooking: new Map(posts.map((p) => [p.bookingId, p])),
     events: eventsAll.filter((e) => e.businessId === businessId),
     passes: passesAll.filter((p) => p.businessId === businessId),
+    creatorLocal: new Map(users.filter((u) => u.role === "creator").map((u) => [u.id, u.creator && typeof u.creator.localAudiencePct === "number" ? u.creator.localAudiencePct : null])),
+    haloModel,
+    avgCheck,
+    platformFirsts: eventsAll.filter((e) => !e.voided && e.kind !== "return").length,
   };
 }
 
@@ -8933,10 +9119,15 @@ function scoreV2Cohort(user, monthKey, ctx) {
     const windowEnd = Math.max(Date.parse(completedAt || "") + RETURN_WINDOW_DAYS * 86400000 || 0, ...passEnds);
     const perf = roasPerformanceOf({ ...b, post });
     const media = perf.reported ? roasRound2((perf.views * ROAS_MODEL.cpm) / 1000 + perf.likes * ROAS_MODEL.like + perf.comments * ROAS_MODEL.comment + perf.shares * ROAS_MODEL.share) : 0;
+    // Build -45 (Halo): this visit's modeled estimate, de-duped
+    // against the firsts already counted for this visit.
+    const hv = haloForVisit(perf, ctx.creatorLocal ? ctx.creatorLocal.get(b.creatorId) : null, completedAt, money.customers, ctx);
     visits.push({
       bookingId: b.id, title: b.title || "", category: b.category || "", creatorId: b.creatorId, creatorHandle: b.creatorHandle || "", completedAt,
       source: money.source, customers: money.customers, spend: money.spend, returns: money.returns, returnSpend: money.returnSpend,
       paid, directCost, costState, discountCost: disc, mature: now >= windowEnd, media, eventCount: bEvents.length,
+      haloEstVisits: hv.estVisits, haloEstDollars: hv.estDollars, haloMaturity: hv.maturity, haloRecognized: hv.recognizedVisits, haloReported: perf.reported,
+      haloEffViews: hv.effViews, haloUltimate: hv.ultimateVisits,
     });
   }
   const eventVisits = visits.filter((v) => v.source === "events");
@@ -8959,6 +9150,33 @@ function scoreV2Cohort(user, monthKey, ctx) {
   const state = formingReasons.length ? "forming" : eventVisits.every((v) => v.mature) ? "final" : "counting";
   const totalCost = plan.recorded ? roasRound2(plan.amount + directCosts) : null;
   const score = state !== "forming" && totalCost !== null && totalCost > 0 ? round1(countedBack / totalCost) : null;
+  // Build -45 (Halo): the cohort's modeled layer and the
+  // blended headline. Additive beside Score v2, whose fields
+  // above stay counted-only; the blend is counted + estimated,
+  // and both parts ride the payload labeled, never merged
+  // silently. The headline obeys the same Forming gates: a
+  // forming month shows the estimate as a labeled line, never
+  // as a ratio.
+  const haloEstVisits = round1(visits.reduce((a, v) => a + (v.haloEstVisits || 0), 0));
+  const haloEstDollars = roasRound2(visits.reduce((a, v) => a + (v.haloEstDollars || 0), 0));
+  const haloBlock = {
+    version: HALO_MODEL_VERSION, words: HALO_WORDS,
+    estVisits: haloEstVisits, estDollars: haloEstDollars,
+    modeledVisits: roasRound2(visits.reduce((a, v) => a + (v.haloReported ? v.haloRecognized || 0 : 0), 0)),
+    countedAgainst: visits.filter((v) => v.haloReported).reduce((a, v) => a + v.customers, 0),
+    avgCheck: ctx.avgCheck, confidence: haloConfidenceFor(ctx),
+    model: { version: HALO_MODEL_VERSION, intentRate: ctx.haloModel.intentRate, updatedAt: ctx.haloModel.updatedAt },
+  };
+  const blendedBack = roasRound2(countedBack + haloEstDollars);
+  const headlineScore = state !== "forming" && totalCost !== null && totalCost > 0 ? round1(blendedBack / totalCost) : null;
+  const headline = {
+    score: headlineScore, back: blendedBack, countedBack, haloDollars: haloEstDollars, haloVisits: haloEstVisits,
+    sentence: headlineScore !== null
+      ? haloEstDollars > 0
+        ? `For every $1 you put in, an estimated ${haloMoney(headlineScore)} came back: ${haloMoney(countedBack)} counted at your register, and about ${haloMoney(haloEstDollars)} more that Halo estimates from the posts.`
+        : `For every $1 you put in, at least $${headlineScore.toFixed(2)} came back through your register that we counted.`
+      : null,
+  };
   const mediaValue = roasRound2(visits.reduce((a, v) => a + v.media, 0));
   const withPostsValued = score !== null && totalCost > 0 ? round1((countedBack + mediaValue) / totalCost) : null;
   // The cohort's came-back rate, on window-closed firsts only.
@@ -8978,6 +9196,7 @@ function scoreV2Cohort(user, monthKey, ctx) {
     return {
       bookingId: v.bookingId, title: v.title, category: v.category, creatorHandle: v.creatorHandle, completedAt: v.completedAt, source: v.source,
       customers: v.customers, spend: v.spend, returns: v.returns, returnSpend: v.returnSpend,
+      halo: { estVisits: v.haloEstVisits || 0, estDollars: v.haloEstDollars || 0, maturity: v.haloMaturity || 0, effViews: v.haloEffViews || 0, ultimateVisits: v.haloUltimate || 0, recognizedVisits: v.haloRecognized || 0 },
       directCost: v.directCost, costState: v.costState, score: vScore, state: vState,
       methodLine: v.source === "events" ? `Counted from ${v.eventCount} register event${v.eventCount === 1 ? "" : "s"} · against what this visit itself cost you, before your plan.` : v.source === "tally" ? "Your reported tally. Tallies ride as facts; the score counts register events only." : "Nothing counted for this visit yet.",
     };
@@ -9014,6 +9233,7 @@ function scoreV2Cohort(user, monthKey, ctx) {
     version: "Score v2", label: ROAS_LABEL, versionLine: SCORE_V2_VERSION_LINE,
     month: monthKey, monthLabel: monthLabelOf(monthKey), state, score,
     sentence: score !== null ? `For every $1 you put in, at least $${score.toFixed(2)} came back through your register that we counted.` : null,
+    halo: haloBlock, headline,
     countedBack, countedCustomers, countedEvents,
     cameBack: { firsts: countedCustomers, returns: eventVisits.reduce((a, v) => a + v.returns, 0), returnSpend: roasRound2(eventVisits.reduce((a, v) => a + v.returnSpend, 0)), closedFirsts, stillInWindow, rate: cameBackRate, rateBase: RETURN_RATE_MIN_BASE },
     cost: { plan: plan.amount, planCredit: plan.credit, planRecorded: plan.recorded, compCosts, paidCosts, discountCosts, directCosts, total: totalCost },
@@ -9067,7 +9287,7 @@ function scoreV2ForBusiness(user, ctx, calendarCounted) {
       weeklyCounted.push({ label: `${monthShort} ${start} to ${end}`, total: roasRound2(total), customers, returns });
     }
   }
-  return { current, weeklyCounted, cohorts: cohorts.map((c) => ({ month: c.month, monthLabel: c.monthLabel, state: c.state, score: c.score, countedBack: c.countedBack, countedCustomers: c.countedCustomers, countedEvents: c.countedEvents, costTotal: c.cost.total, cameBackReturns: c.cameBack.returns })), trailing3 };
+  return { current, weeklyCounted, cohorts: cohorts.map((c) => ({ month: c.month, monthLabel: c.monthLabel, state: c.state, score: c.score, countedBack: c.countedBack, countedCustomers: c.countedCustomers, countedEvents: c.countedEvents, costTotal: c.cost.total, cameBackReturns: c.cameBack.returns, haloDollars: c.halo ? c.halo.estDollars : 0, headlineScore: c.headline ? c.headline.score : null })), trailing3 };
 }
 
 // The capture-gap diagnostic (strategy gap 3, audit A7: the
@@ -10335,6 +10555,31 @@ async function route(event) {
     if (!tokenOk && (!user || user.role !== "admin")) return err(403, "Admin only");
     const summary = await square.syncAllSquare();
     return json(200, { ok: true, sweep: summary });
+  }
+
+  // Halo recalibration (Build -45). Same auth and placement
+  // discipline as the sweeps above: the Netlify scheduled
+  // function (netlify/functions/halo-calibrate.mjs) POSTs here
+  // weekly with the sweep token; an admin session can also run
+  // it on demand. Every run writes a halocal: log record,
+  // adjustment or not (see runHaloCalibration).
+  if (method === "POST" && seg[0] === "admin" && seg[1] === "halo" && seg[2] === "calibrate") {
+    const token = process.env.SIGNL_SWEEP_TOKEN;
+    const tokenOk = !!token && (event.headers["x-signl-sweep-token"] || event.headers["X-Signl-Sweep-Token"]) === token;
+    if (!tokenOk && (!user || user.role !== "admin")) return err(403, "Admin only");
+    const calibration = await runHaloCalibration(user && user.role === "admin" ? "admin" : "sweep");
+    return json(200, { ok: true, calibration });
+  }
+
+  // Halo model state + calibration log (Build -45): how an
+  // admin answers "what rate is the estimate running, and how
+  // did it get there" without reading the store by hand.
+  if (method === "GET" && seg[0] === "admin" && seg[1] === "halo" && seg.length === 2) {
+    if (!user || user.role !== "admin") return err(403, "Admin only");
+    const model = await haloModelState();
+    const stats = await haloCalibrationStats(model);
+    const log = (await store.list("halocal:")).map((r) => r.value).filter(Boolean).sort((a, b) => (a.at < b.at ? 1 : -1)).slice(0, 20);
+    return json(200, { halo: { model, stats, log } });
   }
 
   // Stripe webhook (Jeff, 2026-10-23). Deliberately BEFORE the

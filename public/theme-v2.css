@@ -2953,6 +2953,11 @@ body.rail-on main, body.preview-on main { min-width: 0; }
 .roas-bar.stack > i { flex: none; border-radius: 0; }
 .roas-bar.stack > i.counted { background: var(--mint); }
 .roas-bar.stack > i.in { background: var(--ink); }
+.roas-bar.stack > i.halo { background: #0C7A43; }
+.roas-split { margin-top: 10px; }
+.roas-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; }
+.roas-dot.counted { background: var(--mint); border: 1px solid #8FD3AC; }
+.roas-dot.halo { background: #0C7A43; }
 /* Build -43: the kv row (label left, value right) used by the
    points surfaces and the Golden Ticket panel. It shipped
    without a definition and rendered as run-on inline text
