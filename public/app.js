@@ -1615,16 +1615,17 @@ function bnIcon(name) {
   return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || paths.home}</svg>`;
 }
 
-// App-style bottom navigation (Jeff, 2026-10-18; unified in the
-// UX redesign, 2026-10-24): ONE nav system per role at every width.
-// Signed-in views render the bar at all widths (centered, max
-// width on desktop); signed-out views keep the mobile-only bar.
-// Tab badges ride the counts GET /notifications returns.
+// App navigation (Jeff, 2026-10-18; unified in the UX redesign,
+// 2026-10-24): ONE nav system per role at every width. BUILD -38
+// (Jeff, 2026-10-29): the #tabbar markup this renders is placed as
+// a labeled LEFT RAIL at every width — slim 72px on phones, 232px
+// from 768px up — and the phone bottom tab bar is gone; placement
+// lives entirely in theme-v2.css, the destinations and badges are
+// unchanged. Tab badges ride the counts GET /notifications returns.
 function renderBottomNav() {
-  // Overhaul V3 (2026-10-27): labeled destinations in a
-  // bottom tab bar on phones; the same set as a labeled left
-  // rail on desktop, with the More rows expanded inline under a
-  // hairline; a slim top bar (identity, Messages, help) rides
+  // Overhaul V3 (2026-10-27): labeled destinations, four per role;
+  // on the wide rail the More rows expand inline under a hairline;
+  // a slim top bar (identity, Messages, help) rides
   // every app screen. V4.1 cut the set to four (Home, Explore,
   // Sig, More — see tabItemsFor). The admin console keeps its
   // icon rail; V4.2 (2026-10-27) restyles that rail to the V4
@@ -2822,7 +2823,7 @@ function sigBankFor(biz) {
     { id: "metrics", q: "How do I see my results?", ph: ["roas", "my results", "analytics", "metrics", "return on", "how am i doing", "track results"], g: [["results", "numbers", "performance", "sales", "returns"], ["see", "track", "measure", "show", "doing"]], s: ["roas", "analytics", "metrics"],
       a: "Your dashboard follows every visit: the post, its reach and engagement, refreshed as a day 7, 14, and 30 series. When a visit code is redeemed, it converts to an estimated register value, so your return on spend is a number, not a guess. Nothing is shown before it is real, so a campaign that has not run shows no numbers at all.", flow: "See your results" },
     { id: "marketbiz", q: "When does my market open?", ph: ["market open", "when can i start", "join now", "launch", "my city"], g: [["market", "city", "launch"], ["when", "open", "start", "live", "join", "coming"]], s: [],
-      a: (c) => c.live ? "Your market is open and your business is active. You can post offers and invite creators now." : "Businesses join the founding list now and pick a plan at sign-up; no card is charged during founding. Markets open in waves, 30 to 90 days out. When yours activates, you land in Find creators with the founding roster ready, and you get an email the moment it opens." },
+      a: (c) => c.live ? "Your market is open and your business is active. You can post offers and invite creators now." : "Businesses join the founding list now and pick a plan at sign-up; no card is charged during founding. Businesses sign up when we are ready to launch, market by market as each founding roster completes. When yours activates, you land in Find creators with the founding roster ready, and you get an email the moment it opens." },
     { id: "help", q: "How do I reach a person?", ph: ["password", "contact", "human", "support", "talk to someone", "staff pin", "change my email"], g: [["password", "email", "account", "contact", "support", "human", "help", "pin"], ["change", "reset", "forgot", "update", "talk", "reach", "set"]], s: ["support"],
       a: "Settings, staff, and counter basics live right in the app. For anything a person needs to handle, email hello@joinsignl.com and a person answers.", flow: "Set the staff PIN" },
   ];
@@ -2873,7 +2874,7 @@ function sigBankFor(biz) {
     { id: "reviews", q: "Do I review the business?", ph: ["review", "rating", "stars", "rate the business"], g: [["review", "rating", "stars"], ["how", "do i", "leave", "business", "write"]], s: ["review"],
       a: "Yes. After a completed visit you review the business, any star rating you honestly give, and each review earns +10 Momentum. Businesses rate creators too, and your rating sits next to your points on your card." },
     { id: "markets", q: "When does my market open?", ph: ["market open", "when does", "launch", "my city", "open in", "when will"], g: [["market", "city", "launch"], ["when", "open", "start", "live", "coming"]], s: [],
-      a: (c) => c.live ? "Your market is open, and offers are live now." : "Founding markets open in waves, 30 to 90 days out, and you get an email the moment yours opens. Being approved with a finished profile is what puts you on the roster when it does." },
+      a: (c) => c.live ? "Your market is open, and offers are live now." : "Your market is a founding market, and you get an email the moment it opens. Being approved with a finished profile is what puts you on the roster when it does." },
     { id: "help", q: "How do I reach a person?", ph: ["password", "contact", "human", "support", "talk to someone", "change my email", "delete my account", "log out"], g: [["password", "email", "account", "contact", "support", "human", "help"], ["change", "reset", "forgot", "update", "talk", "reach", "delete"]], s: ["support"],
       a: "Account basics like your password and notifications live under More, and your profile details live on your Profile. For anything a person needs to handle, email hello@joinsignl.com and a person answers." },
   ];
@@ -5547,7 +5548,7 @@ function renderJoinCreator() {
     </div>
     <div class="form-mint">${T("Ranked by local reach, not followers — the share of your audience that lives here.", "Ordenado por alcance local, no por seguidores: la parte de tu audiencia que vive aquí.")}</div>
     <div class="form-body">
-    <p class="muted">${T("Build your full profile now. When your market opens (30 to 90 days), founding creators get priority. This is your real profile, not a waitlist.", "Crea tu perfil completo ahora. Cuando tu mercado abra (de 30 a 90 días), los creadores fundadores tienen prioridad. Este es tu perfil real, no una lista de espera.")}</p>
+    <p class="muted">${T("Build your full profile now. When your market opens, founding creators get priority. This is your real profile, not a waitlist.", "Crea tu perfil completo ahora. Cuando tu mercado abra, los creadores fundadores tienen prioridad. Este es tu perfil real, no una lista de espera.")}</p>
     <p class="small muted">${T("City missing? Pick \"My city is not listed yet\" and sign up anyway.", "¿No está tu ciudad? Elige \"Mi ciudad aún no está en la lista\" y regístrate igual.")}</p>
     <div class="lrow"><span class="tg"></span><div><span class="lname">${T("Comped", "Cortesía")}</span> <span class="lline">${T("— meals, services and experiences, for an honest post within 48 hours.", "— comidas, servicios y experiencias, por una publicación honesta dentro de 48 horas.")}</span></div></div>
     <div class="lrow"><span class="tg off"></span><div><span class="lname">${T("Paid", "Pagado")}</span> <span class="lline">${T("— paid campaigns are separate bookings. Headliners first in line.", "— las campañas pagadas son reservas aparte. Los Headliners van primero.")}</span></div></div>
@@ -6649,7 +6650,7 @@ function renderPending() {
     ${isCreator && f.queueBand ? `<p><span class="badge info">${isUnlisted ? `You are in the first ${f.queueBand} to sign up in ${esc(u.city)}` : `You are in the first ${f.queueBand} founding creators in ${esc(marketTalkNameClient(u.market))}`}</span></p>` : ""}
     <p class="muted">${isUnlisted
       ? `${T("SIGNL is not open in", "SIGNL aún no abrió en")} ${esc(u.city)} ${T("yet, and your sign-up counts toward opening it: we open new markets where creator sign-ups pile up, and founding sign-ups there go first. Every application is reviewed by a person. The moment you are approved, your founding status page opens here, and we will email you at", "y tu registro cuenta para abrirlo: abrimos mercados nuevos donde se juntan registros de creadores, y los registros fundadores de ahí van primero. Cada solicitud la revisa una persona. En cuanto te aprobemos, tu página de estado fundador se abre aquí, y te escribimos a")} ${esc(u.email)} ${T("the moment", "en cuanto")} ${esc(u.city)} ${T("opens. Sign back in any time to check your status.", "abra. Entra cuando quieras para ver tu estado.")}${state.boot && state.boot.email && state.boot.email.enabled ? ` ${T("A confirmation email is on its way to", "Un correo de confirmación va en camino a")} ${esc(u.email)}.` : ""}`
-      : `${T("Every application is reviewed by a person. The moment you are approved, your founding status page opens here, and we will email you at", "Cada solicitud la revisa una persona. En cuanto te aprobemos, tu página de estado fundador se abre aquí, y te escribimos a")} ${esc(u.email)} ${T("when", "cuando")} ${esc(marketTalkNameClient(u.market))} ${T("opens to businesses in the next 30 to 90 days. Sign back in any time to check your status.", "abra para los negocios en los próximos 30 a 90 días. Entra cuando quieras para ver tu estado.")}${state.boot && state.boot.email && state.boot.email.enabled ? ` ${T("A confirmation email is on its way to", "Un correo de confirmación va en camino a")} ${esc(u.email)}.` : ""}`}</p>
+      : `${T("Every application is reviewed by a person. The moment you are approved, your founding status page opens here, and we will email you at", "Cada solicitud la revisa una persona. En cuanto te aprobemos, tu página de estado fundador se abre aquí, y te escribimos a")} ${esc(u.email)} ${T("when", "cuando")} ${esc(marketTalkNameClient(u.market))} ${T("opens to businesses. Sign back in any time to check your status.", "abra para los negocios. Entra cuando quieras para ver tu estado.")}${state.boot && state.boot.email && state.boot.email.enabled ? ` ${T("A confirmation email is on its way to", "Un correo de confirmación va en camino a")} ${esc(u.email)}.` : ""}`}</p>
     ${isCreator && !(u.creator && u.creator.hasPhoto) ? `
     <div style="text-align:left">
       <div class="field"><label>${T("Add your profile photo now (optional)", "Agrega tu foto de perfil ahora (opcional)")}</label><input type="file" id="pending-photo" accept="image/png,image/jpeg,image/webp"></div>
@@ -7389,7 +7390,7 @@ async function loadFoundingDashboard() {
       queueItems.push({ text: "Finish your profile. Businesses can only find finished profiles.", btn: "Open profile", act: () => go("dashboard", "Profile") });
     }
     if (!queueItems.length) {
-      queueItems.push({ text: isUnl ? `You are on the founding roster. ${f.city} opens when sign-ups pile up; we email you the moment it opens.` : `You are on the founding roster. ${marketTalkNameClient(f.market)} opens in the next ${f.launchWindow}; we email you the moment it opens.`, btn: "View status", act: () => go("dashboard", "Status") });
+      queueItems.push({ text: isUnl ? `You are on the founding roster. ${f.city} opens when sign-ups pile up; we email you the moment it opens.` : `You are on the founding roster for ${marketTalkNameClient(f.market)}. We email you the moment it opens.`, btn: "View status", act: () => go("dashboard", "Status") });
     }
     // Sig activation ideas (founding home): once the essentials
     // are done, Sig prompts the two build-up moves a founding
@@ -7421,7 +7422,7 @@ async function loadFoundingDashboard() {
     ];
     el.innerHTML = `
     ${wsHead("Home", { sub: "Start here. Sig shows you what needs you, in order.", subKey: "cr-home" })}
-    <div class="home-greet"><div class="hg-hi">Hi, ${esc(firstName)}</div><div class="hg-line">${esc(greet)}. ${isUnl ? `${esc(f.city)} opens when sign-ups pile up. We email you the moment it opens.` : `${esc(marketTalkNameClient(f.market))} opens in the next ${esc(f.launchWindow)}. We email you the moment it opens.`}</div></div>
+    <div class="home-greet"><div class="hg-hi">Hi, ${esc(firstName)}</div><div class="hg-line">${esc(greet)}. ${isUnl ? `${esc(f.city)} opens when sign-ups pile up. We email you the moment it opens.` : `${esc(marketTalkNameClient(f.market))} is a founding market. We email you the moment it opens.`}</div></div>
     ${sigQueueHtml(queueItems, { links: [], askBox: true })}
     ${checklistHtml(fSteps)}
     <div class="wcard">
@@ -7450,7 +7451,7 @@ async function loadFoundingDashboard() {
     ${creatorBuzzHtml(u, card, f, data.buzz)}
     ${feedListHtml([
       { at: u.createdAt, icon: "status", acc: true, title: `Founding enrollment: ${u.status === "approved" ? "approved" : "in review"}`, meta: isUnl ? unlistedPlace(f) : marketDisplayName(f.market) },
-      { icon: "pin", title: isUnl ? `${esc(f.city)} opens when sign-ups pile up` : `${esc(marketTalkNameClient(f.market))} opens in the next ${esc(f.launchWindow)}`, meta: `We email you at ${esc(u.email)} the moment it opens.` },
+      { icon: "pin", title: isUnl ? `${esc(f.city)} opens when sign-ups pile up` : `${esc(marketTalkNameClient(f.market))} is a founding market`, meta: `We email you at ${esc(u.email)} the moment it opens.` },
     ])}
     ${homePaidLaneHtml(u.creator)}
     <div class="wcard"><h3>Your funnel</h3><p class="wc-sub" style="margin:4px 0 0">Invites appear here once ${isUnl ? esc(f.city) : esc(marketTalkNameClient(f.market))} opens: invites received, visits booked, visits done, posts live. Nothing to count yet, and we do not chart zeroes.</p></div>
@@ -8103,14 +8104,14 @@ async function loadFoundingStatus() {
     <div class="panel">
       <h3 style="margin-top:0">${esc(f.city)} opens when sign-ups pile up</h3>
       <p>SIGNL is not open in ${place} yet. Your sign-up is counted: we open new markets where creator sign-ups pile up, and when ${esc(f.city)} opens, its founding sign-ups are first in line for offers. We email you at <strong>${esc(state.user.email)}</strong> the moment it opens.</p>
-      ${f.priorityBand ? `<p><span class="badge tier" style="font-size:0.95rem;padding:6px 14px">You are in the first ${f.priorityBand} to sign up in ${esc(f.city)}</span></p>
+      ${f.priorityBand ? `<p><span class="badge tier badge-line" style="font-size:0.95rem;padding:6px 14px">You are in the first ${f.priorityBand} to sign up in ${esc(f.city)}</span></p>
       <p class="muted">You signed up early, and it counts: founding creators in a new market are ordered by sign-up time, earliest first.</p>` : ""}
       <p class="muted">Keep your profile current in the meantime; when ${esc(f.city)} opens, your local audience percentage is what businesses look at first.</p>
     </div>` : `
     <div class="panel">
-      <h3 style="margin-top:0">${esc(marketTalkNameClient(f.market))} opens to businesses in the next ${esc(f.launchWindow)}</h3>
+      <h3 style="margin-top:0">${esc(marketTalkNameClient(f.market))} is a founding market</h3>
       <p>Your market is not taking business offers yet, and that is on purpose: SIGNL opens each market with its founding roster in place. The moment ${esc(marketTalkNameClient(f.market))} opens, we email you at <strong>${esc(state.user.email)}</strong>.</p>
-      ${f.priorityBand ? `<p><span class="badge tier" style="font-size:0.95rem;padding:6px 14px">You are in the first ${f.priorityBand} founding creators in ${esc(marketTalkNameClient(f.market))}</span></p>
+      ${f.priorityBand ? `<p><span class="badge tier badge-line" style="font-size:0.95rem;padding:6px 14px">You are in the first ${f.priorityBand} founding creators in ${esc(marketTalkNameClient(f.market))}</span></p>
       <p class="muted">You signed up early, and it counts: when businesses search the ${esc(marketTalkNameClient(f.market))} roster, founding creators are ordered by sign-up time, earliest first.</p>` : ""}
       <p class="muted">Offers, visits, and messages unlock here the day your market activates. Keep your profile current in the meantime; your local audience percentage is what businesses look at first.</p>
     </div>`}`;
@@ -11816,7 +11817,7 @@ async function loadBusinessHome() {
     <div data-dash>
     ${wsHead("Home", { sub: "Start here. Sig shows you what needs you, in order.", subKey: "biz-home" })}
     <div class="home-greet"><div class="hg-hi">Hi, ${esc(bz.businessName || u.name || "")}</div><div class="hg-line">${esc(greetLine)}</div></div>
-    ${d.marketLive ? "" : `<div class="notice blue" style="margin-top:14px"><strong>Your market opens in 30–90 days.</strong> Draft offers now; publishing switches on at launch.</div>`}
+    ${d.marketLive ? "" : `<div class="notice blue" style="margin-top:14px"><strong>Your market has not launched yet.</strong> Businesses sign up when we are ready to launch. Draft offers now; publishing switches on at launch.</div>`}
     ${sigQueueHtml(queue, { links: caughtLinks, leadShort: greetDup, askBox: true })}
     ${checklistHtml(steps)}
     ${snapshotHtml(snapCells, "This fills in once your campaigns are live. When creators start visiting and posting, you will see applications, visits, posts, and the local reach they delivered, right here.", "Analytics")}
