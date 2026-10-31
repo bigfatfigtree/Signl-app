@@ -16,7 +16,7 @@ const { runMetricsSync } = require("./metrics-sync");
 const platformConnect = require("./platform-connect");
 const square = require("./square");
 const { askSigAI } = require("./sigai");
-const { buildProfilePageHtml } = require("./profile-meta");
+const { buildProfilePageHtml, buildClaimPageHtml } = require("./profile-meta");
 const igPrefill = require("./ig-prefill");
 const ZIP_CENTROIDS = require("./zip-centroids.json");
 
@@ -2586,6 +2586,7 @@ function claimConfirmationEmail(user, band) {
       "Every founding application gets a decision or a clear status within 2 business days.",
     ];
     if (band) lines.push(`You are in the first ${band} creators to sign up in ${user.city}. Founding spots are held in sign-up order, and that standing never expires.`);
+    if (user.creator && user.creator.handle) lines.push("", `Your booking page is already live: https://app.joinsignl.com/c/${user.creator.handle}`, "Put it in your bio. Anyone who taps it sees your page and your rate card.");
     lines.push(
       "",
       `What happens next: when you are approved, we email you again, and that is when you finish your profile: your home city, your audience counts, your local audience percentage, your categories, and the rest of what businesses see. A finished profile is what makes you visible to businesses, so the approval email is the one to act on.`,
@@ -2615,6 +2616,7 @@ function claimConfirmationEmail(user, band) {
     "Every founding application gets a decision or a clear status within 2 business days.",
   ];
   if (band) lines.push(`You are in the first ${band} creators to sign up in ${user.market}. Founding spots are held in sign-up order, and that standing never expires.`);
+  if (user.creator && user.creator.handle) lines.push("", `Your booking page is already live: https://app.joinsignl.com/c/${user.creator.handle}`, "Put it in your bio. Anyone who taps it sees your page and your rate card.");
   lines.push(
     "",
     `What happens next: when you are approved, we email you again, and that is when you finish your profile: your home city, your audience counts, your local audience percentage, your categories, and the rest of what businesses see. A finished profile is what makes you visible to businesses, so the approval email is the one to act on. ${marketTalkName(user.market)} is a founding market, and founding creators with finished profiles get first pick of offers when it opens to businesses.`,
@@ -4141,8 +4143,10 @@ async function publicCreator(u, viewer, foundingPriority) {
 // creator can share their OWN page, app.joinsignl.com/c/<handle>,
 // the way creators elsewhere advertise a bio link. The payload is a
 // strict whitelist of public-safe fields built field by field; the
-// full user record never leaves this function. Pending and rejected
-// creators answer exactly like unknown handles: 404.
+// full user record never leaves this function. This lookup is the
+// FULL page (approved + complete + opted in); since Build -61 a
+// claimed-but-unfinished creator resolves through the separate
+// claim-tier lookup below instead of answering 404.
 function sanitizePublicHandle(raw) {
   let h = String(raw || "");
   try { h = decodeURIComponent(h); } catch (e) { /* keep the raw value */ }
@@ -4167,6 +4171,62 @@ async function findPublicProfileUser(handleKey) {
     .filter((u) => isRosterCreator(u) && profileCompleteOf(u) && standingState(u) !== "banned" && u.creator && u.creator.publicPage === true && String(u.creator.handle || "").toLowerCase() === handleKey)
     .sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
   return matches[0] || null;
+}
+
+// ---------- claim-tier creator page (Build -61, Jeff, 2026-10-31) ----------
+// "Signing up pays instantly": the moment a creator submits the
+// quick claim, their booking page is live at /c/<handle>. The
+// full book-me page above stays exactly as gated as Build -31
+// made it (approved + profile-complete + page on). This second
+// lookup resolves everyone the claim itself turned a page on for
+// who is not full-page eligible yet: a pending claim, or an
+// approved creator still finishing. The page shows only what is
+// actually true at that point (see claimPagePayload): the handle,
+// the market, any categories on the record, and the rate card.
+// No audience numbers, no local %, no proof, no reviews: none of
+// that exists yet, and the page never invents it.
+// Still down, exactly like the full page: rejected claims,
+// banned creators, testers, and anyone who turned their page off
+// from Profile. Discovery, offers, and bookings keep their own
+// gates (approval + finished profile); this page changes none of
+// them. It is one creator's own link, never a listing.
+async function findClaimPageUser(handleKey) {
+  if (!handleKey) return null;
+  const matches = (await allUsers())
+    .filter((u) => u.role === "creator" && !isTester(u) && u.status !== "rejected" && standingState(u) !== "banned" && u.creator && u.creator.publicPage === true && !(isRosterCreator(u) && profileCompleteOf(u)) && String(u.creator.handle || "").toLowerCase() === handleKey)
+    .sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
+  return matches[0] || null;
+}
+
+// The claim-tier payload: a strict whitelist, like the full one.
+// photoUrl stays null on purpose: the photo route keeps an
+// unfinished profile's photo locked down (an existing rule this
+// build does not touch), so the page renders the monogram until
+// the finished, approved profile takes over with the real photo.
+function claimPagePayload(u) {
+  const c = u.creator || {};
+  const primary = primaryProfileOf(c);
+  const unlisted = u.market === UNLISTED;
+  return {
+    pageState: "claimed",
+    name: u.name,
+    handle: c.handle,
+    primaryPlatform: primary.platform,
+    primaryPlatformLabel: primary.label,
+    primaryProfileUrl: primary.url,
+    photoUrl: null,
+    market: unlisted ? u.city || "" : normalizeMarketName(u.market),
+    unlisted,
+    city: u.city || "",
+    categories: c.categories || [],
+    compOpen: c.compOpen !== false,
+    paidRate: typeof c.paidRate === "number" && c.paidRate > 0 ? c.paidRate : null,
+    licensingFee: typeof c.licensingFee === "number" && c.licensingFee > 0 ? c.licensingFee : null,
+    status: u.status,
+    viewerTier: 0,
+    canBook: false,
+    viewerIsOwner: false,
+  };
 }
 
 // ---------- server-rendered /c/ pages (Jeff's ruling, 2026-10-23) ----------
@@ -8453,6 +8513,15 @@ async function handleRegister(event) {
       termsVersion: TERMS_VERSION,
       marketingEmailConsent: true,
       marketingConsentAt: ts,
+      // Instant rate card (Build -61, Jeff, 2026-10-31): claiming
+      // turns the creator's booking page ON. The page exists from
+      // the moment of the claim (see findClaimPageUser): it shows
+      // what the claim captured plus the rate card, and upgrades
+      // to the full book-me page when the profile is finished and
+      // approved. The Profile toggle (Build -31) still turns it
+      // off at any time; the claim is the opt-in.
+      publicPage: true,
+      publicPageAt: ts,
       hasPhoto: false,
       photoUploadedAt: null,
       igConnected: false,
@@ -13244,7 +13313,22 @@ async function route(event) {
     const shell = await loadAppShell(event);
     if (seg.length !== 2) return htmlPage(shell);
     const target = await findPublicProfileUser(sanitizePublicHandle(seg[1]));
-    if (!target) return htmlPage(shell);
+    if (!target) {
+      // Claim tier (Build -61): the claimed-but-unfinished page
+      // gets its own baked meta (title/OG so the bio link unfurls
+      // as the creator), but stays noindex until the finished,
+      // approved profile takes over under the 2026-10-23 ruling.
+      const claimed = await findClaimPageUser(sanitizePublicHandle(seg[1]));
+      if (!claimed) return htmlPage(shell);
+      const cp = claimPagePayload(claimed);
+      const chost = (event.headers && (event.headers["x-forwarded-host"] || event.headers.host)) || "app.joinsignl.com";
+      return htmlPage(buildClaimPageHtml(shell, {
+        name: cp.name,
+        handle: cp.handle,
+        place: cp.unlisted ? cp.city : cp.market,
+        origin: `https://${chost}`,
+      }));
+    }
     const p = await publicProfilePayload(target);
     const host = (event.headers && (event.headers["x-forwarded-host"] || event.headers.host)) || "app.joinsignl.com";
     const place = p.unlisted ? p.city : p.market;
@@ -13266,8 +13350,15 @@ async function route(event) {
   // active businesses additionally see socials and can message.
   if (method === "GET" && seg[0] === "c" && seg.length === 2) {
     const target = await findPublicProfileUser(sanitizePublicHandle(seg[1]));
-    if (!target) return err(404, "Creator not found");
-    return json(200, { profile: await bookMePayload(target, user) });
+    if (target) return json(200, { profile: await bookMePayload(target, user) });
+    // Claim tier (Build -61): a claimed-but-unfinished creator's
+    // page is live from the moment of the claim, with the smaller
+    // payload. Anything else answers 404 exactly as before.
+    const claimed = await findClaimPageUser(sanitizePublicHandle(seg[1]));
+    if (!claimed) return err(404, "Creator not found");
+    const payload = claimPagePayload(claimed);
+    if (user && user.id === claimed.id) payload.viewerIsOwner = true;
+    return json(200, { profile: payload });
   }
 
   // Message a creator from their book-me page (Amendment 2,

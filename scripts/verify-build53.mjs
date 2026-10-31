@@ -225,8 +225,8 @@ const win = (startMarker, endMarker) => {
   return a >= 0 && b > a ? appSrc.slice(a, b) : "";
 };
 
-check("build stamp is 2026.10.30-59", BUILD_ID === "2026.10.30-59", BUILD_ID);
-check("index.html carries the -53 stamp", fs.readFileSync(new URL("../public/index.html", import.meta.url), "utf8").includes("2026.10.30-59"));
+check("build stamp is 2026.10.31-61", BUILD_ID === "2026.10.31-61", BUILD_ID);
+check("index.html carries the -53 stamp", fs.readFileSync(new URL("../public/index.html", import.meta.url), "utf8").includes("2026.10.31-61"));
 
 const rail = win('if (u.role === "admin") {', "return items;");
 check("rail: admin block found", rail.length > 0);

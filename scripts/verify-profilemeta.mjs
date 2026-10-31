@@ -190,11 +190,12 @@ try {
   const appJsText = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
   check("client ships the gallery editor + profile gallery row", appJsText.includes("p-gallery") && appJsText.includes("galleryMakeCover") && appJsText.includes("Make cover") && appJsText.includes("Add photo") && appJsText.includes("galleryRowHtml"), "");
 
-  part("http: incomplete + unknown keep old behavior");
+  part("http: incomplete claim page (Build -61) + unknown keep old behavior");
   const incPage = await makeClient()("GET", "/c/metaincomplete");
-  check("incomplete page is the plain shell", incPage.status === 200 && incPage.text.includes("<title>SIGNL - Local Creator Marketing Platform</title>") && incPage.text.includes('<meta name="robots" content="noindex">') && !incPage.text.includes("og:title"), incPage.text.slice(0, 300));
+  check("incomplete claim page carries its own claim meta (title + OG so the bio link unfurls as the creator)", incPage.status === 200 && incPage.text.includes("<title>Meta Incomplete (@metaincomplete) on SIGNL | Virginia Beach</title>") && incPage.text.includes('<meta property="og:title"') && incPage.text.includes("Their booking page is live"), incPage.text.slice(0, 300));
+  check("incomplete claim page stays noindex and carries no JSON-LD (indexing starts at the finished profile)", incPage.text.includes('<meta name="robots" content="noindex">') && !incPage.text.includes('content="index, follow"') && !incPage.text.includes("application/ld+json"), incPage.text.slice(0, 300));
   const incApi = await makeClient()("GET", "/api/c/metaincomplete");
-  check("incomplete profile API keeps 404", incApi.status === 404);
+  check("incomplete profile API serves the claim-tier payload (Build -61)", incApi.status === 200 && incApi.data.profile && incApi.data.profile.pageState === "claimed" && incApi.data.profile.handle === "metaincomplete", JSON.stringify(incApi.data).slice(0, 200));
   const unknownPage = await makeClient()("GET", "/c/neverexisted");
   check("unknown page is the plain shell", unknownPage.status === 200 && unknownPage.text.includes('<meta name="robots" content="noindex">') && !unknownPage.text.includes("og:title"));
   const unknownApi = await makeClient()("GET", "/api/c/neverexisted");

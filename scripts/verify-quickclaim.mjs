@@ -3,9 +3,10 @@
 // local database, then walks:
 //   quick claim (handle + market + email + password + checkboxes)
 //   -> pending, profileComplete=false -> admin approves ->
-//   approved but INVISIBLE (no /c/ page, no discovery, offers
-//   refused both ways) -> profile completed via PATCH -> the flip
-//   to complete opens every gate -> a second claimer who never
+//   approved but not bookable (claim-tier /c/ page live since
+//   Build -61, but no discovery, offers refused both ways) ->
+//   profile completed via PATCH -> the flip to complete opens
+//   every gate and the full book-me page takes over -> a second claimer who never
 //   finishes gets exactly ONE day-3 reminder from the sweep ->
 //   the admin backfill endpoint audits the roster.
 // The full-form sign-up path is exercised alongside to prove it
@@ -110,6 +111,7 @@ try {
   check("claim email subject is the claimed-spot framing", claimMail.subject === "Your SIGNL founding spot is claimed", claimMail.subject);
   check("claim email carries the 2-business-day approval promise", claimMail.text.includes("decision or a clear status within 2 business days"));
   check("claim email says the profile is finished after approval", claimMail.text.includes("that is when you finish your profile"));
+  check("claim email carries the live booking page line (Build -61)", claimMail.text.includes("Your booking page is already live: https://app.joinsignl.com/c/quickclaim757"), claimMail.text);
   check("claim email carries the referral link and signs as Jeff", claimMail.text.includes("https://app.joinsignl.com/?ref=quickclaim757") && claimMail.text.includes("\nJeff\nFounder, SIGNL\n"), claimMail.text);
   check("claim email has no em dashes", !claimMail.text.includes("—") && !claimMail.text.includes("–"));
 
@@ -154,6 +156,9 @@ try {
   check("quick claim name falls back to the handle", claim.data.user && claim.data.user.name === "quickclaim757", claim.data.user && claim.data.user.name);
   check("quick claim referral credit persisted (claim links with ?ref= keep working)", claim.data.user && claim.data.user.referredBy === "foundingfriend");
   check("quick claim payload carries profileCompletion (incomplete, 0 of 4 essentials)", !!claim.data.user.profileCompletion && claim.data.user.profileCompletion.complete === false && claim.data.user.profileCompletion.requiredDone === 0 && claim.data.user.profileCompletion.requiredTotal === 4, JSON.stringify(claim.data.user.profileCompletion));
+  check("quick claim turns the booking page on (publicPage stamped at claim, Build -61)", claim.data.user.creator.publicPage === true, JSON.stringify(claim.data.user.creator.publicPage));
+  const pubAtClaim = await client()("GET", "/api/c/quickclaim757");
+  check("the claim-tier page is live from the moment of the claim: 200, claim facts + rate card only, no audience/proof fields", pubAtClaim.status === 200 && pubAtClaim.data.profile && pubAtClaim.data.profile.pageState === "claimed" && pubAtClaim.data.profile.handle === "quickclaim757" && pubAtClaim.data.profile.market === claim.data.user.market && pubAtClaim.data.profile.paidRate === null && pubAtClaim.data.profile.localAudiencePct === undefined && pubAtClaim.data.profile.momentumPoints === undefined && pubAtClaim.data.profile.proof === undefined, JSON.stringify(pubAtClaim.data && pubAtClaim.data.profile));
 
   const noHandle = await client()("POST", "/api/auth/register", { role: "creator", quickClaim: true, email: "nohandle@fixtures.dev", password: "claim-pass-1234", market: "Hampton Roads", ...AGREE });
   check("quick claim without a handle is refused (400)", noHandle.status === 400, String(noHandle.status));
@@ -217,7 +222,7 @@ try {
   // ---------- the offer gate: approved but invisible ----------
   const anon = client();
   const pubBefore = await anon("GET", "/api/c/quickclaim757");
-  check("public /c/ page 404s for an approved but incomplete creator (identical to pending)", pubBefore.status === 404, String(pubBefore.status));
+  check("approved but incomplete: the claim-tier page stays live (Build -61) while discovery and offers stay shut (asserted below)", pubBefore.status === 200 && pubBefore.data.profile && pubBefore.data.profile.pageState === "claimed", String(pubBefore.status));
 
   const business = client();
   const regB = await business("POST", "/api/auth/register", {
@@ -273,7 +278,7 @@ try {
   check("the completion flip is logged as profile_completed via completion_flow", !!flipEvent && flipEvent.data.via === "completion_flow", JSON.stringify(flipEvent && flipEvent.data));
 
   const pubAfter0 = await anon("GET", "/api/c/quickclaim757");
-  check("public /c/ page still 404s once complete, until the creator turns the book-me page on (opt-in)", pubAfter0.status === 404, String(pubAfter0.status));
+  check("once complete, the full book-me page takes over the same URL with no second opt-in (the claim turned the page on, Build -61)", pubAfter0.status === 200 && pubAfter0.data.profile && pubAfter0.data.profile.pageState === undefined && pubAfter0.data.profile.handle === "quickclaim757", String(pubAfter0.status));
   await claimer("PATCH", "/api/me/profile", { publicPage: true });
   // Charter stamp: the claimer finished while the market is
   // pre-launch, so the founding read seals Charter status (the
@@ -281,6 +286,10 @@ try {
   await claimer("GET", "/api/me/founding");
   const pubAfter = await anon("GET", "/api/c/quickclaim757");
   check("public /c/ page serves 200 once complete and opted in", pubAfter.status === 200 && pubAfter.data.profile && pubAfter.data.profile.handle === "quickclaim757", String(pubAfter.status));
+  await claimer("PATCH", "/api/me/profile", { publicPage: false });
+  const pubOff = await anon("GET", "/api/c/quickclaim757");
+  check("turning the page off in Profile still takes it down (404): the Build -31 creator choice survives Build -61", pubOff.status === 404, String(pubOff.status));
+  await claimer("PATCH", "/api/me/profile", { publicPage: true });
   const disc2 = await business("GET", "/api/discover?market=Hampton%20Roads");
   check("discovery shows the creator once complete", (disc2.data.creators || []).some((c) => c.userId === claimerId));
   const applyOk = await claimer("POST", `/api/offers/${openOfferId}/apply`, {});

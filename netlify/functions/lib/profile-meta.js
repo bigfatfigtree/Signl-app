@@ -85,4 +85,42 @@ function buildProfilePageHtml(shellHtml, profile) {
   return html;
 }
 
-module.exports = { buildProfilePageHtml, profilePageMeta };
+// Claim-tier page meta (Build -61, 2026-10-31): a creator who
+// just claimed holds a live booking page from that moment, and a
+// link they paste into their bio should unfurl as them, not as a
+// generic SIGNL card. Same tag set as the finished page, two
+// differences: the copy says the page is a founding page whose
+// booking opens at launch, and robots stays noindex (the shell's
+// own value): indexing starts when the finished, approved
+// profile takes over under the 2026-10-23 ruling above. No
+// JSON-LD: the page carries no ratings, counts, or offers yet.
+function claimPageMeta(profile) {
+  const place = profile.place || "";
+  const named = profile.name && profile.name !== profile.handle ? `${profile.name} (@${profile.handle})` : `@${profile.handle}`;
+  const title = `${named} on SIGNL${place ? ` | ${place}` : ""}`;
+  const description = `${named} is a founding creator on SIGNL in ${place || "their market"}. Their booking page is live: local businesses book local creators for honest posts, and founding creators get the first look when businesses start booking.`;
+  return { title, description };
+}
+
+function buildClaimPageHtml(shellHtml, profile) {
+  const { title, description } = claimPageMeta(profile);
+  const origin = profile.origin || "https://app.joinsignl.com";
+  let html = String(shellHtml == null ? "" : shellHtml);
+  html = html.replace(/<title>[\s\S]*?<\/title>/, `<title>${escHtml(title)}</title>`);
+  html = html.replace(/(<meta name="description" content=")[^"]*(")/, `$1${escHtml(description)}$2`);
+  const canonical = `${origin}/c/${profile.handle}`;
+  const tags = [
+    `<link rel="canonical" href="${escHtml(canonical)}">`,
+    `<meta property="og:title" content="${escHtml(title)}">`,
+    `<meta property="og:description" content="${escHtml(description)}">`,
+    `<meta property="og:type" content="profile">`,
+    `<meta property="og:url" content="${escHtml(canonical)}">`,
+    `<meta name="twitter:card" content="summary">`,
+    `<meta name="twitter:title" content="${escHtml(title)}">`,
+    `<meta name="twitter:description" content="${escHtml(description)}">`,
+  ].join("\n");
+  html = html.replace(/<\/title>/, `</title>\n${tags}`);
+  return html;
+}
+
+module.exports = { buildProfilePageHtml, profilePageMeta, buildClaimPageHtml, claimPageMeta };

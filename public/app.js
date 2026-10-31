@@ -520,6 +520,7 @@ async function renderPublicProfile() {
     </section>`;
     return;
   }
+  if (p.pageState === "claimed") return renderClaimedProfile(p);
   state.bookMeCreatorId = p.creatorUserId || null;
   const place = p.unlisted ? esc(p.city) : esc(marketDisplayName(p.market));
   applyProfileShareShell(p, p.unlisted ? (p.city || "") : (p.market || ""));
@@ -601,6 +602,53 @@ async function renderPublicProfile() {
       ${visitIncludesHtml(p.visitIncludes)}
       ${p.isRealtor && p.brokerage ? `<p class="small muted">Brokered by ${esc(p.brokerage)}</p>` : ""}
       ${p.viewerIsOwner ? `<p class="small muted">This is your book-me page, exactly as visitors see it. Edit it any time under Profile.</p><p class="small">${shareBlockHtml(p.handle, p.market || "", "Share your invite")}</p>` : ""}
+    </section>
+  </div>`;
+}
+
+// Claim-tier page (Build -61, Jeff, 2026-10-31): the page a
+// creator holds from the moment they claim their founding spot.
+// It shows what the claim actually captured (handle, market, any
+// categories on the record) plus the rate card, and says plainly
+// that booking opens when the market launches. No audience
+// numbers, no local reach, no proof: none of that exists yet.
+// When the profile is finished and approved, the full book-me
+// page above takes over this same URL.
+function renderClaimedProfile(p) {
+  const placeLabel = p.unlisted ? esc(p.city || "") : esc(marketDisplayName(p.market));
+  const place = p.unlisted ? (p.city || "") : (p.market || "");
+  document.title = `@${p.handle} on SIGNL${place ? ` | ${place}` : ""}`;
+  setShareCanonical(`https://app.joinsignl.com/c/${p.handle}`);
+  setShareMeta("og:title", "property", document.title);
+  setShareMeta("og:description", "property", `@${p.handle} is a founding creator on SIGNL in ${place || "their market"}. Their booking page is live: local businesses book local creators for honest posts, and founding creators get the first look when businesses start booking.`);
+  setShareMeta("og:type", "property", "profile");
+  setShareMeta("twitter:card", "name", "summary");
+  setShareMeta("twitter:title", "name", document.title);
+  const initial = esc((p.name || "?").trim().charAt(0).toUpperCase() || "?");
+  app.innerHTML = `
+  <div class="public-profile bookme" style="max-width:720px;margin:20px auto">
+    <div class="bookme-cover">
+      <div class="cc-mono bookme-mono"><span>${initial}</span></div>
+      <div class="bookme-cover-id">
+        <div class="cc-name bookme-name">${esc(p.name)}</div>
+        <div class="bookme-handle">@${esc(p.handle)} &middot; ${esc(p.primaryPlatformLabel || "Instagram")}</div>
+      </div>
+    </div>
+    <section class="panel bookme-body">
+      <div class="cc-chips">
+        <span class="cc-chip market">${placeLabel}</span>
+        <span class="cc-chip">Founding Creator</span>
+        ${(p.categories || []).map((x) => `<span class="cc-chip">${esc(x)}</span>`).join("")}
+      </div>
+      <p style="margin:12px 0 0"><strong>This booking page is live.</strong> It went live the moment @${esc(p.handle)} claimed their founding spot. Their full profile lands here once it is finished and approved.</p>
+      <div class="tint-block" style="margin-top:14px">
+        <p class="small" style="margin-top:0">${p.compOpen === false ? `<span class="badge warn">Paid visits only</span>` : `<span class="badge info">Open to comp visits</span>`}${p.paidRate ? ` <span class="badge tier">Paid bookings: $${fmtPrice(p.paidRate)}</span>` : ""}</p>
+        <p class="small muted" style="margin:6px 0 0">${p.compOpen === false ? "Paid bookings only." : "Comped visits: a meal, a service, or an experience, for an honest post."}</p>
+        ${p.paidRate ? `<p class="small muted">Paid bookings at $${fmtPrice(p.paidRate)} &middot; creator keeps 97% &middot; payment held until the post is live.</p>` : ""}
+        ${p.licensingFee ? `<p class="small muted">Run my post as an ad for 90 days: $${fmtPrice(p.licensingFee)} &middot; I approve each use &middot; I keep 97%.</p>` : ""}
+      </div>
+      <p class="small muted">Booking opens when ${placeLabel} launches on SIGNL. Founding creators get the first look at offers.</p>
+      ${p.viewerIsOwner ? `<p class="small muted">This is your page, exactly as visitors see it. The copyable link is on your status screen and your profile. Finish your profile from your dashboard and your photo, your audience, and your local reach appear here.</p>` : state.user ? "" : `<div class="cta-row" style="justify-content:flex-start"><a class="btn" href="#" onclick="return go('join-business')">Join as a founding business</a> <a class="btn ghost" href="#" onclick="return go('join-creator')">Become a Founding Creator</a></div>`}
     </section>
   </div>`;
 }
@@ -6752,6 +6800,73 @@ function foundingPlansHtml(u) {
   </section>`;
 }
 
+// Instant payoff at claim (Build -61, Jeff, 2026-10-31): the
+// claim success screen hands the creator the thing they now
+// hold: a live booking page. The URL sits big and copyable, the
+// bio line and the one next-step sentence are plain, and one
+// optional control sets a paid rate through the existing
+// PATCH /me/profile write path. The claim form itself gains no
+// fields; nothing here is required.
+function claimPayoffHtml(u) {
+  const url = publicProfileUrl(u);
+  if (!url) return "";
+  const c = u.creator || {};
+  const isUnl = u.market === unlistedLabel();
+  const place = isUnl ? esc(u.city || "") : esc(marketTalkNameClient(u.market));
+  const rateSet = typeof c.paidRate === "number" && c.paidRate > 0;
+  return `
+    <div class="tint-block" style="text-align:left;margin-top:16px">
+      <p style="margin:0"><strong>${T("Your booking page is live.", "Tu página de reservas ya está activa.")}</strong></p>
+      <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
+        <code style="flex:1;overflow-x:auto;white-space:nowrap;padding:8px;background:#fff;border:1px solid #dfe7df;border-radius:8px">${esc(url)}</code>
+        <button class="btn small-btn" onclick="return copyClaimPage()">${T("Copy", "Copiar")}</button>
+      </div>
+      <p class="small" id="claim-copy-ok" style="margin:6px 0 0"></p>
+      <p class="small" style="margin:8px 0 0">${T("Put it in your bio. Anyone who taps it sees your page and your rate card.", "Ponlo en tu bio. Quien lo toque ve tu página y tus tarifas.")}</p>
+      <p class="small muted" style="margin:6px 0 0">${isUnl
+        ? T(`When SIGNL opens in ${place}, founding creators get the first look at offers.`, `Cuando SIGNL abra en ${place}, los creadores fundadores ven las ofertas primero.`)
+        : T(`When ${place} businesses start booking, founding creators get the first look at offers.`, `Cuando los negocios de ${place} empiecen a reservar, los creadores fundadores ven las ofertas primero.`)}</p>
+      ${rateSet
+        ? `<p class="small" style="margin:10px 0 0">${T(`Your paid rate is $${fmtPrice(c.paidRate)}, and it is on your page. Change it any time on your profile.`, `Tu tarifa pagada es $${fmtPrice(c.paidRate)}, y ya está en tu página. Cámbiala cuando quieras en tu perfil.`)}</p>`
+        : `<div style="margin-top:12px">
+            <p class="small" style="margin:0"><strong>${T("Set your paid rate (optional, 20 seconds)", "Pon tu tarifa pagada (opcional, 20 segundos)")}</strong></p>
+            <p class="small muted" style="margin:4px 0 0">${T("It shows on your page. Businesses book at your rate, you keep 97%, and payment is held until your post is live. Minimum $50. Comped visits work without it.", "Aparece en tu página. Los negocios reservan a tu tarifa, te quedas con el 97%, y el pago se retiene hasta que tu publicación esté en vivo. Mínimo $50. Las visitas de cortesía funcionan sin esto.")}</p>
+            <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
+              <span>$</span><input id="claim-rate" type="number" min="50" step="1" inputmode="numeric" placeholder="150" style="width:110px">
+              <button class="btn small-btn" onclick="return saveClaimRate()">${T("Put it on my page", "Ponla en mi página")}</button>
+            </div>
+            <p class="small" id="claim-rate-msg" style="margin:6px 0 0"></p>
+          </div>`}
+    </div>`;
+}
+
+async function copyClaimPage() {
+  const el = document.getElementById("claim-copy-ok");
+  try {
+    await navigator.clipboard.writeText(publicProfileUrl(state.user));
+    if (el) el.textContent = T("Copied.", "Copiado.");
+  } catch (e) {
+    if (el) el.textContent = T("Copy the link from the box above.", "Copia el enlace del cuadro de arriba.");
+  }
+  return false;
+}
+
+async function saveClaimRate() {
+  const input = document.getElementById("claim-rate");
+  const msg = document.getElementById("claim-rate-msg");
+  const rate = Math.round(Number(input && input.value));
+  if (!Number.isFinite(rate) || rate < 50) { if (msg) msg.textContent = T("Rates start at $50.", "Las tarifas empiezan en $50."); return false; }
+  try {
+    const data = await api("PATCH", "/me/profile", { paidRate: rate });
+    if (data && data.user) state.user = data.user;
+    else if (state.user && state.user.creator) state.user.creator.paidRate = rate;
+    render();
+  } catch (e) {
+    if (msg) msg.textContent = (e && e.message) || T("That did not save. You can set it later on your profile.", "No se guardó. Puedes ponerla luego en tu perfil.");
+  }
+  return false;
+}
+
 function renderPending() {
   const u = state.user;
   if (u.role === "business") return renderBusinessFoundingStatus();
@@ -6787,6 +6902,7 @@ function renderPending() {
       <div style="margin-top:8px">${u.marketCandidates.map((m) => `<button class="btn small-btn" style="margin:0 8px 8px 0" onclick="return pickCandidateMarket(event, '${esc(m)}')">${esc(marketDisplayName(m))}</button>`).join("")}</div>
       <p class="small muted" style="margin:0">${T("Your typed city stays as your home city either way.", "Tu ciudad escrita se queda como tu ciudad de todos modos.")}</p>
     </div>` : ""}
+    ${claimedOnly ? claimPayoffHtml(u) : ""}
     ${isCreator && f.queueBand ? `<p><span class="badge info">${isUnlisted ? `You are in the first ${f.queueBand} to sign up in ${esc(u.city)}` : `You are in the first ${f.queueBand} to sign up in ${esc(marketTalkNameClient(u.market))}`}</span></p><p class="small muted">Applications are reviewed in sign-up order. Founding status starts at approval, not at sign-up.</p>` : ""}
     <p class="muted">${isUnlisted
       ? `${T("SIGNL is not open in", "SIGNL aún no abrió en")} ${esc(u.city)} ${T("yet, and your sign-up counts toward opening it: we open new markets where creator sign-ups pile up, and founding sign-ups there go first. Every application is reviewed by a person. The moment you are approved, your founding status page opens here, and we will email you at", "y tu registro cuenta para abrirlo: abrimos mercados nuevos donde se juntan registros de creadores, y los registros fundadores de ahí van primero. Cada solicitud la revisa una persona. En cuanto te aprobemos, tu página de estado fundador se abre aquí, y te escribimos a")} ${esc(u.email)} ${T("the moment", "en cuanto")} ${esc(u.city)} ${T("opens. Sign back in any time to check your status.", "abra. Entra cuando quieras para ver tu estado.")}${state.boot && state.boot.email && state.boot.email.enabled ? ` ${T("A confirmation email is on its way to", "Un correo de confirmación va en camino a")} ${esc(u.email)}.` : ""}`
