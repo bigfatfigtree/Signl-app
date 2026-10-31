@@ -8191,6 +8191,43 @@ function requireApproved(user) {
   return user && user.status === "approved";
 }
 
+// ---------- visit-rules attestation (Build -60, Jeff, 2026-10-31) ----------
+// Sign-up carries ONE attestation: agreement to the Terms. The
+// three behavioral acknowledgments (honest posts, FTC disclosure,
+// the 48-hour post rule) bind when a visit does, so they are
+// collected as ONE combined attestation at the creator's first
+// offer acceptance instead. Creators who registered before this
+// build confirmed all three at sign-up; their stored flags read
+// as attested and they are never asked again.
+function visitRulesAttested(user) {
+  const c = user && user.creator;
+  return !!(c && c.agreedHonestPosts === true && c.agreedFtcDisclosure === true && c.agreedPostCompliance === true);
+}
+
+async function recordVisitRulesAttestation(user) {
+  const ts = nowIso();
+  user.creator.agreedHonestPosts = true;
+  user.creator.agreedFtcDisclosure = true;
+  user.creator.agreedPostCompliance = true;
+  user.creator.agreedAt = ts;
+  user.updatedAt = ts;
+  await store.set(`user:${user.id}`, user);
+}
+
+// The shared gate on the creator accept endpoints: returns an
+// error response when a creator who has not yet confirmed the
+// visit rules accepts without the attestation, and null when the
+// way is clear (recording the attestation first when this very
+// request carries it).
+async function visitRulesGate(user, b) {
+  if (visitRulesAttested(user)) return null;
+  if (b && b.agreedVisitRules === true) {
+    await recordVisitRulesAttestation(user);
+    return null;
+  }
+  return err(400, "Before your first booking, confirm the visit rules in one tap: your posts stay your honest opinion (no business can require a positive post), you disclose every comp as the FTC requires, and you post within 48 hours of the visit and paste the link in the app. A post that never lands does not count, and repeated misses can pause your account.");
+}
+
 // ---------- route handlers ----------
 
 async function handleRegister(event) {
@@ -8199,11 +8236,13 @@ async function handleRegister(event) {
   if (role !== "creator" && role !== "business") return err(400, "role must be creator or business");
   // Two-step claim (Jeff, 2026-10-20): a creator may claim their
   // founding spot with only a handle, a market, an email, a
-  // password, and the rule checkboxes. The full profile is step
+  // password, and agreement to the Terms. The full profile is step
   // two, finished after approval from the dashboard checklist.
   // quickClaim is creators only; businesses always register with
-  // the full form. The agreement checks are the same four the full
-  // form enforces, with the same words.
+  // the full form. One attestation gates sign-up (Build -60, Jeff,
+  // 2026-10-31): the Terms, on every creator path. The three visit
+  // rules are confirmed as one combined attestation at the
+  // creator's first offer acceptance (see visitRulesGate).
   const quickClaim = role === "creator" && b.quickClaim === true;
   const claimHandle = quickClaim ? normalizeHandle(b.handle) : "";
   // The claim's handle belongs to the creator's PRIMARY platform
@@ -8212,9 +8251,6 @@ async function handleRegister(event) {
   const claimPlatform = normalizePrimaryPlatform(b.primaryPlatform);
   if (quickClaim) {
     if (!claimHandle) return err(400, `Your ${primaryPlatformLabel(claimPlatform)} handle is required`);
-    if (b.agreedHonestPosts !== true) return err(400, "Please confirm the honest-post rule: no business can ever require a positive post.");
-    if (b.agreedFtcDisclosure !== true) return err(400, "Please confirm you will disclose every comp in your posts, as the FTC requires.");
-    if (b.agreedPostCompliance !== true) return err(400, "Please confirm the post rule: post within 48 hours of a comped visit for full credit and paste the post link in the app. A late post inside the catch-up window still counts. If a post never lands, the visit does not count, and repeated misses can pause your account.");
     if (b.agreedTerms !== true) return err(400, "Please agree to the Terms of Service and Privacy Policy, and to receiving account and marketing emails from SIGNL.");
   }
   // Business registration is founding-list intake (Jeff restored
@@ -8359,8 +8395,13 @@ async function handleRegister(event) {
 
   if (role === "creator" && quickClaim) {
     // Step one of the two-step claim: the record carries the
-    // handle, the four agreements, and defaults for everything
-    // else. The gate fields (home city, audience counts,
+    // handle, the Terms agreement, and defaults for everything
+    // else. The three visit-rule flags start unconfirmed; the
+    // combined attestation at first offer acceptance sets them
+    // (Build -60). A client that still volunteers the three
+    // confirmations at sign-up (an older build, a claim link in
+    // the wild) has them recorded as given — they are accepted,
+    // never required. The gate fields (home city, audience counts,
     // categories, local audience %) stay empty on purpose, so
     // profileComplete computes false until the creator finishes
     // step two after approval. City for a listed market is a
@@ -8404,10 +8445,10 @@ async function handleRegister(event) {
       localAudiencePct: null,
       localAudienceSource: null,
       localAudienceAsOf: null,
-      agreedHonestPosts: true,
-      agreedFtcDisclosure: true,
-      agreedPostCompliance: true,
-      agreedAt: ts,
+      agreedHonestPosts: b.agreedHonestPosts === true,
+      agreedFtcDisclosure: b.agreedFtcDisclosure === true,
+      agreedPostCompliance: b.agreedPostCompliance === true,
+      agreedAt: b.agreedHonestPosts === true && b.agreedFtcDisclosure === true && b.agreedPostCompliance === true ? ts : null,
       agreedTerms: true,
       termsVersion: TERMS_VERSION,
       marketingEmailConsent: true,
@@ -8424,8 +8465,9 @@ async function handleRegister(event) {
     // creator's primary platform (Jeff, 2026-10-22: the picker comes
     // first, "Where is your main audience?"), home city inside the
     // chosen market, follower count, at least one content category,
-    // self-reported local audience %, and both rule acknowledgments
-    // (honest posts, FTC disclosure).
+    // self-reported local audience %, and agreement to the Terms.
+    // The visit rules are NOT sign-up gates (Build -60): they are
+    // confirmed as one attestation at first offer acceptance.
     const primaryPlatform = normalizePrimaryPlatform(b.primaryPlatform);
     const handle = normalizeHandle(b.handle);
     if (!handle) return err(400, `Your ${primaryPlatformLabel(primaryPlatform)} handle is required`);
@@ -8440,9 +8482,6 @@ async function handleRegister(event) {
     }
     const localPct = Math.max(0, Math.min(100, Number(b.localAudiencePct)));
     if (Number.isNaN(localPct)) return err(400, "Local audience percentage must be a number from 0 to 100");
-    if (b.agreedHonestPosts !== true) return err(400, "Please confirm the honest-post rule: no business can ever require a positive post.");
-    if (b.agreedFtcDisclosure !== true) return err(400, "Please confirm you will disclose every comp in your posts, as the FTC requires.");
-    if (b.agreedPostCompliance !== true) return err(400, "Please confirm the post rule: post within 48 hours of a comped visit for full credit and paste the post link in the app. A late post inside the catch-up window still counts. If a post never lands, the visit does not count, and repeated misses can pause your account.");
     if (b.agreedTerms !== true) return err(400, "Please agree to the Terms of Service and Privacy Policy, and to receiving account and marketing emails from SIGNL.");
     // Audience stacking (Jeff, 2026-10-19): the sign-up's follower
     // count is the count on the creator's PRIMARY platform (Jeff,
@@ -8534,10 +8573,10 @@ async function handleRegister(event) {
       localAudiencePct: localPct,
       localAudienceSource: "Self-reported",
       localAudienceAsOf: ts.slice(0, 10),
-      agreedHonestPosts: true,
-      agreedFtcDisclosure: true,
-      agreedPostCompliance: true,
-      agreedAt: ts,
+      agreedHonestPosts: b.agreedHonestPosts === true,
+      agreedFtcDisclosure: b.agreedFtcDisclosure === true,
+      agreedPostCompliance: b.agreedPostCompliance === true,
+      agreedAt: b.agreedHonestPosts === true && b.agreedFtcDisclosure === true && b.agreedPostCompliance === true ? ts : null,
       agreedTerms: true,
       termsVersion: TERMS_VERSION,
       marketingEmailConsent: true,
@@ -8649,7 +8688,7 @@ async function handleRegister(event) {
     market: user.market,
     data:
       role === "creator"
-        ? { quickClaim: !!quickClaim, profileComplete: user.creator.profileComplete === true, handle: user.creator.handle, primaryPlatform: primaryPlatformOf(user.creator), city: user.city, neighborhood: user.creator.neighborhood, university: user.creator.university, state: user.state, country: user.country, unlisted: user.market === UNLISTED, followerCount: user.creator.followerCount, audienceStack: user.creator.audienceStack, totalAudience: user.creator.totalAudience, tierBand: normalizeTierBand(user.creator.tierBand), suggestedTier: normalizeTierBand(user.creator.suggestedTier), localAudiencePct: user.creator.localAudiencePct, localAudienceSource: user.creator.localAudienceSource, categories: user.creator.categories, compCategories: user.creator.compCategories, openToPaidCampaigns: user.creator.openToPaidCampaigns, profession: user.creator.profession || "", agreedPostCompliance: true, termsVersion: TERMS_VERSION, marketingEmailConsent: true, ...(user.referredBy ? { referredBy: user.referredBy } : {}), ...(user.signupSource ? { signupSource: user.signupSource } : {}) }
+        ? { quickClaim: !!quickClaim, profileComplete: user.creator.profileComplete === true, handle: user.creator.handle, primaryPlatform: primaryPlatformOf(user.creator), city: user.city, neighborhood: user.creator.neighborhood, university: user.creator.university, state: user.state, country: user.country, unlisted: user.market === UNLISTED, followerCount: user.creator.followerCount, audienceStack: user.creator.audienceStack, totalAudience: user.creator.totalAudience, tierBand: normalizeTierBand(user.creator.tierBand), suggestedTier: normalizeTierBand(user.creator.suggestedTier), localAudiencePct: user.creator.localAudiencePct, localAudienceSource: user.creator.localAudienceSource, categories: user.creator.categories, compCategories: user.creator.compCategories, openToPaidCampaigns: user.creator.openToPaidCampaigns, profession: user.creator.profession || "", agreedPostCompliance: user.creator.agreedPostCompliance === true, termsVersion: TERMS_VERSION, marketingEmailConsent: true, ...(user.referredBy ? { referredBy: user.referredBy } : {}), ...(user.signupSource ? { signupSource: user.signupSource } : {}) }
         : { businessName: user.business.businessName, category: user.business.category, plan: user.business.plan, planPriceMonthly: user.business.planPriceMonthly, ...(user.referredBy ? { referredBy: user.referredBy } : {}), ...(user.signupSource ? { signupSource: user.signupSource } : {}) },
   });
   // Standing-authority auto-decision (Jeff, 2026-10-22): a creator
@@ -8702,9 +8741,9 @@ async function handleRegister(event) {
         xUrl: user.creator.xUrl,
         linkedinUrl: user.creator.linkedinUrl,
         hasPhoto: false,
-        agreedHonestPosts: true,
-        agreedFtcDisclosure: true,
-        agreedPostCompliance: true,
+        agreedHonestPosts: user.creator.agreedHonestPosts === true,
+        agreedFtcDisclosure: user.creator.agreedFtcDisclosure === true,
+        agreedPostCompliance: user.creator.agreedPostCompliance === true,
         agreedTerms: true,
         termsVersion: TERMS_VERSION,
         marketingEmailConsent: true,
@@ -17612,6 +17651,12 @@ async function route(event) {
       if (visitsThisWeek(allBk, user.id, Date.now()) >= cap) {
         return err(403, `You are at your max of ${cap} visit${cap === 1 ? "" : "s"} this week (your setting, under Profile). This offer stays in your Offers tab: accept it next week, or raise your weekly max if you want more.`);
       }
+      // Visit rules (Build -60): a creator whose record does not
+      // yet carry the three acknowledgments confirms them here,
+      // as one combined attestation, before their first booking
+      // exists — the moment the rules start to bind.
+      const rulesGate = await visitRulesGate(user, b);
+      if (rulesGate) return rulesGate;
       // Collab +1 (Build -42): a direct accept can name a +1
       // too. Validate BEFORE the booking exists so a bad +1 can
       // never orphan a booked visit behind an error.
@@ -17764,6 +17809,11 @@ async function route(event) {
       if (filledCountFor(offer.id, bookings) >= offer.spots) return err(409, "All spots on this offer are filled");
       const cap = maxVisitsPerWeekOf(user);
       if (visitsThisWeek(bookings, user.id, Date.now()) >= cap) return err(403, `You are at your max of ${cap} visits this week (your setting, under Profile).`);
+      // Visit rules (Build -60): taking a backfill spot can be a
+      // creator's first acceptance; the same one-tap combined
+      // attestation gates it as on a direct accept.
+      const rulesGate = await visitRulesGate(user, parseBody(event));
+      if (rulesGate) return rulesGate;
       const booking = await createBookingForOffer({ offer, creator: user, via: "backfill", applicationId: app.id });
       app.status = "backfill_accepted";
       app.bookingId = booking.id;

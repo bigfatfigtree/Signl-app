@@ -5144,7 +5144,11 @@ function sigC1Confirm(p) {
     ...(b.deliverable ? [`${ST("Deliverable", "Entrega")}: ${b.deliverable}`] : []),
   ];
   const packetLine = o.businessAssetPacket ? `\n${ST("Their asset packet (links and talking points) will be inside your visit view.", "Su paquete (enlaces y puntos) estará en tu vista de visita.")}` : "";
-  sigOpAsk(`${p.mode === "accept" ? ST("Accept this invite?", "¿Aceptar esta invitación?") : ST("Apply to this offer?", "¿Aplicar a esta oferta?")}\n"${o.title}" — ${o.businessName} · ${o.kind === "paid" ? `$${fmtPrice(o.cashRate)} ${ST("paid; you keep 97%", "pagada; te quedas con el 97%")}` : `${o.whatComped} (${ST("comp value", "valor")} $${fmtMoney(o.dollarCap)})`}${briefLines.length ? `\n${briefLines.join("\n")}` : ""}${packetLine}\n${ST("Nothing is sent until you say yes.", "Nada se envía hasta que digas que sí.")}`, [
+  // Visit rules (Build -60): a first acceptance through Sig shows
+  // the combined rules inside this same yes-step; the yes carries
+  // the attestation, exactly like the checkbox on the forms.
+  const rulesLine = p.mode === "accept" && !visitRulesAttestedClient() ? `\n${ST("First visit rules, confirmed by your yes: your posts stay your honest opinion (no business can require a positive post), you disclose every comp as the FTC requires, and you post within 48 hours of the visit and paste the link in the app. A post that never lands doesn't count, and repeated misses can pause your account.", "Reglas de la primera visita, confirmadas con tu sí: tus publicaciones son tu opinión honesta (ningún negocio puede exigirte publicar en positivo), revelas cada cortesía como exige la FTC, y publicas dentro de 48 horas de la visita y pegas el enlace en la app. Una publicación que nunca llega no cuenta, y las faltas repetidas pueden pausar tu cuenta.")}` : "";
+  sigOpAsk(`${p.mode === "accept" ? ST("Accept this invite?", "¿Aceptar esta invitación?") : ST("Apply to this offer?", "¿Aplicar a esta oferta?")}\n"${o.title}" — ${o.businessName} · ${o.kind === "paid" ? `$${fmtPrice(o.cashRate)} ${ST("paid; you keep 97%", "pagada; te quedas con el 97%")}` : `${o.whatComped} (${ST("comp value", "valor")} $${fmtMoney(o.dollarCap)})`}${briefLines.length ? `\n${briefLines.join("\n")}` : ""}${packetLine}${rulesLine}\n${ST("Nothing is sent until you say yes.", "Nada se envía hasta que digas que sí.")}`, [
     { label: p.mode === "accept" ? ST("Yes, accept", "Sí, aceptar") : ST("Yes, apply", "Sí, aplicar"), primary: true, run: () => sigOpPick(ST("Yes", "Sí"), async () => sigC1Commit()) },
     { label: ST("Back to offers", "Volver a ofertas"), run: () => sigOpPick(ST("Back to offers", "Volver a ofertas"), async () => { state.sigFlow = null; await sigC1Start(); }) },
   ]);
@@ -5154,7 +5158,11 @@ async function sigC1Commit() {
   const p = f.data.picked;
   const o = p.o;
   try {
-    if (p.mode === "accept") await api("POST", `/offers/${o.id}/accept`, {});
+    if (p.mode === "accept") {
+      const sigRules = visitRulesAttestedClient() ? {} : { agreedVisitRules: true };
+      await api("POST", `/offers/${o.id}/accept`, sigRules);
+      visitRulesMarkAttested(sigRules);
+    }
     else await api("POST", "/applications", { offerId: o.id });
     state.sigFlow = null;
     refreshBadges();
@@ -5378,8 +5386,10 @@ function sigC4Run() {
 }
 
 // ---------- two-step claim, step one (Jeff, 2026-10-20) ----------
-// The quick claim: handle, market, email, password, and the same
-// four rule checkboxes the full form carries. Submitting claims
+// The quick claim: handle, market, email, password, and ONE
+// agreement, the Terms (Build -60, Jeff, 2026-10-31: the three
+// visit-rule checkboxes moved to the first offer acceptance, as
+// one combined attestation). Submitting claims
 // the founding spot (spots are held in sign-up order) and puts the
 // application in the review queue; the full profile is step two,
 // finished after approval from the dashboard checklist. Claim-link
@@ -5593,9 +5603,6 @@ function renderQuickClaim() {
           <li>${T("No post, no credit. Repeated misses can pause your account.", "Sin publicación, no hay crédito. Las faltas repetidas pueden pausar tu cuenta.")}</li>
         </ul></div>
       </details>
-      <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="qc-agree-honest" required><span>${T("No business can require me to post positively. My posts stay my honest opinion.", "Ningún negocio puede exigirme publicar en positivo. Mis publicaciones son mi opinión honesta.")}</span></label></div>
-      <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="qc-agree-ftc" required><span>${T("I disclose every comp, as the FTC requires.", "Revelo cada cortesía, como lo exige la FTC.")}</span></label></div>
-      <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="qc-agree-compliance" required><span>${T("I post within 48 hours of each comped visit and paste the link in the app. A post that never lands doesn't count; repeated misses can pause my account.", "Publico dentro de 48 horas de cada visita de cortesía y pego el enlace en la app. Una publicación que nunca llega no cuenta; las faltas repetidas pueden pausar mi cuenta.")}</span></label></div>
       <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="qc-agree-terms" required><span>${T("I agree to the", "Acepto los")} <a href="https://joinsignl.com/terms.html" target="_blank" rel="noopener">${T("Terms of Service", "Términos de Servicio")}</a> ${T("and", "y la")} <a href="https://joinsignl.com/privacy.html" target="_blank" rel="noopener">${T("Privacy Policy", "Política de Privacidad")}</a>${T(", including keeping bookings that start on SIGNL on SIGNL, and to account and launch emails. I can unsubscribe from marketing anytime.", ", incluyendo mantener en SIGNL las reservas que empiezan en SIGNL, y los correos de cuenta y de lanzamiento. Puedo cancelar los correos de marketing cuando quiera.")}</span></label></div>
       <button class="btn" type="submit" style="width:100%">${T("Claim my founding spot", "Reclamar mi lugar")}</button>
       <p class="small muted mt">${T("Reviewed by a person — decision or clear status within 2 business days.", "Lo revisa una persona. Decisión o estado claro en 2 días laborables.")}</p>
@@ -5613,9 +5620,6 @@ async function doQuickClaim(e) {
     document.getElementById("form-error").innerHTML = `<div class="error-box">${esc(msg)}</div>`;
     window.scrollTo(0, 0);
   };
-  if (!document.getElementById("qc-agree-honest").checked) { errBox(T("Please confirm the honest-post rule.", "Confirma la regla de publicaciones honestas, por favor.")); return false; }
-  if (!document.getElementById("qc-agree-ftc").checked) { errBox(T("Please confirm the FTC disclosure agreement.", "Confirma el acuerdo de revelación de la FTC, por favor.")); return false; }
-  if (!document.getElementById("qc-agree-compliance").checked) { errBox(T("Please confirm the post rule: post within 48 hours for full credit, paste the link, and understand a post that never lands means the visit does not count, and repeated misses can pause your account.", "Confirma la regla de publicación: publica dentro de 48 horas para crédito completo, pega el enlace, y entiende que una publicación que nunca llega significa que la visita no cuenta, y que las faltas repetidas pueden pausar tu cuenta.")); return false; }
   if (!document.getElementById("qc-agree-terms").checked) { errBox(T("Please agree to the Terms of Service and email consent so we can reach you at launch.", "Acepta los Términos de Servicio y el consentimiento de correo para poder contactarte al lanzar, por favor.")); return false; }
   // The primary social link is required (Jeff, 2026-10-26): it is
   // how businesses and our team view and verify the creator's
@@ -5645,9 +5649,6 @@ async function doQuickClaim(e) {
       customState: isUnlisted ? customState : undefined,
       handle: qcHandle,
       primaryPlatform: document.getElementById("qc-platform").value,
-      agreedHonestPosts: true,
-      agreedFtcDisclosure: true,
-      agreedPostCompliance: true,
       agreedTerms: true,
       referredBy: storedRef() || undefined,
       goldenTicket: storedTicket() || undefined,
@@ -5670,8 +5671,8 @@ function showQuickJoin() { state.joinMode = "quick"; render(); return false; }
 
 function renderJoinCreator() {
   // Two-step claim (Jeff, 2026-10-20): the quick claim is the
-  // default first step (handle, market, email, password, the rule
-  // checkboxes); the full founding profile form below stays one
+  // default first step (handle, market, email, password, the one
+  // Terms agreement); the full founding profile form below stays one
   // tap away for creators who would rather do it all now.
   if (state.joinMode !== "full") return renderQuickClaim();
   const cats = state.boot.creatorCategories.map((c) => `<label><input type="checkbox" name="c-cat" value="${esc(c)}" onchange="proHintSync('jc')"> ${esc(c)}</label>`).join("");
@@ -5776,9 +5777,6 @@ function renderJoinCreator() {
           <li>${T("If a post never lands, the visit does not count, and repeated misses can pause your account. Showing up matters here.", "Si una publicación nunca llega, la visita no cuenta, y las faltas repetidas pueden pausar tu cuenta. Aquí importa que cumplas.")}</li>
         </ul>
       </div>
-      <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="jc-agree-honest" required><span>${T("I understand no business can require me to post positively. My posts stay my honest opinion.", "Entiendo que ningún negocio puede exigirme publicar en positivo. Mis publicaciones son mi opinión honesta.")}</span></label></div>
-      <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="jc-agree-ftc" required><span>${T("I agree to clearly disclose every comp in my posts, as the FTC requires.", "Acepto revelar con claridad cada cortesía en mis publicaciones, como lo exige la FTC.")}</span></label></div>
-      <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="jc-agree-compliance" required><span>${T("I agree to post within 48 hours of every comped visit for full credit and paste the post link in the app. I understand a post that never lands means the visit does not count, and repeated misses can pause my account.", "Acepto publicar dentro de 48 horas de cada visita de cortesía para crédito completo y pegar el enlace en la app. Entiendo que una publicación que nunca llega significa que la visita no cuenta, y que las faltas repetidas pueden pausar mi cuenta.")}</span></label></div>
       <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="jc-agree-terms" required><span>${T("I agree to the", "Acepto los")} <a href="https://joinsignl.com/terms.html" target="_blank" rel="noopener">${T("Terms of Service", "Términos de Servicio")}</a> ${T("and", "y la")} <a href="https://joinsignl.com/privacy.html" target="_blank" rel="noopener">${T("Privacy Policy", "Política de Privacidad")}</a>${T(", including keeping bookings that start on SIGNL on SIGNL, and I agree SIGNL can email me about my account, launch updates and offers. I can unsubscribe from marketing emails at any time.", ", incluyendo mantener en SIGNL las reservas que empiezan en SIGNL, y acepto que SIGNL me escriba sobre mi cuenta, novedades del lanzamiento y ofertas. Puedo cancelar los correos de marketing cuando quiera.")}</span></label></div>
       <div id="jc-save-warn"></div>
       <button class="btn" type="submit" style="width:100%">${T("Create my profile", "Crear mi perfil")}</button>
@@ -5905,9 +5903,6 @@ async function doRegisterCreator(e) {
   const cats = Array.from(document.querySelectorAll("input[name=c-cat]:checked")).map((x) => x.value);
   const comps = Array.from(document.querySelectorAll("input[name=c-comp]:checked")).map((x) => x.value);
   if (!cats.length) { errBox(T("Pick at least one category you create in.", "Elige al menos una categoría en la que creas.")); return false; }
-  if (!document.getElementById("jc-agree-honest").checked) { errBox(T("Please confirm the honest-post rule.", "Confirma la regla de publicaciones honestas, por favor.")); return false; }
-  if (!document.getElementById("jc-agree-ftc").checked) { errBox(T("Please confirm the FTC disclosure agreement.", "Confirma el acuerdo de revelación de la FTC, por favor.")); return false; }
-  if (!document.getElementById("jc-agree-compliance").checked) { errBox(T("Please confirm the post rule: post within 48 hours for full credit, paste the link, and understand a post that never lands means the visit does not count, and repeated misses can pause your account.", "Confirma la regla de publicación: publica dentro de 48 horas para crédito completo, pega el enlace, y entiende que una publicación que nunca llega significa que la visita no cuenta, y que las faltas repetidas pueden pausar tu cuenta.")); return false; }
   const primaryPlatform = jcPrimary();
   const stackFromForm = {};
   const primaryCount = parseInt(document.getElementById("jc-followers").value, 10) || 0;
@@ -5975,9 +5970,6 @@ async function doRegisterCreator(e) {
       categories: cats,
       compCategories: comps,
       bio: document.getElementById("jc-bio").value,
-      agreedHonestPosts: true,
-      agreedFtcDisclosure: true,
-      agreedPostCompliance: true,
       agreedTerms: true,
       referredBy: storedRef() || undefined,
       goldenTicket: storedTicket() || undefined,
@@ -9254,12 +9246,52 @@ async function homeCheckIn(bookingId) {
   catch (err) { alert(err.message); }
 }
 
+// ---------- visit rules: one attestation at first acceptance ----------
+// Build -60 (Jeff, 2026-10-31): sign-up asks for ONE agreement
+// (the Terms). The three visit rules are confirmed as a single
+// combined attestation at the creator's first offer acceptance,
+// the moment they start to bind; the server stamps the record
+// and the gate never renders again. Creators who signed up
+// before this build confirmed the rules at sign-up, so their
+// records already read as attested.
+function visitRulesAttestedClient() {
+  const c = state.user && state.user.creator;
+  return !!(c && c.agreedHonestPosts === true && c.agreedFtcDisclosure === true && c.agreedPostCompliance === true);
+}
+function visitRulesGateHtml(key) {
+  if (!state.user || state.user.role !== "creator" || visitRulesAttestedClient()) return "";
+  return `<div class="field" style="margin-top:10px"${key ? ` data-vr="${esc(key)}"` : ""}><label class="ckrow"><input type="checkbox" class="ckbox vr-agree"><span>${T("Before your first visit, the rules in one confirmation: my posts stay my honest opinion (no business can require a positive post), I disclose every comp as the FTC requires, and I post within 48 hours of each comped visit and paste the link in the app. A post that never lands doesn't count, and repeated misses can pause my account.", "Antes de tu primera visita, las reglas en una sola confirmación: mis publicaciones son mi opinión honesta (ningún negocio puede exigirme publicar en positivo), revelo cada cortesía como exige la FTC, y publico dentro de 48 horas de cada visita de cortesía y pego el enlace en la app. Una publicación que nunca llega no cuenta, y las faltas repetidas pueden pausar mi cuenta.")}</span></label></div>`;
+}
+function visitRulesConfirmMessage() {
+  return T("Please confirm the visit rules first (one checkbox): honest posts, disclose every comp, post within 48 hours and paste the link.", "Confirma primero las reglas de visita (una sola casilla): publicaciones honestas, revelar cada cortesía, publicar dentro de 48 horas y pegar el enlace.");
+}
+// Reads the gate inside a scope element (an accept form or a
+// card). Returns the payload to send, or null when the box is
+// rendered but unchecked (the accept must stop with the message
+// above). Already-attested creators get an empty payload.
+function visitRulesPayload(scope) {
+  if (visitRulesAttestedClient()) return {};
+  const box = scope ? scope.querySelector(".vr-agree") : null;
+  if (!box) return {};
+  return box.checked ? { agreedVisitRules: true } : null;
+}
+function visitRulesMarkAttested(payload) {
+  if (payload && payload.agreedVisitRules === true && state.user && state.user.creator) {
+    state.user.creator.agreedHonestPosts = true;
+    state.user.creator.agreedFtcDisclosure = true;
+    state.user.creator.agreedPostCompliance = true;
+  }
+}
+
 async function homeAcceptOffer(e, offerId) {
   e.preventDefault();
   const form = e.target;
+  const rules = visitRulesPayload(form);
+  if (rules === null) { alert(visitRulesConfirmMessage()); return false; }
   if (!submitBusy(form, true)) return false;
   try {
-    const data = await api("POST", `/offers/${offerId}/accept`, {});
+    const data = await api("POST", `/offers/${offerId}/accept`, { ...rules });
+    visitRulesMarkAttested(rules);
     refreshBadges();
     showBookingCard(data.booking, "You are booked");
     loadCreatorHome();
@@ -9319,6 +9351,7 @@ function homeOpportunitiesHtml(offers, u, bookings, applications) {
           ? `<span class="badge info">Applied</span> <span class="small muted">Waiting on the business</span>`
           : `<button class="btn small-btn book" onclick="homeApplyOffer('${o.id}')">Apply</button>`)
         : `<form onsubmit="return homeAcceptOffer(event, '${o.id}')">
+            ${visitRulesGateHtml()}
             <button class="btn small-btn book" type="submit">Accept</button>
           </form>`;
     return `
@@ -10742,6 +10775,7 @@ async function loadDirectOffers() {
           <div class="slot-actions">
             ${booked ? `<span class="badge ok">Booked</span>
             <button class="btn small-btn ghost" onclick="return go('dashboard','My Visits')">My Visits</button>` : `<form onsubmit="return acceptOffer(event, '${o.id}')">
+              ${visitRulesGateHtml()}
               <button class="btn book" type="submit">Accept</button>
               <p class="small muted" style="margin:6px 0 0">${BOOKING_STARTED_LINE}</p>
             </form>
@@ -11273,6 +11307,7 @@ async function loadMyApplications() {
           </div>
         </div>
         ${(a.status === "released" || a.status === "expired") && a.releaseReason ? `<p class="small">${esc(RELEASE_TEXT[a.releaseReason] || "This application ended.")}</p>` : ""}
+        ${a.status === "backfill_offered" ? visitRulesGateHtml("app-" + a.id) : ""}
         ${a.status === "selected" || a.status === "backfill_accepted" ? `<p class="small">Code + deadline in My Visits.</p>` : ""}
         ${(a.status === "applied" || a.status === "backfill_offered") ? (a.plusOne
           ? `<div class="showcase-block"><h4>Bringing a +1: ${esc(a.plusOne.name)} <span class="muted">@${esc(a.plusOne.handle)}</span></h4><p class="small" style="margin:0">${a.plusOne.localAudiencePct}% local. If the business picks you, both of you are booked on the visit and you each post your own post and story.${a.offer.kind === "paid" ? " On a paid application your +1 is a guest (comped presence) unless the business books them at their own rate too." : ""} The business can also take your application on its own, without the +1.</p><p style="margin:10px 0 0"><button type="button" class="btn small-btn ghost" onclick="poRemoveApp('${a.id}')">Remove +1</button></p></div>`
@@ -11292,8 +11327,15 @@ async function loadMyApplications() {
 }
 
 async function acceptBackfill(applicationId) {
+  let rules = {};
+  if (!visitRulesAttestedClient()) {
+    const gate = document.querySelector(`[data-vr="app-${applicationId}"]`);
+    rules = visitRulesPayload(gate);
+    if (rules === null) { alert(visitRulesConfirmMessage()); return; }
+  }
   try {
-    const data = await api("POST", `/applications/${applicationId}/accept-backfill`, {});
+    const data = await api("POST", `/applications/${applicationId}/accept-backfill`, { ...rules });
+    visitRulesMarkAttested(rules);
     refreshBadges();
     state.tab = "My Visits";
     render();
@@ -11328,9 +11370,12 @@ async function withdrawApplication(applicationId) {
 async function acceptOffer(e, offerId) {
   e.preventDefault();
   const form = e.target;
+  const rules = visitRulesPayload(form);
+  if (rules === null) { alert(visitRulesConfirmMessage()); return false; }
   if (!submitBusy(form, true)) return false;
   try {
-    const data = await api("POST", `/offers/${offerId}/accept`, {});
+    const data = await api("POST", `/offers/${offerId}/accept`, { ...rules });
+    visitRulesMarkAttested(rules);
     refreshBadges();
     state.tab = "My Visits";
     render();
