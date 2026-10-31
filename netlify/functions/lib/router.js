@@ -4804,6 +4804,119 @@ async function maybeRunProfileBackfill() {
   return out;
 }
 
+// One-time public-page backfill for quick claims that predated
+// Build -61 (Jeff approved, 2026-10-31). Build -61 made a new quick
+// claim stamp its booking page on at claim time; records written by
+// the earlier server have signupPath "quick_claim" and no publicPage
+// value at all. This pass stamps exactly those records, using the
+// same claimed-flag pattern as the profile backfill above.
+//
+// The exclusions are deliberate and are counted in the stored audit:
+// an explicit publicPage:false is the creator's own opt-out and is
+// never overridden; an already-stamped record is left alone; a
+// finished, approved creator is governed by the full-page state and
+// is not stamped here; rejected, banned, tester, non-quick-claim,
+// and post-cutoff records are all skipped. A record with any other
+// publicPage value is treated as unexpected and left untouched.
+//
+// Sanity guard: the production roster was 28 creators when this was
+// approved. If a scan ever sees a materially larger creator set or
+// candidate pool, the pass stores a blocked audit and writes no user
+// records rather than stamping on a mistaken read of the store.
+const PUBLIC_PAGE_BACKFILL_KEY = "config:publicPageBackfillV1";
+const PUBLIC_PAGE_BACKFILL_CUTOFF = "2026-10-31T16:59:10.000Z";
+const PUBLIC_PAGE_BACKFILL_MAX_CREATORS = 60;
+const PUBLIC_PAGE_BACKFILL_MAX_CANDIDATES = 40;
+async function runPublicPageBackfill() {
+  const ranAt = nowIso();
+  const users = await allUsers();
+  const audit = {
+    ranAt,
+    cutoff: PUBLIC_PAGE_BACKFILL_CUTOFF,
+    scannedUsers: 0,
+    creatorRecords: 0,
+    candidates: 0,
+    stamped: 0,
+    stampedRecords: [],
+    skipped: {
+      nonCreator: 0,
+      notQuickClaim: 0,
+      afterCutoffOrNoCreatedAt: 0,
+      optedOut: 0,
+      alreadyStamped: 0,
+      unexpectedPublicPageValue: 0,
+      rejected: 0,
+      otherStatus: 0,
+      tester: 0,
+      banned: 0,
+      fullPageGoverned: 0,
+    },
+    blocked: false,
+    blockReason: null,
+  };
+  const candidates = [];
+  for (const u of users) {
+    audit.scannedUsers += 1;
+    if (!u || u.role !== "creator" || !u.creator) { audit.skipped.nonCreator += 1; continue; }
+    audit.creatorRecords += 1;
+    const c = u.creator;
+    if (c.signupPath !== "quick_claim") { audit.skipped.notQuickClaim += 1; continue; }
+    if (!u.createdAt || !(u.createdAt < PUBLIC_PAGE_BACKFILL_CUTOFF)) { audit.skipped.afterCutoffOrNoCreatedAt += 1; continue; }
+    if (c.publicPage === false) { audit.skipped.optedOut += 1; continue; }
+    if (c.publicPage === true) { audit.skipped.alreadyStamped += 1; continue; }
+    if (c.publicPage !== undefined) { audit.skipped.unexpectedPublicPageValue += 1; continue; }
+    if (u.status === "rejected") { audit.skipped.rejected += 1; continue; }
+    if (u.status !== "pending" && u.status !== "approved") { audit.skipped.otherStatus += 1; continue; }
+    if (isTester(u)) { audit.skipped.tester += 1; continue; }
+    if (standingState(u) === "banned") { audit.skipped.banned += 1; continue; }
+    if (isRosterCreator(u) && profileCompleteOf(u)) { audit.skipped.fullPageGoverned += 1; continue; }
+    candidates.push(u);
+  }
+  audit.candidates = candidates.length;
+
+  if (audit.creatorRecords > PUBLIC_PAGE_BACKFILL_MAX_CREATORS || audit.candidates > PUBLIC_PAGE_BACKFILL_MAX_CANDIDATES) {
+    audit.blocked = true;
+    audit.blockReason = audit.creatorRecords > PUBLIC_PAGE_BACKFILL_MAX_CREATORS
+      ? `creator record count ${audit.creatorRecords} exceeded the sanity limit ${PUBLIC_PAGE_BACKFILL_MAX_CREATORS}`
+      : `candidate count ${audit.candidates} exceeded the sanity limit ${PUBLIC_PAGE_BACKFILL_MAX_CANDIDATES}`;
+    await store.set(PUBLIC_PAGE_BACKFILL_KEY, { done: true, ranAt, audit });
+    await logEvent({ type: "public_page_backfill_blocked", actorId: null, actorRole: "system", subjectId: null, market: null, data: { scannedUsers: audit.scannedUsers, creatorRecords: audit.creatorRecords, candidates: audit.candidates, blockReason: audit.blockReason } });
+    return audit;
+  }
+
+  for (const u of candidates) {
+    u.creator.publicPage = true;
+    u.creator.publicPageAt = ranAt;
+    await store.set(`user:${u.id}`, u);
+    audit.stamped += 1;
+    audit.stampedRecords.push({ userId: u.id, handle: u.creator.handle || null, market: u.market || null, status: u.status, profileComplete: profileCompleteOf(u) });
+  }
+  await store.set(PUBLIC_PAGE_BACKFILL_KEY, { done: true, ranAt, audit });
+  await logEvent({ type: "public_page_backfill_completed", actorId: null, actorRole: "system", subjectId: null, market: null, data: { scannedUsers: audit.scannedUsers, creatorRecords: audit.creatorRecords, candidates: audit.candidates, stamped: audit.stamped, skipped: audit.skipped, stampedUserIds: audit.stampedRecords.map((r) => r.userId) } });
+  return audit;
+}
+
+let publicPageBackfillDone = false;
+let publicPageBackfillPromise = null;
+async function maybeRunPublicPageBackfill() {
+  if (publicPageBackfillDone) return null;
+  if (publicPageBackfillPromise) return publicPageBackfillPromise;
+  publicPageBackfillPromise = (async () => {
+    const rec = await store.get(PUBLIC_PAGE_BACKFILL_KEY);
+    if (rec && rec.done) { publicPageBackfillDone = true; return null; }
+    // Claim before running so concurrent requests do not pile on.
+    await store.set(PUBLIC_PAGE_BACKFILL_KEY, { claimedAt: nowIso(), done: false });
+    const out = await runPublicPageBackfill();
+    publicPageBackfillDone = true;
+    return out;
+  })();
+  try {
+    return await publicPageBackfillPromise;
+  } finally {
+    publicPageBackfillPromise = null;
+  }
+}
+
 // ---------- Claim auto-decisions (Jeff standing authority, 2026-10-22) ----------
 // Jeff took himself off the approval critical path: obvious test
 // and spam claims are rejected without a person, and claims that
@@ -13175,6 +13288,8 @@ async function route(event) {
     (async () => { try { await maybeSendRecruiterKit(); } catch (e) { /* kit email is best-effort */ } })(),
     // One-time profileComplete backfill, claimed-flag guarded.
     (async () => { try { await maybeRunProfileBackfill(); } catch (e) { /* backfill is best-effort on the request path */ } })(),
+    // One-time Build -61 public-page backfill, claimed-flag guarded.
+    (async () => { try { await maybeRunPublicPageBackfill(); } catch (e) { /* backfill is best-effort on the request path */ } })(),
     // One-time auto-decision cleanup, claimed-flag guarded.
     (async () => { try { await maybeRunAutoDecisionCleanup(); } catch (e) { /* cleanup is best-effort on the request path */ } })(),
     // Profile completion reminders: throttled opportunistic sweep.
@@ -19641,4 +19756,4 @@ async function route(event) {
 
 // The email builders are exported alongside the router so the verify
 // suites can assert on the exact copy a creator receives.
-module.exports = { route, passwordResetEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, normalizeBriefInput, briefForOffer, validateAssetPacket, assetPacketView, postSeries, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView, musicOpenView, studentOpenView, PLATFORM_PEER_ID, platformThreadId, platformMessageEmail, MESSAGE_TEMPLATES, runFinishEngineSweep, maybeFireFinishMoment, handleFinishEngineReply, finishEngineConfig };
+module.exports = { route, passwordResetEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, normalizeBriefInput, briefForOffer, validateAssetPacket, assetPacketView, postSeries, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, runPublicPageBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView, musicOpenView, studentOpenView, PLATFORM_PEER_ID, platformThreadId, platformMessageEmail, MESSAGE_TEMPLATES, runFinishEngineSweep, maybeFireFinishMoment, handleFinishEngineReply, finishEngineConfig };
