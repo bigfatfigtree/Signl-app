@@ -442,7 +442,12 @@ function setShareCanonical(href) {
 }
 function applyProfileShareShell(p, place) {
   document.title = `${p.name} (@${p.handle}) on SIGNL${place ? ` | ${place}` : ""}`;
-  const desc = `${p.name} is a founding creator on SIGNL in ${place || "their market"}${p.tierBand ? ` (${p.tierBand} tier)` : ""}.${typeof p.localAudiencePct === "number" ? ` ${p.localAudiencePct}% of their audience is local.` : ""} Local businesses comp creators for honest posts.`;
+  // Mirrors profilePageMeta in lib/profile-meta.js exactly,
+  // including the multi-market line (2026-11-01), so the
+  // in-app head and the server-rendered head never disagree.
+  const alsoList = (p.listedMarkets || []).filter((m) => !m.home && typeof m.pct === "number").slice(0, 2);
+  const also = alsoList.length ? ` Also ranked in ${alsoList.map((m) => `${m.market} (${m.pct}% of their audience)`).join(" and ")}.` : "";
+  const desc = `${p.name} is a founding creator on SIGNL in ${place || "their market"}${p.tierBand ? ` (${p.tierBand} tier)` : ""}.${typeof p.localAudiencePct === "number" ? ` ${p.localAudiencePct}% of their audience is local.` : ""}${also} Local businesses comp creators for honest posts.`;
   setShareCanonical(`https://app.joinsignl.com/c/${p.handle}`);
   setShareMeta("og:title", "property", document.title);
   setShareMeta("og:description", "property", desc);
@@ -463,10 +468,13 @@ function clearShareShell() {
 // only when the creator turned it on. The server tiers the
 // payload by viewer, and this render follows the tier exactly:
 //   Tier 0 (logged out / creators / anyone else): showcase
-//     only. No rate, no follower counts, no social links, no
-//     contact path. The handle is text, never a link out.
-//   Tier 1 (signed-in business, not paid/active): rate + the
-//     Book on SIGNL action, plus the locked socials panel.
+//     plus the public rate card (2026-11-01: listed offerings
+//     show at every tier). No follower counts, no social
+//     links, no contact path. The handle is text, never a
+//     link out.
+//   Tier 1 (signed-in business, not paid/active): the rate
+//     card + the Book on SIGNL action, plus the locked
+//     socials panel.
 //   Tier 2 (paid, active business): rate, Book, the creator's
 //     social channel rows, and an in-platform Message box.
 // The ONLY booking action routes inside SIGNL. Nothing on this
@@ -528,21 +536,47 @@ async function renderPublicProfile() {
   const tier = typeof p.viewerTier === "number" ? p.viewerTier : 0;
   const featured = (p.featuredPosts || []).map((f) => `
       <div class="bookme-embed"><iframe src="${esc(f.embedUrl)}" loading="lazy" frameborder="0" scrolling="no" allowtransparency="true" title="Featured post by @${esc(p.handle)}"></iframe></div>`).join("");
-  const rateBlock = tier >= 1 ? `
+  // Rate card as listed offerings (2026-11-01): the offerings
+  // are public on the finished profile at every tier (Jeff's
+  // CreatorMarket-standard ruling); only the Book action and
+  // the booking target stay behind sign-in. Rows come from the
+  // server's rateCard list, so the page, the share meta, and
+  // the structured data can never quote different numbers.
+  const rateRows = (p.rateCard || []).map((r) => `
+      <div style="display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid #DFE7DF">
+        <span><strong>${esc(r.label)}</strong><br><span class="small muted">${esc(r.detail || "")}</span></span>
+        <span style="white-space:nowrap"><strong>${r.price ? "$" + fmtPrice(r.price) : "Open"}</strong></span>
+      </div>`).join("");
+  const rateBlock = `
+    <h3 class="bookme-h">Rate card</h3>
     <div class="tint-block" style="margin-top:0">
-      <p class="small" style="margin-top:0">${p.paidRate ? `<span class="badge tier">Paid bookings: $${fmtPrice(p.paidRate)}</span> ` : ""}${p.compOpen === false ? `<span class="badge warn">Paid visits only</span>` : `<span class="badge info">Open to comp visits</span>`}</p>
-      ${p.paidRate ? `<p class="small muted">Books at $${fmtPrice(p.paidRate)} &middot; creator keeps 97% &middot; payment held until the post is live.</p>` : ""}
-      ${p.licensingFee ? `<p class="small muted">Run my post as an ad for 90 days: $${fmtPrice(p.licensingFee)} &middot; I approve each use &middot; I keep 97%.</p>` : ""}
-      ${p.canBook ? `<div class="cta-row" style="justify-content:flex-start"><button class="btn" onclick="return bookMeBook()">Book on SIGNL</button></div>` : ""}
+      ${rateRows || `<p class="small muted" style="margin:0">This creator takes bookings through SIGNL; rates are set on their dashboard.</p>`}
+      ${p.canBook ? `<div class="cta-row" style="justify-content:flex-start;margin-top:10px"><button class="btn" onclick="return bookMeBook()">Book on SIGNL</button></div>` : tier === 0 ? `<p class="small" style="margin:10px 0 0"><strong>Businesses:</strong> ${state.user ? "booking opens from your dashboard." : `<a href="#" onclick="return go('signin')">sign in</a> to book on SIGNL.`}</p>` : ""}
       <p class="small muted">${BOOKME_GUARANTEE_LINE}</p>
       <p class="small muted">${BOOKME_STAYS_LINE}</p>
-    </div>` : `
-    <div class="tint-block" style="margin-top:0">
-      <p style="margin:0 0 8px"><strong>Businesses: sign in to see rates and book.</strong></p>
-      <div class="cta-row" style="justify-content:flex-start">
-        ${state.user ? `<a class="btn ghost" href="#" onclick="return go('dashboard')">Back to my dashboard</a>` : `<a class="btn" href="#" onclick="return go('signin')">Business sign in</a> <a class="btn ghost" href="#" onclick="return go('join-business')">Join as a founding business</a>`}
-      </div>
     </div>`;
+  // Audience visual (2026-11-01): the creator's listed markets
+  // as one bar: home market first (deep green), other listed
+  // markets in the SIGNL gradient hues, and the pale remainder
+  // is everywhere else. Every number is the creator's own
+  // reported share, labeled as such.
+  const bdSegColors = ["#0C7A43", "#006AFC", "#03C9AB", "#2FE07E", "#5F7265", "#006AFC"];
+  const bd = p.audienceBreakdown;
+  const breakdownHtml = bd && bd.segments && bd.segments.length ? `
+    <div style="margin:14px 0 0">
+      <div style="display:flex;height:14px;border-radius:999px;overflow:hidden;background:#E3F5EA" role="img" aria-label="Where this creator's audience lives">
+        ${bd.segments.map((s, i) => `<span style="display:block;width:${s.pct}%;background:${bdSegColors[i] || "#5F7265"}"></span>`).join("")}
+      </div>
+      <p class="small muted" style="margin:6px 0 0">Where their audience lives: ${bd.segments.map((s) => `${esc(s.market)} ${s.pct}%`).join(" &middot; ")}${bd.elsewherePct > 0 ? ` &middot; everywhere else ${bd.elsewherePct}%` : ""}. Self-reported by the creator.</p>
+    </div>` : "";
+  // Past work (2026-11-01): the creator's own best-work links,
+  // listed as offerings of proof next to the featured embeds.
+  const pastWorkHtml = (p.pastWork || []).length ? `
+    <h3 class="bookme-h">Past work</h3>
+    <div class="bookme-socials">
+      ${p.pastWork.map((w) => `<a class="bookme-channel" href="${esc(w.url)}" target="_blank" rel="noopener"><span class="bookme-channel-name">${esc(w.label || "Watch")}</span><span class="bookme-channel-go">View post</span></a>`).join("")}
+    </div>
+    <p class="small muted">Posts this creator picked as their best work. They are the creator's own posts, not SIGNL visits.</p>` : "";
   const socialsBlock = tier >= 2 ? `
     ${p.socialsHiddenByCreator ? "" : (p.socialLinks && p.socialLinks.length ? `
     <div class="bookme-socials">
@@ -582,6 +616,7 @@ async function renderPublicProfile() {
         ${p.isRealtor ? `<span class="cc-chip">Realtor</span>` : ""}
         ${p.charter ? "" : `<span class="cc-chip">Founding Creator</span>`}
         ${p.foundingBand ? `<span class="cc-chip">First ${p.foundingBand} founding</span>` : ""}
+        ${(p.listedMarkets || []).filter((m) => !m.home).map((m) => `<span class="cc-chip">Also ranked in ${esc(m.market)} &middot; ${m.pct}% of audience</span>`).join("")}
       </div>
       ${p.pitchLine ? `<p class="bookme-pitch" style="font-size:1.05rem;margin:10px 0 0"><em>${esc(p.pitchLine)}</em></p>` : ""}
       ${p.bio ? `<p class="bookme-bio">${esc(p.bio)}</p>` : ""}
@@ -590,6 +625,7 @@ async function renderPublicProfile() {
           ? `<div class="lbl">Local audience not reported yet</div>`
           : `<div class="big">${p.localAudiencePct}%</div><div class="lbl">of their audience is local</div><div class="src">${(p.localAudienceSource || "Self-reported") === "Self-reported" ? "Self-reported: the creator's own number" : esc(p.localAudienceSource)}</div>`}
       </div>
+      ${breakdownHtml}
       ${p.proof && p.proof.countsForming ? `<div class="wcard" style="margin:14px 0 0"><p style="margin:0"><span class="badge ok">Verified on SIGNL</span></p><p style="margin:8px 0 0"><strong>${p.proof.visitsCompleted} visit${p.proof.visitsCompleted === 1 ? "" : "s"} completed</strong>, ${p.proof.onTimePosts} on time. Their counted record is forming: it opens at 5 counted customers.</p><p class="small muted" style="margin:6px 0 0">Counted by SIGNL from register events, not claimed by the creator. Book me on SIGNL and this is the receipt you'll get.</p></div>` : p.proof && p.proof.visitsCompleted > 0 ? `<div class="wcard" style="margin:14px 0 0"><p style="margin:0"><span class="badge ok">Verified on SIGNL</span></p><p style="margin:8px 0 0"><strong>${p.proof.visitsCompleted} visit${p.proof.visitsCompleted === 1 ? "" : "s"} completed</strong>, ${p.proof.onTimePosts} on time · <strong>${p.proof.customersCounted} customers counted</strong> at the register · <strong>${p.proof.cameBacks} came back</strong> within a month · at least <strong>$${fmtMoney(p.proof.trackedSpend)}</strong> tracked spend</p><p class="small muted" style="margin:6px 0 0">Counted by SIGNL from register events, not claimed by the creator. Book me on SIGNL and this is the receipt you'll get.</p></div>` : ""}
       ${p.categories && p.categories.length ? `<p class="small">${p.categories.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
       ${p.isRealtor && p.farmAreas && p.farmAreas.length ? `<p class="small">Neighborhoods: ${p.farmAreas.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
@@ -597,6 +633,7 @@ async function renderPublicProfile() {
       ${p.compCategories && p.compCategories.length ? `<p class="small muted">Open to comps: ${p.compCategories.map(esc).join(", ")}</p>` : ""}
       ${p.portfolioSample ? `<h3 class="bookme-h">Portfolio sample</h3><div class="bookme-featured"><div class="bookme-embed"><iframe src="${esc(p.portfolioSample.embedUrl)}" loading="lazy" frameborder="0" scrolling="no" allowtransparency="true" title="Portfolio sample by @${esc(p.handle)}"></iframe></div></div><p class="small muted">A post @${esc(p.handle)} made about a place they love. A portfolio sample, not a SIGNL visit.</p>` : ""}
       ${featured ? `<h3 class="bookme-h">Featured posts</h3><div class="bookme-featured">${featured}</div>` : ""}
+      ${pastWorkHtml}
       ${rateBlock}
       ${socialsBlock}
       ${visitIncludesHtml(p.visitIncludes)}
@@ -3589,6 +3626,20 @@ function marketOptions(selected, forJoin) {
     return `<optgroup label="${esc(country)}">${opts}</optgroup>`;
   }).join("");
   return forJoin ? groups + `<option value="${esc(unlistedLabel())}">My city is not listed yet</option>` : groups;
+}
+
+// Options for the per-market audience share rows on the creator
+// Profile (multi-market listing, 2026-11-01): every SIGNL market
+// except the creator's home market (the home share is the local
+// % field, never a row here), with a blank "pick a market" head.
+function audienceMarketOptions(selected, homeMarket) {
+  const names = ((state.boot && state.boot.markets) || [])
+    .filter((m) => m.name !== homeMarket)
+    .sort((a, b) => a.name.localeCompare(b.name));
+  // Short market names, not the "Name, State" label: this
+  // select shares its row with the % input, and at phone width
+  // the long label truncates into ambiguity ("Richmo...").
+  return `<option value="">Pick a market</option>` + names.map((m) => `<option value="${esc(m.name)}" ${m.name === selected ? "selected" : ""}>${esc(m.name)}</option>`).join("");
 }
 
 // The search box above the market picker filters the grouped options
@@ -7476,6 +7527,8 @@ function creatorProfileDetailHtml(c, preview, opts) {
     ${c.standing === "paused" ? `<p><span class="badge warn">Paused: a late post is outstanding</span> <span class="small muted">Greyed out in search and unable to take new offers until the post is delivered.</span></p>` : ""}
     ${c.bookedUp ? `<p><span class="badge info">Booked up this week</span> <span class="small muted">At their weekly visit max. Offers can still be sent; accepting reopens next week.</span></p>` : ""}
     ${visitIncludesHtml(c.visitIncludes)}
+    ${c.marketContext ? `<p class="small">You are browsing <strong>${esc(c.marketContext.market)}</strong>: ${c.marketContext.pct}% of their audience is there, and that is the local number on this card. They are based in ${esc(marketDisplayName(c.marketContext.homeMarket))} and listed in ${esc(c.marketContext.market)} on that audience.</p>` : ""}
+    ${(c.listedMarkets || []).filter((m) => !m.home).length ? `<p class="small muted">Also listed in: ${(c.listedMarkets || []).filter((m) => !m.home).map((m) => `${esc(m.market)} ${m.pct}%`).join(" &middot; ")}</p>` : ""}
     ${c.scoreComponents ? `<p class="small muted">Local Impact Score, in the open: local audience ${c.scoreComponents.localAudiencePct}% &middot; reliability ${c.scoreComponents.reliability} (${esc(c.scoreComponents.reliabilityBasis)}) &middot; engagement ${c.scoreComponents.engagement}.</p>` : ""}
     ${p.categories && p.categories.length ? `<p class="small">${p.categories.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
     ${p.compCategories && p.compCategories.filter((x) => x !== PAID_COMP).length ? `<p class="small muted">Open to comps: ${p.compCategories.filter((x) => x !== PAID_COMP).map(esc).join(", ")}</p>` : ""}
@@ -7559,6 +7612,7 @@ function creatorCard(c, viewer, opts) {
       ${p.primaryPlatform && p.primaryPlatform !== "instagram" ? ccHandleHtml(p) : `<div class="cc-handle">@${esc(p.handle || "")}</div>`}
       <div class="cc-chips">
         <span class="cc-chip market">${esc(marketDisplayName(c.market))}</span>
+        ${c.marketContext ? `<span class="cc-chip">Listed in ${esc(c.marketContext.market)}</span>` : ""}
         ${c.city ? `<span class="cc-chip">${esc(c.city)}</span>` : ""}
         ${c.neighborhood ? `<span class="cc-chip">${esc(c.neighborhood)}</span>` : ""}
         ${c.distanceBand ? `<span class="cc-chip band">${esc(c.distanceBand)}</span>` : ""}
@@ -7651,6 +7705,18 @@ function renderCreatorDash() {
 // with the home blocks; the full founding status detail lives under
 // Status; Profile is the same profile form founding creators already
 // use. Data comes from GET /me/founding (which also powers the score).
+// Multi-market listing line (2026-11-01): where else this
+// creator is listed, from the card's server-computed
+// listedMarkets. With no extra markets yet, the line teaches
+// the setting instead of rendering nothing.
+function listedMarketsLineHtml(card) {
+  const others = ((card && card.listedMarkets) || []).filter((m) => !m.home);
+  if (others.length) {
+    return `<p class="small" style="margin:6px 0 0">You are listed in ${others.map((m) => `<strong>${esc(m.market)}</strong> (${m.pct}% of your audience)`).join(" and ")} too: businesses there can find you, and their offers reach you.</p>`;
+  }
+  return `<p class="small muted" style="margin:6px 0 0">Audience in another city too? Add that market under Profile, in Your audience, and you are listed and ranked there as well.</p>`;
+}
+
 function renderFoundingHome() {
   const u = state.user;
   let tab = state.tab || "Dashboard";
@@ -7780,6 +7846,7 @@ async function loadFoundingDashboard() {
         <span class="badge ok" style="font-size:0.95rem;padding:6px 14px">${p.charter ? "Charter Creator" : "Founding Creator"}</span>
       </div>
       <p class="small">${p.localAudiencePct === null || p.localAudiencePct === undefined ? `Add your local audience % in your profile` : `${p.localAudiencePct}% local audience`} &middot; ${esc(p.tierBand || "")} tier &middot; ${fmtNum(totalAudienceOf(card))} total audience${f.priorityBand ? ` &middot; first ${f.priorityBand} founding` : ""}${campusBadgeHtml(card)}</p>
+      ${listedMarketsLineHtml(card)}
       ${p.tierBand ? `<p class="small muted" style="margin:2px 0 0">Your tier is your size band, set automatically from your total audience across platforms.</p>` : ""}
       <p style="margin-bottom:0">${scoreBadge(card.localImpactScore)}</p>
       <div class="home-actions"><button class="btn small-btn ghost" onclick="return go('dashboard','Status')">See your full status</button></div>
@@ -9137,6 +9204,7 @@ async function loadFoundingStatus() {
           ${p.compCategories && p.compCategories.filter((x) => x !== PAID_COMP).length ? `<p class="small muted">Open to comps: ${p.compCategories.filter((x) => x !== PAID_COMP).map(esc).join(", ")}</p>` : ""}
           ${p.neighborhood ? `<p class="small muted">Neighborhood: ${esc(p.neighborhood)}</p>` : ""}
           ${p.topAudienceCities && p.topAudienceCities.length ? `<p class="small muted">Top audience cities: ${p.topAudienceCities.map(esc).join(", ")}</p>` : ""}
+          ${listedMarketsLineHtml(card)}
           ${p.bio ? `<p class="small muted">${esc(p.bio)}</p>` : ""}
           <p class="small">
             ${socialLinksHtml(p)}
@@ -10537,6 +10605,10 @@ function creatorProfileHtml(u) {
         <div class="field"><label>${T("Your local reach (local audience share, %)", "Tu alcance local (parte local de tu audiencia, %)")}</label><input type="number" id="p-localpct" min="0" max="100" value="${c.localAudiencePct === null || c.localAudiencePct === undefined ? "" : c.localAudiencePct}"><p class="small muted">${LOCAL_PCT_HELP}</p></div>
       </div>
       <div class="field"><label>${T("Top audience cities", "Ciudades principales de tu audiencia")}</label><input id="p-topcities" value="${esc((c.topAudienceCities || []).join(", "))}" placeholder="${T("Up to 5, comma separated", "Hasta 5, separadas por comas")}"></div>
+      <div class="field"><label>${T("Your audience in other markets", "Tu audiencia en otros mercados")}</label>
+        ${[0, 1, 2, 3, 4].map((i) => { const e = (c.audienceMarkets || [])[i] || {}; return `<div style="margin-bottom:10px"><select id="p-am-market-${i}" style="width:100%">${audienceMarketOptions(e.market || "", u.market)}</select><div style="display:flex;align-items:center;gap:8px;margin-top:6px"><input id="p-am-pct-${i}" type="number" min="0" max="100" style="width:96px" placeholder="%" value="${e.pct === undefined || e.pct === null ? "" : esc(String(e.pct))}"><span class="small muted">${T("% of my audience", "% de mi audiencia")}</span></div></div>`; }).join("")}
+        <p class="small muted">${T("If a real share of your audience lives in another SIGNL market, name the market and the %. At 5% or more you are listed and ranked in that market too, and offers from its businesses reach you, not just home-market ones. Your home market is the local % above, never a row here. Leave a row blank to remove it.", "Si una parte real de tu audiencia vive en otro mercado de SIGNL, escribe el mercado y el %. Con 5% o más también apareces en ese mercado, y las ofertas de sus negocios te llegan, no solo las de tu mercado. Tu mercado principal es el % local de arriba, nunca una fila aquí. Deja una fila vacía para quitarla.")}</p>
+      </div>
       </div>
       <div class="fgroup">
       <p class="fg-kicker">${T("What you create", "Lo que creas")}</p>
@@ -10746,6 +10818,17 @@ async function doUpdateCreator(e) {
       })(),
       avgViews: parseInt(document.getElementById("p-avgviews").value, 10) || 0,
       localAudiencePct: pctRaw === "" ? null : Number(pctRaw),
+      // Multi-market shares (2026-11-01): the rows under Your
+      // audience. Only sent when the rows rendered, so a save
+      // from any other surface can never wipe them.
+      ...(document.getElementById("p-am-market-0") ? {
+        audienceMarkets: [0, 1, 2, 3, 4].map((i) => {
+          const mEl = document.getElementById("p-am-market-" + i);
+          const pEl = document.getElementById("p-am-pct-" + i);
+          if (!mEl || !pEl || !mEl.value || pEl.value === "") return null;
+          return { market: mEl.value, pct: Number(pEl.value) };
+        }).filter(Boolean),
+      } : {}),
       topAudienceCities: document.getElementById("p-topcities").value.split(",").map((x) => x.trim()).filter(Boolean),
       categories: cats,
       compCategories: comps,

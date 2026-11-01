@@ -247,8 +247,11 @@ try {
   check("book-me page is opt-in: before P turns the page on, the public profile 404s", pubAnon.status === 404, `${pubAnon.status}`);
   await P.client("PATCH", "/api/me/profile", { publicPage: true });
   const pub = await anon("GET", `/api/c/${P.payload.handle}`);
-  check("book-me tiers: logged out sees the showcase with NO rate (rate is gated to businesses)",
-    pub.status === 200 && pub.data.profile.paidRate === undefined && pub.data.profile.licensingFee === undefined, `${pub.status}`);
+  // Rate card (Jeff, 2026-11-01): the listed offerings are
+  // public on the finished profile, logged out included; what
+  // stays gated to businesses is booking, not the price.
+  check("book-me tiers: logged out sees the showcase WITH the public rate card (2026-11-01 ruling)",
+    pub.status === 200 && pub.data.profile.paidRate === 250 && Array.isArray(pub.data.profile.rateCard) && pub.data.profile.rateCard.some((r) => r.kind === "paid" && r.price === 250), `${pub.status}`);
   const pubBiz = await G.client("GET", `/api/c/${P.payload.handle}`);
   check("book-me tiers: a signed-in business sees the paid rate and paid-only state",
     pubBiz.status === 200 && pubBiz.data.profile.paidRate === 250 && pubBiz.data.profile.compOpen === false, `${pubBiz.status} ${JSON.stringify(pubBiz.data.profile && { paidRate: pubBiz.data.profile.paidRate, compOpen: pubBiz.data.profile.compOpen })}`);

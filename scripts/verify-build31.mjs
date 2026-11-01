@@ -190,8 +190,13 @@ try {
   check("book-me tier 0: showcase carries handle, Charter seal, local %, categories, featured posts, theme",
     pa.handle === "nearnina" && pa.charter === true && pa.localAudiencePct === 88 && (pa.categories || []).includes("Food & Drink") && (pa.featuredPosts || []).length === 1 && typeof pa.pageTheme === "string",
     JSON.stringify(pa).slice(0, 300));
-  check("book-me tier 0: NO rate, NO follower counts, NO audience stack, NO social links, NO profile URLs",
-    !("paidRate" in pa) && !("followerCount" in pa) && !("totalAudience" in pa) && !("audienceStack" in pa) && !("socialLinks" in pa) && !("primaryProfileUrl" in pa) && !("instagramUrl" in pa),
+  // Rate card (Jeff, 2026-11-01): the finished profile's listed
+  // offerings are public at every tier, superseding the -31
+  // tier-0 rate hide for the rate fields only. Follower counts,
+  // the audience stack, social links, and profile URLs keep
+  // their tiers exactly as -31 set them.
+  check("book-me tier 0: the public rate card rides (rate + rateCard offerings), NO follower counts, NO audience stack, NO social links, NO profile URLs",
+    pa.paidRate === 150 && Array.isArray(pa.rateCard) && pa.rateCard.some((r) => r.kind === "paid" && r.price === 150) && !("followerCount" in pa) && !("totalAudience" in pa) && !("audienceStack" in pa) && !("socialLinks" in pa) && !("primaryProfileUrl" in pa) && !("instagramUrl" in pa),
     JSON.stringify(Object.keys(pa)));
   const pubHidden = await anon("GET", "/api/c/hiddenhana");
   check("book-me: a complete, approved creator who did not opt in gets no page (404, same as unknown)",
@@ -206,8 +211,8 @@ try {
     pubOwner.status === 200 && pubOwner.data.profile.viewerIsOwner === true && pubOwner.data.profile.canBook === false,
     JSON.stringify(pubOwner.data).slice(0, 200));
   const pubCreator = await tom.client("GET", "/api/c/nearnina");
-  check("book-me: a signed-in creator viewing someone else's page gets the showcase tier (no rate, no CTA)",
-    pubCreator.status === 200 && pubCreator.data.profile.viewerTier === 0 && !("paidRate" in pubCreator.data.profile),
+  check("book-me: a signed-in creator viewing someone else's page gets the showcase tier (public rate card, no CTA)",
+    pubCreator.status === 200 && pubCreator.data.profile.viewerTier === 0 && pubCreator.data.profile.paidRate === 150 && pubCreator.data.profile.canBook === false,
     JSON.stringify(pubCreator.data).slice(0, 200));
 
   // ---------- the Local List endpoint ----------
@@ -344,8 +349,12 @@ try {
   check("book-me source: the page render exists and carries NO mailto, NO tel, NO handle link-out helper",
     bpSlice.length > 1000 && !bpSlice.includes("mailto:") && !bpSlice.includes("tel:") && !bpSlice.includes("ccHandleHtml"),
     `slice ${bpSlice.length}`);
-  check("book-me source: the sign-in gate line ships in the render; the guarantee and stays-on-SIGNL lines ship as the page's constants and are used by it",
-    bpSlice.includes("Businesses: sign in to see rates and book.") && bpSlice.includes("BOOKME_GUARANTEE_LINE") && bpSlice.includes("BOOKME_STAYS_LINE") && appJs.includes("Bookings through SIGNL carry the Visit Guarantee and payment protection") && appJs.includes('BOOKME_STAYS_LINE = "Bookings that start on SIGNL stay on SIGNL."'),
+  // Rate card (Jeff, 2026-11-01): rates are public on the
+  // finished profile, so the old "sign in to see rates" line is
+  // retired; the sign-in prompt now gates the BOOKING only. The
+  // guarantee and stays-on-SIGNL constants are untouched.
+  check("book-me source: the sign-in-to-book line ships in the render; the guarantee and stays-on-SIGNL lines ship as the page's constants and are used by it",
+    bpSlice.includes("to book on SIGNL.") && bpSlice.includes("Businesses:") && bpSlice.includes("BOOKME_GUARANTEE_LINE") && bpSlice.includes("BOOKME_STAYS_LINE") && appJs.includes("Bookings through SIGNL carry the Visit Guarantee and payment protection") && appJs.includes('BOOKME_STAYS_LINE = "Bookings that start on SIGNL stay on SIGNL."'),
     "");
   check("book-me source: the locked unlock panel line ships verbatim",
     appJs.includes("Paying businesses see this creator's social channels and can message them here."), "");

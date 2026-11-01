@@ -18,6 +18,15 @@
   to = "/.netlify/functions/api/cpage/:splat"
   status = 200
 
+# App sitemap: generated live by the api function (finished,
+# public creator profiles only; see the sitemap route in
+# lib/router.js). Before the SPA fallback so it is not
+# swallowed by it.
+[[redirects]]
+  from = "/sitemap.xml"
+  to = "/.netlify/functions/api/sitemap.xml"
+  status = 200
+
 # SPA fallback: every other route serves the app shell.
 [[redirects]]
   from = "/*"

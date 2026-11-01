@@ -17,6 +17,7 @@ const platformConnect = require("./platform-connect");
 const square = require("./square");
 const { askSigAI } = require("./sigai");
 const { buildProfilePageHtml, buildClaimPageHtml } = require("./profile-meta");
+const { normalizeAudienceMarkets, audienceShareInMarket, isListedInMarket, listedMarketsFor, audienceBreakdownFor, MULTI_MARKET_MIN_PCT } = require("./audience-markets");
 const igPrefill = require("./ig-prefill");
 const ZIP_CENTROIDS = require("./zip-centroids.json");
 
@@ -3504,6 +3505,21 @@ function bestWorkCards(creator) {
   return links.map((url) => ({ url, platform: bestWorkPlatform(url), label: bestWorkLabel(url) }));
 }
 
+// The creator's rate card as listed offerings (2026-11-01): the
+// lanes a business can book, in the order the profile presents
+// them, built only from numbers the creator actually listed. A
+// lane she has not opened is absent from the list, never shown
+// at zero: no paid rate means no paid-booking offering, exactly
+// like the paid filter in discovery reads it.
+function rateCardFor(c) {
+  const out = [];
+  if (!c || typeof c !== "object") return out;
+  if (c.compOpen !== false) out.push({ kind: "comp", label: "Comped visit", price: null, detail: "A meal, service, or experience, for one post plus one story" });
+  if (typeof c.paidRate === "number" && c.paidRate > 0) out.push({ kind: "paid", label: "Paid booking", price: c.paidRate, detail: "Booked at my listed rate: I keep 97%, payment held until the post is live, one 90-day license included" });
+  if (typeof c.licensingFee === "number" && c.licensingFee > 0) out.push({ kind: "license", label: "License a post for ads", price: c.licensingFee, detail: "90 days of repost and ad use, I approve each use, I keep 97%" });
+  return out;
+}
+
 async function allOffers() {
   const rows = await store.list("offer:");
   return rows.map((r) => r.value);
@@ -3662,9 +3678,15 @@ async function rankApplications(apps) {
     if (!c || !c.creator) continue;
     const rating = ratingFieldsOf(reviewsByCreator.get(c.id) || []);
     const history = summarizeHistory(bookings.filter((b) => b.creatorId === c.id), posts);
-    const impact = computeLocalImpactScore(c.creator, history);
+    // Multi-market stack (2026-11-01): an application ranks by
+    // the creator's share in the OFFER's market, and the Local
+    // Impact input follows it. A home-market application reads
+    // exactly as before.
+    const shareHere = audienceShareInMarket(c, app.market);
+    const inOtherMarket = shareHere !== null && normalizeMarketName(app.market || "") !== normalizeMarketName(c.market || "");
+    const impact = computeLocalImpactScore(inOtherMarket ? { ...c.creator, localAudiencePct: shareHere } : c.creator, history);
     const track = summarizeTrackRecord(bookings, posts, c.id);
-    const localPct = c.creator.localAudiencePct === null || c.creator.localAudiencePct === undefined ? 0 : Number(c.creator.localAudiencePct);
+    const localPct = shareHere === null ? 0 : Number(shareHere);
     const reliability = history.redeemed > 0 ? Math.round(((history.postsOnTime + history.postsLate * 0.5) / history.redeemed) * 100) : 50;
     const mom = momentum.summaryFor(c);
     // Build -36: total Points (Momentum + Your Line) feed the
@@ -3683,7 +3705,9 @@ async function rankApplications(apps) {
         universityStatus: universityStatusOfRecord(c),
         campusBadge: campusBadgeFor(c),
         tierBand: normalizeTierBand(c.creator.tierBand),
-        localAudiencePct: c.creator.localAudiencePct === undefined ? null : c.creator.localAudiencePct,
+        localAudiencePct: shareHere,
+        shareMarket: inOtherMarket ? normalizeMarketName(app.market) : null,
+        homeMarket: normalizeMarketName(c.market),
         totalAudience: audienceTotalOf(c.creator),
         paidRate: typeof c.creator.paidRate === "number" && c.creator.paidRate > 0 ? c.creator.paidRate : null,
         licensingFee: typeof c.creator.licensingFee === "number" && c.creator.licensingFee > 0 ? c.creator.licensingFee : null,
@@ -3928,7 +3952,13 @@ async function discoverCards(query, viewer) {
   // finished step two) is not on the roster yet either.
   let creators = users.filter((u) => isRosterCreator(u) && profileCompleteOf(u) && standingState(u) !== "banned");
   const market = query.market || (viewer && viewer.role === "business" ? viewer.market : null);
-  if (market) creators = creators.filter((u) => normalizeMarketName(u.market) === (marketByName(market) || {}).name);
+  const marketName = market ? ((marketByName(market) || {}).name || null) : null;
+  // Multi-market discovery (2026-11-01): a market's roster is
+  // everyone LISTED in it: its home-market creators plus any
+  // creator whose reported audience share there clears the
+  // listing floor. An unresolvable market name matches nobody,
+  // exactly as before.
+  if (market) creators = creators.filter((u) => !!marketName && isListedInMarket(u, marketName));
   // Campus facet (university layers U1, Jeff, 2026-10-28): the
   // universities a business can filter this market by — the
   // canonical schools of roster, profile-complete CURRENT students
@@ -4010,7 +4040,14 @@ async function discoverCards(query, viewer) {
   if (!Number.isNaN(fMax)) creators = creators.filter((u) => u.creator && audienceTotalOf(u.creator) <= fMax);
   const minLocal = Number(query.minLocalPct);
   if (query.minLocalPct !== undefined && !Number.isNaN(minLocal)) {
-    creators = creators.filter((u) => u.creator && u.creator.localAudiencePct !== null && u.creator.localAudiencePct !== undefined && Number(u.creator.localAudiencePct) >= minLocal);
+    // The minimum reads the share in the market being browsed
+    // (2026-11-01): a creator strong in Austin is measured by
+    // their Austin share when a business shops Austin.
+    creators = creators.filter((u) => {
+      if (!u.creator) return false;
+      const share = marketName ? audienceShareInMarket(u, marketName) : (u.creator.localAudiencePct === undefined ? null : u.creator.localAudiencePct);
+      return share !== null && share !== undefined && Number(share) >= minLocal;
+    });
   }
   if (query.paid === "1" || query.paid === "true") {
     // The paid filter reads the REAL paid lane (Jeff, 2026-10-19):
@@ -4031,7 +4068,7 @@ async function discoverCards(query, viewer) {
   const rosterUsers36 = await allUsers();
   const out = [];
   for (const c of creators) {
-    const card = await publicCreator(c, viewer, approvedRank.get(c.id) || null);
+    const card = await publicCreator(c, viewer, approvedRank.get(c.id) || null, marketName);
     // Proximity (Build -31): a business viewer gets a coarse
     // distance BAND per card, computed from ZIP centroids. The
     // band is a label only: no distance, no ZIP, no pin ever
@@ -4090,9 +4127,18 @@ async function discoverCards(query, viewer) {
   };
 }
 
-async function publicCreator(u, viewer, foundingPriority) {
+async function publicCreator(u, viewer, foundingPriority, marketContext) {
   const history = await creatorHistory(u.id);
-  const impact = computeLocalImpactScore(u.creator || {}, history);
+  // Multi-market context (2026-11-01): when a card is built for
+  // a specific market (discovery in that market), the local
+  // numbers on the card are the creator's share IN THAT MARKET:
+  // that share is what ranks them there, so it is the number the
+  // card shows and the Local Impact Score is computed from it.
+  // Without a context (or in the home market) the card reads
+  // exactly as it always has.
+  const shareHere = marketContext ? audienceShareInMarket(u, marketContext) : null;
+  const inOtherMarket = !!(marketContext && shareHere !== null && normalizeMarketName(marketContext) !== normalizeMarketName(u.market));
+  const impact = computeLocalImpactScore(inOtherMarket ? { ...(u.creator || {}), localAudiencePct: shareHere } : (u.creator || {}), history);
   const trackRecord = await creatorTrackRecord(u.id);
   const reviewList = (await creatorReviews(u.id)).map(reviewDisplay);
   const rating = ratingFieldsOf(reviewList);
@@ -4118,8 +4164,15 @@ async function publicCreator(u, viewer, foundingPriority) {
     // defaults true for legacy records, paidRate is a number or
     // null (null = no paid bookings at any price).
     profile: u.creator
-      ? { ...u.creator, university, primaryPlatform: primaryProfileOf(u.creator).platform, primaryPlatformLabel: primaryProfileOf(u.creator).label, primaryProfileUrl: primaryProfileOf(u.creator).url, compOpen: u.creator.compOpen !== false, paidRate: typeof u.creator.paidRate === "number" && u.creator.paidRate > 0 ? u.creator.paidRate : null, licensingFee: typeof u.creator.licensingFee === "number" && u.creator.licensingFee > 0 ? u.creator.licensingFee : null, zip: undefined }
+      ? { ...u.creator, university, primaryPlatform: primaryProfileOf(u.creator).platform, primaryPlatformLabel: primaryProfileOf(u.creator).label, primaryProfileUrl: primaryProfileOf(u.creator).url, compOpen: u.creator.compOpen !== false, paidRate: typeof u.creator.paidRate === "number" && u.creator.paidRate > 0 ? u.creator.paidRate : null, licensingFee: typeof u.creator.licensingFee === "number" && u.creator.licensingFee > 0 ? u.creator.licensingFee : null, zip: undefined, ...(inOtherMarket ? { localAudiencePct: shareHere } : {}) }
       : u.creator,
+    // Multi-market listing (2026-11-01): every market this
+    // creator is listed in, with the share that ranks them
+    // there, home first. marketContext names the market this
+    // card was built for when it is not the home market, so the
+    // card can say whose local number it is showing.
+    listedMarkets: listedMarketsFor(u),
+    marketContext: inOtherMarket ? { market: normalizeMarketName(marketContext), pct: shareHere, homeMarket: normalizeMarketName(u.market) } : null,
     totalAudience: audienceTotalOf(u.creator || {}),
     audienceStack: audienceView(u.creator || {}).platforms,
     visitIncludes: STANDARD_VISIT.summary,
@@ -4354,6 +4407,19 @@ async function publicProfilePayload(u) {
     licensingFee: typeof c.licensingFee === "number" && c.licensingFee > 0 ? c.licensingFee : null,
     localAudiencePct: c.localAudiencePct === undefined ? null : c.localAudiencePct,
     localAudienceSource: c.localAudienceSource || "Self-reported",
+    // Multi-market listing (2026-11-01): every market this
+    // creator is listed in with the share that ranks them
+    // there, and the segment breakdown the public page draws
+    // as its audience visual. Both come from the creator's own
+    // reported numbers only (lib/audience-markets.js).
+    listedMarkets: listedMarketsFor(u),
+    audienceBreakdown: audienceBreakdownFor(u),
+    // The rate card as listed offerings (2026-11-01): the same
+    // three lanes every surface quotes, structured so the
+    // public page, the share meta, and the structured data all
+    // read one list. Prices are the creator's own listed
+    // numbers; an unlisted lane is absent, never zero-filled.
+    rateCard: rateCardFor(c),
     // Spanish-speaking audience share (S2): self-reported,
     // rides beside the local % on the public profile payload.
     spanishAudiencePct: c.spanishAudiencePct === undefined ? null : c.spanishAudiencePct,
@@ -4381,15 +4447,24 @@ async function publicProfilePayload(u) {
 // ---------- book-me payload (Build -31 + Amendments 1 and 2) ----------
 // The /c/<handle> page is a gated showcase, tiered by viewer:
 //   Tier 0 (logged out, creators, partners, anyone else): the
-//     showcase only. Handle, Charter seal, local %, categories,
-//     featured posts, theme. NO rate, NO follower counts, NO
-//     social profile links, NO contact path of any kind.
+//     showcase. Handle, Charter seal, local %, categories,
+//     featured posts, theme, past work, the listed markets and
+//     the rate card (2026-11-01, below). NO follower counts, NO
+//     audience stack, NO social profile links, NO contact path
+//     of any kind.
 //   Tier 1 (signed-in business without a paid, active account):
-//     the showcase plus the creator's SIGNL listed rate and the
-//     Book on SIGNL action. Socials stay hidden, no messaging.
+//     the showcase plus the Book on SIGNL action. Socials stay
+//     hidden, no messaging.
 //   Tier 2 (business with a paid, active account): Tier 1 plus
 //     the creator's social channel links (unless the creator
 //     hid them) and the in-platform Message action.
+// Rate card change (Jeff, 2026-11-01): the finished public
+// profile now carries the creator's listed offerings (paid
+// rate, licensing fee, comp openness) at EVERY tier, the
+// CreatorMarket standard Jeff approved: prices up front on the
+// profile. This supersedes the Build -31 tier-0 rate hide for
+// the rate fields only; follower counts, the audience stack,
+// social links, and messaging keep their tiers exactly.
 // The owner and admins keep the full legacy stat fields so the
 // proof sheet (which reads this same payload) keeps working for
 // the person the sheet belongs to.
@@ -4439,6 +4514,14 @@ async function bookMePayload(u, viewer) {
     compOpen: full.compOpen,
     localAudiencePct: full.localAudiencePct,
     localAudienceSource: full.localAudienceSource,
+    // Multi-market + profile upgrade (2026-11-01): the listed
+    // markets, the audience segments for the visual, the rate
+    // card as listed offerings, and the creator's past-work
+    // links. All public at every tier (see the header comment).
+    listedMarkets: full.listedMarkets,
+    audienceBreakdown: full.audienceBreakdown,
+    rateCard: full.rateCard,
+    pastWork: full.bestWork,
     foundingBand: full.foundingBand,
     visitIncludes: full.visitIncludes,
     bio: c.bio || "",
@@ -4460,9 +4543,14 @@ async function bookMePayload(u, viewer) {
     // the single-business forming gate inside proofForCreator.
     proof: await proofForCreator(u, { publicView: true }),
   };
+  // The listed rate and licensing fee are part of the public
+  // rate card now (2026-11-01): they ride at every tier. The
+  // creator's user id (the booking target) stays tier 1+, so
+  // the public page can quote the offerings but only a signed-in
+  // business gets a Book action.
+  payload.paidRate = full.paidRate;
+  payload.licensingFee = full.licensingFee;
   if (t.tier >= 1) {
-    payload.paidRate = full.paidRate;
-    payload.licensingFee = full.licensingFee;
     payload.creatorUserId = u.id;
   }
   if (t.tier >= 2) {
@@ -8615,6 +8703,11 @@ async function handleRegister(event) {
       universityUnverified: uniResolved.name ? !uniResolved.verified : false,
       universityStatus: normalizeUniversityStatus(b.universityStatus),
       topAudienceCities: [],
+      // Multi-market shares (2026-11-01): other markets where
+      // this creator's audience lives, reported per market in
+      // Profile. Empty at claim; the home share is
+      // localAudiencePct below, never an entry here.
+      audienceMarkets: [],
       localAudiencePct: null,
       localAudienceSource: null,
       localAudienceAsOf: null,
@@ -8752,6 +8845,10 @@ async function handleRegister(event) {
       universityUnverified: uniResolved.name ? !uniResolved.verified : false,
       universityStatus: normalizeUniversityStatus(b.universityStatus),
       topAudienceCities: cleanStringList(b.topAudienceCities, null, 5),
+      // Multi-market shares (2026-11-01): see the claim builder
+      // above. The full form does not collect them at sign-up;
+      // they are set in Profile, against the stored home market.
+      audienceMarkets: [],
       localAudiencePct: localPct,
       localAudienceSource: "Self-reported",
       localAudienceAsOf: ts.slice(0, 10),
@@ -13412,6 +13509,32 @@ async function route(event) {
     return json(200, { draft, cached: !!res.cached });
   }
 
+  // App sitemap (SEO, 2026-11-01): every FINISHED, public
+  // creator profile on app.joinsignl.com, generated live. The
+  // membership rule is the public page's own rule (roster +
+  // complete + page on + not banned, the findPublicProfileUser
+  // predicate), so the sitemap can never list a page that does
+  // not resolve, and a claim-tier stub (live but unfinished)
+  // never appears: indexing starts at the finished profile,
+  // per the 2026-10-23 ruling. netlify.toml rewrites
+  // /sitemap.xml here; robots.txt points crawlers at it.
+  if (method === "GET" && seg.length === 1 && seg[0] === "sitemap.xml") {
+    const host = (event.headers && (event.headers["x-forwarded-host"] || event.headers.host)) || "app.joinsignl.com";
+    const escXml = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const eligible = (await allUsers())
+      .filter((u) => isRosterCreator(u) && profileCompleteOf(u) && standingState(u) !== "banned" && u.creator && u.creator.publicPage === true && String(u.creator.handle || "").trim())
+      .sort((a, b) => (String(a.creator.handle).toLowerCase() < String(b.creator.handle).toLowerCase() ? -1 : 1));
+    const urls = eligible.map((u) => {
+      const lastmod = String(u.updatedAt || u.createdAt || "").slice(0, 10);
+      return `  <url><loc>https://${escXml(host)}/c/${escXml(String(u.creator.handle).toLowerCase())}</loc>${/^\d{4}-\d{2}-\d{2}$/.test(lastmod) ? `<lastmod>${lastmod}</lastmod>` : ""}</url>`;
+    });
+    return {
+      statusCode: 200,
+      headers: { "Content-Type": "application/xml; charset=utf-8", "Cache-Control": "public, max-age=3600" },
+      body: `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.join("\n")}\n</urlset>\n`,
+    };
+  }
+
   // Server-rendered profile page (netlify.toml /c/* rewrite).
   // Netlify hands this function the ORIGINAL request path for a
   // rewrite, so a page request arrives as seg ["c", <handle>]
@@ -13454,6 +13577,14 @@ async function route(event) {
       tierBand: p.tierBand,
       localAudiencePct: p.localAudiencePct,
       photoUrl: p.photoUrl,
+      // SEO/AEO (2026-11-01): the same public facts the page
+      // itself shows, handed to the meta builder so the served
+      // head can carry them as structured data: categories,
+      // the markets the creator is ranked in, and the listed
+      // paid rate as an offer.
+      categories: p.categories,
+      listedMarkets: p.listedMarkets,
+      paidRate: p.paidRate,
       origin: `https://${host}`,
     }));
   }
@@ -13550,15 +13681,20 @@ async function route(event) {
       // badge rides each entry.
       const ctx36 = await pointsContext();
       const pointsById = new Map(users.filter((u) => u.role === "creator").map((u) => [u.id, totalPointsFor(u, ctx36).total]));
+      // Multi-market (2026-11-01): the list for a market carries
+      // everyone listed in it, ranked by their share IN that
+      // market: a creator based elsewhere whose audience is
+      // strong here ranks by their here-share, same as a local.
       const opted = users
-        .filter((u) => isRosterCreator(u) && profileCompleteOf(u) && standingState(u) !== "banned" && u.creator && u.creator.publicPage === true && normalizeMarketName(u.market) === marketName)
-        .sort((a, b) => ((b.creator.localAudiencePct || 0) - (a.creator.localAudiencePct || 0)) || ((pointsById.get(b.id) || 0) - (pointsById.get(a.id) || 0)) || (a.createdAt < b.createdAt ? -1 : 1));
+        .filter((u) => isRosterCreator(u) && profileCompleteOf(u) && standingState(u) !== "banned" && u.creator && u.creator.publicPage === true && isListedInMarket(u, marketName))
+        .sort((a, b) => ((audienceShareInMarket(b, marketName) || 0) - (audienceShareInMarket(a, marketName) || 0)) || ((pointsById.get(b.id) || 0) - (pointsById.get(a.id) || 0)) || (a.createdAt < b.createdAt ? -1 : 1));
       const byCategory = new Map();
       for (const u of opted) {
         const lvl36 = levelForPoints(pointsById.get(u.id) || 0);
         const entry = {
           handle: u.creator.handle,
-          localAudiencePct: u.creator.localAudiencePct === undefined ? null : u.creator.localAudiencePct,
+          localAudiencePct: audienceShareInMarket(u, marketName),
+          homeMarket: normalizeMarketName(u.market),
           categories: u.creator.categories || [],
           charter: u.creator.charter === true,
           neighborhood: u.creator.neighborhood || "",
@@ -14614,6 +14750,22 @@ async function route(event) {
         c.universityStatus = status;
         user.universityStatus = status;
       }
+      // Multi-market audience shares (Jeff, 2026-11-01): the
+      // creator reports, per other SIGNL market, the share of
+      // their audience that lives there. Normalized against the
+      // home market at write (the home share is localAudiencePct
+      // below, never an entry here; unknown markets and junk
+      // drop out in lib/audience-markets.js). A share at or above
+      // MULTI_MARKET_MIN_PCT lists them in that market: discovery,
+      // the Local List, the offer board, applying and accepting
+      // all read the same helper, so one save moves every gate
+      // at once. Deliberately NOT a completeness field.
+      if (b.audienceMarkets !== undefined) {
+        const cleanMarkets = normalizeAudienceMarkets(b.audienceMarkets, user.market);
+        changes.audienceMarkets = [Array.isArray(c.audienceMarkets) ? c.audienceMarkets.length : 0, cleanMarkets.length];
+        c.audienceMarkets = cleanMarkets;
+        c.audienceMarketsAsOf = ts.slice(0, 10);
+      }
       if (b.localAudiencePct !== undefined) {
         const pct = b.localAudiencePct === null || b.localAudiencePct === "" ? null : Math.max(0, Math.min(100, Number(b.localAudiencePct)));
         changes.localAudiencePct = [c.localAudiencePct, pct];
@@ -14646,6 +14798,9 @@ async function route(event) {
       }
       if (changes.localAudiencePct) {
         await logEvent({ type: "local_audience_updated", actorId: user.id, actorRole: "creator", subjectId: user.id, market: user.market, data: { from: changes.localAudiencePct[0], to: changes.localAudiencePct[1], source: "Self-reported" } });
+      }
+      if (changes.audienceMarkets) {
+        await logEvent({ type: "audience_markets_updated", actorId: user.id, actorRole: "creator", subjectId: user.id, market: user.market, data: { markets: (c.audienceMarkets || []).map((e) => ({ market: e.market, pct: e.pct })), listed: listedMarketsFor(user).map((e) => e.market), source: "Self-reported" } });
       }
       return json(200, { user: await withFounding(user) });
     }
@@ -17779,7 +17934,7 @@ async function route(event) {
       // exactly as if it were not posted yet.
       if (!offerVisibleToCreator(offer, user, Date.now(), await isMarketLive(offer.market))) return err(404, "Offer not available");
       if (offer.status !== "open") return err(409, "This offer is not taking applications right now");
-      if (offer.market !== user.market) return err(403, "This offer is in a different market");
+      if (!isListedInMarket(user, offer.market)) return err(403, "This offer is in a market you are not listed in. Add your audience share for that market under Profile, in Your audience, and its offers open to you.");
       if (offer.applicationsCloseAt && Date.now() > Date.parse(offer.applicationsCloseAt)) return err(409, "Applications for this offer have closed");
       const tier = normalizeTierBand(user.creator ? user.creator.tierBand : "");
       if (Array.isArray(offer.targetTiers) && offer.targetTiers.length && !offer.targetTiers.includes(tier)) return err(403, `This offer is for ${offer.targetTiers.join(", ")} creators. Your tier is ${tier}.`);
@@ -17823,7 +17978,10 @@ async function route(event) {
           handle: user.creator ? user.creator.handle : "",
           name: user.name,
           tierBand: tier,
-          localAudiencePct: user.creator ? user.creator.localAudiencePct : null,
+          // The snapshot ranks in the OFFER's market (2026-11-01):
+          // for a multi-market application this is the creator's
+          // share in that market, not their home share.
+          localAudiencePct: audienceShareInMarket(user, offer.market),
           totalAudience: audienceTotalOf(user.creator || {}),
           paidRate: user.creator && typeof user.creator.paidRate === "number" && user.creator.paidRate > 0 ? user.creator.paidRate : null,
         },
@@ -17844,7 +18002,7 @@ async function route(event) {
       const offer = await store.get(`offer:${seg[1]}`);
       if (!offer || offer.status !== "open") return err(404, "Offer not available");
       if (offer.creatorId && offer.creatorId !== user.id) return err(403, "This offer was sent to a different creator");
-      if (offer.market !== user.market) return err(403, "This offer is in a different market");
+      if (!isListedInMarket(user, offer.market)) return err(403, "This offer is in a market you are not listed in. Add your audience share for that market under Profile, in Your audience, and its offers open to you.");
       const b = parseBody(event);
       const allBk = await allBookings();
       const existing = allBk.filter((bk) => bk.offerId === offer.id && bk.status !== "expired" && bk.status !== "cancelled");
@@ -17923,7 +18081,10 @@ async function route(event) {
     const out = [];
     let earlyAccessOpensAtMs = null;
     for (const o of offers) {
-      if (laneOf(o) !== "open" || o.status !== "open" || o.market !== user.market) continue;
+      // Multi-market board (2026-11-01): the board shows offers
+      // from every market the creator is LISTED in, not only
+      // their home market.
+      if (laneOf(o) !== "open" || o.status !== "open" || !isListedInMarket(user, o.market)) continue;
       if (Array.isArray(o.targetTiers) && o.targetTiers.length && !o.targetTiers.includes(tier)) continue;
       // Dignity eligibility: an untargeted comp reaches only the
       // tiers whose floor its value clears (see COMP_GUIDANCE).

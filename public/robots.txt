@@ -1,3 +1,5 @@
+Sitemap: https://app.joinsignl.com/sitemap.xml
+
 # SIGNL app robots policy (app.joinsignl.com)
 # The public shell (landing pages, sign-in, public creator profiles
 # at /c/<handle>) is crawlable. The API and the authenticated app are

@@ -25,7 +25,18 @@ function profilePageMeta(profile) {
   const place = profile.place || "";
   const title = `${profile.name} (@${profile.handle}) on SIGNL${place ? ` | ${place}` : ""}`;
   const pct = typeof profile.localAudiencePct === "number" ? profile.localAudiencePct : null;
-  const description = `${profile.name} is a founding creator on SIGNL in ${place || "their market"}${profile.tierBand ? ` (${profile.tierBand} tier)` : ""}.${pct !== null ? ` ${pct}% of their audience is local.` : ""} Local businesses comp creators for honest posts.`;
+  // Multi-market (2026-11-01): the other markets the creator is
+  // ranked in ride the description when they are real (the
+  // router only passes listed markets: home plus shares at or
+  // above the listing floor). At most two are named, strongest
+  // first (listedMarketsFor already orders them that way).
+  const others = (Array.isArray(profile.listedMarkets) ? profile.listedMarkets : [])
+    .filter((e) => e && !e.home && typeof e.pct === "number")
+    .slice(0, 2);
+  const also = others.length
+    ? ` Also ranked in ${others.map((e) => `${e.market} (${e.pct}% of their audience)`).join(" and ")}.`
+    : "";
+  const description = `${profile.name} is a founding creator on SIGNL in ${place || "their market"}${profile.tierBand ? ` (${profile.tierBand} tier)` : ""}.${pct !== null ? ` ${pct}% of their audience is local.` : ""}${also} Local businesses comp creators for honest posts.`;
   return { title, description };
 }
 
@@ -36,6 +47,15 @@ function profilePageMeta(profile) {
 // cover photo). JSON.stringify output is safe inside a <script>
 // block once "</" is neutralized, so a hostile name can never
 // break out of the tag.
+//
+// Multi-market + rate card (2026-11-01): three additions, each
+// only when the router hands over the real fact: the creator's
+// categories as knowsAbout; the markets they are ranked in as
+// the service area of their booking offer; and their listed
+// paid rate as that offer's price (the rate card is public on
+// the finished profile, so the offer states exactly what the
+// page states). No rate listed means no offer node at all:
+// structured data never invents a price.
 function profileJsonLd(profile, meta, canonical, image) {
   const person = {
     "@type": "Person",
@@ -46,6 +66,26 @@ function profileJsonLd(profile, meta, canonical, image) {
   };
   if (image) person.image = image;
   if (profile.place) person.homeLocation = { "@type": "Place", name: String(profile.place) };
+  const categories = (Array.isArray(profile.categories) ? profile.categories : []).filter((x) => typeof x === "string" && x);
+  if (categories.length) person.knowsAbout = categories;
+  const listed = (Array.isArray(profile.listedMarkets) ? profile.listedMarkets : [])
+    .filter((e) => e && typeof e.market === "string" && e.market);
+  if (typeof profile.paidRate === "number" && profile.paidRate > 0) {
+    const service = {
+      "@type": "Service",
+      name: "Paid creator booking: one post plus one story",
+      provider: { "@type": "Person", name: String(profile.name || ""), alternateName: `@${profile.handle || ""}` },
+    };
+    if (listed.length) service.areaServed = listed.map((e) => ({ "@type": "Place", name: String(e.market) }));
+    if (categories.length) service.serviceType = categories;
+    person.makesOffer = {
+      "@type": "Offer",
+      price: profile.paidRate,
+      priceCurrency: "USD",
+      availability: "https://schema.org/InStock",
+      itemOffered: service,
+    };
+  }
   const ld = {
     "@context": "https://schema.org",
     "@type": "ProfilePage",

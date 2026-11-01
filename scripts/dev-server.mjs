@@ -54,6 +54,27 @@ const server = http.createServer(async (req, res) => {
     }
     return;
   }
+  // Mirror the production netlify.toml /sitemap.xml rewrite:
+  // the function generates the app sitemap live.
+  if (url.pathname === "/sitemap.xml") {
+    const event = {
+      httpMethod: "GET",
+      path: "/api/sitemap.xml",
+      headers: req.headers,
+      queryStringParameters: {},
+      body: null,
+      isBase64Encoded: false,
+    };
+    try {
+      const out = await handler(event);
+      res.writeHead(out.statusCode, out.headers || {});
+      res.end(out.body || "");
+    } catch (e) {
+      res.writeHead(500, { "Content-Type": "text/plain" });
+      res.end(String(e));
+    }
+    return;
+  }
   if (url.pathname.startsWith("/api/")) {
     const chunks = [];
     req.on("data", (c) => chunks.push(c));
