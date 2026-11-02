@@ -150,13 +150,23 @@ try {
   check("Sig draft card sits below the business fields", bizSeg.indexOf('${igAssistCardHtml("jb", "business")}') > bizSeg.indexOf('id="jb-about"'));
   check("apply by conversation is a secondary text link", bizSeg.includes('<a class="tlink" href="#" id="jb-convo-start"') && !bizSeg.includes('id="jb-convo-card"'));
   const statusSeg = segment(appJs, "function renderBusinessFoundingStatus()", "// ---------- founding business preview");
-  check("first-month setup moved to post-signup onboarding", statusSeg.includes("Set up your first month") && statusSeg.includes('id="fbz-moment"') && statusSeg.includes('id="fbz-base-day"') && statusSeg.includes('id="fbz-base-count"') && appJs.includes("async function fbzSaveSetup()"));
+  // Build -68 (2026-11-01): the "Set up your first month" panel
+  // DIED. The moment now lives in the campaign composer as one
+  // optional chip row; the usual-day baseline lives in Results
+  // Proof Controls. The status page is pending-review only.
+  check("the first-month setup panel is gone for good (Build -68)", !appJs.includes("Set up your first month") && statusSeg.includes("Application in review") && appJs.includes("What is your first month built around?") && appJs.includes("One of your usual open days"));
   check("css carries the Build -64 profile and form classes", theme.includes(".work-grid") && theme.includes(".bookme-sticky") && theme.includes(".save-bar") && theme.includes(".req-badge") && theme.includes(".p-am-row"));
   check("css accent lock resolves v3 and admin tokens to azure", theme.includes("body.v3-on { --mint-deep: #006AFC; }") && theme.includes("body.v3-on { --blue: #006AFC; }") && theme.includes("--mint-deep: #006AFC; --blue: #006AFC;"));
   check("claim lane bullets match", theme.includes(".ldot.off { background: var(--black); border: 0; width: 14px; height: 14px;"));
   const buildJs = fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8");
   const indexHtml = fs.readFileSync(path.join(root, "public/index.html"), "utf8");
-  check("build stamp is 2026.11.01-67 everywhere", buildJs.includes('exports.BUILD_ID = "2026.11.01-67"') && indexHtml.includes('window.__SIGNL_BUILD__ = "2026.11.01-67"') && (indexHtml.match(/2026\.11\.01-67/g) || []).length >= 4);
+  // Build -68 re-aim (2026-11-02): the asset cache-bust clause used
+  // to count the PREVIOUS build's stamp in index.html; at -68 every
+  // asset reference (styles.css, theme-v2.css, app.js) was bumped to
+  // the -68 stamp itself, so the count now pins -68 (4 occurrences,
+  // 0 of -67). Shipping old-stamp asset URLs under a new build would
+  // serve stale files, which is the bug this clause exists to catch.
+  check("build stamp is 2026.11.01-68 everywhere", buildJs.includes('exports.BUILD_ID = "2026.11.01-68"') && indexHtml.includes('window.__SIGNL_BUILD__ = "2026.11.01-68"') && (indexHtml.match(/2026\.11\.01-68/g) || []).length >= 4);
 
   part("http: finished profile + claim stub");
   startServer();

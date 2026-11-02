@@ -1,9 +1,12 @@
 // Business-side verification (Jeff, 2026-10-20): founding-list
 // intake and the admin activation gate (registration lands in
-// founding state; browse, favorites, offers, Business Home,
-// bookings, and messages refuse server-side; an admin activates
-// the business by hand; publishing stays behind the market live
-// flag), then favorites, the open offer lifecycle (post, apply,
+// founding state; an admin activates the business by hand;
+// publishing stays behind activation). Build -68 (2026-11-01)
+// re-aimed the gate: APPROVED founding businesses browse,
+// favorite, and hold drafts (server force-drafts); Business
+// Home, bookings, and messages still refuse until activation.
+// Pending businesses are refused everywhere. Then favorites,
+// the open offer lifecycle (post, apply,
 // select, release, expire), the dignity floor, backfill, rebook,
 // the coaching nudge, the selection SLA, and the zero-write
 // preview invariant. Production shape: NO test override; the
@@ -120,17 +123,22 @@ try {
   const bizMe = await biz("GET", "/api/auth/me");
   check("approved founding business signs in with plan + profile intact", bizMe.data.user.business.plan === "growth" && bizMe.data.user.business.neighborhood === "Carytown" && bizMe.data.user.business.accessState === "founding", JSON.stringify(bizMe.data.user.business));
 
-  // ---------- the founding gate: no product access ----------
+  // ---------- the founding gate ----------
+  // Build -68 (2026-11-01): approved founding businesses get
+  // the real product: browse, favorites, and DRAFT offers
+  // (the server force-drafts everything until activation).
+  // Bookings, Business Home, and messages below stay refused.
   const gateBrowse = await biz("GET", "/api/discover?market=Richmond");
-  check("founding business cannot browse the roster (403, points at the status page)", gateBrowse.status === 403 && /founding list/.test(gateBrowse.data.error || "") && /Founding Status page/.test(gateBrowse.data.error || ""), JSON.stringify(gateBrowse.data));
+  check("founding business CAN browse the roster (Build -68)", gateBrowse.status === 200 && Array.isArray(gateBrowse.data.creators), JSON.stringify(gateBrowse.data).slice(0, 160));
   const gateFavs = await biz("GET", "/api/favorites");
-  check("founding business cannot read favorites (403)", gateFavs.status === 403, String(gateFavs.status));
+  check("founding business CAN read favorites (Build -68)", gateFavs.status === 200, String(gateFavs.status));
   const gateFavWrite = await biz("POST", "/api/favorites", { creatorId: cB.id });
-  check("founding business cannot favorite a creator (403)", gateFavWrite.status === 403, String(gateFavWrite.status));
+  check("founding business CAN favorite a creator (Build -68)", gateFavWrite.status === 200 && gateFavWrite.data.isFavorite === true, JSON.stringify(gateFavWrite.data));
+  await biz("POST", "/api/favorites", { creatorId: cB.id });
   const gateOffers = await biz("GET", "/api/offers");
-  check("founding business cannot read offers (403)", gateOffers.status === 403, String(gateOffers.status));
+  check("founding business CAN read its own offers (Build -68)", gateOffers.status === 200, String(gateOffers.status));
   const gateDraft = await biz("POST", "/api/offers", { title: "Founding draft attempt", whatComped: "Dinner for two", dollarCap: 80, spots: 1 });
-  check("founding business cannot create even a draft offer (403)", gateDraft.status === 403 && /founding list/.test(gateDraft.data.error || ""), JSON.stringify(gateDraft.data));
+  check("founding business creates a DRAFT offer, never live (Build -68)", gateDraft.status === 201 && gateDraft.data.offer && gateDraft.data.offer.status === "draft", JSON.stringify(gateDraft.data).slice(0, 160));
   const gateHome = await biz("GET", "/api/me/business-home");
   check("Business Home data refuses for a founding business (403)", gateHome.status === 403 && /Founding Status page/.test(gateHome.data.error || ""), JSON.stringify(gateHome.data));
   const gateBookings = await biz("GET", "/api/bookings");
@@ -172,7 +180,7 @@ try {
   const bizTwoMeAfterToggle = await bizTwo("GET", "/api/auth/me");
   check("flipping the market live does NOT silently activate founding businesses", bizTwoMeAfterToggle.data.user.business.accessState === "founding", JSON.stringify(bizTwoMeAfterToggle.data.user.business));
   const bizTwoBrowse = await bizTwo("GET", "/api/discover?market=Richmond");
-  check("a founding business in a LIVE market still cannot browse until activated", bizTwoBrowse.status === 403, String(bizTwoBrowse.status));
+  check("a founding business in a LIVE market CAN browse (Build -68: activation gates going live, not browsing)", bizTwoBrowse.status === 200, String(bizTwoBrowse.status));
   const bulk = await admin("POST", "/api/admin/businesses/activate-market", { market: "Richmond" });
   check("bulk activation activates the market's founding businesses", bulk.status === 200 && bulk.data.activatedCount === 1, JSON.stringify(bulk.data).slice(0, 200));
   const bizTwoBrowseAfter = await bizTwo("GET", "/api/discover?market=Richmond");

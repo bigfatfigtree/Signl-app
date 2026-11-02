@@ -4545,6 +4545,20 @@ function publicViewerTier(u, viewer) {
   return { tier: 0, owner: false, canBook: false, canMessage: false };
 }
 
+// The creator's public first name (Build -68): the first token
+// of the stored account name, or null when there is no real
+// name to show (missing, or the record's name is just the
+// handle repeated). Public surfaces show first names only.
+function firstNameOf(name, handle) {
+  const n = String(name || "").trim();
+  if (!n) return null;
+  const first = n.split(/\s+/)[0];
+  if (!first) return null;
+  const h = String(handle || "").trim().toLowerCase();
+  if (h && (first.toLowerCase() === h || first.toLowerCase() === "@" + h)) return null;
+  return first;
+}
+
 async function bookMePayload(u, viewer) {
   const c = u.creator || {};
   const full = await publicProfilePayload(u);
@@ -4626,6 +4640,13 @@ async function bookMePayload(u, viewer) {
   payload.socialLinks = c.showSocials === false ? [] : creatorSocialLinks(c);
   payload.socialsHiddenByCreator = c.showSocials === false;
   payload.totalAudience = full.totalAudience;
+  // First name + pronouns (Build -68, Jeff): the public header
+  // shows the creator's actual first name, never a surname and
+  // never an invented name. firstName is the first token of the
+  // stored name; when the stored name is missing or IS the
+  // handle, it stays null and the page renders as it did.
+  payload.firstName = firstNameOf(full.name, full.handle);
+  payload.pronouns = typeof c.pronouns === "string" && c.pronouns.trim() ? c.pronouns.trim().slice(0, 40) : null;
   if (t.tier >= 2) {
     payload.canMessage = !!t.canMessage;
   }
@@ -14053,6 +14074,10 @@ async function route(event) {
       categories: p.categories,
       listedMarkets: p.listedMarkets,
       paidRate: p.paidRate,
+      // Build -68: a ?market= on the shared link names the
+      // market the profile is being viewed in; the served body
+      // keys its headline local number to it (profile-meta.js).
+      viewMarket: query && query.market ? normalizeMarketName(String(query.market)) : null,
       origin: `https://${host}`,
       // Build -64: the tier-0 book-me payload rides along so
       // the served HTML carries the rendered profile body
@@ -15126,6 +15151,11 @@ async function route(event) {
         if (user.market !== before) changes.market = [before, user.market];
       }
       if (b.bio !== undefined) c.bio = String(b.bio).trim();
+      // Pronouns (Build -68): optional free text from the
+      // profile editor's Optional card. Shown on the public
+      // profile next to the first name, only when set. Never
+      // required, never defaulted, never guessed.
+      if (b.pronouns !== undefined) c.pronouns = String(b.pronouns || "").trim().slice(0, 40);
       if (b.bestWork !== undefined) {
         const v = validateBestWork(b.bestWork);
         if (!v.ok) return err(400, v.error);
@@ -17570,17 +17600,22 @@ async function route(event) {
   }
 
   // ---------- founding business gate ----------
-  // A business that has not been activated by an admin is on the
-  // founding list, whatever its application's review state or its
-  // market's live flag: browse, favorites, offers (drafts
-  // included), applications, bookings, the counter, posts, and
-  // messages all refuse server-side with a pointer at its
-  // Founding Status page. Hiding the UI is not the enforcement;
-  // this check is. Business Home has the same check at its
-  // handler below. This sits ahead of the approved-account gate
-  // so a founding business always gets the founding answer.
+  // Build -68: an APPROVED founding business may browse the
+  // roster, keep favorites, and hold campaign DRAFTS (the
+  // offers create route force-drafts founding callers and the
+  // publish route refuses them; nothing a founding business
+  // saves can go live before activation). A founding business
+  // still in review is refused everywhere here, and every
+  // founding business is still refused the live sections:
+  // applications, open offers, bookings, the counter, posts,
+  // and messages. Business Home keeps its own founding check
+  // at its handler below. This sits ahead of the
+  // approved-account gate so a founding business always gets
+  // the founding answer.
   const MARKETPLACE_SECTIONS = ["discover", "favorites", "offers", "applications", "open-offers", "bookings", "counter", "posts", "messages"];
-  if (user.role !== "admin" && isFoundingBusiness(user) && MARKETPLACE_SECTIONS.includes(seg[0])) {
+  const FOUNDING_OPEN_SECTIONS = ["discover", "favorites", "offers"];
+  if (user.role !== "admin" && isFoundingBusiness(user) && MARKETPLACE_SECTIONS.includes(seg[0])
+    && !(user.status === "approved" && FOUNDING_OPEN_SECTIONS.includes(seg[0]))) {
     return err(403, FOUNDING_BUSINESS_MESSAGE);
   }
 
@@ -17825,6 +17860,17 @@ async function route(event) {
         (seg[0] === "discover" && method === "GET") ||
         (seg[0] === "offers" && (method === "GET" || method === "POST" || method === "PATCH"))
       );
+      // Build -68: an APPROVED founding business gets the same
+      // pre-launch allowances, and no more: browse, favorite,
+      // and hold campaign drafts. The offers handlers force
+      // founding saves to drafts and refuse founding publishes,
+      // so nothing here can put an offer in front of a creator
+      // before activation.
+      const foundingPrelaunchOk = user.role === "business" && isFoundingBusiness(user) && user.status === "approved" && (
+        seg[0] === "favorites" ||
+        (seg[0] === "discover" && method === "GET") ||
+        (seg[0] === "offers" && (method === "GET" || method === "POST" || method === "PATCH"))
+      );
       // Platform messages (Build -40, Jeff: "open up the message
       // feature for creators"): the SIGNL team thread is the one
       // message surface that has to work BEFORE a market launches
@@ -17853,7 +17899,7 @@ async function route(event) {
         seg[0] === "bookings" || seg[0] === "open-offers" || seg[0] === "offers" ||
         seg[0] === "applications" || seg[0] === "posts"
       );
-      if (!businessPrelaunchOk && !creatorPlatformMsgOk && !creatorPrelaunchReadOk) {
+      if (!businessPrelaunchOk && !foundingPrelaunchOk && !creatorPlatformMsgOk && !creatorPrelaunchReadOk) {
         return err(403, `The ${marketTalkName(user.market)} market has not launched yet. Founding creators keep priority in the order they signed up, and we email them the moment it opens to businesses.`);
       }
     }
@@ -17972,6 +18018,10 @@ async function route(event) {
     // Rebook is matched before the :id routes below.
     if (method === "POST" && seg.length === 2 && seg[1] === "rebook") {
       if (user.role !== "business") return err(403, "Businesses only");
+      // Build -68: rebook creates an OPEN offer directly, so a
+      // founding business is refused outright — its invites
+      // live as drafts until activation.
+      if (isFoundingBusiness(user)) return err(403, "Your business is on the founding list, so invites stay drafts for opening day. Rebooking opens when SIGNL activates your business.");
       if (!(await isMarketLive(user.market))) return err(403, "Rebooking opens when your market launches. Your favorites and visit history are saved and waiting.");
       const b = parseBody(event);
       const creator = await store.get(`user:${b.creatorId}`);
@@ -18098,7 +18148,11 @@ async function route(event) {
         paidBrief = String(b.paidBrief || "").trim().slice(0, PAID_BRIEF_MAX) || null;
       }
       const marketLive = await isMarketLive(user.market);
-      const wantsDraft = b.draft === true || !marketLive;
+      // Build -68: a founding business's offers are drafts by
+      // law, whatever the request says — activation, not the
+      // market's live flag, is what lets a founding business
+      // publish, and until then nothing it saves can be open.
+      const wantsDraft = b.draft === true || !marketLive || isFoundingBusiness(user);
       const ts = nowIso();
       const offer = {
         id: crypto.randomUUID(),
@@ -18189,7 +18243,11 @@ async function route(event) {
       }
       await store.set(`offer:${offer.id}`, offer);
       await logEvent({ type: "offer_created", actorId: user.id, actorRole: "business", subjectId: offer.id, market: offer.market, data: { title: offer.title, dollarCap, spots, targeted: !!targetCreator, creatorId: offer.creatorId, category: offer.category, windowMode: offer.windowMode, lane, kind, cashRate, covers, hasBrief: !!paidBrief, targetTiers, templateId: offer.templateId, status: offer.status, strength: offerStrength(offer).score } });
-      if (targetCreator) await notifyUser(targetCreator.id, "offer_received", `${user.business.businessName} sent you an offer: "${offer.title}". It is under your Offers.`, { offerId: offer.id });
+      // Build -68: only an OPEN offer notifies its creator. A
+      // draft (a founding business's saved-for-opening-day
+      // invite above all) is invisible to the creator until it
+      // is published.
+      if (targetCreator && offer.status === "open") await notifyUser(targetCreator.id, "offer_received", `${user.business.businessName} sent you an offer: "${offer.title}". It is under your Offers.`, { offerId: offer.id });
       return json(201, { offer });
     }
 
@@ -18282,6 +18340,10 @@ async function route(event) {
       const offer = await store.get(`offer:${seg[1]}`);
       if (!offer || offer.businessId !== user.id) return err(404, "Offer not found");
       if (offer.status !== "draft") return err(409, "Only a draft can be published");
+      // Build -68: a founding business cannot publish at all,
+      // even in a live market — activation is the bar, and
+      // until it happens the draft stays saved for opening day.
+      if (isFoundingBusiness(user)) return err(403, "Your business is on the founding list, so this draft stays saved for opening day. It goes out when SIGNL activates your business, and we email you that day.");
       if (!(await isMarketLive(user.market))) return err(403, `Offers go live when your market opens. Businesses sign up when we are ready to launch; your draft is saved and ready to publish the day your market opens.`);
       if (kindOf(offer) === "comp" && Array.isArray(offer.targetTiers) && offer.targetTiers.length) {
         const block = dignityBlock(offer.dollarCap, offer.targetTiers);
@@ -18418,6 +18480,7 @@ async function route(event) {
     // released with a notification.
     if (method === "POST" && seg.length === 3 && seg[2] === "select") {
       if (user.role !== "business") return err(403, "Businesses only");
+      if (isFoundingBusiness(user)) return err(403, "Your business is on the founding list, so there is nothing to select yet. Your drafts go out when SIGNL activates your business.");
       if (!(await isMarketLive(user.market))) return err(403, "Selecting creators opens when your market launches.");
       const offer = await store.get(`offer:${seg[1]}`);
       if (!offer || offer.businessId !== user.id) return err(404, "Offer not found");

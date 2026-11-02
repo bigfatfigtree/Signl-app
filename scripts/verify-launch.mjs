@@ -217,21 +217,24 @@ try {
   check("admin approves creator A", approveA.status === 200 && approveA.data.user.status === "approved");
 
   // --- the founding business, approved, in a NOT-live market ---
-  // Approval alone opens nothing: the founding gate refuses
-  // browse, favorites, offers, and Business Home server-side
-  // until an admin activates the business by hand. After
-  // activation, browse, favorites, and DRAFT offers are real
-  // pre-launch; publishing and bookings stay market-gated.
+  // Build -68 (2026-11-01): approval opens the product for
+  // getting ready: browse, favorites, and DRAFT offers are
+  // real pre-launch (the server force-drafts everything a
+  // founding business creates). Business Home, bookings, and
+  // publishing stay refused until an admin activates the
+  // business by hand; after activation, publishing and
+  // bookings stay market-gated.
   const approveBiz = await admin("POST", "/api/admin/review", { userId: hopefulBizId, decision: "approve" });
   check("admin approves the founding business (approval is not activation)", approveBiz.status === 200 && approveBiz.data.user.status === "approved" && approveBiz.data.user.business.accessState === "founding");
   const bizHomeGate = await hopefulBiz("GET", "/api/me/business-home");
   check("Business Home refuses for a founding business (403, points at the status page)", bizHomeGate.status === 403 && /Founding Status page/.test(bizHomeGate.data.error || ""), JSON.stringify(bizHomeGate.data));
   const bizBrowseGate = await hopefulBiz("GET", "/api/discover?market=Hampton%20Roads");
-  check("browse refuses for a founding business (403): the roster is not visible pre-activation", bizBrowseGate.status === 403 && /founding list/.test(bizBrowseGate.data.error || ""), JSON.stringify(bizBrowseGate.data));
+  check("browse answers for an approved founding business (Build -68)", bizBrowseGate.status === 200 && (bizBrowseGate.data.creators || []).some((c) => c.userId === creatorAId), String(bizBrowseGate.status));
   const bizFavGate = await hopefulBiz("POST", "/api/favorites", { creatorId: creatorAId });
-  check("favorites refuse for a founding business (403)", bizFavGate.status === 403, String(bizFavGate.status));
+  check("a founding business CAN favorite a creator (Build -68)", bizFavGate.status === 200 && bizFavGate.data.isFavorite === true, JSON.stringify(bizFavGate.data));
+  await hopefulBiz("POST", "/api/favorites", { creatorId: creatorAId }); // toggle back off; the activated flow below re-adds it
   const bizDraftGate = await hopefulBiz("POST", "/api/offers", { title: "Launch week dinner for two", whatComped: "Two entrees and two drinks", dollarCap: 100, spots: 2, visitWindow: "Evenings" });
-  check("offers refuse for a founding business, drafts included (403)", bizDraftGate.status === 403, String(bizDraftGate.status));
+  check("a founding business's offer lands as a DRAFT, never open (Build -68)", bizDraftGate.status === 201 && bizDraftGate.data.offer && bizDraftGate.data.offer.status === "draft", JSON.stringify(bizDraftGate.data).slice(0, 160));
   const activateBiz = await admin("POST", "/api/admin/businesses/activate", { userId: hopefulBizId });
   check("admin Activate business flips the founding business to active", activateBiz.status === 200 && activateBiz.data.user.business.accessState === "active", JSON.stringify(activateBiz.data.user && activateBiz.data.user.business));
   const bizHomePre = await hopefulBiz("GET", "/api/me/business-home");
@@ -396,8 +399,10 @@ try {
   });
   check("business registration works the same in a live market (201): founding intake, the live flag does not change sign-up", bizAfter.status === 201 && bizAfter.data.user.status === "pending" && bizAfter.data.user.business.accessState === "founding", String(bizAfter.status));
   await admin("POST", "/api/admin/review", { userId: bizAfter.data.user.id, decision: "approve" });
+  const lateMe = await lateBiz("GET", "/api/auth/me");
+  check("a live market does NOT silently activate a founding business (record still founding after approval)", lateMe.data.user.business.accessState === "founding", JSON.stringify(lateMe.data.user.business));
   const lateBrowse = await lateBiz("GET", "/api/discover?market=Hampton%20Roads");
-  check("a live market does NOT silently activate a founding business: browse still refuses (403) until an admin activates it", lateBrowse.status === 403 && /founding list/.test(lateBrowse.data.error || ""), JSON.stringify(lateBrowse.data));
+  check("but browsing is open to it (Build -68: activation gates going live, not getting ready)", lateBrowse.status === 200, String(lateBrowse.status));
 
   // --- admin Business Preview: same discovery, simulated offers ---
   // This is the server-side proof of the preview path (the suite signs

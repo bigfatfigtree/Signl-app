@@ -569,31 +569,56 @@ function profileHeaderSocialsHtml(p) {
   return `<div class="bookme-socials-row">${links.map((s) => `<a class="bm-soc" href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.label)}</a>`).join("")}</div>`;
 }
 
-function profileHeaderStatsHtml(p) {
-  // Local first and bold, total second. The local number is
-  // the share for the market this page is being viewed in:
-  // when the URL names a market the creator is listed in
-  // (?market=Austin), that market's share is the header number
-  // and the label names it, the same number discovery ranks
-  // them by there. Anything else reads the home share. The
-  // total is the stacked audience (totalAudienceOf, the same
-  // sum the server computes); no total on record means the
-  // local stat stands alone, never a zero.
-  let localPct = (p.localAudiencePct === null || p.localAudiencePct === undefined) ? null : p.localAudiencePct;
-  let localLbl = "local";
-  try {
-    const q = new URLSearchParams(window.location.search).get("market");
-    if (q) {
-      const want = q.trim().toLowerCase();
-      const hit = (p.listedMarkets || []).find((m) => !m.home && typeof m.pct === "number" && String(m.market).toLowerCase() === want);
-      if (hit) { localPct = hit.pct; localLbl = `local · ${hit.market}`; }
-    }
-  } catch (e) { /* the home number stands */ }
-  const stats = [];
-  if (localPct !== null && localPct !== undefined && Number.isFinite(Number(localPct))) {
-    stats.push(`<div class="bm-stat bm-stat-local"><span class="bm-num">${localPct}%</span><span class="bm-lbl">${esc(localLbl)}</span></div>`);
+// The viewed market (Build -68): the headline local number
+// is keyed to the market the viewer is looking in. Resolution
+// order: the logged-in business's own market, then a ?market=
+// on the URL, then the creator's home market. A candidate
+// counts only when the creator is listed there (a
+// listedMarkets entry at or above the listing floor); a
+// viewed market with no share falls back to home, never to a
+// zero headline.
+function profileViewMarket(p) {
+  const listed = (Array.isArray(p.listedMarkets) ? p.listedMarkets : []).filter((m) => m && typeof m.pct === "number");
+  const homeEntry = listed.find((m) => m.home) || null;
+  const home = { market: homeEntry ? homeEntry.market : (p.market || ""), pct: (p.localAudiencePct === null || p.localAudiencePct === undefined) ? (homeEntry ? homeEntry.pct : null) : p.localAudiencePct, home: true };
+  const candidates = [];
+  const u = state.user;
+  if (u && u.role === "business" && u.market) candidates.push(u.market);
+  try { const q = new URLSearchParams(window.location.search).get("market"); if (q) candidates.push(q); } catch (e) { /* no URL context */ }
+  for (const cand of candidates) {
+    const hit = listed.find((m) => String(m.market).toLowerCase() === String(cand).trim().toLowerCase());
+    if (hit) return { market: hit.market, pct: hit.pct, home: !!hit.home };
   }
+  return home;
+}
+// Follower count for a share of the creator's total (Build
+// -68): arithmetic on the creator's own reported numbers,
+// compact format, null when there is no total to count from.
+function followersForPct(pct, total) {
+  if (pct === null || pct === undefined || !Number.isFinite(Number(pct)) || !(Number(total) > 0)) return null;
+  return fmtFollowers(Math.round((Number(pct) / 100) * Number(total)));
+}
+// The public name line (Build -68): first name only, pronouns
+// beside it when set; a record with no real first name renders
+// exactly as it did.
+function profileDisplayName(p) {
+  if (p.firstName) return p.pronouns ? `${p.firstName} \u00B7 ${p.pronouns}` : String(p.firstName);
+  return p.name || "";
+}
+
+function profileHeaderStatsHtml(p) {
+  // Local first and bold, total second (Build -66 order,
+  // kept). The local number is the viewed market's share
+  // (profileViewMarket), with its follower count under it
+  // when the creator has a total on record; no total means
+  // the local stat stands alone, never a zero.
+  const view = profileViewMarket(p);
   const total = totalAudienceOf(p);
+  const stats = [];
+  if (view.pct !== null && view.pct !== undefined && Number.isFinite(Number(view.pct))) {
+    const cnt = followersForPct(view.pct, total);
+    stats.push(`<div class="bm-stat bm-stat-local"><span class="bm-num">${view.pct}%</span><span class="bm-lbl">${view.home ? "local" : `local \u00B7 ${esc(view.market)}`}</span>${cnt ? `<span class="bm-sub">${cnt} followers</span>` : ""}</div>`);
+  }
   if (total > 0) {
     stats.push(`<div class="bm-stat bm-stat-fol"><span class="bm-num">${fmtFollowers(total)}</span><span class="bm-lbl">followers</span></div>`);
   }
@@ -623,6 +648,8 @@ async function renderPublicProfile() {
   }
   if (p.pageState === "claimed") return renderClaimedProfile(p);
   state.bookMeCreatorId = p.creatorUserId || null;
+  const view = profileViewMarket(p);
+  const total = totalAudienceOf(p);
   const place = p.unlisted ? esc(p.city) : esc(marketDisplayName(p.market));
   applyProfileShareShell(p, p.unlisted ? (p.city || "") : (p.market || ""));
   const initial = esc((p.name || "?").trim().charAt(0).toUpperCase() || "?");
@@ -664,9 +691,9 @@ async function renderPublicProfile() {
   const breakdownHtml = bd && bd.segments && bd.segments.length ? `
     <div style="margin:14px 0 0">
       <div style="display:flex;height:14px;border-radius:999px;overflow:hidden;background:#E3F5EA" role="img" aria-label="Where this creator's audience lives">
-        ${bd.segments.map((s, i) => `<span style="display:block;width:${s.pct}%;background:${bdSegColors[i] || "#5F7265"}"></span>`).join("")}
+        ${[...bd.segments].sort((a, b) => (a.market === view.market ? -1 : b.market === view.market ? 1 : b.pct - a.pct)).map((s, i) => `<span style="display:block;width:${s.pct}%;background:${bdSegColors[i] || "#5F7265"}"></span>`).join("")}
       </div>
-      <p class="small muted" style="margin:6px 0 0">Where their audience lives: ${bd.segments.map((s) => `${esc(s.market)} ${s.pct}%`).join(" &middot; ")}${bd.elsewherePct > 0 ? ` &middot; everywhere else ${bd.elsewherePct}%` : ""}. Self-reported by the creator.</p>
+      <p class="small muted" style="margin:6px 0 0">Where their audience lives: ${[...bd.segments].sort((a, b) => (a.market === view.market ? -1 : b.market === view.market ? 1 : b.pct - a.pct)).map((s) => { const cnt = followersForPct(s.pct, total); return `${esc(s.market)} ${s.pct}%${cnt ? ` &middot; ${cnt} followers` : ""}`; }).join(" &middot; ")}${bd.elsewherePct > 0 ? ` &middot; everywhere else ${bd.elsewherePct}%` : ""}. Self-reported by the creator.</p>
     </div>` : "";
   const socialsBlock = tier >= 2 ? `
     ${p.socialsHiddenByCreator ? "" : (p.socialLinks && p.socialLinks.length ? `
@@ -691,7 +718,7 @@ async function renderPublicProfile() {
       <div class="bookme-cover-id">
         <div class="bookme-id-row">
           <div class="bookme-id-main">
-            <div class="cc-name bookme-name">${esc(p.name)}</div>
+            <div class="cc-name bookme-name">${esc(profileDisplayName(p))}</div>
             <div class="bookme-handle">@${esc(p.handle)} &middot; ${esc(p.primaryPlatformLabel || "Instagram")}</div>
             ${profileHeaderSocialsHtml(p)}
             ${p.charter ? `<span class="charter-seal sm">Charter Creator</span>` : ""}
@@ -711,14 +738,14 @@ async function renderPublicProfile() {
         ${p.tierBand ? `<span class="cc-chip">${esc(p.tierBand)}</span>` : ""}
         ${p.isRealtor ? `<span class="cc-chip">Realtor</span>` : ""}
         ${p.charter ? "" : `<span class="cc-chip">Founding Creator</span>`}
-        ${(p.listedMarkets || []).filter((m) => !m.home).map((m) => `<span class="cc-chip">Also ranked in ${esc(m.market)} &middot; ${m.pct}% of audience</span>`).join("")}
+        ${(p.listedMarkets || []).filter((m) => m.market !== view.market).map((m) => { const cnt = followersForPct(m.pct, total); return `<span class="cc-chip">Also ranked in ${esc(m.market)} &middot; ${m.pct}%${cnt ? ` &middot; ${cnt} followers` : " of followers"}</span>`; }).join("")}
       </div>
       ${p.pitchLine ? `<p class="bookme-pitch" style="font-size:1.05rem;margin:10px 0 0"><em>${esc(p.pitchLine)}</em></p>` : ""}
       ${p.bio ? `<p class="bookme-bio">${esc(p.bio)}</p>` : ""}
       <div class="cc-local">
-        ${p.localAudiencePct === null || p.localAudiencePct === undefined
+        ${view.pct === null || view.pct === undefined
           ? `<div class="lbl">Local audience not reported yet</div>`
-          : `<div class="big">${p.localAudiencePct}%</div><div class="lbl">of their audience is local</div><div class="src">${(p.localAudienceSource || "Self-reported") === "Self-reported" ? "Self-reported: the creator's own number" : esc(p.localAudienceSource)}</div>`}
+          : `<div class="big">${view.pct}%</div><div class="lbl">of their audience is local to ${esc(view.market)}</div>${followersForPct(view.pct, total) ? `<div style="font-weight:800;margin-top:2px">${followersForPct(view.pct, total)} followers</div>` : ""}<div class="src">${(p.localAudienceSource || "Self-reported") === "Self-reported" ? "Self-reported: the creator's own number" : esc(p.localAudienceSource)}</div>`}
       </div>
       ${breakdownHtml}
       ${p.proof && p.proof.visitsCompleted > 0 ? `<div class="wcard" style="margin:14px 0 0"><p style="margin:0"><span class="badge ok">Verified on SIGNL</span></p><p style="margin:8px 0 0"><strong>${p.proof.visitsCompleted} visit${p.proof.visitsCompleted === 1 ? "" : "s"} completed</strong> &middot; ${p.proof.onTimePosts} on time</p><p class="small muted" style="margin:6px 0 0">From this creator's real SIGNL visits, counted by SIGNL, not claimed by the creator.</p></div>` : ""}
@@ -1921,7 +1948,12 @@ function renderBottomNav() {
     if (u && u.role === "admin" && state.preview) document.body.classList.add("preview-on");
     return;
   }
-  const full = u.status === "approved" && (u.role === "creator" || u.role === "partner" || businessAccessState(u) === "active");
+  // Build -68: an APPROVED business gets the full rail in
+  // every access state, founding included — the rail is the
+  // app's shape, not a launch perk (the founding carve-out
+  // here is what stranded founding businesses on the slim
+  // shell with no navigation at all).
+  const full = u.status === "approved" && (u.role === "creator" || u.role === "partner" || u.role === "business" || businessAccessState(u) === "active");
   document.body.classList.toggle("v3-on", full);
   document.body.classList.toggle("v3-slim", !full);
   renderTopBar2(full);
@@ -1952,6 +1984,9 @@ function renderBottomNav() {
 // it; the wide rail and the aria-label always carry the full
 // label.
 const RAIL_SHORT = { Content: "Posts", Plan: "Plan", Profile: "Profile", Numbers: "Numbers", Links: "Links", Performance: "Perform­ance" };
+// Build -68: the Offers tab displays as "Campaigns" at every
+// rail width, so its short form is the full display label.
+RAIL_SHORT["My Offers"] = "Campaigns";
 function railRowItems() {
   const t = state.tab;
   const seen = new Set();
@@ -1980,11 +2015,15 @@ function tabItemsFor() {
   const rows = railRowItems();
   const extra = (mainTabs) => rows.filter((r) => !mainTabs.includes(r.tab));
   if (u.role === "business") {
+    // Build -68 (Jeff, 2026-11-01): Sig sits directly under
+    // Home, front and center, for pre-launch and active
+    // businesses alike — same prominence the creator rail
+    // gives it.
     return [
       { icon: "home", label: "Home", tab: "Home", on: t === "Home" || !t },
-      { icon: "deck", label: "Find creators", tab: "Discover", on: t === "Discover" || t === "Favorites" },
       { icon: "sig", label: "Sig", tab: "Sig", on: t === "Sig", badge: sigBadge },
-      ...extra(["Home", "Discover", "Sig"]),
+      { icon: "deck", label: "Find creators", tab: "Discover", on: t === "Discover" || t === "Favorites" },
+      ...extra(["Home", "Sig", "Discover"]),
     ];
   }
   if (u.role === "creator") {
@@ -2018,7 +2057,7 @@ function moreRowsFor() {
   const wc = state.waitCounts || {};
   if (u.role === "business") {
     return [
-      { icon: "notice", label: "Offers", sub: "Your offers and who is applying.", tab: "My Offers", badge: wc.bizApps != null ? wc.bizApps : (b.offers || 0) },
+      { icon: "notice", label: "Campaigns", sub: "Your campaigns and who is applying.", tab: "My Offers", badge: wc.bizApps != null ? wc.bizApps : (b.offers || 0) },
       { icon: "calendar", label: "Visits", sub: "Visits and posts. The counter is inside.", tab: "Visits & Posts", badge: wc.bizVisits != null ? wc.bizVisits : (b.visits || 0) },
       { icon: "bars", label: "Results", sub: "What your campaigns did.", tab: "Analytics" },
       { icon: "play", label: "Posts & licenses", sub: "Every post about you, and the ones you can reuse.", tab: "Content" },
@@ -2735,6 +2774,7 @@ function renderHelpTab() {
   ${wsHead("Help", { sub: "How SIGNL works, in plain words.", subKey: "help" })}
   <div class="wcard">
   ${biz ? `
+    ${isFoundingBusiness(u) ? qa("How founding works", `Your market has not opened yet, and your founding spot is held. Right now you can browse the roster in ${esc(foundingBizPlace(u))}, get your business page ready, and save campaigns as drafts. Nothing is sent to a creator before opening day. When your market opens, we email you that day: your account turns on, your drafts can go out, your plan starts, and your founding rate and $100 first-month credit apply. Nothing is due until then.`) : ""}
     ${qa("How does a visit work?", "You post an offer or invite a creator. When you select an applicant, or a creator accepts your invite, the visit is booked with a code. Your staff redeem the code at the register with the staff PIN. The creator posts within 48 hours to be on time; one week is the hard deadline.")}
     ${qa("What do I owe the creator?", "Exactly what the offer says: the comped meal or service, up to the dollar cap. Paid bookings pay the creator's listed rate instead.")}
     ${qa("Can I reuse a creator's post?", "A comped visit is native share only: reshare it with credit, nothing more. Paid bookings include one standard license: 90 days to repost and run ads. A comped post can be licensed at the creator's listed fee for 90 days; the creator approves each use and keeps 97%. That license is what makes the post UGC you can use — repost it and run it as an ad for those 90 days.")}
@@ -3136,7 +3176,19 @@ function sigCtx() {
   const biz = u.role === "business";
   const live = biz ? businessAccessState(u) === "active" : !!(u.founding && u.founding.marketLive);
   const pc = u.profileCompletion || (u.creator ? { complete: u.creator.profileComplete === true, missing: [] } : { complete: false, missing: [] });
-  return { biz, live, profileComplete: !!pc.complete, missing: pc.missing || [], status: u.status || "", market: (u.founding && u.founding.market) || u.market || "", charter: !!(u.creator && u.creator.charter) };
+  const ctx = { biz, live, profileComplete: !!pc.complete, missing: pc.missing || [], status: u.status || "", market: (u.founding && u.founding.market) || u.market || "", charter: !!(u.creator && u.creator.charter) };
+  // Build -68: a business's own plan facts ride the context so
+  // Sig answers "what does my plan include?" from the record,
+  // never from the generic plan table.
+  if (biz) {
+    ctx.founding = !live;
+    const plan = ((state.boot && state.boot.plans) || []).find((p) => p.id === (u.business || {}).plan) || null;
+    ctx.planName = (u.business && u.business.planName) || (plan ? plan.name : "");
+    ctx.planPrice = plan ? plan.priceMonthly : null;
+    ctx.planVisits = plan ? plan.visitsPerMonth : null;
+    ctx.planCredit = plan && typeof plan.foundingCredit === "number" ? plan.foundingCredit : 100;
+  }
+  return ctx;
 }
 
 // The canon bank. Each topic: display question (q), strong phrases
@@ -3151,14 +3203,26 @@ function sigBankFor(biz) {
       a: "Founding plans: Self-Service is $199 a month for 5 creators a month, Growth is $349 for 10, Managed is $699 for 20. Founding businesses get $100 off the first month, so $99, $249, or $599, and keep the founding rate while the plan stays active. The minimum is 3 months, there is no per-location charge, and unused visits roll into the next month, then expire." },
     { id: "plans", q: "What is the difference between the plans?", ph: ["difference between", "which plan", "compare plans", "growth plan", "managed plan"], g: [["growth", "managed", "self-service", "self service", "tiers"], ["difference", "which", "compare", "best", "include", "get"]], s: ["growth", "managed"],
       a: "The difference is volume and how much is done for you. Self-Service is $199 a month for 5 creators and you run it yourself. Growth is $349 for 10, built for businesses doing paid work and reusing posts, with the license library and renewal tracking. Managed is $699 for 20, the most done for you. Paid bookings and licensing are available on every plan." },
+    { id: "myplan", q: "What does my plan include?", ph: ["what does my plan include", "what is in my plan", "my plan include", "what do i get with my plan", "what do i get"], g: [["plan"], ["include", "get", "come", "have"]], s: [],
+      a: (c) => {
+        const head = c.planName ? `Your plan is ${c.planName}${c.planPrice ? `, $${c.planPrice} a month` : ""}${c.planVisits ? `, with ${c.planVisits} creator visits a month` : ""}.` : "Your founding plan is under Plan & billing, with the exact visits it carries.";
+        if (c.founding) return `${head} Your $${c.planCredit} founding credit is banked for your first month, and your founding rate holds while your plan stays active. Nothing is due and nothing is charged while your market is founding. When ${c.market || "your market"} opens, your plan starts: unused visits roll one month, then expire, and the minimum is 3 months.`;
+        return `${head} Your founding rate holds while your plan stays active. Unused visits roll one month, then expire, and the minimum is 3 months. Paid bookings and licensing are on every plan.`;
+      } },
     { id: "howitworks", q: "How does SIGNL work for a business?", ph: ["how does signl work", "how it works", "what is signl", "how does this work"], g: [["signl", "platform", "this"], ["work", "works", "start", "process"]], s: [],
-      a: "You post an offer, comped or paid, or browse the roster and invite a creator directly at their listed rate. The creator visits, your staff check them in with their visit code, and they post within 48 hours: one post plus one story that shares it. You see the post, its numbers, and your returns on your dashboard. Creators are ranked by local reach, the share of their audience that lives here, not follower count. Bookings that start on SIGNL stay on SIGNL, where the Visit Guarantee and payment protection apply.", flow: "Post an offer" },
+      a: (c) => "You post an offer, comped or paid, or browse the roster and invite a creator directly at their listed rate. The creator visits, your staff check them in with their visit code, and they post within 48 hours: one post plus one story that shares it. You see the post, its numbers, and your returns on your dashboard. Creators are ranked by local reach, the share of their audience that lives here, not follower count. Bookings that start on SIGNL stay on SIGNL, where the Visit Guarantee and payment protection apply." + (c.founding ? " While your market is founding, what you build saves as a draft for opening day; nothing is sent to a creator before the market opens." : ""), flow: "Post an offer" },
+    { id: "campaigns", q: "How do campaigns work?", ph: ["how do campaigns work", "campaign work", "how do offers work", "run a campaign", "how do i campaign"], g: [["campaign", "campaigns", "offer", "offers"], ["work", "run", "start", "post", "send", "make"]], s: ["campaign"],
+      a: (c) => {
+        let t = "Two ways. Post an open call: you post it to your market, creators who fit can apply, and you pick from the stack. Or invite a creator: pick one by name in Find creators, and the invite goes only to them. Either way the creator visits, posts within 48 hours, and you see the post and its numbers here.";
+        if (c.founding) t += " While your market is founding, both ways save as drafts for opening day. Nothing is sent to a creator until your market opens.";
+        return t;
+      }, flow: "Post an offer" },
     { id: "ugc", q: "Is this UGC? Can I reuse a creator's post?", ph: ["ugc", "reuse", "repost", "run it as an ad", "use their post", "whitelist"], g: [["post", "content", "photo", "video"], ["reuse", "repost", "ad", "ads", "marketing", "license", "licence", "rights", "use"]], s: ["ugc", "licensing", "licence"],
       a: "In plain terms, yes: this is UGC, but local. Creators post on their own accounts, and the license is what lets you reuse it. A comped visit is native share only: you may reshare it with credit, nothing more. Paid bookings include one standard license: 90 days to repost and run ads. A comped post can be licensed at the creator's listed fee for 90 days; the creator approves each use and keeps 97%." },
     { id: "paidlane", q: "How do paid bookings work?", ph: ["paid booking", "book a creator", "pay a creator", "how much do creators charge", "creator rate"], g: [["paid", "pay", "book", "rate", "charge"], ["creator", "booking", "how", "work"]], s: [],
       a: "Two lanes. Comped: you cover the visit and the creator posts. Paid: you book a creator at the rate they list, which starts at a $50 floor. The paid lane carries a 6% total fee, split evenly between you and the creator, so the creator keeps 97% of their listed rate. Every paid booking includes one standard license: 90 days to repost the post and run it as an ad.", flow: "Find creators" },
-    { id: "invite", q: "How do I invite a creator?", ph: ["invite a creator", "find creators", "browse creators", "discover creators"], g: [["creator", "creators", "roster"], ["invite", "find", "browse", "choose", "pick", "discover"]], s: ["discover"],
-      a: "From Find creators. Creators are ranked by local reach, and each card shows their tier and their rate. Invite one directly at their listed rate, or post an open offer and let creators apply. A creator can voluntarily accept a lower posted rate; their listed rate otherwise stands, and there is no haggling on a post.", flow: "Find creators" },
+    { id: "invite", q: "How do I invite a creator?", ph: ["invite a creator", "find creators", "browse creators", "discover creators", "who can i book", "who can i invite"], g: [["creator", "creators", "roster"], ["invite", "find", "browse", "choose", "pick", "discover"]], s: ["discover"],
+      a: (c) => "From Find creators. Creators are ranked by local reach, and each card shows their tier and their rate. Invite one directly at their listed rate, or post an open offer and let creators apply. A creator can voluntarily accept a lower posted rate; their listed rate otherwise stands, and there is no haggling on a post." + (c.founding ? " The founding roster is still joining, so new creators show up in Find creators as they finish their pages." : ""), flow: "Find creators" },
     { id: "applicants", q: "How fast do I have to answer applicants?", ph: ["answer applicants", "how fast", "how long to decide", "deadline to answer", "respond to applicants"], g: [["applicant", "applicants", "applications"], ["answer", "respond", "decide", "fast", "long", "deadline"]], s: [],
       a: "Every applicant gets an answer within 2 business days. That is the deal, and the app tracks it. Fast, clear answers are how the roster stays strong for everyone.", flow: "Review applicants" },
     { id: "noshow", q: "What if a creator does not show up?", ph: ["does not show", "doesn't show", "no show", "no-show", "ghost", "never posted", "did not post", "didn't post"], g: [["creator"], ["show", "ghost", "post", "turn up", "cancel"]], s: ["ghost"],
@@ -3171,6 +3235,10 @@ function sigBankFor(biz) {
       a: "Your dashboard follows every visit: the post, its reach and engagement, refreshed as a day 7, 14, and 30 series. When a visit code is redeemed, the sale your staff rang up is counted in dollars on your dashboard, so your return on spend is a number, not a guess. Nothing is shown before it is real, so a campaign that has not run shows no numbers at all.", flow: "See your results" },
     { id: "marketbiz", q: "When does my market open?", ph: ["market open", "when can i start", "join now", "launch", "my city"], g: [["market", "city", "launch"], ["when", "open", "start", "live", "join", "coming"]], s: [],
       a: (c) => c.live ? "Your market is open and your business is active. You can post offers and invite creators now." : "Businesses join the founding list now and pick a plan at sign-up; no card is charged during founding. Businesses sign up when we are ready to launch, market by market as each founding roster completes. When yours activates, you land in Find creators with the founding roster ready, and you get an email the moment it opens." },
+    { id: "counting", q: "How will my results be counted?", ph: ["how will my results be counted", "results counted", "how do you count", "how is it counted", "count my results"], g: [["results", "receipt", "count", "sales"], ["counted", "count", "measured", "measure", "work"]], s: ["receipt"],
+      a: "Every visit carries a code your staff enter at the counter. That counts the visit and starts the creator's 48 hour post clock, and their post links back to the visit. Your receipt then keeps three lines separate: visits and posts that happened, the sales your register reported on visit days, and any modeled estimate, labeled as one. Counted, recorded, and modeled numbers are never blended into one figure. Set one of your usual open days under Results, in Proof Controls, and visit days measure against it in real dollars.", flow: "See your results" },
+    { id: "opens", q: "What happens when my market opens?", ph: ["what happens when my market opens", "what happens when", "market opens", "opening day", "when it opens"], g: [["market", "opening"], ["opens", "open", "happens", "day"]], s: [],
+      a: (c) => c.live ? "Your market is open and your business is active. Campaigns can go out and creators can be booked now." : `We email you the day ${c.market || "your market"} opens. Your account turns on, the campaigns you saved as drafts can go out, your plan starts, and your founding rate and $${c.planCredit || 100} first-month credit apply. Until that day, nothing is due and nothing is sent to a creator.` },
     { id: "help", q: "How do I reach a person?", ph: ["password", "contact", "human", "support", "talk to someone", "staff pin", "change my email"], g: [["password", "email", "account", "contact", "support", "human", "help", "pin"], ["change", "reset", "forgot", "update", "talk", "reach", "set"]], s: ["support"],
       a: "Settings, staff, and counter basics live right in the app. For anything a person needs to handle, email hello@joinsignl.com and a person answers.", flow: "Set the staff PIN" },
   ];
@@ -3456,9 +3524,10 @@ function renderSigTab() {
     </div>
   </section>
   <div id="sig-queue-host">${queueHtml}</div>
+  ${state.user && state.user.role === "business" ? sigBizStartersHtml(state.user) : ""}
   <div class="sig-chat">
     <div class="sig-chat-head"><div><div class="sig-chat-title">Conversation</div><div class="muted small">Straight answers and real actions, with the next step attached. Nothing posts, sends, or saves until you confirm a plain summary.</div></div>${anyPending ? `<span class="sig-typing" aria-hidden="true"><i></i><i></i><i></i></span>` : ""}</div>
-    <div id="sig-thread" class="sig-thread">${sigThreadHtml() || `<div class="sig-turn sig"><span class="sig-turn-ava">${SIG_AVATAR_HTML}</span><div class="sig-bub">Ask me anything about how SIGNL works: how you make money, what things cost, how visits and points run. Or tell me to do something: set up a campaign, find creators, show your numbers. I confirm before anything is saved.</div></div>`}</div>
+    <div id="sig-thread" class="sig-thread">${sigThreadHtml() || `<div class="sig-turn sig"><span class="sig-turn-ava">${SIG_AVATAR_HTML}</span><div class="sig-bub">${state.user && state.user.role === "business" ? "Ask me anything about how SIGNL works for your business: what your plan includes, how campaigns run, how your results get counted. Or tell me to do something: draft a campaign, find creators, set your staff PIN. I confirm before anything is saved." : "Ask me anything about how SIGNL works: how you make money, what things cost, how visits and points run. Or tell me to do something: set up a campaign, find creators, show your numbers. I confirm before anything is saved."}</div></div>`}</div>
     <form class="sig-ask-form" onsubmit="return sigAskSubmit(event)">
       <input id="sig-ask-input" type="text" placeholder="Ask Sig anything" autocomplete="off" aria-label="Ask Sig anything">
       <button class="btn" type="submit">Ask</button>
@@ -3489,6 +3558,33 @@ function renderSigTab() {
     state.sigFocusAsk = false;
     setTimeout(() => { const i = document.getElementById("sig-ask-input"); if (i) i.focus(); }, 60);
   }
+}
+
+// Business starters (Build -68, Jeff: Sig front and center,
+// focused on what a business would want and need): the five
+// business jobs as tappable chips at the top of the Sig tab.
+// Questions route through the same ask path a typed question
+// takes; the campaign chip starts the same B1 flow the home
+// action starts.
+function sigBizStartersHtml(u) {
+  const place = foundingBizPlace(u);
+  return `<div class="sig-starters" style="display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 0">
+    <button type="button" class="rchip" onclick="return sigBizStarterCampaign()">Draft my first campaign</button>
+    <button type="button" class="rchip" onclick="return go('dashboard','Discover')">Find creators near me</button>
+    <button type="button" class="rchip" onclick="return sigBizStarterAsk('What does my plan include?')">What does my plan include?</button>
+    <button type="button" class="rchip" onclick="return sigBizStarterAsk('How will my results be counted?')">How will my results be counted?</button>
+    <button type="button" class="rchip" onclick="return sigBizStarterAsk('What happens when ${esc(place)} opens?')">What happens when ${esc(place)} opens?</button>
+  </div>`;
+}
+function sigBizStarterCampaign() {
+  sigB1Start();
+  sigOpPaint();
+  return false;
+}
+function sigBizStarterAsk(text) {
+  const input = document.getElementById("sig-ask-input");
+  if (input) input.value = text;
+  return sigAskSubmit({ preventDefault: () => {} });
 }
 
 function openAgentSheet() {
@@ -3645,6 +3741,11 @@ async function render() {
   state.agentQueue = null;
   renderAgentFab();
   renderNav();
+  // Build -68: while a public profile is on screen, the
+  // profile-view CSS centers the content column in the page
+  // (the admin rail otherwise left-anchors it, stranding the
+  // profile against the left with a void on the right).
+  document.body.classList.toggle("profile-view", state.view === "public-profile");
   if (state.view === "public-profile") return renderPublicProfile();
   if (state.view === "public-proof") return renderPublicProof();
   clearShareShell();
@@ -3660,7 +3761,10 @@ async function render() {
   }
   if (u.status === "pending") return u.role === "business" ? renderBusinessFoundingStatus() : renderPending();
   if (u.status === "rejected") return renderRejected();
-  if (isFoundingBusiness(u)) return renderBusinessFoundingStatus();
+  // Build -68: approved founding businesses route into the
+  // real dashboard like everyone else; the founding wall that
+  // used to sit here is gone. renderBusinessFoundingStatus
+  // remains only for the pending-review business above.
   return renderDashboard();
 }
 
@@ -4607,8 +4711,14 @@ function sigB1SummaryText() {
 function sigB1Summary() {
   const f = state.sigFlow;
   f.step = "summary";
+  // Build -68: a founding business's commit saves a draft for
+  // opening day (the server forces it), so the confirm says
+  // save, not post.
+  const yesLabel = state.user && state.user.role === "business" && isFoundingBusiness(state.user)
+    ? ST("Yes, save it for opening day", "Sí, guárdala para el día de apertura")
+    : ST("Yes, post it", "Sí, publícala");
   sigOpAsk(sigB1SummaryText(), [
-    { label: ST("Yes, post it", "Sí, publícala"), primary: true, run: () => sigOpPick(ST("Yes, post it", "Sí, publícala"), async () => sigB1Commit()) },
+    { label: yesLabel, primary: true, run: () => sigOpPick(yesLabel, async () => sigB1Commit()) },
     { label: ST("Edit the brief", "Editar el brief"), run: () => sigOpPick(ST("Edit the brief", "Editar el brief"), async () => sigB1DraftBrief()) },
     { label: ST("Start over", "Empezar de nuevo"), run: () => sigOpPick(ST("Start over", "Empezar de nuevo"), async () => { state.sigFlow = null; sigB1Start(); }) },
   ]);
@@ -4652,8 +4762,13 @@ async function sigB1Commit() {
     state.sigOpData = null;
     refreshBadges();
     const created = res && res.offer ? res.offer : null;
-    sigOpSay(ST(`Done. "${d.title}" is live${created && created.status === "draft" ? " as a draft (your market is still founding; it publishes at launch)" : ""}. Creators can ${d.lane === "direct" ? "answer it now" : "apply now"}.`, `Listo. "${d.title}" está activa. Los creadores ya pueden ${d.lane === "direct" ? "responder" : "aplicar"}.`), [
-      { label: ST("See it in My Offers", "Verla en Mis ofertas"), primary: true, run: async () => go("dashboard", "My Offers") },
+    // Build -68: a draft result gets the founding-honest line,
+    // never "creators can apply now" for an offer no creator
+    // can see.
+    sigOpSay(created && created.status === "draft"
+      ? ST(`Done. "${d.title}" is saved as a draft for opening day. Nothing is sent to creators until your market opens, and it waits for you under Campaigns, in Drafts.`, `Listo. "${d.title}" quedó guardado como borrador para el día de apertura. Nada se envía a los creadores hasta que abra tu mercado.`)
+      : ST(`Done. "${d.title}" is live. Creators can ${d.lane === "direct" ? "answer it now" : "apply now"}.`, `Listo. "${d.title}" está activa. Los creadores ya pueden ${d.lane === "direct" ? "responder" : "aplicar"}.`), [
+      { label: ST("See it in My Offers", "Verla en Mis ofertas"), primary: true, run: async () => { if (created && created.status === "draft") state.offersSeg = "drafts"; go("dashboard", "My Offers"); } },
       { label: ST("Set up another", "Crear otra"), run: async () => { sigB1Start(); sigOpPaint(); } },
       { label: ST("How am I doing?", "¿Cómo voy?"), run: async () => { await sigB3Run(); sigOpPaint(); } },
     ]);
@@ -6650,97 +6765,41 @@ function selectPlan(id) {
   if (hidden) hidden.value = id;
 }
 
-// The founding business status page: the ONLY screen a business
-// sees before activation (pending or approved). It mirrors the
-// creator founding pattern: what they joined, their plan
-// interest, the promises, and what happens next. No product
-// tools, no payment link: payment stays concierge. First 60
-// seconds (Jeff, 2026-10-29): below the status card, the page
-// carries a PREVIEW of the real thing (the creator categories
-// live in the market, a Sig-drafted first offer, the benefit
-// layer, founding pricing) so a business sees what SIGNL does
-// before any payment decision. BUILD -30 (Jeff, 2026-10-29):
-// the page shows NO roster counts and no thin-market framing
-// anywhere; counts are an asset only at scale, so the page
-// sells mechanics and personalization instead. The preview is
-// read-only: it books nothing, saves nothing, and the founding
-// gate still refuses every product surface server-side.
+// The founding business status page (Build -68): now ONLY
+// the pending-review screen. An approved founding business
+// routes into the real dashboard with the full rail; a
+// business still in review gets the status card and its
+// account block, and nothing else stacked under it. The
+// preview stack that used to live here was cut with the old
+// one-long-page shell; its pieces live in their real views
+// now (see the migration map in the Build -68 spec).
 function renderBusinessFoundingStatus() {
   const u = state.user;
   const bz = u.business || {};
-  const inReview = u.status !== "approved";
   const bizPlace = u.market === unlistedLabel() ? (u.city || "your city") : marketTalkNameClient(u.market);
   app.innerHTML = `<div class="wrap" style="max-width:680px">
   ${wsHead("Status", { sub: "Where your founding enrollment stands." })}
-  <div class="chiprow" style="margin-top:10px">
-    <button type="button" class="rchip on" onclick="window.scrollTo({top:0,behavior:'smooth'});return false">Your status</button>
-    <button type="button" class="rchip" onclick="document.getElementById('fbz-first-month').scrollIntoView({behavior:'smooth'});return false">Your first month</button>
-    <button type="button" class="rchip" onclick="document.getElementById('fbz-preview').scrollIntoView({behavior:'smooth'});return false">Your preview</button>
-    <button type="button" class="rchip" onclick="document.getElementById('fbz-account').scrollIntoView({behavior:'smooth'});return false">Account &amp; password</button>
-  </div>
   <section class="wcard" style="margin-top:14px">
-    <p><span class="badge ${inReview ? "info" : "ok"}">${inReview ? "Application in review" : "Founding list"}</span></p>
+    <p><span class="badge info">Application in review</span></p>
     <h2 style="margin-top:8px">${esc(bz.businessName || "Your business")} is on the founding list</h2>
-    <p>You joined the <strong>Founding business list, ${esc(bizPlace)}</strong>. Booking opens when SIGNL activates your business by hand. Until then, this page is your preview: your first offer already drafted by Sig, the kinds of creators being lined up in ${esc(bizPlace)}, and exactly how it works, all before you pay anything.</p>
+    <p>You joined the <strong>Founding business list, ${esc(bizPlace)}</strong>. Your application is in review, and every founding application gets a decision or a clear status within 2 business days.</p>
     ${marketResolvedNote(u)}
-    <p>${inReview
-      ? `Your application is in review. Every founding application gets a decision or a clear status within 2 business days.`
-      : `Your application is approved, and your founding spot is held. Activation is a separate step, done by hand by SIGNL.`}</p>
     <div class="panel" style="margin-top:16px">
       <div class="ui-row"><span class="k">Plan interest</span><span class="v">${esc(bz.planName || "")}</span></div>
       <div class="ui-row"><span class="k">Category spot</span><span class="v">Your ${esc(bz.category || "business")} spot is held in application order</span></div>
       <div class="ui-row"><span class="k">Founding pricing</span><span class="v">Locked while you stay subscribed</span></div>
-      <div class="ui-row"><span class="k">Activation</span><span class="v">When ${esc(bizPlace)} opens, or sooner if SIGNL activates your business by hand for a pilot</span></div>
       <div class="ui-row"><span class="k">Payment</span><span class="v">Nothing is due now. Payment stays concierge: Jeff, SIGNL's founder, sends the payment step by hand at activation</span></div>
     </div>
     <h3 class="mt">What happens next</h3>
     <ol style="padding-left:20px">
-      <li>${inReview ? "SIGNL reviews your application. You will get a decision or a clear status within 2 business days." : "Your application is approved. There is nothing else you need to send right now."}</li>
-      <li>Founding creators in ${esc(marketTalkNameClient(u.market))} are finishing their profiles now, across the categories below. Founding businesses get first access to the roster when the market activates.</li>
-      <li>When your market opens, SIGNL activates founding businesses by hand, in application order. A pilot business can be activated sooner.</li>
-      <li>The moment your business is activated, this page opens into the full app: the full roster, favorites, and your first offer as a real draft you can publish.</li>
+      <li>SIGNL reviews your application. You will get a decision or a clear status within 2 business days.</li>
+      <li>When your application is approved, this page opens into the full app: your plan, the creator roster in ${esc(bizPlace)}, and your first campaign, which you can save as a draft for opening day.</li>
+      <li>When your market opens, SIGNL activates founding businesses by hand, in application order.</li>
     </ol>
-    <div class="panel" style="margin-top:16px">
-      <h4 style="margin:0 0 4px">For the counter: the one question</h4>
-      <p class="small" style="margin:0">When your first visits start, teach the team one line, asked at the natural moment: <strong>"First time in? How'd you hear about us?"</strong> When a creator or a post comes up, they tap the mention button on that visit. Those answers count on their own line of your receipt, separate from register money: they are how the customers nobody handed a code still get counted. No competitor shows a business a counted receipt like yours; this question is part of why yours stays full. Set your usual comp cost below, and every visit close-out after that is one tap.</p>
-    </div>
     <p class="muted small">Sign back in any time to check your status. Questions: hello@joinsignl.com</p>
     <div class="mt"><button class="btn ghost" onclick="signOut()">Sign out</button></div>
   </section>
-  ${(() => {
-    // Your first month (Build -67, Deliverable 3): what the
-    // plan's visits ARE, in plain words, on the founding home
-    // before the market opens. The count is the business's own
-    // plan figure from the server catalog; if the plan cannot be
-    // resolved, the card does not render at all rather than guess
-    // a number. The proof line renders only when the server
-    // attached this business's own highlight (Chelsea Friday
-    // Furniture's), never as generic copy. The button lands on
-    // the existing setup panel below; there is one form, not two.
-    const plan = (state.boot.plans || []).find((p) => p.id === bz.plan);
-    const visits = plan ? plan.visitsPerMonth : null;
-    if (!visits) return "";
-    return `<section class="wcard" id="fbz-first-month" style="margin-top:14px">
-    <h3 style="margin-top:0">Your first month</h3>
-    <p>Your ${esc(bz.planName || plan.name)} plan includes <strong>${visits} creator visits a month</strong>. Here is what a visit is: a local creator comes to your store, films while they are there, and posts it for their followers here in ${esc(bizPlace)}. You pick the moment your first month is built around, and the visits run at it.</p>
-    ${bz.highlight ? `<div class="panel" style="margin-top:12px"><p class="small" style="margin:0">${esc(bz.highlight)}</p></div>` : ""}
-    <div class="mt"><button class="btn" type="button" onclick="document.getElementById('fbz-setup').scrollIntoView({behavior:'smooth'});return false">Set up your first month</button></div>
-  </section>`;
-  })()}
-  <section class="wcard" id="fbz-setup" style="margin-top:14px">
-    <h3 style="margin-top:0">Set up your first month</h3>
-    <p class="small muted" style="margin:4px 0 12px">Two optional answers that only matter once visits start, so they live here instead of on the sign-up form. Set them any time before your first visit.</p>
-    <div class="field"><label>What is your first month about?</label><select id="fbz-moment"><option value="">Not sure yet</option>${momentsClient().map((m) => `<option value="${m.id}" ${bz.moment === m.id ? "selected" : ""}>${esc(m.label)}</option>`).join("")}</select><p class="small muted">The moment names the play your first month runs. You can change it any time.</p></div>
-    <div class="form-2col">
-      <div class="field"><label>Your usual night: which weeknight?</label><select id="fbz-base-day"><option value="">Pick a weeknight</option>${["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"].map((d) => `<option ${bz.baseline && bz.baseline.dayLabel === d ? "selected" : ""}>${d}</option>`).join("")}</select></div>
-      <div class="field"><label>About how many tables or customers?</label><input id="fbz-base-count" type="number" min="0" placeholder="For example: 40" value="${bz.baseline ? esc(String(bz.baseline.count)) : ""}"></div>
-    </div>
-    <p class="small muted" style="margin:0 0 10px">One remembered number. It is the starting line your receipt measures visit nights against, and it only works if it predates your first visit.</p>
-    <button class="btn small-btn" type="button" onclick="return fbzSaveSetup()">Save setup</button> <span class="small muted" id="fbz-setup-note"></span>
-  </section>
-  <div id="fbz-preview">${skelHtml("Loading your preview...", 3)}</div>
   <div id="fbz-account">${accountHtml(u)}</div></div>`;
-  loadFoundingBusinessPreview();
 }
 
 // ---------- founding business preview (first 60 seconds, Jeff, 2026-10-29) ----------
@@ -7346,7 +7405,6 @@ function renderDashboard() {
   if (u.role === "admin") return renderAdmin();
   if (u.role === "creator") return renderCreatorDash();
   if (u.role === "partner") return renderPartnerDash();
-  if (isFoundingBusiness(u)) return renderBusinessFoundingStatus();
   return renderBusinessDash();
 }
 
@@ -8152,10 +8210,11 @@ function receiptSettingsHtml(r) {
   const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
   return `<details style="margin-top:14px"><summary class="small"><strong>Your receipt's starting lines and proof controls</strong> <span class="muted">(the settings that decide what counts: your usual night, your comp costs, your register connection)</span></summary>
     <div class="form-2col" style="margin-top:10px">
-      <div class="field"><label>Your usual night</label><select id="rc-base-day">${days.map((d) => `<option ${base && base.dayLabel === d ? "selected" : ""}>${d}</option>`).join("")}</select></div>
-      <div class="field"><label>Usual tables or customers</label><input id="rc-base-count" type="number" min="0" value="${base ? base.usual : ""}" placeholder="For example: 40"></div>
+      <div class="field"><label>One of your usual open days</label><select id="rc-base-day">${days.map((d) => `<option ${base && base.dayLabel === d ? "selected" : ""}>${d}</option>`).join("")}</select></div>
+      <div class="field"><label>About how many customers on that day?</label><input id="rc-base-count" type="number" min="0" value="${base ? base.usual : ""}" placeholder="For example: 40"></div>
     </div>
-    <button class="btn small-btn ghost" type="button" onclick="receiptSaveBaseline()">Save usual night</button> <span class="small muted" id="rc-base-note"></span>
+    <p class="small muted" style="margin:0 0 10px">Your receipt measures visit days against it, so you can see what a visit did in real dollars. One remembered number, set any time before your first visit. Skip it for now if you like.</p>
+    <button class="btn small-btn ghost" type="button" onclick="receiptSaveBaseline()">Save</button> <span class="small muted" id="rc-base-note"></span>
     <div class="form-2col" style="margin-top:12px">
       <div class="field"><label>Google searches this month</label><input id="rc-g-searches" type="number" min="0" value="${g.searches !== undefined ? g.searches : ""}"></div>
       <div class="field"><label>Direction requests</label><input id="rc-g-directions" type="number" min="0" value="${g.directions !== undefined ? g.directions : ""}"></div>
@@ -8192,10 +8251,17 @@ async function receiptSaveBaseline() {
   const day = (document.getElementById("rc-base-day") || {}).value;
   const count = (document.getElementById("rc-base-count") || {}).value;
   const note = document.getElementById("rc-base-note");
+  // Build -68: the baseline is optional in fact. Saving it
+  // blank is a skip, and a skip is a success state, never an
+  // error and never a zero written over a real number.
+  if (count === "" || count === undefined || count === null) {
+    if (note) note.textContent = "Skipped for now. Set it any time before your first visit.";
+    return;
+  }
   try {
     const data = await api("PATCH", "/me/profile", { baseline: { dayLabel: day, count: Number(count) } });
     state.user = data.user;
-    if (note) note.textContent = "Saved. Visit nights now line up against your usual " + day + ".";
+    if (note) note.textContent = "Saved. Visit days now line up against your usual " + day + ".";
     loadReceipt();
   } catch (e) { if (note) note.textContent = e.message; }
 }
@@ -10814,6 +10880,7 @@ function creatorProfileHtml(u) {
       <div class="fgroup tint">
       <p class="fg-kicker">${T("About you", "Sobre ti")} <span class="opt-badge">${T("Optional", "Opcional")}</span></p>
       <div class="field"><label>${T("Your name", "Tu nombre")}</label><input id="p-name" value="${esc(u.name || "")}"><p class="small muted">${T("Shown to businesses next to your handle. A quick claim starts with your handle here; put your real name in.", "Se muestra a los negocios junto a tu usuario. Un reclamo rápido empieza con tu usuario aquí; pon tu nombre real.")}</p></div>
+      <div class="field"><label>${T("Your pronouns (optional)", "Tus pronombres (opcional)")}</label><input id="p-pronouns" value="${esc(c.pronouns || "")}" placeholder="${T("For example: she/her", "Por ejemplo: ella")}" maxlength="40"><p class="small muted">${T("Shown next to your first name on your public profile, only if you set it. Your first name is what the public page shows; never your surname.", "Se muestra junto a tu primer nombre en tu perfil público, solo si lo pones. Tu perfil público muestra tu primer nombre; nunca tu apellido.")}</p></div>
       <div class="field"><label>${T("Your photos", "Tus fotos")}</label>
         <div id="p-gallery">${galleryHtml(u)}</div>
         <p class="small muted">${T("Up to 6 photos. The first is your cover: the one on your cards. Changes save as you make them. PNG, JPEG, or WebP, under 2.5 MB each.", "Hasta 6 fotos. La primera es tu portada: la de tus tarjetas. Los cambios se guardan al hacerlos. PNG, JPEG o WebP, menos de 2.5 MB cada una.")}</p>
@@ -11036,6 +11103,7 @@ async function doUpdateCreator(e) {
     const cityTextEl = document.getElementById("p-city-text");
     const data = await api("PATCH", "/me/profile", {
       name: document.getElementById("p-name").value,
+      pronouns: (document.getElementById("p-pronouns") || {}).value || "",
       handle: normalizeHandleClient(document.getElementById("p-handle").value),
       primaryPlatform: document.getElementById("p-platform").value,
       city: cityEl ? cityEl.value : cityTextEl ? cityTextEl.value : undefined,
@@ -12535,6 +12603,205 @@ async function respondLicense(id, decision) {
 
 // ---------- business ----------
 
+// ---------- Build -68: the founding business shell ----------
+// An approved founding business gets the same rail and the
+// same views as an active one. Home is capped at three
+// blocks; the views that cannot do anything yet carry one
+// honest card each instead of a stacked page. Nothing here
+// pretends to be live: campaigns save as drafts for opening
+// day, and the server enforces that (see the offers routes).
+function foundingPlan() {
+  const bz = (state.user && state.user.business) || {};
+  return (state.boot && state.boot.plans || []).find((p) => p.id === bz.plan) || null;
+}
+function foundingBizPlace(u) {
+  return u.market === unlistedLabel() ? (u.city || "your city") : marketTalkNameClient(u.market);
+}
+
+// The -67 Your first month card, kept verbatim; its button
+// now NAVIGATES to Campaigns instead of scrolling to a setup
+// panel that no longer exists.
+function foundingFirstMonthCardHtml(u) {
+  const bz = u.business || {};
+  const bizPlace = foundingBizPlace(u);
+  const plan = foundingPlan();
+  const visits = plan ? plan.visitsPerMonth : null;
+  if (!visits) return "";
+  return `<section class="wcard" id="fbz-first-month" style="margin-top:14px">
+    <h3 style="margin-top:0">Your first month</h3>
+    <p>Your ${esc(bz.planName || plan.name)} plan includes <strong>${visits} creator visits a month</strong>. Here is what a visit is: a local creator comes to your store, films while they are there, and posts it for their followers here in ${esc(bizPlace)}. You pick the moment your first month is built around, and the visits run at it.</p>
+    ${bz.highlight ? `<div class="panel" style="margin-top:12px"><p class="small" style="margin:0">${esc(bz.highlight)}</p></div>` : ""}
+    <div class="mt"><button class="btn" type="button" onclick="return go('dashboard','My Offers')">Draft your first campaign</button></div>
+  </section>`;
+}
+
+function foundingStatusCardHtml(u) {
+  const bz = u.business || {};
+  const plan = foundingPlan();
+  const planName = bz.planName || (plan ? plan.name : "Founding");
+  const credit = plan && typeof plan.foundingCredit === "number" ? plan.foundingCredit : 100;
+  const visits = plan ? plan.visitsPerMonth : null;
+  return `<section class="wcard">
+    <p><span class="badge ok">Founding list</span></p>
+    <h2 style="margin-top:8px">You're in. ${esc(foundingBizPlace(u))} is next.</h2>
+    <p>Your founding spot is held, ${esc(bz.businessName || "your business")}. Nothing is live yet and nothing is due. Browse the roster, get your page ready, and save your first campaign as a draft. It goes out the day your market opens, and we email you that day.</p>
+    <div class="panel" style="margin-top:16px">
+      <div class="ui-row"><span class="k">Plan</span><span class="v">${esc(planName)}${plan ? ` &middot; $${fmtPrice(plan.priceMonthly)}/mo` : ""} &middot; founding rate held while your plan stays active</span></div>
+      <div class="ui-row"><span class="k">Founding credit</span><span class="v">$${fmtPrice(credit)} off your first month, banked and unused</span></div>
+      ${visits ? `<div class="ui-row"><span class="k">Creator visits</span><span class="v">${visits} a month once your market opens</span></div>` : ""}
+      <div class="ui-row"><span class="k">Payment</span><span class="v">Nothing due now</span></div>
+    </div>
+  </section>`;
+}
+
+async function loadFoundingBusinessHome() {
+  const el = document.getElementById("tab-body");
+  if (!el) return;
+  const u = state.user;
+  el.innerHTML = `
+  ${foundingStatusCardHtml(u)}
+  ${foundingFirstMonthCardHtml(u)}
+  <div id="fbz-sig-queue" style="margin-top:14px"></div>`;
+  // Sig's queue for a founding business: the two things worth
+  // doing before opening day. The same items feed the Sig tab
+  // and the rail badge, like every other queue.
+  const items = [];
+  try {
+    const staff = await api("GET", "/me/staff");
+    if (staff && !staff.staffPinSet) items.push({ text: "Set your staff PIN before your first visit, so your team can mark visits at the counter.", btn: "Set PIN", act: () => go("dashboard", "Visits & Posts") });
+  } catch (e) { /* the queue is a nudge, never a blocker */ }
+  const bz = u.business || {};
+  if (!bz.about) items.push({ text: "Your business page has no story yet. A few lines about your store is what creators read before they apply.", btn: "Write it", act: () => go("dashboard", "Profile") });
+  state.sigQueue = items;
+  state.sigQueueLinks = [];
+  state.sigQueueCount = items.length;
+  const host = document.getElementById("fbz-sig-queue");
+  if (host && items.length) {
+    host.innerHTML = sigQueueHtml(items, {});
+    wireSigQueue(host, items, []);
+    renderNav();
+  }
+}
+
+// Sig's drafted first campaign, as a card on Campaigns
+// (Build -68): the same play machinery Sig's B1 flow and the
+// old founding preview used (SIG_PLAYS + briefFromParts).
+// "Open draft" loads the play into the real composer as a
+// draft the business edits and saves; "Start fresh" clears
+// the composer draft back to blank.
+function sigDraftCardHtml(u) {
+  const bz = u.business || {};
+  const bizName = bz.businessName || "your business";
+  const recId = SIG_PLAY_BY_CATEGORY[bz.category || ""] || "weekend_fill";
+  const play = sigPlay(recId) || sigPlay("weekend_fill");
+  if (!play) return "";
+  return `<section class="wcard" style="margin-top:14px">
+    <div style="display:flex;gap:12px;align-items:center">
+      ${sigAvatarHtml("greet")}
+      <div>
+        <p class="ui-kicker" style="margin:0">Drafted by Sig</p>
+        <h3 style="margin:2px 0 0">Your first campaign is already drafted</h3>
+      </div>
+    </div>
+    <p class="wc-sub" style="margin-top:10px">Sig picked the <strong>${esc(play.name)}</strong> play for ${esc(bizName)}: ${esc(play.spots)} creators, a ${esc(play.windowDays)} day visit window, brief and timing preset. Open it, change anything, and save it for opening day.</p>
+    <div class="cta-row" style="justify-content:flex-start;margin-top:12px">
+      <button class="btn" type="button" onclick="return foundingOpenSigDraft()">Open draft</button>
+      <button class="btn ghost" type="button" onclick="return foundingStartFresh()">Start fresh</button>
+    </div>
+  </section>`;
+}
+function foundingOpenSigDraft() {
+  const u = state.user;
+  const bz = u.business || {};
+  const recId = SIG_PLAY_BY_CATEGORY[bz.category || ""] || "weekend_fill";
+  const play = sigPlay(recId) || sigPlay("weekend_fill");
+  if (!play) return false;
+  const d = state.offerDraft || (state.offerDraft = {});
+  const bizName = bz.businessName || "";
+  d.play = play.id;
+  d.briefGoal = play.goal;
+  d.briefHook = playFill(play.hook, bizName, d.comped || "a visit on us");
+  d.briefMust = [bizName, ...play.mustExtra].filter(Boolean).join("\n");
+  d.briefDont = "";
+  d.briefTiming = play.timing;
+  d.briefCta = play.cta;
+  d.spots = String(play.spots);
+  d.windowdays = String(play.windowDays);
+  d.applydays = String(play.applyDays);
+  if (bz.moment) d.moment = bz.moment;
+  state.composerLane = "open";
+  state.offerTarget = null;
+  state.offersSeg = "live";
+  loadMyOffers();
+  setTimeout(() => { const c = document.getElementById("offer-composer"); if (c) c.scrollIntoView({ behavior: "smooth" }); }, 60);
+  return false;
+}
+function foundingStartFresh() {
+  state.offerDraft = {};
+  state.offerTarget = null;
+  state.composerLane = "open";
+  loadMyOffers();
+  setTimeout(() => { const c = document.getElementById("offer-composer"); if (c) c.scrollIntoView({ behavior: "smooth" }); }, 60);
+  return false;
+}
+
+function renderFoundingVisitsTab() {
+  const el = document.getElementById("tab-body");
+  if (!el) return;
+  const u = state.user;
+  el.innerHTML = `
+  ${wsHead("Visits", { sub: "Creator visits, and the counter your team runs them from." })}
+  <section class="wcard">
+    <h3 style="margin-top:0">Visits open when ${esc(foundingBizPlace(u))} opens</h3>
+    <p>When your market opens, this is where your creator visits live: who is coming, when, and the code they show at your counter. Your plan's visits are counted and ready. Nothing to do here yet.</p>
+  </section>
+  <section class="wcard" style="margin-top:14px">
+    <h3 style="margin-top:0">Your staff PIN</h3>
+    <p>Your team uses one PIN, with the creator's code, to mark a visit at the counter. Set it before your first visit and share it with the team.</p>
+    <div class="mt"><button class="btn" type="button" onclick="return go('dashboard','Settings')">Set your staff PIN</button></div>
+  </section>
+  <section class="wcard" style="margin-top:14px">
+    <h3 style="margin-top:0">For the counter: the one question</h3>
+    <p>When your first visits start, teach the team one line, asked at the natural moment: <strong>"First time in? How'd you hear about us?"</strong> When a creator or a post comes up, they tap the mention button on that visit. Those answers count on their own line of your receipt, separate from register money: they are how the customers nobody handed a code still get counted.</p>
+  </section>`;
+}
+
+function renderFoundingResultsTab() {
+  const el = document.getElementById("tab-body");
+  if (!el) return;
+  el.innerHTML = `
+  ${wsHead("Results", { sub: "What your campaigns did, counted plainly." })}
+  <section class="wcard">
+    <h3 style="margin-top:0">How your results are counted</h3>
+    <p>When a creator visits, they check in at your counter with a code, and their post links back to that visit. Your receipt then counts three things on their own lines: visits that happened, posts that went up, and what your register reports on visit days. Counted, recorded, and modeled numbers are never blended into one figure.</p>
+    <p>The one number worth setting now is below, in Proof Controls: one of your usual open days. Your receipt measures visit days against it, so you can see what a visit did in real dollars.</p>
+  </section>
+  <div id="biz-receipt"></div>`;
+  loadReceipt();
+}
+
+function renderFoundingContentTab() {
+  const el = document.getElementById("tab-body");
+  if (!el) return;
+  el.innerHTML = `
+  ${wsHead("Posts & licenses", { sub: "Every post about you, and the ones you can reuse." })}
+  <section class="wcard">
+    <h3 style="margin-top:0">Nothing here yet</h3>
+    <p>When a creator posts about your business, the post shows up here. A post from a paid booking carries one standard license: 90 days of repost and paid ad use. A post from a comped visit is share only, and you can ask the creator for a license right from this page.</p>
+  </section>`;
+}
+
+function renderFoundingMessagesTab() {
+  const el = document.getElementById("tab-body");
+  if (!el) return;
+  el.innerHTML = `
+  ${wsHead("Messages", { sub: "Talk to a creator about a visit or an offer." })}
+  <section class="wcard">
+    <h3 style="margin-top:0">Messages open with your first campaign</h3>
+    <p>Once your market opens and a campaign is out, you talk to creators here, right on the visit or the offer it belongs to. There is nothing to message about yet, and that is on purpose: talk on SIGNL stays attached to real work.</p>
+  </section>`;
+}
+
 const BUSINESS_TABS = ["Home", "Requests", "Discover", "Favorites", "My Offers", "Counter", "Visits & Posts", "Content", "Analytics", "Plan", "Messages", "Profile", "More", "Settings", "Help", "Sig"];
 
 function renderBusinessDash() {
@@ -12547,16 +12814,21 @@ function renderBusinessDash() {
   if (tab === "Requests") { state.offersSeg = "applicants"; tab = "My Offers"; }
   state.tab = tab;
   app.innerHTML = `<div class="wrap"><div id="tab-body"></div></div>`;
-  if (tab === "Home") loadBusinessHome();
+  // Build -68: founding intercepts. Home, Visits, Results,
+  // Posts & licenses and Messages carry founding states; every
+  // other tab runs its real renderer (Discover, Campaigns,
+  // Plan & billing, Your business page, Settings, Help, Sig).
+  const founding = isFoundingBusiness(u);
+  if (tab === "Home") founding ? loadFoundingBusinessHome() : loadBusinessHome();
   if (tab === "Discover") loadDiscover();
   if (tab === "Favorites") loadFavorites();
   if (tab === "My Offers") loadMyOffers();
-  if (tab === "Counter") renderCounter();
-  if (tab === "Visits & Posts") loadMyVisits("business");
-  if (tab === "Content") renderContentTab();
-  if (tab === "Analytics") renderAnalyticsTab();
+  if (tab === "Counter") founding ? renderFoundingVisitsTab() : renderCounter();
+  if (tab === "Visits & Posts") founding ? renderFoundingVisitsTab() : loadMyVisits("business");
+  if (tab === "Content") founding ? renderFoundingContentTab() : renderContentTab();
+  if (tab === "Analytics") founding ? renderFoundingResultsTab() : renderAnalyticsTab();
   if (tab === "Plan") renderPlanTab();
-  if (tab === "Messages") loadThreads();
+  if (tab === "Messages") founding ? renderFoundingMessagesTab() : loadThreads();
   if (tab === "Profile") renderBizProfileTab();
   if (tab === "More") renderMoreScreen();
   if (tab === "Settings") renderSettingsTab();
@@ -13711,8 +13983,11 @@ async function renderContentTab() {
   if (!el) return;
   el.innerHTML = `${wsHead("Posts & licenses")}${skelHtml("Loading posts...", 2)}`;
   try {
-    const d = await api("GET", "/me/business-home");
-    const h = d.home;
+    // Build -68: business-home refuses founding businesses by
+    // design; the editor degrades to zeros so a founding
+    // business can still open and edit its page.
+    const d = await api("GET", "/me/business-home").catch(() => null);
+    const h = (d && d.home) || { localReachDelivered: 0, postsLive: 0 };
     const lib = h.contentLibrary || [];
     const usable = lib.filter((r) => r.license && r.license.type !== "native").length;
     // License actions join each post to its booking: the fee
@@ -14036,7 +14311,7 @@ async function renderBizProfileTab() {
       el.innerHTML = head + `
       ${igAssistCardHtml("bp", "business")}
       <div class="wcard">
-        <h3>Your business profile</h3>
+        <h3>The basics</h3>
         <p class="wc-sub">What creators see when they weigh your offers: your name, category, neighborhood, and a short about.</p>
         <div class="form-2col">
           <div class="field"><label>Business name</label><input id="bp-name" value="${esc(b.businessName || "")}"></div>
@@ -14048,6 +14323,11 @@ async function renderBizProfileTab() {
           <div class="field"><label>Business ZIP</label><input id="bp-zip" inputmode="numeric" maxlength="5" value="${esc(b.zip || "")}" placeholder="For example: 23452"><p class="small muted">Groups creators by distance bands from your door. Bands only, never an exact distance.</p></div>
         </div>
         <div class="field"><label>About your business</label><textarea id="bp-about" rows="3" placeholder="What you serve, what the visit feels like">${esc(b.about || "")}</textarea></div>
+        <button class="btn ws-primary" onclick="saveBusinessProfile('basics')">Save basics</button> <span id="bp-ok" class="saved"></span>
+      </div>
+      <div class="wcard" style="margin-top:14px">
+        <h3>Optional</h3>
+        <p class="wc-sub">Language, who you are open to, and the packet creators post with. Skip any of it; change it any time.</p>
         <div class="field"><label>Preferred language / Idioma preferido</label><select id="bp-lang"><option value="en"${b.preferredLanguage !== "es" ? " selected" : ""}>English</option><option value="es"${b.preferredLanguage === "es" ? " selected" : ""}>Español</option></select><p class="small muted">Sig answers you in this language, and our team writes to you in it.</p></div>
         <div class="field"><label class="tgl-row"><input type="checkbox" class="sw" id="bp-music-open" ${b.musicOpen ? "checked" : ""} onchange="syncBizMusicRows()"><span><strong>Open to booking musicians</strong><br><span class="small muted">Marks your offers and your page as open to musicians. Any booking still runs as a normal visit, the same as any other creator.</span></span></label></div>
         <div id="bp-music-rows" style="display:${b.musicOpen ? "" : "none"}">
@@ -14065,7 +14345,7 @@ async function renderBizProfileTab() {
           <div class="field"><label>Hashtags (space separated, up to 6)</label><input id="bp-pk-tags" value="${esc((pk.hashtags || []).join(" "))}" placeholder="virginiabeach eatslocal"></div>
         </div>
         <div class="field"><label>Talking points</label><textarea id="bp-pk-points" rows="3" maxlength="600" placeholder="Family owned since 1998. The patio seats 40 and dogs are welcome.">${esc(pk.talkingPoints || "")}</textarea></div>`; })()}
-        <button class="btn ws-primary" onclick="saveBusinessProfile()">Save profile</button> <span id="bp-ok" class="saved"></span>
+        <button class="btn ws-primary" onclick="saveBusinessProfile('optional')">Save optional</button> <span id="bp-ok-opt" class="saved"></span>
       </div>`;
     }
   } catch (err) {
@@ -14193,12 +14473,20 @@ function discoverMusicianChip(btn) {
 async function loadDiscover() {
   const el = document.getElementById("tab-body");
   const u = state.user;
+  // Build -68: a founding business lands on the grid, not the
+  // card deck, and gets the ranking line and the honest roster
+  // note up top. The mode is only defaulted, never forced: the
+  // toggle still works.
+  const foundingDisc = isFoundingBusiness(u);
+  if (foundingDisc && !state.discoverMode) state.discoverMode = "list";
   el.innerHTML = `
     ${wsHead("Find creators", { sub: "Flip through creators near you. Invite the ones who fit.", subKey: "biz-discover" })}
     ${wsTabs([
       { label: "Discover", on: true, onclick: "return go('dashboard','Discover')" },
       { label: "Favorites", on: false, onclick: "return go('dashboard','Favorites')" },
     ])}
+    ${foundingDisc ? `<p class="small" style="margin:10px 0 0"><strong>Ranked by how local their audience is, not by follower count.</strong></p>
+    <p class="small muted" style="margin:4px 0 0">${esc(foundingBizPlace(u))}'s founding roster is still joining. New creators show up here as they finish their pages.</p>` : ""}
     <div class="filters disc-top">
       <div><label>Market</label><select id="f-market">${marketOptions(u.market)}</select></div>
     </div>
@@ -14446,7 +14734,8 @@ function renderOffersSegTabs() {
   const all = state.myOffers || [];
   const wc = state.waitCounts || {};
   host.innerHTML = wsTabs([
-    { label: "Live", count: all.filter((o) => !offerIsArchived(o)).length || null, on: state.offersSeg === "live", onclick: "return offersSetSeg('live')" },
+    { label: "Live", count: all.filter((o) => o.status === "open" || o.status === "filled").length || null, on: state.offersSeg === "live", onclick: "return offersSetSeg('live')" },
+    { label: "Drafts", count: all.filter((o) => o.status === "draft").length || null, on: state.offersSeg === "drafts", onclick: "return offersSetSeg('drafts')" },
     { label: "Applicants", count: wc.bizApps || null, on: state.offersSeg === "applicants", onclick: "return offersSetSeg('applicants')" },
     { label: "Past", count: all.filter(offerIsArchived).length || null, on: state.offersSeg === "past", onclick: "return offersSetSeg('past')" },
   ]);
@@ -14921,7 +15210,7 @@ async function loadMyOffers() {
     // Default segment (spec §5.2): Applicants when anyone is
     // waiting, else Live. Decided from the same records the
     // tab badge counts, so the three never disagree.
-    el.innerHTML = `${wsHead("Offers", { sub: "Your offers, and the creators who applied to them.", subKey: "biz-offers" })}${skelHtml("Loading your offers...", 2)}`;
+    el.innerHTML = `${wsHead("Campaigns", { sub: "Your campaigns, and the creators who applied to them.", subKey: "biz-offers" })}${skelHtml("Loading your campaigns...", 2)}`;
     state.offersSeg = "live";
     try {
       const od = await api("GET", "/offers");
@@ -14939,9 +15228,36 @@ async function loadMyOffers() {
     return loadMyOffers();
   }
   if (state.offersSeg === "applicants") {
-    el.innerHTML = `${wsHead("Offers", { sub: "Your offers, and the creators who applied to them.", subKey: "biz-offers" })}<div id="offers-segs"></div><div id="offers-seg-body"></div>`;
+    el.innerHTML = `${wsHead("Campaigns", { sub: "Your campaigns, and the creators who applied to them.", subKey: "biz-offers" })}<div id="offers-segs"></div><div id="offers-seg-body"></div>`;
     renderOffersSegTabs();
+    if (isFoundingBusiness(state.user)) {
+      const segBody = document.getElementById("offers-seg-body");
+      if (segBody) segBody.innerHTML = `<section class="wcard"><h3 style="margin-top:0">No applicants yet</h3><p>Applicants arrive once your market opens and your first campaign goes out. The drafts you save now go out on opening day, and this is where the stack lands.</p></section>`;
+      return;
+    }
     renderRequestsTab(true);
+    return;
+  }
+  if (state.offersSeg === "drafts") {
+    // Build -68: drafts get their own segment. A founding
+    // business's campaigns live here, labeled for opening day;
+    // nothing in this list is visible to a creator.
+    el.innerHTML = `${wsHead("Campaigns", { sub: "Your campaigns, and the creators who applied to them.", subKey: "biz-offers" })}<div id="offers-segs"></div><div id="offer-list">${skelHtml("Loading your drafts...", 1)}</div>`;
+    renderOffersSegTabs();
+    try {
+      const data = await api("GET", "/offers");
+      state.myOffers = data.offers || [];
+      renderOffersSegTabs();
+      const list = document.getElementById("offer-list");
+      if (!list) return;
+      const drafts = state.myOffers.filter((o) => o.status === "draft");
+      list.innerHTML = drafts.length
+        ? `<div class="vx-stagger">${drafts.map((o) => offerCardHtml(o)).join("")}</div>`
+        : `<div class="empty-card"><div class="ec-t">No drafts saved yet</div><div class="ec-s">${isFoundingBusiness(state.user) ? "Build your first campaign and save it here, ready for opening day." : "A campaign you save instead of posting waits here."}</div></div>`;
+    } catch (err) {
+      const list = document.getElementById("offer-list");
+      if (list) list.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+    }
     return;
   }
   bizOfferTab = state.offersSeg === "past" ? "archived" : "current";
@@ -14951,7 +15267,13 @@ async function loadMyOffers() {
   const myPlan = state.user && state.user.business ? state.user.business.plan : null;
   const planObj = (state.boot ? state.boot.plans : []).find((p) => p.id === myPlan);
   const marketLive = !!(state.boot && state.boot.launch && state.boot.launch.marketLive && state.boot.launch.marketLive[state.user.market]);
+  const foundingBiz = isFoundingBusiness(state.user);
   const dft = state.offerDraft || {};
+  // Build -68: the moment the business picked at sign-up (or
+  // since) pre-fills the composer's moment row until they pick
+  // one here; an explicit pick (even "no set moment") is never
+  // overwritten.
+  if (dft.moment === undefined && state.user.business && state.user.business.moment) dft.moment = state.user.business.moment;
   const dv = (v) => esc(v === undefined || v === null ? "" : String(v));
   // V5 (Jeff, 2026-10-25): "Who can apply" is three Slotted lane
   // toggle rows — switch + bold tier + one muted floor/typical
@@ -14962,26 +15284,27 @@ async function loadMyOffers() {
     return `<label class="tier-toggle"><input type="checkbox" class="sw" name="o2-tier" value="${esc(t)}" ${(dft.tiers || []).includes(t) ? "checked" : ""} onchange="offerCoachUpdate()"><span class="tt-body"><span class="tt-name">${esc(t)}</span><span class="tt-line">floor $${fmtPrice(gd.floor)} &middot; typ. $${fmtPrice(gd.typicalLow)}&ndash;$${fmtPrice(gd.typicalHigh)}</span></span></label>`;
   }).join("")}</div>`;
   el.innerHTML = `
-  ${wsHead("Offers", { sub: "Your offers, and the creators who applied to them.", subKey: "biz-offers", action: state.offersSeg === "live" ? `<button type="button" class="btn ws-primary" onclick="return offersNew()">+ New offer</button>` : "" })}
+  ${wsHead("Campaigns", { sub: "Your campaigns, and the creators who applied to them.", subKey: "biz-offers", action: state.offersSeg === "live" ? `<button type="button" class="btn ws-primary" onclick="return offersNew()">+ New campaign</button>` : "" })}
   <div id="offers-segs"></div>
-  <div id="offer-list">${skelHtml("Loading your offers...", 2)}</div>
+  <div id="offer-list">${skelHtml("Loading your campaigns...", 2)}</div>
   <div id="aud-block"></div>
   <div id="offers-live-only">
+  ${foundingBiz ? `<p class="small" style="margin:14px 0 0"><strong>Building ahead:</strong> build a campaign now and it saves as a draft. Drafts go out the day ${esc(foundingBizPlace(state.user))} opens. Nothing is sent to a creator before then.</p>${sigDraftCardHtml(state.user)}` : ""}
   <h3 style="margin:24px 0 0">Templates</h3>
   ${bizTemplatesHtml()}
   <div class="panel" id="offer-composer" style="margin-top:18px">
-    <h3 style="margin-top:0">Create an offer</h3>
+    <h3 style="margin-top:0">New campaign</h3>
     <div id="form-error"></div>
     ${composerPlaysHtml()}
     ${packageSummaryHtml(myPlan, planObj ? planObj.name : null)}
     <div class="field"><label>Who sees this offer ${infoBtn("lane")}</label>
     <div class="chip-row" role="tablist">
-      <button type="button" class="chip ${mode === "open" ? "on" : ""}" onclick="setComposerLane('open')">Open offer</button>
-      <button type="button" class="chip ${mode === "direct" ? "on" : ""}" onclick="setComposerLane('direct')">Direct offer</button>
+      <button type="button" class="chip ${mode === "open" ? "on" : ""}" onclick="setComposerLane('open')">Post an open call</button>
+      <button type="button" class="chip ${mode === "direct" ? "on" : ""}" onclick="setComposerLane('direct')">Invite a creator</button>
     </div>
-    <p class="small muted" style="margin-top:6px">${mode === "open" ? "Any creator who fits can apply. You pick." : "Only the creator you pick sees this offer."}</p>
+    <p class="small muted" style="margin-top:6px">${mode === "open" ? `Post it to ${esc(foundingBizPlace(state.user))}. Any creator who fits can apply, and you pick from the stack.` : "Pick one creator by name. The invite goes only to them."}</p>
     </div>
-    ${mode === "direct" && !target ? `<p class="small muted">Pick the creator in Discover and tap Send offer, or <a href="#" onclick="setComposerLane('open'); return false;">post an open offer</a> and let creators apply.</p>` : ""}
+    ${mode === "direct" && !target ? `<p class="small muted">Pick the creator in Find creators and tap Invite, or <a href="#" onclick="setComposerLane('open'); return false;">post an open call</a> and let creators apply.</p>` : ""}
     ${mode === "direct" && target ? `<div class="notice blue">Sending directly to <strong>${esc(target.name)}</strong> (@${esc(target.profile.handle)}), ${esc(target.profile.tierBand || "")} tier. <a href="#" onclick="state.offerTarget=null; loadMyOffers(); return false;">Make it an open offer instead</a></div>` : ""}
     ${mode === "open" ? `
     <p class="small muted" style="margin-bottom:4px">Start from a template (optional) ${infoBtn("templates")}</p>
@@ -14991,11 +15314,12 @@ async function loadMyOffers() {
       <div class="fgroup tint">
       <p class="fg-kicker">The offer</p>
       <div class="field"><label>Offer title <span class="req-tag">Required</span> ${infoBtn("title")}</label><input id="o2-title" value="${dv(dft.title)}" placeholder="Dinner for two on us" oninput="offerDraftSync()" onblur="offerValidateField('title')"><p class="field-err" id="err-o2-title"></p></div>
-      <div class="field"><label>What moment is this for? <span class="opt-tag">Optional</span></label>
+      <div class="field"><label>What is your first month built around? <span class="opt-tag">Optional</span></label>
         <div class="radio-stack">
         ${momentsClient().map((m) => `<label class="radio-chip"><input type="radio" name="o2-moment" value="${m.id}" ${dft.moment === m.id ? "checked" : ""} onchange="state.offerDraft.moment=this.value"><span>${esc(m.label)}</span></label>`).join("")}
         <label class="radio-chip"><input type="radio" name="o2-moment" value="" ${!dft.moment ? "checked" : ""} onchange="state.offerDraft.moment=''"><span>No set moment</span></label>
         </div>
+        <p class="small muted">Pick one and your first campaign is built around it. Skip it and Sig suggests one. Change it any time.</p>
       </div>
       <div class="field"><label>The one number we count <span class="req-tag">Required</span></label>
         <div class="radio-stack">
@@ -15080,10 +15404,14 @@ async function loadMyOffers() {
       <p class="small muted">${VISIT_GUARANTEE_LINE}</p>
       <p class="small muted">${BOOKING_STARTED_LINE}</p>
       <div class="cta-row" style="justify-content:flex-start">
-        <button class="btn" type="submit">Publish offer</button>
-        <button class="btn ghost" type="button" onclick="return createOfferV2(event, true)">Save as draft</button>
+        ${foundingBiz
+          ? `<button class="btn" type="button" onclick="return createOfferV2(event, true)">${mode === "direct" ? "Save invite for opening day" : "Save for opening day"}</button>`
+          : `<button class="btn" type="submit">${mode === "direct" ? "Send invite" : "Post open call"}</button>
+        <button class="btn ghost" type="button" onclick="return createOfferV2(event, true)">Save as draft</button>`}
       </div>
-      ${marketLive ? "" : `<p class="small muted">Market not open yet — offers save as drafts until it does.</p>`}
+      ${foundingBiz
+        ? `<p class="small muted">${esc(foundingBizPlace(state.user))} has not opened yet. This saves ready to go. Nothing is sent to creators until your market opens.</p>`
+        : marketLive ? "" : `<p class="small muted">Market not open yet — offers save as drafts until it does.</p>`}
     </form>
   </div>
   </div>
@@ -15178,7 +15506,7 @@ function offerCardHtml(o) {
       <div class="slot-actions">
         ${o.lane === "open" && (o.status === "open" || o.status === "filled") ? `<button class="btn small-btn ws-primary" onclick="return goApplicants('${o.id}')">Applicants (${o.applicationCount || 0})</button>` : ""}
         ${offerIsArchived(o) ? `<button class="btn small-btn ws-outline" onclick="return duplicateOffer('${o.id}')">Duplicate</button>` : ""}
-        ${o.status === "draft" ? `<button class="btn small-btn ws-primary" onclick="publishOffer('${o.id}')">Publish</button>` : ""}
+        ${o.status === "draft" && isFoundingBusiness(state.user) ? `<span class="small" style="font-weight:700">Saved for opening day</span>` : o.status === "draft" ? `<button class="btn small-btn ws-primary" onclick="publishOffer('${o.id}')">Publish</button>` : ""}
         ${o.nudgeSentAt && o.status === "open" && !(o.applicationCount > 0) ? `<button class="btn small-btn ws-outline" onclick="fixOffer('${o.id}','raise')">Raise comp +$25</button><button class="btn small-btn ws-outline" onclick="fixOffer('${o.id}','widen')">Widen window +3 days</button>` : ""}
         ${(o.status === "open" || o.status === "draft") ? `<button class="btn small-btn ws-outline" onclick="closeOffer('${o.id}')">Close offer</button>` : ""}
       </div>
@@ -15260,6 +15588,13 @@ async function createOfferV2(e, draft) {
     state.offerDraft = {};
     state.offerTarget = null;
     refreshBadges();
+    // Build -68: a founding save lands on the Drafts segment,
+    // where the business sees the draft wearing its opening-day
+    // label, with the honesty line said out loud.
+    if (isFoundingBusiness(state.user)) {
+      state.offersSeg = "drafts";
+      toast("Saved for opening day. Nothing is sent to creators until your market opens.");
+    }
     loadMyOffers();
   } catch (err) {
     // Server errors and the dedupe notice live in #form-error; the
@@ -15797,25 +16132,34 @@ function packetFromForm() {
   };
 }
 
-async function saveBusinessProfile() {
-  try {
-    const data = await api("PATCH", "/me/profile", {
-      businessName: document.getElementById("bp-name").value,
-      category: document.getElementById("bp-category").value,
-      city: document.getElementById("bp-city").value,
-      neighborhood: document.getElementById("bp-neighborhood").value,
-      zip: document.getElementById("bp-zip").value,
-      about: document.getElementById("bp-about").value,
-      musicOpen: document.getElementById("bp-music-open").checked,
-      musicLive: document.getElementById("bp-music-live").checked,
-      musicCreated: document.getElementById("bp-music-created").checked,
-      studentOpen: document.getElementById("bp-student-open").checked,
-      preferredLanguage: document.getElementById("bp-lang").value,
+// Build -68: per-card saves. The Basics card sends only its
+// own fields, the Optional card only its own, so one card's
+// save can never clobber the other's unsaved edits.
+async function saveBusinessProfile(scope) {
+  const val = (id) => { const el = document.getElementById(id); return el ? el.value : ""; };
+  const chk = (id) => { const el = document.getElementById(id); return !!(el && el.checked); };
+  const patch = scope === "optional"
+    ? {
+      musicOpen: chk("bp-music-open"),
+      musicLive: chk("bp-music-live"),
+      musicCreated: chk("bp-music-created"),
+      studentOpen: chk("bp-student-open"),
+      preferredLanguage: val("bp-lang") || "en",
       assetPacket: packetFromForm(),
-    });
+    }
+    : {
+      businessName: val("bp-name"),
+      category: val("bp-category"),
+      city: val("bp-city"),
+      neighborhood: val("bp-neighborhood"),
+      zip: val("bp-zip"),
+      about: val("bp-about"),
+    };
+  try {
+    const data = await api("PATCH", "/me/profile", patch);
     state.user = data.user;
     render();
-    setTimeout(() => { const ok = document.getElementById("bp-ok"); if (ok) ok.textContent = "Saved."; }, 30);
+    setTimeout(() => { const ok = document.getElementById(scope === "optional" ? "bp-ok-opt" : "bp-ok"); if (ok) ok.textContent = "Saved."; }, 30);
   } catch (err) { alert(err.message); }
 }
 

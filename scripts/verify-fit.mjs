@@ -10,7 +10,7 @@
 //     creator-side fit note appears only on a strong match;
 //   - discovery wiring: cards carry fit { score, reasons } for a
 //     business viewer, ?sort=fit orders by fit, the DEFAULT order
-//     stays founding order, founding-gate 403s are unchanged, and
+//     stays founding order, the founding browse gate opened in Build -68 (activation still gates going live), and
 //     unauthenticated discovery still 401s;
 //   - the open-offers board: fitNote present for a strong match,
 //     null for a weak one, with application mechanics untouched;
@@ -201,7 +201,7 @@ try {
   });
   await admin("POST", "/api/admin/review", { userId: fbReg.data.user.id, decision: "approve" });
   const fbDiscover = await foundingBiz("GET", "/api/discover");
-  check("founding (not activated) business still gets the 403 gate on discovery", fbDiscover.status === 403, String(fbDiscover.status));
+  check("approved founding business CAN discover (Build -68: browsing opened; activation gates going live, not browsing)", fbDiscover.status === 200, String(fbDiscover.status));
 
   const anon = client();
   const anonDiscover = await anon("GET", "/api/discover");

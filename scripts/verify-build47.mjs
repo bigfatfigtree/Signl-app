@@ -94,7 +94,7 @@ check("B4 segment tabs wrap on phones instead of clipping", css.includes(".ws-ta
 check("B6 threads carry their visit or offer title", routerJs.includes("contextTitle") && appJs.includes("Conversations attach to a visit or an offer"));
 check("B7 the offer card names the missing piece", appJs.includes("still missing: <strong>") && appJs.includes("firstMissing.action"));
 check("B8 counted doctrine in the Sig answer + knowledge", sigaiJs.includes("counted register dollars only") && appJs.includes("counted"));
-check("B9 founding business page has in-page section jumps", appJs.includes('id="fbz-account"') && appJs.includes("Account &amp; password"));
+check("B9 account & password lives in Settings + the pending status page; the founding home has no in-page jump stack (Build -68)", appJs.includes('id="fbz-account"') && appJs.includes("function accountHtml(") && !appJs.includes('href="#fbz-account"') && !appJs.includes('href="#fbz-setup"'));
 check("B10 the Receipt knows when visits have landed", routerJs.includes("visitsLanded") && appJs.includes("Your visits have landed"));
 check("B11 Discover toggles read off until they are on", css.includes(".dspan-toggle.on { background: var(--ink)") && css.includes(".filters.disc-top > div { flex: 1 1 100%; }"));
 check("B12 checklist numbering is consistent; 'live' is not a step", !appJs.includes('label: "You are live"') && appJs.includes("done-n") && appJs.includes("three steps"));
@@ -111,7 +111,7 @@ check("A5 campaign import previews before it writes", appJs.includes("previewCam
 check("A6 stats cells carry labels into the stacked layout", appJs.includes('data-label="Approved creators"') && css.includes("td[data-label]::before"));
 check("L1 sign-in and claim forms validate in JS, not bubbles", appJs.includes('<form novalidate onsubmit="return doSignin(event)">') && appJs.includes('<form novalidate onsubmit="return doQuickClaim(event)">'));
 check("L2 staff redeem is explained on the logged-out page", appJs.includes("Working the register at a SIGNL business?"));
-check("B-cases stamp: the build is 2026.11.01-67", fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes('"2026.11.01-67"'));
+check("B-cases stamp: the build is 2026.11.01-68", fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes('"2026.11.01-68"'));
 
 // ---------- live ----------
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "signl-build47-"));
@@ -151,7 +151,7 @@ try {
   part("live boot");
   const idxRes = await fetch(BASE + "/");
   const idxHtml = await idxRes.text();
-  check("the served page carries build 2026.11.01-67", idxHtml.includes("2026.11.01-67"));
+  check("the served page carries build 2026.11.01-68", idxHtml.includes("2026.11.01-68"));
 
   const admin = makeClient();
   await admin("POST", "/api/auth/login", { email: ADMIN_EMAIL, ["pass" + "word"]: ADMIN_PASSWORD });

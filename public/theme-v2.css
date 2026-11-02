@@ -3178,6 +3178,19 @@ body:has(.bookme-sticky) main { padding-bottom: 96px; }
 .bm-stat-local .bm-num { font-size: 1.55rem; }
 .bm-stat-fol .bm-num { font-size: 1.02rem; }
 .bm-stat .bm-lbl { font-size: .68rem; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; opacity: .72; margin-top: 1px; }
+/* Build -68: the follower count under the local stat (the
+   share made concrete: 47% of a 10K audience is 4.7K people). */
+.bm-stat .bm-sub { font-size: .78rem; font-weight: 700; margin-top: 2px; }
+/* Build -68: the public profile centers in the page. The
+   profile column is max-width 720px with auto margins, but
+   under the admin rail the content column itself is
+   left-anchored, which stranded the profile against the left
+   with a void on the right (Jeff, 2026-11-01). While a
+   profile is on screen, main centers in the full width; the
+   rail offsets are width-based (calc(100% - rail)), so an
+   auto left margin lands exactly where the fixed offset did
+   on the v3 shells and centers the column on the rail shell. */
+body.profile-view main { margin-left: auto; margin-right: auto; }
 @media (max-width: 560px) {
   .bookme-id-row { flex-wrap: wrap; }
   .bookme-stats { flex: 1 1 100%; flex-direction: row; gap: 20px; text-align: left; align-items: baseline; }

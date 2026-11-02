@@ -405,7 +405,12 @@ console.log("== Source checks ==");
   check("View account buttons wired (Command Center + Applications)", (appJs.match(/adminViewBusiness\('/g) || []).length >= 2, "");
   check("Send sign-in link buttons wired", (appJs.match(/adminSendSigninLink\('/g) || []).length >= 2, "");
   check("first-month card renders the plan visit count", appJs.includes('id="fbz-first-month"') && appJs.includes("creator visits a month") && appJs.includes("state.boot.plans"), "");
-  check("first-month CTA lands on the existing setup panel", appJs.includes('id="fbz-setup"') && appJs.includes("getElementById('fbz-setup')"), "");
+  // Build -68 re-aim (2026-11-02): the "Set up your first month"
+  // panel (id="fbz-setup") DIED in -68; the first-month card's CTA
+  // now navigates to Campaigns ("Draft your first campaign" ->
+  // go('dashboard','My Offers')) and the setup element must never
+  // come back. This check pins the new behavior, absence included.
+  check("first-month CTA navigates to Campaigns; the setup panel is gone (Build -68)", appJs.includes("Draft your first campaign") && appJs.includes("go('dashboard','My Offers')") && !appJs.includes('id="fbz-setup"') && !appJs.includes("getElementById('fbz-setup')"), "");
   check("highlight renders only from the business payload", appJs.includes("bz.highlight") && routerJs.includes(HIGHLIGHT_BIT) && routerJs.includes('"chelsea friday furniture"'), "");
   check("new founding copy is plain and dash-free", appJs.includes("You pick the moment your first month is built around") && !routerJs.includes("unprompted, and it pulled about 1,800 likes.\u2014") && appJs.includes("Nothing you do here changes their account"), "");
   check("demo showcase panel wired in Admin", appJs.includes("adminDemoShowcaseLoad") && appJs.includes("adminDemoShowcaseRemove") && appJs.includes('id="admin-demo-showcase"'), "");
@@ -413,8 +418,8 @@ console.log("== Source checks ==");
   check("demo fence is a dedicated flag + batch", routerJs.includes('DEMO_SHOWCASE_BATCH = "nashville-2026-11"') && routerJs.includes("demoShowcaseVisibleTo"), "");
   check("demo roster is 12 fictional creators", (routerJs.match(/handle: "/g) || []).length >= 12 && routerJs.includes('handle: "tesstastestn"') && routerJs.includes('handle: "gracetembostyle"'), "");
   check("build stamp is -67 everywhere",
-    fs.readFileSync(path.join(root, "netlify", "functions", "lib", "build.js"), "utf8").includes('exports.BUILD_ID = "2026.11.01-67"')
-      && indexHtml.includes('window.__SIGNL_BUILD__ = "2026.11.01-67"'));
+    fs.readFileSync(path.join(root, "netlify", "functions", "lib", "build.js"), "utf8").includes('exports.BUILD_ID = "2026.11.01-68"')
+      && indexHtml.includes('window.__SIGNL_BUILD__ = "2026.11.01-68"'));
 }
 
 console.log(`\nBuild -67 verify: ${passed} passed, ${failed} failed`);

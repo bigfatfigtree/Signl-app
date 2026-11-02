@@ -179,6 +179,39 @@ function fmtFollowers(n) {
   return String(v);
 }
 
+// ---------- Build -68: viewed market, follower counts, first name ----------
+// The headline local number is keyed to the market the viewer
+// is looking in. This public page has no signed-in viewer, so
+// the only context is a ?market= the router passes through as
+// p.viewMarket; it counts only when the creator is actually
+// listed there (a listedMarkets entry), and anything else
+// falls back to the home share, exactly like the in-app
+// render. Counts are arithmetic on the creator's own
+// self-reported share and total: pct of total, compact format.
+function profileViewOf(p) {
+  const listed = (Array.isArray(p.listedMarkets) ? p.listedMarkets : []).filter((m) => m && typeof m.pct === "number");
+  const homeEntry = listed.find((m) => m.home) || null;
+  const home = { market: homeEntry ? homeEntry.market : (p.market || ""), pct: typeof p.localAudiencePct === "number" ? p.localAudiencePct : (homeEntry ? homeEntry.pct : null), home: true };
+  const cand = typeof p.viewMarket === "string" ? p.viewMarket.trim().toLowerCase() : "";
+  if (cand) {
+    const hit = listed.find((m) => String(m.market).toLowerCase() === cand);
+    if (hit) return { market: hit.market, pct: hit.pct, home: !!hit.home };
+  }
+  return home;
+}
+function followersForPct(pct, total) {
+  if (typeof pct !== "number" || typeof total !== "number" || !(total > 0)) return null;
+  return fmtFollowers(Math.round((pct / 100) * total));
+}
+// The public name line: first name only (Build -68), pronouns
+// beside it when the creator set them. A record with no real
+// first name (missing, or the name is just the handle) renders
+// exactly as it did before.
+function profileDisplayName(p) {
+  if (p.firstName) return p.pronouns ? `${p.firstName} · ${p.pronouns}` : String(p.firstName);
+  return p.name || "";
+}
+
 function profileHeaderSocialsHtml(p) {
   const links = (Array.isArray(p.socialLinks) ? p.socialLinks : []).filter((s) => s && s.url && s.label);
   if (!links.length) return "";
@@ -187,8 +220,10 @@ function profileHeaderSocialsHtml(p) {
 
 function profileHeaderStatsHtml(p) {
   const stats = [];
-  if (typeof p.localAudiencePct === "number") {
-    stats.push(`<div class="bm-stat bm-stat-local"><span class="bm-num">${p.localAudiencePct}%</span><span class="bm-lbl">local</span></div>`);
+  const view = profileViewOf(p);
+  if (typeof view.pct === "number") {
+    const cnt = followersForPct(view.pct, p.totalAudience);
+    stats.push(`<div class="bm-stat bm-stat-local"><span class="bm-num">${view.pct}%</span><span class="bm-lbl">${view.home ? "local" : `local · ${escHtml(view.market)}`}</span>${cnt ? `<span class="bm-sub">${cnt} followers</span>` : ""}</div>`);
   }
   if (typeof p.totalAudience === "number" && p.totalAudience > 0) {
     stats.push(`<div class="bm-stat bm-stat-fol"><span class="bm-num">${fmtFollowers(p.totalAudience)}</span><span class="bm-lbl">followers</span></div>`);
@@ -216,9 +251,9 @@ function profileBodyHtml(p, place) {
   const breakdown = bd && Array.isArray(bd.segments) && bd.segments.length ? `
       <div style="margin:14px 0 0">
         <div style="display:flex;height:14px;border-radius:999px;overflow:hidden;background:#E3F5EA" role="img" aria-label="Where this creator's audience lives">
-          ${bd.segments.map((s, i) => `<span style="display:block;width:${s.pct}%;background:${WORK_SEG_COLORS[i] || "#5F7265"}"></span>`).join("")}
+          ${[...bd.segments].sort((a, b) => (a.market === profileViewOf(p).market ? -1 : b.market === profileViewOf(p).market ? 1 : b.pct - a.pct)).map((s, i) => `<span style="display:block;width:${s.pct}%;background:${WORK_SEG_COLORS[i] || "#5F7265"}"></span>`).join("")}
         </div>
-        <p class="small muted" style="margin:6px 0 0">Where their audience lives: ${bd.segments.map((s) => `${escHtml(s.market)} ${s.pct}%`).join(" &middot; ")}${bd.elsewherePct > 0 ? ` &middot; everywhere else ${bd.elsewherePct}%` : ""}. Self-reported by the creator.</p>
+        <p class="small muted" style="margin:6px 0 0">Where their audience lives: ${[...bd.segments].sort((a, b) => (a.market === profileViewOf(p).market ? -1 : b.market === profileViewOf(p).market ? 1 : b.pct - a.pct)).map((s) => { const cnt = followersForPct(s.pct, p.totalAudience); return `${escHtml(s.market)} ${s.pct}%${cnt ? ` &middot; ${cnt} followers` : ""}`; }).join(" &middot; ")}${bd.elsewherePct > 0 ? ` &middot; everywhere else ${bd.elsewherePct}%` : ""}. Self-reported by the creator.</p>
       </div>` : "";
   const proof = p.proof && p.proof.visitsCompleted > 0 ? `
       <div class="wcard" style="margin:14px 0 0"><p style="margin:0"><span class="badge ok">Verified on SIGNL</span></p><p style="margin:8px 0 0"><strong>${p.proof.visitsCompleted} visit${p.proof.visitsCompleted === 1 ? "" : "s"} completed</strong> &middot; ${p.proof.onTimePosts} on time</p></div>` : "";
@@ -229,7 +264,7 @@ function profileBodyHtml(p, place) {
       <div class="bookme-cover-id">
         <div class="bookme-id-row">
           <div class="bookme-id-main">
-            <div class="cc-name bookme-name">${escHtml(p.name)}</div>
+            <div class="cc-name bookme-name">${escHtml(profileDisplayName(p))}</div>
             <div class="bookme-handle">@${escHtml(p.handle)} &middot; ${escHtml(p.primaryPlatformLabel || "Instagram")}</div>
             ${profileHeaderSocialsHtml(p)}
             ${p.charter ? `<span class="charter-seal sm">Charter Creator</span>` : ""}
@@ -248,14 +283,14 @@ function profileBodyHtml(p, place) {
         ${p.tierBand ? `<span class="cc-chip">${escHtml(p.tierBand)}</span>` : ""}
         ${p.isRealtor ? `<span class="cc-chip">Realtor</span>` : ""}
         ${p.charter ? "" : `<span class="cc-chip">Founding Creator</span>`}
-        ${(Array.isArray(p.listedMarkets) ? p.listedMarkets : []).filter((m) => !m.home).map((m) => `<span class="cc-chip">Also ranked in ${escHtml(m.market)} &middot; ${m.pct}% of audience</span>`).join("")}
+        ${(Array.isArray(p.listedMarkets) ? p.listedMarkets : []).filter((m) => m.market !== profileViewOf(p).market).map((m) => { const cnt = followersForPct(m.pct, p.totalAudience); return `<span class="cc-chip">Also ranked in ${escHtml(m.market)} &middot; ${m.pct}%${cnt ? ` &middot; ${cnt} followers` : " of followers"}</span>`; }).join("")}
       </div>
       ${p.pitchLine ? `<p class="bookme-pitch" style="font-size:1.05rem;margin:10px 0 0"><em>${escHtml(p.pitchLine)}</em></p>` : ""}
       ${p.bio ? `<p class="bookme-bio">${escHtml(p.bio)}</p>` : ""}
       <div class="cc-local">
-        ${p.localAudiencePct === null || p.localAudiencePct === undefined
+        ${profileViewOf(p).pct === null || profileViewOf(p).pct === undefined
           ? `<div class="lbl">Local audience not reported yet</div>`
-          : `<div class="big">${p.localAudiencePct}%</div><div class="lbl">of their audience is local</div><div class="src">${(p.localAudienceSource || "Self-reported") === "Self-reported" ? "Self-reported: the creator's own number" : escHtml(p.localAudienceSource)}</div>`}
+          : `<div class="big">${profileViewOf(p).pct}%</div><div class="lbl">of their audience is local to ${escHtml(profileViewOf(p).market)}</div>${followersForPct(profileViewOf(p).pct, p.totalAudience) ? `<div style="font-weight:800;margin-top:2px">${followersForPct(profileViewOf(p).pct, p.totalAudience)} followers</div>` : ""}<div class="src">${(p.localAudienceSource || "Self-reported") === "Self-reported" ? "Self-reported: the creator's own number" : escHtml(p.localAudienceSource)}</div>`}
       </div>
       ${breakdown}
       ${proof}
@@ -269,7 +304,7 @@ function profileBodyHtml(p, place) {
         <p class="small muted">Bookings that start on SIGNL stay on SIGNL.</p>
       </div>
     </section>
-    <div class="bookme-sticky"><span class="bs-name">Book ${escHtml(p.name)} on SIGNL</span><a class="btn bs-btn" href="/">Book on SIGNL</a></div>
+    <div class="bookme-sticky"><span class="bs-name">Book ${escHtml(p.firstName || p.name)} on SIGNL</span><a class="btn bs-btn" href="/">Book on SIGNL</a></div>
   </div>`;
 }
 
@@ -289,7 +324,7 @@ function buildProfilePageHtml(shellHtml, profile) {
   // shell goes back exactly as before.
   if (profile.body) {
     const place = profile.place || "";
-    html = html.replace(/(<main id="app">)[\s\S]*?(<\/main>)/, (m, open, close) => `${open}${profileBodyHtml({ ...profile.body, photoUrl: profile.body.photoUrl ? (String(profile.body.photoUrl).startsWith("http") ? profile.body.photoUrl : `${origin}${profile.body.photoUrl}`) : null }, place)}${close}`);
+    html = html.replace(/(<main id="app">)[\s\S]*?(<\/main>)/, (m, open, close) => `${open}${profileBodyHtml({ ...profile.body, viewMarket: profile.viewMarket || null, photoUrl: profile.body.photoUrl ? (String(profile.body.photoUrl).startsWith("http") ? profile.body.photoUrl : `${origin}${profile.body.photoUrl}`) : null }, place)}${close}`);
     html = html.replace(/<script src="\/app\.js/, '<script defer src="/app.js');
   }
   const canonical = `${origin}/c/${profile.handle}`;
@@ -348,4 +383,4 @@ function buildClaimPageHtml(shellHtml, profile) {
   return html;
 }
 
-module.exports = { buildProfilePageHtml, profilePageMeta, buildClaimPageHtml, claimPageMeta, profileBodyHtml, profileWorkItems, fmtFollowers, profileHeaderSocialsHtml, profileHeaderStatsHtml };
+module.exports = { buildProfilePageHtml, profilePageMeta, buildClaimPageHtml, claimPageMeta, profileBodyHtml, profileWorkItems, fmtFollowers, profileHeaderSocialsHtml, profileHeaderStatsHtml, profileViewOf, followersForPct, profileDisplayName };

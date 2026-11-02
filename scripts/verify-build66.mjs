@@ -156,15 +156,23 @@ try {
   check("client profile render calls the header helpers",
     renderSeg.includes("profileHeaderSocialsHtml(p)") && renderSeg.includes("profileHeaderStatsHtml(p)"), renderSeg.slice(0, 200));
   const statsSeg = segment(appJs, "function profileHeaderStatsHtml", "async function renderPublicProfile");
-  check("client stats helper swaps in the browsed market's share from listedMarkets",
-    statsSeg.includes("listedMarkets") && statsSeg.includes('"market"') && statsSeg.includes("totalAudienceOf(p)"), statsSeg.slice(0, 200));
+  // Build -68 re-aim (2026-11-02): market resolution moved out of
+  // the stats helper into profileViewMarket(p), which reads
+  // p.listedMarkets and matches the business's market / ?market=
+  // against it (home fallback). The stats helper consumes that
+  // result and, new in -68, puts the follower count under the
+  // local share via followersForPct. Behavior (the browsed
+  // market's share leads the header) is unchanged and extended.
+  const viewSeg = segment(appJs, "function profileViewMarket", "function followersForPct");
+  check("client stats helper swaps in the browsed market's share from listedMarkets (Build -68: via profileViewMarket)",
+    viewSeg.includes("listedMarkets") && viewSeg.includes('"market"') && statsSeg.includes("totalAudienceOf(p)") && statsSeg.includes("followersForPct"), statsSeg.slice(0, 200));
   check("client carries the compact formatter and the messaging-only locked line",
     appJs.includes("function fmtFollowers") && appJs.includes('BOOKME_LOCKED_LINE = "Paying businesses can message this creator right here on SIGNL."'));
   check("css carries the header classes and the phone wrap",
     theme.includes(".bookme-stats") && theme.includes(".bm-soc") && theme.includes(".bookme-id-row") && theme.includes(".bm-stat-local .bm-num") && /@media \(max-width: 560px\) \{\s*\.bookme-id-row \{ flex-wrap: wrap; \}/.test(theme));
-  check("build stamp is 2026.11.01-67 everywhere",
-    fs.readFileSync(path.join(root, "netlify", "functions", "lib", "build.js"), "utf8").includes('exports.BUILD_ID = "2026.11.01-67"')
-      && fs.readFileSync(path.join(root, "public", "index.html"), "utf8").includes('window.__SIGNL_BUILD__ = "2026.11.01-67"'));
+  check("build stamp is 2026.11.01-68 everywhere",
+    fs.readFileSync(path.join(root, "netlify", "functions", "lib", "build.js"), "utf8").includes('exports.BUILD_ID = "2026.11.01-68"')
+      && fs.readFileSync(path.join(root, "public", "index.html"), "utf8").includes('window.__SIGNL_BUILD__ = "2026.11.01-68"'));
 
   part("http: rich, plain, hidden, stub");
   startServer();
