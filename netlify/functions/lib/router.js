@@ -14738,8 +14738,15 @@ async function route(event) {
     let facts = null;
     try { facts = await buildSigFacts(user, full); } catch (e) { facts = null; }
     if (facts) {
-      const direct = sigdata.answerFacts(user.role, facts, q, history);
-      if (direct) return json(200, { source: "data", text: direct });
+      const direct = sigdata.answerFactsRaw(user.role, facts, q, history);
+      // Build -81: a data answer that shows records carries
+      // its walk (link: { label, dest }); the client renders it
+      // as the answer's action. Plain facts carry no link.
+      if (direct) {
+        const dt = typeof direct === "string" ? direct : direct.text;
+        const dl = typeof direct === "string" ? null : direct.link;
+        if (dt) return json(200, { source: "data", text: dt, ...(dl ? { link: dl } : {}) });
+      }
     }
     const lines = [];
     if (facts) {

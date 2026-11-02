@@ -418,8 +418,8 @@ console.log("== Source checks ==");
   check("demo fence is a dedicated flag + batch", routerJs.includes('DEMO_SHOWCASE_BATCH = "nashville-2026-11"') && routerJs.includes("demoShowcaseVisibleTo"), "");
   check("demo roster is 12 fictional creators", (routerJs.match(/handle: "/g) || []).length >= 12 && routerJs.includes('handle: "tesstastestn"') && routerJs.includes('handle: "gracetembostyle"'), "");
   check("build stamp is -67 everywhere",
-    fs.readFileSync(path.join(root, "netlify", "functions", "lib", "build.js"), "utf8").includes('exports.BUILD_ID = "2026.11.02-80"')
-      && indexHtml.includes('window.__SIGNL_BUILD__ = "2026.11.02-80"'));
+    fs.readFileSync(path.join(root, "netlify", "functions", "lib", "build.js"), "utf8").includes('exports.BUILD_ID = "2026.11.02-81"')
+      && indexHtml.includes('window.__SIGNL_BUILD__ = "2026.11.02-81"'));
 }
 
 console.log(`\nBuild -67 verify: ${passed} passed, ${failed} failed`);

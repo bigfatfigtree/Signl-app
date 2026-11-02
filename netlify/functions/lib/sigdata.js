@@ -305,7 +305,8 @@ function factsLines(role, f) {
 
 // ---------------- THE ANSWERER ----------------
 // Deterministic answers to factual questions, built only from
-// the fact sheet. Returns a plain-text answer or null. Null
+// the fact sheet. Returns a plain-text answer, a linked answer
+// ({ text, link }, Build -81), or null. Null
 // means "not a data question I am sure about": the language
 // model (grounded in these same facts) or the canon bank
 // answers instead. Canon questions ("how does licensing
@@ -332,6 +333,17 @@ function marketLive(f, market) {
   return (f.markets.liveNames || []).some((n) => n.toLowerCase() === String(market || "").toLowerCase());
 }
 
+// Build -81: an answer that SHOWS records (a queue, a list of
+// names, a digest of the asker's own numbers) carries the walk
+// to the surface that holds them: { text, link: { label, dest } },
+// where dest is a key the client maps to real navigation.
+// Plain factual answers (a bare count, a price, a rule) stay
+// plain strings and get no link: no fake links. Admin dests
+// point only at the console's own record tabs (Applications,
+// Partners, Compliance), so console Sig stays read-only in
+// spirit: the button walks the owner, it never edits a record.
+function linked(text, label, dest) { return { text, link: { label, dest } }; }
+
 // ---------- ADMIN ----------
 function answerAdmin(f, q, t) {
   const c = f.creators, b = f.businesses;
@@ -347,8 +359,8 @@ function answerAdmin(f, q, t) {
     if (b.founding) bits.push(`${fmt(b.founding)} approved ${plural(b.founding, "business", "businesses")} on the founding list waiting for activation`);
     if (f.visits.overduePosts) bits.push(`${fmt(f.visits.overduePosts)} ${plural(f.visits.overduePosts, "post")} overdue in the compliance queue`);
     if (f.partners.paused) bits.push(`${fmt(f.partners.paused)} ${plural(f.partners.paused, "partner")} paused`);
-    if (!bits.length) return "Nothing is waiting on you right now. Applications are decided, no posts are overdue, no businesses are held at activation, and partners are in order.";
-    return `Here is what needs you: ${bits.join("; ")}. The Review queue under Applications holds the decisions; this chat stays read-only.`;
+    if (!bits.length) return linked("Nothing is waiting on you right now. Applications are decided, no posts are overdue, no businesses are held at activation, and partners are in order.", "Open the Review queue", "admin-applications");
+    return linked(`Here is what needs you: ${bits.join("; ")}. The Review queue under Applications holds the decisions; this chat stays read-only.`, "Open the Review queue", "admin-applications");
   }
 
   // Waiting list, with names
@@ -357,7 +369,7 @@ function answerAdmin(f, q, t) {
     if (!f.waiting.total) return "Nobody is waiting. Every application on file has a decision.";
     const names = f.waiting.list.map((w) => `${w.label} (${w.waited})`).join("; ");
     const more = f.waiting.total > f.waiting.list.length ? `, and ${fmt(f.waiting.total - f.waiting.list.length)} more` : "";
-    return `${fmt(f.waiting.total)} ${plural(f.waiting.total, "application")} waiting on a decision (${fmt(f.waiting.creators)} ${plural(f.waiting.creators, "creator")}, ${fmt(f.waiting.businesses)} ${plural(f.waiting.businesses, "business", "businesses")}). Oldest first: ${names}${more}. They are decided in the Review queue under Applications.`;
+    return linked(`${fmt(f.waiting.total)} ${plural(f.waiting.total, "application")} waiting on a decision (${fmt(f.waiting.creators)} ${plural(f.waiting.creators, "creator")}, ${fmt(f.waiting.businesses)} ${plural(f.waiting.businesses, "business", "businesses")}). Oldest first: ${names}${more}. They are decided in the Review queue under Applications.`, "Open the Review queue", "admin-applications");
   }
 
   // Recent sign-ups
@@ -365,10 +377,10 @@ function answerAdmin(f, q, t) {
       (hasWord(t, "who") && hasPhrase(t, "signed up", "sign up", "joined"))) {
     if (hasWord(t, "business", "businesses")) {
       if (!b.recent.length) return "No business sign-ups on file yet.";
-      return `${fmt(b.signupsToday)} business ${plural(b.signupsToday, "sign-up")} today. The newest: ${b.recent.map((r) => `${r.label} (${r.when})`).join("; ")}.`;
+      return linked(`${fmt(b.signupsToday)} business ${plural(b.signupsToday, "sign-up")} today. The newest: ${b.recent.map((r) => `${r.label} (${r.when})`).join("; ")}.`, "Open Applications", "admin-applications");
     }
     if (!c.recent.length) return "No creator sign-ups on file yet.";
-    return `${fmt(c.claimsToday)} creator ${plural(c.claimsToday, "sign-up")} today, ${fmt(c.signups7d)} in the last 7 days. The newest: ${c.recent.map((r) => `${r.label} (${r.when})`).join("; ")}.`;
+    return linked(`${fmt(c.claimsToday)} creator ${plural(c.claimsToday, "sign-up")} today, ${fmt(c.signups7d)} in the last 7 days. The newest: ${c.recent.map((r) => `${r.label} (${r.when})`).join("; ")}.`, "Open Applications", "admin-applications");
   }
   if ((hasWord(t, "signups", "sign-ups", "claims", "joined") || hasPhrase(t, "signed up")) && (hasWord(t, "today") || hasPhrase(t, "this week", "last 7 days", "past week"))) {
     if (hasWord(t, "today")) return `${fmt(c.claimsToday)} creator ${plural(c.claimsToday, "sign-up")} today (${fmt(b.signupsToday)} ${plural(b.signupsToday, "business", "businesses")}).`;
@@ -395,7 +407,7 @@ function answerAdmin(f, q, t) {
   if (hasWord(t, "partner", "partners")) {
     if (hasPhrase(t, "who", "list", "show", "names")) {
       if (!f.partners.list.length) return "No partners yet. Partners are created under the Partners tab.";
-      return `${fmt(f.partners.total)} ${plural(f.partners.total, "partner")}: ${f.partners.list.map((p) => `${p.name} (${p.status}${p.markets.length ? ", " + p.markets.join(" + ") : ""})`).join("; ")}.`;
+      return linked(`${fmt(f.partners.total)} ${plural(f.partners.total, "partner")}: ${f.partners.list.map((p) => `${p.name} (${p.status}${p.markets.length ? ", " + p.markets.join(" + ") : ""})`).join("; ")}.`, "Open Partners", "admin-partners");
     }
     if (countAsk || hasWord(t, "active", "paused")) {
       return `${fmt(f.partners.total)} ${plural(f.partners.total, "partner")} in total: ${fmt(f.partners.active)} active, ${fmt(f.partners.paused)} paused.`;
@@ -413,7 +425,7 @@ function answerAdmin(f, q, t) {
 
   // Compliance / overdue
   if (hasWord(t, "overdue", "compliance") || hasPhrase(t, "late post", "posts overdue", "posts are late")) {
-    return `${fmt(f.visits.overduePosts)} ${plural(f.visits.overduePosts, "post")} overdue right now, and ${fmt(f.visits.awaitingPost)} ${plural(f.visits.awaitingPost, "visit")} still inside the window waiting on a post. The Compliance tab runs the sweep; an overdue visit falls under the Visit Guarantee and is replaced for the business in credits.`;
+    return linked(`${fmt(f.visits.overduePosts)} ${plural(f.visits.overduePosts, "post")} overdue right now, and ${fmt(f.visits.awaitingPost)} ${plural(f.visits.awaitingPost, "visit")} still inside the window waiting on a post. The Compliance tab runs the sweep; an overdue visit falls under the Visit Guarantee and is replaced for the business in credits.`, "Open Compliance", "admin-compliance");
   }
 
   // Offers / campaigns
@@ -497,7 +509,7 @@ function answerAdmin(f, q, t) {
 function answerBusiness(f, q, t) {
   // My numbers digest
   if (hasPhrase(t, "my numbers", "my stats", "show me my", "how am i doing", "my dashboard")) {
-    return `Your numbers: ${fmt(f.offersLive)} offers live, ${fmt(f.applicantsWaiting)} applicants waiting on your answer, ${fmt(f.visitsBooked)} visits booked, ${fmt(f.postsLive)} posts live, ${money(f.countedDollars)} counted at the register. You have ${fmt(f.visitsRemaining)} of ${fmt(f.visitsAllowance)} visits left this month on ${f.planName || "your plan"}.`;
+    return linked(`Your numbers: ${fmt(f.offersLive)} offers live, ${fmt(f.applicantsWaiting)} applicants waiting on your answer, ${fmt(f.visitsBooked)} visits booked, ${fmt(f.postsLive)} posts live, ${money(f.countedDollars)} counted at the register. You have ${fmt(f.visitsRemaining)} of ${fmt(f.visitsAllowance)} visits left this month on ${f.planName || "your plan"}.`, "See Results", "biz-results");
   }
   // Visits left
   if ((hasWord(t, "visit", "visits") && hasPhrase(t, "left", "remaining", "do i have")) || hasPhrase(t, "visits left", "visits remaining")) {
@@ -515,28 +527,32 @@ function answerBusiness(f, q, t) {
   // Applicants
   if (hasWord(t, "applicant", "applicants", "applications") && hasPhrase(t, "my", "me", "waiting", "how many", "answer", "applied")) {
     if (!f.applicantsWaiting) return "No applicants are waiting on you right now. When a creator applies to one of your offers, they land here, and every applicant gets an answer within 2 business days.";
-    return `${fmt(f.applicantsWaiting)} ${plural(f.applicantsWaiting, "applicant")} waiting on your answer. Every applicant gets an answer within 2 business days, and the app tracks it, so answering promptly is the move.`;
+    return linked(`${fmt(f.applicantsWaiting)} ${plural(f.applicantsWaiting, "applicant")} waiting on your answer. Every applicant gets an answer within 2 business days, and the app tracks it, so answering promptly is the move.`, "Review applicants", "biz-applicants");
   }
   // My offers
   if ((hasWord(t, "offer", "offers", "campaign", "campaigns")) && hasPhrase(t, "my", "how many", "do i have", "live", "draft")) {
-    return `You have ${fmt(f.offersLive)} offers live and ${fmt(f.draftOffers)} in draft, out of ${fmt(f.visitsBooked)} visits booked from them so far.${f.founding ? " Your market is not open yet, so drafts save for opening day and nothing sends until it activates." : ""}`;
+    const offersText = `You have ${fmt(f.offersLive)} offers live and ${fmt(f.draftOffers)} in draft, out of ${fmt(f.visitsBooked)} visits booked from them so far.${f.founding ? " Your market is not open yet, so drafts save for opening day and nothing sends until it activates." : ""}`;
+    return (f.offersLive || f.draftOffers) ? linked(offersText, "Open My Offers", "biz-offers") : offersText;
   }
   // Results
   if (hasPhrase(t, "my results", "how are my", "how is my", "register", "counted", "sales", "return on") || (hasWord(t, "results") && hasWord(t, "my", "me"))) {
     if (!f.visitsBooked && !f.postsLive) return `Nothing counted yet: no visits have run, so there are no register dollars to show. Results count only what a visit code rings up, and nothing is shown before it is real.${f.founding ? " Your first results land after your market opens and your first visits run." : ""}`;
-    return `Your counted results: ${money(f.countedDollars)} counted at the register across ${fmt(f.postsLive)} live posts and ${fmt(f.visitsRedeemed)} redeemed visits.${f.modeledDollars ? ` On top sits a modeled estimate of ${money(f.modeledDollars)}; that figure is an estimate, not counted sales.` : ""} Counted means rung up through visit codes, the only dollars Sig and your dashboard ever call real.`;
+    return linked(`Your counted results: ${money(f.countedDollars)} counted at the register across ${fmt(f.postsLive)} live posts and ${fmt(f.visitsRedeemed)} redeemed visits.${f.modeledDollars ? ` On top sits a modeled estimate of ${money(f.modeledDollars)}; that figure is an estimate, not counted sales.` : ""} Counted means rung up through visit codes, the only dollars Sig and your dashboard ever call real.`, "See Results", "biz-results");
   }
   // Roster in her market
   if ((hasWord(t, "creator", "creators", "roster") || hasPhrase(t, "can i book", "who can i book")) && hasPhrase(t, "my market", "in my", "near me", "can i book", "how many", "book in")) {
-    return `${fmt(f.rosterInMarket)} ${plural(f.rosterInMarket, "creator")} with finished profiles on the roster in ${f.market || "your market"} right now. ${f.founding ? "Booking opens when your market activates, and that finished roster is who you meet on day one." : "They are ranked by local reach in Find creators, and you can invite any of them at their listed rate."}`;
+    const rosterText = `${fmt(f.rosterInMarket)} ${plural(f.rosterInMarket, "creator")} with finished profiles on the roster in ${f.market || "your market"} right now. ${f.founding ? "Booking opens when your market activates, and that finished roster is who you meet on day one." : "They are ranked by local reach in Find creators, and you can invite any of them at their listed rate."}`;
+    return f.rosterInMarket ? linked(rosterText, "Find creators", "biz-discover") : rosterText;
   }
   // Visits booked/done
   if (hasWord(t, "visit", "visits") && hasPhrase(t, "booked", "done", "completed", "have i", "so far")) {
-    return `${fmt(f.visitsBooked)} visits booked so far: ${fmt(f.visitsRedeemed)} redeemed at the counter and ${fmt(f.postsLive)} posts live from them.`;
+    const visitsText = `${fmt(f.visitsBooked)} visits booked so far: ${fmt(f.visitsRedeemed)} redeemed at the counter and ${fmt(f.postsLive)} posts live from them.`;
+    return f.visitsBooked ? linked(visitsText, "Open Visits and posts", "biz-visits") : visitsText;
   }
   // Licenses
   if (hasWord(t, "license", "licenses", "licensing") && hasPhrase(t, "my", "how many", "waiting", "pending")) {
-    return `Your licenses: ${fmt(f.licensesGranted)} granted and in your library, ${fmt(f.licensesPending)} requested and waiting on the creator's answer. Each granted license is 90 days of repost and ad use, and its end date sits on the post in Posts & licenses.`;
+    const licText = `Your licenses: ${fmt(f.licensesGranted)} granted and in your library, ${fmt(f.licensesPending)} requested and waiting on the creator's answer. Each granted license is 90 days of repost and ad use, and its end date sits on the post in Posts & licenses.`;
+    return (f.licensesGranted || f.licensesPending) ? linked(licText, "Open Posts and licenses", "biz-content") : licText;
   }
   return null;
 }
@@ -545,13 +561,13 @@ function answerBusiness(f, q, t) {
 function answerCreator(f, q, t) {
   // My numbers digest
   if (hasPhrase(t, "my numbers", "my stats", "show me my", "how am i doing")) {
-    return `Your numbers: ${fmt(f.momentumPoints)} Momentum points (level ${f.level ? f.level.name : "Starter"}), ${fmt(f.offersOpen)} open offers in your markets, ${fmt(f.applicationsPending)} applications waiting on an answer, ${fmt(f.visitsBooked)} visits booked, ${fmt(f.postsLive)} posts live, and ${money(f.paidRecordedNet)} recorded from paid bookings.`;
+    return linked(`Your numbers: ${fmt(f.momentumPoints)} Momentum points (level ${f.level ? f.level.name : "Starter"}), ${fmt(f.offersOpen)} open offers in your markets, ${fmt(f.applicationsPending)} applications waiting on an answer, ${fmt(f.visitsBooked)} visits booked, ${fmt(f.postsLive)} posts live, and ${money(f.paidRecordedNet)} recorded from paid bookings.`, "Open Your numbers", "cr-numbers");
   }
   // Why / recent Momentum (before the plain points answer: "why" wins)
   if ((hasWord(t, "momentum", "points")) && hasPhrase(t, "why", "recent", "last", "change", "changed", "come from", "go up", "dropped", "earn them", "earned")) {
     if (!f.recentLedger.length) return "No points on your ledger yet. Points land for finishing your profile, posting on time, reviews, and invites; the Momentum list on your Home shows every way to earn.";
     const bits = f.recentLedger.map((e) => `${e.points > 0 ? "+" : ""}${fmt(e.points)} for ${String(e.label || "an entry").replace(/\.$/, "").toLowerCase()}`).join("; ");
-    return `Your most recent points: ${bits}. That puts you at ${fmt(f.momentumPoints)} in total. Points are priority, not cash: they order the list businesses see.`;
+    return linked(`Your most recent points: ${bits}. That puts you at ${fmt(f.momentumPoints)} in total. Points are priority, not cash: they order the list businesses see.`, "See my Momentum", "cr-momentum");
   }
   // My Momentum / points total
   if ((hasWord(t, "momentum", "points") && hasPhrase(t, "my", "how many", "do i have", "have i got")) || hasPhrase(t, "my momentum")) {
@@ -579,32 +595,33 @@ function answerCreator(f, q, t) {
   // Markets listed in
   if (hasPhrase(t, "markets am i", "which markets", "markets i am", "listed in", "am i listed")) {
     if (!f.listedMarkets.length) return "Your home market is the listing on your record. Add per-market audience shares on your profile and you list in every market where your local share is 5% or more.";
-    return `You are listed in ${f.listedMarkets.length} ${plural(f.listedMarkets.length, "market")}: ${f.listedMarkets.map((m) => `${m.market}${m.pct != null ? " (" + m.pct + "% local)" : ""}${m.home ? ", your home market" : ""}`).join("; ")}. You can receive offers from businesses in all of them.`;
+    return linked(`You are listed in ${f.listedMarkets.length} ${plural(f.listedMarkets.length, "market")}: ${f.listedMarkets.map((m) => `${m.market}${m.pct != null ? " (" + m.pct + "% local)" : ""}${m.home ? ", your home market" : ""}`).join("; ")}. You can receive offers from businesses in all of them.`, "Open my Profile", "cr-profile");
   }
   // Offers waiting
   if (hasWord(t, "offer", "offers") && hasPhrase(t, "waiting", "available", "for me", "are there", "any", "how many", "open", "near me")) {
     if (!f.marketLive) return `Your market is not open yet, so offers start the moment it opens. ${fmt(f.directInvites)} direct invites are on file for you, and finishing your profile is what puts you first in line on day one.`;
     if (!f.offersOpen) return "No open offers in your markets right now. New offers land in your Offers deck, and higher Momentum sees them earlier.";
-    return `${fmt(f.offersOpen)} open offers in your markets right now${f.directInvites ? `, including ${fmt(f.directInvites)} direct ${plural(f.directInvites, "invite")} sent to you` : ""}. They are in your Offers deck, newest first.`;
+    return linked(`${fmt(f.offersOpen)} open offers in your markets right now${f.directInvites ? `, including ${fmt(f.directInvites)} direct ${plural(f.directInvites, "invite")} sent to you` : ""}. They are in your Offers deck, newest first.`, "Open Offers", "cr-offers");
   }
   // Applications pending
   if (hasWord(t, "application", "applications") && hasPhrase(t, "my", "pending", "waiting", "applied", "how many")) {
     if (!f.applicationsPending) return "No applications of yours are waiting. When you apply to an offer, the business owes you an answer within 2 business days.";
-    return `${fmt(f.applicationsPending)} of your applications ${f.applicationsPending === 1 ? "is" : "are"} waiting on a business's answer. Every applicant gets an answer within 2 business days; that is the deal, and the app tracks it.`;
+    return linked(`${fmt(f.applicationsPending)} of your applications ${f.applicationsPending === 1 ? "is" : "are"} waiting on a business's answer. Every applicant gets an answer within 2 business days; that is the deal, and the app tracks it.`, "See my applications", "cr-offers-applied");
   }
   // Posts owed / visits
   if (hasPhrase(t, "do i owe", "posts owed", "owe a post", "still owe", "what do i owe") || (hasWord(t, "visit", "visits") && hasPhrase(t, "my", "booked", "coming", "do i have", "upcoming"))) {
     const owedBits = f.postsOwed.slice(0, 3).map((o) => `"${o.title}" at ${o.businessName}${o.overdue ? " (overdue now)" : ""}`).join("; ");
-    return `You have ${fmt(f.visitsUpcoming)} ${plural(f.visitsUpcoming, "visit")} booked and coming up, and ${fmt(f.postsOwed.length)} ${plural(f.postsOwed.length, "post")} owed from visits already redeemed${f.postsOwed.length ? `: ${owedBits}` : ""}. A post inside 48 hours is on time; one week is the hard deadline.`;
+    const owedText = `You have ${fmt(f.visitsUpcoming)} ${plural(f.visitsUpcoming, "visit")} booked and coming up, and ${fmt(f.postsOwed.length)} ${plural(f.postsOwed.length, "post")} owed from visits already redeemed${f.postsOwed.length ? `: ${owedBits}` : ""}. A post inside 48 hours is on time; one week is the hard deadline.`;
+    return (f.visitsUpcoming || f.postsOwed.length) ? linked(owedText, "Open My Visits", "cr-visits") : owedText;
   }
   // Earnings (recorded only, labeled)
   if (hasPhrase(t, "have i earned", "have i made", "my earnings", "much have i", "paid bookings", "money have i") || (hasWord(t, "earned", "earnings") && hasWord(t, "my", "i"))) {
-    return `Recorded: ${money(f.paidRecordedNet)} net across ${fmt(f.paidBookings)} paid ${plural(f.paidBookings, "booking")} on file. Recorded means the bookings in the app; payouts run outside the app for now, and the app never promises a payout date.${f.licenseRequestsPending ? ` Also waiting on you: ${fmt(f.licenseRequestsPending)} license ${plural(f.licenseRequestsPending, "request")} to approve or decline.` : ""}`;
+    return linked(`Recorded: ${money(f.paidRecordedNet)} net across ${fmt(f.paidBookings)} paid ${plural(f.paidBookings, "booking")} on file. Recorded means the bookings in the app; payouts run outside the app for now, and the app never promises a payout date.${f.licenseRequestsPending ? ` Also waiting on you: ${fmt(f.licenseRequestsPending)} license ${plural(f.licenseRequestsPending, "request")} to approve or decline.` : ""}`, "Open Earnings", "cr-earnings");
   }
   // Profile state
   if (hasPhrase(t, "my profile", "am i finished", "am i complete", "profile finished", "profile complete", "businesses see me", "can businesses see") || (hasWord(t, "missing") && hasWord(t, "profile", "my"))) {
     if (f.profileComplete) return "Your profile is finished, so businesses can see you and book you. A finished profile is the gate, and you are through it.";
-    return `Your profile is not finished yet, so businesses cannot see you. Still missing: ${f.missingLabels.length ? f.missingLabels.join(", ") : "a last check on your Profile"}. Finishing it is the step that makes offers reachable.`;
+    return linked(`Your profile is not finished yet, so businesses cannot see you. Still missing: ${f.missingLabels.length ? f.missingLabels.join(", ") : "a last check on your Profile"}. Finishing it is the step that makes offers reachable.`, "Finish my profile", "cr-profile");
   }
   // Referrals
   if (hasPhrase(t, "my referrals", "my invites", "through my link", "through my invite", "joined through", "signed up through")) {
@@ -612,14 +629,17 @@ function answerCreator(f, q, t) {
   }
   // My rate / fee
   if (hasPhrase(t, "my rate", "my listed rate", "rate did i", "my license fee", "my licensing fee")) {
-    if (!f.paidRate && !f.licenseFee) return "No paid rate on your profile yet. Your rate is yours to set on your Profile, with a $50 floor for paid bookings.";
-    return `Your listed paid rate is ${f.paidRate ? money(f.paidRate) : "not set"}${f.licenseFee ? `, and your licensing fee is ${money(f.licenseFee)}` : ""}. You keep 97% of both when they book or license through SIGNL.`;
+    if (!f.paidRate && !f.licenseFee) return linked("No paid rate on your profile yet. Your rate is yours to set on your Profile, with a $50 floor for paid bookings.", "Set my rates", "cr-profile");
+    return linked(`Your listed paid rate is ${f.paidRate ? money(f.paidRate) : "not set"}${f.licenseFee ? `, and your licensing fee is ${money(f.licenseFee)}` : ""}. You keep 97% of both when they book or license through SIGNL.`, "Open my Profile", "cr-profile");
   }
   return null;
 }
 
 // ---------- DISPATCH ----------
-function answerFacts(role, facts, question, history) {
+// answerFactsRaw returns the string or the { text, link }
+// object; answerFacts keeps the legacy plain-string contract
+// (the router's linked path and older callers split here).
+function answerFactsRaw(role, facts, question, history) {
   if (!facts || !question) return null;
   const t = normQ(question);
   let out = null;
@@ -682,4 +702,10 @@ function buildHomeState(role, f) {
   return { chips };
 }
 
-module.exports = { buildAdminFacts, buildBusinessFacts, buildCreatorFacts, factsLines, answerFacts, buildHomeState };
+function answerFacts(role, facts, question, history) {
+  const out = answerFactsRaw(role, facts, question, history);
+  if (!out) return null;
+  return typeof out === "string" ? out : out.text;
+}
+
+module.exports = { buildAdminFacts, buildBusinessFacts, buildCreatorFacts, factsLines, answerFacts, answerFactsRaw, buildHomeState };

@@ -3502,6 +3502,59 @@ function sigRouteAsk(text) {
 // source "data"; the real AI, canon-grounded and fed the same
 // live fact sheet, takes the rest with source "ai"), the bank
 // when the server cannot answer.
+// Build -81 (Jeff, 2026-11-02): anything Sig SHOWS carries its
+// walk. sigdata's linked answers name a destination key; this
+// map is the one place keys become real navigation, per role.
+// Admin keys point only at the console's own record tabs, so
+// the console stays read-only: the walk never edits a record
+// and never lands on someone else's surface.
+function sigLinkGo(dest) {
+  switch (dest) {
+    case "biz-results": return go("dashboard", "Analytics");
+    case "biz-applicants": state.offersSeg = "applicants"; return go("dashboard", "My Offers");
+    case "biz-offers": return go("dashboard", "My Offers");
+    case "biz-drafts": state.offersSeg = "drafts"; return go("dashboard", "My Offers");
+    case "biz-discover": return go("dashboard", "Discover");
+    case "biz-visits": return go("dashboard", "Visits & Posts");
+    case "biz-content": return go("dashboard", "Content");
+    case "cr-numbers": return go("dashboard", "Numbers");
+    case "cr-momentum": return go("dashboard", "Momentum");
+    case "cr-offers": return go("dashboard", "Offers");
+    case "cr-offers-applied": state.crOffersSeg = "applied"; return go("dashboard", "Offers");
+    case "cr-offers-invited": state.crOffersSeg = "invited"; return go("dashboard", "Offers");
+    case "cr-visits": state.visitsSeg = "needs"; return go("dashboard", "My Visits");
+    case "cr-earnings": return go("dashboard", "Earnings");
+    case "cr-profile": return go("dashboard", "Profile");
+    case "admin-applications": return go("dashboard", "Applications");
+    case "admin-partners": return go("dashboard", "Partners");
+    case "admin-compliance": return go("dashboard", "Compliance");
+    default: return false;
+  }
+}
+
+// The Sig home chips are built server-side from fixed label
+// templates (sigdata buildHomeState), so a chip's walk is
+// matched here from its label. Entity chips (a queue, a record
+// set, a view of your own numbers) navigate; pure status chips
+// (founding list, market live) and the bare visits-left count
+// stay plain text.
+function sigChipDest(label) {
+  const t = " " + String(label || "").toLowerCase() + " ";
+  if (t.includes("applicants waiting")) return "biz-applicants";
+  if (t.includes("draft")) return "biz-drafts";
+  if (t.includes("offers live")) return "biz-offers";
+  if (t.includes("posts live")) return "biz-content";
+  if (t.includes("roster")) return "biz-discover";
+  if (t.includes("invite")) return "cr-offers-invited";
+  if (t.includes("offers waiting")) return "cr-offers";
+  if (t.includes("posts owed")) return "cr-visits";
+  if (t.includes("applications waiting")) return "cr-offers-applied";
+  if (t.includes("license")) return "cr-earnings";
+  if (t.includes("momentum")) return "cr-momentum";
+  if (t.includes("profile")) return "cr-profile";
+  return null;
+}
+
 async function sigAsk(text) {
   const ctx = sigCtx();
   const isAdmin = !!state.user && state.user.role === "admin";
@@ -3513,19 +3566,22 @@ async function sigAsk(text) {
       new Promise((_, reject) => setTimeout(() => reject(new Error("sig timeout")), 10000)),
     ]);
     if (data && (data.source === "ai" || data.source === "data") && data.text) {
-      // Admin: the answer stands on its own. The walk-to flow
-      // picker below is keyed to business/creator flows and must
-      // never hand the console a button into someone else's
-      // surface; the admin fallback bank answers instead of the
-      // creator bank when the AI cannot.
-      if (isAdmin) return { text: data.text, flow: null };
+      // Admin: the business/creator walk-to flow picker below
+      // never applies to the console: no button into someone
+      // else's surface. Build -81: a data answer may carry its
+      // own link, and admin links point only at the console's
+      // own record tabs (Applications, Partners, Compliance),
+      // so the console Sig stays read-only: the walk opens the
+      // queue, it never edits it. The admin fallback bank
+      // answers instead of the creator bank when the AI cannot.
+      if (isAdmin) return { text: data.text, flow: null, link: data.link || null };
       const match = sigMatch(text, ctx.biz);
       let flow = null;
       if (match.topic) {
         const label = typeof match.topic.flow === "function" ? match.topic.flow(ctx) : match.topic.flow;
         flow = sigFlowIndex(label);
       }
-      return { text: data.text, flow };
+      return { text: data.text, flow, link: data.link || null };
     }
   } catch (e) { /* the bank answers instead */ }
   return isAdmin ? sigAdminRouteAsk(text) : sigRouteAsk(text);
@@ -3580,6 +3636,13 @@ async function sigAskSubmit(ev) {
   const reply = await sigAsk(text);
   pending.text = reply.text;
   pending.flow = reply.flow != null ? reply.flow : null;
+  // Build -81: a data answer that shows records carries its
+  // walk as this turn's action (rendered like an operator
+  // action while the turn is the newest action-bearing one).
+  if (reply.link && reply.link.dest && reply.link.label) {
+    const dest = reply.link.dest;
+    pending.actions = [{ label: reply.link.label, primary: true, run: async () => sigLinkGo(dest) }];
+  }
   pending.suggest = reply.suggest || [];
   delete pending.pending;
   pending.talk = true;
@@ -3613,6 +3676,30 @@ function wireSigThread(root) {
       btn.disabled = true;
       try { await fn(); } catch (e) { /* card handlers surface their own errors as turns */ }
       if (typeof sigOpPaint === "function") sigOpPaint();
+    };
+  });
+  // Build -81: a creator card's body (photo, name, stats) is
+  // the walk to that creator's full profile, the same
+  // destination a Discover tap opens. Invite and Save are
+  // buttons inside the card and keep their own tap: a click
+  // that lands on one never navigates. Demo cards ride the
+  // same path: openCreatorProfile is the Discover door, with
+  // its fencing, exactly as tapped there.
+  root.querySelectorAll("[data-sigprofile]").forEach((el) => {
+    el.onclick = (ev) => {
+      if (ev.target.closest("[data-sigcard]")) return;
+      const uid = el.getAttribute("data-sigprofile");
+      if (uid) openCreatorProfile(uid);
+    };
+  });
+  // Build -81: an offer card's body opens the offer's home:
+  // the creator Offers tab, on the Invited segment for a
+  // direct invite. Apply/Accept and Pass keep their own tap.
+  root.querySelectorAll("[data-sigoffer]").forEach((el) => {
+    el.onclick = (ev) => {
+      if (ev.target.closest("[data-sigcard]")) return;
+      if (el.getAttribute("data-sigoffer") === "accept") state.crOffersSeg = "invited";
+      go("dashboard", "Offers");
     };
   });
   // Sig Operator action chips: a turn's actions are closures
@@ -3743,8 +3830,9 @@ async function loadSigHome() {
   const name = d.displayName || "";
   greetEl.innerHTML = `<div class="sig-home-h">${esc(day)}${name ? `, ${esc(name)}` : ""}.</div><div class="sig-home-sub">${ST("Where should we pick up?", "¿Por dónde seguimos?")}</div>`;
   chipsEl.innerHTML = (d.chips && d.chips.length)
-    ? d.chips.map((c) => `<span class="sig-chip">${esc(c)}</span>`).join("")
+    ? d.chips.map((c) => { const dest = sigChipDest(c); return dest ? `<button type="button" class="sig-chip sig-chip-link" data-sigchip="${dest}">${esc(c)}</button>` : `<span class="sig-chip">${esc(c)}</span>`; }).join("")
     : `<span class="sig-chip is-quiet">${ST("All quiet right now", "Todo tranquilo por ahora")}</span>`;
+  chipsEl.querySelectorAll("[data-sigchip]").forEach((el) => el.addEventListener("click", () => sigLinkGo(el.getAttribute("data-sigchip"))));
 }
 // "Find creators near me" runs the search right here in Sig
 // (Build -78): same ranked cards a typed request gets, no
@@ -4714,13 +4802,14 @@ function sigCreatorCardHtml(c, ti, ci) {
   const cats = (p.categories || []).slice(0, 2).join(" · ");
   const why = c.fit && c.fit.reasons && c.fit.reasons.length ? c.fit.reasons[0] : "";
   const saved = !!c.isFavorite;
-  return `<div class="sig-ccard">
+  return `<div class="sig-ccard"${c.userId ? ` data-sigprofile="${esc(c.userId)}"` : ""}>
     <div class="sig-ccard-top">
       ${photos[0] ? `<img class="sig-ccard-photo" src="${esc(photos[0])}" alt="">` : `<span class="sig-ccard-photo sig-ccard-nophoto">${esc(String(c.name || "?").slice(0, 1))}</span>`}
       <div class="sig-ccard-id">
         <div class="sig-ccard-name">${esc(c.name || "")}${p.tierBand ? ` <span class="sig-ccard-tier">${esc(p.tierBand)}</span>` : ""}</div>
         <div class="sig-ccard-handle">@${esc(p.handle || "")}${c.neighborhood ? ` · ${esc(c.neighborhood)}` : ""}</div>
       </div>
+      ${c.userId ? `<span class="sig-ccard-view">${ST("View profile", "Ver perfil")}</span>` : ""}
     </div>
     <div class="sig-ccard-local">${pct === null ? `<span class="sig-ccard-nopct">${ST("Local audience not reported yet", "Audiencia local aún no reportada")}</span>` : `${pct}% <span>${ST("local audience", "audiencia local")}</span>`}</div>
     <div class="sig-ccard-meta">${fmtNum(c.totalAudience || 0)} ${ST("total followers", "seguidores en total")}${cats ? ` · ${esc(cats)}` : ""} · ${p.paidRate ? `$${fmtPrice(p.paidRate)} ${ST("paid rate", "tarifa pagada")}` : ST("comp visits", "visitas de cortesía")}</div>
@@ -4738,10 +4827,10 @@ function sigOfferCardHtml(p, ti, ci) {
   const money = o.kind === "paid"
     ? `$${fmtPrice(o.cashRate)} ${ST("paid · you keep 97%", "pagada · te quedas con el 97%")}`
     : `${ST("Comp", "Cortesía")}: ${esc(o.whatComped || ST("a visit", "una visita"))} ($${fmtMoney(o.dollarCap || 0)} ${ST("value", "valor")})`;
-  return `<div class="sig-ccard sig-ocard">
+  return `<div class="sig-ccard sig-ocard" data-sigoffer="${esc(p.mode || "")}">
     <div class="sig-ccard-name">${esc(o.title || "")}</div>
     <div class="sig-ccard-handle">${esc(o.businessName || "")}${o.market ? ` · ${esc(o.market)}` : ""}</div>
-    <div class="sig-ccard-meta">${money}</div>
+    <div class="sig-ccard-meta">${money} · <span class="sig-ccard-view">${ST("View offer", "Ver oferta")}</span></div>
     <div class="sig-ccard-why">${esc(why)}</div>
     <div class="sig-ccard-acts">
       <button type="button" class="btn small-btn" data-sigcard="${ti}:${ci}:apply">${p.mode === "accept" ? ST("Accept", "Aceptar") : ST("Apply", "Aplicar")}</button>
@@ -5060,7 +5149,7 @@ async function sigB1Commit() {
     sigOpSay(created && created.status === "draft"
       ? ST(`Done. "${d.title}" is saved as a draft for opening day. Nothing is sent to creators until your market opens, and it waits for you under Campaigns, in Drafts.`, `Listo. "${d.title}" quedó guardado como borrador para el día de apertura. Nada se envía a los creadores hasta que abra tu mercado.`)
       : ST(`Done. "${d.title}" is live. Creators can ${d.lane === "direct" ? "answer it now" : "apply now"}.`, `Listo. "${d.title}" está activa. Los creadores ya pueden ${d.lane === "direct" ? "responder" : "aplicar"}.`), [
-      { label: ST("See it in My Offers", "Verla en Mis ofertas"), primary: true, run: async () => { if (created && created.status === "draft") state.offersSeg = "drafts"; go("dashboard", "My Offers"); } },
+      { label: ST("See it in My Offers", "Verla en Mis ofertas"), primary: true, run: async () => { if (created && created.status === "draft") state.offersSeg = "drafts"; go("dashboard", "My Offers"); if (created && created.id) setTimeout(() => jumpToOffer(created.id), 80); } },
       { label: ST("Set up another", "Crear otra"), run: async () => { sigB1Start(); sigOpPaint(); } },
       { label: ST("How am I doing?", "¿Cómo voy?"), run: async () => { await sigB3Run(); sigOpPaint(); } },
     ]);
@@ -5322,6 +5411,7 @@ async function sigB3Run() {
     lines.push(`${ST("Repeat this", "Repite esto")}: "${rec.title}"${rec.creatorName ? ` ${ST("with", "con")} ${rec.creatorName}` : ""}. ${rec.reason || ""}`);
     if (rec.offerId) acts.push({ label: ST("Run it again", "Repetirla"), primary: true, run: async () => sigRepeatProposal(ro) });
   }
+  acts.push({ label: ST("See Results", "Ver Resultados"), run: async () => go("dashboard", "Analytics") });
   acts.push({ label: ST("Open the Performance card", "Abrir la tarjeta de Rendimiento"), run: async () => go("dashboard", "Home") });
   acts.push({ label: ST("Set up a campaign", "Crear una campaña"), run: async () => { sigB1Start(); sigOpPaint(); } });
   sigOpSay(lines.join("\n"), acts);
@@ -8282,7 +8372,13 @@ async function previewAdUse(userId) {
 }
 
 function openCreatorProfile(userId) {
-  const c = (state.discover || []).find((x) => x.userId === userId);
+  // Build -81: Sig's result cards carry the same discover
+  // objects, held in state.sigOpData: a card tap must open the
+  // profile even when the business has not opened Discover yet
+  // (state.discover still empty), so the Sig cohort is the
+  // fallback source. Same objects, same detail render.
+  const c = (state.discover || []).find((x) => x.userId === userId)
+    || ((state.sigOpData && state.sigOpData.cards) || []).find((x) => x.userId === userId);
   const el = document.getElementById("tab-body");
   if (!c || !el) return;
   el.innerHTML = creatorProfileDetailHtml(c, false);

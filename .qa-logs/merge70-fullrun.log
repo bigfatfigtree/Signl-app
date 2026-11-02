@@ -1,0 +1,122 @@
+1/87 verify-flow: exit=0 Verification: 103 passed, 0 failed
+2/87 verify-fallbacks: exit=0 Fallback verification: 15 passed, 0 failed
+3/87 verify-launch: exit=1 Launch verification: 247 passed, 3 failed
+4/87 verify-compliance: exit=1 FAIL [H: client copy] signup carries the post-compliance agreement checkbox
+5/87 verify-campaign: exit=0 Campaign verification: 128 passed, 0 failed
+6/87 verify-paidlane: exit=0 Paid lane verification: 81 passed, 0 failed
+7/87 verify-licensing: exit=0 Licensing verification: 32 passed, 0 failed
+8/87 verify-roas: exit=0 ROAS verification: 70 passed, 0 failed
+9/87 verify-rollover: exit=0 Rollover verification: 12 passed, 0 failed
+10/87 verify-business: exit=0 Business verification: 92 passed, 0 failed
+11/87 verify-quickclaim: exit=0 Quick claim verification: 65 passed, 0 failed
+12/87 verify-ratings: exit=0 verify-ratings: 31 passed, 0 failed
+13/87 verify-staff: exit=0 verify-staff: 52 passed, 0 failed
+14/87 verify-refinements: exit=0 Refinement verification: 61 passed, 0 failed
+15/87 verify-campus: exit=0 Campus verification: 81 passed, 0 failed
+16/87 verify-ladder: exit=0 verify-ladder: 35 passed, 0 failed
+17/87 verify-src: exit=0 verify-src: 17 passed, 0 failed
+18/87 verify-partner: exit=0 verify-partner: 42 passed, 0 failed
+19/87 verify-share: exit=0 verify-share: 18 passed, 0 failed
+20/87 verify-admin: exit=0 verify-admin: 51 passed, 0 failed
+21/87 verify-autodecisions: exit=0 AUTO-DECISIONS SUITE: 61 passed, 0 failed
+22/87 verify-platforms: exit=0 Platform picker verification: 38 passed, 0 failed
+23/87 verify-platformconnect: exit=0 verify-platformconnect: 45 passed, 0 failed
+24/87 verify-realtor: exit=1 Realtor verification: 35 passed, 2 failed
+25/87 verify-signupfixes: exit=0 Signup fixes verification: 62 passed, 0 failed
+26/87 verify-markets: exit=0 verify-markets: 25 passed, 0 failed
+27/87 verify-billing: exit=0 verify-billing: 29 passed, 0 failed
+28/87 verify-profilemeta: exit=1 FAIL [http: approved + complete page] page still ships the SPA shell for humans
+29/87 verify-businesswave: exit=0 verify-businesswave: 49 passed, 0 failed
+30/87 verify-campaignadmin: exit=0 verify-campaignadmin: 37 passed, 0 failed
+31/87 verify-passwordreset: exit=0 verify-passwordreset: 41 passed, 0 failed
+32/87 verify-cityresolver: exit=0 verify-cityresolver: 44 passed, 0 failed
+33/87 verify-fit: exit=0 verify-fit: 37 passed, 0 failed
+34/87 verify-metrics: exit=0 Metrics verification: 65 passed, 0 failed
+35/87 verify-mailboxes: exit=0 Mailbox verification: 57 passed, 0 failed
+36/87 verify-storefail: exit=0 verify-storefail: 5 passed, 0 failed
+37/87 verify-referral: exit=0 Referral tie-in verification: 32 passed, 0 failed
+38/87 verify-admintabs: exit=1 verify-admintabs: 19 passed, 1 failed
+39/87 verify-connect: exit=0 verify-connect: 85 passed, 0 failed
+40/87 verify-proudpass: exit=0 verify-proudpass: 58 passed, 0 failed
+41/87 verify-two-tap: exit=0 Two-tap invite verification: 17 passed, 0 failed
+42/87 verify-shell: exit=1 FAIL [source: nav + Sig tab (Jeff, from live use; BUILD -41 full rail)] partner rail primaries are Home, Markets, Earnings (Sig arrives via the rows)
+43/87 verify-earnlinks: exit=0 verify-earnlinks: 41 passed, 0 failed
+44/87 verify-sig: exit=0 
+45/87 verify-sig-everywhere: exit=0 verify-sig-everywhere: 34 passed, 0 failed
+46/87 verify-spanish: exit=0 Spanish layers verification: 42 passed, 0 failed
+47/87 verify-operator: exit=0 Operator verification: 55 passed, 0 failed
+48/87 verify-activation: exit=0 17 passed, 0 failed
+49/87 verify-igprefill: exit=0 igprefill: 48 passed, 0 failed
+50/87 verify-handleonboarding: exit=0 handleonboarding: 22 passed, 0 failed
+51/87 verify-first60: exit=1 verify-first60: 30 passed, 1 failed
+52/87 verify-nocounts-charter: exit=1 verify-nocounts-charter: 38 passed, 1 failed
+53/87 verify-build31: exit=1 FAILURES:
+54/87 verify-build32: exit=0 verify-build32: 41 passed, 0 failed
+55/87 verify-build33: exit=0 verify-build33: 37 passed, 0 failed
+56/87 verify-build34: exit=0 verify-build34: 41 passed, 0 failed
+57/87 verify-build35: exit=0 verify-build35: 48 passed, 0 failed
+58/87 verify-build36: exit=0 verify-build36: 23 passed, 0 failed
+59/87 verify-build37: exit=0 verify-build37: 13 passed, 0 failed
+60/87 verify-build38: exit=1 FAILURES:
+61/87 verify-build39: exit=1 FAILURES:
+62/87 verify-build40: exit=1 FAILURES:
+63/87 verify-build42: exit=1 FAILED: stamp: the build stamp is 2026.11.01-68 on server and shell
+64/87 verify-build43: exit=1 FAILURES:
+65/87 verify-build44: exit=1 verify-build44: 38 passed, 1 failed
+66/87 verify-build45: exit=1 FAILURES:
+67/87 verify-build46: exit=0 verify-build46: 40 passed, 0 failed
+68/87 verify-build47: exit=1 FAIL [live boot] the served page carries build 2026.11.01-68
+69/87 verify-build48: exit=1 FAILURES:
+70/87 verify-build49: exit=1 FAILURES:
+71/87 verify-build50: exit=1 FAILURES: stamp: build stamp is 2026.11.01-68 on server and shell
+72/87 verify-build51: exit=1 FAILURES:
+73/87 verify-build52: exit=1 verify-build52: 103 passed, 2 failed
+74/87 verify-build53: exit=1 verify-build53: 37 passed, 3 failed
+75/87 verify-build54: exit=1 verify-build54: 67 passed, 2 failed
+76/87 verify-build55: exit=1 verify-build55: 50 passed, 2 failed
+77/87 verify-build56: exit=1 FAILURES: build stamp is 2026.11.01-68 | index.html carries the -56 stamp
+78/87 verify-build57: exit=1 verify-build57: 62 passed, 2 failed
+79/87 verify-build58: exit=1 FAILURES:
+80/87 verify-build59: exit=1 verify-build59: 36 passed, 2 failed
+81/87 verify-multimarket: exit=0 Multi-market verification: 52 passed, 0 failed
+82/87 verify-build64: exit=1 FAIL [source: offers, profile form, business signup, css, stamp] build stamp is 2026.11.01-68 everywhere
+83/87 verify-min500: exit=0 MIN-500 SUITE: 40 passed, 0 failed
+84/87 verify-build66: exit=1 FAIL [source: client mirror + css + stamp] build stamp is 2026.11.01-68 everywhere
+85/87 verify-build67: exit=1 FAIL - build stamp is -67 everywhere
+86/87 verify-build68: exit=1 FAIL - stamp is 2026.11.01-68
+87/87 verify-build70: exit=0 Build -70: 76 passed, 0 failed
+
+TOTAL suites: 87, failing suites: 33
+FAIL: verify-launch Launch verification: 247 passed, 3 failed 
+FAIL: verify-compliance FAIL [H: client copy] signup carries the post-compliance agreement checkbox 
+FAIL: verify-realtor Realtor verification: 35 passed, 2 failed 
+FAIL: verify-profilemeta FAIL [http: approved + complete page] page still ships the SPA shell for humans 
+FAIL: verify-admintabs verify-admintabs: 19 passed, 1 failed 
+FAIL: verify-shell FAIL [source: nav + Sig tab (Jeff, from live use; BUILD -41 full rail)] partner rail primaries are Home, Markets, Earnings (Sig arrives via the rows) 
+FAIL: verify-first60 verify-first60: 30 passed, 1 failed 
+FAIL: verify-nocounts-charter verify-nocounts-charter: 38 passed, 1 failed 
+FAIL: verify-build31 FAILURES: 
+FAIL: verify-build38 FAILURES: 
+FAIL: verify-build39 FAILURES: 
+FAIL: verify-build40 FAILURES: 
+FAIL: verify-build42 FAILED: stamp: the build stamp is 2026.11.01-68 on server and shell 
+FAIL: verify-build43 FAILURES: 
+FAIL: verify-build44 verify-build44: 38 passed, 1 failed 
+FAIL: verify-build45 FAILURES: 
+FAIL: verify-build47 FAIL [live boot] the served page carries build 2026.11.01-68 
+FAIL: verify-build48 FAILURES: 
+FAIL: verify-build49 FAILURES: 
+FAIL: verify-build50 FAILURES: stamp: build stamp is 2026.11.01-68 on server and shell 
+FAIL: verify-build51 FAILURES: 
+FAIL: verify-build52 verify-build52: 103 passed, 2 failed 
+FAIL: verify-build53 verify-build53: 37 passed, 3 failed 
+FAIL: verify-build54 verify-build54: 67 passed, 2 failed 
+FAIL: verify-build55 verify-build55: 50 passed, 2 failed 
+FAIL: verify-build56 FAILURES: build stamp is 2026.11.01-68 | index.html carries the -56 stamp 
+FAIL: verify-build57 verify-build57: 62 passed, 2 failed 
+FAIL: verify-build58 FAILURES: 
+FAIL: verify-build59 verify-build59: 36 passed, 2 failed 
+FAIL: verify-build64 FAIL [source: offers, profile form, business signup, css, stamp] build stamp is 2026.11.01-68 everywhere 
+FAIL: verify-build66 FAIL [source: client mirror + css + stamp] build stamp is 2026.11.01-68 everywhere 
+FAIL: verify-build67 FAIL - build stamp is -67 everywhere 
+FAIL: verify-build68 FAIL - stamp is 2026.11.01-68 

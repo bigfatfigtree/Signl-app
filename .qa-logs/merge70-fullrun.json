@@ -1,0 +1,524 @@
+[
+ [
+  "verify-flow",
+  0,
+  "Verification: 103 passed, 0 failed",
+  false
+ ],
+ [
+  "verify-fallbacks",
+  0,
+  "Fallback verification: 15 passed, 0 failed",
+  false
+ ],
+ [
+  "verify-launch",
+  1,
+  "Launch verification: 247 passed, 3 failed",
+  false
+ ],
+ [
+  "verify-compliance",
+  1,
+  "FAIL [H: client copy] signup carries the post-compliance agreement checkbox",
+  false
+ ],
+ [
+  "verify-campaign",
+  0,
+  "Campaign verification: 128 passed, 0 failed",
+  false
+ ],
+ [
+  "verify-paidlane",
+  0,
+  "Paid lane verification: 81 passed, 0 failed",
+  false
+ ],
+ [
+  "verify-licensing",
+  0,
+  "Licensing verification: 32 passed, 0 failed",
+  false
+ ],
+ [
+  "verify-roas",
+  0,
+  "ROAS verification: 70 passed, 0 failed",
+  false
+ ],
+ [
+  "verify-rollover",
+  0,
+  "Rollover verification: 12 passed, 0 failed",
+  false
+ ],
+ [
+  "verify-business",
+  0,
+  "Business verification: 92 passed, 0 failed",
+  false
+ ],
+ [
+  "verify-quickclaim",
+  0,
+  "Quick claim verification: 65 passed, 0 failed",
+  false
+ ],
+ [
+  "verify-ratings",
+  0,
+  "verify-ratings: 31 passed, 0 failed",
+  false
+ ],
+ [
+  "verify-staff",
+  0,
+  "verify-staff: 52 passed, 0 failed",
+  false
+ ],
+ [
+  "verify-refinements",
+  0,
+  "Refinement verification: 61 passed, 0 failed",
+  false
+ ],
+ [
+  "verify-campus",
+  0,
+  "Campus verification: 81 passed, 0 failed",
+  false
+ ],
+ [
+  "verify-ladder",
+  0,
+  "verify-ladder: 35 passed, 0 failed",
+  false
+ ],
+ [
+  "verify-src",
+  0,
+  "verify-src: 17 passed, 0 failed",
+  false
+ ],
+ [
+  "verify-partner",
+  0,
+  "verify-partner: 42 passed, 0 failed",
+  false
+ ],
+ [
+  "verify-share",
+  0,
+  "verify-share: 18 passed, 0 failed",
+  false
+ ],
+ [
+  "verify-admin",
+  0,
+  "verify-admin: 51 passed, 0 failed",
+  false
+ ],
+ [
+  "verify-autodecisions",
+  0,
+  "AUTO-DECISIONS SUITE: 61 passed, 0 failed",
+  false
+ ],
+ [
+  "verify-platforms",
+  0,
+  "Platform picker verification: 38 passed, 0 failed",
+  false
+ ],
+ [
+  "verify-platformconnect",
+  0,
+  "verify-platformconnect: 45 passed, 0 failed",
+  false
+ ],
+ [
+  "verify-realtor",
+  1,
+  "Realtor verification: 35 passed, 2 failed",
+  false
+ ],
+ [
+  "verify-signupfixes",
+  0,
+  "Signup fixes verification: 62 passed, 0 failed",
+  false
+ ],
+ [
+  "verify-markets",
+  0,
+  "verify-markets: 25 passed, 0 failed",
+  false
+ ],
+ [
+  "verify-billing",
+  0,
+  "verify-billing: 29 passed, 0 failed",
+  false
+ ],
+ [
+  "verify-profilemeta",
+  1,
+  "FAIL [http: approved + complete page] page still ships the SPA shell for humans",
+  false
+ ],
+ [
+  "verify-businesswave",
+  0,
+  "verify-businesswave: 49 passed, 0 failed",
+  false
+ ],
+ [
+  "verify-campaignadmin",
+  0,
+  "verify-campaignadmin: 37 passed, 0 failed",
+  false
+ ],
+ [
+  "verify-passwordreset",
+  0,
+  "verify-passwordreset: 41 passed, 0 failed",
+  false
+ ],
+ [
+  "verify-cityresolver",
+  0,
+  "verify-cityresolver: 44 passed, 0 failed",
+  false
+ ],
+ [
+  "verify-fit",
+  0,
+  "verify-fit: 37 passed, 0 failed",
+  false
+ ],
+ [
+  "verify-metrics",
+  0,
+  "Metrics verification: 65 passed, 0 failed",
+  false
+ ],
+ [
+  "verify-mailboxes",
+  0,
+  "Mailbox verification: 57 passed, 0 failed",
+  false
+ ],
+ [
+  "verify-storefail",
+  0,
+  "verify-storefail: 5 passed, 0 failed",
+  false
+ ],
+ [
+  "verify-referral",
+  0,
+  "Referral tie-in verification: 32 passed, 0 failed",
+  false
+ ],
+ [
+  "verify-admintabs",
+  1,
+  "verify-admintabs: 19 passed, 1 failed",
+  false
+ ],
+ [
+  "verify-connect",
+  0,
+  "verify-connect: 85 passed, 0 failed",
+  false
+ ],
+ [
+  "verify-proudpass",
+  0,
+  "verify-proudpass: 58 passed, 0 failed",
+  false
+ ],
+ [
+  "verify-two-tap",
+  0,
+  "Two-tap invite verification: 17 passed, 0 failed",
+  false
+ ],
+ [
+  "verify-shell",
+  1,
+  "FAIL [source: nav + Sig tab (Jeff, from live use; BUILD -41 full rail)] partner rail primaries are Home, Markets, Earnings (Sig arrives via the rows)",
+  false
+ ],
+ [
+  "verify-earnlinks",
+  0,
+  "verify-earnlinks: 41 passed, 0 failed",
+  false
+ ],
+ [
+  "verify-sig",
+  0,
+  "",
+  false
+ ],
+ [
+  "verify-sig-everywhere",
+  0,
+  "verify-sig-everywhere: 34 passed, 0 failed",
+  false
+ ],
+ [
+  "verify-spanish",
+  0,
+  "Spanish layers verification: 42 passed, 0 failed",
+  false
+ ],
+ [
+  "verify-operator",
+  0,
+  "Operator verification: 55 passed, 0 failed",
+  false
+ ],
+ [
+  "verify-activation",
+  0,
+  "17 passed, 0 failed",
+  false
+ ],
+ [
+  "verify-igprefill",
+  0,
+  "igprefill: 48 passed, 0 failed",
+  false
+ ],
+ [
+  "verify-handleonboarding",
+  0,
+  "handleonboarding: 22 passed, 0 failed",
+  false
+ ],
+ [
+  "verify-first60",
+  1,
+  "verify-first60: 30 passed, 1 failed",
+  false
+ ],
+ [
+  "verify-nocounts-charter",
+  1,
+  "verify-nocounts-charter: 38 passed, 1 failed",
+  false
+ ],
+ [
+  "verify-build31",
+  1,
+  "FAILURES:",
+  false
+ ],
+ [
+  "verify-build32",
+  0,
+  "verify-build32: 41 passed, 0 failed",
+  false
+ ],
+ [
+  "verify-build33",
+  0,
+  "verify-build33: 37 passed, 0 failed",
+  false
+ ],
+ [
+  "verify-build34",
+  0,
+  "verify-build34: 41 passed, 0 failed",
+  false
+ ],
+ [
+  "verify-build35",
+  0,
+  "verify-build35: 48 passed, 0 failed",
+  false
+ ],
+ [
+  "verify-build36",
+  0,
+  "verify-build36: 23 passed, 0 failed",
+  false
+ ],
+ [
+  "verify-build37",
+  0,
+  "verify-build37: 13 passed, 0 failed",
+  false
+ ],
+ [
+  "verify-build38",
+  1,
+  "FAILURES:",
+  false
+ ],
+ [
+  "verify-build39",
+  1,
+  "FAILURES:",
+  false
+ ],
+ [
+  "verify-build40",
+  1,
+  "FAILURES:",
+  false
+ ],
+ [
+  "verify-build42",
+  1,
+  "FAILED: stamp: the build stamp is 2026.11.01-68 on server and shell",
+  false
+ ],
+ [
+  "verify-build43",
+  1,
+  "FAILURES:",
+  false
+ ],
+ [
+  "verify-build44",
+  1,
+  "verify-build44: 38 passed, 1 failed",
+  false
+ ],
+ [
+  "verify-build45",
+  1,
+  "FAILURES:",
+  false
+ ],
+ [
+  "verify-build46",
+  0,
+  "verify-build46: 40 passed, 0 failed",
+  false
+ ],
+ [
+  "verify-build47",
+  1,
+  "FAIL [live boot] the served page carries build 2026.11.01-68",
+  false
+ ],
+ [
+  "verify-build48",
+  1,
+  "FAILURES:",
+  false
+ ],
+ [
+  "verify-build49",
+  1,
+  "FAILURES:",
+  false
+ ],
+ [
+  "verify-build50",
+  1,
+  "FAILURES: stamp: build stamp is 2026.11.01-68 on server and shell",
+  false
+ ],
+ [
+  "verify-build51",
+  1,
+  "FAILURES:",
+  false
+ ],
+ [
+  "verify-build52",
+  1,
+  "verify-build52: 103 passed, 2 failed",
+  false
+ ],
+ [
+  "verify-build53",
+  1,
+  "verify-build53: 37 passed, 3 failed",
+  false
+ ],
+ [
+  "verify-build54",
+  1,
+  "verify-build54: 67 passed, 2 failed",
+  false
+ ],
+ [
+  "verify-build55",
+  1,
+  "verify-build55: 50 passed, 2 failed",
+  false
+ ],
+ [
+  "verify-build56",
+  1,
+  "FAILURES: build stamp is 2026.11.01-68 | index.html carries the -56 stamp",
+  false
+ ],
+ [
+  "verify-build57",
+  1,
+  "verify-build57: 62 passed, 2 failed",
+  false
+ ],
+ [
+  "verify-build58",
+  1,
+  "FAILURES:",
+  false
+ ],
+ [
+  "verify-build59",
+  1,
+  "verify-build59: 36 passed, 2 failed",
+  false
+ ],
+ [
+  "verify-multimarket",
+  0,
+  "Multi-market verification: 52 passed, 0 failed",
+  false
+ ],
+ [
+  "verify-build64",
+  1,
+  "FAIL [source: offers, profile form, business signup, css, stamp] build stamp is 2026.11.01-68 everywhere",
+  false
+ ],
+ [
+  "verify-min500",
+  0,
+  "MIN-500 SUITE: 40 passed, 0 failed",
+  false
+ ],
+ [
+  "verify-build66",
+  1,
+  "FAIL [source: client mirror + css + stamp] build stamp is 2026.11.01-68 everywhere",
+  false
+ ],
+ [
+  "verify-build67",
+  1,
+  "FAIL - build stamp is -67 everywhere",
+  false
+ ],
+ [
+  "verify-build68",
+  1,
+  "FAIL - stamp is 2026.11.01-68",
+  false
+ ],
+ [
+  "verify-build70",
+  0,
+  "Build -70: 76 passed, 0 failed",
+  false
+ ]
+]

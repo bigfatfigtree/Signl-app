@@ -2697,6 +2697,13 @@ body.v3-on .tab-item.on .tab-sig-img { box-shadow: 0 0 0 2px var(--ink); }
 .sig-home-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .sig-chip { background: #fff; border: 1px solid var(--line); border-radius: 999px; padding: 5px 11px; font-size: .8rem; font-weight: 700; color: var(--ink); }
 .sig-chip.is-quiet { color: var(--sage, #5F7265); font-weight: 600; }
+.sig-chip-link { cursor: pointer; font: inherit; }
+.sig-chip-link:hover { border-color: var(--blue, #006AFC); color: var(--blue, #006AFC); }
+/* Build -81: Sig cards read as tappable; the body is the walk. */
+.sig-ccard[data-sigprofile], .sig-ccard[data-sigoffer] { cursor: pointer; }
+.sig-ccard[data-sigprofile]:hover, .sig-ccard[data-sigoffer]:hover { border-color: var(--blue, #006AFC); }
+.sig-ccard-view { color: var(--blue, #006AFC); font-weight: 800; font-size: .78rem; white-space: nowrap; }
+.sig-ccard-top .sig-ccard-view { margin-left: auto; }
 .sig-bub:has(.sig-cards) { max-width: 97%; }
 .sig-cards { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
 .sig-ccard { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 12px; color: var(--ink); text-align: left; }
