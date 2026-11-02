@@ -3204,3 +3204,26 @@ body.profile-view main { margin-left: auto; margin-right: auto; }
 .p-am-row .p-am-search, .p-am-row .p-am-market { width: 100%; box-sizing: border-box; }
 .p-am-row .p-am-pct { box-sizing: border-box; }
 @media (max-width: 560px) { .work-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* Build -74: Start here path + sample results */
+.start-steps { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+.start-step { display: flex; align-items: center; gap: 12px; padding: 12px; background: var(--paper2, #F4F7F4); border: 1px solid var(--line); border-radius: 14px; }
+.start-step .start-num { flex: none; width: 30px; height: 30px; border-radius: 50%; background: var(--ink); color: var(--mint); font-weight: 800; display: flex; align-items: center; justify-content: center; font-size: 15px; }
+.start-step.done { opacity: .75; }
+.start-step.done .start-num { background: var(--deep-mint, #8FD3AC); color: var(--ink); }
+.start-step .start-main { flex: 1; min-width: 0; }
+.start-step .start-title { font-weight: 800; }
+.start-step .start-why { color: var(--sage); font-size: 13.5px; margin-top: 2px; }
+.start-step .btn { flex: none; }
+.sample-story .kpi-grid { display: grid; gap: 10px; }
+@media (max-width: 560px) { .start-step { align-items: flex-start; } .start-step .btn { margin-top: 2px; } }
+/* Build -74: deck v2 */
+.deck2-card .deck2-thumbs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 10px; }
+.deck2-card .deck2-thumbs img, .deck2-card .deck2-thumbs .deck2-thumb-ph { width: 100%; aspect-ratio: 1/1; object-fit: cover; border-radius: 10px; background: #E3F5EA; }
+.deck2-actions { display: flex; gap: 10px; margin-top: 12px; }
+.deck2-actions .btn { flex: 1; min-height: 48px; font-size: 15px; }
+.deck2-actions .btn.faved { background: var(--mint); color: var(--ink); border-color: var(--mint); }
+.stk-save { flex: 1; min-height: 52px; border-radius: 999px; border: 1.5px solid var(--ink); background: #fff; color: var(--ink); font: 700 15px var(--font); cursor: pointer; }
+.stk-save.on { background: var(--mint); border-color: var(--mint); }
+.stk-save:active { transform: scale(.97); }
+.camp-h { margin: 18px 0 10px; font-size: 19px; }

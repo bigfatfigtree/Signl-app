@@ -1450,10 +1450,25 @@ function renderStack(wrap) {
   }
   if (pos) pos.textContent = posOk ? `${s.idx + 1} of ${total}` : "";
   const behind = s.idx + 1 < total ? `<div class="stk-behind" aria-hidden="true">${s.cardHtml(s.items[s.idx + 1], s.idx + 1)}</div>` : "";
-  wrap.innerHTML = behind + `<div class="stk-card">${s.round === 2 ? `<span class="stk-secondlook">Second look</span>` : ""}${s.cardHtml(s.items[s.idx], s.idx)}</div>`
-    + `<div class="stk-actions"><button type="button" class="stk-pass" aria-label="Later: park this card" onclick="stackButton('${key}','pass')">Later</button><button type="button" class="stk-go" onclick="stackButton('${key}','go')">${esc(s.goLabelFor ? s.goLabelFor(s.items[s.idx]) : s.goLabel)}</button></div>`;
+  const cur = s.items[s.idx];
+  const saveBtn = s.onSave ? `<button type="button" class="stk-save${s.saveOf && s.saveOf(cur) ? " on" : ""}" aria-label="Save this creator to your favorites" onclick="stackSave('${key}')">${s.saveOf && s.saveOf(cur) ? "&#10084; Saved" : "&#9825; Save"}</button>` : "";
+  wrap.innerHTML = behind + `<div class="stk-card">${s.round === 2 ? `<span class="stk-secondlook">Second look</span>` : ""}${s.cardHtml(cur, s.idx)}</div>`
+    + `<div class="stk-actions"><button type="button" class="stk-pass" aria-label="Later: park this card" onclick="stackButton('${key}','pass')">${esc(s.passLabel || "Later")}</button>${saveBtn}<button type="button" class="stk-go" onclick="stackButton('${key}','go')">${esc(s.goLabelFor ? s.goLabelFor(cur) : s.goLabel)}</button></div>`;
   const card = wrap.querySelector(".stk-card");
   if (card) attachStackDrag(wrap, card);
+}
+// Build -74: the deck's Save action. Opt-in per deck via cfg
+// (onSave/saveOf); other decks render exactly as before. The
+// save flips local state first so the heart answers instantly,
+// then persists; a failure flips it back and says so.
+function stackSave(key) {
+  const s = stackState[key];
+  if (!s || !s.onSave) return false;
+  const item = s.items[s.idx];
+  if (item) s.onSave(item);
+  const wrap = document.querySelector(`[data-stack="${key}"]`);
+  if (wrap) renderStack(wrap);
+  return false;
 }
 function stackButton(key, dir) {
   const wrap = document.querySelector(`[data-stack="${key}"]`);
@@ -11626,6 +11641,7 @@ function deckChromeHtml(key) {
   return `<span class="deck-counts" data-deckcounts="${key}"></span><button type="button" class="later-chip" data-laterchip="${key}" onclick="openLaterPile('${key}')">Later</button>`;
 }
 function deckTeachHtml(key) {
+  if (key === "discover") return `<p class="small muted deck-teach" data-deckteach="${key}">One at a time, most local first. Tap a card for the full profile; Save keeps a creator, Next moves on. Nothing is a no until you say so.</p>`;
   return `<p class="small muted deck-teach" data-deckteach="${key}">Swipe left to park in Later. Nothing is a no until you say so.</p>`;
 }
 // The Later view: the pile as a grid over the board container.
@@ -12686,14 +12702,143 @@ function foundingStatusCardHtml(u) {
   </section>`;
 }
 
+// ---------- Build -74: sample results + Start here ----------
+// The sample story comes from GET /me/sample-results, which
+// only answers inside the demo fence; for every real viewer it
+// returns sample:null and nothing here renders. Every number in
+// it wears the SAMPLE label in plain words.
+function sampleBadgeHtml() {
+  return `<span class="badge warn">SAMPLE</span>`;
+}
+function sampleStoryHtml(s) {
+  const t = s.totals || {};
+  return `<section class="wcard sample-story">
+    <div class="flex-between" style="flex-wrap:wrap;gap:8px">
+      <h3 style="margin:0">Sample results</h3>${sampleBadgeHtml()}
+    </div>
+    <p style="margin:8px 0 0"><strong>Sample results — what yours will look like.</strong> This is a made-up campaign on sample profiles, so you can see the shape of it. Your real numbers replace it the day your first campaign runs.</p>
+    <div class="panel" style="margin-top:12px">
+      <p class="ui-kicker" style="margin:0">Sample campaign</p>
+      <h4 style="margin:4px 0 2px">${esc(s.campaign.title)}</h4>
+      <p class="small muted" style="margin:0">${esc(s.campaign.kind)} · ${esc(s.campaign.line)}</p>
+    </div>
+    <div class="kpi-grid c3" style="margin-top:12px">
+      ${kpiCard("Visits booked", fmtNum(t.visitsBooked || 0), { sub: "Sample" })}
+      ${kpiCard("Creators who visited", fmtNum(t.visitsDone || 0), { sub: "Sample" })}
+      ${kpiCard("Posts live", fmtNum(t.postsLive || 0), { sub: "Sample" })}
+      ${kpiCard("Local people reached", fmtNum(t.localReach || 0), { sub: "Sample · the local followers of the creators who posted" })}
+      ${kpiCard("Customers counted", fmtNum(t.customersCounted || 0), { sub: "Sample · counted at the counter over 14 days" })}
+    </div>
+    <div class="chart-card" style="margin-top:12px"><h3>Customers counted, day by day</h3><p class="wc-sub">Sample. Each bar is a day: customers who said a creator or a post sent them, counted by your team at the counter.</p>
+      ${barsChartSvg(s.series || [], "customers", "#03C9AB")}
+    </div>
+    <div style="margin-top:12px">
+      ${(s.creators || []).map((c) => `<div class="lb-row"><img src="${esc(c.avatarUrl)}" alt="" style="width:38px;height:38px;border-radius:50%;object-fit:cover;flex:none"><div class="lb-main"><div class="lb-name">${esc(c.name)} <span class="muted" style="font-weight:600">@${esc(c.handle)}</span></div><div class="lb-meta">${c.posted ? "Visited and posted" : "Visited · post still coming"} · ${c.localAudiencePct}% of their audience is local</div></div><span class="lb-num">${fmtNum(c.localReach)}<span class="u">local reach</span></span></div>`).join("")}
+    </div>
+  </section>`;
+}
+function samplePreviewHtml(s) {
+  const t = s.totals || {};
+  return `<section class="wcard sample-story">
+    <div class="flex-between" style="flex-wrap:wrap;gap:8px">
+      <h3 style="margin:0">See what your results will look like</h3>${sampleBadgeHtml()}
+    </div>
+    <p style="margin:8px 0 0">A sample campaign on sample profiles: <strong>${fmtNum(t.visitsDone || 0)} creators visited, ${fmtNum(t.postsLive || 0)} posts went live, and ${fmtNum(t.customersCounted || 0)} customers were counted at the counter.</strong> None of it is yours yet. It is here so you know what this page becomes.</p>
+    <div class="mt"><button class="btn ghost" type="button" onclick="return toggleSampleStory(this)">See the sample</button></div>
+    <div class="sample-full" style="display:none;margin-top:14px">${sampleStoryHtml(s)}</div>
+  </section>`;
+}
+function toggleSampleStory(btn) {
+  const wrap = btn.closest(".sample-story");
+  const full = wrap ? wrap.querySelector(".sample-full") : null;
+  if (full) {
+    const open = full.style.display !== "none";
+    full.style.display = open ? "none" : "";
+    btn.textContent = open ? "See the sample" : "Hide the sample";
+  }
+  return false;
+}
+// Mounts the sample story (or its preview block) into
+// #biz-sample on Results. fullIfViewAs: the Admin view-as demo
+// context gets the whole story; a business in its own account
+// gets the labeled preview block over its real (empty) results.
+async function loadSampleResultsInto(fullIfViewAs) {
+  const host = document.getElementById("biz-sample");
+  if (!host) return;
+  try {
+    const d = await api("GET", "/me/sample-results");
+    if (!d || !d.sample) return;
+    if (!document.getElementById("biz-sample")) return;
+    host.innerHTML = fullIfViewAs && d.context === "view-as" ? sampleStoryHtml(d.sample) : samplePreviewHtml(d.sample);
+  } catch (e) { /* the sample is a demo extra, never a blocker */ }
+}
+
+// Start here: the three things a business came to do, in plain
+// words, with done / not yet read from real records. When all
+// three are done the path retires for good (remembered per
+// account); until then it sits at the top of Home.
+function startHereSteps({ favorites, offers, bookings }) {
+  return [
+    { n: 1, title: "Meet creators near you", why: "Flip through creators in your city and save the ones who fit.", btn: "Find creators", tab: "Discover", done: favorites > 0 },
+    { n: 2, title: "Invite one, or open a campaign", why: "Send one creator an invite, or post a campaign and let creators apply.", btn: "Start a campaign", tab: "My Offers", done: offers.length > 0 || bookings.length > 0 },
+    { n: 3, title: "See who came in", why: "When a creator visits and posts, this is where you see who it brought in.", btn: "See results", tab: "Analytics", done: bookings.some((b) => b.redeemedAt || b.post) },
+  ];
+}
+function startHereHtml(steps) {
+  const doneCount = steps.filter((s) => s.done).length;
+  return `<section class="wcard start-here">
+    <div class="flex-between" style="flex-wrap:wrap;gap:8px"><h3 style="margin:0">Start here</h3><span class="small muted">${doneCount} of ${steps.length} done</span></div>
+    <p class="wc-sub" style="margin:6px 0 0">Three steps. In any order, at your pace.</p>
+    <div class="start-steps">${steps.map((s) => `
+      <div class="start-step${s.done ? " done" : ""}">
+        <span class="start-num">${s.done ? "&#10003;" : s.n}</span>
+        <div class="start-main">
+          <div class="start-title">${esc(s.title)}</div>
+          <div class="start-why">${esc(s.why)}</div>
+        </div>
+        ${s.done ? `<span class="badge ok">Done</span>` : `<button class="btn small-btn" type="button" onclick="return go('dashboard','${s.tab}')">${esc(s.btn)}</button>`}
+      </div>`).join("")}
+    </div>
+  </section>`;
+}
+function mountStartHere(host, data) {
+  if (!host) return;
+  const steps = startHereSteps(data);
+  const u = state.user;
+  const key = u ? `signl_start_here_done:${u.id}` : "";
+  if (steps.every((s) => s.done)) {
+    try { if (key) localStorage.setItem(key, "1"); } catch (e) { /* storage unavailable: just hide */ }
+    host.innerHTML = "";
+    return;
+  }
+  host.innerHTML = startHereHtml(steps);
+}
+async function loadStartHereInto(host) {
+  if (!host) return;
+  try {
+    const [fav, off, bk] = await Promise.all([
+      api("GET", "/favorites").catch(() => null),
+      api("GET", "/offers").catch(() => null),
+      api("GET", "/bookings").catch(() => null),
+    ]);
+    mountStartHere(host, {
+      favorites: fav && Array.isArray(fav.favorites) ? fav.favorites.length : 0,
+      offers: off && Array.isArray(off.offers) ? off.offers : [],
+      bookings: bk && Array.isArray(bk.bookings) ? bk.bookings : [],
+    });
+  } catch (e) { /* a guide, never a blocker */ }
+}
+
 async function loadFoundingBusinessHome() {
   const el = document.getElementById("tab-body");
   if (!el) return;
   const u = state.user;
   el.innerHTML = `
   ${foundingStatusCardHtml(u)}
+  <div id="biz-start-here" style="margin-top:14px"></div>
   ${foundingFirstMonthCardHtml(u)}
   <div id="fbz-sig-queue" style="margin-top:14px"></div>`;
+  loadStartHereInto(document.getElementById("biz-start-here"));
   // Sig's queue for a founding business: the two things worth
   // doing before opening day. The same items feed the Sig tab
   // and the rail badge, like every other queue.
@@ -12803,12 +12948,14 @@ function renderFoundingResultsTab() {
   if (!el) return;
   el.innerHTML = `
   ${wsHead("Results", { sub: "What your campaigns did, counted plainly." })}
+  <div id="biz-sample"></div>
   <section class="wcard">
     <h3 style="margin-top:0">How your results are counted</h3>
-    <p>When a creator visits, they check in at your counter with a code, and their post links back to that visit. Your receipt then counts three things on their own lines: visits that happened, posts that went up, and what your register reports on visit days. Counted, recorded, and modeled numbers are never blended into one figure.</p>
-    <p>The one number worth setting now is below, in Proof Controls: one of your usual open days. Your receipt measures visit days against it, so you can see what a visit did in real dollars.</p>
+    <p>When a creator visits, they check in at your counter with a code, and their post links back to that visit. Your receipt then keeps three lines separate: visits and posts your counter confirmed, what your register reported on visit days, and an estimate, labeled as an estimate. The three lines are never added together into one number.</p>
+    <p>The one number worth setting now is below, in Proof Controls (the settings that prove a visit happened): one of your usual open days. Your receipt measures visit days against it, so you can see what a visit did in real dollars.</p>
   </section>
   <div id="biz-receipt"></div>`;
+  loadSampleResultsInto(true);
   loadReceipt();
 }
 
@@ -13732,6 +13879,7 @@ async function loadBusinessHome() {
     <div data-dash>
     ${wsHead("Home", { sub: "Start here. Sig shows you what needs you, in order.", subKey: "biz-home" })}
     <div class="home-greet"><div class="hg-hi">Hi, ${esc(bz.businessName || u.name || "")}</div><div class="hg-line">${esc(greetLine)}</div></div>
+    <div id="biz-start-here"></div>
     ${d.marketLive ? "" : `<div class="notice blue" style="margin-top:14px"><strong>Your market has not launched yet.</strong> Businesses sign up when we are ready to launch. Draft offers now; publishing switches on at launch.</div>`}
     ${sigQueueHtml(queue, { links: caughtLinks, leadShort: greetDup, askBox: true })}
     ${checklistHtml(steps)}
@@ -13744,6 +13892,13 @@ async function loadBusinessHome() {
     </div>`;
     wireSigQueue(el, queue, caughtLinks);
     wireChecklist(el, steps);
+    api("GET", "/favorites").catch(() => null).then((fav) => {
+      mountStartHere(document.getElementById("biz-start-here"), {
+        favorites: fav && Array.isArray(fav.favorites) ? fav.favorites.length : 0,
+        offers,
+        bookings,
+      });
+    });
     loadPerformanceCard(el);
     renderBottomNav();
   } catch (err) {
@@ -14246,10 +14401,12 @@ async function renderAnalyticsTab() {
       // §8: the fills-in states, never a grid of zeros.
       const hasLiveOffer = (d.openOffers || 0) > 0 || (state.myOffers || []).some((o) => o.status === "open" || o.status === "filled");
       el.innerHTML = `${head}
+      <div id="biz-sample"></div>
       <div id="biz-stats"></div>
       <div class="empty-card"><div class="ec-t">Your results</div><div class="ec-s">${hasLiveOffer ? "Your offer is live. This fills in as creators apply, visit, and post." : "This fills in once your campaigns are live. When creators start visiting and posting, you will see applications, visits, posts, and the local reach they delivered, right here."}</div></div>
       ${hasLiveOffer ? "" : `<p class="center"><button class="btn ws-primary" onclick="return go('dashboard','My Offers')">Post an offer</button></p>`}
       <div id="biz-receipt"></div>`;
+      loadSampleResultsInto(true);
       loadReceipt();
       loadBizStats();
       return;
@@ -14273,6 +14430,7 @@ async function renderAnalyticsTab() {
     const reachHas = series.some((row) => (row.reach || 0) > 0);
     el.innerHTML = `
     ${head}
+    <div id="biz-sample"></div>
     <div id="biz-stats"></div>
     ${cards.length ? `<div class="kpi-grid c${Math.min(4, Math.max(2, cards.length))}">${cards.join("")}</div>` : ""}
     ${seriesHas ? `<div class="chart-card"><h3>Invites &amp; decisions</h3><p class="wc-sub">Per day, last 30 days. Decisions are application answers, stamped when you make them.</p>
@@ -14294,6 +14452,7 @@ async function renderAnalyticsTab() {
       <p style="margin:4px 0 0">Your plan works out to <strong>$${fmtMoney(h.costPerVisit)}</strong> per visit in your allowance${h.postsLive ? `, and every live post cost exactly one visit` : ""}. Register value and media value ride in the modeled estimate; your SIGNL ROAS Score on Home counts register events only.</p>
     </div>` : ""}
     <div id="biz-receipt"></div>`;
+    loadSampleResultsInto(false);
     loadReceipt();
     loadBizStats();
   } catch (err) {
@@ -14505,12 +14664,12 @@ function discoverMusicianChip(btn) {
 async function loadDiscover() {
   const el = document.getElementById("tab-body");
   const u = state.user;
-  // Build -68: a founding business lands on the grid, not the
-  // card deck, and gets the ranking line and the honest roster
-  // note up top. The mode is only defaulted, never forced: the
-  // toggle still works.
+  // Build -68: a founding business got the ranking line and the
+  // honest roster note up top. Build -74: EVERY business lands
+  // on the card deck (Jeff: finding creators should feel fun,
+  // not like scrolling); the grid stays one tap away behind
+  // "See everyone". The mode is only defaulted, never forced.
   const foundingDisc = isFoundingBusiness(u);
-  if (foundingDisc && !state.discoverMode) state.discoverMode = "list";
   el.innerHTML = `
     ${wsHead("Find creators", { sub: "Flip through creators near you. Invite the ones who fit.", subKey: "biz-discover" })}
     ${wsTabs([
@@ -14617,7 +14776,25 @@ async function runDiscover() {
 // the exact card grid Discover has always rendered.
 function discoverModeToggleHtml() {
   const mode = state.discoverMode || "cards";
-  return `<div class="view-toggle"><div class="vt-group"><button type="button" class="rchip${mode === "cards" ? " on" : ""}" onclick="setDiscoverMode('cards')">Cards</button><button type="button" class="rchip${mode === "list" ? " on" : ""}" onclick="setDiscoverMode('list')">List</button></div>${deckChromeHtml("discover")}<span class="stack-pos" data-stackpos="discover"></span></div>${deckTeachHtml("discover")}`;
+  return `<div class="view-toggle"><div class="vt-group"><button type="button" class="rchip${mode === "cards" ? " on" : ""}" onclick="setDiscoverMode('cards')">Cards</button><button type="button" class="rchip${mode === "list" ? " on" : ""}" onclick="setDiscoverMode('list')">See everyone</button></div>${deckChromeHtml("discover")}<span class="stack-pos" data-stackpos="discover"></span></div>${deckTeachHtml("discover")}`;
+}
+// Build -74 deck save: the same favorites store the grid's
+// heart writes (POST /favorites toggles server-side), so a
+// creator saved in the deck shows in Favorites and on grid
+// cards alike. Local state flips first; the deck stays put.
+async function deckToggleFav(c) {
+  const was = !!c.isFavorite;
+  c.isFavorite = !was;
+  try {
+    const d = await api("POST", "/favorites", { creatorId: c.userId });
+    if (d && typeof d.isFavorite === "boolean") c.isFavorite = d.isFavorite;
+    showToast(c.isFavorite ? "Saved to your favorites" : "Removed from favorites");
+  } catch (e) {
+    c.isFavorite = was;
+    alert(e.message);
+  }
+  const wrap = document.querySelector('[data-stack="discover"]');
+  if (wrap) renderStack(wrap);
 }
 function setDiscoverMode(mode) {
   state.discoverMode = mode;
@@ -14647,14 +14824,29 @@ function renderDiscoverResults() {
     return;
   }
   if (!stackState.discover || stackState.discover.src !== all) {
-    stackState.discover = startDeck("discover", all, {
+    // Build -74: the deck runs in canon rank order, highest
+    // local % first (unreported local % last), whatever order
+    // the server returned. The grid keeps its own order.
+    const ranked = [...all].sort((a, b) => {
+      const pa = (a.profile || {}).localAudiencePct;
+      const pb = (b.profile || {}).localAudiencePct;
+      return (pb === null || pb === undefined ? -1 : pb) - (pa === null || pa === undefined ? -1 : pa);
+    });
+    stackState.discover = startDeck("discover", ranked, {
       cardHtml: (c) => discoverStackCard(c),
       goLabel: "Invite",
+      passLabel: "Next",
       onGo: (c) => { pileUnlater("discover", c.userId); startOffer(c.userId); },
       onPass: (c) => { pileLater("discover", c.userId); },
       onTap: (c) => { openCreatorProfile(c.userId); },
+      onSave: (c) => { deckToggleFav(c); },
+      saveOf: (c) => !!c.isFavorite,
       endHtml: (passed, total) => discoverEndHtml(passed, total),
     });
+    // startDeck marks src as the array it was handed; the
+    // re-render guard above compares against the raw result
+    // set, so pin src back to it.
+    stackState.discover.src = all;
   }
   el.innerHTML = `<div class="stk-wrap" data-stack="discover"></div>`;
   renderStack(el.firstElementChild);
@@ -14682,7 +14874,8 @@ function discoverStackCard(c) {
   const extra = (p.categories || []).length - cats.length;
   const place = [c.neighborhood, c.city].filter(Boolean).map(esc).join(" &middot; ");
   const rateLine = p.compOpen === false ? "Paid visits only" : (p.paidRate ? `Listed rate $${fmtPrice(p.paidRate)}` : "Comp friendly");
-  return `<div class="dcard${c.standing === "paused" ? " paused" : ""}">
+  const thumbs = (Array.isArray(c.photos) && c.photos.length ? c.photos : (c.photoUrl ? [c.photoUrl] : [])).slice(0, 3);
+  return `<div class="dcard deck2-card${c.standing === "paused" ? " paused" : ""}">
     <div class="dcard-photo${c.photoUrl ? "" : " no-photo"}">
       ${c.photoUrl ? `<img src="${esc(c.photoUrl)}" alt="">` : `<div class="dcard-mono"><span>${initial}</span></div>`}
       ${p.tierBand ? `<span class="dcard-tier">${esc(p.tierBand)}</span>` : ""}
@@ -14698,7 +14891,8 @@ function discoverStackCard(c) {
     </div>
     <div class="dcard-body">
       ${cats.length || p.spanishContent || p.musician ? `<div class="dcard-chips">${cats.map((x) => `<span class="cc-chip">${esc(x)}</span>`).join("")}${extra > 0 ? `<span class="cc-chip">+${extra}</span>` : ""}${p.spanishContent ? `<span class="cc-chip">Spanish content</span>` : ""}${p.musician ? `<span class="cc-chip">Musician</span>` : ""}</div>` : ""}
-      <div class="dcard-meta">${place ? `<span>${place}</span>` : ""}<span>${fmtNum(totalAudienceOf(c))} audience</span>${c.distanceBand ? `<span class="dcard-band">${esc(c.distanceBand)}</span>` : ""}</div>
+      <div class="dcard-meta">${place ? `<span>${place}</span>` : ""}<span>${fmtNum(totalAudienceOf(c))} followers</span>${c.distanceBand ? `<span class="dcard-band">${esc(c.distanceBand)}</span>` : ""}</div>
+      ${thumbs.length ? `<div class="deck2-thumbs">${thumbs.map((t) => `<img src="${esc(t)}" alt="" loading="lazy">`).join("")}</div>` : ""}
       ${p.spanishAudiencePct !== null && p.spanishAudiencePct !== undefined ? `<div class="dcard-meta"><span>${p.spanishAudiencePct}% Spanish-speaking audience</span></div>` : ""}
       ${c.bookedUp ? `<p class="small muted" style="margin:8px 0 0">Booked up this week — invites still land, accepting reopens next week.</p>` : ""}
       ${c.standing === "paused" ? `<p class="small muted" style="margin:8px 0 0">Paused: a late post is outstanding, so this creator cannot take new offers yet.</p>` : ""}
@@ -15318,6 +15512,10 @@ async function loadMyOffers() {
   el.innerHTML = `
   ${wsHead("Campaigns", { sub: "Your campaigns, and the creators who applied to them.", subKey: "biz-offers", action: state.offersSeg === "live" ? `<button type="button" class="btn ws-primary" onclick="return offersNew()">+ New campaign</button>` : "" })}
   <div id="offers-segs"></div>
+  ${state.offersSeg === "live" ? `<div class="wcard" style="text-align:center">
+    <button class="btn ws-primary" style="width:100%;min-height:52px;font-size:16px" onclick="return offersNew()">+ Create a campaign</button>
+    <p class="small muted" style="margin:8px 0 0">Takes about a minute.${foundingBiz ? " It saves as a draft, ready for opening day." : ""}</p>
+  </div>` : ""}
   <div id="offer-list">${skelHtml("Loading your campaigns...", 2)}</div>
   <div id="aud-block"></div>
   <div id="offers-live-only">
@@ -15488,13 +15686,20 @@ function renderOfferTabs() {
 function renderOfferList() {
   const list = document.getElementById("offer-list");
   if (!list) return;
+  // Build -74 (Jeff): two clearly headed sections, Current and
+  // Past, each with its own plain empty state — no second tab
+  // row hiding half the campaigns. (bizOfferTab/offerSetTab
+  // survive for the archived deep link and older callers.)
   const all = state.myOffers || [];
-  const rows = all.filter((o) => bizOfferTab === "archived" ? offerIsArchived(o) : !offerIsArchived(o));
-  if (!rows.length) {
-    list.innerHTML = `<div class="empty-card"><div class="ec-t">${bizOfferTab === "archived" ? "Nothing archived yet" : "No offers yet"}</div><div class="ec-s">${bizOfferTab === "archived" ? "Closed and expired offers collect here." : "Start from a template below, or build one in the composer."}</div></div>`;
-    return;
-  }
-  list.innerHTML = `<div class="vx-stagger">${rows.map((o) => offerCardHtml(o)).join("")}</div>`;
+  const cur = all.filter((o) => !offerIsArchived(o));
+  const past = all.filter(offerIsArchived);
+  const curHtml = cur.length
+    ? `<div class="vx-stagger">${cur.map((o) => offerCardHtml(o)).join("")}</div>`
+    : `<div class="empty-card"><div class="ec-t">No campaigns yet</div><div class="ec-s">Your first one takes about a minute.</div></div>`;
+  const pastHtml = past.length
+    ? `<div class="vx-stagger">${past.map((o) => offerCardHtml(o)).join("")}</div>`
+    : `<div class="empty-card"><div class="ec-t">Nothing finished yet</div><div class="ec-s">Campaigns you close, or that run their course, collect here.</div></div>`;
+  list.innerHTML = `<h3 class="camp-h">Current</h3>${curHtml}<h3 class="camp-h">Past</h3>${pastHtml}`;
 }
 
 function offerCardHtml(o) {

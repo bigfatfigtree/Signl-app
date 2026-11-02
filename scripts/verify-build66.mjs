@@ -170,9 +170,9 @@ try {
     appJs.includes("function fmtFollowers") && appJs.includes('BOOKME_LOCKED_LINE = "Paying businesses can message this creator right here on SIGNL."'));
   check("css carries the header classes and the phone wrap",
     theme.includes(".bookme-stats") && theme.includes(".bm-soc") && theme.includes(".bookme-id-row") && theme.includes(".bm-stat-local .bm-num") && /@media \(max-width: 560px\) \{\s*\.bookme-id-row \{ flex-wrap: wrap; \}/.test(theme));
-  check("build stamp is 2026.11.02-72 everywhere",
-    fs.readFileSync(path.join(root, "netlify", "functions", "lib", "build.js"), "utf8").includes('exports.BUILD_ID = "2026.11.02-72"')
-      && fs.readFileSync(path.join(root, "public", "index.html"), "utf8").includes('window.__SIGNL_BUILD__ = "2026.11.02-72"'));
+  check("build stamp is 2026.11.02-74 everywhere",
+    fs.readFileSync(path.join(root, "netlify", "functions", "lib", "build.js"), "utf8").includes('exports.BUILD_ID = "2026.11.02-74"')
+      && fs.readFileSync(path.join(root, "public", "index.html"), "utf8").includes('window.__SIGNL_BUILD__ = "2026.11.02-74"'));
 
   part("http: rich, plain, hidden, stub");
   startServer();

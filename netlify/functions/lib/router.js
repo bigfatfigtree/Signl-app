@@ -13703,6 +13703,28 @@ const DEMO_SHOWCASE_ROSTER = [
 
 async function fetchDemoPhoto(url) {
   try {
+    // Build -74: demo portraits are the app's OWN static assets
+    // (public/assets/demo-creators/), so the loader and the
+    // sample-results avatars can never drift apart. A path URL
+    // is read from disk when the file is beside the function
+    // (local dev + the verify suites) and fetched from the
+    // app's own deployed origin otherwise.
+    if (typeof url === "string" && url.startsWith("/")) {
+      try {
+        const fs = require("node:fs");
+        const path = require("node:path");
+        const buf = fs.readFileSync(path.join(__dirname, "..", "..", "public", url));
+        if (buf.length && buf.length <= MAX_PHOTO_BYTES) {
+          return { contentType: "image/jpeg", dataBase64: buf.toString("base64"), bytes: buf.length, uploadedAt: nowIso() };
+        }
+      } catch (e) { /* not on disk here: fall through to the origin fetch */ }
+      const base = (process.env.APP_URL || "https://app.joinsignl.com").replace(/\/+$/, "");
+      const r = await fetch(base + url);
+      if (!r.ok) return null;
+      const buf = Buffer.from(await r.arrayBuffer());
+      if (!buf.length || buf.length > MAX_PHOTO_BYTES) return null;
+      return { contentType: "image/jpeg", dataBase64: buf.toString("base64"), bytes: buf.length, uploadedAt: nowIso() };
+    }
     const r = await fetch(url);
     if (!r.ok) return null;
     const buf = Buffer.from(await r.arrayBuffer());
@@ -13822,11 +13844,18 @@ async function loadDemoShowcase(actorId) {
         brokerage: "",
       },
     };
-    // Two gallery photos from the verified stock pool, stored as
-    // ordinary photo records. A failed fetch leaves the profile
-    // photoless (the designed cover renders) and is reported, so
-    // the load never half-fakes a photo.
-    const stock = previewStockFor(spec.handle, 2);
+    // Two gallery photos, stored as ordinary photo records.
+    // Build -74: the demo portraits are candid Pexels photos of
+    // people, shipped as the app's own static assets
+    // (public/assets/demo-creators/<handle>-1.jpg and -2.jpg) so
+    // every surface shows the same person; the verified stock
+    // pool is only the fallback if an asset ever goes missing.
+    // A failed fetch leaves the profile photoless (the designed
+    // cover renders) and is reported, so the load never
+    // half-fakes a photo.
+    const stock = Array.isArray(spec.photos) && spec.photos.length
+      ? spec.photos
+      : [`/assets/demo-creators/${spec.handle}-1.jpg`, `/assets/demo-creators/${spec.handle}-2.jpg`];
     const cover = await fetchDemoPhoto(stock[0]);
     if (cover) {
       await store.set(photoKey(id, 0), cover);
@@ -13881,6 +13910,58 @@ async function removeDemoShowcase(actorId) {
   const remaining = (await allUsers()).filter(isDemoShowcaseCreator).length;
   await logEvent({ type: "demo_showcase_removed", actorId: actorId || null, actorRole: "admin", subjectId: null, market: "Nashville", data: { batch: DEMO_SHOWCASE_BATCH, removed: demos.length, remaining } });
   return { removed: demos.length, remaining };
+}
+
+// Sample results (Build -74): the demo Results story. Computed
+// fresh from the demo roster specs on every call and NEVER
+// stored, so no booking, offer, count, or Command Center figure
+// can ever include it. It exists only for a viewer the demo
+// showcase is visible to (the -67 fence); everyone else gets
+// null. The story: one wrapped sample campaign run by six of the
+// demo creators, with per-creator local reach derived from the
+// roster's own avgViews and localAudiencePct, and a 14-day
+// counted-customers series that sums exactly to its total.
+const SAMPLE_CAMPAIGN_CREATORS = ["hannahandthem", "tesstastestn", "delladoes615", "wadehensleymusic", "rubygetsglam", "gracetembostyle"];
+const SAMPLE_CUSTOMER_SERIES = [6, 9, 11, 14, 12, 17, 21, 15, 13, 19, 23, 18, 16, 20];
+function sampleResultsFor(viewer) {
+  if (!demoShowcaseVisibleTo(viewer)) return null;
+  const specs = SAMPLE_CAMPAIGN_CREATORS
+    .map((h) => DEMO_SHOWCASE_ROSTER.find((s) => s.handle === h))
+    .filter(Boolean);
+  if (!specs.length) return null;
+  const creators = specs.map((s, i) => ({
+    name: s.name,
+    handle: s.handle,
+    categories: s.categories,
+    localAudiencePct: s.localAudiencePct,
+    localReach: Math.round((s.avgViews * s.localAudiencePct) / 100),
+    visited: true,
+    posted: i !== 4, // five of the six posts are live in the story
+    avatarUrl: `/assets/demo-creators/${s.handle}-1.jpg`,
+  }));
+  const posted = creators.filter((c) => c.posted);
+  const now = Date.now();
+  const series = SAMPLE_CUSTOMER_SERIES.map((n, i) => ({
+    date: new Date(now - (SAMPLE_CUSTOMER_SERIES.length - 1 - i) * 86400000).toISOString().slice(0, 10),
+    customers: n,
+  }));
+  return {
+    sample: true,
+    campaign: {
+      title: "Fall Weekend Kickoff",
+      kind: "Open call · comped visits",
+      line: "Six local creators visited over two weekends. Five posted. This is what the receipt looked like.",
+    },
+    totals: {
+      visitsBooked: 8,
+      visitsDone: creators.length,
+      postsLive: posted.length,
+      localReach: posted.reduce((s, c) => s + c.localReach, 0),
+      customersCounted: SAMPLE_CUSTOMER_SERIES.reduce((s, n) => s + n, 0),
+    },
+    creators,
+    series,
+  };
 }
 
 async function demoShowcaseStatus() {
@@ -19140,6 +19221,15 @@ async function route(event) {
       return json(200, await creatorPerformanceReadout(user));
     }
     return err(403, "The performance readout is for creators and businesses");
+  }
+
+  // ---------- sample results (Build -74, demo context only) ----------
+  if (method === "GET" && seg[0] === "me" && seg[1] === "sample-results") {
+    if (user.role !== "business") return err(403, "Businesses only");
+    const sample = sampleResultsFor(user);
+    if (!sample) return json(200, { sample: null });
+    const inViewAs = !!(ctx.session && ctx.session.viewAs);
+    return json(200, { sample, context: inViewAs ? "view-as" : "direct" });
   }
 
   // ---------- business home ----------
