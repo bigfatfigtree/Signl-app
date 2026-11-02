@@ -357,6 +357,14 @@ function tierForFollowers(n) {
   return "Neighbors";
 }
 
+// The minimum audience to join SIGNL (Jeff's ruling, 2026-11-01:
+// "500 followers needs to be the minimum everywhere. Everywhere.").
+// TOTAL followers, stacked across every platform the creator posts
+// on (the same total the tiers run on). Plain-words statement used
+// wherever joining requirements are described: "SIGNL starts at
+// 500 total followers across your platforms."
+const MIN_TOTAL_AUDIENCE = 500;
+
 // The 15k+ band was renamed Creators -> Headliners (Jeff, 2026-10-19).
 // Records stored before the rename still carry "Creators"; normalize
 // wherever a stored band is read so legacy records behave identically.
@@ -742,4 +750,4 @@ function resolveTypedCity(raw, hints, markets) {
   };
 }
 
-module.exports = { MARKETS, MARKET_NAME_ALIASES, normalizeMarketName, MARKET_STATES, parseTypedCity, resolveTypedCity, TIERS, CREATOR_CATEGORIES, COMP_CATEGORIES, BUSINESS_CATEGORIES, PLANS, PROFESSIONS, LEGACY_PROFESSIONS, REALTOR_PROFESSION, canonicalFromList, tierForFollowers, normalizeTierBand };
+module.exports = { MARKETS, MARKET_NAME_ALIASES, normalizeMarketName, MARKET_STATES, parseTypedCity, resolveTypedCity, TIERS, CREATOR_CATEGORIES, COMP_CATEGORIES, BUSINESS_CATEGORIES, PLANS, PROFESSIONS, LEGACY_PROFESSIONS, REALTOR_PROFESSION, canonicalFromList, tierForFollowers, normalizeTierBand, MIN_TOTAL_AUDIENCE };

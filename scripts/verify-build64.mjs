@@ -156,7 +156,7 @@ try {
   check("claim lane bullets match", theme.includes(".ldot.off { background: var(--black); border: 0; width: 14px; height: 14px;"));
   const buildJs = fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8");
   const indexHtml = fs.readFileSync(path.join(root, "public/index.html"), "utf8");
-  check("build stamp is 2026.11.01-64 everywhere", buildJs.includes('exports.BUILD_ID = "2026.11.01-64"') && indexHtml.includes('window.__SIGNL_BUILD__ = "2026.11.01-64"') && (indexHtml.match(/2026\.11\.01-64/g) || []).length >= 4);
+  check("build stamp is 2026.11.01-65 everywhere", buildJs.includes('exports.BUILD_ID = "2026.11.01-65"') && indexHtml.includes('window.__SIGNL_BUILD__ = "2026.11.01-65"') && (indexHtml.match(/2026\.11\.01-65/g) || []).length >= 4);
 
   part("http: finished profile + claim stub");
   startServer();

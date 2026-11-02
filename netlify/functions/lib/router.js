@@ -5,7 +5,7 @@ const crypto = require("crypto");
 const store = require("./store");
 const auth = require("./auth");
 const { logEvent, listEvents, listEventsForSubject } = require("./events");
-const { MARKETS, normalizeMarketName, resolveTypedCity, TIERS, CREATOR_CATEGORIES, COMP_CATEGORIES, BUSINESS_CATEGORIES, PLANS, PROFESSIONS, LEGACY_PROFESSIONS, REALTOR_PROFESSION, canonicalFromList, tierForFollowers, normalizeTierBand } = require("./markets");
+const { MARKETS, normalizeMarketName, resolveTypedCity, TIERS, CREATOR_CATEGORIES, COMP_CATEGORIES, BUSINESS_CATEGORIES, PLANS, PROFESSIONS, LEGACY_PROFESSIONS, REALTOR_PROFESSION, canonicalFromList, tierForFollowers, normalizeTierBand, MIN_TOTAL_AUDIENCE } = require("./markets");
 const { computeLocalImpactScore, summarizeHistory } = require("./score");
 const { computeFit, buildFitNote } = require("./fit");
 const { emailEnabled, sendEmail, senderProfile, SENDER_PROFILE_NAMES } = require("./email");
@@ -998,6 +998,35 @@ function audienceStackOf(creator) {
 function audienceTotalOf(creator) {
   const stack = audienceStackOf(creator);
   return Object.values(stack).reduce((s, n) => s + n, 0);
+}
+
+// ---------- The 500 minimum (Jeff's ruling, 2026-11-01) ----------
+// "500 followers needs to be the minimum everywhere. Everywhere."
+// The minimum is 500 TOTAL followers stacked across a creator's
+// platforms (MIN_TOTAL_AUDIENCE in markets.js), stated plainly
+// wherever joining requirements are described. The rule applies
+// GOING FORWARD ONLY: records created before the ruling keep the
+// standard they signed up under (audience > 0) and are never
+// modified, unapproved, or demoted by this rule. The ruling was
+// made 2026-11-01 20:17 ET; records created at or after that
+// moment are under the new minimum. A record with no readable
+// createdAt predates reliable stamps and reads as grandfathered.
+const MIN_AUDIENCE_LINE = "SIGNL starts at 500 total followers across your platforms.";
+const MIN_AUDIENCE_RULE_SINCE_MS = Date.parse("2026-11-02T01:17:00.000Z");
+function audienceMinimumApplies(user) {
+  const t = Date.parse((user && user.createdAt) || "");
+  return Number.isFinite(t) && t >= MIN_AUDIENCE_RULE_SINCE_MS;
+}
+// The creator's KNOWN total when it is demonstrably under the
+// minimum (some counts entered, total in 1..499), else null. A
+// total of 0 means "not stated yet", not "under": the completion
+// gate below is what enforces the minimum there, at the moment
+// the counts land.
+function knownUnderMinimumTotal(user) {
+  if (!user || user.role !== "creator" || !user.creator) return null;
+  if (!audienceMinimumApplies(user)) return null;
+  const total = audienceTotalOf(user.creator);
+  return total > 0 && total < MIN_TOTAL_AUDIENCE ? total : null;
 }
 
 // ---------- Primary platform (Jeff, 2026-10-22) ----------
@@ -2517,6 +2546,8 @@ function signupConfirmationEmail(user, band) {
       "",
       ...(paidLine ? [paidLine, ""] : []),
       ...rosterBenefitsLines(user, user.city),
+      MIN_AUDIENCE_LINE,
+      "",
       "Sign in any time to check your status: https://app.joinsignl.com",
       "",
       "You agreed to SIGNL's Terms of Service and Privacy Policy, and to receive account and marketing emails from SIGNL. You can unsubscribe from marketing emails at any time.",
@@ -2545,6 +2576,8 @@ function signupConfirmationEmail(user, band) {
     "",
     ...(paidLine ? [paidLine, ""] : []),
     ...rosterBenefitsLines(user, user.market),
+    MIN_AUDIENCE_LINE,
+    "",
     "Sign in any time to check your status: https://app.joinsignl.com",
     "",
     "You agreed to SIGNL's Terms of Service and Privacy Policy, and to receive account and marketing emails from SIGNL. You can unsubscribe from marketing emails at any time.",
@@ -2599,6 +2632,8 @@ function claimConfirmationEmail(user, band) {
       CREATOR_FREE_LINE,
       "",
       ...rosterBenefitsLines(user, user.city),
+      MIN_AUDIENCE_LINE,
+      "",
       "Sign in any time to check your status: https://app.joinsignl.com",
       "",
       "You agreed to SIGNL's Terms of Service and Privacy Policy, and to receive account and marketing emails from SIGNL. You can unsubscribe from marketing emails at any time.",
@@ -2627,6 +2662,8 @@ function claimConfirmationEmail(user, band) {
     CREATOR_FREE_LINE,
     "",
     ...rosterBenefitsLines(user, user.market),
+    MIN_AUDIENCE_LINE,
+    "",
     "Sign in any time to check your status: https://app.joinsignl.com",
     "",
     "You agreed to SIGNL's Terms of Service and Privacy Policy, and to receive account and marketing emails from SIGNL. You can unsubscribe from marketing emails at any time.",
@@ -2656,6 +2693,7 @@ function profileCompletionReminderEmail(user) {
     `You are approved as a Founding Creator in ${place}, and your founding spot is held in sign-up order. One step is still open: your profile is not finished yet, so businesses cannot see you and you cannot take offers.`,
     "",
     `Still to do: ${missing}.`,
+    ...(completion.missing.includes("audience") && audienceMinimumApplies(user) ? [MIN_AUDIENCE_LINE] : []),
     "Finishing takes a few minutes: sign in, open the Profile tab, and work down the checklist on your dashboard: https://app.joinsignl.com",
     "",
     ...completionChecklistLines(user),
@@ -2686,6 +2724,7 @@ function approvalEmail(user, band) {
   const finishLines = (opensLine) => [
     "",
     "One step left: finish your profile to be launch-ready.",
+    MIN_AUDIENCE_LINE,
     "Sign in and open the Profile tab: https://app.joinsignl.com",
     "Your dashboard shows this checklist. The items marked [needed to go live] are what make you visible to businesses; the rest earn Momentum points, and Momentum points order the creator list businesses see:",
     ...completionChecklistLines(user),
@@ -4799,7 +4838,10 @@ function isRosterCreator(u) {
 // complete by construction:
 //   - an Instagram handle
 //   - a home city
-//   - at least one audience count (any platform)
+//   - an audience totaling at least 500 across platforms (the
+//     2026-11-01 minimum; records created before the ruling keep
+//     the old "at least one audience count" standard, see
+//     audienceMinimumApplies)
 //   - at least one content category
 //   - a self-reported local audience %
 // Photo, a 40+ character bio, neighborhood, best-work links, and
@@ -4812,9 +4854,17 @@ function profileCompletionItems(user) {
   const c = (user && user.creator) || {};
   const stackCount = Object.keys(audienceStackOf(c)).length;
   const workLinks = Math.min(3, (c.bestWork || []).length);
+  const totalAudience = audienceTotalOf(c);
+  const minApplies = audienceMinimumApplies(user);
+  const audienceDone = minApplies ? totalAudience >= MIN_TOTAL_AUDIENCE : totalAudience > 0;
+  const audienceDetail = !minApplies
+    ? (stackCount ? `${stackCount} of 3+ platforms counted for the stack bonus` : "3+ platforms earns the stack bonus")
+    : totalAudience >= MIN_TOTAL_AUDIENCE
+      ? `${totalAudience.toLocaleString("en-US")} total across your platforms, past the 500 minimum${stackCount ? `; ${stackCount} of 3+ platforms counted for the stack bonus` : ""}`
+      : `${MIN_AUDIENCE_LINE} You have ${totalAudience.toLocaleString("en-US")} counted so far. Add every platform you post on; the counts add up.`;
   return [
     { id: "city", label: "Set your home city", points: null, done: !!String((user && user.city) || "").trim(), required: true },
-    { id: "audience", label: "Add your audience counts", points: MOMENTUM_POINTS.profileStack, done: audienceTotalOf(c) > 0, required: true, detail: stackCount ? `${stackCount} of 3+ platforms counted for the stack bonus` : "3+ platforms earns the stack bonus" },
+    { id: "audience", label: "Add your audience counts", points: MOMENTUM_POINTS.profileStack, done: audienceDone, required: true, detail: audienceDetail },
     { id: "categories", label: "Pick at least one content category", points: null, done: Array.isArray(c.categories) && c.categories.length > 0, required: true },
     { id: "local", label: "Report your local audience %", points: MOMENTUM_POINTS.profileLocalAudience, done: c.localAudiencePct !== null && c.localAudiencePct !== undefined, required: true },
     { id: "photo", label: "Add your profile photo", points: MOMENTUM_POINTS.profilePhoto, done: !!c.hasPhoto, required: false },
@@ -5117,6 +5167,23 @@ async function applyAutoDecision(u, users, evidence, opts = {}) {
   }
   const rule = autoEvidenceRule(u, users, evidence);
   if (!rule) return null;
+  // The 500 minimum (Jeff, 2026-11-01): an evidence match approves
+  // silently, but never for a creator whose KNOWN stacked total is
+  // under 500. The record stays pending in a clear under-minimum
+  // state (the stamp rides the creator's own payload, so the
+  // pending screen can say exactly what is missing), and no tier
+  // is assigned. A total of 0 is "not stated yet", not "under":
+  // the claim approves and the completion gate enforces the
+  // minimum when the counts land.
+  const underTotal = knownUnderMinimumTotal(u);
+  if (underTotal !== null) {
+    u.underMinimum = { total: underTotal, since: nowIso(), rule };
+    u.updatedAt = nowIso();
+    await store.set(`user:${u.id}`, u);
+    await logEvent({ type: "application_held_under_minimum", actorId: null, actorRole: "system", subjectId: u.id, market: u.market, data: { applicantRole: u.role, email: u.email, autoDecision: true, rule, totalAudience: underTotal, minimum: MIN_TOTAL_AUDIENCE } });
+    return { action: "held_under_minimum", rule };
+  }
+  delete u.underMinimum;
   u.status = "approved";
   u.reviewedAt = nowIso();
   u.reviewedBy = "system";
@@ -8985,10 +9052,13 @@ async function handleRegister(event) {
       autoDecision = await applyAutoDecision(user, await allUsers(), evidence);
     } catch (e) { /* auto-decisions are best-effort; manual review remains */ }
   }
-  if (role === "creator" && !quickClaim && (!autoDecision || autoDecision.action !== "rejected")) {
+  if (role === "creator" && !quickClaim && profileCompleteOf(user) && (!autoDecision || autoDecision.action !== "rejected")) {
     // A full-form registration IS the complete profile build: the
     // profile fields are all collected up front, so this fires
-    // here. A quick claim fires NO profile_completed event: the
+    // here (and only when the record actually crosses the
+    // completion gate: since the 2026-11-01 minimum, a full-form
+    // sign-up under 500 total is built but NOT finished, and no
+    // completion is logged for it). A quick claim fires NO profile_completed event: the
     // profile is finished later, and that flip is logged by the
     // profile save when it lands. A photo can still be added
     // afterwards (profile_photo_uploaded).
@@ -9030,7 +9100,7 @@ async function handleRegister(event) {
       },
     });
   }
-  if (role === "creator" && !quickClaim && (!autoDecision || autoDecision.action !== "rejected")) {
+  if (role === "creator" && !quickClaim && profileCompleteOf(user) && (!autoDecision || autoDecision.action !== "rejected")) {
     // Finish Engine (BUILD -50): a full-form registration crosses
     // the completion gate at signup, so the finish moment fires
     // here too (exactly once; the record stamp guards it).
@@ -9047,9 +9117,12 @@ async function handleRegister(event) {
     });
   }
 
-  if (role === "creator" && !autoDecision) {
+  if (role === "creator" && (!autoDecision || autoDecision.action === "held_under_minimum")) {
     // Sign-up confirmation email (Jeff, 2026-10-18). Queued as an event
     // always; sent immediately when the SMTP transport is configured.
+    // An under-minimum hold is still pending, so it gets this
+    // confirmation (its pending screen carries the minimum
+    // message), never the approval email.
     // Email trouble must never fail a registration, hence the try/catch.
     try {
       const summary = await foundingSummary(user);
@@ -15799,6 +15872,25 @@ async function route(event) {
       // This handler is human-admin only; the auto-decision path
       // never reaches it, so auto-rejections stay silent.
       const rejectionReason = b.decision === "reject" && target.role === "creator" && REJECTION_REASONS.includes(b.reason) ? b.reason : null;
+      // The 500 minimum (Jeff, 2026-11-01): a creator whose KNOWN
+      // stacked total is under 500 cannot be approved, by hand or
+      // automatically, and no tier is assigned. The application
+      // stays pending in a clear under-minimum state (the stamp
+      // rides the creator's own payload, so their pending screen
+      // says exactly what is missing) and the admin gets the plain
+      // reason back. Records created before the ruling are
+      // grandfathered and never reach this block.
+      if (b.decision === "approve") {
+        const underTotal = knownUnderMinimumTotal(target);
+        if (underTotal !== null) {
+          target.underMinimum = { total: underTotal, since: nowIso(), rule: "manual_review" };
+          target.updatedAt = nowIso();
+          await store.set(`user:${target.id}`, target);
+          await logEvent({ type: "application_held_under_minimum", actorId: user.id, actorRole: "admin", subjectId: target.id, market: target.market, data: { applicantRole: target.role, email: target.email, totalAudience: underTotal, minimum: MIN_TOTAL_AUDIENCE } });
+          return err(422, `${MIN_AUDIENCE_LINE} This creator's counted total is ${underTotal.toLocaleString("en-US")}, so the application stays pending until their audience reaches 500 total. No tier is assigned under the minimum.`);
+        }
+        delete target.underMinimum;
+      }
       target.status = b.decision === "approve" ? "approved" : "rejected";
       target.reviewedAt = nowIso();
       target.reviewedBy = user.id;
