@@ -182,7 +182,12 @@ try {
   // composed row items (railRowItems over moreRowsFor); there
   // is no More item.
   const tabSliceBizCr = tabSlice.split('if (u.role === "partner")')[0];
-  const tabSlicePartner = tabSlice.split('if (u.role === "partner")')[1] || "";
+  // Slice updated at the Build -70 merge (2026-11-02): Build -70 added a
+  // recruiter branch after the partner branch in tabItemsFor, with its own
+  // Sig primary (the recruiter rail is Queue / Outreach / Results / Sig).
+  // The partner slice must stop at the recruiter branch or the recruiter's
+  // Sig item reads as a partner primary.
+  const tabSlicePartner = (tabSlice.split('if (u.role === "partner")')[1] || "").split('if (u.role === "recruiter")')[0];
   check("rail primaries per role, composed with the full row list, no More item (BUILD -41, -68: business = Home/Sig/Find creators, Offers rides rows as Campaigns)", (tabSliceBizCr.match(/label: "Home"/g) || []).length === 2 && (tabSliceBizCr.match(/label: "Sig"/g) || []).length === 2 && tabSliceBizCr.includes('label: "Find creators", tab: "Discover"') && tabSliceBizCr.includes('...extra(["Home", "Sig", "Discover"])') && !(tabSliceBizCr.split('if (u.role === "creator")')[0] || "").includes('label: "Offers"') && tabSlice.includes("railRowItems()") && tabSlice.includes("...extra([") && !tabSlice.includes('label: "More"') && !tabSlice.includes('tab: "More"'));
   check("partner rail primaries are Home, Markets, Earnings (Sig arrives via the rows)", tabSlicePartner.includes('label: "Home", tab: "Home"') && tabSlicePartner.includes('label: "Markets", tab: "Markets"') && tabSlicePartner.includes('label: "Earnings", tab: "Earnings"') && !tabSlicePartner.includes('label: "More"') && !tabSlicePartner.includes('label: "Sig"'));
   check("no account state shrinks the destination set (no market-live or founding branch in tabItemsFor)", !tabSlice.includes("marketLive") && !tabSlice.includes("founding"));

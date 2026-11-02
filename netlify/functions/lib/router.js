@@ -19,7 +19,21 @@ const { askSigAI } = require("./sigai");
 const { buildProfilePageHtml, buildClaimPageHtml } = require("./profile-meta");
 const { normalizeAudienceMarkets, audienceShareInMarket, isListedInMarket, listedMarketsFor, audienceBreakdownFor, MULTI_MARKET_MIN_PCT } = require("./audience-markets");
 const igPrefill = require("./ig-prefill");
+const recruiters = require("./recruiters");
 const ZIP_CENTROIDS = require("./zip-centroids.json");
+
+// Staff recruiters (Build -70): the module reads its cross-cutting
+// dependencies through init so it never reaches into this file's
+// internals directly. testMode is a getter on purpose: TEST_MODE
+// is a const declared below and would be in its temporal dead
+// zone at require time.
+recruiters.init({
+  issuePasswordResetToken: (u) => issuePasswordResetToken(u),
+  passwordResetEmail: (u, url) => passwordResetEmail(u, url),
+  deliverEmail: (kind, user, subject, text, band, opts) => deliverEmail(kind, user, subject, text, band, opts),
+  allUsers: () => allUsers(),
+  testMode: () => TEST_MODE,
+});
 
 // ---------- Build -31: proximity, book-me page, Charter early access ----------
 // Proximity (Jeff, 2026-10-29): creators and businesses each store
@@ -9083,6 +9097,13 @@ async function handleRegister(event) {
 
   await store.set(`user:${id}`, user);
   await store.set(`email:${email}`, { userId: id });
+  // Staff recruiter credit (Build -70): a creator who signs up
+  // through a recruiter's link, or whose handle matches a prospect
+  // on that recruiter's list, credits the recruiter exactly once.
+  // Best-effort: attribution never blocks a signup.
+  if (role === "creator") {
+    try { await recruiters.onCreatorRegistered(user); } catch (e) { /* attribution is best-effort */ }
+  }
   await logEvent({
     type: "application_submitted",
     actorId: id,
@@ -13896,6 +13917,13 @@ async function route(event) {
     if (!isExitPath) return err(403, VIEW_AS_READ_ONLY_MESSAGE);
   }
 
+  // Staff recruiter console (Build -70): the recruiter's own API.
+  // The module enforces the market scoping server-side; a signed-in
+  // recruiter or the admin (owner workspace) only.
+  if (seg[0] === "recruiter") {
+    return recruiters.handleRecruiterApi({ user, seg, method, event, query });
+  }
+
   // Public bootstrap: static config plus the launch state. Deliberately
   // contains NO creator or business data; the roster is never public.
   if (method === "GET" && seg.length === 1 && seg[0] === "bootstrap") {
@@ -14497,7 +14525,7 @@ async function route(event) {
 
   if (!user) return err(401, "Sign in required");
 
-  // ---------- Ask Sig (real AI, Jeff 2026-10-27) ----------
+  // ---------- Ask Sig (live data + real AI, Build -69) ----------
   // POST /api/sig/ask { q, history } -> { source: "ai", text } or
   // { source: "unavailable" } when no AI provider is configured or
   // the provider fails; the client then answers from its canon
@@ -15729,6 +15757,11 @@ async function route(event) {
   if (seg[0] === "admin") {
     if (user.role !== "admin") return err(403, "Admin only");
 
+    // Staff recruiters (Build -70): invite + per-recruiter rollups.
+    if (seg[1] === "recruiters") {
+      return recruiters.handleAdminRecruiters({ user, seg, method, event });
+    }
+
     // View a business's account (Build -67, Deliverable 1): mints
     // a read-only view session for the target business and swaps
     // the browser's cookie to it. The admin's own session token
@@ -15768,6 +15801,13 @@ async function route(event) {
       // prove the whole loop end to end. Production never does.
       if (TEST_MODE) out.devResetToken = token;
       return json(200, out);
+    }
+
+    // Dubai Advertiser Permit (Build -70): an admin sets a Dubai
+    // creator's permit status (not started / in progress / done).
+    // It is tracked, never a gate on signup or approval.
+    if (seg[1] === "users" && seg.length === 4 && seg[3] === "advertiser-permit" && method === "POST") {
+      return recruiters.handleAdminAdvertiserPermit({ user, seg, method, event });
     }
 
     // Demo showcase (Build -67, Deliverable 4): Load creates the
@@ -16173,6 +16213,9 @@ async function route(event) {
           // Admin sees it before anyone writes to this business.
           pub.preferredLanguage = (u.business && u.business.preferredLanguage) || "en";
         }
+        // Dubai Advertiser Permit (Build -70): Admin tracks it on
+        // the application row; it never gates the decision.
+        if (u.advertiserPermit) pub.advertiserPermit = u.advertiserPermit;
         return pub;
       };
       const pending = users.filter((u) => u.status === "pending").sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
@@ -16377,6 +16420,12 @@ async function route(event) {
         } catch (e) { /* email is best-effort */ }
       }
       if (b.decision === "approve" && target.role === "creator") {
+        // Staff recruiter credit (Build -70): an approval flips the
+        // credited recruiter prospect to approved, exactly once.
+        if (b.decision === "approve" && target.role === "creator") {
+          try { await recruiters.onCreatorApproved(target); } catch (e) { /* best-effort */ }
+        }
+
         // Approval email auto-triggers (Jeff, 2026-10-18): queued as an
         // event always, sent when the SMTP transport is configured.
         try {

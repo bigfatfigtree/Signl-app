@@ -225,8 +225,8 @@ const win = (startMarker, endMarker) => {
   return a >= 0 && b > a ? appSrc.slice(a, b) : "";
 };
 
-check("build stamp is 2026.11.01-68", BUILD_ID === "2026.11.01-68", BUILD_ID);
-check("index.html carries the -53 stamp", fs.readFileSync(new URL("../public/index.html", import.meta.url), "utf8").includes("2026.11.01-68"));
+check("build stamp is 2026.11.02-70", BUILD_ID === "2026.11.02-70", BUILD_ID);
+check("index.html carries the -53 stamp", fs.readFileSync(new URL("../public/index.html", import.meta.url), "utf8").includes("2026.11.02-70"));
 
 const rail = win('if (u.role === "admin") {', "return items;");
 check("rail: admin block found", rail.length > 0);
@@ -236,8 +236,11 @@ check("rail: first two admin destinations are Applications, then Requests",
 check("rail: Applications goes to the Applications tab, Requests to the Requests tab",
   rail.includes(`add("a", "inbox", "Applications", "return go('dashboard','Applications')"`) && rail.includes(`add("a", "requests", "Requests", "return go('dashboard','Requests')"`));
 const allLabels = railLabels;
-check("rail: TEN admin destinations in Jeff's order (Applications, Requests, Markets, Recruiters, Partners, Event Log, Compliance, Campaign, Stats, Sig)",
-  JSON.stringify(allLabels) === JSON.stringify(["Applications", "Requests", "Markets", "Recruiters", "Partners", "Event Log", "Compliance", "Campaign", "Stats", "Sig"]),
+// Pin updated at the Build -70 merge (2026-11-02): Build -70 added the
+// Admin Outreach tab (Jeff's owner outreach workspace) after Recruiters,
+// superseding this suite's ten-destination pin. Order otherwise unchanged.
+check("rail: ELEVEN admin destinations in Jeff's order (Applications, Requests, Markets, Recruiters, Outreach, Partners, Event Log, Compliance, Campaign, Stats, Sig)",
+  JSON.stringify(allLabels) === JSON.stringify(["Applications", "Requests", "Markets", "Recruiters", "Outreach", "Partners", "Event Log", "Compliance", "Campaign", "Stats", "Sig"]),
   allLabels.join(" | "));
 
 const renderAdminSrc = win("function renderAdmin() {", "function adminSigItems(");
