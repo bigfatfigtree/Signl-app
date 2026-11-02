@@ -2812,7 +2812,7 @@ function renderHelpTab() {
     ${isFoundingBusiness(u) ? qa("How founding works", `Your market has not opened yet, and your founding spot is held. Right now you can browse the roster in ${esc(foundingBizPlace(u))}, get your business page ready, and save campaigns as drafts. Nothing is sent to a creator before opening day. When your market opens, we email you that day: your account turns on, your drafts can go out, your plan starts, and your founding rate and $100 first-month credit apply. Nothing is due until then.`) : ""}
     ${qa("How does a visit work?", "You post an offer or invite a creator. When you select an applicant, or a creator accepts your invite, the visit is booked with a code. Your staff redeem the code at the register with the staff PIN. The creator posts within 48 hours to be on time; one week is the hard deadline.")}
     ${qa("What do I owe the creator?", "Exactly what the offer says: the comped meal or service, up to the dollar cap. Paid bookings pay the creator's listed rate instead.")}
-    ${qa("Can I reuse a creator's post?", "A comped visit is native share only: reshare it with credit, nothing more. Paid bookings include one standard license: 90 days to repost and run ads. A comped post can be licensed at the creator's listed fee for 90 days; the creator approves each use and keeps 97%. That license is what makes the post UGC you can use — repost it and run it as an ad for those 90 days.")}
+    ${qa("Can I reuse a creator's post?", "A comped visit is native share only: reshare it with credit, nothing more. Paid bookings include one standard license: 90 days from the post date to repost and run ads, never longer. A comped post can be licensed at the creator's listed fee for 90 days from the day the creator approves; the creator approves each use and keeps 97%. Every license shows its end date in Posts & licenses.")}
     ${qa("How fast do I have to answer applicants?", "Every applicant gets an answer within 2 business days. That is the deal. Anyone you do not pick is released with a note, never silence.")}
     ${qa("What if a creator does not show up?", esc(VISIT_GUARANTEE_LINE))}
     ${qa("What does SIGNL cost?", "Founding plans: Self-Service is $199 a month for 5 creators, Growth is $349 for 10, Managed is $699 for 20. Founding businesses get $100 off the first month and keep the founding rate while the plan stays active. The minimum is 3 months, there is no per-location charge, and unused visits roll into the next month, then expire.")}
@@ -2821,7 +2821,7 @@ function renderHelpTab() {
     ${qa("How do comped visits and paid bookings differ?", "A comped visit covers the meal or service, on the business. A paid booking pays your listed rate, and you keep 97%. Joining is free and comped visits are always free; the only fee is 3% on paid bookings.")}
     ${qa("What is local reach?", "The share of your audience that actually lives here, times your audience size. Businesses rank creators by local reach, not follower count.")}
     ${qa("How does Momentum work?", "Points for doing the work well: +20 for an on-time post, +25 when a business runs your post as an ad, +3 when someone joins from your invite link, +10 when a creator you invited is approved. Late posts and no-shows cost points.")}
-    ${qa("What is a license request?", "A business asks to repost your post and run it as an ad for 90 days, at your listed licensing fee. You approve each use and keep 97%. It lives under Earnings.")}
+    ${qa("What is a license request?", "A business asks to repost your post and run it as an ad for 90 days, at your listed licensing fee. The 90 days start the day you approve. You approve each use and keep 97%. It lives under Earnings.")}
     ${qa("When do I get paid?", "Paid bookings record your rate in the app: booked at your rate, you keep 97%. Payouts run outside the app for now, and nothing in the app promises a payout date.")}
   `}
   <p class="small muted" style="margin-top:14px">Still stuck? Email <a href="mailto:hello@joinsignl.com">hello@joinsignl.com</a> and a person answers.</p>
@@ -2882,7 +2882,7 @@ async function renderEarningsTab() {
     for (const l of granted) if (inMonth(l.createdAt)) monthEarned += Number(l.creatorNet) || 0;
     const paidBookings = bookings.filter((b) => b.paidLane);
     const stateWord = (b) => b.paidLane.escrowState === "refunded" ? "Refunded" : b.post ? (b.paidLane.escrowState === "released" ? "Complete" : "Post live") : "Booked";
-    const licRow = (l, withActions) => `<div class="lib-row"><div class="lib-main"><div class="lib-title">${esc(l.businessName || "A business")} wants to license your post</div><div class="lib-meta">Your fee $${fmtPrice(l.fee)} · you keep $${fmtMoney(l.creatorNet)} · 90 days of repost and ad use${l.postUrl ? ` · <a href="${esc(l.postUrl)}" target="_blank" rel="noopener">View post</a>` : ""}${l.status !== "pending" ? ` · ${l.status === "granted" ? "Approved" : "Declined"}` : ""}</div></div>${withActions ? `<span class="req-acts"><button type="button" class="btn small-btn ws-primary" onclick="return respondLicenseEarn('${l.id}','approve')">Approve</button> <button type="button" class="btn small-btn ws-outline" onclick="return respondLicenseEarn('${l.id}','decline')">Decline</button></span>` : ""}</div>`;
+    const licRow = (l, withActions) => `<div class="lib-row"><div class="lib-main"><div class="lib-title">${esc(l.businessName || "A business")} wants to license your post</div><div class="lib-meta">Your fee $${fmtPrice(l.fee)} · you keep $${fmtMoney(l.creatorNet)} · 90 days of repost and ad use${l.status === "pending" ? " · starts the day you approve" : l.status === "granted" && l.windowEndsAt ? ` · runs through ${fmtDay(l.windowEndsAt)}` : ""}${l.postUrl ? ` · <a href="${esc(l.postUrl)}" target="_blank" rel="noopener">View post</a>` : ""}${l.status !== "pending" ? ` · ${l.status === "granted" ? "Approved" : "Declined"}` : ""}</div></div>${withActions ? `<span class="req-acts"><button type="button" class="btn small-btn ws-primary" onclick="return respondLicenseEarn('${l.id}','approve')">Approve</button> <button type="button" class="btn small-btn ws-outline" onclick="return respondLicenseEarn('${l.id}','decline')">Decline</button></span>` : ""}</div>`;
     el.innerHTML = `
   ${wsHead("Earnings", { sub: "What your posts and visits have earned you.", subKey: "earnings" })}
   ${total > 0 || paidBookings.length || granted.length ? `
@@ -2906,7 +2906,7 @@ async function renderEarningsTab() {
 
 async function respondLicenseEarn(id, decision) {
   const rec = (state.licenseRequests || []).find((l) => l.id === id);
-  if (decision === "approve" && rec && !confirm(`Approve this license? ${rec.businessName || "The business"} can repost this post and run it as an ad for 90 days. You keep $${fmtMoney(rec.creatorNet)} (97% of your fee).`)) return false;
+  if (decision === "approve" && rec && !confirm(`Approve this license? ${rec.businessName || "The business"} can repost this post and run it as an ad for 90 days. You keep $${fmtMoney(rec.creatorNet)} (97% of your fee). The 90 days start today, the day you approve, and end ${fmtDayFull(new Date(Date.now() + 90 * 86400000).toISOString())}. Never longer.`)) return false;
   try { await api("POST", `/license-requests/${id}/respond`, { decision }); renderEarningsTab(); }
   catch (err) { alert(err.message); }
   return false;
@@ -3253,9 +3253,9 @@ function sigBankFor(biz) {
         return t;
       }, flow: "Post an offer" },
     { id: "ugc", q: "Is this UGC? Can I reuse a creator's post?", ph: ["ugc", "reuse", "repost", "run it as an ad", "use their post", "whitelist"], g: [["post", "content", "photo", "video"], ["reuse", "repost", "ad", "ads", "marketing", "license", "licence", "rights", "use"]], s: ["ugc", "licensing", "licence"],
-      a: "In plain terms, yes: this is UGC, but local. Creators post on their own accounts, and the license is what lets you reuse it. A comped visit is native share only: you may reshare it with credit, nothing more. Paid bookings include one standard license: 90 days to repost and run ads. A comped post can be licensed at the creator's listed fee for 90 days; the creator approves each use and keeps 97%." },
+      a: "In plain terms, yes: this is UGC, but local. Creators post on their own accounts, and the license is what lets you reuse it. A comped visit is native share only: you may reshare it with credit, nothing more. Paid bookings include one standard license: 90 days from the post date to repost and run ads, never longer. A comped post can be licensed at the creator's listed fee for 90 days from the creator's approval; the creator approves each use and keeps 97%." },
     { id: "paidlane", q: "How do paid bookings work?", ph: ["paid booking", "book a creator", "pay a creator", "how much do creators charge", "creator rate"], g: [["paid", "pay", "book", "rate", "charge"], ["creator", "booking", "how", "work"]], s: [],
-      a: "Two lanes. Comped: you cover the visit and the creator posts. Paid: you book a creator at the rate they list, which starts at a $50 floor. The paid lane carries a 6% total fee, split evenly between you and the creator, so the creator keeps 97% of their listed rate. Every paid booking includes one standard license: 90 days to repost the post and run it as an ad.", flow: "Find creators" },
+      a: "Two lanes. Comped: you cover the visit and the creator posts. Paid: you book a creator at the rate they list, which starts at a $50 floor. The paid lane carries a 6% total fee, split evenly between you and the creator, so the creator keeps 97% of their listed rate. Every paid booking includes one standard license: 90 days from the post date to repost the post and run it as an ad, never longer.", flow: "Find creators" },
     { id: "invite", q: "How do I invite a creator?", ph: ["invite a creator", "find creators", "browse creators", "discover creators", "who can i book", "who can i invite"], g: [["creator", "creators", "roster"], ["invite", "find", "browse", "choose", "pick", "discover"]], s: ["discover"],
       a: (c) => "From Find creators. Creators are ranked by local reach, and each card shows their tier and their rate. Invite one directly at their listed rate, or post an open offer and let creators apply. A creator can voluntarily accept a lower posted rate; their listed rate otherwise stands, and there is no haggling on a post." + (c.founding ? " The founding roster is still joining, so new creators show up in Find creators as they finish their pages." : ""), flow: "Find creators" },
     { id: "applicants", q: "How fast do I have to answer applicants?", ph: ["answer applicants", "how fast", "how long to decide", "deadline to answer", "respond to applicants"], g: [["applicant", "applicants", "applications"], ["answer", "respond", "decide", "fast", "long", "deadline"]], s: [],
@@ -3302,7 +3302,7 @@ function sigBankFor(biz) {
     { id: "cantmake", q: "What if I can't make a visit?", ph: ["can't make", "cant make", "miss a visit", "running late", "cancel a visit", "reschedule", "something came up"], g: [["visit", "booking"], ["cancel", "miss", "late", "cant", "cannot", "reschedule", "sick", "emergency"]], s: [],
       a: "Message the business in the app as early as you can; a heads-up before the visit is always better than silence. A visit you accept and skip costs Momentum points, and repeated no-shows can cost you your spot on the roster." },
     { id: "licensing", q: "What is a license request?", ph: ["license request", "licensing", "license my post", "reuse my post", "license fee"], g: [["licens"], ["request", "what", "how", "fee", "approve", "work"]], s: ["licensing"],
-      a: "Licensing is how a business reuses a post you already made. They request a license at the fee you set, and you approve or decline each use. An approved license lets them repost it and run it as an ad for 90 days. You keep 97% of the fee, and when the business runs your post as an ad, you earn +25 Momentum.", flow: (c) => c.live ? "See my earnings" : null },
+      a: "Licensing is how a business reuses a post you already made. They request a license at the fee you set, and you approve or decline each use. An approved license lets them repost it and run it as an ad for 90 days, starting the day you approve it and never longer. You keep 97% of the fee, and when the business runs your post as an ad, you earn +25 Momentum.", flow: (c) => c.live ? "See my earnings" : null },
     { id: "profilegate", q: "What do I need to finish my profile?", ph: ["finish my profile", "complete my profile", "profile complete", "businesses see me", "not showing up", "why can't businesses"], g: [["profile", "businesses", "roster"], ["finish", "complete", "need", "missing", "see", "visible", "showing"]], s: [],
       a: (c) => {
         let t = "Businesses only see creators with a finished profile, and approval is not the gate; a finished profile is. Finished means four things: your home city, an audience count above zero, at least one category, and your local audience share reported. A photo is not required, but it earns +10 Momentum and makes your card stronger.";
@@ -3705,6 +3705,20 @@ function licPillHtml(lic) {
   if (lic.daysLeft < 0) return `<span class="lic-pill over">${label} ended</span>`;
   return `<span class="lic-pill live">${label} · ${lic.daysLeft}d left</span>`;
 }
+// License window in plain words (Build -76, Jeff's license
+// clarity ruling): every license record stores its end date
+// (windowEndsAt) and the server ships it, but rows used to show
+// only the pill's day count. A window is exactly 90 days, so the
+// start is the end minus 90: the post date on a paid booking,
+// the creator's approval day on a licensed post.
+function licWindowLine(lic) {
+  if (!lic || lic.type === "native" || !lic.windowEndsAt) return "";
+  const end = Date.parse(lic.windowEndsAt);
+  if (!Number.isFinite(end)) return "";
+  const start = new Date(end - 90 * 86400000).toISOString();
+  if (lic.daysLeft !== null && lic.daysLeft !== undefined && lic.daysLeft < 0) return `<div class="lib-meta">Repost + ad use ended ${fmtDay(lic.windowEndsAt)}</div>`;
+  return `<div class="lib-meta">Repost + ad use: ${fmtDay(start)} to ${fmtDay(lic.windowEndsAt)}</div>`;
+}
 // Business funnel with the 7/30-day segmented toggle. Falls back
 // to the cumulative pipeline when windowed counts are absent.
 function bizFunnelHtml(h) {
@@ -3722,11 +3736,11 @@ function bizFunnelHtml(h) {
 function bizLibraryHtml(h) {
   const lib = h.contentLibrary || [];
   if (!lib.length) return `<div class="feed-empty"><strong>No posts yet</strong>Delivered posts land here with their license state.</div>`;
-  const row = (r) => `<div class="lib-row"><div class="lib-main"><div class="lib-title">${esc(r.title)}</div><div class="lib-meta">@${esc(r.creatorHandle)} · ${r.postedAt ? fmtDay(r.postedAt) : ""} · ${fmtNum(r.views)} views · ${r.onTime ? "on time" : "late"}${r.redemptions ? ` · ${r.redemptions.count} code uses · $${fmtMoney(r.redemptions.basketTotal)} rung up` : ""}</div></div>${licPillHtml(r.license)}${r.postUrl ? `<a class="btn small-btn ghost" href="${esc(r.postUrl)}" target="_blank" rel="noopener">View post</a>` : ""}</div>`;
+  const row = (r) => `<div class="lib-row"><div class="lib-main"><div class="lib-title">${esc(r.title)}</div><div class="lib-meta">@${esc(r.creatorHandle)} · ${r.postedAt ? fmtDay(r.postedAt) : ""} · ${fmtNum(r.views)} views · ${r.onTime ? "on time" : "late"}${r.redemptions ? ` · ${r.redemptions.count} code uses · $${fmtMoney(r.redemptions.basketTotal)} rung up` : ""}</div>${licWindowLine(r.license)}</div>${licPillHtml(r.license)}${r.postUrl ? `<a class="btn small-btn ghost" href="${esc(r.postUrl)}" target="_blank" rel="noopener">View post</a>` : ""}</div>`;
   const yours = lib.filter((r) => r.license && r.license.type !== "native");
   return `<div class="view-toggle lib-toggle"><div class="vt-group"><button type="button" class="rchip on" data-libbtn="creator" onclick="return bizLibTab('creator', this)">Creator posts</button><button type="button" class="rchip" data-libbtn="yours" onclick="return bizLibTab('yours', this)">Yours to use</button></div></div>
   <div data-libp="creator"><p class="small muted">Seeing a post here is not the right to reuse it. Comped posts are native share only, with credit, unless you license them from the creator.</p>${lib.map(row).join("")}</div>
-  <div data-libp="yours" hidden><p class="small muted">Posts you can repost and run as ads inside the window shown. The window runs 90 days from the post date.</p>${yours.length ? yours.map(row).join("") : `<div class="feed-empty"><strong>Nothing licensed yet</strong>Paid bookings carry a 90-day standard license. A comped post can be licensed at the creator's listed fee.</div>`}</div>`;
+  <div data-libp="yours" hidden><p class="small muted">Posts you can repost and run as ads inside the window shown. Every license runs 90 days: from the post date on a paid booking, from the day the creator said yes on a licensed post. The end date is on each post, and a license never runs longer than 90 days.</p>${yours.length ? yours.map(row).join("") : `<div class="feed-empty"><strong>Nothing licensed yet</strong>Paid bookings carry a 90-day standard license. A comped post can be licensed at the creator's listed fee.</div>`}</div>`;
 }
 // Offers-segment template cards, in SIGNL's own terms.
 function bizTemplatesHtml() {
@@ -3741,7 +3755,7 @@ function bizActivityFeedHtml(h) {
   for (const r of lib) {
     cards.push(`<div class="feed-card" data-fk="posts"><div class="feed-dot">${bnIcon("visits")}</div><div class="feed-main"><div class="feed-title">Post live: ${esc(r.title)}</div><div class="feed-meta">@${esc(r.creatorHandle)} · ${r.postedAt ? fmtDay(r.postedAt) : ""} · ${fmtNum(r.views)} views · ${r.onTime ? "on time" : "late"}</div></div>${r.postUrl ? `<span class="feed-act"><a class="btn small-btn ghost" href="${esc(r.postUrl)}" target="_blank" rel="noopener">View post</a></span>` : ""}</div>`);
     if (r.license && r.license.type !== "native") {
-      cards.push(`<div class="feed-card" data-fk="licenses"><div class="feed-dot acc">${bnIcon("offers")}</div><div class="feed-main"><div class="feed-title">${r.license.type === "licensed" ? "Licensed post" : "Standard license"}: ${esc(r.title)}</div><div class="feed-meta">${r.license.daysLeft === null || r.license.daysLeft === undefined ? "90-day window from the post date" : r.license.daysLeft < 0 ? "The reuse window has ended" : `${r.license.daysLeft} days left to repost and run ads`}</div></div><span class="feed-act"><button type="button" class="btn small-btn ghost" onclick="return go('dashboard','Visits &amp; Posts')">Open</button></span></div>`);
+      cards.push(`<div class="feed-card" data-fk="licenses"><div class="feed-dot acc">${bnIcon("offers")}</div><div class="feed-main"><div class="feed-title">${r.license.type === "licensed" ? "Licensed post" : "Standard license"}: ${esc(r.title)}</div><div class="feed-meta">${r.license.daysLeft === null || r.license.daysLeft === undefined ? "90-day license window" : r.license.daysLeft < 0 ? `The reuse window ended ${r.license.windowEndsAt ? fmtDay(r.license.windowEndsAt) : ""}` : `${r.license.daysLeft} days left to repost and run ads${r.license.windowEndsAt ? ` · ends ${fmtDay(r.license.windowEndsAt)}` : ""}`}</div></div><span class="feed-act"><button type="button" class="btn small-btn ghost" onclick="return go('dashboard','Visits &amp; Posts')">Open</button></span></div>`);
     }
   }
   return `<div class="feed-chips"><button type="button" class="chip on" data-fcbtn onclick="return feedChip(this,'all')">All</button><button type="button" class="chip" data-fcbtn onclick="return feedChip(this,'posts')">Posts</button><button type="button" class="chip" data-fcbtn onclick="return feedChip(this,'licenses')">Licenses</button></div>${cards.join("")}`;
@@ -7607,7 +7621,7 @@ function bookPaidVisit(creatorId) {
     <p class="small" style="margin:10px 0 2px">Listed rate: <strong>$${fmtPrice(rate)}</strong></p>
     <p class="small" style="margin:2px 0">You pay <strong>$${fmtMoney(total)}</strong> (rate + 3%)</p>
     <p class="small" style="margin:2px 0">They keep <strong>$${fmtMoney(net)}</strong> (97%)</p>
-    <p class="small" style="margin:2px 0">Includes the standard license: repost + ad use for 90 days from the post date.</p>
+    <p class="small" style="margin:2px 0">Includes the standard license: repost + ad use for 90 days from the post date, never longer. The exact end date shows in Posts &amp; licenses once the post is live.</p>
     ${paymentsLive()
       ? (cardOnFileView()
         ? `<p class="small muted">Your ${esc(brandName(cardOnFileView().brand))} &middot;&middot;&middot;&middot;${esc(cardOnFileView().last4)} is charged $${fmtMoney(total)} when you book. SIGNL holds it and releases the creator's share after the post is live and the 48 hour hold passes.</p>`
@@ -7670,7 +7684,7 @@ async function previewPaidBooking(creatorId) {
       <div class="flex-between"><span class="small">SIGNL fee, split evenly</span><strong>$${fmtMoney(bk.platformFee)}</strong></div>
     </div>
     <p class="small" style="margin:10px 0 0">Held by SIGNL until the post is live.</p>
-    <p class="small" style="margin:2px 0 0">Includes the standard license: repost + ad use for 90 days from the post date.</p>
+    <p class="small" style="margin:2px 0 0">Includes the standard license: repost + ad use for 90 days from the post date, never longer. The exact end date shows in Posts &amp; licenses once the post is live.</p>
     ${state.preview && state.preview.planId === "self-service" ? `<p class="small muted">Growth is built for paid work and reuse: every license and renewal tracked in one library, and priority access to the creators you license.</p>` : ""}
     ${bk.paymentNote ? `<p class="small muted">${esc(bk.paymentNote)}</p>` : ""}
     ${bk.note ? `<p class="small muted">${esc(bk.note)}</p>` : ""}`;
@@ -10016,9 +10030,9 @@ function laneFeeOf(c) {
 }
 function laneFeeLine(c) {
   const fee = laneFeeOf(c || {});
-  if (!fee) return "not set. Name one price and a business can ask to run your post as an ad for 90 days, only with your approval.";
+  if (!fee) return "not set. Name one price and a business can ask to repost your post and run it as an ad for 90 days, only with your approval.";
   const keep = Math.round(fee * 0.97 * 100) / 100;
-  return `run my post as an ad for 90 days: $${fmtPrice(fee)} · you keep $${fmtMoney(keep)} (97%) per license.`;
+  return `repost my post and run it as an ad for 90 days: $${fmtPrice(fee)} · you keep $${fmtMoney(keep)} (97%) per license.`;
 }
 function laneFeeSave() {
   const inp = document.getElementById("lane-fee");
@@ -10206,13 +10220,13 @@ function laneControlsHtml(c) {
     <div class="lane-rate" id="lane-rate-row" style="display:${rate ? "block" : "none"}">
       <label for="lane-rate">Your paid rate (min $50)</label>
       <div class="lane-rate-flex"><input type="number" id="lane-rate" min="50" step="1" inputmode="numeric" placeholder="150" value="${rate || ""}" onchange="laneRateAuto()"><button type="button" class="btn small-btn" onclick="return laneRateSave()">Save rate</button></div>
-      <p class="small muted" id="lane-rate-note">${rate ? `Businesses pay your listed rate of $${fmtMoney(rate)}. You keep $${fmtMoney(Math.round(rate * 0.97 * 100) / 100)} (97%), and SIGNL holds the payment until your post is live.` : "Set a rate and businesses can book you paid at that rate. You keep 97%, and SIGNL holds the payment until your post is live. Paid bookings turn on when a rate is saved."}</p>
+      <p class="small muted" id="lane-rate-note">${rate ? `Businesses pay your listed rate of $${fmtMoney(rate)}. You keep $${fmtMoney(Math.round(rate * 0.97 * 100) / 100)} (97%), and SIGNL holds the payment until your post is live. A paid booking includes the standard license: the business can repost your post and run it as an ad for 90 days from the post date, never longer, and never edited.` : "Set a rate and businesses can book you paid at that rate. You keep 97%, and SIGNL holds the payment until your post is live. Paid bookings turn on when a rate is saved. A paid booking includes the standard license: the business can repost your post and run it as an ad for 90 days from the post date, never longer, and never edited."}</p>
       <p class="small" id="lane-range-line"></p>
     </div>
     <div class="lrow lane-row"><div><span class="lname">Run my post as an ad</span> <span class="lline" id="lane-fee-line">— ${esc(laneFeeLine(c || {}))}</span></div></div>
     <div class="lane-rate">
       <div class="lane-rate-flex"><input type="number" id="lane-fee" min="1" step="1" inputmode="numeric" placeholder="75" value="${fee || ""}"><button type="button" class="btn small-btn" onclick="return laneFeeSave()">Save fee</button></div>
-      <p class="small muted">One price, in plain words: what a business pays to run your post as an ad for 90 days. It is a term, with a paper trail on the booking, and it ends when the 90 days end. You approve or decline every request; nothing runs without your yes. Leave blank to keep comped posts native-share only.</p>
+      <p class="small muted">One price, in plain words: what a business pays to repost your post and run it as an ad for 90 days. The 90 days start the day you approve a request, and the license ends when the 90 days end, never longer. You approve or decline every request; nothing runs without your yes. Leave blank to keep comped posts native-share only.</p>
     </div>
     <p class="small lane-err" id="lane-err" style="display:none"></p>
     ${payoutsStepHtml(c)}
@@ -12162,7 +12176,7 @@ function visitCard(b, role) {
         : `<span class="badge info">Payment held by SIGNL</span>`;
     html += role === "creator"
       ? `<p class="small"><span class="badge tier">Paid visit</span> Your rate $${fmtPrice(lane.rate)}: you receive $${fmtMoney(lane.creatorNet)} (97% of your rate). ${escrowBadge}<br><span class="muted">${esc(lane.paymentNote)}${lane.escrowState === "held" && lane.proofAt ? " Your post is in; the escrow releases 48 hours after proof." : ""}${lane.escrowState === "refunded" ? " This visit resolved without delivery, so the business was refunded." : ""} This booking includes the standard license: the business may repost your post and run it as an ad for 90 days from the post date, never longer, and never edited.</span>${fundsStatusHtml(lane, "creator")}</p>`
-      : `<p class="small"><span class="badge tier">Paid visit</span> Creator rate $${fmtPrice(lane.rate)} &middot; you pay $${fmtMoney(lane.businessTotal)} (rate + 3%) &middot; the creator receives $${fmtMoney(lane.creatorNet)}. ${escrowBadge}<br><span class="muted">${esc(lane.paymentNote)} This booking includes the standard license: repost and ad use for 90 days from the post date.</span>${fundsStatusHtml(lane, "business")}</p>`;
+      : `<p class="small"><span class="badge tier">Paid visit</span> Creator rate $${fmtPrice(lane.rate)} &middot; you pay $${fmtMoney(lane.businessTotal)} (rate + 3%) &middot; the creator receives $${fmtMoney(lane.creatorNet)}. ${escrowBadge}<br><span class="muted">${esc(lane.paymentNote)} This booking includes the standard license: repost and ad use for 90 days from the post date, never longer.</span>${fundsStatusHtml(lane, "business")}</p>`;
   }
   if (role === "creator") html += referralProgramBlockHtml(b.businessReferralProgram);
   if (role === "business" && b.businessReferralProgram) {
@@ -12273,7 +12287,7 @@ function visitCard(b, role) {
     }
     if (role === "creator" && b.kind !== "paid") {
       if (licReq && licReq.status === "pending") {
-        html += `<div class="notice blue"><strong>License request:</strong> ${esc(licReq.businessName || "A business")} wants to license this post for 90 days of reposting and ad use at your $${fmtPrice(licReq.fee)} fee. You keep $${fmtMoney(licReq.creatorNet)} (97%).<br><button class="btn small-btn" style="margin-top:8px" onclick="respondLicense('${licReq.id}', 'approve')">Approve license</button> <button class="btn small-btn ghost" style="margin-top:8px" onclick="respondLicense('${licReq.id}', 'decline')">Decline</button></div>`;
+        html += `<div class="notice blue"><strong>License request:</strong> ${esc(licReq.businessName || "A business")} wants to license this post for 90 days of reposting and ad use at your $${fmtPrice(licReq.fee)} fee. You keep $${fmtMoney(licReq.creatorNet)} (97%). If you approve, the 90 days start today and end ${fmtDayFull(new Date(Date.now() + 90 * 86400000).toISOString())}.<br><button class="btn small-btn" style="margin-top:8px" onclick="respondLicense('${licReq.id}', 'approve')">Approve license</button> <button class="btn small-btn ghost" style="margin-top:8px" onclick="respondLicense('${licReq.id}', 'decline')">Decline</button></div>`;
       } else if (licActive) {
         html += `<p class="small"><span class="badge ok">Licensed for ads</span> Through ${fmtDate(lic.windowEndsAt)}${licReq && licReq.creatorNet ? ` &middot; you kept $${fmtMoney(licReq.creatorNet)}` : ""}.</p>`;
       } else if (licReq && licReq.status === "declined") {
@@ -12637,14 +12651,14 @@ async function declareAdUse(postId, basis) {
 async function requestLicense(postId, fee) {
   const total = Math.round(fee * 1.03 * 100) / 100;
   const net = Math.round(fee * 0.97 * 100) / 100;
-  if (!confirm(`License this post for ads? The creator's fee is $${fmtPrice(fee)}: you pay $${fmtMoney(total)} (fee + 3%), the creator keeps $${fmtMoney(net)} (97%), held until they decide. If they approve, you can repost the post and run it as an ad for 90 days from their yes. Nothing is licensed unless they approve.`)) return;
+  if (!confirm(`License this post for ads? The creator's fee is $${fmtPrice(fee)}: you pay $${fmtMoney(total)} (fee + 3%), the creator keeps $${fmtMoney(net)} (97%), held until they decide. If they approve, you can repost the post and run it as an ad for 90 days from their yes. Nothing is licensed unless they approve. The end date shows on the post from the day they approve.`)) return;
   try { await api("POST", `/posts/${postId}/license-request`, {}); if (state.tab === "Content") renderContentTab(); else loadMyVisits("business"); }
   catch (err) { alert(err.message); }
 }
 
 async function respondLicense(id, decision) {
   const rec = (state.licenseRequests || []).find((l) => l.id === id);
-  if (decision === "approve" && rec && !confirm(`Approve this license? ${rec.businessName || "The business"} can repost this post and run it as an ad for 90 days. You keep $${fmtMoney(rec.creatorNet)} (97% of your fee).`)) return;
+  if (decision === "approve" && rec && !confirm(`Approve this license? ${rec.businessName || "The business"} can repost this post and run it as an ad for 90 days. You keep $${fmtMoney(rec.creatorNet)} (97% of your fee). The 90 days start today, the day you approve, and end ${fmtDayFull(new Date(Date.now() + 90 * 86400000).toISOString())}. Never longer.`)) return;
   try { await api("POST", `/license-requests/${id}/respond`, { decision }); if (state.tab === "Earnings") renderEarningsTab(); else loadMyVisits("creator"); }
   catch (err) { alert(err.message); }
 }
@@ -13548,7 +13562,7 @@ function bizFeedEvents(h, notes) {
   for (const r of h.contentLibrary || []) {
     evs.push({ kind: "posts", at: r.postedAt, title: `Post live: ${esc(r.title)}`, meta: `@${esc(r.creatorHandle)} · ${fmtNum(r.views || 0)} views · ${r.onTime ? "on time" : "late"}`, icon: "image", acc: true, act: actFor("posts") });
     if (r.license && r.license.type !== "native") {
-      evs.push({ kind: "licenses", at: r.postedAt, title: `${r.license.type === "licensed" ? "Licensed post" : "Standard license"}: ${esc(r.title)}`, meta: r.license.daysLeft === null || r.license.daysLeft === undefined ? "90-day window from the post date" : r.license.daysLeft < 0 ? "The reuse window has ended" : `${r.license.daysLeft} days left to repost and run ads`, icon: "shield", acc: true, act: actFor("licenses") });
+      evs.push({ kind: "licenses", at: r.postedAt, title: `${r.license.type === "licensed" ? "Licensed post" : "Standard license"}: ${esc(r.title)}`, meta: r.license.daysLeft === null || r.license.daysLeft === undefined ? "90-day license window" : r.license.daysLeft < 0 ? `The reuse window ended ${r.license.windowEndsAt ? fmtDay(r.license.windowEndsAt) : ""}` : `${r.license.daysLeft} days left to repost and run ads${r.license.windowEndsAt ? ` · ends ${fmtDay(r.license.windowEndsAt)}` : ""}`, icon: "shield", acc: true, act: actFor("licenses") });
     }
   }
   evs.sort((a, b) => (Date.parse(b.at || "") || 0) - (Date.parse(a.at || "") || 0));
@@ -14162,7 +14176,7 @@ function libRowsHtml(h, mode, licMap) {
     const canLicense = mode === "creator" && r.license && r.license.type === "native" && lic && lic.fee > 0 && lic.postId;
     return `
     <div class="lib-row"><div class="lib-main"><div class="lib-title">${esc(r.title)}</div>
-    <div class="lib-meta">@${esc(r.creatorHandle)} · ${r.postedAt ? fmtDay(r.postedAt) : ""} · ${fmtNum(r.views)} views · ${fmtNum(r.likes)} likes · ${fmtNum(r.localReach || 0)} local reach · ${r.onTime ? "on time" : "late"}${r.redemptions && r.redemptions.count ? ` · ${r.redemptions.count} code uses · $${fmtMoney(r.redemptions.basketTotal)} rung up` : ""}${r.postUrl ? ` · <a href="${esc(r.postUrl)}" target="_blank" rel="noopener">View post</a>` : ""}</div></div>${licPillHtml(r.license)}${canLicense ? (lic.requested ? `<span class="lic-pill">License requested</span>` : `<button type="button" class="btn small-btn ws-primary" onclick="requestLicense('${lic.postId}', ${lic.fee})">Request license</button>`) : ""}</div>`;
+    <div class="lib-meta">@${esc(r.creatorHandle)} · ${r.postedAt ? fmtDay(r.postedAt) : ""} · ${fmtNum(r.views)} views · ${fmtNum(r.likes)} likes · ${fmtNum(r.localReach || 0)} local reach · ${r.onTime ? "on time" : "late"}${r.redemptions && r.redemptions.count ? ` · ${r.redemptions.count} code uses · $${fmtMoney(r.redemptions.basketTotal)} rung up` : ""}${r.postUrl ? ` · <a href="${esc(r.postUrl)}" target="_blank" rel="noopener">View post</a>` : ""}</div>${licWindowLine(r.license)}</div>${licPillHtml(r.license)}${canLicense ? (lic.requested ? `<span class="lic-pill">License requested</span>` : `<button type="button" class="btn small-btn ws-primary" onclick="requestLicense('${lic.postId}', ${lic.fee})">Request license</button>`) : ""}</div>`;
   }).join("")}</div>`;
 }
 async function renderContentTab() {
@@ -14188,7 +14202,7 @@ async function renderContentTab() {
     } catch (e) { /* rows simply render without the action */ }
     el.innerHTML = `
     ${wsHead("Posts & licenses", { sub: "Every post about you, and the ones you can reuse.", subKey: "biz-content" })}
-    <div class="rights-line">${bnIcon("shield")}<span><strong>Seeing a post here is not the right to reuse it.</strong> You may always reshare the post inside Instagram, with credit. Paid bookings include one standard license: 90 days to repost and run ads. A comped post can be licensed at the creator's listed fee, and the creator approves each use. That license is what makes the post UGC you can use — repost it and run it as an ad for those 90 days.</span></div>
+    <div class="rights-line">${bnIcon("shield")}<span><strong>Seeing a post here is not the right to reuse it.</strong> You may always reshare the post inside Instagram, with credit. Paid bookings include one standard license: 90 days to repost and run ads. A comped post can be licensed at the creator's listed fee, and the creator approves each use. That license is what makes the post UGC you can use: repost it and run it as an ad for those 90 days. Every license below shows its end date, and no license ever runs longer than 90 days.</span></div>
     ${lib.length ? `<div class="track-card"><span class="feed-dot acc">${bnIcon("image")}</span><div class="tc-main"><div class="tc-t">Post tracking is on</div><div class="tc-s">${h.postsTracked30 || 0} post${(h.postsTracked30 || 0) === 1 ? "" : "s"} tracked in the last 30 days. SIGNL tracks every visit's post from the creator's report, timed against the 48 hour standard.</div></div><button type="button" class="btn small-btn ws-outline" onclick="return go('dashboard','Visits & Posts')">Visits</button></div>`
       : `<div class="track-card"><span class="feed-dot acc">${bnIcon("image")}</span><div class="tc-main"><div class="tc-t">Post tracking</div><div class="tc-s">Post tracking starts with your first visit.</div></div></div>`}
     ${wsTabs([

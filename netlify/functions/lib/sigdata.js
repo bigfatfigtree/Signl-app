@@ -536,7 +536,7 @@ function answerBusiness(f, q, t) {
   }
   // Licenses
   if (hasWord(t, "license", "licenses", "licensing") && hasPhrase(t, "my", "how many", "waiting", "pending")) {
-    return `Your licenses: ${fmt(f.licensesGranted)} granted and in your library, ${fmt(f.licensesPending)} requested and waiting on the creator's answer. Each granted license is 90 days of repost and ad use.`;
+    return `Your licenses: ${fmt(f.licensesGranted)} granted and in your library, ${fmt(f.licensesPending)} requested and waiting on the creator's answer. Each granted license is 90 days of repost and ad use, and its end date sits on the post in Posts & licenses.`;
   }
   return null;
 }
