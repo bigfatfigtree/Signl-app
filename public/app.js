@@ -3052,6 +3052,24 @@ async function renderCreatorNumbers() {
       if (days.some((dd) => dd.points > 0)) trendHtml = `<div class="chart-card"><h3>Momentum trend</h3><p class="wc-sub">Your points, day by day, last 30 days. ${POINTS_WHY_SHORT}</p>${lineChartSvg(days, [{ k: "points", color: "#0B0D0C" }])}</div>`;
     }
     const reviewRows = bookings.filter((b) => b.creatorReview).map((b) => `<div class="lib-row"><div class="lib-main"><div class="lib-title">${starsHtml(b.creatorReview.stars)} ${esc(String(b.creatorReview.stars))} — ${esc(b.title || "Visit")}</div><div class="lib-meta">${esc(b.businessName || "")}${b.creatorReview.createdAt ? ` · ${fmtDay(b.creatorReview.createdAt)}` : ""}${b.creatorReview.comment ? `<br>${esc(b.creatorReview.comment)}` : ""}</div></div></div>`).join("");
+    // Intent card (Build -83): the creator's own exact recorded
+    // numbers per post. Saves and shares mean people planning to
+    // come. Only posts with reported numbers appear; a field the
+    // creator never reported reads "not reported", never zero.
+    const reportedPosts = delivered.filter((b) => b.post && b.post.performance && b.post.performance.reported);
+    const iTot = { views: 0, shares: 0, saves: 0 };
+    for (const b of reportedPosts) { const pf = b.post.performance; iTot.views += pf.views || 0; iTot.shares += pf.shares || 0; iTot.saves += pf.saves || 0; }
+    const intentTotal = iTot.shares + iTot.saves;
+    const intentCard = reportedPosts.length ? `<div class="wcard"><h3>Intent: saves and shares</h3>
+      <p class="wc-sub" style="margin:4px 0 10px">Saves and shares mean people planning to come. These are the exact numbers you reported, post by post.</p>
+      <div class="kpi-grid c3">
+        ${kpiCard("Views", fmtNum(iTot.views), { sub: `Recorded across ${reportedPosts.length} reported post${reportedPosts.length === 1 ? "" : "s"}` })}
+        ${kpiCard("Shares", fmtNum(iTot.shares), { sub: "Recorded" })}
+        ${kpiCard("Saves", fmtNum(iTot.saves), { sub: "Recorded" })}
+      </div>
+      <p style="margin:10px 0 6px"><strong>${fmtNum(intentTotal)} intent</strong> (shares + saves)${iTot.views ? `, ${Math.round((intentTotal / iTot.views) * 1000 * 10) / 10} per 1,000 views` : ""}.</p>
+      ${reportedPosts.map((b) => { const pf = b.post.performance; const inten = (pf.shares || 0) + (pf.saves || 0); return `<div class="lb-row"><div class="lb-main"><div class="lb-name">${esc(b.title || "Post")}</div><div class="lb-meta">${esc(b.businessName || "")}</div></div><span class="lb-num" style="font-size:.95rem">${pf.views != null ? fmtNum(pf.views) + " views" : "views not reported"} · ${pf.shares != null ? fmtNum(pf.shares) + " shares" : "shares not reported"} · ${pf.saves != null ? fmtNum(pf.saves) + " saves" : "saves not reported"} · ${fmtNum(inten)} intent</span></div>`; }).join("")}
+    </div>` : "";
     el.innerHTML = `${head}
     <div id="cr-stats"></div>
     ${reachCard}
@@ -3060,6 +3078,7 @@ async function renderCreatorNumbers() {
       ${kpiCard("On time", tr.onTimePct === null || tr.onTimePct === undefined ? "New" : tr.onTimePct + "%", { sub: "Inside the 48 hour standard" })}
       ${kpiCard("Momentum", fmtNum(m.points || 0), { sub: POINTS_WHY_SHORT })}
     </div>
+    ${intentCard}
     ${trendHtml}
     ${seriesRows ? `<div class="wcard"><h3>Post performance, day 7 / 14 / 30</h3><table class="series-table"><tr><th>Post</th><th>Day 7</th><th>Day 14</th><th>Day 30</th><th>Latest views</th></tr>${seriesRows}</table><p class="ana-note">Views at each mark after the post, from the numbers on record. A dash means that mark has not been reported yet.</p></div>` : `<div class="wcard"><h3>Post performance</h3><p class="wc-sub" style="margin:4px 0 0">Your posts appear here once their first numbers are in, tracked at day 7, 14 and 30. We do not chart zeroes.</p></div>`}
     <div class="wcard"><h3>Reviews</h3>
@@ -5400,6 +5419,7 @@ async function sigB3Run() {
   if (o.redemptions && o.redemptions.count > 0) lines.push(`${ST("Redemptions rung up", "Canjes registrados")}: ${o.redemptions.count} ($${fmtMoney(o.redemptions.basketTotal || 0)}).`);
   if (o.registerValue) lines.push(`${ST("Register value", "Valor en caja")}: $${fmtMoney(o.registerValue)}${o.roasScore !== null && o.roasScore !== undefined && Number(o.roasScore) > 0 ? ` · ${ST("modeled estimate", "estimación modelada")} ${o.roasScore}` : ""}.`);
   else if (o.estimatedRegisterValue) lines.push(`${ST("Estimated register value", "Valor estimado en caja")}: $${fmtMoney(o.estimatedRegisterValue)}.`);
+  if (o.intent && o.intent.intent > 0) lines.push(`${ST("Intent", "Intención")}: ${fmtNum(o.intent.intent)} ${ST("saves and shares recorded on your posts (people planning to come)", "guardados y compartidos registrados en tus publicaciones (gente planeando venir)")}${o.returnScore ? ` · ${ST("Return score", "Puntuación de retorno")} ${o.returnScore.score} ${ST("of 100", "de 100")}` : ""}.`);
   const topRows = (ro.offers || []).filter((r) => (r.postsLive || 0) > 0 || (r.visitsBooked || 0) > 0).slice(0, 3);
   for (const r of topRows) lines.push(`"${r.title}": ${r.visitsBooked || 0} ${ST("booked", "reservadas")} · ${r.postsLive || 0} ${ST("posts live", "publicaciones")}${r.views ? ` · ${fmtNum(r.views)} ${ST("views", "vistas")}` : ""}.`);
   const lic = o.licenseRequests || {};
@@ -8253,7 +8273,30 @@ function trackRecordHtml(card) {
       <div class="stat"><div class="num">${tr.onTimePct === null || tr.onTimePct === undefined ? "—" : tr.onTimePct + "%"}</div><div class="lbl">On time</div></div>
       ${typeof tr.contentViews === "number" ? `<div class="stat"><div class="num">${fmtNum(tr.contentViews)}</div><div class="lbl">Content views (creator-reported)</div></div>` : ""}
     </div>
+    ${engagementStripHtml(tr)}
     ${names ? `<p class="small muted">Worked with: ${names}</p>` : ""}</div>`;
+}
+
+// Engagement strip (Build -83): totals and per-post averages
+// across the creator's posts with reported metrics, labeled
+// recorded, with the post count it rests on. Absent when no
+// post has reported metrics. The Return score is business
+// facing: a creator viewing their own profile sees the numbers,
+// not the score.
+function engagementStripHtml(tr) {
+  const eng = tr && tr.engagement;
+  if (!eng) return "";
+  const score = tr.returnScore && state.user && state.user.role !== "creator"
+    ? `<p class="small" style="margin:8px 0 0"><strong>Return score: ${tr.returnScore.score} of 100.</strong> Built from saves and shares first, likes second, views as the base, and counted customers when we have them.</p>` : "";
+  return `<div style="margin-top:12px">
+    <div class="stat-row">
+      <div class="stat"><div class="num">${fmtNum(eng.totals.views)}</div><div class="lbl">Views (recorded)</div></div>
+      <div class="stat"><div class="num">${fmtNum(eng.totals.likes)}</div><div class="lbl">Likes (recorded)</div></div>
+      <div class="stat"><div class="num">${fmtNum(eng.totals.shares)}</div><div class="lbl">Shares (recorded)</div></div>
+      <div class="stat"><div class="num">${fmtNum(eng.totals.saves)}</div><div class="lbl">Saves (recorded)</div></div>
+    </div>
+    <p class="small muted" style="margin:6px 0 0">From ${eng.postsWithMetrics} post${eng.postsWithMetrics === 1 ? "" : "s"} with reported numbers: on average ${fmtNum(eng.averages.views)} views, ${fmtNum(eng.averages.likes)} likes, ${fmtNum(eng.averages.shares)} shares and ${fmtNum(eng.averages.saves)} saves a post. Saves and shares mean people planning to come. Recorded means the creator reported these numbers.</p>
+    ${score}</div>`;
 }
 
 // Business ratings appear only when a real rating exists (a
@@ -12739,13 +12782,18 @@ function visitCard(b, role) {
     }
     if (role === "business" && !post.verifiedAt) html += `<button class="btn small-btn ghost" onclick="verifyPost('${post.id}')">Verify post is live</button>`;
     if (post.reportedAt) {
-      const nums = [["views", post.views], ["likes", post.likes], ["comments", post.comments], ["shares", post.shares]]
+      const nums = [["views", post.views], ["likes", post.likes], ["comments", post.comments], ["shares", post.shares], ["saves", post.saves]]
         .filter(([, v]) => typeof v === "number")
         .map(([k, v]) => `${fmtNum(v)} ${k}`)
         .join(" &middot; ");
       html += role === "business"
         ? `<p class="small">Your comp produced <strong>${nums}</strong> (creator-reported).</p>`
         : `<p class="small">You reported ${nums} (+5 Momentum). Thanks: numbers like these are what bring businesses back.</p>`;
+      if (typeof post.intent === "number") {
+        html += role === "business"
+          ? `<p class="small"><strong>${fmtNum(post.intent)} intent</strong> (saves + shares: people planning to come)${post.returnScore ? ` &middot; <strong>Return score ${post.returnScore.score} of 100</strong>. Built from saves, shares, and counted customers.` : ` &middot; Return score: not enough data yet.`}</p>`
+          : `<p class="small">${fmtNum(post.intent)} of that engagement was saves and shares: people planning to come.</p>`;
+      }
       if (role === "business" && post.performance && post.performance.updatedAt) {
         html += `<p class="small muted">${perfSourceLabel(post.performance.source)}, updated ${fmtDay(post.performance.updatedAt)}${typeof post.performance.viewsGrowthPct === "number" ? ` &middot; views ${post.performance.viewsGrowthPct >= 0 ? "+" : ""}${post.performance.viewsGrowthPct}% since the first report` : ""}</p>`;
       }
@@ -12759,6 +12807,7 @@ function visitCard(b, role) {
         <div class="field"><label>Likes</label><input type="number" id="perf-likes-${b.id}" min="0" placeholder="Optional"></div>
         <div class="field"><label>Comments</label><input type="number" id="perf-comments-${b.id}" min="0" placeholder="Optional"></div>
         <div class="field"><label>Shares</label><input type="number" id="perf-shares-${b.id}" min="0" placeholder="Optional"></div>
+        <div class="field"><label>Saves</label><input type="number" id="perf-saves-${b.id}" min="0" placeholder="Optional"></div>
       </div>
       <button class="btn small-btn" type="submit">Report numbers</button> <span class="small muted">+5 Momentum</span>
     </form>`;
@@ -12953,6 +13002,7 @@ function perfUpdateFormHtml(b, ctx) {
         <div class="field"><label>Likes</label><input type="number" id="perfu-likes-${b.id}" min="0" value="${num(perf.likes)}"></div>
         <div class="field"><label>Comments</label><input type="number" id="perfu-comments-${b.id}" min="0" value="${num(perf.comments)}"></div>
         <div class="field"><label>Shares</label><input type="number" id="perfu-shares-${b.id}" min="0" value="${num(perf.shares)}"></div>
+        <div class="field"><label>Saves</label><input type="number" id="perfu-saves-${b.id}" min="0" value="${num(perf.saves)}"></div>
       </div>
       <button class="btn small-btn" type="submit">Save updated numbers</button>
     </form>
@@ -12963,7 +13013,7 @@ async function submitPostPerformanceUpdate(e, bookingId, ctx) {
   e.preventDefault();
   try {
     const val = (k) => { const el = document.getElementById(`perfu-${k}-${bookingId}`); return !el || el.value === "" ? null : parseInt(el.value, 10); };
-    await api("POST", `/bookings/${bookingId}/performance`, { views: val("views"), likes: val("likes"), comments: val("comments"), shares: val("shares") });
+    await api("POST", `/bookings/${bookingId}/performance`, { views: val("views"), likes: val("likes"), comments: val("comments"), shares: val("shares"), saves: val("saves") });
     if (ctx === "home") loadCreatorHome(); else loadMyVisits("creator");
   } catch (err) { alert(err.message); }
   return false;
@@ -13043,11 +13093,13 @@ async function submitPostPerformance(e, bookingId) {
     const likes = document.getElementById("perf-likes-" + bookingId).value;
     const commentsEl = document.getElementById("perf-comments-" + bookingId);
     const sharesEl = document.getElementById("perf-shares-" + bookingId);
+    const savesEl = document.getElementById("perf-saves-" + bookingId);
     await api("POST", `/bookings/${bookingId}/performance`, {
       views: views === "" ? null : parseInt(views, 10),
       likes: likes === "" ? null : parseInt(likes, 10),
       comments: !commentsEl || commentsEl.value === "" ? null : parseInt(commentsEl.value, 10),
       shares: !sharesEl || sharesEl.value === "" ? null : parseInt(sharesEl.value, 10),
+      saves: !savesEl || savesEl.value === "" ? null : parseInt(savesEl.value, 10),
     });
     loadMyVisits("creator");
   } catch (err) { alert(err.message); }
@@ -13186,6 +13238,9 @@ function sampleStoryHtml(s) {
       ${kpiCard("Local people reached", fmtNum(t.localReach || 0), { sub: "Sample · the local followers of the creators who posted" })}
       ${kpiCard("Customers counted", fmtNum(t.customersCounted || 0), { sub: "Sample · counted at the counter over 14 days" })}
     </div>
+    ${t.funnel ? `<div class="chart-card" style="margin-top:12px"><h3>How it funnels to return</h3><p class="wc-sub">Sample. Local reach becomes intent, intent becomes counted customers, counted customers become register revenue.</p>
+      ${(t.funnel.steps || []).map((s) => `<div class="lb-row"><div class="lb-main"><div class="lb-name">${esc(s.label)}</div><div class="lb-meta">Sample · ${s.cls === "counted" ? "Counted" : "Recorded"}</div></div><span class="lb-num">${s.key === "revenue" ? "$" + fmtMoney(s.value) : fmtNum(s.value)}</span></div>`).join("")}
+      <p class="ana-note">Sample intent is ${fmtNum(t.intent || 0)} saves and shares. Sample register revenue uses the story's $54 average basket.</p></div>` : ""}
     <div class="chart-card" style="margin-top:12px"><h3>Customers counted, day by day</h3><p class="wc-sub">Sample. Each bar is a day: customers who said a creator or a post sent them, counted by your team at the counter.</p>
       ${barsChartSvg(s.series || [], "customers", "#03C9AB")}
     </div>
@@ -14898,6 +14953,7 @@ async function renderAnalyticsTab() {
       ${barsChartSvg(series, "reach", "#03C9AB")}
     </div>` : ""}
     ${!seriesHas && !reachHas ? `<div class="wcard"><h3>Charts</h3><p class="wc-sub" style="margin:4px 0 0">Charts fill in as your campaigns run: invites, decisions, and local reach, day by day.</p></div>` : ""}
+    <div id="biz-intent"></div>
     <div class="wcard"><div class="flex-between" style="flex-wrap:wrap;gap:10px"><h3 style="margin:0">Creator funnel</h3>${segSw([{ v: "7", label: "7 days" }, { v: "30", label: "30 days" }], String(anaDays), "anaSetDays")}</div>
       ${((f.invited || 0) + (f.claimed || 0) + (f.visited || 0) + (f.posted || 0)) > 0 ? `${funnel2Html(stages)}
       <p class="ana-note">Stages count real SIGNL events only. There is no email-open stage: SIGNL does not track opens, so the funnel starts at the invite itself.</p>` : `<p class="wc-sub" style="margin:6px 0 2px">Your funnel fills in once your campaigns are live: invited, accepted, visited, posted.</p>`}
@@ -14912,9 +14968,59 @@ async function renderAnalyticsTab() {
     loadSampleResultsInto(false);
     loadReceipt();
     loadBizStats();
+    loadIntentFunnel();
   } catch (err) {
     el.innerHTML = `${wsHead("Results")}<div class="error-box">${esc(err.message)}</div>`;
   }
+}
+
+// The intent funnel (Build -83): Local reach (recorded views)
+// -> Intent (recorded saves + shares) -> Visits counted
+// (counted) -> Register revenue (counted), rolled up from the
+// performance readout, plus the Return score per campaign.
+// Every step labels its class; a step with no data says so
+// instead of borrowing a modeled substitute.
+function intentFunnelHtml(ro) {
+  if (!ro || ro.empty || !ro.overall || !ro.overall.funnel) return "";
+  const o = ro.overall;
+  const steps = o.funnel.steps || [];
+  const conv = o.funnel.conversions || {};
+  const stepVal = (s) => {
+    if (s.key === "reach" || s.key === "intent") {
+      if (!s.reported) return `<span class="lb-num" style="font-size:1rem">Not reported yet</span>`;
+      return `<span class="lb-num">${fmtNum(s.value)}</span>`;
+    }
+    if (!s.reported) return `<span class="lb-num" style="font-size:1rem">Nothing counted yet</span>`;
+    return `<span class="lb-num">${s.key === "revenue" ? "$" + fmtMoney(s.value) : fmtNum(s.value)}</span>`;
+  };
+  const stepSub = (s) => {
+    if ((s.key === "visits" || s.key === "revenue") && !s.reported) return "Connect Square to count customers, or log code tallies on the visit";
+    if (s.key === "reach") return "Views your creators reported on their posts";
+    if (s.key === "intent") return "Saves and shares mean people planning to come";
+    if (s.key === "visits") return "Customers counted through visit codes";
+    return "Counted at the register";
+  };
+  const convBits = [];
+  if (conv.intentPerReachPct != null) convBits.push(`${conv.intentPerReachPct}% of reach turned into intent`);
+  if (conv.visitsPerIntentPct != null) convBits.push(`${conv.visitsPerIntentPct}% of intent became counted visits`);
+  if (conv.revenuePerVisit != null) convBits.push(`$${fmtMoney(conv.revenuePerVisit)} counted per visit`);
+  const rows = (ro.offers || []).filter((r) => (r.postsLive || 0) > 0);
+  return `<div class="wcard"><h3>How reach funnels to return</h3>
+    <p class="wc-sub" style="margin:4px 0 10px">From the posts your creators delivered: attention first, then intent, then customers SIGNL counted. Recorded numbers are what creators reported; counted numbers are register events. Nothing here is modeled.</p>
+    ${steps.map((s) => `<div class="lb-row"><div class="lb-main"><div class="lb-name">${esc(s.label)}</div><div class="lb-meta">${s.cls === "counted" ? "Counted" : "Recorded"} · ${esc(stepSub(s))}</div></div>${stepVal(s)}</div>`).join("")}
+    ${convBits.length ? `<p class="ana-note">${convBits.join(" · ")}.</p>` : ""}
+    <p style="margin:10px 0 0">${o.returnScore ? `<strong>Return score: ${o.returnScore.score} of 100</strong> across your posts. Built from saves and shares first, likes second, views as the base, and counted customers when we have them.` : `Return score: not enough data yet. It lands once a post's views are reported.`}</p>
+    ${rows.length ? `<h4 style="margin:14px 0 6px">By campaign</h4>${rows.map((r) => `<div class="lb-row"><div class="lb-main"><div class="lb-name">${esc(r.title)}</div><div class="lb-meta">${r.postsLive} post${r.postsLive === 1 ? "" : "s"} · ${fmtNum(r.intent ? r.intent.intent : 0)} intent · ${fmtNum(r.redemptions ? r.redemptions.count : 0)} customers counted</div></div><span class="lb-num" style="font-size:1rem">${r.returnScore ? `Return ${r.returnScore.score}` : "Not enough data yet"}</span></div>`).join("")}` : ""}
+  </div>`;
+}
+async function loadIntentFunnel() {
+  const host = document.getElementById("biz-intent");
+  if (!host) return;
+  try {
+    const ro = await api("GET", "/me/performance-readout");
+    if (!document.getElementById("biz-intent")) return;
+    host.innerHTML = intentFunnelHtml(ro);
+  } catch (e) { /* the rest of Results stands without it */ }
 }
 // ---------- Business Profile (Grin brand profile pattern) ----------
 // Build -80 (Jeff): the profile card at the top of Your business

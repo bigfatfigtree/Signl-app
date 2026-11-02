@@ -207,6 +207,15 @@ function buildBusinessFacts(d) {
     visitsBooked: o.visitsBooked || 0,
     visitsRedeemed: o.visitsRedeemed || 0,
     postsLive: o.postsLive || 0,
+    // Intent (Build -83): recorded shares + saves on the posts
+    // this business received, from the readout's intent block.
+    intentViews: o.intent ? o.intent.views || 0 : 0,
+    intentShares: o.intent ? o.intent.shares || 0 : 0,
+    intentSaves: o.intent ? o.intent.saves || 0 : 0,
+    intentTotal: o.intent ? o.intent.intent || 0 : 0,
+    intentReportedPosts: o.intent ? o.intent.reportedPosts || 0 : 0,
+    returnScore: o.returnScore ? o.returnScore.score : null,
+    countedCustomers: o.redemptions ? o.redemptions.count || 0 : 0,
     countedDollars: o.registerValue || 0,
     modeledDollars: o.estimatedRegisterValue || 0,
     licensesGranted: lic.granted || 0,
@@ -260,6 +269,13 @@ function buildCreatorFacts(d) {
     postsOwed: owed,
     visitsRedeemed: o.visitsRedeemed || 0,
     postsLive: o.postsLive || 0,
+    // Intent (Build -83): the creator's own recorded shares and
+    // saves across their reported posts.
+    intentViews: o.intent ? o.intent.views || 0 : 0,
+    intentShares: o.intent ? o.intent.shares || 0 : 0,
+    intentSaves: o.intent ? o.intent.saves || 0 : 0,
+    intentTotal: o.intent ? o.intent.intent || 0 : 0,
+    intentReportedPosts: o.intent ? o.intent.reportedPosts || 0 : 0,
     onTimePct: o.onTimePct != null ? o.onTimePct : null,
     paidBookings: o.paidBookings || 0,
     paidRecordedNet: o.paidRecordedNet || 0,
@@ -291,6 +307,7 @@ function factsLines(role, f) {
     lines.push(`Their business is ${f.businessName} in ${f.market || "an unfiled market"}. The market is ${f.marketLive ? "OPEN (live)" : "NOT open yet, so the business is on the founding list and nothing is charged"}.`);
     if (f.planName) lines.push(`Their plan is ${f.planName} at ${money(f.planPrice)} a month with ${f.visitsPerMonth} creator visits a month and a ${money(f.foundingCredit)} founding credit off the first month. This month they have used ${fmt(f.visitsUsed)} of ${fmt(f.visitsAllowance)} visits (${fmt(f.visitsRemaining)} left${f.visitsCarried ? `, including ${fmt(f.visitsCarried)} rolled over from last month` : ""}).`);
     lines.push(`Their numbers right now: ${fmt(f.offersLive)} offers live, ${fmt(f.draftOffers)} drafts, ${fmt(f.applicantsWaiting)} applicants waiting on their answer, ${fmt(f.visitsBooked)} visits booked, ${fmt(f.postsLive)} posts live. Counted register dollars so far: ${money(f.countedDollars)} (counted means rung up through visit codes). Modeled estimate on top of that: ${money(f.modeledDollars)}, and that figure is an estimate, never a counted sale. Creators with finished profiles in their market: ${fmt(f.rosterInMarket)}.`);
+    if (f.intentTotal > 0) lines.push(`Post intent on their live posts: ${fmt(f.intentShares)} shares and ${fmt(f.intentSaves)} saves recorded by the creators, ${fmt(f.intentTotal)} in total across ${fmt(f.intentReportedPosts)} reported ${plural(f.intentReportedPosts, "post")}. Saves and shares mean people planning to come. These are recorded figures, not counted sales. Their Return score across those posts is ${f.returnScore != null ? fmt(f.returnScore) + " out of 100" : "not scored yet (not enough data)"}.`);
     return lines;
   }
   // creator
@@ -299,6 +316,7 @@ function factsLines(role, f) {
   lines.push(`Their market is ${f.market || "unknown"} and it is ${f.marketLive ? "OPEN (live)" : "NOT open yet (founding)"}. Their application status is ${f.status || "unknown"}. Their profile is ${f.profileComplete ? "finished, so businesses can see them" : "NOT finished yet; still missing: " + (f.missingLabels.join(", ") || "nothing recorded") + ". A finished profile is the gate for being seen by businesses."}`);
   lines.push(`Their Momentum is ${fmt(f.momentumPoints)} points, level ${lv ? lv.name : "Starter"}${lv && lv.nextName ? `, with ${fmt(lv.nextAt - f.momentumPoints)} points to ${lv.nextName}` : ", the top level"}. Their tier is ${f.tier || "not set yet"}${f.audienceTotal != null ? ` on ${fmt(f.audienceTotal)} total followers across platforms` : ""}. Local audience in their home market: ${f.localPct != null ? f.localPct + "%" : "not reported"}. Markets they are listed in: ${f.listedMarkets.length ? f.listedMarkets.map((m) => `${m.market}${m.pct != null ? " (" + m.pct + "% local)" : ""}`).join(", ") : "just their home market"}.`);
   lines.push(`Their numbers right now: ${fmt(f.offersOpen)} open offers in their markets (${fmt(f.directInvites)} direct invites), ${fmt(f.applicationsPending)} applications waiting on a business's answer, ${fmt(f.visitsBooked)} visits booked, ${fmt(f.postsOwed.length)} posts owed, ${fmt(f.postsLive)} posts live${f.onTimePct != null ? `, ${f.onTimePct}% of their posts on time` : ""}. Paid bookings: ${fmt(f.paidBookings)}, with ${money(f.paidRecordedNet)} recorded as their net (recorded means the bookings on file, paid outside the app). License requests waiting on them: ${fmt(f.licenseRequestsPending)}. Creators joined through their invite link: ${fmt(f.referrals.signups)}, of whom ${fmt(f.referrals.approved)} were approved.`);
+  if (f.intentTotal > 0) lines.push(`Intent on their own posts: ${fmt(f.intentShares)} shares and ${fmt(f.intentSaves)} saves recorded, ${fmt(f.intentTotal)} in total across ${fmt(f.intentReportedPosts)} reported ${plural(f.intentReportedPosts, "post")}. Saves and shares mean people planning to come.`);
   if (f.paidRate) lines.push(`Their listed paid rate is ${money(f.paidRate)}${f.licenseFee ? ` and their licensing fee is ${money(f.licenseFee)}` : ""}.`);
   return lines;
 }
@@ -509,7 +527,7 @@ function answerAdmin(f, q, t) {
 function answerBusiness(f, q, t) {
   // My numbers digest
   if (hasPhrase(t, "my numbers", "my stats", "show me my", "how am i doing", "my dashboard")) {
-    return linked(`Your numbers: ${fmt(f.offersLive)} offers live, ${fmt(f.applicantsWaiting)} applicants waiting on your answer, ${fmt(f.visitsBooked)} visits booked, ${fmt(f.postsLive)} posts live, ${money(f.countedDollars)} counted at the register. You have ${fmt(f.visitsRemaining)} of ${fmt(f.visitsAllowance)} visits left this month on ${f.planName || "your plan"}.`, "See Results", "biz-results");
+    return linked(`Your numbers: ${fmt(f.offersLive)} offers live, ${fmt(f.applicantsWaiting)} applicants waiting on your answer, ${fmt(f.visitsBooked)} visits booked, ${fmt(f.postsLive)} posts live, ${money(f.countedDollars)} counted at the register.${f.intentTotal > 0 ? ` Those posts drew ${fmt(f.intentTotal)} saves and shares (intent: people planning to come).` : ""} You have ${fmt(f.visitsRemaining)} of ${fmt(f.visitsAllowance)} visits left this month on ${f.planName || "your plan"}.`, "See Results", "biz-results");
   }
   // Visits left
   if ((hasWord(t, "visit", "visits") && hasPhrase(t, "left", "remaining", "do i have")) || hasPhrase(t, "visits left", "visits remaining")) {
@@ -537,7 +555,7 @@ function answerBusiness(f, q, t) {
   // Results
   if (hasPhrase(t, "my results", "how are my", "how is my", "register", "counted", "sales", "return on") || (hasWord(t, "results") && hasWord(t, "my", "me"))) {
     if (!f.visitsBooked && !f.postsLive) return `Nothing counted yet: no visits have run, so there are no register dollars to show. Results count only what a visit code rings up, and nothing is shown before it is real.${f.founding ? " Your first results land after your market opens and your first visits run." : ""}`;
-    return linked(`Your counted results: ${money(f.countedDollars)} counted at the register across ${fmt(f.postsLive)} live posts and ${fmt(f.visitsRedeemed)} redeemed visits.${f.modeledDollars ? ` On top sits a modeled estimate of ${money(f.modeledDollars)}; that figure is an estimate, not counted sales.` : ""} Counted means rung up through visit codes, the only dollars Sig and your dashboard ever call real.`, "See Results", "biz-results");
+    return linked(`Your counted results: ${money(f.countedDollars)} counted at the register across ${fmt(f.postsLive)} live posts and ${fmt(f.visitsRedeemed)} redeemed visits.${f.modeledDollars ? ` On top sits a modeled estimate of ${money(f.modeledDollars)}; that figure is an estimate, not counted sales.` : ""} ${f.intentTotal > 0 ? ` Those posts also drew ${fmt(f.intentTotal)} saves and shares, recorded by the creators: intent, people planning to come.` : ""} Counted means rung up through visit codes, the only dollars Sig and your dashboard ever call real.`, "See Results", "biz-results");
   }
   // Roster in her market
   if ((hasWord(t, "creator", "creators", "roster") || hasPhrase(t, "can i book", "who can i book")) && hasPhrase(t, "my market", "in my", "near me", "can i book", "how many", "book in")) {
@@ -561,7 +579,7 @@ function answerBusiness(f, q, t) {
 function answerCreator(f, q, t) {
   // My numbers digest
   if (hasPhrase(t, "my numbers", "my stats", "show me my", "how am i doing")) {
-    return linked(`Your numbers: ${fmt(f.momentumPoints)} Momentum points (level ${f.level ? f.level.name : "Starter"}), ${fmt(f.offersOpen)} open offers in your markets, ${fmt(f.applicationsPending)} applications waiting on an answer, ${fmt(f.visitsBooked)} visits booked, ${fmt(f.postsLive)} posts live, and ${money(f.paidRecordedNet)} recorded from paid bookings.`, "Open Your numbers", "cr-numbers");
+    return linked(`Your numbers: ${fmt(f.momentumPoints)} Momentum points (level ${f.level ? f.level.name : "Starter"}), ${fmt(f.offersOpen)} open offers in your markets, ${fmt(f.applicationsPending)} applications waiting on an answer, ${fmt(f.visitsBooked)} visits booked, ${fmt(f.postsLive)} posts live, and ${money(f.paidRecordedNet)} recorded from paid bookings.${f.intentTotal > 0 ? ` Your posts have drawn ${fmt(f.intentTotal)} saves and shares so far (intent: people planning to come).` : ""}`, "Open Your numbers", "cr-numbers");
   }
   // Why / recent Momentum (before the plain points answer: "why" wins)
   if ((hasWord(t, "momentum", "points")) && hasPhrase(t, "why", "recent", "last", "change", "changed", "come from", "go up", "dropped", "earn them", "earned")) {
@@ -616,7 +634,7 @@ function answerCreator(f, q, t) {
   }
   // Earnings (recorded only, labeled)
   if (hasPhrase(t, "have i earned", "have i made", "my earnings", "much have i", "paid bookings", "money have i") || (hasWord(t, "earned", "earnings") && hasWord(t, "my", "i"))) {
-    return linked(`Recorded: ${money(f.paidRecordedNet)} net across ${fmt(f.paidBookings)} paid ${plural(f.paidBookings, "booking")} on file. Recorded means the bookings in the app; payouts run outside the app for now, and the app never promises a payout date.${f.licenseRequestsPending ? ` Also waiting on you: ${fmt(f.licenseRequestsPending)} license ${plural(f.licenseRequestsPending, "request")} to approve or decline.` : ""}`, "Open Earnings", "cr-earnings");
+    return linked(`Recorded: ${money(f.paidRecordedNet)} net across ${fmt(f.paidBookings)} paid ${plural(f.paidBookings, "booking")} on file. Recorded means the bookings in the app; payouts run outside the app for now, and the app never promises a payout date.${f.intentTotal > 0 ? ` Your posts have drawn ${fmt(f.intentTotal)} saves and shares so far (intent: people planning to come).` : ""}${f.licenseRequestsPending ? ` Also waiting on you: ${fmt(f.licenseRequestsPending)} license ${plural(f.licenseRequestsPending, "request")} to approve or decline.` : ""}`, "Open Earnings", "cr-earnings");
   }
   // Profile state
   if (hasPhrase(t, "my profile", "am i finished", "am i complete", "profile finished", "profile complete", "businesses see me", "can businesses see") || (hasWord(t, "missing") && hasWord(t, "profile", "my"))) {

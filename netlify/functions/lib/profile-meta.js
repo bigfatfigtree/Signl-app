@@ -271,6 +271,16 @@ function profileBodyHtml(p, place) {
       </div>` : "";
   const proof = p.proof && p.proof.visitsCompleted > 0 ? `
       <div class="wcard" style="margin:14px 0 0"><p style="margin:0"><span class="badge ok">Verified on SIGNL</span></p><p style="margin:8px 0 0"><strong>${p.proof.visitsCompleted} visit${p.proof.visitsCompleted === 1 ? "" : "s"} completed</strong> &middot; ${p.proof.onTimePosts} on time</p></div>` : "";
+  // Engagement strip (Build -83): public only once at least 3
+  // of the creator's posts carry reported metrics (the payload
+  // gates it server-side; the check repeats here so a stray
+  // payload can never render a thin strip). Totals and per-post
+  // averages, labeled recorded, with the post count it rests
+  // on. Below the threshold: absent, never zeros.
+  const engN = (v) => Number(v || 0).toLocaleString("en-US");
+  const eng = p.engagement && p.engagement.postsWithMetrics >= 3 ? p.engagement : null;
+  const engagement = eng ? `
+      <div class="wcard" style="margin:14px 0 0"><p style="margin:0"><span class="badge ok">Post engagement</span></p><p style="margin:8px 0 0"><strong>${engN(eng.totals.views)} views &middot; ${engN(eng.totals.likes)} likes &middot; ${engN(eng.totals.shares)} shares &middot; ${engN(eng.totals.saves)} saves</strong></p><p class="small muted" style="margin:4px 0 0">Per post on average: ${engN(eng.averages.views)} views, ${engN(eng.averages.likes)} likes, ${engN(eng.averages.shares)} shares, ${engN(eng.averages.saves)} saves. From ${eng.postsWithMetrics} SIGNL posts with reported numbers. Recorded: the creator's own reported figures.</p></div>` : "";
   return `
   <div class="public-profile bookme theme-${escHtml(p.pageTheme || "ink")}" style="max-width:720px;margin:20px auto">
     <div class="bookme-cover${p.photoUrl ? " has-photo" : " no-photo"}">
@@ -308,6 +318,7 @@ function profileBodyHtml(p, place) {
       </div>
       ${breakdown}
       ${proof}
+      ${engagement}
       ${p.categories && p.categories.length ? `<p class="small">${p.categories.map((x) => `<span class="badge">${escHtml(x)}</span>`).join(" ")}</p>` : ""}
       ${profileWorkHtml(p)}
       <h3 class="bookme-h">Rate card</h3>

@@ -19,6 +19,7 @@ const { askSigAI } = require("./sigai");
 const sigdata = require("./sigdata");
 const { buildProfilePageHtml, buildClaimPageHtml } = require("./profile-meta");
 const { videoEmbedFor } = require("./video-embed");
+const intentLib = require("./intent");
 const { normalizeAudienceMarkets, audienceShareInMarket, isListedInMarket, listedMarketsFor, audienceBreakdownFor, MULTI_MARKET_MIN_PCT } = require("./audience-markets");
 const igPrefill = require("./ig-prefill");
 const recruiters = require("./recruiters");
@@ -3901,6 +3902,14 @@ function summarizeTrackRecord(bookings, posts, creatorId) {
   for (const p of myPosts) {
     if (typeof p.views === "number") { contentViews += p.views; hasContentViews = true; }
   }
+  // Engagement + Return (Build -83): totals and per-post
+  // averages across the posts with reported metrics, plus the
+  // creator-level Return score (aggregates + this creator's
+  // counted customers from register tallies). Absent when no
+  // post has reported metrics: never zero-filled.
+  const engagement = intentLib.engagementOf(myPosts);
+  const countedCustomers = mine.reduce((s, b) => s + (b.redemptions ? Math.max(0, Math.floor(Number(b.redemptions.count) || 0)) : 0), 0);
+  const returnScore = engagement ? intentLib.returnScoreFor({ views: engagement.totals.views, likes: engagement.totals.likes, shares: engagement.totals.shares, saves: engagement.totals.saves, countedCustomers }) : null;
   return {
     visitsCompleted: visited.length,
     postsDelivered: myPosts.length,
@@ -3908,12 +3917,21 @@ function summarizeTrackRecord(bookings, posts, creatorId) {
     businessesWorkedWith: names,
     isNew: visited.length === 0 && myPosts.length === 0,
     ...(hasContentViews ? { contentViews } : {}),
+    ...(engagement ? { engagement } : {}),
+    ...(returnScore ? { returnScore } : {}),
   };
 }
 
 async function creatorTrackRecord(creatorId) {
   const [bookings, posts] = await Promise.all([allBookings(), allPosts()]);
-  return summarizeTrackRecord(bookings, posts, creatorId);
+  const track = summarizeTrackRecord(bookings, posts, creatorId);
+  // Demo showcase profiles stay exactly as they are (Build -83
+  // refinement): no engagement strip, no Return score, ever.
+  try {
+    const u = await store.get(`user:${creatorId}`);
+    if (u && isDemoShowcaseCreator(u)) { delete track.engagement; delete track.returnScore; }
+  } catch (e) { /* the guard is best-effort; absence of data already keeps demo profiles clean */ }
+  return track;
 }
 
 // Business reviews live as review:{id} records (see the POST
@@ -4655,6 +4673,11 @@ async function bookMePayload(u, viewer) {
     // Build -39: the public view honors Proof Card sharing and
     // the single-business forming gate inside proofForCreator.
     proof: await proofForCreator(u, { publicView: true }),
+    // Public engagement strip data (Build -83): rides at every
+    // tier ONLY once at least 3 of the creator's posts carry
+    // reported metrics; below that it is null and no strip
+    // renders anywhere public.
+    engagement: full.trackRecord && full.trackRecord.engagement && full.trackRecord.engagement.postsWithMetrics >= 3 ? full.trackRecord.engagement : null,
   };
   // The listed rate and licensing fee are part of the public
   // rate card now (2026-11-01): they ride at every tier. The
@@ -4720,7 +4743,7 @@ function postState(booking, post) {
 // numbers came from. Legacy posts reported before snapshots existed
 // summarize from their flat fields with a zero snapshot count.
 function performanceSummary(post) {
-  const empty = { reported: false, views: null, likes: null, comments: null, shares: null, firstAt: null, updatedAt: null, snapshots: 0, viewsGrowthPct: null, source: null };
+  const empty = { reported: false, views: null, likes: null, comments: null, shares: null, saves: null, firstAt: null, updatedAt: null, snapshots: 0, viewsGrowthPct: null, source: null };
   if (!post) return empty;
   const snaps = Array.isArray(post.snapshots) ? post.snapshots : [];
   const first = snaps.length ? snaps[0] : null;
@@ -4736,6 +4759,7 @@ function performanceSummary(post) {
     likes: num(post.likes),
     comments: num(post.comments),
     shares: num(post.shares),
+    saves: num(post.saves),
     firstAt: first ? first.at : null,
     updatedAt: post.lastSnapshotAt || (latest ? latest.at : null) || post.reportedAt || null,
     snapshots: snaps.length,
@@ -4819,7 +4843,17 @@ async function withPostState(booking) {
     const prim = await store.get(`booking:${booking.collabPrimaryBookingId}`);
     if (prim) collabPrimaryName = prim.creatorName || null;
   }
-  return { ...booking, post: postWithPerformance(post), creatorLicensingFee, postState: postState(booking, post), compliance: complianceStatusFor(booking, post, creatorStanding), businessReviewLinks, businessReferralProgram, businessReview, creatorReview, roas, collab, collabPrimaryName };
+  const postPayload = postWithPerformance(post);
+  if (postPayload) {
+    // Per-post intent + Return score (Build -83): recorded
+    // numbers on this post plus this booking's counted
+    // customers. Null score until views are reported.
+    const pi = intentLib.postIntent(post);
+    postPayload.intent = pi.intent;
+    postPayload.intentRatePer1k = pi.intentRatePer1k;
+    postPayload.returnScore = intentLib.returnScoreFor({ views: pi.views, likes: pi.likes, shares: pi.shares, saves: pi.saves, countedCustomers: booking.redemptions ? Math.max(0, Math.floor(Number(booking.redemptions.count) || 0)) : 0 });
+  }
+  return { ...booking, post: postPayload, creatorLicensingFee, postState: postState(booking, post), compliance: complianceStatusFor(booking, post, creatorStanding), businessReviewLinks, businessReferralProgram, businessReview, creatorReview, roas, collab, collabPrimaryName };
 }
 
 // ---------- Post compliance (Jeff, 2026-10-19; timeline final) ----------
@@ -8429,6 +8463,14 @@ async function readoutAggregates(bookingsSubset, postByBooking, licensesSubset, 
   const roas = roasFor(roasInputs);
   const postsSubset = (bookingsSubset || []).map((b) => postByBooking.get(b.id)).filter(Boolean);
   const num = (v) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
+  // Intent & Return (Build -83): recorded-only intent sums, the
+  // reach -> intent -> counted -> revenue funnel, and the Return
+  // score for this scope. Counted customers are the register
+  // tallies (counted class); nothing here is modeled.
+  const intentAgg = intentLib.intentOfPosts(postsSubset);
+  const countedCustomers = roas.redemptions ? roas.redemptions.count : 0;
+  const returnScore = intentLib.returnScoreFor({ views: intentAgg.views, likes: intentAgg.likes, shares: intentAgg.shares, saves: intentAgg.saves, countedCustomers });
+  const funnel = intentLib.funnelOf({ views: intentAgg.views, intent: intentAgg.intent, reportedPosts: intentAgg.reportedPosts, countedCustomers, registerRevenue: roas.registerValue });
   return {
     visitsBooked: (bookingsSubset || []).filter((b) => b.status !== "expired" && b.status !== "cancelled").length,
     visitsRedeemed: (bookingsSubset || []).filter((b) => !!b.redeemedAt).length,
@@ -8440,6 +8482,11 @@ async function readoutAggregates(bookingsSubset, postByBooking, licensesSubset, 
     estimatedRegisterValue: roas.estimatedRegisterValue,
     roasScore: roas.score,
     series: seriesForPosts(postsSubset),
+    shares: intentAgg.shares,
+    saves: intentAgg.saves,
+    intent: intentAgg,
+    funnel,
+    returnScore,
     licenseRequests: readoutLicenseCounts(licensesSubset),
   };
 }
@@ -8555,6 +8602,7 @@ async function creatorPerformanceReadout(user) {
     licenseRequestsPending: licenses.filter((l) => l.status === "pending").length,
     paidBookings: paidBookings.length,
     paidRecordedNet,
+    intent: intentLib.intentOfPosts(posts),
   };
   const postRows = posts
     .slice()
@@ -8567,6 +8615,10 @@ async function creatorPerformanceReadout(user) {
         businessName: booking.businessName || "",
         views: typeof p.views === "number" && Number.isFinite(p.views) ? p.views : null,
         likes: typeof p.likes === "number" && Number.isFinite(p.likes) ? p.likes : null,
+        shares: typeof p.shares === "number" && Number.isFinite(p.shares) ? p.shares : null,
+        saves: typeof p.saves === "number" && Number.isFinite(p.saves) ? p.saves : null,
+        intent: intentLib.postIntent(p).intent,
+        intentRatePer1k: intentLib.postIntent(p).intentRatePer1k,
         onTime: !!p.onTime,
         series: postSeries(p),
       };
@@ -13956,22 +14008,44 @@ function sampleResultsFor(viewer) {
     .map((h) => DEMO_SHOWCASE_ROSTER.find((s) => s.handle === h))
     .filter(Boolean);
   if (!specs.length) return null;
-  const creators = specs.map((s, i) => ({
-    name: s.name,
-    handle: s.handle,
-    categories: s.categories,
-    localAudiencePct: s.localAudiencePct,
-    localReach: Math.round((s.avgViews * s.localAudiencePct) / 100),
-    visited: true,
-    posted: i !== 4, // five of the six posts are live in the story
-    avatarUrl: `/assets/demo-creators/${s.handle}-1.jpg`,
-  }));
+  const creators = specs.map((s, i) => {
+    const localReach = Math.round((s.avgViews * s.localAudiencePct) / 100);
+    const posted = i !== 4; // five of the six posts are live in the story
+    return {
+      name: s.name,
+      handle: s.handle,
+      categories: s.categories,
+      localAudiencePct: s.localAudiencePct,
+      localReach,
+      visited: true,
+      posted,
+      avatarUrl: `/assets/demo-creators/${s.handle}-1.jpg`,
+      // Sample post metrics (Build -83): the funnel below reads
+      // the same story numbers. Views are the local reach each
+      // post delivered; shares and saves are the story's intent
+      // on those views. Sample data, labeled Sample everywhere
+      // it renders, like the rest of this story.
+      ...(posted ? {
+        postViews: localReach,
+        postShares: Math.round(localReach * 0.018),
+        postSaves: Math.round(localReach * 0.027),
+      } : {}),
+    };
+  });
   const posted = creators.filter((c) => c.posted);
   const now = Date.now();
   const series = SAMPLE_CUSTOMER_SERIES.map((n, i) => ({
     date: new Date(now - (SAMPLE_CUSTOMER_SERIES.length - 1 - i) * 86400000).toISOString().slice(0, 10),
     customers: n,
   }));
+  const customersCounted = SAMPLE_CUSTOMER_SERIES.reduce((s, n) => s + n, 0);
+  // The sample funnel (Build -83): reach and intent recorded in
+  // the story, visits and revenue counted in the story, at the
+  // story's $54 average basket. Same step shape as the real
+  // funnel; the client labels every step Sample.
+  const sampleIntent = posted.reduce((s, c) => s + (c.postShares || 0) + (c.postSaves || 0), 0);
+  const sampleViews = posted.reduce((s, c) => s + (c.postViews || 0), 0);
+  const sampleRevenue = customersCounted * 54;
   return {
     sample: true,
     campaign: {
@@ -13984,7 +14058,10 @@ function sampleResultsFor(viewer) {
       visitsDone: creators.length,
       postsLive: posted.length,
       localReach: posted.reduce((s, c) => s + c.localReach, 0),
-      customersCounted: SAMPLE_CUSTOMER_SERIES.reduce((s, n) => s + n, 0),
+      customersCounted,
+      intent: sampleIntent,
+      registerRevenue: sampleRevenue,
+      funnel: intentLib.funnelOf({ views: sampleViews, intent: sampleIntent, reportedPosts: posted.length, countedCustomers: customersCounted, registerRevenue: sampleRevenue }),
     },
     creators,
     series,
@@ -20012,8 +20089,9 @@ async function route(event) {
     const likes = num(b.likes);
     const comments = num(b.comments);
     const shares = num(b.shares);
-    if (views === "invalid" || likes === "invalid" || comments === "invalid" || shares === "invalid") return err(400, "Post numbers must be whole numbers, 0 or more");
-    if (views === null && likes === null && comments === null && shares === null) return err(400, "Add at least one number: views, likes, comments, or shares");
+    const saves = num(b.saves);
+    if (views === "invalid" || likes === "invalid" || comments === "invalid" || shares === "invalid" || saves === "invalid") return err(400, "Post numbers must be whole numbers, 0 or more");
+    if (views === null && likes === null && comments === null && shares === null && saves === null) return err(400, "Add at least one number: views, likes, comments, shares, or saves");
     const isFirstReport = !post.reportedAt;
     const carry = (provided, key) => (provided !== null ? provided : typeof post[key] === "number" && Number.isFinite(post[key]) ? post[key] : null);
     const snapshot = {
@@ -20022,6 +20100,7 @@ async function route(event) {
       likes: carry(likes, "likes"),
       comments: carry(comments, "comments"),
       shares: carry(shares, "shares"),
+      saves: carry(saves, "saves"),
       source: "creator_report",
     };
     if (!Array.isArray(post.snapshots)) post.snapshots = [];
@@ -20030,15 +20109,16 @@ async function route(event) {
     post.likes = snapshot.likes;
     post.comments = snapshot.comments;
     post.shares = snapshot.shares;
+    post.saves = snapshot.saves;
     if (isFirstReport) post.reportedAt = snapshot.at;
     post.lastSnapshotAt = snapshot.at;
     await store.set(`post:${post.id}`, post);
-    await logEvent({ type: isFirstReport ? "post_performance_reported" : "post_performance_updated", actorId: user.id, actorRole: "creator", subjectId: post.id, market: booking.market, data: { bookingId: booking.id, views: post.views == null ? null : post.views, likes: post.likes == null ? null : post.likes, comments: post.comments == null ? null : post.comments, shares: post.shares == null ? null : post.shares, snapshots: post.snapshots.length } });
+    await logEvent({ type: isFirstReport ? "post_performance_reported" : "post_performance_updated", actorId: user.id, actorRole: "creator", subjectId: post.id, market: booking.market, data: { bookingId: booking.id, views: post.views == null ? null : post.views, likes: post.likes == null ? null : post.likes, comments: post.comments == null ? null : post.comments, shares: post.shares == null ? null : post.shares, saves: post.saves == null ? null : post.saves, snapshots: post.snapshots.length } });
     if (isFirstReport) {
       await notifyMilestone(booking.businessId, "performance_reported",
         `${user.name} reported their post numbers for "${booking.title}" (${post.views == null ? "no views figure" : `${post.views} views`}). Your results on this booking are updated.`,
         `${user.name} reported post numbers for your visit`,
-        [`${user.name} reported the numbers on their post for "${booking.title}": ${post.views == null ? "views not reported" : `${post.views} views`}, ${post.likes == null ? "likes not reported" : `${post.likes} likes`}, ${post.comments == null ? "comments not reported" : `${post.comments} comments`}, ${post.shares == null ? "shares not reported" : `${post.shares} shares`}.`, "", "They feed the media-value side of this booking's modeled estimate. The register side is still yours to report under Bookings.", "", "Open SIGNL: https://app.joinsignl.com", "", "SIGNL"].join("\n"),
+        [`${user.name} reported the numbers on their post for "${booking.title}": ${post.views == null ? "views not reported" : `${post.views} views`}, ${post.likes == null ? "likes not reported" : `${post.likes} likes`}, ${post.comments == null ? "comments not reported" : `${post.comments} comments`}, ${post.shares == null ? "shares not reported" : `${post.shares} shares`}, ${post.saves == null ? "saves not reported" : `${post.saves} saves`}.`, "", "They feed the media-value side of this booking's modeled estimate. The register side is still yours to report under Bookings.", "", "Open SIGNL: https://app.joinsignl.com", "", "SIGNL"].join("\n"),
         { bookingId: booking.id, postId: post.id });
     } else {
       // Later snapshot updates are quieter: an in-app note for the
