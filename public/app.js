@@ -20486,34 +20486,72 @@ function recruiterHelpHtml() {
 
 // ---------- Admin: staff recruiters (Recruiters tab) ----------
 
-async function loadStaffRecruiters() {
-  const el = document.getElementById("staff-recruiters");
-  if (!el) return;
-  try {
-    const data = await api("GET", "/admin/recruiters");
-    const rows = data.recruiters || [];
-    const conflicts = rows.flatMap((r) => (r.conflicts || []).map((c) => ({ who: r.recruiter.name, market: r.recruiter.marketName, ...c })));
-    el.innerHTML = `
-    <h3 style="margin:18px 0 6px">Staff recruiters</h3>
-    <p class="muted small">A staff recruiter gets a login scoped to one market, a queue, and ready-to-send drafts. They send from their own accounts and mark each send; these numbers are that log, plus the sign-ups credited to them. A sign-up counts once: their link wins, a list match is flagged, never double-counted.</p>
-    <div class="panel">
+// Fallback market names for the invite form's first paint (Build
+// -72): state.boot.markets is the app's own market list; this
+// static copy (names exactly as lib/markets.js) only matters if
+// the form is opened before the bootstrap lands.
+const SR_FALLBACK_MARKET_NAMES = ["Virginia Beach", "Richmond", "Washington DC", "Raleigh", "Charlotte", "Baltimore", "Atlanta", "Nashville", "Austin", "Dallas", "Chicago", "Los Angeles", "San Diego", "Seattle", "Tampa", "Phoenix", "Denver", "Minneapolis", "Philadelphia", "Pittsburgh", "Cincinnati", "Columbus", "New Orleans", "Orlando", "Miami", "Houston", "San Antonio", "Las Vegas", "Detroit", "San Juan", "London", "Manchester", "Dubai", "Paris", "Barcelona", "Lisbon", "Toronto", "Montreal"];
+
+function srMarketOptionsHtml(names, selectedName) {
+  return (names || []).map((name) => `<option value="${esc(name)}" ${name === selectedName ? "selected" : ""}>${esc(name)}</option>`).join("");
+}
+
+function srInvitePanelHtml(optionsHtml) {
+  return `<div class="panel">
       <h4 style="margin-top:0">Invite a staff recruiter</h4>
       <div class="form-2col">
         <div class="field"><label>Name</label><input id="sr-name" placeholder="Bella Hausen"></div>
         <div class="field"><label>Email</label><input id="sr-email" placeholder="name@example.com"></div>
-        <div class="field"><label>Market</label><select id="sr-market">${(data.markets || []).map((m) => `<option value="${esc(m.name)}" ${m.name === "Dubai" ? "selected" : ""}>${esc(m.name)}</option>`).join("")}</select></div>
+        <div class="field"><label>Market</label><select id="sr-market">${optionsHtml}</select></div>
       </div>
       <button class="btn" onclick="srInvite()">Invite staff recruiter</button>
       <span id="sr-msg" class="small muted" style="margin-left:8px"></span>
       <p class="small muted">They get one email with a link to set their own password. Nothing else is sent.</p>
-    </div>
+    </div>`;
+}
+
+async function loadStaffRecruiters() {
+  const el = document.getElementById("staff-recruiters");
+  if (!el) return;
+  // Build -72: paint the invite form IMMEDIATELY, before the GET.
+  // It used to render only after GET /admin/recruiters resolved,
+  // and that read waited on the one-time seed import, so on the
+  // production store the form could hang past the function
+  // timeout and never appear at all. The invite endpoint never
+  // depended on the seeds, so the form is fully usable from first
+  // paint; the rollup fills in under it when the GET lands, and
+  // anything typed meanwhile is carried over.
+  const bootNames = ((state.boot && state.boot.markets) || []).map((m) => m.name);
+  el.innerHTML = `
+    <h3 style="margin:18px 0 6px">Staff recruiters</h3>
+    <p class="muted small">A staff recruiter gets a login scoped to one market, a queue, and ready-to-send drafts. They send from their own accounts and mark each send; these numbers are that log, plus the sign-ups credited to them. A sign-up counts once: their link wins, a list match is flagged, never double-counted.</p>
+    ${srInvitePanelHtml(srMarketOptionsHtml(bootNames.length ? bootNames : SR_FALLBACK_MARKET_NAMES, "Dubai"))}
+    <p class="muted" id="sr-loading">Loading recruiter numbers...</p>`;
+  try {
+    const data = await api("GET", "/admin/recruiters");
+    const rows = data.recruiters || [];
+    const conflicts = rows.flatMap((r) => (r.conflicts || []).map((c) => ({ who: r.recruiter.name, market: r.recruiter.marketName, ...c })));
+    const typedName = (document.getElementById("sr-name") || {}).value || "";
+    const typedEmail = (document.getElementById("sr-email") || {}).value || "";
+    const typedMarket = (document.getElementById("sr-market") || {}).value || "Dubai";
+    el.innerHTML = `
+    <h3 style="margin:18px 0 6px">Staff recruiters</h3>
+    <p class="muted small">A staff recruiter gets a login scoped to one market, a queue, and ready-to-send drafts. They send from their own accounts and mark each send; these numbers are that log, plus the sign-ups credited to them. A sign-up counts once: their link wins, a list match is flagged, never double-counted.</p>
+    ${srInvitePanelHtml(srMarketOptionsHtml((data.markets || []).map((m) => m.name), typedMarket))}
     ${rows.length ? `<div class="table-wrap panel"><table>
       <tr><th>Recruiter</th><th>Market</th><th>Queued</th><th>Sent (IG/TT/Email)</th><th>Replies+</th><th>Sign-ups</th><th>Approved</th><th>Via link / list</th><th></th></tr>
       ${rows.map((r) => { const e = r.recruiter; return `<tr><td><strong>${esc(e.name)}</strong><br><span class="muted small">${esc(e.kind)} &middot; src=${esc(e.claimSrc)}</span></td><td>${esc(e.marketName)}</td><td>${r.assigned}</td><td>${r.sends} (${r.sentByChannel.instagram}/${r.sentByChannel.tiktok}/${r.sentByChannel.email})</td><td>${r.replies}</td><td>${r.claimsStarted}</td><td>${r.signupsApproved}</td><td>${r.creditsViaLink} / ${r.creditsViaListMatch}</td><td>${e.kind === "staff" ? `<button class="btn small-btn ghost" onclick="srResend('${e.id}')">Resend invite</button>` : ""}</td></tr>`; }).join("")}
     </table></div>` : `<p class="muted">No recruiter seats yet.</p>`}
     ${conflicts.length ? `<div class="panel"><h4 style="margin-top:0">Flagged list matches</h4><p class="small muted">These sign-ups matched a prospect on one recruiter's list but arrived through another recruiter's link, so the link took the credit. Nothing is double-counted; the flag is here so a human can see it.</p>${conflicts.map((c) => `<p class="small">${esc(c.who)} (${esc(c.market)}): @${esc(c.handle || "")} - ${esc(c.name || "")}</p>`).join("")}</div>` : ""}`;
+    const nameEl = document.getElementById("sr-name");
+    if (nameEl && typedName) nameEl.value = typedName;
+    const emailEl = document.getElementById("sr-email");
+    if (emailEl && typedEmail) emailEl.value = typedEmail;
   } catch (err) {
-    el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+    // The form stays up even when the rollup read fails: inviting
+    // never depended on it.
+    const loading = document.getElementById("sr-loading");
+    if (loading) loading.outerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
 }
 

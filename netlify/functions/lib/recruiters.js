@@ -608,6 +608,23 @@ async function allCredits() {
 // built from the researched lists in the goal files by
 // scripts/build-recruiter-seeds.mjs; imports are idempotent
 // through the dedupe law, so a re-run adds nothing twice.
+//
+// Build -72 (Jeff, 2026-11-02): two laws changed after the first
+// production hang. (1) NO READ EVER BLOCKS ON SEEDING: read paths
+// call kickSeeds() fire-and-forget and serve the data already in
+// the store; the import drains in the background through normal
+// use. The original shape awaited the full ~1,300-record import
+// inside GET /admin/recruiters, which on the Blobs-backed store
+// ran past the function timeout, so the response never arrived
+// and the Admin Recruiters tab rendered nothing. (2) SEEDING IS
+// RESUMABLE: each seed file stamps its own done flag the moment
+// its import completes, so an invocation killed mid-import loses
+// at most the file in flight, and the next pass skips finished
+// files. The global flag is set only once every file's flag is
+// down. Dubai stays first: Bella's queue lands before anything.
+
+const SEED_FILE_SLUGS = ["dubai", "brain", "austin", "denver", "dallas", "chicago"];
+function seedFileFlagKey(slug) { return `config:recruiterSeedFile:${slug}`; }
 
 let seedsRunning = false;
 async function ensureSeeds(force) {
@@ -618,10 +635,25 @@ async function ensureSeeds(force) {
     seedsRunning = true;
     const results = {};
     const owner = await ensureOwnerEntity();
+
+    // Runs one seed file's import, then stamps its per-file done
+    // flag. A step that throws leaves its flag unset, so the next
+    // invocation resumes with exactly that file.
+    async function runStep(slug, resultKey, fn) {
+      if (!force) {
+        const doneFlag = await store.get(seedFileFlagKey(slug));
+        if (doneFlag) { results[resultKey] = "already-imported"; return; }
+      }
+      results[resultKey] = await fn();
+      await store.set(seedFileFlagKey(slug), { at: nowIso() });
+    }
+
     try {
-      const seed = require("./recruiter-seed-dubai.json");
-      const recs = (seed && seed.prospects) || [];
-      results.dubai = await importProspects({ marketName: "Dubai", recruiterId: seatIdFor("dubai"), records: recs, source: "dubai-seed-2026-11", actorId: null });
+      await runStep("dubai", "dubai", async () => {
+        const seed = require("./recruiter-seed-dubai.json");
+        const recs = (seed && seed.prospects) || [];
+        return importProspects({ marketName: "Dubai", recruiterId: seatIdFor("dubai"), records: recs, source: "dubai-seed-2026-11", actorId: null });
+      });
     } catch (e) { results.dubai = { error: String((e && e.message) || e) }; }
     const ownerFiles = [
       ["recruiter-seed-brain.json", null],
@@ -631,33 +663,56 @@ async function ensureSeeds(force) {
       ["recruiter-seed-chicago.json", "Chicago"],
     ];
     for (const [file, fixedMarket] of ownerFiles) {
+      const slug = file.replace("recruiter-seed-", "").replace(".json", "");
       try {
-        const data = require(`./${file}`);
-        const recs = Array.isArray(data) ? data : (data.prospects || []);
-        if (fixedMarket) {
-          results[file] = await importProspects({ marketName: fixedMarket, recruiterId: owner.id, records: recs, source: file.replace("recruiter-", "").replace(".json", ""), actorId: null });
-        } else {
+        await runStep(slug, file, async () => {
+          const data = require(`./${file}`);
+          const recs = Array.isArray(data) ? data : (data.prospects || []);
+          if (fixedMarket) {
+            return importProspects({ marketName: fixedMarket, recruiterId: owner.id, records: recs, source: file.replace("recruiter-", "").replace(".json", ""), actorId: null });
+          }
           const byMarket = {};
           for (const r of recs) {
             const m = (marketByNameLoose(r.market || "") || {}).name || r.market;
             if (!OWNER_MARKETS.includes(m)) continue;
             (byMarket[m] = byMarket[m] || []).push(r);
           }
-          results[file] = {};
+          const perMarket = {};
           for (const m of Object.keys(byMarket)) {
-            results[file][m] = await importProspects({ marketName: m, recruiterId: owner.id, records: byMarket[m], source: "brain-store", actorId: null });
+            perMarket[m] = await importProspects({ marketName: m, recruiterId: owner.id, records: byMarket[m], source: "brain-store", actorId: null });
           }
-        }
+          return perMarket;
+        });
       } catch (e) { results[file] = { error: String((e && e.message) || e) }; }
     }
-    await store.set(SEED_FLAG_KEY, { at: nowIso(), results });
+    // The global flag means "every file is in"; it is set only
+    // when each per-file flag is down, never before.
+    let allDone = true;
+    for (const slug of SEED_FILE_SLUGS) {
+      if (!(await store.get(seedFileFlagKey(slug)))) { allDone = false; break; }
+    }
+    if (allDone) {
+      await store.set(SEED_FLAG_KEY, { at: nowIso(), results });
+      await logEvent({ type: "recruiter_seeds_imported", actorId: null, actorRole: "system", subjectId: null, market: null, data: { results: JSON.parse(JSON.stringify(results, (k, v) => (k === "error" ? String(v) : v))) } });
+    }
     seedsRunning = false;
-    await logEvent({ type: "recruiter_seeds_imported", actorId: null, actorRole: "system", subjectId: null, market: null, data: { results: JSON.parse(JSON.stringify(results, (k, v) => (k === "error" ? String(v) : v))) } });
     return results;
   } catch (e) {
     seedsRunning = false;
     return null;
   }
+}
+
+// Fire-and-forget seed warm-up for read paths (Build -72). The
+// in-process seedsRunning guard makes repeat calls cheap no-ops
+// while an import is draining, and ensureSeeds never rejects; the
+// catch is belt-and-braces so a seeding fault can never break the
+// request that happened to trigger it.
+function kickSeeds() {
+  try {
+    const p = ensureSeeds();
+    if (p && typeof p.catch === "function") p.catch(() => {});
+  } catch (e) { /* seeding must never break a read */ }
 }
 
 // ---------------- staff invite ----------------
@@ -790,12 +845,12 @@ async function handleRecruiterApi({ method, seg, query, event, user }) {
   const sub = seg[1] || "";
 
   if (method === "GET" && sub === "me") {
-    await ensureSeeds();
+    kickSeeds();
     return json(200, { recruiter: entityView(entity) });
   }
 
   if (method === "GET" && sub === "queue") {
-    await ensureSeeds();
+    kickSeeds();
     let marketName = entity.marketName;
     if (entity.kind === "owner" && query && query.market && (entity.markets || []).includes(query.market)) marketName = query.market;
     const users = deps.allUsers ? await deps.allUsers() : [];
@@ -933,7 +988,7 @@ async function handleAdminRecruiters({ method, seg, event, user }) {
     return json(200, { ok: true, results });
   }
   if (seg.length === 2 && method === "GET") {
-    await ensureSeeds();
+    kickSeeds();
     const users = deps.allUsers ? await deps.allUsers() : [];
     const prospects = await allProspects();
     const credits = await allCredits();
@@ -943,6 +998,11 @@ async function handleAdminRecruiters({ method, seg, event, user }) {
     return json(200, { recruiters: rollups, markets: MARKETS.map((m) => ({ id: m.id, name: m.name })) });
   }
   if (seg[2] === "invite" && method === "POST") {
+    // Warm the seed import in the background (Build -72): the
+    // invite itself never seeds (it adopts whatever is already
+    // assigned to the market's seat), it just keeps the drain
+    // moving through normal Admin use.
+    kickSeeds();
     const b = parseBody(event);
     const result = await inviteStaffRecruiter({ name: b.name, email: b.email, market: b.market, actorId: user.id });
     if (result.error) return err(400, result.error);

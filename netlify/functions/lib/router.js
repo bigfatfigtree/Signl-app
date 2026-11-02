@@ -16365,6 +16365,10 @@ async function route(event) {
     if (method === "GET" && seg[1] === "leaderboard") {
       // Recruiter leaderboard (Jeff, 2026-10-18): every creator with
       // at least one credited sign-up, best Momentum first.
+      // Warm the recruiter seed import in the background (Build
+      // -72): opening the Recruiters tab drains the one-time import
+      // without any read ever waiting on it.
+      try { const seedP = recruiters.ensureSeeds(); if (seedP && seedP.catch) seedP.catch(() => {}); } catch (e) { /* seeding never blocks a read */ }
       const all = await allUsers();
       const [lbBk, lbPo, lbRv, lbBz] = await Promise.all([allBookings(), allPosts(), allReviews(), allBizReviews()]);
       const momentum = createMomentum({ users: all, bookings: lbBk, posts: lbPo, reviews: lbRv, bizReviews: lbBz });

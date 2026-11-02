@@ -123,6 +123,15 @@ async function phaseA() {
     check("admin login", r.status === 200 && r.data.user && r.data.user.role === "admin", `status=${r.status}`);
   }
 
+  // Build -72 adjustment: reads no longer wait on the one-time
+  // seed import (they kick it fire-and-forget and serve current
+  // data), so complete the import explicitly through the seed
+  // endpoint before asserting on seeded content below.
+  {
+    const r = await admin.req("POST", "/admin/recruiters/seed");
+    check("seed endpoint completes the one-time import", r.status === 200 && !!r.data && r.data.ok === true, `status=${r.status}`);
+  }
+
   // Seeds + rollups
   let dubaiSeatCount = 0;
   {
@@ -345,6 +354,14 @@ async function phaseB() {
     };
     const login = await req("POST", "/auth/login", { email: process.env.ADMIN_EMAIL, password: process.env.ADMIN_PASSWORD });
     if (login.status !== 200) { cageBlocked("HTTP admin login", `status=${login.status} ${serverErr.slice(-160)}`); return; }
+    // Build -72 adjustment: complete the seed import through the
+    // explicit seed endpoint before the end-to-end pass. Reads no
+    // longer drain it implicitly (they kick it fire-and-forget),
+    // and inside this single-process dev server a background
+    // import's store writes starve the event loop hard enough to
+    // reset in-flight requests. The assertions below are unchanged.
+    const seed = await req("POST", "/admin/recruiters/seed");
+    if (seed.status !== 200) { cageBlocked("HTTP seed completion", `status=${seed.status} ${serverErr.slice(-160)}`); return; }
     const invite = await req("POST", "/admin/recruiters/invite", { name: "Http Bella", email: "httpbella@fixtures.dev", market: "Dubai" });
     if (invite.status !== 200) { cageBlocked("HTTP invite (store writes over HTTP)", `status=${invite.status} ${serverErr.slice(-160)}`); return; }
     check("HTTP: admin invites a Dubai recruiter end to end", invite.data.recruiter && invite.data.recruiter.marketName === "Dubai");
