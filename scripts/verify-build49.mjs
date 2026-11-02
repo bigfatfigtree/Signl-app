@@ -83,8 +83,8 @@ check("surface: the Points panel actually loads (Build -49 fix: loadPointsCard c
   appJs.includes('api("GET", "/me/points")') && !appJs.includes('api("GET", "/api/me/points")'));
 check("surface: Golden Ticket panel pairs its +100/+25/+10/+3 table with WHY_SHORT and keeps the nothing-for-a-click line",
   (() => { const s = slice(appJs, "async function loadGoldenTickets()", "async function gtIssue"); return s.includes("${POINTS_WHY_SHORT}") && s.includes("Nothing is paid for a click or a share.") && s.includes("+100 points") && s.includes("+25 points") && s.includes("+10 points") && s.includes("+3 points"); })());
-check("surface: founding Home Momentum KPI sub is WHY_SHORT",
-  appJs.includes(`kpiCard("Momentum", fmtNum(momPts), { sub: POINTS_WHY_SHORT })`));
+check("surface: Momentum view carries the points explainer (Build -64: founding Home KPI grid demoted to the Momentum tab)",
+  slice(appJs, "function renderMomentumTab()", "async function renderCreatorNumbers").includes("pointsSectionHtml()") && appJs.includes("${POINTS_WHY_SHORT}"));
 check("surface: Numbers tab Momentum KPI sub is WHY_SHORT",
   appJs.includes(`kpiCard("Momentum", fmtNum(m.points || 0), { sub: POINTS_WHY_SHORT })`));
 check("surface: Momentum trend chart sub carries WHY_SHORT",
@@ -176,7 +176,7 @@ try {
   startServer();
   check("live: dev server boots", await waitUp());
   const boot = await fetch(BASE + "/api/bootstrap");
-  check("live: bootstrap carries the -49 build stamp", boot.headers.get("x-signl-build") === "2026.11.01-63", String(boot.headers.get("x-signl-build")));
+  check("live: bootstrap carries the -49 build stamp", boot.headers.get("x-signl-build") === "2026.11.01-64", String(boot.headers.get("x-signl-build")));
 
   const admin = client();
   await admin("POST", "/api/auth/login", { email: ADMIN_EMAIL, ["pass" + "word"]: ADMIN_PW });

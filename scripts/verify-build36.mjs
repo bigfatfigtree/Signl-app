@@ -203,7 +203,7 @@ try {
   check("client: the Points and Your Line section ships on the founding home",
     appJs.includes("Points and Your Line") && appJs.includes("pointsSectionHtml") && appJs.includes("Ways to earn") && appJs.includes('api("GET", "/me/points")'), "missing points UI");
   check("client: the level badge renders with its early-access perk",
-    appJs.includes("levelBadge") && appJs.includes("Sees new offers"), "missing badge render");
+    appJs.includes("earlyAccessHours") && appJs.includes("sees new offers"), "missing badge render");
   check("client: the Admin line lookup ships in Stats",
     appJs.includes("Your Line lookup") && appJs.includes("adminLineLookup"), "missing admin line UI");
 } catch (e) {

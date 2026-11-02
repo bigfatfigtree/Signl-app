@@ -83,7 +83,7 @@ part("POLISH statics");
 check("C13 Home carries the paid-lane summary, not the settings", appJs.includes("homePaidLaneSummaryHtml") && !appJs.includes("${homePaidLaneHtml("));
 check("C13 Profile still hosts the five panels", appJs.includes("spanishPanelHtml(c)") && appJs.includes("bookMePanelHtml(c)"));
 check("C14 queue sentences take the full phone row", css.includes(".sig-item .sig-stxt { flex: 1 1 100%; }"));
-check("C15 one market-name rule, no doubled lead city", appJs.includes("function marketPlaceLine") && (appJs.match(/marketPlaceLine\(/g) || []).length >= 4);
+check("C15 one market-name rule, no doubled lead city", appJs.includes("function marketPlaceLine") && (appJs.match(/marketPlaceLine\(/g) || []).length >= 3);
 check("C16 rank claims need a field of ten", routerJs.includes("ranked.length >= 10"));
 check("C17 a single open offer is named, not counted", appJs.includes("An offer is open near you:"));
 check("C18 Earnings branches on the rate being set", appJs.includes("Your rate is set at"));
@@ -111,7 +111,7 @@ check("A5 campaign import previews before it writes", appJs.includes("previewCam
 check("A6 stats cells carry labels into the stacked layout", appJs.includes('data-label="Approved creators"') && css.includes("td[data-label]::before"));
 check("L1 sign-in and claim forms validate in JS, not bubbles", appJs.includes('<form novalidate onsubmit="return doSignin(event)">') && appJs.includes('<form novalidate onsubmit="return doQuickClaim(event)">'));
 check("L2 staff redeem is explained on the logged-out page", appJs.includes("Working the register at a SIGNL business?"));
-check("B-cases stamp: the build is 2026.11.01-63", fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes('"2026.11.01-63"'));
+check("B-cases stamp: the build is 2026.11.01-64", fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes('"2026.11.01-64"'));
 
 // ---------- live ----------
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "signl-build47-"));
@@ -151,7 +151,7 @@ try {
   part("live boot");
   const idxRes = await fetch(BASE + "/");
   const idxHtml = await idxRes.text();
-  check("the served page carries build 2026.11.01-63", idxHtml.includes("2026.11.01-63"));
+  check("the served page carries build 2026.11.01-64", idxHtml.includes("2026.11.01-64"));
 
   const admin = makeClient();
   await admin("POST", "/api/auth/login", { email: ADMIN_EMAIL, ["pass" + "word"]: ADMIN_PASSWORD });

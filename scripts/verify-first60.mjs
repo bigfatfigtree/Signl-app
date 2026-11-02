@@ -173,8 +173,8 @@ try {
     !slice.includes("totalInMarket") && !slice.includes("will never be padded with stand-ins") && !slice.includes("roster is being built now") && !slice.includes("Showing the top"), "");
   check("no em dashes anywhere in the new founding preview code", !slice.includes("—"), "");
   check("build stamp is the new build on both sides",
-    fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), "..", "netlify", "functions", "lib", "build.js"), "utf8").includes("2026.11.01-63")
-    && fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), "..", "public", "index.html"), "utf8").includes("2026.11.01-63"), "");
+    fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), "..", "netlify", "functions", "lib", "build.js"), "utf8").includes("2026.11.01-64")
+    && fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), "..", "public", "index.html"), "utf8").includes("2026.11.01-64"), "");
 
   // ================================================================
   // Part B: creator excitement layer (Jeff, 2026-10-29).
@@ -211,7 +211,7 @@ try {
   check("client ships the excitement layer (stat card, unlock meter, momentum payoff)",
     buzzSlice.includes("creatorStatCardHtml") && buzzSlice.includes("Share my stat card") && buzzSlice.includes("City unlock meter") && buzzSlice.includes("Momentum moves you up") && buzzSlice.includes("stack order the business picks from"),
     `slice ${buzzSlice.length} chars`);
-  check("founding home renders the excitement layer from data.buzz", appJs.includes("${creatorBuzzHtml(u, card, f, data.buzz)}"), "");
+  check("founding Status view renders the excitement layer from data.buzz (Build -64 demotion)", appJs.includes("creatorBuzzHtml(state.user, card, f, data.buzz)"), "");
   check("excitement layer code carries no em dashes", buzzSlice.length > 0 && !buzzSlice.includes("—"), "");
   check("no surface claims Momentum shows creators paid campaigns first (the creator feed is newest-first)", !appJs.includes("see paid campaigns first") && !appJs.includes("paid campaigns first"), "");
   check("rate moment states pay-at-rate, keep 97%, held until post live at the rate field",

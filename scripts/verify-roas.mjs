@@ -334,7 +334,7 @@ try {
   check("client never says revenue was generated", !/revenue (generated|we generated)/i.test(appJs.text), "");
   check("client ships the business preview home (metrics, attention, pipeline, plan pace, working content, next visits)", appJs.text.includes("pvHomeHtml") && appJs.text.includes("Business home") && appJs.text.includes("Visit pipeline") && appJs.text.includes("Plan pace") && appJs.text.includes("need${total === 1 ? \"s\" : \"\"} your attention"), "");
   check("client ships the creator home (active visit, opportunities, local signal, money piles)", appJs.text.includes("loadCreatorHome") && appJs.text.includes("homeActiveVisitHtml") && appJs.text.includes("Opportunities picked for you") && appJs.text.includes("Your local signal") && appJs.text.includes("Cash and comps, kept separate"), "");
-  check("client ships the founding tabs (Dashboard, Profile, Status) behind the pre-launch gate", appJs.text.includes("FOUNDING_TABS") && appJs.text.includes("loadFoundingDashboard") && appJs.text.includes("loadFoundingStatus") && appJs.text.includes("See your full status"), "");
+  check("client ships the founding tabs (Dashboard, Profile, Status) behind the pre-launch gate", appJs.text.includes("FOUNDING_TABS") && appJs.text.includes("loadFoundingDashboard") && appJs.text.includes("loadFoundingStatus") && appJs.text.includes("go('dashboard','Status')"), "");
   // V3 (2026-10-27): both roles label the first destination "Home"
   // per the IA spec; internally the creator home stays its own
   // "Dashboard" screen, separate from the business "Home" screen.

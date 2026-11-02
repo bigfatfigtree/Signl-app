@@ -211,7 +211,7 @@ try {
     ["client: Your Last Ad, Graded renders on the founding page", appSrc.includes("Your last ad, graded") && appSrc.includes("gradeLastAd")],
     ["client: the grading verdicts are honest restatements, no projections", appSrc.includes("Grade: unproven") && appSrc.includes("It is not a projection of results")],
     ["client: Apply by Conversation ships (chat files through the register path)", appSrc.includes("Apply by conversation") && appSrc.includes('applicationSource: "conversation"')],
-    ["client: the join form carries the moment select", appSrc.includes('id="jb-moment"')],
+    ["client: the moment select moved to post-signup onboarding (Build -64)", !appSrc.includes('id="jb-moment"') && appSrc.includes('id="fbz-moment"')],
     ["client: the composer asks the moment", appSrc.includes('name="o2-moment"') && appSrc.includes("payload.moment")],
     ["client: the anchor badge renders from viewerAnchor", appSrc.includes("viewerAnchor") && appSrc.includes("Founding Anchor")],
     ["client: anchor copy states the no-lockout truth", appSrc.includes("It never blocks anyone")],

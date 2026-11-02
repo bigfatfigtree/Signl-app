@@ -163,7 +163,7 @@ try {
   check("no legacy bottom-nav items are built", !appJs.includes('class="bn-item'));
   part("source: V4.2 admin + preview join the V4 system");
   check("the shell marks the admin console and the Business Preview with their own body classes", appJs.includes('classList.add("admin-on")') && appJs.includes('classList.add("preview-on")') && appJs.includes('"admin-on", "preview-on"'));
-  check("V4.2 retires azure on admin + preview (deep SIGNL green tokens)", themeCss.includes("body.admin-on, body.preview-on") && themeCss.includes("--mint-deep: #0C7A43; --blue: #0C7A43"));
+  check("Build -64 accent lock: azure tokens on admin + preview (supersedes the V4.2 deep-green retirement)", themeCss.includes("body.admin-on, body.preview-on") && themeCss.includes("--mint-deep: #006AFC; --blue: #006AFC"));
   check("the admin rail wears the V4 chrome (ink rail, mint active, red count badge)", themeCss.includes("body.rail-on .rail-item.on") && themeCss.includes("body.rail-on .rail-badge"));
   check("the preview's chrome is the banner: the legacy topbar + footer are hidden in preview mode", themeCss.includes("body.preview-on .topbar, body.preview-on .footer"));
   check("phone fit: main can shrink and the tab row is capped at the viewport on admin + preview", themeCss.includes("body.rail-on main, body.preview-on main { min-width: 0; }") && themeCss.includes(".tabs { min-width: 0; max-width: 100%; }"));

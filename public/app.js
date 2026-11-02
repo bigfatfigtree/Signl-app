@@ -508,6 +508,47 @@ async function bookMeSendMessage(handle) {
   }
 }
 
+// One merged Work grid (Build -64): the portfolio sample, the
+// featured posts, and the creator's best-work links were three
+// near-identical sections on the public page. They are one grid
+// now: embed cells carry a designed placeholder behind the
+// iframe (a slow or blocked embed shows the placeholder, never
+// a void), and link-only posts ride as designed tiles in the
+// same grid. Deduped by URL. Mirrors profileWorkItems in
+// lib/profile-meta.js, which renders the same grid into the
+// served HTML.
+function workItemsOf(p) {
+  const items = [];
+  const seen = new Set();
+  const norm = (u) => String(u || "").replace(/\/+$/, "").toLowerCase();
+  if (p.portfolioSample && p.portfolioSample.url) {
+    items.push({ kind: "embed", url: p.portfolioSample.url, embedUrl: p.portfolioSample.embedUrl, tag: "Portfolio sample" });
+    seen.add(norm(p.portfolioSample.url));
+  }
+  for (const f of p.featuredPosts || []) {
+    if (!f || !f.url || seen.has(norm(f.url))) continue;
+    items.push({ kind: "embed", url: f.url, embedUrl: f.embedUrl, tag: "Featured post" });
+    seen.add(norm(f.url));
+  }
+  for (const w of p.pastWork || []) {
+    if (!w || !w.url || seen.has(norm(w.url))) continue;
+    items.push({ kind: "tile", url: w.url, label: w.label || "Watch", platform: w.platform || "" });
+    seen.add(norm(w.url));
+  }
+  return items;
+}
+function workGridHtml(p) {
+  const items = workItemsOf(p);
+  if (!items.length) return "";
+  const cells = items.map((it) => it.kind === "embed"
+    ? `<div class="work-cell"><div class="work-ph"><span class="work-ph-mark">${esc(p.primaryPlatformLabel || "Instagram")}</span><span class="work-ph-note">Post loading</span></div><iframe src="${esc(it.embedUrl || "")}" loading="lazy" frameborder="0" scrolling="no" allowtransparency="true" title="${esc(it.tag)} by @${esc(p.handle)}" onload="this.parentNode.classList.add('on')"></iframe><span class="work-tag">${esc(it.tag)}</span></div>`
+    : `<a class="work-cell tile" href="${esc(it.url)}" target="_blank" rel="noopener"><span class="work-ph-mark">${esc(it.platform || "Post")}</span><span class="work-tile-label">${esc(it.label)}</span><span class="work-go">View post</span></a>`).join("");
+  return `
+      <h3 class="bookme-h">Work</h3>
+      <div class="work-grid">${cells}</div>
+      <p class="small muted">Posts ${esc(p.name)} picked to show their work. They are the creator's own posts, not SIGNL visits.</p>`;
+}
+
 async function renderPublicProfile() {
   const handle = state.publicHandle || "";
   app.innerHTML = `<section class="panel center" style="max-width:560px;margin:40px auto"><p class="muted">Loading @${esc(handle)}...</p></section>`;
@@ -534,8 +575,14 @@ async function renderPublicProfile() {
   applyProfileShareShell(p, p.unlisted ? (p.city || "") : (p.market || ""));
   const initial = esc((p.name || "?").trim().charAt(0).toUpperCase() || "?");
   const tier = typeof p.viewerTier === "number" ? p.viewerTier : 0;
-  const featured = (p.featuredPosts || []).map((f) => `
-      <div class="bookme-embed"><iframe src="${esc(f.embedUrl)}" loading="lazy" frameborder="0" scrolling="no" allowtransparency="true" title="Featured post by @${esc(p.handle)}"></iframe></div>`).join("");
+  // Market chips, deduped (Build -64, audit F4): the place chip
+  // and the city chip named the same market twice in two cases.
+  // The city rides only when it adds information the place does
+  // not already carry.
+  const placeNorm = String(p.unlisted ? (p.city || "") : marketDisplayName(p.market)).toLowerCase();
+  const cityNorm = String(p.city || "").toLowerCase();
+  const cityChip = p.city && !p.unlisted && cityNorm && !placeNorm.includes(cityNorm) && !cityNorm.includes(placeNorm.replace(/,.*$/, ""))
+    ? `<span class="cc-chip">${esc(p.city)}</span>` : "";
   // Rate card as listed offerings (2026-11-01): the offerings
   // are public on the finished profile at every tier (Jeff's
   // CreatorMarket-standard ruling); only the Book action and
@@ -551,7 +598,7 @@ async function renderPublicProfile() {
     <h3 class="bookme-h">Rate card</h3>
     <div class="tint-block" style="margin-top:0">
       ${rateRows || `<p class="small muted" style="margin:0">This creator takes bookings through SIGNL; rates are set on their dashboard.</p>`}
-      ${p.canBook ? `<div class="cta-row" style="justify-content:flex-start;margin-top:10px"><button class="btn" onclick="return bookMeBook()">Book on SIGNL</button></div>` : tier === 0 ? `<p class="small" style="margin:10px 0 0"><strong>Businesses:</strong> ${state.user ? "booking opens from your dashboard." : `<a href="#" onclick="return go('signin')">sign in</a> to book on SIGNL.`}</p>` : ""}
+      ${p.canBook ? `<div class="cta-row" style="justify-content:flex-start;margin-top:10px"><button class="btn" onclick="return bookMeBook()">Book on SIGNL</button></div>` : tier === 0 ? `<p class="small" style="margin:10px 0 0"><strong>Businesses:</strong> ${state.user ? "booking opens from your dashboard." : `<a class="tlink" href="#" onclick="return go('signin')">sign in</a> to book on SIGNL.`}</p>` : ""}
       <p class="small muted">${BOOKME_GUARANTEE_LINE}</p>
       <p class="small muted">${BOOKME_STAYS_LINE}</p>
     </div>`;
@@ -560,7 +607,7 @@ async function renderPublicProfile() {
   // markets in the SIGNL gradient hues, and the pale remainder
   // is everywhere else. Every number is the creator's own
   // reported share, labeled as such.
-  const bdSegColors = ["#0C7A43", "#006AFC", "#03C9AB", "#2FE07E", "#5F7265", "#006AFC"];
+  const bdSegColors = ["#006AFC", "#03C9AB", "#2FE07E", "#019BFC", "#5F7265", "#006AFC"];
   const bd = p.audienceBreakdown;
   const breakdownHtml = bd && bd.segments && bd.segments.length ? `
     <div style="margin:14px 0 0">
@@ -569,14 +616,6 @@ async function renderPublicProfile() {
       </div>
       <p class="small muted" style="margin:6px 0 0">Where their audience lives: ${bd.segments.map((s) => `${esc(s.market)} ${s.pct}%`).join(" &middot; ")}${bd.elsewherePct > 0 ? ` &middot; everywhere else ${bd.elsewherePct}%` : ""}. Self-reported by the creator.</p>
     </div>` : "";
-  // Past work (2026-11-01): the creator's own best-work links,
-  // listed as offerings of proof next to the featured embeds.
-  const pastWorkHtml = (p.pastWork || []).length ? `
-    <h3 class="bookme-h">Past work</h3>
-    <div class="bookme-socials">
-      ${p.pastWork.map((w) => `<a class="bookme-channel" href="${esc(w.url)}" target="_blank" rel="noopener"><span class="bookme-channel-name">${esc(w.label || "Watch")}</span><span class="bookme-channel-go">View post</span></a>`).join("")}
-    </div>
-    <p class="small muted">Posts this creator picked as their best work. They are the creator's own posts, not SIGNL visits.</p>` : "";
   const socialsBlock = tier >= 2 ? `
     ${p.socialsHiddenByCreator ? "" : (p.socialLinks && p.socialLinks.length ? `
     <div class="bookme-socials">
@@ -595,8 +634,8 @@ async function renderPublicProfile() {
     </div>`;
   app.innerHTML = `
   <div class="public-profile bookme theme-${esc(p.pageTheme || "ink")}" style="max-width:720px;margin:20px auto">
-    <div class="bookme-cover">
-      ${p.photoUrl ? `<img class="bookme-photo" src="${esc(p.photoUrl)}" alt="">` : `<div class="cc-mono bookme-mono"><span>${initial}</span></div>`}
+    <div class="bookme-cover${p.photoUrl ? " has-photo" : " no-photo"}">
+      ${p.photoUrl ? `<img class="bookme-banner" src="${esc(p.photoUrl)}" alt="">` : `<div class="cc-mono bookme-mono"><span>${initial}</span></div>`}
       <div class="bookme-cover-id">
         <div class="cc-name bookme-name">${esc(p.name)}</div>
         <div class="bookme-handle">@${esc(p.handle)} &middot; ${esc(p.primaryPlatformLabel || "Instagram")}</div>
@@ -604,18 +643,16 @@ async function renderPublicProfile() {
       </div>
     </div>
     ${p.realPeopleChecked ? `<p class="small" style="margin:10px 0 0"><span class="badge ok">Checked by a person</span> Real posts, real local life.</p>` : ""}
-    ${p.levelBadge ? `<p class="small" style="margin:10px 0 0"><span class="badge">Level ${p.levelBadge.level} · ${esc(p.levelBadge.name)}</span> Sees new offers ${p.levelBadge.earlyAccessHours} hours early.</p>` : ""}
     ${galleryRowHtml(p.photos)}
     <section class="panel bookme-body">
       <div class="cc-chips">
         <span class="cc-chip market">${place}</span>
-        ${!p.unlisted && p.city ? `<span class="cc-chip">${esc(p.city)}</span>` : ""}
+        ${cityChip}
         ${p.neighborhood ? `<span class="cc-chip">${esc(p.neighborhood)}</span>` : ""}
         ${p.campusBadge ? `<span class="cc-chip">${esc(p.campusBadge)}</span>` : ""}
         ${p.tierBand ? `<span class="cc-chip">${esc(p.tierBand)}</span>` : ""}
         ${p.isRealtor ? `<span class="cc-chip">Realtor</span>` : ""}
         ${p.charter ? "" : `<span class="cc-chip">Founding Creator</span>`}
-        ${p.foundingBand ? `<span class="cc-chip">First ${p.foundingBand} founding</span>` : ""}
         ${(p.listedMarkets || []).filter((m) => !m.home).map((m) => `<span class="cc-chip">Also ranked in ${esc(m.market)} &middot; ${m.pct}% of audience</span>`).join("")}
       </div>
       ${p.pitchLine ? `<p class="bookme-pitch" style="font-size:1.05rem;margin:10px 0 0"><em>${esc(p.pitchLine)}</em></p>` : ""}
@@ -626,20 +663,19 @@ async function renderPublicProfile() {
           : `<div class="big">${p.localAudiencePct}%</div><div class="lbl">of their audience is local</div><div class="src">${(p.localAudienceSource || "Self-reported") === "Self-reported" ? "Self-reported: the creator's own number" : esc(p.localAudienceSource)}</div>`}
       </div>
       ${breakdownHtml}
-      ${p.proof && p.proof.countsForming ? `<div class="wcard" style="margin:14px 0 0"><p style="margin:0"><span class="badge ok">Verified on SIGNL</span></p><p style="margin:8px 0 0"><strong>${p.proof.visitsCompleted} visit${p.proof.visitsCompleted === 1 ? "" : "s"} completed</strong>, ${p.proof.onTimePosts} on time. Their counted record is forming: it opens at 5 counted customers.</p><p class="small muted" style="margin:6px 0 0">Counted by SIGNL from register events, not claimed by the creator. Book me on SIGNL and this is the receipt you'll get.</p></div>` : p.proof && p.proof.visitsCompleted > 0 ? `<div class="wcard" style="margin:14px 0 0"><p style="margin:0"><span class="badge ok">Verified on SIGNL</span></p><p style="margin:8px 0 0"><strong>${p.proof.visitsCompleted} visit${p.proof.visitsCompleted === 1 ? "" : "s"} completed</strong>, ${p.proof.onTimePosts} on time · <strong>${p.proof.customersCounted} customers counted</strong> at the register · <strong>${p.proof.cameBacks} came back</strong> within a month · at least <strong>$${fmtMoney(p.proof.trackedSpend)}</strong> tracked spend</p><p class="small muted" style="margin:6px 0 0">Counted by SIGNL from register events, not claimed by the creator. Book me on SIGNL and this is the receipt you'll get.</p></div>` : ""}
+      ${p.proof && p.proof.visitsCompleted > 0 ? `<div class="wcard" style="margin:14px 0 0"><p style="margin:0"><span class="badge ok">Verified on SIGNL</span></p><p style="margin:8px 0 0"><strong>${p.proof.visitsCompleted} visit${p.proof.visitsCompleted === 1 ? "" : "s"} completed</strong> &middot; ${p.proof.onTimePosts} on time</p><p class="small muted" style="margin:6px 0 0">From this creator's real SIGNL visits, counted by SIGNL, not claimed by the creator.</p></div>` : ""}
       ${p.categories && p.categories.length ? `<p class="small">${p.categories.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
       ${p.isRealtor && p.farmAreas && p.farmAreas.length ? `<p class="small">Neighborhoods: ${p.farmAreas.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
       ${p.streets && p.streets.length ? `<p class="small">My streets: ${p.streets.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
       ${p.compCategories && p.compCategories.length ? `<p class="small muted">Open to comps: ${p.compCategories.map(esc).join(", ")}</p>` : ""}
-      ${p.portfolioSample ? `<h3 class="bookme-h">Portfolio sample</h3><div class="bookme-featured"><div class="bookme-embed"><iframe src="${esc(p.portfolioSample.embedUrl)}" loading="lazy" frameborder="0" scrolling="no" allowtransparency="true" title="Portfolio sample by @${esc(p.handle)}"></iframe></div></div><p class="small muted">A post @${esc(p.handle)} made about a place they love. A portfolio sample, not a SIGNL visit.</p>` : ""}
-      ${featured ? `<h3 class="bookme-h">Featured posts</h3><div class="bookme-featured">${featured}</div>` : ""}
-      ${pastWorkHtml}
+      ${workGridHtml(p)}
       ${rateBlock}
       ${socialsBlock}
       ${visitIncludesHtml(p.visitIncludes)}
       ${p.isRealtor && p.brokerage ? `<p class="small muted">Brokered by ${esc(p.brokerage)}</p>` : ""}
       ${p.viewerIsOwner ? `<p class="small muted">This is your book-me page, exactly as visitors see it. Edit it any time under Profile.</p><p class="small">${shareBlockHtml(p.handle, p.market || "", "Share your invite")}</p>` : ""}
     </section>
+    ${!state.user ? `<div class="bookme-sticky"><span class="bs-name">Book ${esc(p.name)} on SIGNL</span><a class="btn bs-btn" href="#" onclick="return go('signin')">Book on SIGNL</a></div>` : ""}
   </div>`;
 }
 
@@ -2619,7 +2655,11 @@ function renderMomentumTab() {
     <p class="small" style="margin:10px 0 0">${POINTS_WHY_LONG}</p>
   </div>
   ${momentumHtml(u)}
-  ${growRosterHtml(u)}`;
+  ${growRosterHtml(u)}
+  ${pointsSectionHtml()}
+  ${goldenTicketsSectionHtml()}`;
+  loadPointsCard();
+  loadGoldenTickets();
 }
 
 // Creator Earnings (spec §6.5): real totals only, license
@@ -2765,12 +2805,28 @@ async function renderCreatorNumbers() {
 
 // The creator Offers gate card (spec §6.2 / §8): the deck is
 // replaced by this until the completion gate is finished.
+// Land a creator on the profile form's basics card (Build
+// -64): every "Finish profile" action routes here so the tap
+// ends at the four gate fields, not at the top of a ~30-field
+// form with no pointer to what matters.
+function goFinishProfile() {
+  go("dashboard", "Profile");
+  setTimeout(() => {
+    const b = document.getElementById("profile-basics");
+    if (!b) return;
+    try { b.scrollIntoView({ behavior: "smooth", block: "start" }); } catch (e) { b.scrollIntoView(); }
+    b.classList.add("basics-flash");
+    setTimeout(() => b.classList.remove("basics-flash"), 1800);
+  }, 120);
+  return false;
+}
+
 function gateCardHtml(u) {
   const pc = u.profileCompletion;
   const missing = pc ? pc.items.filter((i) => i.required && !i.done) : [];
   return `<div class="empty-card gate-card"><div class="ec-t">Finish your profile to see offers near you.</div>
   ${missing.length ? `<div class="ec-s">Still needed:</div><ul class="gate-list">${missing.map((i) => `<li>${esc(i.label)}${i.detail ? ` <span class="muted">(${esc(i.detail)})</span>` : ""}</li>`).join("")}</ul>` : `<div class="ec-s">A few essentials are still missing on your profile.</div>`}
-  <p class="center" style="margin-top:12px"><button class="btn ws-primary" onclick="return go('dashboard','Profile')">Finish profile</button></p></div>`;
+  <p class="center" style="margin-top:12px"><button class="btn ws-primary" onclick="return goFinishProfile()">Finish profile</button></p></div>`;
 }
 
 // ---------- Overhaul V2 workspace scaffold (Grin grammar) ----------
@@ -3506,7 +3562,7 @@ function renderHome() {
       <a class="btn" href="#" onclick="return go('join-creator')">Become a Founding Creator</a>
       <a class="btn ghost" href="#" onclick="return go('for-businesses')">For Businesses</a>
     </div>
-    <p class="small muted mt">Working the register at a SIGNL business? <a href="#" onclick="return goStaff()">Redeem a creator visit</a>: staff mode, your PIN and the creator's code, nothing else.</p>
+    <p class="small muted mt">Working the register at a SIGNL business? <a class="tlink" href="#" onclick="return goStaff()">Redeem a creator visit</a>: staff mode, your PIN and the creator's code, nothing else.</p>
     <p class="small muted mt">Founding sign-ups open in all ${(state.boot && state.boot.markets ? state.boot.markets.length : 38)} markets &middot; Decisions within 2 business days</p>
   </section>
   <section style="margin-top:44px">
@@ -3642,6 +3698,56 @@ function audienceMarketOptions(selected, homeMarket) {
   return `<option value="">Pick a market</option>` + names.map((m) => `<option value="${esc(m.name)}" ${m.name === selected ? "selected" : ""}>${esc(m.name)}</option>`).join("");
 }
 
+// Multi-market audience rows (Build -64, audit F2): the profile
+// form used to render five always-open dropdown rows before any
+// explanation. Now the help leads, the form starts with the
+// rows the creator actually has (one blank row when they have
+// none), rows are added and removed one at a time up to five,
+// and each row carries the claim form's search-then-pick
+// pattern instead of a bare full-list select.
+function amRowHtml(market, pct) {
+  const u = state.user || {};
+  return `<div class="p-am-row"><input class="p-am-search" placeholder="${T("Search markets", "Busca mercados")}" oninput="filterAmOptions(this)" style="margin-bottom:6px"><select class="p-am-market" style="width:100%">${audienceMarketOptions(market || "", u.market)}</select><div style="display:flex;align-items:center;gap:8px;margin-top:6px"><input class="p-am-pct" type="number" min="0" max="100" style="width:96px" placeholder="%" value="${esc(pct === undefined || pct === null ? "" : String(pct))}"><span class="small muted">${T("% of my audience", "% de mi audiencia")}</span><button type="button" class="btn small-btn ghost" onclick="return amRemoveRow(this)">${T("Remove", "Quitar")}</button></div></div>`;
+}
+function amRowCount() {
+  return document.querySelectorAll("#p-am-rows .p-am-row").length;
+}
+function amSyncAddBtn() {
+  const b = document.getElementById("p-am-add");
+  if (b) b.style.display = amRowCount() >= 5 ? "none" : "";
+}
+function amAddRow() {
+  const host = document.getElementById("p-am-rows");
+  if (!host || amRowCount() >= 5) return false;
+  const tmp = document.createElement("div");
+  tmp.innerHTML = amRowHtml("", "");
+  host.appendChild(tmp.firstElementChild);
+  amSyncAddBtn();
+  return false;
+}
+function amRemoveRow(btn) {
+  const host = document.getElementById("p-am-rows");
+  const row = btn && btn.closest ? btn.closest(".p-am-row") : null;
+  if (row) row.remove();
+  if (host && !host.querySelector(".p-am-row")) {
+    const tmp = document.createElement("div");
+    tmp.innerHTML = amRowHtml("", "");
+    host.appendChild(tmp.firstElementChild);
+  }
+  amSyncAddBtn();
+  return false;
+}
+function filterAmOptions(input) {
+  const row = input && input.closest ? input.closest(".p-am-row") : null;
+  const sel = row ? row.querySelector(".p-am-market") : null;
+  if (!sel) return;
+  const q = input.value.trim().toLowerCase();
+  for (const opt of sel.querySelectorAll("option")) {
+    if (!opt.value) continue;
+    opt.hidden = !!q && !opt.textContent.toLowerCase().includes(q);
+  }
+}
+
 // The search box above the market picker filters the grouped options
 // live; if the current selection gets filtered out, the first match
 // takes over so the city list below never disagrees with the market.
@@ -3699,10 +3805,10 @@ function renderSignin() {
       <div class="field"><label>Password</label><input type="password" id="si-password" required autocomplete="current-password"></div>
       <button class="btn" type="submit" style="width:100%">Sign in</button>
     </form>
-    <p class="small muted mt">You will stay signed in on this device for 30 days. <a href="#" onclick="return go('forgot')">Forgot password?</a></p>
+    <p class="small muted mt">You will stay signed in on this device for 30 days. <a class="tlink" href="#" onclick="return go('forgot')">Forgot password?</a></p>
     <button class="btn ghost mt" style="width:100%" onclick="return goStaff()">Redeem a creator visit</button>
     <p class="small muted">Staff at a SIGNL business: the button above takes you straight to the register screen. PIN in, creator code in, redeemed.</p>
-    <p class="small muted mt">New to SIGNL? <a href="#" onclick="return go('join-creator')">Join as a founding creator</a>. Businesses: <a href="#" onclick="return go('for-businesses')">join the founding business list</a>.</p>
+    <p class="small muted mt">New to SIGNL? <a class="tlink" href="#" onclick="return go('join-creator')">Join as a founding creator</a>. Businesses: <a class="tlink" href="#" onclick="return go('for-businesses')">join the founding business list</a>.</p>
     </div>
   </section>`;
 }
@@ -6103,16 +6209,14 @@ function renderForBusinesses() {
   <section class="panel form-panel" style="max-width:680px;margin:10px auto">
     <div class="form-head">
     <h2>For Businesses: join the founding list</h2>
-    <p>Join the founding business list. We hold your place while your market's roster is built.</p>
-    <p><strong>Founding pricing</strong> — locked while you stay subscribed. Activated by hand, in application order.</p>
+    <p><strong>Free to join. No card taken. We turn your account on by hand when your city opens.</strong></p>
+    <p>Join the founding business list. We hold your place while your market's roster is built. Founding pricing is locked while you stay subscribed, and activation runs in application order.</p>
     </div>
     <div class="form-body">
     <div class="plan-cards">${plans}</div>
-    <div class="notice blue mt">Joining is free. No card taken — payment stays concierge at activation.</div>
     <div id="jb-prefill"></div>
     <div id="jb-error"></div>
     <form onsubmit="return registerBusiness(event)">
-      ${igAssistCardHtml("jb", "business")}
       <div class="fgroup tint">
         <p class="fg-kicker">Your business</p>
         <div class="form-2col">
@@ -6142,23 +6246,14 @@ function renderForBusinesses() {
         <div class="field"><label>Business ZIP (optional)</label><input id="jb-zip" inputmode="numeric" maxlength="5" placeholder="For example: 23452"><p class="small muted">Used to group nearby creators by distance bands. Bands only, never an exact distance.</p></div>
       </div>
         <div class="field"><label>About your business (optional)</label><textarea id="jb-about" rows="3" placeholder="What you serve, what the visit feels like, anything SIGNL should know when reviewing your application"></textarea></div>
-        <div class="field"><label>What is your first month about? (optional)</label><select id="jb-moment"><option value="">Not sure yet</option>${momentsClient().map((m) => `<option value="${m.id}">${esc(m.label)}</option>`).join("")}</select><p class="small muted">The moment names the play your first month runs. You can change it any time after you join.</p></div>
       </div>
-        <div class="form-2col">
-          <div class="field"><label>Your usual night: which weeknight?</label><select id="jb-baseline-day"><option value="">Pick a weeknight</option><option>Monday</option><option>Tuesday</option><option>Wednesday</option><option>Thursday</option><option>Friday</option><option>Saturday</option><option>Sunday</option></select></div>
-          <div class="field"><label>About how many tables or customers?</label><input id="jb-baseline-count" type="number" min="0" placeholder="For example: 40"></div>
-        </div>
-        <p class="small muted" style="margin:0 0 10px">Optional, one remembered number. It is the starting line your receipt measures visit nights against, and it only works if it predates your first visit.</p>
+      ${igAssistCardHtml("jb", "business")}
       <input type="hidden" id="jb-plan" value="${esc(state.boot.plans[0].id)}">
       <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="jb-terms" required><span>I agree to the Terms of Service and Privacy Policy, including keeping bookings that start on SIGNL on SIGNL, and to account and marketing emails from SIGNL.</span></label></div>
       <button class="btn mt" type="submit" style="width:100%">Join founding list</button>
     </form>
-    <div class="panel" id="jb-convo-card" style="margin-top:16px">
-      <h4 style="margin-top:0">Rather talk it through?</h4>
-      <p class="small muted">Apply by conversation: Sig asks one question at a time and files the same founding application this form files. Nothing different is created; it is the same application, answered out loud instead of typed into boxes.</p>
-      <div id="jb-convo"></div>
-      <button class="btn ghost" type="button" id="jb-convo-start" onclick="jbConvoStart()">Apply by conversation</button>
-    </div>
+    <p class="small muted" style="margin-top:16px">Rather talk it through? <a class="tlink" href="#" id="jb-convo-start" onclick="jbConvoStart(); return false">Apply by conversation</a>: Sig asks one question at a time and files the same founding application this form files.</p>
+    <div id="jb-convo"></div>
     <p class="small muted mt">Reviewed by a person. Decision within 2 business days. Once you join, your status page previews your first drafted offer and exactly how SIGNL works; booking itself opens at activation. Creators join separately: <a href="#" onclick="return go('join-creator')">become a founding creator</a>.</p>
     </div>
   </section>`;
@@ -6489,6 +6584,17 @@ function renderBusinessFoundingStatus() {
     </div>
     <p class="muted small">Sign back in any time to check your status. Questions: hello@joinsignl.com</p>
     <div class="mt"><button class="btn ghost" onclick="signOut()">Sign out</button></div>
+  </section>
+  <section class="wcard" style="margin-top:14px">
+    <h3 style="margin-top:0">Set up your first month</h3>
+    <p class="small muted" style="margin:4px 0 12px">Two optional answers that only matter once visits start, so they live here instead of on the sign-up form. Set them any time before your first visit.</p>
+    <div class="field"><label>What is your first month about?</label><select id="fbz-moment"><option value="">Not sure yet</option>${momentsClient().map((m) => `<option value="${m.id}" ${bz.moment === m.id ? "selected" : ""}>${esc(m.label)}</option>`).join("")}</select><p class="small muted">The moment names the play your first month runs. You can change it any time.</p></div>
+    <div class="form-2col">
+      <div class="field"><label>Your usual night: which weeknight?</label><select id="fbz-base-day"><option value="">Pick a weeknight</option>${["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"].map((d) => `<option ${bz.baseline && bz.baseline.dayLabel === d ? "selected" : ""}>${d}</option>`).join("")}</select></div>
+      <div class="field"><label>About how many tables or customers?</label><input id="fbz-base-count" type="number" min="0" placeholder="For example: 40" value="${bz.baseline ? esc(String(bz.baseline.count)) : ""}"></div>
+    </div>
+    <p class="small muted" style="margin:0 0 10px">One remembered number. It is the starting line your receipt measures visit nights against, and it only works if it predates your first visit.</p>
+    <button class="btn small-btn" type="button" onclick="return fbzSaveSetup()">Save setup</button> <span class="small muted" id="fbz-setup-note"></span>
   </section>
   <div id="fbz-preview">${skelHtml("Loading your preview...", 3)}</div>
   <div id="fbz-account">${accountHtml(u)}</div></div>`;
@@ -7683,7 +7789,7 @@ function renderCreatorDash() {
     ${standingBannerHtml(u)}
     <div id="tab-body">${body}</div></div>`;
   if (tab === "Dashboard") loadCreatorHome();
-  if (tab === "Profile") { setTimeout(loadMyScore, 10); setTimeout(() => { setupUniversityAutocomplete("p-university", "p-university-results"); dragInit(); }, 10); }
+  if (tab === "Profile") { setTimeout(loadMyScore, 10); setTimeout(loadRateRange, 10); setTimeout(() => { setupUniversityAutocomplete("p-university", "p-university-results"); dragInit(); }, 10); }
   if (tab === "Offers") loadCreatorOffers();
   if (tab === "My Visits") loadMyVisits("creator");
   if (tab === "Messages") loadThreads();
@@ -7726,7 +7832,7 @@ function renderFoundingHome() {
   let body = "";
   if (tab === "Dashboard") body = `<div id="founding-dash" class="vx-stagger"><div class="sig-load-row">${sigAvatarHtml("think")}</div>${skelHtml("Loading your dashboard...", 2)}</div>`;
   if (tab === "Bench") body = `<div id="bench-body">${skelHtml("Loading the bench...", 1)}</div>`;
-  if (tab === "Status") body = `<h3 style="margin-top:0">Your founding status</h3><div id="founding-body">${skelHtml("Loading your founding profile...", 1)}</div>`;
+  if (tab === "Status") body = `<h3 style="margin-top:0">Your founding status</h3><div id="founding-body">${skelHtml("Loading your founding profile...", 1)}</div><div id="founding-buzz"></div><div id="founding-depth"></div>`;
   if (tab === "Profile") body = wsHead("My profile", { sub: "Your public creator profile. Complete profiles get booked first.", subKey: "cr-profile" }) + creatorProfileHtml(u);
   if (tab === "Status") body = wsHead("Status", { sub: "Where your founding enrollment stands." }) + body;
   app.innerHTML = `<div class="wrap">
@@ -7734,7 +7840,7 @@ function renderFoundingHome() {
     <div id="tab-body">${body}</div></div>`;
   if (tab === "Dashboard") loadFoundingDashboard();
   if (tab === "Status") loadFoundingStatus();
-  if (tab === "Profile") { setTimeout(loadMyScore, 10); setTimeout(() => { setupUniversityAutocomplete("p-university", "p-university-results"); dragInit(); }, 10); }
+  if (tab === "Profile") { setTimeout(loadMyScore, 10); setTimeout(loadRateRange, 10); setTimeout(() => { setupUniversityAutocomplete("p-university", "p-university-results"); dragInit(); }, 10); }
   if (tab === "More") renderMoreScreen();
   if (tab === "Momentum") renderMomentumTab();
   if (tab === "Numbers") renderCreatorNumbers();
@@ -7775,7 +7881,7 @@ async function loadFoundingDashboard() {
     // computed from the records on screen.
     const queueItems = [];
     if (u.profileCompletion && !u.profileCompletion.complete) {
-      queueItems.push({ text: "Finish your profile. Businesses can only find finished profiles.", btn: "Open profile", act: () => go("dashboard", "Profile") });
+      queueItems.push({ text: "Finish your profile. Businesses can only find finished profiles.", btn: "Open profile", act: () => goFinishProfile() });
     }
     if (!queueItems.length) {
       queueItems.push({ text: isUnl ? `You are on the founding roster. ${f.city} opens when sign-ups pile up; we email you the moment it opens.` : `You are on the founding roster for ${marketTalkNameClient(f.market)}. We email you the moment it opens.`, btn: "View status", act: () => go("dashboard", "Status") });
@@ -7817,7 +7923,7 @@ async function loadFoundingDashboard() {
     state.sigQueueCount = queueItems.length;
     const fSteps = [
       { label: "Claim your profile", sub: "You are on the roster.", done: u.status === "approved" },
-      { label: "Add the four basics", sub: "Home city, audience size, categories, local %.", done: !u.profileCompletion || u.profileCompletion.complete, btn: "Finish profile", act: () => go("dashboard", "Profile") },
+      { label: "Add the four basics", sub: "Home city, audience size, categories, local %.", done: !u.profileCompletion || u.profileCompletion.complete, btn: "Finish profile", act: () => goFinishProfile() },
       { label: "Set your paid rate", sub: "Comped visits work without it.", done: !!(u.creator && u.creator.paidRate), optional: true, btn: "Set my rate", act: () => go("dashboard", "Profile") },
       { label: "Apply to your first offer", sub: "Offers open when your market launches. The Offers tab shows how they work.", done: false, btn: "See Offers", act: () => go("dashboard", "Offers") },
     ];
@@ -7832,48 +7938,14 @@ async function loadFoundingDashboard() {
       <div class="kpi-sub">${pctSet ? `${p.localAudiencePct}% of your ${fmtNum(totalAud)} audience is local. Businesses rank creators by this number, not by follower count.` : "Add your local audience % in your profile and this fills in."}</div>
       ${pctSet ? "" : `<p style="margin:12px 0 0"><button class="btn small-btn ws-primary" onclick="return go('dashboard','Profile')">Add your local %</button></p>`}
     </div>
-    <div class="kpi-grid c3">
-      ${kpiCard("Total audience", fmtNum(totalAud), { sub: "Across your linked accounts" })}
-      ${kpiCard("Momentum", fmtNum(momPts), { sub: POINTS_WHY_SHORT })}
-      ${kpiCard("Local Impact Score", card.localImpactScore !== null && card.localImpactScore !== undefined ? String(card.localImpactScore) : "New", { sub: "Out of 100, from your profile and record" })}
-    </div>
-    <div class="wcard">
-      <div class="flex-between">
-        <div>
-          <h3 style="margin:0">${esc(u.name)} <span class="muted">@${esc(p.handle || "")}</span></h3>
-          <p class="muted small" style="margin:4px 0 0">${isUnl ? place : esc(marketPlaceLine(f.market, f.city))}</p>
-        </div>
-        <span class="badge ok" style="font-size:0.95rem;padding:6px 14px">${p.charter ? "Charter Creator" : "Founding Creator"}</span>
-      </div>
-      <p class="small">${p.localAudiencePct === null || p.localAudiencePct === undefined ? `Add your local audience % in your profile` : `${p.localAudiencePct}% local audience`} &middot; ${esc(p.tierBand || "")} tier &middot; ${fmtNum(totalAudienceOf(card))} total audience${f.priorityBand ? ` &middot; first ${f.priorityBand} founding` : ""}${campusBadgeHtml(card)}</p>
-      ${listedMarketsLineHtml(card)}
-      ${p.tierBand ? `<p class="small muted" style="margin:2px 0 0">Your tier is your size band, set automatically from your total audience across platforms.</p>` : ""}
-      <p style="margin-bottom:0">${scoreBadge(card.localImpactScore)}</p>
-      <div class="home-actions"><button class="btn small-btn ghost" onclick="return go('dashboard','Status')">See your full status</button></div>
-    </div>
-    ${creatorBuzzHtml(u, card, f, data.buzz)}
-    ${feedListHtml([
-      { at: u.createdAt, icon: "status", acc: true, title: `Founding enrollment: ${u.status === "approved" ? "approved" : "in review"}`, meta: isUnl ? unlistedPlace(f) : marketDisplayName(f.market) },
-      { icon: "pin", title: isUnl ? `${f.city} opens when sign-ups pile up` : `${marketTalkNameClient(f.market)} is a founding market`, meta: `We email you at ${u.email} the moment it opens.` },
-    ])}
+    <p class="small" style="margin:10px 2px 0">${listedMarketsLineHtml(card)}</p>
     ${homePaidLaneSummaryHtml(u.creator)}
-    <div class="wcard"><h3>Your funnel</h3><p class="wc-sub" style="margin:4px 0 0">Invites appear here once ${isUnl ? esc(f.city) : esc(marketTalkNameClient(f.market))} opens: invites received, visits booked, visits done, posts live. Nothing to count yet, and we do not chart zeroes.</p></div>
-    ${momentumHtml(u)}
     ${growRosterHtml(u)}
-    ${goldenTicketsSectionHtml()}
-    ${proofSectionHtml()}
-    ${pointsSectionHtml()}
-    <h3 style="margin:22px 0 0">Your founding status</h3>
-    <div id="founding-body">${skelHtml("Loading your founding profile...", 1)}</div>
+    <p class="small muted" style="margin:14px 2px 0">Your Charter card, founding class, points, and full status live under <a class="tlink" href="#" onclick="return go('dashboard','Status')">Status</a> and <a class="tlink" href="#" onclick="return go('dashboard','Momentum')">Momentum</a>.</p>
     ${askSigRowHtml()}`;
     wireSigQueue(el, queueItems, []);
     wireChecklist(el, fSteps);
     renderBottomNav();
-    loadFoundingStatus();
-    loadGoldenTickets();
-    loadProofCard();
-    loadPointsCard();
-    loadRateRange();
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
@@ -7951,6 +8023,27 @@ function receiptSettingsHtml(r) {
     ${proofControlsHtml(r)}
   </details>`;
 }
+// Founding business onboarding setup (Build -64): the
+// first-month moment + usual-night baseline that used to sit
+// on the sign-up form. Both ride the existing /me/profile
+// PATCH fields, the same ones the receipt settings use.
+async function fbzSaveSetup() {
+  const note = document.getElementById("fbz-setup-note");
+  const moment = (document.getElementById("fbz-moment") || {}).value || "";
+  const day = (document.getElementById("fbz-base-day") || {}).value || "";
+  const countRaw = (document.getElementById("fbz-base-count") || {}).value;
+  const patch = { moment: moment || null };
+  if (day && countRaw !== "" && countRaw !== undefined && countRaw !== null) patch.baseline = { dayLabel: day, count: Number(countRaw) };
+  try {
+    const data = await api("PATCH", "/me/profile", patch);
+    state.user = data.user;
+    if (note) note.textContent = "Saved.";
+  } catch (err) {
+    if (note) note.textContent = err.message;
+  }
+  return false;
+}
+
 async function receiptSaveBaseline() {
   const day = (document.getElementById("rc-base-day") || {}).value;
   const count = (document.getElementById("rc-base-count") || {}).value;
@@ -9227,6 +9320,18 @@ async function loadFoundingStatus() {
       <p class="muted">You signed up early, and it counts: when businesses search the ${esc(marketTalkNameClient(f.market))} roster, founding creators are ordered by sign-up time, earliest first.</p>` : ""}
       <p class="muted">Offers, visits, and messages unlock here the day your market activates. Keep your profile current in the meantime; your local audience percentage is what businesses look at first.</p>
     </div>`}`;
+    // Build -64: the founding home's depth moved here (audit
+    // F3). Home keeps status, next step, local reach, and the
+    // invite; the Charter card, stat card, unlock meter,
+    // Momentum payoff, funnel explainer, and Proof Card live
+    // on this Status view, one tap away, nothing deleted.
+    const buzzHost = document.getElementById("founding-buzz");
+    if (buzzHost) buzzHost.innerHTML = creatorBuzzHtml(state.user, card, f, data.buzz);
+    const depthHost = document.getElementById("founding-depth");
+    if (depthHost) {
+      depthHost.innerHTML = `<div class="wcard" style="margin-top:14px"><h3>Your funnel</h3><p class="wc-sub" style="margin:4px 0 0">Invites appear here once ${isUnl ? esc(f.city) : esc(marketTalkNameClient(f.market))} opens: invites received, visits booked, visits done, posts live. Nothing to count yet, and we do not chart zeroes.</p></div>${proofSectionHtml()}`;
+      loadProofCard();
+    }
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
@@ -10345,7 +10450,7 @@ async function loadCreatorHome() {
       if (!introDismissed) items.push({ cls: 3, at: now, text: `${benchMeetLine(intro)} I think you two would make a strong +1 pair: visit together, and you each post your own post and story.`, short: `Meet ${intro.creator.name}`, btn: "Meet them", act: () => go("dashboard", "Bench"), dismissKey: `benchintro:${intro.creator.userId}`, onDismiss: () => benchDismissIntro(intro.creator.userId) });
     }
     if ((money.held || 0) > 0) add(3, now, `A paid booking is earning: $${fmtMoney(money.held)} held until the post is live.`, "See earnings", () => go("dashboard", "Earnings"), `$${fmtMoney(money.held)} held on a paid booking`);
-    if (pc && !pc.complete) add(4, now, `Your profile is missing essentials (${pc.requiredDone} of ${pc.requiredTotal} done). Businesses cannot find you yet.`, "Finish profile", () => go("dashboard", "Profile"), `Profile: ${pc.requiredDone} of ${pc.requiredTotal} done`);
+    if (pc && !pc.complete) add(4, now, `Your profile is missing essentials (${pc.requiredDone} of ${pc.requiredTotal} done). Businesses cannot find you yet.`, "Finish profile", () => goFinishProfile(), `Profile: ${pc.requiredDone} of ${pc.requiredTotal} done`);
     const paidRate = u.creator && u.creator.paidRate;
     if (!paidRate) add(4, now, "Set your paid rate so businesses can book you paid.", "Set my rate", () => go("dashboard", "Profile"), "Paid rate not set");
     // Sig activation ideas (class 5): build-up prompts for a
@@ -10388,7 +10493,7 @@ async function loadCreatorHome() {
     // optional; the card retires when the other three are done.
     const steps = [
       { label: "Claim your profile", sub: "You are on the roster.", done: true },
-      { label: "Add the four basics", sub: "Home city, audience size, categories, local %.", done: gateDone, btn: "Finish profile", act: () => go("dashboard", "Profile") },
+      { label: "Add the four basics", sub: "Home city, audience size, categories, local %.", done: gateDone, btn: "Finish profile", act: () => goFinishProfile() },
       { label: "Set your paid rate", sub: "Comped visits work without it.", done: !!paidRate, optional: true, btn: "Set my rate", act: () => go("dashboard", "Profile") },
       { label: "Apply to your first offer", sub: "Flip through offers near you.", done: applications.length > 0 || bookings.length > 0, btn: "See offers", act: () => { state.crOffersSeg = "foryou"; go("dashboard", "Offers"); } },
     ];
@@ -10544,8 +10649,26 @@ function creatorProfileHtml(u) {
     ${ytNoticeHtml()}
     ${u.profileCompletion && !u.profileCompletion.complete ? `<div class="notice blue">${T("Your profile is not finished yet. Still needed to go live:", "Tu perfil aún no está terminado. Todavía falta para estar activo:")} ${u.profileCompletion.items.filter((i) => i.required && !i.done).map((i) => esc(i.label)).join(", ")}. ${T("Fill in the fields below and save. Businesses cannot see you, and you cannot take offers, until your profile is finished.", "Llena los campos de abajo y guarda. Los negocios no pueden verte, y no puedes aceptar ofertas, hasta que tu perfil esté terminado.")}</div>` : ""}
     <form onsubmit="return doUpdateCreator(event)">
+      <div class="fgroup tint" id="profile-basics">
+      <p class="fg-kicker">${T("Your basics", "Tus datos básicos")}</p>
+      <p class="small" style="margin:0 0 12px">${T("Finish these four to get booked: home city, audience size, at least one category, and your local %. Everything below this card is optional and can be added any time.", "Completa estos cuatro datos para que te contraten: tu ciudad, el tamaño de tu audiencia, al menos una categoría y tu % local. Todo lo que sigue después de esta tarjeta es opcional y puedes agregarlo cuando quieras.")}</p>
+      ${u.market === unlistedLabel()
+        ? `<div class="form-2col"><div class="field"><label>${T("Your city (not an open market yet)", "Tu ciudad (aún no es un mercado abierto)")} <span class="req-badge">${T("Required", "Obligatorio")}</span></label><input id="p-city-text" value="${esc(u.city || "")}"></div>
+           <div class="field"><label>${T("Your country", "Tu país")}</label><input id="p-country-text" value="${esc(u.country || "")}"></div>
+           <div class="field"><label>${T("Your state or province (optional)", "Tu estado o provincia (opcional)")}</label><input id="p-state-text" value="${esc(u.state || "")}"></div></div>`
+        : `<div class="field"><label>${T("Home city", "Ciudad")} (${esc(marketDisplayName(u.market))}) <span class="req-badge">${T("Required", "Obligatorio")}</span></label><select id="p-city">${cityOptions(u.market, u.city || "")}</select></div>`}
+      <div class="field"><label>${T("Your audience size", "El tamaño de tu audiencia")} <span class="req-badge">${T("Required", "Obligatorio")}</span></label>
+        <p class="small muted">Connect a platform and its count is verified: it updates on its own, and businesses see a Synced mark next to it. Counts you type yourself are labeled Self-reported.</p>
+        <div class="form-2col">
+          ${stackRows.map(stackRowHtml).join("")}
+        </div>
+        <p class="small muted">Total audience: <strong id="p-stack-total">${fmtNum(totalAudienceOf(c))}</strong> across every platform. Businesses see the total and the breakdown. Skip any platform you do not use (leave it at 0). Completing 3 or more platforms earns Momentum points.</p>
+      </div>
+      <div class="field"><label>${T("What you create in", "En qué categorías creas")} <span class="req-badge">${T("Required", "Obligatorio")}</span></label><div class="checkrow">${cats}</div></div>
+      <div class="field"><label>${T("Your local reach (local audience share, %)", "Tu alcance local (parte local de tu audiencia, %)")} <span class="req-badge">${T("Required", "Obligatorio")}</span></label><input type="number" id="p-localpct" min="0" max="100" value="${c.localAudiencePct === null || c.localAudiencePct === undefined ? "" : c.localAudiencePct}"><p class="small muted">${LOCAL_PCT_HELP}</p></div>
+      </div>
       <div class="fgroup tint">
-      <p class="fg-kicker">${T("The basics", "Lo básico")}</p>
+      <p class="fg-kicker">${T("About you", "Sobre ti")} <span class="opt-badge">${T("Optional", "Opcional")}</span></p>
       <div class="field"><label>${T("Your name", "Tu nombre")}</label><input id="p-name" value="${esc(u.name || "")}"><p class="small muted">${T("Shown to businesses next to your handle. A quick claim starts with your handle here; put your real name in.", "Se muestra a los negocios junto a tu usuario. Un reclamo rápido empieza con tu usuario aquí; pon tu nombre real.")}</p></div>
       <div class="field"><label>${T("Your photos", "Tus fotos")}</label>
         <div id="p-gallery">${galleryHtml(u)}</div>
@@ -10555,11 +10678,6 @@ function creatorProfileHtml(u) {
       <div class="form-2col">
         <div class="field"><label>${T("Where is your main audience?", "¿Dónde está tu audiencia principal?")}</label>${platformChipsHtml("p-platform", c.primaryPlatform || "instagram", "syncPPlatform")}<p class="small muted" id="p-proof-note" style="display:${(c.primaryPlatform || "instagram") !== "instagram" ? "" : "none"}">${PROOF_DISCLOSURE}</p><p class="small" id="p-pro-hint" style="display:${(c.categories || []).some((x) => PRO_CATS.includes(x)) || c.profession === "Real estate agent" ? "" : "none"}">${T("A lot of pros here run on LinkedIn.", "Muchos profesionales aquí usan LinkedIn.")}</p></div>
         <div class="field"><label>${T("Your main handle", "Tu usuario principal")}</label><input id="p-handle" value="${esc(c.handle || "")}"><p class="small muted">${T("Your handle on your main platform. Your public profile and claim links point there.", "Tu usuario en tu plataforma principal. Tu perfil público y tus enlaces de reclamo apuntan ahí.")}</p></div>
-        ${u.market === unlistedLabel()
-          ? `<div class="field"><label>${T("Your city (not an open market yet)", "Tu ciudad (aún no es un mercado abierto)")}</label><input id="p-city-text" value="${esc(u.city || "")}"></div>
-             <div class="field"><label>${T("Your country", "Tu país")}</label><input id="p-country-text" value="${esc(u.country || "")}"></div>
-             <div class="field"><label>${T("Your state or province (optional)", "Tu estado o provincia (opcional)")}</label><input id="p-state-text" value="${esc(u.state || "")}"></div>`
-          : `<div class="field"><label>${T("Home city", "Ciudad")} (${esc(marketDisplayName(u.market))})</label><select id="p-city">${cityOptions(u.market, u.city || "")}</select></div>`}
       </div>
       <div class="field"><label>${T("Your neighborhood or area", "Tu vecindario o zona")}</label><input id="p-neighborhood" value="${esc(c.neighborhood || "")}" placeholder="${T("Optional, for example: Oceanfront, Ghent, Town Center", "Opcional, por ejemplo: Oceanfront, Ghent, Town Center")}" maxlength="80"><p class="small muted">${T("Businesses search by neighborhood. Keep it to the area you actually post from.", "Los negocios buscan por vecindario. Déjalo en la zona desde donde publicas de verdad.")}</p></div>
       <div class="field"><label>${T("Your three streets", "Tus tres calles")}</label>
@@ -10578,7 +10696,7 @@ function creatorProfileHtml(u) {
       <div class="field"><label>${T("Student status (optional)", "Estado de estudiante (opcional)")}</label>${universityStatusChipsHtml("p-university-status", c.universityStatus || u.universityStatus || "")}<p class="small muted">${T("The campus badge is for current students only, so it shows while your status is Current student.", "La insignia de campus es solo para estudiantes actuales, así que se muestra mientras tu estado sea Estudiante actual.")}</p></div>
       </div>
       <div class="fgroup">
-      <p class="fg-kicker">${T("Your links", "Tus enlaces")}</p>
+      <p class="fg-kicker">${T("Your links", "Tus enlaces")} <span class="opt-badge">${T("Optional", "Opcional")}</span></p>
       <div class="form-2col">
         <div class="field"><label>${T("TikTok handle", "Usuario de TikTok")}</label><input id="p-tiktok" value="${esc(c.tiktokHandle || "")}" placeholder="${T("Optional", "Opcional")}"></div>
         <div class="field"><label>${T("YouTube channel", "Canal de YouTube")}</label><input id="p-youtube" value="${esc(c.youtubeChannel || "")}" placeholder="${T("Optional", "Opcional")}"></div>
@@ -10590,29 +10708,19 @@ function creatorProfileHtml(u) {
       <div class="field"><label>${T("LinkedIn profile URL", "URL de tu perfil de LinkedIn")}</label><input id="p-linkedin" value="${esc(c.linkedinUrl || "")}" placeholder="${T("Optional", "Opcional")}"></div>
       </div>
       <div class="fgroup tint">
-      <p class="fg-kicker">${T("Your audience", "Tu audiencia")}</p>
+      <p class="fg-kicker">${T("Your audience", "Tu audiencia")} <span class="opt-badge">${T("Optional", "Opcional")}</span></p>
       <div class="field"><label>${T("Your tier band", "Tu nivel")}</label><p style="margin:6px 0"><strong id="p-tier-band">${esc(c.tierBand || "")}</strong></p><p class="small muted">${T("Set automatically from your total audience across platforms. It updates itself when your counts below change; nobody picks their own band.", "Se fija solo, según tu audiencia total en todas las plataformas. Se actualiza cuando cambian tus conteos de abajo; nadie elige su propio nivel.")}</p></div>
-      <div class="field"><label>${T("Your audience, platform by platform", "Tu audiencia, plataforma por plataforma")}</label>
-        <p class="small muted">Connect a platform and its count is verified: it updates on its own, and businesses see a Synced mark next to it. Counts you type yourself are labeled Self-reported.</p>
-        <div class="form-2col">
-          ${stackRows.map(stackRowHtml).join("")}
-        </div>
-        <p class="small muted">Total audience: <strong id="p-stack-total">${fmtNum(totalAudienceOf(c))}</strong> across every platform. Businesses see the total and the breakdown. Skip any platform you do not use (leave it at 0). Completing 3 or more platforms earns Momentum points.</p>
-      </div>
       <div class="field"><label>${T("Max visits per week", "Visitas máximas por semana")}</label>${dragBarHtml("p-maxvisits", 1, 7, `value="${c.maxVisitsPerWeek || 3}"`)}<p class="small muted">Your pace, your call: 1 to 7 comped visits a week. At your max, offers still arrive but accepting waits until next week, and businesses see you as booked up this week.</p></div>
-      <div class="form-2col">
-        <div class="field"><label>${T("Typical post views", "Vistas típicas por publicación")}</label><input type="number" id="p-avgviews" min="0" value="${c.avgViews || 0}"></div>
-        <div class="field"><label>${T("Your local reach (local audience share, %)", "Tu alcance local (parte local de tu audiencia, %)")}</label><input type="number" id="p-localpct" min="0" max="100" value="${c.localAudiencePct === null || c.localAudiencePct === undefined ? "" : c.localAudiencePct}"><p class="small muted">${LOCAL_PCT_HELP}</p></div>
-      </div>
-      <div class="field"><label>${T("Top audience cities", "Ciudades principales de tu audiencia")}</label><input id="p-topcities" value="${esc((c.topAudienceCities || []).join(", "))}" placeholder="${T("Up to 5, comma separated", "Hasta 5, separadas por comas")}"></div>
+      <div class="field"><label>${T("Typical post views", "Vistas típicas por publicación")}</label><input type="number" id="p-avgviews" min="0" value="${c.avgViews || 0}"></div>
+      <div class="field"><label>${T("Top audience cities", "Ciudades principales de tu audiencia")}</label><input id="p-topcities" value="${esc((c.topAudienceCities || []).join(", "))}" placeholder="${T("Up to 5, comma separated", "Hasta 5, separadas por comas")}"><p class="small muted">${T("Free text, shown on your profile in words. The market list right below is a different thing: it is the one that actually lists you in other markets.", "Texto libre, se muestra en tu perfil en palabras. La lista de mercados justo debajo es otra cosa: es la que realmente te incluye en otros mercados.")}</p></div>
       <div class="field"><label>${T("Your audience in other markets", "Tu audiencia en otros mercados")}</label>
-        ${[0, 1, 2, 3, 4].map((i) => { const e = (c.audienceMarkets || [])[i] || {}; return `<div style="margin-bottom:10px"><select id="p-am-market-${i}" style="width:100%">${audienceMarketOptions(e.market || "", u.market)}</select><div style="display:flex;align-items:center;gap:8px;margin-top:6px"><input id="p-am-pct-${i}" type="number" min="0" max="100" style="width:96px" placeholder="%" value="${e.pct === undefined || e.pct === null ? "" : esc(String(e.pct))}"><span class="small muted">${T("% of my audience", "% de mi audiencia")}</span></div></div>`; }).join("")}
-        <p class="small muted">${T("If a real share of your audience lives in another SIGNL market, name the market and the %. At 5% or more you are listed and ranked in that market too, and offers from its businesses reach you, not just home-market ones. Your home market is the local % above, never a row here. Leave a row blank to remove it.", "Si una parte real de tu audiencia vive en otro mercado de SIGNL, escribe el mercado y el %. Con 5% o más también apareces en ese mercado, y las ofertas de sus negocios te llegan, no solo las de tu mercado. Tu mercado principal es el % local de arriba, nunca una fila aquí. Deja una fila vacía para quitarla.")}</p>
+        <p class="small muted">${T("Optional. If a real share of your audience lives in another SIGNL market, name the market and the %. At 5% or more you are listed and ranked in that market too, and offers from its businesses reach you, not just home-market ones. Your home market is your local % in Your basics above, never a row here.", "Opcional. Si una parte real de tu audiencia vive en otro mercado de SIGNL, escribe el mercado y el %. Con 5% o más también apareces y te posicionas en ese mercado, y las ofertas de sus negocios te llegan, no solo las de tu mercado. Tu mercado principal es tu % local en Tus datos básicos arriba, nunca una fila aquí.")}</p>
+        <div id="p-am-rows">${(() => { const rows = (c.audienceMarkets || []).filter((e) => e && (e.market || e.pct !== undefined && e.pct !== null)); return (rows.length ? rows : [{}]).slice(0, 5).map((e) => amRowHtml(e.market || "", e.pct === undefined || e.pct === null ? "" : String(e.pct))).join(""); })()}</div>
+        <button type="button" class="btn small-btn ghost" id="p-am-add" onclick="return amAddRow()"${(c.audienceMarkets || []).filter((e) => e && (e.market || e.pct !== undefined && e.pct !== null)).length >= 5 ? ' style="display:none"' : ""}>${T("Add another market", "Agregar otro mercado")}</button>
       </div>
       </div>
       <div class="fgroup">
-      <p class="fg-kicker">${T("What you create", "Lo que creas")}</p>
-      <div class="field"><label>${T("What you create in", "En qué categorías creas")}</label><div class="checkrow">${cats}</div></div>
+      <p class="fg-kicker">${T("What you create", "Lo que creas")} <span class="opt-badge">${T("Optional", "Opcional")}</span></p>
       <div class="field"><label>${T("Comps you would accept", "Cortesías que aceptarías")}</label><div class="checkrow">${comps}</div></div>
       <div class="field" id="p-paid-wrap" style="display:${c.tierBand === "Headliners" ? "" : "none"}">
         <label class="tgl-row"><input type="checkbox" class="sw" id="p-paid" ${c.openToPaidCampaigns ? "checked" : ""}><span><strong>Paid cash campaigns</strong> (Headliners tier): businesses can hire me for paid campaigns when a business runs one, separate from comps.</span></label>
@@ -10633,8 +10741,7 @@ function creatorProfileHtml(u) {
       <div class="field"><label>${T("Bio", "Biografía")}</label><textarea id="p-bio" rows="2">${esc(c.bio || "")}</textarea></div>
       <div class="field"><label>${T("Your pitch line", "Tu línea de presentación")}</label><input id="p-pitch" value="${esc(c.pitchLine || "")}" maxlength="200" placeholder="${T("One line that introduces you, at the top of your profile", "Una línea que te presenta, arriba de tu perfil")}"><p class="small muted">${T("Sig can draft it from your real profile: your categories, your local percentage, your streets. Accept it, edit it, or write your own.", "Sig puede redactarla desde tu perfil real: tus categorías, tu porcentaje local, tus calles. Acéptala, edítala o escribe la tuya.")}</p><button type="button" class="btn small-btn ghost" onclick="return pitchDraftFill()">${T("Draft it with Sig", "Redactarla con Sig")}</button> <span id="p-pitch-note" class="small muted"></span></div>
       </div>
-      <div id="save-warn"></div>
-      <button class="btn" type="submit">${T("Save profile", "Guardar perfil")}</button> <span id="save-ok" class="saved"></span><span id="profile-complete-share"></span>
+      <div class="save-bar"><div id="save-warn"></div><button class="btn" type="submit">${T("Save profile", "Guardar perfil")}</button> <span id="save-ok" class="saved"></span><span id="profile-complete-share"></span></div>
     </form>
     ${accountHtml(u)}
     <div id="my-showcase"></div>
@@ -10818,13 +10925,14 @@ async function doUpdateCreator(e) {
       })(),
       avgViews: parseInt(document.getElementById("p-avgviews").value, 10) || 0,
       localAudiencePct: pctRaw === "" ? null : Number(pctRaw),
-      // Multi-market shares (2026-11-01): the rows under Your
-      // audience. Only sent when the rows rendered, so a save
-      // from any other surface can never wipe them.
-      ...(document.getElementById("p-am-market-0") ? {
-        audienceMarkets: [0, 1, 2, 3, 4].map((i) => {
-          const mEl = document.getElementById("p-am-market-" + i);
-          const pEl = document.getElementById("p-am-pct-" + i);
+      // Multi-market shares (2026-11-01; dynamic rows, Build
+      // -64): the rows under Your audience. Only sent when the
+      // rows rendered, so a save from any other surface can
+      // never wipe them.
+      ...(document.getElementById("p-am-rows") ? {
+        audienceMarkets: Array.from(document.querySelectorAll("#p-am-rows .p-am-row")).map((row) => {
+          const mEl = row.querySelector(".p-am-market");
+          const pEl = row.querySelector(".p-am-pct");
           if (!mEl || !pEl || !mEl.value || pEl.value === "") return null;
           return { market: mEl.value, pct: Number(pEl.value) };
         }).filter(Boolean),
@@ -11008,13 +11116,39 @@ const RELEASE_TEXT = {
 // market that has not launched yet, "no new offers right now"
 // pretends the market is open and the creator is missing them.
 // An unlaunched market says so, and says there is nothing to
-// miss until it opens.
+// miss until it opens. Build -64 (audit B2): the founding line
+// now carries the three facts that make an empty board OK: you
+// are on the founding roster, offers arrive when the market
+// opens, and we email you the moment the first one lands.
 function offersEmptyLine() {
   const mkt = marketTalkNameClient(state.user.market);
   if (state.user && state.user.founding && state.user.founding.marketLive === false) {
-    return `<p>No offers until ${esc(mkt)} opens. Your market has not launched yet, so there is nothing to miss: when it opens, offers from businesses across the market show up here first.</p>`;
+    return `<p>You are on the founding roster for ${esc(mkt)}. Offers land here the moment the market opens, founding creators see every offer first, and we email you the moment the first business posts. There is nothing to miss until then.</p>`;
   }
   return `<p>No new offers in ${esc(mkt)} right now. Offers here come from businesses across the whole market, and new ones show up here first.</p>`;
+}
+
+// The founding empty state as a standalone panel (Build -64):
+// the deck end card and the list view use it whenever the board
+// holds zero offers, so a founding creator's first tap on
+// Offers never lands on "You looked through 0 offers."
+function foundingOffersEmptyHtml() {
+  return `<div class="empty-state"><span class="es-badge"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z"/></svg></span><h3>Open offers in ${esc(marketTalkNameClient(state.user.market))}</h3>${offersEmptyLine()}</div>`;
+}
+
+// Inline deck errors (Build -64, audit P1): a failed apply in
+// the offers deck used to pop the browser's native alert(). It
+// now renders as an error box at the top of the board (and a
+// toast when the board is not on screen), in plain words, with
+// the deck left exactly where it was.
+function boardError(containerId, msg) {
+  const host = document.getElementById(containerId);
+  if (!host) { showToast(msg); return; }
+  const box = document.createElement("div");
+  box.className = "error-box";
+  box.style.marginBottom = "12px";
+  box.textContent = msg;
+  host.prepend(box);
 }
 
 async function loadOpenBoard() {
@@ -11030,7 +11164,7 @@ async function loadOpenBoard() {
     const ea = data.earlyAccess && data.earlyAccess.opensAt ? data.earlyAccess : null;
     const eaLine = ea ? `<p class="small" style="margin-top:10px">A new offer just posted in ${esc(marketTalkNameClient(state.user.market))}. Charter creators, the founding class, see new offers first; this one opens to you ${esc(fmtDay(ea.opensAt))} at ${esc(fmtTime(ea.opensAt))}.</p>` : "";
     if (!data.offers.length) {
-      el.innerHTML = `<div class="empty-state"><span class="es-badge"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z"/></svg></span><h3>Open offers in ${esc(marketTalkNameClient(state.user.market))}</h3>${ea ? eaLine : offersEmptyLine()}</div>`;
+      el.innerHTML = ea ? `<div class="empty-state"><span class="es-badge"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z"/></svg></span><h3>Open offers in ${esc(marketTalkNameClient(state.user.market))}</h3>${eaLine}</div>` : foundingOffersEmptyHtml();
       return;
     }
     state.openOffers = data.offers;
@@ -11327,7 +11461,7 @@ function renderOpenBoard() {
     const pos = document.querySelector('[data-stackpos="offers"]');
     if (pos) pos.textContent = "";
     const q = deckQueue("offers", all);
-    el.innerHTML = `<div class="vx-stagger">${q.visible.map((o) => offerFeedCardHtml(o, { pileKey: "offers" })).join("")}</div>`;
+    el.innerHTML = all.length === 0 ? foundingOffersEmptyHtml() : `<div class="vx-stagger">${q.visible.map((o) => offerFeedCardHtml(o, { pileKey: "offers" })).join("")}</div>`;
     syncDeckChrome("offers");
     return;
   }
@@ -11346,9 +11480,9 @@ function renderOpenBoard() {
           stackAdvance("offers", "go");
           loadMyApplications();
         } catch (err) {
-          alert(err.message);
           const wrap = document.querySelector('[data-stack="offers"]');
           if (wrap) renderStack(wrap);
+          boardError("open-list", err.message);
         }
       },
       onPass: (o) => { pileLater("offers", o.id); },
@@ -11361,7 +11495,12 @@ function renderOpenBoard() {
   syncDeckChrome("offers");
 }
 function offersEndHtml(passed, total) {
-  const q = deckQueue("offers", (stackState.offers && stackState.offers.src) || []);
+  const all = (stackState.offers && stackState.offers.src) || [];
+  // Build -64 (audit B2): with zero offers on the board the end
+  // card is the founding empty state, never a "looked through
+  // 0 offers" recap of a deck that never existed.
+  if (!all.length || !total) return foundingOffersEmptyHtml();
+  const q = deckQueue("offers", all);
   const n = q.parked.length;
   const seen = q.visible.length;
   return `<div class="stk-end"><h3>That's every open offer right now</h3><p class="small muted">You looked through ${seen} offer${seen === 1 ? "" : "s"}. New offers land here first, and your applications are tracked under My Applications below.</p><div class="stk-end-actions">${n ? `<button type="button" class="btn ghost" onclick="openLaterPile('offers')">Review Later (${n})</button>` : ""}<button type="button" class="btn" onclick="loadOpenBoard()">Refresh offers</button></div></div>`;
@@ -11431,9 +11570,9 @@ function renderPvBoard() {
           pileUnlater("pvoffers", o.id);
           stackAdvance("pvoffers", "go");
         } catch (err) {
-          alert(err.message);
           const wrap = document.querySelector('[data-stack="pvoffers"]');
           if (wrap) renderStack(wrap);
+          boardError("pv-open-list", err.message);
         }
       },
       onPass: (o) => { pileLater("pvoffers", o.id); },
@@ -11458,7 +11597,7 @@ async function pvApplyToOffer(offerId) {
     pileUnlater("pvoffers", o.id);
     delete stackState.pvoffers;
     renderPvBoard();
-  } catch (err) { alert(err.message); }
+  } catch (err) { boardError("pv-open-list", err.message); }
 }
 function pvOffersEndHtml(passed, total) {
   const q = deckQueue("pvoffers", (stackState.pvoffers && stackState.pvoffers.src) || []);
@@ -11476,7 +11615,7 @@ async function applyToOffer(offerId) {
     refreshBadges();
     loadOpenBoard();
     loadMyApplications();
-  } catch (err) { alert(err.message); }
+  } catch (err) { boardError("open-board", err.message); }
 }
 
 async function loadMyApplications() {

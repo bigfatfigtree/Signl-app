@@ -207,7 +207,7 @@ try {
   // ---------- source contracts ----------
   const appSrc = fs.readFileSync(path.join(ROOT, "public", "app.js"), "utf8");
   const srcChecks = [
-    ["client: the portfolio sample is labeled, never a SIGNL visit", appSrc.includes("Portfolio sample") && appSrc.includes("A portfolio sample, not a SIGNL visit.")],
+    ["client: the portfolio sample is labeled, never a SIGNL visit", appSrc.includes("Portfolio sample") && appSrc.includes("not SIGNL visits")],
     ["client: the sample editor ships on the book-me panel", appSrc.includes("lane-sample") && appSrc.includes("laneSampleSave")],
     ["client: the pitch editor + Sig draft button ship", appSrc.includes("Draft it with Sig") && appSrc.includes("pitchDraftFill") && appSrc.includes('"/me/pitch-draft"')],
     ["client: the pitch line renders on the public page", appSrc.includes("p.pitchLine")],

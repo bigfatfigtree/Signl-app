@@ -47,8 +47,8 @@ const indexHtml = read("public/index.html");
 const count = (src, needle) => src.split(needle).length - 1;
 
 // ---------- stamp ----------
-check("stamp: BUILD_ID is 2026.11.01-63", buildJs.includes('BUILD_ID = "2026.11.01-63"'));
-check("stamp: index.html pins the -51 stamp in all four spots", count(indexHtml, "2026.11.01-63") === 4, String(count(indexHtml, "2026.11.01-63")));
+check("stamp: BUILD_ID is 2026.11.01-64", buildJs.includes('BUILD_ID = "2026.11.01-64"'));
+check("stamp: index.html pins the -51 stamp in all four spots", count(indexHtml, "2026.11.01-64") === 4, String(count(indexHtml, "2026.11.01-64")));
 
 // ---------- A-02 + X-08: the fake toggle ----------
 check("A-02: no decorative switch pill remains in app.js", !appJs.includes('<span class="tg">') && !appJs.includes('<span class="tg off">'));
@@ -72,14 +72,14 @@ check("A-05: both Home +1 lines explain the pair mechanic in the same breath",
 check("A-06: snapshot cells can carry a plain-words sub-line", appJs.includes("snap-sub") && css.includes(".snap-sub {"));
 check("A-06: live Home subs explain local reach and Momentum",
   appJs.includes('sub: "share of your audience living here"') && appJs.includes('sub: "points that move you up"'));
-check("A-06: the tier gloss rides both Home identity surfaces",
-  count(appJs, "size band, set automatically from your total audience across platforms") === 2,
+check("A-06: the tier gloss rides the Home identity surface (Build -64: the founding Home identity card was demoted)",
+  count(appJs, "size band, set automatically from your total audience across platforms") === 1,
   String(count(appJs, "size band, set automatically from your total audience across platforms")));
 
 // ---------- A-07: unlaunched-market Offers empty state ----------
 check("A-07: the offers empty line is market-state aware", appJs.includes("function offersEmptyLine()") && appJs.includes("state.user.founding.marketLive === false"));
-check("A-07: an unlaunched market says nothing is being missed", appJs.includes("No offers until") && appJs.includes("has not launched yet, so there is nothing to miss"));
-check("A-07: the open board renders the state-aware line", appJs.includes("ea ? eaLine : offersEmptyLine()"));
+check("A-07: an unlaunched market says nothing is being missed", appJs.includes("You are on the founding roster") && appJs.includes("nothing to miss"));
+check("A-07: the open board renders the state-aware line", appJs.includes("foundingOffersEmptyHtml()"));
 
 // ---------- A-09 + deferred: Profile scores and Self-reported ----------
 check("A-09: Profile states both score scales", appJs.includes("Both scores run 0 to 100."));
@@ -184,7 +184,7 @@ try {
   check("live: dev server boots", await waitUp());
   const home = await fetch(BASE + "/");
   const homeText = await home.text();
-  check("live: GET / serves the -51 stamp", home.status === 200 && homeText.includes("2026.11.01-63"));
+  check("live: GET / serves the -51 stamp", home.status === 200 && homeText.includes("2026.11.01-64"));
   const boot = await (await fetch(BASE + "/api/bootstrap")).json();
   check("live: bootstrap reports 38 markets (X-01 app side stays data-driven; 37 -> 38 when Miami was restored in Build -59)", boot && Array.isArray(boot.markets) && boot.markets.length === 38,
     JSON.stringify(boot && boot.markets && boot.markets.length));

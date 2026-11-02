@@ -9449,14 +9449,51 @@ const STRIPE_PLAN_PRICES = {
   "price_1USRLcJ5DCULBlmAajXPmJjr": "growth",
   "price_1USRLiJ5DCULBlmAZoITfl6r": "managed",
 };
+// Founding prices (Build -64): the $199/$349/$699 founding
+// price IDs created in the live account for this build. They
+// are config, not code: set them here (or override per-deploy
+// with the STRIPE_PRICE_FOUNDING_* env vars) once the catalog
+// lands, and plan-based checkout resolves to them ahead of the
+// legacy map above. Until an ID is filled in, checkout keeps
+// resolving through the legacy map, unchanged. The reverse
+// lookup (stripePlanForPrice) learns the founding IDs too, so
+// webhook plan attribution works the moment they are set.
+const FOUNDING_STRIPE_PRICES = {
+  "self-service": process.env.STRIPE_PRICE_FOUNDING_SELF_SERVICE || "",
+  "growth": process.env.STRIPE_PRICE_FOUNDING_GROWTH || "",
+  "managed": process.env.STRIPE_PRICE_FOUNDING_MANAGED || "",
+};
+// The founding credit as a Stripe coupon (Build -64): $100 off
+// the first invoice, created in the live account under this
+// exact ID. Founding checkout attaches it by default (see the
+// checkout route); the attach is best-effort and never blocks
+// a checkout.
+const FOUNDING_COUPON_ID = "FOUNDING100";
 function stripePlanForPrice(priceId) {
+  for (const [planId, id] of Object.entries(FOUNDING_STRIPE_PRICES)) {
+    if (id && id === priceId) return planById(planId);
+  }
   const planId = STRIPE_PLAN_PRICES[priceId];
   return planId ? planById(planId) : null;
 }
 function stripePriceForPlan(planId) {
+  if (FOUNDING_STRIPE_PRICES[planId]) return FOUNDING_STRIPE_PRICES[planId];
   for (const [priceId, id] of Object.entries(STRIPE_PLAN_PRICES)) {
     if (id === planId) return priceId;
   }
+  return null;
+}
+// Best-effort founding-coupon resolution: returns the coupon
+// ID when the live account actually holds a valid FOUNDING100
+// coupon, null otherwise (missing, deleted, expired, or Stripe
+// unreachable). A null here never fails checkout: the session
+// is created without the discount and the concierge founding
+// credit still applies by hand.
+async function foundingCouponId() {
+  try {
+    const coupon = await stripe.stripeApi("GET", `/v1/coupons/${encodeURIComponent(FOUNDING_COUPON_ID)}`);
+    if (coupon && coupon.id === FOUNDING_COUPON_ID && coupon.valid !== false) return coupon.id;
+  } catch (e) { /* graceful skip: no coupon, checkout proceeds */ }
   return null;
 }
 function stripePlanFields(plan) {
@@ -13586,6 +13623,12 @@ async function route(event) {
       listedMarkets: p.listedMarkets,
       paidRate: p.paidRate,
       origin: `https://${host}`,
+      // Build -64: the tier-0 book-me payload rides along so
+      // the served HTML carries the rendered profile body
+      // (profile-meta.js profileBodyHtml) instead of the bare
+      // loading shell. Same payload, same facts: the head and
+      // the body can never tell two different stories.
+      body: await bookMePayload(target, null),
     }));
   }
 
@@ -14055,6 +14098,12 @@ async function route(event) {
     if (!priceId || !plan) return err(400, "Choose one of the three SIGNL plans.");
     const appUrl = (process.env.APP_URL || "https://app.joinsignl.com").replace(/\/+$/, "");
     const existingCustomer = biz.business && biz.business.subscription && biz.business.subscription.customerId;
+    // Founding credit (Build -64): every founding-plan checkout
+    // carries the $100 first-invoice coupon when the live
+    // account holds it. Resolved best-effort: a missing coupon
+    // or a failed lookup skips the discount silently and the
+    // checkout proceeds at the plan price.
+    const couponId = await foundingCouponId();
     let session = null;
     try {
       session = await stripe.stripeApi("POST", "/v1/checkout/sessions", {
@@ -14063,6 +14112,7 @@ async function route(event) {
         cancel_url: `${appUrl}/?billing=canceled`,
         client_reference_id: biz.id,
         line_items: [{ price: priceId, quantity: 1 }],
+        ...(couponId ? { discounts: [{ coupon: couponId }] } : {}),
         metadata: { businessId: biz.id, priceId, planId: plan.id },
         subscription_data: { metadata: { businessId: biz.id, priceId, planId: plan.id } },
         ...(existingCustomer ? { customer: existingCustomer } : { customer_email: biz.email }),

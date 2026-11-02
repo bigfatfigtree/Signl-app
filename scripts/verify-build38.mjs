@@ -93,7 +93,7 @@ for (const [label, src] of [["public/app.js", appJs], ["public/index.html", inde
 check("the launchWindow field is gone from the client", !appJs.includes("launchWindow"));
 check("the launchWindow field and its constant are gone from the server", !routerJs.includes("launchWindow") && !routerJs.includes("LAUNCH_WINDOW_TEXT"));
 check("creator Home greeting states founding status and the opening email", appJs.includes("is a founding market. We email you the moment it opens."));
-check("creator founding hero card title states founding status", appJs.includes("is a founding market`, meta: `We email you at"));
+check("creator founding status title states founding status (Status view, Build -64)", appJs.includes("is a founding market</h3>"));
 check("creator Sig answer promises no window, keeps the opening email", appJs.includes("Your market is a founding market, and you get an email the moment it opens."));
 check("business Sig answer uses the approved business-side line", appJs.includes("Businesses sign up when we are ready to launch, market by market as each founding roster completes."));
 check("business founding notice uses the approved business-side line", appJs.includes("Your market has not launched yet.") && appJs.includes("Businesses sign up when we are ready to launch. Draft offers now;"));
@@ -181,7 +181,7 @@ check("the founding sentence-badge wraps instead of overflowing", themeCss.inclu
 }
 
 // Build stamp.
-check("build stamp is 2026.11.01-63 on both sides", read("netlify/functions/lib/build.js").includes("2026.11.01-63") && indexHtml.includes("2026.11.01-63"));
+check("build stamp is 2026.11.01-64 on both sides", read("netlify/functions/lib/build.js").includes("2026.11.01-64") && indexHtml.includes("2026.11.01-64"));
 
 // ---------- Part B: live API contract (production shape, no test override) ----------
 let server;
@@ -199,7 +199,7 @@ try {
   const boot = await anon("GET", "/api/bootstrap");
   check("bootstrap answers", boot.status === 200, String(boot.status));
   check("bootstrap publishes no launch window", boot.data && boot.data.launch && boot.data.launch.launchWindow === undefined, JSON.stringify(boot.data && boot.data.launch));
-  check("server stamps the -41 build on API responses", boot.headers.get("x-signl-build") === "2026.11.01-63", String(boot.headers.get("x-signl-build")));
+  check("server stamps the -41 build on API responses", boot.headers.get("x-signl-build") === "2026.11.01-64", String(boot.headers.get("x-signl-build")));
 
   const admin = client();
   const login = await admin("POST", "/api/auth/login", { email: ADMIN_EMAIL, password: ADMIN_PASSWORD });

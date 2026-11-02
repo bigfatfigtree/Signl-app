@@ -182,7 +182,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--blue); bord
 .booking-card .code-display { margin: 10px 0; }
 
 .notice { border: 1px solid #E7CF9E; background: #FBF3E2; color: #6B4E12; border-radius: 10px; padding: 12px 16px; margin-bottom: 16px; }
-.notice.blue { border-color: #8FD3AC; background: #E3F5EA; color: #006AFC; }
+.notice.blue { border-color: #8FD3AC; background: #E3F5EA; color: var(--ink); }
 .error-box { border: 1px solid #EDC4B6; background: #F9E9E4; color: #8F2F18; border-radius: 10px; padding: 12px 16px; margin-bottom: 16px; }
 .rules { color: var(--teal); font-weight: 700; }
 
