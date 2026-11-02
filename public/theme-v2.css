@@ -3250,7 +3250,7 @@ body.profile-view main { margin-left: auto; margin-right: auto; }
 .start-step .start-why { color: var(--sage); font-size: 13.5px; margin-top: 2px; }
 .start-step .btn { flex: none; }
 .sample-story .kpi-grid { display: grid; gap: 10px; }
-@media (max-width: 560px) { .start-step { align-items: flex-start; } .start-step .btn { margin-top: 2px; } }
+@media (max-width: 560px) { .start-step { align-items: flex-start; flex-wrap: wrap; } .start-step .start-main { flex: 1 1 150px; } .start-step .btn { margin-top: 2px; margin-left: auto; } }
 /* Build -74: deck v2 */
 .deck2-card .deck2-thumbs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 10px; }
 .deck2-card .deck2-thumbs img, .deck2-card .deck2-thumbs .deck2-thumb-ph { width: 100%; aspect-ratio: 1/1; object-fit: cover; border-radius: 10px; background: #E3F5EA; }

@@ -4682,7 +4682,7 @@ function sigOpCapabilities() {
   if (u.role === "business") return [
     ST("Set you up from your Instagram handle: profile, asset packet and a first play, after one summary.", "Configurarte desde tu usuario de Instagram: perfil, paquete y una primera jugada, tras un resumen."),
     ST("Set up a campaign here, brief included. I confirm before anything posts.", "Crear una campaña aquí, con el brief incluido. Confirmas antes de que se publique nada."),
-    ST("Find creators by category, local reach, Spanish content, musicians, and more.", "Buscar creadores por categoría, alcance local, contenido en español, músicos y más."),
+    ST("Find micro-influencers by category, local reach, Spanish content, musicians, and more.", "Buscar microinfluencers por categoría, alcance local, contenido en español, músicos y más."),
     ST("Track your campaigns: visits, posts, day 7 / 14 / 30 numbers, redemptions, and one clear next move.", "Seguir tus campañas: visitas, publicaciones, números al día 7 / 14 / 30, canjes y un siguiente paso claro."),
     ST("Build your asset packet: logo link, key links, talking points, handle, hashtags.", "Crear tu paquete: enlace del logo, enlaces clave, puntos de conversación, usuario y hashtags."),
     ST("Answer questions about plans, rights, and how SIGNL works.", "Responder preguntas sobre planes, derechos y cómo funciona SIGNL."),
@@ -5341,11 +5341,11 @@ async function sigB2Run(crit) {
   // people (Build -78).
   cards.sort((a, b) => (sigLocalPct(b) - sigLocalPct(a)) || ((Number(b.totalAudience) || 0) - (Number(a.totalAudience) || 0)));
   const top = cards.slice(0, 5);
-  const desc = crit.category ? crit.category + " " + ST("creators", "creadores")
+  const desc = crit.category ? crit.category + " " + ST("micro-influencers", "microinfluencers")
     : crit.spanish ? ST("Spanish-speaking creators", "Creadores que hablan español")
     : crit.musician ? ST("Musicians", "Músicos")
     : crit.students ? ST("Student creators", "Creadores estudiantes")
-    : ST("creators", "creadores");
+    : ST("micro-influencers", "microinfluencers");
   const line = ST(`Found ${cards.length} ${desc} in ${marketTalkNameClient(u.market)}, ranked by how local their audience is.`, `Encontré ${cards.length} ${desc} en ${marketTalkNameClient(u.market)}, ordenados por qué tan local es su audiencia.`)
     + (cards.length > top.length ? " " + ST(`Here are the top ${top.length}.`, `Aquí están los ${top.length} mejores.`) : "");
   const cardActs = top.map((c) => ({
@@ -13134,7 +13134,7 @@ function foundingFirstMonthCardHtml(u) {
   if (!visits) return "";
   return `<section class="wcard" id="fbz-first-month" style="margin-top:14px">
     <h3 style="margin-top:0">Your first month</h3>
-    <p>Your ${esc(bz.planName || plan.name)} plan includes <strong>${visits} creator visits a month</strong>. Here is what a visit is: a local creator comes to your store, films while they are there, and posts it for their followers here in ${esc(bizPlace)}. You pick the moment your first month is built around, and the visits run at it.</p>
+    <p>Your ${esc(bz.planName || plan.name)} plan includes <strong>${visits} creator visits a month</strong>. Here is what a visit is: a local micro-influencer comes to your store, films while they are there, and posts it for their followers here in ${esc(bizPlace)}. You pick the moment your first month is built around, and the visits run at it.</p>
     ${bz.highlight ? `<div class="panel" style="margin-top:12px"><p class="small" style="margin:0">${esc(bz.highlight)}</p></div>` : ""}
     <div class="mt"><button class="btn" type="button" onclick="return go('dashboard','My Offers')">Draft your first campaign</button></div>
   </section>`;
@@ -13236,7 +13236,7 @@ async function loadSampleResultsInto(fullIfViewAs) {
 // account); until then it sits at the top of Home.
 function startHereSteps({ favorites, offers, bookings }) {
   return [
-    { n: 1, title: "Meet creators near you", why: "Flip through creators in your city and save the ones who fit.", btn: "Find creators", tab: "Discover", done: favorites > 0 },
+    { n: 1, title: "Meet micro-influencers near you", why: "Flip through creators in your city and save the ones who fit.", btn: "Find creators", tab: "Discover", done: favorites > 0 },
     { n: 2, title: "Invite one, or open a campaign", why: "Send one creator an invite, or post a campaign and let creators apply.", btn: "Start a campaign", tab: "My Offers", done: offers.length > 0 || bookings.length > 0 },
     { n: 3, title: "See who came in", why: "When a creator visits and posts, this is where you see who it brought in.", btn: "See results", tab: "Analytics", done: bookings.some((b) => b.redeemedAt || b.post) },
   ];
@@ -15228,7 +15228,7 @@ async function loadDiscover() {
   // "See everyone". The mode is only defaulted, never forced.
   const foundingDisc = isFoundingBusiness(u);
   el.innerHTML = `
-    ${wsHead("Find creators", { sub: "Flip through creators near you. Invite the ones who fit.", subKey: "biz-discover" })}
+    ${wsHead("Find creators", { sub: "Flip through micro-influencers near you. Invite the ones who fit.", subKey: "biz-discover" })}
     ${wsTabs([
       { label: "Discover", on: true, onclick: "return go('dashboard','Discover')" },
       { label: "Favorites", on: false, onclick: "return go('dashboard','Favorites')" },
@@ -15993,7 +15993,7 @@ async function loadMyOffers() {
     // Default segment (spec §5.2): Applicants when anyone is
     // waiting, else Live. Decided from the same records the
     // tab badge counts, so the three never disagree.
-    el.innerHTML = `${wsHead("Campaigns", { sub: "Your campaigns, and the creators who applied to them.", subKey: "biz-offers" })}${skelHtml("Loading your campaigns...", 2)}`;
+    el.innerHTML = `${wsHead("Campaigns", { sub: "Your campaigns, and the micro-influencers who applied to them.", subKey: "biz-offers" })}${skelHtml("Loading your campaigns...", 2)}`;
     state.offersSeg = "live";
     try {
       const od = await api("GET", "/offers");
@@ -16011,7 +16011,7 @@ async function loadMyOffers() {
     return loadMyOffers();
   }
   if (state.offersSeg === "applicants") {
-    el.innerHTML = `${wsHead("Campaigns", { sub: "Your campaigns, and the creators who applied to them.", subKey: "biz-offers" })}<div id="offers-segs"></div><div id="offers-seg-body"></div>`;
+    el.innerHTML = `${wsHead("Campaigns", { sub: "Your campaigns, and the micro-influencers who applied to them.", subKey: "biz-offers" })}<div id="offers-segs"></div><div id="offers-seg-body"></div>`;
     renderOffersSegTabs();
     if (isFoundingBusiness(state.user)) {
       const segBody = document.getElementById("offers-seg-body");
@@ -16025,7 +16025,7 @@ async function loadMyOffers() {
     // Build -68: drafts get their own segment. A founding
     // business's campaigns live here, labeled for opening day;
     // nothing in this list is visible to a creator.
-    el.innerHTML = `${wsHead("Campaigns", { sub: "Your campaigns, and the creators who applied to them.", subKey: "biz-offers" })}<div id="offers-segs"></div><div id="offer-list">${skelHtml("Loading your drafts...", 1)}</div>`;
+    el.innerHTML = `${wsHead("Campaigns", { sub: "Your campaigns, and the micro-influencers who applied to them.", subKey: "biz-offers" })}<div id="offers-segs"></div><div id="offer-list">${skelHtml("Loading your drafts...", 1)}</div>`;
     renderOffersSegTabs();
     try {
       const data = await api("GET", "/offers");
@@ -16067,7 +16067,7 @@ async function loadMyOffers() {
     return `<label class="tier-toggle"><input type="checkbox" class="sw" name="o2-tier" value="${esc(t)}" ${(dft.tiers || []).includes(t) ? "checked" : ""} onchange="offerCoachUpdate()"><span class="tt-body"><span class="tt-name">${esc(t)}</span><span class="tt-line">floor $${fmtPrice(gd.floor)} &middot; typ. $${fmtPrice(gd.typicalLow)}&ndash;$${fmtPrice(gd.typicalHigh)}</span></span></label>`;
   }).join("")}</div>`;
   el.innerHTML = `
-  ${wsHead("Campaigns", { sub: "Your campaigns, and the creators who applied to them.", subKey: "biz-offers", action: state.offersSeg === "live" ? `<button type="button" class="btn ws-primary" onclick="return offersNew()">+ New campaign</button>` : "" })}
+  ${wsHead("Campaigns", { sub: "Your campaigns, and the micro-influencers who applied to them.", subKey: "biz-offers", action: state.offersSeg === "live" ? `<button type="button" class="btn ws-primary" onclick="return offersNew()">+ New campaign</button>` : "" })}
   <div id="offers-segs"></div>
   ${state.offersSeg === "live" ? `<div class="wcard" style="text-align:center">
     <button class="btn ws-primary" style="width:100%;min-height:52px;font-size:16px" onclick="return offersNew()">+ Create a campaign</button>
@@ -16801,7 +16801,7 @@ function renderPlanTab() {
       ${u.business.plan === p.id ? `<p class="saved mt">Your current plan</p>` : ""}
     </div>`).join("");
   el.innerHTML = `
-  ${wsHead("Plan & billing", { sub: "Your founding plan, your visits, and your billing.", subKey: "biz-plan" })}
+  ${wsHead("Plan & billing", { sub: "Your founding plan, your micro-influencer visits, and your billing.", subKey: "biz-plan" })}
   <div class="panel mt tint">
     <h3>Your plan</h3>
     <p>Current plan: <strong>${esc(u.business.planName)}</strong>, selected ${fmtDate(u.business.planSelectedAt)}.</p>
