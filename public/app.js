@@ -482,7 +482,7 @@ function clearShareShell() {
 // Tier 2 channel rows, which are the paid unlock itself.
 const BOOKME_GUARANTEE_LINE = "Bookings through SIGNL carry the Visit Guarantee and payment protection: payment is held until the post is live. Deals arranged outside SIGNL carry neither.";
 const BOOKME_STAYS_LINE = "Bookings that start on SIGNL stay on SIGNL.";
-const BOOKME_LOCKED_LINE = "Paying businesses see this creator's social channels and can message them here.";
+const BOOKME_LOCKED_LINE = "Paying businesses can message this creator right here on SIGNL.";
 const BOOKING_STARTED_LINE = "This booking started on SIGNL, so it runs through SIGNL, where the Visit Guarantee and payment protection apply.";
 
 function bookMeBook() {
@@ -547,6 +547,58 @@ function workGridHtml(p) {
       <h3 class="bookme-h">Work</h3>
       <div class="work-grid">${cells}</div>
       <p class="small muted">Posts ${esc(p.name)} picked to show their work. They are the creator's own posts, not SIGNL visits.</p>`;
+}
+
+// ---------- profile header facts (Build -66) ----------
+// Mirror of the server render in profile-meta.js (the two
+// renders must never tell two different stories): quick links
+// to the creator's socials and a stats cluster ride the top
+// bar next to the name and photo. Links come from the
+// payload's socialLinks, built server-side from stored handles
+// only; a platform with nothing on the record never appears.
+function fmtFollowers(n) {
+  const v = Math.floor(Number(n) || 0);
+  if (v >= 1000000) return (v / 1000000).toFixed(1).replace(/\.0$/, "") + "M";
+  if (v >= 1000) return (v / 1000).toFixed(1).replace(/\.0$/, "") + "K";
+  return String(v);
+}
+
+function profileHeaderSocialsHtml(p) {
+  const links = (Array.isArray(p.socialLinks) ? p.socialLinks : []).filter((s) => s && s.url && s.label);
+  if (!links.length) return "";
+  return `<div class="bookme-socials-row">${links.map((s) => `<a class="bm-soc" href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.label)}</a>`).join("")}</div>`;
+}
+
+function profileHeaderStatsHtml(p) {
+  // Local first and bold, total second. The local number is
+  // the share for the market this page is being viewed in:
+  // when the URL names a market the creator is listed in
+  // (?market=Austin), that market's share is the header number
+  // and the label names it, the same number discovery ranks
+  // them by there. Anything else reads the home share. The
+  // total is the stacked audience (totalAudienceOf, the same
+  // sum the server computes); no total on record means the
+  // local stat stands alone, never a zero.
+  let localPct = (p.localAudiencePct === null || p.localAudiencePct === undefined) ? null : p.localAudiencePct;
+  let localLbl = "local";
+  try {
+    const q = new URLSearchParams(window.location.search).get("market");
+    if (q) {
+      const want = q.trim().toLowerCase();
+      const hit = (p.listedMarkets || []).find((m) => !m.home && typeof m.pct === "number" && String(m.market).toLowerCase() === want);
+      if (hit) { localPct = hit.pct; localLbl = `local · ${hit.market}`; }
+    }
+  } catch (e) { /* the home number stands */ }
+  const stats = [];
+  if (localPct !== null && localPct !== undefined && Number.isFinite(Number(localPct))) {
+    stats.push(`<div class="bm-stat bm-stat-local"><span class="bm-num">${localPct}%</span><span class="bm-lbl">${esc(localLbl)}</span></div>`);
+  }
+  const total = totalAudienceOf(p);
+  if (total > 0) {
+    stats.push(`<div class="bm-stat bm-stat-fol"><span class="bm-num">${fmtFollowers(total)}</span><span class="bm-lbl">followers</span></div>`);
+  }
+  if (!stats.length) return "";
+  return `<div class="bookme-stats">${stats.join("")}</div>`;
 }
 
 async function renderPublicProfile() {
@@ -637,9 +689,15 @@ async function renderPublicProfile() {
     <div class="bookme-cover${p.photoUrl ? " has-photo" : " no-photo"}">
       ${p.photoUrl ? `<img class="bookme-banner" src="${esc(p.photoUrl)}" alt="">` : `<div class="cc-mono bookme-mono"><span>${initial}</span></div>`}
       <div class="bookme-cover-id">
-        <div class="cc-name bookme-name">${esc(p.name)}</div>
-        <div class="bookme-handle">@${esc(p.handle)} &middot; ${esc(p.primaryPlatformLabel || "Instagram")}</div>
-        ${p.charter ? `<span class="charter-seal sm">Charter Creator</span>` : ""}
+        <div class="bookme-id-row">
+          <div class="bookme-id-main">
+            <div class="cc-name bookme-name">${esc(p.name)}</div>
+            <div class="bookme-handle">@${esc(p.handle)} &middot; ${esc(p.primaryPlatformLabel || "Instagram")}</div>
+            ${profileHeaderSocialsHtml(p)}
+            ${p.charter ? `<span class="charter-seal sm">Charter Creator</span>` : ""}
+          </div>
+          ${profileHeaderStatsHtml(p)}
+        </div>
       </div>
     </div>
     ${p.realPeopleChecked ? `<p class="small" style="margin:10px 0 0"><span class="badge ok">Checked by a person</span> Real posts, real local life.</p>` : ""}

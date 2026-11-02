@@ -158,6 +158,45 @@ function profileWorkHtml(p) {
       <p class="small muted">Posts ${escHtml(p.name)} picked to show their work. They are the creator's own posts, not SIGNL visits.</p>`;
 }
 
+// ---------- profile header facts (Build -66) ----------
+// Jeff (2026-11-01): the profile's top bar answers two things
+// next to the name and photo: where else this creator is (quick
+// links to their socials) and how big they are, local first.
+// Both facts ride the book-me payload at every tier now (see
+// bookMePayload in the router); this module only renders them.
+// Links come from the payload's socialLinks, which the router
+// builds from stored handles only, so a platform with nothing
+// on the record simply never appears here. The local number is
+// the home-market share on this public page (the in-app render
+// swaps in the browsed market's share; the big block below
+// keeps its Self-reported label either way), and the followers
+// number is the stacked total in compact form. A fact that does
+// not exist renders nothing: no zero, no placeholder.
+function fmtFollowers(n) {
+  const v = Math.floor(Number(n) || 0);
+  if (v >= 1000000) return (v / 1000000).toFixed(1).replace(/\.0$/, "") + "M";
+  if (v >= 1000) return (v / 1000).toFixed(1).replace(/\.0$/, "") + "K";
+  return String(v);
+}
+
+function profileHeaderSocialsHtml(p) {
+  const links = (Array.isArray(p.socialLinks) ? p.socialLinks : []).filter((s) => s && s.url && s.label);
+  if (!links.length) return "";
+  return `<div class="bookme-socials-row">${links.map((s) => `<a class="bm-soc" href="${escHtml(s.url)}" target="_blank" rel="noopener">${escHtml(s.label)}</a>`).join("")}</div>`;
+}
+
+function profileHeaderStatsHtml(p) {
+  const stats = [];
+  if (typeof p.localAudiencePct === "number") {
+    stats.push(`<div class="bm-stat bm-stat-local"><span class="bm-num">${p.localAudiencePct}%</span><span class="bm-lbl">local</span></div>`);
+  }
+  if (typeof p.totalAudience === "number" && p.totalAudience > 0) {
+    stats.push(`<div class="bm-stat bm-stat-fol"><span class="bm-num">${fmtFollowers(p.totalAudience)}</span><span class="bm-lbl">followers</span></div>`);
+  }
+  if (!stats.length) return "";
+  return `<div class="bookme-stats">${stats.join("")}</div>`;
+}
+
 function profileBodyHtml(p, place) {
   const initial = escHtml((String(p.name || "?").trim().charAt(0) || "?").toUpperCase());
   // Market chips, deduped (audit F4): the place chip and the
@@ -188,9 +227,15 @@ function profileBodyHtml(p, place) {
     <div class="bookme-cover${p.photoUrl ? " has-photo" : " no-photo"}">
       ${p.photoUrl ? `<img class="bookme-banner" src="${escHtml(p.photoUrl)}" alt="">` : `<div class="cc-mono bookme-mono"><span>${initial}</span></div>`}
       <div class="bookme-cover-id">
-        <div class="cc-name bookme-name">${escHtml(p.name)}</div>
-        <div class="bookme-handle">@${escHtml(p.handle)} &middot; ${escHtml(p.primaryPlatformLabel || "Instagram")}</div>
-        ${p.charter ? `<span class="charter-seal sm">Charter Creator</span>` : ""}
+        <div class="bookme-id-row">
+          <div class="bookme-id-main">
+            <div class="cc-name bookme-name">${escHtml(p.name)}</div>
+            <div class="bookme-handle">@${escHtml(p.handle)} &middot; ${escHtml(p.primaryPlatformLabel || "Instagram")}</div>
+            ${profileHeaderSocialsHtml(p)}
+            ${p.charter ? `<span class="charter-seal sm">Charter Creator</span>` : ""}
+          </div>
+          ${profileHeaderStatsHtml(p)}
+        </div>
       </div>
     </div>
     ${p.realPeopleChecked ? `<p class="small" style="margin:10px 0 0"><span class="badge ok">Checked by a person</span> Real posts, real local life.</p>` : ""}
@@ -303,4 +348,4 @@ function buildClaimPageHtml(shellHtml, profile) {
   return html;
 }
 
-module.exports = { buildProfilePageHtml, profilePageMeta, buildClaimPageHtml, claimPageMeta, profileBodyHtml, profileWorkItems };
+module.exports = { buildProfilePageHtml, profilePageMeta, buildClaimPageHtml, claimPageMeta, profileBodyHtml, profileWorkItems, fmtFollowers, profileHeaderSocialsHtml, profileHeaderStatsHtml };

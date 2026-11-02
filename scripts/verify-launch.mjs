@@ -273,7 +273,11 @@ try {
   check("public profile leaks no email, password material, or internal fields", !pubRaw.text.includes("launch-a@fixtures.dev") && !pubRaw.text.includes("passwordHash") && !pubRaw.text.includes("passwordSalt") && !pubRaw.text.includes("reviewedBy") && !pubRaw.text.includes("referredBy") && !pubRaw.text.includes("agreedTerms"), pubRaw.text.slice(0, 200));
   const pub = (JSON.parse(pubRaw.text) || {}).profile || {};
   check("public profile carries the public-safe fields", pub.name === "Launch Creator" && pub.handle === "launcheats" && pub.market === "Virginia Beach" && pub.city === "Norfolk" && pub.neighborhood === "Ghent" && pub.tierBand === "Locals", JSON.stringify(pub));
-  check("book-me rule: the logged-out page shows NO follower count", pub.followerCount === undefined && pub.totalAudience === undefined, JSON.stringify([pub.followerCount, pub.totalAudience]));
+  // Build -66 (Jeff, 2026-11-01): the header carries the total
+  // audience at every tier, so totalAudience rides the logged-out
+  // payload; the per-platform followerCount stays owner-only.
+  check("book-me rule: the logged-out page shows NO per-platform follower count; the header total rides (8,400 stacked)",
+    pub.followerCount === undefined && pub.totalAudience === 8400, JSON.stringify([pub.followerCount, pub.totalAudience]));
   check("public profile shows local audience % with its source label", pub.localAudiencePct === 62 && pub.localAudienceSource === "Self-reported", JSON.stringify([pub.localAudiencePct, pub.localAudienceSource]));
   check("public profile carries categories and comp categories", Array.isArray(pub.categories) && pub.categories.includes("Food & Drink") && Array.isArray(pub.compCategories) && pub.compCategories.includes("Restaurant meals"), JSON.stringify([pub.categories, pub.compCategories]));
   // Momentum (expanded 2026-10-19): creator A already earns from

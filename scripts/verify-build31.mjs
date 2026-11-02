@@ -195,16 +195,24 @@ try {
   // tier-0 rate hide for the rate fields only. Follower counts,
   // the audience stack, social links, and profile URLs keep
   // their tiers exactly as -31 set them.
-  check("book-me tier 0: the public rate card rides (rate + rateCard offerings), NO follower counts, NO audience stack, NO social links, NO profile URLs",
-    pa.paidRate === 150 && Array.isArray(pa.rateCard) && pa.rateCard.some((r) => r.kind === "paid" && r.price === 150) && !("followerCount" in pa) && !("totalAudience" in pa) && !("audienceStack" in pa) && !("socialLinks" in pa) && !("primaryProfileUrl" in pa) && !("instagramUrl" in pa),
+  // Header facts (Jeff, 2026-11-01, Build -66): the profile
+  // header itself now carries the social quick links and the
+  // total audience at every tier, superseding the -31 hide for
+  // those two header facts only (socialLinks + totalAudience).
+  // The audience stack, followerCount, and the profile URL
+  // fields keep their tiers exactly as -31 set them.
+  check("book-me tier 0: the public rate card rides (rate + rateCard offerings) and the header facts ride (social links + total audience); NO audience stack, NO followerCount, NO profile URLs",
+    pa.paidRate === 150 && Array.isArray(pa.rateCard) && pa.rateCard.some((r) => r.kind === "paid" && r.price === 150) && !("followerCount" in pa) && !("audienceStack" in pa) && !("primaryProfileUrl" in pa) && !("instagramUrl" in pa) && pa.totalAudience === 3000 && Array.isArray(pa.socialLinks) && pa.socialLinks.some((s) => s.platform === "instagram" && s.url === "https://instagram.com/nearnina"),
     JSON.stringify(Object.keys(pa)));
   const pubHidden = await anon("GET", "/api/c/hiddenhana");
   check("book-me: a complete, approved creator who did not opt in gets no page (404, same as unknown)",
     pubHidden.status === 404, JSON.stringify(pubHidden.data).slice(0, 120));
   const pubBiz = await biz.client("GET", "/api/c/nearnina");
   const pb = pubBiz.data.profile || {};
-  check("book-me tier 1: a signed-in founding business sees the listed rate and can book, but no socials and no message",
-    pubBiz.status === 200 && pb.viewerTier === 1 && pb.paidRate === 150 && pb.canBook === true && !("socialLinks" in pb) && !pb.canMessage,
+  // Build -66: tier 1 sees the header socials like everyone
+  // (they are header facts now); messaging stays tier 2.
+  check("book-me tier 1: a signed-in founding business sees the listed rate and can book, sees the header socials, but no message",
+    pubBiz.status === 200 && pb.viewerTier === 1 && pb.paidRate === 150 && pb.canBook === true && Array.isArray(pb.socialLinks) && pb.socialLinks.length >= 1 && !pb.canMessage,
     JSON.stringify(pb).slice(0, 300));
   const pubOwner = await nina.client("GET", "/api/c/nearnina");
   check("book-me: the owner sees their own page flagged as owner (no booking CTA on their own page)",
@@ -243,8 +251,11 @@ try {
   check("setup: Richmond flips live", toggle.status === 200 && toggle.data.live === true, JSON.stringify(toggle.data).slice(0, 120));
 
   const preWebhook = await biz.client("GET", "/api/c/nearnina");
-  check("book-me tier 1 again: an ACTIVE business without a paid subscription is still tier 1 (activation alone does not unlock socials)",
-    preWebhook.data.profile.viewerTier === 1 && !("socialLinks" in preWebhook.data.profile),
+  // Build -66: activation alone still does not unlock
+  // MESSAGING (the tier-2 unlock that remains); the header
+  // socials ride every tier by Jeff's header ruling.
+  check("book-me tier 1 again: an ACTIVE business without a paid subscription is still tier 1 (activation alone does not unlock messaging)",
+    preWebhook.data.profile.viewerTier === 1 && !preWebhook.data.profile.canMessage,
     JSON.stringify(preWebhook.data.profile).slice(0, 200));
 
   const disc = await biz.client("GET", "/api/discover");
@@ -356,8 +367,11 @@ try {
   check("book-me source: the sign-in-to-book line ships in the render; the guarantee and stays-on-SIGNL lines ship as the page's constants and are used by it",
     bpSlice.includes("to book on SIGNL.") && bpSlice.includes("Businesses:") && bpSlice.includes("BOOKME_GUARANTEE_LINE") && bpSlice.includes("BOOKME_STAYS_LINE") && appJs.includes("Bookings through SIGNL carry the Visit Guarantee and payment protection") && appJs.includes('BOOKME_STAYS_LINE = "Bookings that start on SIGNL stay on SIGNL."'),
     "");
+  // Build -66: the locked panel's line now names the one
+  // unlock that remains at tier 2 (messaging); the social
+  // channels themselves ride the header at every tier.
   check("book-me source: the locked unlock panel line ships verbatim",
-    appJs.includes("Paying businesses see this creator's social channels and can message them here."), "");
+    appJs.includes("Paying businesses can message this creator right here on SIGNL."), "");
   check("book-me source: the opt-in disclosure ships on the creator's own settings panel",
     appJs.includes("Businesses with a paid SIGNL account can see your social channels and message you here."), "");
   check("charter sell: the 24h perk line ships on the Charter card AND the Status tab (at least two placements)",

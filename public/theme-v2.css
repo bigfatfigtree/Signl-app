@@ -3158,6 +3158,30 @@ details.roas-x > summary::-webkit-details-marker { display: none; }
 body:has(.bookme-sticky) main { padding-bottom: 96px; }
 .save-bar { position: sticky; bottom: 12px; z-index: 40; margin-top: 14px; padding: 12px 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 10px 30px rgba(11, 13, 12, .10); }
 @media (max-width: 760px) { .save-bar { bottom: 84px; } }
+/* ===== Build -66: profile header socials + stats =====
+   The top bar carries the creator's social quick links (pills
+   under the handle) and a stats cluster on the right: the
+   local number first and bold, total followers second. On
+   phones the cluster wraps to its own compact row under the
+   name block, so the name is never crowded and nothing
+   overflows at 390px. Cover text color is inherited, so the
+   cluster reads on every page theme (ink, gradient, mint). */
+.bookme-cover-id { flex: 1 1 auto; min-width: 0; }
+.bookme-id-row { display: flex; align-items: flex-start; gap: 16px; }
+.bookme-id-main { flex: 1 1 auto; min-width: 0; }
+.bookme-socials-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.bm-soc { display: inline-flex; align-items: center; padding: 4px 12px; border-radius: 999px; border: 1.5px solid rgba(140, 140, 140, .55); border-color: color-mix(in srgb, currentColor 45%, transparent); color: inherit; font-size: .8rem; font-weight: 700; line-height: 1.5; text-decoration: none; }
+.bm-soc:hover, .bm-soc:focus-visible { text-decoration: underline; text-underline-offset: 3px; }
+.bookme-stats { flex: none; display: flex; flex-direction: column; gap: 6px; text-align: right; }
+.bm-stat { display: flex; flex-direction: column; }
+.bm-stat .bm-num { font-weight: 800; line-height: 1.05; }
+.bm-stat-local .bm-num { font-size: 1.55rem; }
+.bm-stat-fol .bm-num { font-size: 1.02rem; }
+.bm-stat .bm-lbl { font-size: .68rem; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; opacity: .72; margin-top: 1px; }
+@media (max-width: 560px) {
+  .bookme-id-row { flex-wrap: wrap; }
+  .bookme-stats { flex: 1 1 100%; flex-direction: row; gap: 20px; text-align: left; align-items: baseline; }
+}
 .req-badge, .opt-badge { display: inline-block; margin-left: 6px; padding: 2px 8px; border-radius: 999px; font-size: .66rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; vertical-align: middle; }
 .req-badge { background: var(--mint); color: var(--ink); }
 .opt-badge { background: #E3F5EA; color: var(--ink3); }

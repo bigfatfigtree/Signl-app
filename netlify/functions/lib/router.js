@@ -4488,15 +4488,15 @@ async function publicProfilePayload(u) {
 //   Tier 0 (logged out, creators, partners, anyone else): the
 //     showcase. Handle, Charter seal, local %, categories,
 //     featured posts, theme, past work, the listed markets and
-//     the rate card (2026-11-01, below). NO follower counts, NO
-//     audience stack, NO social profile links, NO contact path
-//     of any kind.
+//     the rate card (2026-11-01, below), plus the header facts
+//     (Build -66, below). NO per-platform follower counts, NO
+//     audience stack, NO contact path beyond the header's
+//     social quick links.
 //   Tier 1 (signed-in business without a paid, active account):
-//     the showcase plus the Book on SIGNL action. Socials stay
-//     hidden, no messaging.
+//     the showcase plus the Book on SIGNL action. No messaging.
 //   Tier 2 (business with a paid, active account): Tier 1 plus
-//     the creator's social channel links (unless the creator
-//     hid them) and the in-platform Message action.
+//     the in-platform Message action (the social channel links
+//     ride every tier since Build -66, below).
 // Rate card change (Jeff, 2026-11-01): the finished public
 // profile now carries the creator's listed offerings (paid
 // rate, licensing fee, comp openness) at EVERY tier, the
@@ -4504,6 +4504,16 @@ async function publicProfilePayload(u) {
 // profile. This supersedes the Build -31 tier-0 rate hide for
 // the rate fields only; follower counts, the audience stack,
 // social links, and messaging keep their tiers exactly.
+// Header facts change (Jeff, 2026-11-01, Build -66): the
+// finished profile's header carries the creator's social quick
+// links and their total audience next to the name and photo at
+// EVERY tier: the local number first and bold, the total
+// second. This supersedes the Build -31 tier hide for those
+// two header facts only (the socialLinks list and the
+// totalAudience number); the audience stack, followerCount,
+// the profile URL fields, and messaging keep their tiers
+// exactly. The creator's own showSocials toggle still hides
+// the links everywhere, header included.
 // The owner and admins keep the full legacy stat fields so the
 // proof sheet (which reads this same payload) keeps working for
 // the person the sheet belongs to.
@@ -4592,9 +4602,14 @@ async function bookMePayload(u, viewer) {
   if (t.tier >= 1) {
     payload.creatorUserId = u.id;
   }
+  // Header facts (Build -66, see the note above bookMePayload):
+  // the social quick links and the total audience ride at every
+  // tier because the profile header shows them at every tier.
+  // The creator's own toggle still rules the links.
+  payload.socialLinks = c.showSocials === false ? [] : creatorSocialLinks(c);
+  payload.socialsHiddenByCreator = c.showSocials === false;
+  payload.totalAudience = full.totalAudience;
   if (t.tier >= 2) {
-    payload.socialLinks = c.showSocials === false ? [] : creatorSocialLinks(c);
-    payload.socialsHiddenByCreator = c.showSocials === false;
     payload.canMessage = !!t.canMessage;
   }
   if (t.owner || (viewer && viewer.role === "admin")) {

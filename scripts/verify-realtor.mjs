@@ -137,8 +137,13 @@ try {
   check("public /c/ payload carries the neighborhoods and brokerage for a realtor", pub.status === 200 && pub.data.profile.isRealtor === true && JSON.stringify(pub.data.profile.farmAreas) === JSON.stringify(["Ghent", "Ocean Lakes", "Town Center"]) && pub.data.profile.brokerage === "Harbor Lights Realty", JSON.stringify(pub.data.profile));
   // Build -31 tiers: the proof-sheet numbers ride the owner view;
   // the logged-out book-me payload carries none of them.
+  // Build -66 (Jeff, 2026-11-01): the header total is the one
+  // audience number that rides every tier now (it is the same
+  // 4,200 the owner view proves below); the STACK and the
+  // rating fields stay gated exactly as -31 set them.
   const pubOwn = await realtor("GET", "/api/c/raerealtor");
-  check("book-me tiers: the logged-out payload carries no stacked audience or rating fields", pub.data.profile.totalAudience === undefined && pub.data.profile.ratingAvg === undefined, JSON.stringify(pub.data.profile));
+  check("book-me tiers: the logged-out payload carries no audience stack or rating fields; the header total rides",
+    pub.data.profile.totalAudience === 4200 && pub.data.profile.audienceStack === undefined && pub.data.profile.ratingAvg === undefined, JSON.stringify(pub.data.profile));
   check("proof-sheet source numbers are the real stored ones (stacked audience, local pct with source)", pubOwn.status === 200 && pubOwn.data.profile.totalAudience === 4200 && pubOwn.data.profile.localAudiencePct === 64 && pubOwn.data.profile.localAudienceSource === "Self-reported", JSON.stringify(pubOwn.data.profile));
   check("proof-sheet gated metrics are null/zero in the payload, never invented (rating below 3, no posts yet)", pubOwn.status === 200 && pubOwn.data.profile.ratingAvg === null && pubOwn.data.profile.ratingCount === 0 && pubOwn.data.profile.trackRecord.postsDelivered === 0 && pubOwn.data.profile.trackRecord.visitsCompleted === 0, JSON.stringify(pubOwn.data.profile));
 

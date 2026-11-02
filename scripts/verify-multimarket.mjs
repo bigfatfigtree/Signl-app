@@ -330,8 +330,11 @@ try {
   check("public payload carries her past-work links",
     Array.isArray(pp.pastWork) && pp.pastWork.length === 1 && pp.pastWork[0].url.includes("instagram.com/reel/ABC123xyz"),
     JSON.stringify(pp.pastWork));
-  check("public payload still hides follower counts and the stack at tier 0",
-    pp.followerCount === undefined && pp.totalAudience === undefined && pp.audienceStack === undefined && pp.socialLinks === undefined,
+  // Build -66 (Jeff, 2026-11-01): the header facts (social
+  // quick links + total audience) ride at tier 0 now; the
+  // per-platform stack and followerCount stay hidden.
+  check("public payload hides the stack and followerCount at tier 0; the header facts ride (total audience + social links)",
+    pp.followerCount === undefined && pp.audienceStack === undefined && pp.totalAudience === 9000 && Array.isArray(pp.socialLinks) && pp.socialLinks.some((s) => s.platform === "instagram" && s.url === "https://instagram.com/miamulti"),
     JSON.stringify(Object.keys(pp)));
 
   const pageRes = await fetch(BASE + "/c/miamulti");
