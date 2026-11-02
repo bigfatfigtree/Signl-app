@@ -13713,7 +13713,7 @@ async function fetchDemoPhoto(url) {
       try {
         const fs = require("node:fs");
         const path = require("node:path");
-        const buf = fs.readFileSync(path.join(__dirname, "..", "..", "public", url));
+        const buf = fs.readFileSync(path.join(__dirname, "..", "..", "..", "public", url));
         if (buf.length && buf.length <= MAX_PHOTO_BYTES) {
           return { contentType: "image/jpeg", dataBase64: buf.toString("base64"), bytes: buf.length, uploadedAt: nowIso() };
         }
