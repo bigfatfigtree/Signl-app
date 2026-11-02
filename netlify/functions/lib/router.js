@@ -21,6 +21,7 @@ const { buildProfilePageHtml, buildClaimPageHtml } = require("./profile-meta");
 const { normalizeAudienceMarkets, audienceShareInMarket, isListedInMarket, listedMarketsFor, audienceBreakdownFor, MULTI_MARKET_MIN_PCT } = require("./audience-markets");
 const igPrefill = require("./ig-prefill");
 const recruiters = require("./recruiters");
+const pilots = require("./pilots");
 const ZIP_CENTROIDS = require("./zip-centroids.json");
 
 // Staff recruiters (Build -70): the module reads its cross-cutting
@@ -29,6 +30,18 @@ const ZIP_CENTROIDS = require("./zip-centroids.json");
 // is a const declared below and would be in its temporal dead
 // zone at require time.
 recruiters.init({
+  issuePasswordResetToken: (u) => issuePasswordResetToken(u),
+  passwordResetEmail: (u, url) => passwordResetEmail(u, url),
+  deliverEmail: (kind, user, subject, text, band, opts) => deliverEmail(kind, user, subject, text, band, opts),
+  allUsers: () => allUsers(),
+  testMode: () => TEST_MODE,
+});
+
+// Impact Portal (Build -77): pilot funding partners. Same init
+// wiring as recruiters, for the same reason: the module borrows
+// the password-link invite machinery and the user list, never
+// this file's internals.
+pilots.init({
   issuePasswordResetToken: (u) => issuePasswordResetToken(u),
   passwordResetEmail: (u, url) => passwordResetEmail(u, url),
   deliverEmail: (kind, user, subject, text, band, opts) => deliverEmail(kind, user, subject, text, band, opts),
@@ -14062,6 +14075,13 @@ async function route(event) {
     return recruiters.handleRecruiterApi({ user, seg, method, event, query });
   }
 
+  // Impact Portal (Build -77): the pilot funding partner's own
+  // API. Read-only, and the module scopes every read to the one
+  // pilot stamped on the partner's login.
+  if (seg[0] === "pilot") {
+    return pilots.handlePilotApi({ user, seg, method, event, query });
+  }
+
   // Public bootstrap: static config plus the launch state. Deliberately
   // contains NO creator or business data; the roster is never public.
   if (method === "GET" && seg.length === 1 && seg[0] === "bootstrap") {
@@ -15918,6 +15938,13 @@ async function route(event) {
     // Staff recruiters (Build -70): invite + per-recruiter rollups.
     if (seg[1] === "recruiters") {
       return recruiters.handleAdminRecruiters({ user, seg, method, event });
+    }
+
+    // Impact Portal pilots (Build -77): funded first-visit
+    // pilots and their partner logins. A separate system from
+    // the media partners below: no deals, no revenue share.
+    if (seg[1] === "pilots") {
+      return pilots.handleAdminPilots({ user, seg, method, event });
     }
 
     // View a business's account (Build -67, Deliverable 1): mints

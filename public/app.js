@@ -1955,7 +1955,7 @@ function renderBottomNav() {
   if (rail) rail.innerHTML = "";
   if (toprow) toprow.innerHTML = "";
   document.body.classList.remove("rail-on");
-  const inApp = !!u && state.view !== "staff" && (u.role === "business" || u.role === "creator" || u.role === "partner" || u.role === "recruiter");
+  const inApp = !!u && state.view !== "staff" && (u.role === "business" || u.role === "creator" || u.role === "partner" || u.role === "recruiter" || u.role === "pilot_partner");
   if (!inApp) {
     if (tabbar) tabbar.innerHTML = "";
     if (top2) top2.innerHTML = "";
@@ -1969,7 +1969,7 @@ function renderBottomNav() {
   // here is what stranded founding businesses on the slim
   // shell with no navigation at all). Build -70: staff
   // recruiters get the full rail too.
-  const full = u.status === "approved" && (u.role === "creator" || u.role === "partner" || u.role === "recruiter" || u.role === "business" || businessAccessState(u) === "active");
+  const full = u.status === "approved" && (u.role === "creator" || u.role === "partner" || u.role === "recruiter" || u.role === "pilot_partner" || u.role === "business" || businessAccessState(u) === "active");
   document.body.classList.toggle("v3-on", full);
   document.body.classList.toggle("v3-slim", !full);
   renderTopBar2(full);
@@ -2003,6 +2003,9 @@ const RAIL_SHORT = { Content: "Posts", Plan: "Plan", Profile: "Profile", Numbers
 // Build -68: the Offers tab displays as "Campaigns" at every
 // rail width, so its short form is the full display label.
 RAIL_SHORT["My Offers"] = "Campaigns";
+// Build -77: the Impact Portal's Businesses tab is ten letters;
+// the 72px phone rail shows its compact form.
+RAIL_SHORT["Businesses"] = "Business";
 function railRowItems() {
   const t = state.tab;
   const seen = new Set();
@@ -2070,6 +2073,19 @@ function tabItemsFor() {
       ...extra(["Queue", "Outreach", "Results", "Sig"]),
     ];
   }
+  if (u.role === "pilot_partner") {
+    // Build -77: the Impact Portal. True separate views, one
+    // job each: the fund at a glance, the chosen businesses,
+    // what the visits did, and the report the partner takes
+    // to their board. Help rides the rail rows below.
+    return [
+      { icon: "home", label: "Overview", tab: "Overview", on: t === "Overview" || !t },
+      { icon: "building", label: "Businesses", short: "Business", tab: "Businesses", on: t === "Businesses" },
+      { icon: "bars", label: "Results", tab: "Results", on: t === "Results" },
+      { icon: "receipt", label: "Report", tab: "Report", on: t === "Report" },
+      ...extra(["Overview", "Businesses", "Results", "Report"]),
+    ];
+  }
   return [];
 }
 
@@ -2126,6 +2142,11 @@ function moreRowsFor() {
     return [
       { icon: "sig", label: "Sig", sub: "Ask anything about your queue and your market.", tab: "Sig" },
       { icon: "help", label: "Help", sub: "Your launch guide and scripts, in plain words.", tab: "Help" },
+    ];
+  }
+  if (u.role === "pilot_partner") {
+    return [
+      { icon: "help", label: "Help", sub: "How the pilot works, in plain words.", tab: "Help" },
     ];
   }
   return [];
@@ -7466,6 +7487,7 @@ function renderDashboard() {
   if (u.role === "creator") return renderCreatorDash();
   if (u.role === "partner") return renderPartnerDash();
   if (u.role === "recruiter") return renderRecruiterDash();
+  if (u.role === "pilot_partner") return renderPilotDash();
   return renderBusinessDash();
 }
 
@@ -17237,8 +17259,10 @@ async function loadAdminPartners() {
         <h3 style="margin-top:0">Demo partner</h3>
         <p class="small muted">One fictional partner (Demo Media Group, Virginia Beach) seeded with Sample-tagged creators, businesses, and a completed visit, so the partner dashboard can be shown end to end. Its login email is jeff+partnerdemo@joinsignl.com, which lands in Jeff's own inbox: set its password from the sign-in page with Forgot password. Samples are tester-flagged and never enter a real count.</p>
         <button class="btn ghost" onclick="seedDemoPartner()">Seed demo partner</button> <span id="pt-demo-ok" class="saved"></span>
-      </div>`;
+      </div>
+      <div id="admin-pilots"></div>`;
     for (const p of (data.partners || [])) loadPartnerDeals(p.id);
+    loadAdminPilots();
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
@@ -20701,6 +20725,391 @@ function recruiterHelpHtml() {
     <p>Only message people from your console list, and always mark what happened: sent, replied, not interested. If someone asks not to be contacted, tap <strong>Do not contact</strong> and they are never messaged again.</p>
     <p class="muted">Stuck? Open the Sig tab and ask in plain words. Anything Sig cannot answer, ask Jeff.</p>
   </div>`;
+}
+
+// ---------------- Impact Portal (Build -77) ----------------
+// The pilot funding partner's own console. A funder (a credit
+// union, a Main Street group) put up a fund that pays for first
+// creator visits at businesses it chose in one city; this portal
+// shows where the money went and what came back. Views are true
+// views (Overview / Businesses / Results / Report / Help), never
+// one long page, and the portal is read-only: every number comes
+// from the pilot's ledger and the businesses' real records.
+
+const PILOT_TABS = ["Overview", "Businesses", "Results", "Report", "Help"];
+const PILOT_STEP_BADGE = { selected: "info", invited: "warn", visit_booked: "warn", visited: "info", posted: "ok", continued: "ok", declined: "bad", completed: "ok" };
+let pilotState = { me: null };
+
+const pilotMoney = (cents) => "$" + fmtPrice((Number(cents) || 0) / 100);
+
+async function pilotLoadMe() {
+  if (pilotState.me) return pilotState.me;
+  const data = await api("GET", "/pilot/me");
+  pilotState.me = data;
+  return data;
+}
+
+function renderPilotDash() {
+  let tab = state.tab || "Overview";
+  if (!PILOT_TABS.includes(tab)) tab = "Overview";
+  state.tab = tab;
+  app.innerHTML = `<div class="wrap"><div id="tab-body"><p class="muted">Loading your portal...</p></div></div>`;
+  pilotLoadMe().then(() => renderPilotTab(tab)).catch((e) => {
+    const el = document.getElementById("tab-body");
+    if (el) el.innerHTML = `<div class="error-box">${esc(e.message)}</div>`;
+  });
+}
+
+function renderPilotTab(tab) {
+  const el = document.getElementById("tab-body");
+  if (!el) return;
+  if (tab === "Help") { el.innerHTML = pilotHelpHtml(); return; }
+  if (tab === "Businesses") { loadPilotBusinesses(el); return; }
+  if (tab === "Results") { loadPilotResults(el); return; }
+  if (tab === "Report") { loadPilotReport(el); return; }
+  loadPilotOverview(el);
+}
+
+function pilotHeadHtml(pilot) {
+  return `<h2 style="margin-bottom:2px">${esc(pilot.name)}</h2>
+  <p class="muted" style="margin-top:0">${esc(pilot.partnerName)} &middot; ${esc(pilot.marketName)} &middot; Impact Portal</p>
+  ${pilot.status === "closed" ? `<div class="panel"><p style="margin:0"><strong>This pilot has wrapped up.</strong> The numbers below are the final record of where the fund went.</p></div>` : ""}`;
+}
+
+async function loadPilotOverview(el) {
+  el = el || document.getElementById("tab-body");
+  if (!el) return;
+  try {
+    const data = await api("GET", "/pilot/overview");
+    const p = data.pilot;
+    const f = data.fund;
+    const c = data.counts;
+    const pct = f.committedCents > 0 ? Math.min(100, Math.round((f.spentCents / f.committedCents) * 100)) : 0;
+    const stat = (label, val) => `<div class="panel" style="flex:1;min-width:130px;text-align:center"><div style="font-size:26px;font-weight:700">${val}</div><div class="muted small">${esc(label)}</div></div>`;
+    el.innerHTML = `
+    ${pilotHeadHtml(p)}
+    <div class="panel">
+      <h3 style="margin-top:0">The fund</h3>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;text-align:center">
+        <div style="flex:1;min-width:120px"><div style="font-size:24px;font-weight:700">${pilotMoney(f.committedCents)}</div><div class="muted small">Put in</div></div>
+        <div style="flex:1;min-width:120px"><div style="font-size:24px;font-weight:700">${pilotMoney(f.spentCents)}</div><div class="muted small">Spent so far</div></div>
+        <div style="flex:1;min-width:120px"><div style="font-size:24px;font-weight:700">${pilotMoney(f.remainingCents)}</div><div class="muted small">Left to spend</div></div>
+      </div>
+      <div style="background:#eef3ee;border-radius:999px;height:12px;margin-top:14px;overflow:hidden"><div style="background:#2f9e44;height:100%;width:${pct}%"></div></div>
+      <p class="small muted" style="margin-bottom:0">The fund pays for the first creator visit at each chosen business, at the creator's own listed rate. Nothing else is charged to it.</p>
+    </div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap">
+      ${stat("Businesses chosen", c.businesses)}
+      ${stat("Visits done", c.visitsDone)}
+      ${stat("Posts live", c.postsLive)}
+      ${stat("Joined SIGNL after", c.continued)}
+    </div>
+    <div class="panel">
+      <h3 style="margin-top:0">Customers who came in</h3>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;text-align:center">
+        <div style="flex:1;min-width:140px"><div style="font-size:24px;font-weight:700">${c.countedCustomers}</div><div class="muted small">Counted at the register</div></div>
+        <div style="flex:1;min-width:140px"><div style="font-size:24px;font-weight:700">${c.recordedCustomers}</div><div class="muted small">Recorded by the businesses</div></div>
+      </div>
+      <p class="small muted" style="margin-bottom:0">Two different counts, shown separately on purpose. <strong>Counted</strong> means the customer used the creator's code at the till, so the visit is on the business's own register records. <strong>Recorded</strong> means the business reported the number itself. We never add the two together.</p>
+    </div>
+    <div class="panel">
+      <h3 style="margin-top:0">The return so far</h3>
+      <p style="font-size:17px;margin:0">${pilotMoney(f.spentCents)} spent &middot; ${c.visitsDone} visit${c.visitsDone === 1 ? "" : "s"} done &middot; ${c.postsLive} post${c.postsLive === 1 ? "" : "s"} live &middot; ${c.countedCustomers} customer${c.countedCustomers === 1 ? "" : "s"} counted at the register${c.recordedCustomers ? ` &middot; ${c.recordedCustomers} more recorded by the businesses themselves` : ""}.</p>
+      ${c.businesses === 0 ? `<p class="muted" style="margin-bottom:0">No businesses have been chosen yet. They will appear here as the pilot is set up.</p>` : ""}
+    </div>`;
+  } catch (err) {
+    el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+  }
+}
+
+async function loadPilotBusinesses(el) {
+  el = el || document.getElementById("tab-body");
+  if (!el) return;
+  try {
+    const data = await api("GET", "/pilot/businesses");
+    const rows = data.businesses || [];
+    el.innerHTML = `
+    ${pilotHeadHtml(data.pilot)}
+    <h3>The chosen businesses</h3>
+    <p class="muted small">Every business in this pilot, where it stands, and what its first visit cost the fund.</p>
+    ${rows.length ? rows.map((r) => `
+    <div class="panel">
+      <p style="margin:0 0 4px"><strong>${esc(r.name)}</strong> <span class="badge ${PILOT_STEP_BADGE[r.step] || "info"}">${esc(r.stepLabel)}</span>${r.linked ? "" : ` <span class="badge info">Not on SIGNL yet</span>`}</p>
+      <p class="small muted" style="margin:0">${esc(r.market)} &middot; Spent: ${pilotMoney(r.spendCents)} &middot; Visits done: ${r.visitsDone} &middot; Posts live: ${r.postsLive}</p>
+      ${r.linked ? "" : `<p class="small muted" style="margin:6px 0 0">This business has not joined SIGNL yet, so its visit is arranged with them directly. Its numbers appear here once it is on SIGNL and the visit is booked.</p>`}
+    </div>`).join("") : `<div class="panel"><p class="muted" style="margin:0">No businesses have been chosen yet. They will appear here as the pilot is set up.</p></div>`}`;
+  } catch (err) {
+    el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+  }
+}
+
+async function loadPilotResults(el) {
+  el = el || document.getElementById("tab-body");
+  if (!el) return;
+  try {
+    const data = await api("GET", "/pilot/results");
+    const rows = data.businesses || [];
+    el.innerHTML = `
+    ${pilotHeadHtml(data.pilot)}
+    <h3>What the visits did</h3>
+    <p class="muted small">Business by business: the visits, the posts, and the customers. Reach is the post's own view count, reported by the creator; when a creator has not reported it yet, we say so instead of guessing.</p>
+    ${rows.length ? rows.map((r) => `
+    <div class="panel">
+      <p style="margin:0 0 4px"><strong>${esc(r.name)}</strong> <span class="badge ${PILOT_STEP_BADGE[r.step] || "info"}">${esc(r.stepLabel)}</span></p>
+      <p class="small" style="margin:0 0 6px">Visits done: ${r.visitsDone} &middot; Customers counted at the register: ${r.countedCustomers} &middot; Customers recorded by the business: ${r.recordedCustomers}</p>
+      ${r.posts.length ? r.posts.map((post) => `<p class="small" style="margin:2px 0">${post.url ? `<a href="${esc(post.url)}" target="_blank" rel="noopener">See the post</a>` : "Post"}${post.creatorName ? ` by ${esc(post.creatorName)}` : ""}${post.creatorHandle ? ` (@${esc(post.creatorHandle)})` : ""} &middot; ${post.views !== null && post.views !== undefined ? `${Number(post.views).toLocaleString("en-US")} views` : "Reach not tracked yet"}${post.likes ? ` &middot; ${Number(post.likes).toLocaleString("en-US")} likes` : ""}</p>`).join("") : `<p class="small muted" style="margin:0">No post yet.</p>`}
+    </div>`).join("") : `<div class="panel"><p class="muted" style="margin:0">Nothing to show yet. Results appear here after the first visits happen.</p></div>`}`;
+  } catch (err) {
+    el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+  }
+}
+
+async function loadPilotReport(el) {
+  el = el || document.getElementById("tab-body");
+  if (!el) return;
+  try {
+    const data = await api("GET", "/pilot/report");
+    const p = data.pilot;
+    const f = data.fund;
+    const c = data.counts;
+    const rows = data.businesses || [];
+    el.innerHTML = `
+    <style>@media print { #rail, #tabbar, #topbar2, .pilot-no-print { display: none !important; } body { background: #fff; } }</style>
+    <div class="panel pilot-report">
+      <p class="small muted" style="margin:0">SIGNL &middot; Impact Portal</p>
+      <h2 style="margin:4px 0 2px">${esc(p.name)}</h2>
+      <p style="margin:0 0 4px"><strong>${esc(p.partnerName)}</strong> &middot; ${esc(p.marketName)}</p>
+      <p class="small muted" style="margin:0 0 14px">${fmtDay(data.period.from)} to ${fmtDay(data.period.to)} &middot; Report made ${fmtDay(data.generatedAt)}</p>
+      <h3>The fund</h3>
+      <p>Put in: <strong>${pilotMoney(f.committedCents)}</strong> &middot; Spent: <strong>${pilotMoney(f.spentCents)}</strong> &middot; Left: <strong>${pilotMoney(f.remainingCents)}</strong></p>
+      <h3>What it returned</h3>
+      <p>${c.businesses} businesses chosen &middot; ${c.visitsDone} visits done &middot; ${c.postsLive} posts live &middot; ${c.countedCustomers} customers counted at the register &middot; ${c.recordedCustomers} customers recorded by the businesses &middot; ${c.continued} businesses joined SIGNL afterwards.</p>
+      <h3>Business by business</h3>
+      ${rows.length ? `<div style="overflow-x:auto"><table class="table" style="width:100%"><thead><tr><th>Business</th><th>Where it stands</th><th>Spent</th><th>Visits</th><th>Posts</th><th>Counted</th><th>Recorded</th></tr></thead><tbody>
+      ${rows.map((r) => `<tr><td>${esc(r.name)}</td><td>${esc(r.stepLabel)}</td><td>${pilotMoney(r.spendCents)}</td><td>${r.visitsDone}</td><td>${r.postsLive}</td><td>${r.countedCustomers}</td><td>${r.recordedCustomers}</td></tr>`).join("")}
+      </tbody></table></div>` : `<p class="muted">No businesses have been chosen yet.</p>`}
+      <p class="small muted">How to read the customer counts: "counted" customers used the creator's code at the till, so they are on the business's own register records. "Recorded" customers are the business's own reported count. The two are shown separately and never added together. Every figure here comes from SIGNL's records of this pilot.</p>
+      <p class="small muted">Questions: Jeff Rimmer, Founder, SIGNL &middot; jeff@joinsignl.com</p>
+    </div>
+    <p class="pilot-no-print"><button class="btn" onclick="window.print()">Print this report</button></p>`;
+  } catch (err) {
+    el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+  }
+}
+
+function pilotHelpHtml() {
+  const p = (pilotState.me && pilotState.me.pilot) || {};
+  return `
+  <h2>How this pilot works</h2>
+  <div class="panel">
+    <h3 style="margin-top:0">What this is</h3>
+    <p>${esc(p.partnerName || "Your organization")} put up a fund that pays for a first creator visit at businesses in ${esc(p.marketName || "your city")}. A local creator visits the business, tries the real thing, and posts about it honestly. The business gives the meal, the treatment, or the experience; the fund pays the creator's listed rate for the visit. You are looking at the Impact Portal: where the fund went, and what came back.</p>
+  </div>
+  <div class="panel">
+    <h3 style="margin-top:0">How the businesses were chosen</h3>
+    <p>You and SIGNL picked them together from your members and the businesses you wanted to help. SIGNL works the list: each business is invited, its visit is booked with a creator whose audience is mostly local, and its step moves as the visit happens, from chosen, to invited, to booked, to visited, to posted. A business that then joins SIGNL on its own plan shows as "Joined SIGNL".</p>
+  </div>
+  <div class="panel">
+    <h3 style="margin-top:0">The words we use</h3>
+    <p><strong>Counted</strong> customers used the creator's code at the till, so the visit is on the business's own register records. <strong>Recorded</strong> customers are a number the business reported itself. They are two different kinds of proof, so we show them separately and never add them together.</p>
+    <p><strong>Reach</strong> is a post's view count, reported by the creator. If it has not been reported yet, the Results page says "Reach not tracked yet" rather than guessing.</p>
+    <p><strong>Spent</strong> is money the fund has actually paid out, visit by visit. <strong>Left to spend</strong> is what remains of the fund.</p>
+  </div>
+  <div class="panel">
+    <h3 style="margin-top:0">What you can do here</h3>
+    <p>This portal is read-only: it is the record, not a control panel. The Report page is made to print or save, so you can take it to your board or your members. If anything looks wrong, or you want to add businesses or extend the fund, talk to Jeff directly.</p>
+    <p style="margin-bottom:0">Jeff Rimmer, Founder, SIGNL &middot; <a href="mailto:jeff@joinsignl.com">jeff@joinsignl.com</a></p>
+  </div>`;
+}
+
+// ---------- Admin: Impact Portal pilots (Partners tab) ----------
+// Pilot funders live at the foot of the Partners tab as their
+// own section: a different kind of partner from the media
+// partners above (no deals, no revenue share), with their own
+// records, logins, and API.
+
+let apState = { detailId: null };
+
+async function loadAdminPilots() {
+  const el = document.getElementById("admin-pilots");
+  if (!el) return;
+  try {
+    const data = await api("GET", "/admin/pilots");
+    const markets = data.markets || [];
+    const pilots = data.pilots || [];
+    el.innerHTML = `
+    <h3 style="margin:18px 0 6px">Impact Portal pilots (funded first visits)</h3>
+    <p class="muted small">A funding partner (a credit union, a Main Street group) puts up a fund that pays for first creator visits at businesses it chooses in one city. Different from the media partners above: no deals, no revenue share. The partner gets its own login, the Impact Portal, showing where the fund went and what came back. Creating a pilot makes that login; the partner sets their own password from the invite email.</p>
+    ${pilots.length ? pilots.map((p) => `
+    <div class="card mb">
+      <div class="flex-between"><strong>${esc(p.name)}</strong><span class="badge ${p.status === "active" ? "ok" : "warn"}">${p.status === "active" ? "Active" : "Closed"}</span></div>
+      <p class="small muted" style="margin:6px 0">${esc(p.partnerName)} &middot; ${esc(p.marketName)} &middot; Fund: ${pilotMoney(p.fund.committedCents)} in, ${pilotMoney(p.fund.spentCents)} spent, ${pilotMoney(p.fund.remainingCents)} left &middot; ${p.counts.businesses} businesses, ${p.counts.visitsDone} visits done, ${p.counts.postsLive} posts live</p>
+      <button class="btn small-btn" onclick="apToggleDetail('${p.id}')">${apState.detailId === p.id ? "Close" : "Manage pilot"}</button>
+      <div id="ap-detail-${p.id}" style="margin-top:12px">${apState.detailId === p.id ? `<p class="small muted">Loading...</p>` : ""}</div>
+    </div>`).join("") : `<p class="muted">No pilots yet.</p>`}
+    <div class="panel mt">
+      <h3 style="margin-top:0">New pilot</h3>
+      <div class="form-2col">
+        <div class="field"><label>Partner (organization)</label><input type="text" id="ap-new-partner" placeholder="Langley Federal Credit Union"></div>
+        <div class="field"><label>Contact person</label><input type="text" id="ap-new-contact" placeholder="Full name"></div>
+        <div class="field"><label>Login email</label><input type="email" id="ap-new-email" placeholder="name@organization.org"></div>
+        <div class="field"><label>Market</label><select id="ap-new-market">${markets.map((m) => `<option value="${esc(m.name)}">${esc(m.name)}</option>`).join("")}</select></div>
+        <div class="field"><label>Pilot name (optional)</label><input type="text" id="ap-new-name" placeholder="Hampton Roads Pilot"></div>
+        <div class="field"><label>Fund ($)</label><input type="number" id="ap-new-fund" min="0" step="1" value="5000"></div>
+      </div>
+      <div id="ap-new-error"></div>
+      <button class="btn" onclick="apCreate()">Create pilot and invite partner</button> <span id="ap-new-ok" class="saved"></span>
+    </div>`;
+    if (apState.detailId) apLoadDetail(apState.detailId);
+  } catch (err) {
+    el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+  }
+}
+
+async function apCreate() {
+  const errEl = document.getElementById("ap-new-error");
+  const okEl = document.getElementById("ap-new-ok");
+  try {
+    const data = await api("POST", "/admin/pilots", {
+      partnerName: document.getElementById("ap-new-partner").value,
+      contactName: document.getElementById("ap-new-contact").value,
+      email: document.getElementById("ap-new-email").value,
+      market: document.getElementById("ap-new-market").value,
+      name: document.getElementById("ap-new-name").value,
+      fund: Number(document.getElementById("ap-new-fund").value || 0),
+    });
+    if (errEl) errEl.innerHTML = "";
+    if (okEl) okEl.textContent = data.emailSent ? "Pilot created. Invite email sent." : "Pilot created. Invite email did not send; use Resend invite in Manage pilot.";
+    apState.detailId = data.pilot.id;
+    loadAdminPilots();
+  } catch (err) {
+    if (errEl) errEl.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+  }
+  return false;
+}
+
+function apToggleDetail(id) {
+  apState.detailId = apState.detailId === id ? null : id;
+  loadAdminPilots();
+  return false;
+}
+
+async function apLoadDetail(id) {
+  const el = document.getElementById(`ap-detail-${id}`);
+  if (!el) return;
+  try {
+    const data = await api("GET", `/admin/pilots/${id}`);
+    const p = data.pilot;
+    const biz = data.businesses || [];
+    const spends = data.spends || [];
+    const candidates = data.candidates || [];
+    const bizName = (s) => { const b = biz.find((x) => x.id === s.pilotBizId); return b ? b.name : (s.note || "General"); };
+    const stepOptions = (cur) => [["selected", "Chosen"], ["invited", "Invited"], ["continued", "Joined SIGNL"], ["declined", "Said no"], ["completed", "Finished"]].map(([v, l]) => `<option value="${v}" ${cur === v ? "selected" : ""}>${l}</option>`).join("");
+    el.innerHTML = `
+    <p class="small" style="margin:0 0 8px">Partner login: <strong>${esc(p.partnerEmail || "none")}</strong>${p.partnerLoginName ? ` (${esc(p.partnerLoginName)})` : ""} <button class="btn small-btn ghost" onclick="apResendInvite('${p.id}')">Resend invite</button> <span id="ap-invite-ok-${p.id}" class="saved"></span></p>
+    <div class="form-2col">
+      <div class="field"><label>Fund ($)</label><input type="number" id="ap-fund-${p.id}" min="0" step="1" value="${Math.round((p.fundCents || 0) / 100)}"></div>
+      <div class="field"><label>Status</label><select id="ap-status-${p.id}"><option value="active" ${p.status === "active" ? "selected" : ""}>Active</option><option value="closed" ${p.status === "closed" ? "selected" : ""}>Closed</option></select></div>
+    </div>
+    <button class="btn small-btn" onclick="apSavePilot('${p.id}')">Save pilot</button> <span id="ap-save-ok-${p.id}" class="saved"></span>
+    <h4 style="margin:16px 0 6px">Businesses (${biz.length})</h4>
+    <p class="small muted" style="margin:0 0 6px">The badge is where each business actually stands, worked out from its bookings, posts, and plan. The menu under it sets the step by hand for the ones SIGNL cannot see yet (not invited, declined, done).</p>
+    ${biz.length ? biz.map((r) => `
+    <div style="border-top:1px solid #e5e5e5;padding:8px 0">
+      <p class="small" style="margin:0"><strong>${esc(r.name)}</strong> ${r.linked ? `<span class="badge ok">On SIGNL</span>` : `<span class="badge info">Name only</span>`} <span class="badge ${PILOT_STEP_BADGE[r.step] || "info"}">${esc(r.step)}</span> <span class="muted">Spent ${pilotMoney(r.spendCents)} &middot; visits ${r.visitsDone} &middot; posts ${r.postsLive}</span></p>
+      <p style="margin:6px 0 0"><select id="ap-step-${r.id}">${stepOptions(r.storedStep)}</select> <button class="btn small-btn ghost" onclick="apSetStep('${p.id}','${r.id}')">Set step</button> <button class="btn small-btn ghost" onclick="apRemoveBiz('${p.id}','${r.id}')">Remove</button></p>
+    </div>`).join("") : `<p class="small muted">None yet. Add the businesses this partner chose below.</p>`}
+    <div class="form-2col" style="margin-top:10px">
+      <div class="field"><label>Add a business on SIGNL (this market)</label><select id="ap-add-candidate-${p.id}"><option value="">Pick a business...</option>${candidates.map((cand) => `<option value="${cand.id}">${esc(cand.name)}</option>`).join("")}</select></div>
+      <div class="field"><label>Or a business not on SIGNL yet (name)</label><input type="text" id="ap-add-name-${p.id}" placeholder="Business name"></div>
+    </div>
+    <button class="btn small-btn" onclick="apAddBiz('${p.id}')">Add business</button> <span id="ap-add-ok-${p.id}" class="saved"></span>
+    <h4 style="margin:16px 0 6px">Fund ledger (${pilotMoney(data.fund.spentCents)} of ${pilotMoney(data.fund.committedCents)} spent)</h4>
+    ${spends.length ? spends.map((s) => `<p class="small" style="margin:2px 0">${fmtDay(s.date)} &middot; ${esc(bizName(s))} &middot; ${s.kind === "booking" ? "First visit booking" : "Manual entry"} &middot; <strong>${pilotMoney(s.amountCents)}</strong>${s.note ? ` &middot; ${esc(s.note)}` : ""} ${s.kind === "manual" ? `<button class="btn small-btn ghost" onclick="apRemoveSpend('${p.id}','${s.id}')">Remove</button>` : ""}</p>`).join("") : `<p class="small muted">No spend yet.</p>`}
+    <div class="form-2col" style="margin-top:10px">
+      <div class="field"><label>Manual spend: business</label><select id="ap-spend-biz-${p.id}"><option value="">General (no business)</option>${biz.map((r) => `<option value="${r.id}">${esc(r.name)}</option>`).join("")}</select></div>
+      <div class="field"><label>Amount ($)</label><input type="number" id="ap-spend-amount-${p.id}" min="0" step="1" placeholder="150"></div>
+      <div class="field"><label>Note</label><input type="text" id="ap-spend-note-${p.id}" placeholder="What this paid for"></div>
+    </div>
+    <button class="btn small-btn" onclick="apAddSpend('${p.id}')">Add manual spend</button> <span id="ap-spend-ok-${p.id}" class="saved"></span>`;
+  } catch (err) {
+    el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+  }
+}
+
+async function apResendInvite(id) {
+  const okEl = document.getElementById(`ap-invite-ok-${id}`);
+  try {
+    const data = await api("POST", `/admin/pilots/${id}/resend-invite`, {});
+    if (okEl) okEl.textContent = data.emailSent ? "Invite re-sent." : "Email did not send.";
+  } catch (err) { if (okEl) okEl.textContent = err.message; }
+  return false;
+}
+
+async function apSavePilot(id) {
+  const okEl = document.getElementById(`ap-save-ok-${id}`);
+  try {
+    await api("PATCH", `/admin/pilots/${id}`, {
+      fund: Number(document.getElementById(`ap-fund-${id}`).value || 0),
+      status: document.getElementById(`ap-status-${id}`).value,
+    });
+    if (okEl) okEl.textContent = "Saved.";
+    loadAdminPilots();
+  } catch (err) { if (okEl) okEl.textContent = err.message; }
+  return false;
+}
+
+async function apSetStep(pilotId, bizId) {
+  try {
+    await api("POST", `/admin/pilots/${pilotId}/businesses/${bizId}/status`, { status: document.getElementById(`ap-step-${bizId}`).value });
+    apLoadDetail(pilotId);
+  } catch (err) { alert(err.message); }
+  return false;
+}
+
+async function apRemoveBiz(pilotId, bizId) {
+  try {
+    await api("POST", `/admin/pilots/${pilotId}/businesses/${bizId}/remove`, {});
+    apLoadDetail(pilotId);
+    loadAdminPilots();
+  } catch (err) { alert(err.message); }
+  return false;
+}
+
+async function apAddBiz(pilotId) {
+  const okEl = document.getElementById(`ap-add-ok-${pilotId}`);
+  const candidate = document.getElementById(`ap-add-candidate-${pilotId}`).value;
+  const name = document.getElementById(`ap-add-name-${pilotId}`).value.trim();
+  try {
+    await api("POST", `/admin/pilots/${pilotId}/businesses`, candidate ? { businessId: candidate } : { name });
+    if (okEl) okEl.textContent = "Added.";
+    apLoadDetail(pilotId);
+  } catch (err) { if (okEl) okEl.textContent = err.message; }
+  return false;
+}
+
+async function apAddSpend(pilotId) {
+  const okEl = document.getElementById(`ap-spend-ok-${pilotId}`);
+  try {
+    await api("POST", `/admin/pilots/${pilotId}/spend`, {
+      pilotBizId: document.getElementById(`ap-spend-biz-${pilotId}`).value || undefined,
+      amount: Number(document.getElementById(`ap-spend-amount-${pilotId}`).value || 0),
+      note: document.getElementById(`ap-spend-note-${pilotId}`).value,
+    });
+    if (okEl) okEl.textContent = "Added.";
+    apLoadDetail(pilotId);
+    loadAdminPilots();
+  } catch (err) { if (okEl) okEl.textContent = err.message; }
+  return false;
+}
+
+async function apRemoveSpend(pilotId, spendId) {
+  try {
+    await api("POST", `/admin/pilots/${pilotId}/spend/${spendId}/remove`, {});
+    apLoadDetail(pilotId);
+    loadAdminPilots();
+  } catch (err) { alert(err.message); }
+  return false;
 }
 
 // ---------- Admin: staff recruiters (Recruiters tab) ----------
