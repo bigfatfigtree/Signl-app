@@ -1913,7 +1913,7 @@ function renderBottomNav() {
   if (rail) rail.innerHTML = "";
   if (toprow) toprow.innerHTML = "";
   document.body.classList.remove("rail-on");
-  const inApp = !!u && state.view !== "staff" && (u.role === "business" || u.role === "creator" || u.role === "partner");
+  const inApp = !!u && state.view !== "staff" && (u.role === "business" || u.role === "creator" || u.role === "partner" || u.role === "recruiter");
   if (!inApp) {
     if (tabbar) tabbar.innerHTML = "";
     if (top2) top2.innerHTML = "";
@@ -1921,7 +1921,7 @@ function renderBottomNav() {
     if (u && u.role === "admin" && state.preview) document.body.classList.add("preview-on");
     return;
   }
-  const full = u.status === "approved" && (u.role === "creator" || u.role === "partner" || businessAccessState(u) === "active");
+  const full = u.status === "approved" && (u.role === "creator" || u.role === "partner" || u.role === "recruiter" || businessAccessState(u) === "active");
   document.body.classList.toggle("v3-on", full);
   document.body.classList.toggle("v3-slim", !full);
   renderTopBar2(full);
@@ -2003,6 +2003,18 @@ function tabItemsFor() {
       ...extra(["Home", "Markets", "Earnings"]),
     ];
   }
+  if (u.role === "recruiter") {
+    // Build -70: the staff recruiter console. True separate
+    // views, one job each: the queue, the outreach workbench,
+    // results. Sig and Help ride the rail rows below.
+    return [
+      { icon: "users", label: "Queue", tab: "Queue", on: t === "Queue" || !t },
+      { icon: "bubble", label: "Outreach", tab: "Outreach", on: t === "Outreach" },
+      { icon: "bars", label: "Results", tab: "Results", on: t === "Results" },
+      { icon: "sig", label: "Sig", tab: "Sig", on: t === "Sig", badge: sigBadge },
+      ...extra(["Queue", "Outreach", "Results", "Sig"]),
+    ];
+  }
   return [];
 }
 
@@ -2053,6 +2065,12 @@ function moreRowsFor() {
       { icon: "play", label: "Links & assets", sub: "Your tracked links, QR codes, and the one-pager.", tab: "Links" },
       { icon: "sliders", label: "Account", sub: "Your partner profile and agreement.", tab: "Account" },
       { icon: "help", label: "Help", sub: "How your share works, in plain words.", tab: "Help" },
+    ];
+  }
+  if (u.role === "recruiter") {
+    return [
+      { icon: "sig", label: "Sig", sub: "Ask anything about your queue and your market.", tab: "Sig" },
+      { icon: "help", label: "Help", sub: "Your launch guide and scripts, in plain words.", tab: "Help" },
     ];
   }
   return [];
@@ -2311,6 +2329,7 @@ function railItems() {
     add("a", "requests", "Requests", "return go('dashboard','Requests')", t === "Requests");
     add("a", "pin", "Markets", "return go('dashboard','Markets')", t === "Markets");
     add("a", "heart", "Recruiters", "return go('dashboard','Recruiters')", t === "Recruiters");
+    add("a", "users", "Outreach", "return go('dashboard','Outreach')", t === "Outreach");
     add("a", "building", "Partners", "return go('dashboard','Partners')", t === "Partners");
     add("b", "list", "Event Log", "return go('dashboard','Event Log')", t === "Event Log");
     add("b", "shield", "Compliance", "return go('dashboard','Compliance')", t === "Compliance");
@@ -3315,8 +3334,11 @@ function sigRouteAsk(text) {
   for (let i = 0; i < flows.length; i++) if (flows[i].keys.some((k) => t.includes(k))) return { text: `That lives under "${flows[i].label}". One tap takes you there.`, flow: i };
   return sigFallbackReply(match);
 }
-// Ask Sig: the real AI first (server, canon-grounded, with the
-// user's state in context), the bank when the AI cannot answer.
+// Ask Sig: the server first (Build -69: its live-data brain
+// answers factual questions straight from the records with
+// source "data"; the real AI, canon-grounded and fed the same
+// live fact sheet, takes the rest with source "ai"), the bank
+// when the server cannot answer.
 async function sigAsk(text) {
   const ctx = sigCtx();
   const isAdmin = !!state.user && state.user.role === "admin";
@@ -3899,6 +3921,10 @@ function syncMarketChoice() {
   if (cityWrap) cityWrap.style.display = unlisted ? "none" : "";
   if (customWrap) { customWrap.style.display = unlisted ? "" : "none"; customWrap.style.gridColumn = unlisted ? "1 / -1" : ""; }
   if (!unlisted) document.getElementById("jc-city").innerHTML = cityOptions(m.value);
+  // Dubai Advertiser Permit note (Build -70): shown only when
+  // Dubai is the picked market. It never blocks the signup.
+  const dubaiNote = document.getElementById("jc-dubai-note");
+  if (dubaiNote) dubaiNote.style.display = m.value === "Dubai" ? "" : "none";
 }
 
 function cityOptions(marketName, selected) {
@@ -5748,6 +5774,10 @@ function syncQuickMarketChoice() {
   const unlisted = m.value === unlistedLabel();
   const customWrap = document.getElementById("qc-custom-wrap");
   if (customWrap) customWrap.style.display = unlisted ? "" : "none";
+  // Dubai Advertiser Permit note (Build -70): shown only when
+  // Dubai is the picked market. It never blocks the claim.
+  const dubaiNote = document.getElementById("qc-dubai-note");
+  if (dubaiNote) dubaiNote.style.display = m.value === "Dubai" ? "" : "none";
 }
 
 function syncQcPlatform() {
@@ -5906,7 +5936,7 @@ function renderQuickClaim() {
       ${igAssistCardHtml("qc", "creator", { handleFrom: true })}
       <div class="fgroup">
         <p class="fg-kicker">${T("Your market", "Tu mercado")}</p>
-        <div class="field"><label>${T("Your market", "Tu mercado")}</label><input id="qc-market-search" placeholder="${T("Search markets, for example: Dubai", "Busca mercados, por ejemplo: Dubái")}" oninput="filterQuickMarketOptions()" style="margin-bottom:6px"><select id="qc-market" onchange="syncQuickMarketChoice()">${marketOptions(pfMarket, true)}</select><p class="small muted">${T("Grouped by country. City missing? Pick \"My city is not listed yet\".", "Agrupados por país. ¿No está tu ciudad? Elige \"Mi ciudad aún no está en la lista\".")}</p></div>
+        <div class="field"><label>${T("Your market", "Tu mercado")}</label><input id="qc-market-search" placeholder="${T("Search markets, for example: Dubai", "Busca mercados, por ejemplo: Dubái")}" oninput="filterQuickMarketOptions()" style="margin-bottom:6px"><select id="qc-market" onchange="syncQuickMarketChoice()">${marketOptions(pfMarket, true)}</select><p class="small muted">${T("Grouped by country. City missing? Pick \"My city is not listed yet\".", "Agrupados por país. ¿No está tu ciudad? Elige \"Mi ciudad aún no está en la lista\".")}</p><p id="qc-dubai-note" class="small" style="display:none">Dubai note: the UAE requires an Advertiser Permit before your first paid or gifted post. You do not need it to claim your page, and SIGNL walks founding creators through it.</p></div>
         <div id="qc-custom-wrap" style="display:none">
           <div class="field"><label>${T("Your city", "Tu ciudad")}</label><input id="qc-city-text" placeholder="${T("For example: Tulsa", "Por ejemplo: Tulsa")}"></div>
           <div class="field"><label>${T("Your country", "Tu país")}</label><input id="qc-country-text" placeholder="${T("For example: United States", "Por ejemplo: Estados Unidos")}"></div>
@@ -6034,7 +6064,7 @@ function renderJoinCreator() {
       <div class="fgroup">
         <p class="fg-kicker">${T("Where you are", "Dónde estás")}</p>
         <div class="form-2col">
-          <div class="field"><label>${T("Your market", "Tu mercado")}</label><input id="jc-market-search" placeholder="${T("Search markets, for example: Dubai", "Busca mercados, por ejemplo: Dubái")}" oninput="filterMarketOptions()" style="margin-bottom:6px"><select id="jc-market" onchange="syncMarketChoice()">${marketOptions(pfMarket, true)}</select><p class="small muted">${T("Grouped by country. City missing? Pick \"My city is not listed yet\".", "Agrupados por país. ¿No está tu ciudad? Elige \"Mi ciudad aún no está en la lista\".")}</p></div>
+          <div class="field"><label>${T("Your market", "Tu mercado")}</label><input id="jc-market-search" placeholder="${T("Search markets, for example: Dubai", "Busca mercados, por ejemplo: Dubái")}" oninput="filterMarketOptions()" style="margin-bottom:6px"><select id="jc-market" onchange="syncMarketChoice()">${marketOptions(pfMarket, true)}</select><p class="small muted">${T("Grouped by country. City missing? Pick \"My city is not listed yet\".", "Agrupados por país. ¿No está tu ciudad? Elige \"Mi ciudad aún no está en la lista\".")}</p><p id="jc-dubai-note" class="small" style="display:none">Dubai note: the UAE requires an Advertiser Permit before your first paid or gifted post. You do not need it to join, and SIGNL walks founding creators through it.</p></div>
           <div class="field" id="jc-city-wrap"><label>${T("Your home city", "Tu ciudad")}</label><select id="jc-city">${cityOptions(pfMarket)}</select></div>
           <div id="jc-custom-wrap" style="display:none">
             <div class="field"><label>${T("Your city", "Tu ciudad")}</label><input id="jc-city-text" placeholder="${T("For example: Tulsa", "Por ejemplo: Tulsa")}"></div>
@@ -7346,6 +7376,7 @@ function renderDashboard() {
   if (u.role === "admin") return renderAdmin();
   if (u.role === "creator") return renderCreatorDash();
   if (u.role === "partner") return renderPartnerDash();
+  if (u.role === "recruiter") return renderRecruiterDash();
   if (isFoundingBusiness(u)) return renderBusinessFoundingStatus();
   return renderBusinessDash();
 }
@@ -16354,6 +16385,7 @@ function renderAdmin() {
   if (tab === "Markets") loadMarkets();
   if (tab === "Partners") loadAdminPartners();
   if (tab === "Recruiters") loadLeaderboard();
+  if (tab === "Outreach") loadAdminOutreach();
   if (tab === "Event Log") loadEvents();
   if (tab === "Compliance") loadCompliance();
   if (tab === "Campaign") loadCampaign();
@@ -17327,7 +17359,7 @@ async function loadApplications() {
         <td data-label="Applied">${fmtDate(u.createdAt)}</td>
         <td>${u.status === "pending"
           ? `<button class="btn small-btn" onclick="reviewApp('${u.id}','approve')">Approve</button> <button class="btn small-btn danger" onclick="toggleRejectEditor('${u.id}')">Reject</button><div id="rej-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px"><div class="field"><label>Reason (optional, named in their rejection email)</label><select id="rej-reason-${u.id}"><option value="">No reason given</option><option>Not local enough</option><option>Audience too small for this wave</option><option>Content not a fit</option><option>Market not open yet</option><option>Other</option></select></div><button class="btn small-btn danger" onclick="confirmRejectApp('${u.id}')">Send rejection</button></div>`
-          : `<span class="badge ${u.status === "approved" ? "ok" : "bad"}">${esc(u.status)}</span>${u.tester ? ` <span class="badge warn">Tester</span>` : ""}${u.role === "creator" && u.status === "approved" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="setTester('${u.id}', ${u.tester ? "false" : "true"}, 'creator')">${u.tester ? "Move to roster" : "Move to Tester"}</button>` : ""}${u.role === "creator" && u.status === "approved" ? `<br><button class="btn small-btn" style="margin-top:6px" onclick="adminMsgComposeTo('${u.id}')">Message</button>` : ""}`}${u.role === "business" && u.status === "approved" && businessAccessState(u) !== "active" ? `<br><button class="btn small-btn" style="margin-top:6px" onclick="activateBusiness('${u.id}')">Activate business</button>` : ""}${u.role === "business" ? `<br><button class="btn small-btn" style="margin-top:6px" onclick="adminViewBusiness('${u.id}')">View account</button><br><button class="btn small-btn ghost" style="margin-top:6px" onclick="adminSendSigninLink('${u.id}')">Send sign-in link</button>` : ""}${u.role === "business" && u.status === "approved" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="setTester('${u.id}', ${u.tester ? "false" : "true"}, 'business')">${u.tester ? "Move to roster" : "Move to Tester"}</button>` : ""}${u.role === "business" && u.business ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleReviewLinks('${u.id}')">Review links</button><div id="rl-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px">${["google", "yelp", "tripadvisor", "facebook"].map((k) => `<div class="field"><label>${esc(k)}</label><input id="rl-${k}-${u.id}" type="url" value="${esc((u.business.reviewLinks || {})[k] || "")}" placeholder="https://"></div>`).join("")}<button class="btn small-btn" onclick="saveReviewLinks('${u.id}')">Save review links</button></div><br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleDiscountEditor('${u.id}')">Code discount</button><div id="disc-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px"><label style="font-weight:500"><input type="checkbox" id="disc-enabled-${u.id}" style="width:auto" ${u.business.discountEnabled ? "checked" : ""}> Code discounts on (business's opt-in)</label><div class="field"><label>Discount percent (5 to 50)</label><input id="disc-pct-${u.id}" type="number" min="5" max="50" step="1" value="${esc(String(u.business.discountPct == null ? 20 : u.business.discountPct))}"></div><button class="btn small-btn" onclick="saveDiscountSetting('${u.id}')">Save code discount</button></div>` : ""}${u.role === "creator" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="adminViewCreator('${u.id}')">View profile</button>` : ""}${(u.role === "creator" || u.role === "business") ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleAttributionEditor('${u.id}')">Partner attribution</button><div id="attr-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px"><div class="small" style="margin-bottom:6px">${u.partnerId ? `Attributed to <strong>${esc(u.partnerName || "a partner")}</strong>` : (u.signupSource && u.signupSource.indexOf("partner-") === 0 ? "Came through a partner link, but is not stamped to the partner yet" : "Not attributed to a partner (direct)")}</div><div class="field"><label>Attribute to</label><select id="attr-partner-${u.id}"><option value="">Direct — no partner</option>${adminPartnerChoices.map((p) => `<option value="${p.id}" ${u.partnerId === p.id ? "selected" : ""}>${esc(p.name)} (${esc(p.code)})</option>`).join("")}</select></div><div class="field"><label>Reason (kept with the change)</label><input id="attr-reason-${u.id}" type="text" placeholder="Why is this changing?"></div><button class="btn small-btn" onclick="saveAttribution('${u.id}')">Save attribution</button></div>` : ""}</td>
+          : `<span class="badge ${u.status === "approved" ? "ok" : "bad"}">${esc(u.status)}</span>${u.tester ? ` <span class="badge warn">Tester</span>` : ""}${u.role === "creator" && u.status === "approved" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="setTester('${u.id}', ${u.tester ? "false" : "true"}, 'creator')">${u.tester ? "Move to roster" : "Move to Tester"}</button>` : ""}${u.role === "creator" && u.status === "approved" ? `<br><button class="btn small-btn" style="margin-top:6px" onclick="adminMsgComposeTo('${u.id}')">Message</button>` : ""}`}${u.role === "business" && u.status === "approved" && businessAccessState(u) !== "active" ? `<br><button class="btn small-btn" style="margin-top:6px" onclick="activateBusiness('${u.id}')">Activate business</button>` : ""}${u.role === "business" ? `<br><button class="btn small-btn" style="margin-top:6px" onclick="adminViewBusiness('${u.id}')">View account</button><br><button class="btn small-btn ghost" style="margin-top:6px" onclick="adminSendSigninLink('${u.id}')">Send sign-in link</button>` : ""}${u.role === "business" && u.status === "approved" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="setTester('${u.id}', ${u.tester ? "false" : "true"}, 'business')">${u.tester ? "Move to roster" : "Move to Tester"}</button>` : ""}${u.role === "business" && u.business ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleReviewLinks('${u.id}')">Review links</button><div id="rl-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px">${["google", "yelp", "tripadvisor", "facebook"].map((k) => `<div class="field"><label>${esc(k)}</label><input id="rl-${k}-${u.id}" type="url" value="${esc((u.business.reviewLinks || {})[k] || "")}" placeholder="https://"></div>`).join("")}<button class="btn small-btn" onclick="saveReviewLinks('${u.id}')">Save review links</button></div><br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleDiscountEditor('${u.id}')">Code discount</button><div id="disc-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px"><label style="font-weight:500"><input type="checkbox" id="disc-enabled-${u.id}" style="width:auto" ${u.business.discountEnabled ? "checked" : ""}> Code discounts on (business's opt-in)</label><div class="field"><label>Discount percent (5 to 50)</label><input id="disc-pct-${u.id}" type="number" min="5" max="50" step="1" value="${esc(String(u.business.discountPct == null ? 20 : u.business.discountPct))}"></div><button class="btn small-btn" onclick="saveDiscountSetting('${u.id}')">Save code discount</button></div>` : ""}${u.role === "creator" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="adminViewCreator('${u.id}')">View profile</button>` : ""}${u.role === "creator" && u.market === "Dubai" ? `<br><label class="small" style="display:block;margin-top:8px">Advertiser Permit (UAE)<select onchange="saveAdvertiserPermit('${u.id}', this.value)" style="margin-top:4px"><option value="not_started" ${!u.advertiserPermit || u.advertiserPermit === "not_started" ? "selected" : ""}>Not started</option><option value="in_progress" ${u.advertiserPermit === "in_progress" ? "selected" : ""}>In progress</option><option value="done" ${u.advertiserPermit === "done" ? "selected" : ""}>Done</option></select></label>` : ""}${(u.role === "creator" || u.role === "business") ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleAttributionEditor('${u.id}')">Partner attribution</button><div id="attr-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px"><div class="small" style="margin-bottom:6px">${u.partnerId ? `Attributed to <strong>${esc(u.partnerName || "a partner")}</strong>` : (u.signupSource && u.signupSource.indexOf("partner-") === 0 ? "Came through a partner link, but is not stamped to the partner yet" : "Not attributed to a partner (direct)")}</div><div class="field"><label>Attribute to</label><select id="attr-partner-${u.id}"><option value="">Direct — no partner</option>${adminPartnerChoices.map((p) => `<option value="${p.id}" ${u.partnerId === p.id ? "selected" : ""}>${esc(p.name)} (${esc(p.code)})</option>`).join("")}</select></div><div class="field"><label>Reason (kept with the change)</label><input id="attr-reason-${u.id}" type="text" placeholder="Why is this changing?"></div><button class="btn small-btn" onclick="saveAttribution('${u.id}')">Save attribution</button></div>` : ""}</td>
       </tr>`;
     };
     const pend = (data.pending || []).filter(adminAppInFilter);
@@ -17432,6 +17464,10 @@ async function loadLeaderboard() {
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
+  // Staff recruiters (Build -70): the staff console rollup rides
+  // under the creator-recruiter leaderboard, separate from it.
+  el.insertAdjacentHTML("beforeend", `<div id="staff-recruiters" style="margin-top:18px"></div>`);
+  loadStaffRecruiters();
 }
 
 async function reviewApp(userId, decision) {
@@ -19780,3 +19816,423 @@ function previewDashboardHtml(d) {
     app.innerHTML = `<div style="max-width:560px;margin:40px auto"><div class="error-box">SIGNL could not load. ${esc(e.message)}</div><p class="mt"><button class="btn" onclick="location.reload()">Reload</button></p></div>`;
   }
 })();
+
+
+// ---------------- recruiter console (Build -70) ----------------
+// One console, two doors: a staff recruiter (Bella, Dubai) signs
+// in and lands here scoped to her one market; Jeff works the same
+// screens from Admin -> Outreach through the owner entity. Views
+// are true views (Queue / Outreach / Results / Sig / Help), never
+// one long page. Nothing sends from here: the recruiter copies a
+// draft, sends it from her own app, and marks it sent. That is
+// the honest mechanic, and the guide in Help says so.
+
+const RECRUITER_TABS = ["Queue", "Outreach", "Results", "Sig", "Help"];
+const RC_STATUS_LABEL = { to_contact: "To contact", sent: "Sent", replied: "Replied", claimed: "Claimed", approved: "Approved", not_interested: "Not interested", do_not_contact: "Do not contact" };
+const RC_STATUS_BADGE = { to_contact: "info", sent: "warn", replied: "info", claimed: "ok", approved: "ok", not_interested: "bad", do_not_contact: "bad" };
+let rcState = { entity: null, market: null, queue: null, filter: "all", focusId: null, channel: "instagram", drafts: null, adminMode: false };
+
+async function rcLoadEntity() {
+  if (rcState.entity && !rcState.adminMode) return rcState.entity;
+  const data = await api("GET", "/recruiter/me");
+  rcState.entity = data.recruiter;
+  if (!rcState.market) rcState.market = rcState.entity.marketName;
+  return rcState.entity;
+}
+
+function renderRecruiterDash() {
+  let tab = state.tab || "Queue";
+  if (!RECRUITER_TABS.includes(tab)) tab = "Queue";
+  state.tab = tab;
+  app.innerHTML = `<div class="wrap"><div id="tab-body"><p class="muted">Loading your console...</p></div></div>`;
+  rcLoadEntity().then(() => renderRecruiterTab(tab)).catch((e) => {
+    const el = document.getElementById("tab-body");
+    if (el) el.innerHTML = `<div class="error-box">${esc(e.message)}</div>`;
+  });
+}
+
+function renderRecruiterTab(tab) {
+  const el = document.getElementById("tab-body");
+  if (!el) return;
+  if (tab === "Sig") { renderSigTab(); return; }
+  if (tab === "Help") { el.innerHTML = recruiterHelpHtml(); return; }
+  if (tab === "Results") { loadRecruiterResults(el); return; }
+  if (tab === "Outreach") { loadRecruiterOutreach(el); return; }
+  loadRecruiterQueue(el);
+}
+
+function rcCountsChips(counts) {
+  const chip = (label, n) => `<span class="badge ${n ? "info" : ""}" style="margin-right:6px">${esc(label)}: ${n}</span>`;
+  return `<p>${chip("To contact", counts.to_contact)}${chip("Sent", counts.sent)}${chip("Replied", counts.replied)}${chip("Claimed", counts.claimed)}${chip("Approved", counts.approved)}<span class="muted small">${counts.total} in this queue</span></p>`;
+}
+
+async function loadRecruiterQueue(el) {
+  el = el || document.getElementById("tab-body");
+  if (!el) return;
+  try {
+    const q = rcState.market && rcState.entity && rcState.entity.kind === "owner" ? `?market=${encodeURIComponent(rcState.market)}` : "";
+    const data = await api("GET", "/recruiter/queue" + q);
+    rcState.queue = data;
+    el.innerHTML = recruiterQueueHtml(data);
+  } catch (err) {
+    el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+  }
+}
+
+function recruiterQueueHtml(data) {
+  const c = data.counts;
+  const filters = [["all", "All"], ["to_contact", "To contact"], ["sent", "Sent"], ["replied", "Replied"], ["claimed", "Claimed"], ["approved", "Approved"], ["not_interested", "Not interested"], ["do_not_contact", "Do not contact"]];
+  const rows = (data.prospects || []).filter((p) => rcState.filter === "all" || p.effectiveStatus === rcState.filter);
+  return `
+  <h2>${esc(data.market)} queue</h2>
+  ${rcCountsChips(c)}
+  <p>${filters.map(([k, label]) => `<button class="btn small-btn ${rcState.filter === k ? "" : "ghost"}" style="margin:0 6px 6px 0" onclick="rcSetFilter('${k}')">${esc(label)}</button>`).join("")}</p>
+  <div id="rc-queue-list">
+  ${rows.length ? rows.map(rcProspectCardHtml).join("") : `<div class="panel"><p class="muted">Nobody in this view. ${rcState.filter === "all" ? "Add creators below, or check back after the seed lists load." : "Pick another filter to see the rest of the queue."}</p></div>`}
+  </div>
+  <div class="panel">
+    <h3 style="margin-top:0">Add a creator</h3>
+    <div class="form-2col">
+      <div class="field"><label>Name</label><input id="rc-add-name" placeholder="Full name"></div>
+      <div class="field"><label>Handle</label><input id="rc-add-handle" placeholder="@handle or profile link"></div>
+      <div class="field"><label>Email (only if they publish it)</label><input id="rc-add-email" placeholder="name@example.com"></div>
+      <div class="field"><label>Category</label><input id="rc-add-category" placeholder="Food, Beauty, Fitness..."></div>
+    </div>
+    <button class="btn" onclick="rcAddProspect()">Add to queue</button>
+    <span id="rc-add-msg" class="small muted" style="margin-left:8px"></span>
+    <details style="margin-top:14px"><summary>Paste a list instead</summary>
+      <p class="small muted">One creator per line: name, @handle, email, category. Duplicates and do-not-contact names are skipped automatically.</p>
+      <textarea id="rc-import-text" rows="6" style="width:100%" placeholder="Jane Doe, @janedoe, jane@example.com, Food"></textarea>
+      <p><button class="btn ghost" onclick="rcImportProspects()">Import list</button> <span id="rc-import-msg" class="small muted"></span></p>
+    </details>
+  </div>`;
+}
+
+function rcProspectCardHtml(p) {
+  const st = p.effectiveStatus || p.status;
+  const links = [
+    p.instagramUrl ? `<a href="${esc(p.instagramUrl)}" target="_blank" rel="noopener">Instagram</a>` : "",
+    p.tiktokUrl ? `<a href="${esc(p.tiktokUrl)}" target="_blank" rel="noopener">TikTok</a>` : "",
+    p.creatorMarketUrl ? `<a href="${esc(p.creatorMarketUrl)}" target="_blank" rel="noopener">CreatorMarket</a>` : "",
+    p.email ? `<a href="mailto:${esc(p.email)}">Email</a>` : "",
+  ].filter(Boolean).join(" &middot; ");
+  return `<div class="panel" id="rc-card-${p.id}">
+    <p style="margin:0 0 4px"><strong>${esc(p.name || p.handle || "Creator")}</strong> ${p.handle ? `<span class="muted">@${esc(p.handle)}</span>` : ""}
+    <span class="badge ${RC_STATUS_BADGE[st] || "info"}">${esc(RC_STATUS_LABEL[st] || st)}</span>
+    ${p.alreadyOnSignl ? `<span class="badge ok">On SIGNL</span>` : ""}
+    ${p.belowMinimum ? `<span class="badge warn">Under 500: check before outreach</span>` : ""}
+    ${p.followupReady ? `<span class="badge warn">Follow-up ready</span>` : ""}</p>
+    <p class="small muted" style="margin:0 0 6px">${[p.category, p.city, p.followers ? `${Number(p.followers).toLocaleString("en-US")} followers` : "", p.source].filter(Boolean).map(esc).join(" &middot; ")}</p>
+    ${links ? `<p class="small" style="margin:0 0 8px">${links}</p>` : ""}
+    <p style="margin:0">
+      <button class="btn small-btn" onclick="rcWorkProspect('${p.id}')">Work this one</button>
+      ${st === "to_contact" ? `<button class="btn small-btn ghost" onclick="rcAction('${p.id}','sent','instagram')">Mark sent</button>` : ""}
+      ${st === "sent" ? `<button class="btn small-btn ghost" onclick="rcAction('${p.id}','replied')">Mark replied</button>` : ""}
+      ${!["claimed", "approved", "do_not_contact", "not_interested"].includes(st) ? `<button class="btn small-btn ghost" onclick="rcAction('${p.id}','not_interested')">Not interested</button>` : ""}
+      ${!["claimed", "approved", "do_not_contact"].includes(st) ? `<button class="btn small-btn ghost" onclick="rcAction('${p.id}','do_not_contact')">Do not contact</button>` : ""}
+    </p>
+  </div>`;
+}
+
+function rcSetFilter(f) { rcState.filter = f; const el = document.getElementById("tab-body"); if (rcState.queue) el.innerHTML = recruiterQueueHtml(rcState.queue); else loadRecruiterQueue(el); return false; }
+
+async function rcAddProspect() {
+  const msg = document.getElementById("rc-add-msg");
+  const body = {
+    name: document.getElementById("rc-add-name").value.trim(),
+    handle: document.getElementById("rc-add-handle").value.trim(),
+    email: document.getElementById("rc-add-email").value.trim(),
+    category: document.getElementById("rc-add-category").value.trim(),
+    market: rcState.entity && rcState.entity.kind === "owner" ? rcState.market : undefined,
+  };
+  try {
+    await api("POST", "/recruiter/prospects", body);
+    if (msg) msg.textContent = "Added.";
+    loadRecruiterQueue();
+  } catch (err) { if (msg) msg.textContent = err.message; }
+  return false;
+}
+
+async function rcImportProspects() {
+  const msg = document.getElementById("rc-import-msg");
+  const text = document.getElementById("rc-import-text").value;
+  try {
+    const data = await api("POST", "/recruiter/prospects/import", { text, market: rcState.entity && rcState.entity.kind === "owner" ? rcState.market : undefined });
+    const r = data.result || {};
+    if (msg) msg.textContent = `Added ${r.added || 0}. Skipped ${r.skippedDuplicate || 0} duplicates${r.blockedDoNotContact ? `, ${r.blockedDoNotContact} do-not-contact` : ""}${r.alreadyOnSignl ? `, ${r.alreadyOnSignl} already on SIGNL` : ""}.`;
+    loadRecruiterQueue();
+  } catch (err) { if (msg) msg.textContent = err.message; }
+  return false;
+}
+
+async function rcAction(id, action, channel) {
+  try {
+    await api("POST", `/recruiter/prospects/${id}/action`, { action, channel });
+    if (state.tab === "Outreach" && !rcState.adminMode) loadRecruiterOutreach(document.getElementById("tab-body"));
+    else if (rcState.adminMode) loadAdminOutreachQueue();
+    else loadRecruiterQueue();
+  } catch (err) { alert(err.message); }
+  return false;
+}
+
+function rcWorkProspect(id) {
+  rcState.focusId = id;
+  if (rcState.adminMode) { loadAdminOutreachQueue("outreach"); return false; }
+  return go("dashboard", "Outreach");
+}
+
+// ---------- Outreach workbench ----------
+
+function rcFocusList() {
+  const all = (rcState.queue && rcState.queue.prospects) || [];
+  return all.filter((p) => ["to_contact", "sent", "replied"].includes(p.effectiveStatus || p.status));
+}
+
+async function loadRecruiterOutreach(el) {
+  el = el || document.getElementById("tab-body");
+  if (!el) return;
+  if (!rcState.queue) { await loadRecruiterQueue(document.createElement("div")); }
+  const list = rcFocusList();
+  if (!list.length) {
+    el.innerHTML = `<h2>Outreach</h2><div class="panel"><p class="muted">Nothing waiting to send. When the queue has creators to contact, they line up here one at a time, each with a ready message.</p></div>`;
+    return;
+  }
+  let p = list.find((x) => x.id === rcState.focusId) || list[0];
+  rcState.focusId = p.id;
+  try {
+    const data = await api("GET", `/recruiter/prospects/${p.id}/drafts`);
+    rcState.drafts = data.drafts;
+    el.innerHTML = rcOutreachHtml(p, list);
+  } catch (err) {
+    el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+  }
+}
+
+function rcOutreachHtml(p, list) {
+  const idx = list.findIndex((x) => x.id === p.id);
+  const d = rcState.drafts || {};
+  const ch = rcState.channel;
+  const draftText = ch === "email" ? d.emailBody : ch === "tiktok" ? d.tiktok : d.ig;
+  const profileUrl = ch === "tiktok" ? p.tiktokUrl : ch === "email" ? (p.email ? `mailto:${p.email}` : "") : p.instagramUrl;
+  const st = p.effectiveStatus || p.status;
+  return `<h2>Outreach</h2>
+  <p class="muted small">${idx + 1} of ${list.length} waiting. Pick the next one any time:</p>
+  <p><select id="rc-focus-sel" onchange="rcFocusChange(this.value)" style="max-width:420px">${list.map((x) => `<option value="${x.id}" ${x.id === p.id ? "selected" : ""}>${esc(x.name || x.handle || "Creator")} (@${esc(x.handle || "")}) - ${esc(RC_STATUS_LABEL[x.effectiveStatus || x.status] || "")}</option>`).join("")}</select></p>
+  <div class="panel">
+    <p style="margin:0 0 4px"><strong>${esc(p.name || p.handle || "Creator")}</strong> <span class="muted">@${esc(p.handle || "")}</span> <span class="badge ${RC_STATUS_BADGE[st] || "info"}">${esc(RC_STATUS_LABEL[st] || st)}</span></p>
+    <p class="small muted" style="margin:0 0 10px">${[p.category, p.city, p.followers ? `${Number(p.followers).toLocaleString("en-US")} followers` : ""].filter(Boolean).map(esc).join(" &middot; ")}</p>
+    <div class="tabs">${["instagram", "tiktok", "email"].map((c) => `<button class="${ch === c ? "active" : ""}" onclick="rcSetChannel('${c}')">${c === "email" ? "Email" : c === "tiktok" ? "TikTok" : "Instagram"}</button>`).join("")}</div>
+    ${ch === "email" ? `<div class="field"><label>Subject</label><input id="rc-draft-subject" value="${esc(d.emailSubject || "")}"></div>` : ""}
+    <div class="field"><label>Your message for ${esc(p.name || "them")} - edit anything before you send</label><textarea id="rc-draft-text" rows="12" style="width:100%">${esc(draftText || "")}</textarea></div>
+    <p>
+      <button class="btn" onclick="rcCopyDraft()">Copy message</button>
+      ${profileUrl ? `<a class="btn ghost" href="${esc(profileUrl)}" target="_blank" rel="noopener">${ch === "email" ? "Open email" : "Open profile"}</a>` : ""}
+      <button class="btn ghost" onclick="rcSaveDraft()">Save edits</button>
+      <button class="btn ghost" onclick="rcRegenerateDraft()">Regenerate</button>
+    </p>
+    <p>
+      ${st === "to_contact" ? `<button class="btn" onclick="rcAction('${p.id}','sent','${ch}')">Mark sent</button>` : ""}
+      ${st === "sent" ? `<button class="btn" onclick="rcAction('${p.id}','replied')">Mark replied</button>` : ""}
+      <span id="rc-send-msg" class="small muted"></span>
+    </p>
+    ${p.followupReady ? `<div class="notice blue"><strong>Follow-up ready.</strong> Four quiet days have passed, so the one gentle follow-up is unlocked. Send it the same way, then mark it.<br><textarea id="rc-followup-text" rows="5" style="width:100%;margin-top:8px">${esc(d.followup || "")}</textarea><br><button class="btn small-btn" style="margin-top:6px" onclick="rcCopyFollowup()">Copy follow-up</button> <button class="btn small-btn ghost" onclick="rcAction('${p.id}','followup-sent','${ch}')">Mark follow-up sent</button></div>` : (st === "sent" && p.followupUnlocksAt ? `<p class="small muted">Follow-up unlocks ${new Date(p.followupUnlocksAt).toLocaleDateString("en-US", { month: "long", day: "numeric" })} if there is no reply. One follow-up per person, ever.</p>` : "")}
+    <p class="small muted">You send from your own ${ch === "email" ? "mail app" : ch === "tiktok" ? "TikTok" : "Instagram"} - SIGNL never sends for you. Mark it sent here right after, so your list stays true.</p>
+  </div>`;
+}
+
+function rcFocusChange(id) { rcState.focusId = id; loadRecruiterOutreach(document.getElementById("tab-body")); return false; }
+function rcSetChannel(c) { rcState.channel = c; loadRecruiterOutreach(document.getElementById("tab-body")); return false; }
+
+function rcCopyText(text, msgId) {
+  const done = () => { const m = document.getElementById(msgId || "rc-send-msg"); if (m) m.textContent = "Copied. Paste it in the app and send."; };
+  if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(text).then(done).catch(() => { window.prompt("Copy this message:", text); }); }
+  else window.prompt("Copy this message:", text);
+  return false;
+}
+function rcCopyDraft() { const t = document.getElementById("rc-draft-text"); return rcCopyText(t ? t.value : ""); }
+function rcCopyFollowup() { const t = document.getElementById("rc-followup-text"); return rcCopyText(t ? t.value : ""); }
+
+async function rcSaveDraft() {
+  const p = (rcFocusList().find((x) => x.id === rcState.focusId)) || {};
+  if (!p.id) return false;
+  const drafts = Object.assign({}, rcState.drafts || {});
+  const text = document.getElementById("rc-draft-text");
+  if (rcState.channel === "email") {
+    drafts.emailBody = text ? text.value : drafts.emailBody;
+    const subj = document.getElementById("rc-draft-subject");
+    if (subj) drafts.emailSubject = subj.value;
+  } else if (rcState.channel === "tiktok") drafts.tiktok = text ? text.value : drafts.tiktok;
+  else drafts.ig = text ? text.value : drafts.ig;
+  const fu = document.getElementById("rc-followup-text");
+  if (fu) drafts.followup = fu.value;
+  try {
+    const data = await api("POST", `/recruiter/prospects/${p.id}/drafts`, { drafts: { ig: drafts.ig, tiktok: drafts.tiktok, emailSubject: drafts.emailSubject, emailBody: drafts.emailBody, followup: drafts.followup } });
+    rcState.drafts = data.drafts;
+    const m = document.getElementById("rc-send-msg"); if (m) m.textContent = "Edits saved.";
+  } catch (err) { alert(err.message); }
+  return false;
+}
+
+async function rcRegenerateDraft() {
+  const id = rcState.focusId;
+  if (!id) return false;
+  try {
+    const data = await api("POST", `/recruiter/prospects/${id}/drafts/regenerate`, {});
+    rcState.drafts = data.drafts;
+    loadRecruiterOutreach(document.getElementById("tab-body"));
+  } catch (err) { alert(err.message); }
+  return false;
+}
+
+// ---------- Results ----------
+
+async function loadRecruiterResults(el) {
+  el = el || document.getElementById("tab-body");
+  if (!el) return;
+  try {
+    const data = await api("GET", "/recruiter/results");
+    const r = data.rollup;
+    el.innerHTML = `<h2>Your results</h2>
+    <div class="panel">
+      <p style="margin:0 0 6px"><strong>${r.assigned}</strong> creators in your queue &middot; <strong>${r.sends}</strong> messages marked sent (${r.sentByChannel.instagram} Instagram, ${r.sentByChannel.tiktok} TikTok, ${r.sentByChannel.email} email)</p>
+      <p style="margin:0 0 6px"><strong>${r.replies}</strong> replied or beyond &middot; <strong>${r.claimsStarted}</strong> signed up through you (${r.creditsViaLink} by your link, ${r.creditsViaListMatch} matched from your list) &middot; <strong>${r.signupsApproved}</strong> approved</p>
+      <p class="muted small" style="margin:0">Every sign-up counts once. Your link is the primary credit; a sign-up that matches your list counts for you too, and if the two ever disagree the link wins and the match is flagged for Jeff.</p>
+    </div>
+    ${data.credited && data.credited.length ? `<div class="table-wrap panel"><table>
+      <tr><th>Creator</th><th>Handle</th><th>How</th><th>Status</th><th>When</th></tr>
+      ${data.credited.map((c) => `<tr><td>${esc(c.name || "")}</td><td>@${esc(c.handle || "")}</td><td>${c.via === "link" ? "Your link" : "Your list"}</td><td>${esc(c.status || "")}</td><td>${c.at ? new Date(c.at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : ""}</td></tr>`).join("")}
+    </table></div>` : `<div class="panel"><p class="muted">No sign-ups yet. They appear here the day a creator claims through your message.</p></div>`}`;
+  } catch (err) {
+    el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+  }
+}
+
+// ---------- Help ----------
+
+function recruiterHelpHtml() {
+  const e = rcState.entity || {};
+  const market = e.marketName || "your market";
+  const isDubai = e.marketId === "dubai";
+  return `<h2>How this works</h2>
+  <div class="panel">
+    <h3 style="margin-top:0">Your day, in order</h3>
+    <ol style="padding-left:18px;margin:8px 0">
+      <li>Open <strong>Queue</strong>. The top shows how many people are left to contact.</li>
+      <li>Pick a card and tap <strong>Work this one</strong>, or go straight to <strong>Outreach</strong>. Read the message already written for that person. Edit any word.</li>
+      <li>Tap <strong>Copy message</strong>, then <strong>Open profile</strong>. Paste and send from your own Instagram, TikTok, or email, like any normal message.</li>
+      <li>Come back and tap <strong>Mark sent</strong>. Every time, right after you send. It keeps your list true, and it is how Jeff sees your progress.</li>
+      <li>When someone replies, tap <strong>Mark replied</strong> on their card.</li>
+      <li>Follow-ups: if a person has not replied after 4 days, one short follow-up appears on their Outreach card. Send it the same way. One follow-up per person, ever.</li>
+      <li><strong>Results</strong> shows every creator who signed up through you.</li>
+    </ol>
+    <h3>The facts, for when they ask</h3>
+    <ul style="padding-left:18px;margin:8px 0">
+      <li>Creators get booked two ways: comped experiences (a meal, a treatment, a class, a stay), or paid bookings at the rate they set, and they keep 97% of paid bookings.</li>
+      <li>Creators are ranked by how local their audience is to ${esc(market)}, not by follower count.</li>
+      <li>${esc(market)} opens after the founding roster is set. Claiming a page now holds their spot and their local ranking.</li>
+      <li>Joining is free for creators, and always is. SIGNL starts at 500 total followers across their platforms.</li>
+      ${isDubai ? `<li>Dubai note: creators here need the UAE Advertiser Permit before their first paid or gifted post. They do not need it to sign up, and SIGNL walks founding creators through it.</li>` : ""}
+    </ul>
+    <h3>The one rule</h3>
+    <p>Only message people from your console list, and always mark what happened: sent, replied, not interested. If someone asks not to be contacted, tap <strong>Do not contact</strong> and they are never messaged again.</p>
+    <p class="muted">Stuck? Open the Sig tab and ask in plain words. Anything Sig cannot answer, ask Jeff.</p>
+  </div>`;
+}
+
+// ---------- Admin: staff recruiters (Recruiters tab) ----------
+
+async function loadStaffRecruiters() {
+  const el = document.getElementById("staff-recruiters");
+  if (!el) return;
+  try {
+    const data = await api("GET", "/admin/recruiters");
+    const rows = data.recruiters || [];
+    const conflicts = rows.flatMap((r) => (r.conflicts || []).map((c) => ({ who: r.recruiter.name, market: r.recruiter.marketName, ...c })));
+    el.innerHTML = `
+    <h3 style="margin:18px 0 6px">Staff recruiters</h3>
+    <p class="muted small">A staff recruiter gets a login scoped to one market, a queue, and ready-to-send drafts. They send from their own accounts and mark each send; these numbers are that log, plus the sign-ups credited to them. A sign-up counts once: their link wins, a list match is flagged, never double-counted.</p>
+    <div class="panel">
+      <h4 style="margin-top:0">Invite a staff recruiter</h4>
+      <div class="form-2col">
+        <div class="field"><label>Name</label><input id="sr-name" placeholder="Bella Hausen"></div>
+        <div class="field"><label>Email</label><input id="sr-email" placeholder="name@example.com"></div>
+        <div class="field"><label>Market</label><select id="sr-market">${(data.markets || []).map((m) => `<option value="${esc(m.name)}" ${m.name === "Dubai" ? "selected" : ""}>${esc(m.name)}</option>`).join("")}</select></div>
+      </div>
+      <button class="btn" onclick="srInvite()">Invite staff recruiter</button>
+      <span id="sr-msg" class="small muted" style="margin-left:8px"></span>
+      <p class="small muted">They get one email with a link to set their own password. Nothing else is sent.</p>
+    </div>
+    ${rows.length ? `<div class="table-wrap panel"><table>
+      <tr><th>Recruiter</th><th>Market</th><th>Queued</th><th>Sent (IG/TT/Email)</th><th>Replies+</th><th>Sign-ups</th><th>Approved</th><th>Via link / list</th><th></th></tr>
+      ${rows.map((r) => { const e = r.recruiter; return `<tr><td><strong>${esc(e.name)}</strong><br><span class="muted small">${esc(e.kind)} &middot; src=${esc(e.claimSrc)}</span></td><td>${esc(e.marketName)}</td><td>${r.assigned}</td><td>${r.sends} (${r.sentByChannel.instagram}/${r.sentByChannel.tiktok}/${r.sentByChannel.email})</td><td>${r.replies}</td><td>${r.claimsStarted}</td><td>${r.signupsApproved}</td><td>${r.creditsViaLink} / ${r.creditsViaListMatch}</td><td>${e.kind === "staff" ? `<button class="btn small-btn ghost" onclick="srResend('${e.id}')">Resend invite</button>` : ""}</td></tr>`; }).join("")}
+    </table></div>` : `<p class="muted">No recruiter seats yet.</p>`}
+    ${conflicts.length ? `<div class="panel"><h4 style="margin-top:0">Flagged list matches</h4><p class="small muted">These sign-ups matched a prospect on one recruiter's list but arrived through another recruiter's link, so the link took the credit. Nothing is double-counted; the flag is here so a human can see it.</p>${conflicts.map((c) => `<p class="small">${esc(c.who)} (${esc(c.market)}): @${esc(c.handle || "")} - ${esc(c.name || "")}</p>`).join("")}</div>` : ""}`;
+  } catch (err) {
+    el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+  }
+}
+
+async function srInvite() {
+  const msg = document.getElementById("sr-msg");
+  const body = {
+    name: document.getElementById("sr-name").value.trim(),
+    email: document.getElementById("sr-email").value.trim(),
+    market: document.getElementById("sr-market").value,
+  };
+  try {
+    const data = await api("POST", "/admin/recruiters/invite", body);
+    if (msg) msg.textContent = data.emailSent ? `Invite sent to ${body.email}.` : `Seat created for ${body.email}; the email could not be sent from here, use Resend invite.`;
+    loadStaffRecruiters();
+  } catch (err) { if (msg) msg.textContent = err.message; }
+  return false;
+}
+
+async function srResend(id) {
+  try { await api("POST", `/admin/recruiters/${id}/resend-invite`, {}); alert("Invite email re-sent."); }
+  catch (err) { alert(err.message); }
+  return false;
+}
+
+// ---------- Admin: Jeff's outreach workspace ----------
+
+async function loadAdminOutreach() {
+  const el = document.getElementById("tab-body");
+  if (!el) return;
+  rcState.adminMode = true;
+  try {
+    await rcLoadEntity();
+    const markets = (rcState.entity && rcState.entity.markets) || [];
+    if (!rcState.market || !markets.includes(rcState.market)) rcState.market = markets[0] || "Austin";
+    el.innerHTML = `<h2>Outreach</h2>
+    <p class="muted small">Your own queues, the same console your recruiters use. Pick a market, work the list, mark what happened. Drafts sign as you.</p>
+    <p>${markets.map((m) => `<button class="btn small-btn ${rcState.market === m ? "" : "ghost"}" style="margin:0 6px 6px 0" onclick="rcAdminSetMarket('${esc(m)}')">${esc(m)}</button>`).join("")}</p>
+    <div id="admin-outreach-body"><p class="muted">Loading...</p></div>`;
+    loadAdminOutreachQueue();
+  } catch (err) {
+    el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+  }
+}
+
+function rcAdminSetMarket(m) { rcState.market = m; rcState.queue = null; rcState.focusId = null; loadAdminOutreach(); return false; }
+
+async function loadAdminOutreachQueue(view) {
+  const el = document.getElementById("admin-outreach-body");
+  if (!el) return;
+  if (view === "outreach") { el.innerHTML = ""; await loadRecruiterOutreach(el); return; }
+  try {
+    const data = await api("GET", "/recruiter/queue?market=" + encodeURIComponent(rcState.market));
+    rcState.queue = data;
+    el.innerHTML = recruiterQueueHtml(data);
+  } catch (err) {
+    el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+  }
+}
+
+// ---------- Admin: Dubai Advertiser Permit ----------
+
+async function saveAdvertiserPermit(userId, status) {
+  try {
+    await api("POST", `/admin/users/${userId}/advertiser-permit`, { status });
+  } catch (err) { alert(err.message); }
+  return false;
+}
