@@ -1818,7 +1818,63 @@ function bnIcon(name) {
 // from 768px up — and the phone bottom tab bar is gone; placement
 // lives entirely in theme-v2.css, the destinations and badges are
 // unchanged. Tab badges ride the counts GET /notifications returns.
+// ---------- view-as (Build -67, Jeff, 2026-11-01) ----------
+// An admin viewing a REAL business's account (Deliverable 1).
+// The session belongs to the business, so the whole app renders
+// their real account; the server refuses every write on the view
+// session (see router.js), and this banner (a shell element
+// outside #app, so no screen render can wipe it) is what makes
+// the mode unmistakable and one tap to leave. It is deliberately
+// NOTHING like the sample Business Preview's chrome: that preview
+// is a simulation with fake data, this is a real account.
+function renderViewAsBanner() {
+  const host = document.getElementById("viewas-banner");
+  if (!host) return;
+  const va = state.user && state.user.viewAs;
+  if (!va) { host.innerHTML = ""; host.style.display = "none"; return; }
+  host.style.display = "";
+  host.innerHTML = `<div class="viewas-inner"><span class="viewas-tag">ADMIN VIEW</span><span>Viewing <strong>${esc(va.businessName || "this business")}</strong>&rsquo;s account &middot; Read only &middot; Nothing you do here changes their account</span><button class="btn small-btn" onclick="exitViewAs()">Exit view</button></div>`;
+}
+
+async function exitViewAs() {
+  let data = null;
+  try { data = await api("POST", "/auth/exit-view", {}); } catch (e) { data = null; }
+  if (data && data.user) {
+    state.user = data.user;
+    state.preview = null;
+    state.view = "admin";
+    state.tab = "Applications";
+    state.cc = {};
+    state.caches = {};
+    render();
+  } else {
+    // The admin session died while viewing: the server cleared
+    // the cookie; a reload lands on the sign-in page honestly.
+    location.reload();
+  }
+}
+
+// Admin entry points (Command Center rows, Applications rows):
+// entering swaps the session cookie server-side, so a reload
+// boots straight into the business's real experience.
+async function adminViewBusiness(id) {
+  try {
+    await api("POST", `/admin/businesses/${id}/view`, {});
+    location.reload();
+  } catch (e) { alert(e.message); }
+}
+
+async function adminSendSigninLink(id) {
+  try {
+    const d = await api("POST", `/admin/users/${id}/send-signin-link`, {});
+    alert(d.emailSent
+      ? `Sign-in link sent to ${d.email}. It is the same link Forgot password sends: one tap in that inbox sets a new password.`
+      : `A sign-in link was created for ${d.email}, but email could not be sent from here. Use Forgot password on the sign-in page with that address instead.`);
+  } catch (e) { alert(e.message); }
+}
+
 function renderBottomNav() {
+  renderViewAsBanner();
   // Overhaul V3 (2026-10-27): labeled destinations per role and
   // a slim top bar (identity, Messages, help) rides
   // every app screen. V4.1 cut the rail to four (Home, Explore,
@@ -4004,6 +4060,10 @@ async function doReset(e) {
 }
 
 async function signOut() {
+  // In a view-as session (Build -67), signing out exits the view
+  // back to Admin; the admin is never signed out from under the
+  // view. The server routes logout the same way, belt and braces.
+  if (state.user && state.user.viewAs) { await exitViewAs(); return; }
   try { await api("POST", "/auth/logout", {}); } catch (e) { /* ignore */ }
   state.user = null;
   state.view = "home";
@@ -6614,6 +6674,7 @@ function renderBusinessFoundingStatus() {
   ${wsHead("Status", { sub: "Where your founding enrollment stands." })}
   <div class="chiprow" style="margin-top:10px">
     <button type="button" class="rchip on" onclick="window.scrollTo({top:0,behavior:'smooth'});return false">Your status</button>
+    <button type="button" class="rchip" onclick="document.getElementById('fbz-first-month').scrollIntoView({behavior:'smooth'});return false">Your first month</button>
     <button type="button" class="rchip" onclick="document.getElementById('fbz-preview').scrollIntoView({behavior:'smooth'});return false">Your preview</button>
     <button type="button" class="rchip" onclick="document.getElementById('fbz-account').scrollIntoView({behavior:'smooth'});return false">Account &amp; password</button>
   </div>
@@ -6646,7 +6707,27 @@ function renderBusinessFoundingStatus() {
     <p class="muted small">Sign back in any time to check your status. Questions: hello@joinsignl.com</p>
     <div class="mt"><button class="btn ghost" onclick="signOut()">Sign out</button></div>
   </section>
-  <section class="wcard" style="margin-top:14px">
+  ${(() => {
+    // Your first month (Build -67, Deliverable 3): what the
+    // plan's visits ARE, in plain words, on the founding home
+    // before the market opens. The count is the business's own
+    // plan figure from the server catalog; if the plan cannot be
+    // resolved, the card does not render at all rather than guess
+    // a number. The proof line renders only when the server
+    // attached this business's own highlight (Chelsea Friday
+    // Furniture's), never as generic copy. The button lands on
+    // the existing setup panel below; there is one form, not two.
+    const plan = (state.boot.plans || []).find((p) => p.id === bz.plan);
+    const visits = plan ? plan.visitsPerMonth : null;
+    if (!visits) return "";
+    return `<section class="wcard" id="fbz-first-month" style="margin-top:14px">
+    <h3 style="margin-top:0">Your first month</h3>
+    <p>Your ${esc(bz.planName || plan.name)} plan includes <strong>${visits} creator visits a month</strong>. Here is what a visit is: a local creator comes to your store, films while they are there, and posts it for their followers here in ${esc(bizPlace)}. You pick the moment your first month is built around, and the visits run at it.</p>
+    ${bz.highlight ? `<div class="panel" style="margin-top:12px"><p class="small" style="margin:0">${esc(bz.highlight)}</p></div>` : ""}
+    <div class="mt"><button class="btn" type="button" onclick="document.getElementById('fbz-setup').scrollIntoView({behavior:'smooth'});return false">Set up your first month</button></div>
+  </section>`;
+  })()}
+  <section class="wcard" id="fbz-setup" style="margin-top:14px">
     <h3 style="margin-top:0">Set up your first month</h3>
     <p class="small muted" style="margin:4px 0 12px">Two optional answers that only matter once visits start, so they live here instead of on the sign-up form. Set them any time before your first visit.</p>
     <div class="field"><label>What is your first month about?</label><select id="fbz-moment"><option value="">Not sure yet</option>${momentsClient().map((m) => `<option value="${m.id}" ${bz.moment === m.id ? "selected" : ""}>${esc(m.label)}</option>`).join("")}</select><p class="small muted">The moment names the play your first month runs. You can change it any time.</p></div>
@@ -16262,9 +16343,11 @@ function renderAdmin() {
       <button class="btn" onclick="enterPreview()">Preview as business &rarr;</button>
       <button class="btn ghost" onclick="enterPreviewDashboard()">Business dashboard &rarr;</button>
     </div>
+    <div id="admin-demo-showcase"></div>
     <div id="admin-sig"><div class="panel"><div class="sig-load-row">${sigAvatarHtml("think")}</div><p class="muted small" style="margin:0">Sig is reading the same numbers Admin shows...</p></div></div>` : ""}
     <div id="tab-body"><p class="muted">Loading...</p></div>`;
   if (landing) loadAdminSig();
+  if (landing) loadDemoShowcasePanel();
   if (tab === "Sig") renderAdminSig();
   if (tab === "Applications") loadApplications();
   if (tab === "Requests") loadAdminRequests();
@@ -16275,6 +16358,63 @@ function renderAdmin() {
   if (tab === "Compliance") loadCompliance();
   if (tab === "Campaign") loadCampaign();
   if (tab === "Stats") loadStats();
+}
+
+// Demo showcase (Build -67, Deliverable 4): Jeff's walkthrough
+// creators. Fictional, tester-flagged Nashville profiles that
+// exist ONLY inside the fence: visible in discovery and profile
+// views to the allowlisted business (Chelsea Friday Furniture)
+// and tester businesses, invisible to everyone else, and never
+// loadable into offers, bookings, counts, or the public site.
+// Load is a deliberate tap before a demo; Remove purges the whole
+// batch by flag. Nothing auto-loads.
+function demoShowcasePanelHtml(s) {
+  const loaded = s && s.loaded ? s.loaded : 0;
+  const roster = loaded
+    ? `<p class="small muted" style="margin:8px 0 0">Loaded: ${(s.creators || []).map((c) => `${esc(c.name)} (@${esc(c.handle)})`).join(", ")}</p>`
+    : "";
+  const allow = (s && s.allowlisted && s.allowlisted.length)
+    ? `<p class="small" style="margin:8px 0 0">Can see them in discovery: ${s.allowlisted.map(esc).join(", ")} (their business accounts only), plus any tester-flagged business. Nobody else can: not other businesses, not creators, not the public pages.</p>`
+    : `<p class="small muted" style="margin:8px 0 0">When loaded, they are visible only to Chelsea Friday Furniture's business account and tester-flagged businesses.</p>`;
+  return `<div class="panel">
+    <div><strong>Demo showcase: Nashville creators</strong><p class="muted small" style="margin:4px 0 0">${loaded ? `${loaded} demo creators are loaded.` : "Not loaded. The demo creators do not exist until you load them."} They are fictional sample profiles (tester-flagged, so they never count anywhere). For a live walkthrough from Chelsea Friday Furniture's account: View her account from her Command Center business row after loading.</p></div>
+    ${roster}${allow}
+    <div style="margin-top:10px">${loaded
+      ? `<button class="btn danger" onclick="adminDemoShowcaseRemove(${loaded})">Remove demo creators (${loaded})</button>`
+      : `<button class="btn" onclick="adminDemoShowcaseLoad()">Load Nashville demo creators</button>`}
+    </div>
+    <p class="small muted" id="demo-showcase-note" style="margin:8px 0 0"></p>
+  </div>`;
+}
+
+async function loadDemoShowcasePanel() {
+  const host = document.getElementById("admin-demo-showcase");
+  if (!host) return;
+  try {
+    const d = await api("GET", "/admin/demo-showcase");
+    if (!document.getElementById("admin-demo-showcase")) return;
+    host.innerHTML = demoShowcasePanelHtml(d.showcase);
+  } catch (e) { host.innerHTML = ""; }
+}
+
+async function adminDemoShowcaseLoad() {
+  const note = document.getElementById("demo-showcase-note");
+  if (note) note.textContent = "Loading...";
+  try {
+    const d = await api("POST", "/admin/demo-showcase/load", {});
+    const r = d.result || {};
+    alert(`Demo creators: ${r.created || 0} created, ${r.existing || 0} already loaded${(r.skipped || []).length ? `, skipped (handle taken by a real account): ${r.skipped.join(", ")}` : ""}. Visible to: ${(r.allowlisted || []).join(", ") || "no allowlisted business found"} and tester businesses.`);
+    loadDemoShowcasePanel();
+  } catch (e) { alert(e.message); }
+}
+
+async function adminDemoShowcaseRemove(count) {
+  if (!confirm(`Remove all ${count} demo creators? Every demo record, photo, and favorite pointing at one is deleted. Real accounts are not touched.`)) return;
+  try {
+    const d = await api("POST", "/admin/demo-showcase/remove", {});
+    alert(`Removed ${(d.result || {}).removed || 0} demo creators. ${(d.result || {}).remaining || 0} remain.`);
+    loadDemoShowcasePanel();
+  } catch (e) { alert(e.message); }
 }
 
 // Sig in Admin (Jeff, 2026-10-28): Jeff's attention list, in
@@ -17187,7 +17327,7 @@ async function loadApplications() {
         <td data-label="Applied">${fmtDate(u.createdAt)}</td>
         <td>${u.status === "pending"
           ? `<button class="btn small-btn" onclick="reviewApp('${u.id}','approve')">Approve</button> <button class="btn small-btn danger" onclick="toggleRejectEditor('${u.id}')">Reject</button><div id="rej-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px"><div class="field"><label>Reason (optional, named in their rejection email)</label><select id="rej-reason-${u.id}"><option value="">No reason given</option><option>Not local enough</option><option>Audience too small for this wave</option><option>Content not a fit</option><option>Market not open yet</option><option>Other</option></select></div><button class="btn small-btn danger" onclick="confirmRejectApp('${u.id}')">Send rejection</button></div>`
-          : `<span class="badge ${u.status === "approved" ? "ok" : "bad"}">${esc(u.status)}</span>${u.tester ? ` <span class="badge warn">Tester</span>` : ""}${u.role === "creator" && u.status === "approved" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="setTester('${u.id}', ${u.tester ? "false" : "true"}, 'creator')">${u.tester ? "Move to roster" : "Move to Tester"}</button>` : ""}${u.role === "creator" && u.status === "approved" ? `<br><button class="btn small-btn" style="margin-top:6px" onclick="adminMsgComposeTo('${u.id}')">Message</button>` : ""}`}${u.role === "business" && u.status === "approved" && businessAccessState(u) !== "active" ? `<br><button class="btn small-btn" style="margin-top:6px" onclick="activateBusiness('${u.id}')">Activate business</button>` : ""}${u.role === "business" && u.status === "approved" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="setTester('${u.id}', ${u.tester ? "false" : "true"}, 'business')">${u.tester ? "Move to roster" : "Move to Tester"}</button>` : ""}${u.role === "business" && u.business ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleReviewLinks('${u.id}')">Review links</button><div id="rl-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px">${["google", "yelp", "tripadvisor", "facebook"].map((k) => `<div class="field"><label>${esc(k)}</label><input id="rl-${k}-${u.id}" type="url" value="${esc((u.business.reviewLinks || {})[k] || "")}" placeholder="https://"></div>`).join("")}<button class="btn small-btn" onclick="saveReviewLinks('${u.id}')">Save review links</button></div><br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleDiscountEditor('${u.id}')">Code discount</button><div id="disc-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px"><label style="font-weight:500"><input type="checkbox" id="disc-enabled-${u.id}" style="width:auto" ${u.business.discountEnabled ? "checked" : ""}> Code discounts on (business's opt-in)</label><div class="field"><label>Discount percent (5 to 50)</label><input id="disc-pct-${u.id}" type="number" min="5" max="50" step="1" value="${esc(String(u.business.discountPct == null ? 20 : u.business.discountPct))}"></div><button class="btn small-btn" onclick="saveDiscountSetting('${u.id}')">Save code discount</button></div>` : ""}${u.role === "creator" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="adminViewCreator('${u.id}')">View profile</button>` : ""}${(u.role === "creator" || u.role === "business") ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleAttributionEditor('${u.id}')">Partner attribution</button><div id="attr-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px"><div class="small" style="margin-bottom:6px">${u.partnerId ? `Attributed to <strong>${esc(u.partnerName || "a partner")}</strong>` : (u.signupSource && u.signupSource.indexOf("partner-") === 0 ? "Came through a partner link, but is not stamped to the partner yet" : "Not attributed to a partner (direct)")}</div><div class="field"><label>Attribute to</label><select id="attr-partner-${u.id}"><option value="">Direct — no partner</option>${adminPartnerChoices.map((p) => `<option value="${p.id}" ${u.partnerId === p.id ? "selected" : ""}>${esc(p.name)} (${esc(p.code)})</option>`).join("")}</select></div><div class="field"><label>Reason (kept with the change)</label><input id="attr-reason-${u.id}" type="text" placeholder="Why is this changing?"></div><button class="btn small-btn" onclick="saveAttribution('${u.id}')">Save attribution</button></div>` : ""}</td>
+          : `<span class="badge ${u.status === "approved" ? "ok" : "bad"}">${esc(u.status)}</span>${u.tester ? ` <span class="badge warn">Tester</span>` : ""}${u.role === "creator" && u.status === "approved" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="setTester('${u.id}', ${u.tester ? "false" : "true"}, 'creator')">${u.tester ? "Move to roster" : "Move to Tester"}</button>` : ""}${u.role === "creator" && u.status === "approved" ? `<br><button class="btn small-btn" style="margin-top:6px" onclick="adminMsgComposeTo('${u.id}')">Message</button>` : ""}`}${u.role === "business" && u.status === "approved" && businessAccessState(u) !== "active" ? `<br><button class="btn small-btn" style="margin-top:6px" onclick="activateBusiness('${u.id}')">Activate business</button>` : ""}${u.role === "business" ? `<br><button class="btn small-btn" style="margin-top:6px" onclick="adminViewBusiness('${u.id}')">View account</button><br><button class="btn small-btn ghost" style="margin-top:6px" onclick="adminSendSigninLink('${u.id}')">Send sign-in link</button>` : ""}${u.role === "business" && u.status === "approved" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="setTester('${u.id}', ${u.tester ? "false" : "true"}, 'business')">${u.tester ? "Move to roster" : "Move to Tester"}</button>` : ""}${u.role === "business" && u.business ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleReviewLinks('${u.id}')">Review links</button><div id="rl-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px">${["google", "yelp", "tripadvisor", "facebook"].map((k) => `<div class="field"><label>${esc(k)}</label><input id="rl-${k}-${u.id}" type="url" value="${esc((u.business.reviewLinks || {})[k] || "")}" placeholder="https://"></div>`).join("")}<button class="btn small-btn" onclick="saveReviewLinks('${u.id}')">Save review links</button></div><br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleDiscountEditor('${u.id}')">Code discount</button><div id="disc-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px"><label style="font-weight:500"><input type="checkbox" id="disc-enabled-${u.id}" style="width:auto" ${u.business.discountEnabled ? "checked" : ""}> Code discounts on (business's opt-in)</label><div class="field"><label>Discount percent (5 to 50)</label><input id="disc-pct-${u.id}" type="number" min="5" max="50" step="1" value="${esc(String(u.business.discountPct == null ? 20 : u.business.discountPct))}"></div><button class="btn small-btn" onclick="saveDiscountSetting('${u.id}')">Save code discount</button></div>` : ""}${u.role === "creator" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="adminViewCreator('${u.id}')">View profile</button>` : ""}${(u.role === "creator" || u.role === "business") ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleAttributionEditor('${u.id}')">Partner attribution</button><div id="attr-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px"><div class="small" style="margin-bottom:6px">${u.partnerId ? `Attributed to <strong>${esc(u.partnerName || "a partner")}</strong>` : (u.signupSource && u.signupSource.indexOf("partner-") === 0 ? "Came through a partner link, but is not stamped to the partner yet" : "Not attributed to a partner (direct)")}</div><div class="field"><label>Attribute to</label><select id="attr-partner-${u.id}"><option value="">Direct — no partner</option>${adminPartnerChoices.map((p) => `<option value="${p.id}" ${u.partnerId === p.id ? "selected" : ""}>${esc(p.name)} (${esc(p.code)})</option>`).join("")}</select></div><div class="field"><label>Reason (kept with the change)</label><input id="attr-reason-${u.id}" type="text" placeholder="Why is this changing?"></div><button class="btn small-btn" onclick="saveAttribution('${u.id}')">Save attribution</button></div>` : ""}</td>
       </tr>`;
     };
     const pend = (data.pending || []).filter(adminAppInFilter);
@@ -18025,7 +18165,7 @@ function ccBusinessesHtml(d) {
       <td data-label="Minimum">${minCell}</td>
       <td data-label="Billing">${billingWords(r)}</td>
       <td data-label="Rollover">${rollCell}</td>
-      <td data-label="Lifetime">${lifeCell}</td>
+      <td data-label="Lifetime">${lifeCell}<div style="margin-top:8px"><button class="btn small-btn" onclick="adminViewBusiness('${r.id}')">View account</button> <button class="btn small-btn ghost" onclick="adminSendSigninLink('${r.id}')">Send sign-in link</button></div></td>
     </tr>`;
   };
   if (!rows.length) return `<div class="panel cc-waiting"><strong>No businesses yet.</strong> When the first business signs up, its agreement — plan, founding terms, credit, minimum, billing state and rollover — lands here.</div>`;

@@ -44,6 +44,48 @@ async function destroySession(token) {
   if (token) await store.del(`session:${token}`);
 }
 
+async function getSessionRecord(token) {
+  if (!token) return null;
+  const session = await store.get(`session:${token}`);
+  if (!session) return null;
+  if (Date.now() > Date.parse(session.expiresAt)) {
+    await store.del(`session:${token}`);
+    return null;
+  }
+  return session;
+}
+
+// View-as sessions (Build -67, Jeff, 2026-11-01): an admin looking
+// at a real business's account exactly as the owner sees it. The
+// session's userId is the BUSINESS's id, so every read renders the
+// business's real data through the normal paths; the viewAs marker
+// is what makes it safe: the router refuses every non-GET request
+// on a view session server-side, and the exit path trades this
+// token back for the admin's own (still-live) session token, which
+// is carried inside the record and never reaches the client as
+// data. Two hours, then it expires like any session.
+const VIEW_SESSION_TTL_MS = 1000 * 60 * 60 * 2; // 2 hours
+
+async function createViewSession({ adminUser, adminToken, businessUser }) {
+  const token = crypto.randomBytes(32).toString("hex");
+  const now = Date.now();
+  const biz = businessUser.business || {};
+  await store.set(`session:${token}`, {
+    userId: businessUser.id,
+    createdAt: new Date(now).toISOString(),
+    expiresAt: new Date(now + VIEW_SESSION_TTL_MS).toISOString(),
+    viewAs: {
+      adminId: adminUser.id,
+      adminEmail: adminUser.email,
+      adminSessionToken: adminToken,
+      businessId: businessUser.id,
+      businessName: biz.businessName || businessUser.name || "Business",
+      enteredAt: new Date(now).toISOString(),
+    },
+  });
+  return token;
+}
+
 // Revoke every session a user holds (password reset / password
 // change: the credential changed, so every other device signs out).
 // exceptToken keeps the caller's own session alive on a voluntary
@@ -137,6 +179,8 @@ module.exports = {
   verifyPassword,
   createSession,
   getSessionUser,
+  getSessionRecord,
+  createViewSession,
   destroySession,
   revokeSessionsForUser,
   sessionCookie,

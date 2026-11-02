@@ -225,6 +225,29 @@ th { color: var(--muted); font-weight: 600; }
   background: var(--grad); color: #0B0D0C; vertical-align: middle;
 }
 .preview-cta { display: flex; justify-content: space-between; gap: 16px; align-items: center; flex-wrap: wrap; }
+
+/* View-as (Build -67): the persistent banner over a REAL
+   business's account. Deliberately unlike the Business Preview
+   banner above (ink + gradient chip): amber, full width, sticky,
+   so a real account being viewed can never be mistaken for the
+   sample simulation, on any screen, at any scroll position. */
+#viewas-banner {
+  position: sticky; top: 0; z-index: 120;
+  background: #F5B301; color: #231900;
+  border-bottom: 2px solid #0B0D0C;
+}
+.viewas-inner {
+  display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+  max-width: 1180px; margin: 0 auto; padding: 10px 16px;
+  font-size: 0.92rem;
+}
+.viewas-tag {
+  display: inline-block; padding: 2px 10px; border-radius: 999px;
+  font-size: 0.72rem; font-weight: 800; letter-spacing: 0.08em;
+  background: #0B0D0C; color: #F5B301; vertical-align: middle;
+  white-space: nowrap;
+}
+.viewas-inner .btn { margin-left: auto; background: #0B0D0C; color: #fff; border-color: #0B0D0C; }
 .avatar-initial {
   display: inline-flex; align-items: center; justify-content: center;
   background: var(--grad); color: #0B0D0C; font-weight: 800;

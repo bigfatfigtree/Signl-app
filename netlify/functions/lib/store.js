@@ -14,6 +14,11 @@
 //   user:{uuid}                  account + profile/business payload
 //   email:{lowercased email}     { userId } uniqueness index
 //   session:{token}              { userId, createdAt, expiresAt }
+//                                (a view-as session, Build -67, also
+//                                carries viewAs { adminId, adminEmail,
+//                                adminSessionToken, businessId,
+//                                businessName, enteredAt } and its
+//                                userId is the viewed business's id)
 //   pwreset:{sha256 of token}    { userId, email, createdAt, expiresAt } password reset, hash only at rest
 //   pwreset-user:{userId}        { tokenHash, createdAt } latest reset token per account
 //   offer:{uuid}                 comp offer

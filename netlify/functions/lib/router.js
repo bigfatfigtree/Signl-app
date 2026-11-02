@@ -2364,6 +2364,13 @@ async function creatorBuzz(user) {
 
 async function withFounding(user) {
   const pub = publicUser(user);
+  // Business highlight (Build -67, Deliverable 3): a verified,
+  // business-specific proof line rides the business's own payload
+  // when the record's name matches the highlight table exactly.
+  if (pub && pub.role === "business" && pub.business) {
+    const highlight = BUSINESS_HIGHLIGHTS[normalizeBizName(pub.business.businessName)];
+    if (highlight) pub.business = { ...pub.business, highlight };
+  }
   if (pub && pub.role === "creator") {
     pub.founding = publicFounding(await foundingSummary(user));
     // Two-step claim (Jeff, 2026-10-20): the creator's own payload
@@ -3990,6 +3997,16 @@ async function discoverCards(query, viewer) {
   // creator whose profile is not complete (a quick claim that has not
   // finished step two) is not on the roster yet either.
   let creators = users.filter((u) => isRosterCreator(u) && profileCompleteOf(u) && standingState(u) !== "banned");
+  // Demo showcase fence (Build -67, Deliverable 4): for an
+  // allowlisted business viewer ONLY, the flagged demo creators
+  // join the pool BEFORE every filter and ranking below, so they
+  // mix with the real roster by the same local-reach rules. For
+  // every other viewer this branch never runs and the demos do
+  // not exist in discovery at all.
+  if (demoShowcaseVisibleTo(viewer)) {
+    const demos = users.filter((u) => isDemoShowcaseCreator(u) && u.status === "approved" && profileCompleteOf(u) && standingState(u) !== "banned");
+    if (demos.length) creators = creators.concat(demos);
+  }
   const market = query.market || (viewer && viewer.role === "business" ? viewer.market : null);
   const marketName = market ? ((marketByName(market) || {}).name || null) : null;
   // Multi-market discovery (2026-11-01): a market's roster is
@@ -8516,17 +8533,21 @@ async function creatorPerformanceReadout(user) {
 async function getAuthUser(event) {
   const cookies = auth.parseCookies(event.headers.cookie || event.headers.Cookie || "");
   const token = cookies.signl_session;
-  if (!token) return { user: null, token: null };
+  if (!token) return { user: null, token: null, session: null };
   try {
     const user = await auth.getSessionUser(token);
-    return { user, token };
+    // The raw session record rides along (Build -67): a view-as
+    // session's viewAs marker is how the router enforces read-only
+    // and how /auth/me tells the client to show the banner.
+    const session = user ? await auth.getSessionRecord(token) : null;
+    return { user, token, session };
   } catch (e) {
     // A store failure on the session read fails safe to anonymous
     // (public routes still serve; signed-in routes answer 401)
     // instead of 500ing every route for cookie-bearing browsers.
     // See INCIDENT-2026-10-25.md.
     console.error("SIGNL getAuthUser session lookup failed (treating request as signed out):", e);
-    return { user: null, token: null };
+    return { user: null, token: null, session: null };
   }
 }
 
@@ -9181,9 +9202,34 @@ async function handleLogin(event) {
 }
 
 async function handleLogout(event, ctx) {
+  // Signing out while viewing a business's account exits the view
+  // (Build -67): the admin must land back in their own session,
+  // never in a signed-out void with their admin session orphaned.
+  if (ctx.session && ctx.session.viewAs) return handleExitView(event, ctx);
   if (ctx.token) await auth.destroySession(ctx.token);
   const secure = (event.headers["x-forwarded-proto"] || "").includes("https");
   return json(200, { ok: true }, { "Set-Cookie": auth.clearCookie(secure) });
+}
+
+// Exit view (Build -67): destroys the view session and hands the
+// browser back the admin's own session token, which the view
+// record carried server-side. If that admin session has died in
+// the meantime (expired, revoked), the honest answer is the
+// sign-in page, never a half-state.
+async function handleExitView(event, ctx) {
+  const secure = (event.headers["x-forwarded-proto"] || "").includes("https");
+  const va = ctx.session && ctx.session.viewAs;
+  if (!va) {
+    if (ctx.user) return json(200, { user: await withFounding(ctx.user), exitedView: false });
+    return err(401, "Not signed in");
+  }
+  if (ctx.token) await auth.destroySession(ctx.token);
+  const adminUser = va.adminSessionToken ? await auth.getSessionUser(va.adminSessionToken) : null;
+  if (adminUser && adminUser.role === "admin" && adminUser.id === va.adminId) {
+    await logEvent({ type: "admin_exited_business_view", actorId: adminUser.id, actorRole: "admin", subjectId: va.businessId, market: null, data: { businessName: va.businessName } });
+    return json(200, { user: await withFounding(adminUser), exitedView: true }, { "Set-Cookie": auth.sessionCookie(va.adminSessionToken, secure) });
+  }
+  return json(200, { user: null, exitedView: true, backToSignin: true }, { "Set-Cookie": auth.clearCookie(secure) });
 }
 
 // ---------- password reset + change (UX audit fix, 2026-10-22) ----------
@@ -9225,6 +9271,22 @@ function passwordResetEmail(user, resetUrl) {
   return { subject, text: lines.join("\n") };
 }
 
+// One reset-token issuance, shared by the public Forgot flow and
+// the admin "Send sign-in link" action (Build -67): the newest
+// token wins, the previous one is deleted, and only the hash is
+// ever stored. Whoever receives the link sets the account's new
+// password through the ordinary reset endpoint.
+async function issuePasswordResetToken(targetUser) {
+  const token = crypto.randomBytes(32).toString("hex");
+  const hash = resetTokenHash(token);
+  const prev = await store.get(`pwreset-user:${targetUser.id}`);
+  if (prev && prev.tokenHash && prev.tokenHash !== hash) await store.del(`pwreset:${prev.tokenHash}`);
+  const created = new Date().toISOString();
+  await store.set(`pwreset:${hash}`, { userId: targetUser.id, email: targetUser.email, createdAt: created, expiresAt: new Date(Date.now() + RESET_TTL_MS).toISOString() });
+  await store.set(`pwreset-user:${targetUser.id}`, { tokenHash: hash, createdAt: created });
+  return token;
+}
+
 const forgotAttempts = new Map();
 async function handleForgot(event) {
   const b = parseBody(event);
@@ -9249,13 +9311,7 @@ async function handleForgot(event) {
     const idx = email ? await store.get(`email:${email}`) : null;
     const user = idx ? await store.get(`user:${idx.userId}`) : null;
     if (user && attempts.length <= 5) {
-      const token = crypto.randomBytes(32).toString("hex");
-      const hash = resetTokenHash(token);
-      const prev = await store.get(`pwreset-user:${user.id}`);
-      if (prev && prev.tokenHash && prev.tokenHash !== hash) await store.del(`pwreset:${prev.tokenHash}`);
-      const created = new Date(now).toISOString();
-      await store.set(`pwreset:${hash}`, { userId: user.id, email: user.email, createdAt: created, expiresAt: new Date(now + RESET_TTL_MS).toISOString() });
-      await store.set(`pwreset-user:${user.id}`, { tokenHash: hash, createdAt: created });
+      const token = await issuePasswordResetToken(user);
       const base = process.env.APP_URL || "https://app.joinsignl.com";
       const mail = passwordResetEmail(user, `${base}/?reset=${token}`);
       await deliverEmail("password_reset", user, mail.subject, mail.text, null);
@@ -10884,6 +10940,9 @@ function visibleToCreators(u) {
 // gates picking even though a paused creator still shows on a
 // launched bench.
 function collabEligible(u) {
+  // Demo showcase fence (Build -67): a demo creator can never be
+  // booked, including as a collab +1.
+  if (isDemoShowcaseCreator(u)) return false;
   return visibleToCreators(u) && standingState(u) !== "paused";
 }
 
@@ -13469,6 +13528,276 @@ async function ensureDemoPartner(actorId) {
   return { user: partnerUser, created: true };
 }
 
+// ---------- Build -67: view-as, sign-in links, business highlight, demo showcase (Jeff, 2026-11-01) ----------
+
+// View-as (Deliverable 1): an admin opens a REAL business's account
+// exactly as the owner sees it. The mechanism is a dedicated
+// session (auth.createViewSession) whose user is the business, so
+// every read renders their real record through the normal paths.
+// Safety is enforced in route() itself: a view session's non-GET
+// requests all refuse with this message before any handler runs.
+const VIEW_AS_READ_ONLY_MESSAGE = "You are viewing this account read-only (Admin view). Nothing you do here changes their account. Exit the view to make changes.";
+
+// "Your first month" proof line (Deliverable 3): a TRUE, verified
+// fact about ONE business (Chelsea Friday Furniture: a Nashville
+// creator filmed a tour-and-shop reel in her store in October
+// 2026, unprompted, ~1,800 likes; Jeff's brief, 2026-10-29). It is
+// attached to the business's own payload only when the record's
+// business name matches exactly, so no other business ever sees
+// another business's proof on its page.
+const BUSINESS_HIGHLIGHTS = {
+  "chelsea friday furniture": "It has already happened here: in October, a Nashville creator filmed a tour-and-shop reel in this store, unprompted, and it pulled about 1,800 likes.",
+};
+
+function normalizeBizName(s) {
+  return String(s || "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+// Demo showcase (Deliverable 4): a fenced set of fictional,
+// finished Nashville creator profiles a founding business can
+// browse during a live walkthrough. Every demo record carries the
+// tester flag (so every count, roster, payout, and public surface
+// that excludes testers excludes them too) AND the demoShowcase
+// batch flag (so the batch can be purged by flag alone). The fence
+// is the visibility rule below: demos exist only for a business
+// viewer who is tester-flagged, name-matched to the allowlist
+// business, or stamped demoShowcaseViewer by the loader. For every
+// other viewer they are never merged into discovery, never resolve
+// on a profile fetch, and can never be offered, booked, or
+// messaged (the handlers refuse tester/demo targets server-side).
+const DEMO_SHOWCASE_BATCH = "nashville-2026-11";
+const DEMO_ALLOWLIST_BUSINESS_NAME = "chelsea friday furniture";
+
+function isDemoShowcaseCreator(u) {
+  return !!(u && u.role === "creator" && u.demoShowcase);
+}
+
+function demoShowcaseVisibleTo(viewer) {
+  if (!viewer || viewer.role !== "business") return false;
+  if (isTester(viewer)) return true;
+  const bz = viewer.business || {};
+  if (bz.demoShowcaseViewer === true) return true;
+  return normalizeBizName(bz.businessName) === DEMO_ALLOWLIST_BUSINESS_NAME;
+}
+
+// The demo roster: fictional people (names and handles checked
+// against the brain store and the Watch list, 2026-11-01, zero
+// collisions), Pexels stock photos from the same verified pool the
+// Business Preview uses, audiences stacked past the 500 gate,
+// local shares 55-95%, paid and license rates set. Categories use
+// the canonical taxonomy; the two home creators carry the realtor
+// profession the product already supports.
+const DEMO_SHOWCASE_ROSTER = [
+  { name: "Tess Marlowe", handle: "tesstastestn", categories: ["Food & Drink"], city: "Nashville", neighborhood: "East Nashville", localAudiencePct: 88, stack: { instagram: 4800, tiktok: 1400 }, avgViews: 3200, paidRate: 175, licensingFee: 120, bio: "I eat my way through East Nashville one counter at a time: hot chicken rankings, bakery mornings, and the taco trucks nobody talks about. Honest takes, always hungry.", bestWork: ["https://www.instagram.com/p/DEMOtess1/", "https://www.tiktok.com/@tesstastestn/video/7300000000000000011", "https://www.instagram.com/reel/DEMOtess2/"] },
+  { name: "Wade Hensley", handle: "wadehensleymusic", categories: ["Music", "Nightlife"], city: "Nashville", neighborhood: "Germantown", localAudiencePct: 76, stack: { instagram: 11200, tiktok: 7300 }, avgViews: 14800, paidRate: 400, licensingFee: 260, bio: "Session drummer turned scene reporter. I film the sets, the soundchecks, and the late-night rooms where Nashville actually plays. If it grooves, I am there.", bestWork: ["https://www.instagram.com/reel/DEMOwade1/", "https://www.tiktok.com/@wadehensleymusic/video/7300000000000000021", "https://www.instagram.com/p/DEMOwade2/"] },
+  { name: "Priya Anand", handle: "priyaathome", categories: ["Local Services"], profession: "Real estate agent", city: "Franklin", neighborhood: "Cool Springs", localAudiencePct: 82, stack: { instagram: 2900, tiktok: 500 }, avgViews: 1900, paidRate: 225, licensingFee: 150, bio: "Franklin realtor showing the homes, streets, and small businesses that make a neighborhood. Porch tours, honest prices, and where I would actually live.", bestWork: ["https://www.instagram.com/reel/DEMOpria1/", "https://www.instagram.com/p/DEMOpria2/", "https://www.tiktok.com/@priyaathome/video/7300000000000000031"] },
+  { name: "Marcus Bell", handle: "marcusbellshoots", categories: ["Lifestyle"], city: "Nashville", neighborhood: "Wedgewood-Houston", localAudiencePct: 91, stack: { instagram: 1800, tiktok: 500 }, avgViews: 1250, paidRate: 300, licensingFee: 200, bio: "Nashville photographer. I shoot the people and plates of this city: chef portraits, menu shoots, and golden hour on Broadway before the crowds.", bestWork: ["https://www.instagram.com/p/DEMOmarc1/", "https://www.instagram.com/p/DEMOmarc2/", "https://www.instagram.com/reel/DEMOmarc3/"] },
+  { name: "Della Ruiz", handle: "delladoes615", categories: ["Lifestyle"], city: "Nashville", neighborhood: "12 South", localAudiencePct: 84, stack: { instagram: 7600, tiktok: 2200 }, avgViews: 5400, paidRate: 250, licensingFee: 175, bio: "Your 615 weekend planner. Patios, pop-ups, vintage hunts, and the best seat at every new opening. I post the plan so you do not have to make one.", bestWork: ["https://www.tiktok.com/@delladoes615/video/7300000000000000051", "https://www.instagram.com/reel/DEMOdella1/", "https://www.instagram.com/p/DEMOdella2/"] },
+  { name: "Cole Brandt", handle: "colebrandtfit", categories: ["Fitness & Wellness"], city: "Nashville", neighborhood: "Berry Hill", localAudiencePct: 68, stack: { instagram: 950, tiktok: 500 }, avgViews: 880, paidRate: 120, licensingFee: 80, bio: "Berry Hill trainer reviewing every gym, run club, and recovery spot in the 615. First-week trials, honest pricing, no bro science.", bestWork: ["https://www.tiktok.com/@colebrandtfit/video/7300000000000000061", "https://www.instagram.com/reel/DEMOcole1/", "https://www.instagram.com/p/DEMOcole2/"] },
+  { name: "Hannah Okafor", handle: "hannahandthem", categories: ["Lifestyle"], city: "Nashville", neighborhood: "Bellevue", localAudiencePct: 93, stack: { instagram: 3900, tiktok: 800 }, avgViews: 2600, paidRate: 200, licensingFee: 140, bio: "Mom of three in Bellevue, finding the family days out Nashville does best: free museum mornings, splash pads, and restaurants that hand kids crayons fast.", bestWork: ["https://www.instagram.com/reel/DEMhann1/", "https://www.instagram.com/p/DEMhann2/", "https://www.tiktok.com/@hannahandthem/video/7300000000000000071"] },
+  { name: "Ruby Sandoval", handle: "rubygetsglam", categories: ["Beauty & Grooming"], city: "Nashville", neighborhood: "Green Hills", localAudiencePct: 79, stack: { instagram: 9800, tiktok: 2500 }, avgViews: 7100, paidRate: 275, licensingFee: 190, bio: "Green Hills glam, tested in real light. I try the blowouts, brows, and facials before you book them, and I show the week-two results too.", bestWork: ["https://www.tiktok.com/@rubygetsglam/video/7300000000000000081", "https://www.instagram.com/reel/DEMOruby1/", "https://www.instagram.com/p/DEMOruby2/"] },
+  { name: "Eli Thacker", handle: "elithackereats", categories: ["Food & Drink"], city: "Nashville", neighborhood: "Sylvan Park", localAudiencePct: 95, stack: { instagram: 890 }, avgViews: 640, paidRate: 90, licensingFee: 60, bio: "Sylvan Park sandwich scholar. Small account, all neighbors. I rate every deli counter and meat-and-three on the west side, one lunch at a time.", bestWork: ["https://www.instagram.com/p/DEMOeli01/", "https://www.instagram.com/reel/DEMOeli02/", "https://www.tiktok.com/@elithackereats/video/7300000000000000091"] },
+  { name: "Nora Lindqvist", handle: "noraseesnashville", categories: ["Attractions & Events", "Lifestyle"], city: "Nashville", neighborhood: "Donelson", localAudiencePct: 71, stack: { instagram: 15400, tiktok: 7000 }, avgViews: 12300, paidRate: 450, licensingFee: 300, bio: "I shoot Nashville's big nights: arena shows, festival fields, and the riverfront at golden hour. Event photography and the reels that make you wish you went.", bestWork: ["https://www.instagram.com/reel/DEMOnora1/", "https://www.instagram.com/p/DEMOnora2/", "https://www.tiktok.com/@noraseesnashville/video/7300000000000000101"] },
+  { name: "Sam Whitfield", handle: "samswhitfieldhome", categories: ["Local Services"], profession: "Real estate agent", city: "Brentwood", neighborhood: "Brentwood", localAudiencePct: 66, stack: { instagram: 1120 }, avgViews: 700, paidRate: 150, licensingFee: 100, bio: "Brentwood agent walking the listings and the lunch spots around them. What a street really feels like at 5pm, not just what the photos promise.", bestWork: ["https://www.instagram.com/p/DEMOsam01/", "https://www.instagram.com/reel/DEMOsam02/", "https://www.instagram.com/p/DEMOsam03/"] },
+  { name: "Grace Tembo", handle: "gracetembostyle", categories: ["Lifestyle", "Retail & Shopping"], city: "Nashville", neighborhood: "Music Valley", localAudiencePct: 87, stack: { instagram: 4300, tiktok: 1300 }, avgViews: 3100, paidRate: 210, licensingFee: 145, bio: "Thrift flips and Music Valley finds. I style full outfits from Nashville's vintage racks and show what the good stuff costs before it is gone.", bestWork: ["https://www.tiktok.com/@gracetembostyle/video/7300000000000000121", "https://www.instagram.com/reel/DEMOgrace1/", "https://www.instagram.com/p/DEMOgrace2/"], audienceMarkets: [{ market: "Austin", pct: 12 }] },
+];
+
+async function fetchDemoPhoto(url) {
+  try {
+    const r = await fetch(url);
+    if (!r.ok) return null;
+    const buf = Buffer.from(await r.arrayBuffer());
+    if (!buf.length || buf.length > MAX_PHOTO_BYTES) return null;
+    return { contentType: "image/jpeg", dataBase64: buf.toString("base64"), bytes: buf.length, uploadedAt: nowIso() };
+  } catch (e) {
+    return null;
+  }
+}
+
+// Creates the demo batch in the live store. Idempotent by handle:
+// a handle that already carries the batch flag is left exactly as
+// it is, and a handle owned by a REAL record is skipped and
+// reported, never overwritten. Photos are fetched from the
+// verified Pexels pool and stored as ordinary photo records, so
+// demo profiles render through the same photo route as real ones.
+async function loadDemoShowcase(actorId) {
+  const users = await allUsers();
+  const byHandle = new Map();
+  for (const u of users) {
+    if (u.role === "creator" && u.creator && u.creator.handle) byHandle.set(String(u.creator.handle).toLowerCase(), u);
+  }
+  let created = 0;
+  let existing = 0;
+  const skipped = [];
+  const photoMisses = [];
+  for (let i = 0; i < DEMO_SHOWCASE_ROSTER.length; i++) {
+    const spec = DEMO_SHOWCASE_ROSTER[i];
+    const found = byHandle.get(spec.handle);
+    if (found) {
+      if (found.demoShowcase === DEMO_SHOWCASE_BATCH) { existing++; continue; }
+      skipped.push(spec.handle);
+      continue;
+    }
+    const ts = nowIso();
+    const id = crypto.randomUUID();
+    const total = Object.values(spec.stack).reduce((s, n) => s + n, 0);
+    const tier = tierForFollowers(total);
+    const { salt, hash } = auth.hashPassword(crypto.randomBytes(24).toString("hex"));
+    const email = `demo-${spec.handle}@showcase.signl.invalid`;
+    const rec = {
+      id,
+      role: "creator",
+      email,
+      name: spec.name,
+      passwordSalt: salt,
+      passwordHash: hash,
+      status: "approved",
+      tester: true,
+      demoShowcase: DEMO_SHOWCASE_BATCH,
+      market: "Nashville",
+      city: spec.city,
+      state: "TN",
+      country: "United States",
+      createdAt: ts,
+      updatedAt: ts,
+      reviewedAt: ts,
+      reviewedBy: actorId || null,
+      termsVersion: TERMS_VERSION,
+      termsAcceptedAt: ts,
+      marketingEmailConsent: false,
+      signupSource: "demo-showcase",
+      creator: {
+        handle: spec.handle,
+        primaryPlatform: "instagram",
+        primaryProfileUrl: `https://instagram.com/${spec.handle}`,
+        instagramUrl: `https://instagram.com/${spec.handle}`,
+        tiktokHandle: spec.stack.tiktok ? spec.handle : null,
+        tiktokUrl: spec.stack.tiktok ? `https://www.tiktok.com/@${spec.handle}` : null,
+        youtubeChannel: null,
+        facebookUrl: null,
+        xHandle: null,
+        xUrl: null,
+        linkedinUrl: null,
+        followerCount: spec.stack.instagram || 0,
+        audienceStack: { ...spec.stack },
+        totalAudience: total,
+        avgViews: spec.avgViews,
+        tierBand: tier,
+        suggestedTier: tier,
+        computedTier: tier,
+        categories: [...spec.categories],
+        compCategories: [],
+        openToPaidCampaigns: tier === "Headliners",
+        compOpen: true,
+        paidRate: spec.paidRate,
+        licensingFee: spec.licensingFee,
+        bio: spec.bio,
+        bestWork: [...spec.bestWork],
+        maxVisitsPerWeek: 3,
+        neighborhood: spec.neighborhood,
+        university: "",
+        universityCity: "",
+        universityState: "",
+        universityUnverified: false,
+        universityStatus: "",
+        topAudienceCities: ["Nashville"],
+        audienceMarkets: spec.audienceMarkets || [],
+        localAudiencePct: spec.localAudiencePct,
+        localAudienceSource: "Self-reported",
+        localAudienceAsOf: ts,
+        agreedHonestPosts: true,
+        agreedFtcDisclosure: true,
+        agreedPostCompliance: true,
+        agreedAt: ts,
+        agreedTerms: true,
+        termsVersion: TERMS_VERSION,
+        marketingEmailConsent: false,
+        marketingConsentAt: null,
+        publicPage: true,
+        publicPageAt: ts,
+        hasPhoto: false,
+        photoUploadedAt: null,
+        igConnected: false,
+        profession: spec.profession || "",
+        farmAreas: [],
+        brokerage: "",
+      },
+    };
+    // Two gallery photos from the verified stock pool, stored as
+    // ordinary photo records. A failed fetch leaves the profile
+    // photoless (the designed cover renders) and is reported, so
+    // the load never half-fakes a photo.
+    const stock = previewStockFor(spec.handle, 2);
+    const cover = await fetchDemoPhoto(stock[0]);
+    if (cover) {
+      await store.set(photoKey(id, 0), cover);
+      rec.creator.hasPhoto = true;
+      rec.creator.photoUploadedAt = ts;
+      rec.creator.photoCount = 1;
+      const second = await fetchDemoPhoto(stock[1]);
+      if (second) {
+        await store.set(photoKey(id, 1), second);
+        rec.creator.photoCount = 2;
+      }
+    } else {
+      photoMisses.push(spec.handle);
+    }
+    await store.set(`user:${id}`, rec);
+    await store.set(`email:${email}`, { userId: id });
+    created++;
+  }
+  // Allowlist stamp: the named business's real record gets the
+  // viewer flag, so its account (and only its account, plus
+  // tester businesses) can see the batch in discovery.
+  const allowlisted = [];
+  for (const u of users) {
+    if (u.role !== "business") continue;
+    if (normalizeBizName(u.business && u.business.businessName) !== DEMO_ALLOWLIST_BUSINESS_NAME) continue;
+    if (!u.business.demoShowcaseViewer) {
+      u.business.demoShowcaseViewer = true;
+      u.updatedAt = nowIso();
+      await store.set(`user:${u.id}`, u);
+    }
+    allowlisted.push(u.business.businessName);
+  }
+  await logEvent({ type: "demo_showcase_loaded", actorId: actorId || null, actorRole: "admin", subjectId: null, market: "Nashville", data: { batch: DEMO_SHOWCASE_BATCH, created, existing, skipped, photoMisses, allowlisted } });
+  return { created, existing, skipped, photoMisses, allowlisted };
+}
+
+// Purges the whole batch by flag: user records, email indexes,
+// photo records, and any favorite rows pointing at a demo. Real
+// records are never touched (the flag is the only selector).
+async function removeDemoShowcase(actorId) {
+  const users = await allUsers();
+  const demos = users.filter(isDemoShowcaseCreator);
+  const favs = demos.length ? await store.list("favorite:") : [];
+  for (const u of demos) {
+    await store.del(`user:${u.id}`);
+    if (u.email) await store.del(`email:${u.email}`);
+    for (let i = 0; i < MAX_CREATOR_PHOTOS; i++) await store.del(photoKey(u.id, i));
+    for (const f of favs) {
+      if (f.key.endsWith(`:${u.id}`)) await store.del(f.key);
+    }
+  }
+  const remaining = (await allUsers()).filter(isDemoShowcaseCreator).length;
+  await logEvent({ type: "demo_showcase_removed", actorId: actorId || null, actorRole: "admin", subjectId: null, market: "Nashville", data: { batch: DEMO_SHOWCASE_BATCH, removed: demos.length, remaining } });
+  return { removed: demos.length, remaining };
+}
+
+async function demoShowcaseStatus() {
+  const users = await allUsers();
+  const demos = users.filter(isDemoShowcaseCreator);
+  const allowlisted = users
+    .filter((u) => u.role === "business" && ((u.business && u.business.demoShowcaseViewer === true) || normalizeBizName(u.business && u.business.businessName) === DEMO_ALLOWLIST_BUSINESS_NAME))
+    .map((u) => (u.business && u.business.businessName) || u.name || "");
+  return {
+    batch: DEMO_SHOWCASE_BATCH,
+    loaded: demos.length,
+    creators: demos.map((u) => ({ name: u.name, handle: u.creator ? u.creator.handle : "", categories: (u.creator && u.creator.categories) || [] })),
+    allowlisted,
+  };
+}
+
 async function route(event) {
   const method = event.httpMethod || "GET";
   let path = event.path || "/";
@@ -13531,6 +13860,20 @@ async function route(event) {
   ]);
   const ctx = await getAuthUser(event);
   const user = ctx.user;
+
+  // View-as read-only gate (Build -67): on a view session the
+  // signed-in user IS the business being viewed, so every read
+  // below renders their real account unchanged. Writes are another
+  // matter: EVERY non-GET request refuses here, server-side, no
+  // matter which handler it aimed at (offers, profile saves, staff
+  // redeem, messages, plan changes, all of it). The only POSTs a
+  // view session may make are the two ways out: exit-view (hands
+  // the admin session back) and logout (routed to the same exit).
+  const viewAs = (ctx.session && ctx.session.viewAs) || null;
+  if (viewAs && method !== "GET") {
+    const isExitPath = seg[0] === "auth" && (seg[1] === "exit-view" || seg[1] === "logout");
+    if (!isExitPath) return err(403, VIEW_AS_READ_ONLY_MESSAGE);
+  }
 
   // Public bootstrap: static config plus the launch state. Deliberately
   // contains NO creator or business data; the roster is never public.
@@ -13728,6 +14071,16 @@ async function route(event) {
   if (method === "GET" && seg[0] === "c" && seg.length === 2) {
     const target = await findPublicProfileUser(sanitizePublicHandle(seg[1]));
     if (target) return json(200, { profile: await bookMePayload(target, user) });
+    // Demo showcase fence (Build -67): a demo creator's profile
+    // resolves ONLY for an allowlisted business viewer (the
+    // walkthrough). For everyone else, including logged-out
+    // visitors, it falls through to the same 404 as any unknown
+    // handle; the public predicates above never match a tester.
+    if (demoShowcaseVisibleTo(user)) {
+      const key = sanitizePublicHandle(seg[1]);
+      const demo = (await allUsers()).find((u) => isDemoShowcaseCreator(u) && u.status === "approved" && profileCompleteOf(u) && standingState(u) !== "banned" && u.creator && String(u.creator.handle || "").toLowerCase() === key);
+      if (demo) return json(200, { profile: await bookMePayload(demo, user) });
+    }
     // Claim tier (Build -61): a claimed-but-unfinished creator's
     // page is live from the moment of the claim, with the smaller
     // payload. Anything else answers 404 exactly as before.
@@ -13874,7 +14227,12 @@ async function route(event) {
       allowed =
         user.id === target.id ||
         user.role === "admin" ||
-        (user.role === "business" && user.status === "approved" && businessAccessState(user) === "active" && (await isMarketLive(user.market)));
+        (user.role === "business" && user.status === "approved" && businessAccessState(user) === "active" && (await isMarketLive(user.market))) ||
+        // Demo showcase fence (Build -67): an allowlisted business
+        // viewer can see a demo creator's photo (the walkthrough
+        // renders the same profile cards as real creators). No one
+        // else can: the demo's photo is never public.
+        (user.role === "business" && isDemoShowcaseCreator(target) && demoShowcaseVisibleTo(user));
     }
     if (!allowed) return err(user ? 403 : 401, user ? "That photo is not public" : "Sign in required");
     const photo = await store.get(photoKey(target.id, photoIdx));
@@ -13891,12 +14249,19 @@ async function route(event) {
   if (method === "POST" && seg[0] === "auth" && seg[1] === "register") return handleRegister(event);
   if (method === "POST" && seg[0] === "auth" && seg[1] === "login") return handleLogin(event);
   if (method === "POST" && seg[0] === "auth" && seg[1] === "logout") return handleLogout(event, ctx);
+  if (method === "POST" && seg[0] === "auth" && seg[1] === "exit-view") return handleExitView(event, ctx);
   if (method === "POST" && seg[0] === "auth" && seg[1] === "forgot") return handleForgot(event);
   if (method === "POST" && seg[0] === "auth" && seg[1] === "reset") return handleReset(event);
   if (method === "POST" && seg[0] === "auth" && seg[1] === "change-password") return handleChangePassword(event, ctx);
   if (method === "GET" && seg[0] === "auth" && seg[1] === "me") {
     if (!user) return err(401, "Not signed in");
-    return json(200, { user: await withFounding(user) });
+    const meUser = await withFounding(user);
+    // View-as decoration (Build -67): the client shows the
+    // persistent read-only banner from this marker. It carries
+    // only what the banner prints (whose account, that it is
+    // read-only); the admin's token never leaves the server.
+    if (viewAs) meUser.viewAs = { businessName: viewAs.businessName, readOnly: true };
+    return json(200, { user: meUser });
   }
 
   // Campaign sweep trigger. This route deliberately sits BEFORE the
@@ -15333,6 +15698,64 @@ async function route(event) {
   }
   if (seg[0] === "admin") {
     if (user.role !== "admin") return err(403, "Admin only");
+
+    // View a business's account (Build -67, Deliverable 1): mints
+    // a read-only view session for the target business and swaps
+    // the browser's cookie to it. The admin's own session token
+    // travels inside the view record (server-side only) so Exit
+    // can hand it back. Entry is audit-logged before the swap.
+    if (seg[1] === "businesses" && seg.length === 4 && seg[3] === "view" && method === "POST") {
+      const target = await store.get(`user:${seg[2]}`);
+      if (!target || target.role !== "business") return err(404, "Business not found");
+      const businessName = (target.business && target.business.businessName) || target.name || "Business";
+      const viewToken = await auth.createViewSession({ adminUser: user, adminToken: ctx.token, businessUser: target });
+      await logEvent({ type: "admin_viewed_business_account", actorId: user.id, actorRole: "admin", subjectId: target.id, market: target.market || null, data: { businessName, adminEmail: user.email } });
+      const secure = (event.headers["x-forwarded-proto"] || "").includes("https");
+      return json(200, { ok: true, business: { id: target.id, name: businessName } }, { "Set-Cookie": auth.sessionCookie(viewToken, secure) });
+    }
+
+    // Send sign-in link (Build -67, Deliverable 2): an admin sends
+    // any account owner a fresh password link to THEIR OWN email
+    // on file, through the exact reset machinery Forgot password
+    // uses. This is how a business owner who lost their password
+    // (or never set one, the partner pattern) gets back in: the
+    // link can only ever go to the account's own address, and
+    // setting a new password through it revokes the account's
+    // other sessions, as every reset does.
+    if (seg[1] === "users" && seg.length === 4 && seg[3] === "send-signin-link" && method === "POST") {
+      const target = await store.get(`user:${seg[2]}`);
+      if (!target) return err(404, "Account not found");
+      const token = await issuePasswordResetToken(target);
+      const base = process.env.APP_URL || "https://app.joinsignl.com";
+      const mail = passwordResetEmail(target, `${base}/?reset=${token}`);
+      const sent = await deliverEmail("password_reset", target, mail.subject, mail.text, null);
+      await logEvent({ type: "admin_sent_signin_link", actorId: user.id, actorRole: "admin", subjectId: target.id, market: target.market || null, data: { role: target.role, email: target.email } });
+      const out = { ok: true, email: target.email, role: target.role, emailSent: !!(sent && sent.sent) };
+      // Test hook under the same trust boundary as the forgot
+      // flow's (SIGNL_TEST_ALLOW_BUSINESS, never set in the deploy
+      // environment): the suites cannot read a mailbox, so in
+      // TEST_MODE the response carries the token and they can
+      // prove the whole loop end to end. Production never does.
+      if (TEST_MODE) out.devResetToken = token;
+      return json(200, out);
+    }
+
+    // Demo showcase (Build -67, Deliverable 4): Load creates the
+    // flagged Nashville demo batch in the live store (idempotent),
+    // Remove purges it by flag. Default state is NOT loaded;
+    // nothing auto-loads. Both actions are audit-logged.
+    if (seg[1] === "demo-showcase" && seg.length === 2 && method === "GET") {
+      return json(200, { showcase: await demoShowcaseStatus() });
+    }
+    if (seg[1] === "demo-showcase" && seg.length === 3 && seg[2] === "load" && method === "POST") {
+      const result = await loadDemoShowcase(user.id);
+      return json(200, { ok: true, result, showcase: await demoShowcaseStatus() });
+    }
+    if (seg[1] === "demo-showcase" && seg.length === 3 && seg[2] === "remove" && method === "POST") {
+      const before = await demoShowcaseStatus();
+      const result = await removeDemoShowcase(user.id);
+      return json(200, { ok: true, result, before: before.loaded, showcase: await demoShowcaseStatus() });
+    }
     // Square Connect (Build -44): register connections at a
     // glance, environment labeled (a sandbox connection says
     // sandbox), tokens never included.
@@ -16887,6 +17310,9 @@ async function route(event) {
       if (b.creatorId) {
         targetCreator = await store.get(`user:${b.creatorId}`);
         if (!targetCreator || targetCreator.role !== "creator" || targetCreator.status !== "approved") return err(400, "Target creator is not an approved creator");
+        // Demo showcase fence (Build -67): a demo (or any tester)
+        // creator can never receive a direct offer.
+        if (isTester(targetCreator)) return err(400, "Target creator is not an approved creator");
         if (!profileCompleteOf(targetCreator)) return err(400, "That creator has not finished their founding profile yet, so they cannot receive offers. They get the checklist and a reminder from us; pick another creator for now.");
         if (standingState(targetCreator) === "banned") return err(400, "That creator redeemed a comp and never posted, so they cannot be booked again.");
         if (standingState(targetCreator) === "paused") return err(400, pausedPickMessage(targetCreator));
@@ -17525,6 +17951,10 @@ async function route(event) {
       // Adding a favorite needs a roster creator; removing one is
       // always allowed, even if the creator later unfinished their
       // profile (their card simply stops rendering above).
+      // Demo showcase fence (Build -67): for a business that is
+      // not on the showcase allowlist, a demo creator does not
+      // exist, favorites included.
+      if (!existing && isDemoShowcaseCreator(creator) && !demoShowcaseVisibleTo(user)) return err(404, "Creator not found");
       if (!existing && !profileCompleteOf(creator)) return err(404, "Creator not found");
       if (existing) {
         await store.del(key);
@@ -17633,6 +18063,9 @@ async function route(event) {
       if (b.creatorId) {
         targetCreator = await store.get(`user:${b.creatorId}`);
         if (!targetCreator || targetCreator.role !== "creator" || targetCreator.status !== "approved") return err(400, "Target creator is not an approved creator");
+        // Demo showcase fence (Build -67): a demo (or any tester)
+        // creator can never receive a direct offer.
+        if (isTester(targetCreator)) return err(400, "Target creator is not an approved creator");
         if (!profileCompleteOf(targetCreator)) return err(400, "That creator has not finished their founding profile yet, so they cannot receive offers. They get the checklist and a reminder from us; pick another creator for now.");
         if (standingState(targetCreator) === "banned") return err(400, "That creator redeemed a comp and never posted, so they cannot be booked again.");
         if (standingState(targetCreator) === "paused") return err(400, pausedPickMessage(targetCreator));
@@ -17998,6 +18431,9 @@ async function route(event) {
       if (filledCountFor(offer.id, bookings) >= offer.spots) return err(409, "All spots on this offer are filled");
       const creator = await store.get(`user:${app.creatorId}`);
       if (!creator || creator.role !== "creator" || creator.status !== "approved") return err(400, "That creator is no longer on the roster");
+      // Demo showcase fence (Build -67): a tester or demo creator
+      // can never be selected into a real booking.
+      if (isTester(creator)) return err(400, "That creator is no longer on the roster");
       if (!profileCompleteOf(creator)) return err(400, "That creator has not finished their founding profile yet, so they cannot take a visit. Pick the next applicant.");
       if (standingState(creator) === "banned" || standingState(creator) === "paused") return err(400, "That creator cannot take a visit right now (compliance standing). Pick the next applicant.");
       const cap = maxVisitsPerWeekOf(creator);
@@ -18080,6 +18516,9 @@ async function route(event) {
     // and ranked live from the same records discovery uses.
     if (method === "POST" && seg.length === 3 && seg[2] === "apply") {
       if (user.role !== "creator") return err(403, "Creators only");
+      // Demo showcase fence (Build -67): a demo creator can never
+      // apply to a real offer, whatever state its record is in.
+      if (isDemoShowcaseCreator(user)) return err(403, "That account cannot apply to offers.");
       if (standingState(user) === "banned") return err(403, "Your account was closed to offers after a comped visit was redeemed and no post was delivered. Contact hello@joinsignl.com if you believe this is wrong.");
       if (standingState(user) === "paused") return err(403, pausedSelfMessage(user));
       if (!profileCompleteOf(user)) return err(403, "Finish your founding profile before applying: businesses can only pick creators with finished profiles. Your checklist is on your dashboard, under Profile.");
@@ -18151,6 +18590,9 @@ async function route(event) {
 
     if (method === "POST" && seg.length === 3 && seg[2] === "accept") {
       if (user.role !== "creator") return err(403, "Creators only");
+      // Demo showcase fence (Build -67): a demo creator can never
+      // accept a real offer either.
+      if (isDemoShowcaseCreator(user)) return err(403, "That account cannot accept offers.");
       // Compliance standing gates new bookings: a paused creator
       // delivers the missing post first; a banned creator is done.
       if (standingState(user) === "banned") return err(403, "Your account was closed to offers after a comped visit was redeemed and no post was delivered. Contact hello@joinsignl.com if you believe this is wrong.");
@@ -20040,6 +20482,10 @@ async function route(event) {
       }
       const other = await store.get(`user:${b.toUserId}`);
       if (!other || other.role === "admin") return err(404, "Recipient not found");
+      // Demo showcase fence (Build -67): demo creators are
+      // browse-only; a message to one can never be answered, so
+      // the thread can never start.
+      if (isDemoShowcaseCreator(other)) return err(404, "Recipient not found");
       if (other.status !== "approved") return err(400, "That account is not active yet");
       const body = (b.body || "").trim();
       if (!body) return err(400, "Message cannot be empty");
