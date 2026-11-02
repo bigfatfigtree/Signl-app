@@ -3315,8 +3315,11 @@ function sigRouteAsk(text) {
   for (let i = 0; i < flows.length; i++) if (flows[i].keys.some((k) => t.includes(k))) return { text: `That lives under "${flows[i].label}". One tap takes you there.`, flow: i };
   return sigFallbackReply(match);
 }
-// Ask Sig: the real AI first (server, canon-grounded, with the
-// user's state in context), the bank when the AI cannot answer.
+// Ask Sig: the server first (Build -69: its live-data brain
+// answers factual questions straight from the records with
+// source "data"; the real AI, canon-grounded and fed the same
+// live fact sheet, takes the rest with source "ai"), the bank
+// when the server cannot answer.
 async function sigAsk(text) {
   const ctx = sigCtx();
   const isAdmin = !!state.user && state.user.role === "admin";
@@ -3327,7 +3330,7 @@ async function sigAsk(text) {
       api("POST", "/sig/ask", { q: text, history }),
       new Promise((_, reject) => setTimeout(() => reject(new Error("sig timeout")), 10000)),
     ]);
-    if (data && data.source === "ai" && data.text) {
+    if (data && (data.source === "ai" || data.source === "data") && data.text) {
       // Admin: the answer stands on its own. The walk-to flow
       // picker below is keyed to business/creator flows and must
       // never hand the console a button into someone else's

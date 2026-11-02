@@ -77,7 +77,8 @@
     "verify-build64": "node scripts/verify-build64.mjs",
     "verify-min500": "node scripts/verify-min500.mjs",
     "verify-build66": "node scripts/verify-build66.mjs",
-    "verify-build67": "node scripts/verify-build67.mjs"
+    "verify-build67": "node scripts/verify-build67.mjs",
+    "verify-build69": "node scripts/verify-build69.mjs"
   },
   "type": "commonjs",
   "version": "1.0.0"

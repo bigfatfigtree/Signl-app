@@ -16,6 +16,7 @@ const { runMetricsSync } = require("./metrics-sync");
 const platformConnect = require("./platform-connect");
 const square = require("./square");
 const { askSigAI } = require("./sigai");
+const sigdata = require("./sigdata");
 const { buildProfilePageHtml, buildClaimPageHtml } = require("./profile-meta");
 const { normalizeAudienceMarkets, audienceShareInMarket, isListedInMarket, listedMarketsFor, audienceBreakdownFor, MULTI_MARKET_MIN_PCT } = require("./audience-markets");
 const igPrefill = require("./ig-prefill");
@@ -8528,6 +8529,62 @@ async function creatorPerformanceReadout(user) {
   return { role: "creator", empty: posts.length === 0, overall, posts: postRows, recommendation };
 }
 
+// ---------- Sig live fact sheets (Build -69) ----------
+// One builder per role, feeding sigdata.js. Read-only, computed
+// from the same records (and, for a person's own numbers, the
+// same readout functions) the dashboards use, so Sig can never
+// tell a different story from the screens. Any failure returns
+// null and the ask falls back to the sparse grounding lines.
+async function buildSigFacts(user, full) {
+  if (!user) return null;
+  if (user.role === "admin") {
+    const users = await allUsers();
+    const [offers, bookings, posts, flags] = await Promise.all([allOffers(), allBookings(), allPosts(), getMarketFlags()]);
+    const partners = await allPartners(users);
+    return sigdata.buildAdminFacts({
+      users, offers, bookings, posts, partners, marketFlags: flags,
+      marketNames: MARKETS.map((m) => m.name),
+      isTester, profileCompleteOf, businessAccessState,
+      planNameOf: (id) => { const p = id ? planById(id) : null; return p ? p.name : "No plan picked"; },
+      now: Date.now(),
+    });
+  }
+  if (user.role === "business") {
+    const readout = await businessPerformanceReadout(user);
+    const [apps, offers, users, marketLive] = await Promise.all([allApplications(), allOffers(), allUsers(), isMarketLive(user.market)]);
+    const plan = (user.business && planById(user.business.planId || user.business.plan)) || PLANS[0];
+    const rosterInMarket = users.filter((u) => u.role === "creator" && u.status === "approved" && !isTester(u) && profileCompleteOf(u) && isListedInMarket(u, user.market)).length;
+    return sigdata.buildBusinessFacts({
+      user, readout, plan, marketLive, founding: isFoundingBusiness(user),
+      applicantsWaiting: apps.filter((a) => a.businessId === user.id && (a.status === "applied" || a.status === "backfill_offered")).length,
+      draftOffers: offers.filter((o) => o.businessId === user.id && o.status === "draft").length,
+      rosterInMarket,
+    });
+  }
+  if (user.role === "creator") {
+    const readout = await creatorPerformanceReadout(user);
+    const [offers, bookings, posts, marketLive] = await Promise.all([allOffers(), allBookings(), allPosts(), isMarketLive(user.market)]);
+    const mine = bookings.filter((bk) => bk.creatorId === user.id);
+    const myPosts = posts.filter((p) => p.creatorId === user.id);
+    const openOffers = offers.filter((o) => o.status === "open" && laneOf(o) !== "direct" && isListedInMarket(user, o.market)).length;
+    const directInvites = offers.filter((o) => o.status === "open" && laneOf(o) === "direct" && o.creatorId === user.id).length;
+    const points = full && full.momentum ? full.momentum.points || 0 : 0;
+    const pc = (full && full.profileCompletion) || {};
+    const itemLabels = {};
+    for (const it of pc.items || []) itemLabels[it.id] = it.label;
+    return sigdata.buildCreatorFacts({
+      user, full, readout, marketLive,
+      bookings: mine, posts: myPosts,
+      openOffers, directInvites,
+      level: levelForPoints(points),
+      listedMarkets: listedMarketsFor(user),
+      audienceTotal: user.creator ? audienceTotalOf(user.creator) : null,
+      missingLabels: (pc.missing || []).map((id) => itemLabels[id] || id),
+    });
+  }
+  return null;
+}
+
 // ---------- auth context ----------
 
 async function getAuthUser(event) {
@@ -14472,17 +14529,37 @@ async function route(event) {
 
   if (!user) return err(401, "Sign in required");
 
-  // ---------- Ask Sig (real AI, Jeff 2026-10-27) ----------
-  // POST /api/sig/ask { q, history } -> { source: "ai", text } or
-  // { source: "unavailable" } when no AI provider is configured or
-  // the provider fails; the client then answers from its canon
-  // bank. AI trouble must never surface as an API error here.
+  // ---------- Ask Sig (live data + real AI, Build -69) ----------
+  // POST /api/sig/ask { q, history } -> { source: "data", text }
+  // when the live fact sheet answers the question outright
+  // (sigdata.js: the platform counts for admin, the asker's own
+  // numbers for businesses and creators, computed from the same
+  // records the dashboards count, no AI provider needed), or
+  // { source: "ai", text } from the model grounded in the canon
+  // PLUS that same fact sheet, or { source: "unavailable" } when
+  // no AI provider is configured or the provider fails; the
+  // client then answers from its canon bank. Trouble must never
+  // surface as an API error here.
   if (method === "POST" && seg[0] === "sig" && seg[1] === "ask") {
     const b = parseBody(event);
     const q = String(b.q || "").trim();
     if (!q) return err(400, "Ask a question first");
+    const history = Array.isArray(b.history) ? b.history.filter((t) => t && (t.who === "user" || t.who === "sig") && typeof t.text === "string").map((t) => ({ who: t.who, text: t.text })) : [];
     const full = await withFounding(user);
+    let facts = null;
+    try { facts = await buildSigFacts(user, full); } catch (e) { facts = null; }
+    if (facts) {
+      const direct = sigdata.answerFacts(user.role, facts, q, history);
+      if (direct) return json(200, { source: "data", text: direct });
+    }
     const lines = [];
+    if (facts) {
+      lines.push(...sigdata.factsLines(user.role, facts));
+      if (user.lang === "es" || (user.business && user.business.preferredLanguage === "es")) lines.push("This person prefers Spanish. Answer in Spanish.");
+    }
+    if (!facts) {
+    // Sparse grounding: the degradation path, used only when
+    // the live fact sheet could not be built.
     if (user.role === "creator") {
       const f = full.founding || {};
       if (user.lang === "es") lines.push("This person prefers Spanish. Answer in Spanish.");
@@ -14521,7 +14598,7 @@ async function route(event) {
         lines.push("This admin surface is read-only for you: answer and explain, and point to the Admin tab where an action lives. Never claim you approved, sent, activated, or changed anything.");
       } catch (e) { /* counts are grounding, never a blocker */ }
     }
-    const history = Array.isArray(b.history) ? b.history.filter((t) => t && (t.who === "user" || t.who === "sig") && typeof t.text === "string").map((t) => ({ who: t.who, text: t.text })) : [];
+    }
     const ans = await askSigAI({ role: user.role, stateLines: lines.join(" "), question: q, history });
     if (ans.source === "ai") return json(200, { source: "ai", text: ans.text });
     return json(200, { source: "unavailable" });
