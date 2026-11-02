@@ -508,6 +508,54 @@ async function bookMeSendMessage(handle) {
   }
 }
 
+// Shared video embed parser (Build -79): a mirror of
+// netlify/functions/lib/video-embed.js, kept line-for-line in
+// behavior. The server stamps the same descriptor onto every
+// best-work card it serves (w.embed); this mirror covers any
+// URL a renderer meets without one. Returns null for anything
+// that is not a known video URL, and every renderer falls back
+// to the plain link card for those.
+function videoEmbedFor(url) {
+  let u;
+  try {
+    u = new URL(String(url || ""));
+  } catch (e) {
+    return null;
+  }
+  if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+  const host = u.hostname.toLowerCase().replace(/^www\./, "").replace(/^m\./, "");
+  const seg = u.pathname.split("/").filter(Boolean);
+  if (host === "instagram.com") {
+    const type = String(seg[0] || "").toLowerCase();
+    const id = seg[1] || "";
+    if (!["p", "reel", "reels", "tv"].includes(type) || !/^[A-Za-z0-9_-]{5,40}$/.test(id)) return null;
+    const normType = type === "reels" ? "reel" : type;
+    return { platform: "Instagram", kind: normType === "p" ? "post" : "reel", embedUrl: `https://www.instagram.com/${normType}/${id}/embed`, aspect: "portrait" };
+  }
+  if (host === "tiktok.com") {
+    const id = seg[2] || "";
+    if (String(seg[0] || "").charAt(0) !== "@" || String(seg[1] || "").toLowerCase() !== "video" || !/^\d{3,}$/.test(id)) return null;
+    return { platform: "TikTok", kind: "video", embedUrl: `https://www.tiktok.com/embed/v2/${id}`, aspect: "portrait" };
+  }
+  if (host === "youtube.com" || host === "youtu.be") {
+    let id = "";
+    let kind = "video";
+    if (host === "youtu.be") {
+      id = seg[0] || "";
+    } else if (String(seg[0] || "").toLowerCase() === "watch") {
+      id = u.searchParams.get("v") || "";
+    } else if (String(seg[0] || "").toLowerCase() === "shorts") {
+      id = seg[1] || "";
+      kind = "short";
+    } else if (String(seg[0] || "").toLowerCase() === "embed" || String(seg[0] || "").toLowerCase() === "live") {
+      id = seg[1] || "";
+    }
+    if (!/^[A-Za-z0-9_-]{6,20}$/.test(id)) return null;
+    return { platform: "YouTube", kind, embedUrl: `https://www.youtube-nocookie.com/embed/${id}`, aspect: kind === "short" ? "portrait" : "wide" };
+  }
+  return null;
+}
+
 // One merged Work grid (Build -64): the portfolio sample, the
 // featured posts, and the creator's best-work links were three
 // near-identical sections on the public page. They are one grid
@@ -517,22 +565,32 @@ async function bookMeSendMessage(handle) {
 // same grid. Deduped by URL. Mirrors profileWorkItems in
 // lib/profile-meta.js, which renders the same grid into the
 // served HTML.
+// Build -79: best-work links that parse as videos join the
+// embeds (the video itself, click to play in place); the rest
+// stay tiles.
 function workItemsOf(p) {
   const items = [];
   const seen = new Set();
   const norm = (u) => String(u || "").replace(/\/+$/, "").toLowerCase();
   if (p.portfolioSample && p.portfolioSample.url) {
-    items.push({ kind: "embed", url: p.portfolioSample.url, embedUrl: p.portfolioSample.embedUrl, tag: "Portfolio sample" });
+    const emb = videoEmbedFor(p.portfolioSample.url);
+    items.push({ kind: "embed", url: p.portfolioSample.url, embedUrl: (emb && emb.embedUrl) || p.portfolioSample.embedUrl, embedAspect: (emb && emb.aspect) || "portrait", platform: (emb && emb.platform) || p.primaryPlatformLabel || "Instagram", tag: "Portfolio sample" });
     seen.add(norm(p.portfolioSample.url));
   }
   for (const f of p.featuredPosts || []) {
     if (!f || !f.url || seen.has(norm(f.url))) continue;
-    items.push({ kind: "embed", url: f.url, embedUrl: f.embedUrl, tag: "Featured post" });
+    const emb = videoEmbedFor(f.url);
+    items.push({ kind: "embed", url: f.url, embedUrl: (emb && emb.embedUrl) || f.embedUrl, embedAspect: (emb && emb.aspect) || "portrait", platform: (emb && emb.platform) || p.primaryPlatformLabel || "Instagram", tag: "Featured post" });
     seen.add(norm(f.url));
   }
   for (const w of p.pastWork || []) {
     if (!w || !w.url || seen.has(norm(w.url))) continue;
-    items.push({ kind: "tile", url: w.url, label: w.label || "Watch", platform: w.platform || "" });
+    const emb = w.embed || videoEmbedFor(w.url);
+    if (emb && emb.embedUrl) {
+      items.push({ kind: "embed", url: w.url, embedUrl: emb.embedUrl, embedAspect: emb.aspect || "portrait", platform: emb.platform || w.platform || "", tag: emb.platform || w.platform || "Video" });
+    } else {
+      items.push({ kind: "tile", url: w.url, label: w.label || "Watch", platform: w.platform || "" });
+    }
     seen.add(norm(w.url));
   }
   return items;
@@ -541,7 +599,7 @@ function workGridHtml(p) {
   const items = workItemsOf(p);
   if (!items.length) return "";
   const cells = items.map((it) => it.kind === "embed"
-    ? `<div class="work-cell"><div class="work-ph"><span class="work-ph-mark">${esc(p.primaryPlatformLabel || "Instagram")}</span><span class="work-ph-note">Post loading</span></div><iframe src="${esc(it.embedUrl || "")}" loading="lazy" frameborder="0" scrolling="no" allowtransparency="true" title="${esc(it.tag)} by @${esc(p.handle)}" onload="this.parentNode.classList.add('on')"></iframe><span class="work-tag">${esc(it.tag)}</span></div>`
+    ? `<div class="work-cell${it.embedAspect === "wide" ? " wide" : ""}"><div class="work-ph"><span class="work-ph-mark">${esc(it.platform || "Video")}</span><span class="work-ph-note">Post loading</span></div><iframe src="${esc(it.embedUrl || "")}" loading="lazy" frameborder="0" scrolling="no" allowtransparency="true" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen title="${esc(it.tag)} by @${esc(p.handle)}" onload="this.parentNode.classList.add('on')"></iframe><span class="work-tag">${esc(it.tag)}</span></div>`
     : `<a class="work-cell tile" href="${esc(it.url)}" target="_blank" rel="noopener"><span class="work-ph-mark">${esc(it.platform || "Post")}</span><span class="work-tile-label">${esc(it.label)}</span><span class="work-go">View post</span></a>`).join("");
   return `
       <h3 class="bookme-h">Work</h3>
@@ -8057,13 +8115,35 @@ function avatarHtml(card, cls) {
   return `<span class="${cls} avatar-initial" aria-hidden="true">${initial}</span>`;
 }
 
-// Best work renders as labeled outbound link cards ("Watch: Instagram
-// reel"). Third-party players are never embedded.
+// Best work (Build -79, Jeff): on a profile, a best-work link
+// that is a video shows the video itself, click to play, inside
+// SIGNL: the platform embed renders the post's own visual with
+// its own play control. The embed descriptor rides the card
+// from the server (w.embed, lib/video-embed.js) with the client
+// mirror as fallback. A link that is not a parseable video
+// (a photo post, another platform, a bad URL) keeps the labeled
+// outbound link card it has always had ("Watch: Instagram
+// reel"). The compact rendering
+// (discovery cards) keeps link cards: a results grid is a
+// scanning surface, and the full profile is one tap away.
+function bestWorkEmbedCardHtml(w, emb) {
+  return `<figure class="work-embed-card ${emb.aspect === "wide" ? "wide" : "portrait"}">
+    <div class="work-embed-frame"><iframe src="${esc(emb.embedUrl)}" loading="lazy" frameborder="0" scrolling="no" allowtransparency="true" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen title="${esc(w.label || "Best work video")}"></iframe></div>
+    <figcaption><span class="work-embed-plat">${esc(emb.platform)}</span><a href="${esc(w.url)}" target="_blank" rel="noopener noreferrer">Open post</a></figcaption>
+  </figure>`;
+}
 function bestWorkHtml(list, compact) {
   if (!list || !list.length) return "";
-  const cards = list.map((w) => `<a class="work-card" href="${esc(w.url)}" target="_blank" rel="noopener noreferrer"><span class="work-play">&#9654;</span><span>${esc(w.label)}</span><span class="work-host">${esc(w.platform)}</span></a>`).join("");
-  if (compact) return `<div class="work-row">${cards}</div>`;
-  return `<div class="showcase-block"><h4>Best work</h4><div class="work-row">${cards}</div></div>`;
+  const pill = (w) => `<a class="work-card" href="${esc(w.url)}" target="_blank" rel="noopener noreferrer"><span class="work-play">&#9654;</span><span>${esc(w.label)}</span><span class="work-host">${esc(w.platform)}</span></a>`;
+  if (compact) return `<div class="work-row">${list.map(pill).join("")}</div>`;
+  const embeds = [];
+  const pills = [];
+  for (const w of list) {
+    const emb = w.embed || videoEmbedFor(w.url);
+    if (emb && emb.embedUrl) embeds.push(bestWorkEmbedCardHtml(w, emb));
+    else pills.push(pill(w));
+  }
+  return `<div class="showcase-block"><h4>Best work</h4>${embeds.length ? `<div class="work-embed-row">${embeds.join("")}</div>` : ""}${pills.length ? `<div class="work-row">${pills.join("")}</div>` : ""}</div>`;
 }
 
 // The SIGNL track record: real visits, posts, and on-time record from
@@ -14741,6 +14821,114 @@ async function renderAnalyticsTab() {
   }
 }
 // ---------- Business Profile (Grin brand profile pattern) ----------
+// Build -80 (Jeff): the profile card at the top of Your business
+// page IS the live preview and the creator view: one renderer
+// (bizProfileCardHtml) paints the card on the page, repaints it
+// as the basics form is typed in (before any save), and paints
+// the "See it as creators see it" sheet, so what she edits is
+// exactly what a creator gets. For a founding business the card's
+// stat row carries her real standing (plan, market, Founding)
+// instead of counters that are all zero before launch; the
+// counters take their place the moment they are real.
+function bizProfileBadgesHtml(bz) {
+  const bits = [];
+  if (bz.musicOpen) {
+    const subs = [bz.musicLive ? "For live performances" : "", bz.musicCreated ? "For created music" : ""].filter(Boolean).join(" · ");
+    bits.push(`<div style="margin-top:10px"><span class="badge ok">Open to musicians</span>${subs ? ` <span class="small muted">${esc(subs)}</span>` : ""}</div>`);
+  }
+  if (bz.studentOpen) bits.push(`<div style="margin-top:10px"><span class="badge ok">Open to student creators</span></div>`);
+  return bits.join("");
+}
+function bizProfileCardHtml(bz, market, opts) {
+  opts = opts || {};
+  const home = opts.home || {};
+  const stats = opts.founding
+    ? `<span class="ps"><b>${esc(opts.planName || bz.planName || "")}</b><span>plan</span></span>
+       <span class="ps"><b>${esc(marketDisplayName(market))}</b><span>market</span></span>
+       <span class="ps"><b>Founding</b><span>status</span></span>`
+    : `<span class="ps"><b>${fmtNum(home.localReachDelivered || 0)}</b><span>local audience</span></span>
+       <span class="ps"><b>${home.postsLive || 0}</b><span>posts live</span></span>
+       <span class="ps"><b>${opts.reviewsCount || 0}</b><span>creator reviews</span></span>
+       <span class="ps"><b>${esc(opts.planName || bz.planName || "")}</b><span>plan</span></span>`;
+  return `<div class="prof-card biz-profile-card"${opts.rootId ? ` id="${esc(opts.rootId)}"` : ""}><div class="prof-cover"></div><div class="prof-in">
+    <div class="prof-ava"><span class="bp-card-ava">${esc((bz.businessName || "?").trim().charAt(0).toUpperCase() || "?")}</span></div>
+    <div class="prof-name"><span class="bp-card-name">${esc(bz.businessName || "")}</span>${opts.live ? `<span class="verified-dot">${bnIcon("check")}</span>` : ""}</div>
+    <div class="prof-meta"><span class="bp-card-meta">${esc(bz.category || "Business")}${bz.neighborhood ? ` · ${esc(bz.neighborhood)}` : ""} · ${esc(marketDisplayName(market))}</span><br><span class="bp-card-about">${bz.about ? esc(bz.about) : "No about yet. A written-up experience fills offers faster."}</span></div>
+    <div class="prof-stats">${stats}</div>
+    <div class="bp-card-badges">${bizProfileBadgesHtml(bz)}</div>
+  </div></div>`;
+}
+// The business as the page currently shows it: the saved record
+// with whatever is typed into the editor right now laid over it.
+// The live card and the creator-view sheet both read through
+// this, so an unsaved edit shows in both, exactly as typed.
+function bizProfileFormBiz() {
+  const bz = { ...((state.user && state.user.business) || {}) };
+  const val = (id) => { const el = document.getElementById(id); return el ? el.value : undefined; };
+  const chk = (id) => { const el = document.getElementById(id); return el ? !!el.checked : undefined; };
+  const name = val("bp-name"); if (name !== undefined) bz.businessName = name;
+  const cat = val("bp-category"); if (cat !== undefined) bz.category = cat;
+  const nb = val("bp-neighborhood"); if (nb !== undefined) bz.neighborhood = nb;
+  const about = val("bp-about"); if (about !== undefined) bz.about = about;
+  const mo = chk("bp-music-open");
+  if (mo !== undefined) { bz.musicOpen = mo; bz.musicLive = chk("bp-music-live"); bz.musicCreated = chk("bp-music-created"); }
+  const so = chk("bp-student-open"); if (so !== undefined) bz.studentOpen = so;
+  return bz;
+}
+function bizProfilePaintCard() {
+  const card = document.getElementById("biz-profile-live-card");
+  if (!card) return;
+  const bz = bizProfileFormBiz();
+  const u = state.user || {};
+  const set = (sel, txt) => { const el = card.querySelector(sel); if (el) el.textContent = txt; };
+  set(".bp-card-ava", (bz.businessName || "?").trim().charAt(0).toUpperCase() || "?");
+  set(".bp-card-name", bz.businessName || "");
+  set(".bp-card-meta", `${bz.category || "Business"}${bz.neighborhood ? " · " + bz.neighborhood : ""} · ${marketDisplayName(u.market)}`);
+  set(".bp-card-about", bz.about ? bz.about : "No about yet. A written-up experience fills offers faster.");
+  const badges = card.querySelector(".bp-card-badges");
+  if (badges) badges.innerHTML = bizProfileBadgesHtml(bz);
+}
+function bindBizProfileWysiwyg() {
+  for (const id of ["bp-name", "bp-neighborhood", "bp-about"]) {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener("input", bizProfilePaintCard);
+  }
+  const catRow = document.querySelector('[data-chipfor="bp-category"]');
+  if (catRow) catRow.addEventListener("click", () => setTimeout(bizProfilePaintCard, 0));
+  for (const id of ["bp-music-open", "bp-music-live", "bp-music-created", "bp-student-open"]) {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener("change", bizProfilePaintCard);
+  }
+}
+// The creator view: the identical card markup, read-only, in a
+// sheet. It reflects the page as it stands now (saved or typed),
+// because it renders from bizProfileFormBiz like the live card.
+function openBizProfilePreview() {
+  closeBizProfilePreview();
+  const view = state.bizProfileView || {};
+  const bz = bizProfileFormBiz();
+  const u = state.user || {};
+  const live = businessAccessState(u) === "active";
+  const el = document.createElement("div");
+  el.id = "biz-preview-sheet";
+  el.className = "sheet-overlay";
+  el.innerHTML = `<div class="sheet biz-preview-sheet" role="dialog" aria-label="Your business page as creators see it">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
+      <div><h3 style="margin:0">How creators see your page</h3>
+      <p class="small muted" style="margin:6px 0 0">The same card creators get, showing your page as it stands right now, including anything typed but not saved yet. Close this sheet to keep editing.</p></div>
+      <button type="button" class="btn small-btn ghost" onclick="closeBizProfilePreview()">Close</button>
+    </div>
+    ${bizProfileCardHtml(bz, u.market, { live, founding: !live, home: view.home || {}, reviewsCount: (view.reviews || []).length, planName: view.planName || bz.planName || "" })}
+  </div>`;
+  el.addEventListener("click", (e) => { if (e.target === el) closeBizProfilePreview(); });
+  document.body.appendChild(el);
+  return false;
+}
+function closeBizProfilePreview() {
+  const el = document.getElementById("biz-preview-sheet");
+  if (el) el.remove();
+  return false;
+}
 let bizProfTab = "profile";
 function bizProfSet(t) { bizProfTab = t; renderBizProfileTab(); return false; }
 async function renderBizProfileTab() {
@@ -14758,21 +14946,12 @@ async function renderBizProfileTab() {
       reviews = (bd.bookings || []).filter((x) => x.businessReview).map((x) => ({ stars: x.businessReview.stars, text: x.businessReview.text, at: x.businessReview.createdAt, title: x.title, handle: x.creatorHandle }));
     } catch (e) { /* reviews are a bonus surface */ }
     const live = businessAccessState(u) === "active";
+    state.bizProfileView = { home: h, reviews, planName: (d.plan && d.plan.name) || b.planName || "" };
     const head = `
-    ${wsHead("Your business page", { chip: live ? livePill("Live") : `<span class="beta-pill">Founding list</span>`, sub: "Your business's home on SIGNL. This card is how creators see you.", action: `<button type="button" class="btn ws-outline" onclick="return go('dashboard','My Offers')">See it as creators see it</button>` })}
-    <div class="prof-card"><div class="prof-cover"></div><div class="prof-in">
-      <div class="prof-ava">${esc((b.businessName || "?").trim().charAt(0).toUpperCase() || "?")}</div>
-      <div class="prof-name">${esc(b.businessName || "")}${live ? `<span class="verified-dot">${bnIcon("check")}</span>` : ""}</div>
-      <div class="prof-meta">${esc(b.category || "Business")}${b.neighborhood ? ` · ${esc(b.neighborhood)}` : ""} · ${esc(marketDisplayName(u.market))}<br>${b.about ? esc(b.about) : "No about yet. A written-up experience fills offers faster."}</div>
-      <div class="prof-stats">
-        <span class="ps"><b>${fmtNum(h.localReachDelivered || 0)}</b><span>local audience</span></span>
-        <span class="ps"><b>${h.postsLive || 0}</b><span>posts live</span></span>
-        <span class="ps"><b>${reviews.length}</b><span>creator reviews</span></span>
-        <span class="ps"><b>${esc(b.planName || "")}</b><span>plan</span></span>
-      </div>
-      ${b.musicOpen ? `<div style="margin-top:10px"><span class="badge ok">Open to musicians</span>${[b.musicLive ? "For live performances" : "", b.musicCreated ? "For created music" : ""].filter(Boolean).length ? ` <span class="small muted">${[b.musicLive ? "For live performances" : "", b.musicCreated ? "For created music" : ""].filter(Boolean).join(" · ")}</span>` : ""}</div>` : ""}
-      ${b.studentOpen ? `<div style="margin-top:10px"><span class="badge ok">Open to student creators</span></div>` : ""}
-    </div></div>
+    ${wsHead("Your business page", { chip: live ? livePill("Live") : `<span class="beta-pill">Founding list</span>`, sub: live ? "Your business's home on SIGNL. The card below is how creators see you, and it updates as you edit." : "Your business's home on SIGNL. Your page is yours to get ready now: the card below is how creators will see you, and it updates as you edit.", action: `<button type="button" class="btn ws-outline" onclick="return openBizProfilePreview()">See it as creators see it</button>` })}
+    ${live ? "" : `<div class="bp-status-line"><strong>Founding list</strong><span>Your market has not opened yet, so nothing here is sent to a creator until it does.</span></div>`}
+    <div class="bp-live-caption">Live preview</div>
+    ${bizProfileCardHtml(b, u.market, { live, founding: !live, home: h, reviewsCount: reviews.length, planName: state.bizProfileView.planName, rootId: "biz-profile-live-card" })}
     ${wsTabs([
       { label: "Profile", on: bizProfTab === "profile", onclick: "return bizProfSet('profile')" },
       { label: "Reviews", count: reviews.length, on: bizProfTab === "reviews", onclick: "return bizProfSet('reviews')" },
@@ -14782,9 +14961,9 @@ async function renderBizProfileTab() {
     } else {
       el.innerHTML = head + `
       ${igAssistCardHtml("bp", "business")}
-      <div class="wcard">
+      <div class="wcard" id="bp-basics">
         <h3>The basics</h3>
-        <p class="wc-sub">What creators see when they weigh your offers: your name, category, neighborhood, and a short about.</p>
+        <p class="wc-sub">What creators see when they weigh your offers: your name, category, neighborhood, and a short about. The card above updates as you type, before you save.</p>
         <div class="form-2col">
           <div class="field"><label>Business name</label><input id="bp-name" value="${esc(b.businessName || "")}"></div>
           <div class="field"><label>Category</label>${chipSelectHtml("bp-category", state.boot.businessCategories.map((c) => ({ value: c, label: c })), b.category, null, false)}</div>
@@ -14797,7 +14976,7 @@ async function renderBizProfileTab() {
         <div class="field"><label>About your business</label><textarea id="bp-about" rows="3" placeholder="What you serve, what the visit feels like">${esc(b.about || "")}</textarea></div>
         <button class="btn ws-primary" onclick="saveBusinessProfile('basics')">Save basics</button> <span id="bp-ok" class="saved"></span>
       </div>
-      <div class="wcard" style="margin-top:14px">
+      <div class="wcard" id="bp-optional" style="margin-top:14px">
         <h3>Optional</h3>
         <p class="wc-sub">Language, who you are open to, and the packet creators post with. Skip any of it; change it any time.</p>
         <div class="field"><label>Preferred language / Idioma preferido</label><select id="bp-lang"><option value="en"${b.preferredLanguage !== "es" ? " selected" : ""}>English</option><option value="es"${b.preferredLanguage === "es" ? " selected" : ""}>Español</option></select><p class="small muted">Sig answers you in this language, and our team writes to you in it.</p></div>
@@ -14819,6 +14998,7 @@ async function renderBizProfileTab() {
         <div class="field"><label>Talking points</label><textarea id="bp-pk-points" rows="3" maxlength="600" placeholder="Family owned since 1998. The patio seats 40 and dogs are welcome.">${esc(pk.talkingPoints || "")}</textarea></div>`; })()}
         <button class="btn ws-primary" onclick="saveBusinessProfile('optional')">Save optional</button> <span id="bp-ok-opt" class="saved"></span>
       </div>`;
+      bindBizProfileWysiwyg();
     }
   } catch (err) {
     el.innerHTML = `${wsHead("Your business page")}<div class="error-box">${esc(err.message)}</div>`;

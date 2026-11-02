@@ -220,14 +220,18 @@ try {
   // Build -68 (2026-11-01): approval opens the product for
   // getting ready: browse, favorites, and DRAFT offers are
   // real pre-launch (the server force-drafts everything a
-  // founding business creates). Business Home, bookings, and
-  // publishing stay refused until an admin activates the
-  // business by hand; after activation, publishing and
-  // bookings stay market-gated.
+  // founding business creates). Bookings and publishing stay
+  // refused until an admin activates the business by hand;
+  // after activation, publishing and bookings stay
+  // market-gated. (Business Home data itself opened to founding
+  // businesses in Build -80: it backs the Your business page.)
   const approveBiz = await admin("POST", "/api/admin/review", { userId: hopefulBizId, decision: "approve" });
   check("admin approves the founding business (approval is not activation)", approveBiz.status === 200 && approveBiz.data.user.status === "approved" && approveBiz.data.user.business.accessState === "founding");
   const bizHomeGate = await hopefulBiz("GET", "/api/me/business-home");
-  check("Business Home refuses for a founding business (403, points at the status page)", bizHomeGate.status === 403 && /Founding Status page/.test(bizHomeGate.data.error || ""), JSON.stringify(bizHomeGate.data));
+  // Build -80 (Jeff): Business Home data LOADS for a founding
+  // business (it backs her Your business page). The transactional
+  // gates around it are unchanged.
+  check("Business Home loads for a founding business (Build -80)", bizHomeGate.status === 200 && !!bizHomeGate.data.business && bizHomeGate.data.business.accessState === "founding", JSON.stringify(bizHomeGate.data).slice(0, 160));
   const bizBrowseGate = await hopefulBiz("GET", "/api/discover?market=Hampton%20Roads");
   check("browse answers for an approved founding business (Build -68)", bizBrowseGate.status === 200 && (bizBrowseGate.data.creators || []).some((c) => c.userId === creatorAId), String(bizBrowseGate.status));
   const bizFavGate = await hopefulBiz("POST", "/api/favorites", { creatorId: creatorAId });

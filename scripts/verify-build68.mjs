@@ -107,7 +107,7 @@ console.log("== Source: the shell, the copy, the stamp ==");
 const appJs = fs.readFileSync(path.join(root, "public/app.js"), "utf8");
 const routerJs = fs.readFileSync(path.join(root, "netlify/functions/lib/router.js"), "utf8");
 const metaJs = fs.readFileSync(path.join(root, "netlify/functions/lib/profile-meta.js"), "utf8");
-check("stamp is 2026.11.02-78", fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes("2026.11.02-78") && fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes("2026.11.02-78"));
+check("stamp is 2026.11.02-79", fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes("2026.11.02-79") && fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes("2026.11.02-79"));
 check("no 'Set up your first month' anywhere in the shell", !appJs.includes("Set up your first month"));
 check("business rail: Sig directly under Home", appJs.includes('...extra(["Home", "Sig", "Discover"])'));
 check("rail parity: approved business is full chrome", appJs.includes('u.role === "business" || businessAccessState(u) === "active"'));
@@ -275,7 +275,10 @@ const latoya = new Client(BASE);
   const ms = await chelsea.c.req("GET", "/api/messages");
   check("founding still refused messages", ms.status === 403, `status=${ms.status}`);
   const bh = await chelsea.c.req("GET", "/api/me/business-home");
-  check("founding still refused business-home", bh.status === 403, `status=${bh.status}`);
+  // Build -80 (Jeff): the business PAGE opens for founding (her
+  // card, editor, and preview read this payload); bookings and
+  // messages above stay refused exactly as before.
+  check("founding CAN load business-home for her page (Build -80)", bh.status === 200 && !!bh.data.business && bh.data.business.accessState === "founding", `status=${bh.status}`);
 }
 
 // --- drafts by law ---

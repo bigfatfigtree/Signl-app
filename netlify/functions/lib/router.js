@@ -18,6 +18,7 @@ const square = require("./square");
 const { askSigAI } = require("./sigai");
 const sigdata = require("./sigdata");
 const { buildProfilePageHtml, buildClaimPageHtml } = require("./profile-meta");
+const { videoEmbedFor } = require("./video-embed");
 const { normalizeAudienceMarkets, audienceShareInMarket, isListedInMarket, listedMarketsFor, audienceBreakdownFor, MULTI_MARKET_MIN_PCT } = require("./audience-markets");
 const igPrefill = require("./ig-prefill");
 const recruiters = require("./recruiters");
@@ -3519,9 +3520,10 @@ function normalizeSocials(b) {
 // Best-work links (Jeff, 2026-10-19): a creator may attach up to 3
 // links to their own best posts - Instagram, TikTok or YouTube only.
 // Host-validated, so a rendered link card can never point somewhere
-// its label does not say. Links are stored raw on the creator record
-// and rendered as outbound cards; third-party players are never
-// embedded.
+// its label does not say. Links are stored raw on the creator record.
+// Build -79: a stored link that parses as a video (lib/video-embed.js)
+// renders as the actual video on the profile, click to play in place;
+// anything else keeps the outbound link card it has always had.
 const BEST_WORK_HOSTS = [
   { hosts: ["instagram.com"], platform: "Instagram" },
   { hosts: ["tiktok.com", "vm.tiktok.com", "vt.tiktok.com"], platform: "TikTok" },
@@ -3576,7 +3578,10 @@ function validateBestWork(input) {
 }
 function bestWorkCards(creator) {
   const links = validateBestWork(creator && creator.bestWork).links;
-  return links.map((url) => ({ url, platform: bestWorkPlatform(url), label: bestWorkLabel(url) }));
+  // Build -79: the shared embed descriptor rides every card, so the
+  // in-app profile, the creator's own preview, and the server-rendered
+  // public page all embed (or fall back) identically.
+  return links.map((url) => ({ url, platform: bestWorkPlatform(url), label: bestWorkLabel(url), embed: videoEmbedFor(url) }));
 }
 
 // The creator's rate card as listed offerings (2026-11-01): the
@@ -15137,6 +15142,23 @@ async function route(event) {
   // ---------- profile ----------
   if (method === "PATCH" && seg[0] === "me" && seg[1] === "profile") {
     const b = parseBody(event);
+    // Build -80 (Jeff): a founding business may edit and save its
+    // business PAGE before launch (the fields the Your business
+    // page editor sends, and nothing else). This handler also
+    // carries plan-adjacent and results settings (average ticket,
+    // discounts, proof controls, talent budget, baselines), so a
+    // founding caller's patch is held to the page fields by name:
+    // any other key refuses the whole save, and no other founding
+    // gate moves. Active businesses are untouched.
+    if (user.role === "business" && isFoundingBusiness(user)) {
+      // "moment" rides along: the standing Menu of Moments pick is
+      // a founding-page profile field, set pre-launch by design.
+      const PAGE_FIELDS = ["businessName", "category", "city", "neighborhood", "zip", "about", "preferredLanguage", "musicOpen", "musicLive", "musicCreated", "studentOpen", "assetPacket", "moment"];
+      const extra = Object.keys(b || {}).filter((k) => !PAGE_FIELDS.includes(k));
+      if (extra.length) {
+        return err(403, "Your business page is yours to edit now. Plan settings and the product tools open when SIGNL activates your business.");
+      }
+    }
     const ts = nowIso();
     if (user.role === "creator" && user.creator) {
       const c = { ...user.creator };
@@ -17867,10 +17889,11 @@ async function route(event) {
   // still in review is refused everywhere here, and every
   // founding business is still refused the live sections:
   // applications, open offers, bookings, the counter, posts,
-  // and messages. Business Home keeps its own founding check
-  // at its handler below. This sits ahead of the
-  // approved-account gate so a founding business always gets
-  // the founding answer.
+  // and messages. (Build -80: Business Home no longer refuses
+  // founding businesses; it is a read over their own record and
+  // it is what the Your business page renders from.) This sits
+  // ahead of the approved-account gate so a founding business
+  // always gets the founding answer.
   const MARKETPLACE_SECTIONS = ["discover", "favorites", "offers", "applications", "open-offers", "bookings", "counter", "posts", "messages"];
   const FOUNDING_OPEN_SECTIONS = ["discover", "favorites", "offers"];
   if (user.role !== "admin" && isFoundingBusiness(user) && MARKETPLACE_SECTIONS.includes(seg[0])
@@ -19283,7 +19306,13 @@ async function route(event) {
   // ---------- business home ----------
   if (method === "GET" && seg[0] === "me" && seg[1] === "business-home") {
     if (user.role !== "business") return err(403, "Businesses only");
-    if (isFoundingBusiness(user)) return err(403, FOUNDING_BUSINESS_MESSAGE);
+    // Build -80 (Jeff): a founding business gets its business page.
+    // businessHome is a pure read over the business's own records:
+    // a founding record simply has no bookings, posts, or offers
+    // yet, so the payload comes back with honest zeros and nulls
+    // while the plan, name, and market are real. The founding gate
+    // still refuses every marketplace section below exactly as
+    // before; this read opens none of them.
     return json(200, await businessHome(user));
   }
 

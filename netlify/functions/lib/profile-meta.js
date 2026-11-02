@@ -10,6 +10,8 @@
 // not an approved, complete profile gets the shell back untouched
 // (generic title, noindex), exactly as before.
 
+const { videoEmbedFor } = require("./video-embed");
+
 function escHtml(s) {
   return String(s == null ? "" : s)
     .replace(/&/g, "&amp;")
@@ -123,21 +125,33 @@ function normWorkUrl(u) {
 // first (they carry the real imagery), then link tiles, deduped
 // by URL so a post the creator both featured and listed appears
 // once.
+// Build -79: a best-work link that parses as a video (the shared
+// parser in lib/video-embed.js; the router also stamps the same
+// descriptor on the card as w.embed) joins the embeds, so the
+// video itself shows on the profile and plays in place. A link
+// the parser does not know stays the tile it has always been.
 function profileWorkItems(p) {
   const items = [];
   const seen = new Set();
   if (p.portfolioSample && p.portfolioSample.url) {
-    items.push({ kind: "embed", url: p.portfolioSample.url, embedUrl: p.portfolioSample.embedUrl, tag: "Portfolio sample" });
+    const emb = videoEmbedFor(p.portfolioSample.url);
+    items.push({ kind: "embed", url: p.portfolioSample.url, embedUrl: (emb && emb.embedUrl) || p.portfolioSample.embedUrl, embedAspect: (emb && emb.aspect) || "portrait", platform: (emb && emb.platform) || p.primaryPlatformLabel || "Instagram", tag: "Portfolio sample" });
     seen.add(normWorkUrl(p.portfolioSample.url));
   }
   for (const f of Array.isArray(p.featuredPosts) ? p.featuredPosts : []) {
     if (!f || !f.url || seen.has(normWorkUrl(f.url))) continue;
-    items.push({ kind: "embed", url: f.url, embedUrl: f.embedUrl, tag: "Featured post" });
+    const emb = videoEmbedFor(f.url);
+    items.push({ kind: "embed", url: f.url, embedUrl: (emb && emb.embedUrl) || f.embedUrl, embedAspect: (emb && emb.aspect) || "portrait", platform: (emb && emb.platform) || p.primaryPlatformLabel || "Instagram", tag: "Featured post" });
     seen.add(normWorkUrl(f.url));
   }
   for (const w of Array.isArray(p.pastWork) ? p.pastWork : []) {
     if (!w || !w.url || seen.has(normWorkUrl(w.url))) continue;
-    items.push({ kind: "tile", url: w.url, label: w.label || "Watch", platform: w.platform || "" });
+    const emb = w.embed || videoEmbedFor(w.url);
+    if (emb && emb.embedUrl) {
+      items.push({ kind: "embed", url: w.url, embedUrl: emb.embedUrl, embedAspect: emb.aspect || "portrait", platform: emb.platform || w.platform || "", tag: emb.platform || w.platform || "Video" });
+    } else {
+      items.push({ kind: "tile", url: w.url, label: w.label || "Watch", platform: w.platform || "" });
+    }
     seen.add(normWorkUrl(w.url));
   }
   return items;
@@ -148,7 +162,7 @@ function profileWorkHtml(p) {
   if (!items.length) return "";
   const cells = items.map((it) => {
     if (it.kind === "embed") {
-      return `<div class="work-cell"><div class="work-ph"><span class="work-ph-mark">${escHtml(p.primaryPlatformLabel || "Instagram")}</span><span class="work-ph-note">Post loading</span></div><iframe src="${escHtml(it.embedUrl || "")}" loading="lazy" frameborder="0" scrolling="no" allowtransparency="true" title="${escHtml(it.tag)} by @${escHtml(p.handle)}" onload="this.parentNode.classList.add('on')"></iframe><span class="work-tag">${escHtml(it.tag)}</span></div>`;
+      return `<div class="work-cell${it.embedAspect === "wide" ? " wide" : ""}"><div class="work-ph"><span class="work-ph-mark">${escHtml(it.platform || "Video")}</span><span class="work-ph-note">Post loading</span></div><iframe src="${escHtml(it.embedUrl || "")}" loading="lazy" frameborder="0" scrolling="no" allowtransparency="true" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen title="${escHtml(it.tag)} by @${escHtml(p.handle)}" onload="this.parentNode.classList.add('on')"></iframe><span class="work-tag">${escHtml(it.tag)}</span></div>`;
     }
     return `<a class="work-cell tile" href="${escHtml(it.url)}" target="_blank" rel="noopener"><span class="work-ph-mark">${escHtml(it.platform || "Post")}</span><span class="work-tile-label">${escHtml(it.label)}</span><span class="work-go">View post</span></a>`;
   }).join("");

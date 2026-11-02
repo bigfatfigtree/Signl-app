@@ -3170,7 +3170,7 @@ details.roas-x > summary::-webkit-details-marker { display: none; }
 .bookme-cover.no-photo .bookme-mono { box-shadow: 0 0 0 2px rgba(255, 255, 255, .55); }
 .work-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
 .work-cell { position: relative; display: block; aspect-ratio: 4 / 5; border-radius: 14px; overflow: hidden; background: #E3F5EA; border: 1px solid var(--line); color: var(--ink); text-decoration: none; }
-.work-cell iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; opacity: 0; transition: opacity .3s ease; pointer-events: none; }
+.work-cell iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; opacity: 0; transition: opacity .3s ease; }
 .work-cell.on iframe { opacity: 1; }
 .work-ph { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-end; gap: 5px; padding: 42px 12px 12px; background: linear-gradient(160deg, #E3F5EA, #F4F7F4); }
 .work-ph-mark { color: var(--blue); font-size: .72rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
@@ -3254,3 +3254,36 @@ body.profile-view main { margin-left: auto; margin-right: auto; }
 .stk-save.on { background: var(--mint); border-color: var(--mint); }
 .stk-save:active { transform: scale(.97); }
 .camp-h { margin: 18px 0 10px; font-size: 19px; }
+
+/* ===== Build -79: Best Work video embeds =====
+   A best-work video shows itself on the profile: a tidy
+   scroll-snap row of player cards (portrait for Instagram,
+   TikTok and Shorts; 16:9 for YouTube), lazy-loaded, with the
+   platform named under each card. The row scrolls inside
+   itself, so a phone page never gains horizontal overflow. */
+.work-embed-row { display: flex; gap: 14px; overflow-x: auto; scroll-snap-type: x mandatory; padding: 4px 2px 10px; margin: 6px 0 2px; -webkit-overflow-scrolling: touch; }
+.work-embed-card { flex: 0 0 272px; max-width: 84vw; margin: 0; scroll-snap-align: start; }
+.work-embed-card.wide { flex-basis: min(480px, 88vw); }
+.work-embed-frame { position: relative; aspect-ratio: 4 / 5; border-radius: 16px; overflow: hidden; background: #0B0D0C; border: 1px solid var(--line); }
+.work-embed-card.wide .work-embed-frame { aspect-ratio: 16 / 9; }
+.work-embed-frame iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.work-embed-card figcaption { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 7px 2px 0; }
+.work-embed-plat { font-size: .72rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--blue); }
+.work-embed-card figcaption a { font-size: .82rem; font-weight: 700; color: var(--ink2); text-decoration: none; }
+.work-embed-card figcaption a:hover { text-decoration: underline; text-underline-offset: 3px; }
+/* A wide (YouTube) embed spans two grid columns at its own
+   16:9 ratio instead of being squeezed into the portrait cell. */
+.work-cell.wide { grid-column: span 2; aspect-ratio: 16 / 9; }
+
+/* ===== Build -80: Your business page (founding) =====
+   The profile card is the hero and the live preview: it
+   updates as the basics form is typed in, before any save.
+   Editing groups plainly beneath it: basics, then optional. */
+.biz-profile-card { box-shadow: var(--sh-md); }
+.bp-live-caption { display: flex; align-items: center; gap: 8px; margin: 14px 2px 0; font-size: .78rem; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: var(--ink3); }
+.bp-live-caption::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--green, #2FE07E); box-shadow: 0 0 0 3px #E3F5EA; }
+.bp-status-line { display: flex; gap: 9px; align-items: baseline; flex-wrap: wrap; margin: 10px 0 0; padding: 10px 14px; border: 1px solid var(--line); border-radius: 12px; background: #F4F7F4; font-size: .9rem; color: var(--ink2); }
+.bp-status-line strong { color: var(--ink); }
+.sheet.biz-preview-sheet { width: min(680px, 100%); }
+.biz-preview-sheet .prof-card { margin-top: 10px; }
+@media (max-width: 560px) { .prof-in { padding: 0 16px 18px; } .prof-stats { gap: 16px; } }

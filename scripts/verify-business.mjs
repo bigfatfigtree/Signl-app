@@ -127,7 +127,8 @@ try {
   // Build -68 (2026-11-01): approved founding businesses get
   // the real product: browse, favorites, and DRAFT offers
   // (the server force-drafts everything until activation).
-  // Bookings, Business Home, and messages below stay refused.
+  // Bookings and messages below stay refused. Business Home data
+  // loads since Build -80 (it backs the founding business page).
   const gateBrowse = await biz("GET", "/api/discover?market=Richmond");
   check("founding business CAN browse the roster (Build -68)", gateBrowse.status === 200 && Array.isArray(gateBrowse.data.creators), JSON.stringify(gateBrowse.data).slice(0, 160));
   const gateFavs = await biz("GET", "/api/favorites");
@@ -140,7 +141,10 @@ try {
   const gateDraft = await biz("POST", "/api/offers", { title: "Founding draft attempt", whatComped: "Dinner for two", dollarCap: 80, spots: 1 });
   check("founding business creates a DRAFT offer, never live (Build -68)", gateDraft.status === 201 && gateDraft.data.offer && gateDraft.data.offer.status === "draft", JSON.stringify(gateDraft.data).slice(0, 160));
   const gateHome = await biz("GET", "/api/me/business-home");
-  check("Business Home data refuses for a founding business (403)", gateHome.status === 403 && /Founding Status page/.test(gateHome.data.error || ""), JSON.stringify(gateHome.data));
+  // Build -80 (Jeff): Business Home data now LOADS for a founding
+  // business (it backs her Your business page: card, editor,
+  // preview). Bookings and messages below stay refused.
+  check("Business Home data loads for a founding business (Build -80)", gateHome.status === 200 && !!gateHome.data.business && gateHome.data.business.accessState === "founding", JSON.stringify(gateHome.data).slice(0, 160));
   const gateBookings = await biz("GET", "/api/bookings");
   check("founding business cannot read bookings (403)", gateBookings.status === 403, String(gateBookings.status));
   const gateMessages = await biz("GET", "/api/messages");
