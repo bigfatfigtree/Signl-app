@@ -1687,6 +1687,68 @@ function visitIncludesHtml(summary) {
   </div>`;
 }
 
+// ---------- Build -84: coupon deals + editable deliverables ----------
+// Client mirrors of the server's helpers (router.js): the same
+// recommended standards, the same clamping, the same plain
+// lines, so the composer, Sig and the creator's deal cards can
+// never disagree with what the server stored.
+const DELIVERABLE_STANDARDS_CLIENT = {
+  comp: { posts: 1, story: true, windowHours: 48 },
+  paid: { posts: 1, story: true, windowHours: 48 },
+  coupon: { posts: 1, story: false, windowHours: 48 },
+};
+function kindOfClient(x) {
+  return x && x.kind === "paid" ? "paid" : x && x.kind === "coupon" ? "coupon" : "comp";
+}
+function deliverableStandardClient(kind) {
+  return DELIVERABLE_STANDARDS_CLIENT[kind] || DELIVERABLE_STANDARDS_CLIENT.comp;
+}
+function deliverablesOfClient(x) {
+  const std = deliverableStandardClient(kindOfClient(x));
+  const d = x && x.deliverables && typeof x.deliverables === "object" ? x.deliverables : {};
+  let posts = Math.floor(Number(d.posts));
+  if (!Number.isFinite(posts)) posts = std.posts;
+  posts = Math.min(5, Math.max(1, posts));
+  const story = typeof d.story === "boolean" ? d.story : std.story;
+  let windowHours = Math.floor(Number(d.windowHours));
+  if (!Number.isFinite(windowHours)) windowHours = std.windowHours;
+  windowHours = Math.min(336, Math.max(12, windowHours));
+  return { posts, story, windowHours };
+}
+function deliverablesEditedClient(x) {
+  const std = deliverableStandardClient(kindOfClient(x));
+  const d = deliverablesOfClient(x);
+  return d.posts !== std.posts || d.story !== std.story || d.windowHours !== std.windowHours;
+}
+function windowPhraseClient(hours) {
+  if (hours === 48) return "48 hours";
+  if (hours === 24) return "24 hours";
+  if (hours % 24 === 0) return `${hours / 24} days`;
+  return `${hours} hours`;
+}
+// "1 post + 1 story" / "2 posts, no story": the deliverables as
+// a short phrase for rows, cards and summaries.
+function deliverablePhraseClient(x) {
+  const d = deliverablesOfClient(x);
+  return `${d.posts} post${d.posts === 1 ? "" : "s"}${d.story ? " + 1 story" : ", no story"}`;
+}
+// The coupon in one plain line, mirroring the server's
+// couponSummary (the server also sends it precomputed as
+// o.couponSummary; this mirror covers records built client-side
+// and booking snapshots). Returns raw text; callers escape.
+function couponSummaryClient(coupon, businessName) {
+  if (!coupon) return "";
+  const head = coupon.type === "percent_off"
+    ? `${coupon.percent}% off${coupon.cap ? ` (up to $${coupon.cap} off)` : ""}`
+    : coupon.type === "store_credit" ? `$${Number(coupon.amount)} store credit` : `$${Number(coupon.amount)} off`;
+  return `${head}${businessName ? ` at ${businessName}` : ""}, good for ${coupon.appliesTo || ""}`;
+}
+function couponFaceLabelClient(coupon) {
+  if (!coupon) return "";
+  if (coupon.type === "percent_off") return `${coupon.percent}% off`;
+  return `$${fmtMoney(coupon.amount)}`;
+}
+
 // V3: an offer's terms as compressed labeled rows (visible before
 // any accept tap) + the full plain-words version behind one tap.
 // Rights and deadlines stay visible in compressed form; nothing
@@ -1698,15 +1760,19 @@ function dealRowsHtml(o) {
   // Same rows, same words — only the grouping changed.
   const main = [];
   const terms = [];
+  const dv84 = deliverablesOfClient(o);
   if (o.kind === "paid") {
     const net = o.paidMath && o.paidMath.creatorNet !== undefined && o.paidMath.creatorNet !== null && o.paidMath.creatorNet !== "" ? `$${fmtMoney(o.paidMath.creatorNet)} (97%)` : "97%";
     main.push(["You get paid", `$${fmtPrice(o.cashRate)} &middot; you keep ${net}`]);
+  } else if (o.kind === "coupon") {
+    main.push(["You get", esc(o.couponSummary || couponSummaryClient(o.coupon, o.businessName))]);
+    if (o.coupon && o.coupon.expiresAt) main.push(["Coupon expires", esc(fmtDay(o.coupon.expiresAt))]);
   } else {
     main.push(["You get", `${esc(o.whatComped)} &middot; $${fmtMoney(o.dollarCap)} cap &middot; ${Number(o.covers) === 2 ? "covers 2" : "covers you"}`]);
   }
   if (o.includes) main.push(["Included", esc(o.includes)]);
   if (o.experience) main.push(["Experience", esc(o.experience)]);
-  terms.push(["Post", o.kind === "paid" ? "Per booking terms &middot; 48h &middot; live 30 days" : "1 post/reel + 1 story &middot; 48h &middot; honest, disclosed &middot; live 30 days"]);
+  terms.push(["Post", o.kind === "paid" ? `${deliverablePhraseClient(o)} &middot; within ${windowPhraseClient(dv84.windowHours)} &middot; live 30 days` : `${deliverablePhraseClient(o)} &middot; ${windowPhraseClient(dv84.windowHours)} &middot; honest, disclosed &middot; live 30 days`]);
   terms.push(["Rights", o.kind === "paid" ? "Share + repost + ads for 90 days &middot; no edits" : "Native share only &middot; no edits, downloads or ads"]);
   if (o.requiresSpanish) terms.push(["Language", "Content in Spanish"]);
   const render = (rows) => rows.map(([k, v]) => `<div class="drow"><span class="dk">${k}</span><span class="dv">${v}</span></div>`).join("");
@@ -1715,16 +1781,19 @@ function dealRowsHtml(o) {
 
 function dealPlainWordsHtml(o) {
   const rights = o.visitRights || rightsForVisit(o.kind);
+  const dv84 = deliverablesOfClient(o);
   return `<details class="deal-details"><summary>${T("The deal, in plain words", "El trato, en palabras simples")}</summary><div class="dd-body">
     <div class="showcase-block">
       ${o.kind === "paid"
-        ? `<p class="small"><strong>You get paid:</strong> $${fmtPrice(o.cashRate)} for this paid booking, on the deliverables set in its terms. You keep $${o.paidMath ? fmtMoney(o.paidMath.creatorNet) : ""} (97% of the rate); SIGNL holds the payment and releases it when your post is live.</p>`
-        : `<p class="small"><strong>You get:</strong> ${esc(o.whatComped)} (comp cap $${fmtMoney(o.dollarCap)}) &middot; ${coversLine(o)}</p>`}
+        ? `<p class="small"><strong>You get paid:</strong> $${fmtPrice(o.cashRate)} for this paid booking. You keep $${o.paidMath ? fmtMoney(o.paidMath.creatorNet) : ""} (97% of the rate); SIGNL holds the payment and releases it when your post is live.</p>`
+        : o.kind === "coupon"
+          ? `<p class="small"><strong>You'd get:</strong> ${esc(o.couponSummary || couponSummaryClient(o.coupon, o.businessName))}${o.coupon && o.coupon.expiresAt ? `, expires ${esc(fmtDay(o.coupon.expiresAt))}` : ""}. The coupon is your payment for this post. No cash changes hands.</p>`
+          : `<p class="small"><strong>You get:</strong> ${esc(o.whatComped)} (comp cap $${fmtMoney(o.dollarCap)}) &middot; ${coversLine(o)}</p>`}
       ${o.kind === "paid" && o.paidBrief ? `<p class="small"><strong>Key points from the business:</strong> ${esc(o.paidBrief)}</p>` : ""}
       ${o.includes ? `<p class="small"><strong>Included:</strong> ${esc(o.includes)}</p>` : ""}
       ${o.experience ? `<p class="small"><strong>The experience:</strong> ${esc(o.experience)}</p>` : ""}
-      ${o.kind === "paid" ? `<p class="small"><strong>You post:</strong> the deliverables set in this booking's terms, posted within 48 hours of your visit, honest and disclosed. The post stays live at least 30 days. You check off by pasting the post link in My Visits.</p>` : `<p class="small"><strong>You post:</strong> 1 post or reel + 1 story that shares the post, within 48 hours of your visit, honest, with the comp disclosed. The post stays live at least 30 days. You check off by pasting the post link in My Visits.</p>`}
-      <p class="small muted">Up to a week at the outside. 48 hours is the standard and earns the Momentum.</p>
+      <p class="small"><strong>You post:</strong> ${deliverablePhraseClient(o)}, within ${windowPhraseClient(dv84.windowHours)} of your visit, honest, with the ${o.kind === "coupon" ? "coupon" : o.kind === "paid" ? "paid booking" : "comp"} disclosed. The post stays live at least 30 days. You check off by pasting the post link in My Visits.</p>
+      <p class="small muted">${dv84.windowHours === 48 ? "Up to a week at the outside. 48 hours is the standard and earns the Momentum." : "Up to a week at the outside. Posting inside your window is what earns the Momentum."}</p>
       <p class="small"><strong>They can:</strong> ${rights.can.map(esc).join("; ")}</p>
       <p class="small"><strong>They can't:</strong> ${rights.cannot.map(esc).join("; ")}</p>
     </div>
@@ -2960,6 +3029,15 @@ async function renderEarningsTab() {
     for (const b of bookings) if (b.paidLane && b.paidLane.escrowState === "released" && b.post && inMonth(b.post.firstAt || b.post.submittedAt)) monthEarned += Number(b.paidLane.creatorNet) || 0;
     for (const l of granted) if (inMonth(l.createdAt)) monthEarned += Number(l.creatorNet) || 0;
     const paidBookings = bookings.filter((b) => b.paidLane);
+    // Build -84: coupon deals are their own section. The value
+    // shown is the coupon's face value, labeled store value; it
+    // is never added to the cash totals above.
+    const couponBookings = bookings.filter((b) => b.kind === "coupon");
+    const couponFaceBit = (b) => {
+      const cpn = b.coupon || {};
+      const f = cpn.type === "percent_off" ? (cpn.cap ? Number(cpn.cap) : null) : Number(cpn.amount);
+      return f ? ` &middot; $${fmtMoney(f)} store value` : "";
+    };
     const stateWord = (b) => b.paidLane.escrowState === "refunded" ? "Refunded" : b.post ? (b.paidLane.escrowState === "released" ? "Complete" : "Post live") : "Booked";
     const licRow = (l, withActions) => `<div class="lib-row"><div class="lib-main"><div class="lib-title">${esc(l.businessName || "A business")} wants to license your post</div><div class="lib-meta">Your fee $${fmtPrice(l.fee)} · you keep $${fmtMoney(l.creatorNet)} · 90 days of repost and ad use${l.status === "pending" ? " · starts the day you approve" : l.status === "granted" && l.windowEndsAt ? ` · runs through ${fmtDay(l.windowEndsAt)}` : ""}${l.postUrl ? ` · <a href="${esc(l.postUrl)}" target="_blank" rel="noopener">View post</a>` : ""}${l.status !== "pending" ? ` · ${l.status === "granted" ? "Approved" : "Declined"}` : ""}</div></div>${withActions ? `<span class="req-acts"><button type="button" class="btn small-btn ws-primary" onclick="return respondLicenseEarn('${l.id}','approve')">Approve</button> <button type="button" class="btn small-btn ws-outline" onclick="return respondLicenseEarn('${l.id}','decline')">Decline</button></span>` : ""}</div>`;
     el.innerHTML = `
@@ -2976,7 +3054,10 @@ async function renderEarningsTab() {
   ${pending.length ? `<div class="wcard" style="padding-top:8px;padding-bottom:8px">${pending.map((l) => licRow(l, true)).join("")}</div>` : `<p class="small muted" style="margin:8px 2px 0">No license requests waiting. When a business wants to reuse one of your posts, it lands here at your listed fee.</p>`}
   ${decided.length ? `<div class="wcard" style="padding-top:8px;padding-bottom:8px;margin-top:12px">${decided.map((l) => licRow(l, false)).join("")}</div>` : ""}
   <h3 style="margin:22px 0 0">Paid bookings</h3>
-  ${paidBookings.length ? `<div class="wcard" style="padding-top:8px;padding-bottom:8px">${paidBookings.map((b) => `<div class="lib-row"><div class="lib-main"><div class="lib-title">${esc(b.title)}</div><div class="lib-meta">${esc(b.businessName || "")} · Booked at your rate of $${fmtPrice(b.paidLane.rate)}. You keep $${fmtMoney(b.paidLane.creatorNet)}.</div></div><span class="badge ${b.paidLane.escrowState === "released" ? "ok" : b.paidLane.escrowState === "refunded" ? "warn" : "info"}">${stateWord(b)}</span></div>`).join("")}</div>` : `<p class="small muted" style="margin:8px 2px 0">${(state.user.creator || {}).paidRate ? `No paid bookings yet. Your rate is set at $${fmtPrice(state.user.creator.paidRate)}; when a business books you paid, it lands here.` : "No paid bookings yet. Set your rate on your profile and businesses can book you paid."}</p>`}`;
+  ${paidBookings.length ? `<div class="wcard" style="padding-top:8px;padding-bottom:8px">${paidBookings.map((b) => `<div class="lib-row"><div class="lib-main"><div class="lib-title">${esc(b.title)}</div><div class="lib-meta">${esc(b.businessName || "")} · Booked at your rate of $${fmtPrice(b.paidLane.rate)}. You keep $${fmtMoney(b.paidLane.creatorNet)}.</div></div><span class="badge ${b.paidLane.escrowState === "released" ? "ok" : b.paidLane.escrowState === "refunded" ? "warn" : "info"}">${stateWord(b)}</span></div>`).join("")}</div>` : `<p class="small muted" style="margin:8px 2px 0">${(state.user.creator || {}).paidRate ? `No paid bookings yet. Your rate is set at $${fmtPrice(state.user.creator.paidRate)}; when a business books you paid, it lands here.` : "No paid bookings yet. Set your rate on your profile and businesses can book you paid."}</p>`}
+  ${couponBookings.length ? `<h3 style="margin:22px 0 0">Coupon deals</h3>
+  <p class="small muted" style="margin:8px 2px 0">Coupons you accepted as payment for a post. The value is store value at the business, not cash, so it never counts as cash earned.</p>
+  <div class="wcard" style="padding-top:8px;padding-bottom:8px">${couponBookings.map((b) => `<div class="lib-row"><div class="lib-main"><div class="lib-title">${esc(b.title)}</div><div class="lib-meta">${esc(b.businessName || "")} &middot; ${esc(couponSummaryClient(b.coupon, b.businessName))}${b.coupon && b.coupon.expiresAt ? ` &middot; expires ${esc(fmtDay(b.coupon.expiresAt))}` : ""}${couponFaceBit(b)}</div></div><span class="badge ${b.post ? "ok" : "info"}">${b.post ? "Post live" : "Booked"}</span></div>`).join("")}</div>` : ""}`;
     renderBottomNav();
   } catch (err) {
     el.innerHTML = `${wsHead("Earnings")}<div class="error-box">${esc(err.message)}</div>`;
@@ -3952,7 +4033,16 @@ function feedChip(btn, kind) {
 function startOfferTemplate(kind) {
   state.offerTarget = null;
   state.composerLane = "open";
-  if (offerDraftIsEmpty()) state.offerDraft.kind = kind === "paid" ? "paid" : "comp";
+  if (offerDraftIsEmpty()) {
+    state.offerDraft.kind = kind === "paid" ? "paid" : kind === "coupon" ? "coupon" : "comp";
+    // Build -84: a fresh template starts on its kind's
+    // recommended deliverables.
+    const std = deliverableStandardClient(state.offerDraft.kind);
+    state.offerDraft.dposts = String(std.posts);
+    state.offerDraft.dstory = std.story;
+    state.offerDraft.dwindow = String(std.windowHours);
+    state.offerDraft.deliverablesTouched = false;
+  }
   state.tab = "My Offers";
   render();
   return false;
@@ -3998,16 +4088,16 @@ function bizFunnelHtml(h) {
 function bizLibraryHtml(h) {
   const lib = h.contentLibrary || [];
   if (!lib.length) return `<div class="feed-empty"><strong>No posts yet</strong>Delivered posts land here with their license state.</div>`;
-  const row = (r) => `<div class="lib-row"><div class="lib-main"><div class="lib-title">${esc(r.title)}</div><div class="lib-meta">@${esc(r.creatorHandle)} · ${r.postedAt ? fmtDay(r.postedAt) : ""} · ${fmtNum(r.views)} views · ${r.onTime ? "on time" : "late"}${r.redemptions ? ` · ${r.redemptions.count} code uses · $${fmtMoney(r.redemptions.basketTotal)} rung up` : ""}</div>${licWindowLine(r.license)}</div>${licPillHtml(r.license)}${r.postUrl ? `<a class="btn small-btn ghost" href="${esc(r.postUrl)}" target="_blank" rel="noopener">View post</a>` : ""}</div>`;
+  const row = (r) => `<div class="lib-row"><div class="lib-main"><div class="lib-title">${esc(r.title)}</div><div class="lib-meta">@${esc(r.creatorHandle)} · ${r.postedAt ? fmtDay(r.postedAt) : ""} · ${fmtNum(r.views)} views · ${r.onTime ? "on time" : "late"}${r.kind === "coupon" ? " · Coupon post" : r.kind === "paid" ? " · Paid post" : ""}${r.redemptions ? ` · ${r.redemptions.count} code uses · $${fmtMoney(r.redemptions.basketTotal)} rung up` : ""}</div>${licWindowLine(r.license)}</div>${licPillHtml(r.license)}${r.postUrl ? `<a class="btn small-btn ghost" href="${esc(r.postUrl)}" target="_blank" rel="noopener">View post</a>` : ""}</div>`;
   const yours = lib.filter((r) => r.license && r.license.type !== "native");
   return `<div class="view-toggle lib-toggle"><div class="vt-group"><button type="button" class="rchip on" data-libbtn="creator" onclick="return bizLibTab('creator', this)">Creator posts</button><button type="button" class="rchip" data-libbtn="yours" onclick="return bizLibTab('yours', this)">Yours to use</button></div></div>
-  <div data-libp="creator"><p class="small muted">Seeing a post here is not the right to reuse it. Comped posts are native share only, with credit, unless you license them from the creator.</p>${lib.map(row).join("")}</div>
-  <div data-libp="yours" hidden><p class="small muted">Posts you can repost and run as ads inside the window shown. Every license runs 90 days: from the post date on a paid booking, from the day the creator said yes on a licensed post. The end date is on each post, and a license never runs longer than 90 days.</p>${yours.length ? yours.map(row).join("") : `<div class="feed-empty"><strong>Nothing licensed yet</strong>Paid bookings carry a 90-day standard license. A comped post can be licensed at the creator's listed fee.</div>`}</div>`;
+  <div data-libp="creator"><p class="small muted">Seeing a post here is not the right to reuse it. Comped and coupon posts are native share only, with credit, unless you license them from the creator.</p>${lib.map(row).join("")}</div>
+  <div data-libp="yours" hidden><p class="small muted">Posts you can repost and run as ads inside the window shown. Every license runs 90 days: from the post date on a paid booking, from the day the creator said yes on a licensed post. The end date is on each post, and a license never runs longer than 90 days.</p>${yours.length ? yours.map(row).join("") : `<div class="feed-empty"><strong>Nothing licensed yet</strong>Paid bookings carry a 90-day standard license. A comped or coupon post can be licensed at the creator's listed fee.</div>`}</div>`;
 }
 // Offers-segment template cards, in SIGNL's own terms.
 function bizTemplatesHtml() {
   const card = (kind, icon, name, desc) => `<div class="tmpl-card"><div class="tmpl-tile">${bnIcon(icon)}</div><div class="tmpl-name">${name}</div><div class="tmpl-desc">${desc}</div><button type="button" class="btn small-btn" onclick="return startOfferTemplate('${kind}')">Start</button></div>`;
-  return `<div class="tmpl-grid">${card("comp", "offers", "Comped visit", "You cover the meal or service. The creator posts honestly within 48 hours.")}${card("paid", "visits", "Paid booking", "Book at the creator's listed rate. They keep 97%, and a 90-day license is included.")}${card("open", "join", "Open call", "Post it to your market and let matching creators apply. You pick from the stack.")}</div>`;
+  return `<div class="tmpl-grid">${card("comp", "offers", "Comped visit", "You cover the meal or service. The creator posts honestly within 48 hours.")}${card("paid", "visits", "Paid booking", "Book at the creator's listed rate. They keep 97%, and a 90-day license is included.")}${card("coupon", "offers", "Coupon post", "Pay with a coupon: money off, a percent off, or store credit. One post, no story, unless you change it.")}${card("open", "join", "Open call", "Post it to your market and let matching creators apply. You pick from the stack.")}</div>`;
 }
 // Activity feed cards from delivered posts + their licenses.
 function bizActivityFeedHtml(h) {
@@ -4845,7 +4935,9 @@ function sigOfferCardHtml(p, ti, ci) {
   const why = p.mode === "accept" ? ST("Sent directly to you", "Enviada directamente a ti") : (o.fitNote || ST("Open in your market", "Abierta en tu mercado"));
   const money = o.kind === "paid"
     ? `$${fmtPrice(o.cashRate)} ${ST("paid · you keep 97%", "pagada · te quedas con el 97%")}`
-    : `${ST("Comp", "Cortesía")}: ${esc(o.whatComped || ST("a visit", "una visita"))} ($${fmtMoney(o.dollarCap || 0)} ${ST("value", "valor")})`;
+    : o.kind === "coupon"
+      ? `${ST("Coupon", "Cupón")}: ${esc(o.couponSummary || couponSummaryClient(o.coupon, o.businessName))}`
+      : `${ST("Comp", "Cortesía")}: ${esc(o.whatComped || ST("a visit", "una visita"))} ($${fmtMoney(o.dollarCap || 0)} ${ST("value", "valor")})`;
   return `<div class="sig-ccard sig-ocard" data-sigoffer="${esc(p.mode || "")}">
     <div class="sig-ccard-name">${esc(o.title || "")}</div>
     <div class="sig-ccard-handle">${esc(o.businessName || "")}${o.market ? ` · ${esc(o.market)}` : ""}</div>
@@ -4889,15 +4981,17 @@ function sigB1AskKind() {
   f.step = "kind";
   const who = d.creatorName ? ` for ${d.creatorName}` : "";
   if (d.lane === "direct" && d.creatorRate) {
-    sigOpAsk(ST(`How do you want to book${who}? At their listed rate of $${fmtPrice(d.creatorRate)} (they keep 97%), or a comp offer, your product on you?`, `¿Cómo quieres reservar${who}? A su tarifa publicada de $${fmtPrice(d.creatorRate)} (se queda con el 97%), o una oferta de cortesía, tu producto por tu cuenta?`), [
+    sigOpAsk(ST(`How do you want to book${who}? At their listed rate of $${fmtPrice(d.creatorRate)} (they keep 97%), a comp offer, your product on you, or a coupon as the payment?`, `¿Cómo quieres reservar${who}? A su tarifa publicada de $${fmtPrice(d.creatorRate)} (se queda con el 97%), una oferta de cortesía, tu producto por tu cuenta, o un cupón como pago?`), [
       { label: ST(`Paid at $${fmtPrice(d.creatorRate)}`, `Pagado a $${fmtPrice(d.creatorRate)}`), primary: true, run: () => sigOpPick(ST("Paid", "Pagado"), async () => { d.kind = "paid"; d.rate = d.creatorRate; sigB1AskTitle(); }) },
       { label: ST("Comp offer", "Oferta de cortesía"), run: () => sigOpPick(ST("Comp offer", "Oferta de cortesía"), async () => { d.kind = "comp"; sigB1AskPlay(); }) },
+      { label: ST("Coupon", "Cupón"), run: () => sigOpPick(ST("Coupon", "Cupón"), async () => { d.kind = "coupon"; sigB1AskTitle(); }) },
     ]);
     return;
   }
-  sigOpAsk(ST(`How is the creator paid${who}? Comp means your product is the payment. Cash means you pay a rate for a paid booking.`, `¿Cómo se paga al creador${who}? Cortesía significa que tu producto es el pago. En efectivo pagas una tarifa por una reserva pagada.`), [
+  sigOpAsk(ST(`How is the creator paid${who}? Comp means your product is the payment. Cash means you pay a rate for a paid booking. Coupon means a coupon is the payment for the post.`, `¿Cómo se paga al creador${who}? Cortesía significa que tu producto es el pago. En efectivo pagas una tarifa por una reserva pagada. Cupón significa que un cupón es el pago por la publicación.`), [
     { label: ST("Comp", "Cortesía"), primary: true, run: () => sigOpPick(ST("Comp", "Cortesía"), async () => { d.kind = "comp"; sigB1AskPlay(); }) },
     { label: ST("Cash", "Efectivo"), run: () => sigOpPick(ST("Cash", "Efectivo"), async () => { d.kind = "paid"; sigB1AskPlay(); }) },
+    { label: ST("Coupon", "Cupón"), run: () => sigOpPick(ST("Coupon", "Cupón"), async () => { d.kind = "coupon"; sigB1AskPlay(); }) },
   ]);
 }
 // R1: packaged plays. Offered on open offers, matched to the
@@ -4963,6 +5057,77 @@ function sigB1AskPaidBrief() {
     { label: ST("Skip", "Saltar"), run: () => sigOpPick(ST("Skip", "Saltar"), async () => { f.data.paidBrief = ""; sigB1AskSpots(); }) },
   ]);
 }
+// Coupon steps (Build -84): the coupon IS the payment. Type,
+// value, what it is good for, expiry — the same four facts the
+// composer asks, in the same words.
+function sigB1AskCouponType() {
+  const f = state.sigFlow;
+  f.step = "coupontype";
+  sigOpAsk(ST("What kind of coupon? The coupon is the payment for the post: the creator accepts it as their pay. No cash changes hands.", "¿Qué tipo de cupón? El cupón es el pago por la publicación: el creador lo acepta como su pago. No cambia dinero en efectivo."), [
+    { label: ST("Store credit", "Crédito en tienda"), primary: true, run: () => sigOpPick(ST("Store credit", "Crédito en tienda"), async () => { f.data.ctype = "store_credit"; sigB1AskCouponAmount(); }) },
+    { label: ST("Money off", "Dinero de descuento"), run: () => sigOpPick(ST("Money off", "Dinero de descuento"), async () => { f.data.ctype = "amount_off"; sigB1AskCouponAmount(); }) },
+    { label: ST("Percent off", "Porcentaje de descuento"), run: () => sigOpPick(ST("Percent off", "Porcentaje de descuento"), async () => { f.data.ctype = "percent_off"; sigB1AskCouponPercent(); }) },
+  ]);
+}
+function sigB1AskCouponAmount() {
+  const f = state.sigFlow;
+  f.step = "couponamount";
+  sigOpAsk(f.data.ctype === "store_credit"
+    ? ST("How much store credit, in dollars? For example: 200.", "¿Cuánto crédito en tienda, en dólares? Por ejemplo: 200.")
+    : ST("How much money off, in dollars? For example: 50.", "¿Cuánto dinero de descuento, en dólares? Por ejemplo: 50."));
+}
+function sigB1AskCouponPercent() {
+  const f = state.sigFlow;
+  f.step = "couponpercent";
+  sigOpAsk(ST("What percent off? A whole number from 1 to 100. For example: 25.", "¿Qué porcentaje de descuento? Un número entero de 1 a 100. Por ejemplo: 25."));
+}
+function sigB1AskCouponCap() {
+  const f = state.sigFlow;
+  f.step = "couponcap";
+  sigOpAsk(ST("Cap it at a dollar amount off? Type the cap (for example: 50), or skip and the percent stands on its own.", "¿Lo limitamos a una cantidad en dólares? Escribe el tope (por ejemplo: 50), o salta y el porcentaje queda solo."), [
+    { label: ST("Skip, no cap", "Saltar, sin tope"), run: () => sigOpPick(ST("Skip, no cap", "Saltar, sin tope"), async () => { f.data.ccap = null; sigB1AskCouponApplies(); }) },
+  ]);
+}
+function sigB1AskCouponApplies() {
+  const f = state.sigFlow;
+  f.step = "couponapplies";
+  sigOpAsk(ST("What is the coupon good for? For example: Anything in the store.", "¿Para qué sirve el cupón? Por ejemplo: Para cualquier cosa en la tienda."));
+}
+function sigB1AskCouponExpires() {
+  const f = state.sigFlow;
+  f.step = "couponexpires";
+  sigOpAsk(ST("When does the coupon expire? Type a date like Dec 31, or take the standard: 30 days after the deal is set.", "¿Cuándo vence el cupón? Escribe una fecha como 31 de diciembre, o toma lo estándar: 30 días después de cerrar el trato."), [
+    { label: ST("30 days (the standard)", "30 días (lo estándar)"), primary: true, run: () => sigOpPick(ST("30 days", "30 días"), async () => { f.data.cexpires = ""; sigB1AskSpots(); }) },
+  ]);
+}
+function sigB1CouponOf() {
+  const d = state.sigFlow.data;
+  return { type: d.ctype || "store_credit", amount: d.camount || null, percent: d.cpercent || null, cap: d.ccap || null, appliesTo: d.capplies || "", expiresAt: d.cexpires || null };
+}
+// The deliverables step (Build -84): what the creator owes,
+// starting from the kind's recommended standard. Toggle chips
+// re-ask with the new state, the tiers pattern; the creator
+// sees the final terms before accepting, in Sig and everywhere.
+function sigB1DeliverablesOf() {
+  const d = state.sigFlow.data;
+  if (!d.deliverables) d.deliverables = { ...deliverableStandardClient(d.kind || "comp") };
+  return d.deliverables;
+}
+function sigB1AskDeliverables() {
+  const f = state.sigFlow;
+  const d = f.data;
+  f.step = "deliverables";
+  const cur = sigB1DeliverablesOf();
+  const std = deliverableStandardClient(d.kind || "comp");
+  const isStd = cur.posts === std.posts && cur.story === std.story && cur.windowHours === std.windowHours;
+  const winCycle = [24, 48, 72, 168];
+  sigOpAsk(ST(`What does the creator owe? Right now: ${deliverablePhraseClient({ kind: d.kind, deliverables: cur })}, post within ${windowPhraseClient(cur.windowHours)}.${isStd ? " That is SIGNL's recommended standard for this kind of deal." : ""}${d.kind === "paid" ? " A paid booking also includes the standard license (repost and ad use for 90 days from the post date); that part is set by SIGNL and cannot be changed." : " Rights on this deal: native share only."} Tap a chip to change a piece, or keep it as shown.`, `¿Qué debe entregar el creador? Ahora: ${deliverablePhraseClient({ kind: d.kind, deliverables: cur })}, publicar en ${windowPhraseClient(cur.windowHours)}.${isStd ? " Es el estándar recomendado de SIGNL para este tipo de trato." : ""}${d.kind === "paid" ? " Una reserva pagada también incluye la licencia estándar (republicar y anuncios por noventa días desde la publicación); esa parte la fija SIGNL y no se puede cambiar." : " Derechos en este trato: solo compartir nativo."} Toca una opción para cambiar algo, o déjalo así.`), [
+    { label: ST("Keep as shown", "Dejar así"), primary: true, run: () => sigOpPick(ST("Keep as shown", "Dejar así"), async () => sigB1AskBriefGoal()) },
+    { label: `${ST("Story", "Historia")}: ${cur.story ? ST("yes", "sí") : ST("no", "no")}`, run: () => sigOpPick(ST("Story", "Historia"), async () => { cur.story = !cur.story; sigB1AskDeliverables(); }) },
+    { label: `${ST("Posts", "Publicaciones")}: ${cur.posts}`, run: () => sigOpPick(ST("Posts", "Publicaciones"), async () => { cur.posts = cur.posts >= 3 ? 1 : cur.posts + 1; sigB1AskDeliverables(); }) },
+    { label: `${ST("Post within", "Publicar en")}: ${windowPhraseClient(cur.windowHours)}`, run: () => sigOpPick(ST("Post within", "Publicar en"), async () => { cur.windowHours = winCycle[(winCycle.indexOf(cur.windowHours) + 1) % winCycle.length]; sigB1AskDeliverables(); }) },
+  ]);
+}
 function sigB1AskSpots() {
   const f = state.sigFlow;
   f.step = "spots";
@@ -5017,8 +5182,8 @@ function sigB1AskSpanish() {
   const f = state.sigFlow;
   f.step = "spanish";
   sigOpAsk(ST("Should this offer ask for content in Spanish? It marks the offer; it never blocks anyone from applying.", "¿Esta oferta pide contenido en español? Marca la oferta; nunca bloquea a nadie."), [
-    { label: ST("Yes, Spanish content", "Sí, en español"), run: () => sigOpPick(ST("Yes", "Sí"), async () => { f.data.spanish = true; sigB1AskBriefGoal(); }) },
-    { label: ST("No", "No"), primary: true, run: () => sigOpPick(ST("No", "No"), async () => { f.data.spanish = false; sigB1AskBriefGoal(); }) },
+    { label: ST("Yes, Spanish content", "Sí, en español"), run: () => sigOpPick(ST("Yes", "Sí"), async () => { f.data.spanish = true; sigB1AskDeliverables(); }) },
+    { label: ST("No", "No"), primary: true, run: () => sigOpPick(ST("No", "No"), async () => { f.data.spanish = false; sigB1AskDeliverables(); }) },
   ]);
 }
 function sigB1AskBriefGoal() {
@@ -5061,7 +5226,7 @@ function sigB1DraftBrief() {
     `${ST("Hook", "Gancho")}: ${d.briefHook || "—"}`,
     `${ST("Must mention", "Debe mencionar")}: ${(d.briefMust || []).join(" · ") || "—"}`,
     ...(d.briefDont && d.briefDont.length ? [`${ST("Do not say", "No decir")}: ${d.briefDont.join(" · ")}`] : []),
-    `${ST("Deliverable", "Entrega")}: ${d.kind === "paid" ? ST("set in the booking terms; post within 48 hours, live at least 30 days", "según los términos de la reserva; publicar en 48 horas, activo al menos 30 días") : ST("1 post + 1 story that shares the post; post within 48 hours", "1 publicación + 1 historia que la comparte; publicar en 48 horas")}`,
+    `${ST("Deliverable", "Entrega")}: ${d.kind === "paid" ? ST("set in the booking terms; post within 48 hours, live at least 30 days", "según los términos de la reserva; publicar en 48 horas, activo al menos 30 días") : `${deliverablePhraseClient({ kind: d.kind, deliverables: sigB1DeliverablesOf() })}; ${ST("post within", "publicar en")} ${windowPhraseClient(sigB1DeliverablesOf().windowHours)}`}`,
     ...(d.briefTiming ? [`${ST("Timing", "Tiempo")}: ${d.briefTiming}`] : []),
     ...(d.briefCta ? [`${ST("Call to action", "Llamada a la acción")}: ${d.briefCta}`] : []),
   ];
@@ -5097,7 +5262,8 @@ function sigB1SummaryText() {
     ST("Here is the campaign. Nothing posts until you say yes:", "Esta es la campaña. Nada se publica hasta que digas que sí:"),
     ...(d.play && sigPlay(d.play) ? [`Play: ${sigPlay(d.play).name}`] : []),
     `${ST("Offer", "Oferta")}: "${d.title}" (${d.lane === "direct" ? ST(`direct to ${d.creatorName || "one creator"}`, `directa a ${d.creatorName || "un creador"}`) : ST("open to your market", "abierta a tu mercado")})`,
-    d.kind === "paid" ? `${ST("Paid", "Pago")}: $${fmtPrice(d.rate)} cash${d.lane === "direct" && d.creatorRate ? ST(" at their listed rate", " a su tarifa publicada") : ""}` : `${ST("Comp", "Cortesía")}: ${d.comped} (cap $${fmtMoney(d.cap)}, covers ${d.covers})`,
+    d.kind === "paid" ? `${ST("Paid", "Pago")}: $${fmtPrice(d.rate)} cash${d.lane === "direct" && d.creatorRate ? ST(" at their listed rate", " a su tarifa publicada") : ""}` : d.kind === "coupon" ? `${ST("Coupon", "Cupón")}: ${couponSummaryClient(sigB1CouponOf(), bizName)}${d.cexpires ? ` · ${ST("expires", "vence")} ${fmtDay(d.cexpires)}` : ""}` : `${ST("Comp", "Cortesía")}: ${d.comped} (cap $${fmtMoney(d.cap)}, covers ${d.covers})`,
+    `${ST("Deliverables", "Entregas")}: ${deliverablePhraseClient({ kind: d.kind, deliverables: sigB1DeliverablesOf() })} · ${ST("post within", "publicar en")} ${windowPhraseClient(sigB1DeliverablesOf().windowHours)}${d.kind === "paid" ? ST(" · standard license included (90 days)", " · licencia estándar incluida (noventa días)") : ST(" · native share only", " · solo compartir nativo")}`,
     `${ST("Spots", "Cupos")}: ${d.spots}${d.lane === "open" && (d.tiers || []).length ? ` · ${ST("tiers", "niveles")}: ${d.tiers.join(", ")}` : ""}`,
     d.lane === "open" ? `${ST("Timing", "Tiempo")}: ${ST("applications", "aplicaciones")} ${d.applyDays || 3}d · ${ST("visits within", "visitas en")} ${d.windowDays || 7}d` : `${ST("Timing", "Tiempo")}: ${d.windowMode === "thisweek" ? ST("this week", "esta semana") : ST("within 7 days", "en 7 días")}`,
     ...(d.paidBrief ? [`${ST("Key points", "Puntos clave")}: ${d.paidBrief}`] : []),
@@ -5142,9 +5308,15 @@ async function sigB1Commit() {
     brief: briefFromParts({ goal: d.briefGoal || null, hook: d.briefHook, mustMention: d.briefMust, doNotSay: d.briefDont, timing: d.briefTiming, callToAction: d.briefCta }),
     assetPacketAttached: d.packetAttach !== null && d.packetAttach !== undefined ? !!d.packetAttach : d.kind === "paid",
   };
+  // Build -84: the deliverables set in the deliverables step
+  // ride every commit, and a coupon commit carries the coupon.
+  payload.deliverables = sigB1DeliverablesOf();
   if (d.kind === "paid") {
     payload.cashRate = Number(d.rate);
     if (d.paidBrief && d.paidBrief.trim()) payload.paidBrief = d.paidBrief.trim();
+  } else if (d.kind === "coupon") {
+    payload.coupon = sigB1CouponOf();
+    payload.whatComped = "";
   } else {
     payload.dollarCap = Number(d.cap);
     payload.covers = d.covers || 1;
@@ -5212,8 +5384,42 @@ async function sigB1Step(f, text, norm) {
     case "title":
       if (!t) { sigOpAsk(ST("Give the offer a title first: name the experience.", "Ponle un título primero: nombra la experiencia.")); return; }
       d.title = t.slice(0, 120);
-      sigB1AskComped();
+      if (d.kind === "coupon") sigB1AskCouponType();
+      else sigB1AskComped();
       return;
+    case "couponamount": {
+      const n = sigOpNum(t);
+      if (!(n >= 1)) { sigOpAsk(ST("I need a dollar amount for the coupon. For example: 200.", "Necesito una cantidad en dólares para el cupón. Por ejemplo: 200.")); return; }
+      d.camount = Math.round(n);
+      sigB1AskCouponApplies();
+      return;
+    }
+    case "couponpercent": {
+      const n = sigOpNum(t);
+      if (!(n >= 1 && n <= 100)) { sigOpAsk(ST("I need a percent from 1 to 100. For example: 25.", "Necesito un porcentaje de 1 a 100. Por ejemplo: 25.")); return; }
+      d.cpercent = Math.round(n);
+      sigB1AskCouponCap();
+      return;
+    }
+    case "couponcap": {
+      const n = sigOpNum(t);
+      if (!(n > 0)) { sigOpAsk(ST("Type the cap in dollars, or tap Skip, no cap.", "Escribe el tope en dólares, o toca Saltar, sin tope.")); return; }
+      d.ccap = Math.round(n);
+      sigB1AskCouponApplies();
+      return;
+    }
+    case "couponapplies":
+      if (!t) { sigOpAsk(ST("Say what the coupon is good for, in a few words.", "Di para qué sirve el cupón, en pocas palabras.")); return; }
+      d.capplies = t.slice(0, 120);
+      sigB1AskCouponExpires();
+      return;
+    case "couponexpires": {
+      const ms = Date.parse(t);
+      if (!Number.isFinite(ms)) { sigOpAsk(ST("I could not read that date. Try a date like Dec 31, or tap the 30 days standard.", "No pude leer esa fecha. Prueba con una fecha como 31 de diciembre, o toca lo estándar de 30 días.")); return; }
+      d.cexpires = new Date(ms).toISOString();
+      sigB1AskSpots();
+      return;
+    }
     case "comped":
       if (!t) { sigOpAsk(ST("Say exactly what the creator gets, in one line.", "Di exactamente lo que recibe el creador, en una línea.")); return; }
       d.comped = t.slice(0, 200);
@@ -6046,11 +6252,21 @@ function sigC1Confirm(p) {
     ...(b.deliverable ? [`${ST("Deliverable", "Entrega")}: ${b.deliverable}`] : []),
   ];
   const packetLine = o.businessAssetPacket ? `\n${ST("Their asset packet (links and talking points) will be inside your visit view.", "Su paquete (enlaces y puntos) estará en tu vista de visita.")}` : "";
+  // Build -84: the kind line states the deal's real payment in
+  // plain words. A coupon deal is never stated as cash: what
+  // the creator gets, what they owe, and the native-share-only
+  // rights, all before the yes.
+  const dv84 = deliverablesOfClient(o);
+  const kindLine = o.kind === "paid"
+    ? `$${fmtPrice(o.cashRate)} ${ST("paid; you keep 97%", "pagada; te quedas con el 97%")}`
+    : o.kind === "coupon"
+      ? `${ST("You'd get", "Recibirías")}: ${o.couponSummary || couponSummaryClient(o.coupon, o.businessName)}${o.coupon && o.coupon.expiresAt ? `, ${ST("expires", "vence")} ${fmtDay(o.coupon.expiresAt)}` : ""}. ${ST("You'd owe", "Debes")}: ${deliverablePhraseClient(o)} ${ST("within", "en")} ${windowPhraseClient(dv84.windowHours)}. ${ST("The coupon is the payment. No cash changes hands. Rights: native share only; ad use would be a separate license at your fee, with your approval.", "El cupón es el pago. No cambia dinero en efectivo. Derechos: solo compartir nativo; el uso en anuncios sería una licencia aparte a tu tarifa, con tu aprobación.")}`
+      : `${o.whatComped} (${ST("comp value", "valor")} $${fmtMoney(o.dollarCap)})`;
   // Visit rules (Build -60): a first acceptance through Sig shows
   // the combined rules inside this same yes-step; the yes carries
   // the attestation, exactly like the checkbox on the forms.
   const rulesLine = p.mode === "accept" && !visitRulesAttestedClient() ? `\n${ST("First visit rules, confirmed by your yes: your posts stay your honest opinion (no business can require a positive post), you disclose every comp as the FTC requires, and you post within 48 hours of the visit and paste the link in the app. A post that never lands doesn't count, and repeated misses can pause your account.", "Reglas de la primera visita, confirmadas con tu sí: tus publicaciones son tu opinión honesta (ningún negocio puede exigirte publicar en positivo), revelas cada cortesía como exige la FTC, y publicas dentro de 48 horas de la visita y pegas el enlace en la app. Una publicación que nunca llega no cuenta, y las faltas repetidas pueden pausar tu cuenta.")}` : "";
-  sigOpAsk(`${p.mode === "accept" ? ST("Accept this invite?", "¿Aceptar esta invitación?") : ST("Apply to this offer?", "¿Aplicar a esta oferta?")}\n"${o.title}" — ${o.businessName} · ${o.kind === "paid" ? `$${fmtPrice(o.cashRate)} ${ST("paid; you keep 97%", "pagada; te quedas con el 97%")}` : `${o.whatComped} (${ST("comp value", "valor")} $${fmtMoney(o.dollarCap)})`}${briefLines.length ? `\n${briefLines.join("\n")}` : ""}${packetLine}${rulesLine}\n${ST("Nothing is sent until you say yes.", "Nada se envía hasta que digas que sí.")}`, [
+  sigOpAsk(`${p.mode === "accept" ? ST("Accept this invite?", "¿Aceptar esta invitación?") : ST("Apply to this offer?", "¿Aplicar a esta oferta?")}\n"${o.title}" — ${o.businessName} · ${kindLine}${briefLines.length ? `\n${briefLines.join("\n")}` : ""}${packetLine}${rulesLine}\n${ST("Nothing is sent until you say yes.", "Nada se envía hasta que digas que sí.")}`, [
     { label: p.mode === "accept" ? ST("Yes, accept", "Sí, aceptar") : ST("Yes, apply", "Sí, aplicar"), primary: true, run: () => sigOpPick(ST("Yes", "Sí"), async () => sigC1Commit()) },
     { label: ST("Back to offers", "Volver a ofertas"), run: () => sigOpPick(ST("Back to offers", "Volver a ofertas"), async () => { state.sigFlow = null; await sigC1Start(); }) },
   ]);
@@ -9358,16 +9574,19 @@ function dealCardHtml(b, role) {
       + (role === "creator"
         ? (lane.escrowState === "held" ? `<div style="margin-top:4px"><strong>Money's in.</strong> Post by ${b.postDeadline ? fmtDate(b.postDeadline) : "the deadline on this card"}, paid the day it goes live.</div>` : lane.escrowState === "released" ? `<div style="margin-top:4px">Paid out: the post went live and the money moved.</div>` : `<div style="margin-top:4px">This booking was refunded to the business.</div>`)
         : `<div style="margin-top:4px">Money is held by SIGNL now and paid to the creator the day the post goes live.</div>`);
+  } else if (b.kind === "coupon") {
+    money = `<div>The coupon: ${esc(couponSummaryClient(b.coupon, b.businessName))}${b.coupon && b.coupon.expiresAt ? `, expires ${esc(fmtDay(b.coupon.expiresAt))}` : ""}. That coupon is the payment for this post. No cash changes hands on a coupon deal.</div>`;
   } else {
     money = `<div>The comp: ${esc(b.whatComped || "the experience")}, worth $${fmtMoney(b.dollarCap)}. No cash changes hands on a comped visit.</div>`;
   }
   const dc = b.dealCard || {};
   const mine = role === "business" ? dc.businessAt : dc.creatorAt;
   const theirs = role === "business" ? dc.creatorAt : dc.businessAt;
+  const dv84 = deliverablesOfClient(b);
   return `<div class="wcard" style="margin:12px 0 0">
     <p style="margin:0"><strong>The deal, in plain words</strong></p>
     <div class="small" style="margin-top:6px">
-      <div>What gets posted: 1 post plus 1 story that shares the post${b.postDeadline ? `, by ${fmtDate(b.postDeadline)}` : ", within 48 hours of the visit (a week at the outside)"}.</div>
+      <div>What gets posted: ${dv84.posts} post${dv84.posts === 1 ? "" : "s"}${dv84.story ? " plus 1 story that shares the post" : ", no story"}${b.postDeadline ? `, by ${fmtDate(b.postDeadline)}` : `, within ${windowPhraseClient(dv84.windowHours)} of the visit (a week at the outside)`}.</div>
       <div>Edits: one round of small fixes if something factual is off. Nobody can require a positive post.</div>
       <div>${rights}</div>
       ${money}
@@ -9385,6 +9604,7 @@ async function dealConfirm(bookingId) {
 // Disclosure Done For You: the line itself, one tap to copy,
 // and a confirmation the business can see on the booking.
 function disclosureLine(b) {
+  if (b.kind === "coupon") return `#ad — paid with a coupon by ${b.businessName || "this business"} through SIGNL`;
   return b.kind === "paid" || b.paidLane
     ? `#ad — paid partnership with ${b.businessName || "this business"} through SIGNL`
     : `#ad — comped by ${b.businessName || "this business"} through SIGNL`;
@@ -10276,10 +10496,10 @@ function homeActiveVisitHtml(b) {
   <section class="panel">
     <div class="flex-between">
       <p class="ui-kicker" style="margin:0">Active visit</p>
-      ${lane ? `<span class="badge tier">Paid visit</span>` : `<span class="badge info">Comp visit</span>`}
+      ${lane ? `<span class="badge tier">Paid visit</span>` : b.kind === "coupon" ? `<span class="badge info">Coupon visit</span>` : `<span class="badge info">Comp visit</span>`}
     </div>
     <h3 class="home-h">${esc(b.title)} at ${esc(b.businessName)}</h3>
-    <p class="small muted" style="margin:0">Comp: ${esc(b.whatComped)} (cap $${fmtMoney(b.dollarCap)})${lane ? ` &middot; Your rate $${fmtPrice(lane.rate)}: you receive $${fmtMoney(lane.creatorNet)}` : ""}</p>
+    <p class="small muted" style="margin:0">${b.kind === "coupon" ? `Coupon: ${esc(couponSummaryClient(b.coupon, b.businessName))}` : `Comp: ${esc(b.whatComped)} (cap $${fmtMoney(b.dollarCap)})`}${lane ? ` &middot; Your rate $${fmtPrice(lane.rate)}: you receive $${fmtMoney(lane.creatorNet)}` : ""}</p>
     ${homeTrackerHtml(b)}
     ${clockBlock}
     ${codeBlock}
@@ -10410,7 +10630,7 @@ function homeOpportunitiesHtml(offers, u, bookings, applications) {
       ${briefBlockHtml(o)}
       <p class="small muted">${o.windowMode === "thisweek" ? "Visit this week — ends Sunday" : "Within 7 days of accepting"} &middot; ${left} of ${o.spots} spot${o.spots === 1 ? "" : "s"} left.${o.visitWindow ? ` Note from the business: ${esc(o.visitWindow)}` : ""}</p>
       <div class="slot-foot">
-        <div><div class="slot-price">$${fmtPrice(o.kind === "paid" ? o.cashRate : o.dollarCap)}</div><div class="slot-note">${o.kind === "paid" ? "Rate" : "Comp value"}</div></div>
+        <div><div class="slot-price">${o.kind === "coupon" ? esc(couponFaceLabelClient(o.coupon)) : `$${fmtPrice(o.kind === "paid" ? o.cashRate : o.dollarCap)}`}</div><div class="slot-note">${o.kind === "paid" ? "Rate" : o.kind === "coupon" ? "Coupon value" : "Comp value"}</div></div>
         <div class="slot-actions">
           ${actions}
         </div>
@@ -11273,7 +11493,7 @@ async function loadCreatorHome() {
     // Activity (§6.1): invites, applications, visits, posts,
     // licenses, Momentum gains, and reviews — from real records.
     const feed = [];
-    for (const o of invites) feed.push({ kind: "invites", icon: "deck", at: o.createdAt, title: `Invite: ${o.title || "Untitled offer"}`, meta: `${o.businessName || ""}${o.kind === "paid" ? " · Paid booking" : " · Comped visit"}`, btn: "View", act: () => { state.crOffersSeg = "invited"; go("dashboard", "Offers"); } });
+    for (const o of invites) feed.push({ kind: "invites", icon: "deck", at: o.createdAt, title: `Invite: ${o.title || "Untitled offer"}`, meta: `${o.businessName || ""}${o.kind === "paid" ? " · Paid booking" : o.kind === "coupon" ? " · Coupon deal" : " · Comped visit"}`, btn: "View", act: () => { state.crOffersSeg = "invited"; go("dashboard", "Offers"); } });
     for (const a of applications) { const ab = appOfferBits(a); feed.push({ kind: "applications", icon: "notice", at: a.createdAt, title: ab.title ? `Application sent: ${ab.title}` : ab.business ? `Application sent to ${ab.business}` : "Application sent", meta: a.status === "applied" ? "Waiting on the business" : a.status === "selected" ? "You're in" : "Not this time", btn: null }); }
     for (const b of bookings) {
       if (b.post) feed.push({ kind: "posts", icon: "visits", at: b.post.firstAt || b.post.updatedAt, title: `Post live: ${b.title}`, meta: `${b.businessName || ""} · ${b.state === "posted_on_time" ? "on time" : b.state === "posted_late" ? "late" : "delivered"}`, btn: "Open", act: () => { state.visitsSeg = "done"; state.visitFocus = b.id; go("dashboard", "My Visits"); } });
@@ -11824,7 +12044,7 @@ async function loadDirectOffers() {
             <div class="slot-meta"><span>${o.bookedCount}/${o.spots} spots booked</span><span>${o.creatorId ? "Sent directly to you" : "Open to your market"}</span></div>
           </div>
         </div>
-        <div class="slot-value"><span class="sv-num">$${fmtPrice(o.kind === "paid" ? o.cashRate : o.dollarCap)}</span><span class="sv-lbl">${o.kind === "paid" ? "Your rate · you keep 97%" : "Comp value"}</span></div>
+        <div class="slot-value"><span class="sv-num">${o.kind === "coupon" ? esc(couponFaceLabelClient(o.coupon)) : `$${fmtPrice(o.kind === "paid" ? o.cashRate : o.dollarCap)}`}</span><span class="sv-lbl">${o.kind === "paid" ? "Your rate · you keep 97%" : o.kind === "coupon" ? "Coupon value" : "Comp value"}</span></div>
         <div class="slot-deal">
         ${dealRowsHtml(o)}
         ${o.kind === "paid" && o.paidBrief ? `<p class="small"><strong>Key points:</strong> ${esc(o.paidBrief)}</p>` : ""}
@@ -11958,7 +12178,7 @@ function offerFeedCardHtml(o, opts) {
             <div class="slot-meta"><span>Redeem ${fmtDay(o.windowStartAt)} to ${fmtDay(o.windowEndAt)}</span><span>${spotsLeft} spot${spotsLeft === 1 ? "" : "s"} left</span>${o.businessNeighborhood ? `<span>${esc(o.businessNeighborhood)}</span>` : ""}</div>
           </div>
         </div>
-        <div class="slot-value"><span class="sv-num">$${fmtPrice(o.kind === "paid" ? o.cashRate : o.dollarCap)}</span><span class="sv-lbl">${o.kind === "paid" ? "Your rate · you keep 97%" : "Comp value"}</span></div>
+        <div class="slot-value"><span class="sv-num">${o.kind === "coupon" ? esc(couponFaceLabelClient(o.coupon)) : `$${fmtPrice(o.kind === "paid" ? o.cashRate : o.dollarCap)}`}</span><span class="sv-lbl">${o.kind === "paid" ? "Your rate · you keep 97%" : o.kind === "coupon" ? "Coupon value" : "Comp value"}</span></div>
         <div class="slot-deal">
         ${dealRowsHtml(o)}
         ${o.kind === "paid" && o.paidBrief ? `<p class="small"><strong>Key points:</strong> ${esc(o.paidBrief)}</p>` : ""}
@@ -12401,7 +12621,7 @@ async function loadMyApplications() {
           <div class="slot-body">
             <div class="slot-badges"><span class="badge tier">${esc(a.offer.businessName)}</span>${badge(a)}</div>
             <div class="slot-name">${esc(a.offer.title)}</div>
-            <div class="slot-meta"><span>${esc(a.offer.businessName)}</span><span>${a.offer.kind === "paid" ? `Cash $${fmtPrice(a.offer.cashRate)}` : `Comp: ${esc(a.offer.whatComped)} (value $${fmtMoney(a.offer.dollarCap)})`}</span><span>applied ${fmtDate(a.appliedAt)}</span>${a.offer.windowStartAt ? `<span>redeem ${fmtDate(a.offer.windowStartAt)} to ${fmtDate(a.offer.windowEndAt)}</span>` : ""}</div>
+            <div class="slot-meta"><span>${esc(a.offer.businessName)}</span><span>${a.offer.kind === "paid" ? `Cash $${fmtPrice(a.offer.cashRate)}` : a.offer.kind === "coupon" ? `Coupon: ${esc(a.offer.whatComped)}` : `Comp: ${esc(a.offer.whatComped)} (value $${fmtMoney(a.offer.dollarCap)})`}</span><span>applied ${fmtDate(a.appliedAt)}</span>${a.offer.windowStartAt ? `<span>redeem ${fmtDate(a.offer.windowStartAt)} to ${fmtDate(a.offer.windowEndAt)}</span>` : ""}</div>
           </div>
         </div>
         ${(a.status === "released" || a.status === "expired") && a.releaseReason ? `<p class="small">${esc(RELEASE_TEXT[a.releaseReason] || "This application ended.")}</p>` : ""}
@@ -12635,7 +12855,7 @@ function visitCard(b, role) {
   let html = `
   <div class="card visit-card mb" id="visit-${b.id}">
     <div class="flex-between"><strong>${esc(b.title)}</strong>${complianceBadge(b)}</div>
-    <p class="small muted">${role === "creator" ? esc(b.businessName) : "@" + esc(b.creatorHandle) + " (" + esc(b.creatorName) + ")"} &middot; ${esc(marketDisplayName(b.market))} &middot; Comp: ${esc(b.whatComped)} (cap $${fmtMoney(b.dollarCap)})${b.kind === "paid" || b.paidLane ? "" : ` &middot; ${coversLine(b)}`} &middot; Visit: ${esc(b.visitDate || b.visitWindow || "Flexible")}</p>`;
+    <p class="small muted">${role === "creator" ? esc(b.businessName) : "@" + esc(b.creatorHandle) + " (" + esc(b.creatorName) + ")"} &middot; ${esc(marketDisplayName(b.market))} &middot; ${b.kind === "coupon" ? `Coupon: ${esc(couponSummaryClient(b.coupon, b.businessName))}` : `Comp: ${esc(b.whatComped)} (cap $${fmtMoney(b.dollarCap)})`}${b.kind === "paid" || b.paidLane || b.kind === "coupon" ? "" : ` &middot; ${coversLine(b)}`} &middot; Visit: ${esc(b.visitDate || b.visitWindow || "Flexible")}</p>`;
   if (role === "creator" && b.redeemedAt && !post && b.postDeadline) {
     // Visual pass: the post countdown leads the card instead of
     // sitting under the honor form below the fold. Same ticking
@@ -12696,7 +12916,7 @@ function visitCard(b, role) {
     html += `
     <div class="grid cols-2">
       <div>
-        <p class="small muted" style="margin-bottom:0">Your one-time visit code. Show this at the visit; staff redeem it in the app and your 48 hour clock starts at that moment.</p>
+        <p class="small muted" style="margin-bottom:0">Your one-time visit code. Show this at the visit; staff redeem it in the app and your post clock starts at that moment.</p>
         <div class="code-display">${esc(b.code)}</div>
         ${b.redeemBy ? `<p class="small"><strong>Use by ${esc(fmtDate(b.redeemBy))}</strong>. Come any time inside your window; no appointment needed. If the window passes unused, the offer expires and counts as a no-show.</p>` : ""}
         ${b.checkinAt ? `<p class="small">You checked in at ${fmtDate(b.checkinAt)}. Waiting for the business to confirm.</p>` : `<button class="btn small-btn ghost" onclick="checkIn('${b.id}')">I am here (check in)</button>`}
@@ -12721,7 +12941,7 @@ function visitCard(b, role) {
   }
   if (role === "business" && b.codeStatus === "issued") {
     html += `<p class="small">Booking code <strong>${esc(b.code)}</strong>. Redeem it at the Counter tab when the creator is with you${b.checkinAt ? ", or confirm the visit below (creator checked in " + fmtDate(b.checkinAt) + ")" : ", or confirm the visit below if the code cannot be scanned"}.</p>
-    <button class="btn small-btn" onclick="confirmVisit('${b.id}')">Confirm visit</button> <span class="small muted">Starts the 48-hour post clock.</span>`;
+    <button class="btn small-btn" onclick="confirmVisit('${b.id}')">Confirm visit</button> <span class="small muted">Starts the post clock.</span>`;
   }
   if (b.redeemedAt) {
     html += `<p class="small muted">Redeemed ${fmtDate(b.redeemedAt)} (${b.redeemMethod === "business_confirm" ? "business confirmed" : "code at counter"}). Post deadline: <strong>${fmtDate(b.postDeadline)}</strong>.</p>`;
@@ -12731,7 +12951,7 @@ function visitCard(b, role) {
     html += `
     <form onsubmit="return submitPost(event, '${b.id}')">
       <h4 style="margin:10px 0 4px">Post your proof</h4>
-      ${late ? `<p class="small"><strong>This post is past its 48 hour deadline.</strong> Post within 48 hours for full credit. A late post inside the catch-up window still counts, and the missed deadline stays on your record. No link, no check-off.</p>` : `<p class="small muted">Your check-off is the post link itself. Paste it here and the visit is marked delivered${b.compliance && b.compliance.deadline ? ` (deadline ${esc(fmtDate(b.compliance.deadline))})` : ""}. Post within 48 hours for full credit. A late post inside the catch-up window still counts.</p>`}
+      ${late ? `<p class="small"><strong>This post is past its ${windowPhraseClient(deliverablesOfClient(b).windowHours)} deadline.</strong> Post within ${windowPhraseClient(deliverablesOfClient(b).windowHours)} for full credit. A late post inside the catch-up window still counts, and the missed deadline stays on your record. No link, no check-off.</p>` : `<p class="small muted">Your check-off is the post link itself. Paste it here and the visit is marked delivered${b.compliance && b.compliance.deadline ? ` (deadline ${esc(fmtDate(b.compliance.deadline))})` : ""}. Post within ${windowPhraseClient(deliverablesOfClient(b).windowHours)} for full credit. A late post inside the catch-up window still counts.</p>`}
       <div class="field"><label>Link to your ${esc(primaryLabelClient((state.user && state.user.creator && state.user.creator.primaryPlatform) || "instagram"))} post</label><input id="post-url-${b.id}" type="url" placeholder="https://${esc(primaryMetaClient((state.user && state.user.creator && state.user.creator.primaryPlatform) || "instagram").host)}..." required></div>
       <label class="ckrow"><input type="checkbox" class="ckbox" id="post-disc-${b.id}"><span>My post clearly discloses the comp (for example #ad or "comped by the business"), as the FTC requires.</span></label>
       <p class="small muted">Post your honest experience. Nobody can require a positive post.</p>
@@ -13478,7 +13698,7 @@ function renderFoundingContentTab() {
   ${wsHead("Posts & licenses", { sub: "Every post about you, and the ones you can reuse." })}
   <section class="wcard">
     <h3 style="margin-top:0">Nothing here yet</h3>
-    <p>When a creator posts about your business, the post shows up here. A post from a paid booking carries one standard license: 90 days of repost and paid ad use. A post from a comped visit is share only, and you can ask the creator for a license right from this page.</p>
+    <p>When a creator posts about your business, the post shows up here. A post from a paid booking carries one standard license: 90 days of repost and paid ad use. A post from a comped visit or a coupon deal is share only, and you can ask the creator for a license right from this page.</p>
   </section>`;
 }
 
@@ -14674,7 +14894,7 @@ function libRowsHtml(h, mode, licMap) {
     const canLicense = mode === "creator" && r.license && r.license.type === "native" && lic && lic.fee > 0 && lic.postId;
     return `
     <div class="lib-row"><div class="lib-main"><div class="lib-title">${esc(r.title)}</div>
-    <div class="lib-meta">@${esc(r.creatorHandle)} · ${r.postedAt ? fmtDay(r.postedAt) : ""} · ${fmtNum(r.views)} views · ${fmtNum(r.likes)} likes · ${fmtNum(r.localReach || 0)} local reach · ${r.onTime ? "on time" : "late"}${r.redemptions && r.redemptions.count ? ` · ${r.redemptions.count} code uses · $${fmtMoney(r.redemptions.basketTotal)} rung up` : ""}${r.postUrl ? ` · <a href="${esc(r.postUrl)}" target="_blank" rel="noopener">View post</a>` : ""}</div>${licWindowLine(r.license)}</div>${licPillHtml(r.license)}${canLicense ? (lic.requested ? `<span class="lic-pill">License requested</span>` : `<button type="button" class="btn small-btn ws-primary" onclick="requestLicense('${lic.postId}', ${lic.fee})">Request license</button>`) : ""}</div>`;
+    <div class="lib-meta">@${esc(r.creatorHandle)} · ${r.postedAt ? fmtDay(r.postedAt) : ""} · ${fmtNum(r.views)} views · ${fmtNum(r.likes)} likes · ${fmtNum(r.localReach || 0)} local reach · ${r.onTime ? "on time" : "late"}${r.kind === "coupon" ? " · Coupon post" : r.kind === "paid" ? " · Paid post" : ""}${r.redemptions && r.redemptions.count ? ` · ${r.redemptions.count} code uses · $${fmtMoney(r.redemptions.basketTotal)} rung up` : ""}${r.postUrl ? ` · <a href="${esc(r.postUrl)}" target="_blank" rel="noopener">View post</a>` : ""}</div>${licWindowLine(r.license)}</div>${licPillHtml(r.license)}${canLicense ? (lic.requested ? `<span class="lic-pill">License requested</span>` : `<button type="button" class="btn small-btn ws-primary" onclick="requestLicense('${lic.postId}', ${lic.fee})">Request license</button>`) : ""}</div>`;
   }).join("")}</div>`;
 }
 async function renderContentTab() {
@@ -15663,6 +15883,18 @@ function duplicateOffer(offerId) {
     packetAttach: !!o.assetPacketAttached,
     packetManual: true,
     play: o.play || null,
+    // Build -84: a duplicated coupon deal brings its coupon, and
+    // every duplicated deal brings its deliverables.
+    ctype: (o.coupon && o.coupon.type) || "store_credit",
+    camount: o.coupon && o.coupon.amount != null ? String(o.coupon.amount) : "",
+    cpercent: o.coupon && o.coupon.percent != null ? String(o.coupon.percent) : "",
+    ccap: o.coupon && o.coupon.cap != null ? String(o.coupon.cap) : "",
+    capplies: (o.coupon && o.coupon.appliesTo) || "",
+    cexpires: o.coupon && o.coupon.expiresAt ? String(o.coupon.expiresAt).slice(0, 10) : "",
+    dposts: o.deliverables ? String(deliverablesOfClient(o).posts) : "",
+    dstory: o.deliverables ? deliverablesOfClient(o).story : undefined,
+    dwindow: o.deliverables ? String(deliverablesOfClient(o).windowHours) : "",
+    deliverablesTouched: !!o.deliverables,
   };
   state.offersSeg = "live";
   state.tab = "My Offers";
@@ -15762,6 +15994,7 @@ function packageSummaryHtml(planId, planName) {
     <details class="deal-details"><summary>The Standard Visit, in full</summary><div class="dd-body">
       <p class="small">${esc(standardVisit().summary)}</p>
       <p class="small"><strong>On a comp visit, you can:</strong> ${comp.can.map(esc).join("; ")}. They can't: ${comp.cannot.map(esc).join("; ")}. <strong>On a paid visit, you can also</strong> repost the post on your own feed and run it as an ad for 90 days from the post date. A comped post can be licensed for the same 90 days at the creator's listed licensing fee, with their approval. Rights follow the visit, not your plan${planName ? ` (${esc(planName)})` : ""}.</p>
+      <p class="small"><strong>Coupon deals:</strong> you can also pay with a coupon (money off, a percent off, or store credit). The creator accepts the coupon as their payment for the post, and its rights are native share only, exactly like a comped post. Deliverables on every kind of deal start at the recommended standard and are yours to edit in the composer.</p>
     </div></details>
     <p class="small" style="margin:12px 0 0;font-weight:700">Meal-for-two comps outperform solo.</p>
   </div>`;
@@ -15826,6 +16059,16 @@ function offerDraftSync() {
   if (kind) d.kind = kind;
   const covers = (document.querySelector("input[name='o2-covers']:checked") || {}).value;
   if (covers) d.covers = covers;
+  // Build -84: coupon fields + the deliverables editor ride the
+  // same draft, so a re-render (kind switch, template pick)
+  // never loses them.
+  const ctype = (document.querySelector("input[name='o2-ctype']:checked") || {}).value;
+  if (ctype) d.ctype = ctype;
+  set("camount", "o2-camount"); set("cpercent", "o2-cpercent"); set("ccap", "o2-ccap");
+  set("capplies", "o2-capplies"); set("cexpires", "o2-cexpires");
+  set("dposts", "o2-dposts"); set("dwindow", "o2-dwindow");
+  const dstory = document.getElementById("o2-dstory");
+  if (dstory) d.dstory = !!dstory.checked;
   const bgoal = (document.querySelector("input[name='o2-bgoal']:checked") || {}).value;
   if (bgoal !== undefined) d.briefGoal = bgoal || "";
   const packet = document.getElementById("o2-packet");
@@ -15964,8 +16207,8 @@ function offerValidateField(key) {
   const d = state.offerDraft;
   const kind = d.kind || "comp";
   if (key === "title") return offerFieldError("title", !String(d.title || "").trim() ? "Give the offer a title." : "");
-  if (key === "comped") return offerFieldError("comped", !String(d.comped || "").trim() ? "Say exactly what is comped." : "");
-  if (key === "cap") return kind === "paid" ? offerFieldError("cap", "") : offerFieldError("cap", !(Number(d.cap) > 0) ? "Enter the comp value in dollars." : "");
+  if (key === "comped") return kind === "coupon" ? offerFieldError("comped", "") : offerFieldError("comped", !String(d.comped || "").trim() ? "Say exactly what is comped." : "");
+  if (key === "cap") return kind !== "comp" ? offerFieldError("cap", "") : offerFieldError("cap", !(Number(d.cap) > 0) ? "Enter the comp value in dollars." : "");
   if (key === "rate") return kind !== "paid" ? offerFieldError("rate", "") : offerFieldError("rate", !(Number(d.rate) >= 50) ? "Enter the cash rate. Cash offers start at $50." : "");
   if (key === "spots") {
     const v = String(d.spots === undefined ? "" : d.spots).trim();
@@ -15977,9 +16220,9 @@ function offerValidateField(key) {
 
 const OFFER_INFO = {
   lane: { title: "Open or direct", body: "An open offer posts your terms to your market and creators apply. A direct offer goes to one creator you pick in Discover, and only they see it." },
-  templates: { title: "Templates", body: "Templates prefill a proven offer shape: title, spots, window, and a note. Edit anything after picking one. On a comp offer the deliverable never changes: the Standard Visit. On a cash offer, the booking terms set the deliverables." },
+  templates: { title: "Templates", body: "Templates prefill a proven offer shape: title, spots, window, and a note. Edit anything after picking one, including the deliverables: every template starts from the recommended standard for its kind of deal." },
   title: { title: "Offer title", body: "Name the experience, not the deal. For example: Dinner for two on us. Creators scan titles first, so say what they get." },
-  kind: { title: "How the creator is paid", body: "Comp means your product is the payment: the meal, service, or experience is on you, and the deliverable is the Standard Visit. Cash means you pay the creator a rate for a booking whose deliverables the booking terms set. Pick one; an offer is never both." },
+  kind: { title: "How the creator is paid", body: "Comp means your product is the payment: the meal, service, or experience is on you. Cash means you pay the creator a rate for a booking. Coupon means a coupon is the payment: money off, a percent off, or store credit, and the creator accepts it as their pay for the post. Every kind starts from SIGNL's recommended deliverables, and you can edit them below. Pick one; an offer is never two kinds at once." },
   comped: { title: "What is comped", body: "Say exactly what the creator gets, in one line. For example: Two entrees and two drinks. This line prints on the offer, the visit card, and the staff screen." },
   covers: { title: "Who the comp covers", body: "One person is just the creator. Two people adds a guest. Creators post more when they can bring a guest, and meal for two comps outperform solo comps." },
   cap: { title: "Comp value / dollar cap", body: "The most the comp can ring up, at menu value. For example: a $100 cap on a dinner for two. Higher caps inside the typical range for a tier fill first." },
@@ -16023,6 +16266,91 @@ function jumpToOffer(offerId) {
   return false;
 }
 
+// ---------- Build -84: the composer's deliverables editor ----------
+// The draft's deliverables for a kind: the business's own values
+// once they touch the editor, the kind's recommended standard
+// until then.
+function draftDeliverables(d, kind) {
+  const std = deliverableStandardClient(kind);
+  const dd = d || {};
+  return {
+    posts: dd.dposts !== undefined && dd.dposts !== "" ? Math.min(5, Math.max(1, parseInt(dd.dposts, 10) || std.posts)) : std.posts,
+    story: dd.dstory !== undefined ? !!dd.dstory : std.story,
+    windowHours: dd.dwindow !== undefined && dd.dwindow !== "" ? parseInt(dd.dwindow, 10) || std.windowHours : std.windowHours,
+  };
+}
+function deliverablesEditorHtml(d, kind) {
+  const std = deliverableStandardClient(kind);
+  const cur = draftDeliverables(d, kind);
+  const rec = (id, on) => `<span class="badge info" id="${id}"${on ? "" : ` style="display:none"`}>Recommended</span>`;
+  return `<div class="field"><label>What the creator owes</label>
+    <p class="small muted" style="margin:0 0 8px">These start at SIGNL's recommended standard for this kind of deal, marked Recommended. Change anything and the creator sees exactly what you set before they accept.</p>
+    <div class="form-2col">
+      <div class="field"><label>Posts ${rec("o2-drec-posts", cur.posts === std.posts)}</label><input type="number" id="o2-dposts" min="1" max="5" step="1" value="${cur.posts}" oninput="offerDeliverablesTouch()"></div>
+      <div class="field"><label>Post within ${rec("o2-drec-window", cur.windowHours === std.windowHours)}</label>
+        <select id="o2-dwindow" onchange="offerDeliverablesTouch()">
+          ${[24, 48, 72, 168].map((h) => `<option value="${h}" ${cur.windowHours === h ? "selected" : ""}>${h === 24 ? "24 hours" : h === 48 ? "48 hours" : h === 72 ? "3 days" : "1 week"}</option>`).join("")}
+        </select></div>
+    </div>
+    <label class="ckrow"><input type="checkbox" class="ckbox" id="o2-dstory" ${cur.story ? "checked" : ""} onchange="offerDeliverablesTouch()"><span>Include 1 story that shares the post ${rec("o2-drec-story", cur.story === std.story)}</span></label>
+    ${kind === "paid" ? `<p class="small muted" style="margin:8px 0 0">A paid booking also includes the standard license: repost and ad use for 90 days from the post date. That part is set by SIGNL and cannot be changed.</p>` : ""}
+    <p style="margin:8px 0 0"><button type="button" class="linklike" onclick="return offerDeliverablesReset()">Back to the recommended standard</button></p>
+  </div>`;
+}
+function offerDeliverablesBadges() {
+  const kind = (document.querySelector("input[name='o2-kind']:checked") || {}).value || "comp";
+  const std = deliverableStandardClient(kind);
+  const set = (id, on) => { const el = document.getElementById(id); if (el) el.style.display = on ? "" : "none"; };
+  set("o2-drec-posts", parseInt((document.getElementById("o2-dposts") || {}).value, 10) === std.posts);
+  set("o2-drec-window", parseInt((document.getElementById("o2-dwindow") || {}).value, 10) === std.windowHours);
+  const storyEl = document.getElementById("o2-dstory");
+  set("o2-drec-story", !!storyEl && storyEl.checked === std.story);
+}
+function offerDeliverablesTouch() {
+  state.offerDraft = state.offerDraft || {};
+  state.offerDraft.deliverablesTouched = true;
+  offerDraftSync();
+  offerDeliverablesBadges();
+}
+function offerDeliverablesReset() {
+  const kind = (document.querySelector("input[name='o2-kind']:checked") || {}).value || (state.offerDraft && state.offerDraft.kind) || "comp";
+  const std = deliverableStandardClient(kind);
+  state.offerDraft = state.offerDraft || {};
+  state.offerDraft.dposts = String(std.posts);
+  state.offerDraft.dstory = std.story;
+  state.offerDraft.dwindow = String(std.windowHours);
+  state.offerDraft.deliverablesTouched = false;
+  loadMyOffers();
+  return false;
+}
+// Kind switch: until the business edits the deliverables
+// themselves, the editor follows the newly picked kind's
+// recommended standard. The composer re-renders from the draft,
+// the same pattern as the lane switch.
+function offerKindChanged() {
+  offerDraftSync();
+  const d = state.offerDraft || (state.offerDraft = {});
+  if (!d.deliverablesTouched) {
+    const std = deliverableStandardClient(d.kind || "comp");
+    d.dposts = String(std.posts);
+    d.dstory = std.story;
+    d.dwindow = String(std.windowHours);
+  }
+  loadMyOffers();
+}
+function offerCouponTypeUpdate() {
+  offerDraftSync();
+  const t = (document.querySelector("input[name='o2-ctype']:checked") || {}).value || "store_credit";
+  const amt = document.getElementById("o2-camount-wrap");
+  const pct = document.getElementById("o2-cpercent-wrap");
+  const cap = document.getElementById("o2-ccap-wrap");
+  const lbl = document.getElementById("o2-camount-label");
+  if (amt) amt.style.display = t === "percent_off" ? "none" : "";
+  if (pct) pct.style.display = t === "percent_off" ? "" : "none";
+  if (cap) cap.style.display = t === "percent_off" ? "" : "none";
+  if (lbl) lbl.textContent = t === "store_credit" ? "Store credit ($)" : "Money off ($)";
+}
+
 function compNudgeUpdate() {
   const el = document.getElementById("o2-compnudge");
   if (!el) return;
@@ -16047,8 +16375,16 @@ function offerCoachUpdate() {
   const includes = ((document.getElementById("o2-includes") || {}).value || "").trim();
   const experience = ((document.getElementById("o2-experience") || {}).value || "").trim();
   const tiers = [...document.querySelectorAll("input[name='o2-tier']:checked")].map((x) => x.value);
+  const couponOk = (() => {
+    if (kind !== "coupon") return false;
+    const t = (document.querySelector("input[name='o2-ctype']:checked") || {}).value || "store_credit";
+    const v = t === "percent_off"
+      ? Number((document.getElementById("o2-cpercent") || {}).value) >= 1
+      : Number((document.getElementById("o2-camount") || {}).value) >= 1;
+    return v && String((document.getElementById("o2-capplies") || {}).value || "").trim().length > 0;
+  })();
   const checks = [
-    { label: kind === "paid" ? `Cash rate stated (floor $${fmtPrice(g.paidFloor)})` : "Comp value stated", ok: kind === "paid" ? rate >= g.paidFloor : cap > 0 },
+    { label: kind === "paid" ? `Cash rate stated (floor $${fmtPrice(g.paidFloor)})` : kind === "coupon" ? "Coupon value stated" : "Comp value stated", ok: kind === "paid" ? rate >= g.paidFloor : kind === "coupon" ? couponOk : cap > 0 },
     { label: "Redemption window is 3+ days", ok: windowDays >= 3 },
     { label: "What is included is written out", ok: includes.length >= 12 },
     { label: "The experience is described", ok: experience.length >= 12 },
@@ -16063,9 +16399,18 @@ function offerCoachUpdate() {
   const briefWrap = document.getElementById("o2-brief-wrap");
   if (briefWrap) briefWrap.style.display = kind === "paid" ? "" : "none";
   const capWrap = document.getElementById("o2-cap-wrap");
-  if (capWrap) capWrap.style.display = kind === "paid" ? "none" : "";
+  if (capWrap) capWrap.style.display = kind === "comp" ? "" : "none";
   const rateWrap = document.getElementById("o2-rate-wrap");
   if (rateWrap) rateWrap.style.display = kind === "paid" ? "" : "none";
+  // Build -84: a coupon deal swaps the comp fields for the
+  // coupon fields. Covers and "what is comped" are comp
+  // concepts; the coupon block carries what the coupon is for.
+  const couponWrap = document.getElementById("o2-coupon-wrap");
+  if (couponWrap) couponWrap.style.display = kind === "coupon" ? "" : "none";
+  const coversWrap = document.getElementById("o2-covers-wrap");
+  if (coversWrap) coversWrap.style.display = kind === "coupon" ? "none" : "";
+  const compedWrap = document.getElementById("o2-comped-wrap");
+  if (compedWrap) compedWrap.style.display = kind === "coupon" ? "none" : "";
   const warn = document.getElementById("o2-dignity");
   if (warn) {
     let html = "";
@@ -16087,6 +16432,9 @@ function offerCoachUpdate() {
     }
     warn.innerHTML = html;
   }
+  // Build -84: the coupon type's sub-fields follow the picked
+  // coupon type on first paint as well as on change.
+  if (kind === "coupon") offerCouponTypeUpdate();
   // V5: keep the drag bars painted in step with the values
   // (template picks and chip fills write inputs directly).
   dragInit();
@@ -16224,11 +16572,12 @@ async function loadMyOffers() {
       </div>
       <div class="field"><label>How is the creator paid? <span class="req-tag">Required</span> ${infoBtn("kind")}</label>
         <div class="radio-stack">
-        <label class="radio-chip"><input type="radio" name="o2-kind" value="comp" ${dft.kind === "paid" ? "" : "checked"} onchange="offerCoachUpdate()"><span>Comp: your product, on you</span></label>
-        <label class="radio-chip"><input type="radio" name="o2-kind" value="paid" ${dft.kind === "paid" ? "checked" : ""} onchange="offerCoachUpdate()"><span>Cash: a rate for a paid booking</span></label>
+        <label class="radio-chip"><input type="radio" name="o2-kind" value="comp" ${dft.kind === "paid" || dft.kind === "coupon" ? "" : "checked"} onchange="offerKindChanged()"><span>Comp: your product, on you</span></label>
+        <label class="radio-chip"><input type="radio" name="o2-kind" value="paid" ${dft.kind === "paid" ? "checked" : ""} onchange="offerKindChanged()"><span>Cash: a rate for a paid booking</span></label>
+        <label class="radio-chip"><input type="radio" name="o2-kind" value="coupon" ${dft.kind === "coupon" ? "checked" : ""} onchange="offerKindChanged()"><span>Coupon: a coupon is the payment</span></label>
         </div>
       </div>
-      <div class="field"><label>Exactly what is comped <span class="req-tag">Required</span> ${infoBtn("comped")}</label><input id="o2-comped" value="${dv(dft.comped)}" placeholder="Two entrees and two drinks" oninput="offerCoachUpdate()" onblur="offerValidateField('comped')"><p class="field-err" id="err-o2-comped"></p>${mode === "direct" ? chipsRowHtml("comp", "o2", target && target.profile ? target.profile.tierBand : null, { comp: dft.comped, cap: dft.cap }) : ""}</div>
+      <div class="field" id="o2-comped-wrap"><label>Exactly what is comped <span class="req-tag">Required</span> ${infoBtn("comped")}</label><input id="o2-comped" value="${dv(dft.comped)}" placeholder="Two entrees and two drinks" oninput="offerCoachUpdate()" onblur="offerValidateField('comped')"><p class="field-err" id="err-o2-comped"></p>${mode === "direct" ? chipsRowHtml("comp", "o2", target && target.profile ? target.profile.tierBand : null, { comp: dft.comped, cap: dft.cap }) : ""}</div>
       <div class="field" id="o2-covers-wrap"><label>How many people does the comp cover? <span class="req-tag">Required</span> ${infoBtn("covers")}</label>
         <div class="radio-stack">
         <label class="radio-chip"><input type="radio" name="o2-covers" value="1" ${dft.covers === "2" ? "" : "checked"} onchange="offerDraftSync()"><span>1 person: just the creator</span></label>
@@ -16243,6 +16592,20 @@ async function loadMyOffers() {
       <div class="form-2col">
         <div class="field" id="o2-cap-wrap"><label>Comp value / dollar cap ($) <span class="req-tag">Required</span> ${infoBtn("cap")}</label><input type="number" id="o2-cap" min="1" placeholder="100" value="${dv(dft.cap)}" oninput="offerCoachUpdate()" onblur="offerValidateField('cap')"><p class="field-err" id="err-o2-cap"></p><p class="small" id="o2-compnudge" style="margin:4px 0 0"></p></div>
         <div class="field" id="o2-rate-wrap" style="display:none"><label>Cash rate ($) <span class="req-tag">Required</span> ${infoBtn("rate")}</label><input type="number" id="o2-rate" min="50" step="1" placeholder="150" value="${dv(dft.rate)}" oninput="offerCoachUpdate()" onblur="offerValidateField('rate')"><p class="field-err" id="err-o2-rate"></p><p class="small muted">You pay rate + 3%. Creator keeps 97%. Min $50.</p></div>
+        <div class="field" id="o2-coupon-wrap" style="display:none"><label>The coupon <span class="req-tag">Required</span></label>
+          <div class="radio-stack">
+          <label class="radio-chip"><input type="radio" name="o2-ctype" value="store_credit" ${!dft.ctype || dft.ctype === "store_credit" ? "checked" : ""} onchange="offerCouponTypeUpdate()"><span>Store credit</span></label>
+          <label class="radio-chip"><input type="radio" name="o2-ctype" value="amount_off" ${dft.ctype === "amount_off" ? "checked" : ""} onchange="offerCouponTypeUpdate()"><span>Money off</span></label>
+          <label class="radio-chip"><input type="radio" name="o2-ctype" value="percent_off" ${dft.ctype === "percent_off" ? "checked" : ""} onchange="offerCouponTypeUpdate()"><span>Percent off</span></label>
+          </div>
+          <div class="form-2col" style="margin-top:10px">
+            <div class="field" id="o2-camount-wrap"><label id="o2-camount-label">Store credit ($)</label><input type="number" id="o2-camount" min="1" step="1" placeholder="200" value="${dv(dft.camount)}" oninput="offerDraftSync()"></div>
+            <div class="field" id="o2-cpercent-wrap" style="display:none"><label>Percent off (%)</label><input type="number" id="o2-cpercent" min="1" max="100" step="1" placeholder="25" value="${dv(dft.cpercent)}" oninput="offerDraftSync()"></div>
+            <div class="field" id="o2-ccap-wrap" style="display:none"><label>Up to ($ off, optional)</label><input type="number" id="o2-ccap" min="1" step="1" placeholder="50" value="${dv(dft.ccap)}" oninput="offerDraftSync()"></div>
+          </div>
+          <div class="field"><label>What is the coupon good for? <span class="req-tag">Required</span></label><input id="o2-capplies" value="${dv(dft.capplies)}" placeholder="Anything in the store" oninput="offerDraftSync()"></div>
+          <div class="field"><label>Coupon expires <span class="opt-tag">Optional</span></label><input type="date" id="o2-cexpires" value="${dv(dft.cexpires)}" onchange="offerDraftSync()"><p class="small muted">No date? The coupon expires 30 days after the deal is set. Accepting a coupon deal means the coupon is the payment for the post. No cash changes hands.</p></div>
+        </div>
       </div>
       <div class="field"><label>What is included <span class="opt-tag">Optional</span> ${infoBtn("includes")}</label><textarea id="o2-includes" rows="2" placeholder="Any two entrees, two drinks each, dessert to share" oninput="offerCoachUpdate()">${esc(dft.includes || "")}</textarea></div>
       <div class="field"><label>The experience <span class="opt-tag">Optional</span> ${infoBtn("experience")}</label><textarea id="o2-experience" rows="2" placeholder="Chef's counter seats, open kitchen" oninput="offerCoachUpdate()">${esc(dft.experience || "")}</textarea></div>
@@ -16266,7 +16629,7 @@ async function loadMyOffers() {
         <div class="field"><label>Timing <span class="opt-tag">Optional</span></label><input id="o2-btiming" maxlength="140" value="${dv(dft.briefTiming)}" placeholder="Post by Sunday night" oninput="offerDraftSync()"></div>
         <div class="field"><label>Call to action <span class="opt-tag">Optional</span></label><input id="o2-bcta" maxlength="120" value="${dv(dft.briefCta)}" placeholder="Tell followers to book through the link" oninput="offerDraftSync()"></div>
       </div>
-      <p class="small muted">Deliverable: ${dft.kind === "paid" ? "set in the booking terms. Post within 48 hours and keep the post live at least 30 days." : "1 post + 1 story that shares the post. Post within 48 hours; one week is the hard deadline."}</p>
+      ${deliverablesEditorHtml(dft, dft.kind || "comp")}
       <div class="field"><label class="tgl-row"><input type="checkbox" class="sw" id="o2-packet" ${dft.packetManual ? (dft.packetAttach ? "checked" : "") : (dft.kind === "paid" ? "checked" : "")} onchange="offerDraftSync(); state.offerDraft.packetManual = true;"><span><strong>Attach my asset packet</strong>: your logo link, key links, talking points, handle and hashtags ride with the offer, and the creator sees them in their visit view. On by default for paid offers. Build or edit the packet on your business Profile.</span></label></div>
       </div>
       ${mode === "open" ? `
@@ -16369,12 +16732,14 @@ function offerCardHtml(o) {
   const statusBadge = { draft: "warn", open: "ok", filled: "info", closed: "", expired: "bad", declined: "bad" }[o.status] || "";
   const terms = o.kind === "paid"
     ? `Cash $${fmtPrice(o.cashRate)} for the package (you pay $${fmtMoney(Number(o.cashRate) * 1.03)}, creator keeps $${fmtMoney(Number(o.cashRate) * 0.97)})`
-    : `Cap $${fmtMoney(o.dollarCap)}`;
+    : o.kind === "coupon"
+      ? `Coupon: ${esc(o.couponSummary || couponSummaryClient(o.coupon, o.businessName))}${o.coupon && o.coupon.expiresAt ? ` &middot; expires ${esc(fmtDay(o.coupon.expiresAt))}` : ""}. The coupon is the payment; no cash changes hands.`
+      : `Cap $${fmtMoney(o.dollarCap)}`;
   const when = o.lane === "open" && o.windowStartAt
     ? `Redeem ${fmtDay(o.windowStartAt)} to ${fmtDay(o.windowEndAt)} &middot; Pick by ${fmtDay(o.selectionDeadline)}`
     : esc(o.visitWindow || "Flexible window");
   const firstMissing = o.strength && o.strength.checks ? (o.strength.checks.find((c) => !c.ok) || null) : null;
-  const deliverable = o.kind === "paid" ? "Paid booking" : "1 post + 1 story";
+  const deliverable = o.kind === "paid" ? "Paid booking" : deliverablePhraseClient(o);
   const pill = o.status === "open" ? livePill("Live") : o.status === "draft" ? `<span class="beta-pill">Draft</span>` : `<span class="beta-pill" style="background:var(--tint2);color:var(--ink2)">${esc(o.status)}</span>`;
   return `
   <div class="offer-card" id="offer-card-${o.id}">
@@ -16387,14 +16752,14 @@ function offerCardHtml(o) {
     </div>
     <div class="set-chips">
       <span class="set-chip">${o.lane === "direct" ? (o.creatorHandle ? "Direct to @" + esc(o.creatorHandle) : "Direct") : "Open offer"}</span>
-      <span class="set-chip">${o.kind === "paid" ? `Cash $${fmtPrice(o.cashRate)}` : `Comp up to $${fmtMoney(o.dollarCap)}`}</span>
+      <span class="set-chip">${o.kind === "paid" ? `Cash $${fmtPrice(o.cashRate)}` : o.kind === "coupon" ? `Coupon ${esc(couponFaceLabelClient(o.coupon))}` : `Comp up to $${fmtMoney(o.dollarCap)}`}</span>
       <span class="set-chip">${deliverable}</span>
       ${o.requiresSpanish ? `<span class="set-chip">Spanish content</span>` : ""}
       <span class="set-chip">${o.filledCount || 0}/${o.spots} spots filled</span>
       ${o.lane === "open" ? `<span class="set-chip more">${o.applicationCount || 0} application${(o.applicationCount || 0) === 1 ? "" : "s"}</span>` : ""}
     </div>
     <div class="ws-offer-terms">
-    <p class="small muted">${terms}${o.kind === "paid" ? "" : ` &middot; ${coversLine(o)}`}</p>
+    <p class="small muted">${terms}${o.kind === "comp" ? ` &middot; ${coversLine(o)}` : ""}</p>
     ${o.kind === "paid" && o.paidBrief ? `<p class="small"><strong>Key points for the creator:</strong> ${esc(o.paidBrief)}</p>` : ""}
     ${briefBlockHtml(o)}
     ${o.assetPacketAttached ? `<p class="small muted">Your asset packet rides with this offer: the creator sees your links and talking points in their visit view.</p>` : ""}
@@ -16402,7 +16767,7 @@ function offerCardHtml(o) {
     ${o.strength ? `<p class="small muted">Offer checklist ${o.strength.score} of ${o.strength.total}${firstMissing ? `: still missing: <strong>${esc(firstMissing.action || firstMissing.label)}</strong>` : ": complete"}</p>` : ""}
     </div>
     <div class="ws-offer-foot">
-      <div><div class="ws-price">$${fmtPrice(o.kind === "paid" ? o.cashRate : o.dollarCap)}</div><div class="slot-note">${o.kind === "paid" ? "Rate" : "Comp cap"}</div></div>
+      <div><div class="ws-price">${o.kind === "coupon" ? esc(couponFaceLabelClient(o.coupon)) : `$${fmtPrice(o.kind === "paid" ? o.cashRate : o.dollarCap)}`}</div><div class="slot-note">${o.kind === "paid" ? "Rate" : o.kind === "coupon" ? "Coupon value" : "Comp cap"}</div></div>
       <div class="slot-actions">
         ${o.lane === "open" && (o.status === "open" || o.status === "filled") ? `<button class="btn small-btn ws-primary" onclick="return goApplicants('${o.id}')">Applicants (${o.applicationCount || 0})</button>` : ""}
         ${offerIsArchived(o) ? `<button class="btn small-btn ws-outline" onclick="return duplicateOffer('${o.id}')">Duplicate</button>` : ""}
@@ -16440,9 +16805,20 @@ async function createOfferV2(e, draft) {
   const target = state.offerTarget;
   // Inline validation first: errors land under their fields, the
   // form is NOT re-rendered, and the draft keeps every keystroke.
-  const requiredKeys = ["title", "comped", kind === "paid" ? "rate" : "cap", "spots"];
+  // A coupon offer validates the coupon instead of the comp
+  // fields (Build -84).
+  const requiredKeys = kind === "coupon" ? ["title", "spots"] : ["title", "comped", kind === "paid" ? "rate" : "cap", "spots"];
   let valid = true;
   for (const key of requiredKeys) { if (!offerValidateField(key)) valid = false; }
+  if (kind === "coupon") {
+    const t = d.ctype || "store_credit";
+    const vOk = t === "percent_off" ? Number(d.cpercent) >= 1 && Number(d.cpercent) <= 100 : Number(d.camount) >= 1;
+    if (!vOk || !String(d.capplies || "").trim()) {
+      const fe = document.getElementById("form-error");
+      if (fe) fe.innerHTML = `<div class="error-box">Say what the coupon is worth and what it is good for.</div>`;
+      valid = false;
+    }
+  }
   if (!valid) return false;
   // Clean-start fields left empty take the defaults their
   // placeholders show (spots 1, apply days 3, window days 7).
@@ -16469,9 +16845,26 @@ async function createOfferV2(e, draft) {
   payload.moment = d.moment || undefined;
   payload.countedResult = d.countedResult || undefined;
   payload.assetPacketAttached = d.packetManual ? !!d.packetAttach : kind === "paid";
+  // Build -84: every offer carries its deliverables (the kind's
+  // recommended standard until the business edits them); a
+  // coupon offer carries the coupon itself.
+  payload.deliverables = draftDeliverables(d, kind);
   if (kind === "paid") {
     payload.cashRate = parseFloat(d.rate);
     if (d.brief && d.brief.trim()) payload.paidBrief = d.brief.trim();
+  } else if (kind === "coupon") {
+    const t = d.ctype || "store_credit";
+    payload.coupon = {
+      type: t,
+      amount: t === "percent_off" ? null : parseInt(d.camount, 10) || null,
+      percent: t === "percent_off" ? parseInt(d.cpercent, 10) || null : null,
+      cap: t === "percent_off" ? (parseInt(d.ccap, 10) || null) : null,
+      appliesTo: String(d.capplies || "").trim(),
+      expiresAt: d.cexpires ? new Date(`${d.cexpires}T23:59:59`).toISOString() : null,
+    };
+    // The server composes the coupon's summary into the offer's
+    // what-comped line; the comp field itself does not apply.
+    payload.whatComped = "";
   } else {
     payload.dollarCap = parseInt(d.cap, 10);
     payload.covers = parseInt(d.covers, 10) || 1;

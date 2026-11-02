@@ -461,6 +461,121 @@ function coversText(record) {
   return coversOf(record) === 2 ? "Comp covers 2 people" : "Comp covers you";
 }
 
+// ---------- Build -84: coupon deals + editable deliverables ----------
+// (Jeff, 2026-11-02, from the Chelsea call.) A third deal kind,
+// "coupon": the business pays with a coupon (money off, a percent
+// off, or store credit) and the creator accepts the coupon as
+// their payment. No cash moves through SIGNL on a coupon deal,
+// there is no 97/3 split on it, and it counts against the plan's
+// monthly creator visits exactly like a comped visit
+// (planAllowanceFor counts every non-paid booking). Rights on a
+// coupon-paid post are native share only, exactly like a comped
+// post; ad use is only ever the separate license flow at the
+// creator's fee, with their approval.
+//
+// Every deal kind also carries EDITABLE deliverables: what the
+// creator owes (posts, story, post window), pre-filled from the
+// kind's recommended standard below. The business can change
+// them in the composer or in Sig; the creator always sees the
+// exact final terms before accepting. The one term that is NOT
+// editable: a paid booking's standard license (90 days of
+// repost and ad use from the post date). That is a term of paid
+// bookings, period, and no deliverables edit touches it.
+const DELIVERABLE_STANDARDS = {
+  comp: { posts: 1, story: true, windowHours: 48 },
+  paid: { posts: 1, story: true, windowHours: 48 },
+  coupon: { posts: 1, story: false, windowHours: 48 },
+};
+function deliverableStandard(kind) {
+  return DELIVERABLE_STANDARDS[kind] || DELIVERABLE_STANDARDS.comp;
+}
+// Clamp, never refuse: a missing or malformed deliverables
+// object reads as the kind's standard, and out-of-range values
+// land on the nearest sane one.
+function validateDeliverables(input, kind) {
+  const std = deliverableStandard(kind);
+  if (!input || typeof input !== "object" || Array.isArray(input)) return { ...std };
+  let posts = Math.floor(Number(input.posts));
+  if (!Number.isFinite(posts)) posts = std.posts;
+  posts = Math.min(5, Math.max(1, posts));
+  const story = typeof input.story === "boolean" ? input.story : std.story;
+  let windowHours = Math.floor(Number(input.windowHours));
+  if (!Number.isFinite(windowHours)) windowHours = std.windowHours;
+  windowHours = Math.min(336, Math.max(12, windowHours));
+  return { posts, story, windowHours };
+}
+function deliverablesOf(record) {
+  return validateDeliverables(record && record.deliverables, kindOf(record || {}));
+}
+function windowPhrase(hours) {
+  if (hours === 48) return "48 hours";
+  if (hours === 24) return "24 hours";
+  if (hours % 24 === 0) return `${hours / 24} days`;
+  return `${hours} hours`;
+}
+// The brief's deliverable line, composed from the deal's actual
+// deliverables. For the comp standard this reproduces the
+// long-standing Standard Visit line byte for byte.
+function deliverableLineFor(deliverables, kind) {
+  const d = validateDeliverables(deliverables, kind);
+  return `${d.posts} post${d.posts === 1 ? "" : "s"}${d.story ? " + 1 story that shares the post" : ""}. Post within ${windowPhrase(d.windowHours)}; one week is the hard deadline.`;
+}
+// The post clock a booking runs on: the deal's own window when
+// the business set one, the 48-hour standard otherwise.
+function postWindowHours(booking) {
+  const h = booking && booking.deliverables ? Math.floor(Number(booking.deliverables.windowHours)) : NaN;
+  return Number.isFinite(h) && h >= 12 && h <= 336 ? h : COMPLIANCE.onTimeHours;
+}
+
+const COUPON_TYPES = ["amount_off", "percent_off", "store_credit"];
+// Normalize a coupon from request input. Returns null when the
+// coupon is not real (no type, no value, nothing it is good
+// for). An expiry the business did not set defaults to 30 days
+// out, so a coupon never reads as open-ended.
+function normalizeCoupon(input) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return null;
+  if (!COUPON_TYPES.includes(input.type)) return null;
+  const appliesTo = String(input.appliesTo || "").trim().slice(0, 120);
+  if (!appliesTo) return null;
+  let amount = null;
+  let percent = null;
+  let cap = null;
+  if (input.type === "percent_off") {
+    percent = Math.floor(Number(input.percent));
+    if (!Number.isFinite(percent) || percent < 1 || percent > 100) return null;
+    const c = Math.floor(Number(input.cap));
+    if (Number.isFinite(c) && c > 0) cap = Math.min(100000, c);
+  } else {
+    amount = Math.floor(Number(input.amount));
+    if (!Number.isFinite(amount) || amount < 1) return null;
+    amount = Math.min(100000, amount);
+  }
+  const ex = Date.parse(input.expiresAt || "");
+  const expiresAt = Number.isFinite(ex) ? new Date(ex).toISOString() : new Date(Date.now() + 30 * DAY_MS).toISOString();
+  return { type: input.type, amount, percent, cap, appliesTo, expiresAt };
+}
+function couponOf(record) {
+  return record && record.coupon ? normalizeCoupon(record.coupon) : null;
+}
+// The coupon's face value in dollars, when it has one. A
+// percent-off coupon with no cap has no fixed dollar value, and
+// nothing anywhere states one for it.
+function couponFaceValue(coupon) {
+  if (!coupon) return null;
+  if (coupon.type === "percent_off") return coupon.cap ? Number(coupon.cap) : null;
+  const a = Number(coupon.amount);
+  return Number.isFinite(a) && a > 0 ? a : null;
+}
+// The coupon in one plain line: "$200 store credit at Chelsea
+// Friday Furniture, good for anything in the store".
+function couponSummary(coupon, businessName) {
+  if (!coupon) return "";
+  const head = coupon.type === "percent_off"
+    ? `${coupon.percent}% off${coupon.cap ? ` (up to $${coupon.cap} off)` : ""}`
+    : coupon.type === "store_credit" ? `$${Number(coupon.amount)} store credit` : `$${Number(coupon.amount)} off`;
+  return `${head}${businessName ? ` at ${businessName}` : ""}, good for ${coupon.appliesTo}`;
+}
+
 function noShowStrikesOf(user) {
   const n = Number(user && user.noShowStrikes);
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
@@ -660,7 +775,7 @@ function laneOf(offer) {
   return offer.creatorId ? "direct" : "open";
 }
 function kindOf(offer) {
-  return offer.kind === "paid" ? "paid" : "comp";
+  return offer.kind === "paid" ? "paid" : offer.kind === "coupon" ? "coupon" : "comp";
 }
 
 // The tiers an offer may target given its comp value. Returns the
@@ -686,7 +801,7 @@ function offerStrength(offer) {
   // surface naming the MISSING item reads as a to-do, not as a
   // done item (Build -47, audit B7).
   const checks = [
-    { key: "value", label: "Comp value (or cash rate) is stated", action: "state the comp value or cash rate", ok: kindOf(offer) === "paid" ? Number(offer.cashRate) >= PAID_LANE.minRate : Number(offer.dollarCap) > 0 },
+    { key: "value", label: "Comp value (or cash rate) is stated", action: "state the comp value or cash rate", ok: kindOf(offer) === "paid" ? Number(offer.cashRate) >= PAID_LANE.minRate : kindOf(offer) === "coupon" ? !!couponOf(offer) : Number(offer.dollarCap) > 0 },
     { key: "window", label: "Redemption window is 3+ days", action: "give the visit a window of 3+ days", ok: windowDays >= 3 },
     { key: "includes", label: "What is included is written out", action: "write out what is included", ok: String(offer.includes || offer.whatComped || "").trim().length >= 12 },
     { key: "experience", label: "The experience is described", action: "describe the experience", ok: String(offer.experience || "").trim().length >= 12 },
@@ -3218,9 +3333,11 @@ function talentBudgetOf(business) {
 // { goal, hook, mustMention, doNotSay, deliverable, timing,
 // callToAction }. The brief gives key points only, never a script
 // (the same honesty rule as the paid brief). The deliverable line
-// is SERVER-FORCED by visit kind and is never taken from input:
-// a comp visit is the Standard Visit package; a paid visit's
-// deliverables live in its booking terms. All other fields are
+// is SERVER-COMPOSED and is never taken from input: a comp or
+// coupon visit's line is built from the deal's own editable
+// deliverables (the Standard Visit package at the recommended
+// standard); a paid visit's deliverables live in its booking
+// terms. All other fields are
 // capped, never refused: over-long text truncates, list items
 // trim, drop when empty, dedupe, and cap at 3.
 const BRIEF_GOALS = ["more_weekend_customers", "launch_something_new", "fill_an_event", "grow_regulars"];
@@ -3258,6 +3375,11 @@ function briefSeedFromFields(fields) {
     doNotSay: [],
     timing: typeof f.visitWindow === "string" ? f.visitWindow : "",
     callToAction: "",
+    // Build -84: the seed carries the deal's own deliverables,
+    // so the brief's deliverable line is composed from the
+    // terms the business actually set (the kind's recommended
+    // standard when they set nothing).
+    deliverables: f.deliverables || null,
   };
 }
 // normalizeBriefInput(input, kind, seed): the composer and Sig
@@ -3269,7 +3391,7 @@ function briefSeedFromFields(fields) {
 // brief shape, byte for byte. Other fields take the seed only
 // when the input does not carry them at all.
 function normalizeBriefInput(input, kind, seed) {
-  const k = kind === "paid" ? "paid" : "comp";
+  const k = kind === "paid" ? "paid" : kind === "coupon" ? "coupon" : "comp";
   const src = input && typeof input === "object" && !Array.isArray(input) ? input : {};
   const sd = seed && typeof seed === "object" && !Array.isArray(seed) ? seed : {};
   const pick = (key) => (src[key] !== undefined ? src[key] : sd[key]);
@@ -3283,7 +3405,12 @@ function normalizeBriefInput(input, kind, seed) {
     hook,
     mustMention,
     doNotSay: briefCleanList(pick("doNotSay")),
-    deliverable: BRIEF_DELIVERABLES[k],
+    // The deliverable line is server-composed, never taken from
+    // input: paid keeps its booking-terms line; comp and coupon
+    // compose from the deal's own deliverables (the seed's),
+    // which for the recommended standard reproduces the
+    // Standard Visit line byte for byte.
+    deliverable: k === "paid" ? BRIEF_DELIVERABLES.paid : deliverableLineFor(sd.deliverables, k),
     timing,
     callToAction: briefCleanText(pick("callToAction"), 120),
   };
@@ -3646,7 +3773,7 @@ async function createBookingForOffer({ offer, creator, via, applicationId = null
     category: offer.category,
     title: offer.title,
     whatComped: offer.whatComped,
-    covers: kind === "paid" ? null : coversOf(offer),
+    covers: kind === "comp" ? coversOf(offer) : null,
     paidBrief: kind === "paid" ? (offer.paidBrief || null) : null,
     dollarCap: offer.dollarCap,
     visitWindow: offer.visitWindow,
@@ -3680,7 +3807,20 @@ async function createBookingForOffer({ offer, creator, via, applicationId = null
     // time, so later packet edits never rewrite a booked visit.
     brief: briefForOffer(offer),
     assetPacket: offerAssetPacketAttached(offer) ? assetPacketView(business) : null,
+    // Build -84: the booking snapshots the deal's editable
+    // deliverables for every kind, so the Deal Card, the post
+    // clock and every later surface read the exact terms the
+    // creator accepted.
+    deliverables: deliverablesOf(offer),
   };
+  if (kind === "coupon") {
+    // Coupon deal (Build -84): no cash, no escrow, no split.
+    // The coupon snapshot rides the booking, so the visit card,
+    // the post record and Earnings (as store value, never cash)
+    // all read the exact coupon the creator accepted.
+    booking.kind = "coupon";
+    booking.coupon = couponOf(offer);
+  }
   if (kind === "paid") {
     // Paid open offer: the business posted a cash rate for the
     // Standard Visit package. The escrow ledger is exactly the
@@ -7353,17 +7493,22 @@ async function performCounterRedeem(booking, actor) {
   booking.redeemedVia = actor.via;
   booking.codeStatus = "burned";
   booking.status = "redeemed";
-  booking.postDeadline = new Date(Date.parse(ts) + COMPLIANCE.onTimeHours * 3600 * 1000).toISOString();
+  // Build -84: the clock runs on the deal's own post window
+  // (the business's edited deliverables), 48 hours at the
+  // recommended standard.
+  booking.postDeadline = new Date(Date.parse(ts) + postWindowHours(booking) * 3600 * 1000).toISOString();
   booking.updatedAt = ts;
   await store.set(`booking:${booking.id}`, booking);
   await logEvent({ type: "code_redeemed", actorId: actor.id, actorRole: actor.role, subjectId: booking.id, market: booking.market, data: { creatorId: booking.creatorId, code: booking.code, method: "counter_code", via: actor.via, postDeadline: booking.postDeadline, dollarCap: booking.dollarCap } });
   await sendStaffNotice(booking, "redeem");
-  // The creator's 48 hour clock just started; until 2026-10-24
+  // The creator's post clock just started; until 2026-10-24
   // they heard about it from nobody. Tell them, both surfaces.
+  // The hours stated are the deal's own window (Build -84).
+  const clockH = postWindowHours(booking);
   await notifyMilestone(booking.creatorId, "clock_started",
-    `Your visit to ${booking.businessName || "the business"} is redeemed and your 48 hour post clock is running. Post by ${milestoneDeadlineText(booking.postDeadline)}, then paste the Instagram link in the app. A post inside the week still counts, as a late delivery.`,
-    `Your 48 hour post clock started: ${booking.businessName || "your SIGNL visit"}`,
-    [`Your visit to ${booking.businessName || "the business"} was just redeemed at the counter, so your post clock is running.`, "", `Post within 48 hours, by ${milestoneDeadlineText(booking.postDeadline)}, then paste the full Instagram post or reel link in the app as your proof. On time is what keeps your Momentum climbing, and a post inside the week still counts, as a late delivery.`, "", "Open SIGNL: https://app.joinsignl.com", "", "Jeff", "Founder, SIGNL"].join("\n"),
+    `Your visit to ${booking.businessName || "the business"} is redeemed and your ${clockH} hour post clock is running. Post by ${milestoneDeadlineText(booking.postDeadline)}, then paste the Instagram link in the app. A post inside the week still counts, as a late delivery.`,
+    `Your ${clockH} hour post clock started: ${booking.businessName || "your SIGNL visit"}`,
+    [`Your visit to ${booking.businessName || "the business"} was just redeemed at the counter, so your post clock is running.`, "", `Post within ${clockH} hours, by ${milestoneDeadlineText(booking.postDeadline)}, then paste the full Instagram post or reel link in the app as your proof. On time is what keeps your Momentum climbing, and a post inside the week still counts, as a late delivery.`, "", "Open SIGNL: https://app.joinsignl.com", "", "Jeff", "Founder, SIGNL"].join("\n"),
     { bookingId: booking.id });
   return booking;
 }
@@ -8121,7 +8266,10 @@ function homeAnalyticsExtras(triples, plan, now, apps = []) {
       onTime: !!t.post.onTime,
       views: Number(t.post.views) || 0,
       likes: Number(t.post.likes) || 0,
-      kind: paid ? "paid" : "comp",
+      // Build -84: a coupon-paid post is labeled by its kind;
+      // its license above already derives to native share only,
+      // exactly like a comped post.
+      kind: paid ? "paid" : t.booking.kind === "coupon" ? "coupon" : "comp",
       localReach,
       redemptions: t.booking.redemptions ? { count: t.booking.redemptions.count, basketTotal: t.booking.redemptions.basketTotal } : null,
       viewsGrowthPct: performanceSummary(t.post).viewsGrowthPct,
@@ -18456,13 +18604,17 @@ async function route(event) {
     if (method === "POST" && seg.length === 1) {
       if (user.role !== "business") return err(403, "Businesses only");
       const b = parseBody(event);
-      if (!b.title || !b.whatComped) return err(400, "Title and what is comped are required");
+      // Build -84: a coupon offer carries the coupon itself
+      // instead of a "what is comped" line; the coupon's own
+      // summary becomes that line on the stored offer.
+      if (!b.title || (b.kind !== "coupon" && !b.whatComped)) return err(400, "Title and what is comped are required");
       const spots = parseInt(b.spots, 10);
       if (!spots || spots <= 0) return err(400, "Spots must be a positive number");
       const lane = b.creatorId ? "direct" : "open";
-      const kind = b.kind === "paid" ? "paid" : "comp";
+      const kind = b.kind === "paid" ? "paid" : b.kind === "coupon" ? "coupon" : "comp";
       let cashRate = null;
       let dollarCap = parseInt(b.dollarCap, 10);
+      let coupon = null;
       if (kind === "paid") {
         cashRate = Math.round(Number(b.cashRate || b.dollarCap) * 100) / 100;
         if (!Number.isFinite(cashRate) || cashRate < PAID_LANE.minRate) return err(400, `A cash offer starts at $${fmtPriceS(PAID_LANE.minRate)}. Below that, the payment processing and support cost more than the booking is worth. Comp offers have no minimum beyond the dignity floor for the tiers you target.`);
@@ -18473,6 +18625,14 @@ async function route(event) {
         if (connect.connectConfigured() && !businessCardOnFile(user)) {
           return err(400, "Add a card before posting a paid offer. When you pick a creator, the booking charges your card on file and SIGNL holds the money until the post is live. Add your card in the Plan tab, under Your plan.");
         }
+      } else if (kind === "coupon") {
+        // Coupon deal (Build -84): the coupon IS the payment.
+        // Its face value becomes the offer's dollarCap when it
+        // has one; a percent-off coupon with no cap carries 0,
+        // because no fixed dollar value exists to state.
+        coupon = normalizeCoupon(b.coupon);
+        if (!coupon) return err(400, "A coupon offer needs the coupon itself: what it is worth, what it is good for, and when it expires.");
+        dollarCap = couponFaceValue(coupon) || 0;
       } else if (!dollarCap || dollarCap <= 0) {
         return err(400, "Dollar cap must be a positive number");
       }
@@ -18516,9 +18676,11 @@ async function route(event) {
       // comp does not.
       let covers = null;
       let paidBrief = null;
-      if (kind === "comp") {
-        covers = coversOf(b);
-        if (String(b.paidBrief || "").trim()) return err(400, "Key points are a paid visit feature, so a comp offer cannot carry them. " + PAID_BRIEF_GUIDANCE);
+      if (kind === "comp" || kind === "coupon") {
+        // Covers is a comp concept (how many people the comp
+        // feeds); a coupon covers whoever spends it.
+        covers = kind === "comp" ? coversOf(b) : null;
+        if (String(b.paidBrief || "").trim()) return err(400, `Key points are a paid visit feature, so a ${kind} offer cannot carry them. ` + PAID_BRIEF_GUIDANCE);
       } else {
         paidBrief = String(b.paidBrief || "").trim().slice(0, PAID_BRIEF_MAX) || null;
       }
@@ -18529,6 +18691,9 @@ async function route(event) {
       // publish, and until then nothing it saves can be open.
       const wantsDraft = b.draft === true || !marketLive || isFoundingBusiness(user);
       const ts = nowIso();
+      // A coupon offer's "what the creator gets" line is the
+      // coupon's own summary (Build -84).
+      const whatCompedFinal = kind === "coupon" ? couponSummary(coupon, user.business.businessName) : String(b.whatComped).trim();
       const offer = {
         id: crypto.randomUUID(),
         businessId: user.id,
@@ -18548,8 +18713,8 @@ async function route(event) {
         cashRate,
         targetTiers,
         title: String(b.title).trim().slice(0, 140),
-        whatComped: String(b.whatComped).trim(),
-        includes: String(b.includes || b.whatComped).trim().slice(0, 600),
+        whatComped: whatCompedFinal,
+        includes: String(b.includes || whatCompedFinal).trim().slice(0, 600),
         experience: String(b.experience || "").trim().slice(0, 600),
         templateId: typeof b.templateId === "string" ? b.templateId.slice(0, 40) : null,
         // Packaged play (R1): template metadata only; the brief
@@ -18571,6 +18736,11 @@ async function route(event) {
         updatedAt: ts,
         publishedAt: wantsDraft ? null : ts,
         nudgeSentAt: null,
+        // Build -84: the deal's editable deliverables, validated
+        // against the kind's recommended standard, and, on a
+        // coupon deal, the coupon itself.
+        deliverables: validateDeliverables(b.deliverables, kind),
+        ...(coupon ? { coupon } : {}),
       };
       // Sig Operator (Jeff, 2026-10-28): EVERY created offer stores
       // a normalized brief (the request's brief when one is sent,
@@ -18609,6 +18779,11 @@ async function route(event) {
           if (Number(x.dollarCap) !== Number(offer.dollarCap)) return false;
           if ((x.cashRate === null || x.cashRate === undefined ? null : Number(x.cashRate)) !== (offer.cashRate === null || offer.cashRate === undefined ? null : Number(offer.cashRate))) return false;
           if (coversOf(x) !== coversOf(offer)) return false;
+          // Build -84: the coupon itself and the edited
+          // deliverables are part of what makes two offers the
+          // same offer.
+          if (JSON.stringify(couponOf(x)) !== JSON.stringify(couponOf(offer))) return false;
+          if (JSON.stringify(deliverablesOf(x)) !== JSON.stringify(deliverablesOf(offer))) return false;
           if (Number(x.spots) !== Number(offer.spots)) return false;
           if (x.applyWindowDays !== undefined && offer.applyWindowDays !== undefined && Number(x.applyWindowDays) !== Number(offer.applyWindowDays)) return false;
           if (x.windowDays !== undefined && offer.windowDays !== undefined && Number(x.windowDays) !== Number(offer.windowDays)) return false;
@@ -18643,6 +18818,10 @@ async function route(event) {
         filledCount: filledCountFor(o.id, bookings),
         applicationCount: apps.filter((a) => a.offerId === o.id && a.status !== "withdrawn").length,
         strength: offerStrength(o),
+        // Build -84: the coupon in one plain line, precomputed
+        // so every client surface states it identically. The
+        // coupon object and the deliverables ride the spread.
+        couponSummary: kindOf(o) === "coupon" ? couponSummary(couponOf(o), o.businessName) : null,
       }));
       let feedEarlyAccessOpensAtMs = null;
       if (user.role === "business") {
@@ -18790,6 +18969,22 @@ async function route(event) {
       if (b.covers !== undefined && kindOf(offer) === "comp") {
         changes.covers = [coversOf(offer), coversOf(b)];
         offer.covers = changes.covers[1];
+      }
+      // Build -84: a coupon deal's coupon, and any deal's
+      // deliverables, stay editable while the offer is a draft
+      // or open. The brief's deliverable line re-composes from
+      // the stored deliverables at read time.
+      if (b.coupon !== undefined && kindOf(offer) === "coupon") {
+        const cpn = normalizeCoupon(b.coupon);
+        if (!cpn) return err(400, "A coupon needs what it is worth, what it is good for, and when it expires.");
+        changes.coupon = [offer.coupon || null, cpn];
+        offer.coupon = cpn;
+        offer.dollarCap = couponFaceValue(cpn) || 0;
+        offer.whatComped = couponSummary(cpn, offer.businessName);
+      }
+      if (b.deliverables !== undefined) {
+        changes.deliverables = [offer.deliverables || null, validateDeliverables(b.deliverables, kindOf(offer))];
+        offer.deliverables = changes.deliverables[1];
       }
       if (b.paidBrief !== undefined) {
         if (kindOf(offer) !== "paid") {
@@ -19172,6 +19367,9 @@ async function route(event) {
         businessAbout: biz && biz.business ? (biz.business.about || "") : "",
         businessNeighborhood: biz && biz.business ? (biz.business.neighborhood || "") : "",
         paidMath: kindOf(o) === "paid" ? paidMath(Number(o.cashRate)) : null,
+        // Build -84: the coupon in one plain line (the coupon
+        // object and deliverables ride the spread above).
+        couponSummary: kindOf(o) === "coupon" ? couponSummary(couponOf(o), o.businessName) : null,
         // Sig Operator (Jeff, 2026-10-28): every board offer reads
         // with a brief, and the business's asset packet rides along
         // only when the offer carries it.
@@ -19599,16 +19797,18 @@ async function route(event) {
     booking.redeemMethod = "business_confirm";
     booking.codeStatus = "burned";
     booking.status = "redeemed";
-    booking.postDeadline = new Date(Date.parse(ts) + COMPLIANCE.onTimeHours * 3600 * 1000).toISOString();
+    // Build -84: the clock runs on the deal's own post window.
+    booking.postDeadline = new Date(Date.parse(ts) + postWindowHours(booking) * 3600 * 1000).toISOString();
     booking.updatedAt = ts;
     await store.set(`booking:${booking.id}`, booking);
     await logEvent({ type: "visit_confirmed_by_business", actorId: user.id, actorRole: "business", subjectId: booking.id, market: booking.market, data: { creatorId: booking.creatorId, code: booking.code, postDeadline: booking.postDeadline } });
     await logEvent({ type: "code_redeemed", actorId: user.id, actorRole: "business", subjectId: booking.id, market: booking.market, data: { creatorId: booking.creatorId, code: booking.code, method: "business_confirm", postDeadline: booking.postDeadline } });
     await sendStaffNotice(booking, "redeem");
+    const clockH = postWindowHours(booking);
     await notifyMilestone(booking.creatorId, "clock_started",
-      `Your visit to ${booking.businessName || "the business"} is redeemed and your 48 hour post clock is running. Post by ${milestoneDeadlineText(booking.postDeadline)}, then paste the Instagram link in the app. A post inside the week still counts, as a late delivery.`,
-      `Your 48 hour post clock started: ${booking.businessName || "your SIGNL visit"}`,
-      [`Your visit to ${booking.businessName || "the business"} was just confirmed, so your post clock is running.`, "", `Post within 48 hours, by ${milestoneDeadlineText(booking.postDeadline)}, then paste the full Instagram post or reel link in the app as your proof. On time is what keeps your Momentum climbing, and a post inside the week still counts, as a late delivery.`, "", "Open SIGNL: https://app.joinsignl.com", "", "Jeff", "Founder, SIGNL"].join("\n"),
+      `Your visit to ${booking.businessName || "the business"} is redeemed and your ${clockH} hour post clock is running. Post by ${milestoneDeadlineText(booking.postDeadline)}, then paste the Instagram link in the app. A post inside the week still counts, as a late delivery.`,
+      `Your ${clockH} hour post clock started: ${booking.businessName || "your SIGNL visit"}`,
+      [`Your visit to ${booking.businessName || "the business"} was just confirmed, so your post clock is running.`, "", `Post within ${clockH} hours, by ${milestoneDeadlineText(booking.postDeadline)}, then paste the full Instagram post or reel link in the app as your proof. On time is what keeps your Momentum climbing, and a post inside the week still counts, as a late delivery.`, "", "Open SIGNL: https://app.joinsignl.com", "", "Jeff", "Founder, SIGNL"].join("\n"),
       { bookingId: booking.id });
     return json(200, { booking: await withPostState(booking) });
   }
@@ -20976,4 +21176,4 @@ async function route(event) {
 
 // The email builders are exported alongside the router so the verify
 // suites can assert on the exact copy a creator receives.
-module.exports = { route, passwordResetEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, normalizeBriefInput, briefForOffer, validateAssetPacket, assetPacketView, postSeries, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, runPublicPageBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView, musicOpenView, studentOpenView, PLATFORM_PEER_ID, platformThreadId, platformMessageEmail, MESSAGE_TEMPLATES, runFinishEngineSweep, maybeFireFinishMoment, handleFinishEngineReply, finishEngineConfig };
+module.exports = { route, passwordResetEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, normalizeBriefInput, briefForOffer, validateAssetPacket, assetPacketView, postSeries, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, runPublicPageBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView, musicOpenView, studentOpenView, PLATFORM_PEER_ID, platformThreadId, platformMessageEmail, MESSAGE_TEMPLATES, runFinishEngineSweep, maybeFireFinishMoment, handleFinishEngineReply, finishEngineConfig, normalizeCoupon, couponOf, couponFaceValue, couponSummary, validateDeliverables, deliverablesOf, deliverableLineFor, deliverableStandard, postWindowHours, DELIVERABLE_STANDARDS };
