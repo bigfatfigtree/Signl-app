@@ -3483,7 +3483,7 @@ function sigThreadHtml() {
   turns.forEach((t, i) => { if (t.who !== "user" && (t.actions || []).length) lastActionTurn = i; });
   return turns.map((turn, ti) => turn.who === "user"
     ? `<div class="sig-turn user"><div class="sig-bub">${esc(turn.text)}</div></div>`
-    : `<div class="sig-turn sig"><span class="sig-turn-ava">${turn.pending ? sigAvatarHtml("think") : turn.talk ? sigAvatarHtml("talk") : SIG_AVATAR_HTML}</span><div class="sig-bub">${esc(turn.text)}${turn.pending ? `<span class="sig-typing" aria-hidden="true"><i></i><i></i><i></i></span>` : ""}${turn.flow != null && flows[turn.flow] ? `<button type="button" class="btn small-btn sig-turn-act" data-sigflow="${turn.flow}">${esc(flows[turn.flow].label)}</button>` : ""}${(turn.suggest || []).map((q) => `<button type="button" class="btn small-btn sig-turn-act" data-sigask="${esc(q)}">${esc(q)}</button>`).join("")}${ti === lastActionTurn ? (turn.actions || []).map((a, ai) => `<button type="button" class="btn small-btn sig-turn-act${a.primary ? "" : " ghost"}" data-opact="${ti}:${ai}">${esc(a.label)}</button>`).join("") : ""}</div></div>`).join("");
+    : `<div class="sig-turn sig"><span class="sig-turn-ava">${turn.pending ? sigAvatarHtml("think") : turn.talk ? sigAvatarHtml("talk") : SIG_AVATAR_HTML}</span><div class="sig-bub">${esc(turn.text)}${turn.pending ? `<span class="sig-typing" aria-hidden="true"><i></i><i></i><i></i></span>` : ""}${turn.cardKind ? sigCardsHtmlFor(turn, ti) : ""}${turn.flow != null && flows[turn.flow] ? `<button type="button" class="btn small-btn sig-turn-act" data-sigflow="${turn.flow}">${esc(flows[turn.flow].label)}</button>` : ""}${(turn.suggest || []).map((q) => `<button type="button" class="btn small-btn sig-turn-act" data-sigask="${esc(q)}">${esc(q)}</button>`).join("")}${ti === lastActionTurn ? (turn.actions || []).map((a, ai) => `<button type="button" class="btn small-btn sig-turn-act${a.primary ? "" : " ghost"}" data-opact="${ti}:${ai}">${esc(a.label)}</button>`).join("") : ""}</div></div>`).join("");
 }
 async function sigAskSubmit(ev) {
   if (ev) ev.preventDefault();
@@ -3539,6 +3539,24 @@ function wireSigThread(root) {
   root.querySelectorAll("[data-sigask]").forEach((btn) => {
     btn.onclick = () => { const input = document.getElementById("sig-ask-input"); if (input) input.value = btn.getAttribute("data-sigask"); sigAskSubmit(); };
   });
+  // Sig result cards (Build -78): a results turn carries card
+  // descriptors plus per-card action closures (Invite / Save,
+  // Apply / Pass). Unlike flow chips, card buttons stay live on
+  // their own turn: they act on real records, not on a flow
+  // step, so an older result card can still be used after the
+  // conversation moves on. The handlers repaint the thread.
+  root.querySelectorAll("[data-sigcard]").forEach((btn) => {
+    btn.onclick = async () => {
+      const parts = btn.getAttribute("data-sigcard").split(":");
+      const turn = (state.sigThread || [])[Number(parts[0])];
+      const acts = turn && turn.cardActs && turn.cardActs[Number(parts[1])];
+      const fn = acts && acts[parts[2]];
+      if (typeof fn !== "function") return;
+      btn.disabled = true;
+      try { await fn(); } catch (e) { /* card handlers surface their own errors as turns */ }
+      if (typeof sigOpPaint === "function") sigOpPaint();
+    };
+  });
   // Sig Operator action chips: a turn's actions are closures
   // held in memory with the thread (session-only, like the
   // thread itself). A tap runs the step; the flow repaints.
@@ -3582,8 +3600,13 @@ function renderSigTab() {
       <p>Ask in plain words, or tell me to do it: campaigns, people, numbers, right here. I keep the queue in order, and I confirm before anything is saved.</p>
     </div>
   </section>
+  ${state.user && state.user.role !== "admin" ? `<div class="sig-home" id="sig-home">
+    <div class="sig-home-greet" id="sig-home-greet"></div>
+    <div class="sig-home-chips" id="sig-home-chips"><span class="sig-chip is-quiet">${ST("Loading your numbers…", "Cargando tus números…")}</span></div>
+  </div>` : ""}
   <div id="sig-queue-host">${queueHtml}</div>
   ${state.user && state.user.role === "business" ? sigBizStartersHtml(state.user) : ""}
+  ${state.user && state.user.role === "creator" ? sigCreatorStartersHtml() : ""}
   <div class="sig-chat">
     <div class="sig-chat-head"><div><div class="sig-chat-title">Conversation</div><div class="muted small">Straight answers and real actions, with the next step attached. Nothing posts, sends, or saves until you confirm a plain summary.</div></div>${anyPending ? `<span class="sig-typing" aria-hidden="true"><i></i><i></i><i></i></span>` : ""}</div>
     <div id="sig-thread" class="sig-thread">${sigThreadHtml() || `<div class="sig-turn sig"><span class="sig-turn-ava">${SIG_AVATAR_HTML}</span><div class="sig-bub">${state.user && state.user.role === "business" ? "Ask me anything about how SIGNL works for your business: what your plan includes, how campaigns run, how your results get counted. Or tell me to do something: draft a campaign, find creators, set your staff PIN. I confirm before anything is saved." : "Ask me anything about how SIGNL works: how you make money, what things cost, how visits and points run. Or tell me to do something: set up a campaign, find creators, show your numbers. I confirm before anything is saved."}</div></div>`}</div>
@@ -3605,6 +3628,7 @@ function renderSigTab() {
   ${sigQaFor().map(qa).join("")}`;
   wireSigQueue(el, items, links);
   wireSigThread(el);
+  if (state.user && state.user.role !== "admin") loadSigHome();
   if (!anyPending && !anyTalk && sigQueueBeat) { const beat = sigQueueBeat; sigQueueBeat = ""; sigHeroSet(beat); }
   else sigHeroSet(anyPending ? "think" : anyTalk ? "talk" : "idle");
   el.querySelectorAll("[data-flow]").forEach((btn) => {
@@ -3629,7 +3653,7 @@ function sigBizStartersHtml(u) {
   const place = foundingBizPlace(u);
   return `<div class="sig-starters" style="display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 0">
     <button type="button" class="rchip" onclick="return sigBizStarterCampaign()">Draft my first campaign</button>
-    <button type="button" class="rchip" onclick="return go('dashboard','Discover')">Find creators near me</button>
+    <button type="button" class="rchip" onclick="return sigBizStarterFind()">Find creators near me</button>
     <button type="button" class="rchip" onclick="return sigBizStarterAsk('What does my plan include?')">What does my plan include?</button>
     <button type="button" class="rchip" onclick="return sigBizStarterAsk('How will my results be counted?')">How will my results be counted?</button>
     <button type="button" class="rchip" onclick="return sigBizStarterAsk('What happens when ${esc(place)} opens?')">What happens when ${esc(place)} opens?</button>
@@ -3638,6 +3662,58 @@ function sigBizStartersHtml(u) {
 function sigBizStarterCampaign() {
   sigB1Start();
   sigOpPaint();
+  return false;
+}
+// Sig home state (Build -78): the tab opens the way the
+// benchmark does — a greeting, the asker's real live state as
+// chips, and "where should we pick up?" The numbers come from
+// GET /sig/home, which the server builds from the same sigdata
+// fact sheet the answers come from; the client never counts
+// anything itself here.
+async function loadSigHome() {
+  const host = document.getElementById("sig-home");
+  if (!host) return;
+  let d = null;
+  try { d = await api("GET", "/sig/home"); } catch (e) { d = null; }
+  const greetEl = document.getElementById("sig-home-greet");
+  const chipsEl = document.getElementById("sig-home-chips");
+  if (!greetEl || !chipsEl) return;
+  if (!d) { chipsEl.innerHTML = ""; return; }
+  state.sigHome = d;
+  const hour = new Date().getHours();
+  const day = hour < 12 ? ST("Good morning", "Buenos días") : hour < 18 ? ST("Good afternoon", "Buenas tardes") : ST("Good evening", "Buenas noches");
+  const name = d.displayName || "";
+  greetEl.innerHTML = `<div class="sig-home-h">${esc(day)}${name ? `, ${esc(name)}` : ""}.</div><div class="sig-home-sub">${ST("Where should we pick up?", "¿Por dónde seguimos?")}</div>`;
+  chipsEl.innerHTML = (d.chips && d.chips.length)
+    ? d.chips.map((c) => `<span class="sig-chip">${esc(c)}</span>`).join("")
+    : `<span class="sig-chip is-quiet">${ST("All quiet right now", "Todo tranquilo por ahora")}</span>`;
+}
+// "Find creators near me" runs the search right here in Sig
+// (Build -78): same ranked cards a typed request gets, no
+// detour through Discover.
+function sigBizStarterFind() {
+  (async () => { sigB2FlowStart(); await sigB2Run({}); sigOpPaint(); })();
+  return false;
+}
+// Creator pick-up starters (Build -78): the creator mirror of
+// the business chips — the four jobs a creator opens Sig for,
+// each running its real flow in the thread.
+function sigCreatorStartersHtml() {
+  return `<div class="sig-starters" style="display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 0">
+    <button type="button" class="rchip" onclick="return sigCreatorStarter('offers')">${ST("Find offers for me", "Buscar ofertas para mí")}</button>
+    <button type="button" class="rchip" onclick="return sigCreatorStarter('finish')">${ST("Finish my profile", "Terminar mi perfil")}</button>
+    <button type="button" class="rchip" onclick="return sigCreatorStarter('earn')">${ST("How do I earn more?", "¿Cómo gano más?")}</button>
+    <button type="button" class="rchip" onclick="return sigCreatorStarter('numbers')">${ST("How am I doing?", "¿Cómo voy?")}</button>
+  </div>`;
+}
+function sigCreatorStarter(kind) {
+  (async () => {
+    if (kind === "offers") await sigC1Start();
+    else if (kind === "finish") await sigC2Start();
+    else if (kind === "earn") await sigC5Run();
+    else await sigC3Run();
+    sigOpPaint();
+  })();
   return false;
 }
 function sigBizStarterAsk(text) {
@@ -4450,6 +4526,7 @@ function sigOpHomeActions() {
     { label: ST("Finish my profile", "Terminar mi perfil"), run: async () => { await sigC2Start(); sigOpPaint(); } },
     { label: ST("Setup from Instagram", "Configúrame desde Instagram"), run: async () => { sigSetupStart("creator"); sigOpPaint(); } },
     { label: ST("How am I doing?", "¿Cómo voy?"), run: async () => { await sigC3Run(); sigOpPaint(); } },
+    { label: ST("How do I earn more?", "¿Cómo gano más?"), run: async () => { await sigC5Run(); sigOpPaint(); } },
     { label: ST("Invite a creator", "Invitar a un creador"), run: async () => { sigC4Run(); sigOpPaint(); } },
   ];
 }
@@ -4480,15 +4557,25 @@ function sigOpIntent(norm) {
   if (u.role === "business") {
     if (has("asset packet", "paquete de recursos", "paquete", "brand assets", "mis enlaces")) return async () => sigPacketStart();
     if (has("how am i doing", "como voy", "my numbers", "mis numeros", "my results", "mis resultados", "rendimiento", "track my data", "performance")) return async () => sigB3Run();
-    if (has("find creator", "find me creator", "buscar creador", "encuentra creador", "show me creator", "ver creadores", "buscar creadores")) return async () => sigB2Start();
-    if (has("set up a campaign", "create an offer", "post an offer", "new offer", "make an offer", "start a campaign", "crear una oferta", "publicar una oferta", "nueva oferta", "crear campana", "una campana", "quiero una oferta", "lanzar una oferta")) return async () => sigB1Start();
+    if (has("who should i invite", "who do i invite", "who should we invite", "invite first", "quien invito primero")) return async () => { sigB2FlowStart(); await sigB2Run({}); };
+    if (has("find creator", "find me creator", "buscar creador", "encuentra creador", "show me creator", "ver creadores", "buscar creadores") || (has("creator", "creators", "creador", "creadores") && has("find", "show me", "near me", "nearby", "looking for", "search", "buscar", "muestra"))) return async () => {
+      // A request that already says what it wants ("find me
+      // food creators near me") runs the search right away and
+      // answers with cards; a bare "find creators" still opens
+      // the criteria prompt first.
+      const crit = sigB2ParseCrit(norm);
+      if (Object.keys(crit).length || norm.includes(" near me ") || norm.includes(" nearby ")) { sigB2FlowStart(); await sigB2Run(crit); }
+      else sigB2Start();
+    };
+    if (has("set up a campaign", "create an offer", "post an offer", "new offer", "make an offer", "start a campaign", "draft a campaign", "draft my campaign", "draft my first", "draft an offer", "make a campaign", "make me a campaign", "campaign for my", "campaign for our", "crear una oferta", "publicar una oferta", "nueva oferta", "crear campana", "una campana", "quiero una oferta", "lanzar una oferta")) return async () => sigB1Start();
     if (has("set me up", "set up my business", "setup my business", "set up from instagram", "use my instagram", "from my instagram", "configura mi negocio", "configurar mi negocio")) return async () => sigSetupStart("business");
     return null;
   }
   if (u.role === "creator") {
     if (has("invite a creator", "invite link", "invitar a un creador", "mi enlace de invitacion", "referral link", "invite creators")) return async () => sigC4Run();
     if (has("set me up", "set up from instagram", "use my instagram", "from my instagram", "set up my profile from", "configura mi perfil")) return async () => sigSetupStart("creator");
-    if (has("finish my profile", "complete my profile", "build my profile", "terminar mi perfil", "completar mi perfil", "completar perfil")) return async () => sigC2Start();
+    if (has("finish my profile", "complete my profile", "build my profile", "what do i still need", "still need to finish", "need to finish", "left to finish", "what is missing", "whats missing", "what am i missing", "terminar mi perfil", "completar mi perfil", "completar perfil", "que me falta")) return async () => sigC2Start();
+    if (has("how do i earn more", "earn more", "make more money", "how do i make money", "earn more money", "ganar mas", "como gano mas")) return async () => sigC5Run();
     if (has("how am i doing", "como voy", "my numbers", "mis numeros", "my momentum", "track my data", "mis resultados")) return async () => sigC3Run();
     if (has("find offers", "offers for me", "find work", "find gigs", "buscar ofertas", "ofertas para mi", "see offers", "show me offers", "ver ofertas")) return async () => sigC1Start();
     return null;
@@ -4533,6 +4620,76 @@ async function sigOpStep(text, norm) {
   if (f.id === "bsetup" || f.id === "csetup") return sigSetupStep(f, text, norm);
   if (f.id === "c1") return sigC1Step(f, text, norm);
   if (f.id === "c2") return sigC2Step(f, text, norm);
+}
+
+// ---------- Sig result cards (Build -78) ----------
+// The clean-execution pattern Jeff pointed at: Sig answers a
+// plain request with a short confirmation line, then ranked
+// result CARDS in the thread itself — photo, the key metric
+// first, and a working action button on every card — so the
+// person acts without leaving the conversation. A results turn
+// carries live descriptors (cardKind + cards + cardActs); the
+// HTML is rebuilt from the descriptors at every paint, so a
+// Save toggle or a Pass shows its new state on the repaint.
+function sigOpSayCards(text, cardKind, cards, cardActs, actions) {
+  state.sigThread = state.sigThread || [];
+  state.sigThread.push({ who: "sig", text, cardKind, cards, cardActs, actions: actions && actions.length ? actions : undefined });
+}
+// SIGNL's ranking basis: how local a creator's audience is —
+// the local share itself, the same order the Discover deck
+// deals and the number each card leads with.
+function sigLocalPct(c) {
+  const pct = Number(((c && c.profile) || {}).localAudiencePct);
+  return Number.isFinite(pct) ? pct : -1;
+}
+function sigCardsHtmlFor(turn, ti) {
+  const cards = (turn && turn.cards) || [];
+  if (!cards.length) return "";
+  if (turn.cardKind === "creators") return `<div class="sig-cards">${cards.map((d, ci) => sigCreatorCardHtml(d.c, ti, ci)).join("")}</div>`;
+  if (turn.cardKind === "offers") return `<div class="sig-cards">${cards.map((d, ci) => sigOfferCardHtml(d.p, ti, ci)).join("")}</div>`;
+  return "";
+}
+function sigCreatorCardHtml(c, ti, ci) {
+  const p = c.profile || {};
+  const photos = (Array.isArray(c.photos) && c.photos.length ? c.photos : [c.photoUrl]).filter(Boolean);
+  const pct = p.localAudiencePct === null || p.localAudiencePct === undefined ? null : Number(p.localAudiencePct);
+  const cats = (p.categories || []).slice(0, 2).join(" · ");
+  const why = c.fit && c.fit.reasons && c.fit.reasons.length ? c.fit.reasons[0] : "";
+  const saved = !!c.isFavorite;
+  return `<div class="sig-ccard">
+    <div class="sig-ccard-top">
+      ${photos[0] ? `<img class="sig-ccard-photo" src="${esc(photos[0])}" alt="">` : `<span class="sig-ccard-photo sig-ccard-nophoto">${esc(String(c.name || "?").slice(0, 1))}</span>`}
+      <div class="sig-ccard-id">
+        <div class="sig-ccard-name">${esc(c.name || "")}${p.tierBand ? ` <span class="sig-ccard-tier">${esc(p.tierBand)}</span>` : ""}</div>
+        <div class="sig-ccard-handle">@${esc(p.handle || "")}${c.neighborhood ? ` · ${esc(c.neighborhood)}` : ""}</div>
+      </div>
+    </div>
+    <div class="sig-ccard-local">${pct === null ? `<span class="sig-ccard-nopct">${ST("Local audience not reported yet", "Audiencia local aún no reportada")}</span>` : `${pct}% <span>${ST("local audience", "audiencia local")}</span>`}</div>
+    <div class="sig-ccard-meta">${fmtNum(c.totalAudience || 0)} ${ST("total followers", "seguidores en total")}${cats ? ` · ${esc(cats)}` : ""} · ${p.paidRate ? `$${fmtPrice(p.paidRate)} ${ST("paid rate", "tarifa pagada")}` : ST("comp visits", "visitas de cortesía")}</div>
+    ${photos.length > 1 ? `<div class="sig-ccard-thumbs">${photos.slice(1, 3).map((src) => `<img src="${esc(src)}" alt="">`).join("")}</div>` : ""}
+    ${why ? `<div class="sig-ccard-why">${esc(why)}</div>` : ""}
+    <div class="sig-ccard-acts">
+      <button type="button" class="btn small-btn" data-sigcard="${ti}:${ci}:invite">${ST("Invite", "Invitar")}</button>
+      <button type="button" class="btn small-btn ghost" data-sigcard="${ti}:${ci}:save">${saved ? ST("Saved ✓", "Guardado ✓") : ST("Save", "Guardar")}</button>
+    </div>
+  </div>`;
+}
+function sigOfferCardHtml(p, ti, ci) {
+  const o = p.o;
+  const why = p.mode === "accept" ? ST("Sent directly to you", "Enviada directamente a ti") : (o.fitNote || ST("Open in your market", "Abierta en tu mercado"));
+  const money = o.kind === "paid"
+    ? `$${fmtPrice(o.cashRate)} ${ST("paid · you keep 97%", "pagada · te quedas con el 97%")}`
+    : `${ST("Comp", "Cortesía")}: ${esc(o.whatComped || ST("a visit", "una visita"))} ($${fmtMoney(o.dollarCap || 0)} ${ST("value", "valor")})`;
+  return `<div class="sig-ccard sig-ocard">
+    <div class="sig-ccard-name">${esc(o.title || "")}</div>
+    <div class="sig-ccard-handle">${esc(o.businessName || "")}${o.market ? ` · ${esc(o.market)}` : ""}</div>
+    <div class="sig-ccard-meta">${money}</div>
+    <div class="sig-ccard-why">${esc(why)}</div>
+    <div class="sig-ccard-acts">
+      <button type="button" class="btn small-btn" data-sigcard="${ti}:${ci}:apply">${p.mode === "accept" ? ST("Accept", "Aceptar") : ST("Apply", "Aplicar")}</button>
+      <button type="button" class="btn small-btn ghost" data-sigcard="${ti}:${ci}:pass">${ST("Pass", "Pasar")}</button>
+    </div>
+  </div>`;
 }
 
 // ---------- B1: set up a campaign (business) ----------
@@ -4946,6 +5103,37 @@ async function sigB1Step(f, text, norm) {
 // Criteria in plain words (or chips), the real Discover query
 // behind it, cards Sig can state a reason for, and Invite,
 // which starts B1 in direct mode at the creator's listed rate.
+function sigB2FlowStart() {
+  state.sigFlow = { id: "b2", step: "criteria", data: {} };
+}
+// Plain-words criteria parsing, shared by the B2 criteria step
+// and the ask-intent path, so "find me food creators near me"
+// and the same words typed at the criteria prompt mean the
+// same search. Category names match in full first, then by
+// their first word ("food" for Food & Drink).
+function sigB2ParseCrit(norm) {
+  const crit = {};
+  const cats = state.boot.creatorCategories || [];
+  let cat = null;
+  for (const c of cats) { const cn = sigOpNorm(c).trim(); if (cn && norm.includes(" " + cn + " ")) { cat = c; break; } }
+  if (!cat) {
+    for (const c of cats) {
+      const tok = sigOpNorm(c).trim().split(" ")[0];
+      if (!tok || tok.length < 4 || tok === "local" || tok === "other") continue;
+      if (norm.includes(" " + tok + " ") || norm.includes(" " + tok + "s ")) { cat = c; break; }
+    }
+  }
+  if (cat) crit.category = cat;
+  if (norm.includes("spanish") || norm.includes("espanol")) crit.spanish = true;
+  if (norm.includes("perform")) crit.musician = "perform";
+  else if (norm.includes("musician") || norm.includes("musico") || norm.includes("music")) crit.musician = "1";
+  if (norm.includes("creat") && norm.includes("music")) crit.musician = "create";
+  const pct = /(\d{1,3})\s*%/.exec(norm) || /(\d{1,3})\s*(?:percent|por ciento)/.exec(norm);
+  if (pct) crit.minLocalPct = Number(pct[1]);
+  if (norm.includes("paid")) crit.paid = true;
+  if (norm.includes("student") || norm.includes("estudiant") || norm.includes("campus")) crit.students = true;
+  return crit;
+}
 function sigB2Start() {
   const f = { id: "b2", step: "criteria", data: {} };
   state.sigFlow = f;
@@ -4959,18 +5147,7 @@ function sigB2Start() {
 }
 async function sigB2Step(f, text, norm) {
   if (f.step !== "criteria") { sigOpAsk(ST("Tap Invite on a creator above to build their offer, start a new search, or say never mind.", "Toca Invitar en un creador para armar su oferta, inicia otra búsqueda, o di cancelar.")); return; }
-  const crit = {};
-  const cats = state.boot.creatorCategories || [];
-  for (const c of cats) { if (norm.includes(" " + sigOpNorm(c).trim() + " ") || norm.includes(sigOpNorm(c).trim())) { crit.category = c; break; } }
-  if (norm.includes("spanish") || norm.includes("espanol")) crit.spanish = true;
-  if (norm.includes("perform")) crit.musician = "perform";
-  else if (norm.includes("musician") || norm.includes("musico") || norm.includes("music")) crit.musician = "1";
-  if (norm.includes("creat") && norm.includes("music")) crit.musician = "create";
-  const pct = /(\d{1,3})\s*%/.exec(norm) || /(\d{1,3})\s*(?:percent|por ciento)/.exec(norm);
-  if (pct) crit.minLocalPct = Number(pct[1]);
-  if (norm.includes("paid")) crit.paid = true;
-  if (norm.includes("student") || norm.includes("estudiant") || norm.includes("campus")) crit.students = true;
-  await sigB2Run(crit);
+  await sigB2Run(sigB2ParseCrit(norm));
 }
 async function sigB2Run(crit) {
   const f = state.sigFlow;
@@ -5010,25 +5187,43 @@ async function sigB2Run(crit) {
     ]);
     return;
   }
+  // Ranked by how local the audience is, SIGNL's basis: the
+  // local share first (the number each card leads with), the
+  // bigger audience breaking a tie. The confirmation line
+  // states the count and the basis, then the cards carry the
+  // people (Build -78).
+  cards.sort((a, b) => (sigLocalPct(b) - sigLocalPct(a)) || ((Number(b.totalAudience) || 0) - (Number(a.totalAudience) || 0)));
   const top = cards.slice(0, 5);
-  const lines = top.map((c, i) => {
-    const p = c.profile || {};
-    const local = p.localAudiencePct === null || p.localAudiencePct === undefined ? ST("local % not reported", "sin % local") : `${p.localAudiencePct}% ${ST("local", "local")}`;
-    const why = c.fit && c.fit.reasons && c.fit.reasons.length ? c.fit.reasons[0] : ST(`${local} reach`, `alcance ${local}`);
-    return `${i + 1}. ${c.name} (@${p.handle || ""}) — ${p.tierBand || ""} · ${local} · ${fmtNum(c.totalAudience || 0)} ${ST("audience", "audiencia")} · ${p.paidRate ? `$${fmtPrice(p.paidRate)} ${ST("paid rate", "tarifa pagada")}` : ST("comp visits", "visitas de cortesía")} · ${why}`;
-  });
-  const acts = top.slice(0, 3).map((c) => ({ label: `${ST("Invite", "Invitar")} @${(c.profile || {}).handle || c.name}`, run: () => sigOpPick(`${ST("Invite", "Invitar")} @${(c.profile || {}).handle || ""}`, async () => {
-    state.sigFlow = null;
-    sigB1Start({ creatorId: c.userId, creatorName: c.name, creatorRate: (c.profile || {}).paidRate || null, creatorTier: (c.profile || {}).tierBand || null });
-  }) }));
-  acts.push({ label: ST("See them in Discover", "Verlos en Descubrir"), run: async () => {
-    if (crit.category) state.discoverCats = [crit.category];
-    if (crit.spanish) state.discoverSpanish = true;
-    state.sigFlow = null;
-    go("dashboard", "Discover");
-  } });
-  acts.push({ label: ST("New search", "Nueva búsqueda"), run: () => sigOpPick(ST("New search", "Nueva búsqueda"), async () => sigB2Start()) });
-  sigOpSay(`${ST(`Found ${cards.length} creator${cards.length === 1 ? "" : "s"} in ${marketTalkNameClient(u.market)}. Top matches:`, `Encontré ${cards.length} creador${cards.length === 1 ? "" : "es"} en ${marketTalkNameClient(u.market)}. Mejores:`)}\n${lines.join("\n")}`, acts);
+  const desc = crit.category ? crit.category + " " + ST("creators", "creadores")
+    : crit.spanish ? ST("Spanish-speaking creators", "Creadores que hablan español")
+    : crit.musician ? ST("Musicians", "Músicos")
+    : crit.students ? ST("Student creators", "Creadores estudiantes")
+    : ST("creators", "creadores");
+  const line = ST(`Found ${cards.length} ${desc} in ${marketTalkNameClient(u.market)}, ranked by how local their audience is.`, `Encontré ${cards.length} ${desc} en ${marketTalkNameClient(u.market)}, ordenados por qué tan local es su audiencia.`)
+    + (cards.length > top.length ? " " + ST(`Here are the top ${top.length}.`, `Aquí están los ${top.length} mejores.`) : "");
+  const cardActs = top.map((c) => ({
+    invite: () => sigOpPick(`${ST("Invite", "Invitar")} @${(c.profile || {}).handle || ""}`, async () => {
+      state.sigFlow = null;
+      sigB1Start({ creatorId: c.userId, creatorName: c.name, creatorRate: (c.profile || {}).paidRate || null, creatorTier: (c.profile || {}).tierBand || null });
+    }),
+    // The deck's Save, in chat: the same favorites toggle the
+    // grid heart and the deck card use, fence included server
+    // side. The card repaints with its new state.
+    save: async () => {
+      try { const r = await api("POST", "/favorites", { creatorId: c.userId }); c.isFavorite = !!r.isFavorite; }
+      catch (e) { sigOpSay(e.message, sigOpHomeActions()); }
+    },
+  }));
+  const acts = [
+    { label: ST("See them in Discover", "Verlos en Descubrir"), run: async () => {
+      if (crit.category) state.discoverCats = [crit.category];
+      if (crit.spanish) state.discoverSpanish = true;
+      state.sigFlow = null;
+      go("dashboard", "Discover");
+    } },
+    { label: ST("New search", "Nueva búsqueda"), run: () => sigOpPick(ST("New search", "Nueva búsqueda"), async () => sigB2Start()) },
+  ];
+  sigOpSayCards(line, "creators", top.map((c) => ({ c })), cardActs, acts);
 }
 
 // ---------- B3: track my data (business) ----------
@@ -5640,13 +5835,35 @@ async function sigC1Start() {
     ]);
     return;
   }
-  const lines = picks.map((p, i) => {
-    const o = p.o;
-    const why = p.mode === "accept" ? ST("sent directly to you", "enviada directamente a ti") : (o.fitNote || ST("open in your market", "abierta en tu mercado"));
-    return `${i + 1}. "${o.title}" — ${o.businessName} · $${fmtPrice(o.kind === "paid" ? o.cashRate : o.dollarCap)} ${o.kind === "paid" ? ST("paid", "pagada") : ST("comp", "cortesía")} · ${why}`;
-  });
-  const acts = picks.map((p, i) => ({ label: `${p.mode === "accept" ? ST("Accept", "Aceptar") : ST("Apply", "Aplicar")}: ${String(p.o.title).slice(0, 26)}`, primary: i === 0, run: () => sigOpPick(`${p.mode === "accept" ? ST("Accept", "Aceptar") : ST("Apply", "Aplicar")}: ${p.o.title}`, async () => sigC1Confirm(p)) }));
-  sigOpSay(`${ST("Here is what fits you, best first:", "Esto te conviene, lo mejor primero:")}\n${lines.join("\n")}`, acts);
+  // Cards, not a list (Build -78): each offer carries its own
+  // Apply / Accept and Pass, so the creator acts in the chat.
+  // Apply still lands on the same confirm-first summary as
+  // before; Pass is final in the same way the Offers deck's
+  // pass is (a direct invite is declined; an open offer leaves
+  // the creator's decks through deck state).
+  const cardActs = picks.map((p) => ({
+    apply: () => sigOpPick(`${p.mode === "accept" ? ST("Accept", "Aceptar") : ST("Apply", "Aplicar")}: ${p.o.title}`, async () => sigC1Confirm(p)),
+    pass: async () => { await sigC1Pass(p); },
+  }));
+  sigOpSayCards(ST(`Found ${picks.length} ${picks.length === 1 ? ST("offer that fits you", "oferta que te conviene") : ST("offers that fit you", "ofertas que te convienen")}, best first:`, `Esto te conviene, lo mejor primero:`), "offers", picks.map((p) => ({ p })), cardActs, []);
+}
+async function sigC1Pass(p) {
+  const o = p.o;
+  try {
+    if (p.mode === "accept") await api("POST", `/offers/${o.id}/decline`, {});
+    else await api("POST", "/deck-state", { deck: "offers", action: "hide", itemId: o.id });
+  } catch (e) {
+    sigOpSay(e.message, sigOpHomeActions());
+    return;
+  }
+  for (const t of state.sigThread || []) {
+    if (t.cardKind === "offers") t.cards = (t.cards || []).filter((d) => d.p !== p);
+  }
+  const f = state.sigFlow;
+  let left = null;
+  if (f && f.data) { f.data.picks = (f.data.picks || []).filter((x) => x !== p); left = f.data.picks.length; }
+  if (!left) state.sigFlow = null;
+  sigOpSay(ST(`Passed on "${o.title}". It is off your list.`, `Pasaste de "${o.title}". Salió de tu lista.`), left ? [] : sigOpHomeActions());
 }
 function sigC1Confirm(p) {
   const f = state.sigFlow;
@@ -5900,6 +6117,34 @@ function sigC4Run() {
     { label: ST("Copy invite link", "Copiar enlace"), primary: true, run: async () => { try { await navigator.clipboard.writeText(url); sigOpSay(ST("Copied. Send it anywhere.", "Copiado. Envíalo donde quieras."), sigOpHomeActions()); } catch (e) { sigOpSay(ST("Copy did not work here; the link is in the message above, ready to select.", "La copia no funcionó aquí; el enlace está en el mensaje de arriba, listo para seleccionar."), sigOpHomeActions()); } } },
     { label: ST("See my Momentum", "Ver mi Momentum"), run: async () => go("dashboard", "Momentum") },
   ]);
+}
+
+// ---------- C5: how do I earn more (creator, Build -78) ----------
+// Not a lecture: the creator's own earnings and license state
+// from the records, then the one action that moves it. Recorded
+// money only, labeled recorded, like everywhere else.
+async function sigC5Run() {
+  const u = state.user;
+  const c = u.creator || {};
+  let ro = null;
+  try { ro = await api("GET", "/me/performance-readout"); } catch (e) { ro = null; }
+  let pendingLic = 0;
+  try { const lr = await api("GET", "/license-requests"); pendingLic = (lr.licenseRequests || []).filter((l) => l.status === "pending").length; } catch (e) { /* the readout line still stands */ }
+  const o = (ro && ro.overall) || {};
+  const lines = [];
+  lines.push(ST(`Your earnings on record: ${o.paidBookings || 0} paid ${o.paidBookings === 1 ? "booking" : "bookings"}, $${fmtMoney(o.paidRecordedNet || 0)} recorded as yours. Recorded means the bookings in the app; payouts run outside the app for now.`, `Tus ganancias en registro: ${o.paidBookings || 0} reservas pagadas, $${fmtMoney(o.paidRecordedNet || 0)} registrado como tuyo. Registrado significa las reservas en la app; los pagos van fuera de la app por ahora.`));
+  if (pendingLic) lines.push(ST(`${pendingLic} license ${pendingLic === 1 ? "request is" : "requests are"} waiting on your answer in Earnings. Each one you approve pays you 97% of your licensing fee, and the business gets 90 days of repost and ad use from the day you approve.`, `${pendingLic} solicitud${pendingLic === 1 ? "" : "es"} de licencia esperando tu respuesta en Ganancias. Cada una que apruebas te paga el 97% de tu tarifa de licencia, y el negocio obtiene tres meses de republicación y uso en anuncios desde el día en que apruebas.`));
+  const licFee = c.licensingFee || c.licenseFee || null;
+  if (!c.paidRate) lines.push(ST("No paid rate on your profile yet. Without one, businesses can only book you for comped visits.", "Aún no tienes tarifa pagada en tu perfil. Sin ella, los negocios solo pueden reservarte visitas de cortesía."));
+  else lines.push(ST(`Your paid rate is $${fmtPrice(c.paidRate)}${licFee ? ` and your licensing fee is $${fmtPrice(licFee)}` : ", and your licensing fee is not set yet"}. You keep 97% of both.`, `Tu tarifa pagada es $${fmtPrice(c.paidRate)}${licFee ? ` y tu tarifa de licencia es $${fmtPrice(licFee)}` : ", y tu tarifa de licencia aún no está fijada"}. Te quedas con el 97% de ambas.`));
+  const pc = u.profileCompletion || {};
+  if (!pc.complete) lines.push(ST("Your profile is not finished, and businesses only see finished profiles. Finishing it is the biggest earn-more move there is.", "Tu perfil no está terminado, y los negocios solo ven perfiles terminados. Terminarlo es el paso que más mueve tus ganancias."));
+  const acts = [];
+  if (pendingLic) acts.push({ label: ST("Answer license requests", "Responder licencias"), primary: true, run: async () => go("dashboard", "Earnings") });
+  if (!c.paidRate || !licFee) acts.push({ label: ST("Set my rates", "Fijar mis tarifas"), primary: !pendingLic, run: async () => go("dashboard", "Profile") });
+  if (!pc.complete) acts.push({ label: ST("Finish my profile", "Terminar mi perfil"), primary: !pendingLic && !!c.paidRate && !!licFee, run: async () => { await sigC2Start(); sigOpPaint(); } });
+  acts.push({ label: ST("Find offers for me", "Buscar ofertas para mí"), primary: !acts.length, run: async () => { await sigC1Start(); sigOpPaint(); } });
+  sigOpSay(lines.join("\n"), acts);
 }
 
 // ---------- two-step claim, step one (Jeff, 2026-10-20) ----------

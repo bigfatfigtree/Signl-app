@@ -265,7 +265,7 @@ function buildCreatorFacts(d) {
     paidRecordedNet: o.paidRecordedNet || 0,
     licenseRequestsPending: o.licenseRequestsPending || 0,
     paidRate: c.paidRate || null,
-    licenseFee: c.licenseFee || null,
+    licenseFee: c.licensingFee || c.licenseFee || null,
   };
 }
 
@@ -645,4 +645,41 @@ function answerFacts(role, facts, question, history) {
   return null;
 }
 
-module.exports = { buildAdminFacts, buildBusinessFacts, buildCreatorFacts, factsLines, answerFacts };
+// ---------------- SIG HOME STATE (Build -78) ----------------
+// The greeting chips on the Sig tab home: the asker's own live
+// state, stated in plain words, computed from the same fact
+// sheet the answerer uses. Only true numbers ever appear: a
+// chip with a zero behind it is simply not built, and the one
+// standing-status chip (founding list / market live / profile
+// state) carries no count at all. Admin gets no chips: the
+// console Sig stays read-only answers, exactly as before.
+function buildHomeState(role, f) {
+  if (!f || role === "admin") return { chips: [] };
+  const chips = [];
+  if (role === "business") {
+    // A founding business is on the founding list even in a
+    // market that has opened: its own offers still run as
+    // drafts until activation, so the founding chip wins.
+    if (f.founding) chips.push(`Founding list${f.market ? " · " + f.market : ""}`);
+    else if (f.marketLive) chips.push(`${f.market || "Your market"} is live`);
+    if (f.applicantsWaiting) chips.push(`${fmt(f.applicantsWaiting)} ${plural(f.applicantsWaiting, "applicant")} waiting`);
+    if (f.draftOffers) chips.push(`${fmt(f.draftOffers)} ${plural(f.draftOffers, "draft")} in progress`);
+    if (f.offersLive) chips.push(`${fmt(f.offersLive)} ${plural(f.offersLive, "offer")} live`);
+    if (f.visitsAllowance) chips.push(`${fmt(f.visitsRemaining)} ${plural(f.visitsRemaining, "visit")} left this month`);
+    if (f.postsLive) chips.push(`${fmt(f.postsLive)} ${plural(f.postsLive, "post")} live`);
+    if (f.rosterInMarket) chips.push(`${fmt(f.rosterInMarket)} ${plural(f.rosterInMarket, "creator")} on your ${f.market || "market"} roster`);
+  } else if (role === "creator") {
+    if (f.directInvites) chips.push(`${fmt(f.directInvites)} ${plural(f.directInvites, "invite")} sent to you`);
+    if (f.offersOpen) chips.push(`${fmt(f.offersOpen)} ${plural(f.offersOpen, "offer")} waiting`);
+    if (f.postsOwed && f.postsOwed.length) chips.push(`${fmt(f.postsOwed.length)} ${plural(f.postsOwed.length, "post")} owed`);
+    if (f.applicationsPending) chips.push(`${fmt(f.applicationsPending)} ${plural(f.applicationsPending, "application")} waiting on an answer`);
+    if (f.licenseRequestsPending) chips.push(`${fmt(f.licenseRequestsPending)} license ${plural(f.licenseRequestsPending, "request")} waiting`);
+    chips.push(`${fmt(f.momentumPoints)} Momentum points`);
+    chips.push(f.profileComplete ? "Profile live" : (f.missingLabels && f.missingLabels.length ? `Profile: ${fmt(f.missingLabels.length)} ${plural(f.missingLabels.length, "step")} to finish` : "Profile not finished"));
+    if (f.founding) chips.push(`Founding roster${f.market ? " · " + f.market : ""}`);
+    else if (f.marketLive) chips.push(`${f.market || "Your market"} is live`);
+  }
+  return { chips };
+}
+
+module.exports = { buildAdminFacts, buildBusinessFacts, buildCreatorFacts, factsLines, answerFacts, buildHomeState };

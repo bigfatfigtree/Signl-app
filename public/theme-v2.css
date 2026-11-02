@@ -2687,6 +2687,33 @@ body.v3-on .tab-item.on .tab-sig-img { box-shadow: 0 0 0 2px var(--ink); }
 .sig-turn.sig .sig-bub { background: var(--tint, #E3F5EA); color: var(--ink); border-bottom-left-radius: 6px; }
 .sig-turn.user .sig-bub { background: var(--ink); color: #fff; border-bottom-right-radius: 6px; }
 .sig-turn-act { display: flex; margin-top: 10px; background: var(--ink); color: #fff; border-color: var(--ink); }
+/* Sig home state + result cards (Build -78): the greeting with
+   live-state chips at the top of the tab, and the ranked result
+   cards inside a conversation turn. Cards are white on the
+   mint bubble; a bubble carrying cards runs wider. */
+.sig-home { margin: 2px 0 4px; }
+.sig-home-h { font-size: 1.28rem; font-weight: 800; letter-spacing: -.02em; }
+.sig-home-sub { color: var(--sage, #5F7265); font-weight: 600; margin-top: 1px; }
+.sig-home-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.sig-chip { background: #fff; border: 1px solid var(--line); border-radius: 999px; padding: 5px 11px; font-size: .8rem; font-weight: 700; color: var(--ink); }
+.sig-chip.is-quiet { color: var(--sage, #5F7265); font-weight: 600; }
+.sig-bub:has(.sig-cards) { max-width: 97%; }
+.sig-cards { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+.sig-ccard { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 12px; color: var(--ink); text-align: left; }
+.sig-ccard-top { display: flex; gap: 10px; align-items: center; }
+.sig-ccard-photo { width: 52px; height: 52px; border-radius: 12px; object-fit: cover; flex: none; }
+.sig-ccard-nophoto { display: flex; align-items: center; justify-content: center; background: var(--tint, #E3F5EA); font-weight: 800; font-size: 1.2rem; }
+.sig-ccard-name { font-weight: 800; font-size: 1rem; line-height: 1.2; }
+.sig-ccard-tier { background: var(--tint, #E3F5EA); border-radius: 999px; padding: 1px 8px; font-size: .68rem; font-weight: 800; vertical-align: 2px; }
+.sig-ccard-handle { color: var(--sage, #5F7265); font-size: .84rem; font-weight: 600; }
+.sig-ccard-local { font-size: 1.7rem; font-weight: 800; letter-spacing: -.02em; margin-top: 8px; line-height: 1; }
+.sig-ccard-local span { font-size: .78rem; font-weight: 700; color: var(--sage, #5F7265); letter-spacing: 0; }
+.sig-ccard-local .sig-ccard-nopct { font-size: .86rem; color: var(--sage, #5F7265); }
+.sig-ccard-meta { font-size: .86rem; font-weight: 600; margin-top: 5px; }
+.sig-ccard-thumbs { display: flex; gap: 6px; margin-top: 8px; }
+.sig-ccard-thumbs img { width: 54px; height: 54px; border-radius: 10px; object-fit: cover; }
+.sig-ccard-why { font-size: .82rem; color: var(--sage, #5F7265); margin-top: 6px; }
+.sig-ccard-acts { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
 .sig-ask-form { display: flex; gap: 8px; margin-top: 12px; }
 .sig-ask-form input {
   flex: 1; min-width: 0; font: inherit; color: var(--ink);

@@ -14694,6 +14694,27 @@ async function route(event) {
   // no AI provider is configured or the provider fails; the
   // client then answers from its canon bank. Trouble must never
   // surface as an API error here.
+  // ---------- Sig home state (Build -78) ----------
+  // GET /api/sig/home -> { role, displayName, market, chips }
+  // The Sig tab opens with the asker's real live state (the
+  // Cirqle-clean pattern Jeff pointed at: greet, state, pick
+  // up). Chips are built in sigdata.js from the same fact sheet
+  // /sig/ask answers from, so a number on the greeting can
+  // never disagree with a number in an answer. Admin gets an
+  // empty chip list: console Sig stays read-only answers.
+  if (method === "GET" && seg[0] === "sig" && seg[1] === "home") {
+    if (user.role === "admin") return json(200, { role: "admin", displayName: "", market: null, chips: [] });
+    const full = await withFounding(user);
+    let facts = null;
+    try { facts = await buildSigFacts(user, full); } catch (e) { facts = null; }
+    if (!facts) return json(200, { role: user.role, displayName: "", market: user.market || null, chips: [] });
+    const home = sigdata.buildHomeState(user.role, facts);
+    const displayName = user.role === "business"
+      ? ((user.business && user.business.businessName) || user.name || "")
+      : (String(user.name || "").trim().split(/\s+/)[0] || (user.creator && user.creator.handle) || "");
+    return json(200, { role: user.role, displayName, market: user.market || null, chips: home.chips });
+  }
+
   if (method === "POST" && seg[0] === "sig" && seg[1] === "ask") {
     const b = parseBody(event);
     const q = String(b.q || "").trim();
