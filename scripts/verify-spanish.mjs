@@ -168,7 +168,13 @@ try {
   check("S1: the profile can set the preference (lang es)", langOn.data.user.lang === "es", "");
   const langBad = await esClaim("PATCH", "/api/me/profile", { lang: "pt" });
   check("S1: an unsupported profile lang is ignored, stored value kept", langBad.status === 200 && langBad.data.user.lang === "es", "");
-  check("S1: Sig carries the creator Spanish state line", (routerSrcS3.match(/This person prefers Spanish\. Answer in Spanish\./g) || []).length === 1 && routerSrcS3.includes('if (user.lang === "es")'), "");
+  // Pin updated at the Build -69 merge (2026-11-02): Build -69 split the
+  // sig/ask grounding into a fact-sheet path and a sparse fallback path,
+  // and each carries the Spanish state line, so the count is now >= 1
+  // (was exactly 1 when the handler had a single grounding path). The
+  // behavior this pin protects — the line reaches Sig for Spanish
+  // creators — is unchanged.
+  check("S1: Sig carries the creator Spanish state line", (routerSrcS3.match(/This person prefers Spanish\. Answer in Spanish\./g) || []).length >= 1 && routerSrcS3.includes('if (user.lang === "es")'), "");
 
   // ---------- S4: Admin readout ----------
   await creator("PATCH", "/api/me/profile", { spanishContent: true, spanishAudiencePct: 40 });

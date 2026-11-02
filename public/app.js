@@ -3418,7 +3418,7 @@ async function sigAsk(text) {
       api("POST", "/sig/ask", { q: text, history }),
       new Promise((_, reject) => setTimeout(() => reject(new Error("sig timeout")), 10000)),
     ]);
-    if (data && data.source === "ai" && data.text) {
+    if (data && (data.source === "ai" || data.source === "data") && data.text) {
       // Admin: the answer stands on its own. The walk-to flow
       // picker below is keyed to business/creator flows and must
       // never hand the console a button into someone else's
