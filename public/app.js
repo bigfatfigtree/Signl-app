@@ -1678,7 +1678,7 @@ function audienceLineHtml(source) {
 // the single source of truth; the fallback text mirrors it).
 function standardVisit() {
   return (state.boot && state.boot.standardVisit) || {
-    summary: "Every SIGNL comped visit includes: 1 post or reel + 1 story that shares the post, within 48 hours of the visit, honest and disclosed, live at least 30 days, with tracked delivery proof. 48 hours is the standard creators are held to; a post inside one week still counts, as a late delivery. Paid bookings carry the deliverables set in the booking's own terms. Content rights follow the visit, never the plan: on a comp visit the business may share the post natively only, with the creator tagged; no downloads, no reposting the file, no ad use. On a paid visit the business may also repost the post and run it as an ad for 90 days from the post date, under the one standard license every paid booking includes. A comped post can be licensed the same way, for 90 days, at the creator's listed licensing fee and only with their approval. The creator always owns their content, and nobody can edit it.",
+    summary: "Every SIGNL comped visit includes: 1 post or reel + 1 story that shares the post, within 48 hours of the visit, honest and disclosed, live at least 30 days, with tracked delivery proof. The goal is one post + one story within 48 hours of your visit; a post inside one week still counts, as a late delivery. Paid bookings carry the deliverables set in the booking's own terms. Content rights follow the visit, never the plan: on a comp visit the business may share the post natively only, with the creator tagged; no downloads, no reposting the file, no ad use. On a paid visit the business may also repost the post and run it as an ad for 90 days from the post date, under the one standard license every paid booking includes. A comped post can be licensed the same way, for 90 days, at the creator's listed licensing fee and only with their approval. The creator always owns their content, and nobody can edit it.",
   };
 }
 
@@ -1808,7 +1808,8 @@ function dealPlainWordsHtml(o) {
       ${o.includes ? `<p class="small"><strong>Included:</strong> ${esc(o.includes)}</p>` : ""}
       ${o.experience ? `<p class="small"><strong>The experience:</strong> ${esc(o.experience)}</p>` : ""}
       <p class="small"><strong>You post:</strong> ${deliverablePhraseClient(o)}, within ${windowPhraseClient(dv84.windowHours)} of your visit, honest, with the ${o.kind === "coupon" ? "coupon" : o.kind === "paid" ? "paid booking" : "comp"} disclosed. The post stays live at least 30 days. You check off by pasting the post link in My Visits.</p>
-      <p class="small muted">${dv84.windowHours === 48 ? "Up to a week at the outside. 48 hours is the standard and earns the Momentum." : "Up to a week at the outside. Posting inside your window is what earns the Momentum."}</p>
+      ${o.kind === "paid" ? `<p class="small"><strong>Included:</strong> the standard license: the business can repost your post and run it as an ad for 90 days from the post date, never longer. It is created automatically with this booking as a dated record; there is nothing to fill in, for you or for them.</p>` : ""}
+      <p class="small muted">${dv84.windowHours === 48 ? "The goal is one post + one story within 48 hours of your visit. Up to a week at the outside; posting within 48 hours earns the Momentum." : "Up to a week at the outside. Posting inside your window is what earns the Momentum."}</p>
       <p class="small"><strong>They can:</strong> ${rights.can.map(esc).join("; ")}</p>
       <p class="small"><strong>They can't:</strong> ${rights.cannot.map(esc).join("; ")}</p>
     </div>
@@ -3038,7 +3039,7 @@ function renderHelpTab() {
     ${qa("What does SIGNL cost?", "Founding plans: Self-Service is $199 a month for 5 creators, Growth is $349 for 10, Managed is $699 for 20. Founding businesses get $100 off the first month and keep the founding rate while the plan stays active. The minimum is 3 months, there is no per-location charge, and unused visits roll into the next month, then expire.")}
     ${isUkUser() ? qa("I'm in the UK. How is my data handled?", ukPrivacyText()) : ""}
   ` : `
-    ${qa("What do I owe after a visit?", "One post plus one story that shares the post. Post within 48 hours to be on time; the hard deadline is one week. Always disclose the comp, that is the law and the deal.")}
+    ${qa("What do I owe after a visit?", "The goal is one post + one story within 48 hours of your visit. Post within 48 hours to be on time; the hard deadline is one week. Always disclose the comp, that is the law and the deal.")}
     ${qa("How do comped visits and paid bookings differ?", "A comped visit covers the meal or service, on the business. A paid booking pays your listed rate, and you keep 97%. Joining is free and comped visits are always free; the only fee is 3% on paid bookings.")}
     ${qa("What is local reach?", "The share of your audience that actually lives here, times your audience size. Businesses rank creators by local reach, not follower count.")}
     ${qa("How does Momentum work?", "Points for doing the work well: +20 for an on-time post, +25 when a business runs your post as an ad, +3 when someone joins from your invite link, +10 when a creator you invited is approved. Late posts and no-shows cost points.")}
@@ -3519,7 +3520,7 @@ function sigBankFor(biz) {
         return t;
       }, flow: "Post an offer" },
     { id: "ugc", q: "Is this UGC? Can I reuse a creator's post?", ph: ["ugc", "reuse", "repost", "run it as an ad", "use their post", "whitelist"], g: [["post", "content", "photo", "video"], ["reuse", "repost", "ad", "ads", "marketing", "license", "licence", "rights", "use"]], s: ["ugc", "licensing", "licence"],
-      a: "In plain terms, yes: this is UGC, but local. Creators post on their own accounts, and the license is what lets you reuse it. A comped visit is native share only: you may reshare it with credit, nothing more. Paid bookings include one standard license: 90 days from the post date to repost and run ads, never longer. A comped post can be licensed at the creator's listed fee for 90 days from the creator's approval; the creator approves each use and keeps 97%." },
+      a: "In plain terms, yes: this is UGC, but local. Creators post on their own accounts, and the license is what lets you reuse it. A comped visit is native share only: you may reshare it with credit, nothing more. Paid bookings include one standard license: 90 days from the post date to repost and run ads, never longer. That licence is included and automatic: a dated record created with the booking, never a form to fill in and never an add-on. A comped post can be licensed at the creator's listed fee for 90 days from the creator's approval; the creator approves each use and keeps 97%. To keep using a post past its 90 days, use Extend or license separately on the post: the same creator-approved request at their listed fee, a fresh 90 days from approval." },
     { id: "paidlane", q: "How do paid bookings work?", ph: ["paid booking", "book a creator", "pay a creator", "how much do creators charge", "creator rate"], g: [["paid", "pay", "book", "rate", "charge"], ["creator", "booking", "how", "work"]], s: [],
       a: (c) => `Two lanes. Comped: you cover the visit and the creator posts. Paid: you book a creator at the rate they list, which starts at a ${/london/i.test(c.market || "") ? "£40" : "$50"} floor. The paid lane carries a 6% total fee, split evenly between you and the creator, so the creator keeps 97% of their listed rate. Every paid booking includes one standard license: 90 days from the post date to repost the post and run it as an ad, never longer.`, flow: "Find creators" },
     { id: "invite", q: "How do I invite a creator?", ph: ["invite a creator", "find creators", "browse creators", "discover creators", "who can i book", "who can i invite"], g: [["creator", "creators", "roster"], ["invite", "find", "browse", "choose", "pick", "discover"]], s: ["discover"],
@@ -3564,13 +3565,13 @@ function sigBankFor(biz) {
     { id: "tiers", q: "How do tiers work?", ph: ["tier", "neighbors", "locals", "headliners", "what tier"], g: [["tier", "neighbors", "locals", "headliners"], ["what", "how", "am i", "mean", "work", "level"]], s: ["tier", "headliners"],
       a: "SIGNL starts at 500 total followers across your platforms. Tiers come from your stacked audience, counted across all your platforms, and they set themselves. Neighbors is 500 to 2,000, Locals is 2,000 to 15,000, Headliners is 15,000 and up. Tier shapes which offers you are eligible for. Paid bookings at your own rate are open to every tier; paid campaigns are a Headliners extra.", flow: "Check my Momentum" },
     { id: "visits", q: "How does a visit work, start to finish?", ph: ["visit work", "how does a visit", "visit code", "check in", "redeem", "how do visits work"], g: [["visit", "visits"], ["how", "work", "happen", "process", "code", "redeem"]], s: [],
-      a: "A business books you, or you apply to an offer and get picked. You receive a visit code; at the business, staff enter it to check you in. Then you post: one post plus one story that shares the post. Within 48 hours counts as on time; one week is the hard deadline. If anything goes wrong at the counter, the business can confirm your visit from their side instead.", flow: (c) => c.live ? "Add a post link" : null },
+      a: "A business books you, or you apply to an offer and get picked. You receive a visit code; at the business, staff enter it to check you in. Then you post: the goal is one post + one story within 48 hours of your visit. Within 48 hours counts as on time; one week is the hard deadline. If anything goes wrong at the counter, the business can confirm your visit from their side instead.", flow: (c) => c.live ? "Add a post link" : null },
     { id: "owe", q: "What do I owe after a visit?", ph: ["owe", "deliverable", "have to post", "after a visit", "what do i post"], g: [["owe", "deliver", "post", "required"], ["after", "what", "visit", "need"]], s: [],
-      a: "One post plus one story that shares the post. Post within 48 hours to be on time; the hard deadline is one week. Post honestly, in your own words: nobody can require a positive post or approve your words first, and every comped post gets disclosed, as the FTC requires. Keep the post live for at least 30 days.", flow: (c) => c.live ? "Add a post link" : null },
+      a: "The goal is one post + one story within 48 hours of your visit. Post within 48 hours to be on time; the hard deadline is one week. Post honestly, in your own words: nobody can require a positive post or approve your words first, and every comped post gets disclosed, as the FTC requires. Keep the post live for at least 30 days.", flow: (c) => c.live ? "Add a post link" : null },
     { id: "cantmake", q: "What if I can't make a visit?", ph: ["can't make", "cant make", "miss a visit", "running late", "cancel a visit", "reschedule", "something came up"], g: [["visit", "booking"], ["cancel", "miss", "late", "cant", "cannot", "reschedule", "sick", "emergency"]], s: [],
       a: "Message the business in the app as early as you can; a heads-up before the visit is always better than silence. A visit you accept and skip costs Momentum points, and repeated no-shows can cost you your spot on the roster." },
     { id: "licensing", q: "What is a license request?", ph: ["license request", "licensing", "license my post", "reuse my post", "license fee"], g: [["licens"], ["request", "what", "how", "fee", "approve", "work"]], s: ["licensing"],
-      a: "Licensing is how a business reuses a post you already made. They request a license at the fee you set, and you approve or decline each use. An approved license lets them repost it and run it as an ad for 90 days, starting the day you approve it and never longer. You keep 97% of the fee, and when the business runs your post as an ad, you earn +25 Momentum.", flow: (c) => c.live ? "See my earnings" : null },
+      a: "Licensing is how a business reuses a post you already made. They request a license at the fee you set, and you approve or decline each use. An approved license lets them repost it and run it as an ad for 90 days, starting the day you approve it and never longer. You keep 97% of the fee, and when the business runs your post as an ad, you earn +25 Momentum. A paid booking is different: its standard license is included automatically for 90 days from the post date, with nothing for you or the business to fill in. A request to extend past those 90 days comes to you the same way, at your listed fee, for your yes or no.", flow: (c) => c.live ? "See my earnings" : null },
     { id: "profilegate", q: "What do I need to finish my profile?", ph: ["finish my profile", "complete my profile", "profile complete", "businesses see me", "not showing up", "why can't businesses"], g: [["profile", "businesses", "roster"], ["finish", "complete", "need", "missing", "see", "visible", "showing"]], s: [],
       a: (c) => {
         let t = "Businesses only see creators with a finished profile, and approval is not the gate; a finished profile is. Finished means four things: your home city, an audience count above zero, at least one category, and your local audience share reported. A photo is not required, but it earns +10 Momentum and makes your card stronger.";
@@ -4219,6 +4220,30 @@ function licPillHtml(lic) {
 // only the pill's day count. A window is exactly 90 days, so the
 // start is the end minus 90: the post date on a paid booking,
 // the creator's approval day on a licensed post.
+// Phase A cleanup (Build -110, Jeff 2026-11-03): the paid
+// booking's standard licence as ONE plain INCLUDED line. It is
+// the only way the included licence appears in the booking flow
+// (composer review, booking sheet, preview): auto-created with
+// the booking, dated from the post date, never a form, a field,
+// an option, or an add-on. Extending past it is the separate
+// creator-approved path (Extend or license separately, below).
+function includedLicenceLineHtml() {
+  return `<p class="small included-licence-line" style="margin:2px 0 0">Includes the standard license: repost + ad use for 90 days from the post date, never longer. The exact end date shows in Posts &amp; licenses once the post is live.</p>`;
+}
+// Extend or license separately (Build -110): the ONE extension
+// path, riding the Build -95 creator-approved renewal flow
+// (askRenewLicense). Inside the last 14 days (or after the
+// licence ends) it sends that request; earlier, it says plainly
+// when extending opens and what it will cost, and sends nothing.
+function extendLicence(postId, fee, endsAt) {
+  const endsOn = endsAt ? fmtDay(endsAt) : "";
+  const daysLeft = endsAt ? Math.ceil((Date.parse(endsAt) - Date.now()) / 86400000) : 0;
+  if (endsAt && daysLeft > 14) {
+    alert(`This licence is included and runs through ${endsOn}. Extending it opens 14 days before it ends: a separate, creator-approved request at the creator's listed licensing fee, for a fresh 90 days from the day they approve. Nothing to do yet, and nothing is sent.`);
+    return false;
+  }
+  return askRenewLicense(postId, fee, endsOn);
+}
 function licWindowLine(lic) {
   if (!lic || lic.type === "native" || !lic.windowEndsAt) return "";
   const end = Date.parse(lic.windowEndsAt);
@@ -4349,7 +4374,7 @@ function renderHome() {
   app.innerHTML = `
   <section class="hero">
     <h1>Local creators.<br><span class="grad-text">Real regulars.</span></h1>
-    <p>Local businesses comp a meal or a service. A local creator posts honestly within 48 hours. Every visit tracked.</p>
+    <p>Local businesses comp a meal or a service. A local creator posts honestly: the goal is within 48 hours of the visit. Every visit tracked.</p>
     <p><strong>${CREATOR_FREE_LINE}</strong></p>
     <div class="cta-row">
       <a class="btn" href="#" onclick="return go('join-creator')">Become a Founding Creator</a>
@@ -4362,12 +4387,12 @@ function renderHome() {
     <p class="ui-kicker">How it works</p>
     <div class="srow"><div class="snum">01</div><div><div class="stitle">Claim your spot</div><div class="swhis">Handle, market, email — about a minute.</div></div></div>
     <div class="srow"><div class="snum">02</div><div><div class="stitle">Your market opens</div><div class="swhis">We email you. Businesses see local reach first.</div></div></div>
-    <div class="srow"><div class="snum">03</div><div><div class="stitle">Visit. Post honestly.</div><div class="swhis">Comped visit &middot; post within 48 hours.</div></div></div>
+    <div class="srow"><div class="snum">03</div><div><div class="stitle">Visit. Post honestly.</div><div class="swhis">Comped visit &middot; the goal is a post within 48 hours of the visit.</div></div></div>
   </section>
   <section style="margin-top:40px">
     <p class="ui-kicker">The two lanes</p>
     <h2 style="margin:6px 0 4px">Comped, or <span style="color:var(--mint-deep)">paid.</span></h2>
-    <div class="lrow"><span class="ldot"></span><div><span class="lname">Comped visits</span> <span class="lline">— the business covers it. You post honestly within 48 hours.</span></div></div>
+    <div class="lrow"><span class="ldot"></span><div><span class="lname">Comped visits</span> <span class="lline">— the business covers it. The goal is an honest post within 48 hours of your visit.</span></div></div>
     <div class="lrow"><span class="ldot off"></span><div><span class="lname">Paid bookings</span> <span class="lline">— booked at your rate. You keep 97%.</span></div></div>
   </section>
   <section class="fld fld-mint" style="margin-top:52px">
@@ -5073,7 +5098,7 @@ function sigOpIntent(norm) {
     if (has("monthly receipt", "receipt export", "forward my receipt", "export my receipt", "receipt for my bookkeeper")) return async () => sigB96Receipt();
     if (has("standing hours", "standing availability", "set my hours", "my opening hours", "when are we open", "when am i open")) return async () => sigB96AvailabilityStart();
     if (has("my regulars", "regulars", "book again", "rebook")) return async () => sigB95Regulars();
-    if (has("licence expiring", "license expiring", "licences ending", "licenses ending", "licence ending", "license ending", "renew licence", "renew license", "renew my licence", "renew my license")) return async () => sigB95Licences();
+    if (has("licence expiring", "license expiring", "licences ending", "licenses ending", "licence ending", "license ending", "renew licence", "renew license", "renew my licence", "renew my license", "extend licence", "extend license", "extend my licence", "extend my license", "extend or license", "license separately", "licence separately")) return async () => sigB95Licences();
     if (has("asset packet", "paquete de recursos", "paquete", "brand assets", "mis enlaces")) return async () => sigPacketStart();
     if (has("how am i doing", "como voy", "my numbers", "mis numeros", "my results", "mis resultados", "rendimiento", "track my data", "performance")) return async () => sigB3Run();
     if (has("who should i invite", "who do i invite", "who should we invite", "invite first", "quien invito primero")) return async () => { sigB2FlowStart(); await sigB2Run({}); };
@@ -7762,7 +7787,7 @@ function renderJoinCreator() {
     <div class="form-body">
     <p class="muted">${T("Build your full profile now. When your market opens, founding creators get priority. This is your real profile, not a waitlist.", "Crea tu perfil completo ahora. Cuando tu mercado abra, los creadores fundadores tienen prioridad. Este es tu perfil real, no una lista de espera.")}</p>
     <p class="small muted">${T("City missing? Pick \"My city is not listed yet\" and sign up anyway.", "¿No está tu ciudad? Elige \"Mi ciudad aún no está en la lista\" y regístrate igual.")}</p>
-    <div class="lrow"><span class="ldot"></span><div><span class="lname">${T("Comped", "Cortesía")}</span> <span class="lline">${T("— meals, services and experiences, for an honest post within 48 hours.", "— comidas, servicios y experiencias, por una publicación honesta dentro de 48 horas.")}</span></div></div>
+    <div class="lrow"><span class="ldot"></span><div><span class="lname">${T("Comped", "Cortesía")}</span> <span class="lline">${T("— meals, services and experiences, for an honest post: the goal is within 48 hours of your visit.", "— comidas, servicios y experiencias, por una publicación honesta: la meta es dentro de 48 horas de tu visita.")}</span></div></div>
     <div class="lrow"><span class="ldot off"></span><div><span class="lname">${T("Paid", "Pagado")}</span> <span class="lline">${T("— separate bookings at your own rate. You keep 97%.", "— reservas aparte a tu tarifa. Te quedas con el 97%.")}</span></div></div>
     ${hasPrefill ? `<div class="notice blue">${T("Pre-filled from your invite link. Check it and finish.", "Ya viene lleno desde tu enlace de invitación. Revísalo y termina.")}</div>` : ""}
     <p class="small">${T("In a hurry?", "¿Tienes prisa?")} <a href="#" onclick="return showQuickJoin()">${T("Claim your spot with just your handle", "Reclama tu lugar solo con tu usuario")}</a> ${T("and finish your profile after approval instead.", "y termina tu perfil después de la aprobación.")}</p>
@@ -7844,7 +7869,7 @@ function renderJoinCreator() {
       </div>
       <div class="notice blue">${T("The deal, in plain words:", "El trato, en palabras simples:")}
         <ul style="margin:8px 0 0;padding-left:18px">
-          <li>${T("A business comps you a meal or service. You post your honest experience within 48 hours of the visit and disclose the comp. Nobody can ask you for a positive post. Ever.", "Un negocio te da una comida o un servicio en cortesía. Publicas tu experiencia honesta dentro de 48 horas de la visita y revelas la cortesía. Nadie puede pedirte una publicación positiva. Nunca.")}</li>
+          <li>${T("A business comps you a meal or service. The goal is to post your honest experience within 48 hours of the visit and disclose the comp. Nobody can ask you for a positive post. Ever.", "Un negocio te da una comida o un servicio en cortesía. La meta es publicar tu experiencia honesta dentro de 48 horas de la visita y revelar la cortesía. Nadie puede pedirte una publicación positiva. Nunca.")}</li>
           <li>${T("Your check-off is the post link: you paste it in the app under My Visits. The link is the proof.", "Tu marca de visita es el enlace de la publicación: lo pegas en la app, en Mis Visitas. El enlace es la prueba.")}</li>
           <li>${T("Post within 48 hours of the visit for full credit. A late post inside the catch-up window still counts.", "Publica dentro de 48 horas de la visita para crédito completo. Una publicación tarde, dentro del periodo de gracia, también cuenta.")}</li>
           <li>${T("If a post never lands, the visit does not count, and repeated misses can pause your account. Showing up matters here.", "Si una publicación nunca llega, la visita no cuenta, y las faltas repetidas pueden pausar tu cuenta. Aquí importa que cumplas.")}</li>
@@ -9207,7 +9232,7 @@ function bookPaidVisit(creatorId) {
     <p class="small" style="margin:10px 0 2px">Listed rate: <strong>$${fmtPrice(rate)}</strong></p>
     <p class="small" style="margin:2px 0">You pay <strong>$${fmtMoney(total)}</strong> (rate + 3%)</p>
     <p class="small" style="margin:2px 0">They keep <strong>$${fmtMoney(net)}</strong> (97%)</p>
-    <p class="small" style="margin:2px 0">Includes the standard license: repost + ad use for 90 days from the post date, never longer. The exact end date shows in Posts &amp; licenses once the post is live.</p>
+    ${includedLicenceLineHtml()}
     ${paymentsLive()
       ? (cardOnFileView()
         ? `<p class="small muted">Your ${esc(brandName(cardOnFileView().brand))} &middot;&middot;&middot;&middot;${esc(cardOnFileView().last4)} is charged $${fmtMoney(total)} when you book. SIGNL holds it and releases the creator's share after the post is live and the 48 hour hold passes.</p>`
@@ -9270,7 +9295,7 @@ async function previewPaidBooking(creatorId) {
       <div class="flex-between"><span class="small">SIGNL fee, split evenly</span><strong>$${fmtMoney(bk.platformFee)}</strong></div>
     </div>
     <p class="small" style="margin:10px 0 0">Held by SIGNL until the post is live.</p>
-    <p class="small" style="margin:2px 0 0">Includes the standard license: repost + ad use for 90 days from the post date, never longer. The exact end date shows in Posts &amp; licenses once the post is live.</p>
+    ${includedLicenceLineHtml()}
     ${state.preview && state.preview.planId === "self-service" ? `<p class="small muted">Growth is built for paid work and reuse: every license and renewal tracked in one library, and priority access to the creators you license.</p>` : ""}
     ${bk.paymentNote ? `<p class="small muted">${esc(bk.paymentNote)}</p>` : ""}
     ${bk.note ? `<p class="small muted">${esc(bk.note)}</p>` : ""}`;
@@ -14264,7 +14289,7 @@ function visitCard(b, role) {
       html += `<p class="small"><span class="badge ok">Running as an ad</span> Declared ${fmtDate(post.adUseDeclaredAt)}. The creator was notified and earned +25 Momentum.${role === "business" && post.adUseWindowEndsAt ? ` ${b.kind === "paid" ? "This paid visit's" : "This license's"} ad window runs to ${fmtDate(post.adUseWindowEndsAt)}.` : ""}</p>`;
     } else if (role === "business") {
       if (b.kind === "paid") {
-        html += `<button class="btn small-btn ghost" onclick="declareAdUse('${post.id}', 'paid')">Use in an ad</button> <span class="small muted">This was a paid visit: the standard license is included, repost and ad use for 90 days from the post date. The creator is notified and earns +25 Momentum.</span>`;
+        html += `<button class="btn small-btn ghost" onclick="declareAdUse('${post.id}', 'paid')">Use in an ad</button> <span class="small muted">This was a paid visit: the standard license is included, repost and ad use for 90 days from the post date. The creator is notified and earns +25 Momentum.</span> <button class="btn small-btn ghost" onclick="return extendLicence('${post.id}', ${b.creatorLicensingFee || 0}, '${esc(new Date(Date.parse(post.submittedAt || post.createdAt || Date.now()) + 90 * 86400000).toISOString())}')">Extend or license separately</button>`;
       } else if (licActive) {
         html += `<p class="small"><span class="badge ok">Licensed for ads</span> Through ${fmtDate(lic.windowEndsAt)}: repost and ad use covered.</p><button class="btn small-btn ghost" onclick="declareAdUse('${post.id}', 'license')">Use in an ad</button> <span class="small muted">The creator is notified and earns +25 Momentum.</span>`;
       } else if (licReq && licReq.status === "pending") {
@@ -16551,10 +16576,10 @@ async function loadLicenceExpiryCard() {
     if (!rows.length) { host.innerHTML = ""; return; }
     host.innerHTML = `<section class="wcard" style="margin-bottom:14px;border-left:4px solid var(--acc,#006AFC)">
       <h3 style="margin-top:0">Licences ending soon</h3>
-      <p class="small muted" style="margin-top:0">When a licence ends, you can no longer repost that post or run it as an ad. Ask to renew and the creator decides: a fresh 90 days at their listed fee, only with their approval.</p>
+      <p class="small muted" style="margin-top:0">When a licence ends, you can no longer repost that post or run it as an ad. Extend or license separately and the creator decides: a fresh 90 days at their listed fee, only with their approval. Nothing renews on its own.</p>
       ${rows.map((l) => `<div class="lib-row"><div class="lib-main"><div class="lib-title">${esc(l.title)}</div>
-        <div class="lib-meta">@${esc(l.creatorHandle)} · ${l.kind === "standard" ? "standard licence from a paid booking" : "licensed post"} · ${l.ended ? `<strong>ended ${fmtDay(l.windowEndsAt)}</strong>` : `ends <strong>${fmtDay(l.windowEndsAt)}</strong> (${l.daysLeft} ${l.daysLeft === 1 ? "day" : "days"} left)`}${l.postUrl ? ` · <a href="${esc(l.postUrl)}" target="_blank" rel="noopener">View post</a>` : ""}</div></div>
-        <button type="button" class="btn small-btn ws-primary" onclick="return askRenewLicense('${esc(l.postId)}', ${l.fee || 0}, '${esc(fmtDay(l.windowEndsAt))}')">Ask to renew</button></div>`).join("")}
+        <div class="lib-meta">@${esc(l.creatorHandle)} · ${l.kind === "standard" ? "standard licence from a paid booking (included)" : "licensed post"} · ${l.ended ? `<strong>ended ${fmtDay(l.windowEndsAt)}</strong>` : `ends <strong>${fmtDay(l.windowEndsAt)}</strong> (${l.daysLeft} ${l.daysLeft === 1 ? "day" : "days"} left)`}${l.postUrl ? ` · <a href="${esc(l.postUrl)}" target="_blank" rel="noopener">View post</a>` : ""}</div></div>
+        <button type="button" class="btn small-btn ws-primary" onclick="return askRenewLicense('${esc(l.postId)}', ${l.fee || 0}, '${esc(fmtDay(l.windowEndsAt))}')">Extend or license separately</button></div>`).join("")}
     </section>`;
   } catch (e) { /* the library below still renders; the card is an alert, never a blocker */ }
 }
@@ -16567,9 +16592,10 @@ function libRowsHtml(h, mode, licMap) {
   return `<div class="wcard" style="padding-top:8px;padding-bottom:8px">${rows.map((r) => {
     const lic = (licMap || {})[r.bookingId];
     const canLicense = mode === "creator" && r.license && r.license.type === "native" && lic && lic.fee > 0 && lic.postId;
+    const canExtend = r.license && r.license.type !== "native" && lic && lic.postId && !lic.requested;
     return `
     <div class="lib-row"><div class="lib-main"><div class="lib-title">${esc(r.title)}</div>
-    <div class="lib-meta">@${esc(r.creatorHandle)} · ${r.postedAt ? fmtDay(r.postedAt) : ""} · ${fmtNum(r.views)} views · ${fmtNum(r.likes)} likes · ${fmtNum(r.localReach || 0)} local reach · ${r.onTime ? "on time" : "late"}${r.kind === "coupon" ? " · Coupon post" : r.kind === "paid" ? " · Paid post" : ""}${r.redemptions && r.redemptions.count ? ` · ${r.redemptions.count} code uses · $${fmtMoney(r.redemptions.basketTotal)} rung up` : ""}${r.postUrl ? ` · <a href="${esc(r.postUrl)}" target="_blank" rel="noopener">View post</a>` : ""}</div>${licWindowLine(r.license)}</div>${licPillHtml(r.license)}${canLicense ? (lic.requested ? `<span class="lic-pill">License requested</span>` : `<button type="button" class="btn small-btn ws-primary" onclick="requestLicense('${lic.postId}', ${lic.fee})">Request license</button>`) : ""}</div>`;
+    <div class="lib-meta">@${esc(r.creatorHandle)} · ${r.postedAt ? fmtDay(r.postedAt) : ""} · ${fmtNum(r.views)} views · ${fmtNum(r.likes)} likes · ${fmtNum(r.localReach || 0)} local reach · ${r.onTime ? "on time" : "late"}${r.kind === "coupon" ? " · Coupon post" : r.kind === "paid" ? " · Paid post" : ""}${r.redemptions && r.redemptions.count ? ` · ${r.redemptions.count} code uses · $${fmtMoney(r.redemptions.basketTotal)} rung up` : ""}${r.postUrl ? ` · <a href="${esc(r.postUrl)}" target="_blank" rel="noopener">View post</a>` : ""}</div>${licWindowLine(r.license)}</div>${licPillHtml(r.license)}${canLicense ? (lic.requested ? `<span class="lic-pill">License requested</span>` : `<button type="button" class="btn small-btn ws-primary" onclick="requestLicense('${lic.postId}', ${lic.fee})">Request license</button>`) : canExtend ? `<button type="button" class="btn small-btn ws-outline" onclick="return extendLicence('${lic.postId}', ${lic.fee || 0}, '${esc(r.license.windowEndsAt || "")}')">Extend or license separately</button>` : ""}</div>`;
   }).join("")}</div>`;
 }
 async function renderContentTab() {
@@ -20341,11 +20367,9 @@ function renderAdmin() {
       <button class="btn" onclick="enterPreview()">Preview as business &rarr;</button>
       <button class="btn ghost" onclick="enterPreviewDashboard()">Business dashboard &rarr;</button>
     </div>
-    <div id="admin-demo-showcase"></div>
     <div id="admin-sig"><div class="panel"><div class="sig-load-row">${sigAvatarHtml("think")}</div><p class="muted small" style="margin:0">Sig is reading the same numbers Admin shows...</p></div></div>` : ""}
     <div id="tab-body"><p class="muted">Loading...</p></div>`;
   if (landing) loadAdminSig();
-  if (landing) loadDemoShowcasePanel();
   if (tab === "Sig") renderAdminSig();
   if (tab === "Applications") loadApplications();
   if (tab === "Requests") loadAdminRequests();
@@ -20359,8 +20383,14 @@ function renderAdmin() {
   if (tab === "Stats") loadStats();
 }
 
-// Demo showcase (Build -67, Deliverable 4): Jeff's walkthrough
-// creators. Fictional, tester-flagged Nashville profiles that
+// Demo showcase (Build -67, Deliverable 4; MOVED in Build -110
+// Phase A): Jeff's walkthrough creators. The Load/Remove panel
+// lives in Admin -> Requests, with the other platform-level
+// switches (the Finish Engine toggle's home), NOT in the
+// Applications queue: the queue renders with zero demo UI so
+// daily application checking is never obstructed. Behaviour,
+// endpoints, allowlist, and audit logging are unchanged.
+// Fictional, tester-flagged Nashville profiles that
 // exist ONLY inside the fence: visible in discovery and profile
 // views to the allowlisted business (Chelsea Friday Furniture)
 // and tester businesses, invisible to everyone else, and never
@@ -21432,9 +21462,11 @@ async function loadAdminRequests() {
     el.innerHTML = `
       <div id="admin-msg-panel"><p class="muted">Loading creator messages...</p></div>
       <div id="admin-finish-panel"></div>
+      <div id="admin-demo-showcase"></div>
       ${summaryStrip}`;
     const rendered = renderAdminMessages();
     renderAdminFinishEngine();
+    loadDemoShowcasePanel();
     // A queue-row Message tap that crossed tabs (adminMsgComposeTo)
     // lands here with the target set: once the panel has rendered,
     // bring the compose box into view and focus it.

@@ -210,7 +210,7 @@ check("the token routes are Admin-only", bizSelfSet.status === 403 || bizSelfSet
 
 // ---------- canon locks ----------
 console.log("Canon locks");
-check("build stamp is -109 on both sides", fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes("2026.11.02-109") && fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes("2026.11.02-109"));
+check("build stamp is -109 on both sides", fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes("2026.11.03-110") && fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes("2026.11.03-110"));
 const routerSrc = fs.readFileSync(path.join(root, "netlify/functions/lib/router.js"), "utf8");
 check("founding Stripe prices stay unarmed (no market live for money)", /STRIPE_PRICE_FOUNDING_SELF_SERVICE \|\| ""/.test(routerSrc) && /STRIPE_PRICE_FOUNDING_GROWTH \|\| ""/.test(routerSrc) && /STRIPE_PRICE_FOUNDING_MANAGED \|\| ""/.test(routerSrc));
 check("client carries the UK explainer variant + privacy text behind the market switch", appSrc.includes("payoutExplainerUkHtml") && appSrc.includes("isUkUser") && appSrc.includes("ukPrivacyText"));

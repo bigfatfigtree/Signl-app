@@ -353,13 +353,13 @@ const STANDARD_VISIT = {
   postWithinHours: 48,
   deliverables: ["1 post or reel", "1 story that shares the post"],
   postStaysLiveDays: 30,
-  creatorDoes: "Show up, enjoy the comp, and post within 48 hours of the visit: 1 post or reel + 1 story that shares the post. Honest opinion, comp disclosed.",
+  creatorDoes: "Show up, enjoy the comp, and post: the goal is 1 post or reel + 1 story that shares the post, within 48 hours of your visit. Honest opinion, comp disclosed.",
   businessGets: [
     "The post, tracked and proven in the dashboard",
     "The post stays live on the creator's profile for at least 30 days",
   ],
   summary:
-    "Every SIGNL comped visit includes: 1 post or reel + 1 story that shares the post, within 48 hours of the visit, honest and disclosed, live at least 30 days, with tracked delivery proof. 48 hours is the standard creators are held to; a post inside one week still counts, as a late delivery. Paid bookings carry the deliverables set in the booking's own terms. Content rights follow the visit, never the plan: on a comp visit the business may share the post natively only, with the creator tagged; no downloads, no reposting the file, no ad use. On a paid visit the business may also repost the post and run it as an ad for 90 days from the post date, under the one standard license every paid booking includes. A comped post can be licensed the same way, for 90 days, at the creator's listed licensing fee and only with their approval. The creator always owns their content, and nobody can edit it.",
+    "Every SIGNL comped visit includes: 1 post or reel + 1 story that shares the post, within 48 hours of the visit, honest and disclosed, live at least 30 days, with tracked delivery proof. The goal is one post + one story within 48 hours of your visit; a post inside one week still counts, as a late delivery. Paid bookings carry the deliverables set in the booking's own terms. Content rights follow the visit, never the plan: on a comp visit the business may share the post natively only, with the creator tagged; no downloads, no reposting the file, no ad use. On a paid visit the business may also repost the post and run it as an ad for 90 days from the post date, under the one standard license every paid booking includes. A comped post can be licensed the same way, for 90 days, at the creator's listed licensing fee and only with their approval. The creator always owns their content, and nobody can edit it.",
 };
 
 // ---------- The paid lane (Jeff, 2026-10-19) ----------
@@ -1145,6 +1145,38 @@ function adUseWindowEnd(post) {
 }
 function licenseWindowEnd(fromMs) {
   return new Date(fromMs + LICENSE_WINDOW_DAYS * DAY_MS);
+}
+// Phase A cleanup (Build -110, Jeff 2026-11-03): a paid booking's
+// standard licence is an AUTO-CREATED, DATED record. Nothing about
+// it is a form: no business or creator input creates, edits, or
+// opts out of it. The dated record materializes the moment the
+// paid post lands (its 90 days run from the post date), stored
+// under its own `stdlicence:` namespace so it can never be
+// counted as a separately licensed (paid-for) licence anywhere:
+// fee 0, included, granted by the booking's own accepted terms.
+// Before the post lands, the booking's paidLane carries the same
+// licence in pending form (startsOn: "post date").
+function standardLicenceRecord(post, booking, ts) {
+  const startsMs = Date.parse(post.submittedAt || post.createdAt || ts);
+  return {
+    id: `std-${booking.id}`,
+    type: "standard",
+    included: true,
+    autoCreated: true,
+    status: "granted",
+    postId: post.id,
+    bookingId: booking.id,
+    businessId: booking.businessId,
+    businessName: booking.businessName || "",
+    creatorId: booking.creatorId,
+    creatorHandle: booking.creatorHandle || "",
+    fee: 0,
+    licenseDays: LICENSE_WINDOW_DAYS,
+    startsAt: new Date(startsMs).toISOString(),
+    windowEndsAt: licenseWindowEnd(startsMs).toISOString(),
+    createdAt: ts,
+    note: "Included with this paid booking: repost + paid ad use for 90 days from the post date, never longer.",
+  };
 }
 function visitRightsForVisit(kind) {
   if (kind === "paid") {
@@ -2867,7 +2899,7 @@ function signupConfirmationEmail(user, band) {
       "",
       `SIGNL has not opened in ${place} yet, and your sign-up is how that changes: we open new markets where creator sign-ups pile up. When ${user.city} opens, founding sign-ups there are first in line, and we email you the moment it happens.`,
       "",
-      "The deal, as agreed: businesses comp you a meal or service, you post your honest experience within 48 hours, and you disclose the comp in the post. Nobody can ever ask you for a positive post.",
+      "The deal, as agreed: businesses comp you a meal or service, the goal is to post your honest experience within 48 hours of the visit, and you disclose the comp in the post. Nobody can ever ask you for a positive post.",
       "",
       CREATOR_FREE_LINE,
       "",
@@ -2897,7 +2929,7 @@ function signupConfirmationEmail(user, band) {
     "",
     `What happens next: when you are approved, we email you again and your founding status page opens at app.joinsignl.com. ${marketTalkName(user.market)} is a founding market, and founding creators get first pick of offers when it opens to businesses.`,
     "",
-    "The deal, as agreed: businesses comp you a meal or service, you post your honest experience within 48 hours, and you disclose the comp in the post. Nobody can ever ask you for a positive post.",
+    "The deal, as agreed: businesses comp you a meal or service, the goal is to post your honest experience within 48 hours of the visit, and you disclose the comp in the post. Nobody can ever ask you for a positive post.",
     "",
     CREATOR_FREE_LINE,
     "",
@@ -2954,7 +2986,7 @@ function claimConfirmationEmail(user, band) {
       "",
       `SIGNL has not opened in ${place} yet, and your sign-up is how that changes: we open new markets where creator sign-ups pile up. When ${user.city} opens, founding sign-ups there are first in line.`,
       "",
-      "The deal, as agreed: businesses comp you a meal or service, you post your honest experience within 48 hours, and you disclose the comp in the post. Nobody can ever ask you for a positive post.",
+      "The deal, as agreed: businesses comp you a meal or service, the goal is to post your honest experience within 48 hours of the visit, and you disclose the comp in the post. Nobody can ever ask you for a positive post.",
       "",
       CREATOR_FREE_LINE,
       "",
@@ -2984,7 +3016,7 @@ function claimConfirmationEmail(user, band) {
     "",
     `What happens next: when you are approved, we email you again, and that is when you finish your profile: your home city, your audience counts, your local audience percentage, your categories, and the rest of what businesses see. A finished profile is what makes you visible to businesses, so the approval email is the one to act on. ${marketTalkName(user.market)} is a founding market, and founding creators with finished profiles get first pick of offers when it opens to businesses.`,
     "",
-    "The deal, as agreed: businesses comp you a meal or service, you post your honest experience within 48 hours, and you disclose the comp in the post. Nobody can ever ask you for a positive post.",
+    "The deal, as agreed: businesses comp you a meal or service, the goal is to post your honest experience within 48 hours of the visit, and you disclose the comp in the post. Nobody can ever ask you for a positive post.",
     "",
     CREATOR_FREE_LINE,
     "",
@@ -9185,7 +9217,11 @@ async function licencesHeldBy(bizUser, now, internal = false) {
     if (post.license && post.license.status === "granted") continue; // the granted record above is this post's live licence
     const postedMs = Date.parse(post.reportedAt || post.submittedAt || post.createdAt || "");
     if (!Number.isFinite(postedMs)) continue;
-    const end = licenseWindowEnd(postedMs).getTime();
+    // Build -110: prefer the auto-created dated standard licence
+    // record's end date when the post carries one (same value:
+    // post date + 90 days).
+    const stdEndMs = post.standardLicence && post.standardLicence.windowEndsAt ? Date.parse(post.standardLicence.windowEndsAt) : NaN;
+    const end = Number.isFinite(stdEndMs) ? stdEndMs : licenseWindowEnd(postedMs).getTime();
     const creator = await store.get(`user:${b.creatorId}`);
     if (!creator || creator.role !== "creator" || isTester(creator) || isDemoShowcaseCreator(creator)) continue;
     out.push({
@@ -22784,6 +22820,14 @@ async function route(event) {
       verifiedAt: null,
       verifiedBy: null,
     };
+    // Phase A (Build -110): a paid booking's post landing
+    // auto-creates its dated standard licence record. No input
+    // is read for it and nothing about it is optional.
+    if (booking.kind === "paid" || booking.paidLane) {
+      const stdLic = standardLicenceRecord(post, booking, ts);
+      post.standardLicence = { recordId: stdLic.id, startsAt: stdLic.startsAt, windowEndsAt: stdLic.windowEndsAt };
+      try { await store.set(`stdlicence:${stdLic.id}`, stdLic); } catch (e) { /* the post record still carries the dates */ }
+    }
     await store.set(`post:${post.id}`, post);
     booking.status = "completed";
     booking.updatedAt = ts;
@@ -22908,7 +22952,7 @@ async function route(event) {
     let isRenewal = false;
     if (booking.kind === "paid") {
       const stdEnd = adUseWindowEnd(post).getTime();
-      if (stdEnd - Date.now() > RENEWAL_WINDOW_MS) return err(400, "This post came from a paid visit, which already includes the standard 90-day license. There is nothing more to license.");
+      if (stdEnd - Date.now() > RENEWAL_WINDOW_MS) return err(400, "This post came from a paid visit, which already includes the standard 90-day license. There is nothing more to license yet: extending it opens 14 days before it ends, through Extend or license separately on the post in Posts & licenses.");
       isRenewal = true;
     }
     if (post.license && post.license.status === "granted" && Date.parse(post.license.windowEndsAt) > Date.now()) {
@@ -22955,7 +22999,11 @@ async function route(event) {
       windowEndsAt: null,
       // Build -95: a renewal request names the licence it
       // replaces; the grant still starts fresh on approval.
+      // Build -110: one coherent path — an extension of a paid
+      // booking's included standard licence rides this same
+      // creator-approved flow and is named as an extension.
       renewal: isRenewal,
+      extensionOf: isRenewal && booking.kind === "paid" ? "standard" : null,
       renewalOfRequestId: isRenewal && post.license ? post.license.requestId || null : null,
     };
     await store.set(`license:${rec.id}`, rec);

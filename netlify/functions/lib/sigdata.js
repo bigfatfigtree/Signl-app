@@ -991,11 +991,18 @@ function answerBusiness(f, q, t) {
     const list = f.regulars.slice(0, 5).map((r) => `${r.name}${r.handle ? " (@" + r.handle + ")" : ""}: ${fmt(r.visits)} ${plural(r.visits, "visit")}, last one ${r.lastVisitAt ? String(r.lastVisitAt).slice(0, 10) : "on record"}${r.rebookedSince ? ", already rebooked since" : ""}`).join("; ");
     return linked(`You have ${fmt(f.regularsCount)} ${plural(f.regularsCount, "Regular")}: ${list}. Book again on any of them clones the last visit's deal into a new draft; nothing sends until you publish it.`, "Open Regulars", "biz-regulars");
   }
+  // Included licence + extension (Phase A, Build -110): the
+  // standard licence on a paid booking is automatic, never a
+  // form or an add-on; extending past it is the one separate,
+  // creator-approved path.
+  if ((hasWord(t, "license", "licenses", "licence", "licences")) && hasPhrase(t, "extend", "separately", "included", "add-on", "addon", "extra charge", "form")) {
+    return linked("A paid booking's standard licence is included and automatic: one dated record, repost and paid ad use for 90 days from the post date, never longer. Nobody fills in a licence form for it and it is never an add-on. To keep using a post beyond those 90 days, use Extend or license separately on the post in Posts and licenses: the request goes to the creator at their listed licensing fee, and a fresh 90 days starts only if they approve. Extending opens 14 days before the included licence ends.", "Open Posts and licenses", "biz-content");
+  }
   // Licences ending soon (Build -95)
-  if ((hasWord(t, "license", "licenses", "licence", "licences")) && hasPhrase(t, "expir", "ending", "ends", "renew", "run out", "running out")) {
+  if ((hasWord(t, "license", "licenses", "licence", "licences")) && hasPhrase(t, "expir", "ending", "ends", "renew", "extend", "run out", "running out")) {
     if (!f.licencesExpiring || !f.licencesExpiring.length) return linked("No licences are ending in the next 14 days. Every licence you hold shows its end date in Posts and licenses, and you get an alert 14 days and again 1 day before one ends.", "Open Posts and licenses", "biz-content");
     const list = f.licencesExpiring.map((l) => `${l.creatorName || "A creator"}'s post "${l.title}" ends ${l.endsOn}${l.ended ? " (already ended)" : ` (${fmt(Math.max(0, l.daysLeft))} ${plural(Math.max(0, l.daysLeft), "day")} left)`}`).join("; ");
-    return linked(`Ending soon: ${list}. Ask to renew from Posts and licenses: the request goes to the creator at their listed fee, and a fresh 90 days starts only if they approve. Nothing renews on its own.`, "Ask to renew", "biz-content");
+    return linked(`Ending soon: ${list}. Ask to renew from Posts and licenses (Extend or license separately on the post): the request goes to the creator at their listed fee, and a fresh 90 days starts only if they approve. Nothing renews on its own.`, "Ask to renew", "biz-content");
   }
   // Licenses
   if (hasWord(t, "license", "licenses", "licensing") && hasPhrase(t, "my", "how many", "waiting", "pending")) {

@@ -59,7 +59,7 @@ check("canon: founding prices unchanged", marketsJs.includes("priceMonthly: 199"
 
 part("source: business surfaces");
 const appJs = fs.readFileSync(path.join(root, "public/app.js"), "utf8");
-check("booking sheet + preview twin spell the license", count(appJs, "Includes the standard license: repost + ad use for 90 days from the post date, never longer. The exact end date shows in Posts &amp; licenses once the post is live.") === 2, String(count(appJs, "never longer. The exact end date shows")));
+check("booking sheet + preview twin spell the license (Phase A: one shared INCLUDED line helper, used by both)", count(appJs, "Includes the standard license: repost + ad use for 90 days from the post date, never longer. The exact end date shows in Posts &amp; licenses once the post is live.") === 1 && count(appJs, "includedLicenceLineHtml()") >= 3, String(count(appJs, "never longer. The exact end date shows")));
 check("business visit detail matches the creator's sentence", appJs.includes("This booking includes the standard license: repost and ad use for 90 days from the post date, never longer."));
 check("licWindowLine surfaces the stored end date on rows", appJs.includes("function licWindowLine(lic)") && appJs.includes("Repost + ad use: ${fmtDay(start)} to ${fmtDay(lic.windowEndsAt)}") && appJs.includes("Repost + ad use ended ${fmtDay(lic.windowEndsAt)}"));
 check("licWindowLine is wired into both library row builders", count(appJs, "${licWindowLine(r.license)}") === 2);
