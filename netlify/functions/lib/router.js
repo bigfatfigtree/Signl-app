@@ -2417,7 +2417,7 @@ function createMomentum(data) {
   }
 
   function detailFor(user) {
-    const empty = { signups: 0, approved: 0, points: 0, ledger: [], checklist: [], floorApplied: false, campusCrew: null, campusLead: null };
+    const empty = { signups: 0, approved: 0, points: 0, ledger: [], checklist: [], floorApplied: false, campusCrew: null, campusLead: null, hasBookedVisit: false };
     if (!user || user.role !== "creator" || !user.creator) return empty;
     const c = user.creator;
     const ledger = [];
@@ -2615,6 +2615,10 @@ function createMomentum(data) {
       checklist,
       campusCrew,
       campusLead: campusLeadFor(user),
+      // Build -115: the client hides the Momentum penalties footer
+      // until the creator has actually booked a visit; pre-launch
+      // creators with no visits never see penalty numbers.
+      hasBookedVisit: myBookings.length > 0,
     };
   }
 
@@ -3175,6 +3179,10 @@ function claimConfirmationEmail(user, band) {
 // The day-3 completion reminder (Jeff, 2026-10-20): shorter than
 // the approval email, same pitch. Sent once, by the sweep, only to
 // approved creators whose profile is still unfinished.
+// Build -115 (Jeff, 2026-11-03): same shorter/cleaner pass as the
+// approval email. The bracketed points checklist is gone; what is
+// left is the standing, the plain missing list, one finish link,
+// and the launch line.
 function profileCompletionReminderEmail(user) {
   const first = greetingName(user);
   const completion = profileCompletionFor(user);
@@ -3182,17 +3190,17 @@ function profileCompletionReminderEmail(user) {
   const missing = completion.missing.map((id) => labels[id] || id).join(", ");
   const unlisted = user.market === UNLISTED;
   const place = unlisted ? user.city : marketTalkName(user.market);
+  const handle = user.creator && user.creator.handle ? user.creator.handle : null;
   const subject = "Finish your SIGNL profile to be launch-ready";
   const lines = [
     `Hi ${first},`,
     "",
-    `You are approved as a Founding Creator in ${place}, and your founding spot is held in sign-up order. One step is still open: your profile is not finished yet, so businesses cannot see you and you cannot take offers.`,
+    `You are approved as a Founding Creator in ${place}, and your founding spot is held in sign-up order. One step is still open: finish your profile, so businesses can see you and send you offers.`,
     "",
     `Still to do: ${missing}.`,
     ...(completion.missing.includes("audience") && audienceMinimumApplies(user) ? [MIN_AUDIENCE_LINE] : []),
-    "Finishing takes a few minutes: sign in, open the Profile tab, and work down the checklist on your dashboard: https://app.joinsignl.com",
-    "",
-    ...completionChecklistLines(user),
+    "Finish it here: https://app.joinsignl.com/?open=profile (a few minutes, start to finish).",
+    ...(handle ? [`Your public booking page is already live: https://app.joinsignl.com/c/${handle}`] : []),
     "",
     unlisted
       ? `We open new markets where creator sign-ups pile up, and when ${user.city} opens, founding creators with finished profiles go first.`
@@ -3270,26 +3278,43 @@ function lateStreakPauseEmail(creator) {
 function approvalEmail(user, band) {
   const first = greetingName(user);
   const paidLine = paidCampaignLine(user);
-  // The approval email carries the step-two ask (Jeff, 2026-10-20):
-  // finish the profile to be launch-ready, with the completion
-  // checklist and its Momentum values and a direct link into the
-  // app, then the referral ask (rosterBenefitsLines: their
-  // personal invite link, +3 per sign-up, +10 per approval, points
-  // ordering the business-facing creator list). Founding spots
-  // are held in sign-up order. Signs as Jeff, per the standing rule
-  // for outbound email.
-  const finishLines = (opensLine) => [
+  // Build -115 (Jeff, 2026-11-03): rewritten shorter and cleaner at
+  // Jeff's direction, roughly half the old length. The prize leads
+  // (approved, founding band and standing, the status page), then
+  // ONE step in plain words (the four basics make you visible; no
+  // bracketed points checklist), real links (profile, status, the
+  // public booking page), one plain Momentum gloss, the free line,
+  // the invite kept whole but tightened, and launch hype as the
+  // spine: the moment the market opens, founding creators hear
+  // first and pick first. The invite is compressed inline here
+  // (rosterBenefitsLines still serves the claim and sign-up
+  // emails at full length). Same facts and canon as the long
+  // version it replaces. Signs as Jeff, per the standing rule.
+  const handle = user.creator && user.creator.handle ? user.creator.handle : null;
+  const stepLines = [
     "",
-    "One step left: finish your profile to be launch-ready.",
+    "One step left: finish your profile to be launch-ready. Four basics make you visible to businesses: your home city, your audience counts, at least one content category, and your local audience %.",
     MIN_AUDIENCE_LINE,
-    "Sign in and open the Profile tab: https://app.joinsignl.com",
-    "Your dashboard shows this checklist. The items marked [needed to go live] are what make you visible to businesses; the rest earn Momentum points, and Momentum points order the creator list businesses see:",
-    ...completionChecklistLines(user),
-    "Until your profile is finished, businesses cannot see you and you cannot take offers, so finish it before your market opens.",
+    "Finish your profile: https://app.joinsignl.com/?open=profile",
+    "Your founding status page: https://app.joinsignl.com/?open=status",
+    ...(handle ? [`Your public booking page is already live: https://app.joinsignl.com/c/${handle}`] : []),
+    "Until the basics are done, businesses cannot see you and you cannot take offers. Momentum is the priority score that orders the list businesses see, and finishing your profile earns it.",
+  ];
+  const inviteLines = (place) => {
+    const inviteUrl = inviteUrlForUser(user);
+    if (!inviteUrl) return [];
+    return [
+      "",
+      `Grow your roster in ${place}: your invite link is ${inviteUrl}. Creators who join through it are credited to you: +3 when a creator joins through your link, +10 when they are approved, and roster standing is part of the order they see.`,
+    ];
+  };
+  const tail = [
+    ...(paidLine ? ["", paidLine] : []),
     "",
-    opensLine,
-    "",
-    CREATOR_FREE_LINE,
+    "National platforms sell reach. We sell regulars.",
+    "Jeff",
+    "Founder, SIGNL",
+    "hello@joinsignl.com",
   ];
   if (user.market === UNLISTED) {
     const subject = `You are approved: founding creator for ${user.city}`;
@@ -3300,14 +3325,13 @@ function approvalEmail(user, band) {
     ];
     if (band) lines.push(`You are in the first ${band} to sign up in ${user.city}. Founding spots are held in sign-up order, and when ${user.city} opens, founding sign-ups are first in line for offers.`);
     lines.push(
-      ...finishLines(`${user.city} is not an open market yet. We open new markets where creator sign-ups pile up, and the moment ${user.city} opens, we email you again.`),
-      ...rosterBenefitsLines(user, user.city),
-      "Momentum points order the creator list businesses see, and Headliners are first in line for paid campaigns.",
-      ...(paidLine ? [paidLine, ""] : []),
-      "National platforms sell reach. We sell regulars.",
-      "Jeff",
-      "Founder, SIGNL",
-      "hello@joinsignl.com",
+      ...stepLines,
+      "",
+      `${user.city} is not an open market yet. We open new markets where creator sign-ups pile up, and the moment ${user.city} opens, we email you again, founding creators first.`,
+      "",
+      CREATOR_FREE_LINE,
+      ...inviteLines(user.city),
+      ...tail,
     );
     return { subject, text: lines.join("\n") };
   }
@@ -3319,14 +3343,13 @@ function approvalEmail(user, band) {
   ];
   if (band) lines.push(`You are in the first ${band} founding creators in ${user.market}. Founding spots are held in sign-up order, and founding creators are shown to businesses in that order.`);
   lines.push(
-    ...finishLines(`${marketTalkName(user.market)} is a founding market. The moment it opens to businesses, we email you again, and founding creators get first pick of every offer. Your local audience percentage is the number businesses look at first, so keep it honest and current.`),
-    ...rosterBenefitsLines(user, user.market),
-    "Momentum points order the creator list businesses see, and Headliners are first in line for paid campaigns.",
-    ...(paidLine ? [paidLine, ""] : []),
-    "National platforms sell reach. We sell regulars.",
-    "Jeff",
-    "Founder, SIGNL",
-    "hello@joinsignl.com",
+    ...stepLines,
+    "",
+    `${marketTalkName(user.market)} is a founding market. The moment it opens to businesses, we email you again, and founding creators get first pick of every offer. Your local audience percentage is the number businesses look at first, so keep it honest and current.`,
+    "",
+    CREATOR_FREE_LINE,
+    ...inviteLines(user.market),
+    ...tail,
   );
   return { subject, text: lines.join("\n") };
 }
@@ -5689,6 +5712,12 @@ function profileCompletionItems(user) {
     { id: "bio", label: "Write your bio (40+ characters)", points: MOMENTUM_POINTS.profileBio, done: String(c.bio || "").trim().length >= 40, required: false },
     { id: "neighborhood", label: "Set your neighborhood or area", points: MOMENTUM_POINTS.profileNeighborhood, done: !!String(c.neighborhood || "").trim(), required: false },
     { id: "bestwork", label: "Add best work links (+5 each, up to 3)", points: MOMENTUM_POINTS.profileBestWorkPerLink, done: workLinks >= 3, required: false, detail: `${workLinks} of 3 added` },
+    // Build -115 (Jeff, 2026-11-03): the public booking page joins
+    // the completion path as a visible step. Optional and worth no
+    // points: quick-claim creators already have it on (stamped at
+    // claim), everyone else gets a one-tap row in the card instead
+    // of discovering the toggle by accident.
+    { id: "publicpage", label: "Turn on your public booking page", points: null, done: c.publicPage === true, required: false },
     { id: "settings", label: "Review how businesses can book you (comp visits on, paid rate optional)", points: null, done: true, required: false },
   ];
 }

@@ -68,7 +68,7 @@ check("C4 referrals zero detail points at Home, no zero line", routerJs.includes
 check("C5 pending badge tells the truth about review order", appJs.includes("Applications are reviewed in sign-up order. Founding status starts at approval, not at sign-up."));
 check("C6 bench withholds a thin roster and promotes an introduction", routerJs.includes("One person, one appearance (Build -47, audit C6)"));
 check("C7 Bench +1 names the real button on offer cards", appJs.includes("Bring a +1 button"));
-check("C7 founding checklist step 4 opens the Offers tab", appJs.includes('btn: "See Offers"'));
+check("C7 founding checklist step 4 is the greyed Opens-at-launch info row (Build -115, audit item 5)", appJs.includes('info: "Opens at launch"') && !appJs.includes('btn: "See Offers"'));
 check("C8 Reliability shows its starting words pre-visit", appJs.includes("Starts with your first visit"));
 check("C9/L3 fast-setup copy says the draft is not kept", appJs.includes("The draft isn't kept") && appJs.includes("qc-ig-intro"));
 // Build -85: the claim door no longer mounts the Fast Setup
@@ -115,7 +115,7 @@ check("A5 campaign import previews before it writes", appJs.includes("previewCam
 check("A6 stats cells carry labels into the stacked layout", appJs.includes('data-label="Approved creators"') && css.includes("td[data-label]::before"));
 check("L1 sign-in and claim forms validate in JS, not bubbles", appJs.includes('<form novalidate onsubmit="return doSignin(event)">') && appJs.includes('<form novalidate onsubmit="return doQuickClaim(event)">'));
 check("L2 staff redeem is explained on the logged-out page", appJs.includes("Working the register at a SIGNL business?"));
-check("B-cases stamp: the build is 2026.11.03-114", fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes('"2026.11.03-114"'));
+check("B-cases stamp: the build is 2026.11.03-115", fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes('"2026.11.03-115"'));
 
 // ---------- live ----------
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "signl-build47-"));
@@ -155,7 +155,7 @@ try {
   part("live boot");
   const idxRes = await fetch(BASE + "/");
   const idxHtml = await idxRes.text();
-  check("the served page carries build 2026.11.03-114", idxHtml.includes("2026.11.03-114"));
+  check("the served page carries build 2026.11.03-115", idxHtml.includes("2026.11.03-115"));
 
   const admin = makeClient();
   await admin("POST", "/api/auth/login", { email: ADMIN_EMAIL, ["pass" + "word"]: ADMIN_PASSWORD });

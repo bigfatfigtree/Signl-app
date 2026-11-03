@@ -1161,6 +1161,7 @@ function earnActionFor(item, u) {
     case "city": return { tab: "Profile", focus: ["p-city", "p-city-text"] };
     case "categories": return { tab: "Profile", focusSelector: "input[name='p-cat']" };
     case "firstoffer": return (!u || !u.founding || u.founding.marketLive) ? { tab: "Offers" } : null;
+    case "publicpage": return { tab: "Profile", scroll: "bookme-panel" };
     case "referrals": return { tab: "Momentum", scroll: "grow-roster" };
     default: return null;
   }
@@ -1304,7 +1305,7 @@ function momentumHtml(u) {
     <h4 style="margin:14px 0 6px">Ways to earn</h4>
     ${checklist || `<p class="small muted">Loading...</p>`}
     ${ledger ? `<h4 style="margin:16px 0 6px">Points history</h4>${ledger}` : ""}
-    <p class="small muted" style="margin-top:12px">Late post −10 &middot; No-show −25 &middot; Redeemed, never posted −50.</p>
+    ${m.hasBookedVisit ? `<p class="small muted" style="margin-top:12px">Late post −10 &middot; No-show −25 &middot; Redeemed, never posted −50.</p>` : ""}
   </div>`;
 }
 
@@ -2838,7 +2839,13 @@ function sigQueueHtml(items, opts) {
     if (!state[gk]) { state[gk] = 1; sigQueueBeat = "greet"; ava = sigAvatarHtml("greet"); }
   }
   if (!n) {
-    return `<div class="sig-card"><div class="sig-top">${ava}<div><div class="sig-title">You're all caught up.</div><div class="sig-sub">When a creator applies, a visit needs you, or a post lands, it shows up here.</div></div></div>${o.askBox ? sigAskBoxHtml() : ""}${(o.links || []).length ? `<div class="sig-links">${o.links.map((l, i) => `<button type="button" class="sig-link" data-sq="L${i}">${esc(l.label)}</button>`).join("")}</div>` : ""}</div>`;
+    // Build -115: the caught-up line is role-aware. Creators used
+    // to read the business wording ("When a creator applies...");
+    // the business string stays verbatim for business and admin.
+    const emptyLine = state.user && state.user.role === "creator"
+      ? "When an offer lands, a visit needs you, or a business replies, it shows up here."
+      : "When a creator applies, a visit needs you, or a post lands, it shows up here.";
+    return `<div class="sig-card"><div class="sig-top">${ava}<div><div class="sig-title">You're all caught up.</div><div class="sig-sub">${emptyLine}</div></div></div>${o.askBox ? sigAskBoxHtml() : ""}${(o.links || []).length ? `<div class="sig-links">${o.links.map((l, i) => `<button type="button" class="sig-link" data-sq="L${i}">${esc(l.label)}</button>`).join("")}</div>` : ""}</div>`;
   }
   // leadShort (Homes only): the greeting above the card already
   // carries the lead item's full sentence, so the lead row renders
@@ -2890,13 +2897,23 @@ function wireSigQueue(root, items, links) {
 // collapsed with checks, the next undone step expanded with
 // its action. Retires permanently once every non-optional
 // step is done (the creator's paid-rate step is optional).
+// Build -115: steps may carry `info` (a badge like "Opens at
+// launch"): an info step renders as a greyed row with the badge,
+// never counts toward the done total or the retire test, and
+// never becomes the expanded next step. Founding creators' "Apply
+// to your first offer" is the first info step: pre-launch it can
+// never be done, and as a gated step it kept the whole card from
+// ever reading complete.
 function checklistHtml(steps) {
-  const gated = steps.filter((s) => !s.optional);
+  const gated = steps.filter((s) => !s.optional && !s.info);
   if (gated.length && gated.every((s) => s.done)) return "";
-  const done = steps.filter((s) => s.done).length;
-  const nextIdx = steps.findIndex((s) => !s.done);
-  return `<div class="check-card"><div class="check-head"><strong>Getting set up</strong><span class="muted small">${done} of ${steps.length} done</span></div>
-  ${steps.map((s, i) => s.done
+  const counted = steps.filter((s) => !s.info);
+  const done = counted.filter((s) => s.done).length;
+  const nextIdx = steps.findIndex((s) => !s.done && !s.info);
+  return `<div class="check-card"><div class="check-head"><strong>Getting set up</strong><span class="muted small">${done} of ${counted.length} done</span></div>
+  ${steps.map((s, i) => s.info
+    ? `<div class="check-row"><span class="check-ic num dim">${i + 1}</span><div class="check-tx"><div class="muted">${esc(s.label)} <span class="badge info">${esc(s.info)}</span></div>${s.sub ? `<div class="muted small">${esc(s.sub)}</div>` : ""}</div></div>`
+    : s.done
     ? `<div class="check-row done"><span class="check-ic num done-n">${i + 1}</span><span class="check-tx">${esc(s.label)}</span><span class="check-done-mark">${bnIcon("check")}</span></div>`
     : i === nextIdx
       ? `<div class="check-row next"><span class="check-ic num">${i + 1}</span><div class="check-tx"><div>${esc(s.label)}${s.optional ? ` <span class="badge info">Optional</span>` : ""}</div>${s.sub ? `<div class="muted small">${esc(s.sub)}</div>` : ""}</div>${s.btn ? `<button type="button" class="btn small-btn" data-ck="${i}">${esc(s.btn)}</button>` : ""}</div>`
@@ -3239,7 +3256,7 @@ async function renderEarningsTab() {
     ${kpiCard("This month", `$${fmtMoney(monthEarned)}`, { sub: "Earned in " + nowD.toLocaleDateString(undefined, { month: "long" }) })}
     ${kpiCard("On its way", `$${fmtMoney(money.held || 0)}`, { sub: "Booked at your rate, held until the post is live" })}
   </div>` : `
-  <div class="empty-card"><div class="ec-t">Nothing earned yet</div><div class="ec-s">Nothing earned yet. Paid bookings you complete show up here. Comped visits build your Momentum instead.</div></div>`}
+  <div class="empty-card"><div class="ec-t">Nothing earned yet</div><div class="ec-s">Nothing earned yet. Paid bookings you complete show up here. Comped visits build your Momentum instead.</div><div class="mt">${(state.user.creator || {}).paidRate ? `<button type="button" class="btn small-btn ws-primary" onclick="return go('dashboard','Offers')">See offers</button>` : `<button type="button" class="btn small-btn ws-primary" onclick="return go('dashboard','Profile')">Set your paid rate</button>`}</div></div>`}
   <p class="small muted" style="margin:14px 2px 0">Paid bookings pay your listed rate. You keep 97%.</p>
   <h3 style="margin:22px 0 0">License requests</h3>
   ${pending.length ? `<div class="wcard" style="padding-top:8px;padding-bottom:8px">${pending.map((l) => licRow(l, true)).join("")}</div>` : `<p class="small muted" style="margin:8px 2px 0">No license requests waiting. When a business wants to reuse one of your posts, it lands here at your listed fee.</p>`}
@@ -4128,7 +4145,7 @@ function renderSigTab() {
   ${state.user && state.user.role === "creator" ? sigCreatorStartersHtml() : ""}
   <div class="sig-chat">
     <div class="sig-chat-head"><div><div class="sig-chat-title">Conversation</div><div class="muted small">Straight answers and real actions, with the next step attached. Nothing posts, sends, or saves until you confirm a plain summary.</div></div>${anyPending ? `<span class="sig-typing" aria-hidden="true"><i></i><i></i><i></i></span>` : ""}</div>
-    <div id="sig-thread" class="sig-thread">${sigThreadHtml() || `<div class="sig-turn sig"><span class="sig-turn-ava">${SIG_AVATAR_HTML}</span><div class="sig-bub">${state.user && state.user.role === "business" ? "Ask me anything about how SIGNL works for your business: what your plan includes, how campaigns run, how your results get counted. Or tell me to do something: draft a campaign, find creators, set your staff PIN. I confirm before anything is saved." : "Ask me anything about how SIGNL works: how you make money, what things cost, how visits and points run. Or tell me to do something: set up a campaign, find creators, show your numbers. I confirm before anything is saved."}</div></div>`}</div>
+    <div id="sig-thread" class="sig-thread">${sigThreadHtml() || `<div class="sig-turn sig"><span class="sig-turn-ava">${SIG_AVATAR_HTML}</span><div class="sig-bub">${state.user && state.user.role === "business" ? "Ask me anything about how SIGNL works for your business: what your plan includes, how campaigns run, how your results get counted. Or tell me to do something: draft a campaign, find creators, set your staff PIN. I confirm before anything is saved." : state.user && state.user.role === "creator" ? "Ask me anything about how SIGNL works for creators: how visits and points run, what you earn, when your market opens. Or tell me to do something: find offers, finish your profile, show your numbers. I confirm before anything is saved." : "Ask me anything about how SIGNL works: how you make money, what things cost, how visits and points run. Or tell me to do something: set up a campaign, find creators, show your numbers. I confirm before anything is saved."}</div></div>`}</div>
     <form class="sig-ask-form" onsubmit="return sigAskSubmit(event)">
       <input id="sig-ask-input" type="text" placeholder="Ask Sig anything" autocomplete="off" aria-label="Ask Sig anything">
       <button class="btn" type="submit">Ask</button>
@@ -4823,9 +4840,9 @@ function renderSignin() {
       <button class="btn" type="submit" style="width:100%">Sign in</button>
     </form>
     <p class="small muted mt">You will stay signed in on this device for 30 days. <a class="tlink" href="#" onclick="return go('forgot')">Forgot password?</a></p>
+    <p class="small muted mt">New to SIGNL? <a class="tlink" href="#" onclick="return go('join-creator')">Join as a founding creator</a>. Businesses: <a class="tlink" href="#" onclick="return go('for-businesses')">join the founding business list</a>.</p>
     <button class="btn ghost mt" style="width:100%" onclick="return goStaff()">Redeem a creator visit</button>
     <p class="small muted">Staff at a SIGNL business: the button above takes you straight to the register screen. PIN in, creator code in, redeemed.</p>
-    <p class="small muted mt">New to SIGNL? <a class="tlink" href="#" onclick="return go('join-creator')">Join as a founding creator</a>. Businesses: <a class="tlink" href="#" onclick="return go('for-businesses')">join the founding business list</a>.</p>
     </div>
   </section>`;
 }
@@ -8700,6 +8717,10 @@ async function foundingSaveZip() {
   try {
     const data = await api("PATCH", "/me/profile", { zip });
     if (data && data.user) state.user = data.user;
+    // Build -115 (no-dead-ends rule): the re-render below replaces
+    // the note element, so the confirmation rides the body-level
+    // toast instead.
+    showToast("Saved.");
     renderBusinessFoundingStatus();
   } catch (e) {
     if (note) note.textContent = (e && e.message) || "That ZIP did not save. Try again.";
@@ -8729,8 +8750,11 @@ async function foundingSetMoment(id) {
   try {
     const data = await api("PATCH", "/me/profile", { moment: id || null });
     if (data && data.user) state.user = data.user;
+    // Build -115 (no-dead-ends rule): confirm the pick; the
+    // re-render shows it selected, the toast says it saved.
+    showToast("Saved.");
     renderBusinessFoundingStatus();
-  } catch (e) { /* the picker simply stays as it was */ }
+  } catch (e) { showToast("That did not save. Try again."); }
 }
 
 // Your first month, planned (Build -31): the first-offer
@@ -9045,6 +9069,10 @@ async function saveClaimRate() {
     const data = await api("PATCH", "/me/profile", { paidRate: rate });
     if (data && data.user) state.user = data.user;
     else if (state.user && state.user.creator) state.user.creator.paidRate = rate;
+    // Build -115 (no-dead-ends rule): the re-render swaps the
+    // whole screen (the form becomes the "your rate is on your
+    // page" line), so confirm on the body-level toast.
+    showToast("Saved.");
     render();
   } catch (e) {
     if (msg) msg.textContent = (e && e.message) || T("That did not save. You can set it later on your profile.", "No se guardó. Puedes ponerla luego en tu perfil.");
@@ -9079,7 +9107,7 @@ function renderPending() {
       ? `<p>${T("Thanks,", "Gracias,")} ${esc(u.name)}. ${T("Your founding spot in", "Tu lugar de fundador en")} <strong>${place}</strong> ${T("is claimed and your application is in the review queue. Every founding application gets a decision or a clear status within 2 business days.", "está reclamado y tu solicitud está en la fila de revisión. Cada solicitud fundadora recibe una decisión o un estado claro en 2 días laborables.")}</p>
     <p class="muted" style="text-align:left">${T("Your profile is not finished yet, and that is by design: when you are approved, we email you, and you finish your profile from the checklist on your dashboard (your home city, your audience counts, what share of it is local, your photo). A finished profile is what businesses see, so that step is what makes you bookable.", "Tu perfil aún no está terminado, y es así a propósito: cuando te aprobemos, te escribimos por correo, y terminas tu perfil desde la lista de tu panel (tu ciudad, tus conteos de audiencia, qué parte es local, tu foto). Un perfil terminado es lo que ven los negocios, así que ese paso es lo que te hace contratable.")}</p>`
       : `<p>${T("Thanks,", "Gracias,")} ${esc(u.name)}. ${T("Your founding creator profile for", "Tu perfil de creador fundador para")} <strong>${place}</strong> ${T("is built and in the review queue. Every founding application gets a decision or a clear status within 2 business days.", "está creado y en la fila de revisión. Cada solicitud fundadora recibe una decisión o un estado claro en 2 días laborables.")}</p>`}
-    ${isCreator && u.underMinimum ? `<div class="notice blue" style="text-align:left"><strong>${T("Your application is in line, and one thing is holding it:", "Tu solicitud está en la fila, y una cosa la está deteniendo:")}</strong> ${T("SIGNL starts at 500 total followers across your platforms, and your counted total right now is", "SIGNL empieza con 500 seguidores en total, sumando todas tus plataformas, y tu total contado ahora mismo es")} ${esc(fmtNum(u.underMinimum.total || 0))}. ${T("Nothing else is wrong, and your spot in line is kept. When your audience reaches 500 total, email hello@joinsignl.com and we will move your application forward from the same spot.", "Nada más está mal, y tu lugar en la fila se mantiene. Cuando tu audiencia llegue a 500 en total, escribe a hello@joinsignl.com y moveremos tu solicitud desde el mismo lugar.")}</div>` : ""}
+    ${isCreator && u.underMinimum ? `<div class="notice blue" style="text-align:left"><strong>${T("Your application is in line, and one thing is holding it:", "Tu solicitud está en la fila, y una cosa la está deteniendo:")}</strong> ${T("SIGNL starts at 500 total followers across your platforms, and your total right now is", "SIGNL empieza con 500 seguidores en total, sumando todas tus plataformas, y tu total ahora mismo es")} ${esc(fmtNum(u.underMinimum.total || 0))}. ${T("Nothing else is wrong, and your spot in line is kept. When your audience reaches 500 total, email hello@joinsignl.com and we will move your application forward from the same spot.", "Nada más está mal, y tu lugar en la fila se mantiene. Cuando tu audiencia llegue a 500 en total, escribe a hello@joinsignl.com y moveremos tu solicitud desde el mismo lugar.")}</div>` : ""}
     ${isCreator ? `<p><strong>${T(CREATOR_FREE_LINE, "Unirte a SIGNL es gratis para los creadores. Siempre.")}</strong></p>` : ""}
     ${isCreator && !u.underMinimum ? `<p class="small">${T("One founding standard: SIGNL starts at 500 total followers across your platforms.", "Un estándar fundador: SIGNL empieza con 500 seguidores en total, sumando todas tus plataformas.")}</p>` : ""}
     ${isCreator ? marketResolvedNote(u) : ""}
@@ -10017,7 +10045,7 @@ async function loadFoundingDashboard() {
       { label: "Claim your profile", sub: "You are on the roster.", done: u.status === "approved" },
       { label: "Add the four basics", sub: "Home city, audience size, categories, local %.", done: !u.profileCompletion || u.profileCompletion.complete, btn: "Finish profile", act: () => goFinishProfile() },
       { label: "Set your paid rate", sub: "Comped visits work without it.", done: !!(u.creator && u.creator.paidRate), optional: true, btn: "Set my rate", act: () => go("dashboard", "Profile") },
-      { label: "Apply to your first offer", sub: "Offers open when your market launches. The Offers tab shows how they work.", done: false, btn: "See Offers", act: () => go("dashboard", "Offers") },
+      { label: "Apply to your first offer", sub: "Offers open when your market launches. The Offers tab shows how they work.", info: "Opens at launch" },
     ];
     el.innerHTML = `
     ${wsHead("Home", { sub: "Start here. Sig shows you what needs you, in order.", subKey: "cr-home" })}
@@ -10178,7 +10206,12 @@ async function receiptSaveGoogle() {
 }
 async function receiptSaveOptIn() {
   const el = document.getElementById("rc-optin");
-  try { const data = await api("PATCH", "/me/profile", { proofNameOptIn: !!(el && el.checked) }); state.user = data.user; } catch (e) { /* the checkbox state stands */ }
+  const want = !!(el && el.checked);
+  // Build -115 (no-dead-ends rule): this checkbox used to save
+  // silently and swallow failures. Success confirms; failure
+  // reverts the box so what the business sees is what is stored.
+  try { const data = await api("PATCH", "/me/profile", { proofNameOptIn: want }); state.user = data.user; showToast("Saved."); }
+  catch (e) { if (el) el.checked = !want; showToast("That did not save. Try again."); }
 }
 // Proof Controls (Build -39): one panel, real knobs. The usual
 // comp cost pre-fills every visit close-out; the code discount
@@ -12542,6 +12575,10 @@ async function laneSave(patch) {
     const data = await api("PATCH", "/me/profile", patch);
     if (data && data.user) state.user = data.user;
     rerenderLaneControls();
+    // Build -115 (no-dead-ends rule): every lane save confirms
+    // visibly. The toast is body-level, so it survives the
+    // in-place re-render of the lane controls.
+    showToast("Saved.");
     return true;
   } catch (err) {
     rerenderLaneControls();
@@ -13504,7 +13541,7 @@ async function loadDirectOffers() {
     const bookedOfferIds = new Set((bkData.bookings || []).filter((b) => b.offerId && b.status !== "cancelled" && b.status !== "expired").map((b) => b.offerId));
     const mine = (data.offers || []).filter((o) => o.lane !== "open");
     if (!mine.length) {
-      direct.innerHTML = `<div class="empty-state"><span class="es-badge"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z"/></svg></span><h3>No invites yet</h3><p>When a business sends an offer straight to you, it lands here.</p></div>`;
+      direct.innerHTML = `<div class="empty-state"><span class="es-badge"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z"/></svg></span><h3>No invites yet</h3><p>When a business sends an offer straight to you, it lands here. Offers open to every creator in your market live under For you.</p></div>`;
       return;
     }
     direct.innerHTML = `<div class="vx-stagger">` + mine.map((o) => { const rights = o.visitRights || rightsForVisit(o.kind); const booked = bookedOfferIds.has(o.id); return `
@@ -13591,8 +13628,11 @@ function offersEmptyLine() {
 
 // The one useful next step on the founding empty board (Build
 // -90): finish the profile while the gate is still open, else
-// add rates while no paid rate is on file. A creator with both
-// done gets no button — there is nothing left for them to do.
+// add rates while no paid rate is on file. Build -115 (Jeff's
+// no-dead-ends rule): a creator with both done no longer gets
+// an empty slot — the next step is growing the roster through
+// their invite link, which is real Momentum-earning work that
+// also fills their market faster.
 function foundingEmptyActionHtml() {
   const u = state.user || {};
   const pc = u.profileCompletion;
@@ -13603,7 +13643,8 @@ function foundingEmptyActionHtml() {
   if (!(typeof c.paidRate === "number" && c.paidRate > 0)) {
     return `<button type="button" class="btn" onclick="return go('dashboard','Profile')">Add your rates</button>`;
   }
-  return "";
+  const place = u.market === unlistedLabel() ? (u.city || "your city") : u.market;
+  return `<p class="small muted" style="margin:0 0 10px">Your profile is complete and your paid rate is set. While offers build, grow your roster: creators who join through your invite link are credited to you.</p>${shareBlockHtml(c.handle, place, "Share your invite")}`;
 }
 
 // The founding empty state as a standalone panel (Build -64):
@@ -21967,6 +22008,7 @@ async function saveAttribution(userId) {
   if (!reason) { alert("Add the reason — it is kept with the change."); return false; }
   try {
     await api("POST", "/admin/users/attribute-partner", { userId, partnerId: sel && sel.value ? sel.value : null, reason });
+    showToast("Saved.");
     loadApplications();
   } catch (err) { alert(err.message); }
   return false;
@@ -21975,6 +22017,7 @@ async function saveAttribution(userId) {
 async function fileUnderMarket(userId, market) {
   try {
     await api("POST", "/admin/users/file-market", { userId, market });
+    showToast("Saved.");
     loadApplications();
   } catch (err) { alert(err.message); }
 }
@@ -22065,6 +22108,7 @@ async function saveReviewLinks(userId) {
         facebook: document.getElementById("rl-facebook-" + userId).value,
       },
     });
+    showToast("Saved.");
     loadApplications();
   } catch (err) { alert(err.message); }
 }
@@ -22086,6 +22130,7 @@ async function saveDiscountSetting(userId) {
       enabled: document.getElementById("disc-enabled-" + userId).checked,
       pct: pctRaw === "" ? undefined : Number(pctRaw),
     });
+    showToast("Saved.");
     loadApplications();
   } catch (err) { alert(err.message); }
 }
@@ -24311,6 +24356,17 @@ function previewDashboardHtml(d) {
       if (state.user.role === "creator") state.activeThread = "signl-team";
       try { history.replaceState(null, "", location.pathname + location.hash); } catch (e) { /* cosmetic only */ }
     }
+    // Build -115: the approval and reminder emails link straight
+    // to the surface they name (/?open=profile, /?open=status)
+    // instead of the app root. Same consume-and-strip discipline.
+    if (params.get("open") === "profile" && state.user && state.user.role === "creator") {
+      state.tab = "Profile";
+      try { history.replaceState(null, "", location.pathname + location.hash); } catch (e) { /* cosmetic only */ }
+    }
+    if (params.get("open") === "status" && state.user && state.user.role === "creator") {
+      state.tab = "Status";
+      try { history.replaceState(null, "", location.pathname + location.hash); } catch (e) { /* cosmetic only */ }
+    }
     // A password reset link (/?reset=<token>) lands on the reset
     // screen ahead of every other interpretation of the URL.
     const resetParam = params.get("reset");
@@ -25289,6 +25345,9 @@ async function loadAdminOutreachQueue(view) {
 async function saveAdvertiserPermit(userId, status) {
   try {
     await api("POST", `/admin/users/${userId}/advertiser-permit`, { status });
+    // Build -115 (no-dead-ends rule): this save changed nothing
+    // visible at all before; confirm it.
+    showToast("Saved.");
   } catch (err) { alert(err.message); }
   return false;
 }

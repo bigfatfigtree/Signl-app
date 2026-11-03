@@ -49,7 +49,7 @@ part("S: source pins");
 const emailJs = fs.readFileSync(path.join(root, "netlify/functions/lib/email.js"), "utf8");
 const routerJs = fs.readFileSync(path.join(root, "netlify/functions/lib/router.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(root, "public/index.html"), "utf8");
-check("stamp is 2026.11.03-114", indexHtml.includes("2026.11.03-114") && fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes("2026.11.03-114"));
+check("stamp is 2026.11.03-115", indexHtml.includes("2026.11.03-115") && fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes("2026.11.03-115"));
 check("deliverEmail passes a branded HTML part built from the same text", routerJs.includes("html: brandedEmailHtml(text)"));
 check("router imports brandedEmailHtml from the email layer", routerJs.includes("brandedEmailHtml } = require(\"./email\")"));
 check("email.js exports the wrapper and the logo URL", emailJs.includes("brandedEmailHtml") && emailJs.includes("EMAIL_LOGO_URL"));
@@ -72,7 +72,7 @@ check("logo img carries the exact served URL, alt and width", html.includes(`<im
 check("gradient band carries all four locked stops", ["#006AFC", "#019BFC", "#03C9AB", "#2FE07E"].every((c) => html.includes(c)));
 check("card is email-safe width on white", html.includes("max-width:600px") && html.includes("background-color:#FFFFFF"));
 check("approval wording survives verbatim into the HTML body", html.includes("Good news: your application was reviewed and approved. You are now a Founding Creator in Austin"));
-check("the app link becomes a tappable anchor", html.includes('<a href="https://app.joinsignl.com"'));
+check("the app link becomes a tappable anchor (Build -115: the finish-profile deep link)", html.includes('<a href="https://app.joinsignl.com/?open=profile"'));
 check("sign-off survives", html.includes("National platforms sell reach. We sell regulars."));
 
 const claim = router.claimConfirmationEmail(creator, 25);

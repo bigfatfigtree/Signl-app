@@ -109,14 +109,18 @@ try {
   check("with navigator.share the payload is handed to the share sheet", !!sharedPayload && sharedPayload.url === "https://app.joinsignl.com/?ref=sharer757" && sharedPayload.text.includes("Virginia Beach"), JSON.stringify(sharedPayload));
   ctx.navigator.share = undefined;
 
-  // ---------- placement: exactly the four approved surfaces ----------
+  // ---------- placement: exactly the approved surfaces ----------
+  // Build -115 (audit item 4): a fifth placement joins the set —
+  // the founding Offers empty state, so a complete creator's
+  // most-checked screen carries the invite action too.
   const blockCalls = (appJs.match(/shareBlockHtml\(/g) || []).length;
-  check("share block has exactly four placements plus its definition", blockCalls === 5, String(blockCalls));
+  check("share block has exactly five placements plus its definition", blockCalls === 6, String(blockCalls));
   const bodyOf = (fnName) => { const src = extractFn(fnName); return src; };
   check("placement 1: dashboard roster block", bodyOf("growRosterHtml").includes("shareBlockHtml("), "");
   check("placement 2: founding status (approval) surface", bodyOf("loadFoundingStatus").includes("shareBlockHtml("), "");
   check("placement 3: profile-completion moment fires only on the flip to complete", appJs.includes('id="profile-complete-share"') && bodyOf("doUpdateCreator").includes("profile-complete-share") && bodyOf("doUpdateCreator").includes("!wasProfileComplete && nowComplete"), "");
   check("placement 4: public /c/ profile shares the owner's link", bodyOf("renderPublicProfile").includes("shareBlockHtml(p.handle"), "");
+  check("placement 5: founding Offers empty state (Build -115)", bodyOf("foundingEmptyActionHtml").includes("shareBlockHtml("), "");
   check("the existing invite-link copy flow is untouched in the roster block", bodyOf("growRosterHtml").includes('onclick="this.select()"'), "");
   check("no share buttons were added to the site or other app surfaces", !appJs.includes("shareBlockHtml(state") && !bodyOf("renderHome").includes("shareBlockHtml(") && !bodyOf("renderPending").includes("shareBlockHtml("), "");
 
