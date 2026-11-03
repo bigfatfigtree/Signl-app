@@ -68,8 +68,8 @@ const eq = (a, b) => Math.abs((Number(a) || 0) - (Number(b) || 0)) < 0.005;
 
 // ---------- static contract ----------
 console.log("verify-build58: Role Stats Views (Business / Partner / Creator)");
-check("build stamp is 2026.11.02-98", BUILD_ID === "2026.11.02-98", BUILD_ID);
-check("index.html carries the -58 stamp", fs.readFileSync(new URL("../public/index.html", import.meta.url), "utf8").includes("2026.11.02-98"));
+check("build stamp is 2026.11.02-99", BUILD_ID === "2026.11.02-99", BUILD_ID);
+check("index.html carries the -58 stamp", fs.readFileSync(new URL("../public/index.html", import.meta.url), "utf8").includes("2026.11.02-99"));
 const routerSrc = fs.readFileSync(new URL("../netlify/functions/lib/router.js", import.meta.url), "utf8");
 const appSrc = fs.readFileSync(new URL("../public/app.js", import.meta.url), "utf8");
 check("router carries the /me/stats route and the three role aggregators",

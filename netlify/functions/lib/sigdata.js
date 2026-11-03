@@ -253,6 +253,16 @@ function buildBusinessFacts(d) {
     availabilitySet: !!(d.availability && d.availability.summary),
     availabilitySummary: d.availability && d.availability.summary ? d.availability.summary : null,
     receiptReady: d.receiptReady || null,
+    // Build -99: the ONE setup checklist (the same builder
+    // Home renders): what is left to set up, item by item,
+    // and the register's state inside it.
+    setup: d.setupChecklist ? {
+      remaining: (d.setupChecklist.items || []).filter((i) => !i.done).map((i) => ({ id: i.id, label: i.label })),
+      doneCount: d.setupChecklist.doneCount || 0,
+      total: d.setupChecklist.total || 0,
+      allDone: !!d.setupChecklist.allDone,
+      square: d.setupChecklist.register ? { configured: !!d.setupChecklist.register.configured, state: d.setupChecklist.register.state } : null,
+    } : null,
   };
 }
 
@@ -383,6 +393,9 @@ function factsLines(role, f) {
       ? `Their standing availability, set once on their business page and shown to creators on their offers: ${f.availabilitySummary}. It pre-fills the timing on new offers; a per-offer note still wins for that offer.`
       : "They have not set standing availability yet: the usual open days and hours creators see, set once on the business page. Until it is set, every offer carries its own timing note.");
     if (f.receiptReady) lines.push(`${f.receiptReady.monthLabel}'s receipt is ready to forward: that month ended with real activity. The forwardable monthly receipt export lives in Results: counted, recorded, and intent figures in three separate sections, visits used and rolled over, founding credit state, and licence end dates.`);
+    if (f.setup) lines.push(f.setup.allDone
+      ? "Their setup checklist on Home is fully done, all nine items, so the checklist has retired and Home shows nothing for it."
+      : `Their setup checklist on Home (titled Get the most from SIGNL) has ${fmt(f.setup.doneCount)} of ${fmt(f.setup.total)} items done. Still to do: ${f.setup.remaining.map((i) => i.label).join("; ")}. The Square register connects from that checklist on Home, not from Results: Results keeps the register status and the counted numbers, and the connect button lives on the checklist.${f.setup.square && f.setup.square.state === "paused" ? " Their register is PAUSED right now: reconnecting also lives with the connection, in Results under Proof controls, and on the checklist." : ""}${f.setup.square && !f.setup.square.configured ? " Square is not switched on for this account yet: connecting happens on the setup call, and the checklist item says so." : ""}`);
     return lines;
   }
   // creator
@@ -609,6 +622,27 @@ function answerBusiness(f, q, t) {
   // about creator terms, the plain-words page link rides along.
   if (hasWord(t, "terms") && hasPhrase(t, "creator")) {
     return linked("Creator terms in plain words are on the creator terms page: https://joinsignl.com/creator-terms.html. The short version for your side: a comped visit is native share only, and a paid booking includes one standard licence for 90 days, never longer.", "Read creator terms in plain words", "cr-terms");
+  }
+  // Setup checklist (Build -99): the ONE setup surface on
+  // Home. Sig answers what is left from the same records the
+  // checklist renders, and walks the business to Home, where
+  // every item's own button lands on its real surface.
+  if (hasPhrase(t, "whats left to set up", "what is left to set up", "left to set up", "finish setting up", "setup checklist", "set up checklist", "my checklist", "the checklist", "what do i still need", "still need to set up", "what should i set up", "get the most from signl", "get the most out of signl")) {
+    if (!f.setup) return linked("Your setup checklist lives on Home, under Get the most from SIGNL. Every item there is read from your real records, and the list goes away when all nine are done.", "Open the setup checklist", "biz-home");
+    if (f.setup.allDone) return linked("Nothing is left to set up: all nine items on your setup checklist are done, so the checklist has retired from Home. Your register, your page, your hours, and your first campaign draft are all in place.", "Open Home", "biz-home");
+    const left = f.setup.remaining.map((i) => i.label).join("; ");
+    return linked(`You have ${fmt(f.setup.doneCount)} of ${fmt(f.setup.total)} setup items done. Still to do: ${left}. The whole list is on Home, under Get the most from SIGNL, and each item's button takes you straight to where that step lives.`, "Open the setup checklist", "biz-home");
+  }
+  // Square register connect (Build -99): the connect action
+  // moved from Proof Controls in Results to the setup
+  // checklist on Home. Results keeps the register status, the
+  // counted data, and the connected/paused management.
+  if (hasPhrase(t, "connect square", "square register", "connect my register", "connect the register", "connect a register", "hook up square", "link square", "register connected", "square connected", "reconnect square", "reconnect my register")) {
+    const sq = f.setup && f.setup.square;
+    if (sq && sq.state === "connected") return linked("Your Square register is connected, and code visits and come-backs count themselves from it. The connection, its locations, and the disconnect live in Results, under your proof controls; Results is also where the counted numbers land.", "Open Results", "biz-results");
+    if (sq && sq.state === "paused") return linked("Your register is paused: Square stopped sharing checks, and your codes still count at the till. Reconnect from the setup checklist on Home, or from Results under your proof controls.", "Open the setup checklist", "biz-home");
+    if (sq && !sq.configured) return linked("Your register connects on your setup call: we plug into your register with you, one tap on your end. Until then your codes count on the register you already have. The setup checklist on Home holds the item and says the same.", "Open the setup checklist", "biz-home");
+    return linked("Your register is not connected yet. Connect it from the setup checklist on Home, under Get the most from SIGNL: tap Connect Square there and sign in once, and after that code visits and come-backs count themselves from the register. Not on Square? Skip it; the codes count your visits either way.", "Connect Square from the checklist", "biz-home");
   }
   // Monthly receipt export (Build -96)
   if (hasPhrase(t, "monthly receipt", "receipt export", "export my receipt", "forward my receipt", "forward the receipt", "receipt for my bookkeeper", "bookkeeper", "download my receipt", "my receipt", "the receipt")) {
@@ -882,6 +916,14 @@ function buildHomeState(role, f) {
     if (f.founding && !(f.offersTotal > 0)) chips.push("Set up your first campaign");
     if (f.unfinishedDrafts) chips.push("Finish your draft campaign");
     if (f.visitsUnusedMidMonth) chips.push(`${fmt(f.visitsUnusedMidMonth.remaining)} of ${fmt(f.visitsUnusedMidMonth.allowance)} visits unused this month`);
+    // Build -99 proactive prompts, real records only: the
+    // setup checklist's register item still undone (and
+    // Square switched on for the account), and anything at
+    // all left on the checklist. All done means silence.
+    if (f.setup && !f.setup.allDone) {
+      if (f.setup.square && f.setup.square.configured && f.setup.square.state === "not_connected") chips.push("Connect your Square register");
+      if (f.setup.remaining.length) chips.push(`${fmt(f.setup.remaining.length)} ${plural(f.setup.remaining.length, "setup step")} left to set up`);
+    }
   } else if (role === "creator") {
     if (f.directInvites) chips.push(`${fmt(f.directInvites)} ${plural(f.directInvites, "invite")} sent to you`);
     if (f.offersOpen) chips.push(`${fmt(f.offersOpen)} ${plural(f.offersOpen, "offer")} waiting`);

@@ -8784,6 +8784,59 @@ async function proofKitFor(bizUser) {
   };
 }
 
+// ---------- Build -99: the ONE business setup checklist ----------
+// Tier 2 item 12. Business Home used to carry three setup
+// surfaces at once: the Build -74 start-here cards, the launch
+// checklist, and (once a first booking landed) the Build -91
+// proof kit, while the Square connect lived buried in Results
+// inside the collapsed Proof Controls section. They are ONE
+// surface now: this checklist, computed on read from the
+// business's own real records only (its business record, its
+// staff PIN record, its proof-kit record, its Square connection,
+// its favorites, its wishlist rows, its offers). Every item
+// flips done only when the real state behind it exists; nothing
+// is stored by reading it. The four proof-kit steps live here
+// as items, with the first-booking context attached when a kit
+// is open. When all nine items are done the surface retires
+// (allDone) and Home renders nothing in its place. Demo and
+// tester fencing is by construction: every read is keyed to
+// this business's own id and records, so one business's
+// checklist can never show another's state.
+async function setupChecklistFor(bizUser) {
+  if (!bizUser || bizUser.role !== "business" || !bizUser.business) return null;
+  const bz = bizUser.business;
+  const [pin, kitRec, reg, favRows, wishRows, offers, kit] = await Promise.all([
+    store.get(`staffpin:${bizUser.id}`),
+    store.get(`proofkit:${bizUser.id}`),
+    square.publicSquareState(bizUser.id),
+    store.list(`favorite:${bizUser.id}:`),
+    wishlistRowsFor(bizUser.id),
+    allOffers(),
+    proofKitFor(bizUser),
+  ]);
+  const rec = kitRec || {};
+  const packet = assetPacketView(bz);
+  const items = [
+    { id: "square", label: "Connect your Square register", why: "Connect your register so visits count themselves: code visits and come-backs are read from the register, and nobody types anything at the till.", done: !!(reg && reg.connected) },
+    { id: "baseline", label: "Write down a usual day", why: "Pick one of your usual open days and about how many customers you get. Your receipt measures visit days against it, in real dollars.", done: !!(bz.baseline && bz.baseline.dayLabel) },
+    { id: "pin", label: "Set your staff PIN", why: "Your team uses this PIN with the creator's code to mark the visit at the counter. That tap is what counts the visit.", done: !!pin },
+    { id: "counter_card", label: "Print the counter card", why: "The card for the register: it teaches the one question and how a creator's code gets redeemed.", done: !!rec.counterCardPrintedAt },
+    { id: "test_redemption", label: "Run one test redemption", why: "We mint a test code and you redeem it through the real counter path. It is marked TEST, deleted right after, and never counts in your numbers.", done: !!rec.testRedeemedAt },
+    { id: "page", label: "Finish your business page", why: "Your name, your logo, and a few lines about your place are what creators read before they apply.", done: !!(bz.businessName && bz.category && bz.about && packet && packet.logoUrl) },
+    { id: "hours", label: "Set your usual open hours", why: "Set your standing hours once, and creators see them on your offers while new offers pre-fill their timing from them.", done: !!bz.standingAvailability },
+    { id: "creators", label: "Save or invite your first creators", why: "Save the creators who fit, or add the ones you already want to your wishlist, and we tell you when they join.", done: favRows.length > 0 || wishRows.length > 0 },
+    { id: "campaign", label: "Set up your first campaign draft", why: "A draft sends nothing until you publish it. Set one up now and it is ready when you are.", done: offers.some((o) => o.businessId === bizUser.id) },
+  ];
+  return {
+    items,
+    doneCount: items.filter((i) => i.done).length,
+    total: items.length,
+    allDone: items.every((i) => i.done),
+    register: reg ? { configured: !!reg.configured, state: reg.state, env: reg.env, businessName: reg.businessName || null } : null,
+    firstVisit: kit ? { creatorHandle: kit.creatorHandle, visitWhen: kit.visitWhen } : null,
+  };
+}
+
 // ---------- Build -95: My Regulars + licence-expiry nudges ----------
 // Tier 2 item 10 (strategy doc).
 // (a) My Regulars: every creator who has completed a visit with
@@ -9292,9 +9345,10 @@ async function businessHome(user) {
     business: { name: user.business.businessName, category: user.business.category, market: user.market, planId: plan.id, planName: user.business.planName, billingStatus: user.business.billingStatus, accessState: businessAccessState(user), availability: standingAvailabilityView(user.business) },
     plan: { id: plan.id, name: plan.name, priceMonthly: plan.priceMonthly, foundingCredit: plan.foundingCredit, firstMonthPriceMonthly: plan.firstMonthPriceMonthly, minMonths: plan.minMonths, visitsPerMonth: plan.visitsPerMonth },
     marketLive: await isMarketLive(user.market),
-    // Build -91: the first-booking proof kit rides the home
-    // payload (null when no kit is open for this business).
-    proofKit: await proofKitFor(user),
+    // Build -99: the ONE setup checklist rides the home
+    // payload (it carries its own allDone retire state; the
+    // Build -91 proof kit's four steps are items inside it).
+    setupChecklist: await setupChecklistFor(user),
     home: {
       visitsUsed: allowance.used,
       visitsAllowance: allowance.allowance,
@@ -9612,6 +9666,11 @@ async function buildSigFacts(user, full) {
       // activity (a completed visit or a counted register event
       // in that month), never on an empty month.
       availability: standingAvailabilityView(user.business || {}),
+      // Build -99: the ONE setup checklist's state, from the
+      // same builder Home renders, so Sig's "what's left to
+      // set up" answers and its checklist chips can never tell
+      // a different story from the card.
+      setupChecklist: await setupChecklistFor(user),
       receiptReady: await (async () => {
         const lastMonth = prevMonthKey(monthKeyOf(nowIso()));
         const [bk, posts, events] = await Promise.all([allBookings(), allPosts(), allRedemptionEvents()]);
@@ -20803,6 +20862,15 @@ async function route(event) {
     return err(405, "Method not allowed");
   }
 
+  // ---------- Build -99: the ONE setup checklist ----------
+  if (seg[0] === "me" && seg[1] === "setup-checklist") {
+    if (user.role !== "business") return err(403, "Businesses only");
+    if (method === "GET" && seg.length === 2) {
+      return json(200, { setupChecklist: await setupChecklistFor(user) });
+    }
+    return err(405, "Method not allowed");
+  }
+
   // ---------- Build -91: first-booking proof kit ----------
   if (seg[0] === "me" && seg[1] === "proof-kit") {
     if (user.role !== "business") return err(403, "Businesses only");
@@ -20821,8 +20889,13 @@ async function route(event) {
     if (method === "POST" && seg.length === 3 && seg[2] === "test-redeem") {
       const rec = (await store.get(`proofkit:${user.id}`)) || {};
       if (rec.testRedeemedAt) return json(200, { ok: true, alreadyDone: true, proofKit: await proofKitFor(user) });
-      const kit = await proofKitFor(user);
-      if (!kit) return err(409, "The test redemption opens with the proof kit, when your first booking is confirmed and no visit has happened yet.");
+      // Build -99: the test redemption is a setup-checklist
+      // item now, so it opens with the checklist, before any
+      // booking exists. It still closes the moment a real
+      // visit has happened: a business past its first visit
+      // never gets a stale test.
+      const realVisitDone = (await allBookings()).some((b) => b.businessId === user.id && !b.test && b.redeemedAt);
+      if (realVisitDone) return err(409, "The test redemption runs before your first real visit. Your first visit has already happened, so the test is closed.");
       // Mint a test booking with a real code in the real code
       // index, then redeem it through the exact counter path:
       // index lookup, burned check, performCounterRedeem. The
@@ -22528,4 +22601,4 @@ async function route(event) {
 
 // The email builders are exported alongside the router so the verify
 // suites can assert on the exact copy a creator receives.
-module.exports = { route, passwordResetEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, normalizeBriefInput, briefForOffer, validateAssetPacket, assetPacketView, postSeries, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, runPublicPageBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView, musicOpenView, studentOpenView, PLATFORM_PEER_ID, platformThreadId, platformMessageEmail, MESSAGE_TEMPLATES, runFinishEngineSweep, maybeFireFinishMoment, handleFinishEngineReply, finishEngineConfig, recordRosterDrop, runRosterDigestSweep, regularsFor, licencesExpiringFor, runLicenceExpirySweep, monthlyReceiptExportFor, monthlyReceiptCsv, normalizeStandingAvailability, standingAvailabilitySummary, standingAvailabilityView, normalizeCoupon, couponOf, couponFaceValue, couponSummary, validateDeliverables, deliverablesOf, deliverableLineFor, deliverableStandard, postWindowHours, DELIVERABLE_STANDARDS };
+module.exports = { route, passwordResetEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, normalizeBriefInput, briefForOffer, validateAssetPacket, assetPacketView, postSeries, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, runPublicPageBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView, musicOpenView, studentOpenView, PLATFORM_PEER_ID, platformThreadId, platformMessageEmail, MESSAGE_TEMPLATES, runFinishEngineSweep, maybeFireFinishMoment, handleFinishEngineReply, finishEngineConfig, recordRosterDrop, runRosterDigestSweep, setupChecklistFor, regularsFor, licencesExpiringFor, runLicenceExpirySweep, monthlyReceiptExportFor, monthlyReceiptCsv, normalizeStandingAvailability, standingAvailabilitySummary, standingAvailabilityView, normalizeCoupon, couponOf, couponFaceValue, couponSummary, validateDeliverables, deliverablesOf, deliverableLineFor, deliverableStandard, postWindowHours, DELIVERABLE_STANDARDS };

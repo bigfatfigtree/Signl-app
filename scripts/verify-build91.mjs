@@ -91,11 +91,16 @@ async function waitUp(base) {
 console.log("== Source: the -91 surfaces exist, the rail and stamp are untouched ==");
 const appJs = fs.readFileSync(path.join(root, "public/app.js"), "utf8");
 const routerJs = fs.readFileSync(path.join(root, "netlify/functions/lib/router.js"), "utf8");
-check("stamp is 2026.11.02-98 on both sides", fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes("2026.11.02-98") && fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes("2026.11.02-98"));
+check("stamp is 2026.11.02-99 on both sides", fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes("2026.11.02-99") && fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes("2026.11.02-99"));
 check("wishlist section lives inside Find creators (no 13th rail item)", appJs.includes('id="biz-wishlist"') && appJs.includes("loadWishlistSection()") && appJs.includes("Your wishlist"));
 check("wishlist copy states the privacy rule in plain words", appJs.includes("Your notes stay yours: creators never see them"));
-check("proof kit card + counter card copy present", appJs.includes("Your proof kit: four things, done once") && appJs.includes("First time in? How'd you hear about us?"));
-check("proof kit renders on Home and in Results", appJs.includes("d.proofKit ? proofKitHtml(d.proofKit)") && appJs.includes("state._proofKit"));
+check("counter card copy present", appJs.includes("First time in? How'd you hear about us?"));
+// Build -99 merged contract (pin updated, -95/-97 precedent): the
+// proof kit card no longer renders anywhere. Its four steps are
+// items in the ONE setup checklist on Home, rendered from the
+// business-home payload (active) and the checklist host
+// (founding); Results renders no setup card.
+check("the merged setup checklist renders on Home; no proof-kit card remains", appJs.includes("d.setupChecklist ? setupChecklistHtml(d.setupChecklist)") && appJs.includes('id="biz-setup-checklist"') && appJs.includes("Get the most from SIGNL") && !appJs.includes("proofKitHtml"));
 check("server: wishlist records + roster drop + digest + proof kit", routerJs.includes("wishlist:") && routerJs.includes("rosterdrop:") && routerJs.includes("async function recordRosterDrop") && routerJs.includes("async function runRosterDigestSweep") && routerJs.includes("async function proofKitFor"));
 check("server: test redemption is fenced in the redeem path", routerJs.includes("if (!booking.test)") && routerJs.includes('test: booking.test === true'));
 
@@ -273,12 +278,15 @@ const kitBiz = await makeActiveBusiness("kit91@fixtures.dev", "Proof Kitchen");
   const acc = await kitCreator.c.req("POST", `/api/offers/${off.data.offer.id}/accept`, {});
   check("creator accept confirms the first booking", acc.status === 201 && !!acc.data.booking, `status=${acc.status}`);
   const home = await kitBiz.c.req("GET", "/api/me/business-home");
-  const kit = home.data.proofKit;
-  check("first confirmed booking opens the kit on Home", !!kit && Array.isArray(kit.steps) && kit.steps.length === 4, JSON.stringify(kit).slice(0, 200));
-  const byId = Object.fromEntries((kit.steps || []).map((s) => [s.id, s.done]));
-  check("all four steps start undone", byId.baseline === false && byId.pin === false && byId.counter_card === false && byId.test_redemption === false, JSON.stringify(byId));
+  // Build -99 merged contract (pin updated): Home's payload
+  // carries the ONE setup checklist; the kit's four steps are
+  // items inside it and its first-visit context rides along.
+  const cl = home.data.setupChecklist;
+  check("first confirmed booking: the setup checklist is on Home with the first-visit context", !!cl && Array.isArray(cl.items) && cl.items.length === 9 && !!cl.firstVisit, JSON.stringify(cl).slice(0, 200));
+  const byId = Object.fromEntries((cl.items || []).map((s) => [s.id, s.done]));
+  check("all four proof steps start undone in the checklist", byId.baseline === false && byId.pin === false && byId.counter_card === false && byId.test_redemption === false, JSON.stringify(byId));
   const rc = await kitBiz.c.req("GET", "/api/me/receipt");
-  check("the kit rides the Receipt too (Results -> Proof Controls)", !!rc.data.proofKit && rc.data.proofKit.bookingId === kit.bookingId);
+  check("the kit data still rides the Receipt payload (its card renders on Home since Build -99)", !!rc.data.proofKit && !!cl.firstVisit);
 }
 {
   await kitBiz.c.req("PATCH", "/api/me/profile", { baseline: { dayLabel: "Saturday", count: 40 } });

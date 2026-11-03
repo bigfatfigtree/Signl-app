@@ -3668,6 +3668,7 @@ function sigRouteAsk(text) {
 // and never lands on someone else's surface.
 function sigLinkGo(dest) {
   switch (dest) {
+    case "biz-home": return go("dashboard", "Home");
     case "biz-results": return go("dashboard", "Analytics");
     case "biz-applicants": state.offersSeg = "applicants"; return go("dashboard", "My Offers");
     case "biz-offers": return go("dashboard", "My Offers");
@@ -3702,6 +3703,8 @@ function sigLinkGo(dest) {
 // stay plain text.
 function sigChipDest(label) {
   const t = " " + String(label || "").toLowerCase() + " ";
+  if (t.includes("square register")) return "biz-home";
+  if (t.includes("left to set up")) return "biz-home";
   if (t.includes("first campaign")) return "biz-setup";
   if (t.includes("visits unused")) return "biz-setup";
   if (t.includes("applicants waiting")) return "biz-applicants";
@@ -9757,8 +9760,8 @@ function sqNoticeHtml() {
   const v = state.sqNotice;
   if (!v) return "";
   state.sqNotice = null;
-  if (v === "connected") return `<div class="notice"><strong>Your register is connected.</strong> Code visits and come-backs now count themselves. Your proof controls below hold the connection, its locations, and the disconnect.</div>`;
-  if (v === "error") return `<div class="notice"><strong>Square connect did not finish.</strong> Nothing changed, and your codes still count at the till. You can try again from your proof controls below.</div>`;
+  if (v === "connected") return `<div class="notice"><strong>Your register is connected.</strong> Code visits and come-backs now count themselves. The connection, its locations, and the disconnect live in Results, under your proof controls.</div>`;
+  if (v === "error") return `<div class="notice"><strong>Square connect did not finish.</strong> Nothing changed, and your codes still count at the till. You can try again from the setup checklist on Home.</div>`;
   if (v === "unavailable") return `<div class="notice blue"><strong>The register plug-in opens on your setup call.</strong> We plug into your POS with you, one tap on your end. Until then your codes count on the register you already have.</div>`;
   return "";
 }
@@ -9766,15 +9769,16 @@ async function loadReceipt() {
   const host = document.getElementById("biz-receipt");
   if (!host) return;
   let r = null;
-  try { const data = await api("GET", "/me/receipt"); r = data.receipt; state._proofKit = data.proofKit || null; } catch (e) { r = null; }
+  try { const data = await api("GET", "/me/receipt"); r = data.receipt; } catch (e) { r = null; }
   if (!document.getElementById("biz-receipt")) return;
   if (!r) { host.innerHTML = ""; return; }
   state._receiptTop = (r.topCreators || [])[0] || null;
   state._receiptMonth = r.month || null;
   host.innerHTML = receiptHtml(r);
-  // Build -91: the proof kit's assigned home is Results, above
-  // Proof Controls (which renders inside the receipt below).
-  if (state._proofKit) host.insertAdjacentHTML("afterbegin", proofKitHtml(state._proofKit));
+  // Build -99: no setup card renders in Results anymore. The
+  // proof kit's steps are items in the ONE setup checklist on
+  // Home, and Proof Controls below points there for the
+  // register connect.
   // Build -96: the forwardable export card fills its slot at
   // the foot of the Receipt.
   loadReceiptExport();
@@ -9910,14 +9914,17 @@ function proofControlsHtml(r) {
     <button class="btn small-btn ghost" type="button" onclick="receiptSaveControls()">Save proof controls</button> <span class="small muted" id="rc-ctl-note"></span>
     ${squareControlsHtml(r)}`;
 }
-// Your register (Build -44, Square Connect): the connect
-// control from the POS blueprint, living in Proof Controls
-// where the owner already keeps every other counting knob.
+// Your register (Build -44, Square Connect): the register's
+// status and management, living in Proof Controls. Build -99
+// moved the CONNECT action to the setup checklist on Home:
+// the not-connected state here states the status, explains
+// what connecting does, and points to Home. The connected
+// state (locations, read-back, disconnect) and the paused
+// state (reconnect, disconnect) stay managed right here.
 // The states are the server's (r.register, never a guess):
-// not switched on yet (the approved concierge words), ready
-// to connect, connected (with locations and the last
-// read-back), or paused (the plain sentence, never an error
-// code). Sandbox connections say sandbox.
+// not switched on yet (the approved concierge words), not
+// connected, connected, or paused (the plain sentence, never
+// an error code). Sandbox connections say sandbox.
 function squareControlsHtml(r) {
   const reg = r.register || null;
   if (!reg) return "";
@@ -9934,10 +9941,14 @@ function squareControlsHtml(r) {
     <button class="btn small-btn ghost" type="button" onclick="squareDisconnect()">Disconnect register</button> <span class="small muted" id="rc-sq-note"></span>`;
   }
   if (!reg.connected) {
+    // Build -99: the connect action's home is the setup
+    // checklist on Home. Results keeps the register status
+    // (not connected), what connecting does, and the counted
+    // data; it hosts no Connect Square button anymore.
     return `${head}
-    <p class="small" style="margin:0 0 6px">If your register is Square, tap once and sign in. After that, SIGNL counts code visits and come-backs from the register itself: nobody types anything. Not on Square? Skip it. The codes count your visits either way; your team just taps the amount at the till.</p>
+    <p class="small" style="margin:0 0 6px"><strong>Register not connected.</strong> If your register is Square, connect it from your setup checklist on Home: tap Connect Square there and sign in once. After that, SIGNL counts code visits and come-backs from the register itself: nobody types anything. Not on Square? Skip it. The codes count your visits either way; your team just taps the amount at the till.</p>
     <p class="small muted" style="margin:0 0 8px">We read only the checks your codes touch: the orders they were rung on, whether a counted customer came back, and refunds, so a refunded check comes out of the count. Your other sales are yours.${sandboxTag}</p>
-    <a class="btn small-btn" href="/api/me/square/start">Connect Square</a>`;
+    <button class="btn small-btn" type="button" onclick="return go('dashboard','Home')">Open the setup checklist on Home</button>`;
   }
   const locs = (reg.locations || []).map((l) => `<label class="ckrow" style="display:block;margin-top:4px"><input type="checkbox" class="ckbox sq-loc" value="${esc(l.id)}" ${l.selected ? "checked" : ""}><span>${esc(l.name)}</span></label>`).join("");
   const sum = reg.lastSyncSummary || {};
@@ -14555,61 +14566,11 @@ async function loadSampleResultsInto(fullIfViewAs) {
   } catch (e) { /* the sample is a demo extra, never a blocker */ }
 }
 
-// Start here: the three things a business came to do, in plain
-// words, with done / not yet read from real records. When all
-// three are done the path retires for good (remembered per
-// account); until then it sits at the top of Home.
-function startHereSteps({ favorites, offers, bookings }) {
-  return [
-    { n: 1, title: "Meet micro-influencers near you", why: "Flip through creators in your city and save the ones who fit.", btn: "Find creators", tab: "Discover", done: favorites > 0 },
-    { n: 2, title: "Invite one, or open a campaign", why: "Send one creator an invite, or post a campaign and let creators apply.", btn: "Start a campaign", tab: "Campaign Setup", done: offers.length > 0 || bookings.length > 0 },
-    { n: 3, title: "See who came in", why: "When a creator visits and posts, this is where you see who it brought in.", btn: "See results", tab: "Analytics", done: bookings.some((b) => b.redeemedAt || b.post) },
-  ];
-}
-function startHereHtml(steps) {
-  const doneCount = steps.filter((s) => s.done).length;
-  return `<section class="wcard start-here">
-    <div class="flex-between" style="flex-wrap:wrap;gap:8px"><h3 style="margin:0">Start here</h3><span class="small muted">${doneCount} of ${steps.length} done</span></div>
-    <p class="wc-sub" style="margin:6px 0 0">Three steps. In any order, at your pace.</p>
-    <div class="start-steps">${steps.map((s) => `
-      <div class="start-step${s.done ? " done" : ""}">
-        <span class="start-num">${s.done ? "&#10003;" : s.n}</span>
-        <div class="start-main">
-          <div class="start-title">${esc(s.title)}</div>
-          <div class="start-why">${esc(s.why)}</div>
-        </div>
-        ${s.done ? `<span class="badge ok">Done</span>` : `<button class="btn small-btn" type="button" onclick="return go('dashboard','${s.tab}')">${esc(s.btn)}</button>`}
-      </div>`).join("")}
-    </div>
-  </section>`;
-}
-function mountStartHere(host, data) {
-  if (!host) return;
-  const steps = startHereSteps(data);
-  const u = state.user;
-  const key = u ? `signl_start_here_done:${u.id}` : "";
-  if (steps.every((s) => s.done)) {
-    try { if (key) localStorage.setItem(key, "1"); } catch (e) { /* storage unavailable: just hide */ }
-    host.innerHTML = "";
-    return;
-  }
-  host.innerHTML = startHereHtml(steps);
-}
-async function loadStartHereInto(host) {
-  if (!host) return;
-  try {
-    const [fav, off, bk] = await Promise.all([
-      api("GET", "/favorites").catch(() => null),
-      api("GET", "/offers").catch(() => null),
-      api("GET", "/bookings").catch(() => null),
-    ]);
-    mountStartHere(host, {
-      favorites: fav && Array.isArray(fav.favorites) ? fav.favorites.length : 0,
-      offers: off && Array.isArray(off.offers) ? off.offers : [],
-      bookings: bk && Array.isArray(bk.bookings) ? bk.bookings : [],
-    });
-  } catch (e) { /* a guide, never a blocker */ }
-}
+// Build -99: the Build -74 start-here cards are retired. Their
+// moves (save creators, open a campaign) are items in the ONE
+// setup checklist on Home (setupChecklistHtml, fed by
+// GET /me/setup-checklist), alongside the proof-kit steps and
+// the Square connect. One setup surface, not three.
 
 async function loadFoundingBusinessHome() {
   const el = document.getElementById("tab-body");
@@ -14617,10 +14578,10 @@ async function loadFoundingBusinessHome() {
   const u = state.user;
   el.innerHTML = `
   ${foundingStatusCardHtml(u)}
-  <div id="biz-start-here" style="margin-top:14px"></div>
+  ${sqNoticeHtml()}
+  <div id="biz-setup-checklist"></div>
   ${foundingFirstMonthCardHtml(u)}
   <div id="fbz-sig-queue" style="margin-top:14px"></div>`;
-  loadStartHereInto(document.getElementById("biz-start-here"));
   // Sig's queue for a founding business: the two things worth
   // doing before opening day. The same items feed the Sig tab
   // and the rail badge, like every other queue.
@@ -14648,6 +14609,17 @@ async function loadFoundingBusinessHome() {
     const myOffers = (od && od.offers) || [];
     if (!myOffers.length) items.push({ text: "No campaign drafts yet. Set one up now, with Sig or step by step, and it is ready for opening day.", btn: "Set up a campaign", act: () => go("dashboard", "Campaign Setup") });
   } catch (e) { /* the queue is a nudge, never a blocker */ }
+  // Build -99: the ONE setup checklist renders on this Home
+  // too, and its register item joins the queue when Square is
+  // switched on and not yet connected (real state only).
+  try {
+    const cd = await api("GET", "/me/setup-checklist");
+    const cl = cd && cd.setupChecklist;
+    state._setupChecklist = cl || null;
+    const host2 = document.getElementById("biz-setup-checklist");
+    if (host2 && cl) host2.innerHTML = setupChecklistHtml(cl);
+    if (cl && cl.register && cl.register.configured && cl.register.state === "not_connected") items.push({ text: "Your register isn't connected yet. Connect it and code visits count themselves.", btn: "Connect Square", act: () => { const c = document.getElementById("setup-checklist"); if (c) c.scrollIntoView({ behavior: "smooth", block: "start" }); } });
+  } catch (e) { /* the checklist is a guide, never a blocker */ }
   const bz = u.business || {};
   if (!bz.about) items.push({ text: "Your business page has no story yet. A few lines about your store is what creators read before they apply.", btn: "Write it", act: () => go("dashboard", "Profile") });
   state.sigQueue = items;
@@ -15621,6 +15593,13 @@ async function loadBusinessHome() {
     if (!bz.about) add(4, now, "Your business page is missing its About.", "Add about", () => go("dashboard", "Profile"), "About missing on your page");
     if (!bz.standingAvailability) add(4, now, "Set your standing hours once, and creators see them on your offers while new offers pre-fill their timing from them.", "Set hours", () => go("dashboard", "Profile"), "Standing hours not set");
     if (d.staffPinSet === false) add(4, now, "Set your staff PIN so your team can redeem visits: the creator shows their visit code at your counter, your team enters it with this PIN, and that is what counts the visit.", "Set PIN", () => go("dashboard", "Settings"), "Staff PIN not set");
+    // Build -99 proactive prompt, real records only: the
+    // setup checklist's register item is undone and Square is
+    // switched on for this account. Connected or paused
+    // registers, and accounts Square is not switched on for,
+    // hear nothing here.
+    const sc99 = d.setupChecklist;
+    if (sc99 && sc99.register && sc99.register.configured && sc99.register.state === "not_connected") add(4, now, "Your register isn't connected yet. Connect it and code visits count themselves.", "Connect Square", () => { const c = document.getElementById("setup-checklist"); if (c) c.scrollIntoView({ behavior: "smooth", block: "start" }); }, "Register not connected");
     if ((h.visitsCarried || 0) > 0 && h.carriedExpiresAt) add(4, now, `${h.visitsCarried} rolled visit${h.visitsCarried === 1 ? "" : "s"} expire ${dueDayWords(h.carriedExpiresAt)}.`, "See plan", () => go("dashboard", "Plan"), `Rollover expires ${dueDayWords(h.carriedExpiresAt)}`);
     else if ((h.visitsRemaining || 0) <= 1) add(4, now, `You have ${h.visitsRemaining || 0} visit${(h.visitsRemaining || 0) === 1 ? "" : "s"} left this month.`, "See plan", () => go("dashboard", "Plan"), `${h.visitsRemaining || 0} visit${(h.visitsRemaining || 0) === 1 ? "" : "s"} left this month`);
     // Campus moments (university layers U4, Jeff, 2026-10-28):
@@ -15705,19 +15684,11 @@ async function loadBusinessHome() {
     items.sort((a, b) => a.cls - b.cls || a.at - b.at);
     const queue = capSigIdeas(items).slice(0, 7);
 
-    // The launch checklist (spec §4.6): retires for good once
-    // every step is done.
-    const steps = [
-      { label: "Finish your business page", sub: "Your name, category, and what creators get.", done: !!(bz.businessName && bz.category && bz.about), btn: "Edit page", act: () => go("dashboard", "Profile") },
-      { label: "Post your first offer", sub: "Comped visit, paid booking, or open call.", done: offers.length > 0, btn: "Post offer", act: () => go("dashboard", "Campaign Setup") },
-      { label: "Find creators and send first invite", sub: "Flip through creators near you, invite the ones who fit.", done: offers.some((o) => o.lane === "direct") || bookings.length > 0, btn: "Find creators", act: () => go("dashboard", "Discover") },
-    ];
-    // (Build -47, audit B12: "You are live" was a fourth "step"
-    // that is really a state, and it kept the header at "3 of 4
-    // done" next to work the owner had finished. The list is
-    // three real steps now; when all three are done the card
-    // retires, which IS the live state.)
-    const fresh = !steps[0].done || !offers.length;
+    // Build -99: the launch checklist, the start-here cards,
+    // and the proof kit are ONE surface now: the setup
+    // checklist in d.setupChecklist, rendered below. Its page
+    // and campaign items carry the old launch steps' state.
+    const fresh = !(bz.businessName && bz.category && bz.about) || !offers.length;
     const greetLine = fresh ? "Let's get your first campaign live. Sig walks you through it, three steps." : (queue.length ? queue[0].text : "You're all caught up.");
     const greetDup = !fresh && queue.length > 0;
     const hasNumbers = (h.postsLive || 0) > 0 || (h.localReachDelivered || 0) > 0 || (h.visitsUsed || 0) > 0;
@@ -15746,11 +15717,10 @@ async function loadBusinessHome() {
     <div data-dash>
     ${wsHead("Home", { sub: "Start here. Sig shows you what needs you, in order.", subKey: "biz-home" })}
     <div class="home-greet"><div class="hg-hi">Hi, ${esc(bz.businessName || u.name || "")}</div><div class="hg-line">${esc(greetLine)}</div></div>
-    <div id="biz-start-here"></div>
+    ${sqNoticeHtml()}
+    ${d.setupChecklist ? setupChecklistHtml(d.setupChecklist) : ""}
     ${d.marketLive ? "" : `<div class="notice blue" style="margin-top:14px"><strong>Your market has not launched yet.</strong> Businesses sign up when we are ready to launch. Draft offers now; publishing switches on at launch.</div>`}
     ${sigQueueHtml(queue, { links: caughtLinks, leadShort: greetDup, askBox: true })}
-    ${d.proofKit ? proofKitHtml(d.proofKit) : ""}
-    ${checklistHtml(steps)}
     ${snapshotHtml(snapCells, "This fills in once your campaigns are live. When creators start visiting and posting, you will see applications, visits, posts, and the local reach they delivered, right here.", "Analytics")}
     <div id="perf-card"></div>
     <h3 style="margin:20px 0 0">Activity</h3>
@@ -15759,14 +15729,6 @@ async function loadBusinessHome() {
     ${askSigRowHtml()}
     </div>`;
     wireSigQueue(el, queue, caughtLinks);
-    wireChecklist(el, steps);
-    api("GET", "/favorites").catch(() => null).then((fav) => {
-      mountStartHere(document.getElementById("biz-start-here"), {
-        favorites: fav && Array.isArray(fav.favorites) ? fav.favorites.length : 0,
-        offers,
-        bookings,
-      });
-    });
     loadPerformanceCard(el);
     renderBottomNav();
   } catch (err) {
@@ -16973,31 +16935,71 @@ async function wishlistSave(creatorId, btn) {
   return false;
 }
 
-// The first-booking proof kit card (Home + Results). Steps check
-// themselves off from real state on the server; the buttons run
-// the step or jump to where it lives.
-function proofKitHtml(kit) {
-  if (!kit) return "";
+// ---------- Build -99: the ONE business setup checklist ----------
+// Home used to carry three setup surfaces at once (the -74
+// start-here cards, the launch checklist, and the -91 proof
+// kit card), with the Square connect buried in Results. They
+// are one surface now: this checklist, rendered from
+// GET /me/setup-checklist (or the business-home payload),
+// every item computed server-side from real stored state.
+// The four proof-kit steps are items here. When all nine are
+// done the server says allDone and this renders nothing: the
+// surface retires. Each item's button runs the step or lands
+// on the real surface where the step lives (SIG LINKING RULE).
+function setupChecklistHtml(cl) {
+  if (!cl || cl.allDone) return "";
+  const reg = cl.register || {};
   const btnFor = (s) => {
-    if (s.done) return "";
-    if (s.id === "baseline") return `<button class="btn small-btn" type="button" onclick="return proofKitGoBaseline()">Set the usual day</button>`;
+    if (s.done) return s.id === "square" ? `<button class="btn small-btn ghost" type="button" onclick="return setupGoRegister()">Manage register</button>` : "";
+    if (s.id === "square") {
+      if (reg.state === "paused") return `<a class="btn small-btn" href="/api/me/square/start">Reconnect Square</a>`;
+      if (!reg.configured) return `<button class="btn small-btn" type="button" onclick="return setupGoRegister()">See how it works</button>`;
+      return `<a class="btn small-btn" href="/api/me/square/start">Connect Square</a>`;
+    }
+    if (s.id === "baseline") return `<button class="btn small-btn" type="button" onclick="return setupGoBaseline()">Set the usual day</button>`;
     if (s.id === "pin") return `<button class="btn small-btn" type="button" onclick="return go('dashboard','Settings')">Set the PIN</button>`;
-    if (s.id === "counter_card") return `<button class="btn small-btn" type="button" onclick="return proofKitPrintCard()">Print the card</button>`;
-    if (s.id === "test_redemption") return `<button class="btn small-btn" type="button" onclick="return proofKitTestRedeem(this)">Run the test</button>`;
+    if (s.id === "counter_card") return `<button class="btn small-btn" type="button" onclick="return setupPrintCard()">Print the card</button>`;
+    if (s.id === "test_redemption") return `<button class="btn small-btn" type="button" onclick="return setupTestRedeem(this)">Run the test</button>`;
+    if (s.id === "page") return `<button class="btn small-btn" type="button" onclick="return go('dashboard','Profile')">Finish my page</button>`;
+    if (s.id === "hours") return `<button class="btn small-btn" type="button" onclick="return go('dashboard','Profile')">Set my hours</button>`;
+    if (s.id === "creators") return `<button class="btn small-btn" type="button" onclick="return go('dashboard','Discover')">Find creators</button>`;
+    if (s.id === "campaign") return `<button class="btn small-btn" type="button" onclick="return go('dashboard','Campaign Setup')">Set up a campaign</button>`;
     return "";
   };
-  return `<section class="wcard" id="proof-kit" style="margin-top:14px">
-    <p class="ui-kicker" style="margin:0">Before your first visit</p>
-    <h3 style="margin:2px 0 0">Your proof kit: four things, done once</h3>
-    <p class="wc-sub" style="margin-top:8px">Your first booking is confirmed${kit.creatorHandle ? ` with @${esc(kit.creatorHandle)}` : ""}. These four steps are what make that visit count on your receipt, and they only work if they are done before the visit, so this card goes away once your first visit happens.</p>
-    ${kit.steps.map((s) => `<div style="display:flex;gap:10px;align-items:flex-start;margin-top:12px">
+  const squareNote = (s) => {
+    if (s.id !== "square" || s.done) return "";
+    if (reg.state === "paused") return `<p class="small" style="margin:4px 0 0"><strong>Register paused.</strong> Square stopped sharing checks. Your codes still count at the till.</p>`;
+    if (!reg.configured) return `<p class="small muted" style="margin:4px 0 0">On our setup call, we plug into your register with you: one tap on your end. Until then your codes count on the register you already have.</p>`;
+    if (reg.env === "sandbox") return `<p class="small" style="margin:4px 0 0"><span class="badge">Square sandbox: a test register, not a live one</span></p>`;
+    return "";
+  };
+  return `<section class="wcard" id="setup-checklist" style="margin-top:14px">
+    <p class="ui-kicker" style="margin:0">Finish setting up</p>
+    <h3 style="margin:2px 0 0">Get the most from SIGNL</h3>
+    <p class="wc-sub" style="margin-top:8px">${cl.doneCount} of ${cl.total} done. Each thing here is read from your real records, and this list goes away when all ${cl.total} are done.${cl.firstVisit ? ` Your first booking is confirmed${cl.firstVisit.creatorHandle ? ` with @${esc(cl.firstVisit.creatorHandle)}` : ""}: the register, usual day, PIN, card, and test steps are what make that visit count, and they only work if they are done before the visit.` : ""}</p>
+    ${cl.items.map((s) => `<div style="display:flex;gap:10px;align-items:flex-start;margin-top:12px;flex-wrap:wrap">
       <div>${s.done ? `<span class="badge ok">Done</span>` : `<span class="badge warn">To do</span>`}</div>
-      <div style="flex:1;min-width:0"><strong>${esc(s.label)}</strong><p class="small muted" style="margin:2px 0 0">${esc(s.detail)}</p></div>
+      <div style="flex:1 1 210px;min-width:0"><strong>${esc(s.label)}</strong><p class="small muted" style="margin:2px 0 0">${esc(s.why)}</p>${squareNote(s)}</div>
       <div>${btnFor(s)}</div>
     </div>`).join("")}
   </section>`;
 }
-function proofKitGoBaseline() {
+// The register's management (locations, read the register
+// now, disconnect, reconnect when paused) lives in Results,
+// inside the receipt's settings: go there and open them.
+function setupGoRegister() {
+  go("dashboard", "Analytics");
+  setTimeout(() => {
+    const host = document.getElementById("biz-receipt");
+    const det = host ? host.querySelector("details") : null;
+    if (det) {
+      det.open = true;
+      det.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, 450);
+  return false;
+}
+function setupGoBaseline() {
   go("dashboard", "Analytics");
   setTimeout(() => {
     const dayEl = document.getElementById("rc-base-day");
@@ -17014,7 +17016,7 @@ function proofKitGoBaseline() {
 // The printable counter card: the one question, plus how a
 // creator's code gets redeemed at this business's register (the
 // same instructions the staff settings carry today).
-async function proofKitPrintCard() {
+async function setupPrintCard() {
   try {
     await api("POST", "/me/proof-kit/printed", {});
     const d = await api("GET", "/me/staff");
@@ -17039,7 +17041,7 @@ async function proofKitPrintCard() {
   } catch (e) { alert(e.message); }
   return false;
 }
-async function proofKitTestRedeem(btn) {
+async function setupTestRedeem(btn) {
   if (btn) { btn.disabled = true; btn.textContent = "Running the test..."; }
   try {
     await api("POST", "/me/proof-kit/test-redeem", {});

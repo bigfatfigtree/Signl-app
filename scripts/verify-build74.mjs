@@ -231,12 +231,15 @@ console.log("== Source checks ==");
   const routerJs = fs.readFileSync(path.join(root, "netlify/functions/lib/router.js"), "utf8");
   const buildJs = fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8");
   const pkg = fs.readFileSync(path.join(root, "package.json"), "utf8");
-  check("stamp is 2026.11.02-98", buildJs.includes('BUILD_ID = "2026.11.02-98"'));
+  check("stamp is 2026.11.02-99", buildJs.includes('BUILD_ID = "2026.11.02-99"'));
   check("sample route exists and is fenced by demoShowcaseVisibleTo", routerJs.includes('seg[1] === "sample-results"') && routerJs.includes("function sampleResultsFor(viewer)") && routerJs.includes("if (!demoShowcaseVisibleTo(viewer)) return null;"));
   check("sample builder stores nothing", !/store\.set/.test(routerJs.slice(routerJs.indexOf("function sampleResultsFor"), routerJs.indexOf("function sampleResultsFor") + 2600)));
   check("demo loader reads the shipped demo assets", routerJs.includes("/assets/demo-creators/${spec.handle}-1.jpg"));
-  check("Start-here renderer and its three plain steps exist", appJs.includes("function startHereSteps") && appJs.includes("Meet micro-influencers near you") && appJs.includes("Invite one, or open a campaign") && appJs.includes("See who came in"));
-  check("Start-here mounts on founding and active Home", appJs.includes('id="biz-start-here"') && appJs.includes("loadStartHereInto") && appJs.includes("mountStartHere"));
+  // Build -99 merged contract (pin updated, -95/-97 precedent):
+  // the start-here cards retired into the ONE setup checklist.
+  // Its save-creators and campaign moves are checklist items.
+  check("Start-here retired into the ONE setup checklist", appJs.includes("function setupChecklistHtml") && appJs.includes("Get the most from SIGNL") && routerJs.includes("Save or invite your first creators") && !appJs.includes("function startHereSteps"));
+  check("the setup checklist mounts on founding and active Home", appJs.includes('id="biz-setup-checklist"') && appJs.includes("d.setupChecklist ? setupChecklistHtml(d.setupChecklist)") && appJs.includes("/me/setup-checklist"));
   check("sample story + preview renderers exist with the plain SAMPLE line", appJs.includes("Sample results — what yours will look like") && appJs.includes("function sampleStoryHtml") && appJs.includes("function samplePreviewHtml") && appJs.includes("loadSampleResultsInto"));
   check("sample mounts on founding Results and Analytics", (appJs.split('id="biz-sample"').length - 1) >= 3);
   check("deck: Next label, Save wiring, See everyone toggle", appJs.includes('passLabel: "Next"') && appJs.includes("deckToggleFav") && appJs.includes("See everyone"));
