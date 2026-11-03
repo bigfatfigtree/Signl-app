@@ -4430,7 +4430,19 @@ function syncMarketChoice() {
   const customWrap = document.getElementById("jc-custom-wrap");
   if (cityWrap) cityWrap.style.display = unlisted ? "none" : "";
   if (customWrap) { customWrap.style.display = unlisted ? "" : "none"; customWrap.style.gridColumn = unlisted ? "1 / -1" : ""; }
-  if (!unlisted) document.getElementById("jc-city").innerHTML = cityOptions(m.value);
+  if (!unlisted) document.getElementById("jc-city").innerHTML = m.value === "London" ? `<option value="London" selected>London</option>` : cityOptions(m.value);
+  // Build -88: for London the free-text neighborhood field is
+  // replaced by the area picker (home city stays London).
+  const jcAreaWrap = document.getElementById("jc-area-wrap");
+  if (jcAreaWrap) {
+    jcAreaWrap.style.display = m.value === "London" ? "" : "none";
+    if (m.value === "London") {
+      const areaSel = document.getElementById("jc-area");
+      if (areaSel) areaSel.innerHTML = areaOptions("London", areaSel.value || undefined);
+    }
+  }
+  const jcNbWrap = document.getElementById("jc-neighborhood-wrap");
+  if (jcNbWrap) jcNbWrap.style.display = m.value === "London" ? "none" : "";
   // Dubai Advertiser Permit note (Build -70): shown only when
   // Dubai is the picked market. It never blocks the signup.
   const dubaiNote = document.getElementById("jc-dubai-note");
@@ -4444,6 +4456,30 @@ function syncMarketChoice() {
 function cityOptions(marketName, selected) {
   const m = state.boot.markets.find((x) => x.name === marketName) || state.boot.markets[0];
   return m.cities.map((c) => `<option value="${esc(c)}" ${c === selected ? "selected" : ""}>${esc(c)}</option>`).join("");
+}
+
+// Build -88: the area picker options for a market, fed by the
+// market's own typed city list (for London, its full
+// neighbourhood + surrounding-towns list). The area search box
+// filters the options live, mirroring the market picker.
+function areaOptions(marketName, selected) {
+  const m = (state.boot.markets || []).find((x) => x.name === marketName);
+  const list = m ? m.cities : [];
+  return list.map((c) => `<option value="${esc(c)}" ${c === selected ? "selected" : ""}>${esc(c)}</option>`).join("");
+}
+function filterAreaOptions(searchId, selectId) {
+  const input = document.getElementById(searchId);
+  const sel = document.getElementById(selectId);
+  if (!input || !sel) return;
+  const q = input.value.trim().toLowerCase();
+  let firstMatch = null;
+  for (const opt of sel.querySelectorAll("option")) {
+    const hit = !q || opt.textContent.toLowerCase().includes(q) || opt.value.toLowerCase().includes(q);
+    opt.hidden = !hit;
+    if (hit && !firstMatch) firstMatch = opt;
+  }
+  const current = sel.selectedOptions && sel.selectedOptions[0];
+  if (q && firstMatch && current && current.hidden) sel.value = firstMatch.value;
 }
 
 function renderSignin() {
@@ -6625,6 +6661,7 @@ function claimDraftInit() {
     countedNote: "",
     stackTouched: false,
     market: pf.market || "Virginia Beach",
+    area: "",
     cats: [],
     localPct: 50,
     stack: {},
@@ -6724,11 +6761,23 @@ function syncClaimMarketChoice() {
   const unlisted = m.value === unlistedLabel();
   const customWrap = document.getElementById("c85-custom-wrap");
   if (customWrap) customWrap.style.display = unlisted ? "" : "none";
+  const isLondon = m.value === "London";
   const cityWrap = document.getElementById("c85-city-wrap");
-  if (cityWrap) cityWrap.style.display = unlisted ? "none" : "";
-  if (!unlisted) {
+  if (cityWrap) cityWrap.style.display = unlisted || isLondon ? "none" : "";
+  if (!unlisted && !isLondon) {
     const citySel = document.getElementById("c85-city");
     if (citySel) citySel.innerHTML = cityOptions(m.value);
+  }
+  // Build -88: London is one market; the picker asks for the
+  // creator's area inside it instead of a home city (the home
+  // city stays London, the area is saved on the record).
+  const areaWrap = document.getElementById("c85-area-wrap");
+  if (areaWrap) {
+    areaWrap.style.display = isLondon ? "" : "none";
+    if (isLondon) {
+      const areaSel = document.getElementById("c85-area");
+      if (areaSel) areaSel.innerHTML = areaOptions("London", areaSel.value || undefined);
+    }
   }
   // Dubai Advertiser Permit note (Build -70): shown only when
   // Dubai is the picked market. It never blocks the claim.
@@ -6751,6 +6800,10 @@ function claimLocalLabelSync() {
   const citySel = document.getElementById("c85-city");
   let place = m ? m.value : "";
   if (m && m.value !== unlistedLabel() && citySel && citySel.value) place = citySel.value;
+  if (m && m.value === "London") {
+    const areaSel = document.getElementById("c85-area");
+    if (areaSel && areaSel.value) place = areaSel.value;
+  }
   if (m && m.value === unlistedLabel()) {
     const typed = document.getElementById("c85-city-text");
     place = (typed && typed.value.trim()) || place;
@@ -6973,6 +7026,7 @@ function renderClaimFacts() {
         <p class="fg-kicker">${T("Your city", "Tu ciudad")}</p>
         <div class="field"><label>${T("Your market", "Tu mercado")}</label><input id="c85-market-search" placeholder="${T("Search markets, for example: Dubai", "Busca mercados, por ejemplo: Dubái")}" oninput="filterClaimMarketOptions()" style="margin-bottom:6px"><select id="c85-market" onchange="syncClaimMarketChoice()">${marketOptions(pfMarket, true)}</select><p id="c85-dubai-note" class="small" style="display:none">Dubai note: the UAE requires an Advertiser Permit before your first paid or gifted post. You do not need it to claim your page, and SIGNL walks founding creators through it.</p><p id="c85-london-note" class="small" style="display:none">London note: UK rules count a gifted or paid post as an ad, so every post carries a clear ad label. You do not need anything to claim your page, and the label is built into every SIGNL post.</p></div>
         <div class="field" id="c85-city-wrap" style="margin-bottom:0"><label>${T("Your home city", "Tu ciudad")}</label><select id="c85-city" onchange="claimLocalLabelSync()">${cityOptions(pfMarket === unlistedLabel() ? "Virginia Beach" : pfMarket)}</select></div>
+        <div class="field" id="c85-area-wrap" style="display:none;margin-bottom:0"><label>${T("Your area in London", "Tu zona en Londres")}</label><input id="c85-area-search" placeholder="${T("Search areas, for example: Brixton", "Busca zonas, por ejemplo: Brixton")}" oninput="filterAreaOptions('c85-area-search','c85-area')" style="margin-bottom:6px"><select id="c85-area" onchange="claimLocalLabelSync()">${areaOptions("London")}</select><p class="small muted">${T("London is one market. Your home city stays London, and your area is saved on your record.", "Londres es un solo mercado. Tu ciudad queda como Londres y tu zona se guarda en tu registro.")}</p></div>
         <div id="c85-custom-wrap" style="display:none">
           <div class="field"><label>${T("Your city", "Tu ciudad")}</label><input id="c85-city-text" placeholder="${T("For example: Tulsa", "Por ejemplo: Tulsa")}" oninput="claimLocalLabelSync()"></div>
           <div class="field"><label>${T("Your country", "Tu país")}</label><input id="c85-country-text" placeholder="${T("For example: United States", "Por ejemplo: Estados Unidos")}"></div>
@@ -7073,9 +7127,17 @@ function claimFactsGo() {
     if (!d.customCity) { warn(T("Tell us your city, so your sign-up counts toward opening SIGNL there.", "Dinos tu ciudad, para que tu registro cuente para abrir SIGNL ahí.")); return false; }
     if (!d.customCountry) { warn(T("Tell us your country, so your sign-up counts toward opening SIGNL there.", "Dinos tu país, para que tu registro cuente para abrir SIGNL ahí.")); return false; }
     d.city = "";
+  } else if (marketVal === "London") {
+    // Build -88: home city stays London; the picked area rides
+    // on the draft and lands on the record at claim.
+    d.city = "London";
+    const areaSel = document.getElementById("c85-area");
+    d.area = areaSel ? areaSel.value : "";
+    d.customCity = ""; d.customCountry = ""; d.customState = "";
   } else {
     const citySel = document.getElementById("c85-city");
     d.city = citySel ? citySel.value : "";
+    d.area = "";
     d.customCity = ""; d.customCountry = ""; d.customState = "";
   }
   if (!d.cats.length) {
@@ -7156,6 +7218,7 @@ async function doQuickClaim(e) {
       customCountry: isUnlisted ? d.customCountry : undefined,
       customState: isUnlisted ? d.customState : undefined,
       handle: qcHandle,
+      area: d.area || undefined,
       primaryPlatform: d.platform,
       agreedTerms: true,
       referredBy: storedRef() || undefined,
@@ -7173,6 +7236,7 @@ async function doQuickClaim(e) {
     const patch = {};
     if (d.displayName) patch.name = d.displayName;
     if (!isUnlisted && d.city) patch.city = d.city;
+    if (d.area) patch.area = d.area;
     if (d.cats.length) patch.categories = d.cats.slice();
     patch.localAudiencePct = d.localPct;
     if (Object.keys(d.stack).length) patch.audienceStack = d.stack;
@@ -7316,7 +7380,8 @@ function renderJoinCreator() {
             <p class="small muted">${T("Not open there yet — your sign-up counts toward opening it. Founding sign-ups go first.", "Todavía no abrimos ahí. Tu registro cuenta para abrirlo. Los registros fundadores van primero.")}</p>
           </div>
         </div>
-        <div class="field"><label>${T("Your neighborhood or area (optional)", "Tu vecindario o zona (opcional)")}</label><input id="jc-neighborhood" placeholder="${T("For example: Oceanfront, Ghent, Town Center", "Por ejemplo: Oceanfront, Ghent, Town Center")}" maxlength="80"><p class="small muted">${T("Businesses search by neighborhood.", "Los negocios buscan por vecindario.")}</p></div>
+        <div class="field" id="jc-neighborhood-wrap"><label>${T("Your neighborhood or area (optional)", "Tu vecindario o zona (opcional)")}</label><input id="jc-neighborhood" placeholder="${T("For example: Oceanfront, Ghent, Town Center", "Por ejemplo: Oceanfront, Ghent, Town Center")}" maxlength="80"><p class="small muted">${T("Businesses search by neighborhood.", "Los negocios buscan por vecindario.")}</p></div>
+        <div class="field" id="jc-area-wrap" style="display:none"><label>${T("Your area in London", "Tu zona en Londres")}</label><input id="jc-area-search" placeholder="${T("Search areas, for example: Brixton", "Busca zonas, por ejemplo: Brixton")}" oninput="filterAreaOptions('jc-area-search','jc-area')" style="margin-bottom:6px"><select id="jc-area">${areaOptions("London")}</select><p class="small muted">${T("London is one market. Your home city stays London, and your area is saved on your record.", "Londres es un solo mercado. Tu ciudad queda como Londres y tu zona se guarda en tu registro.")}</p></div>
         <div class="field"><label>${T("Your university (if you are a student now)", "Tu universidad (si eres estudiante ahora)")}</label><input id="jc-university" placeholder="${T("Start typing your school", "Empieza a escribir tu universidad")}" maxlength="120"><div class="uni-results" id="jc-university-results"></div><p class="small muted">${T("Current students get a campus badge. Pick from the list, or type it in full.", "Los estudiantes actuales reciben una insignia de campus. Elige de la lista o escríbela completa.")}</p></div>
         <div class="field"><label>${T("Student status (optional)", "Estado de estudiante (opcional)")}</label>${universityStatusChipsHtml("jc-university-status", "")}<p class="small muted">${T("Badge is current students only.", "La insignia es solo para estudiantes actuales.")}</p></div>
       </div>
@@ -7551,7 +7616,8 @@ async function doRegisterCreator(e) {
       password: document.getElementById("jc-password").value,
       market: marketVal,
       city: isUnlisted ? undefined : document.getElementById("jc-city").value,
-      neighborhood: document.getElementById("jc-neighborhood").value,
+      neighborhood: marketVal === "London" ? (document.getElementById("jc-area") || {}).value || "" : document.getElementById("jc-neighborhood").value,
+      area: marketVal === "London" ? (document.getElementById("jc-area") || {}).value || "" : undefined,
       university: document.getElementById("jc-university").value,
       universityStatus: document.getElementById("jc-university-status").value || undefined,
       customCity: isUnlisted ? customCity : undefined,

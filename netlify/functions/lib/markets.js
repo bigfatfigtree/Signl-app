@@ -275,11 +275,20 @@ const MARKETS = [
     cities: ["San Juan", "Bayamón", "Carolina", "Caguas", "Guaynabo", "Toa Baja", "Toa Alta", "Dorado", "Trujillo Alto", "Canóvanas", "Río Grande", "Gurabo", "Vega Baja", "Catano", "Loíza", "Juncos"],
   },
   {
+    // Build -88 (2026-11-02): London is ONE market (Jeff's ruling);
+    // this typed list is its full neighbourhood + surrounding-towns
+    // set — the race districts (Shoreditch/Spitalfields, Borough–
+    // Bankside, Brixton, Dalston–Hackney Central–Stoke Newington,
+    // Angel/Islington), the Tier 2/3 areas, the other inner areas,
+    // and the surrounding towns. Every entry files to market
+    // london via resolveTypedCity, and the same list feeds the
+    // claim/join area picker: a London creator's home city stays
+    // London and the picked entry is preserved as their area.
     id: "london",
     name: "London",
     label: "London, United Kingdom",
     country: "United Kingdom",
-    cities: ["London", "Croydon", "Bromley", "Romford", "Ilford", "Enfield", "Harrow", "Wembley", "Ealing", "Kingston upon Thames", "Richmond upon Thames", "Hounslow", "Uxbridge", "Watford", "Dartford", "Sutton", "St Albans", "Woking", "Slough"],
+    cities: ["London", "Shoreditch", "Spitalfields", "Borough", "Bankside", "Brixton", "Dalston", "Hackney Central", "Stoke Newington", "Angel", "Islington", "Peckham", "Camden Town", "Tooting", "Greenwich", "Clapham", "Soho", "Covent Garden", "Notting Hill", "Fitzrovia", "Marylebone", "Walthamstow", "Hackney", "Camden", "Whitechapel", "Bethnal Green", "Hoxton", "Clerkenwell", "Bloomsbury", "Westminster", "Kensington", "Chelsea", "Hammersmith", "Fulham", "Battersea", "Wandsworth", "Putney", "Wimbledon", "Hampstead", "Highgate", "Kilburn", "Willesden", "Acton", "Chiswick", "Dulwich", "Herne Hill", "Streatham", "Balham", "Lewisham", "Deptford", "Stratford", "Isle of Dogs", "Tottenham", "Haringey", "Barnes", "Bermondsey", "Kennington", "Vauxhall", "Stockwell", "Camberwell", "Walworth", "Rotherhithe", "Bow", "Clapton", "Hackney Wick", "Leyton", "Leytonstone", "Forest Gate", "East Ham", "Barking", "Wood Green", "Finsbury Park", "Kentish Town", "West Hampstead", "Golders Green", "Hendon", "Finchley", "Muswell Hill", "Crouch End", "Stamford Hill", "Seven Sisters", "Southgate", "Chingford", "Blackheath", "Brockley", "Forest Hill", "Sydenham", "Crystal Palace", "East Dulwich", "Catford", "Eltham", "Woolwich", "Twickenham", "Kew", "Brentford", "Southall", "Ruislip", "Pinner", "Stanmore", "Edgware", "Barnet", "Mitcham", "Morden", "Croydon", "Bromley", "Romford", "Ilford", "Enfield", "Harrow", "Wembley", "Ealing", "Kingston upon Thames", "Richmond upon Thames", "Hounslow", "Uxbridge", "Watford", "Dartford", "Sutton", "St Albans", "Woking", "Slough", "Beckenham", "Orpington", "Hornchurch", "Dagenham", "Edmonton", "Epsom"],
   },
   {
     id: "manchester",

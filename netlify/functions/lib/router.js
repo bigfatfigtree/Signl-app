@@ -1618,6 +1618,31 @@ function marketByName(name) {
   return MARKETS.find((m) => m.name === canonical || m.id === name) || null;
 }
 
+// Build -88: a creator's area inside their market. The record's
+// long-standing field for this is creator.neighborhood (Admin
+// prints it as "Area: ..."); Build -88's London area picker
+// writes the same field, mirrored to creator.area so either name
+// reads the same value. For London the picked area canonicalizes
+// against the market's typed city list (the picker list); any
+// other non-empty value stores trimmed, exactly like the
+// free-text neighborhood always has.
+function cleanCreatorArea(body, marketName) {
+  if (!body || typeof body !== "object") return "";
+  const raw = typeof body.area === "string" && body.area.trim() ? body.area : (typeof body.neighborhood === "string" ? body.neighborhood : "");
+  const trimmed = String(raw || "").trim().slice(0, 80);
+  if (!trimmed) return "";
+  if (normalizeMarketName(marketName || "") === "London") {
+    const mkt = marketByName("London");
+    const hit = mkt && canonicalFromList(trimmed, mkt.cities);
+    if (hit) return hit;
+  }
+  return trimmed;
+}
+function creatorAreaOf(creator) {
+  const c = creator || {};
+  return String(c.area || c.neighborhood || "").trim();
+}
+
 // Typed-city resolution (Jeff, 2026-10-23): a not-listed sign-up
 // types a hometown that may already belong to a market's published
 // city list (Portsmouth is a Virginia Beach market city). Run the
@@ -9093,6 +9118,8 @@ async function handleRegister(event) {
   // free-typed school all land in the same canonical shape.
   const uniResolved = resolveUniversity(b.university);
 
+  const signupArea = role === "creator" ? cleanCreatorArea(b, user.market) : "";
+
   if (role === "creator" && quickClaim) {
     // Step one of the two-step claim: the record carries the
     // handle, the Terms agreement, and defaults for everything
@@ -9135,7 +9162,8 @@ async function handleRegister(event) {
       bio: "",
       bestWork: [],
       maxVisitsPerWeek: 3,
-      neighborhood: "",
+      neighborhood: signupArea,
+      area: signupArea,
       university: uniResolved.name,
       universityCity: uniResolved.city,
       universityState: uniResolved.state,
@@ -9277,7 +9305,8 @@ async function handleRegister(event) {
       // businesses shop by neighborhood: Oceanfront, Ghent, Carytown).
       // Optional free text; never required, never validated against a
       // list, because neighborhoods are local knowledge.
-      neighborhood: typeof b.neighborhood === "string" ? b.neighborhood.trim().slice(0, 80) : "",
+      neighborhood: signupArea,
+      area: signupArea,
       university: uniResolved.name,
       universityCity: uniResolved.city,
       universityState: uniResolved.state,
@@ -9413,7 +9442,7 @@ async function handleRegister(event) {
     market: user.market,
     data:
       role === "creator"
-        ? { quickClaim: !!quickClaim, profileComplete: user.creator.profileComplete === true, handle: user.creator.handle, primaryPlatform: primaryPlatformOf(user.creator), city: user.city, neighborhood: user.creator.neighborhood, university: user.creator.university, state: user.state, country: user.country, unlisted: user.market === UNLISTED, followerCount: user.creator.followerCount, audienceStack: user.creator.audienceStack, totalAudience: user.creator.totalAudience, tierBand: normalizeTierBand(user.creator.tierBand), suggestedTier: normalizeTierBand(user.creator.suggestedTier), localAudiencePct: user.creator.localAudiencePct, localAudienceSource: user.creator.localAudienceSource, categories: user.creator.categories, compCategories: user.creator.compCategories, openToPaidCampaigns: user.creator.openToPaidCampaigns, profession: user.creator.profession || "", agreedPostCompliance: user.creator.agreedPostCompliance === true, termsVersion: TERMS_VERSION, marketingEmailConsent: true, ...(user.referredBy ? { referredBy: user.referredBy } : {}), ...(user.signupSource ? { signupSource: user.signupSource } : {}) }
+        ? { quickClaim: !!quickClaim, profileComplete: user.creator.profileComplete === true, handle: user.creator.handle, primaryPlatform: primaryPlatformOf(user.creator), city: user.city, neighborhood: user.creator.neighborhood, area: creatorAreaOf(user.creator), university: user.creator.university, state: user.state, country: user.country, unlisted: user.market === UNLISTED, followerCount: user.creator.followerCount, audienceStack: user.creator.audienceStack, totalAudience: user.creator.totalAudience, tierBand: normalizeTierBand(user.creator.tierBand), suggestedTier: normalizeTierBand(user.creator.suggestedTier), localAudiencePct: user.creator.localAudiencePct, localAudienceSource: user.creator.localAudienceSource, categories: user.creator.categories, compCategories: user.creator.compCategories, openToPaidCampaigns: user.creator.openToPaidCampaigns, profession: user.creator.profession || "", agreedPostCompliance: user.creator.agreedPostCompliance === true, termsVersion: TERMS_VERSION, marketingEmailConsent: true, ...(user.referredBy ? { referredBy: user.referredBy } : {}), ...(user.signupSource ? { signupSource: user.signupSource } : {}) }
         : { businessName: user.business.businessName, category: user.business.category, plan: user.business.plan, planPriceMonthly: user.business.planPriceMonthly, ...(user.referredBy ? { referredBy: user.referredBy } : {}), ...(user.signupSource ? { signupSource: user.signupSource } : {}) },
   });
   // Standing-authority auto-decision (Jeff, 2026-10-22): a creator
@@ -15682,6 +15711,16 @@ async function route(event) {
         const nb = String(b.neighborhood || "").trim().slice(0, 80);
         changes.neighborhood = [c.neighborhood || "", nb];
         c.neighborhood = nb;
+        c.area = nb;
+      }
+      // Build -88: the London area picker writes `area`; it is
+      // the same value as neighborhood, kept in sync both ways.
+      if (b.area !== undefined) {
+        const ar = cleanCreatorArea(b, user.market);
+        changes.area = [creatorAreaOf(c), ar];
+        changes.neighborhood = [c.neighborhood || "", ar];
+        c.area = ar;
+        c.neighborhood = ar;
       }
       // Proximity (Build -31): the creator's home-base ZIP. Five
       // digits only; a street address is never asked for and
@@ -16864,6 +16903,9 @@ async function route(event) {
           businessesApproved: inMarket.filter((u) => u.role === "business" && u.status === "approved").length,
           businessesFounding: inMarket.filter((u) => u.role === "business" && u.status === "approved" && businessAccessState(u) !== "active").length,
           businessesActive: inMarket.filter((u) => u.role === "business" && u.status === "approved" && businessAccessState(u) === "active").length,
+          // Build -88: creator areas inside the market (the
+          // London picker values), counted for the board.
+          areas: (() => { const counts = {}; for (const u of inMarket) { if (u.role !== "creator" || isTester(u)) continue; const a = creatorAreaOf(u.creator); if (a) counts[a] = (counts[a] || 0) + 1; } return Object.entries(counts).map(([area, creators]) => ({ area, creators })).sort((x, y) => y.creators - x.creators || (x.area < y.area ? -1 : 1)); })(),
         };
       });
       return json(200, { markets: out, testMode: TEST_MODE });
