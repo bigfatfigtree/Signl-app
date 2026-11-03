@@ -5151,7 +5151,7 @@ async function sigB96AvailStep(f, text) {
 function sigC98Payout() {
   const c = (state.user && state.user.creator) || {};
   const ready = !!(c.payouts && c.payouts.ready);
-  sigOpSay(`Payout setup runs on Stripe's secure pages, from the paid lane on your Profile. Stripe will ask for identity details, because payment companies have to check who money is going to. It will ask for your address, as part of that check, and your bank account, so money can go to your bank; bank details go to Stripe, never to SIGNL. It will ask for tax information, so paid earnings can be reported the right way. If your paid earnings pass the reporting threshold for a tax year, you may get a Form 1099-K for that year; it is a tax record, not a bill. Your first payout can be held briefly while identity checks clear. Paid bookings are recorded in the app and settled with help until the payout rail fully opens, so setup does not promise instant payouts. ${ready ? "Your payouts are ready on your record." : "Your payouts are not set up yet on your record."}`, [
+  sigOpSay(`Payout setup runs on Stripe's secure pages, from the paid lane on your Profile. Stripe will ask for identity details, because payment companies have to check who money is going to. It will ask for your address, as part of that check, and your bank account, so money can go to your bank; bank details go to Stripe, never to SIGNL. It will ask for tax information, so paid earnings can be reported the right way. If your paid earnings pass the reporting threshold for a tax year, you may get a Form 1099-K for that year; it is a tax record, not a bill. Your first payout can be held briefly while identity checks clear. Paid bookings are recorded in the app and settled with help until the payout rail fully opens, so setup promises no payout date. ${ready ? "Your payouts are ready on your record." : "Your payouts are not set up yet on your record."}`, [
     { label: ST("Open payout setup on my Profile", "Abrir los pagos en mi perfil"), primary: true, run: async () => go("dashboard", "Profile") },
     { label: ST("Read it in Help", "Leerlo en Ayuda"), run: async () => go("dashboard", "Help") },
   ]);
@@ -11713,7 +11713,7 @@ function laneFeeOf(c) {
 }
 function laneFeeLine(c) {
   const fee = laneFeeOf(c || {});
-  if (!fee) return "not set. The box below starts at a starting point for your tier. Change it to whatever you charge. A business can ask to repost your post and run it as an ad for 90 days, only with your approval.";
+  if (!fee) return "not set. The box below starts at a starting point for your tier; change it to whatever you charge, and a business can ask to repost your post and run it as an ad for 90 days, only with your approval.";
   const keep = Math.round(fee * 0.97 * 100) / 100;
   return `repost my post and run it as an ad for 90 days: ${ownCurrencySymbol()}${fmtPrice(fee)} · you keep ${ownCurrencySymbol()}${fmtMoney(keep)} (97%) per license.`;
 }
@@ -12017,7 +12017,7 @@ function payoutExplainerHtml() {
     <p class="small" style="margin:0 0 6px">Stripe runs payout setup on its own secure pages. Stripe will ask for identity details, like your name and date of birth, because payment companies have to check who money is going to. It will ask for your address, as part of that same identity check. It will ask for your bank account, so money can go to your bank; your bank details go to Stripe, never to SIGNL. And it will ask for tax information, so paid earnings can be reported the right way.</p>
     <p class="small" style="margin:0 0 6px">Taxes, in plain words: if your paid earnings pass the reporting threshold for a tax year, you may get a Form 1099-K for that year. It is a tax record of money paid to you, not a bill. Keep it for your taxes.</p>
     <p class="small" style="margin:0 0 6px">Your first payout can be held briefly while identity checks clear. That is a check finishing, not money lost.</p>
-    <p class="small" style="margin:0">Paid bookings are recorded in the app and settled with help until the payout rail fully opens. Payout setup does not promise instant payouts, and the app does not promise a payout date.</p>
+    <p class="small" style="margin:0">Paid bookings are recorded in the app and settled with help until the payout rail fully opens. Payout setup promises no payout date, and the app does not promise a payout date.</p>
   </div>`;
 }
 function payoutsStepHtml(c) {
@@ -12041,7 +12041,7 @@ function payoutsStepHtml(c) {
       <p class="small" style="margin:0 0 6px">Stripe runs payout setup on its own secure pages. Stripe will ask for identity details, like your name and date of birth, because payment companies have to check who money is going to. It will ask for your address, as part of that same identity check. It will ask for your bank account, so money can go to your bank; your bank details go to Stripe, never to SIGNL. And it will ask for tax information, so paid earnings can be reported the right way.</p>
       <p class="small" style="margin:0 0 6px">Taxes, in plain words: if your paid earnings pass the reporting threshold for a tax year, you may get a Form 1099-K for that year. It is a tax record of money paid to you, not a bill. Keep it for your taxes.</p>
       <p class="small" style="margin:0 0 6px">Your first payout can be held briefly while identity checks clear. That is a check finishing, not money lost.</p>
-      <p class="small" style="margin:0 0 8px">Paid bookings are recorded in the app and settled with help until the payout rail fully opens. Payout setup does not promise instant payouts, and the app does not promise a payout date.</p>
+      <p class="small" style="margin:0 0 8px">Paid bookings are recorded in the app and settled with help until the payout rail fully opens. Payout setup promises no payout date, and the app does not promise a payout date.</p>
       <button type="button" class="btn small-btn ghost" onclick="return ackPayoutExplainer()">Got it</button>
     </div>`;
   }

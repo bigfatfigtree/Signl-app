@@ -47,8 +47,8 @@ const indexHtml = read("public/index.html");
 const count = (src, needle) => src.split(needle).length - 1;
 
 // ---------- stamp ----------
-check("stamp: BUILD_ID is 2026.11.02-99", buildJs.includes('BUILD_ID = "2026.11.02-99"'));
-check("stamp: index.html pins the -51 stamp in all four spots", count(indexHtml, "2026.11.02-99") === 4, String(count(indexHtml, "2026.11.02-99")));
+check("stamp: BUILD_ID is 2026.11.02-100", buildJs.includes('BUILD_ID = "2026.11.02-100"'));
+check("stamp: index.html pins the -51 stamp in all four spots", count(indexHtml, "2026.11.02-100") === 4, String(count(indexHtml, "2026.11.02-100")));
 
 // ---------- A-02 + X-08: the fake toggle ----------
 check("A-02: no decorative switch pill remains in app.js", !appJs.includes('<span class="tg">') && !appJs.includes('<span class="tg off">'));
@@ -194,7 +194,7 @@ try {
   check("live: dev server boots", await waitUp());
   const home = await fetch(BASE + "/");
   const homeText = await home.text();
-  check("live: GET / serves the -51 stamp", home.status === 200 && homeText.includes("2026.11.02-99"));
+  check("live: GET / serves the -51 stamp", home.status === 200 && homeText.includes("2026.11.02-100"));
   const boot = await (await fetch(BASE + "/api/bootstrap")).json();
   check("live: bootstrap reports 38 markets (X-01 app side stays data-driven; 37 -> 38 when Miami was restored in Build -59)", boot && Array.isArray(boot.markets) && boot.markets.length === 38,
     JSON.stringify(boot && boot.markets && boot.markets.length));
