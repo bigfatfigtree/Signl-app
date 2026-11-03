@@ -31,7 +31,7 @@
 //     carries the same userId Discover hands the allowlisted
 //     viewer, and a non-allowlisted business still never
 //     receives demo people at all.
-//   - stamp reads 2026.11.02-95 in build.js + index.html.
+//   - stamp reads 2026.11.02-96 in build.js + index.html.
 import { spawn } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
 import fs from "node:fs";
@@ -54,7 +54,7 @@ const read = (p) => fs.readFileSync(path.join(ROOT, p), "utf8");
   const sigdata = read("netlify/functions/lib/sigdata.js");
   const router = read("netlify/functions/lib/router.js");
   const css = read("public/theme-v2.css");
-  check("stamp: build id is 2026.11.02-95", read("netlify/functions/lib/build.js").includes('"2026.11.02-95"') && read("public/index.html").includes("2026.11.02-95"));
+  check("stamp: build id is 2026.11.02-96", read("netlify/functions/lib/build.js").includes('"2026.11.02-96"') && read("public/index.html").includes("2026.11.02-96"));
   check("source: creator card body carries the profile walk (data-sigprofile + View profile)", app.includes('data-sigprofile="${esc(c.userId)}"') && app.includes("sig-ccard-view") && app.includes("View profile"));
   check("source: card tap navigates via openCreatorProfile (the Discover door)", app.includes('querySelectorAll("[data-sigprofile]")') && app.includes("openCreatorProfile(uid)"));
   check("source: the profile door finds Sig's cohort even before Discover opens (sigOpData fallback)", app.includes("state.sigOpData && state.sigOpData.cards"));

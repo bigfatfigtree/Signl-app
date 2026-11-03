@@ -218,9 +218,9 @@ console.log("== Source checks ==");
   check("funnel section sits under the sign-up board on Overview", overviewSrc.indexOf("adminSignupBoardHtml(s.signupBoard)") >= 0 && overviewSrc.indexOf("adminSignupBoardHtml(s.signupBoard)") < overviewSrc.indexOf("ccFunnelHtml(funnel)"), "");
   check("funnel section carries the plain-words stage key", appJs.includes("First offer taken") && appJs.includes("left out of every stage, always"), "");
   check("server computes the funnel from creator + booking records (profileCompleteOf, live-booking test)", routerJs.includes("ccFunnel") && routerJs.includes("profileCompleteOf") && routerJs.includes('bk.collabRole === "plusone"'), "");
-  check("build stamp is 2026.11.02-95 on both sides",
-    fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes('exports.BUILD_ID = "2026.11.02-95"')
-    && fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes('window.__SIGNL_BUILD__ = "2026.11.02-95"'), "");
+  check("build stamp is 2026.11.02-96 on both sides",
+    fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes('exports.BUILD_ID = "2026.11.02-96"')
+    && fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes('window.__SIGNL_BUILD__ = "2026.11.02-96"'), "");
 }
 
 console.log(`\nBuild -93 verify: ${passed} passed, ${failed} failed`);
