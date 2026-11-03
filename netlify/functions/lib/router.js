@@ -9577,6 +9577,29 @@ async function buildSigFacts(user, full) {
       user, readout, plan, marketLive, founding: isFoundingBusiness(user),
       applicantsWaiting: apps.filter((a) => a.businessId === user.id && (a.status === "applied" || a.status === "backfill_offered")).length,
       draftOffers: offers.filter((o) => o.businessId === user.id && o.status === "draft").length,
+      // Build -97 proactive prompts: total campaign records
+      // (zero is the founding first-campaign prompt), drafts
+      // an ACTIVE business started and never sent (founding
+      // drafts are finished by design, saved for opening day,
+      // so they never count as unfinished), and plan visits
+      // unused partway through the month (day 10 or later,
+      // some used-or-not, some still remaining).
+      offersTotal: offers.filter((o) => o.businessId === user.id).length,
+      unfinishedDrafts: isFoundingBusiness(user) ? 0 : offers.filter((o) => o.businessId === user.id && o.status === "draft").length,
+      visitsUnusedMidMonth: (() => {
+        if (isFoundingBusiness(user)) return null;
+        const pv = (readout && readout.overall && readout.overall.planVisits) || {};
+        // Partway through the month, behind pace: visits
+        // remain, and usage so far is under the share of the
+        // allowance the elapsed share of the month would
+        // predict. Ahead of pace stays silent.
+        const nowD = new Date();
+        const day = nowD.getDate();
+        const daysInMonth = new Date(nowD.getFullYear(), nowD.getMonth() + 1, 0).getDate();
+        const expected = (pv.allowance || 0) * (day / daysInMonth);
+        return day >= 3 && (pv.allowance || 0) > 0 && (pv.remaining || 0) > 0 && (pv.used || 0) < expected
+          ? { remaining: pv.remaining, allowance: pv.allowance, used: pv.used || 0 } : null;
+      })(),
       rosterInMarket,
       // Build -95: My Regulars + licences nearing expiry, from
       // the same builders the Regulars view and the alert

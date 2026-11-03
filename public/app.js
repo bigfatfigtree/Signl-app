@@ -2151,6 +2151,11 @@ RAIL_SHORT["Businesses"] = "Business";
 // Build -95: the Regulars tab's full label is "My Regulars";
 // the 72px phone rail shows its compact form.
 RAIL_SHORT["Regulars"] = "Regulars";
+// Build -97: campaign setup is its own tab ("Campaign Setup");
+// the 72px phone rail shows its compact form. The tracking
+// tab keeps the "Campaigns" short form it has carried since
+// Build -68.
+RAIL_SHORT["Campaign Setup"] = "Setup";
 function railRowItems() {
   const t = state.tab;
   const seen = new Set();
@@ -2246,7 +2251,8 @@ function moreRowsFor() {
   const wc = state.waitCounts || {};
   if (u.role === "business") {
     return [
-      { icon: "notice", label: "Campaigns", sub: "Your campaigns and who is applying.", tab: "My Offers", badge: wc.bizApps != null ? wc.bizApps : (b.offers || 0) },
+      { icon: "notice", label: "Set up a campaign", sub: "Build a new campaign, step by step or with Sig.", tab: "Campaign Setup" },
+      { icon: "bars", label: "Your campaigns", sub: "Current and past campaigns, who applied, and what they did.", tab: "My Offers", badge: wc.bizApps != null ? wc.bizApps : (b.offers || 0) },
       { icon: "calendar", label: "Visits", sub: "Visits and posts. The counter is inside.", tab: "Visits & Posts", badge: wc.bizVisits != null ? wc.bizVisits : (b.visits || 0) },
       { icon: "users", label: "My Regulars", sub: "Creators who visited you. Book them again.", tab: "Regulars" },
       { icon: "bars", label: "Results", sub: "What your campaigns did.", tab: "Analytics" },
@@ -3398,7 +3404,7 @@ function sigFlowsFor() {
   const live = biz ? businessAccessState(u) === "active" : !!(u.founding && u.founding.marketLive);
   const flow = (label, keys, act) => ({ label, keys, act });
   if (biz) return [
-    flow("Post an offer", ["post an offer", "new offer", "create offer", "make an offer"], () => go("dashboard", "My Offers")),
+    flow("Post an offer", ["post an offer", "new offer", "create offer", "make an offer"], () => go("dashboard", "Campaign Setup")),
     flow("Review applicants", ["applicant", "review", "applied", "decide", "answer"], () => { state.offersSeg = "applicants"; go("dashboard", "My Offers"); }),
     flow("Find creators", ["find creator", "browse creator", "discover", "invite a creator", "find creators"], () => go("dashboard", "Discover")),
     flow("Redeem a visit", ["redeem", "counter", "code", "check in", "check-in"], () => go("dashboard", "Counter")),
@@ -3650,6 +3656,7 @@ function sigLinkGo(dest) {
     case "biz-results": return go("dashboard", "Analytics");
     case "biz-applicants": state.offersSeg = "applicants"; return go("dashboard", "My Offers");
     case "biz-offers": return go("dashboard", "My Offers");
+    case "biz-setup": return go("dashboard", "Campaign Setup");
     case "biz-drafts": state.offersSeg = "drafts"; return go("dashboard", "My Offers");
     case "biz-discover": return go("dashboard", "Discover");
     case "biz-visits": return go("dashboard", "Visits & Posts");
@@ -3679,6 +3686,8 @@ function sigLinkGo(dest) {
 // stay plain text.
 function sigChipDest(label) {
   const t = " " + String(label || "").toLowerCase() + " ";
+  if (t.includes("first campaign")) return "biz-setup";
+  if (t.includes("visits unused")) return "biz-setup";
   if (t.includes("applicants waiting")) return "biz-applicants";
   if (t.includes("draft")) return "biz-drafts";
   if (t.includes("offers live")) return "biz-offers";
@@ -4086,7 +4095,7 @@ function startOfferTemplate(kind) {
     state.offerDraft.dwindow = String(std.windowHours);
     state.offerDraft.deliverablesTouched = false;
   }
-  state.tab = "My Offers";
+  state.tab = "Campaign Setup";
   render();
   return false;
 }
@@ -4176,7 +4185,7 @@ function go(view, tab) {
   // 2026-10-28, reproduced in the seed world). The draft itself
   // is kept (state.offerDraft survives re-renders); only the
   // direct targeting ends when the business walks away from it.
-  if (tab && tab !== "My Offers") state.offerTarget = null;
+  if (tab && tab !== "My Offers" && tab !== "Campaign Setup") state.offerTarget = null;
   if (tab) state.tab = tab;
   render();
   return false;
@@ -4997,11 +5006,11 @@ async function sigB95Regulars() {
     ...rows.slice(0, 5).map((r) => ({
       label: `Book again: @${r.creatorHandle}`,
       run: async () => sigOpPick(`Book again: @${r.creatorHandle}`, async () => {
-        sigOpAsk(`Book ${r.creatorName} again? I will copy the last visit's deal ("${r.lastTitle || "your last visit"}", ${r.deal.line}) into a new draft in Campaigns. Nothing sends until you publish the draft.`, [
+        sigOpAsk(`Book ${r.creatorName} again? I will copy the last visit's deal ("${r.lastTitle || "your last visit"}", ${r.deal.line}) into a new draft in Your campaigns. Nothing sends until you publish the draft.`, [
           { label: "Yes, draft it", primary: true, run: async () => sigOpPick("Yes, draft it", async () => {
             try {
               const d = await api("POST", `/me/regulars/${r.creatorId}/book-again`, {});
-              sigOpSay(`Draft created: "${d.offer.title}" is saved in Campaigns as a draft with the same terms as the last visit. Nothing was sent.`, [
+              sigOpSay(`Draft created: "${d.offer.title}" is saved in Your campaigns as a draft with the same terms as the last visit. Nothing was sent.`, [
                 { label: "Open the draft", primary: true, run: async () => { state.offersSeg = "drafts"; go("dashboard", "My Offers"); } },
                 { label: "Back to Regulars", run: async () => sigB95Regulars() },
               ]);
@@ -5641,9 +5650,9 @@ async function sigB1Commit() {
     // never "creators can apply now" for an offer no creator
     // can see.
     sigOpSay(created && created.status === "draft"
-      ? ST(`Done. "${d.title}" is saved as a draft for opening day. Nothing is sent to creators until your market opens, and it waits for you under Campaigns, in Drafts.`, `Listo. "${d.title}" quedó guardado como borrador para el día de apertura. Nada se envía a los creadores hasta que abra tu mercado.`)
+      ? ST(`Done. "${d.title}" is saved as a draft for opening day. Nothing is sent to creators until your market opens, and it waits for you under Your campaigns, in Drafts.`, `Listo. "${d.title}" quedó guardado como borrador para el día de apertura. Nada se envía a los creadores hasta que abra tu mercado.`)
       : ST(`Done. "${d.title}" is live. Creators can ${d.lane === "direct" ? "answer it now" : "apply now"}.`, `Listo. "${d.title}" está activa. Los creadores ya pueden ${d.lane === "direct" ? "responder" : "aplicar"}.`), [
-      { label: ST("See it in My Offers", "Verla en Mis ofertas"), primary: true, run: async () => { if (created && created.status === "draft") state.offersSeg = "drafts"; go("dashboard", "My Offers"); if (created && created.id) setTimeout(() => jumpToOffer(created.id), 80); } },
+      { label: ST("See it in Your campaigns", "Verla en Tus campañas"), primary: true, run: async () => { if (created && created.status === "draft") state.offersSeg = "drafts"; go("dashboard", "My Offers"); if (created && created.id) setTimeout(() => jumpToOffer(created.id), 80); } },
       { label: ST("Set up another", "Crear otra"), run: async () => { sigB1Start(); sigOpPaint(); } },
       { label: ST("How am I doing?", "¿Cómo voy?"), run: async () => { await sigB3Run(); sigOpPaint(); } },
     ]);
@@ -13685,7 +13694,7 @@ async function loadMyVisits(role) {
     const segTabs = wsTabs(segs.map(([id, label]) => ({ label, count: counts[id] || null, on: seg === id, onclick: `return visitsSetSeg('${id}')` })));
     let bodyHtml;
     if (!bookings.length) {
-      bodyHtml = `<div class="empty-card"><div class="ec-t">No visits yet</div><div class="ec-s">${role === "creator" ? "When a business picks you, or you accept an invite, it lands here." : "When you select a creator or one accepts your invite, the visit lands here."}</div></div><p class="center">${role === "creator" ? `<button class="btn ws-primary" onclick="return go('dashboard','Offers')">See offers</button>` : `<button class="btn ws-primary" onclick="return go('dashboard','My Offers')">Post an offer</button>`}</p>`;
+      bodyHtml = `<div class="empty-card"><div class="ec-t">No visits yet</div><div class="ec-s">${role === "creator" ? "When a business picks you, or you accept an invite, it lands here." : "When you select a creator or one accepts your invite, the visit lands here."}</div></div><p class="center">${role === "creator" ? `<button class="btn ws-primary" onclick="return go('dashboard','Offers')">See offers</button>` : `<button class="btn ws-primary" onclick="return go('dashboard','Campaign Setup')">Post an offer</button>`}</p>`;
     } else if (!rows.length) {
       bodyHtml = `<div class="empty-card"><div class="ec-t">Nothing here</div><div class="ec-s">${esc(segEmptyLine(seg, role))}</div></div>`;
     } else {
@@ -14306,7 +14315,7 @@ function foundingFirstMonthCardHtml(u) {
     <h3 style="margin-top:0">Your first month</h3>
     <p>Your ${esc(bz.planName || plan.name)} plan includes <strong>${visits} creator visits a month</strong>. Here is what a visit is: a local micro-influencer comes to your store, films while they are there, and posts it for their followers here in ${esc(bizPlace)}. You pick the moment your first month is built around, and the visits run at it.</p>
     ${bz.highlight ? `<div class="panel" style="margin-top:12px"><p class="small" style="margin:0">${esc(bz.highlight)}</p></div>` : ""}
-    <div class="mt"><button class="btn" type="button" onclick="return go('dashboard','My Offers')">Draft your first campaign</button></div>
+    <div class="mt"><button class="btn" type="button" onclick="return go('dashboard','Campaign Setup')">Draft your first campaign</button></div>
   </section>`;
 }
 
@@ -14410,7 +14419,7 @@ async function loadSampleResultsInto(fullIfViewAs) {
 function startHereSteps({ favorites, offers, bookings }) {
   return [
     { n: 1, title: "Meet micro-influencers near you", why: "Flip through creators in your city and save the ones who fit.", btn: "Find creators", tab: "Discover", done: favorites > 0 },
-    { n: 2, title: "Invite one, or open a campaign", why: "Send one creator an invite, or post a campaign and let creators apply.", btn: "Start a campaign", tab: "My Offers", done: offers.length > 0 || bookings.length > 0 },
+    { n: 2, title: "Invite one, or open a campaign", why: "Send one creator an invite, or post a campaign and let creators apply.", btn: "Start a campaign", tab: "Campaign Setup", done: offers.length > 0 || bookings.length > 0 },
     { n: 3, title: "See who came in", why: "When a creator visits and posts, this is where you see who it brought in.", btn: "See results", tab: "Analytics", done: bookings.some((b) => b.redeemedAt || b.post) },
   ];
 }
@@ -14487,6 +14496,15 @@ async function loadFoundingBusinessHome() {
       items.push({ text: n.text, btn: a.btn, act: a.act });
     }
   } catch (e) { /* the queue is a nudge, never a blocker */ }
+  // Build -97 proactive prompt, real records only: a founding
+  // business with no campaign drafts at all gets pointed at
+  // the guided setup. A business that already saved a draft
+  // hears nothing here.
+  try {
+    const od = await api("GET", "/offers");
+    const myOffers = (od && od.offers) || [];
+    if (!myOffers.length) items.push({ text: "No campaign drafts yet. Set one up now, with Sig or step by step, and it is ready for opening day.", btn: "Set up a campaign", act: () => go("dashboard", "Campaign Setup") });
+  } catch (e) { /* the queue is a nudge, never a blocker */ }
   const bz = u.business || {};
   if (!bz.about) items.push({ text: "Your business page has no story yet. A few lines about your store is what creators read before they apply.", btn: "Write it", act: () => go("dashboard", "Profile") });
   state.sigQueue = items;
@@ -14549,7 +14567,7 @@ function foundingOpenSigDraft() {
   state.composerLane = "open";
   state.offerTarget = null;
   state.offersSeg = "live";
-  loadMyOffers();
+  loadCampaignSetup();
   setTimeout(() => { const c = document.getElementById("offer-composer"); if (c) c.scrollIntoView({ behavior: "smooth" }); }, 60);
   return false;
 }
@@ -14557,7 +14575,7 @@ function foundingStartFresh() {
   state.offerDraft = {};
   state.offerTarget = null;
   state.composerLane = "open";
-  loadMyOffers();
+  loadCampaignSetup();
   setTimeout(() => { const c = document.getElementById("offer-composer"); if (c) c.scrollIntoView({ behavior: "smooth" }); }, 60);
   return false;
 }
@@ -14621,14 +14639,15 @@ function renderFoundingMessagesTab() {
   </section>`;
 }
 
-const BUSINESS_TABS = ["Home", "Requests", "Discover", "Favorites", "My Offers", "Counter", "Visits & Posts", "Regulars", "Content", "Analytics", "Plan", "Messages", "Profile", "More", "Settings", "Help", "Sig"];
+const BUSINESS_TABS = ["Home", "Requests", "Discover", "Favorites", "Campaign Setup", "My Offers", "Counter", "Visits & Posts", "Regulars", "Content", "Analytics", "Plan", "Messages", "Profile", "More", "Settings", "Help", "Sig"];
 
 function renderBusinessDash() {
   const u = state.user;
   let tab = state.tab || "Home";
   if (!BUSINESS_TABS.includes(tab)) tab = "Home";
-  // A "Send offer" from Discover lands on the composer, as before.
-  if (state.offerTarget) tab = "My Offers";
+  // A "Send offer" from Discover lands on the composer, which
+  // lives in Set up a campaign since Build -97.
+  if (state.offerTarget) tab = "Campaign Setup";
   // V3: Requests is the Applicants segment of Offers (§5.2).
   if (tab === "Requests") { state.offersSeg = "applicants"; tab = "My Offers"; }
   state.tab = tab;
@@ -14641,6 +14660,7 @@ function renderBusinessDash() {
   if (tab === "Home") founding ? loadFoundingBusinessHome() : loadBusinessHome();
   if (tab === "Discover") loadDiscover();
   if (tab === "Favorites") loadFavorites();
+  if (tab === "Campaign Setup") loadCampaignSetup();
   if (tab === "My Offers") loadMyOffers();
   if (tab === "Counter") founding ? renderFoundingVisitsTab() : renderCounter();
   if (tab === "Visits & Posts") founding ? renderFoundingVisitsTab() : loadMyVisits("business");
@@ -15434,6 +15454,19 @@ async function loadBusinessHome() {
     if (rxExp && rxExp.hasActivity) {
       add(3, now, `Your ${rxExp.monthLabel} receipt is ready to forward: counted, recorded, and intent figures in three separate sections, with your founding credit and licence end dates.`, "Forward it", () => go("dashboard", "Analytics"), `${rxExp.monthLabel} receipt ready`);
     }
+    // Build -97 proactive prompts, real records only: a draft
+    // this (active) business started and never sent, and plan
+    // visits still unused partway through the month. This home
+    // only runs for active businesses, so a draft here is by
+    // definition unfinished. Nothing true, nothing renders.
+    const unfinishedDraft = offers.filter((o) => o.status === "draft").sort((a, b) => String(a.createdAt || "").localeCompare(String(b.createdAt || "")))[0];
+    if (unfinishedDraft) {
+      add(2, Date.parse(unfinishedDraft.createdAt) || now, `You started a draft campaign, "${unfinishedDraft.title}", and have not finished it yet. It sends nothing until you publish it.`, "Finish the draft", () => { state.offersSeg = "drafts"; go("dashboard", "My Offers"); }, `Draft waiting: "${unfinishedDraft.title}"`);
+    }
+    const pace97 = (() => { const n97 = new Date(); const dim97 = new Date(n97.getFullYear(), n97.getMonth() + 1, 0).getDate(); return n97.getDate() >= 3 && (h.visitsAllowance || 0) > 0 && (h.visitsRemaining || 0) > 0 && (h.visitsUsed || 0) < (h.visitsAllowance || 0) * (n97.getDate() / dim97); })();
+    if (pace97) {
+      add(4, now, `Partway through the month, ${h.visitsRemaining} of your ${h.visitsAllowance} plan visits are still unused. A new campaign is how they turn into visits.`, "Set up a campaign", () => go("dashboard", "Campaign Setup"), `${h.visitsRemaining} visits unused this month`);
+    }
     // Capture-gap diagnostic (Build -39): creator-reported
     // reach ran far ahead of counted register customers. The
     // line names the check, never a culprit, with real counts.
@@ -15476,7 +15509,7 @@ async function loadBusinessHome() {
       add(4, now, d.marketLive
         ? `${sig.roster} creator${plural(sig.roster)} ${sig.roster === 1 ? "is" : "are"} on the roster in ${mktName}. Post your first offer and they can apply.`
         : `${sig.roster} creator${plural(sig.roster)} ${sig.roster === 1 ? "is" : "are"} on the founding roster in ${mktName}. Draft your first offer now; publishing switches on at launch.`,
-        "Post offer", () => { state.offersSeg = "live"; go("dashboard", "My Offers"); }, "Post your first offer");
+        "Post offer", () => go("dashboard", "Campaign Setup"), "Post your first offer");
     }
     if (offers.length > 0 && !offers.some((o) => o.lane === "direct") && bookings.length === 0) {
       add(4, now, "Invite a creator directly at their listed rate. An invite goes to one creator, by name.", "Find creators", () => go("dashboard", "Discover"), "Invite a creator directly");
@@ -15505,7 +15538,7 @@ async function loadBusinessHome() {
           : `New on the roster: new creators finished profiles in ${mktName} in the last two weeks.`;
       pushIdea("biz_fresh", freshLine, "Find creators", () => go("dashboard", "Discover"), "New creators on the roster");
     }
-    pushIdea("biz_category_play", SIG_CATEGORY_PLAYS[bz.category] || SIG_CATEGORY_PLAYS.Other, "Post offer", () => { state.offersSeg = "live"; go("dashboard", "My Offers"); }, "An idea for your business");
+    pushIdea("biz_category_play", SIG_CATEGORY_PLAYS[bz.category] || SIG_CATEGORY_PLAYS.Other, "Post offer", () => go("dashboard", "Campaign Setup"), "An idea for your business");
     // R2 closed-loop repeat (Jeff, 2026-10-28): when the
     // readout's deterministic best performer exists, propose
     // running it again as a queue idea (14-day suppression and
@@ -15533,7 +15566,7 @@ async function loadBusinessHome() {
     // every step is done.
     const steps = [
       { label: "Finish your business page", sub: "Your name, category, and what creators get.", done: !!(bz.businessName && bz.category && bz.about), btn: "Edit page", act: () => go("dashboard", "Profile") },
-      { label: "Post your first offer", sub: "Comped visit, paid booking, or open call.", done: offers.length > 0, btn: "Post offer", act: () => { state.offersSeg = "live"; go("dashboard", "My Offers"); } },
+      { label: "Post your first offer", sub: "Comped visit, paid booking, or open call.", done: offers.length > 0, btn: "Post offer", act: () => go("dashboard", "Campaign Setup") },
       { label: "Find creators and send first invite", sub: "Flip through creators near you, invite the ones who fit.", done: offers.some((o) => o.lane === "direct") || bookings.length > 0, btn: "Find creators", act: () => go("dashboard", "Discover") },
     ];
     // (Build -47, audit B12: "You are live" was a fourth "step"
@@ -15557,7 +15590,7 @@ async function loadBusinessHome() {
     ] : null;
     const caughtLinks = [
       { label: "Find creators", act: () => go("dashboard", "Discover") },
-      { label: "Post an offer", act: () => { state.offersSeg = "live"; go("dashboard", "My Offers"); } },
+      { label: "Post an offer", act: () => go("dashboard", "Campaign Setup") },
     ];
     state.bizFeedEvents = bizFeedEvents(h, notes);
     bizFeedKind = "all";
@@ -15611,7 +15644,7 @@ function perfSeriesText(series) {
 function performanceCardHtml(ro) {
   if (!ro) return "";
   if (ro.empty) {
-    return `<div class="wcard"><h3>Performance</h3><p class="wc-sub" style="margin:4px 0 10px">Your funnel fills in once your campaigns are live. When a visit is redeemed and a post lands, your visits, posts, day 7 / 14 / 30 numbers, redemptions, and register value show up here, with one clear next move.</p><button type="button" class="btn small-btn" onclick="state.offersSeg='live'; return go('dashboard','My Offers')">Post an offer</button></div>`;
+    return `<div class="wcard"><h3>Performance</h3><p class="wc-sub" style="margin:4px 0 10px">Your funnel fills in once your campaigns are live. When a visit is redeemed and a post lands, your visits, posts, day 7 / 14 / 30 numbers, redemptions, and register value show up here, with one clear next move.</p><button type="button" class="btn small-btn" onclick="return go('dashboard','Campaign Setup')">Post an offer</button></div>`;
   }
   const o = ro.overall || {};
   const cells = [
@@ -15919,7 +15952,7 @@ async function regularBookAgain(creatorId, btn) {
   try {
     const d = await api("POST", `/me/regulars/${creatorId}/book-again`, {});
     state.offersSeg = "drafts";
-    alert(`Draft created: "${d.offer.title}" is saved in Campaigns as a draft with the same terms as the last visit. Nothing was sent. Open the draft to check it and publish when you are ready.`);
+    alert(`Draft created: "${d.offer.title}" is saved in Your campaigns as a draft with the same terms as the last visit. Nothing was sent. Open the draft to check it and publish when you are ready.`);
     return go("dashboard", "My Offers");
   } catch (e) {
     alert(e.message);
@@ -16217,7 +16250,7 @@ async function renderAnalyticsTab() {
       <div id="biz-sample"></div>
       <div id="biz-stats"></div>
       <div class="empty-card"><div class="ec-t">Your results</div><div class="ec-s">${hasLiveOffer ? "Your offer is live. This fills in as creators apply, visit, and post." : "This fills in once your campaigns are live. When creators start visiting and posting, you will see applications, visits, posts, and the local reach they delivered, right here."}</div></div>
-      ${hasLiveOffer ? "" : `<p class="center"><button class="btn ws-primary" onclick="return go('dashboard','My Offers')">Post an offer</button></p>`}
+      ${hasLiveOffer ? "" : `<p class="center"><button class="btn ws-primary" onclick="return go('dashboard','Campaign Setup')">Post an offer</button></p>`}
       <div id="biz-receipt"></div>`;
       loadSampleResultsInto(true);
       loadReceipt();
@@ -16625,7 +16658,7 @@ async function rebookCreator(creatorId) {
     await api("POST", "/offers/rebook", { creatorId });
     state.tab = "My Offers";
     render();
-    setTimeout(() => alert("Invite sent. It is prefilled from your last visit together and lives under My Offers."), 50);
+    setTimeout(() => alert("Invite sent. It is prefilled from your last visit together and lives under Your campaigns."), 50);
   } catch (err) { alert(err.message); }
 }
 
@@ -17176,7 +17209,7 @@ function renderOffersSegTabs() {
   const all = state.myOffers || [];
   const wc = state.waitCounts || {};
   host.innerHTML = wsTabs([
-    { label: "Live", count: all.filter((o) => o.status === "open" || o.status === "filled").length || null, on: state.offersSeg === "live", onclick: "return offersSetSeg('live')" },
+    { label: "Current", count: all.filter((o) => o.status === "open" || o.status === "filled").length || null, on: state.offersSeg === "live", onclick: "return offersSetSeg('live')" },
     { label: "Drafts", count: all.filter((o) => o.status === "draft").length || null, on: state.offersSeg === "drafts", onclick: "return offersSetSeg('drafts')" },
     { label: "Applicants", count: wc.bizApps || null, on: state.offersSeg === "applicants", onclick: "return offersSetSeg('applicants')" },
     { label: "Past", count: all.filter(offerIsArchived).length || null, on: state.offersSeg === "past", onclick: "return offersSetSeg('past')" },
@@ -17188,9 +17221,13 @@ function offersSetSeg(seg) {
   return false;
 }
 function offersNew() {
-  const c = document.getElementById("offer-composer");
-  if (c) c.scrollIntoView({ behavior: "smooth" });
-  return false;
+  // Build -97: the composer lives in Set up a campaign.
+  if (state.tab === "Campaign Setup") {
+    const c = document.getElementById("offer-composer");
+    if (c) c.scrollIntoView({ behavior: "smooth" });
+    return false;
+  }
+  return go("dashboard", "Campaign Setup");
 }
 // Duplicate: the one write allowed from Past — the composer
 // opens pre-filled from the old offer.
@@ -17230,7 +17267,7 @@ function duplicateOffer(offerId) {
     deliverablesTouched: !!o.deliverables,
   };
   state.offersSeg = "live";
-  state.tab = "My Offers";
+  state.tab = "Campaign Setup";
   render();
   setTimeout(() => { const c = document.getElementById("offer-composer"); if (c) c.scrollIntoView({ behavior: "smooth" }); }, 60);
   return false;
@@ -17263,7 +17300,7 @@ function prefillDirectDraft(creator) {
 
 function startOffer(creatorId) {
   pileUnlater("discover", creatorId);
-  state.tab = "My Offers";
+  state.tab = "Campaign Setup";
   state.offerTarget = creatorId;
   prefillDirectDraft((state.discover || []).find((x) => x.userId === creatorId));
   render();
@@ -17353,7 +17390,7 @@ function setComposerLane(lane) {
   offerDraftSync();
   state.composerLane = lane;
   state.offerTarget = null;
-  loadMyOffers();
+  loadCampaignSetup();
 }
 
 function applyTemplate(id) {
@@ -17653,7 +17690,7 @@ function offerDeliverablesReset() {
   state.offerDraft.dstory = std.story;
   state.offerDraft.dwindow = String(std.windowHours);
   state.offerDraft.deliverablesTouched = false;
-  loadMyOffers();
+  loadCampaignSetup();
   return false;
 }
 // Kind switch: until the business edits the deliverables
@@ -17669,7 +17706,7 @@ function offerKindChanged() {
     d.dstory = std.story;
     d.dwindow = String(std.windowHours);
   }
-  loadMyOffers();
+  loadCampaignSetup();
 }
 function offerCouponTypeUpdate() {
   offerDraftSync();
@@ -17773,64 +17810,344 @@ function offerCoachUpdate() {
   dragInit();
 }
 
-async function loadMyOffers() {
+// ---------- Build -97: Sig-guided campaign setup ----------
+// The guided entry at the top of Set up a campaign. This is
+// the Sig campaign-draft machinery (the B1 flow's shape:
+// ask one thing at a time, confirm on a plain-words summary,
+// commit through POST /offers) brought into the setup view.
+// It is NOT a second creation path: the commit below builds
+// the same payload the Sig operator and the manual composer
+// build, with the same deliverables helpers, and the draft
+// lands in the same store, reviewed on the same cards in
+// Your campaigns. Flow state lives in memory only until the
+// summary confirmation, so no draft exists before the
+// business taps Save this draft.
+function campaignGuideKnown() {
+  const u = state.user || {};
+  const bz = u.business || {};
+  const plan = foundingPlan() || (state.boot && state.boot.plans || []).find((p) => p.id === bz.plan) || null;
+  return {
+    businessName: bz.businessName || "",
+    market: u.market || "",
+    category: bz.category || "",
+    visits: plan ? plan.visitsPerMonth : null,
+    availability: availabilitySummaryClient(bz.standingAvailability),
+  };
+}
+function campaignGuideParse(text) {
+  const raw = String(text || "").trim();
+  const t = " " + raw.toLowerCase() + " ";
+  const out = {};
+  if (/\b(paid|cash)\b/.test(t)) out.kind = "paid";
+  else if (/\bcoupon\b/.test(t)) out.kind = "coupon";
+  else if (/\b(comp|comped|on us|on the house|free meal)\b/.test(t)) out.kind = "comp";
+  const spots = /(\d+)\s*(creators|spots|visits|people)/.exec(t);
+  if (spots) out.spots = Math.min(30, Math.max(1, parseInt(spots[1], 10)));
+  const money = /\$\s*(\d+)/.exec(t) || /(\d+)\s*dollars/.exec(t);
+  if (money) out.amount = parseInt(money[1], 10);
+  if (/store credit/.test(t)) out.ctype = "store_credit";
+  if (/weekend/.test(t)) out.whenText = "This weekend";
+  else if (/weekday/.test(t)) out.whenText = "Weekdays";
+  else if (/evenings?/.test(t)) out.whenText = "Evenings";
+  const tiers = [];
+  if (/headliner/.test(t)) tiers.push("Headliners");
+  if (/\blocals?\b/.test(t)) tiers.push("Locals");
+  if (/neighbou?r/.test(t)) tiers.push("Neighbors");
+  if (tiers.length) out.tiers = tiers;
+  let s = raw.replace(/\s+/g, " ")
+    .replace(/^(please\s+)?(i want|i need|we want|we need|let's|lets)\s+/i, "")
+    .replace(/^(local\s+)?creators\s+(for|to)\s+/i, "")
+    .replace(/^for\s+/i, "").replace(/^an?\s+/i, "");
+  if (s.length >= 8 && s.length <= 70) out.title = s.charAt(0).toUpperCase() + s.slice(1);
+  return out;
+}
+function campaignGuideHtml() {
+  const known = campaignGuideKnown();
+  const cg = state.campaignGuide;
+  return `<section class="wcard" id="campaign-guide" style="border:2px solid #006AFC">
+    <div style="display:flex;gap:12px;align-items:center">${sigAvatarHtml("greet")}<div><p class="ui-kicker" style="margin:0">Start with Sig</p><h3 style="margin:2px 0 0">Tell Sig what you want</h3></div></div>
+    <p class="small muted" style="margin:10px 0 0">Type it in your own words. Sig fills in what it already knows about your business, asks only for what is missing, one question at a time, and shows you the full draft before anything is saved.</p>
+    <p class="small" style="margin:8px 0 0"><strong>Already on file for you:</strong> ${esc(known.businessName || "Your business")}${known.market ? ` in ${esc(known.market)}` : ""}${known.category ? ` · ${esc(known.category)}` : ""}${known.visits ? ` · your plan includes ${known.visits} visits a month` : ""}${known.availability ? ` · your usual hours: ${esc(known.availability)}` : ""}. Sig will not ask you for any of that again.</p>
+    <div id="cg-thread" class="sig-thread" style="margin-top:12px">${cg ? "" : `<div class="sig-turn sig"><span class="sig-turn-ava">${SIG_AVATAR_HTML}</span><div class="sig-bub">Tell me the campaign in one line. For example: I want creators for a weekend brunch push. I will build the draft from there.</div></div>`}</div>
+    <form class="sig-ask-form" onsubmit="return campaignGuideSubmit(event)">
+      <input id="cg-text" type="text" placeholder="I want creators for a weekend brunch push" autocomplete="off" aria-label="Tell Sig what you want">
+      <button class="btn" type="submit">Tell Sig</button>
+    </form>
+    <p class="small muted" style="margin:8px 0 0">Rather build it yourself? The step by step form is right below. Both ways land in the same place: a draft in Your campaigns.</p>
+  </section>`;
+}
+function campaignGuideRender() {
+  const host = document.getElementById("cg-thread");
+  if (!host) return;
+  const cg = state.campaignGuide;
+  if (!cg) return;
+  host.innerHTML = cg.turns.map((t) => t.who === "user"
+    ? `<div class="sig-turn user"><div class="sig-bub">${esc(t.text)}</div></div>`
+    : `<div class="sig-turn sig"><span class="sig-turn-ava">${SIG_AVATAR_HTML}</span><div class="sig-bub">${esc(t.text)}</div></div>`).join("")
+    + (cg.chips && cg.chips.length ? `<div class="sig-turn sig"><div class="sig-bub">${cg.chips.map((c) => `<button type="button" class="btn small-btn sig-turn-act${c.primary ? "" : " ghost"}" onclick="return campaignGuidePick('${c.field}','${c.value}')">${esc(c.label)}</button>`).join("")}</div></div>` : "")
+    + (cg.step === "done" ? `<div class="sig-turn sig"><div class="sig-bub"><button type="button" class="btn small-btn sig-turn-act" onclick="return campaignGuideGoCampaigns()">See it in Your campaigns</button> <button type="button" class="btn small-btn sig-turn-act ghost" onclick="return campaignGuideRestart()">Start another</button></div></div>` : "");
+  host.scrollTop = host.scrollHeight;
+}
+function campaignGuideSay(text, chips) {
+  const cg = state.campaignGuide;
+  cg.turns.push({ who: "sig", text });
+  cg.chips = chips || [];
+  campaignGuideRender();
+}
+function campaignGuideStart(requestText) {
+  const known = campaignGuideKnown();
+  const parsed = campaignGuideParse(requestText);
+  const d = {
+    request: requestText, lane: "open", title: parsed.title || "", kind: parsed.kind || "",
+    comped: "", cap: null, rate: null, ctype: parsed.ctype || "amount_off", camount: null, cpercent: null, capplies: "",
+    spots: parsed.spots || null, windowNote: parsed.whenText || known.availability || "",
+    tiers: parsed.tiers || [], briefGoal: /weekend/.test(" " + requestText.toLowerCase() + " ") ? "more_weekend_customers" : null, dposts: undefined, dstory: undefined, dwindow: undefined, deliverablesTouched: false,
+    deliverablesSeen: false, fitSeen: false,
+  };
+  if (parsed.amount) {
+    if (d.kind === "paid") d.rate = parsed.amount;
+    else if (d.kind === "coupon") d.camount = parsed.amount;
+    else d.cap = parsed.amount;
+  }
+  state.campaignGuide = { step: "", data: d, turns: [{ who: "user", text: requestText }], chips: [] };
+  const filled = [];
+  if (d.title) filled.push(`the name "${d.title}"`);
+  if (d.kind) filled.push(d.kind === "paid" ? "cash pay" : d.kind === "coupon" ? "a coupon as the payment" : "a comp, your product on you");
+  if (d.spots) filled.push(`${d.spots} creator spot${d.spots === 1 ? "" : "s"}`);
+  if (d.windowNote) filled.push(`timing: ${d.windowNote}`);
+  campaignGuideSay(filled.length
+    ? `Got it. From your words I have ${filled.join(", ")}. I already know your market (${known.market || "your market"}), your kind of business${known.category ? ` (${known.category})` : ""}${known.visits ? `, and that your plan includes ${known.visits} visits a month` : ""}, so I will not ask about those. A few things are still missing.`
+    : `Got it. I already know your market (${known.market || "your market"}), your kind of business${known.category ? ` (${known.category})` : ""}${known.visits ? `, and that your plan includes ${known.visits} visits a month` : ""}, so I will not ask about those. A few things are still missing.`);
+  campaignGuideNext();
+  return false;
+}
+function campaignGuideNext() {
+  const cg = state.campaignGuide;
+  if (!cg) return;
+  const d = cg.data;
+  if (!d.title) { cg.step = "title"; campaignGuideSay("What should we call it? Name the experience, not the deal. For example: Dinner for two on us."); return; }
+  if (!d.kind) {
+    cg.step = "kind";
+    campaignGuideSay("How will the creator be paid? Comp means your product is the payment. Cash means you pay a rate for a paid booking. A coupon can be the payment instead.", [
+      { label: "Comp", field: "kind", value: "comp", primary: true },
+      { label: "Cash", field: "kind", value: "paid" },
+      { label: "Coupon", field: "kind", value: "coupon" },
+    ]);
+    return;
+  }
+  if (d.kind === "comp" && !d.comped) { cg.step = "comped"; campaignGuideSay("Exactly what does the creator get? One line is enough. For example: Brunch for two, on us."); return; }
+  if (d.kind === "comp" && !d.cap) { cg.step = "value"; campaignGuideSay("What is that worth, in dollars? That number is the most it can cost you, and creators see it before they apply. For example: 100."); return; }
+  if (d.kind === "paid" && !d.rate) { cg.step = "value"; campaignGuideSay(`What rate will you pay the creator? Paid bookings start at ${ownCurrencySymbol()}${ownPaidFloor()}. The creator keeps 97% of the rate.`); return; }
+  if (d.kind === "coupon" && !d.camount && !d.cpercent) { cg.step = "couponamount"; campaignGuideSay("What is the coupon worth, in dollars? For example: 50 means $50 off."); return; }
+  if (d.kind === "coupon" && !d.capplies) { cg.step = "couponapplies"; campaignGuideSay("What is the coupon good for? For example: Anything on the brunch menu."); return; }
+  if (!d.spots) {
+    cg.step = "spots";
+    campaignGuideSay("How many creators do you want for this campaign? Each one you pick uses one visit from your plan.", [1, 2, 3, 5].map((n) => ({ label: String(n), field: "spots", value: String(n), primary: n === 1 })));
+    return;
+  }
+  if (!d.windowNote) { cg.step = "dates"; campaignGuideSay("When should creators come in? For example: This weekend, or Saturday and Sunday mornings."); return; }
+  if (!d.deliverablesSeen) {
+    cg.step = "deliverables";
+    const cur = draftDeliverables(d, d.kind);
+    campaignGuideSay(`What the creator owes: ${deliverablePhraseClient({ kind: d.kind, deliverables: cur })}, post within ${windowPhraseClient(cur.windowHours)}. That is the recommended setup for this kind of campaign${d.kind === "paid" ? ". A paid booking also includes the standard licence: repost and ad use for 90 days. That part is set and cannot be changed" : ""}. Keep it, or change one part.`, [
+      { label: "Keep as shown", field: "deliverables", value: "keep", primary: true },
+      { label: `Story: ${cur.story ? "yes" : "no"}`, field: "deliverables", value: "story" },
+      { label: `Posts: ${cur.posts}`, field: "deliverables", value: "posts" },
+      { label: `Post within: ${windowPhraseClient(cur.windowHours)}`, field: "deliverables", value: "window" },
+    ]);
+    return;
+  }
+  if (!d.fitSeen) {
+    cg.step = "fit";
+    campaignGuideSay("Who fits this campaign? Tap any that fit, then tap Done. Leave all untapped and any creator who fits can apply.", [
+      ...["Neighbors", "Locals", "Headliners"].map((t) => ({ label: `${d.tiers.includes(t) ? "✓ " : ""}${t}`, field: "tier", value: t, primary: d.tiers.includes(t) })),
+      { label: "Done", field: "fitdone", value: "done", primary: !d.tiers.length },
+    ]);
+    return;
+  }
+  campaignGuideSummary();
+}
+function campaignGuideSummary() {
+  const cg = state.campaignGuide;
+  const d = cg.data;
+  const known = campaignGuideKnown();
+  const cur = draftDeliverables(d, d.kind);
+  const payLine = d.kind === "paid"
+    ? `Cash $${fmtPrice(d.rate)}. The creator keeps $${fmtMoney(Number(d.rate) * 0.97)} (97%).`
+    : d.kind === "coupon"
+      ? `A coupon: ${couponSummaryClient({ type: d.ctype, amount: d.camount, percent: d.cpercent, appliesTo: d.capplies }, known.businessName)}. The coupon is the payment. No cash changes hands.`
+      : `Comp: ${d.comped} (worth up to $${fmtMoney(d.cap)}, on you). Your business can share the creator's post inside the app only.`;
+  const lines = [
+    "Here is your draft. Nothing is saved until you tap Save this draft:",
+    `Campaign: "${d.title}"`,
+    `Pay: ${payLine}`,
+    `Creators: ${d.spots} spot${d.spots === 1 ? "" : "s"}, open to creators in ${known.market || "your market"}${known.category ? ` who fit a ${known.category}` : ""}.`,
+    `Who fits: ${d.tiers.length ? d.tiers.join(", ") : "any creator who fits"}.`,
+    `When: ${d.windowNote}.`,
+    `What the creator owes: ${deliverablePhraseClient({ kind: d.kind, deliverables: cur })}, post within ${windowPhraseClient(cur.windowHours)}${d.kind === "paid" ? ". The standard licence is included: repost and ad use for 90 days" : ""}.`,
+    `From: ${known.businessName || "your business"}${known.visits ? `. Your plan includes ${known.visits} visits a month` : ""}.`,
+    ...(isFoundingBusiness(state.user) ? ["Your market has not opened yet, so this saves as a draft for opening day. Nothing sends to a creator until then."] : ["It saves as a draft. You can check it, change it, or send it from Your campaigns."]),
+  ];
+  cg.step = "summary";
+  campaignGuideSay(lines.join("\n"), [
+    { label: isFoundingBusiness(state.user) ? "Save this draft for opening day" : "Save this draft", field: "confirm", value: "yes", primary: true },
+    { label: "Start over", field: "restart", value: "yes" },
+  ]);
+}
+async function campaignGuideConfirm() {
+  const cg = state.campaignGuide;
+  const d = cg.data;
+  const payload = {
+    title: d.title || "", whatComped: d.comped || "", includes: "", experience: "",
+    kind: d.kind, spots: d.spots || 1, visitWindow: d.windowNote || "", templateId: null,
+    draft: true, creatorId: null, requiresSpanish: false, play: null, brief: briefFromParts({ goal: d.briefGoal || null, hook: "", mustMention: [], doNotSay: [], timing: d.windowNote || "", callToAction: "" }),
+    assetPacketAttached: d.kind === "paid",
+    deliverables: draftDeliverables(d, d.kind),
+    targetTiers: d.tiers || [], applyWindowDays: 3, windowDays: 7,
+  };
+  if (d.kind === "paid") payload.cashRate = Number(d.rate);
+  else if (d.kind === "coupon") {
+    payload.coupon = { type: d.ctype || "amount_off", amount: d.camount != null ? Number(d.camount) : null, percent: d.cpercent != null ? Number(d.cpercent) : null, cap: null, appliesTo: String(d.capplies || "").trim(), expiresAt: null };
+    payload.whatComped = "";
+  } else { payload.dollarCap = Number(d.cap); payload.covers = 2; }
+  try {
+    const res = await api("POST", "/offers", payload);
+    const created = res && res.offer ? res.offer : null;
+    cg.step = "done";
+    cg.chips = [];
+    refreshBadges();
+    campaignGuideSay(created && created.status === "draft"
+      ? `Saved. "${d.title}" is a draft in Your campaigns. Nothing was sent to a creator.`
+      : `Saved. "${d.title}" is in Your campaigns.`);
+  } catch (err) {
+    cg.step = "summary";
+    campaignGuideSay(`${err.message || "That did not save."} Nothing was saved. Check the summary and try again, or start over.`, [
+      { label: "Try again", field: "confirm", value: "yes", primary: true },
+      { label: "Start over", field: "restart", value: "yes" },
+    ]);
+  }
+}
+function campaignGuidePick(field, value) {
+  const cg = state.campaignGuide;
+  if (!cg) return false;
+  const d = cg.data;
+  const labelOf = (c) => c.label;
+  const chip = (cg.chips || []).find((c) => c.field === field && c.value === value);
+  cg.turns.push({ who: "user", text: chip ? labelOf(chip) : value });
+  if (field === "kind") { d.kind = value; campaignGuideNext(); }
+  else if (field === "spots") { d.spots = parseInt(value, 10); campaignGuideNext(); }
+  else if (field === "deliverables") {
+    const cur = draftDeliverables(d, d.kind);
+    if (value === "keep") { d.deliverablesSeen = true; campaignGuideNext(); }
+    else {
+      d.deliverablesTouched = true;
+      if (value === "story") d.dstory = !cur.story;
+      if (value === "posts") d.dposts = String(cur.posts >= 3 ? 1 : cur.posts + 1);
+      if (value === "window") { const cyc = [24, 48, 72, 168]; d.dwindow = String(cyc[(cyc.indexOf(cur.windowHours) + 1) % cyc.length]); }
+      campaignGuideNext();
+    }
+  }
+  else if (field === "tier") { d.tiers = d.tiers.includes(value) ? d.tiers.filter((t) => t !== value) : [...d.tiers, value]; campaignGuideNext(); }
+  else if (field === "fitdone") { d.fitSeen = true; campaignGuideNext(); }
+  else if (field === "confirm") { cg.chips = []; campaignGuideRender(); campaignGuideConfirm(); }
+  else if (field === "restart") { campaignGuideRestart(); }
+  else campaignGuideRender();
+  return false;
+}
+function campaignGuideAnswer(text) {
+  const cg = state.campaignGuide;
+  const d = cg.data;
+  cg.turns.push({ who: "user", text });
+  const num = (() => { const m = String(text).replace(/[$,]/g, "").match(/(\d+(?:\.\d+)?)/); return m ? Number(m[1]) : null; })();
+  switch (cg.step) {
+    case "title": d.title = text.slice(0, 120); break;
+    case "comped": d.comped = text.slice(0, 200); break;
+    case "value":
+      if (!(num > 0)) { campaignGuideSay("I need a dollar amount. For example: 100."); return; }
+      if (d.kind === "paid") d.rate = Math.round(num); else d.cap = Math.round(num);
+      break;
+    case "couponamount":
+      if (!(num >= 1)) { campaignGuideSay("I need a dollar amount for the coupon. For example: 50."); return; }
+      d.camount = Math.round(num); break;
+    case "couponapplies": d.capplies = text.slice(0, 120); break;
+    case "dates": d.windowNote = text.slice(0, 140); break;
+    default: campaignGuideSay("Tap one of the choices above, or start over below the summary."); return;
+  }
+  campaignGuideNext();
+}
+function campaignGuideSubmit(ev) {
+  if (ev) ev.preventDefault();
+  const input = document.getElementById("cg-text");
+  const text = input ? input.value.trim() : "";
+  if (!text) return false;
+  if (input) input.value = "";
+  const cg = state.campaignGuide;
+  if (!cg) { campaignGuideStart(text); return false; }
+  if (["title", "comped", "value", "couponamount", "couponapplies", "dates"].includes(cg.step)) { campaignGuideAnswer(text); return false; }
+  cg.turns.push({ who: "user", text });
+  campaignGuideSay("Tap one of the choices above to answer this one. One question at a time keeps the draft right.");
+  return false;
+}
+function campaignGuideRestart() {
+  state.campaignGuide = null;
+  if (state.tab === "Campaign Setup") loadCampaignSetup();
+  return false;
+}
+function campaignGuideGoCampaigns() {
+  state.offersSeg = "drafts";
+  return go("dashboard", "My Offers");
+}
+
+// ---------- Build -97: the manual builder, one step at a time ----------
+// The composer's own sections become the steps: one section
+// on screen, a plain progress line, Back and Keep going. The
+// draft syncs on every move, so leaving mid step loses
+// nothing the fields had already captured.
+function campaignStepsInit() {
+  const comp = document.getElementById("offer-composer");
+  if (!comp) return;
+  const groups = [...comp.querySelectorAll(".fgroup")];
+  if (!groups.length) return;
+  const form = comp.querySelector("form");
+  if (!form) return;
+  let bar = document.getElementById("camp-stepbar");
+  if (!bar) { bar = document.createElement("div"); bar.id = "camp-stepbar"; form.parentNode.insertBefore(bar, form); }
+  const cta = form.querySelector(".cta-row");
+  const show = (i) => {
+    state.campaignStep = i;
+    groups.forEach((g, j) => { g.style.display = j === i ? "" : "none"; });
+    if (cta) cta.style.display = i === groups.length - 1 ? "" : "none";
+    const kicker = (groups[i].querySelector(".fg-kicker") || {}).textContent || "";
+    bar.innerHTML = `<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0 0 12px"><strong style="color:#006AFC">Step ${i + 1} of ${groups.length}: ${esc(kicker)}</strong><span class="small muted">One part at a time. What you type is kept as you go.</span><span style="margin-left:auto;display:flex;gap:8px">${i > 0 ? `<button type="button" class="btn ghost small-btn" data-cstep="${i - 1}">Back</button>` : ""}${i < groups.length - 1 ? `<button type="button" class="btn small-btn" data-cstep="${i + 1}">Keep going</button>` : ""}</span></div>`;
+    bar.querySelectorAll("[data-cstep]").forEach((btn) => { btn.onclick = () => { offerDraftSync(); show(Number(btn.getAttribute("data-cstep"))); comp.scrollIntoView({ behavior: "smooth" }); }; });
+  };
+  show(Math.min(state.campaignStep || 0, groups.length - 1));
+}
+
+// ---------- Build -97: Your campaigns prompts ----------
+// Real records only: no campaigns at all, or drafts waiting.
+// Anything else renders nothing.
+function campaignPromptsHtml(offers) {
+  const all = offers || [];
+  const drafts = all.filter((o) => o.status === "draft");
+  if (!all.length) {
+    return `<div class="wcard" id="camp-prompt" style="text-align:center"><h3 style="margin-top:0">No campaigns yet</h3><p class="small muted">Your first campaign takes about a minute to set up. Sig can build the draft with you.</p><button type="button" class="btn ws-primary" onclick="return go('dashboard','Campaign Setup')">Set up your first campaign</button></div>`;
+  }
+  if (drafts.length) {
+    return `<div class="notice blue" id="camp-prompt"><strong>${drafts.length} draft${drafts.length === 1 ? "" : "s"} waiting.</strong> A draft sends nothing until you publish it. Open the Drafts list below to finish one, or start a new one in Set up a campaign.</div>`;
+  }
+  return "";
+}
+
+// ---------- Build -97: Set up a campaign (its own view) ----------
+// The builder half of the old single Campaigns view. The
+// composer below is the same composer that always lived in
+// loadMyOffers (same draft store, same POST /offers, same
+// review cards in Your campaigns); Build -97 gave it its own
+// tab so building and checking stop sharing one screen.
+async function loadCampaignSetup() {
   const el = document.getElementById("tab-body");
-  if (state.offerTarget) state.offersSeg = "live";
-  if (!state.offersSeg) {
-    // Default segment (spec §5.2): Applicants when anyone is
-    // waiting, else Live. Decided from the same records the
-    // tab badge counts, so the three never disagree.
-    el.innerHTML = `${wsHead("Campaigns", { sub: "Your campaigns, and the micro-influencers who applied to them.", subKey: "biz-offers" })}${skelHtml("Loading your campaigns...", 2)}`;
-    state.offersSeg = "live";
-    try {
-      const od = await api("GET", "/offers");
-      state.myOffers = od.offers || [];
-      let waitingCount = 0;
-      for (const o of state.myOffers.filter((x) => (x.applicationCount || 0) > 0).slice(0, 12)) {
-        const ad = await api("GET", `/offers/${o.id}/applications`);
-        waitingCount += (ad.applications || []).filter((a) => a.status === "applied").length;
-      }
-      state.waitCounts = state.waitCounts || {};
-      state.waitCounts.bizApps = waitingCount;
-      if (waitingCount > 0) state.offersSeg = "applicants";
-    } catch (e) { /* the Live default stands */ }
-    if (!document.getElementById("tab-body")) return;
-    return loadMyOffers();
-  }
-  if (state.offersSeg === "applicants") {
-    el.innerHTML = `${wsHead("Campaigns", { sub: "Your campaigns, and the micro-influencers who applied to them.", subKey: "biz-offers" })}<div id="offers-segs"></div><div id="offers-seg-body"></div>`;
-    renderOffersSegTabs();
-    if (isFoundingBusiness(state.user)) {
-      const segBody = document.getElementById("offers-seg-body");
-      if (segBody) segBody.innerHTML = `<section class="wcard"><h3 style="margin-top:0">No applicants yet</h3><p>Applicants arrive once your market opens and your first campaign goes out. The drafts you save now go out on opening day, and this is where the stack lands.</p></section>`;
-      return;
-    }
-    renderRequestsTab(true);
-    return;
-  }
-  if (state.offersSeg === "drafts") {
-    // Build -68: drafts get their own segment. A founding
-    // business's campaigns live here, labeled for opening day;
-    // nothing in this list is visible to a creator.
-    el.innerHTML = `${wsHead("Campaigns", { sub: "Your campaigns, and the micro-influencers who applied to them.", subKey: "biz-offers" })}<div id="offers-segs"></div><div id="offer-list">${skelHtml("Loading your drafts...", 1)}</div>`;
-    renderOffersSegTabs();
-    try {
-      const data = await api("GET", "/offers");
-      state.myOffers = data.offers || [];
-      renderOffersSegTabs();
-      const list = document.getElementById("offer-list");
-      if (!list) return;
-      const drafts = state.myOffers.filter((o) => o.status === "draft");
-      list.innerHTML = drafts.length
-        ? `<div class="vx-stagger">${drafts.map((o) => offerCardHtml(o)).join("")}</div>`
-        : `<div class="empty-card"><div class="ec-t">No drafts saved yet</div><div class="ec-s">${isFoundingBusiness(state.user) ? "Build your first campaign and save it here, ready for opening day." : "A campaign you save instead of posting waits here."}</div></div>`;
-    } catch (err) {
-      const list = document.getElementById("offer-list");
-      if (list) list.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
-    }
-    return;
-  }
-  bizOfferTab = state.offersSeg === "past" ? "archived" : "current";
+  if (!el) return;
   const target = state.offerTarget ? (state.discover || []).find((c) => c.userId === state.offerTarget) : null;
   const mode = target ? "direct" : composerMode();
   const g = offerGuidance();
@@ -17866,13 +18183,8 @@ async function loadMyOffers() {
     return `<label class="tier-toggle"><input type="checkbox" class="sw" name="o2-tier" value="${esc(t)}" ${(dft.tiers || []).includes(t) ? "checked" : ""} onchange="offerCoachUpdate()"><span class="tt-body"><span class="tt-name">${esc(t)}</span><span class="tt-line">floor $${fmtPrice(gd.floor)} &middot; typ. $${fmtPrice(gd.typicalLow)}&ndash;$${fmtPrice(gd.typicalHigh)}</span></span></label>`;
   }).join("")}</div>`;
   el.innerHTML = `
-  ${wsHead("Campaigns", { sub: "Your campaigns, and the micro-influencers who applied to them.", subKey: "biz-offers", action: state.offersSeg === "live" ? `<button type="button" class="btn ws-primary" onclick="return offersNew()">+ New campaign</button>` : "" })}
-  <div id="offers-segs"></div>
-  ${state.offersSeg === "live" ? `<div class="wcard" style="text-align:center">
-    <button class="btn ws-primary" style="width:100%;min-height:52px;font-size:16px" onclick="return offersNew()">+ Create a campaign</button>
-    <p class="small muted" style="margin:8px 0 0">Takes about a minute.${foundingBiz ? " It saves as a draft, ready for opening day." : ""}</p>
-  </div>` : ""}
-  <div id="offer-list">${skelHtml("Loading your campaigns...", 2)}</div>
+  ${wsHead("Set up a campaign", { sub: "Build a new campaign here. Checking on one you already made lives in Your campaigns.", subKey: "biz-setup" })}
+  ${campaignGuideHtml()}
   <div id="aud-block"></div>
   <div id="offers-live-only">
   ${foundingBiz ? `<p class="small" style="margin:14px 0 0"><strong>Building ahead:</strong> build a campaign now and it saves as a draft. Drafts go out the day ${esc(foundingBizPlace(state.user))} opens. Nothing is sent to a creator before then.</p>${sigDraftCardHtml(state.user)}` : ""}
@@ -17891,7 +18203,7 @@ async function loadMyOffers() {
     <p class="small muted" style="margin-top:6px">${mode === "open" ? `Post it to ${esc(foundingBizPlace(state.user))}. Any creator who fits can apply, and you pick from the stack.` : "Pick one creator by name. The invite goes only to them."}</p>
     </div>
     ${mode === "direct" && !target ? `<p class="small muted">Pick the creator in Find creators and tap Invite, or <a href="#" onclick="setComposerLane('open'); return false;">post an open call</a> and let creators apply.</p>` : ""}
-    ${mode === "direct" && target ? `<div class="notice blue">Sending directly to <strong>${esc(target.name)}</strong> (@${esc(target.profile.handle)}), ${esc(target.profile.tierBand || "")} tier. <a href="#" onclick="state.offerTarget=null; loadMyOffers(); return false;">Make it an open offer instead</a></div>` : ""}
+    ${mode === "direct" && target ? `<div class="notice blue">Sending directly to <strong>${esc(target.name)}</strong> (@${esc(target.profile.handle)}), ${esc(target.profile.tierBand || "")} tier. <a href="#" onclick="state.offerTarget=null; loadCampaignSetup(); return false;">Make it an open offer instead</a></div>` : ""}
     ${mode === "open" ? `
     <p class="small muted" style="margin-bottom:4px">Start from a template (optional) ${infoBtn("templates")}</p>
     <div class="chip-row">${(g.templates || []).map((t) => `<button type="button" class="chip" onclick="applyTemplate('${esc(t.id)}')">${esc(t.label)}</button>`).join("")}</div>` : ""}
@@ -17899,7 +18211,7 @@ async function loadMyOffers() {
       <input type="hidden" id="o2-template" value="${dv(dft.template)}">
       <div class="fgroup tint">
       <p class="fg-kicker">The offer</p>
-      <div class="field"><label>Offer title <span class="req-tag">Required</span> ${infoBtn("title")}</label><input id="o2-title" value="${dv(dft.title)}" placeholder="Dinner for two on us" oninput="offerDraftSync()" onblur="offerValidateField('title')"><p class="field-err" id="err-o2-title"></p></div>
+      <div class="field"><label>Offer title <span class="req-tag">Required</span> ${infoBtn("title")}</label><input id="o2-title" value="${dv(dft.title)}" placeholder="Dinner for two on us" oninput="offerDraftSync()" onblur="offerValidateField('title')"><p class="small muted camp-help" style="margin:4px 0 0">This is the name creators see first. Name the experience, not the deal.</p><p class="field-err" id="err-o2-title"></p></div>
       <div class="field"><label>What is your first month built around? <span class="opt-tag">Optional</span></label>
         <div class="radio-stack">
         ${momentsClient().map((m) => `<label class="radio-chip"><input type="radio" name="o2-moment" value="${m.id}" ${dft.moment === m.id ? "checked" : ""} onchange="state.offerDraft.moment=this.value"><span>${esc(m.label)}</span></label>`).join("")}
@@ -17922,7 +18234,7 @@ async function loadMyOffers() {
         <label class="radio-chip"><input type="radio" name="o2-kind" value="coupon" ${dft.kind === "coupon" ? "checked" : ""} onchange="offerKindChanged()"><span>Coupon: a coupon is the payment</span></label>
         </div>
       </div>
-      <div class="field" id="o2-comped-wrap"><label>Exactly what is comped <span class="req-tag">Required</span> ${infoBtn("comped")}</label><input id="o2-comped" value="${dv(dft.comped)}" placeholder="Two entrees and two drinks" oninput="offerCoachUpdate()" onblur="offerValidateField('comped')"><p class="field-err" id="err-o2-comped"></p>${mode === "direct" ? chipsRowHtml("comp", "o2", target && target.profile ? target.profile.tierBand : null, { comp: dft.comped, cap: dft.cap }) : ""}</div>
+      <p class="small muted camp-help" style="margin:0 0 10px">How the creator is paid decides the rest of this form: your product on you, cash at a rate, or a coupon as the payment.</p><div class="field" id="o2-comped-wrap"><label>Exactly what is comped <span class="req-tag">Required</span> ${infoBtn("comped")}</label><input id="o2-comped" value="${dv(dft.comped)}" placeholder="Two entrees and two drinks" oninput="offerCoachUpdate()" onblur="offerValidateField('comped')"><p class="field-err" id="err-o2-comped"></p><p class="small muted camp-help" style="margin:4px 0 0">Say exactly what the creator gets, so there are no surprises on the day.</p>${mode === "direct" ? chipsRowHtml("comp", "o2", target && target.profile ? target.profile.tierBand : null, { comp: dft.comped, cap: dft.cap }) : ""}</div>
       <div class="field" id="o2-covers-wrap"><label>How many people does the comp cover? <span class="req-tag">Required</span> ${infoBtn("covers")}</label>
         <div class="radio-stack">
         <label class="radio-chip"><input type="radio" name="o2-covers" value="1" ${dft.covers === "2" ? "" : "checked"} onchange="offerDraftSync()"><span>1 person: just the creator</span></label>
@@ -17935,7 +18247,7 @@ async function loadMyOffers() {
       <div class="fgroup">
       <p class="fg-kicker">The value</p>
       <div class="form-2col">
-        <div class="field" id="o2-cap-wrap"><label>Comp value / dollar cap ($) <span class="req-tag">Required</span> ${infoBtn("cap")}</label><input type="number" id="o2-cap" min="1" placeholder="100" value="${dv(dft.cap)}" oninput="offerCoachUpdate()" onblur="offerValidateField('cap')"><p class="field-err" id="err-o2-cap"></p><p class="small" id="o2-compnudge" style="margin:4px 0 0"></p></div>
+        <div class="field" id="o2-cap-wrap"><label>Comp value / dollar cap ($) <span class="req-tag">Required</span> ${infoBtn("cap")}</label><input type="number" id="o2-cap" min="1" placeholder="100" value="${dv(dft.cap)}" oninput="offerCoachUpdate()" onblur="offerValidateField('cap')"><p class="field-err" id="err-o2-cap"></p><p class="small muted camp-help" style="margin:4px 0 0">The most this comp can cost you. Creators see this number before they apply.</p><p class="small" id="o2-compnudge" style="margin:4px 0 0"></p></div>
         <div class="field" id="o2-rate-wrap" style="display:none"><label>Cash rate (${ownCurrencySymbol()}) <span class="req-tag">Required</span> ${infoBtn("rate")}</label><input type="number" id="o2-rate" min="${ownPaidFloor()}" step="1" placeholder="150" value="${dv(dft.rate)}" oninput="offerCoachUpdate()" onblur="offerValidateField('rate')"><p class="field-err" id="err-o2-rate"></p><p class="small muted">You pay rate + 3%. Creator keeps 97%. Min ${ownCurrencySymbol()}${ownPaidFloor()}.</p></div>
         <div class="field" id="o2-coupon-wrap" style="display:none"><label>The coupon <span class="req-tag">Required</span></label>
           <div class="radio-stack">
@@ -17982,22 +18294,22 @@ async function loadMyOffers() {
       <p class="fg-kicker">Who + when</p>
       <div class="field"><label>Who can apply <span class="opt-tag">Optional</span> ${infoBtn("tiers")}</label>${tierBoxes}</div>
       <div class="form-2col">
-        <div class="field"><label>Spots (creators you will pick) <span class="req-tag">Required</span> ${infoBtn("spots")}</label>${dragBarHtml("o2-spots", 1, 30, `placeholder="1" value="${dv(dft.spots)}" oninput="offerDraftSync()" onblur="offerValidateField('spots')"`)}<p class="field-err" id="err-o2-spots"></p></div>
+        <div class="field"><label>Spots (creators you will pick) <span class="req-tag">Required</span> ${infoBtn("spots")}</label>${dragBarHtml("o2-spots", 1, 30, `placeholder="1" value="${dv(dft.spots)}" oninput="offerDraftSync()" onblur="offerValidateField('spots')"`)}<p class="field-err" id="err-o2-spots"></p><p class="small muted camp-help" style="margin:4px 0 0">How many creators you will pick. Each pick uses one visit from your plan.</p></div>
         <div class="field"><label>Applications open for (days) <span class="opt-tag">Optional</span> ${infoBtn("applydays")}</label>${dragBarHtml("o2-applydays", 1, 14, `placeholder="3" value="${dv(dft.applydays)}" oninput="offerDraftSync()"`)}</div>
       </div>
       <div class="form-2col">
         <div class="field"><label>Redemption window (days, starts when applications close) <span class="opt-tag">Optional</span> ${infoBtn("windowdays")}</label>${dragBarHtml("o2-windowdays", 1, 30, `placeholder="7" value="${dv(dft.windowdays)}" oninput="offerCoachUpdate()"`)}</div>
-        <div class="field"><label>Window note for creators <span class="opt-tag">Optional</span> ${infoBtn("windownote")}</label><input id="o2-window" value="${dv(dft.window)}" placeholder="Evenings are best" oninput="offerDraftSync()"></div>
+        <div class="field"><label>Window note for creators <span class="opt-tag">Optional</span> ${infoBtn("windownote")}</label><input id="o2-window" value="${dv(dft.window)}" placeholder="Evenings are best" oninput="offerDraftSync()"><p class="small muted camp-help" style="margin:4px 0 0">When creators can come. Your standing hours fill this in until you change it for this campaign.</p></div>
       </div>
       <p class="small muted">You get ${g.selectionSlaHours} hours to pick after applications close. Everyone else is released with a notification.</p>
       </div>` : `
       <div class="fgroup tint">
       <p class="fg-kicker">Who + when</p>
       <div class="form-2col">
-        <div class="field"><label>Spots <span class="req-tag">Required</span> ${infoBtn("spots")}</label>${dragBarHtml("o2-spots", 1, 30, `placeholder="1" value="${dv(dft.spots)}" oninput="offerDraftSync()" onblur="offerValidateField('spots')"`)}<p class="field-err" id="err-o2-spots"></p></div>
+        <div class="field"><label>Spots <span class="req-tag">Required</span> ${infoBtn("spots")}</label>${dragBarHtml("o2-spots", 1, 30, `placeholder="1" value="${dv(dft.spots)}" oninput="offerDraftSync()" onblur="offerValidateField('spots')"`)}<p class="field-err" id="err-o2-spots"></p><p class="small muted camp-help" style="margin:4px 0 0">How many creators you will pick. Each pick uses one visit from your plan.</p></div>
       </div>
       ${windowModeFieldHtml("o2", dft.windowmode)}
-      <div class="field"><label>Window note for the creator <span class="opt-tag">Optional</span> ${infoBtn("windownote")}</label><input id="o2-window" value="${dv(dft.window)}" placeholder="Evenings are best" oninput="offerDraftSync()"></div>
+      <div class="field"><label>Window note for the creator <span class="opt-tag">Optional</span> ${infoBtn("windownote")}</label><input id="o2-window" value="${dv(dft.window)}" placeholder="Evenings are best" oninput="offerDraftSync()"><p class="small muted camp-help" style="margin:4px 0 0">When creators can come. Your standing hours fill this in until you change it for this campaign.</p></div>
       </div>`}
       <div id="o2-dignity"></div>
       <div id="o2-strength" class="showcase-block"></div>
@@ -18016,6 +18328,7 @@ async function loadMyOffers() {
     </form>
   </div>
   </div>
+  <div class="wcard" style="margin-top:18px"><h3 style="margin-top:0">Already made one?</h3><p class="small muted" style="margin:0">Current and past campaigns, who applied, and what they did live in Your campaigns.</p><p style="margin:10px 0 0"><button type="button" class="btn ghost" onclick="return go('dashboard','My Offers')">Open Your campaigns</button></p></div>
   <div id="offer-info-pop" class="sheet-overlay" style="display:none" onclick="if(event.target===this) closeOfferInfo()">
     <div class="sheet">
       <div class="flex-between"><strong id="offer-info-title"></strong><button type="button" class="linklike" onclick="closeOfferInfo()">Close</button></div>
@@ -18023,20 +18336,44 @@ async function loadMyOffers() {
     </div>
   </div>
   <div id="applicant-stack"></div>`;
-  if (state.offersSeg === "past") { const lo = document.getElementById("offers-live-only"); if (lo) lo.remove(); }
   offerCoachUpdate();
+  campaignStepsInit();
+  loadAudienceBlock();
+}
+
+// ---------- Build -97: Your campaigns (its own view) ----------
+// The tracking half of the old single Campaigns view: current
+// campaigns, drafts, applicants, and past campaigns, with
+// their status and results. Building a new one lives in Set
+// up a campaign; this view never carries the composer.
+async function loadMyOffers() {
+  const el = document.getElementById("tab-body");
+  if (!el) return;
+  if (!state.offersSeg) state.offersSeg = "live";
+  if (state.offersSeg === "applicants") {
+    el.innerHTML = `${wsHead("Your campaigns", { sub: "Current and past campaigns, who applied, and what they did.", subKey: "biz-campaigns" })}<div id="offers-segs"></div><div id="offers-seg-body"></div>`;
+    renderOffersSegTabs();
+    if (isFoundingBusiness(state.user)) {
+      const segBody = document.getElementById("offers-seg-body");
+      if (segBody) segBody.innerHTML = `<section class="wcard"><h3 style="margin-top:0">No applicants yet</h3><p>Applicants arrive once your market opens and your first campaign goes out. The drafts you save now go out on opening day, and this is where the stack lands.</p></section>`;
+      return;
+    }
+    renderRequestsTab(true);
+    return;
+  }
+  el.innerHTML = `${wsHead("Your campaigns", { sub: "Current and past campaigns, who applied, and what they did.", subKey: "biz-campaigns", action: `<button type="button" class="btn ws-primary" onclick="return go('dashboard','Campaign Setup')">+ Set up a campaign</button>` })}<div id="offers-segs"></div><div id="camp-prompts"></div><div id="offer-list">${skelHtml("Loading your campaigns...", 2)}</div>`;
+  renderOffersSegTabs();
   try {
     const data = await api("GET", "/offers");
-    const list = document.getElementById("offer-list");
-    if (!list) return;
     state.myOffers = data.offers || [];
     renderOffersSegTabs();
+    const prompts = document.getElementById("camp-prompts");
+    if (prompts) prompts.innerHTML = campaignPromptsHtml(state.myOffers);
     renderOfferList();
   } catch (err) {
     const list = document.getElementById("offer-list");
     if (list) list.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
-  loadAudienceBlock();
 }
 
 // Offers list state (Overhaul V2): Current / Archived underline
@@ -18057,20 +18394,27 @@ function renderOfferTabs() {
 function renderOfferList() {
   const list = document.getElementById("offer-list");
   if (!list) return;
-  // Build -74 (Jeff): two clearly headed sections, Current and
-  // Past, each with its own plain empty state — no second tab
-  // row hiding half the campaigns. (bizOfferTab/offerSetTab
+  // Build -97: Your campaigns shows one list at a time, picked
+  // by its own tab row: Current (running now), Drafts (saved,
+  // sending nothing), or Past (closed or finished). Each list
+  // carries its own plain empty state. (bizOfferTab/offerSetTab
   // survive for the archived deep link and older callers.)
   const all = state.myOffers || [];
-  const cur = all.filter((o) => !offerIsArchived(o));
-  const past = all.filter(offerIsArchived);
-  const curHtml = cur.length
-    ? `<div class="vx-stagger">${cur.map((o) => offerCardHtml(o)).join("")}</div>`
-    : `<div class="empty-card"><div class="ec-t">No campaigns yet</div><div class="ec-s">Your first one takes about a minute.</div></div>`;
-  const pastHtml = past.length
-    ? `<div class="vx-stagger">${past.map((o) => offerCardHtml(o)).join("")}</div>`
-    : `<div class="empty-card"><div class="ec-t">Nothing finished yet</div><div class="ec-s">Campaigns you close, or that run their course, collect here.</div></div>`;
-  list.innerHTML = `<h3 class="camp-h">Current</h3>${curHtml}<h3 class="camp-h">Past</h3>${pastHtml}`;
+  const seg = state.offersSeg || "live";
+  let rows, title, emptyT, emptyS;
+  if (seg === "drafts") {
+    rows = all.filter((o) => o.status === "draft");
+    title = "Drafts"; emptyT = "No drafts saved yet"; emptyS = isFoundingBusiness(state.user) ? "Build a campaign in Set up a campaign and it saves here, ready for opening day." : "A campaign you save instead of sending waits here.";
+  } else if (seg === "past") {
+    rows = all.filter(offerIsArchived);
+    title = "Past"; emptyT = "Nothing finished yet"; emptyS = "Campaigns you close, or that run their course, collect here.";
+  } else {
+    rows = all.filter((o) => !offerIsArchived(o) && o.status !== "draft");
+    title = "Current"; emptyT = "No campaigns running yet"; emptyS = "Campaigns you send show up here while they run. Your first one takes about a minute to set up.";
+  }
+  list.innerHTML = `<h3 class="camp-h">${title}</h3>${rows.length
+    ? `<div class="vx-stagger">${rows.map((o) => offerCardHtml(o)).join("")}</div>`
+    : `<div class="empty-card"><div class="ec-t">${emptyT}</div><div class="ec-s">${emptyS}</div></div>`}`;
 }
 
 function offerCardHtml(o) {
@@ -18228,12 +18572,16 @@ async function createOfferV2(e, draft) {
     refreshBadges();
     // Build -68: a founding save lands on the Drafts segment,
     // where the business sees the draft wearing its opening-day
-    // label, with the honesty line said out loud.
+    // label, with the honesty line said out loud. Build -97:
+    // every save lands in Your campaigns, the tracking view;
+    // the builder stays in Set up a campaign.
     if (isFoundingBusiness(state.user)) {
       state.offersSeg = "drafts";
       toast("Saved for opening day. Nothing is sent to creators until your market opens.");
-    }
-    loadMyOffers();
+    } else if (draft === true) state.offersSeg = "drafts";
+    else state.offersSeg = "live";
+    state.campaignStep = 0;
+    go("dashboard", "My Offers");
   } catch (err) {
     // Server errors and the dedupe notice live in #form-error; the
     // form is never re-rendered on an error, so nothing typed is

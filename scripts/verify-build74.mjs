@@ -231,7 +231,7 @@ console.log("== Source checks ==");
   const routerJs = fs.readFileSync(path.join(root, "netlify/functions/lib/router.js"), "utf8");
   const buildJs = fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8");
   const pkg = fs.readFileSync(path.join(root, "package.json"), "utf8");
-  check("stamp is 2026.11.02-96", buildJs.includes('BUILD_ID = "2026.11.02-96"'));
+  check("stamp is 2026.11.02-97", buildJs.includes('BUILD_ID = "2026.11.02-97"'));
   check("sample route exists and is fenced by demoShowcaseVisibleTo", routerJs.includes('seg[1] === "sample-results"') && routerJs.includes("function sampleResultsFor(viewer)") && routerJs.includes("if (!demoShowcaseVisibleTo(viewer)) return null;"));
   check("sample builder stores nothing", !/store\.set/.test(routerJs.slice(routerJs.indexOf("function sampleResultsFor"), routerJs.indexOf("function sampleResultsFor") + 2600)));
   check("demo loader reads the shipped demo assets", routerJs.includes("/assets/demo-creators/${spec.handle}-1.jpg"));
@@ -242,7 +242,7 @@ console.log("== Source checks ==");
   check("deck: Next label, Save wiring, See everyone toggle", appJs.includes('passLabel: "Next"') && appJs.includes("deckToggleFav") && appJs.includes("See everyone"));
   check("deck card carries post thumbnails", appJs.includes("deck2-thumbs"));
   check("deck is local-% ranked", appJs.includes("localAudiencePct") && appJs.includes("ranked"));
-  check("Campaigns leads with Create and headed Current/Past sections", appJs.includes("+ Create a campaign") && appJs.includes('<h3 class="camp-h">Current</h3>') && appJs.includes('<h3 class="camp-h">Past</h3>') && appJs.includes("No campaigns yet"));
+  check("Campaigns tracking leads with the setup action and headed lists (Build -97 split of the -74 sections)", appJs.includes("+ Set up a campaign") && appJs.includes('<h3 class="camp-h">${title}</h3>') && appJs.includes('title = "Current"') && appJs.includes('title = "Past"') && appJs.includes("No campaigns running yet"));
   check("founding no longer defaults to the grid", !appJs.includes('state.discoverMode = "list"'));
   check("package.json wires verify-build74", pkg.includes("verify-build74"));
 }

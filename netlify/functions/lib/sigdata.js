@@ -208,6 +208,13 @@ function buildBusinessFacts(d) {
     visitsCarried: pv.carried || 0,
     offersLive: o.offersLive || 0,
     draftOffers: d.draftOffers || 0,
+    // Build -97 proactive prompts: total campaign records,
+    // drafts an active business started and never sent, and
+    // plan visits unused partway through the month (computed
+    // in the router, where the date and founding state live).
+    offersTotal: d.offersTotal || 0,
+    unfinishedDrafts: d.unfinishedDrafts || 0,
+    visitsUnusedMidMonth: d.visitsUnusedMidMonth || null,
     applicantsWaiting: d.applicantsWaiting || 0,
     visitsBooked: o.visitsBooked || 0,
     visitsRedeemed: o.visitsRedeemed || 0,
@@ -600,10 +607,15 @@ function answerBusiness(f, q, t) {
     if (!f.applicantsWaiting) return "No applicants are waiting on you right now. When a creator applies to one of your offers, they land here, and every applicant gets an answer within 2 business days.";
     return linked(`${fmt(f.applicantsWaiting)} ${plural(f.applicantsWaiting, "applicant")} waiting on your answer. Every applicant gets an answer within 2 business days, and the app tracks it, so answering promptly is the move.`, "Review applicants", "biz-applicants");
   }
+  // Campaign setup (Build -97): building and checking are
+  // two separate views now, and Sig guides the setup.
+  if (hasPhrase(t, "set up a campaign", "setup a campaign", "new campaign", "start a campaign", "create a campaign", "make a campaign", "build a campaign", "first campaign")) {
+    return linked(`Set up a campaign is its own view. Tell Sig what you want in your own words there, and Sig fills in what it already knows about your business, asks only for what is missing one question at a time, and shows you the full draft before anything is saved.${f.founding ? " While your market is founding, the draft saves for opening day and nothing sends to a creator." : " The draft lands in Your campaigns, where you check on it."}`, "Set up a campaign", "biz-setup");
+  }
   // My offers
   if ((hasWord(t, "offer", "offers", "campaign", "campaigns")) && hasPhrase(t, "my", "how many", "do i have", "live", "draft")) {
     const offersText = `You have ${fmt(f.offersLive)} offers live and ${fmt(f.draftOffers)} in draft, out of ${fmt(f.visitsBooked)} visits booked from them so far.${f.founding ? " Your market is not open yet, so drafts save for opening day and nothing sends until it activates." : ""}`;
-    return (f.offersLive || f.draftOffers) ? linked(offersText, "Open My Offers", "biz-offers") : offersText;
+    return (f.offersLive || f.draftOffers) ? linked(offersText, "Open Your campaigns", "biz-offers") : offersText;
   }
   // Results
   if (hasPhrase(t, "my results", "how are my", "how is my", "register", "counted", "sales", "return on") || (hasWord(t, "results") && hasWord(t, "my", "me"))) {
@@ -805,6 +817,13 @@ function buildHomeState(role, f) {
     // receiptReady when that month holds real activity).
     if (!f.availabilitySet) chips.push("Set your standing hours");
     if (f.receiptReady) chips.push(`${f.receiptReady.monthLabel} receipt is ready to forward`);
+    // Build -97 proactive prompts, real records only: a
+    // founding business with no campaign drafts at all, a
+    // draft an active business started and never finished,
+    // and plan visits unused partway through the month.
+    if (f.founding && !(f.offersTotal > 0)) chips.push("Set up your first campaign");
+    if (f.unfinishedDrafts) chips.push("Finish your draft campaign");
+    if (f.visitsUnusedMidMonth) chips.push(`${fmt(f.visitsUnusedMidMonth.remaining)} of ${fmt(f.visitsUnusedMidMonth.allowance)} visits unused this month`);
   } else if (role === "creator") {
     if (f.directInvites) chips.push(`${fmt(f.directInvites)} ${plural(f.directInvites, "invite")} sent to you`);
     if (f.offersOpen) chips.push(`${fmt(f.offersOpen)} ${plural(f.offersOpen, "offer")} waiting`);
