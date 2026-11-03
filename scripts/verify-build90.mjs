@@ -130,8 +130,8 @@ check("(c) the non-zero board still renders real offer cards",
   boardSeg.includes("renderOpenBoard()") && appJs.includes("function renderOpenBoard()") && segment(appJs, "function renderOpenBoard()", "function offersEndHtml").includes("offerFeedCardHtml"));
 
 // canon guards
-check("canon: stamp is 2026.11.02-91 on both sides",
-  fs.readFileSync(path.join(root, "netlify", "functions", "lib", "build.js"), "utf8").includes('BUILD_ID = "2026.11.02-91"') && fs.readFileSync(path.join(root, "public", "index.html"), "utf8").includes("2026.11.02-91"));
+check("canon: stamp is 2026.11.02-92 on both sides",
+  fs.readFileSync(path.join(root, "netlify", "functions", "lib", "build.js"), "utf8").includes('BUILD_ID = "2026.11.02-92"') && fs.readFileSync(path.join(root, "public", "index.html"), "utf8").includes("2026.11.02-92"));
 check("canon: the 500 minimum line still rides the basics card",
   basicsSeg.includes("<strong>SIGNL starts at 500 total followers across your platforms</strong>"));
 
