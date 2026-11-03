@@ -347,7 +347,7 @@ try {
   editDb((db) => {
     shiftRedemption(db, late.user.id, 6.5);     // past 48h + day-5 + day-6 reminders, inside the week
     shiftRedemption(db, pausedC.user.id, 8.5);  // day 8.5: past the hard stop, inside the ban fuse
-    shiftRedemption(db, bannedC.user.id, 14.5); // day 14.5: fuse burned down, ban lands
+    shiftRedemption(db, bannedC.user.id, 30.5); // day 30.5: one month on, the consumed-comp determination lands (Phase C supersedes the old day-14 timing)
   });
   startServer();
   await waitUp();
@@ -387,7 +387,7 @@ try {
 
   // Banned: standing, out of discovery, public page 404, -50 in ledger.
   const bannedMe = await bannedC.client("GET", "/api/auth/me");
-  check("day-14.5 creator is BANNED", !!bannedMe.data.user.standing && bannedMe.data.user.standing.state === "banned", JSON.stringify(bannedMe.data.user.standing));
+  check("day-30.5 creator is BANNED (one-month consumed-comp determination, Phase C)", !!bannedMe.data.user.standing && bannedMe.data.user.standing.state === "banned", JSON.stringify(bannedMe.data.user.standing));
   const discBanned = await bizC("GET", "/api/discover?market=Hampton%20Roads");
   check("banned creator is out of discovery entirely", !(discBanned.data.creators || []).some((c) => c.userId === bannedC.user.id));
   const pubBanned = await fetch(`${BASE}/api/c/${encodeURIComponent(bannedC.payload.handle)}`);

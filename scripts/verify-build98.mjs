@@ -293,9 +293,9 @@ return rateStartingDefaults;`)(
     routerJs.includes('STRIPE_PRICE_FOUNDING_SELF_SERVICE || ""') && routerJs.includes('STRIPE_PRICE_FOUNDING_GROWTH || ""') && routerJs.includes('STRIPE_PRICE_FOUNDING_MANAGED || ""'));
   check("no em dashes in the new copy",
     ["What you get today", "Starting point for", "What payout setup will ask for, and why", "Creator terms in plain words", "Set your rate card"].every((l) => !l.includes("—") && !l.includes("–")));
-  check("build stamp is 2026.11.03-111 on both sides",
-    fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes('exports.BUILD_ID = "2026.11.03-111"')
-    && fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes('window.__SIGNL_BUILD__ = "2026.11.03-111"'), "");
+  check("build stamp is 2026.11.03-112 on both sides",
+    fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes('exports.BUILD_ID = "2026.11.03-112"')
+    && fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes('window.__SIGNL_BUILD__ = "2026.11.03-112"'), "");
 }
 
 console.log(`\nBuild -98 verify: ${passed} passed, ${failed} failed`);

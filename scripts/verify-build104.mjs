@@ -197,7 +197,7 @@ console.log("== partner truth + Sig read the same resolver ==");
 
 console.log("== canon locks ==");
 {
-  check("build stamp is -104 on both sides", fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes("2026.11.03-111") && fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes("2026.11.03-111"));
+  check("build stamp is -104 on both sides", fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes("2026.11.03-112") && fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes("2026.11.03-112"));
   const routerJs = fs.readFileSync(path.join(root, "netlify/functions/lib/router.js"), "utf8");
   check("founding Stripe prices stay unarmed (no market live for money)", routerJs.includes('STRIPE_PRICE_FOUNDING_SELF_SERVICE || ""') && routerJs.includes('STRIPE_PRICE_FOUNDING_GROWTH || ""') && routerJs.includes('STRIPE_PRICE_FOUNDING_MANAGED || ""'), "");
 }

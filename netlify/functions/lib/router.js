@@ -359,7 +359,7 @@ const STANDARD_VISIT = {
     "The post stays live on the creator's profile for at least 30 days",
   ],
   summary:
-    "Every SIGNL comped visit includes: 1 post or reel + 1 story that shares the post, within 48 hours of the visit, honest and disclosed, live at least 30 days, with tracked delivery proof. The goal is one post + one story within 48 hours of your visit; a post inside one week still counts, as a late delivery. Paid bookings carry the deliverables set in the booking's own terms. Content rights follow the visit, never the plan: on a comp visit the business may share the post natively only, with the creator tagged; no downloads, no reposting the file, no ad use. On a paid visit the business may also repost the post and run it as an ad for 90 days from the post date, under the one standard license every paid booking includes. A comped post can be licensed the same way, for 90 days, at the creator's listed licensing fee and only with their approval. The creator always owns their content, and nobody can edit it.",
+    "Every SIGNL comped visit includes: 1 post or reel + 1 story that shares the post, within 48 hours of the visit, honest and disclosed, live at least 30 days, with tracked delivery proof. The goal is one post + one story within 48 hours of your visit; a post inside one week still counts, as a late delivery. The 48-hour goal and these standards apply to comped visits; paid visits follow the posting terms agreed on the booking. Paid bookings carry the deliverables set in the booking's own terms. Content rights follow the visit, never the plan: on a comp visit the business may share the post natively only, with the creator tagged; no downloads, no reposting the file, no ad use. On a paid visit the business may also repost the post and run it as an ad for 90 days from the post date, under the one standard license every paid booking includes. A comped post can be licensed the same way, for 90 days, at the creator's listed licensing fee and only with their approval. The creator always owns their content, and nobody can edit it.",
 };
 
 // ---------- The paid lane (Jeff, 2026-10-19) ----------
@@ -574,6 +574,77 @@ function postWindowHours(booking) {
   return Number.isFinite(h) && h >= 12 && h <= 336 ? h : COMPLIANCE.onTimeHours;
 }
 
+// ---------- Phase C: paid-visit posting terms (Jeff, 2026-11-03) ----------
+// At PAID booking creation the business picks WHEN the post is
+// due with ONE simple control, never a form:
+//   standard  post within 7 days of the visit (the default)
+//   bydate    post by one specific date
+//   window    special terms: a window (not before / by) + a note
+// The terms are stored structured on the offer/booking plus a
+// rendered plain-words line, shown to the creator BEFORE they
+// accept (accepting accepts these terms) and in both sides' visit
+// views after. A paid visit's posting clock runs off these terms,
+// never the comped ladder: no Momentum on-time hit off the comped
+// clock, no late-streak counting, no silent strikes from paid
+// terms.
+const POSTING_TERMS_TYPES = ["standard", "bydate", "window"];
+function dateOnlyOk(s) {
+  if (typeof s !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const ms = Date.parse(`${s}T12:00:00Z`);
+  return Number.isFinite(ms) && new Date(ms).toISOString().slice(0, 10) === s;
+}
+function fmtDateOnly(s) {
+  if (!dateOnlyOk(s)) return String(s || "");
+  return new Date(`${s}T12:00:00Z`).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+}
+// Normalize + validate posting-terms input. Returns { terms } or
+// { error } with the refusal in plain words. A missing input is
+// the Standard default, never an error.
+function normalizePostingTerms(input) {
+  if (input === undefined || input === null) return { terms: { type: "standard" } };
+  if (typeof input !== "object" || Array.isArray(input)) return { error: "Posting terms need one of the three choices: Standard, Post by a date, or Special terms." };
+  const type = POSTING_TERMS_TYPES.includes(input.type) ? input.type : null;
+  if (!type) return { error: "Posting terms need one of the three choices: Standard, Post by a date, or Special terms." };
+  if (type === "standard") return { terms: { type: "standard" } };
+  const today = new Date().toISOString().slice(0, 10);
+  if (type === "bydate") {
+    const byDate = typeof input.byDate === "string" ? input.byDate.trim() : "";
+    if (!dateOnlyOk(byDate)) return { error: "Pick the date the post is due by." };
+    if (byDate < today) return { error: "That post-by date is in the past. Pick a date from today on." };
+    return { terms: { type: "bydate", byDate } };
+  }
+  const notBefore = typeof input.notBefore === "string" ? input.notBefore.trim() : "";
+  const byDate = typeof input.byDate === "string" ? input.byDate.trim() : "";
+  const note = typeof input.note === "string" ? input.note.trim().slice(0, 200) : "";
+  if (!dateOnlyOk(notBefore) || !dateOnlyOk(byDate)) return { error: "Special terms need both dates: the first day the post can go up, and the day it is due by." };
+  if (notBefore < today) return { error: "The first window date is in the past. Pick dates from today on." };
+  if (byDate < notBefore) return { error: "The due-by date cannot be before the window's first day. Move the due-by date later, or the first day earlier." };
+  return { terms: { type: "window", notBefore, byDate, note } };
+}
+function postingTermsOf(record) {
+  const t = record && record.postingTerms;
+  if (!t || typeof t !== "object" || !POSTING_TERMS_TYPES.includes(t.type)) return { type: "standard" };
+  if (t.type === "bydate" && dateOnlyOk(t.byDate)) return { type: "bydate", byDate: t.byDate };
+  if (t.type === "window" && dateOnlyOk(t.notBefore) && dateOnlyOk(t.byDate)) return { type: "window", notBefore: t.notBefore, byDate: t.byDate, note: typeof t.note === "string" ? t.note : "" };
+  return { type: "standard" };
+}
+// The agreed terms in one plain line: the exact words both sides
+// see on the offer, the visit views, and from Sig.
+function postingTermsLine(terms) {
+  const t = postingTermsOf({ postingTerms: terms });
+  if (t.type === "bydate") return `Posting terms: post by ${fmtDateOnly(t.byDate)}.`;
+  if (t.type === "window") return `Posting terms: post between ${fmtDateOnly(t.notBefore)} and ${fmtDateOnly(t.byDate)}.${t.note ? ` ${t.note}` : ""}`;
+  return "Posting terms: post within 7 days of the visit.";
+}
+// The moment a paid post is due, from the agreed terms: the
+// by-date's end of day, or 7 days after the visit for Standard.
+function postingDeadlineFor(booking) {
+  if (!booking || !booking.redeemedAt) return null;
+  const t = postingTermsOf(booking);
+  if (t.type === "standard") return new Date(Date.parse(booking.redeemedAt) + 7 * DAY_MS).toISOString();
+  return new Date(Date.parse(`${t.byDate}T23:59:59.999Z`)).toISOString();
+}
+
 const COUPON_TYPES = ["amount_off", "percent_off", "store_credit"];
 // Normalize a coupon from request input. Returns null when the
 // coupon is not real (no type, no value, nothing it is good
@@ -660,6 +731,68 @@ function strikeStatusLine(user) {
   const n = noShowStrikesOf(user);
   if (!n) return null;
   return `Visit strikes: ${n}. Letting a booked visit window expire unused counts as a strike, and strikes can pause your account for review.`;
+}
+
+// ---------- Phase C: ladder lanes + silent strikes (Jeff, 2026-11-03) ----------
+// A booking runs on the PAID lane when it carries a paidLane
+// ledger (direct paid bookings and paid-offer bookings both do).
+// Everything else (comp, coupon) runs on the comped ladder.
+function isPaidBooking(booking) {
+  return !!(booking && (booking.kind === "paid" || booking.paidLane));
+}
+function isCompedLane(booking) {
+  return !!booking && !isPaidBooking(booking);
+}
+
+function silentStrikesOf(user) {
+  const n = Number(user && user.silentStrikes);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+}
+
+function silentStrikeStatusLine(user) {
+  const n = silentStrikesOf(user);
+  if (!n) return null;
+  return `Silent no-show strikes: ${n} of ${SILENT_STRIKE_LIMIT}. A visit you redeemed and then went silent on (no post, no message to the business or to SIGNL) counts as a strike; ${SILENT_STRIKE_LIMIT} strikes remove you from the platform.`;
+}
+
+// The late-streak pause (Phase C): while it stands, the creator
+// cannot take NEW offers, but visits already booked run on and a
+// delivered post still lands. It is a dated field, not a standing
+// state: it lifts itself when the date passes.
+function lateStreakPaused(user) {
+  return !!(user && user.lateStreakPauseUntil && Date.parse(user.lateStreakPauseUntil) > Date.now());
+}
+function lateStreakPauseMessage(user) {
+  const until = user && user.lateStreakPauseUntil ? new Date(user.lateStreakPauseUntil).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) : "";
+  return `New offers are paused until ${until} after three late posts in a row. Deliveries still count; the pause lifts on its own on that date.`;
+}
+
+// The consumed-comp final determination (Phase C): the plain
+// reason Admin sees and the creator is told, worded so the state
+// is never confused with a pause.
+function consumedCompReason() {
+  return "Inactive: comp consumed, no post after one month. This account is no longer active for further opportunities unless SIGNL reinstates it.";
+}
+function silentRemovalReason() {
+  return "Removed: two silent no-shows. A redeemed visit ended with no post and no word from the creator, twice. This account is no longer active unless SIGNL reinstates it.";
+}
+
+// What counts as "communication" for the silent no-show test
+// (Phase C): an in-app message the creator sent to THIS booking's
+// business, or to the SIGNL platform thread, at or after the
+// visit was redeemed. Those message records are the contact
+// events the codebase already stores; no new channel is invented.
+async function creatorCommunicatedFor(booking) {
+  if (!booking || !booking.redeemedAt) return false;
+  const since = Date.parse(booking.redeemedAt);
+  const rows = await store.list("message:");
+  for (const r of rows) {
+    const m = r.value;
+    if (!m || m.fromId !== booking.creatorId) continue;
+    if (m.toId !== booking.businessId && m.toId !== PLATFORM_PEER_ID) continue;
+    if (Date.parse(m.createdAt || "") >= since) return true;
+  }
+  return false;
 }
 
 // Plan payment stays concierge (Jeff, 2026-10-20): the plan is
@@ -3069,6 +3202,67 @@ function profileCompletionReminderEmail(user) {
   return { subject, text: lines.join("\n") };
 }
 
+// Phase C (Jeff, 2026-11-03): the two terminal ladder emails.
+// Plain language, the fact, the consequence, the human route back.
+function silentRemovalEmail(creator) {
+  const first = greetingName(creator);
+  return {
+    subject: "Your SIGNL account has been removed",
+    text: [
+      `Hi ${first},`,
+      "",
+      "A visit you redeemed ended with no post and no word from you, for the second time. Silence is the one thing SIGNL cannot work with: the business gave you the visit, heard nothing, and got nothing.",
+      "",
+      "Your account is no longer active, so businesses cannot send you new offers. Visits already posted stay on your record.",
+      "",
+      "If something real kept you from those visits, reply to this email and tell us. A person reads every reply, and SIGNL can reinstate an account when the story checks out.",
+      "",
+      "Jeff",
+      "Founder, SIGNL",
+      "hello@joinsignl.com",
+    ].join("\n"),
+  };
+}
+
+function consumedCompEmail(creator, booking) {
+  const first = greetingName(creator);
+  const biz = (booking && booking.businessName) || "your visit";
+  return {
+    subject: "Your SIGNL account is no longer active",
+    text: [
+      `Hi ${first},`,
+      "",
+      `It has been a month since your visit to ${biz} was redeemed, and no post ever landed. The day-7 pause came first; a month with nothing is the final call.`,
+      "",
+      "Your account is no longer active for further opportunities, so businesses cannot send you new offers. What you already posted stays on your record.",
+      "",
+      "If something went wrong, reply to this email and tell us. A person reads every reply, and SIGNL can reinstate an account when the story checks out.",
+      "",
+      "Jeff",
+      "Founder, SIGNL",
+      "hello@joinsignl.com",
+    ].join("\n"),
+  };
+}
+
+function lateStreakPauseEmail(creator) {
+  const first = greetingName(creator);
+  const until = creator.lateStreakPauseUntil ? new Date(creator.lateStreakPauseUntil).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) : "";
+  return {
+    subject: "New offers are paused for two weeks",
+    text: [
+      `Hi ${first},`,
+      "",
+      "Your last three comped posts in a row landed late. Late posts still count as delivered, but three in a row pauses new offers for 14 days so the pattern can reset.",
+      "",
+      `New offers are paused until ${until}. Visits you already have booked are not affected, and the pause lifts on its own on that date. An on-time post is what keeps this from happening: the goal is one post and one story within 48 hours of the visit.`,
+      "",
+      "The SIGNL team",
+      "hello@joinsignl.com",
+    ].join("\n"),
+  };
+}
+
 function approvalEmail(user, band) {
   const first = greetingName(user);
   const paidLine = paidCampaignLine(user);
@@ -4049,6 +4243,11 @@ async function createBookingForOffer({ offer, creator, via, applicationId = null
     // the creator, held until the post is live (+48h hold).
     const math = paidMath(Number(offer.cashRate));
     booking.kind = "paid";
+    // Phase C: the booking snapshots the offer's posting terms,
+    // so the exact terms the creator accepted are the terms the
+    // visit runs on, whatever the offer later becomes.
+    booking.postingTerms = postingTermsOf(offer);
+    booking.postingTermsLine = postingTermsLine(booking.postingTerms);
     booking.compCostActual = math.businessTotal;
     booking.paidLane = {
       rate: math.rate,
@@ -5311,7 +5510,7 @@ async function withPostState(booking) {
     postPayload.intentRatePer1k = pi.intentRatePer1k;
     postPayload.returnScore = intentLib.returnScoreFor({ views: pi.views, likes: pi.likes, shares: pi.shares, saves: pi.saves, countedCustomers: booking.redemptions ? Math.max(0, Math.floor(Number(booking.redemptions.count) || 0)) : 0 });
   }
-  return { ...booking, post: postPayload, creatorLicensingFee, postState: postState(booking, post), compliance: complianceStatusFor(booking, post, creatorStanding), businessReviewLinks, businessReferralProgram, businessReview, creatorReview, roas, collab, collabPrimaryName, adDisclosure: booking.adDisclosure || adDisclosureForMarket(booking.market), deliveryBlockers: deliveryBlockersFor(booking, post) };
+  return { ...booking, post: postPayload, creatorLicensingFee, postState: postState(booking, post), compliance: complianceStatusFor(booking, post, creatorStanding), businessReviewLinks, businessReferralProgram, businessReview, creatorReview, roas, collab, collabPrimaryName, adDisclosure: booking.adDisclosure || adDisclosureForMarket(booking.market), deliveryBlockers: deliveryBlockersFor(booking, post), postingTermsLine: booking.postingTermsLine || (isPaidBooking(booking) ? postingTermsLine(booking.postingTerms) : null) };
 }
 
 // ---------- Post compliance (Jeff, 2026-10-19; timeline final) ----------
@@ -5329,7 +5528,7 @@ async function withPostState(booking) {
 //                                              a proof still lands, counts
 //                                              delivered-late at +0/-10,
 //                                              unpauses; the missed mark stays
-//   day hardStopDays+banFuseDays, still none   BANNED from offers (-50);
+//   day hardStopDays+banFuseDays, still none   NO LONGER ACTIVE (-50);
 //                                              admin reinstatement only
 // If the comp was never redeemed, this ladder never runs: the
 // redemption window (Part 5) expires the booking as a no-show.
@@ -5338,12 +5537,42 @@ async function withPostState(booking) {
 // THE timeline (Jeff, 2026-10-19): every number the engine runs on
 // lives in this ONE object, so a timeline decision is a one-line
 // edit here and nowhere else.
+// Phase C (Jeff, 2026-11-03): the fuse now runs to ONE MONTH after
+// the visit, superseding the old day-14 ban timing for the
+// consumed-comp case. The day-7 pause still fires first; the
+// one-month mark is the final determination: a creator who
+// redeemed and consumed the comp and has posted NOTHING one month
+// after the visit is set no longer active for further
+// opportunities (standing "banned", source "consumed_comp"). A
+// post landing any time inside that month resolves the visit as
+// delivered, extremely late (compliance.extremelyLateAt marks a
+// delivery more than 14 days after redemption).
 const COMPLIANCE = {
   visitWindowDays: 7, // an accepted offer redeems within this window (Part 5)
   onTimeHours: 48, // post within this of redemption = on time
   hardStopDays: 7, // one week after redemption: the hard stop (pause)
-  banFuseDays: 7, // days after the hard stop before the ban lands (day 14)
+  banFuseDays: 23, // days after the hard stop before the final determination lands (day 30 = one month)
 };
+// Phase C ladder additions (Jeff, 2026-11-03), COMPED LANE ONLY
+// (comp + coupon deals; paid visits run on their agreed posting
+// terms, never on this ladder):
+//   - LATE STREAK: three late comped posts IN A ROW pause NEW
+//     offers for 14 days (user.lateStreakPauseUntil). An on-time
+//     comped post resets the run. The streak is computed at post
+//     submission from the stored posts, never a client claim.
+//   - SILENT NO-SHOW: a redeemed comped visit that reaches the
+//     day-7 hard stop with no post AND no communication from the
+//     creator is a strike (user.silentStrikes). "Communication"
+//     means a real contact event already in the codebase: an
+//     in-app message from the creator to the booking's business,
+//     or to the SIGNL platform thread, sent at or after
+//     redemption (an honor report voids the clock entirely, so
+//     it never reaches this test). TWO strikes remove the
+//     creator (standing "banned", source "silent_strikes").
+const LATE_STREAK_LIMIT = 3;
+const LATE_STREAK_PAUSE_DAYS = 14;
+const SILENT_STRIKE_LIMIT = 2;
+const EXTREMELY_LATE_DAYS = 14; // a delivery later than this (inside the month) is marked extremely late
 // Reminder offsets derive from the timeline: stage 2 lands two days
 // before the hard stop (day 5), the final warning one day before
 // (day 6, "your account pauses tomorrow").
@@ -5362,12 +5591,19 @@ const PERFORMANCE_UPDATE_STALE_DAYS = 5;
 
 function pauseAtFor(booking) {
   if (!booking.redeemedAt) return null;
+  // Phase C: a paid visit's clock runs off its agreed posting
+  // terms, so its hard stop is the agreed deadline itself.
+  if (isPaidBooking(booking) && booking.postDeadline) return booking.postDeadline;
   return new Date(Date.parse(booking.redeemedAt) + COMPLIANCE.hardStopDays * DAY_MS).toISOString();
 }
 
 function banAtFor(booking) {
   if (booking.compliance && booking.compliance.cureClosesAt) return booking.compliance.cureClosesAt;
   if (!booking.redeemedAt) return null;
+  // Phase C: a paid visit's final moment is its agreed deadline
+  // plus the same 7-day fuse the paid lane has always run on
+  // (deadline + 7 days), never the comped ladder's month.
+  if (isPaidBooking(booking) && booking.postDeadline) return new Date(Date.parse(booking.postDeadline) + 7 * DAY_MS).toISOString();
   return new Date(Date.parse(booking.redeemedAt) + (COMPLIANCE.hardStopDays + COMPLIANCE.banFuseDays) * DAY_MS).toISOString();
 }
 
@@ -5899,7 +6135,7 @@ async function bookedUpCreatorIds(users, bookings) {
 //   posted_late     proof in after the deadline (counts delivered)
 //   overdue         deadline passed, no proof, hard stop not reached
 //   paused          hard stop (day 7) reached with no proof
-//   missed          ban fuse burned down with no proof (day 14)
+//   missed          ban fuse burned down with no proof (one month)
 //   expired         redemption window passed unused (a no-show)
 //   honor_reported  creator reported the business did not honor the
 //                   comp; the compliance clock is void for this visit
@@ -5916,6 +6152,10 @@ function complianceStatusFor(booking, post, creatorStanding) {
     redeemBy: booking.redeemBy || null,
     honorReportedAt: booking.honorReportedAt || null,
     missedDeadlineAt: (booking.compliance && booking.compliance.missedDeadlineAt) || null,
+    // Phase C record marks: an extremely late delivery, and a
+    // silent no-show strike counted (or waived) on this visit.
+    extremelyLate: !!((booking.compliance && booking.compliance.extremelyLateAt) || (booking.compliance && booking.compliance.proofAfterBanAt && post)),
+    silentStrike: (booking.compliance && booking.compliance.silentStrikeCounted) ? "counted" : (booking.compliance && booking.compliance.silentStrikeWaived) ? "waived_communicated" : null,
   };
   if (booking.honorReportedAt && !post) return { ...base, status: "honor_reported" };
   if (!booking.redeemedAt) return { ...base, status: booking.status === "expired" ? "expired" : "booked" };
@@ -5992,6 +6232,10 @@ function complianceReminderEmail(creator, booking, stage) {
     "The post must be your honest experience with the comp disclosed, as you agreed.",
   ];
   const consequence = "If a post never lands, the visit does not count, and repeated misses can pause your account.";
+  // Phase C comped-only disclaimer (Jeff, 2026-11-03): one plain
+  // sentence wherever the standard is stated. Paid visits never
+  // run on this ladder, and this email never claims they do.
+  const standardsScope = isCompedLane(booking) ? "These standards are for comped visits. Paid visits follow the posting terms agreed on the booking." : "";
   if (stage === 1) {
     return {
       subject: `Your SIGNL post is due for ${biz}`,
@@ -6003,6 +6247,7 @@ function complianceReminderEmail(creator, booking, stage) {
         ...howTo,
         "",
         consequence,
+        ...(standardsScope ? ["", standardsScope] : []),
         "",
         "If you already posted, this email crossed with your check-off and you can ignore it.",
         "",
@@ -6022,6 +6267,7 @@ function complianceReminderEmail(creator, booking, stage) {
         ...howTo,
         "",
         `A late post inside the catch-up window still counts. ${consequence}`,
+        ...(standardsScope ? ["", standardsScope] : []),
         "",
         "If something went wrong with the visit itself, reply to this email and tell us. We would rather hear it than guess.",
         "",
@@ -6040,6 +6286,7 @@ function complianceReminderEmail(creator, booking, stage) {
       ...howTo,
       "",
       consequence,
+      ...(standardsScope ? ["", standardsScope] : []),
       "",
       "The SIGNL team",
       "hello@joinsignl.com",
@@ -6122,9 +6369,46 @@ async function runComplianceSweep() {
     if (!booking.compliance.banAt) booking.compliance.banAt = banAtFor(booking);
     const redeemedMs = Date.parse(booking.redeemedAt);
     const deadlineMs = Date.parse(booking.postDeadline);
-    const pauseMs = redeemedMs + COMPLIANCE.hardStopDays * DAY_MS;
+    const pauseMs = Date.parse(pauseAtFor(booking));
     const banMs = Date.parse(booking.compliance.banAt);
     let dirty = false;
+
+    // Phase C silent no-show assessment (comped lane only): run
+    // exactly once per booking, at the moment its missed deadline
+    // is first stamped. No post exists (this loop only sees
+    // unposted bookings); the only remaining question is whether
+    // the creator said anything. A message to the business or to
+    // SIGNL since redemption means it was not silent: no strike.
+    // The second strike removes the account on the spot.
+    const assessSilentStrike = async () => {
+      if (!isCompedLane(booking) || booking.compliance.silentStrikeAt) return;
+      booking.compliance.silentStrikeAt = nowIso();
+      dirty = true;
+      if (await creatorCommunicatedFor(booking)) {
+        booking.compliance.silentStrikeWaived = "creator_communicated";
+        await logEvent({ type: "silent_strike_waived", actorId: null, actorRole: "system", subjectId: booking.id, market: booking.market, data: { creatorId: booking.creatorId, businessId: booking.businessId, reason: "creator_communicated" } });
+        return;
+      }
+      const strikes = silentStrikesOf(creator) + 1;
+      creator.silentStrikes = strikes;
+      creator.updatedAt = nowIso();
+      await store.set(`user:${creator.id}`, creator);
+      booking.compliance.silentStrikeCounted = strikes;
+      await logEvent({ type: "creator_silent_strike", actorId: null, actorRole: "system", subjectId: creator.id, market: booking.market, data: { bookingId: booking.id, businessId: booking.businessId, strikes, limit: SILENT_STRIKE_LIMIT } });
+      summary.silentStrikes = (summary.silentStrikes || 0) + 1;
+      await notifyUser(creator.id, "silent_strike", strikes >= SILENT_STRIKE_LIMIT
+        ? "A redeemed visit ended with no post and no word from you, for the second time. Your SIGNL account has been removed. Reply to the email we sent if something kept you from that visit."
+        : "A redeemed visit ended with no post and no word from you. That is one silent no-show strike; a second one removes your account. If something went wrong, message the business or SIGNL in the app: a word from you is what keeps a miss from counting as silent.", { bookingId: booking.id, strikes, limit: SILENT_STRIKE_LIMIT });
+      if (strikes >= SILENT_STRIKE_LIMIT && standingState(creator) !== "banned") {
+        creator.standing = { state: "banned", source: "silent_strikes", reason: silentRemovalReason(), at: nowIso(), bookingId: booking.id };
+        creator.updatedAt = nowIso();
+        await store.set(`user:${creator.id}`, creator);
+        const mail = silentRemovalEmail(creator);
+        await deliverEmail("silent_removal", creator, mail.subject, mail.text);
+        await logEvent({ type: "account_removed", actorId: null, actorRole: "system", subjectId: creator.id, market: booking.market, data: { bookingId: booking.id, businessId: booking.businessId, strikes, limit: SILENT_STRIKE_LIMIT, cause: "silent_strikes" } });
+        summary.silentRemoved = (summary.silentRemoved || 0) + 1;
+      }
+    };
 
     const sendStage = async (stage) => {
       const key = `reminder${stage}At`;
@@ -6148,8 +6432,12 @@ async function runComplianceSweep() {
       }
       await sendStage(1);
     }
-    if (now >= redeemedMs + REMINDER2_DAYS * DAY_MS) await sendStage(2);
-    if (now >= redeemedMs + REMINDER3_DAYS * DAY_MS) await sendStage(3);
+    // Reminder stages 2 and 3 land two days and one day before
+    // the hard stop. On the comped ladder that is day 5 and day 6
+    // exactly as before (the hard stop is day 7); on a paid visit
+    // they key off the agreed posting deadline the same way.
+    if (now >= pauseMs - 2 * DAY_MS) await sendStage(2);
+    if (now >= pauseMs - 1 * DAY_MS) await sendStage(3);
     if (now >= pauseMs && now < banMs) {
       // The hard stop: the visit is recorded as a missed deadline and
       // the account pauses until a proof lands inside the ban fuse.
@@ -6157,6 +6445,7 @@ async function runComplianceSweep() {
         booking.compliance.missedDeadlineAt = nowIso();
         dirty = true;
         await logEvent({ type: "visit_deadline_missed", actorId: null, actorRole: "system", subjectId: booking.id, market: booking.market, data: { creatorId: booking.creatorId, businessId: booking.businessId, redeemedAt: booking.redeemedAt, pauseAt: pauseAtFor(booking) } });
+        await assessSilentStrike();
       }
       if (standingState(creator) !== "banned" && standingState(creator) !== "paused") {
         creator.standing = { state: "paused", reason: "A post from a redeemed visit never landed. Deliver the post link to unpause.", at: nowIso(), bookingId: booking.id };
@@ -6169,21 +6458,34 @@ async function runComplianceSweep() {
       }
     }
     if (now >= banMs) {
-      // The ban: redeemed, never posted, fuse burned down. Jeff's rule.
+      // The final determination: redeemed, never posted, fuse
+      // burned down. On the comped lane this is Jeff's consumed-
+      // comp rule (Phase C): one month after the visit with no
+      // post, the account is no longer active. On the paid lane
+      // the same moment is the booking terms' own end (the escrow
+      // refund below is the remedy those terms already provide).
       if (!booking.compliance.missedDeadlineAt) {
         booking.compliance.missedDeadlineAt = nowIso();
         dirty = true;
         await logEvent({ type: "visit_deadline_missed", actorId: null, actorRole: "system", subjectId: booking.id, market: booking.market, data: { creatorId: booking.creatorId, businessId: booking.businessId, redeemedAt: booking.redeemedAt, pauseAt: pauseAtFor(booking) } });
+        await assessSilentStrike();
       }
       if (!booking.compliance.bannedAt) {
         booking.compliance.bannedAt = nowIso();
         dirty = true;
       }
       if (standingState(creator) !== "banned") {
-        creator.standing = { state: "banned", reason: bannedNoticeReason(), at: nowIso(), bookingId: booking.id };
+        const comped = isCompedLane(booking);
+        creator.standing = { state: "banned", source: comped ? "consumed_comp" : "paid_terms", reason: comped ? consumedCompReason() : bannedNoticeReason(), at: nowIso(), bookingId: booking.id };
         creator.updatedAt = nowIso();
         await store.set(`user:${creator.id}`, creator);
-        await logEvent({ type: "account_banned", actorId: null, actorRole: "system", subjectId: creator.id, market: booking.market, data: { bookingId: booking.id, businessId: booking.businessId, redeemedAt: booking.redeemedAt, banAt: booking.compliance.banAt } });
+        await logEvent({ type: "account_banned", actorId: null, actorRole: "system", subjectId: creator.id, market: booking.market, data: { bookingId: booking.id, businessId: booking.businessId, redeemedAt: booking.redeemedAt, banAt: booking.compliance.banAt, cause: comped ? "consumed_comp" : "paid_terms" } });
+        if (comped) {
+          await notifyUser(creator.id, "account_inactive", "A month has passed since a comped visit was redeemed and no post landed. Your SIGNL account is no longer active for further opportunities. Reply to the email we sent if something went wrong.", { bookingId: booking.id });
+          const mail = consumedCompEmail(creator, booking);
+          await deliverEmail("consumed_comp_inactive", creator, mail.subject, mail.text);
+          summary.inactivated = (summary.inactivated || 0) + 1;
+        }
         summary.banned += 1;
       }
       // A paid visit that ends in a ban refunds the business in
@@ -7823,8 +8125,9 @@ async function performCounterRedeem(booking, actor) {
   booking.status = "redeemed";
   // Build -84: the clock runs on the deal's own post window
   // (the business's edited deliverables), 48 hours at the
-  // recommended standard.
-  booking.postDeadline = new Date(Date.parse(ts) + postWindowHours(booking) * 3600 * 1000).toISOString();
+  // recommended standard. Phase C: a PAID booking's clock runs
+  // off its agreed posting terms instead.
+  booking.postDeadline = isPaidBooking(booking) ? postingDeadlineFor(booking) : new Date(Date.parse(ts) + postWindowHours(booking) * 3600 * 1000).toISOString();
   booking.updatedAt = ts;
   await store.set(`booking:${booking.id}`, booking);
   await logEvent({ type: "code_redeemed", actorId: actor.id, actorRole: actor.role, subjectId: booking.id, market: booking.market, data: { creatorId: booking.creatorId, code: booking.code, method: "counter_code", via: actor.via, postDeadline: booking.postDeadline, dollarCap: booking.dollarCap, test: booking.test === true } });
@@ -7837,11 +8140,20 @@ async function performCounterRedeem(booking, actor) {
     // The creator's post clock just started; until 2026-10-24
     // they heard about it from nobody. Tell them, both surfaces.
     // The hours stated are the deal's own window (Build -84).
+    // Phase C: a paid visit's clock is its agreed posting terms,
+    // stated as the terms, never as the comped 48-hour clock.
     const clockH = postWindowHours(booking);
+    const paidVisit = isPaidBooking(booking);
     await notifyMilestone(booking.creatorId, "clock_started",
-      `Your visit to ${booking.businessName || "the business"} is redeemed and your ${clockH} hour post clock is running. Post by ${milestoneDeadlineText(booking.postDeadline)}, then paste the Instagram link in the app. A post inside the week still counts, as a late delivery.`,
-      `Your ${clockH} hour post clock started: ${booking.businessName || "your SIGNL visit"}`,
-      [`Your visit to ${booking.businessName || "the business"} was just redeemed at the counter, so your post clock is running.`, "", `Post within ${clockH} hours, by ${milestoneDeadlineText(booking.postDeadline)}, then paste the full Instagram post or reel link in the app as your proof. On time is what keeps your Momentum climbing, and a post inside the week still counts, as a late delivery.`, "", "Open SIGNL: https://app.joinsignl.com", "", "Jeff", "Founder, SIGNL"].join("\n"),
+      paidVisit
+        ? `Your visit to ${booking.businessName || "the business"} is redeemed. ${postingTermsLine(booking.postingTerms)} Post by ${milestoneDeadlineText(booking.postDeadline)}, then paste the Instagram link in the app.`
+        : `Your visit to ${booking.businessName || "the business"} is redeemed and your ${clockH} hour post clock is running. Post by ${milestoneDeadlineText(booking.postDeadline)}, then paste the Instagram link in the app. A post inside the week still counts, as a late delivery.`,
+      paidVisit
+        ? `Your post is due under the agreed terms: ${booking.businessName || "your SIGNL visit"}`
+        : `Your ${clockH} hour post clock started: ${booking.businessName || "your SIGNL visit"}`,
+      paidVisit
+        ? [`Your visit to ${booking.businessName || "the business"} was just redeemed at the counter.`, "", `${postingTermsLine(booking.postingTerms)} Post by ${milestoneDeadlineText(booking.postDeadline)}, then paste the full Instagram post or reel link in the app as your proof. Paid visits follow the terms agreed on the booking.`, "", "Open SIGNL: https://app.joinsignl.com", "", "Jeff", "Founder, SIGNL"].join("\n")
+        : [`Your visit to ${booking.businessName || "the business"} was just redeemed at the counter, so your post clock is running.`, "", `Post within ${clockH} hours, by ${milestoneDeadlineText(booking.postDeadline)}, then paste the full Instagram post or reel link in the app as your proof. On time is what keeps your Momentum climbing, and a post inside the week still counts, as a late delivery.`, "", "Open SIGNL: https://app.joinsignl.com", "", "Jeff", "Founder, SIGNL"].join("\n"),
       { bookingId: booking.id });
   }
   return booking;
@@ -9916,8 +10228,17 @@ async function buildSigFacts(user, full) {
     // Build -108: how many of that roster carry an
     // Instagram-verified share in this business's market.
     const verifiedInMarketCount = users.filter((u) => u.role === "creator" && u.status === "approved" && !isTester(u) && profileCompleteOf(u) && isListedInMarket(u, user.market) && verifiedInMarket(u, user.market)).length;
+    // Phase C: this business's paid bookings' agreed posting
+    // terms, from the booking records themselves, so Sig reads
+    // back exactly what was agreed, to either side.
+    const myPaidTerms = (await allBookings())
+      .filter((b) => b && b.businessId === user.id && isPaidBooking(b) && b.status !== "cancelled" && b.status !== "expired")
+      .sort((a, b) => String(a.createdAt) < String(b.createdAt) ? 1 : -1)
+      .slice(0, 8)
+      .map((b) => ({ creatorName: b.creatorName || "A creator", title: b.title || "Paid visit", line: b.postingTermsLine || postingTermsLine(b.postingTerms), status: b.status, postDeadline: b.postDeadline || null }));
     return sigdata.buildBusinessFacts({
       user, readout, plan, marketLive, founding: isFoundingBusiness(user),
+      paidPostingTerms: myPaidTerms,
       applicantsWaiting: apps.filter((a) => a.businessId === user.id && (a.status === "applied" || a.status === "backfill_offered")).length,
       draftOffers: offers.filter((o) => o.businessId === user.id && o.status === "draft").length,
       // Build -97 proactive prompts: total campaign records
@@ -10049,9 +10370,17 @@ async function buildSigFacts(user, full) {
       out.sort((a, b) => String(a.businessName).localeCompare(String(b.businessName)));
       return out;
     })();
+    // Phase C: this creator's paid bookings' agreed posting
+    // terms, from the booking records themselves.
+    const myPaidTerms = mine
+      .filter((b) => b && isPaidBooking(b) && b.status !== "cancelled" && b.status !== "expired")
+      .sort((a, b) => String(a.createdAt) < String(b.createdAt) ? 1 : -1)
+      .slice(0, 8)
+      .map((b) => ({ businessName: b.businessName || "A business", title: b.title || "Paid visit", line: b.postingTermsLine || postingTermsLine(b.postingTerms), status: b.status, postDeadline: b.postDeadline || null }));
     return sigdata.buildCreatorFacts({
       user, full, readout, marketLive,
       bookings: mine, posts: myPosts,
+      paidPostingTerms: myPaidTerms,
       pendingLicenses,
       businessAvailability,
       openOffers, directInvites,
@@ -20312,6 +20641,16 @@ async function route(event) {
           redeemBy: b.redeemBy || null,
           honorReportedAt: b.honorReportedAt || null,
           honorReason: b.honorReason || null,
+          // Phase C Admin visibility: the silent-strike count,
+          // the standing's source + plain reason, the late-streak
+          // pause, and this visit's own strike outcome, so Admin
+          // judges a creator from the record, not from memory.
+          creatorSilentStrikes: creator ? silentStrikesOf(creator) : 0,
+          creatorStandingReason: creator && creator.standing ? creator.standing.reason || null : null,
+          creatorStandingSource: creator && creator.standing ? creator.standing.source || null : null,
+          creatorLateStreakPauseUntil: creator && lateStreakPaused(creator) ? creator.lateStreakPauseUntil : null,
+          silentStrike: status.silentStrike || null,
+          extremelyLate: !!status.extremelyLate,
         });
       }
       rows.sort((a, b) => ((a.redeemedAt || "") < (b.redeemedAt || "") ? -1 : 1));
@@ -20339,6 +20678,7 @@ async function route(event) {
       const previous = standingState(target);
       if (previous === "good") return err(409, "This creator is already in good standing");
       const wasStrikePause = strikePaused(target);
+      const wasSilentRemoval = !!(target.standing && target.standing.source === "silent_strikes");
       target.standing = { state: "good", reason: null, at: nowIso(), bookingId: null, reinstatedBy: user.id, previousState: previous };
       // Strike probation (refinement bundle, 2026-10-20): a creator
       // reinstated from a strike pause restarts at
@@ -20347,9 +20687,15 @@ async function route(event) {
       // email told the creator precisely this. Reinstatement from
       // any other pause or ban leaves the strike count untouched.
       if (wasStrikePause) target.noShowStrikes = STRIKE_PROBATION_COUNT;
+      // Phase C: the same probation shape for a silent-strike
+      // removal: the count restarts one short of the removal
+      // limit, so one more silent no-show removes them again.
+      // Reinstatement from the consumed-comp determination leaves
+      // the silent count as the record shows it.
+      if (wasSilentRemoval) target.silentStrikes = SILENT_STRIKE_LIMIT - 1;
       target.updatedAt = nowIso();
       await store.set(`user:${target.id}`, target);
-      await logEvent({ type: "account_reinstated", actorId: user.id, actorRole: "admin", subjectId: target.id, market: target.market, data: { previousState: previous, note: String(b.note || "").slice(0, 300), strikePause: wasStrikePause, strikesAfter: noShowStrikesOf(target) } });
+      await logEvent({ type: "account_reinstated", actorId: user.id, actorRole: "admin", subjectId: target.id, market: target.market, data: { previousState: previous, note: String(b.note || "").slice(0, 300), strikePause: wasStrikePause, strikesAfter: noShowStrikesOf(target), silentRemoval: wasSilentRemoval, silentStrikesAfter: silentStrikesOf(target) } });
       return json(200, { user: publicUser(target) });
     }
     // Business Preview (Jeff, 2026-10-19): the admin walks the real
@@ -20409,6 +20755,7 @@ async function route(event) {
         if (!profileCompleteOf(targetCreator)) return err(400, "That creator has not finished their founding profile yet, so they cannot receive offers. They get the checklist and a reminder from us; pick another creator for now.");
         if (standingState(targetCreator) === "banned") return err(400, "That creator redeemed a comp and never posted, so they cannot be booked again.");
         if (standingState(targetCreator) === "paused") return err(400, pausedPickMessage(targetCreator));
+        if (lateStreakPaused(targetCreator)) return err(400, "That creator's new offers are paused for two weeks after three late posts in a row. Pick another creator for now.");
       }
       // SIMULATION ONLY: build the confirmation and return it. No
       // store.set and no logEvent below this line - that is the whole
@@ -21338,6 +21685,7 @@ async function route(event) {
         if (!profileCompleteOf(targetCreator)) return err(400, "That creator has not finished their founding profile yet, so they cannot receive offers. They get the checklist and a reminder from us; pick another creator for now.");
         if (standingState(targetCreator) === "banned") return err(400, "That creator redeemed a comp and never posted, so they cannot be booked again.");
         if (standingState(targetCreator) === "paused") return err(400, pausedPickMessage(targetCreator));
+        if (lateStreakPaused(targetCreator)) return err(400, "That creator's new offers are paused for two weeks after three late posts in a row. Pick another creator for now.");
       }
       if (kind === "comp") {
         // The dignity floor (see COMP_GUIDANCE): targeted open
@@ -21360,6 +21708,16 @@ async function route(event) {
       // comp does not.
       let covers = null;
       let paidBrief = null;
+      // Phase C: a paid offer carries the business's posting
+      // terms (the one control; Standard by default). Comp and
+      // coupon offers never carry them: the comped ladder is
+      // theirs.
+      let offerPostingTerms = null;
+      if (kind === "paid") {
+        const termsCheck = normalizePostingTerms(b.postingTerms);
+        if (termsCheck.error) return err(400, termsCheck.error);
+        offerPostingTerms = termsCheck.terms;
+      }
       if (kind === "comp" || kind === "coupon") {
         // Covers is a comp concept (how many people the comp
         // feeds); a coupon covers whoever spends it.
@@ -21425,6 +21783,10 @@ async function route(event) {
         // coupon deal, the coupon itself.
         deliverables: validateDeliverables(b.deliverables, kind),
         ...(coupon ? { coupon } : {}),
+        // Phase C: paid offers carry the agreed posting terms +
+        // their plain-words line, so the creator reads the exact
+        // terms on the offer before accepting.
+        ...(offerPostingTerms ? { postingTerms: offerPostingTerms, postingTermsLine: postingTermsLine(offerPostingTerms) } : {}),
       };
       // Sig Operator (Jeff, 2026-10-28): EVERY created offer stores
       // a normalized brief (the request's brief when one is sent,
@@ -21468,6 +21830,7 @@ async function route(event) {
           // same offer.
           if (JSON.stringify(couponOf(x)) !== JSON.stringify(couponOf(offer))) return false;
           if (JSON.stringify(deliverablesOf(x)) !== JSON.stringify(deliverablesOf(offer))) return false;
+          if (JSON.stringify(postingTermsOf(x)) !== JSON.stringify(postingTermsOf(offer))) return false;
           if (Number(x.spots) !== Number(offer.spots)) return false;
           if (x.applyWindowDays !== undefined && offer.applyWindowDays !== undefined && Number(x.applyWindowDays) !== Number(offer.applyWindowDays)) return false;
           if (x.windowDays !== undefined && offer.windowDays !== undefined && Number(x.windowDays) !== Number(offer.windowDays)) return false;
@@ -21753,6 +22116,7 @@ async function route(event) {
       if (isTester(creator)) return err(400, "That creator is no longer on the roster");
       if (!profileCompleteOf(creator)) return err(400, "That creator has not finished their founding profile yet, so they cannot take a visit. Pick the next applicant.");
       if (standingState(creator) === "banned" || standingState(creator) === "paused") return err(400, "That creator cannot take a visit right now (compliance standing). Pick the next applicant.");
+      if (lateStreakPaused(creator)) return err(400, "That creator's new offers are paused for two weeks after three late posts in a row. Pick the next applicant.");
       const cap = maxVisitsPerWeekOf(creator);
       if (visitsThisWeek(bookings, creator.id, Date.now()) >= cap) return err(409, `That creator is at their max of ${cap} visits this week. Pick the next applicant, or wait for next week.`);
       const booking = await createBookingForOffer({ offer, creator, via: "selection", applicationId: app.id });
@@ -21838,6 +22202,7 @@ async function route(event) {
       if (isDemoShowcaseCreator(user)) return err(403, "That account cannot apply to offers.");
       if (standingState(user) === "banned") return err(403, "Your account was closed to offers after a comped visit was redeemed and no post was delivered. Contact hello@joinsignl.com if you believe this is wrong.");
       if (standingState(user) === "paused") return err(403, pausedSelfMessage(user));
+      if (lateStreakPaused(user)) return err(403, lateStreakPauseMessage(user));
       if (!profileCompleteOf(user)) return err(403, "Finish your founding profile before applying: businesses can only pick creators with finished profiles. Your checklist is on your dashboard, under Profile.");
       const b = parseBody(event);
       const offer = await store.get(`offer:${seg[1]}`);
@@ -21914,6 +22279,9 @@ async function route(event) {
       // delivers the missing post first; a banned creator is done.
       if (standingState(user) === "banned") return err(403, "Your account was closed to offers after a comped visit was redeemed and no post was delivered. Contact hello@joinsignl.com if you believe this is wrong.");
       if (standingState(user) === "paused") return err(403, pausedSelfMessage(user));
+      // Phase C: the late-streak pause gates NEW offers for its
+      // 14 days; visits already booked are untouched.
+      if (lateStreakPaused(user)) return err(403, lateStreakPauseMessage(user));
       if (!profileCompleteOf(user)) return err(403, "Finish your founding profile before accepting offers: businesses can only book creators with finished profiles. Your checklist is on your dashboard, under Profile.");
       const offer = await store.get(`offer:${seg[1]}`);
       if (!offer || offer.status !== "open") return err(404, "Offer not available");
@@ -22085,6 +22453,7 @@ async function route(event) {
       if (user.role !== "creator") return err(403, "Creators only");
       if (standingState(user) === "banned") return err(403, "Your account was closed to offers after a comped visit was redeemed and no post was delivered.");
       if (standingState(user) === "paused") return err(403, pausedSelfMessage(user));
+      if (lateStreakPaused(user)) return err(403, lateStreakPauseMessage(user));
       if (!profileCompleteOf(user)) return err(403, "Finish your founding profile before taking this spot: businesses can only book creators with finished profiles. Your checklist is on your dashboard, under Profile.");
       const app = await store.get(`application:${seg[1]}`);
       if (!app || app.creatorId !== user.id) return err(404, "Application not found");
@@ -22557,6 +22926,7 @@ async function route(event) {
     if (creator.market !== user.market) return err(400, "Paid bookings are inside your own market");
     if (standingState(creator) === "banned") return err(400, "That creator redeemed a comp and never posted, so they cannot be booked again.");
     if (standingState(creator) === "paused") return err(400, pausedPickMessage(creator));
+    if (lateStreakPaused(creator)) return err(400, "That creator's new offers are paused for two weeks after three late posts in a row. Pick another creator for now.");
     const rate = Number(creator.creator && creator.creator.paidRate);
     if (!Number.isFinite(rate) || rate < paidFloorForMarket(creator.market)) return err(400, "That creator has not listed a paid rate. Comp visits are always available; paid bookings need a creator who charges.");
     // Stripe Connect (2026-10-26): while the rail is live, a paid
@@ -22571,6 +22941,11 @@ async function route(event) {
     if (visitsThisWeek(allBk, creator.id, Date.now()) >= cap) {
       return err(409, `That creator is at their max of ${cap} visit${cap === 1 ? "" : "s"} this week. Try again next week.`);
     }
+    // Phase C: the business picks the posting terms with the one
+    // control (Standard by default); invalid terms refuse in
+    // plain words before anything is written.
+    const termsCheck = normalizePostingTerms(b.postingTerms);
+    if (termsCheck.error) return err(400, termsCheck.error);
     const math = paidMath(rate);
     const code = await genCode();
     const creatorCode = await genCreatorCode(creator.creator ? creator.creator.handle : "");
@@ -22579,6 +22954,10 @@ async function route(event) {
       id: crypto.randomUUID(),
       offerId: null,
       kind: "paid",
+      // Phase C: the agreed posting terms, structured + the
+      // rendered line both sides read.
+      postingTerms: termsCheck.terms,
+      postingTermsLine: postingTermsLine(termsCheck.terms),
       businessId: user.id,
       businessName: user.business.businessName,
       creatorId: creator.id,
@@ -22659,9 +23038,9 @@ async function route(event) {
     }
     await logEvent({ type: "paid_booking_created", actorId: user.id, actorRole: "business", subjectId: booking.id, market: booking.market, data: { creatorId: creator.id, rate: math.rate, businessTotal: math.businessTotal, creatorNet: math.creatorNet, platformFee: math.platformFee, escrowState: "held", hasBrief: !!booking.paidBrief } });
     await notifyMilestone(creator.id, "paid_booking_received",
-      `${booking.businessName || "A business"} booked you at your listed rate of $${fmtPriceS(math.rate)}. $${fmtMoneyS(math.creatorNet)} is recorded as held by SIGNL until your post is live. Visit code ${code}.`,
+      `${booking.businessName || "A business"} booked you at your listed rate of $${fmtPriceS(math.rate)}. $${fmtMoneyS(math.creatorNet)} is recorded as held by SIGNL until your post is live. ${booking.postingTermsLine} Visit code ${code}.`,
       `Paid booking: ${booking.businessName || "a business"} booked you at $${fmtPriceS(math.rate)}`,
-      [`${booking.businessName || "A business"} booked you at your listed rate of $${fmtPriceS(math.rate)}.`, "", `${booking.paidLane.paymentNote} Your share is $${fmtMoneyS(math.creatorNet)} of the $${fmtPriceS(math.rate)} rate.`, "", `Your visit code is ${code}: show it at the counter when you visit. The visit window is 7 days from booking.`, "", "Open SIGNL: https://app.joinsignl.com", "", "Jeff", "Founder, SIGNL"].join("\n"),
+      [`${booking.businessName || "A business"} booked you at your listed rate of $${fmtPriceS(math.rate)}.`, "", `${booking.paidLane.paymentNote} Your share is $${fmtMoneyS(math.creatorNet)} of the $${fmtPriceS(math.rate)} rate.`, "", `${booking.postingTermsLine} These are the posting terms agreed on this booking.`, "", `Your visit code is ${code}: show it at the counter when you visit. The visit window is 7 days from booking.`, "", "Open SIGNL: https://app.joinsignl.com", "", "Jeff", "Founder, SIGNL"].join("\n"),
       { bookingId: booking.id });
     await promptCreatorPayoutSetup(booking, creator);
     await logEvent({ type: "booking_code_issued", actorId: user.id, actorRole: "business", subjectId: booking.id, market: booking.market, data: { code, offerId: null, businessId: user.id, dollarCap: booking.dollarCap, kind: "paid", hasBrief: !!booking.paidBrief } });
@@ -22717,17 +23096,25 @@ async function route(event) {
     booking.codeStatus = "burned";
     booking.status = "redeemed";
     // Build -84: the clock runs on the deal's own post window.
-    booking.postDeadline = new Date(Date.parse(ts) + postWindowHours(booking) * 3600 * 1000).toISOString();
+    // Phase C: a PAID booking's clock runs off its agreed terms.
+    booking.postDeadline = isPaidBooking(booking) ? postingDeadlineFor(booking) : new Date(Date.parse(ts) + postWindowHours(booking) * 3600 * 1000).toISOString();
     booking.updatedAt = ts;
     await store.set(`booking:${booking.id}`, booking);
     await logEvent({ type: "visit_confirmed_by_business", actorId: user.id, actorRole: "business", subjectId: booking.id, market: booking.market, data: { creatorId: booking.creatorId, code: booking.code, postDeadline: booking.postDeadline } });
     await logEvent({ type: "code_redeemed", actorId: user.id, actorRole: "business", subjectId: booking.id, market: booking.market, data: { creatorId: booking.creatorId, code: booking.code, method: "business_confirm", postDeadline: booking.postDeadline } });
     await sendStaffNotice(booking, "redeem");
     const clockH = postWindowHours(booking);
+    const paidVisit = isPaidBooking(booking);
     await notifyMilestone(booking.creatorId, "clock_started",
-      `Your visit to ${booking.businessName || "the business"} is redeemed and your ${clockH} hour post clock is running. Post by ${milestoneDeadlineText(booking.postDeadline)}, then paste the Instagram link in the app. A post inside the week still counts, as a late delivery.`,
-      `Your ${clockH} hour post clock started: ${booking.businessName || "your SIGNL visit"}`,
-      [`Your visit to ${booking.businessName || "the business"} was just confirmed, so your post clock is running.`, "", `Post within ${clockH} hours, by ${milestoneDeadlineText(booking.postDeadline)}, then paste the full Instagram post or reel link in the app as your proof. On time is what keeps your Momentum climbing, and a post inside the week still counts, as a late delivery.`, "", "Open SIGNL: https://app.joinsignl.com", "", "Jeff", "Founder, SIGNL"].join("\n"),
+      paidVisit
+        ? `Your visit to ${booking.businessName || "the business"} is redeemed. ${postingTermsLine(booking.postingTerms)} Post by ${milestoneDeadlineText(booking.postDeadline)}, then paste the Instagram link in the app.`
+        : `Your visit to ${booking.businessName || "the business"} is redeemed and your ${clockH} hour post clock is running. Post by ${milestoneDeadlineText(booking.postDeadline)}, then paste the Instagram link in the app. A post inside the week still counts, as a late delivery.`,
+      paidVisit
+        ? `Your post is due under the agreed terms: ${booking.businessName || "your SIGNL visit"}`
+        : `Your ${clockH} hour post clock started: ${booking.businessName || "your SIGNL visit"}`,
+      paidVisit
+        ? [`Your visit to ${booking.businessName || "the business"} was just confirmed.`, "", `${postingTermsLine(booking.postingTerms)} Post by ${milestoneDeadlineText(booking.postDeadline)}, then paste the full Instagram post or reel link in the app as your proof. Paid visits follow the terms agreed on the booking.`, "", "Open SIGNL: https://app.joinsignl.com", "", "Jeff", "Founder, SIGNL"].join("\n")
+        : [`Your visit to ${booking.businessName || "the business"} was just confirmed, so your post clock is running.`, "", `Post within ${clockH} hours, by ${milestoneDeadlineText(booking.postDeadline)}, then paste the full Instagram post or reel link in the app as your proof. On time is what keeps your Momentum climbing, and a post inside the week still counts, as a late delivery.`, "", "Open SIGNL: https://app.joinsignl.com", "", "Jeff", "Founder, SIGNL"].join("\n"),
       { bookingId: booking.id });
     return json(200, { booking: await withPostState(booking) });
   }
@@ -22838,36 +23225,75 @@ async function route(event) {
     await logEvent({ type: "post_submitted", actorId: user.id, actorRole: "creator", subjectId: post.id, market: booking.market, data: { bookingId: booking.id, businessId: booking.businessId, url, onTime, hoursAfterRedeem: post.hoursAfterRedeem, includesDisclosure: post.includesDisclosure, category: booking.category, adLabelVerified: post.adLabelVerified } });
 
     // Compliance bookkeeping for the proof (Jeff, 2026-10-19;
-    // timeline final 01:34). Any proof at or before the ban moment
-    // (day 14) counts as delivered: on time inside 48h, delivered
-    // late up to the day-7 hard stop (+5/-10), and inside the ban
-    // fuse (days 7-14) delivered late at +0/-10 with the missed
-    // deadline mark staying on the record. A proof after day 14 is
-    // recorded for the business but never saves the account.
+    // timeline final 01:34; Phase C 2026-11-03). Any proof at or
+    // before the final-determination moment (one month after the
+    // visit on the comped lane) counts as delivered: on time
+    // inside 48h, delivered late up to the day-7 hard stop
+    // (+5/-10), and inside the fuse (day 7 to one month) delivered
+    // late at +0/-10 with the missed deadline mark staying on the
+    // record; a delivery more than 14 days after the visit is
+    // marked EXTREMELY late on the record. A proof after the
+    // month is recorded for the business but never saves the
+    // account.
     booking.compliance = booking.compliance || {};
     if (!booking.compliance.banAt) booking.compliance.banAt = banAtFor(booking);
     const banMs = Date.parse(booking.compliance.banAt);
     const submittedMs = Date.parse(ts);
     const wasBanned = standingState(user) === "banned";
-    await logEvent({ type: "proof_submitted", actorId: user.id, actorRole: "creator", subjectId: post.id, market: booking.market, data: { bookingId: booking.id, businessId: booking.businessId, url, onTime, withinFuse: submittedMs <= banMs, whileBanned: wasBanned } });
+    const extremelyLate = !onTime && !!booking.redeemedAt && submittedMs > Date.parse(booking.redeemedAt) + EXTREMELY_LATE_DAYS * DAY_MS;
+    if (extremelyLate && submittedMs <= banMs) booking.compliance.extremelyLateAt = ts;
+    await logEvent({ type: "proof_submitted", actorId: user.id, actorRole: "creator", subjectId: post.id, market: booking.market, data: { bookingId: booking.id, businessId: booking.businessId, url, onTime, withinFuse: submittedMs <= banMs, whileBanned: wasBanned, extremelyLate } });
     if (!onTime && submittedMs <= banMs) {
       // Delivered late, inside the fuse: counts, marked late.
       booking.compliance.lateDeliveredAt = ts;
-      await logEvent({ type: "proof_late_accepted", actorId: user.id, actorRole: "creator", subjectId: post.id, market: booking.market, data: { bookingId: booking.id, businessId: booking.businessId, withinFuse: true } });
+      await logEvent({ type: "proof_late_accepted", actorId: user.id, actorRole: "creator", subjectId: post.id, market: booking.market, data: { bookingId: booking.id, businessId: booking.businessId, withinFuse: true, extremelyLate } });
     } else if (!onTime && submittedMs > banMs) {
       // The proof arrived after the ban moment. It is recorded for
       // the business (the visit counts as delivered, late), but it
       // does not save the account: the ban the sweep would apply
       // lands here instead, and only an admin can reinstate.
       booking.compliance.proofAfterBanAt = ts;
-      await logEvent({ type: "proof_late_accepted", actorId: user.id, actorRole: "creator", subjectId: post.id, market: booking.market, data: { bookingId: booking.id, businessId: booking.businessId, withinFuse: false } });
+      await logEvent({ type: "proof_late_accepted", actorId: user.id, actorRole: "creator", subjectId: post.id, market: booking.market, data: { bookingId: booking.id, businessId: booking.businessId, withinFuse: false, extremelyLate } });
       if (!wasBanned) {
         if (!booking.compliance.bannedAt) booking.compliance.bannedAt = ts;
-        user.standing = { state: "banned", reason: bannedNoticeReason(), at: ts, bookingId: booking.id };
+        const comped = isCompedLane(booking);
+        user.standing = { state: "banned", source: comped ? "consumed_comp" : "paid_terms", reason: comped ? consumedCompReason() : bannedNoticeReason(), at: ts, bookingId: booking.id };
         user.updatedAt = ts;
         await store.set(`user:${user.id}`, user);
-        await logEvent({ type: "account_banned", actorId: null, actorRole: "system", subjectId: user.id, market: booking.market, data: { bookingId: booking.id, businessId: booking.businessId, redeemedAt: booking.redeemedAt, banAt: booking.compliance.banAt, trigger: "proof_arrived_after_ban_moment" } });
+        await logEvent({ type: "account_banned", actorId: null, actorRole: "system", subjectId: user.id, market: booking.market, data: { bookingId: booking.id, businessId: booking.businessId, redeemedAt: booking.redeemedAt, banAt: booking.compliance.banAt, trigger: "proof_arrived_after_ban_moment", cause: comped ? "consumed_comp" : "paid_terms" } });
       }
+    }
+    // Phase C late streak (comped lane only): three late comped
+    // posts IN A ROW pause new offers for 14 days. Computed here,
+    // at the moment a post lands, from the stored posts on comped
+    // bookings in submission order; an on-time comped post resets
+    // the run, and paid posts never enter the count either way.
+    // The pause is stamped once per run: while it stands, later
+    // LATE posts do not extend it — but the run is always
+    // recomputed, because an ON-TIME post during the pause is
+    // exactly what resets the run and lifts it.
+    if (isCompedLane(booking) && standingState(user) !== "banned") {
+      try {
+        const [allBkC, allPostsC] = await Promise.all([allBookings(), allPosts()]);
+        const compedIds = new Set(allBkC.filter((x) => x.creatorId === user.id && isCompedLane(x)).map((x) => x.id));
+        const mine = allPostsC.filter((p) => p.creatorId === user.id && compedIds.has(p.bookingId)).sort((a, b) => (a.submittedAt < b.submittedAt ? -1 : 1));
+        let run = 0;
+        for (const p of mine) run = p.onTime ? 0 : run + 1;
+        user.lateStreakCount = run;
+        if (run < LATE_STREAK_LIMIT && user.lateStreakPauseUntil) user.lateStreakPauseUntil = null;
+        if (!onTime && run >= LATE_STREAK_LIMIT && !lateStreakPaused(user)) {
+          user.lateStreakPauseUntil = new Date(Date.parse(ts) + LATE_STREAK_PAUSE_DAYS * DAY_MS).toISOString();
+          user.updatedAt = ts;
+          await store.set(`user:${user.id}`, user);
+          await logEvent({ type: "late_streak_pause", actorId: null, actorRole: "system", subjectId: user.id, market: booking.market, data: { bookingId: booking.id, streak: run, pausedUntil: user.lateStreakPauseUntil, days: LATE_STREAK_PAUSE_DAYS } });
+          await notifyUser(user.id, "late_streak_pause", `Three late posts in a row: new offers are paused for 14 days, until ${new Date(user.lateStreakPauseUntil).toLocaleDateString("en-US", { month: "long", day: "numeric" })}. Visits already booked are not affected.`, { bookingId: booking.id, pausedUntil: user.lateStreakPauseUntil });
+          const mail = lateStreakPauseEmail(user);
+          await deliverEmail("late_streak_pause", user, mail.subject, mail.text);
+        } else {
+          user.updatedAt = ts;
+          await store.set(`user:${user.id}`, user);
+        }
+      } catch (e) { /* the streak is bookkeeping; the proof itself already landed */ }
     }
     await store.set(`booking:${booking.id}`, booking);
     await notifyMilestone(booking.businessId, "proof_submitted",
@@ -24184,4 +24610,4 @@ async function route(event) {
 
 // The email builders are exported alongside the router so the verify
 // suites can assert on the exact copy a creator receives.
-module.exports = { route, passwordResetEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, normalizeBriefInput, briefForOffer, validateAssetPacket, assetPacketView, postSeries, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, runPublicPageBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView, musicOpenView, studentOpenView, PLATFORM_PEER_ID, platformThreadId, platformMessageEmail, MESSAGE_TEMPLATES, runFinishEngineSweep, maybeFireFinishMoment, handleFinishEngineReply, finishEngineConfig, recordRosterDrop, runRosterDigestSweep, setupChecklistFor, regularsFor, licencesExpiringFor, runLicenceExpirySweep, monthlyReceiptExportFor, monthlyReceiptCsv, normalizeStandingAvailability, standingAvailabilitySummary, standingAvailabilityView, normalizeCoupon, couponOf, couponFaceValue, couponSummary, validateDeliverables, deliverablesOf, deliverableLineFor, deliverableStandard, postWindowHours, DELIVERABLE_STANDARDS };
+module.exports = { route, passwordResetEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, normalizeBriefInput, briefForOffer, validateAssetPacket, assetPacketView, postSeries, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, runPublicPageBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView, musicOpenView, studentOpenView, PLATFORM_PEER_ID, platformThreadId, platformMessageEmail, MESSAGE_TEMPLATES, runFinishEngineSweep, maybeFireFinishMoment, handleFinishEngineReply, finishEngineConfig, recordRosterDrop, runRosterDigestSweep, setupChecklistFor, regularsFor, licencesExpiringFor, runLicenceExpirySweep, monthlyReceiptExportFor, monthlyReceiptCsv, normalizeStandingAvailability, standingAvailabilitySummary, standingAvailabilityView, normalizeCoupon, couponOf, couponFaceValue, couponSummary, validateDeliverables, deliverablesOf, deliverableLineFor, deliverableStandard, postWindowHours, DELIVERABLE_STANDARDS, normalizePostingTerms, postingTermsOf, postingTermsLine, postingDeadlineFor, isPaidBooking, isCompedLane, silentStrikesOf, silentStrikeStatusLine, lateStreakPaused, lateStreakPauseMessage, consumedCompReason, silentRemovalReason, silentRemovalEmail, consumedCompEmail, lateStreakPauseEmail, LATE_STREAK_LIMIT, LATE_STREAK_PAUSE_DAYS, SILENT_STRIKE_LIMIT };

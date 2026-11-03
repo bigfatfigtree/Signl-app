@@ -368,6 +368,9 @@ function buildBusinessFacts(d) {
       title: l.title || "", kind: l.kind || "licensed", fee: l.fee != null ? l.fee : null,
       endsOn: l.windowEndsAt ? String(l.windowEndsAt).slice(0, 10) : "", daysLeft: l.daysLeft, ended: !!l.ended,
     })),
+    // Phase C: the agreed posting terms on this business's paid
+    // bookings, read off the booking records.
+    paidPostingTerms: (d.paidPostingTerms || []).map((t) => ({ creatorName: t.creatorName || "A creator", title: t.title || "Paid visit", line: t.line || "", status: t.status || "", postDeadline: t.postDeadline || null })),
     // Build -96: standing availability from the business page
     // record, and last month's receipt-ready state (real
     // activity only, computed in the router).
@@ -479,6 +482,9 @@ function buildCreatorFacts(d) {
     // creator can meet (open offers, direct invites, own
     // bookings), only where the business set it.
     businessAvailability: (d.businessAvailability || []).map((b) => ({ businessId: b.businessId, businessName: b.businessName || "A business", summary: b.summary || "" })),
+    // Phase C: the agreed posting terms on this creator's paid
+    // bookings, read off the booking records.
+    paidPostingTerms: (d.paidPostingTerms || []).map((t) => ({ businessName: t.businessName || "A business", title: t.title || "Paid visit", line: t.line || "", status: t.status || "", postDeadline: t.postDeadline || null })),
     paidRate: c.paidRate || null,
     licenseFee: c.licensingFee || c.licenseFee || null,
     currencySymbol: currencyForMarket(u.market).symbol,
@@ -575,6 +581,7 @@ function factsLines(role, f) {
     if (f.intentTotal > 0) lines.push(`Post intent on their live posts: ${fmt(f.intentShares)} shares and ${fmt(f.intentSaves)} saves recorded by the creators, ${fmt(f.intentTotal)} in total across ${fmt(f.intentReportedPosts)} reported ${plural(f.intentReportedPosts, "post")}. Saves and shares mean people planning to come. These are recorded figures, not counted sales. Their Return score across those posts is ${f.returnScore != null ? fmt(f.returnScore) + " out of 100" : "not scored yet (not enough data)"}.`);
     if (f.regularsCount) lines.push(`Their Regulars (creators who completed a visit and posted): ${f.regulars.map((r) => `${r.name}${r.handle ? " (@" + r.handle + ")" : ""}, ${fmt(r.visits)} ${plural(r.visits, "visit")}, last visit ${r.lastVisitAt ? String(r.lastVisitAt).slice(0, 10) : "on record"}${r.rebookedSince ? ", already rebooked since" : ""}`).join("; ")}. Regulars live in the Regulars view, where Book again clones the last visit's deal into a new draft.`);
     if (f.licencesExpiring && f.licencesExpiring.length) lines.push(`Licences ending soon: ${f.licencesExpiring.map((l) => `${l.creatorName || "a creator"}'s post "${l.title}" ends ${l.endsOn} (${l.ended ? "already ended" : fmt(Math.max(0, l.daysLeft)) + " days left"})`).join("; ")}. Renewing goes through the creator: a fresh request at their listed fee for 90 days, approved by them, never automatic.`);
+    if (f.paidPostingTerms && f.paidPostingTerms.length) lines.push(`Agreed posting terms on their paid bookings: ${f.paidPostingTerms.map((t) => `${t.creatorName} ("${t.title}"): ${t.line}`).join("; ")}. A paid visit's post clock runs off these agreed terms, not the comped ladder.`);
     lines.push(f.availabilitySet
       ? `Their standing availability, set once on their business page and shown to creators on their offers: ${f.availabilitySummary}. It pre-fills the timing on new offers; a per-offer note still wins for that offer.`
       : "They have not set standing availability yet: the usual open days and hours creators see, set once on the business page. Until it is set, every offer carries its own timing note.");
@@ -606,6 +613,7 @@ function factsLines(role, f) {
   if (!f.payoutsReady && (f.paidBookings > 0 || f.paidRecordedNet > 0)) lines.push(`Their payouts are not set up yet (status: ${f.payoutsStatus || "not_started"}), and they have paid bookings or recorded earnings on file. Payout setup lives on their Profile, in the paid lane. Before the first setup, an explainer on that surface says what Stripe will ask for and why: identity details, address, bank account, and tax information. Paid bookings are recorded in the app and settled with help until the payout rail fully opens; no payout date is promised.`);
   lines.push("Creator terms in plain words live at https://joinsignl.com/creator-terms.html. When a creator asks about terms, that link goes with the answer.");
   if (f.pendingLicenses && f.pendingLicenses.length) lines.push(`Licence requests waiting on their decision: ${f.pendingLicenses.map((l) => `${l.businessName} at their ${cmoney(f, l.fee)} fee${l.renewal ? " (a renewal of a licence that is ending)" : ""}`).join("; ")}. Each is decided under Earnings: approve starts a fresh 90 days that day; decline leaves the post native share only.`);
+  if (f.paidPostingTerms && f.paidPostingTerms.length) lines.push(`Agreed posting terms on their paid bookings: ${f.paidPostingTerms.map((t) => `${t.businessName} ("${t.title}"): ${t.line}`).join("; ")}. A paid visit's post clock runs off these agreed terms, not the comped 48-hour ladder.`);
   if (f.businessAvailability && f.businessAvailability.length) lines.push(`Standing availability at businesses they can book with: ${f.businessAvailability.map((b) => `${b.businessName}: ${b.summary}`).join("; ")}. A business that is not listed here has not set its hours; the offer's own window and note are what applies.`);
   return lines;
 }
@@ -999,6 +1007,13 @@ function answerBusiness(f, q, t) {
     const list = f.regulars.slice(0, 5).map((r) => `${r.name}${r.handle ? " (@" + r.handle + ")" : ""}: ${fmt(r.visits)} ${plural(r.visits, "visit")}, last one ${r.lastVisitAt ? String(r.lastVisitAt).slice(0, 10) : "on record"}${r.rebookedSince ? ", already rebooked since" : ""}`).join("; ");
     return linked(`You have ${fmt(f.regularsCount)} ${plural(f.regularsCount, "Regular")}: ${list}. Book again on any of them clones the last visit's deal into a new draft; nothing sends until you publish it.`, "Open Regulars", "biz-regulars");
   }
+  // Paid posting terms (Phase C, Build -112): read back from
+  // the business's own booking records, never from memory.
+  if (hasPhrase(t, "posting terms", "post by", "when does the post", "when is the post due", "post due", "posting deadline")) {
+    if (!f.paidPostingTerms || !f.paidPostingTerms.length) return linked("No paid bookings yet, so no posting terms are on file. When you book a paid visit you pick the terms with one control: Standard (post within 7 days of the visit), Post by a specific date, or Special terms (a date window with a short note). The creator sees the exact terms before accepting, and accepting accepts them.", "Book a paid visit", "biz-discover");
+    const list = f.paidPostingTerms.slice(0, 5).map((x) => `${x.creatorName}: ${x.line}`).join("; ");
+    return linked(`The posting terms you agreed, off the booking records: ${list}. A paid visit's clock runs off these terms, not the comped ladder.`, "Open My Visits", "biz-visits");
+  }
   // Included licence + extension (Phase A, Build -110): the
   // standard licence on a paid booking is automatic, never a
   // form or an add-on; extending past it is the one separate,
@@ -1028,6 +1043,14 @@ function answerCreator(f, q, t) {
   // straight to the Done segment where that card lives.
   if (hasPhrase(t, "ad label", "adlabel") || hasPhrase(t, "#ad")) {
     return linked("UK rules count a comped or paid London post as an ad, so the post must carry #ad up front. If the caption you submitted did not carry it, the visit is blocked as Ad label missing and does not count as delivered yet. The fix is on the visit card itself: open Visits, find the visit under Done, check the caption box (it starts with your disclosure line), and tap Confirm the ad label. The visit counts as delivered the moment the label is verified.", "Fix it on my visit card", "cr-visits-done");
+  }
+  // Paid posting terms (Phase C, Build -112): read back from
+  // the creator's own booking records. Placed before the
+  // generic terms branch, which would otherwise swallow it.
+  if (hasPhrase(t, "posting terms", "when is my post due", "when does my post", "post due")) {
+    if (!f.paidPostingTerms || !f.paidPostingTerms.length) return linked("No paid bookings yet, so no posting terms are on file. On a paid booking the business picks the terms before you accept: Standard (post within 7 days of the visit), a specific post-by date, or special terms (a date window with a short note). The exact terms sit on the offer and on the visit card, and accepting the booking accepts them. Paid visits follow those agreed terms, not the comped 48-hour ladder.", "Open My Visits", "cr-visits");
+    const list = f.paidPostingTerms.slice(0, 5).map((x) => `${x.businessName}: ${x.line}`).join("; ");
+    return linked(`The posting terms on your paid bookings, off the records: ${list}. Your clock on each paid visit runs off its agreed terms.`, "Open My Visits", "cr-visits");
   }
   // Creator terms (Build -98, item 4): a terms question always
   // carries the plain-words terms page link with it.

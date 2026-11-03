@@ -1678,7 +1678,7 @@ function audienceLineHtml(source) {
 // the single source of truth; the fallback text mirrors it).
 function standardVisit() {
   return (state.boot && state.boot.standardVisit) || {
-    summary: "Every SIGNL comped visit includes: 1 post or reel + 1 story that shares the post, within 48 hours of the visit, honest and disclosed, live at least 30 days, with tracked delivery proof. The goal is one post + one story within 48 hours of your visit; a post inside one week still counts, as a late delivery. Paid bookings carry the deliverables set in the booking's own terms. Content rights follow the visit, never the plan: on a comp visit the business may share the post natively only, with the creator tagged; no downloads, no reposting the file, no ad use. On a paid visit the business may also repost the post and run it as an ad for 90 days from the post date, under the one standard license every paid booking includes. A comped post can be licensed the same way, for 90 days, at the creator's listed licensing fee and only with their approval. The creator always owns their content, and nobody can edit it.",
+    summary: "Every SIGNL comped visit includes: 1 post or reel + 1 story that shares the post, within 48 hours of the visit, honest and disclosed, live at least 30 days, with tracked delivery proof. The goal is one post + one story within 48 hours of your visit; a post inside one week still counts, as a late delivery. The 48-hour goal and these standards apply to comped visits; paid visits follow the posting terms agreed on the booking. Paid bookings carry the deliverables set in the booking's own terms. Content rights follow the visit, never the plan: on a comp visit the business may share the post natively only, with the creator tagged; no downloads, no reposting the file, no ad use. On a paid visit the business may also repost the post and run it as an ad for 90 days from the post date, under the one standard license every paid booking includes. A comped post can be licensed the same way, for 90 days, at the creator's listed licensing fee and only with their approval. The creator always owns their content, and nobody can edit it.",
   };
 }
 
@@ -1764,6 +1764,96 @@ function couponFaceLabelClient(coupon) {
   return `$${fmtMoney(coupon.amount)}`;
 }
 
+// ---------- Phase C: paid-visit posting terms (client mirrors) ----------
+// The same one control the server validates (router.js
+// normalizePostingTerms): Standard / Post by a date / Special
+// terms. The server sends the rendered line on the record
+// (postingTermsLine); these mirrors cover records built or
+// edited client-side (composer drafts, Sig) so every surface
+// states the terms in the same words.
+function fmtDateOnlyClient(s) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(s || ""))) return String(s || "");
+  const d = new Date(`${s}T12:00:00Z`);
+  if (Number.isNaN(d.getTime())) return String(s || "");
+  return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+}
+function postingTermsOfClient(x) {
+  const t = x && x.postingTerms && typeof x.postingTerms === "object" ? x.postingTerms : null;
+  if (!t || !["standard", "bydate", "window"].includes(t.type)) return { type: "standard" };
+  if (t.type === "bydate" && t.byDate) return { type: "bydate", byDate: t.byDate };
+  if (t.type === "window" && t.notBefore && t.byDate) return { type: "window", notBefore: t.notBefore, byDate: t.byDate, note: t.note || "" };
+  return { type: "standard" };
+}
+function postingTermsLineClient(x) {
+  if (x && typeof x.postingTermsLine === "string" && x.postingTermsLine) return x.postingTermsLine;
+  const t = postingTermsOfClient(x);
+  if (t.type === "bydate") return `Posting terms: post by ${fmtDateOnlyClient(t.byDate)}.`;
+  if (t.type === "window") return `Posting terms: post between ${fmtDateOnlyClient(t.notBefore)} and ${fmtDateOnlyClient(t.byDate)}.${t.note ? ` ${t.note}` : ""}`;
+  return "Posting terms: post within 7 days of the visit.";
+}
+// The control itself, shared by the paid sheet, the composer and
+// (in chip form) Sig: three radio choices, the date inputs for
+// the chosen one only, one note box for Special terms. prefix
+// namespaces the element ids per surface.
+function postingTermsControlHtml(prefix, current) {
+  // The control preserves the picked type even while its date
+  // is still blank (a composer re-render must not reset the
+  // choice); the stored-terms normalizer stays stricter.
+  const raw = current && typeof current === "object" ? current : {};
+  const t = { type: ["standard", "bydate", "window"].includes(raw.type) ? raw.type : "standard", byDate: raw.byDate || "", notBefore: raw.notBefore || "", note: raw.note || "" };
+  const sel = (v) => t.type === v ? "checked" : "";
+  const show = (v) => t.type === v ? "" : ` style="display:none"`;
+  return `<div class="field"><label>When is the post due?</label>
+    <div class="radio-stack" role="radiogroup" aria-label="Posting terms">
+      <label class="radio-chip"><input type="radio" name="${prefix}-pttype" value="standard" ${sel("standard")} onchange="postingTermsControlSync('${prefix}')"><span><strong>Standard</strong> · post within 7 days of the visit</span></label>
+      <label class="radio-chip"><input type="radio" name="${prefix}-pttype" value="bydate" ${sel("bydate")} onchange="postingTermsControlSync('${prefix}')"><span><strong>Post by a specific date</strong></span></label>
+      <label class="radio-chip"><input type="radio" name="${prefix}-pttype" value="window" ${sel("window")} onchange="postingTermsControlSync('${prefix}')"><span><strong>Special terms</strong> · a date window, with a short note</span></label>
+    </div>
+    <div id="${prefix}-pt-bydate" ${show("bydate")}><label>Post by</label><input type="date" id="${prefix}-pt-by" value="${esc(t.byDate || "")}"></div>
+    <div id="${prefix}-pt-window" ${show("window")}>
+      <div class="form-2col">
+        <div class="field"><label>Not before</label><input type="date" id="${prefix}-pt-from" value="${esc(t.notBefore || "")}"></div>
+        <div class="field"><label>Post by</label><input type="date" id="${prefix}-pt-to" value="${esc(t.byDate || "")}"></div>
+      </div>
+      <div class="field"><label>Note for the creator</label><input id="${prefix}-pt-note" maxlength="200" value="${esc(t.note || "")}" placeholder="For example: the post ties to our spring menu launch"></div>
+    </div>
+    <p class="small muted" style="margin:6px 0 0">The creator sees these exact terms on the offer before accepting, and accepting the booking accepts them.</p>
+    <p class="field-err" id="${prefix}-pt-err"></p>
+  </div>`;
+}
+function postingTermsControlSync(prefix) {
+  const type = (document.querySelector(`input[name='${prefix}-pttype']:checked`) || {}).value || "standard";
+  const by = document.getElementById(`${prefix}-pt-bydate`);
+  const win = document.getElementById(`${prefix}-pt-window`);
+  if (by) by.style.display = type === "bydate" ? "" : "none";
+  if (win) win.style.display = type === "window" ? "" : "none";
+  if (typeof offerDraftSync === "function" && prefix === "o2") offerDraftSync();
+}
+// Read the control into the structured shape the server stores,
+// validating in the same plain words the server uses. Returns
+// { terms } or { error }.
+function readPostingTermsControl(prefix) {
+  const type = (document.querySelector(`input[name='${prefix}-pttype']:checked`) || {}).value || "standard";
+  const val = (id) => { const el = document.getElementById(id); return el ? el.value : ""; };
+  const today = new Date().toISOString().slice(0, 10);
+  if (type === "bydate") {
+    const byDate = val(`${prefix}-pt-by`);
+    if (!byDate) return { error: "Pick the date the post is due by." };
+    if (byDate < today) return { error: "That post-by date is in the past. Pick a date from today on." };
+    return { terms: { type: "bydate", byDate } };
+  }
+  if (type === "window") {
+    const notBefore = val(`${prefix}-pt-from`);
+    const byDate = val(`${prefix}-pt-to`);
+    const note = val(`${prefix}-pt-note`).trim().slice(0, 200);
+    if (!notBefore || !byDate) return { error: "Special terms need both dates: the first day the post can go up, and the day it is due by." };
+    if (notBefore < today) return { error: "The first window date is in the past. Pick dates from today on." };
+    if (byDate < notBefore) return { error: "The due-by date cannot be before the window's first day. Move the due-by date later, or the first day earlier." };
+    return { terms: { type: "window", notBefore, byDate, note } };
+  }
+  return { terms: { type: "standard" } };
+}
+
 // V3: an offer's terms as compressed labeled rows (visible before
 // any accept tap) + the full plain-words version behind one tap.
 // Rights and deadlines stay visible in compressed form; nothing
@@ -1788,6 +1878,10 @@ function dealRowsHtml(o) {
   if (o.includes) main.push(["Included", esc(o.includes)]);
   if (o.experience) main.push(["Experience", esc(o.experience)]);
   terms.push(["Post", o.kind === "paid" ? `${deliverablePhraseClient(o)} &middot; within ${windowPhraseClient(dv84.windowHours)} &middot; live 30 days` : `${deliverablePhraseClient(o)} &middot; ${windowPhraseClient(dv84.windowHours)} &middot; honest, disclosed &middot; live 30 days`]);
+  // Phase C: a paid deal's agreed posting terms, in the exact
+  // words from the booking record, on the offer before accepting
+  // and on both sides' visit views after.
+  if (o.kind === "paid") terms.push(["Posting terms", esc(postingTermsLineClient(o).replace(/^Posting terms: /, ""))]);
   terms.push(["Rights", o.kind === "paid" ? "Share + repost + ads for 90 days &middot; no edits" : "Native share only &middot; no edits, downloads or ads"]);
   if (o.requiresSpanish) terms.push(["Language", "Content in Spanish"]);
   const render = (rows) => rows.map(([k, v]) => `<div class="drow"><span class="dk">${k}</span><span class="dv">${v}</span></div>`).join("");
@@ -1807,9 +1901,12 @@ function dealPlainWordsHtml(o) {
       ${o.kind === "paid" && o.paidBrief ? `<p class="small"><strong>Key points from the business:</strong> ${esc(o.paidBrief)}</p>` : ""}
       ${o.includes ? `<p class="small"><strong>Included:</strong> ${esc(o.includes)}</p>` : ""}
       ${o.experience ? `<p class="small"><strong>The experience:</strong> ${esc(o.experience)}</p>` : ""}
-      <p class="small"><strong>You post:</strong> ${deliverablePhraseClient(o)}, within ${windowPhraseClient(dv84.windowHours)} of your visit, honest, with the ${o.kind === "coupon" ? "coupon" : o.kind === "paid" ? "paid booking" : "comp"} disclosed. The post stays live at least 30 days. You check off by pasting the post link in My Visits.</p>
+      ${o.kind === "paid"
+        ? `<p class="small"><strong>You post:</strong> ${deliverablePhraseClient(o)}, honest, with the paid booking disclosed. The post stays live at least 30 days. You check off by pasting the post link in My Visits.</p>
+      <p class="small"><strong>${esc(postingTermsLineClient(o))}</strong> Paid visits follow the terms agreed on the booking, not the comped 48-hour ladder.</p>`
+        : `<p class="small"><strong>You post:</strong> ${deliverablePhraseClient(o)}, within ${windowPhraseClient(dv84.windowHours)} of your visit, honest, with the ${o.kind === "coupon" ? "coupon" : "comp"} disclosed. The post stays live at least 30 days. You check off by pasting the post link in My Visits.</p>`}
       ${o.kind === "paid" ? `<p class="small"><strong>Included:</strong> the standard license: the business can repost your post and run it as an ad for 90 days from the post date, never longer. It is created automatically with this booking as a dated record; there is nothing to fill in, for you or for them.</p>` : ""}
-      <p class="small muted">${dv84.windowHours === 48 ? "The goal is one post + one story within 48 hours of your visit. Up to a week at the outside; posting within 48 hours earns the Momentum." : "Up to a week at the outside. Posting inside your window is what earns the Momentum."}</p>
+      ${o.kind === "paid" ? "" : `<p class="small muted">${dv84.windowHours === 48 ? "The goal is one post + one story within 48 hours of your visit. Up to a week at the outside; posting within 48 hours earns the Momentum." : "Up to a week at the outside. Posting inside your window is what earns the Momentum."}</p>`}
       <p class="small"><strong>They can:</strong> ${rights.can.map(esc).join("; ")}</p>
       <p class="small"><strong>They can't:</strong> ${rights.cannot.map(esc).join("; ")}</p>
     </div>
@@ -1851,6 +1948,11 @@ function rightsForVisit(kind) {
 // Compliance standing banner for creators (paused / banned).
 function standingBannerHtml(u) {
   const st = u && u.standing;
+  // Phase C: the late-streak pause is a dated field, not a
+  // standing state; it gets its own banner while it stands.
+  if (u && u.lateStreakPauseUntil && Date.parse(u.lateStreakPauseUntil) > Date.now() && (!st || !st.state || st.state === "good")) {
+    return `<div class="notice"><strong>New offers are paused until ${esc(fmtDay(u.lateStreakPauseUntil))}.</strong> Three late posts in a row pause new offers for 14 days. Visits you already have booked are not affected, and the pause lifts on its own on that date.</div>`;
+  }
   if (!st || !st.state || st.state === "good") return "";
   if (st.state === "paused") {
     if (st.source === "strikes") {
@@ -1868,8 +1970,12 @@ function standingBannerHtml(u) {
 // whenever it is above zero (refinement bundle, 2026-10-20).
 function strikeStatusHtml(u) {
   const n = u && Number(u.noShowStrikes) > 0 ? Math.floor(Number(u.noShowStrikes)) : 0;
-  if (!n) return "";
-  return `<p class="small"><strong>Visit strikes: ${n}.</strong> Letting a booked visit window expire unused counts as a strike, and strikes can pause your account for review.</p>`;
+  // Phase C: the silent no-show count rides beside the window
+  // strikes, with its own plain consequence (two removes you).
+  const s = u && Number(u.silentStrikes) > 0 ? Math.floor(Number(u.silentStrikes)) : 0;
+  const silent = s ? `<p class="small"><strong>Silent no-show strikes: ${s} of 2.</strong> A visit you redeemed and then went silent on (no post, and no message to the business or to SIGNL) counts as a strike. Two strikes remove you from the platform.</p>` : "";
+  if (!n) return silent;
+  return `<p class="small"><strong>Visit strikes: ${n}.</strong> Letting a booked visit window expire unused counts as a strike, and strikes can pause your account for review.</p>` + silent;
 }
 
 function fmtDate(iso) {
@@ -3575,6 +3681,10 @@ function sigBankFor(biz) {
       a: "Licensing is how a business reuses a post you already made. They request a license at the fee you set, and you approve or decline each use. An approved license lets them repost it and run it as an ad for 90 days, starting the day you approve it and never longer. You keep 97% of the fee, and when the business runs your post as an ad, you earn +25 Momentum. A paid booking is different: its standard license is included automatically for 90 days from the post date, with nothing for you or the business to fill in. A request to extend past those 90 days comes to you the same way, at your listed fee, for your yes or no.", flow: (c) => c.live ? "See my earnings" : null },
     { id: "adlabel", q: "My London post says ad label missing. What do I do?", ph: ["ad label", "ad label missing", "#ad", "london post not delivered", "post does not count as delivered"], g: [["ad", "label", "#ad"], ["missing", "fix", "what", "do", "count", "delivered", "london"]], s: ["ad label"],
       a: "UK rules count a comped or paid London post as an ad, so the post must carry #ad up front. If the caption you submitted did not carry it, the visit is blocked as Ad label missing and does not count as delivered yet. The fix is on the visit card itself: open Visits, find the visit under Done, check the caption box (it starts with your disclosure line), and tap Confirm the ad label. The visit counts as delivered the moment the label is verified.", flow: (c) => c.live ? "Fix the ad label" : null },
+    { id: "postingterms", q: "What are posting terms on a paid booking?", ph: ["posting terms", "post by a date", "when is my post due", "paid post due", "special terms"], g: [["posting", "post"], ["terms", "due", "date", "when", "special"]], s: ["posting terms"],
+      a: "On a paid booking the business picks the posting terms before you accept: Standard (post within 7 days of the visit), Post by a specific date, or Special terms (a date window with a short note). The exact terms are on the offer and on your visit card, and accepting the booking accepts them. A paid visit's clock runs off those agreed terms, not the comped 48-hour ladder: no late-streak counting and no strikes ever come from a paid visit's terms.", flow: (c) => c.live ? "Add a post link" : null },
+    { id: "ladder", q: "What happens if I post late, or never post?", ph: ["post late", "never post", "didn't post", "silent no-show", "strike", "removed", "paused", "late posts in a row"], g: [["post", "strike", "silent"], ["late", "never", "paused", "removed", "strike", "happens"]], s: ["late"],
+      a: "On comped visits: a late post inside the week still counts as delivered, with no on-time Momentum and a hit on your on-time record. Three late posts in a row pause new offers for 14 days. No post at one week pauses your account until the post lands. A redeemed visit that ends with no post and no word from you (no message to the business or to SIGNL) is a silent no-show strike; two strikes remove you. And a comp you consumed with no post a month later makes the account no longer active. If something goes wrong, message the business in the app: a word from you is what keeps a miss from counting as silent." },
     { id: "profilegate", q: "What do I need to finish my profile?", ph: ["finish my profile", "complete my profile", "profile complete", "businesses see me", "not showing up", "why can't businesses"], g: [["profile", "businesses", "roster"], ["finish", "complete", "need", "missing", "see", "visible", "showing"]], s: [],
       a: (c) => {
         let t = "Businesses only see creators with a finished profile, and approval is not the gate; a finished profile is. Finished means four things: your home city, an audience count above zero, at least one category, and your local audience share reported. A photo is not required, but it earns +10 Momentum and makes your card stronger.";
@@ -5618,10 +5728,26 @@ function sigB1AskDeliverables() {
   const isStd = cur.posts === std.posts && cur.story === std.story && cur.windowHours === std.windowHours;
   const winCycle = [24, 48, 72, 168];
   sigOpAsk(ST(`What does the creator owe? Right now: ${deliverablePhraseClient({ kind: d.kind, deliverables: cur })}, post within ${windowPhraseClient(cur.windowHours)}.${isStd ? " That is SIGNL's recommended standard for this kind of deal." : ""}${d.kind === "paid" ? " A paid booking also includes the standard license (repost and ad use for 90 days from the post date); that part is set by SIGNL and cannot be changed." : " Rights on this deal: native share only."} Tap a chip to change a piece, or keep it as shown.`, `¿Qué debe entregar el creador? Ahora: ${deliverablePhraseClient({ kind: d.kind, deliverables: cur })}, publicar en ${windowPhraseClient(cur.windowHours)}.${isStd ? " Es el estándar recomendado de SIGNL para este tipo de trato." : ""}${d.kind === "paid" ? " Una reserva pagada también incluye la licencia estándar (republicar y anuncios por noventa días desde la publicación); esa parte la fija SIGNL y no se puede cambiar." : " Derechos en este trato: solo compartir nativo."} Toca una opción para cambiar algo, o déjalo así.`), [
-    { label: ST("Keep as shown", "Dejar así"), primary: true, run: () => sigOpPick(ST("Keep as shown", "Dejar así"), async () => sigB1AskBriefGoal()) },
+    { label: ST("Keep as shown", "Dejar así"), primary: true, run: () => sigOpPick(ST("Keep as shown", "Dejar así"), async () => { if (d.kind === "paid") sigB1AskPostingTerms(); else sigB1AskBriefGoal(); }) },
     { label: `${ST("Story", "Historia")}: ${cur.story ? ST("yes", "sí") : ST("no", "no")}`, run: () => sigOpPick(ST("Story", "Historia"), async () => { cur.story = !cur.story; sigB1AskDeliverables(); }) },
     { label: `${ST("Posts", "Publicaciones")}: ${cur.posts}`, run: () => sigOpPick(ST("Posts", "Publicaciones"), async () => { cur.posts = cur.posts >= 3 ? 1 : cur.posts + 1; sigB1AskDeliverables(); }) },
     { label: `${ST("Post within", "Publicar en")}: ${windowPhraseClient(cur.windowHours)}`, run: () => sigOpPick(ST("Post within", "Publicar en"), async () => { cur.windowHours = winCycle[(winCycle.indexOf(cur.windowHours) + 1) % winCycle.length]; sigB1AskDeliverables(); }) },
+  ]);
+}
+// The posting-terms step (Phase C): paid offers only, the same
+// ONE control as the composer and the paid sheet, in chips:
+// Standard (pre-picked), a post-by date, or special terms (a
+// window plus a short note). Dates are typed; a bad or past
+// date re-asks in plain words and nothing is stored.
+function sigB1AskPostingTerms() {
+  const f = state.sigFlow;
+  const d = f.data;
+  f.step = "postingterms";
+  const cur = d.postingTerms || { type: "standard" };
+  sigOpAsk(ST(`When is the post due? Right now: ${postingTermsLineClient({ postingTerms: cur }).replace(/^Posting terms: /, "")} The creator sees the exact terms before accepting, and accepting accepts them.`, `¿Cuándo debe publicarse? Ahora: ${postingTermsLineClient({ postingTerms: cur }).replace(/^Posting terms: /, "")} El creador ve los términos exactos antes de aceptar, y aceptar es aceptarlos.`), [
+    { label: ST("Standard: within 7 days of the visit", "Estándar: en 7 días desde la visita"), primary: cur.type === "standard", run: () => sigOpPick(ST("Standard", "Estándar"), async () => { d.postingTerms = { type: "standard" }; sigB1AskBriefGoal(); }) },
+    { label: ST("Post by a specific date", "Publicar en una fecha"), run: () => sigOpPick(ST("Post by a date", "En una fecha"), async () => { f.step = "postingbydate"; sigOpAsk(ST("Type the date the post is due by, like 2026-11-20.", "Escribe la fecha límite, como 2026-11-20.")); }) },
+    { label: ST("Special terms: a date window + a note", "Términos especiales: ventana + nota"), run: () => sigOpPick(ST("Special terms", "Términos especiales"), async () => { f.step = "postingfrom"; sigOpAsk(ST("Special terms: type the FIRST day the post can go up, like 2026-11-20.", "Términos especiales: escribe el PRIMER día para publicar, como 2026-11-20.")); }) },
   ]);
 }
 function sigB1AskSpots() {
@@ -5760,6 +5886,7 @@ function sigB1SummaryText() {
     `${ST("Offer", "Oferta")}: "${d.title}" (${d.lane === "direct" ? ST(`direct to ${d.creatorName || "one creator"}`, `directa a ${d.creatorName || "un creador"}`) : ST("open to your market", "abierta a tu mercado")})`,
     d.kind === "paid" ? `${ST("Paid", "Pago")}: $${fmtPrice(d.rate)} cash${d.lane === "direct" && d.creatorRate ? ST(" at their listed rate", " a su tarifa publicada") : ""}` : d.kind === "coupon" ? `${ST("Coupon", "Cupón")}: ${couponSummaryClient(sigB1CouponOf(), bizName)}${d.cexpires ? ` · ${ST("expires", "vence")} ${fmtDay(d.cexpires)}` : ""}` : `${ST("Comp", "Cortesía")}: ${d.comped} (cap $${fmtMoney(d.cap)}, covers ${d.covers})`,
     `${ST("Deliverables", "Entregas")}: ${deliverablePhraseClient({ kind: d.kind, deliverables: sigB1DeliverablesOf() })} · ${ST("post within", "publicar en")} ${windowPhraseClient(sigB1DeliverablesOf().windowHours)}${d.kind === "paid" ? ST(" · standard license included (90 days)", " · licencia estándar incluida (noventa días)") : ST(" · native share only", " · solo compartir nativo")}`,
+    ...(d.kind === "paid" ? [`${postingTermsLineClient({ postingTerms: d.postingTerms || { type: "standard" } })}`] : []),
     `${ST("Spots", "Cupos")}: ${d.spots}${d.lane === "open" && (d.tiers || []).length ? ` · ${ST("tiers", "niveles")}: ${d.tiers.join(", ")}` : ""}`,
     d.lane === "open" ? `${ST("Timing", "Tiempo")}: ${ST("applications", "aplicaciones")} ${d.applyDays || 3}d · ${ST("visits within", "visitas en")} ${d.windowDays || 7}d` : `${ST("Timing", "Tiempo")}: ${d.windowMode === "thisweek" ? ST("this week", "esta semana") : ST("within 7 days", "en 7 días")}`,
     ...(d.paidBrief ? [`${ST("Key points", "Puntos clave")}: ${d.paidBrief}`] : []),
@@ -5809,6 +5936,9 @@ async function sigB1Commit() {
   payload.deliverables = sigB1DeliverablesOf();
   if (d.kind === "paid") {
     payload.cashRate = Number(d.rate);
+    // Phase C: the posting terms set in the posting-terms step
+    // (Standard when the step kept the default).
+    payload.postingTerms = d.postingTerms || { type: "standard" };
     if (d.paidBrief && d.paidBrief.trim()) payload.paidBrief = d.paidBrief.trim();
   } else if (d.kind === "coupon") {
     payload.coupon = sigB1CouponOf();
@@ -5939,6 +6069,29 @@ async function sigB1Step(f, text, norm) {
     case "paidbrief":
       d.paidBrief = t.slice(0, 500);
       sigB1AskSpots();
+      return;
+    case "postingbydate": case "postingfrom": case "postingto": {
+      const iso = cgParseDate(t);
+      if (!iso) { sigOpAsk(ST("I could not read that date. Type it like 2026-11-20.", "No pude leer esa fecha. Escríbela como 2026-11-20.")); return; }
+      if (iso < new Date().toISOString().slice(0, 10)) { sigOpAsk(ST("That date is in the past. Pick a date from today on.", "Esa fecha ya pasó. Elige una desde hoy.")); return; }
+      if (f.step === "postingbydate") { d.postingTerms = { type: "bydate", byDate: iso }; sigB1AskBriefGoal(); return; }
+      if (f.step === "postingfrom") {
+        d.postingTerms = { type: "window", notBefore: iso, byDate: "", note: "" };
+        f.step = "postingto";
+        sigOpAsk(ST("Now type the day the post is due by, like 2026-11-27.", "Ahora escribe el día límite, como 2026-11-27."));
+        return;
+      }
+      if (d.postingTerms && iso < d.postingTerms.notBefore) { sigOpAsk(ST("The due-by date cannot be before the window's first day. Type a later due-by date.", "La fecha límite no puede ser antes del primer día. Escribe una fecha límite posterior.")); return; }
+      d.postingTerms.byDate = iso;
+      f.step = "postingnote";
+      sigOpAsk(ST("Last piece: a short note for the creator about these terms, or tap Skip.", "Lo último: una nota corta para el creador, o toca Saltar."), [
+        { label: ST("Skip", "Saltar"), run: () => sigOpPick(ST("Skip", "Saltar"), async () => { if (d.postingTerms) d.postingTerms.note = ""; sigB1AskBriefGoal(); }) },
+      ]);
+      return;
+    }
+    case "postingnote":
+      if (d.postingTerms) d.postingTerms.note = t.slice(0, 200);
+      sigB1AskBriefGoal();
       return;
     case "spots": {
       const n = sigOpNum(t);
@@ -9244,6 +9397,7 @@ function bookPaidVisit(creatorId) {
       : `<p class="small muted">No card is charged in the app yet. This records the booking and holds the amount in the app ledger. It is released after the post is live and the 48 hour hold passes.</p>`}
     ${growthNudgeHtml()}
     <div class="field"><label>Key points for the creator (optional)</label><textarea id="paid-brief" rows="3" maxlength="500" placeholder="What to feature, names, dates"></textarea><p class="small muted">${PAID_BRIEF_GUIDANCE}</p></div>
+    ${postingTermsControlHtml("paid-sheet", null)}
     <button class="btn" style="width:100%" id="paid-sheet-book">${paymentsLive() && !cardOnFileView() ? "Add a card to book" : "Book paid visit"}</button>
     <button class="btn ghost" style="width:100%;margin-top:8px" id="paid-sheet-cancel">Cancel</button>
   </div>`;
@@ -9254,9 +9408,15 @@ function bookPaidVisit(creatorId) {
     if (paymentsLive() && !cardOnFileView()) { closePaidSheet(); addBusinessCard(); return; }
     const briefEl = document.getElementById("paid-brief");
     const paidBrief = briefEl ? briefEl.value.trim().slice(0, 500) : "";
+    // Phase C: the posting terms ride the booking; a bad date
+    // refuses here in plain words, the sheet stays open.
+    const termsRead = readPostingTermsControl("paid-sheet");
+    const termsErr = document.getElementById("paid-sheet-pt-err");
+    if (termsRead.error) { if (termsErr) termsErr.textContent = termsRead.error; return; }
+    if (termsErr) termsErr.textContent = "";
     closePaidSheet();
     try {
-      const data = await api("POST", "/bookings/paid", { creatorId, ...(paidBrief ? { paidBrief } : {}) });
+      const data = await api("POST", "/bookings/paid", { creatorId, ...(paidBrief ? { paidBrief } : {}), postingTerms: termsRead.terms });
       state.tab = "Visits & Posts";
       render();
       showBookingCard(data.booking, "Paid visit booked", data.booking.paidLane ? data.booking.paidLane.paymentNote : "");
@@ -13374,6 +13534,7 @@ async function loadDirectOffers() {
               ${visitRulesGateHtml()}
               <button class="btn book" type="submit">Accept</button>
               <p class="small muted" style="margin:6px 0 0">${BOOKING_STARTED_LINE}</p>
+              ${o.kind === "paid" ? `<p class="small muted" style="margin:2px 0 0">Accepting this booking accepts its posting terms: ${esc(postingTermsLineClient(o).replace(/^Posting terms: /, ""))}</p>` : ""}
             </form>
             ${o.creatorId ? `<button class="btn small-btn danger" onclick="declineOffer('${o.id}')">Decline</button>` : ""}`}
             <button class="btn small-btn ghost" data-ctx="${esc(o.title)}" onclick="return openThreadCtx('${o.businessId}', this.dataset.ctx)">Message</button>
@@ -14285,13 +14446,16 @@ function visitCard(b, role) {
   }
   if (b.redeemedAt) {
     html += `<p class="small muted">Redeemed ${fmtDate(b.redeemedAt)} (${b.redeemMethod === "business_confirm" ? "business confirmed" : "code at counter"}). Post deadline: <strong>${fmtDate(b.postDeadline)}</strong>.</p>`;
+    // Phase C: a paid visit card states its agreed posting
+    // terms, the same line the creator accepted.
+    if (b.kind === "paid" || b.paidLane) html += `<p class="small"><strong>${esc(postingTermsLineClient(b))}</strong> Paid visits follow the terms agreed on the booking.</p>`;
   }
   if (role === "creator" && b.redeemedAt && !post) {
     const late = b.compliance && (b.compliance.status === "overdue" || b.compliance.status === "paused" || b.compliance.status === "missed");
     html += `
     <form onsubmit="return submitPost(event, '${b.id}')">
       <h4 style="margin:10px 0 4px">Post your proof</h4>
-      ${late ? `<p class="small"><strong>This post is past its ${windowPhraseClient(deliverablesOfClient(b).windowHours)} deadline.</strong> Post within ${windowPhraseClient(deliverablesOfClient(b).windowHours)} for full credit. A late post inside the catch-up window still counts, and the missed deadline stays on your record. No link, no check-off.</p>` : `<p class="small muted">Your check-off is the post link itself. Paste it here and the visit is marked delivered${b.compliance && b.compliance.deadline ? ` (deadline ${esc(fmtDate(b.compliance.deadline))})` : ""}. Post within ${windowPhraseClient(deliverablesOfClient(b).windowHours)} for full credit. A late post inside the catch-up window still counts.</p>`}
+      ${(b.kind === "paid" || b.paidLane) ? `<p class="small muted">Your check-off is the post link itself. Paste it here and the visit is marked delivered. This paid visit runs on its agreed terms: ${esc(postingTermsLineClient(b).replace(/^Posting terms: /, ""))}</p>` : late ? `<p class="small"><strong>This post is past its ${windowPhraseClient(deliverablesOfClient(b).windowHours)} deadline.</strong> Post within ${windowPhraseClient(deliverablesOfClient(b).windowHours)} for full credit. A late post inside the catch-up window still counts, and the missed deadline stays on your record. No link, no check-off.</p>` : `<p class="small muted">Your check-off is the post link itself. Paste it here and the visit is marked delivered${b.compliance && b.compliance.deadline ? ` (deadline ${esc(fmtDate(b.compliance.deadline))})` : ""}. Post within ${windowPhraseClient(deliverablesOfClient(b).windowHours)} for full credit. A late post inside the catch-up window still counts.</p>`}
       <div class="field"><label>Link to your ${esc(primaryLabelClient((state.user && state.user.creator && state.user.creator.primaryPlatform) || "instagram"))} post</label><input id="post-url-${b.id}" type="url" placeholder="https://${esc(primaryMetaClient((state.user && state.user.creator && state.user.creator.primaryPlatform) || "instagram").host)}..." required></div>
       <label class="ckrow"><input type="checkbox" class="ckbox" id="post-disc-${b.id}"><span>My post clearly discloses the comp (for example #ad or "comped by the business"), as the FTC requires.</span></label>
       ${b.adDisclosure ? `<div class="field"><label>Your post caption (UK ad rule: #ad up front)</label><textarea id="post-caption-${b.id}" rows="2">${esc(disclosureLine(b))}</textarea><p class="small muted">${esc(b.adDisclosure.clause)} This visit does not count as delivered until the ad label is verified.</p></div>` : ""}
@@ -17984,6 +18148,13 @@ function duplicateOffer(offerId) {
     dstory: o.deliverables ? deliverablesOfClient(o).story : undefined,
     dwindow: o.deliverables ? String(deliverablesOfClient(o).windowHours) : "",
     deliverablesTouched: !!o.deliverables,
+    // Phase C: a duplicated or edited paid offer brings its
+    // posting terms into the draft, in the control's fields.
+    pttype: o.postingTerms ? postingTermsOfClient(o).type : "",
+    ptByDate: o.postingTerms && postingTermsOfClient(o).type === "bydate" ? postingTermsOfClient(o).byDate : "",
+    ptWinFrom: o.postingTerms && postingTermsOfClient(o).type === "window" ? postingTermsOfClient(o).notBefore : "",
+    ptWinTo: o.postingTerms && postingTermsOfClient(o).type === "window" ? postingTermsOfClient(o).byDate : "",
+    ptNote: o.postingTerms && postingTermsOfClient(o).type === "window" ? (postingTermsOfClient(o).note || "") : "",
   };
   state.offersSeg = "live";
   state.tab = "Campaign Setup";
@@ -18158,6 +18329,11 @@ function offerDraftSync() {
   set("dposts", "o2-dposts"); set("dwindow", "o2-dwindow");
   const dstory = document.getElementById("o2-dstory");
   if (dstory) d.dstory = !!dstory.checked;
+  // Phase C: the posting-terms control rides the same draft,
+  // one field per input so switching choices never loses a date.
+  const pttype = (document.querySelector("input[name='o2-pttype']:checked") || {}).value;
+  if (pttype) d.pttype = pttype;
+  set("ptByDate", "o2-pt-by"); set("ptWinFrom", "o2-pt-from"); set("ptWinTo", "o2-pt-to"); set("ptNote", "o2-pt-note");
   const bgoal = (document.querySelector("input[name='o2-bgoal']:checked") || {}).value;
   if (bgoal !== undefined) d.briefGoal = bgoal || "";
   const packet = document.getElementById("o2-packet");
@@ -18265,7 +18441,12 @@ function briefBlockHtml(x) {
   if (b.timing) rows.push(`<div class="ui-row"><span class="k">Timing</span><span class="v">${esc(b.timing)}</span></div>`);
   if (b.callToAction) rows.push(`<div class="ui-row"><span class="k">Call to action</span><span class="v">${esc(b.callToAction)}</span></div>`);
   if (!rows.length) return "";
-  return `<div class="showcase-block"><h4>Your brief</h4><div class="stack-list">${rows.join("")}</div><p class="small muted" style="margin:6px 0 0">Key points, never a script. Post honestly, in your own words.</p></div>`;
+  // Phase C comped-only disclaimer, in the brief itself: the
+  // 48-hour goal and the standards are the comped lane's; a paid
+  // visit's brief carries its agreed posting terms instead
+  // (they render in the deal rows above).
+  const scopeLine = kindOfClient(x) === "paid" ? "" : `<p class="small muted" style="margin:6px 0 0">The 48-hour goal and these standards apply to comped visits; paid visits follow the posting terms agreed on the booking.</p>`;
+  return `<div class="showcase-block"><h4>Your brief</h4><div class="stack-list">${rows.join("")}</div><p class="small muted" style="margin:6px 0 0">Key points, never a script. Post honestly, in your own words.</p>${scopeLine}</div>`;
 }
 // The asset packet block (creator visit view): the business's
 // logo link, key links, talking points, handle and hashtags,
@@ -18411,6 +18592,27 @@ function offerDeliverablesReset() {
   state.offerDraft.deliverablesTouched = false;
   loadCampaignSetup();
   return false;
+}
+// The composer's draft posting terms: the control's current
+// value (type preserved while a date is blank) and the stored
+// shape the payload sends.
+function draftPostingTermsCurrent(d) {
+  const dd = d || {};
+  if (dd.pttype === "bydate") return { type: "bydate", byDate: dd.ptByDate || "" };
+  if (dd.pttype === "window") return { type: "window", notBefore: dd.ptWinFrom || "", byDate: dd.ptWinTo || "", note: dd.ptNote || "" };
+  return { type: "standard" };
+}
+function draftPostingTerms(d) {
+  const t = draftPostingTermsCurrent(d);
+  if (t.type === "bydate") return { type: "bydate", byDate: t.byDate };
+  if (t.type === "window") return { type: "window", notBefore: t.notBefore, byDate: t.byDate, note: String(t.note || "").trim().slice(0, 200) };
+  return { type: "standard" };
+}
+// The composer's posting-terms editor: the shared control,
+// shown only for paid offers (comped visits run on the ladder).
+function postingTermsEditorHtml(d, kind) {
+  if (kind !== "paid") return "";
+  return postingTermsControlHtml("o2", draftPostingTermsCurrent(d));
 }
 // Kind switch: until the business edits the deliverables
 // themselves, the editor follows the newly picked kind's
@@ -18681,6 +18883,17 @@ function campaignGuideNext() {
     ]);
     return;
   }
+  if (d.kind === "paid" && !d.postingTermsSeen) {
+    // Phase C: the same ONE posting-terms control, in chips.
+    cg.step = "postingterms";
+    const cur = d.postingTerms ? postingTermsLineClient({ postingTerms: d.postingTerms }) : "Posting terms: post within 7 days of the visit.";
+    campaignGuideSay(`When is the post due on this paid campaign? Right now: ${cur.replace(/^Posting terms: /, "")} The creator sees the exact terms before accepting, and accepting accepts them.`, [
+      { label: "Standard: within 7 days of the visit", field: "postingterms", value: "standard", primary: !d.postingTerms || d.postingTerms.type === "standard" },
+      { label: "Post by a specific date", field: "postingterms", value: "bydate", primary: d.postingTerms && d.postingTerms.type === "bydate" },
+      { label: "Special terms: a date window + a note", field: "postingterms", value: "window", primary: d.postingTerms && d.postingTerms.type === "window" },
+    ]);
+    return;
+  }
   if (!d.fitSeen) {
     cg.step = "fit";
     campaignGuideSay("Who fits this campaign? Tap any that fit, then tap Done. Leave all untapped and any creator who fits can apply.", [
@@ -18709,6 +18922,7 @@ function campaignGuideSummary() {
     `Who fits: ${d.tiers.length ? d.tiers.join(", ") : "any creator who fits"}.`,
     `When: ${d.windowNote}.`,
     `What the creator owes: ${deliverablePhraseClient({ kind: d.kind, deliverables: cur })}, post within ${windowPhraseClient(cur.windowHours)}${d.kind === "paid" ? ". The standard licence is included: repost and ad use for 90 days" : ""}.`,
+    ...(d.kind === "paid" ? [`${postingTermsLineClient({ postingTerms: d.postingTerms || { type: "standard" } })} The creator sees these terms before accepting.`] : []),
     `From: ${known.businessName || "your business"}${known.visits ? `. Your plan includes ${known.visits} visits a month` : ""}.`,
     ...(isFoundingBusiness(state.user) ? ["Your market has not opened yet, so this saves as a draft for opening day. Nothing sends to a creator until then."] : ["It saves as a draft. You can check it, change it, or send it from Your campaigns."]),
   ];
@@ -18729,7 +18943,7 @@ async function campaignGuideConfirm() {
     deliverables: draftDeliverables(d, d.kind),
     targetTiers: d.tiers || [], applyWindowDays: 3, windowDays: 7,
   };
-  if (d.kind === "paid") payload.cashRate = Number(d.rate);
+  if (d.kind === "paid") { payload.cashRate = Number(d.rate); payload.postingTerms = d.postingTerms || { type: "standard" }; }
   else if (d.kind === "coupon") {
     payload.coupon = { type: d.ctype || "amount_off", amount: d.camount != null ? Number(d.camount) : null, percent: d.cpercent != null ? Number(d.cpercent) : null, cap: null, appliesTo: String(d.capplies || "").trim(), expiresAt: null };
     payload.whatComped = "";
@@ -18771,12 +18985,31 @@ function campaignGuidePick(field, value) {
       campaignGuideNext();
     }
   }
+  else if (field === "postingterms") {
+    if (value === "standard") { d.postingTerms = { type: "standard" }; d.postingTermsSeen = true; campaignGuideNext(); }
+    else if (value === "bydate") { cg.step = "postingbydate"; campaignGuideSay("Type the date the post is due by, like 2026-11-20."); }
+    else if (value === "window") { cg.step = "postingfrom"; campaignGuideSay("Special terms: type the FIRST day the post can go up, like 2026-11-20."); }
+    else campaignGuideRender();
+  }
+  else if (field === "postingnoteskip") { if (d.postingTerms) d.postingTerms.note = ""; d.postingTermsSeen = true; campaignGuideNext(); }
   else if (field === "tier") { d.tiers = d.tiers.includes(value) ? d.tiers.filter((t) => t !== value) : [...d.tiers, value]; campaignGuideNext(); }
   else if (field === "fitdone") { d.fitSeen = true; campaignGuideNext(); }
   else if (field === "confirm") { cg.chips = []; campaignGuideRender(); campaignGuideConfirm(); }
   else if (field === "restart") { campaignGuideRestart(); }
   else campaignGuideRender();
   return false;
+}
+// A date typed in the campaign guide: ISO (2026-11-20) first,
+// then anything Date.parse can read ("Nov 20 2026"). Returns a
+// YYYY-MM-DD string or null.
+function cgParseDate(text) {
+  const t = String(text || "").trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return t;
+  const ms = Date.parse(t);
+  if (!Number.isFinite(ms)) return null;
+  const d = new Date(ms);
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 function campaignGuideAnswer(text) {
   const cg = state.campaignGuide;
@@ -18795,6 +19028,26 @@ function campaignGuideAnswer(text) {
       d.camount = Math.round(num); break;
     case "couponapplies": d.capplies = text.slice(0, 120); break;
     case "dates": d.windowNote = text.slice(0, 140); break;
+    case "postingbydate": case "postingfrom": case "postingto": {
+      const iso = cgParseDate(text);
+      if (!iso) { campaignGuideSay("I could not read that date. Type it like 2026-11-20."); return; }
+      if (iso < new Date().toISOString().slice(0, 10)) { campaignGuideSay("That date is in the past. Pick a date from today on."); return; }
+      if (cg.step === "postingbydate") { d.postingTerms = { type: "bydate", byDate: iso }; d.postingTermsSeen = true; }
+      else if (cg.step === "postingfrom") {
+        d.postingTerms = { type: "window", notBefore: iso, byDate: "", note: "" };
+        cg.step = "postingto";
+        campaignGuideSay("Now type the day the post is due by, like 2026-11-27.");
+        return;
+      } else {
+        if (d.postingTerms && iso < d.postingTerms.notBefore) { campaignGuideSay("The due-by date cannot be before the window's first day. Type a later due-by date."); return; }
+        d.postingTerms.byDate = iso;
+        cg.step = "postingnote";
+        campaignGuideSay("Last piece: a short note for the creator about these terms, or tap Skip.", [{ label: "Skip the note", field: "postingnoteskip", value: "skip" }]);
+        return;
+      }
+      break;
+    }
+    case "postingnote": if (d.postingTerms) d.postingTerms.note = text.slice(0, 200); d.postingTermsSeen = true; break;
     default: campaignGuideSay("Tap one of the choices above, or start over below the summary."); return;
   }
   campaignGuideNext();
@@ -18807,7 +19060,7 @@ function campaignGuideSubmit(ev) {
   if (input) input.value = "";
   const cg = state.campaignGuide;
   if (!cg) { campaignGuideStart(text); return false; }
-  if (["title", "comped", "value", "couponamount", "couponapplies", "dates"].includes(cg.step)) { campaignGuideAnswer(text); return false; }
+  if (["title", "comped", "value", "couponamount", "couponapplies", "dates", "postingbydate", "postingfrom", "postingto", "postingnote"].includes(cg.step)) { campaignGuideAnswer(text); return false; }
   cg.turns.push({ who: "user", text });
   campaignGuideSay("Tap one of the choices above to answer this one. One question at a time keeps the draft right.");
   return false;
@@ -19011,6 +19264,7 @@ async function loadCampaignSetup() {
         <div class="field"><label>Call to action <span class="opt-tag">Optional</span></label><input id="o2-bcta" maxlength="120" value="${dv(dft.briefCta)}" placeholder="Tell followers to book through the link" oninput="offerDraftSync()"></div>
       </div>
       ${deliverablesEditorHtml(dft, dft.kind || "comp")}
+      ${postingTermsEditorHtml(dft, dft.kind || "comp")}
       <div class="field"><label class="tgl-row"><input type="checkbox" class="sw" id="o2-packet" ${dft.packetManual ? (dft.packetAttach ? "checked" : "") : (dft.kind === "paid" ? "checked" : "")} onchange="offerDraftSync(); state.offerDraft.packetManual = true;"><span><strong>Attach my asset packet</strong>: your logo link, key links, talking points, handle and hashtags ride with the offer, and the creator sees them in their visit view. On by default for paid offers. Build or edit the packet on your business Profile.</span></label></div>
       </div>
       ${mode === "open" ? `
@@ -19264,6 +19518,8 @@ async function createOfferV2(e, draft) {
   payload.deliverables = draftDeliverables(d, kind);
   if (kind === "paid") {
     payload.cashRate = parseFloat(d.rate);
+    // Phase C: the posting terms picked in the one control.
+    payload.postingTerms = draftPostingTerms(d);
     if (d.brief && d.brief.trim()) payload.paidBrief = d.brief.trim();
   } else if (kind === "coupon") {
     const t = d.ctype || "store_credit";
@@ -21273,7 +21529,10 @@ async function loadCompliance() {
         <p class="small">Redeemed: ${r.redeemedAt ? esc(fmtDate(r.redeemedAt)) : "not yet"} &middot; Post deadline: ${r.postDeadline ? esc(fmtDate(r.postDeadline)) : "n/a"} &middot; Hard stop: ${r.pauseAt ? esc(fmtDate(r.pauseAt)) : "n/a"} &middot; Ban lands: ${r.banAt ? esc(fmtDate(r.banAt)) : "n/a"}</p>
         ${r.proofUrl ? `<p class="small">Proof: <a href="${esc(r.proofUrl)}" target="_blank" rel="noopener">${esc(r.proofUrl)}</a>${r.proofSubmittedAt ? ` &middot; submitted ${esc(fmtDate(r.proofSubmittedAt))}` : ""}</p>` : ""}
         ${r.honorReportedAt ? `<p class="small">Honor report ${esc(fmtDate(r.honorReportedAt))}: &ldquo;${esc(r.honorReason || "")}&rdquo; This visit's compliance clock is void.</p>` : ""}
-        <p class="small">Creator standing: <strong>${esc(r.creatorStanding)}</strong></p>
+        ${r.extremelyLate ? `<p class="small"><strong>Delivered extremely late</strong> (more than two weeks after the visit, inside the month).</p>` : ""}
+        ${r.silentStrike === "counted" ? `<p class="small"><strong>Silent no-show strike counted on this visit</strong> (no post, no message from the creator).</p>` : r.silentStrike === "waived_communicated" ? `<p class="small">No silent strike on this visit: the creator communicated, so the miss was not silent.</p>` : ""}
+        <p class="small">Creator standing: <strong>${esc(r.creatorStanding)}</strong>${r.creatorStandingSource ? ` &middot; source: ${esc(r.creatorStandingSource)}` : ""}${r.creatorSilentStrikes ? ` &middot; Silent no-show strikes: <strong>${r.creatorSilentStrikes} of 2</strong>` : ""}${r.creatorLateStreakPauseUntil ? ` &middot; New offers paused (late streak) until ${esc(fmtDate(r.creatorLateStreakPauseUntil))}` : ""}</p>
+        ${r.creatorStandingReason ? `<p class="small">${esc(r.creatorStandingReason)}</p>` : ""}
         ${r.creatorStanding === "banned" ? `<button class="btn small-btn" onclick="reinstateCreator('${r.creatorId}')">Reinstate creator</button>` : ""}
         ${r.creatorStanding === "paused" ? `<button class="btn small-btn ghost" onclick="reinstateCreator('${r.creatorId}')">Unpause creator</button>` : ""}
       </div>`).join("");
@@ -21285,7 +21544,7 @@ async function loadCompliance() {
       </div>`).join("");
     el.innerHTML = `
       <div class="flex-between"><h3 style="margin:0">Post compliance</h3><button class="btn small-btn" onclick="runSweepNow()">Run sweep now</button></div>
-      <p class="small muted" style="margin-top:8px">The sweep runs on a schedule and sends the 48-hour reminder, the day-5 reminder, and the day-6 final warning; it pauses creators at the one-week hard stop and bans at two weeks when a redeemed comp never gets a post. Counts: ${Object.entries(data.counts || {}).map(([k, v]) => `${esc(statusLabel[k] || k)} ${v}`).join(" &middot; ") || "none yet"}</p>
+      <p class="small muted" style="margin-top:8px">The sweep runs on a schedule and sends the 48-hour reminder, the day-5 reminder, and the day-6 final warning; it pauses creators at the one-week hard stop, and a redeemed comp with no post one month after the visit makes the account no longer active (Phase C). A hard stop with no post and no word from the creator counts a silent no-show strike; two strikes remove the creator. Paid visits run on their agreed posting terms instead. Counts: ${Object.entries(data.counts || {}).map(([k, v]) => `${esc(statusLabel[k] || k)} ${v}`).join(" &middot; ") || "none yet"}</p>
       <div id="sweep-note" class="small saved"></div>
       ${rows || `<p class="muted">No redeemed visits yet. Compliance rows appear here the moment a comp is redeemed.</p>`}
       ${bizRows ? `<h3 class="mt">Businesses with honor reports</h3><p class="small muted">Creator reports that a business did not honor a comp. Admin only; there is no public surface for this.</p>${bizRows}` : ""}`;
@@ -21299,7 +21558,7 @@ async function runSweepNow() {
   try {
     const data = await api("POST", "/admin/compliance/sweep", {});
     const s = data.sweep || {};
-    if (note) note.textContent = `Sweep ran: ${(s.reminder1 || 0) + (s.reminder2 || 0) + (s.reminder3 || 0)} reminder(s), ${s.paused || 0} pause(s), ${s.banned || 0} ban(s), ${s.expired || 0} window expiration(s), ${s.performance || 0} performance request(s)${s.strikes ? `, ${s.strikes} no-show strike(s)` : ""}${s.strikePaused ? `, ${s.strikePaused} strike pause(s)` : ""}.`;
+    if (note) note.textContent = `Sweep ran: ${(s.reminder1 || 0) + (s.reminder2 || 0) + (s.reminder3 || 0)} reminder(s), ${s.paused || 0} pause(s), ${s.banned || 0} ban(s), ${s.expired || 0} window expiration(s), ${s.performance || 0} performance request(s)${s.strikes ? `, ${s.strikes} no-show strike(s)` : ""}${s.strikePaused ? `, ${s.strikePaused} strike pause(s)` : ""}${s.silentStrikes ? `, ${s.silentStrikes} silent no-show strike(s)` : ""}${s.silentRemoved ? `, ${s.silentRemoved} silent-strike removal(s)` : ""}${s.inactivated ? `, ${s.inactivated} consumed-comp inactivation(s)` : ""}.`;
     loadCompliance();
   } catch (err) {
     if (note) note.textContent = err.message;
