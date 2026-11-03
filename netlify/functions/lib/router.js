@@ -8,7 +8,7 @@ const { logEvent, listEvents, listEventsForSubject } = require("./events");
 const { MARKETS, normalizeMarketName, resolveTypedCity, TIERS, CREATOR_CATEGORIES, COMP_CATEGORIES, BUSINESS_CATEGORIES, PLANS, planBookFor, planInBook, PROFESSIONS, LEGACY_PROFESSIONS, REALTOR_PROFESSION, canonicalFromList, tierForFollowers, normalizeTierBand, MIN_TOTAL_AUDIENCE, currencyForMarket, paidFloorForMarket, LONDON_RACE_DISTRICTS, LONDON_RACE_TARGETS, LONDON_RACE_WEEKS, londonDistrictForArea } = require("./markets");
 const { computeLocalImpactScore, summarizeHistory } = require("./score");
 const { computeFit, buildFitNote } = require("./fit");
-const { emailEnabled, sendEmail, senderProfile, SENDER_PROFILE_NAMES } = require("./email");
+const { emailEnabled, sendEmail, senderProfile, SENDER_PROFILE_NAMES, brandedEmailHtml } = require("./email");
 const claimEvidence = require("./claim-evidence");
 const stripe = require("./stripe");
 const connect = require("./connect");
@@ -2896,7 +2896,11 @@ async function deliverEmail(kind, user, subject, text, band, opts) {
   const profile = (opts && opts.profile) || (opts && opts.fromMailbox) || "default";
   const base = { kind, to: user.email, subject, band: band || null, profile };
   await logEvent({ type: `${kind}_email_queued`, actorId: user.id, actorRole: user.role, subjectId: user.id, market: user.market || null, data: base });
-  const result = await sendEmail({ to: user.email, subject, text, listUnsubscribe: !!(opts && opts.listUnsubscribe), profile: opts && opts.profile, fromMailbox: opts && opts.fromMailbox, replyTo: opts && opts.replyTo, fromName: opts && opts.fromName });
+  // Build -114: every transactional email also carries the
+  // branded HTML alternative (logo + gradient band) generated
+  // from the same text, so the wording a suite pins in the text
+  // part is the wording the HTML part shows.
+  const result = await sendEmail({ to: user.email, subject, text, html: brandedEmailHtml(text), listUnsubscribe: !!(opts && opts.listUnsubscribe), profile: opts && opts.profile, fromMailbox: opts && opts.fromMailbox, replyTo: opts && opts.replyTo, fromName: opts && opts.fromName });
   if (result.sent) {
     await logEvent({ type: `${kind}_email_sent`, actorId: user.id, actorRole: user.role, subjectId: user.id, market: user.market || null, data: base });
   } else {
