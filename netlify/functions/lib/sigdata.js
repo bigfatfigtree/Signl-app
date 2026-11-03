@@ -226,6 +226,20 @@ function buildBusinessFacts(d) {
     licensesGranted: lic.granted || 0,
     licensesPending: lic.pending || 0,
     rosterInMarket: d.rosterInMarket || 0,
+    // Build -95: My Regulars (creators with a completed visit
+    // at this business) and held licences inside their 14-day
+    // expiry window, from the same builders the views read.
+    regulars: (d.regulars || []).map((r) => ({
+      creatorId: r.creatorId, name: r.creatorName || "", handle: r.creatorHandle || "",
+      visits: r.visits || 1, dealKind: r.deal ? r.deal.kind : "comp",
+      lastVisitAt: r.lastVisitAt || null, rebookedSince: !!r.rebookedSince,
+    })),
+    regularsCount: (d.regulars || []).length,
+    licencesExpiring: (d.licencesExpiring || []).map((l) => ({
+      postId: l.postId, creatorName: l.creatorName || "", creatorHandle: l.creatorHandle || "",
+      title: l.title || "", kind: l.kind || "licensed", fee: l.fee != null ? l.fee : null,
+      endsOn: l.windowEndsAt ? String(l.windowEndsAt).slice(0, 10) : "", daysLeft: l.daysLeft, ended: !!l.ended,
+    })),
   };
 }
 
@@ -285,6 +299,9 @@ function buildCreatorFacts(d) {
     paidBookings: o.paidBookings || 0,
     paidRecordedNet: o.paidRecordedNet || 0,
     licenseRequestsPending: o.licenseRequestsPending || 0,
+    // Build -95: the actual pending licence/renewal requests
+    // behind that count (business + fee + renewal flag).
+    pendingLicenses: (d.pendingLicenses || []).map((l) => ({ businessName: l.businessName || "A business", fee: l.fee || 0, renewal: !!l.renewal })),
     paidRate: c.paidRate || null,
     licenseFee: c.licensingFee || c.licenseFee || null,
     currencySymbol: currencyForMarket(u.market).symbol,
@@ -316,6 +333,8 @@ function factsLines(role, f) {
     if (f.planName) lines.push(`Their plan is ${f.planName} at ${money(f.planPrice)} a month with ${f.visitsPerMonth} creator visits a month and a ${money(f.foundingCredit)} founding credit off the first month. This month they have used ${fmt(f.visitsUsed)} of ${fmt(f.visitsAllowance)} visits (${fmt(f.visitsRemaining)} left${f.visitsCarried ? `, including ${fmt(f.visitsCarried)} rolled over from last month` : ""}).`);
     lines.push(`Their numbers right now: ${fmt(f.offersLive)} offers live, ${fmt(f.draftOffers)} drafts, ${fmt(f.applicantsWaiting)} applicants waiting on their answer, ${fmt(f.visitsBooked)} visits booked, ${fmt(f.postsLive)} posts live. Counted register dollars so far: ${money(f.countedDollars)} (counted means rung up through visit codes). Modeled estimate on top of that: ${money(f.modeledDollars)}, and that figure is an estimate, never a counted sale. Creators with finished profiles in their market: ${fmt(f.rosterInMarket)}.`);
     if (f.intentTotal > 0) lines.push(`Post intent on their live posts: ${fmt(f.intentShares)} shares and ${fmt(f.intentSaves)} saves recorded by the creators, ${fmt(f.intentTotal)} in total across ${fmt(f.intentReportedPosts)} reported ${plural(f.intentReportedPosts, "post")}. Saves and shares mean people planning to come. These are recorded figures, not counted sales. Their Return score across those posts is ${f.returnScore != null ? fmt(f.returnScore) + " out of 100" : "not scored yet (not enough data)"}.`);
+    if (f.regularsCount) lines.push(`Their Regulars (creators who completed a visit and posted): ${f.regulars.map((r) => `${r.name}${r.handle ? " (@" + r.handle + ")" : ""}, ${fmt(r.visits)} ${plural(r.visits, "visit")}, last visit ${r.lastVisitAt ? String(r.lastVisitAt).slice(0, 10) : "on record"}${r.rebookedSince ? ", already rebooked since" : ""}`).join("; ")}. Regulars live in the Regulars view, where Book again clones the last visit's deal into a new draft.`);
+    if (f.licencesExpiring && f.licencesExpiring.length) lines.push(`Licences ending soon: ${f.licencesExpiring.map((l) => `${l.creatorName || "a creator"}'s post "${l.title}" ends ${l.endsOn} (${l.ended ? "already ended" : fmt(Math.max(0, l.daysLeft)) + " days left"})`).join("; ")}. Renewing goes through the creator: a fresh request at their listed fee for 90 days, approved by them, never automatic.`);
     return lines;
   }
   // creator
@@ -326,6 +345,7 @@ function factsLines(role, f) {
   lines.push(`Their numbers right now: ${fmt(f.offersOpen)} open offers in their markets (${fmt(f.directInvites)} direct invites), ${fmt(f.applicationsPending)} applications waiting on a business's answer, ${fmt(f.visitsBooked)} visits booked, ${fmt(f.postsOwed.length)} posts owed, ${fmt(f.postsLive)} posts live${f.onTimePct != null ? `, ${f.onTimePct}% of their posts on time` : ""}. Paid bookings: ${fmt(f.paidBookings)}, with ${cmoney(f, f.paidRecordedNet)} recorded as their net (recorded means the bookings on file, paid outside the app). License requests waiting on them: ${fmt(f.licenseRequestsPending)}. Creators joined through their invite link: ${fmt(f.referrals.signups)}, of whom ${fmt(f.referrals.approved)} were approved.`);
   if (f.intentTotal > 0) lines.push(`Intent on their own posts: ${fmt(f.intentShares)} shares and ${fmt(f.intentSaves)} saves recorded, ${fmt(f.intentTotal)} in total across ${fmt(f.intentReportedPosts)} reported ${plural(f.intentReportedPosts, "post")}. Saves and shares mean people planning to come.`);
   if (f.paidRate) lines.push(`Their listed paid rate is ${cmoney(f, f.paidRate)}${f.licenseFee ? ` and their licensing fee is ${cmoney(f, f.licenseFee)}` : ""}.`);
+  if (f.pendingLicenses && f.pendingLicenses.length) lines.push(`Licence requests waiting on their decision: ${f.pendingLicenses.map((l) => `${l.businessName} at their ${cmoney(f, l.fee)} fee${l.renewal ? " (a renewal of a licence that is ending)" : ""}`).join("; ")}. Each is decided under Earnings: approve starts a fresh 90 days that day; decline leaves the post native share only.`);
   return lines;
 }
 
@@ -575,6 +595,18 @@ function answerBusiness(f, q, t) {
     const visitsText = `${fmt(f.visitsBooked)} visits booked so far: ${fmt(f.visitsRedeemed)} redeemed at the counter and ${fmt(f.postsLive)} posts live from them.`;
     return f.visitsBooked ? linked(visitsText, "Open Visits and posts", "biz-visits") : visitsText;
   }
+  // My Regulars (Build -95)
+  if (hasWord(t, "regular", "regulars") || hasPhrase(t, "book again", "rebook", "visited before", "been here before", "came back", "who has visited", "creators who visited")) {
+    if (!f.regularsCount) return linked("No Regulars yet. A creator becomes one of your Regulars the day a visit with them is completed and their post is live. Then they sit in your Regulars view with the deal that ran and a Book again button.", "Open Regulars", "biz-regulars");
+    const list = f.regulars.slice(0, 5).map((r) => `${r.name}${r.handle ? " (@" + r.handle + ")" : ""}: ${fmt(r.visits)} ${plural(r.visits, "visit")}, last one ${r.lastVisitAt ? String(r.lastVisitAt).slice(0, 10) : "on record"}${r.rebookedSince ? ", already rebooked since" : ""}`).join("; ");
+    return linked(`You have ${fmt(f.regularsCount)} ${plural(f.regularsCount, "Regular")}: ${list}. Book again on any of them clones the last visit's deal into a new draft; nothing sends until you publish it.`, "Open Regulars", "biz-regulars");
+  }
+  // Licences ending soon (Build -95)
+  if ((hasWord(t, "license", "licenses", "licence", "licences")) && hasPhrase(t, "expir", "ending", "ends", "renew", "run out", "running out")) {
+    if (!f.licencesExpiring || !f.licencesExpiring.length) return linked("No licences are ending in the next 14 days. Every licence you hold shows its end date in Posts and licenses, and you get an alert 14 days and again 1 day before one ends.", "Open Posts and licenses", "biz-content");
+    const list = f.licencesExpiring.map((l) => `${l.creatorName || "A creator"}'s post "${l.title}" ends ${l.endsOn}${l.ended ? " (already ended)" : ` (${fmt(Math.max(0, l.daysLeft))} ${plural(Math.max(0, l.daysLeft), "day")} left)`}`).join("; ");
+    return linked(`Ending soon: ${list}. Ask to renew from Posts and licenses: the request goes to the creator at their listed fee, and a fresh 90 days starts only if they approve. Nothing renews on its own.`, "Ask to renew", "biz-content");
+  }
   // Licenses
   if (hasWord(t, "license", "licenses", "licensing") && hasPhrase(t, "my", "how many", "waiting", "pending")) {
     const licText = `Your licenses: ${fmt(f.licensesGranted)} granted and in your library, ${fmt(f.licensesPending)} requested and waiting on the creator's answer. Each granted license is 90 days of repost and ad use, and its end date sits on the post in Posts & licenses.`;
@@ -639,6 +671,14 @@ function answerCreator(f, q, t) {
     const owedBits = f.postsOwed.slice(0, 3).map((o) => `"${o.title}" at ${o.businessName}${o.overdue ? " (overdue now)" : ""}`).join("; ");
     const owedText = `You have ${fmt(f.visitsUpcoming)} ${plural(f.visitsUpcoming, "visit")} booked and coming up, and ${fmt(f.postsOwed.length)} ${plural(f.postsOwed.length, "post")} owed from visits already redeemed${f.postsOwed.length ? `: ${owedBits}` : ""}. A post inside 48 hours is on time; one week is the hard deadline.`;
     return (f.visitsUpcoming || f.postsOwed.length) ? linked(owedText, "Open My Visits", "cr-visits") : owedText;
+  }
+  // Licence requests waiting on me (Build -95): first asks and
+  // renewals land in the same creator-approved flow, under
+  // Earnings, with working Approve / Decline on each record.
+  if (hasWord(t, "license", "licenses", "licence", "licences") && hasPhrase(t, "waiting", "pending", "request", "requests", "renew", "decide", "approve")) {
+    if (!f.pendingLicenses || !f.pendingLicenses.length) return "No licence requests are waiting on you. When a business asks to license one of your posts, or to renew a licence that is ending, it lands under Earnings for your yes or no.";
+    const list = f.pendingLicenses.map((l) => `${l.businessName} at your ${cmoney(f, l.fee)} fee${l.renewal ? " (a renewal: their current licence is ending)" : ""}`).join("; ");
+    return linked(`${fmt(f.pendingLicenses.length)} licence ${plural(f.pendingLicenses.length, "request")} waiting on your decision: ${list}. Approving starts a fresh 90 days of repost and ad use that day, and you keep 97% of the fee. Declining leaves the post native share only.`, "Decide in Earnings", "cr-earnings");
   }
   // Earnings (recorded only, labeled)
   if (hasPhrase(t, "have i earned", "have i made", "my earnings", "much have i", "paid bookings", "money have i") || (hasWord(t, "earned", "earnings") && hasWord(t, "my", "i"))) {
@@ -714,6 +754,12 @@ function buildHomeState(role, f) {
     if (f.visitsAllowance) chips.push(`${fmt(f.visitsRemaining)} ${plural(f.visitsRemaining, "visit")} left this month`);
     if (f.postsLive) chips.push(`${fmt(f.postsLive)} ${plural(f.postsLive, "post")} live`);
     if (f.rosterInMarket) chips.push(`${fmt(f.rosterInMarket)} ${plural(f.rosterInMarket, "creator")} on your ${f.market || "market"} roster`);
+    // Build -95 proactive prompts: only when the record is
+    // real. A licence inside its 14-day window, and Regulars
+    // nobody has rebooked since their visit.
+    if (f.licencesExpiring && f.licencesExpiring.length) chips.push(`${fmt(f.licencesExpiring.length)} ${plural(f.licencesExpiring.length, "licence")} ending soon`);
+    const unbooked = (f.regulars || []).filter((r) => !r.rebookedSince).length;
+    if (unbooked) chips.push(`${fmt(unbooked)} ${plural(unbooked, "Regular")} to book again`);
   } else if (role === "creator") {
     if (f.directInvites) chips.push(`${fmt(f.directInvites)} ${plural(f.directInvites, "invite")} sent to you`);
     if (f.offersOpen) chips.push(`${fmt(f.offersOpen)} ${plural(f.offersOpen, "offer")} waiting`);

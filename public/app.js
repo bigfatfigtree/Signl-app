@@ -2148,6 +2148,9 @@ RAIL_SHORT["My Offers"] = "Campaigns";
 // Build -77: the Impact Portal's Businesses tab is ten letters;
 // the 72px phone rail shows its compact form.
 RAIL_SHORT["Businesses"] = "Business";
+// Build -95: the Regulars tab's full label is "My Regulars";
+// the 72px phone rail shows its compact form.
+RAIL_SHORT["Regulars"] = "Regulars";
 function railRowItems() {
   const t = state.tab;
   const seen = new Set();
@@ -2245,6 +2248,7 @@ function moreRowsFor() {
     return [
       { icon: "notice", label: "Campaigns", sub: "Your campaigns and who is applying.", tab: "My Offers", badge: wc.bizApps != null ? wc.bizApps : (b.offers || 0) },
       { icon: "calendar", label: "Visits", sub: "Visits and posts. The counter is inside.", tab: "Visits & Posts", badge: wc.bizVisits != null ? wc.bizVisits : (b.visits || 0) },
+      { icon: "users", label: "My Regulars", sub: "Creators who visited you. Book them again.", tab: "Regulars" },
       { icon: "bars", label: "Results", sub: "What your campaigns did.", tab: "Analytics" },
       { icon: "play", label: "Posts & licenses", sub: "Every post about you, and the ones you can reuse.", tab: "Content" },
       { icon: "receipt", label: "Plan & billing", sub: "Your plan, your visits, your billing.", tab: "Plan" },
@@ -2950,6 +2954,7 @@ function notificationPrefsHtml(u) {
     <label class="tgl-row" style="overflow:hidden;margin:8px 0"><input type="checkbox" class="sw" id="np-bookings"${on(p.bookings)}><span>Picked and booked</span></label>
     <label class="tgl-row" style="overflow:hidden;margin:8px 0"><input type="checkbox" class="sw" id="np-postclock"${on(p.postClock)}><span>Post clock: started, and about 12 hours left</span></label>
     <label class="tgl-row" style="overflow:hidden;margin:8px 0"><input type="checkbox" class="sw" id="np-licences"${on(p.licences)}><span>Licence requests waiting</span></label>
+    <label class="tgl-row" style="overflow:hidden;margin:8px 0"><input type="checkbox" class="sw" id="np-licenceexpiry"${on(p.licenceExpiry)}><span>A licence I hold is ending (14 days and 1 day before)</span></label>
     <label class="tgl-row" style="overflow:hidden;margin:8px 0"><input type="checkbox" class="sw" id="np-applications"${on(p.applications)}><span>Applications waiting</span></label>
     <label class="tgl-row" style="overflow:hidden;margin:8px 0"><input type="checkbox" class="sw" id="np-roster"${on(p.roster)}><span>New creators in my market (roster drops)</span></label>
     <div style="margin-top:10px"><button class="btn" onclick="saveNotificationPrefs()">Save notifications</button> <span id="np-ok" class="saved"></span></div>
@@ -2967,6 +2972,7 @@ async function saveNotificationPrefs() {
       bookings: !!document.getElementById("np-bookings").checked,
       postClock: !!document.getElementById("np-postclock").checked,
       licences: !!document.getElementById("np-licences").checked,
+      licenceExpiry: !!document.getElementById("np-licenceexpiry").checked,
       applications: !!document.getElementById("np-applications").checked,
       roster: !!document.getElementById("np-roster").checked,
       phone: (document.getElementById("np-phone") || {}).value || "",
@@ -3647,6 +3653,7 @@ function sigLinkGo(dest) {
     case "biz-drafts": state.offersSeg = "drafts"; return go("dashboard", "My Offers");
     case "biz-discover": return go("dashboard", "Discover");
     case "biz-visits": return go("dashboard", "Visits & Posts");
+    case "biz-regulars": return go("dashboard", "Regulars");
     case "biz-content": return go("dashboard", "Content");
     case "cr-numbers": return go("dashboard", "Numbers");
     case "cr-momentum": return go("dashboard", "Momentum");
@@ -3675,6 +3682,8 @@ function sigChipDest(label) {
   if (t.includes("draft")) return "biz-drafts";
   if (t.includes("offers live")) return "biz-offers";
   if (t.includes("posts live")) return "biz-content";
+  if (t.includes("ending soon")) return "biz-content";
+  if (t.includes("book again")) return "biz-regulars";
   if (t.includes("roster")) return "biz-discover";
   if (t.includes("invite")) return "cr-offers-invited";
   if (t.includes("offers waiting")) return "cr-offers";
@@ -4886,12 +4895,15 @@ function sigOpHomeActions() {
   if (u.role === "business") return [
     { label: ST("Set up a campaign", "Crear una campaña"), primary: true, run: async () => { sigB1Start(); sigOpPaint(); } },
     { label: ST("Find creators", "Buscar creadores"), run: async () => { sigB2Start(); sigOpPaint(); } },
+    { label: ST("My Regulars", "Mis clientes habituales"), run: async () => { await sigB95Regulars(); sigOpPaint(); } },
+    { label: ST("Licences ending soon", "Licencias por vencer"), run: async () => { await sigB95Licences(); sigOpPaint(); } },
     { label: ST("How am I doing?", "¿Cómo voy?"), run: async () => { await sigB3Run(); sigOpPaint(); } },
     { label: ST("Build my asset packet", "Crear mi paquete"), run: async () => { sigPacketStart(); sigOpPaint(); } },
     { label: ST("Setup from Instagram", "Configúrame desde Instagram"), run: async () => { sigSetupStart("business"); sigOpPaint(); } },
   ];
   return [
     { label: ST("Find offers for me", "Buscar ofertas para mí"), primary: true, run: async () => { await sigC1Start(); sigOpPaint(); } },
+    { label: ST("Licence requests", "Solicitudes de licencia"), run: async () => { await sigC95Licences(); sigOpPaint(); } },
     { label: ST("Finish my profile", "Terminar mi perfil"), run: async () => { await sigC2Start(); sigOpPaint(); } },
     { label: ST("Setup from Instagram", "Configúrame desde Instagram"), run: async () => { sigSetupStart("creator"); sigOpPaint(); } },
     { label: ST("How am I doing?", "¿Cómo voy?"), run: async () => { await sigC3Run(); sigOpPaint(); } },
@@ -4908,6 +4920,7 @@ function sigOpCapabilities() {
     ST("Find micro-influencers by category, local reach, Spanish content, musicians, and more.", "Buscar microinfluencers por categoría, alcance local, contenido en español, músicos y más."),
     ST("Track your campaigns: visits, posts, day 7 / 14 / 30 numbers, redemptions, and one clear next move.", "Seguir tus campañas: visitas, publicaciones, números al día 7 / 14 / 30, canjes y un siguiente paso claro."),
     ST("Build your asset packet: logo link, key links, talking points, handle, hashtags.", "Crear tu paquete: enlace del logo, enlaces clave, puntos de conversación, usuario y hashtags."),
+    ST("Show your Regulars and draft a repeat visit from the last deal, and flag licences ending soon with a renew request to the creator.", "Mostrar tus clientes habituales y crear una visita repetida desde el último trato, y avisarte de licencias por vencer con una solicitud de renovación al creador."),
     ST("Answer questions about plans, rights, and how SIGNL works.", "Responder preguntas sobre planes, derechos y cómo funciona SIGNL."),
   ];
   return [
@@ -4916,6 +4929,7 @@ function sigOpCapabilities() {
     ST("Finish your profile with me, one gap at a time, saved in one go.", "Terminar tu perfil conmigo, un dato a la vez, guardado de una vez."),
     ST("Track your numbers: posts live, on-time record, day 7 / 14 / 30, Momentum.", "Seguir tus números: publicaciones, puntualidad, día 7 / 14 / 30, Momentum."),
     ST("Invite other creators with your link and a ready-to-send message.", "Invitar a otros creadores con tu enlace y un mensaje listo para enviar."),
+    ST("Show licence and renewal requests waiting on you, and approve or decline them right here.", "Mostrar las solicitudes de licencia y renovación que te esperan, y aprobarlas o rechazarlas aquí mismo."),
     ST("Answer questions about pay, visits, licensing, and how SIGNL works.", "Responder preguntas sobre pagos, visitas, licencias y cómo funciona SIGNL."),
   ];
 }
@@ -4924,6 +4938,8 @@ function sigOpIntent(norm) {
   if (!u) return null;
   const has = (...ps) => ps.some((p) => norm.includes(p));
   if (u.role === "business") {
+    if (has("my regulars", "regulars", "book again", "rebook")) return async () => sigB95Regulars();
+    if (has("licence expiring", "license expiring", "licences ending", "licenses ending", "licence ending", "license ending", "renew licence", "renew license", "renew my licence", "renew my license")) return async () => sigB95Licences();
     if (has("asset packet", "paquete de recursos", "paquete", "brand assets", "mis enlaces")) return async () => sigPacketStart();
     if (has("how am i doing", "como voy", "my numbers", "mis numeros", "my results", "mis resultados", "rendimiento", "track my data", "performance")) return async () => sigB3Run();
     if (has("who should i invite", "who do i invite", "who should we invite", "invite first", "quien invito primero")) return async () => { sigB2FlowStart(); await sigB2Run({}); };
@@ -4941,6 +4957,7 @@ function sigOpIntent(norm) {
     return null;
   }
   if (u.role === "creator") {
+    if (has("licence request", "license request", "licence requests", "license requests", "renewal request", "licence renewal", "license renewal")) return async () => sigC95Licences();
     if (has("invite a creator", "invite link", "invitar a un creador", "mi enlace de invitacion", "referral link", "invite creators")) return async () => sigC4Run();
     if (has("set me up", "set up from instagram", "use my instagram", "from my instagram", "set up my profile from", "configura mi perfil")) return async () => sigSetupStart("creator");
     if (has("finish my profile", "complete my profile", "build my profile", "what do i still need", "still need to finish", "need to finish", "left to finish", "what is missing", "whats missing", "what am i missing", "terminar mi perfil", "completar mi perfil", "completar perfil", "que me falta")) return async () => sigC2Start();
@@ -4951,6 +4968,103 @@ function sigOpIntent(norm) {
   }
   return null;
 }
+// ---------- Build -95: Sig Operator for Regulars + licences ----------
+// Business Sig DOES the item-10 work in-thread, confirm-first
+// like every other operator flow: show the business's real
+// Regulars with a Book again draft per row, and the licences
+// inside their 14-day window with an Ask to renew per row.
+// Creator Sig shows the real pending licence and renewal
+// requests waiting on them, with Approve / Decline that write
+// through the same endpoints the Earnings tab uses.
+async function sigB95Regulars() {
+  let rows = [];
+  try { const d = await api("GET", "/me/regulars"); rows = d.regulars || []; } catch (e) { sigOpSay("I could not load your Regulars just now. Try again, or open Regulars in the rail.", sigOpHomeActions()); return; }
+  if (!rows.length) {
+    sigOpSay("No Regulars yet. A creator becomes one of your Regulars the day a visit with them is completed and their post is live. Then they sit in your Regulars view with the deal that ran and a Book again button.", [{ label: "Open Regulars", run: async () => go("dashboard", "Regulars") }, ...sigOpHomeActions()]);
+    return;
+  }
+  const head = rows.length === 1 ? "You have 1 Regular:" : `You have ${rows.length} Regulars:`;
+  const list = rows.slice(0, 5).map((r) => `${r.creatorName} (@${r.creatorHandle}), ${r.visits} ${r.visits === 1 ? "visit" : "visits"}, last one ${r.lastVisitAt ? fmtDay(r.lastVisitAt) : "on record"}${r.rebookedSince ? ", already rebooked since" : ""}`).join(". ") + ".";
+  sigOpSay(`${head} ${list} Tap one to draft a repeat visit with the same deal.`, [
+    ...rows.slice(0, 5).map((r) => ({
+      label: `Book again: @${r.creatorHandle}`,
+      run: async () => sigOpPick(`Book again: @${r.creatorHandle}`, async () => {
+        sigOpAsk(`Book ${r.creatorName} again? I will copy the last visit's deal ("${r.lastTitle || "your last visit"}", ${r.deal.line}) into a new draft in Campaigns. Nothing sends until you publish the draft.`, [
+          { label: "Yes, draft it", primary: true, run: async () => sigOpPick("Yes, draft it", async () => {
+            try {
+              const d = await api("POST", `/me/regulars/${r.creatorId}/book-again`, {});
+              sigOpSay(`Draft created: "${d.offer.title}" is saved in Campaigns as a draft with the same terms as the last visit. Nothing was sent.`, [
+                { label: "Open the draft", primary: true, run: async () => { state.offersSeg = "drafts"; go("dashboard", "My Offers"); } },
+                { label: "Back to Regulars", run: async () => sigB95Regulars() },
+              ]);
+            } catch (e) { sigOpSay(`That draft did not save: ${e.message}`, sigOpHomeActions()); }
+          }) },
+        ]);
+      }),
+    })),
+    { label: "Open Regulars", run: async () => go("dashboard", "Regulars") },
+  ]);
+}
+async function sigB95Licences() {
+  let rows = [];
+  try { const d = await api("GET", "/me/licences-expiring"); rows = d.licences || []; } catch (e) { sigOpSay("I could not load your licences just now. Try again, or open Posts and licenses in the rail.", sigOpHomeActions()); return; }
+  if (!rows.length) {
+    sigOpSay("No licences are ending in the next 14 days. Every licence you hold shows its end date in Posts and licenses, and you get an alert 14 days and again 1 day before one ends.", [{ label: "Open Posts and licenses", run: async () => go("dashboard", "Content") }, ...sigOpHomeActions()]);
+    return;
+  }
+  const list = rows.map((l) => `${l.creatorName}'s post "${l.title}" ends ${fmtDay(l.windowEndsAt)}${l.ended ? " (already ended)" : ""}`).join(". ") + ".";
+  sigOpSay(`Ending soon: ${list} Tap one to ask to renew. The request goes to the creator at their listed fee, and a fresh 90 days starts only if they approve.`, [
+    ...rows.map((l) => ({
+      label: `Ask to renew: @${l.creatorHandle}`,
+      run: async () => sigOpPick(`Ask to renew: @${l.creatorHandle}`, async () => {
+        if (!l.fee) { sigOpSay("This creator has not listed a licensing fee, so this post cannot be renewed through SIGNL. It stays shareable inside Instagram with credit.", sigOpHomeActions()); return; }
+        sigOpAsk(`Ask to renew the licence on ${l.creatorName}'s post "${l.title}"? It ends ${fmtDay(l.windowEndsAt)}. The request goes to the creator at their $${fmtPrice(l.fee)} fee: you pay $${fmtMoney(Math.round(l.fee * 1.03 * 100) / 100)} only if they approve, the creator keeps $${fmtMoney(Math.round(l.fee * 0.97 * 100) / 100)} (97%), and a fresh 90 days starts the day they approve. Nothing renews unless they say yes.`, [
+          { label: "Yes, ask to renew", primary: true, run: async () => sigOpPick("Yes, ask to renew", async () => {
+            try {
+              await api("POST", `/posts/${l.postId}/license-request`, {});
+              sigOpSay("Renewal request sent. It is waiting on the creator's yes or no, and the licence only continues if they approve.", [
+                { label: "Open Posts and licenses", run: async () => go("dashboard", "Content") },
+                { label: "Check again", run: async () => sigB95Licences() },
+              ]);
+            } catch (e) { sigOpSay(`That request did not send: ${e.message}`, sigOpHomeActions()); }
+          }) },
+        ]);
+      }),
+    })),
+    { label: "Open Posts and licenses", run: async () => go("dashboard", "Content") },
+  ]);
+}
+async function sigC95Licences() {
+  let rows = [];
+  try { const d = await api("GET", "/license-requests"); rows = (d.licenseRequests || []).filter((l) => l.status === "pending"); } catch (e) { sigOpSay("I could not load your licence requests just now. Try again, or open Earnings.", sigOpHomeActions()); return; }
+  if (!rows.length) {
+    sigOpSay("No licence requests are waiting on you. When a business asks to license one of your posts, or to renew a licence that is ending, it lands here and under Earnings for your yes or no.", [{ label: "Open Earnings", run: async () => go("dashboard", "Earnings") }, ...sigOpHomeActions()]);
+    return;
+  }
+  const list = rows.map((l) => `${l.businessName || "A business"} at your $${fmtPrice(l.fee)} fee${l.renewal ? " (a renewal: their current licence is ending)" : ""}`).join(". ") + ".";
+  sigOpSay(`Waiting on your decision: ${list} Approving starts a fresh 90 days of repost and ad use that day, and you keep 97% of the fee. Declining leaves the post native share only.`, [
+    ...rows.slice(0, 5).flatMap((l) => ([
+      { label: `Approve: ${l.businessName || "licence"}`, primary: true, run: async () => sigOpPick(`Approve: ${l.businessName || "licence"}`, async () => {
+        sigOpAsk(`Approve this licence? ${l.businessName || "The business"} can repost this post and run it as an ad for 90 days. You keep $${fmtMoney(l.creatorNet)} (97% of your fee). The 90 days start today, the day you approve, and end ${fmtDayFull(new Date(Date.now() + 90 * 86400000).toISOString())}. Never longer.`, [
+          { label: "Yes, approve", primary: true, run: async () => sigOpPick("Yes, approve", async () => {
+            try { await api("POST", `/license-requests/${l.id}/respond`, { decision: "approve" }); sigOpSay("Approved. The licence runs 90 days from today.", [{ label: "Check again", run: async () => sigC95Licences() }]); }
+            catch (e) { sigOpSay(`That approval did not save: ${e.message}`, sigOpHomeActions()); }
+          }) },
+        ]);
+      }) },
+      { label: `Decline: ${l.businessName || "licence"}`, run: async () => sigOpPick(`Decline: ${l.businessName || "licence"}`, async () => {
+        sigOpAsk(`Decline this licence? The post stays native share only: the business can reshare it with credit, with no ad use. Nothing is charged.`, [
+          { label: "Yes, decline", run: async () => sigOpPick("Yes, decline", async () => {
+            try { await api("POST", `/license-requests/${l.id}/respond`, { decision: "decline" }); sigOpSay("Declined. The post stays native share only.", [{ label: "Check again", run: async () => sigC95Licences() }]); }
+            catch (e) { sigOpSay(`That decline did not save: ${e.message}`, sigOpHomeActions()); }
+          }) },
+        ]);
+      }) },
+    ])),
+    { label: "Open Earnings", run: async () => go("dashboard", "Earnings") },
+  ]);
+}
+
 // The routing entry sigAskSubmit calls first. Returns true when
 // the operator consumed the message (a flow step or an intent).
 async function sigOpTry(text) {
@@ -14329,7 +14443,7 @@ function renderFoundingMessagesTab() {
   </section>`;
 }
 
-const BUSINESS_TABS = ["Home", "Requests", "Discover", "Favorites", "My Offers", "Counter", "Visits & Posts", "Content", "Analytics", "Plan", "Messages", "Profile", "More", "Settings", "Help", "Sig"];
+const BUSINESS_TABS = ["Home", "Requests", "Discover", "Favorites", "My Offers", "Counter", "Visits & Posts", "Regulars", "Content", "Analytics", "Plan", "Messages", "Profile", "More", "Settings", "Help", "Sig"];
 
 function renderBusinessDash() {
   const u = state.user;
@@ -14352,6 +14466,7 @@ function renderBusinessDash() {
   if (tab === "My Offers") loadMyOffers();
   if (tab === "Counter") founding ? renderFoundingVisitsTab() : renderCounter();
   if (tab === "Visits & Posts") founding ? renderFoundingVisitsTab() : loadMyVisits("business");
+  if (tab === "Regulars") renderRegularsTab();
   if (tab === "Content") founding ? renderFoundingContentTab() : renderContentTab();
   if (tab === "Analytics") founding ? renderFoundingResultsTab() : renderAnalyticsTab();
   if (tab === "Plan") renderPlanTab();
@@ -15022,6 +15137,10 @@ async function loadBusinessHome() {
     // fire together instead of as a sequential chain. Each keeps
     // its own degrade-to-empty behavior.
     const notesPromise = api("GET", "/notifications").catch(() => null);
+    // Build -95: Regulars + licences ending soon ride the same
+    // parallel fetch block for Sig's queue below.
+    const regularsPromise = api("GET", "/me/regulars").catch(() => null);
+    const licencesExpiringPromise = api("GET", "/me/licences-expiring").catch(() => null);
     const offersPromise = api("GET", "/offers").catch(() => null);
     const bookingsPromise = api("GET", "/bookings").catch(() => null);
     const readoutPromise = api("GET", "/me/performance-readout").catch(() => null);
@@ -15099,6 +15218,30 @@ async function loadBusinessHome() {
     if (licRow) {
       const bk = bookings.find((b) => b.id === licRow.bookingId);
       add(3, Date.parse(licRow.postedAt) || now, `You can license ${licRow.creatorName}'s post for $${fmtPrice(bk.creatorLicensingFee)}.`, "License it", () => go("dashboard", "Content"), `License ${licRow.creatorName}'s post · $${fmtPrice(bk.creatorLicensingFee)}`);
+    }
+    // Build -95 proactive prompts, from real records only: a
+    // licence inside its 14-day window, and a Regular who has
+    // not been rebooked since their visit. Nothing true to say,
+    // nothing renders.
+    const expD = await licencesExpiringPromise;
+    const expRows = (expD && expD.licences) || [];
+    if (expRows.length) {
+      const first = expRows[0];
+      add(2, now, expRows.length === 1
+        ? `Your licence on ${first.creatorName}'s post ends ${fmtDay(first.windowEndsAt)}${first.ended ? " (already ended)" : ""}. Ask to renew and the creator decides.`
+        : `${expRows.length} licences are ending soon. The soonest is ${first.creatorName}'s post, ending ${fmtDay(first.windowEndsAt)}. Ask to renew and the creator decides.`,
+        "Ask to renew", () => go("dashboard", "Content"),
+        expRows.length === 1 ? `Licence ends ${fmtDay(first.windowEndsAt)}: ${first.creatorName}` : `${expRows.length} licences ending soon`);
+    }
+    const regD = await regularsPromise;
+    const unbooked = ((regD && regD.regulars) || []).filter((r) => !r.rebookedSince);
+    if (unbooked.length) {
+      const first = unbooked[0];
+      add(3, Date.parse(first.lastVisitAt) || now, unbooked.length === 1
+        ? `${first.creatorName} visited and posted, and has not been booked again since. Book again copies the last deal into a draft.`
+        : `${unbooked.length} of your Regulars have not been booked again since their visits. Book again copies the last deal into a draft.`,
+        "Book again", () => go("dashboard", "Regulars"),
+        unbooked.length === 1 ? `Book again: ${first.creatorName}` : `${unbooked.length} Regulars to book again`);
     }
     // Capture-gap diagnostic (Build -39): creator-reported
     // reach ran far ahead of counted register customers. The
@@ -15509,6 +15652,125 @@ async function reqBulk(which) {
 
 // ---------- Content: posts + rights (Grin Content) ----------
 let contentTab = "creator";
+// ---------- Build -95: My Regulars ----------
+// A creator becomes a Regular when a visit with them is
+// completed and their post is live. Each row: the deal that
+// ran on the last visit, that visit's results in the three
+// honesty classes on their own labeled lines (counted at the
+// register, recorded post numbers, intent as saves + shares;
+// never added together), a private note only this business
+// can see, and Book again, which clones the last booking's
+// terms into a new draft. The draft sends nothing until the
+// business publishes it from Campaigns.
+function regularResultsHtml(r) {
+  const res = r.results || {};
+  const counted = res.counted
+    ? `<div class="lib-meta"><strong>Counted:</strong> ${fmtNum(res.counted.customers)} customers counted at your register · $${fmtMoney(res.counted.registerDollars)} rung up</div>`
+    : `<div class="lib-meta"><strong>Counted:</strong> no customers counted at the register for this visit yet</div>`;
+  const rec = res.recorded || {};
+  const recorded = (rec.views === null || rec.views === undefined) && (rec.likes === null || rec.likes === undefined)
+    ? `<div class="lib-meta"><strong>Recorded:</strong> the creator has not reported this post's numbers yet</div>`
+    : `<div class="lib-meta"><strong>Recorded:</strong> ${rec.views === null || rec.views === undefined ? "views not reported" : fmtNum(rec.views) + " views"} · ${rec.likes === null || rec.likes === undefined ? "likes not reported" : fmtNum(rec.likes) + " likes"} (reported by the creator)</div>`;
+  const intent = res.intent
+    ? `<div class="lib-meta"><strong>Intent:</strong> ${fmtNum(res.intent.shares || 0)} shares and ${fmtNum(res.intent.saves || 0)} saves recorded on this post (people planning to come)</div>`
+    : `<div class="lib-meta"><strong>Intent:</strong> no saves or shares reported for this post yet</div>`;
+  return counted + recorded + intent;
+}
+function regularRowHtml(r) {
+  return `<div class="lib-row" style="align-items:flex-start">
+    <div class="lib-main">
+      <div class="lib-title">${esc(r.creatorName)} <span class="muted" style="font-weight:600">@${esc(r.creatorHandle)}</span> <span class="badge ok">Regular</span></div>
+      <div class="lib-meta">${fmtNum(r.visits)} completed ${r.visits === 1 ? "visit" : "visits"} · last visit ${r.lastVisitAt ? fmtDay(r.lastVisitAt) : "on record"}${r.lastTitle ? ` · "${esc(r.lastTitle)}"` : ""}</div>
+      <div class="lib-meta"><strong>Last deal:</strong> ${esc(r.deal.line)}</div>
+      <div class="lib-meta">${esc(r.deal.rightsLine)}</div>
+      ${regularResultsHtml(r)}
+      <div class="field" style="margin-top:8px"><label>Your private note (only you can see this)</label>
+        <textarea id="reg-note-${esc(r.creatorId)}" rows="2" maxlength="1000" placeholder="For example: great with the weekend brunch crowd, kids love her">${esc(r.note || "")}</textarea></div>
+      <span class="small muted" id="reg-note-ok-${esc(r.creatorId)}"></span>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:6px">
+      <button type="button" class="btn small-btn ws-primary" onclick="return regularBookAgain('${esc(r.creatorId)}', this)">Book again</button>
+      <button type="button" class="btn small-btn ghost" onclick="return regularSaveNote('${esc(r.creatorId)}', this)">Save note</button>
+    </div>
+  </div>`;
+}
+async function renderRegularsTab() {
+  const el = document.getElementById("tab-body");
+  if (!el) return;
+  el.innerHTML = `${wsHead("My Regulars", { sub: "Creators who have visited you and posted. Book them again in one tap.", subKey: "biz-regulars" })}${skelHtml("Loading your Regulars...", 2)}`;
+  try {
+    const d = await api("GET", "/me/regulars");
+    const rows = d.regulars || [];
+    if (!document.getElementById("tab-body")) return;
+    el.innerHTML = `
+    ${wsHead("My Regulars", { sub: "Creators who have visited you and posted. Book them again in one tap.", subKey: "biz-regulars" })}
+    ${rows.length
+      ? `<div class="wcard" style="padding-top:8px;padding-bottom:8px">${rows.map(regularRowHtml).join("")}</div>
+         <p class="small muted" style="margin-top:10px">Book again copies the last visit's deal into a new draft in Campaigns. Nothing sends until you publish the draft. Your notes are yours alone: creators never see them, and no other business can.</p>`
+      : `<div class="empty-card"><div class="ec-t">No Regulars yet</div><div class="ec-s">When a creator finishes a visit with you and their post goes live, they show up here with the deal that ran, what the visit did, and a Book again button. Your first Regular is one completed visit away.</div></div>`}`;
+  } catch (err) {
+    el.innerHTML = `${wsHead("My Regulars")}<div class="error-box">${esc(err.message)}</div>`;
+  }
+}
+async function regularSaveNote(creatorId, btn) {
+  const ta = document.getElementById("reg-note-" + creatorId);
+  const ok = document.getElementById("reg-note-ok-" + creatorId);
+  if (!ta) return false;
+  try {
+    await api("PUT", `/me/regulars/${creatorId}/note`, { note: ta.value });
+    if (ok) ok.textContent = "Saved. Only you can see this note.";
+  } catch (e) { if (ok) ok.textContent = e.message; }
+  return false;
+}
+async function regularBookAgain(creatorId, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = "Drafting..."; }
+  try {
+    const d = await api("POST", `/me/regulars/${creatorId}/book-again`, {});
+    state.offersSeg = "drafts";
+    alert(`Draft created: "${d.offer.title}" is saved in Campaigns as a draft with the same terms as the last visit. Nothing was sent. Open the draft to check it and publish when you are ready.`);
+    return go("dashboard", "My Offers");
+  } catch (e) {
+    alert(e.message);
+    if (btn) { btn.disabled = false; btn.textContent = "Book again"; }
+  }
+  return false;
+}
+
+// ---------- Build -95: licence-expiry alert card ----------
+// Rides the top of Posts & licenses: held licences ending
+// within 14 days (or just ended), the exact end date on each,
+// and Ask to renew, which sends a fresh request through the
+// creator-approved licensing flow. Nothing renews on its own.
+async function askRenewLicense(postId, fee, endsOn) {
+  if (!fee) { alert("This creator has not listed a licensing fee, so this post cannot be renewed through SIGNL. It stays shareable inside Instagram with credit."); return false; }
+  const total = Math.round(fee * 1.03 * 100) / 100;
+  const net = Math.round(fee * 0.97 * 100) / 100;
+  if (!confirm(`Ask to renew this licence? Your current licence ends ${endsOn}. The request goes to the creator at their $${fmtPrice(fee)} fee: you pay $${fmtMoney(total)} (fee + 3%) only if they approve, the creator keeps $${fmtMoney(net)} (97%), and a fresh 90 days starts the day they approve. Nothing renews unless they say yes.`)) return false;
+  try {
+    await api("POST", `/posts/${postId}/license-request`, {});
+    alert("Renewal request sent. It is waiting on the creator's yes or no, and the licence only continues if they approve.");
+    if (state.tab === "Content") renderContentTab();
+  } catch (err) { alert(err.message); }
+  return false;
+}
+async function loadLicenceExpiryCard() {
+  const host = document.getElementById("biz-lic-expiry");
+  if (!host) return;
+  try {
+    const d = await api("GET", "/me/licences-expiring");
+    const rows = d.licences || [];
+    if (!document.getElementById("biz-lic-expiry")) return;
+    if (!rows.length) { host.innerHTML = ""; return; }
+    host.innerHTML = `<section class="wcard" style="margin-bottom:14px;border-left:4px solid var(--acc,#006AFC)">
+      <h3 style="margin-top:0">Licences ending soon</h3>
+      <p class="small muted" style="margin-top:0">When a licence ends, you can no longer repost that post or run it as an ad. Ask to renew and the creator decides: a fresh 90 days at their listed fee, only with their approval.</p>
+      ${rows.map((l) => `<div class="lib-row"><div class="lib-main"><div class="lib-title">${esc(l.title)}</div>
+        <div class="lib-meta">@${esc(l.creatorHandle)} · ${l.kind === "standard" ? "standard licence from a paid booking" : "licensed post"} · ${l.ended ? `<strong>ended ${fmtDay(l.windowEndsAt)}</strong>` : `ends <strong>${fmtDay(l.windowEndsAt)}</strong> (${l.daysLeft} ${l.daysLeft === 1 ? "day" : "days"} left)`}${l.postUrl ? ` · <a href="${esc(l.postUrl)}" target="_blank" rel="noopener">View post</a>` : ""}</div></div>
+        <button type="button" class="btn small-btn ws-primary" onclick="return askRenewLicense('${esc(l.postId)}', ${l.fee || 0}, '${esc(fmtDay(l.windowEndsAt))}')">Ask to renew</button></div>`).join("")}
+    </section>`;
+  } catch (e) { /* the library below still renders; the card is an alert, never a blocker */ }
+}
+
 function contentSetTab(t) { contentTab = t; renderContentTab(); return false; }
 function libRowsHtml(h, mode, licMap) {
   const lib = h.contentLibrary || [];
@@ -15545,6 +15807,7 @@ async function renderContentTab() {
     } catch (e) { /* rows simply render without the action */ }
     el.innerHTML = `
     ${wsHead("Posts & licenses", { sub: "Every post about you, and the ones you can reuse.", subKey: "biz-content" })}
+    <div id="biz-lic-expiry"></div>
     <div class="rights-line">${bnIcon("shield")}<span><strong>Seeing a post here is not the right to reuse it.</strong> You may always reshare the post inside Instagram, with credit. Paid bookings include one standard license: 90 days to repost and run ads. A comped post can be licensed at the creator's listed fee, and the creator approves each use. That license is what makes the post UGC you can use: repost it and run it as an ad for those 90 days. Every license below shows its end date, and no license ever runs longer than 90 days.</span></div>
     ${lib.length ? `<div class="track-card"><span class="feed-dot acc">${bnIcon("image")}</span><div class="tc-main"><div class="tc-t">Post tracking is on</div><div class="tc-s">${h.postsTracked30 || 0} post${(h.postsTracked30 || 0) === 1 ? "" : "s"} tracked in the last 30 days. SIGNL tracks every visit's post from the creator's report, timed against the 48 hour standard.</div></div><button type="button" class="btn small-btn ws-outline" onclick="return go('dashboard','Visits & Posts')">Visits</button></div>`
       : `<div class="track-card"><span class="feed-dot acc">${bnIcon("image")}</span><div class="tc-main"><div class="tc-t">Post tracking</div><div class="tc-s">Post tracking starts with your first visit.</div></div></div>`}
@@ -15553,6 +15816,7 @@ async function renderContentTab() {
       { label: "Yours to use", count: usable, on: contentTab === "yours", onclick: "return contentSetTab('yours')" },
     ])}
     ${libRowsHtml(h, contentTab, licMap)}`;
+    loadLicenceExpiryCard();
   } catch (err) {
     el.innerHTML = `${wsHead("Posts & licenses")}<div class="error-box">${esc(err.message)}</div>`;
   }

@@ -8784,6 +8784,194 @@ async function proofKitFor(bizUser) {
   };
 }
 
+// ---------- Build -95: My Regulars + licence-expiry nudges ----------
+// Tier 2 item 10 (strategy doc).
+// (a) My Regulars: every creator who has completed a visit with
+// a business (completed = the visit's post is live, the same
+// "delivered" test Business Home uses) gets one row per business:
+// the deal that ran on the LAST visit, that visit's results in
+// the three honesty classes kept apart (counted = register/code
+// tallies on the booking; recorded = the creator-reported post
+// numbers; intent = recorded shares + saves), a business-private
+// note, and Book again. The note lives at
+// regularnote:{businessId}:{creatorId} and is read by exactly
+// one surface: that business's own Regulars view. It never rides
+// a creator payload, a public page, or another business's read.
+// Demo showcase and tester creators never appear, and a tester
+// business gets no Regulars at all (Build -67 fencing).
+// (b) Licence-expiry nudges: at 14 days and 1 day before a held
+// licence's windowEndsAt, the business gets a licence_expiring
+// alert on the Build -87 rail (sandbox discipline, outbox only,
+// its own Settings switch). Held licences are the granted
+// license: records (their stored windowEndsAt) and a paid
+// booking's standard licence (its end is the post date + 90
+// days, the same derivation the content library shows). Fired
+// markers stamp the licence record itself (granted: the
+// license: record; standard: the post record), so each
+// threshold fires at most once, like the post-clock sweep.
+// Renewal is never automatic: Ask to renew creates a fresh
+// request in the creator-approved licensing flow at the
+// creator's listed fee, and a new 90 days starts only if the
+// creator approves.
+
+function regularDealOf(booking) {
+  if (booking.paidLane || booking.kind === "paid") {
+    const rate = booking.paidLane && typeof booking.paidLane.rate === "number" ? booking.paidLane.rate : Number(booking.cashRate || booking.dollarCap) || 0;
+    return { kind: "paid", line: `Paid booking at $${fmtMoneyS(rate)}`, rightsLine: "Included the standard license: repost and ad use for 90 days from the post date, never longer." };
+  }
+  if (booking.kind === "coupon") {
+    return { kind: "coupon", line: `Coupon deal: ${couponSummary(couponOf(booking), booking.businessName)}`, rightsLine: "Post only, native share only, exactly like a comped visit." };
+  }
+  return { kind: "comp", line: `Comp visit: ${booking.whatComped || "a visit on us"}${booking.dollarCap ? ` (up to $${fmtPriceS(booking.dollarCap)})` : ""}`, rightsLine: "Native share only: 1 post + 1 story." };
+}
+
+async function regularsFor(bizUser) {
+  if (!bizUser || bizUser.role !== "business" || !bizUser.business || isTester(bizUser)) return [];
+  const bookings = (await allBookings()).filter((b) => b.businessId === bizUser.id && !b.test && b.collabRole !== "plusone");
+  const posts = await allPosts();
+  const postByBooking = new Map(posts.map((p) => [p.bookingId, p]));
+  const offers = (await allOffers()).filter((o) => o.businessId === bizUser.id);
+  const byCreator = new Map();
+  for (const b of bookings) {
+    const post = postByBooking.get(b.id);
+    if (!post) continue; // no live post, no completed visit, no Regular
+    const when = Date.parse(post.reportedAt || post.submittedAt || post.createdAt || "") || Date.parse(b.updatedAt || "") || 0;
+    const row = byCreator.get(b.creatorId) || { visits: 0, last: null, lastWhen: 0 };
+    row.visits += 1;
+    if (when >= row.lastWhen) { row.last = { booking: b, post }; row.lastWhen = when; }
+    byCreator.set(b.creatorId, row);
+  }
+  const out = [];
+  for (const [creatorId, row] of byCreator) {
+    const creator = await store.get(`user:${creatorId}`);
+    if (!creator || creator.role !== "creator" || isTester(creator) || isDemoShowcaseCreator(creator)) continue;
+    const { booking, post } = row.last;
+    const pi = intentLib.postIntent(post);
+    const lastMs = row.lastWhen;
+    const rebookedSince = bookings.some((b) => b.creatorId === creatorId && Date.parse(b.createdAt || "") > lastMs)
+      || offers.some((o) => o.creatorId === creatorId && Date.parse(o.createdAt || "") > lastMs);
+    const noteRec = await store.get(`regularnote:${bizUser.id}:${creatorId}`);
+    out.push({
+      creatorId,
+      creatorName: creator.name || booking.creatorName || "",
+      creatorHandle: creator.creator ? creator.creator.handle : booking.creatorHandle || "",
+      visits: row.visits,
+      lastVisitAt: lastMs ? new Date(lastMs).toISOString() : null,
+      lastTitle: booking.title || "",
+      lastBookingId: booking.id,
+      deal: regularDealOf(booking),
+      results: {
+        counted: booking.redemptions ? { customers: Math.max(0, Math.floor(Number(booking.redemptions.count) || 0)), registerDollars: Math.round((Number(booking.redemptions.basketTotal) || 0) * 100) / 100 } : null,
+        recorded: { views: pi.views, likes: pi.likes },
+        intent: pi.intent === null ? null : { shares: pi.shares, saves: pi.saves, total: pi.intent },
+      },
+      note: noteRec && typeof noteRec.note === "string" ? noteRec.note : "",
+      rebookedSince,
+    });
+  }
+  out.sort((a, b) => String(b.lastVisitAt || "") < String(a.lastVisitAt || "") ? -1 : 1);
+  return out;
+}
+
+// Every licence a business currently holds, with its end date.
+// internal: true keeps the record refs the sweep stamps.
+async function licencesHeldBy(bizUser, now, internal = false) {
+  if (!bizUser || bizUser.role !== "business" || !bizUser.business || isTester(bizUser)) return [];
+  const DAY = 86400000;
+  const out = [];
+  const granted = (await store.list("license:")).map((r) => r.value)
+    .filter((l) => l && l.businessId === bizUser.id && l.status === "granted" && l.windowEndsAt);
+  for (const rec of granted) {
+    const end = Date.parse(rec.windowEndsAt);
+    if (!Number.isFinite(end)) continue;
+    const post = await store.get(`post:${rec.postId}`);
+    const booking = post ? await store.get(`booking:${post.bookingId}`) : null;
+    const creator = await store.get(`user:${rec.creatorId}`);
+    if (!creator || creator.role !== "creator" || isTester(creator) || isDemoShowcaseCreator(creator)) continue;
+    out.push({
+      key: `license:${rec.id}`, kind: "licensed",
+      postId: rec.postId, bookingId: rec.bookingId, creatorId: rec.creatorId,
+      creatorName: creator.name || rec.creatorHandle || "", creatorHandle: creator.creator ? creator.creator.handle : rec.creatorHandle || "",
+      title: booking ? booking.title || "Licensed post" : "Licensed post",
+      postUrl: post ? post.url || null : null,
+      fee: creator.creator && Number(creator.creator.licensingFee) > 0 ? Number(creator.creator.licensingFee) : null,
+      windowEndsAt: rec.windowEndsAt, daysLeft: Math.ceil((end - now) / DAY),
+      ...(internal ? { rec } : {}),
+    });
+  }
+  const bookings = (await allBookings()).filter((b) => b.businessId === bizUser.id && !b.test && (b.paidLane || b.kind === "paid"));
+  const posts = await allPosts();
+  const postByBooking = new Map(posts.map((p) => [p.bookingId, p]));
+  for (const b of bookings) {
+    const post = postByBooking.get(b.id);
+    if (!post) continue;
+    if (post.license && post.license.status === "granted") continue; // the granted record above is this post's live licence
+    const postedMs = Date.parse(post.reportedAt || post.submittedAt || post.createdAt || "");
+    if (!Number.isFinite(postedMs)) continue;
+    const end = licenseWindowEnd(postedMs).getTime();
+    const creator = await store.get(`user:${b.creatorId}`);
+    if (!creator || creator.role !== "creator" || isTester(creator) || isDemoShowcaseCreator(creator)) continue;
+    out.push({
+      key: `standard:${post.id}`, kind: "standard",
+      postId: post.id, bookingId: b.id, creatorId: b.creatorId,
+      creatorName: creator.name || b.creatorName || "", creatorHandle: creator.creator ? creator.creator.handle : b.creatorHandle || "",
+      title: b.title || "Paid visit post",
+      postUrl: post.url || null,
+      fee: creator.creator && Number(creator.creator.licensingFee) > 0 ? Number(creator.creator.licensingFee) : null,
+      windowEndsAt: new Date(end).toISOString(), daysLeft: Math.ceil((end - now) / DAY),
+      ...(internal ? { post } : {}),
+    });
+  }
+  out.sort((a, b) => (a.daysLeft - b.daysLeft) || (String(a.windowEndsAt) < String(b.windowEndsAt) ? -1 : 1));
+  return out;
+}
+
+// The alert surface's list: held licences ending within 14 days
+// (or ended in the last 7, still renewable), soonest first.
+async function licencesExpiringFor(bizUser, now = Date.now()) {
+  const held = await licencesHeldBy(bizUser, now);
+  return held.filter((l) => l.daysLeft <= 14 && l.daysLeft >= -7)
+    .map((l) => ({ postId: l.postId, bookingId: l.bookingId, creatorId: l.creatorId, creatorName: l.creatorName, creatorHandle: l.creatorHandle, title: l.title, postUrl: l.postUrl, kind: l.kind, fee: l.fee, windowEndsAt: l.windowEndsAt, daysLeft: l.daysLeft, ended: l.daysLeft < 0 }));
+}
+
+const LICENCE_ALERT_14D_MS = 14 * 86400000;
+const LICENCE_ALERT_1D_MS = 1 * 86400000;
+async function runLicenceExpirySweep(opts = {}) {
+  const now = opts.now ? new Date(opts.now).getTime() : Date.now();
+  const summary = { checked: 0, fired14: 0, fired1: 0, alreadyStamped: 0, fenced: 0, suppressed: 0 };
+  const businesses = (await allUsers()).filter((u) => u.role === "business" && u.business && u.status === "approved");
+  for (const biz of businesses) {
+    const held = await licencesHeldBy(biz, now, true);
+    for (const lic of held) {
+      const end = Date.parse(lic.windowEndsAt);
+      if (!Number.isFinite(end)) continue;
+      const remaining = end - now;
+      if (remaining <= 0 || remaining > LICENCE_ALERT_14D_MS) continue;
+      summary.checked += 1;
+      const threshold = remaining <= LICENCE_ALERT_1D_MS ? "d1" : "d14";
+      const holder = lic.kind === "licensed" ? lic.rec : lic.post;
+      const field = lic.kind === "licensed" ? "expiryAlerts" : "standardLicenceAlerts";
+      const marks = (holder && holder[field]) || {};
+      if (marks[threshold]) { summary.alreadyStamped += 1; continue; }
+      // Stamp BEFORE the send, exactly like the post-clock
+      // sweep: a re-run, or a crash mid-run, never double-fires.
+      holder[field] = { ...marks, [threshold]: new Date(now).toISOString() };
+      await store.set(lic.kind === "licensed" ? `license:${lic.rec.id}` : `post:${lic.post.id}`, holder);
+      const result = await notifyLib.notify(biz, "licence_expiring", {
+        businessName: (biz.business && biz.business.businessName) || "",
+        creatorName: lic.creatorName || (lic.creatorHandle ? `@${lic.creatorHandle}` : "A creator"),
+        postTitle: lic.title,
+        endsOn: new Date(end).toLocaleDateString("en-US", { timeZone: "America/New_York", month: "long", day: "numeric", year: "numeric" }),
+      });
+      if (result.fenced) summary.fenced += 1;
+      else if (result.suppressed) summary.suppressed += 1;
+      else if (threshold === "d1") summary.fired1 += 1;
+      else summary.fired14 += 1;
+    }
+  }
+  return summary;
+}
+
 async function businessHome(user) {
   const now = Date.now();
   const plan = planById(user.business.plan) || PLANS[0];
@@ -9218,6 +9406,11 @@ async function buildSigFacts(user, full) {
       applicantsWaiting: apps.filter((a) => a.businessId === user.id && (a.status === "applied" || a.status === "backfill_offered")).length,
       draftOffers: offers.filter((o) => o.businessId === user.id && o.status === "draft").length,
       rosterInMarket,
+      // Build -95: My Regulars + licences nearing expiry, from
+      // the same builders the Regulars view and the alert
+      // surface read, so Sig can never tell a different story.
+      regulars: await regularsFor(user),
+      licencesExpiring: await licencesExpiringFor(user),
     });
   }
   if (user.role === "creator") {
@@ -9231,9 +9424,16 @@ async function buildSigFacts(user, full) {
     const pc = (full && full.profileCompletion) || {};
     const itemLabels = {};
     for (const it of pc.items || []) itemLabels[it.id] = it.label;
+    // Build -95: the pending licence (and renewal) requests
+    // waiting on this creator, with the business and fee on
+    // each, so Sig names the real records behind the count.
+    const pendingLicenses = (await allLicenses()).filter((l) => l.creatorId === user.id && l.status === "pending")
+      .sort((a, b) => String(a.createdAt) < String(b.createdAt) ? -1 : 1)
+      .map((l) => ({ businessName: l.businessName || "A business", fee: l.fee || 0, renewal: !!l.renewal, createdAt: l.createdAt }));
     return sigdata.buildCreatorFacts({
       user, full, readout, marketLive,
       bookings: mine, posts: myPosts,
+      pendingLicenses,
       openOffers, directInvites,
       level: levelForPoints(points),
       listedMarkets: listedMarketsFor(user),
@@ -16741,8 +16941,11 @@ async function route(event) {
     const opts = {};
     if (TEST_MODE && b.now) { const d = new Date(b.now); if (!Number.isNaN(d.getTime())) opts.now = d; }
     const sweep = await notifyLib.runPostClockSweep(opts);
+    // Build -95: the licence-expiry thresholds (14 days, 1 day)
+    // ride the same hourly clock and the same sandbox rail.
+    const licenceSweep = await runLicenceExpirySweep(opts);
     await store.set("config:notifySweep", { lastRunAt: nowIso() });
-    return json(200, { ok: true, sweep, providers: notifyLib.providerStatus() });
+    return json(200, { ok: true, sweep, licenceSweep, providers: notifyLib.providerStatus() });
   }
   if (method === "GET" && seg[0] === "admin" && seg[1] === "notify" && seg[2] === "outbox") {
     if (!user || user.role !== "admin") return err(403, "Admin only");
@@ -20214,6 +20417,100 @@ async function route(event) {
     return json(200, await businessHome(user));
   }
 
+  // ---------- Build -95: My Regulars + licence expiry ----------
+  // Regulars reads/writes are scoped to the signed-in business
+  // by construction: rows compute from its own bookings, and the
+  // note key carries its id. No creator route reads regularnote:
+  // records, and Book again only ever creates a DRAFT (the
+  // founding draft gates apply untouched: a draft sends nothing
+  // and notifies nobody until the business publishes it through
+  // the normal offer flow).
+  if (seg[0] === "me" && seg[1] === "regulars") {
+    if (user.role !== "business") return err(403, "Businesses only");
+    if (user.status !== "approved") return err(403, "Your Regulars open once your business application is approved.");
+    if (method === "GET" && seg.length === 2) {
+      return json(200, { regulars: await regularsFor(user) });
+    }
+    if (method === "PUT" && seg.length === 4 && seg[3] === "note") {
+      const creatorId = seg[2];
+      const rows = await regularsFor(user);
+      if (!rows.some((r) => r.creatorId === creatorId)) return err(404, "That creator is not one of your Regulars yet. A creator becomes a Regular when a visit with them is completed and their post is live.");
+      const b = parseBody(event);
+      const note = String(b.note || "").trim().slice(0, 1000);
+      const key = `regularnote:${user.id}:${creatorId}`;
+      const existing = await store.get(key);
+      const ts = nowIso();
+      await store.set(key, { businessId: user.id, creatorId, note, createdAt: existing ? existing.createdAt : ts, updatedAt: ts });
+      await logEvent({ type: "regular_note_saved", actorId: user.id, actorRole: "business", subjectId: creatorId, market: user.market, data: { hasNote: !!note } });
+      return json(200, { regulars: await regularsFor(user) });
+    }
+    if (method === "POST" && seg.length === 4 && seg[3] === "book-again") {
+      const creatorId = seg[2];
+      const creator = await store.get(`user:${creatorId}`);
+      if (!creator || creator.role !== "creator" || creator.status !== "approved" || isTester(creator) || isDemoShowcaseCreator(creator)) return err(400, "That creator is not on the roster");
+      const rows = await regularsFor(user);
+      const row = rows.find((r) => r.creatorId === creatorId);
+      if (!row) return err(404, "That creator is not one of your Regulars yet. Book again starts from a completed visit.");
+      const last = await store.get(`booking:${row.lastBookingId}`);
+      if (!last) return err(404, "That last visit is not on record");
+      const sourceOffer = last.offerId ? await store.get(`offer:${last.offerId}`) : null;
+      const kind = row.deal.kind;
+      const ts = nowIso();
+      const offer = {
+        id: crypto.randomUUID(),
+        businessId: user.id,
+        businessName: user.business.businessName,
+        market: user.market,
+        category: user.business.category,
+        creatorId: creator.id,
+        creatorHandle: creator.creator ? creator.creator.handle : null,
+        lane: "direct",
+        kind,
+        covers: kind === "comp" ? coversOf(last) : null,
+        paidBrief: kind === "paid" ? (last.paidBrief || null) : null,
+        requiresSpanish: sourceOffer ? sourceOffer.requiresSpanish === true : false,
+        cashRate: kind === "paid" ? (last.paidLane && typeof last.paidLane.rate === "number" ? last.paidLane.rate : Number(last.cashRate || last.dollarCap) || null) : null,
+        targetTiers: null,
+        title: String(last.title || `Visit us again: ${user.business.businessName}`).slice(0, 140),
+        whatComped: String(last.whatComped || "").slice(0, 600),
+        includes: String((sourceOffer && sourceOffer.includes) || last.whatComped || "").slice(0, 600),
+        experience: String((sourceOffer && sourceOffer.experience) || "").slice(0, 600),
+        templateId: null,
+        play: null,
+        moment: sourceOffer ? validMoment(sourceOffer.moment) : validMoment(user.business && user.business.moment),
+        countedResult: validCountedResult(last.countedResult || (sourceOffer && sourceOffer.countedResult)),
+        dollarCap: Math.max(0, Math.floor(Number(last.dollarCap) || 0)),
+        visitWindow: String(last.visitWindow || ""),
+        windowMode: last.windowMode === "thisweek" ? "thisweek" : "7days",
+        spots: 1,
+        status: "draft",
+        createdAt: ts,
+        updatedAt: ts,
+        publishedAt: null,
+        nudgeSentAt: null,
+        deliverables: validateDeliverables(last.deliverables || (sourceOffer && sourceOffer.deliverables), kind),
+        ...(kind === "coupon" ? { coupon: couponOf(last) || couponOf(sourceOffer) } : {}),
+        rebookOfBookingId: last.id,
+        viaRegulars: true,
+      };
+      offer.assetPacketAttached = sourceOffer ? offerAssetPacketAttached(sourceOffer) : kind === "paid";
+      offer.brief = normalizeBriefInput(null, kind, briefSeedFromFields(offer));
+      await store.set(`offer:${offer.id}`, offer);
+      await logEvent({ type: "offer_created", actorId: user.id, actorRole: "business", subjectId: offer.id, market: offer.market, data: { title: offer.title, dollarCap: offer.dollarCap, spots: 1, targeted: true, creatorId: creator.id, category: offer.category, windowMode: offer.windowMode, lane: "direct", kind, status: "draft", via: "regulars_book_again", fromBookingId: last.id } });
+      return json(201, { offer, regulars: await regularsFor(user) });
+    }
+    return err(405, "Method not allowed");
+  }
+
+  // The licence-expiry alert surface's data: this business's
+  // held licences ending within 14 days (or just ended), with
+  // the exact end date the alert carries.
+  if (seg[0] === "me" && seg[1] === "licences-expiring" && method === "GET") {
+    if (user.role !== "business") return err(403, "Businesses only");
+    if (user.status !== "approved") return err(403, "Licences open once your business application is approved.");
+    return json(200, { licences: await licencesExpiringFor(user) });
+  }
+
   // ---------- Build -91: business wishlist ----------
   // The business's own private creator list. Reads and writes are
   // scoped to the signed-in business's own rows by construction
@@ -20749,9 +21046,25 @@ async function route(event) {
     if (!post || post.businessId !== user.id) return err(404, "Post not found");
     const booking = await store.get(`booking:${post.bookingId}`);
     if (!booking) return err(404, "That visit is not on record");
-    if (booking.kind === "paid") return err(400, "This post came from a paid visit, which already includes the standard 90-day license. There is nothing more to license.");
+    // Build -95: renewal. A licence inside its last 14 days (or
+    // already ended) can be renewed through this same flow: the
+    // request goes to the creator at their listed fee, and a
+    // fresh 90 days starts only if they approve. A licence with
+    // more than 14 days left is refused exactly as before.
+    const RENEWAL_WINDOW_MS = 14 * 86400000;
+    let isRenewal = false;
+    if (booking.kind === "paid") {
+      const stdEnd = adUseWindowEnd(post).getTime();
+      if (stdEnd - Date.now() > RENEWAL_WINDOW_MS) return err(400, "This post came from a paid visit, which already includes the standard 90-day license. There is nothing more to license.");
+      isRenewal = true;
+    }
     if (post.license && post.license.status === "granted" && Date.parse(post.license.windowEndsAt) > Date.now()) {
-      return err(409, `This post is already licensed until ${String(post.license.windowEndsAt).slice(0, 10)}.`);
+      if (Date.parse(post.license.windowEndsAt) - Date.now() > RENEWAL_WINDOW_MS) {
+        return err(409, `This post is already licensed until ${String(post.license.windowEndsAt).slice(0, 10)}.`);
+      }
+      isRenewal = true;
+    } else if (post.license && post.license.status === "granted") {
+      isRenewal = true; // the granted window already ended
     }
     const existing = (await store.list("license:")).map((r) => r.value).filter((l) => l.postId === post.id && l.status === "pending");
     if (existing.length) return err(409, "A license request on this post is already waiting on the creator.");
@@ -20787,6 +21100,10 @@ async function route(event) {
       createdAt: ts,
       respondedAt: null,
       windowEndsAt: null,
+      // Build -95: a renewal request names the licence it
+      // replaces; the grant still starts fresh on approval.
+      renewal: isRenewal,
+      renewalOfRequestId: isRenewal && post.license ? post.license.requestId || null : null,
     };
     await store.set(`license:${rec.id}`, rec);
     try { await notifyLib.notifyById(rec.creatorId, "licence_waiting_creator", { businessName: rec.businessName, feeText: `$${rec.fee}` }); } catch (e) { /* best-effort */ }
@@ -21945,4 +22262,4 @@ async function route(event) {
 
 // The email builders are exported alongside the router so the verify
 // suites can assert on the exact copy a creator receives.
-module.exports = { route, passwordResetEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, normalizeBriefInput, briefForOffer, validateAssetPacket, assetPacketView, postSeries, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, runPublicPageBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView, musicOpenView, studentOpenView, PLATFORM_PEER_ID, platformThreadId, platformMessageEmail, MESSAGE_TEMPLATES, runFinishEngineSweep, maybeFireFinishMoment, handleFinishEngineReply, finishEngineConfig, recordRosterDrop, runRosterDigestSweep, normalizeCoupon, couponOf, couponFaceValue, couponSummary, validateDeliverables, deliverablesOf, deliverableLineFor, deliverableStandard, postWindowHours, DELIVERABLE_STANDARDS };
+module.exports = { route, passwordResetEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, normalizeBriefInput, briefForOffer, validateAssetPacket, assetPacketView, postSeries, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, runPublicPageBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView, musicOpenView, studentOpenView, PLATFORM_PEER_ID, platformThreadId, platformMessageEmail, MESSAGE_TEMPLATES, runFinishEngineSweep, maybeFireFinishMoment, handleFinishEngineReply, finishEngineConfig, recordRosterDrop, runRosterDigestSweep, regularsFor, licencesExpiringFor, runLicenceExpirySweep, normalizeCoupon, couponOf, couponFaceValue, couponSummary, validateDeliverables, deliverablesOf, deliverableLineFor, deliverableStandard, postWindowHours, DELIVERABLE_STANDARDS };

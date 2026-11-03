@@ -55,8 +55,14 @@ const EVENT_TYPES = {
   // (Tier 1 item 6's hook: the event type + API live here; the
   // wishlist/roster lane calls notify() with it.)
   roster_drop: { prefKey: "roster", role: "business" },
+  // business: a licence they hold is nearing its end date
+  // (Build -95: fired by the licence-expiry sweep in the
+  // router at 14 days and 1 day out, each threshold at most
+  // once per licence). Its own switch: a business can silence
+  // expiry nudges without silencing licence-request updates.
+  licence_expiring: { prefKey: "licenceExpiry", role: "business" },
 };
-const PREF_KEYS = ["offers", "bookings", "postClock", "licences", "applications", "roster"];
+const PREF_KEYS = ["offers", "bookings", "postClock", "licences", "applications", "roster", "licenceExpiry"];
 
 function defaultPrefs() {
   const out = {};
@@ -116,6 +122,8 @@ function render(eventType, payload = {}) {
       return { subject: `Applications are waiting: ${title}`, sms: `SIGNL: ${payload.creatorName || "A creator"} applied to "${title}". Applications are waiting in your stack in SIGNL.`, email: `Applications are waiting on SIGNL.\n\n${payload.creatorName || "A creator"} applied to "${title}". Picking inside the window keeps things moving; nobody should be left waiting without an answer.\n\nOpen your stack in SIGNL: https://app.joinsignl.com` };
     case "business_licence_waiting":
       return { subject: `Your licence request moved`, sms: `SIGNL: The licence state you were waiting on has moved. Open SIGNL to see where it stands.`, email: `The licence request you were waiting on has moved in SIGNL.\n\n${payload.detail || "Open SIGNL to see the current state."}\n\nOpen SIGNL: https://app.joinsignl.com` };
+    case "licence_expiring":
+      return { subject: `A licence ends ${payload.endsOn || "soon"}: ${payload.creatorName || "a creator"}'s post`, sms: `SIGNL: Your licence on ${payload.creatorName || "a creator"}'s post ends ${payload.endsOn || "soon"}. Ask to renew in SIGNL: the creator approves a fresh 90 days at their listed fee. Nothing renews on its own.`, email: `A licence you hold is ending.\n\nYour licence on ${payload.creatorName || "a creator"}'s post (${payload.postTitle || "a visit post"}) ends ${payload.endsOn || "soon"}. After that day you can no longer repost it or run it as an ad.\n\nTo keep using it, ask to renew in SIGNL: the request goes to the creator at their listed fee, and a fresh 90 days starts only if they approve. Nothing renews on its own, and no licence ever runs longer than 90 days.\n\nOpen SIGNL: https://app.joinsignl.com` };
     case "roster_drop":
       return { subject: `New creators finished in your market`, sms: `SIGNL: ${payload.count ? `${payload.count} new creator${payload.count === 1 ? "" : "s"}` : "New creators"} finished their profiles${payload.market ? ` in ${payload.market}` : ""}. See them in SIGNL.`, email: `New creators finished on SIGNL.\n\n${payload.count ? `${payload.count} new creator${payload.count === 1 ? "" : "s"}` : "New creators"} finished their profiles${payload.market ? ` in ${payload.market}` : ""}${payload.category ? ` (${payload.category})` : ""}. They are ranked by local audience, not follower count.\n\nSee them in SIGNL: https://app.joinsignl.com` };
     default:

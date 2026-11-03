@@ -74,7 +74,7 @@ check("paid-rate note grants the license in plain words", count(appJs, "A paid b
 check("fee line covers repost, not just ads", appJs.includes("repost my post and run it as an ad for 90 days:") && appJs.includes("a business can ask to repost your post and run it as an ad for 90 days, only with your approval."));
 check("fee note states the start day and never longer", appJs.includes("The 90 days start the day you approve a request, and the license ends when the 90 days end, never longer."));
 check("Earnings row: pending starts on approval, granted shows its end", appJs.includes("starts the day you approve") && appJs.includes("runs through ${fmtDay(l.windowEndsAt)}"));
-check("both approve confirms carry start + end + never longer", count(appJs, "The 90 days start today, the day you approve, and end ${fmtDayFull(new Date(Date.now() + 90 * 86400000).toISOString())}. Never longer.") === 2, String(count(appJs, "The 90 days start today")));
+check("approve confirms carry start + end + never longer (both dialogs + the Build -95 Sig in-thread approve)", count(appJs, "The 90 days start today, the day you approve, and end ${fmtDayFull(new Date(Date.now() + 90 * 86400000).toISOString())}. Never longer.") === 3, String(count(appJs, "The 90 days start today")));
 check("post-detail notice carries the end date", appJs.includes("If you approve, the 90 days start today and end ${fmtDayFull(new Date(Date.now() + 90 * 86400000).toISOString())}."));
 check("build35-pinned profile line untouched", appJs.includes("Run my post as an ad for 90 days:"));
 
