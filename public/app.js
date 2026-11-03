@@ -2293,6 +2293,9 @@ function moreRowsFor() {
   if (u.role === "partner") {
     return [
       { icon: "sig", label: "Sig", sub: "Your numbers and next moves, in plain sentences.", tab: "Sig" },
+      // Team seats (Build -107): only the org's team admin
+      // (Admin-set) ever sees the Team section.
+      ...(u.partner && u.partner.teamAdmin ? [{ icon: "users", label: "Team", sub: "Your people's seats: invite, resend, revoke.", tab: "Team" }] : []),
       { icon: "pin", label: "Markets", sub: "Each market's funnel, end to end.", tab: "Markets" },
       { icon: "person", label: "Creators", sub: "The bench your links brought in.", tab: "Creators" },
       { icon: "deck", label: "Businesses", sub: "Businesses your links brought in.", tab: "Businesses" },
@@ -2311,6 +2314,7 @@ function moreRowsFor() {
   if (u.role === "pilot_partner") {
     return [
       { icon: "sig", label: "Sig", sub: "Your pilot's numbers, in plain sentences.", tab: "Sig" },
+      ...(u.teamAdmin ? [{ icon: "users", label: "Team", sub: "Your pilot team's seats: invite, resend, revoke.", tab: "Team" }] : []),
       { icon: "help", label: "Help", sub: "How the pilot works, in plain words.", tab: "Help" },
     ];
   }
@@ -3714,6 +3718,7 @@ function sigLinkGo(dest) {
     case "partner-earnings": return go("dashboard", "Earnings");
     case "partner-links": return go("dashboard", "Links");
     case "partner-markets": return go("dashboard", "Markets");
+    case "partner-team": return go("dashboard", "Team");
     case "pilot-report": return go("dashboard", "Report");
     default: return false;
   }
@@ -3732,6 +3737,7 @@ function sigChipDest(label) {
   if (t.includes("through your links")) return "partner-markets";
   if (t.includes("accrued and owed")) return "partner-earnings";
   if (t.includes("london race")) return "partner-markets";
+  if (t.includes("hasn't accepted their invite")) return "partner-team";
   if (t.includes("square register")) return "biz-home";
   if (t.includes("left to set up")) return "biz-home";
   if (t.includes("first campaign")) return "biz-setup";
@@ -3780,7 +3786,7 @@ async function sigAsk(text) {
       // Partner + funder Sig (Build -106) is scoped answers
       // only: no business/creator flow matching ever attaches
       // to a partner answer; the answer's own link is the walk.
-      if (state.user && (state.user.role === "partner" || state.user.role === "pilot_partner")) return { text: data.text, flow: null, link: data.link || null };
+      if (state.user && (state.user.role === "partner" || state.user.role === "pilot_partner")) return { text: data.text, flow: null, link: data.link || null, action: data.action || null };
       const match = sigMatch(text, ctx.biz);
       let flow = null;
       if (match.topic) {
@@ -3850,6 +3856,31 @@ async function sigAskSubmit(ev) {
   if (reply.link && reply.link.dest && reply.link.label) {
     const dest = reply.link.dest;
     pending.actions = [{ label: reply.link.label, primary: true, run: async () => sigLinkGo(dest) }];
+  }
+  // Team seats (Build -107): a confirm-first action rides a
+  // scoped partner/funder answer. Nothing has happened yet;
+  // the button is the confirmation, and the team endpoint
+  // re-checks every fence when it is tapped.
+  if (reply.action && reply.action.type) {
+    const act = reply.action;
+    pending.actions = [{
+      label: act.label || "Confirm",
+      primary: true,
+      run: async () => {
+        try {
+          if (act.type === "team_invite") {
+            const r = await api("POST", "/partner/team/invite", act.payload || {});
+            sigOpSay(r && r.emailSent === false ? "Done, the seat is created, but the invite email did not go out. Resend it from the Team view." : `Done. The invite is on its way to ${(act.payload || {}).email || "them"}; the seat shows on your Team view right away.`);
+          } else if (act.type === "team_revoke") {
+            await api("POST", "/partner/team/revoke", act.payload || {});
+            sigOpSay("Done. That seat is revoked: their access ends on their next request, and everything they brought in stays credited.");
+          }
+        } catch (e) {
+          sigOpSay(`That did not go through: ${e.message}`);
+        }
+        sigOpPaint();
+      },
+    }];
   }
   pending.suggest = reply.suggest || [];
   delete pending.pending;
@@ -14852,7 +14883,7 @@ function renderBusinessDash() {
 // (GET /partner/summary) computed from the records stamped with
 // the partner's own signup source. A partner with no activity
 // yet gets the fills-in voice, never a grid of zeros.
-const PARTNER_TABS = ["Home", "Markets", "Creators", "Businesses", "Performance", "Earnings", "Links", "Account", "More", "Help", "Sig"];
+const PARTNER_TABS = ["Home", "Markets", "Creators", "Businesses", "Performance", "Earnings", "Links", "Account", "More", "Help", "Sig", "Team"];
 
 // Co-brand (Build -105): when Admin has set a partner brand,
 // the partner's name and logo lead their shell and "Powered by
@@ -14914,6 +14945,7 @@ function renderPartnerTab(tab) {
   if (tab === "Links") el.innerHTML = partnerLinksHtml(d);
   if (tab === "Account") el.innerHTML = partnerAccountHtml(d);
   if (tab === "Help") el.innerHTML = partnerHelpHtml(d);
+  if (tab === "Team") el.innerHTML = teamTabHtml();
   if (tab === "Sig") el.innerHTML = partnerSigHtml(d);
   // Co-brand (Build -105): the partner's brand leads every tab
   // of their shell; no brand set, nothing changes.
@@ -14925,6 +14957,7 @@ function renderPartnerTab(tab) {
   if (tab === "Home") loadPartnerScopeHeads(d);
   if (tab === "Earnings") loadPartnerPacks();
   if (tab === "Markets") loadPartnerRace();
+  if (tab === "Team") loadTeamTab();
   // Sig's living face rides the same hero stack as the Sig tab
   // (sigHeroSet): idle on the Overview presence card; a greet
   // one-shot the first time the partner opens their Sig, idle
@@ -14937,6 +14970,79 @@ function renderPartnerTab(tab) {
 
 function partnerSampleChip(d) {
   return d.partner.demo ? ` <span class="badge warn">Sample data</span>` : "";
+}
+
+// Team seats (Build -107): the org lead's seat manager. One
+// view: who holds seats, what each seat can reach, and the
+// invite form. Revoking ends access on the seat's next
+// request; the work they did stays credited.
+function teamTabHtml() {
+  return `
+  <h2 style="margin-bottom:2px">Your team</h2>
+  <p class="muted" style="margin-top:0">People you seat get their own login for your scopes only. They set their own password from the invite email; nobody ever sees it but them. Revoking a seat ends access on their next request, and everything they brought in stays credited.</p>
+  <div id="pt-team"><p class="muted">Loading your team…</p></div>`;
+}
+function teamSeatsHtml(d) {
+  const seats = d.seats || [];
+  const live = seats.filter((s) => s.status !== "revoked");
+  const kindLabel = (s) => (s.kind === "team" ? "Partner team seat" : s.kind === "pilot" ? "Pilot seat" : "Recruiter");
+  const row = (s) => `
+  <div class="card mb" style="padding:12px 14px">
+    <div class="flex-between"><strong>${esc(s.name || s.email)}</strong><span class="badge ${s.status === "active" ? "ok" : s.status === "invited" ? "warn" : ""}">${s.status === "active" ? "Active" : s.status === "invited" ? "Invited" : "Revoked"}</span></div>
+    <p class="small muted" style="margin:4px 0">${esc(s.email)} · ${esc(kindLabel(s))} · ${esc(s.scope || "")}${s.invitedAt ? ` · invited ${esc(fmtDay(s.invitedAt))}` : ""}</p>
+    ${s.status !== "revoked" ? `<div style="display:flex;gap:8px;flex-wrap:wrap">${s.status === "invited" ? `<button class="btn ghost small-btn" onclick="teamSeatAction('${s.seatId}','resend')">Resend the invite</button>` : ""}<button class="btn ghost small-btn" onclick="teamSeatAction('${s.seatId}','revoke')">Revoke this seat</button></div>` : ""}
+  </div>`;
+  const kindOptions = [];
+  if (!d.isFunder) kindOptions.push(`<option value="team">Partner team seat (sees the org's numbers, never the deal terms)</option>`);
+  for (const p of d.pilots || []) kindOptions.push(`<option value="pilot:${esc(p.id)}">Pilot seat: ${esc(p.name)}</option>`);
+  if (!d.isFunder) for (const m of d.markets || []) kindOptions.push(`<option value="recruiter:${esc(m)}">Recruiter in ${esc(m)}</option>`);
+  return `
+  ${live.length ? live.map(row).join("") : `<div class="panel"><p style="margin:0">No seats yet. Invite your first person below; they get their own login for your scopes only.</p></div>`}
+  ${seats.some((s) => s.status === "revoked") ? `<h3 style="margin:16px 0 6px">Revoked</h3>${seats.filter((s) => s.status === "revoked").map(row).join("")}` : ""}
+  <div class="panel mt">
+    <h3 style="margin-top:0">Invite someone</h3>
+    <div class="form-2col">
+      <div class="field"><label>Their name</label><input type="text" id="tm-name" placeholder="Full name"></div>
+      <div class="field"><label>Their email</label><input type="email" id="tm-email" placeholder="name@company.com"></div>
+    </div>
+    <div class="field"><label>Seat</label><select id="tm-kind">${kindOptions.join("")}</select></div>
+    <button class="btn" onclick="teamInviteSubmit()">Send the invite</button> <span id="tm-ok" class="saved"></span>
+    <p class="small muted" style="margin:8px 0 0">You can only seat people inside your own markets and pilots, and a seat never carries your deal terms or team controls.</p>
+  </div>`;
+}
+async function loadTeamTab() {
+  const host = document.getElementById("pt-team");
+  if (!host) return;
+  try {
+    const d = await api("GET", "/partner/team");
+    host.innerHTML = teamSeatsHtml(d);
+  } catch (e) {
+    host.innerHTML = `<div class="panel"><p style="margin:0">${esc(e.message)}</p></div>`;
+  }
+}
+async function teamInviteSubmit() {
+  const ok = document.getElementById("tm-ok");
+  const kindRaw = (document.getElementById("tm-kind") || {}).value || "team";
+  const [kind, scope] = kindRaw.split(/:(.+)/).filter((x) => x !== "");
+  const body = { kind, name: (document.getElementById("tm-name") || {}).value || "", email: (document.getElementById("tm-email") || {}).value || "" };
+  if (kind === "pilot") body.pilotId = scope;
+  if (kind === "recruiter") body.market = scope;
+  try {
+    const r = await api("POST", "/partner/team/invite", body);
+    if (ok) ok.textContent = r.emailSent === false ? "Seat created, but the invite email did not go out. Resend it from the list above." : "Invite sent. They set their own password from the email.";
+    loadTeamTab();
+  } catch (e) {
+    if (ok) ok.textContent = e.message;
+  }
+}
+async function teamSeatAction(seatId, action) {
+  if (action === "revoke" && !window.confirm("Revoke this seat? Their access ends on their next request. Everything they brought in stays credited.")) return;
+  try {
+    await api("POST", `/partner/team/${action}`, { seatId });
+    loadTeamTab();
+  } catch (e) {
+    window.alert(e.message);
+  }
 }
 
 function partnerFillsIn(what) {
@@ -15043,10 +15149,10 @@ function partnerHomeHtml(d) {
   </div>
   <div class="card mb">
     <div class="flex-between"><strong>Invite a business</strong><span class="badge ok">Next step</span></div>
-    <p class="small muted" style="margin:6px 0 10px">Businesses in your markets earn you ${p.sharePct}% of their subscription while they stay subscribed. Send one your business link today.</p>
+    <p class="small muted" style="margin:6px 0 10px">Businesses in your markets earn you ${p.sharePct == null ? "your org's share" : `${p.sharePct}%`} of their subscription while they stay subscribed. Send one your business link today.</p>
     <button class="btn ghost" onclick="return go('dashboard','Links')">Copy business link</button>
   </div>
-  <p class="small muted">At full fill, ${d.atFill.markets === 1 ? "your market holds" : `your ${d.atFill.markets} markets hold`} about ${fmtNum(d.atFill.businessesPerMarket * d.atFill.markets)} businesses, and your share runs about $${fmtNum(d.atFill.partnerYearly)} a year. Modeled, not promised: markets fill over time.</p>`;
+  ${d.atFill ? `<p class="small muted">At full fill, ${d.atFill.markets === 1 ? "your market holds" : `your ${d.atFill.markets} markets hold`} about ${fmtNum(d.atFill.businessesPerMarket * d.atFill.markets)} businesses, and your share runs about $${fmtNum(d.atFill.partnerYearly)} a year. Modeled, not promised: markets fill over time.</p>` : ""}`;
 }
 
 function partnerMarketsHtml(d) {
@@ -15157,7 +15263,7 @@ function partnerEarningsHtml(d) {
   return `
   ${wsHead("Your earnings", { sub: "Your share of subscription revenue in your markets.", subKey: "pt-earnings" })}
   <div class="stat-band home-metrics">
-    <div class="stat-cell"><div class="stat-num">${e.sharePct}%</div><div class="stat-lbl">Your share</div></div>
+    <div class="stat-cell"><div class="stat-num">${e.sharePct == null ? "—" : `${e.sharePct}%`}</div><div class="stat-lbl">Your share</div></div>
     <div class="stat-cell"><div class="stat-num">${sym}${fmtPrice(e.monthlyRevenue)}</div><div class="stat-lbl">Subscription revenue / mo</div></div>
     <div class="stat-cell"><div class="stat-num"><em>${sym}${fmtPrice(e.accruedMonthly)}</em></div><div class="stat-lbl">Accrued to you / mo</div></div>
     <div class="stat-cell"><div class="stat-num">${sym}${fmtPrice(e.paidTotal)}</div><div class="stat-lbl">Paid to date</div></div>
@@ -15170,9 +15276,9 @@ function partnerEarningsHtml(d) {
   <div class="panel mt"><h3 style="margin-top:0">Accrued, not yet paid</h3>
   <p class="small muted">These amounts accrue from the subscriptions on file in your markets. Payouts begin once partner payments are switched on; until then this page is the ledger, and accrued amounts are never shown as paid.</p></div>` : `
   <div class="panel mt"><h3 style="margin-top:0">No paid revenue yet</h3>
-  <p class="small muted">No business in your markets has a paid subscription on file yet, so nothing has accrued. The moment one does, it appears here at your ${e.sharePct}% share. Amounts on this page are always labeled accrued until a payment actually happens.</p></div>`}
-  <p class="small muted">At full fill, your share runs about $${fmtNum(d.atFill.partnerYearly)} a year across your ${d.atFill.markets === 1 ? "market" : `${d.atFill.markets} markets`}. Modeled from the average partner market (about ${fmtNum(d.atFill.businessesPerMarket)} businesses at $2,958 a year), not a promise.</p>
-  <div class="panel mt">
+  <p class="small muted">No business in your markets has a paid subscription on file yet, so nothing has accrued. The moment one does, it appears here at your ${e.sharePct == null ? "org's" : `${e.sharePct}%`} share. Amounts on this page are always labeled accrued until a payment actually happens.</p></div>`}
+  ${d.atFill ? `<p class="small muted">At full fill, your share runs about $${fmtNum(d.atFill.partnerYearly)} a year across your ${d.atFill.markets === 1 ? "market" : `${d.atFill.markets} markets`}. Modeled from the average partner market (about ${fmtNum(d.atFill.businessesPerMarket)} businesses at $2,958 a year), not a promise.</p>` : ""}
+  ${(d.viewer && d.viewer.isTeamMember) ? "" : `<div class="panel mt">
     <h3 style="margin-top:0">Your month pack</h3>
     <p class="small muted" style="margin:0 0 10px">One file with your month: the accrual, the greater-of math with both candidates, what you have been paid and what is owed, and the business-by-business activity. A closed month's pack is frozen: it matches the numbers SIGNL closed with, to the cent, and later changes arrive as adjustment rows instead of rewriting it. An open month downloads as a live snapshot and says so.</p>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
@@ -15180,7 +15286,7 @@ function partnerEarningsHtml(d) {
       <a class="btn" id="pt-pack-link" href="/api/partner/pack?month=${new Date().toISOString().slice(0, 7)}">Download the month pack</a>
     </div>
     <p class="small muted" id="pt-pack-note" style="margin:8px 0 0"></p>
-  </div>`;
+  </div>`}`;
 }
 
 // The pack month picker (Build -106): options come from the
@@ -15225,7 +15331,7 @@ function partnerLinksHtml(d) {
   </div>`).join("")}
   <div class="panel">
     <h3 style="margin-top:0">How your share works</h3>
-    <p class="small">You keep <strong>${d.partner.sharePct}%</strong> of the subscription revenue from businesses in your assigned markets that joined through your links or are credited to you. Creators cost you nothing and earn you nothing directly; they are the bench that makes businesses stay. Paid bookings and post licenses are the creator's and the business's money, not subscription revenue, so they are not shared. Accrued amounts appear under Earnings the month a subscription is on file.</p>
+    <p class="small">You keep <strong>${d.partner.sharePct == null ? "your org's share" : `${d.partner.sharePct}%`}</strong> of the subscription revenue from businesses in your assigned markets that joined through your links or are credited to you. Creators cost you nothing and earn you nothing directly; they are the bench that makes businesses stay. Paid bookings and post licenses are the creator's and the business's money, not subscription revenue, so they are not shared. Accrued amounts appear under Earnings the month a subscription is on file.</p>
     <p class="small muted">The partner one-pager lives here as soon as it is published. Ask the SIGNL team for the current copy any time: hello@joinsignl.com.</p>
   </div>`;
 }
@@ -15245,7 +15351,7 @@ function partnerAccountHtml(d) {
   <div class="panel">
     <h3 style="margin-top:0">${esc(p.name)}${partnerSampleChip(d)}</h3>
     <p class="small" style="margin:0">Type: ${p.type === "profile" ? "Local profile" : "Media group"} · Contact: ${esc(p.contactName || u.name || "")} · Status: ${p.status === "active" ? "Active" : "Paused"}</p>
-    <p class="small muted">Markets: ${esc(p.markets.join(", "))} · Your share: ${p.sharePct}% · Agreement: ${p.agreementStatus === "signed" ? "Signed" : "Not signed yet"}</p>
+    <p class="small muted">Markets: ${esc(p.markets.join(", "))} · Your share: ${p.sharePct == null ? "set in your org's deal" : `${p.sharePct}%`} · Agreement: ${p.agreementStatus === "signed" ? "Signed" : "Not signed yet"}</p>
     ${p.agreementStatus !== "signed" ? `<p class="small muted">Your agreement is handled with the SIGNL team directly (hello@joinsignl.com); this page updates the moment it is signed. Nothing here waits on it except payouts.</p>` : ""}
   </div>
   ${accountHtml(u)}`;
@@ -15360,7 +15466,7 @@ function partnerHelpHtml(d) {
   </div>
   <div class="wcard">
     ${qa("What do I actually do?", "Share your links. Creators claim through your creator link and join the bench in your markets. Businesses sign up through your business link. SIGNL runs everything else: the platform, the campaigns, the payments, the guarantees.")}
-    ${qa("How do I earn?", `You keep ${p.sharePct || 60}% of subscription revenue from businesses credited to you in your markets, for as long as they stay subscribed. It accrues monthly and shows under Earnings, labeled accrued until a payment actually happens.`)}
+    ${qa("How do I earn?", p.sharePct == null ? "You keep your org's share of subscription revenue from businesses credited to your org in your markets, for as long as they stay subscribed. The share itself sits in your org's deal, which your partner lead holds. It accrues monthly and shows under Earnings, labeled accrued until a payment actually happens." : `You keep ${p.sharePct}% of subscription revenue from businesses credited to you in your markets, for as long as they stay subscribed. It accrues monthly and shows under Earnings, labeled accrued until a payment actually happens.`)}
     ${qa("Why do creators matter to my earnings?", "Businesses subscribe because the bench is worth booking. Every complete creator your link brings in makes your markets easier to sell and likelier to renew.")}
     ${qa("Can I see who joined through me?", "Yes: Creators and Businesses show everyone credited to your links, with their status. Contact details stay private; SIGNL runs the relationships inside the app.")}
     ${qa("What does SIGNL cost my audience?", "Joining is free for creators, and comped visits are always free. Businesses pay the subscription; that is the revenue you share in.")}
@@ -20383,6 +20489,10 @@ async function loadAdminPartners() {
       <h4 style="margin:12px 0 4px">Pilot scopes on this login</h4>
       <p class="small muted" style="margin:0 0 6px">Attach a pilot to this same login and the partner opens its Impact Portal without a second account. Each scope keeps its own numbers; nothing is added across scopes.</p>
       ${allPilots.length ? allPilots.map((pl) => `<label class="small" style="display:block;margin:0 0 4px"><input type="checkbox" class="pt-scope-${p.id}" value="${esc(pl.id)}" ${(p.scopes || []).some((s) => s.pilotId === pl.id) ? "checked" : ""}> ${esc(pl.name)} (${esc(pl.partnerName)}, ${esc(pl.marketName)})</label>`).join("") : `<p class="small muted" style="margin:0">No pilots exist yet.</p>`}
+      <h4 style="margin:12px 0 4px">Team seats</h4>
+      <p class="small muted" style="margin:0 0 6px">${p.teamSeatCount || 0} live seat${(p.teamSeatCount || 0) === 1 ? "" : "s"} on this org. A team admin seats people into the org's own markets and pilots; seats never carry deal terms.</p>
+      ${p.teamOf ? `<p class="small muted" style="margin:0 0 6px">This login is itself a team seat of another org; team admin is set on the org's lead login.</p>` : `<label class="small" style="display:block;margin:0 0 6px"><input type="checkbox" id="pt-teamadmin-${p.id}" ${p.teamAdmin ? "checked" : ""}> This login is the org's team admin</label>`}
+      <div id="pt-team-${p.id}"><p class="small muted">Loading seats…</p></div>
       <button class="btn small-btn" onclick="saveAdminPartner('${p.id}')">Save partner</button> <span id="pt-ok-${p.id}" class="saved"></span>
       <div id="pt-deals-${p.id}" style="margin-top:12px"><p class="small muted">Loading deals…</p></div>
     </div>`).join("");
@@ -20411,7 +20521,7 @@ async function loadAdminPartners() {
         <button class="btn ghost" onclick="seedDemoPartner()">Seed demo partner</button> <span id="pt-demo-ok" class="saved"></span>
       </div>
       <div id="admin-pilots"></div>`;
-    for (const p of (data.partners || [])) loadPartnerDeals(p.id);
+    for (const p of (data.partners || [])) { loadPartnerDeals(p.id); loadAdminPartnerTeam(p.id); }
     loadAdminPilots();
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
@@ -20451,6 +20561,7 @@ async function saveAdminPartner(id) {
         emailFromName: document.getElementById(`pt-brand-from-${id}`).value,
       },
       scopes: [...document.querySelectorAll(`.pt-scope-${id}:checked`)].map((c) => ({ kind: "pilot", pilotId: c.value })),
+      teamAdmin: !!((document.getElementById(`pt-teamadmin-${id}`) || {}).checked),
     });
     const ok = document.getElementById(`pt-ok-${id}`);
     if (ok) ok.textContent = "Saved";
@@ -20493,6 +20604,32 @@ function dealSplitSummary(deal) {
   parts.push(`${(t.markets || []).length} ${(t.markets || []).length === 1 ? "market" : "markets"}`);
   parts.push(t.attributionScope === "sourced_only" ? "their sign-ups only" : "whole market");
   return parts.join(" · ");
+}
+
+// Team seats (Build -107): Admin's seat rollup inside the
+// partner card, from the Command Center detail payload, with
+// the revoke-anything override.
+async function loadAdminPartnerTeam(partnerId) {
+  const host = document.getElementById(`pt-team-${partnerId}`);
+  if (!host) return;
+  try {
+    const d = await api("GET", `/admin/command/partners/${encodeURIComponent(partnerId)}?period=${new Date().toISOString().slice(0, 7)}`);
+    const seats = (d.team && d.team.seats) || [];
+    if (!seats.length) { host.innerHTML = `<p class="small muted" style="margin:0">No seats on this org yet.</p>`; return; }
+    host.innerHTML = seats.map((s) => `
+    <p class="small" style="margin:0 0 4px">${esc(s.name || s.email)} · ${esc(s.email)} · ${esc(s.kind)} · ${esc(s.scope || "")} · ${esc(s.status)} · ${s.mintedBy === "partner" ? "invited by the partner" : "invited by SIGNL"} ${s.status !== "revoked" ? `<button class="btn small-btn ghost" onclick="adminTeamRevoke('${s.seatId}')">Revoke</button>` : ""}</p>`).join("");
+  } catch (e) {
+    host.innerHTML = `<p class="small muted" style="margin:0">Seats could not load: ${esc(e.message)}</p>`;
+  }
+}
+async function adminTeamRevoke(seatId) {
+  if (!window.confirm("Revoke this seat? Access ends on the holder's next request; their work stays credited.")) return;
+  try {
+    await api("POST", "/admin/partners/team-revoke", { seatId });
+    loadAdminPartners();
+  } catch (e) {
+    window.alert(e.message);
+  }
 }
 
 async function loadPartnerDeals(partnerId) {
@@ -24028,7 +24165,7 @@ function recruiterHelpHtml() {
 // one long page, and the portal is read-only: every number comes
 // from the pilot's ledger and the businesses' real records.
 
-const PILOT_TABS = ["Overview", "Businesses", "Results", "Report", "Sig", "Help"];
+const PILOT_TABS = ["Overview", "Businesses", "Results", "Report", "Sig", "Team", "Help"];
 
 // Pilot API calls carry the open scope (Build -106): a legacy
 // pilot_partner login needs no parameter (the server reads the
@@ -24070,6 +24207,7 @@ function renderPilotTab(tab) {
   const pBrand = (pilotState.me && pilotState.me.pilot && pilotState.me.pilot.brand) || null;
   coBrandShellOn(el, pBrand);
   if (tab === "Sig") { el.innerHTML = coBrandHeadHtml(pBrand) + pilotSigHtml(); wireScopedSig(el); return; }
+  if (tab === "Team") { el.innerHTML = coBrandHeadHtml(pBrand) + teamTabHtml(); loadTeamTab(); return; }
   if (tab === "Help") { el.innerHTML = coBrandHeadHtml(pBrand) + pilotHelpHtml(); return; }
   if (tab === "Businesses") { loadPilotBusinesses(el); return; }
   if (tab === "Results") { loadPilotResults(el); return; }
@@ -24315,6 +24453,7 @@ async function apLoadDetail(id) {
     const stepOptions = (cur) => [["selected", "Chosen"], ["invited", "Invited"], ["continued", "Joined SIGNL"], ["declined", "Said no"], ["completed", "Finished"]].map(([v, l]) => `<option value="${v}" ${cur === v ? "selected" : ""}>${l}</option>`).join("");
     el.innerHTML = `
     <p class="small" style="margin:0 0 8px">Partner login: <strong>${esc(p.partnerEmail || "none")}</strong>${p.partnerLoginName ? ` (${esc(p.partnerLoginName)})` : ""} <button class="btn small-btn ghost" onclick="apResendInvite('${p.id}')">Resend invite</button> <span id="ap-invite-ok-${p.id}" class="saved"></span></p>
+    <p class="small" style="margin:0 0 8px">Team seats: this funder ${p.partnerTeamAdmin ? "IS" : "is not"} the pilot's team admin. ${p.partnerUserId ? `<button class="btn small-btn ghost" onclick="apToggleTeamAdmin('${p.id}', ${p.partnerTeamAdmin ? "false" : "true"})">${p.partnerTeamAdmin ? "Remove team admin" : "Make team admin"}</button> <span id="ap-team-ok-${p.id}" class="saved"></span>` : ""}</p>
     <div class="form-2col">
       <div class="field"><label>Fund ($)</label><input type="number" id="ap-fund-${p.id}" min="0" step="1" value="${Math.round((p.fundCents || 0) / 100)}"></div>
       <div class="field"><label>Status</label><select id="ap-status-${p.id}"><option value="active" ${p.status === "active" ? "selected" : ""}>Active</option><option value="closed" ${p.status === "closed" ? "selected" : ""}>Closed</option></select></div>
@@ -24343,6 +24482,16 @@ async function apLoadDetail(id) {
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
+}
+
+async function apToggleTeamAdmin(id, on) {
+  const okEl = document.getElementById(`ap-team-ok-${id}`);
+  try {
+    await api("PATCH", `/admin/pilots/${id}`, { teamAdminPartner: !!on });
+    if (okEl) okEl.textContent = "Saved.";
+    loadAdminPilots();
+  } catch (err) { if (okEl) okEl.textContent = err.message; }
+  return false;
 }
 
 async function apResendInvite(id) {

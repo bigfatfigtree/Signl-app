@@ -9769,8 +9769,16 @@ async function buildSigFacts(user, full) {
     // the Markets view prints.
     let londonRace = null;
     try { londonRace = await londonRacePayload(); } catch (e) { londonRace = null; }
+    // Team seats (Build -107): per-org seat counts with the
+    // minter split, so Admin Sig can say whose seats they are.
+    const teamByPartner = {};
+    for (const p of partners) {
+      if (p.partner && p.partner.teamOf) continue;
+      const seats = await teamSeatsForOrg(p, { includeAdminMinted: true });
+      teamByPartner[p.id] = { total: seats.filter((s) => s.status !== "revoked").length, byPartner: seats.filter((s) => s.mintedBy === "partner" && s.status !== "revoked").length, byAdmin: seats.filter((s) => s.mintedBy === "admin" && s.status !== "revoked").length, seats: seats.map((s) => ({ name: s.name, kind: s.kind, scope: s.scope, status: s.status, mintedBy: s.mintedBy })) };
+    }
     return sigdata.buildAdminFacts({
-      users, offers, bookings, posts, partners, marketFlags: flags, dealFacts, territoryConflicts, londonRace,
+      users, offers, bookings, posts, partners, marketFlags: flags, dealFacts, territoryConflicts, londonRace, teamByPartner,
       marketNames: MARKETS.map((m) => m.name),
       isTester, profileCompleteOf, businessAccessState,
       planNameOf: (id) => { const p = id ? planById(id) : null; return p ? p.name : "No plan picked"; },
@@ -9844,20 +9852,37 @@ async function buildSigFacts(user, full) {
     // territory, their brand, their scopes, and the London
     // race only when London is one of their markets or deals.
     const summary = await partnerSummary(user);
+    const orgForFacts = (await partnerOrgUser(user)) || user;
     const closes = await ccCloseRecords();
-    const frozenMonths = closes.filter((c) => c.snapshot && (c.snapshot.partners || []).some((r) => r.id === user.id)).map((c) => ({ period: c.period, label: monthLabelOf(c.period), state: c.state }));
+    const frozenMonths = closes.filter((c) => c.snapshot && (c.snapshot.partners || []).some((r) => r.id === orgForFacts.id)).map((c) => ({ period: c.period, label: monthLabelOf(c.period), state: c.state }));
     frozenMonths.sort((a, b) => (a.period < b.period ? 1 : -1));
     let race = null;
     const londonScoped = (user.partner.markets || []).some((m) => normalizeMarketName(m) === "London")
       || (summary.territory || []).some((t) => normalizeMarketName(t.market || "") === "London");
     if (londonScoped) { try { race = await londonRacePayload(); } catch (e) { race = null; } }
-    return sigdata.buildPartnerFacts({ user, summary, frozenMonths, race, now: Date.now() });
+    // Team seats (Build -107): the lead's own seat list rides
+    // their facts; a member's facts carry only that they are a
+    // member (never the org's seats or terms).
+    let team = null;
+    const tctx = teamAdminContext(user);
+    if (tctx) {
+      const seats = await teamSeatsForOrg(tctx.org);
+      team = { isAdmin: true, seats, markets: (user.partner.markets || []).slice(), pilots: summary.scopes.filter((s) => s.kind === "pilot").map((s) => ({ pilotId: s.pilotId, name: s.name })) };
+    } else if (summary.viewer && summary.viewer.isTeamMember) {
+      team = { isMember: true, orgName: summary.viewer.orgName };
+    }
+    return sigdata.buildPartnerFacts({ user, summary, frozenMonths, race, team, now: Date.now() });
   }
   if (user.role === "pilot_partner") {
     const resolved = await pilots.pilotForSessionUser(user, {});
     if (resolved.error) return null;
     const pf = await pilots.pilotFactsFor(resolved.pilot);
-    return sigdata.buildPilotFacts({ user, pf, now: Date.now() });
+    let team = null;
+    if (user.teamAdmin === true) {
+      const seats = await teamSeatsForOrg(user);
+      team = { isAdmin: true, seats, pilots: [{ pilotId: resolved.pilot.id, name: resolved.pilot.name || "" }] };
+    }
+    return sigdata.buildPilotFacts({ user, pf, team, now: Date.now() });
   }
   if (user.role === "creator") {
     const readout = await creatorPerformanceReadout(user);
@@ -9919,7 +9944,12 @@ async function getAuthUser(event) {
   const token = cookies.signl_session;
   if (!token) return { user: null, token: null, session: null };
   try {
-    const user = await auth.getSessionUser(token);
+    let user = await auth.getSessionUser(token);
+    // Team seats (Build -107): a revoked seat is signed out on
+    // its next request, whatever its cookie says. Revocation
+    // also deletes the seat's sessions; this guard is the
+    // belt-and-braces for any token minted in between.
+    if (user && user.status === "revoked") user = null;
     // The raw session record rides along (Build -67): a view-as
     // session's viewAs marker is how the router enforces read-only
     // and how /auth/me tells the client to show the banner.
@@ -10795,6 +10825,10 @@ async function handleReset(event) {
   user.passwordSalt = salt;
   user.passwordHash = pwHash;
   user.updatedAt = nowIso();
+  // Team seats (Build -107): setting a first password from an
+  // invite link is the acceptance the team list (and the
+  // 7-day nudge) reads.
+  if (user.invitePending) { user.inviteAcceptedAt = user.updatedAt; delete user.invitePending; }
   await store.set(`user:${user.id}`, user);
   await store.del(`pwreset:${hash}`);
   await store.del(`pwreset-user:${user.id}`);
@@ -12719,6 +12753,10 @@ function publicPartner(p) {
     agreementStatus: p.agreementStatus || "unsigned",
     agreementSignedAt: p.agreementSignedAt || null,
     brand: brandViewOf(p.brand),
+    // Team seats (Build -107): teamAdmin is Admin-set only;
+    // teamOf names the org a team member belongs to.
+    teamAdmin: p.teamAdmin === true,
+    teamOf: p.teamOf || null,
     // Multi-scope logins (Build -106): the license scope is
     // implied by the partner record itself; pilot scopes are
     // listed explicitly. Legacy records carry no scopes field
@@ -12773,6 +12811,13 @@ function partnerLinksFor(partner, origin) {
 // tester-flagged, so they stay out of every real count in the app)
 // and nothing else.
 async function partnerSummary(user) {
+  // Team seats (Build -107): a team member (partner.teamOf)
+  // reads the ORG's summary — the funnel, markets, links and
+  // accrued totals are the org's. The negotiated terms are
+  // stripped from the member's copy at the end.
+  const orgUser = await partnerOrgUser(user);
+  const isTeamMember = !!orgUser && orgUser.id !== user.id;
+  if (isTeamMember) user = orgUser;
   const partner = publicPartner(user.partner);
   const code = partner.code;
   const src = partnerSrcFor(code);
@@ -12957,7 +13002,7 @@ async function partnerSummary(user) {
     if (pilot) scopes.push({ kind: "pilot", pilotId: s.pilotId, name: pilot.name || "", partnerName: pilot.partnerName || "", marketName: pilot.marketName || "", status: pilot.status || "active" });
   }
 
-  return {
+  const out = {
     partner,
     scopes,
     links: partnerLinksFor(partner),
@@ -13002,6 +13047,174 @@ async function partnerSummary(user) {
       postsLive: performance.postsLive,
     },
   };
+  // Team seats (Build -107): who is asking rides the payload so
+  // the shell can show the Team tab to team admins and name the
+  // org to members. A member's copy carries NO deal terms: no
+  // share %, no deal label, no guarantee state, no territory
+  // terms, and the at-fill model (which multiplies the share)
+  // goes too. Accrued / paid / owed totals stay: they are the
+  // org's earnings, which members are allowed to see.
+  out.viewer = { isTeamMember, teamAdmin: !isTeamMember && !!(user.partner && user.partner.teamAdmin), orgName: partner.name || "" };
+  if (isTeamMember) {
+    out.earnings = { ...out.earnings, sharePct: null, dealLabel: null, guaranteeState: null };
+    out.territory = [];
+    out.atFill = null;
+    out.partner = { ...out.partner, sharePct: null };
+  }
+  return out;
+}
+
+// ---------- Team seats (Build -107) ----------
+// One org, several logins. The org lead is the partner (or
+// pilot funder) record Admin created; a teamAdmin flag on that
+// record — Admin-set only — unlocks self-serve seats. Seats
+// are minted ONLY into scopes the org owns, through the same
+// invite plumbing Admin uses (invitee sets their own password
+// from the emailed link; nobody ever sees another's password):
+//   team      a partner login with partner.teamOf = org id:
+//             reads the org's summary with the deal terms
+//             stripped, joins the org's scopes, manages nothing.
+//   pilot     a pilot_partner on one of the org's pilots,
+//             invitedByPartner = org id (pilots.invitePilotPartner).
+//   recruiter a recruiters.js staff entity with
+//             sponsorPartnerId = org id, in one of the org's
+//             markets (inviteStaffRecruiter).
+// Revoking ends access on the next request (status "revoked"
+// + every session deleted); the seat's work — attributions,
+// prospects, credits — stays credited. Admin-created seats are
+// never in the partner's list and never revocable by them.
+
+async function partnerOrgUser(user) {
+  if (user && user.role === "partner" && user.partner && user.partner.teamOf) {
+    const org = await store.get(`user:${user.partner.teamOf}`);
+    if (org && org.role === "partner" && !(org.partner && org.partner.teamOf)) return org;
+    return null;
+  }
+  return user;
+}
+
+function seatStatusOf(u, sessions) {
+  if (!u || u.status === "revoked") return "revoked";
+  const accepted = !!u.inviteAcceptedAt || (sessions || []).some((s) => s.value && s.value.userId === u.id);
+  return accepted ? "active" : "invited";
+}
+
+// The org's seat list. Partner-minted seats are the ones the
+// org minted (teamOf / invitedByPartner / sponsorPartnerId).
+// Admin-minted pilot leads on the org's pilots are included
+// only for Admin's rollup (includeAdminMinted): the partner
+// never sees them and can never revoke them.
+async function teamSeatsForOrg(orgUser, opts = {}) {
+  if (!orgUser) return [];
+  const orgId = orgUser.id;
+  const [users, entities, sessions] = await Promise.all([allUsers(), recruiters.allEntities(), store.list("session:")]);
+  const seats = [];
+  const pilotName = async (pilotId) => { const p = await store.get(`pilot:${pilotId}`); return p ? (p.name || "Pilot") : "Pilot"; };
+  if (orgUser.role === "partner") {
+    for (const u of users) {
+      if (u.role === "partner" && u.partner && u.partner.teamOf === orgId) {
+        seats.push({ seatId: u.id, userId: u.id, kind: "team", name: u.name || "", email: u.email || "", scope: `${(orgUser.partner && orgUser.partner.name) || "Partner"} team seat`, status: seatStatusOf(u, sessions), invitedAt: u.createdAt || null, acceptedAt: u.inviteAcceptedAt || null, mintedBy: "partner" });
+      }
+      if (u.role === "pilot_partner" && u.invitedByPartner === orgId) {
+        seats.push({ seatId: u.id, userId: u.id, kind: "pilot", name: u.name || "", email: u.email || "", scope: await pilotName(u.pilotId), status: seatStatusOf(u, sessions), invitedAt: u.createdAt || null, acceptedAt: u.inviteAcceptedAt || null, mintedBy: "partner" });
+      }
+    }
+    if (opts.includeAdminMinted) {
+      const scopeIds = new Set(partnerScopesOf(orgUser).slice(1).map((s) => s.pilotId));
+      for (const u of users) {
+        if (u.role === "pilot_partner" && u.pilotId && scopeIds.has(u.pilotId) && !u.invitedByPartner) {
+          seats.push({ seatId: u.id, userId: u.id, kind: "pilot", name: u.name || "", email: u.email || "", scope: await pilotName(u.pilotId), status: seatStatusOf(u, sessions), invitedAt: u.createdAt || null, acceptedAt: u.inviteAcceptedAt || null, mintedBy: "admin" });
+        }
+      }
+    }
+  }
+  if (orgUser.role === "pilot_partner") {
+    for (const u of users) {
+      if (u.role === "pilot_partner" && u.invitedByPartner === orgId) {
+        seats.push({ seatId: u.id, userId: u.id, kind: "pilot", name: u.name || "", email: u.email || "", scope: await pilotName(u.pilotId), status: seatStatusOf(u, sessions), invitedAt: u.createdAt || null, acceptedAt: u.inviteAcceptedAt || null, mintedBy: "partner" });
+      }
+    }
+  }
+  for (const e of entities) {
+    if (e.sponsorPartnerId === orgId) {
+      const u = e.userId ? users.find((x) => x.id === e.userId) : null;
+      seats.push({ seatId: e.id, userId: e.userId || null, kind: "recruiter", name: e.name || "", email: e.email || "", scope: `${e.marketName || ""} recruiter`, status: e.status === "disabled" || (u && u.status === "revoked") ? "revoked" : seatStatusOf(u, sessions), invitedAt: e.createdAt || null, acceptedAt: u ? (u.inviteAcceptedAt || null) : null, mintedBy: "partner" });
+    }
+  }
+  seats.sort((a, b) => String(a.invitedAt || "") < String(b.invitedAt || "") ? -1 : 1);
+  return seats;
+}
+
+// The org context a team-managing session acts for: the org
+// lead's own record, and only when Admin made them teamAdmin.
+function teamAdminContext(user) {
+  if (!user) return null;
+  if (user.role === "partner" && user.partner && !user.partner.teamOf && user.partner.teamAdmin === true) return { org: user, isFunder: false };
+  if (user.role === "pilot_partner" && user.teamAdmin === true) return { org: user, isFunder: true };
+  return null;
+}
+
+// Revoke one seat (shared by the partner route and Admin's
+// override): access ends now, the work stays credited.
+async function revokeTeamSeat(seat, actor) {
+  const ts = nowIso();
+  if (seat.kind === "recruiter") {
+    const ent = await store.get(`recruiter:${seat.seatId}`);
+    if (ent) { ent.status = "disabled"; ent.updatedAt = ts; await store.set(`recruiter:${ent.id}`, ent); }
+  }
+  if (seat.userId) {
+    const u = await store.get(`user:${seat.userId}`);
+    if (u) {
+      u.status = "revoked";
+      u.updatedAt = ts;
+      await store.set(`user:${u.id}`, u);
+      await auth.revokeSessionsForUser(u.id);
+    }
+  }
+  await logEvent({ type: "team_seat_revoked", actorId: actor.id, actorRole: actor.role, subjectId: seat.userId || seat.seatId, market: null, data: { seatId: seat.seatId, kind: seat.kind, email: seat.email || "" } });
+}
+
+// The invite email every seat kind shares: a password-set link
+// (the app's own reset machinery), co-branded when the org has
+// a brand (Build -105 helper).
+async function sendSeatInviteEmail(orgUser, seatUser, actorId) {
+  const token = await issuePasswordResetToken(seatUser);
+  const base = process.env.APP_URL || "https://app.joinsignl.com";
+  const rawMail = passwordResetEmail(seatUser, `${base}/?reset=${token}`);
+  const brand = orgUser.role === "partner" ? brandViewOf(orgUser.partner && orgUser.partner.brand) : null;
+  const mail = brand ? partnerBrandedMail(brand, rawMail) : { ...rawMail, fromName: null };
+  const sent = await deliverEmail("password_reset", seatUser, mail.subject, mail.text, null, mail.fromName ? { fromName: mail.fromName } : undefined);
+  return { emailSent: !!(sent && sent.sent), token };
+}
+
+async function createPartnerTeamMember({ org, name, email, actorId }) {
+  const cleanEmail = String(email || "").trim().toLowerCase();
+  if (!isEmail(cleanEmail)) return { error: "A valid email is required" };
+  if (await store.get(`email:${cleanEmail}`)) return { error: "An account with this email already exists" };
+  const tempPassword = crypto.randomBytes(24).toString("hex");
+  const { salt, hash } = auth.hashPassword(tempPassword);
+  const ts = nowIso();
+  const user = {
+    id: crypto.randomUUID(), role: "partner", email: cleanEmail,
+    name: String(name || "").trim().slice(0, 80) || cleanEmail,
+    passwordSalt: salt, passwordHash: hash, status: "approved", tester: false,
+    market: (org.partner.markets || [])[0] || "",
+    createdAt: ts, updatedAt: ts, reviewedAt: ts, reviewedBy: actorId || null,
+    termsVersion: TERMS_VERSION, termsAcceptedAt: ts, creator: null, business: null,
+    invitePending: true,
+    partner: {
+      name: org.partner.name || "", type: org.partner.type || "media",
+      contactName: String(name || "").trim().slice(0, 80),
+      code: org.partner.code || "", markets: (org.partner.markets || []).slice(),
+      sharePct: org.partner.sharePct, status: "active", agreementStatus: org.partner.agreementStatus || "unsigned",
+      demo: !!org.partner.demo, createdAt: ts, teamOf: org.id,
+    },
+  };
+  await store.set(`user:${user.id}`, user);
+  await store.set(`email:${cleanEmail}`, { userId: user.id });
+  const sentInfo = await sendSeatInviteEmail(org, user, actorId);
+  await logEvent({ type: "team_seat_invited", actorId: actorId || null, actorRole: "partner", subjectId: user.id, market: user.market || null, data: { kind: "team", orgId: org.id, email: cleanEmail, emailSent: sentInfo.emailSent } });
+  return { user, emailSent: sentInfo.emailSent, token: sentInfo.token };
 }
 
 // ---------- Command Center aggregates (Build -54) ----------
@@ -16724,7 +16937,12 @@ async function route(event) {
       if (direct) {
         const dt = typeof direct === "string" ? direct : direct.text;
         const dl = typeof direct === "string" ? null : direct.link;
-        if (dt) return json(200, { source: "data", text: dt, ...(dl ? { link: dl } : {}) });
+        // Team seats (Build -107): a confirm-first action (an
+        // invite or a revoke, fully parsed) rides the answer;
+        // the client renders it as a labeled button and nothing
+        // happens until the person taps it.
+        const da = typeof direct === "string" ? null : direct.action;
+        if (dt) return json(200, { source: "data", text: dt, ...(dl ? { link: dl } : {}), ...(da ? { action: da } : {}) });
       }
     }
     const lines = [];
@@ -18174,14 +18392,47 @@ async function route(event) {
     // status only; a partner's code never changes once issued.
     if (seg[1] === "partners" && seg.length === 2 && method === "GET") {
       const partners = await allPartners();
+      // Team seats (Build -107): each org's live seat count, so
+      // growth is visible without opening every card. Revoked
+      // seats and disabled entities do not count.
+      const [seatUsers, seatEntities] = await Promise.all([allUsers(), recruiters.allEntities()]);
+      const seatCounts = new Map();
+      const bump = (orgId) => { if (orgId) seatCounts.set(orgId, (seatCounts.get(orgId) || 0) + 1); };
+      for (const u of seatUsers) {
+        if (u.status === "revoked") continue;
+        if (u.role === "partner" && u.partner && u.partner.teamOf) bump(u.partner.teamOf);
+        if (u.role === "pilot_partner" && u.invitedByPartner) bump(u.invitedByPartner);
+      }
+      for (const e of seatEntities) if (e.sponsorPartnerId && e.status !== "disabled") bump(e.sponsorPartnerId);
       return json(200, {
         partners: partners.map((u) => ({
           id: u.id,
           email: u.email,
           ...publicPartner(u.partner),
+          teamSeatCount: seatCounts.get(u.id) || 0,
           links: partnerLinksFor(publicPartner(u.partner), query.origin || undefined),
         })),
       });
+    }
+    // Team seats (Build -107): Admin's revoke-anything override.
+    // The seat is found across orgs (Admin-minted pilot leads
+    // included); the partner routes can only ever touch their
+    // own minted seats.
+    if (seg[1] === "partners" && seg[2] === "team-revoke" && seg.length === 3 && method === "POST") {
+      const b = parseBody(event);
+      const seatId = String(b.seatId || "");
+      if (!seatId) return err(400, "seatId is required");
+      const orgs = (await allUsers()).filter((u) => (u.role === "partner" && u.partner && !u.partner.teamOf) || u.role === "pilot_partner");
+      let found = null;
+      for (const org of orgs) {
+        const seats = await teamSeatsForOrg(org, { includeAdminMinted: true });
+        const hit = seats.find((s) => s.seatId === seatId);
+        if (hit) { found = hit; break; }
+      }
+      if (!found) return err(404, "Seat not found");
+      if (found.status === "revoked") return json(200, { ok: true, already: true });
+      await revokeTeamSeat(found, user);
+      return json(200, { ok: true });
     }
     if (seg[1] === "partners" && seg.length === 2 && method === "POST") {
       const b = parseBody(event);
@@ -18266,11 +18517,19 @@ async function route(event) {
         scopesPatch = { from: (target.partner.scopes || []).length, to: cleaned.length };
         if (cleaned.length) target.partner.scopes = cleaned; else delete target.partner.scopes;
       }
+      let teamAdminPatch = null;
+      if (b.teamAdmin !== undefined) {
+        // Team seats (Build -107): only the org lead's record
+        // can carry the flag, never a team member's.
+        if (target.partner.teamOf) return err(400, "A team member cannot be the team admin. Set it on the org's lead login.");
+        teamAdminPatch = { from: target.partner.teamAdmin === true, to: b.teamAdmin === true };
+        target.partner.teamAdmin = b.teamAdmin === true;
+      }
       if (typeof b.contactName === "string") target.partner.contactName = b.contactName.trim();
       if (typeof b.name === "string" && b.name.trim()) target.partner.name = b.name.trim();
       target.updatedAt = nowIso();
       await store.set(`user:${target.id}`, target);
-      await logEvent({ type: "partner_updated", actorId: user.id, actorRole: "admin", subjectId: target.id, data: { code: target.partner.code, sharePct: sharePatch || undefined, brand: brandPatch || undefined, scopes: scopesPatch || undefined } });
+      await logEvent({ type: "partner_updated", actorId: user.id, actorRole: "admin", subjectId: target.id, data: { code: target.partner.code, sharePct: sharePatch || undefined, brand: brandPatch || undefined, scopes: scopesPatch || undefined, teamAdmin: teamAdminPatch || undefined } });
       if (agreementPatch && agreementPatch.from !== agreementPatch.to) {
         await logEvent({ type: "partner_agreement_updated", actorId: user.id, actorRole: "admin", subjectId: target.id, data: { from: agreementPatch.from, to: agreementPatch.to, signedAt: target.partner.agreementSignedAt || null } });
       }
@@ -19269,6 +19528,10 @@ async function route(event) {
       const rev = subRevenueByBizMonth(P.visUsers, P.charges);
       const detail = ccPartnerDetailPayload(P, decodeURIComponent(seg[3]), rev);
       if (!detail) return err(404, "Partner not found");
+      // Team seats (Build -107): Admin's full seat rollup for
+      // the org, Admin-minted pilot leads included and labeled.
+      const orgUser = await store.get(`user:${decodeURIComponent(seg[3])}`);
+      detail.team = { seats: orgUser ? await teamSeatsForOrg(orgUser, { includeAdminMinted: true }) : [] };
       return json(200, detail);
     }
     // Subject-scoped event read (§6.7): one record's own trail for
@@ -20192,6 +20455,10 @@ async function route(event) {
   // figures; open months are labeled live snapshots.
   if (seg[0] === "partner" && seg[1] === "pack" && seg.length === 2 && method === "GET") {
     if (!user || user.role !== "partner" || !user.partner) return err(403, "Partners only");
+    // Team seats (Build -107): the pack prints the deal math,
+    // so it stays the org lead's file; members see the totals
+    // on their Earnings tab.
+    if (user.partner.teamOf) return err(403, "The month pack holds the deal math, so it is the partner lead's file. Your Earnings tab shows the totals.");
     const month = query.month && /^\d{4}-\d{2}$/.test(String(query.month)) ? String(query.month) : monthKeyOf(nowIso());
     if (month > monthKeyOf(nowIso())) return err(400, "Name a real month, this one or earlier");
     const csv = await ccPartnerPackCsv(user, month);
@@ -20210,6 +20477,7 @@ async function route(event) {
   // carries this partner are listed as frozen.
   if (seg[0] === "partner" && seg[1] === "packs" && seg.length === 2 && method === "GET") {
     if (!user || user.role !== "partner" || !user.partner) return err(403, "Partners only");
+    if (user.partner.teamOf) return err(403, "The month pack holds the deal math, so it is the partner lead's file. Your Earnings tab shows the totals.");
     const closes = await ccCloseRecords();
     const months = closes
       .filter((c) => c.snapshot && (c.snapshot.partners || []).some((r) => r.id === user.id))
@@ -20233,6 +20501,95 @@ async function route(event) {
     }
     if (!hasLondon) return err(403, "The London race belongs to the London partner's view.");
     return json(200, await londonRacePayload());
+  }
+  // Team seats (Build -107): the org lead's seat list and the
+  // scopes they may invite into. Only a teamAdmin session (the
+  // flag is Admin-set) ever sees this surface.
+  if (seg[0] === "partner" && seg[1] === "team" && seg.length === 2 && method === "GET") {
+    const ctx = teamAdminContext(user);
+    if (!ctx) return err(403, "Team seats are managed by your partner lead. Ask SIGNL to name one for your org.");
+    const seats = await teamSeatsForOrg(ctx.org);
+    const pilotList = [];
+    if (ctx.isFunder) {
+      const p = await store.get(`pilot:${ctx.org.pilotId}`);
+      if (p) pilotList.push({ id: p.id, name: p.name || "", marketName: p.marketName || "" });
+    } else {
+      for (const s of partnerScopesOf(ctx.org).slice(1)) {
+        const p = await store.get(`pilot:${s.pilotId}`);
+        if (p) pilotList.push({ id: p.id, name: p.name || "", marketName: p.marketName || "" });
+      }
+    }
+    return json(200, {
+      orgName: ctx.isFunder ? (ctx.org.pilotPartner && ctx.org.pilotPartner.partnerName) || "" : (ctx.org.partner && ctx.org.partner.name) || "",
+      isFunder: ctx.isFunder,
+      markets: ctx.isFunder ? [] : ((ctx.org.partner && ctx.org.partner.markets) || []).slice(),
+      pilots: pilotList,
+      seats,
+    });
+  }
+  if (seg[0] === "partner" && seg[1] === "team" && seg[2] === "invite" && seg.length === 3 && method === "POST") {
+    const ctx = teamAdminContext(user);
+    if (!ctx) return err(403, "Team seats are managed by your partner lead. Ask SIGNL to name one for your org.");
+    const b = parseBody(event);
+    const kind = String(b.kind || "");
+    const name = String(b.name || "").trim();
+    const email = String(b.email || "").trim().toLowerCase();
+    if (!name) return err(400, "The seat holder's name is required");
+    if (!isEmail(email)) return err(400, "A valid email is required");
+    if (kind === "team") {
+      if (ctx.isFunder) return err(400, "A pilot funder adds pilot seats, not partner logins.");
+      const r = await createPartnerTeamMember({ org: ctx.org, name, email, actorId: user.id });
+      if (r.error) return err(400, r.error);
+      // Test hook under the TEST_MODE trust boundary, same as
+      // the pilots and forgot flows: suites cannot read a
+      // mailbox, so the token rides the response there only.
+      return json(201, { ok: true, emailSent: r.emailSent, seatId: r.user.id, ...(TEST_MODE && r.token ? { devResetToken: r.token } : {}) });
+    }
+    if (kind === "pilot") {
+      const pilotId = String(b.pilotId || "");
+      const allowed = ctx.isFunder ? pilotId === ctx.org.pilotId : partnerScopesOf(ctx.org).slice(1).some((s) => s.pilotId === pilotId);
+      if (!allowed) return err(403, "That pilot is not one of your scopes.");
+      const pilot = await store.get(`pilot:${pilotId}`);
+      if (!pilot) return err(404, "Pilot not found");
+      const inv = await pilots.invitePilotPartner({ pilot, contactName: name, email, actorId: user.id });
+      if (inv.error) return err(400, inv.error);
+      const su = await store.get(`user:${inv.user.id}`);
+      if (su) { su.invitedByPartner = ctx.org.id; su.invitePending = true; await store.set(`user:${su.id}`, su); }
+      await logEvent({ type: "team_seat_invited", actorId: user.id, actorRole: user.role, subjectId: inv.user.id, market: pilot.marketName || null, data: { kind: "pilot", orgId: ctx.org.id, pilotId, email, emailSent: inv.emailSent } });
+      return json(201, { ok: true, emailSent: inv.emailSent, seatId: inv.user.id, ...(TEST_MODE && inv.token ? { devResetToken: inv.token } : {}) });
+    }
+    if (kind === "recruiter") {
+      if (ctx.isFunder) return err(400, "A pilot funder adds pilot seats, not recruiters.");
+      const market = String(b.market || "");
+      const own = ((ctx.org.partner && ctx.org.partner.markets) || []).some((m) => normalizeMarketName(m) === normalizeMarketName(market));
+      if (!own) return err(403, "Recruiters can only be seated in your own markets.");
+      const r = await recruiters.inviteStaffRecruiter({ name, email, market, actorId: user.id, sponsorPartnerId: ctx.org.id, actorRole: "partner" });
+      if (r.error) return err(400, r.error);
+      const su = await store.get(`user:${r.user.id}`);
+      if (su) { su.invitePending = true; await store.set(`user:${su.id}`, su); }
+      await logEvent({ type: "team_seat_invited", actorId: user.id, actorRole: user.role, subjectId: r.user.id, market, data: { kind: "recruiter", orgId: ctx.org.id, email, emailSent: r.emailSent } });
+      return json(201, { ok: true, emailSent: r.emailSent, seatId: r.entity.id, ...(TEST_MODE && r.token ? { devResetToken: r.token } : {}) });
+    }
+    return err(400, "Unknown seat kind");
+  }
+  if (seg[0] === "partner" && seg[1] === "team" && (seg[2] === "resend" || seg[2] === "revoke") && seg.length === 3 && method === "POST") {
+    const ctx = teamAdminContext(user);
+    if (!ctx) return err(403, "Team seats are managed by your partner lead. Ask SIGNL to name one for your org.");
+    const b = parseBody(event);
+    const seats = await teamSeatsForOrg(ctx.org);
+    const seat = seats.find((s) => s.seatId === String(b.seatId || ""));
+    if (!seat) return err(404, "That seat is not one of yours.");
+    if (seg[2] === "revoke") {
+      if (seat.status === "revoked") return json(200, { ok: true, already: true });
+      await revokeTeamSeat(seat, user);
+      return json(200, { ok: true });
+    }
+    if (seat.status === "revoked") return err(400, "That seat was revoked. Invite them again to give them a fresh seat.");
+    const target = seat.userId ? await store.get(`user:${seat.userId}`) : null;
+    if (!target) return err(404, "Seat holder not found");
+    const sentInfo = await sendSeatInviteEmail(ctx.org, target, user.id);
+    await logEvent({ type: "team_seat_invite_resent", actorId: user.id, actorRole: user.role, subjectId: target.id, market: null, data: { kind: seat.kind, orgId: ctx.org.id, emailSent: sentInfo.emailSent } });
+    return json(200, { ok: true, emailSent: sentInfo.emailSent });
   }
   if (seg[0] === "partner" && seg[1] === "qr" && seg.length === 2 && method === "GET") {
     if (!user || user.role !== "partner" || !user.partner) return err(403, "Partners only");

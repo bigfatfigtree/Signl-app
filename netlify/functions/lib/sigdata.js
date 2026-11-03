@@ -161,6 +161,7 @@ function buildAdminFacts(d) {
   }
 
   const partners = (d.partners || []).map((u) => ({
+    id: u.id,
     name: (u.partner && u.partner.name) || u.name || "Partner",
     status: (u.partner && u.partner.status) || "active",
     markets: (u.partner && u.partner.markets) || [],
@@ -170,6 +171,9 @@ function buildAdminFacts(d) {
     brandSet: !!brandViewOf(u.partner && u.partner.brand),
     brandName: (brandViewOf(u.partner && u.partner.brand) || {}).displayName || "",
     hasLogo: !!(brandViewOf(u.partner && u.partner.brand) || {}).logoUrl,
+    // Team seats (Build -107): the org's seat rollup with the
+    // minter split (partner-invited vs SIGNL-invited).
+    team: (d.teamByPartner || {})[u.id] || null,
   }));
   const flags = d.marketFlags || {};
   const liveNames = Object.keys(flags).filter((k) => flags[k]);
@@ -263,6 +267,9 @@ function buildPartnerFacts(d) {
     perMarket: (s.markets || []).map((m) => ({ market: m.market, creatorsClaimed: (m.creators || {}).claimed || 0, creatorsComplete: (m.creators || {}).complete || 0, businessesApplied: (m.businesses || {}).applied || 0, offersLive: m.offersLive || 0, postsLive: m.postsLive || 0 })),
     frozenMonths: Array.isArray(d.frozenMonths) ? d.frozenMonths : [],
     race: d.race || null,
+    // Team seats (Build -107): a teamAdmin's seat list + the
+    // scopes they may invite into; a member's membership fact.
+    team: d.team || null,
   };
 }
 
@@ -291,6 +298,8 @@ function buildPilotFacts(d) {
       continued: c.continued || 0,
     },
     continuedOnFounding: pf.continuedOnFounding || 0,
+    // Team seats (Build -107): the funder lead's pilot seats.
+    team: d.team || null,
   };
 }
 
@@ -505,6 +514,8 @@ function factsLines(role, f) {
       const r = f.londonRace;
       lines.push(`London district race: state ${r.state}${r.startsAt ? `, started ${String(r.startsAt).slice(0, 10)}, backstop ${String(r.endsAt || "").slice(0, 10)}` : ""}. Districts (approved founding creators / founding businesses, targets 40 and 15): ${r.districts.map((x) => `${x.name} ${x.creators}/${x.businesses} (score ${x.score})`).join("; ")}. Outside the race field: ${r.outsideField.creators} creators, ${r.outsideField.businesses} businesses. London totals: ${r.totals.creators} creators, ${r.totals.businesses} businesses.${r.winner ? ` Winner: ${(r.districts.find((x) => x.id === r.winner) || {}).name || r.winner}.` : ""}`);
     }
+    const teamOrgs = f.partners.list.filter((p) => p.team && p.team.total > 0);
+    if (teamOrgs.length) lines.push(`Partner team seats: ${teamOrgs.map((p) => `${p.name}: ${p.team.total} seats (${p.team.byPartner} invited by the partner's own team admin, ${p.team.byAdmin} invited by SIGNL): ${p.team.seats.map((s) => `${s.name} (${s.kind}, ${s.scope}, ${s.status})`).join("; ")}`).join(". ")}.`);
     return lines;
   }
   if (role === "partner") {
@@ -519,6 +530,8 @@ function factsLines(role, f) {
     lines.push(f.frozenMonths.length ? `Frozen month packs ready to download: ${f.frozenMonths.map((m) => m.label).join(", ")}. The newest is ${f.frozenMonths[0].label}; the pack lives on their Earnings view.` : "No month has been frozen for them yet, so no final pack exists; an open month can still be downloaded as a live snapshot from Earnings.");
     if (f.scopes.length > 1) lines.push(`Their login carries ${fmt(f.scopes.length)} scopes: the license view plus ${f.scopes.filter((s) => s.kind === "pilot").map((s) => `the ${s.name || "pilot"} Impact Portal`).join(", ")}. Each scope's numbers stay on their own lines and are never added together.`);
     if (f.race) lines.push(`London district race (their market): state ${f.race.state}. Districts (creators / businesses, targets 40 / 15): ${f.race.districts.map((x) => `${x.name} ${x.creators}/${x.businesses}`).join("; ")}.`);
+    if (f.team && f.team.isAdmin) lines.push(`They are their org's team admin. Their team seats: ${f.team.seats.length ? f.team.seats.map((s) => `${s.name} (${s.kind} seat, ${s.scope}, ${s.status})`).join("; ") : "none yet"}. They can invite into their own scopes only: ${f.team.markets && f.team.markets.length ? `recruiters in ${f.team.markets.join(", ")}; ` : ""}${(f.team.pilots || []).length ? `pilot seats on ${(f.team.pilots || []).map((p) => p.name).join(", ")}; ` : ""}and partner team seats. Invites and revokes happen in this chat by a confirm button, or on the Team view.`);
+    if (f.team && f.team.isMember) lines.push(`They are a team member of ${f.team.orgName || "their partner org"}: they see the org's numbers without the deal terms, and their org's lead manages the team seats.`);
     return lines;
   }
   if (role === "pilot_partner") {
@@ -528,6 +541,7 @@ function factsLines(role, f) {
     lines.push(`The fund: ${dm(f.fund.committedCents)} put in, ${dm(f.fund.spentCents)} spent, ${dm(f.fund.remainingCents)} left. Results: ${fmt(f.counts.businesses)} businesses chosen, ${fmt(f.counts.visitsDone)} visits done, ${fmt(f.counts.postsLive)} posts live.`);
     lines.push(`Customers: ${fmt(f.counts.countedCustomers)} counted at the register and ${fmt(f.counts.recordedCustomers)} recorded by the businesses. These are two different counts and are never added together.`);
     lines.push(`${fmt(f.counts.continued)} businesses joined SIGNL afterwards${f.counts.continued ? `, ${fmt(f.continuedOnFounding)} of them on the $199 founding rate (from their own plan records)` : ""}.${f.closed ? " Their end-of-pilot pack is ready on the Report view." : ""}`);
+    if (f.team && f.team.isAdmin) lines.push(`They are the pilot's team admin. Their pilot team seats: ${f.team.seats.length ? f.team.seats.map((s) => `${s.name} (${s.scope}, ${s.status})`).join("; ") : "none yet"}. They can invite people onto this pilot and revoke those seats, in this chat by a confirm button or on the Team view.`);
     return lines;
   }
   if (role === "business") {
@@ -686,6 +700,16 @@ function answerAdmin(f, q, t) {
     return "London prices live in the GBP book: Self-Service £149, Growth £269, Managed £549 a month, all plus VAT, with a £75 founding credit (first months £74 / £194 / £474) and a 3-month minimum. London is sold through the UK launch partner, so those amounts are recorded, never charged through SIGNL checkout.";
   }
 
+  // Team seats (Build -107): any org's seats and who minted
+  // them — the rollup Admin keeps without being the bottleneck.
+  if (hasWord(t, "team", "seat", "seats") && !hasWord(t, "recruiter", "recruiters")) {
+    const orgs = (f.partners.list || []).filter((p) => p.team && p.team.total > 0);
+    if (!orgs.length) return "No partner team seats yet. Partners seat their own people once SIGNL names a team admin on the partner record; every seat so far is a login SIGNL created.";
+    const named = orgs.find((p) => p.name && q.toLowerCase().includes(p.name.toLowerCase()));
+    const show = named ? [named] : orgs;
+    return linked(`${show.map((p) => `${p.name}: ${p.team.total} seats (${p.team.byPartner} invited by the partner's team admin, ${p.team.byAdmin} invited by SIGNL): ${p.team.seats.filter((s) => s.status !== "revoked").map((s) => `${s.name} (${s.kind}, ${s.scope}, ${s.status}, ${s.mintedBy === "partner" ? "partner-invited" : "SIGNL-invited"})`).join("; ")}`).join(". ")}. The full rollup sits on each partner's Admin detail.`, "Open Partners", "admin-partners");
+  }
+
   // Territory (Build -104): who holds a market, whether it
   // is exclusive, and which records conflict — all read from
   // the deal records the resolver enforces.
@@ -696,7 +720,12 @@ function answerAdmin(f, q, t) {
   }
   if (hasPhrase(t, "who owns", "who holds", "is exclusive", "exclusive", "territory") && market) {
     const askedKey = market.toLowerCase() === "hampton roads" ? "virginia beach" : market.toLowerCase();
-    const holder = (f.deals || []).find((x) => (x.status === "signed" || x.status === "live") && (x.liveMarkets || []).some((m) => m.toLowerCase() === askedKey));
+    // "Who owns X" means the territory holder: a market-wide
+    // deal outranks a sourced-only one sharing the market
+    // (Build -107: list order alone made this answer flip
+    // between two live deals in one market).
+    const inMarket = (f.deals || []).filter((x) => (x.status === "signed" || x.status === "live") && (x.liveMarkets || []).some((m) => m.toLowerCase() === askedKey));
+    const holder = inMarket.find((x) => x.attributionScope !== "sourced_only" && x.exclusivity === "market_conditional") || inMarket.find((x) => x.attributionScope !== "sourced_only") || inMarket[0];
     if (!holder) return `No signed or live deal holds ${market}, so nobody owns that territory right now. Sign-ups there are stamped only when they arrive through a partner link.`;
     const heldMarket = (holder.liveMarkets || []).find((m) => m.toLowerCase() === askedKey) || market;
     return `${holder.partnerName || "The partner"} holds ${heldMarket} under "${holder.label}" (${holder.status}): ${holder.attributionScope === "sourced_only" ? "only businesses that partner brought in count toward the deal" : "the whole market counts, and direct sign-ups there are stamped to them automatically"}. Exclusivity: ${holder.exclusivity === "market_conditional" ? "conditional — a second signed deal or pilot in this market is blocked unless the recorded override path is used" : "none recorded, so another deal could still be signed there"}.`;
@@ -1080,9 +1109,81 @@ function answerCreator(f, q, t) {
 // ---------- PARTNER + PILOT ANSWERERS (Build -106) ----------
 // Scoped to the asker's own fact sheet by construction: the
 // sheet holds nothing about anyone else.
+// ---------------- TEAM SEAT INTENTS (Build -107) ----------
+// Shared by the partner and funder answers. Invites and
+// revokes are confirm-first ACTIONS: the answer parses and
+// proposes, the person taps the button, and the team endpoints
+// re-check every fence before anything happens.
+function teamSeatListText(team) {
+  const seats = (team.seats || []).filter((s) => s.status !== "revoked");
+  if (!seats.length) return "No team seats yet. Say \"invite\" with a name and email and I will line up the invite for your OK.";
+  return `Your team seats: ${seats.map((s) => `${s.name} (${s.kind === "team" ? "partner team seat" : s.kind === "pilot" ? `pilot seat on ${s.scope}` : s.scope}, ${s.status})`).join("; ")}.`;
+}
+function titleCaseName(s) {
+  return String(s || "").replace(/\s+/g, " ").trim().split(" ").map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w)).join(" ").slice(0, 60);
+}
+function parseSeatInvite(f, question, isFunder) {
+  const raw = String(question || "");
+  const emailM = raw.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i);
+  if (!emailM) return null;
+  const email = emailM[0].toLowerCase();
+  const before = raw.slice(0, raw.toLowerCase().indexOf(email)).replace(/\b(invite|add|send|to|my|team|seat|seats|please|on|the|a|an|as|for)\b/gi, " ").replace(/[^a-zA-Z .'-]/g, " ");
+  const name = titleCaseName(before) || titleCaseName(email.split("@")[0].replace(/[._-]+/g, " "));
+  const team = f.team;
+  if (isFunder) {
+    const pilot = (team.pilots || [])[0];
+    if (!pilot) return { text: "Your pilot is not on file yet, so there is nothing to seat anyone on." };
+    return { text: `Ready to invite ${name} (${email}) as a pilot seat on ${pilot.name}. They set their own password from the emailed link; nobody sees it but them. Tap the button and the invite goes out.`, action: { type: "team_invite", label: `Send the invite to ${email}`, payload: { kind: "pilot", name, email, pilotId: pilot.pilotId } } };
+  }
+  if (/recruiter/.test(raw)) {
+    const markets = team.markets || [];
+    const named = markets.find((m) => raw.toLowerCase().includes(m.toLowerCase()));
+    const market = named || (markets.length === 1 ? markets[0] : null);
+    if (!market) return { text: `Which of your markets should the recruiter sit in? Yours are ${markets.join(", ") || "none on file"}. Name one and I will line the invite up.` };
+    return { text: `Ready to invite ${name} (${email}) as a recruiter for ${market}. They get their own recruiter login for that market only, and their outreach credits to them under your org. Tap the button and the invite goes out.`, action: { type: "team_invite", label: `Send the invite to ${email}`, payload: { kind: "recruiter", name, email, market } } };
+  }
+  if (/pilot/.test(raw) || (team.pilots || []).some((p) => p.name && raw.toLowerCase().includes(p.name.toLowerCase()))) {
+    const pilots = team.pilots || [];
+    const named = pilots.find((p) => p.name && raw.toLowerCase().includes(p.name.toLowerCase()));
+    const pilot = named || (pilots.length === 1 ? pilots[0] : null);
+    if (!pilot) return { text: `Which pilot should the seat be on? Your login carries ${(pilots.map((p) => p.name)).join(", ") || "none"}. Name one and I will line the invite up.` };
+    return { text: `Ready to invite ${name} (${email}) as a pilot seat on ${pilot.name}. They set their own password from the emailed link. Tap the button and the invite goes out.`, action: { type: "team_invite", label: `Send the invite to ${email}`, payload: { kind: "pilot", name, email, pilotId: pilot.pilotId } } };
+  }
+  return { text: `Ready to invite ${name} (${email}) as a partner team seat. They will see ${f.name || "your org"}'s numbers and links, never the deal terms, and they manage nothing. They set their own password from the emailed link. Tap the button and the invite goes out.`, action: { type: "team_invite", label: `Send the invite to ${email}`, payload: { kind: "team", name, email } } };
+}
+function teamIntentAnswer(f, question, t, isFunder) {
+  if (!f.team) return null;
+  if (f.team.isMember) {
+    if (hasWord(t, "team", "seat", "seats", "invite", "revoke")) return { text: `You are a team member of ${f.team.orgName || "your partner org"}: seats are managed by your org's partner lead. You see the org's numbers here; the deal terms stay with the lead.` };
+    return null;
+  }
+  if (!f.team.isAdmin) {
+    if (hasWord(t, "team", "seat", "seats", "invite", "revoke")) return { text: "Team seats open when SIGNL names you your org's team admin. Once that is set, you can invite people into your own markets and pilots from here or the Team view, and revoke them the same way." };
+    return null;
+  }
+  const raw = String(question || "");
+  if (hasWord(t, "revoke", "remove") && !/@/.test(raw)) {
+    const seats = (f.team.seats || []).filter((s) => s.status !== "revoked");
+    const hit = seats.find((s) => (s.name && raw.toLowerCase().includes(s.name.toLowerCase())) || (s.name && raw.toLowerCase().includes(s.name.toLowerCase().split(" ")[0])) || (s.email && raw.toLowerCase().includes(s.email.toLowerCase())));
+    if (hit) return { text: `Ready to revoke ${hit.name}'s seat (${hit.scope}). Their access ends on their next request; everything they brought in stays credited. Tap the button to do it.`, action: { type: "team_revoke", label: `Revoke ${hit.name}'s seat`, payload: { seatId: hit.seatId } } };
+    return { text: `${teamSeatListText(f.team)} Name the person and I will line up the revoke for your OK.` };
+  }
+  if ((hasWord(t, "invite", "add") || /@/.test(raw)) && /@/.test(raw)) {
+    const parsed = parseSeatInvite(f, raw, isFunder);
+    if (parsed) return parsed;
+  }
+  if (hasWord(t, "team", "seat", "seats", "invite", "invited", "revoke")) {
+    return linked(`${teamSeatListText(f.team)} Invites go out from here: say invite with a name and email (add "recruiter" plus a market, or a pilot name, to pick the seat kind).`, "Open the Team view", "partner-team");
+  }
+  return null;
+}
+
 function answerPartner(f, question, t) {
   const sym = f.earnings.currency === "GBP" ? "£" : "$";
   const mny = (n) => sym + (Math.round(n0(n) * 100) / 100).toLocaleString("en-US", { maximumFractionDigits: 2 });
+  // Team seats (Build -107): list, invite, revoke.
+  const teamAnswer = teamIntentAnswer(f, question, t, false);
+  if (teamAnswer) return teamAnswer;
   // Month pack: produce it (the answer carries the walk to the
   // download on Earnings, which serves the frozen figures).
   if (hasWord(t, "pack", "export", "download", "spreadsheet") || (hasWord(t, "month", "monthly", "close", "closed") && hasWord(t, "numbers", "figures", "report", "final"))) {
@@ -1133,6 +1234,9 @@ function answerPartner(f, question, t) {
 }
 
 function answerPilot(f, question, t) {
+  // Team seats (Build -107): the funder lead's pilot seats.
+  const teamAnswer = teamIntentAnswer(f, question, t, true);
+  if (teamAnswer) return teamAnswer;
   const dm = (cents) => "$" + (Math.round(n0(cents)) / 100).toLocaleString("en-US", { maximumFractionDigits: 2 });
   if (hasWord(t, "pack", "export", "download", "report", "board")) {
     return linked(`${f.closed ? "Your pilot has wrapped up, so the end-of-pilot pack is the final record: " : "The pack is ready any time from the Report view: "}fund totals, every business's step, and the customer counts with counted and recorded kept separate. Download it from Report.`, "Open the Report", "pilot-report");
@@ -1270,6 +1374,12 @@ function buildHomeState(role, f) {
     if (f.scopes && f.scopes.length > 1) chips.push(`${fmt(f.scopes.length)} scopes on this login`);
     if (f.race && f.race.state === "running") chips.push("The London race is running");
     if (f.race && f.race.state === "won") chips.push("A district has won the London race");
+    // Team seats (Build -107): an invite sitting unaccepted
+    // for over a week is the one team nudge.
+    if (f.team && f.team.isAdmin) {
+      const stale = (f.team.seats || []).find((s) => s.status === "invited" && s.invitedAt && Date.now() - Date.parse(s.invitedAt) > 7 * 86400000);
+      if (stale) chips.push(`${(stale.name || "A seat").split(" ")[0]} hasn't accepted their invite yet`);
+    }
   } else if (role === "pilot_partner") {
     // Build -106 funder chips: the pack prompt fires only when
     // the pilot has actually ended; otherwise fund state.
@@ -1277,6 +1387,10 @@ function buildHomeState(role, f) {
     if (f.counts && f.counts.visitsDone) chips.push(`${fmt(f.counts.visitsDone)} ${plural(f.counts.visitsDone, "visit")} done`);
     if (f.counts && f.counts.postsLive) chips.push(`${fmt(f.counts.postsLive)} ${plural(f.counts.postsLive, "post")} live`);
     if (f.counts && f.counts.continued) chips.push(`${fmt(f.counts.continued)} ${plural(f.counts.continued, "business", "businesses")} joined SIGNL afterwards`);
+    if (f.team && f.team.isAdmin) {
+      const stale = (f.team.seats || []).find((s) => s.status === "invited" && s.invitedAt && Date.now() - Date.parse(s.invitedAt) > 7 * 86400000);
+      if (stale) chips.push(`${(stale.name || "A seat").split(" ")[0]} hasn't accepted their invite yet`);
+    }
   }
   return { chips };
 }

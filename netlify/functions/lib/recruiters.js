@@ -165,6 +165,7 @@ function entityView(e) {
     id: e.id, kind: e.kind, name: e.name, email: e.email, code: e.code,
     marketId: e.marketId, marketName: e.marketName, markets: e.markets || [e.marketName],
     status: e.status, claimSrc: RECRUITER_SRC_PREFIX + e.code, createdAt: e.createdAt,
+    sponsorPartnerId: e.sponsorPartnerId || null, userId: e.userId || null,
   };
 }
 
@@ -717,7 +718,7 @@ function kickSeeds() {
 
 // ---------------- staff invite ----------------
 
-async function inviteStaffRecruiter({ name, email, market, actorId }) {
+async function inviteStaffRecruiter({ name, email, market, actorId, sponsorPartnerId, actorRole }) {
   const cleanName = String(name || "").trim().slice(0, 80);
   const cleanEmail = String(email || "").trim().toLowerCase();
   if (!cleanName) return { error: "The recruiter's name is required" };
@@ -743,6 +744,9 @@ async function inviteStaffRecruiter({ name, email, market, actorId }) {
     createdAt: ts,
     updatedAt: ts,
     createdBy: actorId || null,
+    // Team seats (Build -107): a partner-minted recruiter names
+    // its sponsoring partner org; Admin-minted seats omit it.
+    ...(sponsorPartnerId ? { sponsorPartnerId } : {}),
   };
   // The login is the app's normal account shape with a random
   // password nobody knows; the recruiter sets her own through the
@@ -801,7 +805,7 @@ async function inviteStaffRecruiter({ name, email, market, actorId }) {
     const sent = await deps.deliverEmail("password_reset", user, mail.subject, mail.text, null);
     emailSent = !!(sent && sent.sent);
   }
-  await logEvent({ type: "staff_recruiter_invited", actorId: actorId || null, actorRole: "admin", subjectId: user.id, market: mkt.name, data: { code, email: cleanEmail, marketId: mkt.id, emailSent } });
+  await logEvent({ type: "staff_recruiter_invited", actorId: actorId || null, actorRole: actorRole || "admin", subjectId: user.id, market: mkt.name, data: { code, email: cleanEmail, marketId: mkt.id, emailSent, ...(sponsorPartnerId ? { sponsorPartnerId } : {}) } });
   return { entity, user, emailSent, token };
 }
 
@@ -1050,6 +1054,7 @@ async function handleAdminAdvertiserPermit({ seg, event }) {
 
 module.exports = {
   init,
+  allEntities,
   handleRecruiterApi,
   handleAdminRecruiters,
   handleAdminAdvertiserPermit,

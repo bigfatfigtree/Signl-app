@@ -486,7 +486,14 @@ async function pilotForSessionUser(user, query) {
     return { pilot };
   }
   if (user.role === "partner") {
-    const scopes = (user.partner && Array.isArray(user.partner.scopes) ? user.partner.scopes : []).filter((s) => s && s.kind === "pilot" && s.pilotId);
+    // Team seats (Build -107): a team member carries no scopes
+    // of their own; the org's scopes are the source of truth.
+    let scopeSource = user;
+    if (user.partner && user.partner.teamOf) {
+      const org = await store.get(`user:${user.partner.teamOf}`);
+      if (org && org.role === "partner") scopeSource = org;
+    }
+    const scopes = (scopeSource.partner && Array.isArray(scopeSource.partner.scopes) ? scopeSource.partner.scopes : []).filter((s) => s && s.kind === "pilot" && s.pilotId);
     if (!scopes.length) return { error: [403, "The Impact Portal is for SIGNL pilot partners."] };
     const wanted = query && typeof query.pilot === "string" && query.pilot ? query.pilot : null;
     const scope = wanted ? scopes.find((s) => s.pilotId === wanted) : (scopes.length === 1 ? scopes[0] : null);
@@ -509,7 +516,7 @@ async function handlePilotApi({ method, seg, user, query }) {
 
   if (sub === "me") {
     return json(200, {
-      partner: { name: user.name || "", partnerName: pilot.partnerName, email: user.email },
+      partner: { name: user.name || "", partnerName: pilot.partnerName, email: user.email, teamAdmin: user.teamAdmin === true },
       pilot: pilotView(pilot, null),
     });
   }
@@ -626,6 +633,7 @@ async function adminPilotDetail(pilot) {
       partnerUserId: pilot.partnerUserId || null,
       partnerEmail: partnerUser ? partnerUser.email : null,
       partnerLoginName: partnerUser ? partnerUser.name : null,
+      partnerTeamAdmin: partnerUser ? partnerUser.teamAdmin === true : false,
       createdBy: pilot.createdBy || null,
     }),
     fund: t.fund,
@@ -722,6 +730,13 @@ async function handleAdminPilots({ method, seg, event, user }) {
       const { brand, error } = sanitizePilotBrand(b.brand);
       if (error) return err(400, error);
       if (brand) pilot.brand = brand; else delete pilot.brand;
+    }
+    if (b.teamAdminPartner !== undefined) {
+      // Team seats (Build -107): the funder lead's teamAdmin
+      // flag lives on their user record.
+      if (!pilot.partnerUserId) return err(400, "This pilot has no partner login yet");
+      const lead = await store.get(`user:${pilot.partnerUserId}`);
+      if (lead) { lead.teamAdmin = b.teamAdminPartner === true; lead.updatedAt = nowIso(); await store.set(`user:${lead.id}`, lead); }
     }
     pilot.updatedAt = nowIso();
     await store.set(`pilot:${pilot.id}`, pilot);

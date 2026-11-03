@@ -305,9 +305,9 @@ console.log("== Source checks ==");
   check("sigdata: facts + answerer branches + home chips for both items", sigdataJs.includes("availabilitySet") && sigdataJs.includes("receiptReady: d.receiptReady || null") && sigdataJs.includes("businessAvailability: (d.businessAvailability || [])") && sigdataJs.includes('"biz-profile"') && sigdataJs.includes('"Set your standing hours"') && sigdataJs.includes("receipt is ready to forward`);"));
   check("sigai canon: standing availability + monthly receipt export lines", sigaiJs.includes("Standing availability: a business can set its usual open days") && sigaiJs.includes("Monthly receipt export: from Results"));
   check("no em dashes in the new copy", ["Forward this month's receipt", "When creators can come", "Three different kinds of numbers. They are never added together."].every((l) => !l.includes("—") && !l.includes("–")));
-  check("build stamp is 2026.11.02-106 on both sides",
-    fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes('exports.BUILD_ID = "2026.11.02-106"')
-    && fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes('window.__SIGNL_BUILD__ = "2026.11.02-106"'), "");
+  check("build stamp is 2026.11.02-107 on both sides",
+    fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes('exports.BUILD_ID = "2026.11.02-107"')
+    && fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes('window.__SIGNL_BUILD__ = "2026.11.02-107"'), "");
 }
 
 console.log(`\nBuild -96 verify: ${passed} passed, ${failed} failed`);
