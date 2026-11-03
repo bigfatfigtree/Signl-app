@@ -1251,7 +1251,7 @@ function profileCompletionHtml(u) {
     <div class="flex-between"><h3 style="margin:0">${T("Finish your profile to be launch-ready", "Termina tu perfil para estar listo al lanzar")}</h3><span class="badge info">${pc.requiredDone} ${T("of", "de")} ${pc.requiredTotal} ${T("essentials done", "esenciales listos")}</span></div>
     <p class="small">${T("Businesses can't see you until the essentials are done.", "Los negocios no pueden verte hasta que termines lo esencial.")}</p>
     ${rows}
-    <div class="mt"><button class="btn" onclick="return go('dashboard','Profile')">${T("Finish my profile", "Terminar mi perfil")}</button></div>
+    <div class="mt"><button class="btn" onclick="return goFinishProfile()">${T("Finish my profile", "Terminar mi perfil")}</button></div>
   </div>`;
 }
 
@@ -4334,14 +4334,28 @@ function marketOptions(selected, forJoin) {
 // Profile (multi-market listing, 2026-11-01): every SIGNL market
 // except the creator's home market (the home share is the local
 // % field, never a row here), with a blank "pick a market" head.
+// Build -90: grouped by country exactly like the claim form's
+// market picker (marketOptions), so the profile rows and the
+// claim facts screen offer the same search-then-pick control.
 function audienceMarketOptions(selected, homeMarket) {
-  const names = ((state.boot && state.boot.markets) || [])
-    .filter((m) => m.name !== homeMarket)
-    .sort((a, b) => a.name.localeCompare(b.name));
-  // Short market names, not the "Name, State" label: this
-  // select shares its row with the % input, and at phone width
-  // the long label truncates into ambiguity ("Richmo...").
-  return `<option value="">Pick a market</option>` + names.map((m) => `<option value="${esc(m.name)}" ${m.name === selected ? "selected" : ""}>${esc(m.name)}</option>`).join("");
+  const markets = ((state.boot && state.boot.markets) || []).filter((m) => m.name !== homeMarket);
+  const byCountry = {};
+  for (const m of markets) {
+    const country = m.country || "United States";
+    (byCountry[country] = byCountry[country] || []).push(m);
+  }
+  const countries = Object.keys(byCountry).sort((a, b) => (a === "United States" ? -1 : b === "United States" ? 1 : a.localeCompare(b)));
+  const groups = countries.map((country) => {
+    const opts = [...byCountry[country]]
+      .sort((a, b) => a.name.localeCompare(b.name))
+      // Short market names, not the "Name, State" label: this
+      // select shares its row with the % input, and at phone
+      // width the long label truncates into ambiguity.
+      .map((m) => `<option value="${esc(m.name)}" ${m.name === selected ? "selected" : ""}>${esc(m.name)}</option>`)
+      .join("");
+    return `<optgroup label="${esc(country)}">${opts}</optgroup>`;
+  }).join("");
+  return `<option value="">Pick a market</option>` + groups;
 }
 
 // Multi-market audience rows (Build -64, audit F2): the profile
@@ -4353,7 +4367,7 @@ function audienceMarketOptions(selected, homeMarket) {
 // pattern instead of a bare full-list select.
 function amRowHtml(market, pct) {
   const u = state.user || {};
-  return `<div class="p-am-row"><input class="p-am-search" placeholder="${T("Search markets", "Busca mercados")}" oninput="filterAmOptions(this)" style="margin-bottom:6px"><select class="p-am-market" style="width:100%">${audienceMarketOptions(market || "", u.market)}</select><div style="display:flex;align-items:center;gap:8px;margin-top:6px"><input class="p-am-pct" type="number" min="0" max="100" style="width:96px" placeholder="%" value="${esc(pct === undefined || pct === null ? "" : String(pct))}"><span class="small muted">${T("% of my audience", "% de mi audiencia")}</span><button type="button" class="btn small-btn ghost" onclick="return amRemoveRow(this)">${T("Remove", "Quitar")}</button></div></div>`;
+  return `<div class="p-am-row"><input class="p-am-search" placeholder="${T("Search markets, for example: Dubai", "Busca mercados, por ejemplo: Dubái")}" oninput="filterAmOptions(this)" style="margin-bottom:6px"><select class="p-am-market" style="width:100%">${audienceMarketOptions(market || "", u.market)}</select><div style="display:flex;align-items:center;gap:8px;margin-top:6px"><input class="p-am-pct" type="number" min="0" max="100" style="width:96px" placeholder="%" value="${esc(pct === undefined || pct === null ? "" : String(pct))}"><span class="small muted">${T("% of my audience", "% de mi audiencia")}</span><button type="button" class="btn small-btn ghost" onclick="return amRemoveRow(this)">${T("Remove", "Quitar")}</button></div></div>`;
 }
 function amRowCount() {
   return document.querySelectorAll("#p-am-rows .p-am-row").length;
@@ -4390,7 +4404,12 @@ function filterAmOptions(input) {
   const q = input.value.trim().toLowerCase();
   for (const opt of sel.querySelectorAll("option")) {
     if (!opt.value) continue;
-    opt.hidden = !!q && !opt.textContent.toLowerCase().includes(q);
+    opt.hidden = !!q && !opt.textContent.toLowerCase().includes(q) && !opt.value.toLowerCase().includes(q);
+  }
+  // Claim-picker pattern: a country group with no visible match
+  // hides too, so search never leaves an empty heading behind.
+  for (const grp of sel.querySelectorAll("optgroup")) {
+    grp.hidden = ![...grp.querySelectorAll("option")].some((o) => !o.hidden);
   }
 }
 
@@ -12168,8 +12187,8 @@ function creatorProfileHtml(u) {
     ${u.profileCompletion && !u.profileCompletion.complete ? `<div class="notice blue">${T("Your profile is not finished yet. Still needed to go live:", "Tu perfil aún no está terminado. Todavía falta para estar activo:")} ${u.profileCompletion.items.filter((i) => i.required && !i.done).map((i) => esc(i.label)).join(", ")}. ${T("Fill in the fields below and save. Businesses cannot see you, and you cannot take offers, until your profile is finished.", "Llena los campos de abajo y guarda. Los negocios no pueden verte, y no puedes aceptar ofertas, hasta que tu perfil esté terminado.")}</div>` : ""}
     <form onsubmit="return doUpdateCreator(event)">
       <div class="fgroup tint" id="profile-basics">
-      <p class="fg-kicker">${T("Your basics", "Tus datos básicos")}</p>
-      <p class="small" style="margin:0 0 12px">${T("Finish these four to get booked: home city, audience size, at least one category, and your local %. Everything below this card is optional and can be added any time.", "Completa estos cuatro datos para que te contraten: tu ciudad, el tamaño de tu audiencia, al menos una categoría y tu % local. Todo lo que sigue después de esta tarjeta es opcional y puedes agregarlo cuando quieras.")}</p>
+      <h3 class="four-basics-heading" style="margin:0 0 4px">${T("Finish these four to get booked", "Completa estos cuatro datos para que te contraten")}</h3>
+      <p class="small" style="margin:0 0 12px">${T("Home city, audience size, at least one category, and your local %. Everything below is optional and can be added any time.", "Tu ciudad, el tamaño de tu audiencia, al menos una categoría y tu % local. Todo lo que sigue es opcional y puedes agregarlo cuando quieras.")}</p>
       ${u.market === unlistedLabel()
         ? `<div class="form-2col"><div class="field"><label>${T("Your city (not an open market yet)", "Tu ciudad (aún no es un mercado abierto)")} <span class="req-badge">${T("Required", "Obligatorio")}</span></label><input id="p-city-text" value="${esc(u.city || "")}"></div>
            <div class="field"><label>${T("Your country", "Tu país")}</label><input id="p-country-text" value="${esc(u.country || "")}"></div>
@@ -12233,7 +12252,7 @@ function creatorProfileHtml(u) {
       <div class="field"><label>${T("Typical post views", "Vistas típicas por publicación")}</label><input type="number" id="p-avgviews" min="0" value="${c.avgViews || 0}"></div>
       <div class="field"><label>${T("Top audience cities", "Ciudades principales de tu audiencia")}</label><input id="p-topcities" value="${esc((c.topAudienceCities || []).join(", "))}" placeholder="${T("Up to 5, comma separated", "Hasta 5, separadas por comas")}"><p class="small muted">${T("Free text, shown on your profile in words. The market list right below is a different thing: it is the one that actually lists you in other markets.", "Texto libre, se muestra en tu perfil en palabras. La lista de mercados justo debajo es otra cosa: es la que realmente te incluye en otros mercados.")}</p></div>
       <div class="field"><label>${T("Your audience in other markets", "Tu audiencia en otros mercados")}</label>
-        <p class="small muted">${T("Optional. If a real share of your audience lives in another SIGNL market, name the market and the %. At 5% or more you are listed and ranked in that market too, and offers from its businesses reach you, not just home-market ones. Your home market is your local % in Your basics above, never a row here.", "Opcional. Si una parte real de tu audiencia vive en otro mercado de SIGNL, escribe el mercado y el %. Con 5% o más también apareces y te posicionas en ese mercado, y las ofertas de sus negocios te llegan, no solo las de tu mercado. Tu mercado principal es tu % local en Tus datos básicos arriba, nunca una fila aquí.")}</p>
+        <p class="small muted" id="p-am-help">${T("Optional. If a real share of your audience lives in another SIGNL market, name the market and the %. At 5% or more you are listed and ranked in that market too, and offers from its businesses reach you, not just home-market ones. Your home market is your local % in the four basics at the top, never a row here.", "Opcional. Si una parte real de tu audiencia vive en otro mercado de SIGNL, escribe el mercado y el %. Con 5% o más también apareces y te posicionas en ese mercado, y las ofertas de sus negocios te llegan, no solo las de tu mercado. Tu mercado principal es tu % local en los cuatro datos básicos de arriba, nunca una fila aquí.")}</p>
         <div id="p-am-rows">${(() => { const rows = (c.audienceMarkets || []).filter((e) => e && (e.market || e.pct !== undefined && e.pct !== null)); return (rows.length ? rows : [{}]).slice(0, 5).map((e) => amRowHtml(e.market || "", e.pct === undefined || e.pct === null ? "" : String(e.pct))).join(""); })()}</div>
         <button type="button" class="btn small-btn ghost" id="p-am-add" onclick="return amAddRow()"${(c.audienceMarkets || []).filter((e) => e && (e.market || e.pct !== undefined && e.pct !== null)).length >= 5 ? ' style="display:none"' : ""}>${T("Add another market", "Agregar otro mercado")}</button>
       </div>
@@ -12645,15 +12664,44 @@ function offersEmptyLine() {
   if (state.user && state.user.founding && state.user.founding.marketLive === false) {
     return `<p>You are on the founding roster for ${esc(mkt)}. Offers land here the moment the market opens, founding creators see every offer first, and we email you the moment the first business posts. There is nothing to miss until then.</p>`;
   }
+  // Build -90: an approved creator with an empty board is still
+  // a founding creator waiting on businesses, even once the
+  // market flag reads live — the board says where they stand
+  // and repeats the email promise instead of a bare "no offers"
+  // line that reads like they missed something.
+  if (state.user && state.user.status === "approved") {
+    return `<p>You are an approved founding creator in ${esc(mkt)}. As businesses open in ${esc(mkt)}, their offers land here first, and we email you the moment a new one posts, so there is nothing to keep checking for.</p>`;
+  }
   return `<p>No new offers in ${esc(mkt)} right now. Offers here come from businesses across the whole market, and new ones show up here first.</p>`;
+}
+
+// The one useful next step on the founding empty board (Build
+// -90): finish the profile while the gate is still open, else
+// add rates while no paid rate is on file. A creator with both
+// done gets no button — there is nothing left for them to do.
+function foundingEmptyActionHtml() {
+  const u = state.user || {};
+  const pc = u.profileCompletion;
+  if (pc && !pc.complete) {
+    return `<button type="button" class="btn" onclick="return goFinishProfile()">Finish your profile</button>`;
+  }
+  const c = u.creator || {};
+  if (!(typeof c.paidRate === "number" && c.paidRate > 0)) {
+    return `<button type="button" class="btn" onclick="return go('dashboard','Profile')">Add your rates</button>`;
+  }
+  return "";
 }
 
 // The founding empty state as a standalone panel (Build -64):
 // the deck end card and the list view use it whenever the board
 // holds zero offers, so a founding creator's first tap on
 // Offers never lands on "You looked through 0 offers."
-function foundingOffersEmptyHtml() {
-  return `<div class="empty-state"><span class="es-badge"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z"/></svg></span><h3>Open offers in ${esc(marketTalkNameClient(state.user.market))}</h3>${offersEmptyLine()}</div>`;
+// Build -90: it names the creator's own standing in plain words
+// (approved founding creator in their home market), repeats
+// that offers arrive by email as businesses open, and offers
+// the one useful action while anything is still incomplete.
+function foundingOffersEmptyHtml(extraLine) {
+  return `<div class="empty-state founding-empty" data-empty="founding"><span class="es-badge"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z"/></svg></span><h3>No offers yet in ${esc(marketTalkNameClient(state.user.market))}</h3>${offersEmptyLine()}${extraLine || ""}<div class="founding-empty-action">${foundingEmptyActionHtml()}</div></div>`;
 }
 
 // Inline deck errors (Build -64, audit P1): a failed apply in
@@ -12684,7 +12732,7 @@ async function loadOpenBoard() {
     const ea = data.earlyAccess && data.earlyAccess.opensAt ? data.earlyAccess : null;
     const eaLine = ea ? `<p class="small" style="margin-top:10px">A new offer just posted in ${esc(marketTalkNameClient(state.user.market))}. Charter creators, the founding class, see new offers first; this one opens to you ${esc(fmtDay(ea.opensAt))} at ${esc(fmtTime(ea.opensAt))}.</p>` : "";
     if (!data.offers.length) {
-      el.innerHTML = ea ? `<div class="empty-state"><span class="es-badge"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z"/></svg></span><h3>Open offers in ${esc(marketTalkNameClient(state.user.market))}</h3>${eaLine}</div>` : foundingOffersEmptyHtml();
+      el.innerHTML = foundingOffersEmptyHtml(eaLine);
       return;
     }
     state.openOffers = data.offers;
