@@ -141,18 +141,35 @@ check("the founding sentence-badge wraps instead of overflowing", themeCss.inclu
   const rSlice = appJs.slice(rStart, rEnd);
   const hSlice = appJs.slice(rEnd, appJs.indexOf("function renderTopBar2(", rEnd));
   const tabsOf = (s) => [...s.matchAll(/tab: "([^"]+)"/g)].map((m) => m[1]);
+  // Every branch for the role counts toward the reachable set:
+  // Build -106 split the partner rows into an unscoped branch
+  // and a pilot-scoped branch (multi-scope login), so a
+  // first-match slice would miss one of them.
   const seg = (s, role) => {
-    const at = s.indexOf(`u.role === "${role}"`);
-    if (at < 0) return "";
-    const next = s.indexOf('u.role === "', at + 10);
-    return s.slice(at, next < 0 ? s.length : next);
+    let out = "";
+    let pos = 0;
+    for (;;) {
+      const at = s.indexOf(`u.role === "${role}"`, pos);
+      if (at < 0) break;
+      const next = s.indexOf('u.role === "', at + 10);
+      out += s.slice(at, next < 0 ? s.length : next) + "\n";
+      if (next < 0) break;
+      pos = next;
+    }
+    return out;
   };
   // Per role: primaries from tabItemsFor + rows from
   // moreRowsFor, deduped, sorted == the full reachable set.
   const EXPECTED = {
     business: ["Analytics", "Campaign Setup", "Content", "Discover", "Help", "Home", "Messages", "My Offers", "Plan", "Profile", "Regulars", "Settings", "Sig", "Visits & Posts"],
     creator: ["Bench", "Dashboard", "Earnings", "Help", "Messages", "Momentum", "My Visits", "Numbers", "Offers", "Profile", "Settings", "Sig"],
-    partner: ["Account", "Businesses", "Creators", "Earnings", "Help", "Home", "Links", "Markets", "Performance", "Sig"],
+    // Partner set extended intentionally after -41: Build -106
+    // (Tier 3 item 15, multi-scope login) added the pilot-scope
+    // rows a partner sees inside a scope (Overview, Report,
+    // Results, and the __partner_scope_exit row), and Build
+    // -107 (item 17, team seats) added Team. All ten -41
+    // destinations remain reachable; nothing was lost.
+    partner: ["Account", "Businesses", "Creators", "Earnings", "Help", "Home", "Links", "Markets", "Overview", "Performance", "Report", "Results", "Sig", "Team", "__partner_scope_exit"],
   };
   for (const role of ["business", "creator", "partner"]) {
     const union = [...new Set([...tabsOf(seg(tSlice, role)), ...tabsOf(seg(rSlice, role))])].sort();
