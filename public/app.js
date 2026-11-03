@@ -3689,6 +3689,7 @@ function sigLinkGo(dest) {
     case "cr-terms": window.open("https://joinsignl.com/creator-terms.html", "_blank", "noopener"); return false;
     case "cr-profile": return go("dashboard", "Profile");
     case "admin-applications": return go("dashboard", "Applications");
+    case "admin-businesses": ccTab = "businesses"; return go("dashboard", "Stats");
     case "admin-partners": return go("dashboard", "Partners");
     case "admin-compliance": return go("dashboard", "Compliance");
     default: return false;
@@ -8018,6 +8019,7 @@ function renderForBusinesses() {
         <div class="field"><label>Business ZIP (optional)</label><input id="jb-zip" inputmode="numeric" maxlength="5" placeholder="For example: 23452"><p class="small muted">Used to group nearby creators by distance bands. Bands only, never an exact distance.</p></div>
       </div>
         <div class="field"><label>About your business (optional)</label><textarea id="jb-about" rows="3" placeholder="What you serve, what the visit feels like, anything SIGNL should know when reviewing your application"></textarea></div>
+        <div class="field"><label>Which till do you run? (optional)</label>${chipSelectHtml("jb-pos", [{ value: "", label: "Skip for now" }, { value: "square", label: "Square" }, { value: "clover", label: "Clover" }, { value: "toast", label: "Toast" }, { value: "lightspeed", label: "Lightspeed" }, { value: "other", label: "Another system" }, { value: "none", label: "No register system" }], "", null, false)}<input id="jb-pos-other" placeholder="If another system, which one?" style="margin-top:6px"><p class="small muted">You can skip this; it only changes how visits get counted later. Visit codes count at every till today.</p></div>
       </div>
       ${igAssistCardHtml("jb", "business")}
       <input type="hidden" id="jb-plan" value="${esc(state.boot.plans[0].id)}">
@@ -8259,6 +8261,8 @@ async function registerBusiness(e) {
       customState: isUnlisted ? customState : undefined,
       city: isUnlisted ? undefined : document.getElementById("jb-city").value,
       category: document.getElementById("jb-category").value,
+      posProvider: (document.getElementById("jb-pos") || {}).value || undefined,
+      posOther: (document.getElementById("jb-pos-other") || {}).value || undefined,
       neighborhood: document.getElementById("jb-neighborhood").value,
       zip: document.getElementById("jb-zip").value,
       about: document.getElementById("jb-about").value,
@@ -15592,6 +15596,13 @@ async function loadBusinessHome() {
     const bz = u.business || {};
     if (!bz.about) add(4, now, "Your business page is missing its About.", "Add about", () => go("dashboard", "Profile"), "About missing on your page");
     if (!bz.standingAvailability) add(4, now, "Set your standing hours once, and creators see them on your offers while new offers pre-fill their timing from them.", "Set hours", () => go("dashboard", "Profile"), "Standing hours not set");
+    // Which till (Build -101): the one-time prompt fires only
+    // when the field is empty on a business that is otherwise
+    // set up (its page carries an About), so a brand-new
+    // business is not nagged about a till before its own page
+    // exists. The checklist item asks the same question in
+    // place; this is the Sig-side nudge, once, from real state.
+    if (!bz.posProvider && bz.about) add(5, now, "Tell us which till you run: Square, Clover, Toast, Lightspeed, or another system. It only changes how visits get counted later; codes count at every till today.", "Answer on Home", () => go("dashboard", "Home"), "Which till do you run?");
     if (d.staffPinSet === false) add(4, now, "Set your staff PIN so your team can redeem visits: the creator shows their visit code at your counter, your team enters it with this PIN, and that is what counts the visit.", "Set PIN", () => go("dashboard", "Settings"), "Staff PIN not set");
     // Build -99 proactive prompt, real records only: the
     // setup checklist's register item is undone and Square is
@@ -16703,6 +16714,16 @@ async function renderBizProfileTab() {
         </div>`; })()}
         <button class="btn ws-primary" onclick="saveBusinessProfile('availability')">Save hours</button> <span id="bp-ok-avail" class="saved"></span>
       </div>
+      <div class="wcard" id="bp-pos" style="margin-top:14px">
+        <h3>Your till</h3>
+        <p class="wc-sub">Which register system you run. It only changes how visits get counted later: Square connects directly today, and visit codes count at every till either way. Skip it if you are not sure; you can change it any time.</p>
+        <div class="field"><label>Register system</label><select id="bp-pos-provider">
+          <option value=""${!b.posProvider ? " selected" : ""}>Not answered yet</option>
+          ${["square", "clover", "toast", "lightspeed", "other", "none"].map((p) => `<option value="${p}"${b.posProvider === p ? " selected" : ""}>${p === "other" ? "Another system" : p === "none" ? "No register system" : p[0].toUpperCase() + p.slice(1)}</option>`).join("")}
+        </select></div>
+        <div class="field"><label>If another system, which one?</label><input id="bp-pos-other" value="${esc(b.posOther || "")}" placeholder="For example: Shopify POS"></div>
+        <button class="btn ws-primary" onclick="saveBusinessProfile('pos')">Save till</button> <span id="bp-ok-pos" class="saved"></span>
+      </div>
       <div class="wcard" id="bp-optional" style="margin-top:14px">
         <h3>Optional</h3>
         <p class="wc-sub">Language, who you are open to, and the packet creators post with. Skip any of it; change it any time.</p>
@@ -16960,6 +16981,7 @@ function setupChecklistHtml(cl) {
     if (s.id === "pin") return `<button class="btn small-btn" type="button" onclick="return go('dashboard','Settings')">Set the PIN</button>`;
     if (s.id === "counter_card") return `<button class="btn small-btn" type="button" onclick="return setupPrintCard()">Print the card</button>`;
     if (s.id === "test_redemption") return `<button class="btn small-btn" type="button" onclick="return setupTestRedeem(this)">Run the test</button>`;
+    if (s.id === "till") return `<button class="btn small-btn ghost" type="button" onclick="return go('dashboard','Profile')">Change</button>`;
     if (s.id === "page") return `<button class="btn small-btn" type="button" onclick="return go('dashboard','Profile')">Finish my page</button>`;
     if (s.id === "hours") return `<button class="btn small-btn" type="button" onclick="return go('dashboard','Profile')">Set my hours</button>`;
     if (s.id === "creators") return `<button class="btn small-btn" type="button" onclick="return go('dashboard','Discover')">Find creators</button>`;
@@ -16979,10 +17001,36 @@ function setupChecklistHtml(cl) {
     <p class="wc-sub" style="margin-top:8px">${cl.doneCount} of ${cl.total} done. Each thing here is read from your real records, and this list goes away when all ${cl.total} are done.${cl.firstVisit ? ` Your first booking is confirmed${cl.firstVisit.creatorHandle ? ` with @${esc(cl.firstVisit.creatorHandle)}` : ""}: the register, usual day, PIN, card, and test steps are what make that visit count, and they only work if they are done before the visit.` : ""}</p>
     ${cl.items.map((s) => `<div style="display:flex;gap:10px;align-items:flex-start;margin-top:12px;flex-wrap:wrap">
       <div>${s.done ? `<span class="badge ok">Done</span>` : `<span class="badge warn">To do</span>`}</div>
-      <div style="flex:1 1 210px;min-width:0"><strong>${esc(s.label)}</strong><p class="small muted" style="margin:2px 0 0">${esc(s.why)}</p>${squareNote(s)}</div>
+      <div style="flex:1 1 210px;min-width:0"><strong>${esc(s.label)}</strong><p class="small muted" style="margin:2px 0 0">${esc(s.why)}</p>${squareNote(s)}${s.id === "till" && !s.done ? `<div class="chiprow" style="margin-top:8px">${["square", "clover", "toast", "lightspeed", "other", "none"].map((p) => `<button type="button" class="rchip" onclick="return setupSetPos('${p}')">${p === "other" ? "Another system" : p === "none" ? "No register system" : p[0].toUpperCase() + p.slice(1)}</button>`).join("")}</div><div id="setup-pos-other" style="display:none;margin-top:6px"><input id="setup-pos-other-name" placeholder="Which system?" style="max-width:220px"> <button type="button" class="btn small-btn" onclick="return setupSetPosOther()">Save</button></div>` : ""}</div>
       <div>${btnFor(s)}</div>
     </div>`).join("")}
   </section>`;
+}
+// Which till (Build -101): the checklist item answers in place.
+// Picking a named system saves at once; "Another system" opens
+// the name field first. The save is the ordinary profile PATCH,
+// so the business page and Sig read the same record.
+async function setupSetPos(provider) {
+  if (provider === "other") {
+    const box = document.getElementById("setup-pos-other");
+    if (box) { box.style.display = ""; const inp = document.getElementById("setup-pos-other-name"); if (inp) inp.focus(); }
+    return false;
+  }
+  try {
+    const data = await api("PATCH", "/me/profile", { posProvider: provider });
+    state.user = data.user;
+    render();
+  } catch (e) { alert(e.message); }
+  return false;
+}
+async function setupSetPosOther() {
+  const name = (document.getElementById("setup-pos-other-name") || {}).value || "";
+  try {
+    const data = await api("PATCH", "/me/profile", { posProvider: "other", posOther: name });
+    state.user = data.user;
+    render();
+  } catch (e) { alert(e.message); }
+  return false;
 }
 // The register's management (locations, read the register
 // now, disconnect, reconnect when paused) lives in Results,
@@ -19269,6 +19317,19 @@ function packetFromForm() {
 async function saveBusinessProfile(scope) {
   const val = (id) => { const el = document.getElementById(id); return el ? el.value : ""; };
   const chk = (id) => { const el = document.getElementById(id); return !!(el && el.checked); };
+  if (scope === "pos") {
+    // Which till (Build -101): an empty pick clears the saved
+    // declaration through the same PATCH discipline as the rest
+    // of this page (the server stores null for "").
+    const patch = { posProvider: val("bp-pos-provider") || "", posOther: val("bp-pos-other") };
+    try {
+      const data = await api("PATCH", "/me/profile", patch);
+      state.user = data.user;
+      render();
+      setTimeout(() => { const ok = document.getElementById("bp-ok-pos"); if (ok) ok.textContent = "Saved."; }, 30);
+    } catch (err) { alert(err.message); }
+    return;
+  }
   if (scope === "availability") {
     // Build -96: an all-blank save clears the field (the server
     // stores null), so a business can retire the line cleanly.
@@ -21695,8 +21756,10 @@ function ccBusinessesHtml(d) {
     </tr>`;
   };
   if (!rows.length) return `<div class="panel cc-waiting"><strong>No businesses yet.</strong> When the first business signs up, its agreement — plan, founding terms, credit, minimum, billing state and rollover — lands here.</div>`;
+  const pm = (d.posMix && d.posMix.counts) || null;
+  const posStrip = pm ? `<div class="panel" style="margin-bottom:12px"><h3 style="margin:0 0 6px">Which till they run</h3><p class="small" style="margin:0">Square ${pm.square || 0} &middot; Clover ${pm.clover || 0} &middot; Toast ${pm.toast || 0} &middot; Lightspeed ${pm.lightspeed || 0} &middot; Another system ${pm.other || 0} &middot; No register system ${pm.none || 0} &middot; Not declared yet ${pm.undeclared || 0}. Declared tills are the Clover trigger's evidence: the build starts at 10 to 20 real declarations.</p></div>` : "";
   return `
-    <p class="muted small" style="margin:2px 0 10px">${plural(tt.count || 0, "business", "businesses")} &middot; ${plural(tt.withPlan || 0, "agreement", "agreements")} on record &middot; ${tt.charged || 0} charged &middot; ${tt.recordedOnly || 0} recorded only &middot; ${tt.pastDue || 0} past due. Rows that need a look (past due, then recorded-not-charged) sort first.</p>
+    ${posStrip}<p class="muted small" style="margin:2px 0 10px">${plural(tt.count || 0, "business", "businesses")} &middot; ${plural(tt.withPlan || 0, "agreement", "agreements")} on record &middot; ${tt.charged || 0} charged &middot; ${tt.recordedOnly || 0} recorded only &middot; ${tt.pastDue || 0} past due. Rows that need a look (past due, then recorded-not-charged) sort first.</p>
     <div class="panel"><div class="table-wrap"><table>
       <tr><th>Business</th><th>Plan</th><th>Founding credit</th><th>Minimum</th><th>Billing</th><th>Rollover</th><th>Lifetime</th></tr>
       ${rows.map(rowHtml).join("")}

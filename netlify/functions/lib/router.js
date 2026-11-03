@@ -8784,6 +8784,50 @@ async function proofKitFor(bizUser) {
   };
 }
 
+// ---------- Build -101: which till do you run? (Tier 3 item 19a) ----------
+// The POS mix was UNMEASURED: no field anywhere recorded which
+// register system a business runs, so the Clover/Toast/Lightspeed
+// sequence had no evidence to run on. The business record now
+// carries posProvider (one of the fixed set below, or unset) plus
+// a free-text posOther for "another system". It is asked once at
+// sign-up (skippable), answerable in place on the Home setup
+// checklist and on the business page, and aggregated for Admin in
+// the Command Center Businesses payload (posMix). Codes count at
+// ANY till today; the declaration only decides which register
+// connection is worth building next (the Clover trigger: 10-20
+// real businesses declared). Nothing here connects a register.
+const POS_PROVIDERS = ["square", "clover", "toast", "lightspeed", "other", "none"];
+const POS_LABELS = { square: "Square", clover: "Clover", toast: "Toast", lightspeed: "Lightspeed", other: "Another system", none: "No register system" };
+function normalizePosProvider(v) {
+  const s = String(v || "").trim().toLowerCase();
+  return POS_PROVIDERS.includes(s) ? s : null;
+}
+function posViewOf(bz) {
+  if (!bz || typeof bz !== "object") return null;
+  const provider = normalizePosProvider(bz.posProvider);
+  if (!provider) return null;
+  return { provider, label: POS_LABELS[provider], other: provider === "other" ? String(bz.posOther || "").trim().slice(0, 60) : "" };
+}
+// The mix over a user list: real (non-tester) businesses only,
+// overall counts plus a per-market split. Undeclared is its own
+// row so Admin can see the size of the unknown, and the Clover
+// trigger reads declared counts, never guesses.
+function posMixOf(users, isTesterFn) {
+  const counts = { square: 0, clover: 0, toast: 0, lightspeed: 0, other: 0, none: 0, undeclared: 0, total: 0 };
+  const byMarket = {};
+  for (const u of users || []) {
+    if (!u || u.role !== "business" || !u.business || u.status === "rejected") continue;
+    if (isTesterFn && isTesterFn(u)) continue;
+    const p = normalizePosProvider(u.business.posProvider) || "undeclared";
+    counts[p] += 1; counts.total += 1;
+    const m = normalizeMarketName(u.market || "") || "Unlisted";
+    const row = byMarket[m] || (byMarket[m] = { square: 0, clover: 0, toast: 0, lightspeed: 0, other: 0, none: 0, undeclared: 0, total: 0 });
+    row[p] += 1; row.total += 1;
+  }
+  const declaredNonSquare = counts.clover + counts.toast + counts.lightspeed + counts.other;
+  return { counts, byMarket, declaredNonSquare, cloverTrigger: { threshold: 10, declared: counts.total, nonSquareDeclared: declaredNonSquare, fired: counts.total >= 10 } };
+}
+
 // ---------- Build -99: the ONE business setup checklist ----------
 // Tier 2 item 12. Business Home used to carry three setup
 // surfaces at once: the Build -74 start-here cards, the launch
@@ -8816,8 +8860,10 @@ async function setupChecklistFor(bizUser) {
   ]);
   const rec = kitRec || {};
   const packet = assetPacketView(bz);
+  const pos = posViewOf(bz);
   const items = [
     { id: "square", label: "Connect your Square register", why: "Connect your register so visits count themselves: code visits and come-backs are read from the register, and nobody types anything at the till.", done: !!(reg && reg.connected) },
+    { id: "till", label: "Tell us which till you run", why: pos ? `You told us: ${pos.label}${pos.other ? ` (${pos.other})` : ""}. Visit codes count at your till today, whichever system it is.` : "Square, Clover, Toast, Lightspeed, or something else. You can skip this; it only changes how visits get counted later. Codes count at every till today.", done: !!pos },
     { id: "baseline", label: "Write down a usual day", why: "Pick one of your usual open days and about how many customers you get. Your receipt measures visit days against it, in real dollars.", done: !!(bz.baseline && bz.baseline.dayLabel) },
     { id: "pin", label: "Set your staff PIN", why: "Your team uses this PIN with the creator's code to mark the visit at the counter. That tap is what counts the visit.", done: !!pin },
     { id: "counter_card", label: "Print the counter card", why: "The card for the register: it teaches the one question and how a creator's code gets redeemed.", done: !!rec.counterCardPrintedAt },
@@ -8833,6 +8879,7 @@ async function setupChecklistFor(bizUser) {
     total: items.length,
     allDone: items.every((i) => i.done),
     register: reg ? { configured: !!reg.configured, state: reg.state, env: reg.env, businessName: reg.businessName || null } : null,
+    pos,
     firstVisit: kit ? { creatorHandle: kit.creatorHandle, visitWhen: kit.visitWhen } : null,
   };
 }
@@ -10204,6 +10251,13 @@ async function handleRegister(event) {
       // validated against the shared list; anything else stores
       // null.
       moment: validMoment(b.moment),
+      // Which till (Build -101, Tier 3 item 19a): the register
+      // system declared at sign-up, when the business answered.
+      // Skippable: an unanswered question stores nothing, and the
+      // setup checklist asks again later. An unrecognized value
+      // stores nothing rather than erroring the sign-up.
+      posProvider: normalizePosProvider(b.posProvider),
+      posOther: normalizePosProvider(b.posProvider) === "other" ? String(b.posOther || "").trim().slice(0, 60) : "",
       // Apply by Conversation (Build -32): which surface filed
       // this application. The record is the SAME record either
       // way; only the stamp differs. Anything but the exact
@@ -13346,6 +13400,11 @@ function ccBusinesses(P) {
   rows.sort((a, z) => rank(a) - rank(z) || (z.lastActivity < a.lastActivity ? -1 : z.lastActivity > a.lastActivity ? 1 : 0));
   return {
     filters: ccFiltersEcho(P),
+    // Which till (Build -101): the declared-POS mix over the
+    // same visibility scope as the rows (P.visUsers is the
+    // tester-fenced set), so the mix and the table can never
+    // disagree. This is the Clover trigger's evidence.
+    posMix: posMixOf(P.visUsers.filter((u) => !P.marketScope || normalizeMarketName(u.market || "") === P.marketScope), null),
     businesses: rows,
     totals: {
       count: rows.length,
@@ -16409,7 +16468,7 @@ async function route(event) {
     if (user.role === "business" && isFoundingBusiness(user)) {
       // "moment" rides along: the standing Menu of Moments pick is
       // a founding-page profile field, set pre-launch by design.
-      const PAGE_FIELDS = ["businessName", "category", "city", "neighborhood", "zip", "about", "preferredLanguage", "musicOpen", "musicLive", "musicCreated", "studentOpen", "assetPacket", "moment", "standingAvailability"];
+      const PAGE_FIELDS = ["businessName", "category", "city", "neighborhood", "zip", "about", "preferredLanguage", "musicOpen", "musicLive", "musicCreated", "studentOpen", "assetPacket", "moment", "standingAvailability", "posProvider", "posOther"];
       const extra = Object.keys(b || {}).filter((k) => !PAGE_FIELDS.includes(k));
       if (extra.length) {
         return err(403, "Your business page is yours to edit now. Plan settings and the product tools open when SIGNL activates your business.");
@@ -16892,6 +16951,23 @@ async function route(event) {
         if (!v.ok) return err(400, v.error);
         if (v.value) bz.standingAvailability = v.value;
         else delete bz.standingAvailability;
+      }
+      // Which till (Build -101, Tier 3 item 19a): the declared
+      // register system. A present field writes: a valid provider
+      // stores (with its free-text name when the provider is
+      // "other"), null or "" clears the declaration, and anything
+      // else refuses the save so a typo never silently stores.
+      if (b.posProvider !== undefined) {
+        if (b.posProvider === null || b.posProvider === "") {
+          delete bz.posProvider; delete bz.posOther;
+        } else {
+          const p = normalizePosProvider(b.posProvider);
+          if (!p) return err(400, "Pick the till from the list: Square, Clover, Toast, Lightspeed, another system, or no register system.");
+          bz.posProvider = p;
+          bz.posOther = p === "other" ? String(b.posOther !== undefined ? b.posOther : bz.posOther || "").trim().slice(0, 60) : "";
+        }
+      } else if (b.posOther !== undefined && bz.posProvider === "other") {
+        bz.posOther = String(b.posOther || "").trim().slice(0, 60);
       }
       // Public review-page links: host-validated, optional, shown
       // to creators as a courtesy block. No points ever attach.

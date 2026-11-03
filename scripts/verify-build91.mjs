@@ -91,7 +91,7 @@ async function waitUp(base) {
 console.log("== Source: the -91 surfaces exist, the rail and stamp are untouched ==");
 const appJs = fs.readFileSync(path.join(root, "public/app.js"), "utf8");
 const routerJs = fs.readFileSync(path.join(root, "netlify/functions/lib/router.js"), "utf8");
-check("stamp is 2026.11.02-100 on both sides", fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes("2026.11.02-100") && fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes("2026.11.02-100"));
+check("stamp is 2026.11.02-101 on both sides", fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes("2026.11.02-101") && fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes("2026.11.02-101"));
 check("wishlist section lives inside Find creators (no 13th rail item)", appJs.includes('id="biz-wishlist"') && appJs.includes("loadWishlistSection()") && appJs.includes("Your wishlist"));
 check("wishlist copy states the privacy rule in plain words", appJs.includes("Your notes stay yours: creators never see them"));
 check("counter card copy present", appJs.includes("First time in? How'd you hear about us?"));
@@ -282,7 +282,7 @@ const kitBiz = await makeActiveBusiness("kit91@fixtures.dev", "Proof Kitchen");
   // carries the ONE setup checklist; the kit's four steps are
   // items inside it and its first-visit context rides along.
   const cl = home.data.setupChecklist;
-  check("first confirmed booking: the setup checklist is on Home with the first-visit context", !!cl && Array.isArray(cl.items) && cl.items.length === 9 && !!cl.firstVisit, JSON.stringify(cl).slice(0, 200));
+  check("first confirmed booking: the setup checklist is on Home with the first-visit context", !!cl && Array.isArray(cl.items) && cl.items.length === 10 && !!cl.firstVisit, JSON.stringify(cl).slice(0, 200));
   const byId = Object.fromEntries((cl.items || []).map((s) => [s.id, s.done]));
   check("all four proof steps start undone in the checklist", byId.baseline === false && byId.pin === false && byId.counter_card === false && byId.test_redemption === false, JSON.stringify(byId));
   const rc = await kitBiz.c.req("GET", "/api/me/receipt");

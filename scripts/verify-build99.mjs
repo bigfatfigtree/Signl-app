@@ -142,7 +142,7 @@ const bizUser = (id, over = {}) => putUser({
 // market is not live, so its first campaign still saves as a
 // draft, exactly the founding draft gate.
 bizUser("bizfresh", { business: { businessName: "B99 bizfresh", category: "Restaurant", plan: "self-service", planId: "self-service", accessState: "active" } });
-bizUser("bizdone", { business: { businessName: "B99 Done Deli", category: "Restaurant", plan: "growth", planId: "growth", accessState: "founding", about: "A finished page.", baseline: { dayLabel: "Saturday", count: 40 }, standingAvailability: { days: ["Saturday"], hours: "10 to 10", appointments: "" }, assetPacket: { logoUrl: "https://example.com/logo.png", links: [], talkingPoints: "", handle: "", hashtags: [] } } });
+bizUser("bizdone", { business: { businessName: "B99 Done Deli", category: "Restaurant", plan: "growth", planId: "growth", accessState: "founding", about: "A finished page.", baseline: { dayLabel: "Saturday", count: 40 }, standingAvailability: { days: ["Saturday"], hours: "10 to 10", appointments: "" }, assetPacket: { logoUrl: "https://example.com/logo.png", links: [], talkingPoints: "", handle: "", hashtags: [] }, posProvider: "square" } });
 bizUser("bizpaused");
 putUser({ id: "cr99", role: "creator", email: "cr99@b99.dev", name: "Casey cr99", passwordSalt: salt, passwordHash: hash, status: "approved", market: "Nashville", city: "Nashville", createdAt: iso(now0 - 30 * DAY), updatedAt: iso(now0 - 30 * DAY), creator: { handle: "cr99", followerCount: 3000, totalAudience: 3000, audienceStack: { instagram: 3000 }, categories: ["Food & Drink"], localAudiencePct: 70, tierBand: "Locals", profileComplete: true } });
 data["staffpin:bizdone"] = { pin: "2468", setAt: iso(now0 - 2 * DAY) };
@@ -186,15 +186,15 @@ const doneOf = (cl, id) => { const it = (cl.items || []).find((i) => i.id === id
 console.log("== The checklist derives from real records ==");
 {
   const cl = await itemsOf(fresh);
-  check("fresh business gets the nine-item checklist", !!cl && cl.items.length === 9 && cl.total === 9 && cl.doneCount === 0 && cl.allDone === false, JSON.stringify(cl).slice(0, 200));
-  check("all nine items start undone", ["square", "baseline", "pin", "counter_card", "test_redemption", "page", "hours", "creators", "campaign"].every((id) => doneOf(cl, id) === false), JSON.stringify((cl.items || []).map((i) => [i.id, i.done])));
+  check("fresh business gets the ten-item checklist", !!cl && cl.items.length === 10 && cl.total === 10 && cl.doneCount === 0 && cl.allDone === false, JSON.stringify(cl).slice(0, 200));
+  check("all ten items start undone", ["square", "till", "baseline", "pin", "counter_card", "test_redemption", "page", "hours", "creators", "campaign"].every((id) => doneOf(cl, id) === false), JSON.stringify((cl.items || []).map((i) => [i.id, i.done])));
   check("the register item carries Square's real state (configured by the stub env, not connected)", !!cl.register && cl.register.configured === true && cl.register.state === "not_connected", JSON.stringify(cl.register));
   const cr = await creator.req("GET", "/api/me/setup-checklist");
   check("a creator is refused the checklist surface", cr.status === 403, `status=${cr.status}`);
 }
 {
   const cl = await itemsOf(done);
-  check("the seeded all-done business reads allDone (the surface retires)", !!cl && cl.allDone === true && cl.doneCount === 9, JSON.stringify(cl).slice(0, 160));
+  check("the seeded all-done business reads allDone (the surface retires)", !!cl && cl.allDone === true && cl.doneCount === 10, JSON.stringify(cl).slice(0, 160));
   const home = await done.req("GET", "/api/me/business-home");
   check("the business-home payload carries the same retired state", !!home.data.setupChecklist && home.data.setupChecklist.allDone === true);
 }
@@ -237,6 +237,8 @@ console.log("== Each item flips only when its real state exists ==");
   check("hours item flips done when standing availability is set", r.status === 200 && doneOf(await itemsOf(fresh), "hours") === true, `status=${r.status}`);
   r = await fresh.req("POST", "/api/me/wishlist", { text: "@someone99, brunch crowd" });
   check("creators item flips done when the wishlist gains a row", r.status === 200 && doneOf(await itemsOf(fresh), "creators") === true, `status=${r.status}`);
+  r = await fresh.req("PATCH", "/api/me/profile", { posProvider: "square" });
+  check("till item flips done when the till is declared (Build -101)", r.status === 200 && doneOf(await itemsOf(fresh), "till") === true, `status=${r.status}`);
   r = await fresh.req("POST", "/api/offers", { title: "First draft", whatComped: "Dinner for two", dollarCap: 60, spots: 1, creatorId: "cr99" });
   check("the first campaign creates through the real offers endpoint", r.status === 201 && !!r.data.offer, `status=${r.status} ${JSON.stringify(r.data).slice(0, 160)}`);
   check("campaign item flips done", doneOf(await itemsOf(fresh), "campaign") === true);
@@ -250,7 +252,7 @@ console.log("== Sig knows the checklist (business only) ==");
   const ask = async (c, q) => c.req("POST", "/api/sig/ask", { q, history: [] });
   const left = await ask(fresh, "What's left to set up?");
   check("Sig answers what's left from real state: only the register remains, with the biz-home walk",
-    left.status === 200 && left.data.source === "data" && /8 of 9/.test(left.data.text) && /Connect your Square register/.test(left.data.text) && left.data.link && left.data.link.dest === "biz-home",
+    left.status === 200 && left.data.source === "data" && /9 of 10/.test(left.data.text) && /Connect your Square register/.test(left.data.text) && left.data.link && left.data.link.dest === "biz-home",
     JSON.stringify(left.data).slice(0, 300));
   const conn = await ask(fresh, "How do I connect my Square register?");
   check("Sig walks the connect question to the checklist on Home",
@@ -275,8 +277,10 @@ console.log("== The Square flow is untouched; the checklist item is its home =="
   check("callback still lands on /?sq=connected", cb.status === 302 && cb.location.includes("?sq=connected"), `status=${cb.status} loc=${cb.location}`);
   const reg = await fresh.req("GET", "/api/me/square");
   check("the register reads connected after the callback", reg.status === 200 && reg.data.register.connected === true && reg.data.register.state === "connected", JSON.stringify(reg.data).slice(0, 200));
+  const posPatch = await fresh.req("PATCH", "/api/me/profile", { posProvider: "square" });
+  check("the till question answers through the real profile PATCH", posPatch.status === 200 && posPatch.data.user.business.posProvider === "square", `status=${posPatch.status}`);
   const cl = await itemsOf(fresh);
-  check("the checklist is fully done once the register connects (the surface retires)", !!cl && cl.allDone === true && cl.doneCount === 9, JSON.stringify(cl).slice(0, 160));
+  check("the checklist is fully done once the register connects (the surface retires)", !!cl && cl.allDone === true && cl.doneCount === 10, JSON.stringify(cl).slice(0, 160));
   const home = await fresh.req("GET", "/api/me/business-home");
   check("the business-home payload retires too", !!home.data.setupChecklist && home.data.setupChecklist.allDone === true);
   const ask2 = await fresh.req("POST", "/api/sig/ask", { q: "What's left to set up?", history: [] });
@@ -300,7 +304,7 @@ console.log("== Source: one surface, the moved connect, canon locks ==");
   const appJs = fs.readFileSync(path.join(root, "public/app.js"), "utf8");
   const routerJs = fs.readFileSync(path.join(root, "netlify/functions/lib/router.js"), "utf8");
   const sigdataJs = fs.readFileSync(path.join(root, "netlify/functions/lib/sigdata.js"), "utf8");
-  check("stamp is 2026.11.02-100 on both sides", fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes("2026.11.02-100") && fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes("2026.11.02-100"));
+  check("stamp is 2026.11.02-101 on both sides", fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes("2026.11.02-101") && fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes("2026.11.02-101"));
   check("server: the checklist builder + endpoint + home payload + Sig facts feed",
     routerJs.includes("async function setupChecklistFor") && routerJs.includes('seg[1] === "setup-checklist"')
     && routerJs.includes("setupChecklist: await setupChecklistFor(user)"));

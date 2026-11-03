@@ -174,6 +174,16 @@ function buildAdminFacts(d) {
       total: realBusinesses.length, records: businesses.length, testers: businesses.length - realBusinesses.length,
       approved: bs.approved, pending: bs.pending, rejected: bs.rejected, other: bs.other,
       founding, active, byPlan, signupsToday: bizToday, recent: recentBusinesses,
+      // Which till (Build -101): the declared-POS mix over the
+      // same real-business set as every count above.
+      posMix: (() => {
+        const counts = { square: 0, clover: 0, toast: 0, lightspeed: 0, other: 0, none: 0, undeclared: 0 };
+        for (const u of realBusinesses) {
+          const p = u.business && typeof u.business.posProvider === "string" ? u.business.posProvider : null;
+          if (p && counts[p] !== undefined) counts[p] += 1; else counts.undeclared += 1;
+        }
+        return counts;
+      })(),
     },
     waiting: { total: pendingAll.length, creators: cs.pending, businesses: bs.pending, list: waiting },
     offers: { ...offerCounts, openByMarket },
@@ -262,6 +272,9 @@ function buildBusinessFacts(d) {
       total: d.setupChecklist.total || 0,
       allDone: !!d.setupChecklist.allDone,
       square: d.setupChecklist.register ? { configured: !!d.setupChecklist.register.configured, state: d.setupChecklist.register.state } : null,
+      // Which till (Build -101): the business's own declared
+      // register system from the same checklist payload.
+      pos: d.setupChecklist.pos || null,
     } : null,
   };
 }
@@ -394,8 +407,11 @@ function factsLines(role, f) {
       : "They have not set standing availability yet: the usual open days and hours creators see, set once on the business page. Until it is set, every offer carries its own timing note.");
     if (f.receiptReady) lines.push(`${f.receiptReady.monthLabel}'s receipt is ready to forward: that month ended with real activity. The forwardable monthly receipt export lives in Results: counted, recorded, and intent figures in three separate sections, visits used and rolled over, founding credit state, and licence end dates.`);
     if (f.setup) lines.push(f.setup.allDone
-      ? "Their setup checklist on Home is fully done, all nine items, so the checklist has retired and Home shows nothing for it."
+      ? `Their setup checklist on Home is fully done, all ${fmt(f.setup.total)} items, so the checklist has retired and Home shows nothing for it.`
       : `Their setup checklist on Home (titled Get the most from SIGNL) has ${fmt(f.setup.doneCount)} of ${fmt(f.setup.total)} items done. Still to do: ${f.setup.remaining.map((i) => i.label).join("; ")}. The Square register connects from that checklist on Home, not from Results: Results keeps the register status and the counted numbers, and the connect button lives on the checklist.${f.setup.square && f.setup.square.state === "paused" ? " Their register is PAUSED right now: reconnecting also lives with the connection, in Results under Proof controls, and on the checklist." : ""}${f.setup.square && !f.setup.square.configured ? " Square is not switched on for this account yet: connecting happens on the setup call, and the checklist item says so." : ""}`);
+    if (f.setup) lines.push(f.setup.pos
+      ? `The till they told us they run: ${f.setup.pos.label}${f.setup.pos.other ? ` (${f.setup.pos.other})` : ""}. Visit codes count at any till today. ${f.setup.pos.provider === "square" ? "Square is the register SIGNL can connect directly today." : f.setup.pos.provider === "none" ? "They run no register system; codes are counted by hand at the counter with the staff PIN." : `A direct ${f.setup.pos.label} connection is on the roadmap once enough businesses declare it; no date is promised, and their codes already count at the till in the meantime.`}`
+      : "They have not told us which till (register system) they run yet. It is one tap on the setup checklist on Home or on their business page, and it only changes how visits get counted later; codes count at every till today.");
     return lines;
   }
   // creator
@@ -496,6 +512,14 @@ function answerAdmin(f, q, t) {
   if ((hasWord(t, "signups", "sign-ups", "claims", "joined") || hasPhrase(t, "signed up")) && (hasWord(t, "today") || hasPhrase(t, "this week", "last 7 days", "past week"))) {
     if (hasWord(t, "today")) return `${fmt(c.claimsToday)} creator ${plural(c.claimsToday, "sign-up")} today (${fmt(b.signupsToday)} ${plural(b.signupsToday, "business", "businesses")}).`;
     return `${fmt(c.signups7d)} creator ${plural(c.signups7d, "sign-up")} in the last 7 days.`;
+  }
+
+  // Which till (Build -101): the declared-POS mix Admin watches
+  // for the Clover trigger, tester records excluded as always.
+  if (hasPhrase(t, "which till", "what till", "tills", "pos mix", "register systems", "point of sale", "what pos", "clover", "toast", "lightspeed") || (hasWord(t, "pos") && countAsk)) {
+    const m = b.posMix || {};
+    const declared = (m.square || 0) + (m.clover || 0) + (m.toast || 0) + (m.lightspeed || 0) + (m.other || 0) + (m.none || 0);
+    return linked(`Declared tills across ${fmt(b.total)} real ${plural(b.total, "business", "businesses")}: Square ${fmt(m.square || 0)}, Clover ${fmt(m.clover || 0)}, Toast ${fmt(m.toast || 0)}, Lightspeed ${fmt(m.lightspeed || 0)}, another system ${fmt(m.other || 0)}, no register system ${fmt(m.none || 0)}, and ${fmt(m.undeclared || 0)} have not declared yet. ${declared} ${plural(declared, "declaration")} on file; the Clover build trigger is 10 to 20 declared businesses. The mix strip sits on the Command Center Businesses view.`, "Open Businesses", "admin-businesses");
   }
 
   // Breakdowns
@@ -636,6 +660,15 @@ function answerBusiness(f, q, t) {
   // Square register connect (Build -99): the connect action
   // moved from Proof Controls in Results to the setup
   // checklist on Home. Results keeps the register status, the
+  // Which till (Build -101): what register system the business
+  // declared, and what that means honestly for each system.
+  if (hasPhrase(t, "which till", "what till", "my till", "till do i", "register system", "pos system", "point of sale", "what pos", "which pos", "which register", "what register", "do i use square", "do i use clover", "do i use toast", "clover", "toast", "lightspeed")) {
+    const pos = f.setup && f.setup.pos;
+    if (!pos) return linked("You have not told us which till you run yet. It is one tap on the setup checklist on Home (Tell us which till you run) or on your business page, and it only changes how visits get counted later: visit codes count at every till today, whichever system it is.", "Open the setup checklist", "biz-home");
+    if (pos.provider === "square") return linked("You told us Square, and Square is the register SIGNL connects directly today: connect it from the setup checklist on Home and code visits count themselves from the register.", "Open the setup checklist", "biz-home");
+    if (pos.provider === "none") return linked("You told us you run no register system. That is fine: visit codes are redeemed at the counter with your staff PIN, and that tap is what counts the visit.", "Open the setup checklist", "biz-home");
+    return linked(`You told us ${pos.label}${pos.other ? ` (${pos.other})` : ""}. Your visit codes count at the till today. A direct ${pos.label} connection is on the roadmap once enough businesses ask for it; no date is promised, and nothing about your counting waits on it. You can change the answer any time on your business page.`, "Open your business page", "biz-profile");
+  }
   // counted data, and the connected/paused management.
   if (hasPhrase(t, "connect square", "square register", "connect my register", "connect the register", "connect a register", "hook up square", "link square", "register connected", "square connected", "reconnect square", "reconnect my register")) {
     const sq = f.setup && f.setup.square;
