@@ -208,7 +208,89 @@ function buildAdminFacts(d) {
     // Build -104: territory conflicts (records inside a
     // market-wide territory stamped elsewhere or nowhere).
     territoryConflicts: Array.isArray(d.territoryConflicts) ? d.territoryConflicts : [],
+    // Build -106: the London district race rollup (Admin and
+    // the London partner only; never public).
+    londonRace: d.londonRace || null,
     markets: { liveNames, liveCount: liveNames.length, known: (d.marketNames || []).length },
+  };
+}
+
+// ---------------- PARTNER FACTS (Build -106) ----------------
+// The scoped partner Sig's fact sheet: the partner's OWN
+// records only, lifted from the same summary payload their
+// dashboard renders, plus their frozen month packs, their
+// scopes, and the London race when London is theirs. Nothing
+// about any other partner exists in this sheet, so no answer
+// built from it can leak across partners.
+// deps: { user, summary, frozenMonths, race, now }
+function buildPartnerFacts(d) {
+  const s = d.summary || {};
+  const p = s.partner || {};
+  const e = s.earnings || {};
+  const t = s.totals || {};
+  const cs = (s.creators && s.creators.stages) || {};
+  const bs = (s.businesses && s.businesses.stages) || {};
+  return {
+    role: "partner",
+    name: p.name || "",
+    demo: !!p.demo,
+    markets: p.markets || [],
+    brand: p.brand || null,
+    territory: s.territory || [],
+    scopes: s.scopes || [{ kind: "license" }],
+    totals: {
+      creatorsAttributed: t.creatorsAttributed || 0,
+      businessesAttributed: t.businessesAttributed || 0,
+      offersLive: t.offersLive || 0,
+      visitsCompleted: t.visitsCompleted || 0,
+      postsLive: t.postsLive || 0,
+    },
+    creatorStages: { claimed: cs.claimed || 0, approved: cs.approved || 0, complete: cs.complete || 0 },
+    businessStages: { applied: bs.applied || 0, approved: bs.approved || 0, active: bs.active || 0 },
+    earnings: {
+      basis: e.basis || "share_only",
+      currency: e.currency || "USD",
+      sharePct: typeof e.sharePct === "number" ? e.sharePct : null,
+      monthlyRevenue: e.monthlyRevenue || 0,
+      accruedMonthly: e.accruedMonthly || 0,
+      accruedTotal: e.accruedTotal || 0,
+      paidTotal: e.paidTotal || 0,
+      owedTotal: e.owedTotal || 0,
+      guaranteeState: e.guaranteeState || null,
+      dealLabel: e.dealLabel || "",
+      byCurrency: e.byCurrency || null,
+    },
+    perMarket: (s.markets || []).map((m) => ({ market: m.market, creatorsClaimed: (m.creators || {}).claimed || 0, creatorsComplete: (m.creators || {}).complete || 0, businessesApplied: (m.businesses || {}).applied || 0, offersLive: m.offersLive || 0, postsLive: m.postsLive || 0 })),
+    frozenMonths: Array.isArray(d.frozenMonths) ? d.frozenMonths : [],
+    race: d.race || null,
+  };
+}
+
+// ---------------- PILOT FACTS (Build -106) ----------------
+// The funder's scoped Sig sheet: their one pilot's totals from
+// the same builder the Impact Portal prints. Counted and
+// recorded stay separate fields, never summed.
+// deps: { user, pf, now }
+function buildPilotFacts(d) {
+  const pf = d.pf || {};
+  const p = pf.pilot || {};
+  const f = pf.fund || {};
+  const c = pf.counts || {};
+  return {
+    role: "pilot_partner",
+    pilotName: p.name || "",
+    partnerName: p.partnerName || "",
+    marketName: p.marketName || "",
+    status: p.status || "active",
+    closed: !!pf.closed,
+    brand: p.brand || null,
+    fund: { committedCents: f.committedCents || 0, spentCents: f.spentCents || 0, remainingCents: f.remainingCents || 0 },
+    counts: {
+      businesses: c.businesses || 0, visitsDone: c.visitsDone || 0, postsLive: c.postsLive || 0,
+      countedCustomers: c.countedCustomers || 0, recordedCustomers: c.recordedCustomers || 0,
+      continued: c.continued || 0,
+    },
+    continuedOnFounding: pf.continuedOnFounding || 0,
   };
 }
 
@@ -419,6 +501,33 @@ function factsLines(role, f) {
     if (held.length) lines.push(`Territory held: ${held.map((x) => `${(x.liveMarkets || []).join(", ")} — ${x.partnerName || "partner"} (${x.label}), ${x.attributionScope === "sourced_only" ? "only businesses the partner brought in count" : "the whole market counts"}, exclusivity ${x.exclusivity === "market_conditional" ? "conditional" : "none"}`).join("; ")}.`);
     if ((f.territoryConflicts || []).length) lines.push(`Territory conflicts: ${f.territoryConflicts.length} ${f.territoryConflicts.length === 1 ? "record sits" : "records sit"} in a market-wide territory stamped to a different partner or to none: ${f.territoryConflicts.slice(0, 6).map((c) => `${c.name} (${c.market})`).join("; ")}.`);
     lines.push("This admin surface is read-only for you: answer and explain, and point to the Admin tab where an action lives. Never claim you approved, sent, activated, or changed anything.");
+    if (f.londonRace) {
+      const r = f.londonRace;
+      lines.push(`London district race: state ${r.state}${r.startsAt ? `, started ${String(r.startsAt).slice(0, 10)}, backstop ${String(r.endsAt || "").slice(0, 10)}` : ""}. Districts (approved founding creators / founding businesses, targets 40 and 15): ${r.districts.map((x) => `${x.name} ${x.creators}/${x.businesses} (score ${x.score})`).join("; ")}. Outside the race field: ${r.outsideField.creators} creators, ${r.outsideField.businesses} businesses. London totals: ${r.totals.creators} creators, ${r.totals.businesses} businesses.${r.winner ? ` Winner: ${(r.districts.find((x) => x.id === r.winner) || {}).name || r.winner}.` : ""}`);
+    }
+    return lines;
+  }
+  if (role === "partner") {
+    const lines = [];
+    const sym = f.earnings.currency === "GBP" ? "£" : "$";
+    const mny = (n) => sym + (Math.round(n0(n) * 100) / 100).toLocaleString("en-US", { maximumFractionDigits: 2 });
+    lines.push(`This partner is ${f.name || "a SIGNL partner"}${f.demo ? " (the demo partner; its records are samples)" : ""}. Their markets: ${f.markets.join(", ") || "none yet"}. Everything in this sheet is their own record only.`);
+    lines.push(`Their funnel: ${fmt(f.creatorStages.claimed)} creators claimed (${fmt(f.creatorStages.approved)} approved, ${fmt(f.creatorStages.complete)} complete), ${fmt(f.businessStages.applied)} businesses joined (${fmt(f.businessStages.active)} active), ${fmt(f.totals.offersLive)} offers live, ${fmt(f.totals.visitsCompleted)} visits completed, ${fmt(f.totals.postsLive)} posts live.`);
+    lines.push(`Their earnings (${f.earnings.basis === "deal" ? `deal basis${f.earnings.dealLabel ? `, "${f.earnings.dealLabel}"` : ""}` : "share-only basis"}, ${f.earnings.currency}): share ${f.earnings.sharePct === null ? "not set" : f.earnings.sharePct + "%"}, subscription revenue on file ${mny(f.earnings.monthlyRevenue)} a month, accrued ${mny(f.earnings.accruedTotal)} in total (${mny(f.earnings.accruedMonthly)} this month), paid ${mny(f.earnings.paidTotal)}, owed ${mny(f.earnings.owedTotal)}. Accrued means earned on paper; it is paid only when a payment is recorded.${f.earnings.guaranteeState ? ` Guarantee: ${f.earnings.guaranteeState}.` : ""}`);
+    if (f.territory.length) lines.push(`Territory they hold: ${f.territory.map((x) => `${x.market} (${x.attributionScope === "sourced_only" ? "only businesses they brought in count" : "the whole market counts"}, exclusivity ${x.exclusivity === "market_conditional" ? "conditional" : "none"})`).join("; ")}.`);
+    lines.push(f.brand ? `Their portal is co-branded as ${f.brand.displayName || "their own name"}${f.brand.logoUrl ? ", with their logo" : ", no logo on file"}, with Powered by SIGNL underneath. Branding is set by the SIGNL team, not by the partner.` : "Their portal carries SIGNL branding only; no co-brand is set. Branding is set by the SIGNL team, not by the partner.");
+    lines.push(f.frozenMonths.length ? `Frozen month packs ready to download: ${f.frozenMonths.map((m) => m.label).join(", ")}. The newest is ${f.frozenMonths[0].label}; the pack lives on their Earnings view.` : "No month has been frozen for them yet, so no final pack exists; an open month can still be downloaded as a live snapshot from Earnings.");
+    if (f.scopes.length > 1) lines.push(`Their login carries ${fmt(f.scopes.length)} scopes: the license view plus ${f.scopes.filter((s) => s.kind === "pilot").map((s) => `the ${s.name || "pilot"} Impact Portal`).join(", ")}. Each scope's numbers stay on their own lines and are never added together.`);
+    if (f.race) lines.push(`London district race (their market): state ${f.race.state}. Districts (creators / businesses, targets 40 / 15): ${f.race.districts.map((x) => `${x.name} ${x.creators}/${x.businesses}`).join("; ")}.`);
+    return lines;
+  }
+  if (role === "pilot_partner") {
+    const lines = [];
+    const dm = (cents) => "$" + (Math.round(n0(cents)) / 100).toLocaleString("en-US", { maximumFractionDigits: 2 });
+    lines.push(`This funder is ${f.partnerName || "a pilot funder"}; their pilot is "${f.pilotName}" in ${f.marketName}. The pilot is ${f.closed ? "CLOSED: the numbers are the final record" : "active"}. Everything in this sheet is their own pilot only.`);
+    lines.push(`The fund: ${dm(f.fund.committedCents)} put in, ${dm(f.fund.spentCents)} spent, ${dm(f.fund.remainingCents)} left. Results: ${fmt(f.counts.businesses)} businesses chosen, ${fmt(f.counts.visitsDone)} visits done, ${fmt(f.counts.postsLive)} posts live.`);
+    lines.push(`Customers: ${fmt(f.counts.countedCustomers)} counted at the register and ${fmt(f.counts.recordedCustomers)} recorded by the businesses. These are two different counts and are never added together.`);
+    lines.push(`${fmt(f.counts.continued)} businesses joined SIGNL afterwards${f.counts.continued ? `, ${fmt(f.continuedOnFounding)} of them on the $199 founding rate (from their own plan records)` : ""}.${f.closed ? " Their end-of-pilot pack is ready on the Report view." : ""}`);
     return lines;
   }
   if (role === "business") {
@@ -550,6 +659,19 @@ function answerAdmin(f, q, t) {
     const m = b.posMix || {};
     const declared = (m.square || 0) + (m.clover || 0) + (m.toast || 0) + (m.lightspeed || 0) + (m.other || 0) + (m.none || 0);
     return linked(`Declared tills across ${fmt(b.total)} real ${plural(b.total, "business", "businesses")}: Square ${fmt(m.square || 0)}, Clover ${fmt(m.clover || 0)}, Toast ${fmt(m.toast || 0)}, Lightspeed ${fmt(m.lightspeed || 0)}, another system ${fmt(m.other || 0)}, no register system ${fmt(m.none || 0)}, and ${fmt(m.undeclared || 0)} have not declared yet. ${declared} ${plural(declared, "declaration")} on file; the Clover build trigger is 10 to 20 declared businesses. The mix strip sits on the Command Center Businesses view.`, "Open Businesses", "admin-businesses");
+  }
+
+  // London district race (Build -106): the rollup, Admin-side.
+  // Asked before the London money intent so "race" questions
+  // never land on prices.
+  if (hasWord(t, "race") && (hasWord(t, "london", "district", "districts") || hasPhrase(t, "winning", "who is winning", "leader", "standings"))) {
+    const r = f.londonRace;
+    if (!r) return "The London race rollup is not available right now.";
+    if (r.state === "not_started") return `The London district race has not started: no start date is set, so there is no clock and no winner. Raw counts today: ${r.districts.map((x) => `${x.name} ${x.creators} creators / ${x.businesses} businesses`).join("; ")}; outside the race field ${r.outsideField.creators} creators and ${r.outsideField.businesses} businesses. Set the start date on the Markets view when the London partner launches it.`;
+    const lead = r.districts.slice().sort((a, b) => b.score - a.score)[0];
+    if (r.state === "won") { const w = r.districts.find((x) => x.id === r.winner) || lead; return linked(`${w.name} has won the London district race: ${w.creators} approved founding creators and ${w.businesses} founding businesses, past both targets (40 and 15).`, "Open the race board", "admin-markets"); }
+    if (r.state === "backstop_scored") { const w = r.districts.find((x) => x.id === r.winner) || lead; return linked(`The London race hit its 8-week backstop and the score decided it: ${w.name}, ${w.creators} creators and ${w.businesses} businesses, score ${w.score} (creators count 1, businesses count 2). No district reached both targets.`, "Open the race board", "admin-markets"); }
+    return linked(`The London race is running (started ${String(r.startsAt || "").slice(0, 10)}, backstop ${String(r.endsAt || "").slice(0, 10)}). ${lead.name} leads on score ${lead.score}: ${lead.creators} creators, ${lead.businesses} businesses. Board: ${r.districts.map((x) => `${x.name} ${x.creators}/${x.businesses} (score ${x.score})`).join("; ")}. First to 40 creators AND 15 businesses wins outright.`, "Open the race board", "admin-markets");
   }
 
   // London money (Build -103): GBP answers come from the GBP
@@ -955,6 +1077,86 @@ function answerCreator(f, q, t) {
   return null;
 }
 
+// ---------- PARTNER + PILOT ANSWERERS (Build -106) ----------
+// Scoped to the asker's own fact sheet by construction: the
+// sheet holds nothing about anyone else.
+function answerPartner(f, question, t) {
+  const sym = f.earnings.currency === "GBP" ? "£" : "$";
+  const mny = (n) => sym + (Math.round(n0(n) * 100) / 100).toLocaleString("en-US", { maximumFractionDigits: 2 });
+  // Month pack: produce it (the answer carries the walk to the
+  // download on Earnings, which serves the frozen figures).
+  if (hasWord(t, "pack", "export", "download", "spreadsheet") || (hasWord(t, "month", "monthly", "close", "closed") && hasWord(t, "numbers", "figures", "report", "final"))) {
+    if (f.frozenMonths.length) {
+      const newest = f.frozenMonths[0];
+      return linked(`${newest.label} is frozen: your pack for that month is final and matches the numbers SIGNL closed with. ${f.frozenMonths.length > 1 ? `Also frozen: ${f.frozenMonths.slice(1, 4).map((m) => m.label).join(", ")}. ` : ""}Download it from Earnings: pick the month and tap Download the month pack.`, "Get the pack on Earnings", "partner-earnings");
+    }
+    return linked("No month has been frozen for you yet, so there is no final pack. You can still download any open month from Earnings as a live snapshot; it is labeled as one, and it can move until the month closes.", "Open Earnings", "partner-earnings");
+  }
+  // London race (only present in the sheet when London is theirs).
+  if (hasWord(t, "race") && f.race) {
+    const r = f.race;
+    if (r.state === "not_started") return `The London district race has not started yet, so there is no winner and no clock running. On today's records: ${r.districts.map((x) => `${x.name} has ${x.creators} approved founding creators and ${x.businesses} founding businesses`).join("; ")}. The targets are 40 creators and 15 businesses a district.`;
+    const lead = r.districts.slice().sort((a, b) => b.score - a.score)[0];
+    if (r.state === "won") { const w = r.districts.find((x) => x.id === r.winner) || lead; return `${w.name} has won the London district race: ${w.creators} approved founding creators and ${w.businesses} founding businesses, past both targets (40 and 15).`; }
+    if (r.state === "backstop_scored") { const w = r.districts.find((x) => x.id === r.winner) || lead; return `The 8 weeks ran out, so the backstop score decided it: ${w.name} leads with ${w.creators} creators and ${w.businesses} businesses (score ${w.score}: creators count 1, businesses count 2). No district reached both targets in time.`; }
+    return `The London race is running (started ${String(r.startsAt || "").slice(0, 10)}, backstop ${String(r.endsAt || "").slice(0, 10)}). ${lead.name} leads on score: ${lead.creators} approved founding creators and ${lead.businesses} founding businesses (score ${lead.score}). First district to 40 creators AND 15 businesses wins outright. Full board: ${r.districts.map((x) => `${x.name} ${x.creators}/${x.businesses}`).join("; ")}.`;
+  }
+  if (hasWord(t, "race")) return "The London district race is not part of your markets, so it does not appear in your numbers. It belongs to the London partner's view and to Admin.";
+  // Earnings.
+  if (hasWord(t, "earn", "earnings", "accrued", "accrue", "owed", "paid", "share", "revenue", "money")) {
+    const e = f.earnings;
+    if (!e.accruedTotal && !e.monthlyRevenue) return `Nothing has accrued yet: no business in your markets has a paid subscription on file. The moment one does, it accrues here at your ${e.sharePct === null ? "recorded" : e.sharePct + "%"} share and shows on Earnings, labeled accrued until a payment actually happens.`;
+    return linked(`You have accrued ${mny(e.accruedTotal)} in total (${mny(e.accruedMonthly)} this month) from ${mny(e.monthlyRevenue)} a month of subscription revenue on file. Paid to date: ${mny(e.paidTotal)}; owed to you: ${mny(e.owedTotal)}. Accrued means earned on paper from the records; it becomes paid only when a payment is recorded.${e.guaranteeState ? ` Right now: ${e.guaranteeState.toLowerCase()}.` : ""}`, "See Earnings", "partner-earnings");
+  }
+  // Territory (Build -104 truth, partner side).
+  if (hasWord(t, "territory", "exclusive", "exclusivity") || hasPhrase(t, "my market", "whole market")) {
+    if (!f.territory.length) return "No signed deal holds territory for you yet, so sign-ups count toward you only when they arrive through your links. Territory starts when a deal with live markets is signed.";
+    return f.territory.map((x) => `${x.market}: ${x.attributionScope === "sourced_only" ? "only businesses you brought in count toward this deal, and sign-ups are not stamped to you automatically" : "the whole market counts toward this deal, and new sign-ups there are stamped to you automatically"}. Exclusivity: ${x.exclusivity === "market_conditional" ? "conditional, so a second signed deal or pilot in this market is blocked unless the recorded override path is used" : "none recorded"}.`).join(" ");
+  }
+  // Brand / how the portal looks (Build -105's partner-side gate).
+  if (hasWord(t, "brand", "branding", "logo") || hasPhrase(t, "how does my portal look", "what does my portal look", "how my portal looks")) {
+    if (!f.brand) return "Your portal runs on SIGNL branding only: no co-brand is set for you. When the SIGNL team sets one, your name and logo lead your portal and your invite emails, with Powered by SIGNL underneath. It is set by the SIGNL team; there is nothing you need to upload.";
+    return `Your portal is co-branded: ${f.brand.displayName ? `it leads with ${f.brand.displayName}` : "it leads with your logo"}${f.brand.logoUrl ? " and your logo" : " (no logo on file yet)"}, and Powered by SIGNL sits underneath. Your invite emails carry ${f.brand.emailFromName || f.brand.displayName || "your name"} as the sender name. Branding changes are made by the SIGNL team.`;
+  }
+  // Scopes.
+  if (hasWord(t, "scope", "scopes", "pilot", "pilots") || hasPhrase(t, "impact portal")) {
+    const pilots = f.scopes.filter((s) => s.kind === "pilot");
+    if (!pilots.length) return "Your login carries one scope: your license view, this dashboard. If you also fund a pilot, the SIGNL team can attach it to this same login and it appears here as its own view; you never need a second login.";
+    return `Your login carries ${fmt(f.scopes.length)} scopes: this license view, plus ${pilots.map((s) => `the ${s.name || "pilot"} Impact Portal (${s.marketName || "its market"})`).join(" and ")}. Switch from the scopes card on your Home: each scope keeps its own numbers, and nothing is ever added across scopes.`;
+  }
+  // Funnel / standing.
+  if (hasWord(t, "creators", "businesses", "funnel", "standing", "stand", "numbers", "claimed", "bench")) {
+    if (!f.totals.creatorsAttributed && !f.totals.businessesAttributed) return linked("Your funnel fills in here: no creator or business has come through your links yet. Share your creator claim link and the first claim lands on this page the same day.", "Get your links", "partner-links");
+    return linked(`Through your links so far: ${fmt(f.creatorStages.claimed)} creators claimed (${fmt(f.creatorStages.approved)} approved, ${fmt(f.creatorStages.complete)} complete), ${fmt(f.businessStages.applied)} businesses joined (${fmt(f.businessStages.active)} active). ${fmt(f.totals.offersLive)} offers live, ${fmt(f.totals.visitsCompleted)} visits completed, ${fmt(f.totals.postsLive)} posts live.${f.perMarket.length > 1 ? ` By market: ${f.perMarket.map((m) => `${m.market}: ${m.creatorsClaimed} claimed, ${m.businessesApplied} businesses`).join("; ")}.` : ""}`, "See your markets", "partner-markets");
+  }
+  return null;
+}
+
+function answerPilot(f, question, t) {
+  const dm = (cents) => "$" + (Math.round(n0(cents)) / 100).toLocaleString("en-US", { maximumFractionDigits: 2 });
+  if (hasWord(t, "pack", "export", "download", "report", "board")) {
+    return linked(`${f.closed ? "Your pilot has wrapped up, so the end-of-pilot pack is the final record: " : "The pack is ready any time from the Report view: "}fund totals, every business's step, and the customer counts with counted and recorded kept separate. Download it from Report.`, "Open the Report", "pilot-report");
+  }
+  if (hasWord(t, "counted", "recorded", "customers", "register")) {
+    return `${fmt(f.counts.countedCustomers)} customers were counted at the register (they used the creator's code at the till, so they sit on the businesses' own register records) and ${fmt(f.counts.recordedCustomers)} were recorded by the businesses themselves. The two are different counts and are never added together.`;
+  }
+  if (hasWord(t, "fund", "spent", "spend", "left", "money", "cost")) {
+    return `The fund: ${dm(f.fund.committedCents)} put in, ${dm(f.fund.spentCents)} spent so far, ${dm(f.fund.remainingCents)} left. It pays only for the first creator visit at each chosen business, at the creator's own listed rate.`;
+  }
+  if (hasWord(t, "joined", "continued", "conversion", "afterwards", "signed up")) {
+    if (!f.counts.continued) return "No business has joined SIGNL on its own plan after its pilot visit yet. When one does, it shows here and on the Report, counted from its own plan record.";
+    return `${fmt(f.counts.continued)} businesses joined SIGNL after their pilot visit${f.counts.continued ? `, and ${fmt(f.continuedOnFounding)} of them are on the $199 founding rate, read from their own plan records` : ""}.`;
+  }
+  if (hasWord(t, "brand", "branding", "logo") || hasPhrase(t, "how does my portal look", "what does my portal look")) {
+    if (!f.brand) return "Your portal runs on SIGNL branding only: no co-brand is set for your pilot. When the SIGNL team sets one, your name and logo lead the portal and your invite emails, with Powered by SIGNL underneath.";
+    return `Your portal is co-branded: it leads with ${f.brand.displayName || "your name"}${f.brand.logoUrl ? " and your logo" : " (no logo on file yet)"}, with Powered by SIGNL underneath. Your invite emails carry ${f.brand.emailFromName || f.brand.displayName || "your name"} as the sender name.`;
+  }
+  if (hasWord(t, "businesses", "visits", "posts", "results", "standing", "stand", "numbers")) {
+    return `${fmt(f.counts.businesses)} businesses chosen, ${fmt(f.counts.visitsDone)} visits done, ${fmt(f.counts.postsLive)} posts live. ${fmt(f.counts.countedCustomers)} customers counted at the register, ${fmt(f.counts.recordedCustomers)} recorded by the businesses (separate counts, never added).${f.closed ? " The pilot has wrapped up; the Report holds the final record." : ""}`;
+  }
+  return null;
+}
+
 // ---------- DISPATCH ----------
 // answerFactsRaw returns the string or the { text, link }
 // object; answerFacts keeps the legacy plain-string contract
@@ -967,6 +1169,8 @@ function answerFactsRaw(role, facts, question, history) {
     if (role === "admin") out = answerAdmin(facts, question, t);
     else if (role === "business") out = answerBusiness(facts, question, t);
     else if (role === "creator") out = answerCreator(facts, question, t);
+    else if (role === "partner") out = answerPartner(facts, question, t);
+    else if (role === "pilot_partner") out = answerPilot(facts, question, t);
   } catch (e) { out = null; }
   if (out) return out;
   // Fragment follow-up: "and in Nashville?" after a count
@@ -1055,6 +1259,24 @@ function buildHomeState(role, f) {
     // Build -102: on a public roster page is real state worth
     // one quiet chip, with the page as its walk.
     if (f.publicRoster && f.publicRoster.length) chips.push(`You're on the public ${f.publicRoster[0].market} roster`);
+  } else if (role === "partner") {
+    // Build -106 partner chips: live state only. A frozen pack
+    // waiting is the standing prompt; funnel counts ride along
+    // when they exist; a multi-scope login says so once.
+    if (f.frozenMonths && f.frozenMonths.length) chips.push(`${f.frozenMonths[0].label} pack is final: download it`);
+    if (f.totals && f.totals.creatorsAttributed) chips.push(`${fmt(f.totals.creatorsAttributed)} ${plural(f.totals.creatorsAttributed, "creator")} through your links`);
+    if (f.totals && f.totals.businessesAttributed) chips.push(`${fmt(f.totals.businessesAttributed)} ${plural(f.totals.businessesAttributed, "business", "businesses")} through your links`);
+    if (f.earnings && f.earnings.owedTotal > 0) chips.push(`${f.earnings.currency === "GBP" ? "£" : "$"}${(Math.round(f.earnings.owedTotal * 100) / 100).toLocaleString("en-US", { maximumFractionDigits: 2 })} accrued and owed to you`);
+    if (f.scopes && f.scopes.length > 1) chips.push(`${fmt(f.scopes.length)} scopes on this login`);
+    if (f.race && f.race.state === "running") chips.push("The London race is running");
+    if (f.race && f.race.state === "won") chips.push("A district has won the London race");
+  } else if (role === "pilot_partner") {
+    // Build -106 funder chips: the pack prompt fires only when
+    // the pilot has actually ended; otherwise fund state.
+    if (f.closed) chips.push("Your end-of-pilot pack is ready");
+    if (f.counts && f.counts.visitsDone) chips.push(`${fmt(f.counts.visitsDone)} ${plural(f.counts.visitsDone, "visit")} done`);
+    if (f.counts && f.counts.postsLive) chips.push(`${fmt(f.counts.postsLive)} ${plural(f.counts.postsLive, "post")} live`);
+    if (f.counts && f.counts.continued) chips.push(`${fmt(f.counts.continued)} ${plural(f.counts.continued, "business", "businesses")} joined SIGNL afterwards`);
   }
   return { chips };
 }
@@ -1065,4 +1287,4 @@ function answerFacts(role, facts, question, history) {
   return typeof out === "string" ? out : out.text;
 }
 
-module.exports = { buildAdminFacts, buildBusinessFacts, buildCreatorFacts, factsLines, answerFacts, answerFactsRaw, buildHomeState };
+module.exports = { buildAdminFacts, buildBusinessFacts, buildCreatorFacts, buildPartnerFacts, buildPilotFacts, factsLines, answerFacts, answerFactsRaw, buildHomeState };

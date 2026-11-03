@@ -2203,7 +2203,7 @@ function tabItemsFor() {
       ...extra(["Dashboard", "Offers", "Sig"]),
     ];
   }
-  if (u.role === "partner") {
+  if (u.role === "partner" && !state.pilotScopeId) {
     return [
       { icon: "home", label: "Home", tab: "Home", on: t === "Home" || !t },
       { icon: "pin", label: "Markets", tab: "Markets", on: t === "Markets" },
@@ -2223,17 +2223,21 @@ function tabItemsFor() {
       ...extra(["Queue", "Outreach", "Results", "Sig"]),
     ];
   }
-  if (u.role === "pilot_partner") {
+  if (u.role === "pilot_partner" || (u.role === "partner" && state.pilotScopeId)) {
     // Build -77: the Impact Portal. True separate views, one
     // job each: the fund at a glance, the chosen businesses,
     // what the visits did, and the report the partner takes
     // to their board. Help rides the rail rows below.
+    // Build -106: a scoped license partner sees the same rail
+    // inside their pilot scope, plus the way back.
     return [
+      ...(u.role === "partner" ? [{ icon: "home", label: "Partner view", tab: "__partner_scope_exit", on: false }] : []),
       { icon: "home", label: "Overview", tab: "Overview", on: t === "Overview" || !t },
       { icon: "building", label: "Businesses", short: "Business", tab: "Businesses", on: t === "Businesses" },
       { icon: "bars", label: "Results", tab: "Results", on: t === "Results" },
       { icon: "receipt", label: "Report", tab: "Report", on: t === "Report" },
-      ...extra(["Overview", "Businesses", "Results", "Report"]),
+      { icon: "sig", label: "Sig", tab: "Sig", on: t === "Sig", badge: sigBadge },
+      ...extra(["Overview", "Businesses", "Results", "Report", "Sig"]),
     ];
   }
   return [];
@@ -2249,6 +2253,14 @@ function moreRowsFor() {
   if (!u) return [];
   const b = state.badges || {};
   const wc = state.waitCounts || {};
+  // Build -106: inside a pilot scope, a license partner's
+  // secondary rows are the portal's, not the license shell's.
+  if (u.role === "partner" && state.pilotScopeId) {
+    return [
+      { icon: "sig", label: "Sig", sub: "Your pilot's numbers, in plain sentences.", tab: "Sig" },
+      { icon: "help", label: "Help", sub: "How the pilot works, in plain words.", tab: "Help" },
+    ];
+  }
   if (u.role === "business") {
     return [
       { icon: "notice", label: "Set up a campaign", sub: "Build a new campaign, step by step or with Sig.", tab: "Campaign Setup" },
@@ -2298,6 +2310,7 @@ function moreRowsFor() {
   }
   if (u.role === "pilot_partner") {
     return [
+      { icon: "sig", label: "Sig", sub: "Your pilot's numbers, in plain sentences.", tab: "Sig" },
       { icon: "help", label: "Help", sub: "How the pilot works, in plain words.", tab: "Help" },
     ];
   }
@@ -3695,6 +3708,13 @@ function sigLinkGo(dest) {
     case "admin-businesses": ccTab = "businesses"; return go("dashboard", "Stats");
     case "admin-partners": return go("dashboard", "Partners");
     case "admin-compliance": return go("dashboard", "Compliance");
+    case "admin-markets": ccTab = "markets"; return go("dashboard", "Stats");
+    // Partner Sig walks (Build -106): the partner shell's own
+    // tabs, and the Impact Portal's Report.
+    case "partner-earnings": return go("dashboard", "Earnings");
+    case "partner-links": return go("dashboard", "Links");
+    case "partner-markets": return go("dashboard", "Markets");
+    case "pilot-report": return go("dashboard", "Report");
     default: return false;
   }
 }
@@ -3707,6 +3727,11 @@ function sigLinkGo(dest) {
 // stay plain text.
 function sigChipDest(label) {
   const t = " " + String(label || "").toLowerCase() + " ";
+  if (t.includes("pack is final")) return "partner-earnings";
+  if (t.includes("end-of-pilot pack")) return "pilot-report";
+  if (t.includes("through your links")) return "partner-markets";
+  if (t.includes("accrued and owed")) return "partner-earnings";
+  if (t.includes("london race")) return "partner-markets";
   if (t.includes("square register")) return "biz-home";
   if (t.includes("left to set up")) return "biz-home";
   if (t.includes("first campaign")) return "biz-setup";
@@ -3752,6 +3777,10 @@ async function sigAsk(text) {
       // queue, it never edits it. The admin fallback bank
       // answers instead of the creator bank when the AI cannot.
       if (isAdmin) return { text: data.text, flow: null, link: data.link || null };
+      // Partner + funder Sig (Build -106) is scoped answers
+      // only: no business/creator flow matching ever attaches
+      // to a partner answer; the answer's own link is the walk.
+      if (state.user && (state.user.role === "partner" || state.user.role === "pilot_partner")) return { text: data.text, flow: null, link: data.link || null };
       const match = sigMatch(text, ctx.biz);
       let flow = null;
       if (match.topic) {
@@ -3761,6 +3790,8 @@ async function sigAsk(text) {
       return { text: data.text, flow, link: data.link || null };
     }
   } catch (e) { /* the bank answers instead */ }
+  if (state.user && state.user.role === "partner") return { text: "I cannot reach your numbers right now. Everything is still on your tabs: Earnings for money and packs, Markets for the funnel, Links for your claim links.", flow: null, link: null };
+  if (state.user && state.user.role === "pilot_partner") return { text: "I cannot reach your pilot's numbers right now. The Overview and Report tabs still hold everything, including the downloadable pack.", flow: null, link: null };
   return isAdmin ? sigAdminRouteAsk(text) : sigRouteAsk(text);
 }
 function sigThreadHtml() {
@@ -4211,6 +4242,16 @@ function go(view, tab) {
   // is kept (state.offerDraft survives re-renders); only the
   // direct targeting ends when the business walks away from it.
   if (tab && tab !== "My Offers" && tab !== "Campaign Setup") state.offerTarget = null;
+  // Multi-scope exit (Build -106): the Impact Portal's
+  // "Partner view" row leaves the pilot scope and lands back
+  // on the license partner's Home.
+  if (tab === "__partner_scope_exit") {
+    state.pilotScopeId = null;
+    pilotState.me = null;
+    state.tab = "Home";
+    render();
+    return false;
+  }
   if (tab) state.tab = tab;
   render();
   return false;
@@ -8950,6 +8991,9 @@ function renderDashboard() {
   if (u.role === "admin" && state.preview) return renderPreview();
   if (u.role === "admin") return renderAdmin();
   if (u.role === "creator") return renderCreatorDash();
+  // Build -106: a partner inside one of their pilot scopes
+  // gets the Impact Portal shell, not the license shell.
+  if (u.role === "partner" && state.pilotScopeId) return renderPilotDash();
   if (u.role === "partner") return renderPartnerDash();
   if (u.role === "recruiter") return renderRecruiterDash();
   if (u.role === "pilot_partner") return renderPilotDash();
@@ -14877,6 +14921,10 @@ function renderPartnerTab(tab) {
   coBrandShellOn(el, pBrand);
   const pBrandHead = coBrandHeadHtml(pBrand);
   if (pBrandHead) el.insertAdjacentHTML("afterbegin", pBrandHead);
+  if (tab === "Sig") wireScopedSig(el);
+  if (tab === "Home") loadPartnerScopeHeads(d);
+  if (tab === "Earnings") loadPartnerPacks();
+  if (tab === "Markets") loadPartnerRace();
   // Sig's living face rides the same hero stack as the Sig tab
   // (sigHeroSet): idle on the Overview presence card; a greet
   // one-shot the first time the partner opens their Sig, idle
@@ -14922,6 +14970,50 @@ function partnerSigCardHtml(d) {
   </div>`;
 }
 
+// Multi-scope home (Build -106): when one login carries more
+// than the license scope, Home opens with the rollup: one
+// headline line per scope, never a summed total, and the door
+// into each scope. Pilot headlines fill in from each pilot's
+// own overview (loadPartnerScopeHeads).
+function partnerScopesCardHtml(d) {
+  const scopes = d.scopes || [];
+  if (scopes.length <= 1) return "";
+  const e = d.earnings;
+  const sym = e.currency === "GBP" ? "£" : "$";
+  return `
+  <div class="card mb">
+    <div class="flex-between"><strong>Your scopes</strong><span class="badge info">${scopes.length} views, one login</span></div>
+    <p class="small" style="margin:8px 0 4px"><strong>License view (this one):</strong> ${esc((d.partner.markets || []).join(", ") || "your markets")} · accrued ${sym}${fmtPrice(e.accruedTotal)} · ${d.totals.creatorsAttributed} creators and ${d.totals.businessesAttributed} businesses through your links.</p>
+    ${scopes.filter((s) => s.kind === "pilot").map((s) => `
+    <p class="small" style="margin:4px 0"><strong>${esc(s.partnerName || s.name)} (Impact Portal):</strong> <span data-pt-scope-head="${esc(s.pilotId)}">loading its headline…</span></p>
+    <button class="btn small-btn ghost" onclick="return enterPilotScope('${esc(s.pilotId)}')">Open ${esc(s.name || "the pilot")}</button>`).join("")}
+    <p class="small muted" style="margin:8px 0 0">Each scope keeps its own numbers. Nothing is ever added across scopes.</p>
+  </div>`;
+}
+
+function enterPilotScope(pilotId) {
+  state.pilotScopeId = pilotId;
+  pilotState.me = null;
+  state.sigThread = [];
+  return go("dashboard", "Overview");
+}
+
+async function loadPartnerScopeHeads(d) {
+  const pilots = (d.scopes || []).filter((s) => s.kind === "pilot");
+  for (const s of pilots) {
+    const host = document.querySelector(`[data-pt-scope-head="${s.pilotId}"]`);
+    if (!host) continue;
+    try {
+      const data = await api("GET", "/pilot/overview?pilot=" + encodeURIComponent(s.pilotId));
+      const f = data.fund || {};
+      const c = data.counts || {};
+      host.textContent = `$${fmtPrice((f.committedCents || 0) / 100)} fund · $${fmtPrice((f.spentCents || 0) / 100)} spent · ${c.businesses || 0} businesses chosen · ${c.visitsDone || 0} visits done · ${c.postsLive || 0} posts live`;
+    } catch (err) {
+      host.textContent = "its headline could not load; open the portal to see it";
+    }
+  }
+}
+
 function partnerHomeHtml(d) {
   const p = d.partner;
   const t = d.totals;
@@ -14930,6 +15022,7 @@ function partnerHomeHtml(d) {
   const empty = t.creatorsAttributed === 0 && t.businessesAttributed === 0;
   return `
   ${wsHead(p.name, { chip: partnerSampleChip(d), sub: "Your markets, your bench, your share: the creators and businesses who came in through your links, and the share they earn you.", subKey: "pt-home" })}
+  ${partnerScopesCardHtml(d)}
   ${partnerSigCardHtml(d)}
   ${empty ? "" : `
   <div class="stat-band home-metrics">
@@ -14981,7 +15074,34 @@ function partnerMarketsHtml(d) {
     </div>
     <p class="small muted" style="margin:12px 0 8px"><strong>Next step:</strong> ${esc(n.text)}</p>
     <button class="btn small-btn" onclick="return go('dashboard','${n.tab}')">${n.btn}</button>
-  </div>`; }).join("")}`;
+  </div>`; }).join("")}
+  <div id="pt-race"></div>`;
+}
+
+// London district race (Build -106): renders only when the
+// server says London is this partner's market (the endpoint
+// 403s otherwise and the section simply never appears).
+async function loadPartnerRace() {
+  const host = document.getElementById("pt-race");
+  if (!host) return;
+  let r = null;
+  try { r = await api("GET", "/partner/london-race"); } catch (e) { return; }
+  if (!r || !r.districts) return;
+  const stateLine = r.state === "not_started"
+    ? "The race has not started yet: no clock is running and there is no winner. These are today's raw counts."
+    : r.state === "running"
+      ? `The race is running (backstop ${String(r.endsAt || "").slice(0, 10)}). First district to ${r.targets.creators} approved founding creators AND ${r.targets.businesses} founding businesses wins.`
+      : r.state === "won"
+        ? `${(r.districts.find((x) => x.id === r.winner) || {}).name || "A district"} has won the race, past both targets.`
+        : `The 8-week backstop decided it on score (creators count 1, businesses count 2): ${(r.districts.find((x) => x.id === r.winner) || {}).name || "a district"} leads the final board.`;
+  host.innerHTML = `
+  <div class="card mb">
+    <div class="flex-between"><strong>London district race</strong><span class="badge info">Your market only</span></div>
+    <p class="small muted" style="margin:6px 0 10px">${esc(stateLine)}</p>
+    ${r.districts.map((x) => `
+    <p class="small" style="margin:0 0 6px"><strong>${esc(x.name)}:</strong> ${x.creators} of ${r.targets.creators} creators · ${x.businesses} of ${r.targets.businesses} businesses${r.state === "backstop_scored" || r.state === "running" ? ` · score ${x.score}` : ""}${x.qualifies ? ` · <span class="badge ok">Past both targets</span>` : ""}</p>`).join("")}
+    <p class="small muted" style="margin:8px 0 0">Outside the race field: ${r.outsideField.creators} creators and ${r.outsideField.businesses} businesses elsewhere in London. They count toward London, just not toward a district.</p>
+  </div>`;
 }
 
 function partnerCreatorsHtml(d) {
@@ -15051,7 +15171,40 @@ function partnerEarningsHtml(d) {
   <p class="small muted">These amounts accrue from the subscriptions on file in your markets. Payouts begin once partner payments are switched on; until then this page is the ledger, and accrued amounts are never shown as paid.</p></div>` : `
   <div class="panel mt"><h3 style="margin-top:0">No paid revenue yet</h3>
   <p class="small muted">No business in your markets has a paid subscription on file yet, so nothing has accrued. The moment one does, it appears here at your ${e.sharePct}% share. Amounts on this page are always labeled accrued until a payment actually happens.</p></div>`}
-  <p class="small muted">At full fill, your share runs about $${fmtNum(d.atFill.partnerYearly)} a year across your ${d.atFill.markets === 1 ? "market" : `${d.atFill.markets} markets`}. Modeled from the average partner market (about ${fmtNum(d.atFill.businessesPerMarket)} businesses at $2,958 a year), not a promise.</p>`;
+  <p class="small muted">At full fill, your share runs about $${fmtNum(d.atFill.partnerYearly)} a year across your ${d.atFill.markets === 1 ? "market" : `${d.atFill.markets} markets`}. Modeled from the average partner market (about ${fmtNum(d.atFill.businessesPerMarket)} businesses at $2,958 a year), not a promise.</p>
+  <div class="panel mt">
+    <h3 style="margin-top:0">Your month pack</h3>
+    <p class="small muted" style="margin:0 0 10px">One file with your month: the accrual, the greater-of math with both candidates, what you have been paid and what is owed, and the business-by-business activity. A closed month's pack is frozen: it matches the numbers SIGNL closed with, to the cent, and later changes arrive as adjustment rows instead of rewriting it. An open month downloads as a live snapshot and says so.</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <select id="pt-pack-month" onchange="ptPackSyncLink()"><option value="${new Date().toISOString().slice(0, 7)}">${new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" })} (this month, live)</option></select>
+      <a class="btn" id="pt-pack-link" href="/api/partner/pack?month=${new Date().toISOString().slice(0, 7)}">Download the month pack</a>
+    </div>
+    <p class="small muted" id="pt-pack-note" style="margin:8px 0 0"></p>
+  </div>`;
+}
+
+// The pack month picker (Build -106): options come from the
+// partner's own availability list, frozen months first-class.
+async function loadPartnerPacks() {
+  const sel = document.getElementById("pt-pack-month");
+  if (!sel) return;
+  try {
+    const data = await api("GET", "/partner/packs");
+    const months = data.months || [];
+    if (!months.length) return;
+    sel.innerHTML = months.map((m) => `<option value="${esc(m.period)}">${esc(m.label)}${m.frozen ? " (final)" : " (live snapshot)"}</option>`).join("");
+    sel.value = months[0].period;
+    ptPackSyncLink();
+  } catch (e) { /* the default current-month option still works */ }
+}
+function ptPackSyncLink() {
+  const sel = document.getElementById("pt-pack-month");
+  const link = document.getElementById("pt-pack-link");
+  const note = document.getElementById("pt-pack-note");
+  if (!sel || !link) return;
+  link.href = "/api/partner/pack?month=" + encodeURIComponent(sel.value);
+  const opt = sel.options[sel.selectedIndex];
+  if (note && opt) note.textContent = /final/.test(opt.textContent || "") ? "This month is closed: the pack is frozen and final." : "This month is still open: the pack is a live snapshot and can move until the month closes.";
 }
 
 function partnerLinksHtml(d) {
@@ -15127,14 +15280,14 @@ function partnerSigActions(d) {
   return acts.slice(0, 4);
 }
 
-function partnerSigHtml(d) {
-  const p = d.partner;
-  const t = d.totals;
-  const cs = d.creators.stages;
-  const bs = d.businesses.stages;
-  const e = d.earnings;
-  const empty = t.creatorsAttributed === 0 && t.businessesAttributed === 0;
-  const jump = (id, label) => `<button type="button" class="btn small-btn ghost" onclick="document.getElementById('${id}').scrollIntoView({behavior:'smooth'});return false">${label}</button>`;
+// Scoped Sig chat (Build -106): the real Sig conversation for
+// partner and funder shells — the same thread and ask machinery
+// creators and businesses use, answered server-side from the
+// asker's own scoped fact sheet (sigdata buildPartnerFacts /
+// buildPilotFacts). The static explainer page this replaces
+// could only repeat the dashboard; this Sig answers, walks,
+// and produces the month pack on request.
+function scopedSigChatHtml(opts) {
   return `
   <section class="sig-hero" aria-label="Sig">
     <div class="sig-hero-ava">${sigHeroMediaHtml()}</div>
@@ -15142,49 +15295,54 @@ function partnerSigHtml(d) {
       <div class="sig-hero-kicker">Your guide</div>
       <h2>Sig</h2>
       <div class="sig-presence"><span class="sig-live-dot"></span><strong>Ready</strong><span>Your numbers, in plain sentences.</span></div>
-      <p>I read only your dashboard data: your funnel, your earnings, your links. I explain and point. I never send or change anything.</p>
+      <p>${esc(opts.intro)}</p>
     </div>
   </section>
-  <div style="display:flex;gap:8px;flex-wrap:wrap;margin:0 0 18px">
-    ${jump("pt-sig-stand", "Where things stand")}
-    ${jump("pt-sig-next", "What to do next")}
-    ${jump("pt-sig-earn", "Your earnings")}
-    ${jump("pt-sig-links", "Your links")}
+  <div class="sig-home" id="sig-home">
+    <div class="sig-home-greet" id="sig-home-greet"></div>
+    <div class="sig-home-chips" id="sig-home-chips"><span class="sig-chip is-quiet">Loading your numbers…</span></div>
   </div>
-  <h3 id="pt-sig-stand" style="margin:0 0 8px">Where things stand</h3>
-  ${empty ? partnerFillsIn("Share your creator link and your bench starts here. Sig keeps count from the first claim.") : `
-  <div class="card mb">
-    ${d.markets.map((m) => `<p class="small" style="margin:0 0 8px"><strong>${esc(m.market)}:</strong> ${m.creators.claimed} creator${m.creators.claimed === 1 ? "" : "s"} claimed, ${m.creators.approved} approved, ${m.creators.complete} complete. ${m.businesses.applied} business${m.businesses.applied === 1 ? "" : "es"} joined. ${m.offersLive} offer${m.offersLive === 1 ? "" : "s"} live, ${m.postsLive} post${m.postsLive === 1 ? "" : "s"} live.</p>`).join("")}
-    <p class="small" style="margin:0">Across your markets: ${t.visitsCompleted} visit${t.visitsCompleted === 1 ? "" : "s"} completed and ${t.postsLive} post${t.postsLive === 1 ? "" : "s"} live so far.</p>
-  </div>`}
-  <h3 id="pt-sig-next" style="margin:18px 0 8px">What to do next</h3>
-  ${partnerSigActions(d).map((a) => `
-  <div class="card mb">
-    <div class="flex-between"><strong>${esc(a.h)}</strong><span class="badge ok">Next step</span></div>
-    <p class="small muted" style="margin:6px 0 10px">${esc(a.p)}</p>
-    <button class="btn small-btn ghost" onclick="return go('dashboard','${a.tab}')">${esc(a.btn)}</button>
-  </div>`).join("")}
-  <h3 id="pt-sig-earn" style="margin:18px 0 8px">Your earnings</h3>
-  <div class="card mb">
-    <p class="small" style="margin:0 0 8px">Your share is <strong>${e.sharePct}%</strong> of subscription revenue from businesses credited to you.</p>
-    ${e.hasPaidRevenue ? `<p class="small" style="margin:0 0 8px">Subscriptions on file run <strong>$${fmtPrice(e.monthlyRevenue)}</strong> a month, so <strong>$${fmtPrice(e.accruedMonthly)}</strong> a month is accrued to you. Paid to date: $${fmtPrice(e.paidTotal)}.</p>
-    <p class="small muted" style="margin:0">Accrued means earned on paper from the subscriptions on file. It is never shown as paid until a payment actually happens; payouts begin once partner payments are switched on.</p>` : `<p class="small" style="margin:0">No business in your markets has a paid subscription on file yet, so nothing has accrued. The moment one does, it appears here at your ${e.sharePct}% share, labeled accrued until a payment actually happens.</p>`}
-    <p class="small muted" style="margin:10px 0 0">At full fill, your share runs about $${fmtNum(d.atFill.partnerYearly)} a year across your ${d.atFill.markets === 1 ? "market" : `${d.atFill.markets} markets`}. Modeled, not promised: markets fill over time.</p>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 18px">
+    ${(opts.starters || []).map((q) => `<button type="button" class="btn small-btn ghost" data-scoped-sig-start="${esc(q)}">${esc(q)}</button>`).join("")}
   </div>
-  <h3 id="pt-sig-links" style="margin:18px 0 8px">Your links</h3>
-  ${d.links.map((l) => `
-  <div class="card mb">
-    <div class="flex-between"><strong>${esc(l.market)}</strong>${d.partner.demo ? `<span class="badge warn">Sample</span>` : ""}</div>
-    <p class="small" style="margin:10px 0 4px"><strong>Creator claim link</strong></p>
-    <p class="small muted" style="margin:0 0 4px">For creators: lands on the founding creator claim, credited to you.</p>
-    <p class="small muted" style="word-break:break-all;margin:0 0 8px">${esc(l.creator)}</p>
-    <button class="btn small-btn" onclick="copyPartnerLink('${esc(l.creator)}', this)">Copy link</button>
-    <p class="small" style="margin:14px 0 4px"><strong>Business signup link</strong></p>
-    <p class="small muted" style="margin:0 0 4px">For businesses: lands on the founding business signup, credited to you.</p>
-    <p class="small muted" style="word-break:break-all;margin:0 0 8px">${esc(l.business)}</p>
-    <button class="btn small-btn ghost" onclick="copyPartnerLink('${esc(l.business)}', this)">Copy link</button>
-  </div>`).join("")}
-  <p class="small muted">Sig reads only this dashboard's data and never sends anything. The buttons here just take you to the page that does the work. Spanish is staged for a later partner release. Still stuck? Email <a href="mailto:hello@joinsignl.com">hello@joinsignl.com</a>.</p>`;
+  <div class="sig-chat">
+    <div class="sig-chat-head"><div><div class="sig-chat-title">Conversation</div><div class="muted small">Straight answers from your own records, with the next step attached.</div></div></div>
+    <div id="sig-thread" class="sig-thread">${sigThreadHtml() || `<div class="sig-turn sig"><span class="sig-turn-ava">${SIG_AVATAR_HTML}</span><div class="sig-bub">${esc(opts.greeting)}</div></div>`}</div>
+    <form class="sig-ask-form" onsubmit="return sigAskSubmit(event)">
+      <input id="sig-ask-input" type="text" placeholder="Ask Sig anything" autocomplete="off" aria-label="Ask Sig anything">
+      <button class="btn" type="submit">Ask</button>
+    </form>
+  </div>`;
+}
+
+function wireScopedSig(el) {
+  if (!el) return;
+  wireSigThread(el);
+  loadSigHome();
+  el.querySelectorAll("[data-scoped-sig-start]").forEach((btn) => {
+    btn.onclick = () => {
+      const input = document.getElementById("sig-ask-input");
+      if (input) input.value = btn.getAttribute("data-scoped-sig-start") || "";
+      sigAskSubmit();
+    };
+  });
+}
+
+function partnerSigHtml(d) {
+  return scopedSigChatHtml({
+    intro: "I read only your records: your funnel, your earnings, your month packs, your territory, your scopes. Ask in plain words and I answer from the same numbers your dashboard prints, with the next step attached.",
+    greeting: "Ask me how much you have accrued, whether your latest month pack is final, how your portal looks, or what your territory covers. I answer from your records only.",
+    starters: ["How much have I accrued?", "Send me my latest month pack", "How does my portal look?", "What does my territory cover?"],
+  });
+}
+
+function pilotSigHtml() {
+  const p = (pilotState.me && pilotState.me.pilot) || {};
+  return scopedSigChatHtml({
+    intro: `I read only your pilot: the fund, the chosen businesses, and what the visits did. Counted and recorded customers stay separate in every answer, the way they do everywhere in SIGNL.`,
+    greeting: `Ask me how much of the fund is left, how many customers were counted, or which businesses joined SIGNL after their visit. Everything comes from ${p.name ? p.name + "'s" : "your pilot's"} own records.`,
+    starters: ["How much of the fund is left?", "How many customers were counted?", "Which businesses joined SIGNL afterwards?", "Where is my end-of-pilot pack?"],
+  });
 }
 
 function partnerHelpHtml(d) {
@@ -20199,6 +20357,8 @@ async function loadAdminPartners() {
   if (!el) return;
   try {
     const data = await api("GET", "/admin/partners");
+    const pilotsData = await api("GET", "/admin/pilots").catch(() => ({ pilots: [] }));
+    const allPilots = pilotsData.pilots || [];
     const markets = (state.boot && state.boot.markets) || [];
     const cards = (data.partners || []).map((p) => `
     <div class="card mb">
@@ -20220,6 +20380,9 @@ async function loadAdminPartners() {
         <div class="field"><label>Accent color (hex)</label><input type="text" id="pt-brand-accent-${p.id}" value="${esc((p.brand && p.brand.accentColor) || "")}" placeholder="#006AFC"></div>
         <div class="field"><label>Email sender name</label><input type="text" id="pt-brand-from-${p.id}" value="${esc((p.brand && p.brand.emailFromName) || "")}" placeholder="Name on their invite emails"></div>
       </div>
+      <h4 style="margin:12px 0 4px">Pilot scopes on this login</h4>
+      <p class="small muted" style="margin:0 0 6px">Attach a pilot to this same login and the partner opens its Impact Portal without a second account. Each scope keeps its own numbers; nothing is added across scopes.</p>
+      ${allPilots.length ? allPilots.map((pl) => `<label class="small" style="display:block;margin:0 0 4px"><input type="checkbox" class="pt-scope-${p.id}" value="${esc(pl.id)}" ${(p.scopes || []).some((s) => s.pilotId === pl.id) ? "checked" : ""}> ${esc(pl.name)} (${esc(pl.partnerName)}, ${esc(pl.marketName)})</label>`).join("") : `<p class="small muted" style="margin:0">No pilots exist yet.</p>`}
       <button class="btn small-btn" onclick="saveAdminPartner('${p.id}')">Save partner</button> <span id="pt-ok-${p.id}" class="saved"></span>
       <div id="pt-deals-${p.id}" style="margin-top:12px"><p class="small muted">Loading deals…</p></div>
     </div>`).join("");
@@ -20287,6 +20450,7 @@ async function saveAdminPartner(id) {
         accentColor: document.getElementById(`pt-brand-accent-${id}`).value,
         emailFromName: document.getElementById(`pt-brand-from-${id}`).value,
       },
+      scopes: [...document.querySelectorAll(`.pt-scope-${id}:checked`)].map((c) => ({ kind: "pilot", pilotId: c.value })),
     });
     const ok = document.getElementById(`pt-ok-${id}`);
     if (ok) ok.textContent = "Saved";
@@ -21478,8 +21642,8 @@ async function ccShowTab() {
       return;
     }
     if (ccTab === "markets") {
-      const [d, funnel] = await Promise.all([api("GET", "/admin/command/markets?" + ccQuery()), api("GET", "/admin/command/funnel").catch(() => null)]);
-      host.innerHTML = ccFunnelHtml(funnel) + ccMarketsHtml(d);
+      const [d, funnel, race] = await Promise.all([api("GET", "/admin/command/markets?" + ccQuery()), api("GET", "/admin/command/funnel").catch(() => null), api("GET", "/admin/command/london-race").catch(() => null)]);
+      host.innerHTML = ccFunnelHtml(funnel) + ccLondonRaceHtml(race) + ccMarketsHtml(d);
       return;
     }
     if (ccTab === "money") {
@@ -21628,6 +21792,7 @@ function ccAttentionLabel(a) {
   if (a.kind === "unsigned_partners") return "Open Partners";
   if (a.kind === "unconnected_registers") return "See register connections";
   if (a.kind === "territory_conflicts") return "Review on Partners";
+  if (a.kind === "london_race_won") return "See the race board";
   return "Open";
 }
 
@@ -21658,6 +21823,50 @@ async function ccRunBackfill() {
     await loadStats();
   } catch (err) {
     alert(err.message);
+  }
+  return false;
+}
+
+// London district race board (Build -106, Admin only, never
+// public): the five Tier 1 districts against the 40/15 targets,
+// the race clock state, and the Admin start control. Until a
+// start date is set the board reads "race not started" and
+// shows raw counts only.
+function ccLondonRaceHtml(r) {
+  if (!r || !r.districts) return "";
+  const winnerName = r.winner ? (r.districts.find((x) => x.id === r.winner) || {}).name || "" : "";
+  const stateLine = r.state === "not_started"
+    ? (r.startsAt ? `Starts ${esc(String(r.startsAt).slice(0, 10))}. Until then these are raw counts only.` : "Race not started: no start date is set. These are raw counts only.")
+    : r.state === "running"
+      ? `Running: started ${esc(String(r.startsAt || "").slice(0, 10))}, 8-week backstop ${esc(String(r.endsAt || "").slice(0, 10))}. First district to both targets wins outright.`
+      : r.state === "won"
+        ? `Won: ${esc(winnerName)} reached both targets.`
+        : `Backstop reached: ${esc(winnerName)} takes it on score (creators count 1, businesses count 2).`;
+  return `
+  <div class="panel cc-market">
+    <div class="cc-mhead"><strong>London district race</strong><span class="cc-chip founding">Admin + London partner only, never public</span></div>
+    <p class="small" style="margin:6px 0 8px">${stateLine}</p>
+    ${r.districts.map((x) => `
+    <p class="small" style="margin:0 0 6px"><strong>${esc(x.name)}:</strong> ${x.creators} of ${r.targets.creators} approved founding creators · ${x.businesses} of ${r.targets.businesses} founding businesses · score ${x.score}${x.qualifies ? ` · <span class="badge ok">Past both targets</span>` : ""}</p>`).join("")}
+    <p class="small muted" style="margin:4px 0 0">Outside the race field: ${r.outsideField.creators} creators, ${r.outsideField.businesses} businesses (counted in London's totals, filed under no district). London totals: ${r.totals.creators} creators, ${r.totals.businesses} businesses.</p>
+    ${r.state === "not_started" && !r.startsAt ? `
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px">
+      <input type="date" id="cc-race-start" aria-label="Race start date">
+      <button class="btn small-btn" onclick="return ccStartLondonRace()">Start the race</button>
+      <span class="small muted">Set this when the London partner launches the race. The 8-week backstop runs from the date.</span>
+    </div>` : ""}
+  </div>`;
+}
+
+async function ccStartLondonRace() {
+  const input = document.getElementById("cc-race-start");
+  const v = input ? input.value : "";
+  if (!v) { if (input) input.focus(); return false; }
+  try {
+    await api("POST", "/admin/command/london-race/start", { startsAt: v });
+    ccShowTab();
+  } catch (e) {
+    alert(e.message || "Could not start the race");
   }
   return false;
 }
@@ -23819,16 +24028,26 @@ function recruiterHelpHtml() {
 // one long page, and the portal is read-only: every number comes
 // from the pilot's ledger and the businesses' real records.
 
-const PILOT_TABS = ["Overview", "Businesses", "Results", "Report", "Help"];
+const PILOT_TABS = ["Overview", "Businesses", "Results", "Report", "Sig", "Help"];
+
+// Pilot API calls carry the open scope (Build -106): a legacy
+// pilot_partner login needs no parameter (the server reads the
+// pilot off the login); a scoped license partner names theirs.
+function pilotApiUrl(path) {
+  if (!state.pilotScopeId) return path;
+  return path + (path.includes("?") ? "&" : "?") + "pilot=" + encodeURIComponent(state.pilotScopeId);
+}
 const PILOT_STEP_BADGE = { selected: "info", invited: "warn", visit_booked: "warn", visited: "info", posted: "ok", continued: "ok", declined: "bad", completed: "ok" };
 let pilotState = { me: null };
 
 const pilotMoney = (cents) => "$" + fmtPrice((Number(cents) || 0) / 100);
 
 async function pilotLoadMe() {
-  if (pilotState.me) return pilotState.me;
-  const data = await api("GET", "/pilot/me");
+  const key = state.pilotScopeId || "self";
+  if (pilotState.me && pilotState.meKey === key) return pilotState.me;
+  const data = await api("GET", pilotApiUrl("/pilot/me"));
   pilotState.me = data;
+  pilotState.meKey = key;
   return data;
 }
 
@@ -23850,6 +24069,7 @@ function renderPilotTab(tab) {
   // portal's accent the same way it scopes the partner shell.
   const pBrand = (pilotState.me && pilotState.me.pilot && pilotState.me.pilot.brand) || null;
   coBrandShellOn(el, pBrand);
+  if (tab === "Sig") { el.innerHTML = coBrandHeadHtml(pBrand) + pilotSigHtml(); wireScopedSig(el); return; }
   if (tab === "Help") { el.innerHTML = coBrandHeadHtml(pBrand) + pilotHelpHtml(); return; }
   if (tab === "Businesses") { loadPilotBusinesses(el); return; }
   if (tab === "Results") { loadPilotResults(el); return; }
@@ -23867,7 +24087,7 @@ async function loadPilotOverview(el) {
   el = el || document.getElementById("tab-body");
   if (!el) return;
   try {
-    const data = await api("GET", "/pilot/overview");
+    const data = await api("GET", pilotApiUrl("/pilot/overview"));
     const p = data.pilot;
     const f = data.fund;
     const c = data.counts;
@@ -23913,7 +24133,7 @@ async function loadPilotBusinesses(el) {
   el = el || document.getElementById("tab-body");
   if (!el) return;
   try {
-    const data = await api("GET", "/pilot/businesses");
+    const data = await api("GET", pilotApiUrl("/pilot/businesses"));
     const rows = data.businesses || [];
     el.innerHTML = `
     ${pilotHeadHtml(data.pilot)}
@@ -23934,7 +24154,7 @@ async function loadPilotResults(el) {
   el = el || document.getElementById("tab-body");
   if (!el) return;
   try {
-    const data = await api("GET", "/pilot/results");
+    const data = await api("GET", pilotApiUrl("/pilot/results"));
     const rows = data.businesses || [];
     el.innerHTML = `
     ${pilotHeadHtml(data.pilot)}
@@ -23955,7 +24175,7 @@ async function loadPilotReport(el) {
   el = el || document.getElementById("tab-body");
   if (!el) return;
   try {
-    const data = await api("GET", "/pilot/report");
+    const data = await api("GET", pilotApiUrl("/pilot/report"));
     const p = data.pilot;
     const f = data.fund;
     const c = data.counts;
@@ -23978,7 +24198,8 @@ async function loadPilotReport(el) {
       <p class="small muted">How to read the customer counts: "counted" customers used the creator's code at the till, so they are on the business's own register records. "Recorded" customers are the business's own reported count. The two are shown separately and never added together. Every figure here comes from SIGNL's records of this pilot.</p>
       <p class="small muted">Questions: Jeff Rimmer, Founder, SIGNL &middot; jeff@joinsignl.com</p>
     </div>
-    <p class="pilot-no-print"><button class="btn" onclick="window.print()">Print this report</button></p>`;
+    ${p.status === "closed" ? `<div class="panel"><p style="margin:0"><strong>Your end-of-pilot pack is ready.</strong> One file with the fund, every business's outcome, and the customer counts (counted and recorded kept separate). It is the final record of this pilot.</p></div>` : ""}
+    <p class="pilot-no-print"><button class="btn" onclick="window.print()">Print this report</button> <a class="btn ghost" href="${pilotApiUrl("/api/pilot/pack")}">Download the ${p.status === "closed" ? "end-of-pilot" : "pilot"} pack</a></p>`;
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }

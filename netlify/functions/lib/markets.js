@@ -623,6 +623,29 @@ const GBP_PLANS = [
   },
 ];
 const PLAN_BOOK = { USD: PLANS, GBP: GBP_PLANS };
+// London district race (Build -106, Tier 3 item 15b): the five
+// Tier 1 districts from the London launch strategy, each mapped
+// to its component areas exactly as they exist in the London
+// cities list above. An area in no district is outside the race
+// field: it counts toward the London market totals and is never
+// force-filed into a district. Race rules: first district to 40
+// approved founding creators AND 15 founding businesses wins;
+// at the 8-week backstop the score is creators x1 + businesses x2.
+const LONDON_RACE_DISTRICTS = [
+  { id: "shoreditch-spitalfields", name: "Shoreditch/Spitalfields", areas: ["Shoreditch", "Spitalfields"] },
+  { id: "borough-bankside", name: "Borough–Bankside", areas: ["Borough", "Bankside", "Bermondsey"] },
+  { id: "brixton", name: "Brixton", areas: ["Brixton"] },
+  { id: "dalston-hackney", name: "Dalston–Hackney Central–Stoke Newington", areas: ["Dalston", "Hackney Central", "Stoke Newington"] },
+  { id: "angel-islington", name: "Angel/Islington", areas: ["Angel", "Islington"] },
+];
+const LONDON_RACE_TARGETS = { creators: 40, businesses: 15 };
+const LONDON_RACE_WEEKS = 8;
+const _raceAreaMap = new Map();
+for (const d of LONDON_RACE_DISTRICTS) for (const a of d.areas) _raceAreaMap.set(a.toLowerCase(), d.id);
+function londonDistrictForArea(area) {
+  const key = String(area || "").trim().toLowerCase();
+  return key ? (_raceAreaMap.get(key) || null) : null;
+}
 function planBookFor(currency) {
   return PLAN_BOOK[currency] || PLANS;
 }
@@ -866,4 +889,4 @@ function resolveTypedCity(raw, hints, markets) {
   };
 }
 
-module.exports = { MARKETS, MARKET_NAME_ALIASES, normalizeMarketName, currencyForMarket, paidFloorForMarket, DEFAULT_CURRENCY, MARKET_STATES, parseTypedCity, resolveTypedCity, TIERS, CREATOR_CATEGORIES, COMP_CATEGORIES, BUSINESS_CATEGORIES, PLANS, GBP_PLANS, PLAN_BOOK, planBookFor, planInBook, PROFESSIONS, LEGACY_PROFESSIONS, REALTOR_PROFESSION, canonicalFromList, tierForFollowers, normalizeTierBand, MIN_TOTAL_AUDIENCE };
+module.exports = { MARKETS, MARKET_NAME_ALIASES, normalizeMarketName, currencyForMarket, paidFloorForMarket, DEFAULT_CURRENCY, MARKET_STATES, parseTypedCity, resolveTypedCity, TIERS, CREATOR_CATEGORIES, COMP_CATEGORIES, BUSINESS_CATEGORIES, PLANS, GBP_PLANS, PLAN_BOOK, planBookFor, planInBook, LONDON_RACE_DISTRICTS, LONDON_RACE_TARGETS, LONDON_RACE_WEEKS, londonDistrictForArea, PROFESSIONS, LEGACY_PROFESSIONS, REALTOR_PROFESSION, canonicalFromList, tierForFollowers, normalizeTierBand, MIN_TOTAL_AUDIENCE };

@@ -43,21 +43,26 @@ check("partner Overview carries the Sig presence card", appJs.includes("partnerS
 const helpRegion = appJs.slice(appJs.indexOf("function partnerHelpHtml"), appJs.indexOf("function partnerHelpHtml") + 1400);
 check("partner Help carries Sig's head-crop mark", helpRegion.includes("sigAvatarHtml") && helpRegion.includes("Open Sig"));
 
-// --- partner Sig is grounded in the summary payload only
-const sigSurface = region("function partnerSigActions", "// Shared in-app notifications block");
-check("partner Sig surface code found", sigSurface.length > 500);
-check("partner Sig reads the funnel stages", sigSurface.includes("d.creators.stages") && sigSurface.includes("d.businesses.stages"));
-check("partner Sig reads per-market funnels", sigSurface.includes("d.markets.map") || sigSurface.includes("for (const m of d.markets)"));
-check("partner Sig reads earnings + links from the payload", sigSurface.includes("d.earnings") && sigSurface.includes("d.links.map"));
-check("partner Sig makes no API calls (read-only)", !sigSurface.includes("api(") && !sigSurface.includes("fetch("), "found a network call in the partner Sig surface");
-check("partner Sig has no write verb", !/method:\s*"POST"|method:\s*"PATCH"|method:\s*"DELETE"/.test(sigSurface));
-check("partner Sig actions route to existing tabs only", ["Links", "Businesses", "Account", "Performance"].every((t) => sigSurface.includes(`tab: "${t}"`) || sigSurface.includes(`'${t}'`)));
-check("partner Sig carries the read-only line", sigSurface.includes("I never send or change anything"));
-check("partner Sig keeps the accrued honesty label", sigSurface.includes("labeled accrued until a payment actually happens"));
-check("partner Sig labels the at-fill line modeled", sigSurface.includes("Modeled, not promised"));
-check("partner Sig notes Spanish is staged", sigSurface.includes("Spanish is staged for a later partner release"));
-check("partner Sig empty state uses the fills-in voice", sigSurface.includes("partnerFillsIn("));
-check("partner Sig presence rides the shared hero stack", sigSurface.includes("sigHeroMediaHtml()"));
+// --- partner Sig (Build -106): the scoped Sig chat, grounded
+// server-side in the partner's own fact sheet. This block was
+// rewritten in Build -106 under the intentional-change rule:
+// the old static read-only partner Sig page (and its copy pins)
+// was replaced by Jeff's Sig mandate — Sig answers and acts
+// from real records for partners too. The old surface's honesty
+// lines that still exist elsewhere stay pinned below.
+const sigdataJs = fs.readFileSync(new URL("../netlify/functions/lib/sigdata.js", import.meta.url), "utf8");
+const chatSurface = region("function scopedSigChatHtml", "function partnerSigHtml");
+check("partner Sig surface code found", chatSurface.length > 200 && appJs.includes("function partnerSigHtml"));
+check("partner Sig is the scoped chat, wired on render", appJs.includes("scopedSigChatHtml({") && appJs.includes("wireScopedSig(el)"));
+check("partner Sig facts are built from the partner summary", sigdataJs.includes("function buildPartnerFacts") && sigdataJs.includes("accruedTotal") && sigdataJs.includes("frozenMonths"));
+check("partner Sig answers accrual, pack, territory and brand", sigdataJs.includes("function answerPartner") && sigdataJs.includes('"partner-earnings"') && sigdataJs.includes("whole market") && sigdataJs.includes("portal look"));
+check("partner Sig chat posts only to the Sig ask endpoint", appJs.includes('"/sig/ask"'));
+check("partner Sig actions are link destinations only", ["partner-earnings", "partner-markets", "partner-links"].every((d) => appJs.includes(`case "${d}"`) && sigdataJs.includes(`"${d}"`)));
+check("partner Sig keeps the accrued honesty label", appJs.includes("labeled accrued until a payment actually happens"));
+check("partner surfaces still label the at-fill line modeled", appJs.includes("Modeled, not promised"));
+check("partner Sig makes no Spanish availability claim", !appJs.includes("Spanish is staged for a later partner release") && !chatSurface.includes("Spanish"));
+check("partner empty states keep the fills-in voice", appJs.includes("partnerFillsIn("));
+check("partner Sig presence rides the shared hero stack", chatSurface.includes("sigHeroMediaHtml()"));
 
 // --- admin Sig: existing endpoints only, real-count items
 const adminSig = region("function adminSigItems", "async function loadAdminPartners");

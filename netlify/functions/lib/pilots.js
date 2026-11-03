@@ -472,11 +472,36 @@ async function pilotForUser(user) {
   return pilotById(user.pilotId);
 }
 
-async function handlePilotApi({ method, seg, user }) {
-  if (!user) return err(401, "Sign in first");
-  if (user.role !== "pilot_partner") return err(403, "The Impact Portal is for SIGNL pilot partners.");
-  const pilot = await pilotForUser(user);
-  if (!pilot) return err(404, "Your pilot is not set up yet. Email jeff@joinsignl.com and we will sort it out.");
+// Who may open a pilot's Impact Portal (Build -106 multi-scope):
+// the legacy pilot_partner login stamped with exactly one pilot,
+// OR a license partner whose scopes carry the pilot. A scoped
+// partner names the pilot (?pilot=) when they carry more than
+// one; with exactly one pilot scope it is the default. The
+// legacy path is byte-identical to before.
+async function pilotForSessionUser(user, query) {
+  if (!user) return { error: [401, "Sign in first"] };
+  if (user.role === "pilot_partner") {
+    const pilot = await pilotForUser(user);
+    if (!pilot) return { error: [404, "Your pilot is not set up yet. Email jeff@joinsignl.com and we will sort it out."] };
+    return { pilot };
+  }
+  if (user.role === "partner") {
+    const scopes = (user.partner && Array.isArray(user.partner.scopes) ? user.partner.scopes : []).filter((s) => s && s.kind === "pilot" && s.pilotId);
+    if (!scopes.length) return { error: [403, "The Impact Portal is for SIGNL pilot partners."] };
+    const wanted = query && typeof query.pilot === "string" && query.pilot ? query.pilot : null;
+    const scope = wanted ? scopes.find((s) => s.pilotId === wanted) : (scopes.length === 1 ? scopes[0] : null);
+    if (!scope) return { error: wanted ? [403, "That pilot is not one of your scopes."] : [400, "Name the pilot to open: your login carries more than one."] };
+    const pilot = await pilotById(scope.pilotId);
+    if (!pilot) return { error: [404, "That pilot is not set up yet."] };
+    return { pilot };
+  }
+  return { error: [403, "The Impact Portal is for SIGNL pilot partners."] };
+}
+
+async function handlePilotApi({ method, seg, user, query }) {
+  const resolved = await pilotForSessionUser(user, query);
+  if (resolved.error) return err(resolved.error[0], resolved.error[1]);
+  const pilot = resolved.pilot;
   if (method !== "GET") return err(405, "The Impact Portal is read-only: it shows where the fund went. Email jeff@joinsignl.com if something looks wrong.");
   const sub = seg[1] || "me";
   await syncAutoSpend(pilot, user.id);
@@ -531,7 +556,55 @@ async function handlePilotApi({ method, seg, user }) {
       })),
     });
   }
+  if (sub === "pack") {
+    // End-of-pilot pack (Build -106, item 15a): the Report view
+    // as one downloadable file. Pure data rows; counted and
+    // recorded customers ride in separate columns and are never
+    // summed, here or anywhere. The conversion line is derived
+    // from the records: businesses whose step is "continued",
+    // and of those, the ones whose own plan record shows the
+    // $199 founding rate.
+    const t = pilotTotals(pilot, ctx);
+    const dollars = (cents) => Math.round((Number(cents) || 0)) / 100;
+    const continued = t.rows.filter((r) => r.step === "continued");
+    const onFounding = continued.filter((r) => {
+      const bu = r.businessId ? ctx.usersById.get(r.businessId) : null;
+      return !!(bu && bu.business && (Number(bu.business.planPriceMonthly) === 199 || /\$199/.test(String(bu.business.planName || ""))));
+    });
+    const rows = [
+      ["meta", "pilot", pilot.name, "", "", ""],
+      ["meta", "partner", pilot.partnerName, "", "", ""],
+      ["meta", "market", pilot.marketName, "", "", ""],
+      ["meta", "state", pilot.status === "closed" ? "closed" : "active", "", "", ""],
+      ["meta", "generated", nowIso(), "", "", ""],
+      ["fund", "put_in", "", dollars(t.fund.committedCents), "", ""],
+      ["fund", "spent", "", dollars(t.fund.spentCents), "", ""],
+      ["fund", "left", "", dollars(t.fund.remainingCents), "", ""],
+      ["totals", "businesses_chosen", "", t.counts.businesses, "", ""],
+      ["totals", "visits_done", "", t.counts.visitsDone, "", ""],
+      ["totals", "posts_live", "", t.counts.postsLive, "", ""],
+      ["totals", "customers", "counted at the register and recorded by the businesses are separate counts, never added together", "", t.counts.countedCustomers, t.counts.recordedCustomers],
+      ["conversion", "businesses_joined_signl_afterwards", "", continued.length, "", ""],
+      ["conversion", "of_those_on_the_199_founding_rate", "derived from each business's own plan record", onFounding.length, "", ""],
+    ];
+    for (const r of t.rows) rows.push(["business", r.name, STEP_LABELS[r.step] || r.step, dollars(r.spendCents), r.countedCustomers, r.recordedCustomers]);
+    const csv = pilotCsvOf(["section", "item", "detail", "amount", "counted_customers", "recorded_customers"], rows);
+    const slug = String(pilot.partnerName || "pilot").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "pilot";
+    return {
+      statusCode: 200,
+      headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="signl-pilot-pack-${slug}.csv"` },
+      body: csv,
+    };
+  }
   return err(404, "Not found");
+}
+
+function pilotCsvOf(header, rows) {
+  const cell = (v) => {
+    const s = v === null || v === undefined ? "" : String(v);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  return [header, ...rows].map((r) => r.map(cell).join(",")).join("\n") + "\n";
 }
 
 // ---------------- admin API ----------------
@@ -768,11 +841,34 @@ async function handleAdminPilots({ method, seg, event, user }) {
   return err(404, "Not found");
 }
 
+// The funder's Sig facts (Build -106): the same totals the
+// portal prints, computed once from the pilot context, so a
+// Sig answer and the Report can never disagree.
+async function pilotFactsFor(pilot) {
+  const ctx = await pilotContext(pilot);
+  const t = pilotTotals(pilot, ctx);
+  const continued = t.rows.filter((r) => r.step === "continued");
+  const onFounding = continued.filter((r) => {
+    const bu = r.businessId ? ctx.usersById.get(r.businessId) : null;
+    return !!(bu && bu.business && (Number(bu.business.planPriceMonthly) === 199 || /\$199/.test(String(bu.business.planName || ""))));
+  });
+  return {
+    pilot: pilotView(pilot, null),
+    fund: t.fund,
+    counts: t.counts,
+    closed: pilot.status === "closed",
+    continuedCount: continued.length,
+    continuedOnFounding: onFounding.length,
+  };
+}
+
 module.exports = {
   init,
   handlePilotApi,
   handleAdminPilots,
   pilotForUser,
+  pilotForSessionUser,
+  pilotFactsFor,
   invitePilotPartner,
   syncAutoSpend,
   STEP_LABELS,

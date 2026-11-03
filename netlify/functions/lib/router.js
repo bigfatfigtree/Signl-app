@@ -5,7 +5,7 @@ const crypto = require("crypto");
 const store = require("./store");
 const auth = require("./auth");
 const { logEvent, listEvents, listEventsForSubject } = require("./events");
-const { MARKETS, normalizeMarketName, resolveTypedCity, TIERS, CREATOR_CATEGORIES, COMP_CATEGORIES, BUSINESS_CATEGORIES, PLANS, planBookFor, planInBook, PROFESSIONS, LEGACY_PROFESSIONS, REALTOR_PROFESSION, canonicalFromList, tierForFollowers, normalizeTierBand, MIN_TOTAL_AUDIENCE, currencyForMarket, paidFloorForMarket } = require("./markets");
+const { MARKETS, normalizeMarketName, resolveTypedCity, TIERS, CREATOR_CATEGORIES, COMP_CATEGORIES, BUSINESS_CATEGORIES, PLANS, planBookFor, planInBook, PROFESSIONS, LEGACY_PROFESSIONS, REALTOR_PROFESSION, canonicalFromList, tierForFollowers, normalizeTierBand, MIN_TOTAL_AUDIENCE, currencyForMarket, paidFloorForMarket, LONDON_RACE_DISTRICTS, LONDON_RACE_TARGETS, LONDON_RACE_WEEKS, londonDistrictForArea } = require("./markets");
 const { computeLocalImpactScore, summarizeHistory } = require("./score");
 const { computeFit, buildFitNote } = require("./fit");
 const { emailEnabled, sendEmail, senderProfile, SENDER_PROFILE_NAMES } = require("./email");
@@ -9764,8 +9764,13 @@ async function buildSigFacts(user, full) {
     // Build -104: territory conflicts for Admin Sig, computed
     // over real (non-tester) records by the same resolver.
     const territoryConflicts = territoryConflictsFor(users.filter((u) => !isTester(u)), allDealRecords, (id) => { const p = partners.find((x) => x.id === id); return p ? (p.partner.name || p.name || "") : null; });
+    // Build -106: the London race rollup, so Admin Sig answers
+    // "who's winning the London race?" from the same numbers
+    // the Markets view prints.
+    let londonRace = null;
+    try { londonRace = await londonRacePayload(); } catch (e) { londonRace = null; }
     return sigdata.buildAdminFacts({
-      users, offers, bookings, posts, partners, marketFlags: flags, dealFacts, territoryConflicts,
+      users, offers, bookings, posts, partners, marketFlags: flags, dealFacts, territoryConflicts, londonRace,
       marketNames: MARKETS.map((m) => m.name),
       isTester, profileCompleteOf, businessAccessState,
       planNameOf: (id) => { const p = id ? planById(id) : null; return p ? p.name : "No plan picked"; },
@@ -9831,6 +9836,28 @@ async function buildSigFacts(user, full) {
         return done || countedEv ? { month: lastMonth, monthLabel: monthLabelOf(lastMonth) } : null;
       })(),
     });
+  }
+  if (user.role === "partner") {
+    // Scoped partner Sig (Build -106): the partner's OWN
+    // records only — their summary (the same payload their
+    // dashboard renders), their frozen month packs, their
+    // territory, their brand, their scopes, and the London
+    // race only when London is one of their markets or deals.
+    const summary = await partnerSummary(user);
+    const closes = await ccCloseRecords();
+    const frozenMonths = closes.filter((c) => c.snapshot && (c.snapshot.partners || []).some((r) => r.id === user.id)).map((c) => ({ period: c.period, label: monthLabelOf(c.period), state: c.state }));
+    frozenMonths.sort((a, b) => (a.period < b.period ? 1 : -1));
+    let race = null;
+    const londonScoped = (user.partner.markets || []).some((m) => normalizeMarketName(m) === "London")
+      || (summary.territory || []).some((t) => normalizeMarketName(t.market || "") === "London");
+    if (londonScoped) { try { race = await londonRacePayload(); } catch (e) { race = null; } }
+    return sigdata.buildPartnerFacts({ user, summary, frozenMonths, race, now: Date.now() });
+  }
+  if (user.role === "pilot_partner") {
+    const resolved = await pilots.pilotForSessionUser(user, {});
+    if (resolved.error) return null;
+    const pf = await pilots.pilotFactsFor(resolved.pilot);
+    return sigdata.buildPilotFacts({ user, pf, now: Date.now() });
   }
   if (user.role === "creator") {
     const readout = await creatorPerformanceReadout(user);
@@ -12692,10 +12719,26 @@ function publicPartner(p) {
     agreementStatus: p.agreementStatus || "unsigned",
     agreementSignedAt: p.agreementSignedAt || null,
     brand: brandViewOf(p.brand),
+    // Multi-scope logins (Build -106): the license scope is
+    // implied by the partner record itself; pilot scopes are
+    // listed explicitly. Legacy records carry no scopes field
+    // and read as license-only, exactly as before.
+    scopes: (Array.isArray(p.scopes) ? p.scopes : []).filter((s) => s && s.kind === "pilot" && s.pilotId).map((s) => ({ kind: "pilot", pilotId: s.pilotId })),
     demo: !!p.demo,
     sample: !!p.demo,
     createdAt: p.createdAt || null,
   };
+}
+
+// A partner user's effective scopes (Build -106): the license
+// scope (their deals and markets) plus any pilot scopes Admin
+// attached to the login — one login, several hats, never a
+// second account for the same human.
+function partnerScopesOf(user) {
+  const out = [{ kind: "license" }];
+  const raw = user && user.partner && Array.isArray(user.partner.scopes) ? user.partner.scopes : [];
+  for (const s of raw) if (s && s.kind === "pilot" && s.pilotId) out.push({ kind: "pilot", pilotId: s.pilotId });
+  return out;
 }
 
 async function allPartners(users) {
@@ -12904,8 +12947,19 @@ async function partnerSummary(user) {
   };
   atFill.partnerYearly = Math.round(atFill.grossYearly * (sharePct / 100));
 
+  // Scopes (Build -106): the rollup home's raw material — the
+  // license scope plus each pilot scope with its pilot's name
+  // and market resolved. Each scope's numbers live on its own
+  // surface; nothing is ever summed across scopes.
+  const scopes = [{ kind: "license" }];
+  for (const s of partnerScopesOf(user).slice(1)) {
+    const pilot = await store.get(`pilot:${s.pilotId}`);
+    if (pilot) scopes.push({ kind: "pilot", pilotId: s.pilotId, name: pilot.name || "", partnerName: pilot.partnerName || "", marketName: pilot.marketName || "", status: pilot.status || "active" });
+  }
+
   return {
     partner,
+    scopes,
     links: partnerLinksFor(partner),
     territory,
     creators: {
@@ -14596,12 +14650,54 @@ function ccSnapshotHeadline(P, monthKey, money, partnersPayload, owedTotals) {
   };
 }
 
+// One partner's month detail (Build -106): per-deal rows for
+// the month with both greater-of candidates, plus the
+// by-business activity that counted toward the partner's deals
+// (stamped to them, or in a market-wide deal's live markets).
+// Shared by the frozen close snapshot and the live pack, so
+// the two can never tell different stories about a month.
+function ccPartnerMonthDetail(P, rev, partnerId, monthKey) {
+  const deals = (P.deals || []).filter((d) => d.partnerId === partnerId);
+  const dealRows = [];
+  const wideMarkets = new Set();
+  for (const d of deals) {
+    const bd = dealBreakdown(d, rev);
+    const terms = dealCurrentTerms(d) || {};
+    if (terms.attributionScope !== "sourced_only") for (const m of terms.markets || []) if (m.status === "live") wideMarkets.add(normalizeMarketName(m.market || ""));
+    for (const mr of bd.markets) for (const mrow of mr.months) {
+      if (mrow.month !== monthKey) continue;
+      dealRows.push({
+        label: bd.label, currency: bd.currency || "USD", market: mr.market, gross: mrow.gross, partnerShare: mrow.partnerShare, signlShare: mrow.signlShare,
+        greaterOf: mrow.band ? { pctCandidate: mrow.band.pctAmount, floorCandidate: mrow.band.floorMonthly, governing: mrow.governing, governedBy: mrow.governedBy } : null,
+      });
+    }
+  }
+  const bizRows = [];
+  for (const [bizId, rec] of rev) {
+    const cell = rec.months.get(monthKey);
+    if (!cell || !(cell.gross > 0)) continue;
+    if (!(rec.partnerId === partnerId || wideMarkets.has(normalizeMarketName(rec.market || "")))) continue;
+    const bu = P.userById.get(bizId);
+    if (!bu) continue;
+    bizRows.push({ id: bizId, name: (bu.business && bu.business.businessName) || bu.name || "", market: rec.market, plan: (bu.business && bu.business.planName) || "", gross: cell.gross, currency: rec.currency || "USD" });
+  }
+  bizRows.sort((a, b) => b.gross - a.gross || (a.name < b.name ? -1 : 1));
+  return { deals: dealRows, businesses: bizRows };
+}
+
 async function ccBuildSnapshot(monthKey, actorId) {
   const P = await ccPrep({ period: monthKey });
   const money = ccMoneyAgg(P);
   const rev = subRevenueByBizMonth(P.visUsers, P.charges);
   const partnersPayload = ccPartnersPayload(P, rev);
   const owed = ccOwedAgg(P);
+  // Build -106: per-partner frozen detail, so a partner's own
+  // month pack can be served from the SAME frozen snapshot
+  // Admin closed with (never a live recompute): per-deal month
+  // rows with BOTH greater-of candidates, and the by-business
+  // activity that counted toward the partner's deals that month.
+  const partnerDetail = new Map();
+  for (const row of partnersPayload.partners) partnerDetail.set(row.id, ccPartnerMonthDetail(P, rev, row.id, monthKey));
   const markets = ccMarkets(P).markets.map((m) => ({
     market: m.market, live: m.live,
     creators: m.signups.creators, businesses: m.signups.businesses,
@@ -14613,7 +14709,7 @@ async function ccBuildSnapshot(monthKey, actorId) {
     computedAt: nowIso(), computedBy: actorId || null,
     headline: ccSnapshotHeadline(P, monthKey, money, partnersPayload, owed.totals),
     money: { recorded: money.recorded, charged: money.charged, counted: money.counted },
-    partners: partnersPayload.partners.map((r) => ({ id: r.id, name: r.name, period: r.period, accrued: r.accrued, paid: r.paid, owed: r.owed })),
+    partners: partnersPayload.partners.map((r) => ({ id: r.id, name: r.name, period: r.period, accrued: r.accrued, paid: r.paid, owed: r.owed, byCurrency: r.byCurrency || {}, deals: (partnerDetail.get(r.id) || {}).deals || [], businesses: (partnerDetail.get(r.id) || {}).businesses || [] })),
     markets,
     owed: { totals: owed.totals, creatorsHeld: owed.creators.heldTotal, partnersOwed: owed.partners.owed, liabilities: { rolloverVisits: owed.liabilities.rollover.visits, rolloverPlanValue: owed.liabilities.rollover.planValue, foundingCredits: owed.liabilities.foundingCredits.total, compPromisedValue: owed.liabilities.compPromised.menuValue } },
   };
@@ -14843,6 +14939,157 @@ async function ccExportCsv(P, ledger) {
     return ccCsvOf(["type", "who", "counterparty", "market", "amount", "detail", "age_days"], rows);
   }
   return null;
+}
+
+// Partner month pack (Build -106, item 15a): one partner's
+// close pack as CSV. When the month carries a close snapshot,
+// every figure comes from that FROZEN snapshot filtered to
+// this partner — the same numbers Admin closed with, to the
+// cent, never a live recompute. An open month computes live
+// and says so on its face. Changes about a closed month that
+// landed later ride as adjustment rows; the frozen figures
+// never move. Currencies never share a total: the USD headline
+// follows the partners payload's own convention and every
+// other currency gets its own summary block.
+async function ccPartnerPackCsv(user, monthKey) {
+  const closes = await ccCloseRecords();
+  const rec = closes.find((c) => c.period === monthKey && c.snapshot);
+  const rows = [];
+  const push = (section, item, detail, amount, currency) => rows.push([section, item, detail, amount === undefined || amount === null ? "" : amount, currency || ""]);
+  push("meta", "partner", (user.partner && user.partner.name) || user.name || "");
+  push("meta", "month", monthLabelOf(monthKey));
+  let mine = null;
+  let detail = { deals: [], businesses: [] };
+  let frozenDetailMissing = false;
+  if (rec) {
+    push("meta", "state", rec.state === "closed" ? "Frozen close: these are the numbers Admin closed this month with." : "Soft-closed snapshot: frozen at soft close.");
+    mine = (rec.snapshot.partners || []).find((r) => r.id === user.id) || null;
+    if (mine) {
+      frozenDetailMissing = !("deals" in mine);
+      detail = { deals: mine.deals || [], businesses: mine.businesses || [] };
+    }
+  } else {
+    push("meta", "state", "Live snapshot: this month is not closed, so these figures are computed now and can still move.");
+    const P = await ccPrep({ period: monthKey });
+    const rev = subRevenueByBizMonth(P.visUsers, P.charges);
+    const payload = ccPartnersPayload(P, rev);
+    mine = payload.partners.find((r) => r.id === user.id) || null;
+    detail = ccPartnerMonthDetail(P, rev, user.id, monthKey);
+  }
+  push("meta", "generated", nowIso());
+  if (!mine) {
+    push("note", "", "Nothing had accrued under your deals in this month.");
+  } else {
+    push("summary", "period_gross", "", mine.period ? mine.period.gross : 0, "USD");
+    push("summary", "your_share_for_the_month", "", mine.period ? mine.period.partnerShare : 0, "USD");
+    push("summary", "signl_share_for_the_month", "", mine.period ? mine.period.signlShare : 0, "USD");
+    push("summary", "accrued_total", "", mine.accrued || 0, "USD");
+    push("summary", "paid_total", "", mine.paid || 0, "USD");
+    push("summary", "owed", "", mine.owed || 0, "USD");
+    for (const [cur, g] of Object.entries(mine.byCurrency || {})) {
+      if (cur === "USD") continue;
+      push("summary", "period_gross", "", g.gross, cur);
+      push("summary", "your_share_for_the_month", "", g.partnerShare, cur);
+      push("summary", "accrued_total", "", g.accrued, cur);
+    }
+    for (const d of detail.deals) {
+      push("deal", d.label, d.market, d.partnerShare, d.currency);
+      if (d.greaterOf) {
+        push("greater_of", d.label, "percentage candidate", d.greaterOf.pctCandidate, d.currency);
+        push("greater_of", d.label, "guarantee candidate", d.greaterOf.floorCandidate, d.currency);
+        push("greater_of", d.label, `governing (${d.greaterOf.governedBy})`, d.greaterOf.governing, d.currency);
+      }
+    }
+    if (frozenDetailMissing) push("note", "", "This month was closed before deal detail was frozen into snapshots, so the headline figures above are the frozen ones and no deal detail was frozen for it.");
+    for (const b of detail.businesses) push("business", b.name, `${b.market}${b.plan ? " · " + b.plan : ""}`, b.gross, b.currency);
+  }
+  if (rec && rec.state === "closed") {
+    const bizIds = new Set((detail.businesses || []).map((b) => b.id).filter(Boolean));
+    const cur = monthKeyOf(nowIso());
+    for (let k = monthKeyAdd(monthKey, 1); k <= cur; k = monthKeyAdd(k, 1)) {
+      const P2 = await ccPrep({ period: k });
+      const adjs = await ccAdjustmentsFor(P2, k);
+      for (const a of adjs) {
+        if (a.period !== monthKey) continue;
+        if (a.businessId && bizIds.size && !bizIds.has(a.businessId)) continue;
+        push("adjustment", a.kind, a.detail, a.amount, "USD");
+      }
+    }
+  }
+  return ccCsvOf(["section", "item", "detail", "amount", "currency"], rows);
+}
+
+// London district race (Build -106, item 15b): the rollup over
+// real records. Approved founding creators in London file by
+// creator.area; founding businesses by business.neighborhood;
+// an area in no district is outside the race field (counted in
+// the market totals, never force-filed). The race clock is an
+// Admin-set record; until it exists the state is not_started
+// and only raw counts are stated.
+async function londonRaceState() {
+  const rec = await store.get("londonrace:state");
+  return rec && rec.startsAt ? rec : null;
+}
+function londonRaceRollup(users) {
+  const districts = LONDON_RACE_DISTRICTS.map((d) => ({ id: d.id, name: d.name, areas: d.areas, creators: 0, businesses: 0 }));
+  const byId = new Map(districts.map((d) => [d.id, d]));
+  const outside = { creators: 0, businesses: 0 };
+  const totals = { creators: 0, businesses: 0 };
+  for (const u of users) {
+    if (!u || isTester(u) || (u.role === "partner" && u.partner && u.partner.demo)) continue;
+    if (normalizeMarketName(u.market || "") !== "London") continue;
+    if (u.status !== "approved") continue;
+    if (u.role === "creator") {
+      totals.creators += 1;
+      const d = byId.get(londonDistrictForArea(creatorAreaOf(u.creator || {})) || "");
+      if (d) d.creators += 1; else outside.creators += 1;
+    } else if (u.role === "business") {
+      totals.businesses += 1;
+      const d = byId.get(londonDistrictForArea((u.business && u.business.neighborhood) || "") || "");
+      if (d) d.businesses += 1; else outside.businesses += 1;
+    }
+  }
+  for (const d of districts) {
+    d.score = d.creators + 2 * d.businesses;
+    d.qualifies = d.creators >= LONDON_RACE_TARGETS.creators && d.businesses >= LONDON_RACE_TARGETS.businesses;
+  }
+  return { districts, outsideField: outside, totals };
+}
+async function londonRacePayload() {
+  const users = await allUsers();
+  const roll = londonRaceRollup(users);
+  const stateRec = await londonRaceState();
+  const now = Date.now();
+  let state = "not_started";
+  let winner = null;
+  let startsAt = null;
+  let endsAt = null;
+  if (stateRec) {
+    startsAt = stateRec.startsAt;
+    const startMs = Date.parse(startsAt);
+    const endMs = startMs + LONDON_RACE_WEEKS * 7 * 86400000;
+    endsAt = new Date(endMs).toISOString();
+    if (Number.isFinite(startMs) && now >= startMs) {
+      const qualified = roll.districts.filter((d) => d.qualifies);
+      if (qualified.length) {
+        state = "won";
+        winner = qualified.slice().sort((a, b) => b.score - a.score || roll.districts.indexOf(a) - roll.districts.indexOf(b))[0].id;
+      } else if (now >= endMs) {
+        state = "backstop_scored";
+        winner = roll.districts.slice().sort((a, b) => b.score - a.score || roll.districts.indexOf(a) - roll.districts.indexOf(b))[0].id;
+      } else {
+        state = "running";
+      }
+    }
+  }
+  const winnerDistrict = winner ? roll.districts.find((d) => d.id === winner) : null;
+  return {
+    state, startsAt, endsAt, winner, winnerName: winnerDistrict ? winnerDistrict.name : null,
+    targets: { creators: LONDON_RACE_TARGETS.creators, businesses: LONDON_RACE_TARGETS.businesses },
+    districts: roll.districts,
+    outsideField: roll.outsideField,
+    totals: roll.totals,
+  };
 }
 
 // ---------- Build -58: role stats views ----------
@@ -16453,7 +16700,11 @@ async function route(event) {
     const home = sigdata.buildHomeState(user.role, facts);
     const displayName = user.role === "business"
       ? ((user.business && user.business.businessName) || user.name || "")
-      : (String(user.name || "").trim().split(/\s+/)[0] || (user.creator && user.creator.handle) || "");
+      : user.role === "partner"
+        ? ((user.partner && user.partner.name) || user.name || "")
+        : user.role === "pilot_partner"
+          ? ((user.pilotPartner && user.pilotPartner.partnerName) || user.name || "")
+          : (String(user.name || "").trim().split(/\s+/)[0] || (user.creator && user.creator.handle) || "");
     return json(200, { role: user.role, displayName, market: user.market || null, chips: home.chips });
   }
 
@@ -17996,11 +18247,30 @@ async function route(event) {
         brandPatch = { from: brandViewOf(target.partner.brand), to: brand };
         if (brand) target.partner.brand = brand; else delete target.partner.brand;
       }
+      let scopesPatch = null;
+      if (b.scopes !== undefined) {
+        // Multi-scope logins (Build -106): Admin attaches pilot
+        // scopes to this partner's login, so one human runs a
+        // license market and a pilot without a second login.
+        // Only pilot scopes are writable here (the license scope
+        // is the record itself) and every id must name a real
+        // pilot.
+        if (!Array.isArray(b.scopes)) return err(400, "Scopes must be a list");
+        const cleaned = [];
+        for (const s of b.scopes) {
+          if (!s || s.kind !== "pilot" || !s.pilotId) return err(400, "Each scope must name a pilot");
+          const pilotRec = await store.get(`pilot:${s.pilotId}`);
+          if (!pilotRec) return err(400, "One of the pilot scopes names a pilot that does not exist");
+          if (!cleaned.some((x) => x.pilotId === s.pilotId)) cleaned.push({ kind: "pilot", pilotId: s.pilotId });
+        }
+        scopesPatch = { from: (target.partner.scopes || []).length, to: cleaned.length };
+        if (cleaned.length) target.partner.scopes = cleaned; else delete target.partner.scopes;
+      }
       if (typeof b.contactName === "string") target.partner.contactName = b.contactName.trim();
       if (typeof b.name === "string" && b.name.trim()) target.partner.name = b.name.trim();
       target.updatedAt = nowIso();
       await store.set(`user:${target.id}`, target);
-      await logEvent({ type: "partner_updated", actorId: user.id, actorRole: "admin", subjectId: target.id, data: { code: target.partner.code, sharePct: sharePatch || undefined, brand: brandPatch || undefined } });
+      await logEvent({ type: "partner_updated", actorId: user.id, actorRole: "admin", subjectId: target.id, data: { code: target.partner.code, sharePct: sharePatch || undefined, brand: brandPatch || undefined, scopes: scopesPatch || undefined } });
       if (agreementPatch && agreementPatch.from !== agreementPatch.to) {
         await logEvent({ type: "partner_agreement_updated", actorId: user.id, actorRole: "admin", subjectId: target.id, data: { from: agreementPatch.from, to: agreementPatch.to, signedAt: target.partner.agreementSignedAt || null } });
       }
@@ -18805,6 +19075,23 @@ async function route(event) {
       }
       return err(400, "Action must be stamp or reviewed");
     }
+    // London district race (Build -106, item 15b): Admin reads
+    // the rollup and sets the race clock. The start is a data
+    // entry by design: when the London partner launches the
+    // race, Admin records the date and the 8-week backstop runs
+    // from it.
+    if (method === "GET" && seg[1] === "command" && seg[2] === "london-race" && seg.length === 3) {
+      return json(200, await londonRacePayload());
+    }
+    if (method === "POST" && seg[1] === "command" && seg[2] === "london-race" && seg[3] === "start") {
+      const b = parseBody(event);
+      const startsAt = typeof b.startsAt === "string" ? b.startsAt : "";
+      if (!/^\d{4}-\d{2}-\d{2}/.test(startsAt) || !Number.isFinite(Date.parse(startsAt))) return err(400, "Give the race a real start date");
+      const rec = { startsAt: new Date(Date.parse(startsAt)).toISOString(), setBy: user.id, setAt: nowIso() };
+      await store.set("londonrace:state", rec);
+      await logEvent({ type: "london_race_started", actorId: user.id, actorRole: "admin", subjectId: null, market: "London", data: { startsAt: rec.startsAt } });
+      return json(200, await londonRacePayload());
+    }
     if (method === "GET" && seg[1] === "events") {
       // Guarded like the rest of Hardening A (INCIDENT-2026-10-25):
       // if the event-log read fails, the tab must still render —
@@ -18868,7 +19155,19 @@ async function route(event) {
     // via ccPrep/ccOverview/ccMarkets — never the capped log.
     if (seg[1] === "command" && seg[2] === "overview" && method === "GET") {
       const P = await ccPrep(query);
-      return json(200, ccOverview(P));
+      const ov = ccOverview(P);
+      // London race (Build -106): a district crossing both
+      // thresholds while the race runs is an attention item the
+      // day it happens. The rollup reads live records; the item
+      // exists only while the race state says won.
+      try {
+        const race = await londonRacePayload();
+        if (race.state === "won" && race.winner) {
+          const d = race.districts.find((x) => x.id === race.winner);
+          if (d) ov.attention.push({ kind: "london_race_won", count: 1, text: `${d.name} has won the London district race: ${d.creators} approved founding creators and ${d.businesses} founding businesses, past both targets (40 and 15).`, target: { view: "command", subtab: "markets" } });
+        }
+      } catch (e) { /* the race strip never blocks the overview */ }
+      return json(200, ov);
     }
     if (seg[1] === "command" && seg[2] === "markets" && method === "GET") {
       const P = await ccPrep(query);
@@ -19885,6 +20184,55 @@ async function route(event) {
   if (seg[0] === "partner" && seg[1] === "summary" && seg.length === 2 && method === "GET") {
     if (!user || user.role !== "partner" || !user.partner) return err(403, "Partners only");
     return json(200, await partnerSummary(user));
+  }
+  // Partner month pack (Build -106, item 15a): the partner's
+  // own close pack under their own session — there is no
+  // partner-id parameter anywhere; the session decides whose
+  // pack this is. Closed months serve the frozen snapshot
+  // figures; open months are labeled live snapshots.
+  if (seg[0] === "partner" && seg[1] === "pack" && seg.length === 2 && method === "GET") {
+    if (!user || user.role !== "partner" || !user.partner) return err(403, "Partners only");
+    const month = query.month && /^\d{4}-\d{2}$/.test(String(query.month)) ? String(query.month) : monthKeyOf(nowIso());
+    if (month > monthKeyOf(nowIso())) return err(400, "Name a real month, this one or earlier");
+    const csv = await ccPartnerPackCsv(user, month);
+    const brand = brandViewOf(user.partner.brand);
+    const slugBase = (brand && brand.displayName) || user.partner.name || "partner";
+    const slug = String(slugBase).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "partner";
+    return {
+      statusCode: 200,
+      headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="signl-${slug}-pack-${month}.csv"` },
+      body: csv,
+    };
+  }
+  // Pack availability (Build -106): which months this partner
+  // can download, and whether each is a frozen close or a live
+  // snapshot. Only months whose frozen snapshot actually
+  // carries this partner are listed as frozen.
+  if (seg[0] === "partner" && seg[1] === "packs" && seg.length === 2 && method === "GET") {
+    if (!user || user.role !== "partner" || !user.partner) return err(403, "Partners only");
+    const closes = await ccCloseRecords();
+    const months = closes
+      .filter((c) => c.snapshot && (c.snapshot.partners || []).some((r) => r.id === user.id))
+      .map((c) => ({ period: c.period, label: monthLabelOf(c.period), state: c.state, frozen: true }));
+    months.sort((a, b) => (a.period < b.period ? 1 : -1));
+    const cur = monthKeyOf(nowIso());
+    if (!months.some((m) => m.period === cur)) months.unshift({ period: cur, label: monthLabelOf(cur), state: "open", frozen: false });
+    return json(200, { months });
+  }
+  // London district race (Build -106, item 15b): the London
+  // license partner's own scoped view of the rollup. Partners
+  // without London in their markets or deals get a 403; the
+  // rollup is never public.
+  if (seg[0] === "partner" && seg[1] === "london-race" && seg.length === 2 && method === "GET") {
+    if (!user || user.role !== "partner" || !user.partner) return err(403, "Partners only");
+    const markets = user.partner.markets || [];
+    let hasLondon = markets.some((m) => normalizeMarketName(m) === "London");
+    if (!hasLondon) {
+      const deals = (await allDeals()).filter((d) => d.partnerId === user.id);
+      hasLondon = deals.some((d) => { const t = dealCurrentTerms(d); return t && (t.markets || []).some((m) => normalizeMarketName(m.market || "") === "London"); });
+    }
+    if (!hasLondon) return err(403, "The London race belongs to the London partner's view.");
+    return json(200, await londonRacePayload());
   }
   if (seg[0] === "partner" && seg[1] === "qr" && seg.length === 2 && method === "GET") {
     if (!user || user.role !== "partner" || !user.partner) return err(403, "Partners only");
