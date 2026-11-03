@@ -81,10 +81,44 @@ function payoutStateFromAccount(account) {
 
 // ---------- Connect accounts (creators) ----------
 
+// Payout country by the creator's home market (Build -109,
+// item 20): markets.js carries a country per market; the ISO
+// code below is the country the Express account is created in,
+// and the account's payout currency follows Stripe's country
+// default (GBP for GB). The United Arab Emirates is
+// deliberately ABSENT: Stripe's own Connect docs state UAE
+// Express onboarding is not self-serve for platforms (it needs
+// Stripe enablement), so a Dubai creator's payoutCountryFor is
+// null and the route degrades honestly to the recorded,
+// concierge-settled path instead of creating a wrong-country
+// account. Country is immutable in Stripe: an existing account
+// keeps its country forever, and nothing here ever recreates
+// one (the route only calls createConnectedAccount when the
+// creator has no accountId on file).
+const { MARKETS: PAYOUT_MARKETS, normalizeMarketName: normalizePayoutMarket } = require("./markets");
+const PAYOUT_COUNTRY_ISO = {
+  "United States": "US",
+  "Puerto Rico": "PR",
+  "United Kingdom": "GB",
+  "France": "FR",
+  "Spain": "ES",
+  "Portugal": "PT",
+  "Canada": "CA",
+};
+function payoutCountryFor(user) {
+  if (!user || !user.market) return null;
+  const canonical = normalizePayoutMarket(String(user.market));
+  const m = PAYOUT_MARKETS.find((x) => x.name === canonical);
+  const country = m && m.country;
+  return (country && PAYOUT_COUNTRY_ISO[country]) || null;
+}
+
 async function createConnectedAccount(user) {
+  const country = payoutCountryFor(user);
+  if (!country) throw new Error("Self-serve payout setup is not open for this creator's market yet");
   return stripe.stripeApi("POST", "/v1/accounts", {
     type: "express",
-    country: "US",
+    country,
     email: user.email || undefined,
     capabilities: { transfers: { requested: true } },
     metadata: { signlUserId: user.id },
@@ -199,6 +233,7 @@ module.exports = {
   plainRequirement,
   plainRequirements,
   payoutStateFromAccount,
+  payoutCountryFor,
   createConnectedAccount,
   getConnectedAccount,
   createAccountLink,

@@ -259,7 +259,7 @@ return rateStartingDefaults;`)(
     mkDefaults(500)({ tierBand: "Neighbors" }).paidRate === 500);
 
   const mkStep = (live) => new Function("esc", "state",
-    `${grab(/function laneRateOf\(c\) \{[\s\S]*?\n\}/)}\n${grab(/function paymentsLive\(\) \{[\s\S]*?\n\}/)}\n${grab(/function payoutsStepHtml\(c\) \{[\s\S]*?\n\}/)}\nreturn payoutsStepHtml;`)(escStub, { boot: { payments: { connectLive: live } }, user: { id: "u98" } });
+    `${grab(/function userMarketCountry\(\) \{[\s\S]*?\n\}/)}\n${grab(/function isUkUser\(\) \{[\s\S]*?\n\}/)}\n${grab(/function payoutExplainerUkHtml\(lastMargin\) \{[\s\S]*?\n\}/)}\n${grab(/function laneRateOf\(c\) \{[\s\S]*?\n\}/)}\n${grab(/function paymentsLive\(\) \{[\s\S]*?\n\}/)}\n${grab(/function payoutsStepHtml\(c\) \{[\s\S]*?\n\}/)}\nreturn payoutsStepHtml;`)(escStub, { boot: { payments: { connectLive: live } }, user: { id: "u98" } });
   const stepOn = mkStep(true);
   const first = stepOn({ paidRate: 100, payouts: { status: "not_started", ready: false, missing: [] } });
   check("(3) renderer: before first setup the explainer shows, with Stripe's asks, 1099-K, the hold, the honesty line, and a Got it ack",
@@ -293,9 +293,9 @@ return rateStartingDefaults;`)(
     routerJs.includes('STRIPE_PRICE_FOUNDING_SELF_SERVICE || ""') && routerJs.includes('STRIPE_PRICE_FOUNDING_GROWTH || ""') && routerJs.includes('STRIPE_PRICE_FOUNDING_MANAGED || ""'));
   check("no em dashes in the new copy",
     ["What you get today", "Starting point for", "What payout setup will ask for, and why", "Creator terms in plain words", "Set your rate card"].every((l) => !l.includes("—") && !l.includes("–")));
-  check("build stamp is 2026.11.02-108 on both sides",
-    fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes('exports.BUILD_ID = "2026.11.02-108"')
-    && fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes('window.__SIGNL_BUILD__ = "2026.11.02-108"'), "");
+  check("build stamp is 2026.11.02-109 on both sides",
+    fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes('exports.BUILD_ID = "2026.11.02-109"')
+    && fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes('window.__SIGNL_BUILD__ = "2026.11.02-109"'), "");
 }
 
 console.log(`\nBuild -98 verify: ${passed} passed, ${failed} failed`);

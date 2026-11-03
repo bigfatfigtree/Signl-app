@@ -15,6 +15,7 @@ const connect = require("./connect");
 const { runMetricsSync } = require("./metrics-sync");
 const platformConnect = require("./platform-connect");
 const square = require("./square");
+const clover = require("./clover");
 const { askSigAI } = require("./sigai");
 const sigdata = require("./sigdata");
 const { buildProfilePageHtml, buildClaimPageHtml, buildRosterPageHtml, buildRosterNotFoundHtml } = require("./profile-meta");
@@ -16371,6 +16372,11 @@ async function route(event) {
       // payout setup + card-on-file surfaces from this flag;
       // false keeps every money surface exactly as it was.
       payments: { connectLive: connect.connectConfigured(), billingLive: stripe.billingConfigured() },
+      // UK privacy (Build -109, item 20): SIGNL's ICO
+      // registration number renders in the UK privacy wording
+      // only once Jeff has filed and set it; absent, the line
+      // does not render at all (never a placeholder number).
+      privacy: { icoNumber: process.env.SIGNL_ICO_NUMBER || null },
       // Connect Accounts (2026-10-28): which audience platforms a
       // creator can actually connect today. YouTube is live when
       // the Google OAuth env is set; Meta stays "in_review" until
@@ -17159,6 +17165,16 @@ async function route(event) {
     if (!connect.connectConfigured()) return err(503, "Payouts are not live yet. Paid bookings are recorded in the app and settled by hand until the payout rail opens.");
     const record = (await store.get(`user:${user.id}`)) || user;
     record.creator = record.creator || {};
+    // UK/intl payouts (Build -109, item 20): where Stripe
+    // Express onboarding is not self-serve for the creator's
+    // market (today: the UAE), no account is created at all:
+    // the paid lane stays recorded and concierge-settled, and
+    // the answer says so plainly. An EXISTING account is never
+    // recreated (its country is immutable in Stripe); the
+    // refresh path below handles it whatever its country.
+    if (!storedPayouts(record).accountId && !connect.payoutCountryFor(record)) {
+      return err(503, "Payout setup for your market is handled with help from the SIGNL team for now. Paid bookings are recorded in the app and settled by hand until self-serve setup opens for your market.");
+    }
     try {
       let payouts = storedPayouts(record);
       if (!payouts.accountId) {
@@ -18598,6 +18614,42 @@ async function route(event) {
       if (found.status === "revoked") return json(200, { ok: true, already: true });
       await revokeTeamSeat(found, user);
       return json(200, { ok: true });
+    }
+    // Clover pilot (Build -109, item 19b stub): Admin enters ONE
+    // business's Clover merchant token by hand; the token is
+    // stored encrypted and never returned. Sync reads orders and
+    // writes counted-proof rows through the redevent seam. This
+    // is the pilot shape only: the App Market OAuth build waits
+    // on the declaration trigger (10 to 20 Clover declarations;
+    // zero today).
+    if (seg[1] === "businesses" && seg[3] === "clover" && seg.length === 4 && method === "POST") {
+      const biz = await store.get(`user:${seg[2]}`);
+      if (!biz || biz.role !== "business") return err(404, "Business not found");
+      const b = parseBody(event);
+      const r = await clover.setCloverToken(seg[2], { merchantId: b.merchantId, token: b.token });
+      if (r.error) return err(400, r.error);
+      await logEvent({ type: "clover_token_set", actorId: user.id, actorRole: "admin", subjectId: seg[2], market: biz.market || null, data: { merchantId: r.conn.merchantId } });
+      return json(200, { ok: true, clover: clover.publicCloverState(r.conn) });
+    }
+    if (seg[1] === "businesses" && seg[3] === "clover-sync" && seg.length === 4 && method === "POST") {
+      const biz = await store.get(`user:${seg[2]}`);
+      if (!biz || biz.role !== "business") return err(404, "Business not found");
+      const r = await clover.syncCloverBusiness(seg[2]);
+      await logEvent({ type: "clover_synced", actorId: user.id, actorRole: "admin", subjectId: seg[2], market: biz.market || null, data: { status: r.status, ordersSeen: r.ordersSeen, rowsWritten: r.rowsWritten } });
+      return json(200, { ok: r.status === "ok", ...r, clover: clover.publicCloverState(await clover.getCloverConnection(seg[2])) });
+    }
+    if (seg[1] === "businesses" && seg[3] === "clover-pause" && seg.length === 4 && method === "POST") {
+      const b = parseBody(event);
+      const conn = await clover.setCloverPaused(seg[2], b.paused === true);
+      if (!conn) return err(404, "No Clover connection for this business");
+      return json(200, { ok: true, clover: clover.publicCloverState(conn) });
+    }
+    if (seg[1] === "businesses" && seg[3] === "clover" && seg.length === 4 && method === "DELETE") {
+      const was = await clover.deleteCloverConnection(seg[2]);
+      return json(200, { ok: true, wasConnected: was });
+    }
+    if (seg[1] === "businesses" && seg[3] === "clover" && seg.length === 4 && method === "GET") {
+      return json(200, { clover: clover.publicCloverState(await clover.getCloverConnection(seg[2])) });
     }
     if (seg[1] === "partners" && seg.length === 2 && method === "POST") {
       const b = parseBody(event);

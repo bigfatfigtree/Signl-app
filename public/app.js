@@ -3007,6 +3007,18 @@ async function saveNotificationPrefs() {
   }
 }
 
+// UK privacy wording (Build -109, item 20): the SAME words as
+// the UK section of joinsignl.com/privacy.html (the parity is
+// suite-checked). The partner relationship is described
+// factually only; no controller/processor labels are asserted
+// (that allocation is for Jeff's lawyers, flagged in the Tier 3
+// report). The ICO line renders only when the registration
+// number is configured; absent, it does not render at all.
+function ukPrivacyText() {
+  const ico = state.boot && state.boot.privacy && state.boot.privacy.icoNumber;
+  return `SIGNL runs in the UK through our UK launch partner. When you join SIGNL in a UK market, your information is used under UK data protection law (UK GDPR) on these bases: to run your account and your bookings (contract); to keep the service safe and working (legitimate interests); to meet legal duties (legal obligation); and, for marketing emails, only with your consent, which you can withdraw at any time. Our UK launch partner sees the records for the businesses and creators it brought to SIGNL in its markets: names, handles, business details, and visit and earnings records for those accounts. It does not see other markets' records. It never sees your password, and it never sees your bank details, which are held by Stripe. You can ask us what we hold about you, and ask for it to be corrected or deleted, or object to how it is used, at hello@joinsignl.com. You can also complain to the Information Commissioner's Office (ICO).${ico ? ` SIGNL is registered with the ICO, registration number ${esc(ico)}.` : ""}`;
+}
+
 function renderHelpTab() {
   const el = document.getElementById("tab-body");
   if (!el) return;
@@ -3024,6 +3036,7 @@ function renderHelpTab() {
     ${qa("How fast do I have to answer applicants?", "Every applicant gets an answer within 2 business days. That is the deal. Anyone you do not pick is released with a note, never silence.")}
     ${qa("What if a creator does not show up?", esc(VISIT_GUARANTEE_LINE))}
     ${qa("What does SIGNL cost?", "Founding plans: Self-Service is $199 a month for 5 creators, Growth is $349 for 10, Managed is $699 for 20. Founding businesses get $100 off the first month and keep the founding rate while the plan stays active. The minimum is 3 months, there is no per-location charge, and unused visits roll into the next month, then expire.")}
+    ${isUkUser() ? qa("I'm in the UK. How is my data handled?", ukPrivacyText()) : ""}
   ` : `
     ${qa("What do I owe after a visit?", "One post plus one story that shares the post. Post within 48 hours to be on time; the hard deadline is one week. Always disclose the comp, that is the law and the deal.")}
     ${qa("How do comped visits and paid bookings differ?", "A comped visit covers the meal or service, on the business. A paid booking pays your listed rate, and you keep 97%. Joining is free and comped visits are always free; the only fee is 3% on paid bookings.")}
@@ -3031,7 +3044,8 @@ function renderHelpTab() {
     ${qa("How does Momentum work?", "Points for doing the work well: +20 for an on-time post, +25 when a business runs your post as an ad, +3 when someone joins from your invite link, +10 when a creator you invited is approved. Late posts and no-shows cost points.")}
     ${qa("What is a license request?", "A business asks to repost your post and run it as an ad for 90 days, at your listed licensing fee. The 90 days start the day you approve. You approve each use and keep 97%. It lives under Earnings.")}
     ${qa("When do I get paid?", "Paid bookings record your rate in the app: booked at your rate, you keep 97%. Payouts run outside the app for now, and nothing in the app promises a payout date.")}
-    ${qa("What will payout setup ask me?", "Stripe will ask for identity details, your address, your bank account, and tax information, each for a plain reason. The full version is right below, under Payout setup, in plain words. It also covers Form 1099-K and why a first payout can be held briefly while identity checks clear.")}
+    ${qa("What will payout setup ask me?", isUkUser() ? "Stripe will ask for identity details, your address, and a UK bank account (sort code and account number), each for a plain reason. The full version is right below, under Payout setup, in plain words. It also covers sole trader or limited company setup, and why a first payout can be held briefly while identity checks clear." : "Stripe will ask for identity details, your address, your bank account, and tax information, each for a plain reason. The full version is right below, under Payout setup, in plain words. It also covers Form 1099-K and why a first payout can be held briefly while identity checks clear.")}
+    ${isUkUser() ? qa("I'm in the UK. How is my data handled?", ukPrivacyText()) : ""}
   `}
   ${biz ? "" : `
   <div style="margin-top:16px" id="help-payout-section">
@@ -5230,6 +5244,13 @@ async function sigB96AvailStep(f, text) {
 function sigC98Payout() {
   const c = (state.user && state.user.creator) || {};
   const ready = !!(c.payouts && c.payouts.ready);
+  if (isUkUser()) {
+    sigOpSay(`Payout setup runs on Stripe's secure pages, from the paid lane on your Profile. Stripe will ask for identity details, because payment companies have to check who money is going to. It will ask for your address, as part of that check, and a UK bank account, your sort code and account number, so money can go to your bank by Faster Payments; bank details go to Stripe, never to SIGNL. Whether you sign up as a sole trader or through a limited company changes what Stripe asks for: a sole trader uses their own identity details; a limited company also gives the company's details and a director's. You are responsible for your own UK tax position, and SIGNL does not withhold tax from your earnings. Your first payout can be held briefly while identity checks clear. Paid bookings are recorded in the app and settled with help until the payout rail fully opens, so setup promises no payout date. ${ready ? "Your payouts are ready on your record." : "Your payouts are not set up yet on your record."}`, [
+      { label: ST("Open payout setup on my Profile", "Abrir los pagos en mi perfil"), primary: true, run: async () => go("dashboard", "Profile") },
+      { label: ST("Read it in Help", "Leerlo en Ayuda"), run: async () => go("dashboard", "Help") },
+    ]);
+    return;
+  }
   sigOpSay(`Payout setup runs on Stripe's secure pages, from the paid lane on your Profile. Stripe will ask for identity details, because payment companies have to check who money is going to. It will ask for your address, as part of that check, and your bank account, so money can go to your bank; bank details go to Stripe, never to SIGNL. It will ask for tax information, so paid earnings can be reported the right way. If your paid earnings pass the reporting threshold for a tax year, you may get a Form 1099-K for that year; it is a tax record, not a bill. Your first payout can be held briefly while identity checks clear. Paid bookings are recorded in the app and settled with help until the payout rail fully opens, so setup promises no payout date. ${ready ? "Your payouts are ready on your record." : "Your payouts are not set up yet on your record."}`, [
     { label: ST("Open payout setup on my Profile", "Abrir los pagos en mi perfil"), primary: true, run: async () => go("dashboard", "Profile") },
     { label: ST("Read it in Help", "Leerlo en Ayuda"), run: async () => go("dashboard", "Help") },
@@ -12158,10 +12179,35 @@ function ackPayoutExplainer() {
   if (el) el.style.display = "none";
   return false;
 }
+// UK payouts (Build -109, item 20): the market's country picks
+// the explainer variant, here and in the payout step below: a
+// London creator gets the UK words (sort code, Faster
+// Payments, sole trader vs limited company, the generic UK tax
+// line) and never hears about Form 1099-K. Wording is flagged
+// for Jeff/legal review in the Tier 3 report.
+function userMarketCountry() {
+  const u = state.user || {};
+  const markets = (state.boot && state.boot.markets) || [];
+  const hit = markets.find((m) => m && (m.name === u.market || m.id === u.market));
+  return (hit && hit.country) || null;
+}
+function isUkUser() {
+  return userMarketCountry() === "United Kingdom";
+}
+function payoutExplainerUkHtml(lastMargin) {
+  return `<p style="margin:0 0 6px"><strong>What payout setup will ask for, and why</strong></p>
+    <p class="small" style="margin:0 0 6px">Stripe runs payout setup on its own secure pages. Stripe will ask for identity details, like your name and date of birth, because payment companies have to check who money is going to. It will ask for your address, as part of that same identity check. It will ask for a UK bank account, your sort code and account number, so money can go to your bank; payouts arrive by Faster Payments. Your bank details go to Stripe, never to SIGNL.</p>
+    <p class="small" style="margin:0 0 6px">Whether you sign up as a sole trader or through a limited company changes what Stripe asks for: a sole trader uses their own identity details; a limited company also gives the company's details and a director's.</p>
+    <p class="small" style="margin:0 0 6px">Taxes, in plain words: you are responsible for your own UK tax position, and SIGNL does not withhold tax from your earnings.</p>
+    <p class="small" style="margin:0 0 6px">Your first payout can be held briefly while identity checks clear. That is a check finishing, not money lost.</p>
+    <p class="small" style="margin:0${lastMargin ? " 0 8px" : ""}">Paid bookings are recorded in the app and settled with help until the payout rail fully opens. Payout setup promises no payout date, and the app does not promise a payout date.</p>`;
+}
+
 // Build -98 (11h): the payout-paperwork explainer copy, shared
 // by Help. The payout step below carries the same words inline
 // (its renderer is exercised on its own by the Connect suite).
 function payoutExplainerHtml() {
+  if (isUkUser()) return `<div id="help-payout-explainer" style="text-align:left">${payoutExplainerUkHtml()}</div>`;
   return `<div id="help-payout-explainer" style="text-align:left">
     <p style="margin:0 0 6px"><strong>What payout setup will ask for, and why</strong></p>
     <p class="small" style="margin:0 0 6px">Stripe runs payout setup on its own secure pages. Stripe will ask for identity details, like your name and date of birth, because payment companies have to check who money is going to. It will ask for your address, as part of that same identity check. It will ask for your bank account, so money can go to your bank; your bank details go to Stripe, never to SIGNL. And it will ask for tax information, so paid earnings can be reported the right way.</p>
@@ -12186,7 +12232,11 @@ function payoutsStepHtml(c) {
   if (p.status === "not_started" && !p.ready) {
     let acked98 = false;
     try { acked98 = typeof localStorage !== "undefined" && !!localStorage.getItem("signl_payout_explainer_seen:" + (state.user && state.user.id ? state.user.id : "")); } catch (e) { acked98 = false; }
-    if (!acked98) explainer98 = `<div id="payout-explainer" style="margin:10px 0;text-align:left">
+    if (!acked98) explainer98 = isUkUser()
+      ? `<div id="payout-explainer" style="margin:10px 0;text-align:left">${payoutExplainerUkHtml(true)}
+      <button type="button" class="btn small-btn ghost" onclick="return ackPayoutExplainer()">Got it</button>
+    </div>`
+      : `<div id="payout-explainer" style="margin:10px 0;text-align:left">
       <p style="margin:0 0 6px"><strong>What payout setup will ask for, and why</strong></p>
       <p class="small" style="margin:0 0 6px">Stripe runs payout setup on its own secure pages. Stripe will ask for identity details, like your name and date of birth, because payment companies have to check who money is going to. It will ask for your address, as part of that same identity check. It will ask for your bank account, so money can go to your bank; your bank details go to Stripe, never to SIGNL. And it will ask for tax information, so paid earnings can be reported the right way.</p>
       <p class="small" style="margin:0 0 6px">Taxes, in plain words: if your paid earnings pass the reporting threshold for a tax year, you may get a Form 1099-K for that year. It is a tax record of money paid to you, not a bill. Keep it for your taxes.</p>

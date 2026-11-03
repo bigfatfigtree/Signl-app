@@ -524,7 +524,7 @@ try {
     const grab = (re) => { const mm = appJs.match(re); return mm ? mm[0] : ""; };
     const escStub = (s) => String(s == null ? "" : s);
     const mkStep = (live) => new Function("esc", "state",
-      `${grab(/function laneRateOf\(c\) \{[\s\S]*?\n\}/)}\n${grab(/function paymentsLive\(\) \{[\s\S]*?\n\}/)}\n${grab(/function payoutsStepHtml\(c\) \{[\s\S]*?\n\}/)}\nreturn payoutsStepHtml;`)(escStub, { boot: { payments: { connectLive: live } } });
+      `${grab(/function userMarketCountry\(\) \{[\s\S]*?\n\}/)}\n${grab(/function isUkUser\(\) \{[\s\S]*?\n\}/)}\n${grab(/function payoutExplainerUkHtml\(lastMargin\) \{[\s\S]*?\n\}/)}\n${grab(/function laneRateOf\(c\) \{[\s\S]*?\n\}/)}\n${grab(/function paymentsLive\(\) \{[\s\S]*?\n\}/)}\n${grab(/function payoutsStepHtml\(c\) \{[\s\S]*?\n\}/)}\nreturn payoutsStepHtml;`)(escStub, { boot: { payments: { connectLive: live } } });
     const stepOff = mkStep(false);
     const stepOn = mkStep(true);
     check("renderer: no rate listed, no payout step (joining/comp never see it)", stepOff({ paidRate: null }) === "" && stepOn({ paidRate: null, payouts: { status: "ready", ready: true, missing: [] } }) === "", "");
