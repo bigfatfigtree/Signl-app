@@ -324,7 +324,34 @@ function buildCreatorFacts(d) {
     currencySymbol: currencyForMarket(u.market).symbol,
     currencyCode: currencyForMarket(u.market).code,
     paidFloor: currencyForMarket(u.market).paidFloor,
+    // Build -98 (11g/11h): the rate-card starting defaults for
+    // this creator's tier (a form pre-fill for blank fields
+    // only, never a stored rate and never a mandate), and the
+    // creator's own payout-setup state, so Sig answers and the
+    // proactive prompts read the same record as the screens.
+    rateStarting: rateStartingFor(c.tierBand, d.audienceTotal, currencyForMarket(u.market).paidFloor),
+    payoutsStatus: (c.payouts && c.payouts.status) || "not_started",
+    payoutsReady: !!ucPayoutsReady(c),
   };
+}
+function ucPayoutsReady(c) { return c && c.payouts && c.payouts.ready; }
+// Build -98 (11g): starting defaults by tier band. The numbers
+// are the middle rates of the demo showcase roster in the
+// codebase (Neighbors 120 paid / 80 licensing, Locals 225 /
+// 150, Headliners 425 / 280), floored at the market paid floor.
+const RATE_STARTING_98 = {
+  Neighbors: { paidRate: 120, licensingFee: 80 },
+  Locals: { paidRate: 225, licensingFee: 150 },
+  Headliners: { paidRate: 425, licensingFee: 280 },
+};
+function rateStartingFor(tierBand, audienceTotal, paidFloor) {
+  let tier = RATE_STARTING_98[tierBand] ? tierBand : null;
+  if (!tier) {
+    const n = n0(audienceTotal);
+    tier = n >= 15000 ? "Headliners" : n >= 2000 ? "Locals" : "Neighbors";
+  }
+  const d = RATE_STARTING_98[tier];
+  return { tier, paidRate: Math.max(d.paidRate, n0(paidFloor) || 0), licensingFee: d.licensingFee };
 }
 
 // ---------------- GROUNDING LINES ----------------
@@ -366,6 +393,9 @@ function factsLines(role, f) {
   lines.push(`Their numbers right now: ${fmt(f.offersOpen)} open offers in their markets (${fmt(f.directInvites)} direct invites), ${fmt(f.applicationsPending)} applications waiting on a business's answer, ${fmt(f.visitsBooked)} visits booked, ${fmt(f.postsOwed.length)} posts owed, ${fmt(f.postsLive)} posts live${f.onTimePct != null ? `, ${f.onTimePct}% of their posts on time` : ""}. Paid bookings: ${fmt(f.paidBookings)}, with ${cmoney(f, f.paidRecordedNet)} recorded as their net (recorded means the bookings on file, paid outside the app). License requests waiting on them: ${fmt(f.licenseRequestsPending)}. Creators joined through their invite link: ${fmt(f.referrals.signups)}, of whom ${fmt(f.referrals.approved)} were approved.`);
   if (f.intentTotal > 0) lines.push(`Intent on their own posts: ${fmt(f.intentShares)} shares and ${fmt(f.intentSaves)} saves recorded, ${fmt(f.intentTotal)} in total across ${fmt(f.intentReportedPosts)} reported ${plural(f.intentReportedPosts, "post")}. Saves and shares mean people planning to come.`);
   if (f.paidRate) lines.push(`Their listed paid rate is ${cmoney(f, f.paidRate)}${f.licenseFee ? ` and their licensing fee is ${cmoney(f, f.licenseFee)}` : ""}.`);
+  else if (f.rateStarting) lines.push(`They have not set a paid rate yet. The Profile rate boxes pre-fill a starting point for their ${f.rateStarting.tier} tier: paid rate ${cmoney(f, f.rateStarting.paidRate)} and licensing fee ${cmoney(f, f.rateStarting.licensingFee)}. Those are starting points only, filled in because the fields were blank. They are editable, they are not a price the creator has to use, and nothing is stored until the creator saves.`);
+  if (!f.payoutsReady && (f.paidBookings > 0 || f.paidRecordedNet > 0)) lines.push(`Their payouts are not set up yet (status: ${f.payoutsStatus || "not_started"}), and they have paid bookings or recorded earnings on file. Payout setup lives on their Profile, in the paid lane. Before the first setup, an explainer on that surface says what Stripe will ask for and why: identity details, address, bank account, and tax information. Paid bookings are recorded in the app and settled with help until the payout rail fully opens; no instant payout is promised.`);
+  lines.push("Creator terms in plain words live at https://joinsignl.com/creator-terms.html. When a creator asks about terms, that link goes with the answer.");
   if (f.pendingLicenses && f.pendingLicenses.length) lines.push(`Licence requests waiting on their decision: ${f.pendingLicenses.map((l) => `${l.businessName} at their ${cmoney(f, l.fee)} fee${l.renewal ? " (a renewal of a licence that is ending)" : ""}`).join("; ")}. Each is decided under Earnings: approve starts a fresh 90 days that day; decline leaves the post native share only.`);
   if (f.businessAvailability && f.businessAvailability.length) lines.push(`Standing availability at businesses they can book with: ${f.businessAvailability.map((b) => `${b.businessName}: ${b.summary}`).join("; ")}. A business that is not listed here has not set its hours; the offer's own window and note are what applies.`);
   return lines;
@@ -575,6 +605,11 @@ function answerAdmin(f, q, t) {
 
 // ---------- BUSINESS ----------
 function answerBusiness(f, q, t) {
+  // Creator terms (Build -98, item 4): when a business asks
+  // about creator terms, the plain-words page link rides along.
+  if (hasWord(t, "terms") && hasPhrase(t, "creator")) {
+    return linked("Creator terms in plain words are on the creator terms page: https://joinsignl.com/creator-terms.html. The short version for your side: a comped visit is native share only, and a paid booking includes one standard licence for 90 days, never longer.", "Read creator terms in plain words", "cr-terms");
+  }
   // Monthly receipt export (Build -96)
   if (hasPhrase(t, "monthly receipt", "receipt export", "export my receipt", "forward my receipt", "forward the receipt", "receipt for my bookkeeper", "bookkeeper", "download my receipt", "my receipt", "the receipt")) {
     if (f.receiptReady) return linked(`Your ${f.receiptReady.monthLabel} receipt is ready to forward. It keeps counted, recorded, and intent figures in three separate sections, with visits used and rolled over, your founding credit state, and the end date of every licence you hold. Download the CSV or open the print view from Results and send it on.`, "Open Results", "biz-results");
@@ -654,6 +689,29 @@ function answerBusiness(f, q, t) {
 
 // ---------- CREATOR ----------
 function answerCreator(f, q, t) {
+  // Creator terms (Build -98, item 4): a terms question always
+  // carries the plain-words terms page link with it.
+  if (hasWord(t, "terms") || hasPhrase(t, "creator terms")) {
+    return linked("The short version: a comped visit is one post plus one story, native share only. A paid booking pays your listed rate, you keep 97%, and it includes one standard licence for 90 days, never longer. The full version is on the creator terms page: https://joinsignl.com/creator-terms.html", "Read creator terms in plain words", "cr-terms");
+  }
+  // Payout setup paperwork (Build -98, 11h): the explainer's
+  // content, from the creator's own payout state, linked to
+  // the payout surface on Profile.
+  if (hasPhrase(t, "payout setup", "set up payouts", "setup payouts", "what will stripe ask", "stripe ask", "1099", "payout paperwork", "payouts ask", "payout ask")
+    || (hasWord(t, "payout", "payouts") && hasPhrase(t, "ask", "need", "setup", "set up", "paperwork", "tax", "bank", "identity", "stripe"))) {
+    const stateLine = f.payoutsReady ? "Your payouts are ready on your record." : "Your payouts are not set up yet on your record.";
+    return linked(`Payout setup runs on Stripe's secure pages, from the paid lane on your Profile. Stripe will ask for identity details, because payment companies have to check who money is going to. It will ask for your address, as part of that check, and your bank account, so money can go to your bank; bank details go to Stripe, never to SIGNL. It will ask for tax information, so paid earnings can be reported the right way. If your paid earnings pass the reporting threshold for a tax year, you may get a Form 1099-K for that year; it is a tax record, not a bill. Your first payout can be held briefly while identity checks clear. Paid bookings are recorded in the app and settled with help until the payout rail fully opens, so setup does not promise instant payouts. ${stateLine}`, "Set up payouts on my Profile", "cr-profile");
+  }
+  // Rate starting points (Build -98, 11g): the tier defaults
+  // that pre-fill blank rate boxes, stated as editable
+  // starting points, never a mandate, and never overwriting
+  // a rate the creator already set.
+  if (hasPhrase(t, "starting point", "starting rate", "starting default", "starting fee", "should i charge", "what should i charge", "rate should i", "default rate")
+    || (hasWord(t, "rate", "rates", "charge", "fee") && hasPhrase(t, "starting", "default"))) {
+    const d = f.rateStarting || { tier: f.tier || "Neighbors", paidRate: 120, licensingFee: 80 };
+    if (f.paidRate || f.licenseFee) return linked(`Your own rates are already set, and starting points never overwrite them: paid rate ${f.paidRate ? cmoney(f, f.paidRate) : "not set"}, licensing fee ${f.licenseFee ? cmoney(f, f.licenseFee) : "not set"}. Starting points only fill blank boxes. For ${d.tier}, the starting point is a paid rate of ${cmoney(f, d.paidRate)} and a licensing fee of ${cmoney(f, d.licensingFee)}, and it is editable, not a price you have to use.`, "Open my Profile", "cr-profile");
+    return linked(`Because your rate boxes are blank, they start at a starting point for your ${d.tier} tier: a paid rate of ${cmoney(f, d.paidRate)} and a licensing fee of ${cmoney(f, d.licensingFee)}. Change them to whatever you charge. They are starting points only, not a price you have to use, and nothing is saved until you save it on your Profile.`, "Set my rates", "cr-profile");
+  }
   // A business's standing availability (Build -96): answered
   // from the real business page record, for the businesses
   // this creator can meet. A named business wins; a single
@@ -832,6 +890,13 @@ function buildHomeState(role, f) {
     if (f.licenseRequestsPending) chips.push(`${fmt(f.licenseRequestsPending)} license ${plural(f.licenseRequestsPending, "request")} waiting`);
     chips.push(`${fmt(f.momentumPoints)} Momentum points`);
     chips.push(f.profileComplete ? "Profile live" : (f.missingLabels && f.missingLabels.length ? `Profile: ${fmt(f.missingLabels.length)} ${plural(f.missingLabels.length, "step")} to finish` : "Profile not finished"));
+    // Build -98 proactive prompts, real records only: payout
+    // setup is owed while paid-lane activity or recorded
+    // earnings exist and payouts are not ready; and a finished
+    // profile with a blank paid rate gets the rate-card prompt.
+    // A creator with neither fact true hears neither prompt.
+    if (!f.payoutsReady && (f.paidBookings > 0 || f.paidRecordedNet > 0)) chips.push("Set up payouts");
+    if (f.profileComplete && !f.paidRate) chips.push("Set your rate card");
     if (f.founding) chips.push(`Founding roster${f.market ? " · " + f.market : ""}`);
     else if (f.marketLive) chips.push(`${f.market || "Your market"} is live`);
   }

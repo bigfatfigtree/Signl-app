@@ -372,7 +372,7 @@ console.log("== Source ==");
 const appJs = fs.readFileSync(path.join(root, "public/app.js"), "utf8");
 const routerJs = fs.readFileSync(path.join(root, "netlify/functions/lib/router.js"), "utf8");
 const buildJs = fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8");
-check("stamp is 2026.11.02-97", buildJs.includes('BUILD_ID = "2026.11.02-97"'));
+check("stamp is 2026.11.02-98", buildJs.includes('BUILD_ID = "2026.11.02-98"'));
 check("router mounts the partner API", routerJs.includes('seg[0] === "pilot"') && routerJs.includes("pilots.handlePilotApi"));
 check("router mounts the admin API", routerJs.includes('seg[1] === "pilots"') && routerJs.includes("pilots.handleAdminPilots"));
 check("shell routes pilot partners to their dash", appJs.includes('if (u.role === "pilot_partner") return renderPilotDash();'));

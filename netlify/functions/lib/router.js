@@ -9043,7 +9043,7 @@ async function monthlyReceiptExportFor(bizUser, monthKey) {
     market: bizUser.market || null,
     month: monthKey,
     monthLabel: monthLabelOf(monthKey),
-    generatedAt: nowIso(),
+    exportedAt: nowIso(),
     plan: plan ? { id: plan.id, name: plan.name, priceMonthly: plan.priceMonthly, visitsPerMonth: plan.visitsPerMonth } : null,
     counted, recorded, intent,
     tallyFacts: cohort.tallyFacts || null,

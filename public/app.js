@@ -3014,7 +3014,14 @@ function renderHelpTab() {
     ${qa("How does Momentum work?", "Points for doing the work well: +20 for an on-time post, +25 when a business runs your post as an ad, +3 when someone joins from your invite link, +10 when a creator you invited is approved. Late posts and no-shows cost points.")}
     ${qa("What is a license request?", "A business asks to repost your post and run it as an ad for 90 days, at your listed licensing fee. The 90 days start the day you approve. You approve each use and keep 97%. It lives under Earnings.")}
     ${qa("When do I get paid?", "Paid bookings record your rate in the app: booked at your rate, you keep 97%. Payouts run outside the app for now, and nothing in the app promises a payout date.")}
+    ${qa("What will payout setup ask me?", "Stripe will ask for identity details, your address, your bank account, and tax information, each for a plain reason. The full version is right below, under Payout setup, in plain words. It also covers Form 1099-K and why a first payout can be held briefly while identity checks clear.")}
   `}
+  ${biz ? "" : `
+  <div style="margin-top:16px" id="help-payout-section">
+    <h4 style="margin:0 0 8px">Payout setup, in plain words</h4>
+    ${payoutExplainerHtml()}
+  </div>
+  <p class="small" style="margin-top:14px"><a href="https://joinsignl.com/creator-terms.html" target="_blank" rel="noopener">Creator terms in plain words</a> &middot; <a href="https://joinsignl.com/for-service-providers.html" target="_blank" rel="noopener">SIGNL for service providers</a></p>`}
   <p class="small muted" style="margin-top:14px">Still stuck? Email <a href="mailto:hello@joinsignl.com">hello@joinsignl.com</a> and a person answers.</p>
   </div>`;
 }
@@ -3434,6 +3441,12 @@ function sigCtx() {
   const live = biz ? businessAccessState(u) === "active" : !!(u.founding && u.founding.marketLive);
   const pc = u.profileCompletion || (u.creator ? { complete: u.creator.profileComplete === true, missing: [] } : { complete: false, missing: [] });
   const ctx = { biz, live, profileComplete: !!pc.complete, missing: pc.missing || [], status: u.status || "", market: (u.founding && u.founding.market) || u.market || "", charter: !!(u.creator && u.creator.charter) };
+  // Build -98: the creator's rate starting defaults ride the
+  // Sig context, so the fallback bank states the same numbers
+  // the Profile boxes pre-fill.
+  if (!biz && u.creator) {
+    try { const d98 = rateStartingDefaults(u.creator); ctx.rateTier = d98.tier; ctx.rateStartPaid = d98.paidRate; ctx.rateStartFee = d98.licensingFee; } catch (e) { /* defaults are a pre-fill only */ }
+  }
   // Build -68: a business's own plan facts ride the context so
   // Sig answers "what does my plan include?" from the record,
   // never from the generic plan table.
@@ -3501,7 +3514,9 @@ function sigBankFor(biz) {
   ];
   return [
     { id: "payout", q: "When and how do I get paid?", ph: ["when do i get paid", "paid out", "payout", "pay out", "when do i get", "how do i get paid", "payment timing"], g: [["paid", "pay", "payout", "payment"], ["when", "how", "long", "timing", "arrive", "receive"]], s: ["payout"],
-      a: "For a paid booking, the rate you set is the rate the business books at, and you keep 97% of it. Payouts run outside the app for now, and the app does not promise a payout date. Your Earnings screen keeps the record of every booking and license, so it is always there to check.", flow: (c) => c.live ? "See my earnings" : null },
+      a: "For a paid booking, the rate you set is the rate the business books at, and you keep 97% of it. Payout setup runs on Stripe's secure pages: Stripe asks for identity details, your address, your bank account, and tax information, and a first payout can be held briefly while identity checks clear. Paid bookings are recorded in the app and settled with help until the payout rail fully opens, and the app does not promise a payout date. Your Earnings screen keeps the record of every booking and license, so it is always there to check.", flow: (c) => c.live ? "See my earnings" : null },
+    { id: "terms98", q: "Where are the creator terms in plain words?", ph: ["creator terms", "terms in plain words", "my terms", "the terms"], g: [["terms", "term"], ["creator", "plain", "where", "read", "my"]], s: ["terms"],
+      a: "Creator terms in plain words: https://joinsignl.com/creator-terms.html. The short version: a comped visit is one post plus one story, native share only. A paid booking pays your listed rate, you keep 97%, and it includes one standard licence for 90 days, never longer." },
     { id: "money", q: "How do I make money on SIGNL?", ph: ["make money", "earn money", "making money", "how do i earn", "can i make money", "make some money", "earn cash"], g: [["money", "earn", "earning", "income", "cash", "paid", "pay"], ["how", "can", "do i", "ways", "make", "get"]], s: ["money"],
       a: (c) => {
         let t = "Two ways. First, comped visits: a local business covers your meal, service, or experience, and you post honestly about it. Second, paid bookings: businesses book you at the rate you set, and you keep 97% of it. There is also licensing: if a business wants to reuse your post, they pay your licensing fee and you keep 97% of that too.";
@@ -3510,7 +3525,7 @@ function sigBankFor(biz) {
         return t;
       }, flow: (c) => !c.profileComplete ? "Finish my profile" : (c.live ? "See my earnings" : "Check my Momentum") },
     { id: "rates", q: "How do I set my rate?", ph: ["set my rate", "my rate", "how much should i charge", "charge for", "rate"], g: [["rate", "charge", "price"], ["set", "my", "should", "how much", "change", "pick"]], s: ["rate"],
-      a: (c) => `Your paid rate is yours to set, on your profile. Paid bookings start at a ${/london/i.test(c.market || "") ? "£40" : "$50"} floor, and there is no SIGNL price list on top of that. Businesses weigh your rate against your local reach, so a strong local audience carries a smaller account a long way. You can also take comped visits whenever you would rather have the experience.`, flow: "Finish my profile" },
+      a: (c) => `Your paid rate is yours to set, on your profile. Paid bookings start at a ${/london/i.test(c.market || "") ? "£40" : "$50"} floor, and there is no SIGNL price list on top of that.${c.rateStartPaid ? ` Because your boxes were blank, they start at a starting point for ${c.rateTier || "your"} tier: paid rate ${/london/i.test(c.market || "") ? "£" : "$"}${c.rateStartPaid} and licensing fee ${/london/i.test(c.market || "") ? "£" : "$"}${c.rateStartFee}. Change them to whatever you charge; a starting point is not a price you have to use.` : ""} Businesses weigh your rate against your local reach, so a strong local audience carries a smaller account a long way. You can also take comped visits whenever you would rather have the experience.`, flow: "Finish my profile" },
     { id: "localreach", q: "What is local reach?", ph: ["local reach", "local audience", "local percent", "local %"], g: [["local"], ["reach", "audience", "percent", "%", "share", "followers"]], s: ["reach"],
       a: "Local reach is the share of your audience that actually lives in your market, applied to your audience size. It is the number businesses rank creators by on SIGNL, not follower count. A smaller account whose people are all here can outrank a huge account whose followers are spread across the country.", flow: (c) => !c.profileComplete ? "Finish my profile" : null },
     { id: "momentum", q: "How does Momentum work?", ph: ["momentum", "points", "earn points", "how does momentum"], g: [["momentum", "points"], ["how", "earn", "work", "get", "mean"]], s: ["momentum"],
@@ -3670,6 +3685,7 @@ function sigLinkGo(dest) {
     case "cr-offers-invited": state.crOffersSeg = "invited"; return go("dashboard", "Offers");
     case "cr-visits": state.visitsSeg = "needs"; return go("dashboard", "My Visits");
     case "cr-earnings": return go("dashboard", "Earnings");
+    case "cr-terms": window.open("https://joinsignl.com/creator-terms.html", "_blank", "noopener"); return false;
     case "cr-profile": return go("dashboard", "Profile");
     case "admin-applications": return go("dashboard", "Applications");
     case "admin-partners": return go("dashboard", "Partners");
@@ -3697,6 +3713,8 @@ function sigChipDest(label) {
   if (t.includes("standing hours")) return "biz-profile";
   if (t.includes("receipt is ready")) return "biz-results";
   if (t.includes("roster")) return "biz-discover";
+  if (t.includes("set up payouts")) return "cr-profile";
+  if (t.includes("rate card")) return "cr-profile";
   if (t.includes("invite")) return "cr-offers-invited";
   if (t.includes("offers waiting")) return "cr-offers";
   if (t.includes("posts owed")) return "cr-visits";
@@ -4918,6 +4936,8 @@ function sigOpHomeActions() {
   return [
     { label: ST("Find offers for me", "Buscar ofertas para mí"), primary: true, run: async () => { await sigC1Start(); sigOpPaint(); } },
     { label: ST("Licence requests", "Solicitudes de licencia"), run: async () => { await sigC95Licences(); sigOpPaint(); } },
+    { label: ST("Payout setup", "Configurar pagos"), run: async () => { sigC98Payout(); sigOpPaint(); } },
+    { label: ST("Rate starting points", "Tarifas iniciales"), run: async () => { sigC98Rates(); sigOpPaint(); } },
     { label: ST("Finish my profile", "Terminar mi perfil"), run: async () => { await sigC2Start(); sigOpPaint(); } },
     { label: ST("Setup from Instagram", "Configúrame desde Instagram"), run: async () => { sigSetupStart("creator"); sigOpPaint(); } },
     { label: ST("How am I doing?", "¿Cómo voy?"), run: async () => { await sigC3Run(); sigOpPaint(); } },
@@ -4945,6 +4965,7 @@ function sigOpCapabilities() {
     ST("Track your numbers: posts live, on-time record, day 7 / 14 / 30, Momentum.", "Seguir tus números: publicaciones, puntualidad, día 7 / 14 / 30, Momentum."),
     ST("Invite other creators with your link and a ready-to-send message.", "Invitar a otros creadores con tu enlace y un mensaje listo para enviar."),
     ST("Show licence and renewal requests waiting on you, and approve or decline them right here.", "Mostrar las solicitudes de licencia y renovación que te esperan, y aprobarlas o rechazarlas aquí mismo."),
+    ST("Explain what payout setup will ask for before you start it, and show the rate starting points for your tier, which are yours to change.", "Explicar qué pedirá la configuración de pagos antes de empezarla, y mostrar las tarifas iniciales de tu nivel, que puedes cambiar."),
     ST("Answer questions about pay, visits, licensing, and how SIGNL works.", "Responder preguntas sobre pagos, visitas, licencias y cómo funciona SIGNL."),
   ];
 }
@@ -4974,6 +4995,9 @@ function sigOpIntent(norm) {
     return null;
   }
   if (u.role === "creator") {
+    if (has("payout setup", "set up payouts", "what will stripe ask", "1099", "payout paperwork")) return async () => sigC98Payout();
+    if (has("starting point", "starting rate", "starting default")) return async () => sigC98Rates();
+    if (has("creator terms", "terms in plain words")) return async () => sigC98Terms();
     if (has("licence request", "license request", "licence requests", "license requests", "renewal request", "licence renewal", "license renewal")) return async () => sigC95Licences();
     if (has("invite a creator", "invite link", "invitar a un creador", "mi enlace de invitacion", "referral link", "invite creators")) return async () => sigC4Run();
     if (has("set me up", "set up from instagram", "use my instagram", "from my instagram", "set up my profile from", "configura mi perfil")) return async () => sigSetupStart("creator");
@@ -5115,6 +5139,34 @@ async function sigB96AvailStep(f, text) {
         sigOpSay(ST(`Saved. Your standing availability now reads: "${summary}".`, `Guardado. Tu horario habitual ahora dice: "${summary}".`), [{ label: ST("Open your business page", "Abrir tu página"), run: async () => go("dashboard", "Profile") }]);
       } catch (e) { sigOpSay(ST("I could not save that just now. Your business page holds the same setting, under When creators can come.", "No pude guardarlo ahora."), sigOpHomeActions()); }
     }) },
+  ]);
+}
+// ---------- Build -98: Sig Operator for payout paperwork,
+// rate starting points, and the creator terms page ----------
+// Creator-side only: the answers are the explainer and the
+// defaults themselves, with the walk to the real surface.
+function sigC98Payout() {
+  const c = (state.user && state.user.creator) || {};
+  const ready = !!(c.payouts && c.payouts.ready);
+  sigOpSay(`Payout setup runs on Stripe's secure pages, from the paid lane on your Profile. Stripe will ask for identity details, because payment companies have to check who money is going to. It will ask for your address, as part of that check, and your bank account, so money can go to your bank; bank details go to Stripe, never to SIGNL. It will ask for tax information, so paid earnings can be reported the right way. If your paid earnings pass the reporting threshold for a tax year, you may get a Form 1099-K for that year; it is a tax record, not a bill. Your first payout can be held briefly while identity checks clear. Paid bookings are recorded in the app and settled with help until the payout rail fully opens, so setup does not promise instant payouts. ${ready ? "Your payouts are ready on your record." : "Your payouts are not set up yet on your record."}`, [
+    { label: ST("Open payout setup on my Profile", "Abrir los pagos en mi perfil"), primary: true, run: async () => go("dashboard", "Profile") },
+    { label: ST("Read it in Help", "Leerlo en Ayuda"), run: async () => go("dashboard", "Help") },
+  ]);
+}
+function sigC98Rates() {
+  const c = (state.user && state.user.creator) || {};
+  const d = rateStartingDefaults(c);
+  const sym = ownCurrencySymbol();
+  const set = laneRateOf(c) || laneFeeOf(c);
+  sigOpSay(set
+    ? `Your own rates are already set, and starting points never overwrite them. Starting points only fill blank boxes: for ${d.tier}, the starting point is a paid rate of ${sym}${fmtPrice(d.paidRate)} and a licensing fee of ${sym}${fmtPrice(d.licensingFee)}.`
+    : `Because your rate boxes are blank, they start at a starting point for your ${d.tier} tier: a paid rate of ${sym}${fmtPrice(d.paidRate)} and a licensing fee of ${sym}${fmtPrice(d.licensingFee)}. Change them to whatever you charge. They are starting points only, not a price you have to use, and nothing is saved until you save it.`, [
+    { label: ST("Set my rates", "Fijar mis tarifas"), primary: true, run: async () => go("dashboard", "Profile") },
+  ]);
+}
+function sigC98Terms() {
+  sigOpSay(ST("Creator terms in plain words are here: https://joinsignl.com/creator-terms.html. The short version: a comped visit is one post plus one story, native share only. A paid booking pays your listed rate, you keep 97%, and it includes one standard licence for 90 days, never longer.", "Los términos para creadores en palabras simples están aquí: https://joinsignl.com/creator-terms.html."), [
+    { label: ST("Read creator terms in plain words", "Leer los términos"), primary: true, run: async () => { window.open("https://joinsignl.com/creator-terms.html", "_blank", "noopener"); } },
   ]);
 }
 async function sigC95Licences() {
@@ -7550,6 +7602,12 @@ function renderClaimDone() {
       <h2 class="c85-h2">${done.firstName ? `${T("You're on the roster,", "Ya estás en la lista,")} <span class="c85-accent2">${esc(done.firstName)}.</span>` : `${T("You're on the", "Ya estás en la")} <span class="c85-accent2">${T("roster.", "lista.")}</span>`}</h2>
       <p style="margin:0 0 10px">${T("We review every creator personally. You'll hear within two business days.", "Revisamos a cada creador personalmente. Tendrás respuesta en dos días laborables.")}</p>
       <p class="muted" style="margin:0 0 18px">${line2}</p>
+      <div id="claim-what-you-get" style="text-align:left;border-top:1px solid var(--hairline,#DFE7DF);padding-top:14px;margin:0 0 18px">
+        <p style="margin:0 0 8px"><strong>${T("What you get today", "Lo que obtienes hoy")}</strong></p>
+        <p class="small" style="margin:0 0 6px">${T("When you finish your profile, your page is live and on Google that day.", "Cuando termines tu perfil, tu página estará activa y en Google ese mismo día.")}</p>
+        <p class="small" style="margin:0 0 6px">${T("Your rates are public on your page, so businesses see what you charge before they book.", "Tus tarifas son públicas en tu página, así los negocios ven lo que cobras antes de reservar.")}</p>
+        <p class="small" style="margin:0">${T("Founding creators are recorded in founding order, and founding creators see offers first.", "Los creadores fundadores quedan registrados en orden de llegada, y ven las ofertas primero.")}</p>
+      </div>
       <button class="btn" type="button" style="width:100%" onclick="return claimGoProfile()">${T("Add your rates and best work", "Agrega tus tarifas y tu mejor trabajo")}</button>
       <p class="small muted" style="margin:12px 0 0">${T("or just close this. We'll email you.", "o cierra esto. Te escribiremos por correo.")} <a href="#" onclick="return claimGoDashboard()">${T("Open my dashboard", "Abrir mi panel")}</a></p>
       ${signlInstallBannerHtml()}
@@ -10356,7 +10414,7 @@ function receiptExportPrint() {
   <table>${row("Visits used this month", num(v.used))}${row("Visits rolled over into this month", num(v.carriedIn))}${row("Visits available this month", num(v.allowance))}${row("Visits left at month end", num(v.remaining))}${row("Founding credit", (exp.credit || {}).line || "")}</table>
   <h2>Licences held (90 days each, never longer)</h2>
   <table>${licRows}</table>
-  <p class="muted" style="margin-top:22px">Made from this business's own SIGNL records on ${esc(fmtDay(exp.generatedAt))}. Questions: hello@joinsignl.com.</p>
+  <p class="muted" style="margin-top:22px">Made from this business's own SIGNL records on ${esc(fmtDay(exp.exportedAt))}. Questions: hello@joinsignl.com.</p>
   </body></html>`);
   w.document.close();
   setTimeout(() => { try { w.print(); } catch (e) { /* the page is on screen either way */ } }, 450);
@@ -11569,6 +11627,39 @@ function laneRateOf(c) {
   const r = Number(c && c.paidRate);
   return Number.isFinite(r) && r > 0 ? r : null;
 }
+// Build -98 (11g): rate-card starting defaults by tier. These
+// are a form pre-fill for BLANK fields only, never a stored
+// value, never a migration, and never a price anyone must use.
+// Numbers are the middle rates of the demo showcase roster in
+// the codebase (router DEMO_SHOWCASE_ROSTER), by tier band:
+// Neighbors showcase paid 90/120/150 and licensing 60/80/100,
+// so 120 and 80; Locals showcase paid 175 to 300 with a middle
+// of 225 and licensing 120 to 200 with a middle of 150;
+// Headliners showcase paid 400 and 450 and licensing 260 and
+// 300, so 425 and 280. Every default sits above the paid floor
+// ($50 US, £40 London); the amount renders in the creator's
+// own market currency, like every other creator rate.
+const RATE_STARTING_DEFAULTS = {
+  Neighbors: { paidRate: 120, licensingFee: 80 },
+  Locals: { paidRate: 225, licensingFee: 150 },
+  Headliners: { paidRate: 425, licensingFee: 280 },
+};
+function rateTierFor(c) {
+  const t = String((c && c.tierBand) || "");
+  if (RATE_STARTING_DEFAULTS[t]) return t;
+  return suggestedTierId(totalAudienceOf(c || {}));
+}
+function rateStartingDefaults(c) {
+  const tier = rateTierFor(c || {});
+  const d = RATE_STARTING_DEFAULTS[tier] || RATE_STARTING_DEFAULTS.Neighbors;
+  const floor = ownPaidFloor();
+  return { tier, paidRate: Math.max(d.paidRate, floor), licensingFee: d.licensingFee };
+}
+function rateStartingLine(c) {
+  const d = rateStartingDefaults(c || {});
+  const sym = ownCurrencySymbol();
+  return `Starting point for ${d.tier}: paid rate ${sym}${fmtPrice(d.paidRate)} and licensing fee ${sym}${fmtPrice(d.licensingFee)}. Change it to whatever you charge. It is a starting point only, not a price you have to use.`;
+}
 // Stripe Connect (2026-10-26): the payout rail is live only when
 // the server says payments are configured. Everything payout
 // related renders from this flag: rail off, the paid lane reads
@@ -11597,7 +11688,7 @@ function laneCompLine(c) {
 }
 function lanePaidLine(c) {
   const rate = laneRateOf(c || {});
-  if (!rate) return ownPaidFloor() === 50 && ownCurrencySymbol() === "$" ? "not set. Flip the switch and set a rate (min $50)." : `not set. Flip the switch and set a rate (min ${ownCurrencySymbol()}${ownPaidFloor()}).`;
+  if (!rate) { const base = ownPaidFloor() === 50 && ownCurrencySymbol() === "$" ? "not set. Flip the switch and set a rate (min $50)." : `not set. Flip the switch and set a rate (min ${ownCurrencySymbol()}${ownPaidFloor()}).`; const d = rateStartingDefaults(c || {}); return `${base} The box below starts at a starting point for your tier: ${ownCurrencySymbol()}${fmtPrice(d.paidRate)}. Change it to whatever you charge.`; }
   const keep = Math.round(rate * 0.97 * 100) / 100;
   const total = Math.round(rate * 1.03 * 100) / 100;
   return `your rate ${ownCurrencySymbol()}${fmtPrice(rate)} · you keep ${ownCurrencySymbol()}${fmtMoney(keep)} (97%). Business pays ${ownCurrencySymbol()}${fmtMoney(total)}.`;
@@ -11611,7 +11702,7 @@ function laneFeeOf(c) {
 }
 function laneFeeLine(c) {
   const fee = laneFeeOf(c || {});
-  if (!fee) return "not set. Name one price and a business can ask to repost your post and run it as an ad for 90 days, only with your approval.";
+  if (!fee) return "not set. The box below starts at a starting point for your tier. Change it to whatever you charge. A business can ask to repost your post and run it as an ad for 90 days, only with your approval.";
   const keep = Math.round(fee * 0.97 * 100) / 100;
   return `repost my post and run it as an ad for 90 days: ${ownCurrencySymbol()}${fmtPrice(fee)} · you keep ${ownCurrencySymbol()}${fmtMoney(keep)} (97%) per license.`;
 }
@@ -11794,20 +11885,28 @@ function laneControlsHtml(c) {
   const compOn = !c || c.compOpen !== false;
   const rate = laneRateOf(c || {});
   const fee = laneFeeOf(c || {});
+  // Build -98 (11g): blank fields pre-fill with the tier's
+  // starting defaults. A set rate or fee always wins: the
+  // defaults only ever fill a box that is empty, and nothing
+  // is saved until the creator saves or turns the lane on.
+  const defaults = rateStartingDefaults(c || {});
+  const rateShown = rate || defaults.paidRate;
+  const feeShown = fee || defaults.licensingFee;
   return `<div class="lane-ctl" id="lane-controls">
+    ${!rate || !fee ? `<p class="small" id="lane-starting-line" style="margin:0 0 10px">${esc(rateStartingLine(c || {}))}</p>` : ""}
     ${compOn && rate ? "" : `<div class="lane-bothrow"><button type="button" class="btn small-btn" onclick="return laneBothOn()">Turn both on</button></div>`}
     <div class="lrow lane-row"><input type="checkbox" class="sw lane-sw" id="lane-comp" ${compOn ? "checked" : ""} onchange="laneToggleComp(this)"><div><label class="lname" for="lane-comp">Comp visits</label> <span class="lline" id="lane-comp-line">— ${esc(laneCompLine(c || {}))}</span></div></div>
     <div class="lrow lane-row"><input type="checkbox" class="sw lane-sw" id="lane-paid" ${rate ? "checked" : ""} onchange="laneTogglePaid(this)"><div><label class="lname" for="lane-paid">Paid bookings</label> <span class="lline" id="lane-paid-line">— ${esc(lanePaidLine(c || {}))}</span></div></div>
     <div class="lane-rate" id="lane-rate-row" style="display:${rate ? "block" : "none"}">
       <label for="lane-rate">Your paid rate (min ${ownCurrencySymbol()}${ownPaidFloor()})</label>
-      <div class="lane-rate-flex"><input type="number" id="lane-rate" min="${ownPaidFloor()}" step="1" inputmode="numeric" placeholder="150" value="${rate || ""}" onchange="laneRateAuto()"><button type="button" class="btn small-btn" onclick="return laneRateSave()">Save rate</button></div>
-      <p class="small muted" id="lane-rate-note">${rate ? `Businesses pay your listed rate of ${ownCurrencySymbol()}${fmtMoney(rate)}. You keep ${ownCurrencySymbol()}${fmtMoney(Math.round(rate * 0.97 * 100) / 100)} (97%), and SIGNL holds the payment until your post is live. A paid booking includes the standard license: the business can repost your post and run it as an ad for 90 days from the post date, never longer, and never edited.` : "Set a rate and businesses can book you paid at that rate. You keep 97%, and SIGNL holds the payment until your post is live. Paid bookings turn on when a rate is saved. A paid booking includes the standard license: the business can repost your post and run it as an ad for 90 days from the post date, never longer, and never edited."}</p>
+      <div class="lane-rate-flex"><input type="number" id="lane-rate" min="${ownPaidFloor()}" step="1" inputmode="numeric" placeholder="150" value="${rateShown}" onchange="laneRateAuto()"><button type="button" class="btn small-btn" onclick="return laneRateSave()">Save rate</button></div>
+      <p class="small muted" id="lane-rate-note">${rate ? `Businesses pay your listed rate of ${ownCurrencySymbol()}${fmtMoney(rate)}. You keep ${ownCurrencySymbol()}${fmtMoney(Math.round(rate * 0.97 * 100) / 100)} (97%), and SIGNL holds the payment until your post is live. A paid booking includes the standard license: the business can repost your post and run it as an ad for 90 days from the post date, never longer, and never edited.` : "This is a starting point, filled in because your rate was blank. Change it to whatever you charge, then save. You keep 97%, and SIGNL holds the payment until your post is live. Paid bookings turn on when a rate is saved. A paid booking includes the standard license: the business can repost your post and run it as an ad for 90 days from the post date, never longer, and never edited."}</p>
       <p class="small" id="lane-range-line"></p>
     </div>
     <div class="lrow lane-row"><div><span class="lname">Run my post as an ad</span> <span class="lline" id="lane-fee-line">— ${esc(laneFeeLine(c || {}))}</span></div></div>
     <div class="lane-rate">
-      <div class="lane-rate-flex"><input type="number" id="lane-fee" min="1" step="1" inputmode="numeric" placeholder="75" value="${fee || ""}"><button type="button" class="btn small-btn" onclick="return laneFeeSave()">Save fee</button></div>
-      <p class="small muted">One price, in plain words: what a business pays to repost your post and run it as an ad for 90 days. The 90 days start the day you approve a request, and the license ends when the 90 days end, never longer. You approve or decline every request; nothing runs without your yes. Leave blank to keep comped posts native-share only.</p>
+      <div class="lane-rate-flex"><input type="number" id="lane-fee" min="1" step="1" inputmode="numeric" placeholder="75" value="${feeShown}"><button type="button" class="btn small-btn" onclick="return laneFeeSave()">Save fee</button></div>
+      <p class="small muted">One price, in plain words: what a business pays to repost your post and run it as an ad for 90 days. The 90 days start the day you approve a request, and the license ends when the 90 days end, never longer. You approve or decline every request; nothing runs without your yes. ${fee ? "" : "The amount in the box is a starting point because your fee was blank. Change it to whatever you charge, then save. Clear the box and save to keep comped posts native-share only."}</p>
     </div>
     <p class="small lane-err" id="lane-err" style="display:none"></p>
     ${payoutsStepHtml(c)}
@@ -11886,13 +11985,57 @@ function laneErr(msg) {
 // server's plain words (never raw Stripe requirement codes), and
 // the step is resumable: the button always reopens Stripe's
 // hosted pages where the creator left off.
+function payoutExplainerAckKey() {
+  return "signl_payout_explainer_seen:" + (state.user && state.user.id ? state.user.id : "");
+}
+function payoutExplainerAcked() {
+  try { return typeof localStorage !== "undefined" && !!localStorage.getItem(payoutExplainerAckKey()); } catch (e) { return false; }
+}
+function ackPayoutExplainer() {
+  try { localStorage.setItem(payoutExplainerAckKey(), "1"); } catch (e) { /* private mode: hiding for this screen is enough */ }
+  const el = document.getElementById("payout-explainer");
+  if (el) el.style.display = "none";
+  return false;
+}
+// Build -98 (11h): the payout-paperwork explainer copy, shared
+// by Help. The payout step below carries the same words inline
+// (its renderer is exercised on its own by the Connect suite).
+function payoutExplainerHtml() {
+  return `<div id="help-payout-explainer" style="text-align:left">
+    <p style="margin:0 0 6px"><strong>What payout setup will ask for, and why</strong></p>
+    <p class="small" style="margin:0 0 6px">Stripe runs payout setup on its own secure pages. Stripe will ask for identity details, like your name and date of birth, because payment companies have to check who money is going to. It will ask for your address, as part of that same identity check. It will ask for your bank account, so money can go to your bank; your bank details go to Stripe, never to SIGNL. And it will ask for tax information, so paid earnings can be reported the right way.</p>
+    <p class="small" style="margin:0 0 6px">Taxes, in plain words: if your paid earnings pass the reporting threshold for a tax year, you may get a Form 1099-K for that year. It is a tax record of money paid to you, not a bill. Keep it for your taxes.</p>
+    <p class="small" style="margin:0 0 6px">Your first payout can be held briefly while identity checks clear. That is a check finishing, not money lost.</p>
+    <p class="small" style="margin:0">Paid bookings are recorded in the app and settled with help until the payout rail fully opens. Payout setup does not promise instant payouts, and the app does not promise a payout date.</p>
+  </div>`;
+}
 function payoutsStepHtml(c) {
   // The paid lane is "on" exactly when a rate is listed, the
   // same derivation the lane control itself uses.
   if (!laneRateOf(c || {})) return "";
   const p = c.payouts || { status: "not_started", ready: false, missing: [] };
+  // Build -98 (11h): before a creator's FIRST payout setup, and
+  // only until they tap Got it, the step carries the explainer:
+  // what Stripe asks for and why, 1099-K in plain words, and why
+  // a first payout can be held. It is inline here so this
+  // renderer stays self-contained. Once setup has started
+  // (pending, restricted, or ready) it never shows again, and
+  // Help carries the same words any time.
+  let explainer98 = "";
+  if (p.status === "not_started" && !p.ready) {
+    let acked98 = false;
+    try { acked98 = typeof localStorage !== "undefined" && !!localStorage.getItem("signl_payout_explainer_seen:" + (state.user && state.user.id ? state.user.id : "")); } catch (e) { acked98 = false; }
+    if (!acked98) explainer98 = `<div id="payout-explainer" style="margin:10px 0;text-align:left">
+      <p style="margin:0 0 6px"><strong>What payout setup will ask for, and why</strong></p>
+      <p class="small" style="margin:0 0 6px">Stripe runs payout setup on its own secure pages. Stripe will ask for identity details, like your name and date of birth, because payment companies have to check who money is going to. It will ask for your address, as part of that same identity check. It will ask for your bank account, so money can go to your bank; your bank details go to Stripe, never to SIGNL. And it will ask for tax information, so paid earnings can be reported the right way.</p>
+      <p class="small" style="margin:0 0 6px">Taxes, in plain words: if your paid earnings pass the reporting threshold for a tax year, you may get a Form 1099-K for that year. It is a tax record of money paid to you, not a bill. Keep it for your taxes.</p>
+      <p class="small" style="margin:0 0 6px">Your first payout can be held briefly while identity checks clear. That is a check finishing, not money lost.</p>
+      <p class="small" style="margin:0 0 8px">Paid bookings are recorded in the app and settled with help until the payout rail fully opens. Payout setup does not promise instant payouts, and the app does not promise a payout date.</p>
+      <button type="button" class="btn small-btn ghost" onclick="return ackPayoutExplainer()">Got it</button>
+    </div>`;
+  }
   if (!paymentsLive()) {
-    return `<div class="lane-payouts"><div class="lrow lane-row"><div><span class="lname">Payouts</span><span class="lline"> — setup opens when the paid lane goes live. Comp visits never need it.</span></div></div></div>`;
+    return `<div class="lane-payouts"><div class="lrow lane-row"><div><span class="lname">Payouts</span><span class="lline"> — setup opens when the paid lane goes live. Comp visits never need it.</span></div></div>${explainer98}</div>`;
   }
   if (p.ready) {
     return `<div class="lane-payouts"><div class="lrow lane-row"><div><span class="lname">Payouts</span><span class="lline"> — <span class="badge ok">Payouts ready</span></span></div></div><p class="small muted">Paid bookings pay out to your bank after your post is live.</p></div>`;
@@ -11901,7 +12044,7 @@ function payoutsStepHtml(c) {
     const missing = (p.missing || []).length ? ` Stripe still needs: ${esc(p.missing.join(", "))}.` : "";
     return `<div class="lane-payouts"><div class="lrow lane-row"><div><span class="lname">Payouts</span><span class="lline"> — almost there.${missing}</span></div></div><button type="button" class="btn small-btn" onclick="return startPayoutSetup()">Finish payout setup</button><p class="small muted">Your first payout can take longer while Stripe verifies you.</p></div>`;
   }
-  return `<div class="lane-payouts"><div class="lrow lane-row"><div><span class="lname">Payouts</span><span class="lline"> — not set up. You can be booked at your rate, but the money cannot reach your bank until this is done.</span></div></div><button type="button" class="btn small-btn" onclick="return startPayoutSetup()">Set up payouts</button><p class="small muted">Two minutes on Stripe's secure pages: your bank details go to Stripe, never to SIGNL. Your first payout can take longer while Stripe verifies you.</p></div>`;
+  return `<div class="lane-payouts"><div class="lrow lane-row"><div><span class="lname">Payouts</span><span class="lline"> — not set up. You can be booked at your rate, but the money cannot reach your bank until this is done.</span></div></div>${explainer98}<button type="button" class="btn small-btn" onclick="return startPayoutSetup()">Set up payouts</button><p class="small muted">Two minutes on Stripe's secure pages: your bank details go to Stripe, never to SIGNL. Your first payout can take longer while Stripe verifies you.</p></div>`;
 }
 async function startPayoutSetup() {
   try {
