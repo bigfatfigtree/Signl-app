@@ -71,7 +71,11 @@ check("C7 Bench +1 names the real button on offer cards", appJs.includes("Bring 
 check("C7 founding checklist step 4 opens the Offers tab", appJs.includes('btn: "See Offers"'));
 check("C8 Reliability shows its starting words pre-visit", appJs.includes("Starts with your first visit"));
 check("C9/L3 fast-setup copy says the draft is not kept", appJs.includes("The draft isn't kept") && appJs.includes("qc-ig-intro"));
-check("C9 non-Instagram platforms get the form explanation", appJs.includes("Fast setup reads Instagram only"));
+// Build -85: the claim door no longer mounts the Fast Setup
+// card; its resolution is the inline claimResolve, which reads
+// Instagram only. A non-Instagram pick gets no lookup at all
+// (the form is the way in) and the proof note under the chips.
+check("C9 non-Instagram platforms get the form explanation", appJs.includes('d.platform !== "instagram") return;') && appJs.includes('id="c85-proof-note"'));
 check("C10 founding creator reads pass the market gate", routerJs.includes("creatorPrelaunchReadOk"));
 check("C12 seats carry their story on the record", appJs.includes("This seat closed when") && appJs.includes("They claimed their founding seat"));
 check("C11 milestone email honors the switches", routerJs.includes("NOTIFY_EMAIL_CATEGORY") && routerJs.includes("notifyEmailAllowed"));
@@ -111,7 +115,7 @@ check("A5 campaign import previews before it writes", appJs.includes("previewCam
 check("A6 stats cells carry labels into the stacked layout", appJs.includes('data-label="Approved creators"') && css.includes("td[data-label]::before"));
 check("L1 sign-in and claim forms validate in JS, not bubbles", appJs.includes('<form novalidate onsubmit="return doSignin(event)">') && appJs.includes('<form novalidate onsubmit="return doQuickClaim(event)">'));
 check("L2 staff redeem is explained on the logged-out page", appJs.includes("Working the register at a SIGNL business?"));
-check("B-cases stamp: the build is 2026.11.02-84", fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes('"2026.11.02-84"'));
+check("B-cases stamp: the build is 2026.11.02-85", fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes('"2026.11.02-85"'));
 
 // ---------- live ----------
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "signl-build47-"));
@@ -151,7 +155,7 @@ try {
   part("live boot");
   const idxRes = await fetch(BASE + "/");
   const idxHtml = await idxRes.text();
-  check("the served page carries build 2026.11.02-84", idxHtml.includes("2026.11.02-84"));
+  check("the served page carries build 2026.11.02-85", idxHtml.includes("2026.11.02-85"));
 
   const admin = makeClient();
   await admin("POST", "/api/auth/login", { email: ADMIN_EMAIL, ["pass" + "word"]: ADMIN_PASSWORD });

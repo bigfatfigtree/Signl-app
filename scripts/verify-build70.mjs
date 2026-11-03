@@ -392,7 +392,7 @@ function sourceChecks() {
   check("app: recruiter dashboard renderer present", appJs.includes("renderRecruiterDash") && appJs.includes("RECRUITER_TABS"));
   check("app: staff recruiter admin section present", appJs.includes("loadStaffRecruiters") && appJs.includes("Invite staff recruiter"));
   check("app: Jeff's Admin Outreach tab present", appJs.includes("loadAdminOutreach"));
-  check("app: Dubai permit note on the claim form", appJs.includes("qc-dubai-note"));
+  check("app: Dubai permit note on the claim form", appJs.includes("c85-dubai-note"));
   check("app: permit control on admin rows", appJs.includes("saveAdvertiserPermit"));
   check("router: recruiter module wired", routerJs.includes('require("./recruiters")') && routerJs.includes("handleRecruiterApi") && routerJs.includes("handleAdminRecruiters"));
   check("router: registration + review hooks wired", routerJs.includes("recruiters.onCreatorRegistered") && routerJs.includes("recruiters.onCreatorApproved"));

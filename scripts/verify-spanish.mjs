@@ -222,7 +222,10 @@ try {
   const appJs = await appJsRes.text();
   check("S2: client ships the panel field, the save handler, and the display phrase", appJs.includes("lane-spanish-pct") && appJs.includes("laneSpanishPctSave") && appJs.includes("Spanish-speaking audience"), "");
   check("S3: client ships the business language control and Admin marker", appJs.includes("bp-lang") && appJs.includes("preferredLanguage") && appJs.includes("Prefers Spanish"), "");
-  check("S1: client ships the language capture, the T() helper, and the Spanish claim copy", appJs.includes("signl_lang") && appJs.includes("function T(en, es)") && appJs.includes("Reclama tu lugar de fundador") && appJs.includes("Reclamar mi lugar") && appJs.includes('lang: state.lang === "es" ? "es" : undefined'), "");
+  // Build -85: the Spanish copy pins follow the three-screen
+  // claim surface ("Te invitaron," / "Reclamar mi página"); the
+  // language capture and payload behavior are unchanged.
+  check("S1: client ships the language capture, the T() helper, and the Spanish claim copy", appJs.includes("signl_lang") && appJs.includes("function T(en, es)") && appJs.includes("Te invitaron,") && appJs.includes("Reclamar mi página") && appJs.includes('lang: state.lang === "es" ? "es" : undefined'), "");
   check("S4: client ships the Stats layers panel", appJs.includes("Spanish and campus layers") && appJs.includes("Campus Leads:") && appJs.includes("Business language:"), "");
 } catch (e) {
   failed += 1;

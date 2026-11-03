@@ -47,21 +47,31 @@ const indexHtml = read("public/index.html");
 const count = (src, needle) => src.split(needle).length - 1;
 
 // ---------- stamp ----------
-check("stamp: BUILD_ID is 2026.11.02-84", buildJs.includes('BUILD_ID = "2026.11.02-84"'));
-check("stamp: index.html pins the -51 stamp in all four spots", count(indexHtml, "2026.11.02-84") === 4, String(count(indexHtml, "2026.11.02-84")));
+check("stamp: BUILD_ID is 2026.11.02-85", buildJs.includes('BUILD_ID = "2026.11.02-85"'));
+check("stamp: index.html pins the -51 stamp in all four spots", count(indexHtml, "2026.11.02-85") === 4, String(count(indexHtml, "2026.11.02-85")));
 
 // ---------- A-02 + X-08: the fake toggle ----------
 check("A-02: no decorative switch pill remains in app.js", !appJs.includes('<span class="tg">') && !appJs.includes('<span class="tg off">'));
-check("A-02: all three lane-explainer blocks use plain dots", count(appJs, '<span class="ldot"></span>') === 3 && count(appJs, '<span class="ldot off"></span>') === 3,
+// Build -85: the claim door's lane explainer dropped the dot
+// rows entirely for check-mark facts (Jeff's ruling: the lanes
+// must never read as controls). The other two blocks keep the
+// plain dots; the no-fake-toggle invariant above is unchanged.
+check("A-02: all three lane-explainer blocks use plain dots", count(appJs, '<span class="ldot"></span>') === 2 && count(appJs, '<span class="ldot off"></span>') === 2 && appJs.includes('class="c85-check"'),
   `ldot=${count(appJs, '<span class="ldot"></span>')} off=${count(appJs, '<span class="ldot off"></span>')}`);
 check("A-02: the .ldot style ships", css.includes(".ldot {") && css.includes(".ldot.off {"));
 check("X-08: the false 'Headliners first in line' claim is gone from the claim forms", !appJs.includes("Headliners first in line"));
+// Build -85: the claim door states the same universal paid
+// lane in its welcome wording; the full form keeps the original
+// sentence. One of each, EN and ES.
 check("X-08: both claim forms state the universal paid lane, EN and ES",
-  count(appJs, "separate bookings at your own rate. You keep 97%.") === 2 && count(appJs, "reservas aparte a tu tarifa. Te quedas con el 97%.") === 2);
+  count(appJs, "separate bookings at your own rate. You keep 97%.") === 1 && count(appJs, "reservas aparte a tu tarifa. Te quedas con el 97%.") === 1 && count(appJs, "Paid bookings at your rate. You keep 97%.") === 1 && count(appJs, "Reservas pagadas a tu tarifa. Te quedas con el 97%.") === 1);
 
 // ---------- A-03: Sig introduced at first contact ----------
+// Build -85: the claim door no longer renders Fast Setup (its
+// resolution is silent), so the intro now ships once, inside
+// the shared assist card every remaining surface mounts.
 check("A-03: Fast Setup introduces Sig in plain words, both render sites, EN and ES",
-  count(appJs, "Sig is SIGNL's built-in helper. Give Sig your Instagram handle") === 2 && count(appJs, "Sig es el asistente integrado de SIGNL.") === 2);
+  count(appJs, "Sig is SIGNL's built-in helper. Give Sig your Instagram handle") === 1 && count(appJs, "Sig es el asistente integrado de SIGNL.") >= 1 && appJs.includes('igAssistCardHtml("jc", "creator")'));
 
 // ---------- A-05: the +1 queue sentence speaks and explains ----------
 check("A-05: no Home queue line is attributed to Sig in the third person", !appJs.includes("Sig thinks you two"));
@@ -184,7 +194,7 @@ try {
   check("live: dev server boots", await waitUp());
   const home = await fetch(BASE + "/");
   const homeText = await home.text();
-  check("live: GET / serves the -51 stamp", home.status === 200 && homeText.includes("2026.11.02-84"));
+  check("live: GET / serves the -51 stamp", home.status === 200 && homeText.includes("2026.11.02-85"));
   const boot = await (await fetch(BASE + "/api/bootstrap")).json();
   check("live: bootstrap reports 38 markets (X-01 app side stays data-driven; 37 -> 38 when Miami was restored in Build -59)", boot && Array.isArray(boot.markets) && boot.markets.length === 38,
     JSON.stringify(boot && boot.markets && boot.markets.length));

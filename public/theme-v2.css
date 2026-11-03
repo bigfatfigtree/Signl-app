@@ -3294,3 +3294,52 @@ body.profile-view main { margin-left: auto; margin-right: auto; }
 .sheet.biz-preview-sheet { width: min(680px, 100%); }
 .biz-preview-sheet .prof-card { margin-top: 10px; }
 @media (max-width: 560px) { .prof-in { padding: 0 16px 18px; } .prof-stats { gap: 16px; } }
+
+/* ---------- Claim flow (Build -85): three short screens ---------- */
+.c85-wrap { max-width: 680px; margin: 10px auto 30px; }
+.c85-photo { position: relative; border-radius: 24px; overflow: hidden; background-color: var(--black); background-size: cover; background-position: center; box-shadow: var(--sh-md); }
+.c85-photo::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(11,13,12,.18) 0%, rgba(11,13,12,.38) 55%, rgba(11,13,12,.78) 100%); }
+.c85-photo-inner { position: relative; z-index: 1; min-height: 320px; display: flex; flex-direction: column; justify-content: flex-end; padding: 26px 26px 24px; color: #fff; }
+.c85-dots { display: flex; gap: 6px; margin-bottom: auto; padding-bottom: 18px; }
+.c85-photo .c85-dots { margin-bottom: 0; position: absolute; top: 20px; left: 26px; }
+.c85-card .c85-dots { margin-bottom: 16px; padding-bottom: 0; }
+.c85-dot { width: 24px; height: 4px; border-radius: 999px; background: rgba(11,13,12,.16); }
+.c85-photo .c85-dot { background: rgba(255,255,255,.4); }
+.c85-dot.on { background: var(--blue); }
+.c85-photo .c85-dot.on { background: var(--mint); }
+.c85-h { font-size: 40px; line-height: 1.05; font-weight: 800; letter-spacing: -.01em; margin: 0 0 10px; color: #fff; }
+.c85-accent { color: var(--mint); }
+.c85-accent2 { color: var(--blue); }
+.c85-sub { font-size: 17px; margin: 0; color: rgba(255,255,255,.92); max-width: 44ch; }
+.c85-idrow { display: flex; align-items: center; gap: 14px; }
+.c85-avatar { width: 58px; height: 58px; border-radius: 50%; object-fit: cover; border: 2px solid rgba(255,255,255,.85); flex: none; }
+.c85-avatar-init { display: inline-flex; align-items: center; justify-content: center; background: var(--blue); color: #fff; font-size: 24px; font-weight: 800; }
+.c85-idname { font-size: 19px; font-weight: 800; line-height: 1.15; }
+.c85-idline { font-size: 15px; color: rgba(255,255,255,.88); }
+.c85-card { background: var(--card); border: 1px solid var(--line); border-radius: 24px; box-shadow: var(--sh-sm); padding: 24px 26px 26px; margin-top: 16px; }
+.c85-photo + .c85-card { margin-top: 16px; }
+.c85-h2 { font-size: 30px; line-height: 1.1; font-weight: 800; letter-spacing: -.01em; margin: 0 0 14px; color: var(--ink); }
+.c85-lanes { margin: 0 0 18px; }
+.c85-lanes p { margin: 0 0 8px; font-size: 16px; color: var(--ink2); display: flex; gap: 10px; align-items: baseline; }
+.c85-lanes p:last-child { margin-bottom: 0; }
+.c85-check { color: var(--blue); font-weight: 800; flex: none; }
+.c85-handlebox { border-top: 1px solid var(--line2); padding-top: 16px; margin-bottom: 18px; }
+.c85-fact { border-top: 1px solid var(--line2); padding: 18px 0 20px; }
+.c85-fact:first-of-type { border-top: none; padding-top: 4px; }
+.c85-localq { display: block; font-size: 16px; font-weight: 700; color: var(--ink); margin-bottom: 10px; }
+.c85-localrow { display: flex; align-items: center; gap: 16px; }
+.c85-range { flex: 1; accent-color: var(--blue); height: 38px; margin: 0; }
+.c85-pct { font-size: 38px; font-weight: 800; color: var(--ink); min-width: 96px; text-align: right; line-height: 1; }
+.c85-stackrow { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 9px 0; border-bottom: 1px solid var(--line2); }
+.c85-stackrow label { font-size: 15px; color: var(--ink2); font-weight: 600; }
+.c85-stackrow input { width: 132px; text-align: right; }
+.c85-counted { font-size: 17px; font-weight: 800; color: var(--ink); margin: 14px 0 0; }
+.c85-done-badge { width: 62px; height: 62px; border-radius: 50%; background: var(--mint-pale); color: var(--blue); font-size: 30px; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 14px; }
+@media (max-width: 560px) {
+  .c85-photo-inner { min-height: 272px; padding: 20px 18px 18px; }
+  .c85-h { font-size: 32px; }
+  .c85-card { padding: 20px 18px 22px; }
+  .c85-h2 { font-size: 26px; }
+  .c85-pct { font-size: 32px; min-width: 82px; }
+  .c85-stackrow input { width: 112px; }
+}

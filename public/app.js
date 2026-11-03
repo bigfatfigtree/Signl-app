@@ -24,6 +24,9 @@ const state = {
   view: "home",
   tab: null,
   prefill: null, // claim-link prefill: sanitized ?handle=&market=&tier=
+  claimStep: 1, // Build -85 claim flow: 1 welcome, 2 facts, 3 account, 4 done
+  claimDraft: null, // Build -85: the in-progress claim (memory only until Finish)
+  claimDone: null, // Build -85: the done-state readout ({firstName, total, complete, under})
   bizPrefill: null, // business-wave prefill: sanitized ?biz=&market=&category=
   publicHandle: null, // set when the URL is /c/<handle>
   resetToken: "", // password reset token from a /?reset= email link
@@ -4163,6 +4166,11 @@ async function render() {
     if (state.view === "reset") return renderReset();
     return renderHome();
   }
+  // Build -85: the claim flow's done state replaces the pending
+  // wall for the claim session itself ("You're on the roster").
+  // It is one screen, shown once: the exits below clear the step,
+  // and a returning pending creator gets the normal pending home.
+  if (state.claimStep === 4 && state.claimDone) return renderClaimDone();
   if (u.status === "pending") return u.role === "business" ? renderBusinessFoundingStatus() : renderPending();
   if (u.status === "rejected") return renderRejected();
   // Build -68: approved founding businesses route into the
@@ -6531,19 +6539,142 @@ async function sigC5Run() {
   sigOpSay(lines.join("\n"), acts);
 }
 
-// ---------- two-step claim, step one (Jeff, 2026-10-20) ----------
-// The quick claim: handle, market, email, password, and ONE
-// agreement, the Terms (Build -60, Jeff, 2026-10-31: the three
-// visit-rule checkboxes moved to the first offer acceptance, as
-// one combined attestation). Submitting claims
-// the founding spot (spots are held in sign-up order) and puts the
-// application in the review queue; the full profile is step two,
-// finished after approval from the dashboard checklist. Claim-link
-// prefill (?handle=&market=) fills this form exactly like the full
-// one, so every link already in the wild lands here.
-function filterQuickMarketOptions() {
-  const input = document.getElementById("qc-market-search");
-  const sel = document.getElementById("qc-market");
+// ---------- claim flow (Build -85, Jeff, 2026-11-02) ----------
+// The claim door rebuilt to the simplification spec (Jeff,
+// 2026-11-02 02:17: "It's so much text and it's not easy to sign
+// up from this form. It should be as simple as possible."):
+// three short screens and a done state, nothing else.
+//   Screen 1: an invitation. A real photo, "You're invited",
+//     their name and page when the link's handle resolves, one
+//     button. The two lanes (hosted visits, paid bookings) are
+//     stated once as plain facts with check marks, never as a
+//     choice: Jeff's correction (2026-11-02 02:19) is that
+//     comped/paid must never read as something to pick.
+//   Screen 2: the four gate facts only (city, categories,
+//     local %, followers per platform), prefilled where known.
+//   Screen 3: email + password, then the done state.
+// Submitting posts to the SAME endpoints the old quick claim and
+// the Finish Engine use (POST /auth/register with quickClaim:
+// true, then PATCH /me/profile for the facts), so the Build -65
+// gate math, grandfathering, approvals, auto-decisions, and the
+// confirmation emails keep their exact server behavior, and the
+// attribution persisted at init (src, ref, ticket) is read at
+// submit exactly as before. Rates, bio, best work, extra
+// socials, and audience market rows stay in the profile editor.
+
+// The audience platforms a creator can stack counts on: the
+// server's AUDIENCE_PLATFORMS list, labels as the forms use them.
+const CLAIM_STACK_PLATFORMS = [
+  { id: "instagram", label: "Instagram followers" },
+  { id: "tiktok", label: "TikTok followers" },
+  { id: "youtube", label: "YouTube subscribers" },
+  { id: "facebook", label: "Facebook followers" },
+  { id: "x", label: "X followers" },
+  { id: "linkedin", label: "LinkedIn connections" },
+  { id: "snapchat", label: "Snapchat followers" },
+];
+
+// Market-flavored welcome photos (real photography, copied from
+// the marketing site's photo library): a market with a city shot
+// gets it; everything else gets the cafe default. Atmosphere
+// only: no person is presented as a creator anywhere here.
+const CLAIM_CITY_PHOTOS = ["atlanta", "austin", "chicago", "dallas", "denver", "miami", "nashville", "new-york", "tampa", "virginia-beach", "washington-dc"];
+function claimPhotoFor(market) {
+  const slug = String(market || "").trim().toLowerCase().replace(/\s+/g, "-");
+  return CLAIM_CITY_PHOTOS.includes(slug) ? `/assets/claim/city-${slug}.jpg` : "/assets/claim/welcome.jpg";
+}
+
+// The in-progress claim, memory only until Finish. Built once
+// from the claim-link prefill; the facts are read back out of
+// the DOM at each step change, so what the creator sees is what
+// is sent.
+function claimDraftInit() {
+  if (state.claimDraft) return state.claimDraft;
+  const pf = state.prefill || {};
+  state.claimDraft = {
+    handle: pf.handle || "",
+    platform: pf.platform || "instagram",
+    displayName: "",
+    photoUrl: "",
+    resolvedFor: "",
+    resolving: false,
+    countedNote: "",
+    stackTouched: false,
+    market: pf.market || "Virginia Beach",
+    cats: [],
+    localPct: 50,
+    stack: {},
+  };
+  return state.claimDraft;
+}
+function claimFirstName(d) {
+  const n = String((d && d.displayName) || "").trim();
+  return n ? n.split(/\s+/)[0] : "";
+}
+function claimStackTotal(d) {
+  return Object.values((d && d.stack) || {}).reduce((s, n) => s + (Math.max(0, parseInt(n, 10) || 0)), 0);
+}
+// Counts on this door are numbers the creator is checking, so
+// they render in full with commas (the checklist's own style),
+// never compacted to "12.4k".
+function claimFmtCount(n) {
+  return (Math.max(0, parseInt(n, 10) || 0)).toLocaleString("en-US");
+}
+function claimDots(step) {
+  return `<div class="c85-dots" aria-hidden="true">${[1, 2, 3].map((n) => `<span class="c85-dot${n === step ? " on" : ""}"></span>`).join("")}</div>`;
+}
+
+// Resolve the link's handle against its public Instagram
+// profile (the existing /ig-prefill draft: name, photo, follower
+// count; it never writes anything). Best-effort by design: any
+// failure leaves the plain welcome, and nothing in the flow
+// waits on it. A resolved follower count prefills the Instagram
+// row on Screen 2 unless the creator has already typed counts.
+async function claimResolve() {
+  const d = claimDraftInit();
+  const handle = normalizeHandleClient(d.handle || "");
+  if (!handle || d.platform !== "instagram") return;
+  const key = handle.toLowerCase();
+  if (d.resolvedFor === key || d.resolving) return;
+  d.resolving = true;
+  try {
+    const res = await api("POST", "/ig-prefill", { handle, side: "creator" });
+    const draft = res && res.draft;
+    if (draft && draft.fields) {
+      if (draft.fields.displayName && draft.fields.displayName.value) d.displayName = String(draft.fields.displayName.value).slice(0, 80);
+      if (draft.fields.photoUrl && draft.fields.photoUrl.value) d.photoUrl = String(draft.fields.photoUrl.value);
+      const fc = draft.fields.followerCount && typeof draft.fields.followerCount.value === "number" ? draft.fields.followerCount.value : null;
+      if (fc && !d.stackTouched && !(d.stack.instagram > 0)) {
+        d.stack.instagram = fc;
+        d.countedNote = T(`We counted ${claimFmtCount(fc)} followers on your public Instagram. Fix anything that's off.`, `Contamos ${claimFmtCount(fc)} seguidores en tu Instagram público. Corrige lo que haga falta.`);
+      }
+    }
+  } catch (e) { /* the plain welcome is the fallback, never an error */ }
+  d.resolvedFor = key;
+  d.resolving = false;
+  if (state.view === "join-creator" && state.joinMode !== "full") {
+    if (state.claimStep === 1) render();
+    else if (state.claimStep === 2) claimApplyResolution();
+  }
+}
+// A resolution that lands while the creator is already on
+// Screen 2 fills the Instagram row in place (only while it is
+// still empty) and shows the counted note.
+function claimApplyResolution() {
+  const d = state.claimDraft;
+  if (!d || !(d.stack.instagram > 0)) return;
+  const input = document.getElementById("c85-stack-instagram");
+  if (input && !input.value) {
+    input.value = String(d.stack.instagram);
+    const note = document.getElementById("c85-counted-note");
+    if (note && d.countedNote) { note.textContent = d.countedNote; note.style.display = ""; }
+    claimStackSync();
+  }
+}
+
+function filterClaimMarketOptions() {
+  const input = document.getElementById("c85-market-search");
+  const sel = document.getElementById("c85-market");
   if (!input || !sel) return;
   const q = input.value.trim().toLowerCase();
   let firstMatch = null;
@@ -6559,40 +6690,53 @@ function filterQuickMarketOptions() {
   const current = sel.selectedOptions && sel.selectedOptions[0];
   if (q && firstMatch && current && current.hidden) {
     sel.value = firstMatch.value;
-    syncQuickMarketChoice();
+    syncClaimMarketChoice();
   }
 }
 
-function syncQuickMarketChoice() {
-  const m = document.getElementById("qc-market");
+function syncClaimMarketChoice() {
+  const m = document.getElementById("c85-market");
   if (!m) return;
   const unlisted = m.value === unlistedLabel();
-  const customWrap = document.getElementById("qc-custom-wrap");
+  const customWrap = document.getElementById("c85-custom-wrap");
   if (customWrap) customWrap.style.display = unlisted ? "" : "none";
+  const cityWrap = document.getElementById("c85-city-wrap");
+  if (cityWrap) cityWrap.style.display = unlisted ? "none" : "";
+  if (!unlisted) {
+    const citySel = document.getElementById("c85-city");
+    if (citySel) citySel.innerHTML = cityOptions(m.value);
+  }
   // Dubai Advertiser Permit note (Build -70): shown only when
   // Dubai is the picked market. It never blocks the claim.
-  const dubaiNote = document.getElementById("qc-dubai-note");
+  const dubaiNote = document.getElementById("c85-dubai-note");
   if (dubaiNote) dubaiNote.style.display = m.value === "Dubai" ? "" : "none";
+  claimLocalLabelSync();
 }
 
-function syncQcPlatform() {
-  const sel = document.getElementById("qc-platform");
-  syncProofDisclosure("qc-platform", "qc-proof-note");
-  const meta = primaryMetaClient(sel ? sel.value : "instagram");
-  // Fast Setup copy follows the chosen platform (Build -47,
-  // audit C9): the card drafted from Instagram no matter what
-  // was picked, which read as a broken form. Non-Instagram
-  // picks get the honest version up front.
-  const intro = document.getElementById("qc-ig-intro");
-  if (intro) {
-    intro.textContent = !sel || sel.value === "instagram"
-      ? T("Sig is SIGNL's built-in helper. Give Sig your Instagram handle and it drafts your details from your public profile. You check and fix everything before any of it is used. The draft isn't kept: you review and save what you like.", "Sig es el asistente integrado de SIGNL. Dale a Sig tu usuario de Instagram y arma tus datos desde tu perfil público. Revisas y corriges todo antes de que se use. El borrador no se guarda: revisas y guardas lo que quieras.")
-      : T(`Fast setup reads Instagram only. Your main platform here is ${meta.label}, so the form below is the way in; it asks for the same details.`, `La configuración rápida solo lee Instagram. Tu plataforma principal aquí es ${meta.label}, así que el formulario de abajo es el camino; pide los mismos datos.`);
+// The local-% question names the place the creator just picked:
+// their city when the market is listed, the market otherwise.
+function claimLocalLabelSync() {
+  const label = document.getElementById("c85-local-q");
+  if (!label) return;
+  const m = document.getElementById("c85-market");
+  const citySel = document.getElementById("c85-city");
+  let place = m ? m.value : "";
+  if (m && m.value !== unlistedLabel() && citySel && citySel.value) place = citySel.value;
+  if (m && m.value === unlistedLabel()) {
+    const typed = document.getElementById("c85-city-text");
+    place = (typed && typed.value.trim()) || place;
   }
-  const label = document.getElementById("qc-handle-label");
-  if (label) label.textContent = `${T("Your", "Tu")} ${meta.label} ${T("handle (required)", "usuario (obligatorio)")}`;
-  const input = document.getElementById("qc-handle");
-  const link = document.getElementById("qc-ig-link");
+  label.textContent = T(`About how much of your audience is in ${place}?`, `¿Como qué parte de tu audiencia está en ${place}?`);
+}
+
+function syncClaimPlatform() {
+  const sel = document.getElementById("c85-platform");
+  syncProofDisclosure("c85-platform", "c85-proof-note");
+  const meta = primaryMetaClient(sel ? sel.value : "instagram");
+  const label = document.getElementById("c85-handle-label");
+  if (label) label.textContent = `${T("Your", "Tu")} ${meta.label} ${T("handle", "usuario")}`;
+  const input = document.getElementById("c85-handle");
+  const link = document.getElementById("c85-ig-link");
   if (link) link.textContent = input && input.value ? meta.host + input.value.replace(/^@/, "") : "";
 }
 
@@ -6703,103 +6847,282 @@ function igAssistBlank(uid) {
 }
 
 function renderQuickClaim() {
+  const step = state.claimStep || 1;
+  if (step === 2) return renderClaimFacts();
+  if (step === 3) return renderClaimAccount();
+  if (step === 4) return renderClaimDone();
+  return renderClaimWelcome();
+}
+
+// ---------- Screen 1: the invitation ----------
+function renderClaimWelcome() {
+  const d = claimDraftInit();
   const pf = state.prefill || {};
-  const pfMarket = pf.market || "Virginia Beach";
-  const pfPlatform = pf.platform || "instagram";
-  const hasPrefill = !!(pf.handle || pf.market || pf.tier);
+  const resolved = !!d.handle;
+  const first = claimFirstName(d);
+  const marketLabel = marketDisplayName(pf.market || d.market);
+  const photo = claimPhotoFor(pf.market || d.market);
+  const initial = (first || d.handle || "S").charAt(0).toUpperCase();
+  const lanes = `<div class="c85-lanes">
+      <p><span class="c85-check">✓</span> ${T("Hosted visits: a local business treats you, you post honestly.", "Visitas en cortesía: un negocio local te invita y tú publicas con honestidad.")}</p>
+      <p><span class="c85-check">✓</span> ${T("Paid bookings at your rate. You keep 97%.", "Reservas pagadas a tu tarifa. Te quedas con el 97%.")}</p>
+    </div>`;
+  const identity = resolved ? `
+    <div class="c85-idrow">
+      ${d.photoUrl ? `<img class="c85-avatar" src="${esc(d.photoUrl)}" alt="" onerror="this.style.display='none'">` : `<span class="c85-avatar c85-avatar-init">${esc(initial)}</span>`}
+      <div>
+        ${d.displayName ? `<div class="c85-idname">${esc(d.displayName)}</div>` : ""}
+        <div class="c85-idline">@${esc(d.handle)} · ${esc(marketLabel)}</div>
+      </div>
+    </div>` : "";
+  const handleBlock = resolved ? "" : `
+    <div class="c85-handlebox">
+      <div class="field"><label>${T("Where is your main audience?", "¿Dónde está tu audiencia principal?")}</label>${platformChipsHtml("c85-platform", d.platform, "syncClaimPlatform")}<p class="small muted" id="c85-proof-note" style="display:${d.platform !== "instagram" ? "" : "none"}">${PROOF_DISCLOSURE}</p></div>
+      <div class="field" style="margin-bottom:0"><label id="c85-handle-label">${T("Your", "Tu")} ${esc(primaryLabelClient(d.platform))} ${T("handle", "usuario")}</label><input id="c85-handle" placeholder="yourhandle" value="${esc(d.handle || "")}" oninput="syncClaimPlatform()"><p class="small muted" id="c85-ig-link">${d.handle ? esc(primaryMetaClient(d.platform).host + d.handle) : ""}</p><p class="small muted">${T("Paste your handle or a link to your page, so businesses and our team can view your page.", "Pega tu usuario o un enlace a tu página, para que los negocios y nuestro equipo puedan verla.")}</p></div>
+      <p class="small" id="c85-handle-warn" style="display:none;color:#B3261E;margin:8px 0 0">${T("Add your handle so businesses can find your page.", "Agrega tu usuario para que los negocios encuentren tu página.")}</p>
+    </div>`;
   app.innerHTML = `
-  <section class="panel form-panel" style="max-width:680px;margin:10px auto">
-    <div class="form-head">
-    <h2>${T("Claim your founding spot", "Reclama tu lugar de fundador")}</h2>
-    <p><strong>${T(CREATOR_FREE_LINE, "Unirte a SIGNL es gratis para los creadores. Siempre.")}</strong></p>
+  <section class="c85-wrap">
+    <div class="c85-photo" style="background-image:url('${esc(photo)}')">
+      <div class="c85-photo-inner">
+        ${claimDots(1)}
+        <h1 class="c85-h">${first ? `${T("You're invited,", "Te invitaron,")} <span class="c85-accent">${esc(first)}.</span>` : `${T("You're", "Estás")} <span class="c85-accent">${T("invited.", "invitado.")}</span>`}</h1>
+        ${resolved ? identity : `<p class="c85-sub">${T("SIGNL is where local businesses book local creators.", "SIGNL es donde los negocios locales reservan creadores locales.")}</p>`}
+      </div>
     </div>
-    <div class="form-mint">${T("Ranked by local reach, not followers — the share of your audience that lives here.", "Ordenado por alcance local, no por seguidores: la parte de tu audiencia que vive aquí.")}</div>
-    <div class="form-body">
-    <p class="muted">${T("About a minute: handle, market, email, password. Spots held in sign-up order — finish your profile after approval.", "Como un minuto: usuario, mercado, correo, contraseña. Los lugares se guardan en orden de registro. Termina tu perfil después de la aprobación.")}</p>
-    <p class="small"><strong>${T("SIGNL starts at 500 total followers across your platforms.", "SIGNL empieza con 500 seguidores en total, sumando todas tus plataformas.")}</strong> ${T("That total is the one founding standard: add every platform you post on when you finish your profile, and the counts add up.", "Ese total es el único estándar fundador: al terminar tu perfil agrega cada plataforma donde publicas, y los conteos se suman.")}</p>
-    <div class="lrow"><span class="ldot"></span><div><span class="lname">${T("Comped", "Cortesía")}</span> <span class="lline">${T("— meals, services and experiences, for an honest post within 48 hours.", "— comidas, servicios y experiencias, por una publicación honesta dentro de 48 horas.")}</span></div></div>
-    <div class="lrow"><span class="ldot off"></span><div><span class="lname">${T("Paid", "Pagado")}</span> <span class="lline">${T("— separate bookings at your own rate. You keep 97%.", "— reservas aparte a tu tarifa. Te quedas con el 97%.")}</span></div></div>
-    ${hasPrefill ? `<div class="notice blue">${T("Pre-filled from your invite link — check it and claim.", "Ya viene lleno desde tu enlace de invitación. Revísalo y reclama tu lugar.")}</div>` : ""}
-    <div id="qc-ticket"></div>
-    <div id="form-error"></div>
-    <form novalidate onsubmit="return doQuickClaim(event)">
-      <div class="fgroup tint">
-        <p class="fg-kicker">${T("Your platform", "Tu plataforma")}</p>
-        <div class="field"><label>${T("Where is your main audience?", "¿Dónde está tu audiencia principal?")}</label>${platformChipsHtml("qc-platform", pfPlatform, "syncQcPlatform")}<p class="small muted">${T("Your main platform. Add the rest later.", "Tu plataforma principal. Agrega las demás después.")}</p><p class="small muted" id="qc-proof-note" style="display:${pfPlatform !== "instagram" ? "" : "none"}">${PROOF_DISCLOSURE}</p></div>
-        <div class="field"><label id="qc-handle-label">${T("Your", "Tu")} ${esc(primaryLabelClient(pfPlatform))} ${T("handle (required)", "usuario (obligatorio)")}</label><input id="qc-handle" placeholder="yourhandle" required value="${esc(pf.handle || "")}" oninput="syncQcPlatform()"><p class="small muted" id="qc-ig-link">${pf.handle ? esc(primaryMetaClient(pfPlatform).host + pf.handle) : ""}</p><p class="small muted">${T("Paste your handle or a link to your page, so businesses and our team can view your page.", "Pega tu usuario o un enlace a tu página, para que los negocios y nuestro equipo puedan verla.")}</p></div>
-      </div>
-      ${igAssistCardHtml("qc", "creator", { handleFrom: true })}
-      <div class="fgroup">
-        <p class="fg-kicker">${T("Your market", "Tu mercado")}</p>
-        <div class="field"><label>${T("Your market", "Tu mercado")}</label><input id="qc-market-search" placeholder="${T("Search markets, for example: Dubai", "Busca mercados, por ejemplo: Dubái")}" oninput="filterQuickMarketOptions()" style="margin-bottom:6px"><select id="qc-market" onchange="syncQuickMarketChoice()">${marketOptions(pfMarket, true)}</select><p class="small muted">${T("Grouped by country. City missing? Pick \"My city is not listed yet\".", "Agrupados por país. ¿No está tu ciudad? Elige \"Mi ciudad aún no está en la lista\".")}</p><p id="qc-dubai-note" class="small" style="display:none">Dubai note: the UAE requires an Advertiser Permit before your first paid or gifted post. You do not need it to claim your page, and SIGNL walks founding creators through it.</p></div>
-        <div id="qc-custom-wrap" style="display:none">
-          <div class="field"><label>${T("Your city", "Tu ciudad")}</label><input id="qc-city-text" placeholder="${T("For example: Tulsa", "Por ejemplo: Tulsa")}"></div>
-          <div class="field"><label>${T("Your country", "Tu país")}</label><input id="qc-country-text" placeholder="${T("For example: United States", "Por ejemplo: Estados Unidos")}"></div>
-          <div class="field"><label>${T("Your state or province (optional)", "Tu estado o provincia (opcional)")}</label><input id="qc-state-text" placeholder="${T("Optional, for example: OK", "Opcional, por ejemplo: OK")}"></div>
-          <p class="small muted">${T("Not open there yet — your sign-up counts toward opening it. Founding sign-ups go first.", "Todavía no abrimos ahí. Tu registro cuenta para abrirlo. Los registros fundadores van primero.")}</p>
-        </div>
-      </div>
-      <div class="fgroup tint">
-        <p class="fg-kicker">${T("Your account", "Tu cuenta")}</p>
-        <div class="form-2col">
-          <div class="field"><label>${T("Email (how we reach you at launch)", "Correo electrónico (así te contactamos al lanzar)")}</label><input type="email" id="qc-email" required autocomplete="email"></div>
-          <div class="field"><label>${T("Password (10+ characters)", "Contraseña (10 o más caracteres)")}</label><input type="password" id="qc-password" required minlength="10" autocomplete="new-password"></div>
-        </div>
-      </div>
-      <details class="deal-details"><summary>${T("The deal, in plain words", "El trato, en palabras simples")}</summary>
-        <div class="dd-body"><ul style="margin:8px 0 0;padding-left:18px">
-          <li>${T("A business comps you. You post honestly within 48 hours and disclose the comp. Nobody can require a positive post.", "Un negocio te da una cortesía. Publicas con honestidad dentro de 48 horas y revelas la cortesía. Nadie puede exigirte una publicación positiva.")}</li>
-          <li>${T("Check off by pasting your post link in My Visits.", "Marca la visita pegando el enlace de tu publicación en Mis Visitas.")}</li>
-          <li>${T("Post within 48 hours for full credit. Late inside the catch-up window still counts.", "Publica dentro de 48 horas para crédito completo. Tarde, dentro del periodo de gracia, también cuenta.")}</li>
-          <li>${T("No post, no credit. Repeated misses can pause your account.", "Sin publicación, no hay crédito. Las faltas repetidas pueden pausar tu cuenta.")}</li>
-        </ul></div>
-      </details>
-      <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="qc-agree-terms" required><span>${T("I agree to the", "Acepto los")} <a href="https://joinsignl.com/terms.html" target="_blank" rel="noopener">${T("Terms of Service", "Términos de Servicio")}</a> ${T("and", "y la")} <a href="https://joinsignl.com/privacy.html" target="_blank" rel="noopener">${T("Privacy Policy", "Política de Privacidad")}</a>${T(", including keeping bookings that start on SIGNL on SIGNL, and to account and launch emails. I can unsubscribe from marketing anytime.", ", incluyendo mantener en SIGNL las reservas que empiezan en SIGNL, y los correos de cuenta y de lanzamiento. Puedo cancelar los correos de marketing cuando quiera.")}</span></label></div>
-      <button class="btn" type="submit" style="width:100%">${T("Claim my founding spot", "Reclamar mi lugar")}</button>
-      <p class="small muted mt">${T("Reviewed by a person — decision or clear status within 2 business days.", "Lo revisa una persona. Decisión o estado claro en 2 días laborables.")}</p>
-      <p class="small">${T("Prefer to complete everything now?", "¿Prefieres completar todo ahora?")} <a href="#" onclick="return showFullJoin()">${T("Build your full profile instead", "Crea tu perfil completo")}</a>.</p>
-    </form>
+    <div class="c85-card">
+      <div id="qc-ticket"></div>
+      ${lanes}
+      ${handleBlock}
+      <button class="btn" type="button" style="width:100%" onclick="return claimWelcomeGo()">${T("Claim my page", "Reclamar mi página")}</button>
+      <p class="small muted" style="margin:10px 0 0;text-align:center">${T("Free for creators. Takes a minute.", "Gratis para creadores. Toma un minuto.")}</p>
+      <p class="small" style="margin:14px 0 0;text-align:center">${T("Prefer to complete everything now?", "¿Prefieres completar todo ahora?")} <a href="#" onclick="return showFullJoin()">${T("Build your full profile instead", "Crea tu perfil completo")}</a>.</p>
     </div>
   </section>`;
-  if (pf.market === unlistedLabel()) syncQuickMarketChoice();
   loadTicketBanner();
+  claimResolve();
+}
+
+function claimWelcomeGo() {
+  const d = claimDraftInit();
+  if (!d.handle) {
+    const input = document.getElementById("c85-handle");
+    const handle = normalizeHandleClient(input ? input.value : "");
+    if (!handle) {
+      const warn = document.getElementById("c85-handle-warn");
+      if (warn) warn.style.display = "";
+      if (input) input.focus();
+      return false;
+    }
+    const platEl = document.getElementById("c85-platform");
+    d.platform = platEl ? platEl.value : "instagram";
+    d.handle = handle;
+    if (input) input.value = handle;
+    claimResolve();
+  }
+  state.claimStep = 2;
+  render();
+  window.scrollTo(0, 0);
+  return false;
+}
+
+// ---------- Screen 2: four quick facts ----------
+function renderClaimFacts() {
+  const d = claimDraftInit();
+  const pfMarket = d.market || "Virginia Beach";
+  const cats = (state.boot.creatorCategories || []).map((c) => `<button type="button" class="rchip${d.cats.includes(c) ? " on" : ""}" data-cat="${esc(c)}" onclick="return claimToggleCat(this)">${esc(c)}</button>`).join("");
+  const stackRows = CLAIM_STACK_PLATFORMS.map((p) => `
+      <div class="c85-stackrow"><label for="c85-stack-${p.id}">${T(p.label, p.label)}</label><input type="number" id="c85-stack-${p.id}" min="0" inputmode="numeric" placeholder="0" value="${d.stack[p.id] ? esc(String(d.stack[p.id])) : ""}" oninput="claimStackSync()"></div>`).join("");
+  const total = claimStackTotal(d);
+  app.innerHTML = `
+  <section class="c85-wrap">
+    <div class="c85-card">
+      ${claimDots(2)}
+      <h2 class="c85-h2">${T("Four", "Cuatro")} <span class="c85-accent2">${T("quick facts.", "datos rápidos.")}</span></h2>
+      <div id="c85-facts-warn"></div>
+      <div class="c85-fact">
+        <p class="fg-kicker">${T("Your city", "Tu ciudad")}</p>
+        <div class="field"><label>${T("Your market", "Tu mercado")}</label><input id="c85-market-search" placeholder="${T("Search markets, for example: Dubai", "Busca mercados, por ejemplo: Dubái")}" oninput="filterClaimMarketOptions()" style="margin-bottom:6px"><select id="c85-market" onchange="syncClaimMarketChoice()">${marketOptions(pfMarket, true)}</select><p id="c85-dubai-note" class="small" style="display:none">Dubai note: the UAE requires an Advertiser Permit before your first paid or gifted post. You do not need it to claim your page, and SIGNL walks founding creators through it.</p></div>
+        <div class="field" id="c85-city-wrap" style="margin-bottom:0"><label>${T("Your home city", "Tu ciudad")}</label><select id="c85-city" onchange="claimLocalLabelSync()">${cityOptions(pfMarket === unlistedLabel() ? "Virginia Beach" : pfMarket)}</select></div>
+        <div id="c85-custom-wrap" style="display:none">
+          <div class="field"><label>${T("Your city", "Tu ciudad")}</label><input id="c85-city-text" placeholder="${T("For example: Tulsa", "Por ejemplo: Tulsa")}" oninput="claimLocalLabelSync()"></div>
+          <div class="field"><label>${T("Your country", "Tu país")}</label><input id="c85-country-text" placeholder="${T("For example: United States", "Por ejemplo: Estados Unidos")}"></div>
+          <div class="field" style="margin-bottom:0"><label>${T("Your state or province (optional)", "Tu estado o provincia (opcional)")}</label><input id="c85-state-text" placeholder="${T("Optional, for example: OK", "Opcional, por ejemplo: OK")}"></div>
+          <p class="small muted">${T("Not open there yet. Your sign-up counts toward opening it.", "Todavía no abrimos ahí. Tu registro cuenta para abrirlo.")}</p>
+        </div>
+      </div>
+      <div class="c85-fact">
+        <p class="fg-kicker">${T("What you post about", "De qué publicas")}</p>
+        <div class="chiprow" id="c85-cats">${cats}</div>
+        <p class="small" id="c85-cat-warn" style="display:none;color:#B3261E;margin:8px 0 0">${T("Pick at least one, so businesses can find you.", "Elige al menos una, para que los negocios te encuentren.")}</p>
+      </div>
+      <div class="c85-fact">
+        <p class="fg-kicker">${T("Your audience here", "Tu audiencia aquí")}</p>
+        <label class="c85-localq" id="c85-local-q"></label>
+        <div class="c85-localrow"><input type="range" class="c85-range" id="c85-localpct" min="0" max="100" step="5" value="${esc(String(d.localPct))}" oninput="claimLocalSync()"><span class="c85-pct" id="c85-localpct-read">${esc(String(d.localPct))}%</span></div>
+        <p class="small muted" style="margin:6px 0 0">${T("A rough number is fine. It's labeled self-reported everywhere.", "Un número aproximado está bien. Se marca como autodeclarado en todas partes.")}</p>
+      </div>
+      <div class="c85-fact">
+        <p class="fg-kicker">${T("Your followers", "Tus seguidores")}</p>
+        <p class="small muted" id="c85-counted-note" style="display:${d.countedNote ? "" : "none"};margin:0 0 4px">${esc(d.countedNote || "")}</p>
+        ${stackRows}
+        <p class="c85-counted" id="c85-counted">${T("Counted so far:", "Contados hasta ahora:")} ${claimFmtCount(total)}</p>
+        <p class="small" id="c85-min-line" style="display:${total > 0 && total < 500 ? "" : "none"};margin:6px 0 0"><strong>${T("SIGNL starts at 500 total followers across your platforms.", "SIGNL empieza con 500 seguidores en total, sumando todas tus plataformas.")}</strong> ${T("Add every platform you post on. The counts add up.", "Agrega cada plataforma donde publicas. Los conteos se suman.")}</p>
+      </div>
+      <button class="btn" type="button" style="width:100%" onclick="return claimFactsGo()">${T("Continue", "Continuar")}</button>
+      <p class="small" style="margin:12px 0 0;text-align:center"><a href="#" onclick="return claimBack(1)">${T("Back", "Atrás")}</a></p>
+    </div>
+  </section>`;
+  if (pfMarket === unlistedLabel()) syncClaimMarketChoice();
+  claimLocalLabelSync();
+}
+
+function claimToggleCat(btn) {
+  const d = claimDraftInit();
+  const cat = btn.getAttribute("data-cat") || "";
+  const i = d.cats.indexOf(cat);
+  if (i >= 0) d.cats.splice(i, 1); else d.cats.push(cat);
+  btn.classList.toggle("on", i < 0);
+  const warn = document.getElementById("c85-cat-warn");
+  if (warn && d.cats.length) warn.style.display = "none";
+  return false;
+}
+
+function claimLocalSync() {
+  const slider = document.getElementById("c85-localpct");
+  const read = document.getElementById("c85-localpct-read");
+  if (slider && read) read.textContent = `${slider.value}%`;
+  return false;
+}
+
+function claimReadStack() {
+  const stack = {};
+  for (const p of CLAIM_STACK_PLATFORMS) {
+    const el = document.getElementById(`c85-stack-${p.id}`);
+    const n = el ? Math.max(0, parseInt(el.value, 10) || 0) : 0;
+    if (n > 0) stack[p.id] = n;
+  }
+  return stack;
+}
+
+function claimStackSync() {
+  const d = claimDraftInit();
+  d.stackTouched = true;
+  d.stack = claimReadStack();
+  const total = claimStackTotal(d);
+  const counted = document.getElementById("c85-counted");
+  if (counted) counted.textContent = `${T("Counted so far:", "Contados hasta ahora:")} ${claimFmtCount(total)}`;
+  const minLine = document.getElementById("c85-min-line");
+  if (minLine) minLine.style.display = total > 0 && total < 500 ? "" : "none";
+  return false;
+}
+
+// Read Screen 2 out of the DOM into the draft and advance.
+// Nothing here can dead-end: the only hard stops are the ones
+// the server itself enforces at registration (an unlisted
+// market needs its typed city and country) and the one-tap
+// category pick the gate is built on.
+function claimFactsGo() {
+  const d = claimDraftInit();
+  const warn = (msg) => {
+    const box = document.getElementById("c85-facts-warn");
+    if (box) box.innerHTML = `<div class="error-box">${esc(msg)}</div>`;
+    window.scrollTo(0, 0);
+  };
+  const marketVal = document.getElementById("c85-market").value;
+  d.market = marketVal;
+  const isUnlisted = marketVal === unlistedLabel();
+  if (isUnlisted) {
+    d.customCity = document.getElementById("c85-city-text").value.trim();
+    d.customCountry = document.getElementById("c85-country-text").value.trim();
+    d.customState = document.getElementById("c85-state-text").value.trim();
+    if (!d.customCity) { warn(T("Tell us your city, so your sign-up counts toward opening SIGNL there.", "Dinos tu ciudad, para que tu registro cuente para abrir SIGNL ahí.")); return false; }
+    if (!d.customCountry) { warn(T("Tell us your country, so your sign-up counts toward opening SIGNL there.", "Dinos tu país, para que tu registro cuente para abrir SIGNL ahí.")); return false; }
+    d.city = "";
+  } else {
+    const citySel = document.getElementById("c85-city");
+    d.city = citySel ? citySel.value : "";
+    d.customCity = ""; d.customCountry = ""; d.customState = "";
+  }
+  if (!d.cats.length) {
+    const cw = document.getElementById("c85-cat-warn");
+    if (cw) cw.style.display = "";
+    const box = document.getElementById("c85-facts-warn");
+    if (box) box.innerHTML = "";
+    document.getElementById("c85-cats").scrollIntoView({ block: "center" });
+    return false;
+  }
+  const slider = document.getElementById("c85-localpct");
+  d.localPct = slider ? Math.max(0, Math.min(100, parseInt(slider.value, 10) || 0)) : 50;
+  d.stack = claimReadStack();
+  state.claimStep = 3;
+  render();
+  window.scrollTo(0, 0);
+  return false;
+}
+
+function claimBack(step) {
+  // Stepping back from the facts screen keeps what was typed:
+  // harvest the stack before the DOM goes away.
+  if ((state.claimStep || 1) === 2) {
+    const d = claimDraftInit();
+    d.stack = claimReadStack();
+    const slider = document.getElementById("c85-localpct");
+    if (slider) d.localPct = parseInt(slider.value, 10) || 0;
+  }
+  state.claimStep = step;
+  render();
+  window.scrollTo(0, 0);
+  return false;
+}
+
+// ---------- Screen 3: make it yours ----------
+function renderClaimAccount() {
+  const d = claimDraftInit();
+  app.innerHTML = `
+  <section class="c85-wrap">
+    <div class="c85-card">
+      ${claimDots(3)}
+      <h2 class="c85-h2">${T("Make it", "Hazla")} <span class="c85-accent2">${T("yours.", "tuya.")}</span></h2>
+      <p class="muted" style="margin:0 0 14px">${T("Your page is", "Tu página es")} <strong>@${esc(d.handle)}</strong> · ${esc(marketDisplayName(d.market))}</p>
+      <div id="form-error"></div>
+      <form novalidate onsubmit="return doQuickClaim(event)">
+        <div class="field"><label>${T("Email (how we reach you)", "Correo electrónico (así te contactamos)")}</label><input type="email" id="c85-email" required autocomplete="email"></div>
+        <div class="field"><label>${T("Password (10+ characters)", "Contraseña (10 o más caracteres)")}</label><input type="password" id="c85-password" required minlength="10" autocomplete="new-password"></div>
+        <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="c85-agree-terms" required><span>${T("I agree to the", "Acepto los")} <a href="https://joinsignl.com/terms.html" target="_blank" rel="noopener">${T("Terms of Service", "Términos de Servicio")}</a> ${T("and", "y la")} <a href="https://joinsignl.com/privacy.html" target="_blank" rel="noopener">${T("Privacy Policy", "Política de Privacidad")}</a>${T(", including keeping bookings that start on SIGNL on SIGNL, and I agree SIGNL can email me about my account, launch updates and offers. I can unsubscribe from marketing emails at any time.", ", incluyendo mantener en SIGNL las reservas que empiezan en SIGNL, y acepto que SIGNL me escriba sobre mi cuenta, novedades del lanzamiento y ofertas. Puedo cancelar los correos de marketing cuando quiera.")}</span></label></div>
+        <button class="btn" type="submit" style="width:100%">${T("Finish — join the founding roster", "Terminar: únete a la lista de fundadores")}</button>
+      </form>
+      <p class="small" style="margin:12px 0 0;text-align:center"><a href="#" onclick="return claimBack(2)">${T("Back", "Atrás")}</a></p>
+    </div>
+  </section>`;
 }
 
 async function doQuickClaim(e) {
   e.preventDefault();
+  const d = claimDraftInit();
   const errBox = (msg) => {
     document.getElementById("form-error").innerHTML = `<div class="error-box">${esc(msg)}</div>`;
     window.scrollTo(0, 0);
   };
-  if (!document.getElementById("qc-agree-terms").checked) { errBox(T("Please agree to the Terms of Service and email consent so we can reach you at launch.", "Acepta los Términos de Servicio y el consentimiento de correo para poder contactarte al lanzar, por favor.")); return false; }
-  // The primary social link is required (Jeff, 2026-10-26): it is
-  // how businesses and our team view and verify the creator's
-  // page. A pasted profile link normalizes to the clean handle.
-  const qcHandleInput = document.getElementById("qc-handle");
-  const qcHandle = normalizeHandleClient(qcHandleInput.value);
-  if (!qcHandle) { errBox(`${T("Your", "Tu")} ${primaryLabelClient(document.getElementById("qc-platform").value)} ${T("handle is required: paste your handle or a link to your page.", "usuario es obligatorio: pega tu usuario o un enlace a tu página.")}`); return false; }
-  qcHandleInput.value = qcHandle;
-  const marketVal = document.getElementById("qc-market").value;
-  const isUnlisted = marketVal === unlistedLabel();
-  const customCity = isUnlisted ? document.getElementById("qc-city-text").value.trim() : "";
-  const customCountry = isUnlisted ? document.getElementById("qc-country-text").value.trim() : "";
-  const customState = isUnlisted ? document.getElementById("qc-state-text").value.trim() : "";
-  if (isUnlisted && !customCity) { errBox(T("Tell us your city, so your sign-up counts toward opening SIGNL there.", "Dinos tu ciudad, para que tu registro cuente para abrir SIGNL ahí.")); return false; }
-  if (isUnlisted && !customCountry) { errBox(T("Tell us your country, so your sign-up counts toward opening SIGNL there.", "Dinos tu país, para que tu registro cuente para abrir SIGNL ahí.")); return false; }
+  if (!document.getElementById("c85-agree-terms").checked) { errBox(T("Please agree to the Terms of Service and email consent so we can reach you at launch.", "Acepta los Términos de Servicio y el consentimiento de correo para poder contactarte al lanzar, por favor.")); return false; }
+  const qcHandle = normalizeHandleClient(d.handle || "");
+  if (!qcHandle) { state.claimStep = 1; render(); return false; }
+  d.handle = qcHandle;
+  const isUnlisted = d.market === unlistedLabel();
   const form = e.target;
   if (!submitBusy(form, true)) return false;
   try {
     const data = await api("POST", "/auth/register", {
       role: "creator",
       quickClaim: true,
-      email: document.getElementById("qc-email").value,
-      password: document.getElementById("qc-password").value,
-      market: marketVal,
-      customCity: isUnlisted ? customCity : undefined,
-      customCountry: isUnlisted ? customCountry : undefined,
-      customState: isUnlisted ? customState : undefined,
+      email: document.getElementById("c85-email").value,
+      password: document.getElementById("c85-password").value,
+      market: d.market,
+      customCity: isUnlisted ? d.customCity : undefined,
+      customCountry: isUnlisted ? d.customCountry : undefined,
+      customState: isUnlisted ? d.customState : undefined,
       handle: qcHandle,
-      primaryPlatform: document.getElementById("qc-platform").value,
+      primaryPlatform: d.platform,
       agreedTerms: true,
       referredBy: storedRef() || undefined,
       goldenTicket: storedTicket() || undefined,
@@ -6807,9 +7130,32 @@ async function doQuickClaim(e) {
       lang: state.lang === "es" ? "es" : undefined,
     });
     state.user = data.user;
-    state.sigCelebrate = true;
-    state.view = "dashboard";
+    // The four facts land through the same profile write the
+    // Finish Engine uses, so the completion gate reads them
+    // exactly as if the creator had finished from the
+    // checklist. Best-effort on purpose: the spot is already
+    // claimed, and anything that did not land stays on the
+    // dashboard checklist. It can never dead-end the claim.
+    const patch = {};
+    if (d.displayName) patch.name = d.displayName;
+    if (!isUnlisted && d.city) patch.city = d.city;
+    if (d.cats.length) patch.categories = d.cats.slice();
+    patch.localAudiencePct = d.localPct;
+    if (Object.keys(d.stack).length) patch.audienceStack = d.stack;
+    try {
+      const saved = await api("PATCH", "/me/profile", patch);
+      if (saved && saved.user) state.user = saved.user;
+    } catch (err2) { /* the checklist carries anything missing */ }
+    const total = claimStackTotal(d);
+    state.claimDone = {
+      firstName: claimFirstName(d),
+      total,
+      complete: !!(isUnlisted ? d.customCity : d.city) && d.cats.length > 0 && total >= 500,
+      under: total > 0 && total < 500,
+    };
+    state.claimStep = 4;
     render();
+    window.scrollTo(0, 0);
   } catch (err) {
     submitBusy(form, false);
     errBox(err.message);
@@ -6817,14 +7163,55 @@ async function doQuickClaim(e) {
   return false;
 }
 
+// ---------- Done: you're on the roster ----------
+function renderClaimDone() {
+  const done = state.claimDone || { firstName: "", total: 0, complete: false, under: false };
+  const line2 = done.under
+    ? `<strong>${T("SIGNL starts at 500 total followers across your platforms.", "SIGNL empieza con 500 seguidores en total, sumando todas tus plataformas.")}</strong> ${T(`You have ${claimFmtCount(done.total)} counted so far. Add every platform you post on from your dashboard, and the counts add up.`, `Llevas ${claimFmtCount(done.total)} contados hasta ahora. Agrega cada plataforma donde publicas desde tu panel, y los conteos se suman.`)}`
+    : done.complete
+      ? T("Your four facts are in. The moment you're approved, businesses can find your page.", "Tus cuatro datos ya están. En cuanto te aprueben, los negocios podrán ver tu página.")
+      : T("Anything you skipped is waiting on your dashboard checklist. Two minutes finishes it.", "Lo que saltaste te espera en la lista de tu panel. Dos minutos lo terminan.");
+  app.innerHTML = `
+  <section class="c85-wrap">
+    <div class="c85-card" style="text-align:center">
+      <div class="c85-done-badge">✓</div>
+      <h2 class="c85-h2">${done.firstName ? `${T("You're on the roster,", "Ya estás en la lista,")} <span class="c85-accent2">${esc(done.firstName)}.</span>` : `${T("You're on the", "Ya estás en la")} <span class="c85-accent2">${T("roster.", "lista.")}</span>`}</h2>
+      <p style="margin:0 0 10px">${T("We review every creator personally. You'll hear within two business days.", "Revisamos a cada creador personalmente. Tendrás respuesta en dos días laborables.")}</p>
+      <p class="muted" style="margin:0 0 18px">${line2}</p>
+      <button class="btn" type="button" style="width:100%" onclick="return claimGoProfile()">${T("Add your rates and best work", "Agrega tus tarifas y tu mejor trabajo")}</button>
+      <p class="small muted" style="margin:12px 0 0">${T("or just close this. We'll email you.", "o cierra esto. Te escribiremos por correo.")} <a href="#" onclick="return claimGoDashboard()">${T("Open my dashboard", "Abrir mi panel")}</a></p>
+    </div>
+  </section>`;
+}
+
+function claimGoProfile() {
+  // Leaving the done state ends the claim session: the creator
+  // lands on their pending home, where the rates and best-work
+  // editing lives (the payoff card + the profile form).
+  state.claimStep = 1;
+  state.view = "dashboard";
+  state.tab = "Profile";
+  render();
+  window.scrollTo(0, 0);
+  return false;
+}
+function claimGoDashboard() {
+  state.claimStep = 1;
+  state.view = "dashboard";
+  state.tab = null;
+  render();
+  window.scrollTo(0, 0);
+  return false;
+}
+
 function showFullJoin() { state.joinMode = "full"; render(); return false; }
-function showQuickJoin() { state.joinMode = "quick"; render(); return false; }
+function showQuickJoin() { state.joinMode = "quick"; state.claimStep = 1; render(); return false; }
 
 function renderJoinCreator() {
-  // Two-step claim (Jeff, 2026-10-20): the quick claim is the
-  // default first step (handle, market, email, password, the one
-  // Terms agreement); the full founding profile form below stays one
-  // tap away for creators who would rather do it all now.
+  // The claim flow (Build -85) is the default door: three short
+  // screens (welcome, four facts, account) ending in the done
+  // state. The full founding profile form below stays one tap
+  // away for creators who would rather do it all now.
   if (state.joinMode !== "full") return renderQuickClaim();
   const cats = state.boot.creatorCategories.map((c) => `<label><input type="checkbox" name="c-cat" value="${esc(c)}" onchange="proHintSync('jc')"> ${esc(c)}</label>`).join("");
   const comps = state.boot.compCategories.map((c) => `<label><input type="checkbox" name="c-comp" value="${esc(c)}"> ${esc(c)}</label>`).join("");

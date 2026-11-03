@@ -333,8 +333,10 @@ try {
   check("claim + full-join handle fields carry the view-your-page guidance",
     (appJs.match(/Paste your handle or a link to your page, so businesses and our team can view your page\./g) || []).length >= 2,
     "");
+  // Build -85: the claim door normalizes the same way; an empty
+  // handle gets the welcome's gentle prompt, never an error wall.
   check("both application submits normalize the handle client-side and refuse an empty one",
-    appJs.includes("function normalizeHandleClient") && appJs.includes("const qcHandle = normalizeHandleClient") && appJs.includes("const jcHandle = normalizeHandleClient") && appJs.includes("handle is required: paste your handle or a link to your page."),
+    appJs.includes("function normalizeHandleClient") && appJs.includes("const qcHandle = normalizeHandleClient") && appJs.includes("const jcHandle = normalizeHandleClient") && appJs.includes("Add your handle so businesses can find your page."),
     "");
 } finally {
   server.kill("SIGKILL");

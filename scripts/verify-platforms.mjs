@@ -288,9 +288,11 @@ try {
   // ---------- client ships the picker everywhere it belongs ----------
   const appJsRes = await fetch(BASE + "/app.js");
   const appJs = await appJsRes.text();
-  check("client ships the picker on quick claim, full signup, and profile edit", appJs.includes('platformChipsHtml("qc-platform"') && appJs.includes('platformChipsHtml("jc-platform"') && appJs.includes('platformChipsHtml("p-platform"') && appJs.includes("Where is your main audience?"), "");
+  // Build -85: the claim door's picker is the c85 one (welcome
+  // screen, unresolved path); the other two pickers are unchanged.
+  check("client ships the picker on quick claim, full signup, and profile edit", appJs.includes('platformChipsHtml("c85-platform"') && appJs.includes('platformChipsHtml("jc-platform"') && appJs.includes('platformChipsHtml("p-platform"') && appJs.includes("Where is your main audience?"), "");
   check("client reads the &platform= claim-link param", appJs.includes('params.get("platform")') && appJs.includes("pf.platform"), "");
-  check("client submits primaryPlatform on claim, signup, and profile save", appJs.includes("primaryPlatform: document.getElementById(\"qc-platform\").value") && appJs.includes("primaryPlatform,") && appJs.includes("primaryPlatform: document.getElementById(\"p-platform\").value"), "");
+  check("client submits primaryPlatform on claim, signup, and profile save", appJs.includes("primaryPlatform: d.platform") && appJs.includes('getElementById("c85-platform")') && appJs.includes("primaryPlatform,") && appJs.includes("primaryPlatform: document.getElementById(\"p-platform\").value"), "");
   check("client ships snapchat stack fields on signup + profile (count-only, no handle field)", appJs.includes('id="jc-stack-snapchat"') && appJs.includes('"p-stack-snapchat"') && appJs.includes("Snapchat followers") && !appJs.includes("snapchatHandle"), "");
   check("client labels the admin queue row with the primary platform", appJs.includes("primaryLabelClient(u.creator.primaryPlatform"), "");
   check("client handle links use the primary profile URL with IG markup unchanged", appJs.includes("ccHandleHtml") && appJs.includes("primaryProfileUrl || p.instagramUrl"), "");

@@ -122,8 +122,11 @@ try {
   check("client: the ownership line rides the summaries in both languages",
     appJs.includes("Pulled from your public profile. It does not prove the account is yours.") &&
     appJs.includes("Tomado de tu perfil público. No prueba que la cuenta sea tuya."), "");
-  check("client: all four form surfaces mount the assist card",
-    ["igAssistCardHtml(\"qc\", \"creator\", { handleFrom: true })", "igAssistCardHtml(\"jc\", \"creator\")", "igAssistCardHtml(\"jb\", \"business\")", "igAssistCardHtml(\"bp\", \"business\")"].every((s) => appJs.includes(s)), "");
+  // Build -85: the claim door (the old "qc" surface) resolves
+  // inline through claimResolve on the same endpoint instead of
+  // mounting the assist card; the other three surfaces keep it.
+  check("client: the form surfaces mount the assist card; the claim door resolves inline",
+    ["igAssistCardHtml(\"jc\", \"creator\")", "igAssistCardHtml(\"jb\", \"business\")", "igAssistCardHtml(\"bp\", \"business\")"].every((s) => appJs.includes(s)) && appJs.includes('api("POST", "/ig-prefill", { handle, side: "creator" })'), "");
   check("client: creator commit never sends a never-prefill field",
     !/sigCSetupCommit[\s\S]{0,900}localAudiencePct/.test(appJs) && !/sigCSetupCommit[\s\S]{0,900}spanishAudiencePct/.test(appJs), "");
 
