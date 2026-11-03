@@ -65,9 +65,20 @@ function sigAiConfig() {
   return { key, baseUrl: base || "https://api.openai.com/v1", model };
 }
 
-function sigSystemPrompt(role, stateLines) {
+// Build -89: the canon's creator-money lines follow the asker's
+// home-market currency (markets.js currency-by-market config).
+// London creators hear a £40 floor and the UK #ad rule; every
+// other market hears the canon exactly as written ($50 floor).
+// Business plan prices stay as written: GBP business pricing is
+// not part of this build.
+function canonForMarket(market) {
+  if (String(market || "").trim() !== "London") return CANON_COMMON;
+  return CANON_COMMON.replace("with a $50 floor", "with a £40 floor")
+    + "\n- UK ad disclosure: in the UK, a comped or paid post is an ad under ASA/CAP rules. Every London post carries a clear ad label (#ad) up front, and a London post does not count as delivered until the ad label is verified.";
+}
+function sigSystemPrompt(role, stateLines, market) {
   const who = role === "business" ? "The person asking is a business owner on SIGNL." : role === "admin" ? "The person asking runs SIGNL (admin)." : "The person asking is a creator on SIGNL.";
-  return `${VOICE_AND_RULES}\n\n${CANON_COMMON}\n\n${who}\n${stateLines || ""}`;
+  return `${VOICE_AND_RULES}\n\n${canonForMarket(market)}\n\n${who}\n${stateLines || ""}`;
 }
 
 // stateLines: plain-text facts built by the router from the
@@ -75,10 +86,10 @@ function sigSystemPrompt(role, stateLines) {
 // state. For admin, the platform's live aggregate counts (the
 // fact sheet from sigdata.js); never another person's private
 // record.
-async function askSigAI({ role, stateLines, question, history }) {
+async function askSigAI({ role, stateLines, question, history, market }) {
   const cfg = sigAiConfig();
   if (!cfg) return { source: "unavailable" };
-  const messages = [{ role: "system", content: sigSystemPrompt(role, stateLines) }];
+  const messages = [{ role: "system", content: sigSystemPrompt(role, stateLines, market) }];
   for (const turn of (history || []).slice(-6)) {
     if (!turn || typeof turn.text !== "string") continue;
     messages.push({ role: turn.who === "user" ? "user" : "assistant", content: turn.text.slice(0, 1000) });
@@ -107,4 +118,4 @@ async function askSigAI({ role, stateLines, question, history }) {
   }
 }
 
-module.exports = { askSigAI, sigAiConfig, sigSystemPrompt, CANON_COMMON };
+module.exports = { askSigAI, sigAiConfig, sigSystemPrompt, CANON_COMMON, canonForMarket };

@@ -30,7 +30,12 @@
 // A recorded figure is money the records show; a modeled
 // figure is always labeled an estimate when Sig uses it.
 
+const { currencyForMarket } = require("./markets");
 function n0(v) { const n = Number(v); return Number.isFinite(n) ? n : 0; }
+// Build -89: creator money renders in the creator's home-market
+// currency (London: £). Business and admin facts keep $ — GBP
+// business pricing is out of scope for this build.
+function cmoney(f, n) { const v = n0(n); return ((f && f.currencySymbol) || "$") + (Math.round(v * 100) / 100).toLocaleString("en-US", { maximumFractionDigits: 2 }); }
 function fmt(n) { return Math.round(n0(n)).toLocaleString("en-US"); }
 function money(n) { const v = n0(n); return "$" + (Math.round(v * 100) / 100).toLocaleString("en-US", { maximumFractionDigits: 2 }); }
 function plural(n, one, many) { return n === 1 ? one : (many || one + "s"); }
@@ -282,6 +287,9 @@ function buildCreatorFacts(d) {
     licenseRequestsPending: o.licenseRequestsPending || 0,
     paidRate: c.paidRate || null,
     licenseFee: c.licensingFee || c.licenseFee || null,
+    currencySymbol: currencyForMarket(u.market).symbol,
+    currencyCode: currencyForMarket(u.market).code,
+    paidFloor: currencyForMarket(u.market).paidFloor,
   };
 }
 
@@ -315,9 +323,9 @@ function factsLines(role, f) {
   const lv = f.level;
   lines.push(`Their market is ${f.market || "unknown"} and it is ${f.marketLive ? "OPEN (live)" : "NOT open yet (founding)"}. Their application status is ${f.status || "unknown"}. Their profile is ${f.profileComplete ? "finished, so businesses can see them" : "NOT finished yet; still missing: " + (f.missingLabels.join(", ") || "nothing recorded") + ". A finished profile is the gate for being seen by businesses."}`);
   lines.push(`Their Momentum is ${fmt(f.momentumPoints)} points, level ${lv ? lv.name : "Starter"}${lv && lv.nextName ? `, with ${fmt(lv.nextAt - f.momentumPoints)} points to ${lv.nextName}` : ", the top level"}. Their tier is ${f.tier || "not set yet"}${f.audienceTotal != null ? ` on ${fmt(f.audienceTotal)} total followers across platforms` : ""}. Local audience in their home market: ${f.localPct != null ? f.localPct + "%" : "not reported"}. Markets they are listed in: ${f.listedMarkets.length ? f.listedMarkets.map((m) => `${m.market}${m.pct != null ? " (" + m.pct + "% local)" : ""}`).join(", ") : "just their home market"}.`);
-  lines.push(`Their numbers right now: ${fmt(f.offersOpen)} open offers in their markets (${fmt(f.directInvites)} direct invites), ${fmt(f.applicationsPending)} applications waiting on a business's answer, ${fmt(f.visitsBooked)} visits booked, ${fmt(f.postsOwed.length)} posts owed, ${fmt(f.postsLive)} posts live${f.onTimePct != null ? `, ${f.onTimePct}% of their posts on time` : ""}. Paid bookings: ${fmt(f.paidBookings)}, with ${money(f.paidRecordedNet)} recorded as their net (recorded means the bookings on file, paid outside the app). License requests waiting on them: ${fmt(f.licenseRequestsPending)}. Creators joined through their invite link: ${fmt(f.referrals.signups)}, of whom ${fmt(f.referrals.approved)} were approved.`);
+  lines.push(`Their numbers right now: ${fmt(f.offersOpen)} open offers in their markets (${fmt(f.directInvites)} direct invites), ${fmt(f.applicationsPending)} applications waiting on a business's answer, ${fmt(f.visitsBooked)} visits booked, ${fmt(f.postsOwed.length)} posts owed, ${fmt(f.postsLive)} posts live${f.onTimePct != null ? `, ${f.onTimePct}% of their posts on time` : ""}. Paid bookings: ${fmt(f.paidBookings)}, with ${cmoney(f, f.paidRecordedNet)} recorded as their net (recorded means the bookings on file, paid outside the app). License requests waiting on them: ${fmt(f.licenseRequestsPending)}. Creators joined through their invite link: ${fmt(f.referrals.signups)}, of whom ${fmt(f.referrals.approved)} were approved.`);
   if (f.intentTotal > 0) lines.push(`Intent on their own posts: ${fmt(f.intentShares)} shares and ${fmt(f.intentSaves)} saves recorded, ${fmt(f.intentTotal)} in total across ${fmt(f.intentReportedPosts)} reported ${plural(f.intentReportedPosts, "post")}. Saves and shares mean people planning to come.`);
-  if (f.paidRate) lines.push(`Their listed paid rate is ${money(f.paidRate)}${f.licenseFee ? ` and their licensing fee is ${money(f.licenseFee)}` : ""}.`);
+  if (f.paidRate) lines.push(`Their listed paid rate is ${cmoney(f, f.paidRate)}${f.licenseFee ? ` and their licensing fee is ${cmoney(f, f.licenseFee)}` : ""}.`);
   return lines;
 }
 
@@ -634,7 +642,7 @@ function answerCreator(f, q, t) {
   }
   // Earnings (recorded only, labeled)
   if (hasPhrase(t, "have i earned", "have i made", "my earnings", "much have i", "paid bookings", "money have i") || (hasWord(t, "earned", "earnings") && hasWord(t, "my", "i"))) {
-    return linked(`Recorded: ${money(f.paidRecordedNet)} net across ${fmt(f.paidBookings)} paid ${plural(f.paidBookings, "booking")} on file. Recorded means the bookings in the app; payouts run outside the app for now, and the app never promises a payout date.${f.intentTotal > 0 ? ` Your posts have drawn ${fmt(f.intentTotal)} saves and shares so far (intent: people planning to come).` : ""}${f.licenseRequestsPending ? ` Also waiting on you: ${fmt(f.licenseRequestsPending)} license ${plural(f.licenseRequestsPending, "request")} to approve or decline.` : ""}`, "Open Earnings", "cr-earnings");
+    return linked(`Recorded: ${cmoney(f, f.paidRecordedNet)} net across ${fmt(f.paidBookings)} paid ${plural(f.paidBookings, "booking")} on file. Recorded means the bookings in the app; payouts run outside the app for now, and the app never promises a payout date.${f.intentTotal > 0 ? ` Your posts have drawn ${fmt(f.intentTotal)} saves and shares so far (intent: people planning to come).` : ""}${f.licenseRequestsPending ? ` Also waiting on you: ${fmt(f.licenseRequestsPending)} license ${plural(f.licenseRequestsPending, "request")} to approve or decline.` : ""}`, "Open Earnings", "cr-earnings");
   }
   // Profile state
   if (hasPhrase(t, "my profile", "am i finished", "am i complete", "profile finished", "profile complete", "businesses see me", "can businesses see") || (hasWord(t, "missing") && hasWord(t, "profile", "my"))) {
@@ -647,8 +655,8 @@ function answerCreator(f, q, t) {
   }
   // My rate / fee
   if (hasPhrase(t, "my rate", "my listed rate", "rate did i", "my license fee", "my licensing fee")) {
-    if (!f.paidRate && !f.licenseFee) return linked("No paid rate on your profile yet. Your rate is yours to set on your Profile, with a $50 floor for paid bookings.", "Set my rates", "cr-profile");
-    return linked(`Your listed paid rate is ${f.paidRate ? money(f.paidRate) : "not set"}${f.licenseFee ? `, and your licensing fee is ${money(f.licenseFee)}` : ""}. You keep 97% of both when they book or license through SIGNL.`, "Open my Profile", "cr-profile");
+    if (!f.paidRate && !f.licenseFee) return linked(`No paid rate on your profile yet. Your rate is yours to set on your Profile, with a ${f.currencySymbol || "$"}${f.paidFloor || 50} floor for paid bookings.`, "Set my rates", "cr-profile");
+    return linked(`Your listed paid rate is ${f.paidRate ? cmoney(f, f.paidRate) : "not set"}${f.licenseFee ? `, and your licensing fee is ${cmoney(f, f.licenseFee)}` : ""}. You keep 97% of both when they book or license through SIGNL.`, "Open my Profile", "cr-profile");
   }
   return null;
 }

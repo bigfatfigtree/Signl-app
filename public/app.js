@@ -861,10 +861,10 @@ function renderClaimedProfile(p) {
       </div>
       <p style="margin:12px 0 0"><strong>This booking page is live.</strong> It went live the moment @${esc(p.handle)} claimed their founding spot. Their full profile lands here once it is finished and approved.</p>
       <div class="tint-block" style="margin-top:14px">
-        <p class="small" style="margin-top:0">${p.compOpen === false ? `<span class="badge warn">Paid visits only</span>` : `<span class="badge info">Open to comp visits</span>`}${p.paidRate ? ` <span class="badge tier">Paid bookings: $${fmtPrice(p.paidRate)}</span>` : ""}</p>
+        <p class="small" style="margin-top:0">${p.compOpen === false ? `<span class="badge warn">Paid visits only</span>` : `<span class="badge info">Open to comp visits</span>`}${p.paidRate ? ` <span class="badge tier">Paid bookings: ${currencySymbolForMarket(p.market)}${fmtPrice(p.paidRate)}</span>` : ""}</p>
         <p class="small muted" style="margin:6px 0 0">${p.compOpen === false ? "Paid bookings only." : "Comped visits: a meal, a service, or an experience, for an honest post."}</p>
-        ${p.paidRate ? `<p class="small muted">Paid bookings at $${fmtPrice(p.paidRate)} &middot; creator keeps 97% &middot; payment held until the post is live.</p>` : ""}
-        ${p.licensingFee ? `<p class="small muted">Run my post as an ad for 90 days: $${fmtPrice(p.licensingFee)} &middot; I approve each use &middot; I keep 97%.</p>` : ""}
+        ${p.paidRate ? `<p class="small muted">Paid bookings at ${currencySymbolForMarket(p.market)}${fmtPrice(p.paidRate)} &middot; creator keeps 97% &middot; payment held until the post is live.</p>` : ""}
+        ${p.licensingFee ? `<p class="small muted">Run my post as an ad for 90 days: ${currencySymbolForMarket(p.market)}${fmtPrice(p.licensingFee)} &middot; I approve each use &middot; I keep 97%.</p>` : ""}
       </div>
       <p class="small muted">Booking opens when ${placeLabel} launches on SIGNL. Founding creators get the first look at offers.</p>
       ${p.viewerIsOwner ? `<p class="small muted">This is your page, exactly as visitors see it. The copyable link is on your status screen and your profile. Finish your profile from your dashboard and your photo, your audience, and your local reach appear here.</p>` : state.user ? "" : `<div class="cta-row" style="justify-content:flex-start"><a class="btn" href="#" onclick="return go('join-business')">Join as a founding business</a> <a class="btn ghost" href="#" onclick="return go('join-creator')">Become a Founding Creator</a></div>`}
@@ -3073,7 +3073,7 @@ async function renderEarningsTab() {
   ${pending.length ? `<div class="wcard" style="padding-top:8px;padding-bottom:8px">${pending.map((l) => licRow(l, true)).join("")}</div>` : `<p class="small muted" style="margin:8px 2px 0">No license requests waiting. When a business wants to reuse one of your posts, it lands here at your listed fee.</p>`}
   ${decided.length ? `<div class="wcard" style="padding-top:8px;padding-bottom:8px;margin-top:12px">${decided.map((l) => licRow(l, false)).join("")}</div>` : ""}
   <h3 style="margin:22px 0 0">Paid bookings</h3>
-  ${paidBookings.length ? `<div class="wcard" style="padding-top:8px;padding-bottom:8px">${paidBookings.map((b) => `<div class="lib-row"><div class="lib-main"><div class="lib-title">${esc(b.title)}</div><div class="lib-meta">${esc(b.businessName || "")} · Booked at your rate of $${fmtPrice(b.paidLane.rate)}. You keep $${fmtMoney(b.paidLane.creatorNet)}.</div></div><span class="badge ${b.paidLane.escrowState === "released" ? "ok" : b.paidLane.escrowState === "refunded" ? "warn" : "info"}">${stateWord(b)}</span></div>`).join("")}</div>` : `<p class="small muted" style="margin:8px 2px 0">${(state.user.creator || {}).paidRate ? `No paid bookings yet. Your rate is set at $${fmtPrice(state.user.creator.paidRate)}; when a business books you paid, it lands here.` : "No paid bookings yet. Set your rate on your profile and businesses can book you paid."}</p>`}
+  ${paidBookings.length ? `<div class="wcard" style="padding-top:8px;padding-bottom:8px">${paidBookings.map((b) => `<div class="lib-row"><div class="lib-main"><div class="lib-title">${esc(b.title)}</div><div class="lib-meta">${esc(b.businessName || "")} · Booked at your rate of ${ownCurrencySymbol()}${fmtPrice(b.paidLane.rate)}. You keep ${ownCurrencySymbol()}${fmtMoney(b.paidLane.creatorNet)}.</div></div><span class="badge ${b.paidLane.escrowState === "released" ? "ok" : b.paidLane.escrowState === "refunded" ? "warn" : "info"}">${stateWord(b)}</span></div>`).join("")}</div>` : `<p class="small muted" style="margin:8px 2px 0">${(state.user.creator || {}).paidRate ? `No paid bookings yet. Your rate is set at ${ownCurrencySymbol()}${fmtPrice(state.user.creator.paidRate)}; when a business books you paid, it lands here.` : "No paid bookings yet. Set your rate on your profile and businesses can book you paid."}</p>`}
   ${couponBookings.length ? `<h3 style="margin:22px 0 0">Coupon deals</h3>
   <p class="small muted" style="margin:8px 2px 0">Coupons you accepted as payment for a post. The value is store value at the business, not cash, so it never counts as cash earned.</p>
   <div class="wcard" style="padding-top:8px;padding-bottom:8px">${couponBookings.map((b) => `<div class="lib-row"><div class="lib-main"><div class="lib-title">${esc(b.title)}</div><div class="lib-meta">${esc(b.businessName || "")} &middot; ${esc(couponSummaryClient(b.coupon, b.businessName))}${b.coupon && b.coupon.expiresAt ? ` &middot; expires ${esc(fmtDay(b.coupon.expiresAt))}` : ""}${couponFaceBit(b)}</div></div><span class="badge ${b.post ? "ok" : "info"}">${b.post ? "Post live" : "Booked"}</span></div>`).join("")}</div>` : ""}`;
@@ -4467,6 +4467,25 @@ function areaOptions(marketName, selected) {
   const list = m ? m.cities : [];
   return list.map((c) => `<option value="${esc(c)}" ${c === selected ? "selected" : ""}>${esc(c)}</option>`).join("");
 }
+// Build -89: currency by market, client side. The bootstrap
+// market entries carry currencySymbol + paidFloor (London: £,
+// 40); every other market defaults to $ and 50. Creator money
+// surfaces render with the CREATOR's home-market symbol — the
+// viewer's own market when the surface is the creator's own.
+function currencySymbolForMarket(name) {
+  const m = (state.boot.markets || []).find((x) => x.name === name);
+  return (m && m.currencySymbol) || "$";
+}
+function paidFloorForMarketClient(name) {
+  const m = (state.boot.markets || []).find((x) => x.name === name);
+  return m && typeof m.paidFloor === "number" ? m.paidFloor : 50;
+}
+function ownCurrencySymbol() {
+  return state.user ? currencySymbolForMarket(state.user.market) : "$";
+}
+function ownPaidFloor() {
+  return state.user ? paidFloorForMarketClient(state.user.market) : 50;
+}
 function filterAreaOptions(searchId, selectId) {
   const input = document.getElementById(searchId);
   const sel = document.getElementById(selectId);
@@ -5100,7 +5119,7 @@ function sigB1AskValue() {
   const d = f.data;
   if (d.kind === "paid") {
     f.step = "rate";
-    sigOpAsk(ST("What cash rate, in dollars? Paid bookings start at $50. You pay the rate plus 3%; the creator keeps 97%.", "¿Qué tarifa en efectivo, en dólares? Las reservas pagadas empiezan en $50. Pagas la tarifa más 3%; el creador se queda con el 97%."));
+    sigOpAsk(ST(`What cash rate? Paid bookings start at ${ownCurrencySymbol()}${ownPaidFloor()}. You pay the rate plus 3%; the creator keeps 97%.`, `¿Qué tarifa en efectivo? Las reservas pagadas empiezan en ${ownCurrencySymbol()}${ownPaidFloor()}. Pagas la tarifa más 3%; el creador se queda con el 97%.`));
   } else {
     f.step = "cap";
     sigOpAsk(ST("What is the comp value, in dollars? The most it can ring up, at menu value. For example: 100.", "¿Cuál es el valor de la cortesía, en dólares? Lo máximo que puede sumar, a precio de menú. Por ejemplo: 100."));
@@ -5499,7 +5518,7 @@ async function sigB1Step(f, text, norm) {
     }
     case "rate": {
       const n = sigOpNum(t);
-      if (!(n > 0)) { sigOpAsk(ST("I need a dollar amount for the rate. Paid bookings start at $50.", "Necesito una cantidad en dólares. Las pagadas empiezan en $50.")); return; }
+      if (!(n > 0)) { sigOpAsk(ST(`I need an amount for the rate. Paid bookings start at ${ownCurrencySymbol()}${ownPaidFloor()}.`, `Necesito una cantidad para la tarifa. Las pagadas empiezan en ${ownCurrencySymbol()}${ownPaidFloor()}.`)); return; }
       d.rate = Math.round(n);
       sigB1AskPaidBrief();
       return;
@@ -6580,11 +6599,11 @@ async function sigC5Run() {
   try { const lr = await api("GET", "/license-requests"); pendingLic = (lr.licenseRequests || []).filter((l) => l.status === "pending").length; } catch (e) { /* the readout line still stands */ }
   const o = (ro && ro.overall) || {};
   const lines = [];
-  lines.push(ST(`Your earnings on record: ${o.paidBookings || 0} paid ${o.paidBookings === 1 ? "booking" : "bookings"}, $${fmtMoney(o.paidRecordedNet || 0)} recorded as yours. Recorded means the bookings in the app; payouts run outside the app for now.`, `Tus ganancias en registro: ${o.paidBookings || 0} reservas pagadas, $${fmtMoney(o.paidRecordedNet || 0)} registrado como tuyo. Registrado significa las reservas en la app; los pagos van fuera de la app por ahora.`));
+  lines.push(ST(`Your earnings on record: ${o.paidBookings || 0} paid ${o.paidBookings === 1 ? "booking" : "bookings"}, ${ownCurrencySymbol()}${fmtMoney(o.paidRecordedNet || 0)} recorded as yours. Recorded means the bookings in the app; payouts run outside the app for now.`, `Tus ganancias en registro: ${o.paidBookings || 0} reservas pagadas, ${ownCurrencySymbol()}${fmtMoney(o.paidRecordedNet || 0)} registrado como tuyo. Registrado significa las reservas en la app; los pagos van fuera de la app por ahora.`));
   if (pendingLic) lines.push(ST(`${pendingLic} license ${pendingLic === 1 ? "request is" : "requests are"} waiting on your answer in Earnings. Each one you approve pays you 97% of your licensing fee, and the business gets 90 days of repost and ad use from the day you approve.`, `${pendingLic} solicitud${pendingLic === 1 ? "" : "es"} de licencia esperando tu respuesta en Ganancias. Cada una que apruebas te paga el 97% de tu tarifa de licencia, y el negocio obtiene tres meses de republicación y uso en anuncios desde el día en que apruebas.`));
   const licFee = c.licensingFee || c.licenseFee || null;
   if (!c.paidRate) lines.push(ST("No paid rate on your profile yet. Without one, businesses can only book you for comped visits.", "Aún no tienes tarifa pagada en tu perfil. Sin ella, los negocios solo pueden reservarte visitas de cortesía."));
-  else lines.push(ST(`Your paid rate is $${fmtPrice(c.paidRate)}${licFee ? ` and your licensing fee is $${fmtPrice(licFee)}` : ", and your licensing fee is not set yet"}. You keep 97% of both.`, `Tu tarifa pagada es $${fmtPrice(c.paidRate)}${licFee ? ` y tu tarifa de licencia es $${fmtPrice(licFee)}` : ", y tu tarifa de licencia aún no está fijada"}. Te quedas con el 97% de ambas.`));
+  else lines.push(ST(`Your paid rate is ${ownCurrencySymbol()}${fmtPrice(c.paidRate)}${licFee ? ` and your licensing fee is ${ownCurrencySymbol()}${fmtPrice(licFee)}` : ", and your licensing fee is not set yet"}. You keep 97% of both.`, `Tu tarifa pagada es ${ownCurrencySymbol()}${fmtPrice(c.paidRate)}${licFee ? ` y tu tarifa de licencia es ${ownCurrencySymbol()}${fmtPrice(licFee)}` : ", y tu tarifa de licencia aún no está fijada"}. Te quedas con el 97% de ambas.`));
   const pc = u.profileCompletion || {};
   if (!pc.complete) lines.push(ST("Your profile is not finished, and businesses only see finished profiles. Finishing it is the biggest earn-more move there is.", "Tu perfil no está terminado, y los negocios solo ven perfiles terminados. Terminarlo es el paso que más mueve tus ganancias."));
   const acts = [];
@@ -8399,6 +8418,8 @@ function claimPayoffHtml(u) {
   const isUnl = u.market === unlistedLabel();
   const place = isUnl ? esc(u.city || "") : esc(marketTalkNameClient(u.market));
   const rateSet = typeof c.paidRate === "number" && c.paidRate > 0;
+  const curSym = currencySymbolForMarket(u.market);
+  const curFloor = paidFloorForMarketClient(u.market);
   return `
     <div class="tint-block" style="text-align:left;margin-top:16px">
       <p style="margin:0"><strong>${T("Your booking page is live.", "Tu página de reservas ya está activa.")}</strong></p>
@@ -8412,12 +8433,12 @@ function claimPayoffHtml(u) {
         ? T(`When SIGNL opens in ${place}, founding creators get the first look at offers.`, `Cuando SIGNL abra en ${place}, los creadores fundadores ven las ofertas primero.`)
         : T(`When ${place} businesses start booking, founding creators get the first look at offers.`, `Cuando los negocios de ${place} empiecen a reservar, los creadores fundadores ven las ofertas primero.`)}</p>
       ${rateSet
-        ? `<p class="small" style="margin:10px 0 0">${T(`Your paid rate is $${fmtPrice(c.paidRate)}, and it is on your page. Change it any time on your profile.`, `Tu tarifa pagada es $${fmtPrice(c.paidRate)}, y ya está en tu página. Cámbiala cuando quieras en tu perfil.`)}</p>`
+        ? `<p class="small" style="margin:10px 0 0">${T(`Your paid rate is ${curSym}${fmtPrice(c.paidRate)}, and it is on your page. Change it any time on your profile.`, `Tu tarifa pagada es ${curSym}${fmtPrice(c.paidRate)}, y ya está en tu página. Cámbiala cuando quieras en tu perfil.`)}</p>`
         : `<div style="margin-top:12px">
             <p class="small" style="margin:0"><strong>${T("Set your paid rate (optional, 20 seconds)", "Pon tu tarifa pagada (opcional, 20 segundos)")}</strong></p>
-            <p class="small muted" style="margin:4px 0 0">${T("It shows on your page. Businesses book at your rate, you keep 97%, and payment is held until your post is live. Minimum $50. Comped visits work without it.", "Aparece en tu página. Los negocios reservan a tu tarifa, te quedas con el 97%, y el pago se retiene hasta que tu publicación esté en vivo. Mínimo $50. Las visitas de cortesía funcionan sin esto.")}</p>
+            <p class="small muted" style="margin:4px 0 0">${T(`It shows on your page. Businesses book at your rate, you keep 97%, and payment is held until your post is live. Minimum ${curSym}${curFloor}. Comped visits work without it.`, `Aparece en tu página. Los negocios reservan a tu tarifa, te quedas con el 97%, y el pago se retiene hasta que tu publicación esté en vivo. Mínimo ${curSym}${curFloor}. Las visitas de cortesía funcionan sin esto.`)}</p>
             <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
-              <span>$</span><input id="claim-rate" type="number" min="50" step="1" inputmode="numeric" placeholder="150" style="width:110px">
+              <span>${curSym}</span><input id="claim-rate" type="number" min="${curFloor}" step="1" inputmode="numeric" placeholder="150" style="width:110px">
               <button class="btn small-btn" onclick="return saveClaimRate()">${T("Put it on my page", "Ponla en mi página")}</button>
             </div>
             <p class="small" id="claim-rate-msg" style="margin:6px 0 0"></p>
@@ -8440,7 +8461,8 @@ async function saveClaimRate() {
   const input = document.getElementById("claim-rate");
   const msg = document.getElementById("claim-rate-msg");
   const rate = Math.round(Number(input && input.value));
-  if (!Number.isFinite(rate) || rate < 50) { if (msg) msg.textContent = T("Rates start at $50.", "Las tarifas empiezan en $50."); return false; }
+  const floor = ownPaidFloor(); const sym = ownCurrencySymbol();
+  if (!Number.isFinite(rate) || rate < floor) { if (msg) msg.textContent = T(`Rates start at ${sym}${floor}.`, `Las tarifas empiezan en ${sym}${floor}.`); return false; }
   try {
     const data = await api("PATCH", "/me/profile", { paidRate: rate });
     if (data && data.user) state.user = data.user;
@@ -8712,8 +8734,8 @@ function ladderHtml(u) {
 function paidLaneBadgesHtml(p) {
   if (!p) return "";
   let out = "";
-  if (p.paidRate) out += ` <span class="badge tier">Paid bookings: $${fmtPrice(p.paidRate)}</span>`;
-  if (p.licensingFee) out += ` <span class="badge tier">Licenses posts: $${fmtPrice(p.licensingFee)}</span>`;
+  if (p.paidRate) out += ` <span class="badge tier">Paid bookings: ${currencySymbolForMarket(p.market)}${fmtPrice(p.paidRate)}</span>`;
+  if (p.licensingFee) out += ` <span class="badge tier">Licenses posts: ${currencySymbolForMarket(p.market)}${fmtPrice(p.licensingFee)}</span>`;
   out += p.compOpen === false
     ? ` <span class="badge warn">Paid visits only</span>`
     : ` <span class="badge info">Open to comp visits</span>`;
@@ -9078,7 +9100,7 @@ function creatorProfileDetailHtml(c, preview, opts) {
       <div class="cc-photo${c.photoUrl ? "" : " no-photo"}">
         ${c.photoUrl ? `<img src="${esc(c.photoUrl)}" alt="">` : `<div class="cc-mono"><span>${initial}</span></div>`}
         ${p.tierBand ? `<span class="cc-tier">${esc(p.tierBand)}</span>` : ""}
-        ${p.paidRate ? `<span class="cc-paid">Paid bookings: $${fmtPrice(p.paidRate)}</span>` : ""}${p.licensingFee ? ` <span class="cc-paid">Licenses posts: $${fmtPrice(p.licensingFee)}</span>` : ""}
+        ${p.paidRate ? `<span class="cc-paid">Paid bookings: ${currencySymbolForMarket(p.market)}${fmtPrice(p.paidRate)}</span>` : ""}${p.licensingFee ? ` <span class="cc-paid">Licenses posts: ${currencySymbolForMarket(p.market)}${fmtPrice(p.licensingFee)}</span>` : ""}
       </div>
       ${galleryRowHtml(c.photos)}
       <div class="cc-body">
@@ -9122,12 +9144,12 @@ function creatorProfileDetailHtml(c, preview, opts) {
     ${creatorShowcaseHtml(c)}
     ${adminView ? `<div class="cta-row" style="justify-content:flex-start"><button class="btn ghost" onclick="adminBackToRequests()">Back to Applications</button></div>` : `<div class="cta-row" style="justify-content:flex-start">
       ${preview
-        ? `<button class="btn" onclick="previewStartOffer('${c.userId}')">Send offer</button>${p.paidRate ? ` <button class="btn ghost" onclick="previewPaidBooking('${c.userId}')">Preview paid booking ($${fmtPrice(p.paidRate)})</button>` : ""}`
-        : `<button class="btn" onclick="startOffer('${c.userId}')">Send offer</button>${p.paidRate ? ` <button class="btn" onclick="bookPaidVisit('${c.userId}')">Book paid visit ($${fmtPrice(p.paidRate)})</button>` : ""} <button class="btn ghost" onclick="openThread('${c.userId}')">Message</button>`}
+        ? `<button class="btn" onclick="previewStartOffer('${c.userId}')">Send offer</button>${p.paidRate ? ` <button class="btn ghost" onclick="previewPaidBooking('${c.userId}')">Preview paid booking (${currencySymbolForMarket(p.market)}${fmtPrice(p.paidRate)})</button>` : ""}`
+        : `<button class="btn" onclick="startOffer('${c.userId}')">Send offer</button>${p.paidRate ? ` <button class="btn" onclick="bookPaidVisit('${c.userId}')">Book paid visit (${currencySymbolForMarket(p.market)}${fmtPrice(p.paidRate)})</button>` : ""} <button class="btn ghost" onclick="openThread('${c.userId}')">Message</button>`}
       <button class="btn small-btn ghost" onclick="profileLater('${c.userId}', ${preview ? "true" : "false"})">Later</button>
       <button class="btn small-btn ghost" onclick="profileNotFit('${c.userId}', ${preview ? "true" : "false"})">Not a fit</button>
     </div>`}
-    ${p.paidRate ? `<p class="small muted">Paid bookings: $${fmtPrice(p.paidRate)} &middot; you pay rate + 3% &middot; they keep 97% &middot; held until the post is live.</p>` : ""}
+    ${p.paidRate ? `<p class="small muted">Paid bookings: ${currencySymbolForMarket(p.market)}${fmtPrice(p.paidRate)} &middot; you pay rate + 3% &middot; they keep 97% &middot; held until the post is live.</p>` : ""}
     ${preview ? `<p class="small muted">Preview: an offer sent from here is a simulation. It never reaches ${esc(c.name)} and nothing is saved.</p>` : ""}
     ${preview && c.trackRecord && c.trackRecord.postsDelivered > 0 ? `
     <div class="showcase-block"><h4>Ad use (preview)</h4>
@@ -9193,7 +9215,7 @@ function creatorCard(c, viewer, opts) {
     <div class="cc-photo${c.photoUrl ? "" : " no-photo"}">
       ${c.photoUrl ? `<img src="${esc(c.photoUrl)}" alt="">` : `<div class="cc-mono"><span>${initial}</span></div>`}
       ${p.tierBand ? `<span class="cc-tier">${esc(p.tierBand)}</span>` : ""}
-      ${p.paidRate ? `<span class="cc-paid">Paid bookings: $${fmtPrice(p.paidRate)}</span>` : ""}${p.licensingFee ? ` <span class="cc-paid">Licenses posts: $${fmtPrice(p.licensingFee)}</span>` : ""}
+      ${p.paidRate ? `<span class="cc-paid">Paid bookings: ${currencySymbolForMarket(p.market)}${fmtPrice(p.paidRate)}</span>` : ""}${p.licensingFee ? ` <span class="cc-paid">Licenses posts: ${currencySymbolForMarket(p.market)}${fmtPrice(p.licensingFee)}</span>` : ""}
     </div>
     <div class="cc-id">
       <div class="cc-name">${esc(c.name)}</div>
@@ -9234,9 +9256,9 @@ function creatorCard(c, viewer, opts) {
       ${opts.preview
         ? `<button class="btn small-btn" onclick="previewViewCreator('${c.userId}')">View profile</button>
            <button class="btn small-btn ghost" onclick="previewStartOffer('${c.userId}')">Send preview offer</button>${p.paidRate ? `
-           <button class="btn small-btn ghost" onclick="previewPaidBooking('${c.userId}')">Preview paid booking ($${fmtPrice(p.paidRate)})</button>` : ""}`
+           <button class="btn small-btn ghost" onclick="previewPaidBooking('${c.userId}')">Preview paid booking (${currencySymbolForMarket(p.market)}${fmtPrice(p.paidRate)})</button>` : ""}`
         : `<button class="btn small-btn" onclick="startOffer('${c.userId}')">Send offer</button>${p.paidRate ? `
-           <button class="btn small-btn" onclick="bookPaidVisit('${c.userId}')">Book paid visit ($${fmtPrice(p.paidRate)})</button>` : ""}
+           <button class="btn small-btn" onclick="bookPaidVisit('${c.userId}')">Book paid visit (${currencySymbolForMarket(p.market)}${fmtPrice(p.paidRate)})</button>` : ""}
            <button class="btn small-btn ghost" onclick="openCreatorProfile('${c.userId}')">View profile</button>
            <button class="btn small-btn ghost" onclick="openThread('${c.userId}')">Message</button>
            <button class="heart ${c.isFavorite ? "on" : ""}" title="Save to favorites" onclick="toggleFav('${c.userId}')">${c.isFavorite ? "&#10084;" : "&#9825;"}</button>`}
@@ -10174,11 +10196,13 @@ async function loadRateRange() {
     const d = await api("GET", "/me/rate-range");
     const host = document.getElementById("lane-range-line");
     if (!host) return;
+    const rsym = d.currencySymbol || ownCurrencySymbol();
+    const rfloor = typeof d.floor === "number" ? d.floor : ownPaidFloor();
     host.textContent = d.range
       ? (d.range.source === "bookings"
-        ? `The going range near you, from real paid bookings: $${fmtPrice(d.range.low)} to $${fmtPrice(d.range.high)}. Ranges only; nobody's individual rate is ever shown.`
-        : `Guidance from listed rates near you: $${fmtPrice(d.range.low)} to $${fmtPrice(d.range.high)}. It is guidance until more paid bookings land.`)
-      : "Not enough local booking data yet to show a going range. The floor is $50, and you keep 97% of your rate.";
+        ? `The going range near you, from real paid bookings: ${rsym}${fmtPrice(d.range.low)} to ${rsym}${fmtPrice(d.range.high)}. Ranges only; nobody's individual rate is ever shown.`
+        : `Guidance from listed rates near you: ${rsym}${fmtPrice(d.range.low)} to ${rsym}${fmtPrice(d.range.high)}. It is guidance until more paid bookings land.`)
+      : `Not enough local booking data yet to show a going range. The floor is ${rsym}${rfloor}, and you keep 97% of your rate.`;
   } catch (e) { /* the line is an enhancement */ }
 }
 // Audience offers: one block, role-aware, appended inside the
@@ -11239,10 +11263,10 @@ function laneCompLine(c) {
 }
 function lanePaidLine(c) {
   const rate = laneRateOf(c || {});
-  if (!rate) return "not set. Flip the switch and set a rate (min $50).";
+  if (!rate) return ownPaidFloor() === 50 && ownCurrencySymbol() === "$" ? "not set. Flip the switch and set a rate (min $50)." : `not set. Flip the switch and set a rate (min ${ownCurrencySymbol()}${ownPaidFloor()}).`;
   const keep = Math.round(rate * 0.97 * 100) / 100;
   const total = Math.round(rate * 1.03 * 100) / 100;
-  return `your rate $${fmtPrice(rate)} · you keep $${fmtMoney(keep)} (97%). Business pays $${fmtMoney(total)}.`;
+  return `your rate ${ownCurrencySymbol()}${fmtPrice(rate)} · you keep ${ownCurrencySymbol()}${fmtMoney(keep)} (97%). Business pays ${ownCurrencySymbol()}${fmtMoney(total)}.`;
 }
 function laneSpanishLine(c) {
   return c && c.spanishContent ? "on. Businesses can find you with the Spanish content filter, and offers that need Spanish content are marked." : "off. Turn this on if you create content in Spanish, even sometimes.";
@@ -11255,7 +11279,7 @@ function laneFeeLine(c) {
   const fee = laneFeeOf(c || {});
   if (!fee) return "not set. Name one price and a business can ask to repost your post and run it as an ad for 90 days, only with your approval.";
   const keep = Math.round(fee * 0.97 * 100) / 100;
-  return `repost my post and run it as an ad for 90 days: $${fmtPrice(fee)} · you keep $${fmtMoney(keep)} (97%) per license.`;
+  return `repost my post and run it as an ad for 90 days: ${ownCurrencySymbol()}${fmtPrice(fee)} · you keep ${ownCurrencySymbol()}${fmtMoney(keep)} (97%) per license.`;
 }
 function laneFeeSave() {
   const inp = document.getElementById("lane-fee");
@@ -11263,7 +11287,7 @@ function laneFeeSave() {
   if (raw === "") { laneSave({ licensingFee: null }); return false; }
   const v = Number(raw);
   if (!Number.isFinite(v) || v < 1) {
-    laneErr("Licensing fees start at $1, or leave it blank for no licensing.");
+    laneErr(`Licensing fees start at ${ownCurrencySymbol()}1, or leave it blank for no licensing.`);
     if (inp) inp.focus();
     return false;
   }
@@ -11441,9 +11465,9 @@ function laneControlsHtml(c) {
     <div class="lrow lane-row"><input type="checkbox" class="sw lane-sw" id="lane-comp" ${compOn ? "checked" : ""} onchange="laneToggleComp(this)"><div><label class="lname" for="lane-comp">Comp visits</label> <span class="lline" id="lane-comp-line">— ${esc(laneCompLine(c || {}))}</span></div></div>
     <div class="lrow lane-row"><input type="checkbox" class="sw lane-sw" id="lane-paid" ${rate ? "checked" : ""} onchange="laneTogglePaid(this)"><div><label class="lname" for="lane-paid">Paid bookings</label> <span class="lline" id="lane-paid-line">— ${esc(lanePaidLine(c || {}))}</span></div></div>
     <div class="lane-rate" id="lane-rate-row" style="display:${rate ? "block" : "none"}">
-      <label for="lane-rate">Your paid rate (min $50)</label>
-      <div class="lane-rate-flex"><input type="number" id="lane-rate" min="50" step="1" inputmode="numeric" placeholder="150" value="${rate || ""}" onchange="laneRateAuto()"><button type="button" class="btn small-btn" onclick="return laneRateSave()">Save rate</button></div>
-      <p class="small muted" id="lane-rate-note">${rate ? `Businesses pay your listed rate of $${fmtMoney(rate)}. You keep $${fmtMoney(Math.round(rate * 0.97 * 100) / 100)} (97%), and SIGNL holds the payment until your post is live. A paid booking includes the standard license: the business can repost your post and run it as an ad for 90 days from the post date, never longer, and never edited.` : "Set a rate and businesses can book you paid at that rate. You keep 97%, and SIGNL holds the payment until your post is live. Paid bookings turn on when a rate is saved. A paid booking includes the standard license: the business can repost your post and run it as an ad for 90 days from the post date, never longer, and never edited."}</p>
+      <label for="lane-rate">Your paid rate (min ${ownCurrencySymbol()}${ownPaidFloor()})</label>
+      <div class="lane-rate-flex"><input type="number" id="lane-rate" min="${ownPaidFloor()}" step="1" inputmode="numeric" placeholder="150" value="${rate || ""}" onchange="laneRateAuto()"><button type="button" class="btn small-btn" onclick="return laneRateSave()">Save rate</button></div>
+      <p class="small muted" id="lane-rate-note">${rate ? `Businesses pay your listed rate of ${ownCurrencySymbol()}${fmtMoney(rate)}. You keep ${ownCurrencySymbol()}${fmtMoney(Math.round(rate * 0.97 * 100) / 100)} (97%), and SIGNL holds the payment until your post is live. A paid booking includes the standard license: the business can repost your post and run it as an ad for 90 days from the post date, never longer, and never edited.` : "Set a rate and businesses can book you paid at that rate. You keep 97%, and SIGNL holds the payment until your post is live. Paid bookings turn on when a rate is saved. A paid booking includes the standard license: the business can repost your post and run it as an ad for 90 days from the post date, never longer, and never edited."}</p>
       <p class="small" id="lane-range-line"></p>
     </div>
     <div class="lrow lane-row"><div><span class="lname">Run my post as an ad</span> <span class="lline" id="lane-fee-line">— ${esc(laneFeeLine(c || {}))}</span></div></div>
@@ -11663,14 +11687,14 @@ function laneOpenRateEntry(msg) {
 function laneTogglePaid(input) {
   if (!input.checked) { laneSave({ paidRate: null }); return true; }
   const rate = laneRateOf(state.user.creator || {}) || laneTypedRate();
-  if (rate && rate >= 50) { laneSave({ paidRate: rate }); return true; }
-  laneOpenRateEntry("Set a rate (min $50), then tap Save rate — paid bookings turn on.");
+  if (rate && rate >= ownPaidFloor()) { laneSave({ paidRate: rate }); return true; }
+  laneOpenRateEntry(`Set a rate (min ${ownCurrencySymbol()}${ownPaidFloor()}), then tap Save rate — paid bookings turn on.`);
   return true;
 }
 function laneRateSave() {
   const v = laneTypedRate();
-  if (!v || v < 50) {
-    laneErr("Paid bookings need a rate of at least $50.");
+  if (!v || v < ownPaidFloor()) {
+    laneErr(`Paid bookings need a rate of at least ${ownCurrencySymbol()}${ownPaidFloor()}.`);
     const inp = document.getElementById("lane-rate");
     if (inp) inp.focus();
     return false;
@@ -11683,14 +11707,14 @@ function laneRateAuto() {
   // the rate and the toggle land together.
   const sw = document.getElementById("lane-paid");
   const v = laneTypedRate();
-  if (sw && sw.checked && v && v >= 50 && v !== laneRateOf(state.user.creator || {})) laneSave({ paidRate: Math.round(v * 100) / 100 });
+  if (sw && sw.checked && v && v >= ownPaidFloor() && v !== laneRateOf(state.user.creator || {})) laneSave({ paidRate: Math.round(v * 100) / 100 });
   return true;
 }
 function laneBothOn() {
   const rate = laneRateOf(state.user.creator || {}) || laneTypedRate();
-  if (rate && rate >= 50) { laneSave({ compOpen: true, paidRate: rate }); return false; }
+  if (rate && rate >= ownPaidFloor()) { laneSave({ compOpen: true, paidRate: rate }); return false; }
   laneSave({ compOpen: true });
-  laneOpenRateEntry("Comp is on. Set a rate (min $50), then tap Save rate — paid bookings turn on too.");
+  laneOpenRateEntry(`Comp is on. Set a rate (min ${ownCurrencySymbol()}${ownPaidFloor()}), then tap Save rate — paid bookings turn on too.`);
   return false;
 }
 
@@ -13471,6 +13495,7 @@ function visitCard(b, role) {
       ${late ? `<p class="small"><strong>This post is past its ${windowPhraseClient(deliverablesOfClient(b).windowHours)} deadline.</strong> Post within ${windowPhraseClient(deliverablesOfClient(b).windowHours)} for full credit. A late post inside the catch-up window still counts, and the missed deadline stays on your record. No link, no check-off.</p>` : `<p class="small muted">Your check-off is the post link itself. Paste it here and the visit is marked delivered${b.compliance && b.compliance.deadline ? ` (deadline ${esc(fmtDate(b.compliance.deadline))})` : ""}. Post within ${windowPhraseClient(deliverablesOfClient(b).windowHours)} for full credit. A late post inside the catch-up window still counts.</p>`}
       <div class="field"><label>Link to your ${esc(primaryLabelClient((state.user && state.user.creator && state.user.creator.primaryPlatform) || "instagram"))} post</label><input id="post-url-${b.id}" type="url" placeholder="https://${esc(primaryMetaClient((state.user && state.user.creator && state.user.creator.primaryPlatform) || "instagram").host)}..." required></div>
       <label class="ckrow"><input type="checkbox" class="ckbox" id="post-disc-${b.id}"><span>My post clearly discloses the comp (for example #ad or "comped by the business"), as the FTC requires.</span></label>
+      ${b.adDisclosure ? `<div class="field"><label>Your post caption (UK ad rule: #ad up front)</label><textarea id="post-caption-${b.id}" rows="2">${esc(disclosureLine(b))}</textarea><p class="small muted">${esc(b.adDisclosure.clause)} This visit does not count as delivered until the ad label is verified.</p></div>` : ""}
       <p class="small muted">Post your honest experience. Nobody can require a positive post.</p>
       <div class="field"><label>Your disclosure line, done for you</label><div style="display:flex;gap:8px;flex-wrap:wrap"><input type="text" readonly value="${esc(disclosureLine(b))}" onclick="this.select()" style="flex:1;min-width:220px"><button type="button" class="btn small-btn ghost" onclick="return disclosureCopy(this)">Copy the line</button></div><p class="small muted">One tap copies it. Paste it at the top of your caption, then confirm on this card after the post is live.</p></div>
       <button class="btn small-btn" type="submit">Submit post</button>
@@ -13695,7 +13720,8 @@ async function submitPost(e, bookingId) {
   const disc = document.getElementById("post-disc-" + bookingId);
   if (!disc.checked) { alert("Confirm the disclosure first. Every SIGNL post must disclose the comp."); return false; }
   try {
-    await api("POST", "/posts", { bookingId, url: document.getElementById("post-url-" + bookingId).value, includesDisclosure: true });
+    const capEl = document.getElementById("post-caption-" + bookingId);
+    await api("POST", "/posts", { bookingId, url: document.getElementById("post-url-" + bookingId).value, includesDisclosure: true, caption: capEl ? capEl.value : undefined });
     state.postFlash = true;
     loadMyVisits("creator");
   } catch (err) { alert(err.message); }
@@ -16273,7 +16299,7 @@ function discoverStackCard(c) {
   const cats = (p.categories || []).slice(0, 3);
   const extra = (p.categories || []).length - cats.length;
   const place = [c.neighborhood, c.city].filter(Boolean).map(esc).join(" &middot; ");
-  const rateLine = p.compOpen === false ? "Paid visits only" : (p.paidRate ? `Listed rate $${fmtPrice(p.paidRate)}` : "Comp friendly");
+  const rateLine = p.compOpen === false ? "Paid visits only" : (p.paidRate ? `Listed rate ${currencySymbolForMarket(p.market)}${fmtPrice(p.paidRate)}` : "Comp friendly");
   const thumbs = (Array.isArray(c.photos) && c.photos.length ? c.photos : (c.photoUrl ? [c.photoUrl] : [])).slice(0, 3);
   return `<div class="dcard deck2-card${c.standing === "paused" ? " paused" : ""}">
     <div class="dcard-photo${c.photoUrl ? "" : " no-photo"}">
@@ -16726,7 +16752,7 @@ function offerValidateField(key) {
   if (key === "title") return offerFieldError("title", !String(d.title || "").trim() ? "Give the offer a title." : "");
   if (key === "comped") return kind === "coupon" ? offerFieldError("comped", "") : offerFieldError("comped", !String(d.comped || "").trim() ? "Say exactly what is comped." : "");
   if (key === "cap") return kind !== "comp" ? offerFieldError("cap", "") : offerFieldError("cap", !(Number(d.cap) > 0) ? "Enter the comp value in dollars." : "");
-  if (key === "rate") return kind !== "paid" ? offerFieldError("rate", "") : offerFieldError("rate", !(Number(d.rate) >= 50) ? "Enter the cash rate. Cash offers start at $50." : "");
+  if (key === "rate") return kind !== "paid" ? offerFieldError("rate", "") : offerFieldError("rate", !(Number(d.rate) >= ownPaidFloor()) ? `Enter the cash rate. Cash offers start at ${ownCurrencySymbol()}${ownPaidFloor()}.` : "");
   if (key === "spots") {
     const v = String(d.spots === undefined ? "" : d.spots).trim();
     if (v === "") return offerFieldError("spots", "");
@@ -17108,7 +17134,7 @@ async function loadMyOffers() {
       <p class="fg-kicker">The value</p>
       <div class="form-2col">
         <div class="field" id="o2-cap-wrap"><label>Comp value / dollar cap ($) <span class="req-tag">Required</span> ${infoBtn("cap")}</label><input type="number" id="o2-cap" min="1" placeholder="100" value="${dv(dft.cap)}" oninput="offerCoachUpdate()" onblur="offerValidateField('cap')"><p class="field-err" id="err-o2-cap"></p><p class="small" id="o2-compnudge" style="margin:4px 0 0"></p></div>
-        <div class="field" id="o2-rate-wrap" style="display:none"><label>Cash rate ($) <span class="req-tag">Required</span> ${infoBtn("rate")}</label><input type="number" id="o2-rate" min="50" step="1" placeholder="150" value="${dv(dft.rate)}" oninput="offerCoachUpdate()" onblur="offerValidateField('rate')"><p class="field-err" id="err-o2-rate"></p><p class="small muted">You pay rate + 3%. Creator keeps 97%. Min $50.</p></div>
+        <div class="field" id="o2-rate-wrap" style="display:none"><label>Cash rate (${ownCurrencySymbol()}) <span class="req-tag">Required</span> ${infoBtn("rate")}</label><input type="number" id="o2-rate" min="${ownPaidFloor()}" step="1" placeholder="150" value="${dv(dft.rate)}" oninput="offerCoachUpdate()" onblur="offerValidateField('rate')"><p class="field-err" id="err-o2-rate"></p><p class="small muted">You pay rate + 3%. Creator keeps 97%. Min ${ownCurrencySymbol()}${ownPaidFloor()}.</p></div>
         <div class="field" id="o2-coupon-wrap" style="display:none"><label>The coupon <span class="req-tag">Required</span></label>
           <div class="radio-stack">
           <label class="radio-chip"><input type="radio" name="o2-ctype" value="store_credit" ${!dft.ctype || dft.ctype === "store_credit" ? "checked" : ""} onchange="offerCouponTypeUpdate()"><span>Store credit</span></label>
@@ -17467,7 +17493,7 @@ function applicantCardHtml(offer, a) {
     <div class="flex-between"><strong>${esc(c.name || a.snapshot.name)} <span class="muted">@${esc(c.handle || a.snapshot.handle)}</span></strong>${stateLine}</div>
     ${campusBadgeHtml(c) ? `<p class="small" style="margin-top:6px">${campusBadgeHtml(c)}</p>` : ""}
     <p class="small">${esc(c.tierBand || a.snapshot.tierBand || "")} &middot; ${c.localAudiencePct === null || c.localAudiencePct === undefined ? "local % not reported" : c.localAudiencePct + "% local audience"} &middot; Impact ${c.impact !== undefined && a.rankParts ? a.rankParts.impactScore : ""} &middot; Momentum ${a.rankParts ? a.rankParts.momentum : ""} pts${ratingBit}${badgesHtml(c.badges)} &middot; reliability ${a.rankParts ? a.rankParts.reliability : ""}</p>
-    <p class="small muted">${tr.isNew || !tr.visitsCompleted ? "New to SIGNL: no visits yet." : `${tr.visitsCompleted} visits completed &middot; ${tr.postsDelivered} posts delivered &middot; ${tr.onTimePct === null || tr.onTimePct === undefined ? "on-time n/a" : tr.onTimePct + "% on time"}`} &middot; ${fmtNum(c.totalAudience || a.snapshot.totalAudience)} total audience${c.paidRate ? ` &middot; paid rate $${fmtPrice(c.paidRate)}` : ""}</p>
+    <p class="small muted">${tr.isNew || !tr.visitsCompleted ? "New to SIGNL: no visits yet." : `${tr.visitsCompleted} visits completed &middot; ${tr.postsDelivered} posts delivered &middot; ${tr.onTimePct === null || tr.onTimePct === undefined ? "on-time n/a" : tr.onTimePct + "% on time"}`} &middot; ${fmtNum(c.totalAudience || a.snapshot.totalAudience)} total audience${c.paidRate ? ` &middot; paid rate ${currencySymbolForMarket(c.market)}${fmtPrice(c.paidRate)}` : ""}</p>
     ${a.plusOne ? `<div class="showcase-block"><h4>Bringing a +1: ${esc(a.plusOne.name)} <span class="muted">@${esc(a.plusOne.handle)}</span></h4><p class="small" style="margin:0">${a.plusOne.localAudiencePct}% local. Selecting books both creators on this visit; each redeems their own code and posts their own post and story.${offer.kind === "paid" ? " On a paid offer the +1 is comped presence only, unless you book them at their own rate through the normal flow." : ""}</p>
     ${(a.status === "applied" || a.status === "backfill_offered") ? `<div class="cta-row" style="justify-content:flex-start;margin-top:10px"><button class="btn small-btn" onclick="selectApplicant('${offer.id}','${a.id}')">Select the pair</button><button class="btn small-btn ghost" onclick="declinePairApplicant('${offer.id}','${a.id}')">Decline the +1 only</button><button class="btn small-btn ghost" onclick="releaseApplicant('${offer.id}','${a.id}')">Release</button></div><p class="small muted" style="margin:6px 0 0">Declining the +1 leaves ${esc(c.name || a.snapshot.name)}'s application standing on its own.</p>` : ""}</div>` : ""}
     ${!a.plusOne && (a.status === "applied" || a.status === "backfill_offered") ? `<div class="cta-row" style="justify-content:flex-start"><button class="btn small-btn" onclick="selectApplicant('${offer.id}','${a.id}')">Select this creator</button><button class="btn small-btn ghost" onclick="releaseApplicant('${offer.id}','${a.id}')">Release</button></div>` : ""}

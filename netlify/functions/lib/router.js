@@ -5,7 +5,7 @@ const crypto = require("crypto");
 const store = require("./store");
 const auth = require("./auth");
 const { logEvent, listEvents, listEventsForSubject } = require("./events");
-const { MARKETS, normalizeMarketName, resolveTypedCity, TIERS, CREATOR_CATEGORIES, COMP_CATEGORIES, BUSINESS_CATEGORIES, PLANS, PROFESSIONS, LEGACY_PROFESSIONS, REALTOR_PROFESSION, canonicalFromList, tierForFollowers, normalizeTierBand, MIN_TOTAL_AUDIENCE } = require("./markets");
+const { MARKETS, normalizeMarketName, resolveTypedCity, TIERS, CREATOR_CATEGORIES, COMP_CATEGORIES, BUSINESS_CATEGORIES, PLANS, PROFESSIONS, LEGACY_PROFESSIONS, REALTOR_PROFESSION, canonicalFromList, tierForFollowers, normalizeTierBand, MIN_TOTAL_AUDIENCE, currencyForMarket, paidFloorForMarket } = require("./markets");
 const { computeLocalImpactScore, summarizeHistory } = require("./score");
 const { computeFit, buildFitNote } = require("./fit");
 const { emailEnabled, sendEmail, senderProfile, SENDER_PROFILE_NAMES } = require("./email");
@@ -394,6 +394,50 @@ function paidMath(rate) {
     creatorNet: Math.round(r * (1 - PAID_LANE.creatorFeePct / 100) * 100) / 100,
     platformFee: Math.round(r * (PAID_LANE.feePctTotal / 100) * 100) / 100,
   };
+}
+
+// ---------- Build -89: London #ad + GBP creator money ----------
+// Currency comes from the market (markets.js currencyForMarket):
+// London creators set, see, and are paid against £ with a £40
+// paid floor; US markets keep $ and the $50 floor. No FX
+// conversion anywhere: a stored amount is denominated in the
+// creator's home-market currency.
+function isLondonMarket(name) {
+  return normalizeMarketName(name || "") === "London";
+}
+function currencySymbolForMarket(name) {
+  return currencyForMarket(name).symbol;
+}
+// The UK disclosure clause carried in the booking terms both
+// sides accept for a London-market visit (ASA/CAP, plain words;
+// it extends the Build -60 disclosure attestation and the
+// Build -86 London note): a comped or paid post is an ad, and
+// the label goes up front.
+const UK_AD_CLAUSE = "UK ad disclosure: UK rules (ASA/CAP) count a comped or paid post as an ad. The post must carry a clear ad label, #ad, up front at the start of the post. A London post does not count as delivered until the ad label is verified.";
+const UK_AD_LABEL = "#ad";
+function adDisclosureForMarket(name) {
+  return isLondonMarket(name) ? { required: true, label: UK_AD_LABEL, clause: UK_AD_CLAUSE } : null;
+}
+function captionHasAdLabel(caption) {
+  return typeof caption === "string" && /#ad\b/i.test(caption);
+}
+// Whether a stored post's ad label is verified. Non-London
+// posts are never gated on this. A London post verifies from
+// its stored caption (#ad present) or the creator's disclosure
+// attestation stored alongside it (Build -60 pattern).
+function adLabelVerifiedFor(post, marketName) {
+  if (!isLondonMarket(marketName)) return true;
+  if (!post) return false;
+  if (post.adLabelVerified === true) return true;
+  if (captionHasAdLabel(post.caption)) return true;
+  return false;
+}
+function deliveryBlockersFor(booking, post) {
+  const out = [];
+  if (!booking) return out;
+  if (!post) out.push("post not live");
+  else if (isLondonMarket(booking.market) && !adLabelVerifiedFor(post, booking.market)) out.push("ad label missing");
+  return out;
 }
 // V5 money discipline (Jeff, 2026-10-25), the server twin of the
 // client's fmtMoney/fmtPrice: computed amounts and caps stated in
@@ -827,7 +871,7 @@ function offerStrength(offer) {
   // surface naming the MISSING item reads as a to-do, not as a
   // done item (Build -47, audit B7).
   const checks = [
-    { key: "value", label: "Comp value (or cash rate) is stated", action: "state the comp value or cash rate", ok: kindOf(offer) === "paid" ? Number(offer.cashRate) >= PAID_LANE.minRate : kindOf(offer) === "coupon" ? !!couponOf(offer) : Number(offer.dollarCap) > 0 },
+    { key: "value", label: "Comp value (or cash rate) is stated", action: "state the comp value or cash rate", ok: kindOf(offer) === "paid" ? Number(offer.cashRate) >= paidFloorForMarket(offer.market) : kindOf(offer) === "coupon" ? !!couponOf(offer) : Number(offer.dollarCap) > 0 },
     { key: "window", label: "Redemption window is 3+ days", action: "give the visit a window of 3+ days", ok: windowDays >= 3 },
     { key: "includes", label: "What is included is written out", action: "write out what is included", ok: String(offer.includes || offer.whatComped || "").trim().length >= 12 },
     { key: "experience", label: "The experience is described", action: "describe the experience", ok: String(offer.experience || "").trim().length >= 12 },
@@ -3420,6 +3464,7 @@ function briefCleanList(value) {
 function briefSeedFromFields(fields) {
   const f = fields && typeof fields === "object" ? fields : {};
   return {
+    market: typeof f.market === "string" ? f.market : null,
     goal: null,
     hook: typeof f.experience === "string" ? f.experience : "",
     mustMention: f.includes ? [String(f.includes)] : [],
@@ -3451,6 +3496,14 @@ function normalizeBriefInput(input, kind, seed) {
   let mustMention = briefCleanList(pick("mustMention"));
   if (!mustMention.length) mustMention = briefCleanList(sd.mustMention);
   const timing = briefCleanText(pick("timing"), 140) || briefCleanText(sd.timing, 140);
+  // Build -89: for a London-market offer the brief template
+  // pre-fills #ad and it cannot be removed — enforced here, on
+  // the server, in the one normalizer every brief write runs
+  // through (composer, Sig, and booking snapshots alike).
+  const seedMarket = typeof sd.market === "string" ? sd.market : (typeof src.market === "string" ? src.market : null);
+  if (isLondonMarket(seedMarket) && !mustMention.some((x) => /#ad\b/i.test(x))) {
+    mustMention = [UK_AD_LABEL, ...mustMention].slice(0, 3);
+  }
   return {
     goal: BRIEF_GOALS.includes(goalRaw) ? goalRaw : null,
     hook,
@@ -3850,6 +3903,11 @@ async function createBookingForOffer({ offer, creator, via, applicationId = null
     // confirms the paid-partnership disclosure was added.
     dealCard: null,
     disclosureAt: null,
+    // Build -89: for a London-market visit the booking terms
+    // both sides accept carry the UK ad disclosure clause
+    // (ASA/CAP: a comped or paid post is an ad; the label goes
+    // up front). Null for every other market.
+    adDisclosure: adDisclosureForMarket(offer.market),
     compCostActual: offer.dollarCap,
     // Sig Operator (Jeff, 2026-10-28): the booking snapshots the
     // offer's brief (normalized from the offer, derived for legacy
@@ -5044,7 +5102,7 @@ async function withPostState(booking) {
     postPayload.intentRatePer1k = pi.intentRatePer1k;
     postPayload.returnScore = intentLib.returnScoreFor({ views: pi.views, likes: pi.likes, shares: pi.shares, saves: pi.saves, countedCustomers: booking.redemptions ? Math.max(0, Math.floor(Number(booking.redemptions.count) || 0)) : 0 });
   }
-  return { ...booking, post: postPayload, creatorLicensingFee, postState: postState(booking, post), compliance: complianceStatusFor(booking, post, creatorStanding), businessReviewLinks, businessReferralProgram, businessReview, creatorReview, roas, collab, collabPrimaryName };
+  return { ...booking, post: postPayload, creatorLicensingFee, postState: postState(booking, post), compliance: complianceStatusFor(booking, post, creatorStanding), businessReviewLinks, businessReferralProgram, businessReview, creatorReview, roas, collab, collabPrimaryName, adDisclosure: booking.adDisclosure || adDisclosureForMarket(booking.market), deliveryBlockers: deliveryBlockersFor(booking, post) };
 }
 
 // ---------- Post compliance (Jeff, 2026-10-19; timeline final) ----------
@@ -6045,6 +6103,9 @@ async function runComplianceSweep() {
     if (!lane || lane.escrowState !== "held") continue;
     const post = postByBooking.get(booking.id);
     if (!post || !post.submittedAt) continue;
+    // Build -89: a London post without a verified ad label is
+    // not delivered, so its escrow never releases on it.
+    if (isLondonMarket(booking.market) && !adLabelVerifiedFor(post, booking.market)) continue;
     if (now < Date.parse(post.submittedAt) + PAID_LANE.escrowHoldHoursAfterProof * 3600000) continue;
     // Stripe Connect (2026-10-26): when real money rides on the
     // booking, the release moves it at this same moment: capture
@@ -9880,7 +9941,7 @@ async function releasePaidFunds(booking) {
         await notifyMilestone(creator.id, "payout_setup_needed",
           `Your $${fmtMoneyS(lane.creatorNet)} from ${booking.businessName || "a paid visit"} is ready to release, but your payouts are not set up yet. Finish payout setup under Profile so it can reach your bank.`,
           `Your $${fmtMoneyS(lane.creatorNet)} is waiting: finish payout setup`,
-          [`Your paid visit for ${booking.businessName || "a business"} delivered, and your share of $${fmtMoneyS(lane.creatorNet)} is ready to release.`, "", "It cannot reach your bank until payout setup is finished. It takes a couple of minutes, inside the app under Profile, in the Paid bookings section: Stripe holds the bank details, SIGNL never sees them.", "", "Open SIGNL: https://app.joinsignl.com", "", "Jeff", "Founder, SIGNL"].join("\n"),
+          [`Your paid visit for ${booking.businessName || "a business"} delivered, and your share of ${currencySymbolForMarket(booking.market)}${fmtMoneyS(lane.creatorNet)} is ready to release.`, "", "It cannot reach your bank until payout setup is finished. It takes a couple of minutes, inside the app under Profile, in the Paid bookings section: Stripe holds the bank details, SIGNL never sees them.", "", "Open SIGNL: https://app.joinsignl.com", "", "Jeff", "Founder, SIGNL"].join("\n"),
           { bookingId: booking.id });
       }
     }
@@ -12839,6 +12900,10 @@ function ccHeldState(P, b) {
   const post = P.postByBooking.get(b.id);
   const postLive = !!(post && post.submittedAt);
   if (!postLive) return { state: "waiting", code: "post_not_live", blocker: "Waiting for the post — money releases after the post is live." };
+  // Build -89: a London post does not count as delivered until
+  // its ad label is verified, so its money stays held behind
+  // this named blocker, beside "post not live".
+  if (isLondonMarket(b.market) && !adLabelVerifiedFor(post, b.market)) return { state: "blocked", code: "ad_label_missing", blocker: "Ad label missing: the London post is live but its #ad label is not verified, so the visit does not count as delivered yet." };
   const holdUntil = Date.parse(post.submittedAt) + PAID_LANE.escrowHoldHoursAfterProof * 3600000;
   if (Date.now() < holdUntil) return { state: "waiting", code: "in_hold", blocker: "The post is live; the money releases when the 48-hour hold passes.", releasesAt: new Date(holdUntil).toISOString() };
   return { state: "ready", code: "ready", blocker: "Ready to release — the post is live and the hold has passed." };
@@ -15044,7 +15109,7 @@ async function route(event) {
       lines.push(pc.complete ? "Their profile is finished, so businesses can see them." : `Their profile is NOT finished yet; still missing: ${(pc.missing || []).join(", ") || "nothing recorded"}. A finished profile is the gate for being seen by businesses.`);
       if (full.momentum) lines.push(`Their Momentum is ${full.momentum.points} points.`);
       if (user.creator && user.creator.tierBand) lines.push(`Their tier is ${user.creator.tierBand}.`);
-      if (user.creator && user.creator.paidRate) lines.push(`Their listed paid rate is $${user.creator.paidRate}.`);
+      if (user.creator && user.creator.paidRate) lines.push(`Their listed paid rate is ${currencySymbolForMarket(user.market)}${user.creator.paidRate}.`);
     } else if (user.role === "business") {
       const live = businessAccessState(user) === "active";
       lines.push(`Their market is ${user.market || "unknown"} and their business is ${live ? "ACTIVE (market open)" : "on the founding list (market not open yet)"}.`);
@@ -15075,7 +15140,7 @@ async function route(event) {
       } catch (e) { /* counts are grounding, never a blocker */ }
     }
     }
-    const ans = await askSigAI({ role: user.role, stateLines: lines.join(" "), question: q, history });
+    const ans = await askSigAI({ role: user.role, stateLines: lines.join(" "), question: q, history, market: user.market });
     if (ans.source === "ai") return json(200, { source: "ai", text: ans.text });
     return json(200, { source: "unavailable" });
   }
@@ -15597,8 +15662,9 @@ async function route(event) {
           c.paidRate = null;
         } else {
           const rate = Math.round(Number(b.paidRate) * 100) / 100;
-          if (!Number.isFinite(rate) || rate < PAID_LANE.minRate) {
-            return err(400, `Your paid rate must be at least $${fmtPriceS(PAID_LANE.minRate)}, or left blank for no paid bookings. Below that, the payment processing and support cost more than the booking is worth.`);
+          const myFloor = paidFloorForMarket(user.market);
+          if (!Number.isFinite(rate) || rate < myFloor) {
+            return err(400, `Your paid rate must be at least ${currencySymbolForMarket(user.market)}${fmtPriceS(myFloor)}, or left blank for no paid bookings. Below that, the payment processing and support cost more than the booking is worth.`);
           }
           if (rate > 100000) return err(400, "That rate is too large to list. Set the rate a business actually books at.");
           changes.paidRate = [c.paidRate == null ? null : c.paidRate, rate];
@@ -15619,7 +15685,7 @@ async function route(event) {
         } else {
           const fee = Math.round(Number(b.licensingFee) * 100) / 100;
           if (!Number.isFinite(fee) || fee < 1) {
-            return err(400, "Your licensing fee must be at least $1, or left blank if you do not want your comped posts licensed.");
+            return err(400, `Your licensing fee must be at least ${currencySymbolForMarket(user.market)}1, or left blank if you do not want your comped posts licensed.`);
           }
           if (fee > 100000) return err(400, "That fee is too large to list. Set the fee a business actually licenses at.");
           changes.licensingFee = [c.licensingFee == null ? null : c.licensingFee, fee];
@@ -18032,7 +18098,7 @@ async function route(event) {
       const targetCreator = b.creatorId ? await store.get(`user:${b.creatorId}`) : null;
       if (!targetCreator || targetCreator.role !== "creator" || targetCreator.status !== "approved" || isTester(targetCreator)) return err(400, "Target creator is not an approved creator");
       const rate = Number(targetCreator.creator && targetCreator.creator.paidRate);
-      if (!Number.isFinite(rate) || rate < PAID_LANE.minRate) return err(400, "That creator has not listed a paid rate, so there is no paid booking to preview.");
+      if (!Number.isFinite(rate) || rate < paidFloorForMarket(targetCreator.market)) return err(400, "That creator has not listed a paid rate, so there is no paid booking to preview.");
       const math = paidMath(rate);
       return json(201, {
         preview: true,
@@ -18718,7 +18784,7 @@ async function route(event) {
       let coupon = null;
       if (kind === "paid") {
         cashRate = Math.round(Number(b.cashRate || b.dollarCap) * 100) / 100;
-        if (!Number.isFinite(cashRate) || cashRate < PAID_LANE.minRate) return err(400, `A cash offer starts at $${fmtPriceS(PAID_LANE.minRate)}. Below that, the payment processing and support cost more than the booking is worth. Comp offers have no minimum beyond the dignity floor for the tiers you target.`);
+        if (!Number.isFinite(cashRate) || cashRate < paidFloorForMarket(user.market)) return err(400, `A cash offer starts at ${currencySymbolForMarket(user.market)}${fmtPriceS(paidFloorForMarket(user.market))}. Below that, the payment processing and support cost more than the booking is worth. Comp offers have no minimum beyond the dignity floor for the tiers you target.`);
         dollarCap = Math.round(cashRate);
         // Stripe Connect (2026-10-26): selecting a creator for a
         // paid offer charges the card on file, so the card comes
@@ -19044,7 +19110,7 @@ async function route(event) {
       }
       if (b.cashRate !== undefined && kindOf(offer) === "paid") {
         const rate = Math.round(Number(b.cashRate) * 100) / 100;
-        if (!Number.isFinite(rate) || rate < PAID_LANE.minRate) return err(400, `A cash offer starts at $${fmtPriceS(PAID_LANE.minRate)}.`);
+        if (!Number.isFinite(rate) || rate < paidFloorForMarket(offer.market)) return err(400, `A cash offer starts at ${currencySymbolForMarket(offer.market)}${fmtPriceS(paidFloorForMarket(offer.market))}.`);
         changes.cashRate = [offer.cashRate, rate];
         offer.cashRate = rate;
         offer.dollarCap = Math.round(rate);
@@ -19268,7 +19334,7 @@ async function route(event) {
       if (offer.applicationsCloseAt && Date.now() > Date.parse(offer.applicationsCloseAt)) return err(409, "Applications for this offer have closed");
       const tier = normalizeTierBand(user.creator ? user.creator.tierBand : "");
       if (Array.isArray(offer.targetTiers) && offer.targetTiers.length && !offer.targetTiers.includes(tier)) return err(403, `This offer is for ${offer.targetTiers.join(", ")} creators. Your tier is ${tier}.`);
-      if (kindOf(offer) === "comp" && !(Array.isArray(offer.targetTiers) && offer.targetTiers.length) && Number(offer.dollarCap) < (COMP_GUIDANCE[tier] || {}).floor) return err(403, `This comp is below your tier's guidance floor ($${fmtPriceS((COMP_GUIDANCE[tier] || {}).floor)}), so it is not shown to ${tier}. That floor exists to protect the roster from token comps.`);
+      if (kindOf(offer) === "comp" && !(Array.isArray(offer.targetTiers) && offer.targetTiers.length) && Number(offer.dollarCap) < (COMP_GUIDANCE[tier] || {}).floor) return err(403, `This comp is below your tier's guidance floor (${currencySymbolForMarket(offer.market)}${fmtPriceS((COMP_GUIDANCE[tier] || {}).floor)}), so it is not shown to ${tier}. That floor exists to protect the roster from token comps.`);
       if (kindOf(offer) === "comp" && user.creator && user.creator.compOpen === false) return err(403, "This is a comp offer and your profile is set to paid visits only. Turn comp visits back on under Profile if you want comp offers.");
       const apps = await allApplications();
       const mine = apps.filter((a) => a.offerId === offer.id);
@@ -19741,7 +19807,7 @@ async function route(event) {
     if (standingState(creator) === "banned") return err(400, "That creator redeemed a comp and never posted, so they cannot be booked again.");
     if (standingState(creator) === "paused") return err(400, pausedPickMessage(creator));
     const rate = Number(creator.creator && creator.creator.paidRate);
-    if (!Number.isFinite(rate) || rate < PAID_LANE.minRate) return err(400, "That creator has not listed a paid rate. Comp visits are always available; paid bookings need a creator who charges.");
+    if (!Number.isFinite(rate) || rate < paidFloorForMarket(creator.market)) return err(400, "That creator has not listed a paid rate. Comp visits are always available; paid bookings need a creator who charges.");
     // Stripe Connect (2026-10-26): while the rail is live, a paid
     // booking charges the business's card on file at booking, so
     // the card comes first. With the rail off this gate does not
@@ -19803,7 +19869,8 @@ async function route(event) {
       // paidBrief), and the business's current asset packet is
       // snapshotted onto the booking (paid is attached by
       // default). The paidBrief field itself is unchanged.
-      brief: normalizeBriefInput(b.brief, "paid", { hook: String(b.paidBrief || "").trim().slice(0, PAID_BRIEF_MAX) }),
+      brief: normalizeBriefInput(b.brief, "paid", { hook: String(b.paidBrief || "").trim().slice(0, PAID_BRIEF_MAX), market: user.market }),
+      adDisclosure: adDisclosureForMarket(user.market),
       assetPacket: assetPacketView(user.business),
       paidLane: {
         rate: math.rate,
@@ -19975,6 +20042,14 @@ async function route(event) {
     if (proofPlatform !== myPlatformLabel) return err(400, `Paste the full link to your ${myPlatformLabel} post. That link is your proof of delivery.`);
     const ts = nowIso();
     const onTime = Date.parse(ts) <= Date.parse(booking.postDeadline);
+    // Build -89: the post's caption is stored with the proof.
+    // For a London booking the ad label is read from the stored
+    // caption: #ad present verifies the label; absent, the post
+    // is recorded but does NOT count as delivered (the owed
+    // pipeline names the blocker "ad label missing") until the
+    // creator confirms the label via /posts/:id/ad-label.
+    const caption = typeof b.caption === "string" ? b.caption.trim().slice(0, 2000) : "";
+    const londonPost = isLondonMarket(booking.market);
     const post = {
       id: crypto.randomUUID(),
       bookingId: booking.id,
@@ -19988,6 +20063,9 @@ async function route(event) {
       hoursAfterRedeem: Math.round(((Date.parse(ts) - Date.parse(booking.redeemedAt)) / 360000) ) / 10,
       onTime,
       includesDisclosure: !!b.includesDisclosure,
+      caption,
+      adLabelVerified: londonPost ? captionHasAdLabel(caption) : null,
+      adLabelAttestedAt: londonPost && captionHasAdLabel(caption) ? ts : null,
       verifiedAt: null,
       verifiedBy: null,
     };
@@ -19998,7 +20076,7 @@ async function route(event) {
     // releases once the hold passes; the state stays "held" until
     // then, so both sides see exactly where the money is.
     if (booking.paidLane && booking.paidLane.escrowState === "held") booking.paidLane.proofAt = ts;
-    await logEvent({ type: "post_submitted", actorId: user.id, actorRole: "creator", subjectId: post.id, market: booking.market, data: { bookingId: booking.id, businessId: booking.businessId, url, onTime, hoursAfterRedeem: post.hoursAfterRedeem, includesDisclosure: post.includesDisclosure, category: booking.category } });
+    await logEvent({ type: "post_submitted", actorId: user.id, actorRole: "creator", subjectId: post.id, market: booking.market, data: { bookingId: booking.id, businessId: booking.businessId, url, onTime, hoursAfterRedeem: post.hoursAfterRedeem, includesDisclosure: post.includesDisclosure, category: booking.category, adLabelVerified: post.adLabelVerified } });
 
     // Compliance bookkeeping for the proof (Jeff, 2026-10-19;
     // timeline final 01:34). Any proof at or before the ban moment
@@ -20044,6 +20122,28 @@ async function route(event) {
       try { await unpauseIfClear(user, booking.id); } catch (e) { /* unpause is best-effort */ }
     }
     return json(201, { post, booking: await withPostState(booking) });
+  }
+
+  // Build -89: the creator confirms a London post's ad label by
+  // supplying the post's caption as it now stands (the Build -60
+  // attestation pattern, checked against the stored caption
+  // rule): the caption must carry #ad. On success the label is
+  // verified and the visit counts as delivered.
+  if (seg[0] === "posts" && seg.length === 3 && seg[2] === "ad-label" && method === "POST") {
+    if (user.role !== "creator") return err(403, "Creators confirm their own ad label");
+    const post = await store.get(`post:${seg[1]}`);
+    if (!post || post.creatorId !== user.id) return err(404, "Post not found");
+    const booking = await store.get(`booking:${post.bookingId}`);
+    if (!booking || !isLondonMarket(booking.market)) return err(400, "This post is not on a London-market visit, so no ad label check applies.");
+    const b = parseBody(event);
+    const caption = typeof b.caption === "string" ? b.caption.trim().slice(0, 2000) : "";
+    if (!captionHasAdLabel(caption)) return err(400, "The caption does not carry #ad up front. Add #ad at the start of the post, then confirm again: a London post does not count as delivered until the ad label is verified.");
+    post.caption = caption;
+    post.adLabelVerified = true;
+    post.adLabelAttestedAt = nowIso();
+    await store.set(`post:${post.id}`, post);
+    await logEvent({ type: "ad_label_verified", actorId: user.id, actorRole: "creator", subjectId: post.id, market: booking.market, data: { bookingId: booking.id, businessId: booking.businessId } });
+    return json(200, { post });
   }
 
   if (seg[0] === "posts" && seg.length === 3 && seg[2] === "verify" && method === "POST") {
@@ -20133,7 +20233,7 @@ async function route(event) {
         threadId,
         fromId: user.id,
         toId: post.creatorId,
-        body: `${rec.businessName || "A business"} wants to license your post from your comp visit for 90 days of reposting and ad use, at your $${fmtPriceS(rec.fee)} licensing fee. You would keep $${fmtMoneyS(rec.creatorNet)}. Nothing is licensed unless you approve it: decide on the post in your visits. Your post: ${post.url}`,
+        body: `${rec.businessName || "A business"} wants to license your post from your comp visit for 90 days of reposting and ad use, at your ${currencySymbolForMarket(creator.market)}${fmtPriceS(rec.fee)} licensing fee. You would keep ${currencySymbolForMarket(creator.market)}${fmtMoneyS(rec.creatorNet)}. Nothing is licensed unless you approve it: decide on the post in your visits. Your post: ${post.url}`,
         createdAt: ts,
       };
       await store.set(`message:${msg.id}`, msg);
@@ -20913,7 +21013,7 @@ async function route(event) {
         range = { low: rs[Math.floor(rs.length * 0.25)], high: rs[Math.min(rs.length - 1, Math.floor(rs.length * 0.75))], source: "listed" };
       }
     }
-    return json(200, { range, floor: PAID_LANE.minRate, market: user.market });
+    return json(200, { range, floor: paidFloorForMarket(user.market), currency: currencyForMarket(user.market).code, currencySymbol: currencyForMarket(user.market).symbol, market: user.market });
   }
 
   // Points and Your Line (Build -36): the creator's own totals,

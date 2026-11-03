@@ -288,6 +288,13 @@ const MARKETS = [
     name: "London",
     label: "London, United Kingdom",
     country: "United Kingdom",
+    // Build -89: currency-by-market. London creators set, see,
+    // and are paid against GBP: £40 paid floor (US markets: $50).
+    // No FX conversion anywhere — stored amounts are denominated
+    // in the creator's home-market currency.
+    currency: "GBP",
+    currencySymbol: "£",
+    paidFloor: 40,
     cities: ["London", "Shoreditch", "Spitalfields", "Borough", "Bankside", "Brixton", "Dalston", "Hackney Central", "Stoke Newington", "Angel", "Islington", "Peckham", "Camden Town", "Tooting", "Greenwich", "Clapham", "Soho", "Covent Garden", "Notting Hill", "Fitzrovia", "Marylebone", "Walthamstow", "Hackney", "Camden", "Whitechapel", "Bethnal Green", "Hoxton", "Clerkenwell", "Bloomsbury", "Westminster", "Kensington", "Chelsea", "Hammersmith", "Fulham", "Battersea", "Wandsworth", "Putney", "Wimbledon", "Hampstead", "Highgate", "Kilburn", "Willesden", "Acton", "Chiswick", "Dulwich", "Herne Hill", "Streatham", "Balham", "Lewisham", "Deptford", "Stratford", "Isle of Dogs", "Tottenham", "Haringey", "Barnes", "Bermondsey", "Kennington", "Vauxhall", "Stockwell", "Camberwell", "Walworth", "Rotherhithe", "Bow", "Clapton", "Hackney Wick", "Leyton", "Leytonstone", "Forest Gate", "East Ham", "Barking", "Wood Green", "Finsbury Park", "Kentish Town", "West Hampstead", "Golders Green", "Hendon", "Finchley", "Muswell Hill", "Crouch End", "Stamford Hill", "Seven Sisters", "Southgate", "Chingford", "Blackheath", "Brockley", "Forest Hill", "Sydenham", "Crystal Palace", "East Dulwich", "Catford", "Eltham", "Woolwich", "Twickenham", "Kew", "Brentford", "Southall", "Ruislip", "Pinner", "Stanmore", "Edgware", "Barnet", "Mitcham", "Morden", "Croydon", "Bromley", "Romford", "Ilford", "Enfield", "Harrow", "Wembley", "Ealing", "Kingston upon Thames", "Richmond upon Thames", "Hounslow", "Uxbridge", "Watford", "Dartford", "Sutton", "St Albans", "Woking", "Slough", "Beckenham", "Orpington", "Hornchurch", "Dagenham", "Edmonton", "Epsom"],
   },
   {
@@ -363,6 +370,22 @@ function normalizeMarketName(name) {
     if (MARKETS.some((m) => m.name === bare)) return bare;
   }
   return t;
+}
+
+// Currency by market (Build -89): every market defaults to USD
+// ($, $50 paid floor); a market entry may override with its own
+// currency code, symbol, and paid floor (London: GBP, £, £40).
+const DEFAULT_CURRENCY = { code: "USD", symbol: "$", paidFloor: 50 };
+function currencyForMarket(name) {
+  if (!name) return { ...DEFAULT_CURRENCY };
+  const m = MARKETS.find((x) => x.name === normalizeMarketName(name) || x.id === name);
+  if (m && m.currency) {
+    return { code: m.currency, symbol: m.currencySymbol || "$", paidFloor: typeof m.paidFloor === "number" ? m.paidFloor : DEFAULT_CURRENCY.paidFloor };
+  }
+  return { ...DEFAULT_CURRENCY };
+}
+function paidFloorForMarket(name) {
+  return currencyForMarket(name).paidFloor;
 }
 
 const TIERS = [
@@ -771,4 +794,4 @@ function resolveTypedCity(raw, hints, markets) {
   };
 }
 
-module.exports = { MARKETS, MARKET_NAME_ALIASES, normalizeMarketName, MARKET_STATES, parseTypedCity, resolveTypedCity, TIERS, CREATOR_CATEGORIES, COMP_CATEGORIES, BUSINESS_CATEGORIES, PLANS, PROFESSIONS, LEGACY_PROFESSIONS, REALTOR_PROFESSION, canonicalFromList, tierForFollowers, normalizeTierBand, MIN_TOTAL_AUDIENCE };
+module.exports = { MARKETS, MARKET_NAME_ALIASES, normalizeMarketName, currencyForMarket, paidFloorForMarket, DEFAULT_CURRENCY, MARKET_STATES, parseTypedCity, resolveTypedCity, TIERS, CREATOR_CATEGORIES, COMP_CATEGORIES, BUSINESS_CATEGORIES, PLANS, PROFESSIONS, LEGACY_PROFESSIONS, REALTOR_PROFESSION, canonicalFromList, tierForFollowers, normalizeTierBand, MIN_TOTAL_AUDIENCE };
