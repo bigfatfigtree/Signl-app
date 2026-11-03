@@ -38,7 +38,7 @@
 //     answerer still answers number-first; the offer/finish/
 //     earn card paths ship in source.
 //   - admin: /sig/home returns no chips (read-only console Sig).
-//   - stamp reads 2026.11.02-93 in build.js + index.html.
+//   - stamp reads 2026.11.02-94 in build.js + index.html.
 import { spawn } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
 import fs from "node:fs";
@@ -60,7 +60,7 @@ const read = (p) => fs.readFileSync(path.join(ROOT, p), "utf8");
   const app = read("public/app.js");
   const sigdata = read("netlify/functions/lib/sigdata.js");
   const router = read("netlify/functions/lib/router.js");
-  check("stamp: build id is 2026.11.02-93", read("netlify/functions/lib/build.js").includes('"2026.11.02-93"') && read("public/index.html").includes("2026.11.02-93"));
+  check("stamp: build id is 2026.11.02-94", read("netlify/functions/lib/build.js").includes('"2026.11.02-94"') && read("public/index.html").includes("2026.11.02-94"));
   check("source: confirmation line states the local-audience ranking basis", app.includes("ranked by how local their audience is"));
   check("source: creator cards render with the local metric first", app.includes("sigCreatorCardHtml") && app.includes("sig-ccard-local") && app.includes("total followers"));
   check("source: cards sort by local share, not followers", app.includes("sigLocalPct(b) - sigLocalPct(a)"));

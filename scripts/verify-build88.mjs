@@ -68,8 +68,12 @@ for (const area of ["Hackney", "Brixton", "Peckham", "Soho", "Shoreditch", "Dals
   check("pin: 'London' + United Kingdom -> London market", uk.status === "unique" && uk.market === "London", JSON.stringify(uk));
   const croy = resolveTypedCity("Croydon", {});
   check("pin: Croydon files to London", croy.status === "unique" && croy.market === "London", JSON.stringify(croy));
+  const camBare = resolveTypedCity("Camden", {});
+  check("pin: bare 'Camden' stays Philadelphia's (Camden NJ predates London's list; London's area is 'Camden Town')", camBare.status === "unique" && camBare.market === "Philadelphia", JSON.stringify(camBare));
   const camUk = resolveTypedCity("Camden", { country: "United Kingdom" });
-  check("resolver: 'Camden' + United Kingdom -> London (hint disambiguates)", camUk.status === "unique" && camUk.market === "London", JSON.stringify(camUk));
+  check("resolver: 'Camden' + United Kingdom -> none (never misfiling a UK-hinted Camden into a US market)", camUk.status === "none", JSON.stringify(camUk));
+  const camTown = resolveTypedCity("Camden Town", {});
+  check("resolver: 'Camden Town' files unique to London", camTown.status === "unique" && camTown.market === "London", JSON.stringify(camTown));
 }
 
 console.log("== Static: the area picker surfaces ==");
