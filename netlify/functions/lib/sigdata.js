@@ -893,6 +893,14 @@ function answerAdmin(f, q, t) {
 
 // ---------- BUSINESS ----------
 function answerBusiness(f, q, t) {
+  // London ad label (Phase B, Build -111): a London visit whose
+  // post is live but not delivered is almost always this
+  // blocker. The fix is the creator's, on their visit card;
+  // the business is told that plainly instead of being left
+  // to chase it.
+  if (hasPhrase(t, "ad label", "adlabel") || hasPhrase(t, "#ad")) {
+    return linked("UK rules count a comped or paid London post as an ad, so the post must carry #ad up front. A London post whose caption did not carry it is blocked as Ad label missing and does not count as delivered yet, and on a paid booking the money stays held behind the same blocker. The creator fixes it on their own visit card by confirming the caption; there is nothing for you to do, and the visit counts as delivered the moment the label is verified.", "Open the visit", "biz-visits");
+  }
   // Creator terms (Build -98, item 4): when a business asks
   // about creator terms, the plain-words page link rides along.
   if (hasWord(t, "terms") && hasPhrase(t, "creator")) {
@@ -1014,6 +1022,13 @@ function answerBusiness(f, q, t) {
 
 // ---------- CREATOR ----------
 function answerCreator(f, q, t) {
+  // London ad label (Phase B, Build -111): the blocker the
+  // server names "ad label missing" now has its fix on the
+  // visit card; Sig states the rule and walks the creator
+  // straight to the Done segment where that card lives.
+  if (hasPhrase(t, "ad label", "adlabel") || hasPhrase(t, "#ad")) {
+    return linked("UK rules count a comped or paid London post as an ad, so the post must carry #ad up front. If the caption you submitted did not carry it, the visit is blocked as Ad label missing and does not count as delivered yet. The fix is on the visit card itself: open Visits, find the visit under Done, check the caption box (it starts with your disclosure line), and tap Confirm the ad label. The visit counts as delivered the moment the label is verified.", "Fix it on my visit card", "cr-visits-done");
+  }
   // Creator terms (Build -98, item 4): a terms question always
   // carries the plain-words terms page link with it.
   if (hasWord(t, "terms") || hasPhrase(t, "creator terms")) {

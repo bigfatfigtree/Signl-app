@@ -3454,6 +3454,7 @@ function sigFlowsFor() {
     flow("See offers near you", ["offer", "offers near", "see offers"], () => go("dashboard", "Offers")),
     flow("Answer an invite", ["invite", "invited", "answer an"], () => { state.crOffersSeg = "invited"; go("dashboard", "Offers"); }),
     flow("Add a post link", ["post link", "add a post", "submit post", "post is live", "deliver"], () => { state.visitsSeg = "needs"; go("dashboard", "My Visits"); }),
+    flow("Fix the ad label", ["ad label", "#ad", "fix the ad"], () => { state.visitsSeg = "done"; go("dashboard", "My Visits"); }),
     flow("See my earnings", ["earning", "paid", "money", "license request", "payout"], () => go("dashboard", "Earnings")),
     flow("Check my Momentum", ["momentum", "points", "tier"], () => go("dashboard", "Momentum")),
     flow("Finish my profile", ["profile", "finish", "complete my"], () => go("dashboard", "Profile")),
@@ -3572,6 +3573,8 @@ function sigBankFor(biz) {
       a: "Message the business in the app as early as you can; a heads-up before the visit is always better than silence. A visit you accept and skip costs Momentum points, and repeated no-shows can cost you your spot on the roster." },
     { id: "licensing", q: "What is a license request?", ph: ["license request", "licensing", "license my post", "reuse my post", "license fee"], g: [["licens"], ["request", "what", "how", "fee", "approve", "work"]], s: ["licensing"],
       a: "Licensing is how a business reuses a post you already made. They request a license at the fee you set, and you approve or decline each use. An approved license lets them repost it and run it as an ad for 90 days, starting the day you approve it and never longer. You keep 97% of the fee, and when the business runs your post as an ad, you earn +25 Momentum. A paid booking is different: its standard license is included automatically for 90 days from the post date, with nothing for you or the business to fill in. A request to extend past those 90 days comes to you the same way, at your listed fee, for your yes or no.", flow: (c) => c.live ? "See my earnings" : null },
+    { id: "adlabel", q: "My London post says ad label missing. What do I do?", ph: ["ad label", "ad label missing", "#ad", "london post not delivered", "post does not count as delivered"], g: [["ad", "label", "#ad"], ["missing", "fix", "what", "do", "count", "delivered", "london"]], s: ["ad label"],
+      a: "UK rules count a comped or paid London post as an ad, so the post must carry #ad up front. If the caption you submitted did not carry it, the visit is blocked as Ad label missing and does not count as delivered yet. The fix is on the visit card itself: open Visits, find the visit under Done, check the caption box (it starts with your disclosure line), and tap Confirm the ad label. The visit counts as delivered the moment the label is verified.", flow: (c) => c.live ? "Fix the ad label" : null },
     { id: "profilegate", q: "What do I need to finish my profile?", ph: ["finish my profile", "complete my profile", "profile complete", "businesses see me", "not showing up", "why can't businesses"], g: [["profile", "businesses", "roster"], ["finish", "complete", "need", "missing", "see", "visible", "showing"]], s: [],
       a: (c) => {
         let t = "Businesses only see creators with a finished profile, and approval is not the gate; a finished profile is. Finished means four things: your home city, an audience count above zero, at least one category, and your local audience share reported. A photo is not required, but it earns +10 Momentum and makes your card stronger.";
@@ -3720,6 +3723,7 @@ function sigLinkGo(dest) {
     case "cr-offers-applied": state.crOffersSeg = "applied"; return go("dashboard", "Offers");
     case "cr-offers-invited": state.crOffersSeg = "invited"; return go("dashboard", "Offers");
     case "cr-visits": state.visitsSeg = "needs"; return go("dashboard", "My Visits");
+    case "cr-visits-done": state.visitsSeg = "done"; return go("dashboard", "My Visits");
     case "cr-earnings": return go("dashboard", "Earnings");
     case "cr-terms": window.open("https://joinsignl.com/creator-terms.html", "_blank", "noopener"); return false;
     case "cr-profile": return go("dashboard", "Profile");
@@ -10650,7 +10654,7 @@ function dealCardHtml(b, role) {
   } else if (b.kind === "coupon") {
     money = `<div>The coupon: ${esc(couponSummaryClient(b.coupon, b.businessName))}${b.coupon && b.coupon.expiresAt ? `, expires ${esc(fmtDay(b.coupon.expiresAt))}` : ""}. That coupon is the payment for this post. No cash changes hands on a coupon deal.</div>`;
   } else {
-    money = `<div>The comp: ${esc(b.whatComped || "the experience")}, worth $${fmtMoney(b.dollarCap)}. No cash changes hands on a comped visit.</div>`;
+    money = `<div>The comp: ${esc(b.whatComped || "the experience")}, worth ${currencySymbolForMarket(b.market)}${fmtMoney(b.dollarCap)}. No cash changes hands on a comped visit.</div>`;
   }
   const dc = b.dealCard || {};
   const mine = role === "business" ? dc.businessAt : dc.creatorAt;
@@ -10695,6 +10699,24 @@ async function disclosureConfirm(bookingId) {
     await api("POST", `/bookings/${bookingId}/disclosure`, {});
     loadMyVisits("creator");
   } catch (err) { alert(err.message); }
+}
+// Phase B (Build -111): the creator-side fix for the London #ad
+// blocker, riding the Build -89 endpoint (POST /posts/:id/ad-label).
+// The server checks the caption carries #ad and answers in plain
+// words when it does not; that answer lands beside the button,
+// never in a bare alert, and nothing is confirmed server-side
+// until the caption passes.
+async function confirmAdLabel(postId, bookingId) {
+  const ta = document.getElementById("adlabel-caption-" + bookingId);
+  const note = document.getElementById("adlabel-note-" + bookingId);
+  try {
+    await api("POST", `/posts/${postId}/ad-label`, { caption: ta ? ta.value : "" });
+    loadMyVisits("creator");
+  } catch (err) {
+    if (note) note.textContent = err.message;
+    else alert(err.message);
+  }
+  return false;
 }
 // The Swap Bench: closest matching creators for a cancelled
 // visit, one tap to send the same visit as a direct offer.
@@ -12637,6 +12659,16 @@ async function loadCreatorHome() {
       const overdue = Date.parse(b.postDeadline) < now;
       add(1, Date.parse(b.postDeadline) || now, `Your post for ${b.businessName} is ${overdue ? "overdue" : "due " + dueDayWords(b.postDeadline)}.`, "Add post link", () => { state.visitsSeg = "needs"; state.visitFocus = b.id; go("dashboard", "My Visits"); }, overdue ? `Post late: ${b.businessName}` : `Post due ${dueDayWords(b.postDeadline)}: ${b.businessName}`);
     }
+    // Phase B (Build -111): a delivered London post blocked on
+    // its ad label is a deadline-class item, not a discovery:
+    // the visit does not count as delivered until the creator
+    // confirms the caption carries #ad, and the fix lives on
+    // the visit card (Done segment, focused on this booking).
+    const adBlocked = bookings.filter((b) => b.post && (b.deliveryBlockers || []).includes("ad label missing"));
+    if (adBlocked.length) {
+      const b = adBlocked[0];
+      add(1, now, `Ad label missing on your London post for ${b.businessName}: the visit does not count as delivered until the post caption carries #ad up front. The fix is on the visit card, with the caption box already filled in.`, "Fix the ad label", () => { state.visitsSeg = "done"; state.visitFocus = b.id; go("dashboard", "My Visits"); }, `Ad label missing: ${b.businessName}`);
+    }
     const startOfDay = new Date(); startOfDay.setHours(0, 0, 0, 0);
     const dayOffset = (iso) => { const t = Date.parse(iso || ""); if (Number.isNaN(t)) return null; const d0 = new Date(t); d0.setHours(0, 0, 0, 0); return Math.round((d0.getTime() - startOfDay.getTime()) / 86400000); };
     const visitSoon = bookings.filter((b) => !b.redeemedAt && !b.post && b.status !== "cancelled" && b.status !== "expired")
@@ -14163,7 +14195,7 @@ function visitCard(b, role) {
   let html = `
   <div class="card visit-card mb" id="visit-${b.id}">
     <div class="flex-between"><strong>${esc(b.title)}</strong>${complianceBadge(b)}</div>
-    <p class="small muted">${role === "creator" ? esc(b.businessName) : "@" + esc(b.creatorHandle) + " (" + esc(b.creatorName) + ")"} &middot; ${esc(marketDisplayName(b.market))} &middot; ${b.kind === "coupon" ? `Coupon: ${esc(couponSummaryClient(b.coupon, b.businessName))}` : `Comp: ${esc(b.whatComped)} (cap $${fmtMoney(b.dollarCap)})`}${b.kind === "paid" || b.paidLane || b.kind === "coupon" ? "" : ` &middot; ${coversLine(b)}`} &middot; Visit: ${esc(b.visitDate || b.visitWindow || "Flexible")}</p>`;
+    <p class="small muted">${role === "creator" ? esc(b.businessName) : "@" + esc(b.creatorHandle) + " (" + esc(b.creatorName) + ")"} &middot; ${esc(marketDisplayName(b.market))} &middot; ${b.kind === "coupon" ? `Coupon: ${esc(couponSummaryClient(b.coupon, b.businessName))}` : `Comp: ${esc(b.whatComped)} (cap ${currencySymbolForMarket(b.market)}${fmtMoney(b.dollarCap)})`}${b.kind === "paid" || b.paidLane || b.kind === "coupon" ? "" : ` &middot; ${coversLine(b)}`} &middot; Visit: ${esc(b.visitDate || b.visitWindow || "Flexible")}</p>`;
   if (role === "creator" && b.redeemedAt && !post && b.postDeadline) {
     // Visual pass: the post countdown leads the card instead of
     // sitting under the honor form below the fold. Same ticking
@@ -14273,6 +14305,27 @@ function visitCard(b, role) {
   }
   if (post) {
     html += `<p class="small">Post: <a href="${esc(post.url)}" target="_blank" rel="noopener">${esc(post.url)}</a> &middot; submitted ${fmtDate(post.submittedAt)} (${post.hoursAfterRedeem}h after redemption) ${post.verifiedAt ? "&middot; <span class='saved'>Verified by the business</span>" : ""}</p>`;
+    // Phase B (Build -111): the London #ad blocker, named on the
+    // card itself with its fix path. The server has always named
+    // this blocker (deliveryBlockers: "ad label missing") and
+    // held delivery (and paid escrow) behind it, but the card
+    // never rendered it: a creator could do everything visible
+    // and still be blocked invisibly. The creator fixes it here,
+    // in one tap, from the caption box the platform pre-fills;
+    // the business sees the same name and that the fix is the
+    // creator's, so nobody is left guessing whose move it is.
+    if ((b.deliveryBlockers || []).includes("ad label missing")) {
+      if (role === "creator") {
+        // The pre-fill does the work: a stored caption that already
+        // carries #ad is used as-is; one that does not gets the
+        // disclosure line (which opens with #ad) put in front of
+        // it, so confirming really is one tap, never a retype.
+        const adCap = /#ad\b/i.test(post.caption || "") ? post.caption : (disclosureLine(b) + (post.caption ? " " + post.caption : ""));
+        html += `<div class="notice" id="adlabel-block-${b.id}"><strong>Ad label missing.</strong> UK rules count this London post as an ad, so it does not count as delivered until the caption carries #ad up front. The caption below is filled in for you, starting with #ad: make the post itself match it if it differs, then confirm here.<div class="field" style="margin-top:8px"><label>Your post caption, as it now stands</label><textarea id="adlabel-caption-${b.id}" rows="2">${esc(adCap)}</textarea></div><button class="btn small-btn" type="button" onclick="return confirmAdLabel('${post.id}', '${b.id}')">Confirm the ad label</button> <span class="small muted" id="adlabel-note-${b.id}"></span></div>`;
+      } else {
+        html += `<p class="small"><strong>Ad label missing.</strong> This London post does not count as delivered until its caption carries #ad up front. The creator fixes it on their own visit card by confirming the caption; there is nothing for you to do.</p>`;
+      }
+    }
     if (role === "creator") {
       html += b.disclosureAt
         ? `<p class="small"><span class="badge ok">Disclosure confirmed</span> You confirmed the paid-partnership line is on the post, ${fmtDate(b.disclosureAt)}.</p>`
@@ -18523,7 +18576,12 @@ function campaignGuideParse(text) {
   let s = raw.replace(/\s+/g, " ")
     .replace(/^(please\s+)?(i want|i need|we want|we need|let's|lets)\s+/i, "")
     .replace(/^(local\s+)?creators\s+(for|to)\s+/i, "")
-    .replace(/^for\s+/i, "").replace(/^an?\s+/i, "");
+    .replace(/^for\s+/i, "").replace(/^an?\s+/i, "")
+    // Phase B (Build -111): the pay word the parser already read
+    // (comped / paid / coupon) is a term of the deal, not part of
+    // the campaign's name: "weekend brunch push, comped" drafts
+    // the title "Weekend brunch push", never "..., comped".
+    .replace(/[,\s]+(comped|comp|paid|cash|coupon)\s*$/i, "");
   if (s.length >= 8 && s.length <= 70) out.title = s.charAt(0).toUpperCase() + s.slice(1);
   return out;
 }
@@ -24080,6 +24138,7 @@ function recruiterQueueHtml(data) {
   const rows = (data.prospects || []).filter((p) => rcState.filter === "all" || p.effectiveStatus === rcState.filter);
   return `
   <h2>${esc(data.market)} queue</h2>
+  <p class="muted small" style="margin:4px 0 10px">Your list of creators to invite to SIGNL in ${esc(data.market)}. Work one at a time: tap Work this one, copy the ready message in Outreach, send it from your own app, then mark it sent here. Nothing sends from this console itself.</p>
   ${rcCountsChips(c)}
   <p>${filters.map(([k, label]) => `<button class="btn small-btn ${rcState.filter === k ? "" : "ghost"}" style="margin:0 6px 6px 0" onclick="rcSetFilter('${k}')">${esc(label)}</button>`).join("")}</p>
   <div id="rc-queue-list">

@@ -107,7 +107,7 @@ console.log("== Source: the shell, the copy, the stamp ==");
 const appJs = fs.readFileSync(path.join(root, "public/app.js"), "utf8");
 const routerJs = fs.readFileSync(path.join(root, "netlify/functions/lib/router.js"), "utf8");
 const metaJs = fs.readFileSync(path.join(root, "netlify/functions/lib/profile-meta.js"), "utf8");
-check("stamp is 2026.11.03-110", fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes("2026.11.03-110") && fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes("2026.11.03-110"));
+check("stamp is 2026.11.03-111", fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes("2026.11.03-111") && fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes("2026.11.03-111"));
 check("no 'Set up your first month' anywhere in the shell", !appJs.includes("Set up your first month"));
 check("business rail: Sig directly under Home", appJs.includes('...extra(["Home", "Sig", "Discover"])'));
 check("rail parity: approved business is full chrome", appJs.includes('u.role === "business" || businessAccessState(u) === "active"'));
