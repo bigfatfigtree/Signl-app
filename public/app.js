@@ -15010,7 +15010,8 @@ function partnerEarningsHtml(d) {
   </div>
   ${e.basis === "deal" ? `
   <div class="panel mt"><h3 style="margin-top:0">Your deal${e.dealLabel ? `: ${esc(e.dealLabel)}` : ""}</h3>
-  <p class="small muted">Accrued to date: <strong>${sym}${fmtPrice(e.accruedTotal)}</strong> · Paid to date: <strong>${sym}${fmtPrice(e.paidTotal)}</strong> · Still outstanding: <strong>${sym}${fmtPrice(e.owedTotal)}</strong>. These are the same figures SIGNL's own books show, computed from your deal terms.${e.guaranteeState ? ` Right now: ${esc(e.guaranteeState.toLowerCase())} on your guarantee.` : ""}</p></div>` : ""}
+  <p class="small muted">Accrued to date: <strong>${sym}${fmtPrice(e.accruedTotal)}</strong> · Paid to date: <strong>${sym}${fmtPrice(e.paidTotal)}</strong> · Still outstanding: <strong>${sym}${fmtPrice(e.owedTotal)}</strong>. These are the same figures SIGNL's own books show, computed from your deal terms.${e.guaranteeState ? ` Right now: ${esc(e.guaranteeState.toLowerCase())} on your guarantee.` : ""}</p>
+  ${(d.territory || []).map((t) => `<p class="small" style="margin:6px 0 0"><strong>${esc(t.market)}:</strong> ${t.attributionScope === "market_wide" ? `every business in ${esc(t.market)} counts toward this deal, and new sign-ups there are stamped to you automatically` : `only businesses you bring in count toward this deal`}${t.exclusivity === "market_conditional" ? " · your exclusivity in this market is conditional, on the terms in the deal" : ""}.</p>`).join("")}</div>` : ""}
   ${e.hasPaidRevenue ? `
   <div class="panel mt"><h3 style="margin-top:0">Accrued, not yet paid</h3>
   <p class="small muted">These amounts accrue from the subscriptions on file in your markets. Payouts begin once partner payments are switched on; until then this page is the ledger, and accrued amounts are never shown as paid.</p></div>` : `
@@ -20379,6 +20380,7 @@ function dealFormHtml(partnerId, deal) {
     <div id="df-${partnerId}-${key}-markets">${mrows}</div>
     <button class="btn small-btn ghost" onclick="return dfAddMarketRow('${partnerId}','${key}')">Add a market row</button>
     <div class="field" style="margin-top:10px"><label>Version note</label><input type="text" id="df-${partnerId}-${key}-note" placeholder="Why these terms changed"></div>
+    <label class="small" style="display:block;margin:8px 0"><input type="checkbox" id="df-${partnerId}-${key}-override"> Override a territory block — only works when the deal already holding the market has the reason recorded in its exclusivity conditions. The override is logged.</label>
     <div id="df-${partnerId}-${key}-err"></div>
     <button class="btn" onclick="dfSave('${partnerId}','${key}')">${deal ? "Save as a new version" : "Create deal"}</button>
     <span class="small muted">Saving never edits history: it appends a version, and past months keep the math of the version in force for them.</span>
@@ -20423,13 +20425,15 @@ function dfCollect(partnerId, key) {
 async function dfSave(partnerId, key) {
   const errEl = document.getElementById(`df-${partnerId}-${key}-err`);
   const payload = dfCollect(partnerId, key);
+  const overrideEl = document.getElementById(`df-${partnerId}-${key}-override`);
+  if (overrideEl && overrideEl.checked) payload.overrideTerritory = true;
   try {
     let note = "";
     if (key === "new") {
       await api("POST", `/admin/partners/${partnerId}/deals`, payload);
     } else {
-      await api("PATCH", `/admin/deals/${key}`, { label: payload.label, status: payload.status, governingDocument: payload.governingDocument });
-      const r = await api("POST", `/admin/deals/${key}/versions`, { terms: payload.terms, note: payload.note });
+      await api("PATCH", `/admin/deals/${key}`, { label: payload.label, status: payload.status, governingDocument: payload.governingDocument, ...(payload.overrideTerritory ? { overrideTerritory: true } : {}) });
+      const r = await api("POST", `/admin/deals/${key}/versions`, { terms: payload.terms, note: payload.note, ...(payload.overrideTerritory ? { overrideTerritory: true } : {}) });
       if (r.version) note = `Saved as version ${r.version.n}${(r.version.changedFields || []).length ? ` · changed: ${esc(r.version.changedFields.join(", "))}` : " · no term changed"}.`;
     }
     const shareInput = document.getElementById(`pt-share-${partnerId}`);
@@ -21575,6 +21579,7 @@ function ccAttentionLabel(a) {
   if (a.kind === "unlisted_records") return "See the Markets view";
   if (a.kind === "unsigned_partners") return "Open Partners";
   if (a.kind === "unconnected_registers") return "See register connections";
+  if (a.kind === "territory_conflicts") return "Review on Partners";
   return "Open";
 }
 
@@ -21825,9 +21830,10 @@ function ccPartnersHtml(d) {
       <tr><th>Partner</th><th>The deal</th><th>Markets</th><th>Status</th><th>Period split</th><th>Earned to date</th><th></th></tr>
       ${rows.map((r) => {
         const deal0 = (r.deals || [])[0];
-        const dealCell = r.termsState === "entered" && deal0
+        const territoryLine = (r.territory || []).length ? `<br><span class="small">Territory: ${(r.territory || []).map((t) => `${esc(t.market)} (${t.attributionScope === "market_wide" ? "whole market counts" : "sourced only"}${t.exclusivity === "market_conditional" ? ", conditional exclusivity" : ""})`).join("; ")}</span>` : "";
+        const dealCell = (r.termsState === "entered" && deal0
           ? `<strong>${esc(deal0.label || "Partner deal")}</strong><br><span class="small">${typeof deal0.partnerPct === "number" ? `Partner ${deal0.partnerPct}% · SIGNL ${100 - deal0.partnerPct}%` : "Split in the deal terms"}${deal0.hasGuarantee ? " · greater-of guarantee" : ""}</span><br><span class="small muted">Version ${deal0.currentVersion} · ${esc(deal0.status)}</span>`
-          : `<strong>Deal terms not entered yet</strong><br><span class="small muted">Earnings run on the standing share (${r.sharePct == null ? "—" : r.sharePct + "%"}) until the deal is entered on the Partners tab. No schedule is assumed.</span>`;
+          : `<strong>Deal terms not entered yet</strong><br><span class="small muted">Earnings run on the standing share (${r.sharePct == null ? "—" : r.sharePct + "%"}) until the deal is entered on the Partners tab. No schedule is assumed.</span>`) + territoryLine;
         const status = r.guaranteeState
           ? `<span class="badge ${r.guaranteeState.indexOf("Guarantee") === 0 ? "warn" : "ok"}">${esc(r.guaranteeState)}</span>`
           : `<span class="badge">${esc(r.agreementStatus || "unsigned")}</span>`;
@@ -21841,7 +21847,29 @@ function ccPartnersHtml(d) {
           <td><button type="button" class="btn small-btn" onclick="return ccOpenPartner('${r.id}')">Open</button></td>
         </tr>`;
       }).join("")}
-    </table></div></div>`;
+    </table></div></div>
+    ${(() => {
+      // Territory conflicts (Build -104): records inside a
+      // market-wide territory stamped elsewhere or nowhere.
+      // The money already follows the deal; these buttons fix
+      // the record (stamp it) or close the question (reviewed).
+      const conflicts = rows.flatMap((r) => (r.conflicts || []).map((c) => ({ ...c, territoryPartnerName: r.name })));
+      if (!conflicts.length) return "";
+      return `<div class="panel" style="margin-top:14px"><h3 style="margin:0 0 4px">Territory conflicts</h3>
+      <p class="muted small" style="margin:0 0 8px">These records sit in a market a partner holds whole, but they are stamped to a different partner or to none. Their money already counts under the deal. Stamp the record to the territory partner, or mark it reviewed to keep its stamp and close the row.</p>
+      ${conflicts.map((c) => `<div class="cc-att-row"><span><strong>${esc(c.name || "Record")}</strong> · ${esc(c.market)} · ${c.currentPartnerName ? `stamped to ${esc(c.currentPartnerName)}` : "not stamped to anyone"} · territory held by ${esc(c.territoryPartnerName)} ("${esc(c.territoryDealLabel)}")</span><span><button type="button" class="btn small-btn" onclick="return ccTerritoryResolve('${c.userId}','stamp')">Stamp to ${esc(c.territoryPartnerName)}</button> <button type="button" class="btn small-btn ghost" onclick="return ccTerritoryResolve('${c.userId}','reviewed')">Mark reviewed</button></span></div>`).join("")}
+      </div>`;
+    })()}`;
+}
+
+async function ccTerritoryResolve(userId, action) {
+  try {
+    await api("POST", "/admin/command/territory/resolve", { userId, action });
+    await ccShowTab();
+  } catch (e) {
+    alert(e.message || "That did not save.");
+  }
+  return false;
 }
 
 async function ccAccrueSnapshot() {

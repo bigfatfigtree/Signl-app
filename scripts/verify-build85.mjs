@@ -66,7 +66,7 @@ check("account screen: Finish button + the founding-roster wording", slice.inclu
 check("done state: roster headline + the two-day line + the optional button", slice.includes("You're on the roster,") && slice.includes("We review every creator personally. You'll hear within two business days.") && slice.includes("Add your rates and best work"));
 check("submit: same register payload discipline (quickClaim + attribution)", slice.includes("quickClaim: true") && slice.includes("signupSource: storedSrc() || undefined") && slice.includes("referredBy: storedRef() || undefined") && slice.includes("goldenTicket: storedTicket() || undefined") && slice.includes('lang: state.lang === "es" ? "es" : undefined'));
 check("facts land through the existing profile write", slice.includes('api("PATCH", "/me/profile", patch)') && slice.includes("patch.audienceStack") && slice.includes("patch.localAudiencePct") && slice.includes("patch.categories"));
-check("stamp is 2026.11.02-103 on both sides", fs.readFileSync(path.join(root, "netlify", "functions", "lib", "build.js"), "utf8").includes('BUILD_ID = "2026.11.02-103"') && fs.readFileSync(path.join(root, "public", "index.html"), "utf8").includes("2026.11.02-103"));
+check("stamp is 2026.11.02-104 on both sides", fs.readFileSync(path.join(root, "netlify", "functions", "lib", "build.js"), "utf8").includes('BUILD_ID = "2026.11.02-104"') && fs.readFileSync(path.join(root, "public", "index.html"), "utf8").includes("2026.11.02-104"));
 
 // ---------- live: the exact client sequence ----------
 class Client {

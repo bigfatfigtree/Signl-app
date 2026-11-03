@@ -9754,13 +9754,17 @@ async function buildSigFacts(user, full) {
     // Admin Sig answers money questions per currency from the
     // deal records themselves, and can say plainly when no
     // London split is on file.
-    const dealFacts = (await allDeals()).map((d) => {
+    const allDealRecords = await allDeals();
+    const dealFacts = allDealRecords.map((d) => {
       const t = dealCurrentTerms(d) || {};
       const pu = partners.find((p) => p.id === d.partnerId);
-      return { partnerName: (pu && pu.partner && pu.partner.name) || (pu && pu.name) || "", label: d.label || "Partner deal", status: d.status, currency: t.currency || "USD", partnerPct: typeof t.partnerPct === "number" ? t.partnerPct : null, markets: (t.markets || []).map((m) => m.market) };
+      return { partnerName: (pu && pu.partner && pu.partner.name) || (pu && pu.name) || "", label: d.label || "Partner deal", status: d.status, currency: t.currency || "USD", partnerPct: typeof t.partnerPct === "number" ? t.partnerPct : null, markets: (t.markets || []).map((m) => m.market), attributionScope: t.attributionScope === "sourced_only" ? "sourced_only" : "market_wide", exclusivity: t.exclusivity && t.exclusivity.scope === "market_conditional" ? "market_conditional" : "none", liveMarkets: (t.markets || []).filter((m) => m.status === "live").map((m) => m.market) };
     });
+    // Build -104: territory conflicts for Admin Sig, computed
+    // over real (non-tester) records by the same resolver.
+    const territoryConflicts = territoryConflictsFor(users.filter((u) => !isTester(u)), allDealRecords, (id) => { const p = partners.find((x) => x.id === id); return p ? (p.partner.name || p.name || "") : null; });
     return sigdata.buildAdminFacts({
-      users, offers, bookings, posts, partners, marketFlags: flags, dealFacts,
+      users, offers, bookings, posts, partners, marketFlags: flags, dealFacts, territoryConflicts,
       marketNames: MARKETS.map((m) => m.name),
       isTester, profileCompleteOf, businessAccessState,
       planNameOf: (id) => { const p = id ? planById(id) : null; return p ? p.name : "No plan picked"; },
@@ -10064,7 +10068,25 @@ async function handleRegister(event) {
   if (signupSource.startsWith(PARTNER_SRC_PREFIX)) {
     try {
       const partnerUser = await findPartnerByCode(signupSource.slice(PARTNER_SRC_PREFIX.length));
-      if (partnerUser) user.partnerId = partnerUser.id;
+      if (partnerUser) { user.partnerId = partnerUser.id; user.attributionSource = "sourced"; }
+    } catch (e) { /* attribution never blocks a sign-up */ }
+  }
+
+  // Territory default attribution (Build -104): a sign-up
+  // landing directly in a market a signed/live market-wide
+  // deal covers is stamped to that partner at birth, marked
+  // as a territory stamp. A real partner link always wins
+  // (the branch above ran first and is never overwritten);
+  // a sourced-only deal stamps nothing. Best-effort, exactly
+  // like the link stamp: attribution never blocks a sign-up.
+  if (!user.partnerId && (role === "business" || role === "creator")) {
+    try {
+      const territory = territoryFromDeals(await allDeals(), user.market, ts);
+      if (territory && territory.attributionScope === "market_wide") {
+        user.partnerId = territory.partnerId;
+        user.attributionSource = "territory";
+        user.territoryDealId = territory.dealId;
+      }
     } catch (e) { /* attribution never blocks a sign-up */ }
   }
 
@@ -12811,6 +12833,16 @@ async function partnerSummary(user) {
       hasPaidRevenue: monthlyRevenue > 0,
     };
   }
+  // Territory truth (Build -104): the partner sees the same
+  // resolver answer Admin enforces — which of their markets
+  // are held whole (every business in the market counts
+  // toward the deal) and which exclusivity, if any, holds.
+  const territory = [];
+  for (const d of dealsAll.filter((x) => x.partnerId === user.id && (x.status === "signed" || x.status === "live"))) {
+    const tt = dealCurrentTerms(d);
+    if (!tt) continue;
+    for (const m of tt.markets || []) if (m.status === "live") territory.push({ market: m.market, dealLabel: d.label || "Partner deal", attributionScope: tt.attributionScope === "sourced_only" ? "sourced_only" : "market_wide", exclusivity: tt.exclusivity && tt.exclusivity.scope === "market_conditional" ? "market_conditional" : "none" });
+  }
   const sharePct = earnings.sharePct;
   const atFill = {
     markets: (partner.markets || []).length,
@@ -12822,6 +12854,7 @@ async function partnerSummary(user) {
   return {
     partner,
     links: partnerLinksFor(partner),
+    territory,
     creators: {
       stages: creatorStages,
       roster: creators.map((u) => ({
@@ -13044,6 +13077,13 @@ function ccOverview(P) {
     }
   }
   if (unstamped > 0) attention.push({ kind: "unstamped_attribution", count: unstamped, text: `${unstamped} ${unstamped === 1 ? "sign-up came" : "sign-ups came"} through a partner link but ${unstamped === 1 ? "is" : "are"} not stamped to the partner yet.`, target: { view: "command", subtab: "overview", action: "backfill" } });
+  // Territory conflicts (Build -104): records inside a
+  // market-wide territory stamped to someone else, or to
+  // nobody. The money already follows the deal terms; this
+  // is the record-keeping catching up, on the Partners view.
+  const territoryConflicts = territoryConflictsFor(P.visUsers, P.deals, (id) => { const p = P.partners.find((x) => x.id === id); return p ? (p.partner.name || p.name || "") : null; })
+    .filter((c) => !P.marketScope || c.market === P.marketScope);
+  if (territoryConflicts.length > 0) attention.push({ kind: "territory_conflicts", count: territoryConflicts.length, text: `${territoryConflicts.length} ${territoryConflicts.length === 1 ? "record sits" : "records sit"} in a partner's territory but ${territoryConflicts.length === 1 ? "is" : "are"} stamped to a different partner or to none. The money already follows the deal; the records should match it.`, target: { view: "command", subtab: "partners" } });
   if (unknownCode > 0) attention.push({ kind: "unknown_partner_code", count: unknownCode, text: `${unknownCode} ${unknownCode === 1 ? "sign-up carries" : "sign-ups carry"} a partner link code that matches no partner on file.`, target: { view: "applications" } });
   const unlisted = P.visUsers.filter((u) => (u.role === "creator" || u.role === "business") && normalizeMarketName(u.market) === UNLISTED);
   if (unlisted.length > 0) attention.push({ kind: "unlisted_records", count: unlisted.length, text: `${unlisted.length} ${unlisted.length === 1 ? "sign-up is" : "sign-ups are"} not in a market yet.`, target: { view: "command", subtab: "markets" } });
@@ -13617,6 +13657,98 @@ function dealVersionAt(deal, iso) {
   for (const v of vs) { if (String(v.at || "") <= t) chosen = v; else break; }
   return chosen.n;
 }
+
+// ---------- Territory (Build -104, Tier 3 item 13) ----------
+// The ONE answer to "whose market is this, under what terms,
+// at this date?" Every enforcement below (signup stamping,
+// the second-deal block, conflict surfacing, partner-facing
+// truth, Sig) reads through territoryFromDeals so the rule
+// exists exactly once. A market is covered when a signed or
+// live deal's terms IN FORCE at the date carry the market as
+// a live entry. Draft/unsigned deals cover nothing. When two
+// signed deals somehow cover one market (possible only via
+// the recorded override), the earliest created owns it.
+function territoryFromDeals(deals, marketName, atIso) {
+  const market = normalizeMarketName(marketName || "");
+  if (!market || market === UNLISTED) return null;
+  const at = String(atIso || nowIso());
+  const covering = [];
+  for (const deal of deals || []) {
+    if (!deal || (deal.status !== "signed" && deal.status !== "live")) continue;
+    const vs = dealVersions(deal).filter((v) => String(v.at || "") <= at);
+    if (!vs.length) continue;
+    const terms = vs[vs.length - 1].terms;
+    if (!terms || !Array.isArray(terms.markets)) continue;
+    const entry = terms.markets.find((m) => normalizeMarketName(m.market || "") === market);
+    if (!entry || entry.status !== "live") continue;
+    if (entry.liveAt && String(entry.liveAt) > at) continue;
+    covering.push({ deal, terms, entry });
+  }
+  covering.sort((a, b) => String(a.deal.createdAt || "") < String(b.deal.createdAt || "") ? -1 : 1);
+  if (!covering.length) return null;
+  const { deal, terms } = covering[0];
+  return {
+    dealId: deal.id, dealLabel: deal.label || "Partner deal", partnerId: deal.partnerId, status: deal.status,
+    attributionScope: terms.attributionScope === "sourced_only" ? "sourced_only" : "market_wide",
+    exclusivity: terms.exclusivity && terms.exclusivity.scope === "market_conditional"
+      ? { scope: "market_conditional", conditions: terms.exclusivity.conditions || "" }
+      : { scope: "none", conditions: "" },
+    currency: terms.currency || "USD",
+  };
+}
+
+// The second-deal block: creating (or signing) a deal whose
+// terms would cover a market already held by a signed/live
+// market_conditional deal is refused, unless the caller
+// explicitly overrides AND the covering deal's recorded
+// conditions say why (non-empty conditions text is the
+// record of the reason — Admin writes it as a new version on
+// the covering deal first). conditionalTerritoryFor finds
+// the first conditional covering territory for a market
+// list; the routes decide block vs override from it.
+function conditionalTerritoryFor(deals, markets, excludeDealId) {
+  for (const m of markets || []) {
+    const t = territoryFromDeals((deals || []).filter((d) => d.id !== excludeDealId), m, nowIso());
+    if (t && t.exclusivity.scope === "market_conditional") return { ...t, market: m };
+  }
+  return null;
+}
+function territoryBlockError(t) {
+  return `That market (${t.market}) is already covered by the signed deal "${t.dealLabel}", whose exclusivity is conditional${t.exclusivity.conditions ? `: ${t.exclusivity.conditions}` : " — and its conditions do not record an exception"}. To allow a second deal anyway, record the reason in that deal's exclusivity conditions (a new version), then create this deal with the override set.`;
+}
+
+// Territory conflicts: records sitting in a market_wide
+// territory stamped to a different partner, or to nobody.
+// The money already follows the terms (market-wide counts
+// the whole market); a conflict is about the RECORD, so the
+// partner's attributed counts and the ledger can agree.
+// A record Admin marked reviewed against the current
+// territory deal stays off the list until the territory
+// changes hands.
+function territoryConflictsFor(users, deals, partnerNameOf) {
+  const out = [];
+  const territories = new Map();
+  for (const u of users || []) {
+    if (!u || (u.role !== "business" && u.role !== "creator")) continue;
+    const market = normalizeMarketName(u.market || "");
+    if (!market || market === UNLISTED) continue;
+    if (!territories.has(market)) territories.set(market, territoryFromDeals(deals, market, nowIso()));
+    const t = territories.get(market);
+    if (!t || t.attributionScope !== "market_wide") continue;
+    if (u.partnerId === t.partnerId) continue;
+    if (u.territoryReview && u.territoryReview.dealId === t.dealId) continue;
+    out.push({
+      userId: u.id, role: u.role,
+      name: u.role === "business" ? ((u.business && u.business.businessName) || u.name || "") : (u.name || ""),
+      market, createdAt: u.createdAt || null,
+      currentPartnerId: u.partnerId || null,
+      currentPartnerName: u.partnerId ? (partnerNameOf ? partnerNameOf(u.partnerId) : null) : null,
+      territoryPartnerId: t.partnerId, territoryDealId: t.dealId, territoryDealLabel: t.dealLabel,
+    });
+  }
+  out.sort((a, b) => String(a.createdAt || "") < String(b.createdAt || "") ? -1 : 1);
+  return out;
+}
 function dealHasTerms(deal) {
   const t = dealCurrentTerms(deal);
   if (!t) return false;
@@ -13916,9 +14048,20 @@ function ccPartnersPayload(P, revByBiz) {
     for (const mr of bd.markets) for (const row of mr.months) if (P.period.inPeriod(monthStartIso(row.month))) { gross = ccMoney(gross + row.gross); partnerShare = ccMoney(partnerShare + row.partnerShare); signlShare = ccMoney(signlShare + row.signlShare); }
     return { gross, partnerShare, signlShare };
   };
+  // Territory state + conflicts (Build -104), from the same
+  // resolver signup stamping uses.
+  const partnerNameOf = (id) => { const p = P.partners.find((x) => x.id === id); return p ? (p.partner.name || p.name || "") : null; };
+  const allTerritoryConflicts = territoryConflictsFor(P.visUsers, P.deals, partnerNameOf);
   const rows = P.partners.map((u) => {
     const deals = (P.deals || []).filter((d) => d.partnerId === u.id);
     const bds = deals.map((d) => dealBreakdown(d, revByBiz));
+    const territory = [];
+    for (const d of deals) {
+      if (d.status !== "signed" && d.status !== "live") continue;
+      const tt = dealCurrentTerms(d);
+      if (!tt) continue;
+      for (const m of tt.markets || []) if (m.status === "live") territory.push({ market: m.market, dealLabel: d.label || "Partner deal", attributionScope: tt.attributionScope === "sourced_only" ? "sourced_only" : "market_wide", exclusivity: tt.exclusivity && tt.exclusivity.scope === "market_conditional" ? "market_conditional" : "none" });
+    }
     const paid = partnerPayoutTotals(P.payouts, u.id);
     // Build -103: accruals group by the deal's currency and
     // are NEVER summed across currencies. The flat accrued /
@@ -13946,6 +14089,7 @@ function ccPartnersPayload(P, revByBiz) {
       deals: bds.map((bd) => { const t = dealCurrentTerms(deals.find((d) => d.id === bd.dealId)) || {}; return { id: bd.dealId, label: bd.label, status: bd.status, currency: bd.currency || "USD", termsState: bd.termsState, currentVersion: bd.currentVersion, partnerPct: typeof t.partnerPct === "number" ? t.partnerPct : null, hasGuarantee: !!t.guarantee, guaranteeState: bd.guaranteeState }; }),
       attributedBusinesses: P.visUsers.filter((x) => x.role === "business" && x.partnerId === u.id).length,
       period, accrued, paid, owed: ccMoney(accrued - paid), byCurrency,
+      territory, conflicts: allTerritoryConflicts.filter((c) => c.territoryPartnerId === u.id),
       guaranteeState: primary ? primary.guaranteeState : null,
     };
   });
@@ -17806,6 +17950,21 @@ async function route(event) {
       const status = DEAL_STATUSES.includes(b.status) ? b.status : "negotiating";
       const { terms, error } = sanitizeDealTerms(b.terms || {});
       if (error) return err(400, error);
+      // Territory block (Build -104): a signed/live deal may
+      // not be created over a market a conditional-exclusive
+      // deal already holds, unless the override is set and
+      // the holding deal's conditions record the reason.
+      if (status === "signed" || status === "live") {
+        const covering = conditionalTerritoryFor(await allDeals(), terms.markets.map((m) => m.market), null);
+        if (covering) {
+          if (b.overrideTerritory === true && covering.exclusivity.conditions.trim()) {
+            await logEvent({ type: "territory_override", actorId: user.id, actorRole: "admin", subjectId: target.id, market: covering.market, data: { coveringDealId: covering.dealId, coveringLabel: covering.dealLabel, conditions: covering.exclusivity.conditions } });
+          } else {
+            await logEvent({ type: "territory_blocked", actorId: user.id, actorRole: "admin", subjectId: target.id, market: covering.market, data: { coveringDealId: covering.dealId, coveringLabel: covering.dealLabel, attemptedStatus: status } });
+            return err(409, territoryBlockError(covering));
+          }
+        }
+      }
       const ts = nowIso();
       const deal = {
         id: crypto.randomUUID(), partnerId: target.id,
@@ -17828,7 +17987,24 @@ async function route(event) {
       let statusChange = null;
       if (b.status !== undefined) {
         if (!DEAL_STATUSES.includes(b.status)) return err(400, "Deal status must be negotiating, term_sheet, signed, live or ended");
-        if (b.status !== deal.status) { statusChange = { from: deal.status, to: b.status }; deal.status = b.status; }
+        if (b.status !== deal.status) {
+          // Territory block (Build -104): signing or going
+          // live is the moment a deal starts to hold its
+          // markets, so the block is checked here too.
+          if ((b.status === "signed" || b.status === "live") && deal.status !== "signed" && deal.status !== "live") {
+            const curTerms = dealCurrentTerms(deal) || {};
+            const covering = conditionalTerritoryFor(await allDeals(), (curTerms.markets || []).map((m) => m.market), deal.id);
+            if (covering) {
+              if (b.overrideTerritory === true && covering.exclusivity.conditions.trim()) {
+                await logEvent({ type: "territory_override", actorId: user.id, actorRole: "admin", subjectId: deal.partnerId, market: covering.market, data: { coveringDealId: covering.dealId, coveringLabel: covering.dealLabel, conditions: covering.exclusivity.conditions, via: "deal_signing" } });
+              } else {
+                await logEvent({ type: "territory_blocked", actorId: user.id, actorRole: "admin", subjectId: deal.partnerId, market: covering.market, data: { coveringDealId: covering.dealId, coveringLabel: covering.dealLabel, attemptedStatus: b.status, via: "deal_signing" } });
+                return err(409, territoryBlockError(covering));
+              }
+            }
+          }
+          statusChange = { from: deal.status, to: b.status }; deal.status = b.status;
+        }
       }
       deal.updatedAt = nowIso();
       await store.set(`deal:${deal.id}`, deal);
@@ -17841,6 +18017,21 @@ async function route(event) {
       const b = parseBody(event);
       const { terms, error } = sanitizeDealTerms(b.terms || {});
       if (error) return err(400, error);
+      // Territory block (Build -104): new terms on a signed/
+      // live deal may not move it into a market another
+      // conditional-exclusive deal holds (same override rule
+      // as creation; the deal's OWN markets never block it).
+      if (deal.status === "signed" || deal.status === "live") {
+        const covering = conditionalTerritoryFor(await allDeals(), terms.markets.map((m) => m.market), deal.id);
+        if (covering) {
+          if (b.overrideTerritory === true && covering.exclusivity.conditions.trim()) {
+            await logEvent({ type: "territory_override", actorId: user.id, actorRole: "admin", subjectId: deal.partnerId, market: covering.market, data: { coveringDealId: covering.dealId, coveringLabel: covering.dealLabel, conditions: covering.exclusivity.conditions, via: "deal_version" } });
+          } else {
+            await logEvent({ type: "territory_blocked", actorId: user.id, actorRole: "admin", subjectId: deal.partnerId, market: covering.market, data: { coveringDealId: covering.dealId, coveringLabel: covering.dealLabel, attemptedStatus: deal.status, via: "deal_version" } });
+            return err(409, territoryBlockError(covering));
+          }
+        }
+      }
       const prior = dealCurrentTerms(deal);
       const { changedFields, priorValues } = diffDealTerms(prior, terms);
       const version = { n: dealVersions(deal).length + 1, at: nowIso(), by: user.id, changedFields, priorValues, note: typeof b.note === "string" ? b.note.slice(0, 500) : "", terms };
@@ -18507,6 +18698,39 @@ async function route(event) {
       await store.set(`user:${target.id}`, target);
       await logEvent({ type: "partner_attribution_set", actorId: user.id, actorRole: "admin", subjectId: target.id, market: target.market || null, data: { from, to, toCode: partner ? partner.partner.code : null, reason, via: "admin_repair" } });
       return json(200, { user: { id: target.id, partnerId: to, partnerName: partner ? (partner.partner.name || partner.name || "") : "" } });
+    }
+    // Territory conflict resolution (Build -104): one-tap
+    // Admin answers for the conflict rows on the Partners
+    // view — stamp the record to the territory partner the
+    // resolver names, or mark it reviewed (the record keeps
+    // its stamp; the row leaves the list until the territory
+    // changes hands). Both are event-logged; neither touches
+    // an accrual, which follows the deal terms either way.
+    if (method === "POST" && seg[1] === "command" && seg[2] === "territory" && seg[3] === "resolve") {
+      const b = parseBody(event);
+      const target = b.userId ? await store.get(`user:${b.userId}`) : null;
+      if (!target || (target.role !== "business" && target.role !== "creator")) return err(404, "Record not found");
+      const t = territoryFromDeals(await allDeals(), target.market, nowIso());
+      if (!t || t.attributionScope !== "market_wide") return err(400, "That record is not inside a market-wide territory");
+      if (b.action === "stamp") {
+        const from = target.partnerId || null;
+        target.partnerId = t.partnerId;
+        target.attributionSource = "territory";
+        target.territoryDealId = t.dealId;
+        delete target.territoryReview;
+        target.updatedAt = nowIso();
+        await store.set(`user:${target.id}`, target);
+        await logEvent({ type: "territory_attribution_stamped", actorId: user.id, actorRole: "admin", subjectId: target.id, market: target.market || null, data: { from, to: t.partnerId, dealId: t.dealId, via: "conflict_resolution" } });
+        return json(200, { user: { id: target.id, partnerId: t.partnerId }, resolved: "stamped" });
+      }
+      if (b.action === "reviewed") {
+        target.territoryReview = { dealId: t.dealId, at: nowIso(), by: user.id };
+        target.updatedAt = nowIso();
+        await store.set(`user:${target.id}`, target);
+        await logEvent({ type: "territory_conflict_reviewed", actorId: user.id, actorRole: "admin", subjectId: target.id, market: target.market || null, data: { dealId: t.dealId, keptPartnerId: target.partnerId || null } });
+        return json(200, { user: { id: target.id, partnerId: target.partnerId || null }, resolved: "reviewed" });
+      }
+      return err(400, "Action must be stamp or reviewed");
     }
     if (method === "GET" && seg[1] === "events") {
       // Guarded like the rest of Hardening A (INCIDENT-2026-10-25):

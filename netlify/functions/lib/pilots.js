@@ -70,6 +70,31 @@ const auth = require("./auth");
 const { logEvent } = require("./events");
 const { MARKETS, normalizeMarketName } = require("./markets");
 
+// Territory block (Build -104, Tier 3 item 13): a pilot may
+// not be created in a market a signed/live deal already
+// holds under conditional exclusivity — the same rule the
+// deal routes enforce in router.js (territoryFromDeals is
+// the canonical resolver there; this is the read-only
+// coverage check pilots need, over current deal terms).
+// The override needs the flag AND recorded conditions on
+// the holding deal, exactly as on the deal side.
+async function conditionalDealCovering(marketName) {
+  const market = normalizeMarketName(marketName || "");
+  if (!market) return null;
+  const rows = await store.list("deal:");
+  for (const row of rows) {
+    const deal = row && row.value;
+    if (!deal || (deal.status !== "signed" && deal.status !== "live")) continue;
+    const vs = Array.isArray(deal.versions) ? deal.versions : [];
+    if (!vs.length) continue;
+    const terms = vs[vs.length - 1].terms || {};
+    if (!terms.exclusivity || terms.exclusivity.scope !== "market_conditional") continue;
+    const entry = (terms.markets || []).find((m) => normalizeMarketName(m.market || "") === market && m.status === "live");
+    if (entry) return { dealId: deal.id, dealLabel: deal.label || "Partner deal", conditions: terms.exclusivity.conditions || "" };
+  }
+  return null;
+}
+
 const PILOT_STATUSES = ["active", "closed"];
 const STORED_STEPS = ["selected", "invited", "continued", "declined", "completed"];
 const STEP_LABELS = {
@@ -528,6 +553,19 @@ async function handleAdminPilots({ method, seg, event, user }) {
     if (!isEmail(email)) return err(400, "A valid login email is required");
     if (!mkt) return err(400, "Unknown market");
     if (fundCents === null) return err(400, "The fund amount must be a number of dollars, 0 or more");
+    // Territory block (Build -104): pilots go live at
+    // creation, so a conditional-exclusive deal holding this
+    // market blocks the pilot unless the recorded override
+    // path is satisfied.
+    const covering = await conditionalDealCovering(mkt.name);
+    if (covering) {
+      if (b.overrideTerritory === true && covering.conditions.trim()) {
+        await logEvent({ type: "territory_override", actorId: user.id, actorRole: "admin", subjectId: null, market: mkt.name, data: { coveringDealId: covering.dealId, coveringLabel: covering.dealLabel, conditions: covering.conditions, via: "pilot_create" } });
+      } else {
+        await logEvent({ type: "territory_blocked", actorId: user.id, actorRole: "admin", subjectId: null, market: mkt.name, data: { coveringDealId: covering.dealId, coveringLabel: covering.dealLabel, attemptedStatus: "pilot", via: "pilot_create" } });
+        return err(409, `That market (${mkt.name}) is already covered by the signed deal "${covering.dealLabel}", whose exclusivity is conditional${covering.conditions ? `: ${covering.conditions}` : " — and its conditions do not record an exception"}. To allow a pilot anyway, record the reason in that deal's exclusivity conditions (a new version), then create this pilot with the override set.`);
+      }
+    }
     const ts = nowIso();
     const pilot = {
       id: crypto.randomUUID(),

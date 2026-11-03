@@ -193,6 +193,9 @@ function buildAdminFacts(d) {
     // so money answers stay per-currency and a missing London
     // split is said plainly instead of assumed.
     deals: Array.isArray(d.dealFacts) ? d.dealFacts : [],
+    // Build -104: territory conflicts (records inside a
+    // market-wide territory stamped elsewhere or nowhere).
+    territoryConflicts: Array.isArray(d.territoryConflicts) ? d.territoryConflicts : [],
     markets: { liveNames, liveCount: liveNames.length, known: (d.marketNames || []).length },
   };
 }
@@ -400,6 +403,9 @@ function factsLines(role, f) {
     lines.push(`Offers: ${fmt(f.offers.total)} in total: ${fmt(f.offers.open)} open, ${fmt(f.offers.draft)} drafts, ${fmt(f.offers.filled)} filled, ${fmt(f.offers.closed)} closed. Visits: ${fmt(f.visits.bookings)} bookings, ${fmt(f.visits.completed)} completed, ${fmt(f.visits.upcoming)} booked and coming up, ${fmt(f.visits.postsLive)} posts live, ${fmt(f.visits.awaitingPost)} visits waiting on a post, ${fmt(f.visits.overduePosts)} posts overdue (that overdue count is the compliance queue).`);
     lines.push(`Partners: ${fmt(f.partners.total)} (${fmt(f.partners.active)} active, ${fmt(f.partners.paused)} paused)${f.partners.list.length ? ": " + f.partners.list.map((p) => `${p.name} (${p.status}${p.markets.length ? ", " + p.markets.join(" + ") : ""})`).join("; ") : ""}. Markets live: ${f.markets.liveCount ? f.markets.liveNames.join(", ") : "none yet"}. Applications waiting on a decision: ${fmt(f.waiting.total)} (${fmt(f.waiting.creators)} ${plural(f.waiting.creators, "creator")}, ${fmt(f.waiting.businesses)} ${plural(f.waiting.businesses, "business", "businesses")}).`);
     if ((f.deals || []).length) lines.push(`Deals on file: ${f.deals.map((x) => `${x.label} (${x.partnerName || "partner"}, ${x.status}) in ${x.currency}: ${x.partnerPct === null ? "no split entered yet" : `partner split ${x.partnerPct}% as entered`}`).join("; ")}. London founding prices live in the GBP book: £149 / £269 / £549 a month plus VAT, £75 founding credit; a split exists only where a deal record says so.`);
+    const held = (f.deals || []).filter((x) => (x.status === "signed" || x.status === "live") && (x.liveMarkets || []).length);
+    if (held.length) lines.push(`Territory held: ${held.map((x) => `${(x.liveMarkets || []).join(", ")} — ${x.partnerName || "partner"} (${x.label}), ${x.attributionScope === "sourced_only" ? "only businesses the partner brought in count" : "the whole market counts"}, exclusivity ${x.exclusivity === "market_conditional" ? "conditional" : "none"}`).join("; ")}.`);
+    if ((f.territoryConflicts || []).length) lines.push(`Territory conflicts: ${f.territoryConflicts.length} ${f.territoryConflicts.length === 1 ? "record sits" : "records sit"} in a market-wide territory stamped to a different partner or to none: ${f.territoryConflicts.slice(0, 6).map((c) => `${c.name} (${c.market})`).join("; ")}.`);
     lines.push("This admin surface is read-only for you: answer and explain, and point to the Admin tab where an action lives. Never claim you approved, sent, activated, or changed anything.");
     return lines;
   }
@@ -544,6 +550,22 @@ function answerAdmin(f, q, t) {
       return gbpDeals.map((x) => `${x.label} (${x.partnerName || "partner"}, ${x.status}): ${x.partnerPct === null ? "no split entered yet — nothing accrues until one is" : `partner split ${x.partnerPct}% as entered`}.`).join(" ") + " Pounds and dollars are always reported on separate lines, never added together.";
     }
     return "London prices live in the GBP book: Self-Service £149, Growth £269, Managed £549 a month, all plus VAT, with a £75 founding credit (first months £74 / £194 / £474) and a 3-month minimum. London is sold through the UK launch partner, so those amounts are recorded, never charged through SIGNL checkout.";
+  }
+
+  // Territory (Build -104): who holds a market, whether it
+  // is exclusive, and which records conflict — all read from
+  // the deal records the resolver enforces.
+  if (hasPhrase(t, "territory conflict", "territory conflicts") || (hasWord(t, "conflict", "conflicts", "conflicting") && hasWord(t, "territory", "stamp", "stamped", "attribution"))) {
+    const list = f.territoryConflicts || [];
+    if (!list.length) return "No territory conflicts: every record inside a market-wide territory is stamped to the partner who holds it.";
+    return linked(`${list.length} ${plural(list.length, "record sits", "records sit")} in a market-wide territory stamped to a different partner or to none: ${list.slice(0, 6).map((c) => `${c.name} in ${c.market} (territory: ${c.territoryDealLabel})`).join("; ")}${list.length > 6 ? `; and ${list.length - 6} more` : ""}. The money already follows the deal; stamp or mark each one reviewed on the Partners view.`, "Review conflicts", "admin-partners");
+  }
+  if (hasPhrase(t, "who owns", "who holds", "is exclusive", "exclusive", "territory") && market) {
+    const askedKey = market.toLowerCase() === "hampton roads" ? "virginia beach" : market.toLowerCase();
+    const holder = (f.deals || []).find((x) => (x.status === "signed" || x.status === "live") && (x.liveMarkets || []).some((m) => m.toLowerCase() === askedKey));
+    if (!holder) return `No signed or live deal holds ${market}, so nobody owns that territory right now. Sign-ups there are stamped only when they arrive through a partner link.`;
+    const heldMarket = (holder.liveMarkets || []).find((m) => m.toLowerCase() === askedKey) || market;
+    return `${holder.partnerName || "The partner"} holds ${heldMarket} under "${holder.label}" (${holder.status}): ${holder.attributionScope === "sourced_only" ? "only businesses that partner brought in count toward the deal" : "the whole market counts, and direct sign-ups there are stamped to them automatically"}. Exclusivity: ${holder.exclusivity === "market_conditional" ? "conditional — a second signed deal or pilot in this market is blocked unless the recorded override path is used" : "none recorded, so another deal could still be signed there"}.`;
   }
 
   // Breakdowns
