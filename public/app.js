@@ -4419,6 +4419,10 @@ function syncMarketChoice() {
   // Dubai is the picked market. It never blocks the signup.
   const dubaiNote = document.getElementById("jc-dubai-note");
   if (dubaiNote) dubaiNote.style.display = m.value === "Dubai" ? "" : "none";
+  // London note (Build -86): same shape as the Dubai note
+  // above, for UK ad-labelling norms. Never blocks the signup.
+  const londonNote = document.getElementById("jc-london-note");
+  if (londonNote) londonNote.style.display = m.value === "London" ? "" : "none";
 }
 
 function cityOptions(marketName, selected) {
@@ -6578,7 +6582,11 @@ const CLAIM_STACK_PLATFORMS = [
 // the marketing site's photo library): a market with a city shot
 // gets it; everything else gets the cafe default. Atmosphere
 // only: no person is presented as a creator anywhere here.
-const CLAIM_CITY_PHOTOS = ["atlanta", "austin", "chicago", "dallas", "denver", "miami", "nashville", "new-york", "tampa", "virginia-beach", "washington-dc"];
+// Build -86: London's shot is a real Pexels street photo (a
+// pedestrian shopping street off Oxford Street) - the site
+// library carries no London city shot, so it was sourced the
+// same way that library itself was: real stock, never generated.
+const CLAIM_CITY_PHOTOS = ["atlanta", "austin", "chicago", "dallas", "denver", "london", "miami", "nashville", "new-york", "tampa", "virginia-beach", "washington-dc"];
 function claimPhotoFor(market) {
   const slug = String(market || "").trim().toLowerCase().replace(/\s+/g, "-");
   return CLAIM_CITY_PHOTOS.includes(slug) ? `/assets/claim/city-${slug}.jpg` : "/assets/claim/welcome.jpg";
@@ -6710,6 +6718,11 @@ function syncClaimMarketChoice() {
   // Dubai is the picked market. It never blocks the claim.
   const dubaiNote = document.getElementById("c85-dubai-note");
   if (dubaiNote) dubaiNote.style.display = m.value === "Dubai" ? "" : "none";
+  // London note (Build -86): UK ad-labelling norms, same shape
+  // as the Dubai note. Shown only when London is the picked
+  // market. It never blocks the claim and stores nothing.
+  const londonNote = document.getElementById("c85-london-note");
+  if (londonNote) londonNote.style.display = m.value === "London" ? "" : "none";
   claimLocalLabelSync();
 }
 
@@ -6942,7 +6955,7 @@ function renderClaimFacts() {
       <div id="c85-facts-warn"></div>
       <div class="c85-fact">
         <p class="fg-kicker">${T("Your city", "Tu ciudad")}</p>
-        <div class="field"><label>${T("Your market", "Tu mercado")}</label><input id="c85-market-search" placeholder="${T("Search markets, for example: Dubai", "Busca mercados, por ejemplo: Dubái")}" oninput="filterClaimMarketOptions()" style="margin-bottom:6px"><select id="c85-market" onchange="syncClaimMarketChoice()">${marketOptions(pfMarket, true)}</select><p id="c85-dubai-note" class="small" style="display:none">Dubai note: the UAE requires an Advertiser Permit before your first paid or gifted post. You do not need it to claim your page, and SIGNL walks founding creators through it.</p></div>
+        <div class="field"><label>${T("Your market", "Tu mercado")}</label><input id="c85-market-search" placeholder="${T("Search markets, for example: Dubai", "Busca mercados, por ejemplo: Dubái")}" oninput="filterClaimMarketOptions()" style="margin-bottom:6px"><select id="c85-market" onchange="syncClaimMarketChoice()">${marketOptions(pfMarket, true)}</select><p id="c85-dubai-note" class="small" style="display:none">Dubai note: the UAE requires an Advertiser Permit before your first paid or gifted post. You do not need it to claim your page, and SIGNL walks founding creators through it.</p><p id="c85-london-note" class="small" style="display:none">London note: UK rules count a gifted or paid post as an ad, so every post carries a clear ad label. You do not need anything to claim your page, and the label is built into every SIGNL post.</p></div>
         <div class="field" id="c85-city-wrap" style="margin-bottom:0"><label>${T("Your home city", "Tu ciudad")}</label><select id="c85-city" onchange="claimLocalLabelSync()">${cityOptions(pfMarket === unlistedLabel() ? "Virginia Beach" : pfMarket)}</select></div>
         <div id="c85-custom-wrap" style="display:none">
           <div class="field"><label>${T("Your city", "Tu ciudad")}</label><input id="c85-city-text" placeholder="${T("For example: Tulsa", "Por ejemplo: Tulsa")}" oninput="claimLocalLabelSync()"></div>
@@ -6973,7 +6986,12 @@ function renderClaimFacts() {
       <p class="small" style="margin:12px 0 0;text-align:center"><a href="#" onclick="return claimBack(1)">${T("Back", "Atrás")}</a></p>
     </div>
   </section>`;
-  if (pfMarket === unlistedLabel()) syncClaimMarketChoice();
+  // Build -86: sync unconditionally, not only for the unlisted
+  // pick, so a market note tied to the prefilled market (London's
+  // UK ad-labelling note, Dubai's permit note) is already showing
+  // when the facts screen opens - a claim link names the market,
+  // and the note belongs to that market from the first paint.
+  syncClaimMarketChoice();
   claimLocalLabelSync();
 }
 
@@ -7246,7 +7264,7 @@ function renderJoinCreator() {
       <div class="fgroup">
         <p class="fg-kicker">${T("Where you are", "Dónde estás")}</p>
         <div class="form-2col">
-          <div class="field"><label>${T("Your market", "Tu mercado")}</label><input id="jc-market-search" placeholder="${T("Search markets, for example: Dubai", "Busca mercados, por ejemplo: Dubái")}" oninput="filterMarketOptions()" style="margin-bottom:6px"><select id="jc-market" onchange="syncMarketChoice()">${marketOptions(pfMarket, true)}</select><p class="small muted">${T("Grouped by country. City missing? Pick \"My city is not listed yet\".", "Agrupados por país. ¿No está tu ciudad? Elige \"Mi ciudad aún no está en la lista\".")}</p><p id="jc-dubai-note" class="small" style="display:none">Dubai note: the UAE requires an Advertiser Permit before your first paid or gifted post. You do not need it to join, and SIGNL walks founding creators through it.</p></div>
+          <div class="field"><label>${T("Your market", "Tu mercado")}</label><input id="jc-market-search" placeholder="${T("Search markets, for example: Dubai", "Busca mercados, por ejemplo: Dubái")}" oninput="filterMarketOptions()" style="margin-bottom:6px"><select id="jc-market" onchange="syncMarketChoice()">${marketOptions(pfMarket, true)}</select><p class="small muted">${T("Grouped by country. City missing? Pick \"My city is not listed yet\".", "Agrupados por país. ¿No está tu ciudad? Elige \"Mi ciudad aún no está en la lista\".")}</p><p id="jc-dubai-note" class="small" style="display:none">Dubai note: the UAE requires an Advertiser Permit before your first paid or gifted post. You do not need it to join, and SIGNL walks founding creators through it.</p><p id="jc-london-note" class="small" style="display:none">London note: UK rules count a gifted or paid post as an ad, so every post carries a clear ad label. You do not need anything to join; the label is built into every SIGNL post.</p></div>
           <div class="field" id="jc-city-wrap"><label>${T("Your home city", "Tu ciudad")}</label><select id="jc-city">${cityOptions(pfMarket)}</select></div>
           <div id="jc-custom-wrap" style="display:none">
             <div class="field"><label>${T("Your city", "Tu ciudad")}</label><input id="jc-city-text" placeholder="${T("For example: Tulsa", "Por ejemplo: Tulsa")}"></div>
@@ -7328,7 +7346,10 @@ function renderJoinCreator() {
   // automatic now, so it fills nothing.) Filling only; nothing here
   // submits anything.
   syncJcPlatform();
-  if (pf.market === unlistedLabel()) syncMarketChoice();
+  // Build -86: unconditional for the same reason as the claim
+  // form - the prefilled market's note (London, Dubai) shows at
+  // first paint, not only after the picker is touched.
+  syncMarketChoice();
   setupUniversityAutocomplete("jc-university", "jc-university-results");
 }
 

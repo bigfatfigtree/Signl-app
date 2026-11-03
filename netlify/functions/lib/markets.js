@@ -50,6 +50,18 @@
 // markets; the country set is unchanged. Miami starts NOT live,
 // like every unlaunched market (the live-flag default lives in
 // router.js): it files and counts, it does not launch itself.
+// Build -86 (Jeff, 2026-11-02): London becomes a full push
+// market - "go hard with it just as much" as the US pump
+// markets. The typed entry below has existed since 2026-10-18;
+// this build's work is the surfaces around it (a real London
+// claim-welcome photo, and a UK ad-labelling note in the claim
+// and join forms mirroring the Dubai permit note). The entry
+// itself is unchanged - same id, label, country and city list -
+// so the resolver's pinned outcomes hold (bare "London" stays
+// the Columbus/London tie; the United Kingdom hint picks this
+// market) and London starts NOT live like every unlaunched
+// market: creator founding sign-ups only, no launch date and
+// no businesses promised anywhere on the creator surfaces.
 
 const MARKETS = [
   {
