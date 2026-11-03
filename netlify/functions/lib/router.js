@@ -5,7 +5,7 @@ const crypto = require("crypto");
 const store = require("./store");
 const auth = require("./auth");
 const { logEvent, listEvents, listEventsForSubject } = require("./events");
-const { MARKETS, normalizeMarketName, resolveTypedCity, TIERS, CREATOR_CATEGORIES, COMP_CATEGORIES, BUSINESS_CATEGORIES, PLANS, PROFESSIONS, LEGACY_PROFESSIONS, REALTOR_PROFESSION, canonicalFromList, tierForFollowers, normalizeTierBand, MIN_TOTAL_AUDIENCE, currencyForMarket, paidFloorForMarket } = require("./markets");
+const { MARKETS, normalizeMarketName, resolveTypedCity, TIERS, CREATOR_CATEGORIES, COMP_CATEGORIES, BUSINESS_CATEGORIES, PLANS, planBookFor, planInBook, PROFESSIONS, LEGACY_PROFESSIONS, REALTOR_PROFESSION, canonicalFromList, tierForFollowers, normalizeTierBand, MIN_TOTAL_AUDIENCE, currencyForMarket, paidFloorForMarket } = require("./markets");
 const { computeLocalImpactScore, summarizeHistory } = require("./score");
 const { computeFit, buildFitNote } = require("./fit");
 const { emailEnabled, sendEmail, senderProfile, SENDER_PROFILE_NAMES } = require("./email");
@@ -9750,8 +9750,17 @@ async function buildSigFacts(user, full) {
     const users = await allUsers();
     const [offers, bookings, posts, flags] = await Promise.all([allOffers(), allBookings(), allPosts(), getMarketFlags()]);
     const partners = await allPartners(users);
+    // Build -103: deal facts (currency + split as entered) so
+    // Admin Sig answers money questions per currency from the
+    // deal records themselves, and can say plainly when no
+    // London split is on file.
+    const dealFacts = (await allDeals()).map((d) => {
+      const t = dealCurrentTerms(d) || {};
+      const pu = partners.find((p) => p.id === d.partnerId);
+      return { partnerName: (pu && pu.partner && pu.partner.name) || (pu && pu.name) || "", label: d.label || "Partner deal", status: d.status, currency: t.currency || "USD", partnerPct: typeof t.partnerPct === "number" ? t.partnerPct : null, markets: (t.markets || []).map((m) => m.market) };
+    });
     return sigdata.buildAdminFacts({
-      users, offers, bookings, posts, partners, marketFlags: flags,
+      users, offers, bookings, posts, partners, marketFlags: flags, dealFacts,
       marketNames: MARKETS.map((m) => m.name),
       isTester, profileCompleteOf, businessAccessState,
       planNameOf: (id) => { const p = id ? planById(id) : null; return p ? p.name : "No plan picked"; },
@@ -10323,8 +10332,14 @@ async function handleRegister(event) {
     const bizCity = (b.city || "").trim();
     if (bizCity && market.cities.length && !market.cities.includes(bizCity)) return err(400, `Choose your city in the ${market.name} market`);
     if (bizCity) user.city = bizCity;
-    const plan = planById(b.planId || "self-service") || PLANS[0];
+    // Build -103: the plan is priced from the business's own
+    // market currency book (London reads the GBP book), and
+    // the currency is stamped on the record here — the one
+    // moment every later money read trusts.
+    const bizCurrency = currencyForMarket(market.name);
+    const plan = planInBook(b.planId || "self-service", bizCurrency.code) || planBookFor(bizCurrency.code)[0];
     user.business = {
+      currency: bizCurrency.code,
       businessName: String(b.businessName).trim(),
       category: BUSINESS_CATEGORIES.includes(b.category) ? b.category : "Other",
       // Profile fields a creator sees when weighing an offer:
@@ -10358,7 +10373,7 @@ async function handleRegister(event) {
       baseline: validBaseline(b.baselineDay, b.baselineCount),
       about: typeof b.about === "string" ? b.about.trim().slice(0, 600) : "",
       plan: plan.id,
-      planName: `${plan.name} $${plan.priceMonthly}/mo`,
+      planName: `${plan.name} ${bizCurrency.symbol}${plan.priceMonthly}/mo`,
       planPriceMonthly: plan.priceMonthly,
       planMinMonths: plan.minMonths,
       billingStatus: "Founding billing: plan recorded, no card charged. Billing starts at launch.",
@@ -12740,20 +12755,36 @@ async function partnerSummary(user) {
     const revCharges = chargeRows.map((r) => r.value).filter((c) => c && revBizIds.has(c.businessId));
     const rev = subRevenueByBizMonth(revUsers, revCharges);
     const curKey = monthKeyOf(new Date().toISOString());
+    // Build -103: a partner's headline earnings are stated in
+    // their first deal's currency; any deal in another
+    // currency accrues on its own byCurrency line, never into
+    // the headline total.
+    const headlineCurrency = (dealCurrentTerms(myDeals[0]) || {}).currency || "USD";
     let accruedTotal = 0; let accruedMonthly = 0; let monthlyRevenue = 0; let payingBusinesses = 0; let gState = null;
+    const earningsByCurrency = {};
     for (const deal of myDeals) {
       const bd = dealBreakdown(deal, rev);
+      const bc = bd.currency || "USD";
+      if (bc !== headlineCurrency) {
+        const g = earningsByCurrency[bc] || (earningsByCurrency[bc] = { accruedTotal: 0, accruedMonthly: 0, monthlyRevenue: 0 });
+        g.accruedTotal = ccMoney(g.accruedTotal + bd.totals.partnerShare);
+        for (const mr of bd.markets) for (const row of mr.months) if (row.month === curKey) { g.accruedMonthly = ccMoney(g.accruedMonthly + row.partnerShare); g.monthlyRevenue = ccMoney(g.monthlyRevenue + row.gross); }
+        continue;
+      }
       accruedTotal = ccMoney(accruedTotal + bd.totals.partnerShare);
       if (bd.guaranteeState) gState = bd.guaranteeState;
       for (const mr of bd.markets) for (const row of mr.months) if (row.month === curKey) { accruedMonthly = ccMoney(accruedMonthly + row.partnerShare); monthlyRevenue = ccMoney(monthlyRevenue + row.gross); payingBusinesses += row.businesses; }
     }
     const terms0 = dealCurrentTerms(myDeals[0]) || {};
+    const paidTotalCur = ccMoney(payoutsAll.filter((p) => p.payeeId === user.id && (p.currency || "USD") === headlineCurrency).reduce((s, p) => s + (Number(p.amount) || 0), 0));
     earnings = {
       basis: "deal",
+      currency: headlineCurrency,
+      ...(Object.keys(earningsByCurrency).length ? { byCurrency: earningsByCurrency } : {}),
       dealLabel: myDeals[0].label || "",
       sharePct: typeof terms0.partnerPct === "number" ? terms0.partnerPct : partner.sharePct,
       monthlyRevenue, payingBusinesses, accruedMonthly, accruedTotal,
-      paidTotal, owedTotal: ccMoney(accruedTotal - paidTotal),
+      paidTotal: paidTotalCur, owedTotal: ccMoney(accruedTotal - paidTotalCur),
       guaranteeState: gState,
       hasPaidRevenue: monthlyRevenue > 0,
     };
@@ -13218,21 +13249,36 @@ async function ccFunnel() {
 // greater-of engine (Build -56) — the same figures the Partners
 // view and the partner's own Earnings show. On paid and license
 // rows partners earn nothing by the model's own rule, a real zero.
+// Build -103 (Tier 3 item 16): a business's money lives in
+// ONE currency — the one stamped on its record at plan
+// selection (register derives it from the market), falling
+// back to its market's currency. London reads GBP; everything
+// else USD. A business-month never mixes currencies because
+// every read resolves the plan through that one book.
+function currencyOfBusiness(u) {
+  const b = (u && u.business) || {};
+  if (b.currency === "USD" || b.currency === "GBP") return b.currency;
+  const m = u && u.market ? marketByName(u.market) : null;
+  return (m && currencyForMarket(m.name).code) || "USD";
+}
+
 function ccPlanOf(u) {
   const b = (u && u.business) || {};
   const sub = b.subscription || {};
+  const currency = currencyOfBusiness(u);
+  const book = planBookFor(currency);
   let planId = b.plan || sub.plan || null;
-  let plan = planId ? planById(planId) : null;
+  let plan = planId ? planInBook(planId, currency) : null;
   const monthly = typeof b.planPriceMonthly === "number" ? b.planPriceMonthly
     : typeof sub.planPriceMonthly === "number" ? sub.planPriceMonthly
     : plan ? plan.priceMonthly : null;
   if (!plan && typeof monthly === "number") {
-    plan = ["self-service", "growth", "managed"].map(planById).find((p) => p && p.priceMonthly === monthly) || null;
+    plan = book.find((p) => p && p.priceMonthly === monthly) || null;
     if (plan) planId = plan.id;
   }
   const rawName = b.planName || sub.planName || (plan ? plan.name : null);
-  const planName = rawName ? String(rawName).replace(/\s*\$.*$/, "").trim() : null;
-  return { b, sub, planId, plan, planName, monthly };
+  const planName = rawName ? String(rawName).replace(/\s*[£$].*$/, "").trim() : null;
+  return { b, sub, planId, plan, planName, monthly, currency };
 }
 
 function ccChargeMarket(P, c) {
@@ -13422,7 +13468,20 @@ async function ccModeled(P) {
 }
 
 function ccMoneyView(P, modeled) {
-  return { filters: ccFiltersEcho(P), ...ccMoneyAgg(P), modeled };
+  // Build -103: the Money view also carries the two plan
+  // books (Admin reference, read-only) and recorded
+  // subscription revenue grouped by currency — GBP and USD
+  // printed as separate lines, never a blended total.
+  const rev = subRevenueByBizMonth(P.visUsers, P.charges);
+  const recordedSubsByCurrency = {};
+  for (const rec of rev.values()) {
+    const c = rec.currency || "USD";
+    let g = 0;
+    for (const cell of rec.months.values()) g += Number(cell.gross) || 0;
+    recordedSubsByCurrency[c] = ccMoney((recordedSubsByCurrency[c] || 0) + g);
+  }
+  const bookRow = (p) => ({ id: p.id, name: p.name, priceMonthly: p.priceMonthly, foundingCredit: p.foundingCredit, firstMonthPriceMonthly: p.firstMonthPriceMonthly, minMonths: p.minMonths, visitsPerMonth: p.visitsPerMonth });
+  return { filters: ccFiltersEcho(P), ...ccMoneyAgg(P), modeled, planBooks: { USD: PLANS.map(bookRow), GBP: planBookFor("GBP").map(bookRow) }, recordedSubsByCurrency };
 }
 
 // Businesses (§3.3): the agreement ledger. Every figure on a row
@@ -13443,7 +13502,7 @@ function ccBusinesses(P) {
   for (const u of P.visUsers) {
     if (u.role !== "business") continue;
     if (P.marketScope && normalizeMarketName(u.market || "") !== P.marketScope) continue;
-    const { b, sub, planId, plan, planName, monthly } = ccPlanOf(u);
+    const { b, sub, planId, plan, planName, monthly, currency } = ccPlanOf(u);
     const hasAgreement = typeof monthly === "number";
     const bizCharges = P.charges.filter((c) => c.businessId === u.id);
     const subCharges = bizCharges.filter((c) => c.kind === "subscription" && c.status !== "failed");
@@ -13468,8 +13527,9 @@ function ccBusinesses(P) {
       name: b.businessName || u.name || "",
       market: u.market || "",
       partner: partnerUser && partnerUser.partner ? { id: partnerUser.id, name: partnerUser.partner.name || partnerUser.name || "", code: partnerUser.partner.code || "" } : null,
+      currency,
       accessState: businessAccessState(u),
-      plan: hasAgreement ? { id: planId, name: planName, monthly, foundingRate: true, selectedAt: b.planSelectedAt || null } : null,
+      plan: hasAgreement ? { id: planId, name: planName, monthly, currency, foundingRate: true, selectedAt: b.planSelectedAt || null } : null,
       credit: hasAgreement ? { total: creditTotal, used: creditUsed, remaining: ccMoney(creditTotal - creditUsed), applied: creditUsed > 0 } : null,
       minimum: hasAgreement ? { months: minMonths, end: minimumEnd, monthsLeft } : null,
       billing: { state: billingState, subscriptionStatus: sub.status || null, currentPeriodEnd: sub.currentPeriodEnd || null, lastChargeAt: lastChargeAt || null, chargesCount: subCharges.length },
@@ -13609,7 +13669,7 @@ function subRevenueByBizMonth(users, charges) {
         }
       }
     }
-    if (months.size) out.set(u.id, { market: normalizeMarketName(u.market || ""), partnerId: u.partnerId || null, months });
+    if (months.size) out.set(u.id, { market: normalizeMarketName(u.market || ""), partnerId: u.partnerId || null, currency: currencyOfBusiness(u), months });
   }
   return out;
 }
@@ -13624,8 +13684,13 @@ function guaranteeBandFor(guarantee, monthIndex) {
 // state word for the current month, the pilot-floor check and
 // the crossover estimate. Pure over the revenue substrate.
 function dealBreakdown(deal, revByBiz) {
+  // Build -103: the breakdown carries the deal's one currency
+  // (the sanitizer refuses mixed-currency deals), so every
+  // total below is single-currency by construction.
+  const dealCur = (dealCurrentTerms(deal) || {}).currency || "USD";
   const out = {
     dealId: deal.id, partnerId: deal.partnerId, label: deal.label || "", status: deal.status,
+    currency: dealCur,
     governingDocument: deal.governingDocument || null, currentVersion: deal.currentVersion || dealVersions(deal).length || 0,
     accrues: dealAccrues(deal), termsState: dealHasTerms(deal) ? "entered" : "not_entered",
     markets: [], totals: { gross: 0, partnerShare: 0, signlShare: 0, activationDue: 0, activationPaid: 0 },
@@ -13664,7 +13729,7 @@ function dealBreakdown(deal, revByBiz) {
     let startKey = liveKey || (revMonths.length ? revMonths[0] : null);
     let endKey = curKey;
     if (curTerms.termMonths && liveKey) { const termEnd = monthKeyAdd(liveKey, curTerms.termMonths - 1); if (termEnd < endKey) endKey = termEnd; }
-    const mrow = { market: dm.market, status: dm.status || "pending", liveAt: dm.liveAt || null, activationFee: typeof dm.activationFee === "number" ? dm.activationFee : null, activationStatus: dm.activationStatus || "unbilled", months: [], totals: { gross: 0, partnerShare: 0, signlShare: 0 } };
+    const mrow = { market: dm.market, currency: dealCur, status: dm.status || "pending", liveAt: dm.liveAt || null, activationFee: typeof dm.activationFee === "number" ? dm.activationFee : null, activationStatus: dm.activationStatus || "unbilled", months: [], totals: { gross: 0, partnerShare: 0, signlShare: 0 } };
     if (startKey) {
       const enumerateAll = !!(curTerms.guarantee && liveKey);
       for (let k = startKey; k <= endKey; k = monthKeyAdd(k, 1)) {
@@ -13784,6 +13849,17 @@ function sanitizeDealTerms(raw) {
   if (termMonths !== null && (!Number.isFinite(termMonths) || termMonths < 1)) return { error: "The term must be at least one month" };
   const startAt = raw.startAt ? new Date(raw.startAt) : null;
   if (raw.startAt && (!startAt || !Number.isFinite(startAt.getTime()))) return { error: "The start date must be a real date" };
+  // Build -103: a deal lives in ONE currency. The markets in
+  // the deal decide it (London prices in GBP, US markets in
+  // USD); a stated currency that disagrees, or a market list
+  // spanning both, is refused here — the single choke point
+  // every terms write passes through — so no breakdown can
+  // ever blend two currencies into one total.
+  const marketCurrencies = [...new Set(markets.map((dm) => currencyForMarket(dm.market).code))];
+  if (marketCurrencies.length > 1) return { error: "One deal cannot span two currencies. Split it into one deal per currency." };
+  const statedCurrency = raw.currency === "GBP" || raw.currency === "USD" ? raw.currency : null;
+  if (statedCurrency && marketCurrencies.length && statedCurrency !== marketCurrencies[0]) return { error: `These markets price in ${marketCurrencies[0]} — the deal currency has to match.` };
+  const dealCurrency = { currency: statedCurrency || marketCurrencies[0] || "USD" };
   return {
     terms: {
       splitBasis: "subscriptions",
@@ -13798,11 +13874,12 @@ function sanitizeDealTerms(raw) {
       salesTargets: typeof raw.salesTargets === "string" ? raw.salesTargets.slice(0, 1000) : "",
       markets,
       pilot: raw.pilot && typeof raw.pilot === "object" ? { negotiationWindowDays: num(raw.pilot.negotiationWindowDays), gateMetrics: typeof raw.pilot.gateMetrics === "string" ? raw.pilot.gateMetrics.slice(0, 1000) : "" } : null,
+      currency: dealCurrency.currency,
     },
   };
 }
 
-const DEAL_TERM_KEYS = ["splitBasis", "partnerPct", "attributionScope", "guarantee", "termMonths", "startAt", "renewal", "exclusivity", "promoCommitments", "salesTargets", "markets", "pilot"];
+const DEAL_TERM_KEYS = ["splitBasis", "partnerPct", "attributionScope", "guarantee", "termMonths", "startAt", "renewal", "exclusivity", "promoCommitments", "salesTargets", "markets", "pilot", "currency"];
 function diffDealTerms(oldT, newT) {
   const changedFields = [];
   const priorValues = {};
@@ -13843,22 +13920,42 @@ function ccPartnersPayload(P, revByBiz) {
     const deals = (P.deals || []).filter((d) => d.partnerId === u.id);
     const bds = deals.map((d) => dealBreakdown(d, revByBiz));
     const paid = partnerPayoutTotals(P.payouts, u.id);
-    const accrued = ccMoney(bds.reduce((s, bd) => s + bd.totals.partnerShare, 0));
-    const period = bds.reduce((acc, bd) => { const pr = periodRows(bd); acc.gross = ccMoney(acc.gross + pr.gross); acc.partnerShare = ccMoney(acc.partnerShare + pr.partnerShare); acc.signlShare = ccMoney(acc.signlShare + pr.signlShare); return acc; }, { gross: 0, partnerShare: 0, signlShare: 0 });
+    // Build -103: accruals group by the deal's currency and
+    // are NEVER summed across currencies. The flat accrued /
+    // period / owed fields carry the USD group only (identical
+    // to the pre-currency math whenever every deal is USD,
+    // which is every deal that exists today); byCurrency
+    // carries each currency on its own line.
+    const byCurrency = {};
+    for (const bd of bds) {
+      const c = bd.currency || "USD";
+      const g = byCurrency[c] || (byCurrency[c] = { gross: 0, partnerShare: 0, signlShare: 0, accrued: 0 });
+      const pr = periodRows(bd);
+      g.gross = ccMoney(g.gross + pr.gross); g.partnerShare = ccMoney(g.partnerShare + pr.partnerShare); g.signlShare = ccMoney(g.signlShare + pr.signlShare);
+      g.accrued = ccMoney(g.accrued + bd.totals.partnerShare);
+    }
+    const usd = byCurrency.USD || { gross: 0, partnerShare: 0, signlShare: 0, accrued: 0 };
+    const accrued = usd.accrued;
+    const period = { gross: usd.gross, partnerShare: usd.partnerShare, signlShare: usd.signlShare };
     const primary = bds.find((bd) => bd.guaranteeState) || bds[0] || null;
     return {
       id: u.id, name: (u.partner && u.partner.name) || u.name || "", code: (u.partner && u.partner.code) || "", type: (u.partner && u.partner.type) || "",
       markets: (u.partner && u.partner.markets) || [], agreementStatus: (u.partner && u.partner.agreementStatus) || "unsigned",
       sharePct: typeof (u.partner && u.partner.sharePct) === "number" ? u.partner.sharePct : null,
       termsState: deals.some((d) => dealHasTerms(d)) ? "entered" : "not_entered",
-      deals: bds.map((bd) => { const t = dealCurrentTerms(deals.find((d) => d.id === bd.dealId)) || {}; return { id: bd.dealId, label: bd.label, status: bd.status, termsState: bd.termsState, currentVersion: bd.currentVersion, partnerPct: typeof t.partnerPct === "number" ? t.partnerPct : null, hasGuarantee: !!t.guarantee, guaranteeState: bd.guaranteeState }; }),
+      deals: bds.map((bd) => { const t = dealCurrentTerms(deals.find((d) => d.id === bd.dealId)) || {}; return { id: bd.dealId, label: bd.label, status: bd.status, currency: bd.currency || "USD", termsState: bd.termsState, currentVersion: bd.currentVersion, partnerPct: typeof t.partnerPct === "number" ? t.partnerPct : null, hasGuarantee: !!t.guarantee, guaranteeState: bd.guaranteeState }; }),
       attributedBusinesses: P.visUsers.filter((x) => x.role === "business" && x.partnerId === u.id).length,
-      period, accrued, paid, owed: ccMoney(accrued - paid),
+      period, accrued, paid, owed: ccMoney(accrued - paid), byCurrency,
       guaranteeState: primary ? primary.guaranteeState : null,
     };
   });
   rows.sort((a, b) => (b.accrued - a.accrued) || (a.name < b.name ? -1 : 1));
-  return { filters: ccFiltersEcho(P), partners: rows, totals: { accrued: ccMoney(rows.reduce((s, r) => s + r.accrued, 0)), paid: ccMoney(rows.reduce((s, r) => s + r.paid, 0)), owed: ccMoney(rows.reduce((s, r) => s + r.owed, 0)) } };
+  const totalsByCurrency = {};
+  for (const r of rows) for (const [c, g] of Object.entries(r.byCurrency || {})) {
+    const t = totalsByCurrency[c] || (totalsByCurrency[c] = { accrued: 0 });
+    t.accrued = ccMoney(t.accrued + g.accrued);
+  }
+  return { filters: ccFiltersEcho(P), partners: rows, totals: { accrued: ccMoney(rows.reduce((s, r) => s + r.accrued, 0)), paid: ccMoney(rows.reduce((s, r) => s + r.paid, 0)), owed: ccMoney(rows.reduce((s, r) => s + r.owed, 0)) }, totalsByCurrency };
 }
 
 function ccPartnerDetailPayload(P, partnerId, revByBiz) {
@@ -13878,14 +13975,23 @@ function ccPartnerDetailPayload(P, partnerId, revByBiz) {
       paid: ccMoney(payouts.filter((p) => p.dealId === d.id).reduce((s, p) => s + (Number(p.amount) || 0), 0)),
     };
   });
-  const accrued = ccMoney(dealPayloads.reduce((s, bd) => s + bd.totals.partnerShare, 0));
+  // Build -103: detail totals are stated in the first deal's
+  // currency; other currencies accrue on their own lines.
+  const detailCurrency = (dealPayloads[0] && dealPayloads[0].currency) || "USD";
+  const totalsByCurrency = {};
+  for (const bd of dealPayloads) {
+    const c = bd.currency || "USD";
+    totalsByCurrency[c] = ccMoney((totalsByCurrency[c] || 0) + bd.totals.partnerShare);
+  }
+  const accrued = totalsByCurrency[detailCurrency] || 0;
+  const paidInCurrency = ccMoney(payouts.filter((p) => (p.currency || "USD") === detailCurrency).reduce((s, p) => s + (Number(p.amount) || 0), 0));
   return {
     filters: ccFiltersEcho(P),
     partner: { id: u.id, name: (u.partner && u.partner.name) || u.name || "", code: (u.partner && u.partner.code) || "", type: (u.partner && u.partner.type) || "", markets: (u.partner && u.partner.markets) || [], agreementStatus: (u.partner && u.partner.agreementStatus) || "unsigned", agreementSignedAt: (u.partner && u.partner.agreementSignedAt) || null, sharePct: typeof (u.partner && u.partner.sharePct) === "number" ? u.partner.sharePct : null },
     termsState: deals.some((d) => dealHasTerms(d)) ? "entered" : "not_entered",
     deals: dealPayloads,
-    payouts: payouts.map((p) => ({ id: p.id, dealId: p.dealId || null, amount: p.amount, period: p.period || null, method: p.method || "", reference: p.reference || "", note: p.note || "", markedPaidAt: p.markedPaidAt || p.createdAt || null })),
-    totals: { accrued, paid, owed: ccMoney(accrued - paid) },
+    payouts: payouts.map((p) => ({ id: p.id, dealId: p.dealId || null, currency: p.currency || "USD", amount: p.amount, period: p.period || null, method: p.method || "", reference: p.reference || "", note: p.note || "", markedPaidAt: p.markedPaidAt || p.createdAt || null })),
+    totals: { accrued, paid: paidInCurrency, owed: ccMoney(accrued - paidInCurrency), currency: detailCurrency, byCurrency: totalsByCurrency },
     attributedBusinesses: P.visUsers.filter((x) => x.role === "business" && x.partnerId === partnerId).length,
   };
 }
@@ -17305,12 +17411,18 @@ async function route(event) {
   if (method === "POST" && seg[0] === "me" && seg[1] === "plan") {
     if (user.role !== "business") return err(403, "Businesses only");
     const b = parseBody(event);
-    const plan = planById(b.planId || "");
+    // Build -103: plan re-selection prices from the business's
+    // own currency book too — a London business re-picking a
+    // plan can never land on a dollar price.
+    const bizCur = currencyOfBusiness(user);
+    const bizSym = bizCur === "GBP" ? "£" : "$";
+    const plan = planInBook(b.planId || "", bizCur);
     if (!plan) return err(400, "Unknown plan");
     user.business = {
       ...user.business,
+      currency: bizCur,
       plan: plan.id,
-      planName: `${plan.name} $${plan.priceMonthly}/mo`,
+      planName: `${plan.name} ${bizSym}${plan.priceMonthly}/mo`,
       planPriceMonthly: plan.priceMonthly,
       planMinMonths: plan.minMonths,
       billingStatus: "Founding billing: plan recorded, no card charged. Billing starts at launch.",
@@ -18505,12 +18617,18 @@ async function route(event) {
       if (!partnerUser || partnerUser.role !== "partner" || !partnerUser.partner) return err(404, "Partner not found");
       const amount = Number(b.amount);
       if (!Number.isFinite(amount) || amount <= 0) return err(400, "A payout needs a real amount over zero");
+      let payoutCurrency = "USD";
       if (b.dealId) {
         const deal = await store.get(`deal:${String(b.dealId)}`);
         if (!deal || deal.partnerId !== partnerUser.id) return err(400, "That deal does not belong to this partner");
+        // Build -103: a payout against a deal is stamped with
+        // the deal's currency, so a pounds payout can never be
+        // read as dollars downstream.
+        payoutCurrency = (dealCurrentTerms(deal) || {}).currency || "USD";
       }
       const payout = {
         id: crypto.randomUUID(), payeeType: "partner", payeeId: partnerUser.id, dealId: b.dealId ? String(b.dealId) : null,
+        currency: payoutCurrency,
         amount: ccMoney(amount), period: typeof b.period === "string" && /^\d{4}-\d{2}$/.test(b.period) ? b.period : null,
         method: typeof b.method === "string" ? b.method.slice(0, 60) : "", reference: typeof b.reference === "string" ? b.reference.slice(0, 120) : "",
         note: typeof b.note === "string" ? b.note.slice(0, 500) : "",
@@ -18538,6 +18656,7 @@ async function route(event) {
             if (existing && existing.state === "closed") { skippedClosed += 1; continue; }
             await store.set(key, {
               id: key.slice("accrual:".length), partnerId: deal.partnerId, dealId: deal.id, month: row.month, market: mr.market,
+              currency: bd.currency || "USD",
               gross: row.gross, partnerShare: row.partnerShare, signlShare: row.signlShare,
               countedBasis: row.chargedGross > 0 && row.recordedGross > 0 ? "mixed" : row.chargedGross > 0 ? "charged" : "recorded",
               governing: row.governing, governedBy: row.governedBy, state: "accruing", snapshotAt: nowIso(),

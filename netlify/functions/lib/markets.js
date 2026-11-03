@@ -558,6 +558,78 @@ const PLANS = [
   },
 ];
 
+// Build -103 (Tier 3 item 16): the London GBP founding price
+// book — Jeff-approved 2026-11-02: £149/£269/£549 plus VAT, a
+// £75 founding credit (first months £74/£194/£474), 3-month
+// minimum, founding rate held while the plan stays active,
+// unused visits roll one month. London is sold ONLY through
+// SIGNL's UK launch partner (the partner remits VAT on the
+// full price; these figures are ex-VAT). PLANS above stay the
+// USD constants the public side reads — this book is ledger
+// and Admin data, reached through planBookFor(currency). Plan
+// ids are the SAME in both books: an id never names two
+// different products, only two currencies of one product. No
+// Stripe prices exist for this book and none may be created
+// from it: London money enters as Recorded-class only.
+const GBP_PLANS = [
+  {
+    id: "self-service",
+    name: "Self-Service",
+    priceMonthly: 149,
+    foundingCredit: 75,
+    firstMonthPriceMonthly: 74,
+    minMonths: 3,
+    visitsPerMonth: 5,
+    vatNote: "Plus VAT. Sold through SIGNL's UK launch partner.",
+    features: [
+      "Book from the ranked local roster",
+      "5 creator visits a month",
+      "Comped visits, or paid at the creator's listed rate",
+      "Counted results on every visit",
+    ],
+  },
+  {
+    id: "growth",
+    name: "Growth",
+    priceMonthly: 269,
+    foundingCredit: 75,
+    firstMonthPriceMonthly: 194,
+    minMonths: 3,
+    visitsPerMonth: 10,
+    vatNote: "Plus VAT. Sold through SIGNL's UK launch partner.",
+    features: [
+      "Everything in Self-Service",
+      "10 creator visits a month",
+      "Built for paid work and reuse",
+      "License library with renewal tracking",
+      "Priority access to top local creators",
+    ],
+  },
+  {
+    id: "managed",
+    name: "Managed",
+    priceMonthly: 549,
+    foundingCredit: 75,
+    firstMonthPriceMonthly: 474,
+    minMonths: 3,
+    visitsPerMonth: 20,
+    vatNote: "Plus VAT. Sold through SIGNL's UK launch partner.",
+    features: [
+      "Everything in Growth",
+      "20 creator visits a month",
+      "We run the campaigns for you",
+      "Monthly results review with your team",
+    ],
+  },
+];
+const PLAN_BOOK = { USD: PLANS, GBP: GBP_PLANS };
+function planBookFor(currency) {
+  return PLAN_BOOK[currency] || PLANS;
+}
+function planInBook(id, currency) {
+  return planBookFor(currency).find((p) => p.id === id) || null;
+}
+
 // ---------- typed-city resolution (city -> metro) ----------
 // The not-listed signup path takes a free-typed city ("Portsmouth,
 // United States") and parks the record in the "Not listed yet"
@@ -794,4 +866,4 @@ function resolveTypedCity(raw, hints, markets) {
   };
 }
 
-module.exports = { MARKETS, MARKET_NAME_ALIASES, normalizeMarketName, currencyForMarket, paidFloorForMarket, DEFAULT_CURRENCY, MARKET_STATES, parseTypedCity, resolveTypedCity, TIERS, CREATOR_CATEGORIES, COMP_CATEGORIES, BUSINESS_CATEGORIES, PLANS, PROFESSIONS, LEGACY_PROFESSIONS, REALTOR_PROFESSION, canonicalFromList, tierForFollowers, normalizeTierBand, MIN_TOTAL_AUDIENCE };
+module.exports = { MARKETS, MARKET_NAME_ALIASES, normalizeMarketName, currencyForMarket, paidFloorForMarket, DEFAULT_CURRENCY, MARKET_STATES, parseTypedCity, resolveTypedCity, TIERS, CREATOR_CATEGORIES, COMP_CATEGORIES, BUSINESS_CATEGORIES, PLANS, GBP_PLANS, PLAN_BOOK, planBookFor, planInBook, PROFESSIONS, LEGACY_PROFESSIONS, REALTOR_PROFESSION, canonicalFromList, tierForFollowers, normalizeTierBand, MIN_TOTAL_AUDIENCE };

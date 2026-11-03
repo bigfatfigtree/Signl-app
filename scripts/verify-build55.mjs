@@ -120,8 +120,8 @@ const webhook = async (obj) => {
 };
 
 console.log("verify-build55: Command Center Money + Businesses + charge capture");
-check("build stamp is 2026.11.02-102", BUILD_ID === "2026.11.02-102", BUILD_ID);
-check("index.html carries the -55 stamp", fs.readFileSync(new URL("../public/index.html", import.meta.url), "utf8").includes("2026.11.02-102"));
+check("build stamp is 2026.11.02-103", BUILD_ID === "2026.11.02-103", BUILD_ID);
+check("index.html carries the -55 stamp", fs.readFileSync(new URL("../public/index.html", import.meta.url), "utf8").includes("2026.11.02-103"));
 
 const login = await handler(evt("POST", "/api/auth/login", { body: { email: process.env.ADMIN_EMAIL, password: process.env.ADMIN_PASSWORD } }));
 check("admin login succeeds", login.statusCode === 200, `got ${login.statusCode}`);
@@ -191,8 +191,8 @@ check("a replayed success cannot un-refund the charge (status precedence holds)"
 
 // ---------- the money view after capture ----------
 const money = parse(await handler(evt("GET", "/api/admin/command/money", { cookie: adminCookie })));
-check("money payload carries exactly the four classes plus filters and reconciliation — no cross-class total exists",
-  !!money && Object.keys(money).sort().join(",") === "charged,counted,filters,modeled,reconciliation,recorded",
+check("money payload carries exactly the four classes plus filters and reconciliation — no cross-class total exists (Build -103 adds only the read-only plan books and recorded subs split BY currency, never summed)",
+  !!money && Object.keys(money).sort().join(",") === "charged,counted,filters,modeled,planBooks,reconciliation,recorded,recordedSubsByCurrency",
   money && Object.keys(money).join(","));
 check("recorded paid bookings: flowed 206, SIGNL kept 12, creators 194, released only (the held one is escrow, not flowed)",
   !!money && money.recorded.rows.paidBookings.flowed === 206 && money.recorded.rows.paidBookings.signlKept === 12 && money.recorded.rows.paidBookings.creatorsEarned === 194 && money.recorded.rows.paidBookings.count === 1,

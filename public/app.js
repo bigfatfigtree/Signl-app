@@ -14997,17 +14997,20 @@ function partnerPerformanceHtml(d) {
 
 function partnerEarningsHtml(d) {
   const e = d.earnings;
+  // Build -103: a pounds partner reads pounds. The symbol
+  // follows the deal currency on the earnings payload.
+  const sym = e.currency === "GBP" ? "£" : "$";
   return `
   ${wsHead("Your earnings", { sub: "Your share of subscription revenue in your markets.", subKey: "pt-earnings" })}
   <div class="stat-band home-metrics">
     <div class="stat-cell"><div class="stat-num">${e.sharePct}%</div><div class="stat-lbl">Your share</div></div>
-    <div class="stat-cell"><div class="stat-num">$${fmtPrice(e.monthlyRevenue)}</div><div class="stat-lbl">Subscription revenue / mo</div></div>
-    <div class="stat-cell"><div class="stat-num"><em>$${fmtPrice(e.accruedMonthly)}</em></div><div class="stat-lbl">Accrued to you / mo</div></div>
-    <div class="stat-cell"><div class="stat-num">$${fmtPrice(e.paidTotal)}</div><div class="stat-lbl">Paid to date</div></div>
+    <div class="stat-cell"><div class="stat-num">${sym}${fmtPrice(e.monthlyRevenue)}</div><div class="stat-lbl">Subscription revenue / mo</div></div>
+    <div class="stat-cell"><div class="stat-num"><em>${sym}${fmtPrice(e.accruedMonthly)}</em></div><div class="stat-lbl">Accrued to you / mo</div></div>
+    <div class="stat-cell"><div class="stat-num">${sym}${fmtPrice(e.paidTotal)}</div><div class="stat-lbl">Paid to date</div></div>
   </div>
   ${e.basis === "deal" ? `
   <div class="panel mt"><h3 style="margin-top:0">Your deal${e.dealLabel ? `: ${esc(e.dealLabel)}` : ""}</h3>
-  <p class="small muted">Accrued to date: <strong>$${fmtPrice(e.accruedTotal)}</strong> · Paid to date: <strong>$${fmtPrice(e.paidTotal)}</strong> · Still outstanding: <strong>$${fmtPrice(e.owedTotal)}</strong>. These are the same figures SIGNL's own books show, computed from your deal terms.${e.guaranteeState ? ` Right now: ${esc(e.guaranteeState.toLowerCase())} on your guarantee.` : ""}</p></div>` : ""}
+  <p class="small muted">Accrued to date: <strong>${sym}${fmtPrice(e.accruedTotal)}</strong> · Paid to date: <strong>${sym}${fmtPrice(e.paidTotal)}</strong> · Still outstanding: <strong>${sym}${fmtPrice(e.owedTotal)}</strong>. These are the same figures SIGNL's own books show, computed from your deal terms.${e.guaranteeState ? ` Right now: ${esc(e.guaranteeState.toLowerCase())} on your guarantee.` : ""}</p></div>` : ""}
   ${e.hasPaidRevenue ? `
   <div class="panel mt"><h3 style="margin-top:0">Accrued, not yet paid</h3>
   <p class="small muted">These amounts accrue from the subscriptions on file in your markets. Payouts begin once partner payments are switched on; until then this page is the ledger, and accrued amounts are never shown as paid.</p></div>` : `
@@ -20355,6 +20358,7 @@ function dealFormHtml(partnerId, deal) {
       <div class="field"><label>Status</label><select id="df-${partnerId}-${key}-status">${["negotiating", "term_sheet", "signed", "live", "ended"].map((s) => `<option value="${s}" ${deal && deal.status === s ? "selected" : ""}>${s}</option>`).join("")}</select></div>
       <div class="field"><label>Governing document (link)</label><input type="text" id="df-${partnerId}-${key}-doc" value="${esc(deal ? deal.governingDocument || "" : "")}" placeholder="Drive link to the signed terms"></div>
       <div class="field"><label>Partner share % (of subscriptions)</label><input type="number" id="df-${partnerId}-${key}-pct" min="0" max="100" value="${typeof t.partnerPct === "number" ? t.partnerPct : ""}"></div>
+      <div class="field"><label>Deal currency</label><select id="df-${partnerId}-${key}-currency"><option value="USD" ${t.currency !== "GBP" ? "selected" : ""}>US dollars ($)</option><option value="GBP" ${t.currency === "GBP" ? "selected" : ""}>Pounds (£, London)</option></select></div>
       <div class="field"><label>Attribution</label><select id="df-${partnerId}-${key}-scope"><option value="market_wide" ${t.attributionScope !== "sourced_only" ? "selected" : ""}>Whole market (every business in it)</option><option value="sourced_only" ${t.attributionScope === "sourced_only" ? "selected" : ""}>Only businesses this partner brought in</option></select></div>
       <div class="field"><label>Term (months, blank = open)</label><input type="number" id="df-${partnerId}-${key}-term" min="1" value="${t.termMonths ?? ""}"></div>
       <div class="field"><label>Starts</label><input type="date" id="df-${partnerId}-${key}-start" value="${t.startAt ? esc(String(t.startAt).slice(0, 10)) : ""}"></div>
@@ -20365,6 +20369,7 @@ function dealFormHtml(partnerId, deal) {
       <div class="field"><label>Sales targets</label><input type="text" id="df-${partnerId}-${key}-targets" value="${esc(t.salesTargets || "")}"></div>
     </div>
     <h4 style="margin:12px 0 4px">Guarantee (greater-of)</h4>
+    <p class="small muted" style="margin:0 0 6px">Every amount on this deal (floors, activation fees) is read in the deal currency above. One deal never spans two currencies.</p>
     <div class="form-2col">
       <div class="field"><label>Guarantee protects</label><select id="df-${partnerId}-${key}-gben"><option value="none" ${!g ? "selected" : ""}>No guarantee</option><option value="signl" ${g && g.beneficiary !== "partner" ? "selected" : ""}>SIGNL's monthly take</option><option value="partner" ${g && g.beneficiary === "partner" ? "selected" : ""}>The partner's monthly receipts</option></select></div>
       <div class="field"><label>Pilot floor $ (blank = none)</label><input type="number" id="df-${partnerId}-${key}-gpilot" min="0" step="any" value="${g && typeof g.pilotFloor === "number" ? g.pilotFloor : ""}"></div>
@@ -20401,6 +20406,7 @@ function dfCollect(partnerId, key) {
     label: v("label"), status: v("status"), governingDocument: v("doc"), note: v("note"),
     terms: {
       partnerPct: numOrNull(v("pct")),
+      currency: v("currency") || "USD",
       attributionScope: v("scope"),
       termMonths: numOrNull(v("term")),
       startAt: v("start") || null,
@@ -21322,6 +21328,13 @@ function ccQuery() {
 function ccMoneyFmt(n) {
   return "$" + (Number(n) || 0).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 }
+// Build -103: currency-aware money. A GBP figure is printed
+// with £ and never flows through the dollar formatter, so a
+// blended number cannot be produced by accident.
+function ccMoneyFmtC(n, currency) {
+  if (currency === "GBP") return "£" + (Number(n) || 0).toLocaleString("en-GB", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+  return ccMoneyFmt(n);
+}
 function ccSetTab(tab) { ccTab = tab; if (tab !== "partners") ccPartnerId = null; loadStats(); return false; }
 function ccSetPartnerFilter(v) { ccFilters.partner = v; ccPartnerId = null; loadStats(); return false; }
 async function ccOpenPartner(id) { ccPartnerId = id; await ccShowTab(); return false; }
@@ -21717,7 +21730,23 @@ function ccMoneyHtml(d) {
     </div>`;
   const nothingYet = ((rec.totals || {}).flowed || 0) === 0 && (chg.netTotal || 0) === 0 && (cnt.total || 0) === 0
     ? `<div class="panel cc-waiting"><strong>No money has moved yet.</strong> Billing is recorded, not live: plans businesses pick are written on their records, and the first real card charge lands in the Charged panel the moment it happens — charge capture is already running, so nothing will be missed.</div>` : "";
-  return `${tiles}${nothingYet}${recordedPanel}${chargedPanel}${countedPanel}${reconPanel}${modeledPanel}`;
+  // Build -103: the two plan books, Admin reference only, and
+  // recorded subscription revenue per currency — pounds and
+  // dollars on separate lines, never a blended total.
+  const books = d.planBooks || {};
+  const bookLine = (cur) => (books[cur] || []).map((p) => `${esc(p.name)} ${ccMoneyFmtC(p.priceMonthly, cur)}/mo (credit ${ccMoneyFmtC(p.foundingCredit, cur)}, first month ${ccMoneyFmtC(p.firstMonthPriceMonthly, cur)}, ${p.visitsPerMonth} visits, ${p.minMonths}-month minimum)`).join(" · ");
+  const subsCur = d.recordedSubsByCurrency || {};
+  const subsCurLine = Object.keys(subsCur).length > 1 || subsCur.GBP
+    ? `<p class="small" style="margin:8px 0 0">Recorded subscriptions by currency: ${Object.entries(subsCur).map(([c, v]) => `${ccMoneyFmtC(v, c)} ${c}`).join(" · ")}. Currencies are never added together.</p>` : "";
+  const booksPanel = books.USD || books.GBP ? `
+    <div class="panel">
+      <h3 style="margin:0 0 2px">Plan books</h3>
+      <p class="muted small" style="margin:0 0 8px">The founding books Admin sells from. Read-only here; a business's currency is set by its market when it picks a plan.</p>
+      <p class="small" style="margin:0 0 4px"><strong>US dollars:</strong> ${bookLine("USD")}</p>
+      <p class="small" style="margin:0"><strong>Pounds (London):</strong> ${bookLine("GBP")} · all plus VAT. London is sold through the UK launch partner only, so pounds are recorded, never charged here, and no Stripe prices exist for this book.</p>
+      ${subsCurLine}
+    </div>` : "";
+  return `${tiles}${nothingYet}${recordedPanel}${chargedPanel}${countedPanel}${reconPanel}${booksPanel}${modeledPanel}`;
 }
 
 // Businesses (Build -55, spec §3.3): the agreement ledger — one
@@ -21738,7 +21767,7 @@ function ccBusinessesHtml(d) {
   };
   const rowHtml = (r) => {
     const planCell = r.plan
-      ? `<strong>${esc(r.plan.name || "Plan")}</strong> &middot; ${ccMoneyFmt(r.plan.monthly)}/mo${r.plan.foundingRate ? `<br><span class="small">Founding rate, locked while the plan stays active</span>` : ""}${r.plan.selectedAt ? `<br><span class="small muted">Picked ${esc(fmtDay(r.plan.selectedAt))}</span>` : ""}`
+      ? `<strong>${esc(r.plan.name || "Plan")}</strong> &middot; ${ccMoneyFmtC(r.plan.monthly, r.plan.currency || r.currency)}/mo${r.plan.foundingRate ? `<br><span class="small">Founding rate, locked while the plan stays active</span>` : ""}${r.plan.selectedAt ? `<br><span class="small muted">Picked ${esc(fmtDay(r.plan.selectedAt))}</span>` : ""}`
       : `<span class="muted">No plan yet</span>`;
     const creditCell = r.credit
       ? (r.credit.applied ? `${ccMoneyFmt(r.credit.total)} credit &middot; ${ccMoneyFmt(r.credit.used)} used &middot; <strong>${ccMoneyFmt(r.credit.remaining)} left</strong>` : `${ccMoneyFmt(r.credit.total)} credit &middot; not used yet`)
@@ -21788,6 +21817,7 @@ function ccPartnersHtml(d) {
       <div class="cc-tile"><div class="cc-tlabel">Accrued to partners</div><div class="cc-tnum">${ccMoneyFmt(t.accrued)}</div><div class="cc-tsub">Computed from the deal records, all time</div></div>
       <div class="cc-tile"><div class="cc-tlabel">Paid to partners</div><div class="cc-tnum">${ccMoneyFmt(t.paid)}</div><div class="cc-tsub">Real payouts, recorded when they happen</div></div>
       <div class="cc-tile"><div class="cc-tlabel">Owed to partners</div><div class="cc-tnum">${ccMoneyFmt(t.owed)}</div><div class="cc-tsub">Accrued and not yet paid</div></div>
+      ${Object.entries(d.totalsByCurrency || {}).filter(([c]) => c !== "USD").map(([c, g]) => `<div class="cc-tile"><div class="cc-tlabel">Accrued in ${c === "GBP" ? "pounds" : c}</div><div class="cc-tnum">${ccMoneyFmtC(g.accrued, c)}</div><div class="cc-tsub">Kept on its own line — currencies are never added together</div></div>`).join("")}
     </div>
     <p class="muted small" style="margin:2px 0 10px">Every figure is computed from the deal records — the same math each partner sees on their own Earnings page. Period figures follow the filter: ${esc(periodName)}.
       <button type="button" class="btn small-btn ghost" onclick="return ccAccrueSnapshot()">Snapshot accruals</button></p>
@@ -21806,8 +21836,8 @@ function ccPartnersHtml(d) {
           <td data-label="The deal">${dealCell}</td>
           <td data-label="Markets">${esc((r.markets || []).join(", ") || "—")}</td>
           <td data-label="Status">${status}</td>
-          <td data-label="Period split">Partner ${ccMoneyFmt(r.period.partnerShare)} · SIGNL ${ccMoneyFmt(r.period.signlShare)}<br><span class="small muted">of ${ccMoneyFmt(r.period.gross)} in</span></td>
-          <td data-label="Earned to date"><strong>${ccMoneyFmt(r.accrued)}</strong><br><span class="small muted">${ccMoneyFmt(r.paid)} paid · ${ccMoneyFmt(r.owed)} owed</span></td>
+          <td data-label="Period split">Partner ${ccMoneyFmt(r.period.partnerShare)} · SIGNL ${ccMoneyFmt(r.period.signlShare)}<br><span class="small muted">of ${ccMoneyFmt(r.period.gross)} in</span>${Object.entries(r.byCurrency || {}).filter(([c]) => c !== "USD").map(([c, g]) => `<br><span class="small">In ${c === "GBP" ? "pounds" : c}: partner ${ccMoneyFmtC(g.partnerShare, c)} · SIGNL ${ccMoneyFmtC(g.signlShare, c)} of ${ccMoneyFmtC(g.gross, c)} in</span>`).join("")}</td>
+          <td data-label="Earned to date"><strong>${ccMoneyFmt(r.accrued)}</strong><br><span class="small muted">${ccMoneyFmt(r.paid)} paid · ${ccMoneyFmt(r.owed)} owed</span>${Object.entries(r.byCurrency || {}).filter(([c]) => c !== "USD").map(([c, g]) => `<br><span class="small"><strong>${ccMoneyFmtC(g.accrued, c)}</strong> accrued in ${c === "GBP" ? "pounds" : c}</span>`).join("")}</td>
           <td><button type="button" class="btn small-btn" onclick="return ccOpenPartner('${r.id}')">Open</button></td>
         </tr>`;
       }).join("")}
@@ -21823,16 +21853,17 @@ async function ccAccrueSnapshot() {
   return false;
 }
 
-function ccSplitBarHtml(partnerShare, signlShare, partnerName) {
+function ccSplitBarHtml(partnerShare, signlShare, partnerName, currency) {
   const total = Math.max(0, partnerShare) + Math.max(0, signlShare);
   const pPct = total > 0 ? Math.round((Math.max(0, partnerShare) / total) * 100) : 0;
   return `<div class="cc-splitbar" style="display:flex;height:34px;border-radius:8px;overflow:hidden;margin:8px 0 4px">
-      <div style="background:#A9E8C9;color:#0B0D0C;width:${pPct}%;display:flex;align-items:center;padding:0 10px;font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden">${esc(partnerName)} · ${ccMoneyFmt(partnerShare)} · ${pPct}%</div>
-      <div style="background:#0B0D0C;color:#fff;flex:1;display:flex;align-items:center;justify-content:flex-end;padding:0 10px;font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden">SIGNL · ${ccMoneyFmt(signlShare)} · ${100 - pPct}%</div>
+      <div style="background:#A9E8C9;color:#0B0D0C;width:${pPct}%;display:flex;align-items:center;padding:0 10px;font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden">${esc(partnerName)} · ${ccMoneyFmtC(partnerShare, currency)} · ${pPct}%</div>
+      <div style="background:#0B0D0C;color:#fff;flex:1;display:flex;align-items:center;justify-content:flex-end;padding:0 10px;font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden">SIGNL · ${ccMoneyFmtC(signlShare, currency)} · ${100 - pPct}%</div>
     </div>`;
 }
 
 function ccDealMonthsTable(deal, partnerName) {
+  const ccMoneyFmtC_CUR = (n) => ccMoneyFmtC(n, deal.currency);
   const benName = deal.terms && deal.terms.guarantee ? (deal.terms.guarantee.beneficiary === "partner" ? partnerName : "SIGNL") : null;
   const sections = (deal.markets || []).map((mr) => {
     if (!mr.months.length) return `<h4 style="margin:14px 0 4px">${esc(mr.market)}</h4><p class="small muted">No months yet${mr.liveAt ? "" : " — the market has no live date on the deal, so guarantee months cannot be counted"}.</p>`;
@@ -21842,11 +21873,11 @@ function ccDealMonthsTable(deal, partnerName) {
       ${mr.months.map((row) => `<tr>
         <td><strong>${esc(row.label)}</strong>${row.monthIndex ? `<br><span class="small muted">Month ${row.monthIndex} of the deal</span>` : ""}</td>
         <td data-label="Businesses">${row.businesses}</td>
-        <td data-label="Money in">${ccMoneyFmt(row.gross)}${row.chargedGross && row.recordedGross ? `<br><span class="small muted">${ccMoneyFmt(row.chargedGross)} charged · ${ccMoneyFmt(row.recordedGross)} recorded</span>` : ""}</td>
-        <td data-label="% amount">${row.band ? ccMoneyFmt(row.band.pctAmount) : "—"}</td>
-        <td data-label="Guarantee">${row.band ? ccMoneyFmt(row.band.floorMonthly) : "—"}</td>
-        <td data-label="${esc(partnerName)} receives"><strong>${ccMoneyFmt(row.partnerShare)}</strong></td>
-        <td data-label="SIGNL keeps">${ccMoneyFmt(row.signlShare)}</td>
+        <td data-label="Money in">${ccMoneyFmtC_CUR(row.gross)}${row.chargedGross && row.recordedGross ? `<br><span class="small muted">${ccMoneyFmtC_CUR(row.chargedGross)} charged · ${ccMoneyFmtC_CUR(row.recordedGross)} recorded</span>` : ""}</td>
+        <td data-label="% amount">${row.band ? ccMoneyFmtC_CUR(row.band.pctAmount) : "—"}</td>
+        <td data-label="Guarantee">${row.band ? ccMoneyFmtC_CUR(row.band.floorMonthly) : "—"}</td>
+        <td data-label="${esc(partnerName)} receives"><strong>${ccMoneyFmtC_CUR(row.partnerShare)}</strong></td>
+        <td data-label="SIGNL keeps">${ccMoneyFmtC_CUR(row.signlShare)}</td>
         <td data-label="Governs">${row.band ? `<span class="badge ${row.governedBy === "guarantee" ? "warn" : "ok"}">${row.governedBy === "guarantee" ? "Guarantee" : "Percentage"}</span>` : `<span class="small muted">Percentage</span>`}</td>
       </tr>`).join("")}
     </table></div>`;
@@ -21855,6 +21886,7 @@ function ccDealMonthsTable(deal, partnerName) {
 }
 
 function ccPartnerDealHtml(d, deal) {
+  const ccMoneyFmtC_CUR = (n) => ccMoneyFmtC(n, deal.currency);
   const p = d.partner;
   const t = deal.terms || {};
   const cm = deal.currentMonth;
@@ -21862,13 +21894,13 @@ function ccPartnerDealHtml(d, deal) {
   const liveMarkets = (t.markets || []).filter((m) => m.status === "live");
   tiles.push(`<div class="cc-tile"><div class="cc-tlabel">Markets in this deal</div><div class="cc-tnum">${(t.markets || []).length}</div><div class="cc-tsub">${(t.markets || []).map((m) => esc(m.market)).join(", ") || "—"}${liveMarkets.length ? ` · ${liveMarkets.length} live` : ""}</div></div>`);
   for (const m of (t.markets || [])) {
-    tiles.push(`<div class="cc-tile"><div class="cc-tlabel">Activation · ${esc(m.market)}</div><div class="cc-tnum">${typeof m.activationFee === "number" ? ccMoneyFmt(m.activationFee) : "To be set"}</div><div class="cc-tsub">${typeof m.activationFee === "number" ? esc(m.activationStatus || "unbilled") : "No amount is on the deal yet — never assumed"}</div></div>`);
+    tiles.push(`<div class="cc-tile"><div class="cc-tlabel">Activation · ${esc(m.market)}</div><div class="cc-tnum">${typeof m.activationFee === "number" ? ccMoneyFmtC_CUR(m.activationFee) : "To be set"}</div><div class="cc-tsub">${typeof m.activationFee === "number" ? esc(m.activationStatus || "unbilled") : "No amount is on the deal yet — never assumed"}</div></div>`);
   }
   if (t.guarantee) {
     for (const bd of (t.guarantee.bands || [])) {
-      tiles.push(`<div class="cc-tile"><div class="cc-tlabel">Months ${bd.fromMonth}–${bd.toMonth == null ? "…" : bd.toMonth}</div><div class="cc-tnum">${ccMoneyFmt(bd.floorMonthly)}</div><div class="cc-tsub">The greater of ${ccMoneyFmt(bd.floorMonthly)} or ${bd.pctToBeneficiary}% — to ${t.guarantee.beneficiary === "partner" ? esc(p.name) : "SIGNL"}</div></div>`);
+      tiles.push(`<div class="cc-tile"><div class="cc-tlabel">Months ${bd.fromMonth}–${bd.toMonth == null ? "…" : bd.toMonth}</div><div class="cc-tnum">${ccMoneyFmtC_CUR(bd.floorMonthly)}</div><div class="cc-tsub">The greater of ${ccMoneyFmtC_CUR(bd.floorMonthly)} or ${bd.pctToBeneficiary}% — to ${t.guarantee.beneficiary === "partner" ? esc(p.name) : "SIGNL"}</div></div>`);
     }
-    if (typeof t.guarantee.pilotFloor === "number") tiles.push(`<div class="cc-tile"><div class="cc-tlabel">Pilot floor</div><div class="cc-tnum">${ccMoneyFmt(t.guarantee.pilotFloor)}</div><div class="cc-tsub">Across the whole pilot, activation included</div></div>`);
+    if (typeof t.guarantee.pilotFloor === "number") tiles.push(`<div class="cc-tile"><div class="cc-tlabel">Pilot floor</div><div class="cc-tnum">${ccMoneyFmtC_CUR(t.guarantee.pilotFloor)}</div><div class="cc-tsub">Across the whole pilot, activation included</div></div>`);
   }
   if (cm && cm.monthIndex && t.termMonths) tiles.push(`<div class="cc-tile"><div class="cc-tlabel">Where the deal stands</div><div class="cc-tnum">Month ${cm.monthIndex} of ${t.termMonths}</div><div class="cc-tsub">${esc(cm.label)} · ${esc(cm.market)}</div></div>`);
   let callout = "";
@@ -21880,13 +21912,13 @@ function ccPartnerDealHtml(d, deal) {
     const otherName = benIsSignl ? p.name : "SIGNL";
     callout = `<div class="panel" style="background:#0B0D0C;color:#F4F7F4;margin-top:14px">
       <h3 style="margin:0 0 6px;color:#fff">${cm.governedBy === "guarantee" ? "This month, the guarantee governs." : "This month, the percentage governs."}</h3>
-      <p class="small" style="margin:0;color:#DDE7DD">${esc(benName)}'s ${cm.band.pctToBeneficiary}% of ${ccMoneyFmt(cm.gross)} comes to ${ccMoneyFmt(cm.band.pctAmount)}. ${cm.governedBy === "guarantee" ? `The guarantee pays ${ccMoneyFmt(cm.band.floorMonthly)} instead, so ${esc(benName)} receives ${ccMoneyFmt(benShare)} and ${esc(otherName)} receives the remaining ${ccMoneyFmt(otherShare)}.` : `That is above the ${ccMoneyFmt(cm.band.floorMonthly)} guarantee, so the split runs on percentages: ${esc(benName)} receives ${ccMoneyFmt(benShare)}, ${esc(otherName)} the remaining ${ccMoneyFmt(otherShare)}.`}</p>
+      <p class="small" style="margin:0;color:#DDE7DD">${esc(benName)}'s ${cm.band.pctToBeneficiary}% of ${ccMoneyFmtC_CUR(cm.gross)} comes to ${ccMoneyFmtC_CUR(cm.band.pctAmount)}. ${cm.governedBy === "guarantee" ? `The guarantee pays ${ccMoneyFmtC_CUR(cm.band.floorMonthly)} instead, so ${esc(benName)} receives ${ccMoneyFmtC_CUR(benShare)} and ${esc(otherName)} receives the remaining ${ccMoneyFmtC_CUR(otherShare)}.` : `That is above the ${ccMoneyFmtC_CUR(cm.band.floorMonthly)} guarantee, so the split runs on percentages: ${esc(benName)} receives ${ccMoneyFmtC_CUR(benShare)}, ${esc(otherName)} the remaining ${ccMoneyFmtC_CUR(otherShare)}.`}</p>
       ${deal.crossoverBusinesses ? `<p class="small" style="margin:6px 0 0;color:#DDE7DD">The percentage takes over at about ${deal.crossoverBusinesses} businesses a month in this market.</p>` : ""}
     </div>`;
   }
-  const splitBar = cm ? `<div class="panel" style="margin-top:14px"><h3 style="margin:0 0 2px">This month's split</h3><p class="small muted" style="margin:0">${esc(cm.label)} · ${esc(cm.market)} · ${ccMoneyFmt(cm.gross)} of subscription money in</p>${ccSplitBarHtml(cm.partnerShare, cm.signlShare, p.name)}</div>` : "";
+  const splitBar = cm ? `<div class="panel" style="margin-top:14px"><h3 style="margin:0 0 2px">This month's split</h3><p class="small muted" style="margin:0">${esc(cm.label)} · ${esc(cm.market)} · ${ccMoneyFmtC_CUR(cm.gross)} of subscription money in</p>${ccSplitBarHtml(cm.partnerShare, cm.signlShare, p.name, deal.currency)}</div>` : "";
   const pilot = deal.pilotFloor ? `<div class="panel" style="margin-top:14px"><h3 style="margin:0 0 4px">Pilot floor</h3>
-    <p class="small" style="margin:0">The deal promises ${deal.pilotFloor.beneficiary === "partner" ? esc(p.name) : "SIGNL"} at least ${ccMoneyFmt(deal.pilotFloor.floor)} across the pilot. Counted so far: <strong>${ccMoneyFmt(deal.pilotFloor.counted)}</strong> (${ccMoneyFmt(deal.pilotFloor.activationCounted)} activation + ${ccMoneyFmt(deal.pilotFloor.receiptsCounted)} of monthly takes). ${deal.pilotFloor.met ? `<strong>The floor is met.</strong>` : `${ccMoneyFmt(deal.pilotFloor.shortfall)} to go.`}</p></div>` : "";
+    <p class="small" style="margin:0">The deal promises ${deal.pilotFloor.beneficiary === "partner" ? esc(p.name) : "SIGNL"} at least ${ccMoneyFmtC_CUR(deal.pilotFloor.floor)} across the pilot. Counted so far: <strong>${ccMoneyFmtC_CUR(deal.pilotFloor.counted)}</strong> (${ccMoneyFmtC_CUR(deal.pilotFloor.activationCounted)} activation + ${ccMoneyFmtC_CUR(deal.pilotFloor.receiptsCounted)} of monthly takes). ${deal.pilotFloor.met ? `<strong>The floor is met.</strong>` : `${ccMoneyFmtC_CUR(deal.pilotFloor.shortfall)} to go.`}</p></div>` : "";
   const runRate = deal.runRate ? `<div class="panel" style="margin-top:14px"><div class="flex-between"><h3 style="margin:0">Run-rate at fill</h3><span class="cc-chip modeled">Modeled</span></div>
     <p class="small muted" style="margin:4px 0 8px">The standard model at this deal's split: about ${deal.runRate.businessesPerMarket} businesses a market at $${Number(deal.runRate.arpuYearly).toLocaleString()} a year, ramped 40% / 75% / 100% across the first three years. An estimate for planning, never an accrual.</p>
     <div class="table-wrap"><table><tr><th>Year</th><th>Gross</th><th>${esc(p.name)} at ${typeof t.partnerPct === "number" ? t.partnerPct : 0}%</th></tr>
@@ -21931,13 +21963,13 @@ function ccPartnerDetailHtml(d) {
   }
   const payouts = (d.payouts || []).length ? `<div class="table-wrap"><table>
       <tr><th>Paid</th><th>Amount</th><th>For</th><th>How</th></tr>
-      ${d.payouts.map((po) => `<tr><td>${po.markedPaidAt ? esc(fmtDay(po.markedPaidAt)) : ""}</td><td data-label="Amount"><strong>${ccMoneyFmt(po.amount)}</strong></td><td data-label="For">${po.period ? esc(po.period) : "—"}${po.note ? `<br><span class="small muted">${esc(po.note)}</span>` : ""}</td><td data-label="How">${esc(po.method || "")}${po.reference ? ` · ${esc(po.reference)}` : ""}</td></tr>`).join("")}
+      ${d.payouts.map((po) => `<tr><td>${po.markedPaidAt ? esc(fmtDay(po.markedPaidAt)) : ""}</td><td data-label="Amount"><strong>${ccMoneyFmtC(po.amount, po.currency)}</strong></td><td data-label="For">${po.period ? esc(po.period) : "—"}${po.note ? `<br><span class="small muted">${esc(po.note)}</span>` : ""}</td><td data-label="How">${esc(po.method || "")}${po.reference ? ` · ${esc(po.reference)}` : ""}</td></tr>`).join("")}
     </table></div>` : `<p class="small muted">No payout has been recorded yet. Accrued is not paid until a real payment is recorded here.</p>`;
   return `${head}
     <div class="cc-tiles">
-      <div class="cc-tile"><div class="cc-tlabel">Accrued to date</div><div class="cc-tnum">${ccMoneyFmt(d.totals.accrued)}</div><div class="cc-tsub">Across every month and market on the deal</div></div>
-      <div class="cc-tile"><div class="cc-tlabel">Paid to date</div><div class="cc-tnum">${ccMoneyFmt(d.totals.paid)}</div><div class="cc-tsub">Recorded payouts only</div></div>
-      <div class="cc-tile"><div class="cc-tlabel">Owed</div><div class="cc-tnum">${ccMoneyFmt(d.totals.owed)}</div><div class="cc-tsub">Accrued, not yet paid</div></div>
+      <div class="cc-tile"><div class="cc-tlabel">Accrued to date</div><div class="cc-tnum">${ccMoneyFmtC(d.totals.accrued, d.totals.currency)}</div><div class="cc-tsub">Across every month and market on the deal</div></div>
+      <div class="cc-tile"><div class="cc-tlabel">Paid to date</div><div class="cc-tnum">${ccMoneyFmtC(d.totals.paid, d.totals.currency)}</div><div class="cc-tsub">Recorded payouts only</div></div>
+      <div class="cc-tile"><div class="cc-tlabel">Owed</div><div class="cc-tnum">${ccMoneyFmtC(d.totals.owed, d.totals.currency)}</div><div class="cc-tsub">Accrued, not yet paid</div></div>
       <div class="cc-tile"><div class="cc-tlabel">Agreement</div><div class="cc-tnum" style="font-size:20px">${esc(p.agreementStatus || "unsigned")}</div><div class="cc-tsub">${p.agreementSignedAt ? `Signed ${esc(fmtDay(p.agreementSignedAt))}` : "Set it on the Partners tab"}</div></div>
     </div>
     ${(d.deals || []).map((deal) => ccPartnerDealHtml(d, deal)).join("")}
@@ -21945,23 +21977,26 @@ function ccPartnerDetailHtml(d) {
       ${payouts}
       <h4 style="margin:14px 0 6px">Record a payment</h4>
       <div class="form-2col">
-        <div class="field"><label>Amount $</label><input type="number" id="cp-amount" min="0" step="any"></div>
+        <div class="field"><label>Amount ${d.totals && d.totals.currency === "GBP" ? "£" : "$"}</label><input type="number" id="cp-amount" min="0" step="any"></div>
         <div class="field"><label>For month</label><input type="month" id="cp-period"></div>
         <div class="field"><label>Method</label><input type="text" id="cp-method" placeholder="ACH"></div>
         <div class="field"><label>Reference</label><input type="text" id="cp-reference" placeholder="Transfer id"></div>
       </div>
       <div class="field"><label>Note</label><input type="text" id="cp-note"></div>
       <div id="cp-err"></div>
-      <button type="button" class="btn small-btn" onclick="return ccRecordPayout('${p.id}')">Record payment</button>
+      <button type="button" class="btn small-btn" onclick="return ccRecordPayout('${p.id}', '${(d.deals || [])[0] ? d.deals[0].dealId : ""}')">Record payment</button>
       <span class="small muted">Record only money that actually moved. This is the ledger the partner's Paid to date reads.</span>
     </div>`;
 }
 
-async function ccRecordPayout(partnerId) {
+async function ccRecordPayout(partnerId, dealId) {
   const errEl = document.getElementById("cp-err");
   try {
     await api("POST", "/admin/command/partners/payouts", {
       partnerId,
+      // Build -103: tying the payment to the deal stamps the
+      // payout with the deal's currency server-side.
+      ...(dealId ? { dealId } : {}),
       amount: Number(document.getElementById("cp-amount").value),
       period: document.getElementById("cp-period").value || null,
       method: document.getElementById("cp-method").value,

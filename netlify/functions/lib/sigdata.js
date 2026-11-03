@@ -189,6 +189,10 @@ function buildAdminFacts(d) {
     offers: { ...offerCounts, openByMarket },
     visits: { bookings: bookings.length, completed, upcoming, awaitingPost, overduePosts, postsLive: posts.length },
     partners: { total: partners.length, active: partners.filter((p) => p.status === "active").length, paused: partners.filter((p) => p.status === "paused").length, list: partners },
+    // Build -103: deal records as entered (currency + split),
+    // so money answers stay per-currency and a missing London
+    // split is said plainly instead of assumed.
+    deals: Array.isArray(d.dealFacts) ? d.dealFacts : [],
     markets: { liveNames, liveCount: liveNames.length, known: (d.marketNames || []).length },
   };
 }
@@ -395,6 +399,7 @@ function factsLines(role, f) {
     lines.push(`Businesses: ${fmt(b.total)} in total: ${fmt(b.approved)} approved (${fmt(b.active)} active, ${fmt(b.founding)} on the founding list waiting for activation), ${fmt(b.pending)} pending. Businesses by plan: ${b.byPlan.length ? b.byPlan.map((p) => `${p.plan} ${p.count}`).join(", ") : "none yet"}. Creator sign-ups: ${fmt(c.claimsToday)} today, ${fmt(c.signups7d)} in the last 7 days.`);
     lines.push(`Offers: ${fmt(f.offers.total)} in total: ${fmt(f.offers.open)} open, ${fmt(f.offers.draft)} drafts, ${fmt(f.offers.filled)} filled, ${fmt(f.offers.closed)} closed. Visits: ${fmt(f.visits.bookings)} bookings, ${fmt(f.visits.completed)} completed, ${fmt(f.visits.upcoming)} booked and coming up, ${fmt(f.visits.postsLive)} posts live, ${fmt(f.visits.awaitingPost)} visits waiting on a post, ${fmt(f.visits.overduePosts)} posts overdue (that overdue count is the compliance queue).`);
     lines.push(`Partners: ${fmt(f.partners.total)} (${fmt(f.partners.active)} active, ${fmt(f.partners.paused)} paused)${f.partners.list.length ? ": " + f.partners.list.map((p) => `${p.name} (${p.status}${p.markets.length ? ", " + p.markets.join(" + ") : ""})`).join("; ") : ""}. Markets live: ${f.markets.liveCount ? f.markets.liveNames.join(", ") : "none yet"}. Applications waiting on a decision: ${fmt(f.waiting.total)} (${fmt(f.waiting.creators)} ${plural(f.waiting.creators, "creator")}, ${fmt(f.waiting.businesses)} ${plural(f.waiting.businesses, "business", "businesses")}).`);
+    if ((f.deals || []).length) lines.push(`Deals on file: ${f.deals.map((x) => `${x.label} (${x.partnerName || "partner"}, ${x.status}) in ${x.currency}: ${x.partnerPct === null ? "no split entered yet" : `partner split ${x.partnerPct}% as entered`}`).join("; ")}. London founding prices live in the GBP book: £149 / £269 / £549 a month plus VAT, £75 founding credit; a split exists only where a deal record says so.`);
     lines.push("This admin surface is read-only for you: answer and explain, and point to the Admin tab where an action lives. Never claim you approved, sent, activated, or changed anything.");
     return lines;
   }
@@ -527,6 +532,18 @@ function answerAdmin(f, q, t) {
     const m = b.posMix || {};
     const declared = (m.square || 0) + (m.clover || 0) + (m.toast || 0) + (m.lightspeed || 0) + (m.other || 0) + (m.none || 0);
     return linked(`Declared tills across ${fmt(b.total)} real ${plural(b.total, "business", "businesses")}: Square ${fmt(m.square || 0)}, Clover ${fmt(m.clover || 0)}, Toast ${fmt(m.toast || 0)}, Lightspeed ${fmt(m.lightspeed || 0)}, another system ${fmt(m.other || 0)}, no register system ${fmt(m.none || 0)}, and ${fmt(m.undeclared || 0)} have not declared yet. ${declared} ${plural(declared, "declaration")} on file; the Clover build trigger is 10 to 20 declared businesses. The mix strip sits on the Command Center Businesses view.`, "Open Businesses", "admin-businesses");
+  }
+
+  // London money (Build -103): GBP answers come from the GBP
+  // deal records and the GBP price book only — never blended
+  // with dollars, and a split is reported only as entered.
+  if (hasWord(t, "london", "gbp", "pound", "pounds") || t.includes("£")) {
+    const gbpDeals = (f.deals || []).filter((x) => x.currency === "GBP");
+    if (hasWord(t, "split", "share", "deal", "partner")) {
+      if (!gbpDeals.length) return "No London (GBP) deal is on file yet, so there is no London split to report. A split is set per deal when one is signed; nothing is assumed by default. London founding prices live in the GBP book: £149 / £269 / £549 a month plus VAT, with a £75 founding credit.";
+      return gbpDeals.map((x) => `${x.label} (${x.partnerName || "partner"}, ${x.status}): ${x.partnerPct === null ? "no split entered yet — nothing accrues until one is" : `partner split ${x.partnerPct}% as entered`}.`).join(" ") + " Pounds and dollars are always reported on separate lines, never added together.";
+    }
+    return "London prices live in the GBP book: Self-Service £149, Growth £269, Managed £549 a month, all plus VAT, with a £75 founding credit (first months £74 / £194 / £474) and a 3-month minimum. London is sold through the UK launch partner, so those amounts are recorded, never charged through SIGNL checkout.";
   }
 
   // Breakdowns
