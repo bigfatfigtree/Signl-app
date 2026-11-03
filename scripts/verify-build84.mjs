@@ -241,7 +241,7 @@ async function main() {
 
   // ---------- the client bundle carries the flows ----------
   const shell = await (await fetch(`${BASE}/`)).text();
-  check("shell: the build stamp is current", shell.includes("2026.11.02-107"), shell.slice(0, 120));
+  check("shell: the build stamp is current", shell.includes("2026.11.02-108"), shell.slice(0, 120));
   const appJs = await (await fetch(`${BASE}/app.js`)).text();
   check("client: the composer carries the deliverables editor with the Recommended badge and all three kinds",
     appJs.includes("deliverablesEditorHtml") && appJs.includes("Recommended") && appJs.includes('value="coupon"') && appJs.includes("the coupon is the payment for the post. No cash changes hands."),

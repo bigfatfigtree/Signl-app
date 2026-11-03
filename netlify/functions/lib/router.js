@@ -20,7 +20,7 @@ const sigdata = require("./sigdata");
 const { buildProfilePageHtml, buildClaimPageHtml, buildRosterPageHtml, buildRosterNotFoundHtml } = require("./profile-meta");
 const { videoEmbedFor } = require("./video-embed");
 const intentLib = require("./intent");
-const { normalizeAudienceMarkets, audienceShareInMarket, isListedInMarket, listedMarketsFor, audienceBreakdownFor, MULTI_MARKET_MIN_PCT } = require("./audience-markets");
+const { normalizeAudienceMarkets, audienceShareInMarket, isListedInMarket, listedMarketsFor, audienceBreakdownFor, MULTI_MARKET_MIN_PCT, verifiedInMarket, computeAudienceVerification } = require("./audience-markets");
 const igPrefill = require("./ig-prefill");
 const recruiters = require("./recruiters");
 const pilots = require("./pilots");
@@ -1439,6 +1439,75 @@ async function syncYouTubeForConnection(conn) {
   return { ok: true, status: "ok", count: res.count };
 }
 
+// Instagram audience verification (Build -108, item 12): one
+// connection, one verification pass. The follower count syncs
+// through the same applySyncedAudienceCount the YouTube lane
+// uses (the stack's instagram component may then carry Synced);
+// the city geography is compared against the creator's OWN
+// stated shares and stored as creator.audienceVerification.
+// States stay plain: under 100 followers Meta shares no city
+// data ("below_100"); an empty insights answer is "no_city_data"
+// (new account or the ~48h lag); a provider failure is "error"
+// and the last good record stands untouched.
+async function applyAudienceVerification(userId, record) {
+  const fresh = await store.get(`user:${userId}`);
+  if (!fresh || !fresh.creator) return null;
+  fresh.creator.audienceVerification = record;
+  fresh.updatedAt = nowIso();
+  await store.set(`user:${userId}`, fresh);
+  return fresh;
+}
+
+async function syncInstagramForConnection(conn) {
+  const fresh = (await platformConnect.getConnection(conn.userId, "instagram")) || conn;
+  let profile = null;
+  try {
+    if (!fresh.accessToken || (fresh.tokenExpiresAt && Date.now() > fresh.tokenExpiresAt - 60000)) {
+      await platformConnect.refreshInstagramAccessToken(fresh);
+    }
+    try {
+      profile = await platformConnect.fetchInstagramProfile(fresh.accessToken);
+    } catch (e) {
+      await platformConnect.refreshInstagramAccessToken(fresh);
+      profile = await platformConnect.fetchInstagramProfile(fresh.accessToken);
+    }
+  } catch (e) {
+    return { ok: false, status: "error" };
+  }
+  if (!profile) return { ok: false, status: "error" };
+  fresh.accountId = profile.id || fresh.accountId;
+  fresh.accountLabel = profile.username ? `@${profile.username}` : fresh.accountLabel;
+  if (typeof profile.followersCount === "number" && profile.followersCount > 0) {
+    fresh.lastCount = Math.floor(profile.followersCount);
+  }
+  const userRec = await store.get(`user:${conn.userId}`);
+  if (!userRec || !userRec.creator) return { ok: false, status: "error" };
+  const followers = typeof profile.followersCount === "number" ? profile.followersCount : null;
+  if (followers !== null && followers < 100) {
+    // The count itself is real and still syncs; only the city
+    // geography is unavailable at this size.
+    fresh.lastSyncAt = nowIso();
+    fresh.lastSyncStatus = "below_minimum";
+    await platformConnect.saveInstagramConnection(conn.userId, { access_token: fresh.accessToken, expires_in: Math.max(60, Math.floor(((fresh.tokenExpiresAt || Date.now() + 3600000) - Date.now()) / 1000)) }, { id: fresh.accountId, username: profile.username });
+    if (followers > 0) await applySyncedAudienceCount(conn.userId, fresh, followers);
+    const rec = computeAudienceVerification(userRec, null, { state: "below_100", followerCount: followers });
+    await applyAudienceVerification(conn.userId, rec);
+    return { ok: true, status: "below_minimum", state: "below_100" };
+  }
+  const geo = await platformConnect.fetchInstagramAudienceCities(fresh);
+  if (geo.status === "error") return { ok: false, status: "error" };
+  if (followers !== null && followers > 0) await applySyncedAudienceCount(conn.userId, fresh, followers);
+  if (geo.status === "no_data") {
+    const rec = computeAudienceVerification(userRec, null, { state: "no_city_data", followerCount: followers });
+    await applyAudienceVerification(conn.userId, rec);
+    return { ok: true, status: "no_data", state: "no_city_data" };
+  }
+  const summary = platformConnect.summarizeAudienceCities(geo.cities);
+  const rec = computeAudienceVerification(userRec, summary.perMarket, { state: "ok", followerCount: followers });
+  await applyAudienceVerification(conn.userId, rec);
+  return { ok: true, status: rec.status === "verified" ? "verified" : "checked", verification: rec };
+}
+
 // The daily audience pass behind POST /api/admin/metrics/sync:
 // walk every stored connection and sync each one. YouTube is the
 // only live provider today; other platforms join this walk when
@@ -1447,17 +1516,19 @@ async function syncAllConnectedAudiences() {
   const conns = await platformConnect.listAllConnections();
   let synced = 0;
   let failed = 0;
+  const walked = new Set();
   for (const conn of conns) {
-    if (!conn || conn.platform !== "youtube") continue;
+    if (!conn || (conn.platform !== "youtube" && conn.platform !== "instagram")) continue;
+    walked.add(conn.platform);
     try {
-      const r = await syncYouTubeForConnection(conn);
+      const r = conn.platform === "youtube" ? await syncYouTubeForConnection(conn) : await syncInstagramForConnection(conn);
       if (r.ok) synced += 1;
       else failed += 1;
     } catch (e) {
       failed += 1;
     }
   }
-  return { providers: ["youtube"], connections: conns.length, synced, failed };
+  return { providers: walked.size ? [...walked] : ["youtube"], connections: conns.length, synced, failed };
 }
 
 // ---------- Campus identity (Jeff, 2026-10-21) ----------
@@ -2546,7 +2617,9 @@ async function creatorBuzz(user) {
   const complete = approved.filter((x) => profileCompleteOf(x));
   const ranked = complete
     .filter((x) => x.creator && typeof x.creator.localAudiencePct === "number")
-    .sort((a, b) => (b.creator.localAudiencePct - a.creator.localAudiencePct) || (a.createdAt < b.createdAt ? -1 : 1));
+    // Verified tiebreak (Build -108): equal local shares break
+    // toward the Instagram-verified creator, then founding order.
+    .sort((a, b) => (b.creator.localAudiencePct - a.creator.localAudiencePct) || ((verifiedInMarket(b, user.market) ? 1 : 0) - (verifiedInMarket(a, user.market) ? 1 : 0)) || (a.createdAt < b.createdAt ? -1 : 1));
   const idx = ranked.findIndex((x) => x.id === user.id);
   const marketLive = await isMarketLive(user.market);
   let charter = null;
@@ -4055,7 +4128,13 @@ async function rankApplications(apps) {
       },
     });
   }
-  out.sort((a, b) => (b.rankScore - a.rankScore) || (a.creator.createdAt < b.creator.createdAt ? -1 : 1));
+  // Verified tiebreak (Build -108, item 12): an equal score is
+  // broken by Instagram-verified local share IN THE OFFER'S
+  // MARKET, then by founding order. Verified never outweighs
+  // the score itself; the weights above are untouched.
+  out.sort((a, b) => (b.rankScore - a.rankScore)
+    || ((verifiedInMarket(byId.get(b.creator.userId), b.market) ? 1 : 0) - (verifiedInMarket(byId.get(a.creator.userId), a.market) ? 1 : 0))
+    || (a.creator.createdAt < b.creator.createdAt ? -1 : 1));
   return out;
 }
 
@@ -4469,7 +4548,14 @@ async function discoverCards(query, viewer) {
   // meaningful for a business viewer: fit is computed against
   // their own record).
   if (query.sort === "score") {
-    out.sort((a, b) => (b.localImpactScore || 0) - (a.localImpactScore || 0));
+    // Verified tiebreak (Build -108): equal Local Impact Scores
+    // break toward the creator whose share in the browsed market
+    // Instagram has verified, then founding order — the same
+    // order the application stack and Sig use.
+    const byIdCards = new Map(users.map((u) => [u.id, u]));
+    out.sort((a, b) => ((b.localImpactScore || 0) - (a.localImpactScore || 0))
+      || ((verifiedInMarket(byIdCards.get(b.userId), marketName || b.market) ? 1 : 0) - (verifiedInMarket(byIdCards.get(a.userId), marketName || a.market) ? 1 : 0))
+      || (a.createdAt < b.createdAt ? -1 : 1));
   } else if (query.sort === "momentum") {
     out.sort((a, b) => ((b.pointsTotal || 0) - (a.pointsTotal || 0)) || (a.createdAt < b.createdAt ? -1 : 1));
   } else if (query.sort === "fit") {
@@ -9790,6 +9876,9 @@ async function buildSigFacts(user, full) {
     const [apps, offers, users, marketLive] = await Promise.all([allApplications(), allOffers(), allUsers(), isMarketLive(user.market)]);
     const plan = (user.business && planById(user.business.planId || user.business.plan)) || PLANS[0];
     const rosterInMarket = users.filter((u) => u.role === "creator" && u.status === "approved" && !isTester(u) && profileCompleteOf(u) && isListedInMarket(u, user.market)).length;
+    // Build -108: how many of that roster carry an
+    // Instagram-verified share in this business's market.
+    const verifiedInMarketCount = users.filter((u) => u.role === "creator" && u.status === "approved" && !isTester(u) && profileCompleteOf(u) && isListedInMarket(u, user.market) && verifiedInMarket(u, user.market)).length;
     return sigdata.buildBusinessFacts({
       user, readout, plan, marketLive, founding: isFoundingBusiness(user),
       applicantsWaiting: apps.filter((a) => a.businessId === user.id && (a.status === "applied" || a.status === "backfill_offered")).length,
@@ -9818,6 +9907,7 @@ async function buildSigFacts(user, full) {
           ? { remaining: pv.remaining, allowance: pv.allowance, used: pv.used || 0 } : null;
       })(),
       rosterInMarket,
+      verifiedInMarketCount,
       // Build -95: My Regulars + licences nearing expiry, from
       // the same builders the Regulars view and the alert
       // surface read, so Sig can never tell a different story.
@@ -9932,6 +10022,10 @@ async function buildSigFacts(user, full) {
       listedMarkets: listedMarketsFor(user),
       audienceTotal: user.creator ? audienceTotalOf(user.creator) : null,
       missingLabels: (pc.missing || []).map((id) => itemLabels[id] || id),
+      // Build -108: whether the Instagram connect lane is open
+      // in this environment at all (Meta credentials present);
+      // Sig's connect prompt stays silent while the gate stands.
+      igConfigured: platformConnect.instagramConfigured(),
     });
   }
   return null;
@@ -16284,6 +16378,10 @@ async function route(event) {
       // Connect surface from these flags, never from a guess.
       platformConnect: {
         youtube: { oauthConfigured: platformConnect.youtubeConfigured() },
+        // Instagram (Build -108): the connect + verification lane
+        // is built and ships dark; oauthConfigured flips true only
+        // when the Meta app credentials are in env (post-G4).
+        instagram: { oauthConfigured: platformConnect.instagramConfigured() },
         meta: { state: "in_review" },
         // Square Connect (Build -44): configured only when the
         // server carries the Square app credentials; env names
@@ -17102,7 +17200,7 @@ async function route(event) {
 
   if (method === "GET" && seg[0] === "me" && seg[1] === "platforms" && seg.length === 2) {
     if (user.role !== "creator" || !user.creator) return err(403, "Creators only");
-    return json(200, { platforms: await platformConnect.publicStates(user.id), youtubeConfigured: platformConnect.youtubeConfigured() });
+    return json(200, { platforms: await platformConnect.publicStates(user.id), youtubeConfigured: platformConnect.youtubeConfigured(), instagramConfigured: platformConnect.instagramConfigured() });
   }
 
   if (method === "GET" && seg[0] === "me" && seg[1] === "platforms" && seg[2] === "youtube" && seg[3] === "start" && seg.length === 4) {
@@ -17152,6 +17250,73 @@ async function route(event) {
     await platformConnect.deleteConnection(user.id, "youtube");
     const record = await clearPlatformSyncMirror(user.id, "youtube");
     await logEvent({ type: "platform_disconnected", actorId: user.id, actorRole: "creator", subjectId: user.id, market: user.market || null, data: { platform: "youtube" } });
+    return json(200, { ok: true, user: await withFounding(record || user), platforms: await platformConnect.publicStates(user.id) });
+  }
+
+  // Instagram connect + local-% verification (Build -108, item
+  // 12): the same shape as the YouTube lane above. The lane
+  // ships DARK behind gate G4: with the Meta app credentials
+  // absent, start bounces back ?ig=unavailable and the Profile
+  // row keeps its "in review with Meta" wording; nothing here
+  // can run against real Meta until App Review approves the
+  // insights scope and the credentials land in env.
+
+  if (method === "GET" && seg[0] === "me" && seg[1] === "platforms" && seg[2] === "instagram" && seg[3] === "start" && seg.length === 4) {
+    if (user.role !== "creator" || !user.creator) return err(403, "Creators only");
+    const base = platformConnect.appBaseUrl();
+    if (!platformConnect.instagramConfigured()) {
+      return { statusCode: 302, headers: { Location: `${base}/?ig=unavailable` }, body: "" };
+    }
+    const state = await platformConnect.createOAuthState(user.id, "instagram");
+    return { statusCode: 302, headers: { Location: platformConnect.buildInstagramAuthUrl(state) }, body: "" };
+  }
+
+  if (method === "GET" && seg[0] === "me" && seg[1] === "platforms" && seg[2] === "instagram" && seg[3] === "callback" && seg.length === 4) {
+    const base = platformConnect.appBaseUrl();
+    if (!user || user.role !== "creator" || !user.creator) {
+      return { statusCode: 302, headers: { Location: `${base}/?ig=error` }, body: "" };
+    }
+    const stateRec = query.state ? await platformConnect.consumeOAuthState(query.state) : null;
+    if (!query.code || !stateRec || stateRec.userId !== user.id || stateRec.platform !== "instagram") {
+      return { statusCode: 302, headers: { Location: `${base}/?ig=error` }, body: "" };
+    }
+    try {
+      const short = await platformConnect.exchangeInstagramCode(query.code);
+      const long = await platformConnect.exchangeInstagramLongLived(short.access_token);
+      const profile = await platformConnect.fetchInstagramProfile(long.access_token);
+      if (!profile) return { statusCode: 302, headers: { Location: `${base}/?ig=error` }, body: "" };
+      const conn = await platformConnect.saveInstagramConnection(user.id, long, profile);
+      const synced = await syncInstagramForConnection(conn);
+      await logEvent({ type: "platform_connected", actorId: user.id, actorRole: "creator", subjectId: user.id, market: user.market || null, data: { platform: "instagram", accountLabel: profile.username ? `@${profile.username}` : null, syncStatus: synced.status } });
+      return { statusCode: 302, headers: { Location: `${base}/?ig=connected` }, body: "" };
+    } catch (e) {
+      console.error("SIGNL Instagram connect error:", e);
+      return { statusCode: 302, headers: { Location: `${base}/?ig=error` }, body: "" };
+    }
+  }
+
+  if (method === "POST" && seg[0] === "me" && seg[1] === "platforms" && seg[2] === "instagram" && seg[3] === "sync" && seg.length === 4) {
+    if (user.role !== "creator" || !user.creator) return err(403, "Creators only");
+    const conn = await platformConnect.getConnection(user.id, "instagram");
+    if (!conn) return err(404, "Instagram is not connected");
+    const r = await syncInstagramForConnection(conn);
+    const record = (await store.get(`user:${user.id}`)) || user;
+    return json(200, { ok: r.ok, status: r.status, user: await withFounding(record), platforms: await platformConnect.publicStates(user.id) });
+  }
+
+  if (method === "POST" && seg[0] === "me" && seg[1] === "platforms" && seg[2] === "instagram" && seg[3] === "disconnect" && seg.length === 4) {
+    if (user.role !== "creator" || !user.creator) return err(403, "Creators only");
+    await platformConnect.deleteConnection(user.id, "instagram");
+    const record = await clearPlatformSyncMirror(user.id, "instagram");
+    // The Verified label is backed by the live connection: when
+    // the connection goes, the verification record goes with it
+    // (the creator's stated shares stay exactly as they were).
+    if (record && record.creator && record.creator.audienceVerification) {
+      delete record.creator.audienceVerification;
+      record.updatedAt = nowIso();
+      await store.set(`user:${user.id}`, record);
+    }
+    await logEvent({ type: "platform_disconnected", actorId: user.id, actorRole: "creator", subjectId: user.id, market: user.market || null, data: { platform: "instagram" } });
     return json(200, { ok: true, user: await withFounding(record || user), platforms: await platformConnect.publicStates(user.id) });
   }
 

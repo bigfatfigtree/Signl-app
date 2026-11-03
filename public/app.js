@@ -765,7 +765,7 @@ async function renderPublicProfile() {
       <div style="display:flex;height:14px;border-radius:999px;overflow:hidden;background:#E3F5EA" role="img" aria-label="Where this creator's audience lives">
         ${[...bd.segments].sort((a, b) => (a.market === view.market ? -1 : b.market === view.market ? 1 : b.pct - a.pct)).map((s, i) => `<span style="display:block;width:${s.pct}%;background:${bdSegColors[i] || "#5F7265"}"></span>`).join("")}
       </div>
-      <p class="small muted" style="margin:6px 0 0">Where their audience lives: ${[...bd.segments].sort((a, b) => (a.market === view.market ? -1 : b.market === view.market ? 1 : b.pct - a.pct)).map((s) => { const cnt = followersForPct(s.pct, total); return `${esc(s.market)} ${s.pct}%${cnt ? ` &middot; ${cnt} followers` : ""}`; }).join(" &middot; ")}${bd.elsewherePct > 0 ? ` &middot; everywhere else ${bd.elsewherePct}%` : ""}. Self-reported by the creator.</p>
+      <p class="small muted" style="margin:6px 0 0">Where their audience lives: ${[...bd.segments].sort((a, b) => (a.market === view.market ? -1 : b.market === view.market ? 1 : b.pct - a.pct)).map((s) => { const cnt = followersForPct(s.pct, total); return `${esc(s.market)} ${s.pct}%${cnt ? ` &middot; ${cnt} followers` : ""}`; }).join(" &middot; ")}${bd.elsewherePct > 0 ? ` &middot; everywhere else ${bd.elsewherePct}%` : ""}. ${(() => { const vSegs = bd.segments.filter((s) => s.verified).map((s) => esc(s.market)); return vSegs.length === 0 ? "Self-reported by the creator." : vSegs.length === bd.segments.length ? "Verified from Instagram." : `${vSegs.join(" and ")} verified from Instagram; the rest is self-reported by the creator.`; })()}</p>
     </div>` : "";
   const socialsBlock = tier >= 2 ? `
     ${p.socialsHiddenByCreator ? "" : (p.socialLinks && p.socialLinks.length ? `
@@ -817,7 +817,7 @@ async function renderPublicProfile() {
       <div class="cc-local">
         ${view.pct === null || view.pct === undefined
           ? `<div class="lbl">Local audience not reported yet</div>`
-          : `<div class="big">${view.pct}%</div><div class="lbl">of their audience is local to ${esc(view.market)}</div>${followersForPct(view.pct, total) ? `<div style="font-weight:800;margin-top:2px">${followersForPct(view.pct, total)} followers</div>` : ""}<div class="src">${(p.localAudienceSource || "Self-reported") === "Self-reported" ? "Self-reported: the creator's own number" : esc(p.localAudienceSource)}</div>`}
+          : `<div class="big">${view.pct}%</div><div class="lbl">of their audience is local to ${esc(view.market)}</div>${followersForPct(view.pct, total) ? `<div style="font-weight:800;margin-top:2px">${followersForPct(view.pct, total)} followers</div>` : ""}<div class="src">${bd && bd.segments && bd.segments.some((s) => s.market === view.market && s.verified) ? `<span class="badge ok">Verified from Instagram</span>` : (p.localAudienceSource || "Self-reported") === "Self-reported" ? "Self-reported: the creator's own number" : esc(p.localAudienceSource)}</div>`}
       </div>
       ${breakdownHtml}
       ${p.proof && p.proof.visitsCompleted > 0 ? `<div class="wcard" style="margin:14px 0 0"><p style="margin:0"><span class="badge ok">Verified on SIGNL</span></p><p style="margin:8px 0 0"><strong>${p.proof.visitsCompleted} visit${p.proof.visitsCompleted === 1 ? "" : "s"} completed</strong> &middot; ${p.proof.onTimePosts} on time</p><p class="small muted" style="margin:6px 0 0">From this creator's real SIGNL visits, counted by SIGNL, not claimed by the creator.</p></div>` : ""}
@@ -3753,6 +3753,9 @@ function sigChipDest(label) {
   if (t.includes("roster")) return "biz-discover";
   if (t.includes("set up payouts")) return "cr-profile";
   if (t.includes("rate card")) return "cr-profile";
+  if (t.includes("connect instagram")) return "cr-profile";
+  if (t.includes("lower local share")) return "cr-profile";
+  if (t.includes("audience verified in")) return "cr-profile";
   if (t.includes("invite")) return "cr-offers-invited";
   if (t.includes("offers waiting")) return "cr-offers";
   if (t.includes("posts owed")) return "cr-visits";
@@ -12054,6 +12057,71 @@ async function ytDisconnect() {
   return false;
 }
 
+// Instagram connect (Build -108): the YouTube lane's shape,
+// word for word where the shape is the same.
+function igConnect() {
+  window.location.href = "/api/me/platforms/instagram/start";
+  return false;
+}
+
+async function igSyncNow() {
+  const note = document.getElementById("ig-note");
+  if (note) note.textContent = "Syncing...";
+  try {
+    const data = await api("POST", "/me/platforms/instagram/sync");
+    state.user = data.user;
+    if (data.ok === false) state.igNotice = "syncerror";
+    else if (data.status === "below_minimum") state.igNotice = "below";
+    else if (data.status === "no_data") state.igNotice = "nodata";
+    else if (data.status === "verified") state.igNotice = "verified";
+    rerenderProfileTab();
+  } catch (err) {
+    if (note) note.textContent = err.message;
+  }
+  return false;
+}
+
+async function igDisconnect() {
+  if (!confirm("Disconnect Instagram? Your last synced follower count stays on your profile as a number you type and can edit, and your local shares go back to self-reported: the Verified mark comes off, because it is backed by this connection.")) return false;
+  try {
+    const data = await api("POST", "/me/platforms/instagram/disconnect");
+    state.user = data.user;
+    rerenderProfileTab();
+  } catch (err) {
+    const note = document.getElementById("ig-note");
+    if (note) note.textContent = err.message;
+  }
+  return false;
+}
+
+// The verification state line under a connected Instagram row:
+// per-market truth from the creator's own record.
+function igVerificationLine(c) {
+  const av = (c && c.audienceVerification) || null;
+  if (!av) return "Your local shares have not been checked yet. Sync now runs the first check against Instagram's city data.";
+  const per = av.perMarket || {};
+  const verified = Object.keys(per).filter((m) => per[m] && per[m].withinTolerance);
+  const below = Object.keys(per).filter((m) => per[m] && !per[m].withinTolerance && per[m].igPct < per[m].selfPct).map((m) => `${m}: Instagram ${per[m].igPct}% vs your ${per[m].selfPct}%`);
+  if (av.note === "below_100") return "Instagram does not share city data for accounts under 100 followers, so your local shares stay self-reported for now.";
+  if (av.note === "no_city_data") return "Instagram has not shared city data yet; it can lag about 48 hours. Your local shares stay self-reported until it lands.";
+  if (verified.length) return `Verified from Instagram in ${verified.join(", ")}: the city data matches your stated share within 10 points.${below.length ? ` Not matching yet: ${below.join("; ")}.` : ""}`;
+  return `Checked against Instagram's city data; no market matched within 10 points yet, so your shares stay labeled self-reported.${below.length ? ` ${below.join("; ")}.` : ""} Your stated numbers never change on their own.`;
+}
+
+function igNoticeHtml() {
+  const v = state.igNotice;
+  if (!v) return "";
+  state.igNotice = null;
+  if (v === "connected") return `<div class="notice"><strong>Instagram is connected.</strong> Your follower count now updates on its own, and your local shares are checked against Instagram's city data. See the audience section below.</div>`;
+  if (v === "verified") return `<div class="notice"><strong>Checked, and verified.</strong> Instagram's city data matches your stated local share in at least one market, so the Verified mark is on. Details in your audience section below.</div>`;
+  if (v === "below") return `<div class="notice blue"><strong>Instagram is connected.</strong> Accounts under 100 followers do not get city data from Meta, so your local shares stay self-reported for now; your follower count is synced.</div>`;
+  if (v === "nodata") return `<div class="notice blue"><strong>Instagram is connected.</strong> It has not shared city data yet (that can lag about 48 hours), so your local shares stay self-reported until it lands.</div>`;
+  if (v === "error") return `<div class="notice"><strong>Instagram connect did not finish.</strong> Nothing changed. You can try again from your audience section below.</div>`;
+  if (v === "unavailable") return `<div class="notice blue"><strong>Instagram connect is in review with Meta.</strong> Until it clears, your local shares stay typed by you and labeled Self-reported.</div>`;
+  if (v === "syncerror") return `<div class="notice"><strong>That sync did not come through.</strong> Your last checked state stands. Try Sync now again in a bit.</div>`;
+  return "";
+}
+
 // The one-shot notice the OAuth return (?yt=) leaves behind.
 // Rendered once by the profile form, then cleared.
 function ytNoticeHtml() {
@@ -12574,6 +12642,19 @@ async function loadCreatorHome() {
       const ytSync = (c.platformSync || {}).youtube;
       const ytPresent = Number((c.audienceStack || {}).youtube || 0) > 0 || !!String(c.youtubeChannel || "").trim();
       if (ytCfg.oauthConfigured && !ytSync && ytPresent) pushIdea("cr_youtube", "Connect YouTube and your subscriber count verifies itself and stays current on its own.", "Connect YouTube", () => go("dashboard", "Profile"), "Connect YouTube");
+      // Instagram verification (Build -108): the connect idea
+      // fires only while the lane is actually open (Meta gate
+      // G4) and the creator has a stated share to check; the
+      // mismatch idea is private and factual, from the
+      // creator's own verification record.
+      const igCfg = (state.boot && state.boot.platformConnect && state.boot.platformConnect.instagram) || {};
+      const igSync = (c.platformSync || {}).instagram;
+      const avC = c.audienceVerification || null;
+      if (igCfg.oauthConfigured && !igSync && c.localAudiencePct !== null && c.localAudiencePct !== undefined) pushIdea("cr_instagram", "Connect Instagram and your local audience share gets checked against Instagram's own city data. Markets that match earn the Verified mark, and a verified creator wins an exact tie.", "Connect Instagram", () => go("dashboard", "Profile"), "Connect Instagram");
+      if (avC && avC.perMarket) {
+        const below = Object.keys(avC.perMarket).filter((m) => avC.perMarket[m] && !avC.perMarket[m].withinTolerance && avC.perMarket[m].igPct < avC.perMarket[m].selfPct);
+        if (below.length) { const m0 = below[0]; pushIdea("cr_ig_mismatch", `Instagram shows ${avC.perMarket[m0].igPct}% of your audience in ${m0}; your profile says ${avC.perMarket[m0].selfPct}%. If Instagram's number is closer to the truth, updating your local % is what earns the Verified mark there. Your stated number never changes on its own.`, "Review my local %", () => go("dashboard", "Profile"), "Instagram shows a lower local share"); }
+      }
       const mm = u.momentum || {};
       if ((mm.signups || 0) > 0) pushIdea("cr_invite", `${mm.signups} creator${mm.signups === 1 ? "" : "s"} joined through your link. Approved referrals climb the badge ladder: 1 is Connector, 5 is Roster Builder, 10 is City Lead.`, "Share invite", () => go("dashboard", "Momentum"), `${mm.signups} joined through you`);
       else pushIdea("cr_invite", "Invite a creator you rate. You earn +3 Momentum when they join and +10 when they are approved.", "Share invite", () => go("dashboard", "Momentum"), "Invite a creator");
@@ -12695,9 +12776,12 @@ function creatorProfileHtml(u) {
     let note = "";
     if (sync && sync.verified === true) {
       note = `<p class="small" style="margin-top:6px"><span class="badge">Synced</span> <span class="muted">${esc(sync.accountLabel || label)} &middot; updated ${esc(fmtDate(sync.lastSyncAt))}</span></p>`
-        + (id === "youtube" ? `<p class="small" style="margin-top:4px"><button type="button" class="btn small-btn ghost" onclick="return ytSyncNow()">Sync now</button> <button type="button" class="btn small-btn ghost" onclick="return ytDisconnect()">Disconnect</button> <span class="saved" id="yt-note"></span></p>` : "");
+        + (id === "youtube" ? `<p class="small" style="margin-top:4px"><button type="button" class="btn small-btn ghost" onclick="return ytSyncNow()">Sync now</button> <button type="button" class="btn small-btn ghost" onclick="return ytDisconnect()">Disconnect</button> <span class="saved" id="yt-note"></span></p>` : "")
+        + (id === "instagram" ? `<p class="small" style="margin-top:4px"><button type="button" class="btn small-btn ghost" onclick="return igSyncNow()">Sync now</button> <button type="button" class="btn small-btn ghost" onclick="return igDisconnect()">Disconnect</button> <span class="saved" id="ig-note"></span></p><p class="small muted" style="margin-top:4px">${igVerificationLine(c)}</p>` : "");
     } else if (sync) {
-      note = `<p class="small" style="margin-top:6px"><span class="badge info">Connected</span> <span class="muted">${esc(sync.accountLabel || label)} hides its subscriber count, so this one stays typed by you.</span></p>`
+      note = id === "instagram"
+        ? `<p class="small" style="margin-top:6px"><span class="badge info">Connected</span> <span class="muted">${esc(sync.accountLabel || label)}</span></p><p class="small muted" style="margin-top:4px">${sync.syncStatus === "below_minimum" ? "Instagram does not share city data for accounts under 100 followers, so your local shares stay self-reported for now." : sync.syncStatus === "no_city_data" ? "Instagram has not shared city data yet; it can lag about 48 hours. Your local shares stay self-reported until it lands." : "Connected. Your local shares are checked against Instagram's city data on every sync."}</p><p class="small" style="margin-top:4px"><button type="button" class="btn small-btn ghost" onclick="return igSyncNow()">Sync now</button> <button type="button" class="btn small-btn ghost" onclick="return igDisconnect()">Disconnect</button> <span class="saved" id="ig-note"></span></p>`
+        : `<p class="small" style="margin-top:6px"><span class="badge info">Connected</span> <span class="muted">${esc(sync.accountLabel || label)} hides its subscriber count, so this one stays typed by you.</span></p>`
         + (id === "youtube" ? `<p class="small" style="margin-top:4px"><button type="button" class="btn small-btn ghost" onclick="return ytSyncNow()">Sync now</button> <button type="button" class="btn small-btn ghost" onclick="return ytDisconnect()">Disconnect</button> <span class="saved" id="yt-note"></span></p>` : "");
     } else if (id === "youtube") {
       const ytCfg = (state.boot && state.boot.platformConnect && state.boot.platformConnect.youtube) || {};
@@ -12705,7 +12789,10 @@ function creatorProfileHtml(u) {
         ? `<p class="small muted" style="margin-top:6px">Self-reported. <button type="button" class="btn small-btn" onclick="return ytConnect()">Connect YouTube</button> and this count verifies itself and stays up to date on its own.</p>`
         : `<p class="small muted" style="margin-top:6px">Self-reported. YouTube connect is being switched on; until it opens, this count stays typed by you.</p>`;
     } else if (id === "instagram") {
-      note = `<p class="small muted" style="margin-top:6px">Self-reported. Instagram verification is in review with Meta, and connect opens the day it clears.</p>`;
+      const igCfg = (state.boot && state.boot.platformConnect && state.boot.platformConnect.instagram) || {};
+      note = igCfg.oauthConfigured
+        ? `<p class="small muted" style="margin-top:6px">Self-reported. <button type="button" class="btn small-btn" onclick="return igConnect()">Connect Instagram</button> and this count syncs itself, and your local audience shares get checked against Instagram's own city data: markets that match earn the Verified mark.</p>`
+        : `<p class="small muted" style="margin-top:6px">Self-reported. Instagram verification is in review with Meta, and connect opens the day it clears.</p>`;
     } else if (id === "facebook") {
       note = `<p class="small muted" style="margin-top:6px">Self-reported. Facebook is covered by the same Meta review as Instagram.</p>`;
     } else if (id === "tiktok") {
@@ -12739,6 +12826,7 @@ function creatorProfileHtml(u) {
     </div>` : ""}
     <div id="form-error"></div>
     ${ytNoticeHtml()}
+    ${igNoticeHtml()}
     ${u.profileCompletion && !u.profileCompletion.complete ? `<div class="notice blue">${T("Your profile is not finished yet. Still needed to go live:", "Tu perfil aún no está terminado. Todavía falta para estar activo:")} ${u.profileCompletion.items.filter((i) => i.required && !i.done).map((i) => esc(i.label)).join(", ")}. ${T("Fill in the fields below and save. Businesses cannot see you, and you cannot take offers, until your profile is finished.", "Llena los campos de abajo y guarda. Los negocios no pueden verte, y no puedes aceptar ofertas, hasta que tu perfil esté terminado.")}</div>` : ""}
     <form onsubmit="return doUpdateCreator(event)">
       <div class="fgroup tint" id="profile-basics">
@@ -23703,6 +23791,14 @@ function previewDashboardHtml(d) {
     const ytParam = params.get("yt");
     if (ytParam && state.user && state.user.role === "creator") {
       state.ytNotice = ytParam.trim().slice(0, 24);
+      state.tab = "Profile";
+      try { history.replaceState(null, "", location.pathname + location.hash); } catch (e) { /* cosmetic only */ }
+    }
+    // An Instagram connect return (/?ig=<status>, Build -108)
+    // lands the same way, on the same audience section.
+    const igParam = params.get("ig");
+    if (igParam && state.user && state.user.role === "creator") {
+      state.igNotice = igParam.trim().slice(0, 24);
       state.tab = "Profile";
       try { history.replaceState(null, "", location.pathname + location.hash); } catch (e) { /* cosmetic only */ }
     }

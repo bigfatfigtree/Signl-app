@@ -31,10 +31,13 @@
 //     {APP_URL}/api/me/platforms/youtube/callback). With the env
 //     absent the connect button renders an honest "being enabled"
 //     state instead of a dead OAuth link.
-//   Meta (Instagram + Facebook) — GATED. The Meta app's Access
-//     Verification is In Review; the rows render "In review with
-//     Meta" and no OAuth flow exists yet. The flip list lives in
-//     files/meta-connect-gap-note-2026-10-28.md (goal workspace).
+//   Instagram — BUILT, SHIPS DARK (Build -108, 2026-11-03). The
+//     full OAuth + audience-city lane exists below; it lights up
+//     when Meta App Review approves the insights scope (gate G4:
+//     Access Verification In Review since 2026-10-18) AND the
+//     Meta app credentials land in env. Until then the row
+//     renders "In review with Meta", exactly as before. Facebook
+//     stays gated the same way (no lane built).
 //   TikTok — NOT BUILT against an unapproved API. The developer
 //     application packet is files/tiktok-developer-application-
 //     packet-2026-10-28.md (goal workspace). Rows stay Self-reported.
@@ -261,6 +264,202 @@ async function saveYouTubeConnection(userId, tokens, channel) {
   return conn;
 }
 
+// ---------- Instagram OAuth + Graph API (Build -108, item 12) ----------
+// The full lane is built, mirroring YouTube: OAuth (Instagram
+// Login), long-lived tokens stored server-side only, refresh,
+// profile + audience-city fetches. It ships DARK: until Meta's
+// App Review approves instagram_business_manage_insights on the
+// SIGNL app (gate G4, Access Verification in review since
+// 2026-10-18) no real creator can grant the insights scope, and
+// with the Meta app credentials absent from the environment the
+// row renders "in_review" and the start route bounces back
+// ?ig=unavailable. Setting META_APP_ID / META_APP_SECRET after
+// approval is the whole flip. TEST SEAMS (unset in production):
+// INSTAGRAM_AUTH_URL / INSTAGRAM_TOKEN_URL / INSTAGRAM_GRAPH_BASE
+// override the Meta endpoints so the verify suite can run the
+// whole flow against a local stub, exactly like the YouTube
+// seams above.
+
+const INSTAGRAM_SCOPES = "instagram_business_basic,instagram_business_manage_insights";
+
+function instagramConfigured() {
+  return !!(process.env.META_APP_ID && process.env.META_APP_SECRET);
+}
+
+function instagramRedirectUri() {
+  if (process.env.INSTAGRAM_REDIRECT_URI) return process.env.INSTAGRAM_REDIRECT_URI;
+  return `${appBaseUrl()}/api/me/platforms/instagram/callback`;
+}
+
+function instagramAuthUrlBase() {
+  return process.env.INSTAGRAM_AUTH_URL || "https://www.instagram.com/oauth/authorize";
+}
+function instagramTokenUrl() {
+  return process.env.INSTAGRAM_TOKEN_URL || "https://api.instagram.com/oauth/access_token";
+}
+function instagramGraphBase() {
+  return (process.env.INSTAGRAM_GRAPH_BASE || "https://graph.instagram.com").replace(/\/+$/, "");
+}
+
+function buildInstagramAuthUrl(state) {
+  const params = new URLSearchParams({
+    client_id: process.env.META_APP_ID || "",
+    redirect_uri: instagramRedirectUri(),
+    response_type: "code",
+    scope: INSTAGRAM_SCOPES,
+    state,
+  });
+  return `${instagramAuthUrlBase()}?${params.toString()}`;
+}
+
+async function exchangeInstagramCode(code) {
+  const res = await fetch(instagramTokenUrl(), {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: process.env.META_APP_ID || "",
+      client_secret: process.env.META_APP_SECRET || "",
+      grant_type: "authorization_code",
+      redirect_uri: instagramRedirectUri(),
+      code,
+    }).toString(),
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok || !data || !data.access_token) {
+    throw new Error(`Instagram token request failed (HTTP ${res.status})`);
+  }
+  return data; // { access_token (short-lived), user_id, permissions }
+}
+
+async function exchangeInstagramLongLived(shortToken) {
+  const url = `${instagramGraphBase()}/access_token?grant_type=ig_exchange_token&client_secret=${encodeURIComponent(process.env.META_APP_SECRET || "")}&access_token=${encodeURIComponent(shortToken)}`;
+  const res = await fetch(url);
+  const data = await res.json().catch(() => null);
+  if (!res.ok || !data || !data.access_token) {
+    throw new Error(`Instagram long-lived exchange failed (HTTP ${res.status})`);
+  }
+  return data; // { access_token, token_type, expires_in (~60 days) }
+}
+
+async function refreshInstagramAccessToken(conn) {
+  if (!conn.accessToken) throw new Error("No access token stored for this Instagram connection");
+  const url = `${instagramGraphBase()}/refresh_access_token?grant_type=ig_refresh_token&access_token=${encodeURIComponent(conn.accessToken)}`;
+  const res = await fetch(url);
+  const data = await res.json().catch(() => null);
+  if (!res.ok || !data || !data.access_token) {
+    throw new Error(`Instagram token refresh failed (HTTP ${res.status})`);
+  }
+  conn.accessToken = data.access_token;
+  conn.tokenExpiresAt = Date.now() + Math.max(60, data.expires_in || 5184000) * 1000;
+  await saveConnection(conn);
+  return conn;
+}
+
+async function fetchInstagramProfile(accessToken) {
+  const res = await fetch(`${instagramGraphBase()}/me?fields=id,username,followers_count&access_token=${encodeURIComponent(accessToken)}`);
+  if (!res.ok) throw new Error(`Instagram profile request failed (HTTP ${res.status})`);
+  const data = await res.json().catch(() => null);
+  if (!data || !data.id) return null;
+  return {
+    id: String(data.id),
+    username: data.username || null,
+    followersCount: data.followers_count === undefined || data.followers_count === null ? null : Number(data.followers_count),
+  };
+}
+
+// The geography fetch: Graph audience_city insights (lifetime).
+// Returns { status: "ok", cities: { "<City, ST>": count } } or a
+// plain non-ok status: "no_data" when Meta returns no city rows
+// (new accounts, under-100 audiences, the ~48h lag), "error" when
+// the provider could not be read. Token refresh mirrors the
+// YouTube lane: once, when expired or rejected.
+async function fetchInstagramAudienceCities(conn) {
+  try {
+    if (!conn.accessToken || (conn.tokenExpiresAt && Date.now() > conn.tokenExpiresAt - 60000)) {
+      await refreshInstagramAccessToken(conn);
+    }
+    const read = async () => {
+      const url = `${instagramGraphBase()}/${encodeURIComponent(conn.accountId || "me")}/insights?metric=audience_city&period=lifetime&access_token=${encodeURIComponent(conn.accessToken)}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`Instagram insights request failed (HTTP ${res.status})`);
+      return res.json().catch(() => null);
+    };
+    let data;
+    try { data = await read(); } catch (e) { await refreshInstagramAccessToken(conn); data = await read(); }
+    const row = data && Array.isArray(data.data) ? data.data.find((r) => r && r.name === "audience_city") || data.data[0] : null;
+    const value = row && Array.isArray(row.values) && row.values[0] ? row.values[0].value : (row && row.total_value && row.total_value.breakdowns && row.total_value.breakdowns[0] && row.total_value.breakdowns[0].results ? Object.fromEntries(row.total_value.breakdowns[0].results.map((r) => [(r.dimension_values || [])[0], r.value])) : null);
+    if (!value || typeof value !== "object" || !Object.keys(value).length) {
+      conn.lastSyncStatus = "no_data";
+      conn.lastSyncAt = new Date().toISOString();
+      await saveConnection(conn);
+      return { status: "no_data" };
+    }
+    conn.lastSyncStatus = "ok";
+    conn.lastSyncAt = new Date().toISOString();
+    await saveConnection(conn);
+    return { status: "ok", cities: value };
+  } catch (e) {
+    try {
+      conn.lastSyncStatus = "error";
+      conn.lastSyncAt = new Date().toISOString();
+      await saveConnection(conn);
+    } catch (ignored) { /* the status report below is the contract */ }
+    return { status: "error" };
+  }
+}
+
+// Sum Graph city counts into per-market shares. City keys arrive
+// as "Nashville, Tennessee" (or sometimes bare names); the part
+// before the comma, case-insensitively, is matched against each
+// market's typed city list in markets.js. A city claimed by two
+// lists goes to the first market in MARKETS order. Cities in no
+// list are "elsewhere". Percentages are of the summed city
+// audience (the audience Meta actually located).
+const { MARKETS: IG_MARKETS } = require("./markets");
+function summarizeAudienceCities(cities) {
+  const byCity = new Map();
+  for (const m of IG_MARKETS) {
+    for (const city of m.cities || []) {
+      const key = String(city).trim().toLowerCase();
+      if (!byCity.has(key)) byCity.set(key, m.name);
+    }
+  }
+  const counts = {};
+  let total = 0;
+  let matched = 0;
+  for (const [rawName, rawCount] of Object.entries(cities || {})) {
+    const n = Number(rawCount);
+    if (!Number.isFinite(n) || n <= 0) continue;
+    total += n;
+    const cityKey = String(rawName).split(",")[0].trim().toLowerCase();
+    const market = byCity.get(cityKey);
+    if (market) { counts[market] = (counts[market] || 0) + n; matched += n; }
+  }
+  const perMarket = {};
+  if (total > 0) for (const [market, n] of Object.entries(counts)) perMarket[market] = Math.round((n / total) * 1000) / 10;
+  return { perMarket, total, matchedTotal: matched, elsewherePct: total > 0 ? Math.round(((total - matched) / total) * 1000) / 10 : 0 };
+}
+
+async function saveInstagramConnection(userId, tokens, profile) {
+  const now = new Date().toISOString();
+  const existing = await getConnection(userId, "instagram");
+  const conn = {
+    userId,
+    platform: "instagram",
+    accountId: profile.id || null,
+    accountLabel: profile.username ? `@${profile.username}` : null,
+    accessToken: tokens.access_token,
+    refreshToken: null, // Instagram long-lived tokens refresh in place; there is no separate refresh token.
+    tokenExpiresAt: Date.now() + Math.max(60, tokens.expires_in || 5184000) * 1000,
+    connectedAt: (existing && existing.connectedAt) || now,
+    lastSyncAt: (existing && existing.lastSyncAt) || null,
+    lastCount: existing && typeof existing.lastCount === "number" ? existing.lastCount : null,
+    lastSyncStatus: (existing && existing.lastSyncStatus) || null,
+  };
+  await saveConnection(conn);
+  return conn;
+}
+
 // ---------- public per-platform state (NO tokens, ever) ----------
 
 // The state machine every row of the Connect surface renders from:
@@ -291,7 +490,8 @@ async function publicStates(userId) {
     let state;
     if (conn) state = "connected";
     else if (d.platform === "youtube") state = youtubeConfigured() ? "available" : "enabling";
-    else if (d.platform === "instagram" || d.platform === "facebook") state = "in_review";
+    else if (d.platform === "instagram") state = instagramConfigured() ? "available" : "in_review";
+    else if (d.platform === "facebook") state = "in_review";
     else if (d.platform === "tiktok") state = "planned";
     else state = "manual";
     return {
@@ -318,6 +518,16 @@ module.exports = {
   fetchYouTubeChannel,
   fetchYouTubeSubscriberCount,
   saveYouTubeConnection,
+  instagramConfigured,
+  instagramRedirectUri,
+  buildInstagramAuthUrl,
+  exchangeInstagramCode,
+  exchangeInstagramLongLived,
+  refreshInstagramAccessToken,
+  fetchInstagramProfile,
+  fetchInstagramAudienceCities,
+  summarizeAudienceCities,
+  saveInstagramConnection,
   getConnection,
   deleteConnection,
   listConnectionsForUser,

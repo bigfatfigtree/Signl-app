@@ -353,6 +353,7 @@ function buildBusinessFacts(d) {
     licensesGranted: lic.granted || 0,
     licensesPending: lic.pending || 0,
     rosterInMarket: d.rosterInMarket || 0,
+    verifiedInMarketCount: d.verifiedInMarketCount || 0,
     // Build -95: My Regulars (creators with a completed visit
     // at this business) and held licences inside their 14-day
     // expiry window, from the same builders the views read.
@@ -428,6 +429,28 @@ function buildCreatorFacts(d) {
     // on, from the same finished-public predicate the pages and
     // the sitemap use (rides the withFounding payload).
     publicRoster: (d.full && d.full.publicRoster) || [],
+    // Build -108: Instagram audience verification, read from
+    // the same record the profiles and ranking read. verified
+    // markets carry withinTolerance entries; belowSelf lists
+    // markets where Instagram's number landed materially under
+    // the stated share (outside tolerance, on the low side).
+    audienceVerification: (() => {
+      const av = c.audienceVerification || null;
+      const per = (av && av.perMarket) || {};
+      const verifiedMarkets = Object.keys(per).filter((m) => per[m] && per[m].withinTolerance === true);
+      const belowSelf = Object.keys(per).filter((m) => per[m] && per[m].withinTolerance !== true && typeof per[m].igPct === "number" && typeof per[m].selfPct === "number" && per[m].igPct < per[m].selfPct).map((m) => ({ market: m, igPct: per[m].igPct, selfPct: per[m].selfPct }));
+      const stale = !!(av && av.status === "verified" && av.verifiedAt && Date.now() - Date.parse(av.verifiedAt) > 45 * 86400000);
+      return {
+        status: !av ? "self_reported" : (av.status === "verified" ? (stale ? "stale" : "verified") : "self_reported"),
+        verifiedMarkets,
+        belowSelf,
+        perMarket: per,
+        note: av ? av.note || null : null,
+        verifiedAt: av ? av.verifiedAt || null : null,
+        igConnected: !!((c.platformSync || {}).instagram),
+        igConfigured: !!d.igConfigured,
+      };
+    })(),
     profileComplete: !!pc.complete,
     missingLabels: d.missingLabels || [],
     offersOpen: d.openOffers || 0,
@@ -573,6 +596,10 @@ function factsLines(role, f) {
     : "They are not on a public roster page yet: a market's public roster opens once at least 5 finished public profiles are listed in it. Businesses inside SIGNL can still find a finished profile in the app; the public page is the web version of the same roster.");
   lines.push(`Their Momentum is ${fmt(f.momentumPoints)} points, level ${lv ? lv.name : "Starter"}${lv && lv.nextName ? `, with ${fmt(lv.nextAt - f.momentumPoints)} points to ${lv.nextName}` : ", the top level"}. Their tier is ${f.tier || "not set yet"}${f.audienceTotal != null ? ` on ${fmt(f.audienceTotal)} total followers across platforms` : ""}. Local audience in their home market: ${f.localPct != null ? f.localPct + "%" : "not reported"}. Markets they are listed in: ${f.listedMarkets.length ? f.listedMarkets.map((m) => `${m.market}${m.pct != null ? " (" + m.pct + "% local)" : ""}`).join(", ") : "just their home market"}.`);
   lines.push(`Their numbers right now: ${fmt(f.offersOpen)} open offers in their markets (${fmt(f.directInvites)} direct invites), ${fmt(f.applicationsPending)} applications waiting on a business's answer, ${fmt(f.visitsBooked)} visits booked, ${fmt(f.postsOwed.length)} posts owed, ${fmt(f.postsLive)} posts live${f.onTimePct != null ? `, ${f.onTimePct}% of their posts on time` : ""}. Paid bookings: ${fmt(f.paidBookings)}, with ${cmoney(f, f.paidRecordedNet)} recorded as their net (recorded means the bookings on file, paid outside the app). License requests waiting on them: ${fmt(f.licenseRequestsPending)}. Creators joined through their invite link: ${fmt(f.referrals.signups)}, of whom ${fmt(f.referrals.approved)} were approved.`);
+  const avLine = f.audienceVerification || {};
+  lines.push(avLine.igConnected
+    ? `Instagram audience verification: status ${avLine.status}${avLine.verifiedMarkets && avLine.verifiedMarkets.length ? `, verified in ${avLine.verifiedMarkets.join(", ")} (Instagram city data within 10 points of the stated share)` : ""}${avLine.belowSelf && avLine.belowSelf.length ? `; Instagram shows lower in ${avLine.belowSelf.map((b) => `${b.market} (${b.igPct}% vs stated ${b.selfPct}%)`).join(", ")}` : ""}${avLine.note ? `; note: ${avLine.note}` : ""}.`
+    : "Instagram audience verification: not connected, so their local shares are self-reported.");
   if (f.intentTotal > 0) lines.push(`Intent on their own posts: ${fmt(f.intentShares)} shares and ${fmt(f.intentSaves)} saves recorded, ${fmt(f.intentTotal)} in total across ${fmt(f.intentReportedPosts)} reported ${plural(f.intentReportedPosts, "post")}. Saves and shares mean people planning to come.`);
   if (f.paidRate) lines.push(`Their listed paid rate is ${cmoney(f, f.paidRate)}${f.licenseFee ? ` and their licensing fee is ${cmoney(f, f.licenseFee)}` : ""}.`);
   else if (f.rateStarting) lines.push(`They have not set a paid rate yet. The Profile rate boxes pre-fill a starting point for their ${f.rateStarting.tier} tier: paid rate ${cmoney(f, f.rateStarting.paidRate)} and licensing fee ${cmoney(f, f.rateStarting.licensingFee)}. Those are starting points only, filled in because the fields were blank. They are editable, they are not a price the creator has to use, and nothing is stored until the creator saves.`);
@@ -669,7 +696,7 @@ function answerAdmin(f, q, t) {
 
   // Which till (Build -101): the declared-POS mix Admin watches
   // for the Clover trigger, tester records excluded as always.
-  if (hasPhrase(t, "which till", "what till", "tills", "pos mix", "register systems", "point of sale", "what pos", "clover", "toast", "lightspeed") || (hasWord(t, "pos") && countAsk)) {
+  if (hasPhrase(t, "which till", "what till", "tills", "pos mix", "register systems", "point of sale", "what pos", "clover", "toast", "lightspeed") || (hasPhrase(t, " pos ", " pos?") && countAsk)) {
     const m = b.posMix || {};
     const declared = (m.square || 0) + (m.clover || 0) + (m.toast || 0) + (m.lightspeed || 0) + (m.other || 0) + (m.none || 0);
     return linked(`Declared tills across ${fmt(b.total)} real ${plural(b.total, "business", "businesses")}: Square ${fmt(m.square || 0)}, Clover ${fmt(m.clover || 0)}, Toast ${fmt(m.toast || 0)}, Lightspeed ${fmt(m.lightspeed || 0)}, another system ${fmt(m.other || 0)}, no register system ${fmt(m.none || 0)}, and ${fmt(m.undeclared || 0)} have not declared yet. ${declared} ${plural(declared, "declaration")} on file; the Clover build trigger is 10 to 20 declared businesses. The mix strip sits on the Command Center Businesses view.`, "Open Businesses", "admin-businesses");
@@ -950,7 +977,7 @@ function answerBusiness(f, q, t) {
   }
   // Roster in her market
   if ((hasWord(t, "creator", "creators", "roster") || hasPhrase(t, "can i book", "who can i book")) && hasPhrase(t, "my market", "in my", "near me", "can i book", "how many", "book in")) {
-    const rosterText = `${fmt(f.rosterInMarket)} ${plural(f.rosterInMarket, "creator")} with finished profiles on the roster in ${f.market || "your market"} right now. ${f.founding ? "Booking opens when your market activates, and that finished roster is who you meet on day one." : "They are ranked by local reach in Find creators, and you can invite any of them at their listed rate."}`;
+    const rosterText = `${fmt(f.rosterInMarket)} ${plural(f.rosterInMarket, "creator")} with finished profiles on the roster in ${f.market || "your market"} right now. ${f.founding ? "Booking opens when your market activates, and that finished roster is who you meet on day one." : "They are ranked by local reach in Find creators, and you can invite any of them at their listed rate."}${f.verifiedInMarketCount > 0 ? ` ${fmt(f.verifiedInMarketCount)} of them ${f.verifiedInMarketCount === 1 ? "carries" : "carry"} the Verified mark: Instagram confirmed their local share, and on an exact tie a verified creator ranks first.` : ""}`;
     return f.rosterInMarket ? linked(rosterText, "Find creators", "biz-discover") : rosterText;
   }
   // Visits booked/done
@@ -1044,6 +1071,27 @@ function answerCreator(f, q, t) {
   if (hasPhrase(t, "my tier", "what tier", "tier am i")) {
     if (!f.tier) return "No tier on your record yet. Tiers set themselves from your stacked audience once your counts are in: Neighbors 500 to 2,000, Locals 2,000 to 15,000, Headliners 15,000 and up.";
     return `You are ${f.tier}${f.audienceTotal != null ? `, on ${fmt(f.audienceTotal)} total followers counted across your platforms` : ""}. Tiers come from that stacked audience and set themselves: Neighbors 500 to 2,000, Locals 2,000 to 15,000, Headliners 15,000 and up.`;
+  }
+  // Instagram verification (Build -108, item 12): connect start,
+  // per-market state, and the plain-words explainer.
+  if (hasPhrase(t, "connect my instagram", "connect instagram", "link my instagram", "link instagram") && !hasPhrase(t, "disconnect")) {
+    const av = f.audienceVerification || {};
+    if (av.igConnected) return linked("Your Instagram is already connected. Your local shares are checked against it on every sync, and Sync now on your Profile re-checks them today.", "Open my Profile", "cr-profile");
+    if (!av.igConfigured) return "Instagram connect is still in review with Meta, so it is not open yet. Your local shares stay self-reported until it clears, and the connect button appears on your Profile the day it does.";
+    return linked("Connecting Instagram lets SIGNL check your local audience shares against Instagram's own city data. Markets that match within 10 points earn the Verified mark. The connect button is in the audience stack on your Profile.", "Connect Instagram on my Profile", "cr-profile");
+  }
+  if (hasPhrase(t, "verified", "verification") && hasPhrase(t, "local", "audience", "share", "instagram", "mean", "work")) {
+    const av = f.audienceVerification || {};
+    if (hasPhrase(t, "what does verified mean", "what is verified", "what does the verified", "how does verification work", "how is it verified")) {
+      return "Verified means Instagram's own city data agrees with the local share on your profile, within 10 points, for that market. Your stated number never changes; Verified is a mark next to it, and when two creators score the same, the verified one ranks first. Connect Instagram on your Profile to be checked.";
+    }
+    if (!av.igConnected) return av.igConfigured
+      ? linked("Not yet: your local shares are self-reported, typed by you and not checked. Connect Instagram on your Profile and Instagram's city data does the checking.", "Open my Profile", "cr-profile")
+      : "Not yet: your local shares are self-reported, typed by you and not checked. Instagram connect is in review with Meta; it opens on your Profile the day it clears.";
+    if (av.status === "verified") return `Verified in ${av.verifiedMarkets.join(", ")}: Instagram's city data matches your stated share there within 10 points.${av.belowSelf && av.belowSelf.length ? ` Heads up: in ${av.belowSelf.map((b) => `${b.market}, Instagram shows ${b.igPct}% against your stated ${b.selfPct}%`).join("; ")}. Updating your stated share keeps your profile honest.` : ""}`;
+    if (av.note === "below_100") return "Instagram has not shared city data for your account: accounts under 100 followers do not get city data from Meta, so your shares stay self-reported for now. Your follower count itself is synced.";
+    if (av.note === "no_city_data") return "Instagram has not shared city data yet (it can lag about 48 hours, and new connections start empty). Your shares stay self-reported until it lands; Sync now on your Profile re-checks.";
+    return `Checked, and no market matched within 10 points yet, so your shares stay labeled self-reported.${av.belowSelf && av.belowSelf.length ? ` In ${av.belowSelf.map((b) => `${b.market} Instagram shows ${b.igPct}% against your stated ${b.selfPct}%`).join("; ")}.` : ""} Your stated numbers never change on their own; if Instagram's are closer to the truth, updating them is what earns the mark.`;
   }
   // Local reach (mine)
   if ((hasPhrase(t, "my local") || (hasWord(t, "local") && hasPhrase(t, "mine", "my %", "my percent", "my share"))) && !hasPhrase(t, "what is local", "what does local")) {
@@ -1363,6 +1411,16 @@ function buildHomeState(role, f) {
     // Build -102: on a public roster page is real state worth
     // one quiet chip, with the page as its walk.
     if (f.publicRoster && f.publicRoster.length) chips.push(`You're on the public ${f.publicRoster[0].market} roster`);
+    // Build -108: Instagram verification prompts, from the
+    // record only. The connect prompt fires only while the lane
+    // is actually open (gate G4 stands otherwise) and the
+    // creator has a stated share to check; the mismatch prompt
+    // is private and factual, naming the market and both
+    // numbers' direction, never a verdict.
+    const avHome = f.audienceVerification || {};
+    if (avHome.igConfigured && !avHome.igConnected && f.localPct != null) chips.push("Connect Instagram to verify your local audience");
+    if (avHome.belowSelf && avHome.belowSelf.length) chips.push(`Instagram shows a lower local share in ${avHome.belowSelf[0].market} than your profile says`);
+    if (avHome.status === "verified" && avHome.verifiedMarkets && avHome.verifiedMarkets.length) chips.push(`Local audience verified in ${avHome.verifiedMarkets[0]}`);
   } else if (role === "partner") {
     // Build -106 partner chips: live state only. A frozen pack
     // waiting is the standing prompt; funnel counts ride along

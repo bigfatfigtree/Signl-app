@@ -166,7 +166,7 @@ try {
   // the -68 stamp itself, so the count now pins -68 (4 occurrences,
   // 0 of -67). Shipping old-stamp asset URLs under a new build would
   // serve stale files, which is the bug this clause exists to catch.
-  check("build stamp is 2026.11.02-107 everywhere", buildJs.includes('exports.BUILD_ID = "2026.11.02-107"') && indexHtml.includes('window.__SIGNL_BUILD__ = "2026.11.02-107"') && (indexHtml.match(/2026.11.02-107/g) || []).length >= 4);
+  check("build stamp is 2026.11.02-108 everywhere", buildJs.includes('exports.BUILD_ID = "2026.11.02-108"') && indexHtml.includes('window.__SIGNL_BUILD__ = "2026.11.02-108"') && (indexHtml.match(/2026.11.02-108/g) || []).length >= 4);
 
   part("http: finished profile + claim stub");
   startServer();

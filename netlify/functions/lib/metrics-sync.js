@@ -21,12 +21,14 @@
 //   1. Meta App Review approval for the
 //      instagram_business_manage_insights permission on the SIGNL
 //      Meta app (review not yet filed; Access Verification in
-//      review, deadline 2026-12-21).
-//   2. Creator Instagram connection flow live: a creator connects
-//      their Instagram professional account in the app and grants
-//      the insights permission.
-//   3. Token storage: per-creator access tokens stored server-side
-//      (never on a client payload), with refresh handling.
+//      review, deadline 2026-12-21). STILL OPEN — gate G4.
+//   2. Creator Instagram connection flow: BUILT (Build -108) —
+//      the creator connects their Instagram professional account
+//      in the app and grants the insights permission; the lane
+//      ships dark behind the missing Meta app credentials.
+//   3. Token storage: BUILT (Build -108) — per-creator tokens in
+//      platconn: records server-side only, long-lived with
+//      refresh handling in lib/platform-connect.js.
 //   4. Env flag: METRICS_AUTOSYNC=1 set in the Netlify environment.
 //
 // When those land, implement metaProvider.fetchPostMetrics against
@@ -41,6 +43,15 @@ const metaProvider = {
   name: "meta",
   async fetchPostMetrics(/* post */) {
     return { status: "unavailable" };
+  },
+  // Audience geography (Build -108): the real fetch lives in
+  // lib/platform-connect.js (the same module that owns the
+  // connection and its token). This seam stays the metrics
+  // module's door to it; the router's audience pass calls the
+  // platform module directly, like the YouTube lane.
+  async fetchAudienceCities(conn) {
+    const platformConnect = require("./platform-connect");
+    return platformConnect.fetchInstagramAudienceCities(conn);
   },
 };
 
