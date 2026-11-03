@@ -17,7 +17,7 @@ const platformConnect = require("./platform-connect");
 const square = require("./square");
 const { askSigAI } = require("./sigai");
 const sigdata = require("./sigdata");
-const { buildProfilePageHtml, buildClaimPageHtml } = require("./profile-meta");
+const { buildProfilePageHtml, buildClaimPageHtml, buildRosterPageHtml, buildRosterNotFoundHtml } = require("./profile-meta");
 const { videoEmbedFor } = require("./video-embed");
 const intentLib = require("./intent");
 const { normalizeAudienceMarkets, audienceShareInMarket, isListedInMarket, listedMarketsFor, audienceBreakdownFor, MULTI_MARKET_MIN_PCT } = require("./audience-markets");
@@ -2619,6 +2619,11 @@ async function withFounding(user) {
     // profile loop, and the stored flag on the payload is the
     // COMPUTED value, never a stale stored one.
     pub.profileCompletion = profileCompletionFor(user);
+    // Build -102: the public roster pages this creator appears
+    // on (only markets that have crossed the threshold), so the
+    // dashboard and Sig can say "you are on the public roster"
+    // exactly when it is true, from the same predicate.
+    try { pub.publicRoster = publicRostersFor(await allUsers(), user); } catch (e) { pub.publicRoster = []; }
     if (pub.creator) pub.creator = { ...pub.creator, profileComplete: pub.profileCompletion.complete };
     // Momentum rides on the creator's own profile payload in full
     // detail (total, ledger, ways-to-earn checklist) so the dashboard
@@ -4678,6 +4683,90 @@ function htmlPage(body) {
     headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "public, max-age=300" },
     body,
   };
+}
+
+// ---------- Build -102: public roster pages (Tier 3 item 18) ----------
+// ONE finished-public predicate, shared by the sitemap, the
+// roster pages, and (through roster membership) the creator's
+// own dashboard state, so the three can never drift: an approved
+// roster creator with a finished profile, not banned, whose
+// public page is on and who has a handle. Demo showcase creators
+// are tester-flagged, and isRosterCreator already excludes
+// testers, so demo records fail this predicate by construction.
+function finishedPublicCreators(users) {
+  return (users || []).filter((u) => isRosterCreator(u) && profileCompleteOf(u) && standingState(u) !== "banned" && u.creator && u.creator.publicPage === true && String(u.creator.handle || "").trim());
+}
+const ROSTER_MIN = 5;
+function slugifyName(s) {
+  return String(s || "").toLowerCase().replace(/&/g, "and").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+}
+function marketBySlug(slug) {
+  const want = String(slug || "").toLowerCase();
+  return MARKETS.find((m) => slugifyName(m.name) === want) || null;
+}
+function categoryBySlug(slug) {
+  const want = String(slug || "").toLowerCase();
+  return CREATOR_CATEGORIES.find((c) => slugifyName(c) === want) || null;
+}
+// The members of one market cell (or market x category cell):
+// finished-public creators LISTED in the market (Build -63:
+// home, or a reported share at or above the listing floor),
+// ranked by their local share in THAT market, the item-12
+// Verified flag as tiebreak, then handle for stability. Each
+// card carries the market's own share, never the home number.
+function rosterMembers(users, marketName, categoryName) {
+  const members = finishedPublicCreators(users).filter((u) => isListedInMarket(u, marketName));
+  const cell = categoryName ? members.filter((u) => (u.creator.categories || []).includes(categoryName)) : members;
+  const rows = cell.map((u) => {
+    const share = audienceShareInMarket(u, marketName);
+    const av = u.creator.audienceVerification || null;
+    const verified = !!(av && av.status === "verified" && av.perMarket && av.perMarket[marketName] && av.perMarket[marketName].withinTolerance);
+    return {
+      user: u,
+      share: typeof share === "number" ? share : null,
+      verified,
+      card: {
+        name: u.name || "",
+        handle: u.creator.handle || "",
+        photoUrl: u.creator.hasPhoto ? `/api/users/${u.id}/photo` : null,
+        localPct: typeof share === "number" ? share : (typeof u.creator.localAudiencePct === "number" ? u.creator.localAudiencePct : null),
+        marketName,
+        followers: typeof u.creator.totalAudience === "number" ? u.creator.totalAudience : 0,
+        categories: u.creator.categories || [],
+        paidRate: typeof u.creator.paidRate === "number" && u.creator.paidRate > 0 ? u.creator.paidRate : null,
+        verified,
+      },
+    };
+  });
+  rows.sort((a, b) => ((b.share || 0) - (a.share || 0)) || ((b.verified ? 1 : 0) - (a.verified ? 1 : 0)) || String(a.card.handle).toLowerCase().localeCompare(String(b.card.handle).toLowerCase()));
+  return rows;
+}
+// Every roster URL that qualifies today (market pages and
+// category cells at or above the threshold), for the sitemap.
+// The rule is identical for every market: no market is listed,
+// ordered, or linked preferentially anywhere.
+function qualifyingRosterPaths(users) {
+  const paths = [];
+  for (const m of MARKETS) {
+    const members = rosterMembers(users, m.name, null);
+    if (members.length < ROSTER_MIN) continue;
+    paths.push(`/roster/${slugifyName(m.name)}`);
+    for (const cat of CREATOR_CATEGORIES) {
+      if (rosterMembers(users, m.name, cat).length >= ROSTER_MIN) paths.push(`/roster/${slugifyName(m.name)}/${slugifyName(cat)}`);
+    }
+  }
+  return paths;
+}
+// The creator's own public-roster state: the qualifying market
+// pages they appear on. Empty until a market they are listed in
+// crosses the threshold, which is the honest state to show.
+function publicRostersFor(users, user) {
+  if (!user || !finishedPublicCreators(users).some((u) => u.id === user.id)) return [];
+  const out = [];
+  for (const e of listedMarketsFor(user)) {
+    if (rosterMembers(users, e.market, null).length >= ROSTER_MIN) out.push({ market: e.market, url: `/roster/${slugifyName(e.market)}` });
+  }
+  return out;
 }
 
 async function publicProfilePayload(u) {
@@ -15509,13 +15598,17 @@ async function route(event) {
   if (method === "GET" && seg.length === 1 && seg[0] === "sitemap.xml") {
     const host = (event.headers && (event.headers["x-forwarded-host"] || event.headers.host)) || "app.joinsignl.com";
     const escXml = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    const eligible = (await allUsers())
-      .filter((u) => isRosterCreator(u) && profileCompleteOf(u) && standingState(u) !== "banned" && u.creator && u.creator.publicPage === true && String(u.creator.handle || "").trim())
+    const all = await allUsers();
+    const eligible = finishedPublicCreators(all)
       .sort((a, b) => (String(a.creator.handle).toLowerCase() < String(b.creator.handle).toLowerCase() ? -1 : 1));
     const urls = eligible.map((u) => {
       const lastmod = String(u.updatedAt || u.createdAt || "").slice(0, 10);
       return `  <url><loc>https://${escXml(host)}/c/${escXml(String(u.creator.handle).toLowerCase())}</loc>${/^\d{4}-\d{2}-\d{2}$/.test(lastmod) ? `<lastmod>${lastmod}</lastmod>` : ""}</url>`;
     });
+    // Build -102: qualifying roster pages join the sitemap by
+    // the same threshold rule the pages themselves enforce, so
+    // the sitemap can never list a roster that 404s.
+    for (const p of qualifyingRosterPaths(all)) urls.push(`  <url><loc>https://${escXml(host)}${escXml(p)}</loc></url>`);
     return {
       statusCode: 200,
       headers: { "Content-Type": "application/xml; charset=utf-8", "Cache-Control": "public, max-age=3600" },
@@ -15584,6 +15677,34 @@ async function route(event) {
       // loading shell. Same payload, same facts: the head and
       // the body can never tell two different stories.
       body: await bookMePayload(target, null),
+    }));
+  }
+
+  // Public roster pages (Build -102, Tier 3 item 18): GET
+  // /roster/<market-slug>[/<category-slug>], rewritten by
+  // netlify.toml to seg ["rosterpage", ...] (the /c pattern; the
+  // bare "roster" seg with no /api in the path is also accepted).
+  // A page renders ONLY at or above the threshold of 5 finished
+  // public profiles in the cell; below it, the answer is the
+  // friendly 404, never a thin page. The rule is identical for
+  // every market.
+  if (method === "GET" && (seg[0] === "rosterpage" || (seg[0] === "roster" && apiIdx === -1))) {
+    const notFound = { statusCode: 404, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "public, max-age=300" }, body: buildRosterNotFoundHtml() };
+    if (seg.length < 2 || seg.length > 3) return notFound;
+    const market = marketBySlug(seg[1]);
+    if (!market) return notFound;
+    const category = seg.length === 3 ? categoryBySlug(seg[2]) : null;
+    if (seg.length === 3 && !category) return notFound;
+    const rows = rosterMembers(await allUsers(), market.name, category);
+    if (rows.length < ROSTER_MIN) return notFound;
+    const host = (event.headers && (event.headers["x-forwarded-host"] || event.headers.host)) || "app.joinsignl.com";
+    return htmlPage(buildRosterPageHtml({
+      marketName: market.name,
+      marketSlug: slugifyName(market.name),
+      category,
+      categorySlug: category ? slugifyName(category) : null,
+      cards: rows.map((r) => r.card),
+      origin: `https://${host}`,
     }));
   }
 

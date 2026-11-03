@@ -314,6 +314,10 @@ function buildCreatorFacts(d) {
     audienceTotal: d.audienceTotal != null ? d.audienceTotal : null,
     localPct: c.localAudiencePct != null ? c.localAudiencePct : null,
     listedMarkets: d.listedMarkets || [],
+    // Build -102: the public roster pages this creator appears
+    // on, from the same finished-public predicate the pages and
+    // the sitemap use (rides the withFounding payload).
+    publicRoster: (d.full && d.full.publicRoster) || [],
     profileComplete: !!pc.complete,
     missingLabels: d.missingLabels || [],
     offersOpen: d.openOffers || 0,
@@ -418,6 +422,9 @@ function factsLines(role, f) {
   const lines = [];
   const lv = f.level;
   lines.push(`Their market is ${f.market || "unknown"} and it is ${f.marketLive ? "OPEN (live)" : "NOT open yet (founding)"}. Their application status is ${f.status || "unknown"}. Their profile is ${f.profileComplete ? "finished, so businesses can see them" : "NOT finished yet; still missing: " + (f.missingLabels.join(", ") || "nothing recorded") + ". A finished profile is the gate for being seen by businesses."}`);
+  lines.push(f.publicRoster && f.publicRoster.length
+    ? `Public roster pages they appear on right now: ${f.publicRoster.map((r) => `${r.market} (${r.url})`).join(", ")}. A market's public roster page opens only when at least 5 finished public profiles are listed there; these are public web pages, separate from the in-app roster businesses browse.`
+    : "They are not on a public roster page yet: a market's public roster opens once at least 5 finished public profiles are listed in it. Businesses inside SIGNL can still find a finished profile in the app; the public page is the web version of the same roster.");
   lines.push(`Their Momentum is ${fmt(f.momentumPoints)} points, level ${lv ? lv.name : "Starter"}${lv && lv.nextName ? `, with ${fmt(lv.nextAt - f.momentumPoints)} points to ${lv.nextName}` : ", the top level"}. Their tier is ${f.tier || "not set yet"}${f.audienceTotal != null ? ` on ${fmt(f.audienceTotal)} total followers across platforms` : ""}. Local audience in their home market: ${f.localPct != null ? f.localPct + "%" : "not reported"}. Markets they are listed in: ${f.listedMarkets.length ? f.listedMarkets.map((m) => `${m.market}${m.pct != null ? " (" + m.pct + "% local)" : ""}`).join(", ") : "just their home market"}.`);
   lines.push(`Their numbers right now: ${fmt(f.offersOpen)} open offers in their markets (${fmt(f.directInvites)} direct invites), ${fmt(f.applicationsPending)} applications waiting on a business's answer, ${fmt(f.visitsBooked)} visits booked, ${fmt(f.postsOwed.length)} posts owed, ${fmt(f.postsLive)} posts live${f.onTimePct != null ? `, ${f.onTimePct}% of their posts on time` : ""}. Paid bookings: ${fmt(f.paidBookings)}, with ${cmoney(f, f.paidRecordedNet)} recorded as their net (recorded means the bookings on file, paid outside the app). License requests waiting on them: ${fmt(f.licenseRequestsPending)}. Creators joined through their invite link: ${fmt(f.referrals.signups)}, of whom ${fmt(f.referrals.approved)} were approved.`);
   if (f.intentTotal > 0) lines.push(`Intent on their own posts: ${fmt(f.intentShares)} shares and ${fmt(f.intentSaves)} saves recorded, ${fmt(f.intentTotal)} in total across ${fmt(f.intentReportedPosts)} reported ${plural(f.intentReportedPosts, "post")}. Saves and shares mean people planning to come.`);
@@ -826,6 +833,11 @@ function answerCreator(f, q, t) {
     if (f.localPct == null) return "You have not reported your local audience share yet. It is one of the four things a finished profile needs, and it is the number businesses rank by.";
     return `${f.localPct}% of your audience is local to ${f.market || "your home market"}. Local reach, that share applied to your audience size, is the number businesses rank creators by, not follower count.`;
   }
+  // Public roster page (Build -102)
+  if (hasPhrase(t, "public roster", "roster page", "on the roster page", "public page for my market", "market roster")) {
+    if (f.publicRoster && f.publicRoster.length) return linked(`Yes: you are on the public roster for ${f.publicRoster.map((r) => r.market).join(" and ")}. The page shows finished founding creators in that market ranked by local audience, and your card links to your profile.`, "See the roster page", f.publicRoster[0].url);
+    return linked(`Not yet. A market's public roster page opens when at least 5 finished public profiles are listed in it; below that it would be a thin page, so it stays closed. ${f.profileComplete ? "Your profile is finished, so you will be on it the moment your market crosses." : `Your profile is not finished yet${f.missingLabels && f.missingLabels.length ? " (missing: " + f.missingLabels.join(", ") + ")" : ""}; finishing it is the step that puts you on the page when your market crosses.`}`, "Open my Profile", "cr-profile");
+  }
   // Markets listed in
   if (hasPhrase(t, "markets am i", "which markets", "markets i am", "listed in", "am i listed")) {
     if (!f.listedMarkets.length) return "Your home market is the listing on your record. Add per-market audience shares on your profile and you list in every market where your local share is 5% or more.";
@@ -974,6 +986,9 @@ function buildHomeState(role, f) {
     if (f.profileComplete && !f.paidRate) chips.push("Set your rate card");
     if (f.founding) chips.push(`Founding roster${f.market ? " · " + f.market : ""}`);
     else if (f.marketLive) chips.push(`${f.market || "Your market"} is live`);
+    // Build -102: on a public roster page is real state worth
+    // one quiet chip, with the page as its walk.
+    if (f.publicRoster && f.publicRoster.length) chips.push(`You're on the public ${f.publicRoster[0].market} roster`);
   }
   return { chips };
 }

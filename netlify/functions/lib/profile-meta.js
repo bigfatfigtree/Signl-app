@@ -450,4 +450,147 @@ function buildClaimPageHtml(shellHtml, profile) {
   return html;
 }
 
-module.exports = { buildProfilePageHtml, profilePageMeta, buildClaimPageHtml, claimPageMeta, profileBodyHtml, profileGalleryHtml, profileWorkItems, fmtFollowers, profileHeaderSocialsHtml, profileHeaderStatsHtml, profileViewOf, followersForPct, profileDisplayName };
+// ---------- Build -102: public market x category roster pages ----------
+// Tier 3 item 18. A standalone server-rendered collection page:
+// the finished, public creators listed in one market (or one
+// market x category cell), ranked by their local share IN THAT
+// MARKET. The router decides who qualifies (the shared
+// finished-public predicate + the >=5 threshold); this module
+// only renders what it is handed. Copy carries no counts beyond
+// the creators shown, no business names, and no market is
+// featured over another: every qualifying market gets the same
+// page from the same code.
+function rosterCardHtml(card, origin) {
+  const pct = typeof card.localPct === "number" ? Math.round(card.localPct) : null;
+  const photo = card.photoUrl ? `<img src="${escHtml(origin + card.photoUrl)}" alt="" loading="lazy">` : `<span class="avatar-fallback">${escHtml(String(card.name || "?").trim().slice(0, 1).toUpperCase())}</span>`;
+  return `<a class="card" href="${escHtml(origin)}/c/${escHtml(String(card.handle).toLowerCase())}">
+    <span class="photo">${photo}</span>
+    <span class="card-body">
+      <span class="card-name">${escHtml(card.name || "")}</span>
+      <span class="card-handle">@${escHtml(card.handle || "")}</span>
+      ${pct !== null ? `<span class="card-local"><strong>${pct}% local</strong> in ${escHtml(card.marketName || "")}${card.verified ? ` <span class="verified">Verified from Instagram</span>` : ""}</span>` : ""}
+      <span class="card-meta">${card.followers ? `${escHtml(fmtFollowers(card.followers))} followers` : ""}${card.categories && card.categories.length ? `${card.followers ? " · " : ""}${escHtml(card.categories.slice(0, 3).join(" · "))}` : ""}</span>
+      ${typeof card.paidRate === "number" && card.paidRate > 0 ? `<span class="card-rate">Paid bookings from $${escHtml(String(card.paidRate))}</span>` : ""}
+    </span>
+  </a>`;
+}
+
+function buildRosterPageHtml({ marketName, marketSlug, category, categorySlug, cards, origin }) {
+  const place = marketName || "";
+  const title = category ? `${category} creators in ${place} on SIGNL` : `${place} creators on SIGNL`;
+  const h1 = category ? `${category} creators in ${place}` : `${place} creators`;
+  const canonical = `${origin}/roster/${marketSlug}${category ? `/${categorySlug}` : ""}`;
+  const description = category
+    ? `Meet the ${category} creators on SIGNL in ${place}: local businesses book them for comped visits and paid posts, ranked by how much of their audience actually lives in ${place}.`
+    : `Meet the founding creator roster on SIGNL in ${place}: local businesses book them for comped visits and paid posts, ranked by how much of their audience actually lives in ${place}.`;
+  const crumbs = [
+    { "@type": "ListItem", position: 1, name: "SIGNL", item: "https://joinsignl.com" },
+    { "@type": "ListItem", position: 2, name: `${place} creators`, item: category ? `${origin}/roster/${marketSlug}` : canonical },
+  ];
+  if (category) crumbs.push({ "@type": "ListItem", position: 3, name: `${category} creators in ${place}`, item: canonical });
+  const ld = {
+    "@context": "https://schema.org",
+    "@graph": [
+      { "@type": "WebPage", name: title, description, url: canonical },
+      { "@type": "BreadcrumbList", itemListElement: crumbs },
+      { "@type": "ItemList", name: title, itemListElement: (cards || []).map((c, i) => ({ "@type": "ListItem", position: i + 1, url: `${origin}/c/${String(c.handle).toLowerCase()}`, name: c.name || "" })) },
+    ],
+  };
+  const ldJson = JSON.stringify(ld).replace(/<\//g, "<\\/");
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${escHtml(title)}</title>
+<meta name="description" content="${escHtml(description)}">
+<link rel="canonical" href="${escHtml(canonical)}">
+<meta property="og:title" content="${escHtml(title)}">
+<meta property="og:description" content="${escHtml(description)}">
+<meta property="og:type" content="website">
+<meta property="og:url" content="${escHtml(canonical)}">
+<meta name="twitter:card" content="summary">
+<script type="application/ld+json">${ldJson}</script>
+<style>
+:root{--ink:#0B0D0C;--mint:#A9E8C9;--azure:#006AFC;--bg:#FAFCFA;--hair:#DDE7DD;--sage:#5F7265}
+*{box-sizing:border-box}body{margin:0;font-family:Manrope,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--ink)}
+.wrap{max-width:1060px;margin:0 auto;padding:0 20px 64px}
+header{display:flex;align-items:center;justify-content:space-between;padding:20px 0}
+.logo{font-weight:800;font-size:24px;letter-spacing:.06em;color:var(--ink);text-decoration:none}
+.logo span{color:var(--azure)}
+header a.nav{color:var(--ink);text-decoration:none;font-weight:700;font-size:15px}
+.kicker{color:var(--azure);font-weight:800;font-size:13px;letter-spacing:.14em;text-transform:uppercase;margin:18px 0 6px}
+h1{font-size:clamp(34px,6vw,58px);line-height:1.02;margin:0 0 12px;font-weight:800}
+.sub{font-size:18px;line-height:1.5;color:var(--sage);max-width:640px;margin:0 0 30px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:16px}
+.card{display:block;background:#fff;border:1px solid var(--hair);border-radius:18px;overflow:hidden;text-decoration:none;color:var(--ink)}
+.card .photo{display:block;aspect-ratio:4/3;background:linear-gradient(135deg,#006AFC,#03C9AB);overflow:hidden}
+.card .photo img{width:100%;height:100%;object-fit:cover;display:block}
+.avatar-fallback{display:flex;align-items:center;justify-content:center;height:100%;font-size:56px;font-weight:800;color:#fff}
+.card-body{display:block;padding:14px 16px 16px}
+.card-name{display:block;font-weight:800;font-size:18px}
+.card-handle{display:block;color:var(--sage);font-size:14px;margin:1px 0 8px}
+.card-local{display:block;font-size:15px;margin-bottom:4px}
+.card-local strong{font-size:17px}
+.verified{display:inline-block;background:var(--mint);color:var(--ink);border-radius:999px;padding:1px 8px;font-size:12px;font-weight:700;margin-left:4px}
+.card-meta{display:block;color:var(--sage);font-size:14px}
+.card-rate{display:block;margin-top:8px;font-weight:700;font-size:14px}
+.cta{margin-top:44px;background:var(--ink);border-radius:18px;padding:28px;color:#fff}
+.cta h2{margin:0 0 8px;font-size:26px}
+.cta p{margin:0 0 18px;color:#DDE7DD;line-height:1.5}
+.cta a{display:inline-block;background:var(--mint);color:var(--ink);font-weight:800;border-radius:999px;padding:12px 22px;text-decoration:none;margin-right:10px}
+.cta a.ghost{background:transparent;color:#fff;border:1px solid #fff}
+footer{margin-top:36px;color:var(--sage);font-size:13px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header><a class="logo" href="https://joinsignl.com">SIGNL<span>.</span></a><a class="nav" href="https://joinsignl.com/businesses.html">For businesses</a></header>
+<p class="kicker">Founding roster</p>
+<h1>${escHtml(h1)}</h1>
+<p class="sub">Local businesses book these creators for comped meals, services and experiences, or paid posts at the creator's own listed rate. The number that ranks them here is how much of their audience actually lives in ${escHtml(place)}.</p>
+<div class="grid">
+${(cards || []).map((c) => rosterCardHtml(c, origin)).join("\n")}
+</div>
+<div class="cta">
+<h2>A creator in ${escHtml(place)}?</h2>
+<p>Claim your founding page, finish your profile, and businesses here can find you by the audience that actually lives here.</p>
+<a href="${escHtml(origin)}/">Claim your page</a>
+<a class="ghost" href="https://joinsignl.com/businesses.html">I run a business</a>
+</div>
+<footer>SIGNL — local businesses book local creators. Audience figures are the creators' own, shown on their profiles.</footer>
+</div>
+</body>
+</html>`;
+}
+
+function buildRosterNotFoundHtml() {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Roster not public yet — SIGNL</title>
+<meta name="robots" content="noindex">
+<style>
+body{margin:0;font-family:Manrope,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:#FAFCFA;color:#0B0D0C}
+.wrap{max-width:640px;margin:0 auto;padding:64px 20px}
+.logo{font-weight:800;font-size:24px;letter-spacing:.06em}
+.logo span{color:#006AFC}
+h1{font-size:34px;line-height:1.1;margin:26px 0 10px}
+p{font-size:17px;line-height:1.55;color:#5F7265}
+a.btn{display:inline-block;background:#0B0D0C;color:#A9E8C9;font-weight:800;border-radius:999px;padding:12px 22px;text-decoration:none;margin-top:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="logo">SIGNL<span>.</span></div>
+<h1>This roster is not public yet.</h1>
+<p>A market's public roster opens once enough of its founding creators have finished profiles to make the page worth reading. Until then, the roster is forming, and finished creators are already findable by businesses inside SIGNL.</p>
+<a class="btn" href="https://joinsignl.com">Back to SIGNL</a>
+</div>
+</body>
+</html>`;
+}
+
+module.exports = { buildProfilePageHtml, profilePageMeta, buildClaimPageHtml, claimPageMeta, profileBodyHtml, profileGalleryHtml, profileWorkItems, fmtFollowers, profileHeaderSocialsHtml, profileHeaderStatsHtml, profileViewOf, followersForPct, profileDisplayName, buildRosterPageHtml, buildRosterNotFoundHtml };

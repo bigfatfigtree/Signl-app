@@ -27,6 +27,15 @@
   to = "/.netlify/functions/api/sitemap.xml"
   status = 200
 
+# Public roster pages (Build -102): /roster/<market>[/<category>]
+# is served by the api function (seg "rosterpage"); a market page
+# renders only once its finished-public roster crosses the
+# threshold, exactly like the sitemap rule for /c/ pages.
+[[redirects]]
+  from = "/roster/*"
+  to = "/.netlify/functions/api/rosterpage/:splat"
+  status = 200
+
 # SPA fallback: every other route serves the app shell.
 [[redirects]]
   from = "/*"

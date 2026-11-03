@@ -3667,6 +3667,9 @@ function sigRouteAsk(text) {
 // the console stays read-only: the walk never edits a record
 // and never lands on someone else's surface.
 function sigLinkGo(dest) {
+  // Build -102: a same-origin path dest (a public roster page)
+  // opens as a page, in a new tab so the dashboard stays put.
+  if (typeof dest === "string" && dest.startsWith("/roster/")) { window.open(dest, "_blank", "noopener"); return false; }
   switch (dest) {
     case "biz-home": return go("dashboard", "Home");
     case "biz-results": return go("dashboard", "Analytics");
@@ -12461,6 +12464,10 @@ async function loadCreatorHome() {
     }
     if ((money.held || 0) > 0) add(3, now, `A paid booking is earning: $${fmtMoney(money.held)} held until the post is live.`, "See earnings", () => go("dashboard", "Earnings"), `$${fmtMoney(money.held)} held on a paid booking`);
     if (pc && !pc.complete) add(4, now, `Your profile is missing essentials (${pc.requiredDone} of ${pc.requiredTotal} done). Businesses cannot find you yet.`, "Finish profile", () => goFinishProfile(), `Profile: ${pc.requiredDone} of ${pc.requiredTotal} done`);
+    // Build -102: being on a public roster page is real state
+    // (the same predicate the page itself uses rides the /me
+    // payload), so Home says it once, with the page as the walk.
+    if (Array.isArray(u.publicRoster) && u.publicRoster.length) add(5, now, `You're on the public ${u.publicRoster[0].market} roster: the founding creators page for your market is live and your card is on it.`, "See the page", () => { window.open(u.publicRoster[0].url, "_blank", "noopener"); }, `On the public ${u.publicRoster[0].market} roster`);
     const paidRate = u.creator && u.creator.paidRate;
     if (!paidRate) add(4, now, "Set your paid rate so businesses can book you paid.", "Set my rate", () => go("dashboard", "Profile"), "Paid rate not set");
     // Sig activation ideas (class 5): build-up prompts for a

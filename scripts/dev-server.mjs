@@ -54,6 +54,28 @@ const server = http.createServer(async (req, res) => {
     }
     return;
   }
+  // Mirror the production netlify.toml /roster/* rewrite
+  // (Build -102): roster pages are served by the api function;
+  // pass the pathname through untouched like /c/ above.
+  if (url.pathname.startsWith("/roster/")) {
+    const event = {
+      httpMethod: "GET",
+      path: url.pathname,
+      headers: req.headers,
+      queryStringParameters: Object.fromEntries(url.searchParams.entries()),
+      body: null,
+      isBase64Encoded: false,
+    };
+    try {
+      const out = await handler(event);
+      res.writeHead(out.statusCode, out.headers || {});
+      res.end(out.body || "");
+    } catch (e) {
+      res.writeHead(500, { "Content-Type": "text/plain" });
+      res.end(String(e));
+    }
+    return;
+  }
   // Mirror the production netlify.toml /sitemap.xml rewrite:
   // the function generates the app sitemap live.
   if (url.pathname === "/sitemap.xml") {
