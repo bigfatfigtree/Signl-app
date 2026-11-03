@@ -9498,11 +9498,14 @@ async function loadReceipt() {
   const host = document.getElementById("biz-receipt");
   if (!host) return;
   let r = null;
-  try { const data = await api("GET", "/me/receipt"); r = data.receipt; } catch (e) { r = null; }
+  try { const data = await api("GET", "/me/receipt"); r = data.receipt; state._proofKit = data.proofKit || null; } catch (e) { r = null; }
   if (!document.getElementById("biz-receipt")) return;
   if (!r) { host.innerHTML = ""; return; }
   state._receiptTop = (r.topCreators || [])[0] || null;
   host.innerHTML = receiptHtml(r);
+  // Build -91: the proof kit's assigned home is Results, above
+  // Proof Controls (which renders inside the receipt below).
+  if (state._proofKit) host.insertAdjacentHTML("afterbegin", proofKitHtml(state._proofKit));
 }
 // Build -48: the Receipt's score blocks live under subtabs
 // (Overview / Over time / Creators / Costs / How it counts).
@@ -14170,6 +14173,16 @@ async function loadFoundingBusinessHome() {
     const staff = await api("GET", "/me/staff");
     if (staff && !staff.staffPinSet) items.push({ text: "Set your staff PIN before your first visit, so your team can mark visits at the counter.", btn: "Set PIN", act: () => go("dashboard", "Visits & Posts") });
   } catch (e) { /* the queue is a nudge, never a blocker */ }
+  // Build -91: wishlist and roster-digest alerts join the
+  // founding queue too — they are the pre-open moves this home
+  // exists for.
+  try {
+    const nd = await api("GET", "/notifications");
+    for (const n of sigAlertNotes(nd && nd.notifications)) {
+      const a = sigAlertAction(n);
+      items.push({ text: n.text, btn: a.btn, act: a.act });
+    }
+  } catch (e) { /* the queue is a nudge, never a blocker */ }
   const bz = u.business || {};
   if (!bz.about) items.push({ text: "Your business page has no story yet. A few lines about your store is what creators read before they apply.", btn: "Write it", act: () => go("dashboard", "Profile") });
   state.sigQueue = items;
@@ -15157,6 +15170,14 @@ async function loadBusinessHome() {
       const recR = rod.recommendation;
       pushIdea("biz_repeat_" + recR.bookingId, `Repeat what worked: "${recR.title}"${recR.creatorName ? ` with ${recR.creatorName}` : ""}. ${recR.reason || ""}`, "Repeat it", () => { go("dashboard", "Sig"); setTimeout(() => sigRepeatProposal(rod), 400); }, `Repeat: "${recR.title}"`);
     }
+    // Build -91: wishlist and roster-digest alerts ride the
+    // queue as people-class items, off the same notes the feed
+    // reads. Save / Invite actions follow the Sig linking rule:
+    // they land on the real Discover and composer surfaces.
+    for (const n of sigAlertNotes(notes)) {
+      const a = sigAlertAction(n);
+      add(2, Date.parse(n.createdAt) || now, n.text, a.btn, a.act, a.short);
+    }
     state.waitCounts.bizVisits = visitToday.length + postDue.length + needsTime.length;
     items.sort((a, b) => a.cls - b.cls || a.at - b.at);
     const queue = capSigIdeas(items).slice(0, 7);
@@ -15205,6 +15226,7 @@ async function loadBusinessHome() {
     <div id="biz-start-here"></div>
     ${d.marketLive ? "" : `<div class="notice blue" style="margin-top:14px"><strong>Your market has not launched yet.</strong> Businesses sign up when we are ready to launch. Draft offers now; publishing switches on at launch.</div>`}
     ${sigQueueHtml(queue, { links: caughtLinks, leadShort: greetDup, askBox: true })}
+    ${d.proofKit ? proofKitHtml(d.proofKit) : ""}
     ${checklistHtml(steps)}
     ${snapshotHtml(snapCells, "This fills in once your campaigns are live. When creators start visiting and posting, you will see applications, visits, posts, and the local reach they delivered, right here.", "Analytics")}
     <div id="perf-card"></div>
@@ -16135,6 +16157,170 @@ function discoverMusicianChip(btn) {
   return false;
 }
 
+// ---------- Build -91: wishlist, roster alerts, proof kit ----------
+// Sig queue items from the wishlist / roster-digest notes the
+// server writes (the email is the other half of each alert).
+function sigAlertNotes(notes) {
+  return (notes || []).filter((n) => n && !n.readAt && ["wishlist_ready", "wishlist_claimed", "roster_digest"].includes(n.kind));
+}
+function sigAlertAction(n) {
+  const d = n.data || {};
+  if (n.kind === "wishlist_ready" && d.creatorId) return { btn: "Invite to draft", act: () => startOffer(d.creatorId), short: "Wishlist creator ready" };
+  if (n.kind === "wishlist_claimed") return { btn: "See wishlist", act: () => go("dashboard", "Discover"), short: "Wishlist creator joined" };
+  return { btn: "Find creators", act: () => go("dashboard", "Discover"), short: "New creators this week" };
+}
+
+// The wishlist section inside Find creators (no new rail item):
+// the business's own list, its private notes, and the match state
+// of each row, straight from GET /me/wishlist.
+async function loadWishlistSection() {
+  const el = document.getElementById("biz-wishlist");
+  if (!el) return;
+  try {
+    const d = await api("GET", "/me/wishlist");
+    renderWishlistSection(d.wishlist || []);
+  } catch (e) {
+    el.innerHTML = "";
+  }
+}
+function wishlistRowHtml(row) {
+  const chip = row.state === "ready" ? `<span class="badge ok">Ready to invite</span>`
+    : row.state === "claimed" ? `<span class="badge">On SIGNL, finishing their profile</span>`
+    : `<span class="badge warn">Not on SIGNL yet</span>`;
+  const hint = row.state === "waiting" ? `<p class="small muted" style="margin:2px 0 0">We email you when they claim their profile, and again when it is finished.</p>`
+    : row.state === "claimed" ? `<p class="small muted" style="margin:2px 0 0">We email you when their profile is finished and they are ready to invite.</p>` : "";
+  return `<div style="display:flex;gap:8px 10px;flex-wrap:wrap;align-items:flex-start;padding:10px 0;border-top:1px solid var(--line,#e6e6e6)">
+    <div style="flex:1 1 230px;min-width:0">
+      <div><strong>@${esc(row.handle)}</strong> ${chip}</div>
+      ${row.note ? `<p class="small muted" style="margin:2px 0 0">Your note: ${esc(row.note)}</p>` : ""}
+      ${hint}
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+      ${row.state === "ready" ? `<button class="btn small-btn" type="button" onclick="return wishlistInvite('${row.creatorId}')">Invite to draft</button><button class="btn small-btn ghost" type="button" onclick="return wishlistSave('${row.creatorId}', this)">Save</button>` : ""}
+      <button class="btn small-btn ghost" type="button" onclick="return wishlistRemove('${esc(row.handle)}')">Remove</button>
+    </div>
+  </div>`;
+}
+function renderWishlistSection(rows) {
+  const el = document.getElementById("biz-wishlist");
+  if (!el) return;
+  el.innerHTML = `<section class="wcard" style="margin:14px 0">
+    <h3 style="margin-top:0">Your wishlist</h3>
+    <p class="small muted" style="margin-top:0">The creators you already want, from your own list. Paste their handles below, one per line, with your private note after a comma if you keep one. Your notes stay yours: creators never see them, and no other business can. We email you when someone on your list joins SIGNL, and again when their profile is finished.</p>
+    ${rows.length ? rows.map(wishlistRowHtml).join("") : `<p class="small muted">No one on your wishlist yet.</p>`}
+    <div class="field" style="margin-top:10px"><label>Add creators (one per line, note after a comma)</label><textarea id="wl-paste" rows="4" placeholder="@creatorone, loves our weekend brunch crowd&#10;@creatortwo"></textarea></div>
+    <button class="btn small-btn" type="button" onclick="return wishlistImport()">Add to wishlist</button> <span class="small muted" id="wl-note"></span>
+  </section>`;
+}
+async function wishlistImport() {
+  const ta = document.getElementById("wl-paste");
+  const note = document.getElementById("wl-note");
+  if (!ta || !ta.value.trim()) { if (note) note.textContent = "Paste at least one handle first."; return false; }
+  try {
+    const d = await api("POST", "/me/wishlist", { text: ta.value });
+    renderWishlistSection(d.wishlist || []);
+    const n2 = document.getElementById("wl-note");
+    if (n2) n2.textContent = "Saved. Matching runs right away, and we email you when someone joins or finishes.";
+  } catch (e) { if (note) note.textContent = e.message; }
+  return false;
+}
+async function wishlistRemove(handle) {
+  try {
+    const d = await api("DELETE", "/me/wishlist/" + encodeURIComponent(handle));
+    renderWishlistSection(d.wishlist || []);
+  } catch (e) { alert(e.message); }
+  return false;
+}
+function wishlistInvite(creatorId) {
+  startOffer(creatorId);
+  return false;
+}
+async function wishlistSave(creatorId, btn) {
+  try {
+    const d = await api("POST", "/favorites", { creatorId });
+    if (btn) btn.textContent = d.isFavorite ? "Saved" : "Save";
+  } catch (e) { alert(e.message); }
+  return false;
+}
+
+// The first-booking proof kit card (Home + Results). Steps check
+// themselves off from real state on the server; the buttons run
+// the step or jump to where it lives.
+function proofKitHtml(kit) {
+  if (!kit) return "";
+  const btnFor = (s) => {
+    if (s.done) return "";
+    if (s.id === "baseline") return `<button class="btn small-btn" type="button" onclick="return proofKitGoBaseline()">Set the usual day</button>`;
+    if (s.id === "pin") return `<button class="btn small-btn" type="button" onclick="return go('dashboard','Settings')">Set the PIN</button>`;
+    if (s.id === "counter_card") return `<button class="btn small-btn" type="button" onclick="return proofKitPrintCard()">Print the card</button>`;
+    if (s.id === "test_redemption") return `<button class="btn small-btn" type="button" onclick="return proofKitTestRedeem(this)">Run the test</button>`;
+    return "";
+  };
+  return `<section class="wcard" id="proof-kit" style="margin-top:14px">
+    <p class="ui-kicker" style="margin:0">Before your first visit</p>
+    <h3 style="margin:2px 0 0">Your proof kit: four things, done once</h3>
+    <p class="wc-sub" style="margin-top:8px">Your first booking is confirmed${kit.creatorHandle ? ` with @${esc(kit.creatorHandle)}` : ""}. These four steps are what make that visit count on your receipt, and they only work if they are done before the visit, so this card goes away once your first visit happens.</p>
+    ${kit.steps.map((s) => `<div style="display:flex;gap:10px;align-items:flex-start;margin-top:12px">
+      <div>${s.done ? `<span class="badge ok">Done</span>` : `<span class="badge warn">To do</span>`}</div>
+      <div style="flex:1;min-width:0"><strong>${esc(s.label)}</strong><p class="small muted" style="margin:2px 0 0">${esc(s.detail)}</p></div>
+      <div>${btnFor(s)}</div>
+    </div>`).join("")}
+  </section>`;
+}
+function proofKitGoBaseline() {
+  go("dashboard", "Analytics");
+  setTimeout(() => {
+    const dayEl = document.getElementById("rc-base-day");
+    if (dayEl) {
+      const det = dayEl.closest("details");
+      if (det) det.open = true;
+      dayEl.scrollIntoView({ behavior: "smooth", block: "center" });
+      const c = document.getElementById("rc-base-count");
+      if (c) c.focus();
+    }
+  }, 450);
+  return false;
+}
+// The printable counter card: the one question, plus how a
+// creator's code gets redeemed at this business's register (the
+// same instructions the staff settings carry today).
+async function proofKitPrintCard() {
+  try {
+    await api("POST", "/me/proof-kit/printed", {});
+    const d = await api("GET", "/me/staff");
+    const w = window.open("", "_blank", "width=640,height=760");
+    if (!w) { alert("Allow pop-ups to print the counter card."); return false; }
+    const origin = location.origin;
+    w.document.write(`<!DOCTYPE html><html><head><title>SIGNL counter card</title>
+    <style>body{font-family:Arial,sans-serif;text-align:center;padding:36px;color:#0B0D0C}img.logo{height:54px}.biz{font-size:22px;font-weight:700;margin:10px 0 2px}.big{font-size:32px;font-weight:800;letter-spacing:0.01em;margin:22px 0 6px}.line{font-size:17px}.rule{border-top:2px solid #0B0D0C;margin:26px 0}.code{font-family:monospace;font-size:19px;font-weight:700;letter-spacing:0.12em}.muted{color:#666;font-size:13px}</style></head>
+    <body>
+      <img class="logo" src="${origin}/assets/logo.png" alt="SIGNL">
+      <div class="biz">${esc(d.businessName || "")}</div>
+      <div class="big">"First time in? How'd you hear about us?"</div>
+      <p class="line">Ask it at the natural moment, ringing up or seating. When a creator or a post comes up, that answer counts.</p>
+      <div class="rule"></div>
+      <p class="line"><strong>Here with a SIGNL visit code?</strong><br>Show your code at the register.</p>
+      <p class="muted">Staff: open <strong>${esc(d.staffLink || "")}</strong>, enter the staff PIN, then enter the creator's code. That tap is what counts the visit.<br>Business code: <span class="code">${esc(d.staffCode || "")}</span></p>
+    </body></html>`);
+    w.document.close();
+    w.focus();
+    setTimeout(() => { try { w.print(); } catch (e) { /* the card is on screen either way */ } }, 450);
+    setTimeout(() => { try { render(); } catch (e) { /* stay put if render is unavailable */ } }, 700);
+  } catch (e) { alert(e.message); }
+  return false;
+}
+async function proofKitTestRedeem(btn) {
+  if (btn) { btn.disabled = true; btn.textContent = "Running the test..."; }
+  try {
+    await api("POST", "/me/proof-kit/test-redeem", {});
+    render();
+  } catch (e) {
+    alert(e.message);
+    if (btn) { btn.disabled = false; btn.textContent = "Run the test"; }
+  }
+  return false;
+}
+
 async function loadDiscover() {
   const el = document.getElementById("tab-body");
   const u = state.user;
@@ -16175,8 +16361,10 @@ async function loadDiscover() {
     </div>
     </details>
     <div id="discover-toggle"></div>
+    <div id="biz-wishlist"></div>
     <div id="discover-results">${skelHtml("Loading creators...", 2)}</div>`;
   runDiscover();
+  loadWishlistSection();
 }
 
 // Campus filter options (U1): the server facet lists the

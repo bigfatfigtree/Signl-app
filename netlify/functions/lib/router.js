@@ -6775,6 +6775,8 @@ async function handleFinishEngineReply(user, rawBody) {
     await logEvent({ type: "profile_completed", actorId: rec.id, actorRole: "creator", subjectId: rec.id, market: rec.market, data: { via: "sig_concierge", handle: rec.creator.handle, city: rec.city, audienceStack: rec.creator.audienceStack, totalAudience: rec.creator.totalAudience, localAudiencePct: rec.creator.localAudiencePct, categories: rec.creator.categories } });
     await logEvent({ type: "sig_concierge_completed", actorId: rec.id, actorRole: "creator", subjectId: rec.id, market: rec.market, data: { answers: st.answers || 0 } });
     await maybeFireFinishMoment(rec, "sig_concierge");
+    // Build -91: a concierge finish is a roster drop too.
+    try { await recordRosterDrop(rec, "sig_concierge"); } catch (e) { /* best-effort */ }
     return true;
   }
   const missingAfter = conciergeMissingFields(rec);
@@ -6815,6 +6817,11 @@ async function runFinishEngineSweep(opts = {}) {
     if (u.role !== "creator" || !u.creator || isTester(u)) continue;
     if (standingState(u) === "banned") continue;
     if (profileCompleteOf(u)) {
+      // Build -91: the roster-drop backstop rides the same pass —
+      // any finished + approved creator the live paths missed gets
+      // their drop recorded here (the record itself is the guard,
+      // so this is safe to attempt on every sweep).
+      try { if (await recordRosterDrop(u, "sweep_backstop")) summary.rosterDrops = (summary.rosterDrops || 0) + 1; } catch (e) { /* best-effort */ }
       if (!u.finishMomentSentAt && u.creator.profileCompletedAt) {
         const doneMs = Date.parse(u.creator.profileCompletedAt);
         if (Number.isFinite(doneMs) && doneMs >= epochMs && nowMs - doneMs <= 7 * DAY_MS) {
@@ -7611,17 +7618,23 @@ async function performCounterRedeem(booking, actor) {
   booking.postDeadline = new Date(Date.parse(ts) + postWindowHours(booking) * 3600 * 1000).toISOString();
   booking.updatedAt = ts;
   await store.set(`booking:${booking.id}`, booking);
-  await logEvent({ type: "code_redeemed", actorId: actor.id, actorRole: actor.role, subjectId: booking.id, market: booking.market, data: { creatorId: booking.creatorId, code: booking.code, method: "counter_code", via: actor.via, postDeadline: booking.postDeadline, dollarCap: booking.dollarCap } });
-  await sendStaffNotice(booking, "redeem");
-  // The creator's post clock just started; until 2026-10-24
-  // they heard about it from nobody. Tell them, both surfaces.
-  // The hours stated are the deal's own window (Build -84).
-  const clockH = postWindowHours(booking);
-  await notifyMilestone(booking.creatorId, "clock_started",
-    `Your visit to ${booking.businessName || "the business"} is redeemed and your ${clockH} hour post clock is running. Post by ${milestoneDeadlineText(booking.postDeadline)}, then paste the Instagram link in the app. A post inside the week still counts, as a late delivery.`,
-    `Your ${clockH} hour post clock started: ${booking.businessName || "your SIGNL visit"}`,
-    [`Your visit to ${booking.businessName || "the business"} was just redeemed at the counter, so your post clock is running.`, "", `Post within ${clockH} hours, by ${milestoneDeadlineText(booking.postDeadline)}, then paste the full Instagram post or reel link in the app as your proof. On time is what keeps your Momentum climbing, and a post inside the week still counts, as a late delivery.`, "", "Open SIGNL: https://app.joinsignl.com", "", "Jeff", "Founder, SIGNL"].join("\n"),
-    { bookingId: booking.id });
+  await logEvent({ type: "code_redeemed", actorId: actor.id, actorRole: actor.role, subjectId: booking.id, market: booking.market, data: { creatorId: booking.creatorId, code: booking.code, method: "counter_code", via: actor.via, postDeadline: booking.postDeadline, dollarCap: booking.dollarCap, test: booking.test === true } });
+  // Build -91: a TEST redemption (the proof kit's practice run)
+  // notifies nobody — there is no creator and no real visit. It
+  // burns its code, proves the path, and its booking is deleted
+  // by the caller, so it never enters any counted total.
+  if (!booking.test) {
+    await sendStaffNotice(booking, "redeem");
+    // The creator's post clock just started; until 2026-10-24
+    // they heard about it from nobody. Tell them, both surfaces.
+    // The hours stated are the deal's own window (Build -84).
+    const clockH = postWindowHours(booking);
+    await notifyMilestone(booking.creatorId, "clock_started",
+      `Your visit to ${booking.businessName || "the business"} is redeemed and your ${clockH} hour post clock is running. Post by ${milestoneDeadlineText(booking.postDeadline)}, then paste the Instagram link in the app. A post inside the week still counts, as a late delivery.`,
+      `Your ${clockH} hour post clock started: ${booking.businessName || "your SIGNL visit"}`,
+      [`Your visit to ${booking.businessName || "the business"} was just redeemed at the counter, so your post clock is running.`, "", `Post within ${clockH} hours, by ${milestoneDeadlineText(booking.postDeadline)}, then paste the full Instagram post or reel link in the app as your proof. On time is what keeps your Momentum climbing, and a post inside the week still counts, as a late delivery.`, "", "Open SIGNL: https://app.joinsignl.com", "", "Jeff", "Founder, SIGNL"].join("\n"),
+      { bookingId: booking.id });
+  }
   return booking;
 }
 
@@ -8493,6 +8506,284 @@ function homeAnalyticsExtras(triples, plan, now, apps = []) {
 // reach, top content ranked by register tallies then views), so
 // the sample a business saw before sign-up and the home they get
 // after can never tell two different stories.
+// ---------- Build -91: business wishlist + roster drops + proof kit ----------
+// Item 6 (strategy doc, Tier 1): a business keeps its OWN private
+// list of creators it already wants — Chelsea's spreadsheet, inside
+// SIGNL. Rows live at wishlist:{businessId}:{normalizedHandle} and
+// are read by exactly one surface: that business's own wishlist
+// view. The note on a row is the business's private hook; it never
+// rides a creator payload, a public page, or another business's
+// read. Matching is by normalized handle against REAL creator
+// records only: tester and demo showcase creators never match and
+// never trigger anything (Build -67 fencing, both directions).
+// A roster drop is the moment a real creator first crosses the
+// Build -65 gate into finished + approved (rosterdrop:{creatorId},
+// written once): it fans out the wishlist "ready" alerts and feeds
+// the weekly market digest. The digest is silence by default: a
+// business hears only when at least one creator finished in ITS
+// market since the last digest it was sent.
+// Item 7: the first-booking proof kit, computed on read from real
+// state (the business's bookings, its stored baseline, its staff
+// PIN record, and the proofkit:{businessId} step record), so a
+// step can never show done for a thing that is not true.
+
+function wishlistHandleKey(raw) {
+  return normalizeHandle(raw).toLowerCase();
+}
+
+function wishlistMatchableCreator(u) {
+  return !!(u && u.role === "creator" && u.creator && !isTester(u) && !isDemoShowcaseCreator(u));
+}
+
+function wishlistStateOf(creator) {
+  if (!creator) return "waiting";
+  return creator.status === "approved" && profileCompleteOf(creator) ? "ready" : "claimed";
+}
+
+async function wishlistMatchMap() {
+  const map = new Map();
+  for (const u of await allUsers()) {
+    if (!wishlistMatchableCreator(u)) continue;
+    const key = wishlistHandleKey(u.creator.handle);
+    if (key && !map.has(key)) map.set(key, u);
+  }
+  return map;
+}
+
+async function wishlistRowsFor(businessId) {
+  return (await store.list(`wishlist:${businessId}:`)).map((r) => r.value).filter(Boolean)
+    .sort((a, b) => (String(a.createdAt) < String(b.createdAt) ? -1 : 1));
+}
+
+async function wishlistViewFor(bizUser) {
+  const rows = await wishlistRowsFor(bizUser.id);
+  const map = await wishlistMatchMap();
+  return rows.map((row) => {
+    const c = map.get(row.handle) || null;
+    return {
+      handle: row.handle,
+      note: row.note || "",
+      state: wishlistStateOf(c),
+      creatorId: c ? c.id : null,
+      creatorName: c ? c.name : null,
+      creatorHandle: c && c.creator ? c.creator.handle : null,
+      categories: c && c.creator ? (c.creator.categories || []) : [],
+      market: c ? c.market : null,
+      createdAt: row.createdAt,
+    };
+  });
+}
+
+// Paste parsing: one handle per line; an optional note follows the
+// handle after a comma or a tab (the two shapes a spreadsheet
+// paste produces). Handles normalize exactly like profile handles,
+// so "@name", "name" and a pasted profile link all land on the
+// same row.
+function parseWishlistText(text) {
+  const out = [];
+  const seen = new Set();
+  for (const line of String(text || "").split(/\r?\n/)) {
+    const t = line.trim();
+    if (!t) continue;
+    const parts = t.split(/[,\t]/);
+    const handle = wishlistHandleKey(parts[0]);
+    if (!handle || seen.has(handle)) continue;
+    seen.add(handle);
+    out.push({ handle, note: parts.slice(1).map((x) => x.trim()).filter(Boolean).join(", ").slice(0, 300) });
+    if (out.length >= 200) break;
+  }
+  return out;
+}
+
+function wishlistAlertEmail(biz, creator, kind) {
+  const first = greetingName(biz);
+  const handle = creator.creator.handle;
+  const bizName = (biz.business && biz.business.businessName) || "your business";
+  if (kind === "ready") {
+    return {
+      subject: `@${handle} finished their SIGNL profile`,
+      text: [
+        `Hi ${first},`,
+        "",
+        `@${handle} is on the creator wishlist at ${bizName}, and they just finished their SIGNL profile. They are ready to invite.`,
+        "",
+        "Open Find creators in SIGNL and tap Invite to draft on their wishlist row: the invite starts as a draft with their name on it, ready for opening day.",
+        "",
+        "Open SIGNL: https://app.joinsignl.com",
+        "",
+        "Jeff",
+        "Founder, SIGNL",
+        "hello@joinsignl.com",
+      ].join("\n"),
+    };
+  }
+  return {
+    subject: `@${handle} claimed their SIGNL profile`,
+    text: [
+      `Hi ${first},`,
+      "",
+      `@${handle} is on the creator wishlist at ${bizName}, and they just claimed their SIGNL profile. Their profile is not finished yet, so there is nothing to do today.`,
+      "",
+      "We will email you again the moment their profile is finished and they are ready to invite.",
+      "",
+      "Open SIGNL: https://app.joinsignl.com",
+      "",
+      "Jeff",
+      "Founder, SIGNL",
+      "hello@joinsignl.com",
+    ].join("\n"),
+  };
+}
+
+// One alert per business per transition: the stamp lands on the
+// wishlist row BEFORE the send, so a retry can never double-email.
+// The Sig queue item is the in-app note (the record the business
+// dashboards read); the email rides deliverEmail like every other
+// lifecycle email.
+async function alertWishlistBusinesses(creator, kind) {
+  if (!wishlistMatchableCreator(creator)) return 0;
+  const handle = wishlistHandleKey(creator.creator.handle);
+  if (!handle) return 0;
+  const flag = kind === "ready" ? "readyAlertedAt" : "claimAlertedAt";
+  const rows = await store.list("wishlist:");
+  let sent = 0;
+  for (const r of rows) {
+    const row = r.value;
+    if (!row || row.handle !== handle || row[flag]) continue;
+    const biz = await store.get(`user:${row.businessId}`);
+    if (!biz || biz.role !== "business" || !biz.business || biz.status !== "approved" || isTester(biz)) continue;
+    row[flag] = nowIso();
+    row.updatedAt = nowIso();
+    await store.set(r.key, row);
+    const noteText = kind === "ready"
+      ? `@${creator.creator.handle}, on your wishlist, finished their profile and is ready to invite.`
+      : `@${creator.creator.handle}, on your wishlist, claimed their SIGNL profile. We will tell you when their profile is finished.`;
+    await notifyUser(biz.id, kind === "ready" ? "wishlist_ready" : "wishlist_claimed", noteText, { creatorId: creator.id, handle: creator.creator.handle, wishlist: true });
+    try {
+      const mail = wishlistAlertEmail(biz, creator, kind);
+      await deliverEmail(kind === "ready" ? "wishlist_ready" : "wishlist_claimed", biz, mail.subject, mail.text, null);
+    } catch (e) { /* email is best-effort; the note and the row stamp are the record */ }
+    await logEvent({ type: kind === "ready" ? "wishlist_ready_alert" : "wishlist_claim_alert", actorId: null, actorRole: "system", subjectId: biz.id, market: creator.market, data: { creatorId: creator.id, handle: creator.creator.handle, businessId: biz.id } });
+    sent += 1;
+  }
+  return sent;
+}
+
+// The roster drop: recorded once per creator, the first time the
+// stored record reads finished + approved. Re-reads the record so
+// every finish path (profile save, signup, concierge, approval,
+// sweep backstop) can call it with whatever copy it holds.
+async function recordRosterDrop(creator, via) {
+  if (!creator || creator.role !== "creator") return false;
+  const rec = (await store.get(`user:${creator.id}`)) || creator;
+  if (!wishlistMatchableCreator(rec)) return false;
+  if (rec.status !== "approved" || !profileCompleteOf(rec)) return false;
+  const key = `rosterdrop:${rec.id}`;
+  if (await store.get(key)) return false;
+  const drop = {
+    id: rec.id,
+    creatorId: rec.id,
+    handle: wishlistHandleKey(rec.creator.handle),
+    market: rec.market,
+    categories: (rec.creator.categories || []).slice(),
+    at: nowIso(),
+    via: via || "profile",
+  };
+  await store.set(key, drop);
+  await logEvent({ type: "roster_drop", actorId: null, actorRole: "system", subjectId: rec.id, market: rec.market, data: { handle: drop.handle, categories: drop.categories, via: drop.via } });
+  try { await alertWishlistBusinesses(rec, "ready"); } catch (e) { console.error("wishlist ready alert failed", e && e.message); }
+  return true;
+}
+
+// The weekly market digest. A business is sent one only when at
+// least one creator finished in ITS market in the last 7 days and
+// that finish was not already in a digest it received (the sent
+// ids ride rosterdigest:{businessId}). No finishes, no email, no
+// queue item: silence is the default state.
+async function runRosterDigestSweep(opts = {}) {
+  const nowMs = opts.now ? Date.parse(opts.now) : Date.now();
+  const sinceMs = nowMs - 7 * 86400000;
+  const drops = (await store.list("rosterdrop:")).map((r) => r.value)
+    .filter((d) => d && Date.parse(d.at) >= sinceMs && Date.parse(d.at) <= nowMs);
+  const summary = { finishes: drops.length, businesses: 0, emails: 0 };
+  if (!drops.length) return summary;
+  const users = await allUsers();
+  const businesses = users.filter((u) => u.role === "business" && u.business && u.status === "approved" && !isTester(u));
+  for (const biz of businesses) {
+    const stateKey = `rosterdigest:${biz.id}`;
+    const state = (await store.get(stateKey)) || { sentDropIds: [] };
+    const sentIds = new Set(state.sentDropIds || []);
+    const mine = drops.filter((d) => normalizeMarketName(d.market) === normalizeMarketName(biz.market) && !sentIds.has(d.creatorId));
+    if (!mine.length) continue;
+    const catCounts = new Map();
+    for (const d of mine) for (const c of d.categories || []) catCounts.set(c, (catCounts.get(c) || 0) + 1);
+    const breakdown = [...catCounts.entries()].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).map(([c, n]) => `${n} ${c}`).join(", ");
+    const place = marketTalkName(biz.market);
+    const subject = `${mine.length} new ${place} creator${mine.length === 1 ? "" : "s"} finished this week`;
+    const text = [
+      `Hi ${greetingName(biz)},`,
+      "",
+      `${mine.length} new ${place} creator${mine.length === 1 ? "" : "s"} finished their SIGNL profile this week${breakdown ? ` (${breakdown})` : ""}:`,
+      "",
+      ...mine.map((d) => `- @${d.handle}${(d.categories || []).length ? ` — ${d.categories.join(", ")}` : ""}`),
+      "",
+      "Open Find creators in SIGNL to save the ones who fit, or invite one straight into a draft campaign from Sig's queue on your Home page.",
+      "",
+      "Open SIGNL: https://app.joinsignl.com",
+      "",
+      "Jeff",
+      "Founder, SIGNL",
+      "hello@joinsignl.com",
+    ].join("\n");
+    try { await deliverEmail("roster_digest", biz, subject, text, null); } catch (e) { /* best-effort; the note below is the in-app record */ }
+    await notifyUser(biz.id, "roster_digest", `${mine.length} new ${place} creator${mine.length === 1 ? "" : "s"} finished this week${breakdown ? ` (${breakdown})` : ""}. Save or invite them from Find creators.`, { count: mine.length, market: biz.market, creators: mine.map((d) => ({ creatorId: d.creatorId, handle: d.handle })) });
+    state.sentDropIds = [...sentIds, ...mine.map((d) => d.creatorId)];
+    state.lastSentAt = nowIso();
+    state.lastCount = mine.length;
+    await store.set(stateKey, state);
+    await logEvent({ type: "roster_digest_sent", actorId: null, actorRole: "system", subjectId: biz.id, market: biz.market, data: { businessId: biz.id, count: mine.length, creatorIds: mine.map((d) => d.creatorId) } });
+    summary.businesses += 1;
+    summary.emails += 1;
+  }
+  return summary;
+}
+
+// The proof kit (Item 7), computed on read. The rule, kept
+// simple: the kit is open while the business has a first real
+// booking that has not happened yet — no real visit redeemed, the
+// first booking not cancelled or expired, its window not past —
+// and at least one of the four steps is still undone. The moment
+// a real visit is redeemed, or all four steps are done, the kit
+// retires: a business whose first visit already happened never
+// sees a stale kit.
+async function proofKitFor(bizUser) {
+  if (!bizUser || bizUser.role !== "business" || !bizUser.business) return null;
+  const bookings = (await allBookings()).filter((b) => b.businessId === bizUser.id && !b.test);
+  const live = bookings.filter((b) => b.status !== "cancelled");
+  if (!live.length) return null;
+  if (live.some((b) => b.redeemedAt)) return null;
+  const first = live.slice().sort((a, b) => (String(a.createdAt) < String(b.createdAt) ? -1 : 1))[0];
+  if (first.status === "expired") return null;
+  if (first.redeemBy && Date.parse(first.redeemBy) < Date.now()) return null;
+  const rec = (await store.get(`proofkit:${bizUser.id}`)) || {};
+  const pin = await store.get(`staffpin:${bizUser.id}`);
+  const steps = [
+    { id: "baseline", label: "Write down a usual day", detail: "Pick one of your usual open days and about how many customers you get. Your receipt measures visit days against it, and it only works if it is written down before the first visit.", done: !!(bizUser.business.baseline && bizUser.business.baseline.dayLabel) },
+    { id: "pin", label: "Set your staff PIN", detail: "Your team uses this PIN with the creator's code to mark the visit at the counter. That tap is what counts the visit.", done: !!pin },
+    { id: "counter_card", label: "Print the counter card", detail: "The card for the register: it teaches the one question and how a creator's code gets redeemed.", done: !!rec.counterCardPrintedAt },
+    { id: "test_redemption", label: "Run one test redemption", detail: "We mint a test code and you redeem it through the real counter path. It is marked TEST, deleted right after, and never counts in your numbers.", done: !!rec.testRedeemedAt },
+  ];
+  if (steps.every((s) => s.done)) return null;
+  return {
+    bookingId: first.id,
+    bookingTitle: first.title || "",
+    creatorHandle: first.creatorHandle || null,
+    visitWhen: first.visitDate || first.redeemBy || null,
+    steps,
+    doneCount: steps.filter((s) => s.done).length,
+  };
+}
+
 async function businessHome(user) {
   const now = Date.now();
   const plan = planById(user.business.plan) || PLANS[0];
@@ -8641,6 +8932,9 @@ async function businessHome(user) {
     business: { name: user.business.businessName, category: user.business.category, market: user.market, planId: plan.id, planName: user.business.planName, billingStatus: user.business.billingStatus, accessState: businessAccessState(user) },
     plan: { id: plan.id, name: plan.name, priceMonthly: plan.priceMonthly, foundingCredit: plan.foundingCredit, firstMonthPriceMonthly: plan.firstMonthPriceMonthly, minMonths: plan.minMonths, visitsPerMonth: plan.visitsPerMonth },
     marketLive: await isMarketLive(user.market),
+    // Build -91: the first-booking proof kit rides the home
+    // payload (null when no kit is open for this business).
+    proofKit: await proofKitFor(user),
     home: {
       visitsUsed: allowance.used,
       visitsAllowance: allowance.allowance,
@@ -9574,6 +9868,16 @@ async function handleRegister(event) {
     // the completion gate at signup, so the finish moment fires
     // here too (exactly once; the record stamp guards it).
     try { await maybeFireFinishMoment(user, "signup"); } catch (e) { console.error("finish moment (signup) failed", e && e.message); }
+  }
+  if (role === "creator") {
+    // Build -91: this account appearing is the wishlist "claimed"
+    // moment for any business whose private list names the
+    // handle, and a signup that already reads finished + approved
+    // is a roster drop on the spot. Both are best-effort and
+    // fenced inside their helpers (tester/demo records trigger
+    // nothing).
+    try { await alertWishlistBusinesses(user, "claimed"); } catch (e) { /* best-effort */ }
+    try { await recordRosterDrop(user, "signup"); } catch (e) { /* best-effort */ }
   }
   if (role === "business") {
     await logEvent({
@@ -15949,6 +16253,10 @@ async function route(event) {
         // Finish Engine (BUILD -50): crossing the gate fires the
         // one-time finish moment, whatever path finished it.
         try { await maybeFireFinishMoment(user, "profile"); } catch (e) { console.error("finish moment (profile) failed", e && e.message); }
+        // Build -91: the same crossing is the roster drop —
+        // wishlist "ready" alerts and the weekly market digest
+        // both read off this one record.
+        try { await recordRosterDrop(user, "profile"); } catch (e) { console.error("roster drop (profile) failed", e && e.message); }
       }
       if (changes.localAudiencePct) {
         await logEvent({ type: "local_audience_updated", actorId: user.id, actorRole: "creator", subjectId: user.id, market: user.market, data: { from: changes.localAudiencePct[0], to: changes.localAudiencePct[1], source: "Self-reported" } });
@@ -16367,7 +16675,10 @@ async function route(event) {
     // finish-moment backstop ride the same scheduled clock.
     const finishEngine = await runFinishEngineSweep(remOpts);
     await store.set("config:finishEngineSweep", { lastRunAt: nowIso() });
-    return json(200, { ok: true, sweep: summary, offerSweep, profileReminders, finishEngine });
+    // Build -91: the weekly roster digest rides the same clock.
+    const rosterDigest = await runRosterDigestSweep(remOpts.now ? { now: remOpts.now.toISOString() } : {});
+    await store.set("config:rosterDigestSweep", { lastRunAt: nowIso() });
+    return json(200, { ok: true, sweep: summary, offerSweep, profileReminders, finishEngine, rosterDigest });
   }
   // Offer lifecycle sweep: same trigger discipline as compliance
   // (scheduled token or admin session). Drives the selection SLA,
@@ -16379,6 +16690,24 @@ async function route(event) {
     const summary = await runOfferSweep();
     await store.set("config:offerSweep", { lastRunAt: nowIso() });
     return json(200, { ok: true, sweep: summary });
+  }
+  // Roster digest sweep (Build -91): the weekly market email +
+  // Sig queue item for businesses, sent only in a week when at
+  // least one creator finished in the business's own market.
+  // Same trigger discipline as the other sweeps.
+  if (method === "POST" && seg[0] === "admin" && seg[1] === "roster-digest" && seg[2] === "sweep") {
+    const token = process.env.SIGNL_SWEEP_TOKEN;
+    const tokenOk = !!token && (event.headers["x-signl-sweep-token"] || event.headers["X-Signl-Sweep-Token"]) === token;
+    if (!tokenOk && (!user || user.role !== "admin")) return err(403, "Admin only");
+    const b = parseBody(event);
+    const dgOpts = {};
+    if (TEST_MODE && b.now) {
+      const d = new Date(b.now);
+      if (!Number.isNaN(d.getTime())) dgOpts.now = d.toISOString();
+    }
+    const digest = await runRosterDigestSweep(dgOpts);
+    await store.set("config:rosterDigestSweep", { lastRunAt: nowIso() });
+    return json(200, { ok: true, digest });
   }
   if (seg[0] === "admin") {
     if (user.role !== "admin") return err(403, "Admin only");
@@ -17074,6 +17403,10 @@ async function route(event) {
           const mail = approvalEmail(target, band);
           await deliverEmail("approval", target, mail.subject, mail.text, band);
         } catch (e) { /* email is best-effort */ }
+        // Build -91: approving a creator whose profile is already
+        // finished is the moment they become roster-visible — the
+        // roster drop lands here when the finish came first.
+        try { await recordRosterDrop(target, "approval"); } catch (e) { /* best-effort */ }
       }
       return json(200, { user: publicUser(target) });
     }
@@ -19774,6 +20107,131 @@ async function route(event) {
     return json(200, await businessHome(user));
   }
 
+  // ---------- Build -91: business wishlist ----------
+  // The business's own private creator list. Reads and writes are
+  // scoped to the signed-in business's own rows by construction
+  // (the store key carries its id), so no business can ever read
+  // another's list or notes, and no creator surface reads these
+  // records at all.
+  if (seg[0] === "me" && seg[1] === "wishlist") {
+    if (user.role !== "business") return err(403, "Businesses only");
+    if (user.status !== "approved") return err(403, "Your wishlist opens once your business application is approved.");
+    if (method === "GET" && seg.length === 2) {
+      return json(200, { wishlist: await wishlistViewFor(user) });
+    }
+    if (method === "POST" && seg.length === 2) {
+      const b = parseBody(event);
+      let entries = [];
+      if (typeof b.text === "string") entries = parseWishlistText(b.text);
+      else if (Array.isArray(b.entries)) {
+        entries = b.entries.map((e) => ({ handle: wishlistHandleKey(e && e.handle), note: String((e && e.note) || "").trim().slice(0, 300) })).filter((e) => e.handle);
+      } else if (b.handle) {
+        entries = [{ handle: wishlistHandleKey(b.handle), note: String(b.note || "").trim().slice(0, 300) }].filter((e) => e.handle);
+      }
+      if (!entries.length) return err(400, "Paste at least one creator handle, one per line. A note can follow the handle after a comma.");
+      const ts = nowIso();
+      for (const e of entries) {
+        const key = `wishlist:${user.id}:${e.handle}`;
+        const existing = await store.get(key);
+        await store.set(key, {
+          businessId: user.id,
+          handle: e.handle,
+          note: e.note || (existing ? existing.note || "" : ""),
+          createdAt: existing ? existing.createdAt : ts,
+          updatedAt: ts,
+          claimAlertedAt: existing ? existing.claimAlertedAt || null : null,
+          readyAlertedAt: existing ? existing.readyAlertedAt || null : null,
+        });
+      }
+      await logEvent({ type: "wishlist_imported", actorId: user.id, actorRole: "business", subjectId: user.id, market: user.market, data: { count: entries.length } });
+      return json(200, { wishlist: await wishlistViewFor(user) });
+    }
+    if (method === "DELETE" && seg.length === 3) {
+      const handle = wishlistHandleKey(decodeURIComponent(seg[2]));
+      if (handle) await store.del(`wishlist:${user.id}:${handle}`);
+      return json(200, { wishlist: await wishlistViewFor(user) });
+    }
+    return err(405, "Method not allowed");
+  }
+
+  // ---------- Build -91: first-booking proof kit ----------
+  if (seg[0] === "me" && seg[1] === "proof-kit") {
+    if (user.role !== "business") return err(403, "Businesses only");
+    if (method === "GET" && seg.length === 2) {
+      return json(200, { proofKit: await proofKitFor(user) });
+    }
+    if (method === "POST" && seg.length === 3 && seg[2] === "printed") {
+      const rec = (await store.get(`proofkit:${user.id}`)) || {};
+      if (!rec.counterCardPrintedAt) {
+        rec.counterCardPrintedAt = nowIso();
+        await store.set(`proofkit:${user.id}`, rec);
+        await logEvent({ type: "proof_kit_card_printed", actorId: user.id, actorRole: "business", subjectId: user.id, market: user.market, data: {} });
+      }
+      return json(200, { ok: true, proofKit: await proofKitFor(user) });
+    }
+    if (method === "POST" && seg.length === 3 && seg[2] === "test-redeem") {
+      const rec = (await store.get(`proofkit:${user.id}`)) || {};
+      if (rec.testRedeemedAt) return json(200, { ok: true, alreadyDone: true, proofKit: await proofKitFor(user) });
+      const kit = await proofKitFor(user);
+      if (!kit) return err(409, "The test redemption opens with the proof kit, when your first booking is confirmed and no visit has happened yet.");
+      // Mint a test booking with a real code in the real code
+      // index, then redeem it through the exact counter path:
+      // index lookup, burned check, performCounterRedeem. The
+      // booking is flagged TEST (the redeem notifies nobody) and
+      // deleted with its code the moment the path completes, so
+      // it never enters counted totals, the Receipt, or any list.
+      const code = await genCode();
+      const ts = nowIso();
+      const booking = {
+        id: crypto.randomUUID(),
+        businessId: user.id,
+        businessName: user.business.businessName,
+        market: user.market,
+        category: user.business.category,
+        creatorId: null,
+        creatorName: "Test redemption",
+        creatorHandle: null,
+        offerId: null,
+        kind: "comp",
+        title: "Proof kit test redemption",
+        whatComped: "Test only. Not a real visit.",
+        dollarCap: 0,
+        code,
+        codeStatus: "issued",
+        status: "booked",
+        test: true,
+        createdAt: ts,
+        updatedAt: ts,
+      };
+      await store.set(`booking:${booking.id}`, booking);
+      await store.set(`code:${code}`, { bookingId: booking.id });
+      const idx = await store.get(`code:${code}`);
+      const liveBooking = idx ? await store.get(`booking:${idx.bookingId}`) : null;
+      if (!liveBooking) {
+        await store.del(`booking:${booking.id}`);
+        await store.del(`code:${code}`);
+        return err(500, "The test code could not be read back. Nothing was counted; try again.");
+      }
+      if (liveBooking.codeStatus === "burned" || liveBooking.redeemedAt) {
+        await store.del(`booking:${booking.id}`);
+        await store.del(`code:${code}`);
+        return err(409, "That test code was already redeemed.");
+      }
+      await performCounterRedeem(liveBooking, { id: user.id, role: "business", via: "owner" });
+      const after = await store.get(`booking:${booking.id}`);
+      const proved = !!(after && after.redeemedAt && after.codeStatus === "burned");
+      await store.del(`booking:${booking.id}`);
+      await store.del(`code:${code}`);
+      if (!proved) return err(500, "The test redemption did not complete. Nothing was counted; try again.");
+      rec.testRedeemedAt = nowIso();
+      rec.testCode = code;
+      await store.set(`proofkit:${user.id}`, rec);
+      await logEvent({ type: "proof_kit_test_redeemed", actorId: user.id, actorRole: "business", subjectId: user.id, market: user.market, data: { code, test: true } });
+      return json(200, { ok: true, proofKit: await proofKitFor(user) });
+    }
+    return err(405, "Method not allowed");
+  }
+
   // ---------- bookings and counter ----------
   if (seg[0] === "bookings" && method === "GET" && seg.length === 1) {
     let bookings = await allBookings();
@@ -20924,7 +21382,7 @@ async function route(event) {
       google: { current: g[month] || null, previous: g[prevMonthKey(month)] || null },
       topCreators: whoBrought.slice(0, 3).map((w) => ({ creatorId: w.creatorId, creatorHandle: w.creatorHandle, creatorName: w.creatorName })),
       proofNameOptIn: biz.proofNameOptIn === true,
-    } });
+    }, proofKit: await proofKitFor(user) });
   }
 
   // Proof Card data (Build -34, M7): the creator's own view of
@@ -21380,4 +21838,4 @@ async function route(event) {
 
 // The email builders are exported alongside the router so the verify
 // suites can assert on the exact copy a creator receives.
-module.exports = { route, passwordResetEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, normalizeBriefInput, briefForOffer, validateAssetPacket, assetPacketView, postSeries, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, runPublicPageBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView, musicOpenView, studentOpenView, PLATFORM_PEER_ID, platformThreadId, platformMessageEmail, MESSAGE_TEMPLATES, runFinishEngineSweep, maybeFireFinishMoment, handleFinishEngineReply, finishEngineConfig, normalizeCoupon, couponOf, couponFaceValue, couponSummary, validateDeliverables, deliverablesOf, deliverableLineFor, deliverableStandard, postWindowHours, DELIVERABLE_STANDARDS };
+module.exports = { route, passwordResetEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, normalizeBriefInput, briefForOffer, validateAssetPacket, assetPacketView, postSeries, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, runPublicPageBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView, musicOpenView, studentOpenView, PLATFORM_PEER_ID, platformThreadId, platformMessageEmail, MESSAGE_TEMPLATES, runFinishEngineSweep, maybeFireFinishMoment, handleFinishEngineReply, finishEngineConfig, recordRosterDrop, runRosterDigestSweep, normalizeCoupon, couponOf, couponFaceValue, couponSummary, validateDeliverables, deliverablesOf, deliverableLineFor, deliverableStandard, postWindowHours, DELIVERABLE_STANDARDS };
