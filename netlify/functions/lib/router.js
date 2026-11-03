@@ -24,6 +24,7 @@ const { normalizeAudienceMarkets, audienceShareInMarket, isListedInMarket, liste
 const igPrefill = require("./ig-prefill");
 const recruiters = require("./recruiters");
 const pilots = require("./pilots");
+const notifyLib = require("./notify");
 const ZIP_CENTROIDS = require("./zip-centroids.json");
 
 // Staff recruiters (Build -70): the module reads its cross-cutting
@@ -717,6 +718,25 @@ async function allApplications() {
 async function notifyUser(userId, kind, text, data = {}) {
   const rec = { id: crypto.randomUUID(), userId, kind, text, data, createdAt: nowIso(), readAt: null };
   await store.set(`note:${userId}:${rec.id}`, rec);
+  // Build -87: the clock kinds also ride the transactional rail
+  // (SMS + transactional email, per-type prefs, tester-fenced).
+  // Best-effort: the in-app note above is the guaranteed record.
+  const RAIL_KIND = { offer_received: "creator_offer_new", application_selected: "creator_booked", application_received: "business_applications_waiting" };
+  if (RAIL_KIND[kind]) {
+    try {
+      const payload = { ...(data || {}) };
+      if (data && data.offerId) {
+        const offer = await store.get(`offer:${data.offerId}`);
+        if (offer) { payload.offerTitle = offer.title; payload.businessName = offer.businessName; }
+      }
+      if (kind === "application_received" && data && data.applicationId) {
+        const app = await store.get(`application:${data.applicationId}`);
+        // applicant name is in the note text's stack snapshot; keep generic if absent
+        if (app && app.snapshot && app.snapshot.name) payload.creatorName = app.snapshot.name;
+      }
+      await notifyLib.notifyById(userId, RAIL_KIND[kind], payload);
+    } catch (e) { /* rail is best-effort */ }
+  }
   return rec;
 }
 
@@ -761,6 +781,12 @@ async function notifyMilestone(userId, kind, noteText, subject, mailText, data =
   try {
     const u = await store.get(`user:${userId}`);
     if (u && u.email && notifyEmailAllowed(u, kind)) await deliverEmail(kind, u, subject, mailText, null);
+    // Build -87 rail: the two clock milestones with a milestone
+    // email also fire the transactional rail (per-type prefs).
+    const RAIL_MILESTONE = { clock_started: "post_clock_started", paid_booking_received: "creator_booked" };
+    if (u && RAIL_MILESTONE[kind]) {
+      await notifyLib.notify(u, RAIL_MILESTONE[kind], { ...(data || {}), businessName: (data && data.businessName) || undefined, offerTitle: (data && (data.offerTitle || data.title)) || undefined });
+    }
   } catch (e) { /* best-effort; the in-app note is the guaranteed record */ }
 }
 
@@ -16094,14 +16120,24 @@ async function route(event) {
   // and always sends.
   if (method === "PATCH" && seg[0] === "me" && seg[1] === "notifications") {
     const b = parseBody(event);
-    user.notifyPrefs = {
-      emailActivity: b.emailActivity !== false,
-      emailMessages: b.emailMessages !== false,
-      emailReminders: b.emailReminders !== false,
-    };
+    // Merge, never wipe (Build -87): the Build -47 email switches,
+    // the Build -87 per-type clock switches (default ON), and the
+    // SMS phone all live on this record; a save that only carries
+    // one group must not clear the others.
+    const prev = user.notifyPrefs || {};
+    const next = { ...prev };
+    if ("emailActivity" in b) next.emailActivity = b.emailActivity !== false;
+    if ("emailMessages" in b) next.emailMessages = b.emailMessages !== false;
+    if ("emailReminders" in b) next.emailReminders = b.emailReminders !== false;
+    if (!("emailActivity" in next)) next.emailActivity = prev.emailActivity !== false;
+    if (!("emailMessages" in next)) next.emailMessages = prev.emailMessages !== false;
+    if (!("emailReminders" in next)) next.emailReminders = prev.emailReminders !== false;
+    for (const k of notifyLib.PREF_KEYS) if (typeof b[k] === "boolean") next[k] = b[k];
+    user.notifyPrefs = next;
+    if (typeof b.phone === "string") user.phone = b.phone.trim().slice(0, 40);
     user.updatedAt = nowIso();
     await store.set(`user:${user.id}`, user);
-    return json(200, { ok: true, notifyPrefs: user.notifyPrefs });
+    return json(200, { ok: true, notifyPrefs: user.notifyPrefs, phone: user.phone || "" });
   }
 
   // ---------- staff redemption settings (owner) ----------
@@ -16178,6 +16214,29 @@ async function route(event) {
   // netlify/functions/compliance-sweep.mjs POSTs here on a schedule
   // with the x-signl-sweep-token header when SIGNL_SWEEP_TOKEN is
   // set. Without the env var, only an admin session can trigger it.
+  // ---------- Build -87: notification rail sweep + outbox ----------
+  // Same auth discipline as the compliance sweep: the scheduled
+  // function (netlify/functions/notify-sweep.mjs) POSTs with the
+  // x-signl-sweep-token header when SIGNL_SWEEP_TOKEN is set;
+  // without a matching token, only an admin session can run it.
+  // A `now` in the body is honored ONLY in TEST_MODE.
+  if (method === "POST" && seg[0] === "admin" && seg[1] === "notify" && seg[2] === "sweep") {
+    const token = process.env.SIGNL_SWEEP_TOKEN;
+    const tokenOk = !!token && (event.headers["x-signl-sweep-token"] || event.headers["X-Signl-Sweep-Token"]) === token;
+    if (!tokenOk && (!user || user.role !== "admin")) return err(403, "Admin only");
+    const b = parseBody(event);
+    const opts = {};
+    if (TEST_MODE && b.now) { const d = new Date(b.now); if (!Number.isNaN(d.getTime())) opts.now = d; }
+    const sweep = await notifyLib.runPostClockSweep(opts);
+    await store.set("config:notifySweep", { lastRunAt: nowIso() });
+    return json(200, { ok: true, sweep, providers: notifyLib.providerStatus() });
+  }
+  if (method === "GET" && seg[0] === "admin" && seg[1] === "notify" && seg[2] === "outbox") {
+    if (!user || user.role !== "admin") return err(403, "Admin only");
+    const outbox = await notifyLib.listOutbox(parseInt((event.queryStringParameters || {}).limit, 10) || 200);
+    return json(200, { ok: true, providers: notifyLib.providerStatus(), outbox });
+  }
+
   if (method === "POST" && seg[0] === "admin" && seg[1] === "compliance" && seg[2] === "sweep") {
     const token = process.env.SIGNL_SWEEP_TOKEN;
     const tokenOk = !!token && (event.headers["x-signl-sweep-token"] || event.headers["X-Signl-Sweep-Token"]) === token;
@@ -20023,6 +20082,7 @@ async function route(event) {
       windowEndsAt: null,
     };
     await store.set(`license:${rec.id}`, rec);
+    try { await notifyLib.notifyById(rec.creatorId, "licence_waiting_creator", { businessName: rec.businessName, feeText: `$${rec.fee}` }); } catch (e) { /* best-effort */ }
     await logEvent({ type: "license_requested", actorId: user.id, actorRole: "business", subjectId: rec.id, market: booking.market || user.market, data: { postId: post.id, bookingId: post.bookingId, creatorId: post.creatorId, fee: rec.fee, businessTotal: rec.businessTotal, creatorNet: rec.creatorNet } });
     try {
       const threadId = [user.id, post.creatorId].sort().join("__");
@@ -20076,6 +20136,7 @@ async function route(event) {
         post.license = { requestId: rec.id, fee: rec.fee, grantedAt: ts, windowEndsAt: rec.windowEndsAt, status: "granted" };
         await store.set(`post:${post.id}`, post);
       }
+      try { await notifyLib.notifyById(rec.businessId, "business_licence_waiting", { detail: `Your licence request was approved: you can repost the post and run it as an ad for 90 days, through ${rec.windowEndsAt ? rec.windowEndsAt.slice(0, 10) : ""}.` }); } catch (e) { /* best-effort */ }
       await logEvent({ type: "license_granted", actorId: user.id, actorRole: "creator", subjectId: rec.id, market: user.market, data: { postId: rec.postId, bookingId: rec.bookingId, businessId: rec.businessId, fee: rec.fee, creatorNet: rec.creatorNet, windowEndsAt: rec.windowEndsAt } });
       try {
         const threadId = [rec.businessId, user.id].sort().join("__");
@@ -20095,6 +20156,7 @@ async function route(event) {
     rec.status = "declined";
     rec.escrowState = "refunded";
     await store.set(`license:${rec.id}`, rec);
+    try { await notifyLib.notifyById(rec.businessId, "business_licence_waiting", { detail: "Your licence request was declined, so the post stays native sharing only and nothing was charged." }); } catch (e) { /* best-effort */ }
     await logEvent({ type: "license_declined", actorId: user.id, actorRole: "creator", subjectId: rec.id, market: user.market, data: { postId: rec.postId, bookingId: rec.bookingId, businessId: rec.businessId, fee: rec.fee } });
     try {
       const threadId = [rec.businessId, user.id].sort().join("__");

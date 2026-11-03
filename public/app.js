@@ -2931,6 +2931,15 @@ function notificationPrefsHtml(u) {
     <label class="tgl-row" style="overflow:hidden;margin:8px 0"><input type="checkbox" class="sw" id="np-activity"${on(p.emailActivity)}><span>Activity: offers, applications, bookings and posts</span></label>
     <label class="tgl-row" style="overflow:hidden;margin:8px 0"><input type="checkbox" class="sw" id="np-messages"${on(p.emailMessages)}><span>New messages</span></label>
     <label class="tgl-row" style="overflow:hidden;margin:8px 0"><input type="checkbox" class="sw" id="np-reminders"${on(p.emailReminders)}><span>Reminders and deadlines</span></label>
+    <h4 style="margin:16px 0 4px">Text + email alerts for time-sensitive updates</h4>
+    <p class="small muted">These ride text message and email so a clock never depends on you opening the app. Add your mobile number to get the texts; leave a switch off to stop that one kind only.</p>
+    <div class="field"><label>Mobile number for text alerts</label><input id="np-phone" type="tel" autocomplete="tel" value="${esc(u.phone || "")}" placeholder="+1 555 123 4567"></div>
+    <label class="tgl-row" style="overflow:hidden;margin:8px 0"><input type="checkbox" class="sw" id="np-offers"${on(p.offers)}><span>New offers and early-access windows</span></label>
+    <label class="tgl-row" style="overflow:hidden;margin:8px 0"><input type="checkbox" class="sw" id="np-bookings"${on(p.bookings)}><span>Picked and booked</span></label>
+    <label class="tgl-row" style="overflow:hidden;margin:8px 0"><input type="checkbox" class="sw" id="np-postclock"${on(p.postClock)}><span>Post clock: started, and about 12 hours left</span></label>
+    <label class="tgl-row" style="overflow:hidden;margin:8px 0"><input type="checkbox" class="sw" id="np-licences"${on(p.licences)}><span>Licence requests waiting</span></label>
+    <label class="tgl-row" style="overflow:hidden;margin:8px 0"><input type="checkbox" class="sw" id="np-applications"${on(p.applications)}><span>Applications waiting</span></label>
+    <label class="tgl-row" style="overflow:hidden;margin:8px 0"><input type="checkbox" class="sw" id="np-roster"${on(p.roster)}><span>New creators in my market (roster drops)</span></label>
     <div style="margin-top:10px"><button class="btn" onclick="saveNotificationPrefs()">Save notifications</button> <span id="np-ok" class="saved"></span></div>
   </div>`;
 }
@@ -2942,8 +2951,15 @@ async function saveNotificationPrefs() {
       emailActivity: !!document.getElementById("np-activity").checked,
       emailMessages: !!document.getElementById("np-messages").checked,
       emailReminders: !!document.getElementById("np-reminders").checked,
+      offers: !!document.getElementById("np-offers").checked,
+      bookings: !!document.getElementById("np-bookings").checked,
+      postClock: !!document.getElementById("np-postclock").checked,
+      licences: !!document.getElementById("np-licences").checked,
+      applications: !!document.getElementById("np-applications").checked,
+      roster: !!document.getElementById("np-roster").checked,
+      phone: (document.getElementById("np-phone") || {}).value || "",
     });
-    if (state.user) state.user.notifyPrefs = data.notifyPrefs;
+    if (state.user) { state.user.notifyPrefs = data.notifyPrefs; if (typeof data.phone === "string") state.user.phone = data.phone; }
     if (ok) ok.textContent = "Saved.";
   } catch (err) {
     if (ok) ok.textContent = err.message;
@@ -7182,6 +7198,32 @@ async function doQuickClaim(e) {
 }
 
 // ---------- Done: you're on the roster ----------
+// ---------- PWA install (Build -87, audit Finding 11) ----------
+// Minimal service worker for installability; the install prompt
+// itself is offered once, on the claim DONE screen, dismissible
+// and remembered in this browser. It never blocks any flow.
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => { navigator.serviceWorker.register("/sw.js").catch(() => {}); });
+}
+let signlInstallPromptEvent = null;
+window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); signlInstallPromptEvent = e; });
+function signlInstallDismissed() { try { return localStorage.getItem("signl_install_dismissed") === "1"; } catch (e) { return false; } }
+function dismissSignlInstall() { try { localStorage.setItem("signl_install_dismissed", "1"); } catch (e) {} const b = document.getElementById("signl-install-banner"); if (b) b.remove(); return false; }
+async function promptSignlInstall() {
+  if (signlInstallPromptEvent) { try { await signlInstallPromptEvent.prompt(); } catch (e) {} signlInstallPromptEvent = null; }
+  dismissSignlInstall();
+  return false;
+}
+function signlInstallBannerHtml() {
+  if (signlInstallDismissed()) return "";
+  return `<div class="panel" id="signl-install-banner" style="margin-top:14px;text-align:left">
+    <strong>Add SIGNL to your home screen</strong>
+    <p class="small muted" style="margin:6px 0 10px">One tap to open SIGNL, right where your other apps live. Offers and post clocks move fast; this keeps them one tap away.</p>
+    <button class="btn" type="button" onclick="return promptSignlInstall()">Add SIGNL</button>
+    <a href="#" class="small" style="margin-left:10px" onclick="return dismissSignlInstall()">Not now</a>
+  </div>`;
+}
+
 function renderClaimDone() {
   const done = state.claimDone || { firstName: "", total: 0, complete: false, under: false };
   const line2 = done.under
@@ -7198,6 +7240,7 @@ function renderClaimDone() {
       <p class="muted" style="margin:0 0 18px">${line2}</p>
       <button class="btn" type="button" style="width:100%" onclick="return claimGoProfile()">${T("Add your rates and best work", "Agrega tus tarifas y tu mejor trabajo")}</button>
       <p class="small muted" style="margin:12px 0 0">${T("or just close this. We'll email you.", "o cierra esto. Te escribiremos por correo.")} <a href="#" onclick="return claimGoDashboard()">${T("Open my dashboard", "Abrir mi panel")}</a></p>
+      ${signlInstallBannerHtml()}
     </div>
   </section>`;
 }
