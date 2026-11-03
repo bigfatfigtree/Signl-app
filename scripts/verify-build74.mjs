@@ -231,7 +231,7 @@ console.log("== Source checks ==");
   const routerJs = fs.readFileSync(path.join(root, "netlify/functions/lib/router.js"), "utf8");
   const buildJs = fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8");
   const pkg = fs.readFileSync(path.join(root, "package.json"), "utf8");
-  check("stamp is 2026.11.03-115", buildJs.includes('BUILD_ID = "2026.11.03-115"'));
+  check("stamp is 2026.11.03-116", buildJs.includes('BUILD_ID = "2026.11.03-116"'));
   check("sample route exists and is fenced by demoShowcaseVisibleTo", routerJs.includes('seg[1] === "sample-results"') && routerJs.includes("function sampleResultsFor(viewer)") && routerJs.includes("if (!demoShowcaseVisibleTo(viewer)) return null;"));
   check("sample builder stores nothing", !/store\.set/.test(routerJs.slice(routerJs.indexOf("function sampleResultsFor"), routerJs.indexOf("function sampleResultsFor") + 2600)));
   check("demo loader reads the shipped demo assets", routerJs.includes("/assets/demo-creators/${spec.handle}-1.jpg"));

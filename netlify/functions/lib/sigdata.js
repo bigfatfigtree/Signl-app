@@ -105,6 +105,32 @@ function buildAdminFacts(d) {
   }
   const byMarket = [...marketMap.values()].sort((a, b) => b.creators - a.creators || b.businesses - a.businesses);
 
+  // Build -116: per-market reach — the SAME live totals the
+  // Markets cards print. Approved, non-tester creators (the
+  // realCreators set above already drops testers) counted in
+  // EVERY market they are listed in, each carrying their full
+  // self-reported stacked total. Only computed when the router
+  // passes the listing + audience helpers in; older callers keep
+  // an empty list and the reach answer stays silent.
+  const marketReach = [];
+  if (typeof d.listedMarketsFor === "function" && typeof d.audienceTotalOf === "function") {
+    const reachMap = new Map();
+    for (const u of realCreators) {
+      if (u.status !== "approved") continue;
+      let total = 0;
+      try { total = d.audienceTotalOf(u.creator || {}) || 0; } catch (e) { total = 0; }
+      let listed = [];
+      try { listed = d.listedMarketsFor(u) || []; } catch (e) { listed = []; }
+      for (const e of listed) {
+        const r = reachMap.get(e.market) || { market: e.market, creators: 0, combinedFollowers: 0 };
+        r.creators += 1;
+        r.combinedFollowers += total;
+        reachMap.set(e.market, r);
+      }
+    }
+    marketReach.push(...[...reachMap.values()].sort((a, b) => b.combinedFollowers - a.combinedFollowers || b.creators - a.creators || (a.market < b.market ? -1 : 1)));
+  }
+
   const tierMap = new Map();
   for (const u of approvedCreators) {
     const t = (u.creator && u.creator.tierBand) || "No tier yet";
@@ -184,7 +210,7 @@ function buildAdminFacts(d) {
       total: realCreators.length, records: creators.length, testers: creators.length - realCreators.length,
       approved: cs.approved, pending: cs.pending, rejected: cs.rejected, other: cs.other,
       complete, approvedIncomplete: cs.approved - complete,
-      byMarket, byTier, claimsToday, signups7d, recent: recentCreators,
+      byMarket, byTier, marketReach, claimsToday, signups7d, recent: recentCreators,
     },
     businesses: {
       total: realBusinesses.length, records: businesses.length, testers: businesses.length - realBusinesses.length,
@@ -530,6 +556,7 @@ function factsLines(role, f) {
     const lines = [];
     lines.push(`Live platform counts right now, computed from the same records Admin shows (tester and demo records are excluded from every roster count): ${fmt(c.total)} ${plural(c.total, "creator")} in total: ${fmt(c.approved)} approved, ${fmt(c.pending)} pending, ${fmt(c.rejected)} rejected. Of the approved creators, ${fmt(c.complete)} have finished profiles, and finished profiles are the roster businesses can see; ${fmt(c.approvedIncomplete)} approved creators have not finished yet.`);
     if (c.byMarket.length) lines.push(`Creators by market (total / approved / finished): ${c.byMarket.slice(0, 8).map((m) => `${m.market} ${m.creators}/${m.approved}/${m.complete}`).join("; ")}${c.byMarket.length > 8 ? `; plus ${c.byMarket.length - 8} more markets` : ""}.`);
+    if (c.marketReach && c.marketReach.length) lines.push(`Combined followers by market (approved creators, each creator's own reported stacked total, counted in every market they are listed in): ${c.marketReach.slice(0, 8).map((m) => `${m.market}: ${fmt(m.combinedFollowers)} combined followers across ${fmt(m.creators)} listed ${plural(m.creators, "creator")}`).join("; ")}.`);
     if (c.byTier.length) lines.push(`Approved creators by tier: ${c.byTier.map((t) => `${t.tier} ${t.count}`).join(", ")}.`);
     lines.push(`Businesses: ${fmt(b.total)} in total: ${fmt(b.approved)} approved (${fmt(b.active)} active, ${fmt(b.founding)} on the founding list waiting for activation), ${fmt(b.pending)} pending. Businesses by plan: ${b.byPlan.length ? b.byPlan.map((p) => `${p.plan} ${p.count}`).join(", ") : "none yet"}. Creator sign-ups: ${fmt(c.claimsToday)} today, ${fmt(c.signups7d)} in the last 7 days.`);
     lines.push(`Offers: ${fmt(f.offers.total)} in total: ${fmt(f.offers.open)} open, ${fmt(f.offers.draft)} drafts, ${fmt(f.offers.filled)} filled, ${fmt(f.offers.closed)} closed. Visits: ${fmt(f.visits.bookings)} bookings, ${fmt(f.visits.completed)} completed, ${fmt(f.visits.upcoming)} booked and coming up, ${fmt(f.visits.postsLive)} posts live, ${fmt(f.visits.awaitingPost)} visits waiting on a post, ${fmt(f.visits.overduePosts)} posts overdue (that overdue count is the compliance queue).`);
@@ -871,6 +898,27 @@ function answerAdmin(f, q, t) {
   {
     const tierName = hasWord(t, "neighbors") ? "Neighbors" : hasWord(t, "locals") ? "Locals" : hasWord(t, "headliners") ? "Headliners" : null;
     if (tierName && (countAsk || hasWord(t, "tier", "tiers"))) { const r = c.byTier.find((x) => x.tier === tierName); return `${tierName}: ${fmt(r ? r.count : 0)} approved ${plural(r ? r.count : 0, "creator")}, out of ${fmt(c.approved)} approved creators. Tiers come from stacked audience across platforms.`; }
+  }
+
+  // Combined reach by market (Build -116): the same live
+  // totals the Markets cards print — listed creators and the
+  // sum of their own reported stacked audiences. Placed ahead
+  // of the general creators branch so "which market has the
+  // most ..." never gets answered from home-market counts.
+  const reachRows = c.marketReach || [];
+  if (reachRows.length &&
+      (hasWord(t, "combined") || hasPhrase(t, "combined followers") ||
+       (hasWord(t, "reach") && hasWord(t, "market", "markets")) ||
+       (hasWord(t, "market", "markets") && hasWord(t, "most", "biggest", "largest", "leading", "top")))) {
+    if (market) {
+      const rr = reachRows.find((m) => m.market.toLowerCase() === market.toLowerCase());
+      if (rr) return linked(`${market} has ${fmt(rr.creators)} listed ${plural(rr.creators, "creator")} carrying ${fmt(rr.combinedFollowers)} combined followers (as reported by creators). A creator counts in every market they are listed in.`, "Open Markets", "admin-markets");
+    }
+    const byReach = [...reachRows].sort((a, b) => b.combinedFollowers - a.combinedFollowers || b.creators - a.creators);
+    const byCreators = [...reachRows].sort((a, b) => b.creators - a.creators || b.combinedFollowers - a.combinedFollowers);
+    const topR = byReach[0], topC = byCreators[0];
+    if (topR.market === topC.market) return linked(`${topR.market} leads both ways: ${fmt(topR.creators)} listed ${plural(topR.creators, "creator")} and ${fmt(topR.combinedFollowers)} combined followers (as reported by creators). A creator counts in every market they are listed in, with their full stacked total in each.`, "Open Markets", "admin-markets");
+    return linked(`Most listed creators: ${topC.market} with ${fmt(topC.creators)}. Most combined reach: ${topR.market} with ${fmt(topR.combinedFollowers)} combined followers (as reported by creators). A creator counts in every market they are listed in, with their full stacked total in each.`, "Open Markets", "admin-markets");
   }
 
   // Creators (Jeff's question lands here)

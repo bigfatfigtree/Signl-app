@@ -10249,6 +10249,10 @@ async function buildSigFacts(user, full) {
       users, offers, bookings, posts, partners, marketFlags: flags, dealFacts, territoryConflicts, londonRace, teamByPartner,
       marketNames: MARKETS.map((m) => m.name),
       isTester, profileCompleteOf, businessAccessState,
+      // Build -116: the Markets cards' reach totals and the
+      // Admin Sig reach answer read the SAME live math (listed
+      // markets x stacked totals), never a second source.
+      listedMarketsFor, audienceTotalOf,
       planNameOf: (id) => { const p = id ? planById(id) : null; return p ? p.name : "No plan picked"; },
       now: Date.now(),
     });
@@ -19521,6 +19525,10 @@ async function route(event) {
           pub.universityUnverified = u.universityUnverified === true || !!(u.creator && u.creator.universityUnverified === true);
           pub.campusBadge = campusBadgeFor(u);
           if (pub.creator) pub.creator = { ...pub.creator, university: pub.university, universityStatus: pub.universityStatus, universityUnverified: pub.universityUnverified, primaryPlatform: primaryPlatformOf(pub.creator), primaryPlatformLabel: primaryPlatformLabel(primaryPlatformOf(pub.creator)), primaryProfileUrl: primaryProfileOf(pub.creator).url };
+          // Build -116: the review deck reads its stacked total +
+          // per-platform breakdown from the same audienceView
+          // every profile surface reads (never a second math).
+          if (pub.creator) pub.creator.audience = audienceView(u.creator);
           pub.foundingPriority = approvedRank.get(u.id) || null;
           pub.queuePosition = pendingRank.get(u.id) || null;
           pub.momentum = momentum.summaryFor(u);
@@ -19580,6 +19588,66 @@ async function route(event) {
       };
       return json(200, { pending: pending.map(attach), decided: decided.map(attach), summary });
     }
+    // Find a user (Build -116, Jeff, 2026-11-03): servicing an
+    // account needs ANY record, not just pending applications.
+    // Server-side search over the live records on the identity
+    // fields only (display name, business name, @handle, email),
+    // with an optional market filter that follows the listing
+    // rules: a creator matches a market they are LISTED in
+    // (Build -63), everyone else matches their filed market. A
+    // query under two characters answers with no rows on
+    // purpose: this endpoint never dumps the user base.
+    if (method === "GET" && seg[1] === "users" && seg[2] === "search") {
+      const qs = event.queryStringParameters || {};
+      const q = String(qs.q || "").trim().toLowerCase();
+      const handleQ = q.replace(/^@+/, "");
+      let marketWanted = null;
+      if (qs.market) {
+        const mm = marketByName(String(qs.market));
+        if (!mm) return err(400, "That is not one of the SIGNL markets.");
+        marketWanted = mm.name;
+      }
+      if (q.length < 2) return json(200, { users: [], total: 0, needsQuery: true });
+      const all = await allUsers();
+      const { approvedRank, pendingRank } = creatorRanks(all);
+      const matches = [];
+      for (const u of all) {
+        if (!u || u.role === "admin") continue;
+        const handle = u.creator && u.creator.handle ? String(u.creator.handle).toLowerCase() : "";
+        const bizName = u.business && u.business.businessName ? String(u.business.businessName).toLowerCase() : "";
+        const nameHit = String(u.name || "").toLowerCase().includes(q) || bizName.includes(q);
+        const handleHit = !!handle && (handle.includes(handleQ) || handle.includes(q));
+        const emailHit = String(u.email || "").toLowerCase().includes(q);
+        if (!nameHit && !handleHit && !emailHit) continue;
+        if (marketWanted) {
+          const inMarket = u.role === "creator" ? isListedInMarket(u, marketWanted) : normalizeMarketName(u.market || "") === marketWanted;
+          if (!inMarket) continue;
+        }
+        const exact = (handle && handle === handleQ) || String(u.email || "").toLowerCase() === q ? 0 : 1;
+        matches.push({ u, exact });
+      }
+      matches.sort((a, b) => a.exact - b.exact
+        || (a.u.status === "pending" ? 0 : 1) - (b.u.status === "pending" ? 0 : 1)
+        || String(a.u.name || "").localeCompare(String(b.u.name || "")));
+      const total = matches.length;
+      const users = matches.slice(0, 25).map(({ u }) => {
+        const pub = publicUser(u);
+        pub.partnerId = u.partnerId || null;
+        pub.partnerName = u.partnerId ? partnerNameOf(u.partnerId) : "";
+        if (u.role === "creator") {
+          if (pub.creator) pub.creator = { ...pub.creator, primaryPlatform: primaryPlatformOf(pub.creator), primaryPlatformLabel: primaryPlatformLabel(primaryPlatformOf(pub.creator)), primaryProfileUrl: primaryProfileOf(pub.creator).url };
+          if (pub.creator) pub.creator.audience = audienceView(u.creator);
+          pub.foundingPriority = approvedRank.get(u.id) || null;
+          pub.queuePosition = pendingRank.get(u.id) || null;
+        }
+        if (u.role === "business") {
+          pub.preferredLanguage = (u.business && u.business.preferredLanguage) || "en";
+          if (u.advertiserPermit) pub.advertiserPermit = u.advertiserPermit;
+        }
+        return pub;
+      });
+      return json(200, { users, total });
+    }
     // Admin profile view (Jeff, 2026-10-26): the Requests card's
     // "View profile" opens the applicant's full SIGNL profile
     // exactly as a business would see it. The public /c/ page only
@@ -19638,6 +19706,24 @@ async function route(event) {
       const all = await allUsers();
       const flags = await getMarketFlags();
       const benchFlags = await getBenchFlags();
+      // Build -116: per-market reach totals — approved,
+      // non-tester creators counted in EVERY market they are
+      // listed in (the Build -63 listing), each carrying their
+      // full self-reported stacked total. Computed from the live
+      // records on every read, so a creator editing their
+      // profile after approval moves the numbers with no stored
+      // counter anywhere. The home-market counts below stay as
+      // they have always been; these two fields are additive.
+      const reachByMarket = {};
+      for (const u of all) {
+        if (u.role !== "creator" || u.status !== "approved" || isTester(u)) continue;
+        const total = audienceTotalOf(u.creator || {});
+        for (const e of listedMarketsFor(u)) {
+          const r = reachByMarket[e.market] || (reachByMarket[e.market] = { creators: 0, followers: 0 });
+          r.creators += 1;
+          r.followers += total;
+        }
+      }
       const out = MARKETS.map((m) => {
         const inMarket = all.filter((u) => u.market === m.name && u.role !== "admin");
         return {
@@ -19656,6 +19742,11 @@ async function route(event) {
           // Build -88: creator areas inside the market (the
           // London picker values), counted for the board.
           areas: (() => { const counts = {}; for (const u of inMarket) { if (u.role !== "creator" || isTester(u)) continue; const a = creatorAreaOf(u.creator); if (a) counts[a] = (counts[a] || 0) + 1; } return Object.entries(counts).map(([area, creators]) => ({ area, creators })).sort((x, y) => y.creators - x.creators || (x.area < y.area ? -1 : 1)); })(),
+          // Build -116: listed-creators reach for this market
+          // (see reachByMarket above). Labelled in the UI as
+          // combined followers (as reported by creators).
+          creatorsListed: (reachByMarket[m.name] || {}).creators || 0,
+          combinedFollowers: (reachByMarket[m.name] || {}).followers || 0,
         };
       });
       return json(200, { markets: out, testMode: TEST_MODE });

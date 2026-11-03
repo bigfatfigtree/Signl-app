@@ -20834,6 +20834,13 @@ function adminSigItems(apps, marketsData, partnersData) {
     for (const m of marketsData.markets || []) {
       if (m.businessesFounding > 0) items.push({ text: `${m.businessesFounding} approved founding ${m.businessesFounding === 1 ? "business" : "businesses"} in ${m.label} ${m.businessesFounding === 1 ? "is" : "are"} waiting on activation.`, tab: "Markets", btn: "Open Markets" });
     }
+    // Build -116: the reach leader, from the same combined
+    // totals the Markets cards print (never a second source).
+    const reachRows = (marketsData.markets || []).filter((m) => (m.combinedFollowers || 0) > 0);
+    if (reachRows.length) {
+      const top = reachRows.slice().sort((a, b) => (b.combinedFollowers || 0) - (a.combinedFollowers || 0))[0];
+      items.push({ text: `${top.label} carries the most combined reach: ${fmtNum(top.combinedFollowers)} combined followers across ${fmtNum(top.creatorsListed || 0)} listed ${(top.creatorsListed || 0) === 1 ? "creator" : "creators"} (as reported by creators).`, tab: "Markets", btn: "Open Markets" });
+    }
   }
   if (partnersData) {
     const partners = partnersData.partners || [];
@@ -21638,13 +21645,31 @@ async function loadMarkets() {
 // Market ordering (Jeff, 2026-10-28): "Most creators" reorders
 // the rows by creators signed up, most first. The count is the
 // payload's own per-market creator sign-ups: approved plus
-// pending, the two numbers every row already shows. The sort
+// pending, the two numbers every card already shows. The sort
 // is stable: equal counts keep the default order, and no count
 // itself ever changes. Default restores the standard order.
+// Build -116 adds "Most combined followers" (the payload's
+// live reach total) and "Name", plus grouping by country or
+// status; the cards keep every control the table rows carried.
 function setAdminMarketSort(value) {
-  state.adminMarketsSort = value === "creators" ? "creators" : "default";
+  state.adminMarketsSort = ["creators", "followers", "name"].includes(value) ? value : "default";
   renderAdminMarkets();
   return false;
+}
+
+function setAdminMarketGroup(value) {
+  state.adminMarketsGroup = ["country", "status"].includes(value) ? value : "none";
+  renderAdminMarkets();
+  return false;
+}
+
+function adminMarketCardHtml(m) {
+  return `<div class="panel mkt-card">
+    <div class="mkt-card-head"><div><strong class="mkt-name">${esc(m.label)}</strong><br><span class="muted small">${esc(m.country || "United States")}</span></div>${m.live ? `<span class="badge ok">Live</span>` : `<span class="badge info">Founding only</span>`}</div>
+    <div class="mkt-reach"><span class="mkt-reach-num">${fmtNum(m.combinedFollowers || 0)}</span> <span class="muted small">combined followers (as reported by creators), across ${fmtNum(m.creatorsListed || 0)} listed ${m.creatorsListed === 1 ? "creator" : "creators"}</span></div>
+    <p class="mkt-stats"><strong>${m.creatorsApproved}</strong> approved creators &middot; <strong>${m.creatorsApprovedComplete || 0}</strong> complete &middot; <strong>${m.creatorsPending}</strong> pending<br><span class="muted small"><strong>${m.businessesApproved}</strong> approved businesses &middot; ${m.businessesFounding || 0} on the founding list &middot; ${m.businessesActive || 0} active</span></p>
+    <div class="mkt-actions"><button class="btn small-btn ${m.live ? "danger" : ""}" onclick="toggleMarket('${esc(m.name)}', ${m.live ? "false" : "true"})">${m.live ? "Deactivate" : "Activate market"}</button><div class="muted small" style="margin-top:4px">${m.live ? "Back to founding only: no new offers or bookings there." : "Opens publishing and bookings here. Founding businesses still activate separately."}</div>${m.businessesFounding ? `<button class="btn small-btn ghost" style="margin-top:6px" onclick="activateMarketBusinesses('${esc(m.name)}')">Activate founding businesses (${m.businessesFounding})</button>` : ""}<button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleBench('${esc(m.name)}', ${m.benchOpen ? "false" : "true"})">${m.benchOpen ? "Close bench" : "Open bench"}</button><div class="muted small" style="margin-top:4px">Bench: creators seeing each other in this market. ${m.live ? "Open while the market is live." : m.benchOpen ? "Open by override, ahead of launch." : "Opens at launch unless you open it here."}</div></div>
+  </div>`;
 }
 
 function renderAdminMarkets() {
@@ -21652,27 +21677,45 @@ function renderAdminMarkets() {
   const data = state.adminMarkets;
   if (!el || !data) return;
   const sort = state.adminMarketsSort || "default";
+  const group = state.adminMarketsGroup || "none";
   const rows = (data.markets || []).map((m, i) => ({ m, i }));
   if (sort === "creators") {
     const signedUp = (m) => (m.creatorsApproved || 0) + (m.creatorsPending || 0);
     rows.sort((a, b) => signedUp(b.m) - signedUp(a.m) || a.i - b.i);
+  } else if (sort === "followers") {
+    rows.sort((a, b) => (b.m.combinedFollowers || 0) - (a.m.combinedFollowers || 0) || a.i - b.i);
+  } else if (sort === "name") {
+    rows.sort((a, b) => String(a.m.label).localeCompare(String(b.m.label)) || a.i - b.i);
+  }
+  const sortNote = sort === "creators" ? "Ordered by creators signed up, most first."
+    : sort === "followers" ? "Ordered by combined followers, most first."
+    : sort === "name" ? "Ordered by market name."
+    : "Markets in their standard order.";
+  let sections;
+  if (group === "country") {
+    const byCountry = new Map();
+    for (const r of rows) { const k = r.m.country || "United States"; if (!byCountry.has(k)) byCountry.set(k, []); byCountry.get(k).push(r); }
+    sections = [...byCountry.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([title, rs]) => ({ title, rs }));
+  } else if (group === "status") {
+    sections = [
+      { title: "Live", rs: rows.filter((r) => r.m.live) },
+      { title: "Founding only", rs: rows.filter((r) => !r.m.live) },
+    ].filter((s) => s.rs.length);
+  } else {
+    sections = [{ title: "", rs: rows }];
   }
   el.innerHTML = `
       <p class="muted small">A market that is not live shows creators their founding status page only: no offers, no discovery. Activating a market opens publishing and bookings there, but it does NOT activate founding businesses: business activation is a separate admin action, per business or for every founding business in a market. Founding creators keep sign-up-order priority in discovery.</p>
+      <p class="muted small">Combined followers: each approved creator's own reported total across all their platforms, counted in every market they are listed in, so a creator listed in two markets counts toward both.</p>
       ${data.testMode ? `<div class="error-box">TEST MODE is on (SIGNL_TEST_ALLOW_BUSINESS): every market reads live. Never run production this way.</div>` : ""}
       <div class="flex-between" style="margin:10px 0">
-        <span class="muted small">${sort === "creators" ? "Ordered by creators signed up, most first." : "Markets in their standard order."}</span>
-        <label class="small" style="display:flex;align-items:center;gap:6px">Sort <select id="admin-market-sort" onchange="setAdminMarketSort(this.value)"><option value="default"${sort === "default" ? " selected" : ""}>Default</option><option value="creators"${sort === "creators" ? " selected" : ""}>Most creators</option></select></label>
+        <span class="muted small">${sortNote}</span>
+        <span style="display:flex;gap:10px;flex-wrap:wrap">
+          <label class="small" style="display:flex;align-items:center;gap:6px">Sort <select id="admin-market-sort" onchange="setAdminMarketSort(this.value)"><option value="default"${sort === "default" ? " selected" : ""}>Default</option><option value="creators"${sort === "creators" ? " selected" : ""}>Most creators</option><option value="followers"${sort === "followers" ? " selected" : ""}>Most combined followers</option><option value="name"${sort === "name" ? " selected" : ""}>Name A-Z</option></select></label>
+          <label class="small" style="display:flex;align-items:center;gap:6px">Group <select id="admin-market-group" onchange="setAdminMarketGroup(this.value)"><option value="none"${group === "none" ? " selected" : ""}>Ungrouped</option><option value="country"${group === "country" ? " selected" : ""}>By country</option><option value="status"${group === "status" ? " selected" : ""}>By status</option></select></label>
+        </span>
       </div>
-      <div class="table-wrap panel"><table>
-        <tr><th>Market</th><th>Status</th><th>Roster</th><th>Action</th></tr>
-        ${rows.map(({ m }) => `<tr>
-          <td><strong>${esc(m.label)}</strong><br><span class="muted small">${esc(m.country || "United States")}</span></td>
-          <td>${m.live ? `<span class="badge ok">Live</span>` : `<span class="badge info">Founding only</span>`}</td>
-          <td><strong>${m.creatorsApproved}</strong> approved creators &middot; <strong>${m.creatorsApprovedComplete || 0}</strong> complete &middot; <strong>${m.creatorsPending}</strong> pending<br><span class="muted small"><strong>${m.businessesApproved}</strong> approved businesses &middot; ${m.businessesFounding || 0} on the founding list &middot; ${m.businessesActive || 0} active</span></td>
-          <td><button class="btn small-btn ${m.live ? "danger" : ""}" onclick="toggleMarket('${esc(m.name)}', ${m.live ? "false" : "true"})">${m.live ? "Deactivate" : "Activate market"}</button><div class="muted small" style="margin-top:4px">${m.live ? "Back to founding only: no new offers or bookings there." : "Opens publishing and bookings here. Founding businesses still activate separately."}</div>${m.businessesFounding ? `<button class="btn small-btn ghost" style="margin-top:6px" onclick="activateMarketBusinesses('${esc(m.name)}')">Activate founding businesses (${m.businessesFounding})</button>` : ""}<button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleBench('${esc(m.name)}', ${m.benchOpen ? "false" : "true"})">${m.benchOpen ? "Close bench" : "Open bench"}</button><div class="muted small" style="margin-top:4px">Bench: creators seeing each other in this market. ${m.live ? "Open while the market is live." : m.benchOpen ? "Open by override, ahead of launch." : "Opens at launch unless you open it here."}</div></td>
-        </tr>`).join("")}
-      </table></div>`;
+      ${sections.map((s) => `${s.title ? `<h3 style="margin:18px 0 10px">${esc(s.title)}</h3>` : ""}<div class="mkt-grid">${s.rs.map((r) => adminMarketCardHtml(r.m)).join("")}</div>`).join("")}`;
 }
 
 async function toggleBench(market, open) {
@@ -21697,6 +21740,336 @@ async function activateMarketBusinesses(market) {
     alert(`Activated ${data.activatedCount} founding business${data.activatedCount === 1 ? "" : "es"} in ${market}.`);
     loadMarkets();
   } catch (err) { alert(err.message); }
+}
+
+// ---------- Admin: review deck + Find a user (Build -116) ----------
+// Jeff (2026-11-03): approvals happen from his phone, so the
+// queue gains a DECK — one pending application as a big card,
+// thumb-sized Approve / Reject — and the same tab gains FIND A
+// USER, because servicing an account needs any record, not
+// just the queue. The deck walks the SAME pending array, in
+// the SAME order, as the list, and every decision goes through
+// the existing POST /admin/review with all of its server rules
+// (the 500 minimum and its refusal, approval + rejection
+// email, recruiter credit, roster drop). NO UNDO: a decision
+// sends mail and writes credits those endpoints cannot take
+// back, so the deck offers none rather than faking one.
+// Find a user renders the SAME card component with the full
+// servicing row (View account, Send sign-in link, Correct
+// email, Make tester / Remove tester, View profile, Partner
+// attribution); Approve / Reject appear only on results that
+// are genuinely pending applications.
+let adminAppView = null; // "deck" | "list"; null = deck while a queue exists, else list
+let adminDeckNote = "";
+let adminDeckNoteBad = false;
+let adminDeckSession = { decided: 0, approved: 0, rejected: 0 };
+let adminUserSearchState = { q: "", market: "", users: null, total: 0 };
+// Client mirror of the server's minimum-audience rule start
+// (router MIN_AUDIENCE_RULE_SINCE): records created before it
+// are grandfathered and approve normally at any known total.
+const ADMIN_MIN_RULE_SINCE = Date.parse("2026-11-02T01:17:00.000Z");
+
+function adminAppSetView(v) { adminAppView = v; loadApplications(); }
+
+function adminKnownTotal(u) {
+  const a = u && u.creator ? u.creator.audience : null;
+  if (a && typeof a.total === "number") return a.total;
+  return (u && u.creator && typeof u.creator.followerCount === "number") ? u.creator.followerCount : 0;
+}
+// The total at which the server will refuse an approval, or
+// null: a KNOWN stacked total of 1-499 on a record created
+// since the minimum took effect. Mirrors the server check so
+// the card can say so BEFORE the tap, in the server's terms.
+function adminUnderMinTotal(u) {
+  if (!u || u.role !== "creator") return null;
+  const t = Date.parse(u.createdAt || "");
+  if (!Number.isFinite(t) || t < ADMIN_MIN_RULE_SINCE) return null;
+  const total = adminKnownTotal(u);
+  return total > 0 && total < 500 ? total : null;
+}
+
+function adminUserCardFactsHtml(u) {
+  if (u.role === "creator" && u.creator) {
+    const c = u.creator;
+    const aud = c.audience || null;
+    const total = aud ? aud.total : adminKnownTotal(u);
+    const plats = aud && aud.platforms && aud.platforms.length
+      ? aud.platforms.map((p) => `<span class="badge">${esc(p.label)} ${fmtNum(p.count)}</span>`).join(" ")
+      : `<span class="muted small">Platform split not stated</span>`;
+    const handleHtml = c.handle
+      ? (c.primaryProfileUrl
+        ? `<a href="${esc(c.primaryProfileUrl)}" target="_blank" rel="noopener">@${esc(c.handle)}</a>`
+        : `@${esc(c.handle)}`)
+      : "";
+    const photo = c.hasPhoto
+      ? `<img class="admin-card-photo" src="/api/users/${u.id}/photo" alt="" loading="lazy">`
+      : `<span class="admin-card-photo admin-card-mono">${esc((u.name || "?").trim().charAt(0).toUpperCase() || "?")}</span>`;
+    const place = u.status === "pending" && u.queuePosition
+      ? `Queue #${u.queuePosition} in ${esc(marketDisplayName(u.market))}`
+      : u.status === "approved" && u.foundingPriority
+        ? `Founding priority #${u.foundingPriority} in ${esc(marketDisplayName(u.market))}`
+        : esc(marketDisplayName(u.market));
+    const under = adminUnderMinTotal(u);
+    return `<div class="admin-card-head">${photo}
+        <div class="admin-card-title"><strong>${esc(u.name)}</strong> ${handleHtml}
+          <div class="muted small">${place}${u.city ? ` &middot; ${esc(u.city)}` : ""}</div>
+        </div>
+        ${c.tierBand ? `<span class="badge tier">${esc(c.tierBand)}</span>` : ""}
+      </div>
+      <div class="admin-card-total"><span class="admin-card-total-num">${fmtNum(total || 0)}</span> <span class="muted">total followers, all platforms stacked (as reported by the creator)</span></div>
+      <div class="admin-card-plats">${plats}</div>
+      ${under ? `<p class="admin-card-warn"><strong>Under the 500 minimum:</strong> ${fmtNum(under)} total followers. Approving keeps this application pending until their audience reaches 500.</p>` : ""}
+      <div class="admin-card-facts">
+        <span><strong>Local audience:</strong> ${typeof c.localAudiencePct === "number" ? c.localAudiencePct + "%" : "not reported"} <span class="muted">(Self-reported)</span></span>
+        <span><strong>Categories:</strong> ${(c.categories || []).map(esc).join(", ") || "none yet"}</span>
+        <span><strong>Applied:</strong> ${esc(fmtDate(u.createdAt))}</span>
+        <span><strong>Source:</strong> ${esc(u.signupSource || "Direct signup")}${u.referredBy ? ` &middot; Via referral: @${esc(u.referredBy)}` : ""}</span>
+        <span><strong>Email:</strong> ${esc(u.email)}</span>
+      </div>`;
+  }
+  if (u.role === "business" && u.business) {
+    const b = u.business;
+    const state = businessAccessState(u) === "active" ? "Active" : "Founding list";
+    return `<div class="admin-card-head"><span class="admin-card-photo admin-card-mono">${esc((b.businessName || u.name || "?").trim().charAt(0).toUpperCase() || "?")}</span>
+        <div class="admin-card-title"><strong>${esc(b.businessName || u.name)}</strong>
+          <div class="muted small">${esc(marketDisplayName(u.market))}${u.city ? ` &middot; ${esc(u.city)}` : ""}</div>
+        </div>
+        ${b.category ? `<span class="badge">${esc(b.category)}</span>` : ""}
+      </div>
+      <div class="admin-card-facts">
+        <span><strong>Plan:</strong> ${esc(b.planName || "No plan picked")} &middot; ${u.status === "approved" ? state : esc(u.status || "")}</span>
+        <span><strong>Contact:</strong> ${esc(u.name)} &middot; ${esc(u.email)}</span>
+        <span><strong>Applied:</strong> ${esc(fmtDate(u.createdAt))}</span>
+        <span><strong>Source:</strong> ${esc(u.signupSource || "Direct signup")}${u.referredBy ? ` &middot; Via referral: @${esc(u.referredBy)}` : ""}</span>
+      </div>`;
+  }
+  return `<div class="admin-card-head"><span class="admin-card-photo admin-card-mono">${esc((u.name || "?").trim().charAt(0).toUpperCase() || "?")}</span>
+      <div class="admin-card-title"><strong>${esc(u.name)}</strong>
+        <div class="muted small">${esc(u.role || "")} &middot; ${esc(marketDisplayName(u.market || ""))}</div>
+      </div>
+    </div>
+    <div class="admin-card-facts">
+      <span><strong>Email:</strong> ${esc(u.email)}</span>
+      <span><strong>Joined:</strong> ${esc(fmtDate(u.createdAt))}</span>
+    </div>`;
+}
+
+// The full servicing row, shared by the deck's More panel
+// (prefix "deck", whose correct-email editor reuses the list's
+// "ce" ids — deck and list never render the same pending
+// record at once) and by Find-a-user cards (prefix "srch").
+// Partner attribution gets its own prefixed editor here: the
+// list's editor ids belong to the list rows, and a search card
+// can sit on screen next to the same person in the queue.
+function adminCardActionsHtml(u, prefix) {
+  const emailPrefix = prefix === "deck" ? "ce" : prefix;
+  const parts = [];
+  parts.push(`<button class="btn small-btn" onclick="adminViewAccount('${u.id}')">View account</button>`);
+  parts.push(`<button class="btn small-btn ghost" onclick="adminSendSigninLink('${u.id}')">Send sign-in link</button>`);
+  parts.push("<br>" + correctEmailEditorHtml(u, emailPrefix));
+  if (u.role === "creator" || u.role === "business") {
+    parts.push(`<button class="btn small-btn ghost" onclick="toggleCardAttribution('${prefix}', '${u.id}')">${u.partnerId ? `Partner: ${esc(u.partnerName || "set")}` : "Partner attribution"}</button>`);
+    parts.push(`<button class="btn small-btn ghost" onclick="setTester('${u.id}', ${u.tester ? "false" : "true"}, '${u.role}')">${u.tester ? "Remove tester" : "Make tester"}</button>`);
+  }
+  if (u.role === "creator") parts.push(`<button class="btn small-btn ghost" onclick="adminViewCreator('${u.id}')">View profile</button>`);
+  return `<div class="admin-card-actions">${parts.join("")}</div><div id="cardattr-edit-${prefix}-${u.id}"></div>`;
+}
+
+function toggleCardAttribution(prefix, userId) {
+  const host = document.getElementById(`cardattr-edit-${prefix}-${userId}`);
+  if (!host) return;
+  if (host.innerHTML) { host.innerHTML = ""; return; }
+  const src = prefix === "srch" ? (adminUserSearchState.users || []) : (state.adminAppsPend || []);
+  const u = src.find((x) => x.id === userId);
+  if (!u) return;
+  host.innerHTML = `<div class="admin-card-attr">
+    <div class="small" style="margin-bottom:6px">${u.partnerId ? `Attributed to <strong>${esc(u.partnerName || "a partner")}</strong>` : "Not attributed to a partner (direct)"}</div>
+    <div class="field"><label>Attribute to</label><select id="cardattr-partner-${prefix}-${userId}"><option value="">Direct — no partner</option>${(typeof adminPartnerChoices !== "undefined" ? adminPartnerChoices : []).map((p) => `<option value="${p.id}" ${u.partnerId === p.id ? "selected" : ""}>${esc(p.name)} (${esc(p.code)})</option>`).join("")}</select></div>
+    <div class="field"><label>Reason (kept with the change)</label><input id="cardattr-reason-${prefix}-${userId}" type="text" placeholder="Why is this changing?"></div>
+    <button class="btn small-btn" onclick="saveCardAttribution('${prefix}', '${userId}')">Save attribution</button>
+    <p class="small" id="cardattr-note-${prefix}-${userId}"></p></div>`;
+}
+
+async function saveCardAttribution(prefix, userId) {
+  const partnerId = document.getElementById(`cardattr-partner-${prefix}-${userId}`).value;
+  const reason = document.getElementById(`cardattr-reason-${prefix}-${userId}`).value.trim();
+  const note = document.getElementById(`cardattr-note-${prefix}-${userId}`);
+  if (!reason) { note.textContent = "Add the reason first: it is kept with the change."; return; }
+  try {
+    await api("POST", `/admin/users/${userId}/attribute-partner`, { partnerId: partnerId || null, reason });
+    showToast("Saved.");
+    if (prefix === "srch") adminUserSearch(true); else loadApplications();
+  } catch (e) { note.textContent = e.message; }
+}
+
+// ---- The deck ----
+function adminDeckHtml(pend) {
+  if (!pend.length) {
+    return `<div class="panel admin-deck-done">
+      <h3 style="margin-top:0">Queue clear</h3>
+      <p class="muted">Nothing is waiting on a decision.${adminDeckSession.decided ? ` You decided ${adminDeckSession.decided} this session: ${adminDeckSession.approved} approved, ${adminDeckSession.rejected} rejected.` : ""}</p>
+      <button class="btn ghost" onclick="adminAppSetView('list')">See decided applications</button>
+    </div>`;
+  }
+  const u = pend[0];
+  const under = adminUnderMinTotal(u);
+  return `${adminDeckNote ? `<p class="admin-deck-note${adminDeckNoteBad ? " bad" : ""}">${esc(adminDeckNote)}</p>` : ""}
+    <p class="muted small" style="margin:0 0 10px"><strong>${pend.length} left</strong> &middot; ${adminDeckSession.decided} decided this session</p>
+    <div class="panel admin-user-card admin-deck-card">
+      ${adminUserCardFactsHtml(u)}
+      <div class="admin-deck-decide">
+        <button class="btn admin-deck-btn" onclick="adminDeckDecide('${u.id}', 'approve')">Approve</button>
+        <button class="btn ghost admin-deck-btn" onclick="adminDeckToggleReject('${u.id}')">Reject</button>
+      </div>
+      ${under ? `<p class="muted small" style="margin:8px 0 0">Their total is under the 500 minimum, so the server will refuse the approval and keep this application pending.</p>` : ""}
+      <div id="admin-deck-reject"></div>
+      <button class="btn ghost small-btn" style="margin-top:14px" onclick="adminDeckToggleMore()">More actions</button>
+      <div id="admin-deck-actions" style="display:none">${adminCardActionsHtml(u, "deck")}</div>
+    </div>`;
+}
+
+function adminDeckToggleMore() {
+  const host = document.getElementById("admin-deck-actions");
+  if (host) host.style.display = host.style.display === "none" ? "" : "none";
+}
+
+// The list editor's reason set, mirrored for the card (the
+// server validates against the same fixed categories).
+const ADMIN_CARD_REJECT_REASONS = ["Not local enough", "Audience too small for this wave", "Content not a fit", "Market not open yet", "Other"];
+function adminRejectReasonOptionsHtml() {
+  return `<option value="">No reason given</option>${ADMIN_CARD_REJECT_REASONS.map((r) => `<option>${esc(r)}</option>`).join("")}`;
+}
+
+function adminDeckToggleReject(userId) {
+  const host = document.getElementById("admin-deck-reject");
+  if (!host) return;
+  if (host.innerHTML) { host.innerHTML = ""; return; }
+  host.innerHTML = `<div class="admin-deck-rejectbox">
+    <div class="field"><label>Reason (optional, named in their rejection email)</label><select id="admin-deck-rej-reason">${adminRejectReasonOptionsHtml()}</select></div>
+    <button class="btn admin-deck-btn danger" onclick="adminDeckDecide('${userId}', 'reject')">Send rejection</button>
+  </div>`;
+}
+
+async function adminDeckDecide(userId, decision) {
+  const src = (state.adminAppsPend || []).find((x) => x.id === userId);
+  const label = src ? (src.role === "creator" && src.creator && src.creator.handle ? "@" + src.creator.handle : src.name) : "That application";
+  let reason = "";
+  if (decision === "reject") {
+    const sel = document.getElementById("admin-deck-rej-reason");
+    reason = sel ? sel.value : "";
+  }
+  try {
+    await api("POST", "/admin/review", { userId, decision, ...(reason ? { reason } : {}) });
+    adminDeckSession.decided += 1;
+    if (decision === "approve") adminDeckSession.approved += 1; else adminDeckSession.rejected += 1;
+    adminDeckNote = decision === "approve" ? `Approved ${label}.` : `Rejected ${label}.`;
+    adminDeckNoteBad = false;
+  } catch (e) {
+    // The server's own refusal (the under-500 answer lands
+    // here) shows on the deck and the card does not advance.
+    adminDeckNote = e.message;
+    adminDeckNoteBad = true;
+  }
+  loadApplications();
+}
+
+// ---- Find a user ----
+function adminUserSearchPanelHtml() {
+  const s = adminUserSearchState;
+  return `<div class="panel admin-search-panel">
+    <h3 style="margin-top:0">Find a user</h3>
+    <p class="muted small" style="margin:4px 0 10px">Any account, not just applications: name, @handle, or email. Pick a market to narrow it.</p>
+    <div class="admin-search-row">
+      <input id="admin-user-q" type="search" placeholder="Name, @handle, or email" value="${esc(s.q)}" onkeydown="if(event.key==='Enter'){event.preventDefault();adminUserSearch();}">
+      <select id="admin-user-market">
+        <option value="">All markets</option>
+        ${(state.adminMarketNames || []).map((m) => `<option value="${esc(m.name)}" ${s.market === m.name ? "selected" : ""}>${esc(m.label)}</option>`).join("")}
+      </select>
+      <button class="btn" onclick="adminUserSearch()">Search</button>
+    </div>
+    <div id="admin-user-results"></div>
+  </div>`;
+}
+
+function adminUserCardHtml(u) {
+  const statusBadge = u.status === "approved" ? '<span class="badge ok">Approved</span>'
+    : u.status === "pending" ? '<span class="badge warn">Pending application</span>'
+    : u.status === "rejected" ? '<span class="badge bad">Rejected</span>'
+    : `<span class="badge">${esc(u.status || "")}</span>`;
+  return `<div class="panel admin-user-card">
+    <div class="admin-card-status">${statusBadge}${u.tester ? ' <span class="badge info">Tester</span>' : ""}${u.underMinimum ? ' <span class="badge bad">Under the 500 minimum</span>' : ""} <span class="badge">${esc(u.role || "")}</span></div>
+    ${adminUserCardFactsHtml(u)}
+    ${u.status === "pending" ? `<div class="admin-card-decide">
+      <button class="btn" onclick="adminCardApprove('${u.id}')">Approve</button>
+      <button class="btn ghost" onclick="adminCardToggleReject('${u.id}')">Reject</button>
+    </div><div id="cardrej-${u.id}"></div>` : ""}
+    ${adminCardActionsHtml(u, "srch")}
+  </div>`;
+}
+
+async function adminCardApprove(userId) {
+  try {
+    await api("POST", "/admin/review", { userId, decision: "approve" });
+    showToast("Approved.");
+    loadApplications();
+  } catch (e) { alert(e.message); }
+}
+
+function adminCardToggleReject(userId) {
+  const host = document.getElementById(`cardrej-${userId}`);
+  if (!host) return;
+  if (host.innerHTML) { host.innerHTML = ""; return; }
+  host.innerHTML = `<div class="admin-deck-rejectbox">
+    <div class="field"><label>Reason (optional, named in their rejection email)</label><select id="cardrej-reason-${userId}">${adminRejectReasonOptionsHtml()}</select></div>
+    <button class="btn danger" onclick="adminCardConfirmReject('${userId}')">Send rejection</button>
+  </div>`;
+}
+
+async function adminCardConfirmReject(userId) {
+  const sel = document.getElementById(`cardrej-reason-${userId}`);
+  const reason = sel ? sel.value : "";
+  try {
+    await api("POST", "/admin/review", { userId, decision: "reject", ...(reason ? { reason } : {}) });
+    showToast("Rejected.");
+    loadApplications();
+  } catch (e) { alert(e.message); }
+}
+
+function renderAdminUserResults() {
+  const host = document.getElementById("admin-user-results");
+  if (!host) return;
+  const s = adminUserSearchState;
+  if (!s.users) { host.innerHTML = ""; return; }
+  if (!s.users.length) {
+    host.innerHTML = `<p class="muted" style="margin-top:12px">No user matches that. Try another spelling, the @handle, or the email on the account.</p>`;
+    return;
+  }
+  host.innerHTML = `<p class="muted small" style="margin:12px 0 8px">${s.total} ${s.total === 1 ? "match" : "matches"}${s.total > s.users.length ? ` (first ${s.users.length} shown)` : ""}</p>`
+    + s.users.map((u) => adminUserCardHtml(u)).join("");
+}
+
+async function adminUserSearch(keep) {
+  const qEl = document.getElementById("admin-user-q");
+  const mEl = document.getElementById("admin-user-market");
+  const q = keep ? adminUserSearchState.q : (qEl ? qEl.value.trim() : "");
+  const market = keep ? adminUserSearchState.market : (mEl ? mEl.value : "");
+  adminUserSearchState.q = q;
+  adminUserSearchState.market = market || "";
+  if (q.length < 2) {
+    adminUserSearchState.users = null;
+    const host = document.getElementById("admin-user-results");
+    if (host) host.innerHTML = `<p class="muted small" style="margin-top:10px">Type at least two letters of a name, handle, or email.</p>`;
+    return;
+  }
+  try {
+    const data = await api("GET", `/admin/users/search?q=${encodeURIComponent(q)}${market ? `&market=${encodeURIComponent(market)}` : ""}`);
+    adminUserSearchState.users = data.users || [];
+    adminUserSearchState.total = data.total || 0;
+  } catch (e) {
+    adminUserSearchState.users = [];
+    adminUserSearchState.total = 0;
+  }
+  renderAdminUserResults();
 }
 
 // ---------- Admin: Applications (Build -53) ----------
@@ -21791,14 +22164,36 @@ async function loadApplications() {
     const dec = (data.decided || []).filter(adminAppInFilter);
     const filterBanner = adminAppFilter ? `
       <div class="panel sb-filterbar"><span><strong>${adminAppFilter.kind === "market" ? esc(adminAppFilter.label || adminAppFilter.market) : esc(adminAppFilter.place)}</strong> <span class="muted small">${adminAppFilter.kind === "market" ? "applications only" : "sign-ups only — not in a market yet"} &middot; showing ${pend.length + dec.length} of ${(data.pending || []).length + (data.decided || []).length}</span></span><button type="button" class="btn small-btn ghost" onclick="return adminAppClearFilter()">Show all applications</button></div>` : "";
-    el.innerHTML = `
-      <div id="admin-refile-panel"></div>
-      ${filterBanner}
+    // Build -116: the deck works off these same arrays, and the
+    // card actions look their record up here.
+    state.adminAppsPend = pend;
+    state.adminAppsDec = dec;
+    if (!adminAppView) adminAppView = pend.length ? "deck" : "list";
+    // Market choices for Find a user. A failed read keeps the
+    // choices already loaded; the queue never depends on it.
+    try {
+      const md = await api("GET", "/admin/markets");
+      state.adminMarketNames = (md.markets || []).map((m) => ({ name: m.name, label: m.label }));
+    } catch (e) { /* keep prior choices */ }
+    const listHtml = `
       <h3>Pending (${pend.length})</h3>
       ${pend.length ? `<div class="table-wrap panel"><table><tr><th>Applicant</th><th>Type</th><th>Market</th><th>Details</th><th>Applied</th><th>Decision</th></tr>${pend.map(row).join("")}</table></div>` : `<p class="muted">${adminAppFilter ? "No pending applications match this filter." : "No pending applications."}</p>`}
       <h3 class="mt">Decided (${dec.length})</h3>
       ${dec.length ? `<div class="table-wrap panel"><table><tr><th>Applicant</th><th>Type</th><th>Market</th><th>Details</th><th>Applied</th><th>Status</th></tr>${dec.map(row).join("")}</table></div>` : `<p class="muted">None yet.</p>`}`;
+    el.innerHTML = `
+      <div id="admin-refile-panel"></div>
+      ${adminUserSearchPanelHtml()}
+      ${filterBanner}
+      <div class="admin-apps-toggle">
+        <button class="btn small-btn ${adminAppView === "deck" ? "" : "ghost"}" onclick="adminAppSetView('deck')">Deck</button>
+        <button class="btn small-btn ${adminAppView === "list" ? "" : "ghost"}" onclick="adminAppSetView('list')">List</button>
+        <span class="muted small">Deck: one application at a time. List: the full queue. Same applications, same order.</span>
+      </div>
+      ${adminAppView === "deck" ? adminDeckHtml(pend) : listHtml}
+      ${adminAppView === "deck" ? `<p class="muted small">Decided applications are in the List view.</p>` : ""}`;
     renderAdminRefilePanel();
+    renderAdminUserResults();
+    if (adminUserSearchState.users) adminUserSearch(true);
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
@@ -21906,6 +22301,12 @@ async function saveCorrectEmail(prefix, userId) {
       if (cur) cur.textContent = d.email;
       if (input) input.value = d.email;
       say(`Saved. Mail and sign-in now use ${d.email}.`);
+    } else if (prefix === "srch") {
+      // Find-a-user card (Build -116): confirm in place and
+      // re-run the search so the card shows the new address.
+      if (input) input.value = d.email;
+      say(`Saved. Mail and sign-in now use ${d.email}.`);
+      adminUserSearch(true);
     } else {
       alert(`Saved. Mail and sign-in now use ${d.email}.`);
       loadApplications();

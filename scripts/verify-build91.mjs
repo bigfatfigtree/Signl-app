@@ -91,7 +91,7 @@ async function waitUp(base) {
 console.log("== Source: the -91 surfaces exist, the rail and stamp are untouched ==");
 const appJs = fs.readFileSync(path.join(root, "public/app.js"), "utf8");
 const routerJs = fs.readFileSync(path.join(root, "netlify/functions/lib/router.js"), "utf8");
-check("stamp is 2026.11.03-115 on both sides", fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes("2026.11.03-115") && fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes("2026.11.03-115"));
+check("stamp is 2026.11.03-116 on both sides", fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes("2026.11.03-116") && fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes("2026.11.03-116"));
 check("wishlist section lives inside Find creators (no 13th rail item)", appJs.includes('id="biz-wishlist"') && appJs.includes("loadWishlistSection()") && appJs.includes("Your wishlist"));
 check("wishlist copy states the privacy rule in plain words", appJs.includes("Your notes stay yours: creators never see them"));
 check("counter card copy present", appJs.includes("First time in? How'd you hear about us?"));

@@ -68,7 +68,7 @@ check("London note: present in the full join form (jc-london-note)", appJs.inclu
 check("London note: toggles key on the picked market being London (claim + join)", appJs.includes('londonNote.style.display = m.value === "London"') && (appJs.match(/londonNote\.style\.display = m\.value === "London"/g) || []).length === 2);
 check("Dubai note: unchanged alongside (both ids + toggles intact)", appJs.includes('id="c85-dubai-note"') && appJs.includes('id="jc-dubai-note"') && appJs.includes('dubaiNote.style.display = m.value === "Dubai"'));
 check("no London gating: no permit state, no block keyed on London in the router", !fs.readFileSync(path.join(root, "netlify", "functions", "lib", "router.js"), "utf8").includes("londonPermit"));
-check("stamp is 2026.11.03-115 on both sides", fs.readFileSync(path.join(root, "netlify", "functions", "lib", "build.js"), "utf8").includes('BUILD_ID = "2026.11.03-115"') && fs.readFileSync(path.join(root, "public", "index.html"), "utf8").includes("2026.11.03-115"));
+check("stamp is 2026.11.03-116 on both sides", fs.readFileSync(path.join(root, "netlify", "functions", "lib", "build.js"), "utf8").includes('BUILD_ID = "2026.11.03-116"') && fs.readFileSync(path.join(root, "public", "index.html"), "utf8").includes("2026.11.03-116"));
 
 // ---------- resolver: typed cities around London ----------
 console.log("== Resolver: London typed-city outcomes (pinned ties untouched) ==");
