@@ -3654,6 +3654,7 @@ function sigLinkGo(dest) {
     case "biz-discover": return go("dashboard", "Discover");
     case "biz-visits": return go("dashboard", "Visits & Posts");
     case "biz-regulars": return go("dashboard", "Regulars");
+    case "biz-profile": return go("dashboard", "Profile");
     case "biz-content": return go("dashboard", "Content");
     case "cr-numbers": return go("dashboard", "Numbers");
     case "cr-momentum": return go("dashboard", "Momentum");
@@ -3684,6 +3685,8 @@ function sigChipDest(label) {
   if (t.includes("posts live")) return "biz-content";
   if (t.includes("ending soon")) return "biz-content";
   if (t.includes("book again")) return "biz-regulars";
+  if (t.includes("standing hours")) return "biz-profile";
+  if (t.includes("receipt is ready")) return "biz-results";
   if (t.includes("roster")) return "biz-discover";
   if (t.includes("invite")) return "cr-offers-invited";
   if (t.includes("offers waiting")) return "cr-offers";
@@ -4897,6 +4900,8 @@ function sigOpHomeActions() {
     { label: ST("Find creators", "Buscar creadores"), run: async () => { sigB2Start(); sigOpPaint(); } },
     { label: ST("My Regulars", "Mis clientes habituales"), run: async () => { await sigB95Regulars(); sigOpPaint(); } },
     { label: ST("Licences ending soon", "Licencias por vencer"), run: async () => { await sigB95Licences(); sigOpPaint(); } },
+    { label: ST("Monthly receipt", "Recibo mensual"), run: async () => { await sigB96Receipt(); sigOpPaint(); } },
+    { label: ST("Standing hours", "Horario habitual"), run: async () => { await sigB96AvailabilityStart(); sigOpPaint(); } },
     { label: ST("How am I doing?", "¿Cómo voy?"), run: async () => { await sigB3Run(); sigOpPaint(); } },
     { label: ST("Build my asset packet", "Crear mi paquete"), run: async () => { sigPacketStart(); sigOpPaint(); } },
     { label: ST("Setup from Instagram", "Configúrame desde Instagram"), run: async () => { sigSetupStart("business"); sigOpPaint(); } },
@@ -4921,6 +4926,7 @@ function sigOpCapabilities() {
     ST("Track your campaigns: visits, posts, day 7 / 14 / 30 numbers, redemptions, and one clear next move.", "Seguir tus campañas: visitas, publicaciones, números al día 7 / 14 / 30, canjes y un siguiente paso claro."),
     ST("Build your asset packet: logo link, key links, talking points, handle, hashtags.", "Crear tu paquete: enlace del logo, enlaces clave, puntos de conversación, usuario y hashtags."),
     ST("Show your Regulars and draft a repeat visit from the last deal, and flag licences ending soon with a renew request to the creator.", "Mostrar tus clientes habituales y crear una visita repetida desde el último trato, y avisarte de licencias por vencer con una solicitud de renovación al creador."),
+    ST("Pull up your forwardable monthly receipt (counted, recorded, and intent kept separate) with the CSV download and print view, and set or change your standing hours in plain words.", "Mostrar tu recibo mensual para reenviar (contado, registrado e intención por separado) con la descarga CSV y la vista de impresión, y fijar o cambiar tu horario habitual en palabras simples."),
     ST("Answer questions about plans, rights, and how SIGNL works.", "Responder preguntas sobre planes, derechos y cómo funciona SIGNL."),
   ];
   return [
@@ -4938,6 +4944,8 @@ function sigOpIntent(norm) {
   if (!u) return null;
   const has = (...ps) => ps.some((p) => norm.includes(p));
   if (u.role === "business") {
+    if (has("monthly receipt", "receipt export", "forward my receipt", "export my receipt", "receipt for my bookkeeper")) return async () => sigB96Receipt();
+    if (has("standing hours", "standing availability", "set my hours", "my opening hours", "when are we open", "when am i open")) return async () => sigB96AvailabilityStart();
     if (has("my regulars", "regulars", "book again", "rebook")) return async () => sigB95Regulars();
     if (has("licence expiring", "license expiring", "licences ending", "licenses ending", "licence ending", "license ending", "renew licence", "renew license", "renew my licence", "renew my license")) return async () => sigB95Licences();
     if (has("asset packet", "paquete de recursos", "paquete", "brand assets", "mis enlaces")) return async () => sigPacketStart();
@@ -5034,6 +5042,72 @@ async function sigB95Licences() {
     { label: "Open Posts and licenses", run: async () => go("dashboard", "Content") },
   ]);
 }
+// ---- Build -96: Business Sig serves the monthly receipt export ----
+// One fetch of the real export record; the answer states the
+// three honesty classes separately (never summed), then the
+// actions carry the actual CSV download link and the print
+// view. The Results view stays one tap away.
+async function sigB96Receipt() {
+  try {
+    const data = await api("GET", "/me/receipt-export");
+    const exp = data.export;
+    const c = exp.counted || {}, r = exp.recorded || {}, it = exp.intent || {}, v = exp.visits || {};
+    const lines = ST(
+      `Your ${exp.monthLabel} receipt, ready to forward. Counted at the register: ${fmtNum(c.customers)} customers, $${fmtMoney(c.registerDollars)}. Recorded from posts: ${fmtNum(r.views)} views across ${fmtNum(r.reportedPosts)} reported posts. Intent recorded: ${fmtNum(it.total)} shares and saves. Three separate kinds of numbers, never added together. Visits used: ${fmtNum(v.used)} of ${fmtNum(v.allowance)} (${fmtNum(v.carriedIn)} rolled over). ${(exp.credit || {}).line || ""}${(exp.licences || []).length ? ` Licences held: ${exp.licences.map((l) => `${l.creatorName}'s post ends ${String(l.windowEndsAt).slice(0, 10)}`).join("; ")}.` : " No licences held right now."}`,
+      `Tu recibo de ${exp.monthLabel}, listo para reenviar. Contado en caja: ${fmtNum(c.customers)} clientes, $${fmtMoney(c.registerDollars)}. Registrado de publicaciones: ${fmtNum(r.views)} vistas en ${fmtNum(r.reportedPosts)} publicaciones. Intención registrada: ${fmtNum(it.total)} compartidos y guardados. Tres tipos de cifras, nunca sumadas. Visitas usadas: ${fmtNum(v.used)} de ${fmtNum(v.allowance)} (${fmtNum(v.carriedIn)} trasladadas).`);
+    sigOpSay(lines, [
+      { label: ST("Download CSV", "Descargar CSV"), run: async () => sigOpPick(ST("Download CSV", "Descargar CSV"), async () => { window.location.href = `/api/me/receipt-export/csv?month=${encodeURIComponent(exp.month)}`; sigOpSay(ST("Your CSV download has started. Any month can be picked from Results.", "La descarga de tu CSV empezó. Puedes elegir cualquier mes en Resultados.")); }) },
+      { label: ST("Print view", "Vista de impresión"), run: async () => sigOpPick(ST("Print view", "Vista de impresión"), async () => { state._receiptExport = exp; receiptExportPrint(); sigOpSay(ST("The print view is open in a new tab: print it, or save it as a PDF from there.", "La vista de impresión está abierta en una pestaña nueva.")); }) },
+      { label: ST("Open Results", "Abrir Resultados"), run: async () => sigOpPick(ST("Open Results", "Abrir Resultados"), async () => go("dashboard", "Analytics")) },
+    ]);
+  } catch (e) { sigOpSay(ST("I could not load your receipt just now. It lives in Results, and the export card sits at the foot of it.", "No pude cargar tu recibo ahora. Vive en Resultados, y la tarjeta de exportación está al pie.")); }
+}
+// ---- Build -96: Business Sig reads and sets standing availability ----
+// Read is instant from the account record. Set is confirm-
+// first: Sig parses the plain words, reads the line back, and
+// saves only on Yes, through the same business-page PATCH.
+async function sigB96AvailabilityStart() {
+  const cur = state.user.business ? availabilitySummaryClient(state.user.business.standingAvailability) : null;
+  if (cur) sigOpSay(ST(`Your standing availability reads: "${cur}". Creators see that line on your offers, and new offers pre-fill their timing from it. Tell me the new version in plain words, like "Fri to Sun, 12 to 4 · Tue to Thu by appointment", or say clear to take it off.`,
+    `Tu horario habitual dice: "${cur}". Los creadores ven esa línea en tus ofertas. Dime la nueva versión en palabras simples, o di borrar para quitarlo.`));
+  else sigOpSay(ST("You have not set standing availability yet. Tell me your usual open days and hours in plain words, like \"Fri to Sun, 12 to 4 · Tue to Thu by appointment\", and I will read it back before saving. Creators see it on your offers, and new offers pre-fill their timing from it.",
+    "Aún no fijaste tu horario habitual. Dime tus días y horas habituales en palabras simples, y te lo leo antes de guardar."));
+  state.sigFlow = { id: "b96avail", step: "collect", data: {} };
+  sigOpPaint();
+}
+// The collect step of the availability flow: parse the plain
+// words, then confirm with a button (the codebase's confirm
+// pattern) before anything saves. "Clear" clears, on confirm.
+async function sigB96AvailStep(f, text) {
+  const t = String(text || "").trim();
+  const tl = t.toLowerCase();
+  if (tl === "clear" || tl === "remove" || tl === "borrar" || tl === "quitar") {
+    state.sigFlow = null;
+    sigOpAsk(ST("Take your standing availability off entirely? Creators stop seeing the line, and new offers stop pre-filling from it.", "¿Quitar tu horario habitual por completo?"), [
+      { label: ST("Yes, take it off", "Sí, quitarlo"), primary: true, run: async () => sigOpPick(ST("Yes, take it off", "Sí, quitarlo"), async () => {
+        try {
+          const data = await api("PATCH", "/me/profile", { standingAvailability: null });
+          state.user = data.user;
+          sigOpSay(ST("Cleared. Your standing availability is off; creators no longer see a standing line, and offers carry their own timing notes.", "Borrado. Tu horario habitual está desactivado."), [{ label: ST("Open your business page", "Abrir tu página"), run: async () => go("dashboard", "Profile") }]);
+        } catch (e) { sigOpSay(ST("I could not save that just now. Your business page holds the same setting, under When creators can come.", "No pude guardarlo ahora."), sigOpHomeActions()); }
+      }) },
+    ]);
+    return;
+  }
+  const parsed = parseAvailabilityText(t);
+  if (!parsed) { sigOpAsk(ST("I could not pick days or hours out of that. Try the plain shape: \"Fri to Sun, 12 to 4\" and, if you take them, \"Tue to Thu by appointment\".", "No pude leer días ni horas ahí. Prueba la forma simple: \"Vie a Dom, 12 a 4\".")); return; }
+  state.sigFlow = null;
+  const summary = availabilitySummaryClient(parsed);
+  sigOpAsk(ST(`Save this as your standing availability? It will read: "${summary}". Creators see it on your offers, and new offers pre-fill their timing from it.`, `¿Guardar esto como tu horario habitual? Dirá: "${summary}".`), [
+    { label: ST("Yes, save it", "Sí, guardarlo"), primary: true, run: async () => sigOpPick(ST("Yes, save it", "Sí, guardarlo"), async () => {
+      try {
+        const data = await api("PATCH", "/me/profile", { standingAvailability: parsed });
+        state.user = data.user;
+        sigOpSay(ST(`Saved. Your standing availability now reads: "${summary}".`, `Guardado. Tu horario habitual ahora dice: "${summary}".`), [{ label: ST("Open your business page", "Abrir tu página"), run: async () => go("dashboard", "Profile") }]);
+      } catch (e) { sigOpSay(ST("I could not save that just now. Your business page holds the same setting, under When creators can come.", "No pude guardarlo ahora."), sigOpHomeActions()); }
+    }) },
+  ]);
+}
 async function sigC95Licences() {
   let rows = [];
   try { const d = await api("GET", "/license-requests"); rows = (d.licenseRequests || []).filter((l) => l.status === "pending"); } catch (e) { sigOpSay("I could not load your licence requests just now. Try again, or open Earnings.", sigOpHomeActions()); return; }
@@ -5103,6 +5177,7 @@ async function sigOpStep(text, norm) {
   if (f.id === "bsetup" || f.id === "csetup") return sigSetupStep(f, text, norm);
   if (f.id === "c1") return sigC1Step(f, text, norm);
   if (f.id === "c2") return sigC2Step(f, text, norm);
+  if (f.id === "b96avail") return sigB96AvailStep(f, text, norm);
 }
 
 // ---------- Sig result cards (Build -78) ----------
@@ -9628,10 +9703,14 @@ async function loadReceipt() {
   if (!document.getElementById("biz-receipt")) return;
   if (!r) { host.innerHTML = ""; return; }
   state._receiptTop = (r.topCreators || [])[0] || null;
+  state._receiptMonth = r.month || null;
   host.innerHTML = receiptHtml(r);
   // Build -91: the proof kit's assigned home is Results, above
   // Proof Controls (which renders inside the receipt below).
   if (state._proofKit) host.insertAdjacentHTML("afterbegin", proofKitHtml(state._proofKit));
+  // Build -96: the forwardable export card fills its slot at
+  // the foot of the Receipt.
+  loadReceiptExport();
 }
 // Build -48: the Receipt's score blocks live under subtabs
 // (Overview / Over time / Creators / Costs / How it counts).
@@ -10172,9 +10251,107 @@ function receiptHtml(r) {
     <h3>What SIGNL brought you</h3>
     ${sqNoticeHtml()}
     ${middle}
+    <div id="biz-receipt-export"></div>
     ${receiptSettingsHtml(r)}
     ${roasInfoPopHtml()}
   </section>`;
+}
+// ---------- Build -96: the forwardable Monthly Receipt export ----------
+// One card at the foot of the Receipt: pick a month, download
+// the CSV, or open the print-ready view. The numbers come from
+// GET /me/receipt-export, computed server-side from the same
+// records as the Receipt above, so the card and the export can
+// never tell two stories. Counted, recorded, and intent print
+// as three separate sections, never added together.
+let receiptExportMonth = null;
+function receiptMonthOptions(cur) {
+  const opts = [];
+  const now = new Date();
+  let y = now.getUTCFullYear(), m = now.getUTCMonth();
+  for (let i = 0; i < 6; i++) {
+    const key = `${y}-${String(m + 1).padStart(2, "0")}`;
+    const label = new Date(Date.UTC(y, m, 1)).toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
+    opts.push({ key, label });
+    m -= 1; if (m < 0) { m = 11; y -= 1; }
+  }
+  if (cur && !opts.some((o) => o.key === cur)) opts.push({ key: cur, label: cur });
+  return opts;
+}
+async function loadReceiptExport() {
+  const host = document.getElementById("biz-receipt-export");
+  if (!host) return;
+  const month = receiptExportMonth || (state._receiptMonth || null);
+  try {
+    const data = await api("GET", "/me/receipt-export" + (month ? `?month=${encodeURIComponent(month)}` : ""));
+    const exp = data.export;
+    if (!exp || !document.getElementById("biz-receipt-export")) return;
+    state._receiptExport = exp;
+    receiptExportMonth = exp.month;
+    host.innerHTML = receiptExportHtml(exp);
+  } catch (e) { host.innerHTML = ""; }
+}
+function receiptExportSetMonth(v) { receiptExportMonth = v; loadReceiptExport(); return false; }
+function receiptExportHtml(exp) {
+  const c = exp.counted || {}, r = exp.recorded || {}, it = exp.intent || {}, v = exp.visits || {};
+  const opts = receiptMonthOptions(exp.month).map((o) => `<option value="${o.key}" ${o.key === exp.month ? "selected" : ""}>${esc(o.label)}</option>`).join("");
+  const licRows = (exp.licences || []).length
+    ? exp.licences.map((l) => `<div class="lrow"><span>${esc(l.creatorName)} (@${esc(l.creatorHandle)}) · ${esc(l.title)}</span><strong>ends ${esc(String(l.windowEndsAt).slice(0, 10))}</strong></div>`).join("")
+    : `<p class="small muted" style="margin:4px 0 0">No licences held right now.</p>`;
+  return `<div style="margin-top:16px;border-top:1px solid var(--hairline,#DFE7DF);padding-top:12px" id="receipt-export-card">
+    <h4 style="margin:0 0 4px">Forward this month's receipt</h4>
+    <p class="small muted" style="margin:0 0 10px">One clean page for your bookkeeper or anyone who needs the month in writing: your business name and the month on it, counted, recorded, and intent figures in three separate sections, visits used and rolled over, your founding credit, and the licences you hold with their end dates.</p>
+    <div class="form-2col">
+      <div class="field"><label>Month</label><select id="rx-month" onchange="receiptExportSetMonth(this.value)">${opts}</select></div>
+      <div class="field"><label>&nbsp;</label><p class="small muted" style="margin:0">${exp.hasActivity ? "This month has real activity on it." : "Nothing ran this month. The export says so honestly, in zeros."}</p></div>
+    </div>
+    <div class="lrow"><span><strong>Counted</strong> · at the register</span><strong>${fmtNum(c.customers || 0)} customers · $${fmtMoney(c.registerDollars || 0)}${c.cameBackDollars ? ` (incl. $${fmtMoney(c.cameBackDollars)} came back)` : ""}</strong></div>
+    <div class="lrow"><span><strong>Recorded</strong> · post numbers creators reported</span><strong>${fmtNum(r.views || 0)} views · ${fmtNum(r.reportedPosts || 0)} posts</strong></div>
+    <div class="lrow"><span><strong>Intent</strong> · shares and saves recorded</span><strong>${fmtNum(it.total || 0)} (${fmtNum(it.shares || 0)} shares · ${fmtNum(it.saves || 0)} saves)</strong></div>
+    <p class="small muted" style="margin:6px 0 0">Three different kinds of numbers. They are never added together.</p>
+    <div class="lrow" style="margin-top:8px"><span>Visits used</span><strong>${fmtNum(v.used || 0)} of ${fmtNum(v.allowance || 0)} (${fmtNum(v.carriedIn || 0)} rolled over)</strong></div>
+    <div class="lrow"><span>Founding credit</span><strong>${esc((exp.credit || {}).state === "applied" ? "Applied this month" : (exp.credit || {}).state === "used" ? "Used in your first month" : "Banked, unused")}</strong></div>
+    <h4 style="margin:12px 0 4px">Licences you hold</h4>
+    ${licRows}
+    <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+      <a class="btn small-btn" href="/api/me/receipt-export/csv?month=${encodeURIComponent(exp.month)}" download>Download CSV</a>
+      <button class="btn small-btn ghost" type="button" onclick="return receiptExportPrint()">Print or save as PDF</button>
+    </div>
+  </div>`;
+}
+// The print-ready view (the Build -91 counter-card pattern): a
+// clean standalone page the browser prints or saves as PDF.
+function receiptExportPrint() {
+  const exp = state._receiptExport;
+  if (!exp) return false;
+  const w = window.open("", "_blank");
+  if (!w) { alert("Allow pop-ups to open the print view."); return false; }
+  const c = exp.counted || {}, r = exp.recorded || {}, it = exp.intent || {}, v = exp.visits || {};
+  const num = (n) => Number(n || 0).toLocaleString("en-US");
+  const row = (k, val) => `<tr><td>${esc(k)}</td><td style="text-align:right"><strong>${esc(val)}</strong></td></tr>`;
+  const licRows = (exp.licences || []).length
+    ? exp.licences.map((l) => row(`${l.creatorName} (@${l.creatorHandle}) · ${l.title}`, `Ends ${String(l.windowEndsAt).slice(0, 10)}`)).join("")
+    : row("Licences held", "None");
+  w.document.write(`<!DOCTYPE html><html><head><title>SIGNL receipt · ${esc(exp.businessName)} · ${esc(exp.monthLabel)}</title>
+  <style>body{font-family:Georgia,serif;color:#111;max-width:680px;margin:32px auto;padding:0 20px}h1{font-size:26px;margin:0}h2{font-size:15px;margin:22px 0 6px;border-bottom:2px solid #006AFC;padding-bottom:4px}table{width:100%;border-collapse:collapse}td{padding:5px 0;border-bottom:1px solid #ddd;font-size:14px}.muted{color:#555;font-size:13px}.brand{color:#006AFC;font-weight:bold;letter-spacing:2px;font-size:12px}</style></head><body>
+  <p class="brand">SIGNL</p>
+  <h1>${esc(exp.businessName)}</h1>
+  <p style="margin:4px 0 0;font-size:16px">Monthly receipt · ${esc(exp.monthLabel)}</p>
+  <p class="muted">${exp.plan ? `Plan: ${esc(exp.plan.name)}, $${fmtMoney(exp.plan.priceMonthly)} a month, ${exp.plan.visitsPerMonth} creator visits a month.` : "No plan on record."} Counted, recorded, and intent are three different kinds of numbers. They are never added together.</p>
+  <h2>Counted (counted at the register through visit codes)</h2>
+  <table>${row("Customers counted", num(c.customers))}${row("Register dollars counted", "$" + fmtMoney(c.registerDollars || 0))}${row("Register events", num(c.registerEvents))}${row("Came back within 30 days", num(c.cameBacks))}${row("Came-back dollars (part of the counted dollars above)", "$" + fmtMoney(c.cameBackDollars || 0))}${exp.tallyFacts ? row("Reported tally (a fact, not counted above)", `${exp.tallyFacts.customers} customers, $${fmtMoney(exp.tallyFacts.spend)}`) : ""}</table>
+  <h2>Recorded (post numbers creators reported)</h2>
+  <table>${row("Views recorded", num(r.views))}${row("Likes recorded", num(r.likes))}${row("Posts reported", num(r.reportedPosts))}</table>
+  <h2>Intent (recorded shares and saves: people planning to come)</h2>
+  <table>${row("Shares recorded", num(it.shares))}${row("Saves recorded", num(it.saves))}${row("Intent total", num(it.total))}</table>
+  <h2>Visits and credit</h2>
+  <table>${row("Visits used this month", num(v.used))}${row("Visits rolled over into this month", num(v.carriedIn))}${row("Visits available this month", num(v.allowance))}${row("Visits left at month end", num(v.remaining))}${row("Founding credit", (exp.credit || {}).line || "")}</table>
+  <h2>Licences held (90 days each, never longer)</h2>
+  <table>${licRows}</table>
+  <p class="muted" style="margin-top:22px">Made from this business's own SIGNL records on ${esc(fmtDay(exp.generatedAt))}. Questions: hello@joinsignl.com.</p>
+  </body></html>`);
+  w.document.close();
+  setTimeout(() => { try { w.print(); } catch (e) { /* the page is on screen either way */ } }, 450);
+  return false;
 }
 // ---------- Points and Your Line (Build -36) ----------
 // Plain activity score on the founding home: the total, the
@@ -12909,6 +13086,7 @@ function offerFeedCardHtml(o, opts) {
         ${referralProgramBlockHtml(o.businessReferralProgram)}
         <p class="small muted">Apply by ${fmtDay(o.applicationsCloseAt)} &middot; ${o.applicationCount} applied${o.visitWindow ? `<br>Note from the business: ${esc(o.visitWindow)}` : ""}</p>
         ${o.businessAbout ? `<p class="small muted">${esc(o.businessAbout)}</p>` : ""}
+        ${o.businessAvailability ? `<p class="small muted">When you can come: ${esc(o.businessAvailability)}</p>` : ""}
         </div>
         <div class="slot-foot">
           <div class="slot-actions">
@@ -15141,6 +15319,10 @@ async function loadBusinessHome() {
     // parallel fetch block for Sig's queue below.
     const regularsPromise = api("GET", "/me/regulars").catch(() => null);
     const licencesExpiringPromise = api("GET", "/me/licences-expiring").catch(() => null);
+    // Build -96: last month's export, for the receipt-ready
+    // prompt below (renders only when that month has activity).
+    const prevMonthKey = (() => { const n = new Date(); const p = new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth() - 1, 1)); return `${p.getUTCFullYear()}-${String(p.getUTCMonth() + 1).padStart(2, "0")}`; })();
+    const receiptPrevPromise = api("GET", `/me/receipt-export?month=${prevMonthKey}`).catch(() => null);
     const offersPromise = api("GET", "/offers").catch(() => null);
     const bookingsPromise = api("GET", "/bookings").catch(() => null);
     const readoutPromise = api("GET", "/me/performance-readout").catch(() => null);
@@ -15243,6 +15425,15 @@ async function loadBusinessHome() {
         "Book again", () => go("dashboard", "Regulars"),
         unbooked.length === 1 ? `Book again: ${first.creatorName}` : `${unbooked.length} Regulars to book again`);
     }
+    // Build -96 proactive prompts, real records only: last
+    // month's receipt is ready to forward when that month holds
+    // real activity; standing availability unset is a setup gap
+    // beside the About one below.
+    const rxD = await receiptPrevPromise;
+    const rxExp = rxD && rxD.export;
+    if (rxExp && rxExp.hasActivity) {
+      add(3, now, `Your ${rxExp.monthLabel} receipt is ready to forward: counted, recorded, and intent figures in three separate sections, with your founding credit and licence end dates.`, "Forward it", () => go("dashboard", "Analytics"), `${rxExp.monthLabel} receipt ready`);
+    }
     // Capture-gap diagnostic (Build -39): creator-reported
     // reach ran far ahead of counted register customers. The
     // line names the check, never a culprit, with real counts.
@@ -15252,6 +15443,7 @@ async function loadBusinessHome() {
     }
     const bz = u.business || {};
     if (!bz.about) add(4, now, "Your business page is missing its About.", "Add about", () => go("dashboard", "Profile"), "About missing on your page");
+    if (!bz.standingAvailability) add(4, now, "Set your standing hours once, and creators see them on your offers while new offers pre-fill their timing from them.", "Set hours", () => go("dashboard", "Profile"), "Standing hours not set");
     if (d.staffPinSet === false) add(4, now, "Set your staff PIN so your team can redeem visits: the creator shows their visit code at your counter, your team enters it with this PIN, and that is what counts the visit.", "Set PIN", () => go("dashboard", "Settings"), "Staff PIN not set");
     if ((h.visitsCarried || 0) > 0 && h.carriedExpiresAt) add(4, now, `${h.visitsCarried} rolled visit${h.visitsCarried === 1 ? "" : "s"} expire ${dueDayWords(h.carriedExpiresAt)}.`, "See plan", () => go("dashboard", "Plan"), `Rollover expires ${dueDayWords(h.carriedExpiresAt)}`);
     else if ((h.visitsRemaining || 0) <= 1) add(4, now, `You have ${h.visitsRemaining || 0} visit${(h.visitsRemaining || 0) === 1 ? "" : "s"} left this month.`, "See plan", () => go("dashboard", "Plan"), `${h.visitsRemaining || 0} visit${(h.visitsRemaining || 0) === 1 ? "" : "s"} left this month`);
@@ -16150,6 +16342,66 @@ function bizProfileBadgesHtml(bz) {
   if (bz.studentOpen) bits.push(`<div style="margin-top:10px"><span class="badge ok">Open to student creators</span></div>`);
   return bits.join("");
 }
+// ---------- Build -96: standing availability (client mirror) ----------
+// The same summary the server computes (router.js
+// standingAvailabilitySummary): the client renders it on the
+// live business card before a save, and the composer pre-fills
+// from it. Stored shape rides state.user.business.
+const AVAIL_DAYS_CLIENT = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+function availabilitySummaryClient(av) {
+  if (!av || typeof av !== "object") return null;
+  const days = AVAIL_DAYS_CLIENT.filter((d) => Array.isArray(av.days) && av.days.includes(d));
+  const hours = String(av.hours || "").trim();
+  const appointments = String(av.appointments || "").trim();
+  if (!days.length && !hours && !appointments) return null;
+  let open = "";
+  if (days.length) {
+    const idx = days.map((d) => AVAIL_DAYS_CLIENT.indexOf(d));
+    const runs = [];
+    let start = idx[0], prev = idx[0];
+    for (let i = 1; i <= idx.length; i++) {
+      if (i < idx.length && idx[i] === prev + 1) { prev = idx[i]; continue; }
+      runs.push([start, prev]);
+      if (i < idx.length) { start = idx[i]; prev = idx[i]; }
+    }
+    open = "Open " + runs.map(([a, b]) => a === b ? AVAIL_DAYS_CLIENT[a] : (b === a + 1 ? `${AVAIL_DAYS_CLIENT[a]} and ${AVAIL_DAYS_CLIENT[b]}` : `${AVAIL_DAYS_CLIENT[a]} to ${AVAIL_DAYS_CLIENT[b]}`)).join(", ") + (hours ? `, ${hours}` : "");
+  } else if (hours) open = hours;
+  return [open, appointments].filter(Boolean).join(" · ") || null;
+}
+// Plain-words parser for Sig's set-in-chat flow: the Chelsea
+// shape ("Fri to Sun, 12 to 4 · Tue to Thu by appointment")
+// splits on the appointment clause first, so appointment days
+// never land in the open-days set.
+function parseAvailabilityText(text) {
+  const raw = String(text || "").replace(/\s+/g, " ").trim();
+  if (!raw) return null;
+  const parts = raw.split(/\s*[·;]\s*/);
+  let apptPart = "";
+  const mainParts = [];
+  for (const p of parts) { if (/appointment/i.test(p)) apptPart = p; else mainParts.push(p); }
+  let main = mainParts.join(", ");
+  if (!apptPart) {
+    const m = raw.match(/^(.*?)\s*,?\s*((?:[A-Za-z]{3,9}\s+to\s+)?[A-Za-z]{3,9}.*?by appointment.*)$/i);
+    if (m && /to|mon|tue|wed|thu|fri|sat|sun/i.test(m[2])) { main = m[1]; apptPart = m[2]; }
+  }
+  const dayIdx = { mon: 0, monday: 0, tue: 1, tues: 1, tuesday: 1, wed: 2, wednesday: 2, thu: 3, thur: 3, thurs: 3, thursday: 3, fri: 4, friday: 4, sat: 5, saturday: 5, sun: 6, sunday: 6 };
+  const found = new Set();
+  const rangeRe = /([A-Za-z]{3,9})\s+to\s+([A-Za-z]{3,9})/g;
+  let rm;
+  const mainNoRanges = main.replace(rangeRe, (whole, a, b) => {
+    const ia = dayIdx[a.toLowerCase()], ib = dayIdx[b.toLowerCase()];
+    if (ia !== undefined && ib !== undefined && ib >= ia) { for (let i = ia; i <= ib; i++) found.add(AVAIL_DAYS_CLIENT[i]); return " "; }
+    return whole;
+  });
+  for (const tok of mainNoRanges.toLowerCase().split(/[^a-z]+/)) { if (dayIdx[tok] !== undefined) found.add(AVAIL_DAYS_CLIENT[dayIdx[tok]]); }
+  const days = AVAIL_DAYS_CLIENT.filter((d) => found.has(d));
+  const hm = main.match(/(\d{1,2}(?::\d{2})?\s*(?:am|pm)?\s*(?:to|-)\s*\d{1,2}(?::\d{2})?\s*(?:am|pm)?)/i);
+  const hours = hm ? hm[1].replace(/\s+/g, " ").trim() : "";
+  const appointments = apptPart.trim().slice(0, 200);
+  if (!days.length && !hours && !appointments) return null;
+  return { days, hours, appointments };
+}
+
 function bizProfileCardHtml(bz, market, opts) {
   opts = opts || {};
   const home = opts.home || {};
@@ -16164,7 +16416,7 @@ function bizProfileCardHtml(bz, market, opts) {
   return `<div class="prof-card biz-profile-card"${opts.rootId ? ` id="${esc(opts.rootId)}"` : ""}><div class="prof-cover"></div><div class="prof-in">
     <div class="prof-ava"><span class="bp-card-ava">${esc((bz.businessName || "?").trim().charAt(0).toUpperCase() || "?")}</span></div>
     <div class="prof-name"><span class="bp-card-name">${esc(bz.businessName || "")}</span>${opts.live ? `<span class="verified-dot">${bnIcon("check")}</span>` : ""}</div>
-    <div class="prof-meta"><span class="bp-card-meta">${esc(bz.category || "Business")}${bz.neighborhood ? ` · ${esc(bz.neighborhood)}` : ""} · ${esc(marketDisplayName(market))}</span><br><span class="bp-card-about">${bz.about ? esc(bz.about) : "No about yet. A written-up experience fills offers faster."}</span></div>
+    <div class="prof-meta"><span class="bp-card-meta">${esc(bz.category || "Business")}${bz.neighborhood ? ` · ${esc(bz.neighborhood)}` : ""} · ${esc(marketDisplayName(market))}</span><br><span class="bp-card-about">${bz.about ? esc(bz.about) : "No about yet. A written-up experience fills offers faster."}</span>${availabilitySummaryClient(bz.standingAvailability) ? `<br><span class="bp-card-avail">${esc(availabilitySummaryClient(bz.standingAvailability))}</span>` : ""}</div>
     <div class="prof-stats">${stats}</div>
     <div class="bp-card-badges">${bizProfileBadgesHtml(bz)}</div>
   </div></div>`;
@@ -16184,6 +16436,13 @@ function bizProfileFormBiz() {
   const mo = chk("bp-music-open");
   if (mo !== undefined) { bz.musicOpen = mo; bz.musicLive = chk("bp-music-live"); bz.musicCreated = chk("bp-music-created"); }
   const so = chk("bp-student-open"); if (so !== undefined) bz.studentOpen = so;
+  // Build -96: standing availability typed in the editor rides
+  // the live card too, exactly as typed.
+  const avHoursEl = document.getElementById("bp-av-hours");
+  if (avHoursEl) {
+    const days = AVAIL_DAYS_CLIENT.filter((d) => { const el = document.getElementById("bp-av-day-" + d); return el && el.checked; });
+    bz.standingAvailability = { days, hours: avHoursEl.value || "", appointments: (document.getElementById("bp-av-appointments") || {}).value || "" };
+  }
   return bz;
 }
 function bizProfilePaintCard() {
@@ -16196,6 +16455,10 @@ function bizProfilePaintCard() {
   set(".bp-card-name", bz.businessName || "");
   set(".bp-card-meta", `${bz.category || "Business"}${bz.neighborhood ? " · " + bz.neighborhood : ""} · ${marketDisplayName(u.market)}`);
   set(".bp-card-about", bz.about ? bz.about : "No about yet. A written-up experience fills offers faster.");
+  const avEl = card.querySelector(".bp-card-avail");
+  const avSum = availabilitySummaryClient(bz.standingAvailability);
+  if (avEl) avEl.textContent = avSum || "";
+  else if (avSum) { const meta = card.querySelector(".prof-meta"); if (meta) meta.insertAdjacentHTML("beforeend", `<br><span class="bp-card-avail">${esc(avSum)}</span>`); }
   const badges = card.querySelector(".bp-card-badges");
   if (badges) badges.innerHTML = bizProfileBadgesHtml(bz);
 }
@@ -16209,6 +16472,10 @@ function bindBizProfileWysiwyg() {
   for (const id of ["bp-music-open", "bp-music-live", "bp-music-created", "bp-student-open"]) {
     const el = document.getElementById(id);
     if (el) el.addEventListener("change", bizProfilePaintCard);
+  }
+  for (const id of [...AVAIL_DAYS_CLIENT.map((d) => "bp-av-day-" + d), "bp-av-hours", "bp-av-appointments"]) {
+    const el = document.getElementById(id);
+    if (el) { el.addEventListener("change", bizProfilePaintCard); el.addEventListener("input", bizProfilePaintCard); }
   }
 }
 // The creator view: the identical card markup, read-only, in a
@@ -16286,6 +16553,17 @@ async function renderBizProfileTab() {
         </div>
         <div class="field"><label>About your business</label><textarea id="bp-about" rows="3" placeholder="What you serve, what the visit feels like">${esc(b.about || "")}</textarea></div>
         <button class="btn ws-primary" onclick="saveBusinessProfile('basics')">Save basics</button> <span id="bp-ok" class="saved"></span>
+      </div>
+      <div class="wcard" id="bp-availability" style="margin-top:14px">
+        <h3>When creators can come</h3>
+        <p class="wc-sub">Your usual open days and hours, plus any appointment windows, in plain words. Set it once: creators see this line on your offers, and new offers pre-fill their timing from it. A note on one offer still wins for that offer. Leave it all blank and nothing shows.</p>
+        ${(() => { const av = b.standingAvailability || {}; const daySet = new Set(Array.isArray(av.days) ? av.days : []); return `
+        <div class="field"><label>Open days</label><div class="chiprow">${AVAIL_DAYS_CLIENT.map((d) => `<label class="ckrow" style="margin-right:10px"><input type="checkbox" class="ckbox" id="bp-av-day-${d}" ${daySet.has(d) ? "checked" : ""}><span>${d}</span></label>`).join("")}</div></div>
+        <div class="form-2col">
+          <div class="field"><label>Open hours</label><input id="bp-av-hours" value="${esc(av.hours || "")}" placeholder="For example: 12 to 4"></div>
+          <div class="field"><label>Appointments</label><input id="bp-av-appointments" value="${esc(av.appointments || "")}" placeholder="For example: Tue to Thu by appointment"></div>
+        </div>`; })()}
+        <button class="btn ws-primary" onclick="saveBusinessProfile('availability')">Save hours</button> <span id="bp-ok-avail" class="saved"></span>
       </div>
       <div class="wcard" id="bp-optional" style="margin-top:14px">
         <h3>Optional</h3>
@@ -17566,6 +17844,18 @@ async function loadMyOffers() {
   // one here; an explicit pick (even "no set moment") is never
   // overwritten.
   if (dft.moment === undefined && state.user.business && state.user.business.moment) dft.moment = state.user.business.moment;
+  // Build -96: standing availability pre-fills the composer's
+  // timing fields (the window note and the brief's timing line)
+  // on a fresh draft only. Once the draft carries a value, the
+  // business's own words win: a per-offer edit is never
+  // overwritten by the default.
+  if (state.user.business) {
+    const avSummary = availabilitySummaryClient(state.user.business.standingAvailability);
+    if (avSummary) {
+      if (dft.window === undefined) dft.window = avSummary;
+      if (dft.briefTiming === undefined) dft.briefTiming = avSummary;
+    }
+  }
   const dv = (v) => esc(v === undefined || v === null ? "" : String(v));
   // V5 (Jeff, 2026-10-25): "Who can apply" is three Slotted lane
   // toggle rows — switch + bold tier + one muted floor/typical
@@ -18486,6 +18776,21 @@ function packetFromForm() {
 async function saveBusinessProfile(scope) {
   const val = (id) => { const el = document.getElementById(id); return el ? el.value : ""; };
   const chk = (id) => { const el = document.getElementById(id); return !!(el && el.checked); };
+  if (scope === "availability") {
+    // Build -96: an all-blank save clears the field (the server
+    // stores null), so a business can retire the line cleanly.
+    const days = AVAIL_DAYS_CLIENT.filter((d) => chk("bp-av-day-" + d));
+    const hours = val("bp-av-hours").trim();
+    const appointments = val("bp-av-appointments").trim();
+    const patch = { standingAvailability: (!days.length && !hours && !appointments) ? null : { days, hours, appointments } };
+    try {
+      const data = await api("PATCH", "/me/profile", patch);
+      state.user = data.user;
+      render();
+      setTimeout(() => { const ok = document.getElementById("bp-ok-avail"); if (ok) ok.textContent = "Saved."; }, 30);
+    } catch (err) { alert(err.message); }
+    return;
+  }
   const patch = scope === "optional"
     ? {
       musicOpen: chk("bp-music-open"),

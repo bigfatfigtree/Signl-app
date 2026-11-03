@@ -8926,6 +8926,178 @@ async function licencesHeldBy(bizUser, now, internal = false) {
   return out;
 }
 
+// ---------- Build -96: standing availability + monthly receipt export ----------
+// Tier 2 item 11e/11f (strategy doc).
+// (a) Standing availability: a business sets its usual open
+// days + hours and its appointment windows ONCE, on its business
+// page (business.standingAvailability). Creators see the one-line
+// summary where they see the business (the offer board payload),
+// and the offer composer pre-fills its timing fields from it;
+// a per-offer note still wins for that offer. The field is
+// optional: unset means no line anywhere, never a broken state.
+// Stored shape: { days: ["Fri","Sat","Sun"], hours: "12 to 4",
+// appointments: "Tue to Thu by appointment" }. The summary is
+// computed on read, never stored, so every surface agrees.
+const AVAIL_DAY_ORDER = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const AVAIL_DAY_FULL = { Mon: "Monday", Tue: "Tuesday", Wed: "Wednesday", Thu: "Thursday", Fri: "Friday", Sat: "Saturday", Sun: "Sunday" };
+function normalizeStandingAvailability(raw) {
+  if (raw === null) return { ok: true, value: null };
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { ok: false, error: "Standing availability must be your open days, hours, and appointment note." };
+  const daySet = new Set();
+  if (raw.days !== undefined) {
+    if (!Array.isArray(raw.days)) return { ok: false, error: "Open days must be a list of days." };
+    for (const d of raw.days) {
+      const s = String(d || "").trim();
+      const hit = AVAIL_DAY_ORDER.find((x) => x === s) || AVAIL_DAY_ORDER.find((x) => AVAIL_DAY_FULL[x].toLowerCase() === s.toLowerCase());
+      if (hit) daySet.add(hit);
+    }
+  }
+  const days = AVAIL_DAY_ORDER.filter((d) => daySet.has(d));
+  const hours = String(raw.hours || "").replace(/\s+/g, " ").trim().slice(0, 120);
+  const appointments = String(raw.appointments || "").replace(/\s+/g, " ").trim().slice(0, 200);
+  if (!days.length && !hours && !appointments) return { ok: true, value: null };
+  return { ok: true, value: { days, hours, appointments } };
+}
+function standingAvailabilitySummary(av) {
+  if (!av || typeof av !== "object") return null;
+  const days = AVAIL_DAY_ORDER.filter((d) => Array.isArray(av.days) && av.days.includes(d));
+  const hours = String(av.hours || "").trim();
+  const appointments = String(av.appointments || "").trim();
+  if (!days.length && !hours && !appointments) return null;
+  let open = "";
+  if (days.length) {
+    const idx = days.map((d) => AVAIL_DAY_ORDER.indexOf(d));
+    const runs = [];
+    let start = idx[0], prev = idx[0];
+    for (let i = 1; i <= idx.length; i++) {
+      if (i < idx.length && idx[i] === prev + 1) { prev = idx[i]; continue; }
+      runs.push([start, prev]);
+      if (i < idx.length) { start = idx[i]; prev = idx[i]; }
+    }
+    const runText = runs.map(([a, b]) => a === b ? AVAIL_DAY_ORDER[a] : (b === a + 1 ? `${AVAIL_DAY_ORDER[a]} and ${AVAIL_DAY_ORDER[b]}` : `${AVAIL_DAY_ORDER[a]} to ${AVAIL_DAY_ORDER[b]}`)).join(", ");
+    open = "Open " + runText + (hours ? `, ${hours}` : "");
+  } else if (hours) open = hours;
+  const parts = [open, appointments].filter(Boolean);
+  return parts.length ? parts.join(" · ") : null;
+}
+function standingAvailabilityView(biz) {
+  const av = biz && typeof biz === "object" ? biz.standingAvailability : null;
+  if (!av || typeof av !== "object") return null;
+  const summary = standingAvailabilitySummary(av);
+  if (!summary) return null;
+  return { days: Array.isArray(av.days) ? av.days.slice() : [], hours: String(av.hours || ""), appointments: String(av.appointments || ""), summary };
+}
+
+// (b) The forwardable Monthly Receipt export: the same real
+// records the on-screen Receipt reads, for one chosen month,
+// shaped for a bookkeeper who has never seen SIGNL. Counted,
+// recorded, and intent ride as three SEPARATE labeled sections
+// and are never summed. Counted comes from the Receipt's own
+// Score v2 cohort helper, so the export can never disagree with
+// the Receipt for the same month. The sample story
+// (sampleResultsFor) is a demo-context surface and is never
+// consulted here: a real business's export is its own records
+// or honest zeros.
+async function monthlyReceiptExportFor(bizUser, monthKey) {
+  if (!bizUser || bizUser.role !== "business" || !bizUser.business) return null;
+  const biz = bizUser.business;
+  const plan = planById(biz.planId || biz.plan) || null;
+  const ctx = await scoreV2Context(bizUser.id);
+  const cohort = scoreV2Cohort(bizUser, monthKey, ctx);
+  const cohortPosts = (cohort.visits || []).map((v) => ctx.postByBooking.get(v.bookingId)).filter(Boolean);
+  const intentAgg = intentLib.intentOfPosts(cohortPosts);
+  // Visits used / rolled over for the chosen month, counted the
+  // planAllowanceFor way (non-paid bookings created in the
+  // month; the carry into a month is the prior month's unused
+  // base, and rolled visits never roll twice).
+  const base = plan ? plan.visitsPerMonth : 0;
+  const counts = new Map();
+  let earliest = null;
+  for (const b of ctx.bookings) {
+    if (!b || b.kind === "paid") continue;
+    const k = monthKeyOf(b.createdAt);
+    if (!k) continue;
+    counts.set(k, (counts.get(k) || 0) + 1);
+    if (earliest === null || k < earliest) earliest = k;
+  }
+  const used = counts.get(monthKey) || 0;
+  const priorKey = prevMonthKey(monthKey);
+  const carried = earliest !== null && earliest < monthKey ? Math.max(0, base - Math.min(counts.get(priorKey) || 0, base)) : 0;
+  const allowance = base + carried;
+  // Founding credit state for the month, from the same
+  // planChargeFor record the Receipt's score reads.
+  const charge = planChargeFor(biz, monthKey);
+  const creditTotal = plan && typeof plan.foundingCredit === "number" ? plan.foundingCredit : 100;
+  let creditState;
+  if (biz.accessState !== "active" || !biz.activatedAt) creditState = { state: "banked", total: creditTotal, appliedThisMonth: 0, line: `Your $${creditTotal} founding credit is banked and unused. It comes off your first charged month when your business activates. Nothing has been charged.` };
+  else if (charge.recorded && charge.credit > 0) creditState = { state: "applied", total: creditTotal, appliedThisMonth: charge.credit, line: `Your $${creditTotal} founding credit was applied this month. You were charged $${fmtMoneyS(charge.amount)} for the plan this month.` };
+  else if (charge.recorded && monthKey > monthKeyOf(biz.activatedAt)) creditState = { state: "used", total: creditTotal, appliedThisMonth: 0, line: `Your $${creditTotal} founding credit was used in your first charged month (${monthLabelOf(monthKeyOf(biz.activatedAt))}). This month's plan charge was $${fmtMoneyS(charge.amount)}.` };
+  else creditState = { state: "banked", total: creditTotal, appliedThisMonth: 0, line: `Your $${creditTotal} founding credit is banked and unused. It comes off your first charged month.` };
+  const licences = (await licencesHeldBy(bizUser, Date.now())).map((l) => ({ creatorName: l.creatorName, creatorHandle: l.creatorHandle, title: l.title, kind: l.kind, windowEndsAt: l.windowEndsAt, daysLeft: l.daysLeft }));
+  const counted = { customers: cohort.countedCustomers, registerDollars: cohort.countedBack, registerEvents: cohort.countedEvents, cameBacks: cohort.cameBack ? cohort.cameBack.returns : 0, cameBackDollars: cohort.cameBack ? cohort.cameBack.returnSpend : 0 };
+  const recorded = { views: intentAgg.views, likes: intentAgg.likes, reportedPosts: intentAgg.reportedPosts };
+  const intent = { shares: intentAgg.shares, saves: intentAgg.saves, total: intentAgg.intent };
+  const hasActivity = counted.registerDollars > 0 || counted.customers > 0 || recorded.reportedPosts > 0 || used > 0 || !!cohort.tallyFacts;
+  return {
+    businessName: biz.businessName || bizUser.name || "Your business",
+    market: bizUser.market || null,
+    month: monthKey,
+    monthLabel: monthLabelOf(monthKey),
+    generatedAt: nowIso(),
+    plan: plan ? { id: plan.id, name: plan.name, priceMonthly: plan.priceMonthly, visitsPerMonth: plan.visitsPerMonth } : null,
+    counted, recorded, intent,
+    tallyFacts: cohort.tallyFacts || null,
+    visits: { used, base, carriedIn: carried, allowance, remaining: Math.max(0, allowance - used) },
+    credit: creditState,
+    licences,
+    hasActivity,
+  };
+}
+function csvCell(v) { const s = String(v === null || v === undefined ? "" : v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; }
+function monthlyReceiptCsv(exp) {
+  const rows = [];
+  const row = (...cells) => rows.push(cells.map(csvCell).join(","));
+  row("SIGNL monthly receipt");
+  row("Business", exp.businessName);
+  row("Month", exp.monthLabel);
+  row("Plan", exp.plan ? `${exp.plan.name} ($${exp.plan.priceMonthly} a month, ${exp.plan.visitsPerMonth} visits a month)` : "No plan on record");
+  row("");
+  row("COUNTED (counted at the register through visit codes)");
+  row("Customers counted", exp.counted.customers);
+  row("Register dollars counted", exp.counted.registerDollars);
+  row("Register events", exp.counted.registerEvents);
+  row("Came back within 30 days", exp.counted.cameBacks);
+  row("Came-back dollars (part of the register dollars above)", exp.counted.cameBackDollars);
+  if (exp.tallyFacts) { row(""); row("Reported tally (a fact from the business, not counted above)", `${exp.tallyFacts.customers} customers, $${exp.tallyFacts.spend} across ${exp.tallyFacts.visits} visits`); }
+  row("");
+  row("RECORDED (post numbers creators reported)");
+  row("Views recorded", exp.recorded.views);
+  row("Likes recorded", exp.recorded.likes);
+  row("Posts reported", exp.recorded.reportedPosts);
+  row("");
+  row("INTENT (recorded shares and saves: people planning to come)");
+  row("Shares recorded", exp.intent.shares);
+  row("Saves recorded", exp.intent.saves);
+  row("Intent total", exp.intent.total);
+  row("");
+  row("VISITS");
+  row("Visits used this month", exp.visits.used);
+  row("Visits in the monthly plan", exp.visits.base);
+  row("Visits rolled over into this month", exp.visits.carriedIn);
+  row("Visits available this month", exp.visits.allowance);
+  row("Visits left at month end", exp.visits.remaining);
+  row("");
+  row("FOUNDING CREDIT");
+  row("Credit state", exp.credit.line);
+  row("");
+  row("LICENCES HELD (each ends on the date shown; 90 days, never longer)");
+  if (exp.licences.length) for (const l of exp.licences) row(`${l.creatorName} (@${l.creatorHandle})`, l.title, l.kind === "standard" ? "Standard licence from a paid booking" : "Licensed post", `Ends ${String(l.windowEndsAt).slice(0, 10)}`);
+  else row("None held", "", "", "");
+  row("");
+  row("Counted, recorded, and intent are three different kinds of numbers. They are never added together.");
+  return rows.join("\n") + "\n";
+}
+
 // The alert surface's list: held licences ending within 14 days
 // (or ended in the last 7, still renewable), soonest first.
 async function licencesExpiringFor(bizUser, now = Date.now()) {
@@ -9117,7 +9289,7 @@ async function businessHome(user) {
   };
 
   return {
-    business: { name: user.business.businessName, category: user.business.category, market: user.market, planId: plan.id, planName: user.business.planName, billingStatus: user.business.billingStatus, accessState: businessAccessState(user) },
+    business: { name: user.business.businessName, category: user.business.category, market: user.market, planId: plan.id, planName: user.business.planName, billingStatus: user.business.billingStatus, accessState: businessAccessState(user), availability: standingAvailabilityView(user.business) },
     plan: { id: plan.id, name: plan.name, priceMonthly: plan.priceMonthly, foundingCredit: plan.foundingCredit, firstMonthPriceMonthly: plan.firstMonthPriceMonthly, minMonths: plan.minMonths, visitsPerMonth: plan.visitsPerMonth },
     marketLive: await isMarketLive(user.market),
     // Build -91: the first-booking proof kit rides the home
@@ -9411,6 +9583,21 @@ async function buildSigFacts(user, full) {
       // surface read, so Sig can never tell a different story.
       regulars: await regularsFor(user),
       licencesExpiring: await licencesExpiringFor(user),
+      // Build -96: standing availability (the business page
+      // record itself) and whether last month's receipt is ready
+      // to forward: the month is ready only when it holds real
+      // activity (a completed visit or a counted register event
+      // in that month), never on an empty month.
+      availability: standingAvailabilityView(user.business || {}),
+      receiptReady: await (async () => {
+        const lastMonth = prevMonthKey(monthKeyOf(nowIso()));
+        const [bk, posts, events] = await Promise.all([allBookings(), allPosts(), allRedemptionEvents()]);
+        const postById = new Map(posts.map((p) => [p.bookingId, p]));
+        const mine = bk.filter((b) => b && b.businessId === user.id && !b.test);
+        const done = mine.some((b) => monthKeyOf(visitCompletedAt(b, postById.get(b.id))) === lastMonth && postById.has(b.id));
+        const countedEv = events.some((e) => e && e.businessId === user.id && !e.voided && monthKeyOf(e.at) === lastMonth);
+        return done || countedEv ? { month: lastMonth, monthLabel: monthLabelOf(lastMonth) } : null;
+      })(),
     });
   }
   if (user.role === "creator") {
@@ -9430,10 +9617,32 @@ async function buildSigFacts(user, full) {
     const pendingLicenses = (await allLicenses()).filter((l) => l.creatorId === user.id && l.status === "pending")
       .sort((a, b) => String(a.createdAt) < String(b.createdAt) ? -1 : 1)
       .map((l) => ({ businessName: l.businessName || "A business", fee: l.fee || 0, renewal: !!l.renewal, createdAt: l.createdAt }));
+    // Build -96: standing availability for the businesses this
+    // creator can actually meet: open offers in their markets,
+    // direct invites to them, and their own bookings. Only
+    // businesses that set it appear; unset means Sig says so.
+    const businessAvailability = await (async () => {
+      const ids = new Set();
+      for (const o of offers) {
+        if (!o || !o.businessId) continue;
+        if (laneOf(o) === "direct" ? o.creatorId === user.id : (o.status === "open" && isListedInMarket(user, o.market))) ids.add(o.businessId);
+      }
+      for (const b of mine) if (b && b.businessId) ids.add(b.businessId);
+      const out = [];
+      for (const id of ids) {
+        const bu = await store.get(`user:${id}`);
+        if (!bu || bu.role !== "business" || !bu.business) continue;
+        const view = standingAvailabilityView(bu.business);
+        if (view) out.push({ businessId: id, businessName: bu.business.businessName || bu.name || "A business", summary: view.summary });
+      }
+      out.sort((a, b) => String(a.businessName).localeCompare(String(b.businessName)));
+      return out;
+    })();
     return sigdata.buildCreatorFacts({
       user, full, readout, marketLive,
       bookings: mine, posts: myPosts,
       pendingLicenses,
+      businessAvailability,
       openOffers, directInvites,
       level: levelForPoints(points),
       listedMarkets: listedMarketsFor(user),
@@ -16118,7 +16327,7 @@ async function route(event) {
     if (user.role === "business" && isFoundingBusiness(user)) {
       // "moment" rides along: the standing Menu of Moments pick is
       // a founding-page profile field, set pre-launch by design.
-      const PAGE_FIELDS = ["businessName", "category", "city", "neighborhood", "zip", "about", "preferredLanguage", "musicOpen", "musicLive", "musicCreated", "studentOpen", "assetPacket", "moment"];
+      const PAGE_FIELDS = ["businessName", "category", "city", "neighborhood", "zip", "about", "preferredLanguage", "musicOpen", "musicLive", "musicCreated", "studentOpen", "assetPacket", "moment", "standingAvailability"];
       const extra = Object.keys(b || {}).filter((k) => !PAGE_FIELDS.includes(k));
       if (extra.length) {
         return err(403, "Your business page is yours to edit now. Plan settings and the product tools open when SIGNL activates your business.");
@@ -16590,6 +16799,18 @@ async function route(event) {
         else if (b.moment === null || b.moment === "") delete bz.moment;
       }
       if (b.about !== undefined) bz.about = String(b.about || "").trim().slice(0, 600);
+      // Standing availability (Build -96): the business's usual
+      // open days + hours and appointment windows, set once on
+      // the business page. Normalized whole: an invalid shape
+      // refuses the save; null (or all-empty) clears it. Creators
+      // see the computed summary on the offer board, and the
+      // composer pre-fills its timing fields from it.
+      if (b.standingAvailability !== undefined) {
+        const v = normalizeStandingAvailability(b.standingAvailability);
+        if (!v.ok) return err(400, v.error);
+        if (v.value) bz.standingAvailability = v.value;
+        else delete bz.standingAvailability;
+      }
       // Public review-page links: host-validated, optional, shown
       // to creators as a courtesy block. No points ever attach.
       if (b.reviewLinks !== undefined) {
@@ -20175,6 +20396,7 @@ async function route(event) {
         businessMusicOpen: biz && biz.business ? musicOpenView(biz.business) : null,
         businessStudentOpen: biz && biz.business ? studentOpenView(biz.business) : null,
         businessAbout: biz && biz.business ? (biz.business.about || "") : "",
+        businessAvailability: biz && biz.business ? standingAvailabilitySummary(biz.business.standingAvailability) : null,
         businessNeighborhood: biz && biz.business ? (biz.business.neighborhood || "") : "",
         paidMath: kindOf(o) === "paid" ? paidMath(Number(o.cashRate)) : null,
         // Build -84: the coupon in one plain line (the coupon
@@ -21809,6 +22031,27 @@ async function route(event) {
     }, proofKit: await proofKitFor(user) });
   }
 
+  // The forwardable Monthly Receipt export (Build -96): the
+  // Receipt above, for a chosen month (?month=YYYY-MM, default
+  // the Receipt's own month, the current one), shaped for
+  // forwarding. JSON for the Results card and Sig; CSV as a
+  // download. Same records, same Score v2 cohort math, three
+  // honesty classes kept apart.
+  if (method === "GET" && seg[0] === "me" && seg[1] === "receipt-export") {
+    if (user.role !== "business") return err(403, "Businesses only");
+    const rawMonth = query.month ? String(query.month) : monthKeyOf(nowIso());
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(rawMonth)) return err(400, "Month must look like 2026-10.");
+    const exp = await monthlyReceiptExportFor(user, rawMonth);
+    if (seg[2] === "csv") {
+      return {
+        statusCode: 200,
+        headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="signl-receipt-${rawMonth}.csv"` },
+        body: monthlyReceiptCsv(exp),
+      };
+    }
+    return json(200, { export: exp });
+  }
+
   // Proof Card data (Build -34, M7): the creator's own view of
   // the same counted record, with per-business lines in the
   // anonymized form (category and city) unless that business
@@ -22262,4 +22505,4 @@ async function route(event) {
 
 // The email builders are exported alongside the router so the verify
 // suites can assert on the exact copy a creator receives.
-module.exports = { route, passwordResetEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, normalizeBriefInput, briefForOffer, validateAssetPacket, assetPacketView, postSeries, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, runPublicPageBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView, musicOpenView, studentOpenView, PLATFORM_PEER_ID, platformThreadId, platformMessageEmail, MESSAGE_TEMPLATES, runFinishEngineSweep, maybeFireFinishMoment, handleFinishEngineReply, finishEngineConfig, recordRosterDrop, runRosterDigestSweep, regularsFor, licencesExpiringFor, runLicenceExpirySweep, normalizeCoupon, couponOf, couponFaceValue, couponSummary, validateDeliverables, deliverablesOf, deliverableLineFor, deliverableStandard, postWindowHours, DELIVERABLE_STANDARDS };
+module.exports = { route, passwordResetEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, normalizeBriefInput, briefForOffer, validateAssetPacket, assetPacketView, postSeries, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, runPublicPageBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView, musicOpenView, studentOpenView, PLATFORM_PEER_ID, platformThreadId, platformMessageEmail, MESSAGE_TEMPLATES, runFinishEngineSweep, maybeFireFinishMoment, handleFinishEngineReply, finishEngineConfig, recordRosterDrop, runRosterDigestSweep, regularsFor, licencesExpiringFor, runLicenceExpirySweep, monthlyReceiptExportFor, monthlyReceiptCsv, normalizeStandingAvailability, standingAvailabilitySummary, standingAvailabilityView, normalizeCoupon, couponOf, couponFaceValue, couponSummary, validateDeliverables, deliverablesOf, deliverableLineFor, deliverableStandard, postWindowHours, DELIVERABLE_STANDARDS };

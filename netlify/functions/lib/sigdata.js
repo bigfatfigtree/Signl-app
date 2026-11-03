@@ -240,6 +240,12 @@ function buildBusinessFacts(d) {
       title: l.title || "", kind: l.kind || "licensed", fee: l.fee != null ? l.fee : null,
       endsOn: l.windowEndsAt ? String(l.windowEndsAt).slice(0, 10) : "", daysLeft: l.daysLeft, ended: !!l.ended,
     })),
+    // Build -96: standing availability from the business page
+    // record, and last month's receipt-ready state (real
+    // activity only, computed in the router).
+    availabilitySet: !!(d.availability && d.availability.summary),
+    availabilitySummary: d.availability && d.availability.summary ? d.availability.summary : null,
+    receiptReady: d.receiptReady || null,
   };
 }
 
@@ -302,6 +308,10 @@ function buildCreatorFacts(d) {
     // Build -95: the actual pending licence/renewal requests
     // behind that count (business + fee + renewal flag).
     pendingLicenses: (d.pendingLicenses || []).map((l) => ({ businessName: l.businessName || "A business", fee: l.fee || 0, renewal: !!l.renewal })),
+    // Build -96: standing availability of the businesses this
+    // creator can meet (open offers, direct invites, own
+    // bookings), only where the business set it.
+    businessAvailability: (d.businessAvailability || []).map((b) => ({ businessId: b.businessId, businessName: b.businessName || "A business", summary: b.summary || "" })),
     paidRate: c.paidRate || null,
     licenseFee: c.licensingFee || c.licenseFee || null,
     currencySymbol: currencyForMarket(u.market).symbol,
@@ -335,6 +345,10 @@ function factsLines(role, f) {
     if (f.intentTotal > 0) lines.push(`Post intent on their live posts: ${fmt(f.intentShares)} shares and ${fmt(f.intentSaves)} saves recorded by the creators, ${fmt(f.intentTotal)} in total across ${fmt(f.intentReportedPosts)} reported ${plural(f.intentReportedPosts, "post")}. Saves and shares mean people planning to come. These are recorded figures, not counted sales. Their Return score across those posts is ${f.returnScore != null ? fmt(f.returnScore) + " out of 100" : "not scored yet (not enough data)"}.`);
     if (f.regularsCount) lines.push(`Their Regulars (creators who completed a visit and posted): ${f.regulars.map((r) => `${r.name}${r.handle ? " (@" + r.handle + ")" : ""}, ${fmt(r.visits)} ${plural(r.visits, "visit")}, last visit ${r.lastVisitAt ? String(r.lastVisitAt).slice(0, 10) : "on record"}${r.rebookedSince ? ", already rebooked since" : ""}`).join("; ")}. Regulars live in the Regulars view, where Book again clones the last visit's deal into a new draft.`);
     if (f.licencesExpiring && f.licencesExpiring.length) lines.push(`Licences ending soon: ${f.licencesExpiring.map((l) => `${l.creatorName || "a creator"}'s post "${l.title}" ends ${l.endsOn} (${l.ended ? "already ended" : fmt(Math.max(0, l.daysLeft)) + " days left"})`).join("; ")}. Renewing goes through the creator: a fresh request at their listed fee for 90 days, approved by them, never automatic.`);
+    lines.push(f.availabilitySet
+      ? `Their standing availability, set once on their business page and shown to creators on their offers: ${f.availabilitySummary}. It pre-fills the timing on new offers; a per-offer note still wins for that offer.`
+      : "They have not set standing availability yet: the usual open days and hours creators see, set once on the business page. Until it is set, every offer carries its own timing note.");
+    if (f.receiptReady) lines.push(`${f.receiptReady.monthLabel}'s receipt is ready to forward: that month ended with real activity. The forwardable monthly receipt export lives in Results: counted, recorded, and intent figures in three separate sections, visits used and rolled over, founding credit state, and licence end dates.`);
     return lines;
   }
   // creator
@@ -346,6 +360,7 @@ function factsLines(role, f) {
   if (f.intentTotal > 0) lines.push(`Intent on their own posts: ${fmt(f.intentShares)} shares and ${fmt(f.intentSaves)} saves recorded, ${fmt(f.intentTotal)} in total across ${fmt(f.intentReportedPosts)} reported ${plural(f.intentReportedPosts, "post")}. Saves and shares mean people planning to come.`);
   if (f.paidRate) lines.push(`Their listed paid rate is ${cmoney(f, f.paidRate)}${f.licenseFee ? ` and their licensing fee is ${cmoney(f, f.licenseFee)}` : ""}.`);
   if (f.pendingLicenses && f.pendingLicenses.length) lines.push(`Licence requests waiting on their decision: ${f.pendingLicenses.map((l) => `${l.businessName} at their ${cmoney(f, l.fee)} fee${l.renewal ? " (a renewal of a licence that is ending)" : ""}`).join("; ")}. Each is decided under Earnings: approve starts a fresh 90 days that day; decline leaves the post native share only.`);
+  if (f.businessAvailability && f.businessAvailability.length) lines.push(`Standing availability at businesses they can book with: ${f.businessAvailability.map((b) => `${b.businessName}: ${b.summary}`).join("; ")}. A business that is not listed here has not set its hours; the offer's own window and note are what applies.`);
   return lines;
 }
 
@@ -553,6 +568,16 @@ function answerAdmin(f, q, t) {
 
 // ---------- BUSINESS ----------
 function answerBusiness(f, q, t) {
+  // Monthly receipt export (Build -96)
+  if (hasPhrase(t, "monthly receipt", "receipt export", "export my receipt", "forward my receipt", "forward the receipt", "receipt for my bookkeeper", "bookkeeper", "download my receipt", "my receipt", "the receipt")) {
+    if (f.receiptReady) return linked(`Your ${f.receiptReady.monthLabel} receipt is ready to forward. It keeps counted, recorded, and intent figures in three separate sections, with visits used and rolled over, your founding credit state, and the end date of every licence you hold. Download the CSV or open the print view from Results and send it on.`, "Open Results", "biz-results");
+    return linked("Your forwardable monthly receipt lives in Results: pick a month and download the CSV or open the print view. It keeps counted, recorded, and intent figures in three separate sections, with visits used and rolled over, your founding credit state, and the end date of every licence you hold. A month with no activity exports honest zeros.", "Open Results", "biz-results");
+  }
+  // Standing availability (Build -96)
+  if (hasPhrase(t, "standing availability", "standing hours", "my hours", "our hours", "opening hours", "open hours", "when are we open", "when am i open", "when can creators come", "when creators can come") || hasWord(t, "availability")) {
+    if (f.availabilitySet) return linked(`Your standing availability, shown to creators on your offers: ${f.availabilitySummary}. It pre-fills the timing on new offers, and a per-offer note still wins for that offer. Change it any time on your business page.`, "Open your business page", "biz-profile");
+    return linked("You have not set standing availability yet. Set your usual open days and hours once on your business page, and creators see them on your offers while new offers pre-fill their timing from them. Until then, every offer carries its own timing note.", "Set it on your business page", "biz-profile");
+  }
   // My numbers digest
   if (hasPhrase(t, "my numbers", "my stats", "show me my", "how am i doing", "my dashboard")) {
     return linked(`Your numbers: ${fmt(f.offersLive)} offers live, ${fmt(f.applicantsWaiting)} applicants waiting on your answer, ${fmt(f.visitsBooked)} visits booked, ${fmt(f.postsLive)} posts live, ${money(f.countedDollars)} counted at the register.${f.intentTotal > 0 ? ` Those posts drew ${fmt(f.intentTotal)} saves and shares (intent: people planning to come).` : ""} You have ${fmt(f.visitsRemaining)} of ${fmt(f.visitsAllowance)} visits left this month on ${f.planName || "your plan"}.`, "See Results", "biz-results");
@@ -617,6 +642,20 @@ function answerBusiness(f, q, t) {
 
 // ---------- CREATOR ----------
 function answerCreator(f, q, t) {
+  // A business's standing availability (Build -96): answered
+  // from the real business page record, for the businesses
+  // this creator can meet. A named business wins; a single
+  // business on file answers a bare "when are they open".
+  if ((hasWord(t, "open", "hours", "availability") || hasPhrase(t, "when can i come", "when can i visit", "what time")) &&
+      hasPhrase(t, "when", "what", "open", "hours", "availability", "come in", "visit")) {
+    const list = f.businessAvailability || [];
+    const ql = " " + String(q || "").toLowerCase() + " ";
+    const named = list.find((b) => ql.includes(" " + b.businessName.toLowerCase()) || ql.includes(b.businessName.toLowerCase()));
+    if (named) return linked(`${named.businessName} set its standing hours on its business page: ${named.summary}. The offer's own window and note still apply to a specific visit.`, "See the offer", "cr-offers");
+    if (list.length === 1) return linked(`${list[0].businessName} set its standing hours on its business page: ${list[0].summary}. The offer's own window and note still apply to a specific visit.`, "See the offer", "cr-offers");
+    if (list.length > 1) return linked(`Standing hours on file: ${list.slice(0, 5).map((b) => `${b.businessName}: ${b.summary}`).join("; ")}. Any other business has not set theirs; its offer window and note are what applies.`, "See the offers", "cr-offers");
+    if (hasPhrase(t, "when is", "when are", "what are the hours", "their hours", "its hours")) return "That business has not set standing hours on its page yet. The offer's own window and note are what applies to your visit.";
+  }
   // My numbers digest
   if (hasPhrase(t, "my numbers", "my stats", "show me my", "how am i doing")) {
     return linked(`Your numbers: ${fmt(f.momentumPoints)} Momentum points (level ${f.level ? f.level.name : "Starter"}), ${fmt(f.offersOpen)} open offers in your markets, ${fmt(f.applicationsPending)} applications waiting on an answer, ${fmt(f.visitsBooked)} visits booked, ${fmt(f.postsLive)} posts live, and ${money(f.paidRecordedNet)} recorded from paid bookings.${f.intentTotal > 0 ? ` Your posts have drawn ${fmt(f.intentTotal)} saves and shares so far (intent: people planning to come).` : ""}`, "Open Your numbers", "cr-numbers");
@@ -760,6 +799,12 @@ function buildHomeState(role, f) {
     if (f.licencesExpiring && f.licencesExpiring.length) chips.push(`${fmt(f.licencesExpiring.length)} ${plural(f.licencesExpiring.length, "licence")} ending soon`);
     const unbooked = (f.regulars || []).filter((r) => !r.rebookedSince).length;
     if (unbooked) chips.push(`${fmt(unbooked)} ${plural(unbooked, "Regular")} to book again`);
+    // Build -96 proactive prompts, real records only: standing
+    // availability unset on the business page, and a new
+    // month's receipt ready to forward (the router only sets
+    // receiptReady when that month holds real activity).
+    if (!f.availabilitySet) chips.push("Set your standing hours");
+    if (f.receiptReady) chips.push(`${f.receiptReady.monthLabel} receipt is ready to forward`);
   } else if (role === "creator") {
     if (f.directInvites) chips.push(`${fmt(f.directInvites)} ${plural(f.directInvites, "invite")} sent to you`);
     if (f.offersOpen) chips.push(`${fmt(f.offersOpen)} ${plural(f.offersOpen, "offer")} waiting`);
