@@ -58,7 +58,7 @@ function check(label, cond, detail = "") {
 const uniq = () => Math.random().toString(36).slice(2, 9);
 
 const COMP_DELIVERABLE = "1 post + 1 story that shares the post. Post within 48 hours; one week is the hard deadline.";
-const PAID_DELIVERABLE = "Deliverables are set in the booking terms. Post within 48 hours and keep the post live at least 30 days.";
+const PAID_DELIVERABLE = "Deliverables are set in the booking terms. Post on the agreed posting terms and keep the post live at least 30 days.";
 
 function makeClient() {
   const jar = new Map();

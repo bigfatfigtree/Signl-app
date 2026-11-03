@@ -3744,7 +3744,7 @@ function talentBudgetOf(business) {
 const BRIEF_GOALS = ["more_weekend_customers", "launch_something_new", "fill_an_event", "grow_regulars"];
 const BRIEF_DELIVERABLES = {
   comp: "1 post + 1 story that shares the post. Post within 48 hours; one week is the hard deadline.",
-  paid: "Deliverables are set in the booking terms. Post within 48 hours and keep the post live at least 30 days.",
+  paid: "Deliverables are set in the booking terms. Post on the agreed posting terms and keep the post live at least 30 days.",
 };
 function briefCleanText(value, max) {
   return typeof value === "string" ? value.trim().slice(0, max) : "";
@@ -18900,6 +18900,38 @@ async function route(event) {
       // prove the whole loop end to end. Production never does.
       if (TEST_MODE) out.devResetToken = token;
       return json(200, out);
+    }
+
+    // Correct account email (Build -113, Phase A4): an admin fixes
+    // the address on ANY account — the driving case is a creator
+    // whose own typo (a domain missing its last letter) bounced
+    // every approval email and locked her out of sign-in. The
+    // correction moves the whole identity: the record's email, and
+    // the uniqueness index login and registration resolve through,
+    // so the old address stops resolving the moment the new one
+    // lands. The old address is kept ONLY in the audit event,
+    // never on the account record. Validation speaks plain words
+    // because the queue shows the message verbatim.
+    if (seg[1] === "users" && seg.length === 4 && seg[3] === "correct-email" && method === "POST") {
+      const target = await store.get(`user:${seg[2]}`);
+      if (!target) return err(404, "Account not found");
+      const b = parseBody(event);
+      const newEmail = String(b.email || "").trim().toLowerCase();
+      if (!isEmail(newEmail)) return err(400, "That does not look like a valid email address.");
+      const oldEmail = String(target.email || "").toLowerCase();
+      if (newEmail === oldEmail) return json(200, { ok: true, unchanged: true, email: oldEmail, role: target.role });
+      const existing = await store.get(`email:${newEmail}`);
+      if (existing && existing.userId !== target.id) return err(409, "That email already belongs to another account.");
+      target.email = newEmail;
+      target.updatedAt = nowIso();
+      await store.set(`user:${target.id}`, target);
+      if (oldEmail && oldEmail !== newEmail) {
+        const oldIdx = await store.get(`email:${oldEmail}`);
+        if (oldIdx && oldIdx.userId === target.id) await store.del(`email:${oldEmail}`);
+      }
+      await store.set(`email:${newEmail}`, { userId: target.id });
+      await logEvent({ type: "admin_corrected_account_email", actorId: user.id, actorRole: "admin", subjectId: target.id, market: target.market || null, data: { role: target.role, oldEmail, newEmail } });
+      return json(200, { ok: true, email: newEmail, role: target.role });
     }
 
     // Dubai Advertiser Permit (Build -70): an admin sets a Dubai

@@ -200,7 +200,7 @@ async function main() {
     paid.status === 201 && paid.data.offer.deliverables.posts === 2 && paid.data.offer.deliverables.windowHours === 24,
     `${paid.status} ${JSON.stringify((paid.data.offer || {}).deliverables || null)}`);
   check("paid create: the paid brief line stays the paid canon (terms set in the booking)",
-    paid.data.offer.brief.deliverable === "Deliverables are set in the booking terms. Post within 48 hours and keep the post live at least 30 days.",
+    paid.data.offer.brief.deliverable === "Deliverables are set in the booking terms. Post on the agreed posting terms and keep the post live at least 30 days.",
     JSON.stringify((paid.data.offer.brief || {}).deliverable));
   const pbk = await acceptAndConfirm(biz, chef, paid.data.offer.id);
   check("paid license: the booking still carries the standard 90-day license even with edited deliverables (not removable)",
@@ -241,7 +241,7 @@ async function main() {
 
   // ---------- the client bundle carries the flows ----------
   const shell = await (await fetch(`${BASE}/`)).text();
-  check("shell: the build stamp is current", shell.includes("2026.11.03-112"), shell.slice(0, 120));
+  check("shell: the build stamp is current", shell.includes("2026.11.03-113"), shell.slice(0, 120));
   const appJs = await (await fetch(`${BASE}/app.js`)).text();
   check("client: the composer carries the deliverables editor with the Recommended badge and all three kinds",
     appJs.includes("deliverablesEditorHtml") && appJs.includes("Recommended") && appJs.includes('value="coupon"') && appJs.includes("the coupon is the payment for the post. No cash changes hands."),

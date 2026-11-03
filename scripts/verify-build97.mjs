@@ -154,7 +154,7 @@ try {
   const paid = await bizAct.req("POST", "/api/offers", { title: "Manual paid", kind: "paid", cashRate: 150, whatComped: "Dinner for two", spots: 1, draft: true, deliverables: { posts: 2, story: false, windowHours: 24 } });
   check("manual paid draft: deliverables editable, brief line stays the paid canon (the 90-day licence is a term, not an edit)",
     paid.status === 201 && paid.data.offer.deliverables.posts === 2 && paid.data.offer.deliverables.windowHours === 24
-    && paid.data.offer.brief && paid.data.offer.brief.deliverable === "Deliverables are set in the booking terms. Post within 48 hours and keep the post live at least 30 days.",
+    && paid.data.offer.brief && paid.data.offer.brief.deliverable === "Deliverables are set in the booking terms. Post on the agreed posting terms and keep the post live at least 30 days.",
     JSON.stringify((paid.data.offer || {}).brief || null));
 
   console.log("== Build -97: the guided commit lands in the same store, once ==");
@@ -241,9 +241,9 @@ console.log("== Source checks ==");
   check("canon locks untouched: founding Stripe prices stay env-or-empty (no market live for money)",
     routerJs.includes('STRIPE_PRICE_FOUNDING_SELF_SERVICE || ""') && routerJs.includes('STRIPE_PRICE_FOUNDING_GROWTH || ""') && routerJs.includes('STRIPE_PRICE_FOUNDING_MANAGED || ""'));
   check("no em dashes in the new copy", ["Set up a campaign", "Build a new campaign, step by step or with Sig.", "Current and past campaigns, who applied, and what they did.", "Tell Sig what you want", "Nothing is saved until you tap Save this draft", "Partway through the month,"].every((l) => !l.includes("—") && !l.includes("–")));
-  check("build stamp is 2026.11.03-112 on both sides",
-    fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes('exports.BUILD_ID = "2026.11.03-112"')
-    && fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes('window.__SIGNL_BUILD__ = "2026.11.03-112"'), "");
+  check("build stamp is 2026.11.03-113 on both sides",
+    fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes('exports.BUILD_ID = "2026.11.03-113"')
+    && fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes('window.__SIGNL_BUILD__ = "2026.11.03-113"'), "");
 }
 
 console.log(`\nBuild -97 verify: ${passed} passed, ${failed} failed`);

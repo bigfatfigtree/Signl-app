@@ -1877,7 +1877,10 @@ function dealRowsHtml(o) {
   }
   if (o.includes) main.push(["Included", esc(o.includes)]);
   if (o.experience) main.push(["Experience", esc(o.experience)]);
-  terms.push(["Post", o.kind === "paid" ? `${deliverablePhraseClient(o)} &middot; within ${windowPhraseClient(dv84.windowHours)} &middot; live 30 days` : `${deliverablePhraseClient(o)} &middot; ${windowPhraseClient(dv84.windowHours)} &middot; honest, disclosed &middot; live 30 days`]);
+  // Phase A4 (M1): a paid deal's Post row never states a window —
+  // its timing is the agreed posting terms on the row right
+  // below, not the comped 48-hour standard. Comped rows unchanged.
+  terms.push(["Post", o.kind === "paid" ? `${deliverablePhraseClient(o)} &middot; live 30 days` : `${deliverablePhraseClient(o)} &middot; ${windowPhraseClient(dv84.windowHours)} &middot; honest, disclosed &middot; live 30 days`]);
   // Phase C: a paid deal's agreed posting terms, in the exact
   // words from the booking record, on the offer before accepting
   // and on both sides' visit views after.
@@ -5848,7 +5851,7 @@ function sigB1DraftBrief() {
     `${ST("Hook", "Gancho")}: ${d.briefHook || "—"}`,
     `${ST("Must mention", "Debe mencionar")}: ${(d.briefMust || []).join(" · ") || "—"}`,
     ...(d.briefDont && d.briefDont.length ? [`${ST("Do not say", "No decir")}: ${d.briefDont.join(" · ")}`] : []),
-    `${ST("Deliverable", "Entrega")}: ${d.kind === "paid" ? ST("set in the booking terms; post within 48 hours, live at least 30 days", "según los términos de la reserva; publicar en 48 horas, activo al menos 30 días") : `${deliverablePhraseClient({ kind: d.kind, deliverables: sigB1DeliverablesOf() })}; ${ST("post within", "publicar en")} ${windowPhraseClient(sigB1DeliverablesOf().windowHours)}`}`,
+    `${ST("Deliverable", "Entrega")}: ${d.kind === "paid" ? ST("set in the booking terms; post on the agreed posting terms, live at least 30 days", "según los términos de la reserva; publicar en los términos acordados, activo al menos 30 días") : `${deliverablePhraseClient({ kind: d.kind, deliverables: sigB1DeliverablesOf() })}; ${ST("post within", "publicar en")} ${windowPhraseClient(sigB1DeliverablesOf().windowHours)}`}`,
     ...(d.briefTiming ? [`${ST("Timing", "Tiempo")}: ${d.briefTiming}`] : []),
     ...(d.briefCta ? [`${ST("Call to action", "Llamada a la acción")}: ${d.briefCta}`] : []),
   ];
@@ -5885,7 +5888,7 @@ function sigB1SummaryText() {
     ...(d.play && sigPlay(d.play) ? [`Play: ${sigPlay(d.play).name}`] : []),
     `${ST("Offer", "Oferta")}: "${d.title}" (${d.lane === "direct" ? ST(`direct to ${d.creatorName || "one creator"}`, `directa a ${d.creatorName || "un creador"}`) : ST("open to your market", "abierta a tu mercado")})`,
     d.kind === "paid" ? `${ST("Paid", "Pago")}: $${fmtPrice(d.rate)} cash${d.lane === "direct" && d.creatorRate ? ST(" at their listed rate", " a su tarifa publicada") : ""}` : d.kind === "coupon" ? `${ST("Coupon", "Cupón")}: ${couponSummaryClient(sigB1CouponOf(), bizName)}${d.cexpires ? ` · ${ST("expires", "vence")} ${fmtDay(d.cexpires)}` : ""}` : `${ST("Comp", "Cortesía")}: ${d.comped} (cap $${fmtMoney(d.cap)}, covers ${d.covers})`,
-    `${ST("Deliverables", "Entregas")}: ${deliverablePhraseClient({ kind: d.kind, deliverables: sigB1DeliverablesOf() })} · ${ST("post within", "publicar en")} ${windowPhraseClient(sigB1DeliverablesOf().windowHours)}${d.kind === "paid" ? ST(" · standard license included (90 days)", " · licencia estándar incluida (noventa días)") : ST(" · native share only", " · solo compartir nativo")}`,
+    `${ST("Deliverables", "Entregas")}: ${deliverablePhraseClient({ kind: d.kind, deliverables: sigB1DeliverablesOf() })}${d.kind === "paid" ? "" : ` · ${ST("post within", "publicar en")} ${windowPhraseClient(sigB1DeliverablesOf().windowHours)}`}${d.kind === "paid" ? ST(" · standard license included (90 days)", " · licencia estándar incluida (noventa días)") : ST(" · native share only", " · solo compartir nativo")}`,
     ...(d.kind === "paid" ? [`${postingTermsLineClient({ postingTerms: d.postingTerms || { type: "standard" } })}`] : []),
     `${ST("Spots", "Cupos")}: ${d.spots}${d.lane === "open" && (d.tiers || []).length ? ` · ${ST("tiers", "niveles")}: ${d.tiers.join(", ")}` : ""}`,
     d.lane === "open" ? `${ST("Timing", "Tiempo")}: ${ST("applications", "aplicaciones")} ${d.applyDays || 3}d · ${ST("visits within", "visitas en")} ${d.windowDays || 7}d` : `${ST("Timing", "Tiempo")}: ${d.windowMode === "thisweek" ? ST("this week", "esta semana") : ST("within 7 days", "en 7 días")}`,
@@ -21522,9 +21525,17 @@ async function loadCompliance() {
       expired: "Window expired unused (no-show)",
       honor_reported: "Business didn't honor: clock voided",
     };
+    // Phase A4 (M2): the per-visit badge follows the creator's
+    // actual standing. A creator removed at the hard stop (two
+    // silent no-shows, a consumed comp) still has visits sitting
+    // in the visit-level "paused" window — the badge must say
+    // removed, not paused: removed ≠ paused.
+    const badgeLabel = (r) => (r.status === "paused" && r.creatorStanding === "banned")
+      ? "Past the hard stop, creator removed"
+      : (statusLabel[r.status] || r.status);
     const rows = (data.visits || []).map((r) => `
       <div class="card mb">
-        <div class="flex-between"><strong>${esc(r.title)}</strong><span class="badge ${r.status === "posted_on_time" ? "ok" : r.status === "posted_late" || r.status === "post_due" ? "warn" : r.status === "booked" ? "info" : "bad"}">${esc(statusLabel[r.status] || r.status)}</span></div>
+        <div class="flex-between"><strong>${esc(r.title)}</strong><span class="badge ${r.status === "posted_on_time" ? "ok" : r.status === "posted_late" || r.status === "post_due" ? "warn" : r.status === "booked" ? "info" : "bad"}">${esc(badgeLabel(r))}</span></div>
         <p class="small muted">Creator: <strong>${esc(r.creatorName)}</strong> (@${esc(r.creatorHandle)}) &middot; Business: ${esc(r.businessName)} &middot; Market: ${esc(r.market)}</p>
         <p class="small">Redeemed: ${r.redeemedAt ? esc(fmtDate(r.redeemedAt)) : "not yet"} &middot; Post deadline: ${r.postDeadline ? esc(fmtDate(r.postDeadline)) : "n/a"} &middot; Hard stop: ${r.pauseAt ? esc(fmtDate(r.pauseAt)) : "n/a"} &middot; Ban lands: ${r.banAt ? esc(fmtDate(r.banAt)) : "n/a"}</p>
         ${r.proofUrl ? `<p class="small">Proof: <a href="${esc(r.proofUrl)}" target="_blank" rel="noopener">${esc(r.proofUrl)}</a>${r.proofSubmittedAt ? ` &middot; submitted ${esc(fmtDate(r.proofSubmittedAt))}` : ""}</p>` : ""}
@@ -21732,7 +21743,7 @@ async function loadApplications() {
         <td data-label="Applied">${fmtDate(u.createdAt)}</td>
         <td>${u.status === "pending"
           ? `<button class="btn small-btn" onclick="reviewApp('${u.id}','approve')">Approve</button> <button class="btn small-btn danger" onclick="toggleRejectEditor('${u.id}')">Reject</button><div id="rej-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px"><div class="field"><label>Reason (optional, named in their rejection email)</label><select id="rej-reason-${u.id}"><option value="">No reason given</option><option>Not local enough</option><option>Audience too small for this wave</option><option>Content not a fit</option><option>Market not open yet</option><option>Other</option></select></div><button class="btn small-btn danger" onclick="confirmRejectApp('${u.id}')">Send rejection</button></div>`
-          : `<span class="badge ${u.status === "approved" ? "ok" : "bad"}">${esc(u.status)}</span>${u.tester ? ` <span class="badge warn">Tester</span>` : ""}${u.role === "creator" && u.status === "approved" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="setTester('${u.id}', ${u.tester ? "false" : "true"}, 'creator')">${u.tester ? "Move to roster" : "Move to Tester"}</button>` : ""}${u.role === "creator" && u.status === "approved" ? `<br><button class="btn small-btn" style="margin-top:6px" onclick="adminMsgComposeTo('${u.id}')">Message</button>` : ""}`}${u.role === "business" && u.status === "approved" && businessAccessState(u) !== "active" ? `<br><button class="btn small-btn" style="margin-top:6px" onclick="activateBusiness('${u.id}')">Activate business</button>` : ""}${u.role === "business" ? `<br><button class="btn small-btn" style="margin-top:6px" onclick="adminViewBusiness('${u.id}')">View account</button><br><button class="btn small-btn ghost" style="margin-top:6px" onclick="adminSendSigninLink('${u.id}')">Send sign-in link</button>` : ""}${u.role === "business" && u.status === "approved" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="setTester('${u.id}', ${u.tester ? "false" : "true"}, 'business')">${u.tester ? "Move to roster" : "Move to Tester"}</button>` : ""}${u.role === "business" && u.business ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleReviewLinks('${u.id}')">Review links</button><div id="rl-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px">${["google", "yelp", "tripadvisor", "facebook"].map((k) => `<div class="field"><label>${esc(k)}</label><input id="rl-${k}-${u.id}" type="url" value="${esc((u.business.reviewLinks || {})[k] || "")}" placeholder="https://"></div>`).join("")}<button class="btn small-btn" onclick="saveReviewLinks('${u.id}')">Save review links</button></div><br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleDiscountEditor('${u.id}')">Code discount</button><div id="disc-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px"><label style="font-weight:500"><input type="checkbox" id="disc-enabled-${u.id}" style="width:auto" ${u.business.discountEnabled ? "checked" : ""}> Code discounts on (business's opt-in)</label><div class="field"><label>Discount percent (5 to 50)</label><input id="disc-pct-${u.id}" type="number" min="5" max="50" step="1" value="${esc(String(u.business.discountPct == null ? 20 : u.business.discountPct))}"></div><button class="btn small-btn" onclick="saveDiscountSetting('${u.id}')">Save code discount</button></div>` : ""}${u.role === "creator" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="adminViewCreator('${u.id}')">View profile</button>` : ""}${u.role === "creator" && u.market === "Dubai" ? `<br><label class="small" style="display:block;margin-top:8px">Advertiser Permit (UAE)<select onchange="saveAdvertiserPermit('${u.id}', this.value)" style="margin-top:4px"><option value="not_started" ${!u.advertiserPermit || u.advertiserPermit === "not_started" ? "selected" : ""}>Not started</option><option value="in_progress" ${u.advertiserPermit === "in_progress" ? "selected" : ""}>In progress</option><option value="done" ${u.advertiserPermit === "done" ? "selected" : ""}>Done</option></select></label>` : ""}${(u.role === "creator" || u.role === "business") ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleAttributionEditor('${u.id}')">Partner attribution</button><div id="attr-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px"><div class="small" style="margin-bottom:6px">${u.partnerId ? `Attributed to <strong>${esc(u.partnerName || "a partner")}</strong>` : (u.signupSource && u.signupSource.indexOf("partner-") === 0 ? "Came through a partner link, but is not stamped to the partner yet" : "Not attributed to a partner (direct)")}</div><div class="field"><label>Attribute to</label><select id="attr-partner-${u.id}"><option value="">Direct — no partner</option>${adminPartnerChoices.map((p) => `<option value="${p.id}" ${u.partnerId === p.id ? "selected" : ""}>${esc(p.name)} (${esc(p.code)})</option>`).join("")}</select></div><div class="field"><label>Reason (kept with the change)</label><input id="attr-reason-${u.id}" type="text" placeholder="Why is this changing?"></div><button class="btn small-btn" onclick="saveAttribution('${u.id}')">Save attribution</button></div>` : ""}</td>
+          : `<span class="badge ${u.status === "approved" ? "ok" : "bad"}">${esc(u.status)}</span>${u.tester ? ` <span class="badge warn">Tester</span>` : ""}${u.role === "creator" && u.status === "approved" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="setTester('${u.id}', ${u.tester ? "false" : "true"}, 'creator')">${u.tester ? "Move to roster" : "Move to Tester"}</button>` : ""}${u.role === "creator" && u.status === "approved" ? `<br><button class="btn small-btn" style="margin-top:6px" onclick="adminMsgComposeTo('${u.id}')">Message</button>` : ""}`}${u.role === "business" && u.status === "approved" && businessAccessState(u) !== "active" ? `<br><button class="btn small-btn" style="margin-top:6px" onclick="activateBusiness('${u.id}')">Activate business</button>` : ""}${u.role === "business" ? `<br><button class="btn small-btn" style="margin-top:6px" onclick="adminViewBusiness('${u.id}')">View account</button><br><button class="btn small-btn ghost" style="margin-top:6px" onclick="adminSendSigninLink('${u.id}')">Send sign-in link</button>` : u.role === "creator" ? `<br><button class="btn small-btn" style="margin-top:6px" onclick="adminViewAccount('${u.id}')">View account</button><br><button class="btn small-btn ghost" style="margin-top:6px" onclick="adminSendSigninLink('${u.id}')">Send sign-in link</button>` : ""}${(u.role === "creator" || u.role === "business") ? "<br>" + correctEmailEditorHtml(u, "ce") : ""}${u.role === "business" && u.status === "approved" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="setTester('${u.id}', ${u.tester ? "false" : "true"}, 'business')">${u.tester ? "Move to roster" : "Move to Tester"}</button>` : ""}${u.role === "business" && u.business ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleReviewLinks('${u.id}')">Review links</button><div id="rl-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px">${["google", "yelp", "tripadvisor", "facebook"].map((k) => `<div class="field"><label>${esc(k)}</label><input id="rl-${k}-${u.id}" type="url" value="${esc((u.business.reviewLinks || {})[k] || "")}" placeholder="https://"></div>`).join("")}<button class="btn small-btn" onclick="saveReviewLinks('${u.id}')">Save review links</button></div><br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleDiscountEditor('${u.id}')">Code discount</button><div id="disc-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px"><label style="font-weight:500"><input type="checkbox" id="disc-enabled-${u.id}" style="width:auto" ${u.business.discountEnabled ? "checked" : ""}> Code discounts on (business's opt-in)</label><div class="field"><label>Discount percent (5 to 50)</label><input id="disc-pct-${u.id}" type="number" min="5" max="50" step="1" value="${esc(String(u.business.discountPct == null ? 20 : u.business.discountPct))}"></div><button class="btn small-btn" onclick="saveDiscountSetting('${u.id}')">Save code discount</button></div>` : ""}${u.role === "creator" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="adminViewCreator('${u.id}')">View profile</button>` : ""}${u.role === "creator" && u.market === "Dubai" ? `<br><label class="small" style="display:block;margin-top:8px">Advertiser Permit (UAE)<select onchange="saveAdvertiserPermit('${u.id}', this.value)" style="margin-top:4px"><option value="not_started" ${!u.advertiserPermit || u.advertiserPermit === "not_started" ? "selected" : ""}>Not started</option><option value="in_progress" ${u.advertiserPermit === "in_progress" ? "selected" : ""}>In progress</option><option value="done" ${u.advertiserPermit === "done" ? "selected" : ""}>Done</option></select></label>` : ""}${(u.role === "creator" || u.role === "business") ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleAttributionEditor('${u.id}')">Partner attribution</button><div id="attr-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px"><div class="small" style="margin-bottom:6px">${u.partnerId ? `Attributed to <strong>${esc(u.partnerName || "a partner")}</strong>` : (u.signupSource && u.signupSource.indexOf("partner-") === 0 ? "Came through a partner link, but is not stamped to the partner yet" : "Not attributed to a partner (direct)")}</div><div class="field"><label>Attribute to</label><select id="attr-partner-${u.id}"><option value="">Direct — no partner</option>${adminPartnerChoices.map((p) => `<option value="${p.id}" ${u.partnerId === p.id ? "selected" : ""}>${esc(p.name)} (${esc(p.code)})</option>`).join("")}</select></div><div class="field"><label>Reason (kept with the change)</label><input id="attr-reason-${u.id}" type="text" placeholder="Why is this changing?"></div><button class="btn small-btn" onclick="saveAttribution('${u.id}')">Save attribution</button></div>` : ""}</td>
       </tr>`;
     };
     const pend = (data.pending || []).filter(adminAppInFilter);
@@ -21824,6 +21835,87 @@ async function adminViewCreator(userId) {
 }
 
 function adminBackToRequests() { loadApplications(); return false; }
+
+// ---------- Correct account email + Admin account view (Build -113, Phase A4) ----------
+// The editor behind the "Correct email" button, shared by the
+// Applications row (prefix "ce") and the account view (prefix
+// "acct"). Plain words throughout: the person reading this is
+// fixing a typo, not administering a database. The server does
+// the real work (validation, the index move, the audit event);
+// this only carries the address there and says what happened.
+function correctEmailEditorHtml(u, prefix) {
+  return `<button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleCorrectEmail('${prefix}', '${u.id}')">Correct email</button><div id="${prefix}-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px"><div class="small" style="margin-bottom:6px">Fix a typo or a changed address. Mail and sign-in use the new address.</div><div class="field"><label>New email address</label><input id="${prefix}-email-${u.id}" type="email" value="${esc(u.email)}"></div><button class="btn small-btn" onclick="saveCorrectEmail('${prefix}', '${u.id}')">Save new email</button><p class="small" id="${prefix}-note-${u.id}" style="margin:6px 0 0"></p></div>`;
+}
+function toggleCorrectEmail(prefix, userId) {
+  const d = document.getElementById(prefix + "-edit-" + userId);
+  if (d) d.style.display = d.style.display === "none" ? "block" : "none";
+  return false;
+}
+async function saveCorrectEmail(prefix, userId) {
+  const input = document.getElementById(prefix + "-email-" + userId);
+  const note = document.getElementById(prefix + "-note-" + userId);
+  const email = input ? input.value.trim() : "";
+  const say = (t) => { if (note) note.textContent = t; };
+  if (!email) { say("Type the new email address first."); return false; }
+  try {
+    const d = await api("POST", `/admin/users/${userId}/correct-email`, { email });
+    if (d.unchanged) { say("That is already the email on this account — nothing changed."); return false; }
+    if (prefix === "acct") {
+      const cur = document.getElementById("acct-current-email-" + userId);
+      if (cur) cur.textContent = d.email;
+      if (input) input.value = d.email;
+      say(`Saved. Mail and sign-in now use ${d.email}.`);
+    } else {
+      alert(`Saved. Mail and sign-in now use ${d.email}.`);
+      loadApplications();
+    }
+  } catch (e) { say(e.message); }
+  return false;
+}
+
+// Admin account view: one account on its own screen — who it is,
+// the email on file, and the account actions (Correct email,
+// Send sign-in link). Creator rows reach it with "View account";
+// business rows keep the Build -67 view-as under the same words
+// and reach Correct email on the queue row itself. The record
+// comes from the same Admin applications read the queue renders,
+// so what is corrected here is what the queue shows.
+async function adminViewAccount(userId) {
+  const el = document.getElementById("tab-body");
+  if (!el) return;
+  el.innerHTML = `<p class="muted">Loading account...</p>`;
+  try {
+    const data = await api("GET", "/admin/applications");
+    const u = [...(data.pending || []), ...(data.decided || [])].find((x) => x.id === userId);
+    if (!u) { el.innerHTML = `<div class="error-box">Account not found</div><p><button class="btn small-btn ghost" onclick="adminBackToRequests()">Back to Applications</button></p>`; return; }
+    const roleLabel = { creator: "Creator", business: "Business", partner: "Partner", recruiter: "Recruiter", pilot_partner: "Pilot partner" }[u.role] || u.role;
+    const detailLine = u.role === "creator" && u.creator
+      ? `<p class="small" style="margin:6px 0 0">@${esc(u.creator.handle || "")} &middot; ${fmtNum(u.creator.followerCount)} followers &middot; ${(u.creator.categories || []).map(esc).join(", ")}</p>`
+      : u.role === "business" && u.business
+        ? `<p class="small" style="margin:6px 0 0">${esc(u.business.businessName || "")} &middot; ${esc(u.business.category || "")}</p>`
+        : "";
+    el.innerHTML = `
+      <p style="margin:0 0 10px"><button class="btn small-btn ghost" onclick="adminBackToRequests()">Back to Applications</button></p>
+      <div class="panel">
+        <h3 style="margin:0 0 2px">${esc(u.name || "")}</h3>
+        <p class="small muted" style="margin:0">${roleLabel} account &middot; ${esc(marketDisplayName(u.market))}${u.city ? ` &middot; ${esc(u.city)}` : ""} &middot; Applied ${esc(fmtDate(u.createdAt))}</p>
+        <p style="margin:6px 0 0"><span class="badge ${u.status === "approved" ? "ok" : u.status === "rejected" ? "bad" : "info"}">${esc(u.status)}</span></p>
+        ${detailLine}
+      </div>
+      <div class="panel" style="margin-top:12px">
+        <h4 style="margin:0 0 4px">Account email</h4>
+        <p style="margin:0"><strong id="acct-current-email-${u.id}">${esc(u.email)}</strong></p>
+        <p class="small muted" style="margin:2px 0 0">Approval mail, SIGNL messages and sign-in all use this address.</p>
+        ${correctEmailEditorHtml(u, "acct")}
+        <div style="margin-top:12px"><button class="btn small-btn" onclick="adminSendSigninLink('${u.id}')">Send sign-in link</button> <span class="small muted">Sends a fresh sign-in link to the address above.</span></div>
+        ${u.role === "creator" ? `<div style="margin-top:8px"><button class="btn small-btn ghost" onclick="adminViewCreator('${u.id}')">View profile</button> <span class="small muted">The profile exactly as a business sees it.</span></div>` : ""}
+        ${u.role === "business" ? `<div style="margin-top:8px"><button class="btn small-btn ghost" onclick="adminViewBusiness('${u.id}')">Open their account view</button> <span class="small muted">Their real account, read-only.</span></div>` : ""}
+      </div>`;
+    window.scrollTo(0, 0);
+  } catch (err) {
+    el.innerHTML = `<div class="error-box">${esc(err.message)}</div><p><button class="btn small-btn ghost" onclick="adminBackToRequests()">Back to Applications</button></p>`;
+  }
+}
 
 async function loadLeaderboard() {
   const el = document.getElementById("tab-body");
