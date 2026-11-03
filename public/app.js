@@ -14810,6 +14810,34 @@ function renderBusinessDash() {
 // yet gets the fills-in voice, never a grid of zeros.
 const PARTNER_TABS = ["Home", "Markets", "Creators", "Businesses", "Performance", "Earnings", "Links", "Account", "More", "Help", "Sig"];
 
+// Co-brand (Build -105): when Admin has set a partner brand,
+// the partner's name and logo lead their shell and "Powered by
+// SIGNL" sits underneath. SIGNL's own chrome never disappears,
+// and with no brand set this returns "" so the shell renders
+// exactly as before. The accent restyles only this shell's
+// primary buttons and links (the .pt-shell rules in theme-v2.css).
+function coBrandHeadHtml(brand) {
+  if (!brand || (!brand.displayName && !brand.logoUrl)) return "";
+  return `<div class="pt-brand-head">
+    ${brand.logoUrl ? `<img class="pt-brand-logo" src="${esc(brand.logoUrl)}" alt="">` : ""}
+    <div>
+      ${brand.displayName ? `<div class="pt-brand-name">${esc(brand.displayName)}</div>` : ""}
+      <div class="pt-brand-powered">Powered by SIGNL</div>
+    </div>
+  </div>`;
+}
+
+function coBrandShellOn(el, brand) {
+  if (!el) return;
+  if (brand) {
+    el.classList.add("pt-shell");
+    el.style.setProperty("--pt-accent", brand.accentColor || "#006AFC");
+  } else {
+    el.classList.remove("pt-shell");
+    el.style.removeProperty("--pt-accent");
+  }
+}
+
 function renderPartnerDash() {
   const u = state.user;
   let tab = state.tab || "Home";
@@ -14843,6 +14871,12 @@ function renderPartnerTab(tab) {
   if (tab === "Account") el.innerHTML = partnerAccountHtml(d);
   if (tab === "Help") el.innerHTML = partnerHelpHtml(d);
   if (tab === "Sig") el.innerHTML = partnerSigHtml(d);
+  // Co-brand (Build -105): the partner's brand leads every tab
+  // of their shell; no brand set, nothing changes.
+  const pBrand = d.partner && d.partner.brand;
+  coBrandShellOn(el, pBrand);
+  const pBrandHead = coBrandHeadHtml(pBrand);
+  if (pBrandHead) el.insertAdjacentHTML("afterbegin", pBrandHead);
   // Sig's living face rides the same hero stack as the Sig tab
   // (sigHeroSet): idle on the Overview presence card; a greet
   // one-shot the first time the partner opens their Sig, idle
@@ -20178,6 +20212,14 @@ async function loadAdminPartners() {
         <div class="field"><label>Agreement</label><select id="pt-agree-${p.id}"><option value="unsigned" ${(p.agreementStatus || "unsigned") === "unsigned" ? "selected" : ""}>Unsigned</option><option value="signed" ${p.agreementStatus === "signed" ? "selected" : ""}>Signed</option><option value="countersigned" ${p.agreementStatus === "countersigned" ? "selected" : ""}>Countersigned</option></select></div>
       </div>
       <div class="field"><label>Markets (comma separated, exact names)</label><input type="text" id="pt-markets-${p.id}" value="${esc((p.markets || []).join(", "))}"></div>
+      <h4 style="margin:12px 0 4px">Co-brand</h4>
+      <p class="small muted" style="margin:0 0 6px">What leads in this partner's portal, reports and invite emails. SIGNL stays underneath ("Powered by SIGNL") — this never replaces the platform brand. Leave everything blank for SIGNL-only.</p>
+      <div class="form-2col">
+        <div class="field"><label>Display name</label><input type="text" id="pt-brand-name-${p.id}" value="${esc((p.brand && p.brand.displayName) || "")}" placeholder="Shown at the top of their portal"></div>
+        <div class="field"><label>Logo link (https)</label><input type="text" id="pt-brand-logo-${p.id}" value="${esc((p.brand && p.brand.logoUrl) || "")}" placeholder="https://…"></div>
+        <div class="field"><label>Accent color (hex)</label><input type="text" id="pt-brand-accent-${p.id}" value="${esc((p.brand && p.brand.accentColor) || "")}" placeholder="#006AFC"></div>
+        <div class="field"><label>Email sender name</label><input type="text" id="pt-brand-from-${p.id}" value="${esc((p.brand && p.brand.emailFromName) || "")}" placeholder="Name on their invite emails"></div>
+      </div>
       <button class="btn small-btn" onclick="saveAdminPartner('${p.id}')">Save partner</button> <span id="pt-ok-${p.id}" class="saved"></span>
       <div id="pt-deals-${p.id}" style="margin-top:12px"><p class="small muted">Loading deals…</p></div>
     </div>`).join("");
@@ -20239,6 +20281,12 @@ async function saveAdminPartner(id) {
       status: document.getElementById(`pt-status-${id}`).value,
       agreementStatus: document.getElementById(`pt-agree-${id}`).value,
       markets,
+      brand: {
+        displayName: document.getElementById(`pt-brand-name-${id}`).value,
+        logoUrl: document.getElementById(`pt-brand-logo-${id}`).value,
+        accentColor: document.getElementById(`pt-brand-accent-${id}`).value,
+        emailFromName: document.getElementById(`pt-brand-from-${id}`).value,
+      },
     });
     const ok = document.getElementById(`pt-ok-${id}`);
     if (ok) ok.textContent = "Saved";
@@ -23798,7 +23846,11 @@ function renderPilotDash() {
 function renderPilotTab(tab) {
   const el = document.getElementById("tab-body");
   if (!el) return;
-  if (tab === "Help") { el.innerHTML = pilotHelpHtml(); return; }
+  // Co-brand (Build -105): the funder's brand scopes this
+  // portal's accent the same way it scopes the partner shell.
+  const pBrand = (pilotState.me && pilotState.me.pilot && pilotState.me.pilot.brand) || null;
+  coBrandShellOn(el, pBrand);
+  if (tab === "Help") { el.innerHTML = coBrandHeadHtml(pBrand) + pilotHelpHtml(); return; }
   if (tab === "Businesses") { loadPilotBusinesses(el); return; }
   if (tab === "Results") { loadPilotResults(el); return; }
   if (tab === "Report") { loadPilotReport(el); return; }
@@ -23806,7 +23858,7 @@ function renderPilotTab(tab) {
 }
 
 function pilotHeadHtml(pilot) {
-  return `<h2 style="margin-bottom:2px">${esc(pilot.name)}</h2>
+  return `${coBrandHeadHtml(pilot.brand)}<h2 style="margin-bottom:2px">${esc(pilot.name)}</h2>
   <p class="muted" style="margin-top:0">${esc(pilot.partnerName)} &middot; ${esc(pilot.marketName)} &middot; Impact Portal</p>
   ${pilot.status === "closed" ? `<div class="panel"><p style="margin:0"><strong>This pilot has wrapped up.</strong> The numbers below are the final record of where the fund went.</p></div>` : ""}`;
 }
@@ -23911,7 +23963,7 @@ async function loadPilotReport(el) {
     el.innerHTML = `
     <style>@media print { #rail, #tabbar, #topbar2, .pilot-no-print { display: none !important; } body { background: #fff; } }</style>
     <div class="panel pilot-report">
-      <p class="small muted" style="margin:0">SIGNL &middot; Impact Portal</p>
+      ${p.brand && (p.brand.displayName || p.brand.logoUrl) ? `${coBrandHeadHtml(p.brand)}<p class="small muted" style="margin:0 0 10px">Impact Portal</p>` : `<p class="small muted" style="margin:0">SIGNL &middot; Impact Portal</p>`}
       <h2 style="margin:4px 0 2px">${esc(p.name)}</h2>
       <p style="margin:0 0 4px"><strong>${esc(p.partnerName)}</strong> &middot; ${esc(p.marketName)}</p>
       <p class="small muted" style="margin:0 0 14px">${fmtDay(data.period.from)} to ${fmtDay(data.period.to)} &middot; Report made ${fmtDay(data.generatedAt)}</p>

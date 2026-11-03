@@ -48,6 +48,7 @@ pilots.init({
   issuePasswordResetToken: (u) => issuePasswordResetToken(u),
   passwordResetEmail: (u, url) => passwordResetEmail(u, url),
   deliverEmail: (kind, user, subject, text, band, opts) => deliverEmail(kind, user, subject, text, band, opts),
+  partnerBrandedMail: (brand, mail) => partnerBrandedMail(brand, mail),
   allUsers: () => allUsers(),
   testMode: () => TEST_MODE,
 });
@@ -2656,7 +2657,7 @@ async function deliverEmail(kind, user, subject, text, band, opts) {
   const profile = (opts && opts.profile) || (opts && opts.fromMailbox) || "default";
   const base = { kind, to: user.email, subject, band: band || null, profile };
   await logEvent({ type: `${kind}_email_queued`, actorId: user.id, actorRole: user.role, subjectId: user.id, market: user.market || null, data: base });
-  const result = await sendEmail({ to: user.email, subject, text, listUnsubscribe: !!(opts && opts.listUnsubscribe), profile: opts && opts.profile, fromMailbox: opts && opts.fromMailbox, replyTo: opts && opts.replyTo });
+  const result = await sendEmail({ to: user.email, subject, text, listUnsubscribe: !!(opts && opts.listUnsubscribe), profile: opts && opts.profile, fromMailbox: opts && opts.fromMailbox, replyTo: opts && opts.replyTo, fromName: opts && opts.fromName });
   if (result.sent) {
     await logEvent({ type: `${kind}_email_sent`, actorId: user.id, actorRole: user.role, subjectId: user.id, market: user.market || null, data: base });
   } else {
@@ -12627,6 +12628,57 @@ function partnerCodeOf(user) {
   return user && user.role === "partner" && user.partner ? user.partner.code : null;
 }
 
+// Partner co-brand (Build -105, Tier 3 item 14): the small
+// brand block a partner's portal, reports and invite emails
+// carry — display name, logo URL, accent color, email sender
+// name. NOT white-label: SIGNL's name and mark stay on every
+// surface; the brand leads, "Powered by SIGNL" sits under it.
+// Admin-set only (the deal-terms doctrine: partners never
+// self-edit the record). Validation mirrors the business
+// media packet's logo rule (https only) plus a strict hex.
+function sanitizePartnerBrand(raw) {
+  if (raw === null || raw === undefined) return { brand: null };
+  if (typeof raw !== "object" || Array.isArray(raw)) return { error: "Brand must be an object" };
+  const displayName = typeof raw.displayName === "string" ? raw.displayName.trim().slice(0, 80) : "";
+  const emailFromName = typeof raw.emailFromName === "string" ? raw.emailFromName.trim().slice(0, 80) : "";
+  let logoUrl = null;
+  if (typeof raw.logoUrl === "string" && raw.logoUrl.trim()) {
+    const logo = raw.logoUrl.trim().slice(0, 1000);
+    if (!isHttpsUrl(logo)) return { error: "The logo link must start with https://" };
+    logoUrl = logo;
+  }
+  let accentColor = null;
+  if (typeof raw.accentColor === "string" && raw.accentColor.trim()) {
+    const hex = raw.accentColor.trim();
+    if (!/^#[0-9a-fA-F]{6}$/.test(hex)) return { error: "The accent color must be a hex color like #006AFC" };
+    accentColor = hex.toUpperCase();
+  }
+  if (!displayName && !emailFromName && !logoUrl && !accentColor) return { brand: null };
+  return { brand: { displayName, logoUrl, accentColor, emailFromName } };
+}
+function brandViewOf(brand) {
+  if (!brand || typeof brand !== "object") return null;
+  const out = { displayName: brand.displayName || "", logoUrl: brand.logoUrl || null, accentColor: brand.accentColor || null, emailFromName: brand.emailFromName || "" };
+  return (out.displayName || out.logoUrl || out.accentColor || out.emailFromName) ? out : null;
+}
+// The one helper every partner-sent email inherits: the
+// sender DISPLAY NAME becomes the partner's (the address
+// stays SIGNL's, for deliverability), the subject is
+// prefixed with the partner's name, and the body's first
+// line names the partnership. No brand → the mail is
+// byte-identical to before.
+function partnerBrandedMail(brand, mail) {
+  const b = brandViewOf(brand);
+  if (!b) return { subject: mail.subject, text: mail.text, fromName: null };
+  const name = b.emailFromName || b.displayName || "";
+  if (!name) return { subject: mail.subject, text: mail.text, fromName: null };
+  return {
+    subject: `${name} + SIGNL: ${mail.subject}`,
+    text: `${name} works with SIGNL. This email comes from SIGNL on their behalf.\n\n${mail.text}`,
+    fromName: name,
+  };
+}
+
 function publicPartner(p) {
   if (!p) return null;
   return {
@@ -12639,6 +12691,7 @@ function publicPartner(p) {
     status: p.status === "paused" ? "paused" : "active",
     agreementStatus: p.agreementStatus || "unsigned",
     agreementSignedAt: p.agreementSignedAt || null,
+    brand: brandViewOf(p.brand),
     demo: !!p.demo,
     sample: !!p.demo,
     createdAt: p.createdAt || null,
@@ -15132,6 +15185,11 @@ async function ensureDemoPartner(actorId) {
       status: "active",
       agreementStatus: "unsigned",
       demo: true,
+      // Sample co-brand (Build -105) so the pack can be shown
+      // in a walkthrough: name, accent and sender name set;
+      // no logo file exists for a fictional partner, so the
+      // logo slot honestly stays empty.
+      brand: { displayName: "Demo Media Group", logoUrl: null, accentColor: "#006AFC", emailFromName: "Demo Media Group" },
       createdAt: ts,
     },
   };
@@ -17811,8 +17869,13 @@ async function route(event) {
       if (!target) return err(404, "Account not found");
       const token = await issuePasswordResetToken(target);
       const base = process.env.APP_URL || "https://app.joinsignl.com";
-      const mail = passwordResetEmail(target, `${base}/?reset=${token}`);
-      const sent = await deliverEmail("password_reset", target, mail.subject, mail.text, null);
+      const rawMail = passwordResetEmail(target, `${base}/?reset=${token}`);
+      // Co-brand (Build -105): a partner's sign-in invite is a
+      // partner-sent email — it carries their sender name and
+      // names them, through the one helper. Everyone else's
+      // mail is untouched.
+      const mail = target.role === "partner" && target.partner ? partnerBrandedMail(target.partner.brand, rawMail) : { ...rawMail, fromName: null };
+      const sent = await deliverEmail("password_reset", target, mail.subject, mail.text, null, mail.fromName ? { fromName: mail.fromName } : undefined);
       await logEvent({ type: "admin_sent_signin_link", actorId: user.id, actorRole: "admin", subjectId: target.id, market: target.market || null, data: { role: target.role, email: target.email } });
       const out = { ok: true, email: target.email, role: target.role, emailSent: !!(sent && sent.sent) };
       // Test hook under the same trust boundary as the forgot
@@ -17923,11 +17986,21 @@ async function route(event) {
         if (b.status !== "active" && b.status !== "paused") return err(400, "Status must be active or paused");
         target.partner.status = b.status;
       }
+      let brandPatch = null;
+      if (b.brand !== undefined) {
+        // Co-brand (Build -105): Admin-set only, validated
+        // like the rest of the record; an all-empty block
+        // clears the brand back to SIGNL-only rendering.
+        const { brand, error } = sanitizePartnerBrand(b.brand);
+        if (error) return err(400, error);
+        brandPatch = { from: brandViewOf(target.partner.brand), to: brand };
+        if (brand) target.partner.brand = brand; else delete target.partner.brand;
+      }
       if (typeof b.contactName === "string") target.partner.contactName = b.contactName.trim();
       if (typeof b.name === "string" && b.name.trim()) target.partner.name = b.name.trim();
       target.updatedAt = nowIso();
       await store.set(`user:${target.id}`, target);
-      await logEvent({ type: "partner_updated", actorId: user.id, actorRole: "admin", subjectId: target.id, data: { code: target.partner.code, sharePct: sharePatch || undefined } });
+      await logEvent({ type: "partner_updated", actorId: user.id, actorRole: "admin", subjectId: target.id, data: { code: target.partner.code, sharePct: sharePatch || undefined, brand: brandPatch || undefined } });
       if (agreementPatch && agreementPatch.from !== agreementPatch.to) {
         await logEvent({ type: "partner_agreement_updated", actorId: user.id, actorRole: "admin", subjectId: target.id, data: { from: agreementPatch.from, to: agreementPatch.to, signedAt: target.partner.agreementSignedAt || null } });
       }

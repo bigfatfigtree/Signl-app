@@ -318,6 +318,36 @@ function pilotTotals(pilot, ctx) {
   return { rows, fund, counts };
 }
 
+// Co-brand (Build -105): a funder's brand block lives on the
+// pilot record (license partners carry theirs on the partner
+// user record; the shape and validation are the same — https
+// logo, strict hex accent, clipped strings — Admin-set only).
+function sanitizePilotBrand(raw) {
+  if (raw === null || raw === undefined) return { brand: null };
+  if (typeof raw !== "object" || Array.isArray(raw)) return { error: "Brand must be an object" };
+  const displayName = typeof raw.displayName === "string" ? raw.displayName.trim().slice(0, 80) : "";
+  const emailFromName = typeof raw.emailFromName === "string" ? raw.emailFromName.trim().slice(0, 80) : "";
+  let logoUrl = null;
+  if (typeof raw.logoUrl === "string" && raw.logoUrl.trim()) {
+    const logo = raw.logoUrl.trim().slice(0, 1000);
+    if (!/^https:\/\//i.test(logo)) return { error: "The logo link must start with https://" };
+    logoUrl = logo;
+  }
+  let accentColor = null;
+  if (typeof raw.accentColor === "string" && raw.accentColor.trim()) {
+    const hex = raw.accentColor.trim();
+    if (!/^#[0-9a-fA-F]{6}$/.test(hex)) return { error: "The accent color must be a hex color like #006AFC" };
+    accentColor = hex.toUpperCase();
+  }
+  if (!displayName && !emailFromName && !logoUrl && !accentColor) return { brand: null };
+  return { brand: { displayName, logoUrl, accentColor, emailFromName } };
+}
+function pilotBrandView(brand) {
+  if (!brand || typeof brand !== "object") return null;
+  const out = { displayName: brand.displayName || "", logoUrl: brand.logoUrl || null, accentColor: brand.accentColor || null, emailFromName: brand.emailFromName || "" };
+  return (out.displayName || out.logoUrl || out.accentColor || out.emailFromName) ? out : null;
+}
+
 function pilotView(pilot, ctx) {
   const base = {
     id: pilot.id,
@@ -326,6 +356,7 @@ function pilotView(pilot, ctx) {
     marketId: pilot.marketId,
     marketName: pilot.marketName,
     status: pilot.status,
+    brand: pilotBrandView(pilot.brand),
     createdAt: pilot.createdAt,
     updatedAt: pilot.updatedAt,
   };
@@ -408,8 +439,11 @@ async function invitePilotPartner({ pilot, contactName, email, actorId }) {
   if (deps.issuePasswordResetToken && deps.passwordResetEmail && deps.deliverEmail) {
     token = await deps.issuePasswordResetToken(user);
     const base = process.env.APP_URL || "https://app.joinsignl.com";
-    const mail = deps.passwordResetEmail(user, `${base}/?reset=${token}`);
-    const sent = await deps.deliverEmail("password_reset", user, mail.subject, mail.text, null);
+    const rawMail = deps.passwordResetEmail(user, `${base}/?reset=${token}`);
+    // Co-brand (Build -105): the funder's invite carries
+    // their brand through the one helper in the email seam.
+    const mail = deps.partnerBrandedMail ? deps.partnerBrandedMail(pilot.brand, rawMail) : { ...rawMail, fromName: null };
+    const sent = await deps.deliverEmail("password_reset", user, mail.subject, mail.text, null, mail.fromName ? { fromName: mail.fromName } : undefined);
     emailSent = !!(sent && sent.sent);
   }
   await logEvent({ type: "pilot_partner_invited", actorId: actorId || null, actorRole: "admin", subjectId: user.id, market: pilot.marketName, data: { pilotId: pilot.id, partnerName: pilot.partnerName, email: cleanEmail, emailSent } });
@@ -422,8 +456,9 @@ async function sendPartnerInviteEmail(user, actorId, pilot) {
   if (deps.issuePasswordResetToken && deps.passwordResetEmail && deps.deliverEmail) {
     token = await deps.issuePasswordResetToken(user);
     const base = process.env.APP_URL || "https://app.joinsignl.com";
-    const mail = deps.passwordResetEmail(user, `${base}/?reset=${token}`);
-    const sent = await deps.deliverEmail("password_reset", user, mail.subject, mail.text, null);
+    const rawMail = deps.passwordResetEmail(user, `${base}/?reset=${token}`);
+    const mail = deps.partnerBrandedMail ? deps.partnerBrandedMail(pilot.brand, rawMail) : { ...rawMail, fromName: null };
+    const sent = await deps.deliverEmail("password_reset", user, mail.subject, mail.text, null, mail.fromName ? { fromName: mail.fromName } : undefined);
     emailSent = !!(sent && sent.sent);
   }
   await logEvent({ type: "pilot_partner_invite_resent", actorId: actorId || null, actorRole: "admin", subjectId: user.id, market: pilot.marketName, data: { pilotId: pilot.id, emailSent } });
@@ -610,6 +645,11 @@ async function handleAdminPilots({ method, seg, event, user }) {
     }
     if (typeof b.name === "string" && b.name.trim()) pilot.name = b.name.trim().slice(0, 100);
     if (typeof b.partnerName === "string" && b.partnerName.trim()) pilot.partnerName = b.partnerName.trim().slice(0, 100);
+    if (b.brand !== undefined) {
+      const { brand, error } = sanitizePilotBrand(b.brand);
+      if (error) return err(400, error);
+      if (brand) pilot.brand = brand; else delete pilot.brand;
+    }
     pilot.updatedAt = nowIso();
     await store.set(`pilot:${pilot.id}`, pilot);
     await logEvent({ type: "pilot_updated", actorId: user.id, actorRole: "admin", subjectId: pilot.id, market: pilot.marketName, data: { status: pilot.status, fundCents: pilot.fundCents } });

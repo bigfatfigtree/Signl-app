@@ -53,6 +53,13 @@ function nameOf(u) {
   return biz || u.name || (u.creator && u.creator.handle ? "@" + u.creator.handle : null) || u.email || "Someone";
 }
 function handleOf(u) { return u && u.creator && u.creator.handle ? "@" + u.creator.handle : ""; }
+// Co-brand view (Build -105): mirrors router's brandViewOf.
+// A brand counts as set when any of its fields carries content.
+function brandViewOf(brand) {
+  if (!brand || typeof brand !== "object") return null;
+  const out = { displayName: brand.displayName || "", logoUrl: brand.logoUrl || null, accentColor: brand.accentColor || null, emailFromName: brand.emailFromName || "" };
+  return (out.displayName || out.logoUrl || out.accentColor || out.emailFromName) ? out : null;
+}
 
 // ---------------- ADMIN FACTS ----------------
 // deps: { users, offers, bookings, posts, partners, marketFlags,
@@ -158,6 +165,11 @@ function buildAdminFacts(d) {
     status: (u.partner && u.partner.status) || "active",
     markets: (u.partner && u.partner.markets) || [],
     demo: !!(u.partner && u.partner.demo),
+    // Co-brand (Build -105): whether Admin has set a brand
+    // block for this partner, and whether a logo is on file.
+    brandSet: !!brandViewOf(u.partner && u.partner.brand),
+    brandName: (brandViewOf(u.partner && u.partner.brand) || {}).displayName || "",
+    hasLogo: !!(brandViewOf(u.partner && u.partner.brand) || {}).logoUrl,
   }));
   const flags = d.marketFlags || {};
   const liveNames = Object.keys(flags).filter((k) => flags[k]);
@@ -401,7 +413,7 @@ function factsLines(role, f) {
     if (c.byTier.length) lines.push(`Approved creators by tier: ${c.byTier.map((t) => `${t.tier} ${t.count}`).join(", ")}.`);
     lines.push(`Businesses: ${fmt(b.total)} in total: ${fmt(b.approved)} approved (${fmt(b.active)} active, ${fmt(b.founding)} on the founding list waiting for activation), ${fmt(b.pending)} pending. Businesses by plan: ${b.byPlan.length ? b.byPlan.map((p) => `${p.plan} ${p.count}`).join(", ") : "none yet"}. Creator sign-ups: ${fmt(c.claimsToday)} today, ${fmt(c.signups7d)} in the last 7 days.`);
     lines.push(`Offers: ${fmt(f.offers.total)} in total: ${fmt(f.offers.open)} open, ${fmt(f.offers.draft)} drafts, ${fmt(f.offers.filled)} filled, ${fmt(f.offers.closed)} closed. Visits: ${fmt(f.visits.bookings)} bookings, ${fmt(f.visits.completed)} completed, ${fmt(f.visits.upcoming)} booked and coming up, ${fmt(f.visits.postsLive)} posts live, ${fmt(f.visits.awaitingPost)} visits waiting on a post, ${fmt(f.visits.overduePosts)} posts overdue (that overdue count is the compliance queue).`);
-    lines.push(`Partners: ${fmt(f.partners.total)} (${fmt(f.partners.active)} active, ${fmt(f.partners.paused)} paused)${f.partners.list.length ? ": " + f.partners.list.map((p) => `${p.name} (${p.status}${p.markets.length ? ", " + p.markets.join(" + ") : ""})`).join("; ") : ""}. Markets live: ${f.markets.liveCount ? f.markets.liveNames.join(", ") : "none yet"}. Applications waiting on a decision: ${fmt(f.waiting.total)} (${fmt(f.waiting.creators)} ${plural(f.waiting.creators, "creator")}, ${fmt(f.waiting.businesses)} ${plural(f.waiting.businesses, "business", "businesses")}).`);
+    lines.push(`Partners: ${fmt(f.partners.total)} (${fmt(f.partners.active)} active, ${fmt(f.partners.paused)} paused)${f.partners.list.length ? ": " + f.partners.list.map((p) => `${p.name} (${p.status}${p.markets.length ? ", " + p.markets.join(" + ") : ""}${p.brandSet ? `, co-branded${p.brandName ? ` as ${p.brandName}` : ""}${p.hasLogo ? ", logo on file" : ", no logo on file"}` : ", no co-brand set"})`).join("; ") : ""}. Markets live: ${f.markets.liveCount ? f.markets.liveNames.join(", ") : "none yet"}. Applications waiting on a decision: ${fmt(f.waiting.total)} (${fmt(f.waiting.creators)} ${plural(f.waiting.creators, "creator")}, ${fmt(f.waiting.businesses)} ${plural(f.waiting.businesses, "business", "businesses")}).`);
     if ((f.deals || []).length) lines.push(`Deals on file: ${f.deals.map((x) => `${x.label} (${x.partnerName || "partner"}, ${x.status}) in ${x.currency}: ${x.partnerPct === null ? "no split entered yet" : `partner split ${x.partnerPct}% as entered`}`).join("; ")}. London founding prices live in the GBP book: £149 / £269 / £549 a month plus VAT, £75 founding credit; a split exists only where a deal record says so.`);
     const held = (f.deals || []).filter((x) => (x.status === "signed" || x.status === "live") && (x.liveMarkets || []).length);
     if (held.length) lines.push(`Territory held: ${held.map((x) => `${(x.liveMarkets || []).join(", ")} — ${x.partnerName || "partner"} (${x.label}), ${x.attributionScope === "sourced_only" ? "only businesses the partner brought in count" : "the whole market counts"}, exclusivity ${x.exclusivity === "market_conditional" ? "conditional" : "none"}`).join("; ")}.`);
@@ -582,6 +594,21 @@ function answerAdmin(f, q, t) {
   if (hasPhrase(t, "by plan", "per plan", "each plan") || (hasWord(t, "breakdown", "break") && hasWord(t, "plan"))) {
     if (!b.byPlan.length) return "No approved businesses yet, so no plan breakdown to show.";
     return `Approved businesses by plan: ${b.byPlan.map((x) => `${x.plan} ${fmt(x.count)}`).join(", ")}.`;
+  }
+
+  // Co-brand (Build -105): which partners carry a brand block,
+  // and which are missing a logo. Brand is Admin-set on the
+  // partner record; the answer links to the editor.
+  if (hasWord(t, "brand", "branding", "branded", "logo", "logos") || hasPhrase(t, "co-brand", "cobrand", "co brand")) {
+    if (!f.partners.list.length) return "No partners yet, so no co-branding is set. Partners are created under the Partners tab, and their brand block is set in the same editor.";
+    const branded = f.partners.list.filter((p) => p.brandSet);
+    const unbranded = f.partners.list.filter((p) => !p.brandSet);
+    const noLogo = branded.filter((p) => !p.hasLogo);
+    const bits = [];
+    bits.push(branded.length ? `${fmt(branded.length)} of ${fmt(f.partners.total)} ${plural(f.partners.total, "partner")} ${plural(branded.length, "carries", "carry")} a co-brand: ${branded.map((p) => `${p.name}${p.brandName ? ` (shown as ${p.brandName})` : ""}`).join("; ")}` : `No partner has a co-brand set yet`);
+    if (unbranded.length) bits.push(`No brand set: ${unbranded.map((p) => p.name).join("; ")}`);
+    if (noLogo.length) bits.push(`Branded but no logo on file: ${noLogo.map((p) => p.name).join("; ")}`);
+    return linked(bits.join(". ") + ". A partner's brand leads their portal and invite emails, with Powered by SIGNL underneath; it never replaces the SIGNL name.", "Set branding on Partners", "admin-partners");
   }
 
   // Partners

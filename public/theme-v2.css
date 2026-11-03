@@ -3345,3 +3345,18 @@ body.profile-view main { margin-left: auto; margin-right: auto; }
   .c85-pct { font-size: 32px; min-width: 82px; }
   .c85-stackrow input { width: 112px; }
 }
+
+/* ---------- co-brand (Build -105) ---------- */
+/* Inside a branded partner shell ONLY, the partner's accent
+   restyles primary buttons and links. App-wide tokens are
+   untouched; a shell with no brand set renders exactly as
+   before because .pt-shell is never added to it. */
+.pt-shell .btn:not(.ghost):not(.danger) { background: var(--pt-accent, #006AFC); color: #fff; }
+.pt-shell .btn:not(.ghost):not(.danger):hover { background: var(--pt-accent, #006AFC); filter: brightness(1.12); }
+.pt-shell a { color: var(--pt-accent, #006AFC); }
+.pt-brand-head { display: flex; align-items: center; gap: 14px; padding: 14px 18px; margin: 0 0 16px; background: #fff; border: 1px solid #DFE7DF; border-radius: 16px; }
+.pt-brand-logo { max-height: 44px; max-width: 180px; width: auto; object-fit: contain; }
+.pt-brand-name { font-weight: 800; font-size: 1.12rem; line-height: 1.2; color: #0B0D0C; }
+.pt-brand-powered { font-size: 0.78rem; color: #5A6660; margin-top: 2px; }
+@media print { .pt-brand-head { break-inside: avoid; } }
+@media (max-width: 560px) { .pt-brand-head { flex-wrap: wrap; } .pt-brand-logo { max-width: 150px; max-height: 38px; } }

@@ -87,15 +87,20 @@ function listUnsubscribeHeader() {
   return `List-Unsubscribe: <mailto:${UNSUBSCRIBE_ADDR}?subject=unsubscribe>`;
 }
 
-function smtpSend({ to, subject, text, listUnsubscribe, profile, replyTo }) {
+function smtpSend({ to, subject, text, listUnsubscribe, profile, replyTo, fromName }) {
   return new Promise((resolve, reject) => {
     const host = process.env.SIGNL_SMTP_HOST || "smtp.gmail.com";
     const port = parseInt(process.env.SIGNL_SMTP_PORT || "465", 10);
     const prof = profile || senderProfile("default");
     const user = prof.user;
     const pass = prof.pass;
-    const from = prof.from || "SIGNL <hello@joinsignl.com>";
-    const fromAddr = (from.match(/<([^>]+)>/) || [null, from])[1];
+    const baseFrom = prof.from || "SIGNL <hello@joinsignl.com>";
+    const fromAddr = (baseFrom.match(/<([^>]+)>/) || [null, baseFrom])[1];
+    // Partner co-brand (Build -105): a display-name override
+    // swaps ONLY the name a mail client shows; the address,
+    // the envelope sender and the auth all stay SIGNL's.
+    const safeName = typeof fromName === "string" ? fromName.replace(/[<>"\r\n]/g, "").trim().slice(0, 80) : "";
+    const from = safeName ? `${safeName} <${fromAddr}>` : baseFrom;
     const replyToAddr = replyTo || prof.replyTo || null;
 
     const socket = tls.connect(port, host, { servername: host });
@@ -183,7 +188,7 @@ function smtpSend({ to, subject, text, listUnsubscribe, profile, replyTo }) {
 // byte-identical to before.
 const MAIL_STUB = process.env.SIGNL_MAIL_STUB === "1";
 
-async function sendEmail({ to, subject, text, listUnsubscribe, profile, fromMailbox, replyTo }) {
+async function sendEmail({ to, subject, text, listUnsubscribe, profile, fromMailbox, replyTo, fromName }) {
   const selector = profile !== undefined && profile !== null && profile !== "" ? profile : fromMailbox;
   const prof = senderProfile(selector);
   if (selector !== undefined && selector !== null && selector !== "" && !prof) {
@@ -198,7 +203,7 @@ async function sendEmail({ to, subject, text, listUnsubscribe, profile, fromMail
   }
   if (!prof.available) return { sent: false, queued: true, reason: "transport_not_configured" };
   try {
-    await smtpSend({ to, subject, text, listUnsubscribe: !!listUnsubscribe, profile: prof, replyTo });
+    await smtpSend({ to, subject, text, listUnsubscribe: !!listUnsubscribe, profile: prof, replyTo, fromName });
     return { sent: true };
   } catch (e) {
     return { sent: false, queued: false, reason: String(e && e.message || e).slice(0, 200) };

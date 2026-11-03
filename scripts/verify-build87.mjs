@@ -59,7 +59,7 @@ check("existing email switches kept", appJs.includes('id="np-activity"') && appJ
 check("manifest linked + served file is valid", indexHtml.includes('<link rel="manifest" href="/manifest.json">') && (() => { try { const m = JSON.parse(fs.readFileSync(path.join(root, "public/manifest.json"), "utf8")); return m.name === "SIGNL" && m.start_url === "/" && m.display === "standalone" && m.icons.length >= 1; } catch (e) { return false; } })());
 check("service worker exists (install + fetch, API never cached)", (() => { const sw = fs.readFileSync(path.join(root, "public/sw.js"), "utf8"); return sw.includes("addEventListener(\"install\"") && sw.includes("/api/"); })());
 check("install prompt: capture + dismissal stored + banner on claim DONE", appJs.includes("beforeinstallprompt") && appJs.includes("signl_install_dismissed") && appJs.includes("signlInstallBannerHtml()") && appJs.includes('id="signl-install-banner"') && appJs.includes('navigator.serviceWorker.register("/sw.js")'));
-check("stamp is 2026.11.02-104 on both sides", fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes('BUILD_ID = "2026.11.02-104"') && indexHtml.includes("2026.11.02-104"));
+check("stamp is 2026.11.02-105 on both sides", fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes('BUILD_ID = "2026.11.02-105"') && indexHtml.includes("2026.11.02-105"));
 
 // ---------- live ----------
 class Client {
