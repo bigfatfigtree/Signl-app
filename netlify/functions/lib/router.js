@@ -12471,6 +12471,106 @@ function ccMarkets(P) {
   return { filters: ccFiltersEcho(P), markets: rows, unlisted };
 }
 
+// ---------- Creator funnel (Build -93) ----------
+// Admin-only claim -> approval -> finished -> first-offer-taken
+// counts per market, computed from the existing records on every
+// read (no new tracking events, no client beacons, nothing stored).
+// Stage definitions deliberately reuse the exact fields the Admin
+// sign-up board (Build -53) and the Command Center market board
+// (Build -54, ccMarkets above) already count, so the funnel
+// reconciles with those boards row for row:
+//   claimed         — every creator record filed in the market,
+//                     any review state. This is the boards'
+//                     signed-up count for creators.
+//   approved        — claimed creators whose status is "approved"
+//                     (the boards' approved count).
+//   finished        — approved creators whose profile passes
+//                     profileCompleteOf, the Build -65 gate (home
+//                     city, audience, one category, local %) —
+//                     the boards' profile-finished count, and the
+//                     state that makes a creator visible to
+//                     businesses on the roster predicates.
+//   firstOfferTaken — finished creators with at least one live
+//                     booking in their name. A booking is the
+//                     record the codebase treats as the creator
+//                     committing: direct accepts, business
+//                     selections and backfill accepts all create
+//                     one through createBookingForOffer, while a
+//                     bare application (status "applied") is only
+//                     interest until a business picks it. "Live"
+//                     uses filledCountFor's own test — not a +1
+//                     companion (collabRole "plusone" is a guest,
+//                     never a spot taken), not cancelled, not
+//                     expired. The booking is counted in the
+//                     creator's HOME market (the market every
+//                     earlier stage counts them in), so each row
+//                     stays a true funnel: every stage is a subset
+//                     of the one before it, even for a creator who
+//                     takes an offer in another listed market.
+// Exclusions (fencing): tester accounts and the Build -67 demo
+// showcase creators are out of EVERY stage, always — this read
+// ignores any testers query flag, unlike the other Command Center
+// views. A booking made by a tester business does not count a
+// creator as having taken an offer either (the same recordVisible
+// rule ccPrep applies to bookings). Grandfathered creators count
+// by their actual state: profileCompleteOf already applies the
+// 500 minimum only to records created after the 2026-11-01 ruling,
+// so no stage here re-judges a record by its creation date.
+// Creators filed under UNLISTED have no market yet, so — exactly
+// like ccMarkets — they are reported apart in `unlisted` and are
+// NOT inside any market row or the all-markets totals.
+function ccFunnelStages(list, takenCreatorIds) {
+  const claimed = list.length;
+  const approved = list.filter((u) => u.status === "approved").length;
+  const finishedList = list.filter((u) => u.status === "approved" && profileCompleteOf(u));
+  const finished = finishedList.length;
+  const firstOfferTaken = finishedList.filter((u) => takenCreatorIds.has(u.id)).length;
+  const pct = (n, d) => (d > 0 ? Math.round((n / d) * 1000) / 10 : null);
+  return {
+    claimed, approved, finished, firstOfferTaken,
+    rates: {
+      approvedFromClaimed: pct(approved, claimed),
+      finishedFromApproved: pct(finished, approved),
+      firstOfferTakenFromFinished: pct(firstOfferTaken, finished),
+    },
+  };
+}
+
+async function ccFunnel() {
+  const [users, bookings] = await Promise.all([allUsers(), allBookings()]);
+  const excludedCreator = (u) => !u || u.role !== "creator" || isTester(u) || isDemoShowcaseCreator(u);
+  const testerBizIds = new Set(users.filter((u) => u.role === "business" && isTester(u)).map((u) => u.id));
+  const takenCreatorIds = new Set();
+  for (const bk of bookings) {
+    if (!bk || !bk.creatorId) continue;
+    if (bk.collabRole === "plusone") continue;
+    if (bk.status === "cancelled" || bk.status === "expired") continue;
+    if (testerBizIds.has(bk.businessId)) continue;
+    takenCreatorIds.add(bk.creatorId);
+  }
+  const creators = users.filter((u) => u && u.role === "creator" && !excludedCreator(u));
+  const rows = MARKETS.map((m) => {
+    const list = creators.filter((u) => normalizeMarketName(u.market) === m.name);
+    return { market: m.name, label: m.label || m.name, ...ccFunnelStages(list, takenCreatorIds) };
+  }).sort((a, b) => b.claimed - a.claimed || (a.market < b.market ? -1 : 1));
+  const unlistedList = creators.filter((u) => normalizeMarketName(u.market) === UNLISTED);
+  return {
+    filters: {
+      testersIncluded: false,
+      excludedByDefault: "Tester accounts and demo showcase creators are excluded from every funnel stage, always.",
+    },
+    definitions: {
+      claimed: "Every creator record in the market, any review state.",
+      approved: "Claimed creators whose status is approved.",
+      finished: "Approved creators who passed the profile gate (home city, audience, one category, local %), so businesses can see them.",
+      firstOfferTaken: "Finished creators with at least one live booking (a direct accept, a business picking their application, or a backfill accept). Applying alone does not count.",
+    },
+    markets: rows,
+    totals: ccFunnelStages(creators.filter((u) => rows.some((r) => r.market === normalizeMarketName(u.market))), takenCreatorIds),
+    unlisted: ccFunnelStages(unlistedList, takenCreatorIds),
+  };
+}
+
 // ---------- Command Center: Money + Businesses (Build -55) ----------
 // The Money view (§3.1) and the Businesses agreement ledger
 // (§3.3), computed from the same shared prep as Overview and
@@ -17661,6 +17761,13 @@ async function route(event) {
     if (seg[1] === "command" && seg[2] === "markets" && method === "GET") {
       const P = await ccPrep(query);
       return json(200, ccMarkets(P));
+    }
+    // Creator funnel (Build -93): per-market claim -> approval ->
+    // finished -> first-offer-taken counts. Admin-only by this
+    // block's gate; the aggregate always excludes testers and demo
+    // showcase creators, whatever filters the shell sends.
+    if (seg[1] === "command" && seg[2] === "funnel" && method === "GET") {
+      return json(200, await ccFunnel());
     }
     // Money + Businesses (Build -55): the four honesty classes
     // computed apart from the same prep, and the agreement

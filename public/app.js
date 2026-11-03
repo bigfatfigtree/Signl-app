@@ -20263,8 +20263,8 @@ async function ccShowTab() {
   if (!host) return;
   try {
     if (ccTab === "overview") {
-      const [s, ov] = await Promise.all([api("GET", "/admin/stats"), api("GET", "/admin/command/overview?" + ccQuery())]);
-      host.innerHTML = ccOverviewHtml(s, ov);
+      const [s, ov, funnel] = await Promise.all([api("GET", "/admin/stats"), api("GET", "/admin/command/overview?" + ccQuery()), api("GET", "/admin/command/funnel").catch(() => null)]);
+      host.innerHTML = ccOverviewHtml(s, ov, funnel);
       // Register connections (Square, Build -44): the environment
       // is labeled on purpose; a sandbox connection is a test
       // register and must never be mistaken for a live one.
@@ -20283,8 +20283,8 @@ async function ccShowTab() {
       return;
     }
     if (ccTab === "markets") {
-      const d = await api("GET", "/admin/command/markets?" + ccQuery());
-      host.innerHTML = ccMarketsHtml(d);
+      const [d, funnel] = await Promise.all([api("GET", "/admin/command/markets?" + ccQuery()), api("GET", "/admin/command/funnel").catch(() => null)]);
+      host.innerHTML = ccFunnelHtml(funnel) + ccMarketsHtml(d);
       return;
     }
     if (ccTab === "money") {
@@ -20326,7 +20326,35 @@ async function ccShowTab() {
   }
 }
 
-function ccOverviewHtml(s, ov) {
+// Creator funnel (Build -93): claim -> approval -> finished ->
+// first offer taken, per market, from GET /admin/command/funnel.
+// Admin-only. The percentages are step to step (each stage as a
+// share of the stage before it); a stage with nothing before it
+// shows a dash, never a made-up 0%. Testers and demo showcase
+// creators are out of every stage, always — the shell's tester
+// toggle does not change this section, and the section says so.
+function ccFunnelPct(v) { return v === null || v === undefined ? "—" : `${v}%`; }
+function ccFunnelHtml(f) {
+  if (!f || !Array.isArray(f.markets)) return "";
+  const d = f.definitions || {};
+  const row = (r, bold) => `
+      <tr${bold ? ' class="cc-funnel-total"' : ""}><td>${bold ? `<strong>${esc(r.label || r.market)}</strong>` : esc(r.label || r.market)}</td><td data-label="Claimed">${r.claimed}</td><td data-label="Approved">${r.approved}</td><td data-label="% of claimed">${ccFunnelPct(r.rates && r.rates.approvedFromClaimed)}</td><td data-label="Finished">${r.finished}</td><td data-label="% of approved">${ccFunnelPct(r.rates && r.rates.finishedFromApproved)}</td><td data-label="First offer taken">${r.firstOfferTaken}</td><td data-label="% of finished">${ccFunnelPct(r.rates && r.rates.firstOfferTakenFromFinished)}</td></tr>`;
+  const t = f.totals || { claimed: 0, approved: 0, finished: 0, firstOfferTaken: 0, rates: {} };
+  return `
+  <div class="panel" id="cc-funnel" style="margin-top:14px">
+    <h3 style="margin:0 0 4px">Creator funnel by market</h3>
+    <p class="muted small" style="margin:0 0 4px">How far creators get, market by market. Tester accounts and demo showcase creators are left out of every stage, always.</p>
+    <p class="small" style="margin:0 0 10px"><strong>Claimed</strong> = ${esc(d.claimed || "every creator record in the market.")}<br><strong>Approved</strong> = ${esc(d.approved || "claimed creators whose status is approved.")}<br><strong>Finished</strong> = ${esc(d.finished || "approved creators who passed the profile gate, so businesses can see them.")}<br><strong>First offer taken</strong> = ${esc(d.firstOfferTaken || "finished creators with at least one live booking. Applying alone does not count.")}</p>
+    <div class="table-wrap"><table>
+      <tr><th>Market</th><th>Claimed</th><th>Approved</th><th>% of claimed</th><th>Finished</th><th>% of approved</th><th>First offer taken</th><th>% of finished</th></tr>
+      ${f.markets.map((r) => row(r, false)).join("")}
+      ${row({ label: "All markets", ...t }, true)}
+    </table></div>
+    ${f.unlisted && f.unlisted.claimed ? `<p class="small muted" style="margin:8px 0 0">Not in a market yet (not in the totals above): ${f.unlisted.claimed} claimed &middot; ${f.unlisted.approved} approved &middot; ${f.unlisted.finished} finished &middot; ${f.unlisted.firstOfferTaken} took a first offer.</p>` : ""}
+  </div>`;
+}
+
+function ccOverviewHtml(s, ov, funnel) {
   const t = ov.tiles || {};
   const fd = t.finishedDeals || { compVisits: 0, paidBookings: 0, licenses: 0, total: 0 };
   ccAttentionCache = ov.attention || [];
@@ -20361,6 +20389,7 @@ function ccOverviewHtml(s, ov) {
     ${attention}
     ${waiting}
     ${adminSignupBoardHtml(s.signupBoard)}
+    ${ccFunnelHtml(funnel)}
       <div class="panel"><div class="stat-row">
         <div class="stat"><div class="num">${s.users.creators}</div><div class="lbl">Creators</div></div>
         <div class="stat"><div class="num">${s.users.businesses}</div><div class="lbl">Businesses</div></div>
