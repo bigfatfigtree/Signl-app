@@ -689,13 +689,24 @@ function profileHeaderStatsHtml(p) {
 
 async function renderPublicProfile() {
   const handle = state.publicHandle || "";
-  app.innerHTML = `<section class="panel center" style="max-width:560px;margin:40px auto"><p class="muted">Loading @${esc(handle)}...</p></section>`;
+  // Hydration (Build -92): when the server already rendered the
+  // profile body into the page (profile-meta.js stamps it
+  // data-server-rendered), enhance over it — never blank it out
+  // behind a loading line, and if the payload fetch fails, the
+  // server-rendered profile stays up instead of becoming a dead
+  // end. Only a page that arrived as the bare shell shows the
+  // loading state, exactly as before.
+  const serverRendered = !!(app.querySelector && app.querySelector('.public-profile[data-server-rendered="1"]'));
+  if (!serverRendered) {
+    app.innerHTML = `<section class="panel center" style="max-width:560px;margin:40px auto"><p class="muted">Loading @${esc(handle)}...</p></section>`;
+  }
   let p = null;
   try {
     const data = await api("GET", "/c/" + encodeURIComponent(handle));
     p = data.profile;
   } catch (e) { p = null; }
   if (!p) {
+    if (serverRendered) return; // the served profile is the page; keep it
     document.title = "Profile not public | SIGNL";
     app.innerHTML = `
     <section class="panel center" style="max-width:560px;margin:40px auto">
@@ -810,6 +821,7 @@ async function renderPublicProfile() {
       </div>
       ${breakdownHtml}
       ${p.proof && p.proof.visitsCompleted > 0 ? `<div class="wcard" style="margin:14px 0 0"><p style="margin:0"><span class="badge ok">Verified on SIGNL</span></p><p style="margin:8px 0 0"><strong>${p.proof.visitsCompleted} visit${p.proof.visitsCompleted === 1 ? "" : "s"} completed</strong> &middot; ${p.proof.onTimePosts} on time</p><p class="small muted" style="margin:6px 0 0">From this creator's real SIGNL visits, counted by SIGNL, not claimed by the creator.</p></div>` : ""}
+      ${p.engagement && p.engagement.postsWithMetrics >= 3 ? `<div class="wcard" style="margin:14px 0 0"><p style="margin:0"><span class="badge ok">Post engagement</span></p><p style="margin:8px 0 0"><strong>${Number(p.engagement.totals.views || 0).toLocaleString("en-US")} views &middot; ${Number(p.engagement.totals.likes || 0).toLocaleString("en-US")} likes &middot; ${Number(p.engagement.totals.shares || 0).toLocaleString("en-US")} shares &middot; ${Number(p.engagement.totals.saves || 0).toLocaleString("en-US")} saves</strong></p><p class="small muted" style="margin:4px 0 0">Per post on average: ${Number(p.engagement.averages.views || 0).toLocaleString("en-US")} views, ${Number(p.engagement.averages.likes || 0).toLocaleString("en-US")} likes, ${Number(p.engagement.averages.shares || 0).toLocaleString("en-US")} shares, ${Number(p.engagement.averages.saves || 0).toLocaleString("en-US")} saves. From ${p.engagement.postsWithMetrics} SIGNL posts with reported numbers. Recorded: the creator's own reported figures.</p></div>` : ""}
       ${p.categories && p.categories.length ? `<p class="small">${p.categories.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
       ${p.isRealtor && p.farmAreas && p.farmAreas.length ? `<p class="small">Neighborhoods: ${p.farmAreas.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
       ${p.streets && p.streets.length ? `<p class="small">My streets: ${p.streets.map((x) => `<span class="badge">${esc(x)}</span>`).join(" ")}</p>` : ""}
@@ -821,7 +833,7 @@ async function renderPublicProfile() {
       ${p.isRealtor && p.brokerage ? `<p class="small muted">Brokered by ${esc(p.brokerage)}</p>` : ""}
       ${p.viewerIsOwner ? `<p class="small muted">This is your book-me page, exactly as visitors see it. Edit it any time under Profile.</p><p class="small">${shareBlockHtml(p.handle, p.market || "", "Share your invite")}</p>` : ""}
     </section>
-    ${!state.user ? `<div class="bookme-sticky"><span class="bs-name">Book ${esc(p.name)} on SIGNL</span><a class="btn bs-btn" href="#" onclick="return go('signin')">Book on SIGNL</a></div>` : ""}
+    ${!state.user ? `<div class="bookme-sticky"><span class="bs-name">Book ${esc(p.firstName || p.name)} on SIGNL</span><a class="btn bs-btn" href="#" onclick="return go('signin')">Book on SIGNL</a></div>` : ""}
   </div>`;
 }
 

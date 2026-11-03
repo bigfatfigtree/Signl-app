@@ -246,6 +246,18 @@ function profileHeaderStatsHtml(p) {
   return `<div class="bookme-stats">${stats.join("")}</div>`;
 }
 
+// Photo gallery row (Build -92): the client render shows the
+// creator's extra photos as a row under the cover
+// (galleryRowHtml in public/app.js); the server body carries
+// the same row so a no-JS visitor sees the same profile.
+// Fewer than two photos renders nothing, exactly like the
+// client.
+function profileGalleryHtml(p) {
+  const list = (Array.isArray(p.photos) ? p.photos : []).filter(Boolean);
+  if (list.length < 2) return "";
+  return `<div class="gal-row">${list.slice(1).map((src) => `<img class="gal-row-img" src="${escHtml(src)}" alt="" loading="lazy">`).join("")}</div>`;
+}
+
 function profileBodyHtml(p, place) {
   const initial = escHtml((String(p.name || "?").trim().charAt(0) || "?").toUpperCase());
   // Market chips, deduped (audit F4): the place chip and the
@@ -265,12 +277,32 @@ function profileBodyHtml(p, place) {
   const breakdown = bd && Array.isArray(bd.segments) && bd.segments.length ? `
       <div style="margin:14px 0 0">
         <div style="display:flex;height:14px;border-radius:999px;overflow:hidden;background:#E3F5EA" role="img" aria-label="Where this creator's audience lives">
-          ${[...bd.segments].sort((a, b) => (a.market === profileViewOf(p).market ? -1 : b.market === profileViewOf(p).market ? 1 : b.pct - a.pct)).map((s, i) => `<span style="display:block;width:${s.pct}%;background:${WORK_SEG_COLORS[i] || "#5F7265"}"></span>`).join("")}
+          ${[...bd.segments].sort((a, b) => (a.market === profileViewOf(p).market ? -1 : b.market === profileViewOf(p).market ? 1 : b.pct - a.pct)).map((s, i) => `<span style="display:block;width:${Number(s.pct) || 0}%;background:${WORK_SEG_COLORS[i] || "#5F7265"}"></span>`).join("")}
         </div>
-        <p class="small muted" style="margin:6px 0 0">Where their audience lives: ${[...bd.segments].sort((a, b) => (a.market === profileViewOf(p).market ? -1 : b.market === profileViewOf(p).market ? 1 : b.pct - a.pct)).map((s) => { const cnt = followersForPct(s.pct, p.totalAudience); return `${escHtml(s.market)} ${s.pct}%${cnt ? ` &middot; ${cnt} followers` : ""}`; }).join(" &middot; ")}${bd.elsewherePct > 0 ? ` &middot; everywhere else ${bd.elsewherePct}%` : ""}. Self-reported by the creator.</p>
+        <p class="small muted" style="margin:6px 0 0">Where their audience lives: ${[...bd.segments].sort((a, b) => (a.market === profileViewOf(p).market ? -1 : b.market === profileViewOf(p).market ? 1 : b.pct - a.pct)).map((s) => { const cnt = followersForPct(s.pct, p.totalAudience); return `${escHtml(s.market)} ${Number(s.pct) || 0}%${cnt ? ` &middot; ${cnt} followers` : ""}`; }).join(" &middot; ")}${bd.elsewherePct > 0 ? ` &middot; everywhere else ${bd.elsewherePct}%` : ""}. Self-reported by the creator.</p>
       </div>` : "";
   const proof = p.proof && p.proof.visitsCompleted > 0 ? `
-      <div class="wcard" style="margin:14px 0 0"><p style="margin:0"><span class="badge ok">Verified on SIGNL</span></p><p style="margin:8px 0 0"><strong>${p.proof.visitsCompleted} visit${p.proof.visitsCompleted === 1 ? "" : "s"} completed</strong> &middot; ${p.proof.onTimePosts} on time</p></div>` : "";
+      <div class="wcard" style="margin:14px 0 0"><p style="margin:0"><span class="badge ok">Verified on SIGNL</span></p><p style="margin:8px 0 0"><strong>${p.proof.visitsCompleted} visit${p.proof.visitsCompleted === 1 ? "" : "s"} completed</strong> &middot; ${p.proof.onTimePosts} on time</p><p class="small muted" style="margin:6px 0 0">From this creator's real SIGNL visits, counted by SIGNL, not claimed by the creator.</p></div>` : "";
+  // Client-parity blocks (Build -92): lines the in-app render
+  // has always shown under the categories — realtor farm areas,
+  // the creator's streets, comp openness — plus, after the rate
+  // card, the tier-0 messaging note and the Standard Visit
+  // block (visitIncludesHtml in public/app.js; the text is the
+  // payload's visitIncludes, which the router fills with the
+  // canonical STANDARD_VISIT summary). Same words, same order,
+  // so the served page and the hydrated page are one page.
+  const farmAreas = p.isRealtor && Array.isArray(p.farmAreas) && p.farmAreas.length ? `<p class="small">Neighborhoods: ${p.farmAreas.map((x) => `<span class="badge">${escHtml(x)}</span>`).join(" ")}</p>` : "";
+  const streets = Array.isArray(p.streets) && p.streets.length ? `<p class="small">My streets: ${p.streets.map((x) => `<span class="badge">${escHtml(x)}</span>`).join(" ")}</p>` : "";
+  const compCats = Array.isArray(p.compCategories) && p.compCategories.length ? `<p class="small muted">Open to comps: ${p.compCategories.map((x) => escHtml(x)).join(", ")}</p>` : "";
+  const visitIncludes = p.visitIncludes ? `
+      <div class="visit-mint"><h4>Every comped visit includes</h4><div class="deal-rows">
+        <div class="drow"><span class="dk">Post</span><span class="dv">1 post/reel + 1 story &middot; within 48h &middot; live 30 days</span></div>
+        <div class="drow"><span class="dk">Comp rights</span><span class="dv">Native share only, creator tagged</span></div>
+        <div class="drow"><span class="dk">Paid adds</span><span class="dv">Repost + ad use for 90 days</span></div>
+        <div class="drow"><span class="dk">Ownership</span><span class="dv">Creators own their content. Nobody edits it.</span></div>
+      </div>
+        <details class="deal-details"><summary>The Standard Visit, in full</summary><div class="dd-body"><p class="small">${escHtml(p.visitIncludes)}</p></div></details>
+      </div>` : "";
   // Engagement strip (Build -83): public only once at least 3
   // of the creator's posts carry reported metrics (the payload
   // gates it server-side; the check repeats here so a stray
@@ -282,7 +314,7 @@ function profileBodyHtml(p, place) {
   const engagement = eng ? `
       <div class="wcard" style="margin:14px 0 0"><p style="margin:0"><span class="badge ok">Post engagement</span></p><p style="margin:8px 0 0"><strong>${engN(eng.totals.views)} views &middot; ${engN(eng.totals.likes)} likes &middot; ${engN(eng.totals.shares)} shares &middot; ${engN(eng.totals.saves)} saves</strong></p><p class="small muted" style="margin:4px 0 0">Per post on average: ${engN(eng.averages.views)} views, ${engN(eng.averages.likes)} likes, ${engN(eng.averages.shares)} shares, ${engN(eng.averages.saves)} saves. From ${eng.postsWithMetrics} SIGNL posts with reported numbers. Recorded: the creator's own reported figures.</p></div>` : "";
   return `
-  <div class="public-profile bookme theme-${escHtml(p.pageTheme || "ink")}" style="max-width:720px;margin:20px auto">
+  <div class="public-profile bookme theme-${escHtml(p.pageTheme || "ink")}" data-server-rendered="1" data-profile-handle="${escHtml(p.handle || "")}" style="max-width:720px;margin:20px auto">
     <div class="bookme-cover${p.photoUrl ? " has-photo" : " no-photo"}">
       ${p.photoUrl ? `<img class="bookme-banner" src="${escHtml(p.photoUrl)}" alt="">` : `<div class="cc-mono bookme-mono"><span>${initial}</span></div>`}
       <div class="bookme-cover-id">
@@ -298,6 +330,7 @@ function profileBodyHtml(p, place) {
       </div>
     </div>
     ${p.realPeopleChecked ? `<p class="small" style="margin:10px 0 0"><span class="badge ok">Checked by a person</span> Real posts, real local life.</p>` : ""}
+    ${profileGalleryHtml(p)}
     <section class="panel bookme-body">
       <div class="cc-chips">
         <span class="cc-chip market">${escHtml(place)}</span>
@@ -307,7 +340,7 @@ function profileBodyHtml(p, place) {
         ${p.tierBand ? `<span class="cc-chip">${escHtml(p.tierBand)}</span>` : ""}
         ${p.isRealtor ? `<span class="cc-chip">Realtor</span>` : ""}
         ${p.charter ? "" : `<span class="cc-chip">Founding Creator</span>`}
-        ${(Array.isArray(p.listedMarkets) ? p.listedMarkets : []).filter((m) => m.market !== profileViewOf(p).market).map((m) => { const cnt = followersForPct(m.pct, p.totalAudience); return `<span class="cc-chip">Also ranked in ${escHtml(m.market)} &middot; ${m.pct}%${cnt ? ` &middot; ${cnt} followers` : " of followers"}</span>`; }).join("")}
+        ${(Array.isArray(p.listedMarkets) ? p.listedMarkets : []).filter((m) => m.market !== profileViewOf(p).market).map((m) => { const cnt = followersForPct(m.pct, p.totalAudience); return `<span class="cc-chip">Also ranked in ${escHtml(m.market)} &middot; ${Number(m.pct) || 0}%${cnt ? ` &middot; ${cnt} followers` : " of followers"}</span>`; }).join("")}
       </div>
       ${p.pitchLine ? `<p class="bookme-pitch" style="font-size:1.05rem;margin:10px 0 0"><em>${escHtml(p.pitchLine)}</em></p>` : ""}
       ${p.bio ? `<p class="bookme-bio">${escHtml(p.bio)}</p>` : ""}
@@ -320,6 +353,9 @@ function profileBodyHtml(p, place) {
       ${proof}
       ${engagement}
       ${p.categories && p.categories.length ? `<p class="small">${p.categories.map((x) => `<span class="badge">${escHtml(x)}</span>`).join(" ")}</p>` : ""}
+      ${farmAreas}
+      ${streets}
+      ${compCats}
       ${profileWorkHtml(p)}
       <h3 class="bookme-h">Rate card</h3>
       <div class="tint-block" style="margin-top:0">
@@ -328,6 +364,11 @@ function profileBodyHtml(p, place) {
         <p class="small muted">Bookings through SIGNL carry the Visit Guarantee and payment protection: payment is held until the post is live. Deals arranged outside SIGNL carry neither.</p>
         <p class="small muted">Bookings that start on SIGNL stay on SIGNL.</p>
       </div>
+      <div class="bookme-locked">
+        <p style="margin:0">Paying businesses can message this creator right here on SIGNL.</p>
+      </div>
+      ${visitIncludes}
+      ${p.isRealtor && p.brokerage ? `<p class="small muted">Brokered by ${escHtml(p.brokerage)}</p>` : ""}
     </section>
     <div class="bookme-sticky"><span class="bs-name">Book ${escHtml(p.firstName || p.name)} on SIGNL</span><a class="btn bs-btn" href="/">Book on SIGNL</a></div>
   </div>`;
@@ -349,7 +390,8 @@ function buildProfilePageHtml(shellHtml, profile) {
   // shell goes back exactly as before.
   if (profile.body) {
     const place = profile.place || "";
-    html = html.replace(/(<main id="app">)[\s\S]*?(<\/main>)/, (m, open, close) => `${open}${profileBodyHtml({ ...profile.body, viewMarket: profile.viewMarket || null, photoUrl: profile.body.photoUrl ? (String(profile.body.photoUrl).startsWith("http") ? profile.body.photoUrl : `${origin}${profile.body.photoUrl}`) : null }, place)}${close}`);
+    const absolutize = (u) => (u ? (String(u).startsWith("http") ? u : `${origin}${u}`) : u);
+    html = html.replace(/(<main id="app">)[\s\S]*?(<\/main>)/, (m, open, close) => `${open}${profileBodyHtml({ ...profile.body, viewMarket: profile.viewMarket || null, photoUrl: absolutize(profile.body.photoUrl), photos: (Array.isArray(profile.body.photos) ? profile.body.photos : []).map(absolutize) }, place)}${close}`);
     html = html.replace(/<script src="\/app\.js/, '<script defer src="/app.js');
   }
   const canonical = `${origin}/c/${profile.handle}`;
@@ -408,4 +450,4 @@ function buildClaimPageHtml(shellHtml, profile) {
   return html;
 }
 
-module.exports = { buildProfilePageHtml, profilePageMeta, buildClaimPageHtml, claimPageMeta, profileBodyHtml, profileWorkItems, fmtFollowers, profileHeaderSocialsHtml, profileHeaderStatsHtml, profileViewOf, followersForPct, profileDisplayName };
+module.exports = { buildProfilePageHtml, profilePageMeta, buildClaimPageHtml, claimPageMeta, profileBodyHtml, profileGalleryHtml, profileWorkItems, fmtFollowers, profileHeaderSocialsHtml, profileHeaderStatsHtml, profileViewOf, followersForPct, profileDisplayName };
