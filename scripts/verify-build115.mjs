@@ -50,7 +50,7 @@ part("S: source pins");
 const routerJs = fs.readFileSync(path.join(root, "netlify/functions/lib/router.js"), "utf8");
 const appJs = fs.readFileSync(path.join(root, "public/app.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(root, "public/index.html"), "utf8");
-check("stamp is 2026.11.03-120", indexHtml.includes("2026.11.03-120") && fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes("2026.11.03-120"));
+check("stamp is 2026.11.03-121", indexHtml.includes("2026.11.03-121") && fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes("2026.11.03-121"));
 
 const approvalSeg = seg(routerJs, "function approvalEmail(", "// ---------- rejection email");
 check("approval: one plain step, the four basics named", approvalSeg.includes("Four basics make you visible to businesses: your home city, your audience counts, at least one content category, and your local audience %."));

@@ -316,9 +316,9 @@ console.log("== Source checks ==");
   check("sigdata: business facts + answerer branches + home chips", sigdataJs.includes("licencesExpiring") && sigdataJs.includes("regularsCount") && sigdataJs.includes('"biz-regulars"') && sigdataJs.includes("to book again") && sigdataJs.includes("pendingLicenses"));
   check("sigai canon: Regulars + licence renewal lines", sigaiJs.includes("My Regulars: a creator who completes a visit") && sigaiJs.includes("Licence expiry and renewal:"));
   check("no em dashes in the new Regulars / licence copy", ["Book again copies the last visit's deal into a new draft in Campaigns.", "When a licence ends, you can no longer repost that post or run it as an ad."].every((l) => !l.includes("—") && !l.includes("–")));
-  check("build stamp is 2026.11.03-120 on both sides",
-    fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes('exports.BUILD_ID = "2026.11.03-120"')
-    && fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes('window.__SIGNL_BUILD__ = "2026.11.03-120"'), "");
+  check("build stamp is 2026.11.03-121 on both sides",
+    fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes('exports.BUILD_ID = "2026.11.03-121"')
+    && fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes('window.__SIGNL_BUILD__ = "2026.11.03-121"'), "");
 }
 
 console.log(`\nBuild -95 verify: ${passed} passed, ${failed} failed`);

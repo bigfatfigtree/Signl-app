@@ -434,3 +434,129 @@ body.rail-on .rail-brand img { box-shadow: none; }
 .mkt-card { padding-top: 0; overflow: hidden; }
 .mkt-photo { margin: 0 -26px 12px; border-radius: 0; }
 @media (max-width: 640px) { .mkt-photo { margin: 0 -20px 12px; } }
+
+/* ============================================================
+   Build -121 (Jeff, 2026-11-04, from the live redesign on
+   his phone): "I want full width for the working screen in
+   admin portal (and the rest if they aren't there). Also
+   much less scrolling and all that for me. More bar. More
+   sections." Three moves: work shells drop the centered
+   1140px column and use the whole screen; a denser rhythm
+   so a home shows its next step, its numbers and the start
+   of its activity without a long scroll; and the Admin
+   section bar — every section as a chip on phones, where
+   the bottom bar only holds the four primaries.
+   ============================================================ */
+
+/* ---- 1. Full width: the work shells use the whole screen ---- */
+body.v3-on main, body.v3-slim main, body.admin-on main, body.preview-on main { max-width: none; }
+@media (min-width: 768px) {
+  body.v3-on .wrap, body.v3-slim .wrap { max-width: none; margin-left: 0; margin-right: 0; }
+  body.rail-on #toprow { margin-left: 232px; }
+  body.rail-on #toprow .wrap { max-width: none; width: auto; }
+  .tb2-in { max-width: none; }
+}
+@media (max-width: 767.98px) {
+  /* the phone rail is a bottom bar: no 78px side offset, and
+     the V4.2 phone-fit width (calc(100% - 78px)) goes too —
+     it left a dead strip down the right of every admin
+     screen and squeezed the work into 312px on a 390 phone */
+  body.rail-on main { width: auto; }
+  body.rail-on #toprow { margin-left: 0; padding: 10px 12px 0; }
+  body.rail-on #toprow .wrap { width: auto; }
+  body.v3-on main, body.v3-slim main, body.admin-on main { padding-left: 12px; padding-right: 12px; }
+}
+
+/* ---- 2. Density: tighter rhythm on the work shells ---- */
+body.v3-on .panel, body.v3-slim .panel, body.admin-on .panel { padding: 20px; margin-bottom: 14px; }
+@media (max-width: 640px) {
+  body.v3-on .panel, body.v3-slim .panel, body.admin-on .panel { padding: 15px; margin-bottom: 12px; }
+}
+body.v3-on .ws-tabs, body.v3-slim .ws-tabs, body.admin-on .ws-tabs,
+body.v3-on .tabs, body.v3-slim .tabs, body.admin-on .tabs { margin: 10px 0; }
+.nx-card { padding: 15px; margin: 10px 0; }
+.nx-row { padding: 9px 0; }
+.home-greet { margin: 2px 0 10px; }
+.shapes-row { margin: 10px 0; gap: 10px; }
+body.v3-on :is([data-dash], #creator-home, #founding-dash) .feed-row { padding-top: 10px; padding-bottom: 10px; }
+.sig-card { margin-bottom: 12px; }
+.check-row { padding: 8px 0; }
+/* the three shapes stay in ONE row on phones — stacked, they
+   pushed the activity feed a full screen down */
+@media (max-width: 640px) {
+  .shapes-row { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .shape-cell { flex-direction: column; align-items: flex-start; gap: 5px; padding: 10px; border-radius: 14px; }
+  .shape-cell .sc-num { font-size: 1.05rem; }
+  .shape-cell .sc-sub { font-size: .68rem; line-height: 1.3; }
+  .donut119 { width: 42px; height: 42px; }
+  .donut119 > span { width: 29px; height: 29px; font-size: .6rem; }
+}
+
+/* ---- 3. Admin home: summary strip + two-column work grid ---- */
+#admin-summary:empty { display: none; }
+.admin-sum121, #admin-summary { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; padding-bottom: 4px; margin-bottom: 12px; }
+/* main is a shrink-to-content flex item (margin: 0 auto), so
+   the strip's chip row must cap its own intrinsic width or
+   it drags the whole admin screen wider than the phone */
+#admin-summary { max-width: calc(100vw - 24px); }
+@media (min-width: 768px) { body.rail-on #admin-summary { max-width: calc(100vw - 280px); } }
+#admin-summary::-webkit-scrollbar { display: none; }
+#admin-summary:empty { margin-bottom: 0; padding-bottom: 0; }
+.sum-chip121 {
+  flex: none; display: inline-flex; align-items: baseline; gap: 7px;
+  background: #fff; border: 1px solid var(--line); border-radius: 999px;
+  padding: 8px 14px; cursor: pointer; color: var(--ink2);
+  font-family: 'Instrument Sans', system-ui, sans-serif;
+}
+.sum-chip121:hover { border-color: var(--ink3); }
+.sum-num121 { font-size: 1.12rem; font-weight: 800; letter-spacing: -.02em; color: var(--ink); }
+.sum-lbl121 { font-size: .8rem; font-weight: 600; white-space: nowrap; }
+.admin-home121 { display: flex; flex-direction: column; }
+.admin-home-main, .admin-home-side { min-width: 0; }
+.admin-home-side .admin-sig-panel { margin-top: 0; }
+@media (min-width: 1080px) {
+  .admin-home121 { display: grid; grid-template-columns: minmax(0, 1fr) 400px; grid-template-areas: "main side"; gap: 18px; align-items: start; }
+  .admin-home-main { grid-area: main; }
+  .admin-home-side { grid-area: side; }
+}
+@media (max-width: 767.98px) {
+  /* compact rows on phones: the preview card collapses to
+     its title + buttons, Sig's items tighten, and the first
+     screen holds the summary strip + the top actions */
+  .admin-home-side .preview-cta .muted { display: none; }
+  .admin-home-side .preview-cta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .admin-sig-item { padding-top: 7px; margin-top: 7px; }
+  .admin-sig-head .sig-hero-media { width: 56px; height: 56px; }
+}
+
+/* ---- 3b. Found while widening (pre-existing -119 defect):
+   theme-v3 whitened the Admin preview card, but theme-v2's
+   white-on-dark rules for its title and ghost button
+   survived — "Business Preview" and the "Business
+   dashboard" button have been invisible on the white card
+   since the reskin. Restore both on the ink system. ---- */
+body.admin-on .preview-cta strong { color: var(--ink); }
+body.admin-on .preview-cta .btn.ghost { background: transparent; border-color: var(--line); color: var(--ink2); box-shadow: none; }
+body.admin-on .preview-cta .btn.ghost:hover { background: var(--paper2); border-color: var(--ink3); }
+
+/* ---- 4. Admin section bar (phones): every section, one tap ---- */
+#admin-secbar { display: none; }
+@media (max-width: 767.98px) {
+  body.admin-on #admin-secbar {
+    display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none;
+    position: sticky; top: 0; z-index: 55;
+    background: rgba(250,247,241,.96); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--line2);
+    padding: 8px 10px;
+  }
+  body.admin-on #admin-secbar::-webkit-scrollbar { display: none; }
+  .sec-chip121 {
+    flex: none; display: inline-flex; align-items: center; gap: 6px;
+    border: 1px solid var(--line); background: #fff; color: var(--ink2);
+    border-radius: 999px; padding: 7px 13px; min-height: 34px;
+    font: 700 .8rem 'Instrument Sans', system-ui, sans-serif;
+    cursor: pointer; white-space: nowrap;
+  }
+  .sec-chip121.on { background: var(--ink); border-color: var(--ink); color: #fff; }
+  .sec-badge121 { background: var(--accent); color: #fff; border-radius: 999px; font-size: .64rem; font-weight: 800; padding: 1px 6px; }
+}

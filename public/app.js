@@ -2170,6 +2170,7 @@ async function adminSendSigninLink(id) {
 }
 
 function renderBottomNav() {
+  syncAdminSecbar121();
   renderViewAsBanner();
   // Overhaul V3 (2026-10-27): labeled destinations per role and
   // a slim top bar (identity, Messages, help) rides
@@ -2809,7 +2810,7 @@ function renderRail() {
   // only. Business and creator chrome is the tab bar + top bar
   // (renderBottomNav); a stray call from a screen loader must
   // never resurrect the V2 rail for them.
-  if (!state.user || state.user.role !== "admin") { rail.innerHTML = ""; document.body.classList.remove("rail-on"); return; }
+  if (!state.user || state.user.role !== "admin") { rail.innerHTML = ""; document.body.classList.remove("rail-on"); syncAdminSecbar121(); return; }
   const items = railItems();
   document.body.classList.toggle("rail-on", !!items);
   if (!items) { rail.innerHTML = ""; return; }
@@ -2843,6 +2844,38 @@ function renderRail() {
       <button type="button" class="rail-avatar" title="${esc(name || "Account")}" aria-label="Your account" onclick="${avatarGo}">${esc(initial)}</button>
     </div>`;
   renderTopRow();
+  syncAdminSecbar121();
+}
+
+// Build -121: the Admin section bar (Jeff, 2026-11-04, from
+// the live redesign on his phone: "More bar. More sections.").
+// The phone bottom bar keeps the four primaries (Review,
+// Markets, Money, More); this horizontally scrollable chip
+// bar pins under the top row and carries EVERY admin section
+// — one tap to anything, no sheet-diving. Chips are composed
+// from railItems(), so labels, order, badges and destinations
+// keep exactly one source, and each chip carries the rail
+// item's own onclick — the same handler the rail navigates
+// with (Jeff's 2026-10-29 complaint was nav clicks that did
+// not land; these cannot drift from the rail's). The bar is
+// CSS-gated to phone widths; the desktop rail already lists
+// every section with its label.
+function syncAdminSecbar121() {
+  let bar = document.getElementById("admin-secbar");
+  const u = state.user;
+  const items = u && u.role === "admin" && !state.preview ? railItems() : null;
+  if (!items || !items.length) { if (bar) bar.remove(); return; }
+  if (!bar) {
+    bar = document.createElement("nav");
+    bar.id = "admin-secbar";
+    bar.setAttribute("aria-label", "Admin sections");
+    const anchor = document.getElementById("toprow");
+    if (anchor && anchor.parentNode) anchor.parentNode.insertBefore(bar, anchor.nextSibling);
+    else document.body.appendChild(bar);
+  }
+  bar.innerHTML = items.map((it) => `<button type="button" class="sec-chip121${it.active ? " on" : ""}" onclick="${it.onclick}">${esc(it.label)}${it.badge ? `<span class="sec-badge121">${it.badge > 99 ? "99+" : it.badge}</span>` : ""}</button>`).join("");
+  const on = bar.querySelector(".sec-chip121.on");
+  if (on) { try { bar.scrollLeft = Math.max(0, on.offsetLeft - (bar.clientWidth - on.clientWidth) / 2); } catch (e) { /* no-op */ } }
 }
 
 // The quiet top row inside the content column (Grin pattern):
@@ -21085,16 +21118,28 @@ function renderAdmin() {
   // instead of crowding all ten. The full attention list lives
   // on the Sig destination.
   const landing = tab === "Applications";
+  // Build -121: the landing is a work grid, not a scroll —
+  // a tappable summary strip on top (filled by loadAdminSig
+  // from the same payloads), then the queue in the wide
+  // column with Sig's attention list + the preview card in
+  // a side column on desktop; on phones the side column
+  // stacks compactly above the queue.
   app.innerHTML = `
     <h2>SIGNL Admin</h2>
     ${landing ? `
-    <div class="panel preview-cta">
-      <div><strong>Business Preview</strong><p class="muted small" style="margin:4px 0 0">Walk the app exactly as a business does: the founding plans, roster search with every filter, full creator profiles, the offer composer, and the business dashboard with bookings, codes, tracking and returns. Offers sent in preview are simulations that never reach a creator and are never saved.</p></div>
-      <button class="btn" onclick="enterPreview()">Preview as business &rarr;</button>
-      <button class="btn ghost" onclick="enterPreviewDashboard()">Business dashboard &rarr;</button>
-    </div>
-    <div id="admin-sig"><div class="panel"><div class="sig-load-row">${sigAvatarHtml("think")}</div><p class="muted small" style="margin:0">Sig is reading the same numbers Admin shows...</p></div></div>` : ""}
-    <div id="tab-body"><p class="muted">Loading...</p></div>`;
+    <div id="admin-summary"></div>
+    <div class="admin-home121">
+      <div class="admin-home-side">
+        <div class="panel preview-cta">
+          <div><strong>Business Preview</strong><p class="muted small" style="margin:4px 0 0">Walk the app exactly as a business does: the founding plans, roster search with every filter, full creator profiles, the offer composer, and the business dashboard with bookings, codes, tracking and returns. Offers sent in preview are simulations that never reach a creator and are never saved.</p></div>
+          <button class="btn" onclick="enterPreview()">Preview as business &rarr;</button>
+          <button class="btn ghost" onclick="enterPreviewDashboard()">Business dashboard &rarr;</button>
+        </div>
+        <div id="admin-sig"><div class="panel"><div class="sig-load-row">${sigAvatarHtml("think")}</div><p class="muted small" style="margin:0">Sig is reading the same numbers Admin shows...</p></div></div>
+      </div>
+      <div class="admin-home-main"><div id="tab-body"><p class="muted">Loading...</p></div></div>
+    </div>` : `
+    <div id="tab-body"><p class="muted">Loading...</p></div>`}`;
   if (landing) loadAdminSig();
   if (tab === "Sig") renderAdminSig();
   if (tab === "Applications") loadApplications();
@@ -21222,6 +21267,35 @@ function adminSigItems(apps, marketsData, partnersData) {
   return items;
 }
 
+// Build -121: the Admin home summary strip — the counts
+// Jeff scans for (applications waiting, claims today,
+// businesses waiting on activation), computed from the same
+// three payloads Sig's attention list reads, rendered as
+// tappable chips that land on the tab where the work lives.
+function adminSummaryCounts121(apps, marketsData, partnersData) {
+  const c = { waiting: 0, claimsToday: 0, bizWaiting: 0, partnersPaused: 0 };
+  if (apps) {
+    const pending = apps.pending || [];
+    c.waiting = pending.length;
+    const now = new Date();
+    const isToday = (iso) => { const dt = new Date(iso || ""); return dt.getFullYear() === now.getFullYear() && dt.getMonth() === now.getMonth() && dt.getDate() === now.getDate(); };
+    c.claimsToday = pending.concat(apps.decided || []).filter((u) => u.role === "creator" && isToday(u.createdAt)).length;
+  }
+  if (marketsData) for (const m of marketsData.markets || []) c.bizWaiting += m.businessesFounding || 0;
+  if (partnersData) c.partnersPaused = (partnersData.partners || []).filter((p) => p.status !== "active").length;
+  return c;
+}
+function adminSummaryHtml121(c) {
+  const chip = (n, label, tab) => `<button type="button" class="sum-chip121" onclick="return go('dashboard','${tab}')"><span class="sum-num121">${fmtNum(n)}</span><span class="sum-lbl121">${label}</span></button>`;
+  const chips = [
+    chip(c.waiting, c.waiting === 1 ? "application waiting" : "applications waiting", "Applications"),
+    chip(c.claimsToday, "claims today", "Applications"),
+    chip(c.bizWaiting, c.bizWaiting === 1 ? "business waiting on activation" : "businesses waiting on activation", "Markets"),
+  ];
+  if (c.partnersPaused) chips.push(chip(c.partnersPaused, c.partnersPaused === 1 ? "partner paused" : "partners paused", "Partners"));
+  return chips.join("");
+}
+
 async function loadAdminSig(hostId) {
   const hid = hostId || "admin-sig";
   const host = document.getElementById(hid);
@@ -21230,6 +21304,8 @@ async function loadAdminSig(hostId) {
   const [apps, marketsData, partnersData] = await Promise.all([grab("/admin/applications"), grab("/admin/markets"), grab("/admin/partners")]);
   if (!document.getElementById(hid)) return;
   const items = adminSigItems(apps, marketsData, partnersData);
+  const sumEl = document.getElementById("admin-summary");
+  if (sumEl) sumEl.innerHTML = adminSummaryHtml121(adminSummaryCounts121(apps, marketsData, partnersData));
   const loaded = apps || marketsData || partnersData;
   host.innerHTML = `
   <div class="panel admin-sig-panel">
