@@ -81,7 +81,7 @@ const AGREE = { agreedHonestPosts: true, agreedFtcDisclosure: true, agreedPostCo
 
 // ---------- unit level: the roster and the alias ----------
 const names = MARKETS.map((m) => m.name);
-check("roster has exactly 41 markets (37 of the reset + Miami restored in Build -59 + the 3 NZ markets of Build -117)", names.length === 41, String(names.length));
+check("roster has exactly 42 markets (37 of the reset + Miami restored in Build -59 + the 3 NZ markets of Build -117 + Dublin in Build -127)", names.length === 42, String(names.length));
 check("Virginia Beach is a market; Hampton Roads is not a market name", names.includes("Virginia Beach") && !names.includes("Hampton Roads"));
 const vb = MARKETS.find((m) => m.name === "Virginia Beach");
 check("Virginia Beach keeps the stable id hampton-roads", !!vb && vb.id === "hampton-roads");

@@ -330,6 +330,31 @@ const MARKETS = [
     cities: ["Manchester", "Salford", "Stockport", "Bolton", "Bury", "Oldham", "Rochdale", "Altrincham", "Sale", "Stretford", "Ashton-under-Lyne", "Wigan", "Eccles", "Prestwich", "Middleton", "Hyde", "Stalybridge", "Wilmslow", "Macclesfield", "Denton"],
   },
   {
+    // Build -127 (Jeff, 2026-11-04): Dublin joins the roster in
+    // the expansion wave ("whatever it takes... i want all of
+    // it... just go"). Dublin is ONE market: the city plus its
+    // commuter belt (Swords, Tallaght, Blanchardstown, the
+    // Dún Laoghaire coast, Bray/Greystones, and the Kildare and
+    // Meath commuter towns). Dublin carries the EUR currency
+    // override in the London shape (Build -89 pattern): €45
+    // paid floor. No EUR founding book exists yet, so
+    // planBookFor("EUR") falls back to the USD book — Dublin
+    // money is Recorded-class only until Jeff approves an EUR
+    // price book, the same posture NZ and Canada shipped with
+    // before Build -118. No market is live for money (Jeff,
+    // 2026-11-03): Dublin starts NOT live like every unlaunched
+    // market — founding sign-ups only. The roster is 42 markets
+    // in 10 countries.
+    id: "dublin",
+    name: "Dublin",
+    label: "Dublin, Ireland",
+    country: "Ireland",
+    currency: "EUR",
+    currencySymbol: "€",
+    paidFloor: 45,
+    cities: ["Dublin", "Swords", "Tallaght", "Blanchardstown", "Dún Laoghaire", "Dundrum", "Blackrock", "Sandyford", "Lucan", "Clondalkin", "Ballyfermot", "Finglas", "Howth", "Malahide", "Rathfarnham", "Bray", "Greystones", "Naas", "Celbridge", "Leixlip", "Maynooth", "Skerries", "Balbriggan"],
+  },
+  {
     id: "dubai",
     name: "Dubai",
     label: "Dubai, United Arab Emirates",
@@ -973,6 +998,9 @@ const COUNTRY_ALIASES = {
   "new zealand": "New Zealand",
   nz: "New Zealand",
   france: "France",
+  ireland: "Ireland",
+  "republic of ireland": "Ireland",
+  eire: "Ireland",
   spain: "Spain",
   portugal: "Portugal",
   "united arab emirates": "United Arab Emirates",
