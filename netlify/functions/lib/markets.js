@@ -343,8 +343,7 @@ const MARKETS = [
     // price book, the same posture NZ and Canada shipped with
     // before Build -118. No market is live for money (Jeff,
     // 2026-11-03): Dublin starts NOT live like every unlaunched
-    // market — founding sign-ups only. The roster is 42 markets
-    // in 10 countries.
+    // market — founding sign-ups only.
     id: "dublin",
     name: "Dublin",
     label: "Dublin, Ireland",
@@ -353,6 +352,53 @@ const MARKETS = [
     currencySymbol: "€",
     paidFloor: 45,
     cities: ["Dublin", "Swords", "Tallaght", "Blanchardstown", "Dún Laoghaire", "Dundrum", "Blackrock", "Sandyford", "Lucan", "Clondalkin", "Ballyfermot", "Finglas", "Howth", "Malahide", "Rathfarnham", "Bray", "Greystones", "Naas", "Celbridge", "Leixlip", "Maynooth", "Skerries", "Balbriggan"],
+  },
+  {
+    // Build -127 (Jeff, 2026-11-04): Amsterdam, Copenhagen and
+    // Mexico City join the roster in the same expansion wave as
+    // Dublin (Jeff's ruling the same day: every candidate city
+    // is in, ranked by speed to sign-ups only). Each is ONE
+    // market containing its metro and commuter towns, the
+    // London pattern. Currency overrides mirror the London
+    // shape: Amsterdam EUR with a €45 floor (no EUR book yet —
+    // planBookFor falls back to the USD book, Recorded-class
+    // only until an EUR book is approved); Copenhagen DKK with
+    // a kr 300 floor (Denmark is not in the euro — the floor is
+    // the $50 canon at a clean local point; no DKK book exists,
+    // same fallback posture); Mexico City MXN with a $900 floor
+    // (the $50 canon at a clean local point; no MXN book
+    // exists, same fallback posture). All three start NOT live
+    // like every unlaunched market — founding sign-ups only,
+    // payment gates untouched. The roster is 45 markets in 13
+    // countries.
+    id: "amsterdam",
+    name: "Amsterdam",
+    label: "Amsterdam, Netherlands",
+    country: "Netherlands",
+    currency: "EUR",
+    currencySymbol: "€",
+    paidFloor: 45,
+    cities: ["Amsterdam", "Amstelveen", "Diemen", "Ouder-Amstel", "Zaandam", "Haarlem", "Hoofddorp", "Almere", "Purmerend", "Aalsmeer", "Uithoorn", "Badhoevedorp", "Weesp", "Muiden", "Naarden", "Bussum", "Hilversum"],
+  },
+  {
+    id: "copenhagen",
+    name: "Copenhagen",
+    label: "Copenhagen, Denmark",
+    country: "Denmark",
+    currency: "DKK",
+    currencySymbol: "kr",
+    paidFloor: 300,
+    cities: ["Copenhagen", "Frederiksberg", "Gentofte", "Hellerup", "Charlottenlund", "Lyngby", "Gladsaxe", "Søborg", "Herlev", "Ballerup", "Rødovre", "Hvidovre", "Tårnby", "Kastrup", "Dragør", "Albertslund", "Ishøj", "Vallensbæk", "Brøndby", "Høje-Taastrup", "Roskilde", "Køge"],
+  },
+  {
+    id: "mexico-city",
+    name: "Mexico City",
+    label: "Mexico City, Mexico",
+    country: "Mexico",
+    currency: "MXN",
+    currencySymbol: "$",
+    paidFloor: 900,
+    cities: ["Mexico City", "Ciudad de México", "CDMX", "Coyoacán", "Tlalpan", "Benito Juárez", "Miguel Hidalgo", "Cuauhtémoc", "Álvaro Obregón", "Azcapotzalco", "Iztapalapa", "Gustavo A. Madero", "Xochimilco", "Tláhuac", "Magdalena Contreras", "Cuajimalpa", "Ecatepec", "Naucalpan", "Tlalnepantla", "Nezahualcóyotl", "Chimalhuacán", "Coacalco", "Cuautitlán Izcalli", "Atizapán de Zaragoza", "Tultitlán", "Huixquilucan", "Tecámac"],
   },
   {
     id: "dubai",
@@ -1001,6 +1047,13 @@ const COUNTRY_ALIASES = {
   ireland: "Ireland",
   "republic of ireland": "Ireland",
   eire: "Ireland",
+  netherlands: "Netherlands",
+  holland: "Netherlands",
+  "the netherlands": "Netherlands",
+  denmark: "Denmark",
+  danmark: "Denmark",
+  mexico: "Mexico",
+  "méxico": "Mexico",
   spain: "Spain",
   portugal: "Portugal",
   "united arab emirates": "United Arab Emirates",
