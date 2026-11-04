@@ -12,12 +12,11 @@
 //      "Wellington" with Miami (the designed outcome) and
 //      resolves it on the New Zealand hint; the pinned
 //      outcomes do not move (Henderson -> Las Vegas, Sydenham
-//      -> London, bare London ties Columbus); NZ markets carry
-//      NO currency override (the Build -89 entry is optional
-//      per market — London is the only carrier, Manchester
-//      ships without one), so currencyForMarket defaults them
-//      to USD / $50 exactly like Manchester, and London's GBP
-//      is untouched.
+//      -> London, bare London ties Columbus); NZ markets
+//      launched with NO currency override (USD / $50 default)
+//      and Build -118 superseded that pin the same night: the
+//      trio now carries NZD (NZ$90 floor), asserted below, and
+//      London's GBP is untouched.
 //   G. Sig: Admin facts built with the config-driven market
 //      name list carry an Auckland marketReach row from a
 //      listed Auckland creator, and the facts lines name it.
@@ -64,7 +63,7 @@ function check(name, cond, extra = "") {
 part("S: source pins");
 const marketsJs = fs.readFileSync(path.join(root, "netlify/functions/lib/markets.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(root, "public/index.html"), "utf8");
-check("stamp is 2026.11.03-117 on both sides", indexHtml.includes("2026.11.03-117") && fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes("2026.11.03-117"));
+check("stamp is 2026.11.03-118 on both sides", indexHtml.includes("2026.11.03-118") && fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes("2026.11.03-118"));
 check("markets.js carries the Auckland entry", marketsJs.includes('id: "auckland"') && marketsJs.includes('label: "Auckland, New Zealand"'));
 check("markets.js carries the Wellington entry", marketsJs.includes('id: "wellington"') && marketsJs.includes('label: "Wellington, New Zealand"'));
 check("markets.js carries the Christchurch entry", marketsJs.includes('id: "christchurch"') && marketsJs.includes('label: "Christchurch, New Zealand"'));
@@ -86,8 +85,8 @@ check("bare Wellington is the designed Miami/Wellington tie; the New Zealand hin
   (() => { const bare = resolveTypedCity("Wellington"); const hinted = resolveTypedCity("Wellington, New Zealand"); return bare.status === "ambiguous" && bare.markets.includes("Miami") && bare.markets.includes("Wellington") && hinted.status === "unique" && hinted.market === "Wellington"; })());
 check("pinned resolver outcomes do not move (Henderson -> Las Vegas, Sydenham -> London, bare London ties)",
   resolveTypedCity("Henderson").market === "Las Vegas" && resolveTypedCity("Sydenham").market === "London" && resolveTypedCity("London").status === "ambiguous");
-check("NZ markets carry no currency override: they default to USD / $50 like Manchester",
-  nz.every((m) => !("currency" in m)) && ["Auckland", "Wellington", "Christchurch", "Manchester"].every((n) => { const c = currencyForMarket(n); return c.code === "USD" && c.symbol === "$" && c.paidFloor === 50; }) && paidFloorForMarket("Auckland") === 50);
+check("NZ markets carry the NZD override (Build -118 supersedes the -117 USD-default pin)",
+  nz.every((m) => m.currency === "NZD") && ["Auckland", "Wellington", "Christchurch"].every((n) => { const c = currencyForMarket(n); return c.code === "NZD" && c.symbol === "$" && c.paidFloor === 90; }) && paidFloorForMarket("Auckland") === 90);
 check("London's GBP override is untouched (£40 floor)", (() => { const c = currencyForMarket("London"); return c.code === "GBP" && c.symbol === "£" && c.paidFloor === 40; })());
 
 // ---------- G: Sig facts pick the new markets up from config ----------

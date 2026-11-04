@@ -14112,9 +14112,12 @@ async function ccFunnel() {
 // back to its market's currency. London reads GBP; everything
 // else USD. A business-month never mixes currencies because
 // every read resolves the plan through that one book.
+// Build -118: NZD and CAD records join the stamped-currency
+// set (Manchester / NZ / Canada books now exist), so a stamped
+// NZD or CAD is trusted exactly like a stamped GBP.
 function currencyOfBusiness(u) {
   const b = (u && u.business) || {};
-  if (b.currency === "USD" || b.currency === "GBP") return b.currency;
+  if (b.currency === "USD" || b.currency === "GBP" || b.currency === "NZD" || b.currency === "CAD") return b.currency;
   const m = u && u.market ? marketByName(u.market) : null;
   return (m && currencyForMarket(m.name).code) || "USD";
 }
@@ -14338,7 +14341,9 @@ function ccMoneyView(P, modeled) {
     recordedSubsByCurrency[c] = ccMoney((recordedSubsByCurrency[c] || 0) + g);
   }
   const bookRow = (p) => ({ id: p.id, name: p.name, priceMonthly: p.priceMonthly, foundingCredit: p.foundingCredit, firstMonthPriceMonthly: p.firstMonthPriceMonthly, minMonths: p.minMonths, visitsPerMonth: p.visitsPerMonth });
-  return { filters: ccFiltersEcho(P), ...ccMoneyAgg(P), modeled, planBooks: { USD: PLANS.map(bookRow), GBP: planBookFor("GBP").map(bookRow) }, recordedSubsByCurrency };
+  // Build -118: the Money view carries all four founding books
+  // (USD, GBP, NZD, CAD), each on its own line, never blended.
+  return { filters: ccFiltersEcho(P), ...ccMoneyAgg(P), modeled, planBooks: { USD: PLANS.map(bookRow), GBP: planBookFor("GBP").map(bookRow), NZD: planBookFor("NZD").map(bookRow), CAD: planBookFor("CAD").map(bookRow) }, recordedSubsByCurrency };
 }
 
 // Businesses (§3.3): the agreement ledger. Every figure on a row
@@ -14806,7 +14811,7 @@ function sanitizeDealTerms(raw) {
   // ever blend two currencies into one total.
   const marketCurrencies = [...new Set(markets.map((dm) => currencyForMarket(dm.market).code))];
   if (marketCurrencies.length > 1) return { error: "One deal cannot span two currencies. Split it into one deal per currency." };
-  const statedCurrency = raw.currency === "GBP" || raw.currency === "USD" ? raw.currency : null;
+  const statedCurrency = raw.currency === "GBP" || raw.currency === "USD" || raw.currency === "NZD" || raw.currency === "CAD" ? raw.currency : null;
   if (statedCurrency && marketCurrencies.length && statedCurrency !== marketCurrencies[0]) return { error: `These markets price in ${marketCurrencies[0]} — the deal currency has to match.` };
   const dealCurrency = { currency: statedCurrency || marketCurrencies[0] || "USD" };
   return {

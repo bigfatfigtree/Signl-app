@@ -321,6 +321,12 @@ const MARKETS = [
     name: "Manchester",
     label: "Manchester, United Kingdom",
     country: "United Kingdom",
+    // Build -118: Manchester carries the identical GBP override
+    // as London (Build -89) — every UK market prices in pounds:
+    // £40 paid floor, GBP founding book (planBookFor("GBP")).
+    currency: "GBP",
+    currencySymbol: "£",
+    paidFloor: 40,
     cities: ["Manchester", "Salford", "Stockport", "Bolton", "Bury", "Oldham", "Rochdale", "Altrincham", "Sale", "Stretford", "Ashton-under-Lyne", "Wigan", "Eccles", "Prestwich", "Middleton", "Hyde", "Stalybridge", "Wilmslow", "Macclesfield", "Denton"],
   },
   {
@@ -356,6 +362,12 @@ const MARKETS = [
     name: "Toronto",
     label: "Toronto, Canada",
     country: "Canada",
+    // Build -118: Canada prices in CAD. Converted from the USD
+    // canon at USD/CAD 1.40 (spot 1.397, 2026-11-03): the $50
+    // floor is CA$70 exactly; the founding book is CAD_PLANS.
+    currency: "CAD",
+    currencySymbol: "$",
+    paidFloor: 70,
     cities: ["Toronto", "Mississauga", "Brampton", "Markham", "Vaughan", "Richmond Hill", "Oakville", "Burlington", "Milton", "Ajax", "Pickering", "Whitby", "Oshawa", "Newmarket", "Aurora", "Caledon", "Georgetown"],
   },
   {
@@ -363,6 +375,11 @@ const MARKETS = [
     name: "Montreal",
     label: "Montreal, Canada",
     country: "Canada",
+    // Build -118: CAD, same override as Toronto (CA$70 floor,
+    // CAD_PLANS founding book).
+    currency: "CAD",
+    currencySymbol: "$",
+    paidFloor: 70,
     cities: ["Montreal", "Laval", "Longueuil", "Terrebonne", "Brossard", "Repentigny", "Saint-Jean-sur-Richelieu", "Boucherville", "Dollard-des-Ormeaux", "Blainville", "Châteauguay", "Saint-Eustache", "Mascouche", "Vaudreuil-Dorion", "Kirkland", "Pointe-Claire", "Sainte-Thérèse", "Mirabel", "La Prairie", "Candiac"],
   },
   {
@@ -376,6 +393,12 @@ const MARKETS = [
     name: "Auckland",
     label: "Auckland, New Zealand",
     country: "New Zealand",
+    // Build -118: NZ prices in NZD. Converted from the USD
+    // canon at USD/NZD 1.78 (NZD/USD spot 0.5626, 2026-11-03):
+    // NZ$90 paid floor; the founding book is NZD_PLANS.
+    currency: "NZD",
+    currencySymbol: "$",
+    paidFloor: 90,
     cities: ["Auckland", "Auckland CBD", "Ponsonby", "Grey Lynn", "Westmere", "Herne Bay", "Parnell", "Remuera", "Kohimarama", "Mission Bay", "St Heliers", "Glendowie", "Meadowbank", "Orakei", "Stonefields", "Ellerslie", "Greenlane", "Penrose", "Onehunga", "Mount Eden", "Kingsland", "Sandringham", "Mount Albert", "Point Chevalier", "Waterview", "Mount Roskill", "Three Kings", "Lynfield", "Blockhouse Bay", "New Lynn", "Glen Eden", "Titirangi", "Laingholm", "Swanson", "Ranui", "Massey", "Westgate", "West Harbour", "Hobsonville", "Whenuapai", "Greenhithe", "Albany", "Takapuna", "Devonport", "Birkenhead", "Northcote", "Glenfield", "Browns Bay", "Torbay", "Long Bay", "Silverdale", "Milldale", "Orewa", "Whangaparaoa", "Red Beach", "Gulf Harbour", "Riverhead", "Kumeu", "Huapai", "Helensville", "Waimauku", "Muriwai", "Piha", "Howick", "Botany", "Flat Bush", "Dannemora", "East Tamaki", "Pakuranga", "Half Moon Bay", "Bucklands Beach", "Beachlands", "Maraetai", "Whitford", "Clevedon", "Manukau", "Otara", "Papatoetoe", "Mangere", "Mangere Bridge", "Otahuhu", "Papakura", "Takanini", "Drury", "Karaka", "Pukekohe", "Waiuku", "Tuakau"],
   },
   {
@@ -385,6 +408,11 @@ const MARKETS = [
     name: "Wellington",
     label: "Wellington, New Zealand",
     country: "New Zealand",
+    // Build -118: NZD, same override as Auckland (NZ$90 floor,
+    // NZD_PLANS founding book).
+    currency: "NZD",
+    currencySymbol: "$",
+    paidFloor: 90,
     cities: ["Wellington", "Te Aro", "Thorndon", "Mount Victoria", "Oriental Bay", "Kelburn", "Aro Valley", "Mount Cook", "Newtown", "Berhampore", "Brooklyn", "Island Bay", "Lyall Bay", "Kilbirnie", "Hataitai", "Seatoun", "Wadestown", "Northland", "Karori", "Crofton Downs", "Ngaio", "Khandallah", "Johnsonville", "Tawa", "Grenada North", "Porirua", "Elsdon", "Aotea", "Titahi Bay", "Mana", "Plimmerton", "Pukerua Bay", "Paekakariki", "Raumati", "Paraparaumu", "Paraparaumu Beach", "Waikanae", "Otaki", "Petone", "Maungaraki", "Lower Hutt", "Moera", "Alicetown", "Eastbourne", "Days Bay", "Wainuiomata", "Stokes Valley", "Upper Hutt", "Heretaunga", "Silverstream", "Pinehaven", "Totara Park"],
   },
   {
@@ -395,6 +423,11 @@ const MARKETS = [
     name: "Christchurch",
     label: "Christchurch, New Zealand",
     country: "New Zealand",
+    // Build -118: NZD, same override as Auckland (NZ$90 floor,
+    // NZD_PLANS founding book).
+    currency: "NZD",
+    currencySymbol: "$",
+    paidFloor: 90,
     cities: ["Christchurch", "Christchurch Central", "Riccarton", "Upper Riccarton", "Ilam", "Burnside", "Fendalton", "Merivale", "Mairehau", "Shirley", "Edgeware", "Papanui", "Bishopdale", "Belfast", "Redwood", "Harewood", "Avonhead", "Russley", "Yaldhurst", "Sockburn", "Hornby", "Wigram", "Halswell", "Hoon Hay", "Spreydon", "Addington", "St Martins", "Opawa", "Woolston", "Ferrymead", "Heathcote Valley", "Cashmere", "Mount Pleasant", "Redcliffs", "Sumner", "Lyttelton", "Governors Bay", "Diamond Harbour", "New Brighton", "South New Brighton", "Aranui", "Waimairi Beach", "Parklands", "Burwood", "Spencerville", "Templeton", "Prebbleton", "Lincoln", "Rolleston", "West Melton", "Darfield", "Kirwee", "Tai Tapu", "Leeston", "Burnham", "Rangiora", "Kaiapoi", "Woodend", "Pegasus", "Tuahiwi", "Ohoka", "Fernside", "Oxford", "Amberley", "Little River", "Akaroa"],
   },
 ];
@@ -425,7 +458,9 @@ function normalizeMarketName(name) {
 
 // Currency by market (Build -89): every market defaults to USD
 // ($, $50 paid floor); a market entry may override with its own
-// currency code, symbol, and paid floor (London: GBP, £, £40).
+// currency code, symbol, and paid floor. Overrides on file
+// (Build -118): London + Manchester GBP £40; Toronto + Montreal
+// CAD $70; Auckland + Wellington + Christchurch NZD $90.
 const DEFAULT_CURRENCY = { code: "USD", symbol: "$", paidFloor: 50 };
 function currencyForMarket(name) {
   if (!name) return { ...DEFAULT_CURRENCY };
@@ -673,7 +708,130 @@ const GBP_PLANS = [
     ],
   },
 ];
-const PLAN_BOOK = { USD: PLANS, GBP: GBP_PLANS };
+// Build -118 (2026-11-03, Jeff: "make Canada England New
+// Zealand translate to their currency"): the NZD and CAD
+// founding books, converted from the USD canon at the spot
+// rates of 2026-11-03 and rounded to clean local price points
+// the London way (tiers end in 9, just under the straight
+// conversion; floor and credit land on clean 5s/10s).
+//   NZD — USD/NZD 1.78 (NZD/USD spot 0.5626): $50 floor ->
+//   NZ$90 (89.0 at rate); $100 credit -> NZ$175 (178 at rate);
+//   tiers $199/$349/$699 -> NZ$349 / NZ$619 / NZ$1,239
+//   (354.2 / 621.2 / 1,244.2 at rate). First months are price
+//   minus credit: NZ$174 / NZ$444 / NZ$1,064.
+//   CAD — USD/CAD 1.40 (spot 1.397): $50 floor -> CA$70 and
+//   $100 credit -> CA$140, both exact at rate; tiers ->
+//   CA$279 / CA$489 / CA$979 (278.6 / 488.6 / 978.6 at rate).
+//   First months: CA$139 / CA$349 / CA$839.
+// Same contract as the GBP book: plan ids are shared across
+// books, prices are ledger and Admin data, and NO Stripe
+// prices exist for these books or may be created from them —
+// no market is live for money (Jeff, 2026-11-03), and NZ /
+// Canada money enters as Recorded-class only until a local
+// partner rail exists.
+const NZD_PLANS = [
+  {
+    id: "self-service",
+    name: "Self-Service",
+    priceMonthly: 349,
+    foundingCredit: 175,
+    firstMonthPriceMonthly: 174,
+    minMonths: 3,
+    visitsPerMonth: 5,
+    vatNote: "Plus GST where it applies.",
+    features: [
+      "Book from the ranked local roster",
+      "5 creator visits a month",
+      "Comped visits, or paid at the creator's listed rate",
+      "Counted results on every visit",
+    ],
+  },
+  {
+    id: "growth",
+    name: "Growth",
+    priceMonthly: 619,
+    foundingCredit: 175,
+    firstMonthPriceMonthly: 444,
+    minMonths: 3,
+    visitsPerMonth: 10,
+    vatNote: "Plus GST where it applies.",
+    features: [
+      "Everything in Self-Service",
+      "10 creator visits a month",
+      "Built for paid work and reuse",
+      "License library with renewal tracking",
+      "Priority access to top local creators",
+    ],
+  },
+  {
+    id: "managed",
+    name: "Managed",
+    priceMonthly: 1239,
+    foundingCredit: 175,
+    firstMonthPriceMonthly: 1064,
+    minMonths: 3,
+    visitsPerMonth: 20,
+    vatNote: "Plus GST where it applies.",
+    features: [
+      "Everything in Growth",
+      "20 creator visits a month",
+      "We run the campaigns for you",
+      "Monthly results review with your team",
+    ],
+  },
+];
+const CAD_PLANS = [
+  {
+    id: "self-service",
+    name: "Self-Service",
+    priceMonthly: 279,
+    foundingCredit: 140,
+    firstMonthPriceMonthly: 139,
+    minMonths: 3,
+    visitsPerMonth: 5,
+    vatNote: "Plus applicable taxes.",
+    features: [
+      "Book from the ranked local roster",
+      "5 creator visits a month",
+      "Comped visits, or paid at the creator's listed rate",
+      "Counted results on every visit",
+    ],
+  },
+  {
+    id: "growth",
+    name: "Growth",
+    priceMonthly: 489,
+    foundingCredit: 140,
+    firstMonthPriceMonthly: 349,
+    minMonths: 3,
+    visitsPerMonth: 10,
+    vatNote: "Plus applicable taxes.",
+    features: [
+      "Everything in Self-Service",
+      "10 creator visits a month",
+      "Built for paid work and reuse",
+      "License library with renewal tracking",
+      "Priority access to top local creators",
+    ],
+  },
+  {
+    id: "managed",
+    name: "Managed",
+    priceMonthly: 979,
+    foundingCredit: 140,
+    firstMonthPriceMonthly: 839,
+    minMonths: 3,
+    visitsPerMonth: 20,
+    vatNote: "Plus applicable taxes.",
+    features: [
+      "Everything in Growth",
+      "20 creator visits a month",
+      "We run the campaigns for you",
+      "Monthly results review with your team",
+    ],
+  },
+];
+const PLAN_BOOK = { USD: PLANS, GBP: GBP_PLANS, NZD: NZD_PLANS, CAD: CAD_PLANS };
 // London district race (Build -106, Tier 3 item 15b): the five
 // Tier 1 districts from the London launch strategy, each mapped
 // to its component areas exactly as they exist in the London
@@ -942,4 +1100,4 @@ function resolveTypedCity(raw, hints, markets) {
   };
 }
 
-module.exports = { MARKETS, MARKET_NAME_ALIASES, normalizeMarketName, currencyForMarket, paidFloorForMarket, DEFAULT_CURRENCY, MARKET_STATES, parseTypedCity, resolveTypedCity, TIERS, CREATOR_CATEGORIES, COMP_CATEGORIES, BUSINESS_CATEGORIES, PLANS, GBP_PLANS, PLAN_BOOK, planBookFor, planInBook, LONDON_RACE_DISTRICTS, LONDON_RACE_TARGETS, LONDON_RACE_WEEKS, londonDistrictForArea, PROFESSIONS, LEGACY_PROFESSIONS, REALTOR_PROFESSION, canonicalFromList, tierForFollowers, normalizeTierBand, MIN_TOTAL_AUDIENCE };
+module.exports = { MARKETS, MARKET_NAME_ALIASES, normalizeMarketName, currencyForMarket, paidFloorForMarket, DEFAULT_CURRENCY, MARKET_STATES, parseTypedCity, resolveTypedCity, TIERS, CREATOR_CATEGORIES, COMP_CATEGORIES, BUSINESS_CATEGORIES, PLANS, GBP_PLANS, NZD_PLANS, CAD_PLANS, PLAN_BOOK, planBookFor, planInBook, LONDON_RACE_DISTRICTS, LONDON_RACE_TARGETS, LONDON_RACE_WEEKS, londonDistrictForArea, PROFESSIONS, LEGACY_PROFESSIONS, REALTOR_PROFESSION, canonicalFromList, tierForFollowers, normalizeTierBand, MIN_TOTAL_AUDIENCE };

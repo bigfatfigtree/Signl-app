@@ -23167,7 +23167,9 @@ function ccMoneyHtml(d) {
       <h3 style="margin:0 0 2px">Plan books</h3>
       <p class="muted small" style="margin:0 0 8px">The founding books Admin sells from. Read-only here; a business's currency is set by its market when it picks a plan.</p>
       <p class="small" style="margin:0 0 4px"><strong>US dollars:</strong> ${bookLine("USD")}</p>
-      <p class="small" style="margin:0"><strong>Pounds (London):</strong> ${bookLine("GBP")} · all plus VAT. London is sold through the UK launch partner only, so pounds are recorded, never charged here, and no Stripe prices exist for this book.</p>
+      <p class="small" style="margin:0 0 4px"><strong>Pounds (United Kingdom):</strong> ${bookLine("GBP")} · all plus VAT. The UK is sold through the UK launch partner only, so pounds are recorded, never charged here, and no Stripe prices exist for this book.</p>
+      <p class="small" style="margin:0 0 4px"><strong>New Zealand dollars:</strong> ${bookLine("NZD")} · plus GST where it applies. Recorded only; no Stripe prices exist for this book.</p>
+      <p class="small" style="margin:0"><strong>Canadian dollars:</strong> ${bookLine("CAD")} · plus applicable taxes. Recorded only; no Stripe prices exist for this book.</p>
       ${subsCurLine}
     </div>` : "";
   return `${tiles}${nothingYet}${recordedPanel}${chargedPanel}${countedPanel}${reconPanel}${booksPanel}${modeledPanel}`;
