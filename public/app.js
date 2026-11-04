@@ -2131,7 +2131,7 @@ function renderViewAsBanner() {
   const va = state.user && state.user.viewAs;
   if (!va) { host.innerHTML = ""; host.style.display = "none"; return; }
   host.style.display = "";
-  host.innerHTML = `<div class="viewas-inner"><span class="viewas-tag">ADMIN VIEW</span><span>Viewing <strong>${esc(va.businessName || "this business")}</strong>&rsquo;s account &middot; Read only &middot; Nothing you do here changes their account</span><button class="btn small-btn" onclick="exitViewAs()">Exit view</button></div>`;
+  host.innerHTML = `<div class="viewas-inner"><span class="viewas-tag">ADMIN VIEW</span><span>Viewing <strong>${esc(va.businessName || va.label || "this account")}</strong>&rsquo;s account &middot; Read only &middot; Nothing you do here changes their account</span><button class="btn small-btn" onclick="exitViewAs()">Exit view</button></div>`;
 }
 
 async function exitViewAs() {
@@ -2160,6 +2160,50 @@ async function adminViewBusiness(id) {
     await api("POST", `/admin/businesses/${id}/view`, {});
     location.reload();
   } catch (e) { alert(e.message); }
+}
+
+// Admin home platform totals (Build -126): the strip reads
+// GET /admin/platform-totals — platformTotals126 on the server,
+// the same numbers Sig's admin grounding states. The strip is
+// an enhancement on top of the queue: a failed read leaves it
+// empty and never blocks the page.
+async function loadAdminTotals126() {
+  const host = document.getElementById("admin-totals126");
+  if (!host) return;
+  try {
+    const d = await api("GET", "/admin/platform-totals");
+    const el = document.getElementById("admin-totals126");
+    if (!el) return;
+    const followers = d.totalFollowers || 0;
+    el.innerHTML = `
+      <div class="tot126"><span class="tot126-num">${fmtNum(d.creatorsSignedUp || 0)}</span><span class="tot126-lbl">Creators signed up</span><span class="tot126-sub">Approved + pending, platform-wide. Test accounts are not counted.</span></div>
+      <div class="tot126"><span class="tot126-num">${fmtNum(followers)}</span><span class="tot126-lbl">Total followers</span><span class="tot126-sub">${followers.toLocaleString("en-US")} across every platform, as reported by creators.</span></div>`;
+  } catch (e) { /* the strip never blocks the queue */ }
+}
+
+// Admin home preview tabs (Build -126): Creator and Partner
+// enter the read-only view-as machinery against the targets
+// the server resolves (the approved TEST creator; the seeded
+// DEMO partner). No target, no fake: the tab says why, plainly,
+// under the row. Business uses the preview simulation
+// (enterPreview), unchanged.
+async function adminPreviewAs126(kind) {
+  const note = document.getElementById("pv-note126");
+  const say = (msg) => { if (note) note.textContent = msg; };
+  try {
+    const t = await api("GET", "/admin/preview-targets");
+    const target = t && t[kind];
+    if (!target) {
+      say(kind === "creator"
+        ? "There is no test creator account to preview yet: creator preview only ever opens the flagged test account, never a real creator. Flag a test creator first, then this tab opens it."
+        : "The demo partner is not seeded yet, so there is no partner account to preview. Seed the demo partner from the Partners tab, then this tab opens it.");
+      return false;
+    }
+    say(`Opening ${target.name} read-only...`);
+    await api("POST", `/admin/${kind === "creator" ? "creators" : "partners"}/${target.id}/view`, {});
+    location.reload();
+  } catch (e) { say(e.message || "That preview could not open."); }
+  return false;
 }
 
 async function adminSendSigninLink(id) {
@@ -2484,16 +2528,11 @@ const NAV_LABEL_125 = { Dashboard: "Home", "My Visits": "Visits", "Visits & Post
 // business's page, the partner's account. (Build -125: it
 // used to send every role to "Profile", which partner,
 // pilot and recruiter shells do not have.)
-function identityDest125() {
-  const u = state.user;
-  if (!u) return "Dashboard";
-  if (u.role === "partner" && state.pilotScopeId) return "Overview";
-  if (u.role === "pilot_partner") return "Overview";
-  if (u.role === "partner") return "Account";
-  if (u.role === "recruiter") return "Queue";
-  if (u.role === "admin") return "Applications";
-  return "Profile";
-}
+// Build -126: the -125 identityDest125 helper is deleted —
+// the top-left identity no longer navigates to one landing
+// screen per role; it opens the identity MENU
+// (openIdentityMenu126: Profile / Settings / Sign out, the
+// rows in identityMenuRows126).
 
 // ---------- Build -125: the Everything panel ----------
 // One button, top right beside chat and help, on every
@@ -2648,6 +2687,93 @@ function closeEverything125() {
   if (el) el.remove();
   return false;
 }
+
+// ---------- Build -126: the identity menu ----------
+// Jeff (2026-11-04, from his live screenshots): he could not
+// find sign out in Admin, and the top-left identity was only a
+// shortcut to one screen. The identity is a MENU on every shell
+// now: tapping the photo/initial + name opens Profile /
+// Settings / Sign out, role-appropriate, and every row lands
+// somewhere real. One menu, one source of rows; the rail's own
+// Sign out buttons stay exactly as they were.
+function identityMenuRows126() {
+  const u = state.user;
+  if (!u) return [];
+  const signout = { icon: "signout", label: "Sign out", sub: "Ends this session on this device", act: "signOut()" };
+  const dest = (icon, label, sub, tab) => ({ icon, label, sub, act: `return go('dashboard','${tab}')` });
+  if (u.role === "admin") return [
+    dest("profile", "Your account", "Your settings: sign-in, email and password", "Account"),
+    signout,
+  ];
+  if (u.role === "creator") return [
+    dest("profile", "My profile", "Your public creator profile", "Profile"),
+    dest("sliders", "Settings", "Notifications, connected accounts, password", "Settings"),
+    signout,
+  ];
+  if (u.role === "business") return [
+    dest("building", "Business profile", "Your business's public profile", "Profile"),
+    dest("sliders", "Settings", "Notifications, plan and password", "Settings"),
+    signout,
+  ];
+  if (u.role === "partner" && !state.pilotScopeId) return [
+    dest("profile", "Account", "Your partner profile and agreement", "Account"),
+    dest("sliders", "Settings", "Sign-in, connected accounts and password", "Account"),
+    signout,
+  ];
+  // Partner inside a pilot scope, pilot partners, recruiters:
+  // their account surface is the Your account view.
+  return [
+    dest("profile", "Your account", "Your sign-in, email and password", "Account"),
+    signout,
+  ];
+}
+
+function openIdentityMenu126() {
+  closeIdentityMenu126();
+  closeEverything125();
+  const u = state.user;
+  if (!u) return false;
+  const rows = identityMenuRows126();
+  if (!rows.length) return false;
+  const name = u.role === "business" && u.business ? u.business.businessName : u.role === "partner" && u.partner ? u.partner.name : u.name;
+  const photo = selfAvatarUrl122(u);
+  const initial = String(name || "?").trim().charAt(0).toUpperCase() || "S";
+  const roleWord = u.role === "admin" ? "Admin"
+    : u.role === "creator" ? "Creator"
+    : u.role === "business" ? "Business"
+    : u.role === "recruiter" ? "Recruiter"
+    : (u.role === "pilot_partner" || state.pilotScopeId) ? "Impact Portal"
+    : "Partner";
+  const el = document.createElement("div");
+  el.id = "identity-menu126";
+  el.className = "idm126-overlay";
+  el.innerHTML = `
+  <div class="idm126-panel" role="dialog" aria-label="Your account menu">
+    <div class="idm126-head">${avaHtml122("idm126-ava", "idm126-ava", photo, initial)}<span class="idm126-who"><span class="idm126-name">${esc(name || "")}</span><span class="idm126-sub">${esc(u.email || "")}${u.email ? " · " : ""}${esc(roleWord)}</span></span><button type="button" class="linklike" onclick="closeIdentityMenu126()" aria-label="Close">✕</button></div>
+    ${rows.map((r) => `<button type="button" class="more-row idm126-row" onclick="closeIdentityMenu126(); ${r.act}"><span class="more-ic">${bnIcon(r.icon)}</span><span class="more-tx"><span class="more-label">${esc(r.label)}</span>${r.sub ? `<span class="more-sub">${esc(r.sub)}</span>` : ""}</span><span class="more-chev">›</span></button>`).join("")}
+  </div>`;
+  el.addEventListener("click", (e) => { if (e.target === el) closeIdentityMenu126(); });
+  document.body.appendChild(el);
+  return false;
+}
+function closeIdentityMenu126() {
+  const el = document.getElementById("identity-menu126");
+  if (el) el.remove();
+  return false;
+}
+
+// The standalone Your account view (Build -126): the account
+// surface for the shells that had none — Admin (Jeff had no
+// Settings screen at all), pilots and recruiters. Identity,
+// the shared account panel (email, Google, a working change-
+// password form) and Sign out. No dead ends.
+function accountViewHtml126(roleLabel) {
+  const u = state.user;
+  return `<h2 style="margin-bottom:2px">Your account</h2>
+  <p class="muted" style="margin-top:0">${esc(u.name || "")} · ${esc(u.email || "")}${roleLabel ? ` · ${esc(roleLabel)}` : ""}</p>
+  ${accountHtml(u)}
+  <div class="panel"><button class="btn danger" onclick="signOut()">Sign out</button></div>`;
+}
 // Build -122: the signed-in identity photo. The header circles
 // used to read creator.photoUrl off the session user — a field
 // the session payload never sets — so the initial showed even
@@ -2726,7 +2852,7 @@ function tabBarHtml() {
   const initial = String(nm || "?").trim().charAt(0).toUpperCase() || "S";
   const sub = u.market ? marketDisplayName(u.market) : roleWord;
   const railhead = `<div class="tab-railhead"><img src="/assets/logo.png" alt="SIGNL"><span class="trh-sub">${esc(roleWord)}</span></div>`;
-  const railfoot = `<div class="tab-railfoot"><div class="tab-user tab-user-btn" role="button" tabindex="0" title="Your home base" onclick="return go('dashboard','${identityDest125()}')">${avaHtml122("tu-ava", "tu-ava", photo, initial)}<span><span class="tu-name">${esc(nm || "")}</span><br><span class="tu-sub">${esc(sub)}</span></span></div></div>`;
+  const railfoot = `<div class="tab-railfoot"><div class="tab-user tab-user-btn" role="button" tabindex="0" title="Your account" aria-label="Your account menu" onclick="return openIdentityMenu126()">${avaHtml122("tu-ava", "tu-ava", photo, initial)}<span><span class="tu-name">${esc(nm || "")}</span><br><span class="tu-sub">${esc(sub)}</span></span></div></div>`;
   return `${railhead}<div class="tab-main">${btns}${signout}</div>${railfoot}`;
 }
 
@@ -2743,7 +2869,7 @@ function renderTopBar2(full) {
   const b = state.badges || {};
   const live = u.role === "business" ? businessAccessState(u) === "active" : !!(u.founding && u.founding.marketLive);
   el.innerHTML = `<div class="tb2-in">
-    <button type="button" class="tb2-id" onclick="return go('dashboard','${identityDest125()}')">
+    <button type="button" class="tb2-id" onclick="return openIdentityMenu126()" aria-label="Your account menu" title="Your account">
       ${avaHtml122("tb2-ava txt", "tb2-ava", photo, initial)}
       <span class="tb2-name">${esc(name || "")}</span>
     </button>
@@ -3077,7 +3203,7 @@ function renderRail() {
     ${rows}
     <div class="rail-foot">
       <button type="button" class="rail-item" title="Sign out" aria-label="Sign out" onclick="signOut()"><span class="bn-icon">${bnIcon("signout")}</span><span class="rail-label">Sign out</span></button>
-      <button type="button" class="rail-avatar" title="${esc(name || "Account")}" aria-label="Your account" onclick="${avatarGo}">${esc(initial)}</button>
+      <button type="button" class="rail-avatar" title="${esc(name || "Account")}" aria-label="Your account menu" onclick="return openIdentityMenu126()">${esc(initial)}</button>
     </div>`;
   renderTopRow();
   syncAdminSecbar121();
@@ -3126,7 +3252,11 @@ function renderTopRow() {
   const initial = String(name || u.name || "?").trim().charAt(0).toUpperCase() || "S";
   const photo = selfAvatarUrl122(u);
   const statsGo = u.role === "business" ? "return go('dashboard','Analytics')" : "return go('dashboard')";
-  el.innerHTML = `<div class="wrap tr-in">${avaHtml122("tr-ava", "tr-ava", photo, initial)}<span class="tr-name">${esc(name || "")}</span><span class="tr-right"><button type="button" onclick="${statsGo}" title="Your numbers" aria-label="Your numbers">${bnIcon("stats")}</button><button type="button" class="tr-ev125" onclick="return openEverything125()" aria-label="Everything — all sections" title="Everything">${bnIcon("more")}<span>Everything</span></button><a href="mailto:hello@joinsignl.com">Need help?</a></span></div>`;
+  // Build -126: the identity is a menu button (Profile /
+  // Settings / Sign out), and the spelled-out controls are
+  // icons — Everything keeps its name as the panel's title and
+  // this button's title/aria-label; help is a help icon.
+  el.innerHTML = `<div class="wrap tr-in"><button type="button" class="tr-id" onclick="return openIdentityMenu126()" aria-label="Your account menu" title="Your account">${avaHtml122("tr-ava", "tr-ava", photo, initial)}<span class="tr-name">${esc(name || "")}</span></button><span class="tr-right"><button type="button" onclick="${statsGo}" title="Your numbers" aria-label="Your numbers">${bnIcon("stats")}</button><button type="button" class="tr-ev125" onclick="return openEverything125()" aria-label="Everything — all sections" title="Everything">${bnIcon("more")}</button><a class="tr-help126" href="mailto:hello@joinsignl.com" aria-label="Need help?" title="Need help?">${bnIcon("help")}</a></span></div>`;
 }
 
 // Build -119: the greeting hour comes from the user's own
@@ -21602,20 +21732,24 @@ function renderAdmin() {
   app.innerHTML = `
     <h2>SIGNL Admin</h2>
     ${landing ? `
+    <div id="admin-totals126" class="totals126" aria-label="Platform totals"></div>
+    <div class="pv-tabs126" role="group" aria-label="Preview the app as another role">
+      <span class="pv-tabs126-label">Preview as</span>
+      <button type="button" class="pv-tab126" onclick="enterPreview()">Business</button>
+      <button type="button" class="pv-tab126" onclick="return adminPreviewAs126('creator')">Creator</button>
+      <button type="button" class="pv-tab126" onclick="return adminPreviewAs126('partner')">Partner</button>
+    </div>
+    <p id="pv-note126" class="small muted" role="status" style="margin:2px 0 10px"></p>
     <div id="admin-summary"></div>
     <div class="admin-home121">
       <div class="admin-home-side">
-        <div class="panel preview-cta">
-          <div><strong>Business Preview</strong><p class="muted small" style="margin:4px 0 0">Walk the app exactly as a business does: the founding plans, roster search with every filter, full creator profiles, the offer composer, and the business dashboard with bookings, codes, tracking and returns. Offers sent in preview are simulations that never reach a creator and are never saved.</p></div>
-          <button class="btn" onclick="enterPreview()">Preview as business &rarr;</button>
-          <button class="btn ghost" onclick="enterPreviewDashboard()">Business dashboard &rarr;</button>
-        </div>
         <div id="admin-sig"><div class="panel"><div class="sig-load-row">${sigAvatarHtml("think")}</div><p class="muted small" style="margin:0">Sig is reading the same numbers Admin shows...</p></div></div>
       </div>
       <div class="admin-home-main"><div id="tab-body"><p class="muted">Loading...</p></div></div>
     </div>` : `
     <div id="tab-body"><p class="muted">Loading...</p></div>`}`;
-  if (landing) loadAdminSig();
+  if (landing) { loadAdminSig(); loadAdminTotals126(); }
+  if (tab === "Account") renderAdminAccount126();
   if (tab === "Sig") renderAdminSig();
   if (tab === "Applications") loadApplications();
   if (tab === "Requests") loadAdminRequests();
@@ -21627,6 +21761,16 @@ function renderAdmin() {
   if (tab === "Compliance") loadCompliance();
   if (tab === "Campaign") loadCampaign();
   if (tab === "Stats") loadStats();
+}
+
+// Admin "Your account" (Build -126): Jeff had no Settings
+// screen in Admin at all — the identity menu's Settings row
+// lands here. Identity (name, email, role), the shared account
+// panel with the working change-password form, and Sign out.
+function renderAdminAccount126() {
+  const el = document.getElementById("tab-body");
+  if (!el) return;
+  el.innerHTML = accountViewHtml126("Admin");
 }
 
 // Demo showcase (Build -67, Deliverable 4; MOVED in Build -110
@@ -25898,7 +26042,9 @@ async function rcLoadEntity() {
 
 function renderRecruiterDash() {
   let tab = state.tab || "Queue";
-  if (!RECRUITER_TABS.includes(tab)) tab = "Queue";
+  // Build -126: "Account" is reachable from the identity menu
+  // only (not a bar tab): the recruiter's Your account view.
+  if (!RECRUITER_TABS.includes(tab) && tab !== "Account") tab = "Queue";
   state.tab = tab;
   app.innerHTML = `<div class="wrap"><div id="tab-body"><p class="muted">Loading your console...</p></div></div>`;
   rcLoadEntity().then(() => renderRecruiterTab(tab)).catch((e) => {
@@ -25910,6 +26056,7 @@ function renderRecruiterDash() {
 function renderRecruiterTab(tab) {
   const el = document.getElementById("tab-body");
   if (!el) return;
+  if (tab === "Account") { el.innerHTML = accountViewHtml126("Recruiter"); return; }
   if (tab === "Sig") { renderSigTab(); return; }
   if (tab === "Help") { el.innerHTML = recruiterHelpHtml(); return; }
   if (tab === "Results") { loadRecruiterResults(el); return; }
@@ -26230,7 +26377,9 @@ async function pilotLoadMe() {
 
 function renderPilotDash() {
   let tab = state.tab || "Overview";
-  if (!PILOT_TABS.includes(tab)) tab = "Overview";
+  // Build -126: "Account" is reachable from the identity menu
+  // only (not a bar tab): the pilot's Your account view.
+  if (!PILOT_TABS.includes(tab) && tab !== "Account") tab = "Overview";
   state.tab = tab;
   app.innerHTML = `<div class="wrap"><div id="tab-body"><p class="muted">Loading your portal...</p></div></div>`;
   pilotLoadMe().then(() => renderPilotTab(tab)).catch((e) => {
@@ -26246,6 +26395,7 @@ function renderPilotTab(tab) {
   // portal's accent the same way it scopes the partner shell.
   const pBrand = (pilotState.me && pilotState.me.pilot && pilotState.me.pilot.brand) || null;
   coBrandShellOn(el, pBrand);
+  if (tab === "Account") { el.innerHTML = coBrandHeadHtml(pBrand) + accountViewHtml126("Impact Portal"); return; }
   if (tab === "Sig") { el.innerHTML = coBrandHeadHtml(pBrand) + pilotSigHtml(); wireScopedSig(el); return; }
   if (tab === "Team") { el.innerHTML = coBrandHeadHtml(pBrand) + teamTabHtml(); loadTeamTab(); return; }
   if (tab === "Help") { el.innerHTML = coBrandHeadHtml(pBrand) + pilotHelpHtml(); return; }

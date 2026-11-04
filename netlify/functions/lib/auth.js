@@ -66,22 +66,38 @@ async function getSessionRecord(token) {
 // data. Two hours, then it expires like any session.
 const VIEW_SESSION_TTL_MS = 1000 * 60 * 60 * 2; // 2 hours
 
-async function createViewSession({ adminUser, adminToken, businessUser }) {
+// Build -126 generalises the same machinery to the two other
+// preview targets Admin home offers: the approved TEST creator
+// and the seeded DEMO partner. businessId/businessName stay on
+// business views (Build -67's contract, pinned by its suite);
+// every view also carries targetId/role/label so the banner and
+// the audit log can speak plainly about any role.
+async function createViewSession({ adminUser, adminToken, businessUser, targetUser, label, role }) {
+  const target = targetUser || businessUser;
   const token = crypto.randomBytes(32).toString("hex");
   const now = Date.now();
-  const biz = businessUser.business || {};
+  const biz = businessUser ? businessUser.business || {} : {};
+  const name = businessUser
+    ? biz.businessName || businessUser.name || "Business"
+    : label || target.name || "Account";
+  const viewAs = {
+    adminId: adminUser.id,
+    adminEmail: adminUser.email,
+    adminSessionToken: adminToken,
+    targetId: target.id,
+    role: role || target.role || "business",
+    label: name,
+    enteredAt: new Date(now).toISOString(),
+  };
+  if (businessUser) {
+    viewAs.businessId = businessUser.id;
+    viewAs.businessName = name;
+  }
   await store.set(`session:${token}`, {
-    userId: businessUser.id,
+    userId: target.id,
     createdAt: new Date(now).toISOString(),
     expiresAt: new Date(now + VIEW_SESSION_TTL_MS).toISOString(),
-    viewAs: {
-      adminId: adminUser.id,
-      adminEmail: adminUser.email,
-      adminSessionToken: adminToken,
-      businessId: businessUser.id,
-      businessName: biz.businessName || businessUser.name || "Business",
-      enteredAt: new Date(now).toISOString(),
-    },
+    viewAs,
   });
   return token;
 }

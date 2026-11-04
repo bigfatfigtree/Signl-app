@@ -1383,6 +1383,46 @@ function audienceTotalOf(creator) {
   return Object.values(stack).reduce((s, n) => s + n, 0);
 }
 
+// ---------- Platform totals (Build -126) ----------
+// THE one definition behind the Admin home totals strip and
+// Sig's admin grounding. "Creators signed up" = unique creators
+// with status approved or pending, tester records excluded —
+// the approved + pending sum the Markets grid's "Most creators"
+// sort uses per market. "Total followers" = the sum of each
+// signed-up creator's full stacked total (audienceTotalOf, the
+// same per-creator sum behind the Markets grid's combined
+// followers), each creator counted once here; the grid counts a
+// creator once per market they are listed in, so the platform
+// number is the de-duplicated twin of the grid's per-market sum.
+function platformTotals126(users) {
+  let creatorsSignedUp = 0;
+  let totalFollowers = 0;
+  for (const u of users || []) {
+    if (!u || u.role !== "creator" || isTester(u)) continue;
+    if (u.status !== "approved" && u.status !== "pending") continue;
+    creatorsSignedUp += 1;
+    totalFollowers += audienceTotalOf(u.creator || {}) || 0;
+  }
+  return { creatorsSignedUp, totalFollowers };
+}
+
+// The Admin home preview tabs' targets (Build -126), resolved in
+// exactly one place: the approved TEST creator (tester-flagged,
+// approved, never a demo-showcase discovery prop) and the seeded
+// DEMO partner (partner.demo). Earliest-created wins so the pick
+// is stable. Null when no honest target exists — the tab then
+// says so instead of opening anything.
+function previewTargets126(users) {
+  const byCreated = (a, b) => String(a.createdAt || "").localeCompare(String(b.createdAt || ""));
+  const creator = (users || [])
+    .filter((u) => u && u.role === "creator" && u.status === "approved" && isTester(u) && !isDemoShowcaseCreator(u))
+    .sort(byCreated)[0] || null;
+  const partner = (users || [])
+    .filter((u) => u && u.role === "partner" && u.partner && u.partner.demo)
+    .sort(byCreated)[0] || null;
+  return { creator, partner };
+}
+
 // ---------- The 500 minimum (Jeff's ruling, 2026-11-01) ----------
 // "500 followers needs to be the minimum everywhere. Everywhere."
 // The minimum is 500 TOTAL followers stacked across a creator's
@@ -10261,6 +10301,10 @@ async function buildSigFacts(user, full) {
       // Admin Sig reach answer read the SAME live math (listed
       // markets x stacked totals), never a second source.
       listedMarketsFor, audienceTotalOf,
+      // Build -126: the Admin home totals strip and this Sig
+      // grounding read the SAME platformTotals126 result — the
+      // strip's endpoint computes it from these same records.
+      platformTotals: platformTotals126(users),
       planNameOf: (id) => { const p = id ? planById(id) : null; return p ? p.name : "No plan picked"; },
       now: Date.now(),
     });
@@ -11218,7 +11262,11 @@ async function handleExitView(event, ctx) {
   if (ctx.token) await auth.destroySession(ctx.token);
   const adminUser = va.adminSessionToken ? await auth.getSessionUser(va.adminSessionToken) : null;
   if (adminUser && adminUser.role === "admin" && adminUser.id === va.adminId) {
-    await logEvent({ type: "admin_exited_business_view", actorId: adminUser.id, actorRole: "admin", subjectId: va.businessId, market: null, data: { businessName: va.businessName } });
+    // Build -126: the exit event names the viewed role; business
+    // views keep Build -67's exact event shape.
+    const role = va.role || (va.businessId ? "business" : "business");
+    const exitType = role === "creator" ? "admin_exited_creator_view" : role === "partner" ? "admin_exited_partner_view" : "admin_exited_business_view";
+    await logEvent({ type: exitType, actorId: adminUser.id, actorRole: "admin", subjectId: va.targetId || va.businessId, market: null, data: { businessName: va.businessName || null, label: va.label || va.businessName || null, role } });
     return json(200, { user: await withFounding(adminUser), exitedView: true }, { "Set-Cookie": auth.sessionCookie(va.adminSessionToken, secure) });
   }
   return json(200, { user: null, exitedView: true, backToSignin: true }, { "Set-Cookie": auth.clearCookie(secure) });
@@ -17464,7 +17512,7 @@ async function route(event) {
     // persistent read-only banner from this marker. It carries
     // only what the banner prints (whose account, that it is
     // read-only); the admin's token never leaves the server.
-    if (viewAs) meUser.viewAs = { businessName: viewAs.businessName, readOnly: true };
+    if (viewAs) meUser.viewAs = { businessName: viewAs.businessName || null, label: viewAs.label || viewAs.businessName || null, role: viewAs.role || (viewAs.businessId ? "business" : null), readOnly: true };
     return json(200, { user: meUser });
   }
 
@@ -19191,6 +19239,74 @@ async function route(event) {
       await logEvent({ type: "admin_viewed_business_account", actorId: user.id, actorRole: "admin", subjectId: target.id, market: target.market || null, data: { businessName, adminEmail: user.email } });
       const secure = (event.headers["x-forwarded-proto"] || "").includes("https");
       return json(200, { ok: true, business: { id: target.id, name: businessName } }, { "Set-Cookie": auth.sessionCookie(viewToken, secure) });
+    }
+
+    // Platform totals (Build -126, Jeff, 2026-11-04): the strip at
+    // the top of Admin home. One definition, shared with Sig's
+    // admin grounding (buildSigFacts passes the same helper's
+    // result): "signed up" = unique creators, approved or pending,
+    // tester records excluded — the "Most creators" definition the
+    // Markets grid sorts by (approved + pending per market);
+    // followers = each signed-up creator's full stacked total
+    // (audienceTotalOf, the same sum behind the Markets grid's
+    // combined followers), each creator counted ONCE here, where
+    // the Markets grid counts a multi-market creator once per
+    // market they are listed in.
+    if (seg[1] === "platform-totals" && seg.length === 2 && method === "GET") {
+      const users = (await store.list("user:")).map((r) => r.value).filter(Boolean);
+      return json(200, platformTotals126(users));
+    }
+
+    // Preview targets (Build -126): Admin home's Creator and
+    // Partner preview tabs enter the SAME read-only view-as
+    // machinery as the business view above, but only ever into
+    // accounts that exist to be looked at: the approved TEST
+    // creator (tester-flagged, never a demo-showcase discovery
+    // prop, never a real creator) and the seeded DEMO partner
+    // (partner.demo). Targets are resolved here, server-side, so
+    // the client can never aim the view at another account.
+    if (seg[1] === "preview-targets" && seg.length === 2 && method === "GET") {
+      const users = (await store.list("user:")).map((r) => r.value).filter(Boolean);
+      const t = previewTargets126(users);
+      return json(200, {
+        creator: t.creator ? { id: t.creator.id, name: t.creator.name || "Test creator" } : null,
+        partner: t.partner ? { id: t.partner.id, name: (t.partner.partner && t.partner.partner.orgName) || t.partner.name || "Demo partner" } : null,
+      });
+    }
+
+    // View the approved test creator's account (Build -126): the
+    // Creator preview tab. Same read-only view session as the
+    // business view; the guard is the honesty line — tester-flagged
+    // and approved ONLY. A real creator's live account is never
+    // viewable through this door (the Business Preview's offers
+    // step remains the creator-experience simulation).
+    if (seg[1] === "creators" && seg.length === 4 && seg[3] === "view" && method === "POST") {
+      const target = await store.get(`user:${seg[2]}`);
+      if (!target || target.role !== "creator") return err(404, "Creator not found");
+      if (!isTester(target) || target.status !== "approved" || isDemoShowcaseCreator(target)) {
+        return err(403, "Creator preview only opens the approved test creator account. Real creator accounts are never previewed this way.");
+      }
+      const viewToken = await auth.createViewSession({ adminUser: user, adminToken: ctx.token, targetUser: target, role: "creator", label: target.name || "Test creator" });
+      await logEvent({ type: "admin_viewed_creator_account", actorId: user.id, actorRole: "admin", subjectId: target.id, market: target.market || null, data: { creatorName: target.name || null, adminEmail: user.email } });
+      const secure = (event.headers["x-forwarded-proto"] || "").includes("https");
+      return json(200, { ok: true, creator: { id: target.id, name: target.name || "Test creator" } }, { "Set-Cookie": auth.sessionCookie(viewToken, secure) });
+    }
+
+    // View the seeded demo partner's account (Build -126): the
+    // Partner preview tab — the Impact Portal demo view Jeff demos
+    // partners with. Demo partners only (partner.demo); a real
+    // partner's account is never viewable through this door.
+    if (seg[1] === "partners" && seg.length === 4 && seg[3] === "view" && method === "POST") {
+      const target = await store.get(`user:${seg[2]}`);
+      if (!target || target.role !== "partner") return err(404, "Partner not found");
+      if (!target.partner || !target.partner.demo) {
+        return err(403, "Partner preview only opens the seeded demo partner. Real partner accounts are never previewed this way.");
+      }
+      const orgName = (target.partner && target.partner.orgName) || target.name || "Demo partner";
+      const viewToken = await auth.createViewSession({ adminUser: user, adminToken: ctx.token, targetUser: target, role: "partner", label: orgName });
+      await logEvent({ type: "admin_viewed_partner_account", actorId: user.id, actorRole: "admin", subjectId: target.id, market: target.market || null, data: { partnerName: orgName, adminEmail: user.email } });
+      const secure = (event.headers["x-forwarded-proto"] || "").includes("https");
+      return json(200, { ok: true, partner: { id: target.id, name: orgName } }, { "Set-Cookie": auth.sessionCookie(viewToken, secure) });
     }
 
     // Send sign-in link (Build -67, Deliverable 2): an admin sends

@@ -192,7 +192,11 @@ try {
     ["how many locals do we have", ["Locals: 2 approved creators"]],
     ["how many headliners do we have", ["Headliners: 1 approved creator"]],
     ["how many businesses in nashville", ["0 approved businesses in Nashville", "1 on file"]],
-    ["give me the platform numbers", ["Platform totals", "8 creators (4 approved, 3 finished profiles)", "2 businesses (0 active)"]],
+    // Re-aimed by Build -126: the platform-numbers answer now
+    // leads with the Admin home strip's two numbers (creators
+    // signed up = approved + pending; total followers as
+    // reported by creators) instead of the raw record count.
+    ["give me the platform numbers", ["Platform totals", "7 creators signed up (4 approved, 3 pending, 24,400 total followers as reported by creators; 3 finished profiles)", "2 businesses (0 active)"]],
     ["how many creators are rejected", ["1 creator rejected, out of 8 in total"]],
   ]);
   // fragment follow-up: market re-scope of the previous question

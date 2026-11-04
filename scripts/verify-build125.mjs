@@ -68,7 +68,7 @@ const indexHtml = fs.readFileSync(path.join(root, "public/index.html"), "utf8");
 const buildJs = fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8");
 const css = fs.readFileSync(path.join(root, "public/theme-v3.css"), "utf8");
 const stamp = (buildJs.match(/BUILD_ID\s*=\s*"([^"]+)"/) || [])[1] || "";
-check("stamp is 2026.11.04-125 and identical in build.js + index.html", stamp === "2026.11.04-125" && indexHtml.includes(stamp), String(stamp));
+check("stamp is 2026.11.04-126 and identical in build.js + index.html", stamp === "2026.11.04-126" && indexHtml.includes(stamp), String(stamp));
 check("index.html cache-busts app.js + theme-v3 with the rolled stamp",
   indexHtml.includes(`/app.js?v=${stamp}`) && indexHtml.includes(`/theme-v3.css?v=${stamp}`));
 
@@ -161,9 +161,10 @@ check("no role's tab inventory routes a More tab",
 check("creator Profile (live + founding) is head + segments + the profile form + the -123 Connected accounts hub (Momentum/Grow/More appends stay deleted; pin re-aimed at the landing, 2026-11-04)",
   count(appJs, 'profileSegStrip119() + creatorProfileHtml(u) + connectedAccountsHtml(u);') === 2 &&
   !appJs.includes("creatorProfileHtml(u) + momentumHtml(u)") && !appJs.includes("creatorProfileHtml(u) + moreLinksHtml119()"));
-check("identity row lands per role (partner → Account, pilot → Overview), never a blind Profile",
-  appJs.includes("function identityDest125()") && appJs.includes('if (u.role === "partner") return "Account";') &&
-  appJs.includes("onclick=\"return go('dashboard','${identityDest125()}')\""));
+check("identity row lands per role (partner → Account, pilot → Overview), never a blind Profile — RE-AIMED by Build -126: the identity opens the identity MENU on every shell (openIdentityMenu126 on the top bar + rail foot); the one-destination helper is deleted",
+  !appJs.includes("function identityDest125()") &&
+  appJs.includes("onclick=\"return openIdentityMenu126()\"") &&
+  appJs.includes("function identityMenuRows126()"));
 
 // S — Sig knows the map
 part("S: Sig map");

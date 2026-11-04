@@ -210,6 +210,13 @@ function buildAdminFacts(d) {
       total: realCreators.length, records: creators.length, testers: creators.length - realCreators.length,
       approved: cs.approved, pending: cs.pending, rejected: cs.rejected, other: cs.other,
       complete, approvedIncomplete: cs.approved - complete,
+      // Build -126: the Admin home totals strip's two numbers,
+      // computed by the router's platformTotals126 from these
+      // same records — signed up = approved + pending (testers
+      // excluded); totalFollowers = each signed-up creator's
+      // full stacked total, counted once per creator.
+      signedUp: d.platformTotals ? d.platformTotals.creatorsSignedUp : cs.approved + cs.pending,
+      totalFollowers: d.platformTotals ? d.platformTotals.totalFollowers : null,
       byMarket, byTier, marketReach, claimsToday, signups7d, recent: recentCreators,
     },
     businesses: {
@@ -578,6 +585,7 @@ function factsLines(role, f) {
     const c = f.creators, b = f.businesses;
     const lines = [];
     lines.push(`Live platform counts right now, computed from the same records Admin shows (tester and demo records are excluded from every roster count): ${fmt(c.total)} ${plural(c.total, "creator")} in total: ${fmt(c.approved)} approved, ${fmt(c.pending)} pending, ${fmt(c.rejected)} rejected. Of the approved creators, ${fmt(c.complete)} have finished profiles, and finished profiles are the roster businesses can see; ${fmt(c.approvedIncomplete)} approved creators have not finished yet.`);
+    lines.push(`Platform totals — the same two numbers the strip at the top of Admin home shows: ${fmt(c.signedUp)} creators signed up (approved plus pending, tester records excluded)${c.totalFollowers !== null && c.totalFollowers !== undefined ? `, carrying ${fmt(c.totalFollowers)} total followers (each signed-up creator's full stacked total across their platforms, as reported by creators, each creator counted once)` : ""}. Sign out lives in the menu behind your name and photo at the top left of Admin: tap it, then Sign out; the same menu holds Your account, where the password can be changed.`);
     if (c.byMarket.length) lines.push(`Creators by market (total / approved / finished): ${c.byMarket.slice(0, 8).map((m) => `${m.market} ${m.creators}/${m.approved}/${m.complete}`).join("; ")}${c.byMarket.length > 8 ? `; plus ${c.byMarket.length - 8} more markets` : ""}.`);
     if (c.marketReach && c.marketReach.length) lines.push(`Combined followers by market (approved creators, each creator's own reported stacked total, counted in every market they are listed in): ${c.marketReach.slice(0, 8).map((m) => `${m.market}: ${fmt(m.combinedFollowers)} combined followers across ${fmt(m.creators)} listed ${plural(m.creators, "creator")}`).join("; ")}.`);
     if (c.byTier.length) lines.push(`Approved creators by tier: ${c.byTier.map((t) => `${t.tier} ${t.count}`).join(", ")}.`);
@@ -928,6 +936,23 @@ function answerAdmin(f, q, t) {
     if (tierName && (countAsk || hasWord(t, "tier", "tiers"))) { const r = c.byTier.find((x) => x.tier === tierName); return `${tierName}: ${fmt(r ? r.count : 0)} approved ${plural(r ? r.count : 0, "creator")}, out of ${fmt(c.approved)} approved creators. Tiers come from stacked audience across platforms.`; }
   }
 
+  // Sign out (Build -126): where it lives, on every shell.
+  if (hasPhrase(t, "sign out", "signout", "log out", "logout", "sign off")) {
+    return "Tap your name and photo at the top left of Admin — that opens your menu. Sign out is the last row, and the same menu holds Your account, where you can change your password. Signing out ends the session on this device.";
+  }
+
+  // Platform totals (Build -126): the Admin home strip's two
+  // numbers, from the same platformTotals126 source the strip
+  // endpoint reads. Placed ahead of the market reach branch so
+  // a platform-wide followers question is never answered with a
+  // single market's sum.
+  if (hasPhrase(t, "signed up") ||
+      (hasWord(t, "followers") && hasWord(t, "total", "platform", "overall", "altogether") && !market &&
+       !hasWord(t, "market", "markets", "combined", "most", "biggest", "largest", "leading", "top")) ||
+      (hasWord(t, "creators", "signups") && hasWord(t, "platform", "overall") && countAsk)) {
+    return `${fmt(c.signedUp)} creators signed up on the platform (approved plus pending, tester records excluded)${c.totalFollowers !== null && c.totalFollowers !== undefined ? `, carrying ${fmt(c.totalFollowers)} total followers — each signed-up creator's full stacked total across their platforms, as reported by creators, each creator counted once` : ""}. The same two numbers sit at the top of Admin home.`;
+  }
+
   // Combined reach by market (Build -116): the same live
   // totals the Markets cards print — listed creators and the
   // sum of their own reported stacked audiences. Placed ahead
@@ -970,7 +995,7 @@ function answerAdmin(f, q, t) {
 
   // Bare totals
   if (hasPhrase(t, "platform numbers", "the numbers", "overall") || (hasWord(t, "stats") && countAsk)) {
-    return `Platform totals: ${fmt(c.total)} creators (${fmt(c.approved)} approved, ${fmt(c.complete)} finished profiles), ${fmt(b.total)} businesses (${fmt(b.active)} active), ${fmt(f.offers.open)} offers open, ${fmt(f.visits.postsLive)} posts live, ${fmt(f.partners.total)} partners, ${fmt(f.markets.liveCount)} markets live.`;
+    return `Platform totals: ${fmt(c.signedUp)} creators signed up (${fmt(c.approved)} approved, ${fmt(c.pending)} pending${c.totalFollowers !== null && c.totalFollowers !== undefined ? `, ${fmt(c.totalFollowers)} total followers as reported by creators` : ""}; ${fmt(c.complete)} finished profiles), ${fmt(b.total)} businesses (${fmt(b.active)} active), ${fmt(f.offers.open)} offers open, ${fmt(f.visits.postsLive)} posts live, ${fmt(f.partners.total)} partners, ${fmt(f.markets.liveCount)} markets live.`;
   }
   return null;
 }

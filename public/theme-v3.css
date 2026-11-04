@@ -644,3 +644,79 @@ body.v3-on .tb2-btn.tb2-ev125:hover, .tb2-btn.tb2-ev125:hover { border-color: va
 .tab-user-btn { cursor: pointer; }
 /* Wallet history/comp amounts sit right-aligned on ledger rows */
 .lib-amt { font-weight: 700; white-space: nowrap; margin-left: 10px; }
+
+/* ============================================================
+   Build -126 (Jeff, 2026-11-04): identity menu, admin totals +
+   preview tabs, icon-only admin top row, and the platform-wide
+   no-sideways rule. "Text should always be working right on
+   all logins everywhere."
+   ============================================================ */
+
+/* ---- The identity menu: a top-left dropdown on every shell.
+   Same overlay/panel language as the Everything panel, anchored
+   to the identity it opens from. ---- */
+.idm126-overlay { position: fixed; inset: 0; z-index: 140; background: rgba(23,21,18,.38); }
+.idm126-panel { position: absolute; top: calc(10px + env(safe-area-inset-top)); left: 12px; width: 360px; max-width: calc(100vw - 24px); max-height: calc(100vh - 24px); overflow-y: auto; background: var(--paper); border: 1px solid var(--line); border-radius: 18px; box-shadow: 0 24px 60px rgba(23,21,18,.22); padding: 14px; }
+.idm126-head { display: flex; align-items: center; gap: 11px; padding: 2px 2px 12px; border-bottom: 1px solid var(--line); margin-bottom: 10px; }
+.idm126-ava { width: 42px; height: 42px; border-radius: 50%; background: var(--grad); color: #fff; font-weight: 800; font-size: .95rem; display: flex; align-items: center; justify-content: center; flex: none; }
+.idm126-who { display: flex; flex-direction: column; min-width: 0; margin-right: auto; }
+.idm126-name { font-weight: 800; font-size: 1rem; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.idm126-sub { font-size: .8rem; color: var(--ink3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.idm126-row { margin-bottom: 8px; }
+.idm126-row:last-child { margin-bottom: 0; }
+
+/* ---- Admin top row: identity is a button; the right side is
+   icons with real tap targets (Build -126 item 3). ---- */
+.tr-id { display: inline-flex; align-items: center; gap: 10px; background: none; border: 0; cursor: pointer; padding: 4px 8px 4px 4px; border-radius: 999px; font: inherit; color: var(--ink); min-width: 0; }
+.tr-id:hover { background: var(--paper2); }
+.tr-id .tr-name { min-width: 0; }
+.tr-right > button, .tr-right > a.tr-help126 { min-width: 40px; min-height: 40px; justify-content: center; border-radius: 50%; }
+.tr-ev125 { width: 40px; height: 40px; padding: 0; border-radius: 50%; justify-content: center; }
+.tr-ev125 svg { width: 17px; height: 17px; }
+
+/* ---- Admin home: platform totals strip + preview tabs ---- */
+.totals126 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 4px 0 12px; }
+.totals126:empty { display: none; }
+.tot126 { background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.tot126-num { font-size: 2rem; font-weight: 800; letter-spacing: -.03em; line-height: 1.05; color: var(--ink); }
+.tot126-lbl { font-weight: 700; font-size: .92rem; color: var(--ink); }
+.tot126-sub { font-size: .78rem; color: var(--ink3); line-height: 1.35; }
+@media (max-width: 480px) { .tot126-num { font-size: 1.6rem; } .tot126 { padding: 12px; } }
+.pv-tabs126 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0 0 8px; }
+.pv-tabs126-label { font-size: .78rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--ink3); margin-right: 2px; }
+.pv-tab126 { border: 1px solid var(--line); background: #fff; color: var(--ink); border-radius: 999px; padding: 9px 18px; min-height: 40px; font: 700 .86rem 'Instrument Sans', system-ui, sans-serif; cursor: pointer; }
+.pv-tab126:hover { border-color: var(--ink3); }
+
+/* ---- No-sideways rule (Build -126 item 5) ----
+   main is a flex item of the column-flex body; its automatic
+   minimum size let any wide child drag the whole screen wider
+   than the phone (the Command Center laid out ~685px wide at
+   390px). min-width: 0 caps the shell at the screen; wide
+   content then wraps or scrolls inside its own card, per the
+   rules below and the per-view audit. */
+body > main { min-width: 0; max-width: 100vw; }
+@media (max-width: 767.98px) {
+  /* The rail-on phone rule sets main's width to auto, and a
+     flex item sized auto stretches only when nothing inside
+     demands more — a wide subview (Command Center tables)
+     dragged the whole shell to its content width (~671px on a
+     390px phone). Width 100% pins the shell to the screen;
+     wide rows then wrap or scroll inside their own card. */
+  body.rail-on main, body.admin-on main, body.v3-on main, body.v3-slim main, body.preview-on main { width: 100%; }
+}
+#tab-body, #cc-body, .admin-home-main, .admin-home-side { min-width: 0; }
+main img, main video, main canvas, main svg { max-width: 100%; }
+main .panel, main .card { min-width: 0; }
+
+/* The Command Center at phone width: filters stack full-width,
+   the legend wraps, tiles and tables stay inside their cards. */
+@media (max-width: 640px) {
+  .cc-filter-row { flex-direction: column; align-items: stretch; gap: 10px; }
+  .cc-flabel { width: 100%; }
+  .cc-flabel select { width: 100%; max-width: 100%; }
+  .cc-check { white-space: normal; align-items: flex-start; }
+  .cc-legend { flex-wrap: wrap; row-gap: 6px; }
+  .cc-tiles { grid-template-columns: minmax(0, 1fr); }
+  .cc-tile { min-width: 0; }
+}
+.cc-flabel select { max-width: 100%; }

@@ -283,7 +283,7 @@ check("disconnect removes the connection AND the verification record (the label 
 
 // ---------- canon locks ----------
 console.log("Canon locks");
-check("build stamp is -108 on both sides", fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes("2026.11.04-125") && fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes("2026.11.04-125"));
+check("build stamp is -108 on both sides", fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes("2026.11.04-126") && fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes("2026.11.04-126"));
 const routerSrc = fs.readFileSync(path.join(root, "netlify/functions/lib/router.js"), "utf8");
 check("founding Stripe prices stay unarmed (no market live for money)", /STRIPE_PRICE_FOUNDING_SELF_SERVICE \|\| ""/.test(routerSrc) && /STRIPE_PRICE_FOUNDING_GROWTH \|\| ""/.test(routerSrc) && /STRIPE_PRICE_FOUNDING_MANAGED \|\| ""/.test(routerSrc));
 check("the rank weights are untouched (0.35 local / 0.25 impact / 0.2 momentum / 0.2 reliability)", routerSrc.includes("0.35 * localPct + 0.25 * (impact ? impact.score : 0) + 0.2 * Math.min(100, totalPts) + 0.2 * reliability"));
