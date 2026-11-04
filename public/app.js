@@ -2176,8 +2176,8 @@ async function loadAdminTotals126() {
     if (!el) return;
     const followers = d.totalFollowers || 0;
     el.innerHTML = `
-      <div class="tot126"><span class="tot126-num">${fmtNum(d.creatorsSignedUp || 0)}</span><span class="tot126-lbl">Creators signed up</span><span class="tot126-sub">Approved + pending, platform-wide. Test accounts are not counted.</span></div>
-      <div class="tot126"><span class="tot126-num">${fmtNum(followers)}</span><span class="tot126-lbl">Total followers</span><span class="tot126-sub">${followers.toLocaleString("en-US")} across every platform, as reported by creators.</span></div>`;
+      <div class="tot126"><span class="tot126-num">${fmtNum(d.creatorsSignedUp || 0)}</span><span class="tot126-lbl">Creators signed up</span><span class="tot126-sub">Across all markets. Approved + waiting. Test accounts are not counted.</span></div>
+      <div class="tot126"><span class="tot126-num">${fmtNum(followers)}</span><span class="tot126-lbl">Total followers</span><span class="tot126-sub">${followers.toLocaleString("en-US")} across all markets, as reported by creators.</span></div>`;
   } catch (e) { /* the strip never blocks the queue */ }
 }
 
