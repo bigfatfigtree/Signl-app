@@ -930,7 +930,7 @@ async function renderPublicProof() {
     statCells.push(`<div class="stat-cell"><div class="stat-num">${p.spanishAudiencePct}%</div><div class="stat-lbl">Spanish-speaking audience (self-reported)</div></div>`);
   }
   if (typeof p.momentumPoints === "number") {
-    statCells.push(`<div class="stat-cell"><div class="stat-num">${p.momentumPoints}</div><div class="stat-lbl">Momentum points · part of the order businesses see</div></div>`);
+    statCells.push(`<div class="stat-cell"><div class="stat-num">${p.momentumPoints}</div><div class="stat-lbl">Standing points · part of the order businesses see</div></div>`);
   }
   if (p.ratingCount >= 3 && p.ratingAvg !== null && p.ratingAvg !== undefined) {
     statCells.push(`<div class="stat-cell"><div class="stat-num">${esc(String(p.ratingAvg))} / 5</div><div class="stat-lbl">Rating from ${p.ratingCount} businesses</div></div>`);
@@ -1123,7 +1123,7 @@ function growRosterHtml(u) {
       <p class="small">Share your invite link — creators who join through it are credited to you.</p>
       <div class="field"><label>Your invite link</label><input type="text" readonly value="${esc(link)}" onclick="this.select()"></div>
       <p class="small">${shareBlockHtml(u.creator && u.creator.handle, place, "Share your invite")}</p>
-      ${m.signups > 0 ? `<p class="small"><strong>Your roster:</strong> ${m.signups} ${m.signups === 1 ? "creator" : "creators"} joined through your link &middot; ${m.approved} approved &middot; <strong>${m.points} Momentum points</strong></p>` : ""}
+      ${m.signups > 0 ? `<p class="small"><strong>Your roster:</strong> ${m.signups} ${m.signups === 1 ? "creator" : "creators"} joined through your link &middot; ${m.approved} approved &middot; <strong>${m.points} Standing points</strong></p>` : ""}
       ${m.campusCrew ? `<p class="small"><strong>Your campus crew: ${m.campusCrew.count} creator${m.campusCrew.count === 1 ? "" : "s"} from ${esc(m.campusCrew.university)}</strong></p>` : ""}
       ${m.campusLead && m.campusLead.qualified ? `<p class="small"><strong>Campus Lead · ${esc(m.campusLead.university)}</strong> — ${m.campusLead.count} classmates you recruited are approved. The badge is on your profile.</p>` : m.campusLead && m.campusLead.count > 0 ? `<p class="small"><strong>Campus Lead at ${esc(m.campusLead.university)}:</strong> ${m.campusLead.count} of ${m.campusLead.threshold} classmates recruited and approved — ${m.campusLead.needed} more earns the badge.</p>` : ""}
       <p class="small">Points: +3 per sign-up &middot; +10 per approval. Roster builders get seen first. ${POINTS_WHY_SHORT}</p>
@@ -1299,7 +1299,7 @@ function momentumHtml(u) {
     </div>`).join("");
   return `
   <div class="panel mt" style="text-align:left">
-    <div class="flex-between"><h3 style="margin:0">Momentum points</h3><span class="badge info" style="font-size:1rem;padding:6px 14px">${m.points > 0 ? `${m.points} points` : "Just starting"}</span></div>
+    <div class="flex-between"><h3 style="margin:0">Standing points</h3><span class="badge info" style="font-size:1rem;padding:6px 14px">${m.points > 0 ? `${m.points} points` : "Just starting"}</span></div>
     <p class="small">Earned for on-time posts, a complete profile, reviews and invites.${m.floorApplied ? " Your total never drops below zero." : ""}</p>
     <p class="small" style="margin-top:6px">${POINTS_WHY_LONG}</p>
     <h4 style="margin:14px 0 6px">Ways to earn</h4>
@@ -1910,7 +1910,7 @@ function dealPlainWordsHtml(o) {
       <p class="small"><strong>${esc(postingTermsLineClient(o))}</strong> Paid visits follow the terms agreed on the booking, not the comped 48-hour ladder.</p>`
         : `<p class="small"><strong>You post:</strong> ${deliverablePhraseClient(o)}, within ${windowPhraseClient(dv84.windowHours)} of your visit, honest, with the ${o.kind === "coupon" ? "coupon" : "comp"} disclosed. The post stays live at least 30 days. You check off by pasting the post link in My Visits.</p>`}
       ${o.kind === "paid" ? `<p class="small"><strong>Included:</strong> the standard license: the business can repost your post and run it as an ad for 90 days from the post date, never longer. It is created automatically with this booking as a dated record; there is nothing to fill in, for you or for them.</p>` : ""}
-      ${o.kind === "paid" ? "" : `<p class="small muted">${dv84.windowHours === 48 ? "The goal is one post + one story within 48 hours of your visit. Up to a week at the outside; posting within 48 hours earns the Momentum." : "Up to a week at the outside. Posting inside your window is what earns the Momentum."}</p>`}
+      ${o.kind === "paid" ? "" : `<p class="small muted">${dv84.windowHours === 48 ? "The goal is one post + one story within 48 hours of your visit. Up to a week at the outside; posting within 48 hours earns Standing." : "Up to a week at the outside. Posting inside your window is what earns Standing."}</p>`}
       <p class="small"><strong>They can:</strong> ${rights.can.map(esc).join("; ")}</p>
       <p class="small"><strong>They can't:</strong> ${rights.cannot.map(esc).join("; ")}</p>
     </div>
@@ -2066,6 +2066,7 @@ function bnIcon(name) {
     messages: `<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3.5 7 8.5 6 8.5-6"/>`,
     status: `<path d="m12 3.2 2.7 5.5 6 .9-4.3 4.2 1 6-5.4-2.9-5.4 2.9 1-6L3.3 9.6l6-.9z"/>`,
     signout: `<path d="M9 21H5.5A1.5 1.5 0 0 1 4 19.5v-15A1.5 1.5 0 0 1 5.5 3H9"/><path d="m16 16.5 4.5-4.5L16 7.5"/><path d="M20.5 12H9"/>`,
+    more: `<circle cx="5" cy="12" r="2" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="2" fill="currentColor" stroke="none"/>`,
     join: `<circle cx="12" cy="12" r="8.6"/><path d="M12 8.2v7.6M8.2 12h7.6"/>`,
     signin: `<path d="M15 3h3.5A1.5 1.5 0 0 1 20 4.5v15A1.5 1.5 0 0 1 18.5 21H15"/><path d="m10.5 16.5 4.5-4.5-4.5-4.5"/><path d="M15 12H3.5"/>`,
     building: `<rect x="4.5" y="3" width="15" height="18" rx="1"/><path d="M9.5 21v-4h5v4"/><path d="M8 7h2m4 0h2M8 10.8h2m4 0h2"/>`,
@@ -2227,6 +2228,7 @@ function renderBottomNav() {
   document.body.classList.toggle("v3-slim", !full);
   renderTopBar2(full);
   if (tabbar) tabbar.innerHTML = full ? tabBarHtml() : "";
+  ensureSigFab();
 }
 
 // Destinations (V4.1, Jeff 2026-10-27, from using the live app
@@ -2252,7 +2254,7 @@ function renderBottomNav() {
 // 72px phone rail shows for the few labels that cannot fit
 // it; the wide rail and the aria-label always carry the full
 // label.
-const RAIL_SHORT = { Content: "Posts", Plan: "Plan", Profile: "Profile", Numbers: "Numbers", Links: "Links", Performance: "Perform­ance" };
+const RAIL_SHORT = { Content: "Posts", Plan: "Money", Profile: "Profile", Numbers: "Numbers", Links: "Links", Performance: "Perform­ance" };
 // Build -68: the Offers tab displays as "Campaigns" at every
 // rail width, so its short form is the full display label.
 RAIL_SHORT["My Offers"] = "Campaigns";
@@ -2267,6 +2269,14 @@ RAIL_SHORT["Regulars"] = "Regulars";
 // tab keeps the "Campaigns" short form it has carried since
 // Build -68.
 RAIL_SHORT["Campaign Setup"] = "Setup";
+// Build -119 (Jeff, 2026-11-04, the approved redesign): the
+// phone bottom bar carries the design's one-word labels —
+// Discover reads "Creators", Earnings reads "Money", Visits
+// reads "Visits" — while the wide rail keeps the full labels.
+RAIL_SHORT["Discover"] = "Creators";
+RAIL_SHORT["Earnings"] = "Money";
+RAIL_SHORT["My Visits"] = "Visits";
+RAIL_SHORT["Visits & Posts"] = "Visits";
 function railRowItems() {
   const t = state.tab;
   const seen = new Set();
@@ -2316,9 +2326,9 @@ function tabItemsFor() {
   }
   if (u.role === "partner" && !state.pilotScopeId) {
     return [
-      { icon: "home", label: "Home", tab: "Home", on: t === "Home" || !t },
+      { icon: "home", label: "Overview", tab: "Home", on: t === "Home" || !t },
       { icon: "pin", label: "Markets", tab: "Markets", on: t === "Markets" },
-      { icon: "banknote", label: "Earnings", tab: "Earnings", on: t === "Earnings" },
+      { icon: "banknote", label: "Money", tab: "Earnings", on: t === "Earnings" },
       ...extra(["Home", "Markets", "Earnings"]),
     ];
   }
@@ -2393,7 +2403,7 @@ function moreRowsFor() {
       { icon: "banknote", label: "Earnings", sub: "Paid bookings and license requests.", tab: "Earnings", badge: wc.crLicense || 0 },
       { icon: "person", label: "My profile", sub: "What businesses see, your rate, your links.", tab: "Profile" },
       { icon: "bars", label: "Your numbers", sub: "What your posts and visits did.", tab: "Numbers" },
-      { icon: "bolt", label: "Momentum", sub: "Your points, your tier, what earns more.", tab: "Momentum" },
+      { icon: "bolt", label: "Standing", sub: "You reply fast and show up. Businesses see it before followers.", tab: "Momentum" },
       { icon: "users", label: "Bench", sub: "Creators in your market.", tab: "Bench" },
       { icon: "bubble", label: "Messages", sub: "Talk to a business about a visit or an offer.", tab: "Messages", badge: b.messages || 0 },
       { icon: "sliders", label: "Settings", sub: "Account and notifications.", tab: "Settings" },
@@ -2432,14 +2442,49 @@ function moreRowsFor() {
   return [];
 }
 
+// Build -119 (Jeff, 2026-11-04, the approved redesign): one
+// list, two forms. The design's five primary destinations per
+// role lead at every width; on the wide rail the rest ride
+// below a "More" group label with Sig pinned just above the
+// user card, and on phones the bar carries only the primaries
+// (Sig floats above it; the rest stay one tap deeper — Profile
+// for creators, Money for businesses, the More screen for
+// partners). theme-v3.css does the showing and hiding; this
+// markup is identical at every width.
+const PRIMARY_TABS_119 = {
+  business: ["Home", "Discover", "My Offers", "Visits & Posts", "Plan"],
+  creator: ["Dashboard", "Offers", "My Visits", "Earnings", "Profile"],
+  partner: ["Home", "Businesses", "Earnings", "Performance"],
+  pilot: ["Overview", "Businesses", "Results", "Report"],
+  recruiter: ["Queue", "Outreach", "Results", "Sig", "Help"],
+};
+function primaryTabs119() {
+  const u = state.user;
+  if (!u) return [];
+  if (u.role === "pilot_partner" || (u.role === "partner" && state.pilotScopeId)) return PRIMARY_TABS_119.pilot;
+  return PRIMARY_TABS_119[u.role] || [];
+}
 function tabBarHtml() {
   const items = tabItemsFor();
   if (!items.length) return "";
-  const btns = items.map((it) => `
-    <button type="button" class="tab-item ${it.on ? "on" : ""}" onclick="return go('dashboard','${it.tab}')" aria-label="${esc(it.label)}">
+  const u = state.user;
+  const prim = primaryTabs119();
+  const list = items.slice();
+  if ((u.role === "partner" || u.role === "pilot_partner") && !list.some((it) => it.tab === "More")) {
+    list.push({ icon: "more", label: "More", tab: "More", on: state.tab === "More", primary119: true });
+  }
+  let grouped = false;
+  const btns = list.map((it) => {
+    const isP = !!it.primary119 || prim.includes(it.tab);
+    const isSig = it.tab === "Sig";
+    let group = "";
+    if (!isP && !isSig && !grouped && it.tab !== "__partner_scope_exit") { grouped = true; group = `<div class="tab-grouplabel" aria-hidden="true">More</div>`; }
+    return `${group}
+    <button type="button" class="tab-item ${isP ? "tab-primary" : "tab-secondary"}${isSig ? " tab-sigpin" : ""} ${it.on ? "on" : ""}" onclick="return go('dashboard','${it.tab}')" aria-label="${esc(it.label)}">
       <span class="tab-ic">${it.icon === "sig" ? `<img class="tab-sig-img" src="/assets/sig-v4/head-idle.webp" alt="">` : bnIcon(it.icon)}${it.badge ? `<span class="tab-badge">${it.badge > 99 ? "99+" : it.badge}</span>` : ""}</span>
       <span class="tab-label">${it.short && it.short !== it.label ? `<span class="lbl-full">${esc(it.label)}</span><span class="lbl-short">${esc(it.short)}</span>` : esc(it.label)}</span>
-    </button>`).join("");
+    </button>`;
+  }).join("");
   // Sign out rides directly under the last destination, below
   // a hairline (Jeff, 2026-10-28): an action, not a
   // destination, so it never takes an .on state. BUILD -41:
@@ -2450,7 +2495,14 @@ function tabBarHtml() {
     <button type="button" class="tab-item tab-signout" onclick="signOut()">
       <span class="tab-ic">${bnIcon("signout")}</span><span class="tab-label">Sign out</span>
     </button>`;
-  return `<div class="tab-main">${btns}${signout}</div>`;
+  const roleWord = u.role === "business" ? "Business" : u.role === "creator" ? "Creator" : u.role === "recruiter" ? "Recruiter" : (u.role === "pilot_partner" || state.pilotScopeId) ? "Impact Portal" : "Partner";
+  const nm = u.role === "business" && u.business ? u.business.businessName : u.role === "partner" && u.partner ? u.partner.name : u.name;
+  const photo = u.role === "creator" && u.creator ? u.creator.photoUrl : null;
+  const initial = String(nm || "?").trim().charAt(0).toUpperCase() || "S";
+  const sub = u.market ? marketDisplayName(u.market) : roleWord;
+  const railhead = `<div class="tab-railhead"><img src="/assets/logo.png" alt="SIGNL"><span class="trh-sub">${esc(roleWord)}</span></div>`;
+  const railfoot = `<div class="tab-railfoot"><div class="tab-user">${photo ? `<img class="tu-ava" src="${esc(photo)}" alt="">` : `<span class="tu-ava">${esc(initial)}</span>`}<span><span class="tu-name">${esc(nm || "")}</span><br><span class="tu-sub">${esc(sub)}</span></span></div></div>`;
+  return `${railhead}<div class="tab-main">${btns}${signout}</div>${railfoot}`;
 }
 
 // The slim V3 top bar: avatar chip + account name on the left;
@@ -2513,6 +2565,27 @@ function openMoreSheet() {
 function closeMoreSheet() {
   const el = document.getElementById("more-sheet");
   if (el) el.remove();
+  return false;
+}
+
+// Build -119: Admin's phone bar carries Review, Markets, Money
+// and More; the sheet lists every rail destination under its
+// design label, plus sign out.
+function openAdminMoreSheet() {
+  closeMoreSheet();
+  const items = railItems() || [];
+  const disp = (label) => label === "Applications" ? "Review" : label;
+  const el = document.createElement("div");
+  el.id = "more-sheet";
+  el.className = "sheet-overlay";
+  el.innerHTML = `
+  <div class="sheet" role="dialog" aria-label="More">
+    <div class="flex-between"><strong>More</strong><button class="linklike" onclick="closeMoreSheet()">Close</button></div>
+    ${items.map((it) => `<button class="sheet-row" onclick="closeMoreSheet(); ${it.onclick}"><span>${esc(disp(it.label))}</span>${it.badge ? `<span class="bn-badge static">${it.badge > 99 ? "99+" : it.badge}</span>` : ""}</button>`).join("")}
+    <button class="sheet-row" onclick="closeMoreSheet(); signOut()"><span>Sign out</span></button>
+  </div>`;
+  el.addEventListener("click", (e) => { if (e.target === el) closeMoreSheet(); });
+  document.body.appendChild(el);
   return false;
 }
 
@@ -2745,14 +2818,26 @@ function renderRail() {
   const initial = String(name || u.name || "?").trim().charAt(0).toUpperCase() || "S";
   const avatarGo = u.role === "business" ? "return go('profile')" : u.role === "creator" ? "return go('dashboard','Profile')" : "return go('dashboard')";
   let lastSec = "";
+  // Build -119: the rail carries the design's words (the
+  // review queue reads "Review"; Stats reads "Money" on the
+  // phone bar) and the phone bottom bar shows only the primary
+  // items — Review, Markets, Money, More — with every other
+  // destination inside the More sheet.
+  const railLabel119 = (label) => label === "Applications" ? "Review" : label;
+  const ADMIN_RAIL_PRIMARY_119 = ["Applications", "Markets", "Stats"];
   const rows = items.map((it) => {
     const sec = lastSec && it.sec !== lastSec ? `<div class="rail-sep"></div>` : "";
     lastSec = it.sec;
-    return `${sec}<button type="button" class="rail-item ${it.active ? "on" : ""}" title="${esc(it.label)}" aria-label="${esc(it.label)}" onclick="${it.onclick}"><span class="bn-icon">${it.icon === "sig" ? `<img class="rail-sig-img" src="/assets/sig-v4/head-idle.webp" alt="">` : bnIcon(it.icon)}</span><span class="rail-label">${esc(it.label)}</span>${it.badge ? `<span class="rail-badge">${it.badge > 99 ? "99+" : it.badge}</span>` : ""}</button>`;
+    const disp = railLabel119(it.label);
+    const labelHtml = it.label === "Stats"
+      ? `<span class="rail-label rail-label-full">Stats</span><span class="rail-label rail-label-short">Money</span>`
+      : `<span class="rail-label">${esc(disp)}</span>`;
+    return `${sec}<button type="button" class="rail-item ${ADMIN_RAIL_PRIMARY_119.includes(it.label) ? "rail-primary" : ""} ${it.active ? "on" : ""}" title="${esc(disp)}" aria-label="${esc(disp)}" onclick="${it.onclick}"><span class="bn-icon">${it.icon === "sig" ? `<img class="rail-sig-img" src="/assets/sig-v4/head-idle.webp" alt="">` : bnIcon(it.icon)}</span>${labelHtml}${it.badge ? `<span class="rail-badge">${it.badge > 99 ? "99+" : it.badge}</span>` : ""}</button>`;
   }).join("");
   rail.innerHTML = `
     <button type="button" class="rail-brand" title="SIGNL" aria-label="SIGNL home" onclick="return go('dashboard')"><img src="/assets/icon.png" alt="SIGNL"></button>
     ${rows}
+    <button type="button" class="rail-item rail-primary rail-more" onclick="openAdminMoreSheet()"><span class="bn-icon">${bnIcon("more")}</span><span class="rail-label">More</span></button>
     <div class="rail-foot">
       <button type="button" class="rail-item" title="Sign out" aria-label="Sign out" onclick="signOut()"><span class="bn-icon">${bnIcon("signout")}</span><span class="rail-label">Sign out</span></button>
       <button type="button" class="rail-avatar" title="${esc(name || "Account")}" aria-label="Your account" onclick="${avatarGo}">${esc(initial)}</button>
@@ -2774,6 +2859,17 @@ function renderTopRow() {
   el.innerHTML = `<div class="wrap tr-in"><span class="tr-ava">${esc(initial)}</span><span class="tr-name">${esc(name || "")}</span><span class="tr-right"><button type="button" onclick="${statsGo}" title="Your numbers" aria-label="Your numbers">${bnIcon("stats")}</button><a href="mailto:hello@joinsignl.com">Need help?</a></span></div>`;
 }
 
+// Build -119: the greeting hour comes from the user's own
+// timezone via Intl, never the raw device hour — the fresh-eyes
+// pass caught the header saying "Good morning" at 10:50 PM ET.
+function localHourNow() {
+  try {
+    const h = parseInt(new Intl.DateTimeFormat("en-US", { hour: "numeric", hour12: false }).format(new Date()), 10);
+    if (Number.isFinite(h)) return h % 24;
+  } catch (e) { /* fall through to the device hour */ }
+  return new Date().getHours();
+}
+
 // Ready-for-you queue: homes compute it from real records and
 // register it here; the card renders inline on the home and the
 // floating button opens the same queue as a sheet.
@@ -2781,14 +2877,27 @@ function setAgentFab(queue) {
   state.agentQueue = queue || null;
   renderAgentFab();
 }
+function ensureSigFab() {
+  let fab = document.getElementById("agent-fab");
+  if (!fab) {
+    fab = document.createElement("button");
+    fab.id = "agent-fab";
+    fab.type = "button";
+    fab.setAttribute("aria-label", "Ask Sig");
+    document.body.appendChild(fab);
+  }
+  renderAgentFab();
+}
 function renderAgentFab() {
   const fab = document.getElementById("agent-fab");
   if (!fab) return;
   const q = state.agentQueue;
-  if (!q || !state.user || state.preview) { fab.classList.remove("show"); fab.innerHTML = ""; fab.onclick = null; return; }
+  const inAppShell = !!state.user && !state.preview && state.view === "dashboard"
+    && (document.body.classList.contains("v3-on") || document.body.classList.contains("v3-slim"));
+  if (!state.user || state.preview || (!q && !inAppShell)) { fab.classList.remove("show"); fab.innerHTML = ""; fab.onclick = null; return; }
   fab.classList.add("show");
-  fab.innerHTML = `${SPARK_SVG}${q.count ? `<span class="fab-badge">${q.count}</span>` : ""}`;
-  fab.onclick = openAgentSheet;
+  fab.innerHTML = `<img src="/assets/sig-v4/head-idle.webp" alt=""><span class="fab-dot" aria-hidden="true"></span>Sig${q && q.count ? `<span class="fab-badge">${q.count}</span>` : ""}`;
+  fab.onclick = q ? openAgentSheet : () => go("dashboard", "Sig");
 }
 // Overhaul V2: the ready-for-you card is the Grin agent card —
 // a soft accent-tint card, the agent's avatar, one bold line
@@ -2925,6 +3034,129 @@ function wireChecklist(root, steps) {
   root.querySelectorAll("[data-ck]").forEach((btn) => {
     btn.onclick = () => { const s = steps[Number(btn.getAttribute("data-ck"))]; if (s && s.act) s.act(); };
   });
+}
+
+// ---------- Build -119 home system (the approved redesign) ----------
+// ONE next-step list per Home: the hero is the first thing to
+// do, carrying the screen's one gradient button; every other
+// queue item and setup step rides below it as a plain row.
+// Sig's prompts render inside this same list — the setup
+// checklist and the Sig list never duplicate each other again.
+// Rows keep the callers' own wiring: queue rows carry data-sq
+// indices into the queue array (wireSigQueue), step rows carry
+// data-ck indices into the steps array (wireChecklist).
+const STANDING_GLOSS = "Standing — you reply fast and show up. Businesses see it before followers.";
+function standingLevelName(points) {
+  const p = Number(points) || 0;
+  return p >= 750 ? "Cornerstone" : p >= 300 ? "Standout" : p >= 100 ? "Regular" : "Starter";
+}
+function sparkSvg119(values, color) {
+  const v = (values || []).map(Number).filter((x) => Number.isFinite(x));
+  if (v.length < 2) return "";
+  const w = 86, h = 30, max = Math.max.apply(null, v.concat([1])), min = Math.min.apply(null, v.concat([0]));
+  const pts = v.map((x, i) => `${(4 + (i * (w - 8)) / (v.length - 1)).toFixed(1)},${(h - 4 - ((x - min) / Math.max(max - min, 1)) * (h - 9)).toFixed(1)}`).join(" ");
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true" style="flex:none"><polyline points="${pts}" fill="none" stroke="${color || "#0AA6C2"}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/></svg>`;
+}
+function donutHtml119(pct) {
+  const p = Math.max(0, Math.min(100, Math.round(Number(pct) || 0)));
+  return `<span class="donut119" style="--p:${p}"><span>${p}%</span></span>`;
+}
+function lbarHtml119(pct) {
+  const p = Math.max(0, Math.min(100, Math.round(Number(pct) || 0)));
+  return `<span class="lbar119" role="img" aria-label="${p}% local"><i style="width:${p}%"></i></span>`;
+}
+function ringHtml119(done, total) {
+  const t = Math.max(Number(total) || 0, 1);
+  const d = Math.max(0, Math.min(Number(done) || 0, t));
+  return `<span class="ring119" style="--p:${Math.round((d / t) * 100)}"><span>${d}/${t}</span></span>`;
+}
+function nextStepsHtml(queue, steps, opts) {
+  const o = opts || {};
+  const q = queue || [];
+  const st = steps || [];
+  const heroQ = q.length ? 0 : -1;
+  const heroS = heroQ < 0 ? st.findIndex((x) => !x.done && !x.info) : -1;
+  if (heroQ < 0 && heroS < 0 && !st.some((x) => !x.done)) return o.caughtUp || "";
+  let hero = "";
+  if (heroQ >= 0) {
+    const r = q[0];
+    hero = `<div class="nx-hero"><p class="nx-hero-t">${esc(r.text)}</p>${r.btn ? `<button type="button" class="btn ws-primary" data-sq="0">${esc(r.btn)}</button>` : ""}</div>`;
+  } else if (heroS >= 0) {
+    const x = st[heroS];
+    hero = `<div class="nx-hero"><p class="nx-hero-t">${esc(x.label)}</p>${x.sub ? `<p class="nx-hero-s">${esc(x.sub)}</p>` : ""}${x.btn ? `<button type="button" class="btn ws-primary" data-ck="${heroS}">${esc(x.btn)}</button>` : ""}</div>`;
+  }
+  const rows = [];
+  q.forEach((r, i) => {
+    if (i === heroQ) return;
+    rows.push(`<div class="nx-row"><span class="sdot119" style="background:#0AA6C2"></span><div class="nx-tx">${esc(r.text)}</div>${r.btn ? `<button type="button" class="btn small-btn" data-sq="${i}">${esc(r.btn)}</button>` : ""}${r.dismissKey ? `<button type="button" class="sig-x" data-sqx="${i}" aria-label="Dismiss">&times;</button>` : ""}</div>`);
+  });
+  st.forEach((x, i) => {
+    if (i === heroS || x.done) return;
+    if (x.info) { rows.push(`<div class="nx-row"><span class="sdot119" style="background:#9A958A"></span><div class="nx-tx"><span class="muted">${esc(x.label)}</span><div class="nx-sub2">${esc(x.info)}</div></div></div>`); return; }
+    rows.push(`<div class="nx-row"><span class="sdot119" style="background:#DAD2BF"></span><div class="nx-tx">${esc(x.label)}${x.optional ? ` <span class="badge info">Optional</span>` : ""}${x.sub ? `<div class="nx-sub2">${esc(x.sub)}</div>` : ""}</div>${x.btn ? `<button type="button" class="btn small-btn" data-ck="${i}">${esc(x.btn)}</button>` : ""}</div>`);
+  });
+  const doneCount = st.filter((x) => x.done && !x.info).length;
+  const doneLine = doneCount ? `<div class="nx-done-line">${doneCount} step${doneCount === 1 ? "" : "s"} done — nice work.</div>` : "";
+  const total = q.length + st.filter((x) => !x.done && !x.info).length;
+  return `<div class="nx-card"><div class="nx-head">${SIG_AVATAR_HTML}<div><div class="nx-title">Next</div><div class="nx-sub">${total <= 1 ? "One thing needs you." : `${total} things need you, in order.`}</div></div></div>${hero}${rows.join("")}${doneLine}</div>`;
+}
+function wireNextSteps(root, queue, steps, links) {
+  wireSigQueue(root, queue || [], links || []);
+  wireChecklist(root, steps || []);
+}
+// The creator shapes row (design: numbers are shapes). Earned
+// is a number with its trend line; local audience is the
+// donut; Standing is the level word with its one-line gloss.
+function creatorShapesHtml119(o) {
+  const earned = Number(o.earned) || 0;
+  const spark = sparkSvg119(o.earnedSeries || []);
+  const localCell = o.localPct === null || o.localPct === undefined
+    ? `<div class="shape-cell">${donutHtml119(0)}<div class="sc-tx"><span class="sc-lbl" style="margin-top:0">Local audience</span><span class="sc-sub">Set yours on your profile — it is how businesses rank you.</span></div></div>`
+    : `<div class="shape-cell">${donutHtml119(o.localPct)}<div class="sc-tx"><span class="sc-lbl" style="margin-top:0">Local audience</span><span class="sc-sub">How businesses rank you.</span></div></div>`;
+  return `<div class="shapes-row">
+    <div class="shape-cell"><div class="sc-tx"><span class="sc-num">${ownCurrencySymbol()}${fmtPrice(earned)}</span><span class="sc-lbl">Earned</span></div>${spark}</div>
+    ${localCell}
+    <div class="shape-cell"><span class="sdot119" style="background:#00B67A;width:11px;height:11px"></span><div class="sc-tx"><span class="sc-num" style="font-size:1.15rem">${esc(standingLevelName(o.points))}</span><span class="sc-lbl">Standing · ${fmtNum(o.points || 0)} pts</span><span class="sc-sub">${esc(STANDING_GLOSS.split("—")[1].trim())}</span></div></div>
+  </div>`;
+}
+// Creator Profile segments (Build -119, design): Basics /
+// Photos / Rates as an anchored strip over the profile form.
+// Each jumps to that part of the form; the form stays one
+// form with one save, exactly as the server expects it.
+// Business Money (Build -119, design): Plan / Licenses /
+// Receipts is one area with three homes — the plan screen,
+// Posts & licenses, and Results with its receipt. The strip
+// rides all three so the area reads as one place.
+function bizMoneyStrip119(active) {
+  const item = (id, label, tab) => ({ label, on: active === id, onclick: `return go('dashboard','${tab}')` });
+  return wsTabs([item("plan", "Plan", "Plan"), item("licenses", "Licenses", "Content"), item("receipts", "Receipts", "Analytics")]);
+}
+function profileSegStrip119() {
+  const seg = state.profileSeg119 || "basics";
+  const item = (id, label) => ({ label, on: seg === id, onclick: `return profileSegGo119('${id}')` });
+  return wsTabs([item("basics", "Basics"), item("photos", "Photos"), item("rates", "Rates")]);
+}
+function profileSegGo119(id) {
+  state.profileSeg119 = id;
+  const host = document.getElementById("tab-body");
+  if (host) {
+    const strip = host.querySelector(".ws-tabs");
+    if (strip) strip.outerHTML = profileSegStrip119();
+  }
+  const map = { basics: "pf-basics", photos: "pf-photos", rates: "lane-controls" };
+  const t = document.getElementById(map[id] || "pf-basics");
+  if (t) t.scrollIntoView({ behavior: "smooth", block: "start" });
+  return false;
+}
+
+// The "More" link list that keeps every secondary destination
+// one tap deep on phones (Profile for creators, Money for
+// businesses): the same rows the More screen renders.
+function moreLinksHtml119() {
+  const rows = moreRowsFor();
+  if (!rows.length) return "";
+  return `<h3 style="margin:22px 0 4px">More</h3><div class="more-list">${rows.map((r) => `<button type="button" class="more-row" onclick="return go('dashboard','${r.tab}')"><span class="more-ic">${r.icon === "sig" ? `<img class="tab-sig-img" src="/assets/sig-v4/head-idle.webp" alt="">` : bnIcon(r.icon)}</span><span class="more-tx"><span class="more-label">${esc(r.label)}</span><span class="more-sub">${esc(r.sub || "")}</span></span>${r.badge ? `<span class="tab-badge inline">${r.badge > 99 ? "99+" : r.badge}</span>` : ""}<span class="more-chev">›</span></button>`).join("")}</div>
+  <button type="button" class="more-row logout" onclick="signOut()"><span class="more-ic">${bnIcon("signout")}</span><span class="more-tx"><span class="more-label">Log out</span></span></button>`;
 }
 
 // The Home snapshot strip (spec §4.1): 2–3 real numbers once
@@ -3168,7 +3400,7 @@ function renderHelpTab() {
     ${qa("What do I owe after a visit?", "The goal is one post + one story within 48 hours of your visit. Post within 48 hours to be on time; the hard deadline is one week. Always disclose the comp, that is the law and the deal.")}
     ${qa("How do comped visits and paid bookings differ?", "A comped visit covers the meal or service, on the business. A paid booking pays your listed rate, and you keep 97%. Joining is free and comped visits are always free; the only fee is 3% on paid bookings.")}
     ${qa("What is local reach?", "The share of your audience that actually lives here, times your audience size. Businesses rank creators by local reach, not follower count.")}
-    ${qa("How does Momentum work?", "Points for doing the work well: +20 for an on-time post, +25 when a business runs your post as an ad, +3 when someone joins from your invite link, +10 when a creator you invited is approved. Late posts and no-shows cost points.")}
+    ${qa("How does Standing work?", "Points for doing the work well: +20 for an on-time post, +25 when a business runs your post as an ad, +3 when someone joins from your invite link, +10 when a creator you invited is approved. Late posts and no-shows cost points.")}
     ${qa("What is a license request?", "A business asks to repost your post and run it as an ad for 90 days, at your listed licensing fee. The 90 days start the day you approve. You approve each use and keep 97%. It lives under Earnings.")}
     ${qa("When do I get paid?", "Paid bookings record your rate in the app: booked at your rate, you keep 97%. Payouts run outside the app for now, and nothing in the app promises a payout date.")}
     ${qa("What will payout setup ask me?", isUkUser() ? "Stripe will ask for identity details, your address, and a UK bank account (sort code and account number), each for a plain reason. The full version is right below, under Payout setup, in plain words. It also covers sole trader or limited company setup, and why a first payout can be held briefly while identity checks clear." : "Stripe will ask for identity details, your address, your bank account, and tax information, each for a plain reason. The full version is right below, under Payout setup, in plain words. It also covers Form 1099-K and why a first payout can be held briefly while identity checks clear.")}
@@ -3192,11 +3424,11 @@ function renderMomentumTab() {
   const tier = (u.creator && u.creator.tierBand) || "";
   const next = (m.checklist || []).find((i) => !i.done);
   el.innerHTML = `
-  ${wsHead("Momentum", { sub: "Your points, your tier, and what earns more.", subKey: "momentum" })}
+  ${wsHead("Standing", { sub: "Your points, your tier, and what earns more.", subKey: "momentum" })}
   <div class="wcard mom-card">
-    <div class="kpi-label">Your Momentum</div>
+    <div class="kpi-label">Your Standing</div>
     <div class="kpi-num" style="font-size:3rem">${fmtNum(m.points || 0)}</div>
-    <div class="kpi-sub">${m.points ? `${tier ? `You are in the ${esc(tier)} tier. ` : ""}${next ? `Next: ${esc(next.label)} (+${next.points}).` : "Every way to earn is done. Keep the streak going."}` : "Your Momentum starts with your first visit. Post on time and it climbs."}</div>
+    <div class="kpi-sub">${m.points ? `${tier ? `You are in the ${esc(tier)} tier. ` : ""}${next ? `Next: ${esc(next.label)} (+${next.points}).` : "Every way to earn is done. Keep the streak going."}` : "Your Standing starts with your first visit. Post on time and it climbs."}</div>
     <p class="small" style="margin:10px 0 0">${POINTS_WHY_LONG}</p>
   </div>
   ${momentumHtml(u)}
@@ -3247,6 +3479,15 @@ async function renderEarningsTab() {
       return f ? ` &middot; $${fmtMoney(f)} store value` : "";
     };
     const stateWord = (b) => b.paidLane.escrowState === "refunded" ? "Refunded" : b.post ? (b.paidLane.escrowState === "released" ? "Complete" : "Post live") : "Booked";
+    // Build -119: Money splits the design's way — Earned
+    // (released bookings, decided licenses, coupon deals) and
+    // Pending (money held until the post is live, license
+    // requests waiting on the creator). Same rows, same
+    // actions; only the grouping is new.
+    const bkRow119 = (b) => `<div class="lib-row"><div class="lib-main"><div class="lib-title">${esc(b.title)}</div><div class="lib-meta">${esc(b.businessName || "")} · Booked at your rate of ${ownCurrencySymbol()}${fmtPrice(b.paidLane.rate)}. You keep ${ownCurrencySymbol()}${fmtMoney(b.paidLane.creatorNet)}.</div></div><span class="badge ${b.paidLane.escrowState === "released" ? "ok" : b.paidLane.escrowState === "refunded" ? "warn" : "info"}">${stateWord(b)}</span></div>`;
+    const releasedBk = paidBookings.filter((b) => b.paidLane.escrowState === "released" || b.paidLane.escrowState === "refunded");
+    const pendingBk = paidBookings.filter((b) => b.paidLane.escrowState !== "released" && b.paidLane.escrowState !== "refunded");
+    const earnSeg = state.earnSeg === "pending" ? "pending" : "earned";
     const licRow = (l, withActions) => `<div class="lib-row"><div class="lib-main"><div class="lib-title">${esc(l.businessName || "A business")} wants to license your post</div><div class="lib-meta">Your fee $${fmtPrice(l.fee)} · you keep $${fmtMoney(l.creatorNet)} · 90 days of repost and ad use${l.status === "pending" ? " · starts the day you approve" : l.status === "granted" && l.windowEndsAt ? ` · runs through ${fmtDay(l.windowEndsAt)}` : ""}${l.postUrl ? ` · <a href="${esc(l.postUrl)}" target="_blank" rel="noopener">View post</a>` : ""}${l.status !== "pending" ? ` · ${l.status === "granted" ? "Approved" : "Declined"}` : ""}</div></div>${withActions ? `<span class="req-acts"><button type="button" class="btn small-btn ws-primary" onclick="return respondLicenseEarn('${l.id}','approve')">Approve</button> <button type="button" class="btn small-btn ws-outline" onclick="return respondLicenseEarn('${l.id}','decline')">Decline</button></span>` : ""}</div>`;
     el.innerHTML = `
   ${wsHead("Earnings", { sub: "What your posts and visits have earned you.", subKey: "earnings" })}
@@ -3256,21 +3497,31 @@ async function renderEarningsTab() {
     ${kpiCard("This month", `$${fmtMoney(monthEarned)}`, { sub: "Earned in " + nowD.toLocaleDateString(undefined, { month: "long" }) })}
     ${kpiCard("On its way", `$${fmtMoney(money.held || 0)}`, { sub: "Booked at your rate, held until the post is live" })}
   </div>` : `
-  <div class="empty-card"><div class="ec-t">Nothing earned yet</div><div class="ec-s">Nothing earned yet. Paid bookings you complete show up here. Comped visits build your Momentum instead.</div><div class="mt">${(state.user.creator || {}).paidRate ? `<button type="button" class="btn small-btn ws-primary" onclick="return go('dashboard','Offers')">See offers</button>` : `<button type="button" class="btn small-btn ws-primary" onclick="return go('dashboard','Profile')">Set your paid rate</button>`}</div></div>`}
+  <div class="empty-card"><div class="ec-t">Nothing earned yet</div><div class="ec-s">Nothing earned yet. Paid bookings you complete show up here. Comped visits build your Standing instead.</div><div class="mt">${(state.user.creator || {}).paidRate ? `<button type="button" class="btn small-btn ws-primary" onclick="return go('dashboard','Offers')">See offers</button>` : `<button type="button" class="btn small-btn ws-primary" onclick="return go('dashboard','Profile')">Set your paid rate</button>`}</div></div>`}
   <p class="small muted" style="margin:14px 2px 0">Paid bookings pay your listed rate. You keep 97%.</p>
-  <h3 style="margin:22px 0 0">License requests</h3>
+  ${wsTabs([
+    { label: "Earned", on: earnSeg === "earned", onclick: "return earnSetSeg('earned')" },
+    { label: "Pending", count: (pending.length + pendingBk.length) || null, on: earnSeg === "pending", onclick: "return earnSetSeg('pending')" },
+  ])}
+  ${earnSeg === "pending" ? `
+  <h3 style="margin:6px 0 0">Waiting on you</h3>
   ${pending.length ? `<div class="wcard" style="padding-top:8px;padding-bottom:8px">${pending.map((l) => licRow(l, true)).join("")}</div>` : `<p class="small muted" style="margin:8px 2px 0">No license requests waiting. When a business wants to reuse one of your posts, it lands here at your listed fee.</p>`}
-  ${decided.length ? `<div class="wcard" style="padding-top:8px;padding-bottom:8px;margin-top:12px">${decided.map((l) => licRow(l, false)).join("")}</div>` : ""}
+  <h3 style="margin:22px 0 0">On its way</h3>
+  ${pendingBk.length ? `<div class="wcard" style="padding-top:8px;padding-bottom:8px">${pendingBk.map(bkRow119).join("")}</div>` : `<p class="small muted" style="margin:8px 2px 0">Nothing is being held right now. A paid booking holds its money here until your post is live.</p>`}` : `
+  <h3 style="margin:6px 0 0">License requests</h3>
+  ${decided.length ? `<div class="wcard" style="padding-top:8px;padding-bottom:8px">${decided.map((l) => licRow(l, false)).join("")}</div>` : `<p class="small muted" style="margin:8px 2px 0">No licenses decided yet. Requests you approve pay out here.</p>`}
   <h3 style="margin:22px 0 0">Paid bookings</h3>
-  ${paidBookings.length ? `<div class="wcard" style="padding-top:8px;padding-bottom:8px">${paidBookings.map((b) => `<div class="lib-row"><div class="lib-main"><div class="lib-title">${esc(b.title)}</div><div class="lib-meta">${esc(b.businessName || "")} · Booked at your rate of ${ownCurrencySymbol()}${fmtPrice(b.paidLane.rate)}. You keep ${ownCurrencySymbol()}${fmtMoney(b.paidLane.creatorNet)}.</div></div><span class="badge ${b.paidLane.escrowState === "released" ? "ok" : b.paidLane.escrowState === "refunded" ? "warn" : "info"}">${stateWord(b)}</span></div>`).join("")}</div>` : `<p class="small muted" style="margin:8px 2px 0">${(state.user.creator || {}).paidRate ? `No paid bookings yet. Your rate is set at ${ownCurrencySymbol()}${fmtPrice(state.user.creator.paidRate)}; when a business books you paid, it lands here.` : "No paid bookings yet. Set your rate on your profile and businesses can book you paid."}</p>`}
+  ${releasedBk.length ? `<div class="wcard" style="padding-top:8px;padding-bottom:8px">${releasedBk.map(bkRow119).join("")}</div>` : `<p class="small muted" style="margin:8px 2px 0">${(state.user.creator || {}).paidRate ? `No paid bookings have paid out yet. Your rate is set at ${ownCurrencySymbol()}${fmtPrice(state.user.creator.paidRate)}; when a business books you paid and the post lands, it pays out here.` : "No paid bookings yet. Set your rate on your profile and businesses can book you paid."}</p>`}
   ${couponBookings.length ? `<h3 style="margin:22px 0 0">Coupon deals</h3>
   <p class="small muted" style="margin:8px 2px 0">Coupons you accepted as payment for a post. The value is store value at the business, not cash, so it never counts as cash earned.</p>
-  <div class="wcard" style="padding-top:8px;padding-bottom:8px">${couponBookings.map((b) => `<div class="lib-row"><div class="lib-main"><div class="lib-title">${esc(b.title)}</div><div class="lib-meta">${esc(b.businessName || "")} &middot; ${esc(couponSummaryClient(b.coupon, b.businessName))}${b.coupon && b.coupon.expiresAt ? ` &middot; expires ${esc(fmtDay(b.coupon.expiresAt))}` : ""}${couponFaceBit(b)}</div></div><span class="badge ${b.post ? "ok" : "info"}">${b.post ? "Post live" : "Booked"}</span></div>`).join("")}</div>` : ""}`;
+  <div class="wcard" style="padding-top:8px;padding-bottom:8px">${couponBookings.map((b) => `<div class="lib-row"><div class="lib-main"><div class="lib-title">${esc(b.title)}</div><div class="lib-meta">${esc(b.businessName || "")} &middot; ${esc(couponSummaryClient(b.coupon, b.businessName))}${b.coupon && b.coupon.expiresAt ? ` &middot; expires ${esc(fmtDay(b.coupon.expiresAt))}` : ""}${couponFaceBit(b)}</div></div><span class="badge ${b.post ? "ok" : "info"}">${b.post ? "Post live" : "Booked"}</span></div>`).join("")}</div>` : ""}`}`;
     renderBottomNav();
   } catch (err) {
     el.innerHTML = `${wsHead("Earnings")}<div class="error-box">${esc(err.message)}</div>`;
   }
 }
+
+function earnSetSeg(v) { state.earnSeg = v; renderEarningsTab(); return false; }
 
 async function respondLicenseEarn(id, decision) {
   const rec = (state.licenseRequests || []).find((l) => l.id === id);
@@ -3318,7 +3569,7 @@ async function renderCreatorNumbers() {
       el.innerHTML = `${head}
       <div id="cr-stats"></div>
       ${reachCard}
-      <div class="empty-card"><div class="ec-t">Your numbers</div><div class="ec-s">This fills in once your visits and posts land. When businesses book you and your posts go live, you will see your posts, your on-time record, and your Momentum here.</div></div>`;
+      <div class="empty-card"><div class="ec-t">Your numbers</div><div class="ec-s">This fills in once your visits and posts land. When businesses book you and your posts go live, you will see your posts, your on-time record, and your Standing here.</div></div>`;
       loadCreatorStats();
       return;
     }
@@ -3338,7 +3589,7 @@ async function renderCreatorNumbers() {
         const cum = ledger.filter((e) => (Date.parse(e.at || "") || 0) < dayStart + 86400000).reduce((s, e) => s + (Number(e.points) || 0), 0);
         days.push({ date: new Date(dayStart).toISOString(), points: Math.max(cum, 0) });
       }
-      if (days.some((dd) => dd.points > 0)) trendHtml = `<div class="chart-card"><h3>Momentum trend</h3><p class="wc-sub">Your points, day by day, last 30 days. ${POINTS_WHY_SHORT}</p>${lineChartSvg(days, [{ k: "points", color: "#0B0D0C" }])}</div>`;
+      if (days.some((dd) => dd.points > 0)) trendHtml = `<div class="chart-card"><h3>Standing trend</h3><p class="wc-sub">Your points, day by day, last 30 days. ${POINTS_WHY_SHORT}</p>${lineChartSvg(days, [{ k: "points", color: "#0B0D0C" }])}</div>`;
     }
     const reviewRows = bookings.filter((b) => b.creatorReview).map((b) => `<div class="lib-row"><div class="lib-main"><div class="lib-title">${starsHtml(b.creatorReview.stars)} ${esc(String(b.creatorReview.stars))} — ${esc(b.title || "Visit")}</div><div class="lib-meta">${esc(b.businessName || "")}${b.creatorReview.createdAt ? ` · ${fmtDay(b.creatorReview.createdAt)}` : ""}${b.creatorReview.comment ? `<br>${esc(b.creatorReview.comment)}` : ""}</div></div></div>`).join("");
     // Intent card (Build -83): the creator's own exact recorded
@@ -3365,7 +3616,7 @@ async function renderCreatorNumbers() {
     <div class="kpi-grid c3">
       ${kpiCard("Posts delivered", fmtNum(tr.postsDelivered || delivered.length), { sub: "Posts live from your visits" })}
       ${kpiCard("On time", tr.onTimePct === null || tr.onTimePct === undefined ? "New" : tr.onTimePct + "%", { sub: "Inside the 48 hour standard" })}
-      ${kpiCard("Momentum", fmtNum(m.points || 0), { sub: POINTS_WHY_SHORT })}
+      ${kpiCard("Standing", fmtNum(m.points || 0), { sub: POINTS_WHY_SHORT })}
     </div>
     ${intentCard}
     ${trendHtml}
@@ -4216,7 +4467,7 @@ async function loadSigHome() {
   if (!greetEl || !chipsEl) return;
   if (!d) { chipsEl.innerHTML = ""; return; }
   state.sigHome = d;
-  const hour = new Date().getHours();
+  const hour = localHourNow();
   const day = hour < 12 ? ST("Good morning", "Buenos días") : hour < 18 ? ST("Good afternoon", "Buenas tardes") : ST("Good evening", "Buenas noches");
   const name = d.displayName || "";
   greetEl.innerHTML = `<div class="sig-home-h">${esc(day)}${name ? `, ${esc(name)}` : ""}.</div><div class="sig-home-sub">${ST("Where should we pick up?", "¿Por dónde seguimos?")}</div>`;
@@ -4537,7 +4788,7 @@ function renderHome() {
       <div class="rule-row">Every comp disclosed (FTC).</div>
       <div class="rule-row">Posts delivered in 48 hours*</div>
       <p class="small muted" style="margin:10px 0 0">*Creators have up to a week; 48 hours is the standard they are held to. A visit with no post after the week is replaced for the business.</p>
-      <details class="deal-details"><summary>All the rules</summary><div class="dd-body"><p class="small">A business can never require a positive post, a rating, or specific words. Creators disclose every comp, as the FTC requires. A post inside the week still counts, as a late delivery. Invite other creators and earn Momentum points (+3 per sign-up through your link, +10 per approval). Points order the creator list businesses see.</p></div></details>
+      <details class="deal-details"><summary>All the rules</summary><div class="dd-body"><p class="small">A business can never require a positive post, a rating, or specific words. Creators disclose every comp, as the FTC requires. A post inside the week still counts, as a late delivery. Invite other creators and earn Standing points (+3 per sign-up through your link, +10 per approval). Points order the creator list businesses see.</p></div></details>
     </div>
   </section>`;
 }
@@ -9328,7 +9579,7 @@ function ladderHtml(u) {
   const l = u && u.ladder;
   if (!l) return "";
   const earned = (l.badges || []).filter((b) => b.kind === "milestone" || b.kind === "campus");
-  let out = `<p class="small" style="margin-top:10px"><strong>Referral badges:</strong> approved referrals earn badges and bonus Momentum points. 1 approved referral: Connector badge, +25 points. 3: Super Connector, +50. 5: Roster Builder, +75. 10: City Lead, +150.</p>`;
+  let out = `<p class="small" style="margin-top:10px"><strong>Referral badges:</strong> approved referrals earn badges and bonus Standing points. 1 approved referral: Connector badge, +25 points. 3: Super Connector, +50. 5: Roster Builder, +75. 10: City Lead, +150.</p>`;
   if (earned.length) out += `<p class="small">Your badges: ${earned.map((b) => esc(b.name)).join(" &middot; ")}</p>`;
   const pending = (l.milestones || []).find((m) => m.state === "pending_unlock");
   if (pending) {
@@ -9735,7 +9986,7 @@ function creatorProfileDetailHtml(c, preview, opts) {
         <div class="cc-local">
           ${p.localAudiencePct === null || p.localAudiencePct === undefined
             ? `<div class="lbl">Local audience not reported yet</div>`
-            : `<div class="big">${p.localAudiencePct}%</div><div class="lbl">of their followers are local</div><div class="src">${esc(p.localAudienceSource || "Self-reported")}</div>`}
+            : `<div class="big">${p.localAudiencePct}%</div><div class="lbl">of their followers are local</div>${lbarHtml119(p.localAudiencePct)}<div class="src">${esc(p.localAudienceSource || "Self-reported")}</div>`}
         </div>
         <div class="cc-meta">
           <div><div class="k">Total audience (all platforms)</div><div class="v">${fmtNum(totalAudienceOf(c))}</div></div>
@@ -9769,7 +10020,7 @@ function creatorProfileDetailHtml(c, preview, opts) {
     ${preview ? `<p class="small muted">Preview: an offer sent from here is a simulation. It never reaches ${esc(c.name)} and nothing is saved.</p>` : ""}
     ${preview && c.trackRecord && c.trackRecord.postsDelivered > 0 ? `
     <div class="showcase-block"><h4>Ad use (preview)</h4>
-      <p class="small muted">Ad use comes with the standard license: on a paid visit, a business can repost the post and run it as an ad for 90 days from the post date, and a comped post can be licensed the same way at the creator's listed fee with their approval. In the real app that logs the use, notifies the creator, and awards +25 Momentum. Here it is a simulation: nothing is logged and no points move.</p>
+      <p class="small muted">Ad use comes with the standard license: on a paid visit, a business can repost the post and run it as an ad for 90 days from the post date, and a comped post can be licensed the same way at the creator's listed fee with their approval. In the real app that logs the use, notifies the creator, and awards +25 Standing. Here it is a simulation: nothing is logged and no points move.</p>
       <button class="btn small-btn ghost" onclick="previewAdUse('${c.userId}')">Use in an ad</button> <span id="pv-aduse-note" class="saved"></span>
     </div>` : ""}
   </div>`;
@@ -9849,7 +10100,7 @@ function creatorCard(c, viewer, opts) {
     <div class="cc-local">
       ${p.localAudiencePct === null || p.localAudiencePct === undefined
         ? `<div class="lbl">Local audience not reported yet</div>`
-        : `<div class="big">${p.localAudiencePct}%</div><div class="lbl">of their followers are local</div><div class="src">${esc(p.localAudienceSource || "Self-reported")}</div>`}
+        : `<div class="big">${p.localAudiencePct}%</div><div class="lbl">of their followers are local</div>${lbarHtml119(p.localAudiencePct)}<div class="src">${esc(p.localAudienceSource || "Self-reported")}</div>`}
     </div>
     ${p.spanishAudiencePct !== null && p.spanishAudiencePct !== undefined ? `<p class="small muted" style="margin-top:6px">${p.spanishAudiencePct}% Spanish-speaking audience</p>` : ""}
     <div class="cc-meta">
@@ -9904,7 +10155,7 @@ function renderCreatorDash() {
   let body = "";
   if (tab === "Dashboard") body = `<div id="creator-home" class="vx-stagger"><div class="sig-load-row">${sigAvatarHtml("think")}</div>${skelHtml("Loading your dashboard...", 2)}</div>`;
   if (tab === "Bench") body = `<div id="bench-body">${skelHtml("Loading the bench...", 1)}</div>`;
-  if (tab === "Profile") body = wsHead("My profile", { chip: livePill("Live"), sub: "Your public creator profile. This is what businesses see when they find you.", subKey: "cr-profile" }) + creatorProfileHtml(u) + momentumHtml(u) + growRosterHtml(u);
+  if (tab === "Profile") body = wsHead("My profile", { chip: livePill("Live"), sub: "Your public creator profile. This is what businesses see when they find you.", subKey: "cr-profile" }) + profileSegStrip119() + creatorProfileHtml(u) + momentumHtml(u) + growRosterHtml(u) + moreLinksHtml119();
   app.innerHTML = `<div class="wrap">
     ${standingBannerHtml(u)}
     <div id="tab-body">${body}</div></div>`;
@@ -9953,7 +10204,7 @@ function renderFoundingHome() {
   if (tab === "Dashboard") body = `<div id="founding-dash" class="vx-stagger"><div class="sig-load-row">${sigAvatarHtml("think")}</div>${skelHtml("Loading your dashboard...", 2)}</div>`;
   if (tab === "Bench") body = `<div id="bench-body">${skelHtml("Loading the bench...", 1)}</div>`;
   if (tab === "Status") body = `<h3 style="margin-top:0">Your founding status</h3><div id="founding-body">${skelHtml("Loading your founding profile...", 1)}</div><div id="founding-buzz"></div><div id="founding-depth"></div>`;
-  if (tab === "Profile") body = wsHead("My profile", { sub: "Your public creator profile. Complete profiles get booked first.", subKey: "cr-profile" }) + creatorProfileHtml(u);
+  if (tab === "Profile") body = wsHead("My profile", { sub: "Your public creator profile. Complete profiles get booked first.", subKey: "cr-profile" }) + profileSegStrip119() + creatorProfileHtml(u) + moreLinksHtml119();
   if (tab === "Status") body = wsHead("Status", { sub: "Where your founding enrollment stands." }) + body;
   app.innerHTML = `<div class="wrap">
     ${standingBannerHtml(u)}
@@ -9990,7 +10241,7 @@ async function loadFoundingDashboard() {
     const u = state.user;
     const isUnl = !!f.unlisted;
     const place = isUnl ? esc(unlistedPlace(f)) : esc(marketTalkNameClient(f.market));
-    const hour = new Date().getHours();
+    const hour = localHourNow();
     const greet = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
     const firstName = (u.name || "").trim().split(" ")[0] || u.name || "";
     const totalAud = totalAudienceOf(card);
@@ -10014,10 +10265,10 @@ async function loadFoundingDashboard() {
     if (u.profileCompletion && u.profileCompletion.complete) {
       const photoIt = (u.profileCompletion.items || []).find((i) => i.id === "photo");
       if (photoIt && !photoIt.done) {
-        const it = sigIdeaItem(u.id, "cr_photo", `Add your profile photo.${photoIt.points ? ` It earns +${photoIt.points} Momentum.` : ""} Founding profiles with a face are the ones businesses meet first.`, "Add photo", () => go("dashboard", "Profile"), "Add a profile photo");
+        const it = sigIdeaItem(u.id, "cr_photo", `Add your profile photo.${photoIt.points ? ` It earns +${photoIt.points} Standing.` : ""} Founding profiles with a face are the ones businesses meet first.`, "Add photo", () => go("dashboard", "Profile"), "Add a profile photo");
         if (it) queueItems.push(it);
       }
-      const inv = sigIdeaItem(u.id, "cr_invite", "Know a creator who should be founding with you? Your invite earns +3 Momentum when they join, +10 when they are approved.", "Share invite", () => { const g = document.getElementById("grow-roster"); if (g) g.scrollIntoView({ behavior: "smooth", block: "start" }); }, "Invite a founding creator");
+      const inv = sigIdeaItem(u.id, "cr_invite", "Know a creator who should be founding with you? Your invite earns +3 Standing when they join, +10 when they are approved.", "Share invite", () => { const g = document.getElementById("grow-roster"); if (g) g.scrollIntoView({ behavior: "smooth", block: "start" }); }, "Invite a founding creator");
       if (inv) queueItems.push(inv);
       const capped = capSigIdeas(queueItems);
       queueItems.length = 0;
@@ -10047,24 +10298,28 @@ async function loadFoundingDashboard() {
       { label: "Set your paid rate", sub: "Comped visits work without it.", done: !!(u.creator && u.creator.paidRate), optional: true, btn: "Set my rate", act: () => go("dashboard", "Profile") },
       { label: "Apply to your first offer", sub: "Offers open when your market launches. The Offers tab shows how they work.", info: "Opens at launch" },
     ];
+    // Build -119: same treatment as the live Home — greeting,
+    // ONE Next list (queue + founding steps merged), then the
+    // shapes row (your local reach as the donut card: the full
+    // sentence stays, it is the ranking explanation), roster
+    // and paid-lane blocks as before.
     el.innerHTML = `
-    ${wsHead("Home", { sub: "Start here. Sig shows you what needs you, in order.", subKey: "cr-home" })}
-    <div class="home-greet"><div class="hg-hi">Hi, ${esc(firstName)}</div><div class="hg-line">${esc(greet)}. ${isUnl ? `${esc(f.city)} opens when sign-ups pile up. We email you the moment it opens.` : `${esc(marketTalkNameClient(f.market))} is a founding market. We email you the moment it opens.`}</div></div>
-    ${sigQueueHtml(queueItems, { links: [], askBox: true })}
-    ${checklistHtml(fSteps)}
+    ${wsHead("Home", { sub: "Start here. One list, in the order things need you.", subKey: "cr-home" })}
+    <div class="home-greet"><div class="hg-hi">Hi, ${esc(firstName)}</div><div class="hg-line serif-line">${esc(greet)}. ${isUnl ? `${esc(f.city)} opens when sign-ups pile up. We email you the moment it opens.` : `${esc(marketTalkNameClient(f.market))} is a founding market. We email you the moment it opens.`}</div></div>
+    ${nextStepsHtml(queueItems, fSteps, { caughtUp: sigQueueHtml([], { links: [], askBox: true }) })}
     <div class="wcard">
-      <div class="kpi-label">Your local reach</div>
-      <div class="kpi-num" style="font-size:3.3rem">${localReach === null ? "Not set" : fmtNum(localReach)}</div>
-      <div class="kpi-sub">${pctSet ? `${p.localAudiencePct}% of your ${fmtNum(totalAud)} audience is local. Businesses rank creators by this number, not by follower count.` : "Add your local audience % in your profile and this fills in."}</div>
+      <div style="display:flex;gap:16px;align-items:center">${pctSet ? donutHtml119(p.localAudiencePct) : ""}<div><div class="kpi-label">Your local reach</div>
+      <div class="kpi-num" style="font-size:2.4rem">${localReach === null ? "Not set" : fmtNum(localReach)}</div></div></div>
+      <div class="kpi-sub" style="margin-top:10px">${pctSet ? `${p.localAudiencePct}% of your ${fmtNum(totalAud)} audience is local. Businesses rank creators by this number, not by follower count.` : "Add your local audience % in your profile and this fills in."}</div>
       ${pctSet ? "" : `<p style="margin:12px 0 0"><button class="btn small-btn ws-primary" onclick="return go('dashboard','Profile')">Add your local %</button></p>`}
+      <p class="small" style="margin:12px 0 0"><strong>Standing: ${esc(standingLevelName(momPts))}${momPts ? ` · ${fmtNum(momPts)} pts` : ""}.</strong> ${esc(STANDING_GLOSS.split("—")[1].trim())}</p>
     </div>
     <p class="small" style="margin:10px 2px 0">${listedMarketsLineHtml(card)}</p>
     ${homePaidLaneSummaryHtml(u.creator)}
     ${growRosterHtml(u)}
-    <p class="small muted" style="margin:14px 2px 0">Your Charter card, founding class, points, and full status live under <a class="tlink" href="#" onclick="return go('dashboard','Status')">Status</a> and <a class="tlink" href="#" onclick="return go('dashboard','Momentum')">Momentum</a>.</p>
+    <p class="small muted" style="margin:14px 2px 0">Your Charter card, founding class, points, and full status live under <a class="tlink" href="#" onclick="return go('dashboard','Status')">Status</a> and <a class="tlink" href="#" onclick="return go('dashboard','Momentum')">Standing</a>.</p>
     ${askSigRowHtml()}`;
-    wireSigQueue(el, queueItems, []);
-    wireChecklist(el, fSteps);
+    wireNextSteps(el, queueItems, fSteps, []);
     renderBottomNav();
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
@@ -11517,9 +11772,9 @@ function creatorUnlockHtml(f, buzz, placeRaw) {
 // here claims creators see campaigns earlier by Momentum.
 function creatorMomentumPayoffHtml() {
   return `<section class="wcard">
-    <p class="ui-kicker">Why Momentum matters</p>
-    <h3 style="margin:2px 0 0">Momentum moves you up</h3>
-    <p class="small" style="margin:6px 0 0">Momentum is part of how businesses find you. It rides on your roster card next to your local reach, businesses can sort the roster by Momentum, and when you apply to an offer, Momentum is part of the stack order the business picks from. Local reach counts most in that stack, then your Local Impact Score, then Momentum and reliability. Your points and ways to earn are in the Momentum section below.</p>
+    <p class="ui-kicker">Why Standing matters</p>
+    <h3 style="margin:2px 0 0">Standing moves you up</h3>
+    <p class="small" style="margin:6px 0 0">Standing is part of how businesses find you. It rides on your roster card next to your local reach, businesses can sort the roster by Standing, and when you apply to an offer, Standing is part of the stack order the business picks from. Local reach counts most in that stack, then your Local Impact Score, then Standing and reliability. Your points and ways to earn are in the Standing section below.</p>
   </section>`;
 }
 
@@ -11964,7 +12219,7 @@ function homeLocalSignalHtml(card, bookings) {
     <div class="ui-row"><span class="k">Track record</span><span class="v">${tr.visitsCompleted || 0} visits &middot; ${tr.postsDelivered || 0} posts</span></div>
     <div class="ui-row"><span class="k">Register actions</span><span class="v">${tallyCount ? `${tallyCount} customers &middot; $${fmtMoney(tallyTotal)} rung up` : "None reported yet"}</span></div>
     ${delivered ? `<div class="ui-row"><span class="k">On-time streak</span><span class="v">${streak} in a row</span></div>
-    <p class="small muted">+25 Momentum per 5-post on-time streak.</p>` : ""}
+    <p class="small muted">+25 Standing per 5-post on-time streak.</p>` : ""}
     <div class="home-actions"><button class="btn small-btn" onclick="return go('dashboard','Profile')">View your full profile</button></div>
   </section>`;
 }
@@ -12713,7 +12968,7 @@ function homeComingUpHtml(bookings) {
       items.push({ at: b.postDeadline, label: `Post due for ${b.businessName}`, detail: b.title });
     }
     if (b.post && b.post.performanceRequestedAt && !b.post.reportedAt) {
-      items.push({ at: b.post.performanceRequestedAt, label: `Post numbers requested by ${b.businessName}`, detail: "Reporting them earns +5 Momentum" });
+      items.push({ at: b.post.performanceRequestedAt, label: `Post numbers requested by ${b.businessName}`, detail: "Reporting them earns +5 Standing" });
     }
     if (b.paidLane && b.paidLane.escrowState === "held" && b.paidLane.proofAt) {
       items.push({ at: new Date(Date.parse(b.paidLane.proofAt) + 48 * 3600 * 1000).toISOString(), label: `Paid money releases from ${b.businessName}`, detail: `$${fmtMoney(b.paidLane.creatorNet)} when the 48 hour hold passes` });
@@ -12739,7 +12994,7 @@ function homeFoundingBlocksHtml(card, u) {
   const m = (u && u.momentum) || { points: 0 };
   return `
   <div class="stat-band home-metrics">
-    <div class="stat-cell"><div class="stat-num"><em>${m.points}</em></div><div class="stat-lbl">Momentum points</div></div>
+    <div class="stat-cell"><div class="stat-num"><em>${m.points}</em></div><div class="stat-lbl">Standing points</div></div>
     <div class="stat-cell"><div class="stat-num">${p.localAudiencePct === null || p.localAudiencePct === undefined ? "Not set" : p.localAudiencePct + "%"}</div><div class="stat-lbl">Local reach</div></div>
     <div class="stat-cell"><div class="stat-num">${card && card.localImpactScore !== null && card.localImpactScore !== undefined ? card.localImpactScore : "New"}</div><div class="stat-lbl">Impact Score / 100</div></div>
     <div class="stat-cell"><div class="stat-num">${fmtNum(totalAudienceOf(card))}</div><div class="stat-lbl">Total audience</div></div>
@@ -12831,7 +13086,7 @@ async function loadCreatorHome() {
     const card = fData.card || {};
     const money = homeMoney(bookings);
     const m = u.momentum || { points: 0 };
-    const hour = new Date().getHours();
+    const hour = localHourNow();
     const greet = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
     const firstName = (u.name || "").trim().split(" ")[0] || u.name || "";
     const cprof = card.profile || {};
@@ -12928,14 +13183,14 @@ async function loadCreatorHome() {
       const c = u.creator || {};
       const pcItem = (id) => ((pc && pc.items) || []).find((i) => i.id === id);
       const pushIdea = (id, text, btn, act, short) => { const it = sigIdeaItem(u.id, id, text, btn, act, short); if (it) items.push(it); };
-      const ptsBit = (item, fallback) => (item && item.points ? ` It earns +${item.points} Momentum.` : fallback || "");
+      const ptsBit = (item, fallback) => (item && item.points ? ` It earns +${item.points} Standing.` : fallback || "");
       const photoItem = pcItem("photo");
       if (photoItem && !photoItem.done) pushIdea("cr_photo", `Add your profile photo.${ptsBit(photoItem)} Businesses see a face before they see numbers.`, "Add photo", () => go("dashboard", "Profile"), "Add a profile photo");
       const workItem = pcItem("bestwork");
       const workN = Math.min(3, (c.bestWork || []).length);
-      if (workItem && !workItem.done) pushIdea("cr_bestwork", `Add best-work links (${workN} of 3). Each one earns +5 Momentum and shows on your public profile.`, "Add links", () => go("dashboard", "Profile"), `Best-work links: ${workN} of 3`);
+      if (workItem && !workItem.done) pushIdea("cr_bestwork", `Add best-work links (${workN} of 3). Each one earns +5 Standing and shows on your public profile.`, "Add links", () => go("dashboard", "Profile"), `Best-work links: ${workN} of 3`);
       const bioItem = pcItem("bio");
-      if (bioItem && !bioItem.done) pushIdea("cr_bio", `Your bio is still short. Two honest lines${bioItem.points ? ` earn +${bioItem.points} Momentum` : ""}.`, "Write bio", () => go("dashboard", "Profile"), "Bio still short");
+      if (bioItem && !bioItem.done) pushIdea("cr_bio", `Your bio is still short. Two honest lines${bioItem.points ? ` earn +${bioItem.points} Standing` : ""}.`, "Write bio", () => go("dashboard", "Profile"), "Bio still short");
       const hoodItem = pcItem("neighborhood");
       if (hoodItem && !hoodItem.done) pushIdea("cr_neighborhood", `Set your neighborhood. Businesses search by neighborhood.${ptsBit(hoodItem)}`, "Set neighborhood", () => go("dashboard", "Profile"), "Neighborhood not set");
       if (!c.portfolioSample) pushIdea("cr_sample", "Link one post you already made about a place you love. It sits on your profile and book-me page labeled as your portfolio sample, so businesses can see your work before your first SIGNL visit.", "Add my sample post", () => go("dashboard", "Profile"), "Add a portfolio sample post");
@@ -12981,17 +13236,17 @@ async function loadCreatorHome() {
     const greetDup = gateDone && queue.length > 0;
     const snapCells = gateDone ? [
       { num: localReach === null ? "Not set" : fmtNum(localReach), label: "Your local reach", sub: "share of your audience living here" },
-      { num: fmtNum(m.points || 0), label: "Momentum", sub: "points that move you up" },
+      { num: fmtNum(m.points || 0), label: "Standing", sub: "points that move you up" },
       ...(money.released > 0 ? [{ num: `$${fmtMoney(money.released)}`, label: "Earned" }] : []),
     ] : null;
     const tier = cprof.tierBand || (u.creator && u.creator.tierBand) || "";
     const nextEarn = (m.checklist || []).find((i) => !i.done);
     const momentumCard = `<div class="wcard mom-card">
-      <div class="flex-between"><div><div class="kpi-label">Momentum</div><div class="kpi-num" style="font-size:2.6rem">${fmtNum(m.points || 0)}</div></div>${tier ? `<span class="badge tier" style="font-size:1rem;padding:6px 14px">${esc(tier)}</span>` : ""}</div>
-      <div class="kpi-sub">${m.points ? (nextEarn ? `Next: ${esc(nextEarn.label)} (+${nextEarn.points}).` : "Every way to earn is done. Keep the streak going.") : "Your Momentum starts with your first visit. Post on time and it climbs."}</div>
+      <div class="flex-between"><div><div class="kpi-label">Standing</div><div class="kpi-num" style="font-size:2.6rem">${fmtNum(m.points || 0)}</div></div>${tier ? `<span class="badge tier" style="font-size:1rem;padding:6px 14px">${esc(tier)}</span>` : ""}</div>
+      <div class="kpi-sub">${m.points ? (nextEarn ? `Next: ${esc(nextEarn.label)} (+${nextEarn.points}).` : "Every way to earn is done. Keep the streak going.") : "Your Standing starts with your first visit. Post on time and it climbs."}</div>
       <p class="small" style="margin:8px 0 0">${POINTS_WHY_SHORT}</p>
       ${tier ? `<p class="small muted" style="margin:6px 0 0">${esc(tier)} is your size band, set automatically from your total audience across platforms.</p>` : ""}
-      <p style="margin:10px 0 0"><button class="btn small-btn ws-outline" onclick="return go('dashboard','Momentum')">See Momentum</button></p>
+      <p style="margin:10px 0 0"><button class="btn small-btn ws-outline" onclick="return go('dashboard','Momentum')">See Standing</button></p>
     </div>`;
     // Activity (§6.1): invites, applications, visits, posts,
     // licenses, Momentum gains, and reviews — from real records.
@@ -13005,33 +13260,52 @@ async function loadCreatorHome() {
       if (b.creatorReview) feed.push({ kind: "visits", icon: "star", at: b.creatorReview.createdAt || (b.post && b.post.firstAt), title: `${b.businessName} rated you ${b.creatorReview.stars} stars`, meta: b.creatorReview.comment || "", btn: null });
     }
     for (const l of lrs) feed.push({ kind: "licenses", icon: "play", at: l.createdAt, title: l.status === "pending" ? `License request from ${l.businessName}` : `License ${l.status}: ${l.businessName}`, meta: `Your fee $${fmtPrice(l.fee)} · 90 days`, btn: l.status === "pending" ? "Review" : null, act: () => go("dashboard", "Earnings") });
-    for (const e of (m.ledger || [])) feed.push({ kind: "momentum", icon: "bolt", at: e.at, title: `${e.points > 0 ? "+" : ""}${e.points} Momentum`, meta: e.label || "", btn: null });
+    for (const e of (m.ledger || [])) feed.push({ kind: "momentum", icon: "bolt", at: e.at, title: `${e.points > 0 ? "+" : ""}${e.points} Standing`, meta: e.label || "", btn: null });
     feed.sort((x, y) => (String(y.at || "") < String(x.at || "") ? -1 : 1));
     state.crFeed = feed.slice(0, 14);
     state.crFeedActs = state.crFeed.map((f) => f.act || null);
     crFeedKind = "all";
     const caughtLinks = [
       { label: "See offers near you", act: () => { state.crOffersSeg = "foryou"; go("dashboard", "Offers"); } },
-      { label: "Check your Momentum", act: () => go("dashboard", "Momentum") },
+      { label: "Check your Standing", act: () => go("dashboard", "Momentum") },
     ];
     // V4.1: the Sig tab renders this same queue and badges its
     // count — one queue, two doors (see renderSigTab).
     state.sigQueue = queue;
     state.sigQueueLinks = caughtLinks;
     state.sigQueueCount = queue.length;
+    // Build -119: the design's Home — greeting, ONE Next list
+    // (queue + setup steps merged, Sig's prompts inside it),
+    // the shapes row (earned, local donut, Standing), then
+    // Activity. The old snapshot strip and Momentum card are
+    // folded into the shapes row; nothing they carried is lost.
+    const earnedSeries = (() => {
+      const out = [];
+      const nowM = new Date(); nowM.setDate(1); nowM.setHours(0, 0, 0, 0);
+      for (let i = 5; i >= 0; i--) {
+        const t0 = new Date(nowM.getFullYear(), nowM.getMonth() - i, 1).getTime();
+        const t1 = new Date(nowM.getFullYear(), nowM.getMonth() - i + 1, 1).getTime();
+        let sum = 0;
+        for (const b of bookings) {
+          if (b.paidLane && b.paidLane.escrowState === "released" && b.post) {
+            const at = Date.parse(b.post.firstAt || b.post.submittedAt || "");
+            if (at >= t0 && at < t1) sum += Number(b.paidLane.creatorNet) || 0;
+          }
+        }
+        out.push(Math.round(sum * 100) / 100);
+      }
+      return out;
+    })();
     el.innerHTML = `
-    ${wsHead("Home", { sub: "Start here. Sig shows you what needs you, in order.", subKey: "cr-home" })}
-    <div class="home-greet"><div class="hg-hi">Hi, ${esc(firstName)}</div><div class="hg-line">${esc(greetLine)}</div></div>
+    ${wsHead("Home", { sub: "Start here. One list, in the order things need you.", subKey: "cr-home" })}
+    <div class="home-greet"><div class="hg-hi">Hi, ${esc(firstName)}</div><div class="hg-line serif-line">${esc(greetLine)}</div></div>
     ${strikeStatusHtml(u)}
-    ${sigQueueHtml(queue, { links: caughtLinks, leadShort: greetDup, askBox: true })}
-    ${checklistHtml(steps)}
-    ${gateDone ? snapshotHtml(snapCells, "", "Numbers") : ""}
-    ${momentumCard}
+    ${nextStepsHtml(queue, steps, { caughtUp: sigQueueHtml([], { links: caughtLinks, askBox: true }) })}
+    ${gateDone ? creatorShapesHtml119({ earned: money.released || 0, earnedSeries, localPct: pctSet ? Number(cprof.localAudiencePct) : null, points: m.points || 0 }) : ""}
     <h3 style="margin:20px 0 0">Activity</h3>
     <div id="cr-feed">${crFeedHtml()}</div>
     ${askSigRowHtml()}`;
-    wireSigQueue(el, queue, caughtLinks);
-    wireChecklist(el, steps);
+    wireNextSteps(el, queue, steps, caughtLinks);
     renderBottomNav();
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
@@ -13137,7 +13411,7 @@ function creatorProfileHtml(u) {
     ${u.profileCompletion && !u.profileCompletion.complete ? `<div class="notice blue">${T("Your profile is not finished yet. Still needed to go live:", "Tu perfil aún no está terminado. Todavía falta para estar activo:")} ${u.profileCompletion.items.filter((i) => i.required && !i.done).map((i) => esc(i.label)).join(", ")}. ${T("Fill in the fields below and save. Businesses cannot see you, and you cannot take offers, until your profile is finished.", "Llena los campos de abajo y guarda. Los negocios no pueden verte, y no puedes aceptar ofertas, hasta que tu perfil esté terminado.")}</div>` : ""}
     <form onsubmit="return doUpdateCreator(event)">
       <div class="fgroup tint" id="profile-basics">
-      <h3 class="four-basics-heading" style="margin:0 0 4px">${T("Finish these four to get booked", "Completa estos cuatro datos para que te contraten")}</h3>
+      <h3 class="four-basics-heading" id="pf-basics" style="margin:0 0 4px">${T("Finish these four to get booked", "Completa estos cuatro datos para que te contraten")}</h3>
       <p class="small" style="margin:0 0 12px">${T("Home city, audience size, at least one category, and your local %. Everything below is optional and can be added any time.", "Tu ciudad, el tamaño de tu audiencia, al menos una categoría y tu % local. Todo lo que sigue es opcional y puedes agregarlo cuando quieras.")}</p>
       ${u.market === unlistedLabel()
         ? `<div class="form-2col"><div class="field"><label>${T("Your city (not an open market yet)", "Tu ciudad (aún no es un mercado abierto)")} <span class="req-badge">${T("Required", "Obligatorio")}</span></label><input id="p-city-text" value="${esc(u.city || "")}"></div>
@@ -13149,7 +13423,7 @@ function creatorProfileHtml(u) {
         <div class="form-2col">
           ${stackRows.map(stackRowHtml).join("")}
         </div>
-        <p class="small muted">Total audience: <strong id="p-stack-total">${fmtNum(totalAudienceOf(c))}</strong> across every platform. Businesses see the total and the breakdown. Skip any platform you do not use (leave it at 0). Completing 3 or more platforms earns Momentum points. <strong>SIGNL starts at 500 total followers across your platforms</strong>; until your total reaches 500, this step stays open and businesses cannot see you yet.</p>
+        <p class="small muted">Total audience: <strong id="p-stack-total">${fmtNum(totalAudienceOf(c))}</strong> across every platform. Businesses see the total and the breakdown. Skip any platform you do not use (leave it at 0). Completing 3 or more platforms earns Standing points. <strong>SIGNL starts at 500 total followers across your platforms</strong>; until your total reaches 500, this step stays open and businesses cannot see you yet.</p>
       </div>
       <div class="field"><label>${T("What you create in", "En qué categorías creas")} <span class="req-badge">${T("Required", "Obligatorio")}</span></label><div class="checkrow">${cats}</div></div>
       <div class="field"><label>${T("Your local reach (local audience share, %)", "Tu alcance local (parte local de tu audiencia, %)")} <span class="req-badge">${T("Required", "Obligatorio")}</span></label><input type="number" id="p-localpct" min="0" max="100" value="${c.localAudiencePct === null || c.localAudiencePct === undefined ? "" : c.localAudiencePct}"><p class="small muted">${LOCAL_PCT_HELP}</p></div>
@@ -13158,7 +13432,7 @@ function creatorProfileHtml(u) {
       <p class="fg-kicker">${T("About you", "Sobre ti")} <span class="opt-badge">${T("Optional", "Opcional")}</span></p>
       <div class="field"><label>${T("Your name", "Tu nombre")}</label><input id="p-name" value="${esc(u.name || "")}"><p class="small muted">${T("Shown to businesses next to your handle. A quick claim starts with your handle here; put your real name in.", "Se muestra a los negocios junto a tu usuario. Un reclamo rápido empieza con tu usuario aquí; pon tu nombre real.")}</p></div>
       <div class="field"><label>${T("Your pronouns (optional)", "Tus pronombres (opcional)")}</label><input id="p-pronouns" value="${esc(c.pronouns || "")}" placeholder="${T("For example: she/her", "Por ejemplo: ella")}" maxlength="40"><p class="small muted">${T("Shown next to your first name on your public profile, only if you set it. Your first name is what the public page shows; never your surname.", "Se muestra junto a tu primer nombre en tu perfil público, solo si lo pones. Tu perfil público muestra tu primer nombre; nunca tu apellido.")}</p></div>
-      <div class="field"><label>${T("Your photos", "Tus fotos")}</label>
+      <div class="field" id="pf-photos"><label>${T("Your photos", "Tus fotos")}</label>
         <div id="p-gallery">${galleryHtml(u)}</div>
         <p class="small muted">${T("Up to 6 photos. The first is your cover: the one on your cards. Changes save as you make them. PNG, JPEG, or WebP, under 2.5 MB each.", "Hasta 6 fotos. La primera es tu portada: la de tus tarjetas. Los cambios se guardan al hacerlos. PNG, JPEG o WebP, menos de 2.5 MB cada una.")}</p>
         <p class="small lane-err" id="gallery-err" style="display:none"></p>
@@ -13244,7 +13518,7 @@ function myRatingHtml(card) {
   const count = card.ratingCount !== undefined ? card.ratingCount : (card.reviewSummary ? card.reviewSummary.count : 0);
   const avg = card.ratingAvg !== undefined && card.ratingAvg !== null ? card.ratingAvg : (card.reviewSummary ? card.reviewSummary.average : null);
   if (count >= 1 && avg !== null && avg !== undefined) {
-    return `<div class="showcase-block"><h4>Your rating</h4><p style="margin:0">${starsHtml(avg)} <strong>${esc(String(avg))}</strong> from ${count} business${count === 1 ? "" : "es"}. Businesses see your rating next to your Momentum points: two separate numbers, and ratings never change your points.</p></div>`;
+    return `<div class="showcase-block"><h4>Your rating</h4><p style="margin:0">${starsHtml(avg)} <strong>${esc(String(avg))}</strong> from ${count} business${count === 1 ? "" : "es"}. Businesses see your rating next to your Standing points: two separate numbers, and ratings never change your points.</p></div>`;
   }
   return `<div class="showcase-block"><h4>Your rating</h4><p class="muted" style="margin:0">Businesses rate you after visits. Your rating appears here after your first rated visit.</p></div>`;
 }
@@ -13481,13 +13755,19 @@ async function loadCreatorOffers() {
   }
   try { localStorage.setItem("signl-offers-seen", String(Date.now())); } catch (e) { /* private mode */ }
   if (!state.crOffersSeg) state.crOffersSeg = "foryou";
-  const seg = state.crOffersSeg;
+  // Build -119: the design's segments — New / Applied / Booked /
+  // Done. Legacy values keep working everywhere they are set
+  // (queue items, Sig, deep links): foryou and invited both
+  // land on New, waiting lands on Booked. state.crOffersSeg
+  // itself is never rewritten here.
+  const seg = ({ foryou: "new", invited: "new", waiting: "booked" })[state.crOffersSeg] || state.crOffersSeg;
   el.innerHTML = `
     ${wsHead("Offers", { sub: "Flip through offers near you. Apply to the ones you want.", subKey: "cr-offers" })}
     <div id="cr-offers-segs"></div>
     <div id="cr-seg-body">${skelHtml("Loading offers...", 2)}</div>
     <div id="aud-block"></div>`;
-  let directCount = 0, appliedCount = 0;
+  let directCount = 0, appliedCount = 0, bookedCount = 0, doneCount = 0;
+  let bkAll = [];
   try {
     const [od, bd, ad] = await Promise.all([
       api("GET", "/offers").catch(() => ({ offers: [] })),
@@ -13497,26 +13777,36 @@ async function loadCreatorOffers() {
     const bookedIds = new Set((bd.bookings || []).filter((b) => b.offerId && b.status !== "cancelled" && b.status !== "expired").map((b) => b.offerId));
     directCount = (od.offers || []).filter((o) => o.lane !== "open" && !bookedIds.has(o.id)).length;
     appliedCount = (ad.applications || []).filter((a) => a.status === "applied").length;
+    bkAll = bd.bookings || [];
+    bookedCount = bkAll.filter((b) => { const v = visitSegOf(b, "creator"); return v === "upcoming" || v === "needs"; }).length;
+    doneCount = bkAll.filter((b) => visitSegOf(b, "creator") === "done").length;
     state.waitCounts = state.waitCounts || {};
     state.waitCounts.crInvites = directCount;
   } catch (e) { /* counts are an enhancement */ }
   const segHost = document.getElementById("cr-offers-segs");
   if (!segHost) return;
   segHost.innerHTML = wsTabs([
-    { label: "For you", on: seg === "foryou", onclick: "return crOffersSetSeg('foryou')" },
-    { label: "Invited", count: directCount || null, on: seg === "invited", onclick: "return crOffersSetSeg('invited')" },
+    { label: "New", count: directCount || null, on: seg === "new", onclick: "return crOffersSetSeg('new')" },
     { label: "Applied", count: appliedCount || null, on: seg === "applied", onclick: "return crOffersSetSeg('applied')" },
+    { label: "Booked", count: bookedCount || null, on: seg === "booked", onclick: "return crOffersSetSeg('booked')" },
+    { label: "Done", count: doneCount || null, on: seg === "done", onclick: "return crOffersSetSeg('done')" },
   ]);
   renderBottomNav();
   const body = document.getElementById("cr-seg-body");
   if (!body) return;
-  if (seg === "foryou") {
-    body.innerHTML = `<div id="open-board"></div>`;
+  if (seg === "new") {
+    body.innerHTML = `<div id="direct-offers">${skelHtml("Loading your direct offers...", 1)}</div><h3 style="margin:22px 0 0">Open offers</h3><div id="open-board"></div>`;
+    loadDirectOffers();
     loadOpenBoard();
   } else if (seg === "applied") {
     body.innerHTML = `<div id="my-apps"></div><div id="creator-notes" class="mt"></div>`;
     loadMyApplications();
     loadNotificationsInto("creator-notes");
+  } else if (seg === "booked" || seg === "done") {
+    const rows = bkAll.filter((b) => seg === "done" ? visitSegOf(b, "creator") === "done" : (visitSegOf(b, "creator") === "upcoming" || visitSegOf(b, "creator") === "needs"));
+    body.innerHTML = rows.length
+      ? `<div class="wcard" style="padding-top:8px;padding-bottom:8px">${rows.map((b) => visitsRowWrap(b, "creator", visitSegOf(b, "creator"))).join("")}</div>`
+      : `<div class="empty-card"><div class="ec-t">${seg === "done" ? "Nothing finished yet" : "Nothing booked yet"}</div><div class="ec-s">${seg === "done" ? "Visits you complete land here, with their posts." : "When a business books you, the visit lands here with its code."}</div></div>`;
   } else {
     body.innerHTML = `<div id="direct-offers">${skelHtml("Loading your direct offers...", 1)}</div>`;
     loadDirectOffers();
@@ -13541,7 +13831,7 @@ async function loadDirectOffers() {
     const bookedOfferIds = new Set((bkData.bookings || []).filter((b) => b.offerId && b.status !== "cancelled" && b.status !== "expired").map((b) => b.offerId));
     const mine = (data.offers || []).filter((o) => o.lane !== "open");
     if (!mine.length) {
-      direct.innerHTML = `<div class="empty-state"><span class="es-badge"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z"/></svg></span><h3>No invites yet</h3><p>When a business sends an offer straight to you, it lands here. Offers open to every creator in your market live under For you.</p></div>`;
+      direct.innerHTML = `<div class="empty-state"><span class="es-badge"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z"/></svg></span><h3>No invites yet</h3><p>When a business sends an offer straight to you, it lands here. Offers open to every creator in your market are right below, under Open offers.</p></div>`;
       return;
     }
     direct.innerHTML = `<div class="vx-stagger">` + mine.map((o) => { const rights = o.visitRights || rightsForVisit(o.kind); const booked = bookedOfferIds.has(o.id); return `
@@ -14270,12 +14560,14 @@ function segEmptyLine(seg, role) {
       upcoming: "Nothing coming up. Booked visits with a date or window land here.",
       waiting: "Nothing waiting on a post. Redeemed visits land here until the post arrives.",
       done: "Nothing finished yet. Delivered visits land here.",
+      today: "Nothing today. Visits booked for today land here.",
     }[seg] || "";
   }
   return {
     upcoming: "Nothing coming up. Booked visits land here.",
     needs: "Nothing needs your post. Redeemed visits land here until you add the post link.",
     done: "Nothing finished yet. Delivered visits land here.",
+    codes: "No codes yet. When a visit is booked, its code lands here.",
   }[seg] || "";
 }
 function visitsRowWrap(b, role, seg) {
@@ -14308,11 +14600,19 @@ async function loadMyVisits(role) {
     const bookings = data.bookings || [];
     state.nudgeBookings = state.nudgeBookings || {};
     for (const b of bookings) state.nudgeBookings[b.id] = b;
+    // Build -119 segments (design): creators get a Codes view
+    // (the big code, one tap from the bar); businesses get
+    // Today first. The stored segment ids underneath do not
+    // move — "done" is only relabeled Past — and codes/today
+    // are views over the same bookings, never new state.
     const segs = role === "business"
-      ? [["needs", "Needs a time"], ["upcoming", "Upcoming"], ["waiting", "Waiting on post"], ["done", "Done"]]
-      : [["upcoming", "Upcoming"], ["needs", "Needs your post"], ["done", "Done"]];
+      ? [["today", "Today"], ["needs", "Needs a time"], ["upcoming", "Upcoming"], ["waiting", "Waiting on post"], ["done", "Past"]]
+      : [["upcoming", "Upcoming"], ["needs", "Needs your post"], ["codes", "Codes"], ["done", "Past"]];
     const counts = {};
     for (const b of bookings) { const s = visitSegOf(b, role); counts[s] = (counts[s] || 0) + 1; }
+    const isToday119 = (iso) => { const dt = new Date(iso || ""); const n = new Date(); return !Number.isNaN(dt.getTime()) && dt.getFullYear() === n.getFullYear() && dt.getMonth() === n.getMonth() && dt.getDate() === n.getDate(); };
+    counts.today = bookings.filter((b) => visitSegOf(b, "business") === "upcoming" && (isToday119(b.visitDate) || isToday119(b.redeemBy))).length;
+    counts.codes = bookings.filter((b) => { const v = visitSegOf(b, "creator"); return (v === "upcoming" || v === "needs") && !!b.code; }).length;
     let seg = state.visitsSeg;
     if (!seg || !segs.some(([id]) => id === seg)) {
       // Default to the first segment that actually holds visits
@@ -14322,7 +14622,11 @@ async function loadMyVisits(role) {
       seg = (segs.find(([id]) => (counts[id] || 0) > 0) || segs[0])[0];
     }
     state.visitsSeg = seg;
-    const rows = bookings.filter((b) => visitSegOf(b, role) === seg);
+    const rows = seg === "codes"
+      ? bookings.filter((b) => { const v = visitSegOf(b, "creator"); return (v === "upcoming" || v === "needs") && !!b.code; })
+      : seg === "today"
+        ? bookings.filter((b) => visitSegOf(b, "business") === "upcoming" && (isToday119(b.visitDate) || isToday119(b.redeemBy)))
+        : bookings.filter((b) => visitSegOf(b, role) === seg);
     const head = wsHead("Visits", { sub: role === "creator" ? "Your visits, and what each one needs from you." : "Who is coming in, and what each visit still needs.", subKey: role === "creator" ? "cr-visits" : "biz-visits" });
     let bizTop = "";
     if (role === "business") {
@@ -14333,7 +14637,9 @@ async function loadMyVisits(role) {
     }
     const segTabs = wsTabs(segs.map(([id, label]) => ({ label, count: counts[id] || null, on: seg === id, onclick: `return visitsSetSeg('${id}')` })));
     let bodyHtml;
-    if (!bookings.length) {
+    if (seg === "codes" && rows.length) {
+      bodyHtml = `<div class="vx-stagger">${rows.map((b) => `<div class="wcard" style="text-align:center"><div class="kpi-label">${esc(b.businessName || "")} · ${esc(b.title || "Visit")}</div><div class="bigcode119" style="margin:8px 0">${esc(b.code)}</div><p class="small muted" style="margin:0">Show this code at the counter. Your visit counts the moment they enter it.</p></div>`).join("")}</div>`;
+    } else if (!bookings.length) {
       bodyHtml = `<div class="empty-card"><div class="ec-t">No visits yet</div><div class="ec-s">${role === "creator" ? "When a business picks you, or you accept an invite, it lands here." : "When you select a creator or one accepts your invite, the visit lands here."}</div></div><p class="center">${role === "creator" ? `<button class="btn ws-primary" onclick="return go('dashboard','Offers')">See offers</button>` : `<button class="btn ws-primary" onclick="return go('dashboard','Campaign Setup')">Post an offer</button>`}</p>`;
     } else if (!rows.length) {
       bodyHtml = `<div class="empty-card"><div class="ec-t">Nothing here</div><div class="ec-s">${esc(segEmptyLine(seg, role))}</div></div>`;
@@ -14470,7 +14776,7 @@ function visitCard(b, role) {
     </div>`;
   }
   if (role === "creator" && b.status === "expired") {
-    html += `<p class="small">This offer's window passed without a redemption, so it expired. It counts as a no-show on your Momentum. If something went wrong, tell us at hello@joinsignl.com.</p>`;
+    html += `<p class="small">This offer's window passed without a redemption, so it expired. It counts as a no-show on your Standing. If something went wrong, tell us at hello@joinsignl.com.</p>`;
   }
   if (b.honorReportedAt) {
     html += role === "creator"
@@ -14547,12 +14853,12 @@ function visitCard(b, role) {
     const licActive = !!lic && Date.parse(lic.windowEndsAt) > Date.now();
     const licReq = (state.licenseRequests || []).filter((l) => l.postId === post.id).slice().sort((x, y) => (x.createdAt < y.createdAt ? 1 : -1))[0] || null;
     if (post.adUseDeclaredAt) {
-      html += `<p class="small"><span class="badge ok">Running as an ad</span> Declared ${fmtDate(post.adUseDeclaredAt)}. The creator was notified and earned +25 Momentum.${role === "business" && post.adUseWindowEndsAt ? ` ${b.kind === "paid" ? "This paid visit's" : "This license's"} ad window runs to ${fmtDate(post.adUseWindowEndsAt)}.` : ""}</p>`;
+      html += `<p class="small"><span class="badge ok">Running as an ad</span> Declared ${fmtDate(post.adUseDeclaredAt)}. The creator was notified and earned +25 Standing.${role === "business" && post.adUseWindowEndsAt ? ` ${b.kind === "paid" ? "This paid visit's" : "This license's"} ad window runs to ${fmtDate(post.adUseWindowEndsAt)}.` : ""}</p>`;
     } else if (role === "business") {
       if (b.kind === "paid") {
-        html += `<button class="btn small-btn ghost" onclick="declareAdUse('${post.id}', 'paid')">Use in an ad</button> <span class="small muted">This was a paid visit: the standard license is included, repost and ad use for 90 days from the post date. The creator is notified and earns +25 Momentum.</span> <button class="btn small-btn ghost" onclick="return extendLicence('${post.id}', ${b.creatorLicensingFee || 0}, '${esc(new Date(Date.parse(post.submittedAt || post.createdAt || Date.now()) + 90 * 86400000).toISOString())}')">Extend or license separately</button>`;
+        html += `<button class="btn small-btn ghost" onclick="declareAdUse('${post.id}', 'paid')">Use in an ad</button> <span class="small muted">This was a paid visit: the standard license is included, repost and ad use for 90 days from the post date. The creator is notified and earns +25 Standing.</span> <button class="btn small-btn ghost" onclick="return extendLicence('${post.id}', ${b.creatorLicensingFee || 0}, '${esc(new Date(Date.parse(post.submittedAt || post.createdAt || Date.now()) + 90 * 86400000).toISOString())}')">Extend or license separately</button>`;
       } else if (licActive) {
-        html += `<p class="small"><span class="badge ok">Licensed for ads</span> Through ${fmtDate(lic.windowEndsAt)}: repost and ad use covered.</p><button class="btn small-btn ghost" onclick="declareAdUse('${post.id}', 'license')">Use in an ad</button> <span class="small muted">The creator is notified and earns +25 Momentum.</span>`;
+        html += `<p class="small"><span class="badge ok">Licensed for ads</span> Through ${fmtDate(lic.windowEndsAt)}: repost and ad use covered.</p><button class="btn small-btn ghost" onclick="declareAdUse('${post.id}', 'license')">Use in an ad</button> <span class="small muted">The creator is notified and earns +25 Standing.</span>`;
       } else if (licReq && licReq.status === "pending") {
         html += `<p class="small muted">License requested at $${fmtPrice(licReq.fee)}: waiting on the creator. You pay only if they approve, and the 90 days run from their yes.</p>`;
       } else if (b.creatorLicensingFee) {
@@ -14578,7 +14884,7 @@ function visitCard(b, role) {
         .join(" &middot; ");
       html += role === "business"
         ? `<p class="small">Your comp produced <strong>${nums}</strong> (creator-reported).</p>`
-        : `<p class="small">You reported ${nums} (+5 Momentum). Thanks: numbers like these are what bring businesses back.</p>`;
+        : `<p class="small">You reported ${nums} (+5 Standing). Thanks: numbers like these are what bring businesses back.</p>`;
       if (typeof post.intent === "number") {
         html += role === "business"
           ? `<p class="small"><strong>${fmtNum(post.intent)} intent</strong> (saves + shares: people planning to come)${post.returnScore ? ` &middot; <strong>Return score ${post.returnScore.score} of 100</strong>. Built from saves, shares, and counted customers.` : ` &middot; Return score: not enough data yet.`}</p>`
@@ -14591,7 +14897,7 @@ function visitCard(b, role) {
       html += `
     <form onsubmit="return submitPostPerformance(event, '${b.id}')">
       <h4 style="margin:10px 0 4px">Add post numbers</h4>
-      <p class="small muted">A week in, how did the post do? Optional numbers; reporting earns +5 Momentum points, and they price the media side of the business's modeled estimate.</p>
+      <p class="small muted">A week in, how did the post do? Optional numbers; reporting earns +5 Standing points, and they price the media side of the business's modeled estimate.</p>
       <div class="form-2col">
         <div class="field"><label>Views</label><input type="number" id="perf-views-${b.id}" min="0" placeholder="Optional"></div>
         <div class="field"><label>Likes</label><input type="number" id="perf-likes-${b.id}" min="0" placeholder="Optional"></div>
@@ -14599,7 +14905,7 @@ function visitCard(b, role) {
         <div class="field"><label>Shares</label><input type="number" id="perf-shares-${b.id}" min="0" placeholder="Optional"></div>
         <div class="field"><label>Saves</label><input type="number" id="perf-saves-${b.id}" min="0" placeholder="Optional"></div>
       </div>
-      <button class="btn small-btn" type="submit">Report numbers</button> <span class="small muted">+5 Momentum</span>
+      <button class="btn small-btn" type="submit">Report numbers</button> <span class="small muted">+5 Standing</span>
     </form>`;
     }
   }
@@ -14690,17 +14996,17 @@ function visitCard(b, role) {
       html += `<div class="review-item"><span class="small muted">${esc(b.businessName)} rated you</span><br>${starsHtml(b.creatorReview.stars)} <span class="small">${esc(b.creatorReview.comment || "")}</span></div>`;
     }
     if (b.businessReview) {
-      html += `<div class="review-item"><span class="small muted">Your review of ${esc(b.businessName)}</span><br>${starsHtml(b.businessReview.stars)} <span class="small">${esc(b.businessReview.text || "")}</span> <span class="saved">+10 Momentum earned</span></div>`;
+      html += `<div class="review-item"><span class="small muted">Your review of ${esc(b.businessName)}</span><br>${starsHtml(b.businessReview.stars)} <span class="small">${esc(b.businessReview.text || "")}</span> <span class="saved">+10 Standing earned</span></div>`;
     } else {
       html += `
     <form onsubmit="return submitBusinessReview(event, '${b.id}')">
       <h4 style="margin:10px 0 4px">Review this business</h4>
-      <p class="small muted">Optional, and honest is the whole point: leaving a review earns +10 Momentum at any star rating. SIGNL never pays for positive reviews, and nobody can ask you for one.</p>
+      <p class="small muted">Optional, and honest is the whole point: leaving a review earns +10 Standing at any star rating. SIGNL never pays for positive reviews, and nobody can ask you for one.</p>
       <div class="form-2col">
         <div class="field"><label>Your rating</label>${chipSelectHtml("bizrev-stars-" + b.id, [{ value: "5", label: "5 stars" }, { value: "4", label: "4 stars" }, { value: "3", label: "3 stars" }, { value: "2", label: "2 stars" }, { value: "1", label: "1 star" }], "5", null, false)}</div>
         <div class="field"><label>Your words (optional)</label><input id="bizrev-text-${b.id}" maxlength="500" placeholder="How was the visit, honestly?"></div>
       </div>
-      <button class="btn small-btn" type="submit">Leave review</button> <span class="small muted">+10 Momentum</span>
+      <button class="btn small-btn" type="submit">Leave review</button> <span class="small muted">+10 Standing</span>
     </form>`;
     }
     html += reviewLinksBlockHtml(b.businessReviewLinks);
@@ -14712,7 +15018,7 @@ function visitCard(b, role) {
       html += `
     <form onsubmit="return submitCreatorReview(event, '${b.id}')">
       <h4 style="margin:10px 0 4px">Rate this creator</h4>
-      <p class="small muted">The visit is complete and the post is in. Rate how the visit and the post went. The rating shows on the creator's profile next to their Momentum points: two separate numbers, and ratings never change anyone's points. One rating per visit, and it cannot be edited after.</p>
+      <p class="small muted">The visit is complete and the post is in. Rate how the visit and the post went. The rating shows on the creator's profile next to their Standing points: two separate numbers, and ratings never change anyone's points. One rating per visit, and it cannot be edited after.</p>
       <div class="form-2col">
         <div class="field"><label>Your rating</label>${chipSelectHtml("crev-stars-" + b.id, [{ value: "5", label: "5 stars" }, { value: "4", label: "4 stars" }, { value: "3", label: "3 stars" }, { value: "2", label: "2 stars" }, { value: "1", label: "1 star" }], "5", null, false)}</div>
         <div class="field"><label>Your words (optional, 280 characters)</label><input id="crev-comment-${b.id}" maxlength="280" placeholder="How was the visit and the post?"></div>
@@ -14786,7 +15092,7 @@ function perfUpdateFormHtml(b, ctx) {
   <div class="card mb perf-update-card">
     <form onsubmit="return submitPostPerformanceUpdate(event, '${b.id}', '${ctx}')">
       <h4 style="margin:4px 0">Update post numbers</h4>
-      <p class="small muted">${esc(b.title)} at ${esc(b.businessName)}: posts keep growing after week one. Fresh numbers keep the business's modeled estimate honest, and updating earns +5 Momentum.</p>
+      <p class="small muted">${esc(b.title)} at ${esc(b.businessName)}: posts keep growing after week one. Fresh numbers keep the business's modeled estimate honest, and updating earns +5 Standing.</p>
       ${growth}
       <div class="form-2col">
         <div class="field"><label>Views</label><input type="number" id="perfu-views-${b.id}" min="0" value="${num(perf.views)}"></div>
@@ -14927,8 +15233,8 @@ function growthNudgeHtml() {
 
 async function declareAdUse(postId, basis) {
   const msg = basis === "license"
-    ? "Use this post in an ad? Your license on this post covers repost and ad use inside its 90-day window. The creator is notified and earns +25 Momentum."
-    : "Use this post in an ad? This paid visit includes the standard license: repost and ad use for 90 days from the post date. The creator is notified and earns +25 Momentum.";
+    ? "Use this post in an ad? Your license on this post covers repost and ad use inside its 90-day window. The creator is notified and earns +25 Standing."
+    : "Use this post in an ad? This paid visit includes the standard license: repost and ad use for 90 days from the post date. The creator is notified and earns +25 Standing.";
   if (!confirm(msg)) return;
   try { await api("POST", `/posts/${postId}/ad-use`, {}); loadMyVisits("business"); }
   catch (err) { alert(err.message); }
@@ -15137,8 +15443,15 @@ async function loadFoundingBusinessHome() {
   state.sigQueueCount = items.length;
   const host = document.getElementById("fbz-sig-queue");
   if (host && items.length) {
-    host.innerHTML = sigQueueHtml(items, {});
-    wireSigQueue(host, items, []);
+    // Build -119: the founding queue renders as the same ONE
+    // Next list; the register item leaves it whenever the
+    // setup checklist card above carries the same task.
+    const clF = state._setupChecklist;
+    const nxItems = items.filter((it) => !(clF && !clF.allDone && (it.text || "").indexOf("Your register isn't connected yet") === 0));
+    if (nxItems.length) {
+      host.innerHTML = nextStepsHtml(nxItems, [], {});
+      wireNextSteps(host, nxItems, [], []);
+    }
     renderNav();
   }
 }
@@ -15355,6 +15668,14 @@ async function loadPartnerSummary(force) {
   return state.partnerData;
 }
 
+// Partner area strip (Build -119, design): Overview /
+// Businesses / Money / Reports is one area system across the
+// partner console; the strip rides under each screen's head.
+function partnerStrip119(tab) {
+  const item = (id, label, t) => ({ label, on: tab === id, onclick: `return go('dashboard','${t}')` });
+  return wsTabs([item("Home", "Overview", "Home"), item("Businesses", "Businesses", "Businesses"), item("Earnings", "Money", "Earnings"), item("Performance", "Reports", "Performance")]);
+}
+function ptEarnSetSeg(v) { state.partnerEarnSeg = v; renderPartnerTab("Earnings"); return false; }
 function renderPartnerTab(tab) {
   const el = document.getElementById("tab-body");
   if (!el || !state.partnerData) return;
@@ -15377,6 +15698,12 @@ function renderPartnerTab(tab) {
   coBrandShellOn(el, pBrand);
   const pBrandHead = coBrandHeadHtml(pBrand);
   if (pBrandHead) el.insertAdjacentHTML("afterbegin", pBrandHead);
+  // Build -119: the area strip rides under the head on the
+  // four area screens (Overview, Businesses, Money, Reports).
+  if (["Home", "Businesses", "Earnings", "Performance"].includes(tab)) {
+    const h = el.querySelector(".ws-head");
+    if (h) h.insertAdjacentHTML("afterend", partnerStrip119(tab));
+  }
   if (tab === "Sig") wireScopedSig(el);
   if (tab === "Home") loadPartnerScopeHeads(d);
   if (tab === "Earnings") loadPartnerPacks();
@@ -15565,7 +15892,8 @@ function partnerHomeHtml(d) {
   <div class="card mb">
     <div class="flex-between"><strong>The funnel so far</strong><span class="badge info">${esc(p.markets.join(" · "))}</span></div>
     <p class="small" style="margin:8px 0 0">Creators: ${cs.claimed} claimed, ${cs.approved} approved, ${cs.complete} complete. Businesses: ${bs.applied} joined, ${bs.active} active. ${t.offersLive} offer${t.offersLive === 1 ? "" : "s"} live, ${t.visitsCompleted} visit${t.visitsCompleted === 1 ? "" : "s"} completed, ${t.postsLive} post${t.postsLive === 1 ? "" : "s"} live.</p>
-  </div>`}
+  </div>
+  ${t.visitsCompleted === 0 ? `<p class="small muted" style="margin:2px 2px 12px">0 visits yet. Visits start when your first businesses go live — each one lands here the day it happens.</p>` : ""}`}
   <div class="card mb">
     <div class="flex-between"><strong>Share your link</strong><span class="badge ok">Next step</span></div>
     <p class="small muted" style="margin:6px 0 10px">Every creator who claims through your link is credited to you, permanently. Your QR codes and business link are under Links &amp; assets.</p>
@@ -15692,13 +16020,12 @@ function partnerEarningsHtml(d) {
     <div class="stat-cell"><div class="stat-num"><em>${sym}${fmtPrice(e.accruedMonthly)}</em></div><div class="stat-lbl">Accrued to you / mo</div></div>
     <div class="stat-cell"><div class="stat-num">${sym}${fmtPrice(e.paidTotal)}</div><div class="stat-lbl">Paid to date</div></div>
   </div>
-  ${e.basis === "deal" ? `
-  <div class="panel mt"><h3 style="margin-top:0">Your deal${e.dealLabel ? `: ${esc(e.dealLabel)}` : ""}</h3>
-  <p class="small muted">Accrued to date: <strong>${sym}${fmtPrice(e.accruedTotal)}</strong> · Paid to date: <strong>${sym}${fmtPrice(e.paidTotal)}</strong> · Still outstanding: <strong>${sym}${fmtPrice(e.owedTotal)}</strong>. These are the same figures SIGNL's own books show, computed from your deal terms.${e.guaranteeState ? ` Right now: ${esc(e.guaranteeState.toLowerCase())} on your guarantee.` : ""}</p>
-  ${(d.territory || []).map((t) => `<p class="small" style="margin:6px 0 0"><strong>${esc(t.market)}:</strong> ${t.attributionScope === "market_wide" ? `every business in ${esc(t.market)} counts toward this deal, and new sign-ups there are stamped to you automatically` : `only businesses you bring in count toward this deal`}${t.exclusivity === "market_conditional" ? " · your exclusivity in this market is conditional, on the terms in the deal" : ""}.</p>`).join("")}</div>` : ""}
-  ${e.hasPaidRevenue ? `
-  <div class="panel mt"><h3 style="margin-top:0">Accrued, not yet paid</h3>
-  <p class="small muted">These amounts accrue from the subscriptions on file in your markets. Payouts begin once partner payments are switched on; until then this page is the ledger, and accrued amounts are never shown as paid.</p></div>` : `
+  ${wsTabs([
+    { label: "Fund", on: state.partnerEarnSeg !== "returns", onclick: "return ptEarnSetSeg('fund')" },
+    { label: "Returns", on: state.partnerEarnSeg === "returns", onclick: "return ptEarnSetSeg('returns')" },
+  ])}
+  ${state.partnerEarnSeg === "returns" ? `
+  ${e.hasPaidRevenue ? "" : `
   <div class="panel mt"><h3 style="margin-top:0">No paid revenue yet</h3>
   <p class="small muted">No business in your markets has a paid subscription on file yet, so nothing has accrued. The moment one does, it appears here at your ${e.sharePct == null ? "org's" : `${e.sharePct}%`} share. Amounts on this page are always labeled accrued until a payment actually happens.</p></div>`}
   ${d.atFill ? `<p class="small muted">At full fill, your share runs about $${fmtNum(d.atFill.partnerYearly)} a year across your ${d.atFill.markets === 1 ? "market" : `${d.atFill.markets} markets`}. Modeled from the average partner market (about ${fmtNum(d.atFill.businessesPerMarket)} businesses at $2,958 a year), not a promise.</p>` : ""}
@@ -15710,7 +16037,18 @@ function partnerEarningsHtml(d) {
       <a class="btn" id="pt-pack-link" href="/api/partner/pack?month=${new Date().toISOString().slice(0, 7)}">Download the month pack</a>
     </div>
     <p class="small muted" id="pt-pack-note" style="margin:8px 0 0"></p>
-  </div>`}`;
+  </div>`}` : `
+  ${e.basis === "deal" ? `
+  <div class="panel mt"><h3 style="margin-top:0">Your deal${e.dealLabel ? `: ${esc(e.dealLabel)}` : ""}</h3>
+  <p class="small muted">Accrued to date: <strong>${sym}${fmtPrice(e.accruedTotal)}</strong> · Paid to date: <strong>${sym}${fmtPrice(e.paidTotal)}</strong> · Still outstanding: <strong>${sym}${fmtPrice(e.owedTotal)}</strong>. These are the same figures SIGNL's own books show, computed from your deal terms.${e.guaranteeState ? ` Right now: ${esc(e.guaranteeState.toLowerCase())} on your guarantee.` : ""}</p>
+  ${(d.territory || []).map((t) => `<p class="small" style="margin:6px 0 0"><strong>${esc(t.market)}:</strong> ${t.attributionScope === "market_wide" ? `every business in ${esc(t.market)} counts toward this deal, and new sign-ups there are stamped to you automatically` : `only businesses you bring in count toward this deal`}${t.exclusivity === "market_conditional" ? " · your exclusivity in this market is conditional, on the terms in the deal" : ""}.</p>`).join("")}</div>` : ""}
+  ${e.hasPaidRevenue ? `
+  <div class="panel mt"><h3 style="margin-top:0">Accrued, not yet paid</h3>
+  <p class="small muted">These amounts accrue from the subscriptions on file in your markets. Payouts begin once partner payments are switched on; until then this page is the ledger, and accrued amounts are never shown as paid.</p></div>` : `
+  <div class="panel mt"><h3 style="margin-top:0">Nothing accrued yet</h3>
+  <p class="small muted">Your share starts the moment a business in your markets pays. It lands here first, then pays out under Returns.</p></div>`}
+  `}
+  `;
 }
 
 // The pack month picker (Build -106): options come from the
@@ -16457,14 +16795,34 @@ async function loadBusinessHome() {
     state.sigQueue = queue;
     state.sigQueueLinks = caughtLinks;
     state.sigQueueCount = queue.length;
+    // Build -119: ONE Next list. The setup-gap queue items
+    // that duplicate the setup checklist (About, standing
+    // hours, staff PIN, register) leave the queue whenever the
+    // checklist card itself is on the page — the checklist
+    // keeps its editors (Square connect, till chips, test
+    // redemption), the Next list keeps every decision. The
+    // hero is the most urgent item; with nothing waiting, the
+    // hero is the design's: pick creators first, plumbing
+    // later (the checklist sits under Money, not in front of
+    // the roster).
+    const clOn = !!(d.setupChecklist && !d.setupChecklist.allDone);
+    const setupGap = (t) => clOn && (t.indexOf("Your business page is missing its About") === 0 || t.indexOf("Set your standing hours once") === 0 || t.indexOf("Set your staff PIN so your team can redeem") === 0 || t.indexOf("Your register isn't connected yet") === 0);
+    const nxQueueAll = queue.filter((it) => !setupGap(it.text || ""));
+    let nxQueue = nxQueueAll;
+    if (nxQueueAll.length) {
+      const hi = nxQueueAll.findIndex((it) => (it.cls || 9) <= 2);
+      if (hi > 0) nxQueue = [nxQueueAll[hi]].concat(nxQueueAll.slice(0, hi), nxQueueAll.slice(hi + 1));
+    } else {
+      nxQueue = [{ cls: 1, at: Date.now(), text: "Pick your first creators: see who is local, and what they charge.", btn: "Find creators", act: () => go("dashboard", "Discover"), short: "Pick your first creators" }];
+    }
     el.innerHTML = `
     <div data-dash>
-    ${wsHead("Home", { sub: "Start here. Sig shows you what needs you, in order.", subKey: "biz-home" })}
-    <div class="home-greet"><div class="hg-hi">Hi, ${esc(bz.businessName || u.name || "")}</div><div class="hg-line">${esc(greetLine)}</div></div>
+    ${wsHead("Home", { sub: "Start here. One list, in the order things need you.", subKey: "biz-home" })}
+    <div class="home-greet"><div class="hg-hi">Hi, ${esc(bz.businessName || u.name || "")}</div><div class="hg-line serif-line">${esc(greetLine)}</div></div>
     ${sqNoticeHtml()}
+    ${nextStepsHtml(nxQueue, [], { caughtUp: sigQueueHtml([], { links: caughtLinks, askBox: true }) })}
     ${d.setupChecklist ? setupChecklistHtml(d.setupChecklist) : ""}
     ${d.marketLive ? "" : `<div class="notice blue" style="margin-top:14px"><strong>Your market has not launched yet.</strong> Businesses sign up when we are ready to launch. Draft offers now; publishing switches on at launch.</div>`}
-    ${sigQueueHtml(queue, { links: caughtLinks, leadShort: greetDup, askBox: true })}
     ${snapshotHtml(snapCells, "This fills in once your campaigns are live. When creators start visiting and posting, you will see applications, visits, posts, and the local reach they delivered, right here.", "Analytics")}
     <div id="perf-card"></div>
     <h3 style="margin:20px 0 0">Activity</h3>
@@ -16472,7 +16830,7 @@ async function loadBusinessHome() {
     ${hasNumbers ? `<button type="button" class="more-row results-row" onclick="return go('dashboard','Analytics')"><span class="more-ic">${bnIcon("bars")}</span><span class="more-tx"><span class="more-label">Results</span><span class="more-sub">What your campaigns did.</span></span><span class="more-chev">›</span></button>` : ""}
     ${askSigRowHtml()}
     </div>`;
-    wireSigQueue(el, queue, caughtLinks);
+    wireNextSteps(el, nxQueue, [], caughtLinks);
     loadPerformanceCard(el);
     renderBottomNav();
   } catch (err) {
@@ -16778,6 +17136,11 @@ async function renderRegularsTab() {
     if (!document.getElementById("tab-body")) return;
     el.innerHTML = `
     ${wsHead("My Regulars", { sub: "Creators who have visited you and posted. Book them again in one tap.", subKey: "biz-regulars" })}
+    ${wsTabs([
+      { label: "Browse", on: false, onclick: "return go('dashboard','Discover')" },
+      { label: "My Regulars", on: true, onclick: "return go('dashboard','Regulars')" },
+      { label: "Saved", on: false, onclick: "return go('dashboard','Favorites')" },
+    ])}
     ${rows.length
       ? `<div class="wcard" style="padding-top:8px;padding-bottom:8px">${rows.map(regularRowHtml).join("")}</div>
          <p class="small muted" style="margin-top:10px">Book again copies the last visit's deal into a new draft in Campaigns. Nothing sends until you publish the draft. Your notes are yours alone: creators never see them, and no other business can.</p>`
@@ -16882,6 +17245,7 @@ async function renderContentTab() {
     } catch (e) { /* rows simply render without the action */ }
     el.innerHTML = `
     ${wsHead("Posts & licenses", { sub: "Every post about you, and the ones you can reuse.", subKey: "biz-content" })}
+    ${bizMoneyStrip119("licenses")}
     <div id="biz-lic-expiry"></div>
     <div class="rights-line">${bnIcon("shield")}<span><strong>Seeing a post here is not the right to reuse it.</strong> You may always reshare the post inside Instagram, with credit. Paid bookings include one standard license: 90 days to repost and run ads. A comped post can be licensed at the creator's listed fee, and the creator approves each use. That license is what makes the post UGC you can use: repost it and run it as an ad for those 90 days. Every license below shows its end date, and no license ever runs longer than 90 days.</span></div>
     ${lib.length ? `<div class="track-card"><span class="feed-dot acc">${bnIcon("image")}</span><div class="tc-main"><div class="tc-t">Post tracking is on</div><div class="tc-s">${h.postsTracked30 || 0} post${(h.postsTracked30 || 0) === 1 ? "" : "s"} tracked in the last 30 days. SIGNL tracks every visit's post from the creator's report, timed against the 48 hour standard.</div></div><button type="button" class="btn small-btn ws-outline" onclick="return go('dashboard','Visits & Posts')">Visits</button></div>`
@@ -17059,7 +17423,7 @@ function crStatsHtml(d) {
   const deals = s.deals || {};
   const pts = s.points || {};
   const lvlName = typeof pts.level === "string" ? pts.level : ((pts.level || {}).name || "");
-  const pointsStrip = `<p class="small" style="margin:10px 0 0">Momentum: <strong>${fmtNum(pts.total || 0)} points</strong>${lvlName ? ` &middot; Level: <strong>${esc(lvlName)}</strong>` : ""} (all time — points never reset by period). ${POINTS_WHY_SHORT}</p>`;
+  const pointsStrip = `<p class="small" style="margin:10px 0 0">Standing: <strong>${fmtNum(pts.total || 0)} points</strong>${lvlName ? ` &middot; Level: <strong>${esc(lvlName)}</strong>` : ""} (all time — points never reset by period). ${POINTS_WHY_SHORT}</p>`;
   if (!s.hasData) {
     return `<div class="panel">${head}
       <p class="small" style="margin:8px 0 0">Nothing has landed yet. When businesses book you and your posts go live, this fills in with your money — held, released and paid, each with its reason — plus your offers, deals and comps for the period you pick.</p>${pointsStrip}</div>`;
@@ -17088,7 +17452,7 @@ async function renderAnalyticsTab() {
     const series = h.series30 || [];
     const lb = h.leaderboard || [];
     const lib = h.contentLibrary || [];
-    const head = wsHead("Results", { sub: "Your creator program in numbers, all from your real records.", subKey: "biz-results" });
+    const head = wsHead("Results", { sub: "Your creator program in numbers, all from your real records.", subKey: "biz-results" }) + bizMoneyStrip119("receipts");
     const f30 = h.funnel30 || {};
     const funnelSum = (f30.invited || 0) + (f30.claimed || 0) + (f30.visited || 0) + (f30.posted || 0);
     const appsWin = anaDays === 7 ? (h.applications7 || 0) : (h.applications30 || 0);
@@ -17529,8 +17893,9 @@ async function loadFavorites() {
   try {
     const data = await api("GET", "/favorites");
     const favHead = `${wsHead("Find creators", { sub: "Your saved creators. One tap invites them again, prefilled from your last visit together.", subKey: "biz-discover" })}${wsTabs([
-      { label: "Discover", on: false, onclick: "return go('dashboard','Discover')" },
-      { label: "Favorites", on: true, onclick: "return go('dashboard','Favorites')" },
+      { label: "Browse", on: false, onclick: "return go('dashboard','Discover')" },
+      { label: "My Regulars", on: false, onclick: "return go('dashboard','Regulars')" },
+      { label: "Saved", on: true, onclick: "return go('dashboard','Favorites')" },
     ])}`;
     if (!data.favorites.length) {
       el.innerHTML = `${favHead}<div class="empty-card"><div class="ec-t">No favorites yet</div><div class="ec-s">Tap the heart on any creator while browsing Find creators and they are saved here: your standing roster for repeat visits.</div></div><p class="center"><button class="btn ws-primary" onclick="return go('dashboard','Discover')">Browse creators</button></p>`;
@@ -17847,8 +18212,9 @@ async function loadDiscover() {
   el.innerHTML = `
     ${wsHead("Find creators", { sub: "Flip through micro-influencers near you. Invite the ones who fit.", subKey: "biz-discover" })}
     ${wsTabs([
-      { label: "Discover", on: true, onclick: "return go('dashboard','Discover')" },
-      { label: "Favorites", on: false, onclick: "return go('dashboard','Favorites')" },
+      { label: "Browse", on: true, onclick: "return go('dashboard','Discover')" },
+      { label: "My Regulars", on: false, onclick: "return go('dashboard','Regulars')" },
+      { label: "Saved", on: false, onclick: "return go('dashboard','Favorites')" },
     ])}
     ${foundingDisc ? `<p class="small" style="margin:10px 0 0"><strong>Ranked by how local their audience is, not by follower count.</strong></p>
     <p class="small muted" style="margin:4px 0 0">${esc(foundingBizPlace(u))}'s founding roster is still joining. New creators show up here as they finish their pages.</p>` : ""}
@@ -17869,7 +18235,7 @@ async function loadDiscover() {
       <div><label>Total audience min</label><input type="number" id="f-fmin" min="0" placeholder="Any"></div>
       <div><label>Total audience max</label><input type="number" id="f-fmax" min="0" placeholder="Any"></div>
       <div><label>Min % followers in market</label><input type="number" id="f-minlocal" min="0" max="100" placeholder="Any"></div>
-      <div><label>Sort by</label><select id="f-sort"><option value="">Founding order</option><option value="score">Local Impact Score</option><option value="momentum">Momentum (roster standing)</option><option value="fit">Best fit</option></select></div>
+      <div><label>Sort by</label><select id="f-sort"><option value="">Founding order</option><option value="score">Local Impact Score</option><option value="momentum">Standing</option><option value="fit">Best fit</option></select></div>
       <div><label>&nbsp;</label><label style="font-weight:500"><input type="checkbox" id="f-paid" style="width:auto"> Has a paid rate (paid bookings) only</label></div>
       <div><label>&nbsp;</label><button class="btn small-btn" style="width:100%" onclick="runDiscover()">Search</button></div>
     </div>
@@ -18136,10 +18502,10 @@ function renderOffersSegTabs() {
   const all = state.myOffers || [];
   const wc = state.waitCounts || {};
   host.innerHTML = wsTabs([
-    { label: "Current", count: all.filter((o) => o.status === "open" || o.status === "filled").length || null, on: state.offersSeg === "live", onclick: "return offersSetSeg('live')" },
+    { label: "Live", count: all.filter((o) => o.status === "open" || o.status === "filled").length || null, on: state.offersSeg === "live", onclick: "return offersSetSeg('live')" },
     { label: "Drafts", count: all.filter((o) => o.status === "draft").length || null, on: state.offersSeg === "drafts", onclick: "return offersSetSeg('drafts')" },
     { label: "Applicants", count: wc.bizApps || null, on: state.offersSeg === "applicants", onclick: "return offersSetSeg('applicants')" },
-    { label: "Past", count: all.filter(offerIsArchived).length || null, on: state.offersSeg === "past", onclick: "return offersSetSeg('past')" },
+    { label: "Done", count: all.filter(offerIsArchived).length || null, on: state.offersSeg === "past", onclick: "return offersSetSeg('past')" },
   ]);
 }
 function offersSetSeg(seg) {
@@ -19429,10 +19795,10 @@ function renderOfferList() {
     title = "Drafts"; emptyT = "No drafts saved yet"; emptyS = isFoundingBusiness(state.user) ? "Build a campaign in Set up a campaign and it saves here, ready for opening day." : "A campaign you save instead of sending waits here.";
   } else if (seg === "past") {
     rows = all.filter(offerIsArchived);
-    title = "Past"; emptyT = "Nothing finished yet"; emptyS = "Campaigns you close, or that run their course, collect here.";
+    title = "Done"; emptyT = "Nothing finished yet"; emptyS = "Campaigns you close, or that run their course, collect here.";
   } else {
     rows = all.filter((o) => !offerIsArchived(o) && o.status !== "draft");
-    title = "Current"; emptyT = "No campaigns running yet"; emptyS = "Campaigns you send show up here while they run. Your first one takes about a minute to set up.";
+    title = "Live"; emptyT = "No campaigns running yet"; emptyS = "Campaigns you send show up here while they run. Your first one takes about a minute to set up.";
   }
   list.innerHTML = `<h3 class="camp-h">${title}</h3>${rows.length
     ? `<div class="vx-stagger">${rows.map((o) => offerCardHtml(o)).join("")}</div>`
@@ -19637,7 +20003,7 @@ async function viewApplicants(offerId) {
     el.innerHTML = `
     <div class="panel">
       <div class="flex-between"><h3 style="margin:0">Applicants: ${esc(o.title)}</h3><button class="btn small-btn ghost" onclick="document.getElementById('applicant-stack').innerHTML=''">Close</button></div>
-      <p class="small muted">${o.filledCount || 0} of ${o.spots} spots filled &middot; selection deadline ${fmtDate(o.selectionDeadline)}. Ranked by local fit, Local Impact Score, Momentum, and reliability; founding order breaks ties. Anyone you do not pick is released with a notification when spots fill or the deadline passes.</p>
+      <p class="small muted">${o.filledCount || 0} of ${o.spots} spots filled &middot; selection deadline ${fmtDate(o.selectionDeadline)}. Ranked by local fit, Local Impact Score, Standing, and reliability; founding order breaks ties. Anyone you do not pick is released with a notification when spots fill or the deadline passes.</p>
       ${o.earlyAccessUntil ? `<p class="small"><strong>In early access until ${esc(fmtDay(o.earlyAccessUntil))} at ${esc(fmtTime(o.earlyAccessUntil))}.</strong> Charter creators, the founding class, see new offers first, so this stack is still small on purpose. It opens to every creator at that time.</p>` : ""}
       ${apps.length ? apps.map((a) => applicantCardHtml(o, a)).join("") : `<p class="muted">No applications yet. Offers with a value in the typical range for their tier and a window of 3+ days fill first.</p>`}
       ${waiting.length ? "" : apps.length ? `<p class="small muted">Nobody is waiting on this offer right now.</p>` : ""}
@@ -20018,6 +20384,7 @@ function renderPlanTab() {
     </div>`).join("");
   el.innerHTML = `
   ${wsHead("Plan & billing", { sub: "Your founding plan, your micro-influencer visits, and your billing.", subKey: "biz-plan" })}
+  ${bizMoneyStrip119("plan")}
   <div class="panel mt tint">
     <h3>Your plan</h3>
     <p>Current plan: <strong>${esc(u.business.planName)}</strong>, selected ${fmtDate(u.business.planSelectedAt)}.</p>
@@ -20032,7 +20399,8 @@ function renderPlanTab() {
     ${billingLive()
       ? `<p class="small muted mt">Starts your subscription on Stripe's secure checkout page. Your founding rate stays locked while your plan stays active.</p>`
       : `<p class="small muted mt">Billing is not live yet, so saving only records your selection: no card is charged, and your founding pricing stays locked while you stay subscribed. When billing opens, Jeff, SIGNL's founder, sends the payment step by hand.</p>`}
-  </div>`
+  </div>
+  ${moreLinksHtml119()}`
 }
 
 // Staff redemption settings (owner): the staff PIN, the business
@@ -21663,8 +22031,15 @@ function setAdminMarketGroup(value) {
   return false;
 }
 
+// Build -119: market cards lead with a photo (the design's
+// market cards). Place photography only — Hampton Roads,
+// Nashville and London have real place photos in the bundle;
+// every other market gets the gradient header.
+const MARKET_PHOTOS_119 = { "Hampton Roads": "/assets/market-vb.jpg", "Nashville": "/assets/market-nashville.jpg", "London": "/assets/market-london.jpg" };
 function adminMarketCardHtml(m) {
+  const photo = MARKET_PHOTOS_119[m.name];
   return `<div class="panel mkt-card">
+    ${photo ? `<div class="mkt-photo" style="background-image:url('${photo}')" role="img" aria-label="${esc(m.label)}"></div>` : `<div class="mkt-photo grad" aria-hidden="true"></div>`}
     <div class="mkt-card-head"><div><strong class="mkt-name">${esc(m.label)}</strong><br><span class="muted small">${esc(m.country || "United States")}</span></div>${m.live ? `<span class="badge ok">Live</span>` : `<span class="badge info">Founding only</span>`}</div>
     <div class="mkt-reach"><span class="mkt-reach-num">${fmtNum(m.combinedFollowers || 0)}</span> <span class="muted small">combined followers (as reported by creators), across ${fmtNum(m.creatorsListed || 0)} listed ${m.creatorsListed === 1 ? "creator" : "creators"}</span></div>
     <p class="mkt-stats"><strong>${m.creatorsApproved}</strong> approved creators &middot; <strong>${m.creatorsApprovedComplete || 0}</strong> complete &middot; <strong>${m.creatorsPending}</strong> pending<br><span class="muted small"><strong>${m.businessesApproved}</strong> approved businesses &middot; ${m.businessesFounding || 0} on the founding list &middot; ${m.businessesActive || 0} active</span></p>
@@ -22157,7 +22532,7 @@ async function loadApplications() {
         <td data-label="Applied">${fmtDate(u.createdAt)}</td>
         <td>${u.status === "pending"
           ? `<button class="btn small-btn" onclick="reviewApp('${u.id}','approve')">Approve</button> <button class="btn small-btn danger" onclick="toggleRejectEditor('${u.id}')">Reject</button><div id="rej-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px"><div class="field"><label>Reason (optional, named in their rejection email)</label><select id="rej-reason-${u.id}"><option value="">No reason given</option><option>Not local enough</option><option>Audience too small for this wave</option><option>Content not a fit</option><option>Market not open yet</option><option>Other</option></select></div><button class="btn small-btn danger" onclick="confirmRejectApp('${u.id}')">Send rejection</button></div>`
-          : `<span class="badge ${u.status === "approved" ? "ok" : "bad"}">${esc(u.status)}</span>${u.tester ? ` <span class="badge warn">Tester</span>` : ""}${u.role === "creator" && u.status === "approved" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="setTester('${u.id}', ${u.tester ? "false" : "true"}, 'creator')">${u.tester ? "Move to roster" : "Move to Tester"}</button>` : ""}${u.role === "creator" && u.status === "approved" ? `<br><button class="btn small-btn" style="margin-top:6px" onclick="adminMsgComposeTo('${u.id}')">Message</button>` : ""}`}${u.role === "business" && u.status === "approved" && businessAccessState(u) !== "active" ? `<br><button class="btn small-btn" style="margin-top:6px" onclick="activateBusiness('${u.id}')">Activate business</button>` : ""}${u.role === "business" ? `<br><button class="btn small-btn" style="margin-top:6px" onclick="adminViewBusiness('${u.id}')">View account</button><br><button class="btn small-btn ghost" style="margin-top:6px" onclick="adminSendSigninLink('${u.id}')">Send sign-in link</button>` : u.role === "creator" ? `<br><button class="btn small-btn" style="margin-top:6px" onclick="adminViewAccount('${u.id}')">View account</button><br><button class="btn small-btn ghost" style="margin-top:6px" onclick="adminSendSigninLink('${u.id}')">Send sign-in link</button>` : ""}${(u.role === "creator" || u.role === "business") ? "<br>" + correctEmailEditorHtml(u, "ce") : ""}${u.role === "business" && u.status === "approved" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="setTester('${u.id}', ${u.tester ? "false" : "true"}, 'business')">${u.tester ? "Move to roster" : "Move to Tester"}</button>` : ""}${u.role === "business" && u.business ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleReviewLinks('${u.id}')">Review links</button><div id="rl-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px">${["google", "yelp", "tripadvisor", "facebook"].map((k) => `<div class="field"><label>${esc(k)}</label><input id="rl-${k}-${u.id}" type="url" value="${esc((u.business.reviewLinks || {})[k] || "")}" placeholder="https://"></div>`).join("")}<button class="btn small-btn" onclick="saveReviewLinks('${u.id}')">Save review links</button></div><br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleDiscountEditor('${u.id}')">Code discount</button><div id="disc-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px"><label style="font-weight:500"><input type="checkbox" id="disc-enabled-${u.id}" style="width:auto" ${u.business.discountEnabled ? "checked" : ""}> Code discounts on (business's opt-in)</label><div class="field"><label>Discount percent (5 to 50)</label><input id="disc-pct-${u.id}" type="number" min="5" max="50" step="1" value="${esc(String(u.business.discountPct == null ? 20 : u.business.discountPct))}"></div><button class="btn small-btn" onclick="saveDiscountSetting('${u.id}')">Save code discount</button></div>` : ""}${u.role === "creator" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="adminViewCreator('${u.id}')">View profile</button>` : ""}${u.role === "creator" && u.market === "Dubai" ? `<br><label class="small" style="display:block;margin-top:8px">Advertiser Permit (UAE)<select onchange="saveAdvertiserPermit('${u.id}', this.value)" style="margin-top:4px"><option value="not_started" ${!u.advertiserPermit || u.advertiserPermit === "not_started" ? "selected" : ""}>Not started</option><option value="in_progress" ${u.advertiserPermit === "in_progress" ? "selected" : ""}>In progress</option><option value="done" ${u.advertiserPermit === "done" ? "selected" : ""}>Done</option></select></label>` : ""}${(u.role === "creator" || u.role === "business") ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleAttributionEditor('${u.id}')">Partner attribution</button><div id="attr-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px"><div class="small" style="margin-bottom:6px">${u.partnerId ? `Attributed to <strong>${esc(u.partnerName || "a partner")}</strong>` : (u.signupSource && u.signupSource.indexOf("partner-") === 0 ? "Came through a partner link, but is not stamped to the partner yet" : "Not attributed to a partner (direct)")}</div><div class="field"><label>Attribute to</label><select id="attr-partner-${u.id}"><option value="">Direct — no partner</option>${adminPartnerChoices.map((p) => `<option value="${p.id}" ${u.partnerId === p.id ? "selected" : ""}>${esc(p.name)} (${esc(p.code)})</option>`).join("")}</select></div><div class="field"><label>Reason (kept with the change)</label><input id="attr-reason-${u.id}" type="text" placeholder="Why is this changing?"></div><button class="btn small-btn" onclick="saveAttribution('${u.id}')">Save attribution</button></div>` : ""}</td>
+          : `<span class="badge ${u.status === "approved" ? "ok" : "bad"}">${esc(u.status)}</span>${u.tester ? ` <span class="badge warn">Tester</span>` : ""}<br><button type="button" class="btn small-btn ghost" style="margin-top:6px" onclick="toggleRowMore('${u.id}')">More ▾</button><span class="row-more" id="rowmore-${u.id}" style="display:none">${u.role === "creator" && u.status === "approved" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="setTester('${u.id}', ${u.tester ? "false" : "true"}, 'creator')">${u.tester ? "Move to roster" : "Move to Tester"}</button>` : ""}${u.role === "creator" && u.status === "approved" ? `<br><button class="btn small-btn" style="margin-top:6px" onclick="adminMsgComposeTo('${u.id}')">Message</button>` : ""}`}${u.role === "business" && u.status === "approved" && businessAccessState(u) !== "active" ? `<br><button class="btn small-btn" style="margin-top:6px" onclick="activateBusiness('${u.id}')">Activate business</button>` : ""}${u.role === "business" ? `<br><button class="btn small-btn" style="margin-top:6px" onclick="adminViewBusiness('${u.id}')">View account</button><br><button class="btn small-btn ghost" style="margin-top:6px" onclick="adminSendSigninLink('${u.id}')">Send sign-in link</button>` : u.role === "creator" ? `<br><button class="btn small-btn" style="margin-top:6px" onclick="adminViewAccount('${u.id}')">View account</button><br><button class="btn small-btn ghost" style="margin-top:6px" onclick="adminSendSigninLink('${u.id}')">Send sign-in link</button>` : ""}${(u.role === "creator" || u.role === "business") ? "<br>" + correctEmailEditorHtml(u, "ce") : ""}${u.role === "business" && u.status === "approved" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="setTester('${u.id}', ${u.tester ? "false" : "true"}, 'business')">${u.tester ? "Move to roster" : "Move to Tester"}</button>` : ""}${u.role === "business" && u.business ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleReviewLinks('${u.id}')">Review links</button><div id="rl-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px">${["google", "yelp", "tripadvisor", "facebook"].map((k) => `<div class="field"><label>${esc(k)}</label><input id="rl-${k}-${u.id}" type="url" value="${esc((u.business.reviewLinks || {})[k] || "")}" placeholder="https://"></div>`).join("")}<button class="btn small-btn" onclick="saveReviewLinks('${u.id}')">Save review links</button></div><br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleDiscountEditor('${u.id}')">Code discount</button><div id="disc-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px"><label style="font-weight:500"><input type="checkbox" id="disc-enabled-${u.id}" style="width:auto" ${u.business.discountEnabled ? "checked" : ""}> Code discounts on (business's opt-in)</label><div class="field"><label>Discount percent (5 to 50)</label><input id="disc-pct-${u.id}" type="number" min="5" max="50" step="1" value="${esc(String(u.business.discountPct == null ? 20 : u.business.discountPct))}"></div><button class="btn small-btn" onclick="saveDiscountSetting('${u.id}')">Save code discount</button></div>` : ""}${u.role === "creator" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="adminViewCreator('${u.id}')">View profile</button>` : ""}${u.role === "creator" && u.market === "Dubai" ? `<br><label class="small" style="display:block;margin-top:8px">Advertiser Permit (UAE)<select onchange="saveAdvertiserPermit('${u.id}', this.value)" style="margin-top:4px"><option value="not_started" ${!u.advertiserPermit || u.advertiserPermit === "not_started" ? "selected" : ""}>Not started</option><option value="in_progress" ${u.advertiserPermit === "in_progress" ? "selected" : ""}>In progress</option><option value="done" ${u.advertiserPermit === "done" ? "selected" : ""}>Done</option></select></label>` : ""}${(u.role === "creator" || u.role === "business") ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleAttributionEditor('${u.id}')">Partner attribution</button><div id="attr-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px"><div class="small" style="margin-bottom:6px">${u.partnerId ? `Attributed to <strong>${esc(u.partnerName || "a partner")}</strong>` : (u.signupSource && u.signupSource.indexOf("partner-") === 0 ? "Came through a partner link, but is not stamped to the partner yet" : "Not attributed to a partner (direct)")}</div><div class="field"><label>Attribute to</label><select id="attr-partner-${u.id}"><option value="">Direct — no partner</option>${adminPartnerChoices.map((p) => `<option value="${p.id}" ${u.partnerId === p.id ? "selected" : ""}>${esc(p.name)} (${esc(p.code)})</option>`).join("")}</select></div><div class="field"><label>Reason (kept with the change)</label><input id="attr-reason-${u.id}" type="text" placeholder="Why is this changing?"></div><button class="btn small-btn" onclick="saveAttribution('${u.id}')">Save attribution</button></div>` : ""}</span></td>
       </tr>`;
     };
     const pend = (data.pending || []).filter(adminAppInFilter);
@@ -22365,9 +22740,9 @@ async function loadLeaderboard() {
     const data = await api("GET", "/admin/leaderboard");
     const rows = data.leaderboard || [];
     el.innerHTML = `
-      <p class="muted small">Recruiters ranked by Momentum points: +3 for every creator who signs up through their invite link, +10 more when that creator is approved. Points come only from stored sign-up records.</p>
+      <p class="muted small">Recruiters ranked by Standing points: +3 for every creator who signs up through their invite link, +10 more when that creator is approved. Points come only from stored sign-up records.</p>
       ${rows.length ? `<div class="table-wrap panel"><table>
-        <tr><th>#</th><th>Creator</th><th>Handle</th><th>Market</th><th>Sign-ups via link</th><th>Approved</th><th>Momentum points</th></tr>
+        <tr><th>#</th><th>Creator</th><th>Handle</th><th>Market</th><th>Sign-ups via link</th><th>Approved</th><th>Standing points</th></tr>
         ${rows.map((r, i) => `<tr><td data-label="Rank">${i + 1}</td><td><strong>${esc(r.name)}</strong></td><td>${r.primaryProfileUrl ? `<a href="${esc(r.primaryProfileUrl)}" target="_blank" rel="noopener">@${esc(r.handle)}</a>` : `@${esc(r.handle)}`}</td><td>${esc(r.market)}</td><td data-label="Sign-ups via link">${r.signups}</td><td data-label="Approved">${r.approved}</td><td data-label="Momentum points"><strong>${r.points}</strong></td></tr>`).join("")}
       </table></div>` : `<p class="muted">No creator has a credited sign-up yet. Leaderboard rows appear as soon as someone joins through an invite link.</p>`}`;
   } catch (err) {
@@ -22402,6 +22777,15 @@ function toggleAttributionEditor(userId) {
   if (d) d.style.display = d.style.display === "none" ? "block" : "none";
   return false;
 }
+// Build -119 (design fix d): an application row leads with
+// its decision (Approve / Reject, or the status badge) and ONE
+// More menu — every other action and editor lives behind it.
+function toggleRowMore(userId) {
+  const host = document.getElementById(`rowmore-${userId}`);
+  if (host) host.style.display = host.style.display === "none" ? "" : "none";
+  return false;
+}
+
 async function saveAttribution(userId) {
   const sel = document.getElementById("attr-partner-" + userId);
   const reasonEl = document.getElementById("attr-reason-" + userId);
@@ -23888,7 +24272,7 @@ function previewDiscoverHtml() {
     <div><label>Total audience min</label><input type="number" id="pvf-fmin" min="0" placeholder="Any"></div>
     <div><label>Total audience max</label><input type="number" id="pvf-fmax" min="0" placeholder="Any"></div>
     <div><label>Min % followers in market</label><input type="number" id="pvf-minlocal" min="0" max="100" placeholder="Any"></div>
-    <div><label>Sort by</label><select id="pvf-sort"><option value="">Founding order</option><option value="score">Local Impact Score</option><option value="momentum">Momentum (roster standing)</option><option value="fit">Best fit</option></select></div>
+    <div><label>Sort by</label><select id="pvf-sort"><option value="">Founding order</option><option value="score">Local Impact Score</option><option value="momentum">Standing</option><option value="fit">Best fit</option></select></div>
     <div><label>&nbsp;</label><label style="font-weight:500"><input type="checkbox" id="pvf-paid" style="width:auto"> Has a paid rate (paid bookings) only</label></div>
     <div><label>&nbsp;</label><button class="btn small-btn" style="width:100%" onclick="runPreviewDiscover()">Search</button></div>
   </div>
@@ -24271,7 +24655,7 @@ function pvBookingCard(b) {
       <p class="small muted">Simulation only: in the live app the business reports this tally on the visit and it is saved. Here nothing is recorded, and the dashboard keeps its original tallies.</p>
     </form>`;
     html += b.kind === "paid"
-      ? `<button class="btn small-btn ghost" disabled>Use in an ad</button> <span class="small muted">Ad use comes with the standard license: this paid visit includes repost plus ads for 90 days from the post date; the creator is notified and earns +25 Momentum. Disabled in preview; try it live from a paid visit.</span>`
+      ? `<button class="btn small-btn ghost" disabled>Use in an ad</button> <span class="small muted">Ad use comes with the standard license: this paid visit includes repost plus ads for 90 days from the post date; the creator is notified and earns +25 Standing. Disabled in preview; try it live from a paid visit.</span>`
       : `<button class="btn small-btn ghost" disabled>License for ads</button> <span class="small muted">This was a comp visit: native sharing only until licensed. In the live app, the business can license this post for 90 days of repost and ad use at the creator's listed licensing fee, only with their approval. Disabled in preview.</span>`;
   }
   if (b.review) {
@@ -25237,6 +25621,11 @@ async function pilotLoadMe() {
 
 function renderPilotDash() {
   let tab = state.tab || "Overview";
+  if (tab === "More") {
+    app.innerHTML = `<div class="wrap"><div id="tab-body"><p class="muted">Loading...</p></div></div>`;
+    renderMoreScreen();
+    return;
+  }
   if (!PILOT_TABS.includes(tab)) tab = "Overview";
   state.tab = tab;
   app.innerHTML = `<div class="wrap"><div id="tab-body"><p class="muted">Loading your portal...</p></div></div>`;
@@ -25262,6 +25651,14 @@ function renderPilotTab(tab) {
   loadPilotOverview(el);
 }
 
+// Pilot area strip (Build -119, design): the portal's four
+// screens read as one area system. The fund lives on Overview,
+// so the strip is Overview / Businesses / Results / Report.
+function pilotStrip119(tab) {
+  const item = (id, label, t) => ({ label, on: tab === id, onclick: `return go('dashboard','${t}')` });
+  return wsTabs([item("Overview", "Overview", "Overview"), item("Businesses", "Businesses", "Businesses"), item("Results", "Results", "Results"), item("Report", "Report", "Report")]);
+}
+function pilotBizSetSeg(v) { state.pilotBizSeg = v; loadPilotBusinesses(); return false; }
 function pilotHeadHtml(pilot) {
   return `${coBrandHeadHtml(pilot.brand)}<h2 style="margin-bottom:2px">${esc(pilot.name)}</h2>
   <p class="muted" style="margin-top:0">${esc(pilot.partnerName)} &middot; ${esc(pilot.marketName)} &middot; Impact Portal</p>
@@ -25280,6 +25677,7 @@ async function loadPilotOverview(el) {
     const stat = (label, val) => `<div class="panel" style="flex:1;min-width:130px;text-align:center"><div style="font-size:26px;font-weight:700">${val}</div><div class="muted small">${esc(label)}</div></div>`;
     el.innerHTML = `
     ${pilotHeadHtml(p)}
+    ${pilotStrip119("Overview")}
     <div class="panel">
       <h3 style="margin-top:0">The fund</h3>
       <div style="display:flex;gap:14px;flex-wrap:wrap;text-align:center">
@@ -25287,7 +25685,7 @@ async function loadPilotOverview(el) {
         <div style="flex:1;min-width:120px"><div style="font-size:24px;font-weight:700">${pilotMoney(f.spentCents)}</div><div class="muted small">Spent so far</div></div>
         <div style="flex:1;min-width:120px"><div style="font-size:24px;font-weight:700">${pilotMoney(f.remainingCents)}</div><div class="muted small">Left to spend</div></div>
       </div>
-      <div style="background:#eef3ee;border-radius:999px;height:12px;margin-top:14px;overflow:hidden"><div style="background:#2f9e44;height:100%;width:${pct}%"></div></div>
+      <div class="pilot-fundbar" style="margin-top:14px"><i style="width:${pct}%"></i></div>
       <p class="small muted" style="margin-bottom:0">The fund pays for the first creator visit at each chosen business, at the creator's own listed rate. Nothing else is charged to it.</p>
     </div>
     <div style="display:flex;gap:12px;flex-wrap:wrap">
@@ -25296,6 +25694,7 @@ async function loadPilotOverview(el) {
       ${stat("Posts live", c.postsLive)}
       ${stat("Joined SIGNL after", c.continued)}
     </div>
+    ${c.visitsDone === 0 && c.businesses > 0 ? `<p class="small muted" style="margin:10px 2px 0">0 visits yet. Visits start once the chosen businesses confirm their first creators — each one appears here as it happens.</p>` : ""}
     <div class="panel">
       <h3 style="margin-top:0">Customers who came in</h3>
       <div style="display:flex;gap:14px;flex-wrap:wrap;text-align:center">
@@ -25319,17 +25718,24 @@ async function loadPilotBusinesses(el) {
   if (!el) return;
   try {
     const data = await api("GET", pilotApiUrl("/pilot/businesses"));
-    const rows = data.businesses || [];
+    const allRows = data.businesses || [];
+    const bizSeg = state.pilotBizSeg === "visits" ? "visits" : "chosen";
+    const rows = bizSeg === "visits" ? allRows.filter((r) => (r.visitsDone || 0) > 0) : allRows;
     el.innerHTML = `
     ${pilotHeadHtml(data.pilot)}
+    ${pilotStrip119("Businesses")}
     <h3>The chosen businesses</h3>
     <p class="muted small">Every business in this pilot, where it stands, and what its first visit cost the fund.</p>
+    ${wsTabs([
+      { label: "Chosen", count: allRows.length || null, on: bizSeg === "chosen", onclick: "return pilotBizSetSeg('chosen')" },
+      { label: "Visits", count: allRows.filter((r) => (r.visitsDone || 0) > 0).length || null, on: bizSeg === "visits", onclick: "return pilotBizSetSeg('visits')" },
+    ])}
     ${rows.length ? rows.map((r) => `
     <div class="panel">
       <p style="margin:0 0 4px"><strong>${esc(r.name)}</strong> <span class="badge ${PILOT_STEP_BADGE[r.step] || "info"}">${esc(r.stepLabel)}</span>${r.linked ? "" : ` <span class="badge info">Not on SIGNL yet</span>`}</p>
       <p class="small muted" style="margin:0">${esc(r.market)} &middot; Spent: ${pilotMoney(r.spendCents)} &middot; Visits done: ${r.visitsDone} &middot; Posts live: ${r.postsLive}</p>
       ${r.linked ? "" : `<p class="small muted" style="margin:6px 0 0">This business has not joined SIGNL yet, so its visit is arranged with them directly. Its numbers appear here once it is on SIGNL and the visit is booked.</p>`}
-    </div>`).join("") : `<div class="panel"><p class="muted" style="margin:0">No businesses have been chosen yet. They will appear here as the pilot is set up.</p></div>`}`;
+    </div>`).join("") : `<div class="panel"><p class="muted" style="margin:0">${bizSeg === "visits" && allRows.length ? "No visits yet. Visits appear here as the chosen businesses host their first creators." : "No businesses have been chosen yet. They will appear here as the pilot is set up."}</p></div>`}`;
   } catch (err) {
     el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
@@ -25343,6 +25749,7 @@ async function loadPilotResults(el) {
     const rows = data.businesses || [];
     el.innerHTML = `
     ${pilotHeadHtml(data.pilot)}
+    ${pilotStrip119("Results")}
     <h3>What the visits did</h3>
     <p class="muted small">Business by business: the visits, the posts, and the customers. Reach is the post's own view count, reported by the creator; when a creator has not reported it yet, we say so instead of guessing.</p>
     ${rows.length ? rows.map((r) => `

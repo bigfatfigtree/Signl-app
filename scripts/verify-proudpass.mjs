@@ -203,7 +203,7 @@ try {
 
   console.log("== P3: the 48 hour reframe (standard at 48h, failure at the week) ==");
   check("P3 business promise carries the asterisk line", appJs.includes("Posts delivered in 48 hours*") && appJs.includes("*Creators have up to a week; 48 hours is the standard they are held to."));
-  check("P3 creator grace caption ships in the deal block (Phase A goal phrasing)", appJs.includes("The goal is one post + one story within 48 hours of your visit. Up to a week at the outside; posting within 48 hours earns the Momentum."));
+  check("P3 creator grace caption ships in the deal block (Phase A goal phrasing) [Build -119: earns the Momentum -> earns Standing]", appJs.includes("The goal is one post + one story within 48 hours of your visit. Up to a week at the outside; posting within 48 hours earns Standing."));
   check("P3 in-week lateness reads Post late, not failure", appJs.includes('>Post late</span>') && !appJs.includes("Post overdue"));
   check("P3 standard visit summary states the grace (Phase A goal phrasing)", routerJs.includes("The goal is one post + one story within 48 hours of your visit; a post inside one week still counts, as a late delivery."));
   check("P3 replacement gate names the week", routerJs.includes("Replacements open when a full week passes with no post."));

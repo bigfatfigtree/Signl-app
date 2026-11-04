@@ -178,27 +178,27 @@ check("the founding sentence-badge wraps instead of overflowing", themeCss.inclu
   }
   check("-41: the rail composes its rows from moreRowsFor (one source for labels, order, badges)",
     tSlice.includes("railRowItems()") && appJs.includes("function railRowItems()") && appJs.includes("moreRowsFor()"));
-  check("-41: no More item in the rail path (tabItemsFor, railRowItems, tabBarHtml)",
-    !tSlice.includes('"More"') && !hSlice.includes('"More"') && !appJs.includes("tab-item-more"));
+  check("-41: no More item in the rail path (tabItemsFor, railRowItems, tabBarHtml) [re-aimed Build -119: the design's phone bar carries a More item for partner/pilot only — business/creator rails and the row sources stay More-free]",
+    !tSlice.includes('tab: "More"') && !rSlice.includes('tab: "More"') && (hSlice.match(/tab: "More"/g) || []).length === 1 && hSlice.includes('u.role === "partner" || u.role === "pilot_partner"') && !appJs.includes("tab-item-more"));
   check("-41: no .tab-more cluster in the rail markup; Sign out rides the rail itself",
     !hSlice.includes('class="tab-more"') && hSlice.includes('onclick="signOut()"') && hSlice.includes("tab-signout"));
   check("-41: each row item lights itself, and Counter rides the business Visits item",
     appJs.includes('r.tab === "Visits & Posts" && t === "Counter"') && appJs.includes("on: t === r.tab"));
-  check("-41: short label forms exist for the labels that cannot fit the 72px rail",
-    appJs.includes('const RAIL_SHORT = { Content: "Posts", Plan: "Plan", Profile: "Profile", Numbers: "Numbers", Links: "Links", Performance: "Perform\u00ADance" }')
+  check("-41: short label forms exist for the labels that cannot fit the 72px rail [re-aimed Build -119: Plan's phone form is the design's one-word \"Money\"]",
+    appJs.includes('const RAIL_SHORT = { Content: "Posts", Plan: "Money", Profile: "Profile", Numbers: "Numbers", Links: "Links", Performance: "Perform\u00ADance" }')
       && hSlice.includes("lbl-full") && hSlice.includes("lbl-short"));
   check("-41: short forms show only on the slim rail; full labels from 768px up",
     themeCss.includes(".tab-item .lbl-full { display: none; }") && themeCss.includes(".tab-item .lbl-short { display: none; }"));
   check("-41: the wide rail no longer hides or expands a More cluster in CSS",
     !themeCss.includes("tab-item-more") && !themeCss.includes("#tabbar .tab-more {"));
-  check("-41: primary destinations kept their labels and tabs",
+  check("-41: primary destinations kept their labels and tabs [partner Earnings displays as \"Money\" since Build -119; tab key unchanged]",
     tSlice.includes('label: "Home", tab: "Dashboard"') && tSlice.includes('label: "Offers", tab: "Offers"')
       && tSlice.includes('label: "Find creators", tab: "Discover"') && tSlice.includes('label: "Markets", tab: "Markets"')
-      && tSlice.includes('label: "Earnings", tab: "Earnings"') && (tSlice.match(/label: "Sig"/g) || []).length >= 2);
+      && tSlice.includes('label: "Money", tab: "Earnings"') && (tSlice.match(/label: "Sig"/g) || []).length >= 2);
 }
 
 // Build stamp.
-check("build stamp is 2026.11.03-118 on both sides", read("netlify/functions/lib/build.js").includes("2026.11.03-118") && indexHtml.includes("2026.11.03-118"));
+check("build stamp is 2026.11.03-119 on both sides", read("netlify/functions/lib/build.js").includes("2026.11.03-119") && indexHtml.includes("2026.11.03-119"));
 
 // ---------- Part B: live API contract (production shape, no test override) ----------
 let server;
@@ -216,7 +216,7 @@ try {
   const boot = await anon("GET", "/api/bootstrap");
   check("bootstrap answers", boot.status === 200, String(boot.status));
   check("bootstrap publishes no launch window", boot.data && boot.data.launch && boot.data.launch.launchWindow === undefined, JSON.stringify(boot.data && boot.data.launch));
-  check("server stamps the -41 build on API responses", boot.headers.get("x-signl-build") === "2026.11.03-118", String(boot.headers.get("x-signl-build")));
+  check("server stamps the -41 build on API responses", boot.headers.get("x-signl-build") === "2026.11.03-119", String(boot.headers.get("x-signl-build")));
 
   const admin = client();
   const login = await admin("POST", "/api/auth/login", { email: ADMIN_EMAIL, password: ADMIN_PASSWORD });

@@ -1,4 +1,4 @@
-// Build 2026.11.03-118 verification: Miami restored as a full
+// Build 2026.11.03-119 verification: Miami restored as a full
 // market. Jeff removed Miami in the 2026-10-23 roster reset and
 // reversed that call on 2026-10-30 ("add miami and all
 // surrounding locations of metro area"). Build -52's suite pinned
@@ -117,7 +117,7 @@ const ROOT = path.join(path.dirname(new URL(import.meta.url).pathname), "..");
 // ---------- unit level: stamp, roster, the Miami market ----------
 const buildJs = fs.readFileSync(path.join(ROOT, "netlify/functions/lib/build.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(ROOT, "public/index.html"), "utf8");
-check("stamp: BUILD_ID is 2026.11.03-118 on server and shell", buildJs.includes('BUILD_ID = "2026.11.03-118"') && indexHtml.includes("2026.11.03-118"));
+check("stamp: BUILD_ID is 2026.11.03-119 on server and shell", buildJs.includes('BUILD_ID = "2026.11.03-119"') && indexHtml.includes("2026.11.03-119"));
 
 check("the roster is 41 markets (37 through -58 + Miami + the 3 NZ markets of Build -117)", MARKETS.length === 41, String(MARKETS.length));
 const countries = [...new Set(MARKETS.map((m) => m.country))];
@@ -195,7 +195,7 @@ try {
   if (!up) throw new Error("server did not start");
   const boot = await client()("GET", "/api/bootstrap");
   const UNLISTED_NAME = boot.data.unlistedMarket;
-  check("bootstrap carries the -59 build stamp", boot.headers.get("x-signl-build") === "2026.11.03-118", String(boot.headers.get("x-signl-build")));
+  check("bootstrap carries the -59 build stamp", boot.headers.get("x-signl-build") === "2026.11.03-119", String(boot.headers.get("x-signl-build")));
   check("bootstrap serves 41 markets", Array.isArray(boot.data.markets) && boot.data.markets.length === 41, JSON.stringify(boot.data.markets && boot.data.markets.length));
   const miamiBoot = (boot.data.markets || []).find((m) => m.name === "Miami");
   check("bootstrap ships Miami's full footprint list (48 places incl. Fort Lauderdale and Boca Raton)",

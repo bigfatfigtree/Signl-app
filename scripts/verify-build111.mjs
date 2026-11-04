@@ -23,7 +23,7 @@
 //     longer leaves the pay word in the drafted title
 //     ("weekend brunch push, comped" -> "Weekend brunch push").
 //   Canon locks: LICENSE_WINDOW_DAYS 90, FOUNDING_STRIPE_PRICES
-//     env-or-empty, stamp 2026.11.03-118.
+//     env-or-empty, stamp 2026.11.03-119.
 //
 // Run: node scripts/verify-build111.mjs
 
@@ -85,7 +85,7 @@ check("campaignGuideParse strips a trailing pay word from the drafted title", ap
 part("canon locks");
 check("LICENSE_WINDOW_DAYS still 90", routerJs.includes("const LICENSE_WINDOW_DAYS = 90"));
 check("FOUNDING_STRIPE_PRICES stays env-or-empty (no market live for money)", routerJs.includes('STRIPE_PRICE_FOUNDING_SELF_SERVICE || ""') && routerJs.includes('STRIPE_PRICE_FOUNDING_GROWTH || ""') && routerJs.includes('STRIPE_PRICE_FOUNDING_MANAGED || ""'));
-check("build stamp is 2026.11.03-118 on both sides", fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes('exports.BUILD_ID = "2026.11.03-118"') && fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes('window.__SIGNL_BUILD__ = "2026.11.03-118"'));
+check("build stamp is 2026.11.03-119 on both sides", fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes('exports.BUILD_ID = "2026.11.03-119"') && fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes('window.__SIGNL_BUILD__ = "2026.11.03-119"'));
 
 // ---------- Sig answerer (in-process) ----------
 part("Sig answerer: ad label, both roles");

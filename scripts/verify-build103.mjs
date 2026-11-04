@@ -202,7 +202,7 @@ console.log("== Admin Sig after the London deal: the split as entered ==");
 
 console.log("== canon locks ==");
 {
-  check("build stamp is -103 on both sides", fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes("2026.11.03-118") && fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes("2026.11.03-118"));
+  check("build stamp is -103 on both sides", fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes("2026.11.03-119") && fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes("2026.11.03-119"));
   const routerJs = fs.readFileSync(path.join(root, "netlify/functions/lib/router.js"), "utf8");
   check("founding Stripe prices stay unarmed (no market live for money)", routerJs.includes('STRIPE_PRICE_FOUNDING_SELF_SERVICE || ""') && routerJs.includes('STRIPE_PRICE_FOUNDING_GROWTH || ""') && routerJs.includes('STRIPE_PRICE_FOUNDING_MANAGED || ""'), "");
 }

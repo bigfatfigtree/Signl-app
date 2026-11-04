@@ -173,8 +173,8 @@ try {
     !slice.includes("totalInMarket") && !slice.includes("will never be padded with stand-ins") && !slice.includes("roster is being built now") && !slice.includes("Showing the top"), "");
   check("no em dashes anywhere in the new founding preview code", !slice.includes("—"), "");
   check("build stamp is the new build on both sides",
-    fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), "..", "netlify", "functions", "lib", "build.js"), "utf8").includes("2026.11.03-118")
-    && fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), "..", "public", "index.html"), "utf8").includes("2026.11.03-118"), "");
+    fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), "..", "netlify", "functions", "lib", "build.js"), "utf8").includes("2026.11.03-119")
+    && fs.readFileSync(path.join(path.dirname(new URL(import.meta.url).pathname), "..", "public", "index.html"), "utf8").includes("2026.11.03-119"), "");
 
   // ================================================================
   // Part B: creator excitement layer (Jeff, 2026-10-29).
@@ -208,8 +208,8 @@ try {
   const buzzFrom = appJs.indexOf("creator excitement layer");
   const buzzTo = appJs.indexOf("The founding Status tab", buzzFrom);
   const buzzSlice = buzzFrom > -1 && buzzTo > buzzFrom ? appJs.slice(buzzFrom, buzzTo) : "";
-  check("client ships the excitement layer (stat card, unlock meter, momentum payoff)",
-    buzzSlice.includes("creatorStatCardHtml") && buzzSlice.includes("Share my stat card") && buzzSlice.includes("City unlock meter") && buzzSlice.includes("Momentum moves you up") && buzzSlice.includes("stack order the business picks from"),
+  check("client ships the excitement layer (stat card, unlock meter, standing payoff) [payoff headline renamed from Momentum, Build -119]",
+    buzzSlice.includes("creatorStatCardHtml") && buzzSlice.includes("Share my stat card") && buzzSlice.includes("City unlock meter") && buzzSlice.includes("Standing moves you up") && buzzSlice.includes("stack order the business picks from"),
     `slice ${buzzSlice.length} chars`);
   check("founding Status view renders the excitement layer from data.buzz (Build -64 demotion)", appJs.includes("creatorBuzzHtml(state.user, card, f, data.buzz)"), "");
   check("excitement layer code carries no em dashes", buzzSlice.length > 0 && !buzzSlice.includes("—"), "");

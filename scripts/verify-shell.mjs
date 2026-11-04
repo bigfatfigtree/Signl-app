@@ -199,7 +199,7 @@ try {
   // Sig item reads as a partner primary.
   const tabSlicePartner = (tabSlice.split('u.role === "partner"')[1] || "").split('if (u.role === "recruiter")')[0];
   check("rail primaries per role, composed with the full row list, no More item (BUILD -41, -68: business = Home/Sig/Find creators, Offers rides rows as Campaigns)", (tabSliceBizCr.match(/label: "Home"/g) || []).length === 2 && (tabSliceBizCr.match(/label: "Sig"/g) || []).length === 2 && tabSliceBizCr.includes('label: "Find creators", tab: "Discover"') && tabSliceBizCr.includes('...extra(["Home", "Sig", "Discover"])') && !(tabSliceBizCr.split('if (u.role === "creator")')[0] || "").includes('label: "Offers"') && tabSlice.includes("railRowItems()") && tabSlice.includes("...extra([") && !tabSlice.includes('label: "More"') && !tabSlice.includes('tab: "More"'));
-  check("partner rail primaries are Home, Markets, Earnings (Sig arrives via the rows)", tabSlicePartner.includes('label: "Home", tab: "Home"') && tabSlicePartner.includes('label: "Markets", tab: "Markets"') && tabSlicePartner.includes('label: "Earnings", tab: "Earnings"') && !tabSlicePartner.includes('label: "More"') && !tabSlicePartner.includes('label: "Sig"'));
+  check("partner rail primaries are Overview, Markets, Money (tabs Home/Markets/Earnings; Sig arrives via the rows) [re-aimed Build -119: design display labels]", tabSlicePartner.includes('label: "Overview", tab: "Home"') && tabSlicePartner.includes('label: "Markets", tab: "Markets"') && tabSlicePartner.includes('label: "Money", tab: "Earnings"') && !tabSlicePartner.includes('label: "More"') && !tabSlicePartner.includes('label: "Sig"'));
   check("no account state shrinks the destination set (no market-live or founding branch in tabItemsFor)", !tabSlice.includes("marketLive") && !tabSlice.includes("founding"));
   check("Visits and Earnings ride the rail as composed row items, not a second hard-coded list", !tabSliceBizCr.includes('label: "Visits", tab:') && !tabSliceBizCr.includes('label: "Earnings", tab:') && !tabSliceBizCr.includes('label: "Offers", tab: "My Offers"') && tabSlice.includes("railRowItems()"));
   check("Sig tab badge is the pending queue count (state.sigQueueCount)", tabSlice.includes("state.sigQueueCount") && tabSlice.includes('badge: sigBadge'));
@@ -219,7 +219,7 @@ try {
 
   part("source: workspace scaffold");
   check("scaffold builders exist (wsHead, wsTabs, kpiCard, deltaPill, segSw, feedListHtml, funnel2Html, charts)", ["function wsHead(", "function wsTabs(", "function kpiCard(", "function deltaPill(", "function segSw(", "function feedListHtml(", "function funnel2Html(", "function lineChartSvg(", "function barsChartSvg("].every((x) => appJs.includes(x)));
-  check("V3 screens carry their spec titles", ["Home", "Find creators", "Posts & licenses", "Results", "Your business page", "Plan & billing", "Messages", "Your numbers", "Earnings", "Momentum", "My profile", "Settings", "Help", "More"].every((t) => appJs.includes(`wsHead("${t}"`)));
+  check("V3 screens carry their spec titles", ["Home", "Find creators", "Posts & licenses", "Results", "Your business page", "Plan & billing", "Messages", "Your numbers", "Earnings", "Standing", "My profile", "Settings", "Help", "More"].every((t) => appJs.includes(`wsHead("${t}"`)));
   check("screen titles render at the spec size (28px, weight 800)", themeCss.includes(".ws-title { font-size: 1.75rem; font-weight: 800;"));
   check("purpose lines are dismissible after first visits", appJs.includes("function dismissSub(") && appJs.includes("signl-sub-"));
   check("delta pill is honest: it renders nothing when the prior window is zero", appJs.includes('if (!p) return "";'));
@@ -232,11 +232,11 @@ try {
   check("brand-new greeting lines are the spec section 4.5 text", appJs.includes("Let's get your first campaign live.") && appJs.includes("Let's finish your profile so businesses can find you."));
   check("creator feed chips are the legal kinds only (no Momentum / Sales / Payments / Gifts chips)", (() => { const s = fnSlice("crFeedHtml", "loadCreatorHome"); return s.includes('["applications", "Applications"]') && s.includes('["licenses", "Licenses"]') && !s.includes('["momentum", "Momentum"]'); })());
   check("business feed kinds are the legal kinds only", (() => { const a = appJs.indexOf("const BIZ_FEED_KINDS"); const s = appJs.slice(a, appJs.indexOf("];", a)); return s.includes('"Licenses"') && !s.includes('"Payments"') && !s.includes('"Sales"') && !s.includes('"Gifts"'); })());
-  check("creator Offers segments: For you / Invited / Applied over the canon deck", appJs.includes("function crOffersSetSeg(") && appJs.includes('"For you"') && appJs.includes('"Invited"') && appJs.includes('"Applied"'));
+  check("creator Offers segments: New / Applied / Booked / Done over the canon deck [re-aimed Build -119: design seg labels; stored ids unchanged]", appJs.includes("function crOffersSetSeg(") && appJs.includes('{ label: "New"') && appJs.includes('{ label: "Applied"') && appJs.includes('{ label: "Booked"') && appJs.includes('{ label: "Done"') && appJs.includes('({ foryou: "new", invited: "new", waiting: "booked" })'));
   check("the completion gate replaces the creator deck until the basics are done", appJs.includes("function gateCardHtml(") && appJs.includes("Finish your profile to see offers near you."));
   check("creator analytics is a real dashboard (Your numbers) with the V2 series helpers", appJs.includes("function renderCreatorNumbers(") && appJs.includes("day 7 / 14 / 30") || appJs.includes("function renderCreatorNumbers("));
   check("Earnings keeps the 97% line and license decisions on the row", appJs.includes("You keep 97%") && appJs.includes("function respondLicenseEarn("));
-  check("Momentum screen exists with the spec zero-points line", appJs.includes("function renderMomentumTab(") && appJs.includes("Your Momentum starts with your first visit. Post on time and it climbs."));
+  check("Standing screen exists with the spec zero-points line [renamed from Momentum, Build -119]", appJs.includes("function renderMomentumTab(") && appJs.includes("Your Standing starts with your first visit. Post on time and it climbs."));
 
   part("source: business V3 screens");
   check("business home snapshot reads the real analytics payload; rollover is stated on Plan and queued before expiry", appJs.includes("h.localReachDelivered") && appJs.includes("rolled over from last month") && appJs.includes("function bizFeedEvents("));
@@ -269,8 +269,8 @@ try {
     "When a business picks you, or you accept an invite, it lands here.",
     "When a creator posts about your business, it lands here", // section 8 line, split title/sub in the empty card
     "Post tracking starts with your first visit.",
-    "Paid bookings you complete show up here. Comped visits build your Momentum instead.",
-    "Your Momentum starts with your first visit. Post on time and it climbs.",
+    "Paid bookings you complete show up here. Comped visits build your Standing instead.",
+    "Your Standing starts with your first visit. Post on time and it climbs.",
     "Conversations attach to a visit or an offer.", // Build -47 (audit B6): business empty state names how conversations start
     "No reviews yet. Reviews come from completed visits.",
   ];

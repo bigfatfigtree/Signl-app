@@ -50,7 +50,7 @@ part("S: source pins");
 const routerJs = fs.readFileSync(path.join(root, "netlify/functions/lib/router.js"), "utf8");
 const appJs = fs.readFileSync(path.join(root, "public/app.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(root, "public/index.html"), "utf8");
-check("stamp is 2026.11.03-118", indexHtml.includes("2026.11.03-118") && fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes("2026.11.03-118"));
+check("stamp is 2026.11.03-119", indexHtml.includes("2026.11.03-119") && fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes("2026.11.03-119"));
 
 const approvalSeg = seg(routerJs, "function approvalEmail(", "// ---------- rejection email");
 check("approval: one plain step, the four basics named", approvalSeg.includes("Four basics make you visible to businesses: your home city, your audience counts, at least one content category, and your local audience %."));
@@ -74,7 +74,7 @@ check("client: checklist renders info rows and founding step 4 is one", seg(appJ
 const signinSeg = seg(appJs, "function renderSignin()", "async function doSignin");
 check("client: sign-in join lines sit above the staff redeem button", signinSeg.indexOf("Join as a founding creator") > -1 && signinSeg.indexOf("Join as a founding creator") < signinSeg.indexOf("Redeem a creator visit"));
 check("client: founding Offers empty state always carries an action", seg(appJs, "function foundingEmptyActionHtml()", "function foundingOffersEmptyHtml").includes("Share your invite") && appJs.includes("Finish your profile") && appJs.includes("Add your rates"));
-check("client: direct-offers empty points at the For you board", appJs.includes("Offers open to every creator in your market live under For you."));
+check("client: direct-offers empty points at the Open offers board", appJs.includes("Offers open to every creator in your market are right below, under Open offers."));
 check("client: earnings empty card carries a next step", appJs.includes("Nothing earned yet. Paid bookings you complete show up here.") && appJs.includes("Set your paid rate") && appJs.includes("See offers"));
 check("client: lane saves confirm with a toast", seg(appJs, "async function laneSave(patch)", "function laneToggleSpanish").includes('showToast("Saved.")'));
 check("client: receipt opt-in confirms and reverts on failure", seg(appJs, "async function receiptSaveOptIn()", "function proofControlsHtml").includes('showToast("Saved.")') && appJs.includes("el.checked = !want"));
