@@ -30,6 +30,8 @@ const state = {
   bizPrefill: null, // business-wave prefill: sanitized ?biz=&market=&category=
   publicHandle: null, // set when the URL is /c/<handle>
   resetToken: "", // password reset token from a /?reset= email link
+  googlePrefill: null, // Build -123: { token, name, email } from a Continue with Google apply return (/?googlelink=), persisted in localStorage like ref/src
+  googleNotice: "", // Build -123: one-shot plain-words outcome of a Google return (/?google=), shown on the sign-in screen
   preview: null, // admin Business Preview session (see enterPreview)
   partnerData: null, // partner dashboard: the /partner/summary payload, fetched once per session
   agentQueue: null, // overhaul Stage 1: Ready-for-you queue the current home computed ({count, title, rows:[{text, sub, btn, act}], empty})
@@ -5110,20 +5112,52 @@ function filterAreaOptions(searchId, selectId) {
   if (q && firstMatch && current && current.hidden) sel.value = firstMatch.value;
 }
 
+// ---------- Google sign-in + sign-in link (Build -123) ----------
+// Continue with Google renders only when the server says the
+// Google lane is configured (bootstrap googleSignin): with the
+// env unset there is no button and no dead click, exactly the
+// honesty rule every other rail follows.
+function googleConfigured123() {
+  return !!(state.boot && state.boot.googleSignin && state.boot.googleSignin.configured);
+}
+function googleButtonHtml(mode, label) {
+  if (!googleConfigured123()) return "";
+  return `<a class="btn ghost" style="width:100%;margin-bottom:10px" href="/api/auth/google/start?mode=${mode}"><strong style="margin-right:6px">G</strong> ${esc(label || "Continue with Google")}</a>
+    <p class="small muted" style="text-align:center;margin:0 0 10px">or</p>`;
+}
+function storedGoogleLink() {
+  try { return localStorage.getItem("signl_googlelink") || ""; } catch (e) { return ""; }
+}
+function clearStoredGoogleLink() {
+  try { localStorage.removeItem("signl_googlelink"); localStorage.removeItem("signl_google_prefill"); localStorage.removeItem("signl_claim_draft"); } catch (e) { /* storage unavailable */ }
+  state.googlePrefill = null;
+}
+
 function renderSignin() {
+  const gNotice = state.googleNotice;
+  state.googleNotice = "";
   app.innerHTML = `
   <section class="panel form-panel" style="max-width:460px;margin:30px auto">
     <div class="form-head">
     <h2>Sign in</h2>
     </div>
     <div class="form-body">
-    <div id="form-error"></div>
+    <div id="form-error">${gNotice ? `<div class="error-box">${esc(gNotice)}</div>` : ""}</div>
+    ${googleButtonHtml("signin")}
     <form novalidate onsubmit="return doSignin(event)">
       <div class="field"><label>Email</label><input type="email" id="si-email" required autocomplete="email"></div>
       <div class="field"><label>Password</label><input type="password" id="si-password" required autocomplete="current-password"></div>
       <button class="btn" type="submit" style="width:100%">Sign in</button>
     </form>
     <p class="small muted mt">You will stay signed in on this device for 30 days. <a class="tlink" href="#" onclick="return go('forgot')">Forgot password?</a></p>
+    <div style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">
+      <p class="small" style="margin:0 0 6px"><strong>No password handy?</strong> We can email you a sign-in link instead. It works once and expires in 30 minutes, and your password stays as it is.</p>
+      <form novalidate onsubmit="return doSigninLink(event)">
+        <div class="field"><label>Email</label><input type="email" id="sl-email" required autocomplete="email"></div>
+        <button class="btn ghost" type="submit" style="width:100%">Email me a sign-in link</button>
+      </form>
+      <p class="small" id="sl-note" style="margin:8px 0 0"></p>
+    </div>
     <p class="small muted mt">New to SIGNL? <a class="tlink" href="#" onclick="return go('join-creator')">Join as a founding creator</a>. Businesses: <a class="tlink" href="#" onclick="return go('for-businesses')">join the founding business list</a>.</p>
     <button class="btn ghost mt" style="width:100%" onclick="return goStaff()">Redeem a creator visit</button>
     <p class="small muted">Staff at a SIGNL business: the button above takes you straight to the register screen. PIN in, creator code in, redeemed.</p>
@@ -5155,6 +5189,26 @@ async function doSignin(e) {
   } catch (err) {
     submitBusy(form, false);
     document.getElementById("form-error").innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+  }
+  return false;
+}
+
+async function doSigninLink(e) {
+  e.preventDefault();
+  const form = e.target;
+  const note = document.getElementById("sl-note");
+  const email = (document.getElementById("sl-email").value || "").trim();
+  if (!email) { if (note) note.textContent = "Enter your email and we will send the link there."; return false; }
+  if (!submitBusy(form, true)) return false;
+  try {
+    const data = await api("POST", "/auth/signin-link", { email });
+    submitBusy(form, false);
+    if (note) note.textContent = data && data.emailDown
+      ? "Email is down on our side right now, so no link went out. Try again in a little while, or email hello@joinsignl.com and we will help you in by hand."
+      : "If an account exists for that email, a sign-in link is on its way. It works once and expires in 30 minutes.";
+  } catch (err) {
+    submitBusy(form, false);
+    if (note) note.textContent = err.message;
   }
   return false;
 }
@@ -5286,11 +5340,48 @@ async function signOut() {
 // signs out, this one stays). Before this there was no settings
 // surface at all: no email display, no password change, and a
 // forgotten password was a permanent lockout.
+// Google sign-in row (Build -123): the Settings home of the
+// link/unlink. Linked shows which Google email signs you in;
+// unlinked offers the one-tap link when the lane is configured,
+// and says plainly when it is still being switched on.
+function googleAccountRowHtml(u) {
+  if (u.google && u.google.email) {
+    return `<div style="margin:10px 0">
+      <p class="small" style="margin:0 0 6px"><strong>Google:</strong> connected as ${esc(u.google.email)}. Continue with Google on the sign-in screen brings you straight in; your password still works too.</p>
+      <button type="button" class="btn small-btn ghost" onclick="return googleUnlink()">Unlink Google</button> <span class="saved" id="google-note"></span>
+    </div>`;
+  }
+  if (googleConfigured123()) {
+    return `<div style="margin:10px 0">
+      <p class="small" style="margin:0 0 6px"><strong>Google:</strong> not connected. Link your Google account and signing in becomes one tap, no password to type.</p>
+      <a class="btn small-btn" href="/api/auth/google/start?mode=link">Link Google</a>
+    </div>`;
+  }
+  return `<div style="margin:10px 0">
+    <p class="small muted" style="margin:0"><strong>Google:</strong> sign-in with Google is being switched on. Until it opens, your email and password are the way in.</p>
+  </div>`;
+}
+
+async function googleUnlink() {
+  if (!confirm("Unlink Google? You will sign in with your email and password instead. Your account and everything on it stays exactly as it is.")) return false;
+  try {
+    const data = await api("POST", "/auth/google/unlink", {});
+    if (data && data.user) state.user = data.user;
+    render();
+    setTimeout(() => showToast("Google unlinked"), 300);
+  } catch (err) {
+    const note = document.getElementById("google-note");
+    if (note) note.textContent = err.message;
+  }
+  return false;
+}
+
 function accountHtml(u) {
   return `
   <div class="panel mt">
     <h3>Your account</h3>
     <p class="small muted">Signed in as <strong>${esc(u.email)}</strong>. This is the email SIGNL uses for your account and launch messages.</p>
+    ${googleAccountRowHtml(u)}
     <div id="acct-error"></div>
     <form onsubmit="return doChangePassword(event)">
       <div class="form-2col">
@@ -8062,17 +8153,30 @@ function claimBack(step) {
 }
 
 // ---------- Screen 3: make it yours ----------
+// Build -123: the claim draft is in-memory; the Google round
+// trip is a full-page leave and return, so the draft rides
+// localStorage for that one trip and init restores it.
+function claimGoogleStart() {
+  try {
+    localStorage.setItem("signl_claim_draft", JSON.stringify({ draft: claimDraftInit(), step: 3 }));
+  } catch (e) { /* the trip still works; the form just restarts */ }
+  window.location.href = "/api/auth/google/start?mode=apply";
+  return false;
+}
+
 function renderClaimAccount() {
   const d = claimDraftInit();
+  const gp = state.googlePrefill;
   app.innerHTML = `
   <section class="c85-wrap">
     <div class="c85-card">
       ${claimDots(3)}
       <h2 class="c85-h2">${T("Make it", "Hazla")} <span class="c85-accent2">${T("yours.", "tuya.")}</span></h2>
       <p class="muted" style="margin:0 0 14px">${T("Your page is", "Tu página es")} <strong>@${esc(d.handle)}</strong> · ${esc(marketDisplayName(d.market))}</p>
+      ${gp ? `<div class="notice blue" style="text-align:left">${T(`You're applying with Google: ${esc(gp.email)} is filled in from your Google account. Pick a password to finish, and Google stays linked, so signing in later is one tap.`, `Estás aplicando con Google: ${esc(gp.email)} viene de tu cuenta de Google. Elige una contraseña para terminar, y Google queda vinculado, así entrar luego es un toque.`)}</div>` : (googleConfigured123() ? `<a class="btn ghost" style="width:100%;margin-bottom:10px" href="#" onclick="return claimGoogleStart()"><strong style="margin-right:6px">G</strong> ${T("Continue with Google", "Continuar con Google")}</a><p class="small muted" style="text-align:center;margin:0 0 10px">${T("or finish with email", "o termina con tu correo")}</p>` : "")}
       <div id="form-error"></div>
       <form novalidate onsubmit="return doQuickClaim(event)">
-        <div class="field"><label>${T("Email (how we reach you)", "Correo electrónico (así te contactamos)")}</label><input type="email" id="c85-email" required autocomplete="email"></div>
+        <div class="field"><label>${T("Email (how we reach you)", "Correo electrónico (así te contactamos)")}</label><input type="email" id="c85-email" required autocomplete="email" value="${esc(gp ? gp.email : "")}"></div>
         <div class="field"><label>${T("Password (10+ characters)", "Contraseña (10 o más caracteres)")}</label><input type="password" id="c85-password" required minlength="10" autocomplete="new-password"></div>
         <div class="field"><label class="ckrow"><input type="checkbox" class="ckbox" id="c85-agree-terms" required><span>${T("I agree to the", "Acepto los")} <a href="https://joinsignl.com/terms.html" target="_blank" rel="noopener">${T("Terms of Service", "Términos de Servicio")}</a> ${T("and", "y la")} <a href="https://joinsignl.com/privacy.html" target="_blank" rel="noopener">${T("Privacy Policy", "Política de Privacidad")}</a>${T(", including keeping bookings that start on SIGNL on SIGNL, and I agree SIGNL can email me about my account, launch updates and offers. I can unsubscribe from marketing emails at any time.", ", incluyendo mantener en SIGNL las reservas que empiezan en SIGNL, y acepto que SIGNL me escriba sobre mi cuenta, novedades del lanzamiento y ofertas. Puedo cancelar los correos de marketing cuando quiera.")}</span></label></div>
         <button class="btn" type="submit" style="width:100%">${T("Finish — join the founding roster", "Terminar: únete a la lista de fundadores")}</button>
@@ -8114,7 +8218,9 @@ async function doQuickClaim(e) {
       goldenTicket: storedTicket() || undefined,
       signupSource: storedSrc() || undefined,
       lang: state.lang === "es" ? "es" : undefined,
+      googleLinkToken: storedGoogleLink() || undefined,
     });
+    clearStoredGoogleLink();
     state.user = data.user;
     // The four facts land through the same profile write the
     // Finish Engine uses, so the completion gate reads them
@@ -8253,13 +8359,14 @@ function renderJoinCreator() {
     ${hasPrefill ? `<div class="notice blue">${T("Pre-filled from your invite link. Check it and finish.", "Ya viene lleno desde tu enlace de invitación. Revísalo y termina.")}</div>` : ""}
     <p class="small">${T("In a hurry?", "¿Tienes prisa?")} <a href="#" onclick="return showQuickJoin()">${T("Claim your spot with just your handle", "Reclama tu lugar solo con tu usuario")}</a> ${T("and finish your profile after approval instead.", "y termina tu perfil después de la aprobación.")}</p>
     <div id="form-error"></div>
+    ${state.googlePrefill ? `<div class="notice blue">${T(`You're applying with Google: your name and email are filled in from your Google account. Finish the form and Google stays linked, so signing in later is one tap.`, `Estás aplicando con Google: tu nombre y correo vienen de tu cuenta de Google. Termina el formulario y Google queda vinculado, así entrar luego es un toque.`)}</div>` : googleButtonHtml("apply")}
     <form onsubmit="return doRegisterCreator(event)">
       ${igAssistCardHtml("jc", "creator")}
       <div class="fgroup tint">
         <p class="fg-kicker">${T("About you", "Sobre ti")}</p>
         <div class="form-2col">
-          <div class="field"><label>${T("Full name", "Nombre completo")}</label><input id="jc-name" required autocomplete="name"></div>
-          <div class="field"><label>${T("Email (how we reach you at launch)", "Correo electrónico (así te contactamos al lanzar)")}</label><input type="email" id="jc-email" required autocomplete="email"></div>
+          <div class="field"><label>${T("Full name", "Nombre completo")}</label><input id="jc-name" required autocomplete="name" value="${esc(state.googlePrefill ? state.googlePrefill.name : "")}"></div>
+          <div class="field"><label>${T("Email (how we reach you at launch)", "Correo electrónico (así te contactamos al lanzar)")}</label><input type="email" id="jc-email" required autocomplete="email" value="${esc(state.googlePrefill ? state.googlePrefill.email : "")}"></div>
         </div>
         <div class="field"><label>${T("Password (10+ characters)", "Contraseña (10 o más caracteres)")}</label><input type="password" id="jc-password" required minlength="10" autocomplete="new-password"></div>
       </div>
@@ -8538,7 +8645,9 @@ async function doRegisterCreator(e) {
       goldenTicket: storedTicket() || undefined,
       signupSource: storedSrc() || undefined,
       lang: state.lang === "es" ? "es" : undefined,
+      googleLinkToken: storedGoogleLink() || undefined,
     });
+    clearStoredGoogleLink();
     state.user = data.user;
     await uploadPhotoInput("jc-photo");
     try {
@@ -8574,15 +8683,16 @@ function renderForBusinesses() {
     <div class="plan-cards">${plans}</div>
     <div id="jb-prefill"></div>
     <div id="jb-error"></div>
+    ${state.googlePrefill ? `<div class="notice blue">You're applying with Google: your name and email are filled in from your Google account. Finish the form and Google stays linked, so signing in later is one tap.</div>` : googleButtonHtml("apply")}
     <form onsubmit="return registerBusiness(event)">
       <div class="fgroup tint">
         <p class="fg-kicker">Your business</p>
         <div class="form-2col">
-          <div class="field"><label>Your name</label><input id="jb-name" required placeholder="The person running this account"></div>
+          <div class="field"><label>Your name</label><input id="jb-name" required placeholder="The person running this account" value="${esc(state.googlePrefill ? state.googlePrefill.name : "")}"></div>
           <div class="field"><label>Business name</label><input id="jb-business" required placeholder="Your business as customers know it"></div>
         </div>
         <div class="form-2col">
-          <div class="field"><label>Email</label><input id="jb-email" type="email" required placeholder="you@yourbusiness.com"></div>
+          <div class="field"><label>Email</label><input id="jb-email" type="email" required placeholder="you@yourbusiness.com" value="${esc(state.googlePrefill ? state.googlePrefill.email : "")}"></div>
           <div class="field"><label>${T("Password (10+ characters)", "Contraseña (10 o más caracteres)")}</label><input id="jb-password" type="password" required minlength="10"></div>
         </div>
       </div>
@@ -8858,7 +8968,9 @@ async function registerBusiness(e) {
       applicationSource: window.__jbAppSource || undefined,
       agreedTerms: document.getElementById("jb-terms").checked,
       signupSource: storedSrc() || undefined,
+      googleLinkToken: storedGoogleLink() || undefined,
     });
+    clearStoredGoogleLink();
     state.user = data.user;
     state.view = "dashboard";
     state.tab = null;
@@ -10188,12 +10300,12 @@ function renderCreatorDash() {
   let body = "";
   if (tab === "Dashboard") body = `<div id="creator-home" class="vx-stagger"><div class="sig-load-row">${sigAvatarHtml("think")}</div>${skelHtml("Loading your dashboard...", 2)}</div>`;
   if (tab === "Bench") body = `<div id="bench-body">${skelHtml("Loading the bench...", 1)}</div>`;
-  if (tab === "Profile") body = wsHead("My profile", { chip: livePill("Live"), sub: "Your public creator profile. This is what businesses see when they find you.", subKey: "cr-profile" }) + profileSegStrip119() + creatorProfileHtml(u) + momentumHtml(u) + growRosterHtml(u) + moreLinksHtml119();
+  if (tab === "Profile") body = wsHead("My profile", { chip: livePill("Live"), sub: "Your public creator profile. This is what businesses see when they find you.", subKey: "cr-profile" }) + profileSegStrip119() + creatorProfileHtml(u) + connectedAccountsHtml(u) + momentumHtml(u) + growRosterHtml(u) + moreLinksHtml119();
   app.innerHTML = `<div class="wrap">
     ${standingBannerHtml(u)}
     <div id="tab-body">${body}</div></div>`;
   if (tab === "Dashboard") loadCreatorHome();
-  if (tab === "Profile") { setTimeout(loadMyScore, 10); setTimeout(loadRateRange, 10); setTimeout(() => { setupUniversityAutocomplete("p-university", "p-university-results"); dragInit(); }, 10); }
+  if (tab === "Profile") { setTimeout(loadMyScore, 10); setTimeout(loadRateRange, 10); setTimeout(loadConnectedAccounts, 10); setTimeout(() => { setupUniversityAutocomplete("p-university", "p-university-results"); dragInit(); }, 10); }
   if (tab === "Offers") loadCreatorOffers();
   if (tab === "My Visits") loadMyVisits("creator");
   if (tab === "Messages") loadThreads();
@@ -10237,14 +10349,14 @@ function renderFoundingHome() {
   if (tab === "Dashboard") body = `<div id="founding-dash" class="vx-stagger"><div class="sig-load-row">${sigAvatarHtml("think")}</div>${skelHtml("Loading your dashboard...", 2)}</div>`;
   if (tab === "Bench") body = `<div id="bench-body">${skelHtml("Loading the bench...", 1)}</div>`;
   if (tab === "Status") body = `<h3 style="margin-top:0">Your founding status</h3><div id="founding-body">${skelHtml("Loading your founding profile...", 1)}</div><div id="founding-buzz"></div><div id="founding-depth"></div>`;
-  if (tab === "Profile") body = wsHead("My profile", { sub: "Your public creator profile. Complete profiles get booked first.", subKey: "cr-profile" }) + profileSegStrip119() + creatorProfileHtml(u) + moreLinksHtml119();
+  if (tab === "Profile") body = wsHead("My profile", { sub: "Your public creator profile. Complete profiles get booked first.", subKey: "cr-profile" }) + profileSegStrip119() + creatorProfileHtml(u) + connectedAccountsHtml(u) + moreLinksHtml119();
   if (tab === "Status") body = wsHead("Status", { sub: "Where your founding enrollment stands." }) + body;
   app.innerHTML = `<div class="wrap">
     ${standingBannerHtml(u)}
     <div id="tab-body">${body}</div></div>`;
   if (tab === "Dashboard") loadFoundingDashboard();
   if (tab === "Status") loadFoundingStatus();
-  if (tab === "Profile") { setTimeout(loadMyScore, 10); setTimeout(loadRateRange, 10); setTimeout(() => { setupUniversityAutocomplete("p-university", "p-university-results"); dragInit(); }, 10); }
+  if (tab === "Profile") { setTimeout(loadMyScore, 10); setTimeout(loadRateRange, 10); setTimeout(loadConnectedAccounts, 10); setTimeout(() => { setupUniversityAutocomplete("p-university", "p-university-results"); dragInit(); }, 10); }
   if (tab === "More") renderMoreScreen();
   if (tab === "Momentum") renderMomentumTab();
   if (tab === "Numbers") renderCreatorNumbers();
@@ -12658,6 +12770,70 @@ function igVerificationLine(c) {
   if (av.note === "no_city_data") return "Instagram has not shared city data yet; it can lag about 48 hours. Your local shares stay self-reported until it lands.";
   if (verified.length) return `Verified from Instagram in ${verified.join(", ")}: the city data matches your stated share within 10 points.${below.length ? ` Not matching yet: ${below.join("; ")}.` : ""}`;
   return `Checked against Instagram's city data; no market matched within 10 points yet, so your shares stay labeled self-reported.${below.length ? ` ${below.join("; ")}.` : ""} Your stated numbers never change on their own.`;
+}
+
+// ---------- Connected accounts hub (Build -123) ----------
+// One panel on the creator Profile that lists the audience
+// platforms together — Instagram, TikTok, YouTube, Facebook —
+// each with its honest state in plain words: connected as
+// @handle with the last check date, a live Connect button, or
+// the real reason it is not open yet (Meta review, TikTok in
+// preparation). No dead clicks and no pretend connections: the
+// rows render from GET /me/platforms, the same publicStates the
+// server computes, and the audience rows above keep their own
+// per-count controls.
+function connectedAccountsHtml(u) {
+  return `<div class="panel mt" id="connected-accounts">
+    <h3>Connected accounts</h3>
+    <p class="small muted">Connect a platform and SIGNL reads your real numbers from it: the count verifies itself, stays up to date on its own, and businesses see a Synced mark next to it. Anything not connected stays typed by you and labeled Self-reported.</p>
+    <div id="ca-rows"><p class="small muted">Loading your accounts...</p></div>
+  </div>`;
+}
+
+async function loadConnectedAccounts() {
+  const host = document.getElementById("ca-rows");
+  if (!host || !state.user || state.user.role !== "creator") return;
+  try {
+    const data = await api("GET", "/me/platforms");
+    const rows = (data.platforms || []).filter((p) => ["instagram", "tiktok", "youtube", "facebook"].includes(p.platform));
+    host.innerHTML = rows.map(caRowHtml).join("");
+  } catch (e) {
+    host.innerHTML = `<p class="small">We could not load your accounts just now. Refresh the page to try again.</p>`;
+  }
+}
+
+function caRowHtml(p) {
+  const c = (state.user && state.user.creator) || {};
+  const day = (iso) => (iso ? fmtDate(iso) : "");
+  let body = "";
+  if (p.state === "connected") {
+    const checked = p.lastSyncAt ? ` · followers last checked ${esc(day(p.lastSyncAt))}` : "";
+    const actions = p.platform === "youtube"
+      ? `<p class="small" style="margin-top:4px"><button type="button" class="btn small-btn ghost" onclick="return ytSyncNow()">Sync now</button> <button type="button" class="btn small-btn ghost" onclick="return ytDisconnect()">Disconnect</button></p>`
+      : p.platform === "instagram"
+        ? `<p class="small" style="margin-top:4px"><button type="button" class="btn small-btn ghost" onclick="return igSyncNow()">Sync now</button> <button type="button" class="btn small-btn ghost" onclick="return igDisconnect()">Disconnect</button></p><p class="small muted" style="margin-top:4px">${igVerificationLine(c)}</p>`
+        : "";
+    body = `<p class="small" style="margin:0"><span class="badge">Connected</span> <span class="muted">as ${esc(p.accountLabel || p.label)}${checked}. This count updates on its own.</span></p>${actions}`;
+  } else if (p.state === "available") {
+    const go = p.platform === "youtube"
+      ? `<button type="button" class="btn small-btn" onclick="return ytConnect()">Connect YouTube</button>`
+      : `<button type="button" class="btn small-btn" onclick="return igConnect()">Connect Instagram</button>`;
+    const does = p.platform === "youtube"
+      ? "Connect it and your subscriber count verifies itself and stays up to date on its own."
+      : "Connect it and your follower count syncs itself, and your local audience shares get checked against Instagram's own city data: markets that match earn the Verified mark.";
+    body = `<p class="small muted" style="margin:0 0 6px">Not connected. ${does}</p>${go}`;
+  } else if (p.platform === "youtube") {
+    body = `<p class="small muted" style="margin:0">Coming soon: YouTube connect is being switched on. Until it opens, your subscriber count stays typed by you.</p>`;
+  } else if (p.platform === "instagram") {
+    body = `<p class="small muted" style="margin:0">Coming soon: Instagram connect is in review with Meta. Until it clears, your follower count and local shares stay typed by you.</p>`;
+  } else if (p.platform === "tiktok") {
+    body = `<p class="small muted" style="margin:0">Coming soon: TikTok connect is being prepared. For now your TikTok count stays typed by you.${c.tiktokHandle ? ` Your TikTok handle on file: @${esc(String(c.tiktokHandle).replace(/^@/, ""))}.` : ""}</p>`;
+  } else if (p.platform === "facebook") {
+    body = `<p class="small muted" style="margin:0">Facebook connect is covered by the same Meta review as Instagram, so it is not open yet. ${c.facebookUrl ? `Your Facebook link on your profile: ${esc(c.facebookUrl)}.` : "Add your Facebook profile or Page link under Your links on this page."} Your Facebook count stays typed by you until the review clears.</p>`;
+  } else {
+    body = `<p class="small muted" style="margin:0">Not connected.</p>`;
+  }
+  return `<div style="padding:10px 0;border-top:1px solid var(--line)"><p style="margin:0 0 4px"><strong>${esc(p.label)}</strong></p>${body}</div>`;
 }
 
 function igNoticeHtml() {
@@ -25265,6 +25441,64 @@ function previewDashboardHtml(d) {
     if (!claim.handle && (bizParams.businessName || bizParams.category || (srcParam || "").trim().toLowerCase() === "business-wave" || (params.get("join") || "").trim().toLowerCase() === "business")) {
       state.bizPrefill = bizParams;
       if (!state.user) state.view = "join-business";
+    }
+    // Build -123 landings: Google returns and sign-in links come
+    // back to "/" with one-shot params, consumed and stripped
+    // like every other lane above.
+    // ?google=conflict|unavailable|error: the outcome note shows
+    // on the sign-in screen in plain words. "signedin" and
+    // "linked" need nothing: /auth/me above already carries the
+    // session the callback set.
+    const googleParam = (params.get("google") || "").trim().slice(0, 16);
+    if (googleParam === "conflict") state.googleNotice = "That Google account uses a different email than your SIGNL account, so it was not linked. Sign in with your email and password, then link Google in Settings if you want it linked.";
+    else if (googleParam === "unavailable") state.googleNotice = "Sign-in with Google is not switched on yet. Use your email and password below.";
+    else if (googleParam === "error") state.googleNotice = "Something went wrong with Google just now. Sign in with your email and password below, or try Google again.";
+    if (googleParam && googleParam !== "signedin" && googleParam !== "linked") state.view = "signin";
+    if (googleParam) { try { history.replaceState(null, "", location.pathname + location.hash); } catch (e) { /* cosmetic only */ } }
+    // ?googlelink=<token>: the apply return. Stash the token and
+    // prefill for the forms (persisted like ref/src so a refresh
+    // keeps them), restore any claim left mid-flight, and land on
+    // the right form.
+    const googleLinkParam = (params.get("googlelink") || "").trim().slice(0, 128);
+    if (googleLinkParam) {
+      try { localStorage.setItem("signl_googlelink", googleLinkParam); } catch (e) { /* storage unavailable */ }
+      try {
+        const pf = await api("GET", "/auth/google/prefill?token=" + encodeURIComponent(googleLinkParam));
+        state.googlePrefill = { token: googleLinkParam, name: pf.name || "", email: pf.email || "" };
+        try { localStorage.setItem("signl_google_prefill", JSON.stringify(state.googlePrefill)); } catch (e) { /* in-memory still works */ }
+      } catch (e) { state.googlePrefill = null; }
+      let restoredClaim = null;
+      try { restoredClaim = JSON.parse(localStorage.getItem("signl_claim_draft") || "null"); } catch (e) { restoredClaim = null; }
+      if (restoredClaim && restoredClaim.draft && !state.user) {
+        state.claimDraft = restoredClaim.draft;
+        state.claimStep = restoredClaim.step || 3;
+        state.view = "join-creator";
+      } else if (!state.user) {
+        state.view = (state.bizPrefill && (state.bizPrefill.businessName || state.bizPrefill.category)) ? "join-business" : "join-creator";
+      }
+      try { history.replaceState(null, "", location.pathname + location.hash); } catch (e) { /* cosmetic only */ }
+    } else {
+      // A refresh on a form after a Google return keeps the prefill.
+      try {
+        const savedPf = JSON.parse(localStorage.getItem("signl_google_prefill") || "null");
+        if (savedPf && savedPf.email) state.googlePrefill = savedPf;
+      } catch (e) { /* none saved */ }
+    }
+    // ?signinlink=<token>: the emailed sign-in link. Consume it
+    // once; a spent or expired link lands on the sign-in screen
+    // with the reason in plain words.
+    const signinLinkParam = (params.get("signinlink") || "").trim().slice(0, 128);
+    if (signinLinkParam && !state.user) {
+      try {
+        const data = await api("POST", "/auth/signin-link/consume", { token: signinLinkParam });
+        state.user = data.user;
+        state.view = "dashboard";
+        setTimeout(() => showToast("You're signed in"), 300);
+      } catch (e) {
+        state.googleNotice = (e && e.message) || "That sign-in link did not work. Ask for a fresh one below.";
+        state.view = "signin";
+      }
+      try { history.replaceState(null, "", location.pathname + location.hash); } catch (e) { /* cosmetic only */ }
     }
     // The listing proof sheet (/c/<handle>/proof) is matched
     // before the plain profile: same public payload, print-first

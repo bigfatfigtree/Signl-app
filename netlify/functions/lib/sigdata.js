@@ -480,6 +480,29 @@ function buildCreatorFacts(d) {
         igConfigured: !!d.igConfigured,
       };
     })(),
+    // Build -123: connected accounts, read from the same
+    // mirrors the Profile's Connected accounts hub renders
+    // (platformSync for the audience platforms, the google
+    // stamp on the user record for sign-in). TikTok and
+    // Facebook carry their standing gates as states, never a
+    // pretend connection.
+    connections: (() => {
+      const sync = c.platformSync || {};
+      const row = (p) => {
+        const s = sync[p] || null;
+        return s
+          ? { connected: true, accountLabel: s.accountLabel || null, lastSyncAt: s.lastSyncAt || null, verified: s.verified === true }
+          : { connected: false, accountLabel: null, lastSyncAt: null, verified: false };
+      };
+      return {
+        instagram: row("instagram"),
+        youtube: row("youtube"),
+        tiktok: { state: "planned" },
+        facebook: { state: "in_review" },
+        google: { linked: !!(u.google && u.google.sub), email: u.google ? u.google.email || null : null },
+        ytConfigured: !!d.ytConfigured,
+      };
+    })(),
     profileComplete: !!pc.complete,
     missingLabels: d.missingLabels || [],
     offersOpen: d.openOffers || 0,
@@ -634,6 +657,11 @@ function factsLines(role, f) {
   lines.push(avLine.igConnected
     ? `Instagram audience verification: status ${avLine.status}${avLine.verifiedMarkets && avLine.verifiedMarkets.length ? `, verified in ${avLine.verifiedMarkets.join(", ")} (Instagram city data within 10 points of the stated share)` : ""}${avLine.belowSelf && avLine.belowSelf.length ? `; Instagram shows lower in ${avLine.belowSelf.map((b) => `${b.market} (${b.igPct}% vs stated ${b.selfPct}%)`).join(", ")}` : ""}${avLine.note ? `; note: ${avLine.note}` : ""}.`
     : "Instagram audience verification: not connected, so their local shares are self-reported.");
+  const cn = f.connections || {};
+  const cnRow = (label, r, gate) => r && r.connected
+    ? `${label}: connected${r.accountLabel ? ` as ${r.accountLabel}` : ""}${r.lastSyncAt ? `, followers last checked ${String(r.lastSyncAt).slice(0, 10)}` : ""}${r.verified ? " (count synced)" : ""}`
+    : `${label}: not connected${gate ? ` (${gate})` : ""}`;
+  lines.push(`Connected accounts: ${cnRow("Instagram", cn.instagram)}; ${cnRow("YouTube", cn.youtube, cn.ytConfigured ? "connect is open on their Profile" : "connect is being switched on")}; TikTok: connect is being prepared, so the count stays self-reported; Facebook: connect is covered by the same Meta review as Instagram. Google sign-in: ${cn.google && cn.google.linked ? `linked${cn.google.email ? ` as ${cn.google.email}` : ""}, so they can sign in with Google` : "not linked; they sign in with email and password, and can link Google in Settings"}.`);
   if (f.intentTotal > 0) lines.push(`Intent on their own posts: ${fmt(f.intentShares)} shares and ${fmt(f.intentSaves)} saves recorded, ${fmt(f.intentTotal)} in total across ${fmt(f.intentReportedPosts)} reported ${plural(f.intentReportedPosts, "post")}. Saves and shares mean people planning to come.`);
   if (f.paidRate) lines.push(`Their listed paid rate is ${cmoney(f, f.paidRate)}${f.licenseFee ? ` and their licensing fee is ${cmoney(f, f.licenseFee)}` : ""}.`);
   else if (f.rateStarting) lines.push(`They have not set a paid rate yet. The Profile rate boxes pre-fill a starting point for their ${f.rateStarting.tier} tier: paid rate ${cmoney(f, f.rateStarting.paidRate)} and licensing fee ${cmoney(f, f.rateStarting.licensingFee)}. Those are starting points only, filled in because the fields were blank. They are editable, they are not a price the creator has to use, and nothing is stored until the creator saves.`);
@@ -1178,6 +1206,35 @@ function answerCreator(f, q, t) {
     if (av.igConnected) return linked("Your Instagram is already connected. Your local shares are checked against it on every sync, and Sync now on your Profile re-checks them today.", "Open my Profile", "cr-profile");
     if (!av.igConfigured) return "Instagram connect is still in review with Meta, so it is not open yet. Your local shares stay self-reported until it clears, and the connect button appears on your Profile the day it does.";
     return linked("Connecting Instagram lets SIGNL check your local audience shares against Instagram's own city data. Markets that match within 10 points earn the Verified mark. The connect button is in the audience stack on your Profile.", "Connect Instagram on my Profile", "cr-profile");
+  }
+  // Connected accounts (Build -123): what is connected, what
+  // each connection does, and the honest gates on the rest.
+  // Instagram's own connect ask is answered by the branch above;
+  // this one covers the overview and the other networks.
+  if (hasPhrase(t, "connected account", "connected accounts", "accounts are connected", "accounts connected", "what is connected", "what's connected", "which accounts", "connect my youtube", "connect youtube", "link my youtube", "connect my tiktok", "connect tiktok", "connect my facebook", "connect facebook", "sign in with google", "google sign in", "google linked", "link google", "link my google")) {
+    const cn = f.connections || {};
+    const day = (iso) => (iso ? String(iso).slice(0, 10) : null);
+    if (hasPhrase(t, "google") && !hasPhrase(t, "connected account", "accounts")) {
+      return cn.google && cn.google.linked
+        ? `Google is linked to your account${cn.google.email ? ` as ${cn.google.email}` : ""}, so Continue with Google on the sign-in screen brings you straight in. Your password still works too. You can unlink Google any time in Settings, under Your account.`
+        : "Google is not linked to your account yet. Link it in Settings, under Your account, and from then on Continue with Google on the sign-in screen brings you straight in. Your password keeps working either way.";
+    }
+    if ((hasWord(t, "youtube") || hasWord(t, "tiktok") || hasWord(t, "facebook")) && hasPhrase(t, "connect", "link")) {
+      if (hasWord(t, "youtube")) {
+        if (cn.youtube && cn.youtube.connected) return linked(`Your YouTube is already connected${cn.youtube.accountLabel ? ` as ${cn.youtube.accountLabel}` : ""}${cn.youtube.lastSyncAt ? `, subscribers last checked ${day(cn.youtube.lastSyncAt)}` : ""}. Sync now on your Profile re-reads it today.`, "Open my Profile", "cr-profile");
+        if (!cn.ytConfigured) return "YouTube connect is being switched on. Until it opens, your subscriber count stays typed by you and labeled Self-reported.";
+        return linked("Connecting YouTube lets SIGNL read your real subscriber count from YouTube itself: it verifies itself and stays up to date on its own, and businesses see a Synced mark. The connect button is in the audience stack on your Profile, and in Connected accounts right below it.", "Connect YouTube on my Profile", "cr-profile");
+      }
+      if (hasWord(t, "tiktok")) return "TikTok connect is being prepared, so it is not open yet. For now your TikTok count stays typed by you and labeled Self-reported; the day connect opens, it starts verifying itself like YouTube does.";
+      return "Facebook connect is covered by the same Meta review as Instagram, so it is not open yet. Your Facebook Page link lives in Your links on your Profile, and your Facebook count stays typed by you until the review clears.";
+    }
+    const bits = [];
+    bits.push(cn.instagram && cn.instagram.connected ? `Instagram is connected${cn.instagram.accountLabel ? ` as ${cn.instagram.accountLabel}` : ""}${cn.instagram.lastSyncAt ? ` (followers last checked ${day(cn.instagram.lastSyncAt)})` : ""}: your count syncs itself and your local shares are checked against Instagram's city data` : "Instagram is not connected, so your Instagram count and local shares stay self-reported");
+    bits.push(cn.youtube && cn.youtube.connected ? `YouTube is connected${cn.youtube.accountLabel ? ` as ${cn.youtube.accountLabel}` : ""}${cn.youtube.lastSyncAt ? ` (subscribers last checked ${day(cn.youtube.lastSyncAt)})` : ""}: your subscriber count syncs itself` : `YouTube is not connected${cn.ytConfigured ? ": connect it and your subscriber count verifies itself" : " yet: connect is being switched on"}`);
+    bits.push("TikTok connect is being prepared");
+    bits.push("Facebook connect waits on the same Meta review as Instagram");
+    bits.push(cn.google && cn.google.linked ? `Google is linked${cn.google.email ? ` as ${cn.google.email}` : ""} for sign-in` : "Google is not linked for sign-in (Settings, under Your account, links it)");
+    return linked(`Your connected accounts: ${bits.join(". ")}. Connecting a platform is what turns a typed, self-reported count into a verified one that updates on its own. The full list lives in Connected accounts on your Profile.`, "Open Connected accounts", "cr-profile");
   }
   if (hasPhrase(t, "verified", "verification") && hasPhrase(t, "local", "audience", "share", "instagram", "mean", "work")) {
     const av = f.audienceVerification || {};

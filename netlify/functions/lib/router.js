@@ -14,6 +14,7 @@ const stripe = require("./stripe");
 const connect = require("./connect");
 const { runMetricsSync } = require("./metrics-sync");
 const platformConnect = require("./platform-connect");
+const googleAuth = require("./google-auth");
 const square = require("./square");
 const clover = require("./clover");
 const { askSigAI } = require("./sigai");
@@ -2092,6 +2093,13 @@ function publicUser(u) {
   // here like the decision markers, and re-added only by Admin
   // serializers behind admin auth.
   delete rest.partnerId;
+  // Google sign-in (Build -123): the record carries the Google
+  // subject id as the identity key. Client payloads get the
+  // display shape only (which Google email is linked, since
+  // when), never the subject id itself.
+  if (rest.google) {
+    rest.google = { email: rest.google.email || null, linkedAt: rest.google.linkedAt || null };
+  }
   if (rest.role === "business" && rest.business) {
     rest.business = { ...rest.business, accessState: businessAccessState(rest) };
     delete rest.business.paymentLink;
@@ -10429,6 +10437,10 @@ async function buildSigFacts(user, full) {
       // in this environment at all (Meta credentials present);
       // Sig's connect prompt stays silent while the gate stands.
       igConfigured: platformConnect.instagramConfigured(),
+      // Build -123: same honesty for the YouTube lane, so Sig's
+      // connected-accounts answer can say whether the connect
+      // button is live in this environment at all.
+      ytConfigured: platformConnect.youtubeConfigured(),
     });
   }
   return null;
@@ -11134,6 +11146,23 @@ async function handleRegister(event) {
     } catch (e) { /* email is best-effort; the queued events tell the story */ }
   }
 
+  // Google apply prefill (Build -123): an application that
+  // started with Continue with Google carries the one-time
+  // prefill token. When the Google identity's email is the
+  // email on this application, the identity links to the new
+  // account (subject index + record stamp) and the token is
+  // consumed. A mismatch links nothing and changes nothing:
+  // the application stands exactly as submitted.
+  if (typeof b.googleLinkToken === "string" && b.googleLinkToken) {
+    try {
+      const pre = await googleAuth.peekGooglePrefill(b.googleLinkToken);
+      if (pre && pre.email === email) {
+        await googleAuth.consumeGooglePrefill(b.googleLinkToken);
+        await linkGoogleIdentity(user, pre, "application");
+      }
+    } catch (e) { /* a prefill problem never blocks an application */ }
+  }
+
   const token = await auth.createSession(id);
   const secure = (event.headers["x-forwarded-proto"] || "").includes("https");
   return json(201, { user: await withFounding(user) }, { "Set-Cookie": auth.sessionCookie(token, secure) });
@@ -11352,6 +11381,241 @@ async function handleChangePassword(event, ctx) {
   await auth.revokeSessionsForUser(user.id, ctx.token);
   await logEvent({ type: "password_changed", actorId: user.id, actorRole: user.role, subjectId: user.id, market: user.market || null, data: {} });
   return json(200, { ok: true });
+}
+
+// ---------- Google sign-in + email sign-in link (Build -123) ----------
+// Jeff, 2026-11-04: "Yes Google sign in as well." The OAuth
+// machinery lives in lib/google-auth.js; the account rules live
+// here, next to register/login:
+//   (a) a Google identity already linked signs into THAT
+//       account — never a duplicate;
+//   (b) an unlinked identity whose Google-verified email matches
+//       an existing account signs into that account and links;
+//   (c) an identity with no account gets NO account from the
+//       callback — it lands back on the join form with a
+//       prefill token, and the application it then files is a
+//       normal application (a creator still lands pending,
+//       awaiting approval; Google never approves anyone);
+//   (d) linking from Settings is bound to the signed-in user by
+//       the state record, and one Google identity can only ever
+//       be linked to one SIGNL account (a second account asking
+//       hears about the conflict, in plain words).
+
+async function linkGoogleIdentity(user, identity, via) {
+  // Re-linking a different Google account replaces the old one:
+  // its subject index goes away with the stamp.
+  if (user.google && user.google.sub && user.google.sub !== identity.sub) {
+    const old = await store.get(`google:${user.google.sub}`);
+    if (old && old.userId === user.id) await store.del(`google:${user.google.sub}`);
+  }
+  user.google = { sub: identity.sub, email: identity.email, linkedAt: nowIso() };
+  user.updatedAt = nowIso();
+  await store.set(`user:${user.id}`, user);
+  await store.set(`google:${identity.sub}`, { userId: user.id });
+  await logEvent({ type: "google_linked", actorId: user.id, actorRole: user.role, subjectId: user.id, market: user.market || null, data: { via } });
+  return user;
+}
+
+async function handleGoogleStart(event, ctx) {
+  const base = googleAuth.appBaseUrl();
+  const q = event.queryStringParameters || {};
+  const mode = ["signin", "apply", "link"].includes(q.mode) ? q.mode : "signin";
+  if (!googleAuth.googleConfigured()) {
+    return { statusCode: 302, headers: { Location: `${base}/?google=unavailable` }, body: "" };
+  }
+  if (mode === "link" && !ctx.user) {
+    return { statusCode: 302, headers: { Location: `${base}/?google=error` }, body: "" };
+  }
+  const state = await googleAuth.createGoogleState({ mode, userId: mode === "link" ? ctx.user.id : null });
+  return { statusCode: 302, headers: { Location: googleAuth.buildGoogleAuthUrl(state.token, state.codeVerifier, state.nonce) }, body: "" };
+}
+
+async function handleGoogleCallback(event, ctx) {
+  const base = googleAuth.appBaseUrl();
+  const q = event.queryStringParameters || {};
+  const back = (suffix, headers) => ({ statusCode: 302, headers: Object.assign({ Location: `${base}/?${suffix}` }, headers || {}), body: "" });
+  const stateRec = q.state ? await googleAuth.consumeGoogleState(q.state) : null;
+  if (!q.code || !stateRec) return back("google=error");
+  let identity;
+  try {
+    const tokens = await googleAuth.exchangeGoogleCode(q.code, stateRec.codeVerifier);
+    identity = await googleAuth.verifyGoogleIdToken(tokens.id_token, stateRec.nonce);
+  } catch (e) {
+    console.error("SIGNL Google sign-in failed:", e && e.message);
+    return back("google=error");
+  }
+
+  if (stateRec.mode === "link") {
+    // The state was bound to one signed-in user at start; the
+    // callback only completes for that same user, in that same
+    // session. Anyone else holding the URL gets the plain error.
+    if (!ctx.user || ctx.user.id !== stateRec.userId) return back("google=error");
+    const idx = await store.get(`google:${identity.sub}`);
+    if (idx && idx.userId !== ctx.user.id) return back("google=conflict");
+    // The Google account's email must be the account's own
+    // email: linking a different address would hand future
+    // email-match sign-ins to the wrong identity and confuse
+    // the person about which Google account lets them in. The
+    // landing says exactly that, and nothing is written.
+    if (identity.email !== String(ctx.user.email || "").toLowerCase()) return back("google=conflict");
+    if (!(ctx.user.google && ctx.user.google.sub === identity.sub)) {
+      await linkGoogleIdentity(ctx.user, identity, "settings");
+    }
+    return back("google=linked");
+  }
+
+  // signin / apply: find the account this identity belongs to.
+  let user = null;
+  const bySub = await store.get(`google:${identity.sub}`);
+  if (bySub) user = await store.get(`user:${bySub.userId}`);
+  if (!user && identity.emailVerified) {
+    // Email matching is a sign-in convenience, so it only ever
+    // runs on an address Google itself verified.
+    const byEmail = await store.get(`email:${identity.email}`);
+    if (byEmail) user = await store.get(`user:${byEmail.userId}`);
+    if (user && !user.google) await linkGoogleIdentity(user, identity, "signin_email_match");
+  }
+  if (user) {
+    await logEvent({ type: "user_signed_in", actorId: user.id, actorRole: user.role, subjectId: user.id, market: user.market || null, data: { via: "google" } });
+    const token = await auth.createSession(user.id);
+    const secure = (event.headers["x-forwarded-proto"] || "").includes("https");
+    return back("google=signedin", { "Set-Cookie": auth.sessionCookie(token, secure) });
+  }
+  // No account: no account is created here. The prefill token
+  // carries the identity back to the join form, which files a
+  // normal application and links on submit.
+  const prefill = await googleAuth.issueGooglePrefill(identity);
+  return back(`googlelink=${prefill}`);
+}
+
+async function handleGooglePrefill(event, ctx) {
+  const q = event.queryStringParameters || {};
+  const rec = await googleAuth.peekGooglePrefill(q.token || "");
+  if (!rec) return err(404, "That Google sign-up link has expired. Start again from the sign-in page.");
+  return json(200, { name: rec.name || "", email: rec.email });
+}
+
+async function handleGoogleUnlink(event, ctx) {
+  if (!ctx.user) return err(401, "Not signed in");
+  const user = ctx.user;
+  if (!(user.google && user.google.sub)) return err(400, "Google is not linked to this account.");
+  if (user.google && user.google.sub) {
+    const idx = await store.get(`google:${user.google.sub}`);
+    if (idx && idx.userId === user.id) await store.del(`google:${user.google.sub}`);
+    delete user.google;
+    user.updatedAt = nowIso();
+    await store.set(`user:${user.id}`, user);
+    await logEvent({ type: "google_unlinked", actorId: user.id, actorRole: user.role, subjectId: user.id, market: user.market || null, data: {} });
+  }
+  return json(200, { user: await withFounding(user) });
+}
+
+// ---------- email sign-in link (self-serve, Build -123) ----------
+// "Email me a sign-in link": the same issuance discipline as the
+// password-reset machinery above (SHA-256 hash at rest, newest
+// token wins, single-use, throttled per email+IP, a response that
+// never reveals whether an account exists) — but the link signs
+// the person IN instead of walking them through a password
+// change they may not want. It never replaces the password: the
+// account's password keeps working exactly as before.
+// SIGNL_SIGNINLINK_TTL_MS exists so the verify suites can
+// exercise the expiry path; production leaves it unset.
+function signinLinkTtlMs() {
+  const n = parseInt(process.env.SIGNL_SIGNINLINK_TTL_MS || "", 10);
+  return Number.isFinite(n) && n > 0 ? n : 30 * 60 * 1000;
+}
+
+async function issueSigninLinkToken(targetUser) {
+  const token = crypto.randomBytes(32).toString("hex");
+  const hash = resetTokenHash(token);
+  const prev = await store.get(`signinlink-user:${targetUser.id}`);
+  if (prev && prev.tokenHash && prev.tokenHash !== hash) await store.del(`signinlink:${prev.tokenHash}`);
+  const created = new Date().toISOString();
+  await store.set(`signinlink:${hash}`, { userId: targetUser.id, email: targetUser.email, createdAt: created, expiresAt: new Date(Date.now() + signinLinkTtlMs()).toISOString() });
+  await store.set(`signinlink-user:${targetUser.id}`, { tokenHash: hash, createdAt: created });
+  return token;
+}
+
+function signinLinkEmail(user, signinUrl) {
+  const first = greetingName(user);
+  const subject = "Your SIGNL sign-in link";
+  const lines = [
+    `Hi ${first},`,
+    "",
+    "Tap this link to sign in to SIGNL. No password needed:",
+    signinUrl,
+    "",
+    "The link works once and expires in 30 minutes. Your password stays exactly as it is; this link is just another way in. If you did not ask for it, you can ignore this email: nobody can use the link once it expires, and asking for one changes nothing on your account.",
+    "",
+    "National platforms sell reach. We sell regulars.",
+    "Jeff",
+    "Founder, SIGNL",
+    "hello@joinsignl.com",
+  ];
+  return { subject, text: lines.join("\n") };
+}
+
+const signinLinkAttempts = new Map();
+async function handleSigninLinkRequest(event) {
+  const b = parseBody(event);
+  const email = String(b.email || "").toLowerCase().trim();
+  const ip = (event.headers["x-nf-client-connection-ip"] || event.headers["x-forwarded-for"] || "unknown").toString();
+  const key = `${email}|${ip}`;
+  const now = Date.now();
+  const attempts = (signinLinkAttempts.get(key) || []).filter((t) => now - t < 60 * 60 * 1000);
+  attempts.push(now);
+  signinLinkAttempts.set(key, attempts);
+  // Same neutral shape as Forgot: account or no account,
+  // throttled or not, the caller hears the same thing.
+  const payload = { ok: true };
+  if (!senderProfile("default") || !senderProfile("default").available) payload.emailDown = true;
+  try {
+    const idx = email ? await store.get(`email:${email}`) : null;
+    const user = idx ? await store.get(`user:${idx.userId}`) : null;
+    if (user && attempts.length <= 5) {
+      const token = await issueSigninLinkToken(user);
+      const base = process.env.APP_URL || "https://app.joinsignl.com";
+      const mail = signinLinkEmail(user, `${base}/?signinlink=${token}`);
+      await deliverEmail("signin_link", user, mail.subject, mail.text, null);
+      // Test hook, same trust boundary as the reset flow's:
+      // never set in the deploy environment.
+      if (TEST_MODE) payload.devSigninToken = token;
+    }
+  } catch (e) {
+    console.error(`SIGNL sign-in link request failed: domain=${emailDomainOf(email)} error=${String(e && e.message || e).slice(0, 200)}`);
+    try {
+      await logEvent({ type: "signin_link_failed", actorId: null, actorRole: null, subjectId: null, market: null, data: { domain: emailDomainOf(email), error: String(e && e.message || e).slice(0, 200) } });
+    } catch (logErr) { /* the failure log must never throw */ }
+  }
+  return json(200, payload);
+}
+
+async function handleSigninLinkConsume(event) {
+  const b = parseBody(event);
+  const token = typeof b.token === "string" ? b.token.trim() : "";
+  if (!token) return err(400, "That sign-in link is not valid. Request a new one from the sign-in page.");
+  const hash = resetTokenHash(token);
+  const rec = await store.get(`signinlink:${hash}`);
+  if (!rec) return err(400, "That sign-in link is not valid, or it has already been used. Request a new one from the sign-in page.");
+  if (Date.now() > Date.parse(rec.expiresAt)) {
+    await store.del(`signinlink:${hash}`);
+    const idxRec = await store.get(`signinlink-user:${rec.userId}`);
+    if (idxRec && idxRec.tokenHash === hash) await store.del(`signinlink-user:${rec.userId}`);
+    return err(400, "That sign-in link has expired. Request a new one from the sign-in page.");
+  }
+  const user = await store.get(`user:${rec.userId}`);
+  if (!user) {
+    await store.del(`signinlink:${hash}`);
+    return err(400, "That sign-in link is not valid. Request a new one from the sign-in page.");
+  }
+  // Single-use: the token dies before the session is born, so a
+  // replayed link can never mint a second session.
+  await store.del(`signinlink:${hash}`);
+  await store.del(`signinlink-user:${user.id}`);
+  await logEvent({ type: "user_signed_in", actorId: user.id, actorRole: user.role, subjectId: user.id, market: user.market || null, data: { via: "signin_link" } });
+  const session = await auth.createSession(user.id);
+  const secure = (event.headers["x-forwarded-proto"] || "").includes("https");
+  return json(200, { user: await withFounding(user) }, { "Set-Cookie": auth.sessionCookie(session, secure) });
 }
 
 // ---------- main router ----------
@@ -16774,6 +17038,12 @@ async function route(event) {
       moments: MOMENTS,
       termsVersion: TERMS_VERSION,
       email: { enabled: emailEnabled() },
+      // Google sign-in (Build -123): true only when the Google
+      // OAuth env is set (Jeff's Google Cloud step). The client
+      // renders Continue with Google from this flag, never from
+      // a guess; false keeps the sign-in and join screens
+      // exactly as they were.
+      googleSignin: { configured: googleAuth.googleConfigured() },
       // Stripe Connect paid-lane rail (2026-10-26): true only
       // when the server carries Stripe keys. The client renders
       // payout setup + card-on-file surfaces from this flag;
@@ -17177,6 +17447,16 @@ async function route(event) {
   if (method === "POST" && seg[0] === "auth" && seg[1] === "forgot") return handleForgot(event);
   if (method === "POST" && seg[0] === "auth" && seg[1] === "reset") return handleReset(event);
   if (method === "POST" && seg[0] === "auth" && seg[1] === "change-password") return handleChangePassword(event, ctx);
+  // Google sign-in (Build -123): start + callback are full-page
+  // navigations answering 302s, exactly like the platform
+  // connects; prefill reads the apply token back; unlink and the
+  // sign-in link pair are ordinary JSON posts.
+  if (method === "GET" && seg[0] === "auth" && seg[1] === "google" && seg[2] === "start" && seg.length === 3) return handleGoogleStart(event, ctx);
+  if (method === "GET" && seg[0] === "auth" && seg[1] === "google" && seg[2] === "callback" && seg.length === 3) return handleGoogleCallback(event, ctx);
+  if (method === "GET" && seg[0] === "auth" && seg[1] === "google" && seg[2] === "prefill" && seg.length === 3) return handleGooglePrefill(event, ctx);
+  if (method === "POST" && seg[0] === "auth" && seg[1] === "google" && seg[2] === "unlink" && seg.length === 3) return handleGoogleUnlink(event, ctx);
+  if (method === "POST" && seg[0] === "auth" && seg[1] === "signin-link" && seg.length === 2) return handleSigninLinkRequest(event);
+  if (method === "POST" && seg[0] === "auth" && seg[1] === "signin-link" && seg[2] === "consume" && seg.length === 3) return handleSigninLinkConsume(event);
   if (method === "GET" && seg[0] === "auth" && seg[1] === "me") {
     if (!user) return err(401, "Not signed in");
     const meUser = await withFounding(user);
