@@ -151,15 +151,15 @@ check("admin money view reads Wallet (cc tab + home kicker)",
 check("the old cross-screen money strip is gone (Content and Results stand alone)",
   !appJs.includes("bizMoneyStrip119("));
 
-// P — Profile is the real profile only; More is gone
+// P — Profile is the real profile (+ the -123 Connected accounts hub, landed on top); More is gone
 part("P: Profile + More abolition");
 check("the More screen, the appended More lists and the business More sheet are deleted",
   !appJs.includes("function renderMoreScreen()") && !appJs.includes("function moreLinksHtml119()") &&
   !appJs.includes("function openMoreSheet()") && !appJs.includes('wsHead("More"'));
 check("no role's tab inventory routes a More tab",
   !appJs.includes('"Earnings", "More"') && !appJs.includes('"Profile", "More"') && !appJs.includes('"Account", "More"') && !appJs.includes('"Plan", "Messages", "Profile", "More"'));
-check("creator Profile (live + founding) is head + segments + the profile form only",
-  count(appJs, 'profileSegStrip119() + creatorProfileHtml(u);') === 2 &&
+check("creator Profile (live + founding) is head + segments + the profile form + the -123 Connected accounts hub (Momentum/Grow/More appends stay deleted; pin re-aimed at the landing, 2026-11-04)",
+  count(appJs, 'profileSegStrip119() + creatorProfileHtml(u) + connectedAccountsHtml(u);') === 2 &&
   !appJs.includes("creatorProfileHtml(u) + momentumHtml(u)") && !appJs.includes("creatorProfileHtml(u) + moreLinksHtml119()"));
 check("identity row lands per role (partner → Account, pilot → Overview), never a blind Profile",
   appJs.includes("function identityDest125()") && appJs.includes('if (u.role === "partner") return "Account";') &&

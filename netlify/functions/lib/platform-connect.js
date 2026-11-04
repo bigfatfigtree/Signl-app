@@ -56,8 +56,20 @@ function appBaseUrl() {
   return (process.env.APP_URL || "https://app.joinsignl.com").replace(/\/+$/, "");
 }
 
+// Build -123: one Google Cloud project serves both YouTube
+// connect and Google sign-in, so the dedicated GOOGLE_OAUTH_*
+// pair falls back to the sign-in pair (GOOGLE_CLIENT_ID /
+// GOOGLE_CLIENT_SECRET) when unset. Jeff sets one client once;
+// either name keeps working.
+function googleClientId() {
+  return process.env.GOOGLE_OAUTH_CLIENT_ID || process.env.GOOGLE_CLIENT_ID || "";
+}
+function googleClientSecret() {
+  return process.env.GOOGLE_OAUTH_CLIENT_SECRET || process.env.GOOGLE_CLIENT_SECRET || "";
+}
+
 function youtubeConfigured() {
-  return !!(process.env.GOOGLE_OAUTH_CLIENT_ID && process.env.GOOGLE_OAUTH_CLIENT_SECRET);
+  return !!(googleClientId() && googleClientSecret());
 }
 
 function youtubeRedirectUri() {
@@ -130,7 +142,7 @@ async function consumeOAuthState(token) {
 
 function buildYouTubeAuthUrl(state) {
   const params = new URLSearchParams({
-    client_id: process.env.GOOGLE_OAUTH_CLIENT_ID || "",
+    client_id: googleClientId(),
     redirect_uri: youtubeRedirectUri(),
     response_type: "code",
     scope: YOUTUBE_SCOPE,
@@ -158,8 +170,8 @@ async function postTokenRequest(fields) {
 async function exchangeYouTubeCode(code) {
   return postTokenRequest({
     code,
-    client_id: process.env.GOOGLE_OAUTH_CLIENT_ID || "",
-    client_secret: process.env.GOOGLE_OAUTH_CLIENT_SECRET || "",
+    client_id: googleClientId(),
+    client_secret: googleClientSecret(),
     redirect_uri: youtubeRedirectUri(),
     grant_type: "authorization_code",
   });
@@ -169,8 +181,8 @@ async function refreshYouTubeAccessToken(conn) {
   if (!conn.refreshToken) throw new Error("No refresh token stored for this YouTube connection");
   const data = await postTokenRequest({
     refresh_token: conn.refreshToken,
-    client_id: process.env.GOOGLE_OAUTH_CLIENT_ID || "",
-    client_secret: process.env.GOOGLE_OAUTH_CLIENT_SECRET || "",
+    client_id: googleClientId(),
+    client_secret: googleClientSecret(),
     grant_type: "refresh_token",
   });
   conn.accessToken = data.access_token;
