@@ -930,7 +930,7 @@ async function renderPublicProof() {
     statCells.push(`<div class="stat-cell"><div class="stat-num">${p.spanishAudiencePct}%</div><div class="stat-lbl">Spanish-speaking audience (self-reported)</div></div>`);
   }
   if (typeof p.momentumPoints === "number") {
-    statCells.push(`<div class="stat-cell"><div class="stat-num">${p.momentumPoints}</div><div class="stat-lbl">Standing points · part of the order businesses see</div></div>`);
+    statCells.push(`<div class="stat-cell"><div class="stat-num">${p.momentumPoints}</div><div class="stat-lbl">Momentum points · part of the order businesses see</div></div>`);
   }
   if (p.ratingCount >= 3 && p.ratingAvg !== null && p.ratingAvg !== undefined) {
     statCells.push(`<div class="stat-cell"><div class="stat-num">${esc(String(p.ratingAvg))} / 5</div><div class="stat-lbl">Rating from ${p.ratingCount} businesses</div></div>`);
@@ -1123,7 +1123,7 @@ function growRosterHtml(u) {
       <p class="small">Share your invite link — creators who join through it are credited to you.</p>
       <div class="field"><label>Your invite link</label><input type="text" readonly value="${esc(link)}" onclick="this.select()"></div>
       <p class="small">${shareBlockHtml(u.creator && u.creator.handle, place, "Share your invite")}</p>
-      ${m.signups > 0 ? `<p class="small"><strong>Your roster:</strong> ${m.signups} ${m.signups === 1 ? "creator" : "creators"} joined through your link &middot; ${m.approved} approved &middot; <strong>${m.points} Standing points</strong></p>` : ""}
+      ${m.signups > 0 ? `<p class="small"><strong>Your roster:</strong> ${m.signups} ${m.signups === 1 ? "creator" : "creators"} joined through your link &middot; ${m.approved} approved &middot; <strong>${m.points} Momentum points</strong></p>` : ""}
       ${m.campusCrew ? `<p class="small"><strong>Your campus crew: ${m.campusCrew.count} creator${m.campusCrew.count === 1 ? "" : "s"} from ${esc(m.campusCrew.university)}</strong></p>` : ""}
       ${m.campusLead && m.campusLead.qualified ? `<p class="small"><strong>Campus Lead · ${esc(m.campusLead.university)}</strong> — ${m.campusLead.count} classmates you recruited are approved. The badge is on your profile.</p>` : m.campusLead && m.campusLead.count > 0 ? `<p class="small"><strong>Campus Lead at ${esc(m.campusLead.university)}:</strong> ${m.campusLead.count} of ${m.campusLead.threshold} classmates recruited and approved — ${m.campusLead.needed} more earns the badge.</p>` : ""}
       <p class="small">Points: +3 per sign-up &middot; +10 per approval. Roster builders get seen first. ${POINTS_WHY_SHORT}</p>
@@ -1299,7 +1299,7 @@ function momentumHtml(u) {
     </div>`).join("");
   return `
   <div class="panel mt" style="text-align:left">
-    <div class="flex-between"><h3 style="margin:0">Standing points</h3><span class="badge info" style="font-size:1rem;padding:6px 14px">${m.points > 0 ? `${m.points} points` : "Just starting"}</span></div>
+    <div class="flex-between"><h3 style="margin:0">Momentum points</h3><span class="badge info" style="font-size:1rem;padding:6px 14px">${m.points > 0 ? `${m.points} points` : "Just starting"}</span></div>
     <p class="small">Earned for on-time posts, a complete profile, reviews and invites.${m.floorApplied ? " Your total never drops below zero." : ""}</p>
     <p class="small" style="margin-top:6px">${POINTS_WHY_LONG}</p>
     <h4 style="margin:14px 0 6px">Ways to earn</h4>
@@ -1910,7 +1910,7 @@ function dealPlainWordsHtml(o) {
       <p class="small"><strong>${esc(postingTermsLineClient(o))}</strong> Paid visits follow the terms agreed on the booking, not the comped 48-hour ladder.</p>`
         : `<p class="small"><strong>You post:</strong> ${deliverablePhraseClient(o)}, within ${windowPhraseClient(dv84.windowHours)} of your visit, honest, with the ${o.kind === "coupon" ? "coupon" : "comp"} disclosed. The post stays live at least 30 days. You check off by pasting the post link in My Visits.</p>`}
       ${o.kind === "paid" ? `<p class="small"><strong>Included:</strong> the standard license: the business can repost your post and run it as an ad for 90 days from the post date, never longer. It is created automatically with this booking as a dated record; there is nothing to fill in, for you or for them.</p>` : ""}
-      ${o.kind === "paid" ? "" : `<p class="small muted">${dv84.windowHours === 48 ? "The goal is one post + one story within 48 hours of your visit. Up to a week at the outside; posting within 48 hours earns Standing." : "Up to a week at the outside. Posting inside your window is what earns Standing."}</p>`}
+      ${o.kind === "paid" ? "" : `<p class="small muted">${dv84.windowHours === 48 ? "The goal is one post + one story within 48 hours of your visit. Up to a week at the outside; posting within 48 hours earns Momentum." : "Up to a week at the outside. Posting inside your window is what earns Momentum."}</p>`}
       <p class="small"><strong>They can:</strong> ${rights.can.map(esc).join("; ")}</p>
       <p class="small"><strong>They can't:</strong> ${rights.cannot.map(esc).join("; ")}</p>
     </div>
@@ -2403,7 +2403,7 @@ function moreRowsFor() {
       { icon: "banknote", label: "Earnings", sub: "Paid bookings and license requests.", tab: "Earnings", badge: wc.crLicense || 0 },
       { icon: "person", label: "My profile", sub: "What businesses see, your rate, your links.", tab: "Profile" },
       { icon: "bars", label: "Your numbers", sub: "What your posts and visits did.", tab: "Numbers" },
-      { icon: "bolt", label: "Standing", sub: "You reply fast and show up. Businesses see it before followers.", tab: "Momentum" },
+      { icon: "bolt", label: "Momentum", sub: "You reply fast and show up. Businesses see it before followers.", tab: "Momentum" },
       { icon: "users", label: "Bench", sub: "Creators in your market.", tab: "Bench" },
       { icon: "bubble", label: "Messages", sub: "Talk to a business about a visit or an offer.", tab: "Messages", badge: b.messages || 0 },
       { icon: "sliders", label: "Settings", sub: "Account and notifications.", tab: "Settings" },
@@ -3045,7 +3045,7 @@ function wireChecklist(root, steps) {
 // Rows keep the callers' own wiring: queue rows carry data-sq
 // indices into the queue array (wireSigQueue), step rows carry
 // data-ck indices into the steps array (wireChecklist).
-const STANDING_GLOSS = "Standing — you reply fast and show up. Businesses see it before followers.";
+const MOMENTUM_GLOSS = "Momentum — you reply fast and show up. Businesses see it before followers.";
 function standingLevelName(points) {
   const p = Number(points) || 0;
   return p >= 750 ? "Cornerstone" : p >= 300 ? "Standout" : p >= 100 ? "Regular" : "Starter";
@@ -3106,7 +3106,7 @@ function wireNextSteps(root, queue, steps, links) {
 }
 // The creator shapes row (design: numbers are shapes). Earned
 // is a number with its trend line; local audience is the
-// donut; Standing is the level word with its one-line gloss.
+// donut; Momentum is the level word with its one-line gloss.
 function creatorShapesHtml119(o) {
   const earned = Number(o.earned) || 0;
   const spark = sparkSvg119(o.earnedSeries || []);
@@ -3116,7 +3116,7 @@ function creatorShapesHtml119(o) {
   return `<div class="shapes-row">
     <div class="shape-cell"><div class="sc-tx"><span class="sc-num">${ownCurrencySymbol()}${fmtPrice(earned)}</span><span class="sc-lbl">Earned</span></div>${spark}</div>
     ${localCell}
-    <div class="shape-cell"><span class="sdot119" style="background:#00B67A;width:11px;height:11px"></span><div class="sc-tx"><span class="sc-num" style="font-size:1.15rem">${esc(standingLevelName(o.points))}</span><span class="sc-lbl">Standing · ${fmtNum(o.points || 0)} pts</span><span class="sc-sub">${esc(STANDING_GLOSS.split("—")[1].trim())}</span></div></div>
+    <div class="shape-cell"><span class="sdot119" style="background:#00B67A;width:11px;height:11px"></span><div class="sc-tx"><span class="sc-num" style="font-size:1.15rem">${esc(standingLevelName(o.points))}</span><span class="sc-lbl">Momentum · ${fmtNum(o.points || 0)} pts</span><span class="sc-sub">${esc(MOMENTUM_GLOSS.split("—")[1].trim())}</span></div></div>
   </div>`;
 }
 // Creator Profile segments (Build -119, design): Basics /
@@ -3400,7 +3400,7 @@ function renderHelpTab() {
     ${qa("What do I owe after a visit?", "The goal is one post + one story within 48 hours of your visit. Post within 48 hours to be on time; the hard deadline is one week. Always disclose the comp, that is the law and the deal.")}
     ${qa("How do comped visits and paid bookings differ?", "A comped visit covers the meal or service, on the business. A paid booking pays your listed rate, and you keep 97%. Joining is free and comped visits are always free; the only fee is 3% on paid bookings.")}
     ${qa("What is local reach?", "The share of your audience that actually lives here, times your audience size. Businesses rank creators by local reach, not follower count.")}
-    ${qa("How does Standing work?", "Points for doing the work well: +20 for an on-time post, +25 when a business runs your post as an ad, +3 when someone joins from your invite link, +10 when a creator you invited is approved. Late posts and no-shows cost points.")}
+    ${qa("How does Momentum work?", "Points for doing the work well: +20 for an on-time post, +25 when a business runs your post as an ad, +3 when someone joins from your invite link, +10 when a creator you invited is approved. Late posts and no-shows cost points.")}
     ${qa("What is a license request?", "A business asks to repost your post and run it as an ad for 90 days, at your listed licensing fee. The 90 days start the day you approve. You approve each use and keep 97%. It lives under Earnings.")}
     ${qa("When do I get paid?", "Paid bookings record your rate in the app: booked at your rate, you keep 97%. Payouts run outside the app for now, and nothing in the app promises a payout date.")}
     ${qa("What will payout setup ask me?", isUkUser() ? "Stripe will ask for identity details, your address, and a UK bank account (sort code and account number), each for a plain reason. The full version is right below, under Payout setup, in plain words. It also covers sole trader or limited company setup, and why a first payout can be held briefly while identity checks clear." : "Stripe will ask for identity details, your address, your bank account, and tax information, each for a plain reason. The full version is right below, under Payout setup, in plain words. It also covers Form 1099-K and why a first payout can be held briefly while identity checks clear.")}
@@ -3424,11 +3424,11 @@ function renderMomentumTab() {
   const tier = (u.creator && u.creator.tierBand) || "";
   const next = (m.checklist || []).find((i) => !i.done);
   el.innerHTML = `
-  ${wsHead("Standing", { sub: "Your points, your tier, and what earns more.", subKey: "momentum" })}
+  ${wsHead("Momentum", { sub: "Your points, your tier, and what earns more.", subKey: "momentum" })}
   <div class="wcard mom-card">
-    <div class="kpi-label">Your Standing</div>
+    <div class="kpi-label">Your Momentum</div>
     <div class="kpi-num" style="font-size:3rem">${fmtNum(m.points || 0)}</div>
-    <div class="kpi-sub">${m.points ? `${tier ? `You are in the ${esc(tier)} tier. ` : ""}${next ? `Next: ${esc(next.label)} (+${next.points}).` : "Every way to earn is done. Keep the streak going."}` : "Your Standing starts with your first visit. Post on time and it climbs."}</div>
+    <div class="kpi-sub">${m.points ? `${tier ? `You are in the ${esc(tier)} tier. ` : ""}${next ? `Next: ${esc(next.label)} (+${next.points}).` : "Every way to earn is done. Keep the streak going."}` : "Your Momentum starts with your first visit. Post on time and it climbs."}</div>
     <p class="small" style="margin:10px 0 0">${POINTS_WHY_LONG}</p>
   </div>
   ${momentumHtml(u)}
@@ -3497,7 +3497,7 @@ async function renderEarningsTab() {
     ${kpiCard("This month", `$${fmtMoney(monthEarned)}`, { sub: "Earned in " + nowD.toLocaleDateString(undefined, { month: "long" }) })}
     ${kpiCard("On its way", `$${fmtMoney(money.held || 0)}`, { sub: "Booked at your rate, held until the post is live" })}
   </div>` : `
-  <div class="empty-card"><div class="ec-t">Nothing earned yet</div><div class="ec-s">Nothing earned yet. Paid bookings you complete show up here. Comped visits build your Standing instead.</div><div class="mt">${(state.user.creator || {}).paidRate ? `<button type="button" class="btn small-btn ws-primary" onclick="return go('dashboard','Offers')">See offers</button>` : `<button type="button" class="btn small-btn ws-primary" onclick="return go('dashboard','Profile')">Set your paid rate</button>`}</div></div>`}
+  <div class="empty-card"><div class="ec-t">Nothing earned yet</div><div class="ec-s">Nothing earned yet. Paid bookings you complete show up here. Comped visits build your Momentum instead.</div><div class="mt">${(state.user.creator || {}).paidRate ? `<button type="button" class="btn small-btn ws-primary" onclick="return go('dashboard','Offers')">See offers</button>` : `<button type="button" class="btn small-btn ws-primary" onclick="return go('dashboard','Profile')">Set your paid rate</button>`}</div></div>`}
   <p class="small muted" style="margin:14px 2px 0">Paid bookings pay your listed rate. You keep 97%.</p>
   ${wsTabs([
     { label: "Earned", on: earnSeg === "earned", onclick: "return earnSetSeg('earned')" },
@@ -3569,7 +3569,7 @@ async function renderCreatorNumbers() {
       el.innerHTML = `${head}
       <div id="cr-stats"></div>
       ${reachCard}
-      <div class="empty-card"><div class="ec-t">Your numbers</div><div class="ec-s">This fills in once your visits and posts land. When businesses book you and your posts go live, you will see your posts, your on-time record, and your Standing here.</div></div>`;
+      <div class="empty-card"><div class="ec-t">Your numbers</div><div class="ec-s">This fills in once your visits and posts land. When businesses book you and your posts go live, you will see your posts, your on-time record, and your Momentum here.</div></div>`;
       loadCreatorStats();
       return;
     }
@@ -3589,7 +3589,7 @@ async function renderCreatorNumbers() {
         const cum = ledger.filter((e) => (Date.parse(e.at || "") || 0) < dayStart + 86400000).reduce((s, e) => s + (Number(e.points) || 0), 0);
         days.push({ date: new Date(dayStart).toISOString(), points: Math.max(cum, 0) });
       }
-      if (days.some((dd) => dd.points > 0)) trendHtml = `<div class="chart-card"><h3>Standing trend</h3><p class="wc-sub">Your points, day by day, last 30 days. ${POINTS_WHY_SHORT}</p>${lineChartSvg(days, [{ k: "points", color: "#0B0D0C" }])}</div>`;
+      if (days.some((dd) => dd.points > 0)) trendHtml = `<div class="chart-card"><h3>Momentum trend</h3><p class="wc-sub">Your points, day by day, last 30 days. ${POINTS_WHY_SHORT}</p>${lineChartSvg(days, [{ k: "points", color: "#0B0D0C" }])}</div>`;
     }
     const reviewRows = bookings.filter((b) => b.creatorReview).map((b) => `<div class="lib-row"><div class="lib-main"><div class="lib-title">${starsHtml(b.creatorReview.stars)} ${esc(String(b.creatorReview.stars))} — ${esc(b.title || "Visit")}</div><div class="lib-meta">${esc(b.businessName || "")}${b.creatorReview.createdAt ? ` · ${fmtDay(b.creatorReview.createdAt)}` : ""}${b.creatorReview.comment ? `<br>${esc(b.creatorReview.comment)}` : ""}</div></div></div>`).join("");
     // Intent card (Build -83): the creator's own exact recorded
@@ -3616,7 +3616,7 @@ async function renderCreatorNumbers() {
     <div class="kpi-grid c3">
       ${kpiCard("Posts delivered", fmtNum(tr.postsDelivered || delivered.length), { sub: "Posts live from your visits" })}
       ${kpiCard("On time", tr.onTimePct === null || tr.onTimePct === undefined ? "New" : tr.onTimePct + "%", { sub: "Inside the 48 hour standard" })}
-      ${kpiCard("Standing", fmtNum(m.points || 0), { sub: POINTS_WHY_SHORT })}
+      ${kpiCard("Momentum", fmtNum(m.points || 0), { sub: POINTS_WHY_SHORT })}
     </div>
     ${intentCard}
     ${trendHtml}
@@ -4788,7 +4788,7 @@ function renderHome() {
       <div class="rule-row">Every comp disclosed (FTC).</div>
       <div class="rule-row">Posts delivered in 48 hours*</div>
       <p class="small muted" style="margin:10px 0 0">*Creators have up to a week; 48 hours is the standard they are held to. A visit with no post after the week is replaced for the business.</p>
-      <details class="deal-details"><summary>All the rules</summary><div class="dd-body"><p class="small">A business can never require a positive post, a rating, or specific words. Creators disclose every comp, as the FTC requires. A post inside the week still counts, as a late delivery. Invite other creators and earn Standing points (+3 per sign-up through your link, +10 per approval). Points order the creator list businesses see.</p></div></details>
+      <details class="deal-details"><summary>All the rules</summary><div class="dd-body"><p class="small">A business can never require a positive post, a rating, or specific words. Creators disclose every comp, as the FTC requires. A post inside the week still counts, as a late delivery. Invite other creators and earn Momentum points (+3 per sign-up through your link, +10 per approval). Points order the creator list businesses see.</p></div></details>
     </div>
   </section>`;
 }
@@ -9579,7 +9579,7 @@ function ladderHtml(u) {
   const l = u && u.ladder;
   if (!l) return "";
   const earned = (l.badges || []).filter((b) => b.kind === "milestone" || b.kind === "campus");
-  let out = `<p class="small" style="margin-top:10px"><strong>Referral badges:</strong> approved referrals earn badges and bonus Standing points. 1 approved referral: Connector badge, +25 points. 3: Super Connector, +50. 5: Roster Builder, +75. 10: City Lead, +150.</p>`;
+  let out = `<p class="small" style="margin-top:10px"><strong>Referral badges:</strong> approved referrals earn badges and bonus Momentum points. 1 approved referral: Connector badge, +25 points. 3: Super Connector, +50. 5: Roster Builder, +75. 10: City Lead, +150.</p>`;
   if (earned.length) out += `<p class="small">Your badges: ${earned.map((b) => esc(b.name)).join(" &middot; ")}</p>`;
   const pending = (l.milestones || []).find((m) => m.state === "pending_unlock");
   if (pending) {
@@ -10020,7 +10020,7 @@ function creatorProfileDetailHtml(c, preview, opts) {
     ${preview ? `<p class="small muted">Preview: an offer sent from here is a simulation. It never reaches ${esc(c.name)} and nothing is saved.</p>` : ""}
     ${preview && c.trackRecord && c.trackRecord.postsDelivered > 0 ? `
     <div class="showcase-block"><h4>Ad use (preview)</h4>
-      <p class="small muted">Ad use comes with the standard license: on a paid visit, a business can repost the post and run it as an ad for 90 days from the post date, and a comped post can be licensed the same way at the creator's listed fee with their approval. In the real app that logs the use, notifies the creator, and awards +25 Standing. Here it is a simulation: nothing is logged and no points move.</p>
+      <p class="small muted">Ad use comes with the standard license: on a paid visit, a business can repost the post and run it as an ad for 90 days from the post date, and a comped post can be licensed the same way at the creator's listed fee with their approval. In the real app that logs the use, notifies the creator, and awards +25 Momentum. Here it is a simulation: nothing is logged and no points move.</p>
       <button class="btn small-btn ghost" onclick="previewAdUse('${c.userId}')">Use in an ad</button> <span id="pv-aduse-note" class="saved"></span>
     </div>` : ""}
   </div>`;
@@ -10265,10 +10265,10 @@ async function loadFoundingDashboard() {
     if (u.profileCompletion && u.profileCompletion.complete) {
       const photoIt = (u.profileCompletion.items || []).find((i) => i.id === "photo");
       if (photoIt && !photoIt.done) {
-        const it = sigIdeaItem(u.id, "cr_photo", `Add your profile photo.${photoIt.points ? ` It earns +${photoIt.points} Standing.` : ""} Founding profiles with a face are the ones businesses meet first.`, "Add photo", () => go("dashboard", "Profile"), "Add a profile photo");
+        const it = sigIdeaItem(u.id, "cr_photo", `Add your profile photo.${photoIt.points ? ` It earns +${photoIt.points} Momentum.` : ""} Founding profiles with a face are the ones businesses meet first.`, "Add photo", () => go("dashboard", "Profile"), "Add a profile photo");
         if (it) queueItems.push(it);
       }
-      const inv = sigIdeaItem(u.id, "cr_invite", "Know a creator who should be founding with you? Your invite earns +3 Standing when they join, +10 when they are approved.", "Share invite", () => { const g = document.getElementById("grow-roster"); if (g) g.scrollIntoView({ behavior: "smooth", block: "start" }); }, "Invite a founding creator");
+      const inv = sigIdeaItem(u.id, "cr_invite", "Know a creator who should be founding with you? Your invite earns +3 Momentum when they join, +10 when they are approved.", "Share invite", () => { const g = document.getElementById("grow-roster"); if (g) g.scrollIntoView({ behavior: "smooth", block: "start" }); }, "Invite a founding creator");
       if (inv) queueItems.push(inv);
       const capped = capSigIdeas(queueItems);
       queueItems.length = 0;
@@ -10312,12 +10312,12 @@ async function loadFoundingDashboard() {
       <div class="kpi-num" style="font-size:2.4rem">${localReach === null ? "Not set" : fmtNum(localReach)}</div></div></div>
       <div class="kpi-sub" style="margin-top:10px">${pctSet ? `${p.localAudiencePct}% of your ${fmtNum(totalAud)} audience is local. Businesses rank creators by this number, not by follower count.` : "Add your local audience % in your profile and this fills in."}</div>
       ${pctSet ? "" : `<p style="margin:12px 0 0"><button class="btn small-btn ws-primary" onclick="return go('dashboard','Profile')">Add your local %</button></p>`}
-      <p class="small" style="margin:12px 0 0"><strong>Standing: ${esc(standingLevelName(momPts))}${momPts ? ` · ${fmtNum(momPts)} pts` : ""}.</strong> ${esc(STANDING_GLOSS.split("—")[1].trim())}</p>
+      <p class="small" style="margin:12px 0 0"><strong>Momentum: ${esc(standingLevelName(momPts))}${momPts ? ` · ${fmtNum(momPts)} pts` : ""}.</strong> ${esc(MOMENTUM_GLOSS.split("—")[1].trim())}</p>
     </div>
     <p class="small" style="margin:10px 2px 0">${listedMarketsLineHtml(card)}</p>
     ${homePaidLaneSummaryHtml(u.creator)}
     ${growRosterHtml(u)}
-    <p class="small muted" style="margin:14px 2px 0">Your Charter card, founding class, points, and full status live under <a class="tlink" href="#" onclick="return go('dashboard','Status')">Status</a> and <a class="tlink" href="#" onclick="return go('dashboard','Momentum')">Standing</a>.</p>
+    <p class="small muted" style="margin:14px 2px 0">Your Charter card, founding class, points, and full status live under <a class="tlink" href="#" onclick="return go('dashboard','Status')">Status</a> and <a class="tlink" href="#" onclick="return go('dashboard','Momentum')">Momentum</a>.</p>
     ${askSigRowHtml()}`;
     wireNextSteps(el, queueItems, fSteps, []);
     renderBottomNav();
@@ -11772,9 +11772,9 @@ function creatorUnlockHtml(f, buzz, placeRaw) {
 // here claims creators see campaigns earlier by Momentum.
 function creatorMomentumPayoffHtml() {
   return `<section class="wcard">
-    <p class="ui-kicker">Why Standing matters</p>
-    <h3 style="margin:2px 0 0">Standing moves you up</h3>
-    <p class="small" style="margin:6px 0 0">Standing is part of how businesses find you. It rides on your roster card next to your local reach, businesses can sort the roster by Standing, and when you apply to an offer, Standing is part of the stack order the business picks from. Local reach counts most in that stack, then your Local Impact Score, then Standing and reliability. Your points and ways to earn are in the Standing section below.</p>
+    <p class="ui-kicker">Why Momentum matters</p>
+    <h3 style="margin:2px 0 0">Momentum moves you up</h3>
+    <p class="small" style="margin:6px 0 0">Momentum is part of how businesses find you. It rides on your roster card next to your local reach, businesses can sort the roster by Momentum, and when you apply to an offer, Momentum is part of the stack order the business picks from. Local reach counts most in that stack, then your Local Impact Score, then Momentum and reliability. Your points and ways to earn are in the Momentum section below.</p>
   </section>`;
 }
 
@@ -12219,7 +12219,7 @@ function homeLocalSignalHtml(card, bookings) {
     <div class="ui-row"><span class="k">Track record</span><span class="v">${tr.visitsCompleted || 0} visits &middot; ${tr.postsDelivered || 0} posts</span></div>
     <div class="ui-row"><span class="k">Register actions</span><span class="v">${tallyCount ? `${tallyCount} customers &middot; $${fmtMoney(tallyTotal)} rung up` : "None reported yet"}</span></div>
     ${delivered ? `<div class="ui-row"><span class="k">On-time streak</span><span class="v">${streak} in a row</span></div>
-    <p class="small muted">+25 Standing per 5-post on-time streak.</p>` : ""}
+    <p class="small muted">+25 Momentum per 5-post on-time streak.</p>` : ""}
     <div class="home-actions"><button class="btn small-btn" onclick="return go('dashboard','Profile')">View your full profile</button></div>
   </section>`;
 }
@@ -12968,7 +12968,7 @@ function homeComingUpHtml(bookings) {
       items.push({ at: b.postDeadline, label: `Post due for ${b.businessName}`, detail: b.title });
     }
     if (b.post && b.post.performanceRequestedAt && !b.post.reportedAt) {
-      items.push({ at: b.post.performanceRequestedAt, label: `Post numbers requested by ${b.businessName}`, detail: "Reporting them earns +5 Standing" });
+      items.push({ at: b.post.performanceRequestedAt, label: `Post numbers requested by ${b.businessName}`, detail: "Reporting them earns +5 Momentum" });
     }
     if (b.paidLane && b.paidLane.escrowState === "held" && b.paidLane.proofAt) {
       items.push({ at: new Date(Date.parse(b.paidLane.proofAt) + 48 * 3600 * 1000).toISOString(), label: `Paid money releases from ${b.businessName}`, detail: `$${fmtMoney(b.paidLane.creatorNet)} when the 48 hour hold passes` });
@@ -12994,7 +12994,7 @@ function homeFoundingBlocksHtml(card, u) {
   const m = (u && u.momentum) || { points: 0 };
   return `
   <div class="stat-band home-metrics">
-    <div class="stat-cell"><div class="stat-num"><em>${m.points}</em></div><div class="stat-lbl">Standing points</div></div>
+    <div class="stat-cell"><div class="stat-num"><em>${m.points}</em></div><div class="stat-lbl">Momentum points</div></div>
     <div class="stat-cell"><div class="stat-num">${p.localAudiencePct === null || p.localAudiencePct === undefined ? "Not set" : p.localAudiencePct + "%"}</div><div class="stat-lbl">Local reach</div></div>
     <div class="stat-cell"><div class="stat-num">${card && card.localImpactScore !== null && card.localImpactScore !== undefined ? card.localImpactScore : "New"}</div><div class="stat-lbl">Impact Score / 100</div></div>
     <div class="stat-cell"><div class="stat-num">${fmtNum(totalAudienceOf(card))}</div><div class="stat-lbl">Total audience</div></div>
@@ -13183,14 +13183,14 @@ async function loadCreatorHome() {
       const c = u.creator || {};
       const pcItem = (id) => ((pc && pc.items) || []).find((i) => i.id === id);
       const pushIdea = (id, text, btn, act, short) => { const it = sigIdeaItem(u.id, id, text, btn, act, short); if (it) items.push(it); };
-      const ptsBit = (item, fallback) => (item && item.points ? ` It earns +${item.points} Standing.` : fallback || "");
+      const ptsBit = (item, fallback) => (item && item.points ? ` It earns +${item.points} Momentum.` : fallback || "");
       const photoItem = pcItem("photo");
       if (photoItem && !photoItem.done) pushIdea("cr_photo", `Add your profile photo.${ptsBit(photoItem)} Businesses see a face before they see numbers.`, "Add photo", () => go("dashboard", "Profile"), "Add a profile photo");
       const workItem = pcItem("bestwork");
       const workN = Math.min(3, (c.bestWork || []).length);
-      if (workItem && !workItem.done) pushIdea("cr_bestwork", `Add best-work links (${workN} of 3). Each one earns +5 Standing and shows on your public profile.`, "Add links", () => go("dashboard", "Profile"), `Best-work links: ${workN} of 3`);
+      if (workItem && !workItem.done) pushIdea("cr_bestwork", `Add best-work links (${workN} of 3). Each one earns +5 Momentum and shows on your public profile.`, "Add links", () => go("dashboard", "Profile"), `Best-work links: ${workN} of 3`);
       const bioItem = pcItem("bio");
-      if (bioItem && !bioItem.done) pushIdea("cr_bio", `Your bio is still short. Two honest lines${bioItem.points ? ` earn +${bioItem.points} Standing` : ""}.`, "Write bio", () => go("dashboard", "Profile"), "Bio still short");
+      if (bioItem && !bioItem.done) pushIdea("cr_bio", `Your bio is still short. Two honest lines${bioItem.points ? ` earn +${bioItem.points} Momentum` : ""}.`, "Write bio", () => go("dashboard", "Profile"), "Bio still short");
       const hoodItem = pcItem("neighborhood");
       if (hoodItem && !hoodItem.done) pushIdea("cr_neighborhood", `Set your neighborhood. Businesses search by neighborhood.${ptsBit(hoodItem)}`, "Set neighborhood", () => go("dashboard", "Profile"), "Neighborhood not set");
       if (!c.portfolioSample) pushIdea("cr_sample", "Link one post you already made about a place you love. It sits on your profile and book-me page labeled as your portfolio sample, so businesses can see your work before your first SIGNL visit.", "Add my sample post", () => go("dashboard", "Profile"), "Add a portfolio sample post");
@@ -13236,17 +13236,17 @@ async function loadCreatorHome() {
     const greetDup = gateDone && queue.length > 0;
     const snapCells = gateDone ? [
       { num: localReach === null ? "Not set" : fmtNum(localReach), label: "Your local reach", sub: "share of your audience living here" },
-      { num: fmtNum(m.points || 0), label: "Standing", sub: "points that move you up" },
+      { num: fmtNum(m.points || 0), label: "Momentum", sub: "points that move you up" },
       ...(money.released > 0 ? [{ num: `$${fmtMoney(money.released)}`, label: "Earned" }] : []),
     ] : null;
     const tier = cprof.tierBand || (u.creator && u.creator.tierBand) || "";
     const nextEarn = (m.checklist || []).find((i) => !i.done);
     const momentumCard = `<div class="wcard mom-card">
-      <div class="flex-between"><div><div class="kpi-label">Standing</div><div class="kpi-num" style="font-size:2.6rem">${fmtNum(m.points || 0)}</div></div>${tier ? `<span class="badge tier" style="font-size:1rem;padding:6px 14px">${esc(tier)}</span>` : ""}</div>
-      <div class="kpi-sub">${m.points ? (nextEarn ? `Next: ${esc(nextEarn.label)} (+${nextEarn.points}).` : "Every way to earn is done. Keep the streak going.") : "Your Standing starts with your first visit. Post on time and it climbs."}</div>
+      <div class="flex-between"><div><div class="kpi-label">Momentum</div><div class="kpi-num" style="font-size:2.6rem">${fmtNum(m.points || 0)}</div></div>${tier ? `<span class="badge tier" style="font-size:1rem;padding:6px 14px">${esc(tier)}</span>` : ""}</div>
+      <div class="kpi-sub">${m.points ? (nextEarn ? `Next: ${esc(nextEarn.label)} (+${nextEarn.points}).` : "Every way to earn is done. Keep the streak going.") : "Your Momentum starts with your first visit. Post on time and it climbs."}</div>
       <p class="small" style="margin:8px 0 0">${POINTS_WHY_SHORT}</p>
       ${tier ? `<p class="small muted" style="margin:6px 0 0">${esc(tier)} is your size band, set automatically from your total audience across platforms.</p>` : ""}
-      <p style="margin:10px 0 0"><button class="btn small-btn ws-outline" onclick="return go('dashboard','Momentum')">See Standing</button></p>
+      <p style="margin:10px 0 0"><button class="btn small-btn ws-outline" onclick="return go('dashboard','Momentum')">See Momentum</button></p>
     </div>`;
     // Activity (§6.1): invites, applications, visits, posts,
     // licenses, Momentum gains, and reviews — from real records.
@@ -13260,14 +13260,14 @@ async function loadCreatorHome() {
       if (b.creatorReview) feed.push({ kind: "visits", icon: "star", at: b.creatorReview.createdAt || (b.post && b.post.firstAt), title: `${b.businessName} rated you ${b.creatorReview.stars} stars`, meta: b.creatorReview.comment || "", btn: null });
     }
     for (const l of lrs) feed.push({ kind: "licenses", icon: "play", at: l.createdAt, title: l.status === "pending" ? `License request from ${l.businessName}` : `License ${l.status}: ${l.businessName}`, meta: `Your fee $${fmtPrice(l.fee)} · 90 days`, btn: l.status === "pending" ? "Review" : null, act: () => go("dashboard", "Earnings") });
-    for (const e of (m.ledger || [])) feed.push({ kind: "momentum", icon: "bolt", at: e.at, title: `${e.points > 0 ? "+" : ""}${e.points} Standing`, meta: e.label || "", btn: null });
+    for (const e of (m.ledger || [])) feed.push({ kind: "momentum", icon: "bolt", at: e.at, title: `${e.points > 0 ? "+" : ""}${e.points} Momentum`, meta: e.label || "", btn: null });
     feed.sort((x, y) => (String(y.at || "") < String(x.at || "") ? -1 : 1));
     state.crFeed = feed.slice(0, 14);
     state.crFeedActs = state.crFeed.map((f) => f.act || null);
     crFeedKind = "all";
     const caughtLinks = [
       { label: "See offers near you", act: () => { state.crOffersSeg = "foryou"; go("dashboard", "Offers"); } },
-      { label: "Check your Standing", act: () => go("dashboard", "Momentum") },
+      { label: "Check your Momentum", act: () => go("dashboard", "Momentum") },
     ];
     // V4.1: the Sig tab renders this same queue and badges its
     // count — one queue, two doors (see renderSigTab).
@@ -13276,7 +13276,7 @@ async function loadCreatorHome() {
     state.sigQueueCount = queue.length;
     // Build -119: the design's Home — greeting, ONE Next list
     // (queue + setup steps merged, Sig's prompts inside it),
-    // the shapes row (earned, local donut, Standing), then
+    // the shapes row (earned, local donut, Momentum), then
     // Activity. The old snapshot strip and Momentum card are
     // folded into the shapes row; nothing they carried is lost.
     const earnedSeries = (() => {
@@ -13423,7 +13423,7 @@ function creatorProfileHtml(u) {
         <div class="form-2col">
           ${stackRows.map(stackRowHtml).join("")}
         </div>
-        <p class="small muted">Total audience: <strong id="p-stack-total">${fmtNum(totalAudienceOf(c))}</strong> across every platform. Businesses see the total and the breakdown. Skip any platform you do not use (leave it at 0). Completing 3 or more platforms earns Standing points. <strong>SIGNL starts at 500 total followers across your platforms</strong>; until your total reaches 500, this step stays open and businesses cannot see you yet.</p>
+        <p class="small muted">Total audience: <strong id="p-stack-total">${fmtNum(totalAudienceOf(c))}</strong> across every platform. Businesses see the total and the breakdown. Skip any platform you do not use (leave it at 0). Completing 3 or more platforms earns Momentum points. <strong>SIGNL starts at 500 total followers across your platforms</strong>; until your total reaches 500, this step stays open and businesses cannot see you yet.</p>
       </div>
       <div class="field"><label>${T("What you create in", "En qué categorías creas")} <span class="req-badge">${T("Required", "Obligatorio")}</span></label><div class="checkrow">${cats}</div></div>
       <div class="field"><label>${T("Your local reach (local audience share, %)", "Tu alcance local (parte local de tu audiencia, %)")} <span class="req-badge">${T("Required", "Obligatorio")}</span></label><input type="number" id="p-localpct" min="0" max="100" value="${c.localAudiencePct === null || c.localAudiencePct === undefined ? "" : c.localAudiencePct}"><p class="small muted">${LOCAL_PCT_HELP}</p></div>
@@ -13518,7 +13518,7 @@ function myRatingHtml(card) {
   const count = card.ratingCount !== undefined ? card.ratingCount : (card.reviewSummary ? card.reviewSummary.count : 0);
   const avg = card.ratingAvg !== undefined && card.ratingAvg !== null ? card.ratingAvg : (card.reviewSummary ? card.reviewSummary.average : null);
   if (count >= 1 && avg !== null && avg !== undefined) {
-    return `<div class="showcase-block"><h4>Your rating</h4><p style="margin:0">${starsHtml(avg)} <strong>${esc(String(avg))}</strong> from ${count} business${count === 1 ? "" : "es"}. Businesses see your rating next to your Standing points: two separate numbers, and ratings never change your points.</p></div>`;
+    return `<div class="showcase-block"><h4>Your rating</h4><p style="margin:0">${starsHtml(avg)} <strong>${esc(String(avg))}</strong> from ${count} business${count === 1 ? "" : "es"}. Businesses see your rating next to your Momentum points: two separate numbers, and ratings never change your points.</p></div>`;
   }
   return `<div class="showcase-block"><h4>Your rating</h4><p class="muted" style="margin:0">Businesses rate you after visits. Your rating appears here after your first rated visit.</p></div>`;
 }
@@ -14776,7 +14776,7 @@ function visitCard(b, role) {
     </div>`;
   }
   if (role === "creator" && b.status === "expired") {
-    html += `<p class="small">This offer's window passed without a redemption, so it expired. It counts as a no-show on your Standing. If something went wrong, tell us at hello@joinsignl.com.</p>`;
+    html += `<p class="small">This offer's window passed without a redemption, so it expired. It counts as a no-show on your Momentum. If something went wrong, tell us at hello@joinsignl.com.</p>`;
   }
   if (b.honorReportedAt) {
     html += role === "creator"
@@ -14853,12 +14853,12 @@ function visitCard(b, role) {
     const licActive = !!lic && Date.parse(lic.windowEndsAt) > Date.now();
     const licReq = (state.licenseRequests || []).filter((l) => l.postId === post.id).slice().sort((x, y) => (x.createdAt < y.createdAt ? 1 : -1))[0] || null;
     if (post.adUseDeclaredAt) {
-      html += `<p class="small"><span class="badge ok">Running as an ad</span> Declared ${fmtDate(post.adUseDeclaredAt)}. The creator was notified and earned +25 Standing.${role === "business" && post.adUseWindowEndsAt ? ` ${b.kind === "paid" ? "This paid visit's" : "This license's"} ad window runs to ${fmtDate(post.adUseWindowEndsAt)}.` : ""}</p>`;
+      html += `<p class="small"><span class="badge ok">Running as an ad</span> Declared ${fmtDate(post.adUseDeclaredAt)}. The creator was notified and earned +25 Momentum.${role === "business" && post.adUseWindowEndsAt ? ` ${b.kind === "paid" ? "This paid visit's" : "This license's"} ad window runs to ${fmtDate(post.adUseWindowEndsAt)}.` : ""}</p>`;
     } else if (role === "business") {
       if (b.kind === "paid") {
-        html += `<button class="btn small-btn ghost" onclick="declareAdUse('${post.id}', 'paid')">Use in an ad</button> <span class="small muted">This was a paid visit: the standard license is included, repost and ad use for 90 days from the post date. The creator is notified and earns +25 Standing.</span> <button class="btn small-btn ghost" onclick="return extendLicence('${post.id}', ${b.creatorLicensingFee || 0}, '${esc(new Date(Date.parse(post.submittedAt || post.createdAt || Date.now()) + 90 * 86400000).toISOString())}')">Extend or license separately</button>`;
+        html += `<button class="btn small-btn ghost" onclick="declareAdUse('${post.id}', 'paid')">Use in an ad</button> <span class="small muted">This was a paid visit: the standard license is included, repost and ad use for 90 days from the post date. The creator is notified and earns +25 Momentum.</span> <button class="btn small-btn ghost" onclick="return extendLicence('${post.id}', ${b.creatorLicensingFee || 0}, '${esc(new Date(Date.parse(post.submittedAt || post.createdAt || Date.now()) + 90 * 86400000).toISOString())}')">Extend or license separately</button>`;
       } else if (licActive) {
-        html += `<p class="small"><span class="badge ok">Licensed for ads</span> Through ${fmtDate(lic.windowEndsAt)}: repost and ad use covered.</p><button class="btn small-btn ghost" onclick="declareAdUse('${post.id}', 'license')">Use in an ad</button> <span class="small muted">The creator is notified and earns +25 Standing.</span>`;
+        html += `<p class="small"><span class="badge ok">Licensed for ads</span> Through ${fmtDate(lic.windowEndsAt)}: repost and ad use covered.</p><button class="btn small-btn ghost" onclick="declareAdUse('${post.id}', 'license')">Use in an ad</button> <span class="small muted">The creator is notified and earns +25 Momentum.</span>`;
       } else if (licReq && licReq.status === "pending") {
         html += `<p class="small muted">License requested at $${fmtPrice(licReq.fee)}: waiting on the creator. You pay only if they approve, and the 90 days run from their yes.</p>`;
       } else if (b.creatorLicensingFee) {
@@ -14884,7 +14884,7 @@ function visitCard(b, role) {
         .join(" &middot; ");
       html += role === "business"
         ? `<p class="small">Your comp produced <strong>${nums}</strong> (creator-reported).</p>`
-        : `<p class="small">You reported ${nums} (+5 Standing). Thanks: numbers like these are what bring businesses back.</p>`;
+        : `<p class="small">You reported ${nums} (+5 Momentum). Thanks: numbers like these are what bring businesses back.</p>`;
       if (typeof post.intent === "number") {
         html += role === "business"
           ? `<p class="small"><strong>${fmtNum(post.intent)} intent</strong> (saves + shares: people planning to come)${post.returnScore ? ` &middot; <strong>Return score ${post.returnScore.score} of 100</strong>. Built from saves, shares, and counted customers.` : ` &middot; Return score: not enough data yet.`}</p>`
@@ -14897,7 +14897,7 @@ function visitCard(b, role) {
       html += `
     <form onsubmit="return submitPostPerformance(event, '${b.id}')">
       <h4 style="margin:10px 0 4px">Add post numbers</h4>
-      <p class="small muted">A week in, how did the post do? Optional numbers; reporting earns +5 Standing points, and they price the media side of the business's modeled estimate.</p>
+      <p class="small muted">A week in, how did the post do? Optional numbers; reporting earns +5 Momentum points, and they price the media side of the business's modeled estimate.</p>
       <div class="form-2col">
         <div class="field"><label>Views</label><input type="number" id="perf-views-${b.id}" min="0" placeholder="Optional"></div>
         <div class="field"><label>Likes</label><input type="number" id="perf-likes-${b.id}" min="0" placeholder="Optional"></div>
@@ -14905,7 +14905,7 @@ function visitCard(b, role) {
         <div class="field"><label>Shares</label><input type="number" id="perf-shares-${b.id}" min="0" placeholder="Optional"></div>
         <div class="field"><label>Saves</label><input type="number" id="perf-saves-${b.id}" min="0" placeholder="Optional"></div>
       </div>
-      <button class="btn small-btn" type="submit">Report numbers</button> <span class="small muted">+5 Standing</span>
+      <button class="btn small-btn" type="submit">Report numbers</button> <span class="small muted">+5 Momentum</span>
     </form>`;
     }
   }
@@ -14996,17 +14996,17 @@ function visitCard(b, role) {
       html += `<div class="review-item"><span class="small muted">${esc(b.businessName)} rated you</span><br>${starsHtml(b.creatorReview.stars)} <span class="small">${esc(b.creatorReview.comment || "")}</span></div>`;
     }
     if (b.businessReview) {
-      html += `<div class="review-item"><span class="small muted">Your review of ${esc(b.businessName)}</span><br>${starsHtml(b.businessReview.stars)} <span class="small">${esc(b.businessReview.text || "")}</span> <span class="saved">+10 Standing earned</span></div>`;
+      html += `<div class="review-item"><span class="small muted">Your review of ${esc(b.businessName)}</span><br>${starsHtml(b.businessReview.stars)} <span class="small">${esc(b.businessReview.text || "")}</span> <span class="saved">+10 Momentum earned</span></div>`;
     } else {
       html += `
     <form onsubmit="return submitBusinessReview(event, '${b.id}')">
       <h4 style="margin:10px 0 4px">Review this business</h4>
-      <p class="small muted">Optional, and honest is the whole point: leaving a review earns +10 Standing at any star rating. SIGNL never pays for positive reviews, and nobody can ask you for one.</p>
+      <p class="small muted">Optional, and honest is the whole point: leaving a review earns +10 Momentum at any star rating. SIGNL never pays for positive reviews, and nobody can ask you for one.</p>
       <div class="form-2col">
         <div class="field"><label>Your rating</label>${chipSelectHtml("bizrev-stars-" + b.id, [{ value: "5", label: "5 stars" }, { value: "4", label: "4 stars" }, { value: "3", label: "3 stars" }, { value: "2", label: "2 stars" }, { value: "1", label: "1 star" }], "5", null, false)}</div>
         <div class="field"><label>Your words (optional)</label><input id="bizrev-text-${b.id}" maxlength="500" placeholder="How was the visit, honestly?"></div>
       </div>
-      <button class="btn small-btn" type="submit">Leave review</button> <span class="small muted">+10 Standing</span>
+      <button class="btn small-btn" type="submit">Leave review</button> <span class="small muted">+10 Momentum</span>
     </form>`;
     }
     html += reviewLinksBlockHtml(b.businessReviewLinks);
@@ -15018,7 +15018,7 @@ function visitCard(b, role) {
       html += `
     <form onsubmit="return submitCreatorReview(event, '${b.id}')">
       <h4 style="margin:10px 0 4px">Rate this creator</h4>
-      <p class="small muted">The visit is complete and the post is in. Rate how the visit and the post went. The rating shows on the creator's profile next to their Standing points: two separate numbers, and ratings never change anyone's points. One rating per visit, and it cannot be edited after.</p>
+      <p class="small muted">The visit is complete and the post is in. Rate how the visit and the post went. The rating shows on the creator's profile next to their Momentum points: two separate numbers, and ratings never change anyone's points. One rating per visit, and it cannot be edited after.</p>
       <div class="form-2col">
         <div class="field"><label>Your rating</label>${chipSelectHtml("crev-stars-" + b.id, [{ value: "5", label: "5 stars" }, { value: "4", label: "4 stars" }, { value: "3", label: "3 stars" }, { value: "2", label: "2 stars" }, { value: "1", label: "1 star" }], "5", null, false)}</div>
         <div class="field"><label>Your words (optional, 280 characters)</label><input id="crev-comment-${b.id}" maxlength="280" placeholder="How was the visit and the post?"></div>
@@ -15092,7 +15092,7 @@ function perfUpdateFormHtml(b, ctx) {
   <div class="card mb perf-update-card">
     <form onsubmit="return submitPostPerformanceUpdate(event, '${b.id}', '${ctx}')">
       <h4 style="margin:4px 0">Update post numbers</h4>
-      <p class="small muted">${esc(b.title)} at ${esc(b.businessName)}: posts keep growing after week one. Fresh numbers keep the business's modeled estimate honest, and updating earns +5 Standing.</p>
+      <p class="small muted">${esc(b.title)} at ${esc(b.businessName)}: posts keep growing after week one. Fresh numbers keep the business's modeled estimate honest, and updating earns +5 Momentum.</p>
       ${growth}
       <div class="form-2col">
         <div class="field"><label>Views</label><input type="number" id="perfu-views-${b.id}" min="0" value="${num(perf.views)}"></div>
@@ -15233,8 +15233,8 @@ function growthNudgeHtml() {
 
 async function declareAdUse(postId, basis) {
   const msg = basis === "license"
-    ? "Use this post in an ad? Your license on this post covers repost and ad use inside its 90-day window. The creator is notified and earns +25 Standing."
-    : "Use this post in an ad? This paid visit includes the standard license: repost and ad use for 90 days from the post date. The creator is notified and earns +25 Standing.";
+    ? "Use this post in an ad? Your license on this post covers repost and ad use inside its 90-day window. The creator is notified and earns +25 Momentum."
+    : "Use this post in an ad? This paid visit includes the standard license: repost and ad use for 90 days from the post date. The creator is notified and earns +25 Momentum.";
   if (!confirm(msg)) return;
   try { await api("POST", `/posts/${postId}/ad-use`, {}); loadMyVisits("business"); }
   catch (err) { alert(err.message); }
@@ -17423,7 +17423,7 @@ function crStatsHtml(d) {
   const deals = s.deals || {};
   const pts = s.points || {};
   const lvlName = typeof pts.level === "string" ? pts.level : ((pts.level || {}).name || "");
-  const pointsStrip = `<p class="small" style="margin:10px 0 0">Standing: <strong>${fmtNum(pts.total || 0)} points</strong>${lvlName ? ` &middot; Level: <strong>${esc(lvlName)}</strong>` : ""} (all time — points never reset by period). ${POINTS_WHY_SHORT}</p>`;
+  const pointsStrip = `<p class="small" style="margin:10px 0 0">Momentum: <strong>${fmtNum(pts.total || 0)} points</strong>${lvlName ? ` &middot; Level: <strong>${esc(lvlName)}</strong>` : ""} (all time — points never reset by period). ${POINTS_WHY_SHORT}</p>`;
   if (!s.hasData) {
     return `<div class="panel">${head}
       <p class="small" style="margin:8px 0 0">Nothing has landed yet. When businesses book you and your posts go live, this fills in with your money — held, released and paid, each with its reason — plus your offers, deals and comps for the period you pick.</p>${pointsStrip}</div>`;
@@ -18235,7 +18235,7 @@ async function loadDiscover() {
       <div><label>Total audience min</label><input type="number" id="f-fmin" min="0" placeholder="Any"></div>
       <div><label>Total audience max</label><input type="number" id="f-fmax" min="0" placeholder="Any"></div>
       <div><label>Min % followers in market</label><input type="number" id="f-minlocal" min="0" max="100" placeholder="Any"></div>
-      <div><label>Sort by</label><select id="f-sort"><option value="">Founding order</option><option value="score">Local Impact Score</option><option value="momentum">Standing</option><option value="fit">Best fit</option></select></div>
+      <div><label>Sort by</label><select id="f-sort"><option value="">Founding order</option><option value="score">Local Impact Score</option><option value="momentum">Momentum</option><option value="fit">Best fit</option></select></div>
       <div><label>&nbsp;</label><label style="font-weight:500"><input type="checkbox" id="f-paid" style="width:auto"> Has a paid rate (paid bookings) only</label></div>
       <div><label>&nbsp;</label><button class="btn small-btn" style="width:100%" onclick="runDiscover()">Search</button></div>
     </div>
@@ -20003,7 +20003,7 @@ async function viewApplicants(offerId) {
     el.innerHTML = `
     <div class="panel">
       <div class="flex-between"><h3 style="margin:0">Applicants: ${esc(o.title)}</h3><button class="btn small-btn ghost" onclick="document.getElementById('applicant-stack').innerHTML=''">Close</button></div>
-      <p class="small muted">${o.filledCount || 0} of ${o.spots} spots filled &middot; selection deadline ${fmtDate(o.selectionDeadline)}. Ranked by local fit, Local Impact Score, Standing, and reliability; founding order breaks ties. Anyone you do not pick is released with a notification when spots fill or the deadline passes.</p>
+      <p class="small muted">${o.filledCount || 0} of ${o.spots} spots filled &middot; selection deadline ${fmtDate(o.selectionDeadline)}. Ranked by local fit, Local Impact Score, Momentum, and reliability; founding order breaks ties. Anyone you do not pick is released with a notification when spots fill or the deadline passes.</p>
       ${o.earlyAccessUntil ? `<p class="small"><strong>In early access until ${esc(fmtDay(o.earlyAccessUntil))} at ${esc(fmtTime(o.earlyAccessUntil))}.</strong> Charter creators, the founding class, see new offers first, so this stack is still small on purpose. It opens to every creator at that time.</p>` : ""}
       ${apps.length ? apps.map((a) => applicantCardHtml(o, a)).join("") : `<p class="muted">No applications yet. Offers with a value in the typical range for their tier and a window of 3+ days fill first.</p>`}
       ${waiting.length ? "" : apps.length ? `<p class="small muted">Nobody is waiting on this offer right now.</p>` : ""}
@@ -22740,9 +22740,9 @@ async function loadLeaderboard() {
     const data = await api("GET", "/admin/leaderboard");
     const rows = data.leaderboard || [];
     el.innerHTML = `
-      <p class="muted small">Recruiters ranked by Standing points: +3 for every creator who signs up through their invite link, +10 more when that creator is approved. Points come only from stored sign-up records.</p>
+      <p class="muted small">Recruiters ranked by Momentum points: +3 for every creator who signs up through their invite link, +10 more when that creator is approved. Points come only from stored sign-up records.</p>
       ${rows.length ? `<div class="table-wrap panel"><table>
-        <tr><th>#</th><th>Creator</th><th>Handle</th><th>Market</th><th>Sign-ups via link</th><th>Approved</th><th>Standing points</th></tr>
+        <tr><th>#</th><th>Creator</th><th>Handle</th><th>Market</th><th>Sign-ups via link</th><th>Approved</th><th>Momentum points</th></tr>
         ${rows.map((r, i) => `<tr><td data-label="Rank">${i + 1}</td><td><strong>${esc(r.name)}</strong></td><td>${r.primaryProfileUrl ? `<a href="${esc(r.primaryProfileUrl)}" target="_blank" rel="noopener">@${esc(r.handle)}</a>` : `@${esc(r.handle)}`}</td><td>${esc(r.market)}</td><td data-label="Sign-ups via link">${r.signups}</td><td data-label="Approved">${r.approved}</td><td data-label="Momentum points"><strong>${r.points}</strong></td></tr>`).join("")}
       </table></div>` : `<p class="muted">No creator has a credited sign-up yet. Leaderboard rows appear as soon as someone joins through an invite link.</p>`}`;
   } catch (err) {
@@ -24272,7 +24272,7 @@ function previewDiscoverHtml() {
     <div><label>Total audience min</label><input type="number" id="pvf-fmin" min="0" placeholder="Any"></div>
     <div><label>Total audience max</label><input type="number" id="pvf-fmax" min="0" placeholder="Any"></div>
     <div><label>Min % followers in market</label><input type="number" id="pvf-minlocal" min="0" max="100" placeholder="Any"></div>
-    <div><label>Sort by</label><select id="pvf-sort"><option value="">Founding order</option><option value="score">Local Impact Score</option><option value="momentum">Standing</option><option value="fit">Best fit</option></select></div>
+    <div><label>Sort by</label><select id="pvf-sort"><option value="">Founding order</option><option value="score">Local Impact Score</option><option value="momentum">Momentum</option><option value="fit">Best fit</option></select></div>
     <div><label>&nbsp;</label><label style="font-weight:500"><input type="checkbox" id="pvf-paid" style="width:auto"> Has a paid rate (paid bookings) only</label></div>
     <div><label>&nbsp;</label><button class="btn small-btn" style="width:100%" onclick="runPreviewDiscover()">Search</button></div>
   </div>
@@ -24655,7 +24655,7 @@ function pvBookingCard(b) {
       <p class="small muted">Simulation only: in the live app the business reports this tally on the visit and it is saved. Here nothing is recorded, and the dashboard keeps its original tallies.</p>
     </form>`;
     html += b.kind === "paid"
-      ? `<button class="btn small-btn ghost" disabled>Use in an ad</button> <span class="small muted">Ad use comes with the standard license: this paid visit includes repost plus ads for 90 days from the post date; the creator is notified and earns +25 Standing. Disabled in preview; try it live from a paid visit.</span>`
+      ? `<button class="btn small-btn ghost" disabled>Use in an ad</button> <span class="small muted">Ad use comes with the standard license: this paid visit includes repost plus ads for 90 days from the post date; the creator is notified and earns +25 Momentum. Disabled in preview; try it live from a paid visit.</span>`
       : `<button class="btn small-btn ghost" disabled>License for ads</button> <span class="small muted">This was a comp visit: native sharing only until licensed. In the live app, the business can license this post for 90 days of repost and ad use at the creator's listed licensing fee, only with their approval. Disabled in preview.</span>`;
   }
   if (b.review) {

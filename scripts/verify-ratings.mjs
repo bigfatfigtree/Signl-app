@@ -306,7 +306,7 @@ try {
   // V3 (2026-10-27): the creator's own rating line lives on My
   // profile (both states) and in the Your numbers reviews
   // summary; it no longer sits on Home.
-  check("client ships the creator's own rating line (rated + neutral states) [Build -119: Momentum points -> Standing points]", appJsText.includes("Businesses see your rating next to your Standing points") && appJsText.includes("Businesses rate you after visits. Your rating appears here after your first rated visit.") && appJsText.includes("function renderCreatorNumbers("), "");
+  check("client ships the creator's own rating line (rated + neutral states) [Build -119: Momentum points -> Standing points; Build -120 reverted]", appJsText.includes("Businesses see your rating next to your Momentum points") && appJsText.includes("Businesses rate you after visits. Your rating appears here after your first rated visit.") && appJsText.includes("function renderCreatorNumbers("), "");
   check("client ships the applicant-stack rating", appJsText.includes("ratingBit") && appJsText.includes("ratingCount"), "");
 } catch (e) {
   failed += 1;

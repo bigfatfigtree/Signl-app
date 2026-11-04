@@ -219,7 +219,7 @@ try {
 
   part("source: workspace scaffold");
   check("scaffold builders exist (wsHead, wsTabs, kpiCard, deltaPill, segSw, feedListHtml, funnel2Html, charts)", ["function wsHead(", "function wsTabs(", "function kpiCard(", "function deltaPill(", "function segSw(", "function feedListHtml(", "function funnel2Html(", "function lineChartSvg(", "function barsChartSvg("].every((x) => appJs.includes(x)));
-  check("V3 screens carry their spec titles", ["Home", "Find creators", "Posts & licenses", "Results", "Your business page", "Plan & billing", "Messages", "Your numbers", "Earnings", "Standing", "My profile", "Settings", "Help", "More"].every((t) => appJs.includes(`wsHead("${t}"`)));
+  check("V3 screens carry their spec titles", ["Home", "Find creators", "Posts & licenses", "Results", "Your business page", "Plan & billing", "Messages", "Your numbers", "Earnings", "Momentum", "My profile", "Settings", "Help", "More"].every((t) => appJs.includes(`wsHead("${t}"`)));
   check("screen titles render at the spec size (28px, weight 800)", themeCss.includes(".ws-title { font-size: 1.75rem; font-weight: 800;"));
   check("purpose lines are dismissible after first visits", appJs.includes("function dismissSub(") && appJs.includes("signl-sub-"));
   check("delta pill is honest: it renders nothing when the prior window is zero", appJs.includes('if (!p) return "";'));
@@ -236,7 +236,7 @@ try {
   check("the completion gate replaces the creator deck until the basics are done", appJs.includes("function gateCardHtml(") && appJs.includes("Finish your profile to see offers near you."));
   check("creator analytics is a real dashboard (Your numbers) with the V2 series helpers", appJs.includes("function renderCreatorNumbers(") && appJs.includes("day 7 / 14 / 30") || appJs.includes("function renderCreatorNumbers("));
   check("Earnings keeps the 97% line and license decisions on the row", appJs.includes("You keep 97%") && appJs.includes("function respondLicenseEarn("));
-  check("Standing screen exists with the spec zero-points line [renamed from Momentum, Build -119]", appJs.includes("function renderMomentumTab(") && appJs.includes("Your Standing starts with your first visit. Post on time and it climbs."));
+  check("Momentum screen exists with the spec zero-points line [renamed from Momentum in Build -119; reverted in Build -120]", appJs.includes("function renderMomentumTab(") && appJs.includes("Your Momentum starts with your first visit. Post on time and it climbs."));
 
   part("source: business V3 screens");
   check("business home snapshot reads the real analytics payload; rollover is stated on Plan and queued before expiry", appJs.includes("h.localReachDelivered") && appJs.includes("rolled over from last month") && appJs.includes("function bizFeedEvents("));
@@ -269,8 +269,8 @@ try {
     "When a business picks you, or you accept an invite, it lands here.",
     "When a creator posts about your business, it lands here", // section 8 line, split title/sub in the empty card
     "Post tracking starts with your first visit.",
-    "Paid bookings you complete show up here. Comped visits build your Standing instead.",
-    "Your Standing starts with your first visit. Post on time and it climbs.",
+    "Paid bookings you complete show up here. Comped visits build your Momentum instead.",
+    "Your Momentum starts with your first visit. Post on time and it climbs.",
     "Conversations attach to a visit or an offer.", // Build -47 (audit B6): business empty state names how conversations start
     "No reviews yet. Reviews come from completed visits.",
   ];

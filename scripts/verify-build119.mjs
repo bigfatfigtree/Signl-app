@@ -3,15 +3,16 @@
 // 2026-11-04 and ordered it built into the app): the Paper / Ink /
 // Signal design system lands on all four roles — desktop left
 // rail + mobile bottom bar, the per-role IA map with focused
-// sub-tabs, one Next list per Home, Momentum renamed to
-// "Standing" in app UI chrome only (internal keys, tab keys and
-// server copy untouched), partner/pilot zero states with a
+// sub-tabs, one Next list per Home, the points concept named
+// Momentum in app UI chrome (Build -119's brief rename to
+// "Standing" was reverted by Build -120 on Jeff's word; internal
+// keys, tab keys and server copy were never changed), partner/pilot zero states with a
 // next-step sentence, Admin rows behind one More menu, market
 // cards with photos, and the greeting-clock fix (greetings use
 // the viewer's local hour, not the device's UTC-skewed hour).
 // Proves:
 //   S. source pins: theme-v3 tokens + link, the primary-tab
-//      sets, the Standing rename surface + gloss, localHourNow
+//      sets, the Momentum rename surface + gloss, localHourNow
 //      at all three greeting sites, the Next-list composition
 //      on the four Homes, the new seg labels, the strips, the
 //      row More wrap, the market photos on disk, and the
@@ -70,11 +71,11 @@ check("primary tab sets match the approved IA map",
   appJs.includes('recruiter: ["Queue", "Outreach", "Results", "Sig", "Help"]'));
 check("phone short labels carry the one-word forms",
   appJs.includes('RAIL_SHORT["Discover"] = "Creators"') && appJs.includes('RAIL_SHORT["Earnings"] = "Money"') && appJs.includes('RAIL_SHORT["My Visits"] = "Visits"') && appJs.includes('RAIL_SHORT["Visits & Posts"] = "Visits"'));
-check("Standing rename: gloss + level helper + More-row label, tab key untouched",
-  appJs.includes("Standing — you reply fast and show up. Businesses see it before followers.") &&
-  appJs.includes("function standingLevelName(points)") && appJs.includes('label: "Standing"') &&
-  appJs.includes('"Momentum"') && !appJs.includes('wsHead("Momentum"'));
-check("Standing thresholds match the server ladder (100 / 300 / 750)",
+check("Momentum naming (Build -120): gloss + level helper + More-row label + Momentum heading, tab key untouched",
+  appJs.includes("Momentum — you reply fast and show up. Businesses see it before followers.") &&
+  appJs.includes("function standingLevelName(points)") && appJs.includes('label: "Momentum"') &&
+  appJs.includes('"Momentum"') && appJs.includes('wsHead("Momentum"') && !appJs.includes("Standing points") && !appJs.includes("Your Standing"));
+check("Momentum thresholds match the server ladder (100 / 300 / 750)",
   appJs.includes("p >= 750") && appJs.includes("p >= 300") && appJs.includes("p >= 100"));
 check("greeting clock: localHourNow defined and used at all three greeting sites, no raw getHours greeting left",
   count(appJs, "localHourNow()") >= 4 && !appJs.includes("const hour = new Date().getHours();"));
@@ -88,7 +89,7 @@ check("creator Offers segs are New / Applied / Booked / Done with stored ids unc
 check("Visits segs: creator Codes + business Today, stored ids unchanged",
   appJs.includes('["codes", "Codes"]') && appJs.includes('["today", "Today"]') && appJs.includes('["needs", "Needs your post"]') && appJs.includes("bigcode119"));
 check("creator Earnings splits Earned / Pending with the waiting rows reachable",
-  appJs.includes("function earnSetSeg(v)") && appJs.includes('"On its way"') && appJs.includes("Comped visits build your Standing instead."));
+  appJs.includes("function earnSetSeg(v)") && appJs.includes('"On its way"') && appJs.includes("Comped visits build your Momentum instead."));
 check("business Money strip + Creators strip labels (Plan/Licenses/Receipts, Browse/My Regulars/Saved)",
   appJs.includes("function bizMoneyStrip119(active)") && appJs.includes('item("licenses", "Licenses", "Content")') && appJs.includes('item("receipts", "Receipts", "Analytics")') &&
   appJs.includes('{ label: "My Regulars", on: false, onclick: "return go(\'dashboard\',\'Regulars\')" }') && appJs.includes('{ label: "Saved"'));

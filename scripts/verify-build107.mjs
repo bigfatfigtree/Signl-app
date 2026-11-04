@@ -271,7 +271,7 @@ check("funder Sig lists their pilot seats", franAsk.source === "data" && /Sam Se
 
 // ---------- canon locks ----------
 console.log("Canon locks");
-check("build stamp is -107 on both sides", fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes("2026.11.03-119") && fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes("2026.11.03-119"));
+check("build stamp is -107 on both sides", fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes("2026.11.03-120") && fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes("2026.11.03-120"));
 const routerSrc = fs.readFileSync(path.join(root, "netlify/functions/lib/router.js"), "utf8");
 check("founding Stripe prices stay unarmed (no market live for money)", /STRIPE_PRICE_FOUNDING_SELF_SERVICE \|\| ""/.test(routerSrc) && /STRIPE_PRICE_FOUNDING_GROWTH \|\| ""/.test(routerSrc) && /STRIPE_PRICE_FOUNDING_MANAGED \|\| ""/.test(routerSrc));
 const appSrc = fs.readFileSync(path.join(root, "public/app.js"), "utf8");

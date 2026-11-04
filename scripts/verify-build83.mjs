@@ -270,7 +270,7 @@ async function main() {
 
   // ---------- app shell carries the build's copy ----------
   const shell = await (await fetch(`${BASE}/`)).text();
-  check("shell: the build stamp is current", shell.includes("2026.11.03-119"), shell.slice(0, 120));
+  check("shell: the build stamp is current", shell.includes("2026.11.03-120"), shell.slice(0, 120));
   const appJs = await (await fetch(`${BASE}/app.js`)).text();
   check("client: intent copy and the funnel ship in the bundle",
     appJs.includes("Saves and shares mean people planning to come") && appJs.includes("How reach funnels to return") && appJs.includes("Return score") && appJs.includes("perf-saves-"),

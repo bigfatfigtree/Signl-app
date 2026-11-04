@@ -85,16 +85,16 @@ check("surface: Golden Ticket panel pairs its +100/+25/+10/+3 table with WHY_SHO
   (() => { const s = slice(appJs, "async function loadGoldenTickets()", "async function gtIssue"); return s.includes("${POINTS_WHY_SHORT}") && s.includes("Nothing is paid for a click or a share.") && s.includes("+100 points") && s.includes("+25 points") && s.includes("+10 points") && s.includes("+3 points"); })());
 check("surface: Momentum view carries the points explainer (Build -64: founding Home KPI grid demoted to the Momentum tab)",
   slice(appJs, "function renderMomentumTab()", "async function renderCreatorNumbers").includes("pointsSectionHtml()") && appJs.includes("${POINTS_WHY_SHORT}"));
-check("surface: Numbers tab Standing KPI sub is WHY_SHORT [label renamed from Momentum, Build -119]",
-  appJs.includes(`kpiCard("Standing", fmtNum(m.points || 0), { sub: POINTS_WHY_SHORT })`));
+check("surface: Numbers tab Momentum KPI sub is WHY_SHORT [label renamed in Build -119; reverted to Momentum in Build -120]",
+  appJs.includes(`kpiCard("Momentum", fmtNum(m.points || 0), { sub: POINTS_WHY_SHORT })`));
 check("surface: Momentum trend chart sub carries WHY_SHORT",
   appJs.includes("Your points, day by day, last 30 days. ${POINTS_WHY_SHORT}"));
 check("surface: live Home Momentum card (above the Activity feed of earn lines) carries WHY_SHORT",
   slice(appJs, "const momentumCard", "// Activity").includes("${POINTS_WHY_SHORT}"));
 check("surface: Grow your roster keeps its pinned line and appends WHY_SHORT",
   slice(appJs, "function growRosterHtml(u)", "// Earn-row deep links").includes("Roster builders get seen first. ${POINTS_WHY_SHORT}"));
-check("surface: public profile stat cell explains the number for the business reader; the old sources parenthetical is gone [label renamed to Standing points, Build -119]",
-  appJs.includes("Standing points · part of the order businesses see") && !appJs.includes("Momentum points (reliability and referrals)"));
+check("surface: public profile stat cell explains the number for the business reader; the old sources parenthetical is gone [label renamed in Build -119; reverted to Momentum points in Build -120]",
+  appJs.includes("Momentum points · part of the order businesses see") && !appJs.includes("Momentum points (reliability and referrals)"));
 check("surface: Admin Your Line lookup intro carries WHY_SHORT for the team",
   appJs.includes("Points land only when an invite finishes signing up. ${POINTS_WHY_SHORT}"));
 check("surface: Sig operator lines carry WHY_SHORT inline in English (const + 3 Sig lines = 4 occurrences)",
@@ -104,8 +104,8 @@ check("surface: Sig operator lines carry the why inline in Spanish (3 Sig lines)
 check("surface: Sig Q&A canon now states the level effect with the verified thresholds and hours",
   sigaiJs.includes("Points also set the level: Starter, then Regular at 100 points, Standout at 300, Cornerstone at 750")
   && sigaiJs.includes("Regular sees new offers 12 hours early, Standout 18 hours early, and Cornerstone 24 hours early"));
-check("aligned surfaces kept verbatim: the founding payoff card and the Deal Card rules already carried the why [payoff headline renamed to Standing, Build -119]",
-  appJs.includes("Standing moves you up") && appJs.includes("part of the stack order the business picks from")
+check("aligned surfaces kept verbatim: the founding payoff card and the Deal Card rules already carried the why [payoff headline renamed in Build -119; reverted in Build -120]",
+  appJs.includes("Momentum moves you up") && appJs.includes("part of the stack order the business picks from")
   && appJs.includes("Points order the creator list businesses see."));
 
 // ---------- 3. mechanics the wording rests on ----------
@@ -176,7 +176,7 @@ try {
   startServer();
   check("live: dev server boots", await waitUp());
   const boot = await fetch(BASE + "/api/bootstrap");
-  check("live: bootstrap carries the -49 build stamp", boot.headers.get("x-signl-build") === "2026.11.03-119", String(boot.headers.get("x-signl-build")));
+  check("live: bootstrap carries the -49 build stamp", boot.headers.get("x-signl-build") === "2026.11.03-120", String(boot.headers.get("x-signl-build")));
 
   const admin = client();
   await admin("POST", "/api/auth/login", { email: ADMIN_EMAIL, ["pass" + "word"]: ADMIN_PW });
