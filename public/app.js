@@ -2255,7 +2255,7 @@ function renderBottomNav() {
 // 72px phone rail shows for the few labels that cannot fit
 // it; the wide rail and the aria-label always carry the full
 // label.
-const RAIL_SHORT = { Content: "Posts", Plan: "Money", Profile: "Profile", Numbers: "Numbers", Links: "Links", Performance: "Perform­ance" };
+const RAIL_SHORT = { Content: "Posts", Plan: "Wallet", Profile: "Profile", Numbers: "Numbers", Links: "Links", Performance: "Reports" };
 // Build -68: the Offers tab displays as "Campaigns" at every
 // rail width, so its short form is the full display label.
 RAIL_SHORT["My Offers"] = "Campaigns";
@@ -2272,10 +2272,15 @@ RAIL_SHORT["Regulars"] = "Regulars";
 RAIL_SHORT["Campaign Setup"] = "Setup";
 // Build -119 (Jeff, 2026-11-04, the approved redesign): the
 // phone bottom bar carries the design's one-word labels —
-// Discover reads "Creators", Earnings reads "Money", Visits
-// reads "Visits" — while the wide rail keeps the full labels.
+// Discover reads "Creators", Visits reads "Visits" — while
+// the wide rail keeps the full labels.
+// Build -125 (Jeff, 2026-11-04, the approved navigation
+// model): "Money" is renamed "Wallet" everywhere user-facing,
+// because comps and store value are not cash. Earnings and
+// Plan both read "Wallet" now.
 RAIL_SHORT["Discover"] = "Creators";
-RAIL_SHORT["Earnings"] = "Money";
+RAIL_SHORT["Earnings"] = "Wallet";
+RAIL_SHORT["Plan"] = "Wallet";
 RAIL_SHORT["My Visits"] = "Visits";
 RAIL_SHORT["Visits & Posts"] = "Visits";
 function railRowItems() {
@@ -2329,7 +2334,7 @@ function tabItemsFor() {
     return [
       { icon: "home", label: "Overview", tab: "Home", on: t === "Home" || !t },
       { icon: "pin", label: "Markets", tab: "Markets", on: t === "Markets" },
-      { icon: "banknote", label: "Money", tab: "Earnings", on: t === "Earnings" },
+      { icon: "banknote", label: "Wallet", tab: "Earnings", on: t === "Earnings" },
       ...extra(["Home", "Markets", "Earnings"]),
     ];
   }
@@ -2401,7 +2406,7 @@ function moreRowsFor() {
   if (u.role === "creator") {
     const rows = [
       { icon: "calendar", label: "Visits", sub: "Your visits and post deadlines.", tab: "My Visits", badge: wc.crVisits != null ? wc.crVisits : (b.visits || 0) },
-      { icon: "banknote", label: "Earnings", sub: "Paid bookings and license requests.", tab: "Earnings", badge: wc.crLicense || 0 },
+      { icon: "banknote", label: "Wallet", sub: "Cash, comps and history, kept separate.", tab: "Earnings", badge: wc.crLicense || 0 },
       { icon: "person", label: "My profile", sub: "What businesses see, your rate, your links.", tab: "Profile" },
       { icon: "bars", label: "Your numbers", sub: "What your posts and visits did.", tab: "Numbers" },
       { icon: "bolt", label: "Momentum", sub: "You reply fast and show up. Businesses see it before followers.", tab: "Momentum" },
@@ -2421,7 +2426,7 @@ function moreRowsFor() {
       { icon: "pin", label: "Markets", sub: "Each market's funnel, end to end.", tab: "Markets" },
       { icon: "person", label: "Creators", sub: "The bench your links brought in.", tab: "Creators" },
       { icon: "deck", label: "Businesses", sub: "Businesses your links brought in.", tab: "Businesses" },
-      { icon: "bars", label: "Performance", sub: "Visits, posts, and what they earned.", tab: "Performance" },
+      { icon: "bars", label: "Reports", sub: "Visits, posts, and what they earned.", tab: "Performance" },
       { icon: "play", label: "Links & assets", sub: "Your tracked links, QR codes, and the one-pager.", tab: "Links" },
       { icon: "sliders", label: "Account", sub: "Your partner profile and agreement.", tab: "Account" },
       { icon: "help", label: "Help", sub: "How your share works, in plain words.", tab: "Help" },
@@ -2445,47 +2450,264 @@ function moreRowsFor() {
 
 // Build -119 (Jeff, 2026-11-04, the approved redesign): one
 // list, two forms. The design's five primary destinations per
-// role lead at every width; on the wide rail the rest ride
+// role lead at every width; on the wide rail the rest rode
 // below a "More" group label with Sig pinned just above the
-// user card, and on phones the bar carries only the primaries
-// (Sig floats above it; the rest stay one tap deeper — Profile
-// for creators, Money for businesses, the More screen for
-// partners). theme-v3.css does the showing and hiding; this
-// markup is identical at every width.
-const PRIMARY_TABS_119 = {
+// user card, and on phones the bar carried only the primaries.
+// Build -125 (Jeff, 2026-11-04, the approved navigation
+// model, design #menu-fix): the bar AND the rail now carry
+// ONLY the daily stops — nothing else rides either. Every
+// other section lives in the Everything panel (top right,
+// beside chat and help), grouped by job. Creator "Profile"
+// leaves the bar entirely: it is the real profile only now,
+// reached from Everything → You or the identity row. The
+// creator bar gains Messages (a daily stop) in its place.
+const PRIMARY_TABS_125 = {
   business: ["Home", "Discover", "My Offers", "Visits & Posts", "Plan"],
-  creator: ["Dashboard", "Offers", "My Visits", "Earnings", "Profile"],
+  creator: ["Dashboard", "Offers", "My Visits", "Messages", "Earnings"],
   partner: ["Home", "Businesses", "Earnings", "Performance"],
   pilot: ["Overview", "Businesses", "Results", "Report"],
   recruiter: ["Queue", "Outreach", "Results", "Sig", "Help"],
 };
-function primaryTabs119() {
+function primaryTabs125() {
   const u = state.user;
   if (!u) return [];
-  if (u.role === "pilot_partner" || (u.role === "partner" && state.pilotScopeId)) return PRIMARY_TABS_119.pilot;
-  return PRIMARY_TABS_119[u.role] || [];
+  if (u.role === "pilot_partner" || (u.role === "partner" && state.pilotScopeId)) return PRIMARY_TABS_125.pilot;
+  return PRIMARY_TABS_125[u.role] || [];
+}
+// The bar's one-word display labels (design): the internal
+// tab ids stay stable; only what the person reads changes.
+const NAV_LABEL_125 = { Dashboard: "Home", "My Visits": "Visits", "Visits & Posts": "Visits", Earnings: "Wallet", Plan: "Wallet", Discover: "Creators", "My Offers": "Campaigns", Performance: "Reports", Businesses: "Business" };
+// Where the identity row (photo + name) lands per role: the
+// person's own home base — the creator's real profile, the
+// business's page, the partner's account. (Build -125: it
+// used to send every role to "Profile", which partner,
+// pilot and recruiter shells do not have.)
+function identityDest125() {
+  const u = state.user;
+  if (!u) return "Dashboard";
+  if (u.role === "partner" && state.pilotScopeId) return "Overview";
+  if (u.role === "pilot_partner") return "Overview";
+  if (u.role === "partner") return "Account";
+  if (u.role === "recruiter") return "Queue";
+  if (u.role === "admin") return "Applications";
+  return "Profile";
+}
+
+// ---------- Build -125: the Everything panel ----------
+// One button, top right beside chat and help, on every
+// screen and every role: a grouped PANEL (never a page,
+// never one long list) holding every section that is not a
+// daily stop. Groups and labels are the design's (#menu-fix
+// frames); rows are composed from the same destinations the
+// old More lists carried, so nothing that exists today is
+// orphaned — the reachability accounting lives in
+// verify-build125. A row is {icon, label, sub, tab} or
+// {icon, label, sub, act} (a JS call string) or {href}
+// (leaves the app, e.g. email support). A row may carry a
+// right-aligned `status` word instead of a sub (Momentum).
+function ptEarnGo125(seg) { state.partnerEarnSeg = seg; return go("dashboard", "Earnings"); }
+function adminCreatorsGo125() { ccTab = "creators"; return go("dashboard", "Stats"); }
+function adminWalletGo125() { ccTab = "money"; return go("dashboard", "Stats"); }
+function everythingGroups125() {
+  const u = state.user;
+  if (!u) return [];
+  const b = state.badges || {};
+  const wc = state.waitCounts || {};
+  const R = (icon, label, sub, tab, extra) => Object.assign({ icon, label, sub, tab }, extra || {});
+  if (u.role === "admin") {
+    return [
+      { title: "Review & people", rows: [
+        R("inbox", "Applications", "Creators waiting on your review", "Applications", { badge: wc.adminPending || 0 }),
+        R("requests", "Requests", "Messages, switches and the founding roster", "Requests"),
+        R("building", "Partners", "Media partners and their deals", "Partners"),
+        R("heart", "Recruiters", "Who is bringing creators in", "Recruiters"),
+        R("users", "Outreach", "Campaigns and sends", "Outreach"),
+        R("users", "Campaign", "The current campaign", "Campaign"),
+      ] },
+      { title: "Watch", rows: [
+        R("list", "Event Log", "Everything that happened", "Event Log"),
+        R("shield", "Compliance", "Posts, deadlines and strikes", "Compliance"),
+        R("stats", "Stats", "The command center", "Stats"),
+        { icon: "person", label: "Creators", sub: "Every creator, by state", act: "return adminCreatorsGo125()" },
+        { icon: "banknote", label: "Wallet", sub: "Billing, charges and the plan books", act: "return adminWalletGo125()" },
+      ] },
+      { title: "System", rows: [
+        R("sig", "Sig", "Your attention list", "Sig"),
+        { icon: "building", label: "Preview as business", sub: "Walk the app as a business", act: "return enterPreview()" },
+        { icon: "building", label: "Business dashboard", sub: "The founding business view", act: "return enterPreviewDashboard()" },
+      ] },
+    ];
+  }
+  if (u.role === "creator") {
+    const lvl = standingLevelName((u.momentum && u.momentum.points) || (u.creator && u.creator.momentumPoints) || 0);
+    const founding = !(u.founding && u.founding.marketLive);
+    return [
+      { title: "Grow", rows: [
+        R("bars", "Your numbers", "What your posts did", "Numbers"),
+        R("bolt", "Momentum", "", "Momentum", { status: lvl }),
+        R("users", "Bench", "Creators in your market", "Bench"),
+      ] },
+      { title: "You", rows: [
+        R("person", "My profile", "Photo · bio · rate · links", "Profile"),
+        ...(founding ? [R("status", "Founding status", "Where your enrollment stands", "Status")] : []),
+        R("sliders", "Settings", "Account & notifications", "Settings"),
+      ] },
+      { title: "Help", rows: [
+        R("help", "Help centre", "How SIGNL works, in plain words", "Help"),
+        { icon: "bubble", label: "Talk to support", sub: "hello@joinsignl.com", href: "mailto:hello@joinsignl.com" },
+      ] },
+    ];
+  }
+  if (u.role === "business") {
+    return [
+      { title: "Your place", rows: [
+        R("person", "Business profile", "What creators see", "Profile"),
+        R("sliders", "Team & register PIN", "Staff access", "Settings"),
+        R("pin", "Hours & locations", "On your business profile", "Profile"),
+      ] },
+      { title: "Grow", rows: [
+        R("notice", "Set up a campaign", "Build a new campaign", "Campaign Setup"),
+        R("heart", "Saved creators", "Your shortlist", "Favorites", { badge: wc.bizSaved || 0 }),
+        R("users", "My Regulars", "Creators who visited you", "Regulars"),
+        R("play", "License library", "Posts you can reuse", "Content"),
+        R("bars", "Results", "What your campaigns did", "Analytics"),
+      ] },
+      { title: "Account", rows: [
+        R("receipt", "Plan & billing", "In Wallet", "Plan"),
+        R("bubble", "Messages", "Talk to a creator about a visit or an offer", "Messages", { badge: b.messages || 0 }),
+        R("sliders", "Settings", "Account, staff PIN, notifications", "Settings"),
+        R("help", "Help", "How SIGNL works, in plain words", "Help"),
+      ] },
+    ];
+  }
+  if (u.role === "partner" && !state.pilotScopeId) {
+    return [
+      { title: "Your market", rows: [
+        ...(u.partner && u.partner.teamAdmin ? [R("users", "Recruiters", "Who's bringing creators", "Team")] : []),
+        R("person", "Creators", "The bench your links brought in", "Creators"),
+        R("pin", "Market roster", "Each market's funnel, end to end", "Markets"),
+        R("play", "Outreach", "Links & invites", "Links"),
+      ] },
+      { title: "Terms", rows: [
+        { icon: "banknote", label: "Fund terms", sub: "Activation & monthly", act: "return ptEarnGo125('fund')" },
+        { icon: "receipt", label: "Payout schedule", sub: "What has been paid, and what is owed", act: "return ptEarnGo125('returns')" },
+      ] },
+      { title: "Account", rows: [
+        R("sliders", "Account", "Your partner profile and agreement", "Account"),
+        R("help", "Help", "How your share works, in plain words", "Help"),
+      ] },
+    ];
+  }
+  if (u.role === "pilot_partner" || (u.role === "partner" && state.pilotScopeId)) {
+    return [
+      { title: "Your pilot", rows: [
+        R("sig", "Sig", "Your pilot's numbers, in plain sentences", "Sig"),
+        ...(u.teamAdmin || (u.partner && u.partner.teamAdmin) ? [R("users", "Team", "Your pilot team's seats", "Team")] : []),
+        R("help", "Help", "How the pilot works, in plain words", "Help"),
+        ...(u.role === "partner" ? [{ icon: "home", label: "Partner view", sub: "Back to your partner console", tab: "__partner_scope_exit" }] : []),
+      ] },
+    ];
+  }
+  if (u.role === "recruiter") {
+    return [
+      { title: "Your console", rows: [
+        R("sig", "Sig", "Ask anything about your queue and your market", "Sig"),
+        R("help", "Help", "Your launch guide and scripts, in plain words", "Help"),
+      ] },
+    ];
+  }
+  return [];
+}
+function everythingRowHtml125(r) {
+  const inner = `<span class="more-ic">${r.icon === "sig" ? `<img class="tab-sig-img" src="/assets/sig-a/head-idle.webp" alt="">` : bnIcon(r.icon || "more")}</span><span class="more-tx"><span class="more-label">${esc(r.label)}</span>${r.sub ? `<span class="more-sub">${esc(r.sub)}</span>` : ""}</span>${r.badge ? `<span class="tab-badge inline">${r.badge > 99 ? "99+" : r.badge}</span>` : ""}${r.status ? `<span class="ev125-status">${esc(r.status)}</span>` : `<span class="more-chev">›</span>`}`;
+  if (r.href) return `<a class="more-row ev125-row" href="${esc(r.href)}" onclick="closeEverything125()">${inner}</a>`;
+  const act = r.act || `return go('dashboard','${r.tab}')`;
+  return `<button type="button" class="more-row ev125-row" onclick="closeEverything125(); ${act}">${inner}</button>`;
+}
+function openEverything125() {
+  closeEverything125();
+  closeMoreSheet();
+  const groups = everythingGroups125();
+  if (!groups.length) return false;
+  const el = document.createElement("div");
+  el.id = "everything-panel125";
+  el.className = "ev125-overlay";
+  el.innerHTML = `
+  <div class="ev125-panel" role="dialog" aria-label="Everything">
+    <div class="ev125-head"><strong>Everything</strong><span class="muted small">All you can do</span><button type="button" class="linklike" onclick="closeEverything125()" aria-label="Close">✕</button></div>
+    ${groups.map((g) => `<div class="ev125-group"><h5>${esc(g.title)}</h5>${g.rows.map(everythingRowHtml125).join("")}</div>`).join("")}
+  </div>`;
+  el.addEventListener("click", (e) => { if (e.target === el) closeEverything125(); });
+  document.body.appendChild(el);
+  return false;
+}
+function closeEverything125() {
+  const el = document.getElementById("everything-panel125");
+  if (el) el.remove();
+  return false;
+}
+// Build -122: the signed-in identity photo. The header circles
+// used to read creator.photoUrl off the session user — a field
+// the session payload never sets — so the initial showed even
+// when a photo had been uploaded. The real sources, per role:
+// a creator's uploaded photo (hasPhoto -> the photo route, the
+// same derivation the server's own views use), a business's
+// asset-packet logo link, a partner's brand logo. Anything
+// else keeps the initial: the data does not carry more.
+function selfAvatarUrl122(u) {
+  if (!u) return null;
+  if (u.creator && u.creator.hasPhoto && u.id) return `/api/users/${u.id}/photo`;
+  if (u.creator && u.creator.photoUrl) return u.creator.photoUrl;
+  const pk = u.business && u.business.assetPacket;
+  if (pk && pk.logoUrl) return pk.logoUrl;
+  if (u.partner && u.partner.brand && u.partner.brand.logoUrl) return u.partner.brand.logoUrl;
+  if (u.partner && u.partner.logoUrl) return u.partner.logoUrl;
+  return null;
+}
+// The photo rides ON TOP of the initial circle: if the image
+// is missing or fails to load it removes itself and the
+// initial underneath is what shows — the layout never breaks
+// and there is never a broken-image glyph.
+function avaHtml122(txtCls, imgCls, url, initial) {
+  const base = `<span class="${txtCls}">${esc(initial)}</span>`;
+  if (!url) return base;
+  return `<span class="ava122w">${base}<img class="${imgCls} ava122i" src="${esc(url)}" alt="" loading="lazy" onerror="this.remove()"></span>`;
 }
 function tabBarHtml() {
   const items = tabItemsFor();
   if (!items.length) return "";
   const u = state.user;
-  const prim = primaryTabs119();
-  const list = items.slice();
-  if ((u.role === "partner" || u.role === "pilot_partner") && !list.some((it) => it.tab === "More")) {
-    list.push({ icon: "more", label: "More", tab: "More", on: state.tab === "More", primary119: true });
-  }
-  let grouped = false;
-  const btns = list.map((it) => {
-    const isP = !!it.primary119 || prim.includes(it.tab);
-    const isSig = it.tab === "Sig";
-    let group = "";
-    if (!isP && !isSig && !grouped && it.tab !== "__partner_scope_exit") { grouped = true; group = `<div class="tab-grouplabel" aria-hidden="true">More</div>`; }
-    return `${group}
-    <button type="button" class="tab-item ${isP ? "tab-primary" : "tab-secondary"}${isSig ? " tab-sigpin" : ""} ${it.on ? "on" : ""}" onclick="return go('dashboard','${it.tab}')" aria-label="${esc(it.label)}">
-      <span class="tab-ic">${it.icon === "sig" ? `<img class="tab-sig-img" src="/assets/sig-v4/head-idle.webp" alt="">` : bnIcon(it.icon)}${it.badge ? `<span class="tab-badge">${it.badge > 99 ? "99+" : it.badge}</span>` : ""}</span>
-      <span class="tab-label">${it.short && it.short !== it.label ? `<span class="lbl-full">${esc(it.label)}</span><span class="lbl-short">${esc(it.short)}</span>` : esc(it.label)}</span>
+  // Build -125: the bar/rail renders ONLY the daily stops, in
+  // the design's order, under the design's one-word labels —
+  // plus Sig pinned (where Sig is not itself a daily stop),
+  // the pilot scope exit, and the Everything button that
+  // opens the panel holding everything else. The full item
+  // list still comes from tabItemsFor()/moreRowsFor() — one
+  // source — this function now chooses what the bar shows.
+  const prim = primaryTabs125();
+  const byTab = {};
+  for (const it of items) if (!byTab[it.tab]) byTab[it.tab] = it;
+  const ordered = prim.map((t) => byTab[t]).filter(Boolean);
+  const sigIt = byTab["Sig"] && !prim.includes("Sig") ? byTab["Sig"] : null;
+  const exitIt = byTab["__partner_scope_exit"] || null;
+  const btnHtml = (it, cls) => {
+    // Build -125 display names ride the -41 dual-span mechanism:
+    // the full label on the wide rail, the design's one-word
+    // label on the phone bar (NAV_LABEL_125 / RAIL_SHORT).
+    const full = it.tab === "Plan" && u.role === "business" ? "Wallet" : it.label;
+    const short = NAV_LABEL_125[it.tab] || RAIL_SHORT[it.tab] || full;
+    return `
+    <button type="button" class="tab-item ${cls} ${it.on ? "on" : ""}" onclick="return go('dashboard','${it.tab}')" aria-label="${esc(full)}">
+      <span class="tab-ic">${it.icon === "sig" ? `<img class="tab-sig-img" src="/assets/sig-a/head-idle.webp" alt="">` : bnIcon(it.icon)}${it.badge ? `<span class="tab-badge">${it.badge > 99 ? "99+" : it.badge}</span>` : ""}</span>
+      <span class="tab-label"><span class="lbl-full">${esc(full)}</span><span class="lbl-short">${esc(short)}</span></span>
     </button>`;
-  }).join("");
+  };
+  const btns = [
+    `<button type="button" class="tab-item tab-ev125" onclick="return openEverything125()" aria-label="Everything — all sections"><span class="tab-ic">${bnIcon("more")}</span><span class="tab-label">Everything</span></button>`,
+    ...(exitIt ? [btnHtml(exitIt, "tab-secondary")] : []),
+    ...ordered.map((it) => btnHtml(it, "tab-primary")),
+    ...(sigIt ? [btnHtml(sigIt, "tab-secondary tab-sigpin")] : []),
+  ].join("");
   // Sign out rides directly under the last destination, below
   // a hairline (Jeff, 2026-10-28): an action, not a
   // destination, so it never takes an .on state. BUILD -41:
@@ -2498,11 +2720,11 @@ function tabBarHtml() {
     </button>`;
   const roleWord = u.role === "business" ? "Business" : u.role === "creator" ? "Creator" : u.role === "recruiter" ? "Recruiter" : (u.role === "pilot_partner" || state.pilotScopeId) ? "Impact Portal" : "Partner";
   const nm = u.role === "business" && u.business ? u.business.businessName : u.role === "partner" && u.partner ? u.partner.name : u.name;
-  const photo = u.role === "creator" && u.creator ? u.creator.photoUrl : null;
+  const photo = selfAvatarUrl122(u);
   const initial = String(nm || "?").trim().charAt(0).toUpperCase() || "S";
   const sub = u.market ? marketDisplayName(u.market) : roleWord;
   const railhead = `<div class="tab-railhead"><img src="/assets/logo.png" alt="SIGNL"><span class="trh-sub">${esc(roleWord)}</span></div>`;
-  const railfoot = `<div class="tab-railfoot"><div class="tab-user">${photo ? `<img class="tu-ava" src="${esc(photo)}" alt="">` : `<span class="tu-ava">${esc(initial)}</span>`}<span><span class="tu-name">${esc(nm || "")}</span><br><span class="tu-sub">${esc(sub)}</span></span></div></div>`;
+  const railfoot = `<div class="tab-railfoot"><div class="tab-user tab-user-btn" role="button" tabindex="0" title="Your home base" onclick="return go('dashboard','${identityDest125()}')">${avaHtml122("tu-ava", "tu-ava", photo, initial)}<span><span class="tu-name">${esc(nm || "")}</span><br><span class="tu-sub">${esc(sub)}</span></span></div></div>`;
   return `${railhead}<div class="tab-main">${btns}${signout}</div>${railfoot}`;
 }
 
@@ -2514,18 +2736,19 @@ function renderTopBar2(full) {
   if (!el) return;
   const u = state.user;
   const name = u.role === "business" && u.business ? u.business.businessName : u.role === "partner" && u.partner ? u.partner.name : u.name;
-  const photo = u.role === "creator" && u.creator ? u.creator.photoUrl : null;
+  const photo = selfAvatarUrl122(u);
   const initial = String(name || "?").trim().charAt(0).toUpperCase() || "S";
   const b = state.badges || {};
   const live = u.role === "business" ? businessAccessState(u) === "active" : !!(u.founding && u.founding.marketLive);
   el.innerHTML = `<div class="tb2-in">
-    <button type="button" class="tb2-id" onclick="return go('dashboard','Profile')">
-      ${photo ? `<img class="tb2-ava" src="${esc(photo)}" alt="">` : `<span class="tb2-ava txt">${esc(initial)}</span>`}
+    <button type="button" class="tb2-id" onclick="return go('dashboard','${identityDest125()}')">
+      ${avaHtml122("tb2-ava txt", "tb2-ava", photo, initial)}
       <span class="tb2-name">${esc(name || "")}</span>
     </button>
     <span class="tb2-actions">
       ${full && (live || u.role === "creator") ? `<button type="button" class="tb2-btn" onclick="return go('dashboard','Messages')" aria-label="Messages">${bnIcon("bubble")}${b.messages ? `<span class="tab-badge">${b.messages > 99 ? "99+" : b.messages}</span>` : ""}</button>` : ""}
       ${full ? `<button type="button" class="tb2-btn" onclick="return go('dashboard','Help')" aria-label="Help">${bnIcon("help")}</button>` : `<a class="tb2-btn" href="mailto:hello@joinsignl.com" aria-label="Help">${bnIcon("help")}</a>`}
+      <button type="button" class="tb2-btn tb2-ev125" onclick="return openEverything125()" aria-label="Everything — all sections" title="Everything">${bnIcon("more")}</button>
     </span>
   </div>`;
 }
@@ -2538,40 +2761,25 @@ async function refreshBadges() {
   } catch (e) { /* badges are an enhancement, never a blocker */ }
 }
 
-// The business More sheet: the sections that do not fit the bar,
-// each row a full-width tap target, Messages carrying its badge.
-
-function openMoreSheet() {
-  closeMoreSheet();
-  const b = state.badges || {};
-  const row = (label, tab, badge) => `
-    <button class="sheet-row" onclick="closeMoreSheet(); return go('dashboard','${tab}')"><span>${label}</span>${badge ? `<span class="bn-badge static">${badge > 99 ? "99+" : badge}</span>` : ""}</button>`;
-  const el = document.createElement("div");
-  el.id = "more-sheet";
-  el.className = "sheet-overlay";
-  el.innerHTML = `
-  <div class="sheet" role="dialog" aria-label="More">
-    <div class="flex-between"><strong>More</strong><button class="linklike" onclick="closeMoreSheet()">Close</button></div>
-    ${row("Favorites", "Favorites", 0)}
-    ${row("Visits &amp; Posts", "Visits & Posts", 0)}
-    ${row("Plan", "Plan", 0)}
-    ${row("Messages", "Messages", b.messages || 0)}
-    <button class="sheet-row" onclick="closeMoreSheet(); signOut()"><span>Sign out</span></button>
-  </div>`;
-  el.addEventListener("click", (e) => { if (e.target === el) closeMoreSheet(); });
-  document.body.appendChild(el);
-  return false;
-}
-
+// Build -125: the business "More" sheet is deleted with the
+// rest of the More model — its rows (Favorites, Visits, Plan,
+// Messages) are daily stops or Everything-panel rows now.
+// closeMoreSheet stays: the Everything panel and the retired
+// admin sheet both close through it.
 function closeMoreSheet() {
   const el = document.getElementById("more-sheet");
   if (el) el.remove();
   return false;
 }
 
-// Build -119: Admin's phone bar carries Review, Markets, Money
-// and More; the sheet lists every rail destination under its
+// Build -119: Admin's phone bar carried Review, Markets, Money
+// and More; the sheet listed every rail destination under its
 // design label, plus sign out.
+// Build -125: the sheet is retired — the phone bar is Review ·
+// Creators · Markets · Wallet and the Everything panel (top
+// row) carries every section grouped. This function stays
+// only so nothing that still names it breaks; nothing in the
+// -125 chrome calls it.
 function openAdminMoreSheet() {
   closeMoreSheet();
   const items = railItems() || [];
@@ -2580,8 +2788,8 @@ function openAdminMoreSheet() {
   el.id = "more-sheet";
   el.className = "sheet-overlay";
   el.innerHTML = `
-  <div class="sheet" role="dialog" aria-label="More">
-    <div class="flex-between"><strong>More</strong><button class="linklike" onclick="closeMoreSheet()">Close</button></div>
+  <div class="sheet" role="dialog" aria-label="Everything">
+    <div class="flex-between"><strong>Everything</strong><button class="linklike" onclick="closeMoreSheet()">Close</button></div>
     ${items.map((it) => `<button class="sheet-row" onclick="closeMoreSheet(); ${it.onclick}"><span>${esc(disp(it.label))}</span>${it.badge ? `<span class="bn-badge static">${it.badge > 99 ? "99+" : it.badge}</span>` : ""}</button>`).join("")}
     <button class="sheet-row" onclick="closeMoreSheet(); signOut()"><span>Sign out</span></button>
   </div>`;
@@ -2601,27 +2809,35 @@ function openAdminMoreSheet() {
 // logic behind the button in this stage.
 const SPARK_SVG = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.1 6.9L21 11l-6.9 2.1L12 20l-2.1-6.9L3 11l6.9-2.1z"/></svg>`;
 
-// Sig's face (V4, Jeff, 2026-10-28): a rendered character
-// delivered as generated video — the same delivery model as
-// the Muse avatar. The flat SVG musician retired; the -19/-22
-// state machine and triggers did not change, only the rendering.
-// The asset model:
-//   - The Sig-tab hero (sigHeroMediaHtml) is a video stack: the
-//     hero still as poster/fallback, an idle loop, a talk loop
-//     while an answer renders, one-shot greet/celebrate clips on
-//     their existing triggers, and the think STILL while he is
-//     thinking (no think clip, by design).
+// Sig's face (Build -124, Jeff, 2026-11-04): the painterly
+// portrait Jeff picked as Concept A, replacing the V4 beanie-kid
+// render ("Sig is scaring me a bit... something that doesn't
+// seem so cartoony"). One swappable reference: SIG_ART names the
+// folder, every face on every surface resolves through it (plus
+// the literal head-idle paths in the tab/rail/FAB/More rows).
+// The V4 assets live on at /assets/sig-v4-legacy/ (clips and
+// all); the ink companion and the orb Jeff kept as fallbacks
+// live in ~/workspace/research_notes/sig-concepts-2026-11-04/ —
+// a swap to any of them is: derive the same still set into a
+// folder, repoint SIG_ART + the literal head-idle paths.
+// The asset model (state machine and triggers unchanged):
+//   - The Sig-tab hero (sigHeroMediaHtml) keeps its video-stack
+//     markup, but Concept A is stills-only: SIG_ART_VIDEO is
+//     false, so no clip ever attaches and the hero still carries
+//     every state, exactly like the reduced-motion path. The
+//     think STILL still swaps in while Sig is thinking.
 //   - Everywhere small (queue cards, thread turns, the claim
 //     confirmation, the bottom tab) Sig is a tight head-crop
 //     still of the state. No video at small sizes, ever.
 //   - prefers-reduced-motion: stills everywhere, no autoplay.
 //   - A clip that fails leaves its poster still standing; the
 //     surface is never an empty hole.
-const SIG_V4 = "/assets/sig-v4";
+const SIG_ART = "/assets/sig-a";
+const SIG_ART_VIDEO = false;
 const SIG_HEAD = { "": "head-idle", greet: "head-greet", think: "head-think", talk: "head-talk", celebrate: "head-celebrate" };
 function sigAvatarHtml(mood) {
   const head = SIG_HEAD[mood || ""] || SIG_HEAD[""];
-  return `<span class="sig-ava sig-ava-img${mood ? " sig-mood-" + mood : ""}" role="img" aria-label="Sig"><img src="${SIG_V4}/${head}.webp" alt="" loading="lazy" decoding="async"></span>`;
+  return `<span class="sig-ava sig-ava-img${mood ? " sig-mood-" + mood : ""}" role="img" aria-label="Sig"><img src="${SIG_ART}/${head}.webp" alt="" loading="lazy" decoding="async"></span>`;
 }
 const SIG_AVATAR_HTML = sigAvatarHtml("");
 
@@ -2636,9 +2852,9 @@ let sigQueueBeat = "";
 // state's clips, so nothing downloads before the hero renders.
 function sigHeroMediaHtml() {
   return `<span class="sig-hero-media" data-sig-hero-media>
-    <img class="sig-hero-still" src="${SIG_V4}/hero.webp" alt="" decoding="async">
-    <video class="sig-hero-video" data-sig-hero-video muted loop playsinline autoplay preload="none" poster="${SIG_V4}/hero.webp" aria-hidden="true"></video>
-    <img class="sig-hero-still sig-hero-think" src="${SIG_V4}/still-think.webp" alt="" decoding="async" hidden>
+    <img class="sig-hero-still" src="${SIG_ART}/hero.webp" alt="" decoding="async">
+    <video class="sig-hero-video" data-sig-hero-video muted loop playsinline autoplay preload="none" poster="${SIG_ART}/hero.webp" aria-hidden="true"></video>
+    <img class="sig-hero-still sig-hero-think" src="${SIG_ART}/still-think.webp" alt="" decoding="async" hidden>
   </span>`;
 }
 const SIG_HERO_CLIPS = { idle: 1, talk: 1, greet: 1, celebrate: 1 };
@@ -2666,7 +2882,12 @@ function sigHeroSet(mode) {
     return;
   }
   if (think) think.hidden = true;
-  if (sigReducedMotion()) {
+  if (!SIG_ART_VIDEO || sigReducedMotion()) {
+    // Stills-only character (Build -124): no clips exist for the
+    // current art, so the hero still carries every state — the
+    // same landing as the reduced-motion path below deck. When a
+    // future character ships clips, flip SIG_ART_VIDEO and the
+    // loops/one-shots below come back untouched.
     sigHeroMode = mode;
     try { video.pause(); } catch (e) {}
     video.hidden = true;
@@ -2678,7 +2899,7 @@ function sigHeroSet(mode) {
     sigHeroMode = name;
     video.setAttribute("data-clip", name);
     video.loop = name === "idle" || name === "talk";
-    video.innerHTML = `<source src="${SIG_V4}/${name}.webm" type="video/webm"><source src="${SIG_V4}/${name}.mp4" type="video/mp4">`;
+    video.innerHTML = `<source src="${SIG_ART}/${name}.webm" type="video/webm"><source src="${SIG_ART}/${name}.mp4" type="video/mp4">`;
     try { video.load(); } catch (e) {}
   }
   const p = video.play && video.play();
@@ -2691,16 +2912,17 @@ function sigHeroSet(mode) {
 // face when the clip ends.
 function sigCelebMediaHtml() {
   return `<span class="sig-celeb-media" data-sig-celeb-media>
-    <img src="${SIG_V4}/still-celebrate.webp" alt="" decoding="async" data-sig-celeb-still>
-    <video data-sig-celeb-video muted playsinline preload="none" poster="${SIG_V4}/still-celebrate.webp" aria-hidden="true" hidden></video>
+    <img src="${SIG_ART}/still-celebrate.webp" alt="" decoding="async" data-sig-celeb-still>
+    <video data-sig-celeb-video muted playsinline preload="none" poster="${SIG_ART}/still-celebrate.webp" aria-hidden="true" hidden></video>
   </span>`;
 }
 function sigCelebKick() {
+  if (!SIG_ART_VIDEO) return; // stills-only character (Build -124): the celebrate still stands
   const host = document.querySelector("[data-sig-celeb-media]");
   if (!host || sigReducedMotion()) return;
   const video = host.querySelector("[data-sig-celeb-video]");
   if (!video) return;
-  video.innerHTML = `<source src="${SIG_V4}/celebrate.webm" type="video/webm"><source src="${SIG_V4}/celebrate.mp4" type="video/mp4">`;
+  video.innerHTML = `<source src="${SIG_ART}/celebrate.webm" type="video/webm"><source src="${SIG_ART}/celebrate.mp4" type="video/mp4">`;
   video.hidden = false;
   try { video.load(); } catch (e) {}
   const p = video.play && video.play();
@@ -2718,7 +2940,7 @@ if (typeof document !== "undefined") {
       v.hidden = true;
       const host = v.closest ? v.closest("[data-sig-celeb-media]") : null;
       const still = host && host.querySelector("[data-sig-celeb-still]");
-      if (still) still.src = `${SIG_V4}/hero.webp`;
+      if (still) still.src = `${SIG_ART}/hero.webp`;
     }
   }, true);
   document.addEventListener("error", (ev) => {
@@ -2820,25 +3042,37 @@ function renderRail() {
   const avatarGo = u.role === "business" ? "return go('profile')" : u.role === "creator" ? "return go('dashboard','Profile')" : "return go('dashboard')";
   let lastSec = "";
   // Build -119: the rail carries the design's words (the
-  // review queue reads "Review"; Stats reads "Money" on the
-  // phone bar) and the phone bottom bar shows only the primary
-  // items — Review, Markets, Money, More — with every other
-  // destination inside the More sheet.
+  // review queue reads "Review") and the phone bottom bar
+  // shows only the primary items, with every other
+  // destination inside a sheet.
+  // Build -125: the phone bar is the design's four daily
+  // stops — Review · Creators · Markets · Wallet. "Creators"
+  // is the Command Center's creators view (Stats, ccTab
+  // creators); "Wallet" is the same view's money tab riding
+  // the Stats item's short label. The More sheet is gone:
+  // the Everything panel (top row, beside help) holds every
+  // section, grouped. The desktop rail still lists all
+  // sections labeled (Jeff's -121 call, unchanged).
   const railLabel119 = (label) => label === "Applications" ? "Review" : label;
-  const ADMIN_RAIL_PRIMARY_119 = ["Applications", "Markets", "Stats"];
-  const rows = items.map((it) => {
+  const ADMIN_RAIL_PRIMARY_125 = ["Applications", "Creators", "Markets", "Stats"];
+  const railItems125 = [];
+  for (const it of items) {
+    railItems125.push(it);
+    if (it.label === "Markets") railItems125.push({ sec: it.sec, icon: "person", label: "Creators", onclick: "ccTab = 'creators'; return go('dashboard','Stats')", active: state.tab === "Stats" && ccTab === "creators", badge: 0 });
+  }
+  const rows = railItems125.map((it) => {
     const sec = lastSec && it.sec !== lastSec ? `<div class="rail-sep"></div>` : "";
     lastSec = it.sec;
     const disp = railLabel119(it.label);
+    const active = it.label === "Stats" ? (it.active && ccTab !== "creators") : it.active;
     const labelHtml = it.label === "Stats"
-      ? `<span class="rail-label rail-label-full">Stats</span><span class="rail-label rail-label-short">Money</span>`
+      ? `<span class="rail-label rail-label-full">Stats</span><span class="rail-label rail-label-short">Wallet</span>`
       : `<span class="rail-label">${esc(disp)}</span>`;
-    return `${sec}<button type="button" class="rail-item ${ADMIN_RAIL_PRIMARY_119.includes(it.label) ? "rail-primary" : ""} ${it.active ? "on" : ""}" title="${esc(disp)}" aria-label="${esc(disp)}" onclick="${it.onclick}"><span class="bn-icon">${it.icon === "sig" ? `<img class="rail-sig-img" src="/assets/sig-v4/head-idle.webp" alt="">` : bnIcon(it.icon)}</span>${labelHtml}${it.badge ? `<span class="rail-badge">${it.badge > 99 ? "99+" : it.badge}</span>` : ""}</button>`;
+    return `${sec}<button type="button" class="rail-item ${ADMIN_RAIL_PRIMARY_125.includes(it.label) ? `rail-primary rail-p-${it.label.toLowerCase()}` : ""} ${active ? "on" : ""}" title="${esc(disp)}" aria-label="${esc(disp)}" onclick="${it.onclick}"><span class="bn-icon">${it.icon === "sig" ? `<img class="rail-sig-img" src="/assets/sig-a/head-idle.webp" alt="">` : bnIcon(it.icon)}</span>${labelHtml}${it.badge ? `<span class="rail-badge">${it.badge > 99 ? "99+" : it.badge}</span>` : ""}</button>`;
   }).join("");
   rail.innerHTML = `
     <button type="button" class="rail-brand" title="SIGNL" aria-label="SIGNL home" onclick="return go('dashboard')"><img src="/assets/icon.png" alt="SIGNL"></button>
     ${rows}
-    <button type="button" class="rail-item rail-primary rail-more" onclick="openAdminMoreSheet()"><span class="bn-icon">${bnIcon("more")}</span><span class="rail-label">More</span></button>
     <div class="rail-foot">
       <button type="button" class="rail-item" title="Sign out" aria-label="Sign out" onclick="signOut()"><span class="bn-icon">${bnIcon("signout")}</span><span class="rail-label">Sign out</span></button>
       <button type="button" class="rail-avatar" title="${esc(name || "Account")}" aria-label="Your account" onclick="${avatarGo}">${esc(initial)}</button>
@@ -2873,7 +3107,7 @@ function syncAdminSecbar121() {
     if (anchor && anchor.parentNode) anchor.parentNode.insertBefore(bar, anchor.nextSibling);
     else document.body.appendChild(bar);
   }
-  bar.innerHTML = items.map((it) => `<button type="button" class="sec-chip121${it.active ? " on" : ""}" onclick="${it.onclick}">${esc(it.label)}${it.badge ? `<span class="sec-badge121">${it.badge > 99 ? "99+" : it.badge}</span>` : ""}</button>`).join("");
+  bar.innerHTML = items.map((it) => `<button type="button" class="sec-chip121${it.active && !(it.label === "Stats" && ccTab === "creators") ? " on" : ""}" onclick="${it.onclick}">${esc(it.label)}${it.badge ? `<span class="sec-badge121">${it.badge > 99 ? "99+" : it.badge}</span>` : ""}</button>${it.label === "Stats" ? `<button type="button" class="sec-chip121${state.tab === "Stats" && ccTab === "creators" ? " on" : ""}" onclick="ccTab = 'creators'; return go('dashboard','Stats')">Creators</button>` : ""}`).join("");
   const on = bar.querySelector(".sec-chip121.on");
   if (on) { try { bar.scrollLeft = Math.max(0, on.offsetLeft - (bar.clientWidth - on.clientWidth) / 2); } catch (e) { /* no-op */ } }
 }
@@ -2888,8 +3122,9 @@ function renderTopRow() {
   if (!u || state.preview || state.view === "staff" || !document.body.classList.contains("rail-on")) { el.innerHTML = ""; return; }
   const name = u.role === "business" && u.business ? u.business.businessName : u.name;
   const initial = String(name || u.name || "?").trim().charAt(0).toUpperCase() || "S";
+  const photo = selfAvatarUrl122(u);
   const statsGo = u.role === "business" ? "return go('dashboard','Analytics')" : "return go('dashboard')";
-  el.innerHTML = `<div class="wrap tr-in"><span class="tr-ava">${esc(initial)}</span><span class="tr-name">${esc(name || "")}</span><span class="tr-right"><button type="button" onclick="${statsGo}" title="Your numbers" aria-label="Your numbers">${bnIcon("stats")}</button><a href="mailto:hello@joinsignl.com">Need help?</a></span></div>`;
+  el.innerHTML = `<div class="wrap tr-in">${avaHtml122("tr-ava", "tr-ava", photo, initial)}<span class="tr-name">${esc(name || "")}</span><span class="tr-right"><button type="button" onclick="${statsGo}" title="Your numbers" aria-label="Your numbers">${bnIcon("stats")}</button><button type="button" class="tr-ev125" onclick="return openEverything125()" aria-label="Everything — all sections" title="Everything">${bnIcon("more")}<span>Everything</span></button><a href="mailto:hello@joinsignl.com">Need help?</a></span></div>`;
 }
 
 // Build -119: the greeting hour comes from the user's own
@@ -2929,7 +3164,7 @@ function renderAgentFab() {
     && (document.body.classList.contains("v3-on") || document.body.classList.contains("v3-slim"));
   if (!state.user || state.preview || (!q && !inAppShell)) { fab.classList.remove("show"); fab.innerHTML = ""; fab.onclick = null; return; }
   fab.classList.add("show");
-  fab.innerHTML = `<img src="/assets/sig-v4/head-idle.webp" alt=""><span class="fab-dot" aria-hidden="true"></span>Sig${q && q.count ? `<span class="fab-badge">${q.count}</span>` : ""}`;
+  fab.innerHTML = `<img src="/assets/sig-a/head-idle.webp" alt=""><span class="fab-dot" aria-hidden="true"></span>Sig${q && q.count ? `<span class="fab-badge">${q.count}</span>` : ""}`;
   fab.onclick = q ? openAgentSheet : () => go("dashboard", "Sig");
 }
 // Overhaul V2: the ready-for-you card is the Grin agent card —
@@ -3157,12 +3392,40 @@ function creatorShapesHtml119(o) {
 // Each jumps to that part of the form; the form stays one
 // form with one save, exactly as the server expects it.
 // Business Money (Build -119, design): Plan / Licenses /
-// Receipts is one area with three homes — the plan screen,
-// Posts & licenses, and Results with its receipt. The strip
-// rides all three so the area reads as one place.
-function bizMoneyStrip119(active) {
-  const item = (id, label, tab) => ({ label, on: active === id, onclick: `return go('dashboard','${tab}')` });
-  return wsTabs([item("plan", "Plan", "Plan"), item("licenses", "Licenses", "Content"), item("receipts", "Receipts", "Analytics")]);
+// Receipts was one area with three homes, glued by a strip.
+// Build -125: the area is the business WALLET (the design's
+// payments frame): one screen, three sub-tabs — Plan (the
+// subscription), Bookings (what each paid visit cost),
+// Receipts (the monthly receipt export). Licenses left the
+// strip: the License library is its own Everything-panel
+// destination, and Results stands on its own too.
+function bizWalletTabs125(active) {
+  const item = (id, label) => ({ label, on: active === id, onclick: `return bizWalletSetSeg125('${id}')` });
+  return wsTabs([item("plan", "Plan"), item("bookings", "Bookings"), item("receipts", "Receipts")]);
+}
+function bizWalletSetSeg125(v) { state.bizWalletSeg125 = v; renderPlanTab(); return false; }
+// The Wallet's Bookings sub-tab: every paid booking this
+// business made, at the total it was charged (rate + the 3%
+// that moves the money), plus coupon deals at face value —
+// store value, labeled, never summed with cash.
+async function loadBizWalletBookings125() {
+  const host = document.getElementById("biz-wallet-bookings");
+  if (!host) return;
+  try {
+    const data = await api("GET", "/bookings");
+    if (!document.getElementById("biz-wallet-bookings")) return;
+    const bookings = data.bookings || [];
+    const paid = bookings.filter((b) => b.paidLane);
+    const coupons = bookings.filter((b) => b.kind === "coupon");
+    const stWord = (b) => b.paidLane.escrowState === "released" ? "Paid out" : b.paidLane.escrowState === "refunded" ? "Refunded" : b.post ? "Post live — held" : "Booked — held";
+    host.innerHTML = `
+  ${paid.length ? `<div class="wcard" style="padding-top:8px;padding-bottom:8px">${paid.map((b) => `<div class="lib-row"><div class="lib-main"><div class="lib-title">${esc(b.title)}</div><div class="lib-meta">${esc(b.creatorName || "")} · rate ${ownCurrencySymbol()}${fmtPrice(b.paidLane.rate)} · charged ${ownCurrencySymbol()}${fmtMoney(b.paidLane.businessTotal)} · ${esc(stWord(b))}</div></div></div>`).join("")}</div>` : `<div class="empty-card"><div class="ec-t">No paid bookings yet</div><div class="ec-s">When you book a creator paid — at their rate, charged to your card on file and held until their post is live — it shows up here, cost and all.</div></div>`}
+  ${coupons.length ? `<h3 style="margin:22px 0 0">Coupon deals</h3>
+  <p class="small muted" style="margin:8px 2px 0">Visits you paid with a coupon instead of cash. The value is store value at your business.</p>
+  <div class="wcard" style="padding-top:8px;padding-bottom:8px">${coupons.map((b) => `<div class="lib-row"><div class="lib-main"><div class="lib-title">${esc(b.title)}</div><div class="lib-meta">${esc(b.creatorName || "")} &middot; ${esc(couponSummaryClient(b.coupon, b.businessName))}</div></div><span class="badge ${b.post ? "ok" : "info"}">${b.post ? "Post live" : "Booked"}</span></div>`).join("")}</div>` : ""}`;
+  } catch (err) {
+    host.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+  }
 }
 function profileSegStrip119() {
   const seg = state.profileSeg119 || "basics";
@@ -3182,15 +3445,12 @@ function profileSegGo119(id) {
   return false;
 }
 
-// The "More" link list that keeps every secondary destination
-// one tap deep on phones (Profile for creators, Money for
-// businesses): the same rows the More screen renders.
-function moreLinksHtml119() {
-  const rows = moreRowsFor();
-  if (!rows.length) return "";
-  return `<h3 style="margin:22px 0 4px">More</h3><div class="more-list">${rows.map((r) => `<button type="button" class="more-row" onclick="return go('dashboard','${r.tab}')"><span class="more-ic">${r.icon === "sig" ? `<img class="tab-sig-img" src="/assets/sig-v4/head-idle.webp" alt="">` : bnIcon(r.icon)}</span><span class="more-tx"><span class="more-label">${esc(r.label)}</span><span class="more-sub">${esc(r.sub || "")}</span></span>${r.badge ? `<span class="tab-badge inline">${r.badge > 99 ? "99+" : r.badge}</span>` : ""}<span class="more-chev">›</span></button>`).join("")}</div>
-  <button type="button" class="more-row logout" onclick="signOut()"><span class="more-ic">${bnIcon("signout")}</span><span class="more-tx"><span class="more-label">Log out</span></span></button>`;
-}
+// Build -125: the appended "More" link lists (which rode the
+// creator Profile and the business Plan screen) are gone, and
+// so is the More screen itself. Every row they carried now
+// lives in the Everything panel (everythingGroups125),
+// grouped by job — Profile is the real profile only, and
+// Wallet is the wallet only.
 
 // The Home snapshot strip (spec §4.1): 2–3 real numbers once
 // they exist; before that, the slot carries the fills-in line,
@@ -3268,18 +3528,6 @@ async function sendNudge(bookingId, btn) {
 }
 
 // ---------- V3 More, Settings, Help, Momentum, Earnings ----------
-
-function renderMoreScreen() {
-  const el = document.getElementById("tab-body");
-  if (!el) return;
-  const rows = moreRowsFor();
-  el.innerHTML = `
-  ${wsHead("More", { sub: "The things you check, not the things you work.", subKey: "more" })}
-  <div class="more-list">
-    ${rows.map((r) => `<button type="button" class="more-row" onclick="return go('dashboard','${r.tab}')"><span class="more-ic">${r.icon === "sig" ? `<img class="tab-sig-img" src="/assets/sig-v4/head-idle.webp" alt="">` : bnIcon(r.icon)}</span><span class="more-tx"><span class="more-label">${esc(r.label)}</span><span class="more-sub">${esc(r.sub)}</span></span>${r.badge ? `<span class="tab-badge inline">${r.badge > 99 ? "99+" : r.badge}</span>` : ""}<span class="more-chev">›</span></button>`).join("")}
-  </div>
-  <button type="button" class="more-row logout" onclick="signOut()"><span class="more-ic">${bnIcon("signout")}</span><span class="more-tx"><span class="more-label">Log out</span></span></button>`;
-}
 
 function renderSettingsTab() {
   const el = document.getElementById("tab-body");
@@ -3434,7 +3682,7 @@ function renderHelpTab() {
     ${qa("How do comped visits and paid bookings differ?", "A comped visit covers the meal or service, on the business. A paid booking pays your listed rate, and you keep 97%. Joining is free and comped visits are always free; the only fee is 3% on paid bookings.")}
     ${qa("What is local reach?", "The share of your audience that actually lives here, times your audience size. Businesses rank creators by local reach, not follower count.")}
     ${qa("How does Momentum work?", "Points for doing the work well: +20 for an on-time post, +25 when a business runs your post as an ad, +3 when someone joins from your invite link, +10 when a creator you invited is approved. Late posts and no-shows cost points.")}
-    ${qa("What is a license request?", "A business asks to repost your post and run it as an ad for 90 days, at your listed licensing fee. The 90 days start the day you approve. You approve each use and keep 97%. It lives under Earnings.")}
+    ${qa("What is a license request?", "A business asks to repost your post and run it as an ad for 90 days, at your listed licensing fee. The 90 days start the day you approve. You approve each use and keep 97%. It lives in your Wallet.")}
     ${qa("When do I get paid?", "Paid bookings record your rate in the app: booked at your rate, you keep 97%. Payouts run outside the app for now, and nothing in the app promises a payout date.")}
     ${qa("What will payout setup ask me?", isUkUser() ? "Stripe will ask for identity details, your address, and a UK bank account (sort code and account number), each for a plain reason. The full version is right below, under Payout setup, in plain words. It also covers sole trader or limited company setup, and why a first payout can be held briefly while identity checks clear." : "Stripe will ask for identity details, your address, your bank account, and tax information, each for a plain reason. The full version is right below, under Payout setup, in plain words. It also covers Form 1099-K and why a first payout can be held briefly while identity checks clear.")}
     ${isUkUser() ? qa("I'm in the UK. How is my data handled?", ukPrivacyText()) : ""}
@@ -3475,10 +3723,17 @@ function renderMomentumTab() {
 // Creator Earnings (spec §6.5): real totals only, license
 // requests decided on the row, booking history with states in
 // words. Record language only while payments run off-app.
+// Build -125: this tab is the creator's WALLET (the route id
+// stays "Earnings"; only what the person reads changed).
+// Three sub-tabs, the design's split: Cash (paid bookings +
+// licence income), Comps (comped visits + coupon/store value
+// at face value — value received, never cash, never added
+// into a cash total), History (the combined dated ledger,
+// each line tagged Cash or Comp).
 async function renderEarningsTab() {
   const el = document.getElementById("tab-body");
   if (!el) return;
-  el.innerHTML = `${wsHead("Earnings", { sub: "What your posts and visits have earned you.", subKey: "earnings" })}${skelHtml("Loading your earnings...", 2)}`;
+  el.innerHTML = `${wsHead("Wallet", { sub: "Cash, comps and history — kept separate, the way a wallet is.", subKey: "earnings" })}${skelHtml("Loading your wallet...", 2)}`;
   try {
     const [bkData, lrData] = await Promise.all([
       api("GET", "/bookings"),
@@ -3512,49 +3767,84 @@ async function renderEarningsTab() {
       return f ? ` &middot; $${fmtMoney(f)} store value` : "";
     };
     const stateWord = (b) => b.paidLane.escrowState === "refunded" ? "Refunded" : b.post ? (b.paidLane.escrowState === "released" ? "Complete" : "Post live") : "Booked";
-    // Build -119: Money splits the design's way — Earned
-    // (released bookings, decided licenses, coupon deals) and
-    // Pending (money held until the post is live, license
-    // requests waiting on the creator). Same rows, same
-    // actions; only the grouping is new.
+    // Build -119 split this screen Earned/Pending; Build
+    // -125 regroups the same rows, same actions, under the
+    // Wallet's Cash sub-tab (waiting, on its way, paid out,
+    // licenses) — see cashHtml below.
     const bkRow119 = (b) => `<div class="lib-row"><div class="lib-main"><div class="lib-title">${esc(b.title)}</div><div class="lib-meta">${esc(b.businessName || "")} · Booked at your rate of ${ownCurrencySymbol()}${fmtPrice(b.paidLane.rate)}. You keep ${ownCurrencySymbol()}${fmtMoney(b.paidLane.creatorNet)}.</div></div><span class="badge ${b.paidLane.escrowState === "released" ? "ok" : b.paidLane.escrowState === "refunded" ? "warn" : "info"}">${stateWord(b)}</span></div>`;
     const releasedBk = paidBookings.filter((b) => b.paidLane.escrowState === "released" || b.paidLane.escrowState === "refunded");
     const pendingBk = paidBookings.filter((b) => b.paidLane.escrowState !== "released" && b.paidLane.escrowState !== "refunded");
-    const earnSeg = state.earnSeg === "pending" ? "pending" : "earned";
+    const wseg = ["cash", "comps", "history"].includes(state.walletSeg125) ? state.walletSeg125 : "cash";
     const licRow = (l, withActions) => `<div class="lib-row"><div class="lib-main"><div class="lib-title">${esc(l.businessName || "A business")} wants to license your post</div><div class="lib-meta">Your fee $${fmtPrice(l.fee)} · you keep $${fmtMoney(l.creatorNet)} · 90 days of repost and ad use${l.status === "pending" ? " · starts the day you approve" : l.status === "granted" && l.windowEndsAt ? ` · runs through ${fmtDay(l.windowEndsAt)}` : ""}${l.postUrl ? ` · <a href="${esc(l.postUrl)}" target="_blank" rel="noopener">View post</a>` : ""}${l.status !== "pending" ? ` · ${l.status === "granted" ? "Approved" : "Declined"}` : ""}</div></div>${withActions ? `<span class="req-acts"><button type="button" class="btn small-btn ws-primary" onclick="return respondLicenseEarn('${l.id}','approve')">Approve</button> <button type="button" class="btn small-btn ws-outline" onclick="return respondLicenseEarn('${l.id}','decline')">Decline</button></span>` : ""}</div>`;
-    el.innerHTML = `
-  ${wsHead("Earnings", { sub: "What your posts and visits have earned you.", subKey: "earnings" })}
+    // Comps (Build -125): comped visits you actually made,
+    // plus coupon deals at face value. A comp's worth is the
+    // visit's dollar cap — value you received, not cash; the
+    // coupon canon applies: face value, labeled store value,
+    // never summed with cash anywhere on this screen.
+    const compBookings = bookings.filter((b) => !b.paidLane && b.kind !== "coupon" && (b.redeemedAt || b.post));
+    const couponFace = (b) => { const cpn = b.coupon || {}; return cpn.type === "percent_off" ? (cpn.cap ? Number(cpn.cap) : 0) : (Number(cpn.amount) || 0); };
+    const compTotal = Math.round(((money.compValue || 0) + couponBookings.reduce((s, b) => s + couponFace(b), 0)) * 100) / 100;
+    const couponRow = (b) => `<div class="lib-row"><div class="lib-main"><div class="lib-title">${esc(b.title)}</div><div class="lib-meta">${esc(b.businessName || "")} &middot; ${esc(couponSummaryClient(b.coupon, b.businessName))}${b.coupon && b.coupon.expiresAt ? ` &middot; expires ${esc(fmtDay(b.coupon.expiresAt))}` : ""}${couponFaceBit(b)}</div></div><span class="badge ${b.post ? "ok" : "info"}">${b.post ? "Post live" : "Booked"}</span></div>`;
+    // History (Build -125): one dated ledger over the same
+    // records. Cash lines carry cash amounts; comp lines
+    // carry value, tagged Comp — the two never add together.
+    const hist = [];
+    for (const b of paidBookings) hist.push({ at: (b.post && (b.post.firstAt || b.post.submittedAt)) || b.redeemedAt || b.createdAt, title: b.title, meta: `${b.businessName || ""} · Paid booking · ${stateWord(b)}`, kind: "Cash", amt: `${ownCurrencySymbol()}${fmtMoney(b.paidLane.creatorNet)}` });
+    for (const l of lrs) hist.push({ at: l.createdAt, title: `${l.businessName || "A business"} — license`, meta: l.status === "granted" ? "License approved · 90 days" : l.status === "pending" ? "License request waiting on you" : "License declined", kind: "Cash", amt: l.status === "granted" ? `$${fmtMoney(l.creatorNet)}` : `$${fmtMoney(l.creatorNet)} if approved` });
+    for (const b of compBookings) hist.push({ at: b.redeemedAt || (b.post && (b.post.firstAt || b.post.submittedAt)) || b.createdAt, title: b.title, meta: `${b.businessName || ""} · Comped visit${b.whatComped ? " · " + b.whatComped : ""}`, kind: "Comp", amt: b.dollarCap ? `${ownCurrencySymbol()}${fmtMoney(b.dollarCap)} value` : "Comp" });
+    for (const b of couponBookings) hist.push({ at: b.redeemedAt || b.createdAt, title: b.title, meta: `${b.businessName || ""} · Coupon deal`, kind: "Comp", amt: couponFace(b) ? `$${fmtMoney(couponFace(b))} store value` : "Coupon" });
+    hist.sort((x, y) => String(y.at || "") < String(x.at || "") ? -1 : String(y.at || "") > String(x.at || "") ? 1 : 0);
+    const histRow = (h) => `<div class="lib-row"><div class="lib-main"><div class="lib-title">${esc(h.title)}</div><div class="lib-meta">${h.at ? `${esc(fmtDayFull(h.at))} · ` : ""}${esc(h.meta)}</div></div><span class="badge ${h.kind === "Cash" ? "ok" : "info"}">${h.kind}</span><span class="lib-amt">${esc(h.amt)}</span></div>`;
+    const cashHtml = `
   ${total > 0 || paidBookings.length || granted.length ? `
   <div class="kpi-grid c3">
     ${kpiCard("Total earned", `$${fmtMoney(total)}`, { sub: "Paid bookings released, plus licenses you approved" })}
     ${kpiCard("This month", `$${fmtMoney(monthEarned)}`, { sub: "Earned in " + nowD.toLocaleDateString(undefined, { month: "long" }) })}
     ${kpiCard("On its way", `$${fmtMoney(money.held || 0)}`, { sub: "Booked at your rate, held until the post is live" })}
   </div>` : `
-  <div class="empty-card"><div class="ec-t">Nothing earned yet</div><div class="ec-s">Nothing earned yet. Paid bookings you complete show up here. Comped visits build your Momentum instead.</div><div class="mt">${(state.user.creator || {}).paidRate ? `<button type="button" class="btn small-btn ws-primary" onclick="return go('dashboard','Offers')">See offers</button>` : `<button type="button" class="btn small-btn ws-primary" onclick="return go('dashboard','Profile')">Set your paid rate</button>`}</div></div>`}
+  <div class="empty-card"><div class="ec-t">No cash yet</div><div class="ec-s">Paid bookings you complete pay out here, in cash. Comped visits land under Comps instead — they build your Momentum and your record.</div><div class="mt">${(state.user.creator || {}).paidRate ? `<button type="button" class="btn small-btn ws-primary" onclick="return go('dashboard','Offers')">See offers</button>` : `<button type="button" class="btn small-btn ws-primary" onclick="return go('dashboard','Profile')">Set your paid rate</button>`}</div></div>`}
   <p class="small muted" style="margin:14px 2px 0">Paid bookings pay your listed rate. You keep 97%.</p>
-  ${wsTabs([
-    { label: "Earned", on: earnSeg === "earned", onclick: "return earnSetSeg('earned')" },
-    { label: "Pending", count: (pending.length + pendingBk.length) || null, on: earnSeg === "pending", onclick: "return earnSetSeg('pending')" },
-  ])}
-  ${earnSeg === "pending" ? `
-  <h3 style="margin:6px 0 0">Waiting on you</h3>
-  ${pending.length ? `<div class="wcard" style="padding-top:8px;padding-bottom:8px">${pending.map((l) => licRow(l, true)).join("")}</div>` : `<p class="small muted" style="margin:8px 2px 0">No license requests waiting. When a business wants to reuse one of your posts, it lands here at your listed fee.</p>`}
+  ${pending.length ? `<h3 style="margin:18px 0 0">Waiting on you</h3>
+  <div class="wcard" style="padding-top:8px;padding-bottom:8px">${pending.map((l) => licRow(l, true)).join("")}</div>` : ""}
   <h3 style="margin:22px 0 0">On its way</h3>
-  ${pendingBk.length ? `<div class="wcard" style="padding-top:8px;padding-bottom:8px">${pendingBk.map(bkRow119).join("")}</div>` : `<p class="small muted" style="margin:8px 2px 0">Nothing is being held right now. A paid booking holds its money here until your post is live.</p>`}` : `
-  <h3 style="margin:6px 0 0">License requests</h3>
-  ${decided.length ? `<div class="wcard" style="padding-top:8px;padding-bottom:8px">${decided.map((l) => licRow(l, false)).join("")}</div>` : `<p class="small muted" style="margin:8px 2px 0">No licenses decided yet. Requests you approve pay out here.</p>`}
+  ${pendingBk.length ? `<div class="wcard" style="padding-top:8px;padding-bottom:8px">${pendingBk.map(bkRow119).join("")}</div>` : `<p class="small muted" style="margin:8px 2px 0">Nothing is being held right now. A paid booking holds its money here until your post is live.</p>`}
   <h3 style="margin:22px 0 0">Paid bookings</h3>
   ${releasedBk.length ? `<div class="wcard" style="padding-top:8px;padding-bottom:8px">${releasedBk.map(bkRow119).join("")}</div>` : `<p class="small muted" style="margin:8px 2px 0">${(state.user.creator || {}).paidRate ? `No paid bookings have paid out yet. Your rate is set at ${ownCurrencySymbol()}${fmtPrice(state.user.creator.paidRate)}; when a business books you paid and the post lands, it pays out here.` : "No paid bookings yet. Set your rate on your profile and businesses can book you paid."}</p>`}
+  <h3 style="margin:22px 0 0">License requests</h3>
+  ${decided.length ? `<div class="wcard" style="padding-top:8px;padding-bottom:8px">${decided.map((l) => licRow(l, false)).join("")}</div>` : `<p class="small muted" style="margin:8px 2px 0">No licenses decided yet. Requests you approve pay out here.</p>`}`;
+    const compsHtml = `
+  ${compBookings.length || couponBookings.length ? `
+  <div class="kpi-grid c3">
+    ${kpiCard("Comp value received", `${ownCurrencySymbol()}${fmtMoney(compTotal)}`, { sub: "Meals, services and store value — value, not cash" })}
+    ${kpiCard("Comped visits", String(compBookings.length), { sub: "Visits you made on the house" })}
+    ${kpiCard("Coupon deals", String(couponBookings.length), { sub: "Posts paid with store value" })}
+  </div>
+  <p class="small muted" style="margin:14px 2px 0">Comps are worth real money at the business — they are just not cash, so they never mix into your cash totals.</p>
+  ${compBookings.length ? `<h3 style="margin:18px 0 0">Comped visits</h3>
+  <div class="wcard" style="padding-top:8px;padding-bottom:8px">${compBookings.map((b) => `<div class="lib-row"><div class="lib-main"><div class="lib-title">${esc(b.title)}</div><div class="lib-meta">${esc(b.businessName || "")}${b.whatComped ? ` · ${esc(b.whatComped)}` : ""}${b.redeemedAt ? ` · visited ${esc(fmtDay(b.redeemedAt))}` : ""}</div></div>${b.dollarCap ? `<span class="lib-amt">${ownCurrencySymbol()}${fmtMoney(b.dollarCap)} value</span>` : ""}<span class="badge ${b.post ? "ok" : "info"}">${b.post ? "Post live" : "Visited"}</span></div>`).join("")}</div>` : ""}
   ${couponBookings.length ? `<h3 style="margin:22px 0 0">Coupon deals</h3>
   <p class="small muted" style="margin:8px 2px 0">Coupons you accepted as payment for a post. The value is store value at the business, not cash, so it never counts as cash earned.</p>
-  <div class="wcard" style="padding-top:8px;padding-bottom:8px">${couponBookings.map((b) => `<div class="lib-row"><div class="lib-main"><div class="lib-title">${esc(b.title)}</div><div class="lib-meta">${esc(b.businessName || "")} &middot; ${esc(couponSummaryClient(b.coupon, b.businessName))}${b.coupon && b.coupon.expiresAt ? ` &middot; expires ${esc(fmtDay(b.coupon.expiresAt))}` : ""}${couponFaceBit(b)}</div></div><span class="badge ${b.post ? "ok" : "info"}">${b.post ? "Post live" : "Booked"}</span></div>`).join("")}</div>` : ""}`}`;
+  <div class="wcard" style="padding-top:8px;padding-bottom:8px">${couponBookings.map(couponRow).join("")}</div>` : ""}` : `
+  <div class="empty-card"><div class="ec-t">No comps yet</div><div class="ec-s">When a business hosts you — a meal, a service, an experience — the visit and its value land here, kept apart from your cash.</div><div class="mt"><button type="button" class="btn small-btn ws-primary" onclick="return go('dashboard','Offers')">See offers</button></div></div>`}`;
+    const historyHtml = `
+  ${hist.length ? `<div class="wcard" style="padding-top:8px;padding-bottom:8px">${hist.map(histRow).join("")}</div>
+  <p class="small muted" style="margin:10px 2px 0">Cash earned: $${fmtMoney(total)}. Comp value received: ${ownCurrencySymbol()}${fmtMoney(compTotal)}. Two different piles — they are never added together.</p>` : `
+  <div class="empty-card"><div class="ec-t">Nothing here yet</div><div class="ec-s">Every paid booking, license and comped visit lands here, dated, cash and comps side by side but never mixed.</div></div>`}`;
+    el.innerHTML = `
+  ${wsHead("Wallet", { sub: "Cash, comps and history — kept separate, the way a wallet is.", subKey: "earnings" })}
+  ${wsTabs([
+    { label: "Cash", on: wseg === "cash", onclick: "return walletSetSeg125('cash')" },
+    { label: "Comps", on: wseg === "comps", onclick: "return walletSetSeg125('comps')" },
+    { label: "History", on: wseg === "history", onclick: "return walletSetSeg125('history')" },
+  ])}
+  ${wseg === "cash" ? cashHtml : wseg === "comps" ? compsHtml : historyHtml}`;
     renderBottomNav();
   } catch (err) {
-    el.innerHTML = `${wsHead("Earnings")}<div class="error-box">${esc(err.message)}</div>`;
+    el.innerHTML = `${wsHead("Wallet")}<div class="error-box">${esc(err.message)}</div>`;
   }
 }
 
-function earnSetSeg(v) { state.earnSeg = v; renderEarningsTab(); return false; }
+function walletSetSeg125(v) { state.walletSeg125 = v; renderEarningsTab(); return false; }
 
 async function respondLicenseEarn(id, decision) {
   const rec = (state.licenseRequests || []).find((l) => l.id === id);
@@ -3865,7 +4155,7 @@ function sigFlowsFor() {
     flow("Answer an invite", ["invite", "invited", "answer an"], () => { state.crOffersSeg = "invited"; go("dashboard", "Offers"); }),
     flow("Add a post link", ["post link", "add a post", "submit post", "post is live", "deliver"], () => { state.visitsSeg = "needs"; go("dashboard", "My Visits"); }),
     flow("Fix the ad label", ["ad label", "#ad", "fix the ad"], () => { state.visitsSeg = "done"; go("dashboard", "My Visits"); }),
-    flow("See my earnings", ["earning", "paid", "money", "license request", "payout"], () => go("dashboard", "Earnings")),
+    flow("See my wallet", ["earning", "paid", "money", "license request", "payout", "wallet"], () => go("dashboard", "Earnings")),
     flow("Check my Momentum", ["momentum", "points", "tier"], () => go("dashboard", "Momentum")),
     flow("Finish my profile", ["profile", "finish", "complete my"], () => go("dashboard", "Profile")),
   ];
@@ -3957,7 +4247,7 @@ function sigBankFor(biz) {
   ];
   return [
     { id: "payout", q: "When and how do I get paid?", ph: ["when do i get paid", "paid out", "payout", "pay out", "when do i get", "how do i get paid", "payment timing"], g: [["paid", "pay", "payout", "payment"], ["when", "how", "long", "timing", "arrive", "receive"]], s: ["payout"],
-      a: "For a paid booking, the rate you set is the rate the business books at, and you keep 97% of it. Payout setup runs on Stripe's secure pages: Stripe asks for identity details, your address, your bank account, and tax information, and a first payout can be held briefly while identity checks clear. Paid bookings are recorded in the app and settled with help until the payout rail fully opens, and the app does not promise a payout date. Your Earnings screen keeps the record of every booking and license, so it is always there to check.", flow: (c) => c.live ? "See my earnings" : null },
+      a: "For a paid booking, the rate you set is the rate the business books at, and you keep 97% of it. Payout setup runs on Stripe's secure pages: Stripe asks for identity details, your address, your bank account, and tax information, and a first payout can be held briefly while identity checks clear. Paid bookings are recorded in the app and settled with help until the payout rail fully opens, and the app does not promise a payout date. Your Wallet keeps the record of every booking and license, so it is always there to check.", flow: (c) => c.live ? "See my wallet" : null },
     { id: "terms98", q: "Where are the creator terms in plain words?", ph: ["creator terms", "terms in plain words", "my terms", "the terms"], g: [["terms", "term"], ["creator", "plain", "where", "read", "my"]], s: ["terms"],
       a: "Creator terms in plain words: https://joinsignl.com/creator-terms.html. The short version: a comped visit is one post plus one story, native share only. A paid booking pays your listed rate, you keep 97%, and it includes one standard licence for 90 days, never longer." },
     { id: "money", q: "How do I make money on SIGNL?", ph: ["make money", "earn money", "making money", "how do i earn", "can i make money", "make some money", "earn cash"], g: [["money", "earn", "earning", "income", "cash", "paid", "pay"], ["how", "can", "do i", "ways", "make", "get"]], s: ["money"],
@@ -3966,7 +4256,7 @@ function sigBankFor(biz) {
         if (!c.live) t += " Your market has not opened yet, so bookings start when it opens. A finished profile is what puts you first in line when it does.";
         else if (!c.profileComplete) t += " One thing first: businesses only see finished profiles, so finishing yours is the step that makes all of this reachable.";
         return t;
-      }, flow: (c) => !c.profileComplete ? "Finish my profile" : (c.live ? "See my earnings" : "Check my Momentum") },
+      }, flow: (c) => !c.profileComplete ? "Finish my profile" : (c.live ? "See my wallet" : "Check my Momentum") },
     { id: "rates", q: "How do I set my rate?", ph: ["set my rate", "my rate", "how much should i charge", "charge for", "rate"], g: [["rate", "charge", "price"], ["set", "my", "should", "how much", "change", "pick"]], s: ["rate"],
       a: (c) => `Your paid rate is yours to set, on your profile. Paid bookings start at a ${/london/i.test(c.market || "") ? "£40" : "$50"} floor, and there is no SIGNL price list on top of that.${c.rateStartPaid ? ` Because your boxes were blank, they start at a starting point for ${c.rateTier || "your"} tier: paid rate ${/london/i.test(c.market || "") ? "£" : "$"}${c.rateStartPaid} and licensing fee ${/london/i.test(c.market || "") ? "£" : "$"}${c.rateStartFee}. Change them to whatever you charge; a starting point is not a price you have to use.` : ""} Businesses weigh your rate against your local reach, so a strong local audience carries a smaller account a long way. You can also take comped visits whenever you would rather have the experience.`, flow: "Finish my profile" },
     { id: "localreach", q: "What is local reach?", ph: ["local reach", "local audience", "local percent", "local %"], g: [["local"], ["reach", "audience", "percent", "%", "share", "followers"]], s: ["reach"],
@@ -3982,7 +4272,7 @@ function sigBankFor(biz) {
     { id: "cantmake", q: "What if I can't make a visit?", ph: ["can't make", "cant make", "miss a visit", "running late", "cancel a visit", "reschedule", "something came up"], g: [["visit", "booking"], ["cancel", "miss", "late", "cant", "cannot", "reschedule", "sick", "emergency"]], s: [],
       a: "Message the business in the app as early as you can; a heads-up before the visit is always better than silence. A visit you accept and skip costs Momentum points, and repeated no-shows can cost you your spot on the roster." },
     { id: "licensing", q: "What is a license request?", ph: ["license request", "licensing", "license my post", "reuse my post", "license fee"], g: [["licens"], ["request", "what", "how", "fee", "approve", "work"]], s: ["licensing"],
-      a: "Licensing is how a business reuses a post you already made. They request a license at the fee you set, and you approve or decline each use. An approved license lets them repost it and run it as an ad for 90 days, starting the day you approve it and never longer. You keep 97% of the fee, and when the business runs your post as an ad, you earn +25 Momentum. A paid booking is different: its standard license is included automatically for 90 days from the post date, with nothing for you or the business to fill in. A request to extend past those 90 days comes to you the same way, at your listed fee, for your yes or no.", flow: (c) => c.live ? "See my earnings" : null },
+      a: "Licensing is how a business reuses a post you already made. They request a license at the fee you set, and you approve or decline each use. An approved license lets them repost it and run it as an ad for 90 days, starting the day you approve it and never longer. You keep 97% of the fee, and when the business runs your post as an ad, you earn +25 Momentum. A paid booking is different: its standard license is included automatically for 90 days from the post date, with nothing for you or the business to fill in. A request to extend past those 90 days comes to you the same way, at your listed fee, for your yes or no.", flow: (c) => c.live ? "See my wallet" : null },
     { id: "adlabel", q: "My London post says ad label missing. What do I do?", ph: ["ad label", "ad label missing", "#ad", "london post not delivered", "post does not count as delivered"], g: [["ad", "label", "#ad"], ["missing", "fix", "what", "do", "count", "delivered", "london"]], s: ["ad label"],
       a: "UK rules count a comped or paid London post as an ad, so the post must carry #ad up front. If the caption you submitted did not carry it, the visit is blocked as Ad label missing and does not count as delivered yet. The fix is on the visit card itself: open Visits, find the visit under Done, check the caption box (it starts with your disclosure line), and tap Confirm the ad label. The visit counts as delivered the moment the label is verified.", flow: (c) => c.live ? "Fix the ad label" : null },
     { id: "postingterms", q: "What are posting terms on a paid booking?", ph: ["posting terms", "post by a date", "when is my post due", "paid post due", "special terms"], g: [["posting", "post"], ["terms", "due", "date", "when", "special"]], s: ["posting terms"],
@@ -4139,6 +4429,15 @@ function sigLinkGo(dest) {
     case "cr-visits": state.visitsSeg = "needs"; return go("dashboard", "My Visits");
     case "cr-visits-done": state.visitsSeg = "done"; return go("dashboard", "My Visits");
     case "cr-earnings": return go("dashboard", "Earnings");
+    // Build -125: Sig names the Wallet now; the deep links
+    // follow the new names to the same screens.
+    case "cr-wallet": return go("dashboard", "Earnings");
+    case "biz-wallet": return go("dashboard", "Plan");
+    case "biz-wallet-bookings": state.bizWalletSeg125 = "bookings"; return go("dashboard", "Plan");
+    case "biz-wallet-receipts": state.bizWalletSeg125 = "receipts"; return go("dashboard", "Plan");
+    case "partner-wallet": return go("dashboard", "Earnings");
+    case "admin-wallet": ccTab = "money"; return go("dashboard", "Stats");
+    case "admin-creators": ccTab = "creators"; return go("dashboard", "Stats");
     case "cr-terms": window.open("https://joinsignl.com/creator-terms.html", "_blank", "noopener"); return false;
     case "cr-profile": return go("dashboard", "Profile");
     case "admin-applications": return go("dashboard", "Applications");
@@ -4232,7 +4531,7 @@ async function sigAsk(text) {
       return { text: data.text, flow, link: data.link || null };
     }
   } catch (e) { /* the bank answers instead */ }
-  if (state.user && state.user.role === "partner") return { text: "I cannot reach your numbers right now. Everything is still on your tabs: Earnings for money and packs, Markets for the funnel, Links for your claim links.", flow: null, link: null };
+  if (state.user && state.user.role === "partner") return { text: "I cannot reach your numbers right now. Everything is still on your tabs: Wallet for money and packs, Markets for the funnel, Links for your claim links.", flow: null, link: null };
   if (state.user && state.user.role === "pilot_partner") return { text: "I cannot reach your pilot's numbers right now. The Overview and Report tabs still hold everything, including the downloadable pack.", flow: null, link: null };
   return isAdmin ? sigAdminRouteAsk(text) : sigRouteAsk(text);
 }
@@ -5717,9 +6016,9 @@ function sigC98Terms() {
 }
 async function sigC95Licences() {
   let rows = [];
-  try { const d = await api("GET", "/license-requests"); rows = (d.licenseRequests || []).filter((l) => l.status === "pending"); } catch (e) { sigOpSay("I could not load your licence requests just now. Try again, or open Earnings.", sigOpHomeActions()); return; }
+  try { const d = await api("GET", "/license-requests"); rows = (d.licenseRequests || []).filter((l) => l.status === "pending"); } catch (e) { sigOpSay("I could not load your licence requests just now. Try again, or open your Wallet.", sigOpHomeActions()); return; }
   if (!rows.length) {
-    sigOpSay("No licence requests are waiting on you. When a business asks to license one of your posts, or to renew a licence that is ending, it lands here and under Earnings for your yes or no.", [{ label: "Open Earnings", run: async () => go("dashboard", "Earnings") }, ...sigOpHomeActions()]);
+    sigOpSay("No licence requests are waiting on you. When a business asks to license one of your posts, or to renew a licence that is ending, it lands here and in your Wallet for your yes or no.", [{ label: "Open Wallet", run: async () => go("dashboard", "Earnings") }, ...sigOpHomeActions()]);
     return;
   }
   const list = rows.map((l) => `${l.businessName || "A business"} at your $${fmtPrice(l.fee)} fee${l.renewal ? " (a renewal: their current licence is ending)" : ""}`).join(". ") + ".";
@@ -5742,7 +6041,7 @@ async function sigC95Licences() {
         ]);
       }) },
     ])),
-    { label: "Open Earnings", run: async () => go("dashboard", "Earnings") },
+    { label: "Open Wallet", run: async () => go("dashboard", "Earnings") },
   ]);
 }
 
@@ -7470,7 +7769,7 @@ async function sigC5Run() {
   const o = (ro && ro.overall) || {};
   const lines = [];
   lines.push(ST(`Your earnings on record: ${o.paidBookings || 0} paid ${o.paidBookings === 1 ? "booking" : "bookings"}, ${ownCurrencySymbol()}${fmtMoney(o.paidRecordedNet || 0)} recorded as yours. Recorded means the bookings in the app; payouts run outside the app for now.`, `Tus ganancias en registro: ${o.paidBookings || 0} reservas pagadas, ${ownCurrencySymbol()}${fmtMoney(o.paidRecordedNet || 0)} registrado como tuyo. Registrado significa las reservas en la app; los pagos van fuera de la app por ahora.`));
-  if (pendingLic) lines.push(ST(`${pendingLic} license ${pendingLic === 1 ? "request is" : "requests are"} waiting on your answer in Earnings. Each one you approve pays you 97% of your licensing fee, and the business gets 90 days of repost and ad use from the day you approve.`, `${pendingLic} solicitud${pendingLic === 1 ? "" : "es"} de licencia esperando tu respuesta en Ganancias. Cada una que apruebas te paga el 97% de tu tarifa de licencia, y el negocio obtiene tres meses de republicación y uso en anuncios desde el día en que apruebas.`));
+  if (pendingLic) lines.push(ST(`${pendingLic} license ${pendingLic === 1 ? "request is" : "requests are"} waiting on your answer in your Wallet. Each one you approve pays you 97% of your licensing fee, and the business gets 90 days of repost and ad use from the day you approve.`, `${pendingLic} solicitud${pendingLic === 1 ? "" : "es"} de licencia esperando tu respuesta en tu Billetera. Cada una que apruebas te paga el 97% de tu tarifa de licencia, y el negocio obtiene tres meses de republicación y uso en anuncios desde el día en que apruebas.`));
   const licFee = c.licensingFee || c.licenseFee || null;
   if (!c.paidRate) lines.push(ST("No paid rate on your profile yet. Without one, businesses can only book you for comped visits.", "Aún no tienes tarifa pagada en tu perfil. Sin ella, los negocios solo pueden reservarte visitas de cortesía."));
   else lines.push(ST(`Your paid rate is ${ownCurrencySymbol()}${fmtPrice(c.paidRate)}${licFee ? ` and your licensing fee is ${ownCurrencySymbol()}${fmtPrice(licFee)}` : ", and your licensing fee is not set yet"}. You keep 97% of both.`, `Tu tarifa pagada es ${ownCurrencySymbol()}${fmtPrice(c.paidRate)}${licFee ? ` y tu tarifa de licencia es ${ownCurrencySymbol()}${fmtPrice(licFee)}` : ", y tu tarifa de licencia aún no está fijada"}. Te quedas con el 97% de ambas.`));
@@ -10168,14 +10467,14 @@ function creatorCard(c, viewer, opts) {
 
 // ---------- creator ----------
 
-const LIVE_CREATOR_TABS = ["Dashboard", "Profile", "Offers", "My Visits", "Messages", "Earnings", "More", "Momentum", "Numbers", "Settings", "Help", "Sig", "Bench"];
+const LIVE_CREATOR_TABS = ["Dashboard", "Profile", "Offers", "My Visits", "Messages", "Earnings", "Momentum", "Numbers", "Settings", "Help", "Sig", "Bench"];
 // V4.1: founding creators get the SAME tab set as live ones.
 // The old founding whitelist hid Offers / My Visits / Earnings
 // until the market launched — paired with the old 2-item tab
 // bar, a founding creator (Jeff's own account) had no way to
 // even see the explore door. The screens themselves carry the
 // honest pre-launch states (completion gate, empty decks).
-const FOUNDING_TABS = ["Dashboard", "Profile", "Status", "More", "Momentum", "Numbers", "Messages", "Settings", "Help", "Offers", "My Visits", "Earnings", "Sig", "Bench"];
+const FOUNDING_TABS = ["Dashboard", "Profile", "Status", "Momentum", "Numbers", "Messages", "Settings", "Help", "Offers", "My Visits", "Earnings", "Sig", "Bench"];
 
 function renderCreatorDash() {
   const u = state.user;
@@ -10188,7 +10487,7 @@ function renderCreatorDash() {
   let body = "";
   if (tab === "Dashboard") body = `<div id="creator-home" class="vx-stagger"><div class="sig-load-row">${sigAvatarHtml("think")}</div>${skelHtml("Loading your dashboard...", 2)}</div>`;
   if (tab === "Bench") body = `<div id="bench-body">${skelHtml("Loading the bench...", 1)}</div>`;
-  if (tab === "Profile") body = wsHead("My profile", { chip: livePill("Live"), sub: "Your public creator profile. This is what businesses see when they find you.", subKey: "cr-profile" }) + profileSegStrip119() + creatorProfileHtml(u) + momentumHtml(u) + growRosterHtml(u) + moreLinksHtml119();
+  if (tab === "Profile") body = wsHead("My profile", { chip: livePill("Live"), sub: "Your public creator profile. This is what businesses see when they find you.", subKey: "cr-profile" }) + profileSegStrip119() + creatorProfileHtml(u);
   app.innerHTML = `<div class="wrap">
     ${standingBannerHtml(u)}
     <div id="tab-body">${body}</div></div>`;
@@ -10198,7 +10497,6 @@ function renderCreatorDash() {
   if (tab === "My Visits") loadMyVisits("creator");
   if (tab === "Messages") loadThreads();
   if (tab === "Earnings") renderEarningsTab();
-  if (tab === "More") renderMoreScreen();
   if (tab === "Momentum") renderMomentumTab();
   if (tab === "Numbers") renderCreatorNumbers();
   if (tab === "Settings") renderSettingsTab();
@@ -10237,7 +10535,7 @@ function renderFoundingHome() {
   if (tab === "Dashboard") body = `<div id="founding-dash" class="vx-stagger"><div class="sig-load-row">${sigAvatarHtml("think")}</div>${skelHtml("Loading your dashboard...", 2)}</div>`;
   if (tab === "Bench") body = `<div id="bench-body">${skelHtml("Loading the bench...", 1)}</div>`;
   if (tab === "Status") body = `<h3 style="margin-top:0">Your founding status</h3><div id="founding-body">${skelHtml("Loading your founding profile...", 1)}</div><div id="founding-buzz"></div><div id="founding-depth"></div>`;
-  if (tab === "Profile") body = wsHead("My profile", { sub: "Your public creator profile. Complete profiles get booked first.", subKey: "cr-profile" }) + profileSegStrip119() + creatorProfileHtml(u) + moreLinksHtml119();
+  if (tab === "Profile") body = wsHead("My profile", { sub: "Your public creator profile. Complete profiles get booked first.", subKey: "cr-profile" }) + profileSegStrip119() + creatorProfileHtml(u);
   if (tab === "Status") body = wsHead("Status", { sub: "Where your founding enrollment stands." }) + body;
   app.innerHTML = `<div class="wrap">
     ${standingBannerHtml(u)}
@@ -10245,7 +10543,6 @@ function renderFoundingHome() {
   if (tab === "Dashboard") loadFoundingDashboard();
   if (tab === "Status") loadFoundingStatus();
   if (tab === "Profile") { setTimeout(loadMyScore, 10); setTimeout(loadRateRange, 10); setTimeout(() => { setupUniversityAutocomplete("p-university", "p-university-results"); dragInit(); }, 10); }
-  if (tab === "More") renderMoreScreen();
   if (tab === "Momentum") renderMomentumTab();
   if (tab === "Numbers") renderCreatorNumbers();
   if (tab === "Messages") loadThreads();
@@ -12980,7 +13277,7 @@ function homePaidLaneHtml(creator, footerHtml) {
 function homeMoneyHtml(money) {
   return `
   <section class="panel tint">
-    <p class="ui-kicker">Money</p>
+    <p class="ui-kicker">Wallet</p>
     <h3 class="home-h">Cash and comps, kept separate</h3>
     <div class="home-money">
       <div class="hm-pile"><div class="hm-num">$${fmtMoney(money.released)}</div><div class="hm-lbl">Paid cash released</div></div>
@@ -13200,7 +13497,7 @@ async function loadCreatorHome() {
       try { introDismissed = !!localStorage.getItem(`benchintro:${intro.creator.userId}`); } catch (e) { /* storage unavailable: show it */ }
       if (!introDismissed) items.push({ cls: 3, at: now, text: `${benchMeetLine(intro)} I think you two would make a strong +1 pair: visit together, and you each post your own post and story.`, short: `Meet ${intro.creator.name}`, btn: "Meet them", act: () => go("dashboard", "Bench"), dismissKey: `benchintro:${intro.creator.userId}`, onDismiss: () => benchDismissIntro(intro.creator.userId) });
     }
-    if ((money.held || 0) > 0) add(3, now, `A paid booking is earning: $${fmtMoney(money.held)} held until the post is live.`, "See earnings", () => go("dashboard", "Earnings"), `$${fmtMoney(money.held)} held on a paid booking`);
+    if ((money.held || 0) > 0) add(3, now, `A paid booking is earning: $${fmtMoney(money.held)} held until the post is live.`, "See wallet", () => go("dashboard", "Earnings"), `$${fmtMoney(money.held)} held on a paid booking`);
     if (pc && !pc.complete) add(4, now, `Your profile is missing essentials (${pc.requiredDone} of ${pc.requiredTotal} done). Businesses cannot find you yet.`, "Finish profile", () => goFinishProfile(), `Profile: ${pc.requiredDone} of ${pc.requiredTotal} done`);
     // Build -102: being on a public roster page is real state
     // (the same predicate the page itself uses rides the /me
@@ -15610,7 +15907,7 @@ function renderFoundingMessagesTab() {
   </section>`;
 }
 
-const BUSINESS_TABS = ["Home", "Requests", "Discover", "Favorites", "Campaign Setup", "My Offers", "Counter", "Visits & Posts", "Regulars", "Content", "Analytics", "Plan", "Messages", "Profile", "More", "Settings", "Help", "Sig"];
+const BUSINESS_TABS = ["Home", "Requests", "Discover", "Favorites", "Campaign Setup", "My Offers", "Counter", "Visits & Posts", "Regulars", "Content", "Analytics", "Plan", "Messages", "Profile", "Settings", "Help", "Sig"];
 
 function renderBusinessDash() {
   const u = state.user;
@@ -15641,7 +15938,6 @@ function renderBusinessDash() {
   if (tab === "Plan") renderPlanTab();
   if (tab === "Messages") founding ? renderFoundingMessagesTab() : loadThreads();
   if (tab === "Profile") renderBizProfileTab();
-  if (tab === "More") renderMoreScreen();
   if (tab === "Settings") renderSettingsTab();
   if (tab === "Help") renderHelpTab();
   if (tab === "Sig") renderSigTab();
@@ -15653,7 +15949,7 @@ function renderBusinessDash() {
 // (GET /partner/summary) computed from the records stamped with
 // the partner's own signup source. A partner with no activity
 // yet gets the fills-in voice, never a grid of zeros.
-const PARTNER_TABS = ["Home", "Markets", "Creators", "Businesses", "Performance", "Earnings", "Links", "Account", "More", "Help", "Sig", "Team"];
+const PARTNER_TABS = ["Home", "Markets", "Creators", "Businesses", "Performance", "Earnings", "Links", "Account", "Help", "Sig", "Team"];
 
 // Co-brand (Build -105): when Admin has set a partner brand,
 // the partner's name and logo lead their shell and "Powered by
@@ -15704,16 +16000,17 @@ async function loadPartnerSummary(force) {
 // Partner area strip (Build -119, design): Overview /
 // Businesses / Money / Reports is one area system across the
 // partner console; the strip rides under each screen's head.
+// Build -125: the strip's third stop reads Wallet, like
+// everywhere else.
 function partnerStrip119(tab) {
   const item = (id, label, t) => ({ label, on: tab === id, onclick: `return go('dashboard','${t}')` });
-  return wsTabs([item("Home", "Overview", "Home"), item("Businesses", "Businesses", "Businesses"), item("Earnings", "Money", "Earnings"), item("Performance", "Reports", "Performance")]);
+  return wsTabs([item("Home", "Overview", "Home"), item("Businesses", "Businesses", "Businesses"), item("Earnings", "Wallet", "Earnings"), item("Performance", "Reports", "Performance")]);
 }
 function ptEarnSetSeg(v) { state.partnerEarnSeg = v; renderPartnerTab("Earnings"); return false; }
 function renderPartnerTab(tab) {
   const el = document.getElementById("tab-body");
   if (!el || !state.partnerData) return;
   const d = state.partnerData;
-  if (tab === "More") { renderMoreScreen(); return; }
   if (tab === "Home") el.innerHTML = partnerHomeHtml(d);
   if (tab === "Markets") el.innerHTML = partnerMarketsHtml(d);
   if (tab === "Creators") el.innerHTML = partnerCreatorsHtml(d);
@@ -16022,7 +16319,7 @@ function partnerPerformanceHtml(d) {
   const mile = (label, m) => `<div class="stat"><div class="num">${m ? fmtNum(m.views) : "—"}</div><div class="lbl">${label}${m ? ` (${m.posts} posts)` : ""}</div></div>`;
   const any = f.offersTotal > 0 || f.postsLive > 0 || f.visitsBooked > 0;
   return `
-  ${wsHead("Performance", { sub: "What your markets delivered: visits, posts, and the value they created.", subKey: "pt-performance" })}
+  ${wsHead("Reports", { sub: "What your markets delivered: visits, posts, and the value they created.", subKey: "pt-performance" })}
   ${any ? `
   <div class="card mb">
     <div class="stat-row">
@@ -16046,7 +16343,7 @@ function partnerEarningsHtml(d) {
   // follows the deal currency on the earnings payload.
   const sym = e.currency === "GBP" ? "£" : "$";
   return `
-  ${wsHead("Your earnings", { sub: "Your share of subscription revenue in your markets.", subKey: "pt-earnings" })}
+  ${wsHead("Wallet", { sub: "Your share of subscription revenue in your markets.", subKey: "pt-earnings" })}
   <div class="stat-band home-metrics">
     <div class="stat-cell"><div class="stat-num">${e.sharePct == null ? "—" : `${e.sharePct}%`}</div><div class="stat-lbl">Your share</div></div>
     <div class="stat-cell"><div class="stat-num">${sym}${fmtPrice(e.monthlyRevenue)}</div><div class="stat-lbl">Subscription revenue / mo</div></div>
@@ -16126,7 +16423,7 @@ function partnerLinksHtml(d) {
   </div>`).join("")}
   <div class="panel">
     <h3 style="margin-top:0">How your share works</h3>
-    <p class="small">You keep <strong>${d.partner.sharePct == null ? "your org's share" : `${d.partner.sharePct}%`}</strong> of the subscription revenue from businesses in your assigned markets that joined through your links or are credited to you. Creators cost you nothing and earn you nothing directly; they are the bench that makes businesses stay. Paid bookings and post licenses are the creator's and the business's money, not subscription revenue, so they are not shared. Accrued amounts appear under Earnings the month a subscription is on file.</p>
+    <p class="small">You keep <strong>${d.partner.sharePct == null ? "your org's share" : `${d.partner.sharePct}%`}</strong> of the subscription revenue from businesses in your assigned markets that joined through your links or are credited to you. Creators cost you nothing and earn you nothing directly; they are the bench that makes businesses stay. Paid bookings and post licenses are the creator's and the business's money, not subscription revenue, so they are not shared. Accrued amounts appear in your Wallet the month a subscription is on file.</p>
     <p class="small muted">The partner one-pager lives here as soon as it is published. Ask the SIGNL team for the current copy any time: hello@joinsignl.com.</p>
   </div>`;
 }
@@ -16261,7 +16558,7 @@ function partnerHelpHtml(d) {
   </div>
   <div class="wcard">
     ${qa("What do I actually do?", "Share your links. Creators claim through your creator link and join the bench in your markets. Businesses sign up through your business link. SIGNL runs everything else: the platform, the campaigns, the payments, the guarantees.")}
-    ${qa("How do I earn?", p.sharePct == null ? "You keep your org's share of subscription revenue from businesses credited to your org in your markets, for as long as they stay subscribed. The share itself sits in your org's deal, which your partner lead holds. It accrues monthly and shows under Earnings, labeled accrued until a payment actually happens." : `You keep ${p.sharePct}% of subscription revenue from businesses credited to you in your markets, for as long as they stay subscribed. It accrues monthly and shows under Earnings, labeled accrued until a payment actually happens.`)}
+    ${qa("How do I earn?", p.sharePct == null ? "You keep your org's share of subscription revenue from businesses credited to your org in your markets, for as long as they stay subscribed. The share itself sits in your org's deal, which your partner lead holds. It accrues monthly and shows in your Wallet, labeled accrued until a payment actually happens." : `You keep ${p.sharePct}% of subscription revenue from businesses credited to you in your markets, for as long as they stay subscribed. It accrues monthly and shows in your Wallet, labeled accrued until a payment actually happens.`)}
     ${qa("Why do creators matter to my earnings?", "Businesses subscribe because the bench is worth booking. Every complete creator your link brings in makes your markets easier to sell and likelier to renew.")}
     ${qa("Can I see who joined through me?", "Yes: Creators and Businesses show everyone credited to your links, with their status. Contact details stay private; SIGNL runs the relationships inside the app.")}
     ${qa("What does SIGNL cost my audience?", "Joining is free for creators, and comped visits are always free. Businesses pay the subscription; that is the revenue you share in.")}
@@ -17278,7 +17575,6 @@ async function renderContentTab() {
     } catch (e) { /* rows simply render without the action */ }
     el.innerHTML = `
     ${wsHead("Posts & licenses", { sub: "Every post about you, and the ones you can reuse.", subKey: "biz-content" })}
-    ${bizMoneyStrip119("licenses")}
     <div id="biz-lic-expiry"></div>
     <div class="rights-line">${bnIcon("shield")}<span><strong>Seeing a post here is not the right to reuse it.</strong> You may always reshare the post inside Instagram, with credit. Paid bookings include one standard license: 90 days to repost and run ads. A comped post can be licensed at the creator's listed fee, and the creator approves each use. That license is what makes the post UGC you can use: repost it and run it as an ad for those 90 days. Every license below shows its end date, and no license ever runs longer than 90 days.</span></div>
     ${lib.length ? `<div class="track-card"><span class="feed-dot acc">${bnIcon("image")}</span><div class="tc-main"><div class="tc-t">Post tracking is on</div><div class="tc-s">${h.postsTracked30 || 0} post${(h.postsTracked30 || 0) === 1 ? "" : "s"} tracked in the last 30 days. SIGNL tracks every visit's post from the creator's report, timed against the 48 hour standard.</div></div><button type="button" class="btn small-btn ws-outline" onclick="return go('dashboard','Visits & Posts')">Visits</button></div>`
@@ -17485,7 +17781,7 @@ async function renderAnalyticsTab() {
     const series = h.series30 || [];
     const lb = h.leaderboard || [];
     const lib = h.contentLibrary || [];
-    const head = wsHead("Results", { sub: "Your creator program in numbers, all from your real records.", subKey: "biz-results" }) + bizMoneyStrip119("receipts");
+    const head = wsHead("Results", { sub: "Your creator program in numbers, all from your real records.", subKey: "biz-results" });
     const f30 = h.funnel30 || {};
     const funnelSum = (f30.invited || 0) + (f30.claimed || 0) + (f30.visited || 0) + (f30.posted || 0);
     const appsWin = anaDays === 7 ? (h.applications7 || 0) : (h.applications30 || 0);
@@ -20415,9 +20711,11 @@ function renderPlanTab() {
       <ul>${p.features.map((f) => `<li>${esc(f)}</li>`).join("")}</ul>
       ${u.business.plan === p.id ? `<p class="saved mt">Your current plan</p>` : ""}
     </div>`).join("");
+  const wseg = ["plan", "bookings", "receipts"].includes(state.bizWalletSeg125) ? state.bizWalletSeg125 : "plan";
   el.innerHTML = `
-  ${wsHead("Plan & billing", { sub: "Your founding plan, your micro-influencer visits, and your billing.", subKey: "biz-plan" })}
-  ${bizMoneyStrip119("plan")}
+  ${wsHead("Wallet", { sub: "Your plan, what paid visits cost, and your receipts — one place.", subKey: "biz-plan" })}
+  ${bizWalletTabs125(wseg)}
+  ${wseg === "bookings" ? `<div id="biz-wallet-bookings">${skelHtml("Loading your bookings...", 1)}</div>` : wseg === "receipts" ? `<p class="small muted" style="margin:10px 2px 0">Your monthly receipt: what was counted at the register, what posts recorded, and the visits you used — three kinds of numbers, never added together, ready to forward to your bookkeeper.</p><div id="biz-receipt-export"></div>` : `
   <div class="panel mt tint">
     <h3>Your plan</h3>
     <p>Current plan: <strong>${esc(u.business.planName)}</strong>, selected ${fmtDate(u.business.planSelectedAt)}.</p>
@@ -20432,8 +20730,9 @@ function renderPlanTab() {
     ${billingLive()
       ? `<p class="small muted mt">Starts your subscription on Stripe's secure checkout page. Your founding rate stays locked while your plan stays active.</p>`
       : `<p class="small muted mt">Billing is not live yet, so saving only records your selection: no card is charged, and your founding pricing stays locked while you stay subscribed. When billing opens, Jeff, SIGNL's founder, sends the payment step by hand.</p>`}
-  </div>
-  ${moreLinksHtml119()}`
+  </div>`}`;
+  if (wseg === "bookings") loadBizWalletBookings125();
+  if (wseg === "receipts") loadReceiptExport();
 }
 
 // Staff redemption settings (owner): the staff PIN, the business
@@ -23224,7 +23523,7 @@ async function loadStats() {
       </div>
       ${wsTabs([
         { label: "Overview", on: ccTab === "overview", onclick: "return ccSetTab('overview')" },
-        { label: "Money", on: ccTab === "money", onclick: "return ccSetTab('money')" },
+        { label: "Wallet", on: ccTab === "money", onclick: "return ccSetTab('money')" },
         { label: "Partners", on: ccTab === "partners", onclick: "return ccSetTab('partners')" },
         { label: "Businesses", on: ccTab === "businesses", onclick: "return ccSetTab('businesses')" },
         { label: "Creators", on: ccTab === "creators", onclick: "return ccSetTab('creators')" },
@@ -23352,7 +23651,7 @@ function ccOverviewHtml(s, ov, funnel) {
       <div class="cc-tile"><div class="cc-tlabel">Register dollars <span class="cc-chip counted">Counted</span></div><div class="cc-tnum">${ccMoneyFmt(t.countedRegister || 0)}</div><div class="cc-tsub">Counted at business registers &middot; ${periodName}</div></div>
       ${t.dollarsFlowing
         ? `<div class="cc-tile"><div class="cc-tlabel">Dollars flowing <span class="cc-chip recorded">Recorded</span></div><div class="cc-tnum">${ccMoneyFmt(t.dollarsFlowing.recorded || 0)}</div><div class="cc-tsub">Recorded on platform records &middot; ${ccMoneyFmt(t.dollarsFlowing.charged || 0)} charged on cards so far <span class="cc-chip charged">Charged</span> &middot; the classes are never added together &middot; ${periodName}</div></div>`
-        : formingTile("Dollars flowing", "The all-money view lands with charge capture, on the Money tab.")}
+        : formingTile("Dollars flowing", "The all-money view lands with charge capture, on the Wallet tab.")}
       ${t.moneyOwed
         ? `<div class="cc-tile"><div class="cc-tlabel">Money owed</div><div class="cc-tnum">${ccMoneyFmt(t.moneyOwed.owedOut || 0)}</div><div class="cc-tsub">Owed out: ${ccMoneyFmt(t.moneyOwed.toCreators || 0)} to creators &middot; ${ccMoneyFmt(t.moneyOwed.toPartners || 0)} to partners &middot; businesses owe ${ccMoneyFmt(t.moneyOwed.byBusinessesMonthly || 0)}/mo on paper &middot; <a href="#" onclick="return ccSetTab('owed')">Open the Owed view</a></div></div>`
         : formingTile("Money owed", "The owed ledger lands with the Owed tab.")}
@@ -23705,7 +24004,7 @@ function ccPartnersHtml(d) {
       <div class="cc-tile"><div class="cc-tlabel">Owed to partners</div><div class="cc-tnum">${ccMoneyFmt(t.owed)}</div><div class="cc-tsub">Accrued and not yet paid</div></div>
       ${Object.entries(d.totalsByCurrency || {}).filter(([c]) => c !== "USD").map(([c, g]) => `<div class="cc-tile"><div class="cc-tlabel">Accrued in ${c === "GBP" ? "pounds" : c}</div><div class="cc-tnum">${ccMoneyFmtC(g.accrued, c)}</div><div class="cc-tsub">Kept on its own line — currencies are never added together</div></div>`).join("")}
     </div>
-    <p class="muted small" style="margin:2px 0 10px">Every figure is computed from the deal records — the same math each partner sees on their own Earnings page. Period figures follow the filter: ${esc(periodName)}.
+    <p class="muted small" style="margin:2px 0 10px">Every figure is computed from the deal records — the same math each partner sees on their own Wallet page. Period figures follow the filter: ${esc(periodName)}.
       <button type="button" class="btn small-btn ghost" onclick="return ccAccrueSnapshot()">Snapshot accruals</button></p>
     <div class="panel"><div class="table-wrap"><table>
       <tr><th>Partner</th><th>The deal</th><th>Markets</th><th>Status</th><th>Period split</th><th>Earned to date</th><th></th></tr>
@@ -23863,7 +24162,7 @@ function ccPartnerDetailHtml(d) {
   const p = d.partner || {};
   const head = `<button type="button" class="btn small-btn ghost" onclick="return ccBackPartners()">← All partners</button>
     <h3 style="margin:10px 0 2px">${esc(p.name)}</h3>
-    <p class="muted small" style="margin:0 0 6px">The full deal, the math, and which side of it is paying right now. The same numbers ${esc(p.name)} sees on their Earnings page.</p>`;
+    <p class="muted small" style="margin:0 0 6px">The full deal, the math, and which side of it is paying right now. The same numbers ${esc(p.name)} sees on their Wallet page.</p>`;
   if (d.termsState !== "entered") {
     return `${head}
     <div class="panel"><h3 style="margin:0 0 4px">Deal terms not entered yet</h3>
@@ -23975,7 +24274,7 @@ function ccOwedHtml(d) {
   const partnerPanel = `
     <div class="panel">
       <h3 style="margin:0 0 2px">Owed to partners</h3>
-      <p class="muted small" style="margin:0 0 8px">Accrued under each partner's deal terms, less the payouts recorded on the Partners view. The same figures the partner sees on their own Earnings page.</p>
+      <p class="muted small" style="margin:0 0 8px">Accrued under each partner's deal terms, less the payouts recorded on the Partners view. The same figures the partner sees on their own Wallet page.</p>
       ${(pa.rows || []).length ? `<div class="table-wrap"><table>
         <tr><th>Partner</th><th>Deal</th><th>Accrued</th><th>Paid</th><th>Still owed</th></tr>
         ${(pa.rows || []).map((r) => `<tr>
@@ -24021,7 +24320,7 @@ let ccReconLabel = (a) => {
   if (t.view === "applications") return "Review applications";
   if (t.view === "partners") return "Open Partners";
   if (t.subtab === "businesses") return "Open Businesses";
-  if (t.subtab === "money") return "Open Money";
+  if (t.subtab === "money") return "Open Wallet";
   if (t.subtab === "markets") return "See the Markets view";
   if (t.subtab === "partners") return "Open Partners";
   if (t.subtab === "overview") return "See register connections";
@@ -24168,7 +24467,7 @@ function ccFormingHtml(tab) {
     <div class="cc-form-rows">
       <p><strong>Creators</strong> — forming. Paid-booking funds release on the existing 48-hour hold after proof today; the owed ledger lands with the payout records.</p>
       <p><strong>Partners</strong> — accruals are live on the Partners view; the owed ledger (accrued less paid, per partner) lands with the close phase.</p>
-      <p><strong>Businesses</strong> — forming. Credits and refunds are on the Money and Businesses views today; what a business owes lands with the close phase.</p>
+      <p><strong>Businesses</strong> — forming. Credits and refunds are on the Wallet and Businesses views today; what a business owes lands with the close phase.</p>
     </div></div>`;
   if (tab === "close") return `${head("Close &amp; export", "Month-end, done once and done right.")}
     <div class="cc-form-rows">
@@ -24179,7 +24478,7 @@ function ccFormingHtml(tab) {
       <p>☐ Rollover liability carried into next month</p>
       <p>☐ Export pack generated</p>
     </div>
-    <p class="small">Forming: the close run lands with the owed ledger (charge capture and the reconciliation list are already live on the Money view). Nothing here can be run yet — a close with nothing to reconcile would be theater.</p></div>`;
+    <p class="small">Forming: the close run lands with the owed ledger (charge capture and the reconciliation list are already live on the Wallet view). Nothing here can be run yet — a close with nothing to reconcile would be theater.</p></div>`;
   return `${head("Forming", "")}<p class="small">This view is on its way.</p></div>`;
 }
 
@@ -25697,11 +25996,6 @@ async function pilotLoadMe() {
 
 function renderPilotDash() {
   let tab = state.tab || "Overview";
-  if (tab === "More") {
-    app.innerHTML = `<div class="wrap"><div id="tab-body"><p class="muted">Loading...</p></div></div>`;
-    renderMoreScreen();
-    return;
-  }
   if (!PILOT_TABS.includes(tab)) tab = "Overview";
   state.tab = tab;
   app.innerHTML = `<div class="wrap"><div id="tab-body"><p class="muted">Loading your portal...</p></div></div>`;

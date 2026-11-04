@@ -168,7 +168,7 @@ try {
   check("the preview's chrome is the banner: the legacy topbar + footer are hidden in preview mode", themeCss.includes("body.preview-on .topbar, body.preview-on .footer"));
   check("phone fit: main can shrink and the tab row is capped at the viewport on admin + preview", themeCss.includes("body.rail-on main, body.preview-on main { min-width: 0; }") && themeCss.includes(".tabs { min-width: 0; max-width: 100%; }"));
   check("the preview Discover step renders the live Find creators composition (market strip, category chips, filters fold)", appJs.includes("function previewDiscoverHtml(") && appJs.includes('class="filters disc-top"') && appJs.includes("pvDiscoverCatChip") && appJs.includes('class="filters-fold"') && appJs.includes("function pvDiscoverCatChip("));
-  check("Sig's face is the V4 rendered character behind one swappable reference", appJs.includes("SIG_AVATAR_HTML") && appJs.includes("/assets/sig-v4/head-idle.webp") && fs.existsSync(path.join(root, "public", "assets", "sig-v4", "head-idle.webp")) && !fs.existsSync(path.join(root, "public", "assets", "sig-musician.svg")));
+  check("Sig's face is the current character (Build -124 portrait) behind one swappable reference", appJs.includes("SIG_AVATAR_HTML") && appJs.includes("/assets/sig-a/head-idle.webp") && fs.existsSync(path.join(root, "public", "assets", "sig-a", "head-idle.webp")) && !fs.existsSync(path.join(root, "public", "assets", "sig-musician.svg")));
   check("Ask Sig is a Home row + sheet, not a floating button", appJs.includes("function askSigRowHtml(") && appJs.includes("function openAgentSheet("));
 
   part("source: nav + Sig tab (Jeff, from live use; BUILD -41 full rail)");
@@ -199,16 +199,16 @@ try {
   // Sig item reads as a partner primary.
   const tabSlicePartner = (tabSlice.split('u.role === "partner"')[1] || "").split('if (u.role === "recruiter")')[0];
   check("rail primaries per role, composed with the full row list, no More item (BUILD -41, -68: business = Home/Sig/Find creators, Offers rides rows as Campaigns)", (tabSliceBizCr.match(/label: "Home"/g) || []).length === 2 && (tabSliceBizCr.match(/label: "Sig"/g) || []).length === 2 && tabSliceBizCr.includes('label: "Find creators", tab: "Discover"') && tabSliceBizCr.includes('...extra(["Home", "Sig", "Discover"])') && !(tabSliceBizCr.split('if (u.role === "creator")')[0] || "").includes('label: "Offers"') && tabSlice.includes("railRowItems()") && tabSlice.includes("...extra([") && !tabSlice.includes('label: "More"') && !tabSlice.includes('tab: "More"'));
-  check("partner rail primaries are Overview, Markets, Money (tabs Home/Markets/Earnings; Sig arrives via the rows) [re-aimed Build -119: design display labels]", tabSlicePartner.includes('label: "Overview", tab: "Home"') && tabSlicePartner.includes('label: "Markets", tab: "Markets"') && tabSlicePartner.includes('label: "Money", tab: "Earnings"') && !tabSlicePartner.includes('label: "More"') && !tabSlicePartner.includes('label: "Sig"'));
+  check("partner rail primaries are Overview, Markets, Wallet (tabs Home/Markets/Earnings; Sig arrives via the rows) [re-aimed Build -125: Money renamed Wallet globally]", tabSlicePartner.includes('label: "Overview", tab: "Home"') && tabSlicePartner.includes('label: "Markets", tab: "Markets"') && tabSlicePartner.includes('label: "Wallet", tab: "Earnings"') && !tabSlicePartner.includes('label: "More"') && !tabSlicePartner.includes('label: "Sig"'));
   check("no account state shrinks the destination set (no market-live or founding branch in tabItemsFor)", !tabSlice.includes("marketLive") && !tabSlice.includes("founding"));
   check("Visits and Earnings ride the rail as composed row items, not a second hard-coded list", !tabSliceBizCr.includes('label: "Visits", tab:') && !tabSliceBizCr.includes('label: "Earnings", tab:') && !tabSliceBizCr.includes('label: "Offers", tab: "My Offers"') && tabSlice.includes("railRowItems()"));
   check("Sig tab badge is the pending queue count (state.sigQueueCount)", tabSlice.includes("state.sigQueueCount") && tabSlice.includes('badge: sigBadge'));
-  check("Sig tab item renders Sig's face, not a line glyph", tabSlice.includes('icon: "sig"') && appJs.includes('class="tab-sig-img"') && appJs.includes("/assets/sig-v4/head-idle.webp"));
+  check("Sig tab item renders Sig's face, not a line glyph", tabSlice.includes('icon: "sig"') && appJs.includes('class="tab-sig-img"') && appJs.includes("/assets/sig-a/head-idle.webp"));
   check("every destination lights itself; Counter rides the business Visits item (BUILD -41)", appJs.includes("function railRowItems(") && appJs.includes('r.tab === "Visits & Posts" && t === "Counter"') && appJs.includes("on: t === r.tab") && !appJs.includes("BIZ_MORE_TABS") && !appJs.includes("CR_MORE_TABS") && !appJs.includes("PT_MORE_TABS"));
   const moreSlice = fnSlice("moreRowsFor", "tabBarHtml");
   check("creator More leads with Visits + Earnings rows, badges carried from waitCounts", moreSlice.indexOf('label: "Visits"') > -1 && moreSlice.indexOf('label: "Visits"') < moreSlice.indexOf('label: "My profile"') && moreSlice.indexOf('label: "Earnings"') < moreSlice.indexOf('label: "My profile"') && moreSlice.includes("wc.crVisits") && moreSlice.includes("wc.crLicense"));
   check("business More leads with the campaign rows + Visits rows, badges carried from waitCounts (Build -68 label, split in Build -97)", moreSlice.indexOf('label: "Set up a campaign"') > -1 && moreSlice.indexOf('label: "Set up a campaign"') < moreSlice.indexOf('label: "Your campaigns"') && moreSlice.indexOf('label: "Your campaigns"') < moreSlice.indexOf('label: "Results"') && moreSlice.indexOf('label: "Visits"') < moreSlice.indexOf('label: "Results"') && moreSlice.includes("wc.bizApps") && moreSlice.includes("wc.bizVisits"));
-  check("founding creators route the full tab set (the Jeff case: Offers/My Visits/Earnings/Sig reachable pre-launch)", appJs.includes('const FOUNDING_TABS = ["Dashboard", "Profile", "Status", "More", "Momentum", "Numbers", "Messages", "Settings", "Help", "Offers", "My Visits", "Earnings", "Sig", "Bench"]'));
+  check("founding creators route the full tab set (the Jeff case: Offers/My Visits/Earnings/Sig reachable pre-launch)", appJs.includes('const FOUNDING_TABS = ["Dashboard", "Profile", "Status", "Momentum", "Numbers", "Messages", "Settings", "Help", "Offers", "My Visits", "Earnings", "Sig", "Bench"]'));
   check("Sig is a routed tab for live creators and businesses too", appJs.includes('"Settings", "Help", "Sig"]') && appJs.includes('"Settings", "Help", "Sig"]') && (appJs.match(/if \(tab === "Sig"\) renderSigTab\(\);/g) || []).length === 3);
   check("Sig tab renders queue + conversation + chat input", appJs.includes("function renderSigTab(") && appJs.includes('id="sig-queue-host"') && appJs.includes('id="sig-thread"') && appJs.includes('id="sig-ask-input"') && appJs.includes("Ask Sig anything"));
   check("Sig tab and Ask Sig sheet share one content source (flows + straight answers)", appJs.includes("function sigFlowsFor(") && appJs.includes("function sigQaFor(") && appJs.includes("function sigRouteAsk("));
@@ -219,7 +219,7 @@ try {
 
   part("source: workspace scaffold");
   check("scaffold builders exist (wsHead, wsTabs, kpiCard, deltaPill, segSw, feedListHtml, funnel2Html, charts)", ["function wsHead(", "function wsTabs(", "function kpiCard(", "function deltaPill(", "function segSw(", "function feedListHtml(", "function funnel2Html(", "function lineChartSvg(", "function barsChartSvg("].every((x) => appJs.includes(x)));
-  check("V3 screens carry their spec titles", ["Home", "Find creators", "Posts & licenses", "Results", "Your business page", "Plan & billing", "Messages", "Your numbers", "Earnings", "Momentum", "My profile", "Settings", "Help", "More"].every((t) => appJs.includes(`wsHead("${t}"`)));
+  check("V3 screens carry their spec titles", ["Home", "Find creators", "Posts & licenses", "Results", "Your business page", "Wallet", "Messages", "Your numbers", "Momentum", "My profile", "Settings", "Help"].every((t) => appJs.includes(`wsHead("${t}"`)));
   check("screen titles render at the spec size (28px, weight 800)", themeCss.includes(".ws-title { font-size: 1.75rem; font-weight: 800;"));
   check("purpose lines are dismissible after first visits", appJs.includes("function dismissSub(") && appJs.includes("signl-sub-"));
   check("delta pill is honest: it renders nothing when the prior window is zero", appJs.includes('if (!p) return "";'));
@@ -269,7 +269,7 @@ try {
     "When a business picks you, or you accept an invite, it lands here.",
     "When a creator posts about your business, it lands here", // section 8 line, split title/sub in the empty card
     "Post tracking starts with your first visit.",
-    "Paid bookings you complete show up here. Comped visits build your Momentum instead.",
+    "Paid bookings you complete pay out here, in cash. Comped visits land under Comps instead — they build your Momentum and your record.", // Build -125: the Wallet Cash empty card supersedes the old Earnings line
     "Your Momentum starts with your first visit. Post on time and it climbs.",
     "Conversations attach to a visit or an offer.", // Build -47 (audit B6): business empty state names how conversations start
     "No reviews yet. Reviews come from completed visits.",

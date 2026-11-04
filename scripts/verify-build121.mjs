@@ -70,7 +70,7 @@ const indexHtml = fs.readFileSync(path.join(root, "public/index.html"), "utf8");
 const buildJs = fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8");
 const css = fs.readFileSync(path.join(root, "public/theme-v3.css"), "utf8");
 const stamp = (buildJs.match(/BUILD_ID\s*=\s*"([^"]+)"/) || [])[1] || "";
-check("stamp is 2026.11.03-121 and identical in build.js + index.html", stamp === "2026.11.03-121" && indexHtml.includes(stamp), String(stamp));
+check("stamp is 2026.11.04-125 and identical in build.js + index.html", stamp === "2026.11.04-125" && indexHtml.includes(stamp), String(stamp));
 check("index.html cache-busts theme-v3 with the rolled stamp (the file changed)",
   indexHtml.includes(`/theme-v3.css?v=${stamp}`) && indexHtml.includes(`/app.js?v=${stamp}`));
 
@@ -117,7 +117,7 @@ check("the section bar syncs from railItems (one source for labels/order/destina
 check("the bar is phone-only and pinned under the top row; the desktop rail is untouched",
   css.includes("body.admin-on #admin-secbar") && css.includes("position: sticky; top: 0;") &&
   css.includes("#admin-secbar { display: none; }") &&
-  appJs.includes('ADMIN_RAIL_PRIMARY_119 = ["Applications", "Markets", "Stats"]') && appJs.includes("function openAdminMoreSheet()"));
+  appJs.includes('ADMIN_RAIL_PRIMARY_125 = ["Applications", "Creators", "Markets", "Stats"]') && appJs.includes("function openAdminMoreSheet()"));
 check("the bar syncs on navigation and clears for non-admin states",
   count(appJs, "syncAdminSecbar121()") >= 3);
 
@@ -130,7 +130,7 @@ for (const t of ADMIN_TABS) {
 }
 check("primary tab sets still match the approved IA map",
   appJs.includes('business: ["Home", "Discover", "My Offers", "Visits & Posts", "Plan"]') &&
-  appJs.includes('creator: ["Dashboard", "Offers", "My Visits", "Earnings", "Profile"]') &&
+  appJs.includes('creator: ["Dashboard", "Offers", "My Visits", "Messages", "Earnings"]') &&
   appJs.includes('partner: ["Home", "Businesses", "Earnings", "Performance"]') &&
   appJs.includes('pilot: ["Overview", "Businesses", "Results", "Report"]') &&
   appJs.includes('recruiter: ["Queue", "Outreach", "Results", "Sig", "Help"]'));

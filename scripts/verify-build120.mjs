@@ -68,12 +68,12 @@ check("theme-v3 carries the shape vocabulary + shell rules",
   [".donut119", ".lbar119", ".ring119", ".bigcode119", ".pilot-fundbar", ".mkt-photo", "#agent-fab"].every((x) => css.includes(x)));
 check("primary tab sets match the approved IA map",
   appJs.includes('business: ["Home", "Discover", "My Offers", "Visits & Posts", "Plan"]') &&
-  appJs.includes('creator: ["Dashboard", "Offers", "My Visits", "Earnings", "Profile"]') &&
+  appJs.includes('creator: ["Dashboard", "Offers", "My Visits", "Messages", "Earnings"]') &&
   appJs.includes('partner: ["Home", "Businesses", "Earnings", "Performance"]') &&
   appJs.includes('pilot: ["Overview", "Businesses", "Results", "Report"]') &&
   appJs.includes('recruiter: ["Queue", "Outreach", "Results", "Sig", "Help"]'));
 check("phone short labels carry the one-word forms",
-  appJs.includes('RAIL_SHORT["Discover"] = "Creators"') && appJs.includes('RAIL_SHORT["Earnings"] = "Money"') && appJs.includes('RAIL_SHORT["My Visits"] = "Visits"') && appJs.includes('RAIL_SHORT["Visits & Posts"] = "Visits"'));
+  appJs.includes('RAIL_SHORT["Discover"] = "Creators"') && appJs.includes('RAIL_SHORT["Earnings"] = "Wallet"') && appJs.includes('RAIL_SHORT["My Visits"] = "Visits"') && appJs.includes('RAIL_SHORT["Visits & Posts"] = "Visits"'));
 check("Momentum naming (Build -120): gloss + level helper + More-row label + Momentum heading, tab key untouched",
   appJs.includes("Momentum — you reply fast and show up. Businesses see it before followers.") &&
   appJs.includes("function standingLevelName(points)") && appJs.includes('label: "Momentum"') &&
@@ -91,10 +91,10 @@ check("creator Offers segs are New / Applied / Booked / Done with stored ids unc
   appJs.includes('state.crOffersSeg') && appJs.includes('({ foryou: "new", invited: "new", waiting: "booked" })'));
 check("Visits segs: creator Codes + business Today, stored ids unchanged",
   appJs.includes('["codes", "Codes"]') && appJs.includes('["today", "Today"]') && appJs.includes('["needs", "Needs your post"]') && appJs.includes("bigcode119"));
-check("creator Earnings splits Earned / Pending with the waiting rows reachable",
-  appJs.includes("function earnSetSeg(v)") && appJs.includes('"On its way"') && appJs.includes("Comped visits build your Momentum instead."));
+check("creator Wallet: Cash/Comps/History with the waiting rows reachable (Build -125 supersedes the Earned/Pending split)",
+  appJs.includes("function walletSetSeg125(v)") && appJs.includes('"On its way"') && appJs.includes("Comped visits land under Comps instead"));
 check("business Money strip + Creators strip labels (Plan/Licenses/Receipts, Browse/My Regulars/Saved)",
-  appJs.includes("function bizMoneyStrip119(active)") && appJs.includes('item("licenses", "Licenses", "Content")') && appJs.includes('item("receipts", "Receipts", "Analytics")') &&
+  appJs.includes("function bizWalletTabs125(active)") && appJs.includes('item("bookings", "Bookings")') && appJs.includes('item("receipts", "Receipts")') &&
   appJs.includes('{ label: "My Regulars", on: false, onclick: "return go(\'dashboard\',\'Regulars\')" }') && appJs.includes('{ label: "Saved"'));
 check("creator Profile anchored strip (Basics / Photos / Rates) over the one form",
   appJs.includes("function profileSegStrip119()") && appJs.includes('id="pf-basics"') && appJs.includes('id="pf-photos"'));
@@ -106,7 +106,7 @@ check("pilot portal: area strip + Businesses Chosen/Visits segs + visits zero li
   appJs.includes("function pilotStrip119(tab)") && appJs.includes("function pilotBizSetSeg(v)") &&
   appJs.includes("0 visits yet. Visits start once the chosen businesses confirm") && appJs.includes('class="pilot-fundbar"'));
 check("admin: rail primaries + More sheet + row More wrap + toggleRowMore, railItems data untouched",
-  appJs.includes('ADMIN_RAIL_PRIMARY_119 = ["Applications", "Markets", "Stats"]') &&
+  appJs.includes('ADMIN_RAIL_PRIMARY_125 = ["Applications", "Creators", "Markets", "Stats"]') &&
   appJs.includes("function openAdminMoreSheet()") && appJs.includes("function toggleRowMore(userId)") &&
   appJs.includes('class="row-more"') && appJs.includes('onclick="toggleRowMore('));
 check("admin markets: photo headers for the three photographed markets + gradient fallback",
@@ -128,7 +128,7 @@ check("payment gates stay shut: founding Stripe prices still resolve only from u
 // availability / "Standing hours", the creatorStanding account
 // status fields) are preserved byte-for-byte.
 part("S2: Build -120 naming");
-check("stamp is 2026.11.03-121", stamp === "2026.11.03-121", String(stamp));
+check("stamp is 2026.11.04-125", stamp === "2026.11.04-125", String(stamp));
 const ABSENT_120 = ["Standing points", "Your Standing", "your Standing", "Standing trend",
   "Standing moves you up", "How does Standing work", "Standing — you reply fast",
   'wsHead("Standing"', 'kpiCard("Standing"', "Comped visits build your Standing",
@@ -138,7 +138,7 @@ for (const s of ABSENT_120) check(`absent from app UI: ${JSON.stringify(s)}`, !a
 const PRESENT_120 = ["Momentum — you reply fast and show up. Businesses see it before followers.",
   "Momentum points", "Your Momentum starts with your first visit. Post on time and it climbs.",
   "How does Momentum work?", "Momentum trend", "MOMENTUM_GLOSS", 'wsHead("Momentum"',
-  "Momentum moves you up", "Comped visits build your Momentum instead."];
+  "Momentum moves you up", "Comped visits land under Comps instead"];
 for (const s of PRESENT_120) check(`present in app UI: ${JSON.stringify(s.slice(0, 48))}`, appJs.includes(s));
 check("pre-existing non-Momentum 'standing' uses preserved (standing hours + account standing fields)",
   appJs.includes('ST("Standing hours", "Horario habitual")') && appJs.includes("creatorStanding") &&

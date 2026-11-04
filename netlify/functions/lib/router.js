@@ -21219,7 +21219,7 @@ async function route(event) {
     // Team seats (Build -107): the pack prints the deal math,
     // so it stays the org lead's file; members see the totals
     // on their Earnings tab.
-    if (user.partner.teamOf) return err(403, "The month pack holds the deal math, so it is the partner lead's file. Your Earnings tab shows the totals.");
+    if (user.partner.teamOf) return err(403, "The month pack holds the deal math, so it is the partner lead's file. Your Wallet tab shows the totals.");
     const month = query.month && /^\d{4}-\d{2}$/.test(String(query.month)) ? String(query.month) : monthKeyOf(nowIso());
     if (month > monthKeyOf(nowIso())) return err(400, "Name a real month, this one or earlier");
     const csv = await ccPartnerPackCsv(user, month);
@@ -21238,7 +21238,7 @@ async function route(event) {
   // carries this partner are listed as frozen.
   if (seg[0] === "partner" && seg[1] === "packs" && seg.length === 2 && method === "GET") {
     if (!user || user.role !== "partner" || !user.partner) return err(403, "Partners only");
-    if (user.partner.teamOf) return err(403, "The month pack holds the deal math, so it is the partner lead's file. Your Earnings tab shows the totals.");
+    if (user.partner.teamOf) return err(403, "The month pack holds the deal math, so it is the partner lead's file. Your Wallet tab shows the totals.");
     const closes = await ccCloseRecords();
     const months = closes
       .filter((c) => c.snapshot && (c.snapshot.partners || []).some((r) => r.id === user.id))

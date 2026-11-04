@@ -332,6 +332,13 @@ body.v3-on #agent-fab.show, body.v3-slim #agent-fab.show { display: flex !import
     flex-direction: column; gap: 2px; padding: 6px 2px 5px; border-radius: 999px;
   }
   body.rail-on #rail .rail-item.rail-primary.on { background: var(--ink); color: #fff; box-shadow: none; }
+  /* Build -125: the phone bar reads in the design's order —
+     Review · Creators · Markets · Wallet — regardless of the
+     desktop rail's section order. */
+  body.rail-on #rail .rail-p-applications { order: 1; }
+  body.rail-on #rail .rail-p-creators { order: 2; }
+  body.rail-on #rail .rail-p-markets { order: 3; }
+  body.rail-on #rail .rail-p-stats { order: 4; }
   body.rail-on #rail .rail-label { font-size: .62rem; }
   body.rail-on #rail .rail-badge { top: 0; right: 4px; }
 }
@@ -560,3 +567,80 @@ body.admin-on .preview-cta .btn.ghost:hover { background: var(--paper2); border-
   .sec-chip121.on { background: var(--ink); border-color: var(--ink); color: #fff; }
   .sec-badge121 { background: var(--accent); color: #fff; border-radius: 999px; font-size: .64rem; font-weight: 800; padding: 1px 6px; }
 }
+
+/* ============================================================
+   Build -122 (Jeff, 2026-11-04, from his phone screenshots
+   of the live app): three header fixes, nothing else moves.
+   (1) The signed-out "Sign in" rendered in the old dark-
+   header sage (#C6CFC6, styles.css/theme-v2 #topnav rules)
+   on the Paper top bar — faded, looked disabled. It is
+   solid Ink now, and the rest of the top-nav row takes
+   Ink-2 so no header action reads as decoration.
+   (2) The identity row is pinned LEFT in every shell —
+   the top bar (.tb2-in), the rail top row (.tr-in) and
+   the rail user card; chat/help stay right. On phones the
+   Admin section bar's side padding now matches the 12px
+   content gutters exactly, so the Admin screen's left and
+   right edges line up (the last off-symmetry offset).
+   (3) The identity circle shows the user's uploaded photo
+   when one exists (app.js avaHtml122): the photo sits over
+   the initial circle and removes itself if it fails to
+   load, so the initial is the fallback, never a break.
+   ============================================================ */
+
+/* ---- 1. Sign in: solid black, clearly tappable ---- */
+#topnav a, #topnav button.linklike { color: var(--ink2); }
+#topnav a:hover, #topnav button.linklike:hover { color: var(--ink); }
+#topnav a.nav-signin { color: var(--ink); font-weight: 800; }
+#topnav a.nav-signin:hover { color: var(--ink); }
+
+/* ---- 2. Identity left; actions right; one gutter ---- */
+#topbar2 .tb2-in { justify-content: flex-start; max-width: none; margin-left: 0; margin-right: 0; }
+.tr-in { justify-content: flex-start; }
+.tab-user { justify-content: flex-start; }
+@media (max-width: 767.98px) {
+  body.admin-on #admin-secbar { padding-left: 12px; padding-right: 12px; }
+}
+@media (min-width: 768px) {
+  /* the top row spans the content column edge to edge while
+     the work below sits inside 24px gutters — pad the row to
+     the same gutters so its right edge lines up too */
+  body.rail-on #toprow { padding-left: 24px; padding-right: 24px; }
+}
+
+/* ---- 3. Photo over the initial (fallback underneath) ---- */
+.ava122w { position: relative; display: inline-grid; flex: none; }
+.ava122w > img.ava122i { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
+
+/* ---------- Build -125: the Everything panel + Wallet bits ----------
+   The panel is a sheet on phones (slides over the bottom) and
+   a top-right card on desktop — never a page. Rows reuse the
+   .more-row card so the panel reads as part of the same app. */
+.ev125-overlay { position: fixed; inset: 0; z-index: 130; background: rgba(23,21,18,.38); }
+.ev125-panel { background: var(--paper); overflow-y: auto; padding: 18px; }
+.ev125-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 6px; }
+.ev125-head strong { font-size: 1.12rem; letter-spacing: -.01em; }
+.ev125-head .linklike { margin-left: auto; font-size: 1rem; }
+.ev125-group { margin-top: 14px; }
+.ev125-group h5 { font-size: .68rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ink3); margin: 0 2px 8px; }
+.ev125-row { margin-bottom: 8px; text-decoration: none; }
+.ev125-status { margin-left: auto; font-style: normal; font-weight: 700; color: var(--accent); font-size: .86rem; }
+@media (max-width: 767.98px) {
+  .ev125-panel { position: absolute; left: 0; right: 0; bottom: 0; max-height: 88vh; border-radius: 22px 22px 0 0; padding-bottom: calc(18px + env(safe-area-inset-bottom)); animation: vxSheetUp .38s cubic-bezier(.22,.8,.3,1) both; }
+}
+@media (min-width: 768px) {
+  .ev125-panel { position: absolute; top: 14px; right: 14px; width: 400px; max-width: calc(100vw - 28px); max-height: calc(100vh - 28px); border: 1px solid var(--line); border-radius: 18px; box-shadow: 0 24px 60px rgba(23,21,18,.22); }
+}
+/* The Everything button: dark in the top bar (the design's ≡),
+   a labeled rail item on desktop, absent from the phone bar. */
+body.v3-on .tb2-btn.tb2-ev125, body.v3-slim .tb2-btn.tb2-ev125, .tb2-btn.tb2-ev125 { background: var(--ink); border-color: var(--ink); color: #fff; }
+body.v3-on .tb2-btn.tb2-ev125:hover, .tb2-btn.tb2-ev125:hover { border-color: var(--ink); }
+#tabbar .tab-item.tab-ev125 { order: 5; }
+@media (max-width: 767.98px) {
+  body.v3-on #tabbar .tab-item.tab-ev125 { display: none; }
+}
+.tr-ev125 { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--ink); border-color: var(--ink); color: #fff; border-radius: 999px; padding: 6px 12px; font: 700 .8rem 'Instrument Sans', system-ui, sans-serif; cursor: pointer; }
+.tr-ev125 svg { width: 15px; height: 15px; }
+.tab-user-btn { cursor: pointer; }
+/* Wallet history/comp amounts sit right-aligned on ledger rows */
+.lib-amt { font-weight: 700; white-space: nowrap; margin-left: 10px; }
