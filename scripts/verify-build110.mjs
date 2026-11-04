@@ -105,7 +105,7 @@ part("canon locks");
 check("LICENSE_WINDOW_DAYS still 90", routerJs.includes("const LICENSE_WINDOW_DAYS = 90"));
 check("no perpetual licence language introduced as a right", !/perpetual (license|licence|rights)/i.test(appJs) && !/perpetuity[^.\"]*includ/i.test(routerJs));
 check("FOUNDING_STRIPE_PRICES stays env-or-empty (no market live for money)", routerJs.includes('STRIPE_PRICE_FOUNDING_SELF_SERVICE || ""') && routerJs.includes('STRIPE_PRICE_FOUNDING_GROWTH || ""') && routerJs.includes('STRIPE_PRICE_FOUNDING_MANAGED || ""'));
-check("build stamp is 2026.11.03-116 on both sides", fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes('exports.BUILD_ID = "2026.11.03-116"') && fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes('window.__SIGNL_BUILD__ = "2026.11.03-116"'));
+check("build stamp is 2026.11.03-117 on both sides", fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes('exports.BUILD_ID = "2026.11.03-117"') && fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes('window.__SIGNL_BUILD__ = "2026.11.03-117"'));
 
 // ---------- Sig answerer (in-process, shape-true facts) ----------
 part("Sig answerer: business extend + creator terms");

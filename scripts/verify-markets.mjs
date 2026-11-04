@@ -2,9 +2,11 @@
 // Hampton Roads -> Virginia Beach rename (Jeff, 2026-10-23).
 // Pins:
 //   - the roster is the 37 markets of the reset PLUS Miami,
-//     restored by Jeff on 2026-10-30 (Build -59): 38 markets,
-//     with the other removed markets gone and the 16 added
-//     markets present;
+//     restored by Jeff on 2026-10-30 (Build -59), PLUS the
+//     three New Zealand markets Jeff ordered on 2026-11-03
+//     (Build -117: Auckland restored, Wellington and
+//     Christchurch added): 41 markets, with the other removed
+//     markets gone and the 16 added markets present;
 //   - the Virginia Beach market keeps the full Hampton Roads metro
 //     city list (coverage did not shrink);
 //   - normalizeMarketName maps the legacy name to the canonical
@@ -26,7 +28,7 @@ import path from "node:path";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
-const { MARKETS, normalizeMarketName } = require("../netlify/functions/lib/markets.js");
+const { MARKETS, normalizeMarketName, resolveTypedCity } = require("../netlify/functions/lib/markets.js");
 const claimEvidence = require("../netlify/functions/lib/claim-evidence.js");
 
 const PORT = 8971;
@@ -79,7 +81,7 @@ const AGREE = { agreedHonestPosts: true, agreedFtcDisclosure: true, agreedPostCo
 
 // ---------- unit level: the roster and the alias ----------
 const names = MARKETS.map((m) => m.name);
-check("roster has exactly 38 markets (37 of the reset + Miami restored in Build -59)", names.length === 38, String(names.length));
+check("roster has exactly 41 markets (37 of the reset + Miami restored in Build -59 + the 3 NZ markets of Build -117)", names.length === 41, String(names.length));
 check("Virginia Beach is a market; Hampton Roads is not a market name", names.includes("Virginia Beach") && !names.includes("Hampton Roads"));
 const vb = MARKETS.find((m) => m.name === "Virginia Beach");
 check("Virginia Beach keeps the stable id hampton-roads", !!vb && vb.id === "hampton-roads");
@@ -89,11 +91,26 @@ check("Virginia Beach covers the full Hampton Roads metro (10 cities incl. Norfo
 const ADDED = ["Philadelphia", "Pittsburgh", "Cincinnati", "Columbus", "New Orleans", "Orlando", "Houston", "San Antonio", "Las Vegas", "Detroit", "San Juan", "Paris", "Barcelona", "Lisbon", "Toronto", "Montreal"];
 check("all 16 markets added 2026-10-23 are present", ADDED.every((n) => names.includes(n)));
 // Miami was on this removed list until Build -59 (2026-10-30):
-// Jeff restored it as a full market, so it leaves the list and
-// the other 17 removals of the 2026-10-23 reset still stand.
-const REMOVED = ["Charlottesville", "Roanoke", "Greensboro", "Wilmington", "Abu Dhabi", "Riyadh", "Doha", "Astana", "Bishkek", "Sydney", "Melbourne", "Perth", "Auckland", "Singapore", "Hong Kong", "Beijing", "Shanghai"];
-check("all 17 still-removed markets are gone (Miami restored in Build -59)", REMOVED.every((n) => !names.includes(n)));
+// Jeff restored it as a full market, so it leaves the list.
+// Auckland left it the same way in Build -117 (2026-11-03),
+// restored alongside two new NZ markets; the other 16 removals
+// of the 2026-10-23 reset still stand.
+const REMOVED = ["Charlottesville", "Roanoke", "Greensboro", "Wilmington", "Abu Dhabi", "Riyadh", "Doha", "Astana", "Bishkek", "Sydney", "Melbourne", "Perth", "Singapore", "Hong Kong", "Beijing", "Shanghai"];
+check("all 16 still-removed markets are gone (Miami restored in Build -59, Auckland in Build -117)", REMOVED.every((n) => !names.includes(n)));
 check("Miami is back on the roster (restored in Build -59)", names.includes("Miami"));
+// Build -117 (Jeff, 2026-11-03): New Zealand joins the roster.
+const NZ = ["Auckland", "Wellington", "Christchurch"].map((n) => MARKETS.find((m) => m.name === n));
+check("the three NZ markets are present with stable ids and country New Zealand",
+  NZ.every((m) => !!m) && NZ[0].id === "auckland" && NZ[1].id === "wellington" && NZ[2].id === "christchurch" && NZ.every((m) => m.country === "New Zealand"),
+  JSON.stringify(NZ.map((m) => m && [m.id, m.country])));
+check("each NZ market carries its genuine metro list (anchor city first, 40+ areas)",
+  NZ.every((m) => m.cities[0] === m.name && m.cities.length >= 40), JSON.stringify(NZ.map((m) => m.cities.length)));
+check("NZ metro towns file uniquely to their market (Takapuna, Lower Hutt, Rolleston)",
+  ["Takapuna", "Lower Hutt", "Rolleston"].every((t, i) => { const r = resolveTypedCity(t); return r.status === "unique" && r.market === ["Auckland", "Wellington", "Christchurch"][i]; }));
+check("bare Wellington ties Miami and Wellington (the designed two-market outcome); the New Zealand hint resolves it",
+  (() => { const bare = resolveTypedCity("Wellington"); const hinted = resolveTypedCity("Wellington, New Zealand"); return bare.status === "ambiguous" && bare.markets.includes("Miami") && bare.markets.includes("Wellington") && hinted.status === "unique" && hinted.market === "Wellington"; })());
+check("the pinned resolver outcomes do not move (Henderson stays Las Vegas; Sydenham stays London)",
+  resolveTypedCity("Henderson").market === "Las Vegas" && resolveTypedCity("Sydenham").market === "London");
 check("normalizeMarketName maps the legacy name", normalizeMarketName("Hampton Roads") === "Virginia Beach");
 check("normalizeMarketName trims and maps", normalizeMarketName("  Hampton Roads ") === "Virginia Beach");
 check("normalizeMarketName leaves other names and non-strings alone",
@@ -161,6 +178,22 @@ try {
   check("claim with a newly added market stores it with its country",
     added.r.status === 201 && !!added.r.data.user && added.r.data.user.market === "Toronto" && added.r.data.user.country === "Canada",
     JSON.stringify(added.r.data.user && [added.r.data.user.market, added.r.data.user.country]));
+
+  // Build -117: the NZ claim links (market=Auckland / Wellington
+  // / Christchurch, the exact names the staged outreach uses)
+  // must land. Name, stable id, and a typed metro town all work.
+  const akl = await quickClaim("auckland@fixtures.dev", "akleats", "Auckland");
+  check("claim with market=Auckland stores Auckland with country New Zealand",
+    akl.r.status === 201 && !!akl.r.data.user && akl.r.data.user.market === "Auckland" && akl.r.data.user.country === "New Zealand",
+    JSON.stringify(akl.r.data.user && [akl.r.data.user.market, akl.r.data.user.country]));
+  const wgn = await quickClaim("wellington@fixtures.dev", "wgneats", "wellington");
+  check("claim with the stable id wellington resolves to Wellington",
+    wgn.r.status === 201 && !!wgn.r.data.user && wgn.r.data.user.market === "Wellington",
+    JSON.stringify(wgn.r.data.user && wgn.r.data.user.market));
+  const chc = await quickClaim("christchurch@fixtures.dev", "chceats", "Christchurch");
+  check("claim with market=Christchurch stores Christchurch with country New Zealand",
+    chc.r.status === 201 && !!chc.r.data.user && chc.r.data.user.market === "Christchurch" && chc.r.data.user.country === "New Zealand",
+    JSON.stringify(chc.r.data.user && [chc.r.data.user.market, chc.r.data.user.country]));
 
   const admin = client();
   const adminLogin = await admin("POST", "/api/auth/login", { email: ADMIN_EMAIL, password: ADMIN_PW });

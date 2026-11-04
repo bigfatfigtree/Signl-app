@@ -1,4 +1,4 @@
-// Build 2026.11.03-116 verification: the market footprint fix.
+// Build 2026.11.03-117 verification: the market footprint fix.
 // Jeff flagged a live approval email (2026-10-30): a Clarksville
 // creator was filed "Not listed yet" and told Clarksville is not
 // an open market, when Clarksville, TN is Nashville area. Root
@@ -113,9 +113,9 @@ const ROOT = path.join(path.dirname(new URL(import.meta.url).pathname), "..");
 // ---------- unit level: stamp, lists, resolver ----------
 const buildJs = fs.readFileSync(path.join(ROOT, "netlify/functions/lib/build.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(ROOT, "public/index.html"), "utf8");
-check("stamp: BUILD_ID is 2026.11.03-116 on server and shell", buildJs.includes('BUILD_ID = "2026.11.03-116"') && indexHtml.includes("2026.11.03-116"));
+check("stamp: BUILD_ID is 2026.11.03-117 on server and shell", buildJs.includes('BUILD_ID = "2026.11.03-117"') && indexHtml.includes("2026.11.03-117"));
 
-check("the roster is 38 markets (37 when -52 shipped; Miami restored in Build -59)", MARKETS.length === 38, String(MARKETS.length));
+check("the roster is 41 markets (37 when -52 shipped; Miami restored in Build -59; the 3 NZ markets added in Build -117)", MARKETS.length === 41, String(MARKETS.length));
 const short = MARKETS.filter((m) => m.cities.length < 10).map((m) => m.name);
 check("every market carries a real metro list; the only short list is Dubai (city-emirate, 3)", short.length === 1 && short[0] === "Dubai", JSON.stringify(short));
 const nash = MARKETS.find((m) => m.id === "nashville");
@@ -212,7 +212,7 @@ try {
   if (!up) throw new Error("server did not start");
   const boot = await client()("GET", "/api/bootstrap");
   const UNLISTED_NAME = boot.data.unlistedMarket;
-  check("bootstrap carries the -52 build stamp", boot.headers.get("x-signl-build") === "2026.11.03-116", String(boot.headers.get("x-signl-build")));
+  check("bootstrap carries the -52 build stamp", boot.headers.get("x-signl-build") === "2026.11.03-117", String(boot.headers.get("x-signl-build")));
   const nashBoot = (boot.data.markets || []).find((m) => m.name === "Nashville");
   check("bootstrap ships Nashville's full footprint list (Clarksville included)", !!nashBoot && nashBoot.cities.includes("Clarksville") && nashBoot.cities.length >= 20, JSON.stringify(nashBoot && nashBoot.cities.length));
 

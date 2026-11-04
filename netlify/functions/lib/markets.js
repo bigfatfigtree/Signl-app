@@ -62,6 +62,25 @@
 // market) and London starts NOT live like every unlaunched
 // market: creator founding sign-ups only, no launch date and
 // no businesses promised anywhere on the creator surfaces.
+// Build -117 (Jeff, 2026-11-03): New Zealand joins the roster —
+// Auckland (removed in the 2026-10-23 reset) is restored and
+// Wellington and Christchurch are added, each with its genuine
+// metro-area list (the market contains its surrounding towns;
+// the list entries are the area filter layer, the same pattern
+// as London). The roster is 41 markets in 9 countries. The NZ
+// markets carry no currency override: currency-by-market
+// (Build -89) is an optional per-market entry, London is the
+// only market that carries one, and Manchester ships without
+// one — so NZ creators default to USD ($, $50 paid floor) like
+// Manchester's do until Jeff approves an NZD price book and
+// floor the way he approved GBP for London (Builds -89/-103).
+// Area names that already file to another market's list stay
+// out of the NZ lists (Henderson stays Las Vegas's pinned
+// outcome; St Albans, Sydenham and Beckenham stay London's),
+// except "Wellington" itself, which sits in Miami's city list
+// as the Palm Beach town: the two-market tie is the designed
+// outcome there, the same shape as bare "London" tying
+// Columbus and London, and the New Zealand hint resolves it.
 
 const MARKETS = [
   {
@@ -345,6 +364,38 @@ const MARKETS = [
     label: "Montreal, Canada",
     country: "Canada",
     cities: ["Montreal", "Laval", "Longueuil", "Terrebonne", "Brossard", "Repentigny", "Saint-Jean-sur-Richelieu", "Boucherville", "Dollard-des-Ormeaux", "Blainville", "Châteauguay", "Saint-Eustache", "Mascouche", "Vaudreuil-Dorion", "Kirkland", "Pointe-Claire", "Sainte-Thérèse", "Mirabel", "La Prairie", "Candiac"],
+  },
+  {
+    // Build -117 (2026-11-03): Auckland restored (it was on the
+    // roster 2026-10-18 to 2026-10-23) as a full metro market:
+    // the supercity suburbs plus the commutable fringe (the
+    // Hibiscus Coast, Warkworth's southern neighbours, Pukekohe
+    // and Waiuku). Area spellings are the plain typed forms so
+    // the typed-city resolver matches what people type.
+    id: "auckland",
+    name: "Auckland",
+    label: "Auckland, New Zealand",
+    country: "New Zealand",
+    cities: ["Auckland", "Auckland CBD", "Ponsonby", "Grey Lynn", "Westmere", "Herne Bay", "Parnell", "Remuera", "Kohimarama", "Mission Bay", "St Heliers", "Glendowie", "Meadowbank", "Orakei", "Stonefields", "Ellerslie", "Greenlane", "Penrose", "Onehunga", "Mount Eden", "Kingsland", "Sandringham", "Mount Albert", "Point Chevalier", "Waterview", "Mount Roskill", "Three Kings", "Lynfield", "Blockhouse Bay", "New Lynn", "Glen Eden", "Titirangi", "Laingholm", "Swanson", "Ranui", "Massey", "Westgate", "West Harbour", "Hobsonville", "Whenuapai", "Greenhithe", "Albany", "Takapuna", "Devonport", "Birkenhead", "Northcote", "Glenfield", "Browns Bay", "Torbay", "Long Bay", "Silverdale", "Milldale", "Orewa", "Whangaparaoa", "Red Beach", "Gulf Harbour", "Riverhead", "Kumeu", "Huapai", "Helensville", "Waimauku", "Muriwai", "Piha", "Howick", "Botany", "Flat Bush", "Dannemora", "East Tamaki", "Pakuranga", "Half Moon Bay", "Bucklands Beach", "Beachlands", "Maraetai", "Whitford", "Clevedon", "Manukau", "Otara", "Papatoetoe", "Mangere", "Mangere Bridge", "Otahuhu", "Papakura", "Takanini", "Drury", "Karaka", "Pukekohe", "Waiuku", "Tuakau"],
+  },
+  {
+    // Build -117 (2026-11-03): Wellington is ONE market — the
+    // city, Porirua, the Hutt Valley and the Kapiti Coast.
+    id: "wellington",
+    name: "Wellington",
+    label: "Wellington, New Zealand",
+    country: "New Zealand",
+    cities: ["Wellington", "Te Aro", "Thorndon", "Mount Victoria", "Oriental Bay", "Kelburn", "Aro Valley", "Mount Cook", "Newtown", "Berhampore", "Brooklyn", "Island Bay", "Lyall Bay", "Kilbirnie", "Hataitai", "Seatoun", "Wadestown", "Northland", "Karori", "Crofton Downs", "Ngaio", "Khandallah", "Johnsonville", "Tawa", "Grenada North", "Porirua", "Elsdon", "Aotea", "Titahi Bay", "Mana", "Plimmerton", "Pukerua Bay", "Paekakariki", "Raumati", "Paraparaumu", "Paraparaumu Beach", "Waikanae", "Otaki", "Petone", "Maungaraki", "Lower Hutt", "Moera", "Alicetown", "Eastbourne", "Days Bay", "Wainuiomata", "Stokes Valley", "Upper Hutt", "Heretaunga", "Silverstream", "Pinehaven", "Totara Park"],
+  },
+  {
+    // Build -117 (2026-11-03): Christchurch is ONE market —
+    // the city plus the Waimakariri and Selwyn commuter towns
+    // and Banks Peninsula.
+    id: "christchurch",
+    name: "Christchurch",
+    label: "Christchurch, New Zealand",
+    country: "New Zealand",
+    cities: ["Christchurch", "Christchurch Central", "Riccarton", "Upper Riccarton", "Ilam", "Burnside", "Fendalton", "Merivale", "Mairehau", "Shirley", "Edgeware", "Papanui", "Bishopdale", "Belfast", "Redwood", "Harewood", "Avonhead", "Russley", "Yaldhurst", "Sockburn", "Hornby", "Wigram", "Halswell", "Hoon Hay", "Spreydon", "Addington", "St Martins", "Opawa", "Woolston", "Ferrymead", "Heathcote Valley", "Cashmere", "Mount Pleasant", "Redcliffs", "Sumner", "Lyttelton", "Governors Bay", "Diamond Harbour", "New Brighton", "South New Brighton", "Aranui", "Waimairi Beach", "Parklands", "Burwood", "Spencerville", "Templeton", "Prebbleton", "Lincoln", "Rolleston", "West Melton", "Darfield", "Kirwee", "Tai Tapu", "Leeston", "Burnham", "Rangiora", "Kaiapoi", "Woodend", "Pegasus", "Tuahiwi", "Ohoka", "Fernside", "Oxford", "Amberley", "Little River", "Akaroa"],
   },
 ];
 
@@ -761,6 +812,8 @@ const COUNTRY_ALIASES = {
   "great britain": "United Kingdom",
   england: "United Kingdom",
   canada: "Canada",
+  "new zealand": "New Zealand",
+  nz: "New Zealand",
   france: "France",
   spain: "Spain",
   portugal: "Portugal",

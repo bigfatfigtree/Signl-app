@@ -49,7 +49,7 @@ part("S: source pins");
 const emailJs = fs.readFileSync(path.join(root, "netlify/functions/lib/email.js"), "utf8");
 const routerJs = fs.readFileSync(path.join(root, "netlify/functions/lib/router.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(root, "public/index.html"), "utf8");
-check("stamp is 2026.11.03-116", indexHtml.includes("2026.11.03-116") && fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes("2026.11.03-116"));
+check("stamp is 2026.11.03-117", indexHtml.includes("2026.11.03-117") && fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes("2026.11.03-117"));
 check("deliverEmail passes a branded HTML part built from the same text", routerJs.includes("html: brandedEmailHtml(text)"));
 check("router imports brandedEmailHtml from the email layer", routerJs.includes("brandedEmailHtml } = require(\"./email\")"));
 check("email.js exports the wrapper and the logo URL", emailJs.includes("brandedEmailHtml") && emailJs.includes("EMAIL_LOGO_URL"));

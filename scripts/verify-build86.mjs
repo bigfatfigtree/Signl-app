@@ -57,7 +57,7 @@ console.log("== Static: London the typed market + the claim surface ==");
   const london = MARKETS.find((m) => m.id === "london");
   check("markets.js: London entry is id london, name London, country United Kingdom", !!london && london.name === "London" && london.country === "United Kingdom", JSON.stringify(london && { id: london.id, country: london.country }));
   check("markets.js: London carries its metro city list (London + Croydon at least)", !!london && london.cities.includes("London") && london.cities.includes("Croydon") && london.cities.length >= 15, london && String(london.cities.length));
-  check("markets.js: the roster is still 38 markets (London was already counted)", MARKETS.length === 38, String(MARKETS.length));
+  check("markets.js: the roster is 41 markets (38 when -86 shipped, London already counted; +3 NZ markets in Build -117)", MARKETS.length === 41, String(MARKETS.length));
 }
 const appJs = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
 check("claim photos: london is in CLAIM_CITY_PHOTOS", /CLAIM_CITY_PHOTOS = \[[^\]]*"london"/.test(appJs));
@@ -68,7 +68,7 @@ check("London note: present in the full join form (jc-london-note)", appJs.inclu
 check("London note: toggles key on the picked market being London (claim + join)", appJs.includes('londonNote.style.display = m.value === "London"') && (appJs.match(/londonNote\.style\.display = m\.value === "London"/g) || []).length === 2);
 check("Dubai note: unchanged alongside (both ids + toggles intact)", appJs.includes('id="c85-dubai-note"') && appJs.includes('id="jc-dubai-note"') && appJs.includes('dubaiNote.style.display = m.value === "Dubai"'));
 check("no London gating: no permit state, no block keyed on London in the router", !fs.readFileSync(path.join(root, "netlify", "functions", "lib", "router.js"), "utf8").includes("londonPermit"));
-check("stamp is 2026.11.03-116 on both sides", fs.readFileSync(path.join(root, "netlify", "functions", "lib", "build.js"), "utf8").includes('BUILD_ID = "2026.11.03-116"') && fs.readFileSync(path.join(root, "public", "index.html"), "utf8").includes("2026.11.03-116"));
+check("stamp is 2026.11.03-117 on both sides", fs.readFileSync(path.join(root, "netlify", "functions", "lib", "build.js"), "utf8").includes('BUILD_ID = "2026.11.03-117"') && fs.readFileSync(path.join(root, "public", "index.html"), "utf8").includes("2026.11.03-117"));
 
 // ---------- resolver: typed cities around London ----------
 console.log("== Resolver: London typed-city outcomes (pinned ties untouched) ==");
@@ -139,7 +139,7 @@ const admin = new Client(BASE);
   // forming, like every unlaunched market.
   const cfg = (JSON.parse(fs.readFileSync(DB, "utf8")) || {})["config:markets"];
   check("flags: no live flag is stored for London (it starts NOT live, founding framing)", !cfg || !cfg.flags || !cfg.flags["London"], JSON.stringify(cfg && cfg.flags));
-  check("bootstrap: still 38 markets total", (boot.markets || []).length === 38, String((boot.markets || []).length));
+  check("bootstrap: 41 markets total", (boot.markets || []).length === 41, String((boot.markets || []).length));
 }
 
 async function claimRegister(email, handle, market, extra = {}) {

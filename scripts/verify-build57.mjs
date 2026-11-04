@@ -167,8 +167,8 @@ const sign = (raw) => {
 };
 
 console.log("verify-build57: Owed + Reconciliation + Close & Export");
-check("build stamp is 2026.11.03-116", BUILD_ID === "2026.11.03-116", BUILD_ID);
-check("index.html carries the -57 stamp", fs.readFileSync(new URL("../public/index.html", import.meta.url), "utf8").includes("2026.11.03-116"));
+check("build stamp is 2026.11.03-117", BUILD_ID === "2026.11.03-117", BUILD_ID);
+check("index.html carries the -57 stamp", fs.readFileSync(new URL("../public/index.html", import.meta.url), "utf8").includes("2026.11.03-117"));
 
 const login = await handler(evt("POST", "/api/auth/login", { body: { email: process.env.ADMIN_EMAIL, password: process.env.ADMIN_PASSWORD } }));
 check("admin login succeeds", login.statusCode === 200, `got ${login.statusCode}`);

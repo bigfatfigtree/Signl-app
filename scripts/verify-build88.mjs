@@ -52,7 +52,7 @@ const MUST = ["Shoreditch", "Spitalfields", "Borough", "Bankside", "Brixton", "D
   const missing = MUST.filter((a) => !london.cities.includes(a));
   check("London list carries every named race/Tier/inner/surrounding area", missing.length === 0, missing.join(","));
 }
-check("roster is still 38 markets (areas are inside London, never new markets)", MARKETS.length === 38, String(MARKETS.length));
+check("roster is 41 markets (38 when -88 shipped; +3 NZ markets in Build -117 — areas inside a market are never new markets)", MARKETS.length === 41, String(MARKETS.length));
 
 console.log("== Resolver: typed areas file to London; the pins do not move ==");
 for (const area of ["Hackney", "Brixton", "Peckham", "Soho", "Shoreditch", "Dalston", "Borough", "Angel", "Stoke Newington", "Camden Town"]) {

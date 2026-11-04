@@ -1,18 +1,23 @@
-// Build 2026.11.03-116 verification: Miami restored as a full
+// Build 2026.11.03-117 verification: Miami restored as a full
 // market. Jeff removed Miami in the 2026-10-23 roster reset and
 // reversed that call on 2026-10-30 ("add miami and all
 // surrounding locations of metro area"). Build -52's suite pinned
 // Miami -> none on the 37-market roster; this build flips that
 // doctrine: Miami is back with its full tri-county metro
-// footprint, and the roster is 38 markets in the same 8 countries.
+// footprint, and the roster was 38 markets in the same 8 countries
+// (41 markets in 9 countries since Build -117 added New Zealand).
 // Pins:
 //   - the Miami market exists (id miami, label "Miami, Florida",
 //     country United States, MARKET_STATES ["FL"]) carrying
 //     exactly the 48 mandated places: 22 Miami-Dade, 16 Broward,
 //     10 Palm Beach;
 //   - no steal: none of Miami's 48 names appears in any other
-//     market's list, and the cross-market tie set is still
-//     exactly the 26 documented two/three-metro names -52 left;
+//     market's list — with ONE documented exception since Build
+//     -117: the Palm Beach town Wellington, whose name is now
+//     also the New Zealand capital's market name (a designed
+//     tie, hint-resolved, the London/Columbus precedent) — and
+//     the cross-market tie set is the 26 documented names -52
+//     left PLUS wellington (27);
 //   - the resolver: Miami-metro typed cities (Miami, Miami
 //     Beach, Fort Lauderdale, Boca Raton, Hialeah, West Palm
 //     Beach, Coral Gables, Doral) resolve unique to Miami, with
@@ -112,11 +117,11 @@ const ROOT = path.join(path.dirname(new URL(import.meta.url).pathname), "..");
 // ---------- unit level: stamp, roster, the Miami market ----------
 const buildJs = fs.readFileSync(path.join(ROOT, "netlify/functions/lib/build.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(ROOT, "public/index.html"), "utf8");
-check("stamp: BUILD_ID is 2026.11.03-116 on server and shell", buildJs.includes('BUILD_ID = "2026.11.03-116"') && indexHtml.includes("2026.11.03-116"));
+check("stamp: BUILD_ID is 2026.11.03-117 on server and shell", buildJs.includes('BUILD_ID = "2026.11.03-117"') && indexHtml.includes("2026.11.03-117"));
 
-check("the roster is 38 markets (37 through -58 + Miami)", MARKETS.length === 38, String(MARKETS.length));
+check("the roster is 41 markets (37 through -58 + Miami + the 3 NZ markets of Build -117)", MARKETS.length === 41, String(MARKETS.length));
 const countries = [...new Set(MARKETS.map((m) => m.country))];
-check("the country set is unchanged (8 countries)", countries.length === 8, JSON.stringify(countries));
+check("the country set (9 countries since Build -117 added New Zealand)", countries.length === 9, JSON.stringify(countries));
 
 const MIAMI_CITIES = [
   // Miami-Dade (22)
@@ -142,7 +147,8 @@ check("Miami carries exactly the 48 tri-county places (22 Miami-Dade, 16 Broward
 check("MARKET_STATES files Miami in FL only", JSON.stringify(MARKET_STATES.miami) === JSON.stringify(["FL"]), JSON.stringify(MARKET_STATES.miami));
 
 // No steal: every name on Miami's list is claimed by Miami alone,
-// and the full cross-market tie set is exactly what -52 left.
+// and the full cross-market tie set is what -52 left, plus
+// wellington (Build -117).
 const norm = (s) => String(s || "").toLowerCase().replace(/[.'’]/g, "").replace(/\s+/g, " ").trim();
 const claimants = new Map();
 for (const m of MARKETS) {
@@ -152,11 +158,16 @@ for (const m of MARKETS) {
     claimants.get(k).add(m.id);
   }
 }
-const miamiShared = MIAMI_CITIES.filter((c) => { const s = claimants.get(norm(c)); return !s || s.size !== 1 || !s.has("miami"); });
-check("no steal: every Miami name is claimed by the Miami market alone", miamiShared.length === 0, JSON.stringify(miamiShared));
-const TIE_KEYS = ["arlington", "aurora", "bellevue", "chester", "college park", "columbia", "covington", "denton", "elgin", "georgetown", "glendale", "kirkland", "lakewood", "lebanon", "london", "marysville", "pasadena", "plymouth", "roseville", "san marcos", "smyrna", "spring hill", "springfield", "taylor", "west chester", "westminster"];
+// Build -117 exception: "Wellington" (a Palm Beach town on
+// Miami's list) is claimed by two markets since the NZ capital
+// became a market — the designed tie, resolved by the country
+// hint. Every other Miami name stays Miami's alone.
+const miamiShared = MIAMI_CITIES.filter((c) => c !== "Wellington").filter((c) => { const s = claimants.get(norm(c)); return !s || s.size !== 1 || !s.has("miami"); });
+check("no steal: every Miami name is claimed by the Miami market alone (except Wellington, the designed Build -117 tie)", miamiShared.length === 0, JSON.stringify(miamiShared));
+check("the Wellington tie is exactly Miami + the NZ market", JSON.stringify([...(claimants.get("wellington") || [])].sort()) === JSON.stringify(["miami", "wellington"]), JSON.stringify([...(claimants.get("wellington") || [])]));
+const TIE_KEYS = ["arlington", "aurora", "bellevue", "chester", "college park", "columbia", "covington", "denton", "elgin", "georgetown", "glendale", "kirkland", "lakewood", "lebanon", "london", "marysville", "pasadena", "plymouth", "roseville", "san marcos", "smyrna", "spring hill", "springfield", "taylor", "wellington", "west chester", "westminster"];
 const multiKeys = [...claimants.entries()].filter(([, s]) => s.size > 1).map(([k]) => k).sort();
-check("the documented tie set is unchanged (26 names, none of them Miami's)",
+check("the documented tie set (27 names: the 26 of -52 plus wellington, added by Build -117)",
   JSON.stringify(multiKeys) === JSON.stringify([...TIE_KEYS].sort()), JSON.stringify(multiKeys));
 
 // ---------- unit level: the resolver on Miami ----------
@@ -184,8 +195,8 @@ try {
   if (!up) throw new Error("server did not start");
   const boot = await client()("GET", "/api/bootstrap");
   const UNLISTED_NAME = boot.data.unlistedMarket;
-  check("bootstrap carries the -59 build stamp", boot.headers.get("x-signl-build") === "2026.11.03-116", String(boot.headers.get("x-signl-build")));
-  check("bootstrap serves 38 markets", Array.isArray(boot.data.markets) && boot.data.markets.length === 38, JSON.stringify(boot.data.markets && boot.data.markets.length));
+  check("bootstrap carries the -59 build stamp", boot.headers.get("x-signl-build") === "2026.11.03-117", String(boot.headers.get("x-signl-build")));
+  check("bootstrap serves 41 markets", Array.isArray(boot.data.markets) && boot.data.markets.length === 41, JSON.stringify(boot.data.markets && boot.data.markets.length));
   const miamiBoot = (boot.data.markets || []).find((m) => m.name === "Miami");
   check("bootstrap ships Miami's full footprint list (48 places incl. Fort Lauderdale and Boca Raton)",
     !!miamiBoot && miamiBoot.cities.length === 48 && miamiBoot.cities.includes("Fort Lauderdale") && miamiBoot.cities.includes("Boca Raton") && miamiBoot.country === "United States",
@@ -223,8 +234,8 @@ try {
   const rows = marketsRes.data.markets || [];
   const miamiRow = rows.find((m) => m.name === "Miami");
   const nashRow = rows.find((m) => m.name === "Nashville");
-  check("admin markets list: 38 markets; Miami present, United States, NOT live - the same unlaunched config as Nashville",
-    rows.length === 38 && !!miamiRow && miamiRow.country === "United States" && miamiRow.live === false && !!nashRow && nashRow.live === false,
+  check("admin markets list: 41 markets; Miami present, United States, NOT live - the same unlaunched config as Nashville",
+    rows.length === 41 && !!miamiRow && miamiRow.country === "United States" && miamiRow.live === false && !!nashRow && nashRow.live === false,
     JSON.stringify(miamiRow));
 } finally {
   server.kill();
