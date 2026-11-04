@@ -105,7 +105,7 @@ check("B12 checklist numbering is consistent; 'live' is not a step", !appJs.incl
 check("P2 partner business link is distinct and lands on business", routerJs.includes("join=business") && appJs.includes('params.get("join")'));
 check("P3 every partner market card names its next step", appJs.includes("nextFor"));
 check("P4 partner sentences pluralize", appJs.includes('creator${cs.claimed === 1 ? "" : "s"} claimed'));
-check("P5 the Performance rail label can wrap", appJs.includes("Perform­ance") && css.includes(".tab-item .tab-label"));
+check("P5 the partner rail label is the -125 short form (Performance -> Reports; the old soft-hyphen wrap pin retired at the landing, 2026-11-04)", appJs.includes('Performance: "Reports"') && css.includes(".tab-item .tab-label"));
 check("P6 partner surfaces route asks to the team inbox", !appJs.includes("Ask Jeff for the current copy") && appJs.includes("the SIGNL team"));
 check("A1 admin chrome opens only the landing destination", win(appJs, "function renderAdmin()", 2600).includes('tab === "Applications"'));
 check("A2 the duplicate in-page admin tab strip is gone", !win(appJs, "function renderAdmin()", 2600).includes('tabsHtml(["Applications", "Markets"'));
