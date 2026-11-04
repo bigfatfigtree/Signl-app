@@ -5,7 +5,7 @@
 // Miami -> none on the 37-market roster; this build flips that
 // doctrine: Miami is back with its full tri-county metro
 // footprint, and the roster was 38 markets in the same 8 countries
-// (41 markets in 9 countries since Build -117 added New Zealand).
+// (45 markets in 13 countries; 41 in 9 when -117 added New Zealand, +4 expansion markets in Builds -127/-128).
 // Pins:
 //   - the Miami market exists (id miami, label "Miami, Florida",
 //     country United States, MARKET_STATES ["FL"]) carrying
@@ -119,9 +119,9 @@ const buildJs = fs.readFileSync(path.join(ROOT, "netlify/functions/lib/build.js"
 const indexHtml = fs.readFileSync(path.join(ROOT, "public/index.html"), "utf8");
 check("stamp: BUILD_ID is 2026.11.04-126 on server and shell", buildJs.includes('BUILD_ID = "2026.11.04-126"') && indexHtml.includes("2026.11.04-126"));
 
-check("the roster is 41 markets (37 through -58 + Miami + the 3 NZ markets of Build -117)", MARKETS.length === 41, String(MARKETS.length));
+check("the roster is 45 markets (37 through -58 + Miami + the 3 NZ markets of Build -117 + Dublin, Amsterdam, Copenhagen and Mexico City in Builds -127/-128)", MARKETS.length === 45, String(MARKETS.length));
 const countries = [...new Set(MARKETS.map((m) => m.country))];
-check("the country set (9 countries since Build -117 added New Zealand)", countries.length === 9, JSON.stringify(countries));
+check("the country set (13 countries; 9 when Build -117 added New Zealand, +Ireland, Netherlands, Denmark, Mexico in Builds -127/-128)", countries.length === 13, JSON.stringify(countries));
 
 const MIAMI_CITIES = [
   // Miami-Dade (22)
@@ -196,7 +196,7 @@ try {
   const boot = await client()("GET", "/api/bootstrap");
   const UNLISTED_NAME = boot.data.unlistedMarket;
   check("bootstrap carries the -59 build stamp", boot.headers.get("x-signl-build") === "2026.11.04-126", String(boot.headers.get("x-signl-build")));
-  check("bootstrap serves 41 markets", Array.isArray(boot.data.markets) && boot.data.markets.length === 41, JSON.stringify(boot.data.markets && boot.data.markets.length));
+  check("bootstrap serves 45 markets", Array.isArray(boot.data.markets) && boot.data.markets.length === 45, JSON.stringify(boot.data.markets && boot.data.markets.length));
   const miamiBoot = (boot.data.markets || []).find((m) => m.name === "Miami");
   check("bootstrap ships Miami's full footprint list (48 places incl. Fort Lauderdale and Boca Raton)",
     !!miamiBoot && miamiBoot.cities.length === 48 && miamiBoot.cities.includes("Fort Lauderdale") && miamiBoot.cities.includes("Boca Raton") && miamiBoot.country === "United States",
@@ -234,8 +234,8 @@ try {
   const rows = marketsRes.data.markets || [];
   const miamiRow = rows.find((m) => m.name === "Miami");
   const nashRow = rows.find((m) => m.name === "Nashville");
-  check("admin markets list: 41 markets; Miami present, United States, NOT live - the same unlaunched config as Nashville",
-    rows.length === 41 && !!miamiRow && miamiRow.country === "United States" && miamiRow.live === false && !!nashRow && nashRow.live === false,
+  check("admin markets list: 45 markets; Miami present, United States, NOT live - the same unlaunched config as Nashville",
+    rows.length === 45 && !!miamiRow && miamiRow.country === "United States" && miamiRow.live === false && !!nashRow && nashRow.live === false,
     JSON.stringify(miamiRow));
 } finally {
   server.kill();

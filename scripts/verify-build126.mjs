@@ -242,7 +242,7 @@ try {
   check("dev server boots and /api/bootstrap responds", up);
   if (!up) throw new Error("server did not start");
   const boot = await client()("GET", "/api/bootstrap");
-  check("bootstrap serves 41 markets", (boot.data.markets || []).length === 41, String((boot.data.markets || []).length));
+  check("bootstrap serves 45 markets", (boot.data.markets || []).length === 45, String((boot.data.markets || []).length));
 
   const admin = client();
   const adminLogin = await admin("POST", "/api/auth/login", { email: ADMIN_EMAIL, password: ADMIN_PW });

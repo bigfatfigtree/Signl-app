@@ -30,8 +30,8 @@
 //   T. tab inventory: all 11 admin sections still have a rail
 //      destination AND a renderAdmin dispatch branch — no
 //      surface lost vs the -120 inventory.
-//   H. server: boots; bootstrap 41 markets; a creator claim
-//      lands; Admin markets lists 41 rows; the served shell
+//   H. server: boots; bootstrap 45 markets; a creator claim
+//      lands; Admin markets lists 45 rows; the served shell
 //      carries the -121 stamp.
 // The rendered proof (widths, density, chip landings) lives in
 // scripts/qa-build121.py + ~/workspace/research_notes/
@@ -191,14 +191,14 @@ try {
   check("dev server boots and /api/bootstrap responds", up);
   if (!up) throw new Error("server did not start");
   const boot = await client()("GET", "/api/bootstrap");
-  check("bootstrap serves 41 markets", (boot.data.markets || []).length === 41, String((boot.data.markets || []).length));
+  check("bootstrap serves 45 markets", (boot.data.markets || []).length === 45, String((boot.data.markets || []).length));
   const claim = await client()("POST", "/api/auth/register", { role: "creator", quickClaim: true, email: "b121@fixtures.dev", password: "claim-" + "pass-1234", market: "Nashville", handle: "b121claim", ...AGREE });
   check("a creator claim still lands (201)", claim.status === 201 && !!claim.data.user, String(claim.status));
   const admin = client();
   const adminLogin = await admin("POST", "/api/auth/login", { email: ADMIN_EMAIL, password: ADMIN_PW });
   check("admin signs in", adminLogin.status === 200 && adminLogin.data.user.role === "admin");
   const marketsRes = await admin("GET", "/api/admin/markets");
-  check("admin markets list is still 41 rows", (marketsRes.data.markets || []).length === 41, String((marketsRes.data.markets || []).length));
+  check("admin markets list is still 45 rows", (marketsRes.data.markets || []).length === 45, String((marketsRes.data.markets || []).length));
   const pageRes = await fetch(BASE + "/");
   const pageText = await pageRes.text();
   check("the served shell carries theme-v3 + the -121 stamp", pageRes.status === 200 && pageText.includes("/theme-v3.css") && pageText.includes(stamp), String(pageRes.status));

@@ -6,7 +6,7 @@
 // Proves:
 //   S. source pins: the three NZ entries in markets.js (ids,
 //      labels, country), the NZ country aliases, the stamp.
-//   U. unit: roster 41 markets / 9 countries; each NZ market
+//   U. unit: roster 45 markets / 13 countries; each NZ market
 //      carries its metro list (anchor first, 40+ areas); the
 //      typed-city resolver files NZ towns uniquely, ties bare
 //      "Wellington" with Miami (the designed outcome) and
@@ -20,10 +20,10 @@
 //   G. Sig: Admin facts built with the config-driven market
 //      name list carry an Auckland marketReach row from a
 //      listed Auckland creator, and the facts lines name it.
-//   H. server: bootstrap serves 41 markets incl. the NZ trio;
+//   H. server: bootstrap serves 45 markets incl. the NZ trio;
 //      claims land under market=Auckland (name), wellington
 //      (stable id) and Christchurch (name) with country New
-//      Zealand stored; Admin markets list is 41 rows with the
+//      Zealand stored; Admin markets list is 45 rows with the
 //      NZ rows present, country New Zealand, NOT live; the
 //      public roster surface treats a new market by the same
 //      rule as every market — below the 5-finished-profiles
@@ -71,9 +71,9 @@ check("markets.js carries the New Zealand country aliases", marketsJs.includes('
 
 // ---------- U: unit ----------
 part("U: roster + resolver + currency");
-check("roster is 41 markets", MARKETS.length === 41, String(MARKETS.length));
+check("roster is 45 markets", MARKETS.length === 45, String(MARKETS.length));
 const countries = [...new Set(MARKETS.map((m) => m.country))];
-check("country set is 9 and includes New Zealand", countries.length === 9 && countries.includes("New Zealand"), JSON.stringify(countries));
+check("country set is 13 and includes New Zealand", countries.length === 13 && countries.includes("New Zealand"), JSON.stringify(countries));
 const nz = ["Auckland", "Wellington", "Christchurch"].map((n) => MARKETS.find((m) => m.name === n));
 check("NZ ids are the stable slugs", nz.every((m) => !!m) && nz[0].id === "auckland" && nz[1].id === "wellington" && nz[2].id === "christchurch");
 check("each NZ market carries its metro list, anchor city first, 40+ areas", nz.every((m) => m.cities[0] === m.name && m.cities.length >= 40), JSON.stringify(nz.map((m) => m.cities.length)));
@@ -162,7 +162,7 @@ try {
 
   const boot = await client()("GET", "/api/bootstrap");
   const bootMarkets = boot.data.markets || [];
-  check("bootstrap serves 41 markets", bootMarkets.length === 41, String(bootMarkets.length));
+  check("bootstrap serves 45 markets", bootMarkets.length === 45, String(bootMarkets.length));
   check("bootstrap serves the NZ trio with country New Zealand",
     ["Auckland", "Wellington", "Christchurch"].every((n) => { const m = bootMarkets.find((x) => x.name === n); return !!m && m.country === "New Zealand"; }),
     JSON.stringify(bootMarkets.filter((m) => m.country === "New Zealand").map((m) => m.name)));
@@ -189,7 +189,7 @@ try {
   check("admin signs in", adminLogin.status === 200 && adminLogin.data.user.role === "admin");
   const marketsRes = await admin("GET", "/api/admin/markets");
   const rows = marketsRes.data.markets || [];
-  check("admin markets list is 41 rows", rows.length === 41, String(rows.length));
+  check("admin markets list is 45 rows", rows.length === 45, String(rows.length));
   check("NZ rows are present, country New Zealand, NOT live (founding framing like every unlaunched market)",
     ["Auckland", "Wellington", "Christchurch"].every((n) => { const r = rows.find((x) => x.name === n); return !!r && r.country === "New Zealand" && r.live === false; }),
     JSON.stringify(rows.filter((r) => r.country === "New Zealand")));

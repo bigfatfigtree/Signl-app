@@ -57,7 +57,7 @@ console.log("== Static: London the typed market + the claim surface ==");
   const london = MARKETS.find((m) => m.id === "london");
   check("markets.js: London entry is id london, name London, country United Kingdom", !!london && london.name === "London" && london.country === "United Kingdom", JSON.stringify(london && { id: london.id, country: london.country }));
   check("markets.js: London carries its metro city list (London + Croydon at least)", !!london && london.cities.includes("London") && london.cities.includes("Croydon") && london.cities.length >= 15, london && String(london.cities.length));
-  check("markets.js: the roster is 41 markets (38 when -86 shipped, London already counted; +3 NZ markets in Build -117)", MARKETS.length === 41, String(MARKETS.length));
+  check("markets.js: the roster is 45 markets (38 when -86 shipped, London already counted; +3 NZ markets in Build -117; +4 expansion markets in Builds -127/-128)", MARKETS.length === 45, String(MARKETS.length));
 }
 const appJs = fs.readFileSync(path.join(root, "public", "app.js"), "utf8");
 check("claim photos: london is in CLAIM_CITY_PHOTOS", /CLAIM_CITY_PHOTOS = \[[^\]]*"london"/.test(appJs));
@@ -139,7 +139,7 @@ const admin = new Client(BASE);
   // forming, like every unlaunched market.
   const cfg = (JSON.parse(fs.readFileSync(DB, "utf8")) || {})["config:markets"];
   check("flags: no live flag is stored for London (it starts NOT live, founding framing)", !cfg || !cfg.flags || !cfg.flags["London"], JSON.stringify(cfg && cfg.flags));
-  check("bootstrap: 41 markets total", (boot.markets || []).length === 41, String((boot.markets || []).length));
+  check("bootstrap: 45 markets total", (boot.markets || []).length === 45, String((boot.markets || []).length));
 }
 
 async function claimRegister(email, handle, market, extra = {}) {

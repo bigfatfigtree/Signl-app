@@ -337,11 +337,11 @@ const MARKETS = [
     // Dún Laoghaire coast, Bray/Greystones, and the Kildare and
     // Meath commuter towns). Dublin carries the EUR currency
     // override in the London shape (Build -89 pattern): €45
-    // paid floor. No EUR founding book exists yet, so
-    // planBookFor("EUR") falls back to the USD book — Dublin
-    // money is Recorded-class only until Jeff approves an EUR
-    // price book, the same posture NZ and Canada shipped with
-    // before Build -118. No market is live for money (Jeff,
+    // paid floor. Build -128 the same day added the EUR
+    // founding book (EUR_PLANS below), so Dublin prices from
+    // its own book; money is still Recorded-class only — no
+    // Stripe prices exist for the EUR book. No market is live
+    // for money (Jeff,
     // 2026-11-03): Dublin starts NOT live like every unlaunched
     // market — founding sign-ups only.
     id: "dublin",
@@ -360,14 +360,14 @@ const MARKETS = [
     // is in, ranked by speed to sign-ups only). Each is ONE
     // market containing its metro and commuter towns, the
     // London pattern. Currency overrides mirror the London
-    // shape: Amsterdam EUR with a €45 floor (no EUR book yet —
-    // planBookFor falls back to the USD book, Recorded-class
-    // only until an EUR book is approved); Copenhagen DKK with
-    // a kr 300 floor (Denmark is not in the euro — the floor is
-    // the $50 canon at a clean local point; no DKK book exists,
-    // same fallback posture); Mexico City MXN with a $900 floor
-    // (the $50 canon at a clean local point; no MXN book
-    // exists, same fallback posture). All three start NOT live
+    // shape: Amsterdam EUR with a €45 floor; Copenhagen DKK
+    // with a kr 300 floor (Denmark is not in the euro — the
+    // floor is the $50 canon at a clean local point); Mexico
+    // City MXN with a $900 floor (same clean-point pattern).
+    // Build -128 the same day added the EUR, DKK and MXN
+    // founding books (below), so all three price from their
+    // own books; money stays Recorded-class only — no Stripe
+    // prices exist for these books. All three start NOT live
     // like every unlaunched market — founding sign-ups only,
     // payment gates untouched. The roster is 45 markets in 13
     // countries.
@@ -412,6 +412,14 @@ const MARKETS = [
     name: "Paris",
     label: "Paris, France",
     country: "France",
+    // Build -128 (Jeff, 2026-11-04): Paris carries the EUR
+    // override like Dublin and Amsterdam — €45 paid floor,
+    // EUR_PLANS founding book. Paris shipped in the roster
+    // without an override (USD default) until the expansion
+    // ruling made currency config part of the market adds.
+    currency: "EUR",
+    currencySymbol: "€",
+    paidFloor: 45,
     cities: ["Paris", "Saint-Denis", "Boulogne-Billancourt", "Argenteuil", "Montreuil", "Nanterre", "Créteil", "Versailles", "Colombes", "Asnières-sur-Seine", "Aulnay-sous-Bois", "Rueil-Malmaison", "Aubervilliers", "Champigny-sur-Marne", "Issy-les-Moulineaux", "Levallois-Perret", "Noisy-le-Grand", "Neuilly-sur-Seine", "Antony", "Cergy", "Saint-Germain-en-Laye"],
   },
   {
@@ -532,6 +540,8 @@ function normalizeMarketName(name) {
 // currency code, symbol, and paid floor. Overrides on file
 // (Build -118): London + Manchester GBP £40; Toronto + Montreal
 // CAD $70; Auckland + Wellington + Christchurch NZD $90.
+// (Builds -127/-128): Dublin + Paris + Amsterdam EUR €45;
+// Copenhagen DKK kr 300; Mexico City MXN $900.
 const DEFAULT_CURRENCY = { code: "USD", symbol: "$", paidFloor: 50 };
 function currencyForMarket(name) {
   if (!name) return { ...DEFAULT_CURRENCY };
@@ -902,7 +912,189 @@ const CAD_PLANS = [
     ],
   },
 ];
-const PLAN_BOOK = { USD: PLANS, GBP: GBP_PLANS, NZD: NZD_PLANS, CAD: CAD_PLANS };
+// Build -128 (Jeff, 2026-11-04, expansion ruling: "Currency:
+// do it properly NOW, per city, as part of the market adds"):
+// the EUR, DKK and MXN founding books, converted from the USD
+// canon at the spot rates of 2026-11-03/04 and rounded to
+// clean local price points the London way (tiers end in 9,
+// just under the straight conversion; floor and credit land
+// on clean points).
+//   EUR — USD/EUR 0.895 (ECB reference, 2026-11-03): $50
+//   floor -> EUR 45 (44.8 at rate); $100 credit -> EUR 85;
+//   tiers $199/$349/$699 -> EUR 179 / 309 / 619 (178.1 /
+//   312.4 / 625.6 at rate). First months: 94 / 224 / 534.
+//   Serves Dublin, Paris and Amsterdam.
+//   DKK — USD/DKK 6.685 (ECB reference, 2026-11-03):
+//   Denmark is NOT in the euro, so Copenhagen's proper local
+//   book is kroner: $50 floor -> kr 300 (334.3 at rate, the
+//   clean point under); $100 credit -> kr 650; tiers ->
+//   kr 1,299 / 2,299 / 4,599 (1,330.3 / 2,333.1 / 4,672.6 at
+//   rate). First months: 649 / 1,649 / 3,949.
+//   MXN — USD/MXN 18.6 (2026-11-03): $50 floor -> $900
+//   (930 at rate, the clean point under); $100 credit ->
+//   $1,750; tiers -> $3,699 / 6,449 / 12,999 (3,701.4 /
+//   6,491.4 / 13,001.4 at rate). First months: 1,949 /
+//   4,699 / 11,249.
+// Same contract as every non-USD book: plan ids are shared
+// across books, prices are ledger and Admin data, and NO
+// Stripe prices exist for these books or may be created from
+// them — no market is live for money (Jeff, 2026-11-03), and
+// EUR / DKK / MXN money enters as Recorded-class only until a
+// local partner rail exists.
+const EUR_PLANS = [
+  {
+    id: "self-service",
+    name: "Self-Service",
+    priceMonthly: 179,
+    foundingCredit: 85,
+    firstMonthPriceMonthly: 94,
+    minMonths: 3,
+    visitsPerMonth: 5,
+    vatNote: "Plus VAT where it applies.",
+    features: [
+      "Book from the ranked local roster",
+      "5 creator visits a month",
+      "Comped visits, or paid at the creator's listed rate",
+      "Counted results on every visit",
+    ],
+  },
+  {
+    id: "growth",
+    name: "Growth",
+    priceMonthly: 309,
+    foundingCredit: 85,
+    firstMonthPriceMonthly: 224,
+    minMonths: 3,
+    visitsPerMonth: 10,
+    vatNote: "Plus VAT where it applies.",
+    features: [
+      "Everything in Self-Service",
+      "10 creator visits a month",
+      "Built for paid work and reuse",
+      "License library with renewal tracking",
+      "Priority access to top local creators",
+    ],
+  },
+  {
+    id: "managed",
+    name: "Managed",
+    priceMonthly: 619,
+    foundingCredit: 85,
+    firstMonthPriceMonthly: 534,
+    minMonths: 3,
+    visitsPerMonth: 20,
+    vatNote: "Plus VAT where it applies.",
+    features: [
+      "Everything in Growth",
+      "20 creator visits a month",
+      "We run the campaigns for you",
+      "Monthly results review with your team",
+    ],
+  },
+];
+const DKK_PLANS = [
+  {
+    id: "self-service",
+    name: "Self-Service",
+    priceMonthly: 1299,
+    foundingCredit: 650,
+    firstMonthPriceMonthly: 649,
+    minMonths: 3,
+    visitsPerMonth: 5,
+    vatNote: "Plus VAT (moms) where it applies.",
+    features: [
+      "Book from the ranked local roster",
+      "5 creator visits a month",
+      "Comped visits, or paid at the creator's listed rate",
+      "Counted results on every visit",
+    ],
+  },
+  {
+    id: "growth",
+    name: "Growth",
+    priceMonthly: 2299,
+    foundingCredit: 650,
+    firstMonthPriceMonthly: 1649,
+    minMonths: 3,
+    visitsPerMonth: 10,
+    vatNote: "Plus VAT (moms) where it applies.",
+    features: [
+      "Everything in Self-Service",
+      "10 creator visits a month",
+      "Built for paid work and reuse",
+      "License library with renewal tracking",
+      "Priority access to top local creators",
+    ],
+  },
+  {
+    id: "managed",
+    name: "Managed",
+    priceMonthly: 4599,
+    foundingCredit: 650,
+    firstMonthPriceMonthly: 3949,
+    minMonths: 3,
+    visitsPerMonth: 20,
+    vatNote: "Plus VAT (moms) where it applies.",
+    features: [
+      "Everything in Growth",
+      "20 creator visits a month",
+      "We run the campaigns for you",
+      "Monthly results review with your team",
+    ],
+  },
+];
+const MXN_PLANS = [
+  {
+    id: "self-service",
+    name: "Self-Service",
+    priceMonthly: 3699,
+    foundingCredit: 1750,
+    firstMonthPriceMonthly: 1949,
+    minMonths: 3,
+    visitsPerMonth: 5,
+    vatNote: "Plus IVA where it applies.",
+    features: [
+      "Book from the ranked local roster",
+      "5 creator visits a month",
+      "Comped visits, or paid at the creator's listed rate",
+      "Counted results on every visit",
+    ],
+  },
+  {
+    id: "growth",
+    name: "Growth",
+    priceMonthly: 6449,
+    foundingCredit: 1750,
+    firstMonthPriceMonthly: 4699,
+    minMonths: 3,
+    visitsPerMonth: 10,
+    vatNote: "Plus IVA where it applies.",
+    features: [
+      "Everything in Self-Service",
+      "10 creator visits a month",
+      "Built for paid work and reuse",
+      "License library with renewal tracking",
+      "Priority access to top local creators",
+    ],
+  },
+  {
+    id: "managed",
+    name: "Managed",
+    priceMonthly: 12999,
+    foundingCredit: 1750,
+    firstMonthPriceMonthly: 11249,
+    minMonths: 3,
+    visitsPerMonth: 20,
+    vatNote: "Plus IVA where it applies.",
+    features: [
+      "Everything in Growth",
+      "20 creator visits a month",
+      "We run the campaigns for you",
+      "Monthly results review with your team",
+    ],
+  },
+];
+const PLAN_BOOK = { USD: PLANS, GBP: GBP_PLANS, NZD: NZD_PLANS, CAD: CAD_PLANS, EUR: EUR_PLANS, DKK: DKK_PLANS, MXN: MXN_PLANS };
 // London district race (Build -106, Tier 3 item 15b): the five
 // Tier 1 districts from the London launch strategy, each mapped
 // to its component areas exactly as they exist in the London

@@ -115,7 +115,7 @@ const buildJs = fs.readFileSync(path.join(ROOT, "netlify/functions/lib/build.js"
 const indexHtml = fs.readFileSync(path.join(ROOT, "public/index.html"), "utf8");
 check("stamp: BUILD_ID is 2026.11.04-126 on server and shell", buildJs.includes('BUILD_ID = "2026.11.04-126"') && indexHtml.includes("2026.11.04-126"));
 
-check("the roster is 41 markets (37 when -52 shipped; Miami restored in Build -59; the 3 NZ markets added in Build -117)", MARKETS.length === 41, String(MARKETS.length));
+check("the roster is 45 markets (37 when -52 shipped; Miami restored in Build -59; the 3 NZ markets added in Build -117)", MARKETS.length === 45, String(MARKETS.length));
 const short = MARKETS.filter((m) => m.cities.length < 10).map((m) => m.name);
 check("every market carries a real metro list; the only short list is Dubai (city-emirate, 3)", short.length === 1 && short[0] === "Dubai", JSON.stringify(short));
 const nash = MARKETS.find((m) => m.id === "nashville");

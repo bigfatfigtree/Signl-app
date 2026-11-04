@@ -196,7 +196,7 @@ try {
   const homeText = await home.text();
   check("live: GET / serves the -51 stamp", home.status === 200 && homeText.includes("2026.11.04-126"));
   const boot = await (await fetch(BASE + "/api/bootstrap")).json();
-  check("live: bootstrap reports 41 markets (X-01 app side stays data-driven; 37 -> 38 when Miami was restored in Build -59, 38 -> 41 when the NZ markets were added in Build -117)", boot && Array.isArray(boot.markets) && boot.markets.length === 41,
+  check("live: bootstrap reports 45 markets (X-01 app side stays data-driven; 37 -> 38 when Miami was restored in Build -59, 38 -> 41 when the NZ markets were added in Build -117)", boot && Array.isArray(boot.markets) && boot.markets.length === 45,
     JSON.stringify(boot && boot.markets && boot.markets.length));
 } catch (e) {
   check("live block completed without exception", false, String(e && e.message || e));

@@ -13,7 +13,7 @@
 //   U. unit: currencyForMarket resolves GBP / CAD / NZD with
 //      the pinned floors (London AND Manchester £40, Canada
 //      CA$70, NZ NZ$90) and Nashville stays USD $50; the roster
-//      did not move (41 markets / 9 countries; Canada is the
+//      did not move (45 markets / 13 countries; Canada is the
 //      two markets already on it — Toronto and Montreal — no
 //      market was added by a currency build); the converted
 //      books are pinned to the exact table: at USD/NZD 1.78
@@ -32,7 +32,7 @@
 //      stamped NZD, Toronto Growth CA$489 stamped CAD,
 //      Nashville Growth $349 USD as the control); the Admin
 //      Money view carries all four plan books on separate
-//      lines; the Admin markets list is still 41 rows.
+//      lines; the Admin markets list is still 45 rows.
 //
 // Run: node scripts/verify-build118.mjs
 
@@ -85,8 +85,8 @@ check("Canada resolves CAD / $ / floor 70 in both markets on the roster",
 check("New Zealand resolves NZD / $ / floor 90 in all three markets",
   ["Auckland", "Wellington", "Christchurch"].every((n) => { const c = cur(n); return c.code === "NZD" && c.symbol === "$" && c.paidFloor === 90; }) && paidFloorForMarket("Auckland") === 90);
 check("the USD control is unmoved: Nashville USD / $ / floor 50", (() => { const c = cur("Nashville"); return c.code === "USD" && c.symbol === "$" && c.paidFloor === 50; })());
-check("roster did not move: 41 markets, 9 countries, Canada is exactly Toronto + Montreal (pre-existing)",
-  MARKETS.length === 41 && new Set(MARKETS.map((m) => m.country)).size === 9 &&
+check("roster did not move: 45 markets, 13 countries, Canada is exactly Toronto + Montreal (pre-existing)",
+  MARKETS.length === 45 && new Set(MARKETS.map((m) => m.country)).size === 13 &&
   JSON.stringify(MARKETS.filter((m) => m.country === "Canada").map((m) => m.name).sort()) === JSON.stringify(["Montreal", "Toronto"]),
   JSON.stringify(MARKETS.filter((m) => m.country === "Canada").map((m) => m.name)));
 check("no UK market resolves to USD anywhere in the roster",
@@ -151,7 +151,7 @@ try {
   if (!up) throw new Error("server did not start");
 
   const boot = await client()("GET", "/api/bootstrap");
-  check("bootstrap still serves 41 markets", (boot.data.markets || []).length === 41, String((boot.data.markets || []).length));
+  check("bootstrap still serves 45 markets", (boot.data.markets || []).length === 45, String((boot.data.markets || []).length));
 
   // Admin first: rate-range reads need APPROVED creators (the
   // Build -89 pattern — approve through the review endpoint).
@@ -208,7 +208,7 @@ try {
     !!books.GBP && books.GBP[0].priceMonthly === 149 && !!books.USD && books.USD[1].priceMonthly === 349);
   const marketsRes = await admin("GET", "/api/admin/markets");
   const rows = marketsRes.data.markets || [];
-  check("admin markets list is still 41 rows (no market added by a currency build)", rows.length === 41, String(rows.length));
+  check("admin markets list is still 45 rows (no market added by a currency build)", rows.length === 45, String(rows.length));
 } finally {
   server.kill();
   try { fs.unlinkSync(DB); } catch (e) { /* already gone */ }
