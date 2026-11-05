@@ -128,7 +128,7 @@ check("payment gates stay shut: founding Stripe prices still resolve only from u
 // availability / "Standing hours", the creatorStanding account
 // status fields) are preserved byte-for-byte.
 part("S2: Build -120 naming");
-check("stamp is 2026.11.04-126", stamp === "2026.11.04-126", String(stamp));
+check("stamp is 2026.11.04-129", stamp === "2026.11.04-129", String(stamp));
 const ABSENT_120 = ["Standing points", "Your Standing", "your Standing", "Standing trend",
   "Standing moves you up", "How does Standing work", "Standing — you reply fast",
   'wsHead("Standing"', 'kpiCard("Standing"', "Comped visits build your Standing",

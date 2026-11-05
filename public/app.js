@@ -6019,6 +6019,7 @@ function sigOpCapabilities() {
   ];
   return [
     ST("Find offers that fit you, with the reason, and apply or accept after a summary.", "Buscar ofertas que te convienen, con el motivo, y aplicar o aceptar tras un resumen."),
+    ST("Change your home market right here if your invite or sign-up put you in the wrong one; your audience numbers move with you.", "Cambiar tu mercado principal aquí mismo si tu invitación o registro te puso en el equivocado; tus números de audiencia se mueven contigo."),
     ST("Set you up from your Instagram handle: name and audience pulled for your confirmation, the rest asked here.", "Configurarte desde tu usuario de Instagram: nombre y audiencia traídos para tu confirmación, lo demás se pregunta aquí."),
     ST("Finish your profile with me, one gap at a time, saved in one go.", "Terminar tu perfil conmigo, un dato a la vez, guardado de una vez."),
     ST("Track your numbers: posts live, on-time record, day 7 / 14 / 30, Momentum.", "Seguir tus números: publicaciones, puntualidad, día 7 / 14 / 30, Momentum."),
@@ -6054,6 +6055,7 @@ function sigOpIntent(norm) {
     return null;
   }
   if (u.role === "creator") {
+    if (has("change my market", "move my market", "switch my market", "wrong market", "my market is wrong", "im in the wrong market", "i am in the wrong market", "cambiar mi mercado", "mi mercado esta mal", "mercado equivocado")) return async () => sigC129MarketStart();
     if (has("payout setup", "set up payouts", "what will stripe ask", "1099", "payout paperwork")) return async () => sigC98Payout();
     if (has("starting point", "starting rate", "starting default")) return async () => sigC98Rates();
     if (has("creator terms", "terms in plain words")) return async () => sigC98Terms();
@@ -6305,6 +6307,67 @@ async function sigOpStep(text, norm) {
   if (f.id === "c1") return sigC1Step(f, text, norm);
   if (f.id === "c2") return sigC2Step(f, text, norm);
   if (f.id === "b96avail") return sigB96AvailStep(f, text, norm);
+  if (f.id === "c129market") return sigC129MarketStep(f, text, norm);
+}
+
+// ---- Build -129: Creator Sig changes the creator's own market ----
+// The Zamp Camp fix, in chat: an invite or sign-up filed the
+// creator under the wrong market and the profile said email
+// support. Sig runs the same confirm-first shape as every other
+// operator write: name the market, name the home city inside
+// it, confirm, then POST /me/market (the route the Profile
+// control uses). Audience numbers move with the record on the
+// server; the status never changes, so there is no re-approval.
+function sigC129MarketStart() {
+  const u = state.user;
+  sigOpSay(ST(`Your market is ${u.market} right now. Which market should it be? Type the market name, like Charlotte or London. I will ask your home city there before anything changes.`, `Tu mercado ahora es ${u.market}. ¿Cuál debería ser? Escribe el nombre del mercado, como Charlotte o Londres. Te preguntaré tu ciudad antes de cambiar nada.`));
+  state.sigFlow = { id: "c129market", step: "market", data: {} };
+}
+async function sigC129MarketStep(f, text, norm) {
+  const markets = (state.boot && state.boot.markets) || [];
+  if (f.step === "market") {
+    const t = String(text || "").trim();
+    const exact = markets.find((x) => sigOpNorm(x.name) === sigOpNorm(t) || sigOpNorm(x.label || "") === sigOpNorm(t));
+    const partial = markets.filter((x) => sigOpNorm(x.name).includes(sigOpNorm(t)) || sigOpNorm(t).includes(sigOpNorm(x.name)));
+    const match = exact || (partial.length === 1 ? partial[0] : null);
+    if (!match) {
+      sigOpSay(ST("I could not match that to a SIGNL market. Type the market name as it appears in the list, for example Charlotte, Nashville or London. Or say never mind to stop.", "No pude relacionar eso con un mercado de SIGNL. Escribe el nombre del mercado, por ejemplo Charlotte, Nashville o Londres. O di cancelar para parar."), [sigOpCancelAction()]);
+      return;
+    }
+    if (match.name === state.user.market) {
+      state.sigFlow = null;
+      sigOpSay(ST(`You are already in ${match.name}, so there is nothing to change.`, `Ya estás en ${match.name}, así que no hay nada que cambiar.`), sigOpHomeActions());
+      return;
+    }
+    f.data.market = match.name;
+    f.step = "city";
+    state.sigFlow = f;
+    const cities = match.cities || [];
+    sigOpSay(ST(`Got it: ${match.name}. Which city in ${match.name} is home?${cities.length && cities.length <= 14 ? ` It has to be one of these: ${cities.join(", ")}.` : " Type your home city there."}`, `Perfecto: ${match.name}. ¿Qué ciudad de ${match.name} es tu casa? Escríbela.`));
+    return;
+  }
+  if (f.step === "city") {
+    const t = String(text || "").trim();
+    const m = markets.find((x) => x.name === f.data.market);
+    const cities = (m && m.cities) || [];
+    const city = cities.find((c) => sigOpNorm(c) === sigOpNorm(t)) || cities.find((c) => sigOpNorm(c).includes(sigOpNorm(t)) && sigOpNorm(t).length >= 3);
+    if (!city) {
+      sigOpSay(ST(`That city is not in the ${f.data.market} market. It has to be one of: ${cities.join(", ")}.`, `Esa ciudad no está en el mercado ${f.data.market}. Tiene que ser una de: ${cities.join(", ")}.`), [sigOpCancelAction()]);
+      return;
+    }
+    const market = f.data.market;
+    const fromMarket = state.user.market;
+    state.sigFlow = null;
+    sigOpAsk(ST(`Move your market from ${fromMarket} to ${market}, home city ${city}? Your audience numbers move with you, and you do not need a new approval.`, `¿Mover tu mercado de ${fromMarket} a ${market}, con ciudad ${city}? Tus números de audiencia se mueven contigo, y no necesitas una nueva aprobación.`), [
+      { label: ST("Yes, move my market", "Sí, mover mi mercado"), primary: true, run: async () => sigOpPick(ST("Yes, move my market", "Sí, mover mi mercado"), async () => {
+        try {
+          const data = await api("POST", "/me/market", { market, city });
+          state.user = data.user;
+          sigOpSay(ST(`Done. Your market is now ${data.user.market}, home city ${data.user.city}. Businesses there find you at the local share you reported for that market; add or update it any time in your Profile.`, `Listo. Tu mercado ahora es ${data.user.market}, ciudad ${data.user.city}. Los negocios de ahí te encuentran con la parte local que reportaste para ese mercado; agrégala o actualízala cuando quieras en tu Perfil.`), [{ label: ST("Open my profile", "Abrir mi perfil"), run: async () => go("dashboard", "Profile") }]);
+        } catch (e) { sigOpSay(ST("That move did not save", "Ese cambio no se guardó") + `: ${e.message}`, sigOpHomeActions()); }
+      }) },
+    ]);
+  }
 }
 
 // ---------- Sig result cards (Build -78) ----------
@@ -8384,6 +8447,7 @@ function renderClaimWelcome() {
     <div class="c85-card">
       <div id="qc-ticket"></div>
       ${lanes}
+      ${resolved ? `<p class="small muted" style="margin:0 0 12px">${T("Your invite picked the market shown with your name above. If your audience is really somewhere else, you pick your real home market on the next screen, and you can change it any time later in your profile.", "Tu invitación eligió el mercado que aparece junto a tu nombre. Si tu audiencia está en otro lugar, eliges tu mercado real en la siguiente pantalla, y puedes cambiarlo cuando quieras en tu perfil.")}</p>` : ""}
       ${handleBlock}
       <button class="btn" type="button" style="width:100%" onclick="return claimWelcomeGo()">${T("Claim my page", "Reclamar mi página")}</button>
       <p class="small muted" style="margin:10px 0 0;text-align:center">${T("Free for creators. Takes a minute.", "Gratis para creadores. Toma un minuto.")}</p>
@@ -8433,7 +8497,7 @@ function renderClaimFacts() {
       <div id="c85-facts-warn"></div>
       <div class="c85-fact">
         <p class="fg-kicker">${T("Your city", "Tu ciudad")}</p>
-        <div class="field"><label>${T("Your market", "Tu mercado")}</label><input id="c85-market-search" placeholder="${T("Search markets, for example: Dubai", "Busca mercados, por ejemplo: Dubái")}" oninput="filterClaimMarketOptions()" style="margin-bottom:6px"><select id="c85-market" onchange="syncClaimMarketChoice()">${marketOptions(pfMarket, true)}</select><p id="c85-dubai-note" class="small" style="display:none">Dubai note: the UAE requires an Advertiser Permit before your first paid or gifted post. You do not need it to claim your page, and SIGNL walks founding creators through it.</p><p id="c85-london-note" class="small" style="display:none">London note: UK rules count a gifted or paid post as an ad, so every post carries a clear ad label. You do not need anything to claim your page, and the label is built into every SIGNL post.</p></div>
+        <div class="field"><label>${T("Your market", "Tu mercado")}</label><input id="c85-market-search" placeholder="${T("Search markets, for example: Dubai", "Busca mercados, por ejemplo: Dubái")}" oninput="filterClaimMarketOptions()" style="margin-bottom:6px"><select id="c85-market" onchange="syncClaimMarketChoice()">${marketOptions(pfMarket, true)}</select><p class="small muted" style="margin:6px 0 0">${T("Your invite picked this market. If your audience is really somewhere else, pick the market where most of your followers live. You can change it later, any time, in your profile.", "Tu invitación eligió este mercado. Si tu audiencia está en otro lugar, elige el mercado donde vive la mayoría de tus seguidores. Puedes cambiarlo después, cuando quieras, en tu perfil.")}</p><p id="c85-dubai-note" class="small" style="display:none">Dubai note: the UAE requires an Advertiser Permit before your first paid or gifted post. You do not need it to claim your page, and SIGNL walks founding creators through it.</p><p id="c85-london-note" class="small" style="display:none">London note: UK rules count a gifted or paid post as an ad, so every post carries a clear ad label. You do not need anything to claim your page, and the label is built into every SIGNL post.</p></div>
         <div class="field" id="c85-city-wrap" style="margin-bottom:0"><label>${T("Your home city", "Tu ciudad")}</label><select id="c85-city" onchange="claimLocalLabelSync()">${cityOptions(pfMarket === unlistedLabel() ? "Virginia Beach" : pfMarket)}</select></div>
         <div class="field" id="c85-area-wrap" style="display:none;margin-bottom:0"><label>${T("Your area in London", "Tu zona en Londres")}</label><input id="c85-area-search" placeholder="${T("Search areas, for example: Brixton", "Busca zonas, por ejemplo: Brixton")}" oninput="filterAreaOptions('c85-area-search','c85-area')" style="margin-bottom:6px"><select id="c85-area" onchange="claimLocalLabelSync()">${areaOptions("London")}</select><p class="small muted">${T("London is one market. Your home city stays London, and your area is saved on your record.", "Londres es un solo mercado. Tu ciudad queda como Londres y tu zona se guarda en tu registro.")}</p></div>
         <div id="c85-custom-wrap" style="display:none">
@@ -9954,7 +10018,7 @@ function renderPending() {
     </div>` : ""}
     ${isCreator ? `
     <div style="text-align:left;margin-top:16px">
-      <p class="small" style="margin:0"><a href="#" onclick="return togglePendingMarket(event)"><strong>Wrong market?</strong></a> <span class="muted">If ${place} is not where your audience is, move your application now, while it is still in review. Once a decision lands, your market is set.</span></p>
+      <p class="small" style="margin:0"><a href="#" onclick="return togglePendingMarket(event)"><strong>Wrong market?</strong></a> <span class="muted">If ${place} is not where your audience is, move your application now, while it is still in review. You can also change your market later, any time, from your Profile.</span></p>
       <div id="pm-wrap" style="display:none;margin-top:10px">
         <div id="pm-error"></div>
         <div class="field"><label>Your market</label><input id="pm-market-search" placeholder="Search markets, for example: Raleigh" oninput="filterPendingMarketOptions()" style="margin-bottom:6px"><select id="pm-market" onchange="syncPendingMarketChoice()">${marketOptions(u.market === unlistedLabel() ? "" : u.market, true)}</select></div>
@@ -13967,6 +14031,10 @@ function profileRowSync(name) {
 
 function creatorProfileHtml(u) {
   const c = u.creator || {};
+  // Build -129: the one-time confirmation from a market save
+  // rides here, so the re-render after saving still shows it.
+  const marketFlash = state.profileMarketFlash || "";
+  if (state.profileMarketFlash) state.profileMarketFlash = "";
   const allCatsOn = state.boot.creatorCategories.length > 0 && state.boot.creatorCategories.every((x) => (c.categories || []).includes(x));
   const allCompsOn = state.boot.compCategories.length > 0 && state.boot.compCategories.every((x) => (c.compCategories || []).includes(x));
   const cats = `<label><input type="checkbox" id="p-cat-all" ${allCatsOn ? "checked" : ""} onchange="profileAllToggle('p-cat', this)"> All</label>` + state.boot.creatorCategories.map((x) => `<label><input type="checkbox" name="p-cat" value="${esc(x)}" onchange="profileRowSync('p-cat');proHintSync('p')" ${c.categories && c.categories.includes(x) ? "checked" : ""}> ${esc(x)}</label>`).join("");
@@ -14029,7 +14097,18 @@ function creatorProfileHtml(u) {
       <div id="my-score"><span class="badge info">Loading score...</span></div>
     </div>
     <p class="small muted">Your Local Impact Score is computed only from your stored profile and your real visit history on SIGNL. Both scores run 0 to 100. Reliability starts at a neutral 50 before you have any visits; your real visits move it from there. Your local audience figure shows as <strong>Self-reported</strong> until Instagram verification is available: self-reported means it is your own number, typed by you, not yet checked against Instagram.</p>
-    <p class="small muted">Your market is set from your application and cannot be changed here. Wrong market? Email hello@joinsignl.com and we will move it for you.</p>
+    <div class="field" style="margin:12px 0">
+      <label>${T("Your market", "Tu mercado")}</label>
+      ${marketFlash ? `<div class="notice blue" style="margin:0 0 8px">${esc(marketFlash)}</div>` : ""}
+      <p class="small muted" style="margin:0 0 8px">${T("Your home market: the place most of your audience lives. Wrong one? Pick the right market and your home city in it, then save. Your audience numbers move with you, and you never need a new approval.", "Tu mercado principal: donde vive la mayoría de tu audiencia. ¿No es el correcto? Elige el mercado correcto y tu ciudad en él, y guarda. Tus números de audiencia se mueven contigo, y nunca necesitas una nueva aprobación.")}</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <select id="p-market" onchange="return syncProfileMarketCities()">${marketOptions(u.market === unlistedLabel() ? "" : u.market)}</select>
+        <select id="p-market-city">${cityOptions(u.market === unlistedLabel() ? "Virginia Beach" : u.market, u.city || "")}</select>
+        <button type="button" class="btn small-btn" onclick="return saveProfileMarket()">${T("Save market", "Guardar mercado")}</button>
+      </div>
+      <p class="small" id="p-market-note" style="margin:6px 0 0"></p>
+      <p class="small muted" style="margin:6px 0 0">${T("If your city is not in a SIGNL market yet, email hello@joinsignl.com and we will set you up.", "Si tu ciudad aún no está en un mercado de SIGNL, escribe a hello@joinsignl.com y te ayudamos.")}</p>
+    </div>
     ${u.status === "approved" && c.handle ? `
     <div class="field"><label>Your public profile</label>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -14369,6 +14448,37 @@ async function doUpdateCreator(e) {
       try { errEl.scrollIntoView({ behavior: "smooth", block: "start" }); } catch (e) { errEl.scrollIntoView(); }
       try { errEl.focus({ preventScroll: true }); } catch (e) { /* focus is an enhancement */ }
     }
+  }
+  return false;
+}
+
+// Build -129: the Profile "Your market" control. The city
+// picker follows the market picker; saving posts to the same
+// /me/market route the pending screen uses (the server allows
+// approved creators since Build -129), then re-renders with a
+// confirmation carried in state.profileMarketFlash.
+function syncProfileMarketCities() {
+  const mSel = document.getElementById("p-market");
+  const cSel = document.getElementById("p-market-city");
+  if (mSel && cSel) cSel.innerHTML = cityOptions(mSel.value, "");
+  return false;
+}
+async function saveProfileMarket() {
+  const note = document.getElementById("p-market-note");
+  const mSel = document.getElementById("p-market");
+  const cSel = document.getElementById("p-market-city");
+  if (!mSel) return false;
+  if (note) note.textContent = T("Saving...", "Guardando...");
+  try {
+    const data = await api("POST", "/me/market", { market: mSel.value, city: cSel ? cSel.value : "" });
+    state.user = data.user;
+    const nu = data.user;
+    state.profileMarketFlash = (nu.creator && (nu.creator.localAudiencePct === null || nu.creator.localAudiencePct === undefined))
+      ? `Saved. Your market is now ${nu.market}. Add your ${nu.market} local audience % in the form below so businesses there can find you.`
+      : `Saved. Your market is now ${nu.market}, and your audience numbers moved with you.`;
+    render();
+  } catch (e) {
+    if (note) note.innerHTML = `<span style="color:#B3261E">${esc(e.message)}</span>`;
   }
   return false;
 }

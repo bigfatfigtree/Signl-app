@@ -18190,7 +18190,7 @@ async function route(event) {
     }
   }
 
-  // ---------- self-serve market fix (pending creators) ----------
+  // ---------- self-serve market fix (creators) ----------
   // Audit F2 (2026-10-22): the claim's market select defaults to
   // Hampton Roads when a claim link carried no market, and the
   // market was never editable afterward, so a wrong-market claim
@@ -18198,22 +18198,62 @@ async function route(event) {
   // screen mentioned. While an application is still PENDING the
   // creator can move it here, under exactly registration's rules:
   // a canonical market plus a home city inside it, or the
-  // not-listed typed-city path. Once a decision lands the market
-  // is set: this route refuses, and the profile points approved
-  // creators at hello@joinsignl.com instead. The change is stamped
+  // not-listed typed-city path. The change is stamped
   // on the record (marketChangedAt) and logged as an event; queue
   // position and founding standing derive from the record, so
   // they follow the new market on their own.
+  // Build -129 (Jeff, 2026-11-04, the Zamp Camp case: an approved
+  // Charlotte creator filed under Tampa by her invite link, told
+  // by her profile to email support): APPROVED creators move
+  // their market here too, from their Profile, any time. The
+  // approved path is canonical markets only (an approved record
+  // never drops back to not-listed through this route), the
+  // status is never touched (no re-approval), and every
+  // audience number is preserved across the move: the share
+  // already reported for the new home market becomes the home
+  // share, and the old home share rides along as an other-market
+  // entry for the old market, so the listing there survives on
+  // the same number under the usual multi-market rules.
   if (method === "POST" && seg[0] === "me" && seg[1] === "market") {
     if (user.role !== "creator" || !user.creator) return err(403, "Creators only");
-    if (user.status !== "pending") return err(403, "Your application has already been decided, so your market is set. Email hello@joinsignl.com and we will help you move it.");
+    if (user.status !== "pending" && user.status !== "approved") return err(403, "This account cannot change its market here. Email hello@joinsignl.com and we will help you move it.");
     const b = parseBody(event);
     const fromMarket = user.market;
     const fromCity = user.city || "";
+    const via = user.status === "approved" ? "profile_self_serve" : "pending_self_serve";
     const unlisted = b.market === UNLISTED;
     const market = unlisted ? { name: UNLISTED, cities: [] } : marketByName(b.market || "");
     if (!market) return err(400, "Choose one of the SIGNL markets");
+    // Build -129: the approved-move audience preservation, run
+    // by both filing branches below (an explicit canonical pick
+    // and the one-tap candidate pick) before the record's
+    // market is overwritten. No-op for pending records and for
+    // a same-market city change.
+    const preserveAudienceForMove = () => {
+      if (user.status !== "approved" || !user.creator || market.name === user.market) return;
+      const c = user.creator;
+      const prior = normalizeAudienceMarkets(c.audienceMarkets, user.market);
+      const newHomeEntry = prior.find((e) => e.market === market.name);
+      const rest = prior.filter((e) => e.market !== market.name);
+      if (typeof c.localAudiencePct === "number" && c.localAudiencePct > 0 && user.market !== UNLISTED) {
+        rest.push({ market: normalizeMarketName(user.market), pct: c.localAudiencePct });
+      }
+      c.audienceMarkets = normalizeAudienceMarkets(rest, market.name);
+      c.localAudiencePct = newHomeEntry ? newHomeEntry.pct : null;
+      if (newHomeEntry) c.localAudienceSource = "Self-reported";
+      c.audienceMarketsAsOf = nowIso();
+      c.localAudienceAsOf = nowIso();
+      // Leaving London: a stored area that is one of London's
+      // own areas goes with the old market, so the record never
+      // carries a Brixton label into Charlotte.
+      if (user.market === "London") {
+        const lon = marketByName("London");
+        const areaNow = creatorAreaOf(c);
+        if (lon && areaNow && canonicalFromList(areaNow, lon.cities)) { c.area = ""; c.neighborhood = ""; }
+      }
+    };
     if (unlisted) {
+      if (user.status === "approved") return err(400, "Pick one of the SIGNL markets in the list. If your city is not in a market yet, email hello@joinsignl.com and we will set you up.");
       const customCity = String(b.customCity || "").trim().slice(0, 60);
       const customCountry = String(b.customCountry || "").trim().slice(0, 60);
       let customState = String(b.customState || "").trim().slice(0, 60);
@@ -18237,6 +18277,7 @@ async function route(event) {
       // stamped as the resolved city.
       const res = resolveTypedCity(user.city || "", { state: user.state, country: user.country });
       const match = (res.matches || []).find((mm) => mm.market === market.name);
+      preserveAudienceForMove();
       user.market = market.name;
       user.marketResolvedFrom = "typed_city";
       user.marketResolvedCity = match ? match.city : user.city;
@@ -18250,6 +18291,7 @@ async function route(event) {
         if (user.city && market.cities.includes(user.city)) city = user.city;
         else return err(400, `Choose your home city in the ${market.name} market`);
       }
+      preserveAudienceForMove();
       user.market = market.name;
       user.city = city;
       user.country = market.country || "United States";
@@ -18264,7 +18306,7 @@ async function route(event) {
     user.marketChangedAt = ts;
     user.updatedAt = ts;
     await store.set(`user:${user.id}`, user);
-    await logEvent({ type: "market_changed", actorId: user.id, actorRole: "creator", subjectId: user.id, market: user.market, data: { from: fromMarket, to: user.market, fromCity, toCity: user.city || "", via: "pending_self_serve" } });
+    await logEvent({ type: "market_changed", actorId: user.id, actorRole: "creator", subjectId: user.id, market: user.market, data: { from: fromMarket, to: user.market, fromCity, toCity: user.city || "", via } });
     return json(200, { user: await withFounding(user) });
   }
 

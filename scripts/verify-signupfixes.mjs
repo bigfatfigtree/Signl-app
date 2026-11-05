@@ -222,11 +222,13 @@ try {
   const remEvents = await eventsOf("profile_completion_reminder_email_queued");
   check("no profile reminder email queued for any rejected account", !remEvents.some((e) => [raId, rbId, rcId, autoId].includes(e.subjectId)), JSON.stringify(remEvents.map((e) => e.subjectId)));
 
-  // ---------- F2 tail: once decided, the market is set ----------
+  // ---------- F2 tail, REVERSED by Build -129 (Jeff, 2026-11-04,
+  // the Zamp Camp case): once decided, the creator can STILL move
+  // her own market from her Profile; no re-approval ----------
   const approveM = await admin("POST", "/api/admin/review", { userId: mId, decision: "approve" });
   check("admin approves the moved creator", approveM.status === 200 && approveM.data.user.status === "approved");
   const lateMove = await m.c("POST", "/api/me/market", { market: "Richmond", city: "Richmond" });
-  check("approved creator market change is refused (403) and points at hello@", lateMove.status === 403 && /hello@joinsignl\.com/.test(lateMove.data.error || ""), JSON.stringify(lateMove.data));
+  check("approved creator moves her own market (Build -129) and stays approved", lateMove.status === 200 && lateMove.data.user.market === "Richmond" && lateMove.data.user.city === "Richmond" && lateMove.data.user.status === "approved", JSON.stringify(lateMove.data).slice(0, 200));
 
   // ---------- F1 ask-once: stored local % carries into completion ----------
   const d = await quickClaim("askonce@fixtures.dev", "askonce757", "Hampton Roads");
@@ -271,7 +273,7 @@ try {
 
   // ---------- client: shipped surfaces ----------
   check("pending screen ships the Wrong market? form wired to /me/market", appJs.includes("Wrong market?") && appJs.includes('id="pm-market"') && appJs.includes('id="pm-custom-wrap"') && appJs.includes("togglePendingMarket") && appJs.includes("syncPendingMarketChoice") && appJs.includes("savePendingMarket") && appJs.includes('"/me/market"'));
-  check("profile form tells approved creators the market path (email hello@)", appJs.includes("Wrong market? Email hello@joinsignl.com and we will move it for you."));
+  check("profile form ships the Build -129 Your market control (the email-support dead end is gone)", appJs.includes('id="p-market"') && appJs.includes('id="p-market-city"') && appJs.includes("saveProfileMarket") && appJs.includes("Your home market: the place most of your audience lives.") && !appJs.includes("cannot be changed here"));
   check("admin ships the reject reason picker with the fixed categories", appJs.includes("toggleRejectEditor") && appJs.includes("confirmRejectApp") && appJs.includes('id="rej-reason-${u.id}"') && appJs.includes("named in their rejection email") && appJs.includes("<option>Audience too small for this wave</option>"));
   check("profile save wires the guard: warnings computed, inline confirm, photo failure named", appJs.includes("uncompleteWarnings(wasProfileComplete") && appJs.includes('confirmSaveWarning("save-warn"') && appJs.includes('id="save-warn"') && appJs.includes('id="gallery-err"') && appJs.includes("That photo change did not save.") && appJs.includes("galleryOp"));
   check("full signup wires the zero-audience warning before submit", appJs.includes("zeroAudienceWarnings(signupStackTotal())") && appJs.includes('confirmSaveWarning("jc-save-warn"') && appJs.includes('id="jc-save-warn"'));
