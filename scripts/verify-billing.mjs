@@ -41,6 +41,8 @@ const ADMIN_EMAIL = "admin@signl.test";
 const ADMIN_PASSWORD = "test-admin-password-123";
 const WEBHOOK_SECRET = "whsec_test_secret";
 const GROWTH_PRICE = "price_1USRLcJ5DCULBlmAajXPmJjr";
+const SELF_PRICE = "price_1USRLTJ5DCULBlmAES4a3fNV";
+const MANAGED_PRICE = "price_1USRLiJ5DCULBlmAZoITfl6r";
 const AGREE = { agreedHonestPosts: true, agreedFtcDisclosure: true, agreedPostCompliance: true, agreedTerms: true };
 
 let passed = 0;
@@ -143,7 +145,12 @@ try {
   await stopServer();
 
   part("phase 2: stripe configured, founding gate holds");
-  startServer({ STRIPE_SECRET_KEY: "sk_test_fake", STRIPE_WEBHOOK_SECRET: WEBHOOK_SECRET, STRIPE_API_BASE: `http://127.0.0.1:${STRIPE_PORT}` });
+  // Build -132 (P0-7): checkout resolves FOUNDING price IDs
+  // only. This fixture's price constants stand in as the
+  // founding catalog, configured by env exactly as production
+  // will; the legacy map in code can no longer price anything
+  // (asserted in verify-build132).
+  startServer({ STRIPE_SECRET_KEY: "sk_test_fake", STRIPE_WEBHOOK_SECRET: WEBHOOK_SECRET, STRIPE_API_BASE: `http://127.0.0.1:${STRIPE_PORT}`, STRIPE_PRICE_FOUNDING_SELF_SERVICE: SELF_PRICE, STRIPE_PRICE_FOUNDING_GROWTH: GROWTH_PRICE, STRIPE_PRICE_FOUNDING_MANAGED: MANAGED_PRICE });
   await waitUp();
   const biz2 = makeClient();
   await biz2("POST", "/api/auth/login", { email: "billingbiz@fixtures.dev", password: "<MASKED_SECRET_002>" });

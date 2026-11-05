@@ -1,4 +1,4 @@
-// Build 2026.11.05-131 verification: Halo, the modeled
+// Build 2026.11.05-132 verification: Halo, the modeled
 // influence layer inside the SIGNL ROAS Score (Jeff's order,
 // 2026-10-30). Spec: signl-halo-model-2026-10-30.md.
 //
@@ -143,7 +143,7 @@ try {
   startServer();
   check("dev server boots", await waitUp());
   const boot = await fetch(BASE + "/api/bootstrap");
-  check("bootstrap carries the -45 build stamp", boot.headers.get("x-signl-build") === "2026.11.05-131", String(boot.headers.get("x-signl-build")));
+  check("bootstrap carries the -45 build stamp", boot.headers.get("x-signl-build") === "2026.11.05-132", String(boot.headers.get("x-signl-build")));
   const admin = client();
   await admin("POST", "/api/auth/login", { email: ADMIN_EMAIL, password: ADMIN_PASSWORD });
   const anon = client();
@@ -314,7 +314,7 @@ try {
   const srcChecks = [
     ["client: the split prints with both labels on the Receipt (Counted at register / Halo estimated)", scoreBlock.includes("Counted at register") && scoreBlock.includes("Halo estimated")],
     ["client: the floor sentence survives verbatim in the blended head", scoreBlock.includes("came back through your register from") && scoreBlock.includes("counted dollar by dollar")],
-    ["client: the stacked back bar carries the Halo segment class", scoreBlock.includes('cls: "halo"')],
+    ["client: Build -132 ruling — the headline bar is COUNTED ONLY (no Halo segment) and says so", !scoreBlock.includes('cls: "halo"') && scoreBlock.includes("counted only")],
     ["client: no caused or generated claim language in the score block", !/caused|generated/.test(scoreBlock)],
     ["client: the info sheet still carries exactly twelve topics (Halo explains itself in the split, not a thirteenth topic)", (roasInfo.match(/title: "/g) || []).length === 12],
     ["client: the Proof Card renders the views rollup line", appSrc.includes("viewsRollup") && appSrc.includes("across every campaign")],

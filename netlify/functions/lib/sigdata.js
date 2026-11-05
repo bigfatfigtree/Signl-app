@@ -395,6 +395,15 @@ function buildBusinessFacts(d) {
     // Build -95: My Regulars (creators with a completed visit
     // at this business) and held licences inside their 14-day
     // expiry window, from the same builders the views read.
+    // Build -132: this business's Offer Card deals (structured
+    // terms proposals), from the same records the Deals view
+    // reads — whose move it is, the amount on the table, and
+    // the deadline on the current proposal.
+    deals: d.deals ? {
+      waitingOnMe: (d.deals.waitingOnMe || []).map((x) => ({ withName: x.withName, title: x.title, amount: x.amount, kind: x.kind, expiresAt: x.expiresAt })),
+      waitingOnThem: (d.deals.waitingOnThem || []).map((x) => ({ withName: x.withName, title: x.title, amount: x.amount, kind: x.kind, expiresAt: x.expiresAt })),
+      acceptedCount: d.deals.acceptedCount || 0,
+    } : { waitingOnMe: [], waitingOnThem: [], acceptedCount: 0 },
     regulars: (d.regulars || []).map((r) => ({
       creatorId: r.creatorId, name: r.creatorName || "", handle: r.creatorHandle || "",
       visits: r.visits || 1, dealKind: r.deal ? r.deal.kind : "comp",
@@ -542,6 +551,16 @@ function buildCreatorFacts(d) {
     // Build -95: the actual pending licence/renewal requests
     // behind that count (business + fee + renewal flag).
     pendingLicenses: (d.pendingLicenses || []).map((l) => ({ businessName: l.businessName || "A business", fee: l.fee || 0, renewal: !!l.renewal })),
+    // Build -132: this creator's Offer Card deals, from the
+    // same records the Deals view reads. Sig NEVER suggests
+    // lowering a price: a creator's rate is theirs, and the
+    // only money guidance Sig gives a creator is what the
+    // records say (their listed rate, their standing terms).
+    deals: d.deals ? {
+      waitingOnMe: (d.deals.waitingOnMe || []).map((x) => ({ withName: x.withName, title: x.title, amount: x.amount, kind: x.kind, expiresAt: x.expiresAt })),
+      waitingOnThem: (d.deals.waitingOnThem || []).map((x) => ({ withName: x.withName, title: x.title, amount: x.amount, kind: x.kind, expiresAt: x.expiresAt })),
+      acceptedCount: d.deals.acceptedCount || 0,
+    } : { waitingOnMe: [], waitingOnThem: [], acceptedCount: 0 },
     // Build -96: standing availability of the businesses this
     // creator can meet (open offers, direct invites, own
     // bookings), only where the business set it.
@@ -658,6 +677,11 @@ function factsLines(role, f) {
     if (f.setup) lines.push(f.setup.pos
       ? `The till they told us they run: ${f.setup.pos.label}${f.setup.pos.other ? ` (${f.setup.pos.other})` : ""}. Visit codes count at any till today. ${f.setup.pos.provider === "square" ? "Square is the register SIGNL can connect directly today." : f.setup.pos.provider === "none" ? "They run no register system; codes are counted by hand at the counter with the staff PIN." : `A direct ${f.setup.pos.label} connection is on the roadmap once enough businesses declare it; no date is promised, and their codes already count at the till in the meantime.`}`
       : "They have not told us which till (register system) they run yet. It is one tap on the setup checklist on Home or on their business page, and it only changes how visits get counted later; codes count at every till today.");
+    if (f.deals && (f.deals.waitingOnMe.length || f.deals.waitingOnThem.length)) {
+      const dl = (x) => `${x.withName} — "${x.title}" at $${Math.round(x.amount || 0)}${x.expiresAt ? `, answer by ${String(x.expiresAt).slice(0, 10)}` : ""}`;
+      if (f.deals.waitingOnMe.length) lines.push(`Deals waiting on THEIR answer (a creator countered; accept books the visit at those terms, decline closes it): ${f.deals.waitingOnMe.map(dl).join("; ")}. Deals live in Offers, in the Deals section.`);
+      if (f.deals.waitingOnThem.length) lines.push(`Deals they sent that are waiting on the creator: ${f.deals.waitingOnThem.map(dl).join("; ")}. A deal closes on its own at its deadline if it goes unanswered.`);
+    }
     return lines;
   }
   // creator
@@ -686,6 +710,11 @@ function factsLines(role, f) {
   if (f.pendingLicenses && f.pendingLicenses.length) lines.push(`Licence requests waiting on their decision: ${f.pendingLicenses.map((l) => `${l.businessName} at their ${cmoney(f, l.fee)} fee${l.renewal ? " (a renewal of a licence that is ending)" : ""}`).join("; ")}. Each is decided in their Wallet: approve starts a fresh 90 days that day; decline leaves the post native share only.`);
   if (f.paidPostingTerms && f.paidPostingTerms.length) lines.push(`Agreed posting terms on their paid bookings: ${f.paidPostingTerms.map((t) => `${t.businessName} ("${t.title}"): ${t.line}`).join("; ")}. A paid visit's post clock runs off these agreed terms, not the comped 48-hour ladder.`);
   if (f.businessAvailability && f.businessAvailability.length) lines.push(`Standing availability at businesses they can book with: ${f.businessAvailability.map((b) => `${b.businessName}: ${b.summary}`).join("; ")}. A business that is not listed here has not set its hours; the offer's own window and note are what applies.`);
+  if (f.deals && (f.deals.waitingOnMe.length || f.deals.waitingOnThem.length)) {
+    const dl = (x) => `${x.withName} — "${x.title}" at $${Math.round(x.amount || 0)}${x.expiresAt ? `, answer by ${String(x.expiresAt).slice(0, 10)}` : ""}`;
+    if (f.deals.waitingOnMe.length) lines.push(`Deals waiting on THEIR answer: ${f.deals.waitingOnMe.map(dl).join("; ")}. Each is decided in Offers, in the Deals section: accept books the visit at those terms, one counter is allowed, or decline with a reason. Their rate is theirs: never suggest they lower it, and never frame a lower counter as the smart move.`);
+    if (f.deals.waitingOnThem.length) lines.push(`Deals they countered that are waiting on the business: ${f.deals.waitingOnThem.map(dl).join("; ")}. A deal closes on its own at its deadline if it goes unanswered.`);
+  }
   return lines;
 }
 
@@ -1742,12 +1771,18 @@ function buildHomeState(role, f) {
       if (f.setup.square && f.setup.square.configured && f.setup.square.state === "not_connected") chips.push("Connect your Square register");
       if (f.setup.remaining.length) chips.push(`${fmt(f.setup.remaining.length)} ${plural(f.setup.remaining.length, "setup step")} left to set up`);
     }
+    // Build -132: a deal counter waiting on this business is a
+    // real, expiring decision — it prompts; silence otherwise.
+    if (f.deals && f.deals.waitingOnMe && f.deals.waitingOnMe.length) chips.push(`${fmt(f.deals.waitingOnMe.length)} ${plural(f.deals.waitingOnMe.length, "deal")} waiting on your answer`);
   } else if (role === "creator") {
     if (f.directInvites) chips.push(`${fmt(f.directInvites)} ${plural(f.directInvites, "invite")} sent to you`);
     if (f.offersOpen) chips.push(`${fmt(f.offersOpen)} ${plural(f.offersOpen, "offer")} waiting`);
     if (f.postsOwed && f.postsOwed.length) chips.push(`${fmt(f.postsOwed.length)} ${plural(f.postsOwed.length, "post")} owed`);
     if (f.applicationsPending) chips.push(`${fmt(f.applicationsPending)} ${plural(f.applicationsPending, "application")} waiting on an answer`);
     if (f.licenseRequestsPending) chips.push(`${fmt(f.licenseRequestsPending)} license ${plural(f.licenseRequestsPending, "request")} waiting`);
+    // Build -132: a deal waiting on this creator expires on its
+    // own — it prompts while it is real, and only then.
+    if (f.deals && f.deals.waitingOnMe && f.deals.waitingOnMe.length) chips.push(`${fmt(f.deals.waitingOnMe.length)} ${plural(f.deals.waitingOnMe.length, "deal")} waiting on your answer`);
     chips.push(`${fmt(f.momentumPoints)} Momentum points`);
     chips.push(f.profileComplete ? "Profile live" : (f.missingLabels && f.missingLabels.length ? `Profile: ${fmt(f.missingLabels.length)} ${plural(f.missingLabels.length, "step")} to finish` : "Profile not finished"));
     // Build -98 proactive prompts, real records only: payout

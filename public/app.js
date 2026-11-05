@@ -1763,7 +1763,11 @@ function couponSummaryClient(coupon, businessName) {
 }
 function couponFaceLabelClient(coupon) {
   if (!coupon) return "";
-  if (coupon.type === "percent_off") return `${coupon.percent}% off`;
+  // Build -132 (ruling 4): a percent coupon always shows its
+  // real dollar worth — the cap is the worth. A bare "% off"
+  // hero is gone; percent coupons created from -132 on require
+  // a cap server-side, so the worth is always real.
+  if (coupon.type === "percent_off") return coupon.cap ? `${coupon.percent}% off, up to $${fmtMoney(coupon.cap)}` : `${coupon.percent}% off`;
   return `$${fmtMoney(coupon.amount)}`;
 }
 
@@ -3570,8 +3574,8 @@ async function loadBizWalletBookings125() {
     host.innerHTML = `
   ${paid.length ? `<div class="wcard" style="padding-top:8px;padding-bottom:8px">${paid.map((b) => `<div class="lib-row"><div class="lib-main"><div class="lib-title">${esc(b.title)}</div><div class="lib-meta">${esc(b.creatorName || "")} · rate ${ownCurrencySymbol()}${fmtPrice(b.paidLane.rate)} · charged ${ownCurrencySymbol()}${fmtMoney(b.paidLane.businessTotal)} · ${esc(stWord(b))}</div></div></div>`).join("")}</div>` : `<div class="empty-card"><div class="ec-t">No paid bookings yet</div><div class="ec-s">When you book a creator paid — at their rate, charged to your card on file and held until their post is live — it shows up here, cost and all.</div></div>`}
   ${coupons.length ? `<h3 style="margin:22px 0 0">Coupon deals</h3>
-  <p class="small muted" style="margin:8px 2px 0">Visits you paid with a coupon instead of cash. The value is store value at your business.</p>
-  <div class="wcard" style="padding-top:8px;padding-bottom:8px">${coupons.map((b) => `<div class="lib-row"><div class="lib-main"><div class="lib-title">${esc(b.title)}</div><div class="lib-meta">${esc(b.creatorName || "")} &middot; ${esc(couponSummaryClient(b.coupon, b.businessName))}</div></div><span class="badge ${b.post ? "ok" : "info"}">${b.post ? "Post live" : "Booked"}</span></div>`).join("")}</div>` : ""}`;
+  <p class="small muted" style="margin:8px 2px 0">Visits you paid with a coupon instead of cash. The value is store value at your business, and it counts as spent only when the creator spends it — the spend code on the visit card is how it gets recorded.</p>
+  <div class="wcard" style="padding-top:8px;padding-bottom:8px">${coupons.map((b) => { const cs = b.couponSpend || {}; return `<div class="lib-row"><div class="lib-main"><div class="lib-title">${esc(b.title)}</div><div class="lib-meta">${esc(b.creatorName || "")} &middot; ${esc(couponSummaryClient(b.coupon, b.businessName))}${cs.face ? ` &middot; <strong>$${fmtMoney(cs.spent || 0)} spent</strong> of $${fmtMoney(cs.face)}` : ""}${cs.status === "expired" || cs.status === "closed" ? " &middot; closed at expiry" : ""}</div></div><span class="badge ${cs.status === "spent" ? "ok" : cs.status === "expired" || cs.status === "closed" ? "warn" : b.post ? "ok" : "info"}">${cs.status === "spent" ? "Fully spent" : cs.status === "expired" || cs.status === "closed" ? "Closed" : cs.status === "partly_spent" ? "Partly spent" : b.post ? "Post live" : "Booked"}</span></div>`; }).join("")}</div>` : ""}`;
   } catch (err) {
     host.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
   }
@@ -3779,6 +3783,8 @@ function renderSettingsTab() {
     <p class="small muted">Paid bookings record your rate in the app: booked at your rate, you keep 97%. Payouts run outside the app for now, so there is nothing to set up here yet, and nothing in the app promises a payout date.</p>
   </div>
   ${accountHtml(u)}`;
+    loadAlertPrefs();
+    loadStandingTerms();
     return;
   }
   const rl = u.business.reviewLinks || {};
@@ -3832,24 +3838,33 @@ function renderSettingsTab() {
   loadStaffSettings();
 }
 
-// Notification email switches (Build -47, audit C11): three
-// toggles over the email copies of in-app notifications. The
-// in-app notes themselves always record (they are the
-// no-ghosting record and drive the tab badges); account and
-// payment emails always send and are not switched here.
+// Notifications: ONE consolidated screen (Build -132, merging
+// the Build -47 email switches and the Build -87 clock switches
+// into a single panel with a single save). The honesty label at
+// the top says plainly whether texts and emails actually send
+// yet — the switches save either way, and delivery starts the
+// moment the rail is switched on. Creators also get their match
+// alerts and their standing deal terms here, on the same screen.
+function railHonestyHtml() {
+  const np = (state.boot && state.boot.notifyProviders) || null;
+  if (!np) return "";
+  if (np.emailLive && np.smsLive) return `<p class="small" style="margin:0 0 10px"><span class="badge ok">Texts and emails are on</span> Your alerts send by text and email as well as in the app.</p>`;
+  if (np.emailLive || np.smsLive) return `<p class="small" style="margin:0 0 10px"><span class="badge info">Partly on</span> ${np.emailLive ? "Emails send now." : "Emails start when email delivery is switched on."} ${np.smsLive ? "Texts send now." : "Texts start when text delivery is switched on."} Everything still lands in the app either way.</p>`;
+  return `<p class="small" style="margin:0 0 10px"><span class="badge info">In-app only for now</span> Texts and emails start when SIGNL switches delivery on — your switches below are saved and take effect the moment it does. Until then, everything lands here in the app.</p>`;
+}
+
 function notificationPrefsHtml(u) {
   const p = u.notifyPrefs || {};
   const on = (v) => (v === false ? "" : " checked");
   return `
   <div class="panel mt">
     <h3>Notifications</h3>
-    <p class="small muted">Choose which updates also reach your email. Everything still lands in the app either way; the tab badges count what is waiting on you. Account emails (approval, password resets) and payment emails always send.</p>
+    ${railHonestyHtml()}
+    <p class="small muted">One place for every alert. Everything lands in the app no matter what; these switches choose what also reaches your email and phone. Account emails (approval, password resets) and payment emails always send.</p>
+    <div class="field"><label>Mobile number for text alerts</label><input id="np-phone" type="tel" autocomplete="tel" value="${esc(u.phone || "")}" placeholder="+1 555 123 4567"></div>
     <label class="tgl-row" style="overflow:hidden;margin:8px 0"><input type="checkbox" class="sw" id="np-activity"${on(p.emailActivity)}><span>Activity: offers, applications, bookings and posts</span></label>
     <label class="tgl-row" style="overflow:hidden;margin:8px 0"><input type="checkbox" class="sw" id="np-messages"${on(p.emailMessages)}><span>New messages</span></label>
     <label class="tgl-row" style="overflow:hidden;margin:8px 0"><input type="checkbox" class="sw" id="np-reminders"${on(p.emailReminders)}><span>Reminders and deadlines</span></label>
-    <h4 style="margin:16px 0 4px">Text + email alerts for time-sensitive updates</h4>
-    <p class="small muted">These ride text message and email so a clock never depends on you opening the app. Add your mobile number to get the texts; leave a switch off to stop that one kind only.</p>
-    <div class="field"><label>Mobile number for text alerts</label><input id="np-phone" type="tel" autocomplete="tel" value="${esc(u.phone || "")}" placeholder="+1 555 123 4567"></div>
     <label class="tgl-row" style="overflow:hidden;margin:8px 0"><input type="checkbox" class="sw" id="np-offers"${on(p.offers)}><span>New offers and early-access windows</span></label>
     <label class="tgl-row" style="overflow:hidden;margin:8px 0"><input type="checkbox" class="sw" id="np-bookings"${on(p.bookings)}><span>Picked and booked</span></label>
     <label class="tgl-row" style="overflow:hidden;margin:8px 0"><input type="checkbox" class="sw" id="np-postclock"${on(p.postClock)}><span>Post clock: started, and about 12 hours left</span></label>
@@ -3858,7 +3873,90 @@ function notificationPrefsHtml(u) {
     <label class="tgl-row" style="overflow:hidden;margin:8px 0"><input type="checkbox" class="sw" id="np-applications"${on(p.applications)}><span>Applications waiting</span></label>
     <label class="tgl-row" style="overflow:hidden;margin:8px 0"><input type="checkbox" class="sw" id="np-roster"${on(p.roster)}><span>New creators in my market (roster drops)</span></label>
     <div style="margin-top:10px"><button class="btn" onclick="saveNotificationPrefs()">Save notifications</button> <span id="np-ok" class="saved"></span></div>
-  </div>`;
+  </div>
+  ${u.role === "creator" ? `
+  <div class="panel mt">
+    <h3>Match alerts</h3>
+    <p class="small muted">Tell SIGNL what a good offer looks like for you. When a new offer matches, you hear about it straight away. When nothing matches, you hear nothing — no empty alerts, ever.</p>
+    <div id="alert-prefs-box"><p class="small muted">Loading your alerts…</p></div>
+  </div>
+  <div class="panel mt">
+    <h3>Your standing deal terms</h3>
+    <p class="small muted">When a business sends you a deal, these terms answer for you. Set a floor and qualifying deals book themselves; set a walk-away line and low deals decline themselves. Businesses never see these numbers — they only see whether a deal booked or closed.</p>
+    <div id="standing-terms-box"><p class="small muted">Loading your terms…</p></div>
+  </div>` : ""}`;
+}
+
+async function loadAlertPrefs() {
+  const box = document.getElementById("alert-prefs-box");
+  if (!box) return;
+  try {
+    const d = await api("GET", "/me/alert-prefs");
+    const p = d.alertPrefs || {};
+    const cats = (state.boot && state.boot.creatorCategories) || [];
+    box.innerHTML = `
+    <div class="field"><label>Categories you want (leave empty for all)</label>
+      <div>${cats.map((c) => `<label class="chip-check"><input type="checkbox" class="ap-cat" value="${esc(c)}" ${(p.categories || []).includes(c) ? "checked" : ""}> ${esc(c)}</label>`).join("")}</div>
+    </div>
+    <div class="form-2col">
+      <div class="field"><label>Minimum comp value ($) — comped offers below this stay quiet</label><input type="number" id="ap-mincomp" min="0" step="1" value="${p.minCompValue != null ? esc(String(p.minCompValue)) : ""}" placeholder="Any"></div>
+      <div class="field"><label>Minimum paid rate ($) — paid offers below this stay quiet</label><input type="number" id="ap-paidfloor" min="0" step="1" value="${p.paidFloor != null ? esc(String(p.paidFloor)) : ""}" placeholder="Any"></div>
+    </div>
+    <p class="small muted">Alerts only fire for offers in the markets you are listed in. Distance follows your listed markets.</p>
+    <button class="btn" onclick="saveAlertPrefs()">Save match alerts</button> <span id="ap-ok" class="saved"></span>`;
+  } catch (e) { box.innerHTML = `<p class="small">${esc(e.message)}</p>`; }
+}
+
+async function saveAlertPrefs() {
+  const ok = document.getElementById("ap-ok");
+  const num = (id) => { const v = document.getElementById(id).value; return v === "" ? null : Number(v); };
+  try {
+    await api("PUT", "/me/alert-prefs", {
+      categories: [...document.querySelectorAll(".ap-cat:checked")].map((x) => x.value),
+      minCompValue: num("ap-mincomp"),
+      paidFloor: num("ap-paidfloor"),
+    });
+    if (ok) ok.textContent = "Saved. Matching offers will find you.";
+  } catch (e) { if (ok) ok.textContent = e.message; }
+}
+
+async function loadStandingTerms() {
+  const box = document.getElementById("standing-terms-box");
+  if (!box) return;
+  try {
+    const d = await api("GET", "/me/negotiation");
+    const n = d.negotiation || {};
+    const sw = (state.boot && state.boot.creatorCategories) || [];
+    box.innerHTML = `
+    ${d.listedRate != null ? `<p class="small">Your listed rate is <strong>$${fmtMoney(d.listedRate)}</strong>. Deals are measured against it on your Deal Card.</p>` : `<p class="small muted">You have not listed a paid rate yet — set one on your Profile so deals can be measured against it.</p>`}
+    <div class="form-2col">
+      <div class="field"><label>"Worth my time from" ($) — shown to businesses as where your yes starts</label><input type="number" id="st-consider" min="0" step="1" value="${n.considerFrom != null ? esc(String(n.considerFrom)) : ""}" placeholder="No floor shown"></div>
+      <div class="field"><label>Auto-accept at or above ($) — only you see this</label><input type="number" id="st-accept" min="0" step="1" value="${n.autoAcceptMin != null ? esc(String(n.autoAcceptMin)) : ""}" placeholder="Off"></div>
+      <div class="field"><label>Auto-decline below ($) — only you see this</label><input type="number" id="st-decline" min="0" step="1" value="${n.autoDeclineBelow != null ? esc(String(n.autoDeclineBelow)) : ""}" placeholder="Off"></div>
+    </div>
+    <label class="tgl-row" style="overflow:hidden;margin:8px 0"><input type="checkbox" class="sw" id="st-repeat" ${n.autoAcceptRepeat ? "checked" : ""}><span>Auto-accept repeat deals at my floor from businesses I have already worked with</span></label>
+    <h4 style="margin:14px 0 4px">Your sweeteners</h4>
+    <p class="small muted">Ways a business can make a deal work for you. Businesses see these on your profile as things you welcome — never your private numbers. Add a percent if you would take that much less under that condition.</p>
+    ${[["weekday", "Lower rate for weekday visits"], ["two_posts", "Lower rate for 2+ posts"], ["coupon_mix", "Open to coupon + cash mixes"]].map(([t, label]) => { const cur = (n.sweeteners || []).find((s) => s.type === t); return `<div class="form-2col" style="align-items:end"><label class="tgl-row" style="overflow:hidden;margin:8px 0"><input type="checkbox" class="sw st-sw" value="${t}" ${cur ? "checked" : ""}><span>${label}</span></label><div class="field"><label>Percent less (optional)</label><input type="number" class="st-sw-pct" data-type="${t}" min="1" max="50" step="1" value="${cur && cur.pct != null ? esc(String(cur.pct)) : ""}" placeholder="—"></div></div>`; }).join("")}
+    <div class="field"><label>Coupon + cash mixes: auto-accept when the cash part is at least ($) — only you see this</label><input type="number" id="st-topup" min="0" step="1" value="${n.autoAcceptTopUpMin != null ? esc(String(n.autoAcceptTopUpMin)) : ""}" placeholder="Off"></div>
+    <button class="btn" onclick="saveStandingTerms()">Save standing terms</button> <span id="st-ok" class="saved"></span>`;
+  } catch (e) { box.innerHTML = `<p class="small">${esc(e.message)}</p>`; }
+}
+
+async function saveStandingTerms() {
+  const ok = document.getElementById("st-ok");
+  const num = (id) => { const v = document.getElementById(id).value; return v === "" ? null : Number(v); };
+  try {
+    await api("PUT", "/me/negotiation", {
+      considerFrom: num("st-consider"),
+      autoAcceptMin: num("st-accept"),
+      autoDeclineBelow: num("st-decline"),
+      autoAcceptTopUpMin: num("st-topup"),
+      autoAcceptRepeat: !!document.getElementById("st-repeat").checked,
+      sweeteners: [...document.querySelectorAll(".st-sw:checked")].map((x) => { const pctEl = document.querySelector(`.st-sw-pct[data-type="${x.value}"]`); const pv = pctEl && pctEl.value !== "" ? Number(pctEl.value) : null; return { type: x.value, pct: pv }; }),
+    });
+    if (ok) ok.textContent = "Saved. These answer for you from now on.";
+  } catch (e) { if (ok) ok.textContent = e.message; }
 }
 
 async function saveNotificationPrefs() {
@@ -4020,8 +4118,13 @@ async function renderEarningsTab() {
     // never summed with cash anywhere on this screen.
     const compBookings = bookings.filter((b) => !b.paidLane && b.kind !== "coupon" && (b.redeemedAt || b.post));
     const couponFace = (b) => { const cpn = b.coupon || {}; return cpn.type === "percent_off" ? (cpn.cap ? Number(cpn.cap) : 0) : (Number(cpn.amount) || 0); };
-    const compTotal = Math.round(((money.compValue || 0) + couponBookings.reduce((s, b) => s + couponFace(b), 0)) * 100) / 100;
-    const couponRow = (b) => `<div class="lib-row"><div class="lib-main"><div class="lib-title">${esc(b.title)}</div><div class="lib-meta">${esc(b.businessName || "")} &middot; ${esc(couponSummaryClient(b.coupon, b.businessName))}${b.coupon && b.coupon.expiresAt ? ` &middot; expires ${esc(fmtDay(b.coupon.expiresAt))}` : ""}${couponFaceBit(b)}</div></div><span class="badge ${b.post ? "ok" : "info"}">${b.post ? "Post live" : "Booked"}</span></div>`;
+    // Build -132: coupon value counts AT SPEND, not at
+    // booking. The comps total carries what has actually been
+    // spent at the register; the unspent rest shows as
+    // still-to-spend on the row, never as value received.
+    const couponSpent = (b) => (b.couponSpend ? Number(b.couponSpend.spent) || 0 : 0);
+    const compTotal = Math.round(((money.compValue || 0) + couponBookings.reduce((s, b) => s + couponSpent(b), 0)) * 100) / 100;
+    const couponRow = (b) => { const cs = b.couponSpend || {}; const spent = couponSpent(b); return `<div class="lib-row"><div class="lib-main"><div class="lib-title">${esc(b.title)}</div><div class="lib-meta">${esc(b.businessName || "")} &middot; ${esc(couponSummaryClient(b.coupon, b.businessName))}${b.coupon && b.coupon.expiresAt ? ` &middot; expires ${esc(fmtDay(b.coupon.expiresAt))}` : ""}${couponFaceBit(b)} &middot; <strong>$${fmtMoney(spent)} spent</strong>${cs.remaining ? ` &middot; $${fmtMoney(cs.remaining)} still to spend` : ""}${cs.code ? ` &middot; spend code ${esc(cs.code)}` : ""}</div></div><span class="badge ${cs.status === "spent" ? "ok" : cs.status === "expired" || cs.status === "closed" ? "warn" : b.post ? "ok" : "info"}">${cs.status === "spent" ? "Fully spent" : cs.status === "expired" || cs.status === "closed" ? "Closed at expiry" : cs.status === "partly_spent" ? "Partly spent" : b.post ? "Post live" : "Booked"}</span></div>`; };
     // History (Build -125): one dated ledger over the same
     // records. Cash lines carry cash amounts; comp lines
     // carry value, tagged Comp — the two never add together.
@@ -4029,7 +4132,7 @@ async function renderEarningsTab() {
     for (const b of paidBookings) hist.push({ at: (b.post && (b.post.firstAt || b.post.submittedAt)) || b.redeemedAt || b.createdAt, title: b.title, meta: `${b.businessName || ""} · Paid booking · ${stateWord(b)}`, kind: "Cash", amt: `${ownCurrencySymbol()}${fmtMoney(b.paidLane.creatorNet)}` });
     for (const l of lrs) hist.push({ at: l.createdAt, title: `${l.businessName || "A business"} — license`, meta: l.status === "granted" ? "License approved · 90 days" : l.status === "pending" ? "License request waiting on you" : "License declined", kind: "Cash", amt: l.status === "granted" ? `$${fmtMoney(l.creatorNet)}` : `$${fmtMoney(l.creatorNet)} if approved` });
     for (const b of compBookings) hist.push({ at: b.redeemedAt || (b.post && (b.post.firstAt || b.post.submittedAt)) || b.createdAt, title: b.title, meta: `${b.businessName || ""} · Comped visit${b.whatComped ? " · " + b.whatComped : ""}`, kind: "Comp", amt: b.dollarCap ? `${ownCurrencySymbol()}${fmtMoney(b.dollarCap)} value` : "Comp" });
-    for (const b of couponBookings) hist.push({ at: b.redeemedAt || b.createdAt, title: b.title, meta: `${b.businessName || ""} · Coupon deal`, kind: "Comp", amt: couponFace(b) ? `$${fmtMoney(couponFace(b))} store value` : "Coupon" });
+    for (const b of couponBookings) hist.push({ at: b.redeemedAt || b.createdAt, title: b.title, meta: `${b.businessName || ""} · Coupon deal`, kind: "Comp", amt: couponFace(b) ? (couponSpent(b) > 0 ? `$${fmtMoney(couponSpent(b))} spent of $${fmtMoney(couponFace(b))} store value` : `$${fmtMoney(couponFace(b))} store value, unspent`) : "Coupon" });
     hist.sort((x, y) => String(y.at || "") < String(x.at || "") ? -1 : String(y.at || "") > String(x.at || "") ? 1 : 0);
     const histRow = (h) => `<div class="lib-row"><div class="lib-main"><div class="lib-title">${esc(h.title)}</div><div class="lib-meta">${h.at ? `${esc(fmtDayFull(h.at))} · ` : ""}${esc(h.meta)}</div></div><span class="badge ${h.kind === "Cash" ? "ok" : "info"}">${h.kind}</span><span class="lib-amt">${esc(h.amt)}</span></div>`;
     const cashHtml = `
@@ -4489,6 +4592,8 @@ function sigBankFor(biz) {
       a: "Every visit carries a code your staff enter at the counter. That counts the visit and starts the creator's 48 hour post clock, and their post links back to the visit. Your receipt then keeps three lines separate: visits and posts that happened, the sales your register reported on visit days, and any modeled estimate, labeled as one. Counted, recorded, and modeled numbers are never blended into one figure. Set one of your usual open days under Results, in Proof Controls, and visit days measure against it in real dollars.", flow: "See your results" },
     { id: "opens", q: "What happens when my market opens?", ph: ["what happens when my market opens", "what happens when", "market opens", "opening day", "when it opens"], g: [["market", "opening"], ["opens", "open", "happens", "day"]], s: [],
       a: (c) => c.live ? "Your market is open and your business is active. Campaigns can go out and creators can be booked now." : `We email you the day ${c.market || "your market"} opens. Your account turns on, the campaigns you saved as drafts can go out, your plan starts, and your founding rate and $${c.planCredit || 100} first-month credit apply. Until that day, nothing is due and nothing is sent to a creator.` },
+    { id: "delete-account", q: "How do I delete my account?", ph: ["delete my account", "delete account", "remove my account", "close my account", "erase my account"], g: [["delete", "remove", "close", "erase"], ["account"]], s: [],
+      a: (c) => "Before you do: keeping your account keeps your founding rate locked for as long as your plan stays active. Deleting gives that up, and any banked founding credit (like the $100 first-month credit) is lost with it." + (c.founding ? " And one thing worth knowing plainly: your market has not launched yet, it is launching soon, and deleting now means losing your early, founding status in it. Signing back up later starts you over as new." : "") + " If you still want to go ahead: open Settings, then Account, and choose \"Delete my account\" at the bottom. That screen says exactly what goes (your profile, sign-in, referral links and notification settings) and what happens to anything still in flight: open offers and deals close, and bookings that have not happened yet are cancelled, with any held amount going back to you. You confirm by typing DELETE, so it cannot happen by accident." },
     { id: "help", q: "How do I reach a person?", ph: ["password", "contact", "human", "support", "talk to someone", "staff pin", "change my email"], g: [["password", "email", "account", "contact", "support", "human", "help", "pin"], ["change", "reset", "forgot", "update", "talk", "reach", "set"]], s: ["support"],
       a: "Settings, staff, and counter basics live right in the app. For anything a person needs to handle, email hello@joinsignl.com and a person answers.", flow: "Set the staff PIN" },
   ];
@@ -4554,7 +4659,9 @@ function sigBankFor(biz) {
       a: "Yes. After a completed visit you review the business, any star rating you honestly give, and each review earns +10 Momentum. Businesses rate creators too, and your rating sits next to your points on your card." },
     { id: "markets", q: "When does my market open?", ph: ["market open", "when does", "launch", "my city", "open in", "when will"], g: [["market", "city", "launch"], ["when", "open", "start", "live", "coming"]], s: [],
       a: (c) => c.live ? "Your market is open, and offers are live now." : "Your market is a founding market, and you get an email the moment it opens. Being approved with a finished profile is what puts you on the roster when it does." },
-    { id: "help", q: "How do I reach a person?", ph: ["password", "contact", "human", "support", "talk to someone", "change my email", "delete my account", "log out"], g: [["password", "email", "account", "contact", "support", "human", "help"], ["change", "reset", "forgot", "update", "talk", "reach", "delete"]], s: ["support"],
+    { id: "delete-account", q: "How do I delete my account?", ph: ["delete my account", "delete account", "remove my account", "close my account", "erase my account", "delete my profile"], g: [["delete", "remove", "close", "erase"], ["account", "profile"]], s: [],
+      a: (c) => "Before you do: SIGNL is free for creators, always. Keeping your account keeps your founding creator status, your Momentum, your referral link, and your place in line for offers when your market opens." + (c.live ? "" : " And one thing worth knowing plainly: your market has not launched yet, it is launching soon, and deleting now means losing your early, founding status in it. Signing back up later starts you over as new.") + " If you still want to go ahead: open Settings, then Account, and choose \"Delete my account\" at the bottom. That screen says exactly what goes (your profile, sign-in, public page, referral links and notification settings) and what happens to anything still in flight: pending applications are withdrawn, open offers and deals close, and bookings that have not happened yet are cancelled. You confirm by typing DELETE, so it cannot happen by accident." },
+    { id: "help", q: "How do I reach a person?", ph: ["password", "contact", "human", "support", "talk to someone", "change my email", "log out"], g: [["password", "email", "account", "contact", "support", "human", "help"], ["change", "reset", "forgot", "update", "talk", "reach"]], s: ["support"],
       a: "Account basics like your password and notifications live under More, and your profile details live on your Profile. For anything a person needs to handle, email hello@joinsignl.com and a person answers." },
   ];
 }
@@ -4691,6 +4798,8 @@ function sigLinkGo(dest) {
     case "partner-wallet": return go("dashboard", "Earnings");
     case "admin-wallet": ccTab = "money"; return go("dashboard", "Stats");
     case "admin-creators": return go("dashboard", "Creators");
+    case "cr-settings": state.openDeleteAccount = false; return go("dashboard", "Settings");
+    case "biz-settings": state.openDeleteAccount = false; return go("dashboard", "Settings");
     case "cr-terms": window.open("https://joinsignl.com/creator-terms.html", "_blank", "noopener"); return false;
     case "cr-profile": return go("dashboard", "Profile");
     case "admin-applications": return go("dashboard", "Applications");
@@ -5945,7 +6054,75 @@ function accountHtml(u) {
       <p class="small muted mt">Changing your password signs out every other device on this account. This device stays signed in.</p>
     </form>
     <p class="small muted">Cannot get in at all? Sign out, then use Forgot password on the sign-in screen and we will email you a reset link.</p>
+    ${(u.role === "creator" || u.role === "business") ? deleteAccountHtml(u) : ""}
   </div>`;
+}
+
+// Delete my account (Build -132): nested at the bottom of
+// Settings → Account, behind its own reveal — never a top-level
+// button. The confirm panel says, in plain words, what is
+// deleted and what happens to anything in flight BEFORE the
+// type-DELETE confirmation can be sent; the server runs the
+// one erasure routine (eraseAccount) and emails one
+// confirmation to the address on file.
+function deleteAccountHtml(u) {
+  const creator = u.role === "creator";
+  return `
+  <div style="margin-top:22px;border-top:1px solid var(--hairline,#DFE7DF);padding-top:14px">
+    <button class="btn small-btn ghost" type="button" onclick="document.getElementById('delacct-panel').style.display=''; this.style.display='none'">Delete my account</button>
+    <div id="delacct-panel" style="display:none">
+      <h4 style="margin:4px 0 6px">Delete your SIGNL account</h4>
+      <p class="small" style="margin:0 0 8px">This deletes, for good:</p>
+      <ul class="small" style="margin:0 0 8px;padding-left:18px">
+        <li>Your profile${creator ? " and your public page" : ""}, your name, photos and handle</li>
+        <li>Your sign-in: email, password and every signed-in device</li>
+        <li>Your referral links and invite codes</li>
+        <li>Your audience and share data, and your notification settings</li>
+      </ul>
+      <p class="small" style="margin:0 0 8px">Anything still in flight settles this way:</p>
+      <ul class="small" style="margin:0 0 8px;padding-left:18px">
+        ${creator ? "<li>Applications you have not heard back on are withdrawn.</li>" : "<li>Offers you have posted are closed.</li>"}
+        <li>Open offers and deals are closed, with nobody the winner.</li>
+        <li>A booking that has not happened yet is cancelled, and the other side is told the account was deleted. Money held for a paid booking goes back to the business.</li>
+        <li>A visit that already happened stays in the other side's history, because it is their record of a real visit, with your name${creator ? ", handle and audience code" : ""} taken off it.</li>
+      </ul>
+      <p class="small" style="margin:0 0 10px"><strong>This cannot be undone.</strong> There is no recovery and no copy kept. If you ever come back, you sign up fresh. We email one confirmation to ${esc(u.email)} when it is done.</p>
+      <div class="field"><label>Type DELETE to confirm</label><input id="delacct-confirm" autocomplete="off" placeholder="DELETE" oninput="document.getElementById('delacct-go').disabled = this.value.trim() !== 'DELETE'"></div>
+      <p style="margin:0"><button class="btn danger" type="button" id="delacct-go" disabled onclick="return doDeleteAccount()">Delete my account for good</button> <span class="small" id="delacct-note"></span></p>
+    </div>
+  </div>`;
+}
+
+// Admin delete (Build -132): the same erasure from the Admin
+// user card, for a deletion request that arrives by email. Its
+// own deliberate confirm — type DELETE in the row — then the
+// server runs eraseAccount and the holder gets the one
+// confirmation email.
+function adminDeleteAccountPrompt(userId) {
+  const host = document.getElementById("admin-delacct-" + userId);
+  if (!host) return;
+  host.innerHTML = `<span style="display:block;margin-top:8px;min-width:260px"><span class="small">Deletes the account and its data for good. It is the same erasure as the self-serve screen, with in-flight items settled the same way. Type DELETE:</span><br><input id="admin-delacct-word-${userId}" placeholder="DELETE" style="margin-top:4px"> <button class="btn small-btn danger" type="button" onclick="adminDeleteAccountGo('${userId}')">Delete for good</button> <span class="small" id="admin-delacct-note-${userId}"></span></span>`;
+}
+async function adminDeleteAccountGo(userId) {
+  const note = document.getElementById("admin-delacct-note-" + userId);
+  const word = (document.getElementById("admin-delacct-word-" + userId) || {}).value || "";
+  try {
+    await api("POST", `/admin/users/${userId}/delete-account`, { confirmText: word });
+    if (note) note.textContent = "Deleted.";
+    if (typeof loadApplications === "function") loadApplications();
+    else location.reload();
+  } catch (e) { if (note) note.textContent = e.message; }
+}
+
+async function doDeleteAccount() {
+  const note = document.getElementById("delacct-note");
+  const word = (document.getElementById("delacct-confirm") || {}).value || "";
+  try {
+    await api("DELETE", "/me/account", { confirmText: word });
+    state.user = null;
+    document.body.innerHTML = `<div style="max-width:520px;margin:12vh auto;padding:24px;text-align:center"><h2>Your account is deleted</h2><p>Your SIGNL account and its data are gone, and every device is signed out. A confirmation email is on its way to the address that was on file. If you ever want to come back, you are welcome to sign up fresh.</p></div>`;
+    return false;
+  } catch (e) { if (note) note.textContent = e.message; return false; }
 }
 
 async function doChangePassword(e) {
@@ -10774,10 +10951,11 @@ function creatorProfileDetailHtml(c, preview, opts) {
     ${adminView ? `<div class="cta-row" style="justify-content:flex-start"><button class="btn ghost" onclick="adminBackToRequests()">Back to Applications</button></div>` : `<div class="cta-row" style="justify-content:flex-start">
       ${preview
         ? `<button class="btn" onclick="previewStartOffer('${c.userId}')">Send offer</button>${p.paidRate ? ` <button class="btn ghost" onclick="previewPaidBooking('${c.userId}')">Preview paid booking (${currencySymbolForMarket(p.market)}${fmtPrice(p.paidRate)})</button>` : ""}`
-        : `<button class="btn" onclick="startOffer('${c.userId}')">Send offer</button>${p.paidRate ? ` <button class="btn" onclick="bookPaidVisit('${c.userId}')">Book paid visit (${currencySymbolForMarket(p.market)}${fmtPrice(p.paidRate)})</button>` : ""} <button class="btn ghost" onclick="openThread('${c.userId}')">Message</button>`}
+        : `<button class="btn" onclick="startOffer('${c.userId}')">Send offer</button> <button class="btn ghost" onclick="openDealSheet('${c.userId}')">Make an offer</button>${p.paidRate ? ` <button class="btn" onclick="bookPaidVisit('${c.userId}')">Book paid visit (${currencySymbolForMarket(p.market)}${fmtPrice(p.paidRate)})</button>` : ""} <button class="btn ghost" onclick="openThread('${c.userId}')">Message</button>`}
       <button class="btn small-btn ghost" onclick="profileLater('${c.userId}', ${preview ? "true" : "false"})">Later</button>
       <button class="btn small-btn ghost" onclick="profileNotFit('${c.userId}', ${preview ? "true" : "false"})">Not a fit</button>
-    </div>`}
+    </div>
+    <div id="deal-sheet-host"></div>`}
     ${p.paidRate ? `<p class="small muted">Paid bookings: ${currencySymbolForMarket(p.market)}${fmtPrice(p.paidRate)} &middot; you pay rate + 3% &middot; they keep 97% &middot; held until the post is live.</p>` : ""}
     ${preview ? `<p class="small muted">Preview: an offer sent from here is a simulation. It never reaches ${esc(c.name)} and nothing is saved.</p>` : ""}
     ${preview && c.trackRecord && c.trackRecord.postsDelivered > 0 ? `
@@ -10844,7 +11022,6 @@ function creatorCard(c, viewer, opts) {
     <div class="cc-photo${c.photoUrl ? "" : " no-photo"}">
       ${c.photoUrl ? `<img src="${esc(c.photoUrl)}" alt="">` : `<div class="cc-mono"><span>${initial}</span></div>`}
       ${p.tierBand ? `<span class="cc-tier">${esc(p.tierBand)}</span>` : ""}
-      ${p.paidRate ? `<span class="cc-paid">Paid bookings: ${currencySymbolForMarket(p.market)}${fmtPrice(p.paidRate)}</span>` : ""}${p.licensingFee ? ` <span class="cc-paid">Licenses posts: ${currencySymbolForMarket(p.market)}${fmtPrice(p.licensingFee)}</span>` : ""}
     </div>
     <div class="cc-id">
       <div class="cc-name">${esc(c.name)}</div>
@@ -10864,6 +11041,7 @@ function creatorCard(c, viewer, opts) {
         ? `<div class="lbl">Local audience not reported yet</div>`
         : `<div class="big">${p.localAudiencePct}%</div><div class="lbl">of their followers are local</div>${lbarHtml119(p.localAudiencePct)}<div class="src">${esc(p.localAudienceSource || "Self-reported")}</div>`}
     </div>
+    ${p.paidRate ? `<p class="small muted" style="margin-top:6px">Paid bookings from ${currencySymbolForMarket(p.market)}${fmtPrice(p.paidRate)}${p.licensingFee ? ` · licenses posts at ${currencySymbolForMarket(p.market)}${fmtPrice(p.licensingFee)}` : ""}</p>` : ""}
     ${p.spanishAudiencePct !== null && p.spanishAudiencePct !== undefined ? `<p class="small muted" style="margin-top:6px">${p.spanishAudiencePct}% Spanish-speaking audience</p>` : ""}
     <div class="cc-meta">
       <div><div class="k">Stacked audience</div><div class="v">${fmtNum(totalAudienceOf(c))}</div></div>
@@ -11406,7 +11584,7 @@ function v2CostCaptureHtml(v) {
 // and how it is counted. The popover mirrors the offer form's
 // info sheet.
 const ROAS_INFO = {
-  score: { title: "Your SIGNL ROAS Score", body: "For every $1 your month cost you, all in, this is how many dollars came back. It blends two labeled parts: dollars counted at your register, and Halo's estimate of the visits the posts likely brought in that no code caught. The counted part always prints on its own, with its own score, in the split right under the headline, so you can hold us to either number." },
+  score: { title: "Your SIGNL ROAS Score", body: "For every $1 your month cost you, all in, this is how many dollars came back COUNTED at your register. The headline is counted dollars only. Halo's estimate of the visits the posts likely brought in that no code caught prints separately below, clearly labelled as an estimate, and never joins the headline." },
   back: { title: "Counted back", body: "Check totals your team logged at the register with a creator's code: first visits and came-backs, every one time-stamped. Customers who came in without a code are not in this number, so the real figure is higher." },
   putin: { title: "All in", body: "Everything the month cost you: your plan at what you actually paid, comps at your cost, paid creators at their rate plus your fee share, and code discounts your customers used. Nothing else is in it, and no cost is ever estimated for you." },
   week: { title: "Counted by week", body: "Every check total your team logged, grouped by the week it was rung at your register. Your score groups the same dollars by the visits that earned them; this chart groups them by when they were rung." },
@@ -11539,32 +11717,30 @@ function scoreV2Html(r) {
     ${s.halo && s.halo.estDollars > 0 ? `<div class="roas-split"><div class="lrow"><span><i class="roas-dot counted"></i>Counted at register</span><strong>$${fmtMoney(s.countedBack)}</strong></div><div class="lrow"><span><i class="roas-dot halo"></i>Halo estimated</span><strong>about $${fmtMoney(s.halo.estDollars)}</strong></div><p class="small muted" style="margin:6px 0 0">Halo estimates about ${fmtNum(s.halo.estVisits)} more visits from this month's posts so far, worth about $${fmtMoney(s.halo.estDollars)} at your average check. An estimate never prints as a counted dollar; it joins the score once there is enough counted for the score to print.</p></div>` : ""}
     ${meters}${otherReasons}`;
   } else {
-    // Build -45 (Halo): the headline figure is the blend,
-    // counted + Halo estimated, when Halo has anything to add.
-    // The counted-only score stays printed in the split, and
-    // the floor paragraph under the headline is the -39 one,
-    // verbatim: at least this much was counted, dollar by
-    // dollar, no matter what the estimate says.
+    // Build -132 (Jeff's ruling, reversing the -45 order): the
+    // headline is COUNTED-ONLY. Halo's estimate is a clearly
+    // labelled layer BELOW the headline — never blended into
+    // the big number, never in the headline bar.
     const hl = s.headline || null;
     const halo = s.halo || null;
     const showBlend = !!(hl && hl.score !== null && hl.score !== undefined && (hl.haloDollars || 0) > 0);
-    const bigScore = showBlend ? hl.score : s.score;
-    const vsMax = Math.max(showBlend ? hl.back : s.countedBack, cost.total || 0);
+    const bigScore = s.score;
+    const vsMax = Math.max(s.countedBack, cost.total || 0);
     head = `<div class="roas-score-top">
       <div>
-        <div class="roas-big-label">SIGNL ROAS Score ${roasInfoBtn("score")}</div>
-        <div class="roas-big" aria-label="SIGNL ROAS Score: ${Number(bigScore).toFixed(1)}&times;">${Number(bigScore).toFixed(1)}&times;</div>
+        <div class="roas-big-label">SIGNL ROAS Score — counted only ${roasInfoBtn("score")}</div>
+        <div class="roas-big" aria-label="SIGNL ROAS Score, counted only: ${Number(bigScore).toFixed(1)}&times;">${Number(bigScore).toFixed(1)}&times;</div>
       </div>
       <div class="roas-score-side">
         ${s.state === "counting" ? `<span class="badge info">Still counting</span>` : `<span class="badge ok">Final</span>`}
-        <p class="small" style="margin:6px 0 0">${esc((showBlend ? hl.sentence : s.sentence) || "")}</p>
+        <p class="small" style="margin:6px 0 0">${esc(s.sentence || "")}</p>
       </div>
     </div>
     <p class="small muted" style="margin:8px 0 0">At least <strong>$${fmtMoney(s.countedBack)}</strong> came back through your register from ${esc(s.monthLabel)}'s visits, counted dollar by dollar, from ${s.countedEvents} register events. Customers who came in without a code are not in this number, so the real figure is higher.</p>
-    ${showBlend ? `<div class="roas-split"><div class="lrow"><span><i class="roas-dot counted"></i>Counted at register</span><strong>$${fmtMoney(s.countedBack)}</strong></div><div class="lrow"><span><i class="roas-dot halo"></i>Halo estimated</span><strong>about $${fmtMoney(hl.haloDollars)}</strong></div><p class="small muted" style="margin:6px 0 0">On counted dollars alone, this month's score is ${Number(s.score).toFixed(1)}&times;. Halo estimates about ${fmtNum(hl.haloVisits)} more visits from the posts, at your $${fmtMoney(halo && halo.avgCheck ? halo.avgCheck.amount : 0)} average check${halo && halo.avgCheck && halo.avgCheck.source === "prior" ? " (the platform starting figure, until your register sets its own)" : ""}. ${esc(halo && halo.confidence ? halo.confidence.words : "")} ${esc(halo ? halo.version : "")} · intent rate ${halo ? (halo.model.intentRate * 100).toFixed(2) : "0"}%.</p></div>` : ""}
+    ${showBlend ? `<div class="roas-split"><div class="lrow"><span><i class="roas-dot counted"></i>Counted at register (the headline)</span><strong>$${fmtMoney(s.countedBack)}</strong></div><div class="lrow"><span><i class="roas-dot halo"></i>Halo estimated — a separate estimate, not counted</span><strong>about $${fmtMoney(hl.haloDollars)}</strong></div><p class="small muted" style="margin:6px 0 0">Halo estimates about ${fmtNum(hl.haloVisits)} more visits from the posts, at your $${fmtMoney(halo && halo.avgCheck ? halo.avgCheck.amount : 0)} average check${halo && halo.avgCheck && halo.avgCheck.source === "prior" ? " (the platform starting figure, until your register sets its own)" : ""}. With that estimate folded in, the score would read ${Number(hl.score).toFixed(1)}&times; — the headline above never includes it. ${esc(halo && halo.confidence ? halo.confidence.words : "")} ${esc(halo ? halo.version : "")} · intent rate ${halo ? (halo.model.intentRate * 100).toFixed(2) : "0"}%.</p></div>` : ""}
     ${cost.planCredit > 0 ? `<p class="small" style="margin:6px 0 0">This month carries your $100 founding credit, so the score runs high. It is not the run rate.</p>` : ""}
     <div class="roas-vs">
-      ${roasBarRow("Back through your register", "back", showBlend ? [{ amount: s.countedBack, cls: "counted" }, { amount: hl.haloDollars, cls: "halo" }] : [{ amount: s.countedBack, cls: "counted" }], vsMax)}
+      ${roasBarRow("Back through your register", "back", [{ amount: s.countedBack, cls: "counted" }], vsMax)}
       ${cost.total !== null && cost.total !== undefined ? roasBarRow("All in, what you put in", "putin", [{ amount: cost.total, cls: "in" }], vsMax) : ""}
     </div>`;
   }
@@ -12038,6 +12214,78 @@ async function audCreateStandalone() {
     loadAudienceBlock();
   } catch (err) { if (note) note.textContent = err.message; }
 }
+// Build -132 code centre actions (owner controls + creator
+// share assets + the coupon spend record on the visit card).
+async function loadCodeAssets(bookingId) {
+  const host = document.getElementById("code-assets-" + bookingId);
+  if (!host) return;
+  try {
+    const d = await api("GET", `/bookings/${bookingId}/code-assets`);
+    host.innerHTML = `<div class="panel" style="margin-top:8px">
+      <p class="small" style="margin:0"><strong>Your post line:</strong> ${esc(d.postLine)}</p>
+      <p style="margin:6px 0 0"><button class="btn small-btn ghost" type="button" onclick="navigator.clipboard && navigator.clipboard.writeText(${JSON.stringify(d.postLine)}); this.textContent='Copied'">Copy the post line</button></p>
+      ${d.adLine ? `<p class="small" style="margin:8px 0 0"><strong>UK ad line:</strong> ${esc(d.adLine)}</p>` : ""}
+      <p class="small muted" style="margin:8px 0 0">${esc(d.stackingRule)}</p>
+      ${d.qrSvg ? `<div style="margin-top:8px;max-width:180px">${d.qrSvg}</div><p class="small muted">The code as a QR — for a story or a printed card.</p>` : ""}
+      <p class="small muted" style="margin:4px 0 0">Cards: use the post line on a 1080×1080 post or a 1080×1920 story — the code and the perk line are the whole card.</p>
+    </div>`;
+  } catch (e) { host.innerHTML = `<p class="small">${esc(e.message)}</p>`; }
+}
+async function saveCodeSettings(bookingId) {
+  const note = document.getElementById("cs-note-" + bookingId);
+  const numOrNull = (id) => { const v = (document.getElementById(id) || {}).value; return v === "" || v == null ? null : Number(v); };
+  const exp = (document.getElementById("cs-expires-" + bookingId) || {}).value;
+  try {
+    await api("POST", `/bookings/${bookingId}/code-settings`, { capCount: numOrNull("cs-capcount-" + bookingId), capSpend: numOrNull("cs-capspend-" + bookingId), expiresAt: exp ? new Date(exp + "T23:59:59").toISOString() : null });
+    if (note) note.textContent = "Saved.";
+    loadMyVisits("business");
+  } catch (e) { if (note) note.textContent = e.message; }
+}
+async function revokeCode(bookingId) {
+  const note = document.getElementById("cs-note-" + bookingId);
+  if (!confirm("Revoke this code? It stops counting and discounting straight away. You can replace it with a fresh code any time.")) return;
+  try { await api("POST", `/bookings/${bookingId}/code-revoke`, {}); loadMyVisits("business"); }
+  catch (e) { if (note) note.textContent = e.message; }
+}
+async function regenCode(bookingId) {
+  const note = document.getElementById("cs-note-" + bookingId);
+  try { await api("POST", `/bookings/${bookingId}/code-regenerate`, {}); if (note) note.textContent = "New code issued."; loadMyVisits("business"); }
+  catch (e) { if (note) note.textContent = e.message; }
+}
+async function attachAudienceOffer(bookingId) {
+  const note = document.getElementById("ao-note-" + bookingId);
+  const perk = (document.getElementById("ao-perk-" + bookingId) || {}).value || "";
+  try { await api("POST", `/bookings/${bookingId}/audience-offer`, { perk: perk.trim() }); loadMyVisits("business"); }
+  catch (e) { if (note) note.textContent = e.message; }
+}
+async function removeAudienceOffer(bookingId) {
+  const note = document.getElementById("ao-note-" + bookingId);
+  try { await api("DELETE", `/bookings/${bookingId}/audience-offer`); loadMyVisits("business"); }
+  catch (e) { if (note) note.textContent = e.message; }
+}
+async function recordCouponSpendUi(bookingId, code) {
+  const note = document.getElementById("csp-note-" + bookingId);
+  const amount = Number((document.getElementById("csp-amt-" + bookingId) || {}).value);
+  try {
+    const d = await api("POST", `/bookings/${bookingId}/coupon-spend`, { code, amount });
+    if (note) note.textContent = `Recorded. $${fmtMoney(d.couponSpend.remaining)} remains on the coupon.`;
+    loadMyVisits(state.user && state.user.role === "creator" ? "creator" : "business");
+  } catch (e) { if (note) note.textContent = e.message; }
+}
+async function confirmRedemptionEvent(bookingId, eventId) {
+  try { await api("POST", `/bookings/${bookingId}/events/${eventId}/confirm`, {}); loadVisitEvents(bookingId); loadMyVisits("business"); }
+  catch (e) { alert(e.message); }
+}
+async function loadVisitEvents(bookingId) {
+  const host = document.getElementById("visit-events-" + bookingId);
+  if (!host) return;
+  try {
+    const d = await api("GET", `/bookings/${bookingId}/events`);
+    const evs = d.events || [];
+    host.innerHTML = evs.length ? evs.map((e) => `<div class="lrow"><span>$${fmtMoney(e.amount || 0)} — ${esc(e.kind || "event")}${e.source ? ` · from ${esc(e.source)}` : e.via ? ` · ${esc(e.via)}` : ""}${e.voided ? " · voided" : ""}${e.burst ? ` · <span class="badge warn">burst pattern — check it</span>` : ""}${e.discountApplied === false ? " · counted, no discount (window ended)" : ""}</span><span>${e.pendingConfirm ? `<button class="btn small-btn" type="button" onclick="confirmRedemptionEvent('${bookingId}', '${e.id}')">Confirm $${fmtMoney(e.amount || 0)}</button> <span class="small muted">above the usual ticket — not counted yet</span>` : `<span class="small muted">${esc(fmtDate(e.at))}</span>`}</span></div>`).join("") : `<p class="small muted">No register events on this visit yet. Events logged at the counter are the record.</p>`;
+  } catch (e) { host.innerHTML = `<p class="small">${esc(e.message)}</p>`; }
+}
+
 async function audCreateForBooking(bookingId) {
   const title = (document.getElementById("aud-title-" + bookingId) || {}).value || "";
   const perk = (document.getElementById("aud-perk-" + bookingId) || {}).value || "";
@@ -14661,6 +14909,7 @@ async function loadCreatorOffers() {
   if (!segHost) return;
   segHost.innerHTML = wsTabs([
     { label: "New", count: directCount || null, on: seg === "new", onclick: "return crOffersSetSeg('new')" },
+    { label: "Deals", on: seg === "deals", onclick: "return crOffersSetSeg('deals')" },
     { label: "Applied", count: appliedCount || null, on: seg === "applied", onclick: "return crOffersSetSeg('applied')" },
     { label: "Booked", count: bookedCount || null, on: seg === "booked", onclick: "return crOffersSetSeg('booked')" },
     { label: "Done", count: doneCount || null, on: seg === "done", onclick: "return crOffersSetSeg('done')" },
@@ -14672,6 +14921,9 @@ async function loadCreatorOffers() {
     body.innerHTML = `<div id="direct-offers">${skelHtml("Loading your direct offers...", 1)}</div><h3 style="margin:22px 0 0">Open offers</h3><div id="open-board"></div>`;
     loadDirectOffers();
     loadOpenBoard();
+  } else if (seg === "deals") {
+    body.innerHTML = `<div id="cr-deals">${skelHtml("Loading your deals...", 1)}</div>`;
+    loadDealsInto("cr-deals", "creator");
   } else if (seg === "applied") {
     body.innerHTML = `<div id="my-apps"></div><div id="creator-notes" class="mt"></div>`;
     loadMyApplications();
@@ -14686,6 +14938,225 @@ async function loadCreatorOffers() {
     loadDirectOffers();
   }
   loadAudienceBlock();
+}
+
+// ---------- Deals: the Offer Card (Build -132) ----------
+// Structured terms between one business and one creator: no
+// free-text price negotiation anywhere. The card shows the gap
+// in plain words, a five-row terms table, and the midpoint once
+// both sides have named a number. One counter per side; the
+// licence line never moves (90 days on paid deals).
+function dealAmountLine(terms, role) {
+  if (!terms) return "";
+  if (terms.kind === "paid") return role === "creator" ? `$${fmtPrice(terms.cashRate)} — you keep $${fmtMoney(Math.round(terms.cashRate * 0.97 * 100) / 100)}` : `$${fmtPrice(terms.cashRate)} — the creator keeps 97%`;
+  if (terms.kind === "comp") return `Comp worth $${fmtPrice(terms.dollarCap)}${terms.whatComped ? ` — ${esc(terms.whatComped)}` : ""}`;
+  if (terms.kind === "coupon") return `A coupon worth $${fmtPrice(couponFaceOfTerms(terms))} in spendable value`;
+  if (terms.kind === "mix") return `A coupon worth $${fmtPrice(couponFaceOfTerms(terms))} plus $${fmtPrice(terms.cashTopUp || 0)} cash on top`;
+  return "";
+}
+function couponFaceOfTerms(terms) {
+  const cp = terms.coupon || {};
+  if (cp.type === "percent_off") return cp.cap || 0;
+  return cp.amount || 0;
+}
+function dealDeliverablesLine(d) {
+  if (!d) return "1 post + 1 story";
+  return `${d.posts || 1} post${(d.posts || 1) === 1 ? "" : "s"}${d.story ? " + 1 story" : ""}, within ${d.windowHours || 48} hours of the visit`;
+}
+function dealPostingLine(pt) {
+  if (!pt || pt.type === "standard") return "Post within 7 days of the visit";
+  if (pt.type === "bydate") return `Post by ${esc(pt.byDate || "")}`;
+  return `Post between ${esc(pt.notBefore || "")} and ${esc(pt.byDate || "")}${pt.note ? ` — ${esc(pt.note)}` : ""}`;
+}
+function dealProposalCardHtml(deal, role) {
+  const cur = deal.current || {};
+  const t = cur.terms || {};
+  const other = role === "creator" ? deal.businessName : (deal.creatorName || "The creator");
+  const expires = cur.expiresAt ? new Date(cur.expiresAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "";
+  const rows = `
+    <div class="lrow"><span>${role === "creator" ? "You get" : "They get"}</span><strong>${dealAmountLine(t, role)}</strong></div>
+    <div class="lrow"><span>${role === "creator" ? "You post" : "They post"}</span><strong>${esc(dealDeliverablesLine(t.deliverables))}</strong></div>
+    <div class="lrow"><span>When</span><strong>${dealPostingLine(t.postingTerms)}</strong></div>
+    <div class="lrow"><span>Rights</span><strong>${t.kind === "paid" || t.kind === "mix" ? "One standard licence included: 90 days of repost + ad use. Fixed — never longer." : "Native share only. Licensing this post is a separate request at the creator's fee, approved per use."}</strong></div>
+    <div class="lrow"><span>Money</span><strong>${t.kind === "paid" || t.kind === "mix" ? "SIGNL holds the payment when the deal is accepted and releases it when the post is live." : "No money moves on this deal."}</strong></div>`;
+  let actions = "";
+  if (deal.status === "accepted") {
+    actions = `<p class="small" style="margin:10px 0 0"><span class="badge ok">Booked</span> The visit is booked at exactly these terms — the code and clock are in ${role === "creator" ? "My Visits" : "Visits"}.</p>
+    ${role === "business" ? `<p style="margin:10px 0 0"><button class="btn small-btn ghost" onclick="dealRebook('${deal.id}')">Book again at these terms</button> <span id="deal-note-${deal.id}" class="saved"></span></p>` : ""}`;
+  } else if (deal.status === "declined") {
+    actions = `<p class="small" style="margin:10px 0 0"><span class="badge">Closed</span> ${esc(deal.declineLine || "Declined.")}${deal.autoRule ? " (Their standing terms answered automatically — no hard feelings, the numbers just did not fit.)" : ""}</p>${deal.nextStep ? `<p class="small muted" style="margin:4px 0 0">${esc(deal.nextStep)}</p>` : ""}`;
+  } else if (deal.status === "expired") {
+    actions = `<p class="small" style="margin:10px 0 0"><span class="badge">Expired</span> The deadline passed unanswered, so this deal closed on its own. Nothing is owed either way.</p>`;
+  } else if (deal.status === "withdrawn") {
+    actions = `<p class="small" style="margin:10px 0 0"><span class="badge">Withdrawn</span> The business withdrew this deal. Nothing is owed either way.</p>`;
+  } else if (deal.canAct) {
+    const countersLeft = role === "creator" ? deal.countersLeft.creator : deal.countersLeft.business;
+    actions = `
+    <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn" onclick="dealRespond('${deal.id}','accept')">Accept — book it at these terms</button>
+      ${countersLeft > 0 ? `<button class="btn ghost" onclick="dealToggleCounter('${deal.id}')">Counter once</button>` : ""}
+      <span style="display:inline-flex;gap:6px;align-items:center"><select id="deal-reason-${deal.id}" aria-label="Why are you declining?"><option value="rate">The rate does not work</option><option value="timing">The timing does not work</option><option value="fit">Not the right fit</option><option value="booked">Already booked up</option><option value="other">Another reason</option></select><button class="btn ghost" onclick="dealRespond('${deal.id}','decline')">Decline</button></span>
+    </div>
+    <span id="deal-note-${deal.id}" class="saved"></span>
+    <div id="deal-counter-${deal.id}" style="display:none;margin-top:12px">${dealCounterFormHtml(deal, role)}</div>`;
+  } else {
+    actions = `<p class="small muted" style="margin:10px 0 0">Waiting on ${esc(other)}${expires ? ` — the deal closes on its own ${esc(expires)} if it goes unanswered` : ""}.</p>
+    ${role === "business" ? `<p style="margin:8px 0 0"><button class="btn small-btn ghost" onclick="dealWithdraw('${deal.id}')">Withdraw this deal</button> <span id="deal-note-${deal.id}" class="saved"></span></p>` : ""}`;
+  }
+  return `<div class="card mb">
+    <div class="slot-top"><div class="slot-body">
+      <div class="slot-badges"><span class="badge tier">${esc(other)}</span>${deal.status === "pending" && expires ? `<span class="badge info">Answer by ${esc(expires)}</span>` : ""}</div>
+      <div class="slot-name">${esc(deal.title || "A deal")}</div>
+      ${deal.gap ? `<div class="slot-meta"><span>${esc(deal.gap.line)}</span></div>` : ""}
+      ${deal.midpoint != null ? `<div class="slot-meta"><span>Halfway between you both: <strong>$${fmtPrice(deal.midpoint)}</strong></span></div>` : ""}
+    </div></div>
+    <div style="margin-top:8px">${rows}</div>
+    <p class="small muted" style="margin:8px 0 0">${esc(deal.licenceLine || "")}</p>
+    ${actions}
+  </div>`;
+}
+function dealCounterFormHtml(deal, role) {
+  const t = (deal.current || {}).terms || {};
+  const kindFields = t.kind === "paid"
+    ? `<div class="field"><label>Your rate ($)</label><input type="number" id="dc-rate-${deal.id}" min="0" step="1" value="${t.cashRate || ""}"></div>`
+    : t.kind === "comp"
+      ? `<div class="field"><label>Comp value ($)</label><input type="number" id="dc-cap-${deal.id}" min="0" step="1" value="${t.dollarCap || ""}"></div><div class="field"><label>What is comped</label><input id="dc-what-${deal.id}" value="${esc(t.whatComped || "")}"></div>`
+      : t.kind === "mix"
+        ? `<div class="field"><label>Cash on top ($)</label><input type="number" id="dc-topup-${deal.id}" min="0" step="1" value="${t.cashTopUp || ""}"></div>`
+        : `<p class="small muted">Coupon terms stay as they are on a counter; the amount that moves is set by the coupon itself. Counter the posts or the timing instead.</p>`;
+  return `<div class="panel" style="margin:0">
+    <h4 style="margin:0 0 6px">Your counter — one per deal</h4>
+    <div class="form-2col">
+      ${kindFields}
+      <div class="field"><label>Posts</label><input type="number" id="dc-posts-${deal.id}" min="1" max="5" step="1" value="${(t.deliverables || {}).posts || 1}"></div>
+      <div class="field"><label>Include a story that shares the post?</label><select id="dc-story-${deal.id}"><option value="1" ${!t.deliverables || t.deliverables.story !== false ? "selected" : ""}>Yes — 1 post + 1 story</option><option value="0" ${t.deliverables && t.deliverables.story === false ? "selected" : ""}>Post only</option></select></div>
+      <div class="field"><label>Answer window</label><select id="dc-expiry-${deal.id}"><option value="48">48 hours</option><option value="24">24 hours</option></select></div>
+    </div>
+    <button class="btn" onclick="dealRespond('${deal.id}','counter')">Send counter</button>
+  </div>`;
+}
+async function dealRespond(dealId, action) {
+  const note = document.getElementById(`deal-note-${dealId}`);
+  const body = { action };
+  if (action === "decline") body.reason = (document.getElementById(`deal-reason-${dealId}`) || {}).value || "other";
+  if (action === "counter") {
+    const terms = {};
+    const rate = document.getElementById(`dc-rate-${dealId}`);
+    const cap = document.getElementById(`dc-cap-${dealId}`);
+    const what = document.getElementById(`dc-what-${dealId}`);
+    const topup = document.getElementById(`dc-topup-${dealId}`);
+    if (rate) terms.cashRate = Number(rate.value);
+    if (cap) terms.dollarCap = Number(cap.value);
+    if (what) terms.whatComped = what.value;
+    if (topup) terms.cashTopUp = Number(topup.value);
+    terms.deliverables = { posts: Number((document.getElementById(`dc-posts-${dealId}`) || {}).value || 1), story: (document.getElementById(`dc-story-${dealId}`) || {}).value === "1" };
+    body.terms = terms;
+    body.expiresInHours = Number((document.getElementById(`dc-expiry-${dealId}`) || {}).value || 48);
+  }
+  try {
+    const d = await api("POST", `/deals/${dealId}/respond`, body);
+    if (note) note.textContent = action === "accept" ? "Booked. The visit is in your visits." : action === "counter" ? "Counter sent." : "Declined.";
+    refreshDeals();
+  } catch (e) { if (note) note.textContent = e.message; else alert(e.message); }
+}
+async function dealWithdraw(dealId) {
+  const note = document.getElementById(`deal-note-${dealId}`);
+  try { await api("POST", `/deals/${dealId}/withdraw`, {}); refreshDeals(); }
+  catch (e) { if (note) note.textContent = e.message; }
+}
+async function dealRebook(dealId) {
+  const note = document.getElementById(`deal-note-${dealId}`);
+  try {
+    await api("POST", "/deals", { rebookOfDealId: dealId });
+    if (note) note.textContent = "Sent again at the same terms.";
+    refreshDeals();
+  } catch (e) { if (note) note.textContent = e.message; }
+}
+function dealToggleCounter(dealId) {
+  const box = document.getElementById(`deal-counter-${dealId}`);
+  if (box) box.style.display = box.style.display === "none" ? "" : "none";
+  return false;
+}
+function refreshDeals() {
+  if (state.user && state.user.role === "creator") loadCreatorOffers();
+  else loadMyOffers();
+}
+async function loadDealsInto(hostId, role) {
+  const host = document.getElementById(hostId);
+  if (!host) return;
+  try {
+    const d = await api("GET", "/deals");
+    const deals = d.deals || [];
+    host.innerHTML = deals.length
+      ? deals.map((x) => dealProposalCardHtml(x, role)).join("")
+      : `<div class="empty-card"><div class="ec-t">No deals yet</div><div class="ec-s">${role === "creator" ? "When a business sends you structured terms instead of a plain invite, the deal lands here: accept it, counter it once, or decline with a reason. No messages, no haggling." : "Send a deal from a creator's profile with Make an offer: structured terms they can accept, counter once, or decline. Accepted deals book the visit at exactly those terms."}</div></div>`;
+  } catch (e) { host.innerHTML = `<div class="error-box">${esc(e.message)}</div>`; }
+}
+
+// Make an offer: the one-screen deal sheet on a creator's
+// profile. Amount, what they post, posting terms, and how long
+// the deal stays open — then it goes out as a Deal Card.
+function openDealSheet(creatorId) {
+  const host = document.getElementById("deal-sheet-host");
+  if (!host) return;
+  const c = (state.discover || []).find((x) => x.userId === creatorId) || {};
+  const p = c.profile || {};
+  host.innerHTML = `<div class="panel mt" id="deal-sheet">
+    <h3 style="margin-top:0">Make an offer${c.name ? ` to ${esc(c.name)}` : ""}</h3>
+    <p class="small muted">Structured terms, not a negotiation thread. ${c.name || "The creator"} can accept, counter once, or decline with a reason. Accepting books the visit at exactly these terms.${p.paidRate ? ` Their listed rate is $${fmtPrice(p.paidRate)}.` : ""}</p>
+    <div class="field"><label>What kind of deal?</label><select id="ds-kind" onchange="dealSheetKind()"><option value="paid">Paid — cash at a rate</option><option value="comp">Comp — the experience, on us</option><option value="coupon">Coupon — spendable value at our place</option><option value="mix">Coupon + cash on top</option></select></div>
+    <div class="field"><label>Title</label><input id="ds-title" placeholder="For example: Dinner for two, on us"></div>
+    <div id="ds-paid"><div class="field"><label>Rate ($)</label><input type="number" id="ds-rate" min="0" step="1" value="${p.paidRate || ""}"></div></div>
+    <div id="ds-comp" style="display:none"><div class="form-2col"><div class="field"><label>Comp value ($)</label><input type="number" id="ds-cap" min="0" step="1"></div><div class="field"><label>What is comped</label><input id="ds-what" placeholder="Dinner for two, drinks included"></div></div></div>
+    <div id="ds-coupon" style="display:none">
+      <div class="form-2col">
+        <div class="field"><label>Coupon kind</label><select id="ds-ctype"><option value="store_credit">Store credit ($)</option><option value="amount_off">Money off ($)</option><option value="percent_off">Percent off (a cap is required)</option></select></div>
+        <div class="field"><label>Coupon value ($)</label><input type="number" id="ds-camount" min="0" step="1"></div>
+        <div class="field"><label>Percent off (%)</label><input type="number" id="ds-cpercent" min="1" max="90" step="1"></div>
+        <div class="field"><label>Up to ($ cap)</label><input type="number" id="ds-ccap" min="0" step="1"></div>
+      </div>
+      <div class="field"><label>What it applies to</label><input id="ds-capplies" placeholder="Anything on the menu"></div>
+    </div>
+    <div id="ds-mix" style="display:none"><div class="field"><label>Cash on top ($)</label><input type="number" id="ds-topup" min="0" step="1"></div></div>
+    <div class="form-2col">
+      <div class="field"><label>Posts</label><input type="number" id="ds-posts" min="1" max="5" step="1" value="1"></div>
+      <div class="field"><label>Story that shares the post?</label><select id="ds-story"><option value="1">Yes — the standard: 1 post + 1 story</option><option value="0">Post only</option></select></div>
+      <div class="field"><label>Posting terms</label><select id="ds-pttype"><option value="standard">Standard — post within 7 days of the visit</option><option value="bydate">Post by a date</option></select></div>
+      <div class="field"><label>Post by (only for "by a date")</label><input type="date" id="ds-ptdate"></div>
+      <div class="field"><label>The deal stays open</label><select id="ds-expiry"><option value="48">48 hours</option><option value="24">24 hours</option></select></div>
+    </div>
+    <button class="btn" onclick="sendDeal('${creatorId}')">Send the deal</button> <span id="ds-note" class="saved"></span>
+  </div>`;
+  host.scrollIntoView({ behavior: "smooth", block: "start" });
+  return false;
+}
+function dealSheetKind() {
+  const k = document.getElementById("ds-kind").value;
+  document.getElementById("ds-paid").style.display = k === "paid" ? "" : "none";
+  document.getElementById("ds-comp").style.display = k === "comp" ? "" : "none";
+  document.getElementById("ds-coupon").style.display = (k === "coupon" || k === "mix") ? "" : "none";
+  document.getElementById("ds-mix").style.display = k === "mix" ? "" : "none";
+}
+async function sendDeal(creatorId) {
+  const note = document.getElementById("ds-note");
+  const k = document.getElementById("ds-kind").value;
+  const body = { creatorId, kind: k, title: document.getElementById("ds-title").value || undefined, expiresInHours: Number(document.getElementById("ds-expiry").value || 48) };
+  if (k === "paid") body.cashRate = Number(document.getElementById("ds-rate").value);
+  if (k === "comp") { body.dollarCap = Number(document.getElementById("ds-cap").value); body.whatComped = document.getElementById("ds-what").value; }
+  if (k === "coupon" || k === "mix") {
+    const ct = document.getElementById("ds-ctype").value;
+    body.coupon = { type: ct, appliesTo: document.getElementById("ds-capplies").value || undefined };
+    if (ct === "percent_off") { body.coupon.percent = Number(document.getElementById("ds-cpercent").value); body.coupon.cap = Number(document.getElementById("ds-ccap").value); }
+    else body.coupon.amount = Number(document.getElementById("ds-camount").value);
+  }
+  if (k === "mix") body.cashTopUp = Number(document.getElementById("ds-topup").value);
+  body.deliverables = { posts: Number(document.getElementById("ds-posts").value || 1), story: document.getElementById("ds-story").value === "1" };
+  const ptt = document.getElementById("ds-pttype").value;
+  body.postingTerms = ptt === "bydate" ? { type: "bydate", byDate: document.getElementById("ds-ptdate").value } : { type: "standard" };
+  try {
+    const d = await api("POST", "/deals", body);
+    if (note) note.textContent = d.deal && d.deal.status === "accepted" ? "Their standing terms accepted it on the spot — the visit is booked." : d.deal && d.deal.status === "declined" ? "Their standing terms closed this one automatically: the numbers did not fit their floor." : "Deal sent. It sits in your Deals until they answer or it expires.";
+  } catch (e) { if (note) note.textContent = e.message; }
 }
 
 async function loadDirectOffers() {
@@ -15444,6 +15915,16 @@ function segEmptyLine(seg, role) {
     codes: "No codes yet. When a visit is booked, its code lands here.",
   }[seg] || "";
 }
+// The ONE visit timeline (Build -132): the same steps, the
+// same words, on both sides of the visit — booked, redeemed,
+// story, post, verified, counted — read from the server's
+// shared builder so the two cards can never tell two stories.
+function visitTimelineHtml(b) {
+  const steps = (b.timeline || []).filter((s) => s.state !== "skip");
+  if (!steps.length) return "";
+  return `<div class="visit-timeline" style="margin:10px 0"><h4 style="margin:0 0 6px">How this visit went</h4>${steps.map((s) => `<div class="lrow"><span>${s.state === "done" ? "✓" : s.state === "waiting" ? "→" : "·"} ${esc(s.label)}</span><span class="small muted">${s.at ? esc(fmtDate(s.at)) : ""}</span></div>`).join("")}</div>`;
+}
+
 function visitsRowWrap(b, role, seg) {
   let top = "";
   if (role === "business" && seg === "waiting") {
@@ -15471,6 +15952,10 @@ async function loadMyVisits(role) {
       ? `<div class="card mb"><div class="success-hero">${successCheckHtml()}<h3>Post submitted</h3><p>Your post is in and the visit is marked delivered. Your numbers build from here: update them as the post grows and they feed your track record.</p></div></div>`
       : "";
     state.postFlash = false;
+    const codeWarn = state.postCodeWarning
+      ? `<div class="card mb"><h3>One thing: add your code line</h3><p class="small">${esc(state.postCodeWarning.message)}</p><p class="small"><strong>${esc(state.postCodeWarning.line)}</strong></p><p><button class="btn small-btn ghost" type="button" onclick="navigator.clipboard && navigator.clipboard.writeText(${JSON.stringify(state.postCodeWarning.line)}); this.textContent='Copied'">Copy the line</button></p><p class="small muted">Paste it into the caption on the platform and every customer it brings in counts for both of you.</p></div>`
+      : "";
+    state.postCodeWarning = null;
     const bookings = data.bookings || [];
     state.nudgeBookings = state.nudgeBookings || {};
     for (const b of bookings) state.nudgeBookings[b.id] = b;
@@ -15520,7 +16005,7 @@ async function loadMyVisits(role) {
     } else {
       bodyHtml = `<div class="vx-stagger">${rows.map((b) => visitsRowWrap(b, role, seg)).join("")}</div>`;
     }
-    el.innerHTML = flash + head + bizTop + segTabs + bodyHtml;
+    el.innerHTML = flash + codeWarn + head + bizTop + segTabs + bodyHtml;
     if (state.visitFocus) {
       const target = document.getElementById("visit-" + state.visitFocus);
       state.visitFocus = null;
@@ -15595,6 +16080,7 @@ function visitCard(b, role) {
   }
   html += briefBlockHtml(b);
   html += dealCardHtml(b, role);
+  html += visitTimelineHtml(b);
   html += collabVisitHtml(b, role);
   if (role === "business" && b.status === "cancelled") html += swapBlockHtml(b);
   if (role === "creator") html += assetPacketBlockHtml(b.assetPacket);
@@ -15634,8 +16120,53 @@ function visitCard(b, role) {
     } else {
       html += pct > 0
         ? `<p class="small">Audience code for this visit: <strong>${esc(b.creatorCode)}</strong> (${pct}% off for customers who use it, your chosen code discount). It is rung up at your own register; report the tally on this card after the visit and it feeds this visit's modeled estimate.</p>`
-        : `<p class="small">Audience code for this visit: <strong>${esc(b.creatorCode)}</strong>. You have not turned on a code discount, so it is a counting code only: no percentage off for customers who use it. It is rung up at your own register; report the tally on this card after the visit and it feeds this visit's modeled estimate.</p>`;
+        : `<p class="small">Audience code for this visit: <strong>${esc(b.creatorCode)}</strong>. You have not turned on a code discount, so it is a counting code only: no percentage off for customers who use it. It is rung up at your own register; the register events on this card are the record.</p>`;
     }
+    // Build -132 code centre: ONE code per booking, counted
+    // totals from the one stream, the safety state in plain
+    // words, share assets for the creator, and the owner's
+    // controls (caps, discount expiry, revoke, regenerate).
+    const ac = b.audienceCode || {};
+    const acState = ac.state || {};
+    html += `<div class="showcase-block">
+      <h4>Audience code: ${esc(b.creatorCode)}</h4>
+      <p class="small" style="margin:0">${esc(ac.line || "")}</p>
+      <p class="small" style="margin:6px 0 0"><strong>${ac.counted || 0} customer${(ac.counted || 0) === 1 ? "" : "s"} counted</strong> through this code${ac.countedSpend ? ` &middot; $${fmtMoney(ac.countedSpend)} counted at the register` : ""}.</p>
+      ${acState.revoked ? `<p class="small" style="margin:6px 0 0"><span class="badge warn">Revoked</span> This code no longer counts or discounts.</p>` : acState.closed ? `<p class="small" style="margin:6px 0 0"><span class="badge warn">Closed out</span> This code reached its set limit, so it no longer counts or discounts.</p>` : acState.discountExpired ? `<p class="small" style="margin:6px 0 0"><span class="badge info">Discount window ended</span> The code still counts every customer; it just no longer takes a percentage off.</p>` : ""}
+      ${role === "creator" ? `<p style="margin:8px 0 0"><button class="btn small-btn ghost" type="button" onclick="loadCodeAssets('${b.id}')">Share assets for this code</button></p><div id="code-assets-${b.id}"></div>` : ""}
+      ${role === "business" ? `<div class="form-2col" style="margin-top:8px">
+        <div class="field"><label>Stop counting after this many customers (blank = no cap)</label><input type="number" id="cs-capcount-${b.id}" min="1" value="${acState.capCount != null ? esc(String(acState.capCount)) : ""}"></div>
+        <div class="field"><label>Stop counting after this much register spend $ (blank = no cap)</label><input type="number" id="cs-capspend-${b.id}" min="1" step="0.01" value="${acState.capSpend != null ? esc(String(acState.capSpend)) : ""}"></div>
+        <div class="field"><label>Discount ends (the code keeps counting after)</label><input type="date" id="cs-expires-${b.id}" value="${acState.expiresAt ? esc(String(acState.expiresAt).slice(0, 10)) : ""}"></div>
+      </div>
+      <p style="margin:4px 0 0"><button class="btn small-btn ghost" type="button" onclick="saveCodeSettings('${b.id}')">Save code settings</button>
+      <button class="btn small-btn ghost" type="button" onclick="regenCode('${b.id}')">Replace the code</button>
+      <button class="btn small-btn danger" type="button" onclick="revokeCode('${b.id}')">Revoke the code</button> <span class="small" id="cs-note-${b.id}"></span></p>` : ""}
+    </div>`;
+    // The audience offer rides the booking by default
+    // (attached at booking time); the business can take it off
+    // with one tap, or put one on a booking that has none.
+    if (b.audienceOffer) {
+      html += `<div class="showcase-block"><h4>For the audience: ${esc(b.audienceOffer.title || "For the audience")}</h4>
+      <p class="small" style="margin:0">${esc(b.audienceOffer.perk || "")} — with the code <strong>${esc(b.creatorCode)}</strong>. ${role === "creator" ? "Put the code line in your post so it counts for both of you." : "It rides this visit's code; there is no second code."}</p>
+      ${role === "business" ? `<p style="margin:8px 0 0"><button class="btn small-btn ghost" type="button" onclick="removeAudienceOffer('${b.id}')">Take the audience offer off this visit</button> <span class="small" id="ao-note-${b.id}"></span></p>` : ""}
+      </div>`;
+    } else if (role === "business") {
+      html += `<div class="showcase-block"><h4>No audience offer on this visit</h4>
+      <p class="small" style="margin:0">The code still counts. Add a perk and the creator's audience gets a reason to come in:</p>
+      <div class="form-2col" style="margin-top:6px"><div class="field"><label>What their audience gets</label><input id="ao-perk-${b.id}" placeholder="Free appetizer with an entree"></div></div>
+      <p style="margin:0"><button class="btn small-btn" type="button" onclick="attachAudienceOffer('${b.id}')">Attach the audience offer</button> <span class="small" id="ao-note-${b.id}"></span></p></div>`;
+    }
+  }
+  if (b.kind === "coupon" && b.couponSpend) {
+    const cs = b.couponSpend;
+    html += `<div class="showcase-block">
+      <h4>Coupon spend</h4>
+      <p class="small" style="margin:0">Worth <strong>$${fmtMoney(cs.face || 0)}</strong> in spendable value &middot; <strong>$${fmtMoney(cs.spent || 0)} spent</strong> &middot; <strong>$${fmtMoney(cs.remaining || 0)} remains</strong> &middot; ${cs.status === "spent" ? "fully spent" : cs.status === "expired" || cs.status === "closed" ? "closed at expiry" : cs.status === "partly_spent" ? "partly spent — the rest is still live" : "not spent yet"}${cs.expiresAt ? ` &middot; expires ${esc(fmtDate(cs.expiresAt))}` : ""}.</p>
+      ${role === "creator" ? `<p class="small" style="margin:6px 0 0">At the register, show this spend code (separate from your visit code): <strong style="letter-spacing:0.06em">${esc(cs.code || "")}</strong></p>` : ""}
+      ${role === "business" && cs.status !== "spent" && cs.status !== "expired" && cs.status !== "closed" ? `<div class="form-2col" style="margin-top:6px"><div class="field"><label>Record a spend against the coupon ($)</label><input type="number" id="csp-amt-${b.id}" min="0" step="0.01"></div></div><p style="margin:0"><button class="btn small-btn" type="button" onclick="recordCouponSpendUi('${b.id}', '${esc(cs.code || "")}')">Record the spend</button> <span class="small" id="csp-note-${b.id}"></span></p>` : ""}
+      ${(cs.events || []).length ? `<div style="margin-top:6px">${cs.events.map((e) => `<div class="lrow"><span>$${fmtMoney(e.amount)} spent</span><span class="small muted">${esc(fmtDate(e.at))}${e.via ? ` · ${esc(e.via)}` : ""}</span></div>`).join("")}</div>` : ""}
+    </div>`;
   }
   if (role === "creator" && b.codeStatus === "issued") {
     html += `
@@ -15682,7 +16213,10 @@ function visitCard(b, role) {
       ${(b.kind === "paid" || b.paidLane) ? `<p class="small muted">Your check-off is the post link itself. Paste it here and the visit is marked delivered. This paid visit runs on its agreed terms: ${esc(postingTermsLineClient(b).replace(/^Posting terms: /, ""))}</p>` : late ? `<p class="small"><strong>This post is past its ${windowPhraseClient(deliverablesOfClient(b).windowHours)} deadline.</strong> Post within ${windowPhraseClient(deliverablesOfClient(b).windowHours)} for full credit. A late post inside the catch-up window still counts, and the missed deadline stays on your record. No link, no check-off.</p>` : `<p class="small muted">Your check-off is the post link itself. Paste it here and the visit is marked delivered${b.compliance && b.compliance.deadline ? ` (deadline ${esc(fmtDate(b.compliance.deadline))})` : ""}. Post within ${windowPhraseClient(deliverablesOfClient(b).windowHours)} for full credit. A late post inside the catch-up window still counts.</p>`}
       <div class="field"><label>Link to your ${esc(primaryLabelClient((state.user && state.user.creator && state.user.creator.primaryPlatform) || "instagram"))} post</label><input id="post-url-${b.id}" type="url" placeholder="https://${esc(primaryMetaClient((state.user && state.user.creator && state.user.creator.primaryPlatform) || "instagram").host)}..." required></div>
       <label class="ckrow"><input type="checkbox" class="ckbox" id="post-disc-${b.id}"><span>My post clearly discloses the comp (for example #ad or "comped by the business"), as the FTC requires.</span></label>
-      ${b.adDisclosure ? `<div class="field"><label>Your post caption (UK ad rule: #ad up front)</label><textarea id="post-caption-${b.id}" rows="2">${esc(disclosureLine(b))}</textarea><p class="small muted">${esc(b.adDisclosure.clause)} This visit does not count as delivered until the ad label is verified.</p></div>` : ""}
+      ${b.adDisclosure ? `<div class="field"><label>Your post caption (UK ad rule: #ad up front, then your code line)</label><textarea id="post-caption-${b.id}" rows="2">${esc(disclosureLine(b))} ${esc(b.audienceCode && b.audienceCode.line ? b.audienceCode.line : "")}</textarea><p class="small muted">${esc(b.adDisclosure.clause)} This visit does not count as delivered until the ad label is verified. Keep the code line in: it is how customers this post brings in get counted for both of you.</p></div>` : `<div class="field"><label>Your post caption (started for you — keep the code line in so the visit counts)</label><textarea id="post-caption-${b.id}" rows="2">${esc(disclosureLine(b))} ${esc(b.audienceCode && b.audienceCode.line ? b.audienceCode.line : "")}</textarea></div>`}
+      ${deliverablesOfClient(b).story ? `<label class="ckrow"><input type="checkbox" class="ckbox" id="post-story-attest-${b.id}"><span>I posted the story that shares this post too.</span></label>
+      <div class="field"><label>Story link (optional — a link or screenshot reference is enough)</label><input id="post-story-url-${b.id}" placeholder="https://"></div>
+      <p class="small muted">The story counts as creator-confirmed: you are telling us it went up. SIGNL cannot see stories directly yet, so this runs on your word.</p>` : ""}
       <p class="small muted">Post your honest experience. Nobody can require a positive post.</p>
       <div class="field"><label>Your disclosure line, done for you</label><div style="display:flex;gap:8px;flex-wrap:wrap"><input type="text" readonly value="${esc(disclosureLine(b))}" onclick="this.select()" style="flex:1;min-width:220px"><button type="button" class="btn small-btn ghost" onclick="return disclosureCopy(this)">Copy the line</button></div><p class="small muted">One tap copies it. Paste it at the top of your caption, then confirm on this card after the post is live.</p></div>
       <button class="btn small-btn" type="submit">Submit post</button>
@@ -15735,6 +16269,8 @@ function visitCard(b, role) {
         html += `<p class="small"><span class="badge ok">Licensed for ads</span> Through ${fmtDate(lic.windowEndsAt)}: repost and ad use covered.</p><button class="btn small-btn ghost" onclick="declareAdUse('${post.id}', 'license')">Use in an ad</button> <span class="small muted">The creator is notified and earns +25 Momentum.</span>`;
       } else if (licReq && licReq.status === "pending") {
         html += `<p class="small muted">License requested at $${fmtPrice(licReq.fee)}: waiting on the creator. You pay only if they approve, and the 90 days run from their yes.</p>`;
+      } else if (licReq && licReq.status === "countered") {
+        html += `<div class="notice blue"><strong>The creator countered:</strong> $${fmtPrice(licReq.counterFee)} for the same 90 days of repost and ad use (total $${fmtMoney(licReq.counterBusinessTotal)} with fees). The term never moves — only the fee did.<br><button class="btn small-btn" style="margin-top:8px" onclick="licenseCounterDecision('${licReq.id}', 'accept')">Accept $${fmtPrice(licReq.counterFee)}</button> <button class="btn small-btn ghost" style="margin-top:8px" onclick="licenseCounterDecision('${licReq.id}', 'decline')">Decline</button></div>`;
       } else if (b.creatorLicensingFee) {
         html += `<button class="btn small-btn ghost" onclick="requestLicense('${post.id}', ${b.creatorLicensingFee})">License for ads</button> <span class="small muted">This was a comp visit, so it covers native sharing only until licensed. The creator licenses this post for 90 days of repost and ad use at their $${fmtPrice(b.creatorLicensingFee)} fee, only with their approval.</span>${growthNudgeHtml()}`;
       } else {
@@ -15743,7 +16279,10 @@ function visitCard(b, role) {
     }
     if (role === "creator" && b.kind !== "paid") {
       if (licReq && licReq.status === "pending") {
-        html += `<div class="notice blue"><strong>License request:</strong> ${esc(licReq.businessName || "A business")} wants to license this post for 90 days of reposting and ad use at your $${fmtPrice(licReq.fee)} fee. You keep $${fmtMoney(licReq.creatorNet)} (97%). If you approve, the 90 days start today and end ${fmtDayFull(new Date(Date.now() + 90 * 86400000).toISOString())}.<br><button class="btn small-btn" style="margin-top:8px" onclick="respondLicense('${licReq.id}', 'approve')">Approve license</button> <button class="btn small-btn ghost" style="margin-top:8px" onclick="respondLicense('${licReq.id}', 'decline')">Decline</button></div>`;
+        html += `<div class="notice blue"><strong>License request:</strong> ${esc(licReq.businessName || "A business")} wants to license this post for 90 days of reposting and ad use at your $${fmtPrice(licReq.fee)} fee. You keep $${fmtMoney(licReq.creatorNet)} (97%). If you approve, the 90 days start today and end ${fmtDayFull(new Date(Date.now() + 90 * 86400000).toISOString())}. The 90 days never move — only the fee is yours to counter.<br><button class="btn small-btn" style="margin-top:8px" onclick="respondLicense('${licReq.id}', 'approve')">Approve license</button> <button class="btn small-btn ghost" style="margin-top:8px" onclick="respondLicense('${licReq.id}', 'decline')">Decline</button>
+        <div class="form-2col" style="margin-top:8px"><div class="field"><label>Or counter the fee ($)</label><input type="number" id="lic-counter-${licReq.id}" min="1" step="1" placeholder="${esc(String(licReq.fee || ""))}"></div><div class="field"><label>&nbsp;</label><button class="btn small-btn ghost" type="button" onclick="respondLicense('${licReq.id}', 'counter')">Counter the fee</button></div></div></div>`;
+      } else if (licReq && licReq.status === "countered") {
+        html += `<p class="small">You countered this license at <strong>$${fmtPrice(licReq.counterFee)}</strong> (you would keep $${fmtMoney(licReq.counterCreatorNet)}). Waiting on the business — the 90 days stay locked either way.</p>`;
       } else if (licActive) {
         html += `<p class="small"><span class="badge ok">Licensed for ads</span> Through ${fmtDate(lic.windowEndsAt)}${licReq && licReq.creatorNet ? ` &middot; you kept $${fmtMoney(licReq.creatorNet)}` : ""}.</p>`;
       } else if (licReq && licReq.status === "declined") {
@@ -15781,6 +16320,19 @@ function visitCard(b, role) {
       </div>
       <button class="btn small-btn" type="submit">Report numbers</button> <span class="small muted">+5 Momentum</span>
     </form>`;
+    }
+  }
+  if (b.storyState && b.storyState.required) {
+    const ss = b.storyState;
+    if (ss.confirmed) {
+      html += `<p class="small"><span class="saved">Story confirmed</span> — the story that shares the post was confirmed by the creator${ss.confirmedAt ? ` on ${esc(fmtDate(ss.confirmedAt))}` : ""}${ss.url ? ` &middot; <a href="${esc(ss.url)}" target="_blank" rel="noopener">story link</a>` : ""}. Labelled creator-confirmed: SIGNL cannot see stories directly yet.</p>`;
+    } else if (role === "creator" && b.redeemedAt) {
+      html += `<div class="showcase-block"><h4>The story that shares the post</h4>
+      <p class="small" style="margin:0 0 8px">The visit standard is one post and one story. Confirm the story here — it counts as creator-confirmed, on your word, until story checks can be automatic.</p>
+      <div class="field"><label>Story link (optional)</label><input id="story-url-${b.id}" placeholder="https://"></div>
+      <p style="margin:6px 0 0"><button class="btn small-btn" type="button" onclick="confirmStoryUi('${b.id}')">I posted the story</button> <span class="small" id="story-note-${b.id}"></span></p></div>`;
+    } else {
+      html += `<p class="small muted">Story: not confirmed yet. The visit standard is one post and one story; the creator confirms the story on this card.</p>`;
     }
   }
   if (post && role === "creator" && perfUpdateDue(post)) {
@@ -15821,27 +16373,14 @@ function visitCard(b, role) {
     </div>
     <p class="small" id="counter-note-${b.id}" style="margin-top:6px"></p>
     <div style="margin-top:12px;border-top:1px solid var(--hairline,#DFE7DF);padding-top:10px">
-      <h4 style="margin:0 0 4px">Give their audience a reason to come in</h4>
-      <p class="small muted" style="margin:0 0 8px">Attach an audience offer to this visit: @${esc(b.creatorHandle)} gets a unique code to share, and every redemption counts on your receipt.</p>
-      <div class="form-2col">
-        <div class="field"><label>Offer name</label><input id="aud-title-${b.id}" placeholder="For example: Taco Tuesday invite"></div>
-        <div class="field"><label>What their audience gets</label><input id="aud-perk-${b.id}" placeholder="Free appetizer with an entree"></div>
-      </div>
-      <p style="margin:0 0 8px"><button class="btn small-btn" type="button" onclick="audCreateForBooking('${b.id}')">Create the audience offer</button> <span class="small" id="aud-note-${b.id}"></span></p>
-      <div class="form-2col">
-        <div class="field"><label>Audience code</label><input id="audr-code-${b.id}" placeholder="AUD-XXXXXX" style="text-transform:uppercase"></div>
-        <div class="field"><label>Order total ($)</label><input id="audr-amt-${b.id}" type="number" min="0" step="0.01" placeholder="0.00"></div>
-      </div>
-      <div class="chip-row" role="radiogroup" aria-label="Channel">
-        <label class="radio-chip"><input type="radio" name="audr-chan-${b.id}" value="in_store" checked><span>In store</span></label>
-        <label class="radio-chip"><input type="radio" name="audr-chan-${b.id}" value="pickup"><span>Pickup</span></label>
-        <label class="radio-chip"><input type="radio" name="audr-chan-${b.id}" value="delivery"><span>Delivery</span></label>
-      </div>
-      <p style="margin-top:6px"><button class="btn small-btn ghost" type="button" onclick="audRedeem('audr-','${b.id}')">Log the redemption</button> <span class="small" id="audr-note-${b.id}"></span></p>
+      <h4 style="margin:0 0 4px">Register events on this visit</h4>
+      <p class="small muted" style="margin:0 0 8px">Every code use logged at the counter is the record — this list is what counts. A total far above your usual ticket waits for your confirmation before it counts.</p>
+      <p style="margin:0 0 8px"><button class="btn small-btn ghost" type="button" onclick="loadVisitEvents('${b.id}')">Show the register events</button></p>
+      <div id="visit-events-${b.id}"></div>
     </div>
     <form onsubmit="return submitCodeRedemptions(event, '${b.id}')">
-      <h4 style="margin:10px 0 4px">Code tally for this visit</h4>
-      <p class="small muted">One question settles it: how many customers used ${b.creatorCode ? `<strong>${esc(b.creatorCode)}</strong>` : "the creator's audience code"} at your register. Saving replaces the last tally and completes this visit's modeled estimate.</p>
+      <h4 style="margin:10px 0 4px">Correction tally (only if the register events are wrong)</h4>
+      <p class="small muted">The register events above are the record. Use this only to correct them: how many customers used ${b.creatorCode ? `<strong>${esc(b.creatorCode)}</strong>` : "the creator's audience code"} at your register. Saving replaces the last correction and completes this visit's modeled estimate.</p>
       <div class="form-2col">
         <div class="field"><label>How many customers used the code?</label><input type="number" id="redeem-count-${b.id}" min="0" placeholder="0" value="${tallyCount}" oninput="tallyCountChanged('${b.id}')"></div>
         <div class="field"><label>Total rung up with the code ($)</label><input type="number" id="redeem-basket-${b.id}" min="0" step="0.01" placeholder="0.00" value="${tallyBasket}" oninput="this.dataset.touched='1'"></div>
@@ -15929,11 +16468,22 @@ async function submitPost(e, bookingId) {
   if (!disc.checked) { alert("Confirm the disclosure first. Every SIGNL post must disclose the comp."); return false; }
   try {
     const capEl = document.getElementById("post-caption-" + bookingId);
-    await api("POST", "/posts", { bookingId, url: document.getElementById("post-url-" + bookingId).value, includesDisclosure: true, caption: capEl ? capEl.value : undefined });
+    const storyAttest = document.getElementById("post-story-attest-" + bookingId);
+    const storyUrl = document.getElementById("post-story-url-" + bookingId);
+    const d = await api("POST", "/posts", { bookingId, url: document.getElementById("post-url-" + bookingId).value, includesDisclosure: true, caption: capEl ? capEl.value : undefined, storyAttested: storyAttest ? !!storyAttest.checked : undefined, storyUrl: storyUrl ? storyUrl.value.trim() || undefined : undefined });
     state.postFlash = true;
+    if (d && d.codeWarning) state.postCodeWarning = d.codeWarning;
     loadMyVisits("creator");
   } catch (err) { alert(err.message); }
   return false;
+}
+async function confirmStoryUi(bookingId) {
+  const note = document.getElementById("story-note-" + bookingId);
+  const url = (document.getElementById("story-url-" + bookingId) || {}).value || "";
+  try {
+    await api("POST", `/bookings/${bookingId}/story`, { attested: true, url: url.trim() || undefined });
+    loadMyVisits("creator");
+  } catch (e) { if (note) note.textContent = e.message; }
 }
 
 async function verifyPost(postId) {
@@ -16125,7 +16675,19 @@ async function requestLicense(postId, fee) {
 async function respondLicense(id, decision) {
   const rec = (state.licenseRequests || []).find((l) => l.id === id);
   if (decision === "approve" && rec && !confirm(`Approve this license? ${rec.businessName || "The business"} can repost this post and run it as an ad for 90 days. You keep $${fmtMoney(rec.creatorNet)} (97% of your fee). The 90 days start today, the day you approve, and end ${fmtDayFull(new Date(Date.now() + 90 * 86400000).toISOString())}. Never longer.`)) return;
+  if (decision === "counter") {
+    const feeEl = document.getElementById("lic-counter-" + id);
+    const fee = Number(feeEl && feeEl.value);
+    if (!(fee >= 1)) { alert("Name the fee you would license at — $1 or more."); return; }
+    try { await api("POST", `/license-requests/${id}/respond`, { decision: "counter", fee }); if (state.tab === "Earnings") renderEarningsTab(); else loadMyVisits("creator"); }
+    catch (err) { alert(err.message); }
+    return;
+  }
   try { await api("POST", `/license-requests/${id}/respond`, { decision }); if (state.tab === "Earnings") renderEarningsTab(); else loadMyVisits("creator"); }
+  catch (err) { alert(err.message); }
+}
+async function licenseCounterDecision(id, decision) {
+  try { await api("POST", `/license-requests/${id}/counter-decision`, { decision }); loadMyVisits("business"); }
   catch (err) { alert(err.message); }
 }
 
@@ -17700,6 +18262,7 @@ async function loadBusinessHome() {
     ${sigHomeTopHtml()}
     ${nextStepsHtml(nxQueue, [], { caughtUp: sigQueueHtml([], { links: caughtLinks, askBox: true }) })}
     ${d.setupChecklist ? setupChecklistHtml(d.setupChecklist) : ""}
+    ${d.proofKit && d.proofKit.complete ? `<div class="notice" style="margin-top:14px"><strong>Counter-ready.</strong> Your usual day is set, the staff PIN is on, the counter card is printed, and a test redemption has run — visits count from the first real one.</div>` : ""}
     ${d.marketLive ? "" : `<div class="notice blue" style="margin-top:14px"><strong>Your market has not launched yet.</strong> Businesses sign up when we are ready to launch. Draft offers now; publishing switches on at launch.</div>`}
     ${snapshotHtml(snapCells, "This fills in once your campaigns are live. When creators start visiting and posting, you will see applications, visits, posts, and the local reach they delivered, right here.", "Analytics")}
     <div id="perf-card"></div>
@@ -19101,21 +19664,21 @@ async function loadDiscover() {
     </div>
     <div class="dspan-row"><button type="button" id="dchip-spanish" class="dspan-toggle${state.discoverSpanish ? " on" : ""}" aria-pressed="${state.discoverSpanish ? "true" : "false"}" onclick="return discoverSpanishChip(this)"><span class="dspan-check" aria-hidden="true">&#10003;</span><span class="dspan-main">Spanish-speaking creators only</span><span class="dspan-sub">Makes content in Spanish</span></button><button type="button" id="dchip-musician" class="dspan-toggle${state.discoverMusician ? " on" : ""}" style="margin-left:8px" aria-pressed="${state.discoverMusician ? "true" : "false"}" onclick="return discoverMusicianChip(this)"><span class="dspan-check" aria-hidden="true">&#10003;</span><span class="dspan-main">Musicians only</span><span class="dspan-sub">Creators who make music</span></button></div>
     <div class="dcat-row"><button type="button" data-cat="" class="dcat-chip${(state.discoverCats || []).length ? "" : " on"}" onclick="return discoverCatChip('', this)">All</button>${state.boot.creatorCategories.map((c) => `<button type="button" data-cat="${esc(c)}" class="dcat-chip${(state.discoverCats || []).includes(c) ? " on" : ""}" onclick="return discoverCatChip('${esc(c)}', this)">${esc(c)}</button>`).join("")}</div>
+    <div class="filters">
+      <div><label>Search</label><input id="f-q" placeholder="Name or handle"></div>
+      <div><label>Tier</label><select id="f-tier"><option value="">All tiers</option>${state.boot.tiers.map((t) => `<option>${esc(t.id)}</option>`).join("")}</select></div>
+      <div><label>Min % followers in market</label><input type="number" id="f-minlocal" min="0" max="100" placeholder="Any"></div>
+      <div><label>Sort by</label><select id="f-sort"><option value="local" selected>Local % first</option><option value="">Founding order</option><option value="score">Local Impact Score</option><option value="momentum">Momentum</option><option value="fit">Best fit</option></select></div>
+      <div><label>&nbsp;</label><button class="btn small-btn" style="width:100%" onclick="runDiscover()">Search</button></div>
+    </div>
     <details class="filters-fold"><summary>More filters</summary>
     <div class="filters">
       <div><label>Neighborhood / area</label><input id="f-neighborhood" placeholder="For example: Oceanfront, Ghent"></div>
-      <div><label>Tier</label><select id="f-tier"><option value="">All tiers</option>${state.boot.tiers.map((t) => `<option>${esc(t.id)}</option>`).join("")}</select></div>
-      <div><label>Search</label><input id="f-q" placeholder="Name or handle"></div>
       <div><label>University (current students)</label><select id="f-university"><option value="">All universities</option>${state.discoverUniversity ? `<option selected>${esc(state.discoverUniversity)}</option>` : ""}</select></div>
-    </div>
-    <div class="filters">
       <div><label>Would accept (comp fit)</label><select id="f-comp"><option value="">Any comp</option>${state.boot.compCategories.map((c) => `<option>${esc(c)}</option>`).join("")}</select></div>
       <div><label>Total audience min</label><input type="number" id="f-fmin" min="0" placeholder="Any"></div>
       <div><label>Total audience max</label><input type="number" id="f-fmax" min="0" placeholder="Any"></div>
-      <div><label>Min % followers in market</label><input type="number" id="f-minlocal" min="0" max="100" placeholder="Any"></div>
-      <div><label>Sort by</label><select id="f-sort"><option value="">Founding order</option><option value="score">Local Impact Score</option><option value="momentum">Momentum</option><option value="fit">Best fit</option></select></div>
       <div><label>&nbsp;</label><label style="font-weight:500"><input type="checkbox" id="f-paid" style="width:auto"> Has a paid rate (paid bookings) only</label></div>
-      <div><label>&nbsp;</label><button class="btn small-btn" style="width:100%" onclick="runDiscover()">Search</button></div>
     </div>
     </details>
     <div id="discover-toggle"></div>
@@ -19165,7 +19728,11 @@ async function runDiscover() {
   if (fmin) params.set("followersMin", fmin);
   if (fmax) params.set("followersMax", fmax);
   if (minlocal) params.set("minLocalPct", minlocal);
-  if (sort) params.set("sort", sort);
+  // Build -132: the default sort is local % first — SIGNL's
+  // ranking principle. It is applied to the returned set (the
+  // deck already ranked this way); the named server sorts pass
+  // through untouched.
+  if (sort && sort !== "local") params.set("sort", sort);
   if (document.getElementById("f-paid").checked) params.set("paid", "1");
   if (state.discoverSpanish) params.set("spanish", "1");
   if (state.discoverMusician) params.set("musician", state.discoverMusician);
@@ -19174,6 +19741,13 @@ async function runDiscover() {
   if (state.discoverUniversity) params.set("university", state.discoverUniversity);
   try {
     const data = await api("GET", "/discover?" + params.toString());
+    if (sort === "local") {
+      data.creators.sort((a, b) => {
+        const pa = (a.profile || {}).localAudiencePct;
+        const pb = (b.profile || {}).localAudiencePct;
+        return (pb === null || pb === undefined ? -1 : pb) - (pa === null || pa === undefined ? -1 : pa);
+      });
+    }
     state.discover = data.creators;
     syncUniversityOptions(data.universities);
     if (!data.creators.length) {
@@ -19327,7 +19901,9 @@ function discoverEndHtml(passed, total) {
 }
 function discoverClearFilters() {
   ["f-neighborhood", "f-q", "f-fmin", "f-fmax", "f-minlocal"].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ""; });
-  ["f-tier", "f-comp", "f-sort"].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ""; });
+  ["f-tier", "f-comp"].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ""; });
+  const sortEl = document.getElementById("f-sort");
+  if (sortEl) sortEl.value = "local";
   const paid = document.getElementById("f-paid");
   if (paid) paid.checked = false;
   state.discoverUniversity = "";
@@ -19382,6 +19958,7 @@ function renderOffersSegTabs() {
   host.innerHTML = wsTabs([
     { label: "Live", count: all.filter((o) => o.status === "open" || o.status === "filled").length || null, on: state.offersSeg === "live", onclick: "return offersSetSeg('live')" },
     { label: "Drafts", count: all.filter((o) => o.status === "draft").length || null, on: state.offersSeg === "drafts", onclick: "return offersSetSeg('drafts')" },
+    { label: "Deals", on: state.offersSeg === "deals", onclick: "return offersSetSeg('deals')" },
     { label: "Applicants", count: wc.bizApps || null, on: state.offersSeg === "applicants", onclick: "return offersSetSeg('applicants')" },
     { label: "Done", count: all.filter(offerIsArchived).length || null, on: state.offersSeg === "past", onclick: "return offersSetSeg('past')" },
   ]);
@@ -20616,6 +21193,12 @@ async function loadMyOffers() {
   const el = document.getElementById("tab-body");
   if (!el) return;
   if (!state.offersSeg) state.offersSeg = "live";
+  if (state.offersSeg === "deals") {
+    el.innerHTML = `${wsHead("Your campaigns", { sub: "Deals you sent, and the ones waiting on an answer.", subKey: "biz-campaigns" })}<div id="offers-segs"></div><div id="biz-deals">${skelHtml("Loading your deals...", 1)}</div>`;
+    renderOffersSegTabs();
+    loadDealsInto("biz-deals", "business");
+    return;
+  }
   if (state.offersSeg === "applicants") {
     el.innerHTML = `${wsHead("Your campaigns", { sub: "Current and past campaigns, who applied, and what they did.", subKey: "biz-campaigns" })}<div id="offers-segs"></div><div id="offers-seg-body"></div>`;
     renderOffersSegTabs();
@@ -20943,15 +21526,102 @@ function renderCounter(prefill) {
   ${wsHead("Counter", { sub: "Check a creator in at the register. One tap burns the code and starts the 48 hour post clock." })}
   <div class="panel" style="max-width:560px">
     <h3 style="margin-top:0">Counter check-in</h3>
-    <p class="muted">The creator shows their code or QR at the visit. Scan the QR with any phone camera (it lands back here), or type the short code. One tap burns the code and starts the 48 hour post clock. Your register is never involved: ring the comp in your own system the way you normally do.</p>
+    ${"BarcodeDetector" in window && navigator.mediaDevices ? `<button class="btn" style="width:100%;margin-bottom:12px" onclick="counterScan()">Scan the creator's QR</button>` : ""}
+    <p class="muted">Camera first: scan the creator's QR and the visit looks itself up. No QR? Type the short code — it looks up on its own as soon as it is complete — or find the visit by the creator's name. One tap burns the code and starts the 48 hour post clock. Your register is never involved: ring the comp in your own system the way you normally do.</p>
     <p class="small">Handing this device to staff? <button class="linklike" onclick="return goStaff()">Redeem a creator visit</button> in staff mode: PIN in, code in, done. They never see anything but the visit in front of them.</p>
     <form onsubmit="return counterLookup(event)">
-      <div class="field"><label>Booking code</label><input id="counter-code" value="${esc(code)}" placeholder="SGNL-XXXXXX" style="text-transform:uppercase;font-family:Manrope;font-weight:700;letter-spacing:0.06em" required></div>
+      <div class="field"><label>Booking code</label><input id="counter-code" value="${esc(code)}" placeholder="SGNL-XXXXXX" style="text-transform:uppercase;font-family:Manrope;font-weight:700;letter-spacing:0.06em" autocomplete="off" oninput="counterCodeTyped()"></div>
       <button class="btn" type="submit" style="width:100%">Look up booking</button>
     </form>
+    <div class="card mt">
+      <strong>No code? Find the visit by name</strong>
+      <p class="small muted">Dead phone, lost screen — type the creator's name or handle, pick the visit, and redeem it from there.</p>
+      <div class="field"><input id="counter-q" placeholder="Creator name or @handle" autocomplete="off" oninput="counterSearchTyped()"></div>
+      <div id="counter-search-results"></div>
+    </div>
     <div id="counter-result" class="mt"></div>
   </div>`;
   if (code) setTimeout(() => counterLookup(null, code), 30);
+}
+
+let counterTypeTimer = null;
+function counterCodeTyped() {
+  const v = (document.getElementById("counter-code").value || "").trim().toUpperCase();
+  if (!/^SGNL-[A-Z0-9]{6}$/.test(v)) return;
+  clearTimeout(counterTypeTimer);
+  counterTypeTimer = setTimeout(() => counterLookup(null, v), 250);
+}
+let counterSearchTimer = null;
+function counterSearchTyped() {
+  clearTimeout(counterSearchTimer);
+  counterSearchTimer = setTimeout(counterSearch, 300);
+}
+async function counterSearch() {
+  const q = (document.getElementById("counter-q").value || "").trim();
+  const host = document.getElementById("counter-search-results");
+  if (!host) return;
+  if (q.length < 2) { host.innerHTML = ""; return; }
+  try {
+    const d = await api("GET", "/counter/search?q=" + encodeURIComponent(q));
+    const visits = d.visits || [];
+    host.innerHTML = visits.length
+      ? visits.map((v) => `<div class="lrow" style="align-items:center"><span><strong>${esc(v.creatorName)}</strong> <span class="muted">@${esc(v.creatorHandle || "")}</span><br><span class="small muted">${esc(v.title)}</span></span><button class="btn small-btn" onclick="counterLookup(null, '${esc(v.code)}')">Open visit</button></div>`).join("")
+      : `<p class="small muted">No open visit matches that name. Check the spelling, or ask the creator for their code.</p>`;
+  } catch (e) { host.innerHTML = `<p class="small">${esc(e.message)}</p>`; }
+}
+
+// The owner Counter's own camera scan (Build -132): the button
+// its copy always promised. Same detector pattern as staff
+// mode; a found code fills the box and looks itself up.
+let counterScanStream = null;
+async function counterScan() {
+  const overlay = document.createElement("div");
+  overlay.id = "counter-scan-overlay";
+  overlay.style.cssText = "position:fixed;inset:0;background:rgba(10,10,12,0.92);z-index:999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px";
+  overlay.innerHTML = `
+    <video id="counter-scan-video" autoplay playsinline style="width:100%;max-width:480px;border-radius:12px;background:#000"></video>
+    <p class="small" style="color:#fff;margin:14px 0">Point the camera at the creator's QR code.</p>
+    <button class="btn ghost" onclick="counterScanStop()">Cancel</button>`;
+  document.body.appendChild(overlay);
+  try {
+    counterScanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+    const video = document.getElementById("counter-scan-video");
+    video.srcObject = counterScanStream;
+    const detector = new window.BarcodeDetector({ formats: ["qr_code"] });
+    const tick = async () => {
+      if (!document.getElementById("counter-scan-overlay")) return;
+      try {
+        const codes = await detector.detect(video);
+        if (codes && codes.length) {
+          const raw = String(codes[0].rawValue || "");
+          let code = "";
+          const m = raw.match(/code=([A-Za-z0-9-]+)/);
+          if (m) code = m[1].toUpperCase();
+          else if (/SGNL-/i.test(raw)) code = raw.trim().toUpperCase();
+          if (code) {
+            counterScanStop();
+            const input = document.getElementById("counter-code");
+            if (input) input.value = code;
+            counterLookup(null, code);
+            return;
+          }
+        }
+      } catch (e) { /* keep scanning */ }
+      setTimeout(tick, 350);
+    };
+    tick();
+  } catch (e) {
+    counterScanStop();
+    alert("The camera could not open here. Type the creator's code, or find the visit by name.");
+  }
+}
+function counterScanStop() {
+  if (counterScanStream) {
+    for (const t of counterScanStream.getTracks()) t.stop();
+    counterScanStream = null;
+  }
+  const overlay = document.getElementById("counter-scan-overlay");
+  if (overlay) overlay.remove();
 }
 
 async function counterLookup(e, preset) {
@@ -20963,7 +21633,7 @@ async function counterLookup(e, preset) {
     const data = await api("POST", "/counter/lookup", { code });
     const b = data.booking;
     if (b.redeemedAt) {
-      el.innerHTML = `<div class="error-box">This code was already redeemed at ${fmtDate(b.redeemedAt)}. Codes work once.</div>`;
+      el.innerHTML = `<div class="error-box">This code was already redeemed at ${fmtDate(b.redeemedAt)}. Codes work once. If the creator is here for a new visit, it has its own code — find it by their name above.</div>`;
       return;
     }
     el.innerHTML = `
@@ -20975,7 +21645,7 @@ async function counterLookup(e, preset) {
         <button class="btn" style="width:100%" onclick="counterRedeem('${esc(code)}')">Redeem visit</button>
       </div>`;
   } catch (err) {
-    el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+    el.innerHTML = `<div class="error-box">${esc(err.message)}<br><span class="small">What to do: check the code on the creator's phone and try again, or find the visit by their name above.</span></div>`;
   }
   return false;
 }
@@ -20985,9 +21655,21 @@ async function counterRedeem(code) {
   try {
     const data = await api("POST", "/counter/redeem", { code });
     const b = data.booking;
-    el.innerHTML = `<div class="success-hero">${successCheckHtml()}<h3>Redeemed.</h3><p>${esc(b.creatorName)}'s post is due by <strong>${fmtDate(b.postDeadline)}</strong>. Ring the comp in your own system, up to the $${fmtMoney(b.dollarCap)} cap. Track the post under Visits &amp; Posts.</p></div>`;
+    // Build -132: the success state takes the whole screen —
+    // mint, unmissable from across the counter — and buzzes.
+    try { if (navigator.vibrate) navigator.vibrate(60); } catch (e) { /* no haptics here */ }
+    const overlay = document.createElement("div");
+    overlay.id = "counter-success-overlay";
+    overlay.style.cssText = "position:fixed;inset:0;background:#0E3B2E;z-index:1000;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center;color:#E9FFF5";
+    overlay.innerHTML = `
+      ${successCheckHtml()}
+      <h2 style="margin:14px 0 6px;font-size:2rem">Redeemed.</h2>
+      <p style="max-width:420px">${esc(b.creatorName)} is checked in. Their post is due by <strong>${fmtDate(b.postDeadline)}</strong>. Ring the comp in your own system, up to the $${fmtMoney(b.dollarCap)} cap.</p>
+      <button class="btn" style="margin-top:16px;min-width:200px" onclick="document.getElementById('counter-success-overlay').remove()">Done</button>`;
+    document.body.appendChild(overlay);
+    el.innerHTML = `<div class="success-hero">${successCheckHtml()}<h3>Redeemed.</h3><p>${esc(b.creatorName)}'s post is due by <strong>${fmtDate(b.postDeadline)}</strong>. Track the post under Visits &amp; Posts.</p></div>`;
   } catch (err) {
-    el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+    el.innerHTML = `<div class="error-box">${esc(err.message)}<br><span class="small">What to do: if the window has passed, the visit cannot be redeemed — the creator books a fresh one. Otherwise check the code and try again.</span></div>`;
   }
 }
 
@@ -21104,6 +21786,12 @@ function staffCodeScreen() {
     </form>
     <div id="staff-result" class="mt"></div>
     <div class="card mt">
+      <strong>No code? Confirm the visit by name</strong>
+      <p class="small muted">The creator is here but has no code to show (dead phone, lost screen). Find their visit by name and confirm it — same check-in, and the record says it was confirmed by name.</p>
+      <div class="field"><label>Creator's name or handle</label><input id="staff-q" placeholder="Start typing their name" autocomplete="off" oninput="staffSearchTyped()"></div>
+      <div id="staff-search-results"></div>
+    </div>
+    <div class="card mt">
       <strong>Log a code use</strong>
       <p class="small muted">A customer used a creator's audience code at the register (the code from their post, not the SGNL visit code)? Log it here: each use counts toward that visit's register tally estimate.</p>
       <form onsubmit="return staffLogCodeUse(event)">
@@ -21112,8 +21800,73 @@ function staffCodeScreen() {
       </form>
       <div id="staff-code-use-result" class="mt"></div>
     </div>
+    <div class="card mt">
+      <strong>Record a coupon spend</strong>
+      <p class="small muted">A creator is spending their coupon? Enter the SPEND code on their coupon card (not the visit code) and how much of it they are using now. Part now, part later is fine.</p>
+      <form onsubmit="return staffCouponSpend(event)">
+        <div class="form-2col">
+          <div class="field"><label>Spend code</label><input id="staff-spend-code" placeholder="SPEND-XXXXXX" style="text-transform:uppercase" autocomplete="off" required></div>
+          <div class="field"><label>Amount spent ($)</label><input id="staff-spend-amount" type="number" min="0" step="0.01" required></div>
+        </div>
+        <button class="btn" type="submit" style="width:100%">Record the spend</button>
+      </form>
+      <div id="staff-spend-result" class="mt"></div>
+    </div>
     <p class="small mt"><button class="linklike" onclick="staffExit()">End staff session</button></p>
   </section>`;
+}
+
+let staffSearchTimer = null;
+function staffSearchTyped() {
+  clearTimeout(staffSearchTimer);
+  staffSearchTimer = setTimeout(staffSearch, 300);
+}
+async function staffSearch() {
+  const q = (document.getElementById("staff-q").value || "").trim();
+  const host = document.getElementById("staff-search-results");
+  if (!host) return;
+  if (q.length < 2) { host.innerHTML = ""; return; }
+  try {
+    const d = await api("POST", "/staff/search", { q });
+    const visits = d.visits || [];
+    host.innerHTML = visits.length
+      ? visits.map((v) => `<div class="lrow" style="align-items:center"><span><strong>${esc(v.creatorName)}</strong> <span class="muted">@${esc(v.creatorHandle || "")}</span><br><span class="small muted">${esc(v.title)}</span></span><button class="btn small-btn" onclick="staffConfirmVisit('${v.bookingId}')">Confirm visit</button></div>`).join("")
+      : `<p class="small muted">No open visit matches that name at this business. Check the spelling, or ask the creator for their code.</p>`;
+  } catch (err) {
+    host.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+  }
+}
+async function staffConfirmVisit(bookingId) {
+  const el = document.getElementById("staff-result");
+  try {
+    const data = await api("POST", "/staff/confirm", { bookingId });
+    const b = data.booking;
+    try { if (navigator.vibrate) navigator.vibrate(60); } catch (e) { /* no haptics here */ }
+    el.innerHTML = `
+      <div class="success-hero">
+        ${successCheckHtml()}
+        <h3>Confirmed.</h3>
+        <p>${esc(b.creatorName)}'s visit is in (confirmed by name), and their 48-hour post clock started. Their post is due by <strong>${fmtDate(b.postDeadline)}</strong>.</p>
+        <div class="mt"><button class="btn" style="width:100%" onclick="staffDone()">Done</button></div>
+      </div>`;
+    const host = document.getElementById("staff-search-results");
+    if (host) host.innerHTML = "";
+  } catch (err) {
+    el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+  }
+}
+
+async function staffCouponSpend(e) {
+  if (e) e.preventDefault();
+  const el = document.getElementById("staff-spend-result");
+  try {
+    const data = await api("POST", "/staff/coupon-spend", { code: document.getElementById("staff-spend-code").value.trim(), amount: Number(document.getElementById("staff-spend-amount").value) });
+    const v = data.couponSpend || {};
+    el.innerHTML = `<div class="notice blue"><strong>Recorded.</strong> $${fmtMoney(v.spent || 0)} of $${fmtMoney(v.face || 0)} spent on this coupon${v.remaining > 0 ? ` — $${fmtMoney(v.remaining)} remains` : " — the coupon is fully spent"}.</div>`;
+  } catch (err) {
+    el.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+  }
+  return false;
 }
 
 async function staffLogCodeUse(e) {
@@ -23478,7 +24231,7 @@ async function loadApplications() {
         <td data-label="Applied">${fmtDate(u.createdAt)}</td>
         <td>${u.status === "pending"
           ? `<button class="btn small-btn" onclick="reviewApp('${u.id}','approve')">Approve</button> <button class="btn small-btn danger" onclick="toggleRejectEditor('${u.id}')">Reject</button><div id="rej-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px"><div class="field"><label>Reason (optional, named in their rejection email)</label><select id="rej-reason-${u.id}"><option value="">No reason given</option><option>Not local enough</option><option>Audience too small for this wave</option><option>Content not a fit</option><option>Market not open yet</option><option>Other</option></select></div><button class="btn small-btn danger" onclick="confirmRejectApp('${u.id}')">Send rejection</button></div>`
-          : `<span class="badge ${u.status === "approved" ? "ok" : "bad"}">${esc(u.status)}</span>${u.tester ? ` <span class="badge warn">Tester</span>` : ""}<br><button type="button" class="btn small-btn ghost" style="margin-top:6px" onclick="toggleRowMore('${u.id}')">More ▾</button><span class="row-more" id="rowmore-${u.id}" style="display:none">${u.role === "creator" && u.status === "approved" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="setTester('${u.id}', ${u.tester ? "false" : "true"}, 'creator')">${u.tester ? "Move to roster" : "Move to Tester"}</button>` : ""}${u.role === "creator" && u.status === "approved" ? `<br><button class="btn small-btn" style="margin-top:6px" onclick="adminMsgComposeTo('${u.id}')">Message</button>` : ""}`}${u.role === "business" && u.status === "approved" && businessAccessState(u) !== "active" ? `<br><button class="btn small-btn" style="margin-top:6px" onclick="activateBusiness('${u.id}')">Activate business</button>` : ""}${u.role === "business" ? `<br><button class="btn small-btn" style="margin-top:6px" onclick="adminViewBusiness('${u.id}')">View account</button><br><button class="btn small-btn ghost" style="margin-top:6px" onclick="adminSendSigninLink('${u.id}')">Send sign-in link</button>` : u.role === "creator" ? `<br><button class="btn small-btn" style="margin-top:6px" onclick="adminViewAccount('${u.id}')">View account</button><br><button class="btn small-btn ghost" style="margin-top:6px" onclick="adminSendSigninLink('${u.id}')">Send sign-in link</button>` : ""}${(u.role === "creator" || u.role === "business") ? "<br>" + correctEmailEditorHtml(u, "ce") : ""}${u.role === "business" && u.status === "approved" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="setTester('${u.id}', ${u.tester ? "false" : "true"}, 'business')">${u.tester ? "Move to roster" : "Move to Tester"}</button>` : ""}${u.role === "business" && u.business ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleReviewLinks('${u.id}')">Review links</button><div id="rl-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px">${["google", "yelp", "tripadvisor", "facebook"].map((k) => `<div class="field"><label>${esc(k)}</label><input id="rl-${k}-${u.id}" type="url" value="${esc((u.business.reviewLinks || {})[k] || "")}" placeholder="https://"></div>`).join("")}<button class="btn small-btn" onclick="saveReviewLinks('${u.id}')">Save review links</button></div><br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleDiscountEditor('${u.id}')">Code discount</button><div id="disc-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px"><label style="font-weight:500"><input type="checkbox" id="disc-enabled-${u.id}" style="width:auto" ${u.business.discountEnabled ? "checked" : ""}> Code discounts on (business's opt-in)</label><div class="field"><label>Discount percent (5 to 50)</label><input id="disc-pct-${u.id}" type="number" min="5" max="50" step="1" value="${esc(String(u.business.discountPct == null ? 20 : u.business.discountPct))}"></div><button class="btn small-btn" onclick="saveDiscountSetting('${u.id}')">Save code discount</button></div>` : ""}${u.role === "creator" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="adminViewCreator('${u.id}')">View profile</button>` : ""}${u.role === "creator" && u.market === "Dubai" ? `<br><label class="small" style="display:block;margin-top:8px">Advertiser Permit (UAE)<select onchange="saveAdvertiserPermit('${u.id}', this.value)" style="margin-top:4px"><option value="not_started" ${!u.advertiserPermit || u.advertiserPermit === "not_started" ? "selected" : ""}>Not started</option><option value="in_progress" ${u.advertiserPermit === "in_progress" ? "selected" : ""}>In progress</option><option value="done" ${u.advertiserPermit === "done" ? "selected" : ""}>Done</option></select></label>` : ""}${(u.role === "creator" || u.role === "business") ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleAttributionEditor('${u.id}')">Partner attribution</button><div id="attr-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px"><div class="small" style="margin-bottom:6px">${u.partnerId ? `Attributed to <strong>${esc(u.partnerName || "a partner")}</strong>` : (u.signupSource && u.signupSource.indexOf("partner-") === 0 ? "Came through a partner link, but is not stamped to the partner yet" : "Not attributed to a partner (direct)")}</div><div class="field"><label>Attribute to</label><select id="attr-partner-${u.id}"><option value="">Direct — no partner</option>${adminPartnerChoices.map((p) => `<option value="${p.id}" ${u.partnerId === p.id ? "selected" : ""}>${esc(p.name)} (${esc(p.code)})</option>`).join("")}</select></div><div class="field"><label>Reason (kept with the change)</label><input id="attr-reason-${u.id}" type="text" placeholder="Why is this changing?"></div><button class="btn small-btn" onclick="saveAttribution('${u.id}')">Save attribution</button></div>` : ""}</span></td>
+          : `<span class="badge ${u.status === "approved" ? "ok" : "bad"}">${esc(u.status)}</span>${u.tester ? ` <span class="badge warn">Tester</span>` : ""}<br><button type="button" class="btn small-btn ghost" style="margin-top:6px" onclick="toggleRowMore('${u.id}')">More ▾</button><span class="row-more" id="rowmore-${u.id}" style="display:none">${u.role === "creator" && u.status === "approved" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="setTester('${u.id}', ${u.tester ? "false" : "true"}, 'creator')">${u.tester ? "Move to roster" : "Move to Tester"}</button>` : ""}${u.role === "creator" && u.status === "approved" ? `<br><button class="btn small-btn" style="margin-top:6px" onclick="adminMsgComposeTo('${u.id}')">Message</button>` : ""}`}${u.role === "business" && u.status === "approved" && businessAccessState(u) !== "active" ? `<br><button class="btn small-btn" style="margin-top:6px" onclick="activateBusiness('${u.id}')">Activate business</button>` : ""}${u.role === "business" ? `<br><button class="btn small-btn" style="margin-top:6px" onclick="adminViewBusiness('${u.id}')">View account</button><br><button class="btn small-btn ghost" style="margin-top:6px" onclick="adminSendSigninLink('${u.id}')">Send sign-in link</button>` : u.role === "creator" ? `<br><button class="btn small-btn" style="margin-top:6px" onclick="adminViewAccount('${u.id}')">View account</button><br><button class="btn small-btn ghost" style="margin-top:6px" onclick="adminSendSigninLink('${u.id}')">Send sign-in link</button>` : ""}${(u.role === "creator" || u.role === "business") ? "<br>" + correctEmailEditorHtml(u, "ce") : ""}${u.role === "business" && u.status === "approved" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="setTester('${u.id}', ${u.tester ? "false" : "true"}, 'business')">${u.tester ? "Move to roster" : "Move to Tester"}</button>` : ""}${u.role === "business" && u.business ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleReviewLinks('${u.id}')">Review links</button><div id="rl-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px">${["google", "yelp", "tripadvisor", "facebook"].map((k) => `<div class="field"><label>${esc(k)}</label><input id="rl-${k}-${u.id}" type="url" value="${esc((u.business.reviewLinks || {})[k] || "")}" placeholder="https://"></div>`).join("")}<button class="btn small-btn" onclick="saveReviewLinks('${u.id}')">Save review links</button></div><br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleDiscountEditor('${u.id}')">Code discount</button><div id="disc-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px"><label style="font-weight:500"><input type="checkbox" id="disc-enabled-${u.id}" style="width:auto" ${u.business.discountEnabled ? "checked" : ""}> Code discounts on (business's opt-in)</label><div class="field"><label>Discount percent (5 to 50)</label><input id="disc-pct-${u.id}" type="number" min="5" max="50" step="1" value="${esc(String(u.business.discountPct == null ? 20 : u.business.discountPct))}"></div><button class="btn small-btn" onclick="saveDiscountSetting('${u.id}')">Save code discount</button></div>` : ""}${u.role === "creator" ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="adminViewCreator('${u.id}')">View profile</button>` : ""}${(u.role === "creator" || u.role === "business") ? `<br><button class="btn small-btn danger" style="margin-top:6px" onclick="adminDeleteAccountPrompt('${u.id}')">Delete account…</button><span id="admin-delacct-${u.id}"></span>` : ""}${u.role === "creator" && u.market === "Dubai" ? `<br><label class="small" style="display:block;margin-top:8px">Advertiser Permit (UAE)<select onchange="saveAdvertiserPermit('${u.id}', this.value)" style="margin-top:4px"><option value="not_started" ${!u.advertiserPermit || u.advertiserPermit === "not_started" ? "selected" : ""}>Not started</option><option value="in_progress" ${u.advertiserPermit === "in_progress" ? "selected" : ""}>In progress</option><option value="done" ${u.advertiserPermit === "done" ? "selected" : ""}>Done</option></select></label>` : ""}${(u.role === "creator" || u.role === "business") ? `<br><button class="btn small-btn ghost" style="margin-top:6px" onclick="toggleAttributionEditor('${u.id}')">Partner attribution</button><div id="attr-edit-${u.id}" style="display:none;margin-top:8px;min-width:260px"><div class="small" style="margin-bottom:6px">${u.partnerId ? `Attributed to <strong>${esc(u.partnerName || "a partner")}</strong>` : (u.signupSource && u.signupSource.indexOf("partner-") === 0 ? "Came through a partner link, but is not stamped to the partner yet" : "Not attributed to a partner (direct)")}</div><div class="field"><label>Attribute to</label><select id="attr-partner-${u.id}"><option value="">Direct — no partner</option>${adminPartnerChoices.map((p) => `<option value="${p.id}" ${u.partnerId === p.id ? "selected" : ""}>${esc(p.name)} (${esc(p.code)})</option>`).join("")}</select></div><div class="field"><label>Reason (kept with the change)</label><input id="attr-reason-${u.id}" type="text" placeholder="Why is this changing?"></div><button class="btn small-btn" onclick="saveAttribution('${u.id}')">Save attribution</button></div>` : ""}</span></td>
       </tr>`;
     };
     const pend = (data.pending || []).filter(adminAppInFilter);

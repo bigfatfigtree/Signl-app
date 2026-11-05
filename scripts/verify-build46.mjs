@@ -199,7 +199,11 @@ try {
   await stopServer();
 
   part("phase 2: billing configured — gate holds, then checkout returns a URL");
-  startServer({ STRIPE_SECRET_KEY: "sk_test_fake", STRIPE_WEBHOOK_SECRET: WEBHOOK_SECRET, STRIPE_API_BASE: `http://127.0.0.1:${STRIPE_PORT}` });
+  // Build -132 (P0-7): checkout resolves FOUNDING prices
+  // only; the legacy map can no longer price a checkout. The
+  // founding growth price is configured here exactly the way
+  // production will configure it, by env.
+  startServer({ STRIPE_SECRET_KEY: "sk_test_fake", STRIPE_WEBHOOK_SECRET: WEBHOOK_SECRET, STRIPE_API_BASE: `http://127.0.0.1:${STRIPE_PORT}`, STRIPE_PRICE_FOUNDING_GROWTH: "price_1USRLcJ5DCULBlmAajXPmJjr" });
   await waitUp();
   const boot1 = await makeClient()("GET", "/api/bootstrap");
   check("bootstrap reports billingLive true with Stripe env", boot1.data.payments && boot1.data.payments.billingLive === true, JSON.stringify(boot1.data.payments));

@@ -695,6 +695,833 @@ function couponSummary(coupon, businessName) {
   return `${head}${businessName ? ` at ${businessName}` : ""}, good for ${coupon.appliesTo}`;
 }
 
+// Build -132 (Jeff's journey-map ruling 4, 2026-11-05): the
+// dignity floor EXTENDS to coupons, and a percent-off coupon
+// must carry a cap. A coupon is payment: its spendable worth
+// must clear the floor for every tier the deal can reach, and
+// an uncapped percent has no dollar worth at all, so neither
+// side can price it. Returns a plain-words error or null.
+// tiers = the tiers the deal can reach (a direct deal: the one
+// creator's tier; an open deal: its targeted tiers; untargeted
+// open deals answer to the Neighbors minimum, the same rule
+// untargeted comps run on, with eligibility doing the rest).
+function couponRuleError(coupon, tiers) {
+  if (!coupon) return "A coupon offer needs the coupon itself: what it is worth, what it is good for, and when it expires.";
+  if (coupon.type === "percent_off" && !coupon.cap) return "A percent-off coupon needs a dollar cap: the most it can take off one order. Without a cap the coupon has no set dollar worth, and a creator cannot price it as payment.";
+  const face = couponFaceValue(coupon);
+  if (face === null || !(face > 0)) return "This coupon has no set dollar worth. Give it a dollar amount, or a percent with a dollar cap, so its worth is a number both sides can read.";
+  if (tiers && tiers.length) {
+    const block = dignityBlock(face, tiers);
+    if (block) return `That coupon is worth $${fmtPriceS(face)} in spendable value, below the dignity floor for ${block.tier} (floor $${fmtPriceS(block.floor)}). Coupons are payment, so the floor that protects comps protects them too. Raise the coupon's worth to $${fmtPriceS(block.floor)} or more, or narrow who can take it.`;
+    return null;
+  }
+  if (face < COMP_GUIDANCE.Neighbors.floor) return `A coupon offer starts at $${fmtPriceS(COMP_GUIDANCE.Neighbors.floor)} of spendable value. Below that it is a token, and token payments burn the roster's trust. Raise the coupon's worth, or send a direct offer to one creator instead.`;
+  return null;
+}
+
+// =====================================================================
+// Build -132: the Offer Card, audience-code unification + safety,
+// the coupon spend half, creator alert preferences, the shared
+// visit timeline, and the Proof Kit activation state. Spec:
+// files/signl-journey-maps-2026-11-05.md §3–§5 + Jeff's rulings
+// (opt-in discount with a 20% suggestion; counted-only Results
+// headline; Offer Card replaces free-text price negotiation;
+// dignity floor extended to coupons). Governing line for every
+// mechanic below: structure the TERMS, never pressure the PRICE.
+// =====================================================================
+
+// ---------- creator standing terms (negotiation position) ----------
+// Stored on creator.negotiation. considerFrom + sweeteners are
+// PUBLIC (they are the creator's published flexibility). The
+// auto-accept / auto-decline thresholds are PRIVATE: they never
+// ride any business-facing payload, and an auto-decline reads to
+// the business exactly like a manual decline with a reason.
+const SWEETENER_TYPES = ["weekday", "two_posts", "coupon_mix"];
+const SWEETENER_LABELS = { weekday: "Lower rate for weekday visits", two_posts: "Lower rate for 2+ posts", coupon_mix: "Open to coupon + cash mixes" };
+function normalizeNegotiation(input, existing) {
+  const cur = existing && typeof existing === "object" ? existing : {};
+  const src = input && typeof input === "object" ? input : {};
+  const num = (v, prev) => {
+    if (v === undefined) return prev === undefined ? null : prev;
+    if (v === null || v === "") return null;
+    const n = Math.round(Number(v) * 100) / 100;
+    return Number.isFinite(n) && n > 0 ? n : null;
+  };
+  const sweeteners = [];
+  const rawSw = src.sweeteners !== undefined ? src.sweeteners : cur.sweeteners;
+  if (Array.isArray(rawSw)) {
+    for (const s of rawSw) {
+      if (!s || !SWEETENER_TYPES.includes(s.type)) continue;
+      const pct = Math.floor(Number(s.pct));
+      sweeteners.push({ type: s.type, pct: Number.isFinite(pct) && pct > 0 && pct <= 50 ? pct : null });
+      if (sweeteners.length >= 3) break;
+    }
+  }
+  return {
+    considerFrom: num(src.considerFrom, cur.considerFrom),
+    autoAcceptMin: num(src.autoAcceptMin, cur.autoAcceptMin),
+    autoAcceptRepeat: src.autoAcceptRepeat !== undefined ? src.autoAcceptRepeat === true : cur.autoAcceptRepeat === true,
+    autoAcceptTopUpMin: num(src.autoAcceptTopUpMin, cur.autoAcceptTopUpMin),
+    autoDeclineBelow: num(src.autoDeclineBelow, cur.autoDeclineBelow),
+    sweeteners,
+  };
+}
+function negotiationOf(creatorUser) {
+  return normalizeNegotiation(null, creatorUser && creatorUser.creator ? creatorUser.creator.negotiation : null);
+}
+// The ONLY negotiation fields a business may ever see.
+function negotiationPublicView(creatorUser) {
+  const n = negotiationOf(creatorUser);
+  return {
+    considerFrom: n.considerFrom,
+    sweeteners: n.sweeteners.map((s) => ({ type: s.type, label: SWEETENER_LABELS[s.type] || s.type, pct: s.pct })),
+  };
+}
+
+// ---------- creator alert preferences ----------
+// Stored on creator.alertPrefs. `set` records whether the
+// creator has ever saved preferences: the open-offer fan-out
+// alerts everyone eligible by default, and saved preferences
+// NARROW that to real matches (silence when nothing matches).
+function normalizeAlertPrefs(input, existing) {
+  const cur = existing && typeof existing === "object" ? existing : {};
+  const src = input && typeof input === "object" ? input : {};
+  const list = (v, prev) => {
+    const arr = v !== undefined ? v : prev;
+    if (!Array.isArray(arr)) return [];
+    return [...new Set(arr.map((x) => String(x || "").trim()).filter(Boolean))].slice(0, 24);
+  };
+  const num = (v, prev) => {
+    if (v === undefined) return prev === undefined ? null : prev;
+    if (v === null || v === "") return null;
+    const n = Math.round(Number(v) * 100) / 100;
+    return Number.isFinite(n) && n > 0 ? n : null;
+  };
+  return {
+    set: src.set !== undefined ? src.set === true : cur.set === true || input != null,
+    enabled: src.enabled !== undefined ? src.enabled === true : cur.enabled !== false,
+    categories: list(src.categories, cur.categories),
+    markets: list(src.markets, cur.markets),
+    minCompValue: num(src.minCompValue, cur.minCompValue),
+    paidFloor: num(src.paidFloor, cur.paidFloor),
+  };
+}
+function alertPrefsOf(creatorUser) {
+  return normalizeAlertPrefs(null, creatorUser && creatorUser.creator ? creatorUser.creator.alertPrefs : null);
+}
+function alertMatchesOffer(prefs, offer) {
+  if (!prefs.enabled) return false;
+  if (prefs.markets.length && !prefs.markets.includes(offer.market)) return false;
+  if (prefs.categories.length && offer.category && !prefs.categories.includes(offer.category)) return false;
+  const kind = kindOf(offer);
+  if (kind === "paid" && prefs.paidFloor !== null && Number(offer.cashRate || 0) < prefs.paidFloor) return false;
+  if (kind === "comp" && prefs.minCompValue !== null && Number(offer.dollarCap || 0) < prefs.minCompValue) return false;
+  if (kind === "coupon" && prefs.minCompValue !== null && (couponFaceValue(couponOf(offer)) || 0) < prefs.minCompValue) return false;
+  return true;
+}
+
+// ---------- the Offer Card: structured deals ----------
+// A deal is the negotiation OBJECT the product never had: one
+// record, an alternating proposal history, at most one counter
+// per side, a real expiry, preset decline reasons, and — on
+// acceptance — a materialized offer + booking written by the
+// same createBookingForOffer path every other lane uses, so
+// escrow, licensing and Wallet read the AGREED terms, never a
+// chat transcript.
+const DEAL_KINDS = ["paid", "comp", "coupon", "mix"];
+const DECLINE_REASONS = {
+  rate: { label: "Rate", line: "Declined. The rate does not work for this one." },
+  timing: { label: "Timing", line: "Declined. The timing does not work." },
+  fit: { label: "Not a fit", line: "Declined. Not a fit for their audience." },
+  booked: { label: "Booked up", line: "Declined. They are booked up that week." },
+  other: { label: "Other", line: "Declined." },
+};
+function declineNextStep(reason, deal) {
+  if (reason === "rate") return deal && deal.creatorRate ? `Book at the listed rate (${deal.creatorRateText || "listed rate"}) or raise the offer.` : "Raise the offer, or book at the listed rate.";
+  if (reason === "timing") return "Send it again with a different week or window.";
+  if (reason === "booked") return "Try a later week; the calendar is the blocker, not the deal.";
+  if (reason === "fit") return "A different creator is the fix here; this one is not a fit for their audience.";
+  return "You can send a fresh deal any time.";
+}
+// The headline worth of one proposal's terms, in dollars: the
+// number the gap line and the midpoint are computed from.
+function dealAmountOf(terms) {
+  if (!terms) return 0;
+  if (terms.kind === "paid") return Number(terms.cashRate || 0);
+  if (terms.kind === "comp") return Number(terms.dollarCap || 0);
+  if (terms.kind === "coupon") return couponFaceValue(terms.coupon) || 0;
+  if (terms.kind === "mix") return (couponFaceValue(terms.coupon) || 0) + Number(terms.cashTopUp || 0);
+  return 0;
+}
+// Validate + normalize proposed terms. Floors are enforced on
+// EVERY proposal (create and counter alike): paid at or above
+// the market floor, comp at or above the creator's tier floor,
+// coupon under ruling 4, mix = coupon rules + the combined
+// worth clearing the tier floor.
+function normalizeDealTerms(input, ctx) {
+  const kind = DEAL_KINDS.includes(input && input.kind) ? input.kind : null;
+  if (!kind) return { error: "Say what kind of deal this is: paid, comp, coupon, or a coupon + cash mix." };
+  const terms = {
+    kind,
+    title: String((input && input.title) || "").trim().slice(0, 140),
+    whatComped: String((input && input.whatComped) || "").trim().slice(0, 600),
+    covers: null, cashRate: null, dollarCap: null, coupon: null, cashTopUp: null,
+    deliverables: null, postingTerms: null, windowMode: input && input.windowMode === "thisweek" ? "thisweek" : "7days",
+    note: String((input && input.note) || "").trim().slice(0, 280),
+  };
+  const tier = ctx.creatorTier;
+  if (kind === "paid") {
+    const rate = Math.round(Number(input.cashRate) * 100) / 100;
+    if (!Number.isFinite(rate) || rate <= 0) return { error: "Enter the cash amount for the offer." };
+    if (rate < paidFloorForMarket(ctx.market)) return { error: `A paid offer starts at ${currencySymbolForMarket(ctx.market)}${fmtPriceS(paidFloorForMarket(ctx.market))} in this market.` };
+    terms.cashRate = rate;
+    const t = normalizePostingTerms(input.postingTerms);
+    if (t.error) return { error: t.error };
+    terms.postingTerms = t.terms;
+  }
+  if (kind === "comp") {
+    const cap = Math.floor(Number(input.dollarCap));
+    if (!Number.isFinite(cap) || cap <= 0) return { error: "Enter the comp's value in dollars." };
+    const block = dignityBlock(cap, [tier]);
+    if (block) return { error: `A $${fmtPriceS(cap)} comp is below the dignity floor for ${block.tier} (floor $${fmtPriceS(block.floor)}). Raise the value or pick a different creator.` };
+    terms.dollarCap = cap;
+    terms.covers = coversOf(input);
+  }
+  if (kind === "coupon" || kind === "mix") {
+    const coupon = normalizeCoupon(input.coupon);
+    const cerr = couponRuleError(coupon, [tier]);
+    if (cerr) return { error: cerr };
+    terms.coupon = coupon;
+    terms.dollarCap = couponFaceValue(coupon) || 0;
+  }
+  if (kind === "mix") {
+    const top = Math.round(Number(input.cashTopUp) * 100) / 100;
+    if (!Number.isFinite(top) || top <= 0) return { error: "A mix deal needs the cash top-up amount on top of the coupon." };
+    terms.cashTopUp = top;
+    const combined = (couponFaceValue(terms.coupon) || 0) + top;
+    const block = dignityBlock(Math.floor(combined), [tier]);
+    if (block) return { error: `The mix is worth $${fmtPriceS(Math.floor(combined))} together, below the dignity floor for ${block.tier} (floor $${fmtPriceS(block.floor)}). Raise the coupon or the top-up.` };
+    const t = normalizePostingTerms(input.postingTerms);
+    if (t.error) return { error: t.error };
+    terms.postingTerms = t.terms;
+  }
+  terms.deliverables = validateDeliverables(input.deliverables, kind === "mix" ? "coupon" : kind);
+  if (!terms.title) terms.title = kind === "paid" ? "Paid visit" : kind === "comp" ? "Comped visit" : "Coupon deal";
+  return { terms };
+}
+function dealCurrentProposal(deal) {
+  return deal && Array.isArray(deal.history) && deal.history.length ? deal.history[deal.history.length - 1] : null;
+}
+// What each side sees. The midpoint appears only when both
+// sides have named a number: it is computed from the business's
+// latest amount and the creator's latest amount, and shown to
+// BOTH sides identically (Airbnb/eBay guardrail).
+function dealView(deal, viewerRole) {
+  const cur = dealCurrentProposal(deal);
+  const bizAmounts = (deal.history || []).filter((h) => h.by === "business").map((h) => h.amount);
+  const creAmounts = (deal.history || []).filter((h) => h.by === "creator").map((h) => h.amount);
+  let midpoint = null;
+  if (bizAmounts.length && creAmounts.length) {
+    const b = bizAmounts[bizAmounts.length - 1];
+    const c = creAmounts[creAmounts.length - 1];
+    if (b !== c) midpoint = Math.round(((b + c) / 2) * 100) / 100;
+  }
+  const listed = typeof deal.creatorRate === "number" && deal.creatorRate > 0 ? deal.creatorRate : null;
+  const curAmount = cur ? cur.amount : 0;
+  const rateWord = viewerRole === "creator" ? "Your" : "Their";
+  const gap = listed !== null && cur && cur.by === "business" && curAmount !== listed
+    ? { listedRate: listed, currentAmount: curAmount, under: listed - curAmount, line: curAmount < listed ? `Proposed $${fmtPriceS(curAmount)}. ${rateWord} listed rate is $${fmtPriceS(listed)}, so this is $${fmtPriceS(listed - curAmount)} under it.` : `Proposed $${fmtPriceS(curAmount)}. ${rateWord} listed rate is $${fmtPriceS(listed)}, so this is $${fmtPriceS(curAmount - listed)} over it.` }
+    : null;
+  return {
+    ...deal,
+    current: cur,
+    midpoint,
+    gap,
+    canAct: deal.status === "pending" && ((deal.turn === "creator" && viewerRole === "creator") || (deal.turn === "business" && viewerRole === "business")),
+    countersLeft: { business: 1 - (deal.counters ? deal.counters.business || 0 : 0), creator: 1 - (deal.counters ? deal.counters.creator || 0 : 0) },
+    declineLine: deal.status === "declined"
+      ? (deal.autoRule && viewerRole === "creator"
+        ? "Your standing terms declined this one automatically, under the floor you set. The business just sees a rate decline; they never see your floor."
+        : deal.declineReason ? (DECLINE_REASONS[deal.declineReason] || DECLINE_REASONS.other).line : null)
+      : null,
+    nextStep: deal.status === "declined" ? declineNextStep(deal.declineReason, deal) : null,
+    licenceLine: "Standard licence included on paid deals: 90 days of repost + ad use from the post date. The 90 days is fixed. It is never longer, and it is not part of the negotiation.",
+  };
+}
+// Standing-terms evaluation at deal creation. Returns
+// { auto: "accept"|"decline"|null, rule } — rules are named for
+// the creator's own view; the business never learns which fired.
+async function evaluateStandingTerms(deal, creatorUser, businessId) {
+  const n = negotiationOf(creatorUser);
+  const cur = dealCurrentProposal(deal);
+  if (!cur || cur.by !== "business") return { auto: null, rule: null };
+  const amount = cur.amount;
+  if (n.autoDeclineBelow !== null && amount < n.autoDeclineBelow) return { auto: "decline", rule: "auto_floor" };
+  const terms = cur.terms;
+  if (terms.kind === "mix" && n.autoAcceptTopUpMin !== null && Number(terms.cashTopUp || 0) >= n.autoAcceptTopUpMin && amount >= (n.considerFrom || 0)) {
+    return { auto: "accept", rule: "auto_topup" };
+  }
+  if (n.autoAcceptMin !== null && amount >= n.autoAcceptMin) return { auto: "accept", rule: "auto_min" };
+  if (n.autoAcceptRepeat && n.considerFrom !== null && amount >= n.considerFrom) {
+    const past = (await allBookings()).some((b) => b.businessId === businessId && b.creatorId === creatorUser.id && b.status !== "cancelled" && b.status !== "expired");
+    if (past) return { auto: "accept", rule: "auto_repeat" };
+  }
+  return { auto: null, rule: null };
+}
+// Acceptance IS the record write: a direct offer carrying the
+// agreed terms goes through createBookingForOffer, so the
+// escrow ledger, licence, Wallet and clocks all read the deal's
+// terms — never a chat transcript.
+async function materializeDeal(deal) {
+  const ts = nowIso();
+  const cur = dealCurrentProposal(deal);
+  const t = cur.terms;
+  const offer = {
+    id: crypto.randomUUID(),
+    businessId: deal.businessId,
+    businessName: deal.businessName,
+    market: deal.market,
+    category: deal.category,
+    creatorId: deal.creatorId,
+    creatorHandle: deal.creatorHandle,
+    lane: "direct",
+    kind: t.kind === "mix" ? "coupon" : t.kind,
+    covers: t.covers,
+    paidBrief: null,
+    requiresSpanish: false,
+    cashRate: t.kind === "paid" ? t.cashRate : null,
+    cashTopUp: t.kind === "mix" ? t.cashTopUp : null,
+    targetTiers: null,
+    title: t.title,
+    whatComped: t.kind === "coupon" || t.kind === "mix" ? couponSummary(t.coupon, deal.businessName) : (t.whatComped || t.title),
+    includes: t.whatComped || "",
+    experience: "",
+    templateId: null, play: null, moment: null, countedResult: "door",
+    dollarCap: t.kind === "paid" ? Math.round(t.cashRate) : (t.dollarCap || 0),
+    visitWindow: t.windowMode === "thisweek" ? "This week" : "Any time within 7 days",
+    windowMode: t.windowMode,
+    spots: 1,
+    status: "open",
+    createdAt: ts, updatedAt: ts, publishedAt: ts, nudgeSentAt: null,
+    deliverables: t.deliverables,
+    ...(t.coupon ? { coupon: t.coupon } : {}),
+    ...(t.postingTerms ? { postingTerms: t.postingTerms, postingTermsLine: postingTermsLine(t.postingTerms) } : {}),
+    dealId: deal.id,
+    assetPacketAttached: t.kind === "paid",
+  };
+  offer.brief = normalizeBriefInput(null, kindOf(offer), briefSeedFromFields(offer));
+  await store.set(`offer:${offer.id}`, offer);
+  const creator = await store.get(`user:${deal.creatorId}`);
+  const booking = await createBookingForOffer({ offer, creator, via: "deal_accept" });
+  booking.dealId = deal.id;
+  booking.agreedTerms = { kind: t.kind, amount: cur.amount, cashRate: t.cashRate || null, dollarCap: t.dollarCap || null, cashTopUp: t.cashTopUp || null, coupon: t.coupon || null };
+  booking.updatedAt = nowIso();
+  await store.set(`booking:${booking.id}`, booking);
+  deal.offerId = offer.id;
+  deal.bookingId = booking.id;
+  return booking;
+}
+async function notifyDealParties(deal, kind, extra = {}) {
+  const cur = dealCurrentProposal(deal);
+  const payload = { offerTitle: deal.title || "a deal", businessName: deal.businessName, amountText: cur ? `$${fmtPriceS(cur.amount)}` : "", expiresText: cur && cur.expiresAt ? `by ${milestoneDeadlineText(cur.expiresAt)}` : "in 48 hours", creatorName: deal.creatorName || "The creator", ...extra };
+  if (kind === "new") {
+    await notifyUser(deal.creatorId, "deal_received", `${deal.businessName} sent you a deal: "${deal.title}" at $${fmtPriceS(cur ? cur.amount : 0)}. Accept it, counter it once, or decline with a tap — no messages needed. It expires ${payload.expiresText}.`, { dealId: deal.id });
+    try { await notifyLib.notifyById(deal.creatorId, "creator_deal_new", payload); } catch (e) { /* rail best-effort */ }
+  } else if (kind === "countered") {
+    const toCreator = deal.turn === "creator";
+    await notifyUser(toCreator ? deal.creatorId : deal.businessId, "deal_countered", `"${deal.title}" was countered at $${fmtPriceS(cur ? cur.amount : 0)}. ${midpointLineFor(deal)} It expires ${payload.expiresText}.`, { dealId: deal.id });
+    try { await notifyLib.notifyById(toCreator ? deal.creatorId : deal.businessId, toCreator ? "creator_deal_countered" : "business_deal_countered", payload); } catch (e) { /* rail best-effort */ }
+  } else if (kind === "accepted") {
+    await notifyUser(deal.creatorId, "deal_accepted", `Your deal with ${deal.businessName} is booked: "${deal.title}". Your visit code is in My Visits.`, { dealId: deal.id, bookingId: deal.bookingId });
+    await notifyUser(deal.businessId, "deal_accepted", `${deal.creatorName || "The creator"} accepted your deal: "${deal.title}". The visit is booked at the agreed terms.`, { dealId: deal.id, bookingId: deal.bookingId });
+    try { await notifyLib.notifyById(deal.creatorId, "creator_deal_resolved", { ...payload, text: `Your deal "${deal.title}" with ${deal.businessName} is booked at the agreed terms.` }); } catch (e) { /* best-effort */ }
+    try { await notifyLib.notifyById(deal.businessId, "business_deal_resolved", { ...payload, text: `Your deal "${deal.title}" was accepted and booked at the agreed terms.` }); } catch (e) { /* best-effort */ }
+  } else if (kind === "declined") {
+    const other = deal.declinedBy === "creator" ? deal.businessId : deal.creatorId;
+    const line = (DECLINE_REASONS[deal.declineReason] || DECLINE_REASONS.other).line;
+    await notifyUser(other, "deal_declined", `"${deal.title}": ${line}. ${declineNextStep(deal.declineReason, deal)}`, { dealId: deal.id });
+    try { await notifyLib.notifyById(other, other === deal.creatorId ? "creator_deal_resolved" : "business_deal_resolved", { ...payload, text: `"${deal.title}": ${line}.` }); } catch (e) { /* best-effort */ }
+  } else if (kind === "expired") {
+    await notifyUser(deal.creatorId, "deal_expired", `The deal "${deal.title}" from ${deal.businessName} expired unanswered and closed on its own. Nothing is owed either way.`, { dealId: deal.id });
+    await notifyUser(deal.businessId, "deal_expired", `Your deal "${deal.title}" expired unanswered and closed on its own. Nothing is owed either way.`, { dealId: deal.id });
+    try { await notifyLib.notifyById(deal.creatorId, "creator_deal_expired", payload); } catch (e) { /* best-effort */ }
+    try { await notifyLib.notifyById(deal.businessId, "business_deal_expired", payload); } catch (e) { /* best-effort */ }
+  }
+}
+function midpointLineFor(deal) {
+  const v = dealView(deal, "creator");
+  return v.midpoint !== null ? `You are apart; $${fmtPriceS(v.midpoint)} splits the difference, and it is shown to both sides.` : "";
+}
+// Lazy expiry: any read or action on a due deal closes it, once,
+// with both sides told. The sweep is the backstop, not the clock.
+async function expireDealIfDue(deal) {
+  if (!deal || deal.status !== "pending") return false;
+  const cur = dealCurrentProposal(deal);
+  if (!cur || !cur.expiresAt || Date.now() <= Date.parse(cur.expiresAt)) return false;
+  deal.status = "expired";
+  deal.updatedAt = nowIso();
+  await store.set(`vdeal:${deal.id}`, deal);
+  await logEvent({ type: "deal_expired", actorId: null, actorRole: "system", subjectId: deal.id, market: deal.market, data: { businessId: deal.businessId, creatorId: deal.creatorId } });
+  await notifyDealParties(deal, "expired");
+  return true;
+}
+
+// ---------- audience codes: one code, one stream, with safety ----------
+// The per-booking HANDLE-XXXX code IS the audience code (Build
+// -132 unification): booking-attached audience offers ride it,
+// standalone audience offers keep their AUD code but redeem
+// through the same event stream, and come-back passes stay a
+// separate, clearly-named object. Safety state lives on the
+// booking (codeSafety): discount expiry (default 30 days after
+// the post), revoke/regenerate, redemption caps.
+const CODE_DISCOUNT_DEFAULT_EXPIRY_DAYS = 30;
+function audienceCodeLine(booking) {
+  if (!booking || !booking.creatorCode) return "";
+  const pct = Number(booking.discountPct || 0);
+  const biz = booking.businessName || "the business";
+  return pct > 0
+    ? `Use code ${booking.creatorCode} at ${biz} for ${pct}% off — it counts for both of us.`
+    : `Mention code ${booking.creatorCode} at ${biz} so this visit counts.`;
+}
+function codeSafetyOf(booking) {
+  const s = booking && booking.codeSafety && typeof booking.codeSafety === "object" ? booking.codeSafety : {};
+  return {
+    expiresAt: s.expiresAt || null,
+    revokedAt: s.revokedAt || null,
+    capCount: typeof s.capCount === "number" && s.capCount > 0 ? Math.floor(s.capCount) : null,
+    capSpend: typeof s.capSpend === "number" && s.capSpend > 0 ? s.capSpend : null,
+    closedReason: s.closedReason || null,
+    regeneratedFrom: s.regeneratedFrom || null,
+  };
+}
+// The code's live state for any redemption path. discountLive
+// is separate from counting: an expired or capped DISCOUNT
+// stops discounting, never stops counting — except a revoked or
+// cap-closed code, which closes outright with a reason.
+function audienceCodeState(booking, nowMs = Date.now()) {
+  const s = codeSafetyOf(booking);
+  const pct = Number(booking && booking.discountPct || 0);
+  const tallyCount = booking && booking.redemptions ? Number(booking.redemptions.count) || 0 : 0;
+  const eventCount = booking ? Number(booking.codeUseCount) || 0 : 0;
+  const counted = tallyCount + eventCount;
+  const flat = { capCount: s.capCount, capSpend: s.capSpend, expiresAt: s.expiresAt, revokedAt: s.revokedAt, closedReason: s.closedReason };
+  if (s.revokedAt) return { state: "revoked", revoked: true, closed: false, discountExpired: false, countingLive: false, discountLive: false, safety: s, counted, ...flat };
+  if (s.closedReason === "cap") return { state: "closed_cap", revoked: false, closed: true, discountExpired: false, countingLive: false, discountLive: false, safety: s, counted, ...flat };
+  if (s.capCount !== null && counted >= s.capCount) return { state: "closed_cap", revoked: false, closed: true, discountExpired: false, countingLive: false, discountLive: false, safety: s, counted, ...flat };
+  const discountExpired = !!(pct > 0 && s.expiresAt && nowMs > Date.parse(s.expiresAt));
+  return { state: discountExpired ? "discount_expired" : "active", revoked: false, closed: false, discountExpired, countingLive: true, discountLive: pct > 0 && !discountExpired, safety: s, counted, ...flat };
+}
+// The typed-amount sanity band: entries above it wait for the
+// owner's confirmation before they count (Strategy's widest
+// fraud gap). The business may set its own typical basket; the
+// platform flag amount is the fallback.
+function codeSanityBand(businessUser) {
+  const n = businessUser && businessUser.business ? Number(businessUser.business.typicalBasket) : NaN;
+  return Number.isFinite(n) && n > 0 ? n : REDEEM_FLAG_AMOUNT;
+}
+// Build -132: the booking's own creator code IS the audience
+// code (one code per booking). The unified acode record is
+// what the audience redeem endpoint resolves, so it is
+// written the moment a booking exists, carrying the attached
+// offer's title and perk. Idempotent per booking.
+async function ensureUnifiedAcode(booking) {
+  if (!booking || !booking.creatorCode || !booking.businessId || !booking.audienceOffer) return null;
+  const key = `acode:unified-${booking.id}`;
+  const existing = await store.get(key);
+  if (existing) return existing;
+  const rec = {
+    id: `unified-${booking.id}`,
+    code: booking.creatorCode,
+    businessId: booking.businessId,
+    creatorId: booking.creatorId || null,
+    bookingId: booking.id,
+    title: booking.audienceOffer.title || "For the audience",
+    perk: booking.audienceOffer.perk || "",
+    discountPct: typeof booking.discountPct === "number" ? booking.discountPct : 0,
+    status: "active",
+    unified: true,
+    createdAt: nowIso(),
+  };
+  await store.set(key, rec);
+  return rec;
+}
+
+// The story record's public state (Build -132): required when
+// the agreed deliverables include a story; confirmed only by
+// the creator's own attestation until Meta verification exists,
+// and labelled exactly that way on every surface.
+function storyStateOf(booking) {
+  const d = deliverablesOf(booking);
+  const required = !!(d && d.story);
+  const confirmed = !!(booking.story && booking.story.confirmedAt);
+  return {
+    required,
+    confirmed,
+    confirmedAt: confirmed ? booking.story.confirmedAt : null,
+    url: confirmed ? booking.story.url || null : null,
+    source: confirmed ? "creator_confirmed" : null,
+    label: confirmed ? "Confirmed by the creator" : required ? "Story not confirmed yet" : "No story in this visit's deliverables",
+  };
+}
+
+// Sig's view of the asker's Offer Card deals (Build -132):
+// only the asker's own deals, from their side — who it is with,
+// the amount on the table, whose move it is, and when it
+// expires. Sig answers and prompts from this, and the routes
+// above execute every step when the person asks.
+async function sigDealsSummary(user) {
+  const mine = user.role === "business" ? "business" : "creator";
+  const rows = (await store.list("vdeal:")).map((r) => r.value).filter((d) => d && (mine === "business" ? d.businessId === user.id : d.creatorId === user.id));
+  const view = (d) => {
+    const cur = dealCurrentProposal(d);
+    return { withName: mine === "business" ? (d.creatorName || "A creator") : (d.businessName || "A business"), title: d.title || "A visit", amount: cur ? cur.amount : null, kind: d.kind, expiresAt: cur ? cur.expiresAt : null };
+  };
+  const pending = rows.filter((d) => d.status === "pending");
+  return {
+    waitingOnMe: pending.filter((d) => d.turn === mine).map(view),
+    waitingOnThem: pending.filter((d) => d.turn !== mine).map(view),
+    acceptedCount: rows.filter((d) => d.status === "accepted").length,
+  };
+}
+
+// Counted register spend for a booking's audience code: the
+// register-event amounts that actually COUNT (not voided, not
+// still waiting on owner confirmation above the sanity band).
+async function countedCodeSpend(bookingId) {
+  const rows = (await store.list("redevent:")).map((r) => r.value).filter((e) => e && e.bookingId === bookingId && !e.voided && !e.pendingConfirm);
+  return roasRound2(rows.reduce((a, e) => a + (Number(e.amount) || 0), 0));
+}
+
+// ---------- the coupon spend half (Journey B5) ----------
+// A coupon deal's coupon is spendable value, tracked separately
+// from the visit: its own spend code (never the visit code),
+// spend events, a running balance, and recognition AT SPEND in
+// both wallets. Spend records live at couponspend:{id}.
+async function genSpendCode() {
+  for (let attempt = 0; attempt < 12; attempt++) {
+    let code = "SPEND-";
+    for (let i = 0; i < 6; i++) code += CODE_CHARS[crypto.randomInt(CODE_CHARS.length)];
+    const taken = await store.get(`spendcode:${code}`);
+    if (!taken) return code;
+  }
+  throw new Error("Could not allocate a spend code");
+}
+async function couponSpendEventsFor(bookingId) {
+  const rows = await store.list("couponspend:");
+  return rows.map((r) => r.value).filter((e) => e && e.bookingId === bookingId).sort((a, b) => (a.at < b.at ? -1 : 1));
+}
+async function couponSpendView(booking) {
+  if (!booking || booking.kind !== "coupon" || !booking.coupon) return null;
+  const face = couponFaceValue(booking.coupon) || 0;
+  const init = booking.couponSpend && typeof booking.couponSpend === "object" ? booking.couponSpend : null;
+  const events = await couponSpendEventsFor(booking.id);
+  const spent = events.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+  const expired = booking.coupon.expiresAt ? Date.now() > Date.parse(booking.coupon.expiresAt) : false;
+  return {
+    code: init ? init.code : null,
+    face,
+    spent: roasRound2(spent),
+    remaining: roasRound2(Math.max(0, face - spent)),
+    status: booking.couponClosedAt ? (booking.couponClosedReason === "expired" ? "expired" : "closed") : expired ? "expired" : spent <= 0 ? "unspent" : spent < face ? "partly_spent" : "spent",
+    expiresAt: booking.coupon.expiresAt || null,
+    closedAt: booking.couponClosedAt || null,
+    events: events.map((e) => ({ id: e.id, amount: e.amount, at: e.at, via: e.via })),
+  };
+}
+// Coupon close-out at expiry (sweep): an expired coupon booking
+// is stamped closed once, both sides hear the honest number —
+// what was spent stands, the unspent rest is closed.
+async function closeOutCouponIfExpired(booking) {
+  if (!booking || booking.kind !== "coupon" || !booking.coupon || booking.couponClosedAt) return false;
+  if (!booking.coupon.expiresAt || Date.now() <= Date.parse(booking.coupon.expiresAt)) return false;
+  booking.couponClosedAt = nowIso();
+  booking.couponClosedReason = "expired";
+  booking.updatedAt = booking.couponClosedAt;
+  await store.set(`booking:${booking.id}`, booking);
+  const view = await couponSpendView(booking);
+  const unspent = view ? view.remaining : 0;
+  await logEvent({ type: "coupon_expired", actorId: null, actorRole: "system", subjectId: booking.id, market: booking.market, data: { creatorId: booking.creatorId, businessId: booking.businessId, face: view ? view.face : null, spent: view ? view.spent : null, unspent } });
+  await notifyUser(booking.creatorId, "coupon_expired", `Your coupon from ${booking.businessName || "the business"} reached its expiry${unspent > 0 ? ` with $${fmtPriceS(unspent)} unspent` : ""}. What you spent stands; the rest is closed.`, { bookingId: booking.id });
+  try { await notifyLib.notifyById(booking.creatorId, "creator_coupon_expired", { businessName: booking.businessName, unspentText: unspent > 0 ? `$${fmtPriceS(unspent)}` : "" }); } catch (e) { /* best-effort */ }
+  await notifyUser(booking.businessId, "coupon_expired", `The coupon on "${booking.title}" reached its expiry${unspent > 0 ? ` with $${fmtPriceS(unspent)} unspent` : ""}. The spent part stands in both wallets; the rest is closed.`, { bookingId: booking.id });
+  return true;
+}
+
+// ---------- the shared visit timeline ----------
+// ONE timeline, same facts and same words, rendered for both
+// sides of a visit (Design/UX prescription): the creator and
+// the business point at the same list in the thread.
+function visitTimeline(booking, post) {
+  const out = [];
+  const push = (key, label, at, state) => out.push({ key, label, at: at || null, state });
+  push("booked", "Visit booked", booking.createdAt, "done");
+  if (booking.redeemedAt) push("redeemed", "Visit redeemed at the counter", booking.redeemedAt, "done");
+  else push("redeem_by", `Redeem the visit code by ${booking.redeemBy ? milestoneDeadlineText(booking.redeemBy) : "the window's end"}`, null, "waiting");
+  const std = deliverablesOf(booking);
+  if (std.story) {
+    if (booking.story && booking.story.confirmedAt) push("story", "Story that shares the post — confirmed by the creator", booking.story.confirmedAt, "done");
+    else push("story", "Story that shares the post — not yet confirmed", null, booking.redeemedAt ? "waiting" : "upcoming");
+  }
+  if (post) push("post", post.onTime ? "Post submitted on time" : "Post submitted (late)", post.submittedAt, "done");
+  else if (booking.redeemedAt) push("post_due", `Post due ${booking.postDeadline ? milestoneDeadlineText(booking.postDeadline) : ""}`.trim(), null, "waiting");
+  if (post && post.verifiedAt) push("verified", "Business confirmed the post is live", post.verifiedAt, "done");
+  const counted = (booking.redemptions ? Number(booking.redemptions.count) || 0 : 0) + (Number(booking.codeUseCount) || 0);
+  if (counted > 0) push("counted", `Audience code: ${counted} customer${counted === 1 ? "" : "s"} counted so far`, null, "done");
+  if (booking.kind === "coupon" && booking.coupon) push("coupon", `Coupon: ${couponSummary(booking.coupon, booking.businessName)}`, null, "info");
+  return out;
+}
+
+// Open-offer fan-out (Build -132): an open posting used to be
+// pull-only — creators found it only by opening the board.
+// Now an offer landing open PUSHES: creators with saved match
+// alerts hear about MATCHING offers only (silence when nothing
+// matches — the Indeed pattern), and everyone else eligible
+// gets the ordinary offer_received note, which bridges to the
+// rail creator_offer_new event. Eligibility mirrors the board:
+// approved, profile complete, good standing, listed in the
+// market, tier targets, comp dignity, the comp-open switch and
+// the Charter visibility gate all apply. Stamped so a republish
+// never double-sends.
+async function fanoutOpenOffer(offer) {
+  if (!offer || offer.status !== "open" || offer.fanoutAt) return 0;
+  const business = await store.get(`user:${offer.businessId}`);
+  const kind = kindOf(offer);
+  let sent = 0;
+  const creators = (await allUsers()).filter((u) => u.role === "creator" && u.status === "approved" && !isTester(u) && u.id !== offer.businessId);
+  for (const c of creators) {
+    if (sent >= 200) break;
+    if (!profileCompleteOf(c)) continue;
+    if (standingState(c) === "banned" || standingState(c) === "paused") continue;
+    if (lateStreakPaused(c)) continue;
+    if (!isListedInMarket(c, offer.market)) continue;
+    if (Array.isArray(offer.targetTiers) && offer.targetTiers.length && !offer.targetTiers.includes(normalizeTierBand(c.creator ? c.creator.tierBand : ""))) continue;
+    if (kind === "comp" && c.creator && c.creator.compOpen === false) continue;
+    if (kind === "comp" && dignityBlock(offer.dollarCap, [normalizeTierBand(c.creator ? c.creator.tierBand : "")])) continue;
+    const prefs = alertPrefsOf(c);
+    if (prefs.set) {
+      if (!alertMatchesOffer(prefs, offer, c)) continue;
+      await notifyUser(c.id, "match_alert", `New match in ${offer.market}: "${offer.title}" at ${offer.businessName || "a local business"} — it fits the alerts you set. Open Offers to apply.`, { offerId: offer.id });
+      try { await notifyLib.notifyById(c.id, "creator_match_alert", { offerTitle: offer.title, businessName: offer.businessName || "", market: offer.market }); } catch (e) { /* the rail is best-effort */ }
+      sent += 1;
+      continue;
+    }
+    if (business && !offerVisibleToCreator(offer, c, business)) continue;
+    await notifyUser(c.id, "offer_received", `New open offer in ${offer.market}: "${offer.title}" at ${offer.businessName || "a local business"}. Open Offers to see it and apply.`, { offerId: offer.id });
+    sent += 1;
+  }
+  offer.fanoutAt = nowIso();
+  offer.updatedAt = nowIso();
+  await store.set(`offer:${offer.id}`, offer);
+  await logEvent({ type: "open_offer_fanout", actorId: offer.businessId, actorRole: "business", subjectId: offer.id, market: offer.market, data: { sent } });
+  return sent;
+}
+
+// ---------- account deletion (Build -132) ----------
+// ONE erasure routine behind both doors: the self-serve
+// Settings → Account screen and the Admin user card. The rules
+// are the ones stated in plain words on the confirm screen:
+//   - pending applications are withdrawn (their records go);
+//   - open offers, open invitations and open deals are closed;
+//   - a booking that has not happened yet is cancelled and the
+//     other side is told the account was deleted; a paid amount
+//     held for it goes back to the business (escrow refunded);
+//   - a visit that already happened stays in the OTHER side's
+//     history — it is their record of a real visit — with the
+//     deleted side's name, handle and audience code removed;
+//   - the identity itself goes completely: user record, email
+//     index, every session, sign-in/reset tokens, in-app
+//     notifications, audience offers, and the business's staff
+//     PIN / proof-kit records.
+// The deletion event is anonymised: role and route only, no
+// id, no email, no name — nothing that can point back.
+async function eraseAccount(target, via) {
+  const id = target.id;
+  const role = target.role;
+  const counterpartNote = role === "creator"
+    ? "A creator deleted their SIGNL account, so this is cancelled. Nothing is owed on it."
+    : "A business deleted its SIGNL account, so this is cancelled. Nothing is owed on it.";
+  // Applications in flight: a creator's pending applications
+  // are withdrawn; a business's received applications go with
+  // its offers below.
+  for (const row of await store.list("application:")) {
+    const a = row.value;
+    if (!a) continue;
+    if (role === "creator" && a.creatorId === id && ["applied", "pending"].includes(a.status)) await store.del(row.key);
+  }
+  // Open offers close: the business's own postings, and any
+  // direct invitation still waiting on this creator.
+  for (const o of await allOffers()) {
+    if (!o || o.status !== "open") continue;
+    const mine = (role === "business" && o.businessId === id) || (role === "creator" && o.targetCreatorId === id);
+    if (!mine) continue;
+    o.status = "closed";
+    o.closedReason = "account_deleted";
+    o.updatedAt = nowIso();
+    await store.set(`offer:${o.id}`, o);
+  }
+  // Open Offer Card deals close without a winner.
+  for (const row of await store.list("vdeal:")) {
+    const d = row.value;
+    if (!d || d.status !== "pending") continue;
+    if (d.businessId !== id && d.creatorId !== id) continue;
+    d.status = "withdrawn";
+    d.withdrawReason = "account_deleted";
+    d.updatedAt = nowIso();
+    await store.set(row.key, d);
+    const otherId = d.businessId === id ? d.creatorId : d.businessId;
+    await notifyUser(otherId, "deal_withdrawn", "A deal was closed because the other side deleted their SIGNL account.", { dealId: d.id }).catch(() => {});
+  }
+  // Bookings: future ones cancel (counterparty told, held
+  // money back); past ones stay, anonymised, in the other
+  // side's history.
+  for (const b of await allBookings()) {
+    if (!b || (b.creatorId !== id && b.businessId !== id)) continue;
+    const isCreatorSide = b.creatorId === id;
+    const happened = !!(b.redeemedAt || b.postId);
+    if (!happened && b.status !== "cancelled" && b.status !== "completed") {
+      b.status = "cancelled";
+      b.cancelledAt = nowIso();
+      b.cancelReason = "account_deleted";
+      if (b.paidLane && b.paidLane.escrowState === "held") b.paidLane.escrowState = "refunded";
+      b.updatedAt = nowIso();
+      await store.set(`booking:${b.id}`, b);
+      const otherId = isCreatorSide ? b.businessId : b.creatorId;
+      await notifyUser(otherId, "booking_cancelled", counterpartNote, { bookingId: b.id }).catch(() => {});
+      continue;
+    }
+    if (isCreatorSide) {
+      if (b.creatorCode) await store.del(`ccode:${String(b.creatorCode).toLowerCase()}`);
+      b.creatorId = "deleted";
+      b.creatorName = "A deleted creator";
+      b.creatorHandle = "";
+      b.creatorCode = null;
+      b.audienceOffer = null;
+    } else {
+      b.businessId = "deleted";
+      b.businessName = "A deleted business";
+    }
+    b.updatedAt = nowIso();
+    await store.set(`booking:${b.id}`, b);
+  }
+  // Audience offers owned by this account go entirely.
+  for (const row of await store.list("acode:")) {
+    const a = row.value;
+    if (a && (a.creatorId === id || a.businessId === id)) await store.del(row.key);
+  }
+  // In-app notifications addressed to the account.
+  for (const row of await store.list(`note:${id}:`)) await store.del(row.key);
+  // Sign-in and reset tokens minted for the account.
+  for (const prefix of ["signinlink:", "pwreset:"]) {
+    for (const row of await store.list(prefix)) {
+      if (row.value && row.value.userId === id) await store.del(row.key);
+    }
+  }
+  if (role === "business") {
+    for (const row of await store.list("staffsession:")) {
+      if (row.value && row.value.businessId === id) await store.del(row.key);
+    }
+    await store.del(`staffpin:${id}`);
+    await store.del(`proofkit:${id}`);
+    try { await square.disconnectSquare(id); } catch (e) { /* no connection to forget */ }
+  }
+  // Every session signs out, then the identity itself.
+  await auth.revokeSessionsForUser(id);
+  if (target.email) await store.del(`email:${String(target.email).toLowerCase()}`);
+  await store.del(`user:${id}`);
+  await logEvent({ type: "account_deleted", actorId: null, actorRole: null, subjectId: null, market: null, data: { role, via } });
+  return { deleted: true, role };
+}
+
+// The ONE confirmation email every deletion sends (self-serve
+// and admin alike), written to the outbound canon: it confirms
+// the erasure, thanks the person for being part of the
+// community, and carries the normal sign-in link so they can
+// come back fresh if it was a mistake or they change their
+// mind. It never promises the old data survives. It does not.
+function accountDeletionEmail() {
+  const base = process.env.APP_URL || "https://app.joinsignl.com";
+  return {
+    subject: "Your SIGNL account has been deleted",
+    text: [
+      "Your SIGNL account has been deleted, along with your profile, your sign-in, your public page, your referral links and your notification settings.",
+      "",
+      "Anything still in flight was settled this way: pending applications withdrawn, open offers and deals closed, and bookings that had not happened yet cancelled.",
+      "",
+      "Thank you for being part of the SIGNL community. We are sorry to see you go, and we mean that.",
+      "",
+      `If this was a mistake, or you change your mind, you are welcome back any time. Sign in or start fresh here: ${base}/`,
+      "",
+      "Your old account and its data are gone for good, so coming back means a new account. Nothing from the old one carries over.",
+      "",
+      "SIGNL",
+    ].join("\n"),
+  };
+}
+
+// Records one coupon spend against a coupon-kind booking.
+// Shared by the owner route and the staff route. The spend is
+// keyed by the coupon's own SPEND code (booking.couponSpend),
+// never the visit code, and capped at the remaining balance.
+// Returns { error, status } or { event, view }.
+async function recordCouponSpend(booking, body, opts) {
+  if (!booking || booking.kind !== "coupon") return { error: "That booking does not carry a coupon.", status: 409 };
+  if (!booking.couponSpend || !booking.couponSpend.code) return { error: "This coupon has no spend code yet. Open the visit once so its spend code is ready, then try again.", status: 409 };
+  const given = String(body.code || "").trim().toUpperCase();
+  if (given !== String(booking.couponSpend.code).toUpperCase()) return { error: "That spend code does not match this coupon. Use the SPEND code on the creator's coupon card, not the visit code.", status: 400 };
+  const view0 = await couponSpendView(booking);
+  if (booking.couponClosedAt || view0.status === "expired" || view0.status === "closed") {
+    await closeOutCouponIfExpired(booking);
+    return { error: "This coupon reached its expiry and is closed. Nothing more can be spent against it.", status: 409 };
+  }
+  const amount = Math.round((Number(body.amount) || 0) * 100) / 100;
+  if (!(amount > 0)) return { error: "Enter how much of the coupon was spent.", status: 400 };
+  if (amount > view0.remaining + 0.001) return { error: `Only $${fmtMoneyS(view0.remaining)} is left on this coupon. Record what was actually spent against it.`, status: 400 };
+  const ev = {
+    id: crypto.randomUUID(),
+    bookingId: booking.id,
+    businessId: booking.businessId,
+    creatorId: booking.creatorId,
+    amount,
+    at: nowIso(),
+    via: opts.via || "owner",
+    by: opts.by || null,
+  };
+  await store.set(`couponspend:${ev.id}`, ev);
+  await logEvent({ type: "coupon_spent", actorId: opts.by, actorRole: opts.via === "staff" ? "staff" : "business", subjectId: booking.id, market: booking.market, data: { amount, remaining: roasRound2(view0.remaining - amount) } });
+  const view = await couponSpendView(booking);
+  await notifyUser(booking.creatorId, "coupon_spent", `${booking.businessName || "The business"} recorded $${fmtMoneyS(amount)} spent from your coupon for "${booking.title}". $${fmtMoneyS(view.remaining)} remains${view.status === "spent" ? " — the coupon is fully spent" : ""}.`, { bookingId: booking.id });
+  return { event: ev, view };
+}
+
+// ---------- Proof Kit activation state (P0-8) ----------
+// The four kit steps as a tracked activation state, computed
+// independently of the first-booking window the kit UI rides
+// on: completion is stamped once (proofkit:{id}.completedAt)
+// and read by partner reporting as "activated". A business is
+// activated when baseline + staff PIN + counter card + one test
+// redemption are ALL done — the four things that make a first
+// real visit countable instead of silent.
+async function proofKitState(bizUser) {
+  if (!bizUser || bizUser.role !== "business" || !bizUser.business) return null;
+  const rec = (await store.get(`proofkit:${bizUser.id}`)) || {};
+  const pin = await store.get(`staffpin:${bizUser.id}`);
+  const steps = [
+    { id: "baseline", done: !!(bizUser.business.baseline && bizUser.business.baseline.dayLabel) },
+    { id: "pin", done: !!pin },
+    { id: "counter_card", done: !!rec.counterCardPrintedAt },
+    { id: "test_redemption", done: !!rec.testRedeemedAt },
+  ];
+  const complete = steps.every((s) => s.done);
+  let completedAt = rec.completedAt || null;
+  if (complete && !completedAt) {
+    completedAt = nowIso();
+    rec.completedAt = completedAt;
+    await store.set(`proofkit:${bizUser.id}`, rec);
+    await logEvent({ type: "proof_kit_completed", actorId: bizUser.id, actorRole: "business", subjectId: bizUser.id, market: bizUser.market, data: {} });
+  }
+  return { steps, doneCount: steps.filter((s) => s.done).length, complete, completedAt };
+}
+
 function noShowStrikesOf(user) {
   const n = Number(user && user.noShowStrikes);
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
@@ -4487,6 +5314,7 @@ async function allPosts() {
 // standing / cap / eligibility checks that differ per lane.
 async function createBookingForOffer({ offer, creator, via, applicationId = null }) {
   const business = await store.get(`user:${offer.businessId}`);
+  const aoDefault = business && business.business ? business.business.audienceOfferDefault : null;
   const code = await genCode();
   const creatorCode = await genCreatorCode(creator.creator ? creator.creator.handle : "");
   const ts = nowIso();
@@ -4562,7 +5390,20 @@ async function createBookingForOffer({ offer, creator, via, applicationId = null
     // all read the exact coupon the creator accepted.
     booking.kind = "coupon";
     booking.coupon = couponOf(offer);
+    // Build -132: the coupon's spend half — its own SPEND code,
+    // separate from the visit code, minted at booking.
+    booking.couponSpend = { code: await genSpendCode(), face: couponFaceValue(booking.coupon), createdAt: ts };
   }
+  // Build -132: the audience offer attaches by DEFAULT at
+  // booking time (Jeff's ruling): the counting code rides the
+  // booking from the first moment, the perk pre-filled from
+  // the business's saved default, removable with one tap.
+  booking.audienceOffer = {
+    title: (aoDefault && aoDefault.title) || "For the audience",
+    perk: (aoDefault && aoDefault.perk) || (booking.discountPct > 0 ? `${booking.discountPct}% off when you show this code` : "Show this code at the register so the visit counts"),
+    attachedAt: ts,
+    source: "booking_default",
+  };
   if (kind === "paid") {
     // Paid open offer: the business posted a cash rate for the
     // Standard Visit package. The escrow ledger is exactly the
@@ -4595,6 +5436,8 @@ async function createBookingForOffer({ offer, creator, via, applicationId = null
   await store.set(`booking:${booking.id}`, booking);
   await store.set(`code:${code}`, { bookingId: booking.id });
   await store.set(`ccode:${creatorCode}`, { bookingId: booking.id });
+  await ensureUnifiedAcode(booking);
+  if (booking.couponSpend && booking.couponSpend.code) await store.set(`spendcode:${booking.couponSpend.code}`, { bookingId: booking.id });
   await logEvent({ type: "booking_code_issued", actorId: creator.id, actorRole: "creator", subjectId: booking.id, market: offer.market, data: { code, offerId: offer.id, businessId: offer.businessId, dollarCap: booking.dollarCap, covers: booking.covers, hasBrief: !!booking.paidBrief, via } });
   if (kind === "paid") {
     await logEvent({ type: "paid_booking_created", actorId: offer.businessId, actorRole: "business", subjectId: booking.id, market: booking.market, data: { creatorId: creator.id, rate: booking.paidLane.rate, businessTotal: booking.paidLane.businessTotal, creatorNet: booking.paidLane.creatorNet, platformFee: booking.paidLane.platformFee, escrowState: "held", via, offerId: offer.id, hasBrief: !!booking.paidBrief } });
@@ -5827,6 +6670,30 @@ async function withPostState(booking) {
     const prim = await store.get(`booking:${booking.collabPrimaryBookingId}`);
     if (prim) collabPrimaryName = prim.creatorName || null;
   }
+  // Build -132 attachments: the story record, the ONE audience
+  // code view (code + counting line + safety state + counted
+  // totals), the shared visit timeline both sides read, and —
+  // for coupon bookings — the spend half, with the spend code
+  // lazily minted for bookings that predate it.
+  let couponSpend = null;
+  if (booking.kind === "coupon") {
+    if (!booking.couponSpend || !booking.couponSpend.code) {
+      booking.couponSpend = { code: await genSpendCode(), face: couponFaceValue(couponOf(booking)), createdAt: nowIso() };
+      await store.set(`spendcode:${booking.couponSpend.code}`, { bookingId: booking.id });
+      await store.set(`booking:${booking.id}`, booking);
+    }
+    couponSpend = await couponSpendView(booking);
+  }
+  const storyState = storyStateOf(booking);
+  const audienceCode = {
+    code: booking.creatorCode || null,
+    discountPct: Number(booking.discountPct || 0),
+    line: booking.creatorCode ? audienceCodeLine(booking) : null,
+    state: audienceCodeState(booking),
+    counted: (booking.redemptions ? Math.max(0, Math.floor(Number(booking.redemptions.count) || 0)) : 0) + (Number(booking.codeUseCount) || 0),
+    countedSpend: await countedCodeSpend(booking.id),
+  };
+  const timeline = visitTimeline(booking, post);
   const postPayload = postWithPerformance(post);
   if (postPayload) {
     // Per-post intent + Return score (Build -83): recorded
@@ -5837,7 +6704,7 @@ async function withPostState(booking) {
     postPayload.intentRatePer1k = pi.intentRatePer1k;
     postPayload.returnScore = intentLib.returnScoreFor({ views: pi.views, likes: pi.likes, shares: pi.shares, saves: pi.saves, countedCustomers: booking.redemptions ? Math.max(0, Math.floor(Number(booking.redemptions.count) || 0)) : 0 });
   }
-  return { ...booking, post: postPayload, creatorLicensingFee, postState: postState(booking, post), compliance: complianceStatusFor(booking, post, creatorStanding), businessReviewLinks, businessReferralProgram, businessReview, creatorReview, roas, collab, collabPrimaryName, adDisclosure: booking.adDisclosure || adDisclosureForMarket(booking.market), deliveryBlockers: deliveryBlockersFor(booking, post), postingTermsLine: booking.postingTermsLine || (isPaidBooking(booking) ? postingTermsLine(booking.postingTerms) : null) };
+  return { ...booking, post: postPayload, creatorLicensingFee, postState: postState(booking, post), compliance: complianceStatusFor(booking, post, creatorStanding), businessReviewLinks, businessReferralProgram, businessReview, creatorReview, roas, collab, collabPrimaryName, adDisclosure: booking.adDisclosure || adDisclosureForMarket(booking.market), deliveryBlockers: deliveryBlockersFor(booking, post), postingTermsLine: booking.postingTermsLine || (isPaidBooking(booking) ? postingTermsLine(booking.postingTerms) : null), storyState, audienceCode, timeline, couponSpend };
 }
 
 // ---------- Post compliance (Jeff, 2026-10-19; timeline final) ----------
@@ -6983,8 +7850,19 @@ async function runComplianceSweep() {
 //   - Zero applications 48 hours after publish: the coaching
 //     nudge (attention item on the business home + one email).
 async function runOfferSweep() {
-  const summary = { offersExpired: 0, slaReleased: 0, backfillAdvanced: 0, backfillOffered: 0, nudges: 0 };
+  const summary = { offersExpired: 0, slaReleased: 0, backfillAdvanced: 0, backfillOffered: 0, nudges: 0, dealsExpired: 0, couponsClosed: 0 };
   const now = Date.now();
+  // Build -132 passes: deal proposals past their deadline close
+  // on their own (both sides hear it), and a coupon past its
+  // expiry fires its close-out (balance recorded, both sides
+  // hear it) instead of expiring silently.
+  for (const row of await store.list("vdeal:")) {
+    const d = row.value;
+    if (d && d.status === "pending" && await expireDealIfDue(d)) summary.dealsExpired += 1;
+  }
+  for (const bk of await allBookings()) {
+    if (bk.kind === "coupon" && !bk.couponClosedAt && await closeOutCouponIfExpired(bk)) summary.couponsClosed += 1;
+  }
   const offers = await allOffers();
   const bookings = await allBookings();
   const apps = await allApplications();
@@ -8429,7 +9307,7 @@ async function sendStaffNotice(booking, trigger) {
 // actual register tally replaces the estimate). `via` is "owner"
 // (business owner or admin, from the booking view) or "staff" (a
 // staff session at the counter).
-async function logCodeUse(booking, count, by, via, actorRole) {
+async function logCodeUse(booking, count, by, via, actorRole, meta) {
   const ts = nowIso();
   const rec = {
     id: crypto.randomUUID(),
@@ -8440,6 +9318,10 @@ async function logCodeUse(booking, count, by, via, actorRole) {
     at: ts,
     by,
     via,
+    // Build -132: code-safety facts ride the record — after the
+    // discount window the use still COUNTS but carries no
+    // discount, and the stream says so.
+    ...(meta && meta.discountApplied === false ? { discountApplied: false } : {}),
   };
   await store.set(`codeuse:${rec.id}`, rec);
   booking.codeUseCount = (booking.codeUseCount || 0) + count;
@@ -10254,6 +11136,12 @@ async function businessHome(user) {
     // payload (it carries its own allDone retire state; the
     // Build -91 proof kit's four steps are items inside it).
     setupChecklist: await setupChecklistFor(user),
+    // Build -132: the Proof Kit activation state (the gate:
+    // baseline + PIN + counter card + one test redemption) and
+    // the notification rail state, so the settings screen can
+    // say honestly when texts and emails start.
+    proofKit: await proofKitState(user),
+    notifyProviders: notifyLib.providerStatus(),
     home: {
       visitsUsed: allowance.used,
       visitsAllowance: allowance.allowance,
@@ -10623,6 +11511,9 @@ async function buildSigFacts(user, full) {
       // set up" answers and its checklist chips can never tell
       // a different story from the card.
       setupChecklist: await setupChecklistFor(user),
+      proofKit: await proofKitState(user),
+      notifyProviders: notifyLib.providerStatus(),
+      deals: await sigDealsSummary(user),
       receiptReady: await (async () => {
         const lastMonth = prevMonthKey(monthKeyOf(nowIso()));
         const [bk, posts, events] = await Promise.all([allBookings(), allPosts(), allRedemptionEvents()]);
@@ -10723,6 +11614,7 @@ async function buildSigFacts(user, full) {
       bookings: mine, posts: myPosts,
       paidPostingTerms: myPaidTerms,
       pendingLicenses,
+      deals: await sigDealsSummary(user),
       businessAvailability,
       openOffers, directInvites,
       level: levelForPoints(points),
@@ -12131,16 +13023,21 @@ const STRIPE_PLAN_PRICES = {
 // price IDs created in the live account for this build. They
 // are config, not code: set them here (or override per-deploy
 // with the STRIPE_PRICE_FOUNDING_* env vars) once the catalog
-// lands, and plan-based checkout resolves to them ahead of the
-// legacy map above. Until an ID is filled in, checkout keeps
-// resolving through the legacy map, unchanged. The reverse
-// lookup (stripePlanForPrice) learns the founding IDs too, so
-// webhook plan attribution works the moment they are set.
+// lands. Build -132 HARDENING (Jeff's money-gate ruling): the
+// founding set is the ONLY set checkout may ever resolve. The
+// legacy map above survives ONLY so the reverse lookup can
+// attribute a historical subscription on a webhook; it is
+// never a pricing source again. With a plan's founding ID
+// unset, that plan's checkout refuses (503 below) instead of
+// silently pricing the retired $299/$599/$999.
 const FOUNDING_STRIPE_PRICES = {
   "self-service": process.env.STRIPE_PRICE_FOUNDING_SELF_SERVICE || "",
   "growth": process.env.STRIPE_PRICE_FOUNDING_GROWTH || "",
   "managed": process.env.STRIPE_PRICE_FOUNDING_MANAGED || "",
 };
+function foundingPriceIds() {
+  return Object.values(FOUNDING_STRIPE_PRICES).filter((v) => typeof v === "string" && v.length > 0);
+}
 // The founding credit as a Stripe coupon (Build -64): $100 off
 // the first invoice, created in the live account under this
 // exact ID. Founding checkout attaches it by default (see the
@@ -12155,10 +13052,12 @@ function stripePlanForPrice(priceId) {
   return planId ? planById(planId) : null;
 }
 function stripePriceForPlan(planId) {
+  // Build -132: founding-only resolution. The legacy fallthrough
+  // that priced $299/$599/$999 when a founding ID was missing is
+  // DELETED: an unset founding ID resolves to null, and checkout
+  // refuses rather than charging a retired price. There is no
+  // code path from a plan to a legacy price id after this build.
   if (FOUNDING_STRIPE_PRICES[planId]) return FOUNDING_STRIPE_PRICES[planId];
-  for (const [priceId, id] of Object.entries(STRIPE_PLAN_PRICES)) {
-    if (id === planId) return priceId;
-  }
   return null;
 }
 // Best-effort founding-coupon resolution: returns the coupon
@@ -12753,7 +13652,7 @@ function bookingMoneyFrom(booking, events) {
   // Voided events (Build -39 correction path) never count as
   // money or customers anywhere; this helper is the chokepoint
   // every counted-money surface reads through.
-  const evs = events.filter((e) => e.bookingId === booking.id && !e.voided);
+  const evs = events.filter((e) => e.bookingId === booking.id && !e.voided && !e.pendingConfirm);
   const firsts = evs.filter((e) => e.kind !== "return");
   const returns = evs.filter((e) => e.kind === "return");
   if (evs.length) {
@@ -13105,7 +14004,7 @@ async function scoreV2Context(businessId) {
   // business's average check prefers its own register (counted
   // first-visit spend over counted firsts), falls back to its
   // tally average, and only then to the published prior.
-  const liveFirsts = eventsAll.filter((e) => e.businessId === businessId && !e.voided && e.kind !== "return");
+  const liveFirsts = eventsAll.filter((e) => e.businessId === businessId && !e.voided && !e.pendingConfirm && e.kind !== "return");
   let avgCheck;
   if (liveFirsts.length) {
     avgCheck = { amount: roasRound2(liveFirsts.reduce((a, e) => a + (Number(e.amount) || 0), 0) / liveFirsts.length), source: "register", firsts: liveFirsts.length };
@@ -13126,7 +14025,7 @@ async function scoreV2Context(businessId) {
     creatorLocal: new Map(users.filter((u) => u.role === "creator").map((u) => [u.id, u.creator && typeof u.creator.localAudiencePct === "number" ? u.creator.localAudiencePct : null])),
     haloModel,
     avgCheck,
-    platformFirsts: eventsAll.filter((e) => !e.voided && e.kind !== "return").length,
+    platformFirsts: eventsAll.filter((e) => !e.voided && !e.pendingConfirm && e.kind !== "return").length,
   };
 }
 
@@ -13136,7 +14035,7 @@ async function scoreV2Context(businessId) {
 function scoreV2Cohort(user, monthKey, ctx) {
   const biz = user.business || {};
   const now = Date.now();
-  const liveEvents = ctx.events.filter((e) => !e.voided);
+  const liveEvents = ctx.events.filter((e) => !e.voided && !e.pendingConfirm);
   const visits = [];
   for (const b of ctx.bookings) {
     if (b.status !== "completed") continue;
@@ -13316,7 +14215,7 @@ function scoreV2ForBusiness(user, ctx, calendarCounted) {
       let customers = 0;
       let returns = 0;
       for (const e of ctx.events) {
-        if (e.voided || monthKeyOf(e.at) !== month) continue;
+        if (e.voided || e.pendingConfirm || monthKeyOf(e.at) !== month) continue;
         const day = Number(String(e.at || "").slice(8, 10));
         if (!(day >= start && day <= end)) continue;
         total += Number(e.amount) || 0;
@@ -13348,7 +14247,7 @@ async function captureGapFor(user, prebuiltCtx) {
     if (!perf.reported || !(perf.views > 0)) continue;
     visitCount += 1;
     reach += perf.views;
-    countedFirsts += ctx.events.filter((e) => e.bookingId === b.id && !e.voided && e.kind !== "return").length;
+    countedFirsts += ctx.events.filter((e) => e.bookingId === b.id && !e.voided && !e.pendingConfirm && e.kind !== "return").length;
   }
   const thin = visitCount > 0 && reach >= CAPTURE_GAP_MIN_REACH && countedFirsts * 100 < reach;
   return {
@@ -17348,6 +18247,10 @@ async function route(event) {
       moments: MOMENTS,
       termsVersion: TERMS_VERSION,
       email: { enabled: emailEnabled() },
+      // Build -132: the notification rail state (booleans only),
+      // so the settings screen can say honestly whether texts
+      // and emails actually send yet. Flips with env alone.
+      notifyProviders: (() => { const s = notifyLib.providerStatus(); return { emailLive: s.email !== "sandbox", smsLive: s.sms !== "sandbox", email: s.email, sms: s.sms }; })(),
       // Google sign-in (Build -123): true only when the Google
       // OAuth env is set (Jeff's Google Cloud step). The client
       // renders Continue with Google from this flag, never from
@@ -17980,8 +18883,74 @@ async function route(event) {
     const booking = await store.get(`booking:${idx.bookingId}`);
     if (!booking || booking.businessId !== biz.id) return err(404, "That code does not match any creator code for this business. Check the code and try again.");
     if (booking.status === "cancelled") return err(400, "That visit is cancelled, so its code is not in use");
-    await logCodeUse(booking, 1, staffCtx.businessId, "staff", "staff");
-    return json(200, { creatorName: booking.creatorName, creatorHandle: booking.creatorHandle || "", codeUseCount: booking.codeUseCount });
+    // Code safety (Build -132): revoked and cap-closed codes
+    // stop here with what-to-do copy; a code past its discount
+    // window still counts but applies no discount.
+    const codeState = audienceCodeState(booking);
+    if (codeState.revoked) return err(400, "That code was revoked by the owner, so it no longer counts or discounts. Ask the customer for another way to pay, and tell the owner.");
+    if (codeState.closed) return err(400, "That code reached its set limit and is closed out. It no longer counts or discounts.");
+    if (codeState.capSpend !== null && (await countedCodeSpend(booking.id)) >= codeState.capSpend) {
+      booking.codeSafety = { ...codeSafetyOf(booking), closedReason: "cap" };
+      booking.updatedAt = nowIso();
+      await store.set(`booking:${booking.id}`, booking);
+      return err(400, "That code reached its set spend limit and is closed out. It no longer counts or discounts.");
+    }
+    await logCodeUse(booking, 1, staffCtx.businessId, "staff", "staff", codeState.discountExpired ? { discountApplied: false } : null);
+    return json(200, { creatorName: booking.creatorName, creatorHandle: booking.creatorHandle || "", codeUseCount: booking.codeUseCount, discountApplied: !codeState.discountExpired });
+  }
+
+  // Staff visit confirm by name (Build -132): the creator is
+  // standing there with no code (dead phone, lost screen). Staff
+  // find the visit by the creator's name or handle and confirm
+  // it — the same burn and clock as a code redeem, with the via
+  // recorded as a name confirm so the trail says how it
+  // happened. Scoped to the session's own business, open visits
+  // only, behind the same lookup limiter.
+  if (method === "POST" && seg[0] === "staff" && (seg[1] === "search" || seg[1] === "confirm")) {
+    if (!staffCtx) return err(401, "Your staff session has ended. Enter the staff PIN to keep going.");
+    const biz = staffCtx.business;
+    if (businessAccessState(biz) !== "active" || !(await isMarketLive(biz.market))) {
+      return err(403, "Staff mode is not open for this business right now.");
+    }
+    if (!staffLookupAllowed(staffCtx.token)) return err(429, "Too many lookups in a row. Wait a few minutes and try again.");
+    const b = parseBody(event);
+    if (seg[1] === "search") {
+      const q = String(b.q || "").trim().toLowerCase();
+      if (q.length < 2) return json(200, { visits: [] });
+      const mine = (await allBookings()).filter((bk) => bk.businessId === biz.id && !bk.redeemedAt && bk.status !== "cancelled" && bk.status !== "expired" && !(bk.redeemBy && Date.now() > Date.parse(bk.redeemBy)));
+      const hits = mine.filter((bk) => String(bk.creatorName || "").toLowerCase().includes(q) || String(bk.creatorHandle || "").toLowerCase().includes(q)).slice(0, 10);
+      return json(200, { visits: hits.map((bk) => ({ bookingId: bk.id, creatorName: bk.creatorName, creatorHandle: bk.creatorHandle, title: bk.title, redeemBy: bk.redeemBy })) });
+    }
+    const booking = await store.get(`booking:${String(b.bookingId || "")}`);
+    if (!booking || booking.businessId !== biz.id) return err(404, "That visit is not on this business's list. Search the creator's name again.");
+    if (booking.codeStatus === "burned" || booking.redeemedAt) return err(409, "This visit was already redeemed.");
+    if (booking.status === "expired" || (booking.redeemBy && Date.now() > Date.parse(booking.redeemBy))) {
+      return err(409, "This visit's redemption window has passed, so it can no longer be redeemed.");
+    }
+    const done = await performCounterRedeem(booking, { id: biz.id, role: "business", via: "staff_name_confirm" });
+    return json(200, { booking: staffBookingView(done) });
+  }
+
+  // Staff coupon spend (Build -132): the register records the
+  // creator spending their coupon by its SPEND code. Resolves
+  // through the spendcode: index, own business only.
+  if (method === "POST" && seg[0] === "staff" && seg[1] === "coupon-spend") {
+    if (!staffCtx) return err(401, "Your staff session has ended. Enter the staff PIN to keep going.");
+    const biz = staffCtx.business;
+    if (businessAccessState(biz) !== "active" || !(await isMarketLive(biz.market))) {
+      return err(403, "Staff mode is not open for this business right now.");
+    }
+    if (!staffLookupAllowed(staffCtx.token)) return err(429, "Too many code entries in a row. Wait a few minutes and try again.");
+    const b = parseBody(event);
+    const spendCode = String(b.code || "").trim().toUpperCase();
+    if (!spendCode) return err(400, "Enter the coupon's spend code");
+    const idx = await store.get(`spendcode:${spendCode}`);
+    if (!idx || !idx.bookingId) return err(404, "That spend code does not match any coupon for this business. Use the SPEND code on the creator's coupon card, not the visit code.");
+    const booking = await store.get(`booking:${idx.bookingId}`);
+    if (!booking || booking.businessId !== biz.id) return err(404, "That spend code does not match any coupon for this business.");
+    const out = await recordCouponSpend(booking, b, { via: "staff", by: staffCtx.businessId });
+    if (out.error) return err(out.status || 400, out.error);
+    return json(201, { couponSpend: out.view, event: out.event });
   }
 
   if (!user) return err(401, "Sign in required");
@@ -18039,6 +19008,33 @@ async function route(event) {
     // build: fail closed.
     const screened = sigdata.sigPrivacyScreen(user.role, facts, q);
     if (screened) return json(200, { source: "data", text: screened.text, ...(screened.link ? { link: screened.link } : {}) });
+    // Build -132: "delete my account" used to route to support.
+    // Sig's deletion conversation (Jeff, 2026-11-05) runs three
+    // steps, in order, once: (1) ONE short honest reminder of
+    // what keeping the account holds; (2) if the market has not
+    // launched yet, a plain warning that deleting loses their
+    // early/founding status (creator canon framing: launching
+    // soon, never a date, never "no businesses yet"); (3) the
+    // route to Settings → Account → "Delete my account" and
+    // what the screen asks. A second ask gets the route ONLY:
+    // no repeated pitch, no dark patterns. Sig never performs
+    // the deletion itself; the type-DELETE confirmation lives
+    // on that screen only.
+    if ((user.role === "creator" || user.role === "business") && /\bdelete\b[^.?!]{0,40}\b(account|profile|signl)\b/i.test(q)) {
+      const dest = user.role === "creator" ? "cr-settings" : "biz-settings";
+      const link = { label: "Open Settings → Account", dest };
+      const askedBefore = history.some((h) => h && h.who === "user" && /\bdelete\b[^.?!]{0,40}\b(account|profile|signl)\b/i.test(h.text || "")) || history.some((h) => h && h.who === "sig" && /Delete my account/.test(h.text || ""));
+      if (askedBefore) {
+        return json(200, { source: "data", text: "Of course. Settings, then Account, then \"Delete my account\" at the bottom. The screen explains exactly what goes and asks you to type DELETE to confirm. That is the whole route.", link });
+      }
+      const live = facts && typeof facts.marketLive === "boolean" ? facts.marketLive : await isMarketLive(user.market);
+      const reminder = user.role === "creator"
+        ? "Before you do: SIGNL is free for creators, always. Keeping your account keeps your founding creator status, your Momentum, your referral link, and your place in line for offers when your market opens."
+        : "Before you do: keeping your account keeps your founding rate locked for as long as your plan stays active. Deleting gives that up, and any banked founding credit (like the $100 first-month credit) is lost with it.";
+      const warning = live ? "" : " And one thing worth knowing plainly: your market has not launched yet, it is launching soon, and deleting now means losing your early, founding status in it. Signing back up later starts you over as new.";
+      const route = " If you still want to go ahead: Settings, then Account, then \"Delete my account\" at the bottom. The screen explains exactly what goes and what happens to anything still in flight, and asks you to type DELETE to confirm, so it cannot happen by accident. I cannot delete it from here; that last step is yours, on that screen.";
+      return json(200, { source: "data", text: reminder + warning + route, link });
+    }
     if (facts) {
       const direct = sigdata.answerFactsRaw(user.role, facts, q, history);
       // Build -81: a data answer that shows records carries
@@ -18131,7 +19127,15 @@ async function route(event) {
     if (!biz) return err(403, "Only a business can start a subscription checkout.");
     if (businessAccessState(biz) !== "active") return err(403, FOUNDING_BUSINESS_MESSAGE);
     let priceId = typeof b.priceId === "string" ? b.priceId : null;
-    if (!priceId && typeof b.planId === "string") priceId = stripePriceForPlan(b.planId);
+    let planIdWanted = typeof b.planId === "string" ? b.planId : null;
+    if (!priceId && planIdWanted) priceId = stripePriceForPlan(planIdWanted);
+    // Build -132 gate: a plan whose founding price ID is not
+    // configured cannot check out at ANY price. Refusing here —
+    // never substituting a legacy price — is the whole control.
+    if (planIdWanted && !priceId) return err(503, "Founding pricing is not configured for that plan yet, so checkout cannot start. No card was charged.");
+    // A price id handed in directly must be one of the founding
+    // ids; anything else (including every legacy id) is refused.
+    if (priceId && !foundingPriceIds().includes(priceId)) return err(400, "Choose one of the three SIGNL plans.");
     const plan = priceId ? stripePlanForPrice(priceId) : null;
     if (!priceId || !plan) return err(400, "Choose one of the three SIGNL plans.");
     const appUrl = (process.env.APP_URL || "https://app.joinsignl.com").replace(/\/+$/, "");
@@ -19367,7 +20371,33 @@ async function route(event) {
     if (typeof b.phone === "string") user.phone = b.phone.trim().slice(0, 40);
     user.updatedAt = nowIso();
     await store.set(`user:${user.id}`, user);
-    return json(200, { ok: true, notifyPrefs: user.notifyPrefs, phone: user.phone || "" });
+    // Build -132: the rail state rides the save response, so the
+    // consolidated settings screen can show the honesty label
+    // ("texts and emails start when…") from the same read.
+    return json(200, { ok: true, notifyPrefs: user.notifyPrefs, phone: user.phone || "", notifyProviders: notifyLib.providerStatus() });
+  }
+
+  // Delete my account (Build -132): the self-serve erasure,
+  // reached only from Settings → Account → "Delete my account".
+  // The confirmation is deliberate — the caller must send the
+  // word DELETE — and the erasure itself is eraseAccount, the
+  // same routine the Admin card runs. One confirmation email
+  // goes to the address on file BEFORE the identity is erased
+  // (afterwards there is nothing left to send it from). The
+  // response clears the session cookie; every other session
+  // was revoked inside the routine.
+  if (method === "DELETE" && seg[0] === "me" && seg[1] === "account") {
+    if (user.role !== "creator" && user.role !== "business") return err(403, "Self-serve deletion covers creator and business accounts. Partner and admin accounts are handled by SIGNL directly.");
+    const b = parseBody(event);
+    if (String(b.confirmText || "").trim() !== "DELETE") return err(400, "Type DELETE to confirm. Deleting your account cannot be undone.");
+    const who = { id: user.id, role: user.role, email: user.email, name: user.name, market: user.market };
+    try {
+      const mail = accountDeletionEmail();
+      await deliverEmail("account_deletion", who, mail.subject, mail.text, null);
+    } catch (e) { /* the erasure proceeds even if the mail rail is down */ }
+    await eraseAccount(user, "self");
+    const secure = (event.headers["x-forwarded-proto"] || "").includes("https");
+    return json(200, { deleted: true }, { "Set-Cookie": auth.clearCookie(secure) });
   }
 
   // ---------- staff redemption settings (owner) ----------
@@ -19688,6 +20718,26 @@ async function route(event) {
       await store.set(`email:${newEmail}`, { userId: target.id });
       await logEvent({ type: "admin_corrected_account_email", actorId: user.id, actorRole: "admin", subjectId: target.id, market: target.market || null, data: { role: target.role, oldEmail, newEmail } });
       return json(200, { ok: true, email: newEmail, role: target.role });
+    }
+
+    // Delete account (Build -132): the SAME erasure the
+    // self-serve screen runs (eraseAccount), for the deletion
+    // request that arrives by email. Deliberate confirm (the
+    // word DELETE in the body), never for an admin account, and
+    // the account holder gets the same one confirmation email.
+    if (seg[1] === "users" && seg.length === 4 && seg[3] === "delete-account" && method === "POST") {
+      const target = await store.get(`user:${seg[2]}`);
+      if (!target) return err(404, "Account not found");
+      if (target.role === "admin") return err(400, "Admin accounts are never deleted from here.");
+      const bd = parseBody(event);
+      if (String(bd.confirmText || "").trim() !== "DELETE") return err(400, "Type DELETE to confirm. Deleting an account cannot be undone.");
+      const who = { id: target.id, role: target.role, email: target.email, name: target.name, market: target.market };
+      try {
+        const mail = accountDeletionEmail();
+        await deliverEmail("account_deletion", who, mail.subject, mail.text, null);
+      } catch (e) { /* the erasure proceeds even if the mail rail is down */ }
+      await eraseAccount(target, "admin");
+      return json(200, { deleted: true, role: target.role });
     }
 
     // Dubai Advertiser Permit (Build -70): an admin sets a Dubai
@@ -22531,6 +23581,17 @@ async function route(event) {
           return err(400, `A comp offer starts at $${fmtPriceS(COMP_GUIDANCE.Neighbors.floor)} of value. Below that it is a token, and token comps burn the roster's trust. Raise the value, or send a direct offer to one creator instead.`);
         }
       }
+      if (kind === "coupon") {
+        // Build -132 ruling 4: the coupon answers to the same
+        // dignity floor (see couponRuleError), against the tiers
+        // this deal can actually reach.
+        const tiers = targetCreator
+          ? [normalizeTierBand(targetCreator.creator ? targetCreator.creator.tierBand : "")]
+          : targetTiers;
+        const cerr = couponRuleError(coupon, tiers);
+        if (cerr) return err(400, cerr);
+        dollarCap = couponFaceValue(coupon) || 0;
+      }
       // Covers + paid brief (refinement bundle, 2026-10-20): a comp
       // offer must say how many people the comp covers; a paid
       // offer may carry short key points for the creator. A brief
@@ -22675,6 +23736,10 @@ async function route(event) {
       // invite above all) is invisible to the creator until it
       // is published.
       if (targetCreator && offer.status === "open") await notifyUser(targetCreator.id, "offer_received", `${user.business.businessName} sent you an offer: "${offer.title}". It is under your Offers.`, { offerId: offer.id });
+      // Build -132: an open-lane posting created straight into
+      // "open" pushes to eligible creators (and matching saved
+      // alerts) — the board is no longer pull-only.
+      if (!targetCreator && laneOf(offer) === "open" && offer.status === "open") { try { await fanoutOpenOffer(offer); } catch (e) { /* fan-out never blocks a create */ } }
       return json(201, { offer });
     }
 
@@ -22788,6 +23853,10 @@ async function route(event) {
       await store.set(`offer:${offer.id}`, offer);
       await logEvent({ type: "offer_published", actorId: user.id, actorRole: "business", subjectId: offer.id, market: offer.market, data: { lane: laneOf(offer), kind: kindOf(offer) } });
       if (offer.creatorId) await notifyUser(offer.creatorId, "offer_received", `${user.business.businessName} sent you an offer: "${offer.title}". It is under your Offers.`, { offerId: offer.id });
+      // Build -132: an open posting pushes to eligible creators
+      // (and to matching saved alerts) instead of waiting to be
+      // found on the board.
+      if (laneOf(offer) === "open") { try { await fanoutOpenOffer(offer); } catch (e) { /* fan-out never blocks a publish */ } }
       return json(200, { offer });
     }
 
@@ -22854,6 +23923,14 @@ async function route(event) {
       if (b.coupon !== undefined && kindOf(offer) === "coupon") {
         const cpn = normalizeCoupon(b.coupon);
         if (!cpn) return err(400, "A coupon needs what it is worth, what it is good for, and when it expires.");
+        // Build -132 ruling 4: edits answer to the same floor.
+        let tiers = offer.targetTiers;
+        if (offer.creatorId) {
+          const tc = await store.get(`user:${offer.creatorId}`);
+          tiers = [normalizeTierBand(tc && tc.creator ? tc.creator.tierBand : "")];
+        }
+        const cerr = couponRuleError(cpn, tiers);
+        if (cerr) return err(400, cerr);
         changes.coupon = [offer.coupon || null, cpn];
         offer.coupon = cpn;
         offer.dollarCap = couponFaceValue(cpn) || 0;
@@ -23182,6 +24259,387 @@ async function route(event) {
       await notifyUser(offer.businessId, "offer_declined", `${user.name} passed on "${offer.title}". Your favorites and past creators are one tap to re-invite under Discover.`, { offerId: offer.id });
       return json(200, { offer });
     }
+  }
+
+  // =====================================================================
+  // Build -132 routes: standing terms, alert preferences, the
+  // Offer Card (deals), story capture, the coupon spend half,
+  // audience-code safety + assets, and the counter name lookup.
+  // =====================================================================
+  if (seg[0] === "me" && seg[1] === "negotiation") {
+    if (user.role !== "creator") return err(403, "Creators only");
+    if (method === "GET" && seg.length === 2) {
+      return json(200, { negotiation: negotiationOf(user), publicView: negotiationPublicView(user), listedRate: user.creator && typeof user.creator.paidRate === "number" ? user.creator.paidRate : null });
+    }
+    if (method === "PUT" && seg.length === 2) {
+      const b = parseBody(event);
+      const next = normalizeNegotiation(b, user.creator ? user.creator.negotiation : null);
+      const floor = paidFloorForMarket(user.market);
+      if (next.considerFrom !== null && next.considerFrom < floor) return err(400, `Your consider-from floor cannot sit below the market paid floor (${currencySymbolForMarket(user.market)}${fmtPriceS(floor)}).`);
+      if (next.autoDeclineBelow !== null && next.autoAcceptMin !== null && next.autoDeclineBelow > next.autoAcceptMin) return err(400, "Your auto-decline line sits above your auto-accept line, so every offer would decline. Bring one of them in line.");
+      user.creator = user.creator || {};
+      user.creator.negotiation = next;
+      user.updatedAt = nowIso();
+      await store.set(`user:${user.id}`, user);
+      await logEvent({ type: "negotiation_updated", actorId: user.id, actorRole: "creator", subjectId: user.id, market: user.market, data: { hasConsiderFrom: next.considerFrom !== null, sweeteners: next.sweeteners.length } });
+      return json(200, { ok: true, negotiation: next, publicView: negotiationPublicView(user) });
+    }
+    return err(405, "Method not allowed");
+  }
+
+  if (seg[0] === "me" && seg[1] === "alert-prefs") {
+    if (user.role !== "creator") return err(403, "Creators only");
+    if (method === "GET" && seg.length === 2) return json(200, { alertPrefs: alertPrefsOf(user) });
+    if (method === "PUT" && seg.length === 2) {
+      const b = parseBody(event);
+      const next = normalizeAlertPrefs({ ...b, set: true }, user.creator ? user.creator.alertPrefs : null);
+      user.creator = user.creator || {};
+      user.creator.alertPrefs = next;
+      user.updatedAt = nowIso();
+      await store.set(`user:${user.id}`, user);
+      return json(200, { ok: true, alertPrefs: next });
+    }
+    return err(405, "Method not allowed");
+  }
+
+  if (seg[0] === "deals") {
+    // Create: a business proposes structured terms to one creator.
+    if (method === "POST" && seg.length === 1) {
+      if (user.role !== "business") return err(403, "Businesses only");
+      // A founding business is refused bookings product-wide
+      // (the founding gate); a deal that books itself on
+      // acceptance must not slip one through before activation.
+      if (isFoundingBusiness(user)) return err(403, FOUNDING_BUSINESS_MESSAGE);
+      const b = parseBody(event);
+      let terms = null;
+      let creator = null;
+      let rebookOf = null;
+      if (b.rebookOfDealId) {
+        rebookOf = await store.get(`vdeal:${String(b.rebookOfDealId)}`);
+        if (!rebookOf || rebookOf.businessId !== user.id || rebookOf.status !== "accepted") return err(400, "That past deal cannot be rebooked from here.");
+        creator = await store.get(`user:${rebookOf.creatorId}`);
+        const prev = dealCurrentProposal(rebookOf);
+        if (!prev) return err(400, "That past deal has no terms to rebook.");
+        terms = prev.terms;
+      } else {
+        creator = await store.get(`user:${String(b.creatorId || "")}`);
+      }
+      if (!creator || creator.role !== "creator" || creator.status !== "approved") return err(400, "That creator is not an approved creator");
+      if (isTester(creator)) return err(400, "That creator is not an approved creator");
+      if (!profileCompleteOf(creator)) return err(400, "That creator has not finished their founding profile yet, so they cannot take deals.");
+      if (standingState(creator) === "banned") return err(400, "That creator redeemed a comp and never posted, so they cannot be booked again.");
+      if (standingState(creator) === "paused") return err(400, pausedPickMessage(creator));
+      if (lateStreakPaused(creator)) return err(400, "That creator's new offers are paused for two weeks after three late posts in a row. Pick another creator for now.");
+      if (!isListedInMarket(creator, user.market)) return err(400, "That creator is not listed in your market.");
+      if (!terms) {
+        const checked = normalizeDealTerms(b, { market: user.market, creatorTier: normalizeTierBand(creator.creator ? creator.creator.tierBand : "") });
+        if (checked.error) return err(400, checked.error);
+        terms = checked.terms;
+      }
+      if ((terms.kind === "paid" || terms.kind === "mix") && connect.connectConfigured() && !businessCardOnFile(user)) {
+        return err(400, "Add a card before sending a paid deal. When the creator accepts, the booking charges your card on file and SIGNL holds the money until the post is live. Add your card in the Plan tab, under Your plan.");
+      }
+      const hours = b.expiresInHours === 24 ? 24 : 48;
+      const ts = nowIso();
+      const amount = dealAmountOf(terms);
+      const deal = {
+        id: crypto.randomUUID(),
+        businessId: user.id,
+        businessName: user.business.businessName,
+        creatorId: creator.id,
+        creatorName: creator.name,
+        creatorHandle: creator.creator ? creator.creator.handle : "",
+        creatorRate: creator.creator && typeof creator.creator.paidRate === "number" && creator.creator.paidRate > 0 ? creator.creator.paidRate : null,
+        title: terms.title,
+        market: user.market,
+        category: user.business.category,
+        kind: terms.kind,
+        status: "pending",
+        turn: "creator",
+        counters: { business: 0, creator: 0 },
+        history: [{ n: 1, by: "business", terms, amount, at: ts, expiresAt: new Date(Date.now() + hours * 3600 * 1000).toISOString() }],
+        declineReason: null, declinedBy: null, autoRule: null,
+        bookingId: null, offerId: null,
+        rebookOfDealId: rebookOf ? rebookOf.id : null,
+        createdAt: ts, updatedAt: ts,
+      };
+      deal.creatorRateText = deal.creatorRate !== null ? `$${fmtPriceS(deal.creatorRate)}` : null;
+      await store.set(`vdeal:${deal.id}`, deal);
+      await logEvent({ type: "deal_created", actorId: user.id, actorRole: "business", subjectId: deal.id, market: deal.market, data: { creatorId: creator.id, kind: terms.kind, amount, rebook: !!rebookOf } });
+      // Standing terms resolve qualifying deals instantly, with
+      // no conversation at all (the eBay pattern).
+      const standing = await evaluateStandingTerms(deal, creator, user.id);
+      if (standing.auto === "decline") {
+        deal.status = "declined";
+        deal.declineReason = "rate";
+        deal.declinedBy = "creator";
+        deal.autoRule = standing.rule;
+        deal.updatedAt = nowIso();
+        await store.set(`vdeal:${deal.id}`, deal);
+        await logEvent({ type: "deal_auto_declined", actorId: null, actorRole: "system", subjectId: deal.id, market: deal.market, data: { rule: standing.rule } });
+        await notifyDealParties(deal, "declined");
+        return json(201, { deal: dealView(deal, "business") });
+      }
+      if (standing.auto === "accept") {
+        deal.autoRule = standing.rule;
+        const booking = await materializeDeal(deal);
+        deal.status = "accepted";
+        deal.updatedAt = nowIso();
+        await store.set(`vdeal:${deal.id}`, deal);
+        await logEvent({ type: "deal_auto_accepted", actorId: null, actorRole: "system", subjectId: deal.id, market: deal.market, data: { rule: standing.rule, bookingId: booking.id } });
+        await notifyDealParties(deal, "accepted");
+        return json(201, { deal: dealView(deal, "business"), booking: await withPostState(booking) });
+      }
+      await notifyDealParties(deal, "new");
+      return json(201, { deal: dealView(deal, "business") });
+    }
+    // List: each side sees only its own deals.
+    if (method === "GET" && seg.length === 1) {
+      if (user.role !== "business" && user.role !== "creator") return err(403, "Sign in as a business or creator");
+      const rows = (await store.list("vdeal:")).map((r) => r.value).filter(Boolean)
+        .filter((d) => (user.role === "business" ? d.businessId === user.id : d.creatorId === user.id));
+      const out = [];
+      for (const d of rows) { await expireDealIfDue(d); out.push(dealView(d, user.role)); }
+      out.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
+      return json(200, { deals: out });
+    }
+    // One deal + respond / withdraw.
+    if (seg.length >= 2) {
+      const deal = await store.get(`vdeal:${seg[1]}`);
+      if (!deal || (deal.businessId !== user.id && deal.creatorId !== user.id)) return err(404, "Deal not found");
+      const myRole = deal.businessId === user.id ? "business" : "creator";
+      if (method === "GET" && seg.length === 2) {
+        await expireDealIfDue(deal);
+        const fresh = (await store.get(`vdeal:${deal.id}`)) || deal;
+        return json(200, { deal: dealView(fresh, myRole) });
+      }
+      if (method === "POST" && seg.length === 3 && seg[2] === "withdraw") {
+        if (myRole !== "business") return err(403, "Only the business can withdraw its deal");
+        await expireDealIfDue(deal);
+        if (deal.status !== "pending") return err(409, "This deal is already settled");
+        deal.status = "withdrawn";
+        deal.updatedAt = nowIso();
+        await store.set(`vdeal:${deal.id}`, deal);
+        await notifyUser(deal.creatorId, "deal_withdrawn", `${deal.businessName} withdrew the deal "${deal.title || "a deal"}". Nothing is owed either way.`, { dealId: deal.id });
+        return json(200, { deal: dealView(deal, myRole) });
+      }
+      if (method === "POST" && seg.length === 3 && seg[2] === "respond") {
+        await expireDealIfDue(deal);
+        if (deal.status === "expired") return err(409, "This deal expired and closed on its own. Send a fresh deal if you still want it.");
+        if (deal.status !== "pending") return err(409, "This deal is already settled");
+        if (deal.turn !== myRole) return err(409, "This one is waiting on the other side right now.");
+        const b = parseBody(event);
+        const action = String(b.action || "");
+        if (action === "decline") {
+          const reason = DECLINE_REASONS[String(b.reason || "")] ? String(b.reason) : "other";
+          deal.status = "declined";
+          deal.declineReason = reason;
+          deal.declinedBy = myRole;
+          deal.updatedAt = nowIso();
+          await store.set(`vdeal:${deal.id}`, deal);
+          await logEvent({ type: "deal_declined", actorId: user.id, actorRole: myRole, subjectId: deal.id, market: deal.market, data: { reason } });
+          await notifyDealParties(deal, "declined");
+          return json(200, { deal: dealView(deal, myRole) });
+        }
+        if (action === "counter") {
+          if ((deal.counters && deal.counters[myRole] || 0) >= 1) return err(409, "Each side gets one counter on a deal, and yours is used. Accept the terms on the table, or decline.");
+          const creator = await store.get(`user:${deal.creatorId}`);
+          const checked = normalizeDealTerms({ ...dealCurrentProposal(deal).terms, ...(b.terms || {}), kind: deal.kind }, { market: deal.market, creatorTier: normalizeTierBand(creator && creator.creator ? creator.creator.tierBand : "") });
+          if (checked.error) return err(400, checked.error);
+          const hours = b.expiresInHours === 24 ? 24 : 48;
+          const ts = nowIso();
+          deal.counters = deal.counters || { business: 0, creator: 0 };
+          deal.counters[myRole] += 1;
+          deal.history.push({ n: deal.history.length + 1, by: myRole, terms: checked.terms, amount: dealAmountOf(checked.terms), at: ts, expiresAt: new Date(Date.now() + hours * 3600 * 1000).toISOString() });
+          deal.turn = myRole === "business" ? "creator" : "business";
+          deal.updatedAt = ts;
+          await store.set(`vdeal:${deal.id}`, deal);
+          await logEvent({ type: "deal_countered", actorId: user.id, actorRole: myRole, subjectId: deal.id, market: deal.market, data: { amount: dealAmountOf(checked.terms), round: deal.history.length } });
+          await notifyDealParties(deal, "countered");
+          return json(200, { deal: dealView(deal, myRole) });
+        }
+        if (action === "accept") {
+          const creator = await store.get(`user:${deal.creatorId}`);
+          if (!creator) return err(404, "Creator not found");
+          if (standingState(creator) === "banned") return err(403, "That creator cannot take bookings right now.");
+          if (standingState(creator) === "paused") return err(403, pausedPickMessage(creator));
+          if (lateStreakPaused(creator)) return err(403, "That creator's new offers are paused for two weeks after three late posts in a row.");
+          const allBk = await allBookings();
+          const cap = maxVisitsPerWeekOf(creator);
+          if (visitsThisWeek(allBk, creator.id, Date.now()) >= cap) return err(403, `The creator is at their max of ${cap} visit${cap === 1 ? "" : "s"} this week. The deal stays open until its deadline; accept next week, or let it expire and send a fresh one.`);
+          const dealBiz = await store.get(`user:${deal.businessId}`);
+          if (dealBiz && isFoundingBusiness(dealBiz)) return err(403, FOUNDING_BUSINESS_MESSAGE);
+          const booking = await materializeDeal(deal);
+          deal.status = "accepted";
+          deal.updatedAt = nowIso();
+          await store.set(`vdeal:${deal.id}`, deal);
+          await logEvent({ type: "deal_accepted", actorId: user.id, actorRole: myRole, subjectId: deal.id, market: deal.market, data: { bookingId: booking.id, amount: dealAmountOf(dealCurrentProposal(deal).terms) } });
+          await notifyDealParties(deal, "accepted");
+          return json(200, { deal: dealView(deal, myRole), booking: await withPostState(booking) });
+        }
+        return err(400, "Say what you are doing with this deal: accept, counter, or decline.");
+      }
+      return err(405, "Method not allowed");
+    }
+  }
+
+  // Story capture (Build -132): the comp standard is 1 post +
+  // 1 story that shares the post. The story gets a real record
+  // — the creator confirms it here (an optional link rides
+  // along) — labelled creator-confirmed until Meta verification
+  // exists. The standards ladder itself does not change.
+  if (method === "POST" && seg[0] === "bookings" && seg.length === 3 && seg[2] === "story") {
+    if (user.role !== "creator") return err(403, "Creators confirm their own story");
+    const booking = await store.get(`booking:${seg[1]}`);
+    if (!booking || booking.creatorId !== user.id) return err(404, "Booking not found");
+    if (!booking.redeemedAt) return err(409, "The story goes up after the visit: redeem the visit first.");
+    const b = parseBody(event);
+    if (b.attested !== true) return err(400, "Confirm the story that shares your post is live: tick the confirmation to record it.");
+    const url = String(b.url || "").trim().slice(0, 500);
+    booking.story = { confirmedAt: nowIso(), url: url || null, source: "creator_confirmed" };
+    booking.updatedAt = nowIso();
+    await store.set(`booking:${booking.id}`, booking);
+    await logEvent({ type: "story_confirmed", actorId: user.id, actorRole: "creator", subjectId: booking.id, market: booking.market, data: { businessId: booking.businessId, hasUrl: !!url } });
+    await notifyUser(booking.businessId, "story_confirmed", `${user.name} confirmed the story that shares their post for "${booking.title}". It is on the visit timeline as creator-confirmed.`, { bookingId: booking.id });
+    return json(200, { booking: await withPostState(booking) });
+  }
+
+  // The coupon spend half: the business (or staff, via the staff
+  // route below) records the creator spending their coupon, by
+  // the coupon's own SPEND code — never the visit code.
+  if (method === "POST" && seg[0] === "bookings" && seg.length === 3 && seg[2] === "coupon-spend") {
+    if (user.role !== "business" && user.role !== "admin") return err(403, "Businesses record coupon spends");
+    const booking = await store.get(`booking:${seg[1]}`);
+    if (!booking) return err(404, "Booking not found");
+    if (user.role === "business" && booking.businessId !== user.id) return err(404, "Booking not found");
+    const b = parseBody(event);
+    const out = await recordCouponSpend(booking, b, { via: "owner", by: user.id });
+    if (out.error) return err(out.status || 400, out.error);
+    return json(201, { couponSpend: out.view, event: out.event });
+  }
+
+  // Audience offer on a booking: attached by default at booking
+  // time (see createBookingForOffer); the business can edit the
+  // perk or take it off with one tap from the booking.
+  if (seg[0] === "bookings" && seg.length === 3 && seg[2] === "audience-offer") {
+    const booking = await store.get(`booking:${seg[1]}`);
+    if (!booking) return err(404, "Booking not found");
+    if (user.role === "business" && booking.businessId !== user.id) return err(404, "Booking not found");
+    if (user.role !== "business" && user.role !== "admin") return err(403, "Businesses manage the audience offer");
+    if (method === "POST") {
+      const b = parseBody(event);
+      const perk = String(b.perk || "").trim().slice(0, 140);
+      if (!perk) return err(400, "Say what the audience gets (the perk line).");
+      booking.audienceOffer = { title: String(b.title || "For the audience").trim().slice(0, 80), perk, attachedAt: nowIso(), source: "booking" };
+      booking.audienceOfferRemoved = false;
+      booking.updatedAt = nowIso();
+      await store.set(`booking:${booking.id}`, booking);
+      return json(200, { booking: await withPostState(booking) });
+    }
+    if (method === "DELETE") {
+      booking.audienceOffer = null;
+      booking.audienceOfferRemoved = true;
+      booking.updatedAt = nowIso();
+      await store.set(`booking:${booking.id}`, booking);
+      return json(200, { booking: await withPostState(booking) });
+    }
+    return err(405, "Method not allowed");
+  }
+
+  // Audience-code safety: settings, revoke, regenerate.
+  if (seg[0] === "bookings" && seg.length === 3 && (seg[2] === "code-settings" || seg[2] === "code-revoke" || seg[2] === "code-regenerate")) {
+    const booking = await store.get(`booking:${seg[1]}`);
+    if (!booking) return err(404, "Booking not found");
+    if (user.role === "business" && booking.businessId !== user.id) return err(404, "Booking not found");
+    if (user.role !== "business" && user.role !== "admin") return err(403, "Businesses manage their codes");
+    if (method !== "POST") return err(405, "Method not allowed");
+    const b = parseBody(event);
+    booking.codeSafety = codeSafetyOf(booking);
+    if (seg[2] === "code-settings") {
+      if (b.capCount !== undefined) booking.codeSafety.capCount = b.capCount === null ? null : Math.max(1, Math.floor(Number(b.capCount)) || 0) || null;
+      if (b.capSpend !== undefined) booking.codeSafety.capSpend = b.capSpend === null ? null : Math.max(1, Math.round(Number(b.capSpend) * 100) / 100) || null;
+      if (b.expiresAt !== undefined) booking.codeSafety.expiresAt = b.expiresAt === null ? null : (Number.isFinite(Date.parse(b.expiresAt)) ? new Date(Date.parse(b.expiresAt)).toISOString() : booking.codeSafety.expiresAt);
+      if (booking.codeSafety.closedReason === "cap") booking.codeSafety.closedReason = null;
+    }
+    if (seg[2] === "code-revoke") {
+      booking.codeSafety.revokedAt = nowIso();
+      await notifyUser(booking.creatorId, "code_revoked", `${booking.businessName || "The business"} revoked the audience code ${booking.creatorCode || ""} for "${booking.title}". It no longer counts or discounts.`, { bookingId: booking.id });
+    }
+    if (seg[2] === "code-regenerate") {
+      const old = booking.creatorCode;
+      const fresh = await genCreatorCode(booking.creatorHandle || "");
+      if (old) await store.del(`ccode:${old}`);
+      booking.creatorCode = fresh;
+      await store.set(`ccode:${fresh}`, { bookingId: booking.id });
+      booking.codeSafety = { ...booking.codeSafety, revokedAt: null, closedReason: null, regeneratedFrom: old || null };
+      await notifyUser(booking.creatorId, "code_regenerated", `${booking.businessName || "The business"} replaced the audience code for "${booking.title}". Your new code is ${fresh} — use it from here on.`, { bookingId: booking.id });
+    }
+    booking.updatedAt = nowIso();
+    await store.set(`booking:${booking.id}`, booking);
+    await logEvent({ type: `code_${seg[2].replace("code-", "")}`, actorId: user.id, actorRole: user.role, subjectId: booking.id, market: booking.market, data: { creatorId: booking.creatorId } });
+    return json(200, { booking: await withPostState(booking), codeState: audienceCodeState(booking) });
+  }
+
+  // Share assets for the per-booking audience code (the assets
+  // that used to exist only on the buried AUD system): the post
+  // line, the card copy for post + story sizes, the QR, the
+  // stacking rule, and the #ad flag where the market requires it.
+  if (method === "GET" && seg[0] === "bookings" && seg.length === 3 && seg[2] === "code-assets") {
+    const booking = await store.get(`booking:${seg[1]}`);
+    if (!booking) return err(404, "Booking not found");
+    if (user.role === "business" && booking.businessId !== user.id) return err(404, "Booking not found");
+    if (user.role === "creator" && booking.creatorId !== user.id) return err(404, "Booking not found");
+    if (user.role !== "business" && user.role !== "creator" && user.role !== "admin") return err(403, "Sign in as a party to this booking");
+    let qrSvg = null;
+    try {
+      const qrcode = require("qrcode-generator");
+      const qr = qrcode(0, "M");
+      qr.addData(String(booking.creatorCode || ""));
+      qr.make();
+      qrSvg = qr.createSvgTag({ cellSize: 6, margin: 8, scalable: true });
+    } catch (e) { qrSvg = null; }
+    const pct = Number(booking.discountPct || 0);
+    return json(200, {
+      code: booking.creatorCode,
+      postLine: audienceCodeLine(booking),
+      perkLine: booking.audienceOffer ? booking.audienceOffer.perk : (pct > 0 ? `${pct}% off with this code` : "Mention the code so the visit counts"),
+      businessName: booking.businessName,
+      creatorHandle: booking.creatorHandle || "",
+      stackingRule: "One code per order. An audience code never stacks with a come-back pass on the same order.",
+      adRequired: isLondonMarket(booking.market),
+      adLine: isLondonMarket(booking.market) ? "#ad — paid partnership with " + (booking.businessName || "the business") : null,
+      qrSvg,
+      state: audienceCodeState(booking),
+    });
+  }
+
+  // Owner confirmation for a typed register amount above the
+  // sanity band: until confirmed, the event is flagged and does
+  // not count (see the Receipt aggregation).
+  if (method === "POST" && seg[0] === "bookings" && seg.length === 5 && seg[2] === "events" && seg[4] === "confirm") {
+    const booking = await store.get(`booking:${seg[1]}`);
+    if (!booking) return err(404, "Booking not found");
+    if (user.role === "business" && booking.businessId !== user.id) return err(404, "Booking not found");
+    if (user.role !== "business" && user.role !== "admin") return err(403, "The owner confirms register amounts");
+    const ev = await store.get(`redevent:${seg[3]}`);
+    if (!ev || ev.bookingId !== booking.id) return err(404, "That register event is not on this booking");
+    ev.pendingConfirm = false;
+    ev.confirmedAt = nowIso();
+    ev.confirmedBy = user.id;
+    await store.set(`redevent:${ev.id}`, ev);
+    await logEvent({ type: "redemption_confirmed", actorId: user.id, actorRole: user.role, subjectId: booking.id, market: booking.market, data: { eventId: ev.id, amount: ev.amount } });
+    return json(200, { event: ev });
+  }
+
+  // Counter name/handle lookup (Build -132): the counter finds a
+  // visit by WHO is standing there, not only by code.
+  if (method === "GET" && seg[0] === "counter" && seg[1] === "search") {
+    if (user.role !== "business" && user.role !== "admin") return err(403, "Businesses only");
+    const q = String(query.q || "").trim().toLowerCase();
+    if (q.length < 2) return json(200, { visits: [] });
+    const mine = (await allBookings()).filter((bk) => (user.role === "admin" || bk.businessId === user.id) && !bk.redeemedAt && bk.status !== "cancelled" && bk.status !== "expired" && !(bk.redeemBy && Date.now() > Date.parse(bk.redeemBy)));
+    const hits = mine.filter((bk) => String(bk.creatorName || "").toLowerCase().includes(q) || String(bk.creatorHandle || "").toLowerCase().includes(q)).slice(0, 10);
+    return json(200, { visits: hits.map((bk) => ({ bookingId: bk.id, creatorName: bk.creatorName, creatorHandle: bk.creatorHandle, title: bk.title, code: bk.code, redeemBy: bk.redeemBy })) });
   }
 
   // ---------- open offers board + my applications ----------
@@ -23823,6 +25281,14 @@ async function route(event) {
       creatorCode,
       discountPct: discountPctForBooking(user.business),
       redemptions: null,
+      // Build -132: paid bookings carry the audience offer by
+      // default too — same attach as offer bookings.
+      audienceOffer: {
+        title: (user.business.audienceOfferDefault && user.business.audienceOfferDefault.title) || "For the audience",
+        perk: (user.business.audienceOfferDefault && user.business.audienceOfferDefault.perk) || (discountPctForBooking(user.business) > 0 ? `${discountPctForBooking(user.business)}% off when you show this code` : "Show this code at the register so the visit counts"),
+        attachedAt: ts,
+        source: "booking_default",
+      },
       compCostActual: math.businessTotal,
       // Sig Operator (Jeff, 2026-10-28): a direct paid booking's
       // brief derives from its paidBrief text (the hook is the
@@ -23851,6 +25317,7 @@ async function route(event) {
     await store.set(`booking:${booking.id}`, booking);
     await store.set(`code:${code}`, { bookingId: booking.id });
     await store.set(`ccode:${creatorCode}`, { bookingId: booking.id });
+    await ensureUnifiedAcode(booking);
     // Stripe Connect (2026-10-26): authorize the card on file for
     // the booking total, held on the platform side. A charge that
     // fails unwinds the booking entirely: no booking, no codes,
@@ -23986,6 +25453,13 @@ async function route(event) {
       if (booking.codeStatus === "burned" || booking.redeemedAt) {
         return err(409, `This code was already redeemed at ${booking.redeemedAt}`);
       }
+      // Build -132: the owner Counter checks the redemption
+      // window exactly like staff mode does (the -131 map found
+      // the two paths disagreed: an expired window redeemed fine
+      // for the owner and refused for staff).
+      if (booking.status === "expired" || (booking.redeemBy && Date.now() > Date.parse(booking.redeemBy))) {
+        return err(409, "This visit's redemption window has passed, so this code can no longer be redeemed.");
+      }
       await performCounterRedeem(booking, { id: user.id, role: user.role, via: "owner" });
       return json(200, { booking: await withPostState(booking) });
     }
@@ -24046,6 +25520,22 @@ async function route(event) {
       try { await store.set(`stdlicence:${stdLic.id}`, stdLic); } catch (e) { /* the post record still carries the dates */ }
     }
     await store.set(`post:${post.id}`, post);
+    // Build -132: the story that shares the post can be confirmed
+    // right here on the submit (same record as /bookings/:id/story),
+    // and the audience code's discount window starts at the post:
+    // discount-bearing codes expire 30 days after the post by
+    // default (the owner can move it). The counting itself never
+    // expires with the discount.
+    if (b.storyAttested === true && !booking.story) {
+      booking.story = { confirmedAt: ts, url: String(b.storyUrl || "").trim().slice(0, 500) || null, source: "creator_confirmed" };
+    }
+    if (Number(booking.discountPct || 0) > 0) {
+      const safety = codeSafetyOf(booking);
+      if (!safety.expiresAt) {
+        safety.expiresAt = new Date(Date.parse(ts) + CODE_DISCOUNT_DEFAULT_EXPIRY_DAYS * DAY_MS).toISOString();
+        booking.codeSafety = safety;
+      }
+    }
     booking.status = "completed";
     booking.updatedAt = ts;
     // Paid lane: proof starts the 48 hour escrow hold. The sweep
@@ -24136,7 +25626,14 @@ async function route(event) {
     if (standingState(user) === "paused") {
       try { await unpauseIfClear(user, booking.id); } catch (e) { /* unpause is best-effort */ }
     }
-    return json(201, { post, booking: await withPostState(booking) });
+    // Build -132 soft block: when the caption is missing the
+    // audience code line, the post still lands (the link is the
+    // proof) and the response carries the warning + the exact
+    // line to add, so the creator fixes the caption in place.
+    const codeWarning = booking.creatorCode && caption && !caption.includes(booking.creatorCode)
+      ? { line: audienceCodeLine(booking), message: `Your caption is missing your audience code line. Add it so this visit counts for both of you: "${audienceCodeLine(booking)}"` }
+      : null;
+    return json(201, { post, booking: await withPostState(booking), codeWarning });
   }
 
   // Build -89: the creator confirms a London post's ad label by
@@ -24301,13 +25798,44 @@ async function route(event) {
     if (!rec || rec.creatorId !== user.id) return err(404, "License request not found");
     if (rec.status !== "pending") return err(409, "This request was already decided.");
     const b = parseBody(event);
-    const decision = b.decision === "approve" ? "approve" : b.decision === "decline" ? "decline" : null;
-    if (!decision) return err(400, "Say approve or decline.");
+    const decision = b.decision === "approve" ? "approve" : b.decision === "decline" ? "decline" : b.decision === "counter" ? "counter" : null;
+    if (!decision) return err(400, "Say approve, decline, or counter with your fee.");
     const ts = nowIso();
-    rec.respondedAt = ts;
     const post = await store.get(`post:${rec.postId}`);
     const biz = await store.get(`user:${rec.businessId}`);
     const bizName = rec.businessName || (biz && biz.business ? biz.business.businessName : "") || "The business";
+    // Build -132: the licence-fee counter lives INSIDE the
+    // licence request (no free-text negotiation anywhere). The
+    // creator names their fee once; the business accepts it or
+    // walks away. The licence term never moves: 90 days.
+    if (decision === "counter") {
+      const fee = Number(b.fee);
+      if (!Number.isFinite(fee) || fee < 1) return err(400, "Name your licence fee for the counter (a dollar amount, $1 or more).");
+      const cmath = paidMath(Math.round(fee * 100) / 100);
+      rec.status = "countered";
+      rec.counterFee = cmath.rate;
+      rec.counterBusinessTotal = cmath.businessTotal;
+      rec.counterCreatorNet = cmath.creatorNet;
+      rec.counterPlatformFee = cmath.platformFee;
+      rec.counteredAt = ts;
+      await store.set(`license:${rec.id}`, rec);
+      try { await notifyLib.notifyById(rec.businessId, "business_licence_waiting", { detail: `The creator countered your licence fee at $${fmtPriceS(cmath.rate)} for the same 90 days. You would keep the post licensed for 90 days of repost and ad use; the creator keeps $${fmtMoneyS(cmath.creatorNet)}. Accept or decline it under Posts.` }); } catch (e) { /* best-effort */ }
+      await logEvent({ type: "license_countered", actorId: user.id, actorRole: "creator", subjectId: rec.id, market: user.market, data: { postId: rec.postId, bookingId: rec.bookingId, businessId: rec.businessId, fee: rec.fee, counterFee: cmath.rate } });
+      try {
+        const threadId = [rec.businessId, user.id].sort().join("__");
+        const msg = {
+          id: crypto.randomUUID(),
+          threadId,
+          fromId: user.id,
+          toId: rec.businessId,
+          body: `On the licence for this post: the creator's fee is $${fmtPriceS(cmath.rate)} for the same 90 days of reposting and ad use (they keep $${fmtMoneyS(cmath.creatorNet)}). Accept or decline it on the post under Posts. The post: ${post ? post.url : ""}`,
+          createdAt: ts,
+        };
+        await store.set(`message:${msg.id}`, msg);
+      } catch (e) { /* the counter stands even if the note fails */ }
+      return json(200, { licenseRequest: rec, post });
+    }
+    rec.respondedAt = ts;
     if (decision === "approve") {
       rec.status = "granted";
       rec.escrowState = "released";
@@ -24353,6 +25881,50 @@ async function route(event) {
       await logEvent({ type: "message_sent", actorId: user.id, actorRole: "creator", subjectId: msg.id, market: user.market, data: { toId: rec.businessId, toRole: "business", threadId, bodyLength: msg.body.length, system: "license_declined" } });
     } catch (e) { /* the decline stands even if the note fails */ }
     return json(200, { licenseRequest: rec });
+  }
+
+  // Build -132: the business answers a licence-fee counter.
+  // Accepting grants the licence AT THE COUNTERED FEE (the
+  // record's math is rewritten to the counter, so Wallet and
+  // the licence read the agreed terms); declining closes the
+  // request with nothing charged, exactly like a decline.
+  if (seg[0] === "license-requests" && seg.length === 3 && seg[2] === "counter-decision" && method === "POST") {
+    if (user.role !== "business") return err(403, "Businesses answer licence counters");
+    const rec = await store.get(`license:${seg[1]}`);
+    if (!rec || rec.businessId !== user.id) return err(404, "License request not found");
+    if (rec.status !== "countered") return err(409, "This request has no counter waiting on you.");
+    const b = parseBody(event);
+    const ts = nowIso();
+    const post = await store.get(`post:${rec.postId}`);
+    if (b.decision === "accept") {
+      rec.fee = rec.counterFee;
+      rec.businessTotal = rec.counterBusinessTotal;
+      rec.creatorNet = rec.counterCreatorNet;
+      rec.platformFee = rec.counterPlatformFee;
+      rec.status = "granted";
+      rec.escrowState = "released";
+      rec.respondedAt = ts;
+      rec.windowEndsAt = licenseWindowEnd(Date.now()).toISOString();
+      await store.set(`license:${rec.id}`, rec);
+      if (post) {
+        post.license = { requestId: rec.id, fee: rec.fee, grantedAt: ts, windowEndsAt: rec.windowEndsAt, status: "granted" };
+        await store.set(`post:${post.id}`, post);
+      }
+      try { await notifyLib.notifyById(rec.creatorId, "licence_waiting_creator", { businessName: rec.businessName, feeText: `$${rec.fee}` }); } catch (e) { /* best-effort */ }
+      await notifyUser(rec.creatorId, "license_counter_accepted", `${rec.businessName || "The business"} accepted your licence counter of $${fmtPriceS(rec.fee)}. The post is licensed for 90 days of repost and ad use, through ${rec.windowEndsAt.slice(0, 10)}.`, { licenseId: rec.id });
+      await logEvent({ type: "license_counter_accepted", actorId: user.id, actorRole: "business", subjectId: rec.id, market: user.market, data: { postId: rec.postId, bookingId: rec.bookingId, creatorId: rec.creatorId, fee: rec.fee, creatorNet: rec.creatorNet, windowEndsAt: rec.windowEndsAt } });
+      return json(200, { licenseRequest: rec, post });
+    }
+    if (b.decision === "decline") {
+      rec.status = "declined";
+      rec.escrowState = "refunded";
+      rec.respondedAt = ts;
+      await store.set(`license:${rec.id}`, rec);
+      await notifyUser(rec.creatorId, "license_counter_declined", `${rec.businessName || "The business"} passed on your licence counter of $${fmtPriceS(rec.counterFee || 0)}, so the post stays native sharing only and nothing was charged.`, { licenseId: rec.id });
+      await logEvent({ type: "license_counter_declined", actorId: user.id, actorRole: "business", subjectId: rec.id, market: user.market, data: { postId: rec.postId, bookingId: rec.bookingId, creatorId: rec.creatorId, counterFee: rec.counterFee } });
+      return json(200, { licenseRequest: rec, post });
+    }
+    return err(400, "Say accept or decline.");
   }
 
   // Ad use (Jeff, 2026-10-19; rights model adopted 2026-10-21;
@@ -24587,6 +26159,19 @@ async function route(event) {
     if (!booking) return err(404, "Booking not found");
     if (user.role === "business" && booking.businessId !== user.id) return err(404, "Booking not found");
     if (booking.status === "cancelled") return err(400, "This booking is cancelled, so its code is not in use");
+    // Code safety (Build -132): revoked and cap-closed codes
+    // stop here with what-to-do copy; a code past its discount
+    // window still counts but applies no discount, and the
+    // stream says so.
+    const codeState132 = audienceCodeState(booking);
+    if (codeState132.revoked) return err(400, "That code was revoked, so it no longer counts or discounts. Regenerate a code from the visit if this customer should still count.");
+    if (codeState132.closed) return err(400, "That code reached its set limit and is closed out. It no longer counts or discounts.");
+    if (codeState132.capSpend !== null && (await countedCodeSpend(booking.id)) >= codeState132.capSpend) {
+      booking.codeSafety = { ...codeSafetyOf(booking), closedReason: "cap" };
+      booking.updatedAt = nowIso();
+      await store.set(`booking:${booking.id}`, booking);
+      return err(400, "That code reached its set spend limit and is closed out. It no longer counts or discounts.");
+    }
     const b = parseBody(event);
     let count = 1;
     if (b.count !== undefined && b.count !== null && b.count !== "") {
@@ -24604,9 +26189,16 @@ async function route(event) {
       if (!Number.isFinite(amount) || amount < 0 || amount > 100000) return err(400, "Check total must be a dollar amount between 0 and 100000");
       if (count !== 1) return err(400, "A redemption with a check total is one customer at a time");
       const ts = nowIso();
-      const ev = { id: crypto.randomUUID(), bookingId: booking.id, businessId: booking.businessId, creatorId: booking.creatorId, kind: "first", channel: validChannel(b.channel), amount: roasRound2(amount), passId: null, at: ts, by: user.id, via: user.role === "staff" ? "staff" : "owner", flagged: amount > REDEEM_FLAG_AMOUNT };
+      // Build -132: a typed amount above the sanity band (the
+      // business's typical basket, else $1,000) is flagged AND
+      // held out of every counted total until the owner confirms
+      // it on the visit — a fat-fingered $4,100 can no longer
+      // silently become counted spend.
+      const bandBiz = await store.get(`user:${booking.businessId}`);
+      const overBand = amount > codeSanityBand(bandBiz);
+      const ev = { id: crypto.randomUUID(), bookingId: booking.id, businessId: booking.businessId, creatorId: booking.creatorId, kind: "first", channel: validChannel(b.channel), amount: roasRound2(amount), passId: null, at: ts, by: user.id, via: user.role === "staff" ? "staff" : "owner", flagged: amount > REDEEM_FLAG_AMOUNT, source: "counter", ...(overBand ? { pendingConfirm: true } : {}), ...(codeState132.discountExpired ? { discountApplied: false } : {}) };
       await store.set(`redevent:${ev.id}`, ev);
-      await logCodeUse(booking, 1, user.id, ev.via, user.role);
+      await logCodeUse(booking, 1, user.id, ev.via, user.role, codeState132.discountExpired ? { discountApplied: false } : null);
       // Proof Controls (Build -39): the business's Came-Back
       // Pass switch is real. Off (an explicit false) means this
       // counted redemption hands the customer no pass.
@@ -24667,7 +26259,9 @@ async function route(event) {
         [`${booking.businessName || "The business"} just reported their register tally for your visit: ${count} customer${count === 1 ? "" : "s"} used your code ${booking.creatorCode || ""}, $${fmtMoneyS(booking.redemptions.basketTotal)} rung up in total.`, "", "That tracked register spend sits on your booking and your track record: it is the floor of what your post provably drove.", "", "Open SIGNL: https://app.joinsignl.com", "", "Jeff", "Founder, SIGNL"].join("\n"),
         { bookingId: booking.id });
     }
-    return json(200, { booking: await withPostState(booking) });
+    // Build -132: the tally is a labelled CORRECTION tool now —
+    // the counter event stream is the system of record.
+    return json(200, { booking: await withPostState(booking), tallyNote: "Recorded as a correction. The register events on this visit are the record; the tally only fixes them up." });
   }
 
   // Comp-cost capture at visit close-out (Build -39, strategy
@@ -24718,7 +26312,17 @@ async function route(event) {
     if (!booking) return err(404, "Booking not found");
     if (user.role === "business" && booking.businessId !== user.id) return err(404, "Booking not found");
     const evs = (await allRedemptionEvents()).filter((e) => e.bookingId === booking.id).sort((a, b2) => (a.at < b2.at ? -1 : 1));
-    return json(200, { events: evs.map((e) => ({ ...e, correctable: Date.now() <= tallyWindowEndMs(monthKeyOf(e.at)) })) });
+    // Build -132: the proxy pattern — bursts of redemptions in
+    // minutes are the self-dealing shape (one person cycling a
+    // code), so the Receipt flags them instead of letting them
+    // pass as ordinary counted traffic.
+    const buckets = new Map();
+    for (const e of evs) {
+      if (e.voided) continue;
+      const key = String(e.at || "").slice(0, 15);
+      buckets.set(key, (buckets.get(key) || 0) + 1);
+    }
+    return json(200, { events: evs.map((e) => ({ ...e, correctable: Date.now() <= tallyWindowEndMs(monthKeyOf(e.at)), burst: !e.voided && (buckets.get(String(e.at || "").slice(0, 15)) || 0) >= 3 })) });
   }
 
   // Event correction path (Build -39, strategy gap 4): a
@@ -24776,7 +26380,8 @@ async function route(event) {
     const booking = await store.get(`booking:${pass.firstBookingId}`);
     if (!booking) return err(404, "The original visit for that pass was not found");
     const ts = nowIso();
-    const ev = { id: crypto.randomUUID(), bookingId: booking.id, businessId: booking.businessId, creatorId: booking.creatorId, kind: "return", channel: validChannel(b.channel), amount: roasRound2(amount), passId: pass.id, at: ts, by: user.id, via: user.role === "staff" ? "staff" : "owner", flagged: amount > REDEEM_FLAG_AMOUNT };
+    const passBiz = await store.get(`user:${booking.businessId}`);
+    const ev = { id: crypto.randomUUID(), bookingId: booking.id, businessId: booking.businessId, creatorId: booking.creatorId, kind: "return", channel: validChannel(b.channel), amount: roasRound2(amount), passId: pass.id, at: ts, by: user.id, via: user.role === "staff" ? "staff" : "owner", flagged: amount > REDEEM_FLAG_AMOUNT, source: "comeback_pass", ...(amount > codeSanityBand(passBiz) ? { pendingConfirm: true } : {}) };
     await store.set(`redevent:${ev.id}`, ev);
     pass.status = "redeemed";
     pass.redeemedAt = ts;
@@ -24863,7 +26468,7 @@ async function route(event) {
     if (user.role !== "business") return err(403, "Businesses only");
     const biz = user.business || {};
     const month = monthKeyOf(nowIso());
-    const monthEvents = (await allRedemptionEvents()).filter((e) => e.businessId === user.id && !e.voided && monthKeyOf(e.at) === month);
+    const monthEvents = (await allRedemptionEvents()).filter((e) => e.businessId === user.id && !e.voided && !e.pendingConfirm && monthKeyOf(e.at) === month);
     const mentionsAll = (await allMentions()).filter((m) => m.businessId === user.id);
     const myBookings = (await store.list("booking:")).map((r) => r.value).filter((b) => b && b.businessId === user.id);
     const ledger = [];
@@ -25122,11 +26727,17 @@ async function route(event) {
     await store.set(`aoffer:${offer.id}`, offer);
     let code = null;
     if (booking) {
-      const codeStr = await newAudienceCode();
-      if (codeStr) {
-        code = { id: crypto.randomUUID(), offerId: offer.id, businessId: user.id, creatorId: booking.creatorId, bookingId: booking.id, code: codeStr, status: "active", createdAt: ts };
-        await store.set(`acode:${code.id}`, code);
-      }
+      // Build -132 unification: an audience offer attached to a
+      // booking rides the booking's ONE code (HANDLE-XXXX) — no
+      // second AUD code is minted, and redemptions land in the
+      // booking's one event stream. The record exists so offer
+      // surfaces can list it, flagged unified.
+      code = { id: crypto.randomUUID(), offerId: offer.id, businessId: user.id, creatorId: booking.creatorId, bookingId: booking.id, code: booking.creatorCode, status: "active", unified: true, createdAt: ts };
+      await store.set(`acode:${code.id}`, code);
+      booking.audienceOffer = { title, perk, attachedAt: ts, source: "audience_offer" };
+      booking.audienceOfferRemoved = false;
+      booking.updatedAt = ts;
+      await store.set(`booking:${booking.id}`, booking);
     }
     await logEvent({ type: "audience_offer_created", actorId: user.id, actorRole: "business", subjectId: offer.id, market: user.market, data: { bookingId: offer.bookingId, title } });
     return json(201, { offer, code });
@@ -25171,8 +26782,25 @@ async function route(event) {
     if (!code) return err(404, "That audience code was not found");
     if (user.role === "business" && code.businessId !== user.id) return err(404, "That audience code was not found");
     if (code.status !== "active") return err(400, "That audience code is not active");
+    // Build -132: a unified code (one minted on a booking) is
+    // redeemed AGAINST THE BOOKING — the booking's code safety
+    // applies, the use lands in the booking's own stream, and
+    // the booking's counted total moves. No parallel counting.
+    if (code.unified && code.bookingId) {
+      const bk = await store.get(`booking:${code.bookingId}`);
+      if (!bk) return err(404, "That audience code was not found");
+      const st = audienceCodeState(bk);
+      if (st.revoked) return err(400, "That code was revoked, so it no longer counts or discounts.");
+      if (st.closed) return err(400, "That code reached its set limit and is closed out.");
+      const ts = nowIso();
+      const ev = { id: crypto.randomUUID(), bookingId: bk.id, businessId: bk.businessId, creatorId: bk.creatorId, kind: "audience", channel: validChannel(b.channel), amount: roasRound2(amount), audienceCodeId: code.id, passId: null, at: ts, by: user.id, via: user.role === "staff" ? "staff" : "owner", flagged: amount > REDEEM_FLAG_AMOUNT, source: "audience_code", ...(amount > codeSanityBand(user) ? { pendingConfirm: true } : {}), ...(st.discountExpired ? { discountApplied: false } : {}) };
+      await store.set(`redevent:${ev.id}`, ev);
+      await logCodeUse(bk, 1, user.id, ev.via, user.role, st.discountExpired ? { discountApplied: false } : null);
+      await logEvent({ type: "audience_redemption", actorId: user.id, actorRole: user.role, subjectId: code.id, market: user.market, data: { creatorId: code.creatorId, businessId: code.businessId, amount: ev.amount, channel: ev.channel, unified: true } });
+      return json(201, { redemptionEvent: ev, code: { code: code.code, offerId: code.offerId } });
+    }
     const ts = nowIso();
-    const ev = { id: crypto.randomUUID(), bookingId: code.bookingId || null, businessId: code.businessId, creatorId: code.creatorId, kind: "audience", channel: validChannel(b.channel), amount: roasRound2(amount), audienceCodeId: code.id, passId: null, at: ts, by: user.id, via: user.role === "staff" ? "staff" : "owner", flagged: amount > REDEEM_FLAG_AMOUNT };
+    const ev = { id: crypto.randomUUID(), bookingId: code.bookingId || null, businessId: code.businessId, creatorId: code.creatorId, kind: "audience", channel: validChannel(b.channel), amount: roasRound2(amount), audienceCodeId: code.id, passId: null, at: ts, by: user.id, via: user.role === "staff" ? "staff" : "owner", flagged: amount > REDEEM_FLAG_AMOUNT, source: "audience_code" };
     await store.set(`redevent:${ev.id}`, ev);
     await logEvent({ type: "audience_redemption", actorId: user.id, actorRole: user.role, subjectId: code.id, market: user.market, data: { creatorId: code.creatorId, businessId: code.businessId, amount: ev.amount, channel: ev.channel } });
     return json(201, { redemptionEvent: ev, code: { code: code.code, offerId: code.offerId } });
@@ -25440,4 +27068,4 @@ async function route(event) {
 
 // The email builders are exported alongside the router so the verify
 // suites can assert on the exact copy a creator receives.
-module.exports = { route, passwordResetEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, normalizeBriefInput, briefForOffer, validateAssetPacket, assetPacketView, postSeries, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, runPublicPageBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView, musicOpenView, studentOpenView, PLATFORM_PEER_ID, platformThreadId, platformMessageEmail, MESSAGE_TEMPLATES, runFinishEngineSweep, maybeFireFinishMoment, handleFinishEngineReply, finishEngineConfig, recordRosterDrop, runRosterDigestSweep, setupChecklistFor, regularsFor, licencesExpiringFor, runLicenceExpirySweep, monthlyReceiptExportFor, monthlyReceiptCsv, normalizeStandingAvailability, standingAvailabilitySummary, standingAvailabilityView, normalizeCoupon, couponOf, couponFaceValue, couponSummary, validateDeliverables, deliverablesOf, deliverableLineFor, deliverableStandard, postWindowHours, DELIVERABLE_STANDARDS, normalizePostingTerms, postingTermsOf, postingTermsLine, postingDeadlineFor, isPaidBooking, isCompedLane, silentStrikesOf, silentStrikeStatusLine, lateStreakPaused, lateStreakPauseMessage, consumedCompReason, silentRemovalReason, silentRemovalEmail, consumedCompEmail, lateStreakPauseEmail, LATE_STREAK_LIMIT, LATE_STREAK_PAUSE_DAYS, SILENT_STRIKE_LIMIT };
+module.exports = { route, passwordResetEmail, approvalEmail, rejectionEmail, REJECTION_REASONS, signupConfirmationEmail, claimConfirmationEmail, profileCompletionReminderEmail, recruiterKitEmail, strikePauseEmail, createMomentum, runComplianceSweep, roasFor, performanceSummary, enrichRoasEstimateInputs, normalizeBriefInput, briefForOffer, validateAssetPacket, assetPacketView, postSeries, complianceReminderEmail, postPerformanceEmail, postPerformanceUpdateEmail, runOfferSweep, runCampaignSweep, runProfileCompletionReminderSweep, runProfileBackfill, runPublicPageBackfill, profileCompleteOf, profileCompletionFor, PRIMARY_PLATFORMS, normalizePrimaryPlatform, primaryPlatformOf, primaryPlatformLabel, primaryPlatformUrl, primaryProfileOf, normalizeAudienceStack, audienceStackOf, audienceTotalOf, campaignEmail, crossoverEmail, campaignEmailFor, businessWaveEmail, businessSignupLink, DEFAULT_CAMPAIGN_ID, CROSSOVER_CAMPAIGN_ID, BUSINESS_CAMPAIGN_ID, HELLO_CAMPAIGN_ID, CAMPAIGN_MAILBOXES, campaignFromMailbox, teamMailDailyCap, STANDARD_VISIT, visitRightsForVisit, adUseWindowEnd, LICENSE_WINDOW_DAYS, RECRUITER_KIT_FLAG_KEY, COMP_GUIDANCE, offerTimeline, dignityBlock, offerStrength, CREATOR_FREE_LINE, PAID_BRIEF_GUIDANCE, PAID_BRIEF_MAX, VISIT_GUARANTEE_LINE, STRIKE_LIMIT, STRIKE_PROBATION_COUNT, PREVIEW_STAFF_DEMO, coversOf, coversText, noShowStrikesOf, strikeStatusLine, REFERRAL_MILESTONES, ELITE_RULE, UNIVERSITY_OPTIONS, normalizeUniversity, universityOfRecord, sameUniversity, campusBadgeText, UNIVERSITY_STATUSES, UNIVERSITY_STATUS_LABELS, normalizeUniversityStatus, universityStatusOfRecord, universityStatusLabel, campusBadgeFor, universityKey, resolveUniversity, collegesData, cleanProfession, cleanFarmAreas, creatorIsRealtor, validateReferralProgram, referralProgramOf, referralProgramView, musicOpenView, studentOpenView, PLATFORM_PEER_ID, platformThreadId, platformMessageEmail, MESSAGE_TEMPLATES, runFinishEngineSweep, maybeFireFinishMoment, handleFinishEngineReply, finishEngineConfig, recordRosterDrop, runRosterDigestSweep, setupChecklistFor, regularsFor, licencesExpiringFor, runLicenceExpirySweep, monthlyReceiptExportFor, monthlyReceiptCsv, normalizeStandingAvailability, standingAvailabilitySummary, standingAvailabilityView, normalizeCoupon, couponOf, couponFaceValue, couponSummary, validateDeliverables, deliverablesOf, deliverableLineFor, deliverableStandard, postWindowHours, DELIVERABLE_STANDARDS, normalizePostingTerms, postingTermsOf, postingTermsLine, postingDeadlineFor, isPaidBooking, isCompedLane, silentStrikesOf, silentStrikeStatusLine, lateStreakPaused, lateStreakPauseMessage, consumedCompReason, silentRemovalReason, silentRemovalEmail, consumedCompEmail, lateStreakPauseEmail, LATE_STREAK_LIMIT, LATE_STREAK_PAUSE_DAYS, SILENT_STRIKE_LIMIT, couponRuleError, negotiationOf, negotiationPublicView, normalizeNegotiation, alertPrefsOf, alertMatchesOffer, normalizeAlertPrefs, proofKitState, audienceCodeState, audienceCodeLine, codeSafetyOf, dealView, normalizeDealTerms, dealAmountOf, couponSpendView, countedCodeSpend, foundingPriceIds, fanoutOpenOffer, visitTimeline, storyStateOf, eraseAccount, accountDeletionEmail };

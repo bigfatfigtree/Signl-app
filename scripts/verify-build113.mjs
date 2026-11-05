@@ -59,7 +59,7 @@ part("S: source pins");
 const appJs = fs.readFileSync(path.join(root, "public/app.js"), "utf8");
 const routerJs = fs.readFileSync(path.join(root, "netlify/functions/lib/router.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(root, "public/index.html"), "utf8");
-check("stamp is 2026.11.05-131", indexHtml.includes("2026.11.05-131") && fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes("2026.11.05-131"));
+check("stamp is 2026.11.05-132", indexHtml.includes("2026.11.05-132") && fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes("2026.11.05-132"));
 check("server: correct-email endpoint exists beside send-signin-link", routerJs.includes('seg[3] === "correct-email"') && routerJs.includes('seg[3] === "send-signin-link"'));
 check("server: correction audit-logged as admin_corrected_account_email with old/new", routerJs.includes('type: "admin_corrected_account_email"') && routerJs.includes("oldEmail") && routerJs.includes("newEmail"));
 check("server: taken address refused 409 in plain words", routerJs.includes("That email already belongs to another account."));

@@ -417,9 +417,17 @@ async function desiredCodes(businessId) {
       creatorId: b.creatorId || null,
     });
   }
+  // Build -132 unification: a unified acode IS a booking's code
+  // (same string) — the booking entry above already provisions
+  // it at its REAL discount, so the acode entry is skipped to
+  // avoid a duplicate catalog object at 0%. Standalone audience
+  // codes stay counting-only at pct 0, honestly: they carry no
+  // discount of their own.
+  const bookingCodes = new Set(out.map((o) => o.code));
   for (const r of acodes) {
     const c = r.value;
     if (!c || c.businessId !== businessId || c.status !== "active" || !c.code) continue;
+    if (c.unified || bookingCodes.has(String(c.code))) continue;
     out.push({
       mapKey: `acode:${c.id}`,
       kind: "audience",

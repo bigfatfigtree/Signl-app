@@ -63,7 +63,7 @@ function check(name, cond, extra = "") {
 part("S: source pins");
 const marketsJs = fs.readFileSync(path.join(root, "netlify/functions/lib/markets.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(root, "public/index.html"), "utf8");
-check("stamp is 2026.11.05-131 on both sides", indexHtml.includes("2026.11.05-131") && fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes("2026.11.05-131"));
+check("stamp is 2026.11.05-132 on both sides", indexHtml.includes("2026.11.05-132") && fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes("2026.11.05-132"));
 check("markets.js carries the Auckland entry", marketsJs.includes('id: "auckland"') && marketsJs.includes('label: "Auckland, New Zealand"'));
 check("markets.js carries the Wellington entry", marketsJs.includes('id: "wellington"') && marketsJs.includes('label: "Wellington, New Zealand"'));
 check("markets.js carries the Christchurch entry", marketsJs.includes('id: "christchurch"') && marketsJs.includes('label: "Christchurch, New Zealand"'));

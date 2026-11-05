@@ -218,9 +218,9 @@ console.log("== Source checks ==");
   check("funnel sits in the Stats chart stack under the filters", (() => { const w = appJs.slice(appJs.indexOf("async function loadStats()"), appJs.indexOf("async function ccShowTab()")); return w.includes('id="ast-charts"') && w.includes("astRender();") && appJs.includes("From signup to ready"); })(), "");
   check("funnel stages carry plain words (Signed up · Approved · Profile complete)", appJs.includes('"Signed up"') && appJs.includes('"Profile complete"') && appJs.includes("ready to be booked"), "");
   check("server computes the funnel from creator + booking records (profileCompleteOf, live-booking test)", routerJs.includes("ccFunnel") && routerJs.includes("profileCompleteOf") && routerJs.includes('bk.collabRole === "plusone"'), "");
-  check("build stamp is 2026.11.05-131 on both sides",
-    fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes('exports.BUILD_ID = "2026.11.05-131"')
-    && fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes('window.__SIGNL_BUILD__ = "2026.11.05-131"'), "");
+  check("build stamp is 2026.11.05-132 on both sides",
+    fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes('exports.BUILD_ID = "2026.11.05-132"')
+    && fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes('window.__SIGNL_BUILD__ = "2026.11.05-132"'), "");
 }
 
 console.log(`\nBuild -93 verify: ${passed} passed, ${failed} failed`);

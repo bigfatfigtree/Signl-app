@@ -61,6 +61,25 @@ const EVENT_TYPES = {
   // once per licence). Its own switch: a business can silence
   // expiry nudges without silencing licence-request updates.
   licence_expiring: { prefKey: "licenceExpiry", role: "business" },
+  // Build -132: the Offer Card (structured negotiation). A deal
+  // landing, a counter landing, a deal resolving (accepted or
+  // declined), and a deal expiring are clock events for both
+  // sides: they carry deadlines, so they ride the offers switch.
+  creator_deal_new: { prefKey: "offers", role: "creator" },
+  creator_deal_countered: { prefKey: "offers", role: "creator" },
+  creator_deal_resolved: { prefKey: "offers", role: "creator" },
+  creator_deal_expired: { prefKey: "offers", role: "creator" },
+  business_deal_countered: { prefKey: "offers", role: "business" },
+  business_deal_resolved: { prefKey: "offers", role: "business" },
+  business_deal_expired: { prefKey: "offers", role: "business" },
+  // Build -132: creator match alerts (open offers that match a
+  // creator's saved alert preferences). The matching pass only
+  // ever calls this when something actually matches: silence
+  // when nothing matches is the rule (Indeed pattern).
+  creator_match_alert: { prefKey: "offers", role: "creator" },
+  // Build -132: a coupon deal's coupon reached its expiry with
+  // value unspent (creator side) — the honest close-out.
+  creator_coupon_expired: { prefKey: "bookings", role: "creator" },
 };
 const PREF_KEYS = ["offers", "bookings", "postClock", "licences", "applications", "roster", "licenceExpiry"];
 
@@ -126,6 +145,24 @@ function render(eventType, payload = {}) {
       return { subject: `A licence ends ${payload.endsOn || "soon"}: ${payload.creatorName || "a creator"}'s post`, sms: `SIGNL: Your licence on ${payload.creatorName || "a creator"}'s post ends ${payload.endsOn || "soon"}. Ask to renew in SIGNL: the creator approves a fresh 90 days at their listed fee. Nothing renews on its own.`, email: `A licence you hold is ending.\n\nYour licence on ${payload.creatorName || "a creator"}'s post (${payload.postTitle || "a visit post"}) ends ${payload.endsOn || "soon"}. After that day you can no longer repost it or run it as an ad.\n\nTo keep using it, ask to renew in SIGNL: the request goes to the creator at their listed fee, and a fresh 90 days starts only if they approve. Nothing renews on its own, and no licence ever runs longer than 90 days.\n\nOpen SIGNL: https://app.joinsignl.com` };
     case "roster_drop":
       return { subject: `New creators finished in your market`, sms: `SIGNL: ${payload.count ? `${payload.count} new creator${payload.count === 1 ? "" : "s"}` : "New creators"} finished their profiles${payload.market ? ` in ${payload.market}` : ""}. See them in SIGNL.`, email: `New creators finished on SIGNL.\n\n${payload.count ? `${payload.count} new creator${payload.count === 1 ? "" : "s"}` : "New creators"} finished their profiles${payload.market ? ` in ${payload.market}` : ""}${payload.category ? ` (${payload.category})` : ""}. They are ranked by local audience, not follower count.\n\nSee them in SIGNL: https://app.joinsignl.com` };
+    case "creator_deal_new":
+      return { subject: `A deal is waiting on you: ${title}`, sms: `SIGNL: ${biz} sent you a deal: "${title}"${payload.amountText ? ` at ${payload.amountText}` : ""}. It expires ${payload.expiresText || "soon"}. Open SIGNL to accept, counter, or decline.`, email: `A business sent you a structured deal on SIGNL.\n\n${biz} sent: "${title}"${payload.amountText ? ` at ${payload.amountText}` : ""}. No messages needed: accept it, counter it once, or decline with a tap. It expires ${payload.expiresText || "in 48 hours"}, and expiring costs you nothing.\n\nOpen SIGNL: https://app.joinsignl.com` };
+    case "creator_deal_countered":
+      return { subject: `A counter is waiting on you: ${title}`, sms: `SIGNL: ${biz} countered your deal: "${title}"${payload.amountText ? ` at ${payload.amountText}` : ""}. It expires ${payload.expiresText || "soon"}. Open SIGNL to answer.`, email: `${biz} countered your deal on SIGNL.\n\n"${title}"${payload.amountText ? ` now stands at ${payload.amountText}` : ""}. Accept it, counter back once, or decline with a tap. It expires ${payload.expiresText || "in 48 hours"}.\n\nOpen SIGNL: https://app.joinsignl.com` };
+    case "business_deal_countered":
+      return { subject: `A counter is waiting on you: ${title}`, sms: `SIGNL: ${payload.creatorName || "The creator"} countered your deal: "${title}"${payload.amountText ? ` at ${payload.amountText}` : ""}. It expires ${payload.expiresText || "soon"}. Open SIGNL to answer.`, email: `${payload.creatorName || "The creator"} countered your deal on SIGNL.\n\n"${title}"${payload.amountText ? ` now stands at ${payload.amountText}` : ""}. Accept it, counter back once, or decline with a tap. It expires ${payload.expiresText || "in 48 hours"}.\n\nOpen SIGNL: https://app.joinsignl.com` };
+    case "creator_deal_resolved":
+      return { subject: `Your deal moved: ${title}`, sms: `SIGNL: ${payload.text || `Your deal "${title}" with ${biz} moved.`} Open SIGNL to see where it stands.`, email: `${payload.text || `Your deal "${title}" with ${biz} moved.`}\n\nOpen SIGNL: https://app.joinsignl.com` };
+    case "business_deal_resolved":
+      return { subject: `Your deal moved: ${title}`, sms: `SIGNL: ${payload.text || `Your deal "${title}" moved.`} Open SIGNL to see where it stands.`, email: `${payload.text || `Your deal "${title}" moved.`}\n\nOpen SIGNL: https://app.joinsignl.com` };
+    case "creator_deal_expired":
+      return { subject: `A deal expired: ${title}`, sms: `SIGNL: The deal "${title}" from ${biz} expired unanswered. Nothing is owed either way; their listed-rate booking is still there if you want it.`, email: `A deal expired on SIGNL.\n\nThe deal "${title}" from ${biz} reached its deadline unanswered and closed on its own. Nothing is owed either way.\n\nOpen SIGNL: https://app.joinsignl.com` };
+    case "business_deal_expired":
+      return { subject: `A deal expired: ${title}`, sms: `SIGNL: Your deal "${title}" expired unanswered and closed on its own. Nothing is owed either way.`, email: `A deal expired on SIGNL.\n\nYour deal "${title}" reached its deadline unanswered and closed on its own. Nothing is owed either way; you can send a fresh deal or book at the listed rate any time.\n\nOpen SIGNL: https://app.joinsignl.com` };
+    case "creator_match_alert":
+      return { subject: `An open offer matches your alerts: ${title}`, sms: `SIGNL: An open offer matches your alerts: "${title}" at ${biz}. Open SIGNL to see it and apply.`, email: `An open offer matches the alerts you set.\n\n${biz} posted: "${title}". It matches your saved alert preferences (category, value, or rate). Open SIGNL to see it and apply: https://app.joinsignl.com` };
+    case "creator_coupon_expired":
+      return { subject: `A coupon reached its expiry: ${biz}`, sms: `SIGNL: The coupon from ${biz} reached its expiry${payload.unspentText ? ` with ${payload.unspentText} unspent` : ""}. What you already spent stands; the rest is closed.`, email: `A coupon deal reached its expiry.\n\nThe coupon from ${biz} expired${payload.unspentText ? ` with ${payload.unspentText} of its value unspent` : ""}. Whatever you already spent stands; the unspent rest is closed, and both sides' wallets show exactly that.\n\nOpen SIGNL: https://app.joinsignl.com` };
     default:
       return { subject: "SIGNL update", sms: `SIGNL: ${payload.text || "You have an update in SIGNL."}`, email: payload.text || "You have an update in SIGNL." };
   }
@@ -137,8 +174,15 @@ function smsConfigured() {
 }
 function emailProvider() {
   const sel = String(process.env.NOTIFY_EMAIL_PROVIDER || "").toLowerCase();
-  if (sel === "resend" && process.env.RESEND_API_KEY) return "resend";
   if (sel === "postmark" && process.env.POSTMARK_SERVER_TOKEN) return "postmark";
+  if (sel === "resend" && process.env.RESEND_API_KEY) return "resend";
+  // Build -132: Resend is the DEFAULT email provider (Jeff's
+  // P0-1 pick): a RESEND_API_KEY alone turns the email leg live,
+  // no selector needed, so the rail flips by env alone once the
+  // accounts exist. An explicit NOTIFY_EMAIL_PROVIDER=postmark
+  // still wins when its token is set (handled above).
+  if (process.env.RESEND_API_KEY) return "resend";
+  if (process.env.POSTMARK_SERVER_TOKEN) return "postmark";
   return null; // sandbox
 }
 function providerStatus() {

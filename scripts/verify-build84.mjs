@@ -125,14 +125,23 @@ async function main() {
   check("coupon validation: a coupon without what it is good for, or without a worth, is refused",
     noApplies.status === 400 && noWorth.status === 400, `${noApplies.status}/${noWorth.status}`);
 
-  // ---------- percent off without a cap: face value unpriced, still valid ----------
-  const pct = await biz.client("POST", "/api/offers", {
+  // ---------- percent off: Build -132 (Jeff's ruling 4) — a
+  // ---------- percent coupon REQUIRES a dollar cap so it
+  // ---------- carries a real dollar worth on every card ----
+  const pctNoCap = await biz.client("POST", "/api/offers", {
     kind: "coupon", title: "Percent night", spots: 1,
     coupon: { type: "percent_off", percent: 25, appliesTo: "Dinner for two" },
   });
-  check("coupon create: percent off without a cap is valid and carries no dollar cap",
-    pct.status === 201 && pct.data.offer.dollarCap === 0 && pct.data.offer.whatComped === "25% off at Coupon Kitchen, good for Dinner for two",
-    `${pct.status} ${JSON.stringify(pct.data.offer || pct.data).slice(0, 200)}`);
+  check("coupon create: percent off without a cap is REFUSED (Build -132 ruling: % coupons require a cap)",
+    pctNoCap.status === 400 && /dollar cap/i.test((pctNoCap.data && pctNoCap.data.error) || ""),
+    `${pctNoCap.status} ${JSON.stringify(pctNoCap.data).slice(0, 200)}`);
+  const pct = await biz.client("POST", "/api/offers", {
+    kind: "coupon", title: "Percent night", spots: 1,
+    coupon: { type: "percent_off", percent: 25, cap: 60, appliesTo: "Dinner for two" },
+  });
+  check("coupon create: percent off WITH a cap is valid and shows its dollar worth",
+    pct.status === 201 && pct.data.offer.coupon && pct.data.offer.coupon.cap === 60 && /up to \$60/.test(pct.data.offer.whatComped || ""),
+    `${pct.status} ${JSON.stringify(pct.data.offer || pct.data).slice(0, 240)}`);
 
   // ---------- the creator's offer payload carries the coupon terms (Sig renders from this) ----------
   const crOffers = await chef.client("GET", "/api/offers");
@@ -241,7 +250,7 @@ async function main() {
 
   // ---------- the client bundle carries the flows ----------
   const shell = await (await fetch(`${BASE}/`)).text();
-  check("shell: the build stamp is current", shell.includes("2026.11.05-131"), shell.slice(0, 120));
+  check("shell: the build stamp is current", shell.includes("2026.11.05-132"), shell.slice(0, 120));
   const appJs = await (await fetch(`${BASE}/app.js`)).text();
   check("client: the composer carries the deliverables editor with the Recommended badge and all three kinds",
     appJs.includes("deliverablesEditorHtml") && appJs.includes("Recommended") && appJs.includes('value="coupon"') && appJs.includes("the coupon is the payment for the post. No cash changes hands."),

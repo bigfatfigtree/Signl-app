@@ -31,7 +31,7 @@ const sigdataJs = read("netlify/functions/lib/sigdata.js");
 const sigaiJs = read("netlify/functions/lib/sigai.js");
 const appJs = read("public/app.js");
 
-check("stamp is 2026.11.05-131 on both sides", buildJs.includes('BUILD_ID = "2026.11.05-131"') && indexHtml.includes("2026.11.05-131"));
+check("stamp is 2026.11.05-132 on both sides", buildJs.includes('BUILD_ID = "2026.11.05-132"') && indexHtml.includes("2026.11.05-132"));
 
 // ---------- wiring pins ----------
 const askAt = routerJs.indexOf('seg[1] === "ask"');
