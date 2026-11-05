@@ -6097,15 +6097,22 @@ function deleteAccountHtml(u) {
 // user card, for a deletion request that arrives by email. Its
 // own deliberate confirm — type DELETE in the row — then the
 // server runs eraseAccount and the holder gets the one
-// confirmation email.
-function adminDeleteAccountPrompt(userId) {
-  const host = document.getElementById("admin-delacct-" + userId);
+// confirmation email. Build -133: the card servicing row
+// (deck + Find-a-user) carries the same action; it passes a
+// prefixed host key because the same person can be on screen
+// in a card and in the list at once, and the prompt's element
+// ids must stay unique per surface. No key = the list row's
+// original ids, unchanged.
+function adminDeleteAccountPrompt(userId, key) {
+  const k = key || userId;
+  const host = document.getElementById("admin-delacct-" + k);
   if (!host) return;
-  host.innerHTML = `<span style="display:block;margin-top:8px;min-width:260px"><span class="small">Deletes the account and its data for good. It is the same erasure as the self-serve screen, with in-flight items settled the same way. Type DELETE:</span><br><input id="admin-delacct-word-${userId}" placeholder="DELETE" style="margin-top:4px"> <button class="btn small-btn danger" type="button" onclick="adminDeleteAccountGo('${userId}')">Delete for good</button> <span class="small" id="admin-delacct-note-${userId}"></span></span>`;
+  host.innerHTML = `<span style="display:block;margin-top:8px;min-width:260px"><span class="small">Deletes the account and its data for good. It is the same erasure as the self-serve screen, with in-flight items settled the same way. Type DELETE:</span><br><input id="admin-delacct-word-${k}" placeholder="DELETE" style="margin-top:4px"> <button class="btn small-btn danger" type="button" onclick="adminDeleteAccountGo('${userId}', '${k}')">Delete for good</button> <span class="small" id="admin-delacct-note-${k}"></span></span>`;
 }
-async function adminDeleteAccountGo(userId) {
-  const note = document.getElementById("admin-delacct-note-" + userId);
-  const word = (document.getElementById("admin-delacct-word-" + userId) || {}).value || "";
+async function adminDeleteAccountGo(userId, key) {
+  const k = key || userId;
+  const note = document.getElementById("admin-delacct-note-" + k);
+  const word = (document.getElementById("admin-delacct-word-" + k) || {}).value || "";
   try {
     await api("POST", `/admin/users/${userId}/delete-account`, { confirmText: word });
     if (note) note.textContent = "Deleted.";
@@ -23831,7 +23838,7 @@ async function activateMarketBusinesses(market) {
 // Find a user renders the SAME card component with the full
 // servicing row (View account, Send sign-in link, Correct
 // email, Make tester / Remove tester, View profile, Partner
-// attribution); Approve / Reject appear only on results that
+// attribution, Delete account); Approve / Reject appear only on results that
 // are genuinely pending applications.
 let adminAppView = null; // "deck" | "list"; null = deck while a queue exists, else list
 let adminDeckNote = "";
@@ -23946,7 +23953,10 @@ function adminCardActionsHtml(u, prefix) {
     parts.push(`<button class="btn small-btn ghost" onclick="setTester('${u.id}', ${u.tester ? "false" : "true"}, '${u.role}')">${u.tester ? "Remove tester" : "Make tester"}</button>`);
   }
   if (u.role === "creator") parts.push(`<button class="btn small-btn ghost" onclick="adminViewCreator('${u.id}')">View profile</button>`);
-  return `<div class="admin-card-actions">${parts.join("")}</div><div id="cardattr-edit-${prefix}-${u.id}"></div>`;
+  if (u.role === "creator" || u.role === "business") {
+    parts.push(`<button class="btn small-btn danger" onclick="adminDeleteAccountPrompt('${u.id}', '${prefix}-${u.id}')">Delete account…</button>`);
+  }
+  return `<div class="admin-card-actions">${parts.join("")}</div><span id="admin-delacct-${prefix}-${u.id}"></span><div id="cardattr-edit-${prefix}-${u.id}"></div>`;
 }
 
 function toggleCardAttribution(prefix, userId) {

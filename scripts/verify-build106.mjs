@@ -345,7 +345,7 @@ check("Brixton's score counts businesses double (10 + 2x3 = 16)", brixton && bri
 
 // ---------- canon locks ----------
 console.log("Canon locks");
-check("build stamp is -106 on both sides", fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes("2026.11.05-132") && fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes("2026.11.05-132"));
+check("build stamp is -106 on both sides", fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes("2026.11.05-133") && fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes("2026.11.05-133"));
 const routerSrc = fs.readFileSync(path.join(root, "netlify/functions/lib/router.js"), "utf8");
 check("founding Stripe prices stay unarmed (no market live for money)", /STRIPE_PRICE_FOUNDING_SELF_SERVICE \|\| ""/.test(routerSrc) && /STRIPE_PRICE_FOUNDING_GROWTH \|\| ""/.test(routerSrc) && /STRIPE_PRICE_FOUNDING_MANAGED \|\| ""/.test(routerSrc));
 const appSrc = fs.readFileSync(path.join(root, "public/app.js"), "utf8");

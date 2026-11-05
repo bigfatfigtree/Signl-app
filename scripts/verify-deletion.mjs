@@ -107,9 +107,10 @@ try {
   // ---------- source pins ----------
   const appJs = read("public/app.js");
   const routerJs = read("netlify/functions/lib/router.js");
-  check("pin: stamp is 2026.11.05-132 on both sides", read("netlify/functions/lib/build.js").includes('BUILD_ID = "2026.11.05-132"') && read("public/index.html").includes("2026.11.05-132"));
+  check("pin: stamp is 2026.11.05-133 on both sides", read("netlify/functions/lib/build.js").includes('BUILD_ID = "2026.11.05-133"') && read("public/index.html").includes("2026.11.05-133"));
   check("pin: self-serve screen is nested in accountHtml with the type-DELETE gate", appJs.includes("deleteAccountHtml(u)") && appJs.includes('id="delacct-confirm"') && appJs.includes('api("DELETE", "/me/account"'));
   check("pin: admin card carries the delete action with its own confirm", appJs.includes("adminDeleteAccountPrompt") && appJs.includes("/delete-account"));
+  check("pin: card servicing row carries delete with its own prefixed prompt host (Build -133)", appJs.includes("adminDeleteAccountPrompt('${u.id}', '${prefix}-${u.id}')") && appJs.includes("id=\"admin-delacct-${prefix}-${u.id}\""));
   check("pin: Sig delete walk is wired server-side before the answerer", routerJs.indexOf("delete my account") > -1 && routerJs.includes("cr-settings") && routerJs.includes("biz-settings"));
   check("pin: canon banks answer delete with the walk, not support", (appJs.match(/id: "delete-account"/g) || []).length >= 2);
 

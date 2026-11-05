@@ -192,7 +192,7 @@ console.log("== Admin Sig ==");
 
 console.log("== canon locks ==");
 {
-  check("build stamp is -105 on both sides", fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes("2026.11.05-132") && fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes("2026.11.05-132"));
+  check("build stamp is -105 on both sides", fs.readFileSync(path.join(root, "public/index.html"), "utf8").includes("2026.11.05-133") && fs.readFileSync(path.join(root, "netlify/functions/lib/build.js"), "utf8").includes("2026.11.05-133"));
   const routerJs = fs.readFileSync(path.join(root, "netlify/functions/lib/router.js"), "utf8");
   check("founding Stripe prices stay unarmed (no market live for money)", routerJs.includes('STRIPE_PRICE_FOUNDING_SELF_SERVICE || ""') && routerJs.includes('STRIPE_PRICE_FOUNDING_GROWTH || ""') && routerJs.includes('STRIPE_PRICE_FOUNDING_MANAGED || ""'), "");
   const appJs = fs.readFileSync(path.join(root, "public/app.js"), "utf8");
