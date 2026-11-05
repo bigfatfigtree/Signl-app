@@ -1434,6 +1434,230 @@ function platformTotals126(users) {
   };
 }
 
+// The /admin/markets computation, extracted (Build -131) so the
+// read-only checker endpoint returns the SURFACE's own numbers
+// from the same code the Admin Markets tab runs — never a copy
+// that can drift from it. Returns the full market rows.
+async function adminMarketRows() {
+      const all = await allUsers();
+      const flags = await getMarketFlags();
+      const benchFlags = await getBenchFlags();
+      // Build -116: per-market reach totals — approved,
+      // non-tester creators counted in EVERY market they are
+      // listed in (the Build -63 listing), each carrying their
+      // full self-reported stacked total. Computed from the live
+      // records on every read, so a creator editing their
+      // profile after approval moves the numbers with no stored
+      // counter anywhere. The home-market counts below stay as
+      // they have always been; these two fields are additive.
+      const reachByMarket = {};
+      for (const u of all) {
+        if (u.role !== "creator" || u.status !== "approved" || isTester(u)) continue;
+        const total = audienceTotalOf(u.creator || {});
+        for (const e of listedMarketsFor(u)) {
+          const r = reachByMarket[e.market] || (reachByMarket[e.market] = { creators: 0, followers: 0 });
+          r.creators += 1;
+          r.followers += total;
+        }
+      }
+      // Build -130: per-market local numbers over the signed-up
+      // population (approved + pending, testers excluded — the
+      // platformTotals126 population). Every creator listed in a
+      // market (listedMarketsFor: home plus extra markets at or
+      // above the 5% floor) contributes the share they stated
+      // FOR THAT MARKET (audienceShareInMarket's stored values,
+      // via the listing entries): the straight average of those
+      // shares (unstated excluded, never zero) and the local
+      // follower sum — stacked total x that market's share,
+      // rounded per creator. A multi-market creator lands in
+      // each market at that market's own share.
+      const localByMarket = {};
+      for (const u of all) {
+        if (u.role !== "creator" || isTester(u)) continue;
+        if (u.status !== "approved" && u.status !== "pending") continue;
+        const total = audienceTotalOf(u.creator || {});
+        for (const e of listedMarketsFor(u)) {
+          if (typeof e.pct !== "number" || !Number.isFinite(e.pct)) continue;
+          const r = localByMarket[e.market] || (localByMarket[e.market] = { pctSum: 0, pctCount: 0, localFollowers: 0 });
+          r.pctSum += e.pct;
+          r.pctCount += 1;
+          r.localFollowers += Math.round((total * e.pct) / 100);
+        }
+      }
+      const out = MARKETS.map((m) => {
+        // Build -130 Part 5 (count fix, audit 2026-11-05): the
+        // home-count bucket matches CANONICALLY, exactly like
+        // the reach counts below (listedMarketsFor). The raw
+        // u.market === m.name equality dropped legacy records
+        // stored under pre-rename or label forms ("Hampton
+        // Roads", "Tampa, Florida") out of their home market's
+        // approved/pending/business counts while the same
+        // records still counted in listed/combined — Virginia
+        // Beach showed 9 approved of 11 real, Tampa showed 0
+        // of 1. No stored record is rewritten (standing
+        // design); only the match changes. Definitions from
+        // Builds -116/-126 are unchanged.
+        const inMarket = all.filter((u) => u.role !== "admin" && canonicalMarketName(u.market) === m.name);
+        return {
+          id: m.id,
+          name: m.name,
+          label: m.label,
+          country: m.country || "United States",
+          live: TEST_MODE ? true : !!flags[m.name],
+          benchOpen: !!flags[m.name] || !!benchFlags[m.name],
+          creatorsApproved: inMarket.filter((u) => u.role === "creator" && u.status === "approved" && !isTester(u)).length,
+          creatorsApprovedComplete: inMarket.filter((u) => u.role === "creator" && u.status === "approved" && !isTester(u) && profileCompleteOf(u)).length,
+          creatorsPending: inMarket.filter((u) => u.role === "creator" && u.status === "pending").length,
+          businessesApproved: inMarket.filter((u) => u.role === "business" && u.status === "approved").length,
+          businessesFounding: inMarket.filter((u) => u.role === "business" && u.status === "approved" && businessAccessState(u) !== "active").length,
+          businessesActive: inMarket.filter((u) => u.role === "business" && u.status === "approved" && businessAccessState(u) === "active").length,
+          // Build -88: creator areas inside the market (the
+          // London picker values), counted for the board.
+          areas: (() => { const counts = {}; for (const u of inMarket) { if (u.role !== "creator" || isTester(u)) continue; const a = creatorAreaOf(u.creator); if (a) counts[a] = (counts[a] || 0) + 1; } return Object.entries(counts).map(([area, creators]) => ({ area, creators })).sort((x, y) => y.creators - x.creators || (x.area < y.area ? -1 : 1)); })(),
+          // Build -116: listed-creators reach for this market
+          // (see reachByMarket above). Labelled in the UI as
+          // combined followers (as reported by creators).
+          creatorsListed: (reachByMarket[m.name] || {}).creators || 0,
+          combinedFollowers: (reachByMarket[m.name] || {}).followers || 0,
+          // Build -130: this market's local numbers (see
+          // localByMarket above). avgLocalPct is null when no
+          // listed creator has stated a share for this market.
+          localFollowers: (localByMarket[m.name] || {}).localFollowers || 0,
+          avgLocalPct: (localByMarket[m.name] || {}).pctCount ? Math.round((localByMarket[m.name] || {}).pctSum / (localByMarket[m.name] || {}).pctCount) : null,
+          avgLocalCount: (localByMarket[m.name] || {}).pctCount || 0,
+        };
+      });
+  return out;
+}
+
+
+// ---------- Read-only checker key (Build -131 add, Jeff 2026-11-05) ----------
+// The daily data-accuracy job must compare the LIVE platform
+// numbers without holding Blobs credentials or Jeff's admin
+// password (neither exists outside the Netlify env, and the
+// saved admin sign-in was rejected). This endpoint is the whole
+// of the key's power: GET /api/verify/counts, gated by a
+// dedicated token (env SIGNL_VERIFY_TOKEN, presented as the
+// x-signl-verify-token header, compared in constant time; the
+// env unset fails CLOSED). The token is read in exactly one
+// place — this handler — so it cannot authenticate to any
+// other route, admin or otherwise, and this handler only ever
+// returns aggregates: the platform totals + per-market stats
+// the Admin already displays, computed by the surfaces' own
+// builders (platformTotals126 + adminMarketRows), PLUS an
+// independent recount of the same numbers written from the
+// published definitions (the verify-counts truth model:
+// canonical market matching, stacked totals, signed-up =
+// approved+pending minus testers, listings = home + shares
+// >= 5%, unstated shares excluded never zero). The checker
+// asserts the two computations agree, stat by stat. No record,
+// no name, no email ever leaves through here.
+function verifyTokenOk(event) {
+  const want = process.env.SIGNL_VERIFY_TOKEN || "";
+  if (!want) return false;
+  const headers = (event && event.headers) || {};
+  const got = headers["x-signl-verify-token"] || headers["X-Signl-Verify-Token"] || "";
+  if (!got || got.length !== want.length) return false;
+  try { return crypto.timingSafeEqual(Buffer.from(got), Buffer.from(want)); } catch (e) { return false; }
+}
+function verifyCountsRecount(users) {
+  const CAP = 100000000;
+  const canon = (name) => canonicalMarketName(name);
+  const stacked = (c) => {
+    const cc = c || {};
+    let sum = 0;
+    const stack = cc.audienceStack && typeof cc.audienceStack === "object" ? cc.audienceStack : {};
+    for (const v of Object.values(stack)) {
+      const n = Math.floor(Number(v));
+      if (Number.isFinite(n) && n > 0) sum += Math.min(CAP, n);
+    }
+    if (sum === 0 && (cc.followerCount || 0) > 0) sum = Math.min(CAP, Math.floor(Number(cc.followerCount)) || 0);
+    return sum;
+  };
+  const extras = (user) => {
+    const home = canon(user.market);
+    const byMarket = new Map();
+    const raw = user.creator && Array.isArray(user.creator.audienceMarkets) ? user.creator.audienceMarkets : [];
+    for (const e of raw) {
+      if (!e || typeof e !== "object") continue;
+      const m = canon(e.market);
+      if (!m || m === home) continue;
+      const pct = Number(e.pct);
+      if (!Number.isFinite(pct) || pct <= 0) continue;
+      const clamped = Math.max(0, Math.min(100, pct));
+      if (!byMarket.has(m) || clamped > byMarket.get(m)) byMarket.set(m, clamped);
+    }
+    return byMarket;
+  };
+  const share = (user, marketName) => {
+    if (!user || !user.creator) return null;
+    const home = canon(user.market);
+    if (!home) return null;
+    if (marketName === home) {
+      const pct = user.creator.localAudiencePct;
+      return pct === null || pct === undefined || !Number.isFinite(Number(pct)) ? null : Number(pct);
+    }
+    const hit = extras(user).get(marketName);
+    return hit === undefined ? null : hit;
+  };
+  const listings = (user) => {
+    if (!user || user.role !== "creator" || !user.creator) return [];
+    const home = canon(user.market);
+    if (!home) return [];
+    const out = [{ market: home, pct: share(user, home) }];
+    for (const [m, pct] of extras(user)) if (pct >= 5) out.push({ market: m, pct });
+    return out;
+  };
+  const tester = (u) => !!(u && u.tester);
+  const totals = (() => {
+    let signedUp = 0, totalFollowers = 0, localFollowers = 0, pctSum = 0, pctCount = 0;
+    for (const u of users) {
+      if (!u || u.role !== "creator" || tester(u)) continue;
+      if (u.status !== "approved" && u.status !== "pending") continue;
+      signedUp += 1;
+      const total = stacked(u.creator);
+      totalFollowers += total;
+      const homePct = share(u, canon(u.market));
+      if (typeof homePct === "number") { pctSum += homePct; pctCount += 1; localFollowers += Math.round((total * homePct) / 100); }
+    }
+    return { creatorsSignedUp: signedUp, totalFollowers, localFollowers, avgLocalPct: pctCount ? Math.round(pctSum / pctCount) : null, avgLocalCount: pctCount };
+  })();
+  const markets = MARKETS.map((market) => {
+    const name = market.name;
+    let approved = 0, pending = 0, listed = 0, combined = 0, localFollowers = 0, pctSum = 0, pctCount = 0;
+    for (const u of users) {
+      if (!u || u.role !== "creator") continue;
+      if (canon(u.market) === name) {
+        if (u.status === "approved" && !tester(u)) approved += 1;
+        if (u.status === "pending") pending += 1;
+      }
+      const total = stacked(u.creator);
+      for (const e of listings(u)) {
+        if (e.market !== name) continue;
+        if (u.status === "approved" && !tester(u)) { listed += 1; combined += total; }
+        if ((u.status === "approved" || u.status === "pending") && !tester(u) && typeof e.pct === "number") {
+          pctSum += e.pct; pctCount += 1;
+          localFollowers += Math.round((total * e.pct) / 100);
+        }
+      }
+    }
+    return { name, creatorsApproved: approved, creatorsPending: pending, creatorsListed: listed, combinedFollowers: combined, localFollowers, avgLocalPct: pctCount ? Math.round(pctSum / pctCount) : null, avgLocalCount: pctCount };
+  });
+  return { totals, markets };
+}
+const VERIFY_COUNT_MARKET_FIELDS = ["name", "creatorsApproved", "creatorsPending", "creatorsListed", "combinedFollowers", "localFollowers", "avgLocalPct", "avgLocalCount"];
+async function handleVerifyCounts(event) {
+  if ((event.httpMethod || "GET") !== "GET") return err(404, "Not found.");
+  if (!verifyTokenOk(event)) return err(401, "Unauthorized.");
+  const users = await allUsers();
+  const totals = platformTotals126(users);
+  const rows = await adminMarketRows();
+  const markets = rows.map((m) => { const o = {}; for (const f of VERIFY_COUNT_MARKET_FIELDS) o[f] = m[f]; return o; });
+  const recount = verifyCountsRecount(users);
+  const agree = JSON.stringify(totals) === JSON.stringify(recount.totals) && JSON.stringify(markets) === JSON.stringify(recount.markets);
+  return json(200, { totals, markets, recount, agree });
+}
+
 // The Admin home preview tabs' targets (Build -126), resolved in
 // exactly one place: the approved TEST creator (tester-flagged,
 // approved, never a demo-showcase discovery prop) and the seeded
@@ -17097,6 +17321,13 @@ async function route(event) {
     return pilots.handlePilotApi({ user, seg, method, event, query });
   }
 
+  // Read-only checker key (Build -131 add): GET /api/verify/counts
+  // only, token-gated inside the handler (see verifyTokenOk). The
+  // token opens nothing else anywhere in this router.
+  if (seg[0] === "verify" && seg[1] === "counts" && seg.length === 2) {
+    return handleVerifyCounts(event);
+  }
+
   // Public bootstrap: static config plus the launch state. Deliberately
   // contains NO creator or business data; the roster is never public.
   if (method === "GET" && seg.length === 1 && seg[0] === "bootstrap") {
@@ -20191,94 +20422,7 @@ async function route(event) {
       return json(200, { leaderboard: rows });
     }
     if (method === "GET" && seg[1] === "markets") {
-      const all = await allUsers();
-      const flags = await getMarketFlags();
-      const benchFlags = await getBenchFlags();
-      // Build -116: per-market reach totals — approved,
-      // non-tester creators counted in EVERY market they are
-      // listed in (the Build -63 listing), each carrying their
-      // full self-reported stacked total. Computed from the live
-      // records on every read, so a creator editing their
-      // profile after approval moves the numbers with no stored
-      // counter anywhere. The home-market counts below stay as
-      // they have always been; these two fields are additive.
-      const reachByMarket = {};
-      for (const u of all) {
-        if (u.role !== "creator" || u.status !== "approved" || isTester(u)) continue;
-        const total = audienceTotalOf(u.creator || {});
-        for (const e of listedMarketsFor(u)) {
-          const r = reachByMarket[e.market] || (reachByMarket[e.market] = { creators: 0, followers: 0 });
-          r.creators += 1;
-          r.followers += total;
-        }
-      }
-      // Build -130: per-market local numbers over the signed-up
-      // population (approved + pending, testers excluded — the
-      // platformTotals126 population). Every creator listed in a
-      // market (listedMarketsFor: home plus extra markets at or
-      // above the 5% floor) contributes the share they stated
-      // FOR THAT MARKET (audienceShareInMarket's stored values,
-      // via the listing entries): the straight average of those
-      // shares (unstated excluded, never zero) and the local
-      // follower sum — stacked total x that market's share,
-      // rounded per creator. A multi-market creator lands in
-      // each market at that market's own share.
-      const localByMarket = {};
-      for (const u of all) {
-        if (u.role !== "creator" || isTester(u)) continue;
-        if (u.status !== "approved" && u.status !== "pending") continue;
-        const total = audienceTotalOf(u.creator || {});
-        for (const e of listedMarketsFor(u)) {
-          if (typeof e.pct !== "number" || !Number.isFinite(e.pct)) continue;
-          const r = localByMarket[e.market] || (localByMarket[e.market] = { pctSum: 0, pctCount: 0, localFollowers: 0 });
-          r.pctSum += e.pct;
-          r.pctCount += 1;
-          r.localFollowers += Math.round((total * e.pct) / 100);
-        }
-      }
-      const out = MARKETS.map((m) => {
-        // Build -130 Part 5 (count fix, audit 2026-11-05): the
-        // home-count bucket matches CANONICALLY, exactly like
-        // the reach counts below (listedMarketsFor). The raw
-        // u.market === m.name equality dropped legacy records
-        // stored under pre-rename or label forms ("Hampton
-        // Roads", "Tampa, Florida") out of their home market's
-        // approved/pending/business counts while the same
-        // records still counted in listed/combined — Virginia
-        // Beach showed 9 approved of 11 real, Tampa showed 0
-        // of 1. No stored record is rewritten (standing
-        // design); only the match changes. Definitions from
-        // Builds -116/-126 are unchanged.
-        const inMarket = all.filter((u) => u.role !== "admin" && canonicalMarketName(u.market) === m.name);
-        return {
-          id: m.id,
-          name: m.name,
-          label: m.label,
-          country: m.country || "United States",
-          live: TEST_MODE ? true : !!flags[m.name],
-          benchOpen: !!flags[m.name] || !!benchFlags[m.name],
-          creatorsApproved: inMarket.filter((u) => u.role === "creator" && u.status === "approved" && !isTester(u)).length,
-          creatorsApprovedComplete: inMarket.filter((u) => u.role === "creator" && u.status === "approved" && !isTester(u) && profileCompleteOf(u)).length,
-          creatorsPending: inMarket.filter((u) => u.role === "creator" && u.status === "pending").length,
-          businessesApproved: inMarket.filter((u) => u.role === "business" && u.status === "approved").length,
-          businessesFounding: inMarket.filter((u) => u.role === "business" && u.status === "approved" && businessAccessState(u) !== "active").length,
-          businessesActive: inMarket.filter((u) => u.role === "business" && u.status === "approved" && businessAccessState(u) === "active").length,
-          // Build -88: creator areas inside the market (the
-          // London picker values), counted for the board.
-          areas: (() => { const counts = {}; for (const u of inMarket) { if (u.role !== "creator" || isTester(u)) continue; const a = creatorAreaOf(u.creator); if (a) counts[a] = (counts[a] || 0) + 1; } return Object.entries(counts).map(([area, creators]) => ({ area, creators })).sort((x, y) => y.creators - x.creators || (x.area < y.area ? -1 : 1)); })(),
-          // Build -116: listed-creators reach for this market
-          // (see reachByMarket above). Labelled in the UI as
-          // combined followers (as reported by creators).
-          creatorsListed: (reachByMarket[m.name] || {}).creators || 0,
-          combinedFollowers: (reachByMarket[m.name] || {}).followers || 0,
-          // Build -130: this market's local numbers (see
-          // localByMarket above). avgLocalPct is null when no
-          // listed creator has stated a share for this market.
-          localFollowers: (localByMarket[m.name] || {}).localFollowers || 0,
-          avgLocalPct: (localByMarket[m.name] || {}).pctCount ? Math.round((localByMarket[m.name] || {}).pctSum / (localByMarket[m.name] || {}).pctCount) : null,
-          avgLocalCount: (localByMarket[m.name] || {}).pctCount || 0,
-        };
-      });
+      const out = await adminMarketRows();
       return json(200, { markets: out, testMode: TEST_MODE });
     }
     if (method === "POST" && seg[1] === "markets" && seg[2] === "toggle") {

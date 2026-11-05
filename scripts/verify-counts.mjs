@@ -15,7 +15,9 @@
 //       per-market share for a creator, and the business-facing
 //       creator card's stacked total + share
 //   * business discovery   GET /api/discover (fixture mode) /
-//       GET /api/admin/preview/discover (live mode)
+//       GET /api/admin/preview/discover (fixture mode, admin
+//       preview) — live mode covers the totals/markets parity
+//       through the checker endpoint (see RUN below)
 //
 // Every mismatch prints "FAIL <stat> expected=<truth> actual=
 // <surface>" and the run exits non-zero. PASS lines print too,
@@ -53,14 +55,29 @@
 //
 // RUN — fixture mode (default; self-contained, no network):
 //   node scripts/verify-counts.mjs        (or: npm run verify-counts)
-// RUN — live mode (the daily check): reads the production store
-// directly and compares against the live app. Needs in env:
-//   NETLIFY_BLOBS_SITE_ID, NETLIFY_BLOBS_TOKEN (store access),
-//   VERIFY_COUNTS_ADMIN_EMAIL, VERIFY_COUNTS_ADMIN_PASSWORD,
-//   optional VERIFY_COUNTS_BASE (default https://app.joinsignl.com)
+// RUN — live mode (the daily check; Build -131 checker key):
+//   GET /api/verify/counts on the live app returns the platform
+//   totals + per-market stats TWICE: computed by the surfaces'
+//   own builders, and by an independent in-endpoint recount
+//   written from the definitions above. Live mode asserts the
+//   two agree, stat by stat, and that the key stays read-only
+//   (no token -> 401, wrong token -> 401, token refused on a
+//   mutation route and on an unrelated admin route). This
+//   replaced the original design (direct Blobs read + a real
+//   admin login) because neither credential exists outside the
+//   Netlify env — the 2026-11-05 daily run could not compare
+//   live numbers at all. The record-level samples (Local List
+//   shares, discovery rosters) stay fixture-mode-only: the key
+//   deliberately cannot read records. Token resolution:
+//   SIGNL_VERIFY_TOKEN env, else ~/.config/signl-verify-token
+//   (a mode-600 file). Server side: the SAME value must be set
+//   as the SIGNL_VERIFY_TOKEN env var on the Netlify site —
+//   until it is, the endpoint fails closed and live mode exits
+//   2/1 with the refusal recorded, never a silent pass.
+//   Optional VERIFY_COUNTS_BASE (default https://app.joinsignl.com)
 //   node scripts/verify-counts.mjs --live
 // Exit codes: 0 = every stat matches · 1 = a mismatch ·
-// 2 = setup missing (live mode without its env).
+// 2 = setup missing (live mode without a token).
 
 import { spawn } from "node:child_process";
 import crypto from "node:crypto";
@@ -409,60 +426,53 @@ async function runFixture() {
   }
 }
 
-// ---------- live mode ----------
+// ---------- live mode (Build -131 checker key) ----------
 async function runLive() {
   const base = process.env.VERIFY_COUNTS_BASE || "https://app.joinsignl.com";
-  const email = process.env.VERIFY_COUNTS_ADMIN_EMAIL;
-  const password = process.env.VERIFY_COUNTS_ADMIN_PASSWORD;
-  let store;
-  try {
-    store = require("../netlify/functions/lib/store.js");
-  } catch (e) {
-    console.log("SETUP store module failed to load: " + e.message);
+  let token = process.env.SIGNL_VERIFY_TOKEN || "";
+  if (!token) {
+    try { token = fs.readFileSync(path.join(os.homedir(), ".config", "signl-verify-token"), "utf8").trim(); } catch (e) { /* no token file */ }
+  }
+  if (!token) {
+    console.log("SETUP no checker token: set SIGNL_VERIFY_TOKEN or place the token in ~/.config/signl-verify-token (mode 600).");
     process.exit(2);
   }
-  let users;
-  try {
-    const rows = await store.list("user:");
-    users = rows.map((r) => r.value).filter(Boolean);
-  } catch (e) {
-    console.log("SETUP could not read the data store (" + e.message + "). Live mode needs NETLIFY_BLOBS_SITE_ID + NETLIFY_BLOBS_TOKEN in env (or SIGNL_LOCAL=1 + SIGNL_LOCAL_DB pointing at a snapshot).");
-    process.exit(2);
+  const get = async (headers) => {
+    const r = await fetch(base + "/api/verify/counts", { headers });
+    return { status: r.status, data: await r.json().catch(() => ({})) };
+  };
+  const anon = await get({});
+  stat("live verify endpoint refuses without the token (401)", 401, anon.status);
+  const flipped = token.slice(0, -1) + (token.endsWith("0") ? "1" : "0");
+  const wrong = await get({ "x-signl-verify-token": flipped });
+  stat("live verify endpoint refuses a wrong token (401)", 401, wrong.status);
+  const ok = await get({ "x-signl-verify-token": token });
+  stat("live verify endpoint answers with the token", 200, ok.status);
+  if (ok.status !== 200) {
+    note("the endpoint is not answering with the checker token — if the code is deployed, the SIGNL_VERIFY_TOKEN env var on the Netlify site is the one missing step (it must match the local token).");
+    return;
   }
-  if (!users.length) { console.log("SETUP store read returned zero user records — refusing to call that a pass."); process.exit(2); }
-  if (!email || !password) { console.log("SETUP VERIFY_COUNTS_ADMIN_EMAIL / VERIFY_COUNTS_ADMIN_PASSWORD missing — cannot read the Admin surfaces."); process.exit(2); }
-  note(`live ground truth: ${users.length} user records read straight from the store; surfaces read from ${base}`);
-
-  const admin = makeClient(base);
-  const login = await admin("POST", "/api/auth/login", { email, password });
-  stat("live admin login", 200, login.status);
-  if (login.status !== 200) return;
-  await compareAdminSurfaces(admin, users, "live");
-
-  const anon = makeClient(base);
-  const sample = users.filter((u) => u.role === "creator" && u.status === "approved" && !isTesterT(u) && truthListings(u).length > 1).slice(0, 3);
-  if (sample.length) await compareLocalListShares(anon, users, "live", sample);
-  else skip("live local-list share sample", "no approved multi-market creators in the store right now");
-
-  // Discovery via the Admin Business Preview (the identical
-  // discoverCards roster a business gets, minus per-business
-  // history). Truth roster uses the record's stored
-  // profileComplete flag; a shortfall with named ids usually
-  // means a standing ban or a completeness recompute — the ids
-  // are printed either way.
-  const completeOf = (u) => !!(u.creator && u.creator.profileComplete === true);
-  const marketsWithRoster = MARKETS.filter((m) => truthRosterIds(users, m.name, completeOf).length > 0).slice(0, 3);
-  for (const m of marketsWithRoster) {
-    const r = await admin("GET", `/api/admin/preview/discover?market=${encodeURIComponent(m.name)}`);
-    if (r.status !== 200) { stat(`live preview-discover[${m.name}] reachable`, 200, r.status); continue; }
-    const gotIds = ((r.data && r.data.creators) || []).map((c) => c.userId || c.id).sort();
-    const wantIds = truthRosterIds(users, m.name, completeOf);
-    stat(`live preview-discover[${m.name}] roster size`, wantIds.length, gotIds.length);
-    if (JSON.stringify(wantIds) !== JSON.stringify(gotIds)) {
-      note(`roster diff ${m.name}: missing=${JSON.stringify(wantIds.filter((i) => !gotIds.includes(i)))} extra=${JSON.stringify(gotIds.filter((i) => !wantIds.includes(i)))}`);
-      stat(`live preview-discover[${m.name}] roster ids match truth`, JSON.stringify(wantIds), JSON.stringify(gotIds));
+  const d = ok.data || {};
+  const rec = d.recount || {};
+  stat("live endpoint agrees with itself (agree flag)", true, d.agree === true);
+  for (const f of ["creatorsSignedUp", "totalFollowers", "localFollowers", "avgLocalPct", "avgLocalCount"]) {
+    stat(`live totals.${f} [recount vs surface]`, (rec.totals || {})[f], (d.totals || {})[f]);
+  }
+  stat("live markets count", MARKETS.length, (d.markets || []).length);
+  for (const m of MARKETS) {
+    const s = (d.markets || []).find((x) => x.name === m.name);
+    const r = (rec.markets || []).find((x) => x.name === m.name);
+    if (!s || !r) { stat(`live markets[${m.name}] present on both sides`, true, false); continue; }
+    for (const f of ["creatorsApproved", "creatorsPending", "creatorsListed", "combinedFollowers", "localFollowers", "avgLocalPct", "avgLocalCount"]) {
+      stat(`live markets[${m.name}].${f} [recount vs surface]`, r[f], s[f]);
     }
   }
+  // The key stays read-only: refused everywhere else.
+  const mut = await fetch(base + "/api/admin/review", { method: "POST", headers: { "Content-Type": "application/json", "x-signl-verify-token": token }, body: "{}" });
+  stat("live token cannot mutate (POST /api/admin/review refused)", true, mut.status === 401 || mut.status === 403);
+  const adm = await fetch(base + "/api/admin/applications", { headers: { "x-signl-verify-token": token } });
+  stat("live token opens no other admin route (GET /api/admin/applications refused)", true, adm.status === 401 || adm.status === 403);
+  note(`live numbers from ${base}: ${(d.totals || {}).creatorsSignedUp} creators signed up · ${(d.totals || {}).totalFollowers} followers · avg local ${(d.totals || {}).avgLocalPct}% across ${(d.markets || []).length} markets`);
 }
 
 try {
