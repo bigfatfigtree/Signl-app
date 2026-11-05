@@ -10504,6 +10504,9 @@ async function buildSigFacts(user, full) {
       level: levelForPoints(points),
       listedMarkets: listedMarketsFor(user),
       audienceTotal: user.creator ? audienceTotalOf(user.creator) : null,
+      // Build -131: the per-platform split behind the total,
+      // for Sig's grounded audience answer.
+      audienceStack: user.creator ? audienceStackOf(user.creator) : {},
       missingLabels: (pc.missing || []).map((id) => itemLabels[id] || id),
       // Build -108: whether the Instagram connect lane is open
       // in this environment at all (Meta credentials present);
@@ -17796,6 +17799,15 @@ async function route(event) {
     const full = await withFounding(user);
     let facts = null;
     try { facts = await buildSigFacts(user, full); } catch (e) { facts = null; }
+    // Build -131 privacy screen: a question asking for another
+    // account's data, a platform aggregate, company revenue, or
+    // admin data is refused here, deterministically, before the
+    // answerer runs and before the model ever sees the question.
+    // Admin sessions are exempt inside the screen (Jeff's scope
+    // is the platform). Runs even when the fact sheet failed to
+    // build: fail closed.
+    const screened = sigdata.sigPrivacyScreen(user.role, facts, q);
+    if (screened) return json(200, { source: "data", text: screened.text, ...(screened.link ? { link: screened.link } : {}) });
     if (facts) {
       const direct = sigdata.answerFactsRaw(user.role, facts, q, history);
       // Build -81: a data answer that shows records carries
@@ -17811,6 +17823,11 @@ async function route(event) {
         const da = typeof direct === "string" ? null : direct.action;
         if (dt) return json(200, { source: "data", text: dt, ...(dl ? { link: dl } : {}), ...(da ? { action: da } : {}) });
       }
+      // Build -131 clarify: a question too vague to route gets
+      // one short question back with tappable options, each of
+      // which the answerer answers from the asker's own records.
+      const clarify = sigdata.sigClarify(user.role, facts, q);
+      if (clarify) return json(200, { source: "data", text: clarify.text, suggest: clarify.suggest });
     }
     const lines = [];
     if (facts) {

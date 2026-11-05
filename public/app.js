@@ -4416,6 +4416,16 @@ function sigCtx() {
   // the Profile boxes pre-fill.
   if (!biz && u.creator) {
     try { const d98 = rateStartingDefaults(u.creator); ctx.rateTier = d98.tier; ctx.rateStartPaid = d98.paidRate; ctx.rateStartFee = d98.licensingFee; } catch (e) { /* defaults are a pre-fill only */ }
+    // Build -131: the creator's own audience stack rides the
+    // context so the fallback bank's audience answer states the
+    // same numbers the server answer and the Profile show.
+    try {
+      const parts = stackList(u.creator);
+      if (parts.length) { ctx.audParts = parts; ctx.audTotal = parts.reduce((s, p) => s + (Number(p.count) || 0), 0); }
+      else if (Number(u.creator.followerCount) > 0) { ctx.audParts = [{ label: "Instagram", count: Number(u.creator.followerCount) }]; ctx.audTotal = Number(u.creator.followerCount); }
+      else { ctx.audParts = []; ctx.audTotal = 0; }
+      ctx.localPct = u.creator.localAudiencePct != null ? u.creator.localAudiencePct : null;
+    } catch (e) { ctx.audParts = []; ctx.audTotal = 0; ctx.localPct = null; }
   }
   // Build -68: a business's own plan facts ride the context so
   // Sig answers "what does my plan include?" from the record,
@@ -4496,6 +4506,12 @@ function sigBankFor(biz) {
       }, flow: (c) => !c.profileComplete ? "Finish my profile" : (c.live ? "See my wallet" : "Check my Momentum") },
     { id: "rates", q: "How do I set my rate?", ph: ["set my rate", "my rate", "how much should i charge", "charge for", "rate"], g: [["rate", "charge", "price"], ["set", "my", "should", "how much", "change", "pick"]], s: ["rate"],
       a: (c) => `Your paid rate is yours to set, on your profile. Paid bookings start at a ${/london/i.test(c.market || "") ? "£40" : "$50"} floor, and there is no SIGNL price list on top of that.${c.rateStartPaid ? ` Because your boxes were blank, they start at a starting point for ${c.rateTier || "your"} tier: paid rate ${/london/i.test(c.market || "") ? "£" : "$"}${c.rateStartPaid} and licensing fee ${/london/i.test(c.market || "") ? "£" : "$"}${c.rateStartFee}. Change them to whatever you charge; a starting point is not a price you have to use.` : ""} Businesses weigh your rate against your local reach, so a strong local audience carries a smaller account a long way. You can also take comped visits whenever you would rather have the experience.`, flow: "Finish my profile" },
+    { id: "audience", q: "How many followers do I have?", ph: ["how many followers", "followers do i have", "my followers", "my audience", "how big is my audience", "how many people follow me", "audience do i have"], g: [["followers", "audience"], ["my", "many", "big", "have", "got", "much"]], s: ["followers"],
+      a: (c) => {
+        if (!c.audTotal) return "No audience counts are on your record yet, so there is no follower total to show. Add your counts platform by platform in the audience stack on your Profile and they stack into one total; that total and your local share are what businesses rank by.";
+        const split = (c.audParts || []).length ? ` (${c.audParts.map((p) => `${p.label} ${Number(p.count).toLocaleString("en-US")}`).join(", ")})` : "";
+        return `You have ${Number(c.audTotal).toLocaleString("en-US")} followers counted across your platforms${split}.${c.localPct != null ? ` ${c.localPct}% of your audience is local to ${c.market || "your home market"}; that local share is the number businesses rank by, not follower count.` : " You have not reported your local audience share yet; it is the number businesses rank by."}`;
+      }, flow: "Finish my profile" },
     { id: "localreach", q: "What is local reach?", ph: ["local reach", "local audience", "local percent", "local %"], g: [["local"], ["reach", "audience", "percent", "%", "share", "followers"]], s: ["reach"],
       a: "Local reach is the share of your audience that actually lives in your market, applied to your audience size. It is the number businesses rank creators by on SIGNL, not follower count. A smaller account whose people are all here can outrank a huge account whose followers are spread across the country.", flow: (c) => !c.profileComplete ? "Finish my profile" : null },
     { id: "momentum", q: "How does Momentum work?", ph: ["momentum", "points", "earn points", "how does momentum"], g: [["momentum", "points"], ["how", "earn", "work", "get", "mean"]], s: ["momentum"],
@@ -4611,12 +4627,12 @@ function sigTopicReply(topic, ctx) {
 }
 function sigFallbackReply(match) {
   const near = (match.scored || []).filter((s) => s.score >= 4).slice(0, 3).map((s) => s.topic);
-  const reply = { text: "I don't have that one yet.", suggest: [] };
+  const reply = { text: "That one is not in my bag yet.", suggest: [] };
   if (near.length) {
     reply.text += " The closest things I can answer are right here; tap one and I will tell you straight. For anything else, hello@joinsignl.com reaches a person.";
     reply.suggest = near.map((topic) => topic.q);
   } else {
-    reply.text += " Try me on how SIGNL works, what things cost, or how visits and points run. For anything else, hello@joinsignl.com reaches a person.";
+    reply.text += " What I can answer: how SIGNL works, what things cost, your own numbers, and the next step on anything you are setting up. For anything else, hello@joinsignl.com reaches a person.";
   }
   return reply;
 }
@@ -4754,18 +4770,20 @@ async function sigAsk(text) {
       // so the console Sig stays read-only: the walk opens the
       // queue, it never edits it. The admin fallback bank
       // answers instead of the creator bank when the AI cannot.
-      if (isAdmin) return { text: data.text, flow: null, link: data.link || null };
+      if (isAdmin) return { text: data.text, flow: null, link: data.link || null, suggest: data.suggest || [] };
       // Partner + funder Sig (Build -106) is scoped answers
       // only: no business/creator flow matching ever attaches
       // to a partner answer; the answer's own link is the walk.
-      if (state.user && (state.user.role === "partner" || state.user.role === "pilot_partner")) return { text: data.text, flow: null, link: data.link || null, action: data.action || null };
+      if (state.user && (state.user.role === "partner" || state.user.role === "pilot_partner")) return { text: data.text, flow: null, link: data.link || null, action: data.action || null, suggest: data.suggest || [] };
       const match = sigMatch(text, ctx.biz);
       let flow = null;
       if (match.topic) {
         const label = typeof match.topic.flow === "function" ? match.topic.flow(ctx) : match.topic.flow;
         flow = sigFlowIndex(label);
       }
-      return { text: data.text, flow, link: data.link || null };
+      // Build -131: a clarify answer's tappable options ride
+      // through as suggest chips, same as the bank's.
+      return { text: data.text, flow, link: data.link || null, suggest: data.suggest || [] };
     }
   } catch (e) { /* the bank answers instead */ }
   if (state.user && state.user.role === "partner") return { text: "I cannot reach your numbers right now. Everything is still on your tabs: Wallet for money and packs, Markets for the funnel, Links for your claim links.", flow: null, link: null };
@@ -22266,7 +22284,7 @@ function sigAdminRouteAsk(text) {
   const top = scored[0];
   if (top && top.score >= 8) return { text: top.topic.a, flow: null };
   const near = scored.filter((s) => s.score >= 4).slice(0, 3).map((s) => s.topic);
-  const reply = { text: "I don't have that one yet.", flow: null, suggest: [] };
+  const reply = { text: "That one is not in my bag yet.", flow: null, suggest: [] };
   if (near.length) {
     reply.text += " The closest things I can answer are right here; tap one and I will tell you straight.";
     reply.suggest = near.map((topic) => topic.q);
@@ -24114,10 +24132,22 @@ let astData = null;
 
 function astFull(n) { return (Number(n) || 0).toLocaleString("en-US"); }
 function astCreatorTotal(u) {
+  // Build -131 hotfix: the applications payload precomputes
+  // the stacked total on the creator record (totalAudience,
+  // and audience.total in the audience view). The first cut of
+  // this reader looked for a ".stack" field the payload never
+  // carries, so every multi-platform creator silently fell back
+  // to their primary-platform followerCount and the Stats
+  // Followers total undercounted the platform (and disagreed
+  // with the Admin home strip, which reads the same records
+  // through audienceTotalOf). Read the payload's own fields.
+  const c = u.creator || {};
+  if (typeof c.totalAudience === "number") return c.totalAudience;
+  if (c.audience && typeof c.audience.total === "number") return c.audience.total;
   if (u.audience && typeof u.audience.total === "number") return u.audience.total;
-  const st = (u.creator && u.creator.stack) || {};
+  const st = c.audienceStack || c.stack || {};
   const sum = Object.values(st).reduce((a, v) => a + (Number(v) || 0), 0);
-  return sum || Number((u.creator && u.creator.followerCount) || 0) || 0;
+  return sum || Number(c.followerCount || 0) || 0;
 }
 function astCreatorListings(u) {
   // The markets a creator is listed in, with their % local to
@@ -24223,10 +24253,10 @@ function astRender() {
   const waitingBiz = astData.businesses.filter((b) => b.status === "pending").length;
   host.innerHTML = `
     <div class="stat-band">
-      <div class="stat-cell"><span>Creators signed up</span><strong>${fmtNum(creators.length)}</strong></div>
-      <div class="stat-cell"><span>Followers</span><strong>${fmtNum(totals.followers)}</strong></div>
-      <div class="stat-cell"><span>Local followers</span><strong>${fmtNum(totals.localFollowers)}</strong></div>
-      <div class="stat-cell"><span>Avg % local</span><strong>${avg === null ? "—" : avg + "%"}</strong></div>
+      <div class="stat-cell"><div class="stat-num">${fmtNum(creators.length)}</div><div class="stat-lbl">Creators signed up</div></div>
+      <div class="stat-cell"><div class="stat-num">${fmtNum(totals.followers)}</div><div class="stat-lbl">Followers</div></div>
+      <div class="stat-cell"><div class="stat-num">${fmtNum(totals.localFollowers)}</div><div class="stat-lbl">Local followers</div></div>
+      <div class="stat-cell"><div class="stat-num">${avg === null ? "—" : avg + "%"}</div><div class="stat-lbl">Avg % local</div></div>
     </div>
     <div class="panel">
       <h3 style="margin:0 0 2px">Signups over time</h3>
@@ -24243,8 +24273,8 @@ function astRender() {
       <h3 style="margin:0 0 2px">Revenue</h3>
       <p class="muted small" style="margin:0 0 10px">Only what the records say. Nothing here is estimated.</p>
       <div class="stat-band">
-        <div class="stat-cell"><span>Collected so far</span><strong>${ccMoneyFmt(collected)}</strong></div>
-        <div class="stat-cell"><span>Founding pipeline</span><strong>${ccMoneyFmt(pipeTotal)}/mo</strong></div>
+        <div class="stat-cell"><div class="stat-num">${ccMoneyFmt(collected)}</div><div class="stat-lbl">Collected so far</div></div>
+        <div class="stat-cell"><div class="stat-num">${ccMoneyFmt(pipeTotal)}/mo</div><div class="stat-lbl">Founding pipeline</div></div>
       </div>
       ${collected === 0 ? `<p class="small" style="margin:8px 0 0">Payments are turned off right now, so nothing has been charged or collected yet.</p>` : ""}
       ${pipeRows.length ? `<div class="table-wrap" style="margin-top:10px"><table>

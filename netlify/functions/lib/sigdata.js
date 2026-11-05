@@ -65,6 +65,8 @@ function brandViewOf(brand) {
 // deps: { users, offers, bookings, posts, partners, marketFlags,
 //         marketNames, isTester, profileCompleteOf,
 //         businessAccessState, planNameOf, now }
+const AUDIENCE_PLATFORM_LABELS = { instagram: "Instagram", tiktok: "TikTok", facebook: "Facebook", x: "X", linkedin: "LinkedIn", youtube: "YouTube", snapchat: "Snapchat" };
+
 function buildAdminFacts(d) {
   const now = d.now || Date.now();
   const users = (d.users || []).filter((u) => u && u.role !== "admin");
@@ -462,6 +464,9 @@ function buildCreatorFacts(d) {
     referrals: { signups: mom.signups || 0, approved: mom.approved || 0 },
     tier: c.tierBand || null,
     audienceTotal: d.audienceTotal != null ? d.audienceTotal : null,
+    // Build -131: the per-platform split behind the total, so
+    // the audience answer can show where the followers live.
+    audienceStack: Object.entries(d.audienceStack || {}).filter(([, n]) => Number(n) > 0).map(([id, n]) => ({ id, label: AUDIENCE_PLATFORM_LABELS[id] || id, count: Number(n) })).sort((a, b) => b.count - a.count),
     localPct: c.localAudiencePct != null ? c.localAudiencePct : null,
     listedMarkets: d.listedMarkets || [],
     // Build -102: the public roster pages this creator appears
@@ -952,6 +957,10 @@ function answerAdmin(f, q, t) {
   if (hasPhrase(t, "signed up") ||
       (hasWord(t, "followers") && hasWord(t, "total", "platform", "overall", "altogether") && !market &&
        !hasWord(t, "market", "markets", "combined", "most", "biggest", "largest", "leading", "top")) ||
+      // Build -131: "how many followers do we have" is the same
+      // platform question in first person; Jeff's scope is the
+      // whole platform, so it lands here too.
+      (hasWord(t, "followers") && hasPhrase(t, "do we have", "have we got") && !market) ||
       (hasWord(t, "creators", "signups") && hasWord(t, "platform", "overall") && countAsk)) {
     return `${fmt(c.signedUp)} creators signed up on the platform (approved plus pending, tester records excluded)${c.totalFollowers !== null && c.totalFollowers !== undefined ? `, carrying ${fmt(c.totalFollowers)} total followers across all markets — each signed-up creator's full stacked total, as reported by creators, each creator counted once` : ""}${c.localFollowers !== null && c.localFollowers !== undefined ? `, of which ${fmt(c.localFollowers)} are local followers (living in each creator's own market)` : ""}${c.avgLocalPct !== null && c.avgLocalPct !== undefined ? `; the average local share is ${c.avgLocalPct}%` : ""}. The same numbers sit at the top of Admin home.`;
   }
@@ -1062,6 +1071,17 @@ function answerBusiness(f, q, t) {
   if (hasPhrase(t, "my numbers", "my stats", "show me my", "how am i doing", "my dashboard")) {
     return linked(`Your numbers: ${fmt(f.offersLive)} offers live, ${fmt(f.applicantsWaiting)} applicants waiting on your answer, ${fmt(f.visitsBooked)} visits booked, ${fmt(f.postsLive)} posts live, ${money(f.countedDollars)} counted at the register.${f.intentTotal > 0 ? ` Those posts drew ${fmt(f.intentTotal)} saves and shares (intent: people planning to come).` : ""} You have ${fmt(f.visitsRemaining)} of ${fmt(f.visitsAllowance)} visits left this month on ${f.planName || "your plan"}.`, "See Results", "biz-results");
   }
+  // What do I owe (Build -131): the asker's own billing state
+  // only. On the founding list the honest answer is nothing.
+  if (hasPhrase(t, "what do i owe", "do i owe", "owe anything", "am i being charged", "what will i be charged", "what do i have to pay", "do i have to pay", "my bill", "what is my bill")) {
+    if (f.founding) return `Right now you owe nothing: while your business is on the founding list, no card is charged at all.${f.planName ? ` Your plan is ${f.planName} at ${money(f.planPrice)} a month with ${money(f.foundingCredit)} off the first month, and billing only starts when your market activates.` : ""}`;
+    return `Your plan is ${f.planName || "on file"} at ${money(f.planPrice)} a month, billed monthly while it stays active, with a 3 month minimum.${f.visitsRemaining != null ? ` This month you have used ${fmt(f.visitsUsed)} of ${fmt(f.visitsAllowance)} visits.` : ""} Paid bookings are on top, at each creator's listed rate.`;
+  }
+  // Page views (Build -131): not tracked, for anyone; point at
+  // what IS tracked instead.
+  if (hasPhrase(t, "who viewed", "who saw my", "viewed my", "page views", "profile views", "who looked at my", "who visited my page", "who viewed me")) {
+    return linked("SIGNL does not track page views, so there is no list of who looked at your business page, for anyone. What is tracked: applicants on your offers, visits booked, and the saves and shares your posts draw, all in Results.", "See Results", "biz-results");
+  }
   // Visits left
   if ((hasWord(t, "visit", "visits") && hasPhrase(t, "left", "remaining", "do i have")) || hasPhrase(t, "visits left", "visits remaining")) {
     return `${fmt(f.visitsRemaining)} visits left this month. You have used ${fmt(f.visitsUsed)} of ${fmt(f.visitsAllowance)} on the ${f.planName || "plan"} allowance${f.visitsCarried ? `, including ${fmt(f.visitsCarried)} rolled over from last month (rolled visits expire at month end)` : ""}. Paid bookings sit on top and never use the allowance.`;
@@ -1147,6 +1167,32 @@ function answerCreator(f, q, t) {
   // straight to the Done segment where that card lives.
   if (hasPhrase(t, "ad label", "adlabel") || hasPhrase(t, "#ad")) {
     return linked("UK rules count a comped or paid London post as an ad, so the post must carry #ad up front. If the caption you submitted did not carry it, the visit is blocked as Ad label missing and does not count as delivered yet. The fix is on the visit card itself: open Visits, find the visit under Done, check the caption box (it starts with your disclosure line), and tap Confirm the ad label. The visit counts as delivered the moment the label is verified.", "Fix it on my visit card", "cr-visits-done");
+  }
+  // My audience (Build -131 grounding fix): the asker's own
+  // stacked total, per-platform split, and local share, read off
+  // their own record. The -130 QA found "How many followers do I
+  // have?" landing on a posting-standards answer, so this branch
+  // sits ahead of everything else that could swallow it. Concept
+  // questions ("what is local reach"), growth questions ("how do
+  // I get more followers"), connect asks and verification asks
+  // keep their own branches below and are excluded here.
+  {
+    const audWord = hasWord(t, "followers", "follower", "audiance", "folowers", "follwers", "subs", "subscribers") || hasPhrase(t, "my audience", "my reach", "follow me", "people follow", "audience size");
+    const selfAsk = hasPhrase(t, " my ", " mine ", " do i ", " have i ", " i have ", " i got ", " how many ", " how big ", " how much ") || (f.handle && t.includes(" " + String(f.handle).toLowerCase().replace(/^@/, "") + " "));
+    const conceptAsk = hasPhrase(t, "local reach") && hasPhrase(t, "what is", "what does", "mean", "calculated", "how is");
+    const growthAsk = hasPhrase(t, "get more", "grow my", "gain more", "increase my", "more followers", "build my audience", "grow followers");
+    const connectAsk = hasPhrase(t, "connect", "link my", "sync") && hasWord(t, "instagram", "youtube", "tiktok", "facebook", "account", "accounts");
+    const verifiedAsk = hasWord(t, "verified", "verification");
+    if (audWord && selfAsk && !conceptAsk && !growthAsk && !connectAsk && !verifiedAsk) {
+      if (!f.audienceTotal) return linked("No audience counts are on your record yet, so there is no follower total to show. Add your counts platform by platform in the audience stack on your Profile and they stack into one total; that total and your local share are what businesses rank by.", "Add my audience numbers", "cr-profile");
+      const parts = (f.audienceStack || []).filter((p) => p.count > 0);
+      const split = parts.length ? ` (${parts.map((p) => `${p.label} ${fmt(p.count)}`).join(", ")})` : "";
+      let s = `You have ${fmt(f.audienceTotal)} followers counted across your platforms${split}.`;
+      if (f.localPct != null) s += ` ${f.localPct}% of your audience is local to ${f.market || "your home market"}; that local share applied to your size is the number businesses rank by, not the follower count.`;
+      else s += " You have not reported your local audience share yet; it is the number businesses rank by, and one of the four things a finished profile needs.";
+      if (f.listedMarkets && f.listedMarkets.length > 1) s += ` You are listed in ${fmt(f.listedMarkets.length)} markets on those shares.`;
+      return linked(s, "See my audience", "cr-profile");
+    }
   }
   // Paid posting terms (Phase C, Build -112): read back from
   // the creator's own booking records. Placed before the
@@ -1297,6 +1343,11 @@ function answerCreator(f, q, t) {
     if (!f.marketLive) return `Your market is not open yet, so offers start the moment it opens. ${fmt(f.directInvites)} direct invites are on file for you, and finishing your profile is what puts you first in line on day one.`;
     if (!f.offersOpen) return "No open offers in your markets right now. New offers land in your Offers deck, and higher Momentum sees them earlier.";
     return linked(`${fmt(f.offersOpen)} open offers in your markets right now${f.directInvites ? `, including ${fmt(f.directInvites)} direct ${plural(f.directInvites, "invite")} sent to you` : ""}. They are in your Offers deck, newest first.`, "Open Offers", "cr-offers");
+  }
+  // Profile views (Build -131): SIGNL does not track them, for
+  // anyone; say so plainly and point at what IS tracked.
+  if (hasPhrase(t, "who viewed", "who saw my", "viewed my", "profile views", "views of my profile", "who looked at my", "who visited my profile", "who has seen my", "who viewed me")) {
+    return linked(`SIGNL does not track profile views, so there is no list of who looked at your profile, for anyone. What is tracked is intent on your posts: ${f.intentTotal > 0 ? `${fmt(f.intentTotal)} saves and shares recorded across ${fmt(f.intentReportedPosts)} reported ${plural(f.intentReportedPosts, "post")}` : "saves and shares on your posts, once you report their numbers"}. That lives on your Numbers page.`, "Open Your numbers", "cr-numbers");
   }
   // Applications pending
   if (hasWord(t, "application", "applications") && hasPhrase(t, "my", "pending", "waiting", "applied", "how many")) {
@@ -1493,6 +1544,122 @@ function answerPilot(f, question, t) {
   return null;
 }
 
+// ---------- PRIVACY SCREEN (Build -131) ----------
+// Jeff, 2026-11-05, standing hard rule: Sig answers ONLY the
+// asker's own scoped data. The fact sheets are already built
+// scoped (a creator's sheet holds nothing about anyone else),
+// so the model can never leak what it never sees; this screen
+// is the second layer, in front of both the answerer and the
+// model: a question that asks for another account's data, a
+// platform aggregate, company revenue, or admin data is refused
+// here, deterministically, before anything else runs. Admin
+// sessions are exempt by design: Jeff's scope IS the platform.
+// Refusals reveal nothing about what exists and offer the
+// asker's own scope instead. Returns a linked answer or null.
+const PRIVACY_DATA_NOUNS = ["followers", "follower", "audience", "reach", "earnings", "earned", "earns", "earn", "rate", "rates", "fee", "fees", "bookings", "booking", "sales", "revenue", "email", "phone", "momentum", "points", "tier", "visits", "offers", "plan", "money", "posts", "paid", "pay", "owe", "owes", "address", "profile"];
+function privacyRefusal(role, kind) {
+  if (role === "business") {
+    if (kind === "creator") return linked("I only see your own business's numbers, so I can't pull up a creator's account details. Their public profile and listed rate live in Find creators, and your own numbers I can do right now: visits left, results, applicants waiting.", "Find creators", "biz-discover");
+    return linked("I only see your own business's numbers, so I can't pull up anyone else's account or SIGNL's company totals. Yours I can do right now: visits left, results, applicants waiting.", "See your results", "biz-results");
+  }
+  if (role === "partner") return linked("I only see your own markets and links, so I can't pull up anyone else's numbers or SIGNL's company totals. Yours I can do right now: your funnel, what you have accrued, your month packs.", "See your markets", "partner-markets");
+  if (role === "pilot_partner") return linked("I only see your own pilot, so I can't pull up anyone else's numbers or SIGNL's company totals. Yours I can do right now: the fund, the visits done, the counted and recorded customers.", "Open the Report", "pilot-report");
+  return linked("I only see your own account, so I can't pull up anyone else's numbers or SIGNL's company totals. Yours I can do right now: your followers, your Momentum, what you owe, what is waiting on you.", "See your numbers", "cr-numbers");
+}
+const NAME_STOPWORDS = new Set(["how", "what", "when", "where", "who", "why", "tell", "show", "give", "list", "does", "did", "can", "could", "please", "the", "signl", "january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"]);
+function sigPrivacyScreen(role, facts, question) {
+  if (!role || role === "admin") return null;
+  const raw = String(question || "");
+  // Collapse the possessive token normQ leaves behind
+  // ("signl's revenue" normalizes to "signl s revenue").
+  const t = normQ(raw).replace(/ s /g, " ");
+  const firstPerson = hasPhrase(t, " my ", " mine ", " i ", " me ", " do i ", " have i ");
+  const dataNoun = PRIVACY_DATA_NOUNS.some((w) => hasWord(t, w));
+  // 1. The admin / the company's own contact and account data.
+  if ((hasWord(t, "admin", "admins", "administrator") || hasPhrase(t, "the owner", "the founder", "who runs signl", "who owns signl", "jeff"))
+      && hasWord(t, "email", "phone", "account", "password", "login", "address", "data", "records", "number")) {
+    return privacyRefusal(role, "company");
+  }
+  // 2. Company revenue and money, unless it is plainly the
+  //    asker's own money ("my revenue", "have I earned").
+  if ((hasWord(t, "revenue", "profit", "profits", "mrr", "arr") || hasPhrase(t, "how much money does signl", "how much does signl make", "how much signl makes", "how much signl earns", "signl make money", "does signl make"))
+      && !firstPerson && !hasPhrase(t, " i have ", " have i ")) {
+    return privacyRefusal(role, "company");
+  }
+  // 3. Rosters and name lists of other accounts.
+  if (hasPhrase(t, "list all", "list the", "show me all", "give me all", "give me a list", "names of", "who are the", "who are all", "name all", "all the creators", "all the businesses", "all creators", "all businesses")
+      && hasWord(t, "creator", "creators", "business", "businesses", "partner", "partners")) {
+    return privacyRefusal(role, role === "business" && hasWord(t, "creator", "creators") ? "creator" : "other");
+  }
+  // 4. Platform totals: a count of creators / businesses /
+  //    partners / signups that is not scoped to the asker.
+  {
+    const countAsk = hasPhrase(t, "how many", "total", "number of", "count of");
+    const subject = hasWord(t, "creators", "businesses", "partners", "signups", "users", "members");
+    const attributed = hasPhrase(t, "through my", "through me", "my links", "my link", "my invite", "i brought", "i invited", "i referred", "signed up through", "joined through", "my markets");
+    const planShape = hasPhrase(t, "can a business", "can i book", "per month", "a month", "plan include", "on a plan", "on the plan", "do i get");
+    const businessRoster = role === "business" && hasWord(t, "creators")
+      && (hasPhrase(t, "my market", "near me", "around me", "can i book", "roster", "bookable", "do i have") || (facts && facts.market && t.includes(" " + String(facts.market).toLowerCase() + " ")));
+    if (countAsk && subject && !attributed && !planShape && !businessRoster) return privacyRefusal(role, "company");
+    if (!firstPerson && hasPhrase(t, "total creators", "total businesses", "total partners", "total signups", "creators on signl", "businesses on signl", "creators on the platform", "on the platform in total")) return privacyRefusal(role, "company");
+  }
+  // 5. A named person's or business's data: an @handle that is
+  //    not the asker's own, a possessive name, a two-word
+  //    capitalized name mid-question, third-person pronouns,
+  //    "another / other" accounts, and contact-detail asks.
+  {
+    const handleM = raw.match(/@([a-z0-9._]{2,})/i);
+    const ownHandle = facts && facts.handle ? String(facts.handle).toLowerCase().replace(/^@/, "") : null;
+    if (handleM && dataNoun && (!ownHandle || handleM[1].toLowerCase() !== ownHandle)) return privacyRefusal(role, "other");
+    if (/[A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})?'s\s+(followers|audience|earnings|rate|fee|bookings|email|phone|momentum|posts|sales)/.test(raw)) return privacyRefusal(role, "other");
+    const nameM = raw.match(/\b([A-Z][a-z]{2,}\s+[A-Z][a-z]{2,})\b/g) || [];
+    const ownBiz = facts && facts.businessName ? String(facts.businessName).toLowerCase() : null;
+    const alienName = nameM.some((n) => {
+      const first = n.split(" ")[0].toLowerCase();
+      if (NAME_STOPWORDS.has(first)) return false;
+      if (raw.indexOf(n) === 0) return false;
+      if (ownBiz && n.toLowerCase() === ownBiz) return false;
+      return true;
+    });
+    if (alienName && dataNoun && hasPhrase(t, " does ", " did ", " has ", " have ", " get ", " got ", " is ", " was ", " s ")) return privacyRefusal(role, "other");
+    if (hasPhrase(t, "her followers", "his followers", "their followers", "her audience", "his audience", "their audience", "her earnings", "his earnings", "their earnings", "her rate", "his rate", "their rate", "her bookings", "his bookings", "their bookings", "she earns", "he earns", "she makes", "he makes", "their email", "her email", "his email") ) return privacyRefusal(role, "other");
+    if (hasPhrase(t, "another creator", "another business", "another partner", "other creator", "other business", "other partner", "someone else", "somebody else") && dataNoun) return privacyRefusal(role, "other");
+    if (hasPhrase(t, "email address", "email for", "email of", "phone number", "contact info", "contact details")
+        && !firstPerson && !hasPhrase(t, "your email", "signl email", "support", "hello")) return privacyRefusal(role, "other");
+  }
+  return null;
+}
+
+// ---------- CLARIFY (Build -131) ----------
+// When a question is too vague to route and the answerer found
+// nothing in it, Sig asks ONE short question with tappable
+// options instead of dead-ending. Conservative by design: it
+// fires only on bare fragments or word-salad with no topic
+// word at all, and every option it offers is a question the
+// answerer answers from the asker's own records today.
+const SIG_CLARIFY_VOCAB = ["follower", "audience", "momentum", "point", "offer", "visit", "post", "book", "rate", "fee", "licen", "earn", "pay", "payout", "money", "plan", "cost", "price", "market", "profile", "applicant", "result", "sales", "register", "counted", "referral", "invite", "level", "tier", "local", "verif", "connect", "terms", "guarantee", "rights", "review", "rating", "strike", "cancel", "hour", "availab", "receipt", "checklist", "square", "till", "regular", "renew", "extend", "expir", "owe", "owed", "accrued", "share", "fund", "pack", "creator", "business", "settings", "account", "email", "change", "sign", "password", "delete", "help me", "how does", "how do", "what is", "what does", "when", "why", "charter", "story", "code", "redeem", "dashboard", "numbers"];
+const SIG_CLARIFY_OPTIONS = {
+  creator: ["How many followers do I have?", "What is my Momentum?", "What do I owe?"],
+  business: ["How many visits do I have left?", "What does my plan include?", "How are my results?"],
+  partner: ["What have I accrued?", "How many creators claimed through my links?", "What is my share?"],
+  pilot_partner: ["How much of the fund is left?", "How many visits are done?", "Where is my report pack?"],
+};
+function sigClarify(role, facts, question) {
+  if (!role || role === "admin") return null;
+  const options = SIG_CLARIFY_OPTIONS[role];
+  if (!options) return null;
+  const t = normQ(question);
+  const toks = t.split(" ").filter(Boolean);
+  if (!toks.length) return null;
+  if (hasPhrase(t, "sign out", "log out", "log off", "password", "delete my", "change my email")) return null;
+  const hasVocab = SIG_CLARIFY_VOCAB.some((v) => t.includes(v));
+  const vagueAlone = ["help", "hi", "hey", "hello", "yo", "sup", "status", "update", "numbers", "money", "stuff", "things", "info", "question", "huh", "what", "ok", "yes", "more", "help me"];
+  const bare = toks.length <= 2 || vagueAlone.includes(toks.join(" "));
+  if (!bare && !(toks.length <= 6 && !hasVocab)) return null;
+  if (hasVocab && !bare) return null;
+  return { text: "Quick check, which one do you mean? Tap one and I will answer it straight.", suggest: options.slice() };
+}
+
 // ---------- DISPATCH ----------
 // answerFactsRaw returns the string or the { text, link }
 // object; answerFacts keeps the legacy plain-string contract
@@ -1643,4 +1810,4 @@ function answerFacts(role, facts, question, history) {
   return typeof out === "string" ? out : out.text;
 }
 
-module.exports = { buildAdminFacts, buildBusinessFacts, buildCreatorFacts, buildPartnerFacts, buildPilotFacts, factsLines, answerFacts, answerFactsRaw, buildHomeState };
+module.exports = { buildAdminFacts, buildBusinessFacts, buildCreatorFacts, buildPartnerFacts, buildPilotFacts, factsLines, answerFacts, answerFactsRaw, buildHomeState, sigPrivacyScreen, sigClarify };

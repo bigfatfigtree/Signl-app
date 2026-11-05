@@ -212,7 +212,7 @@ try {
   check("Sig is a routed tab for live creators and businesses too", appJs.includes('"Settings", "Help", "Sig"]') && appJs.includes('"Settings", "Help", "Sig"]') && (appJs.match(/if \(tab === "Sig"\) renderSigTab\(\);/g) || []).length === 3);
   check("Sig tab renders queue + conversation + chat input", appJs.includes("function renderSigTab(") && appJs.includes('id="sig-queue-host"') && appJs.includes('id="sig-thread"') && appJs.includes('id="sig-ask-input"') && appJs.includes("Ask Sig anything"));
   check("Sig tab and Ask Sig sheet share one content source (flows + straight answers)", appJs.includes("function sigFlowsFor(") && appJs.includes("function sigQaFor(") && appJs.includes("function sigRouteAsk("));
-  check("chat routes typed words to answers and flows, and answers honestly on no match", appJs.includes("That lives under") && appJs.includes("I don't have that one yet."));
+  check("chat routes typed words to answers and flows, and answers honestly on no match", appJs.includes("That lives under") && appJs.includes("not in my bag yet"));
   check("Home's mint field carries the ask box (all three Homes), opening the Sig tab focused", appJs.includes("function sigAskBoxHtml(") && appJs.includes("function goSigChat(") && (appJs.match(/askBox: true/g) || []).length === 3 && appJs.includes("state.sigFocusAsk"));
   check("Homes register their queue for the Sig tab + badge (one queue, two doors)", (appJs.match(/state\.sigQueue = /g) || []).length >= 3 && (appJs.match(/state\.sigQueueCount = /g) || []).length >= 3);
   check("sign-out clears Sig's queue and conversation", appJs.includes("state.sigThread = [];"));

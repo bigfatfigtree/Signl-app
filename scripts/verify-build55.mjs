@@ -120,8 +120,8 @@ const webhook = async (obj) => {
 };
 
 console.log("verify-build55: Command Center Money + Businesses + charge capture");
-check("build stamp is 2026.11.05-130", BUILD_ID === "2026.11.05-130", BUILD_ID);
-check("index.html carries the -55 stamp", fs.readFileSync(new URL("../public/index.html", import.meta.url), "utf8").includes("2026.11.05-130"));
+check("build stamp is 2026.11.05-131", BUILD_ID === "2026.11.05-131", BUILD_ID);
+check("index.html carries the -55 stamp", fs.readFileSync(new URL("../public/index.html", import.meta.url), "utf8").includes("2026.11.05-131"));
 
 const login = await handler(evt("POST", "/api/auth/login", { body: { email: process.env.ADMIN_EMAIL, password: process.env.ADMIN_PASSWORD } }));
 check("admin login succeeds", login.statusCode === 200, `got ${login.statusCode}`);
